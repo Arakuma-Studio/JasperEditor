@@ -333,6 +333,36 @@ describe('import flow and media runtime', () => {
 	});
 });
 
+describe('interpreted pictures without events', () => {
+	it('asks again until the picture is ready (a missed ready event cannot leave it pending)', async () => {
+		const { session } = makeSession();
+		const engine = new ScriptedEngine();
+		let asks = 0;
+		engine.on((r) =>
+			r.path === '/api/media/mk_EXR0000001/variants'
+				? asks++ === 0
+					? { body: { state: 'running', jobId: 'job_v' } }
+					: { body: { state: 'ready', url: '/media/mk_EXR0000001/variant/display?v=' } }
+				: r.path === '/api/media/mk_EXR0000001'
+					? { body: { mediaKey: 'mk_EXR0000001', status: 'online', derivatives: {} } }
+					: undefined,
+		);
+		const sync = createMediaRuntimeSync(session, engine.client(), null);
+		const reg = registered('still.exr', { kind: 'image', key: 'mk_EXR0000001' });
+		(reg.probe.streams[0] as { browserDecodable: boolean; codec: string }).browserDecodable = false;
+		const id = addMedia(session, reg);
+		await waitFor(
+			() => expect(session.getState().media[id]?.variant).toMatchObject({ key: 'display:', state: 'ready' }),
+			{
+				timeout: 5000,
+			},
+		);
+		expect(session.getState().media[id]!.posterUrl).toContain('/variant/display');
+		expect(asks).toBe(2);
+		sync.dispose();
+	});
+});
+
 describe('Lottie export dialog', () => {
 	it('exports and lists what was not carried', async () => {
 		const { session, seqId } = makeSession();

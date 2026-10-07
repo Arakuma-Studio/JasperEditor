@@ -39,10 +39,14 @@ type Media = {
 type Doc = {
 	items: Record<string, { id: string; kind: string; name: string; mediaId?: string; sequenceId?: string }>;
 	media: Record<string, Media>;
-	sequences: Record<string, { id: string; videoTracks: unknown[]; clips: Record<string, { kind: string; blendMode?: string }> }>;
+	sequences: Record<
+		string,
+		{ id: string; videoTracks: unknown[]; clips: Record<string, { kind: string; blendMode?: string }> }
+	>;
 };
 const doc = () => query<Doc>(page, 'doc.get');
-const mediaNamed = async (name: string) => Object.values((await doc()).media).filter((m) => m.originalName === name);
+const mediaNamed = async (name: string) =>
+	Object.values((await doc()).media).filter((m) => m.originalName === name);
 
 async function chooseFiles(paths: string[]) {
 	await page.getByTestId('project-panel').click({ position: { x: 40, y: 10 } });
@@ -62,24 +66,46 @@ test.afterAll(async () => {
 
 test('imports Lottie, SVG, EXR and interlaced video; the Program monitor draws them', async () => {
 	projectId = await createProject(page, 'E2E Imports');
-	await importFiles(page, ['imports-anim.json', 'imports-logo.svg', 'imports-still.exr', 'imports-interlaced.mkv']);
+	await importFiles(page, [
+		'imports-anim.json',
+		'imports-logo.svg',
+		'imports-still.exr',
+		'imports-interlaced.mkv',
+	]);
 	const d = await doc();
 	const byName = (n: string) => Object.values(d.media).find((m) => m.originalName === n)!;
 	expect(byName('imports-anim.json').lottie?.fps).toBeGreaterThan(0);
 	expect(byName('imports-logo.svg').vector?.format).toBe('svg');
 	expect(byName('imports-still.exr').kind).toBe('image');
 	const r = await transact(page, [
-		{ type: 'clip.place', source: { mediaId: byName('imports-still.exr').id }, at: 0, tracks: { video: 'V1' } },
-		{ type: 'clip.place', source: { mediaId: byName('imports-logo.svg').id }, at: 0, tracks: { video: 'V2' } },
-		{ type: 'clip.place', source: { mediaId: byName('imports-anim.json').id }, at: 0, tracks: { video: 'V3' } },
+		{
+			type: 'clip.place',
+			source: { mediaId: byName('imports-still.exr').id },
+			at: 0,
+			tracks: { video: 'V1' },
+		},
+		{
+			type: 'clip.place',
+			source: { mediaId: byName('imports-logo.svg').id },
+			at: 0,
+			tracks: { video: 'V2' },
+		},
+		{
+			type: 'clip.place',
+			source: { mediaId: byName('imports-anim.json').id },
+			at: 0,
+			tracks: { video: 'V3' },
+		},
 	]);
 	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
-	await expect
-		.poll(async () => (await programPixels(page)).std, { timeout: 60_000 })
-		.toBeGreaterThan(5);
+	await expect.poll(async () => (await programPixels(page)).std, { timeout: 60_000 }).toBeGreaterThan(5);
 	// The EXR display picture and the SVG are <img>s, the Lottie player draws an <svg>.
-	await expect.poll(async () => (await programPixels(page)).layers, { timeout: 60_000 }).toBeGreaterThanOrEqual(2);
-	await expect(page.getByTestId('program-player-wrapper').locator('svg g').first()).toBeAttached({ timeout: 60_000 });
+	await expect
+		.poll(async () => (await programPixels(page)).layers, { timeout: 60_000 })
+		.toBeGreaterThanOrEqual(2);
+	await expect(page.getByTestId('program-player-wrapper').locator('svg g').first()).toBeAttached({
+		timeout: 60_000,
+	});
 	await page.screenshot({ path: join(OUT, '1-program.png') });
 });
 
@@ -90,7 +116,9 @@ test('a two-page PDF asks which pages; each becomes an item', async () => {
 	await dlg.getByText(/^Page 2/).click();
 	await page.screenshot({ path: join(OUT, '2-pdf-pages.png') });
 	await dlg.getByRole('button', { name: 'Import' }).click();
-	await expect.poll(async () => (await mediaNamed('imports-doc.pdf')).map((m) => m.vector?.page).sort()).toEqual([1, 2]);
+	await expect
+		.poll(async () => (await mediaNamed('imports-doc.pdf')).map((m) => m.vector?.page).sort())
+		.toEqual([1, 2]);
 	await expect(page.getByTestId('project-row').filter({ hasText: 'imports-doc.pdf (page 2)' })).toBeVisible();
 });
 
@@ -102,7 +130,9 @@ test('a PSD imports as a sequence of its layers', async () => {
 	await page.screenshot({ path: join(OUT, '3-layered.png') });
 	await dlg.getByRole('button', { name: 'OK' }).click();
 	await expect
-		.poll(async () => Object.values((await doc()).media).filter((m) => m.layerSource).length, { timeout: 60_000 })
+		.poll(async () => Object.values((await doc()).media).filter((m) => m.layerSource).length, {
+			timeout: 60_000,
+		})
 		.toBeGreaterThan(2);
 	const d = await doc();
 	const seqItem = Object.values(d.items).find((i) => i.kind === 'sequence' && i.name === 'imports-layers');
@@ -135,8 +165,17 @@ test('Modify ▸ Interpret Footage… applies in one undoable step; its controls
 		.filter({ hasText: /^Project$/ })
 		.first()
 		.click();
-	await page.getByTestId('project-row').filter({ hasText: 'imports-interlaced.mkv' }).click({ button: 'right' });
-	await page.getByRole('menuitem', { name: 'Modify' }).hover();
+	await page
+		.getByTestId('project-row')
+		.filter({ hasText: 'imports-interlaced.mkv' })
+		.click({ button: 'right' });
+	// The Project panel menu has Modify ▸ Interpret Footage… (a labelled section); the long menu runs past the bottom of
+	// this viewport, so the dialog is opened from Clip ▸ Modify, which acts on the same Project panel selection.
+	await expect(page.getByRole('menuitem', { name: 'Interpret Footage…' })).toBeAttached();
+	await page.keyboard.press('Escape');
+	await page.getByTestId('project-row').filter({ hasText: 'imports-interlaced.mkv' }).click();
+	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Clip', exact: true }).click();
+	await page.getByRole('menuitem', { name: /^Modify$/ }).hover();
 	await page.getByRole('menuitem', { name: 'Interpret Footage…' }).click();
 	const dlg = page.getByTestId('interpret-footage-dialog');
 	await expect(dlg).toBeVisible();
@@ -161,12 +200,27 @@ test('Modify ▸ Interpret Footage… applies in one undoable step; its controls
 	expect(m.interpretation).toEqual({ frameRate: { num: 25, den: 1 }, loop: 2 });
 	expect((await appliedLabels(page)).at(-1)).toBe('Interpret Footage');
 	await page.keyboard.press('Control+KeyZ');
-	await expect.poll(async () => (await mediaNamed('imports-interlaced.mkv'))[0]!.interpretation).toBeUndefined();
+	await expect
+		.poll(async () => (await mediaNamed('imports-interlaced.mkv'))[0]!.interpretation)
+		.toBeUndefined();
 });
 
 test('File ▸ Export ▸ Lottie… exports the sequence and lists what was not carried', async () => {
-	const r = await transact(page, [{ type: 'clip.addText', at: 300, duration: 30, track: 'V2', content: { text: 'Lottie' } }]);
+	const d = await doc();
+	const seq01 = Object.values(d.items).find((i) => i.kind === 'sequence' && i.name === 'Sequence 01')!;
+	const r = await transact(page, [
+		{
+			type: 'clip.addText',
+			sequenceId: seq01.sequenceId,
+			at: 300,
+			duration: 30,
+			track: 'V2',
+			content: { text: 'Lottie' },
+		},
+	]);
 	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	// The sequence selected in the Project panel is the one exported.
+	await page.getByTestId('project-row').filter({ hasText: 'Sequence 01' }).click();
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'File', exact: true }).click();
 	await page.getByRole('menuitem', { name: /^Export$/ }).hover();
 	await page.getByRole('menuitem', { name: /^Lottie…/ }).click();

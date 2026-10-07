@@ -172,10 +172,62 @@ export function createMediaRuntimeSync(
 		return need.picture ? `${need.picture}:${need.variant}` : null;
 	};
 	const requested = new Map<string, string>();
+	const timers = new Set<ReturnType<typeof setTimeout>>();
+	const isReady = (id: string, vk: string) => {
+		const v = session.getState().media[id]?.variant;
+		return v?.key === vk && v.state === 'ready';
+	};
+	/**
+	 * Asks the engine for an interpreted picture; until it is ready the request is repeated (idempotent on the engine)
+	 * with a growing delay, so a `media.variant.ready` event that raced the answer or was missed cannot leave the
+	 * picture pending. A ready state is never downgraded by a late answer.
+	 */
+	const askVariant = (
+		id: string,
+		key: string,
+		vk: string,
+		kind: 'display' | 'proxy',
+		variant: string,
+		attempt: number,
+	) => {
+		engine
+			.requestMediaVariant(key, { kind, variant })
+			.then((st) => {
+				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
+				session.setMediaRuntime(id, {
+					variant: {
+						key: vk,
+						state: st.state,
+						...(st.url ? { url: st.url } : {}),
+						...(st.error ? { error: st.error } : {}),
+					},
+					...(st.state === 'ready' && st.url && kind === 'display' ? { posterUrl: st.url } : {}),
+				});
+				if ((st.state === 'queued' || st.state === 'running') && attempt < 60) {
+					const t = setTimeout(
+						() => {
+							timers.delete(t);
+							if (!disposed && requested.get(id) === vk && !isReady(id, vk))
+								askVariant(id, key, vk, kind, variant, attempt + 1);
+						},
+						Math.min(15_000, 1000 * 1.5 ** attempt),
+					);
+					timers.add(t);
+				}
+			})
+			.catch((e: unknown) => {
+				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
+				session.setMediaRuntime(id, {
+					variant: { key: vk, state: 'failed', error: e instanceof Error ? e.message : String(e) },
+				});
+			});
+	};
 	const syncVariants = (ids?: readonly string[]) => {
 		if (disposed) return;
 		const media = session.getCommitted().media as Record<string, MediaAsset>;
-		for (const m of ids ? ids.map((id) => media[id]).filter((x): x is MediaAsset => !!x) : Object.values(media)) {
+		for (const m of ids
+			? ids.map((id) => media[id]).filter((x): x is MediaAsset => !!x)
+			: Object.values(media)) {
 			const key = mediaKeyOf(m);
 			const vk = variantKeyOf(m);
 			if (!key || !vk) {
@@ -192,26 +244,7 @@ export function createMediaRuntimeSync(
 				string,
 			];
 			session.setMediaRuntime(m.id, { variant: { key: vk, state: 'queued' } });
-			engine
-				.requestMediaVariant(key, { kind, variant })
-				.then((st) => {
-					if (disposed || requested.get(m.id) !== vk) return;
-					session.setMediaRuntime(m.id, {
-						variant: {
-							key: vk,
-							state: st.state,
-							...(st.url ? { url: st.url } : {}),
-							...(st.error ? { error: st.error } : {}),
-						},
-						...(st.state === 'ready' && st.url && kind === 'display' ? { posterUrl: st.url } : {}),
-					});
-				})
-				.catch((e: unknown) => {
-					if (disposed || requested.get(m.id) !== vk) return;
-					session.setMediaRuntime(m.id, {
-						variant: { key: vk, state: 'failed', error: e instanceof Error ? e.message : String(e) },
-					});
-				});
+			askVariant(m.id, key, vk, kind, variant, 0);
 		}
 	};
 	const onVariantReady = (p: { mediaKey: string; kind: string; variant: string; url: string }) => {
@@ -242,7 +275,8 @@ export function createMediaRuntimeSync(
 				if (!disposed && posters.get(m.id) === key) session.setMediaRuntime(m.id, { posterUrl });
 			};
 			if (m.vector?.format === 'svg') done(url);
-			else if (m.vector?.format === 'pdf') void pdfThumbnail(url, m.vector.page ?? 1).then(done, () => undefined);
+			else if (m.vector?.format === 'pdf')
+				void pdfThumbnail(url, m.vector.page ?? 1).then(done, () => undefined);
 			else if (m.lottie) void lottieThumbnail(url).then(done, () => undefined);
 		}
 	};
@@ -322,6 +356,8 @@ export function createMediaRuntimeSync(
 	return {
 		dispose() {
 			disposed = true;
+			for (const t of timers) clearTimeout(t);
+			timers.clear();
 			offDoc();
 			offEvents();
 		},

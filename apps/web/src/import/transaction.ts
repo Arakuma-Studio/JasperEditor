@@ -38,7 +38,11 @@ export function findExistingMedia(
 	page = 1,
 ): string | null {
 	for (const m of Object.values(doc.media)) {
-		if (m.fingerprint === fingerprint && !m.fingerprint.startsWith('pending:') && (m.vector?.page ?? 1) === page)
+		if (
+			m.fingerprint === fingerprint &&
+			!m.fingerprint.startsWith('pending:') &&
+			(m.vector?.page ?? 1) === page
+		)
 			return m.id;
 	}
 	return null;
