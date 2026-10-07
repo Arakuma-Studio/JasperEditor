@@ -5,6 +5,7 @@ import {
 	alphaOutline,
 	buildRenderSnapshot,
 	checkInvariants,
+	createCounterIdSource,
 	defaultEffectRegistry,
 	deform,
 	evaluate,
@@ -392,7 +393,7 @@ describe('Puppet', () => {
 		expect(
 			checkInvariants(bad, { effects: defaultEffectRegistry }).some((i) => i.message.includes('pin')),
 		).toBe(true);
-		const fixed = repairDocument(bad);
+		const fixed = repairDocument(bad, createCounterIdSource(99));
 		expect(
 			(Object.values(fixed.document.sequences[h.seqId]!.clips)[0] as { effects: { puppet?: unknown }[] })
 				.effects[0]!.puppet,
