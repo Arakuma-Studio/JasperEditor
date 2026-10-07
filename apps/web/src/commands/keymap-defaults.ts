@@ -271,6 +271,8 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('effectControls.removeEffect', 'Backspace', 'effectControls'),
 	b('effectControls.removeEffect', 'Delete', 'effectControls'),
 	b('effectControls.toggleLoop', 'Ctrl+KeyL', 'effectControls'),
+	// Wave expressions: After Effects' Add Expression shortcut (Alt+Shift+= / Option+Shift+=).
+	b('inspector.toggleExpression', 'Alt+Shift+Equal', 'effectControls', { mac: 'Opt+Shift+Equal' }),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

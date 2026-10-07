@@ -20,6 +20,8 @@ import {
 	type Row,
 	rowForKey,
 } from '../panels/properties/lib/model.ts';
+import { ensureExpressionEngine } from '../expressions/engine.ts';
+import { defaultExpressionText, rowExpressionOf, setExpressionCommand } from '../expressions/row.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 function activeSequence(session: EditorSession): Sequence | null {
@@ -131,6 +133,35 @@ export const inspectorCommands: UiCommand[] = [
 			if (!f) return;
 			const on = animState(f.row) === 'none';
 			run(f.session, `Toggle Animation: ${f.row.label}`, planStopwatch(f.row, f.frame, on).commands);
+		},
+	},
+	{
+		// Wave expressions: AE's Animation ▸ Add Expression (Alt+Shift+=) — adds an expression to the focused property
+		// (its own reference, AE's default text) or removes the one it has.
+		id: 'inspector.toggleExpression',
+		label: 'Add/Remove Expression',
+		description: 'Adds an expression to the focused property in Effect Controls, or removes its expression.',
+		scope: 'global',
+		when: (ctx) => {
+			const f = hasFocusedRow(ctx) ? focusedRow(ctx) : null;
+			return !!f && f.row.bindings.length === 1 && !!rowExpressionOf(f.session.getCommitted(), f.row.bindings[0]!, f.seq.id);
+		},
+		run(ctx) {
+			const f = focusedRow(ctx);
+			if (!f || f.row.bindings.length !== 1) return;
+			const doc = f.session.getCommitted();
+			const rx = rowExpressionOf(doc, f.row.bindings[0]!, f.seq.id);
+			if (!rx) return;
+			if (rx.expression) {
+				run(f.session, `Remove Expression: ${f.row.label}`, [
+					{ type: 'expression.clear', target: rx.path, sequenceId: rx.ref.seq } as Command,
+				]);
+				return;
+			}
+			void ensureExpressionEngine();
+			run(f.session, `Add Expression: ${f.row.label}`, [
+				setExpressionCommand(rx, defaultExpressionText(doc, rx.ref)),
+			]);
 		},
 	},
 	{
