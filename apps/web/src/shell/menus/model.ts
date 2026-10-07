@@ -239,7 +239,14 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		editOnly: true,
 		items: [
 			c('sequence.settings', 'Sequence Settings…'),
+			// previews (Premiere's Sequence menu): render previews and their files
 			c('timeline.renderInToOut', 'Render Effects In to Out'),
+			c('timeline.renderAllInToOut', 'Render In to Out'),
+			c('timeline.renderSelection', 'Render Selection'),
+			c('timeline.renderAudio', 'Render Audio'),
+			c('timeline.deleteRenderFiles', 'Delete Render Files'),
+			c('timeline.deleteRenderFilesInToOut', 'Delete Render Files In to Out'),
+			c('sequence.previewSettings', 'Video Previews…'),
 			sep,
 			c('timeline.matchFrame', 'Match Frame'),
 			c('timeline.reverseMatchFrame', 'Reverse Match Frame'),

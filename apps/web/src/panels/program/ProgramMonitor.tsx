@@ -27,6 +27,7 @@ import { buildMulticamViewDoc, multicamClipAt, multicamTrack } from '../../multi
 import { MulticamOverlay } from '../../multicam/MulticamOverlay.tsx';
 import { installMulticamRecorder } from '../../multicam/recorder.ts';
 import { multicamViewStore } from '../../multicam/state.ts';
+import { usePlaybackPreviews } from '../../previews/hooks.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
@@ -208,6 +209,10 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				: null,
 		[seqId, views3d, seq?.settings.width, seq?.settings.height],
 	);
+	// previews: rendered segments play from their files (committed document only: a gesture draws live).
+	const committed = useSessionState((s) => s.document);
+	const previews = usePlaybackPreviews(committed, seqId, !mcView && !!seqId);
+	const playPreviews = previews && drawn === committed && !mcView ? previews : null;
 	const options = useMemo<RenderOptions>(
 		() => ({
 			...DEFAULT_RENDER_OPTIONS,
@@ -217,8 +222,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			...(colorBypass.length ? { colorBypassClipIds: colorBypass } : {}),
 			...(fxPreviewScale < 1 ? { fxPreviewScale } : {}),
 			...(view3d && !mcView ? { view3d } : {}),
+			...(playPreviews ? { previews: playPreviews } : {}),
 		}),
-		[useProxies, transparent, colorBypass, fxPreviewScale, view3d, mcView],
+		[useProxies, transparent, colorBypass, fxPreviewScale, view3d, mcView, playPreviews],
 	);
 	const inputProps = useMemo(() => (doc ? { doc, options } : null), [doc, options]);
 	const duration = seqId ? playerDurationFrames(drawn, seqId) : 1;

@@ -4,9 +4,10 @@ import { type EngineJob, TERMINAL_JOB_STATES } from '@jasper/api';
 
 export type AnyJob = EngineJob & { client?: true };
 
-export type JobGroupId = 'exports' | 'uploads' | 'graphics' | 'media' | 'other';
+export type JobGroupId = 'exports' | 'previews' | 'uploads' | 'graphics' | 'media' | 'other';
 export const JOB_GROUPS: { id: JobGroupId; label: string; collapsedByDefault?: boolean }[] = [
 	{ id: 'exports', label: 'Exports' },
+	{ id: 'previews', label: 'Render previews' },
 	{ id: 'uploads', label: 'Uploads' },
 	{ id: 'graphics', label: 'Graphics renders' },
 	{ id: 'media', label: 'Media analysis', collapsedByDefault: true },
@@ -18,6 +19,8 @@ function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 		case 'export':
 		case 'still':
 			return 'exports';
+		case 'preview':
+			return 'previews';
 		case 'upload':
 			return 'uploads';
 		case 'mg-render':

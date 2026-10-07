@@ -161,6 +161,7 @@ export class PreviewService {
 			audioUrl: this.urlOf(key, '{hash}.wav'),
 			container,
 			size: req.settings.size,
+			audioFiles: [...names].filter((n) => n.endsWith('.wav')).length,
 		};
 	}
 

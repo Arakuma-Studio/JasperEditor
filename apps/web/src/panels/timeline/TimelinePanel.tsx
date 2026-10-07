@@ -33,6 +33,7 @@ import { cameraMenuEntries } from '../../commands/multicam.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
+import { useRenderBar } from '../../previews/hooks.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import {
@@ -72,7 +73,6 @@ import { mediaCacheVersion } from './media/media-cache.ts';
 import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt } from './model/layout.ts';
-import { renderSegments } from './model/renderbar.ts';
 import {
 	type DropTarget,
 	dropCommand,
@@ -524,7 +524,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	// S10:TUI-004: per-track transition index of the drawn sequence (follows gestures, TUI-005).
 	const transitions = useMemo(() => transitionIndex(seq, media), [seq, media]);
 	const selectedTransitions = useMemo(() => new Set(selectedTransitionIds), [selectedTransitionIds]);
-	const segments = useMemo(() => renderSegments(committedDoc, seqId), [committedDoc, seqId]);
+	// previews: the render bar (green = rendered preview files, yellow/red = the live playback cost estimate).
+	const segments = useRenderBar(committedDoc, seqId);
 	const extent = useMemo(() => {
 		const lastMarker = committedSeq.markers.length
 			? Math.max(...committedSeq.markers.map((m) => m.frame + m.duration))

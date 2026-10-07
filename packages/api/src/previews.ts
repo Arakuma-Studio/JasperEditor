@@ -39,6 +39,8 @@ export const PreviewStatusSchema = z.object({
 	container: z.enum(['mp4', 'webm']),
 	/** Size of the preview frames (`half` = half the sequence size). */
 	size: z.enum(['full', 'half']),
+	/** Audio preview files of this format (the editor computes audio segments only when there are some). */
+	audioFiles: z.number().int(),
 });
 export type PreviewStatus = z.infer<typeof PreviewStatusSchema>;
 
