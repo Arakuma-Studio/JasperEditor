@@ -60,6 +60,7 @@ import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { installCaptureSafeCanvases } from './fx/capture-safe-canvas.ts';
 import {
 	BlendFallback,
 	BlendScope,
@@ -107,6 +108,9 @@ import {
 	useScene3DTap,
 } from './three-d/scope.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
+
+// Video canvases must stay capturable by HTML-in-Canvas scopes (fx/capture-safe-canvas.ts).
+installCaptureSafeCanvases();
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
 const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
