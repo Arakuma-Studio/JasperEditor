@@ -20,7 +20,9 @@ import {
 import { z } from 'zod';
 import {
 	defineTool,
+	DESTRUCTIVE_IDEMPOTENT,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -271,7 +273,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 					})
 					.optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
@@ -406,7 +408,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 				points: z.array(z.tuple([z.unknown(), z.number()])).min(1),
 				tolerance: z.number().min(0).optional(),
 			},
-			annotations: EDIT,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, sequenceId, strip, lane, points, tolerance }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
@@ -498,7 +500,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 				amountDb: z.number().min(0).max(96).optional(),
 				fadeMs: z.number().min(0).max(10_000).optional(),
 			},
-			annotations: EDIT,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
@@ -565,7 +567,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 				truePeakDb: z.number().min(-20).max(0).optional(),
 				analyze: z.boolean().optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, sequenceId, enabled, targetLufs, truePeakDb, analyze: doAnalyze }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);

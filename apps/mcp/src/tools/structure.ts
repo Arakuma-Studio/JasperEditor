@@ -17,9 +17,10 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	DESTRUCTIVE,
 	defineTool,
+	DESTRUCTIVE_IDEMPOTENT,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	loadDoc,
 	READ_ONLY,
 	requireOk,
@@ -283,7 +284,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			title: 'Ungroup clips',
 			description: 'Dissolves the groups of the given clips (clip.ungroup).',
 			input: { projectId: ProjectIdArg, clipIds: ClipIdsArg },
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds }, extra) =>
 			run(ctx, projectId, 'Ungroup', [{ type: 'clip.ungroup', clipIds }], extra),
@@ -317,7 +318,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			description:
 				"Deletes a sequence and its project item (sequence.delete). Needs the user's approval in an open editor. A sequence nested elsewhere is refused (E_IN_USE) unless force: true, which also removes those nest clips.",
 			input: { projectId: ProjectIdArg, sequenceId: z.string().min(1), force: z.boolean().optional() },
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, sequenceId, force }, extra) =>
 			run(
@@ -342,7 +343,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 					.array(z.enum(['video', 'audio', 'image', 'animated-image', 'font', 'lut', 'mg-bundle']))
 					.optional(),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, kinds }, extra) =>
 			run(
@@ -416,7 +417,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 				syntheticId: z.string().min(1),
 				params: z.record(z.string(), z.unknown()),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, syntheticId, params }, extra) =>
 			run(ctx, projectId, 'Edit Item', [{ type: 'synthetic.update', syntheticId, params }], extra),
@@ -455,7 +456,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			description:
 				'Heals through edits (sequence.joinThroughEdits) on unlocked tracks: all of them, or only those touching clipIds. The left piece absorbs the right one and keeps its effects and attributes.',
 			input: { projectId: ProjectIdArg, sequenceId: SequenceIdArg, clipIds: ClipIdsArg.optional() },
-			annotations: EDIT,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, sequenceId, clipIds }, extra) => {
 			const { seq } = await sequenceOf(ctx, projectId, sequenceId);
@@ -632,7 +633,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 				sourceTime: z.number().min(0).optional().describe('Source time in seconds for source-time'),
 				holdFilters: z.boolean().optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, enabled, holdOn, at, sourceTime, holdFilters }, extra) =>
 			run(

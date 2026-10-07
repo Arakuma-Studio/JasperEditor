@@ -16,6 +16,8 @@ export const AGENT_QUERIES = [
 	'preferences.get',
 	'validate',
 	'frame.capture',
+	'clip.properties',
+	'param.get',
 ] as const;
 export const AgentQueryNameSchema = z.enum(AGENT_QUERIES);
 export type AgentQueryName = z.infer<typeof AgentQueryNameSchema>;

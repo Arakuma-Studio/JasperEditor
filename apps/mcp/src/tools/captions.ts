@@ -38,9 +38,11 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	DESTRUCTIVE,
 	defineTool,
+	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -293,7 +295,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				range: z.strictObject({ from: timeArg('Start'), to: timeArg('End (exclusive)') }).optional(),
 				dropFrame: z.boolean().optional().describe('SCC/MCC timecode (default drop-frame)'),
 			},
-			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+			annotations: EDIT,
 		},
 		async (a) => {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
@@ -426,7 +428,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				style: StyleArg.optional(),
 				resetStyle: z.boolean().optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			const commands: unknown[] = [];
@@ -495,7 +497,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			description:
 				'Merges consecutive captions of one track into one (texts joined by line breaks, spanning first in to last out).',
 			input: { projectId: ProjectIdArg, clipIds: ClipIdsArg },
-			annotations: EDIT,
+			annotations: DESTRUCTIVE,
 		},
 		async (a, extra) =>
 			run(ctx, a.projectId, 'Merge Captions', [{ type: 'caption.merge', clipIds: a.clipIds }], extra),
@@ -509,7 +511,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			description:
 				'Deletes captions; ripple: true closes the gaps on their caption track (later captions move left; other tracks stay). For a sync-locked ripple of the whole sequence use delete_clips with ripple.',
 			input: { projectId: ProjectIdArg, clipIds: ClipIdsArg, ripple: z.boolean().optional() },
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) =>
 			run(
@@ -541,7 +543,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				reset: z.union([z.boolean(), z.array(z.string())]).optional(),
 				savePresetAs: z.string().min(1).optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			if ((a.track === undefined) === (a.clipIds === undefined))
@@ -839,7 +841,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				fillers: z.array(z.string().min(1)).optional(),
 				dryRun: z.boolean().optional(),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
@@ -891,7 +893,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				keepSeconds: z.number().min(0).optional(),
 				dryRun: z.boolean().optional(),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
@@ -941,7 +943,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 				name: z.string().min(1),
 				transcriptId: z.string().optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) =>
 			run(
