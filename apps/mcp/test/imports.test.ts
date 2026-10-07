@@ -411,6 +411,9 @@ describe('imports MCP tools', () => {
 		const p2 = engine.doc().media[imported[0]!.mediaId]!;
 		expect(p2.vector).toMatchObject({ page: 2, width: 792, height: 612 });
 		expect(p2.probe.streams[0]).toMatchObject({ width: 792, height: 612 });
+		// Pages of one file are different media (same fingerprint, different page).
+		expect(imported[1]!.mediaId).not.toBe(imported[0]!.mediaId);
+		expect(engine.doc().media[imported[1]!.mediaId]!.vector?.page).toBe(3);
 		expect((await call('import_pdf_pages', { path: pdf, pages: [9] })).body.code).toBe('E_INVALID_PARAM');
 	});
 

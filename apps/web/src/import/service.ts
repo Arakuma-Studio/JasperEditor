@@ -400,7 +400,7 @@ export class EngineImportService implements ImportService {
 				now,
 				path: a.path,
 			}),
-			existingMediaId: findExistingMedia(doc, a.reg.fingerprint),
+			existingMediaId: findExistingMedia(doc, a.reg.fingerprint, a.reg.vector?.page ?? 1),
 			...(a.hint ? { sourceHint: a.hint } : {}),
 		}));
 

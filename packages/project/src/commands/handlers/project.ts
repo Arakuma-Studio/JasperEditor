@@ -243,8 +243,13 @@ export const projectHandlers: HandlerMap = {
 	},
 	'media.register': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
+		// imports: the pages of one PDF share the file's fingerprint and are different media.
+		const page = (a: { vector?: { page?: number } | null }) => a.vector?.page ?? 1;
 		const existing = Object.values(doc.media).find(
-			(m) => m.fingerprint === cmd.asset.fingerprint && !m.fingerprint.startsWith('pending:'),
+			(m) =>
+				m.fingerprint === cmd.asset.fingerprint &&
+				!m.fingerprint.startsWith('pending:') &&
+				page(m) === page(cmd.asset),
 		);
 		let mediaId: string;
 		let deduped = false;

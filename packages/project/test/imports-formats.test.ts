@@ -291,6 +291,23 @@ describe('Lottie export', () => {
 	});
 });
 
+describe('PDF pages', () => {
+	it('pages of one file are different media; the same page again is deduplicated', () => {
+		const h = new Harness();
+		const base = videoAsset({ kind: 'image', width: 612, height: 792 });
+		const page = (n: number) => ({ ...base, vector: { format: 'pdf', width: 612, height: 792, page: n, pageCount: 2 } });
+		const r = h.ok([
+			{ type: 'media.register', asset: page(1) },
+			{ type: 'media.register', asset: page(2) },
+			{ type: 'media.register', asset: page(2) },
+		]);
+		const ids = r.results.map((x) => (x as { mediaId: string; deduped: boolean }).mediaId);
+		expect(ids[0]).not.toBe(ids[1]);
+		expect(ids[2]).toBe(ids[1]);
+		expect((r.results[2] as { deduped: boolean }).deduped).toBe(true);
+	});
+});
+
 describe('layered (PSD) import commands', () => {
 	const pic = (name: string, w: number, h: number): LayeredImportLayer['asset'] => {
 		const a = videoAsset({ kind: 'image', width: w, height: h });
