@@ -138,18 +138,21 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 		protocol: TX_PROTOCOL,
 		transaction: toJsonSchema(TransactionSchema),
 		commands,
-		effects: registries.effects.list().map((e) => ({
-			id: e.id,
-			version: e.version,
-			label: e.label,
-			category: e.category,
-			appliesTo: e.appliesTo,
-			params: e.params,
-			capabilities: e.capabilities,
-			...(e.bin ? { bin: e.bin } : {}),
-			...(e.description ? { description: e.description } : {}),
-			...(e.gpu ? { gpu: true } : {}),
-		})),
+		effects: registries.effects
+			.list()
+			.filter((e) => !e.internal)
+			.map((e) => ({
+				id: e.id,
+				version: e.version,
+				label: e.label,
+				category: e.category,
+				appliesTo: e.appliesTo,
+				params: e.params,
+				capabilities: e.capabilities,
+				...(e.bin ? { bin: e.bin } : {}),
+				...(e.description ? { description: e.description } : {}),
+				...(e.gpu ? { gpu: true } : {}),
+			})),
 		transitions: TRANSITION_SPECS.map((t) => ({
 			id: t.id,
 			version: t.version,

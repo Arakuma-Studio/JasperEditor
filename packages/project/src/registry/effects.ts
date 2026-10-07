@@ -21,6 +21,7 @@ import {
 import { EXPRESSION_CONTROL_EFFECTS } from './expression-controls.ts';
 import { FX_EFFECTS } from './fx/index.ts';
 import type { GpuEffect } from './fx/shader.ts';
+import { LUMETRI_SPATIAL_EFFECT } from './lumetri-spatial.ts';
 
 // The M1 colour maths moved next to the colour ops (S06:CG-026); re-exported for existing importers.
 export { blackWhiteAmount, brightnessContrastLinear, hueSaturationValues };
@@ -218,6 +219,13 @@ export type EffectSpec = {
 	 * clip's centre). Applied by `effect.add` on clips for params the command does not set.
 	 */
 	instanceDefaults?(ctx: { box: { width: number; height: number } }): Record<string, ParamValue>;
+	/**
+	 * color-grade: an implementation stage the renderers insert themselves (e.g. `jasper.lumetri-spatial` after a
+	 * Lumetri instance): never listed in the Effects panel or the agent catalogue, and `effect.add` refuses it.
+	 */
+	internal?: boolean;
+	/** color-grade: bypassed together with the colour effects by the before/after toggle (`colorBypass`). */
+	gradeBypass?: boolean;
 	/** One line for the Effects panel tooltip and the agent catalogue. */
 	description?: string;
 	/** Extra search terms for the Effects panel. */
@@ -615,6 +623,9 @@ export const M1_EFFECTS: readonly EffectSpec[] = [
 /** M2 additions registered by default (the colour effects come from `registry/color-effects.ts`). */
 export const M2_EFFECTS: readonly EffectSpec[] = [...COLOR_EFFECTS, CORNER_PIN_EFFECT];
 
+/** color-grade: internal render stages (never listed; inserted by render snapshots). */
+export const INTERNAL_EFFECTS: readonly EffectSpec[] = [LUMETRI_SPATIAL_EFFECT];
+
 export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([
 	...M1_EFFECTS,
 	...M2_EFFECTS,
@@ -624,6 +635,8 @@ export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([
 	...AUDIO_EFFECTS,
 	// Wave expressions: Expression Controls (no visual output).
 	...EXPRESSION_CONTROL_EFFECTS,
+	// color-grade: Lumetri's spatial stage (internal).
+	...INTERNAL_EFFECTS,
 ]);
 
 // ---------------------------------------------------------------- realization helpers (shared by engines)

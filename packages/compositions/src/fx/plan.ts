@@ -161,7 +161,7 @@ export function planLayerFx(
 	}
 	const runnable = ordered.filter((fx) => {
 		const spec = specOf(fx)!;
-		if (spec.color && opts.colorBypass) return false;
+		if ((spec.color || spec.gradeBypass) && opts.colorBypass) return false;
 		if (spec.gpu && opts.failed?.(fx.effectId)) {
 			bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'shader-failed' });
 			return false;
