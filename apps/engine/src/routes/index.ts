@@ -4,6 +4,7 @@ import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
 import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
+import captionRoutes from './captions.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
@@ -49,6 +50,8 @@ const ROUTE_PLUGINS = [
 	animeRoutes,
 	// wp masks: auto-trace (mask tracking runs as `track` jobs of kind `mask`).
 	maskRoutes,
+	// wp captions: caption / transcript files by path.
+	captionRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

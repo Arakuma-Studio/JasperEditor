@@ -20,6 +20,8 @@ export const PANEL_KINDS = [
 	'jobs',
 	'lumetri',
 	'scopes',
+	// wp captions: Text panel (Captions and Transcript tabs)
+	'text',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 

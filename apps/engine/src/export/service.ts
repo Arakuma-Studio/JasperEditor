@@ -3,11 +3,11 @@
 // progress mapping (S04:RN-030); `export.finished` event. Motion-graphic masters come from a provider that
 // WP-2G registers (`registerMgMasterProvider`).
 import type { ChildProcess } from 'node:child_process';
-import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
-import type { EngineJob, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
+import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import {
 	buildRenderSnapshot,
 	type MediaHandle,
@@ -28,6 +28,15 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
 import { runBlendPipeline } from './blend/run.ts';
+import {
+	embedArgs,
+	embeddedTracks,
+	sidecarBytes,
+	sidecarName,
+	sidecarTracks,
+	subtitleCodecFor,
+	vttFor,
+} from './captions.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -258,6 +267,75 @@ export class ExportService {
 			...(typeof doc.projectId === 'string' ? { projectId: doc.projectId } : {}),
 			input: { request: file },
 		});
+	}
+
+	/**
+	 * wp captions (S04:TR-061/062): embeds the selected caption tracks as subtitle streams (`mov_text` in MP4/MOV,
+	 * WebVTT in WebM; stream copy for picture and sound) and writes the sidecar files into the job directory.
+	 */
+	private async writeCaptionOutputs(
+		planned: PlannedExport,
+		output: string,
+		dir: string,
+		ctx: JobContext,
+	): Promise<NonNullable<ExportResult['captions']> | null> {
+		const c = planned.captionSettings;
+		if (!c?.embed && !c?.sidecar?.length) return null;
+		const seq = planned.document.sequences[planned.sequenceId]!;
+		const embedded: NonNullable<ExportResult['captions']>['embedded'] = [];
+		const sidecars: NonNullable<ExportResult['captions']>['sidecars'] = [];
+		const tracks = embeddedTracks(planned.document, seq, c, planned.range);
+		if (tracks.length) {
+			ctx.progress(0.99, { stage: 'Embedding captions' });
+			const scratch = await ctx.scratchDir();
+			const files = [];
+			for (const [i, t] of tracks.entries()) {
+				const path = join(scratch, `captions-${i}.vtt`);
+				await writeFile(path, vttFor(t));
+				files.push({ path, language: t.language, title: t.name });
+			}
+			const container = extname(output).slice(1);
+			const tmp = join(dir, `captioned${extname(output)}`);
+			const args = embedArgs(output, files, container, tmp);
+			ctx.log(`ffmpeg ${args.join(' ')}`);
+			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+			await rename(tmp, output);
+			for (const t of tracks)
+				embedded.push({
+					trackId: t.track.id,
+					name: t.name,
+					language: t.language,
+					codec: subtitleCodecFor(container),
+					cues: t.doc.cues.length,
+				});
+		}
+		const side = sidecarTracks(planned.document, seq, c, planned.range);
+		// sidecars live in `captions/` so `output.*` stays the only output file of the job
+		if (side.length) await mkdir(join(dir, 'captions'), { recursive: true });
+		for (const format of c.sidecar ?? []) {
+			for (const t of side) {
+				const name = sidecarName('output', t, format, side.length === 1);
+				await writeFile(join(dir, 'captions', name), sidecarBytes(t, format, seq, c.dropFrame));
+				sidecars.push({
+					trackId: t.track.id,
+					format,
+					name,
+					url: `/renders/${ctx.job.id}/captions/${encodeURIComponent(name)}`,
+					cues: t.doc.cues.length,
+				});
+			}
+		}
+		return { embedded, sidecars };
+	}
+
+	/** A sidecar caption file of a finished render job (`/renders/:jobId/captions/:name`). */
+	async sidecarFile(jobId: string, name: string): Promise<string | null> {
+		if (!JOB_ID_RE.test(jobId) || !/^output(\.[A-Za-z0-9_-]+)*\.(srt|vtt|scc|mcc|stl|ttml|dfxp)$/.test(name))
+			return null;
+		const job = this.deps.queue.get(jobId);
+		if (job && job.state !== 'succeeded') return null;
+		const file = join(this.deps.rendersDir, jobId, 'captions', name);
+		return (await exists(file)) ? file : null;
 	}
 
 	/** Output file of a finished render job (`/renders/:jobId/output`). */
@@ -682,6 +760,7 @@ export class ExportService {
 		const origin = this.deps.origin();
 		const sign = (path: string) => this.deps.signer.signUrl(origin, path);
 		let doc = buildRenderSnapshot(planned.document, planned.sequenceId, {
+			captions: planned.captions,
 			range: planned.range,
 			resolveMedia: (asset): MediaHandle | null => {
 				const local = planned.media[asset.id];
@@ -847,6 +926,8 @@ export class ExportService {
 			}
 			frames = count;
 		}
+		// wp captions: embedded caption streams (remux) and sidecar files.
+		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
@@ -855,6 +936,15 @@ export class ExportService {
 				output,
 				withExtension(req.settings.destination.path, extname(output)),
 			);
+			const stem = basename(finalPath, extname(finalPath));
+			for (const sc of captionResult?.sidecars ?? []) {
+				const ext = extname(sc.name);
+				const rest = sc.name.slice(sc.name.indexOf('.'), -ext.length || undefined);
+				sc.path = await copyNoOverwrite(
+					join(dir, 'captions', sc.name),
+					join(dirname(finalPath), `${stem}${rest}${ext}`),
+				);
+			}
 		}
 		const result = {
 			downloadUrl,
@@ -866,6 +956,7 @@ export class ExportService {
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(warnings.length ? { warnings } : {}),
+			...(captionResult ? { captions: captionResult } : {}),
 			planId: planned.plan.planId,
 		};
 		this.commitRefs(ctx, planned, 'export');

@@ -16,6 +16,7 @@ import {
 	TextBoxSchema,
 	TextStyleSchema,
 } from '../../schema/sequence.ts';
+import { CaptionRulesSchema } from './captions.ts';
 import {
 	ContentTimeInputSchema,
 	cmd,
@@ -217,6 +218,12 @@ export const ClipAddCaptionsCmd = cmd('clip.addCaptions', {
 	alignToClipId: IdRefSchema.optional(),
 	range: z.strictObject({ from: TimeInputSchema, to: TimeInputSchema }).optional(),
 	style: CaptionStyleSchema.partial().optional(),
+	/**
+	 * wp captions: one caption clip per caption block (default), or one clip paging through the blocks (`false`).
+	 * Blocks follow `rules` (Create Captions defaults: 42 characters × 2 lines, 1–7 s).
+	 */
+	split: z.boolean().optional(),
+	rules: CaptionRulesSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const ClipAddAdjustmentCmd = cmd('clip.addAdjustment', {

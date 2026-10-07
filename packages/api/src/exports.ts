@@ -9,6 +9,25 @@ import { EnvelopeSchema } from './projects.ts';
  * The engine may substitute the codec/container when the build cannot encode H.264 (D-13): the plan's
  * `encoder` says what will actually be written.
  */
+/** wp captions: caption output of an export (S04:TR-061/062). Track lists take ids or `C1`-style labels. */
+export const CAPTION_SIDECAR_FORMATS = ['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
+export const ExportCaptionsSchema = z.object({
+	/** Burn captions into the picture: `true` (default) = the visible caption tracks, `false` = none, or a list. */
+	burnIn: z.union([z.boolean(), z.array(z.string())]).optional(),
+	/**
+	 * Embedded caption streams: `mov_text` in MP4/MOV, WebVTT in WebM. `true` = every caption track with captions
+	 * (the active track first, flagged default), `false` (default) = none, or a list.
+	 */
+	embed: z.union([z.boolean(), z.array(z.string())]).optional(),
+	/** Sidecar caption files written next to the output. */
+	sidecar: z.array(z.enum(CAPTION_SIDECAR_FORMATS)).optional(),
+	/** Tracks written as sidecars: `active` (default), `all`, or a list. */
+	sidecarTracks: z.union([z.enum(['active', 'all']), z.array(z.string())]).optional(),
+	/** SCC / MCC sidecars: drop-frame timecode (default: the sequence's drop-frame setting, else true). */
+	dropFrame: z.boolean().optional(),
+});
+export type ExportCaptions = z.infer<typeof ExportCaptionsSchema>;
+
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
 	range: z.discriminatedUnion('type', [
@@ -60,6 +79,8 @@ export const ExportSettingsSchema = z.object({
 			z.object({ type: z.literal('path'), path: z.string() }),
 		])
 		.default({ type: 'download' }),
+	/** wp captions: burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
+	captions: ExportCaptionsSchema.optional(),
 });
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 
@@ -128,6 +149,30 @@ export const ExportResultSchema = z.object({
 	 * and an `auto` export was rendered on the Remotion path instead.
 	 */
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
+	/** wp captions (additive): caption streams embedded in the file and sidecar files written. */
+	captions: z
+		.object({
+			embedded: z.array(
+				z.object({
+					trackId: z.string(),
+					name: z.string(),
+					language: z.string(),
+					codec: z.string(),
+					cues: z.number(),
+				}),
+			),
+			sidecars: z.array(
+				z.object({
+					trackId: z.string(),
+					format: z.string(),
+					name: z.string(),
+					url: z.string(),
+					path: z.string().optional(),
+					cues: z.number(),
+				}),
+			),
+		})
+		.optional(),
 });
 export type ExportResult = z.infer<typeof ExportResultSchema>;
 

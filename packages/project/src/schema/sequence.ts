@@ -104,8 +104,23 @@ export const CaptionStyleSchema = TextStyleSchema.extend({
 	maxSegmentMs: z.number().positive(),
 	minGapMs: z.number().min(0),
 	boxWidthPct: z.number().positive().max(100),
+	// ---- wp captions (all optional, defaults at read time: `resolveCaptionStyle`)
+	/** Vertical placement inside the title-safe area (default `bottom`). */
+	placement: z.enum(['bottom', 'middle', 'top']).optional(),
+	/** Extra distance from the title-safe edge, % of the frame height (0–45, default 0). */
+	marginPct: z.number().min(0).max(45).optional(),
+	/** WebVTT `line:N%`: top of the caption block at N % of the frame height; null = placement. */
+	linePct: z.number().min(0).max(100).nullable().optional(),
+	/** WebVTT `position:N%`: horizontal anchor of the caption block at N % of the frame width; null = centred. */
+	positionPct: z.number().min(0).max(100).nullable().optional(),
+	// ---- end wp captions
 });
 export type CaptionStyle = DeepStrip<z.infer<typeof CaptionStyleSchema>>;
+
+/** wp captions: caption track standards (Premiere's caption track "Format"). */
+export const CAPTION_STANDARDS = ['subtitle', 'cea-608', 'cea-708', 'teletext'] as const;
+export const CaptionStandardSchema = z.enum(CAPTION_STANDARDS);
+export type CaptionStandard = DeepStrip<z.infer<typeof CaptionStandardSchema>>;
 
 // ---------------------------------------------------------------- tracks
 
@@ -129,6 +144,14 @@ export const TrackSchema = z.looseObject({
 	captionFormat: z.literal('open').optional(),
 	visible: z.boolean().optional(),
 	styleDefaults: CaptionStyleSchema.optional(),
+	// ---- wp captions (caption tracks; optional)
+	/** BCP-47 language of the captions (`en`, `fr-CA`); written to embedded streams and sidecars. */
+	language: z.string().optional(),
+	/** Caption standard of the track (default `subtitle`). */
+	captionStandard: CaptionStandardSchema.optional(),
+	/** WebVTT STYLE / REGION / NOTE blocks kept from an imported file for round trips. */
+	vttBlocks: z.array(z.string()).optional(),
+	// ---- end wp captions
 });
 export type Track = DeepStrip<z.infer<typeof TrackSchema>>;
 
@@ -390,6 +413,8 @@ export const CaptionsClipSchema = z.looseObject({
 	style: CaptionStyleSchema.partial(),
 	transform: TransformSchema,
 	opacity: AnimNumberSchema,
+	/** wp captions: the WebVTT cue identifier and cue settings (verbatim) kept from an imported file. */
+	cue: z.looseObject({ id: z.string().nullable().optional(), settings: z.string().optional() }).optional(),
 });
 /** M2 (S11:ATP-001): how a motion-graphic template is drawn — `fframes` (jasper-mg + SVG twin) or `anime`. */
 export const MG_RENDERERS = ['fframes', 'anime'] as const;
@@ -626,6 +651,8 @@ export const SequenceSchema = z.looseObject({
 	inPoint: nonNegInt().nullable(),
 	outPoint: nonNegInt().nullable(),
 	workArea: z.looseObject({ start: nonNegInt(), end: nonNegInt() }).nullable(),
+	/** wp captions: the caption track the Captions panel edits and that export embeds first (null = C1). */
+	activeCaptionTrackId: z.string().nullable().optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

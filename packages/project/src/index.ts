@@ -6,6 +6,7 @@ export * from './agent/queries.ts';
 export * from './agent/schema-export.ts';
 export * from './animation/index.ts';
 export * from './blend-modes.ts';
+export * from './captions/index.ts';
 export * from './clipboard/index.ts';
 export * from './color/curves.ts';
 export * from './color/lumetri.ts';

@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
 import { MASK_COMMANDS } from './mask.ts';
@@ -10,6 +11,7 @@ import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
+export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
@@ -39,6 +41,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...STRUCTURE_COMMANDS,
 	// wp masks (S03 §17)
 	...MASK_COMMANDS,
+	// wp captions
+	...CAPTION_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;
