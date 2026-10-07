@@ -66,7 +66,10 @@ export function angleOfViewForZoom(
 	frame: { width: number; height: number },
 	measure: FilmMeasure = 'horizontal',
 ): number {
-	return (2 * Math.atan(filmDimension(measure, frame.width, frame.height) / 2 / Math.max(1e-6, zoom)) * 180) / Math.PI;
+	return (
+		(2 * Math.atan(filmDimension(measure, frame.width, frame.height) / 2 / Math.max(1e-6, zoom)) * 180) /
+		Math.PI
+	);
 }
 
 /** Zoom (pixels) of an angle of view (degrees, 0 < a < 180). */
@@ -186,7 +189,10 @@ export type NewCameraOptions = {
  * A camera that frames the sequence like the default camera: at the frame centre, `zoom` in front of the z = 0
  * plane (which it shows at 100 %), its Point of Interest at the frame centre.
  */
-export function newCameraData(frame: { width: number; height: number }, o: NewCameraOptions = {}): CameraData {
+export function newCameraData(
+	frame: { width: number; height: number },
+	o: NewCameraOptions = {},
+): CameraData {
 	const filmSize = o.filmSize ?? DEFAULT_FILM_SIZE;
 	const measure = o.measureFilmSize ?? 'horizontal';
 	const zoom =
@@ -286,5 +292,10 @@ export const IRIS_SHAPE_LABELS: Record<IrisShape, string> = {
 };
 /** Polygon sides of an iris shape (0 = Fast Rectangle, a box filter). */
 export function irisSides(shape: IrisShape): number {
-	return shape === 'fast-rectangle' ? 0 : 3 + ['triangle', 'square', 'pentagon', 'hexagon', 'heptagon', 'octagon', 'nonagon', 'decagon'].indexOf(shape);
+	return shape === 'fast-rectangle'
+		? 0
+		: 3 +
+				['triangle', 'square', 'pentagon', 'hexagon', 'heptagon', 'octagon', 'nonagon', 'decagon'].indexOf(
+					shape,
+				);
 }

@@ -145,7 +145,13 @@ export function defaultCamera(w: number, h: number): CameraState {
 }
 
 /** A view camera from an eye, a point of interest and a zoom (Program monitor 3D views, camera tools). */
-export function lookAtCamera(eye: Vec3, poi: Vec3, zoom: number, ortho = false, down: Vec3 = [0, 1, 0]): CameraState {
+export function lookAtCamera(
+	eye: Vec3,
+	poi: Vec3,
+	zoom: number,
+	ortho = false,
+	down: Vec3 = [0, 1, 0],
+): CameraState {
 	return { view: basisView(eye, sub3(poi, eye), down), eye, zoom, ortho, dof: null, clipId: null };
 }
 
@@ -171,7 +177,8 @@ export function orientationMatrixAt(o: Animatable<Vec3>, t: number): Matrix4 {
 	while (i < kfs.length - 2 && kfs[i + 1]!.time <= t) i++;
 	const a = kfs[i]!;
 	const b = kfs[i + 1]!;
-	if (a.interpolation === 'hold' || isHoldOnlyValue(a.value)) return mat4Orientation(vec3Of(a.value, [0, 0, 0]));
+	if (a.interpolation === 'hold' || isHoldOnlyValue(a.value))
+		return mat4Orientation(vec3Of(a.value, [0, 0, 0]));
 	const u = (t - a.time) / Math.max(1, b.time - a.time);
 	const p =
 		a.interpolation === 'linear' ? u : bezierProgress(u, outgoingEase(kfs, i), incomingEase(kfs, i + 1));
@@ -196,7 +203,10 @@ function rigRotation(r: RigTransform, t: number, pos: Vec3): Matrix4 {
 }
 
 /** World eye, forward and down of a camera / light at content time `t`. */
-export function rigFrameAt(r: RigTransform, t: number): { eye: Vec3; fwd: Vec3; down: Vec3; rotation: Matrix4 } {
+export function rigFrameAt(
+	r: RigTransform,
+	t: number,
+): { eye: Vec3; fwd: Vec3; down: Vec3; rotation: Matrix4 } {
 	const eye = vec3Of(evaluate(r.position, t), [0, 0, -1000]);
 	const rotation = rigRotation(r, t, eye);
 	return {
@@ -211,7 +221,12 @@ const rigTime = (c: RenderCameraClip | RenderLightClip, frame: number, fps: Rati
 	clipContentTime(c, frame, fps);
 
 /** An evaluated camera clip at a sequence frame. */
-export function cameraStateOf(c: RenderCameraClip, frame: number, fps: Rational, frameWidth: number): CameraState {
+export function cameraStateOf(
+	c: RenderCameraClip,
+	frame: number,
+	fps: Rational,
+	frameWidth: number,
+): CameraState {
 	const t = rigTime(c, frame, fps);
 	const cam = c.camera;
 	const { eye, fwd, down } = rigFrameAt(cam.transform, t);
@@ -238,17 +253,22 @@ export function cameraStateOf(c: RenderCameraClip, frame: number, fps: Rational,
 	return { view: basisView(eye, fwd, down), eye, zoom, ortho: false, dof, clipId: c.clipId };
 }
 
-const drawnAt = (c: { start: number; duration: number }, f: number) => f >= c.start && f < c.start + c.duration;
+const drawnAt = (c: { start: number; duration: number }, f: number) =>
+	f >= c.start && f < c.start + c.duration;
 
 /** The camera clip that is active at a frame: the topmost (highest track) camera that is on. */
 export function activeCameraClipAt(scene: RenderScene3D | undefined, frame: number): RenderCameraClip | null {
 	let best: RenderCameraClip | null = null;
-	for (const c of scene?.cameras ?? []) if (drawnAt(c, frame) && (!best || c.trackIndex > best.trackIndex)) best = c;
+	for (const c of scene?.cameras ?? [])
+		if (drawnAt(c, frame) && (!best || c.trackIndex > best.trackIndex)) best = c;
 	return best;
 }
 
 /** The active camera of a snapshot at a frame (the default camera when no camera is on). */
-export function activeCameraAt(snap: Pick<RenderSnapshot, 'settings' | 'scene3d'>, frame: number): CameraState {
+export function activeCameraAt(
+	snap: Pick<RenderSnapshot, 'settings' | 'scene3d'>,
+	frame: number,
+): CameraState {
 	const { width, height, fps } = snap.settings;
 	const c = activeCameraClipAt(snap.scene3d, frame);
 	return c ? cameraStateOf(c, frame, fps, width) : defaultCamera(width, height);
@@ -486,7 +506,9 @@ export function planeHomography(cam: CameraState, w: number, h: number, world: M
 	const m = planeToMat3(mat4Mul(cameraProjection(cam, w, h), world));
 	const col = (j: number) => Math.hypot(m[j]!, m[3 + j]!, m[6 + j]!);
 	const det =
-		m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+		m[0] * (m[4] * m[8] - m[5] * m[7]) -
+		m[1] * (m[3] * m[8] - m[5] * m[6]) +
+		m[2] * (m[3] * m[7] - m[4] * m[6]);
 	if (!(Math.abs(det) > 1e-10 * col(0) * col(1) * col(2))) return null;
 	return m;
 }

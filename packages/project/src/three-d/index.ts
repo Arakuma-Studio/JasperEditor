@@ -2,3 +2,5 @@
 export * from './math.ts';
 export * from './model.ts';
 export * from './scene.ts';
+export * from './bokeh.ts';
+export * from './classic.ts';

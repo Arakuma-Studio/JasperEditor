@@ -36,7 +36,10 @@ export function mat4Mul(a: Matrix4, b: Matrix4): Matrix4 {
 	for (let r = 0; r < 4; r++)
 		for (let c = 0; c < 4; c++)
 			o[4 * r + c] =
-				a[4 * r]! * b[c]! + a[4 * r + 1]! * b[4 + c]! + a[4 * r + 2]! * b[8 + c]! + a[4 * r + 3]! * b[12 + c]!;
+				a[4 * r]! * b[c]! +
+				a[4 * r + 1]! * b[4 + c]! +
+				a[4 * r + 2]! * b[8 + c]! +
+				a[4 * r + 3]! * b[12 + c]!;
 	return o;
 }
 
@@ -180,7 +183,10 @@ export function basisView(eye: Vec3, forward: Vec3, downHint: Vec3): Matrix4 {
 	}
 	d = norm3(d);
 	const r = norm3(cross3(d, f));
-	return mat4Mul([r[0], r[1], r[2], 0, d[0], d[1], d[2], 0, f[0], f[1], f[2], 0, 0, 0, 0, 1], mat4Translate(scale3(eye, -1)));
+	return mat4Mul(
+		[r[0], r[1], r[2], 0, d[0], d[1], d[2], 0, f[0], f[1], f[2], 0, 0, 0, 0, 1],
+		mat4Translate(scale3(eye, -1)),
+	);
 }
 
 /** Rotation (local → parent) of a frame whose +z is `fwd` and whose +y is as close to `downHint` as possible. */
