@@ -80,6 +80,13 @@ export function uncarriedWhat(kind: string): string | null {
 			return 'captions clip';
 		case 'adjustment':
 			return 'adjustment layer';
+		// three-d: cameras and lights shape the 3D layers (which are pre-rendered with them); model layers draw in 3D only.
+		case 'camera':
+			return 'camera';
+		case 'light':
+			return 'light';
+		case 'model':
+			return '3D model layer';
 		case 'video':
 		case 'audio':
 		case 'still':
@@ -627,6 +634,11 @@ export function fromJasper(
 				report.warn(`the masks of clip "${c.name}" at frame ${c.start} are not carried`, {
 					subject: where,
 					instead: 'the clip without its masks (pre-render it to keep them)',
+				});
+			if ((any.threeD as { enabled?: boolean } | undefined)?.enabled === true && c.kind !== 'model')
+				report.warn(`the 3D placement of clip "${c.name}" at frame ${c.start} is not carried`, {
+					subject: where,
+					instead: 'the clip with its 2D Motion only (pre-render it to keep its 3D placement, camera and lights)',
 				});
 			if (hasExpression(c))
 				report.warn(`the expressions of clip "${c.name}" at frame ${c.start} are not carried`, {

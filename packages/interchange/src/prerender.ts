@@ -82,6 +82,9 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 	const caps = FORMAT_CAPS[format];
 	if (!caps.video) return null;
 	if (!isKnownClipKind(c.kind)) return null;
+	// three-d: a 3D layer is drawn by the 3D renderer (camera, lights, depth); a pre-render carries it with them.
+	if (c.kind === 'model') return '3D model layer';
+	if ((c as { threeD?: { enabled?: boolean } }).threeD?.enabled === true) return '3D layer';
 	switch (c.kind) {
 		case 'text':
 			// text-animators: animators and text paths are drawn by the composition, so the pre-render carries them.
@@ -98,6 +101,9 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 		case 'nest-audio':
 		case 'adjustment':
 		case 'synthetic-audio':
+		// three-d: cameras and lights draw nothing (the writer reports them; 3D layers are pre-rendered with them).
+		case 'camera':
+		case 'light':
 			return null;
 	}
 	const v = c as Clip & {
