@@ -40,6 +40,7 @@ import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 
 type Rgba = { data: Uint8Array; width: number; height: number; renderPath?: string };
+type FaceBoxes = { x: number; y: number; w: number; h: number }[];
 
 /** Width of the frames Colour Match and Auto analyse (they shrink to ≤ 128 px; this keeps faces detectable). */
 const ANALYSIS_WIDTH = 640;
@@ -234,30 +235,19 @@ export class GradingService {
 		const faceDetection = req.faceDetection ?? true;
 		let faces: { current: number; reference: number } | null = null;
 		let faceNote: string | undefined;
-		let currentFaces: { x: number; y: number; w: number; h: number }[] | undefined;
-		let referenceFaces: { x: number; y: number; w: number; h: number }[] | undefined;
+		let detected: { current: FaceBoxes; reference: FaceBoxes } | undefined;
 		if (faceDetection) {
 			const f = await this.faces([current, reference]);
 			if ('note' in f) faceNote = f.note;
 			else {
-				currentFaces = f.boxes[0] ?? [];
-				referenceFaces = f.boxes[1] ?? [];
-				faces = { current: currentFaces.length, reference: referenceFaces.length };
-				// No face in either frame: the skin-tone test alone (as without the model).
-				if (!currentFaces.length && !referenceFaces.length) {
-					currentFaces = undefined;
-					referenceFaces = undefined;
-				}
+				detected = { current: f.boxes[0] ?? [], reference: f.boxes[1] ?? [] };
+				faces = { current: detected.current.length, reference: detected.reference.length };
 			}
 		}
 		const base = this.paramsAt(fx, clip, req.frame, rate);
 		const cur: MatchImage = matchImageFromRgba8(current.data, current.width, current.height);
 		const ref: MatchImage = matchImageFromRgba8(reference.data, reference.width, reference.height);
-		const m = solveColorMatch(cur, ref, base, {
-			skinProtect: faceDetection,
-			...(currentFaces ? { currentFaces } : {}),
-			...(referenceFaces ? { referenceFaces } : {}),
-		});
+		const m = solveColorMatch(cur, ref, base, { faceDetection, ...(detected ? { faces: detected } : {}) });
 		return {
 			clipId: req.clipId,
 			effectId: fx?.id ?? null,

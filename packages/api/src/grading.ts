@@ -122,7 +122,8 @@ export const ColorMatchResponseSchema = z.object({
 	}),
 	before: z.number(),
 	after: z.number(),
-	skin: z.enum(['faces', 'hue', 'off']),
+	/** Face Detection outcome: faces (face model), none (no face found), hue (no face model: skin-tone test), off. */
+	skin: z.enum(['faces', 'none', 'hue', 'off']),
 	skinShare: z.number(),
 	skinHueShift: z.number().nullable(),
 	faces: z.object({ current: z.number(), reference: z.number() }).nullable(),

@@ -66,7 +66,7 @@ describe('Colour Match (Oklab statistics, Levenberg–Marquardt into Lumetri)', 
 
 	it('matching a frame to itself changes nothing', () => {
 		const f = frame(false);
-		const m = solveColorMatch(f, f, {}, { skinProtect: false });
+		const m = solveColorMatch(f, f, {}, { faceDetection: false });
 		expect(m.before).toBeLessThan(1e-4);
 		for (const v of [...m.shadowsWheel, ...m.midtonesWheel, ...m.highlightsWheel])
 			expect(Math.abs(v)).toBeLessThan(0.02);
@@ -78,7 +78,7 @@ describe('Colour Match (Oklab statistics, Levenberg–Marquardt into Lumetri)', 
 		const f = frame(false);
 		const truth = [-0.3, -0.2, 0, 0.1, 0.35, 0.15, 0.1, 0, -0.05, 0.2];
 		const reference = graded(f, truth);
-		const m = solveColorMatch(f, reference, {}, { skinProtect: false });
+		const m = solveColorMatch(f, reference, {}, { faceDetection: false });
 		// `after` includes the parameter penalty (λ²·|x|², ≈ 0.012 at the truth itself), so the bound is relative.
 		expect(m.after).toBeLessThan(m.before * 0.25);
 		const out = matchStats(graded(f, xOf(m)), false);
@@ -100,38 +100,46 @@ describe('Colour Match (Oklab statistics, Levenberg–Marquardt into Lumetri)', 
 			if (d > 180) d = 360 - d;
 			return d;
 		};
-		const free = solveColorMatch(f, reference, {}, { skinProtect: false });
+		const free = solveColorMatch(f, reference, {}, { faceDetection: false });
 		const prot = solveColorMatch(f, reference, {});
 		expect(prot.skin).toBe('hue');
 		expect(shift(prot)).toBeLessThanOrEqual(8.5);
 		expect(shift(free)).toBeGreaterThan(shift(prot));
 	});
 
-	it('face boxes restrict skin to faces (warm areas outside faces drive the match)', () => {
+	it('Face Detection with faces: the faces weigh more and the current face colour is matched to the reference face', () => {
 		const f = frame(true);
-		// No face covers the skin block: nothing is protected, like protection off.
-		const away = solveColorMatch(
-			f,
-			graded(f, [-0.6, 0.5, -0.6, 0.5, -0.5, 0.4, 0, 0, 0, 0]),
-			{},
-			{
-				currentFaces: [{ x: 0, y: 0, w: 0.05, h: 0.05 }],
-				referenceFaces: [{ x: 0, y: 0, w: 0.05, h: 0.05 }],
-			},
-		);
-		expect(away.skin).toBe('faces');
-		expect(away.skinShare).toBeLessThan(0.002);
-		const on = solveColorMatch(
-			f,
-			graded(f, [-0.6, 0.5, -0.6, 0.5, -0.5, 0.4, 0, 0, 0, 0]),
-			{},
-			{
-				currentFaces: [{ x: 0.3, y: 0.35, w: 0.32, h: 0.3 }],
-				referenceFaces: [{ x: 0.3, y: 0.35, w: 0.32, h: 0.3 }],
-			},
-		);
-		expect(on.skinShare).toBeGreaterThan(0.05);
-		expect(on.skinHueShift!).toBeLessThanOrEqual(8.5);
+		// Reference: a teal cast on everything but the face (the face keeps its colour, as a well-lit actor would).
+		const cast = graded(f, [-0.6, 0.5, -0.6, 0.5, -0.5, 0.4, 0, 0, 0, 0]);
+		const reference: MatchImage = { w: f.w, h: f.h, rgb: new Float32Array(cast.rgb) };
+		for (let y = 40; y < 70; y++)
+			for (let x = 60; x < 120; x++)
+				for (let k = 0; k < 3; k++) reference.rgb[(y * f.w + x) * 3 + k] = f.rgb[(y * f.w + x) * 3 + k]!;
+		const face = { x: 60 / 192, y: 40 / 108, w: 60 / 192, h: 30 / 108 };
+		const faceHueError = (m: ColorMatchResult) => {
+			const opts = { faces: [face], boost: 4 };
+			const a = matchStats(graded(f, xOf(m)), false, opts).face;
+			const b = matchStats(reference, false, opts).face;
+			let d = Math.abs((Math.atan2(a[2], a[1]) - Math.atan2(b[2], b[1])) * (180 / Math.PI));
+			if (d > 180) d = 360 - d;
+			return d;
+		};
+		const off = solveColorMatch(f, reference, {}, { faceDetection: false });
+		const faces = solveColorMatch(f, reference, {}, { faces: { current: [face], reference: [face] } });
+		expect(faces.skin).toBe('faces');
+		expect(faces.skinShare).toBeGreaterThan(0.03);
+		expect(faceHueError(faces)).toBeLessThan(faceHueError(off));
+		expect(faces.skinHueShift!).toBeLessThan(faceHueError(off));
+	});
+
+	it('the face model found no faces: the whole frame counts equally (same as off)', () => {
+		const f = frame(true);
+		const reference = graded(f, [0.2, 0.1, 0, 0, 0, 0, 0, 0.1, 0, 0.1]);
+		const none = solveColorMatch(f, reference, {}, { faces: { current: [], reference: [] } });
+		const off = solveColorMatch(f, reference, {}, { faceDetection: false });
+		expect(none.skin).toBe('none');
+		expect(none.shadowsWheel).toEqual(off.shadowsWheel);
+		expect(none.saturation).toBe(off.saturation);
 	});
 
 	it('letterbox bars do not count (a pillarboxed copy of the frame matches the frame)', () => {
@@ -142,7 +150,7 @@ describe('Colour Match (Oklab statistics, Levenberg–Marquardt into Lumetri)', 
 		const boxed: MatchImage = { w: W, h: f.h, rgb };
 		const crop = cropLetterbox(boxed);
 		expect([crop.w, crop.h]).toEqual([f.w, f.h]);
-		const m = solveColorMatch(f, boxed, {}, { skinProtect: false });
+		const m = solveColorMatch(f, boxed, {}, { faceDetection: false });
 		expect(m.before).toBeLessThan(0.01);
 		expect(Math.abs(m.saturation - 100)).toBeLessThan(3);
 	});
@@ -150,7 +158,7 @@ describe('Colour Match (Oklab statistics, Levenberg–Marquardt into Lumetri)', 
 	it('keeps the instance’s other settings (base params)', () => {
 		const f = frame(false);
 		const reference = graded(f, [0, 0, 0.2, 0, 0, 0, 0, 0.1, 0, 0]);
-		const m = solveColorMatch(f, reference, { exposure: 0.5 }, { skinProtect: false });
+		const m = solveColorMatch(f, reference, { exposure: 0.5 }, { faceDetection: false });
 		expect(m.after).toBeLessThan(m.before);
 		expect(Number.isFinite(m.midtonesLevel)).toBe(true);
 	});

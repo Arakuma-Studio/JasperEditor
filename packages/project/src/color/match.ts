@@ -65,6 +65,8 @@ export type MatchStats = {
 	bands: [number, number, number, number][];
 	chroma: number;
 	skin: [number, number, number];
+	/** Mean Oklab L, a, b of the faces and their (weighted) share of the frame; share 0 = no faces. */
+	face: [number, number, number, number];
 };
 
 /** RGBA8 (straight) → a match image (encoded floats). */
@@ -173,13 +175,21 @@ function remapFaces(faces: readonly FaceBox[], src: MatchImage, cropped: MatchIm
 }
 
 const insideFaces = (faces: readonly FaceBox[] | undefined, x: number, y: number) =>
-	!faces || faces.some((f) => x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h);
+	!!faces && faces.some((f) => x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h);
+
+/** How faces count in the statistics (Face Detection with the face model). */
+export type FaceStatsOptions = {
+	faces: readonly FaceBox[];
+	/** Weight of pixels inside faces in every statistic (Premiere: "higher weight to the colors in the facial region"). */
+	boost: number;
+};
 
 /**
- * Statistics of an image. `skinProtect` down-weights skin pixels in the colour means; `faces` (normalised boxes)
- * limits "skin" to pixels inside faces (none = the hue test alone).
+ * Statistics of an image. `skinProtect` (the hue fallback of Face Detection, FilmCraft) down-weights skin-coloured
+ * pixels in the colour means. `faces` (face-model boxes) weights the pixels inside faces up and measures the faces'
+ * mean colour (`face`: L, a, b and their share of the frame).
  */
-export function matchStats(img: MatchImage, skinProtect: boolean, faces?: readonly FaceBox[]): MatchStats {
+export function matchStats(img: MatchImage, skinProtect: boolean, faces?: FaceStatsOptions): MatchStats {
 	const acc = [
 		[0, 0, 0, 0],
 		[0, 0, 0, 0],
@@ -188,7 +198,9 @@ export function matchStats(img: MatchImage, skinProtect: boolean, faces?: readon
 	const cw = [0, 0, 0];
 	let chromaSum = 0;
 	let chromaW = 0;
+	let totalW = 0;
 	const skin = [0, 0, 0];
+	const face = [0, 0, 0, 0];
 	const n = img.w * img.h;
 	for (let i = 0; i < n; i++) {
 		const a = img.alpha ? img.alpha[i]! : 1;
@@ -198,26 +210,39 @@ export function matchStats(img: MatchImage, skinProtect: boolean, faces?: readon
 			toLinear(img.rgb[i * 3 + 1]!),
 			toLinear(img.rgb[i * 3 + 2]!),
 		);
-		const px = ((i % img.w) + 0.5) / img.w;
-		const py = (Math.floor(i / img.w) + 0.5) / img.h;
-		const sk = skinWeight(lab) * (insideFaces(faces, px, py) ? 1 : 0);
-		const cwi = skinProtect ? 1 - 0.8 * sk : 1;
+		let pw = 1;
+		if (faces) {
+			const px = ((i % img.w) + 0.5) / img.w;
+			const py = (Math.floor(i / img.w) + 0.5) / img.h;
+			if (insideFaces(faces.faces, px, py)) {
+				pw = faces.boost;
+				// Face colour: skin-like pixels count fully, eyes / hair / background corners of the box less.
+				const fw = Math.max(0.25, skinWeight(lab));
+				face[0]! += fw * lab[0];
+				face[1]! += fw * lab[1];
+				face[2]! += fw * lab[2];
+				face[3]! += fw;
+			}
+		}
+		const sk = skinWeight(lab);
+		const cwi = (skinProtect ? 1 - 0.8 * sk : 1) * pw;
 		const w = tonalWeights(lab[0]);
 		for (let k = 0; k < 3; k++) {
-			const wk = w[k]!;
+			const wk = w[k]! * pw;
 			acc[k]![0]! += wk;
 			acc[k]![1]! += wk * lab[0];
-			acc[k]![2]! += wk * cwi * lab[1];
-			acc[k]![3]! += wk * cwi * lab[2];
-			cw[k]! += wk * cwi;
+			acc[k]![2]! += w[k]! * cwi * lab[1];
+			acc[k]![3]! += w[k]! * cwi * lab[2];
+			cw[k]! += w[k]! * cwi;
 		}
+		totalW += pw;
 		chromaSum += cwi * Math.hypot(lab[1], lab[2]);
 		chromaW += cwi;
 		skin[0]! += sk * lab[1];
 		skin[1]! += sk * lab[2];
 		skin[2]! += sk;
 	}
-	const nn = Math.max(1, n);
+	const nn = Math.max(1, totalW || n);
 	const bands = acc.map(
 		(a, k) =>
 			[
@@ -228,15 +253,17 @@ export function matchStats(img: MatchImage, skinProtect: boolean, faces?: readon
 			] as [number, number, number, number],
 	);
 	const sw = Math.max(1e-9, skin[2]!);
+	const fwt = Math.max(1e-9, face[3]!);
 	return {
 		bands,
 		chroma: chromaSum / Math.max(1e-9, chromaW),
-		skin: [skin[0]! / sw, skin[1]! / sw, skin[2]! / nn],
+		skin: [skin[0]! / sw, skin[1]! / sw, skin[2]! / Math.max(1, n)],
+		face: [face[0]! / fwt, face[1]! / fwt, face[2]! / fwt, face[3]! / Math.max(1, n)],
 	};
 }
 
 /** Residuals between graded statistics and the reference's (bands weighted by how much of both frames they cover). */
-function residuals(cur: MatchStats, ref: MatchStats): number[] {
+function residuals(cur: MatchStats, ref: MatchStats, faces = false): number[] {
 	const r: number[] = [];
 	for (let k = 0; k < 3; k++) {
 		const w = Math.sqrt(Math.min(1, Math.max(0, Math.min(cur.bands[k]![0], ref.bands[k]![0]) * 3)));
@@ -245,6 +272,12 @@ function residuals(cur: MatchStats, ref: MatchStats): number[] {
 		r.push((cur.bands[k]![3] - ref.bands[k]![3]) * w * 2);
 	}
 	r.push((cur.chroma - ref.chroma) * 2);
+	// Face Detection with faces in both frames: the current faces' colour is pulled to the reference faces'.
+	if (faces) {
+		r.push((cur.face[0] - ref.face[0]) * 2);
+		r.push((cur.face[1] - ref.face[1]) * 6);
+		r.push((cur.face[2] - ref.face[2]) * 6);
+	}
 	return r;
 }
 
@@ -259,11 +292,18 @@ export type ColorMatchResult = {
 	saturation: number;
 	before: number;
 	after: number;
-	/** Where skin protection found skin: `faces` (face boxes), `hue` (the skin-tone test), `off`. */
-	skin: 'faces' | 'hue' | 'off';
-	/** Share of the current frame recognised as skin (0..1). */
+	/**
+	 * Face Detection: `faces` (faces found by the face model weigh more, and with faces in both frames the current
+	 * faces' colour is matched to the reference faces'), `none` (the model found no face: the whole frame counts
+	 * equally), `hue` (no face model: skin-coloured pixels are protected by the skin-tone test), `off`.
+	 */
+	skin: 'faces' | 'none' | 'hue' | 'off';
+	/** Share of the current frame recognised as skin (`hue`) or covered by faces (`faces`), 0..1. */
 	skinShare: number;
-	/** Skin hue shift of the current frame after protection (degrees), when skin was found. */
+	/**
+	 * Degrees: `hue` = the skin hue shift of the current frame after protection (≤ 8°); `faces` with faces in both
+	 * frames = the hue difference left between the graded current faces and the reference faces. Else null.
+	 */
 	skinHueShift: number | null;
 };
 
@@ -328,11 +368,13 @@ function solveLinear(a: number[][], b: number[]): number[] | null {
 }
 
 export type ColorMatchOptions = {
-	/** Face Detection: protect skin tones (default true, as Premiere). */
-	skinProtect?: boolean;
-	/** Faces in the current / reference frames (normalised boxes); absent = skin by the hue test. */
-	currentFaces?: readonly FaceBox[];
-	referenceFaces?: readonly FaceBox[];
+	/** Face Detection (default true, as Premiere). */
+	faceDetection?: boolean;
+	/**
+	 * Faces the face model found in the current / reference frames (normalised boxes). Absent = no face model: Face
+	 * Detection falls back to protecting skin-coloured pixels (FilmCraft's skin-tone protection).
+	 */
+	faces?: { current: readonly FaceBox[]; reference: readonly FaceBox[] };
 };
 
 /**
@@ -345,26 +387,33 @@ export function solveColorMatch(
 	base: EffectParams,
 	opts: ColorMatchOptions = {},
 ): ColorMatchResult {
-	const skinProtect = opts.skinProtect ?? true;
+	const detect = opts.faceDetection ?? true;
 	// Letterbox bars out; face boxes follow the crop.
 	const curCrop = cropLetterbox(current);
 	const refCrop = cropLetterbox(reference);
-	const currentFaces = opts.currentFaces && remapFaces(opts.currentFaces, current, curCrop);
-	const referenceFaces = opts.referenceFaces && remapFaces(opts.referenceFaces, reference, refCrop);
-	opts = {
-		...opts,
-		...(currentFaces ? { currentFaces } : {}),
-		...(referenceFaces ? { referenceFaces } : {}),
-	};
+	const curFaces = detect && opts.faces ? remapFaces(opts.faces.current, current, curCrop) : [];
+	const refFaces = detect && opts.faces ? remapFaces(opts.faces.reference, reference, refCrop) : [];
+	const mode: ColorMatchResult['skin'] = !detect
+		? 'off'
+		: !opts.faces
+			? 'hue'
+			: curFaces.length || refFaces.length
+				? 'faces'
+				: 'none';
+	const skinProtect = mode === 'hue';
+	const FACE_BOOST = 4;
+	const curFaceOpts = curFaces.length ? { faces: curFaces, boost: FACE_BOOST } : undefined;
+	const refFaceOpts = refFaces.length ? { faces: refFaces, boost: FACE_BOOST } : undefined;
+	const bothFaces = !!curFaceOpts && !!refFaceOpts;
 	const cur = shrinkMatchImage(curCrop, 96);
-	const ref = matchStats(shrinkMatchImage(refCrop, 96), skinProtect, opts.referenceFaces);
+	const ref = matchStats(shrinkMatchImage(refCrop, 96), skinProtect, refFaceOpts);
 	const graded = (x: readonly number[]) =>
-		matchStats(gradeMatchImage(cur, matchParams(base, x)), skinProtect, opts.currentFaces);
+		matchStats(gradeMatchImage(cur, matchParams(base, x)), skinProtect, curFaceOpts);
 	const N = 10;
 	let x = new Array<number>(N).fill(0);
 	const lambda = 0.02;
 	const cost = (xs: readonly number[]): [number[], number] => {
-		const r = residuals(graded(xs), ref);
+		const r = residuals(graded(xs), ref, bothFaces);
 		let c = 0;
 		for (const v of r) c += v * v;
 		for (const v of xs) c += lambda * lambda * v * v;
@@ -414,30 +463,34 @@ export function solveColorMatch(
 			if (mu > 1e4) break;
 		}
 	}
-	const s0 = matchStats(cur, true, opts.currentFaces);
-	const skinFound = s0.skin[2] > 0.002;
+	const hue = (ab: readonly [number, number]) => (Math.atan2(ab[1], ab[0]) * 180) / Math.PI;
+	const angle = (d: number) => {
+		const x = Math.abs(d) % 360;
+		return x > 180 ? 360 - x : x;
+	};
+	const s0 = matchStats(cur, true, curFaceOpts);
 	let skinHueShift: number | null = null;
-	if (skinProtect && skinFound) {
-		// Limit the hue shift of the current frame's skin tones to 8°.
-		const hue = (s: MatchStats) => (Math.atan2(s.skin[1], s.skin[0]) * 180) / Math.PI;
-		const h0 = hue(s0);
+	let skinShare = mode === 'faces' ? s0.face[3] : s0.skin[2];
+	if (mode === 'hue' && s0.skin[2] > 0.002) {
+		// Limit the hue shift of the current frame's skin tones to 8° (FilmCraft).
+		const h0 = hue([s0.skin[0], s0.skin[1]]);
 		const shift = (xs: readonly number[]) => {
-			const s1 = matchStats(gradeMatchImage(cur, matchParams(base, xs)), true, opts.currentFaces);
-			let d = Math.abs(hue(s1) - h0);
-			if (d > 180) d = 360 - d;
-			return d;
+			const s1 = matchStats(gradeMatchImage(cur, matchParams(base, xs)), true);
+			return angle(hue([s1.skin[0], s1.skin[1]]) - h0);
 		};
 		let k = 1;
-		let d = 0;
 		for (let i = 0; i < 8; i++) {
-			d = shift(x.map((v, j) => (j < 6 ? v * k : v)));
-			if (d <= 8) break;
+			if (shift(x.map((v, j) => (j < 6 ? v * k : v))) <= 8) break;
 			k *= 0.7;
 		}
 		x = x.map((v, j) => (j < 6 ? v * k : v));
 		c = cost(x)[1];
 		skinHueShift = round(shift(x), 2);
+	} else if (mode === 'faces' && bothFaces) {
+		const g = matchStats(gradeMatchImage(cur, matchParams(base, x)), false, curFaceOpts);
+		skinHueShift = round(angle(hue([g.face[1], g.face[2]]) - hue([ref.face[1], ref.face[2]])), 2);
 	}
+	if (mode === 'none' || mode === 'off') skinShare = 0;
 	return {
 		shadowsWheel: [round(x[0]!, 4), round(x[1]!, 4)],
 		midtonesWheel: [round(x[2]!, 4), round(x[3]!, 4)],
@@ -448,8 +501,8 @@ export function solveColorMatch(
 		saturation: round(Math.min(200, Math.max(0, (1 + x[9]!) * 100)), 2),
 		before: round(before, 6),
 		after: round(Math.sqrt(c), 6),
-		skin: !skinProtect ? 'off' : opts.currentFaces ? 'faces' : 'hue',
-		skinShare: round(s0.skin[2], 4),
+		skin: mode,
+		skinShare: round(skinShare, 4),
 		skinHueShift,
 	};
 }

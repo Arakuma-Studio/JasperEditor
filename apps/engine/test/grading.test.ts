@@ -65,7 +65,8 @@ async function twoClips(opts: { darkenA?: boolean } = {}) {
 	return { d, a, b, fxA };
 }
 
-const post = (url: string, payload: unknown) => app.inject({ method: 'POST', url, headers: JSON_H, payload });
+const post = (url: string, payload: Record<string, unknown>) =>
+	app.inject({ method: 'POST', url, headers: JSON_H, payload: payload as never });
 
 describe('POST /api/grading/scopes', () => {
 	it('reads every scope of a Program frame as numbers, like the panel maths on the same frame', async () => {

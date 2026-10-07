@@ -127,12 +127,15 @@ export async function runApplyMatch(
 		faceDetection,
 	});
 	const error = applyLumetriValues(session, 'Apply Match', clip, fx, r.params);
-	const note =
-		faceDetection && r.faceNote
-			? 'Face Detection used the skin-tone test (install the face model in Preferences ▸ Roto & Face Tracking to detect faces).'
-			: faceDetection && r.faces
+	const note = !faceDetection
+		? undefined
+		: r.faceNote
+			? 'Face Detection protected skin tones by colour (install the face model in Preferences ▸ Roto & Face Tracking to detect faces).'
+			: r.faces && r.skin === 'faces'
 				? `Face Detection: ${r.faces.current} face(s) in the clip, ${r.faces.reference} in the reference.`
-				: undefined;
+				: r.skin === 'none'
+					? 'Face Detection found no faces: the whole frame was matched.'
+					: undefined;
 	return { error, ...(note ? { note } : {}) };
 }
 
