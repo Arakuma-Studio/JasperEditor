@@ -1,7 +1,7 @@
 // wp speech UI: the Generate Transcript dialog builds the engine request (model, language, translate, speakers) and
 // downloads a missing model after showing its licence; a finished job commits ONE "Generate Transcript" transaction
 // (`transcript.attach`) that the Text panel's sequence transcript reads; a sequence-mix result is distributed to the
-// clip media and refused when the sequence changed; Preferences ▸ Speech lists, downloads and deletes models; the
+// clip media and refused when the sequence changed; Preferences ▸ Transcription lists, downloads and deletes models; the
 // menus carry the entries.
 import type { EngineJob, SpeechModel, TranscriptionResult } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
@@ -377,7 +377,7 @@ describe('finished transcription jobs', () => {
 	});
 });
 
-describe('Preferences ▸ Speech and menus', () => {
+describe('Preferences ▸ Transcription and menus', () => {
 	it('lists models with licence and size; deletes a downloaded one after confirmation', async () => {
 		const { client, calls } = fakeEngine({
 			models: [model('whisper-base', true), model('whisper-tiny.en', false)],

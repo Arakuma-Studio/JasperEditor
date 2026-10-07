@@ -1,4 +1,4 @@
-// wp speech: registers the Generate Transcript dialog, Preferences ▸ Speech, and the "Generate Transcript…" entries of
+// wp speech: registers the Generate Transcript dialog, Preferences ▸ Transcription, and the "Generate Transcript…" entries of
 // the Project panel item menu and the timeline clip menu (extension points, ARCHITECTURE §19.10). Called at module load
 // of `commands/speech.ts` (in COMMAND_MODULES).
 import { type MediaAsset, transcriptForMedia } from '@jasper/project';
@@ -26,7 +26,7 @@ export function registerSpeechUi(): void {
 	registered = true;
 	registerDialog(GENERATE_TRANSCRIPT_DIALOG, GenerateTranscriptDialog);
 	registerPreferencesDialog();
-	registerPreferencesPage({ id: 'speech', title: 'Speech', order: 55, component: SpeechPreferencesPage });
+	registerPreferencesPage({ id: 'speech', title: 'Transcription', order: 55, component: SpeechPreferencesPage });
 
 	projectItemMenuExtensions.register({
 		id: 'speech',

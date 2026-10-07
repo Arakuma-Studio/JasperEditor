@@ -93,7 +93,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				<EmptyState
 					icon="panel.text"
 					message="No transcript for this sequence"
-					detail="Generate one with speech to text (wp speech), or import a transcript (JSON or a caption file) for the media of an audio clip; text-based editing then follows every edit."
+					detail="Generate one with speech to text, or import a transcript (JSON or a caption file) for the media of an audio clip; text-based editing then follows every edit."
 				/>
 				<TranscriptionStatus session={session} seq={seq} />
 				<div className="flex justify-center px-2 pb-2">

@@ -1,4 +1,4 @@
-// wp speech: Edit ▸ Preferences ▸ Speech — the speech-to-text models of the engine's model catalogue: name, size,
+// wp speech: Edit ▸ Preferences ▸ Transcription — the speech-to-text models of the engine's model catalogue: name, size,
 // languages, licence and source; Download (after the licence is shown, with progress) and Delete.
 import type { SpeechModel } from '@jasper/api';
 import { Button, confirmDialog, toast } from '@jasper/ui';

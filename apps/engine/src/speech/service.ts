@@ -107,7 +107,7 @@ export class SpeechService {
 		if (!(await this.models.installed(e)))
 			throw new JobError(
 				'SPEECH_MODEL_NOT_INSTALLED',
-				`The speech model ${e.name} is not downloaded. Download it in Preferences ▸ Speech (or install_speech_model).`,
+				`The speech model ${e.name} is not downloaded. Download it in Preferences ▸ Transcription (or install_speech_model).`,
 				false,
 			);
 		return id;

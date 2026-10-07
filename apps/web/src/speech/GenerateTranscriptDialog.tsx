@@ -225,12 +225,12 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 						<Row label="Model">
 							<Select
 								label="Model"
-								className="w-72"
+								className="w-96"
 								value={opts.model}
 								onValueChange={(model) => set({ model })}
 								options={models.map((m) => ({
 									value: m.id,
-									label: `${m.name} · ${m.parameters} M · ${formatBytes(m.sizeBytes)}${m.installed ? '' : ' · not downloaded'}`,
+									label: `${m.name} · ${formatBytes(m.sizeBytes)}${m.installed ? '' : ' · download'}`,
 								}))}
 							/>
 						</Row>

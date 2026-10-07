@@ -1,5 +1,5 @@
 // wp speech UI commands (agent-exposed): Generate Transcript… for the active sequence (Sequence ▸ Captions, Text ▸
-// Transcript), for the selected clips' media (Clip menu) or the selected Project media, and Preferences ▸ Speech.
+// Transcript), for the selected clips' media (Clip menu) or the selected Project media, and Preferences ▸ Transcription.
 // Premiere has no default shortcuts for these. Gated by the `transcription` capability (engine speech ready).
 import type { Sequence } from '@jasper/project';
 import { activeTimeline } from '../panels/timeline/env.tsx';
@@ -83,8 +83,8 @@ export const speechCommands: UiCommand[] = [
 	},
 	{
 		id: 'speech.preferences',
-		label: 'Speech…',
-		description: 'Preferences ▸ Speech: speech-to-text models',
+		label: 'Transcription…',
+		description: 'Preferences ▸ Transcription: speech-to-text models',
 		scope: 'global',
 		run: (ctx) => ctx.ui.openDialog(PREFERENCES_DIALOG, { page: 'speech', session: ctx.session ?? null }),
 	},
