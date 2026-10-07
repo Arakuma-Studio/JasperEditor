@@ -57,7 +57,16 @@ export type JasperFragment = {
 	transcripts: Transcript[];
 	/** Sequence ids of the document's timelines (nested ones excluded). */
 	topSequences: string[];
+	/** Caption tracks to add to the fragment's sequences (applied with `caption.import`; times in frames). */
+	captions: FragmentCaptions[];
 	missing: MissingMedia[];
+};
+
+export type FragmentCaptions = {
+	sequenceId: string;
+	name: string | null;
+	language?: string;
+	cues: { start: number; end: number; text: string; speaker?: string | null; settings?: string }[];
 };
 
 export type ToJasperOptions = {
@@ -182,6 +191,7 @@ export function toJasper(p: IProject, opts: ToJasperOptions, report: Report): Ja
 		fonts: [],
 		transcripts: [],
 		topSequences: [],
+		captions: [],
 		missing: [],
 	};
 
@@ -315,7 +325,9 @@ export function toJasper(p: IProject, opts: ToJasperOptions, report: Report): Ja
 			);
 		settings.dropFrame = s.dropFrame && supportsDropFrame(rate);
 		settings.startTimecodeFrames = Math.max(0, Math.round(s.startTimecode) || 0);
-		if (s.sampleRate && s.sampleRate !== 48000)
+		if (s.sampleRate === 44100 || s.sampleRate === 48000 || s.sampleRate === 96000)
+			settings.audioSampleRate = s.sampleRate;
+		else if (s.sampleRate)
 			report.info(`sequence "${s.name}" audio at ${s.sampleRate} Hz is mixed at 48000 Hz`);
 		if (s.pixelAspect && s.pixelAspect.num !== s.pixelAspect.den)
 			report.warn(
@@ -667,8 +679,23 @@ export function toJasper(p: IProject, opts: ToJasperOptions, report: Report): Ja
 				return [];
 			}
 			if (track.kind !== 'video') {
-				report.warn(`generator clip "${c.name}" on an audio track was skipped`, { subject: where });
-				return [];
+				if (syn.kind !== 'bars-and-tone' && syn.kind !== 'counting-leader') {
+					report.warn(`generator clip "${c.name}" on an audio track has no sound and was skipped`, {
+						subject: where,
+					});
+					return [];
+				}
+				return [
+					{
+						...common,
+						kind: 'synthetic-audio',
+						syntheticId: syn.id,
+						gainDb: c.gainDb ?? 0,
+						volumeDb: c.volumeDb ? clone(c.volumeDb) : anim(0),
+						pan: c.pan ? clone(c.pan) : anim(0),
+						effects: reid(effects, 'fx'),
+					} as Clip,
+				];
 			}
 			return [
 				{
@@ -763,34 +790,28 @@ export function toJasper(p: IProject, opts: ToJasperOptions, report: Report): Ja
 				...(j?.trackers ? { trackers: clone(j.trackers) } : {}),
 				...over,
 			}) as Clip;
-		if (c.hold != null && kind === 'video') {
-			// Frame hold: pieces of ≤ 100 frames at 1 % speed show the held source frame exactly (nearest-earlier
-			// sampling never reaches the next source frame within 100 sequence frames).
+		if (c.hold != null && kind !== 'still') {
 			const hold = Math.max(0, Math.round(c.hold));
-			const pieces: Clip[] = [];
-			for (let at = 0; at < duration; at += 100) {
-				const len = Math.min(100, duration - at);
-				pieces.push(
-					make({
-						id: at === 0 ? common.id : ids.next('clp'),
-						start: start + at,
-						duration: len,
-						sourceIn: hold,
-						speed: { rate: 0.01, reverse: false, maintainPitch: true },
-						markers: at === 0 ? common.markers : [],
-					}),
-				);
-			}
-			report.info(
-				`frame hold on clip "${c.name}" is represented as ${pieces.length} clip${pieces.length === 1 ? '' : 's'} at 1 % speed`,
-				{
-					subject: where,
+			const held = make({
+				frameHold: {
+					flicks: hold,
+					...((j?.frameHold as { holdFilters?: boolean } | undefined)?.holdFilters
+						? { holdFilters: true }
+						: {}),
 				},
-			);
-			return pieces;
+			} as Partial<Clip>);
+			// The hold shows one frame; the clip's own range only needs to lie in the media.
+			if (dur !== null && hold >= dur) {
+				report.warn(`frame hold of clip "${c.name}" lies after the end of its media; the hold was dropped`, {
+					subject: where,
+				});
+				delete (held as { frameHold?: unknown }).frameHold;
+			}
+			const f = fit(held);
+			return f ? [f] : [];
 		}
 		if (c.hold != null)
-			report.warn(`frame hold on still clip "${c.name}" is irrelevant and was dropped`, { subject: where });
+			report.info(`frame hold on still clip "${c.name}" is implicit and was dropped`, { subject: where });
 		const f = fit(make({}));
 		return f ? [f] : [];
 	};
@@ -808,6 +829,25 @@ export function toJasper(p: IProject, opts: ToJasperOptions, report: Report): Ja
 	for (const s of Object.values(p.sequences)) {
 		seqFrame = { width: s.width, height: s.height };
 		frag.sequences.push(convertSequence(s));
+		const rate = seqRate.get(s.id)!;
+		for (const ct of s.captions ?? []) {
+			const cues = ct.cues
+				.map((q) => ({
+					start: Math.max(0, flicksToFrames(q.start, rate)),
+					end: flicksToFrames(q.start + q.duration, rate),
+					text: q.text,
+					...(q.speaker ? { speaker: q.speaker } : {}),
+					...(q.settings ? { settings: q.settings } : {}),
+				}))
+				.filter((q) => q.end > q.start && q.text.trim());
+			if (cues.length)
+				frag.captions.push({
+					sequenceId: seqIdOf.get(s.id)!,
+					name: ct.name,
+					...(ct.language ? { language: ct.language } : {}),
+					cues,
+				});
+		}
 	}
 	frag.topSequences = p.top.map((t) => seqIdOf.get(t)).filter((x): x is string => !!x);
 

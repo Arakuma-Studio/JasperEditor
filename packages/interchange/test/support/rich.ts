@@ -25,7 +25,11 @@ export const PRESET_FOR: Record<string, string> = {
 };
 
 export function withPath(a: ReturnType<typeof videoAsset>, path: string): ReturnType<typeof videoAsset> {
-	return { ...a, originalName: path.split('/').pop()!, locators: [...a.locators, { type: 'path', path, relativeToProject: null }] };
+	return {
+		...a,
+		originalName: path.split('/').pop()!,
+		locators: [...a.locators, { type: 'path', path, relativeToProject: null }],
+	};
 }
 
 export type Rich = { h: Harness; ids: Record<string, string> };
@@ -38,29 +42,71 @@ export function richProject(opts: { preset?: string; fps?: { num: number; den: n
 	const h = new Harness({ preset: opts.preset ?? 'hd-1080p-30' });
 	const fps = opts.fps ?? { num: 30, den: 1 };
 	const reg = (name: string, seconds: number, audio = true) =>
-		(h.ok([{ type: 'media.register', asset: withPath(videoAsset({ seconds, fps, audio }), `/footage/${name}.mov`), name }])
-			.results[0] as { mediaId: string }).mediaId;
+		(
+			h.ok([
+				{
+					type: 'media.register',
+					asset: withPath(videoAsset({ seconds, fps, audio }), `/footage/${name}.mov`),
+					name,
+				},
+			]).results[0] as { mediaId: string }
+		).mediaId;
 	const a = reg('A_take1', 20);
 	const b = reg('B roll', 20);
 	const c = reg('C-fast', 30, false);
 	const r = h.ok([
-		{ type: 'clip.place', source: { mediaId: a }, at: 10, tracks: { video: 'V1' }, sourceRange: { in: { sourceFrames: 30 }, out: { sourceFrames: 90 } } },
-		{ type: 'clip.place', source: { mediaId: b }, at: 70, tracks: { video: 'V1' }, sourceRange: { in: { sourceFrames: 15 }, out: { sourceFrames: 75 } } },
-		{ type: 'clip.place', source: { mediaId: c }, at: 0, tracks: { video: 'V2' }, sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 40 } } },
+		{
+			type: 'clip.place',
+			source: { mediaId: a },
+			at: 10,
+			tracks: { video: 'V1' },
+			sourceRange: { in: { sourceFrames: 30 }, out: { sourceFrames: 90 } },
+		},
+		{
+			type: 'clip.place',
+			source: { mediaId: b },
+			at: 70,
+			tracks: { video: 'V1' },
+			sourceRange: { in: { sourceFrames: 15 }, out: { sourceFrames: 75 } },
+		},
+		{
+			type: 'clip.place',
+			source: { mediaId: c },
+			at: 0,
+			tracks: { video: 'V2' },
+			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 40 } },
+		},
 	]);
 	const [va, aa] = (r.results[0] as { clipIds: string[] }).clipIds as [string, string];
 	const [vb, ab] = (r.results[1] as { clipIds: string[] }).clipIds as [string, string];
 	const [vc] = (r.results[2] as { clipIds: string[] }).clipIds as [string];
 	const r2 = h.ok([
-		{ type: 'keyframe.add', target: ['clip', va, 'transform', 'position'], at: { frames: 0 }, value: [960, 540] },
-		{ type: 'keyframe.add', target: ['clip', va, 'transform', 'position'], at: { frames: 30 }, value: [1200, 400] },
+		{
+			type: 'keyframe.add',
+			target: ['clip', va, 'transform', 'position'],
+			at: { frames: 0 },
+			value: [960, 540],
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', va, 'transform', 'position'],
+			at: { frames: 30 },
+			value: [1200, 400],
+		},
 		{ type: 'param.set', target: ['clip', va, 'transform', 'scale'], value: 150 },
 		{ type: 'param.set', target: ['clip', va, 'transform', 'rotation'], value: 12.5 },
 		{ type: 'effect.add', target: { clipId: va }, effectId: 'jasper.gaussian-blur', ref: '$blur' },
 		{ type: 'param.set', target: ['effect', '$blur', 'radius'], value: 8 },
 		{ type: 'param.set', target: ['clip', vb, 'opacity'], value: 50 },
 		{ type: 'clip.update', clipId: vb, patch: { blendMode: 'multiply' } },
-		{ type: 'transition.add', clipId: vb, edge: 'in', effectId: 'jasper.cross-dissolve', duration: 10, alignment: 'center' },
+		{
+			type: 'transition.add',
+			clipId: vb,
+			edge: 'in',
+			effectId: 'jasper.cross-dissolve',
+			duration: 10,
+			alignment: 'center',
+		},
 		{ type: 'clip.setSpeed', clipIds: [vc], rate: 2, ripple: false },
 		{ type: 'keyframe.add', target: ['clip', aa, 'volumeDb'], at: { frames: 0 }, value: -12 },
 		{ type: 'keyframe.add', target: ['clip', aa, 'volumeDb'], at: { frames: 20 }, value: 0 },
@@ -81,7 +127,18 @@ const stripIds = (v: unknown): unknown => {
 	if (v && typeof v === 'object') {
 		const o: Record<string, unknown> = {};
 		for (const [k, x] of Object.entries(v)) {
-			if (k === 'id' || k === 'trackId' || k === 'linkId' || k === 'groupId' || k === 'mediaId' || k === 'syntheticId' || k === 'sequenceId' || k === 'fontId' || k === 'transcriptId') continue;
+			if (
+				k === 'id' ||
+				k === 'trackId' ||
+				k === 'linkId' ||
+				k === 'groupId' ||
+				k === 'mediaId' ||
+				k === 'syntheticId' ||
+				k === 'sequenceId' ||
+				k === 'fontId' ||
+				k === 'transcriptId'
+			)
+				continue;
 			o[k] = stripIds(x);
 		}
 		return o;
@@ -90,7 +147,11 @@ const stripIds = (v: unknown): unknown => {
 };
 
 /** A comparable summary of a sequence: per track, its clips in order (ids stripped), transitions and markers. */
-export function summarize(doc: ProjectDocument, seqId: string, opts: { keep?: (keyof Clip | string)[] } = {}): unknown {
+export function summarize(
+	doc: ProjectDocument,
+	seqId: string,
+	opts: { keep?: (keyof Clip | string)[] } = {},
+): unknown {
 	const s = doc.sequences[seqId] as Sequence;
 	const clipsOf = (trackId: string) =>
 		(Object.values(s.clips) as Clip[]).filter((c) => c.trackId === trackId).sort((a, b) => a.start - b.start);
@@ -100,7 +161,8 @@ export function summarize(doc: ProjectDocument, seqId: string, opts: { keep?: (k
 			clipsOf(t.id).map((c, k) => {
 				pos.set(c.id, `${tag}${i + 1}:${k}`);
 				const any = c as Clip & Record<string, unknown>;
-				const media = typeof any.mediaId === 'string' ? (doc.media[any.mediaId] as MediaAsset | undefined) : undefined;
+				const media =
+					typeof any.mediaId === 'string' ? (doc.media[any.mediaId] as MediaAsset | undefined) : undefined;
 				const base: Record<string, unknown> = {
 					kind: c.kind,
 					start: c.start,
@@ -127,8 +189,21 @@ export function summarize(doc: ProjectDocument, seqId: string, opts: { keep?: (k
 			}))
 			.sort((a, b) => String(a.to ?? a.from).localeCompare(String(b.to ?? b.from))),
 		links: Object.values(s.links)
-			.map((l) => l.members.map((m) => pos.get(m)).sort().join('+'))
+			.map((l) =>
+				l.members
+					.map((m) => pos.get(m))
+					.sort()
+					.join('+'),
+			)
 			.sort(),
 	};
 	return out;
+}
+
+/** Adds a caption track with two captions to the rich project. */
+export function addCaptions(h: Harness): void {
+	h.ok([
+		{ type: 'caption.add', at: 0, duration: 30, text: 'Hello there' },
+		{ type: 'caption.add', at: 40, duration: 30, text: 'Second line\nwith a break' },
+	]);
 }

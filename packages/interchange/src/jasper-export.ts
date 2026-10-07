@@ -3,7 +3,10 @@
 // map what they can and report the rest.
 import {
 	type Animatable,
+	type CaptionsClip,
 	type Clip,
+	captionClipSpeaker,
+	captionClipText,
 	flicksPerFrame,
 	isKnownClipKind,
 	type MediaAsset,
@@ -13,6 +16,7 @@ import {
 	type SyntheticSource,
 	type Track,
 	transitionStartFrame,
+	vttSettingsFor,
 } from '@jasper/project';
 import type {
 	IBinEntry,
@@ -298,6 +302,11 @@ export function fromJasper(
 			},
 		};
 		const where = { kind: 'sequence' as const, id: s.id, name };
+		if (!otio && s.submixTracks?.length)
+			report.warn(`the ${s.submixTracks.length} submix track(s) of "${name}" are not carried`, {
+				subject: where,
+				instead: 'tracks routed to them play straight to the master',
+			});
 		if (!otio) {
 			if (s.master.effects.length || s.master.volumeDb.keyframes.length || s.master.volumeDb.value !== 0)
 				report.warn(`the master volume and effects of "${name}" are not carried`, {
@@ -331,6 +340,20 @@ export function fromJasper(
 					subject: { kind: 'track', id: t.id, name: t.name ?? `${kind === 'video' ? 'V' : 'A'}${index + 1}` },
 					instead: 'the clips without the track effects',
 				});
+			const tag = `${kind === 'video' ? 'V' : 'A'}${index + 1}`;
+			const mixer = t.mixer;
+			if (!otio && mixer) {
+				const what: string[] = [];
+				if (mixer.sends?.length) what.push('sends');
+				if (mixer.output) what.push('a submix output');
+				if (Object.values(mixer.lanes ?? {}).some((l) => l.keyframes.length || l.value !== 0))
+					what.push('mute / 5.1 automation');
+				if (what.length)
+					report.warn(`the ${what.join(', ')} of track ${tag} are not carried`, {
+						subject: { kind: 'track', id: t.id, name: t.name ?? tag },
+						instead: 'the track mixed straight to the master',
+					});
+			}
 			const clips = [...(clipsByTrack.get(t.id) ?? [])].sort((a, b) => a.start - b.start);
 			for (const c of clips) {
 				const ic = convertClip(c, rate);
@@ -356,13 +379,14 @@ export function fromJasper(
 		};
 		seq.video = s.videoTracks.map((t, i) => convertTrack(t, 'video', i));
 		seq.audio = s.audioTracks.map((t, i) => convertTrack(t, 'audio', i));
-		// Captions: pre-rendered ones become video clips on extra top tracks; the others are reported.
+		// Captions: formats with captions (FCPXML, OTIO) carry the cues; pre-rendered caption clips become video
+		// clips on extra top tracks; the others are reported, one entry per caption.
+		const carriesCaptions = opts.format === 'fcpxml' || otio;
 		for (const t of s.captionTracks) {
-			const clips = [...(clipsByTrack.get(t.id) ?? [])].sort((a, b) => a.start - b.start);
+			const clips = ([...(clipsByTrack.get(t.id) ?? [])] as Clip[])
+				.filter((c) => c.kind === 'captions')
+				.sort((a, b) => a.start - b.start) as CaptionsClip[];
 			const pre = clips.filter((c) => prerendered[c.id]);
-			for (const c of clips)
-				if (!prerendered[c.id])
-					reportUncarried(c, rate, 'captions clip', otio ? null : 'nothing (captions are not exported)');
 			if (pre.length) {
 				const tr: ITrack = {
 					name: t.name ?? 'Captions',
@@ -376,22 +400,29 @@ export function fromJasper(
 					if (ic) tr.clips.push(ic);
 				}
 				seq.video.push(tr);
-			} else if (otio && clips.length) {
-				// OTIO keeps caption tracks (metadata) so a JasperEditor round trip restores them.
-				const tr: ITrack = {
-					name: t.name,
-					enabled: t.visible !== false,
-					locked: t.locked,
-					clips: [],
-					transitions: [],
-					jasper: { ...(clone(t) as unknown as Record<string, unknown>), captionTrack: true },
-				};
-				for (const c of clips) {
-					const ic = convertClip(c, rate);
-					if (ic) tr.clips.push(ic);
-				}
-				seq.video.push(tr);
 			}
+			const rest = clips.filter((c) => !prerendered[c.id]);
+			if (!rest.length) continue;
+			if (!carriesCaptions) {
+				for (const c of rest)
+					reportUncarried(c, rate, 'caption', 'nothing (export the captions as a sidecar file)');
+				continue;
+			}
+			(seq.captions ??= []).push({
+				name: t.name,
+				...(t.language ? { language: t.language } : {}),
+				enabled: t.visible !== false,
+				cues: rest.map((c) => {
+					const settings = vttSettingsFor(c);
+					return {
+						start: c.start * F,
+						duration: c.duration * F,
+						text: captionClipText(doc, c, rate),
+						speaker: captionClipSpeaker(doc, c, rate),
+						...(settings ? { settings } : {}),
+					};
+				}),
+			});
 		}
 		return seq;
 	};
@@ -437,12 +468,26 @@ export function fromJasper(
 			effects: clone(((any.effects as Clip[]) ?? []) as never),
 			jasper: clone(c) as unknown as Record<string, unknown>,
 		};
-		// Frame hold made of 1 % speed pieces (see jasper-import.ts): written back as a hold.
-		if (c.kind === 'video' && !c.speed.reverse && c.speed.rate <= 0.01 + 1e-9 && c.duration <= 100) {
-			base.hold = c.sourceIn;
-			base.speed = 1;
-		}
+		// edit-structure Frame Hold: the clip shows one content time for its whole length.
+		if (c.frameHold) base.hold = c.frameHold.flicks;
 		const pre = prerendered[c.id];
+		if (!pre && !otio) {
+			const where = { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start };
+			const masks = (any.masks as unknown[] | undefined)?.length ?? 0;
+			const fxMasks = ((any.effects as { masks?: unknown[] }[] | undefined) ?? []).some(
+				(e) => e.masks?.length,
+			);
+			if (masks || fxMasks)
+				report.warn(`the masks of clip "${c.name}" at frame ${c.start} are not carried`, {
+					subject: where,
+					instead: 'the clip without its masks (pre-render it to keep them)',
+				});
+			if (hasExpression(c))
+				report.warn(`the expressions of clip "${c.name}" at frame ${c.start} are not carried`, {
+					subject: where,
+					instead: 'the keyframed values without the expressions (pre-render it to keep them)',
+				});
+		}
 		if (pre) {
 			const mid = prerenderMedia(c, pre);
 			return {
@@ -526,6 +571,20 @@ export function fromJasper(
 					transform: clone(c.transform),
 					opacity: clone(c.opacity),
 					blendMode: c.blendMode,
+				};
+			}
+			case 'synthetic-audio': {
+				const mid = generatorFor(c.syntheticId);
+				if (!mid) {
+					reportUncarried(c, rate, 'synthetic audio clip', otio ? null : 'nothing');
+					return otio ? base : null;
+				}
+				return {
+					...base,
+					source: { type: 'media', mediaId: mid },
+					gainDb: c.gainDb,
+					volumeDb: clone(c.volumeDb),
+					pan: clone(c.pan),
 				};
 			}
 			case 'nest-video':
@@ -686,4 +745,25 @@ export function fromJasper(
 
 function anim<T>(value: T): Animatable<T> {
 	return { value, keyframes: [] };
+}
+
+/** Whether any animatable of a clip (Motion, Opacity, levels, effect params, Source Text) has an expression. */
+export function hasExpression(c: unknown): boolean {
+	let found = false;
+	const walk = (v: unknown, depth: number) => {
+		if (found || depth > 12 || !v || typeof v !== 'object') return;
+		if (Array.isArray(v)) {
+			for (const x of v) walk(x, depth + 1);
+			return;
+		}
+		const o = v as Record<string, unknown>;
+		const e = o.expression as { text?: unknown } | undefined;
+		if (e && typeof e === 'object' && typeof e.text === 'string' && e.text.trim()) {
+			found = true;
+			return;
+		}
+		for (const [k, x] of Object.entries(o)) if (k !== 'markers' && k !== 'trackers') walk(x, depth + 1);
+	};
+	walk(c, 0);
+	return found;
 }

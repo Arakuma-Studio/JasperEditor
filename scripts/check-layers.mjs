@@ -93,6 +93,14 @@ export const LAYERS = {
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'QuickJS-wasm + the AE object model: no DOM, no Node, no UI, no Remotion',
 	},
+	// Timeline interchange (docs/wp-notes/interchange.md): FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE readers and
+	// writers over the pure model. Pure TypeScript (no fs): the engine reads/writes files, probes, relinks, renders.
+	'packages/interchange': {
+		name: '@jasper/interchange',
+		deps: ['@jasper/project'],
+		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
+		note: 'bytes in, bytes out: no DOM, no Node, no UI',
+	},
 	'packages/api': {
 		name: '@jasper/api',
 		deps: ['@jasper/project'],
@@ -147,6 +155,7 @@ export const LAYERS = {
 			'@jasper/compositions',
 			'@jasper/engine-client',
 			'@jasper/expressions',
+			'@jasper/interchange',
 			'@jasper/mg-templates',
 			'@jasper/project',
 			'@jasper/session',
@@ -166,6 +175,7 @@ export const LAYERS = {
 			'@jasper/compositions',
 			'@jasper/config',
 			'@jasper/expressions',
+			'@jasper/interchange',
 			'@jasper/mcp',
 			'@jasper/mg-templates',
 			'@jasper/project',

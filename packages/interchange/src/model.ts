@@ -125,6 +125,8 @@ export type ISequence = {
 	video: ITrack[];
 	audio: ITrack[];
 	markers: IMarker[];
+	/** Caption tracks (subtitles), top first; absent = none. */
+	captions?: ICaptionTrack[];
 	/** In/out marks (sequence time), null when not set. */
 	inPoint?: number | null;
 	outPoint?: number | null;
@@ -205,6 +207,25 @@ export type ITransition = {
 	alignment: 'center' | 'start-at-cut' | 'end-at-cut';
 	params: Record<string, Animatable<unknown>>;
 	jasper?: Record<string, unknown>;
+};
+
+export type ICaptionTrack = {
+	name: string | null;
+	/** BCP-47 language (`en`, `fr-CA`). */
+	language?: string;
+	enabled: boolean;
+	/** Cues sorted by start, never overlapping (sequence time, flicks). */
+	cues: ICue[];
+};
+
+export type ICue = {
+	start: number;
+	duration: number;
+	/** Lines separated by `\n`. */
+	text: string;
+	speaker?: string | null;
+	/** WebVTT cue settings (`line:90% align:center`), when known. */
+	settings?: string;
 };
 
 export type IMarker = {

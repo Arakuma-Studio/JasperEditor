@@ -451,6 +451,7 @@ class OtioImporter {
 		);
 		const oldId = str(meta?.id);
 		if (oldId) this.seqIds.set(oldId, seq.id);
+		if (Array.isArray(meta?.captions)) seq.captions = meta.captions as ISequence['captions'];
 		seq.markers = this.markers(stack, 0);
 		this.depth++;
 		for (const t of arr(obj(stack)?.children)) {

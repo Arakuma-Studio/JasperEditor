@@ -2,12 +2,15 @@
 // represent are rendered by the engine's export pipeline to ProRes 4444 with alpha (one movie per clip, the clip
 // alone on a transparent frame, Motion/Opacity/effects baked in) and referenced as media instead.
 import {
+	type BlendMode,
 	type Clip,
 	isKnownClipKind,
 	type ProjectDocument,
 	type Sequence,
 	type Transform,
 } from '@jasper/project';
+import { formatCarriesBlend } from './blend.ts';
+import { hasExpression } from './jasper-export.ts';
 import type { Format } from './options.ts';
 
 export const PRERENDER_MODES = ['unsupported', 'all', 'none'] as const;
@@ -86,10 +89,11 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 		case 'composition':
 			return 'composition clip';
 		case 'captions':
-			return 'captions clip';
+			return format === 'fcpxml' || format === 'otio' ? null : 'captions clip';
 		case 'audio':
 		case 'nest-audio':
 		case 'adjustment':
+		case 'synthetic-audio':
 			return null;
 	}
 	const v = c as Clip & {
@@ -99,7 +103,13 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 		trackedBy?: unknown;
 	};
 	if (c.kind === 'nest-video' && !caps.nesting) return 'nested sequence';
+	const any = c as Clip & { masks?: unknown[]; effects?: { enabled: boolean; masks?: unknown[] }[] };
+	if (any.masks?.length || (any.effects ?? []).some((e) => e.enabled && e.masks?.length)) return 'masks';
+	if (hasExpression(c)) return 'expressions';
 	if ((v.effects ?? []).some((e) => e.enabled)) return 'effects';
+	const blend = (c as { blendMode?: BlendMode }).blendMode;
+	if (blend && !formatCarriesBlend(format, blend)) return `blend mode ${blend}`;
+	if (c.frameHold && !caps.speed) return 'frame hold';
 	if (v.trackedBy) return 'tracking';
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	let box: { width: number; height: number } | null = null;

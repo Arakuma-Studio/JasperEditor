@@ -1,14 +1,34 @@
 // project.importTimeline (wp interchange): adds an imported timeline fragment — bins, media items (resolved files or
 // offline placeholders), synthetic sources and sequences — through the clipboard's project-items machinery, so ids
 // are new, media already in the project (same fingerprint) is reused and everything is one transaction.
+
+import { z } from 'zod';
 import { type ClipboardPayload, ClipboardPayloadSchema } from '../../clipboard/payload.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { captionHandlers } from './captions.ts';
 import { insertProjectItems } from './clipboard.ts';
 import { insertItem } from './project.ts';
 import type { HandlerMap } from './util.ts';
 
 export const INTERCHANGE_OWNER = 'wp-interchange';
+
+const FragmentCaptionsSchema = z.looseObject({
+	sequenceId: z.string(),
+	name: z.string().nullable(),
+	language: z.string().optional(),
+	cues: z
+		.array(
+			z.looseObject({
+				start: z.number().int().min(0),
+				end: z.number().int().min(1),
+				text: z.string(),
+				speaker: z.string().nullable().optional(),
+				settings: z.string().optional(),
+			}),
+		)
+		.max(100_000),
+});
 
 function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: HandlerContext): unknown {
 	const f = cmd.fragment as Record<string, unknown>;
@@ -51,11 +71,42 @@ function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: 
 		binId = createdBin;
 	}
 	const r = insertProjectItems(doc, parsed.data as unknown as ClipboardPayload, binId, undefined, h);
+	// Caption tracks (FCPXML captions, OTIO): through the Captions workstream's import (transcript + caption clips).
+	const captionTrackIds: string[] = [];
+	for (const raw of Array.isArray(f.captions) ? (f.captions as unknown[]) : []) {
+		const parsed = FragmentCaptionsSchema.safeParse(raw);
+		if (!parsed.success) {
+			h.warn('W_CLIP_SKIPPED', 'A caption track of the imported document is malformed and was skipped');
+			continue;
+		}
+		const c = parsed.data;
+		const sequenceId = r.sequenceMap[c.sequenceId];
+		if (!sequenceId) continue;
+		const res = captionHandlers['caption.import']!(
+			doc,
+			{
+				type: 'caption.import',
+				sequenceId,
+				track: 'new',
+				cues: c.cues.map((q) => ({
+					start: q.start,
+					end: q.end,
+					text: q.text,
+					...(q.speaker ? { speaker: q.speaker } : {}),
+					...(q.settings ? { settings: q.settings } : {}),
+				})),
+				...(c.name ? { name: c.name } : {}),
+				...(c.language ? { language: c.language } : {}),
+			} as never,
+			h,
+		) as { trackId: string };
+		captionTrackIds.push(res.trackId);
+	}
 	const tops = Array.isArray(f.topSequences) ? (f.topSequences as unknown[]) : [];
 	const topSequenceIds = tops
 		.map((t) => (typeof t === 'string' ? r.sequenceMap[t] : undefined))
 		.filter((x): x is string => !!x);
-	return { ...r, binId: createdBin ?? cmd.binId ?? null, topSequenceIds };
+	return { ...r, binId: createdBin ?? cmd.binId ?? null, topSequenceIds, captionTrackIds };
 }
 
 export const interchangeHandlers: HandlerMap = {
