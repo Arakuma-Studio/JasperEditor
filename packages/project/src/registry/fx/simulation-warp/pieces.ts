@@ -302,7 +302,9 @@ void pc_shade(vec3 n, vec3 q, out vec3 tint, out vec3 spec) {
  *   (flatCol.a > 0 = draw it instead of the texture), opacity, extrusion depth (px, 0 = flat) and the back face's
  *   texture mirroring (0 none, 1 about the X axis, 2 about the Y axis);
  * - `vec4 pc_front(vec2 restPx, int id)`, `vec4 pc_back(vec2 restPx, int id)` — premultiplied texture of each face
- *   (return vec4(-1) from pc_back to drop back-facing pieces); `vec3 pc_sideColor(vec2 restPx, int id)`.
+ *   (return vec4(-1) from pc_back to drop back-facing pieces); `vec3 pc_sideColor(vec2 restPx, int id)`;
+ * - `float pc_sideAlpha(vec2 restPx, vec2 restCentre, int id)` — 0 drops the side faces of a piece (pieces cut from
+ *   transparent areas of the layer have no visible sides).
  * The last pass composites the pieces with the original by `u_post` (sp_combine; 5 = pieces only).
  */
 export function piecePasses(opts: {
@@ -383,6 +385,7 @@ void main() {
     vec3 mid = pos + R * vec3((a + b) * 0.5 - c0, 0.0) + nb * extrude * 0.5;
     if (dot(sn, mid - pos) < 0.0) sn = -sn;
     if (dot(sn, u_eye - mid) <= 0.0) { fx_cull(); return; }
+    if (pc_sideAlpha(v_tex, c0, id) < 0.004) { fx_cull(); return; }
     face = 2;
     pc_shade(sn, mid, tint, spec);
   }

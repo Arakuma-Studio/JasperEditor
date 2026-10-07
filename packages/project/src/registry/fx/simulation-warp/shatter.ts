@@ -308,6 +308,11 @@ vec4 sh_face(int mode, highp sampler2D t, vec2 tsize, vec2 restPx) {
 vec4 pc_front(vec2 t, int id) { return sh_face(u_frontMode, u_frontLayer, u_frontLayer_size, t); }
 vec4 pc_back(vec2 t, int id) { return sh_face(u_backMode, u_backLayer, u_backLayer_size, t); }
 vec3 pc_sideColor(vec2 t, int id) { return fx_unpremultiply(sh_face(u_sideMode, u_sideLayer, u_sideLayer_size, t)).rgb; }
+// Pieces cut from transparent areas of the front have no sides (the layer's alpha near the edge or at the centre).
+float pc_sideAlpha(vec2 t, vec2 c0, int id) {
+  vec2 near = mix(t, c0, 0.25);
+  return max(pc_front(near, id).a, pc_front(c0, id).a);
+}
 `;
 
 export const SHATTER = defineShaderEffect({

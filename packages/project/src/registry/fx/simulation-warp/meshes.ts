@@ -74,13 +74,20 @@ export function meshWarpSetVertex(
 
 // ---------------------------------------------------------------- Liquify
 
-/** Liquify: version, nx, ny, then per grid node (row-major) the displacement (dx, dy) in layer px. */
-export const LIQUIFY_VERSION = 1;
+/**
+ * Liquify: version, nx, ny, then per grid node (row-major) the displacement (dx, dy) in grid cells. Cells (not
+ * pixels) keep the mesh valid at every resolution the layer is drawn at (a downscaled preview, a proxy, a smaller
+ * render): the grid always has 128 cells on the layer's long side.
+ */
+export const LIQUIFY_VERSION = 2;
+/** Cells on the long side of the layer. */
+export const LIQUIFY_CELLS = 128;
 
-/** Grid of a Liquify mesh over a w × h layer: nodes every `cell` px (2…16, ~128 cells on the long side). */
+/** Grid of a Liquify mesh over a w × h layer: nodes every `cell` layer px (128 cells on the long side). */
 export function liquifyGrid(w: number, h: number) {
-	const cell = clamp(Math.max(w, h) / 128, 2, 16);
-	return { cell, nx: Math.ceil(w / cell) + 1, ny: Math.ceil(h / cell) + 1 };
+	const cell = Math.max(1e-6, Math.max(w, h) / LIQUIFY_CELLS);
+	// The epsilon keeps nx / ny the same at every scale of the same box (float noise in w / cell).
+	return { cell, nx: Math.ceil(w / cell - 1e-6) + 1, ny: Math.ceil(h / cell - 1e-6) + 1 };
 }
 
 /** An empty (undistorted) Liquify mesh. */
@@ -160,7 +167,9 @@ export function liquifyApplyStroke(
 	s: LiquifyStroke,
 ): number[] {
 	const g = liquifyGrid(w, h);
-	const m = liquifyOf(mesh, w, h).slice();
+	const stored = liquifyOf(mesh, w, h);
+	// Work in layer px; stored back in cells at the end.
+	const m = stored.map((v, i) => (i >= 3 ? v * g.cell : v));
 	const nx = g.nx;
 	const ny = g.ny;
 	const cell = g.cell;
@@ -188,7 +197,7 @@ export function liquifyApplyStroke(
 	const r = Math.max(1, s.size * 0.5);
 	const pr = clamp(s.pressure / 100, 0, 1);
 	const pts = s.points.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
-	if (pts.length === 0) return m;
+	if (pts.length === 0) return stored.slice();
 	const dabs: { c: [number, number]; mv: [number, number] }[] = [];
 	if (pts.length === 1) dabs.push({ c: [pts[0]![0], pts[0]![1]], mv: [0, 0] });
 	for (let k = 0; k + 1 < pts.length; k++) {
@@ -300,9 +309,9 @@ export function liquifyApplyStroke(
 						d[1] += (tgt[1] - d[1]!) * w * 2;
 					}
 				}
-				m[o] = Math.round(d[0]! * 1000) / 1000;
-				m[o + 1] = Math.round(d[1]! * 1000) / 1000;
+				m[o] = d[0]!;
+				m[o + 1] = d[1]!;
 			}
 	});
-	return m;
+	return m.map((v, i) => (i >= 3 ? Math.round((v / cell) * 10000) / 10000 : v));
 }

@@ -100,6 +100,7 @@ vec4 pc_back(vec2 t, int id) {
   return u_backLayer_size.x > 0.0 ? texture(u_backLayer, (t - u_box.xy) / u_box.zw) : texture(u_source, t / u_canvasSize);
 }
 vec3 pc_sideColor(vec2 t, int id) { return vec3(0.0); }
+float pc_sideAlpha(vec2 t, vec2 c0, int id) { return 1.0; }
 `;
 
 export const CARD_DANCE = defineShaderEffect({
@@ -223,6 +224,7 @@ vec4 pc_back(vec2 t, int id) {
   return texture(u_backLayer, (t - u_box.xy) / u_box.zw);
 }
 vec3 pc_sideColor(vec2 t, int id) { return vec3(0.0); }
+float pc_sideAlpha(vec2 t, vec2 c0, int id) { return 1.0; }
 `;
 
 export const CARD_WIPE = defineShaderEffect({
@@ -333,6 +335,7 @@ void pc_place(int id, out vec2 c0, out mat3 R, out vec3 pos, out vec4 fc, out fl
 vec4 pc_front(vec2 t, int id) { return texture(u_source, t / u_canvasSize); }
 vec4 pc_back(vec2 t, int id) { return texture(u_source, t / u_canvasSize); }
 vec3 pc_sideColor(vec2 t, int id) { return vec3(0.0); }
+float pc_sideAlpha(vec2 t, vec2 c0, int id) { return 1.0; }
 `;
 
 export const PIXEL_POLLY = defineShaderEffect({

@@ -557,6 +557,41 @@ export function outlineOfMask(mask: Grid, cell: number, seed: Pt, expansion: num
 	return simplify(trace(r), 0.75).map((p) => [(p[0] - pad) * cell, (p[1] - pad) * cell]);
 }
 
+/** Longest side of the alpha grid `alphaOutline` traces (the image is sampled down to it). */
+export const ALPHA_OUTLINE_GRID = 256;
+
+/**
+ * The outline of an image's opaque region (alpha ≥ 50 %) under `seed` — what After Effects' first Puppet pin on a
+ * layer with transparency meshes — layer-normalised (0–1 across the image), grown by `expansion` image px. `rgba` is
+ * 8-bit RGBA, `w` × `h`, rows top to bottom. Null when the image is opaque everywhere (the layer box is the same
+ * mesh) or nothing opaque is under the seed.
+ */
+export function alphaOutline(
+	rgba: ArrayLike<number>,
+	w: number,
+	h: number,
+	seed: Pt,
+	expansion = DEFAULT_MESH_OPTS.expansion,
+): Pt[] | null {
+	if (w < 1 || h < 1) return null;
+	const cell = Math.max(1, Math.max(w, h) / ALPHA_OUTLINE_GRID);
+	const gw = Math.max(1, Math.ceil(w / cell));
+	const gh = Math.max(1, Math.ceil(h / cell));
+	const on = new Uint8Array(gw * gh);
+	let all = true;
+	for (let y = 0; y < gh; y++)
+		for (let x = 0; x < gw; x++) {
+			const sx = Math.min(w - 1, Math.floor((x + 0.5) * cell));
+			const sy = Math.min(h - 1, Math.floor((y + 0.5) * cell));
+			const v = (rgba[(sy * w + sx) * 4 + 3] ?? 0) >= 128 ? 1 : 0;
+			on[y * gw + x] = v;
+			if (!v) all = false;
+		}
+	if (all) return null;
+	const outline = outlineOfMask({ w: gw, h: gh, on }, cell, [seed[0] * w, seed[1] * h], expansion);
+	return outline.length >= 3 ? outline.map(([x, y]) => [x / w, y / h] as Pt) : null;
+}
+
 /** Rasterises a polygon (layer px) into a grid of `cell` px over a w × h layer. */
 export function rasterisePolygon(poly: readonly Pt[], w: number, h: number, cell: number): Grid {
 	const gw = Math.max(1, Math.ceil(w / cell));

@@ -2,15 +2,18 @@
 // invariants and repair; the puppet solver and the Liquify brushes (pure).
 import { describe, expect, it } from 'vitest';
 import {
+	alphaOutline,
 	checkInvariants,
 	defaultEffectRegistry,
 	deform,
 	evaluate,
 	flicksPerFrame,
 	LIQUIFY_TOOLS,
+	LIQUIFY_VERSION,
 	liquifyApplyStroke,
 	liquifyEmpty,
 	liquifyGrid,
+	liquifyOf,
 	meshAt,
 	meshWarpRest,
 	type Puppet,
@@ -66,7 +69,7 @@ describe('Liquify', () => {
 		]);
 		const mesh = fx().params.distortionMesh!.value as number[];
 		const g = liquifyGrid(640, 360);
-		expect(mesh.slice(0, 3)).toEqual([1, g.nx, g.ny]);
+		expect(mesh.slice(0, 3)).toEqual([LIQUIFY_VERSION, g.nx, g.ny]);
 		expect(mesh.some((v, i) => i >= 3 && v !== 0)).toBe(true);
 		// Undo = the previous document is untouched.
 		expect(
@@ -187,6 +190,61 @@ describe('Liquify', () => {
 				seed: 3,
 			}),
 		);
+	});
+});
+
+describe('Liquify meshes at other resolutions', () => {
+	it('a mesh made for 1920 × 1080 stays valid and proportional when the layer is drawn at 640 × 360', () => {
+		const big = liquifyApplyStroke(liquifyEmpty(1920, 1080), 1920, 1080, {
+			tool: 'bloat',
+			points: [[960, 540]],
+			size: 600,
+			pressure: 100,
+		});
+		const small = liquifyOf(big, 640, 360);
+		expect(small).toBe(big); // same grid, not reset
+		const gb = liquifyGrid(1920, 1080);
+		const gs = liquifyGrid(640, 360);
+		expect([gs.nx, gs.ny]).toEqual([gb.nx, gb.ny]);
+		// Displacements are cells: in px they scale with the layer.
+		const i = big.findIndex((v, k) => k >= 3 && Math.abs(v) > 0.1);
+		expect((big[i]! * gs.cell) / (big[i]! * gb.cell)).toBeCloseTo(1 / 3, 6);
+		// Odd sizes keep their grid at any scale.
+		for (const [w, h] of [
+			[1001, 337],
+			[333, 999],
+			[1279, 721],
+		] as const)
+			for (const k of [0.25, 1 / 3, 0.5, 0.7])
+				expect([liquifyGrid(w * k, h * k).nx, liquifyGrid(w * k, h * k).ny]).toEqual([
+					liquifyGrid(w, h).nx,
+					liquifyGrid(w, h).ny,
+				]);
+	});
+});
+
+describe('Puppet alpha outlines', () => {
+	it('traces the opaque region under the seed; null for opaque images', () => {
+		const w = 120;
+		const h = 80;
+		const rgba = new Uint8Array(w * h * 4);
+		for (let y = 0; y < h; y++)
+			for (let x = 0; x < w; x++) {
+				const inA = x >= 10 && x < 50 && y >= 10 && y < 70;
+				const inB = (x - 90) ** 2 + (y - 40) ** 2 < 15 ** 2;
+				rgba[(y * w + x) * 4 + 3] = inA || inB ? 255 : 0;
+			}
+		const a = alphaOutline(rgba, w, h, [30 / w, 40 / h], 0)!;
+		expect(a.length).toBeGreaterThanOrEqual(4);
+		for (const [x, y] of a) {
+			expect(x * w).toBeGreaterThan(5);
+			expect(x * w).toBeLessThan(55);
+			expect(y * h).toBeGreaterThan(5);
+			expect(y * h).toBeLessThan(75);
+		}
+		const b = alphaOutline(rgba, w, h, [90 / w, 40 / h], 0)!;
+		expect(Math.min(...b.map((p) => p[0] * w))).toBeGreaterThan(70);
+		expect(alphaOutline(new Uint8Array(w * h * 4).fill(255), w, h, [0.5, 0.5])).toBeNull();
 	});
 });
 

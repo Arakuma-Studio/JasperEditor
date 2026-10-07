@@ -6,6 +6,7 @@ import { evaluate, isAnimated } from '../keyframes.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
+import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
 import {
 	applyMat3,
 	boxToQuad,
@@ -110,6 +111,8 @@ function isStaticClip(c: RenderVisualClip): boolean {
 	)
 		return false;
 	if (masksAnimated(c.masks) || c.effects.some((fx) => masksAnimated(fx.masks))) return false;
+	if (c.effects.some((fx) => fx.puppet?.pins.some((pin) => PUPPET_PIN_PROPS.some((k) => isAnimated(pin[k])))))
+		return false; // sim-warp: animated Puppet pins
 	return c.effects.every((fx) => Object.values(fx.params).every((p) => !isAnimated(p)));
 }
 

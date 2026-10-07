@@ -200,8 +200,9 @@ export const LIQUIFY = defineShaderEffect({
 			const texels = new Float32Array(g.nx * g.ny * 4);
 			let any = false;
 			for (let i = 0; i < g.nx * g.ny; i++) {
-				texels[i * 4] = m[3 + i * 2]!;
-				texels[i * 4 + 1] = m[3 + i * 2 + 1]!;
+				// Stored in cells (meshes.ts); the shader wants layer px.
+				texels[i * 4] = m[3 + i * 2]! * g.cell;
+				texels[i * 4 + 1] = m[3 + i * 2 + 1]! * g.cell;
 				if (texels[i * 4] !== 0 || texels[i * 4 + 1] !== 0) any = true;
 			}
 			const freeze = maskOf(p.freezeAreaMask, ctx.structures?.masks);

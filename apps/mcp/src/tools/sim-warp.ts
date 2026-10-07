@@ -4,6 +4,7 @@
 // (describe_commands lists their params). docs/wp-notes/sim-warp.md.
 import {
 	type Animatable,
+	alphaOutline,
 	type Clip,
 	contentTimeAt,
 	type EffectInstance,
@@ -18,6 +19,7 @@ import {
 import { z } from 'zod';
 import { DESTRUCTIVE, defineTool, EDIT, frameOf, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
+import { decodePng } from '../png.ts';
 import { applyHelper, TIME_FORMATS, timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
@@ -27,7 +29,7 @@ export const SIM_WARP_GUIDE = `Simulations and warps: Particle World, Particle S
 const EffectIdArg = z
 	.string()
 	.min(1)
-	.describe('Effect instance id ("efx_…") from get_timeline / get_clip_properties');
+	.describe('Effect instance id ("fx_…") from get_timeline / get_clip_properties');
 const PinIdArg = z.string().min(1).describe('Puppet pin id ("ppn_…") from add_puppet_pins / get_puppet');
 const NormPt = z.tuple([z.number(), z.number()]);
 
@@ -72,6 +74,26 @@ function seqOfPin(doc: ProjectDocument, pinId: string): Sequence {
 /** A tool time argument → the commands' `at` ({sequenceFrame}). */
 const atOf = (seq: Sequence, at: unknown) =>
 	at === undefined ? {} : { at: { sequenceFrame: frameOf(seq, at, TIME_FORMATS) } };
+
+/** The alpha outline of a PNG still clip's image under `seed` (layer-normalised), else null (alphaOutline). */
+async function stillAlphaOutline(
+	ctx: ToolContext,
+	doc: ProjectDocument,
+	clip: Clip,
+	seed: [number, number],
+): Promise<[number, number][] | null> {
+	const mediaId = (clip as { mediaId?: string }).mediaId;
+	const asset = mediaId ? doc.media[mediaId] : undefined;
+	const key = asset?.locators.find((l) => l.type === 'engine-store')?.key;
+	if (!asset || asset.kind !== 'image' || !key) return null;
+	try {
+		const { bytes } = await ctx.engine((c) => c.fetchBytes(c.mediaUrl(key)));
+		const img = decodePng(bytes);
+		return alphaOutline(img.data, img.width, img.height, seed);
+	} catch {
+		return null; // not a PNG (no alpha to trace) or unreadable: the box mesh
+	}
+}
 
 const r4 = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -138,7 +160,7 @@ export function registerSimWarpTools(ctx: ToolContext): void {
 		{
 			title: 'Add Puppet pins',
 			description:
-				"Places pins on a Puppet effect (After Effects' Puppet Position / Starch / Bend / Advanced / Overlap Pin tools), one undoable step. Points are layer-normalised ([0, 0] = the layer's top-left, [1, 1] its bottom-right). A pin outside every mesh first makes a mesh: from `outline` (layer-normalised polygon, e.g. the subject's silhouette) or else the clip's whole box. Returns the pin ids (results[i].pinId). The picture changes once pins move (move_puppet_pins / record_puppet_pins).",
+				"Places pins on a Puppet effect (After Effects' Puppet Position / Starch / Bend / Advanced / Overlap Pin tools), one undoable step. Points are layer-normalised ([0, 0] = the layer's top-left, [1, 1] its bottom-right). A pin outside every mesh first makes a mesh: by default from the opaque region of a PNG still with transparency under the first pin (After Effects' behaviour), else the clip's whole box; `outline` gives a polygon (layer-normalised, e.g. the subject's silhouette) or forces \"box\". Returns the pin ids (results[i].pinId). The picture changes once pins move (move_puppet_pins / record_puppet_pins).",
 			input: {
 				projectId: ProjectIdArg,
 				effectInstanceId: EffectIdArg,
@@ -153,17 +175,20 @@ export function registerSimWarpTools(ctx: ToolContext): void {
 					.min(1)
 					.max(256),
 				outline: z
-					.array(NormPt)
-					.min(3)
-					.max(4096)
+					.union([z.array(NormPt).min(3).max(4096), z.enum(['alpha', 'box'])])
 					.optional()
-					.describe('Outline of the mesh made for the first pin outside every mesh (layer-normalised)'),
+					.describe(
+						'Mesh made for the first pin outside every mesh: a layer-normalised polygon, "alpha" (default: the opaque region of a PNG still under the pin, as After Effects meshes a layer with transparency; else the box) or "box" (the whole layer)',
+					),
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, effectInstanceId, pins, outline }, extra) => {
+		async ({ projectId, effectInstanceId, pins, outline: outlineArg }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			findEffect(doc, effectInstanceId, 'jasper.puppet');
+			const { clip, fx } = findEffect(doc, effectInstanceId, 'jasper.puppet');
+			let outline = Array.isArray(outlineArg) ? outlineArg : undefined;
+			if (outlineArg !== 'box' && !outline && !fx.puppet?.meshes.length)
+				outline = (await stillAlphaOutline(ctx, doc, clip, pins[0]!.position)) ?? undefined;
 			return applyHelper(
 				ctx,
 				projectId,

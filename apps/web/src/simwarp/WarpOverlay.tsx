@@ -6,12 +6,12 @@
 // - Mesh Warp: the Bézier grid with its vertices and, for the selected vertex, its tangent handles (`meshWarp.setVertex`).
 import type { RenderDoc } from '@jasper/compositions';
 import {
+	alphaOutline,
 	applyMat3,
 	type Command,
 	layerMapOf,
 	MW_STRIDE,
 	meshWarpOf,
-	outlineOfMask,
 	type Pt,
 	type ResolvedLayer,
 	type ResolvedPuppet,
@@ -69,26 +69,16 @@ export async function imageAlphaOutline(
 	if (h?.kind !== 'image') return null;
 	const img = await loadImage(h.url);
 	if (!img) return null;
-	const { width: w, height: hh } = layer.props.box;
-	const cell = Math.max(w, hh) / Math.min(256, Math.max(w, hh));
-	const gw = Math.max(1, Math.ceil(w / cell));
-	const gh = Math.max(1, Math.ceil(hh / cell));
 	try {
+		const w = img.naturalWidth;
+		const hh = img.naturalHeight;
 		const c = document.createElement('canvas');
-		c.width = gw;
-		c.height = gh;
-		const ctx = c.getContext('2d', { willReadFrequently: true })!;
-		ctx.drawImage(img, 0, 0, gw, gh);
-		const data = ctx.getImageData(0, 0, gw, gh).data;
-		const on = new Uint8Array(gw * gh);
-		let all = true;
-		for (let i = 0; i < gw * gh; i++) {
-			on[i] = data[i * 4 + 3]! >= 128 ? 1 : 0;
-			if (!on[i]) all = false;
-		}
-		if (all) return null;
-		const outline = outlineOfMask({ w: gw, h: gh, on }, cell, [seed[0] * w, seed[1] * hh], 3);
-		return outline.length >= 3 ? outline.map(([x, y]) => [x / w, y / hh]) : null;
+		c.width = w;
+		c.height = hh;
+		const ctx = c.getContext('2d', { willReadFrequently: true });
+		if (!ctx) return null;
+		ctx.drawImage(img, 0, 0);
+		return alphaOutline(ctx.getImageData(0, 0, w, hh).data, w, hh, seed);
 	} catch {
 		return null;
 	}
