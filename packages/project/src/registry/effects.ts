@@ -8,6 +8,7 @@
 import type { Lut, Rgb } from '../color/lut.ts';
 import type { ParamValue, SpatialInterpolation } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
+import { AUDIO_EFFECTS } from './audio/index.ts';
 import {
 	BLACK_WHITE_OP,
 	BRIGHTNESS_CONTRAST_OP,
@@ -17,7 +18,6 @@ import {
 	HUE_SATURATION_OP,
 	hueSaturationValues,
 } from './color-effects.ts';
-import { AUDIO_EFFECTS } from './audio/index.ts';
 import { EXPRESSION_CONTROL_EFFECTS } from './expression-controls.ts';
 import { FX_EFFECTS } from './fx/index.ts';
 import type { GpuEffect } from './fx/shader.ts';

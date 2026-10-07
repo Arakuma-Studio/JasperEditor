@@ -9,6 +9,7 @@ import { mergeRanges } from './captions/sequence-transcript.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
+import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
@@ -23,7 +24,7 @@ import type { MgTemplateRegistry } from './registry/mg.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
-import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
+import type { AudioClip, Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
@@ -712,7 +713,44 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	}
 	// Wave expressions (INV-EXPR): well-formed expressions on properties that take them.
 	for (const m of expressionIssues(doc, isAudioEffectId)) issues.push(inv('INV-EXPR', m.message, m.path));
+	// audio-fx (INV-ESSENTIAL): Essential Sound settings are readable, essential effects name a known slot and sit
+	// on clips with a type; remix pieces of one remix share a group and a count.
+	for (const m of essentialIssues(doc)) issues.push(inv('INV-ESSENTIAL', m.message, m.path));
 	return issues;
+}
+
+/** audio-fx: problems of Essential Sound settings, essential effects and remix pieces (see repairDocument). */
+function essentialIssues(doc: ProjectDocument): { message: string; path: string[] }[] {
+	const out: { message: string; path: string[] }[] = [];
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const remixes = new Map<string, number[]>();
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'audio') continue;
+			const raw = (c as { essential?: unknown }).essential;
+			if (raw !== undefined && !EssentialSoundSchema.safeParse(raw).success)
+				out.push({
+					message: `clip ${c.id}: unreadable Essential Sound settings`,
+					path: [seq.id, c.id, 'essential'],
+				});
+			for (const fx of c.effects)
+				if (
+					fx.essential !== undefined &&
+					(!ESSENTIAL_SLOTS.includes(fx.essential as never) || raw === undefined)
+				)
+					out.push({
+						message: `clip ${c.id}: effect ${fx.id} is marked essential (${fx.essential}) without matching settings`,
+						path: [seq.id, c.id, fx.id],
+					});
+			if (c.remix) remixes.set(c.remix.id, [...(remixes.get(c.remix.id) ?? []), c.remix.count]);
+		}
+		for (const [id, counts] of remixes)
+			if (counts.some((n) => n !== counts.length))
+				out.push({
+					message: `remix ${id}: ${counts.length} pieces but they record ${counts[0]}`,
+					path: [seq.id, id],
+				});
+	}
+	return out;
 }
 
 /** M2 (wp-m2-text-anim, S11:TXA-008): a known preset whose stored params its schema rejects. */
@@ -809,6 +847,46 @@ export function repairDocument(
 
 	// Wave expressions: drop malformed expressions and expressions on properties that take none.
 	for (const r of repairExpressions(doc, isAudioEffectId)) note('drop-expression', r.entity, r.detail);
+
+	// audio-fx: Essential Sound settings normalised (defaults for what is missing; unreadable → type cleared, its
+	// effects become the user's); essential markers without settings dropped; remix pieces recount.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const remixes = new Map<string, AudioClip[]>();
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'audio') continue;
+			const a = c as AudioClip & { essential?: unknown };
+			if (a.essential !== undefined && !EssentialSoundSchema.safeParse(a.essential).success) {
+				const fixed = readEssentialSound(a.essential);
+				if (fixed) a.essential = fixed;
+				else delete a.essential;
+				note(
+					'normalize-essential',
+					c.id,
+					fixed
+						? 'Essential Sound settings completed with defaults'
+						: 'unreadable Essential Sound settings removed',
+				);
+			}
+			for (const fx of a.effects)
+				if (
+					fx.essential !== undefined &&
+					(!ESSENTIAL_SLOTS.includes(fx.essential as never) || a.essential === undefined)
+				) {
+					delete fx.essential;
+					note('drop-essential-mark', fx.id, 'essential marker without settings removed (the effect stays)');
+				}
+			if (a.remix) remixes.set(a.remix.id, [...(remixes.get(a.remix.id) ?? []), a]);
+		}
+		for (const [id, list] of remixes) {
+			if (list.every((c) => c.remix!.count === list.length)) continue;
+			list
+				.sort((x, y) => x.start - y.start)
+				.forEach((c, i) => {
+					c.remix = { ...c.remix!, index: i, count: list.length };
+				});
+			note('recount-remix', id, `remix pieces recounted (${list.length})`);
+		}
+	}
 
 	// keyframes-blend: roving flags where a key cannot rove are dropped; roving keys get their run's times.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
