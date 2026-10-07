@@ -328,9 +328,9 @@ describe('scopes maths (color-grade additions)', () => {
 	it('100 % targets of BT.2020 sit further out than 75 %; scale labels follow the bit depth', () => {
 		const t75 = vectorTargets('bt2020', 75);
 		const t100 = vectorTargets('bt2020', 100);
-		t75.forEach((t, i) =>
-			expect(Math.hypot(t100[i]!.cb, t100[i]!.cr)).toBeGreaterThan(Math.hypot(t.cb, t.cr)),
-		);
+		t75.forEach((t, i) => {
+			expect(Math.hypot(t100[i]!.cb, t100[i]!.cr)).toBeGreaterThan(Math.hypot(t.cb, t.cr));
+		});
 		expect(scaleLabels('8bit').at(-1)).toEqual([1, '255']);
 		expect(scaleLabels('10bit').at(-1)).toEqual([1, '1023']);
 		expect(scaleLabels('float')[5]).toEqual([0.5, '0.5']);

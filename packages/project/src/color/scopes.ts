@@ -302,7 +302,7 @@ function buildWaveform(s: ScopeSignal, p: ScopeParams, layout: Layout): ScopeWav
 		for (let x = 0; x < w; x++) {
 			const i = (y * w + x) * 3;
 			let r = rgb[i]!;
-			if (r !== r) continue;
+			if (Number.isNaN(r)) continue;
 			let g = rgb[i + 1]!;
 			let b = rgb[i + 2]!;
 			if (clamp) {
