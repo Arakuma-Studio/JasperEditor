@@ -23,8 +23,10 @@ import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
 import type { LegacyShapeData, ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
 import type { ShapeItem } from '../../schema/shapes.ts';
 import { findItem, newShapeItem, nextItemName, reidItems, walkItems } from '../../vector/defaults.ts';
+import { evaluateVectorShape } from '../../vector/evaluate.ts';
 import { buildShapeItems, type IdGen, patchShapeItem, ShapeInputError } from '../../vector/input.ts';
 import { getShapePreset } from '../../vector/presets.ts';
+import { bezToBezierPaths } from '../../vector/values.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
 import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
@@ -425,6 +427,33 @@ const vectorHandlers: HandlerMap = {
 		}
 		const value = evaluate(anim as Animatable<BezierPath>, t);
 		return { itemId: cmd.itemId, vertices: value.vertices.length, closed: value.closed, time: t };
+	},
+	'shape.convertToPath': (doc, cmd, h) => {
+		const { seq, clip, shape } = vectorOf(doc, cmd.clipId, h);
+		const found = locateItem(shape, cmd.itemId, h);
+		const it = found.item;
+		if (it.type !== 'rect' && it.type !== 'ellipse' && it.type !== 'polystar')
+			return h.fail('E_INVALID_PARAM', `${it.name} is not a rectangle, ellipse or polystar path`);
+		const t = h.clipContentTime(seq, clip, cmd.at);
+		// The primitive alone (no paint, no operator): its geometry at t, direction included.
+		const draws = evaluateVectorShape(
+			[
+				{ ...it, enabled: true } as ShapeItem,
+				{ id: '_', name: '_', type: 'fill', color: anim<RGBA>([0, 0, 0, 1]), opacity: anim(100) },
+			],
+			t,
+		);
+		const value = bezToBezierPaths(draws[0]?.paths ?? [])[0];
+		if (!value) return h.fail('E_INVALID_PARAM', `${it.name} has no geometry at this time`);
+		const path = newShapeItem('path', {
+			id: h.ids.next('shp'),
+			name: nextItemName(shape.contents as ShapeItem[], 'path'),
+			path: value,
+		});
+		if (it.enabled === false) path.enabled = false;
+		found.list[found.index] = path;
+		h.defineRef(cmd.ref, path.id);
+		return { itemId: path.id, vertices: value.vertices.length };
 	},
 	'shape.convertToVector': (doc, cmd, h) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);

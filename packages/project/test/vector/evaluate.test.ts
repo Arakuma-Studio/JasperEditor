@@ -267,6 +267,30 @@ describe('queries', () => {
 	});
 });
 
+describe('shape.convertToPath', () => {
+	it('turns a polystar into a path with the same geometry at that time', () => {
+		const h = new Harness();
+		const r = h.ok([
+			{
+				type: 'clip.addShape',
+				at: 0,
+				track: 'V1',
+				shape: { type: 'vector', contents: [{ type: 'polystar', direction: 'reversed' }, { type: 'fill' }] },
+				ref: '$s',
+			},
+		]);
+		const id = r.refs.$s!;
+		const contents = () => ((h.seq.clips[id] as ShapeClip).shape as VectorShapeData).contents;
+		const before = evaluateVectorShape(contents(), 0)[0]!.paths;
+		const star = contents()[0]!;
+		h.ok([{ type: 'shape.convertToPath', clipId: id, itemId: star.id }]);
+		expect(contents()[0]!.type).toBe('path');
+		const after = evaluateVectorShape(contents(), 0)[0]!.paths;
+		expect(shapeGeom.toSvgPath(after)).toBe(shapeGeom.toSvgPath(before));
+		expect(h.tx([{ type: 'shape.convertToPath', clipId: id, itemId: contents()[1]!.id }]).ok).toBe(false);
+	});
+});
+
 describe('shape.editPath', () => {
 	it('moves, inserts, converts, removes and closes vertices; keyframed paths get keys', () => {
 		const h = new Harness();

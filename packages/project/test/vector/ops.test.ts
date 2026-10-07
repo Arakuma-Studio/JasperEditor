@@ -339,3 +339,43 @@ describe('merge', () => {
 		close(filledArea(p, 'evenodd'), 10000, 1e-6);
 	});
 });
+
+describe('merge (property)', () => {
+	it('inclusion–exclusion holds for random rectangles and circles (curve booleans are robust)', async () => {
+		const fc = (await import('fast-check')).default;
+		const shape = fc.oneof(
+			fc.record({
+				k: fc.constant('sq' as const),
+				x: fc.integer({ min: -100, max: 100 }),
+				y: fc.integer({ min: -100, max: 100 }),
+				s: fc.integer({ min: 10, max: 150 }),
+			}),
+			fc.record({
+				k: fc.constant('c' as const),
+				x: fc.integer({ min: -100, max: 100 }),
+				y: fc.integer({ min: -100, max: 100 }),
+				s: fc.integer({ min: 10, max: 120 }),
+			}),
+		);
+		const mk = (v: { k: 'sq' | 'c'; x: number; y: number; s: number }): BezPath =>
+			v.k === 'sq' ? sq(v.x, v.y, v.s) : circle(v.x, v.y, v.s / 2);
+		fc.assert(
+			fc.property(shape, shape, (a0, b0) => {
+				const a = mk(a0);
+				const b = mk(b0);
+				const aa = area([a]);
+				const ab = area([b]);
+				const u = area([merge([a, b], 'add')]);
+				const i = area([merge([a, b], 'intersect')]);
+				const s = area([merge([a, b], 'subtract')]);
+				const x = area([merge([a, b], 'exclude')]);
+				const tol = 2e-3 * (aa + ab) + 1e-6;
+				expect(Math.abs(u - (aa + ab - i))).toBeLessThanOrEqual(tol);
+				expect(Math.abs(s - (aa - i))).toBeLessThanOrEqual(tol);
+				expect(Math.abs(x - (u - i))).toBeLessThanOrEqual(tol);
+				expect(u + 1e-6).toBeGreaterThanOrEqual(Math.max(aa, ab) - tol);
+			}),
+			{ numRuns: 150 },
+		);
+	});
+});

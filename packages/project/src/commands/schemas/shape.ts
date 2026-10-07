@@ -92,7 +92,20 @@ export const ShapeEditPathCmd = cmd('shape.editPath', {
 	ops: z.array(MaskPathOpSchema).min(1),
 });
 
+/**
+ * After Effects' Convert to Bezier Path: a rectangle / ellipse / polystar path item becomes a free path item with the
+ * geometry it has at `at` (its keyframes and parameters are not kept, as in After Effects); its vertices are then
+ * editable.
+ */
+export const ShapeConvertToPathCmd = cmd('shape.convertToPath', {
+	clipId: IdRefSchema,
+	itemId: ItemId,
+	at: ParamAtSchema.optional(),
+	ref: RefDeclSchema.optional(),
+});
+
 export const SHAPE_COMMANDS = [
+	ShapeConvertToPathCmd,
 	ShapeEditPathCmd,
 	ShapeAddItemsCmd,
 	ShapeUpdateItemCmd,

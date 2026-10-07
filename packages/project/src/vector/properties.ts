@@ -530,3 +530,38 @@ export function mapShapeItemAnimatables(
 	}
 	return root as readonly ShapeItem[];
 }
+
+/**
+ * Field catalogue of every shape item type for agents (`describe_commands` schema): property key pattern
+ * `shape.items.<itemId>.<field>`, label, kind, unit, range and whether it keyframes. Stroke rows include the optional
+ * Dashes (one pair shown; up to three), Taper and Wave fields.
+ */
+export function shapeItemFieldCatalog(): Record<
+	ShapeItemType,
+	{
+		field: string;
+		label: string;
+		kind: string;
+		unit?: string;
+		range?: unknown;
+		animatable: string;
+		options?: readonly string[];
+	}[]
+> {
+	const out = {} as ReturnType<typeof shapeItemFieldCatalog>;
+	for (const type of Object.keys(ITEM_FIELDS) as ShapeItemType[]) {
+		const sample = { id: 'x', name: type, type } as unknown as ShapeItem;
+		if (type === 'stroke' || type === 'gradientStroke')
+			Object.assign(sample, { dashes: { segments: [{}] }, taper: {}, wave: {} });
+		out[type] = itemFields(sample).map((d) => ({
+			field: d.f.join('.'),
+			label: d.label,
+			kind: d.kind,
+			...(d.unit ? { unit: d.unit } : {}),
+			...(d.range ? { range: d.range } : {}),
+			animatable: d.animatable ?? 'continuous',
+			...(d.options ? { options: d.options } : {}),
+		}));
+	}
+	return out;
+}

@@ -403,6 +403,23 @@ function ItemProperties({
 			{rows.map((r) => (
 				<PropertyRow key={r.id} row={r} ctx={ctx} />
 			))}
+			{item.type === 'rect' || item.type === 'ellipse' || item.type === 'polystar' ? (
+				<div className={ROW}>
+					<OptionButton
+						label="Convert to Bezier Path"
+						onClick={() =>
+							run('Convert to Bezier Path', [
+								{
+									type: 'shape.convertToPath',
+									itemId: item.id,
+									at: { sequenceFrame: ctx.transport.getState().frame },
+								},
+							])
+						}
+						testId="vector-convert-path"
+					/>
+				</div>
+			) : null}
 			{stroke ? (
 				<div className={`${ROW} flex-wrap gap-2`}>
 					<OptionButton
