@@ -14,6 +14,7 @@ import { cacheCommands } from './cache.ts';
 import { captionCommands } from './captions.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
+import { colorMgmtCommands } from './color-mgmt.ts';
 import { compositionCommands } from './composition.ts';
 import { editCommands } from './edit.ts';
 import { editUxCommands } from './edit-ux.ts';
@@ -62,6 +63,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	integrationCommands,
 	helpCommands,
 	colorCommands,
+	colorMgmtCommands,
 	processCommands,
 	compositionCommands,
 	trackingCommands,
