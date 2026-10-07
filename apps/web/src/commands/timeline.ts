@@ -16,10 +16,10 @@ import { activeTimeline, type TimelineHandle } from '../panels/timeline/env.tsx'
 import { clipsAtPlayhead, unlockedTrackIds } from '../panels/timeline/model/gestures.ts';
 import { stepHeight, trackHeight } from '../panels/timeline/model/layout.ts';
 import { TOOLS } from '../panels/timeline/model/tools.ts';
-import type { EditPointSel } from '../panels/timeline/state/ui-store.ts';
+import { cancelDynamicTrim, exitTrimMode, stopPlayAround } from '../panels/timeline/state/trim-mode.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
-type Env = {
+export type Env = {
 	session: EditorSession;
 	seq: Sequence;
 	view: SequenceViewState;
@@ -27,7 +27,7 @@ type Env = {
 	handle: TimelineHandle | null;
 };
 
-function envOf(ctx: CommandCtx): Env | null {
+export function envOf(ctx: CommandCtx): Env | null {
 	const session = ctx.session;
 	if (!session) return null;
 	const s = session.getState();
@@ -40,7 +40,7 @@ function envOf(ctx: CommandCtx): Env | null {
 
 const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
 
-function apply(
+export function apply(
 	ctx: CommandCtx,
 	e: Env,
 	label: string,
@@ -71,14 +71,14 @@ function apply(
 	return r;
 }
 
-const selectedClips = (e: Env): Clip[] =>
+export const selectedClips = (e: Env): Clip[] =>
 	e.session
 		.getState()
 		.selection.timeline.clips.map((id) => e.seq.clips[id])
 		.filter((c): c is Clip => !!c);
 
 /** Targeted track ids (both kinds), or every unlocked track when nothing is targeted (TL-251). */
-function targetedTracks(e: Env): string[] {
+export function targetedTracks(e: Env): string[] {
 	const locked = new Set(
 		[...e.seq.videoTracks, ...e.seq.audioTracks].filter((t) => t.locked).map((t) => t.id),
 	);
@@ -86,7 +86,7 @@ function targetedTracks(e: Env): string[] {
 	return t.length ? t : unlockedTrackIds(e.seq);
 }
 
-function isLocked(seq: Sequence, trackId: string): boolean {
+export function isLocked(seq: Sequence, trackId: string): boolean {
 	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].some(
 		(t) => t.id === trackId && t.locked,
 	);
@@ -103,7 +103,7 @@ function onePerLink(clips: readonly Clip[]): Clip[] {
 	});
 }
 
-function seekReveal(e: Env, frame: number): void {
+export function seekReveal(e: Env, frame: number): void {
 	e.session.transport.seek(frame);
 	e.handle?.controller.reveal(frame);
 }
@@ -366,36 +366,6 @@ function playheadTrim(ctx: CommandCtx, e: Env, side: 'prev' | 'next', ripple: bo
 	const r = apply(ctx, e, label, commands);
 	// Q moves the playhead to the old clip start so it stays on the same content.
 	if (r?.ok && ripple && side === 'prev') seekReveal(e, Math.min(...clips.map((c) => c.start)));
-}
-
-function editPointCommands(
-	points: readonly EditPointSel[],
-	deltaFor: (p: EditPointSel) => number,
-): unknown[] {
-	return points
-		.map((p) => ({ p, d: deltaFor(p) }))
-		.filter(({ d }) => d !== 0)
-		.map(({ p, d }) => ({
-			type: 'clip.trim',
-			clipId: p.clipId,
-			edge: p.side,
-			deltaFrames: d,
-			mode: p.type,
-		}));
-}
-
-function trimEditPoints(ctx: CommandCtx, e: Env, delta: number): void {
-	const ui = e.handle?.ui;
-	const points = ui?.getState().editPoints ?? [];
-	if (!points.length) return;
-	const r = apply(
-		ctx,
-		e,
-		'Trim',
-		editPointCommands(points, () => delta),
-		{ coalesceKey: 'trim-keys' },
-	);
-	if (r?.ok && ui) ui.setState({ editPoints: points.map((p) => ({ ...p, frame: p.frame + delta })) });
 }
 
 // ---------------------------------------------------------------- in/out (TL-760…766)
@@ -690,35 +660,6 @@ export const timelineCommands: UiCommand[] = [
 	cmd('timeline.trimNextToPlayhead', 'Trim Next Edit to Playhead', T, (ctx, e) =>
 		playheadTrim(ctx, e, 'next', false),
 	),
-	cmd('timeline.extendEditToPlayhead', 'Extend Selected Edit to Playhead', T, (ctx, e) => {
-		const points = e.handle?.ui.getState().editPoints ?? [];
-		if (!points.length) {
-			ctx.ui.toast({ kind: 'info', message: 'Select an edit point first' });
-			return;
-		}
-		const r = apply(
-			ctx,
-			e,
-			'Extend Edit',
-			editPointCommands(points, (p) => e.playhead - p.frame),
-		);
-		if (r?.ok) e.handle?.ui.setState({ editPoints: points.map((p) => ({ ...p, frame: e.playhead })) });
-	}),
-	cmd('timeline.cycleTrimType', 'Toggle Trim Type', T, (_ctx, e) => {
-		const ui = e.handle?.ui;
-		if (!ui) return;
-		const next = { regular: 'roll', roll: 'ripple', ripple: 'regular' } as const;
-		ui.setState({ editPoints: ui.getState().editPoints.map((p) => ({ ...p, type: next[p.type] })) });
-	}),
-	cmd('timeline.trimBack', 'Trim Backward', T, (ctx, e) => trimEditPoints(ctx, e, -1), { repeat: true }),
-	cmd('timeline.trimForward', 'Trim Forward', T, (ctx, e) => trimEditPoints(ctx, e, 1), { repeat: true }),
-	cmd('timeline.trimBackMany', 'Trim Backward Many', T, (ctx, e) => trimEditPoints(ctx, e, -5), {
-		repeat: true,
-	}),
-	cmd('timeline.trimForwardMany', 'Trim Forward Many', T, (ctx, e) => trimEditPoints(ctx, e, 5), {
-		repeat: true,
-	}),
-
 	cmd('timeline.setWorkAreaIn', 'Set Work Area In', T, (ctx, e) => {
 		const end = e.seq.workArea?.end ?? Math.max(e.playhead + 1, sequenceDuration(e.seq));
 		if (end > e.playhead)
@@ -743,7 +684,11 @@ export const timelineCommands: UiCommand[] = [
 		when: (ctx) => !!ctx.session,
 		run: (ctx) => {
 			const handle = activeTimeline(ctx.services);
+			// edit-ux: Esc first drops a dynamic (J/K/L) trim in progress, restoring the edit.
+			if (cancelDynamicTrim()) return;
 			if (handle?.cancelGesture()) return;
+			stopPlayAround();
+			exitTrimMode();
 			// TL-903: otherwise Escape deselects.
 			ctx.session?.select('timeline', [], 'replace');
 			ctx.session?.selectGaps([]);

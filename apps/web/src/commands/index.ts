@@ -10,6 +10,7 @@ import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
 import { editCommands } from './edit.ts';
+import { editUxCommands } from './edit-ux.ts';
 import { exportCommands } from './export.ts';
 import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
@@ -53,6 +54,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
+	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)
+	editUxCommands,
 ];
 
 let registered = false;
