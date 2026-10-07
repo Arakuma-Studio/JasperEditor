@@ -347,7 +347,8 @@ describe('Path Options, More Options, Source Text', () => {
 	it('text.setPathOptions on a mask; margins keyframable; mask removal resets to Path: None', () => {
 		const h = new Harness();
 		const id = withText(h);
-		const mask = h.ok([{ type: 'mask.add', clipId: id, shape: 'bezier', path, mode: 'none', ref: '$m' }]).refs.$m!;
+		const mask = h.ok([{ type: 'mask.add', clipId: id, shape: 'bezier', path, mode: 'none', ref: '$m' }]).refs
+			.$m!;
 		h.ok([{ type: 'text.setPathOptions', clipIds: [id], maskId: mask, firstMargin: 12 }]);
 		expect(clipOf(h, id).pathOptions!.firstMargin.value).toBe(12);
 		expect(clipOf(h, id).pathOptions!.perpendicularToPath).toBe(true);
@@ -357,7 +358,9 @@ describe('Path Options, More Options, Source Text', () => {
 		]);
 		expect(clipOf(h, id).pathOptions!.lastMargin.keyframes).toHaveLength(1);
 		expect(clipOf(h, id).pathOptions!.reversePath).toBe(true);
-		expect(err(h.tx([{ type: 'text.setPathOptions', clipIds: [id], maskId: 'msk_0000000000000ZZZ' }]))?.code).toBe('E_NOT_FOUND');
+		expect(
+			err(h.tx([{ type: 'text.setPathOptions', clipIds: [id], maskId: 'msk_0000000000000ZZZ' }]))?.code,
+		).toBe('E_NOT_FOUND');
 		invariantsOk(h);
 		h.ok([{ type: 'mask.remove', maskIds: [mask] }]);
 		expect(clipOf(h, id).pathOptions).toBeUndefined();
@@ -509,7 +512,11 @@ describe('font.add', () => {
 		const id = withText(h);
 		const r = h.ok([
 			{ type: 'font.add', family: 'Inter Variable', ref: '$f' },
-			{ type: 'clip.update', clipIds: [id], patch: { content: { style: { fontId: '$f', fontVariations: { wght: 720 } } } } },
+			{
+				type: 'clip.update',
+				clipIds: [id],
+				patch: { content: { style: { fontId: '$f', fontVariations: { wght: 720 } } } },
+			},
 		]);
 		const fid = r.refs.$f!;
 		expect(h.doc.fonts[fid]!.family).toBe('Inter Variable');

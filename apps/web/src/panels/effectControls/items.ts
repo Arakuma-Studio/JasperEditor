@@ -71,7 +71,12 @@ export type TextAnimatorListModel = {
 	animators: AnimatorBlock[];
 };
 
-function textAnimatorList(doc: ProjectDocument, seq: Sequence, clip: Clip, frame: number): TextAnimatorListModel {
+function textAnimatorList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	frame: number,
+): TextAnimatorListModel {
 	const bind = (key: string) => makeRow(key, [bindProperty(doc, seq, clip, key, frame)]);
 	const ok = (r: Row | null): r is Row => r !== null;
 	const c = clip as Clip & {
@@ -90,21 +95,36 @@ function textAnimatorList(doc: ProjectDocument, seq: Sequence, clip: Clip, frame
 		path: {
 			maskId: c.pathOptions?.maskId ?? null,
 			masks: (c.masks ?? []).map((m) => ({ id: m.id, name: m.name })),
-			rows: specs.filter((sp) => sp.key.startsWith('textPath.')).map((sp) => bind(sp.key)).filter(ok),
+			rows: specs
+				.filter((sp) => sp.key.startsWith('textPath.'))
+				.map((sp) => bind(sp.key))
+				.filter(ok),
 		},
-		more: specs.filter((sp) => sp.key.startsWith('textMore.')).map((sp) => bind(sp.key)).filter(ok),
+		more: specs
+			.filter((sp) => sp.key.startsWith('textMore.'))
+			.map((sp) => bind(sp.key))
+			.filter(ok),
 		animators: (c.animators ?? []).map((a) => {
 			const prefix = `textAnimators.${a.id}.`;
 			return {
 				animator: a,
-				rows: specs.filter((sp) => sp.key.startsWith(`${prefix}properties.`)).map((sp) => bind(sp.key)).filter(ok),
+				rows: specs
+					.filter((sp) => sp.key.startsWith(`${prefix}properties.`))
+					.map((sp) => bind(sp.key))
+					.filter(ok),
 				selectors: a.selectors.map((sel) => {
 					const fields = selectorFields(sel.kind);
 					const rowOf = (key: string) => bind(`${prefix}selectors.${sel.id}.${key}`);
 					return {
 						selector: sel,
-						rows: fields.filter((f) => !f.advanced).map((f) => rowOf(f.key)).filter(ok),
-						advanced: fields.filter((f) => f.advanced).map((f) => rowOf(f.key)).filter(ok),
+						rows: fields
+							.filter((f) => !f.advanced)
+							.map((f) => rowOf(f.key))
+							.filter(ok),
+						advanced: fields
+							.filter((f) => f.advanced)
+							.map((f) => rowOf(f.key))
+							.filter(ok),
 					};
 				}),
 			};

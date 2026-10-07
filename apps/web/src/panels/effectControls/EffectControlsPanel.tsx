@@ -33,7 +33,6 @@ import {
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
 import { MaskList } from '../../masks/MaskList.tsx';
-import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
@@ -45,6 +44,7 @@ import {
 } from '../../text-animation/actions.ts';
 import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
+import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
 import { openSimplify } from '../../tracking/simplify-actions.ts';
 import {
 	applyEffectToClips,

@@ -636,7 +636,9 @@ export function textAnimatorsTimeVarying(src: AnimatedTextSource): boolean {
 /** True when the layer's drawing depends on its clip id (Randomize Order / Wiggly seeds mix in the layer id). */
 export function textAnimatorsSeeded(src: AnimatedTextSource): boolean {
 	return (src.animators ?? []).some((a) =>
-		a.selectors.some((s) => s.kind === 'wiggly' || s.kind === 'expression' || (s.kind === 'range' && s.randomize)),
+		a.selectors.some(
+			(s) => s.kind === 'wiggly' || s.kind === 'expression' || (s.kind === 'range' && s.randomize),
+		),
 	);
 }
 

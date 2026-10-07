@@ -252,7 +252,12 @@ function TextSections(props: {
 			ctx.ops.apply('Font', [
 				{ type: 'font.add', family: v.slice(8), ref: '$font' } as Command,
 				...row.bindings.map(
-					(b) => ({ type: 'clip.update', clipIds: [b.clip.id], patch: { content: { style: { fontId: '$font' } } } }) as Command,
+					(b) =>
+						({
+							type: 'clip.update',
+							clipIds: [b.clip.id],
+							patch: { content: { style: { fontId: '$font' } } },
+						}) as Command,
 				),
 			]);
 			return;

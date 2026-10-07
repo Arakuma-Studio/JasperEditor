@@ -48,7 +48,9 @@ function snapshotOf(m: FxMedia, build: (refs: { seq: string }) => Command[]) {
 	return buildRenderSnapshot(document, seqId, {
 		resolveMedia: () => null,
 		resolveFont: (f, weight) =>
-			f.family === 'Inter Variable' ? `${m.base}/inter-var.woff2` : `${m.base}/ss3-${weight >= 600 ? 700 : 400}.woff2`,
+			f.family === 'Inter Variable'
+				? `${m.base}/inter-var.woff2`
+				: `${m.base}/ss3-${weight >= 600 ? 700 : 400}.woff2`,
 	});
 }
 
@@ -70,16 +72,21 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 	let serveUrl: string;
 	let renderer: typeof import('@remotion/renderer');
 	const browserExecutable =
-		process.env.JASPER_BROWSER_EXECUTABLE ?? (existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
+		process.env.JASPER_BROWSER_EXECUTABLE ??
+		(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
 	const browser = browserExecutable ? { browserExecutable, chromeMode: 'chrome-for-testing' as const } : {};
 
 	beforeAll(async () => {
 		media = await startFxMedia('text-animators-');
 		const req = createRequire(import.meta.url);
-		const dir = dirname(req.resolve('@fontsource/source-sans-3/package.json', { paths: [join(here, '../../../apps/engine')] }));
+		const dir = dirname(
+			req.resolve('@fontsource/source-sans-3/package.json', { paths: [join(here, '../../../apps/engine')] }),
+		);
 		copyFileSync(join(dir, 'files/source-sans-3-latin-400-normal.woff2'), join(media.dir, 'ss3-400.woff2'));
 		copyFileSync(join(dir, 'files/source-sans-3-latin-700-normal.woff2'), join(media.dir, 'ss3-700.woff2'));
-		const vdir = dirname(req.resolve('@fontsource-variable/inter/package.json', { paths: [join(here, '../../../apps/engine')] }));
+		const vdir = dirname(
+			req.resolve('@fontsource-variable/inter/package.json', { paths: [join(here, '../../../apps/engine')] }),
+		);
 		copyFileSync(join(vdir, 'files/inter-latin-standard-normal.woff2'), join(media.dir, 'inter-var.woff2'));
 		const { bundle } = await import('@remotion/bundler');
 		serveUrl = await bundle({ entryPoint: join(here, 'text-animators', 'entry.ts') });
@@ -89,8 +96,16 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 	afterAll(() => media?.close());
 
 	async function still(doc: ReturnType<typeof snapshotOf>, frame: number, name: string): Promise<Buffer> {
-		const inputProps = { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } };
-		const composition = await renderer.selectComposition({ serveUrl, id: SEQUENCE_COMPOSITION_ID, inputProps, ...browser });
+		const inputProps = {
+			doc,
+			options: { isPreview: false, useProxies: false, transparentBackground: false },
+		};
+		const composition = await renderer.selectComposition({
+			serveUrl,
+			id: SEQUENCE_COMPOSITION_ID,
+			inputProps,
+			...browser,
+		});
 		const output = join(media.dir, `${name}.png`);
 		await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...browser });
 		return execFileSync('ffmpeg', ['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], {
@@ -127,10 +142,19 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 	const white = (p: Rgb) => p[0] > 128 && p[1] > 128 && p[2] > 128;
 
 	it('a typewriter reveals left to right; the rest state equals plain text glyph extents', async () => {
-		const plain = await still(snapshotOf(media, () => text('HELLO')), 5, 'plain');
+		const plain = await still(
+			snapshotOf(media, () => text('HELLO')),
+			5,
+			'plain',
+		);
 		const doc = snapshotOf(media, () => [
 			...text('HELLO'),
-			{ type: 'textAnimator.applyPreset', clipIds: ['$t'], preset: 'typewriter', durationFrames: 60 } as Command,
+			{
+				type: 'textAnimator.applyPreset',
+				clipIds: ['$t'],
+				preset: 'typewriter',
+				durationFrames: 60,
+			} as Command,
 		]);
 		const start = await still(doc, 0, 'typewriter-0');
 		const mid = await still(doc, 30, 'typewriter-30');
@@ -150,8 +174,16 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		const doc = snapshotOf(media, () => [
 			...text('ABCD'),
 			{ type: 'textAnimator.add', clipId: '$t', properties: ['position', 'fillColor'], ref: '$a' } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'position'], value: [0, -100] } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'fillColor'], value: [1, 0, 0, 1] } as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'position'],
+				value: [0, -100],
+			} as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'fillColor'],
+				value: [1, 0, 0, 1],
+			} as Command,
 		]);
 		const raw = await still(doc, 10, 'position-fill');
 		const red = bbox(raw, (p) => p[0] > 150 && p[1] < 80 && p[2] < 80);
@@ -164,10 +196,24 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 	it('a range selector on the first half selects only those characters', async () => {
 		const doc2 = snapshotOf(media, () => [
 			...text('AAAA'),
-			{ type: 'textAnimator.add', clipId: '$t', properties: ['opacity'], selector: false, ref: '$a' } as Command,
+			{
+				type: 'textAnimator.add',
+				clipId: '$t',
+				properties: ['opacity'],
+				selector: false,
+				ref: '$a',
+			} as Command,
 			{ type: 'textSelector.add', clipId: '$t', animatorId: '$a', kind: 'range', ref: '$s' } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'opacity'], value: 0 } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'selectors', '$s', 'end'], value: 50 } as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'opacity'],
+				value: 0,
+			} as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'selectors', '$s', 'end'],
+				value: 50,
+			} as Command,
 		]);
 		const raw = await still(doc2, 1, 'range-half');
 		const b = bbox(raw, white);
@@ -213,7 +259,14 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 				track: 'V1',
 				content: {
 					text: 'Small Caps x2',
-					style: { sizePx: 60, fill: [1, 1, 1, 1], align: 'left', smallCaps: true, fauxItalic: true, trackingEm: 0.05 },
+					style: {
+						sizePx: 60,
+						fill: [1, 1, 1, 1],
+						align: 'left',
+						smallCaps: true,
+						fauxItalic: true,
+						trackingEm: 0.05,
+					},
 					runs: [{ from: 12, to: 13, style: { script: 'superscript' } }],
 				},
 				box: { width: 600, height: 100, autoSize: 'none' },
@@ -233,7 +286,11 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 					? []
 					: ([
 							{ type: 'textAnimator.add', clipId: '$t', axes: ['wght'], ref: '$a' },
-							{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'axes', 'wght'], value: animated },
+							{
+								type: 'param.set',
+								target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'axes', 'wght'],
+								value: animated,
+							},
 						] as Command[])),
 			]);
 		const thin = ink(await still(at(150, null), 1, 'wght-150'), 0, W);
@@ -247,12 +304,27 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		const doc = snapshotOf(media, () => [
 			...text('STROKE', { strokes: [{ color: [1, 0, 0, 1], widthPx: 6, position: 'outside' }] }),
 			{ type: 'textAnimator.add', clipId: '$t', properties: ['blur', 'strokeWidth'], ref: '$a' } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'blur'], value: [20, 0] } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textMore', 'fillAndStroke'], value: 'allStrokesOverAllFills' } as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'blur'],
+				value: [20, 0],
+			} as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textMore', 'fillAndStroke'],
+				value: 'allStrokesOverAllFills',
+			} as Command,
 		]);
 		const raw = await still(doc, 1, 'stroke-blur');
 		const red = bbox(raw, (p) => p[0] > 120 && p[1] < 90);
-		const plain = bbox(await still(snapshotOf(media, () => text('STROKE')), 1, 'stroke-plain'), white);
+		const plain = bbox(
+			await still(
+				snapshotOf(media, () => text('STROKE')),
+				1,
+				'stroke-plain',
+			),
+			white,
+		);
 		// Horizontal-only blur spreads the paint sideways more than vertically.
 		expect(plain.x0 - red.x0).toBeGreaterThan(plain.y0 - red.y0);
 		// Strokes over fills: the red outline covers the white fill.
@@ -262,8 +334,18 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 	it('Expression Selector: textIndex selects every other character (QuickJS in the renderer)', async () => {
 		const doc = snapshotOf(media, () => [
 			...text('MMMM'),
-			{ type: 'textAnimator.add', clipId: '$t', properties: ['opacity'], selector: false, ref: '$a' } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'opacity'], value: 0 } as Command,
+			{
+				type: 'textAnimator.add',
+				clipId: '$t',
+				properties: ['opacity'],
+				selector: false,
+				ref: '$a',
+			} as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'opacity'],
+				value: 0,
+			} as Command,
 			{ type: 'textSelector.add', clipId: '$t', animatorId: '$a', kind: 'expression', ref: '$s' } as Command,
 			{
 				type: 'expression.set',
@@ -272,7 +354,15 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 			} as Command,
 		]);
 		expect(doc.expressions).toBeTruthy();
-		const all = ink(await still(snapshotOf(media, () => text('MMMM')), 1, 'expr-plain'), 0, W);
+		const all = ink(
+			await still(
+				snapshotOf(media, () => text('MMMM')),
+				1,
+				'expr-plain',
+			),
+			0,
+			W,
+		);
 		const half = ink(await still(doc, 1, 'expr-selector'), 0, W);
 		expect(half / all).toBeGreaterThan(0.4);
 		expect(half / all).toBeLessThan(0.6);
