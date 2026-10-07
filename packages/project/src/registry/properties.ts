@@ -1210,6 +1210,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		ui: {
 			control,
 			bipolar: p.ui?.bipolar,
+			...(p.ui?.multiline ? { multiline: true } : {}),
 			precision: step === undefined ? 1 : step >= 1 ? 0 : step >= 0.1 ? 1 : 2,
 		},
 		defaultValue: p.default,

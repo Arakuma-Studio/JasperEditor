@@ -88,6 +88,8 @@ export type ParamSpec = {
 			/** Wave expressions: Dropdown Menu Control (1-based index into the instance's `items` param lines). */
 			| 'menu';
 		bipolar?: boolean;
+		/** Wave expressions: a multi-line text field (Dropdown Menu Control's items, one per line). */
+		multiline?: boolean;
 	};
 	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */
 	mediaKinds?: readonly MediaKind[];

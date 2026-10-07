@@ -3,14 +3,20 @@
 // without this every layer would re-render during a drag. `stabilizeRenderDoc(prev, next)` returns
 // `next` with every clip, track list, media handle and font list replaced by the previous object when
 // it is deeply equal. Unchanged clips then keep their identity (and their cached static props).
+import { expressionBindingOf } from '@jasper/project';
 import type { RenderDoc } from './types.ts';
 
-/** Deep equality for JSON-like values (plain objects, arrays, primitives). */
+/**
+ * Deep equality for JSON-like values (plain objects, arrays, primitives). Wave expressions: Animatables bound to
+ * different expression worlds are different (an expression reads other clips and sequences, so the same stored
+ * expression can render differently after an edit elsewhere).
+ */
 export function jsonEqual(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
 	if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) {
 		return typeof a === 'number' && typeof b === 'number' && Number.isNaN(a) && Number.isNaN(b);
 	}
+	if (expressionBindingOf(a) !== expressionBindingOf(b)) return false;
 	if (Array.isArray(a)) {
 		if (!Array.isArray(b) || a.length !== b.length) return false;
 		for (let i = 0; i < a.length; i++) if (!jsonEqual(a[i], b[i])) return false;

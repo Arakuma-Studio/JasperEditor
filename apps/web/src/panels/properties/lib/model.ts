@@ -174,7 +174,7 @@ export function rowValue(row: Row): { mixed: boolean; value: unknown } {
 }
 
 /** Per-component mixed state of a vec2 row. */
-export function vecComponent(row: Row, i: 0 | 1): number | null {
+export function vecComponent(row: Row, i: 0 | 1 | 2): number | null {
 	const vals = row.bindings.map((b) =>
 		Array.isArray(b.resolved.value) ? (b.resolved.value[i] as number) : NaN,
 	);

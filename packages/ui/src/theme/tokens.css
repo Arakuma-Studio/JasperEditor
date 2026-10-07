@@ -324,6 +324,25 @@
 	--pr-graph-x: #f0524f;
 	--pr-graph-y: #3fcf5a;
 	--pr-graph-handle: var(--pr-accent);
+	/* Wave expressions: the post-expression curve (AE draws it over the keyframed one). */
+	--pr-graph-post: #ff6b5a;
+}
+
+/* Wave expressions: expression values (AE shows them red), the code field and its syntax colours. */
+:root {
+	--pr-expr-value: #ff5f4d;
+	--pr-expr-bg: #1b1b1b;
+	--pr-expr-border: #3c3c3c;
+	--pr-expr-text: #d8d8d8;
+	--pr-expr-keyword: #c792ea;
+	--pr-expr-string: #c3e88d;
+	--pr-expr-number: #f78c6c;
+	--pr-expr-comment: #7f848e;
+	--pr-expr-function: #82aaff;
+	--pr-expr-property: #ffcb6b;
+	--pr-expr-error-bg: color-mix(in srgb, var(--pr-warning) 22%, transparent);
+	--pr-expr-cursor: #f0f0f0;
+	--pr-expr-selection: rgba(80, 140, 255, 0.35);
 }
 
 /* wp-m2-color: Lumetri Color panel (sliders, curves, wheels) and Lumetri Scopes (S06 §6–§7). */

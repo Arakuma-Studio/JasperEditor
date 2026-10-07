@@ -528,3 +528,48 @@ export function roundToStep(v: number, step = 1): number {
 	const digits = Math.max(0, Math.ceil(-Math.log10(q)));
 	return Number((Math.round(v / q) * q).toFixed(digits));
 }
+
+// ---------------------------------------------------------------- post-expression curves (wave expressions)
+
+/**
+ * Post-expression value curves (AE's "Show Post-Expression Graph"): an expression is any function of time, so the
+ * curve is sampled evenly over the visible range (about one sample every 2 px, at most 600, plus the frames of the
+ * keys) from the bound Animatable through the shared `evaluate()`.
+ */
+export function samplePostValueCurves(
+	bound: Anim,
+	map: TimeMap,
+	range: Range,
+	width: number,
+	opts?: EvaluateOptions,
+): Pt[][] {
+	const n = clamp(Math.ceil(width / 2), 16, 600);
+	const xs: number[] = [];
+	for (let i = 0; i <= n; i++) xs.push(range.start + ((range.end - range.start) * i) / n);
+	for (const k of bound.keyframes) {
+		const x = map.toX(k.time);
+		if (x > range.start && x < range.end) xs.push(x);
+	}
+	xs.sort((a, b) => a - b);
+	const pts = xs.map((x) => ({ x, v: componentsOf(evaluate(bound, map.toTime(x), opts)) }));
+	const dims = pts[0]?.v.length ?? 0;
+	return Array.from({ length: dims }, (_, d) => pts.map((p) => ({ x: p.x, y: p.v[d] ?? 0 })));
+}
+
+/** Post-expression velocity (units / second, speed for vectors): central differences over the visible range. */
+export function samplePostVelocityCurve(
+	bound: Anim,
+	map: TimeMap,
+	range: Range,
+	width: number,
+	opts?: EvaluateOptions,
+): Pt[] {
+	const n = clamp(Math.ceil(width / 2), 16, 600);
+	const out: Pt[] = [];
+	const h = Math.max(1e-6, (range.end - range.start) / n / 4);
+	for (let i = 0; i <= n; i++) {
+		const x = range.start + ((range.end - range.start) * i) / n;
+		out.push({ x, y: rateBetween(bound, map.toTime(x - h), map.toTime(x + h), map, opts) });
+	}
+	return out;
+}

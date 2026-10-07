@@ -206,7 +206,8 @@ export function buildGroups(
 			}
 			sections.push({
 				id: `${clip.id}:fx:${fx.id}`,
-				title: effect.label,
+				// Wave expressions: a renamed instance shows its own name (expressions find it by that name).
+				title: fx.name ?? effect.label,
 				clip,
 				intrinsic: false,
 				fx,
@@ -218,7 +219,7 @@ export function buildGroups(
 					)
 					.filter((r): r is Row => r !== null),
 				// wp masks: every video effect but the corner pin (the layer geometry) has masks.
-				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID
+				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID && !effect.passthrough
 					? { masks: maskList(doc, seq, clip, fx.masks, fx.id, frame) }
 					: {}),
 			});
@@ -235,7 +236,8 @@ export type RowFilter = 'all' | 'animated' | 'modified';
 export function rowVisible(doc: ProjectDocument, seq: Sequence, row: Row, filter: RowFilter): boolean {
 	if (filter === 'all') return true;
 	const b = row.bindings[0]!;
-	if (b.resolved.animated) return true;
+	// Keyframed, or driven by an expression (wave expressions).
+	if (b.resolved.animated || (b.resolved.anim as { expression?: unknown } | null)?.expression) return true;
 	if (filter === 'animated') return false;
 	if (b.spec.defaultValue === undefined) return false;
 	const d = propertyDefault({ doc, seq, clip: b.clip }, b.spec);

@@ -530,6 +530,22 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 				},
 			},
 			{ kind: 'separator' },
+			// Wave expressions: rename the instance (AE renames effects so expressions read effect("Speed")).
+			...(s.fx && !s.intrinsic && !s.missing
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Rename…',
+							run: () => {
+								const name = typeof window !== 'undefined' ? window.prompt('Effect name', s.title) : null;
+								if (name === null) return;
+								ops.apply('Rename Effect', [
+									{ type: 'effect.rename', effectInstanceId: s.fx!.id, name: name.trim() || null } as Command,
+								]);
+							},
+						},
+					]
+				: []),
 			{
 				kind: 'item',
 				label: `Reset ${s.title}`,
@@ -610,6 +626,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					<PropertyGraphs
 						row={r}
 						seq={seq}
+						doc={data.doc}
 						range={range}
 						height={graphHeight}
 						onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}

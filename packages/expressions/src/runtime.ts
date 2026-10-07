@@ -11,7 +11,6 @@
 // interpreter steps (calls and loop iterations), and an evaluation that reaches OPERATION_BUDGET hook calls (~5 M
 // steps, ~0.5 s) is stopped deterministically. A wall-clock guard (WALL_CLOCK_MS) also stops runaway host work; on
 // any machine that renders in real time it is never the first limit reached.
-import variant from '@jitl/quickjs-singlefile-browser-release-sync';
 import {
 	newQuickJSWASMModuleFromVariant,
 	type QuickJSContext,
@@ -73,7 +72,12 @@ let loadError: string | null = null;
 /** Loads the WebAssembly engine (idempotent). Everything else is synchronous once this resolved. */
 export function loadExpressionEngine(): Promise<void> {
 	if (engine) return Promise.resolve();
-	if (!modulePromise) modulePromise = newQuickJSWASMModuleFromVariant(variant);
+	// The engine (~580 KB of JavaScript with the WebAssembly inlined) is a lazy chunk: bundles only fetch it when a
+	// document has expressions.
+	if (!modulePromise)
+		modulePromise = import('@jitl/quickjs-singlefile-browser-release-sync').then((m) =>
+			newQuickJSWASMModuleFromVariant(m.default),
+		);
 	return modulePromise.then(
 		(m) => {
 			if (!engine) engine = createEngine(m);

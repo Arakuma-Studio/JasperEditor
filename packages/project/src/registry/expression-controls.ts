@@ -118,7 +118,14 @@ export const EXPRESSION_CONTROL_EFFECTS: readonly EffectSpec[] = [
 				animatable: false,
 				ui: { control: 'menu' },
 			},
-			{ name: 'items', label: 'Menu Items', type: 'string', default: 'Item 1\nItem 2\nItem 3', animatable: false },
+			{
+				name: 'items',
+				label: 'Menu Items',
+				type: 'string',
+				default: 'Item 1\nItem 2\nItem 3',
+				animatable: false,
+				ui: { multiline: true },
+			},
 		],
 	),
 ];

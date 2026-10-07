@@ -2,11 +2,14 @@
 // stopwatch (Effect Controls), label, value editor(s) by registry control, keyframe navigator ◀ ◆ ▶
 // and reset ⟲. Every numeric scrub is one gesture = one undo step; discrete edits are one transaction.
 // In Effect Controls a twirl opens the row's Value / Velocity graphs (S05:ECP-005, S03:KF-022).
-import type { Command, ProjectDocument, Sequence } from '@jasper/project';
+import { type Command, dropdownItems, type ProjectDocument, type Sequence } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { useSessionOrNull } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
-import { type ReactNode, useRef } from 'react';
+import { Fragment, type ReactNode, useMemo, useRef, useState } from 'react';
+import { ensureExpressionEngine, useExpressionsFor } from '../../../expressions/engine.ts';
+import { ExpressionRow, PICK_WHIP_ATTR } from '../../../expressions/ExpressionRow.tsx';
+import { defaultExpressionText, rowExpressionOf, rowStatus, setExpressionCommand } from '../../../expressions/row.ts';
 import { browseForLut } from '../../../color/actions.ts';
 import { CurveField } from '../../../color/controls/CurveField.tsx';
 import { LutPicker } from '../../../color/controls/LutPicker.tsx';
@@ -70,6 +73,35 @@ export function PropertyRow(props: {
 	const animatable = spec.animatable !== 'no';
 	const outside = row.bindings.every((b) => b.resolved.outside);
 
+	// Wave expressions: the row's expression (single binding), its post-expression value and error.
+	const single = row.bindings.length === 1 ? row.bindings[0]! : null;
+	const rx = useMemo(
+		() => (single ? rowExpressionOf(ctx.doc, single, ctx.seq.id) : null),
+		[ctx.doc, ctx.seq.id, single],
+	);
+	const exprReady = useExpressionsFor(ctx.doc);
+	const status = useMemo(
+		() => (rx && single ? rowStatus(ctx.doc, rx, single.resolved.time, exprReady) : null),
+		[ctx.doc, rx, single, exprReady],
+	);
+	const exprActive = !!rx?.expression?.enabled && !!status && status.expressionError === null;
+	const [focusExpr, setFocusExpr] = useState(false);
+	/** What the editors show: the post-expression value (AE shows it in red) or the stored/keyframed one. */
+	const shown = (): { mixed: boolean; value: unknown } =>
+		exprActive ? { mixed: false, value: status!.value } : rowValue(row);
+	const toggleExpression = () => {
+		if (!rx) return;
+		if (rx.expression) {
+			ctx.ops.apply(`Remove Expression: ${row.label}`, [
+				{ type: 'expression.clear', target: rx.path, sequenceId: rx.ref.seq } as Command,
+			]);
+			return;
+		}
+		void ensureExpressionEngine();
+		setFocusExpr(true);
+		ctx.ops.apply(`Add Expression: ${row.label}`, [setExpressionCommand(rx, defaultExpressionText(ctx.doc, rx.ref))]);
+	};
+
 	/** Live playhead for writes (the rendered `ctx.frame` is throttled for display). */
 	const live = () => ctx.transport.getState().frame;
 	const report = (skipped: string[]) => {
@@ -101,16 +133,23 @@ export function PropertyRow(props: {
 		if (base && !cancelled) report(planSet(base, live(), (b) => b).skipped);
 	};
 
-	const numberEditor = (component?: 0 | 1) => {
-		const v = component === undefined ? rowValue(row) : { mixed: false, value: vecComponent(row, component) };
+	const numberEditor = (component?: 0 | 1 | 2) => {
+		const post = exprActive ? (status!.value as unknown) : undefined;
+		const v =
+			component === undefined
+				? shown()
+				: {
+						mixed: false,
+						value: exprActive && Array.isArray(post) ? post[component] : vecComponent(row, component),
+					};
 		const value = v.mixed || typeof v.value !== 'number' ? null : (v.value as number);
 		const map = (fn: ValueFn) => (base: unknown) => {
 			if (component === undefined) return fn(Number(base));
-			const vec = Array.isArray(base) ? [...(base as number[])] : [0, 0];
+			const vec = Array.isArray(base) ? [...(base as number[])] : spec.kind === "vec3" ? [0, 0, 0] : [0, 0];
 			vec[component] = fn(Number(vec[component]));
 			return vec;
 		};
-		const axis = component === undefined ? '' : component === 0 ? ' X' : ' Y';
+		const axis = component === undefined ? '' : component === 0 ? ' X' : component === 1 ? ' Y' : ' Z';
 		return (
 			<ScrubbyNumber
 				key={component ?? 'n'}
@@ -118,7 +157,9 @@ export function PropertyRow(props: {
 				label={`${row.label}${axis}`}
 				step={spec.range?.step ?? 1}
 				precision={spec.ui.precision}
-				unit={component === 1 || component === undefined ? unitText(spec.unit) : undefined}
+				unit={
+					component === undefined || component === (spec.kind === 'vec3' ? 2 : 1) ? unitText(spec.unit) : undefined
+				}
 				min={component === undefined ? spec.range?.min : undefined}
 				max={component === undefined ? spec.range?.max : undefined}
 				dim={outside}
@@ -134,7 +175,7 @@ export function PropertyRow(props: {
 	// M2 controls (wp-m2-color): sliders, LUT pickers, tone curves and colour wheels, reusable by any effect.
 	const writeCtx = { ops: ctx.ops, live, hint: ctx.hint };
 	const controlEditor = (): ReactNode => {
-		const { mixed, value } = rowValue(row);
+		const { mixed, value } = shown();
 		switch (spec.ui.control) {
 			case 'slider': {
 				if (spec.kind !== 'number') return null;
@@ -201,6 +242,40 @@ export function PropertyRow(props: {
 					/>
 				);
 			}
+			// Wave expressions: Dropdown Menu Control — the items are the instance's `items` param, one per line.
+			case 'menu': {
+				const b = row.bindings[0]!;
+				const fxId = b.path?.[0] === 'effect' ? b.path[1] : null;
+				const fx = (b.clip as { effects?: { id: string; params: Record<string, { value: unknown }> }[] }).effects?.find(
+					(e) => e.id === fxId,
+				);
+				const items = dropdownItems(fx?.params.items?.value);
+				const index = typeof value === 'number' ? Math.min(items.length, Math.max(1, Math.round(value))) : 1;
+				return (
+					<SelectField
+						value={mixed ? null : String(index)}
+						options={items.map((_, i) => String(i + 1))}
+						labels={items}
+						label={row.label}
+						onChange={(v) => commitFn(() => Number(v))}
+						data-testid={`prop-${row.id}`}
+					/>
+				);
+			}
+			// Wave expressions: Layer Control — a clip of the sequence ('' = None), listed in layer order.
+			case 'layer': {
+				const clips = Object.values(ctx.seq.clips).sort((a, b) => a.start - b.start);
+				return (
+					<SelectField
+						value={mixed ? null : String(value ?? '')}
+						options={['', ...clips.map((c) => c.id)]}
+						labels={['None', ...clips.map((c) => c.name || c.id)]}
+						label={row.label}
+						onChange={(v) => commitFn(() => v)}
+						data-testid={`prop-${row.id}`}
+					/>
+				);
+			}
 			// wp masks: Mask Path has no value editor (edited on the monitor): its vertex count.
 			case 'json':
 				if (spec.group === 'mask') {
@@ -223,7 +298,7 @@ export function PropertyRow(props: {
 		if (props.editor) return props.editor;
 		const custom = controlEditor();
 		if (custom) return custom;
-		const { mixed, value } = rowValue(row);
+		const { mixed, value } = shown();
 		switch (spec.kind) {
 			case 'number':
 				return numberEditor();
@@ -232,6 +307,15 @@ export function PropertyRow(props: {
 					<span className="inline-flex gap-3">
 						{numberEditor(0)}
 						{numberEditor(1)}
+					</span>
+				);
+			// Wave expressions: 3D Point Control.
+			case 'vec3':
+				return (
+					<span className="inline-flex gap-3">
+						{numberEditor(0)}
+						{numberEditor(1)}
+						{numberEditor(2)}
 					</span>
 				);
 			case 'color':
@@ -289,7 +373,12 @@ export function PropertyRow(props: {
 		if (plan.commands.length === 0 && plan.skipped.length) ctx.hint(OUTSIDE_HINT);
 		else apply(plan.commands, plan.skipped);
 	};
-	const stopwatch = () => {
+	const stopwatch = (e?: { altKey: boolean }) => {
+		// AE: Alt/Option-click the stopwatch adds or removes an expression.
+		if (e?.altKey && rx) {
+			toggleExpression();
+			return;
+		}
 		if (anim === 'none') {
 			const plan = planStopwatch(row, live(), true);
 			ctx.ops.apply(`Toggle Animation: ${row.label}`, plan.commands);
@@ -308,7 +397,9 @@ export function PropertyRow(props: {
 	const ec = ctx.mode === 'effectControls';
 
 	return (
+		<Fragment>
 		<div
+			{...(rx ? { [PICK_WHIP_ATTR]: JSON.stringify(rx.path) } : {})}
 			className={cx(
 				'group flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1',
 				props.indent ? (ctx.mode === 'effectControls' ? 'pl-[3px]' : 'pl-5') : 'pl-2',
@@ -348,7 +439,7 @@ export function PropertyRow(props: {
 				<span className="w-[18px] shrink-0">
 					{animatable ? (
 						<MiniButton
-							label={`Toggle animation for ${row.label}`}
+							label={`Toggle animation for ${row.label}${rx ? ' (Alt-click: expression)' : ''}`}
 							active={anim !== 'none'}
 							onClick={stopwatch}
 							data-testid={`stopwatch-${row.id}`}
@@ -368,7 +459,17 @@ export function PropertyRow(props: {
 			>
 				{row.label}
 			</span>
-			<span className={cx('flex min-w-0 flex-1 items-center', outside && 'opacity-60')}>{editor}</span>
+			<span
+				className={cx(
+					'flex min-w-0 flex-1 items-center',
+					outside && 'opacity-60',
+					exprActive && 'text-pr-expr-value [&_input]:text-pr-expr-value [&_button]:text-pr-expr-value',
+				)}
+				data-expression={rx?.expression ? (exprActive ? 'active' : 'inactive') : undefined}
+				title={exprActive ? 'Value set by an expression' : undefined}
+			>
+				{editor}
+			</span>
 			{animatable && (!ec || anim !== 'none') ? (
 				<span className="flex shrink-0 items-center">
 					{anim !== 'none' ? (
@@ -419,5 +520,16 @@ export function PropertyRow(props: {
 				) : null}
 			</span>
 		</div>
+		{ec && rx?.expression ? (
+			<ExpressionRow
+				doc={ctx.doc}
+				rx={{ ...rx, expression: rx.expression }}
+				status={status}
+				label={row.label}
+				apply={(label, commands) => ctx.ops.apply(label, commands)}
+				autoFocus={focusExpr}
+			/>
+		) : null}
+		</Fragment>
 	);
 }

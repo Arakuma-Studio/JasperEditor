@@ -1,4 +1,5 @@
 // Inspector value editors besides the scrubby number (S03:EC-011…014, S05:CT-010…014).
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { cx } from '@jasper/ui';
 import { type ReactNode, useEffect, useState } from 'react';
 
@@ -248,7 +249,8 @@ export function TextField(props: {
 /** Small square icon button used inside rows (keyframe navigator, reset, fx toggle). */
 export function MiniButton(props: {
 	label: string;
-	onClick(): void;
+	/** The click event (Alt-click on a stopwatch toggles an expression, AE). */
+	onClick(e: ReactMouseEvent<HTMLButtonElement>): void;
 	disabled?: boolean;
 	active?: boolean;
 	children: ReactNode;

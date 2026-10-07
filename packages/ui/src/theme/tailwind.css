@@ -32,6 +32,10 @@
 	--color-pr-tooltip: var(--pr-tooltip-bg);
 	--color-pr-danger: var(--pr-danger);
 	--color-pr-warning: var(--pr-warning);
+	--color-pr-expr-value: var(--pr-expr-value);
+	--color-pr-expr-bg: var(--pr-expr-bg);
+	--color-pr-expr-border: var(--pr-expr-border);
+	--color-pr-expr-error-bg: var(--pr-expr-error-bg);
 	--color-pr-success: var(--pr-success);
 	--color-pr-on-accent: var(--pr-on-accent);
 	--color-pr-playhead: var(--pr-playhead);

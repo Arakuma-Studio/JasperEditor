@@ -114,7 +114,7 @@ describe('render snapshots', () => {
 		expect(bg.props.opacity).toBe(100);
 		expect(resolveSceneAt(bound, 15).find((l) => l.clip.clipId === d.refs.$bg)!.props.opacity).toBeCloseTo(25, 9);
 		const text = bound.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === d.refs.$title)!;
-		const src = text.source as { text: never };
+		const src = text.source as unknown as { text: never };
 		expect(sourceTextAt(src.text, contentTimeAt(text, 45, { num: 30, den: 1 }))).toBe('00:00:01:15');
 	});
 	it('documents without expressions keep plain snapshots', () => {

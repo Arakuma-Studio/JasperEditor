@@ -2,6 +2,7 @@
 // transport, zoom/pan, overlays and on-canvas transform. The Player is sized at the composition size
 // and scaled by one CSS transform (S03:PGM-002) so overlays share its geometry exactly.
 
+import { useExpressionsFor } from '../../expressions/engine.ts';
 import type { FontCatalog } from '@jasper/api';
 import {
 	DEFAULT_RENDER_OPTIONS,
@@ -133,6 +134,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;
+	// Wave expressions: the engine loads on demand; the doc is rebuilt (bound) once it is ready.
+	const expressionsReady = useExpressionsFor(drawn);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: expressionsReady changes what buildRenderSnapshot binds
 	const doc = useMemo(() => {
 		if (!seqId || !seq) return null;
 		const d = buildProgramDoc(
@@ -141,7 +145,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		);
 		prevDoc.current = d;
 		return d;
-	}, [drawn, seqId, seq, media, tier, fontCatalog]);
+	}, [drawn, seqId, seq, media, tier, fontCatalog, expressionsReady]);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();

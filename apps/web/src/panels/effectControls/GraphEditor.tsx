@@ -4,12 +4,17 @@
 // entry, S03:PRP-023) whose transient document previews live in the Program Monitor (S03:ARC-005).
 import {
 	type Animatable,
+	bindExpressions,
 	type Command,
 	type Ease,
 	formatTimecode,
+	locateExpressionTarget,
+	type ProjectDocument,
 	propertyEvaluateOptions,
 	type Sequence,
 } from '@jasper/project';
+import { useExpressionsFor } from '../../expressions/engine.ts';
+import { rowExpressionOf } from '../../expressions/row.ts';
 import {
 	type CSSProperties,
 	type MouseEvent as ReactMouseEvent,
@@ -35,6 +40,8 @@ import {
 	panRange,
 	planEaseEdit,
 	roundToStep,
+	samplePostValueCurves,
+	samplePostVelocityCurve,
 	sampleValueCurves,
 	sampleVelocityCurve,
 	timeMapOf,
@@ -107,6 +114,8 @@ export function PropertyGraphs(
 	props: {
 		row: Row;
 		seq: Sequence;
+		/** Wave expressions: the drawn document (the post-expression curve of a row with an active expression). */
+		doc?: ProjectDocument;
 		range: Range;
 		height: number;
 		onResize(height: number): void;
@@ -148,6 +157,23 @@ export function PropertyGraphs(
 		() => sampleVelocityCurve(anim, map, range, width, opts),
 		[anim, map, range, width, opts],
 	);
+	// Wave expressions: the post-expression graph (keys and handles stay on the keyframed curve, as in AE).
+	const exprReady = useExpressionsFor(props.doc ?? null);
+	const bound = useMemo(() => {
+		if (!props.doc || !exprReady) return null;
+		const rx = rowExpressionOf(props.doc, b, seq.id);
+		if (!rx?.expression?.enabled || !rx.expression.text.trim()) return null;
+		const loc = locateExpressionTarget(bindExpressions(props.doc), rx.ref);
+		return loc?.kind === 'anim' ? (loc.target as Animatable<unknown>) : null;
+	}, [props.doc, exprReady, b, seq.id]);
+	const postCurves = useMemo(
+		() => (bound ? samplePostValueCurves(bound, map, range, width, opts) : null),
+		[bound, map, range, width, opts],
+	);
+	const postVelocity = useMemo(
+		() => (bound ? samplePostVelocityCurve(bound, map, range, width, opts) : null),
+		[bound, map, range, width, opts],
+	);
 	const vHandles = useMemo(() => kfs.map((_, i) => velocityHandles(anim, i, map)), [anim, kfs, map]);
 
 	const valueBox = Math.max(30, Math.round((height - 1) * 0.55));
@@ -156,13 +182,17 @@ export function PropertyGraphs(
 		frozen?.value ??
 		props.view?.value ??
 		fitRange(
-			valueCurves.flatMap((c) => c.filter((p) => p.x >= range.start && p.x <= range.end).map((p) => p.y)),
+			[...valueCurves, ...(postCurves ?? [])].flatMap((c) =>
+				c.filter((p) => p.x >= range.start && p.x <= range.end).map((p) => p.y),
+			),
 		);
 	const velR =
 		frozen?.velocity ??
 		props.view?.velocity ??
 		fitRange(
-			velocityCurve.filter((p) => p.x >= range.start && p.x <= range.end).map((p) => p.y),
+			[...velocityCurve, ...(postVelocity ?? [])]
+				.filter((p) => p.x >= range.start && p.x <= range.end)
+				.map((p) => p.y),
 			{ includeZero: true },
 		);
 	const vy = yScale(vr, valueBox);
@@ -487,6 +517,20 @@ export function PropertyGraphs(
 								data-testid={`graph-value-curve-${row.id}-${d}`}
 							/>
 						))}
+						{postCurves?.map((c, d) => (
+							<path
+								// biome-ignore lint/suspicious/noArrayIndexKey: one curve per value component
+								key={`post-${d}`}
+								d={pathOf(c, toPx, vy.toPx)}
+								fill="none"
+								stroke="var(--pr-graph-post)"
+								strokeWidth={1.25}
+								strokeDasharray={kind === 'vec2' && d === 1 ? '4 2' : undefined}
+								data-testid={`graph-post-curve-${row.id}-${d}`}
+							>
+								<title>Post-expression value</title>
+							</path>
+						))}
 						{valueHandleList.map((h) => {
 							const k = kfs[h.key]!;
 							const kx = toPx(map.toX(k.time));
@@ -573,6 +617,17 @@ export function PropertyGraphs(
 							strokeWidth={1.25}
 							data-testid={`graph-velocity-curve-${row.id}`}
 						/>
+						{postVelocity ? (
+							<path
+								d={pathOf(postVelocity, toPx, vely.toPx)}
+								fill="none"
+								stroke="var(--pr-graph-post)"
+								strokeWidth={1.25}
+								data-testid={`graph-post-velocity-${row.id}`}
+							>
+								<title>Post-expression velocity</title>
+							</path>
+						) : null}
 						{vHandles.map((hs, i) => {
 							const k = kfs[i]!;
 							const kx = toPx(map.toX(k.time));
