@@ -352,7 +352,12 @@ export function rotoSegmentBody(
 		rate: Rational;
 		base: number | null;
 		span: [number, number];
-		strokes: { kind: ClipRoto['strokes'][number]['kind']; frame: number; radius: number; points: [number, number][] }[];
+		strokes: {
+			kind: ClipRoto['strokes'][number]['kind'];
+			frame: number;
+			radius: number;
+			points: [number, number][];
+		}[];
 		boxes: { frame: number; rect: [number, number, number, number] }[];
 		settings: ResolvedRotoSettings;
 	};
@@ -381,7 +386,10 @@ export function rotoSegmentBody(
 				radius: s.radius,
 				points: s.points.map((p) => [p[0], p[1]] as [number, number]),
 			})),
-			boxes: (r.boxes ?? []).map((b) => ({ frame: b.frame, rect: [b.rect[0], b.rect[1], b.rect[2], b.rect[3]] })),
+			boxes: (r.boxes ?? []).map((b) => ({
+				frame: b.frame,
+				rect: [b.rect[0], b.rect[1], b.rect[2], b.rect[3]],
+			})),
 			settings: rotoSettingsOf(r),
 		},
 		direction,

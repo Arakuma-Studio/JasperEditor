@@ -254,7 +254,7 @@ describe('roto commands', () => {
 		expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
 		{
 			const fx = (h.seq.clips[other] as RClip).effects!.find((e) => e.effectId === OBJECT_MATTE_EFFECT_ID);
-			expect(fx?.params.object!.value).toBe('');
+			expect(fx?.params.object?.value).toBe('');
 		}
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});

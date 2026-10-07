@@ -274,7 +274,9 @@ export function PropertyRow(props: {
 			}
 			// parity (roto): a roto object of the clip ('' = None) — Object Matte / Object Blur / Screen Keyer masks.
 			case 'roto-object': {
-				const clip = row.bindings[0]?.clip as { rotos?: { id: string; name: string; kind: string }[] } | undefined;
+				const clip = row.bindings[0]?.clip as
+					| { rotos?: { id: string; name: string; kind: string }[] }
+					| undefined;
 				const rotos = clip?.rotos ?? [];
 				return (
 					<SelectField

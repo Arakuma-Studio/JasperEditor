@@ -664,8 +664,9 @@ export function registerRotoTools(ctx: ToolContext): void {
 		extra: Parameters<typeof transact>[3],
 		apply: unknown | null,
 	) {
-		const models = ((await ctx.engine((c) => c.call('rotoModels')).catch(engineErr)) as { models: VisionModel[] })
-			.models;
+		const models = (
+			(await ctx.engine((c) => c.call('rotoModels')).catch(engineErr)) as { models: VisionModel[] }
+		).models;
 		const face = models.find((m) => m.task === 'face');
 		if (!face?.installed)
 			throw new ToolError(
