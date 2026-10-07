@@ -3,6 +3,7 @@ import { AUDIO_COMMANDS } from './audio.ts';
 import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
+import { EDIT_UX_COMMANDS } from './edit-ux.ts';
 import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
@@ -12,6 +13,7 @@ import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
+import { SHAPE_COMMANDS } from './shape.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
@@ -23,6 +25,7 @@ export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
+export * from './edit-ux.ts';
 export * from './essential.ts';
 export * from './expression.ts';
 export * from './interchange.ts';
@@ -32,6 +35,7 @@ export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
 export * from './sequence.ts';
+export * from './shape.ts';
 export * from './simplify.ts';
 export * from './speech.ts';
 export * from './structure.ts';
@@ -51,6 +55,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
+	// wp shapes: vector shape items
+	...SHAPE_COMMANDS,
 	// text-animators workstream (AE text animators)
 	...TEXT_ANIMATOR_COMMANDS,
 	// Timeline interchange (wp interchange)
@@ -71,6 +77,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...EXPRESSION_COMMANDS,
 	// Essential Sound and Remix (audio-fx)
 	...ESSENTIAL_COMMANDS,
+	// edit-ux: 3/4-point editing, multi-edit trims, subclips
+	...EDIT_UX_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

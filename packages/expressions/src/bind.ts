@@ -14,9 +14,11 @@ import {
 	type ExpressionWorldData,
 	expressionBindingOf,
 	hasActiveExpression,
+	mapShapeItemAnimatables,
 	type ProjectDocument,
 	type RenderSnapshot,
 	type Sequence,
+	type ShapeItem,
 	sequenceAnimatables,
 } from '@jasper/project';
 import { isExpressionEngineLoaded } from './runtime.ts';
@@ -215,7 +217,13 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 			const masks = bindMasks(c.masks, o);
 			if (masks !== c.masks) out = { ...out, masks: masks as typeof c.masks };
 			const src = c.source as Record<string, unknown>;
-			if (src.shape) {
+			// wp shapes: every number / point / colour property of a vector shape's items.
+			if (src.shape && (src.shape as { type?: string }).type === 'vector') {
+				const sh = src.shape as { contents: ShapeItem[] };
+				const contents = mapShapeItemAnimatables(sh.contents, (a, key) => bind(a, o, key) as object);
+				if (contents !== sh.contents)
+					out = { ...out, source: { ...src, shape: { ...sh, contents } } as never };
+			} else if (src.shape) {
 				const sh = src.shape as Record<string, unknown>;
 				let shape = sh;
 				for (const k of ['size', 'fill', 'cornerRadius'] as const) {

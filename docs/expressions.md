@@ -148,7 +148,8 @@ result may also be the item name); text a string; Layer Control a layer.
 | `thisLayer.opacity` | Opacity (percent). |
 | `thisLayer.effect(nameOrIndex)(paramNameOrIndex)` | An effect parameter. |
 | `thisLayer.text.sourceText` | Text clips: the Source Text (string; .style.fontSize, .fillColor, … read the style). |
-| `thisLayer.shape` | Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius. |
+| `thisLayer.shape` | Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius (rectangles / ellipses); vector shapes: their contents. |
+| `content("Group 1").content("Rectangle Path 1").size` | Vector shapes: an item by name, index or id; groups have .content(name) and .transform (anchorPoint, position, scale, skew, skewAxis, rotation, opacity); items expose their properties by name (size, roundness, color, opacity, strokeWidth → width, start, end, offset, copies…). |
 | `thisLayer.audio` | Audio clips: audioLevels (Volume, dB) and pan. |
 | `thisLayer.params(name)` | Motion-graphic template parameters (read only). |
 | `thisLayer.marker` | Clip markers. |

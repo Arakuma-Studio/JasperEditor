@@ -10,10 +10,10 @@ import {
 	applyMatrix,
 	type LayerTransformValues,
 	layerMatrix,
+	quadBounds,
 	type Rect,
 	type ResolvedLayer,
 	resolveSceneAt,
-	visibleRect,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
@@ -29,6 +29,8 @@ import { layerDoubleClickHandlers } from '../../extensions/index.ts';
 // wp-m2-shapes: geometry hit-test (XF-001) and "Resize shapes by size" handles (S11:SHP-007).
 import {
 	hitsLayerGeometry,
+	layerEditQuad,
+	layerEditRect,
 	resizeShapeBySize,
 	shapeLayerSize,
 	shapeSizeCommand,
@@ -45,6 +47,7 @@ import { activeSequence, addTextAt, transformAt, transformCommands } from './edi
 import { MotionPathLayer } from './MotionPathLayer.tsx';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
+import { guidesOf, monitorExtras } from './monitor-view.ts';
 import {
 	buildMotionPath,
 	convertVertexCommand,
@@ -94,6 +97,8 @@ const AXIS_LOCK_PX = 6;
 type ClipStart = { id: string; v0: LayerTransformValues };
 type GestureState =
 	| { kind: 'pan'; start: Vec2; pan0: Vec2 }
+	/** edit-ux: marquee selection on empty canvas (Premiere Program monitor; Shift/Ctrl add to the selection). */
+	| { kind: 'marquee'; start: Vec2; base: string[]; startScreen: Vec2; moved: boolean }
 	| {
 			kind: 'move';
 			g: Gesture;
@@ -287,6 +292,7 @@ export function TransformOverlay({
 		[motionPath, anchorPath, keySel],
 	);
 	const [hover, setHover] = useState<string | null>(null);
+	const [marquee, setMarquee] = useState<Rect | null>(null);
 	const [snapHits, setSnapHits] = useState<{ x: SnapHit | null; y: SnapHit | null } | null>(null);
 	const [readout, setReadout] = useState<Readout>(null);
 	const [cursor, setCursor] = useState('default');
@@ -311,7 +317,7 @@ export function TransformOverlay({
 		const g = gestureRef.current;
 		const p = pendingRef.current;
 		pendingRef.current = null;
-		if (g && g.kind !== 'pan' && p) g.g.update(p.cmds);
+		if (g && g.kind !== 'pan' && g.kind !== 'marquee' && p) g.g.update(p.cmds);
 	};
 	const scheduleUpdate = (cmds: Parameters<Gesture['update']>[0]) => {
 		pendingRef.current = { cmds };
@@ -321,11 +327,12 @@ export function TransformOverlay({
 	const endGesture = (commit: boolean) => {
 		const g = gestureRef.current;
 		// Apply the last pointer position before the gesture is released.
-		if (commit && g && g.kind !== 'pan' && g.moved) flushUpdate();
+		if (commit && g && g.kind !== 'pan' && g.kind !== 'marquee' && g.moved) flushUpdate();
 		gestureRef.current = null;
 		setSnapHits(null);
 		setReadout(null);
-		if (!g || g.kind === 'pan') return;
+		setMarquee(null);
+		if (!g || g.kind === 'pan' || g.kind === 'marquee') return;
 		if (commit && g.moved) {
 			g.g.commit();
 		} else {
@@ -362,16 +369,16 @@ export function TransformOverlay({
 	};
 
 	const layerScreenQuad = (l: ResolvedLayer): Quad =>
-		l.props.quad.map((p) => toScreen(view, p as Vec2)) as Quad;
+		layerEditQuad(l).map((p) => toScreen(view, p as Vec2)) as Quad;
 
 	const groupBox = (layers: readonly ResolvedLayer[]): Rect | null =>
-		unionBounds(layers.map((l) => l.props.bounds));
+		unionBounds(layers.map((l) => quadBounds(layerEditQuad(l))));
 
 	const layerAt = (p: Vec2): string | null =>
 		hitTest(
 			live.current.scene
 				.filter((l) => l.props.transform && hitsLayerGeometry(l, p))
-				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
+				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: layerEditQuad(l) as Quad })),
 			p,
 			locked,
 		);
@@ -430,10 +437,11 @@ export function TransformOverlay({
 									width: doc.settings.width,
 									height: doc.settings.height,
 									safeMargins: monitor.safeMargins ? SAFE_MARGINS : null,
+									guides: snapGuides(session),
 									layers: [
 										...live.current.scene
 											.filter((l) => l.clip.clipId !== mp.clipId)
-											.map((l) => l.props.bounds),
+											.map((l) => quadBounds(layerEditQuad(l))),
 										// The path's other keys (points) are targets too.
 										...mp.keys
 											.filter((k) => !drag.group.some((g) => g.id === k.id))
@@ -448,7 +456,7 @@ export function TransformOverlay({
 		// Handles / anchor / rotation of the current selection (XF-010…012, XF-037).
 		if (sel.length === 1) {
 			const l = sel[0]!;
-			const rect = visibleRect(l.props.box, l.props.crop ?? undefined);
+			const rect = layerEditRect(l);
 			const anchorScreen = toScreen(view, applyMatrix(l.props.matrix, l.props.transform!.anchor));
 			const cs = clipStart(l.clip.clipId);
 			if (!cs) return;
@@ -538,7 +546,16 @@ export function TransformOverlay({
 		// Hit test and selection (XF-001, XF-003, XF-005).
 		const hit = layerAt(p);
 		if (!hit) {
-			if (!e.shiftKey && !e.ctrlKey && !e.metaKey) session.clearSelection('timeline');
+			const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+			if (!additive) session.clearSelection('timeline');
+			svg.setPointerCapture?.(e.pointerId);
+			gestureRef.current = {
+				kind: 'marquee',
+				start: p,
+				base: additive ? [...session.getState().selection.timeline.clips] : [],
+				startScreen: screen,
+				moved: false,
+			};
 			return;
 		}
 		if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -553,7 +570,9 @@ export function TransformOverlay({
 		);
 		const clips = moving.map((l) => clipStart(l.clip.clipId)).filter((c): c is ClipStart => !!c);
 		if (clips.length === 0) return;
-		const others = live.current.scene.filter((l) => !ids.has(l.clip.clipId)).map((l) => l.props.bounds);
+		const others = live.current.scene
+			.filter((l) => !ids.has(l.clip.clipId))
+			.map((l) => quadBounds(layerEditQuad(l)));
 		svg.setPointerCapture?.(e.pointerId);
 		gestureRef.current = {
 			kind: 'move',
@@ -561,11 +580,12 @@ export function TransformOverlay({
 			start: p,
 			startScreen: screen,
 			clips,
-			bounds0: unionBounds(moving.map((l) => l.props.bounds))!,
+			bounds0: unionBounds(moving.map((l) => quadBounds(layerEditQuad(l))))!,
 			targets: buildSnapTargets({
 				width: doc.settings.width,
 				height: doc.settings.height,
 				safeMargins: monitor.safeMargins ? SAFE_MARGINS : null,
+				guides: snapGuides(session),
 				layers: others,
 			}),
 			moved: false,
@@ -621,6 +641,27 @@ export function TransformOverlay({
 		}
 		if (g.kind === 'pan') {
 			onPan([g.pan0[0] + screen[0] - g.start[0], g.pan0[1] + screen[1] - g.start[1]]);
+			return;
+		}
+		if (g.kind === 'marquee') {
+			if (!g.moved && dist(screen, g.startScreen) < DRAG_THRESHOLD) return;
+			g.moved = true;
+			const r: Rect = {
+				x: Math.min(g.start[0], p[0]),
+				y: Math.min(g.start[1], p[1]),
+				width: Math.abs(p[0] - g.start[0]),
+				height: Math.abs(p[1] - g.start[1]),
+			};
+			setMarquee(r);
+			// Layers whose bounds intersect the marquee (unlocked tracks only).
+			const hits = live.current.scene
+				.filter((l) => l.props.transform && !locked.has(l.clip.trackId))
+				.filter((l) => {
+					const b = l.props.bounds;
+					return b.x < r.x + r.width && b.x + b.width > r.x && b.y < r.y + r.height && b.y + b.height > r.y;
+				})
+				.map((l) => l.clip.clipId);
+			session.select('timeline', [...new Set([...g.base, ...hits])], 'replace');
 			return;
 		}
 		if (!g.moved && dist(screen, g.startScreen) < DRAG_THRESHOLD) return;
@@ -762,7 +803,7 @@ export function TransformOverlay({
 		else if (pathHitAt(screen)) c = 'pointer';
 		else if (sel.length === 1) {
 			const l = sel[0]!;
-			const h = handleUnder(l, visibleRect(l.props.box, l.props.crop ?? undefined), screen);
+			const h = handleUnder(l, layerEditRect(l), screen);
 			if (h) c = handleCursor(h, l.props.transform!.rotation);
 			else if (rotationZoneHit(layerScreenQuad(l), screen)) c = 'alias';
 		}
@@ -774,8 +815,9 @@ export function TransformOverlay({
 
 	const onPointerUp = () => {
 		const g = gestureRef.current;
-		if (g?.kind === 'pan') {
+		if (g?.kind === 'pan' || g?.kind === 'marquee') {
 			gestureRef.current = null;
+			setMarquee(null);
 			return;
 		}
 		// keyframes-blend: a Pen / Ctrl click on a path key (no drag) converts the vertex (corner ↔ smooth).
@@ -939,6 +981,19 @@ export function TransformOverlay({
 			)}
 			{motionPath ? <MotionPathLayer path={motionPath} view={view} selected={selectedKeys} /> : null}
 			{anchorPath ? <MotionPathLayer path={anchorPath} view={view} selected={selectedKeys} /> : null}
+			{marquee ? (
+				<rect
+					x={toScreen(view, [marquee.x, marquee.y])[0]}
+					y={toScreen(view, [marquee.x, marquee.y])[1]}
+					width={marquee.width * view.scale}
+					height={marquee.height * view.scale}
+					fill="var(--pr-marquee-fill, transparent)"
+					stroke="var(--pr-accent)"
+					strokeDasharray="4 3"
+					pointerEvents="none"
+					data-testid="program-marquee"
+				/>
+			) : null}
 			{readout ? (
 				<g pointerEvents="none">
 					<rect
@@ -969,9 +1024,9 @@ function handleCursor(h: HandleId, rotation: number): string {
 }
 
 function SelectionBox({ layer, view }: { layer: ResolvedLayer; view: View }) {
-	const quad = layer.props.quad.map((p) => toScreen(view, p as Vec2)) as Quad;
+	const quad = layerEditQuad(layer).map((p) => toScreen(view, p as Vec2)) as Quad;
 	const t = layer.props.transform!;
-	const rect = visibleRect(layer.props.box, layer.props.crop ?? undefined);
+	const rect = layerEditRect(layer);
 	const small = Math.min(dist(quad[0], quad[1]), dist(quad[1], quad[2])) < SMALL_QUAD;
 	const ids: readonly HandleId[] = small ? CORNERS : HANDLE_IDS;
 	const anchor = toScreen(view, applyMatrix(layer.props.matrix, t.anchor));
@@ -1138,7 +1193,7 @@ function PlaybackOutlines({
 			const scene = resolveSceneAt(d, transport.getState().frame);
 			for (const [id, el] of refs.current) {
 				const l = scene.find((x) => x.clip.clipId === id);
-				el.setAttribute('points', l ? pts(l.props.quad.map((p) => toScreen(v, p as Vec2))) : '');
+				el.setAttribute('points', l ? pts(layerEditQuad(l).map((p) => toScreen(v, p as Vec2))) : '');
 			}
 		};
 		draw();
@@ -1166,4 +1221,10 @@ function PlaybackOutlines({
 			))}
 		</g>
 	);
+}
+
+/** edit-ux: visible guides of the active sequence are snap targets (Premiere: Snap in Program Monitor). */
+function snapGuides(session: EditorSession) {
+	if (!monitorExtras.getState().showGuides) return [];
+	return guidesOf(session.getState().activeSequenceId);
 }

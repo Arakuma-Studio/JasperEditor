@@ -20,6 +20,7 @@ import {
 	rowStatus,
 	setExpressionCommand,
 } from '../../../expressions/row.ts';
+import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
 	animState,
@@ -288,6 +289,8 @@ export function PropertyRow(props: {
 			}
 			// wp masks: Mask Path has no value editor (edited on the monitor): its vertex count.
 			case 'json':
+				// wp shapes: gradients (editor) and shape paths (vertex count, Closed).
+				if (spec.group === 'shape') return <ShapeJsonValue row={row} ctx={ctx} value={value} mixed={mixed} />;
 				if (spec.group === 'mask') {
 					const p = value as { vertices?: unknown[]; closed?: boolean } | null;
 					return (

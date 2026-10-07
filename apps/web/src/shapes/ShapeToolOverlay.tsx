@@ -1,19 +1,31 @@
-// Program monitor Rectangle / Ellipse tools (S03:XF-061, S11:SHP-006, S05:TOOL-005). Registered as a Program
-// overlay; while a shape tool is active it covers the monitor: a drag draws the shape's bounding box (Shift =
-// square/circle, Alt = from the centre, re-evaluated when the modifiers change mid-drag), the outline previews
-// the result, Escape cancels, and the release adds the shape in one transaction (one undo step) at the playhead,
-// selects it and returns to the Selection tool. Clicks without a drag add nothing.
-import type { ShapeType, Vec2 } from '@jasper/project';
+// Program monitor Rectangle / Ellipse / Polygon / Star tools (S03:XF-061, S11:SHP-006, S05:TOOL-005, wp shapes).
+// Registered as a Program overlay; while a shape tool is active it covers the monitor: a drag draws the shape's
+// bounding box (Shift = square/circle, Alt = from the centre, re-evaluated when the modifiers change mid-drag) —
+// Polygon / Star drag from the centre outwards (the drag sets the outer radius and turns the first point towards
+// the pointer; Shift keeps it upright) — the outline previews the result, Escape cancels, and the release adds the
+// shape in one transaction (one undo step) at the playhead, selects it and returns to the Selection tool. With one
+// vector shape selected under the playhead the drawing is added to it as a new group (After Effects: drawing on a
+// selected shape layer); else Rectangle / Ellipse add a rectangle / ellipse clip and Polygon / Star a new vector
+// shape. Clicks without a drag add nothing.
+import type { Vec2 } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
+import { addBoxToVector, addPolystar, type DrawnStar, dragStar, polystarPreview } from './draw.ts';
 import { type DrawnBox, dragShapeBox } from './geometry.ts';
 import { addShapeAt } from './insert.ts';
+import { selectedVectorClip } from './vector.ts';
 
 const DRAG_THRESHOLD = 3;
-const TOOL_SHAPES: Partial<Record<string, ShapeType>> = { rectangle: 'rect', ellipse: 'ellipse' };
+type DrawKind = 'rect' | 'ellipse' | 'polygon' | 'star';
+const TOOL_SHAPES: Partial<Record<string, DrawKind>> = {
+	rectangle: 'rect',
+	ellipse: 'ellipse',
+	polygon: 'polygon',
+	star: 'star',
+};
 
 type Drag = {
 	start: Vec2;
@@ -32,7 +44,7 @@ export function ShapeToolOverlay(props: ProgramOverlayHostProps) {
 	return <ShapeDrawSurface {...props} type={type} />;
 }
 
-function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: ShapeType }) {
+function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: DrawKind }) {
 	const { session, type } = props;
 	const view = props.view as View;
 	const transport = props.transport as TransportStore;
@@ -44,13 +56,17 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: ShapeType }) 
 		const r = svgRef.current!.getBoundingClientRect();
 		return [e.clientX - r.left, e.clientY - r.top];
 	};
+	const [star, setStar] = useState<DrawnStar | null>(null);
 	const refresh = () => {
 		const d = dragRef.current;
-		setBox(d?.moved ? dragShapeBox(d.start, d.last, { shift: d.shift, alt: d.alt }) : null);
+		const polystar = type === 'polygon' || type === 'star';
+		setBox(d?.moved && !polystar ? dragShapeBox(d.start, d.last, { shift: d.shift, alt: d.alt }) : null);
+		setStar(d?.moved && polystar ? dragStar(d.start, d.last, d.shift) : null);
 	};
 	const cancel = () => {
 		dragRef.current = null;
 		setBox(null);
+		setStar(null);
 	};
 
 	// Escape cancels the drag before the keymap sees it; Shift/Alt changes re-shape the box without a move.
@@ -112,11 +128,24 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: ShapeType }) 
 		const d = dragRef.current;
 		dragRef.current = null;
 		setBox(null);
+		setStar(null);
 		if (!d?.moved) return;
+		const frame = transport.getState().frame;
+		const done = () => session.setToggles({ activeTool: 'selection' });
+		if (type === 'polygon' || type === 'star') {
+			const star = dragStar(d.start, d.last, d.shift);
+			if (star.radius < 1) return;
+			if (addPolystar(session, type, frame, star)) done();
+			return;
+		}
 		const drawn = dragShapeBox(d.start, d.last, { shift: d.shift, alt: d.alt });
 		if (drawn.size[0] < 1 || drawn.size[1] < 1) return;
-		if (addShapeAt(session, type, transport.getState().frame, drawn))
-			session.setToggles({ activeTool: 'selection' });
+		const target = selectedVectorClip(session, frame);
+		if (target) {
+			if (addBoxToVector(session, target.id, type, frame, drawn)) done();
+			return;
+		}
+		if (addShapeAt(session, type, frame, drawn)) done();
 	};
 
 	return (
@@ -132,12 +161,17 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: ShapeType }) 
 			onPointerCancel={cancel}
 			role="presentation"
 		>
-			{box ? <DrawPreview box={box} type={type} view={view} /> : null}
+			{box && (type === 'rect' || type === 'ellipse') ? (
+				<DrawPreview box={box} type={type} view={view} />
+			) : null}
+			{star && (type === 'polygon' || type === 'star') ? (
+				<StarPreview star={star} type={type} view={view} />
+			) : null}
 		</svg>
 	);
 }
 
-function DrawPreview({ box, type, view }: { box: DrawnBox; type: ShapeType; view: View }) {
+function DrawPreview({ box, type, view }: { box: DrawnBox; type: 'rect' | 'ellipse'; view: View }) {
 	const [w, h] = box.size;
 	const a = toScreen(view, [box.center[0] - w / 2, box.center[1] - h / 2]);
 	const b = toScreen(view, [box.center[0] + w / 2, box.center[1] + h / 2]);
@@ -167,6 +201,21 @@ function DrawPreview({ box, type, view }: { box: DrawnBox; type: ShapeType; view
 			<text x={b[0] + 22} y={b[1] + 29} fontSize={11} fill="var(--pr-text-strong)">
 				{`${w} × ${h}`}
 			</text>
+		</g>
+	);
+}
+
+function StarPreview({ star, type, view }: { star: DrawnStar; type: 'polygon' | 'star'; view: View }) {
+	const pts = polystarPreview(type, star).map((p) => toScreen(view, p));
+	return (
+		<g data-testid="shape-tool-preview" data-radius={star.radius} pointerEvents="none">
+			<polygon
+				points={pts.map((p) => `${p[0]},${p[1]}`).join(' ')}
+				fill="none"
+				stroke="var(--pr-accent)"
+				strokeWidth={1}
+				vectorEffect="non-scaling-stroke"
+			/>
 		</g>
 	);
 }

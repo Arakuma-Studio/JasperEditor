@@ -63,6 +63,11 @@ type DriverOptions = {
 	setPlayerRate(rate: number): void;
 	/** Buffering state for the dropped-frame/buffering indicator. */
 	onBuffering?(waiting: boolean): void;
+	/**
+	 * edit-ux (Premiere's Dropped Frame Indicator): frames skipped during native playback since playback started (a
+	 * `frameupdate` that jumps past the next frame counts the frames in between).
+	 */
+	onDroppedFrames?(count: number): void;
 };
 
 type DriverMode = 'idle' | 'native' | 'stepping';
@@ -78,6 +83,7 @@ export class PlaybackDriver implements PlayerController {
 	private stepOrigin = { t: 0, frame: 0 };
 	private lastSeekAt = Number.NEGATIVE_INFINITY;
 	private frameEvents = 0;
+	private dropped = 0;
 	private buffering = false;
 	private watchdog: ReturnType<typeof setTimeout> | null = null;
 	private readonly unsubscribe: () => void;
@@ -116,7 +122,18 @@ export class PlaybackDriver implements PlayerController {
 
 	play(): void {
 		this.rate = this.opts.transport.getState().rate || 1;
+		this.resetDroppedFrames();
 		this.start();
+	}
+
+	/** Dropped frames counted since playback started (or the last reset). */
+	get droppedFrames(): number {
+		return this.dropped;
+	}
+
+	resetDroppedFrames(): void {
+		this.dropped = 0;
+		this.opts.onDroppedFrames?.(0);
 	}
 
 	pause(): void {
@@ -276,6 +293,11 @@ export class PlaybackDriver implements PlayerController {
 			t.reportFrame(range.loopStart);
 			this.player?.seekTo(range.loopStart);
 			return;
+		}
+		// Dropped frames (native forward playback): a jump past the next frame skipped the frames in between.
+		if (this.rate > 0 && this.lastReported >= 0 && frame > this.lastReported + 1 && !this.buffering) {
+			this.dropped += frame - this.lastReported - 1;
+			this.opts.onDroppedFrames?.(this.dropped);
 		}
 		this.lastReported = frame;
 		t.reportFrame(frame);

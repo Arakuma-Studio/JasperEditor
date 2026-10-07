@@ -1,6 +1,7 @@
 // Agent queries (S01 §21.2, S02:TL-951, ARCHITECTURE §11 Stage 1): read-only JSON views of a document,
 // shared by the in-page bridge (with session state) and the engine's headless path (document only).
 // Frames are integers and are always accompanied by timecode strings for LLM readability (TL-951).
+
 import { z } from 'zod';
 import type { TransactionResult } from '../commands/types.ts';
 import {
@@ -23,6 +24,7 @@ import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, TextAnimator } from '../schema/sequence.ts';
 import { flicksToSeconds, fpsOf, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
+import { shapeItemsSummary } from '../vector/summary.ts';
 import { AddressError, pickSequence, resolveFrameInput } from './addressing.ts';
 import { clipPropertiesQuery, PropertyQueryError, paramGetQuery } from './properties-query.ts';
 
@@ -211,6 +213,8 @@ function clipSource(clip: Clip): Record<string, unknown> {
 	if (clip.kind === 'motion-graphic') return { template: c.template, params: c.params };
 	if (clip.kind === 'shape') {
 		const s = clip.shape;
+		// wp shapes: vector shapes list their item tree (ids, types, names, animated fields).
+		if (s.type === 'vector') return { shape: { type: 'vector', contents: shapeItemsSummary(s.contents) } };
 		return {
 			shape: {
 				type: s.type,

@@ -13,19 +13,11 @@ import { type Sequence, SYNTHETIC_INFO, sequenceDuration } from '@jasper/project
 import { type EditorSession, TransportStore } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
-import {
-	ArrowDownToLine,
-	ArrowLeftToLine,
-	ArrowRightToLine,
-	CornerRightDown,
-	Play,
-	Square,
-	StepBack,
-	StepForward,
-	X,
-} from 'lucide-react';
+import { X } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { chordFromEvent } from '../../commands/index.ts';
+import { chordFromEvent, runCommand } from '../../commands/index.ts';
+import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	durationLabel,
@@ -34,7 +26,6 @@ import {
 	SettingsMenu,
 	TimecodeDisplay,
 	type TimecodeFormat,
-	TransportButton,
 	useElementSize,
 	useTransportPlaying,
 } from '../program/MonitorChrome.tsx';
@@ -43,6 +34,7 @@ import { detectPlatform, handleMonitorKey, useMonitorCommandCtx } from '../progr
 import { monitorStores } from '../program/monitor-store.ts';
 import { PlaybackDriver } from '../program/playback-driver.ts';
 import { buildProgramDoc, resolveMediaHandle } from '../program/render-doc.ts';
+import { TransportBar } from '../program/TransportBar.tsx';
 import { registerDriver, setSourceTransport } from '../program/transport-registry.ts';
 import { computeView, ZOOM_PRESETS } from '../program/viewport.ts';
 import { markerVar } from '../timeline/components/ClipView.tsx';
@@ -52,7 +44,6 @@ import {
 	closeSource,
 	flicksToSourceFrames,
 	openInSource,
-	performSourceEdit,
 	setSourceMarks,
 	sourceAsset,
 	sourceItem,
@@ -141,6 +132,13 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			: { width: 1280, height: 720 };
 	const transport = useMemo(() => new TransportStore(), []);
 	const ctx = useMonitorCommandCtx({ session, panel: 'source', instanceId, engine });
+	useEffect(() => registerFullscreenTarget('source', () => viewportRef.current));
+	// Buttons run with the shell's live context (dialogs, toasts) focused on this monitor.
+	const shell = useShellRuntimeOrNull();
+	const barCtx = () => {
+		const c = shell?.getCtx();
+		return c ? { ...c, focus: { panel: 'source' as const, instanceId } } : ctx;
+	};
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, canvas, monitor.zoom, [0, 0]);
 
@@ -156,12 +154,35 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			})),
 		[itemMarkerList, fps],
 	);
-	const markIn = seqItem ? seqItem.inPoint : marks?.in ? flicksToSourceFrames(marks.in.flicks, fps) : null;
+	// edit-ux: a subclip without marks shows its own range as In/Out.
+	const sub = item?.kind === 'subclip' ? item : null;
+	const markIn = seqItem
+		? seqItem.inPoint
+		: marks?.in
+			? flicksToSourceFrames(marks.in.flicks, fps)
+			: sub
+				? flicksToSourceFrames(sub.range.in, fps)
+				: null;
 	const markOut = seqItem
 		? seqItem.outPoint
 		: marks?.out
 			? flicksToSourceFrames(marks.out.flicks, fps)
-			: null;
+			: sub
+				? flicksToSourceFrames(sub.range.out, fps)
+				: null;
+	// edit-ux (Mark Split): the video/audio marks on the mini ruler.
+	const split = (marks as { split?: Record<string, { flicks: number } | null | undefined> } | null)?.split;
+	const splitMarkers = useMemo(
+		() =>
+			Object.entries(split ?? {})
+				.filter((e): e is [string, { flicks: number }] => !!e[1])
+				.map(([k, v]) => ({
+					id: `split-${k}`,
+					frame: flicksToSourceFrames(v.flicks, fps) - (k.endsWith('Out') ? 1 : 0),
+					color: k.startsWith('video') ? 'var(--pr-trim-regular)' : 'var(--pr-trim-ripple)',
+				})),
+		[split, fps],
+	);
 	useEffect(() => {
 		sourceMonitorState.setState({ fps, durationFrames: duration, markIn, markOut });
 		transport.setMaxFrame(Math.max(0, duration - 1));
@@ -218,14 +239,19 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 		transport.seek(Math.max(0, Math.min(duration - 1, f)));
 	};
 	const frameNow = () => transport.getState().frame;
-	const edit = (mode: 'insert' | 'overwrite') => {
-		const r = performSourceEdit(session, mode);
-		if (!r.ok) console.info(`[source] ${r.message}`);
-	};
+	// edit-ux: through the commands (three/four-point editing, Fit Clip dialog, toasts).
+	const _edit = (mode: 'insert' | 'overwrite') =>
+		void runCommand(
+			mode === 'insert' ? 'timeline.insertFromSource' : 'timeline.overwriteFromSource',
+			barCtx(),
+		);
 	const mediaItems = useMemo(
 		() =>
 			Object.values(doc.items)
-				.filter((it) => it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence')
+				.filter(
+					(it) =>
+						it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence' || it.kind === 'subclip',
+				)
 				.map((it) => ({ value: it.id, label: it.name })),
 		[doc.items],
 	);
@@ -409,78 +435,19 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				duration={duration}
 				markIn={markIn}
 				markOut={markOut}
-				markers={sourceMarkers}
+				markers={splitMarkers.length ? [...sourceMarkers, ...splitMarkers] : sourceMarkers}
 				fps={fps}
 				onSeek={seek}
 				testId="source-ruler"
 			/>
-			<div
-				className="flex h-[36px] shrink-0 flex-wrap items-center justify-center gap-0.5 overflow-hidden px-2"
-				data-testid="source-transport"
-			>
-				<TransportButton
-					label="Mark In"
-					shortcut="I"
-					testId="src-mark-in"
-					disabled={!item}
-					onClick={() => setSourceMarks(session, { in: frameNow() }, 'Mark In')}
-				>
-					<span className="font-pr text-[15px] leading-none">{'{'}</span>
-				</TransportButton>
-				<TransportButton
-					label="Mark Out"
-					shortcut="O"
-					testId="src-mark-out"
-					disabled={!item}
-					onClick={() => setSourceMarks(session, { out: frameNow() + 1 }, 'Mark Out')}
-				>
-					<span className="font-pr text-[15px] leading-none">{'}'}</span>
-				</TransportButton>
-				<TransportButton label="Go to In" shortcut="Shift+I" onClick={() => seek(markIn ?? 0)}>
-					<ArrowLeftToLine size={16} />
-				</TransportButton>
-				<TransportButton label="Step Back 1 Frame" shortcut="Left" onClick={() => seek(frameNow() - 1)}>
-					<StepBack size={16} />
-				</TransportButton>
-				<TransportButton
-					label={playing ? 'Stop' : 'Play'}
-					shortcut="Space"
-					testId="src-play"
-					active={playing}
-					disabled={!props && !seqProps}
-					onClick={() => (playing ? transport.pause() : transport.play(1))}
-				>
-					{playing ? <Square size={14} /> : <Play size={16} />}
-				</TransportButton>
-				<TransportButton label="Step Forward 1 Frame" shortcut="Right" onClick={() => seek(frameNow() + 1)}>
-					<StepForward size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Go to Out"
-					shortcut="Shift+O"
-					onClick={() => seek(markOut !== null ? markOut - 1 : duration - 1)}
-				>
-					<ArrowRightToLine size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Insert"
-					shortcut=","
-					testId="src-insert"
-					disabled={!item}
-					onClick={() => edit('insert')}
-				>
-					<CornerRightDown size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Overwrite"
-					shortcut="."
-					testId="src-overwrite"
-					disabled={!item}
-					onClick={() => edit('overwrite')}
-				>
-					<ArrowDownToLine size={16} />
-				</TransportButton>
-			</div>
+			{/* edit-ux: data-driven transport row with the Button Editor. */}
+			<TransportBar
+				monitor="source"
+				ctx={barCtx}
+				playing={playing}
+				testId="source-transport"
+				disabled={(btn) => !item || (btn.id === 'play' && !props && !seqProps)}
+			/>
 		</div>
 	);
 }

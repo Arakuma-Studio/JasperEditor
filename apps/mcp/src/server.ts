@@ -15,6 +15,7 @@ import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
+import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
@@ -27,7 +28,7 @@ import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
-import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
@@ -79,6 +80,7 @@ const FULL_GUIDE = [
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
 	STRUCTURE_GUIDE,
+	EDIT_UX_GUIDE,
 	MULTICAM_GUIDE,
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
@@ -122,11 +124,13 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerKeyframesBlendTools(ctx);
 	registerMaskTools(ctx);
 	registerShapeTools(ctx);
+	registerVectorShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
 	registerStructureTools(ctx);
+	registerEditUxTools(ctx);
 	registerMulticamTools(ctx);
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);

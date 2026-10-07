@@ -43,6 +43,7 @@ import {
 	type TextAnimationSide,
 } from '../text-animations.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
+import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';
@@ -160,6 +161,8 @@ export type PropertySpec = {
 	valueSchema?: JsonSchemaObject;
 	/** `media` values (fx framework): the asset kinds the picker offers (absent = LUTs, the M2 colour pickers). */
 	mediaKinds?: readonly string[];
+	/** wp shapes: structural check of a written value (`json` paths and gradients); false = E_INVALID_PARAM. */
+	validate?: (value: unknown) => boolean;
 };
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
@@ -195,8 +198,8 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 		const canvas = r.canvas as 'sequence' | { width: number; height: number };
 		return canvas === 'sequence' ? frame : { width: canvas.width, height: canvas.height };
 	}
-	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry.
-	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape);
+	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry; vector shapes (wp shapes): the frame.
+	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape, frame);
 	// edit-structure (S01:KND-020): a nest clip's box is the nested sequence's frame.
 	if (clip.kind === 'nest-video') {
 		const nested = doc.sequences?.[r.sequenceId as string];
@@ -301,7 +304,9 @@ export const DEFAULT_SHAPE_STROKE = {
 	width: 8,
 	position: 'center' as const,
 };
-const isShape = (c: Pick<Clip, 'kind'>) => c.kind === 'shape';
+/** Rectangle / ellipse shapes (vector shapes have per-item `shape.items.*` keys instead, wp shapes). */
+const isShape = (c: Pick<Clip, 'kind'>) =>
+	c.kind === 'shape' && (c as { shape?: { type?: string } }).shape?.type !== 'vector';
 /** Corner radius applies to rectangles; a bare `{kind}` (agent schema) counts as a possible rectangle. */
 const isRectShape = (c: Pick<Clip, 'kind'>) =>
 	isShape(c) && (c as { shape?: { type?: string } }).shape?.type !== 'ellipse';
@@ -1482,6 +1487,8 @@ export function propertiesForClip(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
 ): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
+	// wp shapes: per-item keys of vector shapes.
+	if (clip.kind === 'shape') return [...base, ...shapeItemPropertySpecs(clip)];
 	if (clip.kind === 'text')
 		return [
 			...base,
@@ -1508,6 +1515,9 @@ export function resolvePropertySpec(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
 	clip?: TextAnimated,
 ): PropertySpec | undefined {
+	// wp shapes: `shape.items.<itemId>.<field…>` of vector shapes (given the clip).
+	if (key.startsWith(SHAPE_ITEM_KEY_PREFIX))
+		return clip ? shapeItemPropertySpecs(clip as Pick<Clip, 'kind'>).find((s) => s.key === key) : undefined;
 	// text-animators workstream: dynamic animator / selector / path / more-options keys (need the clip).
 	if (isTextAnimatorKey(key))
 		return resolveTextAnimatorSpec(key, clip as Parameters<typeof resolveTextAnimatorSpec>[1]);

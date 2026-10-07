@@ -59,10 +59,22 @@ export type RunResult = {
 	error?: unknown;
 };
 
+const beforeRun = new Set<(id: string, ctx: CommandCtx) => void>();
+
+/**
+ * Called before every command runs (edit-ux: a dynamic J/K/L trim in progress commits first, as in Premiere and
+ * FilmCraft, so another command never runs on top of the open trim gesture). Returns the unregister function.
+ */
+export function onBeforeCommand(fn: (id: string, ctx: CommandCtx) => void): () => void {
+	beforeRun.add(fn);
+	return () => beforeRun.delete(fn);
+}
+
 /** Runs a command by id (menus, palette, keymap, agents all go through here, S05:KB-001). */
 export async function runCommand(id: string, ctx: CommandCtx, args?: unknown): Promise<RunResult> {
 	const cmd = commands.get(id);
 	if (!cmd) return { ran: false, reason: 'unknown' };
+	for (const fn of [...beforeRun]) fn(id, ctx);
 	if (!isCommandEnabled(cmd, ctx)) return { ran: false, reason: 'disabled' };
 	if (cmd.argsSchema) {
 		const parsed = cmd.argsSchema.safeParse(args);

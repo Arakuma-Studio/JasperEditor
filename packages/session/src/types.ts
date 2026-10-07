@@ -36,7 +36,11 @@ export type SequenceViewState = {
 	targeting: { video: string[]; audio: string[] };
 	/** Source patching: source track label (e.g. "V1"/"A1") → sequence track id or null (off). */
 	sourcePatching: Record<string, string | null>;
-	keyframeDisplay: Record<string, 'none' | 'opacity' | 'volume' | 'pan'>;
+	/**
+	 * Keyframe lane per clip id or track id (edit-ux): a property key (`opacity`, `volumeDb`, `effects.<fx>.<param>`…)
+	 * or `none`; absent = the default (Opacity on video, Level on audio).
+	 */
+	keyframeDisplay: Record<string, string>;
 	display: { thumbnails: 'none' | 'head' | 'continuous'; waveforms: boolean; clipNames: boolean };
 };
 
@@ -56,6 +60,9 @@ export type ActiveTool =
 	// M2 (S11:SHP-006, wp-m2-shapes): Program monitor shape tools (XF-061).
 	| 'rectangle'
 	| 'ellipse'
+	// wp shapes: Polygon and Star tools (After Effects' shape tool group; vector shapes).
+	| 'polygon'
+	| 'star'
 	| 'hand'
 	| 'zoom'
 	| 'type';

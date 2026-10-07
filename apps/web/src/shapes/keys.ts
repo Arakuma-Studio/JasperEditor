@@ -5,6 +5,8 @@ import type { Clip } from '@jasper/project';
 export function shapePropertyKeys(clip: Clip): string[] {
 	if (clip.kind !== 'shape') return [];
 	const s = clip.shape;
+	// Vector shapes list their items' rows per item (Effect Controls ▸ Contents, wp shapes).
+	if (s.type === 'vector') return [];
 	return [
 		'shape.size',
 		...(s.fill ? ['shape.fill'] : []),

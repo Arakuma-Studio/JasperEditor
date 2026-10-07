@@ -401,7 +401,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (210; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (230; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -420,6 +420,9 @@ Tools (210; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
   `add_shape` `get_motion_path` `set_spatial_interpolation`.
+- Vector shapes: `add_vector_shape` `svg_to_shape` `list_shape_presets` `get_shape` `add_shape_items`
+  `update_shape_item` `remove_shape_items` `move_shape_item` `group_shape_items` `duplicate_shape_item`
+  `edit_shape_path` `convert_shape_to_vector`.
 - Text animators: `list_text_animator_presets` `apply_text_animator_preset` `add_text_animator` `add_text_selector`
   `get_text_animators` `remove_text_animators` `set_text_path` `convert_text_animation`.
 - Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
@@ -433,6 +436,9 @@ Tools (210; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
   `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
   `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
+- Editing and trimming: `source_edit` (three/four-point Insert/Overwrite, backtiming, Fit Clip, split edits, source
+  patching) `find_edit_points` `trim_edit_points` `match_frame` `reverse_match_frame` `make_subclip` `edit_subclip`
+  `set_split_marks` (`docs/wp-notes/edit-ux.md`).
 - Synchronize, Merge Clips, multi-camera: `measure_audio_sync` `synchronize_clips` `merge_clips`
   `create_multicam_sequence` `switch_multicam_angle` `record_multicam_cuts` `set_multicam_enabled` `flatten_multicam`
   `edit_multicam_cameras` `get_multicam` (`docs/wp-notes/multicam.md`).
@@ -624,6 +630,14 @@ Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.
   layer bake they export natively. Agents use `add_shape`, or `clip.update {shape}` / `param.set` on `shape.*`.
 - Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
   `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
+- **Vector shapes** (After Effects-style shape layers, `docs/wp-notes/shapes.md`): nested groups with transforms;
+  rectangle, ellipse, polystar and free Bézier paths; solid and gradient (linear / radial with highlight) fills and
+  strokes with dashes, taper and wave; the path operators Trim Paths, Repeater, Offset Paths, Round Corners, Zig Zag,
+  Twist, Wiggle Paths, Pucker & Bloat and Merge Paths (curve-preserving booleans); every blend mode. **Properties ▸
+  Shape Contents** is the layer list (add, group, reorder by drag, enable, rename) with the selected item's
+  properties and a gradient editor; **Effect Controls ▸ Contents** keyframes every property. Tools: Pen (draw, add /
+  delete / convert vertices), Rectangle, Ellipse, Polygon, Star; vertices of path items are edited on the Program
+  monitor. Presets, SVG → shape (`svgToShapeContents`), and Graphics ▸ Convert to Vector Shape.
 
 ## Transitions and their defaults
 

@@ -11,12 +11,7 @@ import {
 	defaultTransform,
 } from '../../factories.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
-import {
-	contentDurationFlicks,
-	defaultLabelForPlacedClip,
-	isBoundedContent,
-	kindCapabilities,
-} from '../../registry/kinds.ts';
+import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
@@ -39,7 +34,6 @@ import {
 	assertUnlocked,
 	cleanupSequence,
 	clearRange,
-	contentInRange,
 	end,
 	ensureTrackAt,
 	findTrackIn,
@@ -54,9 +48,9 @@ import {
 	shiftMarkers,
 	splitClipAt,
 	syncFollowerTracks,
-	trackClips,
 	tracksOfKind,
 } from '../placement.ts';
+import { rippleDeleteSpans, rippleTrimGroup, tracksHolding, trimLimits } from '../ripple.ts';
 import type { ClipPatch, TransformPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
@@ -153,7 +147,8 @@ type PlaceOptions = {
 	at: number;
 	mode: 'overwrite' | 'insert';
 	videoTrack?: string;
-	audioTracks?: string[];
+	/** Destination per audio channel clip; `null` leaves that channel out (edit-ux source patching). */
+	audioTracks?: (string | null)[];
 	video?: boolean;
 	audio?: boolean;
 	audioMapping?: 'stereo' | 'mono-per-channel' | 'per-stream';
@@ -162,6 +157,16 @@ type PlaceOptions = {
 	createTracks?: boolean;
 	rippleMarkers?: boolean;
 	ref?: string;
+	/**
+	 * edit-ux (3/4-point editing, split edits, fit to fill): the resolved placement. `rate` is the clip speed;
+	 * each channel (visual kinds use `video`, audio clips `audio`) starts `offset` frames after `at` with its own
+	 * content In and length. A missing channel is not placed.
+	 */
+	fitted?: {
+		rate: number;
+		video?: { in: number; offset: number; frames: number };
+		audio?: { in: number; offset: number; frames: number };
+	};
 	/** edit-structure: sequence sources as nests (default) or individual clips. */
 	nest?: boolean;
 };
@@ -181,7 +186,7 @@ export function placeSource(
 	if (o.source.projectItemId) {
 		item = doc.items[o.source.projectItemId] as ProjectItem | undefined;
 		if (!item) h.fail('E_NOT_FOUND', `Project item not found: ${o.source.projectItemId}`);
-		if (item.kind === 'media') mediaId = item.mediaId;
+		if (item.kind === 'media' || item.kind === 'subclip') mediaId = item.mediaId;
 		else if (item.kind === 'synthetic') syntheticId = item.syntheticId;
 		else if (item.kind !== 'sequence') h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
 	}
@@ -198,7 +203,7 @@ export function placeSource(
 			at: o.at,
 			mode: o.mode,
 			...(o.videoTrack ? { videoTrack: o.videoTrack } : {}),
-			...(o.audioTracks ? { audioTracks: o.audioTracks } : {}),
+			...(o.audioTracks ? { audioTracks: o.audioTracks.filter((t): t is string => t !== null) } : {}),
 			...(o.video !== undefined ? { video: o.video } : {}),
 			...(o.audio !== undefined ? { audio: o.audio } : {}),
 			...(nest !== undefined ? { nest } : {}),
@@ -210,7 +215,13 @@ export function placeSource(
 		if (placedSrc?.multicam) markMulticamClips(seq, placed.clipIds, placedSrc.multicam);
 		return placed;
 	}
-	const marks = item && (item.kind === 'media' || item.kind === 'synthetic') ? item.marks : null;
+	const marks =
+		item && (item.kind === 'media' || item.kind === 'synthetic' || item.kind === 'subclip')
+			? item.marks
+			: null;
+	// edit-ux: a subclip's range is its default source range (its own marks narrow it).
+	const subclip = item?.kind === 'subclip' ? item : null;
+	const defaultIn = subclip ? subclip.range.in : 0;
 	if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
 	const scaling = o.scaling ?? doc.settings.defaultScaling;
 	const stillFrames = Math.max(
@@ -241,11 +252,11 @@ export function placeSource(
 		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
 		const box = mediaIntrinsicSize(asset) ?? frameBox(seq);
 		const bounded = asset.kind === 'video' || asset.kind === 'audio';
-		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
+		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? defaultIn;
 		if (bounded) {
 			const dur = asset.probe.durationFlicks;
 			if (dur === null) h.fail('E_INVALID_PARAM', 'Media has no duration');
-			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? dur;
+			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? subclip?.range.out ?? dur;
 			if (outF <= inF) h.fail('E_INVALID_PARAM', 'Source out must be after source in');
 			if (inF < 0 || outF > dur + F) h.fail('E_OUT_OF_MEDIA', 'Source range is outside the media');
 			frames = Math.max(1, Math.floor(Math.min(outF, dur) / F - inF / F + FRAME_EPS));
@@ -343,6 +354,7 @@ export function placeSource(
 				return m ? Number(m[1]) - 1 : 0;
 			})();
 			channelSets.forEach((channels, i) => {
+				if (o.audioTracks?.[i] === null) return;
 				const trackRef =
 					o.audioTracks?.[i] ??
 					(o.audioTracks && o.audioTracks.length > 0 ? `A${i + 1}` : `A${videoIndex + i + 1}`);
@@ -429,15 +441,39 @@ export function placeSource(
 		return h.fail('E_INVALID_PARAM', 'clip.place needs a source');
 	}
 
+	// Where each planned clip goes: one range for all, or per channel (edit-ux `fitted`).
+	type Slot = { plan: Plan; start: number; frames: number; sourceIn: number };
+	const slots: Slot[] = [];
+	for (const p of plans) {
+		if (!o.fitted) {
+			slots.push({ plan: p, start: o.at, frames: frames!, sourceIn: sourceIn! });
+			continue;
+		}
+		const ch = p.kind === 'audio' ? o.fitted.audio : o.fitted.video;
+		if (ch && ch.frames >= 1)
+			slots.push({ plan: p, start: o.at + ch.offset, frames: ch.frames, sourceIn: ch.in });
+	}
+	if (slots.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to place from this source');
 	const create = o.createTracks !== false;
-	const dest = plans.map((p) => prepareTrack(seq, p.trackRef, p.kind, h, create));
+	const dest = slots.map((sl) => prepareTrack(seq, sl.plan.trackRef, sl.plan.kind, h, create));
 	if (new Set(dest.map((t) => t.id)).size !== dest.length)
 		h.fail('E_INVALID_PARAM', 'Two placed clips target the same track');
-	makeRoom(seq, h, dest, o.at, frames!, o.mode, o.rippleMarkers);
+	if (o.mode === 'insert' || slots.every((sl) => sl.start === o.at && sl.frames === slots[0]!.frames)) {
+		const a = Math.min(...slots.map((sl) => sl.start));
+		const b = Math.max(...slots.map((sl) => sl.start + sl.frames));
+		makeRoom(seq, h, dest, a, b - a, o.mode, o.rippleMarkers);
+	} else
+		slots.forEach((sl, i) => {
+			makeRoom(seq, h, [dest[i]!], sl.start, sl.frames, 'overwrite');
+		});
 	const clipIds: string[] = [];
-	plans.forEach((p, i) => {
+	slots.forEach((sl, i) => {
 		const id = h.ids.next('clp');
-		seq.clips[id] = p.build(id, dest[i]!.id, o.at, frames!, sourceIn!) as DClip;
+		const clip = sl.plan.build(id, dest[i]!.id, sl.start, sl.frames, sl.sourceIn) as DClip;
+		if (o.fitted && o.fitted.rate !== 1 && kindCapabilities(clip.kind)?.supportsSpeed)
+			clip.speed.rate = o.fitted.rate;
+		if (subclip) clip.subclipId = subclip.id;
+		seq.clips[id] = clip;
 		clipIds.push(id);
 	});
 	let linkId: string | null = null;
@@ -532,51 +568,6 @@ function validateMgParams(
 
 // ---------------------------------------------------------------- trim
 
-type TrimLimits = { min: number; max: number };
-
-/** Allowed delta range for trimming one clip edge (S02:TL-534/541, S01:CLP-005). */
-function trimLimits(
-	doc: DDoc,
-	seq: DSeq,
-	c: DClip,
-	edge: 'in' | 'out',
-	ripple: boolean,
-	members: ReadonlySet<string>,
-): TrimLimits {
-	const F = flicksPerFrame(seq.settings.frameRate);
-	const step = F * c.speed.rate;
-	let min = Number.NEGATIVE_INFINITY;
-	let max = Number.POSITIVE_INFINITY;
-	// Media duration, or the composition length for composition clips (S08:MGC-004).
-	const dur = contentDurationFlicks(doc, c);
-	// edit-structure: a held clip shows one frame; its edges are only limited by content time 0.
-	const bounded = isBoundedContent(c as Clip) && dur !== null && !c.frameHold;
-	const others = trackClips(seq, c.trackId).filter((x) => x.id !== c.id && !members.has(x.id));
-	if (edge === 'in') {
-		max = Math.min(max, c.duration - 1);
-		if (!ripple) {
-			min = Math.max(min, -c.start);
-			const prevEnd = Math.max(0, ...others.filter((x) => end(x) <= c.start).map(end));
-			min = Math.max(min, prevEnd - c.start);
-		}
-		if (!c.speed.reverse) min = Math.max(min, -Math.floor(c.sourceIn / step + FRAME_EPS));
-		else if (bounded) min = Math.max(min, -(Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration));
-	} else {
-		min = Math.max(min, 1 - c.duration);
-		if (!ripple) {
-			const nextStart = Math.min(
-				Number.POSITIVE_INFINITY,
-				...others.filter((x) => x.start >= end(c)).map((x) => x.start),
-			);
-			max = Math.min(max, nextStart - end(c));
-		}
-		if (!c.speed.reverse && bounded)
-			max = Math.min(max, Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration);
-		else if (c.speed.reverse) max = Math.min(max, Math.floor(c.sourceIn / step + FRAME_EPS));
-	}
-	return { min, max };
-}
-
 function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext): unknown {
 	const mode = cmd.mode ?? 'regular';
 	if (mode === 'roll') return rollTrim(doc, cmd, h);
@@ -589,6 +580,7 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 			const p = seq.clips[id];
 			if (!p || p.id === clip.id || edgeFrame(p) !== edgeFrame(clip)) continue;
 			if (findTrackIn(seq, p.trackId)?.track.locked) continue;
+			if (members.some((m) => m.trackId === p.trackId)) continue;
 			members.push(p);
 		}
 	}
@@ -605,79 +597,33 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 				members.push(g);
 			}
 	}
+	if (mode === 'ripple') {
+		// edit-ux: one group edit that keeps split edits in sync (ripple.ts).
+		const d = rippleTrimGroup(
+			doc,
+			seq,
+			h,
+			members.map((m) => ({ clip: m, edge: cmd.edge })),
+			cmd.deltaFrames,
+			{ clampToSyncLock: cmd.clampToSyncLock, rippleMarkers: cmd.rippleMarkers },
+		);
+		if (d !== 0) cleanupSequence(seq, h);
+		return { deltaFrames: d };
+	}
 	const memberIds = new Set(members.map((m) => m.id));
-	const ripple = mode === 'ripple';
 	let d = cmd.deltaFrames;
-	const lim = members.map((m) => trimLimits(doc, seq, m, cmd.edge, ripple, memberIds));
+	const lim = members.map((m) => trimLimits(doc, seq, m, cmd.edge, false, memberIds));
 	const lo = Math.max(...lim.map((l) => l.min));
 	const hi = Math.min(...lim.map((l) => l.max));
-	const clamped = Math.min(hi, Math.max(lo, d));
+	const clamped = lo > hi ? 0 : Math.min(hi, Math.max(lo, d));
 	if (clamped !== d) {
 		h.warn('W_DURATION_CLAMPED', `Trim clamped from ${d} to ${clamped} frames`);
 		d = clamped;
 	}
 	if (d === 0) return { deltaFrames: 0 };
-
-	if (!ripple) {
-		for (const m of members) {
-			if (cmd.edge === 'in') setClipRange(seq, m, m.start + d, end(m));
-			else setClipRange(seq, m, m.start, end(m) + d);
-		}
-		cleanupSequence(seq, h);
-		return { deltaFrames: d };
-	}
-
-	// Ripple: the edited clip's duration changes by `shift`; later material moves with it.
-	const shift = cmd.edge === 'in' ? -d : d;
-	const oldEnd = end(clip);
-	const edited = new Set(members.map((m) => m.trackId));
-	const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
-	let n = Math.abs(shift);
-	const removalStart = () => (cmd.edge === 'in' ? clip.start : oldEnd - n);
-	if (shift < 0) {
-		const blocking = followers.flatMap((t) => contentInRange(seq, t, removalStart(), n).map((c) => c.id));
-		if (blocking.length > 0) {
-			if (!cmd.clampToSyncLock) {
-				h.fail('E_SYNC_CONFLICT', 'Sync-locked tracks have content in the trimmed range', { blocking });
-			}
-			// Gesture behaviour: stop at the largest amount every sync-locked track allows (S02:TL-543).
-			let allowed = n;
-			for (const t of followers) {
-				for (const c of trackClips(seq, t)) {
-					if (cmd.edge === 'in') {
-						if (end(c) > clip.start) allowed = Math.min(allowed, Math.max(0, c.start - clip.start));
-					} else if (c.start < oldEnd) allowed = Math.min(allowed, Math.max(0, oldEnd - end(c)));
-				}
-			}
-			h.warn('W_DURATION_CLAMPED', `Ripple trim stopped at ${allowed} of ${n} frames by sync-locked tracks`);
-			n = allowed;
-			d = cmd.edge === 'in' ? n : -n;
-			if (n === 0) return { deltaFrames: 0 };
-		}
-	}
-	const signed = shift < 0 ? -n : n;
-	// Later clips on the edited tracks.
 	for (const m of members) {
-		const mEnd = end(m);
-		for (const c of trackClips(seq, m.trackId))
-			if (!memberIds.has(c.id) && c.start >= mEnd) c.start += signed;
-	}
-	for (const m of members) {
-		if (cmd.edge === 'in') {
-			// Premiere keeps the clip's start; the head content changes (S02:TL-540).
-			const s = m.start;
-			setClipRange(seq, m, s + d, end(m));
-			m.start = s;
-		} else setClipRange(seq, m, m.start, end(m) + d);
-	}
-	if (signed > 0) {
-		const at = cmd.edge === 'in' ? clip.start : oldEnd;
-		relinkSplits(seq, insertShift(seq, followers, at, n, h), h);
-		if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, n);
-	} else {
-		const f = cmd.edge === 'in' ? clip.start : oldEnd - n;
-		removeShift(seq, followers, f, n, h);
-		if (cmd.rippleMarkers !== false) shiftMarkers(seq, f, -n);
+		if (cmd.edge === 'in') setClipRange(seq, m, m.start + d, end(m));
+		else setClipRange(seq, m, m.start, end(m) + d);
 	}
 	cleanupSequence(seq, h);
 	return { deltaFrames: d };
@@ -899,28 +845,27 @@ export const clipCoreHandlers: HandlerMap = {
 		const seq = found.seq;
 		const clips = cmd.groups === false ? found.clips : expandGroups(seq, found.clips);
 		for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
-		const spans = clips
-			.map((c) => ({ start: c.start, end: end(c), track: c.trackId }))
-			.sort((a, b) => a.start - b.start);
-		const ranges: { start: number; end: number; tracks: Set<string> }[] = [];
-		for (const s of spans) {
-			const last = ranges[ranges.length - 1];
-			if (last && s.start <= last.end) {
-				last.end = Math.max(last.end, s.end);
-				last.tracks.add(s.track);
-			} else ranges.push({ start: s.start, end: s.end, tracks: new Set([s.track]) });
-		}
+		// edit-ux: close the time the clips free on every track that loses one, once (split edits, ripple.ts).
+		const ids = new Set(clips.map((c) => c.id));
+		const spans = rippleDeleteSpans(seq, ids);
+		if (spans.length === 0)
+			h.fail('E_INVALID_PARAM', 'No gap can close: other clips on these tracks cover the deleted time', {
+				blocking: clips.map((c) => c.id),
+			});
+		const affected = tracksHolding(seq, ids);
 		for (const c of clips) removeClip(seq, c.id, h);
-		const followers = allTracksIn(seq)
-			.filter((t) => t.syncLock && !t.locked)
-			.map((t) => t.id);
-		for (const r of [...ranges].reverse()) {
-			const tracks = new Set([...r.tracks, ...followers]);
+		const tracks = new Set([
+			...affected,
+			...allTracksIn(seq)
+				.filter((t) => t.syncLock && !t.locked)
+				.map((t) => t.id),
+		]);
+		for (const r of [...spans].reverse()) {
 			removeShift(seq, tracks, r.start, r.end - r.start, h, { syncConflict: cmd.syncConflict });
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, r.start, -(r.end - r.start));
 		}
 		cleanupSequence(seq, h);
-		return { removed: clips.map((c) => c.id), ranges: ranges.map((r) => ({ start: r.start, end: r.end })) };
+		return { removed: clips.map((c) => c.id), ranges: spans.map((r) => ({ start: r.start, end: r.end })) };
 	},
 	'clip.update': (doc, cmd, h: HandlerContext) => {
 		const ids = cmd.clipId ? [cmd.clipId] : idList(cmd.clipIds);
