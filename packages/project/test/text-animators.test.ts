@@ -469,3 +469,36 @@ describe('invariants, repair and evaluation', () => {
 		expect(at(60)).toEqual([100, 100, 100, 100]);
 	});
 });
+
+describe('typography properties (Character / Paragraph)', () => {
+	it('param.set writes the style through clip.update with read-time defaults', () => {
+		const h = new Harness();
+		const id = withText(h);
+		const clip = () => clipOf(h, id);
+		const read = (key: string) => {
+			const spec = resolvePropertySpec(key, undefined, undefined, clip())!;
+			return spec;
+		};
+		expect(read('text.kerning').kind).toBe('enum');
+		h.ok([
+			{ type: 'param.set', target: ['clip', id, 'text', 'kerning'], value: 'optical' },
+			{ type: 'param.set', target: ['clip', id, 'text', 'smallCaps'], value: true },
+			{ type: 'param.set', target: ['clip', id, 'text', 'stylisticSets'], value: '3, 1, 1' },
+			{ type: 'param.set', target: ['clip', id, 'text', 'fractions'], value: true },
+			{ type: 'param.set', target: ['clip', id, 'text', 'fontVariations'], value: 'wght 650, wdth 80' },
+			{ type: 'param.set', target: ['clip', id, 'text', 'indentFirstLinePx'], value: 24 },
+		]);
+		const st = clip().content.style;
+		expect(st.kerning).toBe('optical');
+		expect(st.smallCaps).toBe(true);
+		expect(st.openType).toEqual({ stylisticSets: [3, 1], fractions: true });
+		expect(st.fontVariations).toEqual({ wght: 650, wdth: 80 });
+		expect(st.indentFirstLinePx).toBe(24);
+		h.ok([{ type: 'param.set', target: ['clip', id, 'text', 'kerningAmount'], value: -40 }]);
+		expect(clip().content.style.kerning).toBe(-40);
+		expect(
+			err(h.tx([{ type: 'param.set', target: ['clip', id, 'text', 'script'], value: 'wavy' }]))?.code,
+		).toBe('E_INVALID_PARAM');
+		invariantsOk(h);
+	});
+});

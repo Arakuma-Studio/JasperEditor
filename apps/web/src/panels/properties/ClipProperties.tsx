@@ -303,6 +303,50 @@ function TextSections(props: {
 					visual,
 				).map((r) => render(r))}
 			</Section>
+			{/* text-animators: AE's Character panel (kerning, baseline shift, tsume, faux styles, caps, scripts,
+			    ligatures and OpenType features, variable font axes). */}
+			<Section id="properties.textCharacter" title="Character" defaultOpen={false}>
+				{rows(
+					[
+						'text.kerning',
+						'text.kerningAmount',
+						'text.baselineShiftPx',
+						'text.tsume',
+						'text.fauxBold',
+						'text.fauxItalic',
+						'text.smallCaps',
+						'text.script',
+						'text.ligatures',
+						'text.discretionaryLigatures',
+						'text.contextualAlternates',
+						'text.stylisticAlternates',
+						'text.swash',
+						'text.titling',
+						'text.ordinals',
+						'text.fractions',
+						'text.allSmallCaps',
+						'text.figureStyle',
+						'text.figureWidth',
+						'text.stylisticSets',
+						'text.fontVariations',
+					],
+					visual,
+				).map((r) => render(r))}
+			</Section>
+			{/* text-animators: AE's Paragraph panel (justification, indents, paragraph spacing). */}
+			<Section id="properties.textParagraph" title="Paragraph" defaultOpen={false}>
+				{rows(
+					[
+						'text.justifyLast',
+						'text.indentLeftPx',
+						'text.indentRightPx',
+						'text.indentFirstLinePx',
+						'text.spaceBeforePx',
+						'text.spaceAfterPx',
+					],
+					visual,
+				).map((r) => render(r))}
+			</Section>
 		</>
 	);
 }

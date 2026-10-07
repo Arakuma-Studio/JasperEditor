@@ -33,6 +33,7 @@ import {
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
 import { MaskList } from '../../masks/MaskList.tsx';
+import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
@@ -582,7 +583,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const left = { width: showTimeline ? `${leftPct}%` : '100%' };
 
 	/** One property row with its key lane (and Value/Velocity graphs when twirled open). */
-	const renderRow = (r: Row) => {
+	const renderRow = (r: Row, editor?: ReactNode) => {
 		const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
 		const hasGraph = graphKindOf(r.spec) !== null;
 		const graphHeight = hasGraph ? graphs[graphKey] : undefined;
@@ -593,6 +594,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 						<PropertyRow
 							row={r}
 							ctx={ctx}
+							editor={editor}
 							indent
 							twirl={
 								hasGraph
@@ -864,6 +866,19 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 										) : null}
 										{open ? rows.map((r) => renderRow(r)) : null}
+										{open && s.textAnimators ? (
+											<TextAnimatorList
+												session={session}
+												model={s.textAnimators}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
+												frame={frame}
+											/>
+										) : null}
 										{open && s.masks ? (
 											<MaskList
 												session={session}
