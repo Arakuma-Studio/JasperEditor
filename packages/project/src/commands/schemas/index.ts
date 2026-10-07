@@ -12,6 +12,7 @@ import { MASK_COMMANDS } from './mask.ts';
 import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
+import { PREVIEWS_COMMANDS } from './previews.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { ROTO_COMMANDS } from './roto.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
@@ -39,6 +40,7 @@ export * from './mask.ts';
 export * from './multicam.ts';
 export * from './param.ts';
 export * from './preset.ts';
+export * from './previews.ts';
 export * from './project.ts';
 export * from './roto.ts';
 export * from './sequence.ts';
@@ -99,6 +101,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...THREE_D_COMMANDS,
 	// imports: Interpret Footage
 	...INTERPRET_COMMANDS,
+	// previews: Sequence Settings ▸ Video Previews
+	...PREVIEWS_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

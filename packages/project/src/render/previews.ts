@@ -36,7 +36,9 @@
 //     absolute start frame: an expression may read any layer, marker or name and `time` is sequence time, so a
 //     ripple or an edit anywhere invalidates exactly those segments. Segments without expressions are not affected
 //     by expressions elsewhere.
-//  6. **Things outside the document** — the renderer build, the effect shaders — are not in the hash: the engine
+//  6. **Monitor-only settings** — Draft 3D, proxies, playback resolution — are not hashed: previews are rendered by the
+//     export path at full quality and size.
+//  7. **Things outside the document** — the renderer build, the effect shaders — are not in the hash: the engine
 //     keeps preview files per renderer version (`previews/<rendererKey>/<hash>.*`), so an update never shows stale
 //     files.
 //
@@ -551,7 +553,7 @@ function hashItems(
 		},
 		frames: b - a,
 		body,
-		scene3d: s3 ? [s3.renderer, s3.draft ?? false, s3.shadowMapSize ?? null, s3.supersampling ?? null] : null,
+		scene3d: s3 ? [s3.renderer, s3.shadowMapSize ?? null, s3.supersampling ?? null] : null,
 		media: [...media].sort().map((id) => [id, snap.media[id] ?? null]),
 		fonts: snap.fonts
 			.filter((f) => fonts.has(f.fontId))

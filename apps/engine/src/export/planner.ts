@@ -113,6 +113,10 @@ export type OutputSpec = {
 	proresProfile?: 'hq' | '4444';
 	/** wp interchange: straight-alpha ProRes 4444 on a transparent background, no audio (Remotion path). */
 	alpha?: boolean;
+	/** previews: no audio stream (`ExportSettings.videoOnly`). */
+	videoOnly?: boolean;
+	/** previews: frames between keyframes (`video.keyframeInterval`); absent = the encoder default. */
+	gop?: number;
 };
 
 export type LocalMedia = {
@@ -462,6 +466,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
 		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
 		...(video?.alpha ? { alpha: true } : {}),
+		...(settings.videoOnly ? { videoOnly: true } : {}),
+		...(video?.keyframeInterval ? { gop: video.keyframeInterval } : {}),
 	};
 	if (
 		video?.alpha &&

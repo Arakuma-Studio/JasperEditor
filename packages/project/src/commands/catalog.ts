@@ -19,6 +19,7 @@ import { maskHandlers } from './handlers/mask.ts';
 import { multicamHandlers } from './handlers/multicam.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
+import { PREVIEWS_OWNER, previewsHandlers } from './handlers/previews.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
@@ -87,7 +88,9 @@ export type CommandOwner =
 	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
 	| 'sim-warp'
 	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
-	| 'imports';
+	| 'imports'
+	// Render previews (docs/wp-notes/previews.md)
+	| 'previews';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -347,6 +350,8 @@ const LABELS: Record<CommandType, string> = {
 	'cameraTracker.create': 'Create Camera',
 	'cameraTracker.remove': 'Remove 3D Camera Tracker',
 	'media.interpret': 'Interpret Footage',
+	// previews
+	'sequence.setPreviewSettings': 'Preview Settings',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -384,6 +389,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[cameraTrackerHandlers, THREE_D_OWNER],
 	[simWarpHandlers, SIM_WARP_OWNER],
 	[interpretHandlers, INTERPRET_OWNER],
+	[previewsHandlers, PREVIEWS_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -415,7 +421,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux' ||
 				owner === THREE_D_OWNER ||
-				owner === INTERPRET_OWNER
+				owner === INTERPRET_OWNER ||
+				owner === PREVIEWS_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

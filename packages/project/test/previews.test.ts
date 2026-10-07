@@ -4,6 +4,10 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	audioPreviewSegments,
+	checkInvariants,
+	createCounterIdSource,
+	previewSettingsOf,
+	repairDocument,
 	flicksPerFrame,
 	hash128,
 	isPreviewHash,
@@ -337,5 +341,31 @@ describe('audio segments (Render Audio)', () => {
 		expect(after[after.length - 1]!.hash).toBe(moved[moved.length - 1]!.hash);
 		// picture hashes ignore audio
 		expect(hashes(segs(h.doc, h.seqId))).toEqual(hashes(segs(h.doc, h.seqId)));
+	});
+});
+
+describe('sequence.setPreviewSettings', () => {
+	it('sets format, size and quality in one undoable step; defaults apply at read time; bad values refuse', () => {
+		const h = new Harness();
+		expect(previewSettingsOf(h.seq)).toEqual({ format: 'h264-iframe', size: 'full', quality: 'standard' });
+		const d0 = h.doc;
+		h.ok([{ type: 'sequence.setPreviewSettings', format: 'vp9', size: 'half' }]);
+		expect(previewSettingsOf(h.seq)).toEqual({ format: 'vp9', size: 'half', quality: 'standard' });
+		h.ok([{ type: 'sequence.setPreviewSettings', quality: 'high' }]);
+		expect(h.seq.previews).toEqual({ format: 'vp9', size: 'half', quality: 'high' });
+		expect(previewSettingsOf(Object.values(d0.sequences)[0]!).format).toBe('h264-iframe');
+		expect(h.tx([{ type: 'sequence.setPreviewSettings', format: 'mjpeg' }]).ok).toBe(false);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('repair resets unreadable preview settings', () => {
+		const h = new Harness();
+		const doc = structuredClone(h.doc) as ProjectDocument;
+		(doc.sequences[h.seqId] as { previews?: unknown }).previews = { format: 'gif', size: 3 };
+		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-PREVIEWS')).toBe(true);
+		const { document, report } = repairDocument(doc, createCounterIdSource(99));
+		expect(report.some((r) => r.action === 'reset-preview-settings')).toBe(true);
+		expect((document.sequences[h.seqId] as { previews?: unknown }).previews).toBeUndefined();
+		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-PREVIEWS')).toEqual([]);
 	});
 });

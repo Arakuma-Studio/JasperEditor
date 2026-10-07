@@ -68,6 +68,11 @@ export const ExportSettingsSchema = z.object({
 			alpha: z.boolean().optional(),
 			encoderSpeed: z.enum(['fast', 'balanced', 'best']),
 			colorTags: z.literal('rec709').default('rec709'),
+			/**
+			 * previews (additive): frames between keyframes (1 = every frame is a keyframe). Absent = the encoder default
+			 * (≈ 2 s). Render previews use short intervals so the Program monitor seeks inside them quickly.
+			 */
+			keyframeInterval: z.number().int().min(1).max(600).optional(),
 		})
 		.optional(),
 	audio: z
@@ -102,6 +107,13 @@ export const ExportSettingsSchema = z.object({
 		.default({ type: 'download' }),
 	/** wp captions: burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
 	captions: ExportCaptionsSchema.optional(),
+	/** previews (additive): picture only — no audio stream and no mixdown (render previews of the picture). */
+	videoOnly: z.boolean().optional(),
+	/**
+	 * previews (additive): use the sequence's valid render previews for the segments they cover (Premiere "Use
+	 * Previews"). Segments without a preview render as usual. Ignored for alpha masters.
+	 */
+	usePreviews: z.boolean().optional(),
 });
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 

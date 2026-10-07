@@ -35,7 +35,7 @@ import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
 import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet.ts';
 import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
-import { isKnownClipKind } from './schema/sequence.ts';
+import { isKnownClipKind, SequencePreviewSettingsSchema } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
 import { isNestClip } from './structure/nest.ts';
@@ -180,6 +180,18 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	table(doc.transcripts, 'transcripts', 'trs');
 	table(doc.fonts, 'fonts', 'fnt');
 	table(doc.sequences, 'sequences', 'seq');
+	// previews: Sequence Settings ▸ Video Previews must be one of the known formats / sizes / qualities.
+	for (const seq of Object.values(doc.sequences)) {
+		const p = (seq as { previews?: unknown }).previews;
+		if (p !== undefined && !SequencePreviewSettingsSchema.safeParse(p).success)
+			issues.push(
+				inv('INV-PREVIEWS', `Sequence ${seq.id}: invalid preview settings`, [
+					'sequences',
+					seq.id,
+					'previews',
+				]),
+			);
+	}
 
 	// wp masks: ids, value ranges and path structure of Opacity / effect masks.
 	const masks = (list: readonly Mask[] | undefined, where: string[]) => {
@@ -1029,6 +1041,15 @@ export function repairDocument(
 	const doc = JSON.parse(JSON.stringify(input)) as ProjectDocument;
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
+
+	// ---- previews: unreadable preview settings fall back to the defaults.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const r = seq as { previews?: unknown };
+		if (r.previews !== undefined && !SequencePreviewSettingsSchema.safeParse(r.previews).success) {
+			delete r.previews;
+			note('reset-preview-settings', seq.id, 'invalid preview settings replaced by the defaults');
+		}
+	}
 
 	// ---- wp-m2-anime-templates (S11:ATP-002/006): re-stamp renderers from the registry; drop malformed param
 	// keyframe lists (unsorted / duplicate times / wrong value type) — the static params stay.

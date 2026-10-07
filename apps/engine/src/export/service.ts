@@ -727,6 +727,7 @@ export class ExportService {
 			fps: o.fps,
 			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
 			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
+			...(o.gop ? { gop: o.gop } : {}),
 		});
 		const vf = [
 			`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`,
@@ -742,8 +743,7 @@ export class ExportService {
 			...(audio?.path ? ['-i', audio.path] : []),
 			'-map',
 			'0:v:0',
-			'-map',
-			audio?.path ? '1:a:0' : '0:a:0?',
+			...(o.videoOnly ? [] : ['-map', audio?.path ? '1:a:0' : '0:a:0?']),
 			'-vf',
 			vf.join(','),
 			...(audio?.path && audio.sampleRate !== o.audioSampleRate
@@ -760,11 +760,15 @@ export class ExportService {
 			'tv',
 			'-frames:v',
 			String(frames),
-			...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
-			'-ar',
-			String(o.audioSampleRate),
-			'-ac',
-			String(o.audioChannels),
+			...(o.videoOnly
+				? ['-an']
+				: [
+						...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
+						'-ar',
+						String(o.audioSampleRate),
+						'-ac',
+						String(o.audioChannels),
+					]),
 			'-threads',
 			String(Math.max(1, ctx.slots)),
 			...(choice.container !== 'webm' ? ['-movflags', '+faststart'] : []),
@@ -919,6 +923,38 @@ export class ExportService {
 		};
 	}
 
+	/**
+	 * previews: renders an export request (its range, picture settings) into `output` inside the calling job — the same
+	 * planning, paths, fallbacks and frame-count check as an export job, without the job's output directory, captions
+	 * or destination copy. `output` must carry the container's extension; the caller owns the file (partials).
+	 */
+	async renderToFile(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		output: string,
+	): Promise<{
+		frames: number;
+		renderPath: 'native' | 'hybrid' | 'remotion';
+		warnings: { code: string; message: string }[];
+	}> {
+		ctx.progress(0, { stage: 'Planning' });
+		let planned: PlannedExport;
+		try {
+			planned = await this.plan(req);
+		} catch (e) {
+			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
+			throw e;
+		}
+		const r = await this.renderPlanned(ctx, req, planned, output);
+		return { frames: r.frames, renderPath: r.path, warnings: r.warnings };
+	}
+
+	/** The container (file extension) an export request will be written in. */
+	async containerOf(req: ExportStartRequest): Promise<string> {
+		const planned = await this.plan(req);
+		return planned.output.encoder?.container ?? 'mp4';
+	}
+
 	private async runExport(ctx: JobContext): Promise<unknown> {
 		const stored = await this.loadRequest(ctx);
 		if (stored.kind !== 'export') throw new JobError('BAD_REQUEST', 'Not an export request', false);
@@ -935,12 +971,40 @@ export class ExportService {
 		const encoder = planned.output.encoder;
 		const output = join(dir, `output.${encoder?.container ?? 'mp4'}`);
 		ctx.addPartial(dir);
+		const rendered = await this.renderPlanned(ctx, req, planned, output);
+		planned = rendered.planned;
+		const { frames, path, remotionOutput, warnings, audio } = rendered;
+		return this.finishExport(ctx, req, planned, output, dir, {
+			frames,
+			path,
+			remotionOutput,
+			warnings,
+			audio,
+		});
+	}
+
+	/** Renders a planned export into `output` (native / hybrid with the Remotion fallback, or Remotion). */
+	private async renderPlanned(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+	): Promise<{
+		planned: PlannedExport;
+		frames: number;
+		path: 'native' | 'hybrid' | 'remotion';
+		remotionOutput: 'direct' | 'intermediate' | undefined;
+		warnings: { code: string; message: string }[];
+		audio: MixdownResult | null;
+	}> {
+		const encoder = planned.output.encoder;
 		let frames = 0;
 		let remotionOutput: 'direct' | 'intermediate' | undefined;
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
-		const audio = await this.renderAudio(planned, ctx);
+		// previews: picture-only renders skip the mixdown.
+		const audio = planned.output.videoOnly ? null : await this.renderAudio(planned, ctx);
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -1047,7 +1111,8 @@ export class ExportService {
 					rp.phases[1]!.label,
 					audio,
 				);
-			} else await this.muxAudio(planned, target, audio, output, ctx);
+			} else if (audio) await this.muxAudio(planned, target, audio, output, ctx);
+			else await rename(target, output);
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(
@@ -1058,6 +1123,32 @@ export class ExportService {
 			}
 			frames = count;
 		}
+		return {
+			planned,
+			frames,
+			path: path as 'native' | 'hybrid' | 'remotion',
+			remotionOutput,
+			warnings,
+			audio,
+		};
+	}
+
+	private async finishExport(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+		dir: string,
+		r: {
+			frames: number;
+			path: 'native' | 'hybrid' | 'remotion';
+			remotionOutput: 'direct' | 'intermediate' | undefined;
+			warnings: { code: string; message: string }[];
+			audio: MixdownResult | null;
+		},
+	): Promise<unknown> {
+		const { frames, path, remotionOutput, warnings, audio } = r;
+		const encoder = planned.output.encoder;
 		// wp captions: embedded caption streams (remux) and sidecar files.
 		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		const byteSize = (await stat(output)).size;
@@ -1091,12 +1182,16 @@ export class ExportService {
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(warnings.length ? { warnings } : {}),
-			audioLoudness: {
-				integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
-				truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
-				lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
-				...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
-			},
+			...(audio
+				? {
+						audioLoudness: {
+							integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
+							truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
+							lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
+							...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
+						},
+					}
+				: {}),
 			...(captionResult ? { captions: captionResult } : {}),
 			planId: planned.plan.planId,
 		};
