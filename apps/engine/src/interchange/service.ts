@@ -586,7 +586,7 @@ export class InterchangeService {
 		const rate = seq.settings.frameRate;
 		const sampleRate = seq.settings.audioSampleRate;
 		const handles = audio.handlesFrames * flicksPerFrame(rate);
-		const needs = audioNeeds(ir, sequenceId, { handles });
+		const needs = audioNeeds(ir, sequenceId, { handles, wholeMedia: audio.copyComplete });
 		const paths = await this.mediaPaths(doc);
 		const out: AudioEssence[] = [];
 		const bps = audio.bitDepth / 8;
@@ -791,7 +791,20 @@ export class InterchangeService {
 					continue;
 				}
 				if (want.has('duration') && relinkDiff(a, reg).some((d) => d.field === 'duration')) continue;
-				hit = { file: f, reg, matched: req.match.filter((m) => m !== 'size' || a.sizeBytes > 0) };
+				// Media Start: the start timecode, when the asset knows one.
+				if (
+					want.has('mediaStart') &&
+					a.probe.startTimecode &&
+					reg.probe.startTimecode !== a.probe.startTimecode
+				)
+					continue;
+				hit = {
+					file: f,
+					reg,
+					matched: req.match.filter(
+						(m) => (m !== 'size' || a.sizeBytes > 0) && (m !== 'mediaStart' || !!a.probe.startTimecode),
+					),
+				};
 				break;
 			}
 			// Then by fingerprint: files of the asset's size whose content is the asset's (moved and renamed).

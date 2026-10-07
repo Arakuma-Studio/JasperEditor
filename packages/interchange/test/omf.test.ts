@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { audioNeeds } from '../src/essence.ts';
 import { detectFormat } from '../src/formats.ts';
@@ -8,6 +9,7 @@ import type { AudioEssence, ExportOptions } from '../src/options.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks, RATE_23_976, RATE_25, RATE_29_97, timecodeBase } from '../src/time.ts';
 import { parseWav } from '../src/wav.ts';
+import { arbProject, BASIC } from './support/arbitraries.ts';
 import { expectOnlyInterchangeErrors } from './support/fuzz.ts';
 import { clip, key, link, marker, media, project, sequence, structure, transition } from './support/ir.ts';
 
@@ -61,6 +63,23 @@ function ramp(frames: number, channels: number, seed: number): Uint8Array {
 }
 
 describe('OMF', () => {
+	it('export → import keeps every audio clip and crossfade, at every rate (property)', () => {
+		fc.assert(
+			fc.property(arbProject({ ...BASIC, transitions: true, timecode: true }), (p) => {
+				const s = p.top[0]!;
+				const q = importOmf(exportOmf(p, s, {}, new Report()), {}, new Report());
+				const n = q.top[0]!;
+				expect(rounded(structure(q, n, 'audio'))).toEqual(structure(p, s, 'audio'));
+				expect(structure(q, n, 'video')).toEqual([]);
+				expect([q.sequences[n]!.rate, q.sequences[n]!.dropFrame]).toEqual([
+					p.sequences[s]!.rate,
+					p.sequences[s]!.dropFrame,
+				]);
+			}),
+			{ numRuns: Number(process.env.FC_RUNS ?? 60) },
+		);
+	});
+
 	it('round trips the audio edit at 25, 23.976 and 29.97 DF and reports what it leaves out', () => {
 		for (const [rate, df] of [
 			[RATE_25, false],

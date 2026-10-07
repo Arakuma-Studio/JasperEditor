@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { exportAaf, importAaf, sniffAaf } from '../src/aaf/index.ts';
 import { audioNeeds } from '../src/essence.ts';
@@ -11,6 +12,7 @@ import type { AudioEssence } from '../src/options.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks, RATE_23_976, RATE_25, RATE_29_97, RATE_59_94, timecodeBase } from '../src/time.ts';
 import { parseWav } from '../src/wav.ts';
+import { arbProject, BASIC } from './support/arbitraries.ts';
 import { expectOnlyInterchangeErrors, VENV_PYTHON } from './support/fuzz.ts';
 import {
 	clip,
@@ -76,7 +78,33 @@ const rt = (p: IProject, s: string, opts = {}) => {
 
 const close = (a: number, b: number) => Math.abs(a - b) < 1e-3;
 
+/** A structure with times rounded to frames. */
+const framesOf = (st: ReturnType<typeof structure>) =>
+	st.map((t) => ({
+		clips: t.clips.map((c) => c.map((x) => (typeof x === 'number' ? Math.round(x) : x))),
+		transitions: t.transitions.map((c) => c.map((x) => (typeof x === 'number' ? Math.round(x) : x))),
+	}));
+
 describe('AAF', () => {
+	it('export → import keeps every clip, transition and link, at every rate (property)', () => {
+		fc.assert(
+			fc.property(arbProject({ ...BASIC, transitions: true, links: true, timecode: true }), (p) => {
+				const s = p.top[0]!;
+				const q = importAaf(exportAaf(p, s, {}, new Report()), {}, new Report());
+				const n = q.top[0]!;
+				expect(structure(q, n, 'video')).toEqual(structure(p, s, 'video'));
+				// sound slots are in samples: at 29.97 / 59.94 a frame is not a whole number of 48 kHz samples
+				expect(framesOf(structure(q, n, 'audio'))).toEqual(structure(p, s, 'audio'));
+				expect(links(q, n)).toEqual(links(p, s));
+				expect([q.sequences[n]!.rate, q.sequences[n]!.dropFrame]).toEqual([
+					p.sequences[s]!.rate,
+					p.sequences[s]!.dropFrame,
+				]);
+			}),
+			{ numRuns: Number(process.env.FC_RUNS ?? 60) },
+		);
+	});
+
 	it('round trips the edit at 25, 29.97 DF, 23.976 and 59.94 DF', () => {
 		for (const [rate, df] of [
 			[RATE_25, false],

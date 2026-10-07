@@ -93,6 +93,8 @@ export const InterchangeAudioOptionsSchema = z.object({
 	bitDepth: z.union([z.literal(16), z.literal(24)]).default(24),
 	/** Separate files: WAV or AIFF. */
 	fileFormat: z.enum(['wav', 'aiff']).default('wav'),
+	/** Premiere's "Copy Complete Audio Files": whole media instead of the used ranges ("Trim Audio Files", default). */
+	copyComplete: z.boolean().default(false),
 });
 export type InterchangeAudioOptions = z.infer<typeof InterchangeAudioOptionsSchema>;
 
@@ -183,7 +185,8 @@ export const InterchangePrerenderPlanResponseSchema = z.object({
 
 // ---------------------------------------------------------------- Link Media (S04:AS-011)
 
-export const RELINK_CRITERIA = ['name', 'size', 'duration'] as const;
+/** File name (always first), file size, media duration, media start (start timecode). */
+export const RELINK_CRITERIA = ['name', 'size', 'duration', 'mediaStart'] as const;
 export const RelinkCriterionSchema = z.enum(RELINK_CRITERIA);
 
 export const AssetRelinkRequestSchema = z.object({
@@ -218,7 +221,7 @@ export const RelinkScanRequestSchema = z.object({
 	folder: z.string().min(1),
 	/** The offline assets to find. */
 	assets: z.array(MediaAssetSchema).min(1).max(5000),
-	/** What must match besides the file kind: name (always first), size, duration. */
+	/** What must match besides the file kind: name (always first), size, duration, media start timecode. */
 	match: z.array(RelinkCriterionSchema).min(1).default(['name']),
 	/** Name match ignores the extension (a transcoded file). */
 	ignoreExtension: z.boolean().default(false),

@@ -134,8 +134,9 @@ Apple's *Final Cut Pro XML Interchange Format* (xmeml v2+, "Elements" catalogue)
 | switching (cuts) | consecutive clipitems of one multiclip with different `activevideoangle` |
 
 Import does the inverse: one source sequence per distinct `multiclip id` (one angle per `<angle>`, its clip placed so
-the synctype points line up), multi-camera clips with the active angles. Until the interchange code implements this,
-multi-camera clips export as their nest (the composite of all angles), which the interchange report must flag.
+the synctype points line up), multi-camera clips with the active angles. Implemented by the interchange workstream
+(`docs/wp-notes/interchange.md` §2.4), also for FCPXML (`multicam`/`mc-clip`), OTIO and, as the angle's clips, EDL,
+AAF, OMF and ALE.
 
 ## 7. Verified behaviour (tests; all measured with the commands shown)
 
@@ -216,8 +217,7 @@ multi-camera clips export as their nest (the composite of all angles), which the
 
 ## 10. Limits (honest)
 
-- The FCP7 multiclip mapping (§6) is a specification for the interchange workstream; that code has not landed in
-  `integrate/parity`, so today a multi-camera clip exports to XML as a plain nest (composite).
+- The FCP7 multiclip mapping (§6) is implemented by the interchange workstream (`docs/wp-notes/interchange.md` §2.4).
 - Audio sync analyses at most 30 minutes per recording; repetitive material (music beats, hum) can match at several
   lags — `distinct` flags it, but the user must choose.
 - The Multi-Camera view decodes every visible angle at full size in the preview Player (no reduced-resolution grid

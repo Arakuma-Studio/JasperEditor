@@ -234,6 +234,12 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 						breakoutToMono: z.boolean().optional(),
 						bitDepth: z.union([z.literal(16), z.literal(24)]).optional(),
 						fileFormat: z.enum(['wav', 'aiff']).optional().describe('Separate files (OMF: AIFF or WAV)'),
+						copyComplete: z
+							.boolean()
+							.optional()
+							.describe(
+								'Whole media files instead of the used ranges plus handles (Premiere: Copy Complete Audio Files)',
+							),
 					})
 					.optional(),
 				aafSmallSectors: z
@@ -355,10 +361,12 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 					.optional()
 					.describe('With folder: only these assets (default: every offline one)'),
 				match: z
-					.array(z.enum(['name', 'size', 'duration']))
+					.array(z.enum(['name', 'size', 'duration', 'mediaStart']))
 					.min(1)
 					.optional()
-					.describe('With folder: what must match (default ["name", "duration"])'),
+					.describe(
+						'With folder: what must match — name, size, duration, mediaStart (start timecode); default ["name", "duration"]',
+					),
 				ignoreExtension: z
 					.boolean()
 					.optional()

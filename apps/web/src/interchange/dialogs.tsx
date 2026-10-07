@@ -250,8 +250,12 @@ export function InterchangeExportDialog(props: HostedDialogProps<ExportProps>) {
 	const [edlComments, setEdlComments] = useState(true);
 	const [perTrack, setPerTrack] = useState(false);
 	const [audioMode, setAudioMode] = useState<AudioMode>(format === 'omf' ? 'embed' : 'link');
-	const [handles, setHandles] = useState('0');
-	const [breakout, setBreakout] = useState(false);
+	// Premiere's defaults: one second of handles; OMF "Separate Audio" writes mono files.
+	const [handles, setHandles] = useState(() =>
+		String(Math.round(seq.settings.frameRate.num / seq.settings.frameRate.den)),
+	);
+	const [copyComplete, setCopyComplete] = useState(false);
+	const [breakout, setBreakout] = useState(format === 'omf');
 	const [bitDepth, setBitDepth] = useState<'16' | '24'>('24');
 	const [fileFormat, setFileFormat] = useState<'wav' | 'aiff'>(format === 'omf' ? 'aiff' : 'wav');
 	const [smallSectors, setSmallSectors] = useState(false);
@@ -303,6 +307,7 @@ export function InterchangeExportDialog(props: HostedDialogProps<ExportProps>) {
 				breakoutToMono: breakout,
 				bitDepth: Number(bitDepth) as 16 | 24,
 				fileFormat: format === 'aaf' ? 'wav' : fileFormat,
+				copyComplete,
 			};
 		if (format === 'aaf' && smallSectors) o.aafSmallSectors = true;
 		if (format === 'ale') o.ale = { scope: aleScope };
@@ -484,6 +489,18 @@ export function InterchangeExportDialog(props: HostedDialogProps<ExportProps>) {
 						</Row>
 						{audioMode !== 'link' ? (
 							<>
+								<Row label="Audio files">
+									<Select
+										value={copyComplete ? 'complete' : 'trim'}
+										onValueChange={(v) => setCopyComplete(v === 'complete')}
+										options={[
+											{ value: 'trim', label: 'Trim Audio Files' },
+											{ value: 'complete', label: 'Copy Complete Audio Files' },
+										]}
+										label="Audio files"
+										id="ix-audio-files"
+									/>
+								</Row>
 								<Row label="Handle frames">
 									<TextField
 										value={handles}
@@ -665,6 +682,7 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 	const [byName, setByName] = useState(true);
 	const [bySize, setBySize] = useState(false);
 	const [byDuration, setByDuration] = useState(true);
+	const [byStart, setByStart] = useState(false);
 	const [ignoreExt, setIgnoreExt] = useState(false);
 	const [found, setFound] = useState<Record<string, Candidate>>({});
 	const [locate, setLocate] = useState<Record<string, string>>({});
@@ -675,6 +693,7 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 		...(byName ? (['name'] as const) : []),
 		...(bySize ? (['size'] as const) : []),
 		...(byDuration ? (['duration'] as const) : []),
+		...(byStart ? (['mediaStart'] as const) : []),
 	];
 	const search = async () => {
 		setError(null);
@@ -805,6 +824,7 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 								checked={byDuration}
 								onCheckedChange={setByDuration}
 							/>
+							<Checkbox id="lm-start" label="Media Start" checked={byStart} onCheckedChange={setByStart} />
 						</div>
 					</Row>
 				</div>
