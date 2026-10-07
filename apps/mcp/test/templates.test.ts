@@ -399,10 +399,11 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		let failure = new EngineError('TEMPLATE_NOT_INSTALLED', 'Motion-graphic template x@9 is not installed', {
 			status: 502,
 		});
+		// mcp-cli: render_frame submits the still job itself (so a cancelled request can cancel it); the engine
+		// refuses the still request the way frame.capture used to.
 		const engine = fakeEngine({
-			agentQuery: async (req: { query: string }) => {
-				if (req.query === 'frame.capture') throw failure;
-				return { result: engine.doc(), revision: 1, via: 'headless' };
+			requestStill: async () => {
+				throw failure;
 			},
 		});
 		const { call } = await connect(engine);
@@ -416,6 +417,17 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const b = errOf(await call('render_frame', { projectId, at: 0 }));
 		expect(b.code).toBe('RENDER_FAILED');
 		expect(b.hint).toContain('JASPER_BROWSER_EXECUTABLE');
+		// A still job that fails while rendering gets the same hint.
+		const failing = fakeEngine();
+		failing.setStill({
+			state: 'failed',
+			error: { code: 'RENDER_FAILED', message: 'Failed to launch the browser process!', retryable: true },
+		});
+		failing.setRender({ native: true, remotionLocal: 'needs-browser-download', fframes: 'ready' });
+		const c2 = await connect(failing);
+		const j = errOf(await c2.call('render_frame', { projectId: failing.doc().projectId, at: 0 }));
+		expect(j.code).toBe('RENDER_FAILED');
+		expect(j.hint).toContain('JASPER_BROWSER_EXECUTABLE');
 	});
 
 	it('start_export preserves plan errors and explains unavailable rendering', async () => {
