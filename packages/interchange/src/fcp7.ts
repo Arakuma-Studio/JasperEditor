@@ -53,6 +53,7 @@ import type { ExportOptions, ImportOptions } from './options.ts';
 import { fileName, isAbsolutePath, kindFromExtension, pathToFileUrl, resolvePath } from './paths.ts';
 import { InterchangeError, parseError, type Report } from './report.ts';
 import {
+	flicksPerFrame,
 	flicksToFrames,
 	flicksToTicks,
 	formatTc,
@@ -716,6 +717,9 @@ class Fcp7Importer {
 		let reverse = false;
 		let hold = false;
 		let remap = false;
+		let variable = false;
+		let blending = false;
+		let graph: { when: number; value: number; smooth: boolean }[] = [];
 		for (const eff of children(c, 'filter')
 			.map((f) => child(f, 'effect'))
 			.filter((e): e is XNode => !!e)) {
@@ -730,30 +734,35 @@ class Fcp7Importer {
 						speed = Math.abs(v) / 100;
 						reverse ||= v < 0;
 					}
-					if (child(p, 'keyframe'))
-						this.report.warn(`variable speed on clip "${name}" is not supported; a constant speed was used`, {
-							subject: { kind: 'clip', name },
-							instead: 'a constant speed',
-						});
 				} else if (pid === 'reverse') reverse ||= childBool(p, 'value') ?? false;
-				else if (
-					pid === 'variablespeed' &&
-					((childBool(p, 'value') ?? false) || (childNum(p, 'value') ?? 0) !== 0)
-				)
-					this.report.warn(`variable speed on clip "${name}" is not supported; a constant speed was used`, {
-						subject: { kind: 'clip', name },
-						instead: 'a constant speed',
-					});
-				else if (pid === 'graphdict' && children(p, 'keyframe').length > 2)
-					this.report.warn(
-						`time remapping keyframes on clip "${name}" are not supported; a constant speed was used`,
-						{
-							subject: { kind: 'clip', name },
-							instead: 'a constant speed',
-						},
-					);
+				else if (pid === 'variablespeed')
+					variable = (childBool(p, 'value') ?? false) || (childNum(p, 'value') ?? 0) !== 0;
+				else if (pid === 'frameblending') blending = childBool(p, 'value') ?? false;
+				else if (pid === 'graphdict')
+					graph = children(p, 'keyframe')
+						.map((k) => ({
+							when: childNum(k, 'when') ?? Number.NaN,
+							value: childNum(k, 'value') ?? Number.NaN,
+							smooth: (pathText(k, ['interpolation', 'name']) ?? 'linear') !== 'linear',
+						}))
+						.filter((k) => Number.isFinite(k.when) && Number.isFinite(k.value))
+						.sort((a, b) => a.when - b.when);
 			}
 		}
+		// Workstream `time`: variable speed (Time Remap graph) → a time map; the clip axis then runs at 100 %.
+		const timeMap =
+			variable && graph.length >= 2 && !hold
+				? graph.map((k) => ({
+						time: framesToFlicks(k.when, rate) - srcIn,
+						value: Math.round(k.value * flicksPerFrame(rate)),
+						interp: (k.smooth ? 'smooth' : 'linear') as 'smooth' | 'linear',
+					}))
+				: null;
+		if (variable && !timeMap && !hold)
+			this.report.warn(`variable speed on clip "${name}" has no time graph; a constant speed was used`, {
+				subject: { kind: 'clip', name },
+				instead: 'a constant speed',
+			});
 		const srcLen = Math.abs(srcOut - srcIn);
 		let startT: number;
 		let dur: number;
@@ -774,7 +783,8 @@ class Fcp7Importer {
 			return null;
 		}
 		if (dur <= 0 || startT < 0) return null;
-		if (!remap && !hold && srcLen > 0 && srcLen !== dur) speed = Math.round((srcLen / dur) * 10000) / 10000;
+		if (!remap && !hold && srcLen > 0 && srcLen !== dur && !timeMap)
+			speed = Math.round((srcLen / dur) * 10000) / 10000;
 		const clip = newClip({
 			id: this.b.id('c'),
 			name: name || 'Clip',
@@ -785,6 +795,8 @@ class Fcp7Importer {
 			speed,
 			reverse,
 			...(hold ? { hold: srcIn, speed: 1, reverse: false } : {}),
+			...(timeMap ? { timeMap, sourceIn: srcIn, speed: 1, reverse: false } : {}),
+			...(blending ? { frameSampling: 'frame-blending' as const } : {}),
 			enabled: childBool(c, 'enabled') ?? true,
 			...(multicam ? { multicam } : {}),
 		});
@@ -1712,12 +1724,41 @@ class Fcp7Exporter {
 				this.numParam('opacity', 'opacity', 0, 100, c.opacity, rate, (v) => v);
 				this.closeEffect();
 			}
-			if (c.speed !== 1 || c.reverse || c.hold != null) {
+			const blend = boolStr(!!c.frameSampling && c.frameSampling !== 'frame-sampling');
+			if (c.frameSampling === 'optical-flow')
+				this.report.info(
+					`Optical Flow of clip "${c.name}" is written as frame blending (FCP7 XML has no optical flow)`,
+					{
+						subject: where,
+					},
+				);
+			if (c.timeMap && c.timeMap.length >= 2 && c.hold == null) {
+				// Workstream `time`: variable speed as the Time Remap graph (`graphdict`): <when> = the clip's content time
+				// in frames (the keyframe convention of this writer), <value> = the source frame shown.
+				const m = c.timeMap;
+				const first = (m[1]!.value - m[0]!.value) / Math.max(1, m[1]!.time - m[0]!.time);
+				this.openEffect('Time Remap', 'timeremap', 'motion', 'motion', 'video', true);
+				this.simpleParam('variablespeed', 'variablespeed', 'TRUE');
+				this.simpleParam('speed', 'speed', num(Math.round(first * 10000) / 100));
+				this.simpleParam('reverse', 'reverse', 'FALSE');
+				this.simpleParam('frameblending', 'frameblending', blend);
+				const w = this.w;
+				w.open('parameter').text('parameterid', 'graphdict').text('name', 'Time Graph');
+				for (const p of m) {
+					w.open('keyframe')
+						.text('when', flicksToFrames(c.sourceIn + p.time * c.speed, rate, 'round'))
+						.text('value', exactNum(Math.round((p.value / flicksPerFrame(rate)) * 1000) / 1000));
+					if (p.interp === 'smooth') w.open('interpolation').text('name', 'FCPCurve').close();
+					w.close();
+				}
+				w.close();
+				this.closeEffect();
+			} else if (c.speed !== 1 || c.reverse || c.hold != null) {
 				this.openEffect('Time Remap', 'timeremap', 'motion', 'motion', 'video', true);
 				this.simpleParam('variablespeed', 'variablespeed', '0');
 				this.simpleParam('speed', 'speed', num(c.hold != null ? 0 : c.speed * 100));
 				this.simpleParam('reverse', 'reverse', boolStr(c.reverse));
-				this.simpleParam('frameblending', 'frameblending', 'FALSE');
+				this.simpleParam('frameblending', 'frameblending', blend);
 				this.closeEffect();
 			}
 		} else {

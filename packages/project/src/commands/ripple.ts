@@ -13,7 +13,9 @@
 import { contentDurationFlicks, isBoundedContent } from '../registry/kinds.ts';
 import type { ProjectItem } from '../schema/document.ts';
 import type { Clip } from '../schema/sequence.ts';
-import { FRAME_EPS, flicksPerFrame } from '../time.ts';
+import { FRAME_EPS, flicksPerFrame, type Rational } from '../time.ts';
+import { remapRoom } from '../time-remap/bounds.ts';
+import { isRemapped } from '../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from './context.ts';
 import {
 	allTracksIn,
@@ -63,6 +65,19 @@ export function contentWindow(doc: DDoc, c: DClip | Clip): { start: number; end:
  */
 export function contentHandles(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
 	const step = flicksPerFrame(seq.settings.frameRate) * c.speed.rate;
+	// Workstream `time`: a remapped clip's handles are the frames whose remapped media time is inside the media;
+	// its content time (the keyframe axis) still never goes below 0.
+	if (isRemapped(c as Clip) && !(c as Clip).frameHold) {
+		const room = remapRoom(
+			c as Clip,
+			seq.settings.frameRate as Rational,
+			contentDurationFlicks(doc, c as Clip),
+		);
+		return {
+			head: Math.min(room.head, Math.max(0, Math.floor(c.sourceIn / step + FRAME_EPS))),
+			tail: room.tail,
+		};
+	}
 	const w = contentWindow(doc, c);
 	const before = Math.max(0, Math.floor((c.sourceIn - w.start) / step + FRAME_EPS));
 	const after =

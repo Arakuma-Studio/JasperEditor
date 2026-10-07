@@ -566,6 +566,19 @@ class FcpxmlImporter {
 					speed: tm.speed,
 					reverse: tm.reverse,
 					...(tm.hold ? { hold: Math.max(0, srcIn), speed: 1, reverse: false } : {}),
+					...(tm.points
+						? {
+								timeMap: tm.points.map((p) => ({
+									time: p.time - local,
+									value: p.value - src.origin,
+									interp: p.interp,
+								})),
+								sourceIn: 0,
+								speed: 1,
+								reverse: false,
+							}
+						: {}),
+					...(tm.sampling && tm.sampling !== 'frame-sampling' ? { frameSampling: tm.sampling } : {}),
 					enabled: flag(el, 'enabled') ?? true,
 					...(link ? { link } : {}),
 					source:
@@ -829,28 +842,81 @@ class FcpxmlImporter {
 	}
 }
 
-/** (speed, reverse, freeze, source time at the element's local start) of a `timeMap`. */
-function timeMap(el: XNode, local: number): { speed: number; reverse: boolean; hold: boolean; base: number } {
+/** FCPXML `frameSampling` values (FCP 10.4+) for each Time Interpolation; frame sampling writes none. */
+const FRAME_SAMPLING_OUT: Record<string, string | null> = {
+	'frame-sampling': null,
+	'frame-blending': 'frame-blending',
+	'optical-flow': 'optical-flow',
+};
+
+/** Time Interpolation of an FCPXML `frameSampling` value. */
+function frameSamplingIn(v: string | undefined): IClip['frameSampling'] | undefined {
+	if (!v) return undefined;
+	if (v === 'frame-blending') return 'frame-blending';
+	if (v.startsWith('optical-flow')) return 'optical-flow';
+	return 'frame-sampling';
+}
+
+/**
+ * (speed, reverse, freeze, source time at the element's local start) of a `timeMap`; a variable one (more than two
+ * points or eased pieces) also returns its `points` in local time → source time (workstream `time`).
+ */
+function timeMap(
+	el: XNode,
+	local: number,
+): {
+	speed: number;
+	reverse: boolean;
+	hold: boolean;
+	base: number;
+	points?: { time: number; value: number; interp: 'linear' | 'smooth' }[];
+	sampling?: IClip['frameSampling'];
+} {
 	const tm = child(el, 'timeMap');
 	if (!tm) return { speed: 1, reverse: false, hold: false, base: local };
-	const pts = children(tm, 'timept')
-		.map((p) => [at(p, 'time'), at(p, 'value')] as const)
-		.filter((p): p is readonly [number, number] => p[0] !== null && p[1] !== null);
+	const sampling = frameSamplingIn(tm.attrs.frameSampling);
+	const all = children(tm, 'timept')
+		.map((p) => ({ time: at(p, 'time'), value: at(p, 'value'), interp: p.attrs.interp ?? 'smooth2' }))
+		.filter((p): p is { time: number; value: number; interp: string } => p.time !== null && p.value !== null);
+	if (all.length > 2) {
+		const points = all.map((p) => ({
+			time: p.time,
+			value: p.value,
+			interp: (p.interp === 'linear' ? 'linear' : 'smooth') as 'linear' | 'smooth',
+		}));
+		const first = points[0]!;
+		return {
+			speed: 1,
+			reverse: false,
+			hold: false,
+			base: first.value,
+			points,
+			...(sampling ? { sampling } : {}),
+		};
+	}
+	const pts = all.map((p) => [p.time, p.value] as const);
 	if (pts.length < 2) return { speed: 1, reverse: false, hold: false, base: pts[0]?.[1] ?? local };
 	const [t0, v0] = pts[0]!;
 	const [t1, v1] = pts[pts.length - 1]!;
 	const dt = t1 - t0;
 	const dv = v1 - v0;
-	if (dv === 0 || dt === 0) return { speed: 1, reverse: false, hold: true, base: v0 };
+	if (dv === 0 || dt === 0)
+		return { speed: 1, reverse: false, hold: true, base: v0, ...(sampling ? { sampling } : {}) };
 	const s = Math.round((dv / dt) * 1e6) / 1e6;
 	const atStart = (sp: number) => v0 + Math.round((local - t0) * sp);
 	if (s < 0) {
 		const speed = -s;
 		const hi = atStart(s);
 		const len = Math.max(0, t1 - local);
-		return { speed, reverse: true, hold: false, base: hi - Math.round(len * speed) };
+		return {
+			speed,
+			reverse: true,
+			hold: false,
+			base: hi - Math.round(len * speed),
+			...(sampling ? { sampling } : {}),
+		};
 	}
-	return { speed: s, reverse: false, hold: false, base: atStart(s) };
+	return { speed: s, reverse: false, hold: false, base: atStart(s), ...(sampling ? { sampling } : {}) };
 }
 
 function r9(v: number): number {
@@ -1419,27 +1485,39 @@ class FcpxmlExporter {
 		const local = origin + (c.hold ?? c.sourceIn);
 		const kids: El[] = [];
 		const retimed = c.speed !== 1 || c.reverse || c.hold != null;
-		if (retimed) {
+		const sampling = FRAME_SAMPLING_OUT[c.frameSampling ?? 'frame-sampling'];
+		if (c.timeMap && c.timeMap.length >= 2 && c.hold == null) {
+			// Workstream `time`: variable speed — one timept per time-map point (local time → source time).
+			kids.push(
+				el(
+					'timeMap',
+					sampling ? [['frameSampling', sampling]] : [],
+					c.timeMap.map((p) =>
+						el('timept', [
+							['time', fmtTime(local + p.time, rate)],
+							['value', fmtTime(origin + p.value, rate)],
+							['interp', p.interp === 'smooth' ? 'smooth2' : 'linear'],
+						]),
+					),
+				),
+			);
+		} else if (retimed) {
 			const v0 = local;
 			const span = Math.round(c.duration * c.speed);
 			const [a, b] = c.hold != null ? [v0, v0] : c.reverse ? [v0 + span, v0] : [v0, v0 + span];
 			kids.push(
-				el(
-					'timeMap',
-					[],
-					[
-						el('timept', [
-							['time', fmtTime(local, rate)],
-							['value', fmtTime(a, rate)],
-							['interp', 'linear'],
-						]),
-						el('timept', [
-							['time', fmtTime(local + c.duration, rate)],
-							['value', fmtTime(b, rate)],
-							['interp', 'linear'],
-						]),
-					],
-				),
+				el('timeMap', sampling ? [['frameSampling', sampling]] : [], [
+					el('timept', [
+						['time', fmtTime(local, rate)],
+						['value', fmtTime(a, rate)],
+						['interp', 'linear'],
+					]),
+					el('timept', [
+						['time', fmtTime(local + c.duration, rate)],
+						['value', fmtTime(b, rate)],
+						['interp', 'linear'],
+					]),
+				]),
 			);
 		}
 		// keyframe content time → element local time

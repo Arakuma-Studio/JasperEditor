@@ -320,3 +320,24 @@ describe('roto commands', () => {
 		expect(fnv64('a')).toBe('af63dc4c8601ec8c');
 	});
 });
+
+describe('roto × Time Remapping (workstream `time`)', () => {
+	it('export checks the media frames the remapped picture shows, not the linear content frames', () => {
+		const { h, clip } = setup();
+		h.ok([{ type: 'roto.add', clipId: clip().id, points: [{ x: 5, y: 5 }] }]);
+		const roto = clip().rotos![0]!;
+		h.ok([{ type: 'roto.apply', rotoId: roto.id }]);
+		h.ok([{ type: 'roto.setResult', rotoId: roto.id, result: result(clip().rotos![0]!, 30, 60) }]);
+		const snap = () =>
+			buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		expect(rotoExportIssues(snap())[0]).toMatchObject({ kind: 'not-computed', frames: [61, 89] });
+		// 50 % over the whole clip, then keep its first 60 frames: the picture shows media frames 30–59 only.
+		h.ok([{ type: 'timeRemap.setSpeed', clipId: clip().id, at: 0, speedPercent: 50 }]);
+		expect(clip().duration).toBe(120);
+		h.ok([{ type: 'clip.trim', clipId: clip().id, edge: 'out', deltaFrames: -60 }]);
+		expect(rotoExportIssues(snap())).toEqual([]);
+		// Back to the full slowed clip: media frames 61–89 are shown again and missing.
+		h.ok([{ type: 'clip.trim', clipId: clip().id, edge: 'out', deltaFrames: 60 }]);
+		expect(rotoExportIssues(snap())[0]).toMatchObject({ kind: 'not-computed', frames: [61, 89] });
+	});
+});

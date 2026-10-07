@@ -33,6 +33,8 @@ import {
 	type Speed,
 	type TextBox,
 	type TextContent,
+	type TimeInterpolation,
+	type TimeRemap,
 	type Transform,
 } from '../schema/sequence.ts';
 import type { TextAnimatorGroup, TextMoreOptions, TextPathOptions } from '../schema/text-animators.ts';
@@ -45,6 +47,7 @@ import {
 } from '../structure/synthetic.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../time.ts';
+import { activeRemap, needsRetime, timeInterpolationOf } from '../time-remap/model.ts';
 import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import {
 	type AudioClipTransitionRender,
@@ -265,10 +268,30 @@ export type RenderVisualClip = {
 	 */
 	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
 	/**
+	 * Workstream `time`: the clip's enabled Time Remapping (content time → media time, see time-remap/model.ts). The
+	 * time-remap functions (`clipMediaTimeAt`…) read it directly from the render clip.
+	 */
+	timeRemap?: TimeRemap;
+	/**
+	 * Workstream `time`: set for video clips whose picture is made frame by frame from media times — reverse, a time
+	 * remap, Frame Blending / Optical Flow where frames fall between source frames, and variable-frame-rate media
+	 * (timestamp-exact frames). Consumers draw them with the retime pipeline (preview decoder / native retime stage).
+	 */
+	retime?: RenderRetime;
+	/**
 	 * parity (roto): the computed mattes of the clip's roto objects, by roto id (objects without a result are
 	 * absent). Effects with roto-object params sample them at the layer's media frame.
 	 */
 	rotos?: Record<string, RenderRotoMatte>;
+};
+
+/** How a retimed video layer makes its frames (workstream `time`). */
+export type RenderRetime = {
+	interpolation: TimeInterpolation;
+	/** Nominal frame rate of the media's video stream. */
+	mediaRate: Rational;
+	/** Variable-frame-rate media: frames are placed by their own timestamps. */
+	vfr: boolean;
 };
 
 export type RenderAudioClip = {
@@ -459,6 +482,37 @@ function transitionFields<T>(
 		...(x.fades.length ? { fades: x.fades } : {}),
 		...(x.freezeHead ? { freezeHead: x.freezeHead } : {}),
 		...(x.freezeTail ? { freezeTail: x.freezeTail } : {}),
+	};
+}
+
+/** Workstream `time`: the `timeRemap` / `retime` fields of a render clip. */
+function retimeFields(
+	c: Clip,
+	doc: ProjectDocument,
+	rate: Rational,
+): Pick<RenderVisualClip, 'timeRemap' | 'retime'> {
+	// Nested sequences (multi-camera clips too): the remap picks the nested frame (Frame Sampling).
+	if (c.kind === 'nest-video') {
+		const r = activeRemap(c);
+		return r ? { timeRemap: r } : {};
+	}
+	if (c.kind !== 'video') return {};
+	const vs = doc.media[c.mediaId]?.probe.streams.find((x) => x.type === 'video');
+	const mediaRate = vs?.type === 'video' ? vs.frameRate : rate;
+	const vfr = doc.media[c.mediaId]?.probe.variableFrameRate === true;
+	const remap = activeRemap(c);
+	const retimed = vfr || needsRetime(c, { sequenceRate: rate, mediaRate, vfr });
+	return {
+		...(remap ? { timeRemap: remap } : {}),
+		...(retimed
+			? {
+					retime: {
+						interpolation: timeInterpolationOf(c),
+						mediaRate: { num: mediaRate.num, den: mediaRate.den },
+						vfr,
+					},
+				}
+			: {}),
 	};
 }
 
@@ -774,6 +828,7 @@ export function buildRenderSnapshot(
 				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
 					? { sourceInfo: sourceInfoOf(source.mediaId) }
 					: {}),
+				...retimeFields(c, doc, seq.settings.frameRate as Rational),
 				...rotosOf(r.rotos as ClipRoto[] | undefined, opts),
 			});
 		}

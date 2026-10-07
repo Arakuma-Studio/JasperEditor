@@ -181,7 +181,18 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('timeline.frameHoldOptions', 'Frame Hold Options…'),
 				c('timeline.addFrameHold', 'Add Frame Hold'),
 				c('timeline.insertFrameHoldSegment', 'Insert Frame Hold Segment'),
+				// Workstream `time` (Premiere: Clip ▸ Video Options ▸ Time Interpolation).
+				sub('Time Interpolation', [
+					c('timeline.timeInterpolation.frameSampling', 'Frame Sampling'),
+					c('timeline.timeInterpolation.frameBlending', 'Frame Blending'),
+					c('timeline.timeInterpolation.opticalFlow', 'Optical Flow'),
+				]),
 			]),
+			// Workstream `time`: Time Remapping (the speed band) and Scene Edit Detection.
+			sub('Show Clip Keyframes', [sub('Time Remapping', [c('timeline.showSpeedKeyframes', 'Speed')])]),
+			c('timeline.toggleSpeedKeyframe', 'Add / Remove Speed Keyframe'),
+			c('timeline.removeTimeRemapping', 'Remove Time Remapping'),
+			c('timeline.sceneEditDetection', 'Scene Edit Detection…'),
 			sep,
 			// wp-clipboard-2 (S03:XF-050/051/038): the Program monitor layer menu's transform entries.
 			sub('Transform', [

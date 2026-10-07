@@ -56,6 +56,11 @@ export type LayerOverride = {
 	 * the override stream (`sequence` space) with the filters of the extensions that realise colour effects.
 	 */
 	colorRuns?: boolean;
+	/**
+	 * Workstream `time` (`layer` space): the intermediate already follows the clip's time mapping (reverse, time
+	 * remap, frame hold, interpolation): frame k shows sequence frame `startFrame + k`, played linearly.
+	 */
+	retimed?: boolean;
 };
 
 type NativeEffectSupport = false | 'static' | 'animated';
@@ -117,6 +122,11 @@ export type NativeExtension = {
 	 * `animated` = keyframes too. The planner stops blocking them.
 	 */
 	effectSupport?(effectId: string, spec: EffectSpec | undefined): NativeEffectSupport;
+	/**
+	 * Workstream `time`: this extension renders the clip's frames by media time (reverse, time remaps, Frame Blending /
+	 * Optical Flow, VFR media) through a `layer` override: the planner stops blocking reversed / retimed video clips.
+	 */
+	retimes?(clip: RenderVisualClip): boolean;
 	/** Clip kinds whose picture this extension provides through `override` (planner: native-capable kinds). */
 	kinds?: ReadonlySet<string>;
 	/**

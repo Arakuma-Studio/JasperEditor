@@ -16,9 +16,10 @@ import { OffthreadVideo } from 'remotion';
 import { ColorCanvas, type ColorCanvasHandle } from '../color/ColorCanvas.tsx';
 import { useColorStage } from '../color/chain.ts';
 import { FxPicture } from '../fx/FxPicture.tsx';
-import { FxVideoSources } from '../fx/sources.tsx';
+import { FxVideoSources, RetimedFxSources } from '../fx/sources.tsx';
 import { useLayerFx } from '../fx/stage.ts';
 import { videoSource, videoTrimBefore } from '../pipeline.ts';
+import { RetimedFeed } from '../retime/RetimedVideo.tsx';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
 
@@ -33,6 +34,9 @@ export function VideoLayer(layer: LayerProps) {
 	const source = videoSource(media, options);
 	if (source.via === 'pending-proxy') return <ProxyPendingCard {...layer} />;
 	const trimBefore = videoTrimBefore(clip, fps);
+	// Workstream `time`: reverse, time remaps, Frame Blending / Optical Flow and VFR media are drawn frame by frame
+	// from media times (retime/).
+	if (clip.retime) return <RetimedVideoLayer layer={layer} media={media} color={color} fx={fx} />;
 	if (fx.mode === 'active')
 		return (
 			<LayerBox
@@ -82,7 +86,6 @@ export function VideoLayer(layer: LayerProps) {
 				<Video
 					src={source.src}
 					trimBefore={trimBefore}
-					// Reverse playback needs a native retime proxy (S03:KND-015, M2); preview plays forward.
 					playbackRate={clip.speed.rate}
 					muted
 					objectFit="fill"
@@ -94,6 +97,74 @@ export function VideoLayer(layer: LayerProps) {
 		</LayerBox>
 	);
 }
+
+/** A retimed video layer (workstream `time`) in its three modes: fx picture, colour stage, plain. */
+function RetimedVideoLayer({
+	layer,
+	media,
+	color,
+	fx,
+}: {
+	layer: LayerProps;
+	media: NonNullable<LayerProps['media']>;
+	color: ReturnType<typeof useColorStage>;
+	fx: ReturnType<typeof useLayerFx>;
+}) {
+	const { clip, options } = layer;
+	const pictureTime = layer.pictureTime ?? layer.contentTime;
+	const stage = useRef<ColorCanvasHandle | null>(null);
+	const toColor = useCallback((frame: CanvasImageSource) => {
+		void stage.current?.draw(frame);
+	}, []);
+	if (fx.mode === 'active')
+		return (
+			<LayerBox
+				layer={layer}
+				effects={fx.cssEffects}
+				masksInChain
+				overlay={fx.chip ? <GradeChip layer={layer} text={fx.chip} /> : null}
+			>
+				<FxPicture stage={fx.stage}>
+					<RetimedFxSources layer={layer} stage={fx.stage} media={media} />
+				</FxPicture>
+			</LayerBox>
+		);
+	const graded = color.effects.length > 0;
+	return (
+		<LayerBox
+			layer={layer}
+			effects={color.cssEffects}
+			overlay={
+				fx.mode === 'bypass' ? (
+					<GradeChip layer={layer} text={fx.chip} />
+				) : color.unavailable ? (
+					<GradeChip layer={layer} />
+				) : null
+			}
+		>
+			<RetimedFeed
+				clip={clip}
+				media={media}
+				options={options}
+				pictureTime={pictureTime}
+				visible={!graded}
+				onPicture={graded ? toColor : NOOP}
+			/>
+			{graded ? (
+				<ColorCanvas
+					ref={stage}
+					effects={color.effects}
+					width={Math.max(1, Math.round(layer.props.box.width))}
+					height={Math.max(1, Math.round(layer.props.box.height))}
+					style={{ ...MEDIA_STYLE, position: 'absolute', left: 0, top: 0 }}
+					data-color-output=""
+				/>
+			) : null}
+		</LayerBox>
+	);
+}
+
+const NOOP = () => undefined;
 
 /** <OffthreadVideo> (renders of originals a browser cannot decode) through the colour stage. */
 function GradedOffthread({

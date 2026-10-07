@@ -29,6 +29,7 @@ import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
+import { timeHandlers } from './handlers/time.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -70,6 +71,8 @@ export type CommandOwner =
 	| 'wp-m3-expressions'
 	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
 	| 'audio-fx'
+	// Time Remapping, Time Interpolation, Scene Edit Detection (docs/wp-notes/time.md)
+	| 'wp-time'
 	// parity: roto / object mattes
 	| 'parity-roto'
 	// Editorial UX: 3/4-point editing, trim mode, subclips
@@ -295,6 +298,16 @@ const LABELS: Record<CommandType, string> = {
 	'essentialSound.autoMatch': 'Auto-Match Loudness',
 	'clip.remix': 'Remix',
 	'clip.remixRevert': 'Revert Remix',
+	'timeRemap.enable': 'Time Remapping',
+	'timeRemap.addKeyframe': 'Add Speed Keyframe',
+	'timeRemap.removeKeyframes': 'Delete Speed Keyframes',
+	'timeRemap.setSpeed': 'Change Speed',
+	'timeRemap.moveKeyframe': 'Move Speed Keyframe',
+	'timeRemap.setTransition': 'Speed Transition',
+	'timeRemap.addFreeze': 'Freeze Frame',
+	'timeRemap.addReverse': 'Reverse Speed Segment',
+	'clip.setTimeInterpolation': 'Time Interpolation',
+	'clip.applySceneEdits': 'Scene Edit Detection',
 	'roto.add': 'Roto Brush',
 	'roto.update': 'Roto Settings',
 	'roto.addStrokes': 'Roto Brush Stroke',
@@ -339,6 +352,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[speechHandlers, SPEECH_OWNER],
 	[expressionHandlers, EXPRESSION_OWNER],
 	[essentialHandlers, ESSENTIAL_OWNER],
+	[timeHandlers, 'wp-time'],
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
 	[simWarpHandlers, SIM_WARP_OWNER],
@@ -369,6 +383,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === SPEECH_OWNER ||
 				owner === ESSENTIAL_OWNER ||
 				owner === 'wp-multicam' ||
+				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux'
 					? 'M3'

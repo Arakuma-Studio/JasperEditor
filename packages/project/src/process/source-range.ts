@@ -16,7 +16,9 @@
 import { retargetRotos } from '../roto/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset, MediaProbe, SourceRange } from '../schema/media.ts';
+import type { TimeRemap } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational, rationalEquals, roundSym } from '../time.ts';
+import { activeRemap, clipMediaRange, clipMediaTimeFn } from '../time-remap/model.ts';
 import { parseTimecode } from '../timecode.ts';
 import { mediaFrameRate } from '../tracking/request.ts';
 import { sourceLinkOf } from './versions.ts';
@@ -153,7 +155,30 @@ export type ClipContentTiming = {
 	sourceIn: number;
 	duration: number;
 	speed: { rate: number; reverse: boolean };
+	/** Workstream `time`: a time-remapped clip shows media times through its remap. */
+	kind?: string;
+	timeRemap?: TimeRemap | null;
+	start?: number;
 };
+
+/** A clip's content timing as if its content moved by `shift` flicks (a switch to another file of the media). */
+export function shiftedTiming(clip: ClipContentTiming, shift: number): ClipContentTiming {
+	const r = clip.timeRemap;
+	return {
+		sourceIn: clip.sourceIn + shift,
+		duration: clip.duration,
+		speed: clip.speed,
+		...(clip.kind !== undefined ? { kind: clip.kind } : {}),
+		...(r
+			? {
+					timeRemap: {
+						...r,
+						keyframes: r.keyframes.map((k) => ({ ...k, time: k.time + shift, source: k.source + shift })),
+					},
+				}
+			: {}),
+	};
+}
 
 /**
  * Tolerance (flicks) on the end of a file: probe durations are microsecond-rounded (a 130-frame 30 fps file
@@ -176,6 +201,19 @@ export function coveredClipFrames(
 	mediaDuration: number | null,
 	tol: number,
 ): { from: number; to: number } | null {
+	if (activeRemap(clip)) {
+		// Time-remapped: the frames whose remapped media time lies in the file (the longest run from the start).
+		const at = clipMediaTimeFn({ start: 0, ...clip }, seqRate);
+		const inside = (f: number) => {
+			const m = at(f);
+			return m >= -1 && (mediaDuration === null || m < mediaDuration + tol);
+		};
+		let from = 0;
+		while (from < clip.duration && !inside(from)) from++;
+		let to = from;
+		while (to < clip.duration && inside(to)) to++;
+		return to > from ? { from, to } : null;
+	}
 	const step = flicksPerFrame(seqRate) * clip.speed.rate;
 	const d = clip.duration;
 	// j = content step index (0 = the frame showing `sourceIn`); its content is [sourceIn + j·step, … + step).
@@ -193,8 +231,12 @@ export function clipFileFrames(
 	seqRate: Rational,
 	fileRate: Rational,
 ): { first: number; end: number } {
-	const span = flicksPerFrame(seqRate) * clip.speed.rate * clip.duration;
 	const F = flicksPerFrame(fileRate);
+	if (activeRemap(clip)) {
+		const r = clipMediaRange({ start: 0, ...clip }, seqRate);
+		return { first: Math.floor(r.min / F + EPS), end: Math.floor(r.max / F + EPS) + 1 };
+	}
+	const span = flicksPerFrame(seqRate) * clip.speed.rate * clip.duration;
 	return {
 		first: Math.floor(clip.sourceIn / F + EPS),
 		end: Math.ceil((clip.sourceIn + span) / F - EPS),
@@ -232,6 +274,7 @@ export type ContentShiftReport = {
 
 type ShiftableClip = {
 	sourceIn: number;
+	timeRemap?: { keyframes: { time: number; source: number }[] };
 	markers?: { flicks: number }[];
 	trackers?: {
 		reference: { time: number };
@@ -250,6 +293,11 @@ export function shiftClipContentTime(clip: ShiftableClip, shift: number): Conten
 	if (shift === 0) return report;
 	clip.sourceIn += shift;
 	shiftAnimatables(clip, shift);
+	// Workstream `time`: speed keyframes anchor content time and media time; both move with the file.
+	for (const k of clip.timeRemap?.keyframes ?? []) {
+		k.time += shift;
+		k.source += shift;
+	}
 	if (clip.markers) {
 		const kept = clip.markers.filter((m) => m.flicks + shift >= 0);
 		report.droppedMarkers = clip.markers.length - kept.length;

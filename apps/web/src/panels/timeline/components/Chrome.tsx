@@ -4,6 +4,7 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { cx, IconButton, labelColor, Z } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -251,7 +252,9 @@ export function ContextMenu(props: {
 			window.removeEventListener('keydown', key, true);
 		};
 	}, [props.onClose]);
-	return (
+	// In a portal: `fixed` inside the docked panel is relative to the panel's containing block, not the window, so
+	// the menu opened offset by the panel's position (workstream `time`, e2e/time.spec.ts).
+	const menu = (
 		<div
 			ref={ref}
 			role="menu"
@@ -262,6 +265,7 @@ export function ContextMenu(props: {
 			<MenuItems items={props.items} onClose={props.onClose} />
 		</div>
 	);
+	return typeof document === 'undefined' ? menu : createPortal(menu, document.body);
 }
 
 function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {

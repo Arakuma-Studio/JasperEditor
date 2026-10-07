@@ -8,6 +8,7 @@
 // `samples` are absolute clip-local source frames; LUT media params are bound as 3D textures; the preview may draw
 // the canvases at a reduced resolution (`RenderOptions.fxPreviewScale`).
 import {
+	activeRemap,
 	colorRunKey,
 	type EffectSpec,
 	FX_MAX_CANVAS,
@@ -36,6 +37,7 @@ import {
 	planGpuEffect,
 	type ResolvedEffect,
 	type ResolvedMask,
+	remapSourceAt,
 	rotoFrameState,
 	rotoFrameUrl,
 	sideCompToCanvas,
@@ -217,6 +219,11 @@ export function useLayerFx(
 	const failures = fxStatus.version();
 	const realFrame = layer.realFrame ?? layer.localFrame;
 	const contentTime = layer.contentTime;
+	// Media time of the picture shown (frame hold, then Time Remapping; workstream `time`): roto mattes follow it.
+	const pictureRemap = activeRemap(clip as Parameters<typeof activeRemap>[0]);
+	const pictureMediaTime = pictureRemap
+		? Math.max(0, remapSourceAt(pictureRemap, layer.pictureTime ?? contentTime))
+		: (layer.pictureTime ?? contentTime);
 	const sourceFrame = layer.localFrame;
 	const duration = clip.duration;
 	// Params at other frames (sub-frame shutters, write-on paths, …) from the clip's keyframes, per effect instance.
@@ -486,7 +493,7 @@ export function useLayerFx(
 							let state = 0;
 							if (ref) {
 								const still = clip.kind === 'still';
-								const f = still ? 0 : mediaFrameAt(contentTime, ref.rate) + t.matte.offset;
+								const f = still ? 0 : mediaFrameAt(pictureMediaTime, ref.rate) + t.matte.offset;
 								const at = rotoFrameState(ref, f);
 								if (at === 'missing' && !doc.isPreview && t.matte.offset === 0)
 									cancelRender(

@@ -16,10 +16,13 @@ import {
 	type ProjectItem,
 	pieceAudioClip,
 	pieceVideoClip,
+	remapToTimeMap,
 	resolveMulticamClip,
 	type Sequence,
 	type SyntheticSource,
+	type TimedClip,
 	type Track,
+	timeInterpolationOf,
 	transitionStartFrame,
 	vttSettingsFor,
 } from '@jasper/project';
@@ -38,6 +41,7 @@ import type {
 } from './model.ts';
 import type { Format } from './options.ts';
 import { isAbsolutePath, kindFromExtension } from './paths.ts';
+import { FORMAT_CAPS } from './prerender.ts';
 import type { Report } from './report.ts';
 import { parseTc } from './time.ts';
 
@@ -586,7 +590,33 @@ export function fromJasper(
 		};
 		// edit-structure Frame Hold: the clip shows one content time for its whole length.
 		if (c.frameHold) base.hold = c.frameHold.flicks;
+		// Workstream `time`: Time Remapping as a time map (clip time → media time), and the Time Interpolation.
+		const tmap = remapToTimeMap(c as TimedClip, rate);
+		// (`speed` / `sourceIn` stay: they are the content axis keyframes are measured on.)
+		if (tmap) base.timeMap = tmap;
+		const interp = timeInterpolationOf(c as TimedClip);
+		if (interp !== 'frame-sampling') base.frameSampling = interp;
 		const pre = prerendered[c.id];
+		if (tmap && !pre && opts.format && !FORMAT_CAPS[opts.format].timeMap) {
+			// No variable speed in this format: the clip's average speed, reported (OTIO keeps the remap in its metadata).
+			const a = tmap[0]!;
+			const b = tmap[tmap.length - 1]!;
+			const avg = (b.value - a.value) / Math.max(1, b.time - a.time);
+			base.timeMap = null;
+			base.speed = Math.max(0.01, Math.abs(avg)) || 1;
+			base.reverse = avg < 0;
+			base.sourceIn = Math.max(0, Math.min(a.value, b.value));
+			const where = { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start };
+			if (otio)
+				report.info(`the time remapping of clip "${c.name}" is kept in the OTIO metadata only`, {
+					subject: where,
+				});
+			else
+				report.warn(`the time remapping of clip "${c.name}" at frame ${c.start} is not carried`, {
+					subject: where,
+					instead: 'its average speed (pre-render it to keep the speed changes)',
+				});
+		}
 		if (!pre && !otio) {
 			const where = { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start };
 			const masks = (any.masks as unknown[] | undefined)?.length ?? 0;

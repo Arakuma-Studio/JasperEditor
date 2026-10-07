@@ -47,6 +47,8 @@ import {
 	type Rational,
 	supportsDropFrame,
 } from './time.ts';
+import { remapIssues, repairRemap } from './time-remap/invariants.ts';
+import { isRemapped } from './time-remap/model.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
 
@@ -438,6 +440,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
 			if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
 				issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
+			// Workstream `time`: Time Remapping / Time Interpolation (INV-005/011/012).
+			for (const k of (c as { timeRemap?: { keyframes: { id: string }[] } }).timeRemap?.keyframes ?? [])
+				claim(k.id, 'kf', [...cw, 'timeRemap', k.id]);
+			for (const x of remapIssues(c, rate, contentDurationFlicks(doc, c)))
+				issues.push(inv(x.code, x.message, [...cw, 'timeRemap']));
 			const r = c as Record<string, unknown>;
 			// INV-006 references
 			if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip')
@@ -450,7 +457,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					// edit-structure: a held clip shows one frame; only that frame must exist.
 					if (c.frameHold.flicks >= asset.probe.durationFlicks + flicksPerFrame(rate) + 1)
 						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
-				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null && !isRemapped(c)) {
 					// INV-005 media bounds with one frame of tolerance
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
@@ -1234,6 +1241,10 @@ export function repairDocument(
 				}
 			}
 		}
+		// Workstream `time`: malformed or out-of-media time remaps.
+		for (const c of Object.values(seq.clips))
+			for (const detail of repairRemap(c, seq.settings.frameRate as Rational, contentDurationFlicks(doc, c)))
+				note('repair-time-remap', c.id, detail);
 		// parity (roto): roto objects follow their clip's media (else their mattes are dropped), spans and bases
 		// are made valid, and effect params naming a missing roto are reset to "none".
 		for (const c of Object.values(seq.clips)) {
