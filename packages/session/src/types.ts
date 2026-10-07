@@ -66,6 +66,13 @@ export type SessionToggles = {
 	previewQuality: 'full' | 'half' | 'quarter';
 	activeTool: ActiveTool;
 	rippleMarkers: boolean;
+	/**
+	 * edit-structure: Premiere's timeline toggle "Insert and overwrite sequences as nests or individual clips" — on
+	 * (default): a sequence placed from the Source monitor or the bin becomes nest clips; off: its clips are copied.
+	 */
+	insertSequencesAsNests?: boolean;
+	/** edit-structure: Sequence ▸ Show Through Edits (default on) — through-edit markers on cuts. */
+	showThroughEdits?: boolean;
 };
 
 export type DerivativeStatus = {

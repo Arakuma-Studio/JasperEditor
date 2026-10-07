@@ -60,8 +60,15 @@ These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-n
   the unit tests and in `pnpm e2e` is encoded by libopenh264.
 - **Remotion Player stall (4.0.499):** the root cause is unknown. The playback watchdog works around it
   (E2E is stable).
-- **Editing lock:** the lock is not released on `pagehide`, so a reload leaves the project read-only until
-  "Take over editing".
+- **Editing lock (corrected 2026-10-07):** an earlier version of this list said the lock is not released on
+  `pagehide`. That was wrong: `EngineProjectStore` (`packages/session/src/persistence/engine.ts`) sends a
+  keepalive `DELETE …/lease/:id` for every held lease on `pagehide`, with the bearer token in token-only auth
+  mode since e8b4d14 (test: "keepalive lease release carries the bearer token…" in
+  `packages/session/test/persistence/engine-store.test.ts`), so a reload reopens the project editable. If the
+  browser drops the request (a crash, a killed process), the lease expires after 30 s, and the unsaved changes
+  are offered for recovery on the next open (ARCHITECTURE D-39). Observed once in about six automated runs
+  (`e2e/project-files.spec.ts` development, 7 October): a full navigation to Home within a second or two of opening
+  a project left its lease held until it expired; the cause was not found (the keepalive request is best-effort).
 - **Unregistered commands at the M1 checkpoint:** clipboard, transitions, captions, preferences, and
   other M2 menu commands were pending. The old wiring inventory test was removed during test cleanup;
   current command behavior is checked through feature tests and browser workflows.

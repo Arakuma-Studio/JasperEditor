@@ -131,17 +131,20 @@ describe('Program Monitor motion path (S03:OVL-020)', () => {
 		const { session, id } = setup();
 		const { svg, refresh } = overlay(session);
 		const before = session.getState().history.entries.length;
-		// Auto tangent of the middle key = (next − prev) / 6 = (183.33, 0): out handle at screen (571.67, 400).
-		const out: Vec2 = [(960 + 1100 / 6) / 2, 400];
+		// Auto tangent of the middle key (keyframes-blend: After Effects' rule): along next − prev = (1, 0), each handle
+		// ⅓ of its chord — out = |(540, −500)| / 3, in = |(560, 500)| / 3.
+		const LOUT = Math.hypot(540, 500) / 3;
+		const LIN = Math.hypot(560, 500) / 3;
+		const out: Vec2 = [(960 + LOUT) / 2, 400];
 		act(() => drag(svg, out, [out[0], 450]));
 		let s = keysOf(session, id)[1]!.spatial!;
 		expect(s.mode).toBe('continuous-bezier');
-		expect(s.outTangent[0]).toBeCloseTo(1100 / 6, 6);
+		expect(s.outTangent[0]).toBeCloseTo(LOUT, 6);
 		expect(s.outTangent[1]).toBeCloseTo(100, 6);
 		const len = Math.hypot(...s.outTangent);
-		// The in tangent turned opposite and kept its length (1100 / 6).
-		expect(s.inTangent[0] / (1100 / 6)).toBeCloseTo(-s.outTangent[0] / len, 6);
-		expect(Math.hypot(...s.inTangent)).toBeCloseTo(1100 / 6, 6);
+		// The in tangent turned opposite and kept its length.
+		expect(s.inTangent[0] / LIN).toBeCloseTo(-s.outTangent[0] / len, 6);
+		expect(Math.hypot(...s.inTangent)).toBeCloseTo(LIN, 6);
 		expect(session.getState().history.entries.length).toBe(before + 1);
 		refresh();
 		// Alt-drag the in handle: Bezier, the out tangent stays.

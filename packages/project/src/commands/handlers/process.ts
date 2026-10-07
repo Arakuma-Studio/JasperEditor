@@ -15,7 +15,7 @@
 //   does not hold every frame the clip shows is refused (E_OUT_OF_MEDIA), or with `fit` the clip is trimmed to
 //   the covered frames (`trim`) or left alone with a warning (`skip`). `keepDuration` is accepted and has no
 //   effect: the duration is always kept.
-import { current, isDraft } from 'immer';
+import { current, type Draft, isDraft } from 'immer';
 import {
 	clipFileFrames,
 	coverageTolerance,
@@ -35,7 +35,7 @@ import {
 import { defaultLabelForMedia, isBoundedContent } from '../../registry/kinds.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SourceRange } from '../../schema/media.ts';
-import type { Clip, VideoClip } from '../../schema/sequence.ts';
+import type { AudioClip, Clip, VideoClip } from '../../schema/sequence.ts';
 import { type Rational, rationalEquals } from '../../time.ts';
 import { mediaFrameRate } from '../../tracking/request.ts';
 import { clipHandles, fitTransitionDuration } from '../../transitions.ts';
@@ -480,7 +480,11 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 			'E_INVALID_PARAM',
 			'media.derive needs `asset`: the engine produces the processed file (POST /api/media/:key/process) and its result is committed here',
 		);
-	if (source.kind !== 'video')
+	// audio-mix: a loudness-normalised version is an audio file made from the audio stream of a video or audio media.
+	const loudness = cmd.recipe.op === 'loudness-normalize';
+	if (loudness && source.kind !== 'video' && source.kind !== 'audio')
+		h.fail('E_INVALID_PARAM', `Media ${source.id} is ${source.kind}; loudness normalisation needs audio`);
+	if (!loudness && source.kind !== 'video')
 		h.fail('E_INVALID_PARAM', `Media ${source.id} is ${source.kind}; only video can be processed`);
 	if (cmd.binId) assertBin(doc, cmd.binId, h);
 	if (asset.fingerprint === source.fingerprint)
@@ -504,7 +508,7 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 			: undefined;
 		doc.media[mediaId] = {
 			id: mediaId,
-			kind: source.kind,
+			kind: loudness ? 'audio' : source.kind,
 			fingerprint: asset.fingerprint,
 			originalName: asset.originalName,
 			sizeBytes: asset.sizeBytes,
@@ -522,6 +526,27 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 		} as MediaAsset;
 	}
 	const media = doc.media[mediaId] as MediaAsset;
+	if (loudness && cmd.replaceInClips?.length) {
+		const out = useNormalizedAudio(doc, media, source.id, cmd.replaceInClips, h);
+		let item0 = mediaItemOf(doc, mediaId);
+		if (!item0) {
+			const originalItem = mediaItemOf(doc, source.id);
+			const binId0 = cmd.binId ?? processedBin(doc, originalItem?.id, h);
+			const itemId = h.ids.next('itm');
+			item0 = {
+				id: itemId,
+				kind: 'media',
+				name: processedItemName(originalItem?.name ?? source.originalName, cmd.recipe, null),
+				mediaId,
+				label: defaultLabelForMedia(media),
+				marks: { in: null, out: null },
+			};
+			doc.items[itemId] = item0;
+			insertItem(doc, itemId, binId0);
+		}
+		h.defineRef(cmd.ref, mediaId);
+		return { mediaId, itemId: item0.id, deduped: !!existing, clipIds: out };
+	}
 	if (!isVersionDerivation(media.derivation) && cmd.replaceInClips?.length)
 		h.fail('E_INVALID_PARAM', `Media ${mediaId} is not a processed version; clips cannot switch to it`);
 
@@ -560,6 +585,40 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 			? { trimmedClipIds: swaps.filter((s) => s.trimmed).map((s) => s.clipId) }
 			: {}),
 	};
+}
+
+/**
+ * audio-mix: audio clips of `sourceId` play the loudness-normalised `media` instead (same timing: the file starts at
+ * the source's time 0; its first audio stream holds the normalised stream's channels).
+ */
+function useNormalizedAudio(
+	doc: DDoc,
+	media: MediaAsset,
+	sourceId: string,
+	clipIds: readonly string[],
+	h: HandlerContext,
+): string[] {
+	const stream = media.probe.streams.find((s) => s.type === 'audio');
+	if (stream?.type !== 'audio') return h.fail('E_INVALID_PARAM', 'The normalised file has no audio stream');
+	const changed: string[] = [];
+	for (const id of new Set(clipIds)) {
+		const { seq, clip } = h.clip(doc, id);
+		if (clip.kind !== 'audio')
+			h.fail(
+				'E_INVALID_PARAM',
+				`Clip ${id} is ${clip.kind}; only audio clips switch to a normalised version`,
+			);
+		const c = clip as Draft<AudioClip>;
+		if (c.mediaId !== sourceId) h.fail('E_INVALID_PARAM', `Clip ${id} does not play media ${sourceId}`);
+		assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
+		c.mediaId = media.id;
+		const map = c.channels.map.every((i) => i < stream.channels)
+			? [...c.channels.map]
+			: Array.from({ length: Math.min(2, stream.channels) }, (_, i) => i);
+		c.channels = { streamIndex: stream.index, map };
+		changed.push(id);
+	}
+	return changed;
 }
 
 // ---------------------------------------------------------------- media.setSourceRange

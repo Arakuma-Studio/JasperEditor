@@ -12,6 +12,7 @@ import {
 	AgentTxRequestSchema,
 	AgentTxResponseSchema,
 } from './agent.ts';
+import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -22,6 +23,7 @@ import {
 	CacheUsageSchema,
 } from './cache.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
+import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
@@ -41,6 +43,7 @@ import {
 import { FontCatalogSchema } from './fonts.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
+import { MaskTraceRequestSchema, MaskTraceResponseSchema } from './masks.ts';
 import {
 	DerivativesRequestSchema,
 	MediaDiscardResponseSchema,
@@ -79,7 +82,14 @@ import {
 	ProjectListResponseSchema,
 	ProjectPutResponseSchema,
 	ProjectViewSchema,
+	RecoveryGetResponseSchema,
+	RecoveryListResponseSchema,
+	RecoveryPutRequestSchema,
+	RecoveryPutResponseSchema,
+	VersionGetResponseSchema,
 	VersionListResponseSchema,
+	VersionRestoreRequestSchema,
+	VersionRestoreResponseSchema,
 } from './projects.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
@@ -95,9 +105,17 @@ export type RouteOwner =
 	| 'wp-m2-track'
 	// M2 animation (ARCHITECTURE §20, S11 §10)
 	| 'wp-m2-layer-bake'
+	// wp masks
+	| 'wp-masks'
 	// M3
 	| 'wp-m3-cachegc'
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// parity program: versions and crash recovery (D-39)
+	| 'process'
+	// parity program: audio buses, loudness
+	| 'audio-mix'
+	// parity program: captions and transcripts
+	| 'wp-captions';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -176,6 +194,45 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/versions',
 		response: VersionListResponseSchema,
 		owner: 'WP-2F',
+	},
+	projectVersionGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/versions/:versionId',
+		response: VersionGetResponseSchema,
+		owner: 'process',
+	},
+	projectVersionRestore: {
+		method: 'POST',
+		path: '/api/projects/:projectId/versions/:versionId/restore',
+		body: VersionRestoreRequestSchema,
+		response: VersionRestoreResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryList: {
+		method: 'GET',
+		path: '/api/projects/:projectId/recovery',
+		response: RecoveryListResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		response: RecoveryGetResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryPut: {
+		method: 'PUT',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		body: RecoveryPutRequestSchema,
+		response: RecoveryPutResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryDelete: {
+		method: 'DELETE',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		query: z.object({ leaseId: z.string().optional() }),
+		response: OkSchema,
+		owner: 'process',
 	},
 	projectDelete: {
 		method: 'DELETE',
@@ -311,6 +368,13 @@ export const ROUTES = {
 		owner: 'WP-2F',
 	},
 	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary', owner: 'WP-2F' },
+	/** wp captions: a sidecar caption file of a finished export (`result.captions.sidecars[].name`). */
+	renderCaptionFile: {
+		method: 'GET',
+		path: '/renders/:jobId/captions/:name',
+		response: 'binary',
+		owner: 'wp-captions',
+	},
 	stills: {
 		method: 'POST',
 		path: '/api/stills',
@@ -471,6 +535,14 @@ export const ROUTES = {
 	},
 	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */
 	mgBundleFiles: { method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' },
+	/** wp masks: auto-trace a media frame into mask paths. */
+	masksTrace: {
+		method: 'POST',
+		path: '/api/masks/trace',
+		body: MaskTraceRequestSchema,
+		response: MaskTraceResponseSchema,
+		owner: 'wp-masks',
+	},
 	trackingTrack: {
 		method: 'POST',
 		path: '/api/tracking/track',
@@ -496,6 +568,23 @@ export const ROUTES = {
 		path: '/mg/layers/:key/:file',
 		response: 'binary',
 		owner: 'wp-m2-layer-bake',
+	},
+	// ---- audio-mix: loudness / peak / activity analysis and loudness-normalised media versions
+	audioAnalyze: {
+		method: 'POST',
+		path: '/api/audio/analyze',
+		body: AudioAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'audio-mix',
+	},
+	mediaLoudnessNormalize: {
+		method: 'POST',
+		path: '/api/media/:key/loudness-normalize',
+		body: LoudnessNormalizeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'audio-mix',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
@@ -592,6 +681,14 @@ export const ROUTES = {
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
 		owner: 'wp-m3-presets',
+	},
+	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
+	captionFileRead: {
+		method: 'POST',
+		path: '/api/captions/read',
+		body: CaptionFileReadRequestSchema,
+		response: CaptionFileReadResponseSchema,
+		owner: 'wp-captions',
 	},
 } as const satisfies Record<string, RouteDef>;
 

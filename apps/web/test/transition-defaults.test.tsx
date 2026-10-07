@@ -296,6 +296,8 @@ describe('agents and drag (TUI-034, TUI-021)', () => {
 						audio: 'jasper.constant-power',
 						alignment: 'start-at-cut',
 					},
+					// edit-structure: the timeline toggles agents read too (Insert Sequences as Nests, Show Through Edits).
+					timeline: { insertSequencesAsNests: true, showThroughEdits: true },
 				},
 			});
 		} finally {

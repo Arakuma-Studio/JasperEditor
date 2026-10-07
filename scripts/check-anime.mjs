@@ -170,7 +170,7 @@ const DYNAMIC_RE = /(?:\bimport|\brequire)\s*\(\s*(['"])([^'"]+)\1/g;
  * Imports of a file: `{spec, line, typeOnly, namespace, names: string[]}` for static imports and
  * re-exports (multi-line clauses included), dynamic `import()` and `require()`.
  */
-function parseImports(text) {
+export function parseImports(text) {
 	const code = blankTemplates(stripComments(text));
 	const lineAt = (index) => code.slice(0, index).split('\n').length;
 	const out = [];

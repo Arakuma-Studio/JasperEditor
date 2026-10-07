@@ -52,7 +52,7 @@ const editing: WorkspaceDefinition = {
 					'fill',
 					TIMELINE_STRIP([
 						21 / 78,
-						g(['project', 'effects', 'markers', 'history', 'info', 'jobs'], 'project'),
+						g(['project', 'effects', 'text', 'markers', 'history', 'info', 'jobs'], 'project'),
 					]),
 				],
 			),
@@ -137,6 +137,51 @@ const color: WorkspaceDefinition = {
 	),
 };
 
+/**
+ * Audio (audio-mix; Premiere's Audio workspace): Audio Track Mixer and Audio Clip Mixer next to a large Program,
+ * the Timeline strip with the meters below, Properties on the right.
+ */
+const audio: WorkspaceDefinition = {
+	id: 'audio',
+	name: 'Audio',
+	layout: row(
+		[
+			0.78,
+			col(
+				[
+					0.58,
+					row(
+						[0.45, g(['audioTrackMixer', 'audioClipMixer', 'source', 'effectControls'], 'audioTrackMixer')],
+						['fill', g(['program'])],
+					),
+				],
+				['fill', TIMELINE_STRIP([0.2, g(['project', 'effects', 'markers', 'history'], 'project')])],
+			),
+		],
+		['fill', g(['properties', 'info'], 'properties')],
+	),
+};
+
+/**
+ * Captions (wp captions; Premiere's "Captions and Graphics"): the Text panel as the left column next to a large
+ * Program, Properties on the right, the Timeline strip at the bottom.
+ */
+const captions: WorkspaceDefinition = {
+	id: 'captions',
+	name: 'Captions',
+	layout: col(
+		[
+			0.6,
+			row(
+				[0.3, g(['text', 'project'], 'text')],
+				['fill', g(['program'])],
+				[0.22, g(['properties', 'effectControls'], 'properties')],
+			),
+		],
+		['fill', TIMELINE_STRIP()],
+	),
+};
+
 /** Built-ins in default order (Alt+Shift+1…9 follow the visible order, WS-010). */
 export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	editing,
@@ -145,6 +190,8 @@ export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	motion,
 	essentials,
 	color,
+	audio,
+	captions,
 ];
 
 /**

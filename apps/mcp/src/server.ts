@@ -6,20 +6,26 @@ import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
+import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
+import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
+import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
 import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
+import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
@@ -50,11 +56,17 @@ const FULL_GUIDE = [
 	TRANSITION_GUIDE,
 	ANIMATION_GUIDE,
 	MOTION_PATH_GUIDE,
+	KEYFRAMES_BLEND_GUIDE,
+	MASKS_GUIDE,
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE,
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
+	STRUCTURE_GUIDE,
+	VERSIONS_GUIDE,
+	AUDIO_GUIDE,
+	CAPTIONS_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -82,11 +94,17 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
 	registerMotionPathTools(ctx);
+	registerKeyframesBlendTools(ctx);
+	registerMaskTools(ctx);
 	registerShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
+	registerStructureTools(ctx);
+	registerVersionTools(ctx);
+	registerAudioTools(ctx);
+	registerCaptionTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };

@@ -90,19 +90,24 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 							visual,
 						).map((r) => render(r))}
 					</Section>
-					<Section id="properties.crop" title="Crop" defaultOpen={false}>
-						{CROP_PARAMS.map((p) =>
-							render(
-								makeRow(
-									`crop.${p}`,
-									visual.map((c) => bindCrop(doc, seq, c, p, frame)),
+					{/* wp captions: captions have no effects (no Crop) and no blend mode */}
+					{visual.some((c) => c.kind === 'captions') ? null : (
+						<Section id="properties.crop" title="Crop" defaultOpen={false}>
+							{CROP_PARAMS.map((p) =>
+								render(
+									makeRow(
+										`crop.${p}`,
+										visual.map((c) => bindCrop(doc, seq, c, p, frame)),
+									),
 								),
-							),
-						)}
-					</Section>
-					<Section id="properties.blend" title="Blend Mode">
-						{rows(['blendMode'], visual).map((r) => render(r))}
-					</Section>
+							)}
+						</Section>
+					)}
+					{visual.some((c) => c.kind === 'captions') ? null : (
+						<Section id="properties.blend" title="Blend Mode">
+							{rows(['blendMode'], visual).map((r) => render(r))}
+						</Section>
+					)}
 					<SpeedSection clips={visual} seq={seq} />
 					{allKind('text') ? (
 						<TextSections session={session} visual={visual} ctx={ctx} rows={rows} render={render} />

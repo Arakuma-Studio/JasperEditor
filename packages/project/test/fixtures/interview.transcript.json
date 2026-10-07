@@ -1,0 +1,27 @@
+{
+  "language": "en",
+  "origin": "manual",
+  "speakers": { "s1": { "name": "Speaker 1" }, "s2": { "name": "Speaker 2" } },
+  "words": [
+    { "text": "Welcome", "seconds": [0.5, 0.9], "speaker": "s1" },
+    { "text": "to", "seconds": [0.9, 1.05], "speaker": "s1" },
+    { "text": "the", "seconds": [1.05, 1.2], "speaker": "s1" },
+    { "text": "show.", "seconds": [1.2, 1.7], "speaker": "s1" },
+    { "text": "Um,", "seconds": [3.7, 4.0], "speaker": "s1" },
+    { "text": "today", "seconds": [4.1, 4.5], "speaker": "s1" },
+    { "text": "we", "seconds": [4.5, 4.65], "speaker": "s1" },
+    { "text": "talk", "seconds": [4.65, 4.95], "speaker": "s1" },
+    { "text": "about", "seconds": [4.95, 5.3], "speaker": "s1" },
+    { "text": "rivers.", "seconds": [5.3, 5.9], "speaker": "s1" },
+    { "text": "Thanks", "seconds": [6.4, 6.8], "speaker": "s2" },
+    { "text": "for", "seconds": [6.8, 6.95], "speaker": "s2" },
+    { "text": "having", "seconds": [6.95, 7.3], "speaker": "s2" },
+    { "text": "me.", "seconds": [7.3, 7.6], "speaker": "s2" },
+    { "text": "I", "seconds": [8.0, 8.1], "speaker": "s2" },
+    { "text": "uh", "seconds": [8.2, 8.5], "speaker": "s2" },
+    { "text": "love", "seconds": [8.6, 8.9], "speaker": "s2" },
+    { "text": "rivers,", "seconds": [8.9, 9.4], "speaker": "s2" },
+    { "text": "you", "seconds": [9.5, 9.65], "speaker": "s2" },
+    { "text": "know.", "seconds": [9.65, 10.0], "speaker": "s2" }
+  ]
+}

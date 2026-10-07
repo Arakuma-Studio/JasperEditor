@@ -9,6 +9,25 @@ import { EnvelopeSchema } from './projects.ts';
  * The engine may substitute the codec/container when the build cannot encode H.264 (D-13): the plan's
  * `encoder` says what will actually be written.
  */
+/** wp captions: caption output of an export (S04:TR-061/062). Track lists take ids or `C1`-style labels. */
+export const CAPTION_SIDECAR_FORMATS = ['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
+export const ExportCaptionsSchema = z.object({
+	/** Burn captions into the picture: `true` (default) = the visible caption tracks, `false` = none, or a list. */
+	burnIn: z.union([z.boolean(), z.array(z.string())]).optional(),
+	/**
+	 * Embedded caption streams: `mov_text` in MP4/MOV, WebVTT in WebM. `true` = every caption track with captions
+	 * (the active track first, flagged default), `false` (default) = none, or a list.
+	 */
+	embed: z.union([z.boolean(), z.array(z.string())]).optional(),
+	/** Sidecar caption files written next to the output. */
+	sidecar: z.array(z.enum(CAPTION_SIDECAR_FORMATS)).optional(),
+	/** Tracks written as sidecars: `active` (default), `all`, or a list. */
+	sidecarTracks: z.union([z.enum(['active', 'all']), z.array(z.string())]).optional(),
+	/** SCC / MCC sidecars: drop-frame timecode (default: the sequence's drop-frame setting, else true). */
+	dropFrame: z.boolean().optional(),
+});
+export type ExportCaptions = z.infer<typeof ExportCaptionsSchema>;
+
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
 	range: z.discriminatedUnion('type', [
@@ -46,10 +65,24 @@ export const ExportSettingsSchema = z.object({
 		.optional(),
 	audio: z
 		.object({
-			codec: z.enum(['aac', 'opus']),
-			sampleRate: z.literal(48000),
-			channels: z.union([z.literal(1), z.literal(2)]),
+			/** audio-mix: `pcm` (24-bit, MOV only) added. */
+			codec: z.enum(['aac', 'opus', 'pcm']),
+			/** audio-mix: 44.1 / 48 / 96 kHz (default: the sequence rate). AAC and Opus encode at 48 kHz max 96. */
+			sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]),
+			/** audio-mix: 6 = discrete 5.1 (L R C LFE Ls Rs); a 5.1 Mix exported as 2/1 channels is folded (BS.775). */
+			channels: z.union([z.literal(1), z.literal(2), z.literal(6)]),
 			bitrateKbps: z.number().int().positive().optional(),
+			/**
+			 * audio-mix: two-pass loudness normalisation of the final mix (S04:RN-032) with a true-peak ceiling. Absent =
+			 * the sequence's Mix setting (`master.loudness` when enabled); null = off.
+			 */
+			normalize: z
+				.object({
+					targetLufs: z.number().min(-60).max(0),
+					truePeakDb: z.number().min(-20).max(0).default(-1),
+				})
+				.nullable()
+				.optional(),
 		})
 		.optional(),
 	engine: z.enum(['auto', 'native', 'remotion']),
@@ -60,6 +93,8 @@ export const ExportSettingsSchema = z.object({
 			z.object({ type: z.literal('path'), path: z.string() }),
 		])
 		.default({ type: 'download' }),
+	/** wp captions: burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
+	captions: ExportCaptionsSchema.optional(),
 });
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 
@@ -80,7 +115,11 @@ export const RenderPlanSchema = z.object({
 	),
 	audio: z.object({
 		mode: z.enum(['native-mix', 'remotion', 'browser']),
-		normalize: z.object({ targetLufs: z.number() }).optional(),
+		normalize: z.object({ targetLufs: z.number(), truePeakDb: z.number().optional() }).optional(),
+		/** audio-mix: what the delivered audio is: rate, channels and codec. */
+		sampleRate: z.number().int().optional(),
+		channels: z.number().int().optional(),
+		codec: z.string().optional(),
 	}),
 	blockers: z.array(
 		z.object({
@@ -128,6 +167,39 @@ export const ExportResultSchema = z.object({
 	 * and an `auto` export was rendered on the Remotion path instead.
 	 */
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
+	/** audio-mix: loudness of the delivered audio (BS.1770-4), and the normalisation gain when it was normalised. */
+	audioLoudness: z
+		.object({
+			integratedLufs: z.number().nullable(),
+			truePeakDbtp: z.number().nullable(),
+			lra: z.number().nullable(),
+			normalizedGainDb: z.number().optional(),
+		})
+		.optional(),
+	/** wp captions (additive): caption streams embedded in the file and sidecar files written. */
+	captions: z
+		.object({
+			embedded: z.array(
+				z.object({
+					trackId: z.string(),
+					name: z.string(),
+					language: z.string(),
+					codec: z.string(),
+					cues: z.number(),
+				}),
+			),
+			sidecars: z.array(
+				z.object({
+					trackId: z.string(),
+					format: z.string(),
+					name: z.string(),
+					url: z.string(),
+					path: z.string().optional(),
+					cues: z.number(),
+				}),
+			),
+		})
+		.optional(),
 });
 export type ExportResult = z.infer<typeof ExportResultSchema>;
 

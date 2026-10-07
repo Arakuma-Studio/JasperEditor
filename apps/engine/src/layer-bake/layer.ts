@@ -7,7 +7,9 @@ import {
 	defaultEffectRegistry,
 	type EffectRegistry,
 	gpuIsTimeDependent,
+	hasEffectMasks,
 	layerMapOf,
+	maskExportRoute,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
@@ -15,7 +17,7 @@ import {
 } from '@jasper/project';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
-const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic']);
+const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic', 'captions']);
 
 /**
  * S11:LBK-001: a DOM layer — every text clip, every shape and motion-graphic clips rendered by Remotion
@@ -60,10 +62,13 @@ export function hasBrowserEffect(
  * master overlaid natively, so a GPU effect no longer sends the whole export to Remotion.
  */
 export function needsBake(
-	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects'>,
+	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects' | 'masks'>,
 	registry?: EffectRegistry,
 ): boolean {
-	return isDomLayer(c) || (MEDIA_BAKE_KINDS.has(c.kind) && hasBrowserEffect(c, registry));
+	return (
+		isDomLayer(c) ||
+		(MEDIA_BAKE_KINDS.has(c.kind) && (hasBrowserEffect(c, registry) || maskExportRoute(c) === 'bake'))
+	);
 }
 
 /** True when the effect has a colour op (D-21): applied natively to DOM layers (S11:LBK-010). */
@@ -74,9 +79,13 @@ export function isColorEffect(
 	return !!registry.get(fx.effectId, fx.effectVersion)?.color;
 }
 
-/** The clip has enabled colour-op effects (FIX-002: they are applied by ffmpeg, not baked by Remotion). */
+/**
+ * The clip has enabled colour-op effects that ffmpeg applies (FIX-002: not baked by Remotion). wp masks: a clip with
+ * effect masks keeps its whole stack in the bake (a masked colour effect mixes with its input, and ffmpeg could
+ * only apply runs to the finished layer), so its colour effects are rendered by the composition.
+ */
 export function hasColorEffects(c: Pick<RenderVisualClip, 'effects'>, registry?: EffectRegistry): boolean {
-	return c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
+	return !hasEffectMasks(c) && c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
 }
 
 /** Geometric effects: they commute with pointwise colour ops (crop, flips, corner pin). */
@@ -126,15 +135,24 @@ function hasKeyframesDeep(v: unknown): boolean {
  * (colour effects removed when ffmpeg applies them, LBK-010).
  */
 export function isStaticLayer(
-	c: Pick<RenderVisualClip, 'kind' | 'source' | 'transform' | 'opacity' | 'effects'>,
+	c: Pick<RenderVisualClip, 'kind' | 'source' | 'transform' | 'opacity' | 'effects' | 'masks'>,
 	registry: EffectRegistry = defaultEffectRegistry,
 ): boolean {
 	if (c.kind === 'motion-graphic') return false;
+	// wp captions: a caption is one picture unless it pages or highlights the active word.
+	if (c.kind === 'captions') {
+		const cap = (c.source as { captions?: { pages: unknown[]; style: { highlight?: { mode?: string } } } })
+			.captions;
+		if (cap?.pages.length !== 1 || (cap.style.highlight?.mode ?? 'none') !== 'none') return false;
+	}
 	// Moving pictures (wave1c media bakes) are never one frame.
 	if (c.kind === 'video' || c.kind === 'animated-image') return false;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	if (src.animation && (src.animation.in || src.animation.out)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
+	// wp masks: keyframed Opacity or effect masks.
+	if (hasKeyframesDeep(c.masks) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.masks)))
+		return false;
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		const spec = registry.get(fx.effectId, fx.effectVersion);
@@ -182,7 +200,9 @@ export function bakeClip(
 	},
 ): RenderVisualClip {
 	const span = drawnSpan(c);
-	const effects = c.effects.filter((fx) => fx.enabled && !(o.stripColor && isColorEffect(fx, o.registry)));
+	// wp masks: with effect masks nothing is stripped (see `hasColorEffects`).
+	const strip = o.stripColor && !hasEffectMasks(c);
+	const effects = c.effects.filter((fx) => fx.enabled && !(strip && isColorEffect(fx, o.registry)));
 	const { headHandle, tailHandle, fades, ...rest } = c;
 	let out: RenderVisualClip;
 	if (o.variant.recipe === 'still') out = { ...rest, effects, start: 0, duration: 1 };
@@ -306,6 +326,23 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 		};
 	};
 	const used = new Set<F>();
+	const cap = (clip.source as { captions?: { style: { fontId: string; weight: number; italic: boolean } } })
+		.captions;
+	if (cap) {
+		// wp captions: the style's face and the bold / italic faces markup uses
+		const st = cap.style;
+		for (const [w, it] of [
+			[st.weight, st.italic],
+			[Math.max(st.weight, 700), st.italic],
+			[st.weight, true],
+		] as const) {
+			const f = fonts.find((x) => x.fontId === st.fontId && x.weight === w && (x.style === 'italic') === it);
+			if (f) used.add(f);
+		}
+		const f = faceFor(fonts, st.fontId, st.weight, st.italic);
+		if (f) used.add(f);
+		return fonts.filter((x) => used.has(x));
+	}
 	if (src.text) {
 		const base = src.text.style ?? {};
 		for (const st of [base, ...(src.text.runs ?? []).map((r) => ({ ...base, ...r.style }))]) {
