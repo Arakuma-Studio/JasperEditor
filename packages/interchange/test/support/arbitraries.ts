@@ -98,8 +98,8 @@ function key<T>(time: number, value: T, interpolation: Keyframe<T>['interpolatio
 		time,
 		value,
 		interpolation,
-		easeIn: { influence: 1 / 3, slope: 0 },
-		easeOut: { influence: 1 / 3, slope: 0 },
+		easeIn: { influence: 1 / 3, slope: interpolation === 'bezier' ? 0 : 1 },
+		easeOut: { influence: 1 / 3, slope: interpolation === 'bezier' ? 0 : 1 },
 	};
 }
 
@@ -163,6 +163,7 @@ export function arbProject(f: Features): fc.Arbitrary<IProject> {
 }
 
 const SPEEDS = [1, 2, 0.5, 4, 0.25];
+const GEN_NAMES = ['Black Video', 'Color Matte', 'Bars and Tone', 'Transparent Video', 'Counting Leader'];
 
 type Gen = {
 	rateIx: number;
@@ -217,7 +218,7 @@ function build(f: Features, g: Gen): IProject {
 		if (!gens[id])
 			gens[id] = {
 				id,
-				name: ['Black Video', 'Color Matte', 'Bars and Tone', 'Transparent Video', 'Counting Leader'][k]!,
+				name: GEN_NAMES[k]!,
 				kind: 'generator',
 				path: null,
 				duration: null,
@@ -274,7 +275,7 @@ function build(f: Features, g: Gen): IProject {
 			const hold = video && !useGen && f.hold && c.hold === 0;
 			const clip: IClip = {
 				id: `c${++n}`,
-				name: useGen ? 'Generator' : m.name,
+				name: useGen ? GEN_NAMES[c.gen]! : m.name,
 				start: at * F,
 				duration: c.len * F,
 				sourceIn: useGen ? 0 : c.inFrames * F,
@@ -300,7 +301,7 @@ function build(f: Features, g: Gen): IProject {
 						: { value: [c.px, c.py], keyframes: [] },
 					anchor: { value: [960, 540], keyframes: [] },
 					scale: anim(c.scale, kf ? [key(clip.sourceIn, c.scale), key(clip.sourceIn + 5 * F, 100)] : []),
-					scaleWidth: anim(c.scale),
+					scaleWidth: anim(c.scale, kf ? [key(clip.sourceIn, c.scale), key(clip.sourceIn + 5 * F, 100)] : []),
 					uniformScale: true,
 					rotation: anim(c.rot),
 					flipH: false,
@@ -382,7 +383,7 @@ function build(f: Features, g: Gen): IProject {
 					],
 				},
 			],
-			audio: [],
+			audio: [{ name: null, enabled: true, locked: false, transitions: [], clips: [] }],
 		};
 		p.sequences[inner.id] = inner;
 		p.root.push({ type: 'sequence', id: inner.id });

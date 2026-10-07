@@ -11,6 +11,8 @@ export type CanonOptions = {
 	trimEmptyTracks?: boolean;
 	/** Keep only the top sequence and the sequences it nests. */
 	onlyTop?: boolean;
+	/** Treat unity levels / centred pan / full opacity / zero gain as absent (formats write only changes). */
+	dropDefaults?: boolean;
 };
 
 const stripKfIds = (v: unknown): unknown => {
@@ -20,6 +22,13 @@ const stripKfIds = (v: unknown): unknown => {
 		for (const [k, x] of Object.entries(v)) {
 			if (k === 'id' && 'interpolation' in (v as object)) continue;
 			if (x === undefined) continue;
+			// With keys, the static value is not used (the first key's value is).
+			if (
+				k === 'value' &&
+				Array.isArray((v as { keyframes?: unknown }).keyframes) &&
+				(v as { keyframes: unknown[] }).keyframes.length > 0
+			)
+				continue;
 			o[k] = stripKfIds(x);
 		}
 		return o;
@@ -63,6 +72,17 @@ export function canonical(p: IProject, opts: CanonOptions = {}): unknown {
 					if (!o.link) delete o.link;
 					if (o.hold === null) delete o.hold;
 					for (const k of opts.dropClip ?? []) delete o[k];
+					if (opts.dropDefaults) {
+						const isDef = (a: unknown, v: number) => {
+							const x = a as { value?: unknown; keyframes?: unknown[] } | undefined;
+							return !!x && x.value === v && !(x.keyframes ?? []).length;
+						};
+						if (isDef(o.volumeDb, 0)) delete o.volumeDb;
+						if (isDef(o.pan, 0)) delete o.pan;
+						if (isDef(o.opacity, 100)) delete o.opacity;
+						if (o.gainDb === 0) delete o.gainDb;
+						if (o.blendMode === 'normal') delete o.blendMode;
+					}
 					return stripKfIds(o);
 				}),
 				transitions: t.transitions.map((x) => {

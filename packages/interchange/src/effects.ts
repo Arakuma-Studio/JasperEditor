@@ -102,7 +102,13 @@ export function effectSpecOf(idOrName: string, appliesTo?: 'video' | 'audio'): E
 	return (
 		defaultEffectRegistry
 			.list()
-			.find((s) => (!appliesTo || s.appliesTo === appliesTo) && (norm(s.label) === n || norm(s.id) === n)) ??
-		null
+			.find(
+				(s) =>
+					(!appliesTo || s.appliesTo === appliesTo) &&
+					(norm(s.label) === n ||
+						norm(s.id) === n ||
+						norm(s.label).replace(/ /g, '') === n.replace(/ /g, '') ||
+						norm(s.id.replace(/^jasper\./, '')).replace(/ /g, '') === n.replace(/ /g, '')),
+			) ?? null
 	);
 }

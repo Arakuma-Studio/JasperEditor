@@ -1,9 +1,8 @@
 // JasperEditor document → format → JasperEditor document, through `project.importTimeline`.
-import { checkInvariants, defaultRegistries } from '@jasper/project';
+import { type CaptionsClip, captionClipText, checkInvariants, defaultRegistries } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { exportTimeline, type Format, importTimeline, planPrerender } from '../src/index.ts';
 import { addCaptions, Harness, richProject, summarize } from './support/rich.ts';
-import { captionClipText, type CaptionsClip } from '@jasper/project';
 
 function roundTrip(format: Format, opts: { preset?: string } = {}) {
 	const { h, ids } = richProject(opts);
@@ -47,7 +46,11 @@ describe('JasperEditor round trips', () => {
 		const caps = (s: typeof a) =>
 			(Object.values(s.clips) as CaptionsClip[])
 				.filter((c) => c.kind === 'captions')
-				.map((c) => [c.start, c.duration, captionClipText(c === c ? (s === a ? target.doc : h.doc) : h.doc, c, s.settings.frameRate)])
+				.map((c) => [
+					c.start,
+					c.duration,
+					captionClipText(c === c ? (s === a ? target.doc : h.doc) : h.doc, c, s.settings.frameRate),
+				])
 				.sort((x, y) => (x[0] as number) - (y[0] as number));
 		expect(caps(a)).toEqual(caps(b));
 		expect(caps(a).length).toBe(2);

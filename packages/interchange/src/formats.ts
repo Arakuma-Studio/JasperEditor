@@ -1,4 +1,6 @@
 // The format registry: names, extensions, sniffing and the reader/writer of every format.
+
+import { exportFcp7, importFcp7, sniffFcp7 } from './fcp7.ts';
 import type { IProject } from './model.ts';
 import type { ExportOptions, Format, ImportOptions } from './options.ts';
 import { exportOtio, importOtio, sniffOtio } from './otio.ts';
@@ -65,7 +67,17 @@ export const FORMAT_INFO: Record<Format, FormatInfo | undefined> = {
 		read: text(importOtio),
 		write: textOut(exportOtio),
 	},
-	fcp7: undefined,
+	fcp7: {
+		id: 'fcp7',
+		name: 'Final Cut Pro XML',
+		extension: 'xml',
+		extensions: ['xml', 'xmeml'],
+		binary: false,
+		timeline: true,
+		sniff: (_b, head) => sniffFcp7(head),
+		read: text(importFcp7),
+		write: textOut(exportFcp7),
+	},
 	fcpxml: undefined,
 	edl: undefined,
 	aaf: undefined,
@@ -89,7 +101,7 @@ export function formatFromExtension(ext: string): Format | null {
 /** Sniff a document's format from its bytes, with the file name as a hint for ambiguous text. */
 export function detectFormat(bytes: Uint8Array, fileName?: string | null): Format | null {
 	const head = decodeText(bytes.subarray(0, 8192));
-	const ext = fileName && fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.') + 1) : '';
+	const ext = fileName?.includes('.') && fileName ? fileName.slice(fileName.lastIndexOf('.') + 1) : '';
 	// Binary containers first, then text sniffers in a fixed order.
 	const order: Format[] = ['aaf', 'omf', 'fcp7', 'fcpxml', 'otio', 'ale', 'edl'];
 	for (const f of order) {
