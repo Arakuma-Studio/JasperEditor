@@ -138,7 +138,11 @@ const quote = (s: string) => JSON.stringify(s);
  * shortest AE form (`transform.position`, `effect("Slider Control")("Slider")`, `thisComp.layer("Title")…`,
  * `comp("Other")…`). Null when `to` cannot be referenced.
  */
-export function pickWhipExpression(doc: ProjectDocument, from: ExpressionRef, to: ExpressionRef): string | null {
+export function pickWhipExpression(
+	doc: ProjectDocument,
+	from: ExpressionRef,
+	to: ExpressionRef,
+): string | null {
 	const world = worldOfDocument(doc);
 	const target = world.prop(to);
 	if (!target) return null;
@@ -147,10 +151,14 @@ export function pickWhipExpression(doc: ProjectDocument, from: ExpressionRef, to
 	let layer = '';
 	if (to.owner !== from.owner || to.seq !== from.seq) {
 		if (info.kind !== 'clip') return null;
-		const comp = to.seq === from.seq ? 'thisComp' : `comp(${quote(doc.items ? nameOfSequence(doc, to.seq) : to.seq)})`;
+		const comp =
+			to.seq === from.seq ? 'thisComp' : `comp(${quote(doc.items ? nameOfSequence(doc, to.seq) : to.seq)})`;
 		const clip = info.clip;
 		const sameName = world.layers(to.seq).filter((id) => info.seq.clips[id]?.name === clip.name);
-		const key = sameName.length === 1 && sameName[0] === clip.id ? quote(clip.name) : String(world.layers(to.seq).indexOf(clip.id) + 1);
+		const key =
+			sameName.length === 1 && sameName[0] === clip.id
+				? quote(clip.name)
+				: String(world.layers(to.seq).indexOf(clip.id) + 1);
 		layer = `${comp}.layer(${key}).`;
 	} else if (info.kind !== 'clip' && info.kind !== 'track' && info.kind !== 'master') return null;
 	if (to.owner === from.owner && to.seq === from.seq && to.path === from.path) return 'value';
@@ -166,7 +174,9 @@ export function pickWhipExpression(doc: ProjectDocument, from: ExpressionRef, to
 		const [, maskId, prop] = path.split('.');
 		const node = world.children(info, 'masks').find((n) => n.path === `masks.${maskId}`);
 		if (!node) return null;
-		const attr = { feather: 'maskFeather', opacity: 'maskOpacity', expansion: 'maskExpansion' }[prop as 'feather'];
+		const attr = { feather: 'maskFeather', opacity: 'maskOpacity', expansion: 'maskExpansion' }[
+			prop as 'feather'
+		];
 		return attr ? `${layer}mask(${quote(node.name)}).${attr}` : null;
 	}
 	const short: Record<string, string> = {
@@ -186,14 +196,16 @@ export function pickWhipExpression(doc: ProjectDocument, from: ExpressionRef, to
 		'text.content': 'text.sourceText',
 	};
 	const s =
-		short[path] ?? (path.startsWith('params.') ? `${layer ? '' : 'thisLayer.'}params(${quote(path.slice(7))})` : null);
+		short[path] ??
+		(path.startsWith('params.') ? `${layer ? '' : 'thisLayer.'}params(${quote(path.slice(7))})` : null);
 	if (!s) return null;
 	if (!layer && (info.kind === 'track' || info.kind === 'master')) return null;
 	return layer ? `${layer}${s}` : s;
 }
 
 function nameOfSequence(doc: ProjectDocument, seqId: string): string {
-	for (const it of Object.values(doc.items)) if (it.kind === 'sequence' && it.sequenceId === seqId) return it.name;
+	for (const it of Object.values(doc.items))
+		if (it.kind === 'sequence' && it.sequenceId === seqId) return it.name;
 	return seqId;
 }
 

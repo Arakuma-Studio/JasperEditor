@@ -9,9 +9,9 @@ import {
 } from '../captions/model.ts';
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { contentTimeAt } from '../derive/index.ts';
+import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
-import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';

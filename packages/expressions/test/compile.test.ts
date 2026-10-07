@@ -1,7 +1,6 @@
 // Source transform: array maths (the EffectCraft rewrite.rs cases) and completion values.
 import { describe, expect, it } from 'vitest';
-import { compileExpressionSource, MAX_NESTING } from '../src/compile.ts';
-import { rewriteForTest } from '../src/compile.ts';
+import { compileExpressionSource, MAX_NESTING, rewriteForTest } from '../src/compile.ts';
 
 const n = (s: string) => s.replace(/[ \t]/g, '');
 const rw = (s: string) => n(rewriteForTest(s));
@@ -23,8 +22,9 @@ describe('array maths rewrite (rewrite.rs cases)', () => {
 		expect(rw('if (a) -b; else c')).toBe(n('__r=void 0;if (a) __r=(__neg(b)); else __r=(c)'));
 	});
 	it('strings, regexes, comments and template literals', () => {
-		expect(rw("'a+b' + \"c\"")).toBe(n('__r=(__add(\'a+b\',"c"))'));
+		expect(rw('\'a+b\' + "c"')).toBe(n('__r=(__add(\'a+b\',"c"))'));
 		expect(rw("s.replace(/a+b/g, '')")).toBe(n("__r=(s.replace(/a+b/g, ''))"));
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: the expression source contains a template literal
 		expect(rw('`${a+b}` + 1')).toBe(n('__r=(__add(`${__add(a,b)}`,1))'));
 		expect(rewriteForTest('a /* + */ * b').match(/__mul/g)?.length).toBe(1);
 	});
@@ -62,6 +62,8 @@ describe('array maths rewrite (rewrite.rs cases)', () => {
 			expect(c.ok).toBe(false);
 			expect(!c.ok && c.error).toMatch(/nested too deeply/);
 		}
-		expect(compileExpressionSource(`${'('.repeat(MAX_NESTING - 2)}a + b${')'.repeat(MAX_NESTING - 2)}`).ok).toBe(true);
+		expect(
+			compileExpressionSource(`${'('.repeat(MAX_NESTING - 2)}a + b${')'.repeat(MAX_NESTING - 2)}`).ok,
+		).toBe(true);
 	});
 });

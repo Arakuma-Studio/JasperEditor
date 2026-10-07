@@ -7,6 +7,8 @@
 import type { Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
+import { ensureExpressionEngine } from '../expressions/engine.ts';
+import { defaultExpressionText, rowExpressionOf, setExpressionCommand } from '../expressions/row.ts';
 import { deleteMasks } from '../masks/actions.ts';
 import { maskUi } from '../masks/store.ts';
 import { applyEffectToClips } from '../panels/effects/drag.ts';
@@ -20,8 +22,6 @@ import {
 	type Row,
 	rowForKey,
 } from '../panels/properties/lib/model.ts';
-import { ensureExpressionEngine } from '../expressions/engine.ts';
-import { defaultExpressionText, rowExpressionOf, setExpressionCommand } from '../expressions/row.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 function activeSequence(session: EditorSession): Sequence | null {
@@ -144,11 +144,15 @@ export const inspectorCommands: UiCommand[] = [
 		scope: 'global',
 		when: (ctx) => {
 			const f = hasFocusedRow(ctx) ? focusedRow(ctx) : null;
-			return !!f && f.row.bindings.length === 1 && !!rowExpressionOf(f.session.getCommitted(), f.row.bindings[0]!, f.seq.id);
+			return (
+				!!f &&
+				f.row.bindings.length === 1 &&
+				!!rowExpressionOf(f.session.getCommitted(), f.row.bindings[0]!, f.seq.id)
+			);
 		},
 		run(ctx) {
 			const f = focusedRow(ctx);
-			if (!f || f.row.bindings.length !== 1) return;
+			if (f?.row.bindings.length !== 1) return;
 			const doc = f.session.getCommitted();
 			const rx = rowExpressionOf(doc, f.row.bindings[0]!, f.seq.id);
 			if (!rx) return;

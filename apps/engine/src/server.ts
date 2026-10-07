@@ -1,12 +1,12 @@
 // Fastify factory (ARCHITECTURE §9.1): error handler with the S04:ENG-022 shape, x-jasper-api header,
 // auth + Host check (§4.2), /health, static SPA with a fallback that never shadows engine paths.
 
-import { loadExpressionEngine } from '@jasper/expressions';
 import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { API_HEADER, API_VERSION, AUTH_COOKIE, errorBody, isEnginePath } from '@jasper/api';
+import { loadExpressionEngine } from '@jasper/expressions';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createCoreAgentStore } from './agent/core-store.ts';
 import type { EngineConfig, EngineContext } from './context.ts';

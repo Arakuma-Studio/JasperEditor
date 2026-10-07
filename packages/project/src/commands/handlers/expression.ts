@@ -26,7 +26,10 @@ function holder(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: Ha
 	if (head === 'clip' && clipId && (key === 'text.content' || key === 'text.sourceText')) {
 		const { seq, clip } = h.clip(doc, clipId);
 		if (clip.kind !== 'text')
-			return h.fail('E_INVALID_PARAM', `Source Text expressions need a text clip (${clipId} is ${clip.kind})`);
+			return h.fail(
+				'E_INVALID_PARAM',
+				`Source Text expressions need a text clip (${clipId} is ${clip.kind})`,
+			);
 		assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 		const content = (clip as unknown as { content: Draft<TextContent> }).content;
 		return content as unknown as Draft<Holder>;
@@ -51,16 +54,22 @@ function holder(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: Ha
 	}
 	// Template parameters (motion graphics) are read with thisLayer.params(name); they take no expressions.
 	if (head === 'clip' && rest[0] === 'params')
-		return h.fail('E_INVALID_PARAM', 'Expressions are not supported on template parameters', { path: cmd.target });
+		return h.fail('E_INVALID_PARAM', 'Expressions are not supported on template parameters', {
+			path: cmd.target,
+		});
 	const target = resolveTarget(doc, cmd, h);
 	if (target.type !== 'anim')
 		return h.fail('E_INVALID_PARAM', `${target.label} is not animatable, so it cannot have an expression`, {
 			path: cmd.target,
 		});
 	if (!EXPRESSION_KINDS.has(target.rule.kind))
-		return h.fail('E_INVALID_PARAM', `${target.label}: expressions are not supported on ${target.rule.kind} values`, {
-			path: cmd.target,
-		});
+		return h.fail(
+			'E_INVALID_PARAM',
+			`${target.label}: expressions are not supported on ${target.rule.kind} values`,
+			{
+				path: cmd.target,
+			},
+		);
 	return target.anim as unknown as Draft<Holder>;
 }
 
@@ -84,7 +93,8 @@ export const expressionHandlers: HandlerMap = {
 	},
 	'expression.setEnabled': (doc, cmd: CommandOf<'expression.setEnabled'>, h: HandlerContext) => {
 		const o = holder(doc, cmd, h);
-		if (!o.expression) return h.fail('E_INVALID_PARAM', 'The property has no expression', { path: cmd.target });
+		if (!o.expression)
+			return h.fail('E_INVALID_PARAM', 'The property has no expression', { path: cmd.target });
 		o.expression.enabled = cmd.enabled;
 		return { enabled: cmd.enabled };
 	},

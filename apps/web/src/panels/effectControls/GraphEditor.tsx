@@ -13,8 +13,6 @@ import {
 	propertyEvaluateOptions,
 	type Sequence,
 } from '@jasper/project';
-import { useExpressionsFor } from '../../expressions/engine.ts';
-import { rowExpressionOf } from '../../expressions/row.ts';
 import {
 	type CSSProperties,
 	type MouseEvent as ReactMouseEvent,
@@ -26,6 +24,8 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { useExpressionsFor } from '../../expressions/engine.ts';
+import { rowExpressionOf } from '../../expressions/row.ts';
 import type { Row } from '../properties/lib/model.ts';
 import type { InspectorOps } from '../properties/lib/ops.ts';
 import {

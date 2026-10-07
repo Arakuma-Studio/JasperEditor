@@ -23,7 +23,6 @@ import { createHash } from 'node:crypto';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-	isAnimated,
 	bakeColorRun,
 	type ColorRunEffect,
 	clipContentTime,
@@ -33,6 +32,7 @@ import {
 	EXPORT_LUT_SIZE,
 	effectRuns,
 	evaluate,
+	isAnimated,
 	type Lut,
 	type ParamValue,
 	type RenderVisualClip,

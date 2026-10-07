@@ -62,7 +62,9 @@ describe('documents', () => {
 	});
 	it('a disabled expression renders the keyframed value; status reports errors', () => {
 		const d = rigged();
-		d.tx([{ type: 'expression.setEnabled', target: ['clip', '$a', 'transform', 'rotation'], enabled: false }]);
+		d.tx([
+			{ type: 'expression.setEnabled', target: ['clip', '$a', 'transform', 'rotation'], enabled: false },
+		]);
 		const ref = { seq: d.seqId, owner: d.refs.$a!, path: 'transform.rotation' };
 		const t = storedTimeAtFrame(d.doc, ref, 60);
 		expect(propertyStatusAt(d.doc, ref, t)?.value).toBe(0);
@@ -82,10 +84,14 @@ describe('documents', () => {
 	it('commands: clear, empty text, undo-friendly storage', () => {
 		const d = rigged();
 		d.tx([{ type: 'expression.clear', target: ['clip', '$a', 'transform', 'rotation'] }]);
-		const a = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as { transform: { rotation: { expression?: unknown } } };
+		const a = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as {
+			transform: { rotation: { expression?: unknown } };
+		};
 		expect(a.transform.rotation.expression).toBeUndefined();
 		d.tx([{ type: 'expression.set', target: ['clip', '$a', 'transform', 'position'], text: '  ' }]);
-		const b = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as { transform: { position: { expression?: unknown } } };
+		const b = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as {
+			transform: { position: { expression?: unknown } };
+		};
 		expect(b.transform.position.expression).toBeUndefined();
 		expect(() =>
 			d.tx([{ type: 'expression.set', target: ['clip', '$a', 'transform', 'flipH'], text: '1' }]),
@@ -112,7 +118,10 @@ describe('render snapshots', () => {
 		expect(a.props.transform!.rotation).toBeCloseTo(180, 9);
 		const bg = scene.find((l) => l.clip.clipId === d.refs.$bg)!;
 		expect(bg.props.opacity).toBe(100);
-		expect(resolveSceneAt(bound, 15).find((l) => l.clip.clipId === d.refs.$bg)!.props.opacity).toBeCloseTo(25, 9);
+		expect(resolveSceneAt(bound, 15).find((l) => l.clip.clipId === d.refs.$bg)!.props.opacity).toBeCloseTo(
+			25,
+			9,
+		);
 		const text = bound.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === d.refs.$title)!;
 		const src = text.source as unknown as { text: never };
 		expect(sourceTextAt(src.text, contentTimeAt(text, 45, { num: 30, den: 1 }))).toBe('00:00:01:15');
@@ -126,13 +135,18 @@ describe('render snapshots', () => {
 	it('values do not depend on evaluation order (fresh worlds, shuffled frames)', () => {
 		const d = rigged();
 		const reference = (() => {
-			const s = bindSnapshotExpressions(JSON.parse(JSON.stringify(buildRenderSnapshot(d.doc, d.seqId, snapOpts))));
+			const s = bindSnapshotExpressions(
+				JSON.parse(JSON.stringify(buildRenderSnapshot(d.doc, d.seqId, snapOpts))),
+			);
 			return Array.from({ length: 40 }, (_, f) => resolveSceneAt(s, 30 + f * 3).map((l) => l.props));
 		})();
 		fc.assert(
 			fc.property(fc.shuffledSubarray([...Array(40).keys()], { minLength: 40, maxLength: 40 }), (order) => {
-				const s = bindSnapshotExpressions(JSON.parse(JSON.stringify(buildRenderSnapshot(d.doc, d.seqId, snapOpts))));
-				for (const i of order) expect(resolveSceneAt(s, 30 + i * 3).map((l) => l.props)).toEqual(reference[i]);
+				const s = bindSnapshotExpressions(
+					JSON.parse(JSON.stringify(buildRenderSnapshot(d.doc, d.seqId, snapOpts))),
+				);
+				for (const i of order)
+					expect(resolveSceneAt(s, 30 + i * 3).map((l) => l.props)).toEqual(reference[i]);
 			}),
 			{ numRuns: 8, seed: 7 },
 		);
@@ -143,18 +157,22 @@ describe('pick-whip and the Expression Selector API', () => {
 	it('pick-whip references', () => {
 		const d = rigged();
 		const from = { seq: d.seqId, owner: d.refs.$bg!, path: 'transform.rotation' };
-		expect(pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$a!, path: 'transform.rotation' })).toBe(
-			'thisComp.layer("A").transform.rotation',
-		);
 		expect(
-			pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$a!, path: `effects.${d.refs.$slider}.slider` }),
+			pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$a!, path: 'transform.rotation' }),
+		).toBe('thisComp.layer("A").transform.rotation');
+		expect(
+			pickWhipExpression(d.doc, from, {
+				seq: d.seqId,
+				owner: d.refs.$a!,
+				path: `effects.${d.refs.$slider}.slider`,
+			}),
 		).toBe('thisComp.layer("A").effect("Slider Control")("Slider")');
 		expect(pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$bg!, path: 'opacity' })).toBe(
 			'transform.opacity',
 		);
-		expect(pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' })).toBe(
-			'thisComp.layer("Title").text.sourceText',
-		);
+		expect(
+			pickWhipExpression(d.doc, from, { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' }),
+		).toBe('thisComp.layer("Title").text.sourceText');
 	});
 	it('selector amounts per unit', () => {
 		const d = basicDoc();
@@ -172,9 +190,19 @@ describe('pick-whip and the Expression Selector API', () => {
 		});
 		expect(v).toEqual({ ok: true, amount: [50, 40, 30] });
 		const rand = (i: number) =>
-			evaluateSelectorExpression(d.doc, at, 'random(100)', 0, { textIndex: i, textTotal: 4, selectorValue: [100, 100, 100] });
+			evaluateSelectorExpression(d.doc, at, 'random(100)', 0, {
+				textIndex: i,
+				textTotal: 4,
+				selectorValue: [100, 100, 100],
+			});
 		expect(rand(1)).toEqual(rand(1));
 		expect(rand(1)).not.toEqual(rand(2));
-		expect(evaluateSelectorExpression(d.doc, at, '"x"', 0, { textIndex: 1, textTotal: 1, selectorValue: [100, 100, 100] }).ok).toBe(false);
+		expect(
+			evaluateSelectorExpression(d.doc, at, '"x"', 0, {
+				textIndex: 1,
+				textTotal: 1,
+				selectorValue: [100, 100, 100],
+			}).ok,
+		).toBe(false);
 	});
 });

@@ -123,7 +123,13 @@ export const LAYERS = {
 	},
 	'packages/compositions': {
 		name: '@jasper/compositions',
-		deps: ['@jasper/project', '@jasper/mg-templates', '@jasper/motion', '@jasper/audio-dsp', '@jasper/expressions'],
+		deps: [
+			'@jasper/project',
+			'@jasper/mg-templates',
+			'@jasper/motion',
+			'@jasper/audio-dsp',
+			'@jasper/expressions',
+		],
 		forbid: [...BROWSER_LAYER, 'uiLibs', 'tailwind', 'anime'],
 		note: 'the Remotion bundle: no session, ui, engine-client or Tailwind',
 	},
@@ -169,7 +175,13 @@ export const LAYERS = {
 	},
 	'apps/mcp': {
 		name: '@jasper/mcp',
-		deps: ['@jasper/api', '@jasper/config', '@jasper/engine-client', '@jasper/expressions', '@jasper/project'],
+		deps: [
+			'@jasper/api',
+			'@jasper/config',
+			'@jasper/engine-client',
+			'@jasper/expressions',
+			'@jasper/project',
+		],
 		forbid: ['react', 'uiLibs', 'tailwind', 'remotion', 'anime', 'electron', 'server'],
 	},
 	'apps/desktop': {

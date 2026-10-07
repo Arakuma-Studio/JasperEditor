@@ -227,7 +227,9 @@ export function expressionBindingOf(anim: unknown): ExpressionBinding | undefine
 }
 
 /** True when the property has an expression that renders (non-empty text, enabled). */
-export function hasActiveExpression(anim: { expression?: { text: string; enabled: boolean } } | null | undefined): boolean {
+export function hasActiveExpression(
+	anim: { expression?: { text: string; enabled: boolean } } | null | undefined,
+): boolean {
 	return !!anim?.expression?.enabled && anim.expression.text.trim().length > 0;
 }
 

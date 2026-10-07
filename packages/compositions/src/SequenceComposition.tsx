@@ -52,6 +52,7 @@ import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remo
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
+import { useExpressionSnapshot } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import {
 	BlendFallback,
@@ -85,7 +86,6 @@ import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
 import { ShowFrame } from './show-frame.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
-import { useExpressionSnapshot } from './expressions.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
 const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
@@ -99,8 +99,9 @@ const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 /** Keyframed or driven by an active expression (wave expressions). */
-const hasKeyframes = (v: { keyframes: unknown[]; expression?: { text: string; enabled: boolean } } | null | undefined): boolean =>
-	isAnimated(v);
+const hasKeyframes = (
+	v: { keyframes: unknown[]; expression?: { text: string; enabled: boolean } } | null | undefined,
+): boolean => isAnimated(v);
 
 /**
  * Layers whose output depends on the frame beyond `ResolvedLayerProps` (ARCHITECTURE §20.4): the

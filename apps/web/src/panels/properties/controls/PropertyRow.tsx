@@ -7,14 +7,19 @@ import type { TransportStore } from '@jasper/session';
 import { useSessionOrNull } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { Fragment, type ReactNode, useMemo, useRef, useState } from 'react';
-import { ensureExpressionEngine, useExpressionsFor } from '../../../expressions/engine.ts';
-import { ExpressionRow, PICK_WHIP_ATTR } from '../../../expressions/ExpressionRow.tsx';
-import { defaultExpressionText, rowExpressionOf, rowStatus, setExpressionCommand } from '../../../expressions/row.ts';
 import { browseForLut } from '../../../color/actions.ts';
 import { CurveField } from '../../../color/controls/CurveField.tsx';
 import { LutPicker } from '../../../color/controls/LutPicker.tsx';
 import { Slider } from '../../../color/controls/Slider.tsx';
 import { WheelField } from '../../../color/controls/WheelField.tsx';
+import { ExpressionRow, PICK_WHIP_ATTR } from '../../../expressions/ExpressionRow.tsx';
+import { ensureExpressionEngine, useExpressionsFor } from '../../../expressions/engine.ts';
+import {
+	defaultExpressionText,
+	rowExpressionOf,
+	rowStatus,
+	setExpressionCommand,
+} from '../../../expressions/row.ts';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
 	animState,
@@ -99,7 +104,9 @@ export function PropertyRow(props: {
 		}
 		void ensureExpressionEngine();
 		setFocusExpr(true);
-		ctx.ops.apply(`Add Expression: ${row.label}`, [setExpressionCommand(rx, defaultExpressionText(ctx.doc, rx.ref))]);
+		ctx.ops.apply(`Add Expression: ${row.label}`, [
+			setExpressionCommand(rx, defaultExpressionText(ctx.doc, rx.ref)),
+		]);
 	};
 
 	/** Live playhead for writes (the rendered `ctx.frame` is throttled for display). */
@@ -145,7 +152,7 @@ export function PropertyRow(props: {
 		const value = v.mixed || typeof v.value !== 'number' ? null : (v.value as number);
 		const map = (fn: ValueFn) => (base: unknown) => {
 			if (component === undefined) return fn(Number(base));
-			const vec = Array.isArray(base) ? [...(base as number[])] : spec.kind === "vec3" ? [0, 0, 0] : [0, 0];
+			const vec = Array.isArray(base) ? [...(base as number[])] : spec.kind === 'vec3' ? [0, 0, 0] : [0, 0];
 			vec[component] = fn(Number(vec[component]));
 			return vec;
 		};
@@ -158,7 +165,9 @@ export function PropertyRow(props: {
 				step={spec.range?.step ?? 1}
 				precision={spec.ui.precision}
 				unit={
-					component === undefined || component === (spec.kind === 'vec3' ? 2 : 1) ? unitText(spec.unit) : undefined
+					component === undefined || component === (spec.kind === 'vec3' ? 2 : 1)
+						? unitText(spec.unit)
+						: undefined
 				}
 				min={component === undefined ? spec.range?.min : undefined}
 				max={component === undefined ? spec.range?.max : undefined}
@@ -246,9 +255,9 @@ export function PropertyRow(props: {
 			case 'menu': {
 				const b = row.bindings[0]!;
 				const fxId = b.path?.[0] === 'effect' ? b.path[1] : null;
-				const fx = (b.clip as { effects?: { id: string; params: Record<string, { value: unknown }> }[] }).effects?.find(
-					(e) => e.id === fxId,
-				);
+				const fx = (
+					b.clip as { effects?: { id: string; params: Record<string, { value: unknown }> }[] }
+				).effects?.find((e) => e.id === fxId);
 				const items = dropdownItems(fx?.params.items?.value);
 				const index = typeof value === 'number' ? Math.min(items.length, Math.max(1, Math.round(value))) : 1;
 				return (
@@ -402,138 +411,140 @@ export function PropertyRow(props: {
 
 	return (
 		<Fragment>
-		<div
-			{...(rx ? { [PICK_WHIP_ATTR]: JSON.stringify(rx.path) } : {})}
-			className={cx(
-				'group flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1',
-				props.indent ? (ctx.mode === 'effectControls' ? 'pl-[3px]' : 'pl-5') : 'pl-2',
-				spec.ui.multiline && 'items-start py-1',
-				props.className,
-			)}
-			data-row={row.id}
-			onPointerDownCapture={() =>
-				inspectorFocus.set({
-					source: ctx.mode,
-					clipIds: row.bindings.map((b) => b.clip.id),
-					rowId: row.id,
-				})
-			}
-			onFocusCapture={() =>
-				inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id })
-			}
-		>
-			{ec && props.indent ? (
-				<span className="flex w-[13px] shrink-0 justify-center">
-					{props.twirl ? (
-						<button
-							type="button"
-							aria-label={props.twirl.open ? `Hide graphs for ${row.label}` : `Show graphs for ${row.label}`}
-							title={props.twirl.open ? 'Hide Value and Velocity graphs' : 'Show Value and Velocity graphs'}
-							aria-expanded={props.twirl.open}
-							onClick={props.twirl.onToggle}
-							className="inline-flex h-[18px] w-[13px] items-center justify-center rounded-pr-control text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
-							data-testid={`twirl-${row.id}`}
-						>
-							<CaretGlyph open={props.twirl.open} size={10} />
-						</button>
-					) : null}
-				</span>
-			) : null}
-			{ec ? (
-				<span className="w-[18px] shrink-0">
-					{animatable || (rx && spec.key === 'text.content') ? (
-						<MiniButton
-							label={`Toggle animation for ${row.label}${rx ? ' (Alt-click: expression)' : ''}`}
-							active={anim !== 'none'}
-							onClick={stopwatch}
-							data-testid={`stopwatch-${row.id}`}
-						>
-							<StopwatchGlyph size={13} />
-						</MiniButton>
-					) : null}
-				</span>
-			) : null}
-			<span
+			<div
+				{...(rx ? { [PICK_WHIP_ATTR]: JSON.stringify(rx.path) } : {})}
 				className={cx(
-					'shrink-0 truncate text-pr-ui',
-					ec ? 'w-[38%]' : 'w-[34%]',
-					anim !== 'none' ? 'text-pr-text' : 'text-pr-muted',
+					'group flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1',
+					props.indent ? (ctx.mode === 'effectControls' ? 'pl-[3px]' : 'pl-5') : 'pl-2',
+					spec.ui.multiline && 'items-start py-1',
+					props.className,
 				)}
-				title={spec.description ?? row.label}
+				data-row={row.id}
+				onPointerDownCapture={() =>
+					inspectorFocus.set({
+						source: ctx.mode,
+						clipIds: row.bindings.map((b) => b.clip.id),
+						rowId: row.id,
+					})
+				}
+				onFocusCapture={() =>
+					inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id })
+				}
 			>
-				{row.label}
-			</span>
-			<span
-				className={cx(
-					'flex min-w-0 flex-1 items-center',
-					outside && 'opacity-60',
-					exprActive && 'text-pr-expr-value [&_input]:text-pr-expr-value [&_button]:text-pr-expr-value',
-				)}
-				data-expression={rx?.expression ? (exprActive ? 'active' : 'inactive') : undefined}
-				title={exprActive ? 'Value set by an expression' : undefined}
-			>
-				{editor}
-			</span>
-			{animatable && (!ec || anim !== 'none') ? (
-				<span className="flex shrink-0 items-center">
-					{anim !== 'none' ? (
-						<MiniButton
-							label={`Previous keyframe for ${row.label}`}
-							disabled={prev === null}
-							onClick={() => {
-								const f = navigateKey(row, ctx.seq, live(), -1);
-								if (f !== null) ctx.transport.seek(f);
-							}}
-							data-testid={`kf-prev-${row.id}`}
-						>
-							<PrevGlyph size={11} />
-						</MiniButton>
-					) : null}
-					<MiniButton
-						label={
-							keyHere && anim !== 'none'
-								? `Remove keyframe for ${row.label}`
-								: `Add keyframe for ${row.label}`
-						}
-						active={anim !== 'none'}
-						onClick={toggleKey}
-						data-testid={`kf-toggle-${row.id}`}
-					>
-						<DiamondGlyph size={12} filled={keyHere && anim !== 'none'} />
-					</MiniButton>
-					{anim !== 'none' ? (
-						<MiniButton
-							label={`Next keyframe for ${row.label}`}
-							disabled={next === null}
-							onClick={() => {
-								const f = navigateKey(row, ctx.seq, live(), 1);
-								if (f !== null) ctx.transport.seek(f);
-							}}
-							data-testid={`kf-next-${row.id}`}
-						>
-							<NextGlyph size={11} />
-						</MiniButton>
-					) : null}
-				</span>
-			) : null}
-			<span className="w-[18px] shrink-0">
-				{canReset ? (
-					<MiniButton label={`Reset ${row.label}`} onClick={reset} data-testid={`reset-${row.id}`}>
-						<ResetGlyph size={12} />
-					</MiniButton>
+				{ec && props.indent ? (
+					<span className="flex w-[13px] shrink-0 justify-center">
+						{props.twirl ? (
+							<button
+								type="button"
+								aria-label={
+									props.twirl.open ? `Hide graphs for ${row.label}` : `Show graphs for ${row.label}`
+								}
+								title={props.twirl.open ? 'Hide Value and Velocity graphs' : 'Show Value and Velocity graphs'}
+								aria-expanded={props.twirl.open}
+								onClick={props.twirl.onToggle}
+								className="inline-flex h-[18px] w-[13px] items-center justify-center rounded-pr-control text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
+								data-testid={`twirl-${row.id}`}
+							>
+								<CaretGlyph open={props.twirl.open} size={10} />
+							</button>
+						) : null}
+					</span>
 				) : null}
-			</span>
-		</div>
-		{ec && rx?.expression ? (
-			<ExpressionRow
-				doc={ctx.doc}
-				rx={{ ...rx, expression: rx.expression }}
-				status={status}
-				label={row.label}
-				apply={(label, commands) => ctx.ops.apply(label, commands)}
-				autoFocus={focusExpr}
-			/>
-		) : null}
+				{ec ? (
+					<span className="w-[18px] shrink-0">
+						{animatable || (rx && spec.key === 'text.content') ? (
+							<MiniButton
+								label={`Toggle animation for ${row.label}${rx ? ' (Alt-click: expression)' : ''}`}
+								active={anim !== 'none'}
+								onClick={stopwatch}
+								data-testid={`stopwatch-${row.id}`}
+							>
+								<StopwatchGlyph size={13} />
+							</MiniButton>
+						) : null}
+					</span>
+				) : null}
+				<span
+					className={cx(
+						'shrink-0 truncate text-pr-ui',
+						ec ? 'w-[38%]' : 'w-[34%]',
+						anim !== 'none' ? 'text-pr-text' : 'text-pr-muted',
+					)}
+					title={spec.description ?? row.label}
+				>
+					{row.label}
+				</span>
+				<span
+					className={cx(
+						'flex min-w-0 flex-1 items-center',
+						outside && 'opacity-60',
+						exprActive && 'text-pr-expr-value [&_input]:text-pr-expr-value [&_button]:text-pr-expr-value',
+					)}
+					data-expression={rx?.expression ? (exprActive ? 'active' : 'inactive') : undefined}
+					title={exprActive ? 'Value set by an expression' : undefined}
+				>
+					{editor}
+				</span>
+				{animatable && (!ec || anim !== 'none') ? (
+					<span className="flex shrink-0 items-center">
+						{anim !== 'none' ? (
+							<MiniButton
+								label={`Previous keyframe for ${row.label}`}
+								disabled={prev === null}
+								onClick={() => {
+									const f = navigateKey(row, ctx.seq, live(), -1);
+									if (f !== null) ctx.transport.seek(f);
+								}}
+								data-testid={`kf-prev-${row.id}`}
+							>
+								<PrevGlyph size={11} />
+							</MiniButton>
+						) : null}
+						<MiniButton
+							label={
+								keyHere && anim !== 'none'
+									? `Remove keyframe for ${row.label}`
+									: `Add keyframe for ${row.label}`
+							}
+							active={anim !== 'none'}
+							onClick={toggleKey}
+							data-testid={`kf-toggle-${row.id}`}
+						>
+							<DiamondGlyph size={12} filled={keyHere && anim !== 'none'} />
+						</MiniButton>
+						{anim !== 'none' ? (
+							<MiniButton
+								label={`Next keyframe for ${row.label}`}
+								disabled={next === null}
+								onClick={() => {
+									const f = navigateKey(row, ctx.seq, live(), 1);
+									if (f !== null) ctx.transport.seek(f);
+								}}
+								data-testid={`kf-next-${row.id}`}
+							>
+								<NextGlyph size={11} />
+							</MiniButton>
+						) : null}
+					</span>
+				) : null}
+				<span className="w-[18px] shrink-0">
+					{canReset ? (
+						<MiniButton label={`Reset ${row.label}`} onClick={reset} data-testid={`reset-${row.id}`}>
+							<ResetGlyph size={12} />
+						</MiniButton>
+					) : null}
+				</span>
+			</div>
+			{ec && rx?.expression ? (
+				<ExpressionRow
+					doc={ctx.doc}
+					rx={{ ...rx, expression: rx.expression }}
+					status={status}
+					label={row.label}
+					apply={(label, commands) => ctx.ops.apply(label, commands)}
+					autoFocus={focusExpr}
+				/>
+			) : null}
 		</Fragment>
 	);
 }

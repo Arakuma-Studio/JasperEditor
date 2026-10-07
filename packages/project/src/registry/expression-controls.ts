@@ -46,25 +46,52 @@ export function dropdownItems(items: unknown): string[] {
 }
 
 export const EXPRESSION_CONTROL_EFFECTS: readonly EffectSpec[] = [
-	control(SLIDER_CONTROL_ID, 'Slider Control', 'A number for expressions (−1,000,000 … 1,000,000; slider 0 … 100).', [
+	control(
+		SLIDER_CONTROL_ID,
+		'Slider Control',
+		'A number for expressions (−1,000,000 … 1,000,000; slider 0 … 100).',
+		[
+			{
+				name: 'slider',
+				label: 'Slider',
+				type: 'number',
+				default: 0,
+				range: { min: -1_000_000, max: 1_000_000, softMin: 0, softMax: 100, step: 0.01 },
+				animatable: true,
+				ui: { control: 'slider' },
+			},
+		],
+	),
+	control(ANGLE_CONTROL_ID, 'Angle Control', 'An angle in degrees for expressions.', [
 		{
-			name: 'slider',
-			label: 'Slider',
+			name: 'angle',
+			label: 'Angle',
 			type: 'number',
 			default: 0,
-			range: { min: -1_000_000, max: 1_000_000, softMin: 0, softMax: 100, step: 0.01 },
+			unit: 'deg',
 			animatable: true,
-			ui: { control: 'slider' },
+			ui: { control: 'angle' },
 		},
 	]),
-	control(ANGLE_CONTROL_ID, 'Angle Control', 'An angle in degrees for expressions.', [
-		{ name: 'angle', label: 'Angle', type: 'number', default: 0, unit: 'deg', animatable: true, ui: { control: 'angle' } },
-	]),
 	control(CHECKBOX_CONTROL_ID, 'Checkbox Control', 'An on/off switch for expressions (reads 1 or 0).', [
-		{ name: 'checkbox', label: 'Checkbox', type: 'boolean', default: false, animatable: false, ui: { control: 'toggle' } },
+		{
+			name: 'checkbox',
+			label: 'Checkbox',
+			type: 'boolean',
+			default: false,
+			animatable: false,
+			ui: { control: 'toggle' },
+		},
 	]),
 	control(COLOR_CONTROL_ID, 'Color Control', 'A colour for expressions ([r, g, b, a] in 0…1).', [
-		{ name: 'color', label: 'Color', type: 'color', default: [1, 0, 0, 1], animatable: true, ui: { control: 'color' } },
+		{
+			name: 'color',
+			label: 'Color',
+			type: 'color',
+			default: [1, 0, 0, 1],
+			animatable: true,
+			ui: { control: 'color' },
+		},
 	]),
 	control(
 		POINT_CONTROL_ID,
@@ -101,9 +128,21 @@ export const EXPRESSION_CONTROL_EFFECTS: readonly EffectSpec[] = [
 		],
 		{ instanceDefaults: ({ box }) => ({ point: [box.width / 2, box.height / 2, 0] }) },
 	),
-	control(LAYER_CONTROL_ID, 'Layer Control', 'Picks a clip of the sequence; expressions read it as a layer.', [
-		{ name: 'layer', label: 'Layer', type: 'string', default: '', animatable: false, ui: { control: 'layer' } },
-	]),
+	control(
+		LAYER_CONTROL_ID,
+		'Layer Control',
+		'Picks a clip of the sequence; expressions read it as a layer.',
+		[
+			{
+				name: 'layer',
+				label: 'Layer',
+				type: 'string',
+				default: '',
+				animatable: false,
+				ui: { control: 'layer' },
+			},
+		],
+	),
 	control(
 		DROPDOWN_CONTROL_ID,
 		'Dropdown Menu Control',

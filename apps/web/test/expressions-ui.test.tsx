@@ -40,7 +40,9 @@ describe('Effect Controls expressions', () => {
 			session.apply({
 				label: 'expr',
 				origin: 'user',
-				commands: [{ type: 'expression.set', target: ['clip', id, 'transform', 'rotation'], text: 'time * 90' }] as never,
+				commands: [
+					{ type: 'expression.set', target: ['clip', id, 'transform', 'rotation'], text: 'time * 90' },
+				] as never,
 			});
 		});
 		// Frame 30 = 1 s → 90°, shown in red (data-expression="active").
@@ -60,11 +62,15 @@ describe('Effect Controls expressions', () => {
 			session.apply({
 				label: 'expr',
 				origin: 'user',
-				commands: [{ type: 'expression.set', target: ['clip', id, 'transform', 'rotation'], text: 'nope(' }] as never,
+				commands: [
+					{ type: 'expression.set', target: ['clip', id, 'transform', 'rotation'], text: 'nope(' },
+				] as never,
 			});
 		});
 		const pathId = `clip-${id}-transform-rotation`;
-		await waitFor(() => expect(screen.getByTestId(`expr-error-${pathId}`).textContent).toMatch(/Error at line 1/));
+		await waitFor(() =>
+			expect(screen.getByTestId(`expr-error-${pathId}`).textContent).toMatch(/Error at line 1/),
+		);
 		expect(screen.getByTestId('prop-transform.rotation').textContent).toContain('0');
 		act(() => {
 			fireEvent.click(screen.getByTestId(`expr-enable-${pathId}`));
@@ -80,7 +86,12 @@ describe('Effect Controls expressions', () => {
 				label: 'controls',
 				origin: 'user',
 				commands: [
-					{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.dropdown-control', params: { items: 'Small\nLarge' } },
+					{
+						type: 'effect.add',
+						target: { clipId: id },
+						effectId: 'jasper.dropdown-control',
+						params: { items: 'Small\nLarge' },
+					},
 					{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.layer-control' },
 					{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.point3d-control' },
 				] as never,

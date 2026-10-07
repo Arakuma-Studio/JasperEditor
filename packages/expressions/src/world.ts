@@ -13,40 +13,40 @@
 // Track, master and transition properties have no layer: `thisLayer` raises an error there; `thisComp`, `time`,
 // `value`, `thisProperty` and every global function work.
 import {
+	type Animatable,
+	type Clip,
 	contentTimeAt,
-	effectParamPropertySpec,
+	defaultEffectRegistry,
+	type EffectInstance,
 	type EffectSpec,
 	type EvaluateOptions,
+	type Expression,
 	type ExpressionRef,
 	type ExpressionWorldData,
+	effectParamPropertySpec,
 	evaluate,
 	evaluateKeyframes,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	getPropertySpec,
 	hasActiveExpression,
+	invertMat3,
 	isAnimated,
+	kindCapabilities,
 	layerMapOf,
+	maskPropertySpec,
 	type ParamSpec,
 	type PropertySpec,
 	propertyEvaluateOptions,
 	type Rational,
 	type RenderVisualClip,
 	resolveLayerProps,
-	sequenceDuration,
-	transitionSpec,
-	transitionStartFrame,
-	type Animatable,
-	type Clip,
-	type EffectInstance,
-	type Expression,
 	type Sequence,
+	sequenceDuration,
 	type TextContent,
 	type Track,
-	defaultEffectRegistry,
-	invertMat3,
-	kindCapabilities,
-	maskPropertySpec,
+	transitionSpec,
+	transitionStartFrame,
 } from '@jasper/project';
 import { OP } from './ops.ts';
 import { type HostHandler, type RunState, runExpression } from './runtime.ts';
@@ -246,7 +246,8 @@ export class World {
 	// ------------------------------------------------------------ property tree
 
 	private effectsOf(info: OwnerInfo): readonly EffectInstance[] {
-		if (info.kind === 'clip') return ((info.clip as { effects?: EffectInstance[] }).effects ?? []) as EffectInstance[];
+		if (info.kind === 'clip')
+			return ((info.clip as { effects?: EffectInstance[] }).effects ?? []) as EffectInstance[];
 		if (info.kind === 'track') return info.track.effects ?? [];
 		if (info.kind === 'master') return info.seq.master.effects;
 		return [];
@@ -255,10 +256,20 @@ export class World {
 	/** Masks of a clip and of its effects (stack order), as AE lists a layer's masks. */
 	masksOf(info: OwnerInfo): { id: string; name: string; anims: Record<string, Animatable<unknown>> }[] {
 		if (info.kind !== 'clip') return [];
-		type M = { id: string; name: string; feather: Animatable<unknown>; opacity: Animatable<unknown>; expansion: Animatable<unknown> };
+		type M = {
+			id: string;
+			name: string;
+			feather: Animatable<unknown>;
+			opacity: Animatable<unknown>;
+			expansion: Animatable<unknown>;
+		};
 		const c = info.clip as { masks?: M[]; effects?: { masks?: M[] }[] };
 		const all = [...(c.masks ?? []), ...(c.effects ?? []).flatMap((fx) => fx.masks ?? [])];
-		return all.map((m) => ({ id: m.id, name: m.name, anims: { feather: m.feather, opacity: m.opacity, expansion: m.expansion } }));
+		return all.map((m) => ({
+			id: m.id,
+			name: m.name,
+			anims: { feather: m.feather, opacity: m.opacity, expansion: m.expansion },
+		}));
 	}
 
 	children(info: OwnerInfo, group: string): Node[] {
@@ -280,23 +291,54 @@ export class World {
 				const c = info.clip as Record<string, unknown>;
 				const caps = kindCapabilities(info.clip.kind);
 				if (c.transform || c.opacity)
-					out.push({ path: 'transform', group: true, name: 'Motion', matchName: 'transform', aliases: ['Transform', 'motion'] });
+					out.push({
+						path: 'transform',
+						group: true,
+						name: 'Motion',
+						matchName: 'transform',
+						aliases: ['Transform', 'motion'],
+					});
 				if (Array.isArray(c.effects))
-					out.push({ path: 'effects', group: true, name: 'Effects', matchName: 'effects', aliases: ['effect', 'Effects'] });
-				if (c.shape) out.push({ path: 'shape', group: true, name: 'Shape', matchName: 'shape', aliases: ['contents'] });
+					out.push({
+						path: 'effects',
+						group: true,
+						name: 'Effects',
+						matchName: 'effects',
+						aliases: ['effect', 'Effects'],
+					});
+				if (c.shape)
+					out.push({ path: 'shape', group: true, name: 'Shape', matchName: 'shape', aliases: ['contents'] });
 				if (this.masksOf(info).length)
-					out.push({ path: 'masks', group: true, name: 'Masks', matchName: 'masks', aliases: ['mask', 'Masks'] });
+					out.push({
+						path: 'masks',
+						group: true,
+						name: 'Masks',
+						matchName: 'masks',
+						aliases: ['mask', 'Masks'],
+					});
 				if (VISUAL_KINDS_AUDIO.has(info.clip.kind))
 					out.push({ path: 'audio', group: true, name: 'Audio', matchName: 'audio', aliases: ['Audio'] });
 				if (info.clip.kind === 'text')
 					out.push({ path: 'text', group: true, name: 'Text', matchName: 'text', aliases: ['Text'] });
 				if (info.clip.kind === 'motion-graphic')
-					out.push({ path: 'params', group: true, name: 'Params', matchName: 'params', aliases: ['parameters'] });
+					out.push({
+						path: 'params',
+						group: true,
+						name: 'Params',
+						matchName: 'params',
+						aliases: ['parameters'],
+					});
 				void caps;
 				return out;
 			}
 			out.push({ path: 'audio', group: true, name: 'Audio', matchName: 'audio', aliases: ['Audio'] });
-			out.push({ path: 'effects', group: true, name: 'Effects', matchName: 'effects', aliases: ['effect', 'Effects'] });
+			out.push({
+				path: 'effects',
+				group: true,
+				name: 'Effects',
+				matchName: 'effects',
+				aliases: ['effect', 'Effects'],
+			});
 			return out;
 		}
 		if (group === 'transform' && info.kind === 'clip') {
@@ -334,9 +376,15 @@ export class World {
 		}
 		if (group === 'shape' && info.kind === 'clip') {
 			const shape = (info.clip as { shape?: { stroke?: unknown } }).shape;
-			const out = [leaf('shape.size', 'Size', 'size'), leaf('shape.fill', 'Fill Color', 'fill', 'fillColor', 'color')];
+			const out = [
+				leaf('shape.size', 'Size', 'size'),
+				leaf('shape.fill', 'Fill Color', 'fill', 'fillColor', 'color'),
+			];
 			if (shape?.stroke)
-				out.push(leaf('shape.stroke.color', 'Stroke Color', 'strokeColor'), leaf('shape.stroke.width', 'Stroke Width', 'strokeWidth'));
+				out.push(
+					leaf('shape.stroke.color', 'Stroke Color', 'strokeColor'),
+					leaf('shape.stroke.width', 'Stroke Width', 'strokeWidth'),
+				);
 			out.push(leaf('shape.cornerRadius', 'Roundness', 'cornerRadius', 'roundness'));
 			return out;
 		}
@@ -361,7 +409,8 @@ export class World {
 			if (info.kind !== 'master') out.push(leaf('pan', 'Pan', 'pan', 'balance'));
 			return out;
 		}
-		if (group === 'text' && info.kind === 'clip') return [leaf('text.content', 'Source Text', 'sourceText', 'text')];
+		if (group === 'text' && info.kind === 'clip')
+			return [leaf('text.content', 'Source Text', 'sourceText', 'text')];
 		if (group === 'params' && info.kind === 'clip') {
 			const params = (info.clip as { params?: Record<string, unknown> }).params ?? {};
 			return Object.keys(params).map((n) => leaf(`params.${n}`, n, n));
@@ -380,7 +429,8 @@ export class World {
 			if (i < 0) {
 				const c = compact(k);
 				i = list.findIndex(
-					(n) => compact(n.name) === c || compact(n.matchName) === c || n.aliases.some((a) => compact(a) === c),
+					(n) =>
+						compact(n.name) === c || compact(n.matchName) === c || n.aliases.some((a) => compact(a) === c),
 				);
 			}
 		}
@@ -434,7 +484,10 @@ export class World {
 			const spec = transitionSpec(t.effectId);
 			const p = spec?.params.find((x) => x.name === ref.path);
 			if (!p) return null;
-			const anim = (t.params[p.name] as Animatable<unknown> | undefined) ?? { value: p.default, keyframes: [] };
+			const anim = (t.params[p.name] as Animatable<unknown> | undefined) ?? {
+				value: p.default,
+				keyframes: [],
+			};
 			return {
 				...base,
 				name: p.label,
@@ -508,7 +561,7 @@ export class World {
 			const name = ref.path.slice(7);
 			const params = (clip.params as Record<string, unknown> | undefined) ?? {};
 			if (!(name in params)) return null;
-			const kfs = ((clip.paramKeyframes as Record<string, unknown[]> | undefined) ?? {})[name] ?? [];
+			const kfs = (clip.paramKeyframes as Record<string, unknown[]> | undefined)?.[name] ?? [];
 			const anim = { value: params[name], keyframes: kfs } as Animatable<unknown>;
 			return {
 				...base,
@@ -525,9 +578,15 @@ export class World {
 		if (!spec || spec.animatable === 'no' || !spec.appliesTo(info.clip)) return null;
 		let anim: unknown = clip;
 		for (const k of spec.storagePath) anim = (anim as Record<string, unknown> | null | undefined)?.[k];
-		if (!anim || typeof anim !== 'object' || !Array.isArray((anim as Animatable<unknown>).keyframes)) return null;
+		if (!anim || typeof anim !== 'object' || !Array.isArray((anim as Animatable<unknown>).keyframes))
+			return null;
 		const a = anim as Animatable<unknown>;
-		const group = ref.path.startsWith('transform.') || ref.path === 'opacity' ? 'transform' : ref.path.startsWith('shape.') ? 'shape' : 'audio';
+		const group =
+			ref.path.startsWith('transform.') || ref.path === 'opacity'
+				? 'transform'
+				: ref.path.startsWith('shape.')
+					? 'shape'
+					: 'audio';
 		return {
 			...base,
 			name: spec.label,
@@ -564,7 +623,9 @@ export class World {
 				const b = at(f0 + 1);
 				const u = f - f0;
 				const lerp =
-					typeof a.value === 'number' && typeof b.value === 'number' ? a.value + (b.value - a.value) * u : a.value;
+					typeof a.value === 'number' && typeof b.value === 'number'
+						? a.value + (b.value - a.value) * u
+						: a.value;
 				return { value: lerp, error: a.error ?? b.error };
 			}
 		}
@@ -611,7 +672,13 @@ export class World {
 		return this.run(adhoc, t, pre, p.opts, selector);
 	}
 
-	private run(p: ResolvedProp, t: number, pre: unknown, o: EvaluateOptions, selector?: SelectorInput): EvalStatus {
+	private run(
+		p: ResolvedProp,
+		t: number,
+		pre: unknown,
+		o: EvaluateOptions,
+		selector?: SelectorInput,
+	): EvalStatus {
 		const seq = this.data.sequences[p.ref.seq]!;
 		const state: RunState = {
 			time: p.time.toSeconds(t),
@@ -620,7 +687,9 @@ export class World {
 			owner: p.ref.owner,
 			path: p.ref.path,
 			// Selector evaluations: one seed per selector and character (AE gives every character its own random()).
-			seed: selector ? `${p.ref.owner}/${selector.seedKey ?? p.ref.path}#${selector.textIndex}` : `${p.ref.owner}/${p.ref.path}`,
+			seed: selector
+				? `${p.ref.owner}/${selector.seedKey ?? p.ref.path}#${selector.textIndex}`
+				: `${p.ref.owner}/${p.ref.path}`,
 			fd: frameDuration(seq),
 			kind: p.kind,
 			textIndex: selector?.textIndex ?? 1,
@@ -658,17 +727,20 @@ export class World {
 			}
 			case OP.COMPNAME: {
 				const name = String(args[0]);
-				for (const [id, n] of Object.entries(this.data.names)) if (n === name && this.data.sequences[id]) return id;
+				for (const [id, n] of Object.entries(this.data.names))
+					if (n === name && this.data.sequences[id]) return id;
 				if (this.data.sequences[name]) return name;
 				const c = compact(name);
-				for (const [id, n] of Object.entries(this.data.names)) if (compact(n) === c && this.data.sequences[id]) return id;
+				for (const [id, n] of Object.entries(this.data.names))
+					if (compact(n) === c && this.data.sequences[id]) return id;
 				return null;
 			}
 			case OP.LAYER: {
 				const seqId = String(args[0]);
 				const list = this.layers(seqId);
 				const key = args[1];
-				if (typeof key === 'number') return Number.isInteger(key) && key >= 1 && key <= list.length ? list[key - 1]! : null;
+				if (typeof key === 'number')
+					return Number.isInteger(key) && key >= 1 && key <= list.length ? list[key - 1]! : null;
 				const seq = this.data.sequences[seqId];
 				if (!seq) return null;
 				const name = String(key);
@@ -680,7 +752,7 @@ export class World {
 			}
 			case OP.LINFO: {
 				const info = this.owner(String(args[0]), String(args[1]));
-				if (!info || info.kind !== 'clip') return null;
+				if (info?.kind !== 'clip') return null;
 				const { seq, clip } = info;
 				const f = fps(seq);
 				const F = flicksPerFrame(seq.settings.frameRate as Rational);
@@ -709,7 +781,15 @@ export class World {
 				if (!info) return null;
 				const c = this.child(info, String(args[2]), args[3]);
 				if (!c) return null;
-				return [c.node.path, c.node.group, c.node.name, c.node.matchName, c.count, c.index, c.node.enabled ?? true];
+				return [
+					c.node.path,
+					c.node.group,
+					c.node.name,
+					c.node.matchName,
+					c.count,
+					c.index,
+					c.node.enabled ?? true,
+				];
 			}
 			case OP.PINFO: {
 				const p = this.prop({ seq: String(args[0]), owner: String(args[1]), path: String(args[2]) });
@@ -742,12 +822,12 @@ export class World {
 			}
 			case OP.XFORM: {
 				const info = this.owner(String(args[0]), String(args[1]));
-				if (!info || info.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
+				if (info?.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
 				return this.xform(info.seqId, info.seq, info.clip, Number(args[2]));
 			}
 			case OP.RECT: {
 				const info = this.owner(String(args[0]), String(args[1]));
-				if (!info || info.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
+				if (info?.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
 				const b = this.box(info.seq, info.clip);
 				return [0, 0, b.width, b.height];
 			}
@@ -755,12 +835,12 @@ export class World {
 				return this.markers(String(args[0]), args[1] === null ? null : String(args[1]));
 			case OP.TEXT: {
 				const info = this.owner(String(args[0]), String(args[1]));
-				if (!info || info.kind !== 'clip' || info.clip.kind !== 'text') return null;
+				if (info?.kind !== 'clip' || info.clip.kind !== 'text') return null;
 				return this.textInfo(info.seqId, info.seq, info.clip, Number(args[2]));
 			}
 			case OP.SAMPLE: {
 				const info = this.owner(String(args[0]), String(args[1]));
-				if (!info || info.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
+				if (info?.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
 				return this.sample(info.seq, info.clip, args.slice(2) as never);
 			}
 			default:
@@ -790,7 +870,11 @@ export class World {
 		const seq = this.data.sequences[seqId];
 		if (!seq) return [];
 		const f = fps(seq);
-		const row = (time: number, durSeconds: number, m: { name: string; comment: string; type: string; url?: string; color: string }) => [
+		const row = (
+			time: number,
+			durSeconds: number,
+			m: { name: string; comment: string; type: string; url?: string; color: string },
+		) => [
 			time,
 			durSeconds,
 			m.comment || m.name,
@@ -800,9 +884,12 @@ export class World {
 			m.type,
 			m.color,
 		];
-		if (owner === null) return [...seq.markers].sort((a, b) => a.frame - b.frame).map((m) => row(m.frame / f, m.duration / f, m));
+		if (owner === null)
+			return [...seq.markers]
+				.sort((a, b) => a.frame - b.frame)
+				.map((m) => row(m.frame / f, m.duration / f, m));
 		const info = this.owner(seqId, owner);
-		if (!info || info.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
+		if (info?.kind !== 'clip') throw new Error('This property does not belong to a layer (clip)');
 		const map = this.clipTime(seq, info.clip);
 		return [...info.clip.markers]
 			.sort((a, b) => a.flicks - b.flicks)
@@ -847,16 +934,24 @@ export class World {
 	private sample(seq: Sequence, clip: Clip, a: [number, number, number, number, boolean, number]): number[] {
 		const synth = (clip as { syntheticId?: string }).syntheticId;
 		if (clip.kind !== 'solid' || !synth)
-			throw new Error(`sampleImage is only available on solid clips (layer "${clip.name}" is a ${clip.kind} clip)`);
+			throw new Error(
+				`sampleImage is only available on solid clips (layer "${clip.name}" is a ${clip.kind} clip)`,
+			);
 		const color = this.data.solids[synth];
 		if (!color) throw new Error('sampleImage: the solid has no colour');
 		const box = this.box(seq, clip);
 		const [x, y, rx0, ry0] = a;
 		const rx = Math.abs(rx0);
 		const ry = Math.abs(ry0);
-		const ov = (c: number, r: number, size: number) => Math.max(0, Math.min(c + r, size) - Math.max(c - r, 0));
+		const ov = (c: number, r: number, size: number) =>
+			Math.max(0, Math.min(c + r, size) - Math.max(c - r, 0));
 		const area = 4 * rx * ry;
-		const cover = area > 0 ? (ov(x, rx, box.width) * ov(y, ry, box.height)) / area : x >= 0 && y >= 0 && x < box.width && y < box.height ? 1 : 0;
+		const cover =
+			area > 0
+				? (ov(x, rx, box.width) * ov(y, ry, box.height)) / area
+				: x >= 0 && y >= 0 && x < box.width && y < box.height
+					? 1
+					: 0;
 		if (cover <= 0 || color[3] <= 0) return [0, 0, 0, 0];
 		return [color[0], color[1], color[2], color[3] * cover];
 	}
@@ -891,7 +986,8 @@ export type SelectorInput = {
 function clampOut(v: unknown, o: EvaluateOptions): unknown {
 	const c = o.clamp;
 	if (!c) return v;
-	const f = (x: number) => Math.min(c.max ?? Number.POSITIVE_INFINITY, Math.max(c.min ?? Number.NEGATIVE_INFINITY, x));
+	const f = (x: number) =>
+		Math.min(c.max ?? Number.POSITIVE_INFINITY, Math.max(c.min ?? Number.NEGATIVE_INFINITY, x));
 	if (typeof v === 'number') return f(v);
 	if (Array.isArray(v)) return v.map((x) => (typeof x === 'number' ? f(x) : x));
 	return v;

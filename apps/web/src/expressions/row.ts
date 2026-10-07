@@ -43,7 +43,12 @@ export function rowExpressionOf(
 }
 
 /** Post-expression status at a stored (content) time; null when the engine is not loaded or nothing to show. */
-export function rowStatus(doc: ProjectDocument, rx: RowExpression, t: number, ready: boolean): PropertyStatus | null {
+export function rowStatus(
+	doc: ProjectDocument,
+	rx: RowExpression,
+	t: number,
+	ready: boolean,
+): PropertyStatus | null {
 	if (!ready || !rx.expression) return null;
 	return propertyStatusAt(doc, rx.ref, t);
 }
@@ -53,7 +58,11 @@ export function defaultExpressionText(doc: ProjectDocument, ref: ExpressionRef):
 	return pickWhipExpression(doc, { ...ref, path: '\u0000self' }, ref) ?? 'value';
 }
 
-export function setExpressionCommand(rx: Pick<RowExpression, 'path' | 'ref'>, text: string, enabled?: boolean): Command {
+export function setExpressionCommand(
+	rx: Pick<RowExpression, 'path' | 'ref'>,
+	text: string,
+	enabled?: boolean,
+): Command {
 	return {
 		type: 'expression.set',
 		target: rx.path,

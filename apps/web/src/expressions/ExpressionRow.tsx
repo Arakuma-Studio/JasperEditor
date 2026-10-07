@@ -12,7 +12,12 @@ import { type Command, type ProjectDocument, paramPathToExpressionRef } from '@j
 import { cx } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef, useState } from 'react';
 import { MiniButton } from '../panels/properties/controls/fields.tsx';
-import { ExpressionGlyph, LanguageMenuGlyph, PickWhipGlyph, WarningGlyph } from '../panels/properties/controls/glyphs.tsx';
+import {
+	ExpressionGlyph,
+	LanguageMenuGlyph,
+	PickWhipGlyph,
+	WarningGlyph,
+} from '../panels/properties/controls/glyphs.tsx';
 import { ContextMenu } from '../panels/timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../panels/timeline/state/ui-store.ts';
 import { ExpressionField, type ExpressionFieldHandle } from './ExpressionField.tsx';
@@ -48,10 +53,16 @@ export function ExpressionRow(props: {
 	const enabled = rx.expression.enabled;
 	const testId = rx.path.join('-');
 
-	const setText = (text: string) => props.apply(`Edit Expression: ${props.label}`, [setExpressionCommand(rx, text)]);
+	const setText = (text: string) =>
+		props.apply(`Edit Expression: ${props.label}`, [setExpressionCommand(rx, text)]);
 	const toggle = () =>
 		props.apply(`${enabled ? 'Disable' : 'Enable'} Expression: ${props.label}`, [
-			{ type: 'expression.setEnabled', target: rx.path, enabled: !enabled, sequenceId: rx.ref.seq } as Command,
+			{
+				type: 'expression.setEnabled',
+				target: rx.path,
+				enabled: !enabled,
+				sequenceId: rx.ref.seq,
+			} as Command,
 		]);
 	const remove = () =>
 		props.apply(`Remove Expression: ${props.label}`, [
@@ -79,6 +90,7 @@ export function ExpressionRow(props: {
 		if (text) field.current?.insert(text);
 	};
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: rebuilt when the menu opens
 	const menuItems = useMemo((): ContextMenuItem[] => {
 		if (!menu) return [];
 		const insert = (t: string) => field.current?.insert(t);
@@ -106,7 +118,11 @@ export function ExpressionRow(props: {
 					? links.map((c) => ({
 							kind: 'submenu' as const,
 							label: c.label,
-							items: c.props.map((p) => ({ kind: 'item' as const, label: p.label, run: () => insert(p.text) })),
+							items: c.props.map((p) => ({
+								kind: 'item' as const,
+								label: p.label,
+								run: () => insert(p.text),
+							})),
 						}))
 					: [{ kind: 'item' as const, label: 'No other properties', disabled: true, run: () => {} }],
 			},
@@ -121,7 +137,6 @@ export function ExpressionRow(props: {
 				})),
 			})),
 		];
-		// biome-ignore lint/correctness/useExhaustiveDependencies: rebuilt when the menu opens
 	}, [menu]);
 
 	return (
@@ -180,11 +195,24 @@ export function ExpressionRow(props: {
 			) : null}
 			{whip ? (
 				<svg className="pointer-events-none fixed inset-0 z-50 size-full" aria-hidden>
-					<line x1={whip.x0} y1={whip.y0} x2={whip.x} y2={whip.y} stroke="var(--pr-accent)" strokeWidth={1.5} />
+					<line
+						x1={whip.x0}
+						y1={whip.y0}
+						x2={whip.x}
+						y2={whip.y}
+						stroke="var(--pr-accent)"
+						strokeWidth={1.5}
+					/>
 				</svg>
 			) : null}
 			{menu ? (
-				<ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} testId="expr-language-menu" />
+				<ContextMenu
+					x={menu.x}
+					y={menu.y}
+					items={menuItems}
+					onClose={() => setMenu(null)}
+					testId="expr-language-menu"
+				/>
 			) : null}
 		</div>
 	);

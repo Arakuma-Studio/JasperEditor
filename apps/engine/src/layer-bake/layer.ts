@@ -2,12 +2,12 @@
 // are rendered from. Pure functions over the render snapshot (no I/O), shared by the native extension, the
 // preview route and the tests.
 import {
-	hasActiveExpression,
 	applyMat3,
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	gpuIsTimeDependent,
+	hasActiveExpression,
 	hasEffectMasks,
 	layerMapOf,
 	maskExportRoute,

@@ -67,7 +67,11 @@ function paramPathOf(a: TargetInput): string[] {
 		return ['transition', a.transitionId, a.param];
 	}
 	if (!a.clipId || !a.property)
-		throw new ToolError('E_INVALID_PARAM', 'Give clipId + property (or transitionId + param)', 'See list_expression_properties.');
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			'Give clipId + property (or transitionId + param)',
+			'See list_expression_properties.',
+		);
 	return propertyKeyToParamPath({ clipId: a.clipId }, a.property);
 }
 
@@ -76,7 +80,11 @@ function refOf(doc: ProjectDocument, a: TargetInput): { ref: ExpressionRef; path
 	const ref = paramPathToExpressionRef(doc, path);
 	const seq = ref ? doc.sequences[ref.seq] : undefined;
 	if (!ref || !seq || !worldOfDocument(doc).prop(ref))
-		throw new ToolError('E_NOT_FOUND', `No property ${JSON.stringify(path)}`, 'Call list_expression_properties {clipId}.');
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`No property ${JSON.stringify(path)}`,
+			'Call list_expression_properties {clipId}.',
+		);
 	return { ref, path, seq };
 }
 
@@ -120,7 +128,7 @@ export function registerExpressionTools(ctx: ToolContext): void {
 		{
 			title: 'Set expression',
 			description:
-				"Sets (or replaces) the After Effects-style expression of a property — one undoable step — and returns the evaluated value at a few frames with any expressionError (the property then renders its keyframed value). Empty text removes the expression. The language reference is the jasper://guide resource.",
+				'Sets (or replaces) the After Effects-style expression of a property — one undoable step — and returns the evaluated value at a few frames with any expressionError (the property then renders its keyframed value). Empty text removes the expression. The language reference is the jasper://guide resource.',
 			input: {
 				projectId: ProjectIdArg,
 				...TargetArgs,
@@ -136,7 +144,14 @@ export function registerExpressionTools(ctx: ToolContext): void {
 				ctx,
 				args.projectId,
 				'Set Expression',
-				[{ type: 'expression.set', target: path, text: args.text, ...(args.enabled === undefined ? {} : { enabled: args.enabled }) }],
+				[
+					{
+						type: 'expression.set',
+						target: path,
+						text: args.text,
+						...(args.enabled === undefined ? {} : { enabled: args.enabled }),
+					},
+				],
 				extra,
 				{ sequenceId: ref.seq },
 			);
@@ -156,16 +171,24 @@ export function registerExpressionTools(ctx: ToolContext): void {
 		'clear_expression',
 		{
 			title: 'Clear expression',
-			description: 'Removes the expression of a property (it renders its keyframed value again). One undoable step.',
+			description:
+				'Removes the expression of a property (it renders its keyframed value again). One undoable step.',
 			input: { projectId: ProjectIdArg, ...TargetArgs },
 			annotations: EDIT,
 		},
 		async (args, extra) => {
 			const { doc } = await load(args.projectId);
 			const { path, ref } = refOf(doc, args);
-			return applyHelper(ctx, args.projectId, 'Clear Expression', [{ type: 'expression.clear', target: path }], extra, {
-				sequenceId: ref.seq,
-			});
+			return applyHelper(
+				ctx,
+				args.projectId,
+				'Clear Expression',
+				[{ type: 'expression.clear', target: path }],
+				extra,
+				{
+					sequenceId: ref.seq,
+				},
+			);
 		},
 	);
 
@@ -273,7 +296,8 @@ export function registerExpressionTools(ctx: ToolContext): void {
 		async ({ projectId, clipId }) => {
 			const { doc } = await load(projectId);
 			const seqId = Object.keys(doc.sequences).find((id) => doc.sequences[id]!.clips[clipId]);
-			if (!seqId) throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
+			if (!seqId)
+				throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
 			const world = worldOfDocument(doc);
 			const other = { seq: seqId, owner: '\u0000other', path: '' };
 			return jsonResult({
@@ -297,7 +321,8 @@ export function registerExpressionTools(ctx: ToolContext): void {
 		'list_expression_presets',
 		{
 			title: 'List expression presets',
-			description: 'Ready-made expressions (wiggle, loops, inertial bounce, counters, timecode, links to controls…), optionally for one value kind.',
+			description:
+				'Ready-made expressions (wiggle, loops, inertial bounce, counters, timecode, links to controls…), optionally for one value kind.',
 			input: {
 				kind: z
 					.enum(['number', 'vec2', 'vec3', 'color', 'boolean', 'enum', 'string'])
@@ -334,7 +359,9 @@ export function registerExpressionTools(ctx: ToolContext): void {
 				value: z
 					.unknown()
 					.optional()
-					.describe('Initial value: number (slider/angle), boolean, [r,g,b,a], [x,y], [x,y,z], a clip id (layer), a 1-based index (dropdown)'),
+					.describe(
+						'Initial value: number (slider/angle), boolean, [r,g,b,a], [x,y], [x,y,z], a clip id (layer), a 1-based index (dropdown)',
+					),
 				items: z.array(z.string().min(1)).min(1).max(1000).optional().describe('Dropdown menu items'),
 			},
 			annotations: EDIT,

@@ -7,8 +7,8 @@ import {
 	type AnimLocation,
 	buildExpressionWorldData,
 	documentHasActiveExpressions,
-	EXPRESSION_BINDING,
 	type EvaluateOptions,
+	EXPRESSION_BINDING,
 	type ExpressionBinding,
 	type ExpressionRef,
 	type ExpressionWorldData,
@@ -112,7 +112,10 @@ export function worldOfDocument(doc: ProjectDocument): World {
 
 const snapCache = new WeakMap<RenderSnapshot, RenderSnapshot>();
 
-function boundAt(seq: Sequence | undefined, path: readonly (string | number)[]): ExpressionBinding | undefined {
+function boundAt(
+	seq: Sequence | undefined,
+	path: readonly (string | number)[],
+): ExpressionBinding | undefined {
 	let cur: unknown = seq;
 	for (const k of path) cur = (cur as Record<string | number, unknown> | null | undefined)?.[k];
 	return expressionBindingOf(cur);
@@ -131,13 +134,15 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 	const { sequences } = bindWorld(data);
 	const seq = sequences[snap.sequenceId];
 	const locs = new Map<string, AnimLocation>();
-	if (seq) for (const loc of sequenceAnimatables(snap.sequenceId, seq)) locs.set(`${loc.ref.owner}|${loc.ref.path}`, loc);
+	if (seq)
+		for (const loc of sequenceAnimatables(snap.sequenceId, seq))
+			locs.set(`${loc.ref.owner}|${loc.ref.path}`, loc);
 	const bind = <T>(anim: T, owner: string, path: string): T => {
 		if (!anim || typeof anim !== 'object' || expressionBindingOf(anim)) return anim;
 		if (!hasActiveExpression(anim as { expression?: { text: string; enabled: boolean } })) return anim;
 		const loc = locs.get(`${owner}|${path}`);
 		const b = loc ? boundAt(seq, loc.at) : undefined;
-		return b ? withBinding(anim as object, b) as T : anim;
+		return b ? (withBinding(anim as object, b) as T) : anim;
 	};
 	const bindMasks = <M extends { id: string }>(masks: M[] | undefined, owner: string): M[] | undefined => {
 		if (!masks) return masks;

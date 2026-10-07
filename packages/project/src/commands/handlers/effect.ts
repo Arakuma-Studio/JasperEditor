@@ -160,7 +160,9 @@ export const effectHandlers: HandlerMap = {
 			list = c.effects;
 			// Wave expressions: clip-dependent defaults (Point Control starts at the clip's centre).
 			if (spec.instanceDefaults)
-				instanceDefaults = spec.instanceDefaults({ box: intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as never }) });
+				instanceDefaults = spec.instanceDefaults({
+					box: intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as never }),
+				});
 		} else {
 			const seq = h.sequence(doc, cmd.target.sequenceId ?? cmd.sequenceId);
 			// audio-mix: submix tracks (`S1`… or their id) take track effects too.

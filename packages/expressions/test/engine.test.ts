@@ -1,6 +1,7 @@
 // The expression engine end to end on a document: object model, helpers, determinism, errors and limits.
-import { beforeAll, describe, expect, it } from 'vitest';
+
 import type { ExpressionRef } from '@jasper/project';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpressionText, loadExpressionEngine, storedTimeAtFrame } from '../src/index.ts';
 import { basicDoc, type Doc } from './fixture.ts';
 
@@ -40,13 +41,15 @@ describe('globals and the object model', () => {
 		expect(num(d, 'effect("Slider Control")("Slider") * 2')).toBe(84);
 		expect(num(d, 'thisLayer.effect(1).param(1)')).toBe(42);
 		expect(num(d, 'effect("Slider Control").param("slider").value')).toBe(42);
-		expect(val(d, '$bg', 'transform.rotation', 'thisComp.layer("A").effect("Slider Control")("Slider")')).toBe(42);
+		expect(
+			val(d, '$bg', 'transform.rotation', 'thisComp.layer("A").effect("Slider Control")("Slider")'),
+		).toBe(42);
 		expect(str(d, 'thisComp.layer("A").effect(1).name')).toBe('Slider Control');
 	});
 	it('layers: names, indexes (1 = topmost), in/out points, comp attributes', () => {
-		expect(str(d, 'thisComp.layer(1).name + "," + thisComp.layer(2).name + "," + thisComp.layer(3).name')).toBe(
-			'Title,A,Bg',
-		);
+		expect(
+			str(d, 'thisComp.layer(1).name + "," + thisComp.layer(2).name + "," + thisComp.layer(3).name'),
+		).toBe('Title,A,Bg');
 		expect(num(d, 'thisComp.numLayers')).toBe(3);
 		expect(num(d, 'index')).toBe(2);
 		expect(num(d, 'inPoint')).toBeCloseTo(1, 12);
@@ -79,8 +82,18 @@ describe('keyframes, loops and time', () => {
 	const d = basicDoc();
 	// Rotation keys on A: 0 at frame 30 (content 0 s), 90 at frame 60 (content 1 s).
 	d.tx([
-		{ type: 'keyframe.add', target: ['clip', '$a', 'transform', 'rotation'], at: { sequenceFrame: 30 }, value: 0 },
-		{ type: 'keyframe.add', target: ['clip', '$a', 'transform', 'rotation'], at: { sequenceFrame: 60 }, value: 90 },
+		{
+			type: 'keyframe.add',
+			target: ['clip', '$a', 'transform', 'rotation'],
+			at: { sequenceFrame: 30 },
+			value: 0,
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', '$a', 'transform', 'rotation'],
+			at: { sequenceFrame: 60 },
+			value: 90,
+		},
 	]);
 	it('numKeys, key(n), nearestKey, valueAtTime, velocity', () => {
 		expect(num(d, 'numKeys')).toBe(2);
@@ -152,9 +165,9 @@ describe('interpolation, maths and colour helpers', () => {
 		expect(val(d, '$a', 'opacity', 'hexToRgb("#FF8000")[1] * 100')).toBeCloseTo((128 / 255) * 100, 12);
 		expect(str(d, 'hexToRgb("0x00ff0080").join(",")')).toBe(`0,1,0,${128 / 255}`);
 		expect(str(d, 'rgbToHsl([1, 0, 0, 1]).join(",")')).toBe('0,1,0.5,1');
-		expect(str(d, 'hslToRgb([1/3, 1, 0.5, 1]).map(function (x) { return Math.round(x * 1000) / 1000 }).join(",")')).toBe(
-			'0,1,0,1',
-		);
+		expect(
+			str(d, 'hslToRgb([1/3, 1, 0.5, 1]).map(function (x) { return Math.round(x * 1000) / 1000 }).join(",")'),
+		).toBe('0,1,0,1');
 	});
 });
 
@@ -166,7 +179,9 @@ describe('determinism: random, wiggle, noise, clock', () => {
 		expect(num(d, 'random()', 41)).not.toBe(a1);
 		expect(val(d, '$a', 'transform.scale', 'random()', 40)).not.toBe(a1);
 		expect(num(d, 'seedRandom(5, true); random(10)', 40)).toBe(num(d, 'seedRandom(5, true); random(10)', 80));
-		expect(num(d, 'seedRandom(5, true); random(10)', 40)).not.toBe(num(d, 'seedRandom(6, true); random(10)', 40));
+		expect(num(d, 'seedRandom(5, true); random(10)', 40)).not.toBe(
+			num(d, 'seedRandom(6, true); random(10)', 40),
+		);
 		const r = num(d, 'random(20, 30)', 50);
 		expect(r).toBeGreaterThanOrEqual(20);
 		expect(r).toBeLessThan(30);
@@ -240,19 +255,28 @@ describe('errors fall back to the keyframed value', () => {
 		expect(ev(d, '$a', 'transform.rotation', 'function f(n) { return f(n + 1) + 1 } f(0)').error).toMatch(
 			/too much recursion/,
 		);
-		expect(ev(d, '$a', 'transform.rotation', 'var a = []; while (true) a.push(new Float64Array(1000000)); 0').error).toMatch(
-			/ran out of memory/,
-		);
+		expect(
+			ev(d, '$a', 'transform.rotation', 'var a = []; while (true) a.push(new Float64Array(1000000)); 0')
+				.error,
+		).toMatch(/ran out of memory/);
 		expect(num(d, '2 + 2')).toBe(4);
 	});
 	it('expressions reading each other: chains work, cycles stop', () => {
 		d.tx([
-			{ type: 'expression.set', target: ['clip', '$a', 'transform', 'scale'], text: 'thisComp.layer("Bg").transform.rotation + 1' },
+			{
+				type: 'expression.set',
+				target: ['clip', '$a', 'transform', 'scale'],
+				text: 'thisComp.layer("Bg").transform.rotation + 1',
+			},
 			{ type: 'expression.set', target: ['clip', '$bg', 'transform', 'rotation'], text: '41' },
 		]);
 		expect(num(d, 'transform.scale.value')).toBe(42);
 		d.tx([
-			{ type: 'expression.set', target: ['clip', '$bg', 'transform', 'rotation'], text: 'thisComp.layer("A").transform.scale' },
+			{
+				type: 'expression.set',
+				target: ['clip', '$bg', 'transform', 'rotation'],
+				text: 'thisComp.layer("A").transform.scale',
+			},
 		]);
 		const r = ev(d, '$a', 'transform.rotation', 'transform.scale.value');
 		expect(r.error).toMatch(/too deeply|circular/);
@@ -291,7 +315,9 @@ describe('Expression Controls', () => {
 	it('renamed instances are found by their name', () => {
 		d.tx([{ type: 'effect.rename', effectInstanceId: d.refs.$s2, name: 'Speed' }]);
 		expect(num(d, 'effect("Speed")("Slider")')).toBe(7);
-		expect(ev(d, '$a', 'transform.rotation', 'effect("Slider Control 2")("Slider")').error).toMatch(/not found/);
+		expect(ev(d, '$a', 'transform.rotation', 'effect("Slider Control 2")("Slider")').error).toMatch(
+			/not found/,
+		);
 	});
 	it('a Layer Control expression returns a layer', () => {
 		const r = val(d, '$a', `effects.${d.refs.$lc}.layer`, 'thisComp.layer("Bg")');

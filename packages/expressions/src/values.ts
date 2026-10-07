@@ -9,7 +9,16 @@
 // least three (alpha defaults to the keyframed alpha); booleans take JavaScript truthiness; popups take an index
 // (rounded, clamped) or an item name; strings take String(result). Non-finite numbers are errors.
 
-export type PropKind = 'number' | 'vec2' | 'vec3' | 'color' | 'boolean' | 'enum' | 'string' | 'layer' | 'other';
+export type PropKind =
+	| 'number'
+	| 'vec2'
+	| 'vec3'
+	| 'color'
+	| 'boolean'
+	| 'enum'
+	| 'string'
+	| 'layer'
+	| 'other';
 
 export function toExpressionValue(kind: PropKind, v: unknown, options?: readonly string[]): unknown {
 	switch (kind) {
@@ -54,7 +63,8 @@ function vector(r: Wire, n: number, label: string): Converted {
 		if (nonFinite(r)) return { ok: false, error: NOT_FINITE };
 		return { ok: false, error: `Error: expression result must be of dimension ${label}, not 1` };
 	}
-	if (r.length < n) return { ok: false, error: `Error: expression result must be of dimension ${label}, not ${r.length}` };
+	if (r.length < n)
+		return { ok: false, error: `Error: expression result must be of dimension ${label}, not ${r.length}` };
 	const out: number[] = [];
 	for (let i = 0; i < n; i++) {
 		const x = num(r[i]);
@@ -69,9 +79,17 @@ function vector(r: Wire, n: number, label: string): Converted {
 }
 
 /** Converts a script result (JSON-decoded) to the property's value. `current` = the keyframed value. */
-export function fromExpressionValue(kind: PropKind, r: Wire, current: unknown, options?: readonly string[]): Converted {
+export function fromExpressionValue(
+	kind: PropKind,
+	r: Wire,
+	current: unknown,
+	options?: readonly string[],
+): Converted {
 	if (r === undefined && kind !== 'string')
-		return { ok: false, error: 'Error: expression result is undefined (the last statement produced no value)' };
+		return {
+			ok: false,
+			error: 'Error: expression result is undefined (the last statement produced no value)',
+		};
 	switch (kind) {
 		case 'number': {
 			if (Array.isArray(r))
@@ -90,7 +108,10 @@ export function fromExpressionValue(kind: PropKind, r: Wire, current: unknown, o
 			return vector(r, 3, '3');
 		case 'color': {
 			if (!Array.isArray(r) || r.length < 3)
-				return { ok: false, error: `Error: expression result must be a colour [r, g, b, a], not ${describe(r)}` };
+				return {
+					ok: false,
+					error: `Error: expression result must be a colour [r, g, b, a], not ${describe(r)}`,
+				};
 			const rgb = vector(r.slice(0, 3), 3, '4');
 			if (!rgb.ok) return rgb;
 			const a = r.length > 3 ? num(r[3]) : Array.isArray(current) ? (current[3] as number) : 1;
@@ -103,11 +124,13 @@ export function fromExpressionValue(kind: PropKind, r: Wire, current: unknown, o
 			if (!options?.length) return { ok: true, value: current };
 			if (typeof r === 'string') {
 				const i = options.indexOf(r);
-				if (i < 0) return { ok: false, error: `Error: "${r}" is not an item of this menu (${options.join(', ')})` };
+				if (i < 0)
+					return { ok: false, error: `Error: "${r}" is not an item of this menu (${options.join(', ')})` };
 				return { ok: true, value: r };
 			}
 			const x = num(r);
-			if (x === null) return { ok: false, error: 'Error: expression result must be a menu item index (1-based)' };
+			if (x === null)
+				return { ok: false, error: 'Error: expression result must be a menu item index (1-based)' };
 			const i = Math.min(options.length, Math.max(1, Math.round(x))) - 1;
 			return { ok: true, value: options[i] };
 		}

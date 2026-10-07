@@ -10,8 +10,8 @@
 // QuickJS build; the object model maps a Premiere sequence onto AE's comp (layers = clips, see world.ts).
 //
 // This text is NOT passed through the array-maths rewrite, so it uses plain JS operators. It must not contain
-// backticks or dollar-brace sequences (it is a String.raw template).
-export const PRELUDE = String.raw`
+// backticks, dollar-brace sequences or backslashes (it is a template literal).
+export const PRELUDE = `
 var time = 0;
 var value = 0;
 var __S = null;

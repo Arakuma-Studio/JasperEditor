@@ -32,4 +32,9 @@ export const EffectRenameCmd = cmd('effect.rename', {
 	name: z.string().max(256).nullable(),
 });
 
-export const EXPRESSION_COMMANDS = [ExpressionSetCmd, ExpressionClearCmd, ExpressionSetEnabledCmd, EffectRenameCmd] as const;
+export const EXPRESSION_COMMANDS = [
+	ExpressionSetCmd,
+	ExpressionClearCmd,
+	ExpressionSetEnabledCmd,
+	EffectRenameCmd,
+] as const;

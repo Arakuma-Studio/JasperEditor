@@ -20,13 +20,15 @@ const g = (name: string, signature: string, doc: string, snippet?: string): RefE
 	doc,
 	...(snippet ? { snippet } : {}),
 });
-const s = (scope: RefScope) => (name: string, signature: string, doc: string, snippet?: string): RefEntry => ({
-	name,
-	signature,
-	scope,
-	doc,
-	...(snippet ? { snippet } : {}),
-});
+const s =
+	(scope: RefScope) =>
+	(name: string, signature: string, doc: string, snippet?: string): RefEntry => ({
+		name,
+		signature,
+		scope,
+		doc,
+		...(snippet ? { snippet } : {}),
+	});
 const L = s('layer');
 const C = s('comp');
 const P = s('property');
@@ -39,20 +41,64 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	g('time', 'time', 'Sequence time in seconds at which the expression is evaluated.'),
 	g('value', 'value', "The property's keyframed (pre-expression) value at the current time."),
 	g('thisComp', 'thisComp', 'The sequence the property belongs to (AE comp).'),
-	g('thisLayer', 'thisLayer', 'The clip the property belongs to (AE layer). Not available on track, master or transition properties.'),
+	g(
+		'thisLayer',
+		'thisLayer',
+		'The clip the property belongs to (AE layer). Not available on track, master or transition properties.',
+	),
 	g('thisProperty', 'thisProperty', 'The property the expression is on.'),
 	g('thisProject', 'thisProject', 'The project (bitsPerChannel = 8, linearBlending = false).'),
 	g('comp', 'comp(name)', 'Another sequence by its project name.', 'comp("$")'),
-	g('effect', 'effect(nameOrIndex)', 'An effect of this clip by name (renamed instance name, else label; duplicates are "Label 2", "Label 3"…), effect id or 1-based index. Call the result with a parameter name or index: effect("Slider Control")("Slider").', 'effect("$")'),
+	g(
+		'effect',
+		'effect(nameOrIndex)',
+		'An effect of this clip by name (renamed instance name, else label; duplicates are "Label 2", "Label 3"…), effect id or 1-based index. Call the result with a parameter name or index: effect("Slider Control")("Slider").',
+		'effect("$")',
+	),
 	// Animation helpers.
-	g('wiggle', 'wiggle(freq, amp, octaves = 1, amp_mult = 0.5, t = time)', 'Randomly wiggles the value: freq wiggles per second, amp in the property units; octaves of noise each amp_mult times the previous. Deterministic per clip and property.', 'wiggle($2, 50)'),
-	g('temporalWiggle', 'temporalWiggle(freq, amp, octaves = 1, amp_mult = 0.5, t = time)', 'Samples the property at a wiggled time.'),
-	g('smooth', 'smooth(width = .2, samples = 5, t = time)', 'Average of `samples` values spread over `width` seconds around t.'),
-	g('loopOut', 'loopOut(type = "cycle", numKeyframes = 0)', 'Repeats the animation after the last keyframe: "cycle", "pingpong", "offset" or "continue"; numKeyframes = how many last segments loop (0 = all).', 'loopOut("cycle")'),
-	g('loopIn', 'loopIn(type = "cycle", numKeyframes = 0)', 'Repeats the animation before the first keyframe.', 'loopIn("cycle")'),
-	g('loopOutDuration', 'loopOutDuration(type = "cycle", duration = 0)', 'loopOut over the last `duration` seconds.'),
-	g('loopInDuration', 'loopInDuration(type = "cycle", duration = 0)', 'loopIn over the first `duration` seconds.'),
-	g('valueAtTime', 'valueAtTime(t)', "The property's value at sequence time t (its own expression reads its keyframed value)."),
+	g(
+		'wiggle',
+		'wiggle(freq, amp, octaves = 1, amp_mult = 0.5, t = time)',
+		'Randomly wiggles the value: freq wiggles per second, amp in the property units; octaves of noise each amp_mult times the previous. Deterministic per clip and property.',
+		'wiggle($2, 50)',
+	),
+	g(
+		'temporalWiggle',
+		'temporalWiggle(freq, amp, octaves = 1, amp_mult = 0.5, t = time)',
+		'Samples the property at a wiggled time.',
+	),
+	g(
+		'smooth',
+		'smooth(width = .2, samples = 5, t = time)',
+		'Average of `samples` values spread over `width` seconds around t.',
+	),
+	g(
+		'loopOut',
+		'loopOut(type = "cycle", numKeyframes = 0)',
+		'Repeats the animation after the last keyframe: "cycle", "pingpong", "offset" or "continue"; numKeyframes = how many last segments loop (0 = all).',
+		'loopOut("cycle")',
+	),
+	g(
+		'loopIn',
+		'loopIn(type = "cycle", numKeyframes = 0)',
+		'Repeats the animation before the first keyframe.',
+		'loopIn("cycle")',
+	),
+	g(
+		'loopOutDuration',
+		'loopOutDuration(type = "cycle", duration = 0)',
+		'loopOut over the last `duration` seconds.',
+	),
+	g(
+		'loopInDuration',
+		'loopInDuration(type = "cycle", duration = 0)',
+		'loopIn over the first `duration` seconds.',
+	),
+	g(
+		'valueAtTime',
+		'valueAtTime(t)',
+		"The property's value at sequence time t (its own expression reads its keyframed value).",
+	),
 	g('velocityAtTime', 'velocityAtTime(t)', 'Rate of change per second at time t.'),
 	g('speedAtTime', 'speedAtTime(t)', 'Length of the velocity at time t.'),
 	g('velocity', 'velocity', 'velocityAtTime(time).'),
@@ -64,14 +110,37 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	g('inPoint', 'inPoint', "This clip's first frame in sequence seconds."),
 	g('outPoint', 'outPoint', "One past this clip's last frame in sequence seconds."),
 	// Interpolation.
-	g('linear', 'linear(t, [tMin, tMax,] value1, value2)', 'Linear interpolation of value1 → value2 as t goes tMin → tMax (0 → 1 with three arguments); clamped outside.', 'linear(time, 0, 1, $0, 100)'),
-	g('ease', 'ease(t, [tMin, tMax,] value1, value2)', 'Like linear with zero velocity at both ends.', 'ease(time, 0, 1, $0, 100)'),
+	g(
+		'linear',
+		'linear(t, [tMin, tMax,] value1, value2)',
+		'Linear interpolation of value1 → value2 as t goes tMin → tMax (0 → 1 with three arguments); clamped outside.',
+		'linear(time, 0, 1, $0, 100)',
+	),
+	g(
+		'ease',
+		'ease(t, [tMin, tMax,] value1, value2)',
+		'Like linear with zero velocity at both ends.',
+		'ease(time, 0, 1, $0, 100)',
+	),
 	g('easeIn', 'easeIn(t, [tMin, tMax,] value1, value2)', 'Like linear with zero velocity at tMin only.'),
 	g('easeOut', 'easeOut(t, [tMin, tMax,] value1, value2)', 'Like linear with zero velocity at tMax only.'),
 	// Random and noise.
-	g('random', 'random() | random(max) | random(min, max)', 'Uniform random number (or array) — deterministic: seeded by clip, property, time and seedRandom.', 'random($)'),
-	g('gaussRandom', 'gaussRandom() | gaussRandom(max) | gaussRandom(min, max)', 'Gaussian random: about 90% of results lie in the range.'),
-	g('seedRandom', 'seedRandom(offset, timeless = false)', 'Changes the random seed; timeless = the same numbers at every frame.'),
+	g(
+		'random',
+		'random() | random(max) | random(min, max)',
+		'Uniform random number (or array) — deterministic: seeded by clip, property, time and seedRandom.',
+		'random($)',
+	),
+	g(
+		'gaussRandom',
+		'gaussRandom() | gaussRandom(max) | gaussRandom(min, max)',
+		'Gaussian random: about 90% of results lie in the range.',
+	),
+	g(
+		'seedRandom',
+		'seedRandom(offset, timeless = false)',
+		'Changes the random seed; timeless = the same numbers at every frame.',
+	),
 	g('noise', 'noise(valOrArray)', 'Smooth noise in −1…1 (1D–3D input); nearby inputs give nearby results.'),
 	// Maths.
 	g('clamp', 'clamp(value, limit1, limit2)', 'Limits a number or each array component.'),
@@ -83,14 +152,26 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	g('div', 'div(vec, amount)', 'Vector divided by a number.'),
 	g('dot', 'dot(a, b)', 'Dot product.'),
 	g('cross', 'cross(a, b)', 'Cross product of 3D vectors.'),
-	g('lookAt', 'lookAt(fromPoint, atPoint)', 'Orientation [x, y, 0] in degrees pointing from one point to another.'),
+	g(
+		'lookAt',
+		'lookAt(fromPoint, atPoint)',
+		'Orientation [x, y, 0] in degrees pointing from one point to another.',
+	),
 	g('degreesToRadians', 'degreesToRadians(deg)', 'Degrees → radians.'),
 	g('radiansToDegrees', 'radiansToDegrees(rad)', 'Radians → degrees.'),
 	g('Math', 'Math', 'JavaScript Math (Math.sin, Math.PI, …). Math.random is the deterministic random().'),
 	// Time conversion.
-	g('timeToFrames', 'timeToFrames(t = time + thisComp.displayStartTime, fps = 1 / thisComp.frameDuration)', 'Seconds → frames.'),
+	g(
+		'timeToFrames',
+		'timeToFrames(t = time + thisComp.displayStartTime, fps = 1 / thisComp.frameDuration)',
+		'Seconds → frames.',
+	),
 	g('framesToTime', 'framesToTime(frames, fps = 1 / thisComp.frameDuration)', 'Frames → seconds.'),
-	g('timeToTimecode', 'timeToTimecode(t = time + thisComp.displayStartTime, timecodeBase = fps)', 'Seconds → "HH:MM:SS:FF".'),
+	g(
+		'timeToTimecode',
+		'timeToTimecode(t = time + thisComp.displayStartTime, timecodeBase = fps)',
+		'Seconds → "HH:MM:SS:FF".',
+	),
 	g('timeToCurrentFormat', 'timeToCurrentFormat(t, fps)', 'Seconds → timecode at the sequence rate.'),
 	g('timeToFeetAndFrames', 'timeToFeetAndFrames(t, fps, framesPerFoot = 16)', 'Seconds → "feet+frames".'),
 	g('posterizeTime', 'posterizeTime(fps)', 'Evaluates the rest of the expression at a lower frame rate.'),
@@ -105,10 +186,23 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	g('fromCompVec', 'fromCompVec(vec, t = time)', 'Direction vector, sequence → layer.'),
 	g('toWorld', 'toWorld(point, t = time)', 'Same as toComp (sequences are 2D).'),
 	g('fromWorld', 'fromWorld(point, t = time)', 'Same as fromComp.'),
-	g('sourceRectAtTime', 'sourceRectAtTime(t = time)', '{top, left, width, height} of the clip box in layer pixels.'),
-	g('sampleImage', 'sampleImage(point, radius = [.5, .5], postEffect = true, t = time)', 'Average straight RGBA in point ± radius (layer pixels). Solid clips only; other kinds report an error.'),
+	g(
+		'sourceRectAtTime',
+		'sourceRectAtTime(t = time)',
+		'{top, left, width, height} of the clip box in layer pixels.',
+	),
+	g(
+		'sampleImage',
+		'sampleImage(point, radius = [.5, .5], postEffect = true, t = time)',
+		'Average straight RGBA in point ± radius (layer pixels). Solid clips only; other kinds report an error.',
+	),
 	// Comp.
-	C('layer', 'thisComp.layer(index | name | otherLayer, relIndex)', 'A clip by 1-based index (1 = topmost: caption tracks, video tracks top to bottom, audio tracks), name or id.', 'layer("$")'),
+	C(
+		'layer',
+		'thisComp.layer(index | name | otherLayer, relIndex)',
+		'A clip by 1-based index (1 = topmost: caption tracks, video tracks top to bottom, audio tracks), name or id.',
+		'layer("$")',
+	),
 	C('name', 'thisComp.name', 'Sequence name.'),
 	C('width', 'thisComp.width', 'Frame width in pixels.'),
 	C('height', 'thisComp.height', 'Frame height in pixels.'),
@@ -131,14 +225,26 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	L('hasAudio', 'thisLayer.hasAudio', 'True for audio clips (and video clips).'),
 	L('enabled', 'thisLayer.enabled', 'The clip is enabled.'),
 	L('active', 'thisLayer.active', 'Enabled and inside its in/out points at the current time.'),
-	L('transform', 'thisLayer.transform', 'Motion: anchorPoint, position, scale, scaleWidth, rotation, opacity.'),
+	L(
+		'transform',
+		'thisLayer.transform',
+		'Motion: anchorPoint, position, scale, scaleWidth, rotation, opacity.',
+	),
 	L('position', 'thisLayer.position', 'transform.position ([x, y] sequence pixels).'),
 	L('anchorPoint', 'thisLayer.anchorPoint', 'transform.anchorPoint ([x, y] layer pixels).'),
-	L('scale', 'thisLayer.scale', 'transform.scale (percent, one number as in Premiere; Scale Width is transform.scaleWidth).'),
+	L(
+		'scale',
+		'thisLayer.scale',
+		'transform.scale (percent, one number as in Premiere; Scale Width is transform.scaleWidth).',
+	),
 	L('rotation', 'thisLayer.rotation', 'transform.rotation (degrees, clockwise).'),
 	L('opacity', 'thisLayer.opacity', 'Opacity (percent).'),
 	L('effect', 'thisLayer.effect(nameOrIndex)(paramNameOrIndex)', 'An effect parameter.'),
-	L('text', 'thisLayer.text.sourceText', 'Text clips: the Source Text (string; .style.fontSize, .fillColor, … read the style).'),
+	L(
+		'text',
+		'thisLayer.text.sourceText',
+		'Text clips: the Source Text (string; .style.fontSize, .fillColor, … read the style).',
+	),
 	L('shape', 'thisLayer.shape', 'Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius.'),
 	L('audio', 'thisLayer.audio', 'Audio clips: audioLevels (Volume, dB) and pan.'),
 	L('params', 'thisLayer.params(name)', 'Motion-graphic template parameters (read only).'),
@@ -166,23 +272,40 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	K('time', 'key.time', 'Keyframe time (sequence seconds).'),
 	K('value', 'key.value', 'Keyframe value.'),
 	K('index', 'key.index', 'Keyframe index.'),
-	M('key', 'marker.key(indexOrName)', 'A marker: {time, duration, comment, name, chapter, url, type, color, index}.'),
+	M(
+		'key',
+		'marker.key(indexOrName)',
+		'A marker: {time, duration, comment, name, chapter, url, type, color, index}.',
+	),
 	M('numKeys', 'marker.numKeys', 'Number of markers.'),
 	M('nearestKey', 'marker.nearestKey(t)', 'Nearest marker.'),
 	// Text Expression Selector.
 	S('textIndex', 'textIndex', 'Expression Selector: 1-based index of the character, word or line.'),
 	S('textTotal', 'textTotal', 'Expression Selector: number of characters, words or lines.'),
-	S('selectorValue', 'selectorValue', 'Expression Selector: amount of the selectors above (percent, 3 components).'),
+	S(
+		'selectorValue',
+		'selectorValue',
+		'Expression Selector: amount of the selectors above (percent, 3 components).',
+	),
 ];
 
 /** Markdown reference (MCP guide resource, docs/expressions.md). */
 export function expressionReferenceMarkdown(): string {
 	const section = (title: string, scope: RefScope) =>
-		[`### ${title}`, '', '| Name | Description |', '|---|---|', ...EXPRESSION_REFERENCE.filter((e) => e.scope === scope).map((e) => `| \`${e.signature}\` | ${e.doc} |`), ''].join('\n');
+		[
+			`### ${title}`,
+			'',
+			'| Name | Description |',
+			'|---|---|',
+			...EXPRESSION_REFERENCE.filter((e) => e.scope === scope).map(
+				(e) => `| \`${e.signature}\` | ${e.doc} |`,
+			),
+			'',
+		].join('\n');
 	return [
 		'## Expression language reference',
 		'',
-		'Expressions are JavaScript (ES2023, run by QuickJS) with After Effects\' expression object model. The result',
+		"Expressions are JavaScript (ES2023, run by QuickJS) with After Effects' expression object model. The result",
 		'is the value of the last statement. `+ - * /` work on arrays (`value + [10, 0]`, `[1, 2] * 2`). Everything',
 		'is deterministic: no clock (`Date` is fixed at 0), `Math.random` is the seeded `random()`, no I/O. Limits: about',
 		'5 million operations, 64 MiB memory and 16 levels of expressions reading each other per evaluation. A failing',

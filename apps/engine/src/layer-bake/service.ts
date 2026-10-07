@@ -41,8 +41,8 @@ import { binaryNames } from '../tools/lgpl.ts';
 import type { CoreServices } from '../tools/services.ts';
 import {
 	type BakeEnvironment,
-	FileHashCache,
 	expressionKeyPart,
+	FileHashCache,
 	KEY_RE,
 	type KeyFont,
 	type KeyMaterial,

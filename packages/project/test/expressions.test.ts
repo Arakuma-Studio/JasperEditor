@@ -38,7 +38,10 @@ describe('commands', () => {
 		const before = h.doc;
 		h.ok([{ type: 'expression.set', target: ['clip', a, 'transform', 'rotation'], text: 'time * 90' }]);
 		expect(anim(h, a, 'transform', 'rotation').expression).toEqual({ text: 'time * 90', enabled: true });
-		expect((before.sequences[h.seqId]!.clips[a] as never as { transform: { rotation: object } }).transform.rotation).not.toHaveProperty('expression');
+		expect(
+			(before.sequences[h.seqId]!.clips[a] as never as { transform: { rotation: object } }).transform
+				.rotation,
+		).not.toHaveProperty('expression');
 		h.ok([{ type: 'expression.setEnabled', target: ['clip', a, 'transform', 'rotation'], enabled: false }]);
 		expect(anim(h, a, 'transform', 'rotation').expression?.enabled).toBe(false);
 		expect(isAnimated(anim(h, a, 'transform', 'rotation') as never)).toBe(false);
@@ -51,8 +54,14 @@ describe('commands', () => {
 			{ type: 'expression.set', target: ['effect', s, 'slider'], text: 'time' },
 			{ type: 'expression.set', target: ['clip', t, 'text', 'content'], text: 'timeToTimecode()' },
 		]);
-		expect((h.seq.clips[a] as never as { effects: { params: { slider: { expression: unknown } } }[] }).effects[0]!.params.slider.expression).toEqual({ text: 'time', enabled: true });
-		expect((h.seq.clips[t] as never as { content: { expression: unknown } }).content.expression).toEqual({ text: 'timeToTimecode()', enabled: true });
+		expect(
+			(h.seq.clips[a] as never as { effects: { params: { slider: { expression: unknown } } }[] }).effects[0]!
+				.params.slider.expression,
+		).toEqual({ text: 'time', enabled: true });
+		expect((h.seq.clips[t] as never as { content: { expression: unknown } }).content.expression).toEqual({
+			text: 'timeToTimecode()',
+			enabled: true,
+		});
 	});
 	it('refusals: static properties, faders, audio effects, template params, missing expression', () => {
 		const { h, a } = setup();
@@ -61,12 +70,22 @@ describe('commands', () => {
 			expect(r.ok).toBe(false);
 			return r.ok ? '' : r.errors[0]!.message;
 		};
-		expect(fail({ type: 'expression.set', target: ['clip', a, 'transform', 'flipH'], text: '1' })).toMatch(/not animatable/);
+		expect(fail({ type: 'expression.set', target: ['clip', a, 'transform', 'flipH'], text: '1' })).toMatch(
+			/not animatable/,
+		);
 		const track = h.seq.audioTracks[0]!.id;
-		expect(fail({ type: 'expression.set', target: ['track', track, 'volumeDb'], text: '0' })).toMatch(/Audio Track Mixer/);
-		expect(fail({ type: 'expression.set', target: ['master', 'volumeDb'], text: '0' })).toMatch(/Audio Track Mixer/);
-		expect(fail({ type: 'expression.setEnabled', target: ['clip', a, 'opacity'], enabled: true })).toMatch(/no expression/);
-		expect(fail({ type: 'expression.set', target: ['clip', a, 'params', 'x'], text: '1' })).toMatch(/template parameters/);
+		expect(fail({ type: 'expression.set', target: ['track', track, 'volumeDb'], text: '0' })).toMatch(
+			/Audio Track Mixer/,
+		);
+		expect(fail({ type: 'expression.set', target: ['master', 'volumeDb'], text: '0' })).toMatch(
+			/Audio Track Mixer/,
+		);
+		expect(fail({ type: 'expression.setEnabled', target: ['clip', a, 'opacity'], enabled: true })).toMatch(
+			/no expression/,
+		);
+		expect(fail({ type: 'expression.set', target: ['clip', a, 'params', 'x'], text: '1' })).toMatch(
+			/template parameters/,
+		);
 	});
 	it('effect.rename', () => {
 		const { h, a, s } = setup();
@@ -87,7 +106,9 @@ describe('commands', () => {
 			},
 		]);
 		const id = (r.results[0] as { effectInstanceId: string }).effectInstanceId;
-		const fx = (h.seq.clips[a] as never as { effects: { id: string; params: { slider: { expression: unknown } } }[] }).effects.find((e) => e.id === id)!;
+		const fx = (
+			h.seq.clips[a] as never as { effects: { id: string; params: { slider: { expression: unknown } } }[] }
+		).effects.find((e) => e.id === id)!;
 		expect(fx.params.slider.expression).toEqual({ text: 'value * 2', enabled: true });
 		expect(
 			h.tx([
@@ -120,7 +141,8 @@ describe('Expression Controls', () => {
 			{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.point-control' },
 			{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.point3d-control' },
 		]);
-		const fxs = (h.seq.clips[a] as never as { effects: { params: { point?: { value: unknown } } }[] }).effects;
+		const fxs = (h.seq.clips[a] as never as { effects: { params: { point?: { value: unknown } } }[] })
+			.effects;
 		expect(fxs[1]!.params.point!.value).toEqual([960, 540]);
 		expect(fxs[2]!.params.point!.value).toEqual([960, 540, 0]);
 		expect(r.ok).toBe(true);
@@ -131,7 +153,9 @@ describe('Expression Controls', () => {
 	});
 	it('3D points validate as three numbers', () => {
 		const { h, a } = setup();
-		const r = h.ok([{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.point3d-control', ref: '$p' }]);
+		const r = h.ok([
+			{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.point3d-control', ref: '$p' },
+		]);
 		const p = r.refs.$p!;
 		expect(h.tx([{ type: 'param.set', target: ['effect', p, 'point'], value: [1, 2] }]).ok).toBe(false);
 		expect(h.tx([{ type: 'param.set', target: ['effect', p, 'point'], value: [1, 2, 3] }]).ok).toBe(true);
@@ -166,7 +190,11 @@ describe('model helpers', () => {
 		seq.master.volumeDb.expression = { text: '0', enabled: true };
 		const expr = (d: unknown) =>
 			checkInvariants(d as never).filter((i) => (i as { invariant?: string }).invariant === 'INV-EXPR');
-		expect(expr(doc).map((i) => i.message).sort()).toEqual([
+		expect(
+			expr(doc)
+				.map((i) => i.message)
+				.sort(),
+		).toEqual([
 			'INV-EXPR: Malformed expression (expected {text, enabled})',
 			'INV-EXPR: This property does not take expressions',
 		]);

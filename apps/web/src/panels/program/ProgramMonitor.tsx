@@ -2,7 +2,6 @@
 // transport, zoom/pan, overlays and on-canvas transform. The Player is sized at the composition size
 // and scaled by one CSS transform (S03:PGM-002) so overlays share its geometry exactly.
 
-import { useExpressionsFor } from '../../expressions/engine.ts';
 import type { FontCatalog } from '@jasper/api';
 import {
 	DEFAULT_RENDER_OPTIONS,
@@ -30,6 +29,7 @@ import { createPortal } from 'react-dom';
 import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
+import { useExpressionsFor } from '../../expressions/engine.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';

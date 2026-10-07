@@ -178,7 +178,11 @@ function registerResources(ctx: ToolContext): void {
 		// Wave expressions: the guide resource carries the full expression language reference.
 		async (uri) => ({
 			contents: [
-				{ uri: uri.href, mimeType: 'text/markdown', text: `${FULL_GUIDE}\n\n${expressionReferenceMarkdown()}` },
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `${FULL_GUIDE}\n\n${expressionReferenceMarkdown()}`,
+				},
 			],
 		}),
 	);

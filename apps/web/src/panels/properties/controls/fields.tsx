@@ -1,6 +1,7 @@
 // Inspector value editors besides the scrubby number (S03:EC-011…014, S05:CT-010…014).
-import type { MouseEvent as ReactMouseEvent } from 'react';
+
 import { cx } from '@jasper/ui';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 type RGBA = [number, number, number, number];

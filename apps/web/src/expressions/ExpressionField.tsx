@@ -29,11 +29,21 @@ export type ExpressionFieldHandle = {
 export type CompletionNames = { effects: string[]; layers: string[]; params: Record<string, string[]> };
 
 const highlight = HighlightStyle.define([
-	{ tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.definitionKeyword], color: 'var(--pr-expr-keyword)' },
+	{
+		tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword, tags.definitionKeyword],
+		color: 'var(--pr-expr-keyword)',
+	},
 	{ tag: [tags.string, tags.special(tags.string)], color: 'var(--pr-expr-string)' },
 	{ tag: [tags.number, tags.bool, tags.null], color: 'var(--pr-expr-number)' },
-	{ tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--pr-expr-comment)', fontStyle: 'italic' },
-	{ tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: 'var(--pr-expr-function)' },
+	{
+		tag: [tags.comment, tags.lineComment, tags.blockComment],
+		color: 'var(--pr-expr-comment)',
+		fontStyle: 'italic',
+	},
+	{
+		tag: [tags.function(tags.variableName), tags.function(tags.propertyName)],
+		color: 'var(--pr-expr-function)',
+	},
 	{ tag: tags.propertyName, color: 'var(--pr-expr-property)' },
 ]);
 
@@ -47,16 +57,25 @@ const theme = EditorView.theme(
 			borderRadius: '2px',
 		},
 		'&.cm-focused': { outline: '1px solid var(--pr-accent)' },
-		'.cm-content': { fontFamily: 'var(--pr-font-mono)', padding: '2px 0', caretColor: 'var(--pr-expr-cursor)' },
+		'.cm-content': {
+			fontFamily: 'var(--pr-font-mono)',
+			padding: '2px 0',
+			caretColor: 'var(--pr-expr-cursor)',
+		},
 		'.cm-line': { padding: '0 4px' },
 		'.cm-cursor': { borderLeftColor: 'var(--pr-expr-cursor)' },
-		'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--pr-expr-selection)' },
+		'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+			backgroundColor: 'var(--pr-expr-selection)',
+		},
 		'.cm-tooltip': {
 			backgroundColor: 'var(--pr-bg-panel)',
 			border: '1px solid var(--pr-border)',
 			color: 'var(--pr-text-primary)',
 		},
-		'.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: 'var(--pr-accent-fill)', color: 'var(--pr-on-accent)' },
+		'.cm-tooltip-autocomplete ul li[aria-selected]': {
+			backgroundColor: 'var(--pr-accent-fill)',
+			color: 'var(--pr-on-accent)',
+		},
 		'.cm-completionDetail': { color: 'var(--pr-text-secondary)', fontStyle: 'normal', marginLeft: '8px' },
 		'.cm-placeholder': { color: 'var(--pr-text-tertiary)' },
 	},
@@ -94,7 +113,11 @@ export function expressionCompletions(names: () => CompletionNames) {
 				const fx = /effect\(\s*["']([^"']+)["']\s*\)\s*\(\s*["'][^"']*$/.exec(ctx.state.sliceDoc(0, ctx.pos));
 				list = fx ? (n.params[fx[1]!] ?? []) : [];
 			}
-			return { from: str.from + quote + 1, options: list.map((label) => ({ label, type: 'text' })), validFor: /^[^"']*$/ };
+			return {
+				from: str.from + quote + 1,
+				options: list.map((label) => ({ label, type: 'text' })),
+				validFor: /^[^"']*$/,
+			};
 		}
 		const member = ctx.matchBefore(/([A-Za-z_$][\w$]*)\s*\.\s*[\w$]*$/);
 		if (member) {
@@ -138,7 +161,10 @@ export const ExpressionField = forwardRef<ExpressionFieldHandle, Props>(function
 			if (!v) return;
 			if (v.hasFocus) {
 				const sel = v.state.selection.main;
-				v.dispatch({ changes: { from: sel.from, to: sel.to, insert: text }, selection: { anchor: sel.from + text.length } });
+				v.dispatch({
+					changes: { from: sel.from, to: sel.to, insert: text },
+					selection: { anchor: sel.from + text.length },
+				});
 			} else {
 				v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text } });
 				commit();
@@ -158,6 +184,12 @@ export const ExpressionField = forwardRef<ExpressionFieldHandle, Props>(function
 		latest.current.onCommit(text);
 	};
 
+	const commitAndLeave = () => {
+		commit();
+		view.current?.contentDOM.blur();
+		return true;
+	};
+
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the editor is created once; props are read through refs
 	useEffect(() => {
 		if (!host.current) return;
@@ -167,13 +199,16 @@ export const ExpressionField = forwardRef<ExpressionFieldHandle, Props>(function
 			bracketMatching(),
 			new LanguageSupport(javascriptLanguage),
 			syntaxHighlighting(highlight),
-			autocompletion({ override: [expressionCompletions(() => latest.current.names())], activateOnTyping: true }),
+			autocompletion({
+				override: [expressionCompletions(() => latest.current.names())],
+				activateOnTyping: true,
+			}),
 			placeholder('Expression'),
 			EditorView.lineWrapping,
 			theme,
 			keymap.of([
-				{ key: 'Mod-Enter', run: () => (commit(), view.current?.contentDOM.blur(), true) },
-				{ key: 'NumpadEnter', run: () => (commit(), view.current?.contentDOM.blur(), true) },
+				{ key: 'Mod-Enter', run: commitAndLeave },
+				{ key: 'NumpadEnter', run: commitAndLeave },
 				{
 					key: 'Escape',
 					run: (v) => {
@@ -200,7 +235,10 @@ export const ExpressionField = forwardRef<ExpressionFieldHandle, Props>(function
 					return false;
 				},
 			}),
-			EditorView.contentAttributes.of({ 'aria-label': props.label, 'data-testid': props['data-testid'] ?? '' }),
+			EditorView.contentAttributes.of({
+				'aria-label': props.label,
+				'data-testid': props['data-testid'] ?? '',
+			}),
 		];
 		view.current = new EditorView({
 			parent: host.current,

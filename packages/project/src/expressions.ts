@@ -48,7 +48,12 @@ function* effectAnims(
 	}
 }
 
-type MaskLike = { id: string; feather?: Animatable<unknown>; opacity?: Animatable<unknown>; expansion?: Animatable<unknown> };
+type MaskLike = {
+	id: string;
+	feather?: Animatable<unknown>;
+	opacity?: Animatable<unknown>;
+	expansion?: Animatable<unknown>;
+};
 
 /** Expression-capable mask properties (the path is a Bezier shape: no expressions). */
 export const MASK_EXPRESSION_PROPS = ['feather', 'opacity', 'expansion'] as const;
@@ -124,7 +129,8 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 		// wp masks: Mask Feather / Opacity / Expansion of the clip's masks and of its effects' masks.
 		yield* maskAnims(seqId, id, c.masks as MaskLike[] | undefined, [...at, 'masks']);
 		const fxs = (c.effects as (EffectInstance & { masks?: MaskLike[] })[] | undefined) ?? [];
-		for (let i = 0; i < fxs.length; i++) yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
+		for (let i = 0; i < fxs.length; i++)
+			yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
 	}
 	for (const [list, name] of [
 		[seq.videoTracks, 'videoTracks'],
@@ -376,7 +382,11 @@ export function expressionWorldData(doc: ProjectDocument): ExpressionWorldData |
 const MAX_TEXT = 65_536;
 
 /** Where expressions may live: clip properties (no audio effects), transition params, Source Text. */
-function allowedTargets(seqId: string, seq: Sequence, audioEffect: (effectId: string) => boolean): Set<object> {
+function allowedTargets(
+	seqId: string,
+	seq: Sequence,
+	audioEffect: (effectId: string) => boolean,
+): Set<object> {
 	const out = new Set<object>();
 	for (const loc of sequenceAnimatables(seqId, seq)) {
 		const o = loc.ref.owner;
@@ -394,7 +404,10 @@ function allowedTargets(seqId: string, seq: Sequence, audioEffect: (effectId: st
 }
 
 /** Every object of a sequence carrying an `expression` field, with its path. */
-function* expressionHolders(root: unknown, path: (string | number)[]): Generator<{ holder: Record<string, unknown>; path: (string | number)[] }> {
+function* expressionHolders(
+	root: unknown,
+	path: (string | number)[],
+): Generator<{ holder: Record<string, unknown>; path: (string | number)[] }> {
 	if (!root || typeof root !== 'object') return;
 	if (Array.isArray(root)) {
 		for (let i = 0; i < root.length; i++) yield* expressionHolders(root[i], [...path, i]);
@@ -430,7 +443,8 @@ export function expressionIssues(
 			const p = path.map(String);
 			if (!wellFormed(holder.expression))
 				out.push({ message: 'Malformed expression (expected {text, enabled})', path: p });
-			else if (!allowed.has(holder)) out.push({ message: 'This property does not take expressions', path: p });
+			else if (!allowed.has(holder))
+				out.push({ message: 'This property does not take expressions', path: p });
 		}
 	}
 	return out;
