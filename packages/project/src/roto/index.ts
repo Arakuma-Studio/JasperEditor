@@ -320,3 +320,18 @@ export function retargetRotos(
 	}
 }
 export * from './export.ts';
+
+/** The rotated square of a face pose (TL, TR, BR, BL; side = the face size), media px. */
+export function faceSquare(cx: number, cy: number, size: number, angle: number): [number, number][] {
+	const h = size / 2;
+	const c = Math.cos(angle);
+	const s = Math.sin(angle);
+	return (
+		[
+			[-h, -h],
+			[h, -h],
+			[h, h],
+			[-h, h],
+		] as const
+	).map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c] as [number, number]);
+}

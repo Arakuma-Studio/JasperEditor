@@ -87,7 +87,8 @@ export type RotoJobSpec = {
 export type RotoFaceTrackOut = {
 	id: number;
 	startFrame: number;
-	poses: [number, number, number, number][];
+	/** 4 numbers per frame: cx, cy, size, angle (media px, radians). */
+	poses: number[];
 	present: number[];
 };
 
@@ -473,6 +474,14 @@ function iou4(a: readonly number[], b: readonly number[]): number {
 	return u > 0 ? inter / u : 0;
 }
 
+/** Fraction of box `a` inside box `b`. */
+function containment(a: readonly number[], b: readonly number[]): number {
+	const ix = Math.max(0, Math.min(a[2]!, b[2]!) - Math.max(a[0]!, b[0]!));
+	const iy = Math.max(0, Math.min(a[3]!, b[3]!) - Math.max(a[1]!, b[1]!));
+	const area = (a[2]! - a[0]!) * (a[3]! - a[1]!);
+	return area > 0 ? (ix * iy) / area : 0;
+}
+
 /** An ellipse polygon around a face pose (Face Tracking "ellipse" shape). */
 function ellipseOf(
 	pose: { cx: number; cy: number; size: number; angle: number },
@@ -543,6 +552,8 @@ async function runFaces(
 				for (const d of dets) {
 					const db = [d.x0, d.y0, d.x1, d.y1];
 					const match = live.find((t) => t.last && iou4(boxOfPoints(t.last.points), db) > 0.3);
+					// A detection mostly inside a tracked face is a part of it (an eye, a cheek), not a new face.
+					if (!match && live.some((t) => t.last && containment(db, boxOfPoints(t.last.points)) > 0.5)) continue;
 					if (match) {
 						if (match.lost > 0) match.roi = roiOfDetection(d);
 						continue;
@@ -614,7 +625,12 @@ async function runFaces(
 		model: 'mediapipe-face-landmarker',
 		faces: tracks
 			.filter((t) => t.present.some((p) => p === 1))
-			.map((t) => ({ id: t.id, startFrame: t.startFrame, poses: t.poses, present: t.present })),
+			.map((t) => ({
+				id: t.id,
+				startFrame: t.startFrame,
+				poses: t.poses.flatMap((p) => p.map((v) => Math.round(v * 1e4) / 1e4)),
+				present: t.present,
+			})),
 		ms: Math.round(performance.now() - t0),
 	};
 }

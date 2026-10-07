@@ -7,19 +7,30 @@ import type { Draft } from 'immer';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import {
 	clipMediaFrames,
+	faceSquare,
 	mediaFrameAt,
+	mediaFrameFlicks,
 	OBJECT_BLUR_EFFECT_ID,
 	OBJECT_MATTE_EFFECT_ID,
 	rotoFrameCount,
 	rotoRateOf,
 } from '../../roto/index.ts';
 import type { ParamValue } from '../../schema/common.ts';
-import type { ClipRoto, EffectInstance, RotoResult, RotoStroke } from '../../schema/sequence.ts';
+import { stepOfRate } from '../../tracking/samples.ts';
+import type {
+	ClipRoto,
+	ClipTracker,
+	EffectInstance,
+	RotoResult,
+	RotoStroke,
+	VideoClip,
+} from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { effectHandlers } from './effect.ts';
+import { trackerHandlers } from './tracker.ts';
 import { ruleFromParam, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -349,5 +360,58 @@ export const rotoHandlers: HandlerMap = {
 			fx.params[name] = { value: v.value as ParamValue, keyframes: [] } as never;
 		}
 		return { effectInstanceId: fx.id, effectId, created, rotoId: roto.id, clipId: clip.id };
+	},
+
+	'roto.faceTracker': (doc, cmd: CommandOf<'roto.faceTracker'>, h) => {
+		const { seq, clip, roto } = locate(doc, cmd.rotoId, h);
+		assertClipUnlocked(seq, clip, h);
+		if (roto.kind !== 'faces') h.fail('E_INVALID_PARAM', `Roto "${roto.name}" is not a face track`);
+		if (clip.kind !== 'video') h.fail('E_INVALID_PARAM', 'Face trackers go on video clips');
+		const face = roto.result?.faces?.find((f) => f.id === cmd.faceId);
+		if (!face)
+			h.fail('E_NOT_FOUND', `Face ${cmd.faceId} is not in the computed face track of "${roto.name}" (track faces first)`);
+		const n = face!.present.length;
+		if (n === 0 || face!.poses.length !== n * 4) h.fail('E_INVALID_PARAM', 'The face track is empty or malformed');
+		const rate = roto.rate as Rational;
+		const data: number[] = [];
+		for (let i = 0; i < n; i++) {
+			const [cx, cy, size, angle] = face!.poses.slice(i * 4, i * 4 + 4) as [number, number, number, number];
+			for (const [x, y] of faceSquare(cx, cy, size, angle))
+				data.push(Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000);
+		}
+		const confidence = face!.present.map((p) => (p ? 1 : 0));
+		const ref = Math.max(0, face!.present.indexOf(1));
+		const v = clip as Draft<VideoClip>;
+		v.trackers ??= [];
+		const id = h.ids.next('tkr');
+		const start = mediaFrameFlicks(face!.startFrame, rate);
+		const step = stepOfRate(rate);
+		const tracker: ClipTracker = {
+			id,
+			name: cmd.name ?? `${roto.name} · Face ${cmd.faceId + 1}`,
+			kind: 'planar',
+			reference: {
+				time: start + ref * step,
+				corners: [0, 1, 2, 3].map((k) => [data[ref * 8 + k * 2]!, data[ref * 8 + k * 2 + 1]!] as [number, number]),
+			},
+			samples: { start, step, stride: 8, data, confidence },
+			method: 'face-landmarks@1',
+		};
+		v.trackers.push(tracker as Draft<ClipTracker>);
+		h.defineRef(cmd.ref, id);
+		let applied: unknown = null;
+		if (cmd.targetClipId)
+			applied = trackerHandlers['tracker.apply']!(
+				doc,
+				{
+					type: 'tracker.apply',
+					trackerId: id,
+					targetClipId: cmd.targetClipId,
+					mode: 'transform',
+					...(cmd.components ? { components: cmd.components } : {}),
+				},
+				h,
+			);
+		return { trackerId: id, clipId: clip.id, frames: n, ...(applied ? { applied } : {}) };
 	},
 };

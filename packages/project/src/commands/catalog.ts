@@ -258,6 +258,7 @@ const LABELS: Record<CommandType, string> = {
 	'roto.freeze': 'Freeze Roto',
 	'roto.remove': 'Remove Roto',
 	'roto.apply': 'Apply Object Matte',
+	'roto.faceTracker': 'Track Face',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

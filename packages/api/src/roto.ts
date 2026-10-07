@@ -70,8 +70,8 @@ export type RotoSegmentRequest = z.infer<typeof RotoSegmentRequestSchema>;
 export const RotoFaceTrackSchema = z.object({
 	id: z.number().int().min(0),
 	startFrame: z.number().int().min(0),
-	/** Per frame from `startFrame`: cx, cy, size (forehead → chin), angle; NaN-free; `present` 0 = lost (held). */
-	poses: z.array(z.tuple([z.number(), z.number(), z.number(), z.number()])),
+	/** Per frame from `startFrame`, 4 numbers: cx, cy, size (forehead → chin), angle; `present` 0 = lost (held). */
+	poses: z.array(z.number()),
 	present: z.array(z.number().int().min(0).max(1)),
 });
 export type RotoFaceTrack = z.infer<typeof RotoFaceTrackSchema>;

@@ -88,6 +88,23 @@ export const RotoApplyCmd = cmd('roto.apply', {
 	ref: RefDeclSchema.optional(),
 });
 
+/**
+ * Turns a tracked face of a faces roto into a planar tracker of the clip (its rotated face square per frame), and
+ * optionally applies it to a target clip as position / scale / rotation keyframes (`tracker.apply` transform mode) —
+ * e.g. a mosaic shape or a graphic that follows the face.
+ */
+export const RotoFaceTrackerCmd = cmd('roto.faceTracker', {
+	rotoId: IdRefSchema,
+	faceId: z.number().int().min(0),
+	name: z.string().min(1).optional(),
+	targetClipId: IdRefSchema.optional(),
+	components: z
+		.array(z.enum(['position', 'scale', 'rotation']))
+		.min(1)
+		.optional(),
+	ref: RefDeclSchema.optional(),
+});
+
 export const ROTO_COMMANDS = [
 	RotoAddCmd,
 	RotoUpdateCmd,
@@ -98,4 +115,5 @@ export const ROTO_COMMANDS = [
 	RotoFreezeCmd,
 	RotoRemoveCmd,
 	RotoApplyCmd,
+	RotoFaceTrackerCmd,
 ] as const;

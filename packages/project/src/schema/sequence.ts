@@ -425,6 +425,20 @@ export const RotoResultSchema = z.looseObject({
 	height: z.number().int().positive(),
 	inputs: z.string(),
 	model: z.string().nullable(),
+	/**
+	 * Faces rotos: the tracked faces over [`start`, `end`] (media px): per frame from `startFrame` 4 numbers (centre x,
+	 * y, size forehead → chin, roll in radians clockwise) in `poses`, and `present` (1 = seen, 0 = lost and held).
+	 */
+	faces: z
+		.array(
+			z.looseObject({
+				id: nonNegInt(),
+				startFrame: nonNegInt(),
+				poses: z.array(z.number()),
+				present: z.array(z.number().int().min(0).max(1)),
+			}),
+		)
+		.optional(),
 });
 export type RotoResult = DeepStrip<z.infer<typeof RotoResultSchema>>;
 
