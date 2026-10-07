@@ -291,3 +291,31 @@ describe('clip.applySceneEdits', () => {
 		clean(h);
 	});
 });
+
+describe('interplay with trackers and media versions', () => {
+	it('refuses trackers on remapped clips and remapping tracked clips', () => {
+		const h = new Harness();
+		const { v } = place(h, 0);
+		h.ok([{ type: 'timeRemap.enable', clipIds: [v], enabled: true }]);
+		expect(h.tx([{ type: 'tracker.add', clipId: v, kind: 'point', at: { frames: 0 }, point: [100, 100] }]).ok).toBe(
+			false,
+		);
+		const h2 = new Harness();
+		const p = place(h2, 0);
+		h2.ok([{ type: 'tracker.add', clipId: p.v, kind: 'point', at: { frames: 0 }, point: [100, 100] }]);
+		expect(h2.tx([{ type: 'timeRemap.enable', clipIds: [p.v], enabled: true }]).ok).toBe(false);
+	});
+
+	it('a content shift moves speed keyframes in content and media time', async () => {
+		const { shiftClipContentTime } = await import('../src/index.ts');
+		const h = new Harness();
+		const { v } = place(h, 0);
+		h.ok([{ type: 'timeRemap.setSpeed', clipId: v, at: 10, speedPercent: 50 }]);
+		const c = structuredClone(h.seq.clips[v]) as VideoClip;
+		const before = c.timeRemap!.keyframes.map((k) => [k.time, k.source]);
+		shiftClipContentTime(c as never, 1000);
+		expect(c.timeRemap!.keyframes.map((k) => [k.time, k.source])).toEqual(
+			before.map(([a, b]) => [a! + 1000, b! + 1000]),
+		);
+	});
+});

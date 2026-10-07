@@ -72,6 +72,12 @@ function remappable(seq: DSeq, clip: DClip, h: HandlerContext): DVideo {
 			`Clip ${clip.id} plays in reverse (Speed/Duration ▸ Reverse Speed); turn that off and use a reverse segment instead`,
 			{ blocking: [clip.id] },
 		);
+	if (!(clip as DVideo).timeRemap?.enabled && ((clip as { trackers?: unknown[] }).trackers?.length ?? 0) > 0)
+		h.fail(
+			'E_INVALID_PARAM',
+			`Clip ${clip.id} has trackers, whose samples follow its content time: nest the clip to time-remap it`,
+			{ blocking: [clip.id] },
+		);
 	return clip as DVideo;
 }
 
