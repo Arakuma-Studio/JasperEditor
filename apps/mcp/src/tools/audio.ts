@@ -65,7 +65,7 @@ function resultOf<T>(job: EngineJob): T {
 	return job.result as T;
 }
 
-async function analyze(
+export async function analyze(
 	ctx: ToolContext,
 	projectId: string,
 	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity'>,
@@ -80,7 +80,7 @@ async function analyze(
 	return resultOf<AudioAnalyzeResult>(job);
 }
 
-async function apply(
+export async function apply(
 	ctx: ToolContext,
 	projectId: string,
 	label: string,

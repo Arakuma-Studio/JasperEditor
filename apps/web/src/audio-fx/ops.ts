@@ -5,13 +5,12 @@ import type { EngineClient } from '@jasper/engine-client';
 import {
 	type AudioClip,
 	type AudioType,
-	type Clip,
-	contentSpan,
+	duckTriggerClips,
 	type EssentialSound,
-	FLICKS_PER_SECOND,
 	type MediaAsset,
 	type Rational,
 	readEssentialSound,
+	remixSourceRange,
 	type Sequence,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -68,18 +67,6 @@ export async function autoMatchLoudness(
 	return measured;
 }
 
-/** Clips of the sequence that trigger ducking for these settings (by audio type; untyped when asked). */
-export function duckTriggers(seq: Sequence, targets: readonly string[], s: EssentialSound): string[] {
-	const want = new Set<AudioType>(s.ducking.against);
-	return Object.values(seq.clips)
-		.filter((c): c is AudioClip => c.kind === 'audio' && !targets.includes(c.id))
-		.filter((c) => {
-			const t = readEssentialSound(c.essential)?.type;
-			return t ? want.has(t) : s.ducking.againstUntyped;
-		})
-		.map((c) => c.id);
-}
-
 /** Ducking ▸ Generate Keyframes: Volume keyframes on `clipIds` under their trigger clips (audio-mix autoDuck). */
 export async function generateDucking(
 	session: EditorSession,
@@ -91,7 +78,7 @@ export async function generateDucking(
 	const first = seq.clips[clipIds[0]!] as AudioClip | undefined;
 	const s = first ? readEssentialSound(first.essential) : null;
 	if (!s) throw new Error('Set the clips to Music or Ambience first');
-	const triggers = duckTriggers(seq, clipIds, s);
+	const triggers = duckTriggerClips(seq, clipIds, s);
 	if (triggers.length === 0) throw new Error('No clips of the "Duck against" types in the sequence');
 	const r = await autoDuck(session, engine, {
 		sequenceId,
@@ -102,19 +89,6 @@ export async function generateDucking(
 		fadeMs: s.ducking.fadeSeconds * 1000,
 	});
 	return r.regions.length;
-}
-
-/** The content range the remix plans over: the clip's own range (or a remixed clip's original). */
-function remixRange(clip: AudioClip, rate: Rational): { startSec: number; durSec: number } {
-	const o = clip.remix?.original;
-	const sourceIn = o ? o.sourceIn : clip.sourceIn;
-	const dur = o ? o.duration : clip.duration;
-	return {
-		startSec: sourceIn / FLICKS_PER_SECOND,
-		durSec:
-			contentSpan({ duration: dur, speed: { rate: 1, reverse: false, maintainPitch: true } } as Clip, rate) /
-			FLICKS_PER_SECOND,
-	};
 }
 
 /** Remix a music clip to `targetSeconds` (beat-tracked plan from the engine, then `clip.remix`, one undo step). */
@@ -133,7 +107,7 @@ export async function remixClip(
 	const key = mediaKeyOf(doc.media[clip.mediaId] as MediaAsset | undefined);
 	if (!key) throw new Error('The music is not on the engine');
 	const rate = seq.settings.frameRate as Rational;
-	const { startSec, durSec } = remixRange(clip, rate);
+	const { startSec, durSec } = remixSourceRange(clip, rate);
 	const plan = await engine.remixPlan({
 		mediaKey: key,
 		streamIndex: clip.channels.streamIndex,
