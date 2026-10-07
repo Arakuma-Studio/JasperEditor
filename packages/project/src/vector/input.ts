@@ -82,8 +82,36 @@ const ItemFields = z.looseObject({
 			}),
 		])
 		.optional(),
-	taper: z.union([z.null(), z.looseObject({})]).optional(),
-	wave: z.union([z.null(), z.looseObject({})]).optional(),
+	taper: z
+		.union([
+			z.null(),
+			z
+				.looseObject({
+					units: z.enum(['percent', 'pixels']),
+					startLength: num,
+					endLength: num,
+					startWidth: num,
+					endWidth: num,
+					startEase: num,
+					endEase: num,
+				})
+				.partial(),
+		])
+		.optional(),
+	wave: z
+		.union([
+			z.null(),
+			z
+				.looseObject({
+					amount: num,
+					units: z.enum(['pixels', 'cycles']),
+					wavelength: num,
+					cycles: num,
+					phase: num,
+				})
+				.partial(),
+		])
+		.optional(),
 	gradientType: z.enum(['linear', 'radial']).optional(),
 	startPoint: vec.optional(),
 	endPoint: vec.optional(),
@@ -109,7 +137,22 @@ const ItemFields = z.looseObject({
 	spatialPhase: num.optional(),
 	seed: num.optional(),
 	// group / repeater
-	transform: z.looseObject({}).optional(),
+	/** Groups: anchor, position, scale, skew, skewAxis, rotation, opacity; repeaters: anchor, position, scale, rotation, startOpacity, endOpacity. */
+	transform: z
+		.looseObject({
+			anchor: vec,
+			position: vec,
+			scale: vec,
+			skew: num,
+			skewAxis: num,
+			rotation: num,
+			opacity: num,
+			startOpacity: num,
+			endOpacity: num,
+		})
+		.partial()
+		.optional(),
+	/** Groups: nested items (same form; validated when the items are built). */
 	contents: z.array(z.unknown()).optional(),
 });
 
