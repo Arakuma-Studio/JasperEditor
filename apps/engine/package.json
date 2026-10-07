@@ -32,6 +32,7 @@
     "@jasper/audio-dsp": "workspace:*",
     "@jasper/compositions": "workspace:*",
     "@jasper/config": "workspace:*",
+    "@jasper/expressions": "workspace:*",
     "@jasper/mcp": "workspace:*",
     "@jasper/mg-templates": "workspace:*",
     "@jasper/project": "workspace:*",

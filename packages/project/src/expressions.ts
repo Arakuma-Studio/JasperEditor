@@ -48,6 +48,28 @@ function* effectAnims(
 	}
 }
 
+type MaskLike = { id: string; feather?: Animatable<unknown>; opacity?: Animatable<unknown>; expansion?: Animatable<unknown> };
+
+/** Expression-capable mask properties (the path is a Bezier shape: no expressions). */
+export const MASK_EXPRESSION_PROPS = ['feather', 'opacity', 'expansion'] as const;
+
+function* maskAnims(
+	seq: string,
+	owner: string,
+	masks: readonly MaskLike[] | undefined,
+	at: (string | number)[],
+): Generator<AnimLocation> {
+	if (!masks) return;
+	for (let i = 0; i < masks.length; i++) {
+		const m = masks[i]!;
+		for (const k of MASK_EXPRESSION_PROPS) {
+			const a = m[k];
+			if (a)
+				yield { ref: { seq, owner, path: `masks.${m.id}.${k}` }, at: [...at, i, k], kind: 'anim', target: a };
+		}
+	}
+}
+
 /** Every stored animatable property of a sequence (clips, tracks, master, transitions), in a stable order. */
 export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<AnimLocation> {
 	for (const [id, clip] of Object.entries(seq.clips)) {
@@ -99,6 +121,10 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 				target: c.content as TextContent,
 			};
 		yield* effectAnims(seqId, id, c.effects as EffectInstance[] | undefined, [...at, 'effects']);
+		// wp masks: Mask Feather / Opacity / Expansion of the clip's masks and of its effects' masks.
+		yield* maskAnims(seqId, id, c.masks as MaskLike[] | undefined, [...at, 'masks']);
+		const fxs = (c.effects as (EffectInstance & { masks?: MaskLike[] })[] | undefined) ?? [];
+		for (let i = 0; i < fxs.length; i++) yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
 	}
 	for (const [list, name] of [
 		[seq.videoTracks, 'videoTracks'],
@@ -169,6 +195,10 @@ export function documentHasActiveExpressions(doc: Pick<ProjectDocument, 'sequenc
 /** Command address (S01:CMD-010 ParamPath) of an expression location. */
 export function expressionRefToParamPath(ref: ExpressionRef): string[] {
 	if (ref.owner === 'master') return ['master', ref.seq, ref.path];
+	if (ref.path.startsWith('masks.')) {
+		const [, maskId, prop] = ref.path.split('.');
+		return ['mask', maskId!, prop!];
+	}
 	if (ref.path.startsWith('effects.')) {
 		const [, fxId, ...param] = ref.path.split('.');
 		return ['effect', fxId!, param.join('.')];
@@ -206,6 +236,16 @@ export function paramPathToExpressionRef(
 	if (head === 'transition') {
 		for (const [seqId, seq] of Object.entries(doc.sequences))
 			if (seq.transitions[a]) return { seq: seqId, owner: `transition:${a}`, path: rest.join('.') };
+		return null;
+	}
+	if (head === 'mask') {
+		const has = (ms: unknown) => Array.isArray(ms) && ms.some((m) => (m as { id?: string }).id === a);
+		for (const [seqId, seq] of Object.entries(doc.sequences))
+			for (const [id, c] of Object.entries(seq.clips)) {
+				const cc = c as { masks?: unknown; effects?: { masks?: unknown }[] };
+				if (has(cc.masks) || (cc.effects ?? []).some((fx) => has(fx.masks)))
+					return { seq: seqId, owner: id, path: `masks.${a}.${rest.join('.')}` };
+			}
 		return null;
 	}
 	if (head === 'track') {

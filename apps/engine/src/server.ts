@@ -1,6 +1,7 @@
 // Fastify factory (ARCHITECTURE §9.1): error handler with the S04:ENG-022 shape, x-jasper-api header,
 // auth + Host check (§4.2), /health, static SPA with a fallback that never shadows engine paths.
 
+import { loadExpressionEngine } from '@jasper/expressions';
 import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -65,6 +66,9 @@ export async function createServer(
 	config: EngineConfig,
 	opts: { logger?: boolean; env?: Record<string, string | undefined>; totalSlots?: number } = {},
 ): Promise<FastifyInstance> {
+	// Wave expressions: the QuickJS engine is loaded once per process before anything plans, renders or answers
+	// agents, so render snapshots, native export sampling and agent queries all see post-expression values.
+	await loadExpressionEngine();
 	const app = Fastify({ logger: opts.logger ?? false, bodyLimit: JSON_BODY_LIMIT, trustProxy: false });
 	const ctx: EngineContext = { config, services: {} };
 	app.decorate('jasper', ctx);

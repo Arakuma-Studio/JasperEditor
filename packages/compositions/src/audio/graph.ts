@@ -22,6 +22,7 @@ import {
 	contentTimeAt,
 	type EffectInstance,
 	evaluate,
+	isAnimated,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	holdValueAt,
@@ -113,7 +114,8 @@ function laneAt(
 	t: number,
 	hold = false,
 ): number {
-	if (a.keyframes.length === 0) return a.value;
+	// Keyframes or a bound expression (wave expressions; clip Volume / Pan).
+	if (!isAnimated(a as never)) return a.value;
 	return hold ? holdValueAt(a as never, t) : evaluate(a as never, t);
 }
 

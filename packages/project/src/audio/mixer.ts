@@ -17,7 +17,7 @@ import {
 	pan51Matrix,
 	panMonoGains,
 } from '@jasper/audio-dsp';
-import { evaluate } from '../keyframes.ts';
+import { evaluate, isAnimated } from '../keyframes.ts';
 import { nestGainDbAt, type RenderAudioClip, type RenderSnapshot } from '../render/snapshot.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
@@ -417,7 +417,7 @@ export class OfflineMixer {
 		const F = flicksPerFrame(this.fps);
 		const spf = (this.sampleRate * this.fps.den) / this.fps.num; // samples per frame
 		const gain = this.scratch;
-		const volAnimated = c.volumeDb.keyframes.length > 0;
+		const volAnimated = isAnimated(c.volumeDb);
 		const fades = c.fades;
 		const nest = c.nestGain;
 		const g0 = c.gainDb + c.volumeDb.value;
@@ -440,7 +440,7 @@ export class OfflineMixer {
 		const tw = st.width;
 		const src = layoutOfWidth(w);
 		const mat = conversionMatrix(src, layoutOfWidth(tw));
-		const panAnimated = c.pan.keyframes.length > 0;
+		const panAnimated = isAnimated(c.pan);
 		const panConst = c.pan.value;
 		for (let i = 0; i < k; i++) {
 			let pl = 1;

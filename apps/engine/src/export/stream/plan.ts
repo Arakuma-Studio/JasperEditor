@@ -20,6 +20,7 @@ import {
 	activeMasks,
 	clipContentTime,
 	evaluate,
+	isAnimated,
 	invertMat3,
 	type Mat3,
 	multiplyMat3,
@@ -105,18 +106,19 @@ export function needsSubpixel(
 	const t = c.transform;
 	if (!t) return false;
 	if (
-		t.position.keyframes.length > 0 ||
-		t.anchor.keyframes.length > 0 ||
-		t.scale.keyframes.length > 0 ||
-		t.scaleWidth.keyframes.length > 0 ||
-		t.rotation.keyframes.length > 0
+		// Keyframes or an active expression (wave expressions).
+		isAnimated(t.position) ||
+		isAnimated(t.anchor) ||
+		isAnimated(t.scale) ||
+		isAnimated(t.scaleWidth) ||
+		isAnimated(t.rotation)
 	)
 		return true;
 	// A crop with keyframes, or with edges between pixels (the filter path rounds them).
 	const crop = c.effects.find((e) => e.enabled && e.effectId === CROP);
 	if (crop) {
 		const anims = CROP_EDGES.map((e) => crop.params[e] as Animatable<number> | undefined);
-		if (anims.some((a) => a && a.keyframes.length > 0)) return true;
+		if (anims.some((a) => isAnimated(a))) return true;
 		const [l, tp, r, b] = anims.map((a) => (a ? Number(a.value) : 0) / 100);
 		if (![l! * box.bw, r! * box.bw, tp! * box.bh, b! * box.bh].every(isInt)) return true;
 	}

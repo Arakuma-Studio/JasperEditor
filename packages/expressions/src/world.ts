@@ -46,6 +46,7 @@ import {
 	defaultEffectRegistry,
 	invertMat3,
 	kindCapabilities,
+	maskPropertySpec,
 } from '@jasper/project';
 import { OP } from './ops.ts';
 import { type HostHandler, type RunState, runExpression } from './runtime.ts';
@@ -251,6 +252,15 @@ export class World {
 		return [];
 	}
 
+	/** Masks of a clip and of its effects (stack order), as AE lists a layer's masks. */
+	masksOf(info: OwnerInfo): { id: string; name: string; anims: Record<string, Animatable<unknown>> }[] {
+		if (info.kind !== 'clip') return [];
+		type M = { id: string; name: string; feather: Animatable<unknown>; opacity: Animatable<unknown>; expansion: Animatable<unknown> };
+		const c = info.clip as { masks?: M[]; effects?: { masks?: M[] }[] };
+		const all = [...(c.masks ?? []), ...(c.effects ?? []).flatMap((fx) => fx.masks ?? [])];
+		return all.map((m) => ({ id: m.id, name: m.name, anims: { feather: m.feather, opacity: m.opacity, expansion: m.expansion } }));
+	}
+
 	children(info: OwnerInfo, group: string): Node[] {
 		const leaf = (path: string, name: string, ...aliases: string[]): Node => ({
 			path,
@@ -274,6 +284,8 @@ export class World {
 				if (Array.isArray(c.effects))
 					out.push({ path: 'effects', group: true, name: 'Effects', matchName: 'effects', aliases: ['effect', 'Effects'] });
 				if (c.shape) out.push({ path: 'shape', group: true, name: 'Shape', matchName: 'shape', aliases: ['contents'] });
+				if (this.masksOf(info).length)
+					out.push({ path: 'masks', group: true, name: 'Masks', matchName: 'masks', aliases: ['mask', 'Masks'] });
 				if (VISUAL_KINDS_AUDIO.has(info.clip.kind))
 					out.push({ path: 'audio', group: true, name: 'Audio', matchName: 'audio', aliases: ['Audio'] });
 				if (info.clip.kind === 'text')
@@ -327,6 +339,22 @@ export class World {
 				out.push(leaf('shape.stroke.color', 'Stroke Color', 'strokeColor'), leaf('shape.stroke.width', 'Stroke Width', 'strokeWidth'));
 			out.push(leaf('shape.cornerRadius', 'Roundness', 'cornerRadius', 'roundness'));
 			return out;
+		}
+		if (group === 'masks') {
+			return this.masksOf(info).map((m) => ({
+				path: `masks.${m.id}`,
+				group: true,
+				name: m.name,
+				matchName: 'mask',
+				aliases: [m.id],
+			}));
+		}
+		if (group.startsWith('masks.')) {
+			return [
+				leaf(`${group}.feather`, 'Mask Feather', 'maskFeather', 'feather'),
+				leaf(`${group}.opacity`, 'Mask Opacity', 'maskOpacity', 'opacity'),
+				leaf(`${group}.expansion`, 'Mask Expansion', 'maskExpansion', 'expansion'),
+			];
 		}
 		if (group === 'audio') {
 			const out = [leaf('volumeDb', 'Volume', 'audioLevels', 'level', 'volume', 'Audio Levels')];
@@ -459,6 +487,23 @@ export class World {
 				propertyIndex: 1,
 			};
 		}
+		if (ref.path.startsWith('masks.')) {
+			const [, maskId, prop] = ref.path.split('.');
+			const m = this.masksOf(info).find((x) => x.id === maskId);
+			const anim = m?.anims[prop!];
+			if (!m || !anim) return null;
+			const spec = maskPropertySpec(maskId!, prop as 'feather');
+			return {
+				...base,
+				name: spec.label,
+				matchName: `mask${prop![0]!.toUpperCase()}${prop!.slice(1)}`,
+				kind: 'number',
+				opts: propertyEvaluateOptions(spec),
+				anim,
+				expression: anim.expression,
+				propertyIndex: indexIn(`masks.${maskId}`),
+			};
+		}
 		if (ref.path.startsWith('params.')) {
 			const name = ref.path.slice(7);
 			const params = (clip.params as Record<string, unknown> | undefined) ?? {};
@@ -507,6 +552,32 @@ export class World {
 	evaluate(ref: ExpressionRef, t: number, opts?: EvaluateOptions, selector?: SelectorInput): EvalStatus {
 		const p = this.prop(ref);
 		if (!p) return { value: undefined, error: 'Error: property not found' };
+		// Audio levels are read per sample by the mixer: like AE, the expression runs once per frame and the
+		// samples in between interpolate linearly.
+		if (!selector && (ref.path === 'volumeDb' || ref.path === 'pan') && hasActiveExpression(p.anim)) {
+			const seq = this.data.sequences[ref.seq]!;
+			const f = p.time.toSeconds(t) * fps(seq);
+			const f0 = Math.floor(f + 1e-9);
+			if (Math.abs(f - f0) > 1e-9) {
+				const at = (fr: number) => this.evaluateRaw(ref, p, p.time.toStored(fr / fps(seq)), opts);
+				const a = at(f0);
+				const b = at(f0 + 1);
+				const u = f - f0;
+				const lerp =
+					typeof a.value === 'number' && typeof b.value === 'number' ? a.value + (b.value - a.value) * u : a.value;
+				return { value: lerp, error: a.error ?? b.error };
+			}
+		}
+		return this.evaluateRaw(ref, p, t, opts, selector);
+	}
+
+	private evaluateRaw(
+		ref: ExpressionRef,
+		p: ResolvedProp,
+		t: number,
+		opts?: EvaluateOptions,
+		selector?: SelectorInput,
+	): EvalStatus {
 		const o = opts ?? p.opts;
 		const pre = this.pre(p, t, o);
 		if (!hasActiveExpression(p.anim)) return { value: pre, error: null };

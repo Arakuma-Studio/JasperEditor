@@ -236,6 +236,12 @@ export type RenderVisualClip = {
 		rect?: { x: number; y: number; w: number; h: number };
 	};
 	/**
+	 * Wave expressions (engine layer bakes): a translation added to the post-expression Position, set when a bake
+	 * shifts the layer into its cropped render rect (the stored keys are shifted directly; an expression's result is
+	 * shifted by the binding). Absent = none.
+	 */
+	expressionPositionShift?: [number, number];
+	/**
 	 * fx framework (clip context, additive): what effects may show about the clip's media — the project item name
 	 * (Premiere "Project Item Name"), the file name and the media's embedded start timecode. Set for media clips
 	 * that have effects; absent otherwise.

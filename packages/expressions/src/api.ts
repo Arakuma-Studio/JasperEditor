@@ -162,6 +162,13 @@ export function pickWhipExpression(doc: ProjectDocument, from: ExpressionRef, to
 		const effectCall = layer ? `${layer}effect(${quote(fxNode.name)})` : `effect(${quote(fxNode.name)})`;
 		return `${effectCall}(${quote(target.name || rest.join('.'))})`;
 	}
+	if (path.startsWith('masks.')) {
+		const [, maskId, prop] = path.split('.');
+		const node = world.children(info, 'masks').find((n) => n.path === `masks.${maskId}`);
+		if (!node) return null;
+		const attr = { feather: 'maskFeather', opacity: 'maskOpacity', expansion: 'maskExpansion' }[prop as 'feather'];
+		return attr ? `${layer}mask(${quote(node.name)}).${attr}` : null;
+	}
 	const short: Record<string, string> = {
 		'transform.position': 'transform.position',
 		'transform.anchor': 'transform.anchorPoint',

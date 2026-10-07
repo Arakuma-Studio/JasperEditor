@@ -1,5 +1,6 @@
 // The JasperEditor MCP server (tools, resources, prompts). Transport-agnostic: `cli.ts` serves it over
 // stdio (jasper-mcp), the engine serves the same definitions over Streamable HTTP at /mcp.
+import { expressionReferenceMarkdown } from '@jasper/expressions';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
@@ -13,6 +14,7 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
 import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
@@ -67,6 +69,7 @@ const FULL_GUIDE = [
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
 	CAPTIONS_GUIDE,
+	EXPRESSIONS_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -105,6 +108,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);
 	registerCaptionTools(ctx);
+	registerExpressionTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };
@@ -171,7 +175,12 @@ function registerResources(ctx: ToolContext): void {
 			description: 'How to drive JasperEditor with these tools.',
 			mimeType: 'text/markdown',
 		},
-		async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: FULL_GUIDE }] }),
+		// Wave expressions: the guide resource carries the full expression language reference.
+		async (uri) => ({
+			contents: [
+				{ uri: uri.href, mimeType: 'text/markdown', text: `${FULL_GUIDE}\n\n${expressionReferenceMarkdown()}` },
+			],
+		}),
 	);
 }
 

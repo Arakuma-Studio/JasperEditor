@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+	isAnimated,
 	bakeColorRun,
 	type ColorRunEffect,
 	clipContentTime,
@@ -84,7 +85,7 @@ export type ColorExtensionOptions = {
 type RunState = { effects: ColorRunEffect[]; key: string };
 
 const hasKeyframes = (fx: RenderVisualClip['effects'][number]) =>
-	Object.values(fx.params).some((a) => a.keyframes.length > 0);
+	Object.values(fx.params).some((a) => isAnimated(a));
 
 /** Quoted filter-option value (single quotes; `'` itself is closed, escaped and reopened). */
 export function quoteFilterPath(path: string): string {

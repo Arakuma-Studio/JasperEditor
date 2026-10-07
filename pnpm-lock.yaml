@@ -104,6 +104,9 @@ importers:
       '@jasper/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@jasper/expressions':
+        specifier: workspace:*
+        version: link:../../packages/expressions
       '@jasper/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -174,6 +177,9 @@ importers:
       '@jasper/engine-client':
         specifier: workspace:*
         version: link:../../packages/engine-client
+      '@jasper/expressions':
+        specifier: workspace:*
+        version: link:../../packages/expressions
       '@jasper/project':
         specifier: workspace:*
         version: link:../../packages/project

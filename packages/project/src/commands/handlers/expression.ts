@@ -31,6 +31,27 @@ function holder(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: Ha
 		const content = (clip as unknown as { content: Draft<TextContent> }).content;
 		return content as unknown as Draft<Holder>;
 	}
+	// The Audio Track Mixer automates track and Mix faders and track effects (automation lanes, the mixer's own
+	// modes); expressions there are refused rather than silently ignored by the mixer.
+	if (head === 'track' || head === 'master')
+		return h.fail(
+			'E_INVALID_PARAM',
+			'Expressions are not supported on track or Mix faders: automate them in the Audio Track Mixer',
+			{ path: cmd.target },
+		);
+	if (head === 'effect' && clipId) {
+		const loc = locateEffect(doc, clipId);
+		const spec = loc ? h.registries.effects.get(loc.fx.effectId, loc.fx.effectVersion) : undefined;
+		if (loc && (!loc.clip || spec?.appliesTo === 'audio'))
+			return h.fail(
+				'E_INVALID_PARAM',
+				'Expressions are not supported on audio effects (they are processed per sample by the audio mixer)',
+				{ path: cmd.target },
+			);
+	}
+	// Template parameters (motion graphics) are read with thisLayer.params(name); they take no expressions.
+	if (head === 'clip' && rest[0] === 'params')
+		return h.fail('E_INVALID_PARAM', 'Expressions are not supported on template parameters', { path: cmd.target });
 	const target = resolveTarget(doc, cmd, h);
 	if (target.type !== 'anim')
 		return h.fail('E_INVALID_PARAM', `${target.label} is not animatable, so it cannot have an expression`, {

@@ -139,14 +139,33 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 		const b = loc ? boundAt(seq, loc.at) : undefined;
 		return b ? withBinding(anim as object, b) as T : anim;
 	};
-	const bindEffects = <T extends { id: string; params: Record<string, unknown> }>(fxs: T[], owner: string): T[] =>
+	const bindMasks = <M extends { id: string }>(masks: M[] | undefined, owner: string): M[] | undefined => {
+		if (!masks) return masks;
+		let changed = false;
+		const out = masks.map((m) => {
+			let mm = m;
+			for (const k of ['feather', 'opacity', 'expansion'] as const) {
+				const a = (m as Record<string, unknown>)[k];
+				const b = bind(a, owner, `masks.${m.id}.${k}`);
+				if (b !== a) mm = { ...mm, [k]: b };
+			}
+			if (mm !== m) changed = true;
+			return mm;
+		});
+		return changed ? out : masks;
+	};
+	const bindEffects = <T extends { id: string; params: Record<string, unknown>; masks?: { id: string }[] }>(
+		fxs: T[],
+		owner: string,
+	): T[] =>
 		fxs.map((fx) => {
 			let params = fx.params;
 			for (const [k, a] of Object.entries(fx.params)) {
 				const b = bind(a, owner, `effects.${fx.id}.${k}`);
 				if (b !== a) params = { ...params, [k]: b };
 			}
-			return params === fx.params ? fx : { ...fx, params };
+			const masks = bindMasks(fx.masks, owner);
+			return params === fx.params && masks === fx.masks ? fx : { ...fx, params, ...(masks ? { masks } : {}) };
 		});
 	const videoTracks = snap.videoTracks.map((track) => ({
 		...track,
@@ -159,12 +178,31 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 					const b = bind(tr[k], o, `transform.${k}`);
 					if (b !== tr[k]) tr = { ...tr, [k]: b };
 				}
+				// A bake's render-rect shift applies to the expression's result too.
+				const shift = c.expressionPositionShift;
+				const pb = shift ? expressionBindingOf(tr.position) : undefined;
+				if (shift && pb) {
+					const add = (v: unknown) =>
+						Array.isArray(v) ? [Number(v[0]) + shift[0], Number(v[1]) + shift[1]] : v;
+					tr = {
+						...tr,
+						position: withBinding(tr.position as object, {
+							evaluate: (t, opts) => add(pb.evaluate(t, opts)),
+							evaluateWithStatus: (t, opts) => {
+								const r = pb.evaluateWithStatus(t, opts);
+								return { value: add(r.value), error: r.error };
+							},
+						}) as never,
+					};
+				}
 				if (tr !== c.transform) out = { ...out, transform: tr };
 			}
 			const op = bind(c.opacity, o, 'opacity');
 			if (op !== c.opacity) out = { ...out, opacity: op };
 			const effects = bindEffects(c.effects, o);
 			if (effects.some((e, i) => e !== c.effects[i])) out = { ...out, effects };
+			const masks = bindMasks(c.masks, o);
+			if (masks !== c.masks) out = { ...out, masks: masks as typeof c.masks };
 			const src = c.source as Record<string, unknown>;
 			if (src.shape) {
 				const sh = src.shape as Record<string, unknown>;

@@ -3,8 +3,11 @@
 // tool registration wrapper that turns failures into MCP tool errors.
 import type { AgentTxResponse, EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
+import { loadExpressionEngine } from '@jasper/expressions';
 import {
 	approvalReasons,
+	bindExpressions,
+	documentHasActiveExpressions,
 	type ProjectDocument,
 	resolveFrameInput,
 	type Sequence,
@@ -86,9 +89,14 @@ type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boo
 /** The current document: from the open editor when there is one (unsaved edits included), else stored. */
 export async function loadDoc(ctx: ToolContext, projectId: string): Promise<LoadedDoc> {
 	const r = await ctx.engine((c) => c.agentQuery({ projectId, query: 'doc.get', args: {} }));
-	const doc = r.result as ProjectDocument;
+	let doc = r.result as ProjectDocument;
 	if (!doc || typeof doc !== 'object' || !doc.sequences)
 		throw new ToolError('INTERNAL', 'The engine returned no document');
+	// Wave expressions: tools that evaluate properties report what renders (post-expression values).
+	if (documentHasActiveExpressions(doc)) {
+		await loadExpressionEngine();
+		doc = bindExpressions(doc);
+	}
 	return { doc, revision: r.revision, live: r.via === 'session' };
 }
 

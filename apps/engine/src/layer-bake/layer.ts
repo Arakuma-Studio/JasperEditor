@@ -2,6 +2,7 @@
 // are rendered from. Pure functions over the render snapshot (no I/O), shared by the native extension, the
 // preview route and the tests.
 import {
+	hasActiveExpression,
 	applyMat3,
 	contentTimeAt,
 	defaultEffectRegistry,
@@ -114,12 +115,16 @@ export function effectRunsOrderWarning(
 	return null;
 }
 
-/** True when any Animatable inside `v` has keyframes (deep: Motion, opacity, effects, shape props, params…). */
+/**
+ * True when any Animatable inside `v` has keyframes or an active expression (deep: Motion, opacity, effects, shape
+ * props, params, a Source Text expression…): an expression is a function of time.
+ */
 function hasKeyframesDeep(v: unknown): boolean {
 	if (!v || typeof v !== 'object') return false;
 	if (Array.isArray(v)) return v.some(hasKeyframesDeep);
 	const o = v as Record<string, unknown>;
 	if (Array.isArray(o.keyframes) && o.keyframes.length > 0 && 'value' in o) return true;
+	if (hasActiveExpression(o as { expression?: { text: string; enabled: boolean } })) return true;
 	for (const x of Object.values(o)) if (hasKeyframesDeep(x)) return true;
 	return false;
 }
@@ -215,8 +220,14 @@ export function bakeClip(
 			...(tailHandle ? { tailHandle } : {}),
 			...(fades?.length ? { fades: fades.map((f) => ({ ...f, start: f.start - span.start })) } : {}),
 		};
-	if (o.shift && (o.shift.x || o.shift.y) && out.transform)
+	if (o.shift && (o.shift.x || o.shift.y) && out.transform) {
 		out = { ...out, transform: shifted(out.transform, o.shift) };
+		// Wave expressions: a Position expression's result is shifted by the binding (bindSnapshotExpressions).
+		if (hasActiveExpression(out.transform!.position)) {
+			const prev = c.expressionPositionShift ?? [0, 0];
+			out = { ...out, expressionPositionShift: [prev[0] - o.shift.x, prev[1] - o.shift.y] };
+		}
+	}
 	return out;
 }
 
@@ -247,7 +258,7 @@ export function variantFrames(c: RenderVisualClip, v: BakeVariant): number {
  * handles the consumer resolved (signed URLs for Remotion; URLs never enter the render key).
  */
 export function bakeDoc(
-	snapshot: Pick<RenderSnapshot, 'sequenceId' | 'settings'>,
+	snapshot: Pick<RenderSnapshot, 'sequenceId' | 'settings' | 'expressions'>,
 	clip: RenderVisualClip,
 	o: {
 		variant: BakeVariant;
@@ -274,6 +285,8 @@ export function bakeDoc(
 		fonts: o.fonts,
 		master: { volumeDb: { value: 0, keyframes: [] } },
 		warnings: [],
+		// Wave expressions: the renderer binds the clip's expressions against the whole project.
+		...(snapshot.expressions ? { expressions: snapshot.expressions } : {}),
 	};
 }
 

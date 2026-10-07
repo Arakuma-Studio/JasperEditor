@@ -3,7 +3,7 @@
 // Coordinates: mask paths are normalised to the layer's intrinsic box (0..1); feather / expansion / feather-point
 // radii are layer pixels. Evaluation uses the shared keyframe evaluator (`evaluate`), whose path values
 // interpolate through `path/interp.ts` (vertex-wise, or smart vertex matching for different vertex counts).
-import { evaluate } from '../keyframes.ts';
+import { evaluate, isAnimated } from '../keyframes.ts';
 import { type BezierPath, ellipsePath, rectPath } from '../path/model.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Mask, MaskFeatherFalloff, MaskMode, MaskShape, MaskTrackMethod } from '../schema/mask.ts';
@@ -184,10 +184,11 @@ export function resolveMasks(masks: readonly Mask[] | undefined, t: number): Res
 export function masksAnimated(masks: readonly Mask[] | undefined): boolean {
 	return (masks ?? []).some(
 		(m) =>
+			// Keyframes, or an active expression on feather / opacity / expansion (wave expressions).
 			m.path.keyframes.length > 0 ||
-			m.feather.keyframes.length > 0 ||
-			m.opacity.keyframes.length > 0 ||
-			m.expansion.keyframes.length > 0,
+			isAnimated(m.feather) ||
+			isAnimated(m.opacity) ||
+			isAnimated(m.expansion),
 	);
 }
 

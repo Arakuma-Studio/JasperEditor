@@ -586,7 +586,7 @@ Layer.prototype = {
     return e;
   },
   property: function (k) { return this.__group(__v(k)); },
-  mask: function (k) { __err('mask(): clips have no masks'); },
+  mask: function (k) { return this.__group('masks').__get(k); },
   content: function (k) { __err('content(): clips have no shape contents; use thisLayer.shape'); },
   __x: function (t) { return __h(__XFORM, this.__s, this.__o, t === undefined ? time : __v(t)); },
   toComp: function (p, t) { return __m3(this.__x(t)[0], __v(p)); },
