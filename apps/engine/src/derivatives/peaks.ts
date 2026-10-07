@@ -6,7 +6,7 @@ import { Worker } from 'node:worker_threads';
 export const PEAKS_PER_SECOND = 100;
 export const PEAKS_SAMPLE_RATE = 8000;
 
-export type PeakReducer = {
+type PeakReducer = {
 	push(chunk: Uint8Array): void;
 	finish(): { channels: Float32Array[]; frames: number };
 };

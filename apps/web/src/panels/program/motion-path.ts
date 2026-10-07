@@ -18,11 +18,11 @@ import {
 import { toScreen, type View } from './viewport.ts';
 
 /** Screen radius (px) within which a key square or a tangent handle is grabbed. */
-export const PATH_HIT = 6;
+const PATH_HIT = 6;
 /** Tangent handles are drawn for at most this many keys (dense tracking keys show squares only). */
-export const MAX_HANDLE_KEYS = 200;
+const MAX_HANDLE_KEYS = 200;
 
-export type MotionPathKey = {
+type MotionPathKey = {
 	id: string;
 	/** Key value = position (sequence px). */
 	pos: Vec2;
@@ -74,7 +74,7 @@ export function buildMotionPath(clip: RenderVisualClip, fps: Rational): MotionPa
 	return { clipId: clip.clipId, trackId: clip.trackId, dots, keys };
 }
 
-export type PathHit = { kind: 'key'; keyId: string } | { kind: 'tangent'; keyId: string; side: 'in' | 'out' };
+type PathHit = { kind: 'key'; keyId: string } | { kind: 'tangent'; keyId: string; side: 'in' | 'out' };
 
 /** The handle or key square under a screen point (handles win ties: they sit on top), or null. */
 export function hitMotionPath(path: MotionPath, view: View, screen: Vec2, radius = PATH_HIT): PathHit | null {

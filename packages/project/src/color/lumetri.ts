@@ -13,32 +13,6 @@ const LUMA_B = 0.0722;
 /** BT.1886 simplification used for the linear-light steps: `L = v^2.4`. */
 const DISPLAY_GAMMA = 2.4;
 
-export type LumetriParams = {
-	inputLut: string | null;
-	temperature: number;
-	tint: number;
-	exposure: number;
-	contrast: number;
-	highlights: number;
-	shadows: number;
-	whites: number;
-	blacks: number;
-	saturation: number;
-	look: string | null;
-	lookIntensity: number;
-	vibrance: number;
-	curveMaster: number[][] | null;
-	curveRed: number[][] | null;
-	curveGreen: number[][] | null;
-	curveBlue: number[][] | null;
-	shadowsWheel: [number, number];
-	midtonesWheel: [number, number];
-	highlightsWheel: [number, number];
-	shadowsLevel: number;
-	midtonesLevel: number;
-	highlightsLevel: number;
-};
-
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
 
 function num(p: EffectParams, k: string, def: number, lo: number, hi: number): number {
@@ -62,7 +36,7 @@ function vec(p: EffectParams, k: string): [number, number] {
 }
 
 /** Reads (and clamps to the S06:CG-002 ranges) the Lumetri params; missing values take their defaults. */
-function readLumetriParams(p: EffectParams): LumetriParams {
+function readLumetriParams(p: EffectParams) {
 	return {
 		inputLut: mediaRef(p, 'inputLut'),
 		temperature: num(p, 'temperature', 0, -100, 100),

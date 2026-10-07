@@ -25,7 +25,7 @@ import {
 } from '@jasper/project';
 import { buildMediaAsset } from '../import/assets.ts';
 
-export type ReplaceClipCheck = {
+type ReplaceClipCheck = {
 	clipId: string;
 	name: string;
 	/** Timeline frames the new file holds, `[from, to)` relative to the clip start; null = none. */
@@ -33,7 +33,7 @@ export type ReplaceClipCheck = {
 	whole: boolean;
 };
 
-export type ReplacePlan = {
+type ReplacePlan = {
 	sourceRange: SourceRange | null;
 	timing: SourceTimingShift;
 	/** Content shift applied when keeping source timing (frames of the file's rate; 0 otherwise). */

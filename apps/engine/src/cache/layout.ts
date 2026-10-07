@@ -91,7 +91,6 @@ export type ScannedEntry = EntryRef & {
 	bytes: number;
 	/** Newest mtime of anything in the entry (ms). */
 	mtimeMs: number;
-	createdMs: number;
 	/** Last use recorded by the owner (`meta.json` `lastUsedAt` of graphics bakes and composition renders). */
 	usedMs?: number;
 };
@@ -115,29 +114,28 @@ export function isTrashName(name: string): boolean {
 }
 
 /** Bytes and newest mtime of a file or directory tree (symlinks are not followed; unreadable parts count 0). */
-export async function measure(path: string): Promise<{ bytes: number; mtimeMs: number; birthMs: number }> {
+async function measure(path: string): Promise<{ bytes: number; mtimeMs: number }> {
 	let st: Awaited<ReturnType<typeof lstat>>;
 	try {
 		st = await lstat(path);
 	} catch {
-		return { bytes: 0, mtimeMs: 0, birthMs: 0 };
+		return { bytes: 0, mtimeMs: 0 };
 	}
-	const birth = st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs;
-	if (!st.isDirectory()) return { bytes: st.size, mtimeMs: st.mtimeMs, birthMs: birth };
+	if (!st.isDirectory()) return { bytes: st.size, mtimeMs: st.mtimeMs };
 	let bytes = 0;
 	let mtimeMs = st.mtimeMs;
 	let names: Dirent[];
 	try {
 		names = await readdir(path, { withFileTypes: true });
 	} catch {
-		return { bytes: 0, mtimeMs, birthMs: birth };
+		return { bytes: 0, mtimeMs };
 	}
 	for (const d of names) {
 		const m = await measure(join(path, d.name));
 		bytes += m.bytes;
 		if (m.mtimeMs > mtimeMs) mtimeMs = m.mtimeMs;
 	}
-	return { bytes, mtimeMs, birthMs: birth };
+	return { bytes, mtimeMs };
 }
 
 async function list(dir: string): Promise<Dirent[]> {
@@ -200,14 +198,12 @@ export type ScanResult = { entries: ScannedEntry[]; orphans: Orphan[]; scannedAt
 async function entryFrom(ref: EntryRef, paths: string[]): Promise<ScannedEntry> {
 	let bytes = 0;
 	let mtimeMs = 0;
-	let createdMs = Number.POSITIVE_INFINITY;
 	for (const p of paths) {
 		const m = await measure(p);
 		bytes += m.bytes;
 		mtimeMs = Math.max(mtimeMs, m.mtimeMs);
-		if (m.birthMs > 0) createdMs = Math.min(createdMs, m.birthMs);
 	}
-	return { ...ref, paths, bytes, mtimeMs, createdMs: Number.isFinite(createdMs) ? createdMs : mtimeMs };
+	return { ...ref, paths, bytes, mtimeMs };
 }
 
 /** `lastUsedAt` (else `createdAt`) of an entry directory's `meta.json`, in ms. */

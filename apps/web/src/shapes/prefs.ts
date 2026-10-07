@@ -3,7 +3,7 @@
 // Shape. Per-user UI state in localStorage, never in the project (S05:SH-010).
 import { useSyncExternalStore } from 'react';
 
-export type ShapePrefs = {
+type ShapePrefs = {
 	/** Handles of a selected shape edit its size instead of Motion scale (default off = Premiere parity). */
 	resizeBySize: boolean;
 	/** Properties ▸ Shape ▸ Size keeps the aspect ratio when one side is edited. */

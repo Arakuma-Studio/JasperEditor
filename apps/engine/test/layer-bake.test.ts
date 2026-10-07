@@ -10,7 +10,7 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PlanCapabilities, PlannedExport } from '../src/export/planner.ts';
 import type { BakeEnvironment } from '../src/layer-bake/key.ts';
 import { bakeClip, effectRunsOrderWarning, isStaticLayer } from '../src/layer-bake/layer.ts';
@@ -57,7 +57,6 @@ function inject(
 		sequences: { ...d.doc.sequences, [d.seqId]: { ...seq, clips: { ...seq.clips, [o.id]: c as never } } },
 	};
 	d.revision++;
-	return o.id;
 }
 
 function snapOf(d: DocBuilder): RenderSnapshot {
@@ -216,10 +215,9 @@ describe('render keys (LBK-020)', () => {
 		});
 	}
 
-	async function keyOfClip(d: DocBuilder, id: string, env = ENV, frame?: number): Promise<string> {
+	async function keyOfClip(d: DocBuilder, id: string, env = ENV): Promise<string> {
 		const p = await planned(d);
-		return (await svc.planBake(p, clipOf(p.snapshot, id), { env, ...(frame !== undefined ? { frame } : {}) }))
-			.key;
+		return (await svc.planBake(p, clipOf(p.snapshot, id), { env })).key;
 	}
 
 	it('changes with text, font, bundle, anime.js, Remotion, browser and GL; not with time or duration', async () => {
@@ -410,34 +408,42 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 	beforeAll(async () => {
 		app = await makeApp();
 		svc = app.jasper.services.layerBake as LayerBakeService;
+		await coreServices(app).cache.start();
 	});
 	afterAll(closeApps);
 
+	function cacheStill(key: string, lastUsed: Date) {
+		mkdirSync(join(svc.dir, key), { recursive: true });
+		writeFileSync(join(svc.dir, key, 'still.png'), 'x');
+		writeFileSync(
+			join(svc.dir, key, 'meta.json'),
+			JSON.stringify({
+				kind: 'layer',
+				key,
+				recipe: 'still',
+				rect: null,
+				frames: 1,
+				width: 10,
+				height: 10,
+				createdAt: lastUsed.toISOString(),
+				lastUsedAt: lastUsed.toISOString(),
+			}),
+		);
+		for (const file of ['still.png', 'meta.json', ''])
+			utimesSync(join(svc.dir, key, file), lastUsed, lastUsed);
+	}
+
 	it('GC removes entries unused for 14 days and keeps the others', async () => {
 		const day = 24 * 60 * 60 * 1000;
-		const mk = (key: string, lastUsed: Date) => {
-			mkdirSync(join(svc.dir, key), { recursive: true });
-			writeFileSync(join(svc.dir, key, 'still.png'), 'x');
-			writeFileSync(
-				join(svc.dir, key, 'meta.json'),
-				JSON.stringify({
-					kind: 'layer',
-					key,
-					recipe: 'still',
-					createdAt: lastUsed.toISOString(),
-					lastUsedAt: lastUsed.toISOString(),
-				}),
-			);
-		};
 		const old = 'a'.repeat(40);
 		const fresh = 'b'.repeat(40);
 		const orphan = 'c'.repeat(40);
-		mk(old, new Date(Date.now() - 15 * day));
-		mk(fresh, new Date(Date.now() - 13 * day));
+		cacheStill(old, new Date(Date.now() - 15 * day));
+		cacheStill(fresh, new Date(Date.now() - 13 * day));
 		mkdirSync(join(svc.dir, orphan), { recursive: true });
 		const t = (Date.now() - 15 * day) / 1000;
 		utimesSync(join(svc.dir, orphan), t, t);
-		await svc.gc();
+		await coreServices(app).cache.clean('auto', ['layers']);
 		expect(existsSync(join(svc.dir, old))).toBe(false);
 		expect(existsSync(join(svc.dir, orphan))).toBe(false);
 		expect(existsSync(join(svc.dir, fresh, 'still.png'))).toBe(true);
@@ -458,52 +464,44 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		expect(bad.statusCode).toBe(404);
 	});
 
-	it('GC keeps leased entries and entries a lookup marks used meanwhile (review fix 4)', async () => {
-		const mk = (key: string, lastUsed: Date) => {
-			mkdirSync(join(svc.dir, key), { recursive: true });
-			writeFileSync(join(svc.dir, key, 'still.png'), 'x');
-			writeFileSync(
-				join(svc.dir, key, 'meta.json'),
-				JSON.stringify({
-					kind: 'layer',
-					key,
-					recipe: 'still',
-					rect: null,
-					frames: 1,
-					width: 10,
-					height: 10,
-					createdAt: lastUsed.toISOString(),
-					lastUsedAt: lastUsed.toISOString(),
-				}),
-			);
-		};
+	it('GC keeps leased entries and entries a lookup marks used meanwhile', async () => {
 		const longAgo = () => new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
 		// A lease (a running job reading the entry) keeps it; released, the next pass removes it.
 		const held = 'd'.repeat(40);
-		mk(held, longAgo());
+		cacheStill(held, longAgo());
 		const release = svc.lease([held]);
-		await svc.gc();
+		await coreServices(app).cache.clean('auto', ['layers']);
 		expect(existsSync(join(svc.dir, held, 'still.png'))).toBe(true);
 		release();
 		release();
-		await svc.gc();
+		await coreServices(app).cache.clean('auto', ['layers']);
 		expect(existsSync(join(svc.dir, held))).toBe(false);
 		// `lookup` has written `lastUsedAt` when it returns.
 		const used = 'e'.repeat(40);
-		mk(used, longAgo());
+		cacheStill(used, longAgo());
 		expect(await svc.lookup(used)).not.toBeNull();
-		await svc.gc();
+		await coreServices(app).cache.clean('auto', ['layers']);
 		expect(existsSync(join(svc.dir, used, 'still.png'))).toBe(true);
-		// A lookup racing a GC pass either keeps the entry or misses (never returns a path the GC removes).
+		// A lookup after GC scans old metadata must keep the entry even though the scan snapshot is stale.
 		const racing = 'f'.repeat(40);
-		mk(racing, longAgo());
-		const [, hit] = await Promise.all([svc.gc(), svc.lookup(racing)]);
-		if (hit) {
-			expect(existsSync(hit.path)).toBe(true);
-		} else expect(existsSync(join(svc.dir, racing, 'still.png'))).toBe(false);
+		cacheStill(racing, longAgo());
+		const cache = coreServices(app).cache;
+		const scan = cache.scan.bind(cache);
+		const file = join(svc.dir, racing, 'still.png');
+		const scanned = vi.spyOn(cache, 'scan').mockImplementationOnce(async (force) => {
+			const snapshot = await scan(force);
+			expect(await svc.lookup(racing)).toMatchObject({ path: file });
+			return snapshot;
+		});
+		try {
+			await cache.clean('auto', ['layers']);
+			expect(existsSync(file)).toBe(true);
+		} finally {
+			scanned.mockRestore();
+		}
 	});
 
-	it('graded masters are PNG frame sequences served per frame under one signed URL (review fix 1)', async () => {
+	it('graded masters are PNG frame sequences served per frame under one signed URL', async () => {
 		const key = '2'.repeat(40);
 		mkdirSync(join(svc.dir, key, 'graded'), { recursive: true });
 		for (const n of [0, 1]) writeFileSync(join(svc.dir, key, 'graded', `00000${n}.png`), `frame ${n}`);

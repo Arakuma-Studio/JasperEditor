@@ -28,16 +28,9 @@ let registryVersion = 0;
 subscribeCommands(() => {
 	registryVersion++;
 });
-function useRegistryVersion(): number {
-	return useSyncExternalStore(
-		(l) => subscribeCommands(l),
-		() => registryVersion,
-	);
-}
-
 /** Live label/enabled/shortcut for a command id (header buttons reflect SH-031). */
 function useCommandButton(id: string, fallback: string) {
-	useRegistryVersion();
+	useSyncExternalStore(subscribeCommands, () => registryVersion);
 	const runtime = useShellRuntime();
 	const getCtx = useCommandCtx();
 	const st = commandState(

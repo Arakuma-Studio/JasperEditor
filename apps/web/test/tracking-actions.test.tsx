@@ -68,7 +68,7 @@ describe('tracking actions', () => {
 			},
 		});
 		const run = trackingStore.getState().running[id]!;
-		expect(run.progress).toMatchObject({ frame: 12, done: 12, total: 60, confidence: 0.7 });
+		expect(run.progress).toMatchObject({ done: 12, total: 60, confidence: 0.7 });
 		expect(run.trail).toHaveLength(1);
 		expect(session.transport.getState().frame).toBe(12);
 		expect(labels(session)).toEqual(['Add Planar Tracker']);

@@ -14,7 +14,7 @@ import {
 	type TextAnimationSpec,
 	textAnimationKey,
 } from '../../text-animations.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch, TextAnimationInput, TextAnimatorInput } from '../schemas/clip.ts';
 
 type DText = Draft<Extract<Clip, { kind: 'text' }>>;
@@ -105,7 +105,6 @@ function compressionMessage(clip: { id: string; duration: number; textAnimation?
 
 /** clip.addText `textAnimation`: writes the animators of the new clip (called after its layout). */
 export function applyInitialTextAnimation(
-	_doc: DDoc,
 	seq: DSeq,
 	clip: DClip,
 	input: TextAnimationInput | undefined,
@@ -123,20 +122,19 @@ export function applyInitialTextAnimation(
 /**
  * clip.update `{textAnimation}` (S11:TXA-006): `null` removes both sides; per side `null` removes it, an object
  * with `preset` replaces it (params reset to the preset's defaults, then merged), an object without `preset`
- * merges into the current side. Returns true when it handled the patch.
+ * merges into the current side.
  */
 export function applyTextAnimationPatch(
-	_doc: DDoc,
 	seq: DSeq,
 	clip: DClip,
 	p: Pick<ClipPatch, 'textAnimation'>,
 	h: HandlerContext,
-): boolean {
-	if (p.textAnimation === undefined) return false;
+): void {
+	if (p.textAnimation === undefined) return;
 	const t = clip as DText;
 	if (p.textAnimation === null) {
 		delete t.textAnimation;
-		return true;
+		return;
 	}
 	for (const side of TEXT_ANIMATION_SIDES) {
 		const s = p.textAnimation[side];
@@ -146,7 +144,6 @@ export function applyTextAnimationPatch(
 		else setSide(t, side, mergedAnimator(t, side, s, h));
 	}
 	warnIfCompressed(t, h);
-	return true;
 }
 
 /** Merges a patch without `preset` into the current side (version change re-validates the params). */

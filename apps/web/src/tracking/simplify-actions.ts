@@ -13,7 +13,7 @@ import {
 type Anim = { keyframes?: unknown[] };
 
 /** Number of keyframes of a clip's animated parameters (Motion, opacity, effect params, template params). */
-export function clipKeyframeCount(clip: Clip): number {
+function clipKeyframeCount(clip: Clip): number {
 	let n = 0;
 	const add = (a: unknown) => {
 		const k = (a as Anim | undefined)?.keyframes;

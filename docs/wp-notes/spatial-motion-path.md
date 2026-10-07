@@ -39,10 +39,10 @@ type Keyframe<T> = { …existing fields…; spatial?: Spatial };   // keyframeSc
 ## Evaluation — still ONE implementation (S03:KF-010)
 
 `evaluate()` keeps its signature. New module `packages/project/src/keyframes-spatial.ts` (exported from the
-package index): `effectiveTangents`, `autoTangents`, `spatialSegment(kfs, i)` (null = straight → plain lerp),
+package index): `effectiveTangents`, `spatialSegment(kfs, i)` (null = straight → plain lerp),
 `pathPointAt(seg, s)`, `arcLengthTable` (64 samples, cached by the segment's 8 control coordinates; results
-never depend on the cache), `bezierPoint`, `bezierLength`, `spatialSegmentLength(kfs, i)`,
-`hasCurvedSpatialPath(anim)`, `spatialModeOf`, and the editing helpers used by the handlers
+never depend on the cache), `bezierPoint`, `spatialSegmentLength(kfs, i)`,
+`spatialModeOf`, and the editing helpers used by the handlers
 (`setSpatialMode`, `setTangents`, `refreshAutoTangents`, `newKeySpatial`, `reversedSpatial`).
 
 Temporal progress `p` is computed exactly as before (S01:KF-003/004); on a curved segment it is an
@@ -53,8 +53,8 @@ speed along it. `p` outside [0, 1] (steep Bézier eases) continues along the end
 
 ### For the native-export agent
 
-- Sample `evaluate()`; don't re-implement lerp. If `hasCurvedSpatialPath(transform.position)` (or anchor, or
-  a corner pin corner) is true, the segment is **not** a linear function of the temporal progress: it can't be
+- Sample `evaluate()`; don't re-implement lerp. If `spatialSegment(kfs, i)` returns a curve for position,
+  anchor or a corner pin corner, the segment is **not** a linear function of the temporal progress: it can't be
   compiled to `lerp(a, b, ease(u))` expressions. Either emit per-frame values / dense piecewise-linear
   expressions sampled from `evaluate`, or route the clip through the existing Remotion/hybrid path.
 - Straight segments (`spatialSegment(kfs, i) === null`) behave exactly as before, so all existing projects and

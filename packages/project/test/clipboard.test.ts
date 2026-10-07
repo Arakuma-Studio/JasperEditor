@@ -41,32 +41,19 @@ function idsIn(v: unknown, out = new Set<string>()): Set<string> {
 const ok = (h: Harness) =>
 	expect(checkInvariants(h.doc, { effects: defaultRegistries().effects })).toEqual([]);
 
-function placeVideo(h: Harness, at: number, opts: { seconds?: number; v?: string; audio?: boolean } = {}) {
-	const m = h.registerVideo({ seconds: opts.seconds ?? 10, audio: opts.audio });
+function placeVideo(h: Harness, at: number, opts: { audio?: boolean } = {}) {
+	const m = h.registerVideo(opts);
 	const r = h.ok([
 		{
 			type: 'clip.place',
 			source: { mediaId: m },
 			at,
-			tracks: { video: opts.v ?? 'V1' },
+			tracks: { video: 'V1' },
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
 		},
 	]);
 	return { mediaId: m, clipIds: (r.results[0] as { clipIds: string[] }).clipIds };
 }
-
-const lutAsset = (): Omit<MediaAsset, 'id'> => ({
-	kind: 'lut',
-	fingerprint: `q1:${'7'.repeat(64)}`,
-	originalName: 'look.cube',
-	sizeBytes: 100,
-	container: 'cube',
-	probe: EMPTY_PROBE,
-	locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_lut' }],
-	derivation: null,
-	importedAt: '2026-10-01T00:00:00.000Z',
-	lut: { format: 'cube', dimensions: 3, size: 2, title: null, domainMin: [0, 0, 0], domainMax: [1, 1, 1] },
-});
 
 /** A video with linked audio (fade-in transition, keyframed blur), an animated text and a keyframed shape. */
 function richProject(seed = 1) {
@@ -453,8 +440,26 @@ describe('reference resolution across projects (CLB-008)', () => {
 
 	it('resolves LUT media in effect params, composition bundles and derivation sources', () => {
 		const h = new Harness();
-		const lut = (h.ok([{ type: 'media.register', asset: lutAsset() }]).results[0] as { mediaId: string })
-			.mediaId;
+		const asset: Omit<MediaAsset, 'id'> = {
+			kind: 'lut',
+			fingerprint: `q1:${'7'.repeat(64)}`,
+			originalName: 'look.cube',
+			sizeBytes: 100,
+			container: 'cube',
+			probe: EMPTY_PROBE,
+			locators: [{ type: 'engine-store', engineId: 'local', key: 'mk_lut' }],
+			derivation: null,
+			importedAt: '2026-10-01T00:00:00.000Z',
+			lut: {
+				format: 'cube',
+				dimensions: 3,
+				size: 2,
+				title: null,
+				domainMin: [0, 0, 0],
+				domainMax: [1, 1, 1],
+			},
+		};
+		const lut = (h.ok([{ type: 'media.register', asset }]).results[0] as { mediaId: string }).mediaId;
 		const { clipIds, mediaId } = placeVideo(h, 0, { audio: false });
 		const v = clipIds[0]!;
 		h.ok([
@@ -467,7 +472,7 @@ describe('reference resolution across projects (CLB-008)', () => {
 		]);
 		// A processed version of the video replaces its source in the clip (derivation chain).
 		const derived = videoAsset({ seconds: 10, audio: false });
-		const d = h.ok([
+		h.ok([
 			{
 				type: 'media.derive',
 				fromMediaId: mediaId,
@@ -476,7 +481,6 @@ describe('reference resolution across projects (CLB-008)', () => {
 				replaceInClips: [v],
 			},
 		]);
-		expect(d.ok).toBe(true);
 		const p = roundTrip(buildClipsPayload(h.doc, h.seqId, [v]));
 		expect(p.media.map((m) => m.kind)).toEqual(['video', 'video', 'lut']);
 		const t = new Harness({ seed: 44 });
@@ -593,7 +597,7 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 		expect(Q.shape.size.value).toEqual([50, 50]);
 		ok(h);
 		const audioOnly = roundTrip(buildClipsPayload(h.doc, h.seqId, [text]));
-		const { a } = { a: Object.values(h.seq.clips).find((c) => c.kind === 'audio')!.id };
+		const a = Object.values(h.seq.clips).find((c) => c.kind === 'audio')!.id;
 		expect(
 			h.tx([
 				{ type: 'clip.pasteAttributes', payload: audioOnly, clipIds: [a], attributes: { motion: true } },

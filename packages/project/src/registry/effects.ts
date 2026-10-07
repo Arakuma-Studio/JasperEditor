@@ -181,17 +181,6 @@ export function createEffectRegistry(specs: readonly EffectSpec[]): EffectRegist
 	};
 }
 
-/** Returns a new registry with extra (or replacing) specs. */
-export function extendEffectRegistry(base: EffectRegistry, specs: readonly EffectSpec[]): EffectRegistry {
-	return createEffectRegistry([...base.list().filter((b) => !specs.some((s) => s.id === b.id)), ...specs]);
-}
-
-export function defaultParams(spec: EffectSpec): EffectParams {
-	const out: EffectParams = {};
-	for (const p of spec.params) out[p.name] = p.default;
-	return out;
-}
-
 /** Effects panel badges (S05:EFX-001, R-PUI §12): "Real-time" = previewable, "Native" = ffmpeg export. */
 export function effectBadges(spec: EffectSpec): { realtime: boolean; native: boolean } {
 	return {
@@ -556,84 +545,4 @@ export function effectiveParams(spec: EffectSpec, params: Record<string, unknown
 		out[p.name] = v === undefined || v === null ? p.default : (v as ParamValue);
 	}
 	return out;
-}
-
-/**
- * Preview segments for an effect stack (S03:FX-002): consecutive CSS-expressible effects merge into one
- * `filter` chain; an SVG filter, a transform or a clip path starts a new wrapper so order is preserved.
- * Disabled and unknown effects are skipped (S01:FX-022, S03:FX-003).
- */
-export type PreviewSegment =
-	| { kind: 'css'; style: Record<string, string>; effectIds: string[] }
-	| { kind: 'svg'; filterId: string; markup: string; effectIds: string[] };
-
-export function buildPreviewChain(
-	effects: readonly EffectLike[],
-	registry: EffectRegistry,
-	uidPrefix: string,
-): { segments: PreviewSegment[]; skipped: string[] } {
-	const segments: PreviewSegment[] = [];
-	const skipped: string[] = [];
-	for (const fx of effects) {
-		if (!fx.enabled) continue;
-		const spec = registry.get(fx.effectId, fx.effectVersion);
-		if (!spec) {
-			skipped.push(fx.id);
-			continue;
-		}
-		if (spec.appliesTo !== 'video') continue;
-		const p = effectiveParams(spec, fx.params);
-		const css = spec.preview.css?.(p);
-		if (css && Object.keys(css).length === 0) continue; // identity
-		if (css) {
-			const last = segments[segments.length - 1];
-			const onlyFilter = Object.keys(css).length === 1 && css.filter !== undefined;
-			if (last?.kind === 'css' && onlyFilter && Object.keys(last.style).every((k) => k === 'filter')) {
-				last.style.filter = last.style.filter ? `${last.style.filter} ${css.filter}` : css.filter!;
-				last.effectIds.push(fx.id);
-			} else segments.push({ kind: 'css', style: { ...css }, effectIds: [fx.id] });
-			continue;
-		}
-		if (spec.preview.svgFilter) {
-			const filterId = `${uidPrefix}-${fx.id}`;
-			segments.push({
-				kind: 'svg',
-				filterId,
-				markup: spec.preview.svgFilter(p, filterId),
-				effectIds: [fx.id],
-			});
-		} else skipped.push(fx.id);
-	}
-	return { segments, skipped };
-}
-
-/**
- * ffmpeg filter chain for an effect stack on the native path (comma-joined, in stack order). Returns
- * `blockers` for enabled effects with no native realization so the planner can route to Remotion.
- */
-export function buildNativeFilterChain(
-	effects: readonly EffectLike[],
-	registry: EffectRegistry,
-	ctx: NativeFilterContext,
-): { filter: string; blockers: string[]; skipped: string[] } {
-	const parts: string[] = [];
-	const blockers: string[] = [];
-	const skipped: string[] = [];
-	for (const fx of effects) {
-		if (!fx.enabled) continue;
-		const spec = registry.get(fx.effectId, fx.effectVersion);
-		if (!spec) {
-			skipped.push(fx.id);
-			continue;
-		}
-		if (spec.appliesTo !== 'video') continue;
-		if (!spec.native) {
-			// Colour ops are fused into a baked LUT by the engine's colour extension (ARCHITECTURE §19.6).
-			if (!spec.color) blockers.push(fx.id);
-			continue;
-		}
-		const f = spec.native.filter(effectiveParams(spec, fx.params), ctx);
-		if (f && f !== 'null') parts.push(f);
-	}
-	return { filter: parts.length ? parts.join(',') : 'null', blockers, skipped };
 }

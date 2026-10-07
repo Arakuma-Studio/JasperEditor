@@ -295,7 +295,6 @@ describe('pasting images and files (CLB-010, LIFE-010)', () => {
 				throw new Error('engine offline');
 			},
 			placeItems: async () => ({ clipIds: [] }),
-			readDataTransfer: () => null,
 		});
 		try {
 			await runCommand('edit.paste', p.ctxFor('timeline'), {

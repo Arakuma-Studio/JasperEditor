@@ -37,7 +37,7 @@ import {
 	useCurrentFrame,
 } from 'remotion';
 import type { TransitionTap } from '../types.ts';
-import { canUseHtmlInCanvas, useFxImages } from './FxPicture.tsx';
+import { useFxImages } from './FxPicture.tsx';
 import { FxShaderError, type FxTextureInput, fxHost, runShaderPlan } from './host.ts';
 import { type FxGpuState, fxStatus } from './status.ts';
 
@@ -391,9 +391,4 @@ function StageChip({ text }: { text: string }) {
 			</div>
 		</AbsoluteFill>
 	);
-}
-
-/** Whether DOM layers can be captured here (HTML-in-Canvas), for `transitionRunMode`. */
-export function htmlInCanvasAvailable(): boolean {
-	return canUseHtmlInCanvas();
 }

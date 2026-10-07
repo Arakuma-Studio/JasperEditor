@@ -28,7 +28,7 @@ export const MG_HOST_QUERY = 'jasper-host';
 export const MG_HOST_TIMEOUT_MS = 30_000;
 
 /** Page functions and globals the adapter relies on (checked by `checkHostProtocol`). */
-export const MG_HOST_REQUIRED_GLOBALS = [
+const MG_HOST_REQUIRED_GLOBALS = [
 	'remotion_setBundleMode',
 	'remotion_calculateComposition',
 	'getStaticCompositions',
@@ -52,7 +52,7 @@ export function bundleServeUrl(mediaKey: string): string {
  * globals `setPropsAndEnv` sets with `evaluateOnNewDocument`, plus a transparent page background, then the
  * text probe (M3, S08:MGC-037/039: it must see the bundle's `new FontFace(…)` calls, so it runs first too).
  */
-export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: string } = {}): string {
+function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: string } = {}): string {
 	const timeout = Math.max(1000, Math.floor(opts.timeoutMs ?? MG_HOST_TIMEOUT_MS));
 	return [
 		'(function(){',
@@ -82,7 +82,7 @@ export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: strin
 }
 
 /** CSS injected with the bootstrap: transparent page, no margins or scrollbars. */
-export const HOST_PAGE_CSS =
+const HOST_PAGE_CSS =
 	// `color-scheme: light` on both sides (here and on the <iframe>): a scheme mismatch makes Chrome paint an
 	// opaque backdrop behind the frame.
 	'html,body{margin:0!important;padding:0!important;background:transparent!important;overflow:hidden!important;color-scheme:light}' +

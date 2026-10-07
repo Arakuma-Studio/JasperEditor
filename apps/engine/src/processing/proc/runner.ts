@@ -50,12 +50,8 @@ type StepFactory = (step: ProcessStep, env: StepEnv) => Promise<StepImpl> | Step
 /** What the factory may know about the runtime (capabilities of the ffmpeg in use). */
 export type StepEnv = { ffmpeg: string; spec: ProcSpec; filters: ReadonlySet<string> };
 
-export type RunResult = {
+type RunResult = {
 	frames: number;
-	width: number;
-	height: number;
-	fps: Rational;
-	notes: string[];
 	sidecar: string;
 	sidecarData: Sidecar;
 };
@@ -195,7 +191,7 @@ type Stage =
 	| { kind: 'filter'; index: number; op: string; step: FilterStep }
 	| { kind: 'frames'; index: number; op: string; step: FrameStep };
 
-export type RunOptions = {
+type RunOptions = {
 	emit(e: ProcEvent): void;
 	signal: AbortSignal;
 	createStep: StepFactory;
@@ -667,7 +663,7 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 		createdAt: new Date().toISOString(),
 	};
 	writeFileSync(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
-	return { frames, width: outW, height: outH, fps, notes, sidecar: sidecarPath, sidecarData: sidecar };
+	return { frames, sidecar: sidecarPath, sidecarData: sidecar };
 }
 
 export function cleanupPartial(spec: ProcSpec): void {

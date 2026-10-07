@@ -98,18 +98,6 @@ export function lightTail(
 	return out;
 }
 
-/** Sapphire "Edge Mode" for glows: Reflect (default, glow clipped to the frame like Sapphire without Expand
- * Borders) or Transparent (the glow spills outside the layer box). `u_edgeMode` 0 = Transparent, 1 = Reflect. */
-export function glowEdgeMode(): ParamSpec {
-	return fxParam.choice(
-		'edgeMode',
-		'Edge Mode',
-		['transparent', 'reflect'],
-		['Transparent', 'Reflect'],
-		'reflect',
-	);
-}
-
 /** Sapphire's Atmosphere set (dusty air modulating the light). */
 export function atmosphereParams(def: { amp?: number; freq?: number; detail?: number } = {}): ParamSpec[] {
 	return [
@@ -126,8 +114,8 @@ export const GLSL_SGL_FINISH: GlslChunk = {
 	deps: [GLSL_NOISE],
 	source: /* glsl */ `
 float sgl_maxc(vec3 c) { return max(c.r, max(c.g, c.b)); }
-// fbm with a run-time loop bound (fx_fbm/fx_fbm3 loop to a constant 12, which ANGLE/SwiftShader unroll: slow to
-// compile when used several times in a shader). Same maths, octaves ≤ 12.
+// Keep the fbm loop bound opaque even with constant octaves so ANGLE/SwiftShader do not unroll it when used
+// several times in a shader. Same maths as fx_fbm/fx_fbm3, octaves ≤ 12.
 float sgl_fbm(vec2 p, int octaves, float lacunarity, float gain, float seed) {
   float sum = 0.0, amp = 0.5, norm = 0.0;
   int n = min(octaves, 12) + int(min(0.0, u_resolution.x));

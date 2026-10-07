@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const VENDOR_DIR = join(ROOT, 'vendor', 'ffmpeg-lgpl');
 
-/** Pinned inputs (read once; the JSON is the single source of truth for URLs and checksums). */
+/** Pinned inputs; the JSON is the single source of truth for URLs and checksums. */
 export function loadManifest() {
 	return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'manifest.json'), 'utf8'));
 }

@@ -28,7 +28,7 @@ export type ClipboardData = {
 	paths?: string[];
 };
 
-export type StoredClipboard = {
+type StoredClipboard = {
 	payload: ClipboardPayload;
 	json: string;
 	text: string;

@@ -230,14 +230,3 @@ export function mbUniforms(plan: MbPlan): {
 		u_mbWarp: { vec4s: warp },
 	};
 }
-
-/** Unwraps an angle sequence (radians or degrees with `period`) so consecutive values never jump by > period / 2. */
-export function unwrapAngles(values: readonly number[], period = 2 * Math.PI): number[] {
-	const out: number[] = [];
-	for (const v of values) {
-		const prev = out[out.length - 1];
-		if (prev === undefined) out.push(v);
-		else out.push(v - period * Math.round((v - prev) / period));
-	}
-	return out;
-}

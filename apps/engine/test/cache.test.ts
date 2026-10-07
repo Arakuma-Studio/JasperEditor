@@ -132,10 +132,7 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 	});
 	afterAll(closeApps);
 
-	const fresh = () => {
-		const s = seed(app.appdir);
-		return s;
-	};
+	const fresh = () => seed(app.appdir);
 	const clean = async (mode: string, kinds?: string[]) => {
 		const r = await app.inject({
 			method: 'POST',
@@ -153,7 +150,7 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 	};
 
 	it('reports usage per kind: in use, referenced by saved projects, unused (CA-013)', async () => {
-		const s = fresh();
+		fresh();
 		const d = docWithMedia();
 		const pid = saveProject(app.appdir, d);
 		const u = await usage();
@@ -178,7 +175,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		expect(kind('bundles').inUseBytes).toBe(1000);
 		await clean('all');
 		rmProject(app.appdir, pid);
-		void s;
 	});
 
 	it('"Clean Unused" keeps referenced, pinned and recent entries and sweeps stale temporary files (CA-014, CA-017)', async () => {

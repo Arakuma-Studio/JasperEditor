@@ -194,14 +194,6 @@ export function transitionBand(rowHeight: number): { top: number; height: number
 	return { top, height: Math.max(4, rowHeight - 1 - 2 - top) };
 }
 
-type TransitionRect = { x: number; w: number; top: number; height: number };
-
-function transitionRect(g: TransitionGeom, v: Viewport, rowHeight: number): TransitionRect {
-	const x = frameToX(v, g.start);
-	const w = (g.end - g.start) * v.pxPerFrame;
-	return { x, w, ...transitionBand(rowHeight) };
-}
-
 /** Edges that resize: centred → both; at-cut and fades → only the edge away from the cut (TUI-012). */
 export function resizableEdges(g: TransitionGeom): { start: boolean; end: boolean } {
 	if (g.oneSided === 'in') return { start: false, end: true };
@@ -238,23 +230,24 @@ export function hitTransition(
 	const [first, last] = candidateBounds(list, frame - reach, frame + reach);
 	for (let i = first; i < last; i++) {
 		const g = list[i]!;
-		const r = transitionRect(g, v, row.height);
-		const pad = Math.max(0, (MIN_HIT_PX - r.w) / 2);
+		const startX = frameToX(v, g.start);
+		const width = (g.end - g.start) * v.pxPerFrame;
+		const pad = Math.max(0, (MIN_HIT_PX - width) / 2);
 		const edgesOk = resizableEdges(g);
-		const zone = r.w >= 12 ? EDGE_ZONE_PX : r.w >= 6 ? 2 : 0;
-		const x0 = r.x - pad;
-		const x1 = r.x + r.w + pad;
+		const zone = width >= 12 ? EDGE_ZONE_PX : width >= 6 ? 2 : 0;
+		const x0 = startX - pad;
+		const x1 = startX + width + pad;
 		// Edge zones reach 2 px outside the rect so a thin transition's edge stays grabbable.
-		if (zone > 0 && edgesOk.start && x >= r.x - 2 && x < r.x + zone) {
-			const d = Math.abs(x - r.x);
+		if (zone > 0 && edgesOk.start && x >= startX - 2 && x < startX + zone) {
+			const d = Math.abs(x - startX);
 			if (d < bestDist) {
 				best = { geom: g, zone: 'start' };
 				bestDist = d;
 			}
 			continue;
 		}
-		if (zone > 0 && edgesOk.end && x > r.x + r.w - zone && x <= r.x + r.w + 2) {
-			const d = Math.abs(x - (r.x + r.w));
+		if (zone > 0 && edgesOk.end && x > startX + width - zone && x <= startX + width + 2) {
+			const d = Math.abs(x - (startX + width));
 			if (d < bestDist) {
 				best = { geom: g, zone: 'end' };
 				bestDist = d;
@@ -262,7 +255,7 @@ export function hitTransition(
 			continue;
 		}
 		if (x >= x0 && x <= x1) {
-			const d = Math.abs(x - (r.x + r.w / 2)) + 1000; // edges win over bodies
+			const d = Math.abs(x - (startX + width / 2)) + 1000; // edges win over bodies
 			if (d < bestDist) {
 				best = { geom: g, zone: 'body' };
 				bestDist = d;

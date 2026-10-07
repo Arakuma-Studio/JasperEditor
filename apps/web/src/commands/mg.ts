@@ -26,7 +26,7 @@ const InsertArgs = z.object({
 });
 
 /** Render spec of a motion-graphic clip in the document (null for other kinds / unknown ids). */
-export function mgSpecForClip(doc: ProjectDocument, sequenceId: string, clipId: string): MgRenderSpec | null {
+function mgSpecForClip(doc: ProjectDocument, sequenceId: string, clipId: string): MgRenderSpec | null {
 	const seq = doc.sequences[sequenceId];
 	const clip = seq?.clips[clipId];
 	// Anime templates (and templates this build lacks) have no jasper-mg spec (S11:ATP-008).

@@ -77,10 +77,10 @@ type WorkerRequest =
 
 type Task = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
 
-export type MotionResult = { p75: number; dx: number; dy: number };
+type MotionResult = { p75: number };
 
-/** Tracked point pairs (interleaved x,y in tracking-frame pixels) and the number of corners found. */
-export type TrackResult = { p0: Float32Array; p1: Float32Array; corners: number };
+/** Tracked point pairs (interleaved x,y in tracking-frame pixels). */
+type TrackResult = { p0: Float32Array; p1: Float32Array };
 
 type WorkerResponse =
 	| { type: 'ready' }
@@ -157,8 +157,8 @@ export class CvPool {
 				slot.busy = false;
 				if (msg.type === 'error') job.reject(new Error(`dejudder worker: ${msg.message}`));
 				else if (msg.type === 'warp') job.resolve(msg.data);
-				else if (msg.type === 'motion') job.resolve({ p75: msg.p75, dx: msg.dx, dy: msg.dy });
-				else if (msg.type === 'track') job.resolve({ p0: msg.p0, p1: msg.p1, corners: msg.corners });
+				else if (msg.type === 'motion') job.resolve({ p75: msg.p75 });
+				else if (msg.type === 'track') job.resolve({ p0: msg.p0, p1: msg.p1 });
 				this.pump();
 			});
 			const fail = (err: Error) => {

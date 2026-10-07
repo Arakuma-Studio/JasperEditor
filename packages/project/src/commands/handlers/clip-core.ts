@@ -669,7 +669,7 @@ export const clipCoreHandlers: HandlerMap = {
 		layoutText(clip, h, seq.settings.width);
 		if (!cmd.transform?.anchor) clip.transform.anchor.value = [clip.box.width / 2, clip.box.height / 2];
 		// M2 (S11:TXA-006, wp-m2-text-anim).
-		applyInitialTextAnimation(doc, seq, clip as DClip, cmd.textAnimation, h);
+		applyInitialTextAnimation(seq, clip as DClip, cmd.textAnimation, h);
 		cleanupSequence(seq, h);
 		h.defineRef(cmd.ref, id);
 		return { clipId: id };
@@ -867,8 +867,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		layoutText(t, h, seq.settings.width);
 	}
 	// M2 (S11:ATP-009): a template upgrade runs before `params`, so params in the same patch target the new version.
-	if (p.template !== undefined) need(clip.kind === 'motion-graphic', 'template');
-	applyTemplatePatch(doc, seq, clip, p, h);
+	applyTemplatePatch(seq, clip, p, h);
 	// M2 (S08:MGC-007): composition clips take `props` (whole override object) and `canvas`.
 	if (p.props !== undefined) need(clip.kind === 'composition', 'props');
 	if (!applyCompositionPatch(doc, clip, p, h) && (p.params !== undefined || p.canvas !== undefined)) {
@@ -888,9 +887,11 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 	}
 	// M2 (S11, ARCHITECTURE §20.1): fields implemented by wp-m2-text-anim, wp-m2-shapes, wp-m2-anime-templates.
 	if (p.textAnimation !== undefined) need(clip.kind === 'text', 'textAnimation');
-	applyTextAnimationPatch(doc, seq, clip, p, h);
-	if (p.shape !== undefined) need(clip.kind === 'shape', 'shape');
-	applyShapePatch(doc, seq, clip, p, h);
+	applyTextAnimationPatch(seq, clip, p, h);
+	if (p.shape !== undefined) {
+		need(clip.kind === 'shape', 'shape');
+		applyShapePatch((clip as Draft<Extract<Clip, { kind: 'shape' }>>).shape, p.shape, h);
+	}
 	if (p.blendMode !== undefined) {
 		need(!!caps?.hasOpacity && clip.kind !== 'captions', 'blendMode');
 		c.blendMode = p.blendMode;

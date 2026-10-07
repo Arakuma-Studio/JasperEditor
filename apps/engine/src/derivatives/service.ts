@@ -65,11 +65,11 @@ const TITLES: Record<DerivativeKind, string> = {
 };
 
 /** What `alphaProxy` needs from a media record. */
-export type AlphaSource = Pick<MediaRecord, 'kind' | 'probe'>;
+type AlphaSource = Pick<MediaRecord, 'kind' | 'probe'>;
 
 type DerivativeJobInput = { mediaKey: string; kind: DerivativeKind };
 
-export type ArtifactPaths = {
+type ArtifactPaths = {
 	/** The file whose existence marks the artifact complete (JSON header / index / media file). */
 	main: string;
 	/** Directory with sheets/streams (sprite, peaks). */
@@ -160,8 +160,7 @@ export class DerivativeService {
 		private readonly deps: {
 			cacheDir: string;
 			ff: Ffmpeg;
-			/** Proxy encoder selection (D-13); absent = libx264 (tests). */
-			encoders?: EncoderService;
+			encoders: EncoderService;
 			queue: JobQueue;
 			registry: MediaRegistry;
 			broadcaster: Broadcaster;
@@ -177,8 +176,6 @@ export class DerivativeService {
 
 	/** The proxy encoder choice (null: no usable video encoder). */
 	private proxyChoice() {
-		if (!this.deps.encoders)
-			return { codec: 'h264', encoder: 'libx264', audioEncoder: 'aac', container: 'mp4' } as const;
 		return this.deps.encoders.select({ purpose: 'proxy' });
 	}
 
@@ -187,9 +184,7 @@ export class DerivativeService {
 	 * an alpha channel, on a build that has libvpx-vp9.
 	 */
 	private alphaProxy(r: AlphaSource | null | undefined): boolean {
-		return (
-			!!r && r.kind === 'video' && r.probe.hasAlpha && (this.deps.encoders?.has(ALPHA_PROXY_ENCODER) ?? false)
-		);
+		return !!r && r.kind === 'video' && r.probe.hasAlpha && this.deps.encoders.has(ALPHA_PROXY_ENCODER);
 	}
 
 	private hashOf(kind: DerivativeKind, alpha = false): string {
@@ -568,7 +563,7 @@ export class DerivativeService {
 			// Alpha sources: VP9 yuva420p in WebM (see ALPHA_PROXY_ENCODER). WebM alpha inputs need libvpx to
 			// decode their alpha; WebM audio is Opus.
 			const dec = alphaDecoder(r.probe);
-			const opus = this.deps.encoders?.has('libopus') ?? false;
+			const opus = this.deps.encoders.has('libopus');
 			args = [
 				...(dec ? ['-c:v', dec] : []),
 				'-i',

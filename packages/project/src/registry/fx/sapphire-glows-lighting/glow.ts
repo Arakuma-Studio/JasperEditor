@@ -215,18 +215,11 @@ float sgl_levelW(float k, float L, float slope, float shift) {
   float x = k - shift;
   return exp2(slope * (x - (L - 1.0))) * clamp(L - x, 0.0, 1.0) * clamp(x + 1.0, 0.0, 1.0);
 }
-// Soft threshold of a value (luma or channel): 0 below t, ramping to 1 over softness s.
-float sgl_soft(float v, float t, float s) { return clamp((v - t) / max(s, 1.0e-4), 0.0, 1.0); }
 // Rainbow spectrum 0..1 (red → yellow → green → cyan → blue → violet), energy-balanced.
 vec3 sgl_spectrum(float t) {
   t = clamp(t, 0.0, 1.0);
   vec3 c = clamp(vec3(abs(t * 6.0 - 3.0) - 1.0, 2.0 - abs(t * 6.0 - 2.0), 2.0 - abs(t * 6.0 - 4.0)), 0.0, 1.0);
-  c = vec3(c.r, c.g, c.b);
   return c / max(0.6, dot(c, vec3(0.2126, 0.7152, 0.0722)) * 1.4);
-}
-// Cyclic hue 0..1 → saturated RGB.
-vec3 sgl_hue(float h) {
-  return clamp(abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
 }
 `,
 };

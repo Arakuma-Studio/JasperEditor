@@ -69,13 +69,8 @@ export function refreshPresets(): Promise<void> {
 	return loading;
 }
 
-/** Built-ins first, then the user's presets. */
-export function allPresets(state: PresetLibraryState = presetLibrary().getState()): EffectPreset[] {
-	return [...BUILTIN_EFFECT_PRESETS, ...state.presets];
-}
-
 export function findPreset(id: string): EffectPreset | undefined {
-	return allPresets().find((p) => p.id === id);
+	return [...BUILTIN_EFFECT_PRESETS, ...presetLibrary().getState().presets].find((p) => p.id === id);
 }
 
 function engine(): EngineClient {

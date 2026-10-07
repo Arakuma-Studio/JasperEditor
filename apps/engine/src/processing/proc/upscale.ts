@@ -84,7 +84,7 @@ const BATCH = 4;
 type Tile = { x: number; y: number };
 
 /** Tile origins along one axis: stride TILE-OVERLAP, the last tile clamped to the end. */
-function tileStarts(size: number, tile = TILE, overlap = OVERLAP): number[] {
+function tileStarts(size: number, tile: number, overlap: number): number[] {
 	if (size <= tile) return [0];
 	const out: number[] = [];
 	const stride = tile - overlap;
@@ -171,10 +171,10 @@ async function upscaleTiled(
 	src: Float32Array,
 	width: number,
 	height: number,
-	opts: { tile?: number; overlap?: number; batch?: number } = {},
+	opts: { tile?: number; batch?: number } = {},
 ): Promise<Float32Array> {
 	const tile = opts.tile ?? TILE;
-	const overlap = opts.overlap ?? OVERLAP;
+	const overlap = OVERLAP;
 	const batch = opts.batch ?? BATCH;
 	const s = model.scale;
 	const ow = width * s;

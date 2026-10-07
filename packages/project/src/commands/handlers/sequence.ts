@@ -50,11 +50,7 @@ function videoInfo(asset: MediaAsset) {
 	return { width: even(w), height: even(hgt), rate: nearestAllowedRate(vs.frameRate) };
 }
 
-function mapAnimVec(a: Draft<Animatable<Vec2>>, f: (v: Vec2) => Vec2) {
-	a.value = f(a.value as Vec2);
-	for (const k of a.keyframes) k.value = f(k.value as Vec2);
-}
-function mapAnimNum(a: Draft<Animatable<number>>, f: (v: number) => number) {
+function mapAnim<T>(a: Animatable<T>, f: (v: T) => T): void {
 	a.value = f(a.value);
 	for (const k of a.keyframes) k.value = f(k.value);
 }
@@ -120,14 +116,14 @@ function changeFrameSize(
 			| undefined;
 		if (!tr || !kindCapabilities(c.kind)?.hasTransform) continue;
 		if (isFrameSizedGenerator(c as { kind: string; canvas?: unknown })) {
-			mapAnimVec(tr.position, ([x, y]) => [x + dx, y + dy]);
-			mapAnimVec(tr.anchor, ([x, y]) => [x + dx, y + dy]);
+			mapAnim<Vec2>(tr.position, ([x, y]) => [x + dx, y + dy]);
+			mapAnim<Vec2>(tr.anchor, ([x, y]) => [x + dx, y + dy]);
 		} else if (mode === 'keep-offset-from-center') {
-			mapAnimVec(tr.position, ([x, y]) => [x + dx, y + dy]);
+			mapAnim<Vec2>(tr.position, ([x, y]) => [x + dx, y + dy]);
 		} else {
-			mapAnimVec(tr.position, ([x, y]) => [w2 / 2 + (x - w1 / 2) * s, h2 / 2 + (y - h1 / 2) * s]);
-			mapAnimNum(tr.scale, (v) => v * s);
-			mapAnimNum(tr.scaleWidth, (v) => v * s);
+			mapAnim<Vec2>(tr.position, ([x, y]) => [w2 / 2 + (x - w1 / 2) * s, h2 / 2 + (y - h1 / 2) * s]);
+			mapAnim(tr.scale, (v) => v * s);
+			mapAnim(tr.scaleWidth, (v) => v * s);
 		}
 	}
 }

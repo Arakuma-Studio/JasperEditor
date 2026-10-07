@@ -35,7 +35,6 @@ type ProcessWatch = {
 	session: EditorSession;
 	/** The document media the job processes (`media.derive.fromMediaId`). */
 	fromMediaId: string;
-	mediaKey: string;
 	steps: ProcessStep[];
 	executor: ProcessRequest['executor'];
 	/** Clips to swap to the processed version when done (empty = only add it to the Project panel). */
@@ -45,7 +44,7 @@ type ProcessWatch = {
 	dedupeKey?: string;
 };
 
-export type ProcessRange = { startFrame: number; endFrame: number };
+type ProcessRange = { startFrame: number; endFrame: number };
 
 // ------------------------------------------------------------------ media.derive
 
@@ -170,7 +169,6 @@ export async function startProcessing(input: StartInput): Promise<EngineJob> {
 		engine: input.engine,
 		session: input.session,
 		fromMediaId: input.mediaId,
-		mediaKey: key,
 		steps: input.steps,
 		executor: input.executor,
 		replaceInClips: [...input.replaceInClips],

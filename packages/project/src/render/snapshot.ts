@@ -287,6 +287,13 @@ export function buildRenderSnapshot(
 		const asset = doc.media[id];
 		media[id] = asset ? opts.resolveMedia(asset) : null;
 	};
+	const useParamMedia = (params: EffectInstance['params']) => {
+		for (const p of Object.values(params))
+			for (const v of [p.value, ...p.keyframes.map((k) => k.value)]) {
+				const id = (v as { mediaId?: unknown } | null)?.mediaId;
+				if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
+			}
+	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
 	let itemNames: Map<string, string> | null = null;
@@ -323,6 +330,7 @@ export function buildRenderSnapshot(
 			const caps = kindCapabilities(c.kind)!;
 			if (!caps.visual) continue;
 			const r = c as Record<string, unknown>;
+			const effects = (r.effects as EffectInstance[] | undefined) ?? [];
 			let source: RenderVisualSource;
 			const box = intrinsicBoxOf({ clip: c, doc, seq });
 			switch (c.kind) {
@@ -439,16 +447,7 @@ export function buildRenderSnapshot(
 					source = { unsupported: c.kind };
 			}
 			// M2 (S06:LUT-003): LUT assets referenced by effect params (`{mediaId}`) get media handles too.
-			for (const fx of (r.effects as EffectInstance[] | undefined) ?? []) {
-				if (!fx.enabled) continue;
-				for (const p of Object.values(fx.params)) {
-					const refs = [p.value, ...p.keyframes.map((k) => k.value)];
-					for (const v of refs) {
-						const id = (v as { mediaId?: unknown } | null)?.mediaId;
-						if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
-					}
-				}
-			}
+			for (const fx of effects) if (fx.enabled) useParamMedia(fx.params);
 			clips.push({
 				clipId: c.id,
 				kind: c.kind,
@@ -462,15 +461,13 @@ export function buildRenderSnapshot(
 				transform: (r.transform as Transform | undefined) ?? null,
 				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
-				effects: (r.effects as EffectInstance[] | undefined) ?? [],
+				effects,
 				intrinsicBox: box,
 				engine: clipEngines(c)?.export ?? caps.engines.export,
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),
 				...transitionFields(transitions.clips.get(c.id)),
-				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
-					? { sourceInfo: sourceInfoOf(source.mediaId) }
-					: {}),
+				...('mediaId' in source && effects.length > 0 ? { sourceInfo: sourceInfoOf(source.mediaId) } : {}),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);
@@ -496,12 +493,7 @@ export function buildRenderSnapshot(
 			return tracks.out || tracks.in ? { ...st, tracks } : st;
 		});
 		// Image params of GPU transitions (Gradient Wipe's custom gradient…) get media handles like effect params.
-		for (const st of stages)
-			for (const p of Object.values(st.params))
-				for (const v of [p.value, ...p.keyframes.map((k) => k.value)]) {
-					const id = (v as { mediaId?: unknown } | null)?.mediaId;
-					if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
-				}
+		for (const st of stages) useParamMedia(st.params);
 		videoTracks.push({
 			trackId: t.id,
 			clips,

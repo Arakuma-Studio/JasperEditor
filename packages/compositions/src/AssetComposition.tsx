@@ -9,7 +9,7 @@ import { FALLBACK_FONT_STACK } from './fonts.ts';
 import { mediaSrc } from './pipeline.ts';
 import type { AssetCompositionProps } from './types.ts';
 
-export const DEFAULT_STILL_SECONDS = 5;
+const DEFAULT_STILL_SECONDS = 5;
 const AUDIO_CANVAS = { width: 1280, height: 720 };
 
 /** Natural size of an asset preview (audio assets get a fixed card size). */

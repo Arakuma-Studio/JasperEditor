@@ -10,7 +10,7 @@
 // are kept verbatim and only flagged (`presetIssues`), so presets made with a newer build stay intact.
 import { z } from 'zod';
 import { utf8Length } from '../clipboard/payload.ts';
-import type { Animatable, Ease, Interpolation, ParamValue, RationalT, Vec2 } from '../schema/common.ts';
+import type { Ease, Interpolation, ParamValue, RationalT, Vec2 } from '../schema/common.ts';
 import {
 	EaseSchema,
 	InterpolationSchema,
@@ -210,10 +210,6 @@ export type EffectPresetLibrary = {
 	presets: EffectPreset[];
 };
 
-export function emptyPresetLibrary(): EffectPresetLibrary {
-	return { format: 'jasper-effect-preset-library', version: 1, folders: [], presets: [] };
-}
-
 /** An exported file (Export…): presets plus the bins they sit in. */
 export const EffectPresetBundleSchema = z.looseObject({
 	format: z.literal(EFFECT_PRESET_BUNDLE_FORMAT),
@@ -318,23 +314,5 @@ export function buildPresetBundle(
 			const { builtIn: _b, ...rest } = JSON.parse(JSON.stringify(p)) as EffectPreset;
 			return rest;
 		}),
-	};
-}
-
-/** Animatable form of a preset anim (keys normalised: ids optional, linear by default). */
-export function presetAnimOf<T>(a: Animatable<T>): PresetAnim<T> {
-	return {
-		value: a.value,
-		...(a.keyframes.length
-			? {
-					keyframes: a.keyframes.map((k) => ({
-						time: k.time,
-						value: k.value,
-						interpolation: k.interpolation,
-						easeIn: { ...k.easeIn },
-						easeOut: { ...k.easeOut },
-					})),
-				}
-			: {}),
 	};
 }

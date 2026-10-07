@@ -59,7 +59,7 @@ export type CoreServices = {
 	stop(): Promise<void>;
 };
 
-export type CoreServiceOptions = {
+type CoreServiceOptions = {
 	jsonBodyLimit: number;
 	env?: Record<string, string | undefined>;
 	/** Packaged resources folder (ffmpeg under `<dir>/bin` or `<dir>/ffmpeg-lgpl`, D-13). */

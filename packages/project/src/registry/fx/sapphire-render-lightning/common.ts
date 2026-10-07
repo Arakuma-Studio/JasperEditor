@@ -150,9 +150,8 @@ const float SRT_PI = 3.14159265358979;
 const float SRT_TAU = 6.28318530717959;
 // Canvas px per Sapphire unit (half the layer width).
 float srt_unit() { return 0.5 * u_box.z; }
-// Layer-normalised point → canvas px; layer px → canvas px; this fragment in canvas px.
+// Layer-normalised point → canvas px; this fragment in canvas px.
 vec2 srt_pt(vec2 norm) { return u_box.xy + norm * u_box.zw; }
-vec2 srt_lpx(vec2 layerPx) { return u_box.xy + layerPx * u_pxScale; }
 vec2 srt_here() { return v_uv * u_canvasSize; }
 // Sapphire frame coordinates of this fragment: x ∈ [−1, 1] across the layer, y up, same units.
 vec2 srt_sapphire(vec2 canvasPx) { vec2 d = (canvasPx - (u_box.xy + 0.5 * u_box.zw)) / srt_unit(); return vec2(d.x, -d.y); }
@@ -457,22 +456,6 @@ export function splinePoints(
 }
 
 // ---------------------------------------------------------------- misc GLSL
-
-/** Hi/lo byte packing of 0..1 values into rgba8 outputs (exact in every texture format). */
-export const GLSL_SRT_PACK: GlslChunk = {
-	name: 'srt/pack',
-	source: /* glsl */ `
-vec2 srt_pack16(float v) {
-  float q = floor(clamp(v, 0.0, 1.0) * 65535.0 + 0.5);
-  float hi = floor(q / 256.0);
-  return vec2(hi, q - hi * 256.0) / 255.0;
-}
-float srt_unpack16(vec2 b) {
-  vec2 q = floor(b * 255.0 + 0.5);
-  return (q.x * 256.0 + q.y) / 65535.0;
-}
-`,
-};
 
 /**
  * Lean seeded noise for this family: ONE PCG round per lattice point (the library's `fx_hash3` chains three, and

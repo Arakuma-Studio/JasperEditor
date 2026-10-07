@@ -48,11 +48,7 @@ const PREVIEW_FPS = 30;
 /** Composition size of the gallery previews (16:9; templates fit their design canvas into it). */
 const PREVIEW_SIZE = { width: 640, height: 360 } as const;
 
-type NullableStore = {
-	getState(): SessionState | null;
-	subscribe(l: (s: SessionState | null, p: SessionState | null) => void): () => void;
-};
-const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () => () => {} };
+const NO_SESSION_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:16', '1080x1080': '1:1' };
 
@@ -263,8 +259,8 @@ function initialTab(): MotionTemplatesTab {
 export function MotionTemplatesPanel(props: PanelProps) {
 	const session = useSessionOrNull();
 	const hasSequence = useStoreSelector(
-		(session?.store as NullableStore | undefined) ?? NO_SESSION_STORE,
-		(s) => !!s?.activeSequenceId,
+		session?.store ?? NO_SESSION_STORE,
+		(s: SessionState | null) => !!s?.activeSequenceId,
 	);
 	const catalog = useEngineCatalog();
 	const [query, setQuery] = useState('');

@@ -236,7 +236,6 @@ async function exportProRes(
 	const res = await request.get(`/renders/${jobId}/output`);
 	expect(res.ok()).toBe(true);
 	const file = join(EXPORT_DIR, filename);
-	const { writeFileSync } = await import('node:fs');
 	writeFileSync(file, await res.body());
 	return { file, renderPath: String(job.result?.renderPath ?? '') };
 }
@@ -280,7 +279,6 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	const stillJob = await waitForJob(request, (await still.json()).id, 300_000);
 	expect(stillJob.state, JSON.stringify(stillJob.error ?? null)).toBe('succeeded');
 	const png = join(EXPORT_DIR, `still-${frame}.png`);
-	const { writeFileSync } = await import('node:fs');
 	writeFileSync(png, await (await request.get(String(stillJob.result?.url))).body());
 
 	const a = rgbFrame(out.file, ['-vf', `select=eq(n\\,${frame})`, '-frames:v', '1']);

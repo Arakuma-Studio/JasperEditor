@@ -12,11 +12,11 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
 
 function mockFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
 	const calls: Call[] = [];
-	const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+	const fn: typeof fetch = async (input, init) => {
 		calls.push({ url: String(input), init: init ?? {} });
 		return handler(String(input), init ?? {});
-	});
-	return { fetch: fn as unknown as typeof fetch, calls };
+	};
+	return { fetch: fn, calls };
 }
 
 const job = {

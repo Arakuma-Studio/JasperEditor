@@ -1,5 +1,4 @@
-// Toast queue and notification log (S05 §13, TS-001…008). Pure logic with injectable clock and timers so
-// dedupe/merge/duration rules are unit-testable; <ToastHost> renders it.
+// Toast queue and notification log (S05 §13, TS-001…008), rendered by <ToastHost>.
 
 export type ToastKind = 'info' | 'success' | 'warning' | 'error' | 'progress' | 'agent';
 
@@ -65,28 +64,14 @@ export function defaultDuration(req: ToastRequest): number | null {
 	}
 }
 
-type Timers = {
-	now(): number;
-	setTimeout(fn: () => void, ms: number): unknown;
-	clearTimeout(h: unknown): void;
-};
-
-const realTimers: Timers = {
-	now: () => Date.now(),
-	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-	clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
-};
-
 export type ToastState = { toasts: Toast[]; log: LogEntry[] };
 
 export class ToastStore {
 	private state: ToastState = { toasts: [], log: [] };
 	private readonly listeners = new Set<() => void>();
-	private readonly timers = new Map<number, { handle: unknown; startedAt: number }>();
+	private readonly timers = new Map<number, { handle: ReturnType<typeof setTimeout>; startedAt: number }>();
 	private paused = false;
 	private nextId = 1;
-
-	constructor(private readonly t: Timers = realTimers) {}
 
 	getState = (): ToastState => this.state;
 	subscribe = (l: () => void): (() => void) => {
@@ -100,7 +85,7 @@ export class ToastStore {
 
 	/** Shows a toast; returns its id (use it with update/dismiss). */
 	show(req: ToastRequest): number {
-		const now = this.t.now();
+		const now = Date.now();
 		const req2: ToastRequest = { ...req, actions: req.actions?.slice(0, 2) };
 		const toasts = this.state.toasts;
 		const byKey = req.dedupeKey ? toasts.find((x) => x.dedupeKey === req.dedupeKey) : undefined;
@@ -145,7 +130,7 @@ export class ToastStore {
 	update(id: number, patch: Partial<ToastRequest>): void {
 		const cur = this.state.toasts.find((x) => x.id === id);
 		if (!cur) return;
-		const now = this.t.now();
+		const now = Date.now();
 		const kindChanged = patch.kind !== undefined && patch.kind !== cur.kind;
 		const restartTimer = kindChanged || patch.durationMs !== undefined;
 		const next: Toast = { ...cur, ...patch, updatedAt: now };
@@ -174,7 +159,7 @@ export class ToastStore {
 	setPaused(paused: boolean): void {
 		if (paused === this.paused) return;
 		this.paused = paused;
-		const now = this.t.now();
+		const now = Date.now();
 		if (paused) {
 			const toasts = this.state.toasts.map((x) => {
 				const timer = this.timers.get(x.id);
@@ -208,16 +193,16 @@ export class ToastStore {
 	private schedule(x: Toast) {
 		this.clearTimer(x.id);
 		if (this.paused || x.remainingMs === null) return;
-		const handle = this.t.setTimeout(() => {
+		const handle = setTimeout(() => {
 			this.timers.delete(x.id);
 			this.dismiss(x.id);
 		}, x.remainingMs);
-		this.timers.set(x.id, { handle, startedAt: this.t.now() });
+		this.timers.set(x.id, { handle, startedAt: Date.now() });
 	}
 
 	private clearTimer(id: number) {
 		const timer = this.timers.get(id);
-		if (timer) this.t.clearTimeout(timer.handle);
+		if (timer) clearTimeout(timer.handle);
 		this.timers.delete(id);
 	}
 }

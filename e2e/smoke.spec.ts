@@ -40,12 +40,7 @@ test.afterAll(async () => {
 test('Home → New Project opens the Editing workspace', async () => {
 	await createProject(page, 'E2E Smoke');
 	await expect(page.getByTestId('workspace-tab-editing')).toBeVisible();
-	const summary = await page.evaluate(() =>
-		(window as unknown as { jasper: { query(n: string): Promise<unknown> } }).jasper.query(
-			'sequence.summary',
-		),
-	);
-	expect(summary).toMatchObject({ settings: { width: 1920, height: 1080 } });
+	expect(await sequenceSummary(page)).toMatchObject({ settings: { width: 1920, height: 1080 } });
 });
 
 test('import clip-a.mp4 through the file chooser → Project panel row with a poster', async () => {
@@ -159,7 +154,7 @@ async function sequenceFrames(): Promise<number> {
 	return Math.max(...(await clips(page)).map((c) => c.end));
 }
 
-function assertOutput(file: string, frames: number, opts: { audio: boolean }): void {
+function assertOutput(file: string, frames: number): void {
 	const probe = ffprobe(file);
 	const v = probe.streams.find((s) => s.codec_type === 'video');
 	expect(v, 'video stream').toBeTruthy();
@@ -169,8 +164,7 @@ function assertOutput(file: string, frames: number, opts: { audio: boolean }): v
 	expect(Number(v!.nb_read_frames)).toBe(frames);
 	// Container duration within 0.1 s (AAC priming/padding makes the audio a few ms longer).
 	expect(Math.abs(Number(probe.format.duration) - (frames * 1001) / 30000)).toBeLessThan(0.1);
-	if (opts.audio)
-		expect(probe.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac')).toBe(true);
+	expect(probe.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac')).toBe(true);
 }
 
 test('export a media-only sequence with Auto → native ffmpeg path; ffprobe frame count matches', async ({
@@ -185,7 +179,7 @@ test('export a media-only sequence with Auto → native ffmpeg path; ffprobe fra
 		outDir: EXPORT_DIR,
 	});
 	expect(out.job.result?.renderPath).toBe('native');
-	assertOutput(out.file, frames, { audio: true });
+	assertOutput(out.file, frames);
 });
 
 test('insert the lower-third@1 motion graphic from the Motion Templates panel (drag to V2)', async () => {
@@ -216,7 +210,7 @@ test('motion graphic + footage exports with Auto → native (fframes master)', a
 		outDir: EXPORT_DIR,
 	});
 	expect(out.job.result?.renderPath).toBe('native');
-	assertOutput(out.file, frames, { audio: true });
+	assertOutput(out.file, frames);
 	// The lower third (bottom-left) is composited over black before the footage starts.
 	const mg = (await clips(page)).find((c) => c.kind === 'motion-graphic')!;
 	const firstFootage = Math.min(...(await clips(page, ['V1'])).map((c) => c.start));
@@ -252,7 +246,7 @@ test('with the text clip, the forced Remotion export succeeds', async ({ request
 		jobTimeoutMs: 900_000,
 	});
 	expect(out.job.result?.renderPath).toBe('remotion');
-	assertOutput(out.file, frames, { audio: true });
+	assertOutput(out.file, frames);
 });
 
 test('Program monitor accepts effect drops (layer under the pointer) and motion-template drops', async () => {

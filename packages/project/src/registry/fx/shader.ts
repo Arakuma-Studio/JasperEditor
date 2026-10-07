@@ -501,12 +501,6 @@ export function resolveIncludes(chunks: readonly GlslChunk[] | undefined): GlslC
 	return out;
 }
 
-/** Number of lines before the author's `frag` in a pass source (to map compile-error line numbers). */
-export function fragLineOffset(source: string, frag: string): number {
-	const i = source.lastIndexOf(frag);
-	return i < 0 ? 0 : source.slice(0, i).split('\n').length - 1;
-}
-
 const declaredName = (decl: string) => /\b(u_[A-Za-z0-9_]+)\s*(?:\[\d+\])?\s*;\s*$/.exec(decl)?.[1] ?? '';
 
 /**

@@ -26,7 +26,6 @@ float sfg_gaussU(ivec2 p, uint s) {
   vec4 b = vec4(float(h & 255u), float((h >> 8u) & 255u), float((h >> 16u) & 255u), float(h >> 24u)) * (1.0 / 255.0);
   return (b.x + b.y + b.z + b.w - 2.0) * 1.7320508;
 }
-float sfg_gauss(ivec2 p, float seed) { return sfg_gaussU(p, sfg_seedU(seed)); }
 // Smoothly interpolated Gaussian lattice noise.
 float sfg_gaussNoiseU(vec2 p, uint s) {
   ivec2 i = ivec2(floor(p));

@@ -9,8 +9,6 @@ import {
 	evaluate,
 	fpsOf,
 	type Keyframe,
-	type ProjectDocument,
-	type Sequence,
 	SpatialInterpolationSchema,
 	sequenceFrameOfContentTime,
 	sequenceTimecode,
@@ -18,7 +16,7 @@ import {
 	type Vec2,
 } from '@jasper/project';
 import { z } from 'zod';
-import { defineTool, EDIT, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import { defineTool, EDIT, findClip, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
@@ -28,14 +26,6 @@ export const MOTION_PATH_GUIDE = `Motion paths (curved position animation):
 - Position (and Anchor Point, Corner Pin corners) keys have a spatial interpolation besides the temporal one: linear (straight segments), bezier (independent in/out tangents), auto-bezier (smooth tangents from the neighbours, (next − prev) / 6) or continuous-bezier (user tangents kept opposite). New position keys are auto-bezier spatial with linear temporal, so three or more keys make a smooth curve travelled at constant speed; temporal eases change the speed along the curve, not its shape.
 - get_motion_path {clipId} shows the keys (frame, value, modes, effective tangents) and sampled points; set_spatial_interpolation {clipId | keyframeIds, mode} changes the mode (linear = straight lines).
 - Tangents are offsets from the key in sequence pixels: apply_commands keyframe.setTangents {keyframeId, inTangent?, outTangent?, breakContinuity?} (a non-bezier key becomes continuous-bezier and the other side turns opposite unless breakContinuity). keyframe.add / keyframe.update also take spatial {mode, inTangent?, outTangent?}.`;
-
-function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
-	for (const seq of Object.values(doc.sequences)) {
-		const clip = seq.clips[clipId];
-		if (clip) return { seq, clip };
-	}
-	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
-}
 
 function positionOf(clip: Clip): Animatable<Vec2> {
 	const p = (clip as { transform?: { position?: Animatable<Vec2> } }).transform?.position;

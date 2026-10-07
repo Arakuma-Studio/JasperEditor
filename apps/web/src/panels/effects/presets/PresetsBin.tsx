@@ -15,7 +15,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx } from '@jasper/ui';
-import { type DragEvent, type MouseEvent, type ReactNode, useMemo } from 'react';
+import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { CaretGlyph } from '../../properties/controls/glyphs.tsx';
 import type { ContextMenuItem } from '../../timeline/state/ui-store.ts';
 import { isEffectDrag, readEffectDragPayload, writePresetDragPayload } from '../drag.ts';
@@ -119,10 +119,11 @@ function PresetGlyph(props: { warning?: boolean }) {
 	);
 }
 
-export type PresetsBinProps = {
+type PresetsBinProps = {
 	session: EditorSession;
 	/** The library (`usePresetLibrary()` of the host panel). */
 	lib: PresetLibraryState;
+	tree: ReturnType<typeof presetTree>;
 	filter: Filter;
 	closed: Record<string, boolean>;
 	onToggle(id: string): void;
@@ -134,9 +135,7 @@ export type PresetsBinProps = {
 };
 
 export function PresetsBin(props: PresetsBinProps) {
-	const { session, filter, closed, selectedClips, lib } = props;
-	const registry = session.ctx.registries.effects;
-	const tree = useMemo(() => presetTree(lib, registry, filter), [lib, registry, filter]);
+	const { session, filter, closed, selectedClips, lib, tree } = props;
 	const searching = !!filter.query.trim() || filter.realtime || filter.native;
 	if (searching && tree.matches === 0) return null;
 	const engineReady = lib.status === 'ready';

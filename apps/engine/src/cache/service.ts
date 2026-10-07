@@ -113,12 +113,12 @@ type CacheKindAdapter = {
 type CacheServiceOptions = {
 	appdir: string;
 	paths: AppdirPaths;
-	queue?: JobQueue | null;
-	projects?: ProjectStoreFs | null;
-	leases?: LeaseManager | null;
-	broadcaster?: Broadcaster | null;
-	/** Pre-render key of composition requests (mg-bundles `prerenderKey`); null = no composition refs. */
-	renderKey?: RenderKeyFn | null;
+	queue: JobQueue;
+	projects: ProjectStoreFs;
+	leases: LeaseManager;
+	broadcaster: Broadcaster;
+	/** Pre-render key of composition requests (mg-bundles `prerenderKey`). */
+	renderKey: RenderKeyFn;
 	/** Show the cache location in usage answers (local mode). */
 	exposePaths?: boolean;
 	/** Automatic passes (start-up, hourly, after renders). Default on; configurable through JASPER_CACHE_AUTO_GC. */
@@ -213,12 +213,11 @@ export class CacheService {
 			t0.unref?.();
 			t1.unref?.();
 			this.timers.push(t0, t1);
-			this.offEvents =
-				this.o.broadcaster?.subscribe((e) => {
-					if (e.type !== 'job.finished') return;
-					const kind = (e.payload as { kind?: string } | null)?.kind;
-					if (kind && RENDER_JOB_KINDS.has(kind)) this.scheduleAfterRender();
-				}) ?? null;
+			this.offEvents = this.o.broadcaster.subscribe((e) => {
+				if (e.type !== 'job.finished') return;
+				const kind = (e.payload as { kind?: string } | null)?.kind;
+				if (kind && RENDER_JOB_KINDS.has(kind)) this.scheduleAfterRender();
+			});
 		}
 	}
 
@@ -272,7 +271,7 @@ export class CacheService {
 		}));
 		let prunedJobs = 0;
 		const journal = await stat(this.o.paths.jobsJournal).catch(() => null);
-		if (this.o.queue && journal && journal.size > JOURNAL_COMPACT_BYTES) prunedJobs = this.o.queue.prune();
+		if (journal && journal.size > JOURNAL_COMPACT_BYTES) prunedJobs = this.o.queue.prune();
 		return { ...r, prunedJobs };
 	}
 
@@ -300,7 +299,6 @@ export class CacheService {
 		const check = await this.checkLocation(req.path, req.mode);
 		if (!check.ok) throw new CacheLocationError(check.message ?? 'The folder cannot hold the cache', check);
 		const q = this.o.queue;
-		if (!q) throw new CacheLocationError('No job queue', check);
 		return q.submit({
 			kind: 'cache-move',
 			title: req.mode === 'move' ? `Move media cache to ${check.path}` : `New media cache in ${check.path}`,
@@ -316,7 +314,7 @@ export class CacheService {
 
 	/** Registers the `cache-move` runner (core services, after the queue exists). */
 	registerRunners(): void {
-		this.o.queue?.registerRunner('cache-move', (ctx) => this.runMove(ctx));
+		this.o.queue.registerRunner('cache-move', (ctx) => this.runMove(ctx));
 	}
 
 	private async runMove(ctx: JobContext): Promise<unknown> {
@@ -328,9 +326,9 @@ export class CacheService {
 			.then(async () => {
 				const check = await checkLocation(this.o.appdir, from, input.path, input.mode);
 				if (!check.ok) throw new JobError('CACHE_LOCATION_INVALID', check.message ?? 'Invalid folder', false);
-				const others = (this.o.queue?.list({ active: true }) ?? []).filter(
-					(j) => j.id !== ctx.job.id && j.state === 'running',
-				);
+				const others = this.o.queue
+					.list({ active: true })
+					.filter((j) => j.id !== ctx.job.id && j.state === 'running');
 				if (others.length)
 					throw new JobError(
 						'CACHE_BUSY',
@@ -358,7 +356,7 @@ export class CacheService {
 			});
 		this.gcChain = run;
 		const result = await run;
-		this.o.broadcaster?.publish('cache.cleaned', { ...(this.index.lastGc ?? emptyReport(Date.now())) });
+		this.o.broadcaster.publish('cache.cleaned', { ...(this.index.lastGc ?? emptyReport(Date.now())) });
 		return result;
 	}
 
@@ -390,7 +388,7 @@ export class CacheService {
 	}
 
 	private isOpen(projectId: string): boolean {
-		if (this.o.leases?.get(projectId)) return true;
+		if (this.o.leases.get(projectId)) return true;
 		for (const p of this.openProbes) {
 			try {
 				if (p(projectId)) return true;
@@ -515,7 +513,7 @@ export class CacheService {
 
 	/** Holders `job:<id>` are released when the queue reports the job finished. */
 	private hookJobRelease(holder: string): void {
-		if (!holder.startsWith('job:') || this.releaseHooked.has(holder) || !this.o.queue) return;
+		if (!holder.startsWith('job:') || this.releaseHooked.has(holder)) return;
 		const id = holder.slice(4);
 		const q = this.o.queue;
 		if (!q.get(id)) return; // pseudo ids expire (validateHolders)
@@ -540,7 +538,7 @@ export class CacheService {
 				continue;
 			}
 			if (!holder.startsWith('job:')) continue;
-			const job = q?.get(holder.slice(4));
+			const job = q.get(holder.slice(4));
 			const gone = job ? TERMINAL_JOB_STATES.has(job.state) : t - since > UNKNOWN_HOLDER_TTL_MS;
 			if (gone) this.release(holder);
 		}
@@ -576,47 +574,45 @@ export class CacheService {
 		const open = new Set<string>();
 		const computed = new Map<string, ProjectCacheRefs>();
 		const store = this.o.projects;
-		if (store) {
-			for (const p of await store.list().catch(() => [])) {
-				if (typeof p.revision !== 'number') continue; // not a readable project file
-				existing.add(p.projectId);
-				if (this.isOpen(p.projectId)) open.add(p.projectId);
-				let c = this.projectRefsCache.get(p.projectId);
-				if (!c || c.revision !== p.revision) {
-					const doc = await store
-						.get(p.projectId)
-						.then((g) => (g.envelope as { document?: unknown }).document)
-						.catch(() => null);
-					c = {
-						revision: p.revision,
-						refs: projectCacheRefs(doc, this.o.renderKey ?? null, this.fframesKey),
-					};
-					this.projectRefsCache.set(p.projectId, c);
-				}
-				computed.set(p.projectId, c.refs);
+		for (const p of await store.list().catch(() => [])) {
+			if (typeof p.revision !== 'number') continue; // not a readable project file
+			existing.add(p.projectId);
+			if (this.isOpen(p.projectId)) open.add(p.projectId);
+			let c = this.projectRefsCache.get(p.projectId);
+			if (!c || c.revision !== p.revision) {
+				const doc = await store
+					.get(p.projectId)
+					.then((g) => (g.envelope as { document?: unknown }).document)
+					.catch(() => null);
+				c = {
+					revision: p.revision,
+					refs: projectCacheRefs(doc, this.o.renderKey, this.fframesKey),
+				};
+				this.projectRefsCache.set(p.projectId, c);
 			}
-			for (const pid of [...this.projectRefsCache.keys()])
-				if (!existing.has(pid)) this.projectRefsCache.delete(pid);
-			// Open projects: what their editors show right now counts too (not saved yet, CA-012/CA-014).
-			await Promise.all(
-				[...open].map(async (pid) => {
-					const doc = await this.liveDocument(pid);
-					if (!doc) return;
-					const live = projectCacheRefs(doc, this.o.renderKey ?? null, this.fframesKey);
-					const saved = computed.get(pid);
-					computed.set(
-						pid,
-						saved
-							? {
-									fingerprints: new Set([...saved.fingerprints, ...live.fingerprints]),
-									mgRenderKeys: new Set([...saved.mgRenderKeys, ...live.mgRenderKeys]),
-									bundleHashes: new Set([...saved.bundleHashes, ...live.bundleHashes]),
-								}
-							: live,
-					);
-				}),
-			);
+			computed.set(p.projectId, c.refs);
 		}
+		for (const pid of [...this.projectRefsCache.keys()])
+			if (!existing.has(pid)) this.projectRefsCache.delete(pid);
+		// Open projects: what their editors show right now counts too (not saved yet, CA-012/CA-014).
+		await Promise.all(
+			[...open].map(async (pid) => {
+				const doc = await this.liveDocument(pid);
+				if (!doc) return;
+				const live = projectCacheRefs(doc, this.o.renderKey, this.fframesKey);
+				const saved = computed.get(pid);
+				computed.set(
+					pid,
+					saved
+						? {
+								fingerprints: new Set([...saved.fingerprints, ...live.fingerprints]),
+								mgRenderKeys: new Set([...saved.mgRenderKeys, ...live.mgRenderKeys]),
+								bundleHashes: new Set([...saved.bundleHashes, ...live.bundleHashes]),
+							}
+						: live,
+				);
+			}),
+		);
 		const recorded = new Map<string, Set<string>>();
 		for (const set of this.index.refs.values()) {
 			if (!existing.has(set.projectId)) continue;
@@ -651,7 +647,7 @@ export class CacheService {
 	private activeJobs(): { ids: Set<string>; dedupe: string[] } {
 		const ids = new Set<string>();
 		const dedupe: string[] = [];
-		for (const j of this.o.queue?.list({ active: true }) ?? []) {
+		for (const j of this.o.queue.list({ active: true })) {
 			ids.add(j.id);
 			if (j.dedupeKey) dedupe.push(j.dedupeKey);
 		}
@@ -809,7 +805,7 @@ export class CacheService {
 		this.lastScan = null;
 		await this.index.flush().catch(() => undefined);
 		if (mode !== 'orphans' && (report.removedEntries || mode !== 'auto'))
-			this.o.broadcaster?.publish('cache.cleaned', report);
+			this.o.broadcaster.publish('cache.cleaned', report);
 		return report;
 	}
 

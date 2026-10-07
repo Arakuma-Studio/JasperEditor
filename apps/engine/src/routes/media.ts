@@ -79,7 +79,6 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 			record(req.params.mediaKey);
 			return media.discard(req.params.mediaKey, {
 				projectsDir: core.config.paths.projectsDir,
-				cacheDir: core.config.paths.cacheDir,
 				// M3 (wp-m3-cachegc): derivatives go through the cache registry (crash-safe, pin-aware).
 				cache: core.cache,
 			});
@@ -135,46 +134,25 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		}),
 	);
 
-	app.get<K>(
-		'/media/:mediaKey/poster.jpg',
-		guarded<K>(async (req, reply) => {
-			const r = record(req.params.mediaKey);
-			return serveArtifact(
-				req,
-				reply,
-				(await derivatives.isReady(r, 'poster')) ? derivatives.paths(r.fingerprint, 'poster').main : null,
-				'image/jpeg',
-			);
-		}),
-	);
-
-	app.get<K>(
-		'/media/:mediaKey/keyframes.json',
-		guarded<K>(async (req, reply) => {
-			const r = record(req.params.mediaKey);
-			return serveArtifact(
-				req,
-				reply,
-				(await derivatives.isReady(r, 'keyframes'))
-					? derivatives.paths(r.fingerprint, 'keyframes').main
-					: null,
-				'application/json',
-			);
-		}),
-	);
-
-	app.get<K>(
-		'/media/:mediaKey/sprite.json',
-		guarded<K>(async (req, reply) => {
-			const r = record(req.params.mediaKey);
-			return serveArtifact(
-				req,
-				reply,
-				(await derivatives.isReady(r, 'sprite')) ? derivatives.paths(r.fingerprint, 'sprite').main : null,
-				'application/json',
-			);
-		}),
-	);
+	for (const [file, kind, contentType] of [
+		['poster.jpg', 'poster', 'image/jpeg'],
+		['keyframes.json', 'keyframes', 'application/json'],
+		['sprite.json', 'sprite', 'application/json'],
+		['peaks.json', 'peaks', 'application/json'],
+	] as const) {
+		app.get<K>(
+			`/media/:mediaKey/${file}`,
+			guarded<K>(async (req, reply) => {
+				const r = record(req.params.mediaKey);
+				return serveArtifact(
+					req,
+					reply,
+					(await derivatives.isReady(r, kind)) ? derivatives.paths(r.fingerprint, kind).main : null,
+					contentType,
+				);
+			}),
+		);
+	}
 
 	app.get<{ Params: { mediaKey: string; sheet: string } }>(
 		'/media/:mediaKey/sprite/:sheet',
@@ -188,19 +166,6 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 				reply,
 				(await derivatives.isReady(r, 'sprite')) ? join(p.dir!, `${Number(m[1])}.jpg`) : null,
 				'image/jpeg',
-			);
-		}),
-	);
-
-	app.get<K>(
-		'/media/:mediaKey/peaks.json',
-		guarded<K>(async (req, reply) => {
-			const r = record(req.params.mediaKey);
-			return serveArtifact(
-				req,
-				reply,
-				(await derivatives.isReady(r, 'peaks')) ? derivatives.paths(r.fingerprint, 'peaks').main : null,
-				'application/json',
 			);
 		}),
 	);

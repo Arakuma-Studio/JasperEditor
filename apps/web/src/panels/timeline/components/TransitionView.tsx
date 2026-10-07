@@ -8,6 +8,7 @@ import { memo } from 'react';
 import type { TransitionGeom } from '../model/transitions.ts';
 import { transitionBand } from '../model/transitions.ts';
 import { frameToX, snapPx, type Viewport } from '../model/viewport.ts';
+import type { TransitionGhost } from '../state/ui-store.ts';
 import { dpr } from './canvas.tsx';
 
 type TransitionViewProps = {
@@ -177,14 +178,7 @@ export const TransitionView = memo(TransitionViewImpl);
 
 /** Drop / edge-drag ghost with handle availability (TUI-021/022), in track-area coordinates. */
 export function TransitionGhostView(props: {
-	ghost: {
-		wanted: { start: number; end: number };
-		fitted: { start: number; end: number } | null;
-		bands: { start: number; end: number }[];
-		missing: { start: number; end: number }[];
-		refused: boolean;
-		replace?: boolean;
-	};
+	ghost: TransitionGhost;
 	rowY: number;
 	rowHeight: number;
 	v: Viewport;

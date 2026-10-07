@@ -18,7 +18,7 @@ const PASTED_TEXT_SECONDS = 5;
 /** Longer clipboard text is cut (a text clip is a title, not a document). */
 const MAX_PASTED_TEXT = 5000;
 
-export type ExternalPasteEnv = {
+type ExternalPasteEnv = {
 	session: EditorSession;
 	seq: Sequence | null;
 	view: SequenceViewState | undefined;

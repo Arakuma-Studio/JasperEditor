@@ -35,7 +35,6 @@ float fx_valueNoise3(vec3 p, float seed) {
 
 // Gradient (Perlin-style) noise, ≈ −1..1.
 vec2 fx_grad2s(ivec2 i, uint s) { float a = fx_hash2s(i, s) * 6.28318530718; return vec2(cos(a), sin(a)); }
-vec2 fx_grad2(ivec2 i, float seed) { return fx_grad2s(i, fx_hashSeed(seed)); }
 float fx_gradientNoise(vec2 p, float seed) {
   ivec2 i = ivec2(floor(p));
   vec2 f = fract(p);
@@ -73,7 +72,6 @@ vec3 fx_grad3s(ivec3 i, uint s) {
   float r = sqrt(max(0.0, 1.0 - z * z));
   return vec3(r * cos(a), r * sin(a), z);
 }
-vec3 fx_grad3(ivec3 i, float seed) { return fx_grad3s(i, fx_hashSeed(seed)); }
 float fx_simplex3(vec3 p, float seed) {
   const float F3 = 1.0 / 3.0;
   const float G3 = 1.0 / 6.0;

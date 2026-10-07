@@ -66,8 +66,6 @@ import {
 	variantFrames,
 } from './layer.ts';
 
-/** Entries unused for this long are removed by the GC pass (S11:LBK-021). */
-const LAYER_CACHE_TTL_MS = 14 * 24 * 3600 * 1000;
 /**
  * Version of the graded entries' recipe (bumped when graded pixels change for the same inputs). 2: graded stills
  * carry the transition fades; the Remotion-path master is a PNG frame sequence (alpha honoured).
@@ -194,12 +192,10 @@ export function bakeParallelismFromEnv(env: Record<string, string | undefined>):
 	const shared = env.JASPER_LAYER_BAKE_SHARED_BROWSER;
 	return {
 		maxInFlight: Number.isInteger(n) && n >= 1 ? n : null,
-		sharedBrowser: shared === undefined || shared === '' ? DEFAULT_SHARED_BROWSER : shared !== '0',
+		sharedBrowser: shared !== '0',
 	};
 }
 
-/** Whether the bakes of an export share one render browser by default (measured: see the wp-notes). */
-const DEFAULT_SHARED_BROWSER = true;
 /** Progress poll of a running child job (the parent aggregates it). */
 const PROGRESS_POLL_MS = 250;
 
@@ -231,7 +227,6 @@ export class LayerBakeService {
 	readonly dir: string;
 	private readonly hashes = new FileHashCache();
 	private readonly now: () => Date;
-	private gcTimer: NodeJS.Timeout | null = null;
 	private offCache: (() => void) | null = null;
 	private bytes = 0;
 	private bytesPending: Promise<void> | null = null;
@@ -320,72 +315,26 @@ export class LayerBakeService {
 
 	async start(): Promise<void> {
 		await mkdir(this.dir, { recursive: true });
-		const cache = this.core.cache;
-		if (cache) {
-			// M3 (wp-m3-cachegc): the engine's cache registry cleans `cache/layers/` (kind `layers`, 14 days by default)
-			// with project references and budgets; it keeps leased and in-flight entries, and its removals go through
-			// `removing` so that lookups wait for them and miss.
-			this.offCache = cache.registerAdapter('layers', {
-				busy: (key) => this.leases.has(key) || this.inflight.has(key),
-				remove: (key, remove) => {
-					const p = remove();
-					const done = p
-						.then(
-							() => undefined,
-							() => undefined,
-						)
-						.finally(() => this.removing.delete(key));
-					this.removing.set(key, done);
-					return p.finally(() => void this.refreshBytes());
-				},
-			});
-			return;
-		}
-		void this.gc().catch(() => undefined);
-		this.gcTimer = setInterval(() => void this.gc().catch(() => undefined), 24 * 3600 * 1000);
-		this.gcTimer.unref();
+		// The cache registry keeps leased and in-flight entries. Lookups wait for its removals and then miss.
+		this.offCache = this.core.cache.registerAdapter('layers', {
+			busy: (key) => this.leases.has(key) || this.inflight.has(key),
+			remove: (key, remove) => {
+				const p = remove();
+				const done = p
+					.then(
+						() => undefined,
+						() => undefined,
+					)
+					.finally(() => this.removing.delete(key));
+				this.removing.set(key, done);
+				return p.finally(() => void this.refreshBytes());
+			},
+		});
 	}
 
 	stop(): void {
-		if (this.gcTimer) clearInterval(this.gcTimer);
-		this.gcTimer = null;
 		this.offCache?.();
 		this.offCache = null;
-	}
-
-	/**
-	 * Removes entries unused for `ttlMs` (default 14 days) and stale partial files. Returns the count removed.
-	 * Entries held by running jobs (`lease`) are kept; an entry's `meta.json` is read right before it is removed.
-	 */
-	async gc(ttlMs = LAYER_CACHE_TTL_MS): Promise<number> {
-		let removed = 0;
-		const now = this.now().getTime();
-		for (const name of await readdir(this.dir).catch(() => [] as string[])) {
-			const dir = join(this.dir, name);
-			if (!KEY_RE.test(name) || this.leases.has(name)) continue;
-			// Read right before the removal, and no await between the checks and its start (lookups that mark the
-			// entry used or leases taken meanwhile keep it; lookups wait for a removal in progress).
-			if ((await this.entryAge(dir, now)) <= ttlMs || this.leases.has(name)) continue;
-			const removal = rm(dir, { recursive: true, force: true }).finally(() => this.removing.delete(name));
-			this.removing.set(name, removal);
-			await removal;
-			removed++;
-		}
-		if (removed) await this.refreshBytes();
-		return removed;
-	}
-
-	/** Time since an entry was last used (its `meta.json`, else the directory's mtime: orphans, partial files). */
-	private async entryAge(dir: string, now: number): Promise<number> {
-		const meta = await readJsonOrNull<LayerMeta>(join(dir, 'meta.json'));
-		const used = meta ? Date.parse(meta.lastUsedAt ?? meta.createdAt) : Number.NaN;
-		if (Number.isFinite(used)) return now - used;
-		return (
-			now -
-			(await stat(dir)
-				.then((s) => s.mtimeMs)
-				.catch(() => now))
-		);
 	}
 
 	/**
@@ -466,6 +415,7 @@ export class LayerBakeService {
 	}
 
 	private async markUsed(key: string, meta: LayerMeta): Promise<void> {
+		this.core.cache.touch(this.entryDir(key));
 		await atomicWriteJson(join(this.entryDir(key), 'meta.json'), {
 			...meta,
 			lastUsedAt: this.now().toISOString(),
@@ -535,7 +485,9 @@ export class LayerBakeService {
 				fileSha256: await this.hashes.hash(file),
 			});
 		}
-		return out.sort((a, b) => canonicalSort(a, b));
+		return out.sort((a, b) =>
+			`${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`),
+		);
 	}
 
 	/**
@@ -548,15 +500,13 @@ export class LayerBakeService {
 		clip: RenderVisualClip,
 		o: { env: BakeEnvironment; frame?: number | null },
 	): Promise<BakePlan> {
-		const colorRuns = hasColorEffects(clip);
 		const asBaked = bakeClip(clip, { variant: { recipe: 'master' }, stripColor: true });
 		const isStatic = isStaticLayer(asBaked);
 		const span = drawnSpan(clip);
 		const full = await this.plan(planned, clip, isStatic ? { recipe: 'still' } : { recipe: 'master' }, o.env);
-		if (o.frame === undefined || o.frame === null || isStatic) return { ...full, colorRuns };
-		if (await this.lookup(full.key)) return { ...full, colorRuns };
-		const one = await this.plan(planned, clip, { recipe: 'frame', frame: o.frame - span.start }, o.env);
-		return { ...one, colorRuns };
+		if (o.frame === undefined || o.frame === null || isStatic) return full;
+		if (await this.lookup(full.key)) return full;
+		return this.plan(planned, clip, { recipe: 'frame', frame: o.frame - span.start }, o.env);
 	}
 
 	private async plan(
@@ -615,7 +565,7 @@ export class LayerBakeService {
 			fullDoc: rect ? docOf(unshifted, null) : null,
 			frames,
 			startFrame: f0,
-			colorRuns: false,
+			colorRuns: hasColorEffects(clip),
 			material,
 		};
 	}
@@ -1011,13 +961,10 @@ export class LayerBakeService {
 	private sharedBrowser(group: string | undefined): Promise<SharedRenderBrowser | null> {
 		const s = group ? this.sessions.get(group) : undefined;
 		if (!s) return Promise.resolve(null);
-		s.browser ??= this.core.remotion.openSharedBrowser().then(
-			(b) => b,
-			(e) => {
-				this.o.log?.(`layer-bake: no shared render browser (${(e as Error).message}); one per bake`);
-				return null;
-			},
-		);
+		s.browser ??= this.core.remotion.openSharedBrowser().catch((e) => {
+			this.o.log?.(`layer-bake: no shared render browser (${(e as Error).message}); one per bake`);
+			return null;
+		});
 		return s.browser;
 	}
 
@@ -1069,8 +1016,7 @@ export class LayerBakeService {
 				browser,
 			});
 			if (input.op === 'bake') return bake;
-			const out = await this.renderGrade(ctx, input.bake, bake, input.grade, input.outputs);
-			return out;
+			return await this.renderGrade(ctx, input.bake, bake, input.grade, input.outputs);
 		} catch (e) {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (e instanceof JobError) throw e;
@@ -1383,8 +1329,4 @@ export class LayerBakeService {
 			};
 		return { key: grade.key, path: join(dir, GRADED_FRAMES_DIR) };
 	}
-}
-
-function canonicalSort(a: KeyFont, b: KeyFont): number {
-	return `${a.family}|${a.weight}|${a.style}`.localeCompare(`${b.family}|${b.weight}|${b.style}`);
 }

@@ -42,22 +42,15 @@ const AUTO_INFLUENCE = 1 / 3;
 /** Layer box of a media asset: its first video stream, with width/height swapped for 90°/270° rotation. */
 export function mediaIntrinsicSize(asset: Pick<MediaAsset, 'probe'> | undefined | null): PixelSize | null {
 	const vs = asset?.probe.streams.find((s) => s.type === 'video');
-	if (!asset || !vs || vs.type !== 'video') return null;
+	if (!asset || !vs) return null;
 	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
 	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
-}
-
-/** True when the two sizes have exactly the same aspect ratio (a uniform scale compensates the change). */
-function isIsotropicResize(oldSize: PixelSize, newSize: PixelSize): boolean {
-	return oldSize.width * newSize.height === oldSize.height * newSize.width;
 }
 
 function assertSize(s: PixelSize, name: string): void {
 	if (!(s.width > 0 && s.height > 0 && Number.isFinite(s.width) && Number.isFinite(s.height)))
 		throw new Error(`rescaleClipForSource: invalid ${name} ${s.width}x${s.height}`);
 }
-
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Maps values with a linear per-axis map `f`; spatial tangents (offsets, S03:KF-030) are mapped the same way. */
 function mapAnim<T>(a: Animatable<T>, f: (v: T) => T): Animatable<T> {
@@ -139,18 +132,16 @@ function rescaleTransform(
 	newSize: PixelSize,
 	opts?: RescaleOptions,
 ): Transform {
-	const isotropic = isIsotropicResize(oldSize, newSize);
+	const isotropic = oldSize.width * newSize.height === oldSize.height * newSize.width;
 	// Per-axis factors; for 2×/4× versions they are powers of two, so a swap and its inverse are bit-exact.
 	const kx = oldSize.width / newSize.width;
 	const ky = oldSize.height / newSize.height;
 	const sx = (v: number) => v * kx;
 	const sy = (v: number) => v * ky;
-	const ax = (v: number) => v / kx;
-	const ay = (v: number) => v / ky;
 
 	let anchor = t.anchor;
 	if (!isotropic) anchor = freezeAutoBezier(anchor);
-	anchor = mapAnim(anchor, (v): Vec2 => [ax(v[0]), ay(v[1])]);
+	anchor = mapAnim(anchor, (v): Vec2 => [v[0] / kx, v[1] / ky]);
 
 	let uniformScale = t.uniformScale;
 	let scale: Animatable<number>;
@@ -185,7 +176,7 @@ export function rescaleClipForSource<C extends RescalableClip>(
 ): C {
 	assertSize(oldSize, 'oldSize');
 	assertSize(newSize, 'newSize');
-	const out = clone(clip);
+	const out = JSON.parse(JSON.stringify(clip)) as C;
 	if (oldSize.width === newSize.width && oldSize.height === newSize.height) return out;
 	out.transform = rescaleTransform(out.transform, oldSize, newSize, opts);
 	if (out.trackers)

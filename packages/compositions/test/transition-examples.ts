@@ -17,7 +17,7 @@ import {
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 /** Guide §2: Wipe ▸ Clock Wipe (a single pass, the standard options, a derived uniform). */
-export const TEST_CLOCK_WIPE = defineShaderTransition({
+const TEST_CLOCK_WIPE = defineShaderTransition({
 	id: 'test.clock-wipe',
 	label: 'Clock Wipe',
 	bin: TRANSITION_BINS.wipe,
@@ -47,7 +47,7 @@ void main() {
  * Guide §8: a two-pass Sapphire-style dissolve that needs both sides (S_DissolveGlow-like): A and B are blurred
  * and brightened towards the middle of the transition, then cross-faded.
  */
-export const TEST_DISSOLVE_GLOW = defineShaderTransition({
+const TEST_DISSOLVE_GLOW = defineShaderTransition({
 	id: 'test.s.dissolve-glow',
 	label: 'S_DissolveGlow (example)',
 	bin: TRANSITION_BINS.sapphire,

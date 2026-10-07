@@ -6,13 +6,7 @@ import type { VsTransform } from './wasm.ts';
  *   p_s = z · R(alpha) · (p_d − c) + c − (t.x, t.y),  z = 1 − zoom/100,  c = (⌊w/2⌋, ⌊h/2⌋)
  * (vid.stab transformPlanar: rotation about the frame centre, then translation, zoom in percent).
  */
-export function sourcePoint(
-	t: VsTransform,
-	width: number,
-	height: number,
-	x: number,
-	y: number,
-): [number, number] {
+function sourcePoint(t: VsTransform, width: number, height: number, x: number, y: number): [number, number] {
 	const z = 1 - t.zoom / 100;
 	const c = z * Math.cos(t.alpha);
 	const s = z * Math.sin(t.alpha);

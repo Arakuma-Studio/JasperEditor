@@ -22,6 +22,7 @@ import {
 import { SessionProvider, useSession, useStoreSelector } from '@jasper/session/react';
 import { Button, Z } from '@jasper/ui';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
+import { useAgentBridge } from '../agent-bridge/index.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
@@ -83,6 +84,7 @@ function LifecycleBody(props: {
 	children?: ReactNode;
 }) {
 	const { session } = props;
+	useAgentBridge(session);
 	const engine = useEngine();
 	const exportState = useExportMode();
 	const exportHostedByShell = useExportModeHostedByShell();

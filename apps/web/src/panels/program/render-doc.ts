@@ -12,6 +12,7 @@ import {
 	sequenceDuration,
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
+import { mediaKeyOf } from '../../import/assets.ts';
 
 type ProxyTier = '720' | '540';
 type MediaUrlFn = (mediaKey: string, variant?: 'original' | { proxy: ProxyTier }) => string;
@@ -21,11 +22,6 @@ const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
 	const k = encodeURIComponent(key);
 	return variant === 'original' ? `/media/${k}` : `/media/${k}/proxy/${variant.proxy}`;
 };
-
-function engineKey(asset: MediaAsset): string | null {
-	const loc = asset.locators.find((l) => l.type === 'engine-store');
-	return loc && loc.type === 'engine-store' ? loc.key : null;
-}
 
 /**
  * Runtime media handle for an asset, or null when offline (S03:RND-032). Uses the runtime playback
@@ -38,7 +34,7 @@ export function resolveMediaHandle(
 ): MediaHandle | null {
 	if (runtime && (runtime.availability === 'offline' || runtime.availability === 'error')) return null;
 	const mediaUrl = opts.mediaUrl ?? defaultMediaUrl;
-	const key = engineKey(asset);
+	const key = mediaKeyOf(asset);
 	const urlLoc = asset.locators.find((l) => l.type === 'url');
 	const url =
 		runtime?.playbackUrl ?? (key ? mediaUrl(key) : urlLoc && urlLoc.type === 'url' ? urlLoc.url : null);

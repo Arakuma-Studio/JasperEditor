@@ -446,10 +446,6 @@ export class EngineImportService implements ImportService {
 		return { clipIds };
 	}
 
-	readDataTransfer(dt: DataTransfer): DragPayload | null {
-		return readDataTransfer(dt);
-	}
-
 	/** Human summary for toasts, e.g. "Imported 2 files at 00;00;05;00". */
 	describe(result: ImportResult, target: ImportTarget): string {
 		const n = result.mediaIds.length;

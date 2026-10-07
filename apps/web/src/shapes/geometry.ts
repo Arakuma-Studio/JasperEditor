@@ -80,7 +80,7 @@ const DIRECTION: Record<HandleId, Vec2> = {
 	w: [-1, 0],
 };
 
-export type SizeResizeInput = {
+type SizeResizeInput = {
 	/** Motion values at the gesture start (frame of the edit). */
 	values: LayerTransformValues;
 	/** Evaluated shape size at the gesture start. */

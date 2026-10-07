@@ -791,7 +791,3 @@ void main() {
 });
 
 export const SAPPHIRE_LIGHTNING_EFFECTS: readonly EffectSpec[] = [S_ULTRA_ZAP, S_ZAP, S_ZAP_TO, S_ZAP_FROM];
-
-/** Exposed for tests: the spline uniform of S_Zap at the given params. */
-export const zapSplineFor = (p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>) =>
-	splineUniform(splinePoints(p, ctx, SPLINE_NAMES, ZAP_POINTS, ZAP_ENABLES));

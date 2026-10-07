@@ -192,11 +192,6 @@ export function fxHost(): FxHost | null {
 	return host;
 }
 
-/** Test hook: forget the page host (a new one is created on next use). */
-export function resetFxHostForTests(next?: FxHost | null): void {
-	host = next;
-}
-
 function program(h: FxHost, effectId: string, pass: FxPassPlan): Program {
 	const hit = h.programs.get(pass.source);
 	if (hit instanceof FxShaderError) throw hit;

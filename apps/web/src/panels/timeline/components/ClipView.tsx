@@ -15,12 +15,7 @@ import {
 import type { MediaRuntime } from '@jasper/session';
 import { labelColor } from '@jasper/ui';
 import { memo, useCallback } from 'react';
-import {
-	type ClipDecorationDef,
-	type ClipDecorationProps,
-	clipDecorations,
-	decorationsFor,
-} from '../../../extensions/index.ts';
+import { type ClipDecorationProps, clipDecorations, decorationsFor } from '../../../extensions/index.ts';
 import { useClipBadge, useRegistry } from '../../../extensions/react.ts';
 import { TextAnimationWedges } from '../../../text-animation/TextAnimationWedges.tsx';
 import { peaksFor, reducePeaks, sheetImage, spriteFor } from '../media/media-cache.ts';
@@ -317,7 +312,12 @@ function ClipViewImpl(p: ClipViewProps) {
 					) : (
 						<span className="flex-1" />
 					)}
-					{decoProps ? decoBadges.map((d) => <DecorationBadge key={d.id} def={d} props={decoProps} />) : null}
+					{decoProps
+						? decoBadges.map((d) => {
+								const Badge = d.badge!;
+								return <Badge key={d.id} {...decoProps} />;
+							})
+						: null}
 					{showName && showBadges && p.syncOffset ? (
 						<span
 							className="shrink-0 rounded-[2px] px-[3px] text-[10px] leading-[12px] text-pr-strong"
@@ -366,7 +366,12 @@ function ClipViewImpl(p: ClipViewProps) {
 				: null}
 			{/* M2 (wp-m2-text-anim, S11:TXA-023): In/Out wedges of animated text clips. */}
 			<TextAnimationWedges clip={c} pxPerFrame={p.pxPerFrame} height={p.height} />
-			{decoProps ? decoOverlays.map((d) => <DecorationOverlay key={d.id} def={d} props={decoProps} />) : null}
+			{decoProps
+				? decoOverlays.map((d) => {
+						const Overlay = d.overlay!;
+						return <Overlay key={d.id} {...decoProps} />;
+					})
+				: null}
 			{p.trackLocked ? (
 				<div
 					className="pointer-events-none absolute inset-0"
@@ -375,16 +380,6 @@ function ClipViewImpl(p: ClipViewProps) {
 			) : null}
 		</div>
 	);
-}
-
-function DecorationBadge({ def, props }: { def: ClipDecorationDef; props: ClipDecorationProps }) {
-	const Badge = def.badge!;
-	return <Badge {...props} />;
-}
-
-function DecorationOverlay({ def, props }: { def: ClipDecorationDef; props: ClipDecorationProps }) {
-	const Overlay = def.overlay!;
-	return <Overlay {...props} />;
 }
 
 function maxOf(a: Float32Array, b: Float32Array): Float32Array {

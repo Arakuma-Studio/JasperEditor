@@ -16,9 +16,9 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 
-export const TEXT_ANIM_MIME = 'application/x-jasper-text-anim';
+const TEXT_ANIM_MIME = 'application/x-jasper-text-anim';
 
-export type TextAnimRef = { preset: string; version: number };
+type TextAnimRef = { preset: string; version: number };
 type TextAnimDragPayload = TextAnimRef & { type: 'jasper/text-anim' };
 
 export function writeTextAnimationDrag(dt: DataTransfer, ref: TextAnimRef): void {
@@ -72,7 +72,7 @@ export function selectedTextClips(session: EditorSession): string[] {
 	return textClipIds(session, session.getState().selection.timeline.clips);
 }
 
-export type ApplyAnimationArgs = {
+type ApplyAnimationArgs = {
 	side: AnimationSide;
 	preset: string;
 	version?: number;

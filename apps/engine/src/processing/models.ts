@@ -108,7 +108,7 @@ export class ModelStore {
 	}
 
 	/** Path + verified sha256 of an installed model (throws MODEL_NOT_INSTALLED / MODEL_CORRUPT). */
-	async resolve(id: string): Promise<{ path: string; sha256: string; scale: number; entry: CatalogEntry }> {
+	async resolve(id: string): Promise<{ path: string; sha256: string; scale: number }> {
 		const e = this.entry(id);
 		if (!e) throw new ModelError('MODEL_UNKNOWN', `Unknown model ${id}`);
 		const path = this.pathOf(e);
@@ -120,7 +120,7 @@ export class ModelStore {
 				throw new ModelError('MODEL_CORRUPT', `Model ${e.name} does not match its sha256 (reinstall it)`);
 			this.verified.set(path, got);
 		}
-		return { path, sha256: e.sha256, scale: e.scale, entry: e };
+		return { path, sha256: e.sha256, scale: e.scale };
 	}
 
 	/** Downloads a model (resumable is not needed at these sizes), verifies sha256, installs atomically. */

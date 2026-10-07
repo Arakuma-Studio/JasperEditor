@@ -13,7 +13,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
-import { appliedLabels, clipBox, FIXTURES, query, ROOT } from '../support.ts';
+import { appliedLabels, clipBox, FIXTURES, focusTimeline, playheadFrame, query, ROOT } from '../support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -137,9 +137,8 @@ const bridgeRead = (page: Page) =>
 /** Playhead to the sequence end (where nothing is overwritten) with the Timeline focused; returns the frame. */
 async function atEnd(page: Page): Promise<number> {
 	await query(page, 'playhead.set', { frame: 1_000_000 });
-	await page.getByTestId('timeline-timecode').click();
-	await page.keyboard.press('Escape');
-	return (await query<{ frame: number }>(page, 'playhead.get')).frame;
+	await focusTimeline(page);
+	return playheadFrame(page);
 }
 
 async function editPaste(page: Page): Promise<void> {

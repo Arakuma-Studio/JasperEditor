@@ -119,13 +119,8 @@ export function transitionSpec(effectId: string): TransitionSpec | null {
 	return BY_ID.get(effectId) ?? null;
 }
 
-/** The transition renders as a GPU shader stage (Remotion path) rather than ramps (native-capable). */
-export function isGpuTransition(spec: Pick<TransitionSpec, 'gpu'> | null | undefined): boolean {
-	return !!spec?.gpu;
-}
-
 /** A transition's params with every declared param present (stored value or default), unknown names dropped. */
-export function transitionParamsOf(
+function transitionParamsOf(
 	spec: Pick<TransitionSpec, 'params'>,
 	params: Readonly<Record<string, Animatable<ParamValue>>>,
 ): Record<string, Animatable<ParamValue>> {
@@ -376,7 +371,7 @@ export function resolveVideoTransitions(
 		if ((!out && !inc) || (t.outgoingClipId && !out) || (t.incomingClipId && !inc)) continue;
 		if ((out && !out.enabled) || (inc && !inc.enabled)) continue;
 		const dip = t.effectId === DIP_TO_BLACK;
-		const gpu = isGpuTransition(spec);
+		const gpu = !!spec.gpu;
 		if (out && inc) {
 			if (clipEnd(out) !== inc.start) continue; // not adjacent (INV-010); cleanup removes these
 			const cut = inc.start;

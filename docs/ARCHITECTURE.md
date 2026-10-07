@@ -885,8 +885,7 @@ file (`commands/schemas/<area>.ts`) and registers it in `schemas/index.ts` + `ca
 ### 19.2 Colour contract (D-21) — on `dev`
 
 - `packages/project/src/color/lut.ts`: `Lut` (3D/1D, float32, `.cube` order), `parseCube`, `serializeCube`, `bakeLut`,
-  `applyLut` (tetrahedral = FFmpeg `lut3d` default = what the WebGL shader must implement), `applyLutMix`,
-  `identityLut`, `lutMaxDelta`.
+  `applyLut` (tetrahedral = FFmpeg `lut3d` default = what the WebGL shader must implement), `applyLutMix`.
 - `EffectSpec.color?: ColorOp` with `build(params, {lut(mediaId)}) → ColorFn | null` (`registry/effects.ts`):
   pure RGB→RGB on display-referred values; alpha untouched.
 - `packages/project/src/color/runs.ts`: `effectRuns` (colour runs vs other effects, stack order),
@@ -930,7 +929,7 @@ file (`commands/schemas/<area>.ts`) and registers it in `schemas/index.ts` + `ca
 ### 19.5 Tracking and projective layers (D-27, D-28) — geometry on `dev`
 
 - `packages/project/src/render/homography.ts`: `Mat3` (row-major), `unitSquareToQuad`, `quadToQuad`, `boxToQuad`,
-  `invertMat3`, `multiplyMat3`, `applyMat3`, `mat3FromMat2D`, `isAffineMat3`, `isConvexQuad`, `mat3ToCss`
+  `invertMat3`, `multiplyMat3`, `applyMat3`, `mat3FromMat2D`, `isConvexQuad`, `mat3ToCss`
   (`matrix3d`, `transform-origin: 0 0`).
 - `jasper.corner-pin` effect (registered, `native: null`): params `topLeft/topRight/bottomRight/bottomLeft`, vec2
   **normalised to the layer box**. `resolveLayerProps` returns `projective = Motion · H(box → pinned quad)` and the
@@ -1136,8 +1135,8 @@ fframes parity/twin tests iterate fframes templates only. `@jasper/mg-templates`
 
 - `isFrameDependent(clip)` replaces the kind check in `layerViewEqual`: kinds `motion-graphic`, `animated-image`,
   `composition`, plus text clips with `animation` in their source.
-- `FontsReadyContext` from `useDocumentFonts` (`fonts.ts`): `useFontsReady(families)` → boolean; contracts ship a
-  version that resolves when the document's faces are loaded; core refines it per face (S11:FIX-003).
+- `FontsReadyContext` from `useFontsReadyState` (`fonts.ts`): `useFontsReady(families)` → boolean, tracked
+  per family, weight and style (S11:FIX-003).
 - Layer table: `shape → ShapeLayer` (placeholder: a grey box of `intrinsicBox` until wp-m2-shapes);
   `MotionGraphicLayer` renders an "anime template" placeholder card for `renderer: 'anime'` until
   wp-m2-anime-templates.

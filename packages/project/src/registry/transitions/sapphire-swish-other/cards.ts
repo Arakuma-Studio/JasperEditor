@@ -1,7 +1,6 @@
 // Card and strip transitions of the family: S_CardFlip (3D cards in perspective with lighting and a drop shadow),
 // S_StripSlideTransition (strips sliding off / on one at a time) and S_ParallaxStripsTransition (refracting glass
 // strips that grow, carry the dissolve and shrink away).
-import type { TransitionSpec } from '../../../transitions.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { GLSL_MB } from '../../fx/glsl/motion-blur.ts';
 import { fxParam } from '../../fx/params.ts';
@@ -390,9 +389,3 @@ void main() {
 		],
 	},
 });
-
-export const CARD_STRIP_TRANSITIONS: readonly TransitionSpec[] = [
-	S_CARD_FLIP,
-	S_PARALLAX_STRIPS_TRANSITION,
-	S_STRIP_SLIDE_TRANSITION,
-];

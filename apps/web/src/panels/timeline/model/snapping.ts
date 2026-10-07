@@ -2,7 +2,7 @@
 import type { Sequence } from '@jasper/project';
 
 type SnapKind = 'playhead' | 'marker' | 'inout' | 'clip' | 'zero';
-export type SnapTarget = { frame: number; kind: SnapKind; priority: number; sourceId?: string };
+export type SnapTarget = { frame: number; kind: SnapKind; priority: number };
 
 /** TL-453 tie-break priority: playhead > marker > In/Out > clip edge > frame 0. */
 const SNAP_PRIORITY: Record<SnapKind, number> = { playhead: 5, marker: 4, inout: 3, clip: 2, zero: 1 };
@@ -19,18 +19,17 @@ export function collectSnapTargets(
 	if (opts.includeClips !== false) {
 		for (const c of Object.values(seq.clips)) {
 			if (opts.exclude?.has(c.id)) continue;
-			out.push({ frame: c.start, kind: 'clip', priority: SNAP_PRIORITY.clip, sourceId: c.id });
-			out.push({ frame: c.start + c.duration, kind: 'clip', priority: SNAP_PRIORITY.clip, sourceId: c.id });
+			out.push({ frame: c.start, kind: 'clip', priority: SNAP_PRIORITY.clip });
+			out.push({ frame: c.start + c.duration, kind: 'clip', priority: SNAP_PRIORITY.clip });
 		}
 	}
 	for (const m of seq.markers) {
-		out.push({ frame: m.frame, kind: 'marker', priority: SNAP_PRIORITY.marker, sourceId: m.id });
+		out.push({ frame: m.frame, kind: 'marker', priority: SNAP_PRIORITY.marker });
 		if (m.duration > 0)
 			out.push({
 				frame: m.frame + m.duration,
 				kind: 'marker',
 				priority: SNAP_PRIORITY.marker,
-				sourceId: m.id,
 			});
 	}
 	if (seq.inPoint !== null) out.push({ frame: seq.inPoint, kind: 'inout', priority: SNAP_PRIORITY.inout });

@@ -121,7 +121,6 @@
 	box-shadow: var(--pr-shadow-floating);
 }
 
-/* The keep-alive render overlay must not paint its own background. */
 .dockview-theme-jasper .dv-render-overlay {
 	background: var(--pr-bg-panel);
 }

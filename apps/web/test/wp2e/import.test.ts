@@ -41,7 +41,7 @@ async function setup(answers: Parameters<typeof fakePrompts>[0] = {}, opts: { de
 		unloadGuard: guard,
 		desktop: opts.desktop ? { runtime: 'desktop', pickMedia: async () => picked } : null,
 	});
-	return { session, engine, jobs, guard, win, service, log, picked };
+	return { session, engine, jobs, win, service, log, picked };
 }
 
 const file = (name: string, size = 10) => new File([new Uint8Array(size)], name, { type: 'video/mp4' });

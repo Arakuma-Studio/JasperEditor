@@ -40,8 +40,6 @@ export const GLSL_PR_MODERN: GlslChunk = {
 const float PM_PI = 3.14159265358979;
 // 0 at both ends, 1 in the middle.
 float pm_bump(float p) { return sin(PM_PI * clamp(p, 0.0, 1.0)); }
-// A sharper bump (an exposure peak at the cut).
-float pm_peak(float p, float k) { return pow(pm_bump(p), k); }
 // The cross-over from A to B around the middle, w = half width of the blend (0 = a cut).
 float pm_switch(float p, float w) { return w <= 0.0 ? step(0.5, p) : smoothstep(0.5 - w, 0.5 + w, p); }
 vec4 pm_side(int side, vec2 uv) { return side == 0 ? tr_from(uv) : tr_to(uv); }
@@ -68,30 +66,8 @@ vec2 pm_fromAxes(vec2 q, vec2 dir) {
 }
 // Frame size in motion axes (px).
 vec2 pm_axesSize(vec2 dir) { return abs(dir.y) > 0.5 ? u_compSize.yx : u_compSize; }
-// Frame uv of the point that a transform (scale s about the centre c, rotation a radians, then translation t, all in
-// frame-height units so rotations stay round) brings to uv. Inverse mapping: where to read.
-vec2 pm_inverse(vec2 uv, vec2 c, float s, float a, vec2 t) {
-  vec2 asp = vec2(tr_aspect(), 1.0);
-  vec2 q = (uv - c) * asp - t;
-  float co = cos(a), si = sin(a);
-  q = vec2(co * q.x + si * q.y, -si * q.x + co * q.y) / max(s, 1e-4);
-  return q / asp + c;
-}
 // Taps of a blur whose longest path is extentPx: the wave-3 count minN, more (≤ 1 px apart, ≤ 64) when longer.
 int pm_taps(float extentPx, int minN) { return max(minN, fx_mbTapCount(extentPx, 64)); }
-// A side read along a straight motion blur: taps from uv − delta/2 to uv + delta/2 (uv units).
-vec4 pm_streak(int side, vec2 uv, vec2 delta) {
-  if (dot(delta, delta) < 1e-10) return pm_side(side, uv);
-  float ext = length(delta * u_compSize);
-  int n = pm_taps(ext, 16);
-  float j = n > 16 ? fx_mbJitterFor(ext, n) : 0.5;
-  vec4 s = vec4(0.0);
-  for (int i = 0; i < fx_mbDyn(64); i++) {
-    if (i >= n) break;
-    s += pm_side(side, uv + delta * (fx_mbTapAt(i, n, j) - 0.5));
-  }
-  return s / float(n);
-}
 // A long straight blur (32+ taps, jittered per pixel against banding).
 vec4 pm_streakLong(int side, vec2 uv, vec2 delta) {
   if (dot(delta, delta) < 1e-10) return pm_side(side, uv);

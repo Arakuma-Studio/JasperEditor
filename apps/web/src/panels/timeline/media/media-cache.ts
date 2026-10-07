@@ -6,6 +6,7 @@ import type { EngineClient } from '@jasper/engine-client';
 import type { MediaAsset } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
+import { mediaKeyOf } from '../../../import/assets.ts';
 import { type ColumnRequest, reduceColumns } from '../model/waveform.ts';
 
 /** Bumped whenever any sprite/peaks resource finishes loading. */
@@ -36,12 +37,6 @@ function cached<T>(map: Map<string, Entry<T>>, key: string, load: () => Promise<
 		});
 	map.set(key, entry);
 	return null;
-}
-
-/** Engine mediaKey of an asset (engine-store locator, ARCHITECTURE D-09). */
-function mediaKeyOf(asset: MediaAsset | undefined): string | null {
-	const loc = asset?.locators.find((l) => l.type === 'engine-store') as { key?: string } | undefined;
-	return loc?.key ?? null;
 }
 
 async function fetchJson(url: string): Promise<unknown> {

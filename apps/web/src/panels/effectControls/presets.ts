@@ -12,11 +12,11 @@ function intrinsicKey(s: FxSection): IntrinsicKey | null {
 	return (INTRINSIC as readonly string[]).includes(suffix) ? (suffix as IntrinsicKey) : null;
 }
 
-export function presetableSection(s: FxSection): boolean {
+function presetableSection(s: FxSection): boolean {
 	return s.intrinsic ? intrinsicKey(s) !== null : !!s.fx;
 }
 
-export type PresetSelection =
+type PresetSelection =
 	| { ok: true; clipId: string; sections: PresetSections; subject: string; defaultName: string }
 	| { ok: false; reason: string };
 

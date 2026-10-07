@@ -2,7 +2,7 @@
 // own `remotion bundle`, built bundle directory, zip upload), content-addressed storage
 // `<appdir>/mg-bundles/<bundleHash>/`, composition metadata (getCompositions with the LGPL binaries directory),
 // props schemas, watch + rebuild, pre-render jobs (`mg-prerender`: ProRes 4444 master + VP9-alpha preview +
-// poster under `<appdir>/mg/<renderKey>/`), posters of the Motion Templates panel and GC.
+// poster under `<appdir>/mg/<renderKey>/`) and posters of the Motion Templates panel.
 import { createHash } from 'node:crypto';
 import { existsSync, type FSWatcher, watch as fsWatch } from 'node:fs';
 import { cp, mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
@@ -48,8 +48,6 @@ import { extractZip, ZipError } from './zip.ts';
 /** CPU slots of one pre-render (S08:MGC-030) and of a bundle build. */
 const MG_PRERENDER_SLOTS = 4;
 const MG_BUNDLE_SLOTS = 4;
-/** Render directories unused for this long are removed by the GC pass (S08:MGC-031). */
-const MG_RENDER_TTL_MS = 14 * 24 * 3600 * 1000;
 const MG_DELAY_RENDER_TIMEOUT_MS = 60_000;
 const KEY_RE = /^[0-9a-f]{40}$/;
 const MEDIA_KEY_RE = /^mk_[0-9a-f]{24}$/;
@@ -127,7 +125,6 @@ export class MgBundleService {
 	private rendererPromise: Promise<RendererModule> | null = null;
 	/** Error detail and hint of failed bundle jobs (EngineJob.error carries code + message only). */
 	private readonly jobErrors = new Map<string, { detail?: unknown; hint?: string }>();
-	private gcTimer: NodeJS.Timeout | null = null;
 	private readonly now: () => Date;
 
 	constructor(private readonly o: MgBundlesOptions) {
@@ -225,17 +222,9 @@ export class MgBundleService {
 		for (const n of await readdir(this.bundlesDir).catch(() => [] as string[]))
 			if (n.startsWith('.staging-')) await rm(join(this.bundlesDir, n), { recursive: true, force: true });
 		if (this.o.localMode) await this.restoreWatches();
-		// M3 (wp-m3-cachegc): the engine's cache registry cleans `mg/<renderKey>/` (kind `mg-renders`) with project
-		// references, pins and budgets; this service's own 14-day pass only runs without it.
-		if (!this.core.cache) {
-			void this.gc().catch(() => undefined);
-			this.gcTimer = setInterval(() => void this.gc().catch(() => undefined), 24 * 3600 * 1000);
-			this.gcTimer.unref();
-		}
 	}
 
 	async stop(): Promise<void> {
-		if (this.gcTimer) clearInterval(this.gcTimer);
 		for (const w of this.watches.values()) this.closeWatch(w);
 		this.watches.clear();
 	}
@@ -951,8 +940,6 @@ export class MgBundleService {
 				ctx.progress(0.9, { stage: 'Encoding preview' });
 				await this.encodePreview(ff, join(dir, 'master.mov'), join(dir, 'preview.webm'), ctx);
 				files.preview = true;
-				await this.extractPoster(ff, join(dir, 'master.mov'), join(dir, 'poster.png'), req, ctx, null);
-				files.poster = existsSync(join(dir, 'poster.png'));
 			} else {
 				const half = req.width % 4 === 0 && req.height % 4 === 0;
 				const tmpPreview = join(scratch, 'preview.webm');
@@ -976,16 +963,16 @@ export class MgBundleService {
 				await rename(tmpPreview, join(dir, 'preview.webm'));
 				files.preview = true;
 				if (existsSync(join(dir, 'master.mov'))) files.master = true;
-				await this.extractPoster(
-					ff,
-					join(dir, 'preview.webm'),
-					join(dir, 'poster.png'),
-					req,
-					ctx,
-					'libvpx-vp9',
-				);
-				files.poster = existsSync(join(dir, 'poster.png'));
 			}
+			await this.extractPoster(
+				ff,
+				join(dir, req.quality === 'master' ? 'master.mov' : 'preview.webm'),
+				join(dir, 'poster.png'),
+				req,
+				ctx,
+				req.quality === 'master' ? null : 'libvpx-vp9',
+			);
+			files.poster = existsSync(join(dir, 'poster.png'));
 			const t = this.now().toISOString();
 			const prev = await readJsonOrNull<RenderMeta>(join(dir, 'meta.json'));
 			const meta: RenderMeta = {
@@ -1232,25 +1219,5 @@ export class MgBundleService {
 		});
 		await rename(tmp, file);
 		return file;
-	}
-
-	// ------------------------------------------------------------------ GC (MGC-031)
-
-	/** Removes composition render directories unused for 14 days. Returns the number removed. */
-	async gc(ttlMs = MG_RENDER_TTL_MS): Promise<number> {
-		let removed = 0;
-		const now = this.now().getTime();
-		for (const name of await readdir(this.mgDir).catch(() => [] as string[])) {
-			if (!KEY_RE.test(name)) continue;
-			const dir = join(this.mgDir, name);
-			const meta = await readJsonOrNull<RenderMeta>(join(dir, 'meta.json'));
-			if (meta?.kind !== 'composition') continue; // fframes renders belong to the M1 MG service
-			const used = Date.parse(meta.lastUsedAt ?? meta.createdAt);
-			if (Number.isFinite(used) && now - used > ttlMs) {
-				await rm(dir, { recursive: true, force: true });
-				removed++;
-			}
-		}
-		return removed;
 	}
 }

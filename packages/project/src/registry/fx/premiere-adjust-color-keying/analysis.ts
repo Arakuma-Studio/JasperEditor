@@ -5,7 +5,6 @@
 // Approximations: statistics come from the thumbnail (≈ 5k samples; clip percentages below ~0.02 % act like one
 // sample), and Premiere's Temporal Smoothing / Scene Detect are not offered (no state between frames: each frame is
 // analysed on its own — see the family report).
-import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { fxParam } from '../params.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
@@ -304,5 +303,3 @@ void main() {
 		],
 	},
 });
-
-export const AUTO_EFFECTS: readonly EffectSpec[] = [AUTO_COLOR, AUTO_CONTRAST, AUTO_LEVELS];

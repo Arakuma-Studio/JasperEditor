@@ -55,7 +55,7 @@ const DIM_NAMES = ['x', 'y'];
 
 type KeySelection = { clipOrTrackId: string; keyframeIds: string[] } | null;
 
-export type GraphHost = {
+type GraphHost = {
 	ops: InspectorOps;
 	selected: ReadonlySet<string>;
 	keySel: KeySelection;

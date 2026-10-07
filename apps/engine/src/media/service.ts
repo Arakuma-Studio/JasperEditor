@@ -8,6 +8,7 @@ import {
 	type RegisteredMedia,
 	TERMINAL_JOB_STATES,
 } from '@jasper/api';
+import type { CacheService } from '../cache/service.ts';
 import type { DerivativeService } from '../derivatives/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -258,19 +259,15 @@ export class MediaService {
 	 * Discards a media a client registered but never committed (M3, S07:PRC-018: Replace Footage cancelled after
 	 * its upload). Deletes only engine-managed copies under `<mediaDir>/<key>/` that no stored project file or
 	 * project version references; the user's own files (path storage) and processed versions are never touched.
-	 * Running jobs on the media are cancelled; its cached derivatives are removed — through the cache registry when
-	 * given (M3 wp-m3-cachegc: crash-safe, waits for pinned / still-rendering entries, leaves what stays busy to the
-	 * next cleaning pass and reports it as `cacheKept`), else directly.
+	 * Running jobs on the media are cancelled; its cached derivatives are removed through the cache registry
+	 * (M3 wp-m3-cachegc: crash-safe, waits for pinned / still-rendering entries, leaves what stays busy to the
+	 * next cleaning pass and reports it as `cacheKept`).
 	 */
 	async discard(
 		mediaKey: string,
 		opts: {
 			projectsDir: string;
-			cacheDir: string;
-			cache?: {
-				removeFingerprint(hex: string, o?: { waitMs?: number }): Promise<{ removed: number; kept: number }>;
-			};
-			cacheWaitMs?: number;
+			cache: Pick<CacheService, 'removeFingerprint'>;
 		},
 	): Promise<MediaDiscardResponse> {
 		return this.mutex.run(mediaKey, async () => {
@@ -285,14 +282,7 @@ export class MediaService {
 			const dir = dirname(r.storage.path);
 			if (dir === join(this.deps.mediaDir, mediaKey)) await rm(dir, { recursive: true, force: true });
 			else await rm(r.storage.path, { force: true });
-			let cacheKept = 0;
-			if (opts.cache)
-				cacheKept = (
-					await opts.cache.removeFingerprint(fingerprintHex(r.fingerprint), {
-						...(opts.cacheWaitMs !== undefined ? { waitMs: opts.cacheWaitMs } : {}),
-					})
-				).kept;
-			else await rm(join(opts.cacheDir, fingerprintHex(r.fingerprint)), { recursive: true, force: true });
+			const { kept: cacheKept } = await opts.cache.removeFingerprint(fingerprintHex(r.fingerprint));
 			this.deps.broadcaster.publish('media.updated', { mediaKey, status: 'missing' });
 			return { deleted: true, reason: 'deleted', ...(cacheKept ? { cacheKept } : {}) };
 		});

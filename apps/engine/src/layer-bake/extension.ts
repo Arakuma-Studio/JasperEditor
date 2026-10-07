@@ -29,15 +29,13 @@ import {
 	layerFileUrl,
 } from './service.ts';
 
-const LAYER_BAKE_EXTENSION_ID = 'layer-bake';
-
 type PreparedLayer = {
 	/** Native composite (absent when prepared for the Remotion path). */
 	override?: LayerOverride;
 	/** Graded master for the Remotion path (LBK-010). */
 	graded?: {
 		key: string;
-		rect: { x: number; y: number; w: number; h: number } | null;
+		rect: Rect | null;
 		startFrame: number;
 		frames: number;
 	};
@@ -77,7 +75,7 @@ function entryOf(
 
 export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 	return {
-		id: LAYER_BAKE_EXTENSION_ID,
+		id: 'layer-bake',
 		kinds: new Set(['text', 'shape']),
 		claimsLayer: (c) => needsBake(c),
 		bakes: (c) => (needsBake(c) ? 'remotion' : null),

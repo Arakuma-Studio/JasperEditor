@@ -94,8 +94,8 @@ function EffectsBody({ session }: { session: EditorSession }) {
 	);
 	const presetLib = usePresetLibrary();
 	const presetFilter = useMemo(() => ({ query, realtime, native }), [query, realtime, native]);
-	const presetHits = useMemo(
-		() => presetTree(presetLib, registry, presetFilter).matches,
+	const presets = useMemo(
+		() => presetTree(presetLib, registry, presetFilter),
 		[presetLib, registry, presetFilter],
 	);
 	const defaults = useStoreSelector(transitionDefaults(), (s) => s);
@@ -215,12 +215,13 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				<Badge on={gpu} label="GPU-accelerated" short="GPU" onClick={() => setGpu(!gpu)} />
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto" role="tree" aria-label="Effects">
-				{tree.length === 0 && transitionBins.length === 0 && presetHits === 0 ? (
+				{tree.length === 0 && transitionBins.length === 0 && presets.matches === 0 ? (
 					<p className="px-2 py-1 text-pr-small text-pr-muted">No effects match.</p>
 				) : null}
 				<PresetsBin
 					session={session}
 					lib={presetLib}
+					tree={presets}
 					filter={presetFilter}
 					closed={closed}
 					onToggle={toggle}

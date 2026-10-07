@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import type { Rational } from './types.ts';
 
-export type ProcProbe = {
+type ProcProbe = {
 	width: number;
 	height: number;
 	fps: Rational;

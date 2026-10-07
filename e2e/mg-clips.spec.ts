@@ -7,7 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, query, ROOT } from './support.ts';
+import { appliedLabels, createProject, enableAgentBridge, query, ROOT } from './support.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 
@@ -229,8 +229,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	);
 
 	// The history includes the import, insert and title edit.
-	const hist = await query<{ entries: { label: string; applied: boolean }[] }>(page, 'history.list');
-	expect(hist.entries.filter((e) => e.applied).map((e) => e.label)).toEqual(
+	expect(await appliedLabels(page)).toEqual(
 		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Edit Text «Title»']),
 	);
 	await page.screenshot({ path: 'test-results/e2e-composition-preview.png' });

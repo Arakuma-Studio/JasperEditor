@@ -43,17 +43,6 @@ export function applyMatrix(m: Mat2D, p: Vec2): Vec2 {
 	return [m.a * p[0] + m.c * p[1] + m.e, m.b * p[0] + m.d * p[1] + m.f];
 }
 
-export function multiplyMatrix(m: Mat2D, n: Mat2D): Mat2D {
-	return {
-		a: m.a * n.a + m.c * n.b,
-		b: m.b * n.a + m.d * n.b,
-		c: m.a * n.c + m.c * n.d,
-		d: m.b * n.c + m.d * n.d,
-		e: m.a * n.e + m.c * n.f + m.e,
-		f: m.b * n.e + m.d * n.f + m.f,
-	};
-}
-
 /** Inverse matrix, or null when singular (scale 0). */
 export function invertMatrix(m: Mat2D): Mat2D | null {
 	const det = m.a * m.d - m.b * m.c;

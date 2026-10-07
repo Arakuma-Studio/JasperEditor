@@ -464,8 +464,8 @@ export function createMgService(opts: MgServiceOptions) {
 	}
 
 	/**
-	 * Hook for the WP-2F native export planner: the ProRes 4444 master of a motion-graphic clip,
-	 * rendered on demand; null means "not available, plan this range with Remotion".
+	 * The native export planner's ProRes 4444 master, rendered on demand at the clip's canvas size.
+	 * Frame 0 is the clip's first frame (sourceIn applied); null means "plan this range with Remotion".
 	 */
 	async function mgMasterProvider(
 		clip: Pick<RenderVisualClip, 'source' | 'duration' | 'sourceIn'>,

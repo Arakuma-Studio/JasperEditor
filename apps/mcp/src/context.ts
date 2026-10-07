@@ -5,6 +5,7 @@ import type { AgentTxResponse, EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	approvalReasons,
+	type Clip,
 	type ProjectDocument,
 	resolveFrameInput,
 	type Sequence,
@@ -90,6 +91,14 @@ export async function loadDoc(ctx: ToolContext, projectId: string): Promise<Load
 	if (!doc || typeof doc !== 'object' || !doc.sequences)
 		throw new ToolError('INTERNAL', 'The engine returned no document');
 	return { doc, revision: r.revision, live: r.via === 'session' };
+}
+
+export function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
+	for (const seq of Object.values(doc.sequences)) {
+		const clip = seq.clips[clipId];
+		if (clip) return { seq, clip };
+	}
+	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
 }
 
 /** Resolve a tool's sequence time while preserving its actionable input hint. */

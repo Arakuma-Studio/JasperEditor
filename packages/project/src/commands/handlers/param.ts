@@ -346,7 +346,7 @@ export function validateValue(
 }
 
 /** A new key: Linear temporal, and the parameter's default spatial interpolation for points (S03:KF-021). */
-export function newKeyframe(
+function newKeyframe(
 	h: HandlerContext,
 	time: number,
 	value: unknown,

@@ -17,7 +17,7 @@ const STYLE_ATTR = 'data-jasper-processed-badges';
 const TITLE_ATTR = 'data-jasper-processed-title';
 
 /** Ids of timeline clips and Project items that use a processed version. */
-export function processedTargets(doc: ProjectDocument): { clipIds: string[]; itemIds: string[] } {
+function processedTargets(doc: ProjectDocument): { clipIds: string[]; itemIds: string[] } {
 	const clipIds: string[] = [];
 	const itemIds: string[] = [];
 	for (const seq of Object.values(doc.sequences))
@@ -38,7 +38,7 @@ const CHIP =
 	'color: var(--pr-accent); background: var(--pr-menu-bg); box-shadow: 0 0 0 1px var(--pr-border-subtle);';
 
 /** The stylesheet drawing the badges (empty when nothing is processed). */
-export function processedBadgeCss(t: { clipIds: readonly string[]; itemIds: readonly string[] }): string {
+function processedBadgeCss(t: { clipIds: readonly string[]; itemIds: readonly string[] }): string {
 	const out: string[] = [];
 	if (t.clipIds.length) {
 		const clip = t.clipIds.map((id) => `[data-testid="timeline-track-area"] div[data-clip-id="${esc(id)}"]`);

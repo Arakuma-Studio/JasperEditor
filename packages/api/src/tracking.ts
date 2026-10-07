@@ -1,5 +1,6 @@
 // Tracking contracts (M2, S09, ARCHITECTURE §19.5). Owner: wp-m2-track.
 import { z } from 'zod';
+import { RationalSchema } from './common.ts';
 
 const Vec2 = z.tuple([z.number(), z.number()]);
 
@@ -52,7 +53,7 @@ export type TrackRequest = z.infer<typeof TrackRequestSchema>;
 export const TrackResultSchema = z.object({
 	startFrame: z.number().int().min(0),
 	/** Media frame rate the frames refer to. */
-	fps: z.object({ num: z.number().int().positive(), den: z.number().int().positive() }),
+	fps: RationalSchema,
 	stride: z.union([z.literal(2), z.literal(8)]),
 	data: z.array(z.number()),
 	confidence: z.array(z.number().min(0).max(1)),

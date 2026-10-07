@@ -1,5 +1,5 @@
 // Agent bridge entry points (ARCHITECTURE §11): one AgentBridge per open session, `window.jasper` in dev
-// and Electron builds, and React hooks for the session host and the shell's approval cards (shell/AgentApprovals.tsx).
+// and Electron builds, and React hooks for the project lifecycle and the shell's approval cards (shell/AgentApprovals.tsx).
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { useEffect, useState } from 'react';
@@ -52,9 +52,7 @@ function startAgentBridge(session: EditorSession, engine: EngineClient): () => v
 	};
 }
 
-/**
- * Session-host hook (apps/web/src/state/session-host.tsx): runs the bridge while `session` is open.
- */
+/** Follows the active session, including take-over and reopen replacements in ProjectLifecycle. */
 export function useAgentBridge(session: EditorSession | null): void {
 	const engine = useEngineClient();
 	useEffect(() => (session ? startAgentBridge(session, engine) : undefined), [session, engine]);

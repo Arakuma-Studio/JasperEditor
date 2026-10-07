@@ -13,11 +13,7 @@ import { insertComposition } from '../../mg-bundles/insert.ts';
 import { useMgRuntimeAttach } from '../../mg-bundles/RuntimeHost.tsx';
 import { writeMgTemplateDrag } from './insert.ts';
 
-type NullableStore = {
-	getState(): SessionState | null;
-	subscribe(l: (s: SessionState | null, p: SessionState | null) => void): () => void;
-};
-const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () => () => {} };
+const NO_SESSION_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 type BundleEntry = { asset: MediaAsset; compositions: MgCompositionInfo[] };
 
@@ -122,9 +118,9 @@ function CompositionCard(props: {
 export function RemotionTab(props: { session: EditorSession | null; onImport(): void }) {
 	const { session } = props;
 	useMgRuntimeAttach(session);
-	const store = (session?.store as NullableStore | undefined) ?? NO_SESSION_STORE;
-	const media = useStoreSelector(store, (s) => s?.document.media ?? null);
-	const hasSequence = useStoreSelector(store, (s) => !!s?.activeSequenceId);
+	const store = session?.store ?? NO_SESSION_STORE;
+	const media = useStoreSelector(store, (s: SessionState | null) => s?.document.media ?? null);
+	const hasSequence = useStoreSelector(store, (s: SessionState | null) => !!s?.activeSequenceId);
 	const [query, setQuery] = useState('');
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
 	const bundles = useMemo(() => (media ? bundleEntries(media, query) : []), [media, query]);

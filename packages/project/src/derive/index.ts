@@ -7,17 +7,12 @@ export const clipEnd = (c: { start: number; duration: number }) => c.start + c.d
 
 // ---------------------------------------------------------------- per-track index
 
-export type TrackIndex = {
-	/** Clips on each track sorted by start. Tracks with no clips map to an empty array. */
-	byTrack: Map<string, Clip[]>;
-};
-
-const indexCache = new WeakMap<object, TrackIndex>();
+const indexCache = new WeakMap<object, Map<string, Clip[]>>();
 
 /** Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). */
 function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
-): TrackIndex {
+): Map<string, Clip[]> {
 	const cached = indexCache.get(seq.clips);
 	if (cached) return cached;
 	const byTrack = new Map<string, Clip[]>();
@@ -31,13 +26,12 @@ function sequenceIndex(
 		list.push(c);
 	}
 	for (const list of byTrack.values()) list.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-	const idx = { byTrack };
-	indexCache.set(seq.clips, idx);
-	return idx;
+	indexCache.set(seq.clips, byTrack);
+	return byTrack;
 }
 
 export function clipsOnTrack(seq: Sequence, trackId: string): Clip[] {
-	return sequenceIndex(seq).byTrack.get(trackId) ?? [];
+	return sequenceIndex(seq).get(trackId) ?? [];
 }
 
 /** First index whose clip ends after `frame` (clips on a track never overlap, so ends are sorted). */

@@ -29,10 +29,10 @@ import { type ComponentType, memo, useContext, useMemo, useRef } from 'react';
 import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { canUseHtmlInCanvas } from './fx/FxPicture.tsx';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import {
-	htmlInCanvasAvailable,
 	TransitionHub,
 	type TransitionSideEntry,
 	TransitionSidesContext,
@@ -207,7 +207,7 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 	const background = options.transparentBackground ? 'transparent' : rgbaCss(doc.settings.backgroundColor);
 	const premount = premountFrames(fps);
 	const gpu = useFxStatus();
-	const htmlInCanvas = htmlInCanvasAvailable();
+	const htmlInCanvas = canUseHtmlInCanvas();
 	// One hub per transition id for the life of the composition (the sides' taps and the stage meet there).
 	const hubs = useRef(new Map<string, TransitionHub>());
 	const hubOf = (id: string) => {

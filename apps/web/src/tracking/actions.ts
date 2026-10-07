@@ -187,7 +187,7 @@ export async function startTrack(
 	trackingStore.setState((s) => ({
 		running: {
 			...s.running,
-			[trackerId]: { jobId: null, mode, plan, mediaKey, startedAt: Date.now(), progress: null, trail: [] },
+			[trackerId]: { jobId: null, mode, plan, progress: null, trail: [] },
 		},
 	}));
 	const body = {
@@ -264,7 +264,6 @@ export function handleEngineEvent(session: EditorSession, engine: TrackingEngine
 		const trail = c ? [...r.trail, c].slice(-TRAIL_LENGTH) : r.trail;
 		patchRunning(trackerId, {
 			progress: {
-				frame: p.data.frame,
 				data: p.data.data,
 				confidence: p.data.confidence,
 				done: p.data.done,

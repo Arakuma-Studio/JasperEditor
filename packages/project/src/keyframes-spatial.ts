@@ -13,7 +13,7 @@
 import type { Keyframe, Spatial, SpatialInterpolation, Vec2 } from './schema/common.ts';
 
 /** Arc-length samples per segment (S03:KF-031). */
-export const ARC_LENGTH_SAMPLES = 64;
+const ARC_LENGTH_SAMPLES = 64;
 /** Cached tables before the cache is reset (results never depend on the cache). */
 const ARC_CACHE_LIMIT = 4096;
 
@@ -30,7 +30,7 @@ export function spatialModeOf(k: Pick<Keyframe<unknown>, 'spatial'>): SpatialInt
 }
 
 /** Auto Bezier tangents of key `i` (Catmull-Rom, S03:KF-030): `out = (next − prev) / 6`, `in = −out`. */
-export function autoTangents(kfs: readonly Keyframe<unknown>[], i: number): Tangents {
+function autoTangents(kfs: readonly Keyframe<unknown>[], i: number): Tangents {
 	const k = kfs[i]!;
 	const prev = kfs[i - 1] ?? k;
 	const next = kfs[i + 1] ?? k;
@@ -122,11 +122,6 @@ export function arcLengthTable(seg: BezierSegment): Float64Array {
 	return table;
 }
 
-/** Arc length of a curved segment. */
-export function bezierLength(seg: BezierSegment): number {
-	return arcLengthTable(seg)[ARC_LENGTH_SAMPLES]!;
-}
-
 function unit(v: Vec2): Vec2 | null {
 	const l = Math.hypot(v[0], v[1]);
 	return l > 0 ? [v[0] / l, v[1] / l] : null;
@@ -169,26 +164,16 @@ export function pathPointAt(seg: BezierSegment, s: number): Vec2 {
 /** Value distance of the segment leaving key `i`: the path length when curved, else the chord. */
 export function spatialSegmentLength(kfs: readonly Keyframe<unknown>[], i: number): number {
 	const seg = spatialSegment(kfs, i);
-	if (seg) return bezierLength(seg);
+	if (seg) return arcLengthTable(seg)[ARC_LENGTH_SAMPLES]!;
 	const a = kfs[i]?.value;
 	const b = kfs[i + 1]?.value;
 	return isVec2Value(a) && isVec2Value(b) ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
 }
 
-/** True when some segment of the animation is a curve (native expression planners must sample `evaluate`). */
-export function hasCurvedSpatialPath(anim: { keyframes: readonly Keyframe<unknown>[] }): boolean {
-	const kfs = anim.keyframes;
-	for (let i = 0; i + 1 < kfs.length; i++) {
-		if (kfs[i]!.interpolation === 'hold') continue;
-		if (spatialSegment(kfs, i)) return true;
-	}
-	return false;
-}
-
 // ---------------------------------------------------------------- editing (commands, S03:KF-021, OVL-020)
 
 /** Spatial input of the keyframe commands: tangents omitted = keep the key's current ones. */
-export type SpatialInput = { mode: SpatialInterpolation; inTangent?: Vec2; outTangent?: Vec2 };
+type SpatialInput = { mode: SpatialInterpolation; inTangent?: Vec2; outTangent?: Vec2 };
 
 /** `other` turned to point opposite `lead`, keeping its length (mirrored when it has none). */
 function opposite(lead: Vec2, other: Vec2): Vec2 {

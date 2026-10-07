@@ -29,7 +29,7 @@ import { pointParams } from './PointOverlay.tsx';
 type Vec2 = [number, number];
 
 /** The selected transition (last selected) of the active sequence with its type, or null. */
-export function selectedTransition(
+function selectedTransition(
 	doc: ProjectDocument,
 	seqId: string | null,
 	ids: readonly string[],

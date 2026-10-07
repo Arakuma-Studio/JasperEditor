@@ -184,11 +184,10 @@ export function TrackArea(props: TrackAreaProps) {
 	const outX = seq.outPoint !== null ? frameToX(v, seq.outPoint) : null;
 	const razorRow =
 		overlays.razor?.trackId !== undefined && overlays.razor?.trackId !== null
-			? [...layout.video.rows, ...layout.audio.rows].find((r) => r.trackId === overlays.razor!.trackId)
+			? rowOf(layout, overlays.razor.trackId)
 			: null;
-	const limitRow = overlays.limit
-		? [...layout.video.rows, ...layout.audio.rows].find((r) => r.trackId === overlays.limit!.trackId)
-		: null;
+	const limitRow = overlays.limit ? rowOf(layout, overlays.limit.trackId) : null;
+	const ghostRow = overlays.transitionGhost ? rowOf(layout, overlays.transitionGhost.trackId) : null;
 	return (
 		<div className="absolute inset-0" data-testid="timeline-track-area">
 			<Region {...props} region={layout.video} offsets={offsets} />
@@ -255,19 +254,14 @@ export function TrackArea(props: TrackAreaProps) {
 					</span>
 				</div>
 			) : null}
-			{overlays.transitionGhost
-				? (() => {
-						const row = rowOf(layout, overlays.transitionGhost.trackId);
-						return row ? (
-							<TransitionGhostView
-								ghost={overlays.transitionGhost}
-								rowY={row.y}
-								rowHeight={row.height}
-								v={v}
-							/>
-						) : null;
-					})()
-				: null}
+			{overlays.transitionGhost && ghostRow ? (
+				<TransitionGhostView
+					ghost={overlays.transitionGhost}
+					rowY={ghostRow.y}
+					rowHeight={ghostRow.height}
+					v={v}
+				/>
+			) : null}
 			{overlays.snapFrame !== null ? (
 				<div
 					className="pointer-events-none absolute top-0 bottom-0"

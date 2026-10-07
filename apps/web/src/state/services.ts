@@ -56,8 +56,6 @@ export interface ImportService {
 		payload: ProjectItemsDragPayload,
 		target: Extract<ImportTarget, { kind: 'timeline' | 'program' }>,
 	): Promise<{ clipIds: string[] }>;
-	/** Parses a DataTransfer into a payload (null when nothing importable). */
-	readDataTransfer(dt: DataTransfer): DragPayload | null;
 }
 
 // ---------------------------------------------------------------- registration (WP-2E, additive)

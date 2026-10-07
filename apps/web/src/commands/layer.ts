@@ -232,7 +232,12 @@ function arrangeCommand(id: string, op: ArrangeOp): UiCommand {
 			);
 			if (ok && p.reason) ctx.ui.toast({ kind: 'info', message: label, detail: p.reason });
 		},
-		{ disabledReason: (ctx) => (plan(ctx)?.moves.length ? undefined : plan(ctx)?.reason) },
+		{
+			disabledReason: (ctx) => {
+				const result = plan(ctx);
+				return result?.moves.length ? undefined : result?.reason;
+			},
+		},
 	);
 }
 

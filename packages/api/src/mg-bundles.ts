@@ -2,6 +2,7 @@
 // Bundles are served under `/mg/bundles/:key/*`; pre-render masters reuse `/mg/:renderKey/:file`.
 import { MgBundleInfoSchema } from '@jasper/project';
 import { z } from 'zod';
+import { RationalSchema } from './common.ts';
 
 /** Error codes of the mg-bundles routes and jobs (S08:MGA-002; each comes with an actionable hint). */
 export const MG_BUNDLE_ERROR_CODES = [
@@ -41,7 +42,7 @@ export const MgPrerenderRequestSchema = z.object({
 	props: z.record(z.string(), z.unknown()),
 	width: z.number().int().positive(),
 	height: z.number().int().positive(),
-	fps: z.object({ num: z.number().int().positive(), den: z.number().int().positive() }),
+	fps: RationalSchema,
 	/** Composition frame of the master's frame 0, and the number of frames. */
 	startFrame: z.number().int().min(0),
 	durationFrames: z.number().int().positive(),

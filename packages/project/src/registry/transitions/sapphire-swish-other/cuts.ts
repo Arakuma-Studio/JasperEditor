@@ -1,7 +1,6 @@
 // Cutting transitions of the family: S_FlutterCut (rapid cuts between the clips, optional colour and inverted
 // frames; the frame pattern is computed in TS, a pure function of the params and the span) and S_TVChannelChange
 // (bad reception into black/static and out of it on the other channel).
-import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams } from '../../effects.ts';
 import { GLSL_COLOR } from '../../fx/glsl/color.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
@@ -290,5 +289,3 @@ void main() {
 		],
 	},
 });
-
-export const CUT_TRANSITIONS: readonly TransitionSpec[] = [S_FLUTTER_CUT, S_TV_CHANNEL_CHANGE];

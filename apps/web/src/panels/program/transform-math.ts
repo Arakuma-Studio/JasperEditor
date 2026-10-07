@@ -69,10 +69,6 @@ const OPPOSITE: Record<HandleId, HandleId> = {
 	w: 'e',
 };
 
-export function oppositeHandle(h: HandleId): HandleId {
-	return OPPOSITE[h];
-}
-
 function isCorner(h: HandleId): boolean {
 	return h.length === 2;
 }
@@ -150,7 +146,7 @@ export function scaleFromHandle(i: ScaleInput): ScaleResult {
 	const flipX = v.flipH ? -1 : 1;
 	const flipY = v.flipV ? -1 : 1;
 	const qh = handlePoint(i.rect, i.handle);
-	const qref = i.aboutOpposite ? handlePoint(i.rect, oppositeHandle(i.handle)) : v.anchor;
+	const qref = i.aboutOpposite ? handlePoint(i.rect, OPPOSITE[i.handle]) : v.anchor;
 	const M = layerMatrix(v);
 	const pref = applyMatrix(M, qref);
 	const d = sub(qh, qref);

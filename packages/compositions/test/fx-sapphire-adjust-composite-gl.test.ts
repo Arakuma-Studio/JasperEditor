@@ -3,21 +3,13 @@
 // no GPU): identity at defaults, one characteristic pixel per effect, alpha, the Mask block, media inputs, matte
 // shrink/grow per filter, edge noise determinism, EdgeFlash light and Z compositing. Same harness as fx-gl.test.ts
 // (FX_GL=0 skips it).
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Browser, chromium, type Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const CHROME = [
-	process.env.JASPER_BROWSER_EXECUTABLE,
-	'/usr/bin/google-chrome',
-	'/usr/bin/google-chrome-stable',
-	'/usr/bin/chromium',
-	'/usr/bin/chromium-browser',
-].find((p): p is string => !!p && existsSync(p));
 
 type Px = [number, number, number, number];
 const rgbNear = (a: Px | number[], b: number[], tol = 3) => b.every((v, i) => Math.abs(a[i]! - v) <= tol);
@@ -37,30 +29,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			) as Promise<T>;
 
 		beforeAll(async () => {
-			const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-			const esbuild = req('esbuild') as {
-				build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-			};
-			const out = await esbuild.build({
-				entryPoints: [join(here, 'fx-sapphire-adjust-composite-gl', 'entry.ts')],
-				bundle: true,
-				write: false,
-				format: 'iife',
-				platform: 'browser',
-				target: 'es2022',
-				define: { 'process.env.NODE_ENV': '"production"' },
-				logLevel: 'silent',
-			});
-			browser = await chromium.launch({
-				executablePath: CHROME,
-				args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-			});
-			page = await browser.newPage();
-			const errors: string[] = [];
-			page.on('pageerror', (e) => errors.push(e.message));
-			await page.setContent('<!doctype html><html><body></body></html>');
-			await page.addScriptTag({ content: out.outputFiles[0]!.text });
-			if (errors.length) throw new Error(errors.join('\n'));
+			({ browser, page } = await openGlPage(join(here, 'fx-sapphire-adjust-composite-gl', 'entry.ts')));
 		}, 120_000);
 
 		afterAll(async () => {

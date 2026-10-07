@@ -82,9 +82,6 @@ export class History {
 	get position(): number {
 		return this.index;
 	}
-	get length(): number {
-		return this.entries.length;
-	}
 	view(): HistoryState {
 		return {
 			entries: this.entries.map(

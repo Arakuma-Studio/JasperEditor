@@ -18,7 +18,7 @@ export type EngineConfig = {
 
 export type EngineContext = {
 	config: EngineConfig;
-	/** Optional services registered by wave-2 packages (jobs, media registry, events, mg, agent…). */
+	/** Core services and services registered by route plugins (events, mg, agent…). */
 	services: Record<string, unknown>;
 };
 

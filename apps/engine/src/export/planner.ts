@@ -174,13 +174,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 
 	// ---- media resolution (engine-store keys only: never trust path locators from a client, S04:SC-003)
 	const media: Record<string, LocalMedia> = {};
-	const offline: string[] = [];
 	for (const asset of Object.values(document.media)) {
 		const key = mediaKeyOf(asset);
 		const record = key ? deps.registry.get(key) : null;
 		const path = record ? await deps.registry.resolvePath(record.mediaKey) : null;
 		if (record && path) media[asset.id] = { path, record };
-		else offline.push(asset.id);
 	}
 	const fontFallbacks = new Set<string>();
 	const snapshot = buildRenderSnapshot(document, input.sequenceId, {

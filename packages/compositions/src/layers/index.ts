@@ -46,7 +46,7 @@ export {
 	VideoLayer,
 };
 
-export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>> = {
+const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>> = {
 	video: VideoLayer,
 	still: StillLayer,
 	'animated-image': StillLayer,

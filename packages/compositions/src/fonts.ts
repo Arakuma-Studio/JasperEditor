@@ -207,8 +207,3 @@ export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadySt
 		[fonts, version],
 	);
 }
-
-/** Whether every document face has loaded or settled on the fallback font. */
-export function useDocumentFonts(fonts: readonly FontFaceSpec[]): boolean {
-	return useFontsReadyState(fonts).allLoaded;
-}
