@@ -30,6 +30,7 @@ import {
 	fadeFactor,
 	flicksPerFrame,
 	isCssBlend,
+	isStencilBlend,
 	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
@@ -603,8 +604,21 @@ export function VideoTracks({
 			</Fragment>
 		);
 	}
+	// keyframes-blend: Stencil / Silhouette cut the stack below them, background included; what they reveal is the
+	// background (After Effects: the comp background), drawn once more under the whole stack (= the native export).
+	const stencilled =
+		!!background &&
+		background[3] > 0 &&
+		tracks.some(
+			(t) =>
+				t.clips.some((c) => isStencilBlend(c.blendMode)) ||
+				t.stages.some((st) => isStencilBlend(st.blendModeId)),
+		);
 	return (
 		<TrackMatteContext.Provider value={matteContext}>
+			{stencilled ? (
+				<AbsoluteFill data-stencil-background="" style={{ backgroundColor: rgbaCss(background) }} />
+			) : null}
 			{hiddenMattes.map((track) => (
 				<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
 					{track.clips.map((clip) => {

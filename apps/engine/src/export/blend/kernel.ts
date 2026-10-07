@@ -1,77 +1,69 @@
-// The blend-composite kernel of the native export (keyframes-blend): composites the layer stack below the top blend
-// layer frame by frame — every part a sequence-sized straight-RGBA frame (a run of Normal layers composited by
-// ffmpeg, or one blend-mode layer placed by ffmpeg) — onto transparency with each part's mode, exactly as the GL
-// compositor of the preview does (`packages/compositions/src/fx/composite-plan.ts`): the formulas are
-// `makeBlendKernel` of @jasper/project (`blend-modes.ts`, the same source text runs in the worker threads), the stack
-// is stored premultiplied on the 8-bit grid between parts (`storePremul8`) and Dissolve hashes the sequence pixel.
-// `compositeBlendFrame` is self-contained (no imports, no closures over module scope): its source text runs inside the
+// The blend kernel of the native export (keyframes-blend): one frame of a blend layer composited onto the composite
+// below it, exactly as the preview's GL compositor does (`packages/compositions/src/fx/composite-plan.ts`): the
+// formulas are `makeBlendKernel` of @jasper/project (`blend-modes.ts`; the same source text runs in the worker
+// threads), the result is stored premultiplied on the 8-bit grid (`storePremul8`) and Dissolve hashes the sequence
+// pixel with the layer's seed of the frame. Input: a `2W×H` straight-RGBA frame, the composite below ‖ the layer
+// placed on transparency (ffmpeg `hstack`); output: the `W×H` straight-RGBA result.
+// `blendStackedFrame` is self-contained (no imports, no closures over module scope): its source text runs inside the
 // worker threads (pool.ts), so tests and production share one implementation.
 import type { BlendKernel } from '@jasper/project';
 
-/**
- * Composites `parts` (straight RGBA, `W×H`, bottom → top) with `modes` (BLEND_MODES indexes) and Dissolve `seeds`
- * into `out` (straight RGBA): what lies below the top blend layer, over transparency.
- */
-export function compositeBlendFrame(
+export function blendStackedFrame(
 	K: BlendKernel,
-	parts: readonly Uint8Array[],
-	modes: ArrayLike<number>,
-	seeds: ArrayLike<number>,
+	src: Uint8Array,
 	W: number,
 	H: number,
+	mode: number,
+	seed: number,
+	active: boolean,
 	out: Uint8Array,
 ): void {
 	const d = new Float64Array(4);
 	const s = new Float64Array(4);
-	const n = parts.length;
+	const row = W * 8;
 	for (let y = 0; y < H; y++) {
 		for (let x = 0; x < W; x++) {
-			const i = (y * W + x) * 4;
-			d[0] = 0;
-			d[1] = 0;
-			d[2] = 0;
-			d[3] = 0;
-			for (let p = 0; p < n; p++) {
-				const src = parts[p]!;
-				const a8 = src[i + 3]!;
-				const m = modes[p]!;
-				if (a8 === 0) {
-					// A transparent source leaves the stack as it is, except the stencils, which clear it.
-					if (m === 27 || m === 28) {
-						d[0] = 0;
-						d[1] = 0;
-						d[2] = 0;
-						d[3] = 0;
-					}
-					continue;
-				}
-				const sa = a8 / 255;
-				s[0] = (src[i]! / 255) * sa;
-				s[1] = (src[i + 1]! / 255) * sa;
-				s[2] = (src[i + 2]! / 255) * sa;
-				s[3] = sa;
-				K.blend(m, d, s, m === 1 ? K.noise(x, y, seeds[p]!) : 0);
-				// storePremul8: alpha 0..1, colour 0..alpha, each on the 8-bit grid.
-				const a = d[3]! < 0 ? 0 : d[3]! > 1 ? 1 : d[3]!;
-				for (let k = 0; k < 3; k++) {
-					const c = d[k]! < 0 ? 0 : d[k]! > a ? a : d[k]!;
-					d[k] = Math.round(c * 255) / 255;
-				}
-				d[3] = Math.round(a * 255) / 255;
-			}
-			const A = d[3]!;
-			if (A <= 0) {
-				out[i] = 0;
-				out[i + 1] = 0;
-				out[i + 2] = 0;
-				out[i + 3] = 0;
+			const i = y * row + x * 4;
+			const j = i + W * 4;
+			const o = (y * W + x) * 4;
+			const ba = src[i + 3]!;
+			const la = src[j + 3]!;
+			// Inactive frame, or a transparent layer pixel (it leaves the composite as it is — except the stencils,
+			// which keep the composite only where the layer is): copy.
+			if (!active || (la === 0 && mode !== 27 && mode !== 28)) {
+				out[o] = src[i]!;
+				out[o + 1] = src[i + 1]!;
+				out[o + 2] = src[i + 2]!;
+				out[o + 3] = ba;
 				continue;
 			}
-			const inv = 255 / A;
-			out[i] = Math.min(255, Math.round(d[0]! * inv));
-			out[i + 1] = Math.min(255, Math.round(d[1]! * inv));
-			out[i + 2] = Math.min(255, Math.round(d[2]! * inv));
-			out[i + 3] = Math.round(A * 255);
+			const da = ba / 255;
+			d[0] = (src[i]! / 255) * da;
+			d[1] = (src[i + 1]! / 255) * da;
+			d[2] = (src[i + 2]! / 255) * da;
+			d[3] = da;
+			const sa = la / 255;
+			s[0] = (src[j]! / 255) * sa;
+			s[1] = (src[j + 1]! / 255) * sa;
+			s[2] = (src[j + 2]! / 255) * sa;
+			s[3] = sa;
+			K.blend(mode, d, s, mode === 1 ? K.noise(x, y, seed) : 0);
+			// storePremul8 (alpha 0..1, colour 0..alpha, on the 8-bit grid), then straight 8-bit.
+			const a = d[3]! < 0 ? 0 : d[3]! > 1 ? 1 : d[3]!;
+			const A = Math.round(a * 255);
+			if (A === 0) {
+				out[o] = 0;
+				out[o + 1] = 0;
+				out[o + 2] = 0;
+				out[o + 3] = 0;
+				continue;
+			}
+			for (let k = 0; k < 3; k++) {
+				const c = d[k]! < 0 ? 0 : d[k]! > a ? a : d[k]!;
+				const c8 = Math.round(c * 255);
+				out[o + k] = Math.min(255, Math.round((c8 * 255) / A));
+			}
+			out[o + 3] = A;
 		}
 	}
 }

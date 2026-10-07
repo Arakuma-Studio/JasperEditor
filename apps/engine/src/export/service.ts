@@ -27,6 +27,7 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
+import { runBlendPipeline } from './blend/run.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -418,6 +419,15 @@ export class ExportService {
 			const i = args.indexOf('-filter_complex');
 			args = [...args.slice(0, i), '-filter_complex_script', script, ...args.slice(i + 2)];
 		}
+		for (const [i, seg] of (graph.blend?.segments ?? []).entries()) {
+			if (seg.filter.length > 60_000) {
+				const script = join(await ctx.scratchDir(), `blend-${i}.txt`);
+				await writeFile(script, seg.filter);
+				const k = seg.args.indexOf('-filter_complex');
+				seg.args = [...seg.args.slice(0, k), '-filter_complex_script', script, ...seg.args.slice(k + 2)];
+			}
+			ctx.log(`ffmpeg (blend layer ${i + 1}) ${seg.args.join(' ')}`);
+		}
 		ctx.log(`ffmpeg ${args.join(' ')}`);
 		const total = graph.durationSec;
 		const started = Date.now();
@@ -428,9 +438,15 @@ export class ExportService {
 		ctx.signal.addEventListener('abort', onJobAbort, { once: true });
 		const producers: Promise<void>[] = [];
 		let streamError: Error | null = null;
-		const workers = Math.max(2, Math.floor(Math.max(1, ctx.slots) / Math.max(1, graph.streams.length)));
-		const runStreams = (child: ChildProcess) => {
-			for (const s of graph.streams) {
+		const blend = graph.blend;
+		const allStreams =
+			graph.streams.length + (blend?.segments.reduce((n, sg) => n + sg.streams.length, 0) ?? 0);
+		const workers = Math.max(
+			2,
+			Math.floor(Math.max(1, ctx.slots) / Math.max(1, allStreams + (blend?.segments.length ?? 0))),
+		);
+		const runStreams = (child: ChildProcess, streams = graph.streams) => {
+			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
 				producers.push(
 					streamLayer(this.deps.ff, s.plan, sink, {
@@ -445,13 +461,37 @@ export class ExportService {
 				);
 			}
 		};
+		// keyframes-blend: the processes before the composite run while it runs; the last kernel feeds its pipe:3.
+		const runBlend = (child: ChildProcess) => {
+			if (!blend) return;
+			producers.push(
+				runBlendPipeline(
+					this.deps.ff,
+					blend.segments,
+					{ width: blend.width, height: blend.height },
+					child.stdio[blend.backdropFd] as Writable,
+					{
+						workers,
+						signal: streamAbort.signal,
+						onSpawn: ctx.trackChild,
+						runStreams: (c, streams) => runStreams(c, streams),
+					},
+				).catch((e: Error) => {
+					if (streamAbort.signal.aborted) return;
+					streamError ??= e;
+					void terminateTree(child, 500);
+				}),
+			);
+		};
+		const pipes = graph.streams.length + (blend ? 1 : 0);
 		try {
 			await this.deps.ff.run(args, {
 				signal: ctx.signal,
-				...(graph.streams.length > 0 ? { pipes: graph.streams.length } : {}),
+				...(pipes > 0 ? { pipes } : {}),
 				onSpawn: (child) => {
 					ctx.trackChild(child);
 					if (graph.streams.length > 0) runStreams(child);
+					runBlend(child);
 				},
 				onProgress: (p) => {
 					if (still || total <= 0) return;

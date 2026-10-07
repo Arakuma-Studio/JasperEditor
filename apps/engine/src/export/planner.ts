@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	blendModeInfo,
 	buildRenderSnapshot,
 	clipContentTime,
 	defaultEffectRegistry,
@@ -534,7 +535,6 @@ export function nativeBlockers(
 	if ('generator' in c.source && !exts.some((e) => e.id === 'synthetic'))
 		out.push(`${label} draws a generator that needs the synthetic extension`);
 	if (exts.some((e) => e.claimsLayer?.(c))) {
-		if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
 		if (c.speed.reverse) out.push(`${label} plays in reverse`);
 		return out;
 	}
@@ -566,7 +566,8 @@ export function nativeBlockers(
 				: `${label} has masks the native kernel does not draw on this layer (no layer bake available)`,
 		);
 	// Keyframed Motion and Opacity are native: the builder samples them per frame (S03:ENG-032, keyframed.ts).
-	if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
+	// keyframes-blend: blend modes are native in the sequence's own stack (the blend pipeline, native.ts);
+	// `nestBlockers` refuses them inside nested sequences.
 	if (c.speed.reverse) out.push(`${label} plays in reverse`);
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
@@ -633,6 +634,14 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 					clipId: c.clipId,
 					reason: `nested sequence clip "${c.name}" has animated, sub-pixel or corner-pinned Motion and contains sub-pixel or masked layers`,
 				});
+			// keyframes-blend: a nested stack is drawn inside one process, where a blend layer cannot reach the blend
+			// kernel (the nest clip itself may have any blend mode).
+			for (const x of sub.videoTracks.flatMap((t) => t.clips))
+				if ((x.blendMode ?? 'normal') !== 'normal')
+					out.push({
+						clipId: x.clipId,
+						reason: `${x.kind} clip "${x.name}" inside nested sequence clip "${c.name}" uses blend mode "${blendModeInfo(x.blendMode)?.label ?? x.blendMode}" (native blend modes apply to the sequence's own layers)`,
+					});
 			out.push(...nestBlockers(sub));
 		}
 	return out;
