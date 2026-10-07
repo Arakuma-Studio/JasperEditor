@@ -23,6 +23,8 @@ export const ID_PREFIXES = {
 	font: 'fnt',
 	/** M2 (S09): trackers placed on a clip. */
 	tracker: 'tkr',
+	/** wp shapes: items of a vector shape (unique within their clip). */
+	shapeItem: 'shp',
 	/** text-animators workstream: text animators and their selectors. */
 	textAnimator: 'tan',
 	textSelector: 'tsl',

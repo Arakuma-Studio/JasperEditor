@@ -60,6 +60,9 @@ export type ActiveTool =
 	// M2 (S11:SHP-006, wp-m2-shapes): Program monitor shape tools (XF-061).
 	| 'rectangle'
 	| 'ellipse'
+	// wp shapes: Polygon and Star tools (After Effects' shape tool group; vector shapes).
+	| 'polygon'
+	| 'star'
 	| 'hand'
 	| 'zoom'
 	| 'type';

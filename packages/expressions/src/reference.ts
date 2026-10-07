@@ -245,7 +245,16 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 		'thisLayer.text.sourceText',
 		'Text clips: the Source Text (string; .style.fontSize, .fillColor, … read the style).',
 	),
-	L('shape', 'thisLayer.shape', 'Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius.'),
+	L(
+		'shape',
+		'thisLayer.shape',
+		'Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius (rectangles / ellipses); vector shapes: their contents.',
+	),
+	L(
+		'content',
+		'content("Group 1").content("Rectangle Path 1").size',
+		'Vector shapes: an item by name, index or id; groups have .content(name) and .transform (anchorPoint, position, scale, skew, skewAxis, rotation, opacity); items expose their properties by name (size, roundness, color, opacity, strokeWidth → width, start, end, offset, copies…).',
+	),
 	L('audio', 'thisLayer.audio', 'Audio clips: audioLevels (Volume, dB) and pan.'),
 	L('params', 'thisLayer.params(name)', 'Motion-graphic template parameters (read only).'),
 	L('marker', 'thisLayer.marker', 'Clip markers.'),

@@ -3,7 +3,7 @@
 // width, position) and Corner Radius (rectangles). Rows reuse the inspector's PropertyRow, so ◆ keyframes,
 // reset, scrubs as one gesture and multi-selection (mixed `–`, relative scrubs) work like every other property.
 // "None" toggles write `clip.update {shape: {fill | stroke}}`; values go through `param.set shape.*`.
-import type { Clip, Command, ShapeClip } from '@jasper/project';
+import type { Clip, Command, LegacyShapeClip } from '@jasper/project';
 import { useSessionState } from '@jasper/session/react';
 import { Icon } from '@jasper/ui';
 import { type ReactNode, useRef } from 'react';
@@ -29,8 +29,9 @@ const ROW = 'flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1 pl-2';
 const LABEL = 'w-[34%] shrink-0 truncate text-pr-ui text-pr-muted';
 const OUTSIDE_HINT = 'Move the playhead over the clip to add a keyframe';
 
+/** Rectangles and ellipses (vector shapes have Properties ▸ Shape Contents, wp shapes). */
 export const isShapeSelection = (clips: readonly Clip[]) =>
-	clips.length > 0 && clips.every((c) => c.kind === 'shape');
+	clips.length > 0 && clips.every((c) => c.kind === 'shape' && c.shape.type !== 'vector');
 
 export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionProps) {
 	const doc = useSessionState((s) => s.transient ?? s.document);
@@ -38,7 +39,7 @@ export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionP
 	const notices = useNotices();
 	const seq = doc.sequences[sequenceId];
 	if (!seq) return null;
-	const shapes = clips.filter((c): c is ShapeClip => c.kind === 'shape');
+	const shapes = clips.filter((c): c is LegacyShapeClip => c.kind === 'shape' && c.shape.type !== 'vector');
 	const ctx: RowContext = {
 		doc,
 		seq,
@@ -56,7 +57,7 @@ export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionP
 		);
 		return r && r.bindings.length === list.length ? r : null;
 	};
-	const updateShapes = (label: string, list: ShapeClip[], shape: Record<string, unknown>) =>
+	const updateShapes = (label: string, list: LegacyShapeClip[], shape: Record<string, unknown>) =>
 		ops.apply(
 			label,
 			list.map((c) => ({ type: 'clip.update', clipId: c.id, patch: { shape } }) as Command),
@@ -136,6 +137,23 @@ export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionP
 			</div>
 			{strokeRows.map((r) => (r ? <PropertyRow key={r.id} row={r} ctx={ctx} indent /> : null))}
 			{radius ? <PropertyRow row={radius} ctx={ctx} /> : null}
+			{/* wp shapes: the editable vector form (groups, gradients, path operators); the picture does not change. */}
+			<div className={ROW}>
+				<span className={LABEL} />
+				<button
+					type="button"
+					className="h-[20px] rounded-pr-control border border-pr-border-strong px-2 text-pr-ui text-pr-text hover:bg-pr-hover"
+					onClick={() =>
+						ops.apply(
+							'Convert to Vector Shape',
+							shapes.map((c) => ({ type: 'shape.convertToVector', clipId: c.id }) as Command),
+						)
+					}
+					data-testid="shape-convert-vector"
+				>
+					Convert to Vector Shape
+				</button>
+			</div>
 		</div>
 	);
 }

@@ -18,9 +18,11 @@ import {
 	resolvePropertyAt,
 	type Sequence,
 	selectorFields,
+	shapeItemSpecs,
 	type TextAnimatorGroup,
 	type TextSelector,
 	textAnimatorPropertySpecs,
+	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
 import {
@@ -263,7 +265,7 @@ export function buildGroups(
 					.filter((r): r is Row => r !== null),
 				...(pinned ? { masks: maskList(doc, seq, clip, pinned.masks, pinned.id, frame) } : {}),
 			});
-			if (clip.kind === 'shape')
+			if (clip.kind === 'shape' && clip.shape.type !== 'vector')
 				sections.push({
 					id: `${clip.id}:shape`,
 					title: 'Shape',
@@ -271,6 +273,21 @@ export function buildGroups(
 					intrinsic: true,
 					rows: rows(shapePropertyKeys(clip)),
 				});
+			// wp shapes: a vector shape's contents, one section per item (AE's Contents twirl-downs), in list order.
+			if (clip.kind === 'shape' && clip.shape.type === 'vector') {
+				const names = new Map<string, string>();
+				walkItems(clip.shape.contents, (it, parent) => {
+					const title = parent ? `${names.get(parent.id)} › ${it.name}` : it.name;
+					names.set(it.id, title);
+					sections.push({
+						id: `${clip.id}:shape:${it.id}`,
+						title: `Contents › ${title}${it.enabled === false ? ' (off)' : ''}`,
+						clip,
+						intrinsic: true,
+						rows: rows(shapeItemSpecs(clip, it.id).map((sp) => sp.key)),
+					});
+				});
+			}
 			const tpl = templateOf(clip, registries.mgTemplates);
 			if (tpl) {
 				sections.push({

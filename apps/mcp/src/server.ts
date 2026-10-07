@@ -28,7 +28,7 @@ import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
-import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
@@ -126,6 +126,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerKeyframesBlendTools(ctx);
 	registerMaskTools(ctx);
 	registerShapeTools(ctx);
+	registerVectorShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);

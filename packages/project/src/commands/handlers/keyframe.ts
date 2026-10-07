@@ -22,6 +22,7 @@ import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/com
 import type { Mask } from '../../schema/mask.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import { shapeItemPropertySpecs } from '../../vector/properties.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { CommandOf, ParamPath } from '../schemas/index.ts';
 import { PRUNE_EMPTY_KEYFRAMES, templateParamDraftAnim } from './mg-template.ts';
@@ -67,6 +68,13 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
 	}
+	// wp shapes: every item property of a vector shape (dynamic `shape.items.<id>.<field>` keys).
+	if (clip.kind === 'shape')
+		for (const s of shapeItemPropertySpecs(clip as never)) {
+			if (s.animatable === 'no') continue;
+			const a = getAt(clip, s.storagePath);
+			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
+		}
 	// text-animators workstream: animator properties, selector fields, Path / More Options, Source Text.
 	if (clip.kind === 'text') {
 		for (const s of textAnimatorPropertySpecs(clip as never)) {

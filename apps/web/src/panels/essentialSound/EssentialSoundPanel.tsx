@@ -6,7 +6,6 @@ import {
 	AUDIO_TYPE_LABELS,
 	AUDIO_TYPES,
 	type AudioClip,
-	type AudioType,
 	builtinEssentialPresets,
 	DEFAULT_LOUDNESS_TARGET,
 	EQ_PRESETS,
