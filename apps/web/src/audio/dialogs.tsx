@@ -14,6 +14,7 @@ import {
 	toast,
 } from '@jasper/ui';
 import { useId, useMemo, useState } from 'react';
+import { useEngineOrNull } from '../state/engine.tsx';
 import {
 	analyzeAudio,
 	analyzeSequenceLoudness,
@@ -57,7 +58,8 @@ type GainMode = 'set' | 'adjust' | 'normalizeMax' | 'normalizeAll';
 
 export type AudioGainProps = {
 	session: EditorSession;
-	engine: EngineClient;
+	/** Default: the editor's engine. */
+	engine?: EngineClient;
 	sequenceId: string;
 	clipIds: string[];
 };
@@ -67,7 +69,8 @@ export type AudioGainProps = {
  * normalise modes measure each clip's source peak on the engine first (the Peak Amplitude readout).
  */
 function AudioGainDialog(props: HostedDialogProps<AudioGainProps>) {
-	const { session, engine, sequenceId, clipIds } = props;
+	const { session, sequenceId, clipIds } = props;
+	const engine = useDialogEngine(props.engine);
 	const doc = session.getCommitted();
 	const seq = doc.sequences[sequenceId] as Sequence | undefined;
 	const clips = clipIds.map((id) => seq?.clips[id]).filter((c) => !!c) as { id: string; gainDb: number }[];
@@ -86,7 +89,7 @@ function AudioGainDialog(props: HostedDialogProps<AudioGainProps>) {
 		setBusy(true);
 		setError(null);
 		try {
-			setPeaks(await clipPeaks(session, engine, sequenceId, clipIds));
+			setPeaks(await clipPeaks(session, need(engine), sequenceId, clipIds));
 		} catch (e) {
 			setError((e as Error).message);
 		} finally {
@@ -185,14 +188,16 @@ function AudioGainDialog(props: HostedDialogProps<AudioGainProps>) {
 
 export type AutoDuckProps = {
 	session: EditorSession;
-	engine: EngineClient;
+	/** Default: the editor's engine. */
+	engine?: EngineClient;
 	sequenceId: string;
 	clipIds: string[];
 };
 
 /** Essential Sound ▸ Ducking as a dialog: duck the selected clips under the chosen trigger tracks. */
 function AutoDuckDialog(props: HostedDialogProps<AutoDuckProps>) {
-	const { session, engine, sequenceId, clipIds } = props;
+	const { session, sequenceId, clipIds } = props;
+	const engine = useDialogEngine(props.engine);
 	const seq = session.getCommitted().sequences[sequenceId] as Sequence | undefined;
 	const targetTracks = new Set(clipIds.map((id) => seq?.clips[id]?.trackId));
 	const tracks = seq?.audioTracks ?? [];
@@ -216,7 +221,7 @@ function AutoDuckDialog(props: HostedDialogProps<AutoDuckProps>) {
 				setBusy(true);
 				setError(null);
 				try {
-					const r = await autoDuck(session, engine, {
+					const r = await autoDuck(session, need(engine), {
 						sequenceId,
 						targetClipIds: clipIds,
 						triggers: { trackIds: [...triggers] },
@@ -308,7 +313,8 @@ function AutoDuckDialog(props: HostedDialogProps<AutoDuckProps>) {
 export type LoudnessProps = { session: EditorSession; engine: EngineClient; sequenceId: string };
 
 function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
-	const { session, engine, sequenceId } = props;
+	const { session, sequenceId } = props;
+	const engine = useDialogEngine(props.engine);
 	const seq = session.getCommitted().sequences[sequenceId] as Sequence | undefined;
 	const cur = seq?.master.loudness;
 	const [enabled, setEnabled] = useState(cur?.enabled ?? true);
@@ -361,7 +367,7 @@ function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
 						setBusy(true);
 						setError(null);
 						try {
-							setResult(await analyzeSequenceLoudness(session, engine, sequenceId));
+							setResult(await analyzeSequenceLoudness(session, need(engine), sequenceId));
 						} catch (e) {
 							setError((e as Error).message);
 						} finally {
@@ -441,14 +447,16 @@ function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
 
 export type NormalizeMediaProps = {
 	session: EditorSession;
-	engine: EngineClient;
+	/** Default: the editor's engine. */
+	engine?: EngineClient;
 	mediaId: string;
 	/** Audio clips of this media to switch to the normalised version. */
 	clipIds: string[];
 };
 
 function NormalizeMediaDialog(props: HostedDialogProps<NormalizeMediaProps>) {
-	const { session, engine, mediaId, clipIds } = props;
+	const { session, mediaId, clipIds } = props;
+	const engine = useDialogEngine(props.engine);
 	const [target, setTarget] = useState(-16);
 	const [tp, setTp] = useState(-1);
 	const [replace, setReplace] = useState(clipIds.length > 0);
@@ -467,7 +475,7 @@ function NormalizeMediaDialog(props: HostedDialogProps<NormalizeMediaProps>) {
 				setBusy(true);
 				setError(null);
 				try {
-					const r = await normalizeMediaLoudness(session, engine, mediaId, {
+					const r = await normalizeMediaLoudness(session, need(engine), mediaId, {
 						targetLufs: target,
 						truePeakDb: tp,
 						...(replace ? { replaceInClips: clipIds } : {}),
@@ -526,6 +534,18 @@ function NormalizeMediaDialog(props: HostedDialogProps<NormalizeMediaProps>) {
 			</div>
 		</Dialog>
 	);
+}
+
+/** The engine of a dialog: its prop, else the editor's engine (dialogs opened from context menus). */
+function useDialogEngine(e: EngineClient | undefined): EngineClient | null {
+	const fallback = useEngineOrNull()?.client;
+	return e ?? fallback ?? null;
+}
+
+/** Inside the dialogs' try blocks: the engine, or an error the dialog shows. */
+function need(engine: EngineClient | null): EngineClient {
+	if (!engine) throw new Error('The engine is not connected');
+	return engine;
 }
 
 let registered = false;

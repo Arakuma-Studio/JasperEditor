@@ -3,7 +3,7 @@
 // imported at start-up (commands/index.ts): it also installs the preview mix runtime (AudioWorklet), the dialogs and
 // Preferences ▸ Audio.
 import type { Sequence } from '@jasper/project';
-import { toast } from '@jasper/ui';
+import { openDialog, toast } from '@jasper/ui';
 import { z } from 'zod';
 import {
 	AUDIO_GAIN_DIALOG,
@@ -17,6 +17,7 @@ import { AudioPreferencesPage } from '../audio/PreferencesPage.tsx';
 import { audioPrefs } from '../audio/prefs.ts';
 import { installAudioRuntime } from '../audio/runtime.ts';
 import { voiceoverFor } from '../audio/voiceover.ts';
+import { clipMenuExtensions, projectItemMenuExtensions } from '../extensions/index.ts';
 import {
 	PREFERENCES_DIALOG,
 	registerPreferencesDialog,
@@ -26,6 +27,73 @@ import type { CommandCtx, UiCommand } from './types.ts';
 
 installAudioRuntime();
 registerAudioDialogs();
+
+// Context menus: timeline audio clips (Audio Gain, Auto Duck, Normalize Loudness) and Project media items.
+clipMenuExtensions.register({
+	id: 'audio-mix',
+	order: 40,
+	items: ({ session, clip, selection }) => {
+		if (!AUDIO_KINDS.has(clip.kind)) return [];
+		const readOnly = session.getState().readOnly;
+		const seqId = session.getState().activeSequenceId;
+		const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
+		if (!seq) return [];
+		const ids = (selection.includes(clip.id) ? selection : [clip.id]).filter((id) => {
+			const c = seq.clips[id];
+			return !!c && AUDIO_KINDS.has(c.kind);
+		});
+		const mediaId = (clip as { mediaId?: string }).mediaId;
+		return [
+			{
+				kind: 'item',
+				label: 'Audio Gain…',
+				shortcut: 'G',
+				disabled: readOnly,
+				run: () => void openDialog(AUDIO_GAIN_DIALOG, { session, sequenceId: seq.id, clipIds: ids }),
+			},
+			{
+				kind: 'item',
+				label: 'Auto Duck…',
+				disabled: readOnly,
+				run: () => void openDialog(AUTO_DUCK_DIALOG, { session, sequenceId: seq.id, clipIds: ids }),
+			},
+			...(clip.kind === 'audio' && mediaId
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Normalize Loudness…',
+							disabled: readOnly,
+							run: () =>
+								void openDialog(NORMALIZE_MEDIA_DIALOG, {
+									session,
+									mediaId,
+									clipIds: ids.filter((id) => (seq.clips[id] as { mediaId?: string }).mediaId === mediaId),
+								}),
+						},
+					]
+				: []),
+		];
+	},
+});
+projectItemMenuExtensions.register({
+	id: 'audio-mix',
+	order: 60,
+	items: ({ session, items, readOnly }) => {
+		if (items.length !== 1) return [];
+		const it = items[0] as { kind: string; mediaId?: string };
+		const kind = it.mediaId ? session.getCommitted().media[it.mediaId]?.kind : undefined;
+		if (it.kind !== 'media' || !it.mediaId || (kind !== 'audio' && kind !== 'video')) return [];
+		const mediaId = it.mediaId;
+		return [
+			{
+				kind: 'item',
+				label: 'Normalize Loudness…',
+				disabled: readOnly,
+				run: () => void openDialog(NORMALIZE_MEDIA_DIALOG, { session, mediaId, clipIds: [] }),
+			},
+		];
+	},
+});
 registerPreferencesDialog();
 registerPreferencesPage({ id: 'audio', title: 'Audio', order: 30, component: AudioPreferencesPage });
 
