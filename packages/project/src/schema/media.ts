@@ -5,7 +5,16 @@ import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
 /** `mg-bundle` (M2, ARCHITECTURE §19.3): an imported Remotion bundle whose compositions become clips. */
 // three-d: 'model' = a glTF (.glb / .gltf) or OBJ 3D model (Advanced 3D model layers).
-export const MEDIA_KINDS = ['video', 'audio', 'image', 'animated-image', 'font', 'lut', 'mg-bundle', 'model'] as const;
+export const MEDIA_KINDS = [
+	'video',
+	'audio',
+	'image',
+	'animated-image',
+	'font',
+	'lut',
+	'mg-bundle',
+	'model',
+] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
 export type MediaKind = DeepStrip<z.infer<typeof MediaKindSchema>>;
 

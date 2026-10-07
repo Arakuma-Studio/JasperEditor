@@ -47,7 +47,6 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
-import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 import type { MgTemplateInfo } from './mg.ts';
 import {
 	isTextAnimatorKey,
@@ -55,6 +54,7 @@ import {
 	SOURCE_TEXT_SPEC,
 	textAnimatorPropertySpecs,
 } from './text-animator-properties.ts';
+import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 
 /**
  * `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). `json` (M2, S08) = any JSON

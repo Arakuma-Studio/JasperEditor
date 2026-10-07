@@ -35,10 +35,15 @@ function apply(session: EditorSession, label: string, commands: unknown[]) {
 	return r;
 }
 
-const trackerOf = (doc: ProjectDocument, clipId: string) => findCameraTracker(doc as never, clipId)?.tracker ?? null;
+const trackerOf = (doc: ProjectDocument, clipId: string) =>
+	findCameraTracker(doc as never, clipId)?.tracker ?? null;
 
 /** Animation ▸ Track Camera: applies the tracker to the clip (when it has none) and starts the analysis. */
-export async function trackCamera(session: EditorSession, engine: CamTrackEngine, clipId: string): Promise<void> {
+export async function trackCamera(
+	session: EditorSession,
+	engine: CamTrackEngine,
+	clipId: string,
+): Promise<void> {
 	if (!trackerOf(session.getState().document, clipId)) {
 		const r = apply(session, 'Track Camera', [{ type: 'cameraTracker.add', clipId }]);
 		if (!r.ok) return;
@@ -47,7 +52,11 @@ export async function trackCamera(session: EditorSession, engine: CamTrackEngine
 }
 
 /** Starts (or restarts) the analysis and solve of a clip's tracker. */
-export async function analyze(session: EditorSession, engine: CamTrackEngine, clipId: string): Promise<string | null> {
+export async function analyze(
+	session: EditorSession,
+	engine: CamTrackEngine,
+	clipId: string,
+): Promise<string | null> {
 	const prev = camtrackUi.get().running[clipId];
 	if (prev?.jobId) void engine.cancelJob(prev.jobId).catch(() => undefined);
 	camtrackUi.setError(clipId, null);
@@ -59,10 +68,18 @@ export async function analyze(session: EditorSession, engine: CamTrackEngine, cl
 		return null;
 	}
 	const { inputs, ...request } = body;
-	camtrackUi.patchRunning(clipId, { jobId: null, inputs, progress: 0, stage: 'Starting', startedAt: Date.now() });
+	camtrackUi.patchRunning(clipId, {
+		jobId: null,
+		inputs,
+		progress: 0,
+		stage: 'Starting',
+		startedAt: Date.now(),
+	});
 	let job: EngineJob;
 	try {
-		job = (await engine.call('camtrackSolve', { body: { ...request, projectId: session.projectId } })) as EngineJob;
+		job = (await engine.call('camtrackSolve', {
+			body: { ...request, projectId: session.projectId },
+		})) as EngineJob;
 	} catch (e) {
 		camtrackUi.patchRunning(clipId, null);
 		camtrackUi.setError(clipId, `Could not start: ${(e as Error).message}`);
@@ -126,14 +143,27 @@ export async function cancelAnalysis(engine: CamTrackEngine, clipId: string): Pr
 	if (r?.jobId) await engine.cancelJob(r.jobId).catch(() => undefined);
 }
 
-export function updateTracker(session: EditorSession, clipId: string, patch: Record<string, unknown>): boolean {
-	return apply(session, '3D Camera Tracker Settings', [{ type: 'cameraTracker.settings', clipId, ...patch }]).ok;
+export function updateTracker(
+	session: EditorSession,
+	clipId: string,
+	patch: Record<string, unknown>,
+): boolean {
+	return apply(session, '3D Camera Tracker Settings', [{ type: 'cameraTracker.settings', clipId, ...patch }])
+		.ok;
 }
 
 /** Delete Selected Points, then solve again without them. */
-export function deletePoints(session: EditorSession, engine: CamTrackEngine | null, clipId: string, ids: number[]): void {
+export function deletePoints(
+	session: EditorSession,
+	engine: CamTrackEngine | null,
+	clipId: string,
+	ids: number[],
+): void {
 	if (!ids.length) return;
-	if (!apply(session, 'Delete Track Points', [{ type: 'cameraTracker.deletePoints', clipId, pointIds: ids }]).ok) return;
+	if (
+		!apply(session, 'Delete Track Points', [{ type: 'cameraTracker.deletePoints', clipId, pointIds: ids }]).ok
+	)
+		return;
 	camtrackUi.clearSelection();
 	if (engine) void analyze(session, engine, clipId);
 }
@@ -151,7 +181,12 @@ export function createFromTracker(
 	ids: number[],
 	frame?: number,
 ): void {
-	const label = layer === 'text' ? 'Create Text and Camera' : layer === 'solid' ? 'Create Solid and Camera' : 'Create Camera';
+	const label =
+		layer === 'text'
+			? 'Create Text and Camera'
+			: layer === 'solid'
+				? 'Create Solid and Camera'
+				: 'Create Camera';
 	const r = apply(session, label, [
 		{
 			type: 'cameraTracker.create',

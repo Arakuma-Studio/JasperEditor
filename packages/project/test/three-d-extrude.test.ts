@@ -3,14 +3,26 @@
 // shared by two triangles; bevel profiles; normals pointing out).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { earcut, extrudeShapes, loopArea, nestLoops, shapesOfAlpha, simplifyLoop, traceContours } from '../src/index.ts';
+import {
+	earcut,
+	extrudeShapes,
+	loopArea,
+	nestLoops,
+	shapesOfAlpha,
+	simplifyLoop,
+	traceContours,
+} from '../src/index.ts';
 
 type P = [number, number];
 const triArea = (d: number[], t: number[]) => {
 	let s = 0;
 	for (let i = 0; i < t.length; i += 3) {
 		const [a, b, c] = [t[i]!, t[i + 1]!, t[i + 2]!];
-		s += Math.abs((d[2 * b]! - d[2 * a]!) * (d[2 * c + 1]! - d[2 * a + 1]!) - (d[2 * c]! - d[2 * a]!) * (d[2 * b + 1]! - d[2 * a + 1]!)) / 2;
+		s +=
+			Math.abs(
+				(d[2 * b]! - d[2 * a]!) * (d[2 * c + 1]! - d[2 * a + 1]!) -
+					(d[2 * c]! - d[2 * a]!) * (d[2 * b + 1]! - d[2 * a + 1]!),
+			) / 2;
 	}
 	return s;
 };
@@ -71,7 +83,9 @@ describe('contours', () => {
 		const shapes = shapesOfAlpha(64, 64, ring);
 		expect(shapes.length).toBe(1);
 		expect(shapes[0]!.holes.length).toBe(1);
-		const two = nestLoops(traceContours(64, 32, (x, y) => Math.max(disc(16, 16, 8)(x, y), disc(48, 16, 8)(x, y))));
+		const two = nestLoops(
+			traceContours(64, 32, (x, y) => Math.max(disc(16, 16, 8)(x, y), disc(48, 16, 8)(x, y))),
+		);
 		expect(two.length).toBe(2);
 		expect(two.every((s) => s.holes.length === 0)).toBe(true);
 	});
@@ -106,10 +120,20 @@ describe('extrusion', () => {
 	};
 
 	it('a flat shape is its front face only; an extruded one is a closed solid with outward normals', () => {
-		const flat = extrudeShapes([{ outer: square, holes: [] }], { depth: 0, bevelStyle: 'none', bevelDepth: 0, holeBevel: 100 });
+		const flat = extrudeShapes([{ outer: square, holes: [] }], {
+			depth: 0,
+			bevelStyle: 'none',
+			bevelDepth: 0,
+			holeBevel: 100,
+		});
 		expect(flat.indices.length / 3).toBe(2);
 		for (const style of ['none', 'angular', 'convex', 'concave'] as const) {
-			const m = extrudeShapes([{ outer: square, holes: [hole] }], { depth: 40, bevelStyle: style, bevelDepth: 6, holeBevel: 50 });
+			const m = extrudeShapes([{ outer: square, holes: [hole] }], {
+				depth: 40,
+				bevelStyle: style,
+				bevelDepth: 6,
+				holeBevel: 50,
+			});
 			expect(closed(m), style).toBe(true);
 			// Normals point away from the solid's centre line: walls of the outer square outwards, of the hole inwards.
 			for (let i = 0; i < m.vertices.length / 9; i++) {
@@ -125,10 +149,16 @@ describe('extrusion', () => {
 	});
 
 	it('the bevel insets the faces by the bevel depth and the hole bevel by its percentage', () => {
-		const m = extrudeShapes([{ outer: square, holes: [hole] }], { depth: 40, bevelStyle: 'angular', bevelDepth: 6, holeBevel: 50 });
+		const m = extrudeShapes([{ outer: square, holes: [hole] }], {
+			depth: 40,
+			bevelStyle: 'angular',
+			bevelDepth: 6,
+			holeBevel: 50,
+		});
 		const front: P[] = [];
 		for (let i = 0; i < m.vertices.length / 9; i++)
-			if (m.vertices[i * 9 + 2] === 0 && m.vertices[i * 9 + 8] === 0) front.push([m.vertices[i * 9]!, m.vertices[i * 9 + 1]!]);
+			if (m.vertices[i * 9 + 2] === 0 && m.vertices[i * 9 + 8] === 0)
+				front.push([m.vertices[i * 9]!, m.vertices[i * 9 + 1]!]);
 		const xs = front.map((p) => p[0]);
 		expect(Math.min(...xs)).toBeCloseTo(6, 6);
 		expect(Math.max(...xs)).toBeCloseTo(94, 6);

@@ -18,7 +18,12 @@ const cache = new Map<string, { key: string; mesh: Mesh | null }>();
 export function geometryAt(
 	clip: Pick<RenderVisualClip, 'kind' | 'threeD'>,
 	t: number,
-): { depth: number; bevelStyle: NonNullable<Layer3D['geometry']>['bevelStyle']; bevelDepth: number; holeBevel: number } | null {
+): {
+	depth: number;
+	bevelStyle: NonNullable<Layer3D['geometry']>['bevelStyle'];
+	bevelDepth: number;
+	holeBevel: number;
+} | null {
 	const g = clip.threeD?.geometry;
 	if (!g || (clip.kind !== 'text' && clip.kind !== 'shape')) return null;
 	const num = (a: unknown, d: number) => {

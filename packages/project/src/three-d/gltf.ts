@@ -76,7 +76,8 @@ export function parseModel(bytes: Uint8Array, format: ModelFormat): ParsedModel 
 				if (v > max[k]!) max[k] = v;
 			}
 	}
-	if (!min.every(Number.isFinite) || !max.every(Number.isFinite)) throw new ModelParseError('The model has no vertices');
+	if (!min.every(Number.isFinite) || !max.every(Number.isFinite))
+		throw new ModelParseError('The model has no vertices');
 	return { format, primitives, bounds: { min, max }, triangles };
 }
 
@@ -145,7 +146,8 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 	let bin: Uint8Array | null = null;
 	if (format === 'glb') {
 		const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-		if (bytes.byteLength < 20 || dv.getUint32(0, true) !== 0x46546c67) throw new ModelParseError('Not a binary glTF (.glb) file');
+		if (bytes.byteLength < 20 || dv.getUint32(0, true) !== 0x46546c67)
+			throw new ModelParseError('Not a binary glTF (.glb) file');
 		if (dv.getUint32(4, true) !== 2) throw new ModelParseError('Only glTF 2.0 is supported');
 		let off = 12;
 		let jsonText: string | null = null;
@@ -166,10 +168,14 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			throw new ModelParseError('The .gltf file is not valid JSON');
 		}
 	}
-	if (!String(json.asset?.version ?? '').startsWith('2')) throw new ModelParseError('Only glTF 2.0 is supported');
+	if (!String(json.asset?.version ?? '').startsWith('2'))
+		throw new ModelParseError('Only glTF 2.0 is supported');
 	const required: string[] = json.extensionsRequired ?? [];
 	const unsupported = required.filter((e) => e !== 'KHR_materials_unlit' && e !== 'KHR_texture_transform');
-	if (unsupported.length) throw new ModelParseError(`The model needs glTF extensions that are not supported: ${unsupported.join(', ')}`);
+	if (unsupported.length)
+		throw new ModelParseError(
+			`The model needs glTF extensions that are not supported: ${unsupported.join(', ')}`,
+		);
 	const buffers: Uint8Array[] = (json.buffers ?? []).map((b: Json, i: number) => {
 		if (b.uri === undefined) {
 			if (i === 0 && bin) return bin;
@@ -182,7 +188,10 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		if (!v) throw new ModelParseError(`Missing bufferView ${i}`);
 		const b = buffers[v.buffer];
 		if (!b) throw new ModelParseError(`Missing buffer ${v.buffer}`);
-		return { bytes: b.subarray(v.byteOffset ?? 0, (v.byteOffset ?? 0) + v.byteLength), stride: v.byteStride as number | undefined };
+		return {
+			bytes: b.subarray(v.byteOffset ?? 0, (v.byteOffset ?? 0) + v.byteLength),
+			stride: v.byteStride as number | undefined,
+		};
 	};
 	const COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
 	const readAccessor = (i: number): { data: Float64Array; n: number; count: number } => {
@@ -240,7 +249,8 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		const src = json.textures?.[texIndex]?.source;
 		const img = src !== undefined ? json.images?.[src] : undefined;
 		if (!img) return null;
-		if (img.bufferView !== undefined) return { mime: img.mimeType ?? 'image/png', bytes: view(img.bufferView).bytes.slice() };
+		if (img.bufferView !== undefined)
+			return { mime: img.mimeType ?? 'image/png', bytes: view(img.bufferView).bytes.slice() };
 		if (img.uri) return dataUri(String(img.uri));
 		return null;
 	};
@@ -303,20 +313,27 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 				const x = n.data[k * 3]!;
 				const y = n.data[k * 3 + 1]!;
 				const z = n.data[k * 3 + 2]!;
-				const v: Vec3 = [nm[0]! * x + nm[1]! * y + nm[2]! * z, nm[3]! * x + nm[4]! * y + nm[5]! * z, nm[6]! * x + nm[7]! * y + nm[8]! * z];
+				const v: Vec3 = [
+					nm[0]! * x + nm[1]! * y + nm[2]! * z,
+					nm[3]! * x + nm[4]! * y + nm[5]! * z,
+					nm[6]! * x + nm[7]! * y + nm[8]! * z,
+				];
 				const l = Math.hypot(...v) || 1;
 				normals.set([v[0] / l, v[1] / l, v[2] / l], k * 3);
 			}
 		} else normals = new Float32Array(0);
 		let uvs: Float32Array | null = null;
-		if (p.attributes.TEXCOORD_0 !== undefined) uvs = Float32Array.from(readAccessor(p.attributes.TEXCOORD_0).data);
-		const material = p.material !== undefined && materials[p.material] ? materials[p.material]! : DEFAULT_MATERIAL();
+		if (p.attributes.TEXCOORD_0 !== undefined)
+			uvs = Float32Array.from(readAccessor(p.attributes.TEXCOORD_0).data);
+		const material =
+			p.material !== undefined && materials[p.material] ? materials[p.material]! : DEFAULT_MATERIAL();
 		// glTF: without normals, flat shading (each triangle its own vertices with its face normal).
 		if (normals.length === 0) return { ...flatShaded(positions, uvs, tris), material };
 		return { positions, normals, uvs, indices: Uint32Array.from(tris), material };
 	};
 	const sceneIndex = json.scene ?? 0;
-	const roots: number[] = json.scenes?.[sceneIndex]?.nodes ?? (json.nodes ?? []).map((_: unknown, i: number) => i);
+	const roots: number[] =
+		json.scenes?.[sceneIndex]?.nodes ?? (json.nodes ?? []).map((_: unknown, i: number) => i);
 	const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 	for (const r of roots) visit(r, I, 0);
 	return out;
@@ -327,7 +344,24 @@ function nodeMatrix(node: Json): number[] {
 	if (Array.isArray(node.matrix) && node.matrix.length === 16) {
 		const m = node.matrix as number[];
 		// glTF stores column-major.
-		return [m[0]!, m[4]!, m[8]!, m[12]!, m[1]!, m[5]!, m[9]!, m[13]!, m[2]!, m[6]!, m[10]!, m[14]!, m[3]!, m[7]!, m[11]!, m[15]!];
+		return [
+			m[0]!,
+			m[4]!,
+			m[8]!,
+			m[12]!,
+			m[1]!,
+			m[5]!,
+			m[9]!,
+			m[13]!,
+			m[2]!,
+			m[6]!,
+			m[10]!,
+			m[14]!,
+			m[3]!,
+			m[7]!,
+			m[11]!,
+			m[15]!,
+		];
 	}
 	const [tx, ty, tz] = (node.translation ?? [0, 0, 0]) as number[];
 	const [x, y, z, w] = (node.rotation ?? [0, 0, 0, 1]) as number[];
@@ -498,9 +532,22 @@ function parseObj(text: string): ModelPrimitive[] {
 		throw new ModelParseError('The OBJ file has non-numeric coordinates');
 	if (tris.length === 0) return [];
 	const pos = Float32Array.from(positions);
-	const material: ModelMaterial = { ...DEFAULT_MATERIAL(), baseColor: [0.8, 0.8, 0.8, 1], metallic: 0, roughness: 0.6 };
+	const material: ModelMaterial = {
+		...DEFAULT_MATERIAL(),
+		baseColor: [0.8, 0.8, 0.8, 1],
+		metallic: 0,
+		roughness: 0.6,
+	};
 	const uv = anyUv ? Float32Array.from(uvs) : null;
 	// Faces without normals are shaded flat.
 	if (!hasNormals) return [{ ...flatShaded(pos, uv, tris), material }];
-	return [{ positions: pos, normals: Float32Array.from(normals), uvs: uv, indices: Uint32Array.from(tris), material }];
+	return [
+		{
+			positions: pos,
+			normals: Float32Array.from(normals),
+			uvs: uv,
+			indices: Uint32Array.from(tris),
+			material,
+		},
+	];
 }

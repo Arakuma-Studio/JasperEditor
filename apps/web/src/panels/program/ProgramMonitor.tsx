@@ -200,12 +200,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const fxPreviewScale = FX_PREVIEW_SCALE[monitor.playbackResolution];
 	// three-d: the selected 3D view (View ▸ Switch 3D View) draws the 3D layers through its camera.
 	const views3d = useStoreSelector(threeDViews, (s) => (seqId ? s.bySequence[seqId] : undefined));
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the view store entry carries the view cameras
 	const view3d = useMemo(
 		() =>
 			seqId && seq
 				? viewCamOf(seqId, views3d?.view ?? 'activeCamera', seq.settings.width, seq.settings.height)
 				: null,
-		// biome-ignore lint/correctness/useExhaustiveDependencies: the view store entry carries the view cameras
 		[seqId, views3d, seq?.settings.width, seq?.settings.height],
 	);
 	const options = useMemo<RenderOptions>(

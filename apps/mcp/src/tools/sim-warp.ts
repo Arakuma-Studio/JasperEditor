@@ -85,7 +85,7 @@ async function stillAlphaOutline(
 	const mediaId = (clip as { mediaId?: string }).mediaId;
 	const asset = mediaId ? doc.media[mediaId] : undefined;
 	const key = asset?.locators.find((l) => l.type === 'engine-store')?.key;
-	if (!asset || asset.kind !== 'image' || !key) return null;
+	if (asset?.kind !== 'image' || !key) return null;
 	try {
 		const { bytes } = await ctx.engine((c) => c.fetchBytes(c.mediaUrl(key)));
 		const img = decodePng(bytes);

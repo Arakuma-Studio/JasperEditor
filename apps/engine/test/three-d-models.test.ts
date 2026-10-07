@@ -27,8 +27,8 @@ describe('model media', () => {
 		expect(m.container).toBe('obj');
 		const gltf = join(dir, 'tri.gltf');
 		const bin = Buffer.alloc(44);
-		[0, 0, 0, 1, 0, 0, 0, 1, 0].forEach((v, i) => bin.writeFloatLE(v, i * 4));
-		[0, 1, 2].forEach((v, i) => bin.writeUInt16LE(v, 36 + i * 2));
+		for (const [i, v] of [0, 0, 0, 1, 0, 0, 0, 1, 0].entries()) bin.writeFloatLE(v, i * 4);
+		for (const [i, v] of [0, 1, 2].entries()) bin.writeUInt16LE(v, 36 + i * 2);
 		writeFileSync(
 			gltf,
 			JSON.stringify({

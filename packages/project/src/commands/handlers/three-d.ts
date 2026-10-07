@@ -332,7 +332,9 @@ export const threeDHandlers: HandlerMap = {
 				h.fail('E_INVALID_PARAM', `A ${c.kind} clip cannot be a 3D layer`, { blocking: [c.id] });
 			assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
 			if (!cmd.enabled && c.kind === 'model')
-				h.fail('E_INVALID_PARAM', `"${c.name}" is a 3D model: model layers are always 3D`, { blocking: [c.id] });
+				h.fail('E_INVALID_PARAM', `"${c.name}" is a 3D model: model layers are always 3D`, {
+					blocking: [c.id],
+				});
 			const v = c as Draft<Clip> & {
 				threeD?: Draft<NonNullable<Extract<Clip, { kind: 'video' }>['threeD']>>;
 			};

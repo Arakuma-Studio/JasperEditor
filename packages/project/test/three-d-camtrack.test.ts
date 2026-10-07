@@ -99,16 +99,22 @@ function truthUv(m: number, p: Vec3): [number, number] {
 	return [(F * q[0]) / q[2] + 960, (F * q[1]) / q[2] + 540];
 }
 
-const snap = (h: Harness) => buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: media, resolveFont: () => 'f.woff2' });
+const snap = (h: Harness) =>
+	buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: media, resolveFont: () => 'f.woff2' });
 
 describe('cameraTracker commands', () => {
 	it('applies to a video clip with the shown media frames as the span; refuses other clips and a second tracker', () => {
 		const { h, clipId, clip } = setup();
 		const r = h.ok([{ type: 'cameraTracker.add', clipId, shot: 'specify', hfov: 50 }]);
 		expect(r.results[0]).toMatchObject({ span: [30, 89] });
-		expect(clip().cameraTracker).toMatchObject({ span: [30, 89], settings: { shot: 'specify', hfov: 50 }, solve: null });
+		expect(clip().cameraTracker).toMatchObject({
+			span: [30, 89],
+			settings: { shot: 'specify', hfov: 50 },
+			solve: null,
+		});
 		expect(h.tx([{ type: 'cameraTracker.add', clipId }]).ok).toBe(false);
-		const solid = h.ok([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 1, 1, 1] }]).results[0] as {
+		const solid = h.ok([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 1, 1, 1] }])
+			.results[0] as {
 			clipId: string;
 		};
 		const bad = h.tx([{ type: 'cameraTracker.add', clipId: solid.clipId }]);
@@ -137,7 +143,10 @@ describe('cameraTracker commands', () => {
 
 	it('projects the track points of a frame through the solved camera', () => {
 		const { h, clipId, clip } = setup();
-		h.ok([{ type: 'cameraTracker.add', clipId }, { type: 'cameraTracker.setResult', clipId, solve: solve() }]);
+		h.ok([
+			{ type: 'cameraTracker.add', clipId },
+			{ type: 'cameraTracker.setResult', clipId, solve: solve() },
+		]);
 		const pts = trackPointsAt(clip().cameraTracker!, 55);
 		expect(pts.length).toBe(POINTS.length + GROUND.length);
 		for (const p of pts.slice(0, 5)) {
@@ -150,8 +159,14 @@ describe('cameraTracker commands', () => {
 
 	it('Create Camera: the camera sees every track point where the footage shows it', () => {
 		const { h, clipId, clip } = setup();
-		h.ok([{ type: 'cameraTracker.add', clipId }, { type: 'cameraTracker.setResult', clipId, solve: solve() }]);
-		const r = h.ok([{ type: 'cameraTracker.create', clipId }]).results[0] as { cameraClipId: string; keys: number };
+		h.ok([
+			{ type: 'cameraTracker.add', clipId },
+			{ type: 'cameraTracker.setResult', clipId, solve: solve() },
+		]);
+		const r = h.ok([{ type: 'cameraTracker.create', clipId }]).results[0] as {
+			cameraClipId: string;
+			keys: number;
+		};
 		expect(r.keys).toBe(60);
 		const camClip = h.seq.clips[r.cameraClipId] as CameraClip;
 		expect(camClip.camera.transform.autoOrient).toBe('off');
@@ -181,9 +196,18 @@ describe('cameraTracker commands', () => {
 
 	it('Create Text and Camera puts a 3D text layer in the plane of the selected points', () => {
 		const { h, clipId } = setup();
-		h.ok([{ type: 'cameraTracker.add', clipId }, { type: 'cameraTracker.setResult', clipId, solve: solve() }]);
+		h.ok([
+			{ type: 'cameraTracker.add', clipId },
+			{ type: 'cameraTracker.setResult', clipId, solve: solve() },
+		]);
 		const r = h.ok([
-			{ type: 'cameraTracker.create', clipId, layer: 'text', text: 'Hello', pointIds: GROUND.map((p) => p.id) },
+			{
+				type: 'cameraTracker.create',
+				clipId,
+				layer: 'text',
+				text: 'Hello',
+				pointIds: GROUND.map((p) => p.id),
+			},
 		]).results[0] as { cameraClipId: string; layerClipId: string };
 		const layer = h.seq.clips[r.layerClipId] as Clip & { threeD?: { enabled: boolean } };
 		expect(layer.kind).toBe('text');
@@ -206,20 +230,26 @@ describe('cameraTracker commands', () => {
 		// The text sits on a free track above the footage, the camera above it.
 		const tracks = h.seq.videoTracks.map((t) => t.id);
 		expect(tracks.indexOf(layer.trackId)).toBeGreaterThan(0);
-		expect(tracks.indexOf(h.seq.clips[r.cameraClipId]!.trackId)).toBeGreaterThan(tracks.indexOf(layer.trackId));
+		expect(tracks.indexOf(h.seq.clips[r.cameraClipId]!.trackId)).toBeGreaterThan(
+			tracks.indexOf(layer.trackId),
+		);
 		expect(h.tx([{ type: 'cameraTracker.create', clipId, layer: 'solid' }]).ok).toBe(false);
 	});
 
 	it('Set Ground Plane and Origin: the points lie on the horizontal plane through the frame centre', () => {
 		const { h, clipId, clip } = setup();
-		h.ok([{ type: 'cameraTracker.add', clipId }, { type: 'cameraTracker.setResult', clipId, solve: solve() }]);
+		h.ok([
+			{ type: 'cameraTracker.add', clipId },
+			{ type: 'cameraTracker.setResult', clipId, solve: solve() },
+		]);
 		expect(h.tx([{ type: 'cameraTracker.setGround', clipId, pointIds: [500, 501] }]).ok).toBe(false);
 		h.ok([{ type: 'cameraTracker.setGround', clipId, pointIds: GROUND.map((p) => p.id) }]);
 		const t = clip().cameraTracker!;
 		const map = solveMapping(t, { width: 1920, height: 1080 }, 1)!;
 		for (const p of GROUND) expect(toWorld(map, p.pos)[1]).toBeCloseTo(540, 2);
 		const r = h.ok([{ type: 'cameraTracker.create', clipId }]).results[0] as { cameraClipId: string };
-		const eye = (h.seq.clips[r.cameraClipId] as CameraClip).camera.transform.position.keyframes[0]!.value as Vec3;
+		const eye = (h.seq.clips[r.cameraClipId] as CameraClip).camera.transform.position.keyframes[0]!
+			.value as Vec3;
 		// The camera is above the ground (y down).
 		expect(eye[1]).toBeLessThan(540);
 		h.ok([{ type: 'cameraTracker.setGround', clipId, pointIds: [] }]);
@@ -228,7 +258,10 @@ describe('cameraTracker commands', () => {
 
 	it('refuses a camera for footage that is rotated or off-centre', () => {
 		const { h, clipId } = setup();
-		h.ok([{ type: 'cameraTracker.add', clipId }, { type: 'cameraTracker.setResult', clipId, solve: solve() }]);
+		h.ok([
+			{ type: 'cameraTracker.add', clipId },
+			{ type: 'cameraTracker.setResult', clipId, solve: solve() },
+		]);
 		h.ok([{ type: 'param.set', target: ['clip', clipId, 'transform', 'rotation'], value: 10 }]);
 		const r = h.tx([{ type: 'cameraTracker.create', clipId }]);
 		expect(r.ok).toBe(false);
@@ -240,7 +273,10 @@ describe('cameraTracker commands', () => {
 
 	it('invariants flag malformed solves; repair resets them and drops trackers without media', () => {
 		const { h, clipId } = setup();
-		h.ok([{ type: 'cameraTracker.add', clipId }, { type: 'cameraTracker.setResult', clipId, solve: solve() }]);
+		h.ok([
+			{ type: 'cameraTracker.add', clipId },
+			{ type: 'cameraTracker.setResult', clipId, solve: solve() },
+		]);
 		const doc = structuredClone(h.doc);
 		const t = (doc.sequences[h.seqId]!.clips[clipId] as TClip).cameraTracker!;
 		(t.solve as { frames: number[] }).frames.pop();

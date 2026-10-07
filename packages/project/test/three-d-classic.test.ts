@@ -35,7 +35,8 @@ const FPS = { num: 30, den: 1 };
 
 function solid(w: number, h: number, rgba: [number, number, number, number]): FloatImage {
 	const img = newFloatImage(w, h);
-	for (let i = 0; i < w * h; i++) img.data.set([rgba[0] * rgba[3], rgba[1] * rgba[3], rgba[2] * rgba[3], rgba[3]], i * 4);
+	for (let i = 0; i < w * h; i++)
+		img.data.set([rgba[0] * rgba[3], rgba[1] * rgba[3], rgba[2] * rgba[3], rgba[3]], i * 4);
 	return img;
 }
 const tr = (o: Partial<Record<keyof Transform, unknown>> = {}): Transform =>
@@ -55,7 +56,14 @@ const ID: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 function plane(
 	key: string,
 	order: number,
-	o: { transform?: Transform; td?: ReturnType<typeof newLayer3D>; mode?: string; opacity?: number; w?: number; h?: number } = {},
+	o: {
+		transform?: Transform;
+		td?: ReturnType<typeof newLayer3D>;
+		mode?: string;
+		opacity?: number;
+		w?: number;
+		h?: number;
+	} = {},
 ): PlaneSource {
 	const td = o.td ?? newLayer3D();
 	return {
@@ -81,7 +89,8 @@ const setup = (o: Partial<ClassicSetup> = {}): ClassicSetup => ({
 	lights: [],
 	...o,
 });
-const px = (img: FloatImage, x: number, y: number) => Array.from(img.data.subarray((y * W + x) * 4, (y * W + x) * 4 + 4));
+const px = (img: FloatImage, x: number, y: number) =>
+	Array.from(img.data.subarray((y * W + x) * 4, (y * W + x) * 4 + 4));
 
 describe('Classic 3D (CPU reference)', () => {
 	it('a plane at its defaults is drawn exactly where its 2D Motion puts it', () => {
@@ -130,9 +139,24 @@ describe('Classic 3D (CPU reference)', () => {
 	});
 
 	it('lights: no lights = unlit; a parallel light facing the plane lights it by diffuse·N·L + ambient', () => {
-		const rig = { start: 0, duration: 10, sourceIn: 0, speed: { rate: 1, reverse: false, maintainPitch: false } };
+		const rig = {
+			start: 0,
+			duration: 10,
+			sourceIn: 0,
+			speed: { rate: 1, reverse: false, maintainPitch: false },
+		};
 		const light = (type: 'parallel' | 'ambient', o = {}) =>
-			lightStateOf({ clipId: type, name: type, trackIndex: 0, ...rig, light: newLightData(type, { width: W, height: H }, o) }, 0, FPS);
+			lightStateOf(
+				{
+					clipId: type,
+					name: type,
+					trackIndex: 0,
+					...rig,
+					light: newLightData(type, { width: W, height: H }, o),
+				},
+				0,
+				FPS,
+			);
 		const par = light('parallel');
 		// Aim straight at the plane (from the camera side).
 		par.dir = [0, 0, 1];
@@ -146,9 +170,20 @@ describe('Classic 3D (CPU reference)', () => {
 	});
 
 	it('ray-cast shadows: a caster between a light and a receiver darkens it; Light Transmission tints it', () => {
-		const rig = { start: 0, duration: 10, sourceIn: 0, speed: { rate: 1, reverse: false, maintainPitch: false } };
+		const rig = {
+			start: 0,
+			duration: 10,
+			sourceIn: 0,
+			speed: { rate: 1, reverse: false, maintainPitch: false },
+		};
 		const l = lightStateOf(
-			{ clipId: 'l', name: 'l', trackIndex: 0, ...rig, light: newLightData('parallel', { width: W, height: H }, { castsShadows: true }) },
+			{
+				clipId: 'l',
+				name: 'l',
+				trackIndex: 0,
+				...rig,
+				light: newLightData('parallel', { width: W, height: H }, { castsShadows: true }),
+			},
 			0,
 			FPS,
 		);
@@ -171,9 +206,20 @@ describe('Classic 3D (CPU reference)', () => {
 	});
 
 	it('Accepts Shadows: Only draws just the shadow', () => {
-		const rig = { start: 0, duration: 10, sourceIn: 0, speed: { rate: 1, reverse: false, maintainPitch: false } };
+		const rig = {
+			start: 0,
+			duration: 10,
+			sourceIn: 0,
+			speed: { rate: 1, reverse: false, maintainPitch: false },
+		};
 		const l = lightStateOf(
-			{ clipId: 'l', name: 'l', trackIndex: 0, ...rig, light: newLightData('parallel', { width: W, height: H }, { castsShadows: true }) },
+			{
+				clipId: 'l',
+				name: 'l',
+				trackIndex: 0,
+				...rig,
+				light: newLightData('parallel', { width: W, height: H }, { castsShadows: true }),
+			},
 			0,
 			FPS,
 		);
@@ -208,7 +254,12 @@ describe('Classic 3D (CPU reference)', () => {
 	});
 });
 
-function renderShadow(caster: ReturnType<typeof newLayer3D>, recv: ReturnType<typeof newLayer3D>, l: ReturnType<typeof lightStateOf>, color: [number, number, number, number]) {
+function renderShadow(
+	caster: ReturnType<typeof newLayer3D>,
+	recv: ReturnType<typeof newLayer3D>,
+	l: ReturnType<typeof lightStateOf>,
+	color: [number, number, number, number],
+) {
 	const canvas = newFloatImage(W, H);
 	renderClassicCPU(canvas, setup({ lights: [l] }), [
 		{ src: plane('recv', 0, { td: recv }), pixels: solid(32, 24, [1, 1, 1, 1]) },
@@ -233,7 +284,14 @@ describe('bokeh (EffectCraft bokeh tests, ported)', () => {
 		const c = img.width >> 1;
 		return img.data[((c + y) * img.width + c + x) * 4 + 3]! > 1e-4;
 	};
-	const iris = (o: Partial<Iris>): Iris => ({ sides: 0, rotation: 0, roundness: 0, aspect: 1, fringe: 0, ...o });
+	const iris = (o: Partial<Iris>): Iris => ({
+		sides: 0,
+		rotation: 0,
+		roundness: 0,
+		aspect: 1,
+		fringe: 0,
+		...o,
+	});
 
 	it('kernel shapes', () => {
 		const hex = iris({ sides: 6 });

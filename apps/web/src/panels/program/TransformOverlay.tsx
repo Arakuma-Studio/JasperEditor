@@ -13,7 +13,6 @@ import {
 	quadBounds,
 	type Rect,
 	type ResolvedLayer,
-	resolveSceneAt,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';

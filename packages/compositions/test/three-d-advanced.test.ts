@@ -59,7 +59,18 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 		if (errors.length) throw new Error(errors.join('\n'));
 		({ W, H } = await call<{ W: number; H: number }>('size'));
 		if (process.env.THREE_D_DEBUG)
-			for (const n of ['flat', 'stack', 'shadowOn', 'shadowOff', 'ringFlat', 'ringExtruded', 'env', 'highlight', 'model', 'dof']) {
+			for (const n of [
+				'flat',
+				'stack',
+				'shadowOn',
+				'shadowOff',
+				'ringFlat',
+				'ringExtruded',
+				'env',
+				'highlight',
+				'model',
+				'dof',
+			]) {
 				const url = await call<string>('png', n);
 				const { writeFileSync } = await import('node:fs');
 				writeFileSync(`/tmp/adv-${n}.png`, Buffer.from(url.split(',')[1]!, 'base64'));
@@ -85,7 +96,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 			const aa = a[i * 4 + 3]!;
 			if (ca > 0) drawn++;
 			let e = Math.abs(ca - aa);
-			for (let k = 0; k < 3; k++) e = Math.max(e, Math.abs((c[i * 4 + k]! * ca) / 255 - (a[i * 4 + k]! * aa) / 255));
+			for (let k = 0; k < 3; k++)
+				e = Math.max(e, Math.abs((c[i * 4 + k]! * ca) / 255 - (a[i * 4 + k]! * aa) / 255));
 			if (e > 6) bad++;
 		}
 		expect(drawn).toBeGreaterThan(100);
@@ -121,7 +133,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 		expect(px(ext, W / 2, H / 2)[0]).toBeLessThan(face - 60);
 		// Lit wall pixels are grey-white (the fill colour), not black.
 		let lit = 0;
-		for (let i = 0; i < W * H; i++) if (ext[i * 4 + 3]! > 200 && flat[i * 4 + 3]! < 10 && ext[i * 4]! > 40) lit++;
+		for (let i = 0; i < W * H; i++)
+			if (ext[i * 4 + 3]! > 200 && flat[i * 4 + 3]! < 10 && ext[i * 4]! > 40) lit++;
 		expect(lit).toBeGreaterThan(10);
 	});
 

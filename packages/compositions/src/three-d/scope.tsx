@@ -19,10 +19,10 @@ import {
 	layerMapOf,
 	layerWorldMatrix,
 	lightsAt,
-	mat4Mul,
 	type Mat3,
 	type MaterialState,
 	mat3FromMat2D,
+	mat4Mul,
 	materialAt,
 	multiplyMat3,
 	planeHomography,
@@ -63,8 +63,8 @@ import type { FxGpuState } from '../fx/status.ts';
 import type { LayerTap } from '../types.ts';
 import { type AdvancedEnvironment, type AdvancedMember, renderAdvancedGL } from './advanced.ts';
 import { extrudedMesh, geometryAt } from './extruded.ts';
-import { type LoadedModel, modelAt, modelToLayer } from './model-loader.ts';
 import { type GlPlane, renderClassicGL } from './gl.ts';
+import { type LoadedModel, modelAt, modelToLayer } from './model-loader.ts';
 
 // ---------------------------------------------------------------- hub
 
@@ -198,7 +198,7 @@ export function makeScene3D(
 /** The 3D tap of a clip at an absolute sequence frame (null: not a 3D layer drawn by a scope there). */
 export function useScene3DTap(clipId: string, frame: number): LayerTap | null {
 	const ctx = useContext(Scene3DContext);
-	if (!ctx || ctx.mode.mode !== 'gpu') return null;
+	if (ctx?.mode.mode !== 'gpu') return null;
 	const run = ctx.runsAt(frame).find((r) => r.members.includes(clipId));
 	if (!run) return null;
 	return ctx.hubOf(run.bottomTrack)?.tap(clipId, frame) ?? null;
@@ -295,7 +295,10 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 			for (const m of params.members) {
 				const pic = params.pictures.get(m.clip.clipId);
 				if (!pic?.compToCanvas || pic.opacity <= 0) continue;
-				const layerToPicture = multiplyMat3(pic.compToCanvas.slice(0, 9) as Mat3, mat3FromMat2D(m.props.matrix));
+				const layerToPicture = multiplyMat3(
+					pic.compToCanvas.slice(0, 9) as Mat3,
+					mat3FromMat2D(m.props.matrix),
+				);
 				const g = geometryAt(m.clip, m.contentTime);
 				const model = m.clip.kind === 'model' ? params.models.get(m.clip.clipId) : undefined;
 				if (m.clip.kind === 'model') {
@@ -389,6 +392,46 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 
 // ---------------------------------------------------------------- scope
 
+/** A short fingerprint of the 3D state an effect draws (rounded numbers; FNV-1a). */
+function sceneFingerprint(
+	setup: ClassicSetup,
+	members: { clip: RenderVisualClip; world: number[]; material: MaterialState; contentTime: number }[],
+	scene3d: RenderScene3D | undefined,
+): string {
+	let h = 0x811c9dc5;
+	const mix = (v: unknown) => {
+		const s = typeof v === 'number' ? (Math.round(v * 1e4) / 1e4).toString() : String(v);
+		for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+		h = Math.imul(h ^ 0x7c, 0x01000193) >>> 0;
+	};
+	const deep = (v: unknown): void => {
+		if (Array.isArray(v)) for (const x of v) deep(x);
+		else if (v && typeof v === 'object')
+			for (const [k, x] of Object.entries(v)) {
+				mix(k);
+				deep(x);
+			}
+		else mix(v);
+	};
+	deep([
+		setup.camera.view,
+		setup.camera.zoom,
+		setup.camera.ortho,
+		setup.camera.dof,
+		setup.lights,
+		setup.draft,
+	]);
+	for (const m of members) {
+		mix(m.clip.clipId);
+		deep(m.world);
+		deep(m.material);
+		const g = m.clip.threeD?.geometry;
+		if (g) deep([geometryAt(m.clip, m.contentTime)]);
+	}
+	deep([scene3d?.renderer, scene3d?.shadowMapSize, scene3d?.draft]);
+	return h.toString(36);
+}
+
 const envImages = new Map<string, HTMLImageElement | 'error'>();
 
 /** Loaded models by clip id (absent while loading); renders hold until they are loaded and fail when one cannot be. */
@@ -400,7 +443,8 @@ function useModels(urls: ReadonlyMap<string, string>, rendering: boolean): Map<s
 		const e = modelAt(url, bump);
 		if (e.state === 'ready') out.set(id, e.value);
 		else if (e.state === 'loading') pending.push(url);
-		else if (rendering) cancelRender(new Error(`THREE_D_UNSUPPORTED: the 3D model could not be loaded: ${e.error}`));
+		else if (rendering)
+			cancelRender(new Error(`THREE_D_UNSUPPORTED: the 3D model could not be loaded: ${e.error}`));
 	}
 	const key = pending.join(',');
 	useEffect(() => {
@@ -427,7 +471,8 @@ function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageE
 		};
 		img.onerror = () => {
 			envImages.set(url, 'error');
-			if (rendering) cancelRender(new Error(`THREE_D_UNSUPPORTED: the environment image could not be loaded (${url})`));
+			if (rendering)
+				cancelRender(new Error(`THREE_D_UNSUPPORTED: the environment image could not be loaded (${url})`));
 			bump();
 		};
 		img.src = url;
@@ -532,7 +577,9 @@ export function Scene3DScope({
 						background: !!envLight.environment?.background,
 					}
 				: null;
-		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${envImage ? envUrl : ''}|${modelKey}`;
+		// The effect re-runs when its key changes: the pictures, and everything 3D that moves without changing them
+		// (world matrices, materials, the camera, the lights, the renderer settings).
+		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${envImage ? envUrl : ''}|${modelKey}|${sceneFingerprint(setup, members, doc.scene3d)}`;
 		return [
 			fx3dRun({
 				key,
@@ -546,7 +593,20 @@ export function Scene3DScope({
 				shadowMapSize: doc.scene3d?.shadowMapSize ?? 1024,
 			}),
 		];
-	}, [frame, run, pictureKey, complete, rendering, isPreview, version, scene, comp.width, comp.height, envImage, modelKey]);
+	}, [
+		frame,
+		run,
+		pictureKey,
+		complete,
+		rendering,
+		isPreview,
+		version,
+		scene,
+		comp.width,
+		comp.height,
+		envImage,
+		modelKey,
+	]);
 	const hold = useRef<number | null>(null);
 	if (rendering && run && !complete && hold.current === null)
 		hold.current = delayRender(`3D layers at frame ${frame}`);

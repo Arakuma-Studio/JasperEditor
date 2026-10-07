@@ -11,25 +11,29 @@ import {
 	defaultCamera,
 	extrudeShapes,
 	type FloatImage,
-	layerWorldMatrix,
 	type LightState,
+	layerWorldMatrix,
 	lightStateOf,
 	lookAtCamera,
-	materialAt,
 	type Mesh,
+	mat4Mul,
+	materialAt,
 	newFloatImage,
 	newLayer3D,
-	mat4Mul,
 	newLightData,
-	parseModel,
 	type PlaneSource,
+	parseModel,
 	prepareClassicPlane,
 	shapesOfAlpha,
 	type Transform,
 	type Vec3,
 } from '@jasper/project';
 import { fxHost } from '../../src/fx/host.ts';
-import { type AdvancedEnvironment, type AdvancedMember, renderAdvancedGL } from '../../src/three-d/advanced.ts';
+import {
+	type AdvancedEnvironment,
+	type AdvancedMember,
+	renderAdvancedGL,
+} from '../../src/three-d/advanced.ts';
 import { type LoadedModel, modelToLayer } from '../../src/three-d/model-loader.ts';
 
 const W = 96;
@@ -38,7 +42,11 @@ const FPS = { num: 30, den: 1 };
 const RIG = { start: 0, duration: 10, sourceIn: 0, speed: { rate: 1, reverse: false, maintainPitch: false } };
 
 type Pic = { canvas: HTMLCanvasElement; float: FloatImage };
-function picture(w: number, h: number, fill: (x: number, y: number) => [number, number, number, number]): Pic {
+function picture(
+	w: number,
+	h: number,
+	fill: (x: number, y: number) => [number, number, number, number],
+): Pic {
 	const c = document.createElement('canvas');
 	c.width = w;
 	c.height = h;
@@ -50,7 +58,10 @@ function picture(w: number, h: number, fill: (x: number, y: number) => [number, 
 	const f = newFloatImage(w, h);
 	for (let i = 0; i < w * h; i++) {
 		const a = back[i * 4 + 3]! / 255;
-		f.data.set([(back[i * 4]! / 255) * a, (back[i * 4 + 1]! / 255) * a, (back[i * 4 + 2]! / 255) * a, a], i * 4);
+		f.data.set(
+			[(back[i * 4]! / 255) * a, (back[i * 4 + 1]! / 255) * a, (back[i * 4 + 2]! / 255) * a, a],
+			i * 4,
+		);
 	}
 	return { canvas: c, float: f };
 }
@@ -84,15 +95,37 @@ const tr = (o: Partial<Record<keyof Transform, unknown>> = {}): Transform =>
 		...o,
 	}) as Transform;
 
-function light(type: 'parallel' | 'spot' | 'point' | 'ambient', o: Record<string, unknown> = {}, pos?: Vec3, poi?: Vec3) {
+function light(
+	type: 'parallel' | 'spot' | 'point' | 'ambient',
+	o: Record<string, unknown> = {},
+	pos?: Vec3,
+	poi?: Vec3,
+) {
 	const data = newLightData(type, { width: W, height: H }, o);
 	if (pos) data.transform.position = anim(pos);
 	if (poi) data.transform.pointOfInterest = anim(poi);
-	return lightStateOf({ clipId: `${type}${Math.random()}`, name: type, trackIndex: 0, ...RIG, light: data }, 0, FPS);
+	return lightStateOf(
+		{ clipId: `${type}${Math.random()}`, name: type, trackIndex: 0, ...RIG, light: data },
+		0,
+		FPS,
+	);
 }
 
-type Layer = { pic: Pic; transform?: Transform; td?: ReturnType<typeof newLayer3D>; mesh?: Mesh | null; opacity?: number; model?: LoadedModel };
-type Scene = { layers: Layer[]; camera?: CameraState; lights?: LightState[]; backdrop?: Pic; env?: AdvancedEnvironment };
+type Layer = {
+	pic: Pic;
+	transform?: Transform;
+	td?: ReturnType<typeof newLayer3D>;
+	mesh?: Mesh | null;
+	opacity?: number;
+	model?: LoadedModel;
+};
+type Scene = {
+	layers: Layer[];
+	camera?: CameraState;
+	lights?: LightState[];
+	backdrop?: Pic;
+	env?: AdvancedEnvironment;
+};
 
 const td = (f: (t: ReturnType<typeof newLayer3D>) => void) => {
 	const t = newLayer3D();
@@ -111,14 +144,23 @@ const ring = () =>
 function extruded(p: Pic, depth: number, bevel: 'none' | 'angular' | 'convex' = 'none'): Mesh {
 	const ctx = p.canvas.getContext('2d')!;
 	const d = ctx.getImageData(0, 0, p.canvas.width, p.canvas.height).data;
-	const shapes = shapesOfAlpha(p.canvas.width, p.canvas.height, (x, y) => d[(y * p.canvas.width + x) * 4 + 3]!);
+	const shapes = shapesOfAlpha(
+		p.canvas.width,
+		p.canvas.height,
+		(x, y) => d[(y * p.canvas.width + x) * 4 + 3]!,
+	);
 	return extrudeShapes(shapes, { depth, bevelStyle: bevel, bevelDepth: 2, holeBevel: 100 });
 }
 
 function scenes(): Record<string, () => Scene> {
 	const pic = (seed: number) => picture(40, 30, blocks(seed));
 	const spot = (cast: boolean) =>
-		light('spot', { coneAngle: 90, castsShadows: cast, shadowDarkness: 100, shadowDiffusion: 0 }, [W / 2 - 10, H / 2 - 30, -120], [W / 2, H / 2, 0]);
+		light(
+			'spot',
+			{ coneAngle: 90, castsShadows: cast, shadowDarkness: 100, shadowDiffusion: 0 },
+			[W / 2 - 10, H / 2 - 30, -120],
+			[W / 2, H / 2, 0],
+		);
 	const shadowScene = (cast: boolean): Scene => ({
 		layers: [
 			{
@@ -155,7 +197,11 @@ function scenes(): Record<string, () => Scene> {
 		orbit: () => ({
 			layers: [
 				{ pic: pic(4), td: td((t) => (t.orientation = anim<Vec3>([10, 20, 5]))) },
-				{ pic: pic(5), transform: tr({ position: anim([30, 20]) }), td: td((t) => (t.positionZ = anim(-20))) },
+				{
+					pic: pic(5),
+					transform: tr({ position: anim([30, 20]) }),
+					td: td((t) => (t.positionZ = anim(-20))),
+				},
 			],
 			camera: lookAtCamera([W / 2 + 60, H / 2 - 40, -110], [W / 2, H / 2, 0], 130),
 		}),
@@ -167,13 +213,19 @@ function scenes(): Record<string, () => Scene> {
 		shadowOff: () => shadowScene(false),
 		ringFlat: () => ({
 			layers: [{ pic: ring(), td: td((t) => (t.rotationY = anim(50))) }],
-			lights: [light('parallel', { intensity: 90 }, [W / 2 - 60, H / 2 - 40, -80], [W / 2, H / 2, 0]), light('ambient', { intensity: 20 })],
+			lights: [
+				light('parallel', { intensity: 90 }, [W / 2 - 60, H / 2 - 40, -80], [W / 2, H / 2, 0]),
+				light('ambient', { intensity: 20 }),
+			],
 		}),
 		ringExtruded: () => {
 			const p = ring();
 			return {
 				layers: [{ pic: p, td: td((t) => (t.rotationY = anim(50))), mesh: extruded(p, 25, 'convex') }],
-				lights: [light('parallel', { intensity: 90 }, [W / 2 - 60, H / 2 - 40, -80], [W / 2, H / 2, 0]), light('ambient', { intensity: 20 })],
+				lights: [
+					light('parallel', { intensity: 90 }, [W / 2 - 60, H / 2 - 40, -80], [W / 2, H / 2, 0]),
+					light('ambient', { intensity: 20 }),
+				],
 			};
 		},
 		env: () => {
@@ -206,11 +258,21 @@ function scenes(): Record<string, () => Scene> {
 				iris: { sides: 6, rotation: 0, roundness: 0, aspect: 1, fringe: 0 },
 				highlight: { gain: 0, threshold: 1, saturation: 0 },
 			};
-			const chk = (x: number, y: number) => (((x >> 1) + (y >> 1)) & 1 ? [255, 255, 255, 255] : [0, 0, 0, 255]) as [number, number, number, number];
+			const chk = (x: number, y: number) =>
+				(((x >> 1) + (y >> 1)) & 1 ? [255, 255, 255, 255] : [0, 0, 0, 255]) as [
+					number,
+					number,
+					number,
+					number,
+				];
 			return {
 				layers: [
 					{ pic: picture(40, 30, chk), transform: tr({ position: anim([25, 32]) }) },
-					{ pic: picture(40, 30, chk), transform: tr({ position: anim([70, 32]), scale: anim(300) }), td: td((t) => (t.positionZ = anim(600))) },
+					{
+						pic: picture(40, 30, chk),
+						transform: tr({ position: anim([70, 32]), scale: anim(300) }),
+						td: td((t) => (t.positionZ = anim(600))),
+					},
 				],
 				camera: cam,
 				backdrop: picture(W, H, () => [128, 128, 128, 255]),
@@ -251,7 +313,10 @@ function scenes(): Record<string, () => Scene> {
 						model: { model, textures: [null] },
 					},
 				],
-				lights: [light('parallel', { intensity: 100 }, [W / 2 - 60, H / 2 - 80, -100], [W / 2, H / 2, 0]), light('ambient', { intensity: 20 })],
+				lights: [
+					light('parallel', { intensity: 100 }, [W / 2 - 60, H / 2 - 80, -100], [W / 2, H / 2, 0]),
+					light('ambient', { intensity: 20 }),
+				],
 			};
 		},
 		highlight: () => ({
@@ -324,7 +389,13 @@ function advanced(name: string): number[] {
 	out.height = H;
 	renderAdvancedGL(
 		h,
-		{ setup: setupOf(s), members: members(s), backdrop: s.backdrop?.canvas ?? null, environment: s.env ?? null, shadowMapSize: 512 },
+		{
+			setup: setupOf(s),
+			members: members(s),
+			backdrop: s.backdrop?.canvas ?? null,
+			environment: s.env ?? null,
+			shadowMapSize: 512,
+		},
 		out.getContext('2d')!,
 	);
 	return Array.from(out.getContext('2d')!.getImageData(0, 0, W, H).data);
@@ -353,7 +424,9 @@ function classic(name: string): number[] {
 		const p = prepareClassicPlane(setup, src);
 		if (p) cpu.push({ ...p, pixels: l.pic.float });
 	});
-	const canvas = s.backdrop ? { ...s.backdrop.float, data: s.backdrop.float.data.slice() } : newFloatImage(W, H);
+	const canvas = s.backdrop
+		? { ...s.backdrop.float, data: s.backdrop.float.data.slice() }
+		: newFloatImage(W, H);
 	compositeClassicCPU(canvas, setup, cpu);
 	const px: number[] = [];
 	for (let i = 0; i < W * H; i++) {

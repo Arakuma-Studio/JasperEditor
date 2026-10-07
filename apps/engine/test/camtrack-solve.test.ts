@@ -6,17 +6,30 @@ import {
 	decomposeEssential,
 	essential8pt,
 	type P2,
-	ransacHomography,
 	Rng,
+	ransacHomography,
 	selectPose,
 	triangulate,
 } from '../src/camtrack/core/geometry.ts';
-import { cross, logRot, type M3, mm, mt, mv, norm, normalize, rodrigues, sub, umeyama, type V3 } from '../src/camtrack/core/linalg.ts';
+import {
+	cross,
+	logRot,
+	type M3,
+	mm,
+	mt,
+	mv,
+	norm,
+	normalize,
+	rodrigues,
+	sub,
+	umeyama,
+	type V3,
+} from '../src/camtrack/core/linalg.ts';
 import { focalOf, solveCamera } from '../src/camtrack/core/solver.ts';
 import {
 	type CameraTracks,
-	distort,
 	type Distortion,
+	distort,
 	frameR,
 	type SolveSettings,
 	solveFocal,
@@ -76,8 +89,9 @@ function tracksOf(cams: Cam[], pts: V3[], sigma: number, seed: number, dist?: Di
 
 function randomPoints(n: number, seed: number, box: { min: V3; max: V3 }): V3[] {
 	const rng = new Rng(seed);
-	return Array.from({ length: n }, () =>
-		[0, 1, 2].map((i) => box.min[i]! + (box.max[i]! - box.min[i]!) * rng.unit()) as V3,
+	return Array.from(
+		{ length: n },
+		() => [0, 1, 2].map((i) => box.min[i]! + (box.max[i]! - box.min[i]!) * rng.unit()) as V3,
 	);
 }
 
@@ -148,7 +162,17 @@ describe('camtrack geometry', () => {
 		const dir = normalize(mv(a.r, sub(b.c, a.c)));
 		expect(norm(sub(normalize(sel.pose.c), dir))).toBeLessThan(1e-6);
 		const x = triangulate([
-			{ pose: { r: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], c: [0, 0, 0] }, x: x1[0]! },
+			{
+				pose: {
+					r: [
+						[1, 0, 0],
+						[0, 1, 0],
+						[0, 0, 1],
+					],
+					c: [0, 0, 0],
+				},
+				x: x1[0]!,
+			},
 			{ pose: sel.pose, x: x2[0]! },
 		])!;
 		expect(x[2]).toBeGreaterThan(0);
@@ -170,7 +194,8 @@ describe('camtrack geometry', () => {
 		const fit = ransacHomography(src, dst, 1, 400, 4)!;
 		expect(fit.inliers.filter(Boolean).length).toBeGreaterThanOrEqual(64);
 		const k = h[2][2] / fit.h[2][2];
-		for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) expect(fit.h[i]![j]! * k).toBeCloseTo(h[i]![j]!, 3);
+		for (let i = 0; i < 3; i++)
+			for (let j = 0; j < 3; j++) expect(fit.h[i]![j]! * k).toBeCloseTo(h[i]![j]!, 3);
 	});
 
 	it('bundle adjustment converges from a perturbed start', () => {
@@ -186,12 +211,12 @@ describe('camtrack geometry', () => {
 		}));
 		const start = pts.map((p) => [p[0] + 0.05, p[1] - 0.05, p[2] + 0.1] as V3);
 		const obs: BaObs[] = [];
-		truth.forEach((c, ci) =>
+		truth.forEach((c, ci) => {
 			pts.forEach((x, pi) => {
 				const p = mv(c.r, sub(x, c.c));
 				obs.push({ cam: ci, pt: pi, uv: [(c.f * p[0]) / p[2], (c.f * p[1]) / p[2]] });
-			}),
-		);
+			});
+		});
 		const fixed = truth.map((_, i) => i < 2);
 		cams[1] = { pose: { r: truth[1]!.r, c: truth[1]!.c }, f: 900, dist: cams[1]!.dist };
 		const rep = adjust(cams, start, obs, {
@@ -240,7 +265,10 @@ describe('camtrack solve (synthetic scenes)', () => {
 	it('Specify Angle of View: uses the given focal length', () => {
 		const f = focalOf(W, 40);
 		const truth = movingCamera(30, () => f);
-		const solve = solveCamera(tracksOf(truth, pts3d, 0.1, 2), settings({ shot: 'specify', hfov: 40, method: 'typical' }));
+		const solve = solveCamera(
+			tracksOf(truth, pts3d, 0.1, 2),
+			settings({ shot: 'specify', hfov: 40, method: 'typical' }),
+		);
 		expect(solveFocal(solve)).toBeCloseTo(f, 6);
 		expect(pathError(truth, solve)).toBeLessThan(0.02);
 	}, 120_000);
@@ -300,7 +328,9 @@ describe('camtrack solve (synthetic scenes)', () => {
 		const truth = movingCamera(20, () => 900);
 		const ac = new AbortController();
 		ac.abort();
-		expect(() => solveCamera(tracksOf(truth, pts3d, 0.1, 7), settings(), { signal: ac.signal })).toThrow(/cancelled/);
+		expect(() => solveCamera(tracksOf(truth, pts3d, 0.1, 7), settings(), { signal: ac.signal })).toThrow(
+			/cancelled/,
+		);
 	});
 
 	it('refuses clips without features', () => {
@@ -309,4 +339,3 @@ describe('camtrack solve (synthetic scenes)', () => {
 		).toThrow(/not enough features/);
 	});
 });
-

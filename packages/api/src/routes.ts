@@ -25,6 +25,7 @@ import {
 	CacheSettingsSchema,
 	CacheUsageSchema,
 } from './cache.ts';
+import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
 import {
@@ -111,7 +112,6 @@ import {
 	RotoTraceResponseSchema,
 	VisionModelsResponseSchema,
 } from './roto.ts';
-import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { SceneDetectRequestSchema } from './scenes.ts';
 import {
 	SpeechModelDeleteResponseSchema,

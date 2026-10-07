@@ -4,8 +4,28 @@
 import { readFileSync } from 'node:fs';
 import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { logRot, type M3, mm, mt, norm, rodrigues, sub, umeyama, type V3 } from '../src/camtrack/core/linalg.ts';
-import { closeApps, ensureFixtures, fixture, H, JSON_H, makeApp, register, type TestApp, until } from './helpers.ts';
+import {
+	logRot,
+	type M3,
+	mm,
+	mt,
+	norm,
+	rodrigues,
+	sub,
+	umeyama,
+	type V3,
+} from '../src/camtrack/core/linalg.ts';
+import {
+	closeApps,
+	ensureFixtures,
+	fixture,
+	H,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+	until,
+} from './helpers.ts';
 
 type Truth = { width: number; height: number; frames: { r: M3; c: V3; f: number }[] };
 
@@ -23,7 +43,9 @@ async function post(body: object): Promise<EngineJob> {
 
 async function finished(job: EngineJob): Promise<EngineJob> {
 	return until(async () => {
-		const j = (await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json() as EngineJob;
+		const j = (
+			await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
+		).json() as EngineJob;
 		return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
 	}, 600_000);
 }
@@ -87,7 +109,12 @@ describe('camtrack jobs', () => {
 		const gone = first.points.slice(0, 10).map((p) => p.id);
 		const t0 = Date.now();
 		const job = await finished(
-			await post({ mediaKey: key, span: [0, 59], settings: { ...SETTINGS, shot: 'specify', hfov: 59.5 }, deleted: gone }),
+			await post({
+				mediaKey: key,
+				span: [0, 59],
+				settings: { ...SETTINGS, shot: 'specify', hfov: 59.5 },
+				deleted: gone,
+			}),
 		);
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
 		const r = job.result as CamTrackResult;
@@ -100,7 +127,9 @@ describe('camtrack jobs', () => {
 	it('cancels a running job (the child process is killed)', async () => {
 		const job = await post({ mediaKey: key, span: [0, 59], settings: { ...SETTINGS, detailed: true } });
 		await until(async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json() as EngineJob;
+			const j = (
+				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
+			).json() as EngineJob;
 			return j.state === 'running' ? j : null;
 		}, 60_000);
 		const c = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });

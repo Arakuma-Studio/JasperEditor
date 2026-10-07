@@ -89,11 +89,7 @@ function isEar(ear: Node): boolean {
 	if (area(a, b, c) >= 0) return false;
 	let p = ear.next.next;
 	while (p !== ear.prev) {
-		if (
-			pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-			area(p.prev, p, p.next) >= 0
-		)
-			return false;
+		if (pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) && area(p.prev, p, p.next) >= 0) return false;
 		p = p.next;
 	}
 	return true;
@@ -270,7 +266,10 @@ function intersects(p1: Node, q1: Node, p2: Node, q2: Node): boolean {
 
 function onSegment(p: Node, q: Node, r: Node): boolean {
 	return (
-		q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) && q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y)
+		q.x <= Math.max(p.x, r.x) &&
+		q.x >= Math.min(p.x, r.x) &&
+		q.y <= Math.max(p.y, r.y) &&
+		q.y >= Math.min(p.y, r.y)
 	);
 }
 
@@ -279,7 +278,8 @@ const sign = (n: number) => (n > 0 ? 1 : n < 0 ? -1 : 0);
 function intersectsPolygon(a: Node, b: Node): boolean {
 	let p = a;
 	do {
-		if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i && intersects(p, p.next, a, b)) return true;
+		if (p.i !== a.i && p.next.i !== a.i && p.i !== b.i && p.next.i !== b.i && intersects(p, p.next, a, b))
+			return true;
 		p = p.next;
 	} while (p !== a);
 	return false;
@@ -297,7 +297,11 @@ function middleInside(a: Node, b: Node): boolean {
 	const px = (a.x + b.x) / 2;
 	const py = (a.y + b.y) / 2;
 	do {
-		if (p.y > py !== p.next.y > py && p.next.y !== p.y && px < ((p.next.x - p.x) * (py - p.y)) / (p.next.y - p.y) + p.x)
+		if (
+			p.y > py !== p.next.y > py &&
+			p.next.y !== p.y &&
+			px < ((p.next.x - p.x) * (py - p.y)) / (p.next.y - p.y) + p.x
+		)
 			inside = !inside;
 		p = p.next;
 	} while (p !== a);

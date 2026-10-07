@@ -41,7 +41,10 @@ export function traceContours(
 			const br = v(i + 1, j + 1);
 			const bl = v(i, j + 1);
 			const c =
-				(tl >= threshold ? 8 : 0) | (tr >= threshold ? 4 : 0) | (br >= threshold ? 2 : 0) | (bl >= threshold ? 1 : 0);
+				(tl >= threshold ? 8 : 0) |
+				(tr >= threshold ? 4 : 0) |
+				(br >= threshold ? 2 : 0) |
+				(bl >= threshold ? 1 : 0);
 			if (c === 0 || c === 15) continue;
 			const T = key(i, j, false);
 			const B = key(i, j + 1, false);
@@ -192,7 +195,8 @@ function inside(pt: P, loop: readonly P[]): boolean {
 	for (let i = 0, j = loop.length - 1; i < loop.length; j = i++) {
 		const a = loop[i]!;
 		const b = loop[j]!;
-		if (a[1] > pt[1] !== b[1] > pt[1] && pt[0] < ((b[0] - a[0]) * (pt[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c;
+		if (a[1] > pt[1] !== b[1] > pt[1] && pt[0] < ((b[0] - a[0]) * (pt[1] - a[1])) / (b[1] - a[1]) + a[0])
+			c = !c;
 	}
 	return c;
 }
@@ -224,7 +228,6 @@ export function nestLoops(loops: readonly P[][]): Shape2D[] {
 	});
 	return [...shapes.values()];
 }
-
 
 export type ExtrudeOptions = {
 	depth: number;
@@ -289,7 +292,17 @@ export function extrudeShapes(shapes: readonly Shape2D[], o: ExtrudeOptions): Me
 	const verts: number[] = [];
 	const idx: number[] = [];
 	const D = Math.max(0, o.depth);
-	const push = (x: number, y: number, z: number, nx: number, ny: number, nz: number, u: number, v: number, kind: number) => {
+	const push = (
+		x: number,
+		y: number,
+		z: number,
+		nx: number,
+		ny: number,
+		nz: number,
+		u: number,
+		v: number,
+		kind: number,
+	) => {
 		verts.push(x, y, z, nx, ny, nz, u, v, kind);
 		return verts.length / 9 - 1;
 	};
@@ -317,10 +330,12 @@ export function extrudeShapes(shapes: readonly Shape2D[], o: ExtrudeOptions): Me
 		});
 		const tris = earcut(flat, holeStarts);
 		const front = faceRing.map((p) => push(p[0], p[1], 0, 0, 0, -1, p[0], p[1], 0));
-		for (let t = 0; t < tris.length; t += 3) idx.push(front[tris[t]!]!, front[tris[t + 1]!]!, front[tris[t + 2]!]!);
+		for (let t = 0; t < tris.length; t += 3)
+			idx.push(front[tris[t]!]!, front[tris[t + 1]!]!, front[tris[t + 2]!]!);
 		if (D <= 0) continue;
 		const back = faceRing.map((p) => push(p[0], p[1], D, 0, 0, 1, p[0], p[1], 0));
-		for (let t = 0; t < tris.length; t += 3) idx.push(back[tris[t]!]!, back[tris[t + 2]!]!, back[tris[t + 1]!]!);
+		for (let t = 0; t < tris.length; t += 3)
+			idx.push(back[tris[t]!]!, back[tris[t + 2]!]!, back[tris[t + 1]!]!);
 		// Walls: profile stations from the front edge to the back edge.
 		rings.forEach((r, k) => {
 			const b = bevelOf(k);

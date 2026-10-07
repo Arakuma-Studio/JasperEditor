@@ -39,7 +39,8 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-const clipDoc = async <T>(id: string) => query<T>(page, 'doc.get', { path: ['sequences', seqId, 'clips', id] });
+const clipDoc = async <T>(id: string) =>
+	query<T>(page, 'doc.get', { path: ['sequences', seqId, 'clips', id] });
 
 /** Mean colour of a region (fractions) of the Program monitor output. */
 async function programRegion(x: number, y: number, w = 0.06, h = 0.06): Promise<[number, number, number]> {
@@ -58,7 +59,12 @@ async function programRegion(x: number, y: number, w = 0.06, h = 0.06): Promise<
 					// not drawable
 				}
 			}
-			const d = g.getImageData(Math.round(r.x * W), Math.round(r.y * H), Math.max(1, Math.round(r.w * W)), Math.max(1, Math.round(r.h * H))).data;
+			const d = g.getImageData(
+				Math.round(r.x * W),
+				Math.round(r.y * H),
+				Math.max(1, Math.round(r.w * W)),
+				Math.max(1, Math.round(r.h * H)),
+			).data;
 			const s = [0, 0, 0];
 			for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) s[k] += d[i + k]!;
 			const n = d.length / 4;
@@ -71,7 +77,12 @@ async function programRegion(x: number, y: number, w = 0.06, h = 0.06): Promise<
 async function menu(top: string, ...path: (string | RegExp)[]) {
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: top, exact: true }).click();
 	for (let i = 0; i < path.length; i++) {
-		const item = page.getByRole('menuitem', { name: path[i]! });
+		const n = path[i]!;
+		const opts = typeof n === 'string' ? { name: n, exact: true } : { name: n };
+		const item = page
+			.getByRole('menuitem', opts)
+			.or(page.getByRole('menuitemcheckbox', opts))
+			.or(page.getByRole('menuitemradio', opts));
 		if (i < path.length - 1) await item.first().hover();
 		else await item.first().click();
 	}
@@ -93,10 +104,13 @@ test('Clip ▸ 3D Layer and the Effect Controls 3D switch make two solids one 3D
 	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('3D Layer');
 	expect((await clipDoc<{ threeD?: { enabled: boolean } }>(card)).threeD?.enabled).toBe(true);
 	await clipElement(page, floor).click();
+	await page.getByTestId('tab-effectControls').click();
 	const sw = page.getByTestId(`ec-3d-switch-${floor}`);
 	await sw.scrollIntoViewIfNeeded();
 	await sw.click();
-	await expect.poll(async () => (await clipDoc<{ threeD?: { enabled: boolean } }>(floor)).threeD?.enabled).toBe(true);
+	await expect
+		.poll(async () => (await clipDoc<{ threeD?: { enabled: boolean } }>(floor)).threeD?.enabled)
+		.toBe(true);
 	expect(
 		(
 			await transact(page, [
@@ -135,10 +149,13 @@ test('File ▸ New ▸ Camera… and Light…: the Program monitor draws the run
 	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('New Light');
 	// The camera moved the card off the centre and the light changed the shading: the centre differs.
 	await expect
-		.poll(async () => {
-			const c = await programRegion(0.47, 0.47);
-			return Math.max(...c.map((v, i) => Math.abs(v - before[i]!)));
-		}, { timeout: 30_000 })
+		.poll(
+			async () => {
+				const c = await programRegion(0.47, 0.47);
+				return Math.max(...c.map((v, i) => Math.abs(v - before[i]!)));
+			},
+			{ timeout: 30_000 },
+		)
 		.toBeGreaterThan(20);
 	await page.screenshot({ path: 'test-results/three-d-camera-light.png' });
 });
@@ -148,10 +165,13 @@ test('the 3D view chip switches the Program monitor to Custom View 1 and back', 
 	const active = await programRegion(0.3, 0.3, 0.4, 0.4);
 	await select.selectOption('custom1');
 	await expect
-		.poll(async () => {
-			const c = await programRegion(0.3, 0.3, 0.4, 0.4);
-			return Math.max(...c.map((v, i) => Math.abs(v - active[i]!)));
-		}, { timeout: 30_000 })
+		.poll(
+			async () => {
+				const c = await programRegion(0.3, 0.3, 0.4, 0.4);
+				return Math.max(...c.map((v, i) => Math.abs(v - active[i]!)));
+			},
+			{ timeout: 30_000 },
+		)
 		.toBeGreaterThan(4);
 	await page.screenshot({ path: 'test-results/three-d-custom-view.png' });
 	await select.selectOption('activeCamera');
@@ -163,7 +183,14 @@ test('Sequence ▸ 3D Renderer ▸ Advanced 3D draws extruded text', async () =>
 	expect(
 		(
 			await transact(page, [
-				{ type: 'clip.addText', at: 0, duration: 120, track: 'V3', content: { text: 'JASPER', style: { sizePx: 220 } }, ref: '$t' },
+				{
+					type: 'clip.addText',
+					at: 0,
+					duration: 120,
+					track: 'V3',
+					content: { text: 'JASPER', style: { sizePx: 220 } },
+					ref: '$t',
+				},
 				{ type: 'clip.set3d', clipIds: ['$t'], enabled: true },
 				{ type: 'param.set', target: ['clip', '$t', 'threeD', 'rotationY'], value: 30 },
 				{ type: 'param.set', target: ['clip', '$t', 'threeD', 'geometry', 'extrusionDepth'], value: 60 },
@@ -185,7 +212,18 @@ test('the export renders the 3D scene on the Remotion path (named in the plan)',
 		outDir,
 		jobTimeoutMs: 600_000,
 	});
-	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', ['-v', 'error', '-y', '-ss', '0.5', '-i', file, '-frames:v', '1', 'test-results/three-d-export.png']);
+	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
+		'-v',
+		'error',
+		'-y',
+		'-ss',
+		'0.5',
+		'-i',
+		file,
+		'-frames:v',
+		'1',
+		'test-results/three-d-export.png',
+	]);
 	const raw = execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
 		...['-v', 'error', '-ss', '0.5', '-i', file, '-frames:v', '1'],
 		...['-vf', 'scale=64:36:flags=area,format=rgb24', '-f', 'rawvideo', '-'],
@@ -210,7 +248,15 @@ test('3D Camera Tracker: Track Camera solves the dolly plate, three points → C
 	expect(
 		(
 			await transact(page, [
-				{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1' }, matchSequence: 'keep', audio: false, ref: '$c' },
+				{
+					type: 'clip.place',
+					source: { mediaId },
+					at: 0,
+					tracks: { video: 'V1' },
+					matchSequence: 'keep',
+					audio: false,
+					ref: '$c',
+				},
 				{ type: 'clip.fitToFrame', clipIds: ['$c'], mode: 'fit' },
 			])
 		).ok,
@@ -222,8 +268,11 @@ test('3D Camera Tracker: Track Camera solves the dolly plate, three points → C
 	await expect
 		.poll(async () => (await appliedLabels(page)).slice(-2), { timeout: 600_000, intervals: [2000] })
 		.toEqual(['Track Camera', 'Solve Camera']);
-	const t = (await clipDoc<{ cameraTracker?: { solve: { methodUsed: string; averageError: number; points: unknown[] } } }>(plate))
-		.cameraTracker!;
+	const t = (
+		await clipDoc<{
+			cameraTracker?: { solve: { methodUsed: string; averageError: number; points: unknown[] } };
+		}>(plate)
+	).cameraTracker!;
 	expect(t.solve.methodUsed).toBe('typical');
 	expect(t.solve.averageError).toBeLessThan(1);
 	await expect(page.getByTestId('camtrack-section')).toHaveAttribute('data-solved', '1');
@@ -240,7 +289,11 @@ test('3D Camera Tracker: Track Camera solves the dolly plate, three points → C
 			})
 			.sort((a, b) => b.y - a.y),
 	);
-	const chosen = [pts[0]!, pts.find((p) => Math.abs(p.x - pts[0]!.x) > 60)!, pts.find((p) => p.y < pts[0]!.y - 25)!];
+	const chosen = [
+		pts[0]!,
+		pts.find((p) => Math.abs(p.x - pts[0]!.x) > 60)!,
+		pts.find((p) => p.y < pts[0]!.y - 25)!,
+	];
 	await page.mouse.click(chosen[0]!.x, chosen[0]!.y);
 	await page.keyboard.down('Shift');
 	await page.mouse.click(chosen[1]!.x, chosen[1]!.y);

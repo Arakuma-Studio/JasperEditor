@@ -170,7 +170,11 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 			} as Command,
 			{ type: 'clip.set3d', clipIds: ['$t'], enabled: true } as Command,
 			{ type: 'param.set', target: ['clip', '$t', 'threeD', 'rotationY'], value: 45 } as Command,
-			{ type: 'param.set', target: ['clip', '$t', 'threeD', 'geometry', 'extrusionDepth'], value: depth } as Command,
+			{
+				type: 'param.set',
+				target: ['clip', '$t', 'threeD', 'geometry', 'extrusionDepth'],
+				value: depth,
+			} as Command,
 		];
 		const flat = await still(scene(text(0)), 5, 'advanced-flat');
 		const ext = await still(scene(text(60)), 5, 'advanced-extruded');

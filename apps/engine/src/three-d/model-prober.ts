@@ -16,7 +16,11 @@ export const modelProber: AssetProber = {
 		const format = modelFormatOf(file)!;
 		const st = await stat(file);
 		if (st.size > MAX_MODEL_BYTES)
-			throw new JobError('INVALID_MODEL', `Model file too large (${st.size} bytes, max ${MAX_MODEL_BYTES})`, false);
+			throw new JobError(
+				'INVALID_MODEL',
+				`Model file too large (${st.size} bytes, max ${MAX_MODEL_BYTES})`,
+				false,
+			);
 		const bytes = new Uint8Array(await readFile(file));
 		try {
 			parseModel(bytes, format);

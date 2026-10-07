@@ -628,6 +628,7 @@ export function renderClassicGL(h: FxHost, input: ClassicGlInput, out: CanvasRen
 		gl.bindFramebuffer(gl.FRAMEBUFFER, drawFbo);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, final, 0);
 		gl.viewport(0, 0, pack.width, pack.height);
+		// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 		gl.useProgram(ps.copy);
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, raw);
@@ -705,6 +706,7 @@ export function renderClassicGL(h: FxHost, input: ClassicGlInput, out: CanvasRen
 	gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 	gl.viewport(0, 0, W, H);
 	const prog = ps.composite;
+	// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 	gl.useProgram(prog);
 	const bindTex = (unit: number, t: WebGLTexture, name: string) => {
 		gl.activeTexture(gl.TEXTURE0 + unit);
@@ -754,6 +756,7 @@ function runDof(
 		gl.bindFramebuffer(gl.FRAMEBUFFER, ps.fbo);
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
 		gl.viewport(0, 0, vw, vh);
+		// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 		gl.useProgram(prog);
 	};
 	draw(ps.dofInit, a, pw, rh);
@@ -789,18 +792,19 @@ function runDof(
 	const maxSpans = Math.max(1, ...spanLists.map((l) => l.length));
 	const rowsPerLevel = Math.ceil(maxSpans / SPAN_ROW);
 	const sd = new Float32Array(SPAN_ROW * rowsPerLevel * levels.length * 4);
-	spanLists.forEach((list, li) =>
+	spanLists.forEach((list, li) => {
 		list.forEach((s, si) => {
 			const x = si % SPAN_ROW;
 			const y = li * rowsPerLevel + Math.floor(si / SPAN_ROW);
 			sd.set(s, (y * SPAN_ROW + x) * 4);
-		}),
-	);
+		});
+	});
 	const spanTex = dataTexture(gl, ps, 'spans', SPAN_ROW, rowsPerLevel * levels.length, sd);
 	// Gather into the final atlas region.
 	gl.bindFramebuffer(gl.FRAMEBUFFER, drawFbo);
 	gl.viewport(slot.x, slot.y, rw, rh);
 	const g = ps.dofGather;
+	// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 	gl.useProgram(g);
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindTexture(gl.TEXTURE_2D, src);

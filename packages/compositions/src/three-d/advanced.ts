@@ -16,6 +16,7 @@ import {
 	type ClassicSetup,
 	circleOfConfusion,
 	type LightState,
+	MAX_DOF_RADIUS,
 	type MaterialState,
 	type Matrix4,
 	type Mesh,
@@ -23,7 +24,6 @@ import {
 	mat4Apply,
 	mat4Invert,
 	mat4Mul,
-	MAX_DOF_RADIUS,
 	type Vec3,
 } from '@jasper/project';
 import { blit, compileShader, ensureCanvas, type FxHost } from '../fx/host.ts';
@@ -481,7 +481,12 @@ function progs(gl: WebGL2RenderingContext): Progs {
 	return p;
 }
 
-function U(gl: WebGL2RenderingContext, ps: Progs, prog: WebGLProgram, name: string): WebGLUniformLocation | null {
+function U(
+	gl: WebGL2RenderingContext,
+	ps: Progs,
+	prog: WebGLProgram,
+	name: string,
+): WebGLUniformLocation | null {
 	let m = ps.locs.get(prog);
 	if (!m) {
 		m = new Map();
@@ -492,7 +497,14 @@ function U(gl: WebGL2RenderingContext, ps: Progs, prog: WebGLProgram, name: stri
 }
 
 type TexFmt = 'rgba8' | 'r32f' | 'rgba32f' | 'depth24';
-function tex2d(gl: WebGL2RenderingContext, ps: Progs, name: string, w: number, h: number, fmt: TexFmt): WebGLTexture {
+function tex2d(
+	gl: WebGL2RenderingContext,
+	ps: Progs,
+	name: string,
+	w: number,
+	h: number,
+	fmt: TexFmt,
+): WebGLTexture {
 	const key = `${w}x${h}:${fmt}`;
 	let t = ps.tex.get(name);
 	if (t && t.__key === key) return t;
@@ -507,7 +519,8 @@ function tex2d(gl: WebGL2RenderingContext, ps: Progs, name: string, w: number, h
 	if (fmt === 'rgba8') gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 	else if (fmt === 'r32f') gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, w, h, 0, gl.RED, gl.FLOAT, null);
 	else if (fmt === 'rgba32f') gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
-	else gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, w, h, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+	else
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, w, h, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
 	t.__key = key;
 	ps.tex.set(name, t);
 	return t;
@@ -550,7 +563,17 @@ function uploadPicture(gl: WebGL2RenderingContext, t: WebGLTexture, src: TexImag
 // ---------------------------------------------------------------- geometry
 
 const invert3 = (m: readonly number[]): number[] | null => {
-	const [a, b, c, d, e, f, g, h, i] = m as [number, number, number, number, number, number, number, number, number];
+	const [a, b, c, d, e, f, g, h, i] = m as [
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+	];
 	const A = e * i - f * h;
 	const B = -(d * i - f * g);
 	const C = d * h - e * g;
@@ -571,7 +594,9 @@ const invert3 = (m: readonly number[]): number[] | null => {
 };
 
 /** The layer quad covering the picture (layer px), as a mesh. */
-export function pictureQuad(m: Pick<AdvancedMember, 'layerToPicture' | 'pictureWidth' | 'pictureHeight'>): Mesh | null {
+export function pictureQuad(
+	m: Pick<AdvancedMember, 'layerToPicture' | 'pictureWidth' | 'pictureHeight'>,
+): Mesh | null {
 	const inv = invert3(m.layerToPicture);
 	if (!inv) return null;
 	const corners = [
@@ -593,18 +618,42 @@ export function pictureQuad(m: Pick<AdvancedMember, 'layerToPicture' | 'pictureW
 
 /** Row-major 4×4 → the column-major array GL wants. */
 const colMajor = (m: readonly number[]) =>
-	new Float32Array([m[0]!, m[4]!, m[8]!, m[12]!, m[1]!, m[5]!, m[9]!, m[13]!, m[2]!, m[6]!, m[10]!, m[14]!, m[3]!, m[7]!, m[11]!, m[15]!]);
+	new Float32Array([
+		m[0]!,
+		m[4]!,
+		m[8]!,
+		m[12]!,
+		m[1]!,
+		m[5]!,
+		m[9]!,
+		m[13]!,
+		m[2]!,
+		m[6]!,
+		m[10]!,
+		m[14]!,
+		m[3]!,
+		m[7]!,
+		m[11]!,
+		m[15]!,
+	]);
 const colMajor3 = (m: readonly number[]) =>
 	new Float32Array([m[0]!, m[3]!, m[6]!, m[1]!, m[4]!, m[7]!, m[2]!, m[5]!, m[8]!]);
 
 /** Normal matrix (inverse transpose of the upper 3×3), row-major. */
 function normalMatrix(w: Matrix4): number[] {
-	const inv = invert3([w[0]!, w[1]!, w[2]!, w[4]!, w[5]!, w[6]!, w[8]!, w[9]!, w[10]!]) ?? [1, 0, 0, 0, 1, 0, 0, 0, 1];
+	const inv = invert3([w[0]!, w[1]!, w[2]!, w[4]!, w[5]!, w[6]!, w[8]!, w[9]!, w[10]!]) ?? [
+		1, 0, 0, 0, 1, 0, 0, 0, 1,
+	];
 	return [inv[0]!, inv[3]!, inv[6]!, inv[1]!, inv[4]!, inv[7]!, inv[2]!, inv[5]!, inv[8]!];
 }
 
 /** Camera clip matrix (world → clip space; NDC y up = the top of the frame). */
-export function cameraClip(cam: CameraState, frame: { width: number; height: number }, near: number, far: number): Matrix4 {
+export function cameraClip(
+	cam: CameraState,
+	frame: { width: number; height: number },
+	near: number,
+	far: number,
+): Matrix4 {
 	const W = frame.width;
 	const H = frame.height;
 	const P = cam.ortho
@@ -675,7 +724,8 @@ function worldPoints(p: { member: AdvancedMember; mesh: Mesh }): Vec3[] {
 	const out: Vec3[] = [];
 	const v = p.mesh.vertices;
 	const step = Math.max(1, Math.floor(v.length / 9 / 64));
-	for (let i = 0; i < v.length / 9; i += step) out.push(mat4Apply(p.member.world, [v[i * 9]!, v[i * 9 + 1]!, v[i * 9 + 2]!]));
+	for (let i = 0; i < v.length / 9; i += step)
+		out.push(mat4Apply(p.member.world, [v[i * 9]!, v[i * 9 + 1]!, v[i * 9 + 2]!]));
 	return out;
 }
 
@@ -686,7 +736,10 @@ function shadowTiles(
 	size: number,
 ): { vp: Matrix4; texel: number; persp: boolean }[] {
 	if (pts.length === 0) return [];
-	const c = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length] as Vec3, [0, 0, 0] as Vec3);
+	const c = pts.reduce(
+		(a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length] as Vec3,
+		[0, 0, 0] as Vec3,
+	);
 	const R = Math.max(1, ...pts.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])));
 	const persp = (eye: Vec3, fwd: Vec3, half: number): { vp: Matrix4; texel: number; persp: boolean } => {
 		const view = basisView(eye, fwd, [0, 1, 0]);
@@ -695,7 +748,24 @@ function shadowTiles(
 		far *= 1.05;
 		const near = Math.max(0.5, far / 20000);
 		const f = 1 / Math.tan(half);
-		const P = [f, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) / (far - near), (-2 * far * near) / (far - near), 0, 0, 1, 0];
+		const P = [
+			f,
+			0,
+			0,
+			0,
+			0,
+			f,
+			0,
+			0,
+			0,
+			0,
+			(far + near) / (far - near),
+			(-2 * far * near) / (far - near),
+			0,
+			0,
+			1,
+			0,
+		];
 		return { vp: mat4Mul(P, view), texel: (2 * Math.tan(half)) / size, persp: true };
 	};
 	if (l.type === 'spot') return [persp(l.pos, l.dir, Math.min(1.5, l.coneHalf * 1.05 + 0.02))];
@@ -836,7 +906,15 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		const mesh = m.mesh ?? pictureQuad(m);
 		if (!mesh || mesh.indices.length === 0) return;
 		const { vao, buffers } = upload(mesh);
-		prepared.push({ member: m, mesh, centre: centreOf(m, mesh), vao, buffers, count: mesh.indices.length, tex: t });
+		prepared.push({
+			member: m,
+			mesh,
+			centre: centreOf(m, mesh),
+			vao,
+			buffers,
+			count: mesh.indices.length,
+			tex: t,
+		});
 	});
 	gl.bindBuffer(gl.ARRAY_BUFFER, null);
 	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
@@ -856,11 +934,24 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		const mat = p.prim?.material;
 		gl.uniform1i(U(gl, ps, prog, 'u_model'), mat ? 1 : 0);
 		if (mat) {
-			gl.uniform4f(U(gl, ps, prog, 'u_baseColor'), mat.baseColor[0], mat.baseColor[1], mat.baseColor[2], mat.baseColor[3]);
+			gl.uniform4f(
+				U(gl, ps, prog, 'u_baseColor'),
+				mat.baseColor[0],
+				mat.baseColor[1],
+				mat.baseColor[2],
+				mat.baseColor[3],
+			);
 			gl.uniform1i(U(gl, ps, prog, 'u_hasBaseTex'), p.prim!.tex ? 1 : 0);
-			gl.uniform1i(U(gl, ps, prog, 'u_alphaMode'), mat.alphaMode === 'BLEND' ? 2 : mat.alphaMode === 'MASK' ? 1 : 0);
+			gl.uniform1i(
+				U(gl, ps, prog, 'u_alphaMode'),
+				mat.alphaMode === 'BLEND' ? 2 : mat.alphaMode === 'MASK' ? 1 : 0,
+			);
 			gl.uniform1f(U(gl, ps, prog, 'u_alphaCutoff'), mat.alphaCutoff);
-			gl.uniform2f(U(gl, ps, prog, 'u_mr'), Math.min(1, Math.max(0, mat.metallic)), Math.min(1, Math.max(0, mat.roughness)));
+			gl.uniform2f(
+				U(gl, ps, prog, 'u_mr'),
+				Math.min(1, Math.max(0, mat.metallic)),
+				Math.min(1, Math.max(0, mat.roughness)),
+			);
 			gl.uniform3f(U(gl, ps, prog, 'u_emissive'), mat.emissive[0], mat.emissive[1], mat.emissive[2]);
 		}
 		gl.activeTexture(gl.TEXTURE0 + unit + 5);
@@ -890,7 +981,9 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	const atlasW = cols * S;
 	const atlasH = rows * S;
 	if (atlasH > maxTex)
-		throw new Error(`THREE_D_TOO_LARGE: ${tiles.length} shadow maps of ${S}² do not fit a ${maxTex}² texture`);
+		throw new Error(
+			`THREE_D_TOO_LARGE: ${tiles.length} shadow maps of ${S}² do not fit a ${maxTex}² texture`,
+		);
 	const shadowAtlas = tex2d(gl, ps, 'shadowAtlas', atlasW, atlasH, 'depth24');
 	if (tiles.length > 0) {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, ps.shadowFbo);
@@ -906,6 +999,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.enable(gl.POLYGON_OFFSET_FILL);
 		gl.polygonOffset(1.5, 4);
 		const prog = ps.shadow;
+		// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 		gl.useProgram(prog);
 		const casters = prepared.filter((p) => p.member.material.castsShadows !== 0);
 		tiles.forEach((t, k) => {
@@ -999,6 +1093,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 	// Background: the composite below the run, then the environment when it is the background.
 	gl.disable(gl.DEPTH_TEST);
+	// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 	gl.useProgram(ps.back);
 	gl.bindVertexArray(ps.quadVao);
 	if (input.backdrop) {
@@ -1016,7 +1111,11 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.bindTexture(gl.TEXTURE_2D, envTex);
 		gl.uniform1i(U(gl, ps, ps.back, 'u_env'), 1);
 		gl.uniform1i(U(gl, ps, ps.back, 'u_mode'), 1);
-		gl.uniformMatrix4fv(U(gl, ps, ps.back, 'u_invViewProj'), false, colMajor(mat4Invert(viewProj) ?? viewProj));
+		gl.uniformMatrix4fv(
+			U(gl, ps, ps.back, 'u_invViewProj'),
+			false,
+			colMajor(mat4Invert(viewProj) ?? viewProj),
+		);
 		gl.uniform3f(U(gl, ps, ps.back, 'u_eye'), cam.eye[0], cam.eye[1], cam.eye[2]);
 		gl.uniform3f(U(gl, ps, ps.back, 'u_fwd'), cam.view[8]!, cam.view[9]!, cam.view[10]!);
 		gl.uniform1i(U(gl, ps, ps.back, 'u_ortho'), cam.ortho ? 1 : 0);
@@ -1024,6 +1123,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.drawArrays(gl.TRIANGLES, 0, 3);
 	}
 	const prog = ps.main;
+	// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 	gl.useProgram(prog);
 	gl.uniformMatrix4fv(U(gl, ps, prog, 'u_viewProj'), false, colMajor(viewProj));
 	gl.uniform3f(U(gl, ps, prog, 'u_eye'), cam.eye[0], cam.eye[1], cam.eye[2]);
@@ -1101,7 +1201,9 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	let depthTex: WebGLTexture | null = null;
 	if (dof && drawn.length) {
 		if (!h.floatTargets)
-			throw new Error('WEBGL_UNAVAILABLE: depth of field needs float render targets (EXT_color_buffer_float)');
+			throw new Error(
+				'WEBGL_UNAVAILABLE: depth of field needs float render targets (EXT_color_buffer_float)',
+			);
 		depthTex = tex2d(gl, ps, 'viewDepth', W, H, 'r32f');
 		const depthRb1 = renderbuffer(gl, ps, 'depth1', W, H, gl.DEPTH_COMPONENT24, 0);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, ps.fbo2);
@@ -1113,6 +1215,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LESS);
 		const dp = ps.depth;
+		// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 		gl.useProgram(dp);
 		gl.uniformMatrix4fv(U(gl, ps, dp, 'u_viewProj'), false, colMajor(viewProj));
 		gl.uniform3f(U(gl, ps, dp, 'u_eye'), cam.eye[0], cam.eye[1], cam.eye[2]);
@@ -1130,6 +1233,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	gl.viewport(0, 0, W, H);
 	gl.disable(gl.DEPTH_TEST);
 	const fp = ps.dof;
+	// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
 	gl.useProgram(fp);
 	gl.activeTexture(gl.TEXTURE0);
 	gl.bindTexture(gl.TEXTURE_2D, resolved);

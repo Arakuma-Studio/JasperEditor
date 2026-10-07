@@ -5,7 +5,13 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { CancelledError, decodeFrames } from '../../roto/worker/frames.ts';
 import { solveCamera } from '../core/solver.ts';
-import { type CameraSolve, type CameraTracks, type ShotType, type SolveMethod, SolveError } from '../core/types.ts';
+import {
+	type CameraSolve,
+	type CameraTracks,
+	type ShotType,
+	SolveError,
+	type SolveMethod,
+} from '../core/types.ts';
 import { createFeatureTracker, featureConfig, greyOf } from '../features.ts';
 
 export { CancelledError };
@@ -119,7 +125,8 @@ export async function runCamTrackJob(
 		);
 		return { solve, tracks: tracks.tracks.length };
 	} catch (e) {
-		if (o.signal?.aborted || (e instanceof SolveError && e.message === 'cancelled')) throw new CancelledError();
+		if (o.signal?.aborted || (e instanceof SolveError && e.message === 'cancelled'))
+			throw new CancelledError();
 		throw e;
 	}
 }

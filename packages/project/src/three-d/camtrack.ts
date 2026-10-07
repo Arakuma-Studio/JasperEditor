@@ -37,7 +37,9 @@ export function cameraTrackerSettingsOf(s: CameraTrackerSettings | undefined): R
 }
 
 /** Fingerprint of what a solve depends on (span, solve settings, deleted points): a solve with other inputs is stale. */
-export function cameraTrackerInputs(t: Pick<ClipCameraTracker, 'span' | 'settings' | 'deleted' | 'mediaId'>): string {
+export function cameraTrackerInputs(
+	t: Pick<ClipCameraTracker, 'span' | 'settings' | 'deleted' | 'mediaId'>,
+): string {
 	const s = cameraTrackerSettingsOf(t.settings);
 	const key = JSON.stringify([
 		t.mediaId,
@@ -99,7 +101,10 @@ export type SolvedCamera = { r: M3; c: Vec3; f: number; solved: boolean };
 export const solveFrameCount = (s: Pick<CameraSolve, 'frames'>) => Math.floor(s.frames.length / 8);
 
 /** The solved camera at a media frame (clamped to the span), or null without frames. */
-export function solvedCameraAt(s: Pick<CameraSolve, 'frames' | 'span'>, mediaFrame: number): SolvedCamera | null {
+export function solvedCameraAt(
+	s: Pick<CameraSolve, 'frames' | 'span'>,
+	mediaFrame: number,
+): SolvedCamera | null {
 	const n = solveFrameCount(s);
 	if (n === 0) return null;
 	const k = Math.min(n - 1, Math.max(0, Math.round(mediaFrame) - s.span[0]));
@@ -237,7 +242,9 @@ export function fitPlane(p: readonly Vec3[]): { c: Vec3; n: Vec3 } | null {
 function invert3(m: M3): M3 | null {
 	const [a, b, c] = m;
 	const det =
-		a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+		a[0] * (b[1] * c[2] - b[2] * c[1]) -
+		a[1] * (b[0] * c[2] - b[2] * c[0]) +
+		a[2] * (b[0] * c[1] - b[1] * c[0]);
 	if (Math.abs(det) < 1e-300) return null;
 	const k = 1 / det;
 	return [
@@ -323,7 +330,13 @@ export function cameraTrackerSolveBody(
 	clipId: string;
 	trackerId: string;
 	span: [number, number];
-	settings: { shot: 'fixed' | 'variable' | 'specify'; hfov: number; method: 'auto' | 'typical' | 'flat' | 'tripod'; detailed: boolean; lensDistortion: boolean };
+	settings: {
+		shot: 'fixed' | 'variable' | 'specify';
+		hfov: number;
+		method: 'auto' | 'typical' | 'flat' | 'tripod';
+		detailed: boolean;
+		lensDistortion: boolean;
+	};
 	deleted: number[];
 	inputs: string;
 } {

@@ -55,13 +55,23 @@ function trackerOf(doc: DDoc, h: HandlerContext, clipId: string) {
 function checkSpan(span: readonly [number, number], n: number | null, h: HandlerContext): [number, number] {
 	const [a, b] = span;
 	if (b < a + 1) h.fail('E_INVALID_PARAM', 'The analysed span must hold at least two frames');
-	if (n !== null && b > n - 1) h.fail('E_INVALID_PARAM', `The span ends after the media's last frame (${n - 1})`);
+	if (n !== null && b > n - 1)
+		h.fail('E_INVALID_PARAM', `The span ends after the media's last frame (${n - 1})`);
 	return [a, b];
 }
 
 type SettingsInput = Omit<CommandOf<'cameraTracker.settings'>, 'type' | 'clipId' | 'span'>;
 function applySettings(t: DTracker, o: SettingsInput): void {
-	const keys = ['shot', 'hfov', 'method', 'detailed', 'lensDistortion', 'showPoints', 'pointSize', 'targetSize'] as const;
+	const keys = [
+		'shot',
+		'hfov',
+		'method',
+		'detailed',
+		'lensDistortion',
+		'showPoints',
+		'pointSize',
+		'targetSize',
+	] as const;
 	for (const k of keys) if (o[k] !== undefined) (t.settings as Record<string, unknown>)[k] = o[k];
 }
 
@@ -79,7 +89,12 @@ function pointsById(t: DTracker, ids: readonly number[], h: HandlerContext): Cam
 }
 
 /** The solved camera that sees points best: at `frame`, else the first frame all of them were tracked on. */
-function cameraFor(t: DTracker, pts: CameraSolvePoint[], frame: number | undefined, h: HandlerContext): SolvedCamera {
+function cameraFor(
+	t: DTracker,
+	pts: CameraSolvePoint[],
+	frame: number | undefined,
+	h: HandlerContext,
+): SolvedCamera {
 	const solve = t.solve!;
 	const f = frame ?? Math.max(solve.span[0], ...pts.map((p) => p.first));
 	const cam = solvedCameraAt(solve, f);
@@ -239,7 +254,8 @@ export const cameraTrackerHandlers: HandlerMap = {
 	'cameraTracker.create': (doc, cmd: CommandOf<'cameraTracker.create'>, h: HandlerContext) => {
 		const { seq, clip, tracker } = trackerOf(doc, h, cmd.clipId);
 		const solve = tracker.solve;
-		if (!solve || solveFrameCount(solve) === 0) return h.fail('E_INVALID_PARAM', 'Analyze and solve the camera first');
+		if (!solve || solveFrameCount(solve) === 0)
+			return h.fail('E_INVALID_PARAM', 'Analyze and solve the camera first');
 		const rate = seq.settings.frameRate as Rational;
 		const frame = { width: seq.settings.width, height: seq.settings.height };
 		const mapping = solveMapping(tracker as ClipCameraTracker, frame, pictureScale(doc, seq, clip, h));
@@ -247,8 +263,7 @@ export const cameraTrackerHandlers: HandlerMap = {
 		const layerKind = cmd.layer ?? 'none';
 		if (layerKind !== 'none' && !cmd.pointIds?.length)
 			h.fail('E_INVALID_PARAM', 'Select track points: the layer goes on their target');
-		const mediaAt = (f: number) =>
-			mediaFrameAt(contentTimeAt(clip, f, rate), tracker.rate as Rational);
+		const mediaAt = (f: number) => mediaFrameAt(contentTimeAt(clip, f, rate), tracker.rate as Rational);
 
 		// The layer first (on a free track above the footage), then the camera (on top).
 		let layerId: string | undefined;
@@ -270,7 +285,13 @@ export const cameraTrackerHandlers: HandlerMap = {
 			const place = { sequenceId: seq.id, at: clip.start, duration: clip.duration, track };
 			const res =
 				layerKind === 'text'
-					? (clipCoreHandlers['clip.addText'] as never as (d: DDoc, c: unknown, h: HandlerContext) => { clipId: string })(
+					? (
+							clipCoreHandlers['clip.addText'] as never as (
+								d: DDoc,
+								c: unknown,
+								h: HandlerContext,
+							) => { clipId: string }
+						)(
 							doc,
 							{
 								type: 'clip.addText',
@@ -280,7 +301,13 @@ export const cameraTrackerHandlers: HandlerMap = {
 							},
 							h,
 						)
-					: (clipCoreHandlers['clip.addSolid'] as never as (d: DDoc, c: unknown, h: HandlerContext) => { clipId: string })(
+					: (
+							clipCoreHandlers['clip.addSolid'] as never as (
+								d: DDoc,
+								c: unknown,
+								h: HandlerContext,
+							) => { clipId: string }
+						)(
 							doc,
 							{
 								type: 'clip.addSolid',
@@ -301,9 +328,7 @@ export const cameraTrackerHandlers: HandlerMap = {
 			layer.threeD = l3 as never;
 			layer.transform.position.value = [round(centre[0]), round(centre[1])] as never;
 			l3.positionZ.value = round(centre[2]);
-			l3.orientation.value = roundV(
-				layerOrientationFor(dirToWorld(mapping, target.n), right),
-			) as never;
+			l3.orientation.value = roundV(layerOrientationFor(dirToWorld(mapping, target.n), right)) as never;
 			const pct = round((100 * worldWidth) / Math.max(1, box.width), 1e3);
 			layer.transform.scale.value = pct;
 			layer.transform.scaleWidth.value = pct;
@@ -312,9 +337,15 @@ export const cameraTrackerHandlers: HandlerMap = {
 		let cameraId = cmd.replaceCamera ? tracker.createdCameraId : undefined;
 		let camClip = cameraId ? (seq.clips[cameraId] as Draft<CameraClip> | undefined) : undefined;
 		if (!camClip || camClip.kind !== 'camera') {
-			const r = (threeDHandlers['clip.addCamera'] as never as (d: DDoc, c: unknown, h: HandlerContext) => {
-				clipId: string;
-			})(
+			const r = (
+				threeDHandlers['clip.addCamera'] as never as (
+					d: DDoc,
+					c: unknown,
+					h: HandlerContext,
+				) => {
+					clipId: string;
+				}
+			)(
 				doc,
 				{
 					type: 'clip.addCamera',
@@ -337,7 +368,11 @@ export const cameraTrackerHandlers: HandlerMap = {
 		const ori: { time: number; value: unknown }[] = [];
 		const zoom: { time: number; value: unknown }[] = [];
 		const zooms: number[] = [];
-		for (let f = Math.max(clip.start, camClip.start); f < Math.min(clip.start + clip.duration, camClip.start + camClip.duration); f++) {
+		for (
+			let f = Math.max(clip.start, camClip.start);
+			f < Math.min(clip.start + clip.duration, camClip.start + camClip.duration);
+			f++
+		) {
 			const cam = solvedCameraAt(solve, mediaAt(f));
 			if (!cam) continue;
 			const wc = worldCameraOf(mapping, cam);
@@ -367,4 +402,3 @@ export const cameraTrackerHandlers: HandlerMap = {
 		return { clipId: clip.id };
 	},
 };
-

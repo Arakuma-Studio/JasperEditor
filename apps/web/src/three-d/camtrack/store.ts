@@ -19,7 +19,11 @@ type CamTrackUiState = {
 	selection: { clipId: string; ids: number[] } | null;
 };
 
-export const camtrackStore = createStore<CamTrackUiState>(() => ({ running: {}, errors: {}, selection: null }));
+export const camtrackStore = createStore<CamTrackUiState>(() => ({
+	running: {},
+	errors: {},
+	selection: null,
+}));
 
 export function useCamTrack<T>(selector: (s: CamTrackUiState) => T): T {
 	return useSyncExternalStore(
@@ -37,7 +41,13 @@ export const camtrackUi = {
 			if (p === null) delete running[clipId];
 			else
 				running[clipId] = {
-					...(running[clipId] ?? { jobId: null, inputs: '', progress: 0, stage: 'Starting', startedAt: Date.now() }),
+					...(running[clipId] ?? {
+						jobId: null,
+						inputs: '',
+						progress: 0,
+						stage: 'Starting',
+						startedAt: Date.now(),
+					}),
 					...p,
 				};
 			return { running };

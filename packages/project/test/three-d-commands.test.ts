@@ -17,8 +17,8 @@ import {
 	propertiesForClip,
 	repairDocument,
 	resolveVideoTransitions,
-	stackAt,
 	runs3d,
+	stackAt,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -70,19 +70,32 @@ describe('clip.set3d', () => {
 		expect(r.ok).toBe(false);
 		const a = solid(h, 0);
 		const b = solid(h, 60);
-		h.ok([{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10, handles: 'freeze' }]);
+		h.ok([
+			{
+				type: 'transition.add',
+				trackId: 'V1',
+				at: 60,
+				effectId: 'jasper.cross-dissolve',
+				duration: 10,
+				handles: 'freeze',
+			},
+		]);
 		const refused = h.tx([{ type: 'clip.set3d', clipIds: [a], enabled: true }]);
 		expect(refused.ok).toBe(false);
 		expect(!refused.ok && refused.errors[0]!.message).toMatch(/transitions/);
 		// Remove the transition, make it 3D, then a new transition is refused.
 		h.ok([{ type: 'transition.remove', transitionIds: Object.keys(h.seq.transitions) }]);
 		h.ok([{ type: 'clip.set3d', clipIds: [a], enabled: true }]);
-		const t = h.tx([{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 }]);
+		const t = h.tx([
+			{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 },
+		]);
 		expect(t.ok).toBe(false);
 		// applyDefault skips the 3D edges with a warning.
 		const d = h.ok([{ type: 'transition.applyDefault', clipIds: [a, b], edges: 'both' }]);
 		expect(d.warnings.some((w) => w.code === 'W_TRANSITION_3D')).toBe(true);
-		expect(Object.values(h.seq.transitions).some((x) => x.outgoingClipId === a || x.incomingClipId === a)).toBe(false);
+		expect(
+			Object.values(h.seq.transitions).some((x) => x.outgoingClipId === a || x.incomingClipId === a),
+		).toBe(false);
 	});
 
 	it('locked tracks refuse', () => {
@@ -99,21 +112,42 @@ describe('clip.set3d', () => {
 		h.ok([{ type: 'clip.set3d', clipIds: [id], enabled: true }]);
 		const keys = propertiesForClip(h.seq.clips[id]!).map((s) => s.key);
 		expect(keys).toEqual(
-			expect.arrayContaining(['threeD.positionZ', 'threeD.orientation', 'threeD.rotationX', 'threeD.material.castsShadows']),
+			expect.arrayContaining([
+				'threeD.positionZ',
+				'threeD.orientation',
+				'threeD.rotationX',
+				'threeD.material.castsShadows',
+			]),
 		);
 		h.ok([
-			{ type: 'param.setAnimated', target: ['clip', id, 'threeD', 'rotationY'], animated: true, at: { frames: 0 } },
+			{
+				type: 'param.setAnimated',
+				target: ['clip', id, 'threeD', 'rotationY'],
+				animated: true,
+				at: { frames: 0 },
+			},
 			{ type: 'param.set', target: ['clip', id, 'threeD', 'rotationY'], value: 90, at: { frames: 30 } },
 			{ type: 'param.set', target: ['clip', id, 'threeD', 'orientation'], value: [10, 20, 30] },
 			{ type: 'param.set', target: ['clip', id, 'threeD', 'material', 'castsShadows'], value: 'on' },
 			{ type: 'param.set', target: ['clip', id, 'threeD', 'material', 'specularShininess'], value: 250 },
 		]);
-		const c = h.seq.clips[id] as { threeD: { rotationY: { keyframes: unknown[] }; material: { castsShadows: string; specularShininess: { value: number } } } };
+		const c = h.seq.clips[id] as {
+			threeD: {
+				rotationY: { keyframes: unknown[] };
+				material: { castsShadows: string; specularShininess: { value: number } };
+			};
+		};
 		expect(c.threeD.rotationY.keyframes).toHaveLength(2);
 		expect(c.threeD.material.castsShadows).toBe('on');
 		expect(c.threeD.material.specularShininess.value).toBe(100); // clamped
-		expect(h.tx([{ type: 'param.set', target: ['clip', id, 'threeD', 'orientation'], value: [1, 2] }]).ok).toBe(false);
-		expect(h.tx([{ type: 'param.set', target: ['clip', id, 'threeD', 'material', 'castsShadows'], value: 'maybe' }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'param.set', target: ['clip', id, 'threeD', 'orientation'], value: [1, 2] }]).ok,
+		).toBe(false);
+		expect(
+			h.tx([
+				{ type: 'param.set', target: ['clip', id, 'threeD', 'material', 'castsShadows'], value: 'maybe' },
+			]).ok,
+		).toBe(false);
 		clean(h);
 	});
 });
@@ -140,10 +174,20 @@ describe('cameras', () => {
 
 	it('Camera Settings: preset, focal length, angle of view, f-stop, lock to zoom, one-node', () => {
 		const h = new Harness();
-		const id = (h.ok([{ type: 'clip.addCamera', at: 0, preset: '35mm' }]).results[0] as { clipId: string }).clipId;
+		const id = (h.ok([{ type: 'clip.addCamera', at: 0, preset: '35mm' }]).results[0] as { clipId: string })
+			.clipId;
 		const zoom = () => (h.seq.clips[id] as CameraClip).camera.zoom.value;
 		expect(focalLengthForZoom(zoom(), { width: 1920, height: 1080 })).toBeCloseTo(35, 6);
-		h.ok([{ type: 'camera.settings', clipId: id, focalLength: 80, lockToZoom: true, depthOfField: true, fStop: 2 }]);
+		h.ok([
+			{
+				type: 'camera.settings',
+				clipId: id,
+				focalLength: 80,
+				lockToZoom: true,
+				depthOfField: true,
+				fStop: 2,
+			},
+		]);
 		const cam = (h.seq.clips[id] as CameraClip).camera;
 		expect(focalLengthForZoom(cam.zoom.value, { width: 1920, height: 1080 })).toBeCloseTo(80, 6);
 		expect(cam.focusDistance.value).toBeCloseTo(cam.zoom.value, 6);
@@ -173,10 +217,14 @@ describe('cameras', () => {
 		};
 		const d0 = dist();
 		fc.assert(
-			fc.property(fc.double({ min: -180, max: 180, noNaN: true }), fc.double({ min: -60, max: 60, noNaN: true }), (yaw, pitch) => {
-				h.ok([{ type: 'camera.orbit', clipId: id, yaw, pitch }]);
-				expect(dist()).toBeCloseTo(d0, 6);
-			}),
+			fc.property(
+				fc.double({ min: -180, max: 180, noNaN: true }),
+				fc.double({ min: -60, max: 60, noNaN: true }),
+				(yaw, pitch) => {
+					h.ok([{ type: 'camera.orbit', clipId: id, yaw, pitch }]);
+					expect(dist()).toBeCloseTo(d0, 6);
+				},
+			),
 			{ numRuns: 25 },
 		);
 		const poi0 = tr().pointOfInterest.value;
@@ -187,7 +235,12 @@ describe('cameras', () => {
 		expect(dist()).toBeCloseTo(d0 - 500, 6);
 		// Keyed position: the tool writes a key at the time.
 		h.ok([
-			{ type: 'param.setAnimated', target: ['clip', id, 'camera', 'position'], animated: true, at: { frames: 0 } },
+			{
+				type: 'param.setAnimated',
+				target: ['clip', id, 'camera', 'position'],
+				animated: true,
+				at: { frames: 0 },
+			},
 			{ type: 'camera.dolly', clipId: id, amount: 100, at: { frames: 30 } },
 		]);
 		expect(tr().position.keyframes).toHaveLength(2);
@@ -208,7 +261,9 @@ describe('lights', () => {
 		expect(spot.light.castsShadows).toBe(true);
 		expect(spot.light.transform.autoOrient).toBe('poi');
 		expect((h.seq.clips[b!] as LightClip).light.transform.autoOrient).toBe('off');
-		h.ok([{ type: 'light.settings', clipId: a!, lightType: 'point', falloff: 'inverse-square', radius: 200 }]);
+		h.ok([
+			{ type: 'light.settings', clipId: a!, lightType: 'point', falloff: 'inverse-square', radius: 200 },
+		]);
 		expect((h.seq.clips[a!] as LightClip).light.transform.autoOrient).toBe('off');
 		expect(snap(h).scene3d?.lights).toHaveLength(2);
 		// Environment media must exist and be a picture.
@@ -230,7 +285,8 @@ describe('lights', () => {
 
 	it('disabled and hidden-track lights are off', () => {
 		const h = new Harness();
-		const id = (h.ok([{ type: 'clip.addLight', at: 0, lightType: 'point' }]).results[0] as { clipId: string }).clipId;
+		const id = (h.ok([{ type: 'clip.addLight', at: 0, lightType: 'point' }]).results[0] as { clipId: string })
+			.clipId;
 		h.ok([{ type: 'clip.update', clipId: id, patch: { enabled: false } }]);
 		expect(snap(h).scene3d).toBeUndefined();
 	});
@@ -259,7 +315,16 @@ describe('runs and the renderer setting', () => {
 		const h = new Harness();
 		const a = solid(h, 0);
 		solid(h, 60);
-		h.ok([{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10, handles: 'freeze' }]);
+		h.ok([
+			{
+				type: 'transition.add',
+				trackId: 'V1',
+				at: 60,
+				effectId: 'jasper.cross-dissolve',
+				duration: 10,
+				handles: 'freeze',
+			},
+		]);
 		const doc = JSON.parse(JSON.stringify(h.doc));
 		const seq = Object.values(doc.sequences)[0] as { clips: Record<string, Record<string, unknown>> };
 		h.ok([{ type: 'transition.remove', transitionIds: Object.keys(h.seq.transitions) }]);
@@ -269,4 +334,3 @@ describe('runs and the renderer setting', () => {
 		expect(r.skipped.some((x) => /3D layers/.test(x.reason))).toBe(true);
 	});
 });
-

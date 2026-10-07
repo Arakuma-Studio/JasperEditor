@@ -638,7 +638,8 @@ export function fromJasper(
 			if ((any.threeD as { enabled?: boolean } | undefined)?.enabled === true && c.kind !== 'model')
 				report.warn(`the 3D placement of clip "${c.name}" at frame ${c.start} is not carried`, {
 					subject: where,
-					instead: 'the clip with its 2D Motion only (pre-render it to keep its 3D placement, camera and lights)',
+					instead:
+						'the clip with its 2D Motion only (pre-render it to keep its 3D placement, camera and lights)',
 				});
 			if (hasExpression(c))
 				report.warn(`the expressions of clip "${c.name}" at frame ${c.start} are not carried`, {

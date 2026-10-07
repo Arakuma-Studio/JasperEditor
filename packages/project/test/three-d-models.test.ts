@@ -26,7 +26,9 @@ function gltfJson(bufferUri?: string, byteLength = 0) {
 			{ mesh: 0, rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2], scale: [2, 2, 2] },
 		],
 		meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1, material: 0 }] }],
-		materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1], metallicFactor: 0, roughnessFactor: 0.5 } }],
+		materials: [
+			{ pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1], metallicFactor: 0, roughnessFactor: 0.5 } },
+		],
 		accessors: [
 			{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3' },
 			{ bufferView: 1, componentType: 5123, count: 3, type: 'SCALAR' },
@@ -42,8 +44,8 @@ function gltfJson(bufferUri?: string, byteLength = 0) {
 function binary(): Uint8Array {
 	const b = new Uint8Array(44);
 	const dv = new DataView(b.buffer);
-	[0, 0, 0, 1, 0, 0, 0, 1, 0].forEach((v, i) => dv.setFloat32(i * 4, v, true));
-	[0, 1, 2].forEach((v, i) => dv.setUint16(36 + i * 2, v, true));
+	for (const [i, v] of [0, 0, 0, 1, 0, 0, 0, 1, 0].entries()) dv.setFloat32(i * 4, v, true);
+	for (const [i, v] of [0, 1, 2].entries()) dv.setUint16(36 + i * 2, v, true);
 	return b;
 }
 
@@ -89,14 +91,22 @@ describe('model files', () => {
 		const json = JSON.stringify(gltfJson(`data:application/octet-stream;base64,${b64}`, 44));
 		const m = parseModel(new TextEncoder().encode(json), 'gltf');
 		expect(m.triangles).toBe(2);
-		expect(() => parseModel(new TextEncoder().encode(JSON.stringify(gltfJson('scene.bin', 44))), 'gltf')).toThrow(
-			/export the model as \.glb/,
+		expect(() =>
+			parseModel(new TextEncoder().encode(JSON.stringify(gltfJson('scene.bin', 44))), 'gltf'),
+		).toThrow(/export the model as \.glb/);
+		const draco = {
+			...gltfJson(`data:;base64,${b64}`, 44),
+			extensionsRequired: ['KHR_draco_mesh_compression'],
+		};
+		expect(() => parseModel(new TextEncoder().encode(JSON.stringify(draco)), 'gltf')).toThrow(
+			ModelParseError,
 		);
-		const draco = { ...gltfJson(`data:;base64,${b64}`, 44), extensionsRequired: ['KHR_draco_mesh_compression'] };
-		expect(() => parseModel(new TextEncoder().encode(JSON.stringify(draco)), 'gltf')).toThrow(ModelParseError);
-		expect(() => parseModel(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]), 'glb')).toThrow(
-			/Not a binary glTF/,
-		);
+		expect(() =>
+			parseModel(
+				new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+				'glb',
+			),
+		).toThrow(/Not a binary glTF/);
 	});
 
 	it('reads an OBJ (quads fanned, negative indices, uv / normal references)', () => {
@@ -127,7 +137,12 @@ describe('model files', () => {
 describe('model layers', () => {
 	function setup() {
 		const h = new Harness();
-		const asset = { ...videoAsset({ kind: 'video' }), kind: 'model' as const, container: 'glb', originalName: 'robot.glb' };
+		const asset = {
+			...videoAsset({ kind: 'video' }),
+			kind: 'model' as const,
+			container: 'glb',
+			originalName: 'robot.glb',
+		};
 		asset.probe = { ...asset.probe, streams: [], durationFlicks: null };
 		const m = (h.ok([{ type: 'media.register', asset }]).results[0] as { mediaId: string }).mediaId;
 		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0 }]);
@@ -157,8 +172,7 @@ describe('model layers', () => {
 
 	it('the snapshot draws it with the 3D renderer and warns when the sequence uses Classic 3D', () => {
 		const { h, clip } = setup();
-		const snap = () =>
-			buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: media, resolveFont: () => null });
+		const snap = () => buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: media, resolveFont: () => null });
 		const s = snap();
 		const c = s.videoTracks[0]!.clips[0]!;
 		expect(c.kind).toBe('model');
@@ -176,8 +190,9 @@ describe('model layers', () => {
 		(doc.sequences[h.seqId]!.clips[clip().id] as { threeD?: { enabled: boolean } }).threeD!.enabled = false;
 		expect(checkInvariants(doc).some((i) => i.message.includes('3D model layer'))).toBe(true);
 		const fixed = repairDocument(doc, createCounterIdSource(5));
-		expect((fixed.document.sequences[h.seqId]!.clips[clip().id] as { threeD?: { enabled: boolean } }).threeD!.enabled).toBe(
-			true,
-		);
+		expect(
+			(fixed.document.sequences[h.seqId]!.clips[clip().id] as { threeD?: { enabled: boolean } }).threeD!
+				.enabled,
+		).toBe(true);
 	});
 });

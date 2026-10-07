@@ -10,7 +10,10 @@ export const CAMTRACK_BUNDLE = 'jasper-camtrack.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 
 function sourceEntry(): string | null {
-	const candidates = [join(here, 'worker', 'cli.ts'), join(here, '..', 'src', 'camtrack', 'worker', 'cli.ts')];
+	const candidates = [
+		join(here, 'worker', 'cli.ts'),
+		join(here, '..', 'src', 'camtrack', 'worker', 'cli.ts'),
+	];
 	return candidates.find((c) => existsSync(c)) ?? null;
 }
 

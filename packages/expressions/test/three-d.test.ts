@@ -12,11 +12,17 @@ beforeAll(async () => {
 /** Evaluates `text` on the Title's Source Text (a string result keeps every component) and parses the array. */
 function val(d: Doc, _owner: string, _path: string, text: string, frame = 60) {
 	const ref: ExpressionRef = { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' };
-	const r = evaluateExpressionText(d.doc, ref, `JSON.stringify(${text})`, storedTimeAtFrame(d.doc, ref, frame));
+	const r = evaluateExpressionText(
+		d.doc,
+		ref,
+		`JSON.stringify(${text})`,
+		storedTimeAtFrame(d.doc, ref, frame),
+	);
 	if (r.error) throw new Error(r.error);
 	return JSON.parse(String(r.value)) as number[];
 }
-const close = (a: number[], b: number[], eps = 1e-6) => a.forEach((x, i) => expect(Math.abs(x - b[i]!)).toBeLessThan(eps));
+const close = (a: number[], b: number[], eps = 1e-6) =>
+	a.forEach((x, i) => expect(Math.abs(x - b[i]!)).toBeLessThan(eps));
 
 describe('3D layer transforms in expressions', () => {
 	it('a 3D layer at its defaults maps like its 2D Motion; toWorld returns [x, y, z]', () => {
@@ -41,7 +47,14 @@ describe('3D layer transforms in expressions', () => {
 		const l = val(d, '$bg', 'transform.position', `thisComp.layer("A").fromComp([${c[0]}, ${c[1]}])`);
 		close(l.slice(0, 2), [100, 50], 1e-4);
 		// The camera depth of a point 500 px behind z = 0 through the default camera (−2666.7): 3166.7.
-		expect(val(d, '$bg', 'transform.position', 'thisComp.layer("A").toComp(thisComp.layer("A").transform.anchorPoint)')[2]).toBeCloseTo(3166.6667, 3);
+		expect(
+			val(
+				d,
+				'$bg',
+				'transform.position',
+				'thisComp.layer("A").toComp(thisComp.layer("A").transform.anchorPoint)',
+			)[2],
+		).toBeCloseTo(3166.6667, 3);
 	});
 
 	it('follows the active camera', () => {

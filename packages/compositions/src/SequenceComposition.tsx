@@ -273,6 +273,7 @@ const ClipLayer = memo(function ClipLayer({
 	const projective3d = fallback3d
 		? fallbackProjective(clip, resolved, frame, scene3d!.doc, scene3d!.cameraAt(frame))
 		: null;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the projective map is compared by value (a new array per render)
 	const props = useMemo(() => {
 		const base = fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade };
 		if (!fallback3d) return base;
@@ -562,7 +563,9 @@ export function VideoTracks({
 		return out;
 	}, [tracks, options.layerFilter, gpu, htmlInCanvas]);
 	// three-d: a 3D scope (and its hub) per track that holds a 3D clip; the runs of every frame.
-	const scene3dHubs = useRef(new Map<string, Scene3DHub>());
+	// One hub for every scope: a member's tap stays the same when the run it belongs to moves to another bottom track
+	// (a layer only delivers when it repaints, so a new hub would never get its picture).
+	const scene3dHub = useRef<Scene3DHub | null>(null);
 	const nested = useContext(NestCompSizeContext) !== null;
 	const scene3d = useMemo(() => {
 		const hubs = new Map<number, Scene3DHub>();
@@ -573,15 +576,8 @@ export function VideoTracks({
 			doc.range.end > doc.range.start ? doc.range : { start: 0, end: Number.MAX_SAFE_INTEGER },
 			options.layerFilter ? { layerFilter: options.layerFilter } : {},
 		);
-		doc.videoTracks.forEach((t, i) => {
-			if (!bottoms.has(i)) return;
-			let hub = scene3dHubs.current.get(t.trackId);
-			if (!hub) {
-				hub = new Scene3DHub();
-				scene3dHubs.current.set(t.trackId, hub);
-			}
-			hubs.set(i, hub);
-		});
+		scene3dHub.current ??= new Scene3DHub();
+		for (const i of bottoms) hubs.set(i, scene3dHub.current);
 		// The Program monitor's 3D view (preview only, the top-level sequence only).
 		const v = options.isPreview && !nested ? options.view3d : undefined;
 		return makeScene3D(

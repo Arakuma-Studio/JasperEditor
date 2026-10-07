@@ -75,7 +75,8 @@ export const fromCols = (a: V3, b: V3, c: V3): M3 => [
 export function inv3(m: M3): M3 | null {
 	const d = det3(m);
 	if (!(Math.abs(d) >= 1e-300)) return null;
-	const c = (r0: number, c0: number, r1: number, c1: number) => m[r0]![c0]! * m[r1]![c1]! - m[r0]![c1]! * m[r1]![c0]!;
+	const c = (r0: number, c0: number, r1: number, c1: number) =>
+		m[r0]![c0]! * m[r1]![c1]! - m[r0]![c1]! * m[r1]![c0]!;
 	const adj: M3 = [
 		[c(1, 1, 2, 2), -c(0, 1, 2, 2), c(0, 1, 1, 2)],
 		[-c(1, 0, 2, 2), c(0, 0, 2, 2), -c(0, 0, 1, 2)],
@@ -130,7 +131,11 @@ export function slerpRot(a: M3, b: M3, t: number): M3 {
  * Thin SVD `A = U diag(s) Vᵀ` of an `m × n` row-major matrix (one-sided Jacobi). `U` is `max(m, n) × n`, `s` sorted
  * descending, `V` is `n × n` (columns are the right singular vectors).
  */
-export function svd(a: ArrayLike<number>, m: number, n: number): { u: Float64Array; s: number[]; v: Float64Array } {
+export function svd(
+	a: ArrayLike<number>,
+	m: number,
+	n: number,
+): { u: Float64Array; s: number[]; v: Float64Array } {
 	const rows = Math.max(m, n);
 	const u = new Float64Array(rows * n);
 	for (let i = 0; i < m * n; i++) u[i] = a[i]!;
@@ -179,7 +184,8 @@ export function svd(a: ArrayLike<number>, m: number, n: number): { u: Float64Arr
 		for (let r = 0; r < rows; r++) acc += u[r * n + j]! * u[r * n + j]!;
 		s.push(Math.sqrt(acc));
 	}
-	for (let j = 0; j < n; j++) if (s[j]! > 1e-300) for (let r = 0; r < rows; r++) u[r * n + j] = u[r * n + j]! / s[j]!;
+	for (let j = 0; j < n; j++)
+		if (s[j]! > 1e-300) for (let r = 0; r < rows; r++) u[r * n + j] = u[r * n + j]! / s[j]!;
 	const order = [...Array(n).keys()].sort((x, y) => s[y]! - s[x]!);
 	const u2 = new Float64Array(rows * n);
 	const v2 = new Float64Array(n * n);

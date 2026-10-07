@@ -6,9 +6,9 @@ import {
 	applyMat3,
 	blendPixel,
 	type ClassicSetup,
+	type CpuPlane,
 	clipContentTime,
 	compositeClassicCPU,
-	type CpuPlane,
 	dissolveSeed,
 	dofPicture,
 	invertMat3,
@@ -30,7 +30,8 @@ export function referenceFrame(snap: RenderSnapshot, frame: number): Uint8Clampe
 	const H = snap.settings.height;
 	const canvas = newFloatImage(W, H);
 	const bg = snap.settings.backgroundColor;
-	for (let i = 0; i < W * H; i++) canvas.data.set([bg[0] * bg[3], bg[1] * bg[3], bg[2] * bg[3], bg[3]], i * 4);
+	for (let i = 0; i < W * H; i++)
+		canvas.data.set([bg[0] * bg[3], bg[1] * bg[3], bg[2] * bg[3], bg[3]], i * 4);
 	const clips = new Map(snap.videoTracks.flatMap((t) => t.clips).map((c) => [c.clipId, c]));
 	const stack = stackAt(snap.videoTracks, frame);
 	const runs = runs3d(stack);

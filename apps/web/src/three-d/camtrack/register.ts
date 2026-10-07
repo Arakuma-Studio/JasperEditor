@@ -15,7 +15,9 @@ export function registerCamTrackUi(): void {
 		id: 'camera-tracker',
 		title: '3D Camera Tracker',
 		appliesTo: (clips) =>
-			clips.length === 1 && clips[0]!.kind === 'video' && !!(clips[0] as { cameraTracker?: unknown }).cameraTracker,
+			clips.length === 1 &&
+			clips[0]!.kind === 'video' &&
+			!!(clips[0] as { cameraTracker?: unknown }).cameraTracker,
 		component: CamTrackSection,
 		defaultOpen: true,
 		order: 63,

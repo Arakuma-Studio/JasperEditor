@@ -26,6 +26,7 @@ import type {
 	Transform,
 } from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
+import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
@@ -61,7 +62,6 @@ import { applyShapePatch } from './shape.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
-import { newLayer3D } from '../../three-d/model.ts';
 
 type DTrack = Draft<Track>;
 export const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });

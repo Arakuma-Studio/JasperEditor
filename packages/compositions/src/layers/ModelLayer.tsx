@@ -19,6 +19,7 @@ export function ModelLayer(p: LayerProps) {
 	const tap = p.composite?.tap ?? null;
 	const opacity = p.props.opacity;
 	const frame = p.localFrame;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the placeholder is delivered again on every frame (the run waits for each frame's delivery)
 	useLayoutEffect(() => {
 		if (!tap) return;
 		tap.deliver(blankCanvas(), 1, 1, { compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity });

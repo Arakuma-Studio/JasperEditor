@@ -72,7 +72,10 @@ async function connect() {
 	await client.connect(y);
 	open.push(client);
 	const call = async (name: string, args: Record<string, unknown>) => {
-		const r = (await client.callTool({ name, arguments: { projectId: 'prj_test', ...args } })) as CallToolResult;
+		const r = (await client.callTool({
+			name,
+			arguments: { projectId: 'prj_test', ...args },
+		})) as CallToolResult;
 		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 		let body: unknown = text;
 		try {
@@ -100,22 +103,35 @@ describe('three-d MCP tools', () => {
 			'get_3d_scene',
 		])
 			expect(names).toContain(n);
-		expect((await call('set_3d_layer', { clipIds: [engine.a, engine.b], enabled: true })).isError).toBe(false);
+		expect((await call('set_3d_layer', { clipIds: [engine.a, engine.b], enabled: true })).isError).toBe(
+			false,
+		);
 		expect(
-			(await call('set_3d_transform', { clipId: engine.b, position: [960, 540, -200], rotationY: 30, orientation: [0, 0, 10] }))
+			(
+				await call('set_3d_transform', {
+					clipId: engine.b,
+					position: [960, 540, -200],
+					rotationY: 30,
+					orientation: [0, 0, 10],
+				})
+			).isError,
+		).toBe(false);
+		expect(
+			(await call('set_material', { clipIds: [engine.b], castsShadows: 'on', specularShininess: 40 }))
 				.isError,
 		).toBe(false);
-		expect((await call('set_material', { clipIds: [engine.b], castsShadows: 'on', specularShininess: 40 })).isError).toBe(
-			false,
-		);
 		const cam = await call('add_camera', { at: 0, preset: '35mm', depthOfField: true, fStop: 2.8 });
 		expect(cam.isError).toBe(false);
-		const camId = Object.values(engine.doc().sequences[engine.seqId]!.clips).find((c) => c.kind === 'camera')!.id;
-		expect((await call('move_camera', { clipId: camId, op: 'orbit', yaw: 20, pitch: -10 })).isError).toBe(false);
-		expect((await call('camera_settings', { clipId: camId, focalLength: 50 })).isError).toBe(false);
-		expect((await call('add_light', { at: 0, lightType: 'spot', castsShadows: true, coneAngle: 60 })).isError).toBe(
+		const camId = Object.values(engine.doc().sequences[engine.seqId]!.clips).find(
+			(c) => c.kind === 'camera',
+		)!.id;
+		expect((await call('move_camera', { clipId: camId, op: 'orbit', yaw: 20, pitch: -10 })).isError).toBe(
 			false,
 		);
+		expect((await call('camera_settings', { clipId: camId, focalLength: 50 })).isError).toBe(false);
+		expect(
+			(await call('add_light', { at: 0, lightType: 'spot', castsShadows: true, coneAngle: 60 })).isError,
+		).toBe(false);
 		expect((await call('set_3d_renderer', { draft: true })).isError).toBe(false);
 		const scene = await call('get_3d_scene', { frame: 10 });
 		expect(scene.isError).toBe(false);

@@ -25,9 +25,15 @@ describe('3D edits are undoable', () => {
 		const solidId = (add.ok && (add.results[0] as { clipId: string }).clipId) || '';
 		const steps: { label: string; commands: unknown[] }[] = [
 			{ label: '3D Layer', commands: [{ type: 'clip.set3d', clipIds: [solidId], enabled: true }] },
-			{ label: 'Z Position', commands: [{ type: 'param.set', target: ['clip', solidId, 'threeD', 'positionZ'], value: 200 }] },
+			{
+				label: 'Z Position',
+				commands: [{ type: 'param.set', target: ['clip', solidId, 'threeD', 'positionZ'], value: 200 }],
+			},
 			{ label: 'New Camera', commands: [{ type: 'clip.addCamera', at: 0, preset: '35mm' }] },
-			{ label: 'New Light', commands: [{ type: 'clip.addLight', at: 0, lightType: 'spot', castsShadows: true }] },
+			{
+				label: 'New Light',
+				commands: [{ type: 'clip.addLight', at: 0, lightType: 'spot', castsShadows: true }],
+			},
 			{ label: '3D Renderer', commands: [{ type: 'sequence.set3dRenderer', renderer: 'advanced' }] },
 		];
 		const docs = [s.getCommitted()];
@@ -36,7 +42,9 @@ describe('3D edits are undoable', () => {
 			expect(r.ok, st.label).toBe(true);
 			docs.push(s.getCommitted());
 		}
-		const camId = Object.values(Object.values(s.getCommitted().sequences)[0]!.clips).find((c) => c.kind === 'camera')!.id;
+		const camId = Object.values(Object.values(s.getCommitted().sequences)[0]!.clips).find(
+			(c) => c.kind === 'camera',
+		)!.id;
 		const tool = s.apply({
 			label: 'Orbit Camera',
 			origin: 'user',
@@ -44,15 +52,12 @@ describe('3D edits are undoable', () => {
 		});
 		expect(tool.ok).toBe(true);
 		docs.push(s.getCommitted());
-		expect(s.getState().history.entries.map((e) => e.label).slice(-7)).toEqual([
-			'Add',
-			'3D Layer',
-			'Z Position',
-			'New Camera',
-			'New Light',
-			'3D Renderer',
-			'Orbit Camera',
-		]);
+		expect(
+			s
+				.getState()
+				.history.entries.map((e) => e.label)
+				.slice(-7),
+		).toEqual(['Add', '3D Layer', 'Z Position', 'New Camera', 'New Light', '3D Renderer', 'Orbit Camera']);
 		for (let i = docs.length - 1; i > 0; i--) {
 			expect(s.undo().ok).toBe(true);
 			expect(s.getCommitted()).toBe(docs[i - 1]);

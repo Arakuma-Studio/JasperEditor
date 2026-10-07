@@ -184,7 +184,11 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 	g('fromComp', 'fromComp(point, t = time)', 'Sequence pixels → layer pixels.'),
 	g('toCompVec', 'toCompVec(vec, t = time)', 'Direction vector, layer → sequence.'),
 	g('fromCompVec', 'fromCompVec(vec, t = time)', 'Direction vector, sequence → layer.'),
-	g('toWorld', 'toWorld(point, t = time)', 'Layer pixels → world [x, y, z] (3D layers; 2D layers: = toComp).'),
+	g(
+		'toWorld',
+		'toWorld(point, t = time)',
+		'Layer pixels → world [x, y, z] (3D layers; 2D layers: = toComp).',
+	),
 	g('fromWorld', 'fromWorld(point, t = time)', 'World → layer pixels (3D layers; 2D layers: = fromComp).'),
 	g(
 		'sourceRectAtTime',

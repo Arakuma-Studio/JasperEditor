@@ -85,7 +85,10 @@ export function CamTrackOverlay(props: ProgramOverlayHostProps) {
 			cam,
 		);
 		if (t) {
-			const depth = cam.r[2][0] * (t.c[0] - cam.c[0]) + cam.r[2][1] * (t.c[1] - cam.c[1]) + cam.r[2][2] * (t.c[2] - cam.c[2]);
+			const depth =
+				cam.r[2][0] * (t.c[0] - cam.c[0]) +
+				cam.r[2][1] * (t.c[1] - cam.c[1]) +
+				cam.r[2][2] * (t.c[2] - cam.c[2]);
 			const radius = (0.125 * solve.size[0] * Math.max(1e-6, depth) * settings.targetSize) / (100 * cam.f);
 			const helper: Vec3 = Math.abs(t.n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
 			const u = norm(cross(t.n, helper));
@@ -130,7 +133,13 @@ export function CamTrackOverlay(props: ProgramOverlayHostProps) {
 			>
 				{target ? (
 					<g pointerEvents="none" data-testid="camtrack-target">
-						<polygon points={pts(target)} fill={CAMTRACK_COLORS.target} fillOpacity={0.35} stroke={CAMTRACK_COLORS.target} strokeWidth={2} />
+						<polygon
+							points={pts(target)}
+							fill={CAMTRACK_COLORS.target}
+							fillOpacity={0.35}
+							stroke={CAMTRACK_COLORS.target}
+							strokeWidth={2}
+						/>
 						{targetCentre ? (
 							<circle cx={targetCentre[0]} cy={targetCentre[1]} r={3} fill={CAMTRACK_COLORS.targetInner} />
 						) : null}
@@ -140,7 +149,9 @@ export function CamTrackOverlay(props: ProgramOverlayHostProps) {
 					const [x, y] = screen(p.uv);
 					const s = Math.max(2, Math.min(12, (4 * settings.pointSize * refDepth) / (100 * p.depth)));
 					const on = chosen.has(p.id);
-					const color = on ? CAMTRACK_COLORS.selected : CAMTRACK_COLORS.points[p.id % CAMTRACK_COLORS.points.length]!;
+					const color = on
+						? CAMTRACK_COLORS.selected
+						: CAMTRACK_COLORS.points[p.id % CAMTRACK_COLORS.points.length]!;
 					return (
 						<g key={p.id} data-point-id={p.id} data-selected={on ? '1' : '0'}>
 							<path
@@ -153,6 +164,7 @@ export function CamTrackOverlay(props: ProgramOverlayHostProps) {
 								stroke={color}
 								strokeWidth={on ? 2 : 1.25}
 							/>
+							{/* biome-ignore lint/a11y/noStaticElementInteractions: track points are picked with the pointer on the monitor; Properties ▸ 3D Camera Tracker has the same actions as buttons */}
 							<circle
 								cx={x}
 								cy={y}
@@ -186,8 +198,14 @@ export function CamTrackOverlay(props: ProgramOverlayHostProps) {
 					onPointerLeave={() => setMenu(null)}
 				>
 					{[
-						['Create Text and Camera', () => createFromTracker(session, clip.id, 'text', [...chosen], mediaFrame)],
-						['Create Solid and Camera', () => createFromTracker(session, clip.id, 'solid', [...chosen], mediaFrame)],
+						[
+							'Create Text and Camera',
+							() => createFromTracker(session, clip.id, 'text', [...chosen], mediaFrame),
+						],
+						[
+							'Create Solid and Camera',
+							() => createFromTracker(session, clip.id, 'solid', [...chosen], mediaFrame),
+						],
 						['Create Camera', () => createFromTracker(session, clip.id, 'none', [], mediaFrame)],
 						...(chosen.size >= 3
 							? [['Set Ground Plane and Origin', () => setGround(session, clip.id, ids, mediaFrame)] as const]
@@ -211,7 +229,11 @@ export function CamTrackOverlay(props: ProgramOverlayHostProps) {
 }
 
 const pts = (q: readonly Vec2[]) => q.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const cross = (a: Vec3, b: Vec3): Vec3 => [
+	a[1] * b[2] - a[2] * b[1],
+	a[2] * b[0] - a[0] * b[2],
+	a[0] * b[1] - a[1] * b[0],
+];
 const norm = (a: Vec3): Vec3 => {
 	const l = Math.hypot(a[0], a[1], a[2]) || 1;
 	return [a[0] / l, a[1] / l, a[2] / l];

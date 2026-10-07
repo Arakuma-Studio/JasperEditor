@@ -10,8 +10,8 @@ import {
 	defaultCamera,
 	dofPicture,
 	type FloatImage,
-	layerWorldMatrix,
 	type LightState,
+	layerWorldMatrix,
 	lightStateOf,
 	lookAtCamera,
 	materialAt,
@@ -39,7 +39,11 @@ function rng(seed: number) {
 	};
 }
 type Pic = { canvas: HTMLCanvasElement; float: FloatImage };
-function picture(w: number, h: number, fill: (x: number, y: number) => [number, number, number, number]): Pic {
+function picture(
+	w: number,
+	h: number,
+	fill: (x: number, y: number) => [number, number, number, number],
+): Pic {
 	const c = document.createElement('canvas');
 	c.width = w;
 	c.height = h;
@@ -51,16 +55,27 @@ function picture(w: number, h: number, fill: (x: number, y: number) => [number, 
 	const f = newFloatImage(w, h);
 	for (let i = 0; i < w * h; i++) {
 		const a = back[i * 4 + 3]! / 255;
-		f.data.set([(back[i * 4]! / 255) * a, (back[i * 4 + 1]! / 255) * a, (back[i * 4 + 2]! / 255) * a, a], i * 4);
+		f.data.set(
+			[(back[i * 4]! / 255) * a, (back[i * 4 + 1]! / 255) * a, (back[i * 4 + 2]! / 255) * a, a],
+			i * 4,
+		);
 	}
 	return { canvas: c, float: f };
 }
 const noise = (seed: number, aMin = 255) => {
 	const r = rng(seed);
-	return () => [r(), r(), r(), aMin >= 255 ? 255 : aMin + Math.round((r() / 255) * (255 - aMin))] as [number, number, number, number];
+	return () =>
+		[r(), r(), r(), aMin >= 255 ? 255 : aMin + Math.round((r() / 255) * (255 - aMin))] as [
+			number,
+			number,
+			number,
+			number,
+		];
 };
-const checker = (a: [number, number, number, number], b: [number, number, number, number], k = 4) => (x: number, y: number) =>
-	((Math.floor(x / k) + Math.floor(y / k)) & 1 ? a : b);
+const checker =
+	(a: [number, number, number, number], b: [number, number, number, number], k = 4) =>
+	(x: number, y: number) =>
+		(Math.floor(x / k) + Math.floor(y / k)) & 1 ? a : b;
 
 const tr = (o: Partial<Record<keyof Transform, unknown>> = {}): Transform =>
 	({
@@ -75,14 +90,30 @@ const tr = (o: Partial<Record<keyof Transform, unknown>> = {}): Transform =>
 		...o,
 	}) as Transform;
 
-type Layer = { pic: Pic; transform?: Transform; td?: ReturnType<typeof newLayer3D>; mode?: string; opacity?: number; seed?: number };
+type Layer = {
+	pic: Pic;
+	transform?: Transform;
+	td?: ReturnType<typeof newLayer3D>;
+	mode?: string;
+	opacity?: number;
+	seed?: number;
+};
 type Scene = { layers: Layer[]; camera?: CameraState; lights?: LightState[]; backdrop?: Pic };
 
-function light(type: 'parallel' | 'spot' | 'point' | 'ambient', o: Record<string, unknown> = {}, pos?: Vec3, poi?: Vec3) {
+function light(
+	type: 'parallel' | 'spot' | 'point' | 'ambient',
+	o: Record<string, unknown> = {},
+	pos?: Vec3,
+	poi?: Vec3,
+) {
 	const data = newLightData(type, { width: W, height: H }, o);
 	if (pos) data.transform.position = anim(pos);
 	if (poi) data.transform.pointOfInterest = anim(poi);
-	return lightStateOf({ clipId: `${type}${Math.random()}`, name: type, trackIndex: 0, ...RIG, light: data }, 0, FPS);
+	return lightStateOf(
+		{ clipId: `${type}${Math.random()}`, name: type, trackIndex: 0, ...RIG, light: data },
+		0,
+		FPS,
+	);
 }
 
 function scenes(): Record<string, () => Scene> {
@@ -104,8 +135,15 @@ function scenes(): Record<string, () => Scene> {
 		}),
 		orbit: () => ({
 			layers: [
-				{ pic: picture(40, 30, checker([255, 0, 0, 255], [0, 0, 255, 255])), td: td((t) => (t.orientation = anim<Vec3>([10, 20, 5]))) },
-				{ pic: pic40(4), transform: tr({ position: anim([30, 20]) }), td: td((t) => (t.positionZ = anim(-20))) },
+				{
+					pic: picture(40, 30, checker([255, 0, 0, 255], [0, 0, 255, 255])),
+					td: td((t) => (t.orientation = anim<Vec3>([10, 20, 5]))),
+				},
+				{
+					pic: pic40(4),
+					transform: tr({ position: anim([30, 20]) }),
+					td: td((t) => (t.positionZ = anim(-20))),
+				},
 			],
 			camera: lookAtCamera([W / 2 + 60, H / 2 - 40, -110], [W / 2, H / 2, 0], 130),
 		}),
@@ -127,18 +165,47 @@ function scenes(): Record<string, () => Scene> {
 			return {
 				layers: [
 					{ pic: picture(40, 30, () => [200, 200, 200, 255]), transform: tr({ scale: anim(200) }), td: recv },
-					{ pic: picture(12, 10, checker([255, 60, 0, 255], [0, 0, 0, 0], 3)), transform: tr({ anchor: anim([6, 5]) }), td: caster },
+					{
+						pic: picture(12, 10, checker([255, 60, 0, 255], [0, 0, 0, 0], 3)),
+						transform: tr({ anchor: anim([6, 5]) }),
+						td: caster,
+					},
 				],
 				lights: [
-					light('spot', { coneAngle: 70, coneFeather: 40, castsShadows: true, shadowDiffusion: 3, falloff: 'smooth', radius: 60, falloffDistance: 80 }, [20, 10, -90], [W / 2, H / 2, 0]),
-					light('point', { color: [0.3, 0.6, 1, 1], intensity: 80, falloff: 'inverse-square', radius: 40 }, [80, 50, -40]),
-					light('parallel', { intensity: 40, castsShadows: true, shadowDarkness: 60 }, [W / 2, 0, -80], [W / 2, H / 2, 0]),
+					light(
+						'spot',
+						{
+							coneAngle: 70,
+							coneFeather: 40,
+							castsShadows: true,
+							shadowDiffusion: 3,
+							falloff: 'smooth',
+							radius: 60,
+							falloffDistance: 80,
+						},
+						[20, 10, -90],
+						[W / 2, H / 2, 0],
+					),
+					light(
+						'point',
+						{ color: [0.3, 0.6, 1, 1], intensity: 80, falloff: 'inverse-square', radius: 40 },
+						[80, 50, -40],
+					),
+					light(
+						'parallel',
+						{ intensity: 40, castsShadows: true, shadowDarkness: 60 },
+						[W / 2, 0, -80],
+						[W / 2, H / 2, 0],
+					),
 					light('ambient', { intensity: 15 }),
 				],
 				backdrop: picture(W, H, () => [10, 20, 30, 255]),
 			};
 		},
-		dissolve: () => ({ layers: [{ pic: pic40(6), mode: 'dissolve', opacity: 0.5, seed: 123456789 }], backdrop: picture(W, H, noise(8)) }),
+		dissolve: () => ({
+			layers: [{ pic: pic40(6), mode: 'dissolve', opacity: 0.5, seed: 123456789 }],
+			backdrop: picture(W, H, noise(8)),
+		}),
 		dof: () => {
 			const cam: CameraState = { ...defaultCamera(W, H) };
 			cam.dof = {
@@ -150,8 +217,15 @@ function scenes(): Record<string, () => Scene> {
 			};
 			return {
 				layers: [
-					{ pic: picture(40, 30, checker([255, 255, 255, 255], [20, 40, 200, 255], 5)), td: td((t) => (t.rotationY = anim(50))) },
-					{ pic: pic40(7), transform: tr({ position: anim([30, 22]) }), td: td((t) => (t.positionZ = anim(60))) },
+					{
+						pic: picture(40, 30, checker([255, 255, 255, 255], [20, 40, 200, 255], 5)),
+						td: td((t) => (t.rotationY = anim(50))),
+					},
+					{
+						pic: pic40(7),
+						transform: tr({ position: anim([30, 22]) }),
+						td: td((t) => (t.positionZ = anim(60))),
+					},
 				],
 				camera: cam,
 			};
@@ -191,13 +265,18 @@ function render(name: string): { gl: number[]; cpu: number[]; W: number; H: numb
 		const p = prepareClassicPlane(setup, src);
 		if (!p) return;
 		gl.push({ ...p, picture: l.pic.canvas, pictureWidth: src.width, pictureHeight: src.height });
-		cpu.push({ ...p, pixels: p.dof && setup.camera.dof ? dofPicture(p, l.pic.float, setup.camera.dof) : l.pic.float });
+		cpu.push({
+			...p,
+			pixels: p.dof && setup.camera.dof ? dofPicture(p, l.pic.float, setup.camera.dof) : l.pic.float,
+		});
 	});
 	const out = document.createElement('canvas');
 	out.width = W;
 	out.height = H;
 	renderClassicGL(h, { setup, planes: gl, backdrop: s.backdrop?.canvas ?? null }, out.getContext('2d')!);
-	const canvas = s.backdrop ? { ...s.backdrop.float, data: s.backdrop.float.data.slice() } : newFloatImage(W, H);
+	const canvas = s.backdrop
+		? { ...s.backdrop.float, data: s.backdrop.float.data.slice() }
+		: newFloatImage(W, H);
 	compositeClassicCPU(canvas, setup, cpu);
 	const glPx = Array.from(out.getContext('2d')!.getImageData(0, 0, W, H).data);
 	// CPU → straight bytes like getImageData (clamped premultiplied).

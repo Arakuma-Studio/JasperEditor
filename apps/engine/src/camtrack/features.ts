@@ -4,11 +4,7 @@
 // fundamental matrix (normalised 8-point, Sampson distance), which drops features on independently moving objects
 // and mismatches; new corners are detected away from the live ones whenever the count falls below the target. A
 // lost feature is never revived, so each track is one run of consecutive frames.
-import {
-	type P2,
-	Rng,
-	sampson2,
-} from './core/geometry.ts';
+import { type P2, Rng, sampson2 } from './core/geometry.ts';
 import { type M3, mm, mt, nullVector, svd3 } from './core/linalg.ts';
 import type { CameraTracks, Track2D } from './core/types.ts';
 
@@ -130,7 +126,8 @@ export function epipolarInliers(x1: P2[], x2: P2[], thr: number, seed: number): 
 			bestC = c;
 			best = inl;
 			const pGood = (c / n) ** 8;
-			if (pGood > 1e-9) maxIter = Math.min(maxIter, Math.max(20, Math.ceil(Math.log(0.01) / Math.log(1 - pGood))));
+			if (pGood > 1e-9)
+				maxIter = Math.min(maxIter, Math.max(20, Math.ceil(Math.log(0.01) / Math.log(1 - pGood))));
 		}
 	}
 	if (!best) return new Array<boolean>(n).fill(true);
@@ -155,7 +152,10 @@ export function createFeatureTracker(cv: CV, cfg: FeatureConfig) {
 	const tracks = new Map<number, Track2D>();
 	const border = 3;
 	const inside = (p: P2) => p[0] >= border && p[1] >= border && p[0] < W - border && p[1] < H - border;
-	const toDisplay = (p: P2): [number, number] => [(p[0] + 0.5) * cfg.factor - 0.5, (p[1] + 0.5) * cfg.factor - 0.5];
+	const toDisplay = (p: P2): [number, number] => [
+		(p[0] + 0.5) * cfg.factor - 0.5,
+		(p[1] + 0.5) * cfg.factor - 0.5,
+	];
 
 	function detect(img: CV): void {
 		const want = cfg.target - pts.length;
@@ -164,7 +164,13 @@ export function createFeatureTracker(cv: CV, cfg: FeatureConfig) {
 		const corners = new cv.Mat();
 		try {
 			for (const p of pts)
-				cv.circle(mask, new cv.Point(Math.round(p[0]), Math.round(p[1])), cfg.minDistance, new cv.Scalar(0), -1);
+				cv.circle(
+					mask,
+					new cv.Point(Math.round(p[0]), Math.round(p[1])),
+					cfg.minDistance,
+					new cv.Scalar(0),
+					-1,
+				);
 			cv.goodFeaturesToTrack(img, corners, want, cfg.qualityLevel, cfg.minDistance, mask, 3, false, 0.04);
 			const d = corners.data32F;
 			for (let i = 0; i < corners.rows; i++) {

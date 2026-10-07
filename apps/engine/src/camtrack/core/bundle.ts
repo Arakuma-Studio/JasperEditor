@@ -4,7 +4,21 @@
 // rotations update multiplicatively (`R ← exp([δ]×) R`), focal lengths in log space. Port of EffectCraft
 // `crates/track/src/camtrack/bundle.rs` (MIT OR Apache-2.0).
 import type { Pose } from './geometry.ts';
-import { add, choleskySolve, dot, inv3, type M3, mm, mtv, mv, rodrigues, scale, skew, sub, type V3 } from './linalg.ts';
+import {
+	add,
+	choleskySolve,
+	dot,
+	inv3,
+	type M3,
+	mm,
+	mtv,
+	mv,
+	rodrigues,
+	scale,
+	skew,
+	sub,
+	type V3,
+} from './linalg.ts';
 import { type Distortion, distort, distortionJacobian } from './types.ts';
 
 export type BaCam = { pose: Pose; f: number; dist: Distortion };
@@ -38,7 +52,11 @@ const BEHIND = 1e6;
 const huberCost = (e2: number, k: number) => (e2 <= k * k ? e2 : 2 * k * Math.sqrt(e2) - k * k);
 
 export function cloneCam(c: BaCam): BaCam {
-	return { pose: { r: c.pose.r.map((r) => [...r]) as M3, c: [...c.pose.c] as V3 }, f: c.f, dist: { ...c.dist } };
+	return {
+		pose: { r: c.pose.r.map((r) => [...r]) as M3, c: [...c.pose.c] as V3 },
+		f: c.f,
+		dist: { ...c.dist },
+	};
 }
 
 /** Residual (pixels) of one observation; null behind the camera. */
@@ -52,7 +70,8 @@ export function residual(c: BaCam, x: V3, uv: [number, number]): [number, number
 function priorCost(cams: BaCam[], o: BaOpts): number {
 	if (o.focal.kind !== 'perCamera') return 0;
 	let s = 0;
-	for (let i = 0; i + 1 < cams.length; i++) s += (o.focal.prior * (Math.log(cams[i]!.f) - Math.log(cams[i + 1]!.f))) ** 2;
+	for (let i = 0; i + 1 < cams.length; i++)
+		s += (o.focal.prior * (Math.log(cams[i]!.f) - Math.log(cams[i + 1]!.f))) ** 2;
 	return s;
 }
 
@@ -108,7 +127,9 @@ export function adjust(cams: BaCam[], pts: V3[], obs: BaObs[], o: BaOpts): BaRep
 	const l = layout(cams.length, o);
 	const npts = pts.length;
 	const byPt: number[][] = Array.from({ length: npts }, () => []);
-	obs.forEach((ob, i) => byPt[ob.pt]!.push(i));
+	obs.forEach((ob, i) => {
+		byPt[ob.pt]!.push(i);
+	});
 	let cur = baCost(cams, pts, obs, o);
 	const initial = cur;
 	let lambda = 1e-4;
@@ -148,11 +169,13 @@ export function adjust(cams: BaCam[], pts: V3[], obs: BaObs[], o: BaOpts): BaRep
 					[0, c.f * iz, -c.f * xc[1] * iz * iz],
 				];
 				const { j: dj, k: dk } = distortionJacobian(c.dist, p0);
-				const a: [V3, V3] = [0, 1].map((i) => [0, 1, 2].map((k) => dj[i]![0] * a0[0]![k]! + dj[i]![1] * a0[1]![k]!) as V3) as [
-					V3,
-					V3,
+				const a: [V3, V3] = [0, 1].map(
+					(i) => [0, 1, 2].map((k) => dj[i]![0] * a0[0]![k]! + dj[i]![1] * a0[1]![k]!) as V3,
+				) as [V3, V3];
+				const p: [number, number] = [
+					dj[0][0] * p0[0] + dj[0][1] * p0[1],
+					dj[1][0] * p0[0] + dj[1][1] * p0[1],
 				];
-				const p: [number, number] = [dj[0][0] * p0[0] + dj[0][1] * p0[1], dj[1][0] * p0[0] + dj[1][1] * p0[1]];
 				// Camera-side Jacobian.
 				jc.length = 0;
 				const s = l.start[ci]!;
@@ -235,7 +258,8 @@ export function adjust(cams: BaCam[], pts: V3[], obs: BaObs[], o: BaOpts): BaRep
 				if (o.fixPoints) return null;
 				const v = ps.v.map((r) => [...r]) as M3;
 				const vd = (v[0][0] + v[1][1] + v[2][2]) / 3;
-				for (let k = 0; k < 3; k++) v[k]![k]! += lambda * Math.max(v[k]![k]!, 1e-6 * Math.max(vd, 1e-12)) + 1e-12;
+				for (let k = 0; k < 3; k++)
+					v[k]![k]! += lambda * Math.max(v[k]![k]!, 1e-6 * Math.max(vd, 1e-12)) + 1e-12;
 				return inv3(v);
 			});
 			if (!o.fixPoints)

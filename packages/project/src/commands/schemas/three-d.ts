@@ -8,11 +8,11 @@ import {
 	CAMERA_TRACKER_SHOT_TYPES,
 	CameraSolvePointSchema,
 	FILM_SIZE_MEASURES,
-	TRACK_POINT_DISPLAY,
 	IRIS_SHAPES,
 	LIGHT_FALLOFFS,
 	LIGHT_TYPES,
 	RENDERERS_3D,
+	TRACK_POINT_DISPLAY,
 } from '../../schema/three-d.ts';
 import {
 	cmd,

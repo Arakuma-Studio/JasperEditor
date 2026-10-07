@@ -4,8 +4,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	activeCameraClipAt,
-	anim,
 	angleOfViewForZoom,
+	anim,
 	applyMat3,
 	cameraStateOf,
 	defaultCamera,
@@ -55,17 +55,19 @@ const transform = (o: Partial<Record<keyof Transform, unknown>> = {}): Transform
 		...o,
 	}) as Transform;
 
-const rig = { start: 0, duration: 300, sourceIn: 0, speed: { rate: 1, reverse: false, maintainPitch: false } };
+const rig = {
+	start: 0,
+	duration: 300,
+	sourceIn: 0,
+	speed: { rate: 1, reverse: false, maintainPitch: false },
+};
 
 describe('default camera', () => {
 	it('is the 50 mm preset at −zoom', () => {
 		const cam = defaultCamera(W, H);
 		expect(cam.zoom).toBeCloseTo(2666.6667, 3);
 		expect(cam.eye).toEqual([W / 2, H / 2, -cam.zoom]);
-		expect(projectPoint(cam, W, H, [100, 200, 0])).toEqual([
-			expect.closeTo(100, 9),
-			expect.closeTo(200, 9),
-		]);
+		expect(projectPoint(cam, W, H, [100, 200, 0])).toEqual([expect.closeTo(100, 9), expect.closeTo(200, 9)]);
 	});
 
 	it('a 3D layer at its defaults projects exactly like its 2D Motion (property test)', () => {
@@ -206,7 +208,13 @@ describe('3D layer transform', () => {
 
 describe('cameras', () => {
 	it('a new two-node camera frames the sequence like the default camera', () => {
-		const c: RenderCameraClip = { clipId: 'c', name: 'Camera 1', trackIndex: 1, ...rig, camera: newCameraData({ width: W, height: H }) };
+		const c: RenderCameraClip = {
+			clipId: 'c',
+			name: 'Camera 1',
+			trackIndex: 1,
+			...rig,
+			camera: newCameraData({ width: W, height: H }),
+		};
 		const s = cameraStateOf(c, 0, FPS, W);
 		const d = defaultCamera(W, H);
 		for (let i = 0; i < 16; i++) expect(s.view[i]!).toBeCloseTo(d.view[i]!, 9);
@@ -216,7 +224,15 @@ describe('cameras', () => {
 	it('the topmost camera that is on is active', () => {
 		const cam = newCameraData({ width: W, height: H });
 		const a: RenderCameraClip = { clipId: 'a', name: 'a', trackIndex: 1, ...rig, camera: cam };
-		const b: RenderCameraClip = { clipId: 'b', name: 'b', trackIndex: 3, ...rig, start: 100, duration: 50, camera: cam };
+		const b: RenderCameraClip = {
+			clipId: 'b',
+			name: 'b',
+			trackIndex: 3,
+			...rig,
+			start: 100,
+			duration: 50,
+			camera: cam,
+		};
 		const scene = { renderer: 'classic' as const, cameras: [a, b], lights: [] };
 		expect(activeCameraClipAt(scene, 50)?.clipId).toBe('a');
 		expect(activeCameraClipAt(scene, 120)?.clipId).toBe('b');
@@ -277,7 +293,7 @@ describe('lights and materials', () => {
 		expect(lightAttenuation(l, at(250))).toBe(0);
 	});
 
-	it('material defaults are After Effects\'', () => {
+	it("material defaults are After Effects'", () => {
 		const m = materialAt(newLayer3D().material, 0);
 		expect(m).toMatchObject({
 			castsShadows: 0,

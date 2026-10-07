@@ -6,9 +6,9 @@ import {
 	type Clip,
 	type ClipCameraTracker,
 	cameraTrackerSettingsOf,
+	contentTimeAt,
 	isSolveStale,
 	mediaFrameAt,
-	contentTimeAt,
 	type Rational,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -35,13 +35,17 @@ const SHOTS = ['fixed', 'variable', 'specify'] as const;
 const SHOT_LABELS = ['Fixed Angle of View', 'Variable Zoom', 'Specify Angle of View'];
 const METHODS = ['auto', 'typical', 'flat', 'tripod'] as const;
 const METHOD_LABELS = ['Auto Detect', 'Typical', 'Mostly Flat Scene', 'Tripod Pan'];
-const METHOD_USED: Record<string, string> = { typical: 'Typical', flat: 'Mostly Flat Scene', tripod: 'Tripod Pan' };
+const METHOD_USED: Record<string, string> = {
+	typical: 'Typical',
+	flat: 'Mostly Flat Scene',
+	tripod: 'Tripod Pan',
+};
 
 export function CamTrackSection(props: ClipSectionProps) {
 	const clip = props.clips.length === 1 ? (props.clips[0] as Clip) : null;
 	const engine = useEngineOrNull();
 	const client = engine?.client ?? null;
-	if (!clip || clip.kind !== 'video')
+	if (clip?.kind !== 'video')
 		return <p className="px-2 py-1 text-pr-small text-pr-muted">Select a single video clip.</p>;
 	const tracker = (clip as { cameraTracker?: ClipCameraTracker }).cameraTracker;
 	if (!tracker)
@@ -61,7 +65,12 @@ export function CamTrackSection(props: ClipSectionProps) {
 	return <TrackerControls session={props.session} clip={clip} tracker={tracker} frame={props.frame} />;
 }
 
-function TrackerControls(props: { session: EditorSession; clip: Clip; tracker: ClipCameraTracker; frame: number }) {
+function TrackerControls(props: {
+	session: EditorSession;
+	clip: Clip;
+	tracker: ClipCameraTracker;
+	frame: number;
+}) {
 	const { session, clip, tracker } = props;
 	const engine = useEngineOrNull();
 	const client = engine?.client ?? null;
@@ -76,7 +85,10 @@ function TrackerControls(props: { session: EditorSession; clip: Clip; tracker: C
 	const stale = isSolveStale(tracker);
 	const seq = Object.values(doc.sequences).find((q) => q.clips[clip.id]);
 	const mediaFrame = seq
-		? mediaFrameAt(contentTimeAt(clip, props.frame, seq.settings.frameRate as Rational), tracker.rate as Rational)
+		? mediaFrameAt(
+				contentTimeAt(clip, props.frame, seq.settings.frameRate as Rational),
+				tracker.rate as Rational,
+			)
 		: undefined;
 	const status = running
 		? `${running.stage} (${Math.round(running.progress * 100)} %)`
@@ -127,7 +139,12 @@ function TrackerControls(props: { session: EditorSession; clip: Clip; tracker: C
 			</Row>
 			{s.shot === 'specify' ? (
 				<Row label="Horizontal Angle of View">
-					<NumberInput value={s.hfov} label="Horizontal Angle of View" unit="°" onChange={(v) => set({ hfov: v })} />
+					<NumberInput
+						value={s.hfov}
+						label="Horizontal Angle of View"
+						unit="°"
+						onChange={(v) => set({ hfov: v })}
+					/>
 				</Row>
 			) : null}
 			<Row label="Show Track Points">
@@ -141,10 +158,20 @@ function TrackerControls(props: { session: EditorSession; clip: Clip; tracker: C
 				/>
 			</Row>
 			<Row label="Track Point Size">
-				<NumberInput value={s.pointSize} label="Track Point Size" unit="%" onChange={(v) => set({ pointSize: v })} />
+				<NumberInput
+					value={s.pointSize}
+					label="Track Point Size"
+					unit="%"
+					onChange={(v) => set({ pointSize: v })}
+				/>
 			</Row>
 			<Row label="Target Size">
-				<NumberInput value={s.targetSize} label="Target Size" unit="%" onChange={(v) => set({ targetSize: v })} />
+				<NumberInput
+					value={s.targetSize}
+					label="Target Size"
+					unit="%"
+					onChange={(v) => set({ targetSize: v })}
+				/>
 			</Row>
 			<Row label="Span">
 				<NumberInput

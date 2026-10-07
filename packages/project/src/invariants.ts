@@ -36,10 +36,10 @@ import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet
 import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
+import type { ClipCameraTracker } from './schema/three-d.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
-import type { ClipCameraTracker } from './schema/three-d.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 
 import {
@@ -63,7 +63,8 @@ function cameraTrackerProblem(t: ClipCameraTracker): string | null {
 	if (s.span[0] !== t.span[0] || s.span[1] !== t.span[1]) return 'solve is of another span';
 	if (s.frames.length !== (s.span[1] - s.span[0] + 1) * 8 || !s.frames.every(Number.isFinite))
 		return 'solve frames are malformed';
-	if (s.points.some((p) => p.first > p.last || !p.pos.every(Number.isFinite))) return 'solve points are malformed';
+	if (s.points.some((p) => p.first > p.last || !p.pos.every(Number.isFinite)))
+		return 'solve points are malformed';
 	return null;
 }
 
@@ -632,7 +633,9 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (c.kind === 'model') {
 				const m = doc.media[(r as { mediaId: string }).mediaId];
 				if (m && m.kind !== 'model')
-					issues.push(inv('INV-012', `Clip ${c.id}: a model layer needs a 3D model media, not ${m.kind}`, cw));
+					issues.push(
+						inv('INV-012', `Clip ${c.id}: a model layer needs a 3D model media, not ${m.kind}`, cw),
+					);
 				if ((r.threeD as { enabled?: boolean } | undefined)?.enabled !== true)
 					issues.push(inv('INV-012', `Clip ${c.id}: a 3D model layer must be a 3D layer`, [...cw, 'threeD']));
 			}
@@ -642,9 +645,12 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (c.kind !== 'video')
 					issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot carry a 3D Camera Tracker`, cw));
 				else if (!doc.media[t.mediaId])
-					issues.push(inv('INV-006', `Clip ${c.id}: 3D Camera Tracker references missing media ${t.mediaId}`, cw));
+					issues.push(
+						inv('INV-006', `Clip ${c.id}: 3D Camera Tracker references missing media ${t.mediaId}`, cw),
+					);
 				const bad = cameraTrackerProblem(t);
-				if (bad) issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
+				if (bad)
+					issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
 			}
 			// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
 			if (c.kind === 'text')
@@ -1060,7 +1066,11 @@ export function repairDocument(
 				note('reset-environment', c.id, 'environment media is missing: neutral studio light');
 			}
 			if (c.kind === 'model' && (r.threeD as { enabled?: boolean } | undefined)?.enabled !== true) {
-				r.threeD = { ...newLayer3D(true, 'model'), ...((r.threeD as object | undefined) ?? {}), enabled: true };
+				r.threeD = {
+					...newLayer3D(true, 'model'),
+					...((r.threeD as object | undefined) ?? {}),
+					enabled: true,
+				};
 				note('enable-3d-model', c.id, 'a 3D model layer is always a 3D layer');
 			}
 			if (r.cameraTracker !== undefined) {

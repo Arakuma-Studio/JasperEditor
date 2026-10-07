@@ -223,7 +223,8 @@ export function triangulate(views: { pose: Pose; x: P2 }[]): V3 | null {
 		const a1 = [0, 1, 2, 3].map((j) => x[1] * rows[2]![j]! - rows[1]![j]!);
 		for (const a of [a0, a1]) {
 			const nrm = Math.max(1e-300, Math.sqrt(a.reduce((s, v) => s + v * v, 0)));
-			for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) ata[i * 4 + j]! += (a[i]! * a[j]!) / (nrm * nrm);
+			for (let i = 0; i < 4; i++)
+				for (let j = 0; j < 4; j++) ata[i * 4 + j]! += (a[i]! * a[j]!) / (nrm * nrm);
 		}
 	}
 	const { vecs } = symEigen(ata, 4);

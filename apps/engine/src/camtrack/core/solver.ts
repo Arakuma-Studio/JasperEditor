@@ -193,8 +193,12 @@ class Recon {
 			maxIter: iters,
 			distortion: cfg.distortion,
 		});
-		frames.forEach((k, i) => this.cams.set(k, cams[i]!));
-		ids.forEach((ti, i) => this.pts.set(ti, pts[i]!));
+		frames.forEach((k, i) => {
+			this.cams.set(k, cams[i]!);
+		});
+		ids.forEach((ti, i) => {
+			this.pts.set(ti, pts[i]!);
+		});
 		return rep.cost;
 	}
 	reject(d: Data): void {
@@ -298,15 +302,30 @@ class Recon {
 		for (const start of [init, ...(nearest ? [nearest] : [])]) {
 			if (best && best.n >= 0.8 * obs.length) break;
 			const cams = [cloneCam(start)];
-			adjust(cams, pts.map((p) => [...p] as V3), obs, opts(d.inlierThr() * 4));
-			adjust(cams, pts.map((p) => [...p] as V3), obs, opts(d.huber()));
+			adjust(
+				cams,
+				pts.map((p) => [...p] as V3),
+				obs,
+				opts(d.inlierThr() * 4),
+			);
+			adjust(
+				cams,
+				pts.map((p) => [...p] as V3),
+				obs,
+				opts(d.huber()),
+			);
 			const n = inl(cams[0]!, obs).length;
 			if (!best || n > best.n) best = { n, cam: cams[0]! };
 		}
 		if (!best || best.n < 6 || best.n < 0.5 * obs.length) return false;
 		const keep = inl(best.cam, obs);
 		const cams = [cloneCam(best.cam)];
-		adjust(cams, pts.map((p) => [...p] as V3), keep, opts(d.huber()));
+		adjust(
+			cams,
+			pts.map((p) => [...p] as V3),
+			keep,
+			opts(d.huber()),
+		);
 		const kept = new Set(inl(cams[0]!, obs));
 		for (const o of obs) if (!kept.has(o)) this.outliers.add(okey(ids[o.pt]!, k));
 		this.cams.set(k, cams[0]!);
@@ -381,7 +400,10 @@ function predict(r: Recon, k: number): BaCam | null {
 		const t = Math.min(2, (kb - k) / (kn - kb));
 		const dr = logRot(mm(b.pose.r, mt(nx.pose.r)));
 		return {
-			pose: { r: mm(rodrigues(scale(dr, t)), b.pose.r), c: add(b.pose.c, scale(sub(b.pose.c, nx.pose.c), t)) },
+			pose: {
+				r: mm(rodrigues(scale(dr, t)), b.pose.r),
+				c: add(b.pose.c, scale(sub(b.pose.c, nx.pose.c), t)),
+			},
 			f: b.f,
 			dist: { ...b.dist },
 		};
@@ -434,7 +456,8 @@ function initPair(d: Data, a: number, b: number, f: number, useE: boolean, useH:
 			];
 			const p1 = x1.filter((_, i) => fit.inliers[i]);
 			const p2 = x2.filter((_, i) => fit.inliers[i]);
-			for (const s of decomposeHomography(hn, p1, p2)) if (norm(s.t) > 1e-6) cands.push(poseFromRt(s.r, normalize(s.t)));
+			for (const s of decomposeHomography(hn, p1, p2))
+				if (norm(s.t) > 1e-6) cands.push(poseFromRt(s.r, normalize(s.t)));
 		}
 	}
 	const thr2 = (d.inlierThr() / f) ** 2;
@@ -449,7 +472,13 @@ function initPair(d: Data, a: number, b: number, f: number, useE: boolean, useH:
 			if (!x) return;
 			const e1 = reproj2(poseIdentity(), x, x1[i]!);
 			const e2 = reproj2(pose, x, x2[i]!);
-			if (e1 !== null && e1 < thr2 && e2 !== null && e2 < thr2 && (rayAngle([0, 0, 0], pose.c, x) * 180) / Math.PI > 0.3)
+			if (
+				e1 !== null &&
+				e1 < thr2 &&
+				e2 !== null &&
+				e2 < thr2 &&
+				(rayAngle([0, 0, 0], pose.c, x) * 180) / Math.PI > 0.3
+			)
 				pts.set(s[0], x);
 		});
 		if (pts.size >= 10 && pts.size * 3 >= sh.length) out.push({ pose, pts });
@@ -461,7 +490,15 @@ const focalMode = (cfg: Cfg, frames: number): FocalMode =>
 	cfg.perFrameF && frames > 2 ? { kind: 'perCamera', prior: F_PRIOR } : { kind: 'fixed' };
 
 /** Grows a reconstruction over keyframes from the initial pair (kfs[0], kfs[j]). */
-function grow(d: Data, kfs: number[], j: number, init: Init, f: number, cfg: Cfg, cancelled: () => boolean): Recon | null {
+function grow(
+	d: Data,
+	kfs: number[],
+	j: number,
+	init: Init,
+	f: number,
+	cfg: Cfg,
+	cancelled: () => boolean,
+): Recon | null {
 	const a = kfs[0]!;
 	const b = kfs[j]!;
 	const r = new Recon();
@@ -529,7 +566,12 @@ export const focalOf = (w: number, hfov: number) =>
 
 type Attempt = { recon: Recon; err: number; method: Exclude<SolveMethod, 'auto'> };
 
-function bestInit(d: Data, kfs: number[], f: number, method: SolveMethod): { j: number; init: Init; isH: boolean } | null {
+function bestInit(
+	d: Data,
+	kfs: number[],
+	f: number,
+	method: SolveMethod,
+): { j: number; init: Init; isH: boolean } | null {
 	const useE = method !== 'flat';
 	const useH = method !== 'typical';
 	let best: { score: number; j: number; init: Init; isH: boolean } | null = null;
@@ -539,7 +581,9 @@ function bestInit(d: Data, kfs: number[], f: number, method: SolveMethod): { j: 
 			...(useH ? initPair(d, kfs[0]!, kfs[j]!, f, false, true).map((c) => ({ c, isH: true })) : []),
 		];
 		for (const { c, isH } of cands) {
-			const ang = [...c.pts.values()].map((x) => (rayAngle([0, 0, 0], c.pose.c, x) * 180) / Math.PI).sort((a, b) => a - b);
+			const ang = [...c.pts.values()]
+				.map((x) => (rayAngle([0, 0, 0], c.pose.c, x) * 180) / Math.PI)
+				.sort((a, b) => a - b);
 			const med = ang[ang.length >> 1] ?? 0;
 			const score = c.pts.size * Math.min(4, med);
 			if (!best || score > best.score) best = { score, j, init: c, isH };
@@ -554,19 +598,35 @@ function initCandidates(d: Data, kfs: number[], f: number, method: SolveMethod) 
 	const out = [first];
 	if (method === 'auto' || method === 'flat')
 		for (const c of initPair(d, kfs[0]!, kfs[first.j]!, f, false, true))
-			if (out.every((o) => norm(logRot(mm(o.init.pose.r, mt(c.pose.r)))) > 1e-3 || norm(sub(o.init.pose.c, c.pose.c)) > 1e-3))
+			if (
+				out.every(
+					(o) =>
+						norm(logRot(mm(o.init.pose.r, mt(c.pose.r)))) > 1e-3 || norm(sub(o.init.pose.c, c.pose.c)) > 1e-3,
+				)
+			)
 				out.push({ j: first.j, init: c, isH: true });
 	return out;
 }
 
-function general(d: Data, kfs: number[], f: number, method: SolveMethod, cfg: Cfg, cancelled: () => boolean): Attempt | null {
+function general(
+	d: Data,
+	kfs: number[],
+	f: number,
+	method: SolveMethod,
+	cfg: Cfg,
+	cancelled: () => boolean,
+): Attempt | null {
 	let best: Attempt | null = null;
 	for (const { j, init, isH } of initCandidates(d, kfs, f, method)) {
 		const r = grow(d, kfs, j, init, f, cfg, cancelled);
 		if (!r) continue;
 		if (r.error(d).n === 0) continue;
 		const cover = r.cams.size / kfs.length;
-		const a: Attempt = { recon: r, err: r.score(d) / Math.max(0.05, cover), method: isH ? 'flat' : 'typical' };
+		const a: Attempt = {
+			recon: r,
+			err: r.score(d) / Math.max(0.05, cover),
+			method: isH ? 'flat' : 'typical',
+		};
 		if (!best || a.err < best.err) best = a;
 	}
 	return best;
@@ -613,7 +673,15 @@ function searchFocal(w: number, evaluate: (f: number) => number): number {
 	return best.e <= errs[i]! ? Math.exp(best.x) : fs[i]!;
 }
 
-type Core = { d: Data; r: Recon; method: Exclude<SolveMethod, 'auto'>; kind: Kind; cfg: Cfg; focal: FocalMode; kfs: number[] };
+type Core = {
+	d: Data;
+	r: Recon;
+	method: Exclude<SolveMethod, 'auto'>;
+	kind: Kind;
+	cfg: Cfg;
+	focal: FocalMode;
+	kfs: number[];
+};
 
 function undistortedTracks(t: CameraTracks, dist: Distortion): CameraTracks {
 	const c: P2 = [t.size[0] * 0.5, t.size[1] * 0.5];
@@ -656,7 +724,8 @@ export function solveCamera(
 		const cfg: Cfg = { ...c.cfg, distortion: true };
 		const all = r.frames();
 		const frames = all.length <= 160 ? all : c.kfs.filter((k) => r.cams.has(k));
-		if (frames.length < 2) throw new SolveError('the camera could not be solved (not enough parallax or features)');
+		if (frames.length < 2)
+			throw new SolveError('the camera could not be solved (not enough parallax or features)');
 		r.outliers.clear();
 		r.adjust(d, frames, cfg, c.focal, 30);
 		r.outliers.clear();
@@ -683,7 +752,12 @@ export function solveCamera(
 	return out;
 }
 
-function solveCore(tracks: CameraTracks, s: SolveSettings, isCancelled: () => boolean, progress: SolveProgress): Core {
+function solveCore(
+	tracks: CameraTracks,
+	s: SolveSettings,
+	isCancelled: () => boolean,
+	progress: SolveProgress,
+): Core {
 	const cancelled = () => {
 		if (isCancelled()) throw new SolveError('cancelled');
 		return false;
@@ -704,7 +778,11 @@ function solveCore(tracks: CameraTracks, s: SolveSettings, isCancelled: () => bo
 	progress(0.05, 'Solving camera (general)');
 	if (tryGeneral) {
 		const f =
-			fixedF ?? searchFocal(d.w, (f) => general(d, mini, f, s.method, gcfg, cancelled)?.err ?? Number.POSITIVE_INFINITY);
+			fixedF ??
+			searchFocal(
+				d.w,
+				(f) => general(d, mini, f, s.method, gcfg, cancelled)?.err ?? Number.POSITIVE_INFINITY,
+			);
 		if (cancelled()) throw new SolveError('cancelled');
 		const a = general(d, kfs, f, s.method, gcfg, cancelled);
 		if (a) results.push({ a, f });
@@ -712,11 +790,14 @@ function solveCore(tracks: CameraTracks, s: SolveSettings, isCancelled: () => bo
 	progress(0.35, 'Solving camera (tripod check)');
 	let tripodPlausible = true;
 	if (s.method === 'auto' && results[0]) {
-		const quick = tripod(d, mini, results[0].f, { ...tcfg, perFrameF: false }, cancelled)?.err ?? Number.POSITIVE_INFINITY;
+		const quick =
+			tripod(d, mini, results[0].f, { ...tcfg, perFrameF: false }, cancelled)?.err ??
+			Number.POSITIVE_INFINITY;
 		tripodPlausible = quick <= 3 * results[0].a.err + d.noise;
 	}
 	if (tryTripod && tripodPlausible && !cancelled()) {
-		const f = fixedF ?? searchFocal(d.w, (f) => tripod(d, mini, f, tcfg, cancelled)?.err ?? Number.POSITIVE_INFINITY);
+		const f =
+			fixedF ?? searchFocal(d.w, (f) => tripod(d, mini, f, tcfg, cancelled)?.err ?? Number.POSITIVE_INFINITY);
 		const a = tripod(d, kfs, f, tcfg, cancelled);
 		if (a) results.push({ a, f });
 	}
@@ -742,7 +823,12 @@ function solveCore(tracks: CameraTracks, s: SolveSettings, isCancelled: () => bo
 	const kind: Kind = att.method === 'tripod' ? 'tripod' : 'general';
 	const cfg: Cfg = { kind, perFrameF: variable, distortion: false };
 	const r = att.recon;
-	const focal: FocalMode = fixedF !== null ? { kind: 'fixed' } : variable ? { kind: 'perCamera', prior: F_PRIOR } : { kind: 'shared' };
+	const focal: FocalMode =
+		fixedF !== null
+			? { kind: 'fixed' }
+			: variable
+				? { kind: 'perCamera', prior: F_PRIOR }
+				: { kind: 'shared' };
 	progress(0.55, 'Adjusting keyframes');
 	const kfFrames = r.frames();
 	r.adjust(d, kfFrames, cfg, focal, 40);
@@ -825,7 +911,14 @@ function covRatio(p: V3[]): number {
 }
 
 /** Canonical frame, per-frame output (unsolved frames interpolated), points and errors. */
-function finish(d: Data, tracks: CameraTracks, s: SolveSettings, r: Recon, method: Exclude<SolveMethod, 'auto'>, kind: Kind): CameraSolve {
+function finish(
+	d: Data,
+	tracks: CameraTracks,
+	s: SolveSettings,
+	r: Recon,
+	method: Exclude<SolveMethod, 'auto'>,
+	kind: Kind,
+): CameraSolve {
 	const keys = r.frames();
 	if (keys.length === 0) throw new SolveError('the camera could not be solved (no frame was solved)');
 	const k0 = keys[0]!;
@@ -835,12 +928,19 @@ function finish(d: Data, tracks: CameraTracks, s: SolveSettings, r: Recon, metho
 		.map((x) => mv(c0.pose.r, sub(x, c0.pose.c))[2])
 		.filter((z) => z > 0)
 		.sort((a, b) => a - b);
-	const sc = kind === 'tripod' ? 1 : (depths[depths.length >> 1] ?? 1) > 1e-12 ? (depths[depths.length >> 1] ?? 1) : 1;
+	const sc =
+		kind === 'tripod' ? 1 : (depths[depths.length >> 1] ?? 1) > 1e-12 ? (depths[depths.length >> 1] ?? 1) : 1;
 	const r0 = c0.pose.r;
 	const cc = c0.pose.c;
 	const toWorld = (x: V3) => scale(mv(r0, sub(x, cc)), 1 / sc);
-	const frames: SolvedFrame[] = Array.from({ length: d.n }, () => ({ rot: [0, 0, 0], center: [0, 0, 0], focal: 0, solved: false }));
-	for (const [k, c] of r.cams) frames[k] = { rot: logRot(mm(c.pose.r, mt(r0))), center: toWorld(c.pose.c), focal: c.f, solved: true };
+	const frames: SolvedFrame[] = Array.from({ length: d.n }, () => ({
+		rot: [0, 0, 0],
+		center: [0, 0, 0],
+		focal: 0,
+		solved: false,
+	}));
+	for (const [k, c] of r.cams)
+		frames[k] = { rot: logRot(mm(c.pose.r, mt(r0))), center: toWorld(c.pose.c), focal: c.f, solved: true };
 	const solved = [...Array(d.n).keys()].filter((k) => frames[k]!.solved);
 	for (let k = 0; k < d.n; k++) {
 		if (frames[k]!.solved) continue;
@@ -880,7 +980,13 @@ function finish(d: Data, tracks: CameraTracks, s: SolveSettings, r: Recon, metho
 		if (n1 < 2) continue;
 		esum += s1;
 		en += n1;
-		points.push({ id: t.id, pos: toWorld(x), error: s1 / n1, first: t.start, last: t.start + t.pts.length - 1 });
+		points.push({
+			id: t.id,
+			pos: toWorld(x),
+			error: s1 / n1,
+			first: t.start,
+			last: t.start + t.pts.length - 1,
+		});
 	}
 	return {
 		size: tracks.size,

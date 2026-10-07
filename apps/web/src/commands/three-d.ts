@@ -141,7 +141,11 @@ export const threeDCommands: UiCommand[] = [
 			"After Effects' 3D Camera Tracker: analyse the selected video clip, solve its camera and lens, show the track points; then create a camera, text or solid on them.",
 		scope: 'global',
 		agentExposed: true,
-		when: (ctx) => editable(ctx) && selectedClips(ctx).length === 1 && selectedClips(ctx)[0]!.kind === 'video' && !!camtrackEngine(),
+		when: (ctx) =>
+			editable(ctx) &&
+			selectedClips(ctx).length === 1 &&
+			selectedClips(ctx)[0]!.kind === 'video' &&
+			!!camtrackEngine(),
 		disabledReason: (ctx) =>
 			selectedClips(ctx).length === 1 && selectedClips(ctx)[0]!.kind === 'video'
 				? camtrackEngine()

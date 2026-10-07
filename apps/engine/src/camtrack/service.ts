@@ -57,7 +57,10 @@ export class CamTrackService {
 	}
 
 	/** Validates a request and queues the `camtrack` job (HttpError 404/400/409). */
-	async submit(req: CamTrackSolveRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+	async submit(
+		req: CamTrackSolveRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
 		const rec = this.core.registry.get(req.mediaKey);
 		if (!rec) throw new HttpError(404, 'ASSET_NOT_FOUND', `Unknown media key ${req.mediaKey}`);
 		const file = await this.core.registry.resolvePath(req.mediaKey);
@@ -166,7 +169,12 @@ export class CamTrackService {
 				nl = buf.indexOf('\n');
 				if (!line) continue;
 				try {
-					const ev = JSON.parse(line) as { type: string; fraction?: number; stage?: string; message?: string };
+					const ev = JSON.parse(line) as {
+						type: string;
+						fraction?: number;
+						stage?: string;
+						message?: string;
+					};
 					if (ev.type === 'progress' && typeof ev.fraction === 'number')
 						ctx.progress(ev.fraction * 0.99, { stage: ev.stage ?? 'Solving camera' });
 					else if (ev.type === 'error') failure = ev.message ?? 'failed';

@@ -5,36 +5,36 @@ import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	activeCameraAt,
-	cameraTrackerInputs,
-	cameraTrackerSettingsOf,
-	cameraTrackerSolveBody,
-	type ClipCameraTracker,
-	contentTimeAt,
-	findCameraTracker,
-	isSolveStale,
-	mediaFrameAt,
-	type Rational,
-	trackPointsAt,
 	activeCameraClipAt,
 	angleOfViewForZoom,
 	buildRenderSnapshot,
 	CAMERA_PRESETS,
 	type CameraClip,
+	type ClipCameraTracker,
+	cameraTrackerInputs,
+	cameraTrackerSettingsOf,
+	cameraTrackerSolveBody,
 	clipContentTime,
+	contentTimeAt,
+	findCameraTracker,
 	focalLengthForZoom,
 	IRIS_SHAPES,
+	isSolveStale,
 	LIGHT_FALLOFFS,
 	LIGHT_TYPES,
 	layerWorldMatrix,
 	lightsAt,
 	mat4Apply,
+	mediaFrameAt,
 	type ProjectDocument,
 	planeHomography,
+	type Rational,
 	RENDERERS_3D,
 	runs3d,
 	type Sequence,
 	SHADOW_MODES,
 	stackAt,
+	trackPointsAt,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -539,18 +539,32 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		{
 			title: 'Track camera (3D Camera Tracker)',
 			description:
-				"After Effects' 3D Camera Tracker on a video clip: applies it (when missing) with the settings given, tracks features through the media frames the clip shows (span to change), solves the camera and lens, and stores the solve (History \"Solve Camera\"). With wait: false it returns the job; call again with the jobId to store the result. Returns Method Used, Average Error (px) and the number of 3D track points.",
+				'After Effects\' 3D Camera Tracker on a video clip: applies it (when missing) with the settings given, tracks features through the media frames the clip shows (span to change), solves the camera and lens, and stores the solve (History "Solve Camera"). With wait: false it returns the job; call again with the jobId to store the result. Returns Method Used, Average Error (px) and the number of 3D track points.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1),
-				shot: z.enum(['fixed', 'variable', 'specify']).optional().describe('Shot Type (default fixed: one focal length)'),
-				hfov: z.number().min(1).max(170).optional().describe('Horizontal angle of view (°) for shot "specify"'),
+				shot: z
+					.enum(['fixed', 'variable', 'specify'])
+					.optional()
+					.describe('Shot Type (default fixed: one focal length)'),
+				hfov: z
+					.number()
+					.min(1)
+					.max(170)
+					.optional()
+					.describe('Horizontal angle of view (°) for shot "specify"'),
 				method: z.enum(['auto', 'typical', 'flat', 'tripod']).optional(),
 				detailed: z.boolean().optional(),
 				lensDistortion: z.boolean().optional(),
-				span: z.tuple([z.number().int().min(0), z.number().int().min(0)]).optional().describe('Media frames [first, last]'),
+				span: z
+					.tuple([z.number().int().min(0), z.number().int().min(0)])
+					.optional()
+					.describe('Media frames [first, last]'),
 				wait: z.boolean().optional().describe('Wait for the solve (default true)'),
-				jobId: z.string().optional().describe('A camtrack job started with wait: false, to wait for and store'),
+				jobId: z
+					.string()
+					.optional()
+					.describe('A camtrack job started with wait: false, to wait for and store'),
 			},
 			annotations: EDIT,
 		},
@@ -601,7 +615,10 @@ export function registerThreeDTools(ctx: ToolContext): void {
 					note: 'The camera solve is running. Call track_camera with this jobId (and the clipId) to store it when done.',
 				});
 			if (job.state !== 'succeeded')
-				throw new ToolError(job.error?.code ?? 'CAMTRACK_FAILED', job.error?.message ?? `The camtrack job ${job.state}`);
+				throw new ToolError(
+					job.error?.code ?? 'CAMTRACK_FAILED',
+					job.error?.message ?? `The camtrack job ${job.state}`,
+				);
 			const r = job.result as CamTrackResult;
 			const { clipId: _c, trackerId: _t, mediaKey: _m, rate: _r, tracks: _n, ...solve } = r;
 			const res = await transact(
@@ -648,9 +665,16 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			const { seq, clip } = findClip(doc, clipId);
 			const t = (clip as { cameraTracker?: ClipCameraTracker }).cameraTracker;
 			if (!t)
-				throw new ToolError('E_INVALID_PARAM', `Clip ${clipId} has no 3D Camera Tracker`, 'Call track_camera first.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`Clip ${clipId} has no 3D Camera Tracker`,
+					'Call track_camera first.',
+				);
 			const f = frame ?? clip.start;
-			const media = mediaFrameAt(contentTimeAt(clip, f, seq.settings.frameRate as Rational), t.rate as Rational);
+			const media = mediaFrameAt(
+				contentTimeAt(clip, f, seq.settings.frameRate as Rational),
+				t.rate as Rational,
+			);
 			const points = trackPointsAt(t, media)
 				.sort((a, b) => a.depth - b.depth)
 				.slice(0, limit ?? 200)
@@ -684,7 +708,7 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		{
 			title: 'Create camera from the 3D Camera Tracker',
 			description:
-				'Create Camera / Create Text and Camera / Create Solid and Camera: a one-node camera keyed on every frame of the tracked clip (position, orientation, zoom for variable zoom) that sees the footage as filmed, and with layer text | solid a 3D layer on the target of pointIds (three or more points: lying in their plane, facing the camera; fewer: facing the camera). replaceCamera rewrites the tracker\'s camera instead of adding one.',
+				"Create Camera / Create Text and Camera / Create Solid and Camera: a one-node camera keyed on every frame of the tracked clip (position, orientation, zoom for variable zoom) that sees the footage as filmed, and with layer text | solid a 3D layer on the target of pointIds (three or more points: lying in their plane, facing the camera; fewer: facing the camera). replaceCamera rewrites the tracker's camera instead of adding one.",
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1),
@@ -701,7 +725,11 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			applyHelper(
 				ctx,
 				projectId,
-				args.layer === 'text' ? 'Create Text and Camera' : args.layer === 'solid' ? 'Create Solid and Camera' : 'Create Camera',
+				args.layer === 'text'
+					? 'Create Text and Camera'
+					: args.layer === 'solid'
+						? 'Create Solid and Camera'
+						: 'Create Camera',
 				[{ type: 'cameraTracker.create', ...args }],
 				extra,
 			),
@@ -723,7 +751,13 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, ...args }, extra) =>
-			applyHelper(ctx, projectId, 'Set Ground Plane and Origin', [{ type: 'cameraTracker.setGround', ...args }], extra),
+			applyHelper(
+				ctx,
+				projectId,
+				'Set Ground Plane and Origin',
+				[{ type: 'cameraTracker.setGround', ...args }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -741,9 +775,14 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE,
 		},
 		async ({ projectId, ...args }, extra) =>
-			applyHelper(ctx, projectId, 'Delete Track Points', [{ type: 'cameraTracker.deletePoints', ...args }], extra),
+			applyHelper(
+				ctx,
+				projectId,
+				'Delete Track Points',
+				[{ type: 'cameraTracker.deletePoints', ...args }],
+				extra,
+			),
 	);
-
 }
 
 function camtrackErr(e: unknown): never {
