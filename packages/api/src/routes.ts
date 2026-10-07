@@ -365,6 +365,13 @@ export const ROUTES = {
 		owner: 'WP-2F',
 	},
 	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary', owner: 'WP-2F' },
+	/** wp captions: a sidecar caption file of a finished export (`result.captions.sidecars[].name`). */
+	renderCaptionFile: {
+		method: 'GET',
+		path: '/renders/:jobId/captions/:name',
+		response: 'binary',
+		owner: 'wp-captions',
+	},
 	stills: {
 		method: 'POST',
 		path: '/api/stills',

@@ -16,8 +16,10 @@ import { exportMode, trackExportJob } from './mode.ts';
 import { blockingForEngine, type PlanState, PlanSummary } from './PlanSummary.tsx';
 import {
 	buildExportSettings,
+	type CaptionExportChoice,
 	CODEC_LABELS,
 	codecOptions,
+	DEFAULT_CAPTION_CHOICE,
 	ENGINE_OPTIONS,
 	type ExportEngineChoice,
 	type ExportRangeChoice,
@@ -88,6 +90,9 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	);
 	const [codec, setCodec] = useState<VideoCodec>(remembered?.codec ?? 'h264');
 	const [encoderChoice, setEncoderChoice] = useState<string>(remembered?.encoder ?? '');
+	const [captionChoice, setCaptionChoice] = useState<CaptionExportChoice>(
+		remembered?.captions ?? DEFAULT_CAPTION_CHOICE,
+	);
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
@@ -99,6 +104,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setEngineChoice(r?.engine ?? 'auto');
 		setCodec(r?.codec ?? 'h264');
 		setEncoderChoice(r?.encoder ?? '');
+		setCaptionChoice(r?.captions ?? DEFAULT_CAPTION_CHOICE);
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -122,9 +128,10 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						engine: engineChoice,
 						codec: effectiveCodec,
 						encoder: effectiveEncoder || null,
+						captions: captionChoice,
 					})
 				: null,
-		[seq, effectiveRange, engineChoice, effectiveCodec, effectiveEncoder],
+		[seq, effectiveRange, engineChoice, effectiveCodec, effectiveEncoder, captionChoice],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
 	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
@@ -209,6 +216,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				fileName: name,
 				codec: effectiveCodec,
 				...(effectiveEncoder ? { encoder: effectiveEncoder } : {}),
+				captions: captionChoice,
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -410,6 +418,76 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							))}
 						</select>
 					</Field>
+					{seq?.captionTracks.length ? (
+						<div
+							className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2"
+							data-testid="export-captions"
+						>
+							<h3 className="text-pr-small text-pr-muted">CAPTIONS</h3>
+							<Field label="Burn In">
+								<label className="flex items-center gap-2 text-pr-small">
+									<input
+										type="checkbox"
+										checked={captionChoice.burnIn}
+										onChange={(e) => setCaptionChoice({ ...captionChoice, burnIn: e.target.checked })}
+										data-testid="export-captions-burn"
+									/>
+									Burn the visible caption tracks into the video
+								</label>
+							</Field>
+							<Field label="Embed">
+								<label className="flex items-center gap-2 text-pr-small">
+									<input
+										type="checkbox"
+										checked={captionChoice.embed}
+										onChange={(e) => setCaptionChoice({ ...captionChoice, embed: e.target.checked })}
+										data-testid="export-captions-embed"
+									/>
+									{chosenEncoder?.container === 'webm' ? 'WebVTT' : 'mov_text'} subtitle streams (every
+									caption track)
+								</label>
+							</Field>
+							<Field label="Sidecar">
+								<div className="flex gap-1">
+									<select
+										data-testid="export-captions-sidecar"
+										className="h-[var(--pr-control-h)] min-w-0 flex-1 rounded-pr-control bg-pr-field px-2 text-pr-text"
+										value={captionChoice.sidecar}
+										onChange={(e) =>
+											setCaptionChoice({
+												...captionChoice,
+												sidecar: e.target.value as CaptionExportChoice['sidecar'],
+											})
+										}
+									>
+										<option value="none">None</option>
+										<option value="srt">SubRip (.srt)</option>
+										<option value="vtt">WebVTT (.vtt)</option>
+										<option value="scc">Scenarist SCC (.scc)</option>
+										<option value="mcc">MacCaption MCC (.mcc)</option>
+										<option value="stl">EBU STL (.stl)</option>
+										<option value="ttml">TTML / IMSC1 (.ttml)</option>
+										<option value="dfxp">DFXP (.dfxp)</option>
+									</select>
+									<select
+										data-testid="export-captions-sidecar-tracks"
+										className="h-[var(--pr-control-h)] w-28 rounded-pr-control bg-pr-field px-2 text-pr-text"
+										value={captionChoice.sidecarTracks}
+										disabled={captionChoice.sidecar === 'none'}
+										onChange={(e) =>
+											setCaptionChoice({
+												...captionChoice,
+												sidecarTracks: e.target.value === 'all' ? 'all' : 'active',
+											})
+										}
+									>
+										<option value="active">Active track</option>
+										<option value="all">All tracks</option>
+									</select>
+								</div>
+							</Field>
+						</div>
+					) : null}
 					<div className="border-t border-pr-border-subtle pt-2">
 						<h3 className="mb-1 text-pr-small text-pr-muted">SUMMARY</h3>
 						<p className="mb-2 text-pr-small">

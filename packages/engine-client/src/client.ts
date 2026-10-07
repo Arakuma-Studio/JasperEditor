@@ -360,6 +360,10 @@ export class EngineClient {
 	renderOutputUrl(jobId: string): string {
 		return this.url(buildPath(ROUTES.renderOutput.path, { jobId }));
 	}
+	/** wp captions: download URL of an export's sidecar caption file. */
+	renderCaptionFileUrl(jobId: string, name: string): string {
+		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
+	}
 	mgFileUrl(key: string, file: string): string {
 		return this.url(buildPath(ROUTES.mgFile.path, { key, file }));
 	}
