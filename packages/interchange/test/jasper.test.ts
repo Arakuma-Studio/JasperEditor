@@ -49,7 +49,7 @@ describe('JasperEditor round trips', () => {
 				.map((c) => [
 					c.start,
 					c.duration,
-					captionClipText(c === c ? (s === a ? target.doc : h.doc) : h.doc, c, s.settings.frameRate),
+					captionClipText(s === a ? target.doc : h.doc, c, s.settings.frameRate),
 				])
 				.sort((x, y) => (x[0] as number) - (y[0] as number));
 		expect(caps(a)).toEqual(caps(b));
