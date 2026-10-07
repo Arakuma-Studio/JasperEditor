@@ -15,6 +15,7 @@ import {
 	type MediaInterpretation,
 	mediaDurationFlicks,
 	type Rational,
+	rationalFromFps,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
@@ -81,17 +82,7 @@ const fpsText = (r: Rational | null) => (r ? `${(r.num / r.den).toFixed(r.den ==
 
 /** A frame rate typed by the user → a rational (NTSC rates as 1001 fractions). */
 export function parseFps(text: string): Rational | null {
-	const v = Number(text.replace(',', '.'));
-	if (!Number.isFinite(v) || v < 1 || v > 1000) return null;
-	for (const [num, den] of [
-		[24000, 1001],
-		[30000, 1001],
-		[60000, 1001],
-		[120000, 1001],
-	] as const)
-		if (Math.abs(v - num / den) < 0.005) return { num, den };
-	if (Math.abs(v - Math.round(v)) < 1e-9) return { num: Math.round(v), den: 1 };
-	return { num: Math.round(v * 1000), den: 1000 };
+	return rationalFromFps(Number(text.replace(',', '.')));
 }
 
 /** Premiere's pixel aspect ratio menu. */
@@ -115,7 +106,13 @@ const FIELD_LABELS: Record<'progressive' | 'upper' | 'lower', string> = {
 	lower: 'Lower Field First',
 };
 
-function Radio(props: { name: string; checked: boolean; onChange(): void; children: ReactNode; testId?: string }) {
+function Radio(props: {
+	name: string;
+	checked: boolean;
+	onChange(): void;
+	children: ReactNode;
+	testId?: string;
+}) {
 	return (
 		<label className="flex items-center gap-2 text-pr-ui text-pr-text">
 			<input
@@ -143,8 +140,7 @@ function current<K extends keyof MediaInterpretation>(
 }
 
 const setPatch =
-	(setDraft: InterpretSectionProps['setDraft']) =>
-	(key: keyof InterpretationPatch, value: unknown) =>
+	(setDraft: InterpretSectionProps['setDraft']) => (key: keyof InterpretationPatch, value: unknown) =>
 		setDraft((d) => ({ ...d, patch: { ...d.patch, [key]: value } }));
 
 // ---------------------------------------------------------------- built-in sections
@@ -153,9 +149,21 @@ function FrameRateSection({ assets, draft, setDraft }: InterpretSectionProps) {
 	const set = setPatch(setDraft);
 	const own = common(assets, (a) => fileFrameRate(a));
 	const assumed = current(assets, draft, 'frameRate') as Rational | null | undefined;
-	const [text, setText] = useState(() => (assumed ? String(+(assumed.num / assumed.den).toFixed(3)) : own ? String(+(own.num / own.den).toFixed(3)) : '30'));
+	const [text, setText] = useState(() =>
+		assumed
+			? String(+(assumed.num / assumed.den).toFixed(3))
+			: own
+				? String(+(own.num / own.den).toFixed(3))
+				: '30',
+	);
 	const invalid = !!assumed && !parseFps(text);
-	const duration = assets.length === 1 ? mediaDurationFlicks({ ...assets[0]!, interpretation: { ...assets[0]!.interpretation, frameRate: assumed ?? undefined } }) : null;
+	const duration =
+		assets.length === 1
+			? mediaDurationFlicks({
+					...assets[0]!,
+					interpretation: { ...assets[0]!.interpretation, frameRate: assumed ?? undefined },
+				})
+			: null;
 	return (
 		<div className="flex flex-col gap-1.5" data-testid="interpret-frame-rate">
 			<Radio name="fr" checked={!assumed} onChange={() => set('frameRate', null)} testId="interpret-fr-file">
@@ -186,9 +194,7 @@ function FrameRateSection({ assets, draft, setDraft }: InterpretSectionProps) {
 				<span className="text-pr-muted">fps</span>
 			</div>
 			{duration !== null ? (
-				<span className="text-pr-small text-pr-muted">
-					Duration: {(duration / 705_600_000).toFixed(3)} s
-				</span>
+				<span className="text-pr-small text-pr-muted">Duration: {(duration / 705_600_000).toFixed(3)} s</span>
 			) : null}
 		</div>
 	);
@@ -204,7 +210,12 @@ function PixelAspectSection({ assets, draft, setDraft }: InterpretSectionProps) 
 		: 0;
 	return (
 		<div className="flex flex-col gap-1.5" data-testid="interpret-pixel-aspect">
-			<Radio name="par" checked={!conform} onChange={() => set('pixelAspect', null)} testId="interpret-par-file">
+			<Radio
+				name="par"
+				checked={!conform}
+				onChange={() => set('pixelAspect', null)}
+				testId="interpret-par-file"
+			>
 				Use Pixel Aspect Ratio from File: {own ? parLabel(own) : 'mixed'}
 			</Radio>
 			<div className="flex items-center gap-2">
@@ -232,26 +243,41 @@ function PixelAspectSection({ assets, draft, setDraft }: InterpretSectionProps) 
 function FieldOrderSection({ assets, draft, setDraft }: InterpretSectionProps) {
 	const set = setPatch(setDraft);
 	const own = common(assets, (a) => fileFieldOrder(a));
-	const conform = current(assets, draft, 'fieldOrder') as 'progressive' | 'upper' | 'lower' | null | undefined;
+	const conform = current(assets, draft, 'fieldOrder') as
+		| 'progressive'
+		| 'upper'
+		| 'lower'
+		| null
+		| undefined;
 	return (
 		<div className="flex flex-col gap-1.5" data-testid="interpret-field-order">
 			<Radio name="fo" checked={!conform} onChange={() => set('fieldOrder', null)} testId="interpret-fo-file">
 				Use Field Order from File: {own ? FIELD_LABELS[own] : 'mixed'}
 			</Radio>
 			<div className="flex items-center gap-2">
-				<Radio name="fo" checked={!!conform} onChange={() => set('fieldOrder', 'progressive')} testId="interpret-fo-conform">
+				<Radio
+					name="fo"
+					checked={!!conform}
+					onChange={() => set('fieldOrder', 'progressive')}
+					testId="interpret-fo-conform"
+				>
 					Conform to:
 				</Radio>
 				<Select
 					value={conform ?? 'progressive'}
 					onValueChange={(v) => set('fieldOrder', v)}
-					options={(['progressive', 'upper', 'lower'] as const).map((v) => ({ value: v, label: FIELD_LABELS[v] }))}
+					options={(['progressive', 'upper', 'lower'] as const).map((v) => ({
+						value: v,
+						label: FIELD_LABELS[v],
+					}))}
 					disabled={!conform}
 					label="Field order"
 					className="w-[260px]"
 				/>
 			</div>
-			<span className="text-pr-small text-pr-muted">Interlaced pictures are deinterlaced in the progressive sequence.</span>
+			<span className="text-pr-small text-pr-muted">
+				Interlaced pictures are deinterlaced in the progressive sequence.
+			</span>
 		</div>
 	);
 }
@@ -262,11 +288,20 @@ function AlphaSection({ assets, draft, setDraft }: InterpretSectionProps) {
 	const mode = alpha?.mode ?? 'straight';
 	const invert = !!alpha?.invert;
 	const matte = alpha?.matte ?? [0, 0, 0, 1];
-	const write = (next: { mode?: 'straight' | 'premultiplied' | 'ignore'; invert?: boolean; matte?: [number, number, number, number] }) => {
+	const write = (next: {
+		mode?: 'straight' | 'premultiplied' | 'ignore';
+		invert?: boolean;
+		matte?: [number, number, number, number];
+	}) => {
 		const m = next.mode ?? mode;
 		const inv = next.invert ?? invert;
 		const mt = next.matte ?? (matte as [number, number, number, number]);
-		set('alpha', m === 'straight' && !inv ? null : { mode: m, invert: inv, ...(m === 'premultiplied' ? { matte: mt } : {}) });
+		set(
+			'alpha',
+			m === 'straight' && !inv
+				? null
+				: { mode: m, invert: inv, ...(m === 'premultiplied' ? { matte: mt } : {}) },
+		);
 	};
 	return (
 		<div className="flex flex-col gap-1.5" data-testid="interpret-alpha">
@@ -367,7 +402,11 @@ export type InterpretFootageProps = { session: EditorSession; mediaIds: string[]
 export function interpretCommands(assets: readonly MediaAsset[], draft: InterpretDraft): Command[] {
 	const out: Command[] = [];
 	if (Object.keys(draft.patch).length)
-		out.push({ type: 'media.interpret', mediaIds: assets.map((a) => a.id), interpretation: draft.patch } as Command);
+		out.push({
+			type: 'media.interpret',
+			mediaIds: assets.map((a) => a.id),
+			interpretation: draft.patch,
+		} as Command);
 	for (const s of SECTIONS) if (s.applies(assets) && s.commands) out.push(...s.commands(assets, draft));
 	return out;
 }

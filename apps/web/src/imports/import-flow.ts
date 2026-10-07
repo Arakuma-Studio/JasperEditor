@@ -5,7 +5,12 @@
 // 2. multi-page PDF / Illustrator documents — the chosen pages become one item each;
 // 3. layered documents (PSD) — Merge All Layers (the flattened item), Merged Layers (one picture of the chosen
 //    layers), Individual Layers (a bin of layers) or Sequence (the layers stacked; `layeredImportCommands`).
-import type { LayeredExtractResult, LayeredLayer, RegisteredMedia } from '@jasper/api';
+import {
+	type LayeredExtractResult,
+	type LayeredLayer,
+	type RegisteredMedia,
+	toLayeredImportLayers,
+} from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Command,
@@ -34,7 +39,10 @@ export function defaultSequenceRate(session: EditorSession): Rational {
 	return seq ? { num: seq.settings.frameRate.num, den: seq.settings.frameRate.den } : { num: 30, den: 1 };
 }
 
-async function finishedJobResult<T>(engine: EngineClient, job: { id: string; state: string; result?: unknown; error?: { message?: string; code?: string } | null }): Promise<T> {
+async function finishedJobResult<T>(
+	engine: EngineClient,
+	job: { id: string; state: string; result?: unknown; error?: { message?: string; code?: string } | null },
+): Promise<T> {
 	let j = job;
 	while (!['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state)) {
 		await new Promise((r) => setTimeout(r, 300));
@@ -71,7 +79,13 @@ export async function acquireImageSequences(
 	if (paths.length === 1 && pathGroups.length === 0) {
 		try {
 			const d = await engine.detectImageSequence(paths[0]!);
-			if (d.count >= 2) detected = { path: paths[0]!, label: d.pattern, count: d.last - d.first + 1, missing: d.missing.length };
+			if (d.count >= 2)
+				detected = {
+					path: paths[0]!,
+					label: d.pattern,
+					count: d.last - d.first + 1,
+					missing: d.missing.length,
+				};
 		} catch {
 			detected = null;
 		}
@@ -94,7 +108,10 @@ export async function acquireImageSequences(
 			let next = 0;
 			const worker = async () => {
 				for (let i = next++; i < frames.length; i = next++) {
-					uploadIds[i] = await engine.uploadSequenceFrame(frames[i]!, { projectId, fileName: frames[i]!.name });
+					uploadIds[i] = await engine.uploadSequenceFrame(frames[i]!, {
+						projectId,
+						fileName: frames[i]!.name,
+					});
 				}
 			};
 			await Promise.all(Array.from({ length: Math.min(4, frames.length) }, worker));
@@ -111,7 +128,11 @@ export async function acquireImageSequences(
 		paths = paths.filter((p) => !names.has(baseName(p)));
 		try {
 			const job = await engine.importImageSequence({ projectId, paths: mine, frameRate, name: g.label });
-			acquired.push({ reg: await finishedJobResult<RegisteredMedia>(engine, job), name: g.label, path: null });
+			acquired.push({
+				reg: await finishedJobResult<RegisteredMedia>(engine, job),
+				name: g.label,
+				path: null,
+			});
 		} catch (e) {
 			failed.push({ name: g.label, ...errorInfo(e) });
 		}
@@ -119,8 +140,17 @@ export async function acquireImageSequences(
 	if (detected) {
 		paths = paths.filter((p) => p !== detected!.path);
 		try {
-			const job = await engine.importImageSequence({ projectId, path: detected.path, frameRate, name: detected.label });
-			acquired.push({ reg: await finishedJobResult<RegisteredMedia>(engine, job), name: detected.label, path: null });
+			const job = await engine.importImageSequence({
+				projectId,
+				path: detected.path,
+				frameRate,
+				name: detected.label,
+			});
+			acquired.push({
+				reg: await finishedJobResult<RegisteredMedia>(engine, job),
+				name: detected.label,
+				path: null,
+			});
 		} catch (e) {
 			failed.push({ name: detected.label, ...errorInfo(e) });
 		}
@@ -143,22 +173,7 @@ function layerAsset(reg: RegisteredMedia): LayeredImportLayer['asset'] {
 }
 
 export function toImportLayers(layers: readonly LayeredLayer[]): LayeredImportLayer[] {
-	return layers.map((l) => ({
-		index: l.index,
-		name: l.name,
-		kind: l.kind,
-		visible: l.visible,
-		opacity: l.opacity,
-		blendMode: l.blendMode,
-		clipping: l.clipping,
-		left: l.left,
-		top: l.top,
-		width: l.width,
-		height: l.height,
-		asset: l.media ? layerAsset(l.media) : null,
-		...(l.children ? { children: toImportLayers(l.children) } : {}),
-		...(l.notes ? { notes: l.notes } : {}),
-	}));
+	return toLayeredImportLayers(layers, layerAsset);
 }
 
 /**
@@ -195,7 +210,9 @@ export async function expandImports(
 							vector: { ...v, page: p.page, width: p.width, height: p.height },
 							probe: {
 								...a.reg.probe,
-								streams: a.reg.probe.streams.map((s) => (s.type === 'video' ? { ...s, width: w, height: h } : s)),
+								streams: a.reg.probe.streams.map((s) =>
+									s.type === 'video' ? { ...s, width: w, height: h } : s,
+								),
 							},
 						},
 					});

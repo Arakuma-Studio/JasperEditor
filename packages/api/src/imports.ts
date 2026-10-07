@@ -1,8 +1,13 @@
 // imports workstream (docs/wp-notes/imports.md): interpreted media variants, image sequences, layered documents
 // (PSD), vector pages and Lottie export.
-import { LayeredInfoSchema, RationalSchema, VectorInfoSchema } from '@jasper/project';
+import {
+	type LayeredImportLayer,
+	LayeredInfoSchema,
+	RationalSchema,
+	VectorInfoSchema,
+} from '@jasper/project';
 import { z } from 'zod';
-import { RegisteredMediaSchema } from './media.ts';
+import { type RegisteredMedia, RegisteredMediaSchema } from './media.ts';
 
 // ---------------------------------------------------------------- interpreted variants
 
@@ -147,6 +152,32 @@ export const LayeredLayerSchema: z.ZodType<LayeredLayer> = z.lazy(() =>
 		notes: z.array(z.string()).optional(),
 	}),
 );
+
+/**
+ * The extracted layers → the input of `layeredImportCommands` (@jasper/project); `assetOf` turns a layer picture's
+ * registration into the asset fields its `media.register` carries (the caller's engine locator).
+ */
+export function toLayeredImportLayers(
+	layers: readonly LayeredLayer[],
+	assetOf: (reg: RegisteredMedia) => LayeredImportLayer['asset'],
+): LayeredImportLayer[] {
+	return layers.map((l) => ({
+		index: l.index,
+		name: l.name,
+		kind: l.kind,
+		visible: l.visible,
+		opacity: l.opacity,
+		blendMode: l.blendMode,
+		clipping: l.clipping,
+		left: l.left,
+		top: l.top,
+		width: l.width,
+		height: l.height,
+		asset: l.media ? assetOf(l.media) : null,
+		...(l.children ? { children: toLayeredImportLayers(l.children, assetOf) } : {}),
+		...(l.notes ? { notes: [...l.notes] } : {}),
+	}));
+}
 
 /** `POST /api/imports/layers {mediaKey}` (job `layers`): every layer of a PSD extracted as a PNG and registered. */
 export const LayeredExtractRequestSchema = z.object({

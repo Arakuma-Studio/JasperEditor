@@ -39,6 +39,20 @@ const finiteRational = (r: Rational | null | undefined): r is Rational =>
 	!!r && Number.isFinite(r.num) && Number.isFinite(r.den) && r.num > 0 && r.den > 0;
 
 /** Whether frame rate / loop interpretation applies to the asset (video, animated images, Lottie, sequences). */
+/** A frame rate in fps (1…1000) → a rational; NTSC rates (23.976, 29.97, 59.94, 119.88) become 1001 fractions. */
+export function rationalFromFps(fps: number): Rational | null {
+	if (!Number.isFinite(fps) || fps < 1 || fps > 1000) return null;
+	for (const [num, den] of [
+		[24000, 1001],
+		[30000, 1001],
+		[60000, 1001],
+		[120000, 1001],
+	] as const)
+		if (Math.abs(fps - num / den) < 0.005) return { num, den };
+	if (Math.abs(fps - Math.round(fps)) < 1e-9) return { num: Math.round(fps), den: 1 };
+	return { num: Math.round(fps * 1000), den: 1000 };
+}
+
 export function isTimedMedia(asset: Pick<MediaAsset, 'kind' | 'probe'> & { lottie?: unknown }): boolean {
 	return TIMED_KINDS.has(asset.kind) && isFrameExact(asset) && !!videoStream(asset);
 }
@@ -98,7 +112,9 @@ export function mediaDurationFlicks(asset: AssetLike): number | null {
 /** The file's own pixel aspect ratio (1:1 when unknown or invalid). */
 export function filePixelAspect(asset: Pick<MediaAsset, 'probe'>): Rational {
 	const vs = videoStream(asset);
-	return vs && finiteRational(vs.pixelAspect) ? { num: vs.pixelAspect.num, den: vs.pixelAspect.den } : { num: 1, den: 1 };
+	return vs && finiteRational(vs.pixelAspect)
+		? { num: vs.pixelAspect.num, den: vs.pixelAspect.den }
+		: { num: 1, den: 1 };
 }
 
 /** Pixel aspect ratio the picture is shown with (the conformed one, else the file's). */
@@ -238,7 +254,8 @@ export function mediaPixelVariant(asset: AssetLike): string {
 export function pixelInterpretationFilters(p: PixelInterpretation | null): string[] {
 	if (!p) return [];
 	const f: string[] = [];
-	if (p.deinterlace) f.push(`bwdif=mode=send_frame:parity=${p.deinterlace === 'upper' ? 'tff' : 'bff'}:deint=all`);
+	if (p.deinterlace)
+		f.push(`bwdif=mode=send_frame:parity=${p.deinterlace === 'upper' ? 'tff' : 'bff'}:deint=all`);
 	const a = p.alpha;
 	if (a) {
 		f.push('format=rgba');
@@ -391,15 +408,21 @@ export function importedDescriptors(reg: {
  *   `display` PNG; a video with a pixel interpretation from its interpreted `proxy` (preview) / `master` (renders),
  *   both made with `variant`.
  */
-export function browserPictureNeed(
-	asset: AssetLike & { vector?: unknown; locators?: unknown },
-): { loader: 'lottie' | 'vector' | null; picture: 'display' | 'proxy' | null; variant: string } {
+export function browserPictureNeed(asset: AssetLike & { vector?: unknown; locators?: unknown }): {
+	loader: 'lottie' | 'vector' | null;
+	picture: 'display' | 'proxy' | null;
+	variant: string;
+} {
 	if (asset.lottie) return { loader: 'lottie', picture: null, variant: '' };
 	if ((asset as { vector?: unknown }).vector) return { loader: 'vector', picture: null, variant: '' };
 	const variant = mediaPixelVariant(asset);
 	const vs = videoStream(asset);
 	if (asset.kind === 'image' && vs)
-		return { loader: null, picture: variant !== '' || vs.browserDecodable === false ? 'display' : null, variant };
+		return {
+			loader: null,
+			picture: variant !== '' || vs.browserDecodable === false ? 'display' : null,
+			variant,
+		};
 	if (asset.kind === 'video' && vs && variant !== '') return { loader: null, picture: 'proxy', variant };
 	return { loader: null, picture: null, variant };
 }
