@@ -214,9 +214,97 @@ function over(px: Float32Array, i: number, c: readonly number[], k: number): voi
 	px[i + 2] = px[i + 2]! + (c[2]! - px[i + 2]!) * a;
 }
 
+/** Per size and style: the static layers of the leader (background / wipe with rings and lines) and the geometry. */
+type LeaderLayers = {
+	/** Background + target rings + lines (RGB floats 0..1). */
+	base: Float32Array;
+	/** Wipe colour + target rings + lines. */
+	swept: Float32Array;
+	/** The two layers rounded to RGBA8 (opaque), as 32-bit pixels. */
+	base32: Uint32Array;
+	swept32: Uint32Array;
+	/** Clockwise angle from 12 o'clock (radians) and max(distance, 1) from the centre. */
+	angle: Float32Array;
+	dist: Float32Array;
+};
+let leaderCache: { key: string; layers: LeaderLayers } | null = null;
+
+function leaderLayers(w: number, h: number, style: CountingLeaderStyle): LeaderLayers {
+	const key = `${w}x${h}:${JSON.stringify(style)}`;
+	if (leaderCache?.key === key) return leaderCache.layers;
+	const n = w * h;
+	const base = new Float32Array(n * 3);
+	const swept = new Float32Array(n * 3);
+	const angle = new Float32Array(n);
+	const dist = new Float32Array(n);
+	const cx = w / 2;
+	const cy = h / 2;
+	const unit = h / 1080;
+	const lineHalf = Math.max(0.75, 2 * unit);
+	const ringHalf = Math.max(0.75, 3 * unit);
+	const rings = [0.38 * h, 0.32 * h];
+	const overRgb = (px: Float32Array, i: number, c: readonly number[], k: number) => {
+		const a = k * (c[3] ?? 1);
+		if (a <= 0) return;
+		px[i] = px[i]! + (c[0]! - px[i]!) * a;
+		px[i + 1] = px[i + 1]! + (c[1]! - px[i + 1]!) * a;
+		px[i + 2] = px[i + 2]! + (c[2]! - px[i + 2]!) * a;
+	};
+	const bg = style.backgroundColor;
+	const wipe = style.wipeColor;
+	for (let y = 0; y < h; y++) {
+		const dy = y + 0.5 - cy;
+		for (let x = 0; x < w; x++) {
+			const dx = x + 0.5 - cx;
+			const p = y * w + x;
+			const i = p * 3;
+			const d = Math.sqrt(dx * dx + dy * dy);
+			let a = Math.atan2(dx, -dy);
+			if (a < 0) a += 2 * Math.PI;
+			angle[p] = a;
+			dist[p] = Math.max(d, 1);
+			base[i] = bg[0];
+			base[i + 1] = bg[1];
+			base[i + 2] = bg[2];
+			// The wipe colour over the background (its own alpha), as the sweep draws it.
+			swept[i] = bg[0];
+			swept[i + 1] = bg[1];
+			swept[i + 2] = bg[2];
+			overRgb(swept, i, wipe, 1);
+			for (const r of rings) {
+				const k = clamp01(ringHalf - Math.abs(d - r) + 0.5);
+				if (k > 0) {
+					overRgb(base, i, style.targetColor, k);
+					overRgb(swept, i, style.targetColor, k);
+				}
+			}
+			const kl = Math.max(clamp01(lineHalf - Math.abs(dx) + 0.5), clamp01(lineHalf - Math.abs(dy) + 0.5));
+			if (kl > 0) {
+				overRgb(base, i, style.lineColor, kl);
+				overRgb(swept, i, style.lineColor, kl);
+			}
+		}
+	}
+	const bytes = (src: Float32Array) => {
+		const b = new Uint8ClampedArray(n * 4);
+		for (let p = 0; p < n; p++) {
+			b[p * 4] = Math.round(src[p * 3]! * 255);
+			b[p * 4 + 1] = Math.round(src[p * 3 + 1]! * 255);
+			b[p * 4 + 2] = Math.round(src[p * 3 + 2]! * 255);
+			b[p * 4 + 3] = 255;
+		}
+		return new Uint32Array(b.buffer);
+	};
+	const layers = { base, swept, angle, dist, base32: bytes(base), swept32: bytes(swept) };
+	leaderCache = { key, layers };
+	return layers;
+}
+
 /**
  * The Universal Counting Leader at content time `t` seconds, `w × h` RGBA (opaque). `frameSeconds` = the length of
- * one frame (the cue circle "on out" is drawn on the leader's last frame).
+ * one frame (the cue circle "on out" is drawn on the leader's last frame). The sweep is the wipe colour over the
+ * background (anti-aliased edge), under the target rings and lines (composited as `over`, which is affine: the frame
+ * is a per-pixel mix of two cached layers).
  */
 export function renderCountingLeader(
 	w: number,
@@ -233,75 +321,96 @@ export function renderCountingLeader(
 		if (lastFrame) drawCueCircle(out, w, h);
 		return out;
 	}
-	const f = new Float32Array(w * h * 4);
-	const bg = style.backgroundColor;
-	for (let i = 0; i < f.length; i += 4) {
-		f[i] = bg[0];
-		f[i + 1] = bg[1];
-		f[i + 2] = bg[2];
-		f[i + 3] = 1;
-	}
-	const cx = w / 2;
-	const cy = h / 2;
-	const unit = h / 1080;
-	const lineHalf = Math.max(0.75, 2 * unit);
-	const ringHalf = Math.max(0.75, 3 * unit);
-	const rings = [0.38 * h, 0.32 * h];
+	const { base, swept, angle, dist, base32, swept32 } = leaderLayers(w, h, style);
 	const sweep = phase.phase === 'count' ? phase.sweep * 2 * Math.PI : 0;
-	for (let y = 0; y < h; y++) {
-		const dy = y + 0.5 - cy;
-		for (let x = 0; x < w; x++) {
-			const dx = x + 0.5 - cx;
-			const i = (y * w + x) * 4;
-			const d = Math.sqrt(dx * dx + dy * dy);
-			if (sweep > 0) {
-				// Clockwise angle from 12 o'clock; the swept sector shows the wipe colour (edge anti-aliased in px).
-				let a = Math.atan2(dx, -dy);
-				if (a < 0) a += 2 * Math.PI;
-				const edge = Math.min(sweep - a, a) * Math.max(d, 1);
-				const k = a <= sweep ? clamp01(edge + 0.5) : 0;
-				if (k > 0) over(f, i, style.wipeColor, k);
-			}
-			for (const r of rings) {
-				const k = clamp01(ringHalf - Math.abs(d - r) + 0.5);
-				if (k > 0) over(f, i, style.targetColor, k);
-			}
-			const kl = Math.max(clamp01(lineHalf - Math.abs(dx) + 0.5), clamp01(lineHalf - Math.abs(dy) + 0.5));
-			if (kl > 0) over(f, i, style.lineColor, kl);
+	const coverage = (p: number): number => {
+		if (sweep <= 0) return 0;
+		const a = angle[p]!;
+		if (a > sweep) return 0;
+		const e = (sweep - a < a ? sweep - a : a) * dist[p]! + 0.5;
+		return e < 0 ? 0 : e > 1 ? 1 : e;
+	};
+	const mixAt = (p: number, c: number): number => {
+		const b = base[p * 3 + c]!;
+		return b + (swept[p * 3 + c]! - b) * coverage(p);
+	};
+	const out32 = new Uint32Array(out.buffer);
+	const n = w * h;
+	for (let p = 0; p < n; p++) {
+		const k = coverage(p);
+		if (k === 0) out32[p] = base32[p]!;
+		else if (k === 1) out32[p] = swept32[p]!;
+		else {
+			const o = p * 4;
+			out[o] = Math.round(mixAt(p, 0) * 255);
+			out[o + 1] = Math.round(mixAt(p, 1) * 255);
+			out[o + 2] = Math.round(mixAt(p, 2) * 255);
+			out[o + 3] = 255;
 		}
 	}
-	if (phase.phase === 'count') drawNumeral(f, w, h, String(phase.numeral), style.numeralColor);
-	for (let i = 0; i < f.length; i++) out[i] = Math.round(f[i]! * 255);
+	if (phase.phase === 'count') {
+		// The numeral over the mixed picture (from the unrounded values), inside its box only.
+		const { x0, y0, bw, bh, cov } = numeralCoverage(w, h, String(phase.numeral));
+		const c = style.numeralColor;
+		const ca = c[3] ?? 1;
+		for (let y = 0; y < bh; y++)
+			for (let x = 0; x < bw; x++) {
+				const k = cov[y * bw + x]! * ca;
+				if (k <= 0) continue;
+				const p = (y + y0) * w + x + x0;
+				for (let ch = 0; ch < 3; ch++) {
+					const v = mixAt(p, ch);
+					out[p * 4 + ch] = Math.round((v + (c[ch]! - v) * k) * 255);
+				}
+			}
+	}
 	if (lastFrame) drawCueCircle(out, w, h);
 	return out;
 }
 
-function drawNumeral(f: Float32Array, w: number, h: number, text: string, color: readonly number[]): void {
+const numeralCache = new Map<string, { x0: number; y0: number; bw: number; bh: number; cov: Float32Array }>();
+
+/** Coverage of a numeral's strokes (round caps, anti-aliased 1 px) over its bounding box, cached per size. */
+function numeralCoverage(w: number, h: number, text: string) {
+	const key = `${w}x${h}:${text}`;
+	const hit = numeralCache.get(key);
+	if (hit) return hit;
 	const nh = 0.42 * h;
 	const nw = 0.6 * nh;
 	const half = 0.055 * nh;
-	const x0 = w / 2 - nw / 2;
-	const y0 = h / 2 - nh / 2;
-	const strokes = (DIGITS[text] ?? []).map((pts) => pts.map(([x, y]) => [x0 + x * nw, y0 + y * nh] as const));
-	const bx0 = Math.max(0, Math.floor(x0 - half - 1));
-	const bx1 = Math.min(w, Math.ceil(x0 + nw + half + 1));
-	const by0 = Math.max(0, Math.floor(y0 - half - 1));
-	const by1 = Math.min(h, Math.ceil(y0 + nh + half + 1));
-	for (let y = by0; y < by1; y++) {
-		for (let x = bx0; x < bx1; x++) {
-			const px = x + 0.5;
-			const py = y + 0.5;
-			let d = Number.POSITIVE_INFINITY;
-			for (const s of strokes)
-				for (let k = 1; k < s.length; k++) {
-					const a = s[k - 1]!;
-					const b = s[k]!;
-					d = Math.min(d, segDist(px, py, a[0], a[1], b[0], b[1]));
+	const ox = w / 2 - nw / 2;
+	const oy = h / 2 - nh / 2;
+	const x0 = Math.max(0, Math.floor(ox - half - 1));
+	const y0 = Math.max(0, Math.floor(oy - half - 1));
+	const x1 = Math.min(w, Math.ceil(ox + nw + half + 1));
+	const y1 = Math.min(h, Math.ceil(oy + nh + half + 1));
+	const bw = Math.max(0, x1 - x0);
+	const bh = Math.max(0, y1 - y0);
+	const dist = new Float32Array(bw * bh).fill(Number.POSITIVE_INFINITY);
+	for (const pts of DIGITS[text] ?? []) {
+		for (let k = 1; k < pts.length; k++) {
+			const ax = ox + pts[k - 1]![0] * nw;
+			const ay = oy + pts[k - 1]![1] * nh;
+			const bx = ox + pts[k]![0] * nw;
+			const by = oy + pts[k]![1] * nh;
+			// Only the pixels near this segment can be covered by it.
+			const sx0 = Math.max(x0, Math.floor(Math.min(ax, bx) - half - 1));
+			const sx1 = Math.min(x1, Math.ceil(Math.max(ax, bx) + half + 1));
+			const sy0 = Math.max(y0, Math.floor(Math.min(ay, by) - half - 1));
+			const sy1 = Math.min(y1, Math.ceil(Math.max(ay, by) + half + 1));
+			for (let y = sy0; y < sy1; y++)
+				for (let x = sx0; x < sx1; x++) {
+					const d = segDist(x + 0.5, y + 0.5, ax, ay, bx, by);
+					const i = (y - y0) * bw + (x - x0);
+					if (d < dist[i]!) dist[i] = d;
 				}
-			const k = clamp01(half - d + 0.5);
-			if (k > 0) over(f, (y * w + x) * 4, color, k);
 		}
 	}
+	const cov = new Float32Array(bw * bh);
+	for (let i = 0; i < cov.length; i++) cov[i] = clamp01(half - dist[i]! + 0.5);
+	const out = { x0, y0, bw, bh, cov };
+	numeralCache.set(key, out);
+	return out;
 }
 
 /** The cue circle on the leader's last frame (top right, white). */

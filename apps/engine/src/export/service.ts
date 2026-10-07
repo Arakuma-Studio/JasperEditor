@@ -330,17 +330,24 @@ export class ExportService {
 	): Promise<Map<string, string> | null> {
 		const masters = new Map<string, string>();
 		// Anime templates (S11:ATP-008) are Remotion graphics: baked by the layer-bake extension, not by fframes.
-		const clips = planned.snapshot.videoTracks
-			.flatMap((t) => t.clips)
-			.filter((c) => c.kind === 'motion-graphic' && !isAnimeTemplate(c));
+		// edit-structure: motion graphics inside nested sequences are drawn in the nested frame.
+		const clips: { clip: RenderVisualClip; snap: PlannedExport['snapshot'] }[] = [];
+		const collect = (snap: PlannedExport['snapshot']) => {
+			for (const c of snap.videoTracks.flatMap((t) => t.clips)) {
+				if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) clips.push({ clip: c, snap });
+				if ('nest' in c.source) collect(c.source.nest.snapshot);
+			}
+		};
+		collect(planned.snapshot);
 		if (clips.length === 0) return masters;
 		if (!this.mgProvider) return null;
-		for (const clip of clips) {
+		for (const { clip, snap } of clips) {
+			if (masters.has(clip.clipId)) continue;
 			ctx.progress(0, { stage: 'Rendering motion graphics' });
 			const p = await this.mgProvider({
 				clip,
-				fps: planned.snapshot.settings.fps,
-				sequence: { width: planned.snapshot.settings.width, height: planned.snapshot.settings.height },
+				fps: snap.settings.fps,
+				sequence: { width: snap.settings.width, height: snap.settings.height },
 				projectId: planned.document.projectId,
 				parentId: ctx.job.id,
 				signal: ctx.signal,

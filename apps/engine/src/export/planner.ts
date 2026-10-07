@@ -18,9 +18,12 @@ import {
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
+	clipContentTime,
 	rationalEquals,
+	resolveLayerProps,
 	transitionSpec,
 } from '@jasper/project';
+import { needsSubpixel } from './stream/plan.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
@@ -57,7 +60,8 @@ export class PlanError extends Error {
 	}
 }
 
-const NATIVE_VISUAL_KINDS = new Set(['video', 'still', 'solid', 'motion-graphic']);
+// edit-structure: nest clips draw their nested stack in the same graph; adjustment layers process the composite.
+const NATIVE_VISUAL_KINDS = new Set(['video', 'still', 'solid', 'motion-graphic', 'nest-video', 'adjustment']);
 
 export type OutputSpec = {
 	width: number;
@@ -212,11 +216,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
-	const visual = snapshot.videoTracks.flatMap((t) => t.clips);
+	// edit-structure: the clips of nested sequences are drawn natively too (in the same graph): they are classified
+	// with the sequence's own clips.
+	const visual = allVisualClips(snapshot);
 	const mgClips: string[] = [];
 	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
 	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
 	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
+	for (const reason of nestBlockers(snapshot)) blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
@@ -241,7 +248,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// built-in ramps (cross dissolve, dip to black). wave1c: an extension that pre-renders the span (A + B + stage,
 	// layer-bake) keeps the export native (`hybrid`): only the span is rendered by Remotion. Without one, the export
 	// goes through Remotion.
-	for (const track of snapshot.videoTracks)
+	for (const track of allVideoTracks(snapshot))
 		for (const t of track.transitions ?? []) {
 			const engine = (deps.extensions ?? [])
 				.map((e) => e.bakesTransition?.(t, track.trackId) ?? null)
@@ -513,6 +520,9 @@ export function nativeBlockers(
 		if (ext.kinds?.has(c.kind) || ext.claimsLayer?.(c)) out.push(...(ext.blockers?.(c) ?? []));
 	}
 	const extKind = exts.some((e) => e.kinds?.has(c.kind));
+	// edit-structure: generator pictures (Bars and Tone, counting leader) come from the synthetic extension.
+	if ('generator' in c.source && !exts.some((e) => e.id === 'synthetic'))
+		out.push(`${label} draws a generator that needs the synthetic extension`);
 	if (exts.some((e) => e.claimsLayer?.(c))) {
 		if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
 		if (c.speed.reverse) out.push(`${label} plays in reverse`);
@@ -557,4 +567,63 @@ export function nativeBlockers(
 		else if (support === 'static' && animated) out.push(`${label} has an animated ${fx.effectId}`);
 	}
 	return out;
+}
+
+// ---------------------------------------------------------------- edit-structure: nested sequences
+
+/** Visual clips of a snapshot and of every nested snapshot drawn in it. */
+export function allVisualClips(snap: RenderSnapshot): RenderVisualClip[] {
+	const out: RenderVisualClip[] = [];
+	for (const t of snap.videoTracks)
+		for (const c of t.clips) {
+			out.push(c);
+			if ('nest' in c.source) out.push(...allVisualClips(c.source.nest.snapshot));
+		}
+	return out;
+}
+
+/** Video tracks of a snapshot and of every nested snapshot drawn in it. */
+export function allVideoTracks(snap: RenderSnapshot): RenderSnapshot['videoTracks'] {
+	const out: RenderSnapshot['videoTracks'] = [];
+	for (const t of snap.videoTracks) {
+		out.push(t);
+		for (const c of t.clips) if ('nest' in c.source) out.push(...allVideoTracks(c.source.nest.snapshot));
+	}
+	return out;
+}
+
+/**
+ * Native limits of nests: a nest clip drawn sub-pixel (animated Motion) is decoded in a separate process, where the
+ * layers of its nested sequence cannot be sub-pixel streams themselves.
+ */
+function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[] {
+	const out: { clipId: string; reason: string }[] = [];
+	const subpixel = (c: RenderVisualClip) => {
+		const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
+		return needsSubpixel(c, props, {
+			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+		});
+	};
+	for (const t of snap.videoTracks)
+		for (const c of t.clips) {
+			if (!('nest' in c.source)) continue;
+			const sub = c.source.nest.snapshot;
+			const ownProcess = subpixel(c) || c.effects.some((e) => e.enabled && e.effectId === 'jasper.corner-pin');
+			if (ownProcess && allVisualClips(sub).some((x) => !('nest' in x.source) && subpixelIn(sub, x)))
+				out.push({
+					clipId: c.clipId,
+					reason: `nested sequence clip "${c.name}" has animated, sub-pixel or corner-pinned Motion and contains sub-pixel layers`,
+				});
+			out.push(...nestBlockers(sub));
+		}
+	return out;
+}
+
+function subpixelIn(snap: RenderSnapshot, c: RenderVisualClip): boolean {
+	const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
+	return needsSubpixel(c, props, {
+		bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+		bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+	});
 }

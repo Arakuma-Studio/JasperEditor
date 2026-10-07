@@ -13,6 +13,7 @@ import {
 	evaluate,
 	flicksPerFrame,
 	isAnimated,
+	nestGainDbAt,
 	type Rational,
 	type RenderAudioClip,
 	type RenderVisualClip,
@@ -497,14 +498,19 @@ const VOLUME_BLOCK = 128;
  * `VOLUME_BLOCK` samples that steps at frame boundaries (≤ -96 dB is silence, like `dbToGain`).
  */
 export function audioVolumeFilters(
-	a: Pick<RenderAudioClip, 'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track'>,
+	a: Pick<RenderAudioClip, 'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track'> & {
+		nestGain?: RenderAudioClip['nestGain'];
+	},
 	master: { volumeDb: Animatable<number> },
 	f0: number,
 	f1: number,
 	fps: Rational,
 ): string[] {
-	if (!isAnimated(a.volumeDb) && !isAnimated(a.track.volumeDb) && !isAnimated(master.volumeDb)) {
-		const db = a.gainDb + a.volumeDb.value + a.track.volumeDb.value + master.volumeDb.value;
+	// edit-structure: a clip of a nested sequence carries its nested gain per frame (`nestGain`).
+	const nestVaries = (a.nestGain?.length ?? 0) > 1;
+	const nest0 = a.nestGain?.[0]?.db ?? 0;
+	if (!isAnimated(a.volumeDb) && !isAnimated(a.track.volumeDb) && !isAnimated(master.volumeDb) && !nestVaries) {
+		const db = a.gainDb + a.volumeDb.value + a.track.volumeDb.value + master.volumeDb.value + nest0;
 		return [`volume=${fmt6(db)}dB`];
 	}
 	const F = flicksPerFrame(fps);
@@ -519,7 +525,8 @@ export function audioVolumeFilters(
 			a.gainDb +
 				evaluate(a.volumeDb, content) +
 				evaluate(a.track.volumeDb, seqT) +
-				evaluate(master.volumeDb, seqT),
+				evaluate(master.volumeDb, seqT) +
+				nestGainDbAt(a.nestGain, f0 + k),
 		);
 	}
 	const value = piecewiseExpr(fitPieces(db, FIT_TOLERANCE.db), frameIndex(fps, 0, true));

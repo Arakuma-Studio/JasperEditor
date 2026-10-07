@@ -428,8 +428,10 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			// Exact frame mapping: output frame j shows nested frame floor(k + j·speed) (as the composition does).
 			const k = clipPictureTime(c, f0, fps) / F - n0;
 			const i0 = Math.max(0, Math.floor(k + 1e-6));
+			// (A fine time base first: `setpts` truncates to it, and the stack's 1/fps would merge frames.)
 			f.push(
 				`trim=start_frame=${i0}`,
+				'settb=AVTB',
 				`setpts=(N+${fmt(i0 - k)})/${fmt(c.speed.rate)}/(${fps.num}/${fps.den})/TB`,
 				`fps=fps=${rate(fps)}:round=up:start_time=0`,
 				`trim=end_frame=${n}`,
