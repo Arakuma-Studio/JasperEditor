@@ -119,7 +119,8 @@ for (const id of ['inter']) {
 	if (existsSync(join(pkgDir, 'LICENSE'))) cpSync(join(pkgDir, 'LICENSE'), join(dest, 'LICENSE'));
 	cpSync(join(pkgDir, 'files'), join(dest, 'files'), {
 		recursive: true,
-		filter: (src) => !src.endsWith('.woff') && (/-(latin|latin-ext)-standard-/.test(src) || !src.includes('.woff')),
+		filter: (src) =>
+			!src.endsWith('.woff') && (/-(latin|latin-ext)-standard-/.test(src) || !src.includes('.woff')),
 	});
 }
 console.log(`[build:remotion] fonts copied to ${fontsOut}`);

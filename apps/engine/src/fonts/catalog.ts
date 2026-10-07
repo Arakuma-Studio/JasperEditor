@@ -42,7 +42,11 @@ type Metadata = {
 
 type ResolvedFamily = FontFamily & { id: string; dir: string };
 
-function packageDir(id: string, env: Record<string, string | undefined>, scope = '@fontsource'): string | null {
+function packageDir(
+	id: string,
+	env: Record<string, string | undefined>,
+	scope = '@fontsource',
+): string | null {
 	const custom = env.JASPER_FONTS_DIR;
 	if (custom && existsSync(join(custom, id, 'metadata.json'))) return join(custom, id);
 	// Packaged engine bundle: fonts copied next to dist/engine.mjs by the build script.
@@ -117,13 +121,15 @@ export class FontCatalogService {
 				for (const style of meta.styles) {
 					const file = `${base}-${subset}-standard-${style}.woff2`;
 					if (!existsSync(join(dir, 'files', file))) continue;
-					for (const weight of meta.weights) files.push({ weight, style, subset, url: `/fonts/${id}/${file}` });
+					for (const weight of meta.weights)
+						files.push({ weight, style, subset, url: `/fonts/${id}/${file}` });
 				}
 			}
 			if (!files.length) continue;
 			const axes: NonNullable<FontFamily['axes']> = {};
 			for (const [tag, a] of Object.entries(meta.variable ?? {}))
-				if (tag !== 'ital') axes[tag] = { min: Number(a.min), max: Number(a.max), default: Number(a.default) };
+				if (tag !== 'ital')
+					axes[tag] = { min: Number(a.min), max: Number(a.max), default: Number(a.default) };
 			this.families.push({
 				id,
 				dir,
