@@ -13,7 +13,11 @@ async function openSession() {
 	const store = new MemoryProjectStore({ ids });
 	const doc = createEmptyProject({ ids, name: 'Mix', preset: 'hd-1080p-30' });
 	store.put(doc);
-	return EditorSession.open({ store, projectId: doc.projectId, ctx: { ids, now: () => 't', registries: defaultRegistries() } });
+	return EditorSession.open({
+		store,
+		projectId: doc.projectId,
+		ctx: { ids, now: () => 't', registries: defaultRegistries() },
+	});
 }
 
 describe('audio panels', () => {

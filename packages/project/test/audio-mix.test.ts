@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildAudioMix,
 	buildRenderSnapshot,
-	checkInvariants,
 	type ClipReader,
+	checkInvariants,
 	createCounterIdSource,
 	listStrips,
 	mixFingerprint,
@@ -60,7 +60,13 @@ function constReader(levels: Record<string, number[]>) {
 	};
 }
 
-async function render(h: Harness, levels: Record<string, number[]>, frames = 10, start = 0, layout?: 'mono' | 'stereo' | '5.1') {
+async function render(
+	h: Harness,
+	levels: Record<string, number[]>,
+	frames = 10,
+	start = 0,
+	layout?: 'mono' | 'stereo' | '5.1',
+) {
 	const snapshot = snapOf(h);
 	return renderMixToBuffers({
 		snapshot,
@@ -181,7 +187,16 @@ describe('offline mixer', () => {
 		const { h, a } = audioHarness();
 		h.ok([
 			{ type: 'mixer.updateStrip', stripId: 'A2', patch: { mute: true } },
-			{ type: 'mixer.writeAutomation', stripId: 'A1', lane: 'volume', points: [[0, 0], [10 * F30, -20]], thinning: { tolerance: 0 } },
+			{
+				type: 'mixer.writeAutomation',
+				stripId: 'A1',
+				lane: 'volume',
+				points: [
+					[0, 0],
+					[10 * F30, -20],
+				],
+				thinning: { tolerance: 0 },
+			},
 		]);
 		const [l] = await render(h, { [a]: [0.5, 0.5] });
 		for (const i of [0, 4000, 8000, 15999]) {
@@ -236,7 +251,12 @@ describe('offline mixer', () => {
 		const strip = snapshot.audioMix!.strips.find((s) => s.label === 'A1')!;
 		strip.inserts = [{ id: 'fx_test', effectId: 'test.half', effectVersion: 1, enabled: true, params: {} }];
 		const missing: string[] = [];
-		const m0 = new OfflineMixer({ snapshot, openClip: constReader({ [a]: [0.5, 0.5] }), startSample: 0, onMissingProcessor: (e) => missing.push(e.effectId) });
+		const m0 = new OfflineMixer({
+			snapshot,
+			openClip: constReader({ [a]: [0.5, 0.5] }),
+			startSample: 0,
+			onMissingProcessor: (e) => missing.push(e.effectId),
+		});
 		m0.close();
 		expect(missing).toEqual(['test.half']);
 		const off = registerAudioProcessor('test.half', () => {
@@ -257,7 +277,12 @@ describe('offline mixer', () => {
 			};
 		});
 		try {
-			const out = await renderMixToBuffers({ snapshot, openClip: constReader({ [a]: [0.5, 0.5] }), startSample: 0, length: 3200 });
+			const out = await renderMixToBuffers({
+				snapshot,
+				openClip: constReader({ [a]: [0.5, 0.5] }),
+				startSample: 0,
+				length: 3200,
+			});
 			// the latency is compensated: from the first sample the output is the halved source
 			expect(close(out[0]![1]!, 0.25)).toBe(true);
 			expect(close(out[0]![3000]!, 0.25)).toBe(true);
@@ -269,10 +294,24 @@ describe('offline mixer', () => {
 	it('block size does not change the output', async () => {
 		const { h, a } = audioHarness();
 		h.ok([
-			{ type: 'mixer.writeAutomation', stripId: 'A1', lane: 'pan', points: [[0, -100], [5 * F30, 100]], thinning: { tolerance: 0 } },
+			{
+				type: 'mixer.writeAutomation',
+				stripId: 'A1',
+				lane: 'pan',
+				points: [
+					[0, -100],
+					[5 * F30, 100],
+				],
+				thinning: { tolerance: 0 },
+			},
 		]);
 		const snapshot = snapOf(h);
-		const whole = await renderMixToBuffers({ snapshot, openClip: constReader({ [a]: [0.5, 0.3] }), startSample: 0, length: 8000 });
+		const whole = await renderMixToBuffers({
+			snapshot,
+			openClip: constReader({ [a]: [0.5, 0.3] }),
+			startSample: 0,
+			length: 8000,
+		});
 		const m = new OfflineMixer({ snapshot, openClip: constReader({ [a]: [0.5, 0.3] }), startSample: 0 });
 		const parts = [new Float32Array(8000), new Float32Array(8000)];
 		let pos = 0;
@@ -322,7 +361,17 @@ describe('mixer commands', () => {
 			[50, -10],
 			[100, 0],
 		]);
-		h.ok([{ type: 'mixer.writeAutomation', stripId: 'A1', lane: 'volume', points: [[40 * F30, -20], [60 * F30, -20]] }]);
+		h.ok([
+			{
+				type: 'mixer.writeAutomation',
+				stripId: 'A1',
+				lane: 'volume',
+				points: [
+					[40 * F30, -20],
+					[60 * F30, -20],
+				],
+			},
+		]);
 		const kf = h.seq.audioTracks[0]!.volumeDb!.keyframes;
 		expect(kf[0]).toMatchObject({ time: 0, value: 0 });
 		expect(kf[kf.length - 1]).toMatchObject({ time: 100 * F30, value: 0 });
@@ -352,7 +401,18 @@ describe('mixer commands', () => {
 
 	it('clipMixer.write writes clip volume keyframes in content time', () => {
 		const { h } = audioHarness();
-		h.ok([{ type: 'clipMixer.write', trackId: 'A1', lane: 'volume', points: [[F30 * 10, -6], [F30 * 20, -12]], thinning: { tolerance: 0 } }]);
+		h.ok([
+			{
+				type: 'clipMixer.write',
+				trackId: 'A1',
+				lane: 'volume',
+				points: [
+					[F30 * 10, -6],
+					[F30 * 20, -12],
+				],
+				thinning: { tolerance: 0 },
+			},
+		]);
 		const c = h.clips('A1')[0]! as { volumeDb: { keyframes: { time: number; value: number }[] } };
 		expect(c.volumeDb.keyframes.length).toBeGreaterThanOrEqual(2);
 		expect(c.volumeDb.keyframes.some((k) => k.value === -6)).toBe(true);
@@ -367,10 +427,14 @@ describe('mixer commands', () => {
 		expect([gain(x), gain(y)]).toEqual([3, 3]);
 		h.ok([{ type: 'audio.setGain', clipIds: [x], mode: 'adjust', db: -5 }]);
 		expect(gain(x)).toBe(-2);
-		h.ok([{ type: 'audio.setGain', clipIds: [x, y], mode: 'normalizeAll', db: -1, peaks: { [x]: -10, [y]: -4 } }]);
+		h.ok([
+			{ type: 'audio.setGain', clipIds: [x, y], mode: 'normalizeAll', db: -1, peaks: { [x]: -10, [y]: -4 } },
+		]);
 		expect([gain(x), gain(y)]).toEqual([9, 3]);
 		h.ok([{ type: 'audio.setGain', clipIds: [x, y], mode: 'set', db: 0 }]);
-		h.ok([{ type: 'audio.setGain', clipIds: [x, y], mode: 'normalizeMax', db: -1, peaks: { [x]: -10, [y]: -4 } }]);
+		h.ok([
+			{ type: 'audio.setGain', clipIds: [x, y], mode: 'normalizeMax', db: -1, peaks: { [x]: -10, [y]: -4 } },
+		]);
 		expect([gain(x), gain(y)]).toEqual([3, 3]);
 		expect(h.tx([{ type: 'audio.setGain', clipIds: [x], mode: 'normalizeAll', db: -1 }]).ok).toBe(false);
 	});
@@ -379,8 +443,17 @@ describe('mixer commands', () => {
 		const { h } = audioHarness();
 		const music = h.clips('A2')[0]!.id;
 		const s = 705_600_000;
-		h.ok([{ type: 'audio.autoDuck', targetClipIds: [music], regions: [[2 * s, 4 * s]], amountDb: 18, fadeMs: 500 }]);
-		const kf = (h.seq.clips[music] as { volumeDb: { keyframes: { time: number; value: number }[] } }).volumeDb.keyframes;
+		h.ok([
+			{
+				type: 'audio.autoDuck',
+				targetClipIds: [music],
+				regions: [[2 * s, 4 * s]],
+				amountDb: 18,
+				fadeMs: 500,
+			},
+		]);
+		const kf = (h.seq.clips[music] as { volumeDb: { keyframes: { time: number; value: number }[] } }).volumeDb
+			.keyframes;
 		expect(kf.map((k) => [k.time / s, k.value])).toEqual([
 			[1.5, 0],
 			[2, -18],
@@ -413,7 +486,10 @@ describe('mixer commands', () => {
 		h.ok([{ type: 'mixer.addSubmix' }]);
 		const doc = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
 		const seq = Object.values(doc.sequences)[0]!;
-		seq.audioTracks[0]!.mixer = { output: 'trk_missing', sends: [{ id: 'snd_0000000000000000', target: 'nope', levelDb: { value: 0, keyframes: [] } }] };
+		seq.audioTracks[0]!.mixer = {
+			output: 'trk_missing',
+			sends: [{ id: 'snd_0000000000000000', target: 'nope', levelDb: { value: 0, keyframes: [] } }],
+		};
 		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-MIX')).toBe(true);
 		const { document } = repairDocument(doc, createCounterIdSource(99));
 		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-MIX')).toEqual([]);

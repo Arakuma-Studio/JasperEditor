@@ -33,7 +33,11 @@ describe('audio UI helpers', () => {
 
 	it('audio prefs parse tolerantly', () => {
 		expect(parseAudioPrefs(null)).toEqual(DEFAULT_AUDIO_PREFS);
-		const p = parseAudioPrefs({ scrub: false, mixdown: 'bogus', voiceOver: { prerollSeconds: 999, name: '  ' } });
+		const p = parseAudioPrefs({
+			scrub: false,
+			mixdown: 'bogus',
+			voiceOver: { prerollSeconds: 999, name: '  ' },
+		});
 		expect(p.scrub).toBe(false);
 		expect(p.mixdown).toBe('frontRear');
 		expect(p.voiceOver.prerollSeconds).toBe(60);

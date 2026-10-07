@@ -19,9 +19,9 @@ import {
 } from '@jasper/audio-dsp';
 import { evaluate } from '../keyframes.ts';
 import { nestGainDbAt, type RenderAudioClip, type RenderSnapshot } from '../render/snapshot.ts';
-import { syntheticSamples } from '../structure/generators.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
+import { syntheticSamples } from '../structure/generators.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { audioFadeGain } from '../transitions.ts';
 import type { RenderStrip } from './plan.ts';

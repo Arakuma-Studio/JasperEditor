@@ -139,7 +139,7 @@ export function buildExportSettings(
 			sampleRate:
 				preset.container === 'webm'
 					? 48000
-					: (opts.audioSampleRate ?? ((s.audioSampleRate as 44100 | 48000 | 96000 | undefined) ?? 48000)),
+					: (opts.audioSampleRate ?? (s.audioSampleRate as 44100 | 48000 | 96000 | undefined) ?? 48000),
 			channels: opts.audioChannels ?? (s.masterLayout === '5.1' ? 6 : 2),
 			...(opts.audioChannels === 6 || (opts.audioChannels === undefined && s.masterLayout === '5.1')
 				? { bitrateKbps: Math.max(preset.audioKbps ?? 0, 384) }

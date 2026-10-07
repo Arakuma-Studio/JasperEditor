@@ -164,7 +164,10 @@ class CaptureProcessor extends AudioWorkletProcessor {
 			for (let c = 0; c < nch; c++) out[c]!.set(block[c]!, o);
 			o += block[0]!.length;
 		}
-		this.port.postMessage({ type: 'data', start: this.batchStart, channels: out }, out.map((c) => c.buffer));
+		this.port.postMessage(
+			{ type: 'data', start: this.batchStart, channels: out },
+			out.map((c) => c.buffer),
+		);
 		this.batch = [];
 		this.batchFrames = 0;
 	}

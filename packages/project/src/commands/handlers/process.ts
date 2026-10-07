@@ -599,12 +599,15 @@ function useNormalizedAudio(
 	h: HandlerContext,
 ): string[] {
 	const stream = media.probe.streams.find((s) => s.type === 'audio');
-	if (!stream || stream.type !== 'audio') return h.fail('E_INVALID_PARAM', 'The normalised file has no audio stream');
+	if (stream?.type !== 'audio') return h.fail('E_INVALID_PARAM', 'The normalised file has no audio stream');
 	const changed: string[] = [];
 	for (const id of new Set(clipIds)) {
 		const { seq, clip } = h.clip(doc, id);
 		if (clip.kind !== 'audio')
-			h.fail('E_INVALID_PARAM', `Clip ${id} is ${clip.kind}; only audio clips switch to a normalised version`);
+			h.fail(
+				'E_INVALID_PARAM',
+				`Clip ${id} is ${clip.kind}; only audio clips switch to a normalised version`,
+			);
 		const c = clip as Draft<AudioClip>;
 		if (c.mediaId !== sourceId) h.fail('E_INVALID_PARAM', `Clip ${id} does not play media ${sourceId}`);
 		assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);

@@ -364,7 +364,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 				audioChannels: z
 					.union([z.literal(1), z.literal(2), z.literal(6)])
 					.optional()
-					.describe('Audio channels: 2 (stereo; a 5.1 Mix is folded with ITU-R BS.775), 1, or 6 (discrete 5.1). Default: 6 for a 5.1 Mix, else 2'),
+					.describe(
+						'Audio channels: 2 (stereo; a 5.1 Mix is folded with ITU-R BS.775), 1, or 6 (discrete 5.1). Default: 6 for a 5.1 Mix, else 2',
+					),
 				audioSampleRate: z
 					.union([z.literal(44100), z.literal(48000), z.literal(96000)])
 					.optional()
@@ -375,8 +377,15 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.max(0)
 					.nullable()
 					.optional()
-					.describe('Two-pass loudness normalisation of the final mix to this target (e.g. -14, -16, -23); null = off even when the sequence normalises'),
-				truePeakDb: z.number().min(-20).max(0).optional().describe('True-peak ceiling of the normalisation (default -1 dBTP)'),
+					.describe(
+						'Two-pass loudness normalisation of the final mix to this target (e.g. -14, -16, -23); null = off even when the sequence normalises',
+					),
+				truePeakDb: z
+					.number()
+					.min(-20)
+					.max(0)
+					.optional()
+					.describe('True-peak ceiling of the normalisation (default -1 dBTP)'),
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 		},
@@ -433,7 +442,10 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(audioChannels !== undefined ? { audioChannels } : {}),
 				...(audioSampleRate !== undefined ? { audioSampleRate } : {}),
 				...(normalizeLufs !== undefined
-					? { normalize: normalizeLufs === null ? null : { targetLufs: normalizeLufs, truePeakDb: truePeakDb ?? -1 } }
+					? {
+							normalize:
+								normalizeLufs === null ? null : { targetLufs: normalizeLufs, truePeakDb: truePeakDb ?? -1 },
+						}
 					: {}),
 			});
 			const envelope = makeEnvelope(doc, {
