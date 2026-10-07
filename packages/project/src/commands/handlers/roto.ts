@@ -16,7 +16,6 @@ import {
 	rotoRateOf,
 } from '../../roto/index.ts';
 import type { ParamValue } from '../../schema/common.ts';
-import { stepOfRate } from '../../tracking/samples.ts';
 import type {
 	ClipRoto,
 	ClipTracker,
@@ -26,12 +25,13 @@ import type {
 	VideoClip,
 } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
+import { stepOfRate } from '../../tracking/samples.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { effectHandlers } from './effect.ts';
-import { trackerHandlers } from './tracker.ts';
 import { ruleFromParam, validateValue } from './param.ts';
+import { trackerHandlers } from './tracker.ts';
 import type { HandlerMap } from './util.ts';
 
 type DRoto = Draft<ClipRoto>;
@@ -369,9 +369,13 @@ export const rotoHandlers: HandlerMap = {
 		if (clip.kind !== 'video') h.fail('E_INVALID_PARAM', 'Face trackers go on video clips');
 		const face = roto.result?.faces?.find((f) => f.id === cmd.faceId);
 		if (!face)
-			h.fail('E_NOT_FOUND', `Face ${cmd.faceId} is not in the computed face track of "${roto.name}" (track faces first)`);
+			h.fail(
+				'E_NOT_FOUND',
+				`Face ${cmd.faceId} is not in the computed face track of "${roto.name}" (track faces first)`,
+			);
 		const n = face!.present.length;
-		if (n === 0 || face!.poses.length !== n * 4) h.fail('E_INVALID_PARAM', 'The face track is empty or malformed');
+		if (n === 0 || face!.poses.length !== n * 4)
+			h.fail('E_INVALID_PARAM', 'The face track is empty or malformed');
 		const rate = roto.rate as Rational;
 		const data: number[] = [];
 		for (let i = 0; i < n; i++) {
@@ -392,7 +396,9 @@ export const rotoHandlers: HandlerMap = {
 			kind: 'planar',
 			reference: {
 				time: start + ref * step,
-				corners: [0, 1, 2, 3].map((k) => [data[ref * 8 + k * 2]!, data[ref * 8 + k * 2 + 1]!] as [number, number]),
+				corners: [0, 1, 2, 3].map(
+					(k) => [data[ref * 8 + k * 2]!, data[ref * 8 + k * 2 + 1]!] as [number, number],
+				),
 			},
 			samples: { start, step, stride: 8, data, confidence },
 			method: 'face-landmarks@1',

@@ -27,6 +27,7 @@ const FAMILY_FILES = [
 	'sapphire-textures-clouds',
 	'sapphire-time-flicker',
 	'object-matte',
+	'keying-matte',
 ];
 
 describe('fx catalogue', () => {
