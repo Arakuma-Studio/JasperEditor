@@ -6,9 +6,9 @@ import type { EngineClient } from '@jasper/engine-client';
 import { loadExpressionEngine } from '@jasper/expressions';
 import {
 	approvalReasons,
-	makeEnvelope,
 	bindExpressions,
 	documentHasActiveExpressions,
+	makeEnvelope,
 	type ProjectDocument,
 	resolveCaptureArgs,
 	resolveFrameInput,
