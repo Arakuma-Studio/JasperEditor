@@ -92,7 +92,8 @@ export class Scene3DHub {
 		if (hit) return hit;
 		if (this.taps.size > 256) this.taps.clear();
 		const t: LayerTap = {
-			side: key,
+			// Per frame: the layer's tap step (keyed by `side`) re-runs and delivers every frame, even when its picture is static.
+			side: id,
 			deliver: (picture, width, height, meta) => {
 				const prev = this.pictures.get(key);
 				const canvas = prev?.canvas ?? document.createElement('canvas');

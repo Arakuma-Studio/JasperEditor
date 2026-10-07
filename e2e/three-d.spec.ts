@@ -203,6 +203,8 @@ test('Sequence ▸ 3D Renderer ▸ Advanced 3D draws extruded text', async () =>
 });
 
 test('the export renders the 3D scene on the Remotion path (named in the plan)', async ({ request }) => {
+	// 120 frames of 1080p through the 3D renderer in a GPU-less headless Chrome (SwiftShader).
+	test.setTimeout(1_200_000);
 	const outDir = mkdtempSync(join(tmpdir(), 'jasper-e2e-3d-'));
 	const { file } = await exportViaUi(page, request, {
 		engine: 'auto',
@@ -210,7 +212,7 @@ test('the export renders the 3D scene on the Remotion path (named in the plan)',
 		expectPath: /remotion/i,
 		expectBlocker: /3D/,
 		outDir,
-		jobTimeoutMs: 600_000,
+		jobTimeoutMs: 1_100_000,
 	});
 	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
 		'-v',
@@ -228,11 +230,11 @@ test('the export renders the 3D scene on the Remotion path (named in the plan)',
 		...['-v', 'error', '-ss', '0.5', '-i', file, '-frames:v', '1'],
 		...['-vf', 'scale=64:36:flags=area,format=rgb24', '-f', 'rawvideo', '-'],
 	]);
-	// Something orange (the card) and something not black (floor / text) are drawn.
+	// The card (orange, lit by the light) and the extruded text (grey) are drawn, as in the Program monitor.
 	let orange = 0;
 	let lit = 0;
 	for (let i = 0; i < raw.length; i += 3) {
-		if (raw[i]! > 120 && raw[i]! > raw[i + 2]! * 1.6) orange++;
+		if (raw[i]! > 60 && raw[i]! > raw[i + 2]! * 1.6 && raw[i]! > raw[i + 1]! * 1.3) orange++;
 		if (raw[i]! + raw[i + 1]! + raw[i + 2]! > 60) lit++;
 	}
 	expect(orange).toBeGreaterThan(5);
@@ -240,6 +242,7 @@ test('the export renders the 3D scene on the Remotion path (named in the plan)',
 });
 
 test('3D Camera Tracker: Track Camera solves the dolly plate, three points → Create Text and Camera', async () => {
+	test.setTimeout(900_000);
 	await createProject(page, 'E2E camera tracker');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	await importFiles(page, ['camtrack-dolly.mp4']);
