@@ -37,7 +37,9 @@ let truth: Truth;
 const logs: string[] = [];
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
-	return (await client.callTool({ name, arguments: args }, undefined, { timeout: 900_000 })) as CallToolResult;
+	return (await client.callTool({ name, arguments: args }, undefined, {
+		timeout: 900_000,
+	})) as CallToolResult;
 }
 async function ok<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}): Promise<T> {
 	const r = await call(name, args);
@@ -48,13 +50,34 @@ async function ok<T = Record<string, unknown>>(name: string, args: Record<string
 function decodeRgb(input: Buffer | string, args: string[] = []): { w: number; h: number; rgb: Buffer } {
 	const probe = spawnSync(
 		'ffprobe',
-		['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', ...(typeof input === 'string' ? [input] : ['-i', 'pipe:0'])],
+		[
+			'-v',
+			'error',
+			'-show_entries',
+			'stream=width,height',
+			'-of',
+			'csv=p=0',
+			...(typeof input === 'string' ? [input] : ['-i', 'pipe:0']),
+		],
 		typeof input === 'string' ? { encoding: 'utf8' } : { input, encoding: 'utf8' },
 	);
 	const [w, h] = probe.stdout.trim().split(',').map(Number) as [number, number];
 	const r = spawnSync(
 		'ffmpeg',
-		['-v', 'error', ...args, '-i', typeof input === 'string' ? input : 'pipe:0', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+		[
+			'-v',
+			'error',
+			...args,
+			'-i',
+			typeof input === 'string' ? input : 'pipe:0',
+			'-frames:v',
+			'1',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgb24',
+			'pipe:1',
+		],
 		{ ...(typeof input === 'string' ? {} : { input }), maxBuffer: 256 * 1024 * 1024 },
 	);
 	if (r.status !== 0) throw new Error(`ffmpeg: ${r.stderr}`);
@@ -101,7 +124,8 @@ beforeAll(async () => {
 	engine.stderr?.on('data', (d: Buffer) => logs.push(d.toString()));
 	await waitFor(
 		async () =>
-			existsSync(join(appdir, 'engine', 'runtime.json')) && (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
+			existsSync(join(appdir, 'engine', 'runtime.json')) &&
+			(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
 		90_000,
 		`the engine on ${PORT}: ${logs.join('')}`,
 	);
@@ -135,7 +159,14 @@ describe('roto tools', () => {
 			projectId,
 			label: 'Setup',
 			commands: [
-				{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1' }, audio: false, ref: '$plate' },
+				{
+					type: 'clip.place',
+					source: { mediaId },
+					at: 0,
+					tracks: { video: 'V1' },
+					audio: false,
+					ref: '$plate',
+				},
 				{ type: 'clip.fitToFrame', clipIds: ['$plate'], mode: 'fit' },
 			],
 		});
@@ -153,10 +184,13 @@ describe('roto tools', () => {
 		const refused = await call('start_export', { projectId, preset: 'draft-720p-h264' });
 		expect(refused.isError).toBe(true);
 		expect(textOf(refused)).toContain('ROTO_NOT_COMPUTED');
-		const prop = await ok<{ computedFrames: { start: number; end: number }; framesComputed: number }>('propagate_roto', {
-			projectId,
-			rotoId: created.rotoId,
-		});
+		const prop = await ok<{ computedFrames: { start: number; end: number }; framesComputed: number }>(
+			'propagate_roto',
+			{
+				projectId,
+				rotoId: created.rotoId,
+			},
+		);
 		expect(prop.computedFrames).toEqual({ start: 0, end: 44 });
 		const info = await ok<{ stale: boolean; computed: { start: number; end: number } }>('get_roto', {
 			projectId,
@@ -175,20 +209,77 @@ describe('roto tools', () => {
 		// Overlay view: the background stays visible, tinted.
 		await ok('apply_object_matte', { projectId, rotoId: created.rotoId, params: { view: 'overlay' } });
 		const ov = await call('render_frame', { projectId, at: 25, width: 640 });
-		const ovImg = decodeRgb(Buffer.from((ov.content.find((c) => c.type === 'image') as { data: string }).data, 'base64'));
+		const ovImg = decodeRgb(
+			Buffer.from((ov.content.find((c) => c.type === 'image') as { data: string }).data, 'base64'),
+		);
 		const k = (20 * ovImg.w + 20) * 3;
 		expect(ovImg.rgb[k]!).toBeGreaterThan(100); // red tint over the blue background
 		await ok('apply_object_matte', { projectId, rotoId: created.rotoId, params: { view: 'final' } });
 
+		// The Object Matte composes with effect masks: limited to the left half, the right half keeps the plate.
+		const v = (x: number, y: number) => ({ p: [x, y], in: [0, 0], out: [0, 0] });
+		const masked = await ok<{ refs: Record<string, string> }>('apply_commands', {
+			projectId,
+			label: 'Effect mask',
+			commands: [
+				{
+					type: 'mask.add',
+					effectId: created.effectInstanceId,
+					shape: 'bezier',
+					path: { closed: true, vertices: [v(0, 0), v(0.5, 0), v(0.5, 1), v(0, 1)] },
+					feather: 0,
+					ref: '$m',
+				},
+			],
+		});
+		const mk = await call('render_frame', { projectId, at: 25, width: 640 });
+		const mkImg = decodeRgb(
+			Buffer.from((mk.content.find((c) => c.type === 'image') as { data: string }).data, 'base64'),
+		);
+		writeFileSync(
+			join(ARTIFACTS, 'roto-effect-mask-25.png'),
+			Buffer.from((mk.content.find((c) => c.type === 'image') as { data: string }).data, 'base64'),
+		);
+		const px = (x: number, y: number) => {
+			const i = (y * mkImg.w + x) * 3;
+			return mkImg.rgb[i]! + mkImg.rgb[i + 1]! + mkImg.rgb[i + 2]!;
+		};
+		expect(px(40, 40)).toBeLessThan(30); // inside the mask: cut out
+		expect(px(600, 40)).toBeGreaterThan(60); // outside the mask: the plate's background
+		expect(px(305, 200)).toBeGreaterThan(150); // the object stays
+		await ok('apply_commands', {
+			projectId,
+			label: 'Remove effect mask',
+			commands: [{ type: 'mask.remove', maskIds: [masked.refs.$m] }],
+		});
+
 		// Native / hybrid export (the layer is baked through Remotion with the matte).
 		const output = join(appdir, 'exports', 'roto.mp4');
-		const job = await ok<{ jobId: string }>('start_export', { projectId, preset: 'draft-720p-h264', outputPath: output });
+		const job = await ok<{ jobId: string }>('start_export', {
+			projectId,
+			preset: 'draft-720p-h264',
+			outputPath: output,
+		});
 		const done = await ok<{ state: string }>('wait_for_job', { jobId: job.jobId, timeoutSeconds: 600 });
 		expect(done.state).toBe('succeeded');
 		for (const f of [3, 30]) {
 			const small = spawnSync(
 				'ffmpeg',
-				['-v', 'error', '-i', output, '-vf', `select=eq(n\\,${f}),scale=640:360`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+				[
+					'-v',
+					'error',
+					'-i',
+					output,
+					'-vf',
+					`select=eq(n\\,${f}),scale=640:360`,
+					'-frames:v',
+					'1',
+					'-f',
+					'rawvideo',
+					'-pix_fmt',
+					'rgb24',
+					'pipe:1',
+				],
 				{ maxBuffer: 64 * 1024 * 1024 },
 			);
 			expect(small.status, String(small.stderr)).toBe(0);
@@ -197,11 +288,17 @@ describe('roto tools', () => {
 		}
 
 		// Convert to masks: one Bézier Opacity mask around the object.
-		const masks = await ok<{ masks: number }>('convert_roto_to_masks', { projectId, rotoId: created.rotoId, at: 20 });
+		const masks = await ok<{ masks: number }>('convert_roto_to_masks', {
+			projectId,
+			rotoId: created.rotoId,
+			at: 20,
+		});
 		expect(masks.masks).toBe(1);
 		const resource = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
 		const doc = JSON.parse((resource.contents[0] as { text: string }).text) as ProjectDocument;
-		const clip = Object.values(doc.sequences)[0]!.clips[clipId] as { masks?: { path: { value: { vertices: unknown[] } } }[] };
+		const clip = Object.values(doc.sequences)[0]!.clips[clipId] as {
+			masks?: { path: { value: { vertices: unknown[] } } }[];
+		};
 		expect(clip.masks?.length).toBe(1);
 		expect(clip.masks![0]!.path.value.vertices.length).toBeGreaterThan(4);
 
