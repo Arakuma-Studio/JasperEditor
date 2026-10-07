@@ -369,6 +369,7 @@ export function TransportBar(props: {
 							setDragId(null);
 						}}
 						data-button={b.id}
+						data-testid={`${monitor}-btn-slot-${b.id}`}
 					>
 						<TransportButton
 							label={b.id === 'play' ? (props.playing ? 'Stop' : 'Play') : b.label}

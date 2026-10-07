@@ -151,7 +151,11 @@ export function KeyboardShortcutsDialog(props: HostedDialogProps<{ platform: Pla
 			data-testid="keyboard-shortcuts-dialog"
 		>
 			{/* biome-ignore lint/a11y/noStaticElementInteractions: key capture surface while rebinding */}
-			<div className="flex max-h-[70vh] min-h-[420px] flex-col gap-2 text-pr-ui" onKeyDown={onCaptureKey}>
+			<div
+				className="flex max-h-[70vh] min-h-[420px] flex-col gap-2 text-pr-ui"
+				onKeyDown={onCaptureKey}
+				data-testid="kb-root"
+			>
 				<div className="flex items-center gap-2">
 					<span className="text-pr-muted">Keyboard Layout Preset</span>
 					<Select

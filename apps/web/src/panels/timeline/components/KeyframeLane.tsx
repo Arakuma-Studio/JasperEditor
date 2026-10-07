@@ -267,6 +267,7 @@ export function KeyframeLane(p: Props) {
 				cursor: pen ? 'crosshair' : undefined,
 			}}
 			data-keyframe-lane={clip.id}
+			data-testid={`lane-${clip.id}`}
 			data-lane-property={spec.key}
 			onPointerDown={onDown}
 			onPointerMove={onMove}
@@ -301,6 +302,7 @@ export function KeyframeLane(p: Props) {
 						style: { pointerEvents: active && !p.locked ? 'all' : 'none', cursor: 'move' } as const,
 						onPointerDown: onDown as never,
 						'data-keyframe-id': k.id,
+						'data-kf-id': k.id,
 					};
 					return k.roving ? (
 						<circle key={k.id} cx={k.x} cy={cy} r={2.5} fill={fill} {...common} />
