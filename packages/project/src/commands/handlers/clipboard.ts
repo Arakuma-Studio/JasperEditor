@@ -36,6 +36,7 @@ import {
 } from '../../schema/sequence.ts';
 import { scaleAnimationFrames } from '../../text-animations.ts';
 import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
+import { isRemapped, type TimedClip } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	assertKindFits,
@@ -59,6 +60,7 @@ import { refreshAutoBezier } from './keyframe.ts';
 import { PRUNE_EMPTY_KEYFRAMES } from './mg-template.ts';
 import { resolveTarget, validateValue } from './param.ts';
 import { assertBin, insertItem } from './project.ts';
+import { pasteTimeRemap, removeTimeRemap } from './time.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 export const CLIPBOARD_OWNER = 'wp-clipboard';
@@ -486,6 +488,8 @@ type AttributeSource = {
 	textAnimation?: { in?: TextAnimator | null; out?: TextAnimator | null };
 	textStyle?: Record<string, unknown>;
 	shape?: Record<string, unknown>;
+	/** Workstream `time`: the copied clip itself when it is time-remapped (Paste Attributes ▸ Time Remapping). */
+	remapped?: TimedClip;
 };
 
 /** Attribute sources of a payload: the copied effects, or the copied clips with the primary one first. */
@@ -520,6 +524,7 @@ function attributeSources(p: ClipboardPayload): AttributeSource[] {
 			...(r.textAnimation ? { textAnimation: r.textAnimation as AttributeSource['textAnimation'] } : {}),
 			...(c.kind === 'text' ? { textStyle: (r.content as { style: Record<string, unknown> }).style } : {}),
 			...(c.kind === 'shape' ? { shape: r.shape as Record<string, unknown> } : {}),
+			...(isRemapped(c as TimedClip) ? { remapped: c as TimedClip } : {}),
 		};
 	});
 }
@@ -571,6 +576,9 @@ function applyAttributes(
 			c.transform = retimed(motion.intrinsic.transform, motion) as never;
 			done.push('motion');
 		}
+		const remapSrc = first((s) => s.remapped);
+		if (attrs.timeRemapping && remapSrc && pasteTimeRemap(doc, seq, t, remapSrc.remapped!, remapSrc.rate, h))
+			done.push('timeRemapping');
 		const opacity = first((s) => s.intrinsic.opacity);
 		if (attrs.opacity && opacity && 'opacity' in c) {
 			c.opacity = retimed(opacity.intrinsic.opacity, opacity) as never;
@@ -690,6 +698,10 @@ function removeAttributes(doc: DDoc, cmd: CommandOf<'clip.removeAttributes'>, h:
 			const box = intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: t as Clip });
 			c.transform = defaultTransform(box, frame, 'none') as never;
 			done.push('motion');
+		}
+		if (a.timeRemapping && (c as { timeRemap?: unknown }).timeRemap) {
+			removeTimeRemap(doc, seq, t, h);
+			done.push('timeRemapping');
 		}
 		if (a.opacity && 'opacity' in c) {
 			c.opacity = anim(100) as never;

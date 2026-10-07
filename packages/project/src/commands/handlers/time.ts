@@ -16,7 +16,7 @@ import type {
 } from '../../schema/sequence.ts';
 import { contentSpanFlicks, FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import { remapFitDuration, remapFramesInMedia } from '../../time-remap/bounds.ts';
-import { clipMediaTimeFn, REMAPPABLE_KINDS } from '../../time-remap/model.ts';
+import { clipMediaTimeFn, REMAPPABLE_KINDS, type TimedClip } from '../../time-remap/model.ts';
 import {
 	addKeyframe,
 	clampRamps,
@@ -30,6 +30,7 @@ import {
 	setRamp,
 	setSegmentSpeed,
 } from '../../time-remap/ops.ts';
+import { remapToTimeMap, timeMapToRemap } from '../../time-remap/timemap.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	assertUnlocked,
@@ -108,14 +109,31 @@ function commitEdit(
 	h: HandlerContext,
 	opts: { ripple?: boolean; edited?: Set<string>; rippled?: Set<string> } = {},
 ): { duration: number } {
-	const rate = rateOf(seq);
 	const step = stepOf(seq, clip);
 	const c0 = clip.sourceIn;
 	const c1 = c0 + clip.duration * step;
-	clampRamps(edit.remap);
-	clip.timeRemap = edit.remap as DVideo['timeRemap'];
+	const want = Math.max(1, Math.round((edit.shift(c1) - c0) / step));
+	return setRemap(doc, seq, clip, edit.remap, want, h, opts);
+}
+
+/**
+ * Stores a remap on a clip with a wanted duration, fitted to the media (frames past it go into the tail) and —
+ * unless `ripple` — to the next clip on the track (Premiere: "it will not overwrite an adjacent clip").
+ */
+function setRemap(
+	doc: DDoc,
+	seq: DSeq,
+	clip: DVideo,
+	remap: TimeRemap,
+	wanted: number,
+	h: HandlerContext,
+	opts: { ripple?: boolean; edited?: Set<string>; rippled?: Set<string> } = {},
+): { duration: number } {
+	const rate = rateOf(seq);
+	clampRamps(remap);
+	clip.timeRemap = remap as DVideo['timeRemap'];
 	const dur = mediaDurationOf(doc, clip);
-	let want = Math.max(1, Math.round((edit.shift(c1) - c0) / step));
+	let want = wanted;
 	const plain = clip as unknown as VideoClip;
 	if (!remapFramesInMedia(plain, clip.start, clip.start, rate, dur))
 		h.fail('E_OUT_OF_MEDIA', `Clip ${clip.id} would show frames outside its media`, { blocking: [clip.id] });
@@ -150,6 +168,40 @@ function commitEdit(
 			opts.rippled ?? new Set(),
 		);
 	return { duration: want };
+}
+
+/**
+ * Paste Attributes ▸ Time Remapping: the speed profile of `src` (a copied clip, at `srcRate`) applied to `target`
+ * from its first frame — the same speeds at the same distances from the clip start, starting on the target's own
+ * first picture. Returns false when the target cannot take it.
+ */
+export function pasteTimeRemap(
+	doc: DDoc,
+	seq: DSeq,
+	target: DClip,
+	src: TimedClip,
+	srcRate: Rational,
+	h: HandlerContext,
+): boolean {
+	if (!REMAPPABLE_KINDS.has(target.kind) || target.speed.reverse) return false;
+	if (((target as { trackers?: unknown[] }).trackers?.length ?? 0) > 0) return false;
+	const pts = remapToTimeMap(src, srcRate);
+	if (!pts || pts.length < 2) return false;
+	const rate = rateOf(seq);
+	const v = target as DVideo;
+	const plain = { ...(target as unknown as VideoClip), timeRemap: undefined } as TimedClip;
+	const m0 = clipMediaTimeFn(plain, rate)(target.start);
+	const off = m0 - pts[0]!.value;
+	const r = timeMapToRemap(
+		pts.map((p) => ({ ...p, value: p.value + off })),
+		target.sourceIn,
+		newKeyId(h),
+		target.speed.rate,
+	);
+	const want = Math.max(1, Math.round(pts[pts.length - 1]!.time / flicksPerFrame(rate)));
+	setRemap(doc, seq, v, r.remap, want, h);
+	if (src.timeInterpolation && target.kind === 'video') v.timeInterpolation = src.timeInterpolation as never;
+	return true;
 }
 
 /** Content time of a sequence frame inside a clip (frames outside are refused). */
@@ -196,27 +248,30 @@ function enableHandler(doc: DDoc, cmd: CommandOf<'timeRemap.enable'>, h: Handler
 		} else {
 			if (!REMAPPABLE_KINDS.has(c.kind)) continue;
 			assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
-			const v = c as DVideo;
-			if (!v.timeRemap) {
-				out.push({ clipId: c.id, enabled: false, duration: c.duration });
-				continue;
-			}
-			delete v.timeRemap;
-			// Back to linear playback: the clip may now run past its media (it was slowed down) — trim it there.
-			const dur = mediaDurationOf(doc, c);
-			if (dur !== null) {
-				const step = stepOf(seq, c);
-				const max = Math.max(1, Math.floor((dur - c.sourceIn) / step + 1e-3));
-				if (c.duration > max) {
-					h.warn('W_DURATION_CLAMPED', `Clip ${c.id} trimmed to the end of its media`);
-					c.duration = max;
-				}
-			}
+			removeTimeRemap(doc, seq, c, h);
 			out.push({ clipId: c.id, enabled: false, duration: c.duration });
 		}
 	}
 	cleanupSequence(seq, h);
 	return { clips: out };
+}
+
+/**
+ * Time Remapping off: every speed keyframe deleted, the clip plays its content linearly again ("the clip's duration
+ * will return to its original length", Adobe) — trimmed to its media when it now runs past it.
+ */
+export function removeTimeRemap(doc: DDoc, seq: DSeq, c: DClip, h: HandlerContext): void {
+	const v = c as DVideo;
+	if (!v.timeRemap) return;
+	delete v.timeRemap;
+	const dur = mediaDurationOf(doc, c);
+	if (dur === null || c.kind !== 'video') return;
+	const step = stepOf(seq, c);
+	const max = Math.max(1, Math.floor((dur - c.sourceIn) / step + 1e-3));
+	if (c.duration > max) {
+		h.warn('W_DURATION_CLAMPED', `Clip ${c.id} trimmed to the end of its media`);
+		c.duration = max;
+	}
 }
 
 // ---------------------------------------------------------------- keyframes and segments

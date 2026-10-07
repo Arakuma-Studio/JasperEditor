@@ -319,3 +319,31 @@ describe('interplay with trackers and media versions', () => {
 		);
 	});
 });
+
+describe('Paste / Remove Attributes ▸ Time Remapping', () => {
+	it('pastes the speed profile onto another clip from its own first frame, and removes it', async () => {
+		const { buildClipsPayload } = await import('../src/index.ts');
+		const h = new Harness();
+		const a = place(h, 0, { seconds: 20, inSec: 0, outSec: 2 });
+		const b = place(h, 200, { seconds: 20, inSec: 5, outSec: 7 });
+		h.ok([{ type: 'timeRemap.addKeyframe', clipId: a.v, at: 20 }]);
+		h.ok([{ type: 'timeRemap.setSpeed', clipId: a.v, at: 30, speedPercent: 50, ripple: true }]);
+		const payload = JSON.parse(JSON.stringify(buildClipsPayload(h.doc, h.seqId, [a.v])));
+		const r = h.ok([
+			{ type: 'clip.pasteAttributes', payload, clipIds: [b.v], attributes: { timeRemapping: true } },
+		]);
+		expect((r.results[0] as { applied: Record<string, string[]> }).applied[b.v]).toEqual(['timeRemapping']);
+		const A = vid(h, a.v);
+		const B = vid(h, b.v);
+		expect(B.duration).toBe(A.duration);
+		for (const f of [0, 10, 25, 40, 70]) {
+			const ma = clipMediaTimeAt(A, A.start + f, R) - clipMediaTimeAt(A, A.start, R);
+			const mb = clipMediaTimeAt(B, B.start + f, R) - clipMediaTimeAt(B, B.start, R);
+			expect(mb).toBeCloseTo(ma, -1);
+		}
+		expect(clipMediaTimeAt(B, B.start, R)).toBeCloseTo(5 * FLICKS_PER_SECOND, -1);
+		h.ok([{ type: 'clip.removeAttributes', clipIds: [b.v], attributes: { timeRemapping: true } }]);
+		expect(vid(h, b.v).timeRemap).toBeUndefined();
+		clean(h);
+	});
+});

@@ -57,7 +57,9 @@ export function timeMapToRemap(
 	newId: () => string,
 	axisRate = 1,
 ): { remap: TimeRemap; approximated: boolean } {
-	const pts = [...points].sort((a, b) => a.time - b.time).filter((p, i, a) => i === 0 || p.time > a[i - 1]!.time);
+	const pts = [...points]
+		.sort((a, b) => a.time - b.time)
+		.filter((p, i, a) => i === 0 || p.time > a[i - 1]!.time);
 	const keys: RemapKeyframe[] = [];
 	let approximated = false;
 	const slope = (a: TimeMapPoint, b: TimeMapPoint) => (b.value - a.value) / Math.max(1e-9, b.time - a.time);
