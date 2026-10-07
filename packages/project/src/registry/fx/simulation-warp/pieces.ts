@@ -269,6 +269,8 @@ export function piecePasses(opts: {
 	include?: ShaderPass['include'];
 	extrude?: boolean;
 	post?: boolean;
+	/** Wireframe views: `u_wire` (int, uniform of the effect) > 0 draws the piece outlines instead of the faces. */
+	wire?: boolean;
 }): ShaderPass[] {
 	const include = [GLSL_PIECES, ...(opts.include ?? [])];
 	const vertices = opts.extrude ? 12 + 36 : 12;
@@ -361,6 +363,27 @@ flat in ivec2 v_idm;
 flat in vec2 v_c0;
 void main() {
   int face = int(v_spec.w + 0.5);
+${
+	opts.wire
+		? `  if (u_wire > 0) {
+    // Outline: distance (rest px) to the polygon's edges.
+    if (face == 2) { fragColor = vec4(0.0); return; }
+    int nv = pc_n(v_idm.x);
+    float dmin = 1e9;
+    for (int k = 0; k < 6; k++) {
+      if (k >= nv) break;
+      vec2 a = pc_vertex(v_idm.x, k);
+      vec2 b = pc_vertex(v_idm.x, (k + 1) % nv);
+      vec2 ab = b - a;
+      float t = clamp(dot(v_tex - a, ab) / max(dot(ab, ab), 1e-9), 0.0, 1.0);
+      dmin = min(dmin, length(v_tex - a - ab * t));
+    }
+    float cov = clamp(1.0 - dmin / max(u_pxScale, 0.5), 0.0, 1.0);
+    fragColor = vec4(vec3(0.75, 0.85, 1.0) * cov, cov);
+    return;
+  }`
+		: ''
+}
   vec4 c;
   if (v_flat.a > 0.0) c = vec4(v_flat.rgb, 1.0);
   else {

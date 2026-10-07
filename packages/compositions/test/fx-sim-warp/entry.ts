@@ -122,6 +122,31 @@ const api = {
 		};
 	},
 
+	shatter() {
+		const base = { view: 'rendered' };
+		const t0 = fx('jasper.shatter', base, { frame: 0 });
+		const t1 = fx('jasper.shatter', base, { frame: 15 });
+		const patterns = ['bricks', 'glass', 'hexagons', 'squares', 'triangles'].map((pattern) => {
+			const r = fx('jasper.shatter', { ...base, pattern }, { frame: 0 });
+			return maxDiff(r.out, r.input);
+		});
+		const wire = fx('jasper.shatter', { view: 'wireframeFrontView', repetitions: 3 }, { frame: 0 });
+		const layerOnly = fx('jasper.shatter', { ...base, render: 'layer' }, { frame: 15 });
+		const piecesOnly = fx('jasper.shatter', { ...base, render: 'pieces' }, { frame: 15 });
+		const forces = fx('jasper.shatter', { view: 'wireframeFrontViewForces' }, { frame: 0 });
+		return {
+			rest: maxDiff(t0.out, t0.input),
+			moved: sumDiff(t1.out, t1.input),
+			patterns,
+			wireMax: mean(wire.out)[3],
+			wireHasGaps: px(wire.out, 48, 32)[3] < 255 ? 1 : 0,
+			layerCentre: px(layerOnly.out, 48, 32)[3],
+			layerCorner: px(layerOnly.out, 2, 2)[3],
+			piecesCorner: px(piecesOnly.out, 2, 2)[3],
+			forcesRed: mean(forces.out)[0] - mean(wire.out)[0],
+		};
+	},
+
 	weather() {
 		const rain = fx('jasper.rainfall', { drops: 400, opacity: 100, appearance: 'softSolid', color: [1, 1, 1, 1] }, { frame: 15 }, solid('#333'));
 		const noRain = fx('jasper.rainfall', { drops: 0 }, { frame: 15 }, solid('#333'));

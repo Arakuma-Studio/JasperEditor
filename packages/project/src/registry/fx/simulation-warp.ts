@@ -6,12 +6,14 @@
 // Design and verified behaviour: docs/wp-notes/sim-warp.md. Authoring guide: docs/wp-notes/fx-shader-framework.md.
 import type { EffectSpec } from '../effects.ts';
 import { CARD_EFFECTS, CARD_TRANSITION_EFFECTS } from './simulation-warp/cards.ts';
+import { SHATTER_EFFECTS } from './simulation-warp/shatter.ts';
 import { PARTICLE_EFFECTS } from './simulation-warp/particles.ts';
 import { WEATHER_EFFECTS } from './simulation-warp/weather.ts';
 
 export const SIMULATION_WARP_EFFECTS: readonly EffectSpec[] = [
 	...PARTICLE_EFFECTS,
 	...CARD_EFFECTS,
+	...SHATTER_EFFECTS,
 	...WEATHER_EFFECTS,
 	...CARD_TRANSITION_EFFECTS,
 ];

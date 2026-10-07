@@ -19,6 +19,8 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'card-dance', id: 'jasper.card-dance', over: { rows: 12, columns: 16, yRotationSource: 'intensity1', yRotationMultiplier: 120, zPositionSource: 'red1', zPositionMultiplier: -2, cameraYRotation: 20, specularReflection: 0.5 } },
 	{ name: 'card-wipe', id: 'jasper.card-wipe', over: { transitionCompletion: 50, cameraXRotation: 15, cameraYRotation: -20 } },
 	{ name: 'pixel-polly', id: 'jasper.pixel-polly', over: { gridSpacing: 16 }, frame: 20 },
+	{ name: 'shatter', id: 'jasper.shatter', over: { view: 'rendered', pattern: 'glass', repetitions: 14, specularReflection: 0.6, cameraYRotation: 25 }, frame: 12 },
+	{ name: 'shatter-wire', id: 'jasper.shatter', over: { view: 'wireframeForces', pattern: 'hexagons' }, frame: 12 },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -95,10 +97,24 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.ppTex).toBeGreaterThan(1);
 	});
 
+	it('shatter: intact at rest for every pattern, breaks, render modes, wireframes', async () => {
+		const r = await page.call<Record<string, any>>('shatter');
+		expect(r.rest).toBeLessThanOrEqual(3);
+		for (const d of r.patterns) expect(d).toBeLessThanOrEqual(8); // every pattern tiles the layer seamlessly
+		expect(r.moved).toBeGreaterThan(50);
+		expect(r.wireMax).toBeGreaterThan(1);
+		expect(r.wireHasGaps).toBe(1);
+		expect(r.layerCentre).toBe(0); // the broken centre is removed (Render: Layer)
+		expect(r.layerCorner).toBe(255);
+		expect(r.piecesCorner).toBe(0); // Render: Pieces drops the unbroken layer
+		expect(r.forcesRed).toBeGreaterThan(0.1);
+	});
+
 	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean }[] = [
 		{ id: 'jasper.card-dance', over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 }, seeded: false, animated: false },
 		{ id: 'jasper.card-wipe', over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 } },
 		{ id: 'jasper.pixel-polly' },
+		{ id: 'jasper.shatter', over: { view: 'rendered', randomness: 0.5 } },
 		{ id: 'jasper.particle-world' },
 		{ id: 'jasper.particle-systems' },
 		{ id: 'jasper.mercury' },
