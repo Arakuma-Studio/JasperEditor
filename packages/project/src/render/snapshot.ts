@@ -1,5 +1,6 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
+import { type CaptionPage, captionPages, type ResolvedCaptionStyle, resolveCaptionStyle } from '../captions/model.ts';
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
@@ -96,7 +97,20 @@ export type RenderVisualSource =
 	| {
 			composition: RenderCompositionSource;
 	  }
+	/**
+	 * wp captions: a caption clip resolved for drawing — its style (track style ← clip overrides, defaults applied)
+	 * and its pages in sequence frames with per-word frames (active-word highlight). The same pages feed sidecar and
+	 * embedded caption export (`captionCuesForTrack`).
+	 */
+	| { captions: RenderCaptionSource }
 	| { unsupported: string };
+
+export type RenderCaptionSource = {
+	style: ResolvedCaptionStyle;
+	pages: CaptionPage[];
+	/** Caption track standard (CEA-608 tracks are drawn in a monospace caption face when the style has no font). */
+	standard?: string;
+};
 
 /** Source of a composition clip in the snapshot (S08:MGC-008; wp-m2-mg fields are additive). */
 export type RenderCompositionSource = {
@@ -205,7 +219,8 @@ export type RenderSnapshot = {
 	range: { start: number; end: number };
 	durationFrames: number;
 	/**
-	 * V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
+	 * V1 (bottom) → top, then the visible caption tracks (wp captions: C1 → Cn, `caption: true`) above every video
+	 * track; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
 	 * colours drawn under the track's clips (the black of a dip to black). `transitions` (wave-2 transition framework)
 	 * are the GPU transition stages drawn over the track's clips (each replaces its A/B clips for its span).
 	 */
@@ -214,6 +229,8 @@ export type RenderSnapshot = {
 		clips: RenderVisualClip[];
 		mattes?: RenderMatte[];
 		transitions?: RenderTransition[];
+		/** wp captions: a caption track (burned in). */
+		caption?: boolean;
 	}[];
 	/** After mute/solo resolution. */
 	audioClips: RenderAudioClip[];
@@ -235,6 +252,11 @@ export type SnapshotOptions = {
 		asset: MediaAsset;
 		source: RenderCompositionSource;
 	}): RenderCompositionSource['prerender'] | null;
+	/**
+	 * wp captions: which caption tracks are drawn (burned in): `'visible'` (default) = tracks whose eye is on,
+	 * `'none'`, or a list of track ids/labels.
+	 */
+	captions?: 'visible' | 'none' | readonly string[];
 };
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
@@ -511,6 +533,63 @@ export function buildRenderSnapshot(
 	}
 	for (const s of transitions.skipped)
 		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });
+
+	// ---- wp captions: caption tracks draw above every video track (S01:RND-005).
+	const captionMode = opts.captions ?? 'visible';
+	const fallbackFont = Object.values(doc.fonts)[0]?.id ?? '';
+	seq.captionTracks.forEach((t, ti) => {
+		const shown =
+			captionMode === 'visible'
+				? t.visible !== false
+				: captionMode === 'none'
+					? false
+					: captionMode.includes(t.id) || captionMode.includes(`C${ti + 1}`);
+		if (!shown) return;
+		const clips: RenderVisualClip[] = [];
+		for (const c of clipsByTrack.get(t.id) ?? []) {
+			if (c.kind !== 'captions' || !inRange(c)) continue;
+			const style = resolveCaptionStyle(t.styleDefaults, c.style, fallbackFont, frame.height);
+			const pages = captionPages(doc, seq, c, style);
+			if (!pages.length) continue;
+			// faces: the style's, plus bold / italic faces used by markup
+			const faces = [
+				[style.weight, style.italic],
+				[Math.max(style.weight, 700), style.italic],
+				[style.weight, true],
+				[Math.max(style.weight, 700), true],
+			] as const;
+			const font = doc.fonts[style.fontId];
+			for (const [weight, italic] of faces) {
+				if (!font) break;
+				const key = `${font.id}:${weight}:${italic}`;
+				if (fontKeys.has(key)) continue;
+				const url = opts.resolveFont(font, weight, italic);
+				if (url)
+					fontKeys.set(key, { fontId: font.id, family: font.family, weight, style: italic ? 'italic' : 'normal', url });
+			}
+			clips.push({
+				clipId: c.id,
+				kind: c.kind,
+				trackId: c.trackId,
+				name: c.name,
+				start: c.start,
+				duration: c.duration,
+				sourceIn: c.sourceIn,
+				speed: c.speed,
+				source: { captions: { style, pages, ...(t.captionStandard ? { standard: t.captionStandard } : {}) } },
+				transform: c.transform,
+				opacity: c.opacity,
+				blendMode: 'normal',
+				effects: [],
+				intrinsicBox: { ...frame },
+				engine: clipEngines(c)?.export ?? 'remotion',
+				bounded: false,
+			});
+		}
+		clips.sort((a, b) => a.start - b.start);
+		videoTracks.push({ trackId: t.id, clips, caption: true });
+	});
+	// ---- end wp captions
 
 	const anySolo = seq.audioTracks.some((t) => t.solo);
 	const audible = seq.audioTracks.filter((t) => !t.mute && (!anySolo || t.solo));
