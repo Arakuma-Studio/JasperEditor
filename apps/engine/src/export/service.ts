@@ -4,7 +4,17 @@
 // WP-2G registers (`registerMgMasterProvider`).
 import type { ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { type FileHandle, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+	type FileHandle,
+	mkdir,
+	open,
+	readdir,
+	readFile,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';

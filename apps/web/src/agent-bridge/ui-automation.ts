@@ -693,7 +693,8 @@ async function screenshot(a: ShotArgs) {
 		scale,
 		width: isWindow ? window.innerWidth : undefined,
 		height: isWindow ? window.innerHeight : undefined,
-		backgroundColor: getComputedStyle(document.body).backgroundColor || '#000',
+		// The app background token, so transparent areas match what the user sees.
+		backgroundColor: getComputedStyle(document.body).getPropertyValue('--pr-bg-app').trim() || null,
 		timeout: 15_000,
 	});
 	const png = url.slice(url.indexOf(',') + 1);

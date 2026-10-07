@@ -555,9 +555,14 @@ export class AgentService {
 			);
 		} catch (e) {
 			if (e instanceof RelayError)
-				throw new AgentApiError(e.code === 'E_TIMEOUT' ? 504 : 409, e.code === 'E_TIMEOUT' ? 'TIMEOUT' : 'NO_SESSION', e.message, {
-					code: e.code,
-				});
+				throw new AgentApiError(
+					e.code === 'E_TIMEOUT' ? 504 : 409,
+					e.code === 'E_TIMEOUT' ? 'TIMEOUT' : 'NO_SESSION',
+					e.message,
+					{
+						code: e.code,
+					},
+				);
 			throw e;
 		}
 		if (out.error)
