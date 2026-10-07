@@ -374,4 +374,24 @@ describe('clip.trimEdits (keyboard trim mode)', () => {
 		]);
 		expect(bad.ok).toBe(false);
 	});
+	it('roll points on a picture and its linked sound roll once (not once per point)', () => {
+		const h = cut();
+		const [v1] = h.clips('V1');
+		const [a1] = h.clips('A1');
+		h.ok([
+			{
+				type: 'clip.trimEdits',
+				edits: [
+					{ clipId: v1!.id, edge: 'out', mode: 'roll' },
+					{ clipId: a1!.id, edge: 'out', mode: 'roll' },
+				],
+				deltaFrames: 6,
+			},
+		]);
+		expect(h.spans('V1')).toEqual([
+			[0, 66],
+			[66, 120],
+		]);
+		expect(h.spans('A1')).toEqual(h.spans('V1'));
+	});
 });

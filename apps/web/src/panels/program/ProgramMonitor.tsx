@@ -223,6 +223,11 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const shell = useShellRuntimeOrNull();
 	const [layerMenu, setLayerMenu] = useState<{ x: number; y: number; clipId: string | null } | null>(null);
 	const menuCtx = () => shell?.getCtx() ?? ctx;
+	// edit-ux: transport buttons run with the shell's live context focused on this monitor.
+	const barCtx = () => {
+		const c = shell?.getCtx();
+		return c ? { ...c, focus: { panel: 'program' as const, instanceId } } : ctx;
+	};
 
 	// ------------------------------------------------------------------ Player ↔ TransportStore (ARC-010)
 	const live = useRef({ seq, end, fps });
@@ -516,7 +521,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				{extras.comparison.enabled && !playing && !trimVisible && !mcView && seqId ? (
 					<ProgramComparison session={session} sequenceId={seqId} doc={drawn} />
 				) : null}
-				{trimVisible && seqId ? <TrimMonitor session={session} sequenceId={seqId} ctx={ctx} /> : null}
+				{trimVisible && seqId ? <TrimMonitor session={session} sequenceId={seqId} ctx={barCtx()} /> : null}
 				{extras.showDroppedFrames ? (
 					<button
 						type="button"
@@ -692,7 +697,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				testId="program-ruler"
 			/>
 			{/* edit-ux: data-driven transport row with the Button Editor. */}
-			<TransportBar monitor="program" ctx={menuCtx} playing={playing} testId="program-transport" />
+			<TransportBar monitor="program" ctx={barCtx} playing={playing} testId="program-transport" />
 			{/* Portaled: the dock's split views clip and stack their panels' fixed descendants. */}
 			{layerMenu
 				? createPortal(

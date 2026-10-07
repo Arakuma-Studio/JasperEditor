@@ -17,6 +17,7 @@ import { X } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { chordFromEvent, runCommand } from '../../commands/index.ts';
 import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	durationLabel,
@@ -132,6 +133,12 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const transport = useMemo(() => new TransportStore(), []);
 	const ctx = useMonitorCommandCtx({ session, panel: 'source', instanceId, engine });
 	useEffect(() => registerFullscreenTarget('source', () => viewportRef.current));
+	// Buttons run with the shell's live context (dialogs, toasts) focused on this monitor.
+	const shell = useShellRuntimeOrNull();
+	const barCtx = () => {
+		const c = shell?.getCtx();
+		return c ? { ...c, focus: { panel: 'source' as const, instanceId } } : ctx;
+	};
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, canvas, monitor.zoom, [0, 0]);
 
@@ -234,7 +241,10 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const frameNow = () => transport.getState().frame;
 	// edit-ux: through the commands (three/four-point editing, Fit Clip dialog, toasts).
 	const _edit = (mode: 'insert' | 'overwrite') =>
-		void runCommand(mode === 'insert' ? 'timeline.insertFromSource' : 'timeline.overwriteFromSource', ctx);
+		void runCommand(
+			mode === 'insert' ? 'timeline.insertFromSource' : 'timeline.overwriteFromSource',
+			barCtx(),
+		);
 	const mediaItems = useMemo(
 		() =>
 			Object.values(doc.items)
@@ -433,7 +443,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			{/* edit-ux: data-driven transport row with the Button Editor. */}
 			<TransportBar
 				monitor="source"
-				ctx={() => ctx}
+				ctx={barCtx}
 				playing={playing}
 				testId="source-transport"
 				disabled={(btn) => !item || (btn.id === 'play' && !props && !seqProps)}

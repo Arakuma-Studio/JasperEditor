@@ -450,8 +450,15 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 		lo = Math.max(lo, l.min);
 		hi = Math.min(hi, l.max);
 	}
+	// A roll's link partners roll with it, unless one of them is itself a selected edit point (it would roll twice).
+	const selectedTracks = new Set(edits.map((e) => e.clip.trackId));
+	const rollLinked = (m: { clip: DClip }) =>
+		linked &&
+		!(seq.links[m.clip.linkId ?? '']?.members ?? []).some(
+			(id) => id !== m.clip.id && seq.clips[id] && selectedTracks.has(seq.clips[id]!.trackId),
+		);
 	for (const m of rolls) {
-		const l = rollRange(doc, seq, m.clip, m.edge, linked);
+		const l = rollRange(doc, seq, m.clip, m.edge, rollLinked(m));
 		lo = Math.max(lo, l.lo);
 		hi = Math.min(hi, l.hi);
 	}
@@ -472,7 +479,14 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 		for (const m of rolls)
 			rollTrim(
 				doc,
-				{ type: 'clip.trim', clipId: m.clip.id, edge: m.edge, deltaFrames: d, mode: 'roll', linked },
+				{
+					type: 'clip.trim',
+					clipId: m.clip.id,
+					edge: m.edge,
+					deltaFrames: d,
+					mode: 'roll',
+					linked: rollLinked(m),
+				},
 				h,
 			);
 	}
