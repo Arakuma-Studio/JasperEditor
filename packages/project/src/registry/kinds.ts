@@ -313,6 +313,23 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		defaultLabel: 'rose',
 		priority: 'P1',
 	},
+	model: {
+		kind: 'model',
+		trackKind: 'video',
+		source: 'media',
+		bounded: 'no',
+		visual: true,
+		audio: false,
+		hasTransform: true,
+		hasOpacity: true,
+		supportsEffects: false,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: null,
+		m1: true,
+		defaultLabel: 'rose',
+		priority: 'P1',
+	},
 };
 
 export function kindCapabilities(kind: string): KindCapabilities | null {

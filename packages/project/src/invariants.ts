@@ -40,7 +40,7 @@ import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import type { ClipCameraTracker } from './schema/three-d.ts';
-import { canBe3d } from './three-d/model.ts';
+import { canBe3d, newLayer3D } from './three-d/model.ts';
 
 import {
 	contentSpanFlicks,
@@ -628,6 +628,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (env && !doc.media[env])
 					issues.push(inv('INV-006', `Light ${c.id} references missing environment media ${env}`, cw));
 			}
+			// three-d: a model layer shows a model media and is always 3D.
+			if (c.kind === 'model') {
+				const m = doc.media[(r as { mediaId: string }).mediaId];
+				if (m && m.kind !== 'model')
+					issues.push(inv('INV-012', `Clip ${c.id}: a model layer needs a 3D model media, not ${m.kind}`, cw));
+				if ((r.threeD as { enabled?: boolean } | undefined)?.enabled !== true)
+					issues.push(inv('INV-012', `Clip ${c.id}: a 3D model layer must be a 3D layer`, [...cw, 'threeD']));
+			}
 			// three-d: the 3D Camera Tracker sits on video clips, analyses existing media, its solve is whole.
 			if (r.cameraTracker !== undefined) {
 				const t = r.cameraTracker as ClipCameraTracker;
@@ -1050,6 +1058,10 @@ export function repairDocument(
 			if (c.kind === 'light' && c.light.environmentMediaId && !doc.media[c.light.environmentMediaId]) {
 				c.light.environmentMediaId = null;
 				note('reset-environment', c.id, 'environment media is missing: neutral studio light');
+			}
+			if (c.kind === 'model' && (r.threeD as { enabled?: boolean } | undefined)?.enabled !== true) {
+				r.threeD = { ...newLayer3D(true, 'model'), ...((r.threeD as object | undefined) ?? {}), enabled: true };
+				note('enable-3d-model', c.id, 'a 3D model layer is always a 3D layer');
 			}
 			if (r.cameraTracker !== undefined) {
 				const t = r.cameraTracker as ClipCameraTracker;

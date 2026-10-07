@@ -9,3 +9,4 @@ export * from './tools.ts';
 export * from './camtrack.ts';
 export * from './extrude.ts';
 export * from './triangulate.ts';
+export * from './gltf.ts';

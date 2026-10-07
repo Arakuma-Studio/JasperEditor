@@ -19,6 +19,7 @@ import {
 	layerMapOf,
 	layerWorldMatrix,
 	lightsAt,
+	mat4Mul,
 	type Mat3,
 	type MaterialState,
 	mat3FromMat2D,
@@ -62,6 +63,7 @@ import type { FxGpuState } from '../fx/status.ts';
 import type { LayerTap } from '../types.ts';
 import { type AdvancedEnvironment, type AdvancedMember, renderAdvancedGL } from './advanced.ts';
 import { extrudedMesh, geometryAt } from './extruded.ts';
+import { type LoadedModel, modelAt, modelToLayer } from './model-loader.ts';
 import { type GlPlane, renderClassicGL } from './gl.ts';
 
 // ---------------------------------------------------------------- hub
@@ -266,6 +268,8 @@ type Fx3DParams = {
 	preview: boolean;
 	renderer: 'classic' | 'advanced';
 	environment: AdvancedEnvironment | null;
+	/** Loaded models of the run's model layers, by clip id. */
+	models: ReadonlyMap<string, LoadedModel>;
 	shadowMapSize: number;
 };
 
@@ -293,6 +297,24 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 				if (!pic?.compToCanvas || pic.opacity <= 0) continue;
 				const layerToPicture = multiplyMat3(pic.compToCanvas.slice(0, 9) as Mat3, mat3FromMat2D(m.props.matrix));
 				const g = geometryAt(m.clip, m.contentTime);
+				const model = m.clip.kind === 'model' ? params.models.get(m.clip.clipId) : undefined;
+				if (m.clip.kind === 'model') {
+					if (!model) continue;
+					members.push({
+						key: m.clip.clipId,
+						picture: pic.canvas,
+						pictureWidth: 1,
+						pictureHeight: 1,
+						layerToPicture: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+						world: mat4Mul(m.world, modelToLayer(model.model.bounds, setup.frame)),
+						mesh: null,
+						model,
+						material: m.material,
+						opacity: Math.min(1, Math.max(0, pic.opacity)),
+						draw: m.clip.threeD!.material.castsShadows !== 'only',
+					});
+					continue;
+				}
 				members.push({
 					key: m.clip.clipId,
 					picture: pic.canvas,
@@ -330,7 +352,8 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 		const planes: GlPlane[] = [];
 		params.members.forEach((m, order) => {
 			const pic = params.pictures.get(m.clip.clipId);
-			if (!pic?.compToCanvas || pic.opacity <= 0) return;
+			// Classic 3D draws no models (the snapshot warns: THREE_D_MODEL_CLASSIC).
+			if (!pic?.compToCanvas || pic.opacity <= 0 || m.clip.kind === 'model') return;
 			const layerToPicture = multiplyMat3(
 				pic.compToCanvas.slice(0, 9) as Mat3,
 				mat3FromMat2D(m.props.matrix),
@@ -367,6 +390,26 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 // ---------------------------------------------------------------- scope
 
 const envImages = new Map<string, HTMLImageElement | 'error'>();
+
+/** Loaded models by clip id (absent while loading); renders hold until they are loaded and fail when one cannot be. */
+function useModels(urls: ReadonlyMap<string, string>, rendering: boolean): Map<string, LoadedModel> {
+	const [, bump] = useReducer((n: number) => n + 1, 0);
+	const out = new Map<string, LoadedModel>();
+	const pending: string[] = [];
+	for (const [id, url] of urls) {
+		const e = modelAt(url, bump);
+		if (e.state === 'ready') out.set(id, e.value);
+		else if (e.state === 'loading') pending.push(url);
+		else if (rendering) cancelRender(new Error(`THREE_D_UNSUPPORTED: the 3D model could not be loaded: ${e.error}`));
+	}
+	const key = pending.join(',');
+	useEffect(() => {
+		if (!rendering || !key) return;
+		const handle = delayRender(`3D models ${key}`);
+		return () => continueRender(handle);
+	}, [key, rendering]);
+	return out;
+}
 
 /** The decoded environment image of a URL (null while loading; renders fail when it cannot be loaded). */
 function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageElement | null {
@@ -429,6 +472,16 @@ export function Scene3DScope({
 	const envMedia = envLight?.environment?.mediaId ? scene.doc.media?.[envLight.environment.mediaId] : null;
 	const envUrl = envMedia ? (isPreview && envMedia.proxyUrl ? envMedia.proxyUrl : envMedia.url) : null;
 	const envImage = useEnvironmentImage(envUrl, rendering);
+	// Advanced 3D: the models of the run's model layers.
+	const modelUrls = new Map<string, string>();
+	if (run && scene.doc.scene3d?.renderer === 'advanced')
+		for (const id of run.members) {
+			const c = scene.clips.get(id);
+			const mid = c?.kind === 'model' && 'mediaId' in c.source ? c.source.mediaId : null;
+			const h = mid ? scene.doc.media?.[mid] : null;
+			if (h) modelUrls.set(id, h.url);
+		}
+	const models = useModels(modelUrls, rendering);
 	const pictures = new Map<string, HubPicture>();
 	let complete = true;
 	for (const id of run?.members ?? []) {
@@ -437,6 +490,8 @@ export function Scene3DScope({
 		else complete = false;
 	}
 	if (rendering && run && envUrl && !envImage) complete = false;
+	if (rendering && run && models.size < modelUrls.size) complete = false;
+	const modelKey = [...models.keys()].join(',');
 	const pictureKey = [...pictures.entries()].map(([k, p]) => `${k}:${p.version}`).join(',');
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the frame's run and delivered pictures
 	const effects = useMemo(() => {
@@ -477,7 +532,7 @@ export function Scene3DScope({
 						background: !!envLight.environment?.background,
 					}
 				: null;
-		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${envImage ? envUrl : ''}`;
+		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${envImage ? envUrl : ''}|${modelKey}`;
 		return [
 			fx3dRun({
 				key,
@@ -487,10 +542,11 @@ export function Scene3DScope({
 				preview: isPreview,
 				renderer,
 				environment,
+				models,
 				shadowMapSize: doc.scene3d?.shadowMapSize ?? 1024,
 			}),
 		];
-	}, [frame, run, pictureKey, complete, rendering, isPreview, version, scene, comp.width, comp.height, envImage]);
+	}, [frame, run, pictureKey, complete, rendering, isPreview, version, scene, comp.width, comp.height, envImage, modelKey]);
 	const hold = useRef<number | null>(null);
 	if (rendering && run && !complete && hold.current === null)
 		hold.current = delayRender(`3D layers at frame ${frame}`);

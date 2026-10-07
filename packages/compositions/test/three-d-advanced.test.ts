@@ -59,7 +59,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 		if (errors.length) throw new Error(errors.join('\n'));
 		({ W, H } = await call<{ W: number; H: number }>('size'));
 		if (process.env.THREE_D_DEBUG)
-			for (const n of ['flat', 'stack', 'shadowOn', 'shadowOff', 'ringFlat', 'ringExtruded', 'env', 'highlight']) {
+			for (const n of ['flat', 'stack', 'shadowOn', 'shadowOff', 'ringFlat', 'ringExtruded', 'env', 'highlight', 'model', 'dof']) {
 				const url = await call<string>('png', n);
 				const { writeFileSync } = await import('node:fs');
 				writeFileSync(`/tmp/adv-${n}.png`, Buffer.from(url.split(',')[1]!, 'base64'));
@@ -152,6 +152,22 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 		const blurred = contrast(62, 80);
 		expect(sharp).toBeGreaterThan(60);
 		expect(blurred).toBeLessThan(sharp / 3);
+	});
+
+	it('3D model layer: a lit cube shows three differently shaded faces in its base colour', async () => {
+		const img = await call<number[]>('advanced', 'model');
+		const shades = new Set<number>();
+		let red = 0;
+		for (let i = 0; i < W * H; i++) {
+			if (img[i * 4 + 3]! < 250) continue;
+			const [r, g, b] = [img[i * 4]!, img[i * 4 + 1]!, img[i * 4 + 2]!];
+			if (r > g * 3 && r > b * 3 && r > 30) {
+				red++;
+				shades.add(Math.round(r / 12));
+			}
+		}
+		expect(red).toBeGreaterThan(400);
+		expect(shades.size).toBeGreaterThanOrEqual(3);
 	});
 
 	it('GGX: a shiny surface shows a highlight under a point light', async () => {

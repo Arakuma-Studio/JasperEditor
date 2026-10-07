@@ -62,6 +62,10 @@ export const MEDIA_EXTENSIONS = [
 	'aaf',
 	'omf',
 	'ale',
+	// three-d: 3D models (Advanced 3D model layers)
+	'glb',
+	'gltf',
+	'obj',
 ] as const;
 
 /** `revealInFolder` accepts only absolute paths without NUL bytes. */

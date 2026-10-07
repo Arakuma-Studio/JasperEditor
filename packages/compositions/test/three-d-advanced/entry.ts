@@ -19,7 +19,9 @@ import {
 	type Mesh,
 	newFloatImage,
 	newLayer3D,
+	mat4Mul,
 	newLightData,
+	parseModel,
 	type PlaneSource,
 	prepareClassicPlane,
 	shapesOfAlpha,
@@ -28,6 +30,7 @@ import {
 } from '@jasper/project';
 import { fxHost } from '../../src/fx/host.ts';
 import { type AdvancedEnvironment, type AdvancedMember, renderAdvancedGL } from '../../src/three-d/advanced.ts';
+import { type LoadedModel, modelToLayer } from '../../src/three-d/model-loader.ts';
 
 const W = 96;
 const H = 64;
@@ -88,7 +91,7 @@ function light(type: 'parallel' | 'spot' | 'point' | 'ambient', o: Record<string
 	return lightStateOf({ clipId: `${type}${Math.random()}`, name: type, trackIndex: 0, ...RIG, light: data }, 0, FPS);
 }
 
-type Layer = { pic: Pic; transform?: Transform; td?: ReturnType<typeof newLayer3D>; mesh?: Mesh | null; opacity?: number };
+type Layer = { pic: Pic; transform?: Transform; td?: ReturnType<typeof newLayer3D>; mesh?: Mesh | null; opacity?: number; model?: LoadedModel };
 type Scene = { layers: Layer[]; camera?: CameraState; lights?: LightState[]; backdrop?: Pic; env?: AdvancedEnvironment };
 
 const td = (f: (t: ReturnType<typeof newLayer3D>) => void) => {
@@ -213,6 +216,44 @@ function scenes(): Record<string, () => Scene> {
 				backdrop: picture(W, H, () => [128, 128, 128, 255]),
 			};
 		},
+		model: () => {
+			// A red cube (OBJ), turned so three faces show, lit from the upper left.
+			const v = [
+				[-1, -1, -1],
+				[1, -1, -1],
+				[1, 1, -1],
+				[-1, 1, -1],
+				[-1, -1, 1],
+				[1, -1, 1],
+				[1, 1, 1],
+				[-1, 1, 1],
+			];
+			const f = [
+				[1, 2, 3, 4],
+				[5, 8, 7, 6],
+				[1, 5, 6, 2],
+				[2, 6, 7, 3],
+				[3, 7, 8, 4],
+				[5, 1, 4, 8],
+			];
+			const obj = [...v.map((p) => `v ${p.join(' ')}`), ...f.map((q) => `f ${q.join(' ')}`)].join('\n');
+			const model = parseModel(new TextEncoder().encode(obj), 'obj');
+			model.primitives[0]!.material.baseColor = [0.9, 0.1, 0.1, 1];
+			return {
+				layers: [
+					{
+						pic: picture(1, 1, () => [0, 0, 0, 0]),
+						transform: tr({ anchor: anim([W / 2, H / 2]) }),
+						td: td((t) => {
+							t.orientation = anim<Vec3>([30, 40, 0]);
+							t.material.specularIntensity = anim(0);
+						}),
+						model: { model, textures: [null] },
+					},
+				],
+				lights: [light('parallel', { intensity: 100 }, [W / 2 - 60, H / 2 - 80, -100], [W / 2, H / 2, 0]), light('ambient', { intensity: 20 })],
+			};
+		},
 		highlight: () => ({
 			layers: [
 				{
@@ -233,6 +274,21 @@ function scenes(): Record<string, () => Scene> {
 function members(s: Scene): AdvancedMember[] {
 	return s.layers.map((l, i) => {
 		const t = l.td ?? newLayer3D();
+		const world = layerWorldMatrix({ transform: l.transform ?? tr(), threeD: t }, 0);
+		if (l.model)
+			return {
+				key: `p${i}`,
+				picture: l.pic.canvas,
+				pictureWidth: 1,
+				pictureHeight: 1,
+				layerToPicture: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+				world: mat4Mul(world, modelToLayer(l.model.model.bounds, { width: W, height: H })),
+				mesh: null,
+				model: l.model,
+				material: materialAt(t.material, 0),
+				opacity: 1,
+				draw: true,
+			};
 		return {
 			key: `p${i}`,
 			picture: l.pic.canvas,

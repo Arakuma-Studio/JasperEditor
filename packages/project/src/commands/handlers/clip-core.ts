@@ -61,6 +61,7 @@ import { applyShapePatch } from './shape.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
+import { newLayer3D } from '../../three-d/model.ts';
 
 type DTrack = Draft<Track>;
 export const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });
@@ -328,6 +329,21 @@ export function placeSource(
 						mediaId: asset.id,
 						...(asset.kind === 'animated-image' ? { loop: true } : {}),
 						...visualFields(defaultTransform(box, frameBox(seq), scaling)),
+					}) as Clip,
+			});
+		} else if (asset.kind === 'model') {
+			// three-d: a 3D model layer — always a 3D layer (Advanced 3D draws it).
+			if (o.video === false) h.fail('E_INVALID_PARAM', 'Nothing to place (video: false on a 3D model)');
+			plans.push({
+				kind: 'model',
+				trackRef: videoTrackRef,
+				build: (id, trackId, start, duration, si) =>
+					({
+						...commonFields(id, trackId, start, duration, si, name, label('model')),
+						kind: 'model',
+						mediaId: asset.id,
+						...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
+						threeD: newLayer3D(true, 'model'),
 					}) as Clip,
 			});
 		}

@@ -1,9 +1,11 @@
-// The 3D Camera Tracker (three-d):
+// three-d on the engine:
 //   POST /api/camtrack/solve   CamTrackSolveRequest → `camtrack` job (`?wait=1` → the finished job)
-// Also registers the `camtrack` job runner.
+// Also registers the `camtrack` job runner and the 3D model asset prober (.glb / .gltf / .obj → kind `model`).
 import { CamTrackSolveRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { CamTrackService } from '../camtrack/service.ts';
+import { registerAssetProber } from '../media/probe.ts';
+import { modelProber } from '../three-d/model-prober.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
@@ -14,6 +16,8 @@ export default async function camtrackRoutes(app: FastifyInstance): Promise<void
 	const svc = new CamTrackService(core);
 	app.jasper.services.camtrack = svc;
 	svc.registerRunners();
+	const unregisterProber = registerAssetProber(modelProber);
+	app.addHook('onClose', async () => unregisterProber());
 
 	app.post<Wait>(
 		'/api/camtrack/solve',

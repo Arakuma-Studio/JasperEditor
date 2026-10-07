@@ -712,6 +712,12 @@ export function buildRenderSnapshot(
 			if (threeD) {
 				has3dLayer = true;
 				// Advanced 3D draws physically: what it does not reproduce is said, not dropped silently.
+				if (c.kind === 'model' && seq.threeD?.renderer !== 'advanced')
+					warnings.push({
+						clipId: c.id,
+						code: 'THREE_D_MODEL_CLASSIC',
+						message: `3D model "${c.name}" is drawn by Advanced 3D only: switch the sequence to Advanced 3D (Sequence ▸ 3D Renderer) to see it`,
+					});
 				if (seq.threeD?.renderer === 'advanced') {
 					const mode = (r.blendMode as string | undefined) ?? 'normal';
 					if (mode !== 'normal')
@@ -734,7 +740,8 @@ export function buildRenderSnapshot(
 			switch (c.kind) {
 				case 'video':
 				case 'still':
-				case 'animated-image': {
+				case 'animated-image':
+				case 'model': {
 					useMedia(c.mediaId);
 					source = { mediaId: c.mediaId };
 					break;

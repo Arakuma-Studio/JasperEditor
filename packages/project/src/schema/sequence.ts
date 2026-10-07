@@ -393,6 +393,8 @@ export const KNOWN_CLIP_KINDS = [
 	// three-d: After Effects-style cameras and lights (video tracks; they draw nothing themselves).
 	'camera',
 	'light',
+	// three-d: a 3D model layer (glTF / OBJ media; always 3D, drawn by Advanced 3D).
+	'model',
 ] as const;
 export type KnownClipKind = (typeof KNOWN_CLIP_KINDS)[number];
 
@@ -846,6 +848,16 @@ export const LightClipSchema = z.looseObject({
 	kind: z.literal('light'),
 	light: LightDataSchema,
 });
+/**
+ * three-d: a 3D model layer (After Effects' 3D model layers): a `model` media drawn by Advanced 3D, fitted to half the
+ * frame height around the frame centre in layer space, moved by its Motion and 3D transform.
+ */
+export const ModelClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('model'),
+	mediaId: z.string(),
+	...visualShape,
+});
 
 export const KnownClipSchema = z.discriminatedUnion('kind', [
 	VideoClipSchema,
@@ -864,6 +876,7 @@ export const KnownClipSchema = z.discriminatedUnion('kind', [
 	SyntheticAudioClipSchema,
 	CameraClipSchema,
 	LightClipSchema,
+	ModelClipSchema,
 ]);
 
 export type VideoClip = DeepStrip<z.infer<typeof VideoClipSchema>>;
@@ -884,6 +897,7 @@ export type LegacyShapeClip = ShapeClip & { shape: LegacyShapeData };
 export type SyntheticAudioClip = DeepStrip<z.infer<typeof SyntheticAudioClipSchema>>;
 export type CameraClip = DeepStrip<z.infer<typeof CameraClipSchema>>;
 export type LightClip = DeepStrip<z.infer<typeof LightClipSchema>>;
+export type ModelClip = DeepStrip<z.infer<typeof ModelClipSchema>>;
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 
 const ClipCommonSchema = z.looseObject(commonShape);

@@ -19,6 +19,7 @@ import {
 	type MaterialState,
 	type Matrix4,
 	type Mesh,
+	type ModelMaterial,
 	mat4Apply,
 	mat4Invert,
 	mat4Mul,
@@ -26,6 +27,7 @@ import {
 	type Vec3,
 } from '@jasper/project';
 import { blit, compileShader, ensureCanvas, type FxHost } from '../fx/host.ts';
+import type { LoadedModel } from './model-loader.ts';
 
 export type AdvancedMember = {
 	key: string;
@@ -38,6 +40,8 @@ export type AdvancedMember = {
 	world: Matrix4;
 	/** Extruded solid (layer px), or null for a flat layer. */
 	mesh: Mesh | null;
+	/** A 3D model layer: its model (drawn instead of the picture; `world` then maps model units → world). */
+	model?: LoadedModel | null;
 	material: MaterialState;
 	opacity: number;
 	/** Drawn (false: Casts Shadows "Only"). */
@@ -97,7 +101,18 @@ uniform mat3 u_l2p;
 uniform vec2 u_picSize;
 uniform float u_opacity;
 uniform int u_solid;
+uniform int u_model;
+uniform vec4 u_baseColor;
+uniform sampler2D u_baseTex;
+uniform int u_hasBaseTex;
+uniform int u_alphaMode;
+uniform float u_alphaCutoff;
 vec4 surface(vec2 uv, float kind) {
+  if (u_model == 1) {
+    vec4 c = u_baseColor * (u_hasBaseTex == 1 ? texture(u_baseTex, uv) : vec4(1.0));
+    float ma = u_alphaMode == 2 ? c.a : (u_alphaMode == 1 ? step(u_alphaCutoff, c.a) : 1.0);
+    return vec4(clamp(c.rgb, 0.0, 1.0), ma * u_opacity);
+  }
   vec3 q = u_l2p * vec3(uv, 1.0);
   vec2 pp = q.xy / q.z;
   vec2 tc = pp / u_picSize;
@@ -146,6 +161,8 @@ uniform sampler2D u_env;
 uniform int u_hasEnv;
 uniform vec4 u_envColor; // rgb, rotation
 uniform float u_envLod;
+uniform vec2 u_mr; // model: metallic, roughness
+uniform vec3 u_emissive;
 out vec4 o;
 const float PI = 3.14159265;
 vec4 L(int l, int k) { return texelFetch(u_lights, ivec2(k, l), 0); }
@@ -249,9 +266,11 @@ void main() {
   vec3 n = normalize(v_normal);
   if (dot(n, view) < 0.0) n = -n;
   float nv = max(dot(n, view), 1e-4);
-  float rough = clamp(1.0 - u_m0.w, 0.04, 1.0);
+  bool model = u_model == 1;
+  float metallic = model ? u_mr.x : 0.0;
+  float rough = clamp(model ? u_mr.y : 1.0 - u_m0.w, 0.04, 1.0);
   float al = rough * rough;
-  vec3 f0 = vec3(0.04 * u_m0.z / 0.5) * mix(vec3(1.0), rgb, u_m1.x);
+  vec3 f0 = model ? mix(vec3(0.04 * u_m0.z / 0.5), rgb, metallic) : vec3(0.04 * u_m0.z / 0.5) * mix(vec3(1.0), rgb, u_m1.x);
   vec3 amb = vec3(0.0);
   vec3 diff = vec3(0.0);
   vec3 spec = vec3(0.0);
@@ -282,7 +301,11 @@ void main() {
   }
   if (u_hasEnv == 1) {
     diff += envAt(n, u_envLod - 1.0);
-    if (u_m1.y > 0.0) {
+    if (model) {
+      vec3 r = reflect(-view, n);
+      vec3 fr = f0 + (1.0 - f0) * pow(1.0 - nv, 5.0) * (1.0 - rough);
+      refl += envAt(r, rough * u_envLod) * fr;
+    } else if (u_m1.y > 0.0) {
       vec3 r = reflect(-view, n);
       float lod = (1.0 - u_m1.z) * u_envLod;
       vec3 fr = vec3(u_m1.y) + (1.0 - vec3(u_m1.y)) * pow(1.0 - nv, 5.0) * u_m1.y;
@@ -295,7 +318,9 @@ void main() {
     o = vec4(0.0, 0.0, 0.0, sa);
     return;
   }
-  vec3 c = rgb * (u_m0.x * amb + u_m0.y * diff) * (1.0 - u_m1.y) + spec * (u_m0.z > 0.0 ? 1.0 : 0.0) + refl;
+  vec3 c = model
+    ? rgb * (1.0 - metallic) * (u_m0.x * amb + u_m0.y * diff) + spec + refl + u_emissive
+    : rgb * (u_m0.x * amb + u_m0.y * diff) * (1.0 - u_m1.y) + spec * (u_m0.z > 0.0 ? 1.0 : 0.0) + refl;
   o = vec4(c * a, a);
 }
 `;
@@ -622,7 +647,29 @@ export function cameraClip(cam: CameraState, frame: { width: number; height: num
 	return mat4Mul(P, cam.view);
 }
 
-type Prepared = { member: AdvancedMember; mesh: Mesh; centre: Vec3; vao: WebGLVertexArrayObject; buffers: WebGLBuffer[]; count: number; tex: WebGLTexture };
+type Prepared = {
+	member: AdvancedMember;
+	mesh: Mesh;
+	centre: Vec3;
+	vao: WebGLVertexArrayObject;
+	buffers: WebGLBuffer[];
+	count: number;
+	tex: WebGLTexture;
+	/** A model primitive: its material and base colour texture. */
+	prim?: { material: ModelMaterial; tex: WebGLTexture | null };
+};
+
+/** Interleaved vertices (position, normal, uv, kind) of a model primitive. */
+function primitiveMesh(p: LoadedModel['model']['primitives'][number]): Mesh {
+	const n = p.positions.length / 3;
+	const v = new Float32Array(n * 9);
+	for (let i = 0; i < n; i++) {
+		v.set(p.positions.subarray(i * 3, i * 3 + 3), i * 9);
+		v.set(p.normals.subarray(i * 3, i * 3 + 3), i * 9 + 3);
+		if (p.uvs) v.set(p.uvs.subarray(i * 2, i * 2 + 2), i * 9 + 6);
+	}
+	return { vertices: v, indices: p.indices, stride: 9 };
+}
 
 function worldPoints(p: { member: AdvancedMember; mesh: Mesh }): Vec3[] {
 	const out: Vec3[] = [];
@@ -719,9 +766,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 
 	// 1. geometry (VAOs) and pictures
 	const prepared: Prepared[] = [];
-	input.members.forEach((m, i) => {
-		const mesh = m.mesh ?? pictureQuad(m);
-		if (!mesh || mesh.indices.length === 0) return;
+	const upload = (mesh: Mesh) => {
 		const vao = gl.createVertexArray()!;
 		gl.bindVertexArray(vao);
 		const vb = gl.createBuffer()!;
@@ -740,16 +785,58 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
 		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STREAM_DRAW);
 		gl.bindVertexArray(null);
-		const t = tex2d(gl, ps, `pic${i}`, 1, 1, 'rgba8');
-		uploadPicture(gl, t, m.picture);
+		return { vao, buffers: [vb, ib] };
+	};
+	const centreOf = (m: AdvancedMember, mesh: Mesh) => {
 		const pts = worldPoints({ member: m, mesh });
-		const centre = pts.reduce(
+		return pts.reduce(
 			(a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length] as Vec3,
 			[0, 0, 0] as Vec3,
 		);
-		prepared.push({ member: m, mesh, centre, vao, buffers: [vb, ib], count: mesh.indices.length, tex: t });
+	};
+	const extraTextures: WebGLTexture[] = [];
+	input.members.forEach((m, i) => {
+		const t = tex2d(gl, ps, `pic${i}`, 1, 1, 'rgba8');
+		uploadPicture(gl, t, m.picture);
 		// The picture texture is re-specified per frame: forget its cached size key.
 		(t as { __key?: string }).__key = undefined;
+		if (m.model) {
+			m.model.model.primitives.forEach((p, k) => {
+				const mesh = primitiveMesh(p);
+				if (mesh.indices.length === 0) return;
+				const img = m.model!.textures[k];
+				let ptex: WebGLTexture | null = null;
+				if (img) {
+					ptex = gl.createTexture()!;
+					extraTextures.push(ptex);
+					gl.bindTexture(gl.TEXTURE_2D, ptex);
+					gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+					gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+					gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+					gl.generateMipmap(gl.TEXTURE_2D);
+					gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+					gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+					gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+					gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+				}
+				const { vao, buffers } = upload(mesh);
+				prepared.push({
+					member: m,
+					mesh,
+					centre: centreOf(m, mesh),
+					vao,
+					buffers,
+					count: mesh.indices.length,
+					tex: t,
+					prim: { material: p.material, tex: ptex },
+				});
+			});
+			return;
+		}
+		const mesh = m.mesh ?? pictureQuad(m);
+		if (!mesh || mesh.indices.length === 0) return;
+		const { vao, buffers } = upload(mesh);
+		prepared.push({ member: m, mesh, centre: centreOf(m, mesh), vao, buffers, count: mesh.indices.length, tex: t });
 	});
 	gl.bindBuffer(gl.ARRAY_BUFFER, null);
 	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
@@ -766,6 +853,19 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.activeTexture(gl.TEXTURE0 + unit);
 		gl.bindTexture(gl.TEXTURE_2D, p.tex);
 		gl.uniform1i(U(gl, ps, prog, 'u_pic'), unit);
+		const mat = p.prim?.material;
+		gl.uniform1i(U(gl, ps, prog, 'u_model'), mat ? 1 : 0);
+		if (mat) {
+			gl.uniform4f(U(gl, ps, prog, 'u_baseColor'), mat.baseColor[0], mat.baseColor[1], mat.baseColor[2], mat.baseColor[3]);
+			gl.uniform1i(U(gl, ps, prog, 'u_hasBaseTex'), p.prim!.tex ? 1 : 0);
+			gl.uniform1i(U(gl, ps, prog, 'u_alphaMode'), mat.alphaMode === 'BLEND' ? 2 : mat.alphaMode === 'MASK' ? 1 : 0);
+			gl.uniform1f(U(gl, ps, prog, 'u_alphaCutoff'), mat.alphaCutoff);
+			gl.uniform2f(U(gl, ps, prog, 'u_mr'), Math.min(1, Math.max(0, mat.metallic)), Math.min(1, Math.max(0, mat.roughness)));
+			gl.uniform3f(U(gl, ps, prog, 'u_emissive'), mat.emissive[0], mat.emissive[1], mat.emissive[2]);
+		}
+		gl.activeTexture(gl.TEXTURE0 + unit + 5);
+		gl.bindTexture(gl.TEXTURE_2D, p.prim?.tex ?? p.tex);
+		gl.uniform1i(U(gl, ps, prog, 'u_baseTex'), unit + 5);
 	};
 	const draw = (p: Prepared) => {
 		gl.bindVertexArray(p.vao);
@@ -1063,6 +1163,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		gl.deleteVertexArray(p.vao);
 		for (const b of p.buffers) gl.deleteBuffer(b);
 	}
+	for (const t of extraTextures) gl.deleteTexture(t);
 	if (gl.isContextLost()) throw new Error('WEBGL_UNAVAILABLE: the GPU context was lost while drawing');
 	blit(h, out, W, H);
 }
