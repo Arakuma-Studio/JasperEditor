@@ -2,6 +2,7 @@
 // handling, invariants and repair. Evaluation itself is tested in packages/expressions.
 import { describe, expect, it } from 'vitest';
 import {
+	buildEffectPreset,
 	buildRenderSnapshot,
 	checkInvariants,
 	createCounterIdSource,
@@ -11,6 +12,7 @@ import {
 	expressionRefToParamPath,
 	isAnimated,
 	paramPathToExpressionRef,
+	parseEffectPreset,
 	repairDocument,
 	sequenceAnimatables,
 } from '../src/index.ts';
@@ -120,6 +122,33 @@ describe('commands', () => {
 				},
 			]).ok,
 		).toBe(false);
+	});
+});
+
+describe('effect presets', () => {
+	it('carry expressions of intrinsic properties and effect params', () => {
+		const { h, a, s } = setup();
+		h.ok([
+			{ type: 'expression.set', target: ['clip', a, 'opacity'], text: 'wiggle(2, 20)' },
+			{ type: 'expression.set', target: ['effect', s, 'slider'], text: 'time * 10' },
+		]);
+		const built = buildEffectPreset(h.doc, a, {
+			name: 'P',
+			type: 'anchor-in',
+			sections: { opacity: true, effectIds: [s] },
+			id: 'fxp_TEST',
+		});
+		const parsed = parseEffectPreset(JSON.parse(JSON.stringify(built)));
+		expect(parsed.ok).toBe(true);
+		const r = h.ok([
+			{ type: 'clip.addSolid', at: 100, duration: 30, track: 'V1', color: [0, 0, 0, 1], ref: '$b' },
+		]);
+		const b = r.refs.$b!;
+		h.ok([{ type: 'effect.applyPreset', preset: (parsed as { preset: unknown }).preset, clipIds: [b] }]);
+		expect(anim(h, b, 'opacity').expression).toEqual({ text: 'wiggle(2, 20)', enabled: true });
+		const fx = (h.seq.clips[b] as never as { effects: { params: { slider: { expression: unknown } } }[] })
+			.effects[0]!;
+		expect(fx.params.slider.expression).toEqual({ text: 'time * 10', enabled: true });
 	});
 });
 
