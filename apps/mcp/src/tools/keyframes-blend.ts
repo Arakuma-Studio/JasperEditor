@@ -2,7 +2,7 @@
 // Effects' utility modes), set a clip's blend mode by id or label, and turn Rove Across Time on or off for keys.
 import { BLEND_MODE_GROUP_LABELS, BLEND_MODE_INFO, parseBlendMode } from '@jasper/project';
 import { z } from 'zod';
-import { defineTool, EDIT, READ_ONLY, type ToolContext } from '../context.ts';
+import { defineTool, EDIT_IDEMPOTENT, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
@@ -47,7 +47,7 @@ export function registerKeyframesBlendTools(ctx: ToolContext): void {
 				clipIds: z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…")'),
 				mode: z.string().min(1).describe('Blend mode id or label'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, mode }, extra) => {
 			const id = parseBlendMode(mode);
@@ -79,7 +79,7 @@ export function registerKeyframesBlendTools(ctx: ToolContext): void {
 				keyframeIds: z.array(z.string().min(1)).min(1).describe('Keyframe ids ("kf_…")'),
 				roving: z.boolean().describe('true = rove across time, false = fixed time'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, keyframeIds, roving }, extra) =>
 			applyHelper(

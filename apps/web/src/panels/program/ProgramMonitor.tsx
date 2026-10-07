@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
@@ -216,6 +217,45 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		});
 		return off;
 	}, [instanceId, transport, viewportRef]);
+
+	// mcp-cli (live-UI automation): sequence pixels ↔ window points for agents (ui_locate / ui_hit, ui_click {program}).
+	const viewRef = useRef(view);
+	viewRef.current = view;
+	const frameSizeRef = useRef(frameSize);
+	frameSizeRef.current = frameSize;
+	useEffect(
+		() =>
+			registerUiLocator(instanceId, {
+				kind: 'program',
+				element: () => viewportRef.current,
+				impl: {
+					toWindow: (x, y) => {
+						const r = viewportRef.current?.getBoundingClientRect();
+						const v = viewRef.current;
+						return { x: (r?.left ?? 0) + v.x + x * v.scale, y: (r?.top ?? 0) + v.y + y * v.scale };
+					},
+					toSequence: (x, y) => {
+						const r = viewportRef.current?.getBoundingClientRect();
+						const v = viewRef.current;
+						return { x: (x - (r?.left ?? 0) - v.x) / v.scale, y: (y - (r?.top ?? 0) - v.y) / v.scale };
+					},
+					view: () => {
+						const r = viewportRef.current?.getBoundingClientRect();
+						const v = viewRef.current;
+						const f = frameSizeRef.current;
+						const left = r?.left ?? 0;
+						const top = r?.top ?? 0;
+						return {
+							frame: { x: left + v.x, y: top + v.y, width: f.width * v.scale, height: f.height * v.scale },
+							scale: v.scale,
+							sequence: { width: f.width, height: f.height },
+							viewport: { x: left, y: top, width: r?.width ?? 0, height: r?.height ?? 0 },
+						};
+					},
+				},
+			}),
+		[instanceId, viewportRef],
+	);
 
 	// Dev-only handle for manual checks and agents without the bridge (window.__jasperMonitor).
 	useEffect(() => {

@@ -8,7 +8,7 @@ export type RelayState = 'off' | 'connecting' | 'connected' | 'disconnected';
 type RelayHello = { projectId: string; sessionId: string; leaseId: string | null };
 
 type RelayRequestHandler = (
-	kind: 'tx' | 'query' | 'schema',
+	kind: 'tx' | 'query' | 'schema' | 'ui',
 	payload: unknown,
 ) => Promise<{ result?: unknown; error?: { code: string; message: string } }>;
 

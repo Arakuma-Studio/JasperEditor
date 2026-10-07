@@ -384,7 +384,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (153; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (168; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -425,6 +425,10 @@ Tools (153; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   (`docs/wp-notes/captions.md`).
 - Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
   `get_transcript` (`docs/wp-notes/speech.md`).
+- Reading properties: `get_clip_properties` `get_param` (the keyframed value next to the value actually rendered).
+- Live UI of the open editor window (web or desktop): `ui_state` `ui_elements` `ui_screenshot` `ui_click` `ui_drag`
+  `ui_scroll` `ui_key` `ui_type` `ui_set` `ui_locate` `ui_hit` `ui_commands` `ui_command`
+  (`docs/wp-notes/mcp-cli.md`).
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
@@ -442,6 +446,60 @@ working *on* the editor. It runs the server from source (`node --import tsx apps
 with `--start-engine --appdir .stage`: it uses the `pnpm dev` engine when one is running, and otherwise starts a
 headless engine on the same dev appdir (that needs `pnpm --filter @jasper/engine build` once). Claude Code asks
 once before enabling a project-scoped server; start it from the repository root so the relative paths resolve.
+
+### Conventions every tool follows
+
+- **Strict arguments.** An unknown argument key — at the top level or inside any nested object, and inside the
+  commands of `apply_commands` — is an error that names the key, lists the accepted ones and suggests the likely
+  typo (`E_UNKNOWN_ARGUMENT`: `"jobid" → "jobId"?`), never a silently dropped key. A temp ref used before it was
+  declared names the refs declared so far.
+- **Annotations.** Every tool has a title and all four hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`), so a client can run the read-only ones without asking (`apps/mcp/test/conventions.test.ts`).
+- **Progress and cancellation.** Long calls (`start_export {wait: true}`, `wait_for_job`, `render_frame(s)`,
+  processing, tracking, pre-renders) send `notifications/progress` at most every 100 ms when the request has a
+  `progressToken`; `notifications/cancelled` cancels the engine job, and the engine deletes the job's partial
+  output (including a half-copied file at the export destination).
+- **Property reads.** `get_clip_properties` / `get_param` return `value` (the keyframed value at a time, as
+  Effect Controls shows it) next to `evaluated` (what the renderer draws then), keyframes in sequence frames and
+  the `param.set` target; `rendered: false` + `why` when that frame draws nothing.
+
+### Live UI: look at and operate the editor window
+
+With a project open in the web app or the desktop app, `ui_state`, `ui_elements`, `ui_screenshot`, `ui_click`,
+`ui_drag`, `ui_scroll`, `ui_key`, `ui_type`, `ui_set`, `ui_locate`, `ui_hit`, `ui_commands` and `ui_command`
+drive the window itself through the engine relay (`POST /api/agent/ui` → WS `/agent`). Elements have stable
+automation ids (`timeline-toolbar/button[Snap in Timeline]`, `timeline.clip.<id>`, `effectControls.fx.<id>`…);
+`ui_locate` / `ui_hit` map timeline frames ↔ x and tracks ↔ y, and Program monitor sequence pixels ↔ window
+points, so `ui_drag {from: {timeline: {clipId}}, to: {x, y}}` moves a clip like a user. `ui_commands` lists every
+UI command with `enabled` and, when disabled, `why`. `e2e/ui-audit.spec.ts` keeps every interactive element of
+every panel in every workspace addressable. Details: `docs/wp-notes/mcp-cli.md`.
+
+### Command line: `jasper`
+
+Every tool is also one shell call away. `pnpm jasper <command>` from this checkout, or the bundled
+`node apps/mcp/dist/jasper.mjs` after `pnpm mcp:build`. It finds the engine like `jasper-mcp` (`--engine-url`,
+`--appdir`, `--start-engine`), and edits apply live when the project is open in an editor window.
+
+```bash
+jasper status                                    # engine and capabilities
+jasper projects                                  # ids and names
+jasper --project Teaser import a.mp4 b.mp4       # relative paths are fine
+jasper exec marker.add frame=30 name=Intro       # one command, one undo step (k=v values are JSON when they parse)
+jasper exec '{"type":"clip.addText","at":0,"duration":90,"track":"V2","content":{"text":"Hi"}}'
+jasper run edit.jsonl                            # a command or {"commands": [...]} per line; JSON line per result
+jasper describe clip.place                       # schema and an example
+jasper props clp_123 --at 2s                     # value, evaluated, keyframes
+jasper get clip/clp_123/opacity --at 45          # one parameter
+jasper set clip/clp_123/transform.position '[640,200]'
+jasper inspect                                   # the timeline table (--json: the sequence summary)
+jasper render-frame --at 00:00:02:00 --out f.png --width 960
+jasper export --out cut.mp4 --range 0..10s       # waits with progress; Ctrl+C cancels and deletes the file
+jasper ui elements panel=timeline                # the live window (ui click id=…, ui screenshot --out w.png)
+jasper call get_mixer --json                     # any MCP tool
+```
+
+`--json` prints one JSON document per line; exit status 0 = ok, 1 = the command failed (its error code, message
+and hint on stderr), 2 = usage error. `jasper --help` is the reference.
 
 ### HTTP API underneath
 
@@ -678,6 +736,13 @@ appdir, connects an MCP SDK client to `jasper-mcp` over stdio, and goes from cre
 media → edit → `render_frame` (PNG) → `start_export` + `wait_for_job` → ffprobe of the output. Run it alone
 with `pnpm exec vitest run --project @jasper/mcp`.
 
+The MCP scenario QA suite (`pnpm qa:mcp`, also run with `REMOTION_E2E=1`; `apps/mcp/test/qa/`) builds real
+edits only through `jasper-mcp` over MCP JSON-RPC against a real engine — a rough cut, a colour grade, titles, a
+cross dissolve, keyframed opacity and position, an export re-imported into another project, and a cancelled
+export — and asserts on rendered pixels (coverage, centroid, luma, mean difference) and on the written files.
+`MCP_QA_PORT` picks the engine port (49025), `MCP_QA_KEEP=1` keeps the frames in `test-results/mcp-qa/`.
+`apps/mcp/test/jasper-cli.test.ts` runs every `jasper` command against a real engine.
+
 Playwright specs:
 
 - `e2e/smoke.spec.ts` — Home → New Project → import `clip-a.mp4` (file chooser) → poster → drag to the
@@ -691,6 +756,11 @@ Playwright specs:
   while the editor is open (live, `Agent:` History entry and toast), helper tools / `set_playhead` / `undo`,
   an approval-gated `track.remove` denied and then approved on the shell's approval card, Help ▸ Connect an AI
   Agent…, a headless apply with the editor closed, and `open_project_in_editor` bringing the project back.
+- `e2e/agent-ui.spec.ts` — the live-UI tools through the built `jasper-mcp`: `ui_state`, `ui_elements`, timeline and
+  Program coordinate mapping, a clip dragged by `ui_drag` and undone with `ui_key Cmd+Z`, `ui_set` on a scrubby
+  number, `ui_commands` / `ui_command` (workspaces), `ui_screenshot` of the window and of a panel.
+- `e2e/ui-audit.spec.ts` — every interactive element of every panel in every workspace, the menu bar menus and the
+  clip context menu has a stable automation id.
 - `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
 - `e2e/layer-bake.spec.ts` — footage + static title + keyframed title, a Lumetri grade on a title ("Grade
   pending" → graded preview in the Program), Auto export planned `hybrid` with baked titles, output pixels.

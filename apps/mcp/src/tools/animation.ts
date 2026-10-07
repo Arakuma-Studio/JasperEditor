@@ -15,8 +15,9 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	captureStill,
 	defineTool,
-	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	loadDoc,
 	progressReporter,
@@ -31,6 +32,7 @@ import { clipSummary, pickSequence } from '../format.ts';
 import { composeGrid, decodePng, encodePng } from '../png.ts';
 import { propsSummary } from './compositions.ts';
 import { ProjectIdArg } from './projects.ts';
+import { failedJobError } from './templates.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const ANIMATION_GUIDE = `Text animation:
@@ -300,7 +302,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Sequence id ("seq_…") for "$selection"; default: the sequence of the clips'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) => {
 			if ((a.clipId === undefined) === (a.clipIds === undefined))
@@ -398,7 +400,8 @@ export function registerAnimationTools(ctx: ToolContext): void {
 					'E_INVALID_PARAM',
 					'Give times, or count with an optional range (from/to or clipId), not both',
 				);
-			const { doc } = await loadDoc(ctx, a.projectId);
+			const loaded = await loadDoc(ctx, a.projectId);
+			const { doc } = loaded;
 			const seq = sequenceFor(doc, { sequenceId: a.sequenceId, clipId: a.clipId });
 			let frames: number[];
 			if (a.times) frames = a.times.map((t) => frameOf(seq, t));
@@ -424,16 +427,14 @@ export function registerAnimationTools(ctx: ToolContext): void {
 			const renderedBy = new Set<string>();
 			for (const [i, frame] of frames.entries()) {
 				report(i, frames.length, `Rendering frame ${frame} (${i + 1}/${frames.length})`);
-				const q = await ctx.engine((c) =>
-					c.agentQuery({
-						projectId: a.projectId,
-						query: 'frame.capture',
-						args: { frame, width, sequenceId: seq.id },
-					}),
+				const r = await captureStill(
+					ctx,
+					{ projectId: a.projectId, frame, width, sequenceId: seq.id },
+					extra,
+					loaded,
+					(job) => failedJobError(ctx, job, 'Check get_timeline; engine_status shows the render setup.'),
 				);
-				const r = q.result as { url?: string; renderPath?: string };
-				if (!r?.url) throw new ToolError('INTERNAL', `The engine returned no image for frame ${frame}`);
-				const { bytes } = await ctx.engine((c) => c.fetchBytes(r.url!));
+				const bytes = r.bytes;
 				images.push(decodePng(bytes));
 				if (r.renderPath) renderedBy.add(r.renderPath);
 			}

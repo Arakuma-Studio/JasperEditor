@@ -4,6 +4,7 @@ export * from './agent/addressing.ts';
 export * from './agent/guard.ts';
 export * from './agent/queries.ts';
 export * from './agent/schema-export.ts';
+export * from './agent/strict.ts';
 export * from './animation/index.ts';
 export * from './audio/index.ts';
 export * from './blend-modes.ts';
