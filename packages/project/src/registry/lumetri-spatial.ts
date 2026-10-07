@@ -44,15 +44,15 @@ float lm_band(float v, vec4 k) {
 float lm_key(vec3 c) {
   vec3 hsl = fx_rgb2hsl(clamp(c, 0.0, 1.0));
   float w = 1.0;
-  if (u_keyHue.x > 0.5 && u_keyHue.z < 0.5 - 1e-6) {
-    float dd = abs(hsl.x - u_keyHue.y);
+  if (u_lmKeyHue.x > 0.5 && u_lmKeyHue.z < 0.5 - 1e-6) {
+    float dd = abs(hsl.x - u_lmKeyHue.y);
     dd = fract(dd);
     float d = min(dd, 1.0 - dd);
-    float hw = d <= u_keyHue.z ? 1.0 : (u_keyHue.w > 0.0 ? max(0.0, 1.0 - (d - u_keyHue.z) / u_keyHue.w) : 0.0);
+    float hw = d <= u_lmKeyHue.z ? 1.0 : (u_lmKeyHue.w > 0.0 ? max(0.0, 1.0 - (d - u_lmKeyHue.z) / u_lmKeyHue.w) : 0.0);
     w *= hw * min(1.0, hsl.y * 20.0);
   }
-  w *= lm_band(hsl.y, u_keySat);
-  w *= lm_band(hsl.z, u_keyLuma);
+  w *= lm_band(hsl.y, u_lmKeySat);
+  w *= lm_band(hsl.z, u_lmKeyLuma);
   return w;
 }
 `,
@@ -94,17 +94,17 @@ void main() {
   vec3 c = src.rgb / src.a;
   float k = 0.0;
   ${f.key ? (keyTex ? `k = texture(${keyTex}, v_uv).r;` : 'k = lm_key(c);') : ''}
-  ${f.key ? 'if (u_invert) k = 1.0 - k;' : ''}
+  ${f.key ? 'if (u_lmInvert) k = 1.0 - k;' : ''}
   ${
 		f.key
 			? `
-  if (u_showMask == 1) {
+  if (u_lmShowMask == 1) {
     float g = clamp(fx_luma(c), 0.0, 1.0) * 0.2 + 0.4;
     fragColor = vec4(clamp(mix(vec3(g), c, k), 0.0, 1.0) * src.a, src.a);
     return;
   }
-  if (u_showMask == 2) { fragColor = vec4(clamp(c * k, 0.0, 1.0) * src.a, src.a); return; }
-  if (u_showMask == 3) { fragColor = vec4(vec3(clamp(k, 0.0, 1.0)) * src.a, src.a); return; }`
+  if (u_lmShowMask == 2) { fragColor = vec4(clamp(c * k, 0.0, 1.0) * src.a, src.a); return; }
+  if (u_lmShowMask == 3) { fragColor = vec4(vec3(clamp(k, 0.0, 1.0)) * src.a, src.a); return; }`
 			: ''
 	}
   ${
@@ -114,7 +114,7 @@ void main() {
     vec4 soft = texture(u_soft, v_uv);
     vec3 s3 = soft.a > 0.0 ? soft.rgb / soft.a : c;
     float detail = fx_luma(c) - fx_luma(s3);
-    float amount = u_sharpen + u_secSharpen * k;
+    float amount = u_lmSharpen + u_lmSecSharpen * k;
     float kk = amount > 0.0 ? 2.5 * amount : amount;
     c += detail * kk;
   }`
@@ -125,31 +125,31 @@ void main() {
 			? `
   if (k > 0.0) {
     vec3 d = c;
-    d *= vec3(1.0 + 0.25 * u_secTemp, 1.0 - 0.25 * u_secTint, 1.0 - 0.25 * u_secTemp);
-    d = 0.5 + (d - 0.5) * (1.0 + u_secContrast);
+    d *= vec3(1.0 + 0.25 * u_lmSecTemp, 1.0 - 0.25 * u_lmSecTint, 1.0 - 0.25 * u_lmSecTemp);
+    d = 0.5 + (d - 0.5) * (1.0 + u_lmSecContrast);
     float y = fx_luma(d);
-    d = y + (d - y) * u_secSat;
-    if (u_threeWay) {
-      d = d + u_lift * (1.0 - d);
-      d = vec3(d.r > 0.0 ? pow(d.r, u_gamma.r) : d.r, d.g > 0.0 ? pow(d.g, u_gamma.g) : d.g, d.b > 0.0 ? pow(d.b, u_gamma.b) : d.b);
-      d *= u_gain;
+    d = y + (d - y) * u_lmSecSat;
+    if (u_lmThreeWay) {
+      d = d + u_lmLift * (1.0 - d);
+      d = vec3(d.r > 0.0 ? pow(d.r, u_lmGamma.r) : d.r, d.g > 0.0 ? pow(d.g, u_lmGamma.g) : d.g, d.b > 0.0 ? pow(d.b, u_lmGamma.b) : d.b);
+      d *= u_lmGain;
     } else {
-      d += u_offset;
+      d += u_lmOffset;
     }
     c = mix(c, d, k);
   }`
 			: ''
 	}
-  if (u_vigAmount != 0.0) {
+  if (u_lmVigAmount != 0.0) {
     vec2 n = fx_layerNorm() * 2.0 - 1.0;
     float aspect = u_box.z / max(u_box.w, 1e-6);
-    if (u_vigRound > 0.0) n *= vec2(1.0 + (max(aspect, 1.0) - 1.0) * u_vigRound, 1.0 + (max(1.0 / aspect, 1.0) - 1.0) * u_vigRound);
-    float pw = 2.0 + max(0.0, -u_vigRound) * 6.0;
+    if (u_lmVigRound > 0.0) n *= vec2(1.0 + (max(aspect, 1.0) - 1.0) * u_lmVigRound, 1.0 + (max(1.0 / aspect, 1.0) - 1.0) * u_lmVigRound);
+    float pw = 2.0 + max(0.0, -u_lmVigRound) * 6.0;
     float r = pow(pow(abs(n.x), pw) + pow(abs(n.y), pw), 1.0 / pw) / 1.4142135623730951;
-    float start = u_vigMid * 0.9;
-    float fe = smoothstep(start, start + 0.05 + u_vigFeather * (1.05 - start), r);
-    if (u_vigAmount < 0.0) c *= max(0.0, 1.0 + u_vigAmount * 0.2 * fe);
-    else c += (1.0 - c) * min(1.0, u_vigAmount * 0.2 * fe);
+    float start = u_lmVigMid * 0.9;
+    float fe = smoothstep(start, start + 0.05 + u_lmVigFeather * (1.05 - start), r);
+    if (u_lmVigAmount < 0.0) c *= max(0.0, 1.0 + u_lmVigAmount * 0.2 * fe);
+    else c += (1.0 - c) * min(1.0, u_lmVigAmount * 0.2 * fe);
   }
   fragColor = vec4(clamp(c, 0.0, 1.0) * src.a, src.a);
 }`;
@@ -176,13 +176,13 @@ void main() {
 			out.push({
 				output: 'keyDenoised',
 				frag: /* glsl */ `${GLSL_MEDIAN9}
-float lm_at(vec2 o) { return texture(u_key, v_uv + o * u_texel * u_denoiseStep).r; }
+float lm_at(vec2 o) { return texture(u_key, v_uv + o * u_texel * u_lmDenoiseStep).r; }
 void main() {
   float m = lm_median9(lm_at(vec2(-1.0, -1.0)), lm_at(vec2(0.0, -1.0)), lm_at(vec2(1.0, -1.0)),
     lm_at(vec2(-1.0, 0.0)), lm_at(vec2(0.0)), lm_at(vec2(1.0, 0.0)),
     lm_at(vec2(-1.0, 1.0)), lm_at(vec2(0.0, 1.0)), lm_at(vec2(1.0, 1.0)));
   float k = texture(u_key, v_uv).r;
-  k = mix(k, m, u_denoise);
+  k = mix(k, m, u_lmDenoise);
   fragColor = vec4(k, k, k, 1.0);
 }`,
 				filter: 'nearest',
@@ -194,14 +194,14 @@ void main() {
 				...gaussianBlurPasses({
 					input: keyTex.slice(2),
 					output: 'keyBlurred',
-					sigma: { uniform: 'u_keyBlurSigma' },
+					sigma: { uniform: 'u_lmKeyBlurSigma' },
 				}),
 			);
 			keyTex = 'u_keyBlurred';
 		}
 	}
 	if (f.sharpen)
-		out.push(...gaussianBlurPasses({ input: 'source', output: 'soft', sigma: { uniform: 'u_sharpSigma' } }));
+		out.push(...gaussianBlurPasses({ input: 'source', output: 'soft', sigma: { uniform: 'u_lmSharpSigma' } }));
 	out.push(finalPass(f, keyTex));
 	return out;
 }
@@ -223,30 +223,30 @@ const BASE_SPEC = defineShaderEffect({
 			const s = lumetriSpatialSettings(p);
 			const px = ctx.pxScale;
 			return {
-				u_sharpen: s.sharpen,
-				u_secSharpen: s.secondary && s.showMask === 0 ? s.secSharpen : 0,
-				u_sharpSigma: LUMETRI_SHARPEN_SIGMA * px,
-				u_showMask: { int: s.showMask },
-				u_invert: s.invert,
-				u_keyHue: [s.hue.on ? 1 : 0, s.hue.a, s.hue.b, s.hue.soft],
-				u_keySat: [s.sat.on ? 1 : 0, s.sat.a, s.sat.b, s.sat.soft],
-				u_keyLuma: [s.luma.on ? 1 : 0, s.luma.a, s.luma.b, s.luma.soft],
-				u_denoise: s.denoise,
-				u_denoiseStep: Math.max(1, (1 + 2 * s.denoise) * px),
-				u_keyBlurSigma: s.blur * LUMETRI_KEY_BLUR_MAX * px,
-				u_secTemp: s.temperature,
-				u_secTint: s.tint,
-				u_secContrast: s.contrast,
-				u_secSat: s.saturation,
-				u_threeWay: s.threeWay,
-				u_offset: [...s.offset],
-				u_lift: [...s.lift],
-				u_gamma: [...s.gamma],
-				u_gain: [...s.gain],
-				u_vigAmount: s.vignette.amount,
-				u_vigMid: s.vignette.midpoint,
-				u_vigRound: s.vignette.roundness,
-				u_vigFeather: s.vignette.feather,
+				u_lmSharpen: s.sharpen,
+				u_lmSecSharpen: s.secondary && s.showMask === 0 ? s.secSharpen : 0,
+				u_lmSharpSigma: LUMETRI_SHARPEN_SIGMA * px,
+				u_lmShowMask: { int: s.showMask },
+				u_lmInvert: s.invert,
+				u_lmKeyHue: [s.hue.on ? 1 : 0, s.hue.a, s.hue.b, s.hue.soft],
+				u_lmKeySat: [s.sat.on ? 1 : 0, s.sat.a, s.sat.b, s.sat.soft],
+				u_lmKeyLuma: [s.luma.on ? 1 : 0, s.luma.a, s.luma.b, s.luma.soft],
+				u_lmDenoise: s.denoise,
+				u_lmDenoiseStep: Math.max(1, (1 + 2 * s.denoise) * px),
+				u_lmKeyBlurSigma: s.blur * LUMETRI_KEY_BLUR_MAX * px,
+				u_lmSecTemp: s.temperature,
+				u_lmSecTint: s.tint,
+				u_lmSecContrast: s.contrast,
+				u_lmSecSat: s.saturation,
+				u_lmThreeWay: s.threeWay,
+				u_lmOffset: [...s.offset],
+				u_lmLift: [...s.lift],
+				u_lmGamma: [...s.gamma],
+				u_lmGain: [...s.gain],
+				u_lmVigAmount: s.vignette.amount,
+				u_lmVigMid: s.vignette.midpoint,
+				u_lmVigRound: s.vignette.roundness,
+				u_lmVigFeather: s.vignette.feather,
 			};
 		},
 	},

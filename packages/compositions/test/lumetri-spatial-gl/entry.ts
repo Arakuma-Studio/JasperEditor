@@ -1,0 +1,181 @@
+// Browser entry of the Lumetri spatial stage GL test (bundled with esbuild, run in headless Chrome by
+// ../lumetri-spatial-gl.test.ts): runs `jasper.lumetri-spatial` through the real GPU host on synthetic scenes and
+// compares every pixel of the pointwise cases with the CPU reference (`lumetriSpatialPixel`). Same host contract as
+// test/fx-gl/entry.ts.
+import {
+	defaultEffectRegistry,
+	type EffectSpec,
+	fxBuiltinUniforms,
+	LUMETRI_SPATIAL_EFFECT_ID,
+	lumetriSpatialPixel,
+	lumetriSpatialSettings,
+	planGpuEffect,
+	type Rgb,
+} from '@jasper/project';
+import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
+import { fxCanvasLayout } from '../../src/fx/plan.ts';
+
+type Px = [number, number, number, number];
+type Box = { x: number; y: number; w: number; h: number };
+
+function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+	const c = document.createElement('canvas');
+	c.width = w;
+	c.height = h;
+	const ctx = c.getContext('2d', { willReadFrequently: true })!;
+	paint?.(ctx);
+	return c;
+}
+
+const spec = (): EffectSpec => defaultEffectRegistry.get(LUMETRI_SPATIAL_EFFECT_ID)!;
+
+const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = {
+	/** Vertical bands: hues around the wheel, then greys. */
+	hues(ctx, b) {
+		const cols = [
+			'#e01010',
+			'#e07010',
+			'#d0d020',
+			'#20c020',
+			'#20c0c0',
+			'#2040e0',
+			'#a020d0',
+			'#e02090',
+			'#c8906c',
+			'#202020',
+			'#808080',
+			'#e0e0e0',
+		];
+		cols.forEach((c, i) => {
+			ctx.fillStyle = c;
+			ctx.fillRect(b.x + (b.w * i) / cols.length, b.y, Math.ceil(b.w / cols.length) + 1, b.h);
+		});
+	},
+	/** Uniform mid grey (vignette profiles). */
+	grey(ctx, b) {
+		ctx.fillStyle = '#a0a0a0';
+		ctx.fillRect(b.x, b.y, b.w, b.h);
+	},
+	/** Red field with isolated blue specks (the key has speckle holes: Denoise). */
+	speckle(ctx, b) {
+		ctx.fillStyle = '#d02020';
+		ctx.fillRect(b.x, b.y, b.w, b.h);
+		ctx.fillStyle = '#2030d0';
+		for (let y = 3; y < b.h; y += 7) for (let x = 3; x < b.w; x += 7) ctx.fillRect(b.x + x, b.y + y, 1, 1);
+	},
+	/** Left half red, right half blue (key edge: Blur). */
+	split(ctx, b) {
+		ctx.fillStyle = '#d02020';
+		ctx.fillRect(b.x, b.y, b.w / 2, b.h);
+		ctx.fillStyle = '#2030d0';
+		ctx.fillRect(b.x + b.w / 2, b.y, b.w / 2, b.h);
+	},
+	/** Left half light grey, right half dark grey (sharpen). */
+	edge(ctx, b) {
+		ctx.fillStyle = '#404040';
+		ctx.fillRect(b.x, b.y, b.w, b.h);
+		ctx.fillStyle = '#c0c0c0';
+		ctx.fillRect(b.x, b.y, b.w / 2, b.h);
+	},
+	/** Half transparent layer (alpha stays). */
+	alpha(ctx, b) {
+		ctx.fillStyle = '#d02020';
+		ctx.fillRect(b.x, b.y, b.w / 2, b.h);
+	},
+};
+
+export type RunOptions = {
+	params?: Record<string, unknown>;
+	width: number;
+	height: number;
+	scene: string;
+	probes?: [number, number][];
+	/** Compare every pixel with the CPU reference (pointwise settings only). */
+	reference?: boolean;
+	png?: boolean;
+};
+
+async function run(o: RunOptions) {
+	const h = fxHost();
+	if (!h) throw new Error('no WebGL2');
+	const s = spec();
+	const params = { ...Object.fromEntries(s.params.map((p) => [p.name, p.default])), ...o.params };
+	const box = { width: o.width, height: o.height };
+	const layout = fxCanvasLayout(box, { left: 0, top: 0, right: 0, bottom: 0 }, 8192);
+	const plan = planGpuEffect(
+		s,
+		{ id: 'fx1', params: params as never },
+		{
+			width: box.width,
+			height: box.height,
+			pxScale: layout.pxScale,
+			fps: 30,
+			frame: 0,
+			duration: 60,
+			seed: 0.5,
+			progress: 0,
+		},
+		{ width: layout.width, height: layout.height },
+	);
+	const input = canvas(layout.width, layout.height, (ctx) => SCENES[o.scene]!(ctx, layout.box));
+	const out = canvas(layout.width, layout.height);
+	runShaderPlan(
+		h,
+		plan,
+		input,
+		{
+			builtins: [
+				...fxBuiltinUniforms({
+					canvas: layout,
+					box: layout.box,
+					pxScale: layout.pxScale,
+					frame: 0,
+					fps: 30,
+					duration: 60,
+					compSize: { width: 1920, height: 1080 },
+				}),
+				{ name: 'u_seed', type: 'float', value: [0.5] },
+			],
+			textures: {},
+			samples: { sources: [], offsets: [] },
+		},
+		out.getContext('2d')!,
+	);
+	const W = layout.width;
+	const H = layout.height;
+	const got = out.getContext('2d')!.getImageData(0, 0, W, H).data;
+	const src = input.getContext('2d')!.getImageData(0, 0, W, H).data;
+	let maxDiff = 0;
+	let worst: unknown = null;
+	if (o.reference) {
+		const settings = lumetriSpatialSettings(params as never);
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) {
+				const i = (y * W + x) * 4;
+				if (src[i + 3] === 0) continue;
+				const c: Rgb = [src[i]! / 255, src[i + 1]! / 255, src[i + 2]! / 255];
+				lumetriSpatialPixel(settings, c, (x + 0.5) / W, (y + 0.5) / H, W / H);
+				for (let k = 0; k < 3; k++) {
+					const d = Math.abs(Math.round(c[k]! * 255) - got[i + k]!);
+					if (d > maxDiff) {
+						maxDiff = d;
+						worst = { x, y, k, want: Math.round(c[k]! * 255), got: got[i + k], src: [src[i], src[i + 1], src[i + 2]] };
+					}
+				}
+			}
+	}
+	const at = (x: number, y: number): Px => {
+		const i = (Math.floor(y) * W + Math.floor(x)) * 4;
+		return [got[i]!, got[i + 1]!, got[i + 2]!, got[i + 3]!];
+	};
+	return {
+		passes: plan.passes.map((p) => p.output ?? null),
+		probes: (o.probes ?? []).map(([x, y]) => at(x, y)),
+		maxDiff,
+		worst,
+		png: o.png ? out.toDataURL('image/png') : undefined,
+	};
+}
+
+const api = { run };
+(window as unknown as { __lms: typeof api }).__lms = api;
