@@ -131,19 +131,21 @@ function now(): number {
 	return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
 
-/** Replace the runtime after a fatal condition (out of memory): every cached function is dropped. */
-function resetEngine(): void {
-	if (!engine || depth > 0) return;
-	const m = engine.module;
-	try {
-		for (const f of engine.functions.values()) if ('fn' in f) f.fn.dispose();
-		engine.run.dispose();
-		engine.context.dispose();
-		engine.runtime.dispose();
-	} catch {
-		// A runtime that ran out of memory may refuse to free cleanly; it is abandoned either way.
-	}
-	engine = createEngine(m);
+/**
+ * The WebAssembly instance aborted (a QuickJS assertion or a host-side failure): drop it and load a fresh one in the
+ * background. Evaluations meanwhile report an error (the properties render their keyframed values). Running out of
+ * the 64 MiB heap is not fatal: QuickJS throws, the expression's objects are freed as the stack unwinds.
+ */
+function abandonEngine(reason: string): void {
+	engine = null;
+	modulePromise = null;
+	loadError = `Error: the expression engine stopped (${reason}); it is restarting`;
+	void loadExpressionEngine().then(
+		() => {
+			loadError = null;
+		},
+		() => {},
+	);
 }
 
 // ---------------------------------------------------------------- errors
@@ -224,7 +226,6 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 	}
 	depth++;
 	hosts.push(host);
-	let fatal = false;
 	try {
 		const json = e.context.newString(JSON.stringify({ ...state, top }));
 		const r = e.context.callFunction(e.run, e.context.undefined, c.fn, json);
@@ -232,19 +233,17 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 		if (r.error) {
 			const dumped = e.context.dump(r.error);
 			r.error.dispose();
-			const msg = formatError(dumped);
-			fatal = /ran out of memory/.test(msg);
-			return { ok: false, error: msg };
+			return { ok: false, error: formatError(dumped) };
 		}
 		const out = e.context.getString(r.value);
 		r.value.dispose();
-		return { ok: true, result: out === undefined ? undefined : JSON.parse(out) };
+		return { ok: true, result: (JSON.parse(out) as { r?: unknown }).r };
 	} catch (err) {
-		fatal = true;
-		return { ok: false, error: `Error: ${(err as Error).message ?? String(err)}` };
+		const msg = (err as Error).message ?? String(err);
+		if (depth === 1) abandonEngine(msg);
+		return { ok: false, error: `Error: ${msg}` };
 	} finally {
 		hosts.pop();
 		depth--;
-		if (fatal && depth === 0) resetEngine();
 	}
 }
