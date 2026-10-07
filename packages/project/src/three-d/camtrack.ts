@@ -296,3 +296,57 @@ export function layerOrientationFor(n: Vec3, right: Vec3): Vec3 {
 
 /** World direction of a canonical direction (rotation only). */
 export const dirToWorld = (m: SolveMapping, d: Vec3): Vec3 => norm3(mv(m.r, d));
+
+// ---------------------------------------------------------------- engine requests
+
+/** Where a clip's 3D Camera Tracker is, or null. */
+export function findCameraTracker(
+	doc: { sequences: Record<string, { id: string; clips: Record<string, unknown> }> },
+	clipId: string,
+): { sequenceId: string; tracker: ClipCameraTracker } | null {
+	for (const seq of Object.values(doc.sequences)) {
+		const c = seq.clips[clipId] as { cameraTracker?: ClipCameraTracker } | undefined;
+		if (c?.cameraTracker) return { sequenceId: seq.id, tracker: c.cameraTracker };
+	}
+	return null;
+}
+
+/** The body of `POST /api/camtrack/solve` for a clip's tracker (the client adds `projectId`). Throws when impossible. */
+export function cameraTrackerSolveBody(
+	doc: {
+		sequences: Record<string, { id: string; clips: Record<string, unknown> }>;
+		media: Record<string, { locators: readonly { type: string; key?: string }[] } | undefined>;
+	},
+	clipId: string,
+): {
+	mediaKey: string;
+	clipId: string;
+	trackerId: string;
+	span: [number, number];
+	settings: { shot: 'fixed' | 'variable' | 'specify'; hfov: number; method: 'auto' | 'typical' | 'flat' | 'tripod'; detailed: boolean; lensDistortion: boolean };
+	deleted: number[];
+	inputs: string;
+} {
+	const loc = findCameraTracker(doc, clipId);
+	if (!loc) throw new Error('The clip has no 3D Camera Tracker');
+	const t = loc.tracker;
+	const asset = doc.media[t.mediaId];
+	const store = asset?.locators.find((l) => l.type === 'engine-store');
+	if (!store?.key) throw new Error('The clip’s media is not on the engine (import it first)');
+	const s = cameraTrackerSettingsOf(t.settings);
+	return {
+		mediaKey: store.key,
+		clipId,
+		trackerId: t.id,
+		span: [t.span[0], t.span[1]],
+		settings: {
+			shot: s.shot,
+			hfov: s.hfov,
+			method: s.method,
+			detailed: s.detailed,
+			lensDistortion: s.lensDistortion,
+		},
+		deleted: [...t.deleted],
+		inputs: cameraTrackerInputs(t),
+	};
+}

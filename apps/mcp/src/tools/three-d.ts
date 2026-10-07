@@ -1,8 +1,20 @@
 // three-d for agents (docs/wp-notes/three-d.md): the 3D Layer switch, 3D transform and Material Options, cameras
 // (lens, depth of field, orbit / pan / dolly), lights, the sequence's 3D renderer, and a read-out of the evaluated
 // 3D scene at a frame (active camera, lights, every 3D layer's world placement and projected corners, the runs).
+import type { CamTrackResult, EngineJob } from '@jasper/api';
+import { EngineError } from '@jasper/engine-client';
 import {
 	activeCameraAt,
+	cameraTrackerInputs,
+	cameraTrackerSettingsOf,
+	cameraTrackerSolveBody,
+	type ClipCameraTracker,
+	contentTimeAt,
+	findCameraTracker,
+	isSolveStale,
+	mediaFrameAt,
+	type Rational,
+	trackPointsAt,
 	activeCameraClipAt,
 	angleOfViewForZoom,
 	buildRenderSnapshot,
@@ -25,7 +37,21 @@ import {
 	stackAt,
 } from '@jasper/project';
 import { z } from 'zod';
-import { defineTool, EDIT, EDIT_IDEMPOTENT, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import {
+	DESTRUCTIVE,
+	defineTool,
+	EDIT,
+	EDIT_IDEMPOTENT,
+	isTerminal,
+	jobBody,
+	loadDoc,
+	READ_ONLY,
+	requireOk,
+	type ToolContext,
+	transact,
+	txBody,
+	waitJob,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
@@ -38,7 +64,8 @@ export const THREE_D_GUIDE = `3D layers, cameras and lights (After Effects' 3D i
 - add_light {lightType parallel|spot|point|ambient|environment, position, pointOfInterest, intensity, color, coneAngle, coneFeather, falloff none|smooth|inverse-square, radius, falloffDistance, castsShadows, shadowDarkness, shadowDiffusion}; light_settings edits one. Shadows need a light with castsShadows and layers with Casts Shadows on.
 - set_3d_renderer {renderer classic|advanced, draft}: Classic 3D is After Effects' plane renderer. get_3d_scene {frame} reports the evaluated camera, lights, every 3D layer's placement and projected corners and the runs — check results with render_frame.
 - Every property is also a param.set path: ["clip", id, "threeD", "positionZ" | "orientation" | "rotationX" | "material", "castsShadows" …], ["clip", id, "camera", "zoom" | "position" | "pointOfInterest" …], ["clip", id, "light", "intensity" | "color" …] (keyframe.add / expressions work on them too).
-- Export: 3D layers render on the Remotion path (the planner routes them there and says so); preview and export use the same renderer.`;
+- Export: 3D layers render on the Remotion path (the planner routes them there and says so); preview and export use the same renderer.
+- 3D Camera Tracker: track_camera {clipId} analyses a video clip (features tracked through the shown media frames, then the camera and lens solved: Shot Type fixed | variable | specify with hfov, Solve Method auto | typical | flat | tripod, detailed, lensDistortion) and stores the solve (Method Used, Average Error in px, 3D track points); it takes about a second per frame. get_camera_tracker {clipId, frame} lists the track points seen at a sequence frame (id, media px, depth, error). create_tracked_camera {clipId, layer none|text|solid, pointIds, text} makes a one-node camera keyed on every frame that sees the footage as it was filmed, plus a 3D text or solid on the target of the points (3 or more points: their plane). set_tracker_ground {clipId, pointIds ≥ 3} makes their plane the ground (horizontal, through the frame centre) before creating the camera. delete_track_points {clipId, pointIds} drops bad points and solves again. The tracked clip must be drawn centred, unrotated, not animated (its Motion scale is used).`;
 
 const Vec3Arg = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
 const FrameArg = z
@@ -505,4 +532,224 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			});
 		},
 	);
+
+	defineTool(
+		ctx,
+		'track_camera',
+		{
+			title: 'Track camera (3D Camera Tracker)',
+			description:
+				"After Effects' 3D Camera Tracker on a video clip: applies it (when missing) with the settings given, tracks features through the media frames the clip shows (span to change), solves the camera and lens, and stores the solve (History \"Solve Camera\"). With wait: false it returns the job; call again with the jobId to store the result. Returns Method Used, Average Error (px) and the number of 3D track points.",
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				shot: z.enum(['fixed', 'variable', 'specify']).optional().describe('Shot Type (default fixed: one focal length)'),
+				hfov: z.number().min(1).max(170).optional().describe('Horizontal angle of view (°) for shot "specify"'),
+				method: z.enum(['auto', 'typical', 'flat', 'tripod']).optional(),
+				detailed: z.boolean().optional(),
+				lensDistortion: z.boolean().optional(),
+				span: z.tuple([z.number().int().min(0), z.number().int().min(0)]).optional().describe('Media frames [first, last]'),
+				wait: z.boolean().optional().describe('Wait for the solve (default true)'),
+				jobId: z.string().optional().describe('A camtrack job started with wait: false, to wait for and store'),
+			},
+			annotations: EDIT,
+		},
+		async (args, extra) => {
+			const { projectId, clipId } = args;
+			let job: EngineJob;
+			let timedOut = false;
+			if (args.jobId) ({ job, timedOut } = await waitJob(ctx, args.jobId, 3_600_000, extra));
+			else {
+				const { doc } = await loadDoc(ctx, projectId);
+				const settings = {
+					...(args.shot ? { shot: args.shot } : {}),
+					...(args.hfov !== undefined ? { hfov: args.hfov } : {}),
+					...(args.method ? { method: args.method } : {}),
+					...(args.detailed !== undefined ? { detailed: args.detailed } : {}),
+					...(args.lensDistortion !== undefined ? { lensDistortion: args.lensDistortion } : {}),
+					...(args.span ? { span: args.span } : {}),
+				};
+				const has = !!findCameraTracker(doc as never, clipId);
+				if (!has || Object.keys(settings).length) {
+					const res = await transact(
+						ctx,
+						projectId,
+						{
+							label: has ? '3D Camera Tracker Settings' : 'Track Camera',
+							commands: [{ type: has ? 'cameraTracker.settings' : 'cameraTracker.add', clipId, ...settings }],
+						},
+						extra,
+					);
+					requireOk(res);
+				}
+				const fresh = (await loadDoc(ctx, projectId)).doc;
+				let body: ReturnType<typeof cameraTrackerSolveBody>;
+				try {
+					body = cameraTrackerSolveBody(fresh as never, clipId);
+				} catch (e) {
+					throw new ToolError('E_INVALID_PARAM', (e as Error).message);
+				}
+				const { inputs: _i, ...request } = body;
+				job = (await ctx
+					.engine((c) => c.call('camtrackSolve', { body: { ...request, projectId } }))
+					.catch(camtrackErr)) as EngineJob;
+				if (args.wait !== false) ({ job, timedOut } = await waitJob(ctx, job.id, 3_600_000, extra));
+			}
+			if (!isTerminal(job) || timedOut)
+				return jsonResult({
+					...jobBody(job, ctx.link.target?.url ?? ''),
+					note: 'The camera solve is running. Call track_camera with this jobId (and the clipId) to store it when done.',
+				});
+			if (job.state !== 'succeeded')
+				throw new ToolError(job.error?.code ?? 'CAMTRACK_FAILED', job.error?.message ?? `The camtrack job ${job.state}`);
+			const r = job.result as CamTrackResult;
+			const { clipId: _c, trackerId: _t, mediaKey: _m, rate: _r, tracks: _n, ...solve } = r;
+			const res = await transact(
+				ctx,
+				projectId,
+				{ label: 'Solve Camera', commands: [{ type: 'cameraTracker.setResult', clipId, solve }] },
+				extra,
+			);
+			const ok = requireOk(res);
+			return jsonResult({
+				...txBody(res, ok),
+				jobId: job.id,
+				methodUsed: r.methodUsed,
+				averageErrorPx: r.averageError,
+				trackPoints: r.points.length,
+				featureTracks: r.tracks,
+				focalLengthPx: (() => {
+					const f = r.frames.filter((_, i) => i % 8 === 6).sort((a, b) => a - b);
+					return r3(f[f.length >> 1] ?? 0);
+				})(),
+				...(r.distortion ? { distortion: r.distortion } : {}),
+				next: 'Pick points with get_camera_tracker, then create_tracked_camera (layer text | solid | none).',
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'get_camera_tracker',
+		{
+			title: 'Get 3D Camera Tracker',
+			description:
+				"A clip's 3D Camera Tracker (read-only): settings, span, whether it is solved (and stale), Method Used, Average Error, the created camera, the ground plane, and the track points seen at a sequence frame (id, media px, depth from the camera in solve units, error px) — nearest first, at most `limit`.",
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				frame: z.number().int().min(0).optional().describe('Sequence frame (default: the clip start)'),
+				limit: z.number().int().min(1).max(5000).optional(),
+			},
+			annotations: READ_ONLY,
+		},
+		async ({ projectId, clipId, frame, limit }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const { seq, clip } = findClip(doc, clipId);
+			const t = (clip as { cameraTracker?: ClipCameraTracker }).cameraTracker;
+			if (!t)
+				throw new ToolError('E_INVALID_PARAM', `Clip ${clipId} has no 3D Camera Tracker`, 'Call track_camera first.');
+			const f = frame ?? clip.start;
+			const media = mediaFrameAt(contentTimeAt(clip, f, seq.settings.frameRate as Rational), t.rate as Rational);
+			const points = trackPointsAt(t, media)
+				.sort((a, b) => a.depth - b.depth)
+				.slice(0, limit ?? 200)
+				.map((p) => ({ id: p.id, uv: rv(p.uv), depth: r3(p.depth), errorPx: r3(p.error) }));
+			return jsonResult({
+				trackerId: t.id,
+				span: t.span,
+				settings: cameraTrackerSettingsOf(t.settings),
+				deletedPoints: t.deleted.length,
+				solved: !!t.solve,
+				stale: isSolveStale(t),
+				inputs: cameraTrackerInputs(t),
+				...(t.solve
+					? {
+							methodUsed: t.solve.methodUsed,
+							averageErrorPx: t.solve.averageError,
+							trackPoints: t.solve.points.length - t.deleted.length,
+						}
+					: {}),
+				...(t.createdCameraId ? { cameraClipId: t.createdCameraId } : {}),
+				ground: t.ground ?? null,
+				mediaFrame: media,
+				points,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'create_tracked_camera',
+		{
+			title: 'Create camera from the 3D Camera Tracker',
+			description:
+				'Create Camera / Create Text and Camera / Create Solid and Camera: a one-node camera keyed on every frame of the tracked clip (position, orientation, zoom for variable zoom) that sees the footage as filmed, and with layer text | solid a 3D layer on the target of pointIds (three or more points: lying in their plane, facing the camera; fewer: facing the camera). replaceCamera rewrites the tracker\'s camera instead of adding one.',
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				layer: z.enum(['none', 'text', 'solid']).optional(),
+				pointIds: z.array(z.number().int().min(0)).optional(),
+				frame: z.number().int().min(0).optional().describe('Media frame the target is seen at'),
+				text: z.string().optional(),
+				color: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+				replaceCamera: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, ...args }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				args.layer === 'text' ? 'Create Text and Camera' : args.layer === 'solid' ? 'Create Solid and Camera' : 'Create Camera',
+				[{ type: 'cameraTracker.create', ...args }],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'set_tracker_ground',
+		{
+			title: 'Set ground plane and origin',
+			description:
+				"Set Ground Plane and Origin: the plane of three or more track points becomes the world's ground (horizontal, y down, through the frame centre at z 0). pointIds [] resets it. Create the camera afterwards (create_tracked_camera with replaceCamera).",
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				pointIds: z.array(z.number().int().min(0)),
+				frame: z.number().int().min(0).optional(),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, ...args }, extra) =>
+			applyHelper(ctx, projectId, 'Set Ground Plane and Origin', [{ type: 'cameraTracker.setGround', ...args }], extra),
+	);
+
+	defineTool(
+		ctx,
+		'delete_track_points',
+		{
+			title: 'Delete track points',
+			description:
+				'Deletes 3D Camera Tracker track points (bad ones: on moving objects, high error) — they stay out of the next solve. Call track_camera again to re-solve without them (the feature tracks are cached, so it is faster).',
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				pointIds: z.array(z.number().int().min(0)).min(1),
+			},
+			annotations: DESTRUCTIVE,
+		},
+		async ({ projectId, ...args }, extra) =>
+			applyHelper(ctx, projectId, 'Delete Track Points', [{ type: 'cameraTracker.deletePoints', ...args }], extra),
+	);
+
+}
+
+function camtrackErr(e: unknown): never {
+	if (e instanceof EngineError) {
+		const code = (e.detail as { code?: string } | undefined)?.code ?? e.code;
+		throw new ToolError(code ?? 'ENGINE_ERROR', e.message);
+	}
+	throw e;
 }

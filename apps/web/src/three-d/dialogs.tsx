@@ -72,7 +72,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /** A number field that keeps the text while typing and reports finite numbers. */
-function NumberInput(props: {
+export function NumberInput(props: {
 	value: number;
 	onChange(v: number): void;
 	label: string;

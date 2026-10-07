@@ -5,12 +5,15 @@
 // overlay (view chip, wireframes, axis gizmo, Camera tool).
 import { type Clip, canBe3d, type Sequence, VIEW_3D_LABELS, VIEWS_3D, type View3D } from '@jasper/project';
 import { programOverlays } from '../extensions/index.ts';
+import { camtrackEngine, trackCamera } from '../three-d/camtrack/actions.ts';
+import { registerCamTrackUi } from '../three-d/camtrack/register.ts';
 import { CAMERA_DIALOG, LIGHT_DIALOG, registerThreeDDialogs } from '../three-d/dialogs.tsx';
 import { Scene3DOverlay } from '../three-d/Scene3DOverlay.tsx';
 import { resetView, switchView, viewCamOf, viewsOf } from '../three-d/view-store.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerThreeDDialogs();
+registerCamTrackUi();
 programOverlays.register({ id: 'three-d', active: () => true, component: Scene3DOverlay, order: 95 });
 
 function seqOf(ctx: CommandCtx): Sequence | null {
@@ -129,6 +132,26 @@ export const threeDCommands: UiCommand[] = [
 				apply(ctx, '3D Layer', [
 					{ type: 'clip.set3d', clipIds: c.map((x) => x.id), enabled: !c.every(is3d) },
 				]);
+		},
+	},
+	{
+		id: 'threeD.trackCamera',
+		label: 'Track Camera',
+		description:
+			"After Effects' 3D Camera Tracker: analyse the selected video clip, solve its camera and lens, show the track points; then create a camera, text or solid on them.",
+		scope: 'global',
+		agentExposed: true,
+		when: (ctx) => editable(ctx) && selectedClips(ctx).length === 1 && selectedClips(ctx)[0]!.kind === 'video' && !!camtrackEngine(),
+		disabledReason: (ctx) =>
+			selectedClips(ctx).length === 1 && selectedClips(ctx)[0]!.kind === 'video'
+				? camtrackEngine()
+					? undefined
+					: 'The engine is not connected'
+				: 'Select one video clip',
+		run: (ctx) => {
+			const c = selectedClips(ctx)[0];
+			const e = camtrackEngine();
+			if (c && e) void trackCamera(ctx.session!, e, c.id);
 		},
 	},
 	{

@@ -184,6 +184,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('threeD.toggleLayer', '3D Layer'),
 			c('threeD.cameraSettings', 'Camera Settings…'),
 			c('threeD.lightSettings', 'Light Settings…'),
+			c('threeD.trackCamera', 'Track Camera'),
 			sub('Video Options', [
 				c('timeline.frameHoldOptions', 'Frame Hold Options…'),
 				c('timeline.addFrameHold', 'Add Frame Hold'),
