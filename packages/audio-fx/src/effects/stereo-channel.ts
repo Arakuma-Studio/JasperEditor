@@ -184,7 +184,9 @@ export class ChannelMixer extends EffectBase {
 			(ir * this.pv.v('rightFromLeft')) / 100,
 			(ir * this.pv.v('rightFromRight')) / 100,
 		];
-		this.g.forEach((s, k) => s.set(v[k]!));
+		this.g.forEach((s, k) => {
+			s.set(v[k]!);
+		});
 		if (snap) snapAll(this.g);
 	}
 	reset(): void {
@@ -445,7 +447,9 @@ export class Binauralizer extends EffectBase {
 		const a = (this.pv.v('headSize') * 0.01) / 2;
 		const near = Shadow.coeffs(90 - theta, a, this.sampleRate);
 		const far = Shadow.coeffs(90 + theta, a, this.sampleRate);
-		this.sh.forEach((s, k) => s.set(k % 2 === 0 ? near : far));
+		this.sh.forEach((s, k) => {
+			s.set(k % 2 === 0 ? near : far);
+		});
 		const th = (theta * Math.PI) / 180;
 		this.itd.set((a / SPEED_OF_SOUND) * (th + Math.sin(th)) * this.sampleRate);
 		this.mix.set(this.pv.v('mix') / 100);
@@ -519,7 +523,9 @@ export class AmbisonicsPanner extends EffectBase {
 		const [ll, rl] = AmbisonicsPanner.sourceGains(30, pan, tilt, roll);
 		const [lr, rr] = AmbisonicsPanner.sourceGains(-30, pan, tilt, roll);
 		const clean = (v: number) => (Math.abs(v) < 1e-6 ? 0 : Math.abs(v - 1) < 1e-6 ? 1 : v);
-		[ll, lr, rl, rr].forEach((v, k) => this.m[k]!.set(clean(v)));
+		[ll, lr, rl, rr].forEach((v, k) => {
+			this.m[k]!.set(clean(v));
+		});
 		if (snap) snapAll(this.m);
 	}
 	reset(): void {
