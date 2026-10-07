@@ -4,6 +4,8 @@
 // * `jasper-meter`: pass-through tap; posts per-channel peak / RMS / clip every ~33 ms and, with
 //   `processorOptions.loudness`, the BS.1770-4 / R128 readouts (momentary, short-term, integrated, LRA, true peak).
 // * `jasper-limiter`: look-ahead true-peak limiter at the loudness-normalisation ceiling (bypass when disabled).
+// * `jasper-capture`: voice-over recording tap: posts the input (planar copies, ~85 ms batches) with the frame
+//   index of the first sample (`currentFrame`), plus per-channel input peaks for the record meter.
 import { LevelMeter, LoudnessMeter, TruePeakLimiter } from '@jasper/audio-dsp';
 
 declare const sampleRate: number;
@@ -126,5 +128,74 @@ class LimiterProcessor extends AudioWorkletProcessor {
 	}
 }
 
+declare const currentFrame: number;
+
+class CaptureProcessor extends AudioWorkletProcessor {
+	private recording = false;
+	private batch: Float32Array[][] = [];
+	private batchFrames = 0;
+	private batchStart = 0;
+	private readonly flushFrames: number;
+	private peaks: number[] = [];
+
+	constructor(options: Options) {
+		super(options);
+		this.flushFrames = Math.max(128, Math.round(sampleRate * 0.085));
+		this.port.onmessage = (e: MessageEvent) => {
+			const m = e.data as { type?: string };
+			if (m.type === 'start') {
+				this.recording = true;
+				this.batch = [];
+				this.batchFrames = 0;
+			} else if (m.type === 'stop') {
+				this.flush();
+				this.recording = false;
+				this.port.postMessage({ type: 'stopped', frame: currentFrame });
+			}
+		};
+	}
+
+	private flush(): void {
+		if (this.batchFrames === 0) return;
+		const nch = this.batch[0]?.length ?? 0;
+		const out = Array.from({ length: nch }, () => new Float32Array(this.batchFrames));
+		let o = 0;
+		for (const block of this.batch) {
+			for (let c = 0; c < nch; c++) out[c]!.set(block[c]!, o);
+			o += block[0]!.length;
+		}
+		this.port.postMessage({ type: 'data', start: this.batchStart, channels: out }, out.map((c) => c.buffer));
+		this.batch = [];
+		this.batchFrames = 0;
+	}
+
+	process(inputs: Float32Array[][]): boolean {
+		const input = inputs[0] ?? [];
+		const n = input[0]?.length ?? 0;
+		if (n === 0) return true;
+		for (let c = 0; c < input.length; c++) {
+			let p = this.peaks[c] ?? 0;
+			const x = input[c]!;
+			for (let i = 0; i < n; i++) {
+				const a = x[i]! < 0 ? -x[i]! : x[i]!;
+				if (a > p) p = a;
+			}
+			this.peaks[c] = p;
+		}
+		if (this.recording) {
+			if (this.batchFrames === 0) this.batchStart = currentFrame;
+			this.batch.push(input.map((c) => c.slice()));
+			this.batchFrames += n;
+			if (this.batchFrames >= this.flushFrames) this.flush();
+		}
+		if (currentFrame % 4096 < 128) {
+			this.port.postMessage({ type: 'peaks', peaks: this.peaks });
+			this.peaks = [];
+		}
+		return true;
+	}
+}
+
 registerProcessor('jasper-meter', MeterProcessor);
+registerProcessor('jasper-capture', CaptureProcessor);
 registerProcessor('jasper-limiter', LimiterProcessor);

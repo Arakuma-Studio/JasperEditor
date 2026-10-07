@@ -411,6 +411,8 @@ export class MixGraph {
 	private fps: Rational = { num: 30, den: 1 };
 	private time = 0;
 	mixdown: Mixdown = 'frontRear';
+	/** Output channels soloed on the Audio Meters (monitoring only; empty = all). */
+	private monitorSolo = new Set<number>();
 
 	constructor(
 		readonly ctx: AudioContext,
@@ -540,7 +542,6 @@ export class MixGraph {
 		this.time = timeFlicks;
 		const key = JSON.stringify([
 			this.workletReady,
-			this.mixdown,
 			mix.masterFormat,
 			mix.strips.map((s) => [
 				s.id,
@@ -634,7 +635,7 @@ export class MixGraph {
 			this.masterMeter = null;
 		}
 		this.device = new MatrixNode(this.ctx, mw, 2);
-		this.device.set(conversionMatrix(layoutOf(mw), 'stereo', this.mixdown), true);
+		this.device.set(this.deviceMatrix(mw), true);
 		last.connect(this.device.input);
 		this.device.output.connect(this.destination);
 		// existing clips → their (new) track inputs
@@ -644,6 +645,41 @@ export class MixGraph {
 			const st = this.strips.get(clip.trackId);
 			if (st) c.connect(clip, st.width, st.input, this.time);
 		}
+	}
+
+	/** The Mix → device fold with the meters' channel solo applied (soloed channels only, folded the same way). */
+	private deviceMatrix(mw: number): number[][] {
+		const m = conversionMatrix(layoutOf(mw), 'stereo', this.mixdown);
+		if (this.monitorSolo.size === 0) return m;
+		const solo = mw === 2 ? m.map((row) => row.map((v, j) => (this.monitorSolo.has(j) ? v : 0))) : m;
+		if (mw !== 2) return m.map((row) => row.map((v, j) => (this.monitorSolo.has(j) ? v : 0)));
+		// stereo: a soloed channel is heard on both sides (Premiere's meter solo buttons)
+		if (this.monitorSolo.size === 1) {
+			const j = [...this.monitorSolo][0]!;
+			return [
+				[j === 0 ? 1 : 0, j === 1 ? 1 : 0],
+				[j === 0 ? 1 : 0, j === 1 ? 1 : 0],
+			];
+		}
+		return solo;
+	}
+
+	/** Solo output channels on the monitor (Audio Meters' S buttons). */
+	setMonitorSolo(channels: Iterable<number>): void {
+		this.monitorSolo = new Set(channels);
+		if (this.device && this.mix) this.device.set(this.deviceMatrix(widthOf(this.mix.masterFormat)));
+		for (const cb of this.changeListeners) cb();
+	}
+
+	get monitorSoloChannels(): ReadonlySet<number> {
+		return this.monitorSolo;
+	}
+
+	/** 5.1 mixdown type of the device fold (Preferences ▸ Audio). */
+	setMixdown(m: Mixdown): void {
+		if (this.mixdown === m) return;
+		this.mixdown = m;
+		if (this.device && this.mix) this.device.set(this.deviceMatrix(widthOf(this.mix.masterFormat)));
 	}
 
 	private ov(stripId: string, lane: string): number | undefined {
