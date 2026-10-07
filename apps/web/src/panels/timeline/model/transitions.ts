@@ -76,12 +76,15 @@ export function transitionGeom(seq: Sequence, media: MediaRecord, t: Transition)
 	const spec = transitionSpec(t.effectId);
 	const oneSided = outgoing && incoming ? null : incoming ? 'in' : 'out';
 	const cut = incoming ? incoming.start : endOf(outgoing!);
+	// edit-structure: freeze-frame handles repeat edge frames, so only the clips' lengths limit the span.
+	const free = t.freezeHandles === true;
+	const inf = Number.POSITIVE_INFINITY;
 	const duration = fitTransitionDuration({
 		effectId: t.effectId,
 		wanted: t.duration,
 		alignment: t.alignment,
-		outgoing: outgoing ? { duration: outgoing.duration, tail } : null,
-		incoming: incoming ? { duration: incoming.duration, head } : null,
+		outgoing: outgoing ? { duration: outgoing.duration, tail: free ? inf : tail } : null,
+		incoming: incoming ? { duration: incoming.duration, head: free ? inf : head } : null,
 	});
 	const d = Math.max(1, duration);
 	const span = spanOf(cut, d, t.alignment, oneSided);

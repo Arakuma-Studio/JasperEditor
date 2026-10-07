@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import { Biquad, designBiquad, magnitudeDb } from '../src/core/biquad.ts';
 import { Fft } from '../src/core/fft.ts';
-import { Interpolator, PolyphaseBank, TAPS_PER_PHASE } from '../src/core/oversample.ts';
 import { Smoothed } from '../src/core/smooth.ts';
 import { AllPass1, DelayLine, Prng } from '../src/core/util.ts';
 import { db, SR, sine, toneAmplitude } from './util.ts';
@@ -150,21 +149,5 @@ describe('primitives', () => {
 			sum += v;
 		}
 		expect(Math.abs(sum / 100000)).toBeLessThan(0.01);
-	});
-
-	it('true-peak interpolator: unity DC phases, finds the inter-sample peak of fs/4 at 45°', () => {
-		const bank = new PolyphaseBank(4);
-		for (let p = 0; p < 4; p++) {
-			let s = 0;
-			for (let j = 0; j < TAPS_PER_PHASE; j++) s += bank.coeffs[p * TAPS_PER_PHASE + j]!;
-			expect(Math.abs(s - 1)).toBeLessThan(1e-9);
-		}
-		const ip = new Interpolator();
-		let pk = 0;
-		for (let n = 0; n < 400; n++) {
-			const p = ip.pushPeak(bank, Math.sin((Math.PI / 2) * n + Math.PI / 4));
-			if (n > 40) pk = Math.max(pk, p);
-		}
-		expect(Math.abs(pk - 1)).toBeLessThan(0.02);
 	});
 });

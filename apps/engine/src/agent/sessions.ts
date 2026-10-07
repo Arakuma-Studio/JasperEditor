@@ -18,7 +18,7 @@ export interface AgentSocket {
 
 const OPEN = 1;
 
-type RequestKind = 'tx' | 'query' | 'schema';
+type RequestKind = 'tx' | 'query' | 'schema' | 'ui';
 
 type RelayOutcome = { result: unknown; error?: { code: string; message: string } };
 
@@ -187,6 +187,25 @@ export class SessionRegistry {
 		let best: AgentConnection | null = null;
 		for (const c of this.conns) {
 			if (c.projectId !== projectId || !c.leaseId || c.socket.readyState !== OPEN) continue;
+			if (!best || c.helloAt > best.helloAt) best = c;
+		}
+		return best;
+	}
+
+	/**
+	 * The window that answers live-UI automation (mcp-cli): for a project, its lease holder or else its most
+	 * recent window (read-only windows can be looked at and clicked too); without a project, the most recently
+	 * announced window of any project.
+	 */
+	uiTarget(projectId?: string): AgentConnection | null {
+		if (projectId) {
+			const h = this.holder(projectId);
+			if (h) return h;
+		}
+		let best: AgentConnection | null = null;
+		for (const c of this.conns) {
+			if (!c.projectId || c.socket.readyState !== OPEN) continue;
+			if (projectId && c.projectId !== projectId) continue;
 			if (!best || c.helloAt > best.helloAt) best = c;
 		}
 		return best;

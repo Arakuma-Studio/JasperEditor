@@ -1,9 +1,10 @@
 // Channel utilities and stereo imagery (ports of filmcraft `channel.rs` / `premiere_tests.rs` tests plus analytic
 // checks of the pan laws and the Mono Maker crossover).
+
+import { balanceGains, panMonoGains as constantPowerPan } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import { magnitudeDb } from '../src/core/biquad.ts';
 import { dbToGain } from '../src/core/math.ts';
-import { balanceGains, constantPowerPan, panGains } from '../src/core/pan.ts';
 import { AmbisonicsPanner } from '../src/effects/stereo-channel.ts';
 import { createProcessor } from '../src/registry.ts';
 import { noise, peak, rms, SR, sine, toneAmplitude } from './util.ts';
@@ -21,29 +22,7 @@ function run(e: ReturnType<typeof fx>, l: Float32Array, r: Float32Array) {
 	return [a, b] as const;
 }
 
-describe('pan laws', () => {
-	it('panGains: centre unity, hard sides silence the other side, normalised constant power in between', () => {
-		expect(panGains(0)[0]).toBeCloseTo(1, 12);
-		expect(panGains(0)[1]).toBeCloseTo(1, 12);
-		expect(panGains(-1)[0]).toBeCloseTo(1, 12);
-		expect(panGains(-1)[1]).toBeCloseTo(0, 12);
-		expect(panGains(1)[0]).toBeCloseTo(0, 12);
-		expect(panGains(1)[1]).toBeCloseTo(1, 12);
-		// Right half: right stays 1, left follows √2·cos((p+1)π/4).
-		for (const p of [0.25, 0.5, 0.75]) {
-			const [l, r] = panGains(p);
-			expect(r).toBe(1);
-			expect(l).toBeCloseTo(Math.SQRT2 * Math.cos(((p + 1) * Math.PI) / 4), 12);
-			// Symmetric.
-			const [l2, r2] = panGains(-p);
-			expect(l2).toBeCloseTo(r, 12);
-			expect(r2).toBeCloseTo(l, 12);
-		}
-		// −50 % = the right side at −3.01 dB relative to centre (cos(π/8)·√2 … = 0.7654? no: (−0.5+1)π/4 = π/8).
-		expect(panGains(-0.5)[1]).toBeCloseTo(Math.SQRT2 * Math.sin(Math.PI / 8), 12);
-		expect(panGains(Number.NaN)).toEqual(panGains(0));
-	});
-
+describe('pan laws (audio-dsp, used by Balance)', () => {
 	it('constant-power pan sums power to 1; balance is cosine', () => {
 		for (let i = -10; i <= 10; i++) {
 			const [l, r] = constantPowerPan(i / 10);

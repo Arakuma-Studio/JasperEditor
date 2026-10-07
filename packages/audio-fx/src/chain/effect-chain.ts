@@ -45,7 +45,14 @@ export class EffectChain {
 			if (!slot || slot.effectId !== fx.effectId) {
 				const processor = createProcessor(fx.effectId, this.sampleRate, this.channels);
 				if (!processor) continue;
-				slot = { instanceId: fx.id, effectId: fx.effectId, processor, enabled: fx.enabled, animated: [], last: new Map() };
+				slot = {
+					instanceId: fx.id,
+					effectId: fx.effectId,
+					processor,
+					enabled: fx.enabled,
+					animated: [],
+					last: new Map(),
+				};
 			}
 			slot.animated = [];
 			for (const p of slot.processor.spec.params) {

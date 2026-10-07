@@ -57,6 +57,7 @@ function toPresetAnim<T>(a: Animatable<T>, timing: ClipTiming, seq: Sequence): P
 	const rate = seq.settings.frameRate;
 	return {
 		value: clone(a.value),
+		...(a.expression ? { expression: { text: a.expression.text, enabled: a.expression.enabled } } : {}),
 		...(a.keyframes.length
 			? {
 					keyframes: a.keyframes.map((k) => ({

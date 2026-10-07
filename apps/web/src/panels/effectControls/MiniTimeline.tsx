@@ -1,7 +1,7 @@
 // Mini-timeline pieces for Effect Controls (S03:EC-020…024, S05:ECP-006): ruler with clip range bar,
 // per-row keyframe lanes with interpolation glyphs, summary diamonds on effect headers, and the
 // playhead line that follows the TransportStore imperatively (no React render per frame).
-import { formatTimecode, type Sequence } from '@jasper/project';
+import { formatTimecode, isRovingKey, type Keyframe, type Sequence } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import {
@@ -22,6 +22,8 @@ function KeyGlyph(props: {
 	right: ReturnType<typeof glyphHalves>['right'];
 	selected?: boolean;
 	summary?: boolean;
+	/** keyframes-blend: a roving key (After Effects draws it as a small dot). */
+	roving?: boolean;
 }) {
 	const fill = props.summary
 		? 'var(--pr-text-tertiary)'
@@ -33,6 +35,12 @@ function KeyGlyph(props: {
 		: props.selected
 			? 'var(--pr-keyframe-selected-stroke)'
 			: 'var(--pr-keyframe-stroke)';
+	if (props.roving)
+		return (
+			<svg width={9} height={9} viewBox="0 0 9 9" aria-hidden className="block">
+				<circle cx={4.5} cy={4.5} r={2.2} fill={fill} stroke={stroke} strokeWidth={0.6} />
+			</svg>
+		);
 	return (
 		<svg width={9} height={9} viewBox="0 0 9 9" aria-hidden className="block">
 			<path d={halfPath(props.left, 'left')} fill={fill} stroke={stroke} strokeWidth={0.6} />
@@ -61,7 +69,7 @@ export function KeyLane(props: {
 	const kfs = b.resolved.anim?.keyframes ?? [];
 	return (
 		<div
-			data-lane
+			data-lane={props.row.id}
 			className="relative h-full min-h-[var(--pr-row-h)] flex-1 overflow-hidden"
 			onPointerDown={props.onLanePointerDown}
 		>
@@ -71,14 +79,15 @@ export function KeyLane(props: {
 				if (pct < -2 || pct > 102) return null;
 				const h = glyphHalves(kfs, i);
 				const selected = props.selected.has(k.id);
+				const roving = isRovingKey(kfs as readonly Keyframe<unknown>[], i);
 				return (
 					<button
 						type="button"
 						key={k.id}
 						data-kf-id={k.id}
 						data-kf-clip={b.clip.id}
-						data-kf-shape={`${h.left}/${h.right}`}
-						aria-label={`Keyframe ${props.row.label} at frame ${Math.round(frame)}`}
+						data-kf-shape={roving ? 'roving' : `${h.left}/${h.right}`}
+						aria-label={`${roving ? 'Roving keyframe' : 'Keyframe'} ${props.row.label} at frame ${Math.round(frame)}`}
 						aria-pressed={selected}
 						className="absolute top-1/2 flex size-[13px] -translate-x-1/2 -translate-y-1/2 items-center justify-center"
 						style={{ left: `${pct}%` }}
@@ -89,7 +98,7 @@ export function KeyLane(props: {
 						onDoubleClick={() => props.onKeyDoubleClick(Math.round(frame))}
 						onContextMenu={(e) => props.onKeyContextMenu(e, b.clip.id, k.id)}
 					>
-						<KeyGlyph left={h.left} right={h.right} selected={selected} />
+						<KeyGlyph left={h.left} right={h.right} selected={selected} roving={roving} />
 					</button>
 				);
 			})}

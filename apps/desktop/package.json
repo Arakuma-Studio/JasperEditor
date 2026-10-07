@@ -90,7 +90,12 @@
         "zip"
       ],
       "category": "public.app-category.video",
-      "hardenedRuntime": true
+      "hardenedRuntime": true,
+      "entitlements": "resources-mac/entitlements.mac.plist",
+      "entitlementsInherit": "resources-mac/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "JasperEditor records voice-over from the microphone you choose."
+      }
     },
     "fileAssociations": [
       {

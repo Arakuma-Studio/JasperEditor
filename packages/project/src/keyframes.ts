@@ -2,51 +2,98 @@
 // overlay, Effect Controls and the native planner (S01:KF-009). vec2 point keys with a curved spatial
 // path (S03:KF-030/031) are evaluated along the path by `keyframes-spatial.ts`.
 import { isVec2Value, pathPointAt, spatialSegment, spatialSegmentLength } from './keyframes-spatial.ts';
+import { lerpPathValues, pathValueDistance } from './path/interp.ts';
+import { type BezierPath, isBezierPath } from './path/model.ts';
 import type { Animatable, Ease, Keyframe } from './schema/common.ts';
 
 const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
 const AUTO_INFLUENCE = 1 / 3;
-const TOLERANCE = 1e-6;
+/** Newton stops when its step in the curve parameter is below this (a parameter criterion, not an x residual). */
+const STEP_TOLERANCE = 1e-15;
 
-/** Cubic Bézier progress p(u) through (0,0), (a1, a1·s1), (1−a2, 1−a2·s2), (1,1) (S01:KF-003 step 5). */
+/**
+ * Solves x(t) = u for the time curve of an ease, x(t) = 3(1−t)²t·x1 + 3(1−t)t²·x2 + t³ with x1, x2 ∈ [0, 1] (monotone,
+ * so the root is unique). Influences are NOT normalised when they overlap (x1 > x2): After Effects keeps both
+ * (effectcraft docs/fidelity: normalising was off by up to 12.46° against live AE samples).
+ * - x1 = 1, x2 = 0 (100 % / 100 %): x = ½ + 4(t − ½)³ exactly, whose flat midpoint (dx/dt = 0) defeats Newton on a
+ *   residual criterion — the closed-form inverse t = ½ + ∛((u − ½) / 4) is used (effectcraft `solve_u`).
+ * - otherwise Newton safeguarded by a bisection bracket: a step leaving the bracket (or a flat derivative) is replaced
+ *   by a bisection step; it stops when the step in t is below 1e-15 or the bracket collapsed.
+ */
+function solveEaseTime(u: number, x1: number, x2: number): number {
+	if (x1 === 1 && x2 === 0) return 0.5 + Math.cbrt((u - 0.5) / 4);
+	// x(½ + w) − u = d0 + w·(c1 + w·(c2 + c3·w)), expanded about the midpoint where dx/dt is smallest. d0 = x(½) − u is
+	// a cancellation; it is kept in double-double so a nearly flat curve (influences near 100 % / 100 %) still has an
+	// accurate root (the time curve's root moves like ∛(error) there).
+	const [s, se] = twoSum(x1, x2);
+	const [p, pe] = twoProd(0.375, s);
+	const [q, qe] = twoSum(p, 0.125);
+	const [d, de] = twoSum(q, -u);
+	const d0 = d;
+	const d0lo = de + qe + pe + 0.375 * se;
+	const c1 = 0.75 * (1 - x1 + x2);
+	const c2 = 1.5 * (1 - x1 - x2);
+	const c3 = 3 * x1 - 3 * x2 + 1;
+	const f = (w: number) => d0 + w * (c1 + w * (c2 + c3 * w)) + d0lo;
+	const df = (w: number) => c1 + w * (2 * c2 + 3 * c3 * w);
+	let lo = -0.5;
+	let hi = 0.5;
+	let w = u - 0.5;
+	for (let i = 0; i < 200; i++) {
+		const fw = f(w);
+		if (fw === 0) return 0.5 + w;
+		if (fw > 0) hi = w;
+		else lo = w;
+		const dw = df(w);
+		let next = dw > 0 ? w - fw / dw : Number.NaN;
+		if (!(next > lo && next < hi)) next = (lo + hi) / 2;
+		if (Math.abs(next - w) <= STEP_TOLERANCE || hi - lo <= STEP_TOLERANCE) return 0.5 + next;
+		w = next;
+	}
+	return 0.5 + w;
+}
+
+/** Error-free sum (Knuth TwoSum): a + b = s + e exactly. */
+function twoSum(a: number, b: number): [number, number] {
+	const s = a + b;
+	const bb = s - a;
+	return [s, a - (s - bb) + (b - bb)];
+}
+
+const SPLIT = 134217729; // 2^27 + 1 (Dekker)
+/** Error-free product (Dekker TwoProduct): a · b = p + e exactly (no FMA in JS). */
+function twoProd(a: number, b: number): [number, number] {
+	const p = a * b;
+	const ca = SPLIT * a;
+	const ah = ca - (ca - a);
+	const al = a - ah;
+	const cb = SPLIT * b;
+	const bh = cb - (cb - b);
+	const bl = b - bh;
+	return [p, ah * bh - p + ah * bl + al * bh + al * bl];
+}
+
+/**
+ * Cubic Bézier progress p(u) through (0,0), (a1, a1·s1), (1−a2, 1−a2·s2), (1,1) (S01:KF-003 step 5). Slopes may be
+ * negative or steep (overshoot): only the time curve has to be monotone, which influences in (0, 1] guarantee.
+ */
 export function bezierProgress(u: number, out: Ease, inn: Ease): number {
 	if (u <= 0) return 0;
 	if (u >= 1) return 1;
-	const x1 = out.influence;
-	const y1 = out.influence * out.slope;
-	const x2 = 1 - inn.influence;
-	const y2 = 1 - inn.influence * inn.slope;
-	const bx = (t: number) => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
-	const by = (t: number) => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
-	const dbx = (t: number) => 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
-	// Newton iterations with bisection fallback.
-	let t = u;
-	let lo = 0;
-	let hi = 1;
-	for (let i = 0; i < 12; i++) {
-		const x = bx(t) - u;
-		if (Math.abs(x) < TOLERANCE) return by(t);
-		if (x > 0) hi = t;
-		else lo = t;
-		const d = dbx(t);
-		if (Math.abs(d) < 1e-9) break;
-		const next = t - x / d;
-		if (next <= lo || next >= hi) break;
-		t = next;
-	}
-	for (let i = 0; i < 60; i++) {
-		t = (lo + hi) / 2;
-		const x = bx(t) - u;
-		if (Math.abs(x) < TOLERANCE) break;
-		if (x > 0) hi = t;
-		else lo = t;
-	}
-	return by(t);
+	const x1 = Math.min(1, Math.max(0, out.influence));
+	const x2 = 1 - Math.min(1, Math.max(0, inn.influence));
+	const y1 = x1 * out.slope;
+	const y2 = 1 - (1 - x2) * inn.slope;
+	const t = solveEaseTime(u, x1, x2);
+	const s = 1 - t;
+	return 3 * s * s * t * y1 + 3 * s * t * t * y2 + t * t * t;
 }
 
 /** Magnitude of a value difference: absolute for numbers, Euclidean for vectors (S01:KF-004). */
 function distance(a: unknown, b: unknown): number {
 	if (typeof a === 'number' && typeof b === 'number') return Math.abs(b - a);
+	// wp masks: Bézier path values (Mask Path) — RMS vertex displacement.
+	if (isBezierPath(a) && isBezierPath(b)) return pathValueDistance(a, b);
 	if (Array.isArray(a) && Array.isArray(b)) {
 		let s = 0;
 		for (let i = 0; i < a.length; i++) {
@@ -109,12 +156,15 @@ export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 /** True for value types that only step (booleans, strings, enums, font ids, media refs; S01:KF-007). */
 export function isHoldOnlyValue(v: unknown): boolean {
 	if (typeof v === 'number') return false;
+	// wp masks: Bézier path values interpolate (vertex-wise / smart vertex matching, path/interp.ts).
+	if (isBezierPath(v)) return false;
 	if (Array.isArray(v)) return !v.every((x) => typeof x === 'number');
 	return true;
 }
 
 function lerpValue<T>(a: T, b: T, p: number): T {
 	if (typeof a === 'number' && typeof b === 'number') return (a + p * (b - a)) as T;
+	if (isBezierPath(a) && isBezierPath(b)) return lerpPathValues(a as BezierPath, b as BezierPath, p) as T;
 	if (Array.isArray(a) && Array.isArray(b)) {
 		// Per component; colors interpolate in straight sRGB in v1.
 		return a.map((x: number, i) => x + p * ((b[i] as number) - x)) as T;
@@ -153,8 +203,48 @@ function keyframeIndexAt<T>(kfs: readonly Keyframe<T>[], t: number): number {
 	return ans;
 }
 
-/** Evaluates an animatable property at content time `t` (flicks) per S01:KF-003. */
+/**
+ * Expressions (wave expressions): an Animatable whose enabled expression has been *bound* to its place in a
+ * document (`@jasper/expressions` `bindDocumentExpressions` / `bindSnapshotExpressions`) carries its evaluator
+ * under this symbol (non-enumerable: JSON, structuredClone and Immer never see it). `evaluate()` delegates to it,
+ * so every consumer of the shared evaluator (preview, overlays, native sampling, graphs, agents) renders the
+ * post-expression value. Unbound Animatables (command handlers, the raw document) evaluate their keyframes.
+ */
+export const EXPRESSION_BINDING: unique symbol = Symbol.for('jasper.expressionBinding');
+
+export type ExpressionBinding = {
+	/** Post-expression value at content time `t` (falls back to the keyframed value on errors). */
+	evaluate(t: number, opts?: EvaluateOptions): unknown;
+	/** As `evaluate`, with the error message of a failed evaluation (`null` = the expression ran). */
+	evaluateWithStatus(t: number, opts?: EvaluateOptions): { value: unknown; error: string | null };
+};
+
+/** The binding of an Animatable, if any. */
+export function expressionBindingOf(anim: unknown): ExpressionBinding | undefined {
+	return anim && typeof anim === 'object'
+		? ((anim as { [EXPRESSION_BINDING]?: ExpressionBinding })[EXPRESSION_BINDING] ?? undefined)
+		: undefined;
+}
+
+/** True when the property has an expression that renders (non-empty text, enabled). */
+export function hasActiveExpression(
+	anim: { expression?: { text: string; enabled: boolean } } | null | undefined,
+): boolean {
+	return !!anim?.expression?.enabled && anim.expression.text.trim().length > 0;
+}
+
+/**
+ * Evaluates an animatable property at content time `t` (flicks) per S01:KF-003. A bound expression (see
+ * `EXPRESSION_BINDING`) replaces the keyframed value with the expression's result.
+ */
 export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptions): T {
+	const bound = (anim as { [EXPRESSION_BINDING]?: ExpressionBinding })[EXPRESSION_BINDING];
+	if (bound) return bound.evaluate(t, opts) as T;
+	return evaluateKeyframes(anim, t, opts);
+}
+
+/** The keyframed (pre-expression) value of an animatable property at content time `t` (S01:KF-003). */
+export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptions): T {
 	const kfs = anim.keyframes;
 	if (kfs.length === 0) return clampValue(anim.value, opts?.clamp);
 	const first = kfs[0]!;
@@ -164,6 +254,11 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 	const i = keyframeIndexAt(kfs, t);
 	const a = kfs[i]!;
 	const b = kfs[i + 1]!;
+	// keyframes-blend: inside a run of roving keys the whole run is one segment (Rove Across Time).
+	if (!opts?.holdOnly) {
+		const run = rovingRunAt(kfs as readonly Keyframe<unknown>[], i);
+		if (run) return clampValue(rovingValue(kfs as readonly Keyframe<unknown>[], run, t) as T, opts?.clamp);
+	}
 	if (a.interpolation === 'hold' || opts?.holdOnly || isHoldOnlyValue(a.value)) {
 		return clampValue(a.value, opts?.clamp);
 	}
@@ -175,8 +270,239 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
 }
 
-/** True when the property has at least one keyframe (stopwatch on). */
-export function isAnimated(anim: { keyframes: readonly unknown[] } | undefined | null): boolean {
+// ---------------------------------------------------------------- roving keyframes (keyframes-blend)
+
+/**
+ * A run of roving keys: fixed key `a`, roving keys a+1 … b−1, fixed key `b`. `cum[j]` = distance travelled from key a
+ * to key a + j (arc length along curved spatial segments, value distance otherwise), `cum[b − a]` = the total.
+ */
+export type RovingRun = { a: number; b: number; cum: number[] };
+
+/** A key that actually roves: flagged, not first / last, not hold, an interpolating value. */
+export function isRovingKey(kfs: readonly Keyframe<unknown>[], i: number): boolean {
+	const k = kfs[i];
+	return (
+		!!k?.roving &&
+		i > 0 &&
+		i < kfs.length - 1 &&
+		k.interpolation !== 'hold' &&
+		!isHoldOnlyValue(k.value) &&
+		kfs[i - 1]!.interpolation !== 'hold'
+	);
+}
+
+const runCache = new WeakMap<readonly Keyframe<unknown>[], RovingRun[]>();
+
+/** Distance of the segment leaving key i (arc length on curved spatial segments). */
+function segmentDistance(kfs: readonly Keyframe<unknown>[], i: number): number {
+	const a = kfs[i]!.value;
+	const b = kfs[i + 1]!.value;
+	if (isVec2Value(a) && isVec2Value(b)) return spatialSegmentLength(kfs, i);
+	return distance(a, b);
+}
+
+/** The roving runs of a key list (cached per array: documents are immutable between edits). */
+export function rovingRuns(kfs: readonly Keyframe<unknown>[]): RovingRun[] {
+	const hit = runCache.get(kfs);
+	if (hit) return hit;
+	const runs: RovingRun[] = [];
+	if (kfs.some((k) => k.roving)) {
+		let i = 1;
+		while (i < kfs.length - 1) {
+			if (!isRovingKey(kfs, i)) {
+				i++;
+				continue;
+			}
+			const a = i - 1;
+			let b = i;
+			while (b < kfs.length - 1 && isRovingKey(kfs, b)) b++;
+			const cum = [0];
+			for (let j = a; j < b; j++) cum.push(cum[cum.length - 1]! + segmentDistance(kfs, j));
+			runs.push({ a, b, cum });
+			i = b + 1;
+		}
+	}
+	runCache.set(kfs, runs);
+	return runs;
+}
+
+/** The run whose segments include the one leaving key i, or null. */
+export function rovingRunAt(kfs: readonly Keyframe<unknown>[], i: number): RovingRun | null {
+	for (const r of rovingRuns(kfs)) if (i >= r.a && i < r.b) return r;
+	return null;
+}
+
+/** Progress (0 … 1, may overshoot) of a run at normalised time u: the fixed keys' eases, as for one segment. */
+export function rovingProgress(kfs: readonly Keyframe<unknown>[], run: RovingRun, u: number): number {
+	const a = kfs[run.a]!;
+	return a.interpolation === 'linear'
+		? u
+		: bezierProgress(u, outgoingEase(kfs, run.a), incomingEase(kfs, run.b));
+}
+
+/** Value of a run at time t: the point at the run's progress along its cumulative distance. */
+function rovingValue(kfs: readonly Keyframe<unknown>[], run: RovingRun, t: number): unknown {
+	const A = kfs[run.a]!;
+	const B = kfs[run.b]!;
+	const u = B.time > A.time ? (t - A.time) / (B.time - A.time) : 0;
+	const p = rovingProgress(kfs, run, Math.min(1, Math.max(0, u)));
+	const total = run.cum[run.cum.length - 1]!;
+	const m = run.b - run.a;
+	if (!(total > 0)) return A.value;
+	const s = p * total;
+	// The segment holding s (the first / last one extrapolate an overshoot).
+	let j = 0;
+	while (j < m - 1 && run.cum[j + 1]! <= s) j++;
+	while (j < m - 1 && run.cum[j + 1]! - run.cum[j]! <= 0) j++;
+	const len = run.cum[j + 1]! - run.cum[j]!;
+	const q = len > 0 ? (s - run.cum[j]!) / len : 0;
+	const i = run.a + j;
+	const path = spatialSegment(kfs, i);
+	return path ? pathPointAt(path, q) : lerpValue(kfs[i]!.value, kfs[i + 1]!.value, q);
+}
+
+/** The normalised time (0 … 1) at which a run's progress reaches `f` (bisection; eases are monotone in practice). */
+function rovingTimeOf(kfs: readonly Keyframe<unknown>[], run: RovingRun, f: number): number {
+	let lo = 0;
+	let hi = 1;
+	for (let k = 0; k < 64; k++) {
+		const mid = (lo + hi) / 2;
+		if (rovingProgress(kfs, run, mid) < f) lo = mid;
+		else hi = mid;
+	}
+	return (lo + hi) / 2;
+}
+
+/**
+ * Stores the times of roving keys (Rove Across Time): each roving key sits where the run's motion passes it, rounded
+ * to whole flicks and kept strictly between its neighbours. Clears the flag of keys that cannot rove (first, last,
+ * hold). Returns true when a time changed. Called by every command that edits keys (evaluation does not need the
+ * stored times: they place the keys on the timeline).
+ */
+export function retimeRoving(kfs: Keyframe<unknown>[]): boolean {
+	if (!kfs.some((k) => k.roving)) return false;
+	kfs.forEach((k, i) => {
+		if (k.roving && !isRovingKey(kfs, i)) delete k.roving;
+	});
+	let changed = false;
+	for (const run of rovingRuns([...kfs])) {
+		const A = kfs[run.a]!;
+		const B = kfs[run.b]!;
+		const m = run.b - run.a;
+		const total = run.cum[m]!;
+		let prev = A.time;
+		for (let r = 1; r < m; r++) {
+			const f = total > 0 ? run.cum[r]! / total : r / m;
+			const u = rovingTimeOf(kfs, run, f);
+			let time = Math.round(A.time + u * (B.time - A.time));
+			// Strictly increasing, leaving room for the remaining roving keys before B.
+			time = Math.max(prev + 1, Math.min(B.time - (m - r), time));
+			if (kfs[run.a + r]!.time !== time) {
+				kfs[run.a + r]!.time = time;
+				changed = true;
+			}
+			prev = time;
+		}
+	}
+	return changed;
+}
+
+/**
+ * Speed of the motion at roving key i (value units per flick, along the path), from the run's progress curve: used
+ * when the key stops roving so its eases keep the speed through it.
+ */
+export function rovingSpeedAt(kfs: readonly Keyframe<unknown>[], i: number): number | null {
+	const run = rovingRuns(kfs).find((r) => i > r.a && i < r.b);
+	if (!run) return null;
+	const A = kfs[run.a]!;
+	const B = kfs[run.b]!;
+	const T = B.time - A.time;
+	const total = run.cum[run.b - run.a]!;
+	if (!(T > 0) || !(total > 0)) return 0;
+	const u = rovingTimeOf(kfs, run, run.cum[i - run.a]! / total);
+	const h = 1e-4;
+	const dp =
+		(rovingProgress(kfs, run, Math.min(1, u + h)) - rovingProgress(kfs, run, Math.max(0, u - h))) /
+		(Math.min(1, u + h) - Math.max(0, u - h));
+	return (dp * total) / T;
+}
+
+/** Distance of the segment leaving key i (arc length for curved spatial segments). */
+function frozenSegDistance(kfs: readonly Keyframe<unknown>[], i: number): number {
+	const a = kfs[i]?.value;
+	const b = kfs[i + 1]?.value;
+	if (a === undefined || b === undefined) return 0;
+	if (typeof a === 'number' && typeof b === 'number') return Math.abs(b - a);
+	if (Array.isArray(a) && Array.isArray(b) && a.length === 2) return spatialSegmentLength(kfs, i);
+	if (Array.isArray(a) && Array.isArray(b))
+		return Math.sqrt(a.reduce((s: number, x, k) => s + ((b[k] as number) - (x as number)) ** 2, 0));
+	return 0;
+}
+
+/**
+ * Freezes a roving key (it stops roving): Continuous Bezier with the run's speed at the key on both sides, expressed
+ * as the normalised slopes of its two segments (slope = speed / segment average speed).
+ */
+export function stopRoving(kfs: Keyframe<unknown>[], i: number): void {
+	const k = kfs[i]!;
+	if (!k.roving) return;
+	const v = isRovingKey(kfs, i) ? rovingSpeedAt(kfs, i) : null;
+	delete k.roving;
+	if (v === null) return;
+	const avg = (j: number) => {
+		const T = kfs[j + 1]!.time - kfs[j]!.time;
+		const d = frozenSegDistance(kfs, j);
+		return T > 0 && d > 0 ? d / T : 0;
+	};
+	const vin = avg(i - 1);
+	const vout = avg(i);
+	k.interpolation = 'continuous-bezier';
+	k.easeIn = { influence: AUTO_INFLUENCE, slope: vin > 0 ? v / vin : 1 };
+	k.easeOut = { influence: AUTO_INFLUENCE, slope: vout > 0 ? v / vout : 1 };
+}
+
+// ---------------------------------------------------------------- reversed traversal (keyframes-blend)
+
+/**
+ * The temporal fields key `i` of `kfs` (time order) needs when the keys are traversed backwards (pasted / re-timed
+ * onto a clip running the other way): each segment mirrored, so the motion plays exactly in reverse. A segment's
+ * shape is its left key's out-ease and its right key's in-ease (a Linear left key makes it linear), so after the
+ * reversal key i is a Bezier key with easeOut = its old effective arriving ease and easeIn = its old effective
+ * leaving ease (a Bézier ease mirrored about (½, ½) swaps its two controls). A Hold segment cannot be mirrored (a hold
+ * shows its left key): it becomes a hold of the key it now starts from. Hold-only values keep holding.
+ */
+export function reversedKeyTiming(
+	kfs: readonly Keyframe<unknown>[],
+	i: number,
+): Pick<Keyframe<unknown>, 'interpolation' | 'easeIn' | 'easeOut'> {
+	const k = kfs[i]!;
+	if (isHoldOnlyValue(k.value)) return { interpolation: 'hold', easeIn: k.easeIn, easeOut: k.easeOut };
+	const prev = kfs[i - 1];
+	const next = kfs[i + 1];
+	// Arriving side of the old segment (prev, k) → leaving side now.
+	const arriving = !prev || prev.interpolation === 'linear' ? LINEAR_EASE : incomingEase(kfs, i);
+	// Leaving side of the old segment (k, next) → arriving side now.
+	const leaving = !next || k.interpolation === 'linear' ? LINEAR_EASE : outgoingEase(kfs, i);
+	const interpolation = prev?.interpolation === 'hold' ? 'hold' : 'bezier';
+	return {
+		interpolation,
+		easeIn: { influence: leaving.influence, slope: leaving.slope },
+		easeOut: { influence: arriving.influence, slope: arriving.slope },
+	};
+}
+
+/**
+ * True when the property may change over time: it has keyframes (stopwatch on) or an active expression (which is
+ * a function of time; renderers sample it per frame like keyframes).
+ */
+export function isAnimated(
+	anim: { keyframes: readonly unknown[]; expression?: { text: string; enabled: boolean } } | undefined | null,
+): boolean {
+	return !!anim && (anim.keyframes.length > 0 || hasActiveExpression(anim));
+}
+
+/** True when the property has at least one keyframe (the stopwatch state; expressions ignored). */
+export function hasKeyframes(anim: { keyframes: readonly unknown[] } | undefined | null): boolean {
 	return !!anim && anim.keyframes.length > 0;
 }
 

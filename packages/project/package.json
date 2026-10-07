@@ -6,13 +6,14 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent/schema-export": "./src/agent/schema-export.ts",
-    "./audio": "./src/audio.ts"
+    "./audio": "./src/audio-light.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@jasper/audio-dsp": "workspace:*",
     "immer": "^11.1.0",
     "zod": "^4.1.0"
   }

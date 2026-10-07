@@ -6,7 +6,7 @@ Status: authoritative architecture for the from-scratch JasperEditor codebase. W
 Audience: the engineers and autonomous agents who implement JasperEditor. Read this first, then the specs it cites.
 
 **Precedence.** When this document and a spec disagree, this document wins. When two specs disagree, §2.3 decides.
-Specs and research this document is built on (all ours, all clean-room):
+Specs and research this document is built on (all ours; none derived from `.reference/`):
 
 | Short name | File |
 |---|---|
@@ -31,13 +31,16 @@ Specs and research this document is built on (all ours, all clean-room):
 
 ---
 
-## 0. Clean-room rule (applies to every contributor, human or agent)
+## 0. The `.reference/` ban and third-party code (applies to every contributor, human or agent)
 
-- The purchased Remotion "Editor Starter" lives, gitignored, under `.reference/` and as `editor-starter.zip` in the repo root. **Nobody who writes JasperEditor code may open, read, grep, unzip or copy anything under `.reference/` or `editor-starter.zip`.** Worktrees do not contain these files; do not go looking for them in the main checkout either.
-- Work only from `docs/specs/*`, `docs/research/*`, this file, public npm/crate documentation, and your own knowledge.
-- All code is original. Remotion's public npm packages (`remotion`, `@remotion/player`, `@remotion/renderer`, `@remotion/bundler`, `@remotion/media`, `@remotion/web-renderer`, `@remotion/captions`, `@remotion/google-fonts`, `@remotion/fonts`, `@remotion/shapes`, `@remotion/gif`, `@remotion/layout-utils`) are allowed dependencies (Remotion license: free for teams of up to 3; set `acknowledgeRemotionLicense` on the Player).
+The full rules are in [`AGENTS.md`](../AGENTS.md) (it outranks this file); the essentials:
+
+- The purchased Remotion "Editor Starter" lives, gitignored, under `.reference/` and as `editor-starter.zip` in the repo root. Its licence forbids using it here. **Nobody may open, read, list, grep, unzip, copy or port anything under `.reference/` or `editor-starter.zip`.** Worktrees do not contain these files; do not go looking for them in the main checkout either. This is the only clean-room rule (D-36).
+- Earlier versions of this section said "all code is original". That was never the owner's rule and is withdrawn: code and algorithms may be **ported from permissively licensed projects** (MIT, Apache-2.0, BSD, ISC, Zlib…; for example EffectCraft and FilmCraft, MIT OR Apache-2.0), each recorded in `licenses/ported/<name>.md` (upstream URL, upstream paths → our paths, licence, copyright line) and shipped in `THIRD_PARTY_NOTICES.md` and Help ▸ About ▸ Licenses (`pnpm notices`). No GPL/AGPL code; LGPL only as a separate executable or WebAssembly module (FFmpeg, vid.stab; D-13, D-25).
+- Remotion's public npm packages (`remotion`, `@remotion/player`, `@remotion/renderer`, `@remotion/bundler`, `@remotion/media`, `@remotion/web-renderer`, `@remotion/captions`, `@remotion/google-fonts`, `@remotion/fonts`, `@remotion/shapes`, `@remotion/gif`, `@remotion/layout-utils`) are allowed dependencies (Remotion license: free for teams of up to 3; set `acknowledgeRemotionLicense` on the Player).
 - fframes (MIT) is an allowed dependency of our Rust crates.
 - anime.js (`animejs`, MIT, pinned exactly) is an allowed dependency of `@jasper/motion` only (D-31).
+- Every non-code asset carries a `<file>.attribution` sidecar and an `ATTRIBUTION.md` row (D-38).
 
 ---
 
@@ -98,6 +101,10 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | D-34 | **Keyframed Motion, Opacity, crop edges and audio levels on the native path (wave1 native-animated-export, wave1b native-subpixel, S03:ENG-032).** Every frame is sampled with the shared evaluator (`resolveLayerProps` / `evaluate`, KF-010, so linear/Bezier/hold/spatial curves need no special cases). **Layers whose geometry is not whole pixels** (keyframed position/anchor/scale/rotation, or static fractional geometry or crop) are **drawn sub-pixel by our kernel and streamed into the composite** (`apps/engine/src/export/stream/`): a decoder ffmpeg per layer (source chain, mipmap-like pre-scale below half size) → worker threads draw the layer box like a browser (coverage-anti-aliased edges of the picture or its crop, bilinear clamp-to-edge colour on premultiplied pixels, opacity) into a layer-sized frame → raw RGBA on an extra pipe (`pipe:3…`) of the composite → `overlay` at a per-frame integer offset (piecewise-linear `t` expression; the fraction is in the pixels). Layers with whole-pixel geometry keep filters (`motionStage`: `scale`/flips/`transpose`, opacity as `lut2` × a per-frame constant). Volumes: `volume` (`eval=frame`, 128-sample blocks, steps at frame boundaries). | LGPL FFmpeg cannot place or size by fractions per frame (`perspective` is GPL; `geq` too slow; `sendcmd` can land a frame early; `libplacebo` needs Vulkan). Measured: 0.05 px/frame pan smooth to 0.001 px RMS (whole-pixel filters: 1 px jumps; warp stage: stalls under minification), lossless-still parity with Remotion SSIM 0.99999, and the fastest first export (≈2× the warp stage, 9–14× Remotion). No intermediate file, no cache. |
 | D-35 | **GPU effects and GPU transitions keep exports native (wave1c native-gpu-spans).** The `layer-bake` extension (D-31) also bakes (a) media layers (video, still, solid, animated image) with a browser-only effect — GPU shader effects, SVG/CSS-only effects — as the whole layer (straight-alpha master, or one PNG when nothing changes per frame), and (b) the **span of every GPU transition**: a Remotion render of the track's two sides plus the transition stage over `[start, start + duration)` on a transparent background, cached by content (sides, transition with its keyframed params, media fingerprints, fonts, environment; times relative to the span, so moving the cut keeps the master). New `NativeExtension` hooks `bakesTransition` / `transitionOverride`: the planner lists the span as a graphics group (`hybrid`) instead of a native blocker; the builder draws the sides only outside the span and overlays the span master in the track's place (where the composition draws the stage). Stills inside a span bake one frame (or reuse the cached master). | A GPU transition or a GPU effect used to send the whole export through Remotion (≈8 fps); now only those frames are, and re-exports reuse the masters. Measured: span/effect parity with the composition 100 % of samples within 3/255; a 60 s 1080p timeline with 3 GPU transitions and 2 GPU-effect layers exports 2.5× faster than full Remotion (9× when re-exported). |
 | D-33 | **Schema v5 (M3): source ranges.** `MediaAsset.sourceRange {mediaId, sourceName, firstFrame, frames, frameRate, origin}` records which source frames a file holds (processed ranges, sidecar-declared renders). Content time stays per file; switching a clip between files shifts everything it stores in content time by the difference of the files' source offsets (frames correspond by index, equal rates required), so it shows the same source frames (S07:PRC-015…019). v4→v5 records the whole-source range on M2 processed versions; later M3 additions may share v5. | Keeps every renderer and bound check per file (no media-time offsets in the render paths); a swap is one exact integer shift, inverted exactly on the way back. |
+| D-36 | **The only clean-room rule is the `.reference/` / `editor-starter.zip` ban; porting permissively licensed code is allowed with attribution (owner decision, 2026-10-07).** The earlier "all code is original" statement (README, §0) is withdrawn. Ports are recorded in `licenses/ported/<name>.md` (format in `licenses/ported/README.md`); `scripts/third-party-notices.mjs` copies every record into `THIRD_PARTY_NOTICES.md` (shown in Help ▸ About ▸ Licenses) and `--check` fails when one is missing or stale. | The owner never required original-only code; the paid Editor Starter licence is the real constraint. Recording each port keeps the MIT/Apache notice obligations met mechanically. |
+| D-37 | **Dependency layering is enforced by `scripts/check-layers.mjs` in `pnpm lint`** (§3.1 is its table). It checks workspace edges in every `package.json`, the import specifiers of every non-test source file (bare `@jasper/*`, undeclared imports, deep relative imports that leave the package root, forbidden externals such as React/Remotion/Node built-ins in `packages/project`), and that `packages/*` never import `apps/*`. `scripts/check-anime.mjs` keeps the anime.js determinism rules. | §3.1 said "enforced in review"; reviews missed nothing yet, but 24 parallel agents need a mechanical check (EffectCraft `cargo xtask layers`). |
+| D-38 | **Every non-code asset has a `<file>.attribution` sidecar and an `ATTRIBUTION.md` row; `scripts/check-assets.mjs` (in `pnpm lint`) fails otherwise** (AGENTS.md §3). Generated test media (`fixtures/media/`) is never committed; its generators are documented in `ATTRIBUTION.md`. | Licence hygiene that scales to many contributors (EffectCraft/FilmCraft §1.3). |
+| D-39 | **Crash recovery = an engine-side per-session journal (S01:PER-021, AC-18).** The editor sends its committed document ~1 s after each edit (at most every 5 s during continuous editing) to `PUT /api/projects/:pid/recovery/:sessionId`; the engine writes it atomically to `<appdir>/projects/<pid>/recovery/<sessionId>/` while the session's lease holds it (the lease is the lock). A clean close or a save that catches up deletes it; a journal whose session no longer holds a lease (crash, killed tab or engine) is offered on the next open: **Recover** applies it as one undoable "Recover unsaved changes" step, **Discard** deletes it. Saved versions are listed and restored through `GET /api/projects/:pid/versions/:versionId` and `POST …/versions/:versionId/restore` (in place, keeping the current state as a version, or as a new project), File ▸ Project Versions…; the first save over a project migrated from an older schema keeps `project (schema vN backup).jasper`. Details: `docs/project-files.md`. | Autosave already makes the project file current within 1.5–10 s and atomic writes keep it whole; the journal closes the remaining window (and covers paused autosave: conflict, lost lease, engine errors) without making the browser the source of truth. |
 
 ### 2.2 Pinned toolchain (M1)
 
@@ -215,22 +222,34 @@ JasperEditor/
     └── config/                   # @jasper/config — appdir layout, env parsing, ports (Node only)
 ```
 
-### 3.1 Dependency rules (enforced in review; a Biome/TS path check may follow)
+### 3.1 Dependency rules (enforced by `scripts/check-layers.mjs` in `pnpm lint`, D-37)
+
+`LAYERS` in `scripts/check-layers.mjs` is this table in code; change both together and record why in §2.1.
 
 ```
-project        → zod, immer                      (no DOM, no Node built-ins, no React)
-mg-templates   → zod, (type-only) project
+audio-dsp      → nothing                         (pure DSP: no DOM, no Node, no deps; runs in AudioWorklets; audio-mix)
+project        → zod, immer, audio-dsp           (no DOM, no Node built-ins, no React/UI, no Remotion, no anime.js)
+audio-fx       → project (light ./audio subpath), audio-dsp   (audio effect DSP; no DOM, no Node; audio-fx)
+mg-templates   → zod, project (types)
+expressions    → project, quickjs-emscripten (WebAssembly), acorn   (no DOM, no Node, no UI, no Remotion; expressions)
 api            → zod, project
 engine-client  → api                             (fetch + ReadableStream; runs in browser and Node 20)
-session        → project, api, engine-client, zustand; react only in ./react subpath
-ui             → react, radix-ui, lucide-react, dockview-react (theme only); type-only project imports allowed
+session        → project, api, engine-client, zustand; react only in src/react (the ./react subpath)
+ui             → react, radix-ui, lucide-react, @fontsource; project (labels, timecode helpers)
 motion         → animejs, remotion, project, mg-templates; react as peer   (only compositions imports it)
-compositions   → remotion, @remotion/*, project, mg-templates, motion   (NO session, ui, tailwind)
+compositions   → remotion, @remotion/*, project, mg-templates, motion, audio-dsp, audio-fx, expressions   (NO session, ui, engine-client, tailwind)
 config         → node built-ins
-web            → everything above except config
-engine         → project, api, config, mg-templates, compositions (bundled via @remotion/bundler), fastify…
+web            → api, audio-dsp, audio-fx, compositions, engine-client, expressions, mg-templates, project, session, ui (NOT config, motion, apps/*;
+                 no Node built-ins except the `node` script src/pwa/generate-icons.mjs)
+engine         → project, api, audio-dsp, audio-fx, config, expressions, mg-templates, compositions (bundled via @remotion/bundler), mcp (serves /mcp,
+                 D-18), fastify…; tests also use engine-client and session
+mcp            → api, config, engine-client, expressions, project
 desktop        → electron, config (paths only)
 ```
+
+Everywhere: `packages/*` never import `apps/*`; relative imports never leave the package root (use the target's
+public `@jasper/*` export, which must be declared in package.json and listed in the target's `exports`); only
+`motion` imports anime.js. `// layers-allow: <reason>` on (or above) a line excuses that import.
 
 Each TS package: `"type": "module"`, `"exports": {".": "./src/index.ts"}` (plus subpaths like `"./react"`), `"scripts": {"typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run"}`, `tsconfig.json` extending the base. Dependencies between workspace packages use `"workspace:*"`.
 
@@ -753,7 +772,7 @@ Root `package.json` scripts (WP-00 creates; later packages must not rename them)
 | `pnpm dev:desktop` | `pnpm --filter @jasper/desktop dev` (build main/preload, launch Electron against 5173) |
 | `pnpm typecheck` | `pnpm -r --if-present typecheck` |
 | `pnpm test` | `vitest run` (root projects) |
-| `pnpm lint` | `biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs` |
+| `pnpm lint` | `biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs && node scripts/check-layers.mjs && node scripts/check-assets.mjs` |
 | `pnpm format` | `biome format --write .` |
 | `pnpm build` | `pnpm -r --if-present build` (web: `vite build`; engine: esbuild ESM bundle `dist/engine.mjs` + remotion bundle; desktop: main/preload) |
 | `pnpm mg:build` | `node scripts/mg-build.mjs` (cargo release build of `native/mg`, skip with exit 0 if cargo missing) |

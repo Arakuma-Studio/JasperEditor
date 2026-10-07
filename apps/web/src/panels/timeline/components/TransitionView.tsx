@@ -24,6 +24,8 @@ type TransitionViewProps = {
 	capEnd: boolean;
 	broken: boolean;
 	dip: boolean;
+	/** edit-structure: freeze-frame handles (repeated frames) — Premiere's warning stripe. */
+	freeze: boolean;
 };
 
 const ALIGN_LABEL = { center: 'Center at Cut', 'start-at-cut': 'Start at Cut', 'end-at-cut': 'End at Cut' };
@@ -50,6 +52,7 @@ function transitionTitle(g: TransitionGeom, rate: Rational, dropFrame: boolean):
 	}
 	if (g.duration > 0 && g.duration < g.t.duration)
 		lines.push(`Shortened from ${g.t.duration} frames to fit the media`);
+	if (g.t.freezeHandles) lines.push('Insufficient media: this transition contains repeated frames');
 	if (g.broken)
 		lines.push(g.spec ? 'Not rendered: no media handles left' : 'Not rendered: unknown transition');
 	return lines.join('\n');
@@ -80,6 +83,7 @@ export function transitionViewProps(
 		capEnd: g.capEnd,
 		broken: g.broken,
 		dip: g.t.effectId === 'jasper.dip-to-black',
+		freeze: g.t.freezeHandles === true,
 	};
 }
 
@@ -154,6 +158,15 @@ function TransitionViewImpl(p: TransitionViewProps) {
 				>
 					{p.label}
 				</span>
+			) : null}
+			{p.freeze ? (
+				<div
+					className="pointer-events-none absolute right-0 bottom-0 left-0 h-[3px]"
+					style={{
+						background: 'repeating-linear-gradient(-45deg, var(--pr-warning) 0 3px, transparent 3px 6px)',
+					}}
+					data-transition-freeze=""
+				/>
 			) : null}
 			{p.capStart ? (
 				<div

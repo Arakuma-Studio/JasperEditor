@@ -5,8 +5,10 @@
 // head or tail (TRN-004). Audio tracks take one-sided fades and two-sided crossfades (constant gain /
 // constant power, S10:TUI-052; handles as for a cross dissolve); `transition.add` with `clipId` + `edge` on an
 // audio clip is always a fade of that clip, an edit point given by `trackId` + `at` a crossfade. Durations are
-// shortened to what the clips and their media handles allow (`handles: 'shorten'`, the agent default);
-// freeze-frame handles are not implemented. Rendering is defined in ../../transitions.ts.
+// shortened to what the clips and their media handles allow (`handles: 'shorten'`, the agent default), or — video
+// transitions with `handles: 'freeze'` (Premiere's "Insufficient media… repeated frames") — kept, the missing
+// handle frames repeating the clips' edge frames (`Transition.freezeHandles`, edit-structure). Audio transitions
+// always shorten. Rendering is defined in ../../transitions.ts.
 import type { Draft } from 'immer';
 import type { Clip, Sequence, Transition } from '../../schema/sequence.ts';
 import {
@@ -93,18 +95,46 @@ function fit(
 	alignment: Transition['alignment'],
 	outgoing: Clip | null,
 	incoming: Clip | null,
+	freeze = false,
 ): number {
+	const inf = Number.POSITIVE_INFINITY;
 	return fitTransitionDuration({
 		effectId,
 		wanted,
 		alignment,
 		outgoing: outgoing
-			? { duration: outgoing.duration, tail: clipHandles(doc as never, seq as Sequence, outgoing).tail }
+			? {
+					duration: outgoing.duration,
+					tail: freeze ? inf : clipHandles(doc as never, seq as Sequence, outgoing).tail,
+				}
 			: null,
 		incoming: incoming
-			? { duration: incoming.duration, head: clipHandles(doc as never, seq as Sequence, incoming).head }
+			? {
+					duration: incoming.duration,
+					head: freeze ? inf : clipHandles(doc as never, seq as Sequence, incoming).head,
+				}
 			: null,
 	});
+}
+
+/**
+ * Duration of a transition with the handle policy: `freeze` (video only) keeps what the clips' lengths allow and
+ * reports whether media frames are missing (they repeat); `shorten` fits the media handles.
+ */
+function fitWithHandles(
+	doc: DDoc,
+	seq: DSeq,
+	effectId: string,
+	wanted: number,
+	alignment: Transition['alignment'],
+	outgoing: Clip | null,
+	incoming: Clip | null,
+	freezeWanted: boolean,
+): { duration: number; freeze: boolean } {
+	const media = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming);
+	if (!freezeWanted || !outgoing || !incoming) return { duration: media, freeze: false };
+	const frozen = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming, true);
+	return frozen > media ? { duration: frozen, freeze: true } : { duration: media, freeze: false };
 }
 
 function noRoomMessage(alignment: Transition['alignment'], wanted: number, two: boolean): string {
@@ -148,19 +178,27 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 			? 'start-at-cut'
 			: 'end-at-cut';
 	const wanted = a.duration ?? defaultTransitionFrames(doc.settings, spec.appliesTo);
-	const duration = fit(doc, seq, a.effectId, wanted, alignment, outgoing, incoming);
-	if (duration < wanted) {
-		if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
-		if (a.handles === 'freeze')
-			h.fail(
-				'E_NOT_IMPLEMENTED',
-				`Freeze-frame handles are not implemented; ${duration} frame(s) fit with the media available (handles: "shorten")`,
-			);
+	const { duration, freeze } = fitWithHandles(
+		doc,
+		seq,
+		a.effectId,
+		wanted,
+		alignment,
+		outgoing,
+		incoming,
+		a.handles === 'freeze' && spec.appliesTo === 'video',
+	);
+	if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
+	if (duration < wanted)
 		h.warn(
 			'W_TRANSITION_SHORTENED',
-			`Transition shortened from ${wanted} to ${duration} frames (clip length or media handles)`,
+			`Transition shortened from ${wanted} to ${duration} frames (clip length${freeze || a.handles === 'freeze' ? '' : ' or media handles'})`,
 		);
-	}
+	if (freeze)
+		h.warn(
+			'W_TRANSITION_FREEZE_FRAMES',
+			'Insufficient media: this transition contains repeated frames (freeze-frame handles)',
+		);
 	// One transition per clip edge (INV-010): a new one replaces what is there.
 	for (const t of Object.values(seq.transitions)) {
 		if ((outgoing && t.outgoingClipId === outgoing.id) || (incoming && t.incomingClipId === incoming.id))
@@ -178,6 +216,7 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		duration,
 		alignment,
 		params: {},
+		...(freeze ? { freezeHandles: true } : {}),
 	};
 	if (a.params) writeParams(seq.transitions[id]!, spec, a.params, h);
 	return {
@@ -186,6 +225,7 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		alignment,
 		outgoingClipId: outgoing?.id ?? null,
 		incomingClipId: incoming?.id ?? null,
+		...(freeze ? { freezeHandles: true } : {}),
 	};
 }
 
@@ -268,13 +308,31 @@ export const transitionHandlers: HandlerMap = {
 			h.fail('E_INVALID_PARAM', 'A fade at a single clip edge has a fixed alignment');
 		const alignment = cmd.alignment ?? t.alignment;
 		const wanted = cmd.duration ?? t.duration;
-		const duration = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming);
+		const freezeWanted =
+			track.kind === 'video' && (cmd.handles ? cmd.handles === 'freeze' : t.freezeHandles === true);
+		const { duration, freeze } = fitWithHandles(
+			doc,
+			seq,
+			effectId,
+			wanted,
+			alignment,
+			outgoing,
+			incoming,
+			freezeWanted,
+		);
 		if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
 		if (duration < wanted)
 			h.warn(
 				'W_TRANSITION_SHORTENED',
-				`Transition shortened from ${wanted} to ${duration} frames (clip length or media handles)`,
+				`Transition shortened from ${wanted} to ${duration} frames (clip length${freezeWanted ? '' : ' or media handles'})`,
 			);
+		if (freeze && !t.freezeHandles)
+			h.warn(
+				'W_TRANSITION_FREEZE_FRAMES',
+				'Insufficient media: this transition contains repeated frames (freeze-frame handles)',
+			);
+		if (freeze) t.freezeHandles = true;
+		else delete t.freezeHandles;
 		if (effectId !== t.effectId) {
 			t.effectId = effectId;
 			t.effectVersion = transitionSpec(effectId)!.version;
@@ -283,7 +341,7 @@ export const transitionHandlers: HandlerMap = {
 		t.alignment = alignment;
 		t.duration = duration;
 		if (cmd.params && Object.keys(cmd.params).length > 0) writeParams(t, specOf(effectId, h), cmd.params, h);
-		return { transitionId: t.id, effectId, duration, alignment };
+		return { transitionId: t.id, effectId, duration, alignment, ...(freeze ? { freezeHandles: true } : {}) };
 	},
 
 	'transition.remove': (doc, cmd, h) => {
@@ -342,11 +400,21 @@ export const transitionHandlers: HandlerMap = {
 					: incoming
 						? 'start-at-cut'
 						: 'end-at-cut';
+				const freezeWanted = cmd.handles === 'freeze' && track.kind === 'video';
 				// Edit points without room are skipped instead of failing the whole command.
-				if (fit(doc, seq, effectId, wanted, alignment, outgoing, incoming) === 0) continue;
+				if (fit(doc, seq, effectId, wanted, alignment, outgoing, incoming, freezeWanted) === 0) continue;
 				const r = addTransition(
 					doc,
-					{ seq, trackId: clip.trackId, outgoing, incoming, effectId, duration: wanted, alignment },
+					{
+						seq,
+						trackId: clip.trackId,
+						outgoing,
+						incoming,
+						effectId,
+						duration: wanted,
+						alignment,
+						...(cmd.handles ? { handles: cmd.handles } : {}),
+					},
 					h,
 				);
 				created.push(r.transitionId);

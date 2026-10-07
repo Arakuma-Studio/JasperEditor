@@ -1,6 +1,13 @@
 import { CACHE_KINDS, type CacheGcReport, type CacheUsage } from '@jasper/api';
 import { z } from 'zod';
-import { DESTRUCTIVE, defineTool, jobBody, READ_ONLY, type ToolContext, waitJob } from '../context.ts';
+import {
+	DESTRUCTIVE_IDEMPOTENT,
+	defineTool,
+	jobBody,
+	READ_ONLY,
+	type ToolContext,
+	waitJob,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
@@ -55,7 +62,7 @@ export function registerCacheTools(ctx: ToolContext): void {
 				keepOld: z.boolean().optional().describe('fresh only: keep the old files instead of deleting them'),
 				wait: z.boolean().optional().describe('Wait until the move is done (default true)'),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ path, mode, keepOld, wait }, extra) => {
 			const check = await ctx.engine((c) => c.call('cacheLocationCheck', { body: { path } }));
@@ -104,7 +111,7 @@ export function registerCacheTools(ctx: ToolContext): void {
 					.optional()
 					.describe(`Only these kinds: ${CACHE_KINDS.join(', ')}`),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ mode, kinds }) => {
 			const r: CacheGcReport = await ctx.engine((c) =>

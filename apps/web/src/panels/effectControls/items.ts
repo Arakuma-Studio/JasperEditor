@@ -3,14 +3,19 @@
 // applied effects in stack order. Unknown effects show as "Missing effect: <id>" (S01:FX-022).
 import {
 	type Clip,
+	CORNER_PIN_EFFECT_ID,
 	CROP_EFFECT,
 	type EffectInstance,
 	type EffectRegistry,
 	type EffectSpec,
+	MASK_PROPS,
+	type Mask,
 	type MgTemplateRegistry,
+	maskPropertySpec,
 	type ProjectDocument,
 	paramsPropertySpecs,
 	propertyDefault,
+	resolvePropertyAt,
 	type Sequence,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
@@ -40,7 +45,42 @@ export type FxSection = {
 	/** Index of `fx` in the clip's effect stack. */
 	stackIndex?: number;
 	missing?: boolean;
+	/** wp masks: the section's masks (Opacity masks, or the effect's own masks) and their property rows. */
+	masks?: MaskList;
 };
+
+/** wp masks: a section's mask tools and masks (Premiere: under Opacity and every video effect). */
+export type MaskList = {
+	owner: { clipId: string; effectId: string | null };
+	blocks: { mask: Mask; rows: Row[] }[];
+};
+
+function maskList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	masks: readonly Mask[] | undefined,
+	effectId: string | null,
+	frame: number,
+): MaskList {
+	return {
+		owner: { clipId: clip.id, effectId },
+		blocks: (masks ?? []).map((mask) => ({
+			mask,
+			rows: MASK_PROPS.map((prop) => {
+				const spec = maskPropertySpec(mask.id, prop);
+				return makeRow(spec.key, [
+					{
+						clip,
+						spec,
+						path: ['mask', mask.id, prop],
+						resolved: resolvePropertyAt({ doc, seq, clip }, spec, frame),
+					},
+				]);
+			}).filter((r): r is Row => r !== null),
+		})),
+	};
+}
 
 type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
 
@@ -96,7 +136,17 @@ export function buildGroups(
 				clip,
 				intrinsic: true,
 				rows: rows(['opacity', 'blendMode']),
+				masks: maskList(doc, seq, clip, (clip as { masks?: Mask[] }).masks, null, frame),
 			});
+			// Wave expressions: Source Text, where an expression can drive the text (AE's Text ▸ Source Text).
+			if (clip.kind === 'text')
+				sections.push({
+					id: `${clip.id}:sourceText`,
+					title: 'Text',
+					clip,
+					intrinsic: true,
+					rows: rows(['text.content']),
+				});
 			// M2 (wp-m2-text-anim, S11:TXA-022): the Text Animation section (body drawn by TextAnimationSection).
 			if (clip.kind === 'text')
 				sections.push({
@@ -117,6 +167,7 @@ export function buildGroups(
 				rows: CROP_EFFECT.params
 					.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
 					.filter((r): r is Row => r !== null),
+				...(pinned ? { masks: maskList(doc, seq, clip, pinned.masks, pinned.id, frame) } : {}),
 			});
 			if (clip.kind === 'shape')
 				sections.push({
@@ -164,7 +215,8 @@ export function buildGroups(
 			}
 			sections.push({
 				id: `${clip.id}:fx:${fx.id}`,
-				title: effect.label,
+				// Wave expressions: a renamed instance shows its own name (expressions find it by that name).
+				title: fx.name ?? effect.label,
 				clip,
 				intrinsic: false,
 				fx,
@@ -175,6 +227,10 @@ export function buildGroups(
 						makeRow(`effects.${fx.id}.${p.name}`, [bindEffectParam(doc, seq, clip, fx, effect, p, frame)]),
 					)
 					.filter((r): r is Row => r !== null),
+				// wp masks: every video effect but the corner pin (the layer geometry) has masks.
+				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID && !effect.passthrough
+					? { masks: maskList(doc, seq, clip, fx.masks, fx.id, frame) }
+					: {}),
 			});
 		});
 		const medium = isAudioClip(clip) ? 'audio' : 'video';
@@ -189,7 +245,8 @@ export type RowFilter = 'all' | 'animated' | 'modified';
 export function rowVisible(doc: ProjectDocument, seq: Sequence, row: Row, filter: RowFilter): boolean {
 	if (filter === 'all') return true;
 	const b = row.bindings[0]!;
-	if (b.resolved.animated) return true;
+	// Keyframed, or driven by an expression (wave expressions).
+	if (b.resolved.animated || (b.resolved.anim as { expression?: unknown } | null)?.expression) return true;
 	if (filter === 'animated') return false;
 	if (b.spec.defaultValue === undefined) return false;
 	const d = propertyDefault({ doc, seq, clip: b.clip }, b.spec);

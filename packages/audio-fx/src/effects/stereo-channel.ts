@@ -1,9 +1,10 @@
 // Channel utilities and stereo imagery (ported from filmcraft `audio-dsp/src/effects/channel.rs`, `essential.rs`
 // StereoWidth, `special.rs` ChannelMixer / StereoExpander / Binauralizer / AmbisonicsPanner; Mono Maker is ours).
+
+import { balanceGains, panMonoGains as constantPowerPan } from '@jasper/audio-dsp';
 import { Biquad, type Coeffs, designBiquad } from '../core/biquad.ts';
 import { EffectBase, type ProcessorFactory } from '../core/effect.ts';
 import { dbToGain, flush32 } from '../core/math.ts';
-import { balanceGains, constantPowerPan } from '../core/pan.ts';
 import { Smoothed } from '../core/smooth.ts';
 import { DelayLine } from '../core/util.ts';
 

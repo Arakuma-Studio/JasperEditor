@@ -48,7 +48,8 @@ export function selectInspector(
 }
 
 export const isVisualClip = (c: Clip) => isKnownClipKind(c.kind) && !!kindCapabilities(c.kind)?.hasTransform;
-export const isAudioClip = (c: Clip) => c.kind === 'audio' || c.kind === 'nest-audio';
+export const isAudioClip = (c: Clip) =>
+	c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 
 // ---------------------------------------------------------------- bindings
 
@@ -173,7 +174,7 @@ export function rowValue(row: Row): { mixed: boolean; value: unknown } {
 }
 
 /** Per-component mixed state of a vec2 row. */
-export function vecComponent(row: Row, i: 0 | 1): number | null {
+export function vecComponent(row: Row, i: 0 | 1 | 2): number | null {
 	const vals = row.bindings.map((b) =>
 		Array.isArray(b.resolved.value) ? (b.resolved.value[i] as number) : NaN,
 	);
