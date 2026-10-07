@@ -543,16 +543,20 @@ export async function fixtures(ctx) {
 		},
 		{
 			name: 'imports-interlaced.mkv',
-			recipe: 'imports-interlaced:v2',
+			recipe: 'imports-interlaced:v3',
 			// Two fields 1/60 s apart woven into each frame (a box moving 8 px per field: combing on edges).
 			make: (out) =>
 				run(ff, [
 					'-f',
 					'lavfi',
 					'-i',
-					'color=c=0x204060:size=320x120:rate=60:duration=1,drawbox=x=t*480:y=30:w=60:h=60:color=white:t=fill',
-					'-vf',
-					'weave=first_field=top,setfield=tff',
+					'color=c=0x204060:size=320x120:rate=60:duration=1',
+					'-f',
+					'lavfi',
+					'-i',
+					'color=c=white:size=60x60:rate=60:duration=1',
+					'-filter_complex',
+					"[0][1]overlay=x='t*480':y=30,weave=first_field=top,setfield=tff",
 					'-c:v',
 					'ffv1',
 					'-f',

@@ -78,11 +78,12 @@ export function createImportsExtension(deps: { variants: VariantService; registr
 				const asset = planned.document.media[mediaId] as MediaAsset | undefined;
 				if (!asset) continue;
 				const r = local.record;
-				// Photoshop documents: the native composite also uses the display picture (ag-psd composite).
-				if (r.layered && asset.kind === 'image' && !asset.vector) {
+				// Photoshop documents (ag-psd composite) and stills ffmpeg does not demux as images (HEIF items in an ISO BMFF
+				// container: no `-loop`): the native composite also uses the display picture.
+				if (asset.kind === 'image' && !asset.vector && (r.layered || !/(^|,)(image2|[a-z0-9]+_pipe|png|webp)(,|$)/.test(r.container))) {
 					const need = browserPictureNeed(asset);
 					ctx.stage('Preparing pictures');
-					local.display = await deps.variants.ensureAndWait(r, 'display', need.variant, ctx.signal);
+					local.display = await deps.variants.ensureAndWait(r, 'display', need.variant, ctx.signal, ctx.jobId);
 				}
 				if (!drawn.has(mediaId)) continue;
 				const need = browserPictureNeed(asset);
@@ -92,11 +93,11 @@ export function createImportsExtension(deps: { variants: VariantService; registr
 					if (p) entry.loaderUrl = p;
 				} else if (need.picture === 'display') {
 					ctx.stage('Preparing pictures');
-					await deps.variants.ensureAndWait(r, 'display', need.variant, ctx.signal);
+					await deps.variants.ensureAndWait(r, 'display', need.variant, ctx.signal, ctx.jobId);
 					entry.proxyUrl = deps.variants.url(r, 'display', need.variant);
 				} else if (need.picture === 'proxy') {
 					ctx.stage('Preparing interpreted footage');
-					await deps.variants.ensureAndWait(r, 'master', need.variant, ctx.signal);
+					await deps.variants.ensureAndWait(r, 'master', need.variant, ctx.signal, ctx.jobId);
 					entry.url = deps.variants.url(r, 'master', need.variant);
 				}
 				if (Object.keys(entry).length) art.set(mediaId, entry);

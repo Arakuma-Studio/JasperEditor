@@ -128,7 +128,13 @@ export class VariantService {
 		r: MediaRecord,
 		kind: MediaVariantKind,
 		variant: string,
-		opts: { projectId?: string; priority?: 'interactive' | 'user' | 'background'; retry?: boolean } = {},
+		opts: {
+			projectId?: string;
+			priority?: 'interactive' | 'user' | 'background';
+			retry?: boolean;
+			/** A child of a running export / still: no CPU slots of its own (the parent holds them). */
+			parentId?: string;
+		} = {},
 	): Promise<EngineJob | null> {
 		this.check(r, kind, variant);
 		if (await this.isReady(r, kind, variant)) return null;
@@ -140,18 +146,31 @@ export class VariantService {
 			kind: 'interpret',
 			title: `${label} – ${r.originalName}`,
 			priority: opts.priority ?? (kind === 'display' ? 'interactive' : 'background'),
-			cpuSlots: SLOTS[kind],
+			...(opts.parentId ? { cpuSlots: 0, minSlots: 0, parentId: opts.parentId } : { cpuSlots: SLOTS[kind] }),
 			origin: { type: 'system' },
 			assetId: r.mediaKey,
 			...(opts.projectId ? { projectId: opts.projectId } : {}),
-			dedupeKey: dk,
+			dedupeKey: opts.parentId ? `${dk}:${opts.parentId}` : dk,
 			input: { mediaKey: r.mediaKey, kind, variant } satisfies JobInput,
 		});
 	}
 
-	/** Makes the picture if needed and waits for it (export preparation). Returns its path. */
-	async ensureAndWait(r: MediaRecord, kind: MediaVariantKind, variant: string, signal?: AbortSignal): Promise<string> {
-		const job = await this.ensure(r, kind, variant, { priority: 'user', retry: true });
+	/**
+	 * Makes the picture if needed and waits for it (export preparation: pass the export job as `parentId`: the child
+	 * runs within the parent's CPU slots). Returns its path.
+	 */
+	async ensureAndWait(
+		r: MediaRecord,
+		kind: MediaVariantKind,
+		variant: string,
+		signal?: AbortSignal,
+		parentId?: string,
+	): Promise<string> {
+		const job = await this.ensure(r, kind, variant, {
+			priority: 'user',
+			retry: true,
+			...(parentId ? { parentId } : {}),
+		});
 		if (job) {
 			const onAbort = () => this.deps.queue.cancel(job.id);
 			signal?.addEventListener('abort', onAbort, { once: true });

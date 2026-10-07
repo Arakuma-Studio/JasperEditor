@@ -182,7 +182,8 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 // ---------------------------------------------------------------- temp refs and $selection
 
 const REF_RE = /^\$[A-Za-z_][\w.-]*$/;
-const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks)$/;
+// imports: `matteTrack` (Track Matte Key's track param) takes a temp ref of a track added in the same transaction.
+const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks|matteTrack)$/;
 // `payload` (clipboard commands) is data from another document, `preset` (effect.applyPreset) library data: their
 // ids are never refs or selections.
 const DECL_KEYS = new Set(['ref', 'itemRef', 'type', 'payload', 'preset']);

@@ -25,7 +25,7 @@ import type { UploadService } from '../uploads/service.ts';
 import { decodeFilters, decoderArgs } from './decode.ts';
 
 /** Bump to re-conform cached intermediates. */
-const CONFORM_VERSION = 1;
+const CONFORM_VERSION = 2;
 const MAX_DIR_ENTRIES = 1_000_000;
 
 type JobInput = {
@@ -225,6 +225,7 @@ export class ImageSequenceService {
 			const deep = vs.bitDepth > 8 || ['exr', 'hdr'].includes(vs.codec) || /(16|f32|f16|48|64)/.test(vs.pixelFormat);
 			const gray = /^(gray|ya|monob|monow)/.test(vs.pixelFormat) && !alpha;
 			const yuv = /^yuvj?4/.test(vs.pixelFormat) && !alpha && !deep;
+			// (8-bit RGB is stored as `bgra`, not `bgr0`: Remotion's compositor cannot read `bgr0` FFV1.)
 			const pix = alpha
 				? deep
 					? 'gbrap16le'
@@ -237,7 +238,7 @@ export class ImageSequenceService {
 						? 'gray'
 						: yuv
 							? vs.pixelFormat.replace('yuvj', 'yuv')
-							: 'bgr0';
+							: 'bgra';
 			const W = vs.width;
 			const H = vs.height;
 			try {
