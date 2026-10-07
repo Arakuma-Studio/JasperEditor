@@ -664,6 +664,15 @@ export function registerRotoTools(ctx: ToolContext): void {
 		extra: Parameters<typeof transact>[3],
 		apply: unknown | null,
 	) {
+		const models = ((await ctx.engine((c) => c.call('rotoModels')).catch(engineErr)) as { models: VisionModel[] })
+			.models;
+		const face = models.find((m) => m.task === 'face');
+		if (!face?.installed)
+			throw new ToolError(
+				'FACE_MODEL_NOT_INSTALLED',
+				'Face tracking needs the MediaPipe Face Landmarker model, which is not installed',
+				`Install it with install_roto_model "${face?.id ?? 'mediapipe-face-landmarker'}" (tell the user: Apache-2.0, ~5 MB), then retry.`,
+			);
 		const settings = {
 			...(args.threshold !== undefined ? { faceThreshold: args.threshold } : {}),
 			...(args.expand !== undefined ? { faceExpand: args.expand } : {}),
