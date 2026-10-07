@@ -10,7 +10,7 @@
 // 2. Language: unless given, the first window's decoder logits after `<|startoftranscript|>` are compared over
 //    the language tokens.
 // 3. Decoding with timestamp tokens (`core/decode.ts` filters), conditioned on the previous window's text
-//    (`<|startofprev|>`, up to 223 tokens). Temperature fallback (0 → 0.2 → … → 1.0, seeded sampling) when the
+//    (`<|startofprev|>`, up to 223 tokens); beam search (5 beams, batched) at temperature 0. Temperature fallback (0 → 0.2 → … → 1.0, seeded sampling) when the
 //    text compresses more than 2.4× (a loop) or its mean log-probability is below −1; windows whose `<|nospeech|>`
 //    probability is above 0.6 while the text is improbable are skipped.
 // 4. Long audio — overlap and stitching: the next window starts at the end of the last complete segment, or of
@@ -72,8 +72,10 @@ export type WhisperOptions = {
 	task?: 'transcribe' | 'translate';
 	/** Feed the previous window's text as a prompt (OpenAI default: on). */
 	conditionOnPreviousText?: boolean;
-	/** Temperature fallback (default on). Off = greedy only (FilmCraft's behaviour). */
+	/** Temperature fallback (default on). Off = temperature 0 only (FilmCraft's behaviour). */
 	temperatureFallback?: boolean;
+	/** Beam search width at temperature 0 (default 5, OpenAI's CLI default); 1 = greedy (FilmCraft). */
+	beamSize?: number;
 	/** 0..1 progress and stage; return false to cancel. */
 	onProgress?(fraction: number, stage: string): boolean | undefined;
 	signal?: AbortSignal;
@@ -321,16 +323,162 @@ export class WhisperModel {
 		};
 	}
 
+	/** `t` repeated `b` times along the batch dimension (dims[0] must be 1). */
+	private repeatBatch(t: Tensor, b: number): Tensor {
+		const dims = t.dims as number[];
+		if (b === 1) return t;
+		const src = t.data as Float32Array;
+		const out = new Float32Array(src.length * b);
+		for (let i = 0; i < b; i++) out.set(src, i * src.length);
+		return new this.ort.Tensor('float32', out, [b, ...dims.slice(1)]);
+	}
+
+	/** Rows `idx` of a [B, …] tensor. */
+	private gatherBatch(t: Tensor, idx: readonly number[]): Tensor {
+		const dims = t.dims as number[];
+		const src = t.data as Float32Array;
+		const row = src.length / dims[0];
+		const out = new Float32Array(row * idx.length);
+		idx.forEach((r, i) => out.set(src.subarray(r * row, (r + 1) * row), i * row));
+		return new this.ort.Tensor('float32', out, [idx.length, ...dims.slice(1)]);
+	}
+
+	/**
+	 * Beam search at temperature 0 (OpenAI `BeamSearchDecoder` with patience 1 and `MaximumLikelihoodRanker`
+	 * without length penalty: the finished sequence with the best sum of log-probabilities / length). The
+	 * timestamp rules apply per beam. All beams run in one batched decoder call per step.
+	 */
+	private async decodeBeam(xa: Tensor, sotSeq: number[], prompt: readonly number[], beamSize: number): Promise<DecodeResult> {
+		const pre: number[] = [];
+		if (prompt.length && this.tok.sotPrev !== null) {
+			const maxPrompt = Math.floor(this.cfg.max_target_positions / 2) - 1;
+			pre.push(this.tok.sotPrev, ...prompt.slice(-maxPrompt));
+		}
+		const full = [...pre, ...sotSeq];
+		const { logits, cache: c0 } = await this.full(full, xa, { cache: true });
+		const noSpeechProb = this.tok.noSpeech !== null ? softmaxAt(rowOf(logits, pre.length), this.tok.noSpeech) : 0;
+		let cache = c0 as Record<string, Tensor>;
+		let rows = [rowOf(logits, full.length - 1)];
+		let beams: Array<{ seq: number[]; score: number }> = [{ seq: [], score: 0 }];
+		const finished = new Map<string, { seq: number[]; score: number }>();
+		const sampleLen = Math.min(224, this.cfg.max_target_positions - full.length - 1);
+		const cfg: FilterConfig = { ...this.filters, timestamps: true };
+		const xaBatch = new Map<number, Tensor>([[1, xa]]);
+		const encKeys = Object.keys(cache).filter((k) => k.includes('.encoder.'));
+		const encBatch = new Map<number, Record<string, Tensor>>();
+		const encFor = (b: number) => {
+			let e = encBatch.get(b);
+			if (!e) {
+				e = {};
+				for (const k of encKeys) e[k] = this.repeatBatch(c0![k] as Tensor, b);
+				encBatch.set(b, e);
+			}
+			return e;
+		};
+		for (let i = 0; i < sampleLen; i++) {
+			const candidates: Array<{ src: number; seq: number[]; score: number }> = [];
+			beams.forEach((beam, b) => {
+				const row = rows[b];
+				applyFilters(row, beam.seq, this.tok, cfg);
+				const lp = logSoftmax(row);
+				// top beamSize + 1 tokens of this beam
+				const top: number[] = [];
+				for (let t = 0; t < lp.length; t++) {
+					if (!Number.isFinite(lp[t])) continue;
+					if (top.length < beamSize + 1) {
+						top.push(t);
+						top.sort((x, y) => lp[y] - lp[x]);
+					} else if (lp[t] > lp[top[top.length - 1]]) {
+						top[top.length - 1] = t;
+						top.sort((x, y) => lp[y] - lp[x]);
+					}
+				}
+				for (const t of top) candidates.push({ src: b, seq: [...beam.seq, t], score: beam.score + lp[t] });
+			});
+			candidates.sort((a, b) => b.score - a.score);
+			const next: typeof candidates = [];
+			for (const c of candidates) {
+				if (c.seq[c.seq.length - 1] === this.tok.eot) {
+					const seq = c.seq.slice(0, -1);
+					const key = seq.join(',');
+					if (finished.size < beamSize && !finished.has(key)) finished.set(key, { seq, score: c.score });
+				} else next.push(c);
+				if (next.length >= beamSize) break;
+			}
+			if (finished.size >= beamSize || !next.length || i + 1 >= sampleLen) {
+				if (!finished.size) for (const c of next.slice(0, beamSize)) finished.set(c.seq.join(','), c);
+				break;
+			}
+			// loops: a beam that keeps repeating itself is finished as it is
+			const live = next.filter((c) => {
+				if (!repeating(c.seq, this.tok.timestampBegin)) return true;
+				if (finished.size < beamSize) finished.set(c.seq.join(','), { seq: c.seq, score: c.score });
+				return false;
+			});
+			if (!live.length || finished.size >= beamSize) break;
+			const B = live.length;
+			const idx = live.map((c) => c.src);
+			const feeds: Record<string, Tensor> = { ...encFor(B) };
+			for (const k of Object.keys(cache)) if (k.includes('.decoder.')) feeds[k] = this.gatherBatch(cache[k] as Tensor, idx);
+			let xb = xaBatch.get(B);
+			if (!xb) {
+				xb = this.repeatBatch(xa, B);
+				xaBatch.set(B, xb);
+			}
+			const fetches = ['logits'];
+			for (let l = 0; l < this.cfg.decoder_layers; l++)
+				for (const kv of ['key', 'value']) fetches.push(`present.${l}.decoder.${kv}`);
+			const out = await this.decoder.run(
+				{
+					input_ids: new this.ort.Tensor(
+						'int64',
+						BigInt64Array.from(live.map((c) => BigInt(c.seq[c.seq.length - 1]))),
+						[B, 1],
+					),
+					encoder_hidden_states: xb,
+					...feeds,
+					use_cache_branch: new this.ort.Tensor('bool', [true], [1]),
+				},
+				fetches,
+			);
+			cache = { ...feeds };
+			for (let l = 0; l < this.cfg.decoder_layers; l++)
+				for (const kv of ['key', 'value'])
+					cache[`past_key_values.${l}.decoder.${kv}`] = out[`present.${l}.decoder.${kv}`] as Tensor;
+			const lg = out.logits as Tensor;
+			const V = (lg.dims as number[])[2];
+			const data = lg.data as Float32Array;
+			rows = live.map((_, b) => data.slice(b * V, (b + 1) * V));
+			beams = live.map((c) => ({ seq: c.seq, score: c.score }));
+		}
+		let best: { seq: number[]; score: number } | null = null;
+		for (const f of finished.values())
+			if (!best || f.score / Math.max(1, f.seq.length) > best.score / Math.max(1, best.seq.length)) best = f;
+		const seq = best?.seq ?? [];
+		const text = this.tok.decode(seq.filter((t) => t < this.tok.eot));
+		return {
+			tokens: seq,
+			avgLogprob: (best?.score ?? 0) / (seq.length + 1),
+			noSpeechProb,
+			temperature: 0,
+			compressionRatio: compressionRatio(text),
+		};
+	}
+
 	private async decodeWithFallback(
 		xa: Tensor,
 		sotSeq: number[],
 		prompt: readonly number[],
 		fallback: boolean,
 		seed: number,
+		beamSize = 1,
 	): Promise<DecodeResult> {
 		let result: DecodeResult | null = null;
 		for (const t of fallback ? TEMPERATURES : [0]) {
-			result = await this.decodeOnce(xa, sotSeq, prompt, t, seed);
+			result =
+				t === 0 && beamSize > 1
+					? await this.decodeBeam(xa, sotSeq, prompt, beamSize)
+					: await this.decodeOnce(xa, sotSeq, prompt, t, seed);
 			let needsFallback =
 				result.compressionRatio > COMPRESSION_RATIO_THRESHOLD || result.avgLogprob < LOGPROB_THRESHOLD;
 			if (result.noSpeechProb > NO_SPEECH_THRESHOLD && result.avgLogprob < LOGPROB_THRESHOLD) needsFallback = false;
@@ -384,6 +532,7 @@ export class WhisperModel {
 		const task = opts.task === 'translate' && this.tok.multilingual ? 'translate' : 'transcribe';
 		const condition = opts.conditionOnPreviousText ?? true;
 		const fallback = opts.temperatureFallback ?? true;
+		const beamSize = Math.max(1, Math.min(10, opts.beamSize ?? 5));
 		const progress = (f: number, stage: string) => {
 			if (opts.signal?.aborted) throw new CancelledError();
 			if (opts.onProgress?.(f, stage) === false) throw new CancelledError();
@@ -423,7 +572,7 @@ export class WhisperModel {
 			}
 			const sotSeq = this.sotSequence(language, task);
 			const prompt = condition ? allTokens.slice(promptResetSince) : [];
-			const r = await this.decodeWithFallback(xa, sotSeq, prompt, fallback, 1234 + windowIndex);
+			const r = await this.decodeWithFallback(xa, sotSeq, prompt, fallback, 1234 + windowIndex, beamSize);
 			windowIndex++;
 			if (r.noSpeechProb > NO_SPEECH_THRESHOLD && r.avgLogprob < LOGPROB_THRESHOLD) {
 				seek += segmentFrames;

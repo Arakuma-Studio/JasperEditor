@@ -42,6 +42,8 @@ export const TranscribeOptionsSchema = z.object({
 	speakerCount: z.number().int().min(1).max(32).optional(),
 	/** At most this many speakers (default 6). */
 	maxSpeakers: z.number().int().min(1).max(32).optional(),
+	/** Beam search width (default 5; 1 = greedy, about twice as fast, slightly less accurate). */
+	beamSize: z.number().int().min(1).max(10).optional(),
 });
 export type TranscribeOptions = z.infer<typeof TranscribeOptionsSchema>;
 

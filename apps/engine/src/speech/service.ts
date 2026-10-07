@@ -333,11 +333,13 @@ function pickOptions(o: TranscribeOptions): TranscribeOptions {
 	if (o.speakerLabels) out.speakerLabels = true;
 	if (o.speakerCount) out.speakerCount = o.speakerCount;
 	if (o.maxSpeakers) out.maxSpeakers = o.maxSpeakers;
+	if (o.beamSize) out.beamSize = o.beamSize;
 	return out;
 }
 
-function specOptions(o: TranscribeOptions): Pick<SpeechJobSpec, 'language' | 'task' | 'speakers'> {
+function specOptions(o: TranscribeOptions): Pick<SpeechJobSpec, 'language' | 'task' | 'speakers' | 'beamSize'> {
 	return {
+		...(o.beamSize ? { beamSize: o.beamSize } : {}),
 		language: o.language && o.language !== 'auto' ? o.language : null,
 		task: o.task ?? 'transcribe',
 		speakers: {

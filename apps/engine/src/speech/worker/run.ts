@@ -14,6 +14,8 @@ export type SpeechJobSpec = {
 	language?: string | null;
 	task?: 'transcribe' | 'translate';
 	speakers?: { enabled: boolean; count?: number; max?: number };
+	/** Beam search width (default 5). */
+	beamSize?: number;
 	threads?: number;
 };
 
@@ -108,6 +110,7 @@ export async function runSpeechJob(
 		const r = await model.transcribe(audio, {
 			language: spec.language ?? null,
 			task: spec.task ?? 'transcribe',
+			...(spec.beamSize ? { beamSize: spec.beamSize } : {}),
 			signal: opts.signal,
 			onProgress: (f, stage) => {
 				opts.onProgress?.(0.03 + f * 0.92, stage);
