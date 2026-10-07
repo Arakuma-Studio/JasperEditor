@@ -324,6 +324,10 @@ export class MediaService {
 			interlaced: !!p.interlaced,
 			registeredAt: new Date().toISOString(),
 			...(p.lut ? { lut: p.lut } : {}),
+			...(p.vector ? { vector: p.vector } : {}),
+			...(p.lottie ? { lottie: p.lottie } : {}),
+			...(p.layered ? { layered: p.layered } : {}),
+			...(p.imageSequence ? { imageSequence: p.imageSequence } : {}),
 		};
 	}
 

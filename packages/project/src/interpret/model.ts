@@ -363,3 +363,22 @@ export function filePieces(
 	}
 	return out;
 }
+
+/**
+ * The imports descriptors (vector, Lottie, layered, image sequence) a registration carries, copied for a new asset
+ * (every client that turns an engine `RegisteredMedia` into a `MediaAsset` spreads this in).
+ */
+export function importedDescriptors(reg: {
+	vector?: unknown;
+	lottie?: unknown;
+	layered?: unknown;
+	imageSequence?: unknown;
+}): Pick<MediaAsset, 'vector' | 'lottie' | 'layered' | 'imageSequence'> {
+	const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+	return {
+		...(reg.vector ? { vector: copy(reg.vector as MediaAsset['vector']) } : {}),
+		...(reg.lottie ? { lottie: copy(reg.lottie as MediaAsset['lottie']) } : {}),
+		...(reg.layered ? { layered: copy(reg.layered as MediaAsset['layered']) } : {}),
+		...(reg.imageSequence ? { imageSequence: copy(reg.imageSequence as MediaAsset['imageSequence']) } : {}),
+	};
+}
