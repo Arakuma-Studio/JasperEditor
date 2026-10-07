@@ -383,6 +383,15 @@
 	--pr-scope-blue: #5a8cff;
 	--pr-scope-skin: #e3a36f;
 	--pr-scope-target: rgba(255, 255, 255, 0.6);
+	/* color-grade: hue/saturation curve backgrounds (x = hue from red, luma, saturation), hue slider, scope traces. */
+	--pr-curve-hue: linear-gradient(90deg, #ff3b3b, #ffff3b 16.67%, #3bff3b 33.33%, #3bffff 50%, #3b3bff 66.67%, #ff3bff 83.33%, #ff3b3b);
+	--pr-curve-luma: linear-gradient(90deg, #000000, #ffffff);
+	--pr-curve-sat: linear-gradient(90deg, #8f8f8f, #ff3b3b);
+	--pr-curve-hue-fade: linear-gradient(180deg, rgba(18, 18, 18, 0.15), rgba(18, 18, 18, 0.75));
+	--pr-slider-hue: linear-gradient(90deg, #ff3b3b, #ffff3b 16.67%, #3bff3b 33.33%, #3bffff 50%, #3b3bff 66.67%, #ff3bff 83.33%, #ff3b3b);
+	--pr-slider-luma: linear-gradient(90deg, #000000, #ffffff);
+	--pr-scope-chroma: #d8a6ff;
+	--pr-scope-ire: rgba(255, 255, 255, 0.1);
 }
 
 /* wp-m2-transitions: transitions drawn on the timeline (S10:TUI-001…006, TUI-020…022). */
