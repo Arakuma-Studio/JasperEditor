@@ -29,6 +29,7 @@ export * from './ids.ts';
 export * from './interpret/index.ts';
 export * from './invariants.ts';
 export * from './keyframes.ts';
+export * from './lottie/index.ts';
 export * from './keyframes-spatial.ts';
 export * from './masks/index.ts';
 export * from './migrations.ts';

@@ -20,6 +20,8 @@ import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
 import {
 	contentTimeAt,
+	interpretMediaHandle,
+	type MediaAsset,
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderSnapshot,
@@ -32,8 +34,10 @@ import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
+import { importsArtifactsOf, withImportsUrls } from '../imports/extension.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
+import type { MediaRecord } from '../media/registry.ts';
 import { REMOTION_VERSION, type SharedRenderBrowser } from '../remotion/service.ts';
 import { Ffmpeg, sec } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
@@ -535,6 +539,17 @@ export class LayerBakeService {
 		const key = asset ? mediaKeyOf(asset) : null;
 		if (!local || !asset || !key) return null;
 		const r = local.record;
+		// imports: interpreted size / pixels / time, Lottie and vector loaders, display pictures and masters prepared by
+		// the `imports` extension for this export.
+		const sign = (p: string) => this.core.signer.signUrl(this.core.origin(), p);
+		return withImportsUrls(
+			interpretMediaHandle(asset, this.rawSignedHandle(key, asset, r)),
+			importsArtifactsOf(planned)?.get(id),
+			sign,
+		);
+	}
+
+	private rawSignedHandle(key: string, asset: MediaAsset, r: MediaRecord): MediaHandle {
 		return {
 			url: this.core.signer.signUrl(this.core.origin(), `/media/${encodeURIComponent(key)}`),
 			proxyUrl: null,
@@ -551,11 +566,17 @@ export class LayerBakeService {
 	private keyMedia(planned: Pick<PlannedExport, 'document' | 'media'>, ids: Iterable<string>): KeyMedia[] {
 		return [...ids].sort().map((mediaId) => {
 			const local = planned.media[mediaId];
+			const asset = planned.document.media[mediaId];
+			const interp =
+				asset?.interpretation || asset?.vector
+					? JSON.stringify({ i: asset.interpretation ?? null, p: asset.vector?.page ?? null })
+					: null;
 			return {
 				mediaId,
-				fingerprint: local?.record.fingerprint ?? planned.document.media[mediaId]?.fingerprint ?? null,
+				fingerprint: local?.record.fingerprint ?? asset?.fingerprint ?? null,
 				size: local?.record.sizeBytes ?? null,
 				mtime: local ? Math.round(local.record.mtimeMs) : null,
+				...(interp ? { interp } : {}),
 			};
 		});
 	}

@@ -255,6 +255,38 @@ export class MediaService {
 	}
 
 	/**
+	 * imports workstream: registers a managed file the engine produced for an import (the lossless intermediate of an
+	 * image sequence, the extracted layers of a PSD), with descriptors (`extras`) stored on the record and returned in
+	 * RegisteredMedia. Probed like any file; the usual derivatives follow (a proxy when browsers cannot decode it).
+	 */
+	async registerProduced(
+		file: string,
+		opts: { name: string; projectId?: string; extras?: Partial<Pick<MediaRecord, 'imageSequence'>> },
+	): Promise<RegisteredMedia> {
+		const st = await stat(file).catch(() => null);
+		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Produced file not found');
+		const { fingerprint, sizeBytes } = await fingerprintFile(file);
+		const mediaKey = mediaKeyFor(fingerprint);
+		return this.mutex.run(mediaKey, async () => {
+			const existing = this.deps.registry.get(mediaKey);
+			let record: MediaRecord;
+			if (existing && (await this.deps.registry.availability(mediaKey)) === 'online') {
+				record = { ...existing, ...(opts.extras ?? {}), originalName: existing.originalName };
+				await this.deps.registry.put(record);
+			} else {
+				const probe = await this.probe(file, fingerprint, opts.name, opts.projectId);
+				record = {
+					...this.makeRecord(mediaKey, fingerprint, opts.name, sizeBytes, st.mtimeMs, { type: 'managed', path: file }, probe),
+					...(opts.extras ?? {}),
+				};
+				await this.deps.registry.put(record);
+			}
+			this.announce(record, opts.projectId);
+			return this.deps.registry.toRegistered(record, { exposePath: this.deps.exposePaths });
+		});
+	}
+
+	/**
 	 * Discards a media a client registered but never committed (M3, S07:PRC-018: Replace Footage cancelled after
 	 * its upload). Deletes only engine-managed copies under `<mediaDir>/<key>/` that no stored project file or
 	 * project version references; the user's own files (path storage) and processed versions are never touched.

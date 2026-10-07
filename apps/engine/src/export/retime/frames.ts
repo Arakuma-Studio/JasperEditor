@@ -70,6 +70,12 @@ export type DecodeSource = {
 	scaleOptions: string;
 	/** Decoder for WebM alpha (`libvpx`/`libvpx-vp9`): decoded from the file start (see native.ts). */
 	decoder: string | null;
+	/**
+	 * imports (Interpret Footage): decoder options before `-i` (EXR transfer) and filters before the scale (decode
+	 * transfer, deinterlace, alpha interpretation) — the native builder's source chain.
+	 */
+	pre?: string[];
+	filters?: string[];
 };
 
 /** Raw RGBA frames of a media by index, decoded in chunks with an LRU. */
@@ -124,8 +130,8 @@ export class ChunkedFrames {
 		const t = s.times[first]!;
 		const prev = first > 0 ? s.times[first - 1]! : 0;
 		const seek = first > 0 ? t - Math.min(0.5 * (t - prev), 0.01) : 0;
-		const vf = `scale=${s.width}:${s.height}${s.scaleOptions},setsar=1,format=rgba`;
-		const head = s.decoder ? ['-c:v', s.decoder] : [];
+		const vf = [...(s.filters ?? []), `scale=${s.width}:${s.height}${s.scaleOptions},setsar=1,format=rgba`].join(',');
+		const head = [...(s.decoder ? ['-c:v', s.decoder] : []), ...(s.pre ?? [])];
 		if (s.decoder) {
 			// WebM alpha: decode from the start, pick frames by index.
 			return [

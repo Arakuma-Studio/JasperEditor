@@ -336,6 +336,11 @@ function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResul
 export async function probeFile(ff: Ffmpeg, file: string, opts: SpawnOptions = {}): Promise<ProbeResult> {
 	const prober = ASSET_PROBERS.find((p) => p.matches(file));
 	if (prober) return prober.probe(file, opts);
+	return probeWithFfprobe(ff, file, opts);
+}
+
+/** ffprobe only (no asset prober): what a prober falls back to for files it cannot read itself. */
+export async function probeWithFfprobe(ff: Ffmpeg, file: string, opts: SpawnOptions = {}): Promise<ProbeResult> {
 	let json: Record<string, unknown>;
 	try {
 		json = await ff.probeJson(['-show_format', '-show_streams', file], opts);

@@ -83,11 +83,11 @@ export function clipDecodeArgs(o: {
 	// imports (Interpret Footage): content time is interpreted media time; the file is read at
 	// `fileTimeOf(mediaTime, t)` — an assumed frame rate scales it (the sound plays `scale` times faster, pitch
 	// following like the picture) and a loop wraps it (`-stream_loop`: the file restarts at its end).
-	const map = clip.mediaTime;
-	const scale = map?.scale ?? 1;
-	const startSec = fileTimeOf(map, Math.max(0, c0)) / FLICKS_PER_SECOND;
+	const tmap = clip.mediaTime;
+	const scale = tmap?.scale ?? 1;
+	const startSec = fileTimeOf(tmap, Math.max(0, c0)) / FLICKS_PER_SECOND;
 	const durSec = (Math.max(0, c1 - Math.max(0, c0)) * scale) / FLICKS_PER_SECOND;
-	const loops = !!map?.period && Math.max(0, c0) + (c1 - Math.max(0, c0)) > map.period;
+	const loops = !!tmap?.period && Math.max(0, c0) + (c1 - Math.max(0, c0)) > tmap.period;
 	const channels = clipChannels(clip, o.stream);
 	const map = clip.channels.map;
 	const chain: string[] = [];

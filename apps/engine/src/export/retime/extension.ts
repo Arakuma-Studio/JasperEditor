@@ -5,10 +5,11 @@
 // the preview shows (same frame choice, same optical flow algorithm), and `override` hands it to the builder as the
 // clip's `layer` source: effects, Motion, opacity, masks and transitions then apply as for any video layer.
 import { createHash } from 'node:crypto';
+import { decoderArgs, sourceFilters } from '../../imports/decode.ts';
 import { mkdir, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
-import type { RenderVisualClip } from '@jasper/project';
+import { pixelVariantKey, type RenderVisualClip } from '@jasper/project';
 import { JobError } from '../../jobs/types.ts';
 import { alphaDecoder } from '../../media/alpha.ts';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
@@ -87,6 +88,7 @@ export function createRetimeExtension(deps: RetimeDeps): NativeExtension {
 					media: fp,
 					size: [width, height],
 					scaleOptions,
+					pixel: pixelVariantKey(local.pixel ?? null),
 					fps,
 					mode: plan.interpolation,
 					frames: plan.frames.map((f) => [f.a, f.b, Math.round(f.w * 1e6)]),
@@ -117,6 +119,9 @@ export function createRetimeExtension(deps: RetimeDeps): NativeExtension {
 				height,
 				scaleOptions,
 				decoder,
+				// imports (Interpret Footage): the same source chain as the builder.
+				pre: decoderArgs(local.record),
+				filters: sourceFilters(local.record, local.pixel),
 			},
 			ctx.signal,
 		);

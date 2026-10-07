@@ -104,8 +104,13 @@ export type MediaHandle = {
 	frameRate?: Rational;
 	/** A vector still (SVG / PDF): drawn as vector at the scale it is shown at, by the composition. */
 	vector?: { format: 'svg' | 'pdf'; page: number; width: number; height: number };
-	/** A Lottie animation drawn by the Lottie player (`url` = its JSON, images embedded). */
+	/** A Lottie animation drawn by the Lottie player (from `loaderUrl`: its JSON, images embedded). */
 	lottie?: { fps: number; inFrame: number; outFrame: number; width: number; height: number };
+	/**
+	 * Lottie / vector media: the URL of the document the composition draws (the engine's `/media/<key>/lottie.json`
+	 * or `/media/<key>/vector`, signed for renders). Set by the consumer that resolves URLs.
+	 */
+	loaderUrl?: string;
 };
 
 /**
@@ -910,7 +915,9 @@ export function buildRenderSnapshot(
 				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
 				// edit-structure: a nest renders with the engines its nested layers need.
 				engine:
-					'nest' in source && nestNeedsRemotion(source.nest.snapshot)
+					('nest' in source && nestNeedsRemotion(source.nest.snapshot)) ||
+					// imports: Lottie and vector pictures are drawn by the composition (baked for the native path).
+					('mediaId' in source && (doc.media[source.mediaId]?.lottie || doc.media[source.mediaId]?.vector))
 						? 'remotion'
 						: (clipEngines(c)?.export ?? caps.engines.export),
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),

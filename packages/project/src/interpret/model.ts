@@ -382,3 +382,36 @@ export function importedDescriptors(reg: {
 		...(reg.imageSequence ? { imageSequence: copy(reg.imageSequence as MediaAsset['imageSequence']) } : {}),
 	};
 }
+
+/**
+ * What a browser-side renderer (Program monitor, Remotion render, layer bake) needs to show an asset exactly as the
+ * native export decodes it:
+ * - `loader`: Lottie and vector media are drawn by the composition from their JSON / SVG / PDF (`mediaLoaderPath`);
+ * - `picture`: a still the browser cannot decode or that has a pixel interpretation is shown from the engine's
+ *   `display` PNG; a video with a pixel interpretation from its interpreted `proxy` (preview) / `master` (renders),
+ *   both made with `variant`.
+ */
+export function browserPictureNeed(
+	asset: AssetLike & { vector?: unknown; locators?: unknown },
+): { loader: 'lottie' | 'vector' | null; picture: 'display' | 'proxy' | null; variant: string } {
+	if (asset.lottie) return { loader: 'lottie', picture: null, variant: '' };
+	if ((asset as { vector?: unknown }).vector) return { loader: 'vector', picture: null, variant: '' };
+	const variant = mediaPixelVariant(asset);
+	const vs = videoStream(asset);
+	if (asset.kind === 'image' && vs)
+		return { loader: null, picture: variant !== '' || vs.browserDecodable === false ? 'display' : null, variant };
+	if (asset.kind === 'video' && vs && variant !== '') return { loader: null, picture: 'proxy', variant };
+	return { loader: null, picture: null, variant };
+}
+
+/** Same-origin path of the document a Lottie / vector asset is drawn from (`/media/<key>/lottie.json` / `…/vector`). */
+export function mediaLoaderPath(
+	asset: Pick<MediaAsset, 'locators'> & { lottie?: unknown; vector?: unknown },
+): string | null {
+	const loc = asset.locators.find((l) => l.type === 'engine-store');
+	if (!loc || loc.type !== 'engine-store') return null;
+	const k = encodeURIComponent(loc.key);
+	if (asset.lottie) return `/media/${k}/lottie.json`;
+	if (asset.vector) return `/media/${k}/vector`;
+	return null;
+}
