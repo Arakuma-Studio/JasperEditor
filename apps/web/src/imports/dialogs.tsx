@@ -5,15 +5,8 @@ import type { LayeredExtractResult, LayeredLayer, LottieExportResult } from '@ja
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import type { LayeredImportMode, Rational } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import {
-	Checkbox,
-	Dialog,
-	type HostedDialogProps,
-	registerDialog,
-	Select,
-	TextField,
-} from '@jasper/ui';
-import { type ReactNode, useMemo, useState } from 'react';
+import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { exportEnvelope } from '../export/settings.ts';
 import { parseFps } from './interpret-dialog.tsx';
 
@@ -25,11 +18,15 @@ export const LOTTIE_EXPORT_DIALOG = 'imports.lottieExport';
 const errorText = (e: unknown) =>
 	e instanceof EngineError ? `${e.message} (${e.code})` : e instanceof Error ? e.message : String(e);
 
+/** Open state and a one-shot close: the Dialog also reports its closing after the primary action ran. */
 function useFinish(close: (r?: unknown) => void) {
 	const [open, setOpen] = useState(true);
+	const done = useRef(false);
 	return {
 		open,
 		finish(r?: unknown) {
+			if (done.current) return;
+			done.current = true;
 			setOpen(false);
 			close(r);
 		},
@@ -65,7 +62,9 @@ export function ImageSequenceDialog(
 			size="medium"
 			primaryLabel="Import"
 			primaryDisabled={asSequence && !rate}
-			onPrimary={() => finish({ asSequence, frameRate: rate ?? props.defaultRate } satisfies ImageSequenceChoice)}
+			onPrimary={() =>
+				finish({ asSequence, frameRate: rate ?? props.defaultRate } satisfies ImageSequenceChoice)
+			}
 			data-testid="image-sequence-dialog"
 		>
 			<div className="flex flex-col gap-3 text-pr-ui">
@@ -141,7 +140,9 @@ function LayerRows({
 							/>
 						)}
 						{!l.visible ? <span className="text-pr-small text-pr-dim">(hidden)</span> : null}
-						{l.notes?.length ? <span className="text-pr-small text-pr-warning">{l.notes.join('; ')}</span> : null}
+						{l.notes?.length ? (
+							<span className="text-pr-small text-pr-warning">{l.notes.join('; ')}</span>
+						) : null}
 					</div>
 					{l.children ? (
 						<ul>
@@ -162,11 +163,15 @@ function allPictureLayers(layers: LayeredLayer[], out: LayeredLayer[] = []): Lay
 	return out;
 }
 
-export function LayeredImportDialog(props: HostedDialogProps<{ name: string; result: LayeredExtractResult }>) {
+export function LayeredImportDialog(
+	props: HostedDialogProps<{ name: string; result: LayeredExtractResult }>,
+) {
 	const { open, finish } = useFinish(props.close);
 	const [mode, setMode] = useState<LayeredImportMode>('sequence');
 	const pictures = useMemo(() => allPictureLayers(props.result.layers), [props.result]);
-	const [selected, setSelected] = useState(() => new Set(pictures.filter((l) => l.visible).map((l) => l.index)));
+	const [selected, setSelected] = useState(
+		() => new Set(pictures.filter((l) => l.visible).map((l) => l.index)),
+	);
 	const toggle = (i: number, on: boolean) =>
 		setSelected((s) => {
 			const n = new Set(s);
@@ -191,7 +196,10 @@ export function LayeredImportDialog(props: HostedDialogProps<{ name: string; res
 					<Select
 						value={mode}
 						onValueChange={(v) => setMode(v as LayeredImportMode)}
-						options={(Object.keys(MODE_LABELS) as LayeredImportMode[]).map((m) => ({ value: m, label: MODE_LABELS[m] }))}
+						options={(Object.keys(MODE_LABELS) as LayeredImportMode[]).map((m) => ({
+							value: m,
+							label: MODE_LABELS[m],
+						}))}
 						label="Import as"
 						className="w-[220px]"
 					/>
@@ -223,7 +231,10 @@ export function LayeredImportDialog(props: HostedDialogProps<{ name: string; res
 								Select none
 							</button>
 						</div>
-						<ul className="max-h-[40vh] overflow-auto rounded-pr-control bg-pr-raised p-2" data-testid="layered-layers">
+						<ul
+							className="max-h-[40vh] overflow-auto rounded-pr-control bg-pr-raised p-2"
+							data-testid="layered-layers"
+						>
 							<LayerRows layers={props.result.layers} selected={selected} toggle={toggle} />
 						</ul>
 					</div>
@@ -307,7 +318,11 @@ export function LottieExportDialog(props: HostedDialogProps<LottieExportProps>) 
 	const { session, engine, sequenceId } = props;
 	const { open, finish } = useFinish(props.close);
 	const seq = session.getCommitted().sequences[sequenceId];
-	const hasInOut = seq?.inPoint !== null && seq?.inPoint !== undefined && seq?.outPoint !== null && seq?.outPoint !== undefined;
+	const hasInOut =
+		seq?.inPoint !== null &&
+		seq?.inPoint !== undefined &&
+		seq?.outPoint !== null &&
+		seq?.outPoint !== undefined;
 	const [format, setFormat] = useState<'json' | 'dotlottie'>('json');
 	const [range, setRange] = useState<'entire' | 'inout'>('entire');
 	const [busy, setBusy] = useState(false);
@@ -321,10 +336,14 @@ export function LottieExportDialog(props: HostedDialogProps<LottieExportProps>) 
 				envelope: exportEnvelope(session.getCommitted(), session.revision) as never,
 				sequenceId,
 				format,
-				...(range === 'inout' && seq && hasInOut ? { range: { start: seq.inPoint!, end: seq.outPoint! + 1 } } : {}),
+				...(range === 'inout' && seq && hasInOut
+					? { range: { start: seq.inPoint!, end: seq.outPoint! + 1 } }
+					: {}),
 			});
 			const url = r.contentBase64
-				? URL.createObjectURL(base64Blob(r.contentBase64, format === 'json' ? 'application/json' : 'application/zip'))
+				? URL.createObjectURL(
+						base64Blob(r.contentBase64, format === 'json' ? 'application/json' : 'application/zip'),
+					)
 				: undefined;
 			setResult({ ...r, ...(url ? { url } : {}) });
 		} catch (e) {
@@ -373,8 +392,8 @@ export function LottieExportDialog(props: HostedDialogProps<LottieExportProps>) 
 							/>
 						</Row>
 						<p className="text-pr-small text-pr-muted">
-							Shapes, text, colour mattes, stills, nested sequences and Lottie clips are exported as Lottie layers with
-							their keyframes; anything Lottie cannot carry is listed after the export.
+							Shapes, text, colour mattes, stills, nested sequences and Lottie clips are exported as Lottie
+							layers with their keyframes; anything Lottie cannot carry is listed after the export.
 						</p>
 					</>
 				) : (
@@ -383,14 +402,23 @@ export function LottieExportDialog(props: HostedDialogProps<LottieExportProps>) 
 							{result.layers} layer{result.layers === 1 ? '' : 's'}, {(result.bytes / 1024).toFixed(1)} KB.
 						</p>
 						{result.url ? (
-							<a className="text-pr-accent underline" href={result.url} download={result.fileName} data-testid="lottie-export-download">
+							<a
+								className="text-pr-accent underline"
+								href={result.url}
+								download={result.fileName}
+								data-testid="lottie-export-download"
+							>
 								Download {result.fileName}
 							</a>
 						) : (
 							<span className="text-pr-muted">{result.outputPath}</span>
 						)}
 						{result.warnings.length ? (
-							<ul className="flex max-h-[40vh] flex-col gap-1 overflow-auto" aria-label="Not carried" data-testid="lottie-export-warnings">
+							<ul
+								className="flex max-h-[40vh] flex-col gap-1 overflow-auto"
+								aria-label="Not carried"
+								data-testid="lottie-export-warnings"
+							>
 								{result.warnings.map((w) => (
 									<li key={w} className="rounded-pr-control bg-pr-raised px-2 py-1 text-pr-warning">
 										{w}

@@ -27,7 +27,7 @@ import {
 	Select,
 	TextField,
 } from '@jasper/ui';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 
 export const INTERPRET_FOOTAGE_DIALOG = 'imports.interpretFootage';
 
@@ -421,7 +421,11 @@ export function InterpretFootageDialog(props: HostedDialogProps<InterpretFootage
 	const [draft, setDraft] = useState<InterpretDraft>({ patch: {}, sections: {} });
 	const [error, setError] = useState<string | null>(null);
 	const shown = SECTIONS.filter((s) => s.applies(assets));
+	// One-shot: the Dialog also reports its closing after OK ran.
+	const closed = useRef(false);
 	const close = (r?: unknown) => {
+		if (closed.current) return;
+		closed.current = true;
 		setOpen(false);
 		props.close(r);
 	};
