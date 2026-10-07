@@ -1,6 +1,7 @@
 // The format registry: names, extensions, sniffing and the reader/writer of every format.
 
 import { exportFcp7, importFcp7, sniffFcp7 } from './fcp7.ts';
+import { exportFcpxml, importFcpxml, sniffFcpxml } from './fcpxml.ts';
 import type { IProject } from './model.ts';
 import type { ExportOptions, Format, ImportOptions } from './options.ts';
 import { exportOtio, importOtio, sniffOtio } from './otio.ts';
@@ -78,7 +79,17 @@ export const FORMAT_INFO: Record<Format, FormatInfo | undefined> = {
 		read: text(importFcp7),
 		write: textOut(exportFcp7),
 	},
-	fcpxml: undefined,
+	fcpxml: {
+		id: 'fcpxml',
+		name: 'FCPXML',
+		extension: 'fcpxml',
+		extensions: ['fcpxml', 'fcpxmld'],
+		binary: false,
+		timeline: true,
+		sniff: (_b, head) => sniffFcpxml(head),
+		read: text(importFcpxml),
+		write: textOut(exportFcpxml),
+	},
 	edl: undefined,
 	aaf: undefined,
 	omf: undefined,

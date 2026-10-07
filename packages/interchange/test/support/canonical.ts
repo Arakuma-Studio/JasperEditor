@@ -7,6 +7,8 @@ export type CanonOptions = {
 	dropClip?: readonly (keyof IClip)[];
 	dropMedia?: readonly (keyof IMedia)[];
 	dropSequence?: readonly (keyof ISequence)[];
+	/** Remove these marker fields (sequence, clip and media markers). */
+	dropMarker?: readonly string[];
 	/** Remove empty tracks at the top of each list. */
 	trimEmptyTracks?: boolean;
 	/** Keep only the top sequence and the sequences it nests. */
@@ -36,7 +38,19 @@ const stripKfIds = (v: unknown): unknown => {
 	return v;
 };
 
-export function canonical(p: IProject, opts: CanonOptions = {}): unknown {
+export function canonical(p0: IProject, opts: CanonOptions = {}): unknown {
+	let p = p0;
+	if (opts.dropMarker?.length) {
+		p = JSON.parse(JSON.stringify(p0)) as IProject;
+		const fix = (list: Record<string, unknown>[]) => {
+			for (const m of list) for (const k of opts.dropMarker!) delete m[k];
+		};
+		for (const s of Object.values(p.sequences)) {
+			fix(s.markers as never);
+			for (const t of [...s.video, ...s.audio]) for (const c of t.clips) fix(c.markers as never);
+		}
+		for (const m of Object.values(p.media)) fix(m.markers as never);
+	}
 	const mediaKey = (id: string) => {
 		const m = p.media[id];
 		return m ? `media:${m.generator ? JSON.stringify(m.generator) : (m.path ?? m.name)}` : `missing:${id}`;

@@ -354,7 +354,7 @@ function build(f: Features, g: Gen): IProject {
 		sequences: { [seq.id]: seq },
 		top: [seq.id],
 	};
-	if (f.nested && g.nestedAt >= 0 && seq.video.length) {
+	if (f.nested && g.nestedAt >= 0 && seq.video.length && media[ids[0]!]!.video) {
 		const inner: ISequence = {
 			...seq,
 			id: 'seq2',
