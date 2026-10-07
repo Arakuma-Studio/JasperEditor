@@ -49,7 +49,11 @@ export class WhisperTokenizer {
 	/** Language tokens (`"en"` → id) in vocabulary order, multilingual models only. */
 	readonly languages: Array<[string, number]>;
 
-	constructor(json: TokenizerJson) {
+	/**
+	 * `multilingual`: whether the model was trained on many languages (OpenAI: vocabulary ≥ 51865 tokens). The
+	 * English-only models list the language tokens too, but take a bare `<|startoftranscript|>` prompt.
+	 */
+	constructor(json: TokenizerJson, multilingual = true) {
 		const table = unicodeToByte();
 		const vocab = json.model?.vocab;
 		if (!vocab) throw new Error('tokenizer.json: no model.vocab');
@@ -82,7 +86,9 @@ export class WhisperTokenizer {
 		this.noSpeech = this.special.get('<|nospeech|>') ?? this.special.get('<|nocaptions|>') ?? null;
 		this.timestampBegin = need('<|0.00|>');
 		const tr = this.translate;
-		this.languages = [...this.special.entries()]
+		this.languages = !multilingual
+			? []
+			: [...this.special.entries()]
 			.filter(
 				([k, id]) =>
 					id > this.sot && (tr === null || id < tr) && k.startsWith('<|') && k.endsWith('|>') && k.length <= 10,

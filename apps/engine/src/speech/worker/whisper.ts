@@ -37,6 +37,7 @@ import {
 } from '../core/decode.ts';
 import { HOP, logMel, SAMPLE_RATE } from '../core/mel.ts';
 import { type TokenizerJson, WhisperTokenizer } from '../core/tokenizer.ts';
+import { endOfVoice, frameDb, vadThreshold } from '../core/vad.ts';
 
 type Ort = typeof import('onnxruntime-node');
 type Session = import('onnxruntime-node').InferenceSession;
@@ -131,7 +132,7 @@ export class WhisperModel {
 			begin_suppress_tokens?: number[];
 			max_initial_timestamp_index?: number;
 		};
-		const tok = new WhisperTokenizer(read('tokenizer.json') as TokenizerJson);
+		const tok = new WhisperTokenizer(read('tokenizer.json') as TokenizerJson, cfg.vocab_size >= 51865);
 		const heads =
 			gen.alignment_heads && gen.alignment_heads.length
 				? gen.alignment_heads
@@ -392,6 +393,8 @@ export class WhisperModel {
 		padded.set(audio);
 		const { frames: totalFrames, data: mel } = logMel(padded, nMels);
 		const contentFrames = Math.max(0, totalFrames - N_FRAMES);
+		const db = frameDb(audio);
+		const voiceThreshold = vadThreshold(db);
 		let language = opts.language && opts.language !== 'auto' ? opts.language : null;
 		if (language && this.tok.multilingual && this.tok.languageToken(language) === null)
 			throw new Error(`The model does not know the language "${language}"`);
@@ -441,7 +444,12 @@ export class WhisperModel {
 				if (!parsed.singleTimestampEnding) {
 					let lastWordEnd: number | null = null;
 					for (const s of segs) for (const w of s.words) lastWordEnd = w.end;
-					if (lastWordEnd !== null && lastWordEnd > timeOffset) nextSeek = Math.round(lastWordEnd * 100);
+					if (lastWordEnd !== null && lastWordEnd > timeOffset) {
+						// resume after the voice that the last word's (often early) end leaves, but not past the
+						// window's last complete segment
+						const segEnd = Math.round(segs[segs.length - 1].end * 100);
+						nextSeek = endOfVoice(db, voiceThreshold, Math.round(lastWordEnd * 100), Math.max(segEnd, Math.round(lastWordEnd * 100)));
+					}
 				}
 				const windowEnd = timeOffset + segmentFrames / 100;
 				for (const s of segs) {
