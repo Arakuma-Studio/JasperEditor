@@ -11,6 +11,7 @@ export * from './audio-fade.ts';
 export * from './blend-modes.ts';
 export * from './captions/index.ts';
 export * from './clipboard/index.ts';
+export * from './color/analysis.ts';
 export * from './color/auto-tone.ts';
 export * from './color/curves.ts';
 export * from './color/grade-math.ts';

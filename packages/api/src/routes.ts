@@ -45,6 +45,14 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import {
+	AutoToneRequestSchema,
+	AutoToneResponseSchema,
+	ColorMatchRequestSchema,
+	ColorMatchResponseSchema,
+	GradingScopesRequestSchema,
+	GradingScopesResponseSchema,
+} from './grading.ts';
+import {
 	ImageSequenceDetectRequestSchema,
 	ImageSequenceDetectResponseSchema,
 	ImageSequenceRequestSchema,
@@ -169,7 +177,9 @@ export type RouteOwner =
 	// parity program: roto / object mattes, face tracking
 	| 'roto'
 	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
-	| 'imports';
+	| 'imports'
+	// parity program: Lumetri completion, Colour Match, scopes
+	| 'color-grade';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -960,6 +970,28 @@ export const ROUTES = {
 		body: CaptionFileReadRequestSchema,
 		response: CaptionFileReadResponseSchema,
 		owner: 'wp-captions',
+	},
+	// ---- color-grade: scopes as numbers, Colour Match, Auto tone (each renders its frames with the still renderer)
+	gradingScopes: {
+		method: 'POST',
+		path: '/api/grading/scopes',
+		body: GradingScopesRequestSchema,
+		response: GradingScopesResponseSchema,
+		owner: 'color-grade',
+	},
+	gradingMatch: {
+		method: 'POST',
+		path: '/api/grading/match',
+		body: ColorMatchRequestSchema,
+		response: ColorMatchResponseSchema,
+		owner: 'color-grade',
+	},
+	gradingAutoTone: {
+		method: 'POST',
+		path: '/api/grading/auto-tone',
+		body: AutoToneRequestSchema,
+		response: AutoToneResponseSchema,
+		owner: 'color-grade',
 	},
 } as const satisfies Record<string, RouteDef>;
 
