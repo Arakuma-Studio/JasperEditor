@@ -41,13 +41,7 @@ import { rgbaCss } from '../../metadata.ts';
 import type { LayerProps } from '../../types.ts';
 import { TextExpressionContext } from './expression-context.ts';
 import { drawnBaseline, measureAdvance, measureTypeset, type TypesetLayout } from './measure.ts';
-import {
-	charFlowCss,
-	FAUX_ITALIC_SLANT,
-	fauxBoldWidth,
-	glyphSize,
-	variationSettings,
-} from './typography.ts';
+import { charFlowCss, FAUX_ITALIC_SLANT, fauxBoldWidth, glyphSize, variationSettings } from './typography.ts';
 
 type Fonts = LayerProps['fonts'];
 

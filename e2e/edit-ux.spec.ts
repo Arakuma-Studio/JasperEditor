@@ -17,8 +17,8 @@ import {
 	importFiles,
 	pointerDrag,
 	query,
-	regionLuma,
 	ROOT,
+	regionLuma,
 	transact,
 } from './support.ts';
 
@@ -54,7 +54,9 @@ async function seqId(): Promise<string> {
 
 test('four-point Overwrite asks Fit Clip and fits the clip by speed', async () => {
 	const items = await doc<Record<string, { id: string; kind: string; mediaId?: string }>>(['items']);
-	const itemA = Object.values(items).find((i) => i.kind === 'media' && i.mediaId === mediaId('clip-a.mp4'))!.id;
+	const itemA = Object.values(items).find(
+		(i) => i.kind === 'media' && i.mediaId === mediaId('clip-a.mp4'),
+	)!.id;
 	const r = await transact(page, [
 		{ type: 'item.setMarks', itemId: itemA, in: { seconds: 0 }, out: { seconds: 2 } },
 		{ type: 'sequence.setInOut', in: 0, out: 30 },
@@ -117,7 +119,9 @@ test('Match Frame opens the source at the matching frame', async () => {
 	await focusTimeline(page);
 	await page.keyboard.press('KeyF');
 	const items = await doc<Record<string, { id: string; kind: string; mediaId?: string }>>(['items']);
-	const itemB = Object.values(items).find((i) => i.kind === 'media' && i.mediaId === mediaId('clip-b.mp4'))!.id;
+	const itemB = Object.values(items).find(
+		(i) => i.kind === 'media' && i.mediaId === mediaId('clip-b.mp4'),
+	)!.id;
 	await expect(page.getByTestId('source-item')).toHaveValue(itemB);
 });
 
@@ -135,7 +139,11 @@ test('keyframe lane: Ctrl-click adds a keyframe; the fade handle fades in (one e
 	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('Add Keyframe');
 	const fade = page.getByTestId(`lane-fade-in-${v1.id}`);
 	const fb = (await fade.boundingBox())!;
-	await pointerDrag(page, { x: fb.x + fb.width / 2, y: fb.y + fb.height / 2 }, { x: fb.x + box.width * 0.3, y: fb.y + fb.height / 2 });
+	await pointerDrag(
+		page,
+		{ x: fb.x + fb.width / 2, y: fb.y + fb.height / 2 },
+		{ x: fb.x + box.width * 0.3, y: fb.y + fb.height / 2 },
+	);
 	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('Fade In');
 	await page.screenshot({ path: join(OUT, 'lanes.png') });
 });

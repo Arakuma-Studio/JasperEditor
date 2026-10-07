@@ -3,7 +3,7 @@
 import { EngineClient } from '@jasper/engine-client';
 import { type Clip, FLICKS_PER_SECOND } from '@jasper/project';
 import { TransportStore } from '@jasper/session';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import {
@@ -131,7 +131,9 @@ describe('subclips and Mark Split', () => {
 			itemId: h.itemId,
 			range: { in: 2 * FLICKS_PER_SECOND, out: 4 * FLICKS_PER_SECOND },
 		});
-		render(<SubclipDialog {...(d.props as unknown as Parameters<typeof SubclipDialog>[0])} close={() => {}} />);
+		render(
+			<SubclipDialog {...(d.props as unknown as Parameters<typeof SubclipDialog>[0])} close={() => {}} />,
+		);
 		fireEvent.change(screen.getByTestId('subclip-name'), { target: { value: 'Take A' } });
 		fireEvent.click(screen.getByText('Restrict Trims To Subclip Boundaries'));
 		fireEvent.click(screen.getByText('OK'));

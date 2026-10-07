@@ -61,7 +61,7 @@ describe('match frame', () => {
 		const v = h.clips('V1')[0]!;
 		h.ok([{ type: 'clip.setSpeed', clipIds: [v.id], reverse: true, ripple: false }]);
 		const m = matchFrame(h.doc, h.seqId, 10)!;
-		const back = reverseMatchFrame(h.doc, h.seqId, { itemId, time: m.sourceTime }, { near: 10 })!;
+		const back = reverseMatchFrame(h.doc, h.seqId, { itemId, time: m.sourceTime })!;
 		expect(back.frame).toBe(10);
 	});
 });
