@@ -3,14 +3,12 @@
 import type { TranscribeOptions, TranscriptionResult } from '@jasper/api';
 import {
 	type Command,
-	distributeSequenceWords,
 	type MediaAsset,
 	mixFingerprint,
 	type ProjectDocument,
 	type Sequence,
-	type Transcript,
+	transcriptAttachPlan,
 	transcriptForMedia,
-	transcriptLanguage,
 } from '@jasper/project';
 
 /** OpenAI Whisper's languages (tokenizer.py `LANGUAGES`), by ISO 639-1 code (`yue` = Cantonese). */
@@ -217,15 +215,6 @@ export function clipMedia(doc: ProjectDocument, clipIds: readonly string[]): str
 
 type Attach = { commands: Command[]; summary: string } | { error: string };
 
-function meta(res: TranscriptionResult) {
-	return {
-		language: transcriptLanguage(res.language, res.task),
-		origin: 'whisper-local',
-		model: res.model,
-		...(res.task === 'translate' ? { task: 'translate', sourceLanguage: res.language } : {}),
-	};
-}
-
 /** `transcript.attach` for a finished media job. */
 export function mediaAttach(
 	doc: ProjectDocument,
@@ -233,56 +222,29 @@ export function mediaAttach(
 	res: TranscriptionResult,
 	mode: 'replace' | 'keep',
 ): Attach {
-	if (!doc.media[mediaId]) return { error: 'The media is no longer in the project' };
-	const words = res.words.map((w) => ({ ...w }));
+	const plan = transcriptAttachPlan(doc, res, { mediaId, replace: mode === 'replace' });
+	if ('error' in plan) return plan;
 	return {
-		commands: [
-			{
-				type: 'transcript.attach',
-				mediaId,
-				...meta(res),
-				words,
-				speakers: res.speakers,
-				mode,
-			} as unknown as Command,
-		],
-		summary: `${words.length} words · ${languageName(res.language)}${res.task === 'translate' ? ' → English' : ''}${
+		commands: plan.commands as unknown as Command[],
+		summary: `${res.words.length} words · ${languageName(res.language)}${res.task === 'translate' ? ' → English' : ''}${
 			Object.keys(res.speakers).length > 1 ? ` · ${Object.keys(res.speakers).length} speakers` : ''
 		}`,
 	};
 }
 
-/** `transcript.attach` per media heard in a sequence-mix result (words outside its coverage are kept). */
+/** `transcript.attach` per media heard in a sequence-mix result (refused when the sequence changed since). */
 export function mixAttach(doc: ProjectDocument, res: TranscriptionResult, replace: boolean): Attach {
 	if (res.target.type !== 'sequence') return { error: 'not a sequence result' };
-	const seq = doc.sequences[res.target.sequenceId];
-	if (!seq) return { error: 'The sequence is no longer in the project' };
-	if (mixFingerprint(doc, seq.id) !== res.target.mixHash)
-		return { error: 'The sequence changed while its mix was being transcribed; transcribe it again' };
-	const r = distributeSequenceWords(doc, seq.id, res.words, {
-		start: res.target.range.startFrame,
-		end: res.target.range.endFrame,
+	const plan = transcriptAttachPlan(doc, res, {
+		replace,
+		currentMixHash: doc.sequences[res.target.sequenceId] ? mixFingerprint(doc, res.target.sequenceId) : '',
 	});
-	const commands: Command[] = [];
-	for (const m of r.media) {
-		const existing = transcriptForMedia(doc, m.mediaId) as Transcript | null;
-		if (existing && !replace) continue;
-		commands.push({
-			type: 'transcript.attach',
-			mediaId: m.mediaId,
-			...meta(res),
-			words: m.words,
-			speakers: res.speakers,
-			coverage: m.coverage,
-			mode: existing ? 'merge' : 'replace',
-		} as unknown as Command);
-	}
-	if (!commands.length) return { error: 'No clip media to attach the words to' };
-	const words = r.media.reduce((s, m) => s + m.words.length, 0);
+	if ('error' in plan) return plan;
+	const words = plan.media.reduce((s, m) => s + m.words, 0);
 	return {
-		commands,
-		summary: `${words} words for ${commands.length} media · ${languageName(res.language)}${
-			r.unassigned ? ` · ${r.unassigned} words outside the audio clips were dropped` : ''
+		commands: plan.commands as unknown as Command[],
+		summary: `${words} words for ${plan.media.length} media · ${languageName(res.language)}${
+			plan.unassigned ? ` · ${plan.unassigned} words outside the audio clips were dropped` : ''
 		}`,
 	};
 }

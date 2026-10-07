@@ -148,3 +148,93 @@ export function mergeTranscriptWords(
 export function transcriptLanguage(language: string, task: 'transcribe' | 'translate' | undefined): string {
 	return task === 'translate' ? 'en' : language;
 }
+
+/** A finished recognition (the engine's `TranscriptionResult`, structurally). Times are flicks. */
+export type RecognitionResult = {
+	target:
+		| { type: 'media'; mediaKey?: string }
+		| {
+				type: 'sequence';
+				sequenceId: string;
+				range: { startFrame: number; endFrame: number };
+				mixHash: string;
+		  };
+	model: string;
+	language: string;
+	task: 'transcribe' | 'translate';
+	words: readonly RecognizedWord[];
+	speakers: Record<string, { name: string }>;
+};
+
+export type AttachPlan =
+	| {
+			commands: Array<Record<string, unknown> & { type: 'transcript.attach'; mediaId: string }>;
+			/** Words attached, per media. */
+			media: Array<{ mediaId: string; words: number }>;
+			/** Mix words heard through no audio clip (dropped). */
+			unassigned: number;
+	  }
+	| { error: string };
+
+/**
+ * The `transcript.attach` commands for a finished recognition: a media result attaches to `mediaId`; a sequence-mix
+ * result is distributed to the clip media (`distributeSequenceWords`) — refused when the sequence's mix changed since
+ * it was rendered (`mixHash`, from `mixFingerprint`). Media that already have a transcript are replaced (media
+ * result) or merged inside the mix coverage (mix result), or skipped when `replace` is false.
+ */
+export function transcriptAttachPlan(
+	doc: Pick<ProjectDocument, 'sequences' | 'media' | 'transcripts'>,
+	res: RecognitionResult,
+	opts: { mediaId?: string; replace: boolean; currentMixHash?: string },
+): AttachPlan {
+	const meta = {
+		language: transcriptLanguage(res.language, res.task),
+		origin: 'whisper-local',
+		model: res.model,
+		...(res.task === 'translate' ? { task: 'translate', sourceLanguage: res.language } : {}),
+	};
+	if (res.target.type === 'media') {
+		const mediaId = opts.mediaId;
+		if (!mediaId || !doc.media[mediaId]) return { error: 'The media is no longer in the project' };
+		return {
+			commands: [
+				{
+					type: 'transcript.attach',
+					mediaId,
+					...meta,
+					words: res.words.map((w) => ({ ...w })),
+					speakers: res.speakers,
+					mode: opts.replace ? 'replace' : 'keep',
+				},
+			],
+			media: [{ mediaId, words: res.words.length }],
+			unassigned: 0,
+		};
+	}
+	const seq = doc.sequences[res.target.sequenceId];
+	if (!seq) return { error: 'The sequence is no longer in the project' };
+	if (opts.currentMixHash !== undefined && opts.currentMixHash !== res.target.mixHash)
+		return { error: 'The sequence changed while its mix was being transcribed; transcribe it again' };
+	const r = distributeSequenceWords(doc, seq.id, res.words, {
+		start: res.target.range.startFrame,
+		end: res.target.range.endFrame,
+	});
+	const commands: Array<Record<string, unknown> & { type: 'transcript.attach'; mediaId: string }> = [];
+	const media: Array<{ mediaId: string; words: number }> = [];
+	for (const m of r.media) {
+		const existing = Object.values(doc.transcripts).some((t) => t.mediaId === m.mediaId);
+		if (existing && !opts.replace) continue;
+		commands.push({
+			type: 'transcript.attach',
+			mediaId: m.mediaId,
+			...meta,
+			words: m.words,
+			speakers: res.speakers,
+			coverage: m.coverage,
+			mode: existing ? 'merge' : 'replace',
+		});
+		media.push({ mediaId: m.mediaId, words: m.words.length });
+	}
+	if (!commands.length) return { error: 'No clip media to attach the words to' };
+	return { commands, media, unassigned: r.unassigned };
+}

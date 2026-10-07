@@ -9,6 +9,7 @@ import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
+import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
@@ -67,6 +68,7 @@ const FULL_GUIDE = [
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
 	CAPTIONS_GUIDE,
+	SPEECH_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -105,6 +107,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);
 	registerCaptionTools(ctx);
+	registerSpeechTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };

@@ -384,7 +384,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (148; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (153; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -423,6 +423,8 @@ Tools (148; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
   `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
   (`docs/wp-notes/captions.md`).
+- Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
+  `get_transcript` (`docs/wp-notes/speech.md`).
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
