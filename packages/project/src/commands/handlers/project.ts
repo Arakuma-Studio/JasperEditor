@@ -1,7 +1,10 @@
 // project.*, bin.create, item.* (S01 §5, §16.2).
+
+import type { Draft } from 'immer';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
-import type { ProjectItem } from '../../schema/document.ts';
+import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
@@ -85,7 +88,7 @@ export function collectOrphans(doc: DDoc): void {
 	const items = peek<Record<string, ProjectItem>>(doc, 'items')!;
 	for (const key of peekKeys(items)) {
 		const it = peek<ProjectItem>(items, key)!;
-		if (it.kind === 'media') usedMedia.add(it.mediaId);
+		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
 		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
 	}
 	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
@@ -205,31 +208,74 @@ export const projectHandlers: HandlerMap = {
 			detachItem(doc, id);
 			delete doc.items[id];
 		}
+		// edit-ux: clips forget a deleted subclip (their media stays); subclips forget a deleted parent item.
+		for (const seq of Object.values(doc.sequences))
+			for (const c of Object.values(seq.clips))
+				if (c.subclipId && toDelete.has(c.subclipId)) delete c.subclipId;
+		for (const it of Object.values(doc.items))
+			if (it.kind === 'subclip' && it.parentItemId && toDelete.has(it.parentItemId)) it.parentItemId = null;
 		for (const seq of Object.values(doc.sequences)) cleanupSequence(seq, h);
 		collectOrphans(doc);
 		return { deletedItems: [...toDelete], removedClips: clipRemovals.map((r) => r.clipId) };
 	},
 	'item.setMarks': (doc, cmd, h: HandlerContext) => {
 		const it = item(doc, cmd.itemId, h);
-		if (it.kind !== 'media' && it.kind !== 'synthetic')
-			h.fail('E_INVALID_PARAM', 'Only media and synthetic items have marks');
+		if (it.kind !== 'media' && it.kind !== 'synthetic' && it.kind !== 'subclip')
+			h.fail('E_INVALID_PARAM', 'Only media, subclip and synthetic items have marks');
 		const asset: MediaAsset | undefined =
-			it.kind === 'media' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
+			it.kind === 'media' || it.kind === 'subclip' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
 		const fallback: Rational = { num: 30, den: 1 };
-		const inF = cmd.in ? h.flicks(cmd.in, asset, fallback) : null;
-		const outF = cmd.out ? h.flicks(cmd.out, asset, fallback) : null;
-		if (inF !== null && outF !== null && outF <= inF)
-			h.fail('E_INVALID_PARAM', 'Out mark must be after In mark');
-		const dur = asset?.probe.durationFlicks;
-		if (dur != null && ((inF ?? 0) > dur || (outF ?? 0) > dur + flicksPerFrame(fallback))) {
-			h.fail('E_OUT_OF_MEDIA', 'Marks are outside the media');
+		const conv = (v: Parameters<typeof h.flicks>[0] | null | undefined) =>
+			v ? h.flicks(v, asset, fallback) : null;
+		// Subclips: marks live in the media's content time, inside the subclip's range (edit-ux).
+		const lo = it.kind === 'subclip' ? it.range.in : 0;
+		const hiDur = it.kind === 'subclip' ? it.range.out : asset ? mediaDurationFlicks(asset) : undefined;
+		const check = (a: number | null, b: number | null, what: string) => {
+			if (a !== null && b !== null && b <= a)
+				h.fail('E_INVALID_PARAM', `${what} Out mark must be after its In mark`);
+			if ((a !== null && a < lo) || (b !== null && b <= lo))
+				h.fail(
+					'E_OUT_OF_MEDIA',
+					`${what} marks are outside the ${it.kind === 'subclip' ? 'subclip' : 'media'}`,
+				);
+			if (hiDur != null && ((a ?? 0) > hiDur || (b ?? 0) > hiDur + flicksPerFrame(fallback)))
+				h.fail(
+					'E_OUT_OF_MEDIA',
+					`${what} marks are outside the ${it.kind === 'subclip' ? 'subclip' : 'media'}`,
+				);
+		};
+		const inF = conv(cmd.in);
+		const outF = conv(cmd.out);
+		check(inF, outF, '');
+		const marks: Draft<SourceMarks> = {
+			in: inF === null ? null : { flicks: inF },
+			out: outF === null ? null : { flicks: outF },
+		};
+		// edit-ux (Mark Split): keep, replace or clear the video/audio marks.
+		const prev = (it.marks as SourceMarks).split;
+		if (cmd.split !== null) {
+			const sp = { ...(prev ?? {}) } as NonNullable<SourceMarks['split']>;
+			for (const k of ['videoIn', 'videoOut', 'audioIn', 'audioOut'] as const) {
+				const v = cmd.split?.[k];
+				if (v === undefined) continue;
+				sp[k] = v === null ? null : { flicks: conv(v)! };
+			}
+			const f = (k: keyof typeof sp) => sp[k]?.flicks ?? null;
+			check(f('videoIn') ?? inF, f('videoOut') ?? outF, 'Video');
+			check(f('audioIn') ?? inF, f('audioOut') ?? outF, 'Audio');
+			if (Object.values(sp).some((v) => v)) marks.split = sp;
 		}
-		it.marks = { in: inF === null ? null : { flicks: inF }, out: outF === null ? null : { flicks: outF } };
+		it.marks = marks as SourceMarks;
 	},
 	'media.register': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
+		// imports: the pages of one PDF share the file's fingerprint and are different media.
+		const page = (a: { vector?: { page?: number } | null }) => a.vector?.page ?? 1;
 		const existing = Object.values(doc.media).find(
-			(m) => m.fingerprint === cmd.asset.fingerprint && !m.fingerprint.startsWith('pending:'),
+			(m) =>
+				m.fingerprint === cmd.asset.fingerprint &&
+				!m.fingerprint.startsWith('pending:') &&
+				page(m) === page(cmd.asset),
 		);
 		let mediaId: string;
 		let deduped = false;
@@ -274,7 +320,16 @@ export const projectHandlers: HandlerMap = {
 		const fingerprintChanges = !!cmd.fingerprint && cmd.fingerprint !== asset.fingerprint;
 		// A rebuilt Remotion bundle is new content by definition (S08:MGC-013), and Replace Footage (S07:PRC-018)
 		// says so explicitly: no force needed.
-		if (fingerprintChanges && !cmd.force && !cmd.replace && !(asset.kind === 'mg-bundle' && cmd.mgBundle))
+		// An offline placeholder of an imported timeline (wp interchange) has no content to compare: linking it to its
+		// file is the first time the fingerprint is known (the Link Media dialog compares name, size and duration).
+		const placeholder = asset.fingerprint.startsWith('pending:interchange:');
+		if (
+			fingerprintChanges &&
+			!cmd.force &&
+			!cmd.replace &&
+			!placeholder &&
+			!(asset.kind === 'mg-bundle' && cmd.mgBundle)
+		)
 			h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
 		const sr = cmd.sourceRange;
 		if (sr?.mediaId && sr.mediaId !== asset.id && !doc.media[sr.mediaId])

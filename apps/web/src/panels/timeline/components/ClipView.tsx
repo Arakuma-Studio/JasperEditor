@@ -6,13 +6,20 @@ import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	clipEngines,
+	clipMediaTimeAt,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
+	isMulticamClip,
+	isRemapped,
 	kindCapabilities,
 	type MediaAsset,
+	multicamBadge,
+	multicamSourceOf,
 	type Rational,
+	type TimedClip,
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
+import { useSessionOrNull } from '@jasper/session/react';
 import { labelColor } from '@jasper/ui';
 import { memo, useCallback } from 'react';
 import {
@@ -24,7 +31,7 @@ import {
 import { useClipBadge, useRegistry } from '../../../extensions/react.ts';
 import { TextAnimationWedges } from '../../../text-animation/TextAnimationWedges.tsx';
 import { peaksFor, reducePeaks, sheetImage, spriteFor } from '../media/media-cache.ts';
-import { filmstripSlots, nearestTile, tileRect } from '../model/filmstrip.ts';
+import { filmstripSlots, mappedFilmstripSlots, nearestTile, tileRect } from '../model/filmstrip.ts';
 import { snapPx } from '../model/viewport.ts';
 import { drawGain, waveBars } from '../model/waveform.ts';
 import type { ThumbnailStyle } from '../state/prefs.ts';
@@ -70,11 +77,14 @@ type ClipViewProps = {
 	mediaVersion: number;
 };
 
-function nameFor(c: Clip, linked: boolean, isAudio: boolean): string {
-	let s = c.name;
+function nameFor(c: Clip, linked: boolean, isAudio: boolean, mcBadge = ''): string {
+	let s = mcBadge ? `[${mcBadge}] ${c.name}` : c.name;
 	if (linked) s += isAudio ? ' [A]' : ' [V]';
-	if (c.speed.rate !== 1) s += ` ${Math.round(c.speed.rate * 10000) / 100}%`;
-	if (c.speed.reverse) s += ' (reversed)';
+	if (isRemapped(c as TimedClip)) s += ' (time remapped)';
+	else {
+		if (c.speed.rate !== 1) s += ` ${Math.round(c.speed.rate * 10000) / 100}%`;
+		if (c.speed.reverse) s += ' (reversed)';
+	}
 	return s;
 }
 
@@ -85,6 +95,12 @@ function ClipViewImpl(p: ClipViewProps) {
 	const extBadge = useClipBadge(c);
 	const decorations = decorationsFor(useRegistry(clipDecorations), c);
 	const isAudio = caps ? !caps.visual && caps.audio : false;
+	// wp-multicam: Premiere labels multi-camera clips "[MC<camera>] name".
+	const session = useSessionOrNull();
+	const mcBadge =
+		session && isMulticamClip(c)
+			? multicamBadge(multicamSourceOf(session.getCommitted().sequences[c.sequenceId]), c)
+			: '';
 	const dprv = dpr();
 	const xr = snapPx(p.x, dprv);
 	const wr = Math.max(1 / dprv, snapPx(p.x + p.w, dprv) - xr);
@@ -120,20 +136,31 @@ function ClipViewImpl(p: ClipViewProps) {
 			const slots =
 				c.kind === 'still'
 					? [{ x: p.x, w: contentH * aspect, timeSec: 0 }]
-					: filmstripSlots({
-							start: c.start,
-							duration: c.duration,
-							sourceIn: c.sourceIn,
-							rate: c.speed.rate,
-							reverse: c.speed.reverse,
-							scrollFrame: p.scrollFrame,
-							pxPerFrame: p.pxPerFrame,
-							visibleX0: tile.x0,
-							visibleX1: tile.x0 + tile.width,
-							slotWidth: contentH * aspect,
-							fps: p.rate,
-							style: p.display.thumbnails === 'off' ? 'continuous' : p.display.thumbnails,
-						});
+					: isRemapped(c as TimedClip)
+						? mappedFilmstripSlots({
+								start: c.start,
+								duration: c.duration,
+								scrollFrame: p.scrollFrame,
+								pxPerFrame: p.pxPerFrame,
+								visibleX0: tile.x0,
+								visibleX1: tile.x0 + tile.width,
+								slotWidth: contentH * aspect,
+								mediaSecondsAt: (f) => clipMediaTimeAt(c as TimedClip, f, p.rate) / FLICKS_PER_SECOND,
+							})
+						: filmstripSlots({
+								start: c.start,
+								duration: c.duration,
+								sourceIn: c.sourceIn,
+								rate: c.speed.rate,
+								reverse: c.speed.reverse,
+								scrollFrame: p.scrollFrame,
+								pxPerFrame: p.pxPerFrame,
+								visibleX0: tile.x0,
+								visibleX1: tile.x0 + tile.width,
+								slotWidth: contentH * aspect,
+								fps: p.rate,
+								style: p.display.thumbnails === 'off' ? 'continuous' : p.display.thumbnails,
+							});
 			ctx.save();
 			ctx.beginPath();
 			ctx.rect(
@@ -312,7 +339,7 @@ function ClipViewImpl(p: ClipViewProps) {
 				>
 					{showName ? (
 						<span className="min-w-0 flex-1 truncate">
-							{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio)}
+							{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio, mcBadge)}
 						</span>
 					) : (
 						<span className="flex-1" />

@@ -16,10 +16,10 @@ import { activeTimeline, type TimelineHandle } from '../panels/timeline/env.tsx'
 import { clipsAtPlayhead, unlockedTrackIds } from '../panels/timeline/model/gestures.ts';
 import { stepHeight, trackHeight } from '../panels/timeline/model/layout.ts';
 import { TOOLS } from '../panels/timeline/model/tools.ts';
-import type { EditPointSel } from '../panels/timeline/state/ui-store.ts';
+import { cancelDynamicTrim, exitTrimMode, stopPlayAround } from '../panels/timeline/state/trim-mode.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
-type Env = {
+export type Env = {
 	session: EditorSession;
 	seq: Sequence;
 	view: SequenceViewState;
@@ -27,7 +27,7 @@ type Env = {
 	handle: TimelineHandle | null;
 };
 
-function envOf(ctx: CommandCtx): Env | null {
+export function envOf(ctx: CommandCtx): Env | null {
 	const session = ctx.session;
 	if (!session) return null;
 	const s = session.getState();
@@ -40,7 +40,7 @@ function envOf(ctx: CommandCtx): Env | null {
 
 const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
 
-function apply(
+export function apply(
 	ctx: CommandCtx,
 	e: Env,
 	label: string,
@@ -71,14 +71,14 @@ function apply(
 	return r;
 }
 
-const selectedClips = (e: Env): Clip[] =>
+export const selectedClips = (e: Env): Clip[] =>
 	e.session
 		.getState()
 		.selection.timeline.clips.map((id) => e.seq.clips[id])
 		.filter((c): c is Clip => !!c);
 
 /** Targeted track ids (both kinds), or every unlocked track when nothing is targeted (TL-251). */
-function targetedTracks(e: Env): string[] {
+export function targetedTracks(e: Env): string[] {
 	const locked = new Set(
 		[...e.seq.videoTracks, ...e.seq.audioTracks].filter((t) => t.locked).map((t) => t.id),
 	);
@@ -86,7 +86,7 @@ function targetedTracks(e: Env): string[] {
 	return t.length ? t : unlockedTrackIds(e.seq);
 }
 
-function isLocked(seq: Sequence, trackId: string): boolean {
+export function isLocked(seq: Sequence, trackId: string): boolean {
 	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].some(
 		(t) => t.id === trackId && t.locked,
 	);
@@ -103,7 +103,7 @@ function onePerLink(clips: readonly Clip[]): Clip[] {
 	});
 }
 
-function seekReveal(e: Env, frame: number): void {
+export function seekReveal(e: Env, frame: number): void {
 	e.session.transport.seek(frame);
 	e.handle?.controller.reveal(frame);
 }
@@ -205,6 +205,7 @@ const TOOL_IDS: ActiveTool[] = [
 	'ripple',
 	'rolling',
 	'rateStretch',
+	'remix',
 	'razor',
 	'slip',
 	'slide',
@@ -212,7 +213,16 @@ const TOOL_IDS: ActiveTool[] = [
 	'hand',
 	'zoom',
 	'type',
+	'camera',
 ];
+
+/**
+ * edit-ux: spring-loaded tools (Premiere: hold a tool's key to use it temporarily; releasing returns to the previous
+ * tool; a quick tap switches for good). A key held at least SPRING_HOLD_MS counts as a hold.
+ */
+export const SPRING_HOLD_MS = 250;
+const springs = new Map<string, { previous: ActiveTool; at: number }>();
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 const toolCommands: UiCommand[] = TOOL_IDS.map((tool) => ({
 	id: `tool.${tool}`,
@@ -221,7 +231,23 @@ const toolCommands: UiCommand[] = TOOL_IDS.map((tool) => ({
 	agentExposed: true,
 	when: (ctx) => !!ctx.session,
 	checked: (ctx) => ctx.session?.getState().toggles.activeTool === tool,
-	run: (ctx) => ctx.session?.setToggles({ activeTool: tool }),
+	run: (ctx) => {
+		const s = ctx.session;
+		if (!s) return;
+		const previous = s.getState().toggles.activeTool;
+		if (previous !== tool) springs.set(tool, { previous, at: now() });
+		else springs.delete(tool);
+		s.setToggles({ activeTool: tool });
+	},
+	onKeyUp: (ctx) => {
+		const spring = springs.get(tool);
+		springs.delete(tool);
+		const s = ctx.session;
+		if (!spring || !s || s.getState().toggles.activeTool !== tool) return;
+		// Released after a hold: back to the tool that was active (unless a gesture is still running with it).
+		if (now() - spring.at >= SPRING_HOLD_MS && !s.gestureActive)
+			s.setToggles({ activeTool: spring.previous });
+	},
 }));
 
 // ---------------------------------------------------------------- edits (TL-680…704)
@@ -260,12 +286,20 @@ function clear(ctx: CommandCtx, e: Env, ripple: boolean): void {
 		e.session.selectGaps([]);
 		return;
 	}
+	// edit-ux: keyframes selected on a clip's lane (rubber band) are deleted first, as in Premiere.
+	const kf = sel.keyframes;
+	if (!ripple && kf && kf.keyframeIds.length && e.seq.clips[kf.clipOrTrackId]) {
+		const r = apply(ctx, e, 'Delete Keyframes', [{ type: 'keyframe.remove', keyframeIds: kf.keyframeIds }]);
+		if (r?.ok) e.session.selectKeyframes(null);
+		return;
+	}
 	const clips = selectedClips(e);
 	if (clips.length) {
 		apply(ctx, e, ripple ? 'Ripple Delete' : 'Clear', [
 			{
 				type: ripple ? 'clip.extract' : 'clip.lift',
 				clipIds: clips.map((c) => c.id),
+				groups: false,
 				...(ripple ? { rippleMarkers: e.session.getState().toggles.rippleMarkers } : {}),
 			},
 		]);
@@ -280,9 +314,15 @@ function nudge(ctx: CommandCtx, e: Env, delta: number): void {
 	const min = Math.min(...clips.map((c) => c.start));
 	const d = Math.max(-min, delta); // TL-497: clamped at frame 0
 	if (d === 0) return;
-	apply(ctx, e, 'Nudge', [{ type: 'clip.move', clipIds: clips.map((c) => c.id), deltaFrames: d }], {
-		coalesceKey: 'nudge',
-	});
+	apply(
+		ctx,
+		e,
+		'Nudge',
+		[{ type: 'clip.move', clipIds: clips.map((c) => c.id), deltaFrames: d, groups: false }],
+		{
+			coalesceKey: 'nudge',
+		},
+	);
 }
 
 function nudgeTrack(ctx: CommandCtx, e: Env, up: boolean): void {
@@ -300,6 +340,7 @@ function nudgeTrack(ctx: CommandCtx, e: Env, up: boolean): void {
 				deltaFrames: 0,
 				deltaTracks: { video: up ? 1 : -1, audio: up ? -1 : 1 },
 				createTracks: false,
+				groups: false,
 			},
 		],
 		{ coalesceKey: 'nudge-track', quiet: true },
@@ -366,36 +407,6 @@ function playheadTrim(ctx: CommandCtx, e: Env, side: 'prev' | 'next', ripple: bo
 	const r = apply(ctx, e, label, commands);
 	// Q moves the playhead to the old clip start so it stays on the same content.
 	if (r?.ok && ripple && side === 'prev') seekReveal(e, Math.min(...clips.map((c) => c.start)));
-}
-
-function editPointCommands(
-	points: readonly EditPointSel[],
-	deltaFor: (p: EditPointSel) => number,
-): unknown[] {
-	return points
-		.map((p) => ({ p, d: deltaFor(p) }))
-		.filter(({ d }) => d !== 0)
-		.map(({ p, d }) => ({
-			type: 'clip.trim',
-			clipId: p.clipId,
-			edge: p.side,
-			deltaFrames: d,
-			mode: p.type,
-		}));
-}
-
-function trimEditPoints(ctx: CommandCtx, e: Env, delta: number): void {
-	const ui = e.handle?.ui;
-	const points = ui?.getState().editPoints ?? [];
-	if (!points.length) return;
-	const r = apply(
-		ctx,
-		e,
-		'Trim',
-		editPointCommands(points, () => delta),
-		{ coalesceKey: 'trim-keys' },
-	);
-	if (r?.ok && ui) ui.setState({ editPoints: points.map((p) => ({ ...p, frame: p.frame + delta })) });
 }
 
 // ---------------------------------------------------------------- in/out (TL-760…766)
@@ -690,35 +701,6 @@ export const timelineCommands: UiCommand[] = [
 	cmd('timeline.trimNextToPlayhead', 'Trim Next Edit to Playhead', T, (ctx, e) =>
 		playheadTrim(ctx, e, 'next', false),
 	),
-	cmd('timeline.extendEditToPlayhead', 'Extend Selected Edit to Playhead', T, (ctx, e) => {
-		const points = e.handle?.ui.getState().editPoints ?? [];
-		if (!points.length) {
-			ctx.ui.toast({ kind: 'info', message: 'Select an edit point first' });
-			return;
-		}
-		const r = apply(
-			ctx,
-			e,
-			'Extend Edit',
-			editPointCommands(points, (p) => e.playhead - p.frame),
-		);
-		if (r?.ok) e.handle?.ui.setState({ editPoints: points.map((p) => ({ ...p, frame: e.playhead })) });
-	}),
-	cmd('timeline.cycleTrimType', 'Toggle Trim Type', T, (_ctx, e) => {
-		const ui = e.handle?.ui;
-		if (!ui) return;
-		const next = { regular: 'roll', roll: 'ripple', ripple: 'regular' } as const;
-		ui.setState({ editPoints: ui.getState().editPoints.map((p) => ({ ...p, type: next[p.type] })) });
-	}),
-	cmd('timeline.trimBack', 'Trim Backward', T, (ctx, e) => trimEditPoints(ctx, e, -1), { repeat: true }),
-	cmd('timeline.trimForward', 'Trim Forward', T, (ctx, e) => trimEditPoints(ctx, e, 1), { repeat: true }),
-	cmd('timeline.trimBackMany', 'Trim Backward Many', T, (ctx, e) => trimEditPoints(ctx, e, -5), {
-		repeat: true,
-	}),
-	cmd('timeline.trimForwardMany', 'Trim Forward Many', T, (ctx, e) => trimEditPoints(ctx, e, 5), {
-		repeat: true,
-	}),
-
 	cmd('timeline.setWorkAreaIn', 'Set Work Area In', T, (ctx, e) => {
 		const end = e.seq.workArea?.end ?? Math.max(e.playhead + 1, sequenceDuration(e.seq));
 		if (end > e.playhead)
@@ -743,7 +725,11 @@ export const timelineCommands: UiCommand[] = [
 		when: (ctx) => !!ctx.session,
 		run: (ctx) => {
 			const handle = activeTimeline(ctx.services);
+			// edit-ux: Esc first drops a dynamic (J/K/L) trim in progress, restoring the edit.
+			if (cancelDynamicTrim()) return;
 			if (handle?.cancelGesture()) return;
+			stopPlayAround();
+			exitTrimMode();
 			// TL-903: otherwise Escape deselects.
 			ctx.session?.select('timeline', [], 'replace');
 			ctx.session?.selectGaps([]);

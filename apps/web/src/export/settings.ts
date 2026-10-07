@@ -8,7 +8,16 @@ import type {
 	RenderPlan,
 	VideoCodec,
 } from '@jasper/api';
-import { fpsOf, makeEnvelope, type ProjectDocument, type Sequence, sequenceDuration } from '@jasper/project';
+import {
+	colorSpace,
+	fpsOf,
+	makeEnvelope,
+	OUTPUT_SPACE_IDS,
+	type ProjectDocument,
+	type Sequence,
+	sequenceColorInfo,
+	sequenceDuration,
+} from '@jasper/project';
 
 export const MATCH_SEQUENCE_PRESET = { id: 'match-sequence-h264', label: 'Match Sequence – H.264' } as const;
 const DEFAULT_CRF = 18;
@@ -46,9 +55,20 @@ export function buildExportSettings(
 		codec?: VideoCodec;
 		/** Explicit ffmpeg encoder; absent = the engine's best choice. */
 		encoder?: string | null;
+		/** audio-mix: delivered audio (defaults: the Mix's channels, the sequence rate, the sequence loudness). */
+		audio?: ExportAudioChoice;
+		/** wp captions: caption output (burn-in, embedded streams, sidecars). */
+		captions?: CaptionExportChoice;
+		/** color-mgmt: written colour space, bit depth and HDR metadata. */
+		color?: ExportColorChoice;
 	},
 ): ExportSettings {
+	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
 	const s = seq.settings;
+	const a = choice.audio ?? {};
+	const channels = a.channels && a.channels !== 'auto' ? a.channels : s.masterLayout === '5.1' ? 6 : 2;
+	const rate =
+		a.sampleRate && a.sampleRate !== 'sequence' ? a.sampleRate : (s.audioSampleRate as 44100 | 48000 | 96000);
 	return {
 		sequenceId: seq.id,
 		range: choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' },
@@ -65,10 +85,59 @@ export function buildExportSettings(
 			quality: { mode: 'crf', value: choice.crf ?? DEFAULT_CRF },
 			encoderSpeed: 'balanced',
 			colorTags: 'rec709',
+			// color-mgmt
+			...(col.colorSpace !== 'working' ? { colorSpace: col.colorSpace } : {}),
+			...(col.bitDepth !== 'auto' ? { bitDepth: col.bitDepth } : {}),
+			...(col.maxCll || col.maxFall
+				? {
+						hdrMetadata: {
+							...(col.maxCll ? { maxCll: col.maxCll } : {}),
+							...(col.maxFall ? { maxFall: col.maxFall } : {}),
+						},
+					}
+				: {}),
 		},
-		audio: { codec: 'aac', sampleRate: 48000, channels: 2, bitrateKbps: AUDIO_KBPS },
+		audio: {
+			codec: 'aac',
+			sampleRate: rate ?? 48000,
+			channels,
+			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
+			...(a.loudness === 'off'
+				? { normalize: null }
+				: typeof a.loudness === 'number'
+					? { normalize: { targetLufs: a.loudness, truePeakDb: a.truePeakDb ?? -1 } }
+					: {}),
+		},
 		engine: choice.engine,
 		destination: { type: 'download' },
+		...(seq.captionTracks.length && choice.captions ? { captions: captionSettings(choice.captions) } : {}),
+	};
+}
+
+// ------------------------------------------------------------ captions (wp captions, S04:TR-061/062)
+
+export type CaptionExportChoice = {
+	/** Burn the visible caption tracks into the picture. */
+	burnIn: boolean;
+	/** Embed every caption track as a subtitle stream (mov_text in MP4/MOV, WebVTT in WebM). */
+	embed: boolean;
+	/** Sidecar file format, or none. */
+	sidecar: 'none' | 'srt' | 'vtt' | 'scc' | 'mcc' | 'stl' | 'ttml' | 'dfxp';
+	sidecarTracks: 'active' | 'all';
+};
+
+export const DEFAULT_CAPTION_CHOICE: CaptionExportChoice = {
+	burnIn: true,
+	embed: false,
+	sidecar: 'none',
+	sidecarTracks: 'active',
+};
+
+export function captionSettings(c: CaptionExportChoice): NonNullable<ExportSettings['captions']> {
+	return {
+		burnIn: c.burnIn,
+		embed: c.embed,
+		...(c.sidecar !== 'none' ? { sidecar: [c.sidecar], sidecarTracks: c.sidecarTracks } : {}),
 	};
 }
 
@@ -244,9 +313,69 @@ export function exportExtension(encoder: EncoderChoice | null | undefined): stri
 	return encoder?.container === 'webm' ? 'webm' : encoder?.container === 'mov' ? 'mov' : 'mp4';
 }
 
+/** audio-mix: Export ▸ Audio choices. `loudness`: 'sequence' = the Mix's normalisation setting, 'off', or a target. */
+export type ExportAudioChoice = {
+	channels?: 'auto' | 1 | 2 | 6;
+	sampleRate?: 'sequence' | 44100 | 48000 | 96000;
+	loudness?: 'sequence' | 'off' | number;
+	truePeakDb?: number;
+};
+
+// ------------------------------------------------------------ colour (color-mgmt)
+
+export type ExportColorChoice = {
+	/** `working` = the sequence's working space; else an output space id. */
+	colorSpace: 'working' | (typeof OUTPUT_SPACE_IDS)[number];
+	bitDepth: 'auto' | 8 | 10 | 12;
+	/** CTA-861.3 MaxCLL / MaxFALL (cd/m²) of PQ/HLG outputs; 0 = not written. */
+	maxCll: number;
+	maxFall: number;
+};
+
+export const DEFAULT_COLOR_CHOICE: ExportColorChoice = {
+	colorSpace: 'working',
+	bitDepth: 'auto',
+	maxCll: 0,
+	maxFall: 0,
+};
+
+/** Colour space choices of the Export settings: Working (its name) and every output space. */
+export function exportColorSpaceOptions(seq: Sequence | null): { value: string; label: string }[] {
+	const w = colorSpace(sequenceColorInfo(seq?.settings).space)?.label ?? 'Rec. 709';
+	return [
+		{ value: 'working', label: `Working (${w})` },
+		...OUTPUT_SPACE_IDS.map((id) => ({ value: id, label: colorSpace(id)!.label })),
+	];
+}
+
+/** Whether the chosen output is PQ / HLG (MaxCLL / MaxFALL apply). */
+export function hdrOutput(seq: Sequence | null, c: ExportColorChoice): boolean {
+	const id = c.colorSpace === 'working' ? sequenceColorInfo(seq?.settings).space : c.colorSpace;
+	return id === 'rec2100-pq' || id === 'rec2100-hlg';
+}
+
+function sanitizeColorChoice(c: Partial<ExportColorChoice>): ExportColorChoice {
+	const n = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10000 ? v : 0);
+	return {
+		colorSpace:
+			c.colorSpace &&
+			(c.colorSpace === 'working' || (OUTPUT_SPACE_IDS as readonly string[]).includes(c.colorSpace))
+				? c.colorSpace
+				: 'working',
+		bitDepth: c.bitDepth === 8 || c.bitDepth === 10 || c.bitDepth === 12 ? c.bitDepth : 'auto',
+		maxCll: n(c.maxCll),
+		maxFall: n(c.maxFall),
+	};
+}
+
 // ------------------------------------------------------------ remembered choices (EX-014)
 
 type Remembered = {
+	/** color-mgmt */
+	color?: ExportColorChoice;
+	audio?: ExportAudioChoice;
+	/** wp captions */
+	captions?: CaptionExportChoice;
 	range: ExportRangeChoice;
 	engine: ExportEngineChoice;
 	fileName?: string;
@@ -266,16 +395,46 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			v.codec === 'av1' || v.codec === 'vp9' || v.codec === 'h264' || v.codec === 'prores'
 				? v.codec
 				: undefined;
+		const c = v.captions as Partial<CaptionExportChoice> | undefined;
+		const sidecars = ['none', 'srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
+		const captions: CaptionExportChoice | undefined =
+			c && typeof c === 'object'
+				? {
+						burnIn: c.burnIn !== false,
+						embed: c.embed === true,
+						sidecar: sidecars.includes(c.sidecar as never)
+							? (c.sidecar as CaptionExportChoice['sidecar'])
+							: 'none',
+						sidecarTracks: c.sidecarTracks === 'all' ? 'all' : 'active',
+					}
+				: undefined;
 		return {
 			range,
 			engine,
+			...(captions ? { captions } : {}),
 			...(typeof v.fileName === 'string' ? { fileName: v.fileName } : {}),
 			...(codec ? { codec } : {}),
 			...(typeof v.encoder === 'string' && v.encoder ? { encoder: v.encoder } : {}),
+			...(v.audio && typeof v.audio === 'object' ? { audio: sanitizeAudioChoice(v.audio) } : {}),
+			...(v.color && typeof v.color === 'object' ? { color: sanitizeColorChoice(v.color) } : {}),
 		};
 	} catch {
 		return null;
 	}
+}
+
+function sanitizeAudioChoice(a: ExportAudioChoice): ExportAudioChoice {
+	return {
+		channels: a.channels === 1 || a.channels === 2 || a.channels === 6 ? a.channels : 'auto',
+		sampleRate:
+			a.sampleRate === 44100 || a.sampleRate === 48000 || a.sampleRate === 96000 ? a.sampleRate : 'sequence',
+		loudness:
+			a.loudness === 'off' || (typeof a.loudness === 'number' && a.loudness >= -60 && a.loudness <= 0)
+				? a.loudness
+				: 'sequence',
+		truePeakDb:
+			typeof a.truePeakDb === 'number' && a.truePeakDb >= -20 && a.truePeakDb <= 0 ? a.truePeakDb : -1,
+	};
 }
 
 export function saveExportChoice(projectId: string, sequenceId: string, v: Remembered): void {

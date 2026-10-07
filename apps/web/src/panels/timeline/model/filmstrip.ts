@@ -115,3 +115,33 @@ export function filmstripSlots(i: SlotInput): Slot[] {
 	}
 	return out;
 }
+
+/**
+ * Workstream `time`: slots of a clip whose media time is not linear (Time Remapping, frame holds): one slot per
+ * thumbnail width from the clip start, each showing the media time at its centre frame (`mediaSecondsAt`).
+ */
+export function mappedFilmstripSlots(i: {
+	start: number;
+	duration: number;
+	scrollFrame: number;
+	pxPerFrame: number;
+	visibleX0: number;
+	visibleX1: number;
+	slotWidth: number;
+	mediaSecondsAt(frame: number): number;
+}): Slot[] {
+	const clipX0 = (i.start - i.scrollFrame) * i.pxPerFrame;
+	const clipX1 = clipX0 + i.duration * i.pxPerFrame;
+	const x0 = Math.max(clipX0, i.visibleX0);
+	const x1 = Math.min(clipX1, i.visibleX1);
+	if (x1 <= x0 || i.slotWidth <= 0) return [];
+	const out: Slot[] = [];
+	const k0 = Math.floor((x0 - clipX0) / i.slotWidth);
+	for (let k = k0; clipX0 + k * i.slotWidth < x1; k++) {
+		const x = clipX0 + k * i.slotWidth;
+		const mid = Math.min(clipX1 - 1e-6, x + i.slotWidth / 2);
+		const frame = i.start + Math.min(i.duration - 1, Math.max(0, Math.floor((mid - clipX0) / i.pxPerFrame)));
+		out.push({ x, w: i.slotWidth, timeSec: i.mediaSecondsAt(frame) });
+	}
+	return out;
+}

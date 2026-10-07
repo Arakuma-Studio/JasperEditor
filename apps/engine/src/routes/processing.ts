@@ -47,7 +47,8 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 	app.post<ModelParams>(
 		'/api/processing/models/:modelId/install',
 		guarded<ModelParams>(async (req) => {
-			if (!svc.models.entry(req.params.modelId))
+			// wp speech: the catalogue's speech models install through the same job
+			if (!svc.models.entry(req.params.modelId) && !svc.speechModels.entry(req.params.modelId))
 				throw new HttpError(404, 'MODEL_UNKNOWN', `Unknown model ${req.params.modelId}`);
 			return svc.submitInstall(req.params.modelId);
 		}),

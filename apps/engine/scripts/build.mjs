@@ -1,5 +1,6 @@
 // Bundles the engine to dist/engine.mjs (ESM) for Electron's utilityProcess and server installs
-// (ARCHITECTURE §9.1, D-17). Remotion packages and binaries stay external.
+// (ARCHITECTURE §9.1, D-17). Remotion packages and binaries stay external; so does pdfjs-dist (imports: it loads its
+// worker module relative to its own files), staged with the runtime closure by the desktop packager.
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,7 @@ await build({
 	target: 'node20',
 	sourcemap: true,
 	legalComments: 'none',
-	external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', '*.node'],
+	external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', 'pdfjs-dist', 'pdfjs-dist/*', '*.node'],
 	banner: {
 		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
 	},
@@ -42,3 +43,57 @@ await build({
 	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
 	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
 }
+
+// wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
+// engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.
+await build({
+	entryPoints: [join(root, 'src/speech/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-speech.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['onnxruntime-node', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
+// three-d: jasper-camtrack.mjs (3D Camera Tracker feature tracking + camera solve, run as a child process by `camtrack`
+// jobs) next to engine.mjs. OpenCV.js (staged with the engine runtime) stays external.
+await build({
+	entryPoints: [join(root, 'src/camtrack/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-camtrack.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['@techstark/opencv-js', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
+// parity roto: jasper-roto.mjs (Roto Brush segmentation / face tracking, run as a child process by `roto` jobs) next to
+// engine.mjs. onnxruntime-node (native binding) and OpenCV.js (staged with the engine runtime) stay external.
+await build({
+	entryPoints: [join(root, 'src/roto/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-roto.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['onnxruntime-node', '@techstark/opencv-js', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});

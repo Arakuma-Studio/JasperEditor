@@ -38,6 +38,19 @@ export const ItemSetMarksCmd = cmd('item.setMarks', {
 	itemId: IdRefSchema,
 	in: ContentTimeInputSchema.nullable(),
 	out: ContentTimeInputSchema.nullable(),
+	/**
+	 * edit-ux (Mark Split): separate video/audio marks. Absent = keep the current split marks; a field set to null
+	 * clears it; `split: null` clears all four.
+	 */
+	split: z
+		.strictObject({
+			videoIn: ContentTimeInputSchema.nullable().optional(),
+			videoOut: ContentTimeInputSchema.nullable().optional(),
+			audioIn: ContentTimeInputSchema.nullable().optional(),
+			audioOut: ContentTimeInputSchema.nullable().optional(),
+		})
+		.nullable()
+		.optional(),
 });
 
 /** `media.register`: `asset.id` may be omitted (generated) or be a temp ref. */
@@ -151,7 +164,11 @@ export const TranscriptCreateCmd = cmd('transcript.create', {
 	mediaId: IdRefSchema.nullable(),
 	language: z.string(),
 	origin: z.enum(['whisper-local', 'cloud-asr', 'subtitle-file', 'manual']),
+	/** `{text, start, end}` (flicks of media time) plus optional `confidence`, `speaker` (a key of `speakers`), `breakBefore`. */
 	words: z.array(z.record(z.string(), z.unknown())),
+	/** wp captions: speaker names by key (default: a `Speaker N` entry per key used by the words). */
+	speakers: z.record(z.string(), z.looseObject({ name: z.string() })).optional(),
+	id: z.string().optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TranscriptEditTextCmd = cmd('transcript.editText', {

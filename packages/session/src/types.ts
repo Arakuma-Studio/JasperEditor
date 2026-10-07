@@ -36,7 +36,11 @@ export type SequenceViewState = {
 	targeting: { video: string[]; audio: string[] };
 	/** Source patching: source track label (e.g. "V1"/"A1") → sequence track id or null (off). */
 	sourcePatching: Record<string, string | null>;
-	keyframeDisplay: Record<string, 'none' | 'opacity' | 'volume' | 'pan'>;
+	/**
+	 * Keyframe lane per clip id or track id (edit-ux): a property key (`opacity`, `volumeDb`, `effects.<fx>.<param>`…)
+	 * or `none`; absent = the default (Opacity on video, Level on audio).
+	 */
+	keyframeDisplay: Record<string, string>;
 	display: { thumbnails: 'none' | 'head' | 'continuous'; waveforms: boolean; clipNames: boolean };
 };
 
@@ -47,6 +51,8 @@ export type ActiveTool =
 	| 'ripple'
 	| 'rolling'
 	| 'rateStretch'
+	// audio-fx: Remix tool (Premiere's, in the Ripple Edit group): drag a music clip's end to remix it to that length.
+	| 'remix'
 	| 'razor'
 	| 'slip'
 	| 'slide'
@@ -54,9 +60,14 @@ export type ActiveTool =
 	// M2 (S11:SHP-006, wp-m2-shapes): Program monitor shape tools (XF-061).
 	| 'rectangle'
 	| 'ellipse'
+	// wp shapes: Polygon and Star tools (After Effects' shape tool group; vector shapes).
+	| 'polygon'
+	| 'star'
 	| 'hand'
 	| 'zoom'
-	| 'type';
+	| 'type'
+	// three-d: After Effects' Unified Camera Tool (orbit / pan / dolly the camera in the Program monitor).
+	| 'camera';
 
 /** Session toggles (S01:SES-001 `toggles`). */
 export type SessionToggles = {
@@ -66,6 +77,13 @@ export type SessionToggles = {
 	previewQuality: 'full' | 'half' | 'quarter';
 	activeTool: ActiveTool;
 	rippleMarkers: boolean;
+	/**
+	 * edit-structure: Premiere's timeline toggle "Insert and overwrite sequences as nests or individual clips" — on
+	 * (default): a sequence placed from the Source monitor or the bin becomes nest clips; off: its clips are copied.
+	 */
+	insertSequencesAsNests?: boolean;
+	/** edit-structure: Sequence ▸ Show Through Edits (default on) — through-edit markers on cuts. */
+	showThroughEdits?: boolean;
 };
 
 export type DerivativeStatus = {
@@ -87,6 +105,11 @@ export type MediaRuntime = {
 	peaks: DerivativeStatus;
 	derived: DerivativeStatus | null;
 	ingest: { phase: 'copying' | 'uploading' | 'fingerprinting' | 'probing'; progress: number } | null;
+	/**
+	 * imports workstream: the engine's interpreted picture the asset is shown from (`<kind>:<variant>`: a still's
+	 * display PNG, a video's interpreted proxy). Absent = none needed.
+	 */
+	variant?: { key: string; state: 'queued' | 'running' | 'ready' | 'failed'; url?: string; error?: string };
 };
 
 export type LeaseState = {

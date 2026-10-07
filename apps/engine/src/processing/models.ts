@@ -9,6 +9,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { ProcessingModel } from '@jasper/api';
+import type { VisionCatalogEntry } from '../roto/models.ts';
+import type { SpeechCatalogEntry } from '../speech/models.ts';
 import { sha256File } from '../tools/fs.ts';
 import builtin from './models.json' with { type: 'json' };
 
@@ -42,19 +44,38 @@ function bundledModelsDir(env: Record<string, string | undefined> = process.env)
 export function loadCatalog(env: Record<string, string | undefined> = process.env): {
 	entries: CatalogEntry[];
 	bundledDir: string;
+	/** wp speech: the speech-to-text models of the same catalogue (`speech`, see speech/models.ts). */
+	speech: SpeechCatalogEntry[];
+	/** parity (roto): segmentation and face models (`vision`, see roto/models.ts). */
+	vision: VisionCatalogEntry[];
 } {
 	const file = env[MODEL_CATALOG_ENV];
 	if (file) {
-		const json = JSON.parse(readFileSync(file, 'utf8')) as { models: CatalogEntry[]; bundledDir?: string };
+		const json = JSON.parse(readFileSync(file, 'utf8')) as {
+			models: CatalogEntry[];
+			bundledDir?: string;
+			speech?: SpeechCatalogEntry[];
+			vision?: VisionCatalogEntry[];
+		};
 		const base = dirname(resolve(file));
 		const dir = json.bundledDir
 			? isAbsolute(json.bundledDir)
 				? json.bundledDir
 				: join(base, json.bundledDir)
 			: base;
-		return { entries: json.models, bundledDir: dir };
+		return { entries: json.models, bundledDir: dir, speech: json.speech ?? [], vision: json.vision ?? [] };
 	}
-	return { entries: (builtin as { models: CatalogEntry[] }).models, bundledDir: bundledModelsDir(env) };
+	const b = builtin as unknown as {
+		models: CatalogEntry[];
+		speech?: SpeechCatalogEntry[];
+		vision?: VisionCatalogEntry[];
+	};
+	return {
+		entries: b.models,
+		bundledDir: bundledModelsDir(env),
+		speech: b.speech ?? [],
+		vision: b.vision ?? [],
+	};
 }
 
 export class ModelError extends Error {

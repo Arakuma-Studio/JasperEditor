@@ -1,11 +1,25 @@
 // param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
-import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import { evaluate, isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
+import {
+	MASK_EXPANSION_RANGE,
+	MASK_FEATHER_RANGE,
+	MASK_OPACITY_RANGE,
+	MASK_PROP_LABELS,
+	MASK_PROPS,
+	type MaskProp,
+} from '../../masks/model.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
-import type { Animatable, Keyframe, SpatialInterpolation } from '../../schema/common.ts';
+import {
+	type Animatable,
+	type Keyframe,
+	MESH_VALUE_MAX,
+	type SpatialInterpolation,
+} from '../../schema/common.ts';
+import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
@@ -15,17 +29,36 @@ import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
+import { locateMask, validateMaskPath } from './mask.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { ensureShapeStorage } from './shape.ts';
+import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './sim-warp.ts';
+import { ensureMoreOptions, parseSourceText, sourceTextDraftAnim } from './text-animators.ts';
 import { type HandlerMap, peek, peekKeys } from './util.ts';
 
 type ValueRule = {
-	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
+	kind:
+		| 'number'
+		| 'vec2'
+		| 'vec3'
+		| 'color'
+		| 'enum'
+		| 'boolean'
+		| 'string'
+		| 'media'
+		| 'curve'
+		| 'json'
+		| 'maskPath'
+		| 'mesh';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
 	/** vec2 point parameters: the spatial interpolation of new keys (S03:KF-021); absent = not a point. */
 	spatial?: SpatialInterpolation;
+	/** wp shapes: structural check of the value (vector shape paths and gradients). */
+	check?: (v: unknown) => boolean;
+	/** `json` values with a schema (text-animators: Source Text): returns the parsed value or throws a message. */
+	parse?: (v: unknown) => unknown;
 };
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
@@ -46,6 +79,7 @@ function ruleFromProperty(s: PropertySpec): ValueRule {
 		options: s.options,
 		holdOnly: s.animatable === 'hold-only',
 		...(s.kind === 'vec2' && s.animatable === 'continuous' && s.spatial ? { spatial: s.spatial } : {}),
+		...(s.validate ? { check: s.validate } : {}),
 	};
 }
 export function ruleFromParam(p: ParamSpec): ValueRule {
@@ -101,12 +135,12 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 			const index = list.findIndex((e) => e.id === fxId);
 			return { seq, list, index, fx: list[index]!, clip, track: null };
 		}
-		for (const kind of ['videoTracks', 'audioTracks'] as const) {
-			const tracks = peek<Track[]>(s, kind)!;
+		for (const kind of ['videoTracks', 'audioTracks', 'submixTracks'] as const) {
+			const tracks = peek<Track[]>(s, kind) ?? [];
 			for (let ti = 0; ti < tracks.length; ti++) {
 				if (effectIndex(peek<Track>(tracks, ti)?.effects, fxId) < 0) continue;
 				const seq = doc.sequences[sid]!;
-				const t = seq[kind][ti]!;
+				const t = seq[kind]![ti]!;
 				const index = t.effects!.findIndex((e) => e.id === fxId);
 				return { seq, list: t.effects!, index, fx: t.effects![index]!, clip: null, track: t };
 			}
@@ -188,6 +222,16 @@ export function resolveTarget(
 			};
 		}
 		const time = (at: ParamAt | undefined) => h.clipContentTime(seq, clip, at);
+		// text-animators workstream: Source Text (hold keys over `content`) and More Options created on first write.
+		if (spec.storagePath[0] === '$sourceText')
+			return {
+				type: 'anim',
+				anim: sourceTextDraftAnim(clip, h),
+				rule: { ...ruleFromProperty(spec), parse: parseSourceText },
+				time,
+				label: key,
+			};
+		if (spec.storagePath[0] === 'moreOptions' && clip.kind === 'text') ensureMoreOptions(clip);
 		// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates
 		if (spec.group === 'params' && spec.animatable !== 'no' && template) {
 			const anim = templateParamDraftAnim(
@@ -246,6 +290,49 @@ export function resolveTarget(
 		const time = (at: ParamAt | undefined) =>
 			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
 		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${found.fx.effectId}.${p.name}` };
+	}
+	// wp masks: `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).
+	if (head === 'mask' && a && rest.length === 1) {
+		const prop = rest[0] as MaskProp;
+		if (!MASK_PROPS.includes(prop)) return bad();
+		const loc = locateMask(doc, a);
+		if (!loc) return h.fail('E_NOT_FOUND', `Mask not found: ${a}`);
+		assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
+		const range =
+			prop === 'feather'
+				? MASK_FEATHER_RANGE
+				: prop === 'opacity'
+					? MASK_OPACITY_RANGE
+					: MASK_EXPANSION_RANGE;
+		const rule: ValueRule =
+			prop === 'path' ? { kind: 'maskPath', holdOnly: false } : { kind: 'number', range, holdOnly: false };
+		return {
+			type: 'anim',
+			anim: loc.mask[prop] as Draft<Animatable<unknown>>,
+			rule,
+			time: (at) => h.clipContentTime(loc.seq, loc.clip, at),
+			label: `${loc.mask.name}.${MASK_PROP_LABELS[prop]}`,
+		};
+	}
+	// sim-warp: `["puppetPin", pinId, "position" | "scale" | "rotation" | "amount" | "extent" | "inFront"]` (content time of
+	// the owning clip; position layer-box-normalised).
+	if (head === 'puppetPin' && a && rest.length === 1) {
+		const prop = rest[0]!;
+		if (!isPinProp(prop)) return bad();
+		const loc = locatePin(doc, a);
+		if (!loc) return h.fail('E_NOT_FOUND', `Puppet pin not found: ${a}`);
+		assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
+		const rule: ValueRule =
+			prop === 'position'
+				? { kind: 'vec2', holdOnly: false, spatial: 'auto-bezier' }
+				: { kind: 'number', range: PUPPET_PIN_RANGES[prop], holdOnly: false };
+		return {
+			type: 'anim',
+			anim: loc.pin[prop] as Draft<Animatable<unknown>>,
+			rule,
+			time: (at) => h.clipContentTime(loc.seq, loc.clip, at),
+			label: `${loc.pin.name}.${PUPPET_PIN_LABELS[prop]}`,
+		};
 	}
 	// Wave-2 transition framework: `["transition", trnId, param]`; keyframe times are flicks from the span's start.
 	if (head === 'transition' && a && rest.length === 1) {
@@ -313,6 +400,7 @@ export function validateValue(
 			Math.max(rule.range?.min ?? Number.NEGATIVE_INFINITY, x),
 		);
 	const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+	if (rule.check && !rule.check(v)) return fail();
 	switch (rule.kind) {
 		case 'number': {
 			if (!isNum(v)) return fail();
@@ -324,6 +412,11 @@ export function validateValue(
 			// Per-component range (wp-m2-shapes: `shape.size` ≥ 0); specs without min/max are unchanged.
 			const c = [clampN(v[0]), clampN(v[1])];
 			return { value: c, clamped: c[0] !== v[0] || c[1] !== v[1] };
+		}
+		case 'vec3': {
+			if (!Array.isArray(v) || v.length !== 3 || !v.every(isNum)) return fail();
+			const c = [clampN(v[0]), clampN(v[1]), clampN(v[2])];
+			return { value: c, clamped: c.some((x, i) => x !== v[i]) };
 		}
 		case 'color': {
 			if (!Array.isArray(v) || v.length !== 4 || !v.every(isNum)) return fail();
@@ -352,8 +445,21 @@ export function validateValue(
 				return fail();
 			}
 			if (copy === undefined) return fail();
+			if (rule.parse) {
+				try {
+					copy = rule.parse(copy);
+				} catch (e) {
+					return h.fail('E_INVALID_PARAM', `Invalid value for ${label}: ${(e as Error).message}`);
+				}
+			}
 			return { value: copy, clamped: false };
 		}
+		case 'maskPath':
+			return { value: validateMaskPath(v, h, label), clamped: false };
+		case 'mesh':
+			// sim-warp: a distortion mesh — a list of finite numbers (layout checked by the effect when it renders).
+			if (!Array.isArray(v) || v.length > MESH_VALUE_MAX || !v.every(isNum)) return fail();
+			return { value: [...v], clamped: false };
 		case 'curve': {
 			// {curve: [[x, y], …]}: ≥ 2 points in 0..1 (clamped), sorted by x, x strictly increasing.
 			const pts = (v as { curve?: unknown } | null)?.curve;
@@ -400,6 +506,8 @@ function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>)
 		anim.keyframes.sort((x, y) => x.time - y.time);
 	}
 	refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+	// keyframes-blend: roving keys sit where the motion passes them.
+	retimeRoving(anim.keyframes as Keyframe<unknown>[]);
 	return id;
 }
 

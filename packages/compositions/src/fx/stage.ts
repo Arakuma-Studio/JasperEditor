@@ -8,44 +8,70 @@
 // `samples` are absolute clip-local source frames; LUT media params are bound as 3D textures; the preview may draw
 // the canvases at a reduced resolution (`RenderOptions.fxPreviewScale`).
 import {
+	activeRemap,
 	colorRunKey,
 	type EffectSpec,
 	FX_MAX_CANVAS,
 	type FxClipInfo,
 	type FxEffectPlan,
 	type FxFrameContext,
+	type FxLayerMask,
 	type FxParamsAt,
 	type FxStepTime,
 	type FxTimeStep,
 	type FxUniform,
+	flattenPath,
 	fxBuiltinUniforms,
 	fxClipProgress,
 	fxParamsAtFn,
 	fxSeed,
 	fxStackTime,
+	fxUniformsKey,
+	hashString,
 	isLutMediaParam,
 	type Lut,
 	layerMapOf,
 	type MediaHandle,
+	mediaFrameAt,
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
+	type ResolvedMask,
+	remapSourceAt,
+	rotoFrameState,
+	rotoFrameUrl,
 	sideCompToCanvas,
+	TRACK_MATTE_EFFECT_ID,
+	workingKey,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
-import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
+import { ColorDocContext, colorOpsContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
-import type { LayerProps, TransitionTap } from '../types.ts';
-import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
+import { NestCompSizeContext } from '../layers/nest-context.ts';
+import type { LayerProps, LayerTap } from '../types.ts';
+import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
+import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
+import { fxPixelsOf, useFxPixels } from './pixels.ts';
+import {
+	type FxBypass,
+	type FxCanvasLayout,
+	type FxStep,
+	fxCanvasLayout,
+	type LayerFxPlan,
+	planLayerFx,
+} from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
 import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
 
+/** wp masks: masks of a step (the effect applies inside them), in the chain canvas. */
+type PreparedMasks = { masks?: FxMaskGeometry };
+
 export type FxPreparedStep =
-	| {
+	| ({
 			kind: 'gpu';
 			key: string;
 			plan: FxEffectPlan;
@@ -56,21 +82,62 @@ export type FxPreparedStep =
 			sampleFrames: (number | null)[];
 			/** `u_sampleValid`. */
 			sampleValid: number;
-	  }
-	| { kind: 'lut'; key: string; lut: Lut | null }
-	| { kind: 'css'; key: string; filter: string }
-	| { kind: 'crop'; key: string; insets: [number, number, number, number] }
-	| { kind: 'flip'; key: string; horizontal: boolean }
+	  } & PreparedMasks)
+	| ({ kind: 'lut'; key: string; lut: Lut | null } & PreparedMasks)
+	| ({ kind: 'css'; key: string; filter: string } & PreparedMasks)
+	| ({ kind: 'crop'; key: string; insets: [number, number, number, number] } & PreparedMasks)
+	| ({ kind: 'flip'; key: string; horizontal: boolean } & PreparedMasks)
+	/** wp masks: the layer's Opacity masks. */
+	| { kind: 'mask'; key: string; geometry: FxMaskGeometry }
+	/** wp masks: hand the finished picture to the layer's matte track hub (before a transition tap). */
+	| { kind: 'matteTap'; key: string; tap: MatteTap; meta: MatteTapMeta; hide: boolean }
 	/** Transition framework: hand the picture to the GPU transition stage (always the last step). */
 	| {
 			kind: 'tap';
 			key: string;
-			tap: TransitionTap;
+			tap: LayerTap;
 			meta: { compToCanvas: readonly number[] | null; opacity: number };
+	  }
+	/** edit-structure (adjustment layers): keep a copy of the picture before the effects (`holder`). */
+	| { kind: 'stash'; key: string; holder: AdjustmentHolder }
+	/**
+	 * edit-structure (adjustment layers): the adjusted picture over the stashed original, with opacity, blend mode
+	 * and the crop region (canvas px) the effects are limited to (Premiere: cropping an adjustment layer limits it).
+	 */
+	| {
+			kind: 'mix';
+			key: string;
+			holder: AdjustmentHolder;
+			opacity: number;
+			/** keyframes-blend: the adjustment clip's blend mode (BLEND_MODES id) and its Dissolve seed of the frame. */
+			blend: string;
+			seed: number;
+			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
+			insets: readonly [number, number, number, number] | null;
+			/** wp masks: the adjustment layer's active Opacity masks (it applies inside them). */
+			opacityMasks?: readonly ResolvedMask[];
 	  };
 
+/** The original picture of an adjustment scope, kept by its `stash` step for its `mix` step. */
+export type AdjustmentHolder = { canvas: HTMLCanvasElement | null };
+
 /** A media param input of the layer's shader effects (`lut`: a .cube asset bound as a 3D texture). */
-export type FxMediaInput = { mediaId: string; url: string; kind: 'image' | 'video' | 'lut' };
+export type FxMediaInput = {
+	mediaId: string;
+	url: string;
+	kind: 'image' | 'video' | 'lut';
+	/** color-mgmt: a `color-config` asset bound as the LUT of the conversion between two of its spaces. */
+	ocio?: { from: string; to: string };
+	/**
+	 * parity (roto): an object-matte frame — renders fail when it cannot be loaded (never a silently missing matte);
+	 * `group` = its matte store (the preview keeps showing the store's last loaded frame while the next one loads);
+	 * `prefetch` = following frames the preview loads ahead.
+	 */
+	matte?: { group: string; prefetch: string[] };
+};
+
+/** Media frames the preview loads ahead of a playing roto matte. */
+const MATTE_PREFETCH = 4;
 
 export type FxStage = {
 	plan: LayerFxPlan;
@@ -88,6 +155,10 @@ export type FxStage = {
 	key: string;
 	/** LUT assets of colour runs are still loading (the preview draws without them meanwhile). */
 	pending: boolean;
+	/** wp masks: video tracks whose composite Track Matte Keys of the stack read (media `track:<id>`). */
+	trackMattes: string[];
+	/** wp masks: the sequence frame of the stage (track mattes are taken at the same sequence time). */
+	seqFrame: number;
 };
 
 export type LayerFx =
@@ -119,25 +190,43 @@ export function useLayerFx(
 		enabled?: boolean;
 		/** The effects to plan (default: the layer's); e.g. none for a picture that already has them baked. */
 		effects?: readonly ResolvedEffect[];
+		/**
+		 * edit-structure: run the whole stack in the canvas chain even without shader effects (colour runs, CSS filters,
+		 * crop, flips) — nest pictures with colour effects and adjustment scopes.
+		 */
+		chain?: boolean;
+		/** edit-structure: steps appended after the stack (adjustment scope stash/mix), prepended when `first`. */
+		extraSteps?: { first: FxPreparedStep[]; last: FxPreparedStep[] };
 	} = {},
 ): LayerFx {
 	const doc = useContext(ColorDocContext);
 	const gpu = useFxStatus();
 	// Null outside a composition (layers rendered standalone, e.g. template thumbnails/tests).
 	const config = Internals.useUnsafeVideoConfig();
-	const compW = config?.width ?? 0;
-	const compH = config?.height ?? 0;
+	// edit-structure: inside a nested sequence the "composition" is the nested frame.
+	const nestComp = useContext(NestCompSizeContext);
+	const compW = nestComp?.width ?? config?.width ?? 0;
+	const compH = nestComp?.height ?? config?.height ?? 0;
 	const { clip, props, fps } = layer;
 	const effects = opts.effects ?? props.effects;
 	const box = props.box;
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
-	const tap = layer.transition?.tap ?? null;
-	const capture = !!tap;
+	// keyframes-blend: a layer of the GL compositor's group captures its picture the same way as a transition side.
+	const tap: LayerTap | null = layer.transition?.tap ?? layer.composite?.tap ?? null;
+	// wp masks: a layer of a matte track runs the chain too (its picture goes to the matte hub).
+	const matte = layer.matte ?? null;
+	const capture = !!tap || !!matte || !!opts.chain;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
 	const canRun = opts.canRun ?? true;
 	const enabled = opts.enabled ?? true;
 	const failures = fxStatus.version();
 	const realFrame = layer.realFrame ?? layer.localFrame;
+	const contentTime = layer.contentTime;
+	// Media time of the picture shown (frame hold, then Time Remapping; workstream `time`): roto mattes follow it.
+	const pictureRemap = activeRemap(clip as Parameters<typeof activeRemap>[0]);
+	const pictureMediaTime = pictureRemap
+		? Math.max(0, remapSourceAt(pictureRemap, layer.pictureTime ?? contentTime))
+		: (layer.pictureTime ?? contentTime);
 	const sourceFrame = layer.localFrame;
 	const duration = clip.duration;
 	// Params at other frames (sub-frame shutters, write-on paths, …) from the clip's keyframes, per effect instance.
@@ -155,6 +244,21 @@ export function useLayerFx(
 		};
 	}, [clip, fps, realFrame]);
 	const clipInfo = useMemo((): FxClipInfo => fxClipInfoOf(clip), [clip]);
+	// sim-warp: identity of each instance's animation (params with keys and expressions, the clip's timing) — the key
+	// of stepped simulations' checkpoint caches.
+	const instanceKeyOf = useMemo(() => {
+		const cache = new Map<string, string>();
+		const timing = `${clip.clipId}|${clip.sourceIn}|${clip.speed.rate}|${clip.speed.reverse ? 1 : 0}|${clip.duration}|${fps}`;
+		const byId = new Map(clip.effects.map((e) => [e.id, e]));
+		return (fxId: string): string => {
+			const hit = cache.get(fxId);
+			if (hit !== undefined) return hit;
+			const inst = byId.get(fxId);
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}`;
+			cache.set(fxId, k);
+			return k;
+		};
+	}, [clip, fps]);
 	const mediaKind = useMemo(() => (id: string) => doc.media[id]?.kind, [doc.media]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
@@ -171,6 +275,7 @@ export function useLayerFx(
 						mediaKind,
 						clip: clipInfo,
 						capture,
+						masks: props.masks,
 					}),
 		[
 			enabled,
@@ -187,6 +292,7 @@ export function useLayerFx(
 			paramsAtOf,
 			mediaKind,
 			clipInfo,
+			props.masks,
 		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))
@@ -222,6 +328,39 @@ export function useLayerFx(
 					: [],
 			) ?? [],
 		[plan],
+	);
+	// sim-warp: images whose pixels simulations read on the CPU (`gpu.cpuPixels`).
+	const pixelUrls = useMemo(
+		() => [
+			...new Set(
+				plan?.steps.flatMap((s) =>
+					s.kind === 'gpu'
+						? (s.spec.gpu?.cpuPixels ?? [])
+								.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
+								.filter((id): id is string => typeof id === 'string' && !!id)
+								.map((id) => doc.media[id])
+								.filter((h) => h?.kind === 'image')
+								.map((h) => h!.url)
+						: [],
+				) ?? [],
+			),
+		],
+		[plan, doc.media],
+	);
+	const pixelsVersion = useFxPixels(pixelUrls, !doc.isPreview);
+	// sim-warp: the layer's masks as polylines in layer px (effects that reference "Mask n").
+	const layerMasks = useMemo(
+		(): FxLayerMask[] =>
+			(props.masks ?? []).map((m) => {
+				const flat = flattenPath(m.path, 0.25 / Math.max(1, box.width, box.height));
+				return {
+					id: m.id,
+					closed: m.path.closed,
+					inverted: m.inverted,
+					points: flat.pts.map(([x, y]) => [x * box.width, y * box.height] as [number, number]),
+				};
+			}),
+		[props.masks, box.width, box.height],
 	);
 	const lutUrls = [...referencedMedia(lutEffects), ...fxLutIds]
 		.map((id) => doc.media[id]?.url)
@@ -265,6 +404,7 @@ export function useLayerFx(
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the values that change the output
 	const stage = useMemo((): FxStage | null => {
 		if (!plan?.active || !layout) return null;
+		const L = layout;
 		const canvas = { width: layout.width, height: layout.height };
 		const lutKey = (id: string) => {
 			const u = doc.media[id]?.url;
@@ -276,7 +416,38 @@ export function useLayerFx(
 		};
 		const samples: number[] = [];
 		const media = new Map<string, FxMediaInput>();
+		const trackMattes: string[] = [];
+		const geometryOf = (masks: FxMaskGeometry['masks']): FxMaskGeometry => ({
+			masks,
+			box: layout.box,
+			pxScale: layout.pxScale,
+		});
+		// A masked step's key includes its mask geometry (the coverage changes the output).
+		const withMasks = (st: FxPreparedStep, masks: FxMaskGeometry['masks'] | undefined): FxPreparedStep => {
+			if (
+				!masks?.length ||
+				st.kind === 'mask' ||
+				st.kind === 'tap' ||
+				st.kind === 'matteTap' ||
+				st.kind === 'stash' ||
+				st.kind === 'mix'
+			)
+				return st;
+			const g = geometryOf(masks);
+			return { ...st, masks: g, key: `${st.key}|masks:${maskGeometryKey(g, canvas.width, canvas.height)}` };
+		};
 		const steps: FxPreparedStep[] = plan.steps.map((s, i): FxPreparedStep => {
+			if (s.kind === 'mask') {
+				const g = geometryOf(s.masks);
+				return {
+					kind: 'mask',
+					key: `mask${i}:${maskGeometryKey(g, canvas.width, canvas.height)}`,
+					geometry: g,
+				};
+			}
+			return withMasks(prepareStep(s, i), s.masks);
+		});
+		function prepareStep(s: Exclude<FxStep, { kind: 'mask' }>, i: number): FxPreparedStep {
 			switch (s.kind) {
 				case 'gpu': {
 					const seed = fxSeed(clip.clipId, s.fx.id, s.fx.params);
@@ -284,7 +455,7 @@ export function useLayerFx(
 					const ctx: FxFrameContext = {
 						width: box.width,
 						height: box.height,
-						pxScale: layout.pxScale,
+						pxScale: L.pxScale,
 						fps,
 						frame: realFrame,
 						duration,
@@ -292,23 +463,91 @@ export function useLayerFx(
 						progress,
 						clip: clipInfo,
 						...(paramsAt ? { paramsAt } : {}),
+						instanceKey: instanceKeyOf(s.fx.id),
+						pixels: (param: string) => {
+							const id = (s.fx.params[param] as { mediaId?: unknown } | undefined)?.mediaId;
+							const h = typeof id === 'string' && id ? doc.media[id] : undefined;
+							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
+						},
+						structures: {
+							...((s.fx as { puppet?: unknown }).puppet
+								? { puppet: (s.fx as { puppet?: unknown }).puppet }
+								: {}),
+							...(layerMasks.length ? { masks: layerMasks } : {}),
+						},
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
+					// wp masks: a Track Matte Key reading a track binds the track's composite as `u_matte`.
+					const matteTrack = s.fx.effectId === TRACK_MATTE_EFFECT_ID ? s.fx.params.matteTrack : undefined;
+					if (typeof matteTrack === 'string' && matteTrack) {
+						if (!trackMattes.includes(matteTrack)) trackMattes.push(matteTrack);
+						gp.textures = gp.textures.map((t) =>
+							t.uniform === 'u_matte' ? { ...t, mediaId: trackMatteMediaId(matteTrack) } : t,
+						);
+					}
 					const st = stackTime.get(s.fx.id);
 					const offsets = st?.offsets ?? [];
 					const frames = st?.frames ?? [];
 					for (const f of frames) if (f !== null && !samples.includes(f)) samples.push(f);
 					for (const t of gp.textures) {
+						if (t.matte) {
+							// parity (roto): the object's matte at the layer's media frame (+ offset).
+							const ref = t.matte.object ? clip.rotos?.[t.matte.object] : undefined;
+							let state = 0;
+							if (ref) {
+								const still = clip.kind === 'still';
+								const f = still ? 0 : mediaFrameAt(pictureMediaTime, ref.rate) + t.matte.offset;
+								const at = rotoFrameState(ref, f);
+								if (at === 'missing' && !doc.isPreview && t.matte.offset === 0)
+									cancelRender(
+										new Error(
+											`ROTO_NOT_COMPUTED: roto "${ref.name}" has no matte for media frame ${f}: propagate it first`,
+										),
+									);
+								if (at === 'matte') {
+									state = 1;
+									const id = `roto:${ref.key}:${f}`;
+									t.mediaId = id;
+									const prefetch: string[] = [];
+									if (doc.isPreview && !still && t.matte.offset === 0)
+										for (let k = 1; k <= MATTE_PREFETCH && f + k <= ref.end; k++)
+											prefetch.push(rotoFrameUrl(ref, f + k));
+									media.set(id, {
+										mediaId: id,
+										url: rotoFrameUrl(ref, f),
+										kind: 'image',
+										matte: { group: `${ref.key}:${t.matte.offset}`, prefetch },
+									});
+								} else if (at === 'outside') state = 2;
+							}
+							const u = gp.uniforms.find((x) => x.name === `${t.uniform}_state`);
+							if (u) u.value = [state];
+							continue;
+						}
 						const h: MediaHandle | null | undefined = t.mediaId ? doc.media[t.mediaId] : null;
 						if (!h) continue;
 						if (t.kind === 'lut') {
 							if (h.kind === 'lut') media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: 'lut' });
+							else if (h.kind === 'color-config') {
+								// color-mgmt: S_OCIOTransform ▸ Custom: the conversion's LUT, keyed by config and spaces.
+								const conv = (s.spec as EffectSpec).gpu?.ocioConversion?.(s.fx.params);
+								if (conv && conv.param === t.param) {
+									const id = `ocio:${t.mediaId}:${conv.from}>${conv.to}`;
+									t.mediaId = id;
+									media.set(id, {
+										mediaId: id,
+										url: h.url,
+										kind: 'lut',
+										ocio: { from: conv.from, to: conv.to },
+									});
+								}
+							}
 						} else if (h.kind === 'image' || h.kind === 'video')
 							media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: h.kind });
 					}
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${JSON.stringify(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
+						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
 						sampleOffsets: offsets,
@@ -317,10 +556,18 @@ export function useLayerFx(
 					};
 				}
 				case 'lut': {
-					const key = colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE);
+					const key = colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE, workingKey(doc.working));
 					const lut = pending
 						? null
-						: bakedRunLut(clip.clipId, key, s.effects, fxEffectRegistry(), lutOf, PREVIEW_LUT_SIZE);
+						: bakedRunLut(
+								clip.clipId,
+								key,
+								s.effects,
+								fxEffectRegistry(),
+								lutOf,
+								PREVIEW_LUT_SIZE,
+								colorOpsContext(doc),
+							);
 					return { kind: 'lut', key: `lut${i}:${key}`, lut };
 				}
 				case 'css':
@@ -330,7 +577,22 @@ export function useLayerFx(
 				default:
 					return { kind: 'flip', key: `flip${i}`, horizontal: s.horizontal };
 			}
-		});
+		}
+		if (opts.extraSteps) {
+			steps.unshift(...opts.extraSteps.first);
+			steps.push(...opts.extraSteps.last);
+		}
+		if (matte) {
+			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
+			const compToCanvas = sideCompToCanvas(map, layout);
+			steps.push({
+				kind: 'matteTap',
+				key: `matte:${matte.seqFrame}:${opacity}:${compToCanvas?.join(',') ?? 'none'}:${matte.hide}`,
+				tap: matte.tap,
+				meta: { compToCanvas, opacity, frame: matte.seqFrame },
+				hide: matte.hide,
+			});
+		}
 		if (tap) {
 			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
 			const compToCanvas = sideCompToCanvas(map, layout);
@@ -360,7 +622,18 @@ export function useLayerFx(
 			map.join(','),
 			...steps.map((s) => s.key),
 		].join('\u0000');
-		return { plan, layout, steps, samples, media: [...media.values()], builtins, key, pending };
+		return {
+			plan,
+			layout,
+			steps,
+			samples,
+			media: [...media.values()],
+			builtins,
+			key,
+			pending,
+			trackMattes,
+			seqFrame: clip.start + realFrame,
+		};
 	}, [
 		plan,
 		layout,
@@ -377,10 +650,17 @@ export function useLayerFx(
 		clip.clipId,
 		duration,
 		tap,
+		matte,
 		props.opacity,
 		stackTime,
 		paramsAtOf,
 		clipInfo,
+		contentTime,
+		opts.extraSteps,
+		instanceKeyOf,
+		pixelsVersion,
+		layerMasks,
+		doc.working,
 	]);
 
 	if (!plan) return NONE;

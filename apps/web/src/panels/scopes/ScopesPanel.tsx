@@ -2,6 +2,7 @@
 // skin-tone line) and histogram of the selected clip's graded picture read back from the Program monitor
 // (≤ 256 px wide), computed in a worker; ≤ 15 updates/s while playing, on every change while paused. Drawn with
 // design tokens only (CSS variables read with getComputedStyle).
+import { sequenceColorInfo, workingSignalOfNits } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
@@ -104,6 +105,20 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		return gradeEligible(clip) ? clip.id : null;
 	});
 	const revision = useSessionState((s) => (s.transient ? -s.revision - 1 : s.revision));
+	// color-mgmt: the working space; HDR sequences can show the waveform in cd/m² (PQ / HLG signal positions).
+	const working = useSessionState((s) => {
+		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
+		return sequenceColorInfo(seq?.settings).space;
+	});
+	const hdr = working === 'rec2100-pq' || working === 'rec2100-hlg';
+	const [nitsPref, setNitsPref] = useState(() => {
+		try {
+			return globalThis.localStorage?.getItem(SCALE_KEY) !== 'percent';
+		} catch {
+			return true;
+		}
+	});
+	const scale: ScopeScale = hdr && nitsPref ? { kind: 'nits', space: working } : { kind: 'percent' };
 	const setMode = (m: ScopeMode) => {
 		setModeState(m);
 		try {
@@ -114,8 +129,8 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 	};
 
 	// Latest state for the loop (no re-subscription per change).
-	const live = useRef({ mode, clipId, visible });
-	live.current = { mode, clipId, visible };
+	const live = useRef({ mode, clipId, visible, scale });
+	live.current = { mode, clipId, visible, scale };
 	const last = useRef<ScopeResult | null>(null);
 	/** Time the in-flight request was posted (0 = none); a lost reply unblocks after a second. */
 	const pending = useRef(0);
@@ -140,7 +155,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		}
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
 		colors.current ??= readColors(box);
-		drawScope(g, W, H, live.current.mode, last.current, colors.current);
+		drawScope(g, W, H, live.current.mode, last.current, colors.current, live.current.scale);
 	}, []);
 
 	// Result handling + worker lifetime.
@@ -235,7 +250,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		if (last.current && last.current.mode !== mode) last.current = null;
 		draw();
 		captureNow.current?.(true);
-	}, [mode, clipId, revision, visible, draw]);
+	}, [mode, clipId, revision, visible, draw, scale.kind, working]);
 
 	// Redraw on resize.
 	useEffect(() => {
@@ -271,6 +286,25 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 						</button>
 					))}
 				</div>
+				{hdr ? (
+					<button
+						type="button"
+						className="ml-auto h-[20px] shrink-0 rounded-pr-control px-2 text-pr-small text-pr-muted hover:bg-pr-hover"
+						onClick={() => {
+							const next = !nitsPref;
+							setNitsPref(next);
+							try {
+								globalThis.localStorage?.setItem(SCALE_KEY, next ? 'nits' : 'percent');
+							} catch {
+								// not persisted
+							}
+						}}
+						title="Waveform scale: cd/m² (HDR) or percent of the signal"
+						data-testid="scopes-scale"
+					>
+						{nitsPref ? 'Scale: nits' : 'Scale: %'}
+					</button>
+				) : null}
 			</header>
 			<div ref={boxRef} className="relative min-h-0 flex-1" style={{ background: 'var(--pr-scope-bg)' }}>
 				<canvas
@@ -311,6 +345,63 @@ function traceBitmap(r: ScopeResult): HTMLCanvasElement | null {
 	return c;
 }
 
+/** color-mgmt: the waveform's vertical scale: percent of the signal, or cd/m² of an HDR working space. */
+type ScopeScale = { kind: 'percent' } | { kind: 'nits'; space: 'rec2100-pq' | 'rec2100-hlg' | string };
+const SCALE_KEY = 'jasper.scopes.hdrScale';
+/** cd/m² graticule of HDR waveforms (BT.2408 reference white 203 labelled). */
+const NITS_LINES = [0.1, 1, 10, 100, 203, 1000, 4000, 10000];
+
+/** color-mgmt: cd/m² lines at their PQ / HLG signal positions (the trace is the working signal). */
+function drawNitsGraticule(
+	g: CanvasRenderingContext2D,
+	space: string,
+	x0: number,
+	y0: number,
+	w: number,
+	h: number,
+	c: Colors,
+): void {
+	for (const n of NITS_LINES) {
+		if (space === 'rec2100-hlg' && n > 1000) continue;
+		const v = workingSignalOfNits(space as 'rec2100-pq', n);
+		const y = Math.round(y0 + h - v * h) + 0.5;
+		g.strokeStyle = c.graticule;
+		g.globalAlpha = n === 203 || n === 1000 ? 1 : 0.5;
+		g.beginPath();
+		g.moveTo(x0, y);
+		g.lineTo(x0 + w, y);
+		g.stroke();
+		g.globalAlpha = 1;
+		g.fillStyle = c.label;
+		g.fillText(n < 1 ? String(n) : n >= 1000 ? `${n / 1000}k` : String(n), 1, y + 3);
+	}
+}
+
+/** IRE-style graticule 0…100 every 10. */
+function drawPercentGraticule(
+	g: CanvasRenderingContext2D,
+	x0: number,
+	y0: number,
+	w: number,
+	h: number,
+	c: Colors,
+): void {
+	for (let i = 0; i <= 10; i++) {
+		const y = Math.round(y0 + h - (i / 10) * h) + 0.5;
+		g.strokeStyle = c.graticule;
+		g.globalAlpha = i % 5 === 0 ? 1 : 0.5;
+		g.beginPath();
+		g.moveTo(x0, y);
+		g.lineTo(x0 + w, y);
+		g.stroke();
+		g.globalAlpha = 1;
+		if (i % 2 === 0) {
+			g.fillStyle = c.label;
+			g.fillText(String(i * 10), 2, y + 3);
+		}
+	}
+}
+
 function drawScope(
 	g: CanvasRenderingContext2D,
 	W: number,
@@ -318,6 +409,7 @@ function drawScope(
 	mode: ScopeMode,
 	r: ScopeResult | null,
 	c: Colors,
+	scale: ScopeScale = { kind: 'percent' },
 ): void {
 	g.clearRect(0, 0, W, H);
 	g.fillStyle = c.bg;
@@ -329,21 +421,8 @@ function drawScope(
 	const w = Math.max(10, W - PAD - 8);
 	const h = Math.max(10, H - 16);
 	if (mode === 'waveform' || mode === 'parade') {
-		// IRE-style graticule 0…100 every 10.
-		for (let i = 0; i <= 10; i++) {
-			const y = Math.round(y0 + h - (i / 10) * h) + 0.5;
-			g.strokeStyle = c.graticule;
-			g.globalAlpha = i % 5 === 0 ? 1 : 0.5;
-			g.beginPath();
-			g.moveTo(x0, y);
-			g.lineTo(x0 + w, y);
-			g.stroke();
-			g.globalAlpha = 1;
-			if (i % 2 === 0) {
-				g.fillStyle = c.label;
-				g.fillText(String(i * 10), 2, y + 3);
-			}
-		}
+		if (scale.kind === 'nits') drawNitsGraticule(g, scale.space, x0, y0, w, h, c);
+		else drawPercentGraticule(g, x0, y0, w, h, c);
 		if (mode === 'parade')
 			for (const t of [1 / 3, 2 / 3]) {
 				const x = Math.round(x0 + w * t) + 0.5;

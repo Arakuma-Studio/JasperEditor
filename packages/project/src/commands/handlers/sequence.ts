@@ -1,10 +1,14 @@
 // sequence.*, marker.*, track.* (S01 §7, §8, SEQ-006/007/008).
+
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
+import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
-import type { ClipMarker, Marker, SequenceSettings, Track } from '../../schema/sequence.ts';
+import type { ClipMarker, Marker, Sequence, SequenceSettings, Track } from '../../schema/sequence.ts';
 import {
 	isAllowedSequenceRate,
 	mapFrameBetweenRates,
@@ -23,6 +27,7 @@ import {
 	tracksOfKind,
 } from '../placement.ts';
 import { placeSource } from './clip-core.ts';
+import { applyColorSettings, hdrWorkingSpaceOf } from './color-mgmt.ts';
 import { assertBin, insertItem } from './project.ts';
 import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
@@ -144,6 +149,17 @@ function findMarker(doc: DDoc, markerId: string, h: HandlerContext) {
 	return h.fail('E_NOT_FOUND', `Marker not found: ${markerId}`);
 }
 
+/** wp-multicam: a source clip marker of a media item. */
+function findItemMarker(doc: DDoc, markerId: string) {
+	for (const it of Object.values(doc.items)) {
+		if (it.kind !== 'media') continue;
+		const list = (it as { markers?: Draft<ClipMarker>[] }).markers;
+		const marker = list?.find((m) => m.id === markerId);
+		if (list && marker) return { item: it, list, marker };
+	}
+	return null;
+}
+
 export const sequenceHandlers: HandlerMap = {
 	'sequence.create': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
@@ -165,12 +181,19 @@ export const sequenceHandlers: HandlerMap = {
 				settings.dropFrame = supportsDropFrame(info.rate);
 			}
 		}
-		Object.assign(settings, cmd.settings ?? {});
+		const { workingColorSpace: _w, color: _c, ...plain } = cmd.settings ?? {};
+		Object.assign(settings, plain);
 		if (cmd.settings?.frameRate && cmd.settings.dropFrame === undefined)
 			settings.dropFrame = supportsDropFrame(settings.frameRate);
+		// color-mgmt: a sequence made from HDR media works in its HDR space (Premiere: New Sequence From Clip).
+		if (asset && !cmd.settings?.workingColorSpace) {
+			const hdr = hdrWorkingSpaceOf(asset);
+			if (hdr) settings.workingColorSpace = hdr;
+		}
 		validateSettings(settings, h);
 		const id = h.newId(doc, 'seq', cmd.id);
 		const seq = createSequence(h.ids, settings, cmd.tracks ?? base.tracks, id);
+		if (cmd.settings) applyColorSettings(seq as DSeq, cmd.settings, h);
 		doc.sequences[id] = seq;
 		const itemId = h.ids.next('itm');
 		doc.items[itemId] = { id: itemId, kind: 'sequence', name: cmd.name, sequenceId: id, label: 'forest' };
@@ -190,10 +213,11 @@ export const sequenceHandlers: HandlerMap = {
 	},
 	'sequence.updateSettings': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
+		const { workingColorSpace: _w, color: _c, ...p0 } = cmd.settings;
 		const p = cmd.settings;
 		const next: SequenceSettings = {
 			...(JSON.parse(JSON.stringify(seq.settings)) as SequenceSettings),
-			...p,
+			...p0,
 		};
 		validateSettings(next, h);
 		if (
@@ -213,6 +237,9 @@ export const sequenceHandlers: HandlerMap = {
 		else if (p.frameRate) seq.settings.dropFrame = next.dropFrame;
 		if (p.startTimecodeFrames !== undefined) seq.settings.startTimecodeFrames = p.startTimecodeFrames;
 		if (p.backgroundColor) seq.settings.backgroundColor = [...p.backgroundColor];
+		if (p.audioSampleRate !== undefined) seq.settings.audioSampleRate = p.audioSampleRate;
+		if (p.masterLayout !== undefined) seq.settings.masterLayout = p.masterLayout;
+		applyColorSettings(seq, p, h);
 	},
 	'sequence.setInOut': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
@@ -246,7 +273,22 @@ export const sequenceHandlers: HandlerMap = {
 			...(cmd.url !== undefined ? { url: cmd.url } : {}),
 			author: h.agentAuthor(),
 		} as const;
-		if (cmd.clipId) {
+		if (cmd.itemId) {
+			// wp-multicam: source clip markers live on the media item (media time).
+			const it = doc.items[cmd.itemId];
+			if (!it) h.fail('E_NOT_FOUND', `Project item not found: ${cmd.itemId}`);
+			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', 'Source clip markers go on media items');
+			const asset = doc.media[it.mediaId] as MediaAsset | undefined;
+			const fallback = { num: 30, den: 1 };
+			const flicks = cmd.flicks ? h.flicks(cmd.flicks, asset, fallback) : (it.marks.in?.flicks ?? 0);
+			if (flicks < 0) h.fail('E_INVALID_PARAM', 'Marker time must be >= 0');
+			const dur = asset ? mediaDurationFlicks(asset) : undefined;
+			if (dur !== null && dur !== undefined && flicks > dur)
+				h.fail('E_OUT_OF_MEDIA', 'Marker is after the end of the media');
+			const list = ((it as { markers?: ClipMarker[] }).markers ??= []) as Draft<ClipMarker>[];
+			list.push({ ...base, flicks, duration: 0 });
+			list.sort((a, b) => a.flicks - b.flicks);
+		} else if (cmd.clipId) {
 			const { seq, clip } = h.clip(doc, cmd.clipId);
 			assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 			let flicks: number;
@@ -276,6 +318,21 @@ export const sequenceHandlers: HandlerMap = {
 		return { markerId: id };
 	},
 	'marker.update': (doc, cmd, h: HandlerContext) => {
+		const im = findItemMarker(doc, cmd.markerId);
+		if (im) {
+			const m = im.marker;
+			if (cmd.name !== undefined) m.name = cmd.name;
+			if (cmd.comment !== undefined) m.comment = cmd.comment;
+			if (cmd.color !== undefined) m.color = cmd.color;
+			if (cmd.markerType !== undefined) m.type = cmd.markerType;
+			if (cmd.url !== undefined) m.url = cmd.url;
+			if (cmd.flicks) {
+				const asset = doc.media[im.item.mediaId] as MediaAsset | undefined;
+				m.flicks = h.flicks(cmd.flicks, asset, { num: 30, den: 1 });
+			}
+			im.list.sort((a, b) => a.flicks - b.flicks);
+			return;
+		}
 		const found = findMarker(doc, cmd.markerId, h);
 		const m = found.marker as Draft<Marker & ClipMarker>;
 		if (found.clip) assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
@@ -296,6 +353,11 @@ export const sequenceHandlers: HandlerMap = {
 	},
 	'marker.remove': (doc, cmd, h: HandlerContext) => {
 		for (const id of cmd.markerIds) {
+			const im = findItemMarker(doc, id);
+			if (im) {
+				im.list.splice(im.list.indexOf(im.marker), 1);
+				continue;
+			}
 			const found = findMarker(doc, id, h);
 			if (found.clip) {
 				assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
@@ -308,7 +370,15 @@ export const sequenceHandlers: HandlerMap = {
 		const list = tracksOfKind(seq, cmd.kind);
 		const index = Math.min(cmd.index ?? list.length, list.length);
 		const created: Track[] = [];
-		for (let i = 0; i < (cmd.count ?? 1); i++) created.push(createTrack(h.ids, cmd.kind, cmd.name ?? null));
+		if ((cmd.language !== undefined || cmd.captionStandard !== undefined) && cmd.kind !== 'caption')
+			h.fail('E_INVALID_PARAM', 'language and captionStandard apply to caption tracks only');
+		for (let i = 0; i < (cmd.count ?? 1); i++) {
+			const t = createTrack(h.ids, cmd.kind, cmd.name ?? null);
+			// wp captions
+			if (cmd.language !== undefined) t.language = cmd.language;
+			if (cmd.captionStandard !== undefined) t.captionStandard = cmd.captionStandard;
+			created.push(t);
+		}
 		list.splice(index, 0, ...(created as Draft<Track>[]));
 		h.defineRef(cmd.ref, created[0]!.id);
 		return { trackIds: created.map((t) => t.id) };
@@ -336,6 +406,11 @@ export const sequenceHandlers: HandlerMap = {
 		seq.captionTracks = seq.captionTracks.filter((t) => !ids.includes(t.id));
 		if (seq.videoTracks.length === 0 || seq.audioTracks.length === 0) {
 			h.fail('E_INVALID_PARAM', 'A sequence needs at least one video and one audio track');
+		}
+		// wp-multicam: angles of a multi-camera source lose the removed tracks; clips of a removed angle fall back.
+		if ((seq as Sequence).multicam) {
+			pruneMulticamAngles(seq as Sequence);
+			fixMulticamSelections(doc as ProjectDocument);
 		}
 		cleanupSequence(seq, h);
 	},
@@ -383,7 +458,18 @@ export const sequenceHandlers: HandlerMap = {
 		}
 		if (p.styleDefaults !== undefined) {
 			only('caption', 'styleDefaults');
+			if (!doc.fonts[p.styleDefaults.fontId])
+				h.fail('E_NOT_FOUND', `Font not found: ${p.styleDefaults.fontId}`);
 			track.styleDefaults = p.styleDefaults;
+		}
+		// wp captions
+		if (p.language !== undefined) {
+			only('caption', 'language');
+			track.language = p.language;
+		}
+		if (p.captionStandard !== undefined) {
+			only('caption', 'captionStandard');
+			track.captionStandard = p.captionStandard;
 		}
 	},
 };

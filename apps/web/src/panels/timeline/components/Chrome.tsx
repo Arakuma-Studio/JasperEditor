@@ -2,8 +2,9 @@
 // (TL-112, TLC-030), context menu and gesture tooltip.
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
-import { IconButton, labelColor, Z } from '@jasper/ui';
+import { cx, IconButton, labelColor, Z } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -194,14 +195,17 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 				className="absolute top-[3px] h-[8px] rounded-pr-pill bg-pr-hover"
 				style={{ left: x0, width: Math.max(12, x1 - x0) }}
 				onPointerDown={(e) => onDown(e, 'pan')}
+				data-testid="timeline-zoombar-thumb"
 			>
 				<div
 					className="absolute top-[-1px] left-[-1px] size-[10px] cursor-ew-resize rounded-full border border-pr-border-strong bg-pr-panel"
 					onPointerDown={(e) => onDown(e, 'left')}
+					data-testid="timeline-zoombar-start"
 				/>
 				<div
 					className="absolute top-[-1px] right-[-1px] size-[10px] cursor-ew-resize rounded-full border border-pr-border-strong bg-pr-panel"
 					onPointerDown={(e) => onDown(e, 'right')}
+					data-testid="timeline-zoombar-end"
 				/>
 			</div>
 		</div>
@@ -248,7 +252,9 @@ export function ContextMenu(props: {
 			window.removeEventListener('keydown', key, true);
 		};
 	}, [props.onClose]);
-	return (
+	// In a portal: `fixed` inside the docked panel is relative to the panel's containing block, not the window, so
+	// the menu opened offset by the panel's position (workstream `time`, e2e/time.spec.ts).
+	const menu = (
 		<div
 			ref={ref}
 			role="menu"
@@ -259,9 +265,12 @@ export function ContextMenu(props: {
 			<MenuItems items={props.items} onClose={props.onClose} />
 		</div>
 	);
+	return typeof document === 'undefined' ? menu : createPortal(menu, document.body);
 }
 
 function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
+	// One open submenu per level, opened on hover (CSS group-hover would open every nested level at once).
+	const [openSub, setOpenSub] = useState<string | null>(null);
 	return (
 		<>
 			{props.items.map((it, i) => {
@@ -270,20 +279,29 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 					return <div key={`sep-${i}`} className="my-1 h-px bg-pr-border" />;
 				if (it.kind === 'submenu')
 					return (
-						<div key={it.label} className="group relative">
-							<div className="flex h-[22px] items-center px-3 hover:bg-pr-hover">
+						// biome-ignore lint/a11y/noStaticElementInteractions: hover opens the submenu (pointer menus)
+						<div key={it.label} className="relative" onMouseEnter={() => setOpenSub(it.label)}>
+							<div
+								className={cx(
+									'flex h-[22px] items-center px-3 hover:bg-pr-hover',
+									openSub === it.label && 'bg-pr-hover',
+								)}
+							>
 								<span className="flex-1">{it.label}</span>
 								<span className="text-pr-muted">▸</span>
 							</div>
-							<div className="absolute top-0 left-full hidden min-w-[180px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay group-hover:block">
-								<MenuItems items={it.items} onClose={props.onClose} />
-							</div>
+							{openSub === it.label ? (
+								<div className="absolute top-0 left-full min-w-[180px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay">
+									<MenuItems items={it.items} onClose={props.onClose} />
+								</div>
+							) : null}
 						</div>
 					);
 				return (
 					<button
 						key={it.label}
 						type="button"
+						onMouseEnter={() => setOpenSub(null)}
 						role="menuitem"
 						disabled={it.disabled}
 						className="flex h-[22px] w-full items-center gap-2 px-3 text-left hover:bg-pr-hover disabled:text-pr-dim"

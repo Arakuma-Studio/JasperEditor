@@ -2,8 +2,12 @@
 // solo, name) go through `track.update` transactions (undoable); targeting and heights are view state.
 import { type Sequence, type Track, trackList } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
+import { useStoreSelector } from '@jasper/session/react';
 import { IconButton } from '@jasper/ui';
 import { useRef, useState } from 'react';
+import { useShellRuntimeOrNull } from '../../../shell/context.tsx';
+import { patchedLabelOn, setPatch, sourceLabel, sourceTracksOf } from '../../source/patching.ts';
+import { sourceMonitorState } from '../../source/source-state.ts';
 import {
 	DEFAULT_AUDIO_PX,
 	DEFAULT_VIDEO_PX,
@@ -153,6 +157,19 @@ function headerMenu(
 				]),
 		},
 		{ kind: 'separator' },
+		// edit-ux (Premiere track "Show Keyframes"): clip keyframe lanes on this track, drawn when it is expanded.
+		{
+			kind: 'item',
+			label: 'Show Clip Keyframes',
+			checked: p.view.keyframeDisplay[track.id] !== 'none',
+			run: () => {
+				const d = { ...p.view.keyframeDisplay };
+				if (d[track.id] === 'none') delete d[track.id];
+				else d[track.id] = 'none';
+				p.session.setView(p.seq.id, { keyframeDisplay: d });
+			},
+		},
+		{ kind: 'separator' },
 		{ kind: 'item', label: 'Rename', run: startRename },
 	];
 }
@@ -165,6 +182,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 	const targeted = (kind === 'video' ? props.view.targeting.video : props.view.targeting.audio).includes(
 		track.id,
 	);
+	const runtime = useShellRuntimeOrNull();
 	const anySolo = props.seq.audioTracks.some((t) => t.solo);
 	const silencedBySolo = kind === 'audio' && anySolo && !track.solo;
 	const label = labelOf(kind, row.index);
@@ -226,6 +244,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				props.controller.setTrackHeight(track.id, row.height * wheelZoomFactor(e.deltaY));
 			}}
 		>
+			<SourcePatchCell {...props} kind={kind} track={track} label={label} />
 			<IconButton
 				icon={track.locked ? 'track.lock' : 'track.unlock'}
 				label={track.locked ? 'Unlock track' : 'Lock track'}
@@ -287,6 +306,13 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 					>
 						S
 					</button>
+					{/* audio-mix: Voice-over Record (records into this track at the playhead; again to stop) */}
+					<IconButton
+						icon="track.voiceOver"
+						label="Voice-over record"
+						onClick={() => void runtime?.run('audio.voiceoverRecord', { trackId: track.id })}
+						data-control="voiceover"
+					/>
 				</>
 			)}
 			{editing !== null ? (
@@ -313,6 +339,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 						startRename();
 					}}
 					title={name}
+					data-testid="track-name"
 				>
 					{name}
 				</span>
@@ -322,6 +349,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				style={kind === 'video' ? { top: -2 } : { bottom: -2 }}
 				onPointerDown={(e) => resize(e, kind === 'video' ? -1 : 1)}
 				data-resize-handle
+				data-testid="track-height-handle"
 			/>
 		</div>
 	);
@@ -374,6 +402,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 			<div
 				className="absolute right-0 left-0"
 				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)', cursor: 'row-resize' }}
+				data-testid="timeline-region-divider"
 				onPointerDown={(e) => {
 					const el = e.currentTarget;
 					el.setPointerCapture?.(e.pointerId);
@@ -392,5 +421,66 @@ export function TrackHeaders(props: TrackHeadersProps) {
 				data-divider-handle
 			/>
 		</div>
+	);
+}
+
+/**
+ * edit-ux: the source patching column (Premiere "Source patching and track targeting"): while a clip is open in the
+ * Source monitor, each source track (V1, A1…) shows on the sequence track it is patched to. Click it to switch that
+ * source track off/on (off = left out of Insert/Overwrite); click an empty cell to patch the first source track of
+ * that kind there; drag a source indicator onto another track to repatch it.
+ */
+function SourcePatchCell(props: TrackHeadersProps & { kind: Kind; track: Track; label: string }) {
+	const { seq, view, session, kind, track } = props;
+	const itemId = useStoreSelector(sourceMonitorState, (s) => s.itemId);
+	const doc = session.getCommitted();
+	const item = itemId ? (doc.items[itemId] ?? null) : null;
+	const counts = sourceTracksOf(doc, item, session.getState().toggles.insertSequencesAsNests !== false);
+	const n = kind === 'video' ? counts.video : counts.audio;
+	if (!item || n === 0) return <span className="w-[22px] shrink-0" aria-hidden />;
+	const here = patchedLabelOn(seq, view, counts, track.id);
+	const first = sourceLabel(kind, 0);
+	const onClick = () => {
+		if (track.locked) return;
+		if (here) setPatch(session, seq.id, here.label, here.on ? null : track.id);
+		else setPatch(session, seq.id, first, track.id);
+	};
+	return (
+		<button
+			type="button"
+			className={`h-[20px] w-[22px] shrink-0 rounded-pr-pill text-[10px] leading-[20px] ${
+				here?.on
+					? 'bg-pr-accent-fill text-pr-on-accent'
+					: here
+						? 'text-pr-dim outline outline-1 -outline-offset-1 outline-[var(--pr-border-strong)]'
+						: 'text-pr-dim hover:bg-pr-hover'
+			}`}
+			title={
+				here
+					? `Source ${here.label} ${here.on ? 'patched here (click to switch off)' : 'off (click to switch on)'}`
+					: `Patch source ${first} to ${props.label}`
+			}
+			aria-label={here ? `Source ${here.label} patch` : `Patch source ${first} to ${props.label}`}
+			aria-pressed={here ? here.on : undefined}
+			disabled={track.locked}
+			draggable={!!here}
+			onDragStart={(e) => {
+				if (here) e.dataTransfer.setData('application/x-jasper-source-patch', here.label);
+			}}
+			onDragOver={(e) => {
+				if (e.dataTransfer.types.includes('application/x-jasper-source-patch')) e.preventDefault();
+			}}
+			onDrop={(e) => {
+				const l = e.dataTransfer.getData('application/x-jasper-source-patch');
+				if (!l || track.locked || (l[0] === 'V') !== (kind === 'video')) return;
+				e.preventDefault();
+				setPatch(session, seq.id, l, track.id);
+			}}
+			onClick={onClick}
+			data-testid={`source-patch-${props.label}`}
+			data-control="source-patch"
+		>
+			{here?.label ?? ''}
+		</button>
 	);
 }

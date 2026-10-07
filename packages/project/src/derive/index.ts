@@ -194,7 +194,7 @@ export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
  * keyframe evaluation accepts fractional times.
  */
 export function contentTimeAt(
-	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
+	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn'> & { speed: { rate: number; reverse: boolean } },
 	frame: number,
 	rate: Rational,
 ): number {
@@ -214,15 +214,64 @@ export function sourceOut(clip: Pick<Clip, 'duration' | 'speed' | 'sourceIn'>, r
 	return clip.sourceIn + contentSpan(clip, rate);
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 /**
- * Through edit (S02:TL-021): `b` continues `a`'s content. Content times are whole flicks while a frame
- * at non-unit speed spans a fractional number of flicks, so repeated splits can leave the two sides a
- * few flicks apart; anything under half a source frame counts as continuous.
+ * Whether two clips show the same source (the identity a through edit continues): the same media stream, synthetic
+ * source, nested sequence, transcript or composition; for generators drawn from inline data (text, shapes, motion
+ * graphics) the same data. Unknown kinds never match.
+ */
+export function sameSource(a: Clip, b: Clip): boolean {
+	if (a.kind !== b.kind) return false;
+	const x = a as Record<string, unknown>;
+	const y = b as Record<string, unknown>;
+	switch (a.kind) {
+		case 'video':
+			return x.mediaId === y.mediaId && x.videoStreamIndex === y.videoStreamIndex;
+		case 'audio':
+			return x.mediaId === y.mediaId && same(x.channels, y.channels);
+		case 'still':
+		case 'animated-image':
+			return x.mediaId === y.mediaId;
+		case 'solid':
+		case 'adjustment':
+		case 'synthetic-audio':
+			return x.syntheticId === y.syntheticId;
+		case 'nest-video':
+		case 'nest-audio':
+			return x.sequenceId === y.sequenceId;
+		case 'captions':
+			return x.transcriptId === y.transcriptId;
+		case 'composition':
+			return same(x.composition, y.composition) && same(x.props, y.props) && same(x.canvas, y.canvas);
+		case 'motion-graphic':
+			return (
+				same(x.template, y.template) &&
+				same(x.params, y.params) &&
+				same(x.paramKeyframes, y.paramKeyframes) &&
+				same(x.canvas, y.canvas)
+			);
+		case 'text':
+			return same(x.content, y.content) && same(x.box, y.box);
+		case 'shape':
+			return same(x.shape, y.shape);
+		default:
+			return false;
+	}
+}
+
+/**
+ * Through edit (S02:TL-021): `b` starts where `a` ends on the same track, shows the same source at the same speed and
+ * direction (and the same frame hold), and continues `a`'s content. Content times are whole flicks while a frame at
+ * non-unit speed spans a fractional number of flicks, so anything under half a source frame counts as continuous.
  */
 export function isThroughEdit(a: Clip, b: Clip, rate: Rational): boolean {
-	if (a.trackId !== b.trackId || clipEnd(a) !== b.start || a.kind !== b.kind) return false;
+	if (a.trackId !== b.trackId || clipEnd(a) !== b.start) return false;
 	if (a.speed.rate !== b.speed.rate || a.speed.reverse !== b.speed.reverse) return false;
-	if ((a as { mediaId?: string }).mediaId !== (b as { mediaId?: string }).mediaId) return false;
+	if (!sameSource(a, b)) return false;
+	const ha = (a as { frameHold?: unknown }).frameHold;
+	const hb = (b as { frameHold?: unknown }).frameHold;
+	if (ha || hb) return same(ha ?? null, hb ?? null);
 	const tolerance = (flicksPerFrame(rate) * a.speed.rate) / 2;
 	if (a.speed.reverse) return Math.abs(a.sourceIn - sourceOut(b, rate)) < tolerance;
 	return Math.abs(b.sourceIn - sourceOut(a, rate)) < tolerance;

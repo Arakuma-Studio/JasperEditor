@@ -18,6 +18,8 @@ export const JOB_KINDS = [
 	'browser-download',
 	'gc',
 	'relink-scan',
+	// wp interchange: timeline export (pre-renders, audio essence, the document)
+	'interchange-export',
 	// M2 (ARCHITECTURE §19.7)
 	'process',
 	'track',
@@ -27,6 +29,16 @@ export const JOB_KINDS = [
 	'remote-setup',
 	// M3 (wp-m3-cachegc): moving the media cache to another folder (S04:CA-021)
 	'cache-move',
+	// Workstream `time`: Scene Edit Detection
+	'scene-detect',
+	// parity (roto): Roto Brush segmentation / propagation and face tracking
+	'roto',
+	// parity (three-d): 3D Camera Tracker (feature tracking + camera solve)
+	'camtrack',
+	// imports: interpreted variants, image sequences, layered documents
+	'interpret',
+	'image-sequence',
+	'layers',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

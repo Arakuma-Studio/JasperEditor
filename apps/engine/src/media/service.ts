@@ -1,6 +1,6 @@
 // Media ingest on the engine (S01:LIFE-010, S04 §5): canonicalize → fingerprint → dedupe → probe (an
 // interactive-lane job) → registry record → follow-up derivative jobs (S04:IN-011).
-import { copyFile, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import {
 	type MediaDiscardResponse,
@@ -8,6 +8,7 @@ import {
 	type RegisteredMedia,
 	TERMINAL_JOB_STATES,
 } from '@jasper/api';
+import { buildOcioBundle, bundleFileName } from '../color/ocio-bundle.ts';
 import type { DerivativeService } from '../derivatives/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -124,6 +125,8 @@ export class MediaService {
 	): Promise<RegisteredMedia> {
 		const st = await stat(path).catch(() => null);
 		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Not a regular file');
+		// color-mgmt: a `.ocio` config registers as its self-contained bundle (config + referenced LUT files).
+		if (/\.ocio$/i.test(path)) return this.registerOcio(path, opts);
 		const { fingerprint, sizeBytes } = await fingerprintFile(path);
 		const mediaKey = mediaKeyFor(fingerprint);
 		return this.mutex.run(mediaKey, async () => {
@@ -157,15 +160,45 @@ export class MediaService {
 		});
 	}
 
+	/** color-mgmt: builds the `.jocio` bundle of an OCIO config and registers it (managed, content-addressed). */
+	private async registerOcio(path: string, opts: { projectId?: string }): Promise<RegisteredMedia> {
+		let bundle: Awaited<ReturnType<typeof buildOcioBundle>>;
+		try {
+			bundle = await buildOcioBundle(path);
+		} catch (e) {
+			if (e instanceof JobError) throw new MediaError('UNSUPPORTED_MEDIA', e.message);
+			throw e;
+		}
+		const tmpDir = join(this.deps.mediaDir, '.ocio-tmp');
+		await mkdir(tmpDir, { recursive: true });
+		const tmp = join(tmpDir, `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.jocio`);
+		await writeFile(tmp, JSON.stringify(bundle));
+		return this.registerUploaded(tmp, bundleFileName(path), opts);
+	}
+
 	/**
 	 * Registers a completed upload: moves `tmpFile` to `<appdir>/media/<mediaKey>/<name>` (or discards it
 	 * when the same content is already managed) and probes it.
 	 */
 	async registerUploaded(
 		tmpFile: string,
-		originalName: string,
+		originalName0: string,
 		opts: { projectId?: string } = {},
 	): Promise<RegisteredMedia> {
+		let originalName = originalName0;
+		// color-mgmt: an uploaded `.ocio` (no sibling LUT folder) becomes a bundle of the config alone.
+		if (/\.ocio$/i.test(originalName)) {
+			let bundle: Awaited<ReturnType<typeof buildOcioBundle>>;
+			try {
+				bundle = await buildOcioBundle(tmpFile);
+			} catch (e) {
+				await rm(tmpFile, { force: true });
+				if (e instanceof JobError) throw new MediaError('UNSUPPORTED_MEDIA', e.message);
+				throw e;
+			}
+			await writeFile(tmpFile, JSON.stringify({ ...bundle, name: bundle.name || originalName }));
+			originalName = bundleFileName(originalName);
+		}
 		const { fingerprint, sizeBytes } = await fingerprintFile(tmpFile);
 		const mediaKey = mediaKeyFor(fingerprint);
 		return this.mutex.run(mediaKey, async () => {
@@ -255,6 +288,46 @@ export class MediaService {
 	}
 
 	/**
+	 * imports workstream: registers a managed file the engine produced for an import (the lossless intermediate of an
+	 * image sequence, the extracted layers of a PSD), with descriptors (`extras`) stored on the record and returned in
+	 * RegisteredMedia. Probed like any file; the usual derivatives follow (a proxy when browsers cannot decode it).
+	 */
+	async registerProduced(
+		file: string,
+		opts: { name: string; projectId?: string; extras?: Partial<Pick<MediaRecord, 'imageSequence'>> },
+	): Promise<RegisteredMedia> {
+		const st = await stat(file).catch(() => null);
+		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Produced file not found');
+		const { fingerprint, sizeBytes } = await fingerprintFile(file);
+		const mediaKey = mediaKeyFor(fingerprint);
+		return this.mutex.run(mediaKey, async () => {
+			const existing = this.deps.registry.get(mediaKey);
+			let record: MediaRecord;
+			if (existing && (await this.deps.registry.availability(mediaKey)) === 'online') {
+				record = { ...existing, ...(opts.extras ?? {}), originalName: existing.originalName };
+				await this.deps.registry.put(record);
+			} else {
+				const probe = await this.probe(file, fingerprint, opts.name, opts.projectId);
+				record = {
+					...this.makeRecord(
+						mediaKey,
+						fingerprint,
+						opts.name,
+						sizeBytes,
+						st.mtimeMs,
+						{ type: 'managed', path: file },
+						probe,
+					),
+					...(opts.extras ?? {}),
+				};
+				await this.deps.registry.put(record);
+			}
+			this.announce(record, opts.projectId);
+			return this.deps.registry.toRegistered(record, { exposePath: this.deps.exposePaths });
+		});
+	}
+
+	/**
 	 * Discards a media a client registered but never committed (M3, S07:PRC-018: Replace Footage cancelled after
 	 * its upload). Deletes only engine-managed copies under `<mediaDir>/<key>/` that no stored project file or
 	 * project version references; the user's own files (path storage) and processed versions are never touched.
@@ -324,6 +397,11 @@ export class MediaService {
 			interlaced: !!p.interlaced,
 			registeredAt: new Date().toISOString(),
 			...(p.lut ? { lut: p.lut } : {}),
+			...(p.colorConfig ? { colorConfig: p.colorConfig } : {}),
+			...(p.vector ? { vector: p.vector } : {}),
+			...(p.lottie ? { lottie: p.lottie } : {}),
+			...(p.layered ? { layered: p.layered } : {}),
+			...(p.imageSequence ? { imageSequence: p.imageSequence } : {}),
 		};
 	}
 

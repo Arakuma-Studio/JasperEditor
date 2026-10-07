@@ -2,7 +2,7 @@
 // and a Project item to the document (ARCHITECTURE D-09: an `engine-store` locator keyed by the engine's
 // mediaKey, plus the file's `path` locator; the probe is copied as is).
 import type { RegisteredMedia } from '@jasper/api';
-import type { MediaLocator } from '@jasper/project';
+import { importedDescriptors, type MediaLocator } from '@jasper/project';
 
 /** Engine identity used in `engine-store` locators (M1 talks to exactly one local engine). */
 export const LOCAL_ENGINE_ID = 'local';
@@ -27,6 +27,9 @@ export function mediaRegisterCommand(reg: RegisteredMedia, ref: string, itemRef:
 			locators,
 			// M2: LUT header (S06:LUT-001).
 			...(reg.lut ? { lut: reg.lut } : {}),
+			...(reg.colorConfig ? { colorConfig: reg.colorConfig } : {}),
+			// imports: vector / Lottie / layered / image-sequence descriptors.
+			...importedDescriptors(reg),
 		},
 		...(name ? { name } : {}),
 		ref,

@@ -1,11 +1,17 @@
 // ffprobe → the S01 MediaProbe shape (S01:AST-001) plus kind, container and browserPlayable (S04:PB-001…006).
 // Rotation comes from the display matrix; VFR when average and nominal rates differ by more than 0.1 %.
 import {
+	type ColorConfigInfo,
+	type ImageSequenceInfo,
+	type LayeredInfo,
+	type LottieInfo,
 	type LutInfo,
 	type MediaKind,
 	type MediaProbe,
 	type MediaStream,
 	secondsToFlicks,
+	type VectorInfo,
+	type VideoStream,
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import type { SpawnOptions } from '../tools/process.ts';
@@ -28,6 +34,13 @@ export type ProbeResult = {
 	display: { width: number; height: number } | null;
 	/** kind `lut` (M2): the parsed header (stored on the media record, copied into RegisteredMedia). */
 	lut?: LutInfo;
+	/** color-mgmt: kind `color-config` (OCIO bundle) header. */
+	colorConfig?: ColorConfigInfo;
+	// imports workstream: descriptors stored on the record and copied into RegisteredMedia / the asset.
+	vector?: VectorInfo;
+	lottie?: LottieInfo;
+	layered?: LayeredInfo;
+	imageSequence?: ImageSequenceInfo;
 };
 
 /**
@@ -72,7 +85,15 @@ type FfStream = {
 	duration?: string;
 	disposition?: { attached_pic?: number };
 	tags?: Record<string, string>;
-	side_data_list?: { side_data_type?: string; rotation?: number }[];
+	side_data_list?: {
+		side_data_type?: string;
+		rotation?: number;
+		/** color-mgmt: "Mastering display metadata" (rationals, cd/m²) and "Content light level metadata". */
+		max_luminance?: string | number;
+		min_luminance?: string | number;
+		max_content?: string | number;
+		max_average?: string | number;
+	}[];
 };
 type FfFormat = { format_name?: string; duration?: string; tags?: Record<string, string> };
 
@@ -89,7 +110,31 @@ const IMAGE_CODECS = new Set([
 	'qoi',
 	'ppm',
 	'pgm',
+	// imports workstream: the still formats of the LGPL build (EXR half/float, DPX, TGA, Radiance HDR, JPEG XL,
+	// PSD's merged image, SGI, PCX, PAM/PBM, XBM/XPM, Sun raster, DDS, PHM/PFM).
+	'exr',
+	'dpx',
+	'targa',
+	'hdr',
+	'jpegxl',
+	'psd',
+	'sgi',
+	'pcx',
+	'pbm',
+	'pam',
+	'pfm',
+	'phm',
+	'xbm',
+	'xpm',
+	'xwd',
+	'sunrast',
+	'dds',
+	'pictor',
+	'photocd',
+	'gem',
 ]);
+/** Still codecs Chromium shows in an `<img>` (everything else gets a PNG display picture from the engine). */
+const BROWSER_IMAGE_CODECS = new Set(['png', 'mjpeg', 'webp', 'bmp', 'avif', 'gif', 'apng', 'svg']);
 const IMAGE_FORMAT = /(^|,)(image2|[a-z0-9]+_pipe|png|apng|webp)(,|$)/;
 const BROWSER_AUDIO = /^(aac|mp3|opus|vorbis|flac|pcm_(s16le|s24le|s32le|f32le|u8|s16be))$/;
 const BROWSER_CONTAINERS = /(mov|mp4|m4a|webm|matroska|ogg|wav|mp3|flac|aac|image2|_pipe|gif|png|webp)/;
@@ -142,19 +187,84 @@ function streamHasAlpha(s: Pick<FfStream, 'pix_fmt' | 'tags'>): boolean {
 }
 
 /** First guess of WebCodecs/`<video>` decodability (S04:PB-004); null = depends on the client (HEVC). */
+/** A number or an ffprobe rational ("10000000/10000"); null when absent or not finite. */
+function ffNumber(v: string | number | undefined): number | null {
+	if (v === undefined) return null;
+	if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+	const [a, b] = v.split('/').map(Number);
+	const x = b === undefined ? a! : a! / b;
+	return Number.isFinite(x) ? x : null;
+}
+
+/** color-mgmt: HDR static metadata of a video stream (mastering display luminance, MaxCLL / MaxFALL). */
+export function hdrOf(s: Pick<FfStream, 'side_data_list'>): { hdr?: NonNullable<VideoStream['hdr']> } {
+	const hdr: NonNullable<VideoStream['hdr']> = {};
+	for (const sd of s.side_data_list ?? []) {
+		const t = sd.side_data_type ?? '';
+		if (/mastering display/i.test(t)) {
+			const max = ffNumber(sd.max_luminance);
+			const min = ffNumber(sd.min_luminance);
+			if (max !== null && max > 0) hdr.masteringMaxNits = max;
+			if (min !== null && min >= 0) hdr.masteringMinNits = min;
+		} else if (/content light level/i.test(t)) {
+			const cll = ffNumber(sd.max_content);
+			const fall = ffNumber(sd.max_average);
+			if (cll !== null && cll > 0) hdr.maxCll = cll;
+			if (fall !== null && fall > 0) hdr.maxFall = fall;
+		}
+	}
+	return Object.keys(hdr).length ? { hdr } : {};
+}
+
+/**
+ * color-mgmt: video whose tags make a browser convert colours while decoding (HDR transfer functions, wide-gamut
+ * primaries, the BT.2020 matrix). Previews play a signal proxy instead (BT.709-tagged, same R'G'B' signal), so the
+ * colour input transform sees the file's own signal, as the native path does.
+ */
+export function browserConvertsColor(
+	s: Pick<FfStream, 'color_primaries' | 'color_transfer' | 'color_space'>,
+): boolean {
+	const t = s.color_transfer ?? '';
+	const p = s.color_primaries ?? '';
+	const m = s.color_space ?? '';
+	return (
+		['smpte2084', 'arib-std-b67', 'linear', 'log100', 'log316', 'smpte428'].includes(t) ||
+		['bt2020', 'smpte431', 'smpte432', 'film', 'smpte428'].includes(p) ||
+		m === 'bt2020nc' ||
+		m === 'bt2020c'
+	);
+}
+
 function browserDecodable(s: FfStream, interlaced: boolean): boolean | null {
 	if (interlaced) return false;
 	const codec = s.codec_name ?? '';
 	const pix = s.pix_fmt ?? '';
-	if (IMAGE_CODECS.has(codec) || codec === 'gif' || codec === 'apng') return codec !== 'tiff';
+	if (IMAGE_CODECS.has(codec) || codec === 'gif' || codec === 'apng') return BROWSER_IMAGE_CODECS.has(codec);
+	if (browserConvertsColor(s)) return false;
 	if (codec === 'h264') return (pix === 'yuv420p' || pix === 'yuvj420p') && bitDepthOf(s) === 8;
 	if (codec === 'vp8' || codec === 'vp9' || codec === 'av1') return /^yuva?420p/.test(pix);
 	if (codec === 'hevc') return null;
 	return false;
 }
 
+/** imports: ffprobe's field order (`tt`/`tb` = top first, `bb`/`bt` = bottom first, `progressive`). */
+function fieldOrderOf(s: FfStream): { fieldOrder?: 'progressive' | 'tt' | 'bb' | 'tb' | 'bt' } {
+	const fo = s.field_order;
+	return fo === 'progressive' || fo === 'tt' || fo === 'bb' || fo === 'tb' || fo === 'bt'
+		? { fieldOrder: fo }
+		: {};
+}
+
 function isInterlaced(s: FfStream): boolean {
 	return ['tt', 'bb', 'tb', 'bt'].includes(s.field_order ?? '');
+}
+
+const HEIF_BRANDS = /^(heic|heix|heim|heis|hevc|hevx|mif1|msf1)$/;
+
+/** imports: an ISO BMFF HEIF image (not a movie): its major brand is a HEIF image brand. */
+function isHeifImage(format: FfFormat): boolean {
+	const brand = format.tags?.major_brand?.trim().toLowerCase() ?? '';
+	return /(^|,)mov(,|$)/.test(format.format_name ?? '') && HEIF_BRANDS.test(brand);
 }
 
 /** Maps raw ffprobe JSON to a ProbeResult. */
@@ -181,6 +291,8 @@ function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResul
 				: 'image';
 	} else if (IMAGE_CODECS.has(v0.codec_name ?? '') && (IMAGE_FORMAT.test(container) || !hasDuration))
 		kind = 'image';
+	// imports: HEIF / HEIC stills (ISO BMFF image items: brand heic, mif1…; tiled grids are several streams).
+	else if (isHeifImage(format)) kind = 'image';
 	else kind = 'video';
 
 	let variableFrameRate = false;
@@ -210,7 +322,9 @@ function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResul
 					matrix: s.color_space ?? 'unknown',
 					range: s.color_range === 'pc' || s.color_range === 'jpeg' ? 'pc' : 'tv',
 				},
-				browserDecodable: browserDecodable(s, interlaced),
+				browserDecodable: kind === 'image' && isHeifImage(format) ? false : browserDecodable(s, interlaced),
+				...fieldOrderOf(s),
+				...hdrOf(s),
 			});
 		} else if (s.codec_type === 'audio') {
 			streams.push({
@@ -251,7 +365,12 @@ function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResul
 	const audioOk = audios.every((a) => BROWSER_AUDIO.test(a.codec_name ?? ''));
 	if (v0) {
 		const vd = browserDecodable(v0, interlaced);
-		if (vd === false || !BROWSER_CONTAINERS.test(container) || /(^|,)(avi|mxf|mpegts)(,|$)/.test(container))
+		if (
+			vd === false ||
+			(kind === 'image' && isHeifImage(format)) ||
+			!BROWSER_CONTAINERS.test(container) ||
+			/(^|,)(avi|mxf|mpegts)(,|$)/.test(container)
+		)
 			browserPlayable = 'no';
 		else if (vd === null || !audioOk) browserPlayable = 'unknown';
 		else browserPlayable = 'yes';
@@ -281,6 +400,15 @@ function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResul
 export async function probeFile(ff: Ffmpeg, file: string, opts: SpawnOptions = {}): Promise<ProbeResult> {
 	const prober = ASSET_PROBERS.find((p) => p.matches(file));
 	if (prober) return prober.probe(file, opts);
+	return probeWithFfprobe(ff, file, opts);
+}
+
+/** ffprobe only (no asset prober): what a prober falls back to for files it cannot read itself. */
+export async function probeWithFfprobe(
+	ff: Ffmpeg,
+	file: string,
+	opts: SpawnOptions = {},
+): Promise<ProbeResult> {
 	let json: Record<string, unknown>;
 	try {
 		json = await ff.probeJson(['-show_format', '-show_streams', file], opts);

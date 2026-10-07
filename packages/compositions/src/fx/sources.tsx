@@ -6,9 +6,12 @@
 //   seek and parallel renders because every sample is decoded for its own frame, never taken from earlier draws);
 // - stills: the decoded image; solids: a canvas of the matte colour;
 // - media params (depth/displacement maps, textures): images, or videos at the layer's clip-local time.
+
+import { clipPictureTime, type MediaHandle, nearestAllowedRate } from '@jasper/project';
 import { Video } from '@remotion/media';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { continueRender, delayRender, Freeze, getRemotionEnvironment, OffthreadVideo } from 'remotion';
+import { RetimedFeed } from '../retime/RetimedVideo.tsx';
 import type { LayerProps } from '../types.ts';
 import { loadFxImage, useFxFeed } from './FxPicture.tsx';
 import type { FxStage } from './stage.ts';
@@ -183,5 +186,60 @@ export function FxMediaInputs({ stage, frame }: { stage: FxStage; frame: number 
 					/>
 				))}
 		</>
+	);
+}
+
+/**
+ * Workstream `time`: the sources of a retimed video layer (reverse, time remap, Frame Blending / Optical Flow, VFR) —
+ * the main slot and the stage's time samples come from `RetimedFeed` at their picture times.
+ */
+export function RetimedFxSources(props: { layer: LayerProps; stage: FxStage; media: MediaHandle }) {
+	const { layer, stage, media } = props;
+	const fx = useFxFeed();
+	const rendering = getRemotionEnvironment().isRendering;
+	const { clip } = layer;
+	const head = clip.headHandle ?? 0;
+	const tail = clip.tailHandle ?? 0;
+	const rate = nearestAllowedRate(layer.fps);
+	const main = layer.pictureTime ?? layer.contentTime;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the picture time changes the picture
+	useLayoutEffect(() => {
+		if (rendering) fx.invalidate('source');
+	}, [main, fx, rendering]);
+	return (
+		<>
+			<RetimedFeed
+				clip={clip}
+				media={media}
+				options={layer.options}
+				pictureTime={main}
+				onPicture={(img) => fx.feed('source', img)}
+			/>
+			{stage.samples.map((at) => {
+				if (at < -head || at > clip.duration + tail - 1) return null;
+				const t = clipPictureTime(clip, clip.start + at, rate);
+				return <RetimedSample key={at} slot={`sample@${at}`} layer={layer} media={media} pictureTime={t} />;
+			})}
+			<FxMediaInputs stage={stage} frame={layer.localFrame} />
+		</>
+	);
+}
+
+function RetimedSample(props: { slot: string; layer: LayerProps; media: MediaHandle; pictureTime: number }) {
+	const fx = useFxFeed();
+	const rendering = getRemotionEnvironment().isRendering;
+	const { slot } = props;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the picture time changes the picture
+	useLayoutEffect(() => {
+		if (rendering) fx.invalidate(slot);
+	}, [props.pictureTime, slot, fx, rendering]);
+	return (
+		<RetimedFeed
+			clip={props.layer.clip}
+			media={props.media}
+			options={props.layer.options}
+			pictureTime={props.pictureTime}
+			onPicture={(img) => fx.feed(slot, img)}
+		/>
 	);
 }

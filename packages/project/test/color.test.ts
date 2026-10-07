@@ -45,6 +45,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 		expect(spec?.version).toBe(1);
 		expect(LUMETRI_PARAMS.map((p) => p.name)).toEqual([
 			'inputLut',
+			'hdrWhite', // color-mgmt
 			'temperature',
 			'tint',
 			'exposure',
@@ -53,6 +54,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 			'shadows',
 			'whites',
 			'blacks',
+			'hdrSpecular', // color-mgmt
 			'saturation',
 			'look',
 			'lookIntensity',

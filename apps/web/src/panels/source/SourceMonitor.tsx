@@ -6,23 +6,18 @@ import {
 	type AssetCompositionProps,
 	assetCanvas,
 	assetDurationFrames,
+	type RenderDoc,
+	SequenceComposition,
 } from '@jasper/compositions';
+import { type Sequence, SYNTHETIC_INFO, sequenceDuration } from '@jasper/project';
 import { type EditorSession, TransportStore } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
-import {
-	ArrowDownToLine,
-	ArrowLeftToLine,
-	ArrowRightToLine,
-	CornerRightDown,
-	Play,
-	Square,
-	StepBack,
-	StepForward,
-	X,
-} from 'lucide-react';
+import { X } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { chordFromEvent } from '../../commands/index.ts';
+import { chordFromEvent, runCommand } from '../../commands/index.ts';
+import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	durationLabel,
@@ -31,7 +26,6 @@ import {
 	SettingsMenu,
 	TimecodeDisplay,
 	type TimecodeFormat,
-	TransportButton,
 	useElementSize,
 	useTransportPlaying,
 } from '../program/MonitorChrome.tsx';
@@ -39,20 +33,22 @@ import { checkerboard } from '../program/monitor.tokens.ts';
 import { detectPlatform, handleMonitorKey, useMonitorCommandCtx } from '../program/monitor-commands.ts';
 import { monitorStores } from '../program/monitor-store.ts';
 import { PlaybackDriver } from '../program/playback-driver.ts';
-import { resolveMediaHandle } from '../program/render-doc.ts';
+import { buildProgramDoc, resolveMediaHandle } from '../program/render-doc.ts';
+import { TransportBar } from '../program/TransportBar.tsx';
 import { registerDriver, setSourceTransport } from '../program/transport-registry.ts';
 import { computeView, ZOOM_PRESETS } from '../program/viewport.ts';
+import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
 import {
 	assetFps,
 	closeSource,
 	flicksToSourceFrames,
 	openInSource,
-	performSourceEdit,
 	setSourceMarks,
 	sourceAsset,
 	sourceItem,
 	sourceMonitorState,
+	syntheticPreviewDoc,
 } from './source-state.ts';
 
 export function SourceMonitor(props: PanelProps) {
@@ -83,22 +79,110 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const monitor = useStoreSelector(monitorStores.source, (s) => s);
 	const item = sourceItem(doc, src.itemId);
 	const asset = sourceAsset(doc, item);
+	// wp-multicam: source clip markers of a media item (sync points of Merge Clips / multi-camera).
+	const itemMarkerList = (item as { markers?: { id: string; flicks: number; color: string }[] } | null)
+		?.markers;
 	const handle = useMemo(() => (asset ? resolveMediaHandle(asset, media[asset.id]) : null), [asset, media]);
-	const fps = assetFps(asset, seqRate.num / seqRate.den);
+	// edit-structure: sequences and synthetic sources are drawn by the sequence composition.
+	const activeSettings = useStoreSelector(session.store, (s) => {
+		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
+		return seq?.settings ?? Object.values(s.document.sequences)[0]?.settings;
+	});
+	const seqDoc = useMemo<{ doc: RenderDoc; fps: number; frames: number; w: number; h: number } | null>(() => {
+		if (item?.kind === 'sequence') {
+			const sq = doc.sequences[item.sequenceId] as Sequence | undefined;
+			if (!sq) return null;
+			const r = sq.settings.frameRate;
+			return {
+				doc: buildProgramDoc({ doc, sequenceId: sq.id, media }, null),
+				fps: r.num / r.den,
+				frames: Math.max(1, sequenceDuration(sq)),
+				w: sq.settings.width,
+				h: sq.settings.height,
+			};
+		}
+		if (item?.kind === 'synthetic' && activeSettings) {
+			const syn = doc.synthetics[item.syntheticId];
+			const r = activeSettings.frameRate;
+			const fpsN = r.num / r.den;
+			const secs = syn ? (SYNTHETIC_INFO[syn.kind].defaultSeconds ?? 10) : 10;
+			const frames = Math.max(1, Math.round(Math.max(secs, 10) * fpsN));
+			const d = syntheticPreviewDoc(doc, item, activeSettings, frames);
+			return d ? { doc: d, fps: fpsN, frames, w: activeSettings.width, h: activeSettings.height } : null;
+		}
+		return null;
+	}, [item, doc, media, activeSettings]);
+	const fps = seqDoc ? seqDoc.fps : assetFps(asset, seqRate.num / seqRate.den);
 	const props = useMemo<AssetCompositionProps | null>(
 		() => (handle ? { asset: handle, fps, name: item?.name, useProxies } : null),
 		[handle, fps, item?.name, useProxies],
 	);
-	const duration = props ? assetDurationFrames(props) : 1;
-	const canvas = handle ? assetCanvas(handle) : { width: 1280, height: 720 };
+	const seqProps = useMemo(
+		() =>
+			seqDoc
+				? { doc: seqDoc.doc, options: { isPreview: true, useProxies, transparentBackground: false } }
+				: null,
+		[seqDoc, useProxies],
+	);
+	const duration = seqDoc ? seqDoc.frames : props ? assetDurationFrames(props) : 1;
+	const canvas = seqDoc
+		? { width: seqDoc.w, height: seqDoc.h }
+		: handle
+			? assetCanvas(handle)
+			: { width: 1280, height: 720 };
 	const transport = useMemo(() => new TransportStore(), []);
 	const ctx = useMonitorCommandCtx({ session, panel: 'source', instanceId, engine });
+	useEffect(() => registerFullscreenTarget('source', () => viewportRef.current));
+	// Buttons run with the shell's live context (dialogs, toasts) focused on this monitor.
+	const shell = useShellRuntimeOrNull();
+	const barCtx = () => {
+		const c = shell?.getCtx();
+		return c ? { ...c, focus: { panel: 'source' as const, instanceId } } : ctx;
+	};
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, canvas, monitor.zoom, [0, 0]);
 
 	// Mirror marks (document, flicks) → source frames for the transport commands.
-	const markIn = item?.marks.in ? flicksToSourceFrames(item.marks.in.flicks, fps) : null;
-	const markOut = item?.marks.out ? flicksToSourceFrames(item.marks.out.flicks, fps) : null;
+	const seqItem = item?.kind === 'sequence' ? doc.sequences[item.sequenceId] : undefined;
+	const marks = item && item.kind !== 'sequence' ? item.marks : null;
+	const sourceMarkers = useMemo(
+		() =>
+			(itemMarkerList ?? []).map((m) => ({
+				id: m.id,
+				frame: flicksToSourceFrames(m.flicks, fps),
+				color: `var(--pr-marker-${markerVar(m.color as never)})`,
+			})),
+		[itemMarkerList, fps],
+	);
+	// edit-ux: a subclip without marks shows its own range as In/Out.
+	const sub = item?.kind === 'subclip' ? item : null;
+	const markIn = seqItem
+		? seqItem.inPoint
+		: marks?.in
+			? flicksToSourceFrames(marks.in.flicks, fps)
+			: sub
+				? flicksToSourceFrames(sub.range.in, fps)
+				: null;
+	const markOut = seqItem
+		? seqItem.outPoint
+		: marks?.out
+			? flicksToSourceFrames(marks.out.flicks, fps)
+			: sub
+				? flicksToSourceFrames(sub.range.out, fps)
+				: null;
+	// edit-ux (Mark Split): the video/audio marks on the mini ruler.
+	const split = (marks as { split?: Record<string, { flicks: number } | null | undefined> } | null)?.split;
+	const splitMarkers = useMemo(
+		() =>
+			Object.entries(split ?? {})
+				.filter((e): e is [string, { flicks: number }] => !!e[1])
+				.map(([k, v]) => ({
+					id: `split-${k}`,
+					frame: flicksToSourceFrames(v.flicks, fps) - (k.endsWith('Out') ? 1 : 0),
+					color: k.startsWith('video') ? 'var(--pr-trim-regular)' : 'var(--pr-trim-ripple)',
+				})),
+		[split, fps],
+	);
 	useEffect(() => {
 		sourceMonitorState.setState({ fps, durationFrames: duration, markIn, markOut });
 		transport.setMaxFrame(Math.max(0, duration - 1));
@@ -143,8 +227,9 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 
 	const playing = useTransportPlaying(transport);
 	const vs = asset?.kind === 'video' ? asset.probe.streams.find((st) => st.type === 'video') : undefined;
-	const rateNum = vs?.type === 'video' ? vs.frameRate.num : seqRate.num;
-	const rateDen = vs?.type === 'video' ? vs.frameRate.den : seqRate.den;
+	const ownRate = seqItem?.settings.frameRate ?? null;
+	const rateNum = ownRate ? ownRate.num : vs?.type === 'video' ? vs.frameRate.num : seqRate.num;
+	const rateDen = ownRate ? ownRate.den : vs?.type === 'video' ? vs.frameRate.den : seqRate.den;
 	const format: TimecodeFormat = useMemo(
 		() => ({ rate: { num: rateNum, den: rateDen }, dropFrame: false }),
 		[rateNum, rateDen],
@@ -154,14 +239,19 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 		transport.seek(Math.max(0, Math.min(duration - 1, f)));
 	};
 	const frameNow = () => transport.getState().frame;
-	const edit = (mode: 'insert' | 'overwrite') => {
-		const r = performSourceEdit(session, mode);
-		if (!r.ok) console.info(`[source] ${r.message}`);
-	};
+	// edit-ux: through the commands (three/four-point editing, Fit Clip dialog, toasts).
+	const _edit = (mode: 'insert' | 'overwrite') =>
+		void runCommand(
+			mode === 'insert' ? 'timeline.insertFromSource' : 'timeline.overwriteFromSource',
+			barCtx(),
+		);
 	const mediaItems = useMemo(
 		() =>
 			Object.values(doc.items)
-				.filter((it) => it.kind === 'media')
+				.filter(
+					(it) =>
+						it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence' || it.kind === 'subclip',
+				)
 				.map((it) => ({ value: it.id, label: it.name })),
 		[doc.items],
 	);
@@ -230,7 +320,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				className="relative min-h-0 flex-1 overflow-hidden"
 				data-testid="source-viewport"
 			>
-				{!props ? (
+				{!props && !seqProps ? (
 					<div className="absolute inset-0 flex items-center justify-center px-4 text-center text-pr-small text-pr-muted">
 						{item && !handle
 							? 'Media Offline'
@@ -259,24 +349,45 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 								transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
 							}}
 						>
-							<Player
-								key={src.itemId ?? ''}
-								ref={playerRef}
-								component={AssetComposition}
-								inputProps={props}
-								durationInFrames={duration}
-								compositionWidth={canvas.width}
-								compositionHeight={canvas.height}
-								fps={fps}
-								style={playerStyle}
-								controls={false}
-								clickToPlay={false}
-								doubleClickToFullscreen={false}
-								spaceKeyToPlayOrPause={false}
-								moveToBeginningWhenEnded={false}
-								playbackRate={rate}
-								acknowledgeRemotionLicense
-							/>
+							{seqProps ? (
+								<Player
+									key={src.itemId ?? ''}
+									ref={playerRef}
+									component={SequenceComposition}
+									inputProps={seqProps}
+									durationInFrames={duration}
+									compositionWidth={canvas.width}
+									compositionHeight={canvas.height}
+									fps={fps}
+									style={playerStyle}
+									controls={false}
+									clickToPlay={false}
+									doubleClickToFullscreen={false}
+									spaceKeyToPlayOrPause={false}
+									moveToBeginningWhenEnded={false}
+									playbackRate={rate}
+									acknowledgeRemotionLicense
+								/>
+							) : (
+								<Player
+									key={src.itemId ?? ''}
+									ref={playerRef}
+									component={AssetComposition}
+									inputProps={props!}
+									durationInFrames={duration}
+									compositionWidth={canvas.width}
+									compositionHeight={canvas.height}
+									fps={fps}
+									style={playerStyle}
+									controls={false}
+									clickToPlay={false}
+									doubleClickToFullscreen={false}
+									spaceKeyToPlayOrPause={false}
+									moveToBeginningWhenEnded={false}
+									playbackRate={rate}
+									acknowledgeRemotionLicense
+								/>
+							)}
 						</div>
 					</>
 				)}
@@ -316,7 +427,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 					style={{ fontVariantNumeric: 'tabular-nums' }}
 				>
 					{/* No clip loaded: show a zero duration, not the 1-frame placeholder length. */}
-					{durationLabel(format, props ? duration : 0, markIn, markOut)}
+					{durationLabel(format, props || seqProps ? duration : 0, markIn, markOut)}
 				</span>
 			</div>
 			<MiniRuler
@@ -324,77 +435,19 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				duration={duration}
 				markIn={markIn}
 				markOut={markOut}
+				markers={splitMarkers.length ? [...sourceMarkers, ...splitMarkers] : sourceMarkers}
 				fps={fps}
 				onSeek={seek}
 				testId="source-ruler"
 			/>
-			<div
-				className="flex h-[36px] shrink-0 flex-wrap items-center justify-center gap-0.5 overflow-hidden px-2"
-				data-testid="source-transport"
-			>
-				<TransportButton
-					label="Mark In"
-					shortcut="I"
-					testId="src-mark-in"
-					disabled={!item}
-					onClick={() => setSourceMarks(session, { in: frameNow() }, 'Mark In')}
-				>
-					<span className="font-pr text-[15px] leading-none">{'{'}</span>
-				</TransportButton>
-				<TransportButton
-					label="Mark Out"
-					shortcut="O"
-					testId="src-mark-out"
-					disabled={!item}
-					onClick={() => setSourceMarks(session, { out: frameNow() + 1 }, 'Mark Out')}
-				>
-					<span className="font-pr text-[15px] leading-none">{'}'}</span>
-				</TransportButton>
-				<TransportButton label="Go to In" shortcut="Shift+I" onClick={() => seek(markIn ?? 0)}>
-					<ArrowLeftToLine size={16} />
-				</TransportButton>
-				<TransportButton label="Step Back 1 Frame" shortcut="Left" onClick={() => seek(frameNow() - 1)}>
-					<StepBack size={16} />
-				</TransportButton>
-				<TransportButton
-					label={playing ? 'Stop' : 'Play'}
-					shortcut="Space"
-					testId="src-play"
-					active={playing}
-					disabled={!props}
-					onClick={() => (playing ? transport.pause() : transport.play(1))}
-				>
-					{playing ? <Square size={14} /> : <Play size={16} />}
-				</TransportButton>
-				<TransportButton label="Step Forward 1 Frame" shortcut="Right" onClick={() => seek(frameNow() + 1)}>
-					<StepForward size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Go to Out"
-					shortcut="Shift+O"
-					onClick={() => seek(markOut !== null ? markOut - 1 : duration - 1)}
-				>
-					<ArrowRightToLine size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Insert"
-					shortcut=","
-					testId="src-insert"
-					disabled={!item}
-					onClick={() => edit('insert')}
-				>
-					<CornerRightDown size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Overwrite"
-					shortcut="."
-					testId="src-overwrite"
-					disabled={!item}
-					onClick={() => edit('overwrite')}
-				>
-					<ArrowDownToLine size={16} />
-				</TransportButton>
-			</div>
+			{/* edit-ux: data-driven transport row with the Button Editor. */}
+			<TransportBar
+				monitor="source"
+				ctx={barCtx}
+				playing={playing}
+				testId="source-transport"
+				disabled={(btn) => !item || (btn.id === 'play' && !props && !seqProps)}
+			/>
 		</div>
 	);
 }

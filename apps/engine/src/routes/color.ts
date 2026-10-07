@@ -8,6 +8,7 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createColorExtension } from '../color/extension.ts';
+import { ocioBundleProber } from '../color/ocio-bundle.ts';
 import { cubeProber } from '../color/prober.ts';
 import { registerAssetProber } from '../media/probe.ts';
 import { coreServices } from '../tools/services.ts';
@@ -15,6 +16,8 @@ import { coreServices } from '../tools/services.ts';
 export default async function colorRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
 	const unregisterProber = registerAssetProber(cubeProber);
+	// color-mgmt: custom OCIO config bundles (`.ocio` imports are bundled by the media service).
+	const unregisterOcio = registerAssetProber(ocioBundleProber);
 	const unregisterExt = core.registerNativeExtension(
 		createColorExtension({
 			lutCacheDir: join(core.config.paths.cacheDir, 'luts'),
@@ -43,6 +46,7 @@ export default async function colorRoutes(app: FastifyInstance): Promise<void> {
 	}
 	app.addHook('onClose', async () => {
 		unregisterProber();
+		unregisterOcio();
 		unregisterExt();
 	});
 }

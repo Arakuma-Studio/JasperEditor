@@ -86,6 +86,12 @@ cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(deploy, 'THIRD_PARTY_NOTICES.m
 for (const f of [
 	'jasper-proc.mjs',
 	'jasper-proc.package.json',
+	// wp speech: the speech-to-text worker (onnxruntime-node is staged below)
+	'jasper-speech.mjs',
+	// parity roto: the Roto Brush / face tracking worker (onnxruntime-node and OpenCV.js are staged below)
+	'jasper-roto.mjs',
+	// three-d: the 3D Camera Tracker worker (OpenCV.js is staged below)
+	'jasper-camtrack.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
 	'VIDSTAB-WASM.json',
@@ -155,9 +161,11 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 	return count;
 }
 
-// onnxruntime-node (MIT): the super-resolution runtime of jasper-proc (native binding, loaded lazily).
+// onnxruntime-node (MIT): the super-resolution runtime of jasper-proc and the speech-to-text runtime of
+// jasper-speech (native binding, loaded lazily). pdfjs-dist (Apache-2.0): PDF / Illustrator page sizes (imports), kept
+// external because it loads its worker module from its own package directory.
 const packages = copyRuntimeClosure(
-	['@remotion/renderer', '@techstark/opencv-js', 'onnxruntime-node'],
+	['@remotion/renderer', '@techstark/opencv-js', 'onnxruntime-node', 'pdfjs-dist'],
 	engine,
 	deploy,
 );

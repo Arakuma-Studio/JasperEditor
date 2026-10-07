@@ -51,6 +51,16 @@ export const WARNING_CODES = [
 	'W_KEYFRAMES_DROPPED',
 	/** wp-clipboard (S01:CLB-008): a pasted clip, item or keyframe track had nothing to land on and was skipped. */
 	'W_CLIP_SKIPPED',
+	/** edit-structure: a video transition keeps its length with repeated frames (freeze-frame handles). */
+	'W_TRANSITION_FREEZE_FRAMES',
+	/** edit-structure: a nested sequence of another frame rate was conformed (cuts move by up to half a frame). */
+	'W_CONFORMED',
+	/** edit-structure: Unnest copied the nest clip's effects onto each clip it showed. */
+	'W_EFFECTS_DISTRIBUTED',
+	/** edit-structure: a tracker link between clips that ended up in different sequences was removed. */
+	'W_TRACKING_UNLINKED',
+	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
+	'W_TRACK_MATTE_CLEARED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */
@@ -61,7 +71,7 @@ export type Issue = {
 	path?: string[];
 	/** Entities that block the edit (sync conflicts, stale revisions). */
 	blocking?: string[];
-	/** Invariant id (INV-001…INV-015) for `E_INVARIANT` issues. */
+	/** Invariant id (INV-001…INV-016) for `E_INVARIANT` issues. */
 	invariant?: string;
 };
 

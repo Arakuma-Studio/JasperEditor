@@ -5,6 +5,7 @@
 import {
 	Activity,
 	AudioLines,
+	AudioWaveform,
 	Bookmark,
 	Camera,
 	Captions,
@@ -52,6 +53,7 @@ import {
 	MousePointer2,
 	Palette,
 	Pause,
+	Pentagon,
 	Pipette,
 	Play,
 	Plus,
@@ -67,9 +69,12 @@ import {
 	SkipBack,
 	SkipForward,
 	SlidersHorizontal,
+	SlidersVertical,
 	Sparkles,
+	Speech,
 	Square,
 	SquareStack,
+	Star,
 	StepBack,
 	StepForward,
 	TriangleAlert,
@@ -102,16 +107,22 @@ export const ICONS = {
 	'tool.ripple': g('M8 4v16', 'M8 4h6', 'M8 20h6', 'M16 9l3 3-3 3'),
 	'tool.rolling': g('M10 4v16', 'M14 4v16', 'M6 12h3', 'M15 12h3'),
 	'tool.rateStretch': g('M4 12h16', 'M7 9l-3 3 3 3', 'M17 9l3 3-3 3'),
+	/** audio-fx: Remix tool — a stretch arrow over a zig-zag cut (re-cut music). */
+	'tool.remix': g('M4 16l3-4 3 4 3-4 3 4', 'M4 7h16', 'M17 4l3 3-3 3'),
 	'tool.razor': Scissors,
 	'tool.slip': g('M4 6h16v12H4z', 'M9 12h6', 'M9 12l2-2', 'M15 12l-2 2'),
 	'tool.slide': g('M8 6h8v12H8z', 'M3 12h3', 'M18 12h3'),
 	'tool.pen': g('M12 20l-7-7 3-3 7 7', 'M15 17l4-10-10 4', 'M11 11l-1.5-1.5'),
 	'tool.rectangle': Square,
 	'tool.ellipse': Circle,
+	'tool.polygon': Pentagon,
+	'tool.star': Star,
 	'tool.hand': Hand,
 	'tool.zoom': ZoomIn,
 	'tool.zoomOut': ZoomOut,
 	'tool.type': Type,
+	// three-d: the Camera tool (a camera with an orbit arc).
+	'tool.camera': g('M3 9h11v8H3z', 'M14 12l5-3v8l-5-3', 'M5 6a8 4 0 0 1 12 0'),
 	'tool.verticalType': g('M5 5h8', 'M9 5v10', 'M18 4v16', 'M15.5 17.5L18 20l2.5-2.5'),
 
 	// ------------------------------------------------------------ transport and monitor buttons
@@ -207,12 +218,18 @@ export const ICONS = {
 	'panel.properties': Settings,
 	'panel.motionTemplates': Wand2,
 	'panel.audioMeters': AudioLines,
+	'panel.audioTrackMixer': SlidersVertical,
+	'panel.audioClipMixer': AudioWaveform,
+	// audio-fx
+	'panel.essentialSound': Speech,
 	'panel.history': History,
 	'panel.info': Info,
 	'panel.markers': Bookmark,
 	'panel.jobs': ListTodo,
 	'panel.lumetri': Palette,
 	'panel.scopes': Activity,
+	// wp captions: Text panel (Captions / Transcript)
+	'panel.text': Captions,
 
 	// ------------------------------------------------------------ media
 	'media.video': Film,

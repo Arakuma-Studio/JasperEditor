@@ -9,7 +9,10 @@ import {
 	canonicalJson,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	hasActiveExpression,
+	type RenderSnapshot,
 	type RenderVisualClip,
+	textAnimatorsSeeded,
 } from '@jasper/project';
 import type { BakeVariant, Rect } from './layer.ts';
 
@@ -32,6 +35,8 @@ export type KeyMedia = {
 	fingerprint: string | null;
 	size: number | null;
 	mtime: number | null;
+	/** imports: the asset's interpretation / vector page (absent when it has none). */
+	interp?: string;
 };
 
 /** Layers seeded by their clip id (S11:ANM-007 `hash32(clipId, …)`, fx `u_seed`): their clip id stays in the key. */
@@ -39,8 +44,40 @@ function seedBearing(c: RenderVisualClip, registry: EffectRegistry): boolean {
 	if (c.kind === 'motion-graphic') return true;
 	// Wave 1 (fx framework): GPU shader effects seed their randomness with the clip id (`u_seed`, fxSeed).
 	if (c.effects.some((fx) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.gpu)) return true;
+	// Wave expressions: random()/wiggle() are seeded by the clip id.
+	if (clipHasExpressions(c)) return true;
+	// text-animators: Randomize Order, Wiggly and Expression selectors are seeded by the clip id.
+	if (c.kind === 'text' && textAnimatorsSeeded(c.source as never)) return true;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	return !!src.animation && !!(src.animation.in || src.animation.out);
+}
+
+/** True when any Animatable of the clip (or its Source Text) has an active expression. */
+export function clipHasExpressions(c: RenderVisualClip): boolean {
+	const walk = (v: unknown): boolean => {
+		if (!v || typeof v !== 'object') return false;
+		if (Array.isArray(v)) return v.some(walk);
+		const o = v as Record<string, unknown>;
+		if (hasActiveExpression(o as { expression?: { text: string; enabled: boolean } })) return true;
+		return Object.values(o).some(walk);
+	};
+	return walk([c.transform, c.opacity, c.effects, c.source]);
+}
+
+const worldHashes = new WeakMap<object, string>();
+/**
+ * Wave expressions: a clip whose expressions read the project (other clips, sequences, its own timing) renders
+ * differently when any of it changes, so the key covers the expression world (all sequences) and the clip's sequence
+ * position (`time` is sequence time). Null for clips without expressions.
+ */
+export function expressionKeyPart(c: RenderVisualClip, world: RenderSnapshot['expressions']): string | null {
+	if (!world || !clipHasExpressions(c)) return null;
+	let h = worldHashes.get(world);
+	if (!h) {
+		h = createHash('sha256').update(canonicalJson(world)).digest('hex');
+		worldHashes.set(world, h);
+	}
+	return h;
 }
 
 /**
@@ -81,6 +118,8 @@ export type KeyMaterial = {
 	 * whose drawing changes without a params change bumps it. Absent for other layers.
 	 */
 	renderVersion?: number | null;
+	/** Wave expressions: hash of the expression world when the clip has expressions (see `expressionKeyPart`). */
+	expressions?: string;
 	/** Graded entries (Remotion path, preview): the colour effects and LUT identities; false = ungraded bake. */
 	graded: false | { v: number; source: string; effects: unknown; luts: KeyMedia[] };
 };

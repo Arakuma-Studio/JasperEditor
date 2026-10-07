@@ -4,6 +4,7 @@
 import { current, type Draft, isDraft } from 'immer';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
+import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
 import { contentSpanFlicks } from '../time.ts';
@@ -126,6 +127,25 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 		trackedBy?: { effectInstanceId?: string };
 	};
 	for (const t of c.trackers ?? []) t.id = h.ids.next('tkr');
+	// Workstream `time`: speed keyframes of a time remap.
+	for (const k of (clip as { timeRemap?: { keyframes?: { id: string }[] } }).timeRemap?.keyframes ?? [])
+		k.id = h.ids.next('kf');
+	// parity (roto): roto objects too; effect params naming them follow (ROTO_OBJECT_PARAMS).
+	const rotoMap = new Map<string, string>();
+	for (const ro of (clip as { rotos?: { id: string }[] }).rotos ?? []) {
+		const id = h.ids.next('rto');
+		rotoMap.set(ro.id, id);
+		ro.id = id;
+	}
+	if (rotoMap.size)
+		for (const fx of (c.effects ?? []) as unknown as {
+			effectId: string;
+			params: Record<string, { value: unknown }>;
+		}[])
+			for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
+				const a = fx.params[name];
+				if (a && typeof a.value === 'string' && rotoMap.has(a.value)) a.value = rotoMap.get(a.value)!;
+			}
 	const fxIndex = c.trackedBy?.effectInstanceId
 		? (c.effects ?? []).findIndex((fx) => fx.id === c.trackedBy!.effectInstanceId)
 		: -1;
@@ -144,6 +164,8 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 				for (const fx of x as { id: string }[]) fx.id = h.ids.next('fx');
 			if (k === 'markers' && Array.isArray(x))
 				for (const m of x as { id: string }[]) m.id = h.ids.next('mrk');
+			// wp masks: Opacity and effect masks get fresh ids (their keyframes are visited below).
+			if (k === 'masks' && Array.isArray(x)) for (const m of x as { id: string }[]) m.id = h.ids.next('msk');
 			// wp-m2-anime-templates (S11:ATP-006): template param keyframes are plain lists per param name.
 			if (k === 'paramKeyframes' && x && typeof x === 'object')
 				for (const list of Object.values(x as Record<string, { id: string }[]>))

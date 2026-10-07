@@ -81,6 +81,16 @@ export const KeyframeSetSpatialCmd = cmd('keyframe.setSpatialInterpolation', {
  * Continuous Bezier and the side not given turns to stay opposite (keeping its length), unless
  * `breakContinuity` (Alt-drag) makes it Bezier with independent sides. Both sides given and not opposite → Bezier.
  */
+/**
+ * keyframes-blend: right-click ▸ Rove Across Time (After Effects). Roving keys lose their own time: each run of roving
+ * keys between two fixed keys moves as one segment shaped by the fixed keys' eases, and the roving keys' times follow
+ * from where the motion passes them. The first and last keys and hold keys cannot rove (skipped with a warning).
+ * Turning roving off keeps the key at its current time with eases that keep the speed through it.
+ */
+export const KeyframeSetRovingCmd = cmd('keyframe.setRoving', {
+	keyframeIds: z.array(IdRefSchema).min(1),
+	roving: z.boolean(),
+});
 export const KeyframeSetTangentsCmd = cmd('keyframe.setTangents', {
 	keyframeId: IdRefSchema,
 	inTangent: Vec2Schema.optional(),
@@ -132,6 +142,11 @@ export const TransitionUpdateCmd = cmd('transition.update', {
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
 	/**
+	 * edit-structure: `freeze` lets a video transition keep its duration with too few media frames (the edge frames
+	 * repeat, `freezeHandles`); `shorten` fits it to the media. Default: what the transition has.
+	 */
+	handles: z.enum(['shorten', 'freeze']).optional(),
+	/**
 	 * Wave-2 transition framework: static param values (`TransitionSpec.params`; a param with keyframes is refused —
 	 * use param.set with target ["transition", id, name]).
 	 */
@@ -153,6 +168,8 @@ export const TransitionApplyDefaultCmd = cmd('transition.applyDefault', {
 	duration: z.number().int().min(1).optional(),
 	/** M3 (S10:TUI-033): alignment of the two-sided ones (default center); fades keep their fixed alignment. */
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
+	/** edit-structure: `freeze` = video transitions keep their length with repeated frames (Premiere's default). */
+	handles: z.enum(['shorten', 'freeze']).optional(),
 });
 
 export const PARAM_COMMANDS = [
@@ -166,6 +183,7 @@ export const PARAM_COMMANDS = [
 	KeyframesPruneCmd,
 	KeyframeSetSpatialCmd,
 	KeyframeSetTangentsCmd,
+	KeyframeSetRovingCmd,
 	EffectAddCmd,
 	EffectRemoveCmd,
 	EffectReorderCmd,

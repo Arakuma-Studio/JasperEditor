@@ -1,0 +1,274 @@
+// The GL blend compositor's planning (keyframes-blend), pure: which layers a track's blend scope composites at a
+// frame and the shader plan that does it. CSS `mix-blend-mode` draws most W3C blend modes exactly; the other clip blend
+// modes (Dissolve, Color Burn / Dodge, Linear Burn, Darker / Lighter Color, Linear Dodge (Add), Vivid / Linear / Pin
+// Light, Hard Mix, Subtract, Divide, Saturation, the utility modes) need the pixels below them, which the DOM cannot
+// give a layer. So a track holding such a layer ("GL item": a clip, or a GPU transition span whose sides share the
+// mode) wraps everything below it (background, lower tracks, adjustment scopes, its own transition mattes) in a BLEND
+// SCOPE: the composite below is captured (HTML-in-Canvas, like an adjustment layer's scope) and, at frames where a
+// GL item of the track is drawn, every layer the track draws at that frame captures its picture (the transition
+// framework's tap; GPU transition spans deliver their stage output) and is composited onto the captured backdrop,
+// in drawing order, with its mode (`fx_layerBlend` = `blendPixel`, the native export kernel's formulas).
+import {
+	blendModeIndex,
+	dissolveSeed,
+	type FxEffectPlan,
+	type FxUniform,
+	GLSL_BLEND,
+	isCssBlend,
+	planPasses,
+	planPassesKey,
+	type RGBA,
+	type ShaderPass,
+} from '@jasper/project';
+
+export type CompositeTrackInput = {
+	trackId: string;
+	clips: readonly {
+		clipId: string;
+		start: number;
+		duration: number;
+		headHandle?: number;
+		tailHandle?: number;
+		blendMode: string;
+	}[];
+	/** GPU transitions drawn as stages (their sides are captured by the stage, not by the compositor). */
+	stages: readonly { id: string; start: number; duration: number; blendMode: string }[];
+};
+
+export type CompositeItem =
+	| { kind: 'matte'; key: string; color: RGBA }
+	| {
+			kind: 'clip' | 'stage';
+			/** Hub key: the clip id, or `transition:<id>`. */
+			key: string;
+			mode: string;
+			/** Dissolve seed of this frame (`dissolveSeed(key, local frame)`). */
+			seed: number;
+	  };
+
+const drawnAt = (c: CompositeTrackInput['clips'][number], f: number) =>
+	f >= c.start - (c.headHandle ?? 0) && f < c.start + c.duration + (c.tailHandle ?? 0);
+const spanAt = (s: { start: number; duration: number }, f: number) =>
+	f >= s.start && f < s.start + s.duration;
+
+/**
+ * Whether a track holds a GL item at all (its tracks below are then wrapped in a blend scope). color-mgmt: with
+ * "Blend using 1.0 gamma" (`linear`) every layer is a GL item (opacity and Normal composite in linear light too).
+ */
+export function trackHasGlBlend(t: CompositeTrackInput, linear = false): boolean {
+	if (linear) return t.clips.length > 0 || t.stages.length > 0;
+	return t.clips.some((c) => !isCssBlend(c.blendMode)) || t.stages.some((s) => !isCssBlend(s.blendMode));
+}
+
+/**
+ * The layers a track's blend scope composites at sequence frame `f` (drawing order: clips, then transition stages),
+ * or null when no GL item of the track is drawn there (the scope then passes the backdrop through and the track draws
+ * the CSS way). `isGpuSide(clipId, f)`: the clip is a side of a GPU transition at `f` (its picture belongs to the
+ * transition stage).
+ */
+export function compositeItemsAt(
+	t: CompositeTrackInput,
+	f: number,
+	isGpuSide: (clipId: string, f: number) => boolean,
+	/** color-mgmt: Blend using 1.0 gamma — every drawn layer composites through the scope. */
+	linear = false,
+): CompositeItem[] | null {
+	const items: CompositeItem[] = [];
+	let gl = linear;
+	for (const c of t.clips) {
+		if (!drawnAt(c, f) || isGpuSide(c.clipId, f)) continue;
+		gl ||= !isCssBlend(c.blendMode);
+		items.push({ kind: 'clip', key: c.clipId, mode: c.blendMode, seed: dissolveSeed(c.clipId, f - c.start) });
+	}
+	for (const st of t.stages) {
+		if (!spanAt(st, f)) continue;
+		gl ||= !isCssBlend(st.blendMode);
+		const key = `transition:${st.id}`;
+		items.push({ kind: 'stage', key, mode: st.blendMode, seed: dissolveSeed(key, f - st.start) });
+	}
+	return gl && items.length > 0 ? items : null;
+}
+
+/**
+ * color-mgmt: the layers ONE scope composites at frame `f` for a run of tracks blending in linear light (bottom to
+ * top). Chrome cannot nest HTML-in-Canvas scopes (fx/canvas-scope.tsx), so with "Blend using 1.0 gamma" the tracks of
+ * a run share the scope of the lowest one: their items in drawing order, the transition mattes of the upper tracks
+ * drawn as matte items under that track's clips (the lowest track's mattes are in the captured backdrop).
+ */
+export function linearGroupItemsAt(
+	members: readonly {
+		input: CompositeTrackInput;
+		mattes: readonly { id: string; start: number; duration: number; color: RGBA }[];
+	}[],
+	f: number,
+	isGpuSide: (clipId: string, f: number) => boolean,
+): CompositeItem[] | null {
+	const out: CompositeItem[] = [];
+	members.forEach((m, i) => {
+		if (i > 0)
+			for (const mt of m.mattes)
+				if (spanAt(mt, f)) out.push({ kind: 'matte', key: `matte:${mt.id}`, color: mt.color });
+		out.push(...(compositeItemsAt(m.input, f, isGpuSide, true) ?? []));
+	});
+	return out.length > 0 ? out : null;
+}
+
+/** color-mgmt: the working curves the compositor decodes for linear blending (GLSL `cm_*` ids = indexes). */
+export const LINEAR_BLEND_CURVES = ['bt1886', 'srgb', 'gamma22', 'gamma26', 'pq', 'hlg'] as const;
+export type LinearBlendCurve = (typeof LINEAR_BLEND_CURVES)[number];
+
+/** GLSL: encoded ↔ linear light of the working curve (`u_linCurve`), on premultiplied RGBA. */
+const GLSL_LINEAR_BLEND = /* glsl */ `
+float cm_dec1(int k, float v) {
+  v = max(v, 0.0);
+  if (k == 1) return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4);
+  if (k == 2) return pow(v, 2.2);
+  if (k == 3) return pow(v, 2.6);
+  if (k == 4) { float p = pow(v, 1.0 / 78.84375); return pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125); }
+  if (k == 5) return v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+  return pow(v, 2.4);
+}
+float cm_enc1(int k, float x) {
+  x = max(x, 0.0);
+  if (k == 1) return x <= 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+  if (k == 2) return pow(x, 1.0 / 2.2);
+  if (k == 3) return pow(x, 1.0 / 2.6);
+  if (k == 4) { float p = pow(x, 0.1593017578125); return pow((0.8359375 + 18.8515625 * p) / (1.0 + 18.6875 * p), 78.84375); }
+  if (k == 5) return x <= 1.0 / 12.0 ? sqrt(3.0 * x) : 0.17883277 * log(12.0 * x - 0.28466892) + 0.55991073;
+  return pow(x, 1.0 / 2.4);
+}
+vec4 cm_toLinear(int k, vec4 c) {
+  if (c.a <= 0.0) return vec4(0.0);
+  vec3 s = c.rgb / c.a;
+  return vec4(vec3(cm_dec1(k, s.r), cm_dec1(k, s.g), cm_dec1(k, s.b)) * c.a, c.a);
+}
+vec4 cm_toEncoded(int k, vec4 c) {
+  if (c.a <= 0.0) return vec4(0.0);
+  vec3 s = c.rgb / c.a;
+  return vec4(vec3(cm_enc1(k, s.r), cm_enc1(k, s.g), cm_enc1(k, s.b)) * c.a, c.a);
+}
+`;
+
+/** A delivered picture and its placement (comp px → picture px, projective; opacity 0..1). */
+export type CompositePicture = {
+	width: number;
+	height: number;
+	compToCanvas: readonly number[];
+	opacity: number;
+};
+
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+/**
+ * The shader plan compositing `items` (bottom → top) onto the backdrop (`u_source`, the captured composite below) or,
+ * with `backdrop: false`, onto transparency: one pass per item, ping-ponging the
+ * accumulated picture (`u_acc`, premultiplied RGBA8 like an 8-bit pipeline: `storePremul8`), the last one into the
+ * stage canvas. A member without a
+ * picture yet is left out (it draws nothing until it delivers). Texture inputs: `u_l<i>` (see `textures`).
+ */
+export function planComposite(
+	items: readonly CompositeItem[],
+	pictures: ReadonlyMap<string, CompositePicture>,
+	comp: { width: number; height: number },
+	opts: {
+		backdrop?: boolean;
+		/** Canvas px of sequence px (0, 0) and canvas px per sequence px (Dissolve hashes sequence pixels). */
+		noise?: { x: number; y: number; scale: number };
+		/**
+		 * color-mgmt (Blend using 1.0 gamma): blend in linear light of this working curve. The stack stays stored
+		 * encoded (RGBA8) between layers: each pass decodes the stored picture and the layer, blends, encodes.
+		 */
+		linear?: LinearBlendCurve | null;
+	} = {},
+): { plan: FxEffectPlan; textures: { uniform: string; key: string }[]; builtins: FxUniform[] } {
+	const backdrop = opts.backdrop ?? true;
+	const lin = opts.linear ? LINEAR_BLEND_CURVES.indexOf(opts.linear) : -1;
+	const L = lin >= 0;
+	const blendExpr = (dst: string, src: string, rest: string) =>
+		L
+			? `cm_toEncoded(u_linCurve, fx_clampPremul(fx_layerBlend(${rest.split('|')[0]}, cm_toLinear(u_linCurve, ${dst}), cm_toLinear(u_linCurve, ${src}), ${rest.split('|')[1]})))`
+			: `fx_clampPremul(fx_layerBlend(${rest.split('|')[0]}, ${dst}, ${src}, ${rest.split('|')[1]}))`;
+	const linUniform: Record<string, { int: number }> = L ? { u_linCurve: { int: lin } } : {};
+	const drawn = items.filter((it) => it.kind === 'matte' || pictures.has(it.key));
+	const textures: { uniform: string; key: string }[] = [];
+	const passes: ShaderPass[] = drawn.map((it, i): ShaderPass => {
+		const first = i === 0;
+		const dst = !first ? 'texture(u_acc, v_uv)' : backdrop ? 'texture(u_source, v_uv)' : 'vec4(0.0)';
+		// The stack is stored premultiplied in RGBA8 between layers (= `storePremul8`, which the native kernel applies).
+		const common = { output: 'acc', filter: 'nearest' as const, ...(first ? {} : { update: true }) };
+		if (it.kind === 'matte') {
+			const [r, g, b, a] = it.color;
+			return {
+				...common,
+				include: [GLSL_BLEND],
+				frag: /* glsl */ `${L ? GLSL_LINEAR_BLEND : ''}
+void main() {
+  fragColor = ${blendExpr(dst, 'vec4(u_matte.rgb * u_matte.a, u_matte.a)', 'FX_LAYER_NORMAL|0.0')};
+}`,
+				uniforms: { u_matte: [r, g, b, a], ...linUniform },
+			};
+		}
+		const pic = pictures.get(it.key)!;
+		const name = `u_l${textures.length}`;
+		textures.push({ uniform: name, key: it.key });
+		const m = pic.compToCanvas.length >= 9 ? pic.compToCanvas : IDENTITY;
+		return {
+			...common,
+			include: [GLSL_BLEND],
+			frag: /* glsl */ `${L ? GLSL_LINEAR_BLEND : ''}
+void main() {
+  vec4 dst = ${dst};
+  // Placement (as the transition framework places its sides): comp px → picture px, edge coverage, × opacity.
+  vec3 q = u_place * vec3(v_uv * u_compSize, 1.0);
+  float w = abs(q.z) < 1e-6 ? 1e-6 : q.z;
+  vec2 c = q.xy / w;
+  vec2 fw = max(fwidth(c), vec2(1e-4));
+  vec2 e = min(c, u_placeSize - c) / fw;
+  bool live = q.z > 1e-6 && u_placeSize.x > 0.0 && u_placeSize.y > 0.0;
+  float cov = live ? clamp(min(e.x, e.y) + 0.5, 0.0, 1.0) : 0.0;
+  // A pixel-aligned layer samples texel centres exactly (float error in the map must not mix in a neighbour: modes
+  // like Divide amplify a 1e-4 blend of a neighbour into a full code value).
+  vec2 snap = floor(c) + 0.5;
+  vec2 cc = mix(c, snap, step(abs(c - snap), vec2(1e-3)));
+  vec4 src = texture(${name}, cc / max(u_placeSize, vec2(1.0))) * (cov * clamp(u_placeOpacity, 0.0, 1.0));
+  uvec2 px = uvec2(max(floor((v_uv * u_compSize - u_noiseXform.xy) / u_noiseXform.z), vec2(0.0)));
+  fragColor = ${blendExpr('dst', 'src', 'u_mode|fx_blendNoise(px, uint(u_dissolveSeed))')};
+}`,
+			uniforms: {
+				...linUniform,
+				// GLSL mat3 is column-major; ours is row-major.
+				u_place: { mat3: [m[0]!, m[3]!, m[6]!, m[1]!, m[4]!, m[7]!, m[2]!, m[5]!, m[8]!] },
+				u_placeSize: [pic.width, pic.height],
+				u_placeOpacity: Math.min(1, Math.max(0, pic.opacity)),
+				u_mode: { int: blendModeIndex(it.mode) },
+				u_dissolveSeed: { int: it.seed },
+				u_noiseXform: [opts.noise?.x ?? 0, opts.noise?.y ?? 0, opts.noise?.scale ?? 1],
+			},
+		};
+	});
+	if (passes.length === 0)
+		passes.push({
+			include: [GLSL_BLEND],
+			frag: backdrop
+				? 'void main() { fragColor = texture(u_source, v_uv); }'
+				: 'void main() { fragColor = vec4(0.0); }',
+		});
+	const canvas = { width: comp.width, height: comp.height };
+	const planned = planPasses(passes, { paramDecls: [], textures: textures.map((t) => t.uniform), canvas });
+	const plan: FxEffectPlan = {
+		fxId: 'jasper.composite',
+		effectId: 'jasper.composite',
+		canvas,
+		passes: planned,
+		uniforms: [],
+		textures: textures.map((t) => ({ param: t.key, uniform: t.uniform, mediaId: '' })),
+		key: `composite:${canvas.width}x${canvas.height}:${planPassesKey(planned)}`,
+	};
+	const builtins: FxUniform[] = [
+		{ name: 'u_compSize', type: 'vec2', value: [comp.width, comp.height] },
+		{ name: 'u_canvasSize', type: 'vec2', value: [comp.width, comp.height] },
+		{ name: 'u_box', type: 'vec4', value: [0, 0, comp.width, comp.height] },
+		{ name: 'u_pxScale', type: 'float', value: [1] },
+	];
+	return { plan, textures, builtins };
+}

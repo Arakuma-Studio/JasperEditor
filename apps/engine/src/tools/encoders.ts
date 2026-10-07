@@ -292,6 +292,12 @@ type EncodeParams = {
 	bitrateKbps?: number;
 	/** ProRes profile (`prores_ks`): 422 HQ (default) or 4444. */
 	proresProfile?: 'hq' | '4444';
+	/** color-mgmt: bits per component (default 8; ProRes is always 10). */
+	bitDepth?: 8 | 10 | 12;
+	/** color-mgmt: H.273 code points of the output colour (default BT.709) for encoders that need them explicitly. */
+	colorCodes?: { primaries: number; trc: number; matrix: number };
+	/** color-mgmt: SVT-AV1 HDR metadata parameters (`mastering-display=…:content-light=…`). */
+	svtHdr?: string | null;
 };
 
 type EncodeArgs = {
@@ -316,9 +322,11 @@ export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 /** x264 CRF → AV1 CRF (SVT-AV1/libaom 0–63): 18 → 28, 23 → 35, 26 → 39. */
 const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
 
-/** Pixel format the encoder receives from the filter graph. */
-function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq'): string {
+/** Pixel format the encoder receives from the filter graph (color-mgmt: 10/12-bit 4:2:0 for AV1/VP9). */
+function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq', bitDepth: 8 | 10 | 12 = 8): string {
 	if (encoder === 'prores_ks') return proresProfile === '4444' ? 'yuv444p10le' : 'yuv422p10le';
+	if (bitDepth > 8 && (encoder === 'libsvtav1' || encoder === 'libaom-av1' || encoder === 'libvpx-vp9'))
+		return bitDepth === 12 && encoder !== 'libsvtav1' ? 'yuv420p12le' : 'yuv420p10le';
 	return HW_H264.find((h) => h.encoder === encoder)?.pixFmt ?? 'yuv420p';
 }
 
@@ -332,7 +340,7 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		return ['-b:v', `${b}k`, '-maxrate', `${Math.round(b * 1.5)}k`, '-bufsize', `${b * 2}k`];
 	};
 	const enc = choice.encoder;
-	const pix = pixFmtFor(enc, p.proresProfile);
+	const pix = pixFmtFor(enc, p.proresProfile, p.bitDepth);
 	const pre: string[] = [];
 	let filters = [`format=${pix}`];
 	const video: string[] = ['-c:v', enc];
@@ -362,11 +370,11 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		case 'libopenh264':
 			// No CRF: average bitrate with a VBV cap; frame skipping off so the frame count is exact.
 			video.push(...rate(1.3), '-rc_mode', 'bitrate', '-allow_skip_frames', '0', '-g', String(gop));
-			// FFmpeg 7.1's OpenH264 wrapper writes only the matrix into the VUI: set BT.709 primaries/transfer
-			// too (every Jasper export and proxy is BT.709 SDR), like x264 does from -color_primaries/-color_trc.
+			// FFmpeg 7.1's OpenH264 wrapper writes only the matrix into the VUI: set primaries/transfer too (BT.709
+			// unless the export's colour space says otherwise, color-mgmt), like x264 does from -color_primaries/-color_trc.
 			video.push(
 				'-bsf:v',
-				'h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1',
+				`h264_metadata=colour_primaries=${p.colorCodes?.primaries ?? 1}:transfer_characteristics=${p.colorCodes?.trc ?? 1}:matrix_coefficients=${p.colorCodes?.matrix ?? 1}`,
 			);
 			break;
 		case 'h264_videotoolbox':
@@ -445,6 +453,8 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 				String(p.realtime ? 12 : p.speed === 'fast' ? 10 : p.speed === 'best' ? 5 : 8),
 				'-g',
 				String(gop),
+				// color-mgmt: HDR10 static metadata as AV1 metadata OBUs.
+				...(p.svtHdr ? ['-svtav1-params', p.svtHdr] : []),
 			);
 			break;
 		case 'libaom-av1':
@@ -471,9 +481,17 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 }
 
 /** Audio encoder arguments for a container (`aac` in MP4, `libopus` in WebM). */
-export function audioEncodeArgs(audioEncoder: string, kbps: number): string[] {
-	if (audioEncoder === 'libopus') return ['-c:a', 'libopus', '-b:a', `${Math.min(510, kbps)}k`];
-	if (audioEncoder === 'pcm_s16le') return ['-c:a', 'pcm_s16le'];
+export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2): string[] {
+	// audio-mix: Opus needs the Vorbis channel mapping (family 1) above two channels (discrete 5.1).
+	if (audioEncoder === 'libopus')
+		return [
+			'-c:a',
+			'libopus',
+			'-b:a',
+			`${Math.min(510 * Math.max(1, channels / 2), kbps)}k`,
+			...(channels > 2 ? ['-mapping_family', '1'] : []),
+		];
+	if (audioEncoder === 'pcm_s16le' || audioEncoder === 'pcm_s24le') return ['-c:a', audioEncoder];
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
 

@@ -13,6 +13,7 @@ const definition: PanelDefinition = {
 	menu: [
 		{ type: 'command', command: 'effectControls.removeEffect', label: 'Remove Selected Effect' },
 		{ type: 'command', command: 'inspector.toggleStopwatch' },
+		{ type: 'command', command: 'inspector.toggleExpression' },
 		{ type: 'command', command: 'inspector.prevKeyframe' },
 		{ type: 'command', command: 'inspector.nextKeyframe' },
 		{ type: 'command', command: 'inspector.resetProperty' },

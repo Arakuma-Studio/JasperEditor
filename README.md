@@ -10,8 +10,12 @@ Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, resea
 The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
 notes and known gaps are in `docs/wp-notes/`.
 
-**Clean-room rule:** never open, read, grep or copy anything from `.reference/` or `editor-starter.zip`
-(ARCHITECTURE §0). All code here is original.
+**Rules first:** [`AGENTS.md`](AGENTS.md) holds the rules every contributor and agent must follow, and
+[`CLAUDE.md`](CLAUDE.md) the working instructions (gate, running the app headlessly, Definition of Done). Never
+open, read, grep or copy anything from `.reference/` or `editor-starter.zip` (a paid licence; ARCHITECTURE §0,
+D-36). Code ported from permissively licensed projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
+and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)
+and [`docs/parity.md`](docs/parity.md). Project files, migrations and crash recovery: [`docs/project-files.md`](docs/project-files.md).
 
 ## Requirements
 
@@ -219,7 +223,8 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`
   (Chrome at `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`).
 - `pnpm notices` regenerates `THIRD_PARTY_NOTICES.md` (the JavaScript packages shipped in the web app and the
-  Remotion bundle, with their licence texts); `pnpm notices --check` fails when it is stale (a test runs it).
+  Remotion bundle, with their licence texts, and every ported-source record in `licenses/ported/`); `pnpm notices
+  --check` fails when it is stale (a test runs it).
   The web build ships it as `/THIRD_PARTY_NOTICES.md`, linked from Help ▸ About. Build tools whose output
   ships (Tailwind's CSS, Vite's and webpack's runtimes, Remotion's bundle entry) are an explicit list in
   `scripts/third-party-notices.mjs`; after `pnpm --filter @jasper/web build` and
@@ -253,6 +258,23 @@ Typewriter types behind a caret that blinks while typing pauses, like an editor'
   textAnimation.<side>.…`; UI commands `text.applyAnimation` / `text.removeAnimation`; MCP
   `list_text_animations`, `set_text_animation`, `add_text {animateIn, animateOut}`, `render_frames` (contact
   sheet).
+
+## Text animators (After Effects style)
+
+Text clips also take AE-style **animators** (`docs/wp-notes/text-animators.md`): Effect Controls ▸ Text ▸
+**Animate ▸** adds an animator with any of position, anchor, scale, skew, rotation (per-character 3D X/Y/Z),
+opacity, fill / stroke colour (RGB, hue, saturation, brightness, opacity), stroke width, tracking, line anchor, line
+spacing, character offset / value, blur and variable font axes; **Add ▸** adds Range, Wiggly and Expression
+selectors (combine modes add / subtract / intersect / min / max / difference). Animator presets (typewriter,
+fades by character / word, slides, pop, bounce, scramble / decoder, tracking, blur, 3D flip / fly, wave, jitter,
+the In/Out presets re-expressed) apply from the same menu. Text follows a mask path (**Path**: a mask with mode
+None; reverse, perpendicular, force alignment, first / last margin). Character and Paragraph settings (kerning
+metrics / optical / manual, baseline shift, tsume, faux bold / italic, small caps, super / subscript, ligatures,
+OpenType features, variable font axes, justification, indents, paragraph spacing, per-character runs, per-paragraph
+overrides, Source Text hold keys) are in Properties. Preview and every export draw the same per-character DOM.
+Commands `textAnimator.*`, `textSelector.*`, `text.setPathOptions`, `text.setPerCharacter3d`; MCP
+`list_text_animator_presets`, `apply_text_animator_preset`, `add_text_animator`, `add_text_selector`,
+`get_text_animators`, `remove_text_animators`, `set_text_path`, `convert_text_animation`.
 
 ## Animated templates (anime.js)
 
@@ -379,25 +401,85 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (76; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (291; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
   `add_transition` · `get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
   `render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
 - Colour: `import_lut` `grade_clip` `get_grade` `copy_grade`.
+- Colour management, HDR, OCIO: `list_color_spaces` `get_color_settings` `set_working_color_space`
+  `interpret_footage_color` `set_clip_color_space` `import_ocio_config`.
 - Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`
   `get_processing_settings` `set_processing_settings` `test_remote_executor` `replace_footage`
   `set_media_source_range`.
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
-- Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
+- Roto Brush, object mattes and faces: `list_roto_models` `install_roto_model` `remove_roto_model` `create_roto`
+  `add_roto_strokes` `propagate_roto` `get_roto` `apply_object_matte` `convert_roto_to_masks` `freeze_roto`
+  `remove_roto` `track_faces` `blur_faces` `face_to_keyframes`.
+- Puppet, Liquify and Mesh Warp (the simulation and warp effects themselves are `apply_commands` effects):
+  `get_puppet` `add_puppet_pins` `move_puppet_pins` `record_puppet_pins` `remove_puppet_pins` `liquify_stroke`
+  `set_mesh_warp_vertex` (`docs/wp-notes/sim-warp.md`).
+- Masks and track mattes: `list_masks` `add_mask` `edit_mask` `remove_masks` `track_mask` `auto_trace_mask`
+  `set_track_matte`.
+- Transitions: `list_transitions` `list_transition_types` `update_transition` `remove_transitions` `apply_default_transitions`
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
-  `add_shape`.
+  `add_shape` `get_motion_path` `set_spatial_interpolation`.
+- Vector shapes: `add_vector_shape` `svg_to_shape` `list_shape_presets` `get_shape` `add_shape_items`
+  `update_shape_item` `remove_shape_items` `move_shape_item` `group_shape_items` `duplicate_shape_item`
+  `edit_shape_path` `convert_shape_to_vector`.
+- Text animators: `list_text_animator_presets` `apply_text_animator_preset` `add_text_animator` `add_text_selector`
+  `get_text_animators` `remove_text_animators` `set_text_path` `convert_text_animation`.
+- Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
+  `delete_effect_preset`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
+- Blend modes: `list_blend_modes` `set_blend_mode` (Premiere's 27 + After Effects' stencils, `docs/wp-notes/keyframes-blend.md`).
+- 3D layers, cameras and lights: `set_3d_layer` `set_3d_transform` `set_material` `add_camera` `camera_settings` `move_camera` `add_light` `light_settings` `set_3d_renderer` `get_3d_scene`; 3D Camera Tracker: `track_camera` `get_camera_tracker` `create_tracked_camera` `set_tracker_ground` `delete_track_points` (After Effects' Classic 3D and 3D Camera Tracker, `docs/wp-notes/three-d.md`).
+- Keyframes and presets: `get_motion_path` `set_spatial_interpolation` `set_roving` · `list_effect_presets` `get_effect_preset`
+  `save_effect_preset` `apply_effect_preset` `delete_effect_preset`.
 - Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.
+- Edit structure: `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips`
+  `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
+  `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
+  `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
+- Time remapping, time interpolation, Scene Edit Detection: `get_time_remap` `set_time_remap` `set_segment_speed`
+  `add_speed_keyframe` `remove_speed_keyframes` `move_speed_keyframe` `set_speed_transition` `add_freeze_segment`
+  `add_reverse_segment` `set_time_interpolation` `detect_scene_edits` (`docs/wp-notes/time.md`).
+- Editing and trimming: `source_edit` (three/four-point Insert/Overwrite, backtiming, Fit Clip, split edits, source
+  patching) `find_edit_points` `trim_edit_points` `match_frame` `reverse_match_frame` `make_subclip` `edit_subclip`
+  `set_split_marks` (`docs/wp-notes/edit-ux.md`).
+- Synchronize, Merge Clips, multi-camera: `measure_audio_sync` `synchronize_clips` `merge_clips`
+  `create_multicam_sequence` `switch_multicam_angle` `record_multicam_cuts` `set_multicam_enabled` `flatten_multicam`
+  `edit_multicam_cameras` `get_multicam` (`docs/wp-notes/multicam.md`).
+- Versions and recovery: `list_project_versions` `restore_project_version` `save_project_copy` `list_unsaved_changes`
+  (docs/project-files.md).
+- Audio buses and loudness: `measure_loudness` `get_mixer` `set_mixer_strip` `add_submix` `add_send` `write_automation`
+  `set_audio_gain` `auto_duck` `set_loudness_normalization` `normalize_media_loudness` (`docs/wp-notes/audio-mix.md`).
+- Audio effects, Essential Sound and Remix: `list_audio_effects` `get_audio_effects` `add_audio_effect` `set_audio_effect`
+  `remove_audio_effect` · `get_essential_sound` `set_essential_sound` `clear_essential_sound` `auto_match_loudness`
+  `generate_essential_ducking` · `remix_audio` `revert_remix` (`docs/wp-notes/audio-fx.md`).
+- Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
+  `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
+  `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
+  `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
+  (`docs/wp-notes/captions.md`).
+- Speech to text (local Whisper): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
+  `get_transcript` (`docs/wp-notes/speech.md`).
+- Timeline interchange (Final Cut Pro 7 XML, FCPXML, OpenTimelineIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media:
+  `import_timeline` `export_timeline` `list_offline_media` `link_media` (`docs/wp-notes/interchange.md`).
+- Imports and Interpret Footage (Lottie, SVG, PDF/AI, PSD, image sequences, EXR/TIFF/TGA/BMP/DPX/HEIC/JPEG XL through
+  `import_media`): `get_media_interpretation` `interpret_footage` `detect_image_sequence` `import_image_sequence`
+  `list_document_layers` `import_layered_document` `import_pdf_pages` `export_lottie` (`docs/wp-notes/imports.md`).
+- Reading properties: `get_clip_properties` `get_param` (the keyframed value next to the value actually rendered).
+- Live UI of the open editor window (web or desktop): `ui_state` `ui_elements` `ui_screenshot` `ui_click` `ui_drag`
+  `ui_scroll` `ui_key` `ui_type` `ui_set` `ui_locate` `ui_hit` `ui_commands` `ui_command`
+  (`docs/wp-notes/mcp-cli.md`).
+- Expressions: `set_expression` `clear_expression` `enable_expression` `test_expression` `get_property_values`
+  `list_expression_properties` `list_expression_presets` `add_expression_control` (`docs/expressions.md`,
+  `docs/wp-notes/expressions.md`; the language reference is also the `jasper://guide` resource).
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
@@ -410,8 +492,65 @@ stdio server there.
 The packaged desktop app ships the server as `resources/mcp/jasper-mcp.mjs`. It has no `node`: Help ▸ Connect
 an AI Agent… gives the command that runs the bundle with the app's own binary (`ELECTRON_RUN_AS_NODE=1`).
 
-No repo-root `.mcp.json` is committed on purpose: it would switch the server on for everyone who opens this
-checkout in an MCP client, and it would point at a bundle that may not be built yet.
+**Developing JasperEditor itself:** this checkout's root [`.mcp.json`](.mcp.json) registers `jasper` for agents
+working *on* the editor. It runs the server from source (`node --import tsx apps/mcp/src/cli.ts`, no build needed)
+with `--start-engine --appdir .stage`: it uses the `pnpm dev` engine when one is running, and otherwise starts a
+headless engine on the same dev appdir (that needs `pnpm --filter @jasper/engine build` once). Claude Code asks
+once before enabling a project-scoped server; start it from the repository root so the relative paths resolve.
+
+### Conventions every tool follows
+
+- **Strict arguments.** An unknown argument key — at the top level or inside any nested object, and inside the
+  commands of `apply_commands` — is an error that names the key, lists the accepted ones and suggests the likely
+  typo (`E_UNKNOWN_ARGUMENT`: `"jobid" → "jobId"?`), never a silently dropped key. A temp ref used before it was
+  declared names the refs declared so far.
+- **Annotations.** Every tool has a title and all four hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`), so a client can run the read-only ones without asking (`apps/mcp/test/conventions.test.ts`).
+- **Progress and cancellation.** Long calls (`start_export {wait: true}`, `wait_for_job`, `render_frame(s)`,
+  processing, tracking, pre-renders) send `notifications/progress` at most every 100 ms when the request has a
+  `progressToken`; `notifications/cancelled` cancels the engine job, and the engine deletes the job's partial
+  output (including a half-copied file at the export destination).
+- **Property reads.** `get_clip_properties` / `get_param` return `value` (the keyframed value at a time, as
+  Effect Controls shows it) next to `evaluated` (what the renderer draws then), keyframes in sequence frames and
+  the `param.set` target; `rendered: false` + `why` when that frame draws nothing.
+
+### Live UI: look at and operate the editor window
+
+With a project open in the web app or the desktop app, `ui_state`, `ui_elements`, `ui_screenshot`, `ui_click`,
+`ui_drag`, `ui_scroll`, `ui_key`, `ui_type`, `ui_set`, `ui_locate`, `ui_hit`, `ui_commands` and `ui_command`
+drive the window itself through the engine relay (`POST /api/agent/ui` → WS `/agent`). Elements have stable
+automation ids (`timeline-toolbar/button[Snap in Timeline]`, `timeline.clip.<id>`, `effectControls.fx.<id>`…);
+`ui_locate` / `ui_hit` map timeline frames ↔ x and tracks ↔ y, and Program monitor sequence pixels ↔ window
+points, so `ui_drag {from: {timeline: {clipId}}, to: {x, y}}` moves a clip like a user. `ui_commands` lists every
+UI command with `enabled` and, when disabled, `why`. `e2e/ui-audit.spec.ts` keeps every interactive element of
+every panel in every workspace addressable. Details: `docs/wp-notes/mcp-cli.md`.
+
+### Command line: `jasper`
+
+Every tool is also one shell call away. `pnpm jasper <command>` from this checkout, or the bundled
+`node apps/mcp/dist/jasper.mjs` after `pnpm mcp:build`. It finds the engine like `jasper-mcp` (`--engine-url`,
+`--appdir`, `--start-engine`), and edits apply live when the project is open in an editor window.
+
+```bash
+jasper status                                    # engine and capabilities
+jasper projects                                  # ids and names
+jasper --project Teaser import a.mp4 b.mp4       # relative paths are fine
+jasper exec marker.add frame=30 name=Intro       # one command, one undo step (k=v values are JSON when they parse)
+jasper exec '{"type":"clip.addText","at":0,"duration":90,"track":"V2","content":{"text":"Hi"}}'
+jasper run edit.jsonl                            # a command or {"commands": [...]} per line; JSON line per result
+jasper describe clip.place                       # schema and an example
+jasper props clp_123 --at 2s                     # value, evaluated, keyframes
+jasper get clip/clp_123/opacity --at 45          # one parameter
+jasper set clip/clp_123/transform.position '[640,200]'
+jasper inspect                                   # the timeline table (--json: the sequence summary)
+jasper render-frame --at 00:00:02:00 --out f.png --width 960
+jasper export --out cut.mp4 --range 0..10s       # waits with progress; Ctrl+C cancels and deletes the file
+jasper ui elements panel=timeline                # the live window (ui click id=…, ui screenshot --out w.png)
+jasper call get_mixer --json                     # any MCP tool
+```
+
+`--json` prints one JSON document per line; exit status 0 = ok, 1 = the command failed (its error code, message
+and hint on stderr), 2 = usage error. `jasper --help` is the reference.
 
 ### HTTP API underneath
 
@@ -462,6 +601,33 @@ Corner pins and keyframed Motion export on the native ffmpeg path through the wa
 
 Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker`, `set_corner_pin` and `simplify_keyframes` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md`, `docs/wp-notes/wp-m2-track.md` and `docs/wp-notes/wp-m3-trackui.md`.
 
+## Masks and track mattes
+
+Premiere-style masks (`docs/wp-notes/masks.md`):
+
+1. Select a clip. In **Effect Controls ▸ Opacity** (to cut the layer out) or under any video effect (to limit the
+   effect to a region) click the **ellipse**, **4-point polygon** or **free draw bezier** (pen) tool. The pen draws in
+   the Program monitor: click to add points, drag for curves, click the first point to close. The **trace** button
+   creates masks from the picture's alpha or luminance (holes become Subtract masks).
+2. Edit on the Program monitor: drag vertices (Shift adds to the selection), tangent handles (Alt breaks them), the
+   inside of the mask (moves it), the corner squares (scale) or just outside them (rotate); click the path to add a
+   vertex, **Alt**-click a vertex to convert it smooth ↔ corner, **Ctrl**-click to delete it; the square and circle
+   handles set **Mask Expansion** and **Mask Feather**. **Delete** removes the selected vertices or the mask.
+3. Each mask has **Mask Path**, **Mask Feather**, **Mask Opacity**, **Mask Expansion** (all keyframable), **Inverted**
+   and a mode (Add, Subtract, Intersect, Lighten, Darken, Difference, None). Paths with different vertex counts
+   interpolate through smart vertex matching.
+4. **Track** (◀◀ ◀ ▶ ▶▶ in the mask's tracking row): follows the pixels inside the mask (Position; Position &
+   Rotation; Position, Scale & Rotation; Perspective) and keys its path. Progress shows there and in the Jobs panel;
+   ■ stops it.
+
+**Track Matte Key** reads another video track (Matte = Video n; Composite Using: Matte Alpha / Matte Luma; Reverse).
+Hide the matte track (its eye) and it still works as a matte.
+
+Preview: a GPU mask rasteriser in the fx chain (analytic coverage and feather). Export: Opacity masks stay native (the
+sub-pixel kernel multiplies the picture by the same coverage); effect masks and track mattes render the layer through
+the layer bake (hybrid). Agents use `list_masks`, `add_mask`, `edit_mask`, `remove_masks`, `track_mask`,
+`auto_trace_mask` and `set_track_matte`, or the `mask.*` commands.
+
 ## Shapes
 
 Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.md`):
@@ -479,6 +645,14 @@ Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.
   layer bake they export natively. Agents use `add_shape`, or `clip.update {shape}` / `param.set` on `shape.*`.
 - Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
   `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
+- **Vector shapes** (After Effects-style shape layers, `docs/wp-notes/shapes.md`): nested groups with transforms;
+  rectangle, ellipse, polystar and free Bézier paths; solid and gradient (linear / radial with highlight) fills and
+  strokes with dashes, taper and wave; the path operators Trim Paths, Repeater, Offset Paths, Round Corners, Zig Zag,
+  Twist, Wiggle Paths, Pucker & Bloat and Merge Paths (curve-preserving booleans); every blend mode. **Properties ▸
+  Shape Contents** is the layer list (add, group, reorder by drag, enable, rename) with the selected item's
+  properties and a gradient editor; **Effect Controls ▸ Contents** keyframes every property. Tools: Pen (draw, add /
+  delete / convert vertices), Rectangle, Ellipse, Polygon, Star; vertices of path items are edited on the Program
+  monitor. Presets, SVG → shape (`svgToShapeContents`), and Graphics ▸ Convert to Vector Shape.
 
 ## Transitions and their defaults
 
@@ -621,6 +795,13 @@ appdir, connects an MCP SDK client to `jasper-mcp` over stdio, and goes from cre
 media → edit → `render_frame` (PNG) → `start_export` + `wait_for_job` → ffprobe of the output. Run it alone
 with `pnpm exec vitest run --project @jasper/mcp`.
 
+The MCP scenario QA suite (`pnpm qa:mcp`, also run with `REMOTION_E2E=1`; `apps/mcp/test/qa/`) builds real
+edits only through `jasper-mcp` over MCP JSON-RPC against a real engine — a rough cut, a colour grade, titles, a
+cross dissolve, keyframed opacity and position, an export re-imported into another project, and a cancelled
+export — and asserts on rendered pixels (coverage, centroid, luma, mean difference) and on the written files.
+`MCP_QA_PORT` picks the engine port (49025), `MCP_QA_KEEP=1` keeps the frames in `test-results/mcp-qa/`.
+`apps/mcp/test/jasper-cli.test.ts` runs every `jasper` command against a real engine.
+
 Playwright specs:
 
 - `e2e/smoke.spec.ts` — Home → New Project → import `clip-a.mp4` (file chooser) → poster → drag to the
@@ -634,6 +815,11 @@ Playwright specs:
   while the editor is open (live, `Agent:` History entry and toast), helper tools / `set_playhead` / `undo`,
   an approval-gated `track.remove` denied and then approved on the shell's approval card, Help ▸ Connect an AI
   Agent…, a headless apply with the editor closed, and `open_project_in_editor` bringing the project back.
+- `e2e/agent-ui.spec.ts` — the live-UI tools through the built `jasper-mcp`: `ui_state`, `ui_elements`, timeline and
+  Program coordinate mapping, a clip dragged by `ui_drag` and undone with `ui_key Cmd+Z`, `ui_set` on a scrubby
+  number, `ui_commands` / `ui_command` (workspaces), `ui_screenshot` of the window and of a panel.
+- `e2e/ui-audit.spec.ts` — every interactive element of every panel in every workspace, the menu bar menus and the
+  clip context menu has a stable automation id.
 - `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
 - `e2e/layer-bake.spec.ts` — footage + static title + keyframed title, a Lumetri grade on a title ("Grade
   pending" → graded preview in the Program), Auto export planned `hybrid` with baked titles, output pixels.
@@ -690,7 +876,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
 | `pnpm perf` | Sequential snapshot, scene, selection, timeline-transition, and cache-reference microbenchmarks |
-| `pnpm lint` | Biome + design-token and anime.js checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`) |
+| `pnpm lint` | Biome + design-token, anime.js, dependency-layer and asset-attribution checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`, `scripts/check-layers.mjs`, `scripts/check-assets.mjs`) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |
 | `pnpm mcp:build` | only the MCP server: esbuild bundle `apps/mcp/dist/jasper-mcp.mjs` (one executable file) |
@@ -704,6 +890,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm e2e:desktop-clipboard` | desktop clipboard runtime check under xvfb (`playwright.desktop.config.ts`, `E2E_SKIP_BUILD=1` reuses builds) |
 | `pnpm e2e:packaged` | packed-app check: license guard, packed engine with only the shipped LGPL FFmpeg, Remotion export |
 | `pnpm verify` | lint + typecheck + test + build |
+| `pnpm notices` / `--check` | regenerates / verifies `THIRD_PARTY_NOTICES.md`: shipped npm packages plus every `licenses/ported/*.md` record and its licence text (Help ▸ About ▸ Licenses) |
 
 ## Layout
 

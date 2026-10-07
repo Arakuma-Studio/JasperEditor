@@ -11,12 +11,16 @@ export const CACHE_KINDS = [
 	'proxies',
 	'luts',
 	'warp',
+	// Workstream `time`: retimed layers (reverse, time remaps, frame blending / optical flow, VFR) and frame indexes.
+	'retime',
 	'layers',
 	'mg-renders',
 	'mg-posters',
 	'exports',
 	'stills',
 	'bundles',
+	// parity (roto): computed object mattes (Roto Brush, faces) and the reusable frame pool
+	'roto',
 ] as const;
 export const CacheKindSchema = z.enum(CACHE_KINDS);
 export type CacheKind = z.infer<typeof CacheKindSchema>;

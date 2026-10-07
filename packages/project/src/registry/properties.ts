@@ -3,7 +3,9 @@
 // `transform.position`, `opacity`, `volumeDb`, `effects.<fxId>.<param>`, `params.<name>`, `text.sizePx`.
 // Each spec carries labels, units, ranges, UI control hints, the reset value (`defaultValue`), its
 // applicability by kind capabilities and how the UI writes it (`param.set` or `clip.update`).
+
 import { z } from 'zod';
+import { BLEND_MODE_GROUPS, BLEND_MODE_LABELS } from '../blend-modes.ts';
 import type { ParamPath } from '../commands/schemas/common.ts';
 import {
 	derefSchema,
@@ -12,16 +14,28 @@ import {
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
+import { mediaDisplaySize } from '../interpret/model.ts';
 import { type EvaluateOptions, evaluate } from '../keyframes.ts';
+import {
+	MASK_DEFAULT_FEATHER,
+	MASK_EXPANSION_RANGE,
+	MASK_FEATHER_RANGE,
+	MASK_OPACITY_RANGE,
+	MASK_PROP_LABELS,
+	type MaskProp,
+} from '../masks/model.ts';
 import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Mask } from '../schema/mask.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
+import { PUPPET_PIN_LABELS, type PuppetPinKind, type PuppetPinProp } from '../schema/puppet.ts';
 import {
 	BLEND_MODES,
 	type Clip,
 	type EffectInstance,
 	type Sequence,
 	type TextAnimation,
+	type TextStyle,
 } from '../schema/sequence.ts';
 import {
 	getTextAnimationSpec,
@@ -31,9 +45,17 @@ import {
 	type TextAnimationSide,
 } from '../text-animations.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
+import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';
+import {
+	isTextAnimatorKey,
+	resolveTextAnimatorSpec,
+	SOURCE_TEXT_SPEC,
+	textAnimatorPropertySpecs,
+} from './text-animator-properties.ts';
+import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 
 /**
  * `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). `json` (M2, S08) = any JSON
@@ -42,13 +64,17 @@ import type { MgTemplateInfo } from './mg.ts';
 export type ValueKind =
 	| 'number'
 	| 'vec2'
+	/** Wave expressions: 3D Point Control. */
+	| 'vec3'
 	| 'color'
 	| 'enum'
 	| 'boolean'
 	| 'string'
 	| 'curve'
 	| 'media'
-	| 'json';
+	| 'json'
+	/** sim-warp: a keyframable distortion mesh (flat number list; edited on the Program monitor). */
+	| 'mesh';
 export type PropertyGroup =
 	| 'motion'
 	| 'opacity'
@@ -64,11 +90,21 @@ export type PropertyGroup =
 	| 'crop'
 	| 'box'
 	/** M2 (S11:SHP-005, wp-m2-shapes): shape geometry and paint (`shape.*`). */
-	| 'shape';
+	| 'shape'
+	/** text-animators workstream: animators, selectors, Path Options, More Options (`textAnimators.*`, …). */
+	| 'textAnimator'
+	/** wp masks: Opacity / effect mask properties (`masks.<maskId>.<prop>`). */
+	| 'mask'
+	/** three-d: 3D transform of a 3D layer, its Material Options and Geometry Options; cameras; lights. */
+	| 'threeD'
+	| 'material'
+	| 'geometry'
+	| 'camera'
+	| 'light';
 
 /** Everything a default or a patch may need to know about the clip. */
 export type PropertyContext = {
-	doc: Pick<ProjectDocument, 'media' | 'synthetics'>;
+	doc: Pick<ProjectDocument, 'media' | 'synthetics'> & Partial<Pick<ProjectDocument, 'sequences'>>;
 	seq: Pick<Sequence, 'settings'>;
 	clip: Clip;
 };
@@ -78,7 +114,7 @@ export type PropertySpec = {
 	label: string;
 	group: PropertyGroup;
 	kind: ValueKind;
-	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's';
+	unit?: ParamSpec['unit'];
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	/** `continuous` = interpolated keyframes; `hold-only` = step keyframes (S01:KF-007); `no` = static field. */
 	animatable: 'continuous' | 'hold-only' | 'no';
@@ -89,6 +125,8 @@ export type PropertySpec = {
 	spatial?: SpatialInterpolation;
 	options?: readonly string[];
 	optionLabels?: readonly string[];
+	/** Menu section of each option (`options` order); consecutive runs are drawn as labelled groups. */
+	optionGroups?: readonly string[];
 	/**
 	 * Path of the stored value inside the clip (an Animatable when `animatable !== 'no'`). Special heads:
 	 * `$synthetic` (the clip's synthetic source) and `$effect` (`['$effect', fxId, param]`).
@@ -109,7 +147,19 @@ export type PropertySpec = {
 			| 'curve'
 			| 'media'
 			/** M2 (S08): a JSON editor (arrays, free-form objects). */
-			| 'json';
+			| 'json'
+			/** wp masks: a video-track picker (value = track id, '' = none). */
+			| 'track'
+			/** Wave expressions: x, y, z fields (3D Point Control). */
+			| 'vec3'
+			/** Wave expressions: a clip picker (Layer Control; value = clip id, '' = none). */
+			| 'layer'
+			/** Wave expressions: Dropdown Menu Control (1-based index into the effect's `items`). */
+			| 'menu'
+			/** parity (roto): picker of the clip's roto objects (string param holding a roto id). */
+			| 'roto-object'
+			/** sim-warp: a distortion mesh row (stopwatch and keyframe navigation; edited on the Program monitor). */
+			| 'mesh';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
@@ -126,11 +176,14 @@ export type PropertySpec = {
 	valueSchema?: JsonSchemaObject;
 	/** `media` values (fx framework): the asset kinds the picker offers (absent = LUTs, the M2 colour pickers). */
 	mediaKinds?: readonly string[];
+	/** wp shapes: structural check of a written value (`json` paths and gradients); false = E_INVALID_PARAM. */
+	validate?: (value: unknown) => boolean;
 };
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
 const hasOpacity = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasOpacity;
-const isAudio = (c: Pick<Clip, 'kind'>) => c.kind === 'audio' || c.kind === 'nest-audio';
+const isAudio = (c: Pick<Clip, 'kind'>) =>
+	c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 const isText = (c: Pick<Clip, 'kind'>) => c.kind === 'text';
 
 const styleWrite = (field: string): PropertySpec['write'] => ({
@@ -147,10 +200,8 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	const r = clip as Record<string, unknown>;
 	if (clip.kind === 'video' || clip.kind === 'still' || clip.kind === 'animated-image') {
 		const asset = doc.media[r.mediaId as string];
-		const vs = asset?.probe.streams.find((s) => s.type === 'video');
-		if (!asset || !vs || vs.type !== 'video') return frame;
-		const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-		return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
+		// imports: rotation and the (conformed) pixel aspect ratio.
+		return (asset && mediaDisplaySize(asset)) ?? frame;
 	}
 	if (clip.kind === 'text') {
 		const box = r.box as { width: number; height: number };
@@ -160,8 +211,13 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 		const canvas = r.canvas as 'sequence' | { width: number; height: number };
 		return canvas === 'sequence' ? frame : { width: canvas.width, height: canvas.height };
 	}
-	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry.
-	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape);
+	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry; vector shapes (wp shapes): the frame.
+	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape, frame);
+	// edit-structure (S01:KND-020): a nest clip's box is the nested sequence's frame.
+	if (clip.kind === 'nest-video') {
+		const nested = doc.sequences?.[r.sequenceId as string];
+		if (nested) return { width: nested.settings.width, height: nested.settings.height };
+	}
 	return frame;
 }
 
@@ -261,7 +317,9 @@ export const DEFAULT_SHAPE_STROKE = {
 	width: 8,
 	position: 'center' as const,
 };
-const isShape = (c: Pick<Clip, 'kind'>) => c.kind === 'shape';
+/** Rectangle / ellipse shapes (vector shapes have per-item `shape.items.*` keys instead, wp shapes). */
+const isShape = (c: Pick<Clip, 'kind'>) =>
+	c.kind === 'shape' && (c as { shape?: { type?: string } }).shape?.type !== 'vector';
 /** Corner radius applies to rectangles; a bare `{kind}` (agent schema) counts as a possible rectangle. */
 const isRectShape = (c: Pick<Clip, 'kind'>) =>
 	isShape(c) && (c as { shape?: { type?: string } }).shape?.type !== 'ellipse';
@@ -351,6 +409,252 @@ const SHAPE_PROPERTY_SPECS: readonly PropertySpec[] = [
 ];
 
 // ---------------------------------------------------------------- end wp-m2-shapes
+
+// ---------------------------------------------------------------- text-animators: typography
+type TypoStyle = Partial<TextStyle> & Record<string, unknown>;
+/** Readers of the typography specs (`['$typo', key]` storage: values with read-time defaults). */
+const TYPO_GETTERS = new Map<string, (s: TypoStyle) => unknown>();
+const styleOfClip = (c: Clip) => (c.kind === 'text' ? (c.content.style as TypoStyle) : ({} as TypoStyle));
+const typo = (
+	key: string,
+	label: string,
+	kind: PropertySpec['kind'],
+	get: (s: TypoStyle) => unknown,
+	patch: (v: unknown, s: TypoStyle) => Record<string, unknown>,
+	extra: Partial<PropertySpec> & { defaultValue: unknown },
+): PropertySpec => {
+	TYPO_GETTERS.set(key, get);
+	return {
+		key: `text.${key}`,
+		label,
+		group: 'text',
+		kind,
+		animatable: 'no',
+		storagePath: ['$typo', key],
+		appliesTo: isText,
+		ui: {
+			control:
+				kind === 'boolean' ? 'toggle' : kind === 'enum' ? 'select' : kind === 'string' ? 'text' : 'scrub',
+		},
+		write: { via: 'clip.update', patch: (v, clip) => ({ content: { style: patch(v, styleOfClip(clip)) } }) },
+		...extra,
+		description: extra.description ?? `${label} (Character / Paragraph settings)`,
+	};
+};
+const field = (f: string) => (v: unknown) => ({ [f]: v });
+const ot = (f: string) => (v: unknown, s: TypoStyle) => ({
+	openType: { ...((s.openType as object) ?? {}), [f]: v },
+});
+const otGet = (f: string, d: unknown) => (s: TypoStyle) =>
+	(s.openType as Record<string, unknown> | undefined)?.[f] ?? d;
+/** `"wght 650, wdth 80"` ↔ `{wght: 650, wdth: 80}`. */
+export function parseFontVariations(v: unknown): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const part of String(v ?? '').split(',')) {
+		const m = /^\s*['"]?([\x20-\x7e]{4})['"]?\s+(-?\d+(?:\.\d+)?)\s*$/.exec(part);
+		if (m) out[m[1]!] = Number(m[2]);
+	}
+	return out;
+}
+export const TYPOGRAPHY_SPECS: readonly PropertySpec[] = [
+	typo(
+		'kerning',
+		'Kerning',
+		'enum',
+		(s) => s.kerning ?? 'metrics',
+		(v, s) => ({ kerning: v === 'manual' ? (typeof s.kerning === 'number' ? s.kerning : 0) : v }),
+		{
+			options: ['metrics', 'optical', 'manual'],
+			optionLabels: ['Metrics', 'Optical', 'Manual'],
+			defaultValue: 'metrics',
+			description:
+				"Kerning: the font's pairs (Metrics), from the glyph outlines (Optical) or Manual (1/1000 em before each character).",
+		},
+	),
+	typo(
+		'kerningAmount',
+		'Kerning Amount',
+		'number',
+		(s) => (typeof s.kerning === 'number' ? s.kerning : 0),
+		field('kerning'),
+		{
+			range: { min: -1000, max: 10000, step: 1 },
+			defaultValue: 0,
+			description: 'Manual kerning in 1/1000 em before each character (sets Kerning to Manual).',
+		},
+	),
+	typo(
+		'baselineShiftPx',
+		'Baseline Shift',
+		'number',
+		(s) => s.baselineShiftPx ?? 0,
+		field('baselineShiftPx'),
+		{
+			unit: 'px',
+			range: { min: -1000, max: 1000, step: 0.1 },
+			defaultValue: 0,
+		},
+	),
+	typo('tsume', 'Tsume', 'number', (s) => s.tsume ?? 0, field('tsume'), {
+		unit: '%',
+		range: { min: 0, max: 100, step: 1 },
+		defaultValue: 0,
+	}),
+	typo('fauxBold', 'Faux Bold', 'boolean', (s) => !!s.fauxBold, field('fauxBold'), { defaultValue: false }),
+	typo('fauxItalic', 'Faux Italic', 'boolean', (s) => !!s.fauxItalic, field('fauxItalic'), {
+		defaultValue: false,
+	}),
+	typo('smallCaps', 'Small Caps', 'boolean', (s) => !!s.smallCaps, field('smallCaps'), {
+		defaultValue: false,
+	}),
+	typo('script', 'Superscript / Subscript', 'enum', (s) => s.script ?? 'normal', field('script'), {
+		options: ['normal', 'superscript', 'subscript'],
+		optionLabels: ['Normal', 'Superscript', 'Subscript'],
+		defaultValue: 'normal',
+	}),
+	typo('ligatures', 'Ligatures', 'boolean', (s) => s.ligatures !== false, field('ligatures'), {
+		defaultValue: true,
+	}),
+	typo(
+		'discretionaryLigatures',
+		'Discretionary Ligatures',
+		'boolean',
+		otGet('discretionaryLigatures', false),
+		ot('discretionaryLigatures'),
+		{
+			defaultValue: false,
+		},
+	),
+	typo(
+		'contextualAlternates',
+		'Contextual Alternates',
+		'boolean',
+		otGet('contextualAlternates', true),
+		ot('contextualAlternates'),
+		{
+			defaultValue: true,
+		},
+	),
+	typo(
+		'stylisticAlternates',
+		'Stylistic Alternates',
+		'boolean',
+		otGet('stylisticAlternates', false),
+		ot('stylisticAlternates'),
+		{
+			defaultValue: false,
+		},
+	),
+	typo('swash', 'Swash', 'boolean', otGet('swash', false), ot('swash'), {
+		defaultValue: false,
+	}),
+	typo('titling', 'Titling Alternates', 'boolean', otGet('titling', false), ot('titling'), {
+		defaultValue: false,
+	}),
+	typo('ordinals', 'Ordinals', 'boolean', otGet('ordinals', false), ot('ordinals'), {
+		defaultValue: false,
+	}),
+	typo('fractions', 'Fractions', 'boolean', otGet('fractions', false), ot('fractions'), {
+		defaultValue: false,
+	}),
+	typo('allSmallCaps', 'All Small Caps', 'boolean', otGet('allSmallCaps', false), ot('allSmallCaps'), {
+		defaultValue: false,
+	}),
+	typo('figureStyle', 'Figure Style', 'enum', otGet('figureStyle', 'default'), ot('figureStyle'), {
+		options: ['default', 'lining', 'oldStyle'],
+		optionLabels: ['Default', 'Lining', 'Oldstyle'],
+		defaultValue: 'default',
+	}),
+	typo('figureWidth', 'Figure Width', 'enum', otGet('figureWidth', 'default'), ot('figureWidth'), {
+		options: ['default', 'proportional', 'tabular'],
+		optionLabels: ['Default', 'Proportional', 'Tabular'],
+		defaultValue: 'default',
+	}),
+	typo(
+		'stylisticSets',
+		'Stylistic Sets',
+		'string',
+		(s) => ((s.openType as { stylisticSets?: number[] } | undefined)?.stylisticSets ?? []).join(', '),
+		(v, s) => ({
+			openType: {
+				...((s.openType as object) ?? {}),
+				stylisticSets: [
+					...new Set(
+						String(v)
+							.split(/[\s,]+/)
+							.map(Number),
+					),
+				].filter((n) => Number.isInteger(n) && n >= 1 && n <= 20),
+			},
+		}),
+		{ defaultValue: '', description: 'Stylistic sets on, e.g. "1, 3" (ss01, ss03).' },
+	),
+	typo(
+		'fontVariations',
+		'Variable Font Axes',
+		'string',
+		(s) =>
+			Object.entries((s.fontVariations as Record<string, number> | undefined) ?? {})
+				.map(([t, v]) => `${t} ${v}`)
+				.join(', '),
+		(v) => ({ fontVariations: parseFontVariations(v) }),
+		{
+			defaultValue: '',
+			description: 'Variable font axis values, e.g. "wght 650, wdth 80" (the font must be variable).',
+		},
+	),
+	typo('justifyLast', 'Justify Last Line', 'enum', (s) => s.justifyLast ?? 'left', field('justifyLast'), {
+		options: ['left', 'center', 'right', 'justify'],
+		optionLabels: ['Left', 'Center', 'Right', 'Justify All'],
+		defaultValue: 'left',
+	}),
+	typo('indentLeftPx', 'Indent Left Margin', 'number', (s) => s.indentLeftPx ?? 0, field('indentLeftPx'), {
+		unit: 'px',
+		range: { min: -2000, max: 2000, step: 1 },
+		defaultValue: 0,
+	}),
+	typo(
+		'indentRightPx',
+		'Indent Right Margin',
+		'number',
+		(s) => s.indentRightPx ?? 0,
+		field('indentRightPx'),
+		{
+			unit: 'px',
+			range: { min: -2000, max: 2000, step: 1 },
+			defaultValue: 0,
+		},
+	),
+	typo(
+		'indentFirstLinePx',
+		'Indent First Line',
+		'number',
+		(s) => s.indentFirstLinePx ?? 0,
+		field('indentFirstLinePx'),
+		{
+			unit: 'px',
+			range: { min: -2000, max: 2000, step: 1 },
+			defaultValue: 0,
+		},
+	),
+	typo(
+		'spaceBeforePx',
+		'Space Before Paragraph',
+		'number',
+		(s) => s.spaceBeforePx ?? 0,
+		field('spaceBeforePx'),
+		{
+			unit: 'px',
+			range: { min: -2000, max: 2000, step: 1 },
+			defaultValue: 0,
+		},
+	),
+	typo('spaceAfterPx', 'Space After Paragraph', 'number', (s) => s.spaceAfterPx ?? 0, field('spaceAfterPx'), {
+		unit: 'px',
+		range: { min: -2000, max: 2000, step: 1 },
+		defaultValue: 0,
+	}),
+];
 
 export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	{
@@ -479,7 +783,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		group: 'opacity',
 		kind: 'enum',
 		options: BLEND_MODES,
-		optionLabels: ['Normal', 'Multiply', 'Screen', 'Overlay', 'Darken', 'Lighten', 'Add', 'Difference'],
+		optionLabels: BLEND_MODE_LABELS,
+		optionGroups: BLEND_MODE_GROUPS,
 		animatable: 'no',
 		storagePath: ['blendMode'],
 		appliesTo: (c) => hasOpacity(c) && c.kind !== 'captions',
@@ -812,6 +1117,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		defaultValue: false,
 		write: styleWrite('allCaps'),
 	},
+	// text-animators workstream: Character and Paragraph settings (AE Character / Paragraph panels).
+	...TYPOGRAPHY_SPECS,
 	{
 		key: 'solid.color',
 		label: 'Color',
@@ -828,6 +1135,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	// ------------------------------------------------ wp-m2-shapes: shape properties (S11:SHP-003/005)
 	...SHAPE_PROPERTY_SPECS,
 	// ------------------------------------------------ end wp-m2-shapes
+	// three-d: 3D layers, cameras, lights.
+	...THREE_D_PROPERTY_SPECS,
 ];
 
 function textStyleOf(clip: Clip) {
@@ -1146,26 +1455,30 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		hint ??
 		(kind === 'curve'
 			? 'curve'
-			: kind === 'media'
-				? 'media'
-				: kind === 'number'
-					? 'scrub'
-					: kind === 'boolean'
-						? 'toggle'
-						: kind === 'enum'
-							? 'select'
-							: kind === 'color'
-								? 'color'
-								: kind === 'vec2'
-									? 'vec2'
-									: 'text');
+			: kind === 'mesh'
+				? 'mesh'
+				: kind === 'media'
+					? 'media'
+					: kind === 'number'
+						? 'scrub'
+						: kind === 'boolean'
+							? 'toggle'
+							: kind === 'enum'
+								? 'select'
+								: kind === 'color'
+									? 'color'
+									: kind === 'vec2'
+										? 'vec2'
+										: kind === 'vec3'
+											? 'vec3'
+											: 'text');
 	const step = p.range?.step;
 	return {
 		key: `effects.${fxId}.${p.name}`,
 		label: p.label,
 		group: effect.id === 'jasper.crop' ? 'crop' : 'effect',
 		kind,
-		unit: p.unit === 'Hz' ? undefined : p.unit,
+		unit: p.unit,
 		range: p.range,
 		animatable: p.animatable ? 'continuous' : 'hold-only',
 		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),
@@ -1176,6 +1489,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		ui: {
 			control,
 			bipolar: p.ui?.bipolar,
+			...(p.ui?.multiline ? { multiline: true } : {}),
 			precision: step === undefined ? 1 : step >= 1 ? 0 : step >= 0.1 ? 1 : 2,
 		},
 		defaultValue: p.default,
@@ -1190,7 +1504,16 @@ export function propertiesForClip(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
 ): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
-	if (clip.kind === 'text') return [...base, ...textAnimationParamSpecs(clip as TextAnimated)];
+	// wp shapes: per-item keys of vector shapes.
+	if (clip.kind === 'shape') return [...base, ...shapeItemPropertySpecs(clip)];
+	if (clip.kind === 'text')
+		return [
+			...base,
+			...textAnimationParamSpecs(clip as TextAnimated),
+			// text-animators workstream: animators, selectors, Path / More Options, Source Text.
+			SOURCE_TEXT_SPEC,
+			...textAnimatorPropertySpecs(clip as Parameters<typeof textAnimatorPropertySpecs>[0]),
+		];
 	if (template && clip.kind === 'motion-graphic') return [...base, ...paramsPropertySpecs(template)];
 	if (composition && clip.kind === 'composition')
 		return [...base, ...compositionPropsPropertySpecs(composition)];
@@ -1209,6 +1532,12 @@ export function resolvePropertySpec(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
 	clip?: TextAnimated,
 ): PropertySpec | undefined {
+	// wp shapes: `shape.items.<itemId>.<field…>` of vector shapes (given the clip).
+	if (key.startsWith(SHAPE_ITEM_KEY_PREFIX))
+		return clip ? shapeItemPropertySpecs(clip as Pick<Clip, 'kind'>).find((s) => s.key === key) : undefined;
+	// text-animators workstream: dynamic animator / selector / path / more-options keys (need the clip).
+	if (isTextAnimatorKey(key))
+		return resolveTextAnimatorSpec(key, clip as Parameters<typeof resolveTextAnimatorSpec>[1]);
 	if (/^textAnimation\.(in|out)\.params\./.test(key))
 		return clip ? textAnimationParamSpecs(clip).find((s) => s.key === key) : undefined;
 	if (key.startsWith('params.'))
@@ -1256,6 +1585,29 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 	if (head === '$effect') {
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
 		return fx?.params[b!];
+	}
+	// text-animators workstream: typography values with read-time defaults.
+	if (head === '$typo') {
+		const st = ctx.clip.kind === 'text' ? (ctx.clip.content.style as TypoStyle) : ({} as TypoStyle);
+		return TYPO_GETTERS.get(a!)?.(st);
+	}
+	// text-animators workstream: Source Text as an Animatable view (`content` + hold keys).
+	if (head === '$sourceText') {
+		const t = ctx.clip as { content?: unknown; sourceTextKeyframes?: Keyframe<unknown>[] };
+		return { value: t.content, keyframes: t.sourceTextKeyframes ?? [] };
+	}
+	// wp masks: `['$mask', maskId, prop]` — an Opacity mask or a mask of one of the clip's effects.
+	if (head === '$mask') {
+		const c = ctx.clip as { masks?: Mask[]; effects?: EffectInstance[] };
+		const m =
+			c.masks?.find((x) => x.id === a) ?? c.effects?.flatMap((fx) => fx.masks ?? []).find((x) => x.id === a);
+		return m ? (m as Record<string, unknown>)[b!] : undefined;
+	}
+	// sim-warp: `['$puppetPin', pinId, prop]` — a pin of one of the clip's Puppet effects.
+	if (head === '$puppetPin') {
+		const c = ctx.clip as { effects?: EffectInstance[] };
+		const pin = c.effects?.flatMap((fx) => fx.puppet?.pins ?? []).find((x) => x.id === a);
+		return pin ? (pin as Record<string, unknown>)[b!] : undefined;
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
 	if (s.group === 'params' && s.animatable !== 'no') {
@@ -1377,6 +1729,8 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 			};
 		case 'vec2':
 			return { ...base, type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 };
+		case 'vec3':
+			return { ...base, type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 };
 		case 'color':
 			return {
 				...base,
@@ -1420,6 +1774,14 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 			};
 		case 'json':
 			return { ...(s.valueSchema ?? {}), ...base };
+		case 'mesh':
+			return {
+				...base,
+				type: 'array',
+				description: `${s.description ? `${s.description} ` : ''}Distortion mesh: a flat list of numbers in the effect's layout (edit it with the effect's mesh/brush commands).`,
+				items: { type: 'number' },
+				maxItems: 400000,
+			};
 	}
 }
 
@@ -1453,11 +1815,150 @@ export type PropertyOwner = { clipId: string } | { trackId: string } | { master:
 
 /** Property key + owner → ParamPath (S01:CMD-010). */
 export function propertyKeyToParamPath(owner: PropertyOwner, key: string): ParamPath {
+	// wp masks: `masks.<maskId>.<prop>` → `["mask", maskId, prop]`.
+	if (key.startsWith('masks.')) {
+		const [, maskId, prop] = key.split('.');
+		return ['mask', maskId!, prop!];
+	}
 	if (key.startsWith('effects.')) {
 		const [, fxId, ...param] = key.split('.');
 		return ['effect', fxId!, param.join('.')];
 	}
+	// sim-warp: `puppet.<pinId>.<prop>` → `["puppetPin", pinId, prop]`.
+	if (key.startsWith('puppet.')) {
+		const [, pinId, prop] = key.split('.');
+		return ['puppetPin', pinId!, prop!];
+	}
 	if ('clipId' in owner) return ['clip', owner.clipId, ...key.split('.')];
 	if ('trackId' in owner) return ['track', owner.trackId, ...key.split('.')];
 	return owner.sequenceId ? ['master', owner.sequenceId, key] : ['master', key];
+}
+
+// ---------------------------------------------------------------- wp masks
+
+/** The Effect Controls / Properties spec of a mask property (`masks.<maskId>.<prop>`). */
+export function maskPropertySpec(maskId: string, prop: MaskProp): PropertySpec {
+	const base = {
+		key: `masks.${maskId}.${prop}`,
+		label: MASK_PROP_LABELS[prop],
+		group: 'mask' as const,
+		animatable: 'continuous' as const,
+		storagePath: ['$mask', maskId, prop],
+		appliesTo: (c: Pick<Clip, 'kind'>) => hasOpacity(c),
+	};
+	switch (prop) {
+		case 'path':
+			return { ...base, kind: 'json', ui: { control: 'json' } };
+		case 'feather':
+			return {
+				...base,
+				kind: 'number',
+				unit: 'px',
+				range: { ...MASK_FEATHER_RANGE, softMax: 200, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: MASK_DEFAULT_FEATHER,
+			};
+		case 'opacity':
+			return {
+				...base,
+				kind: 'number',
+				unit: '%',
+				range: { ...MASK_OPACITY_RANGE, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 100,
+			};
+		default:
+			return {
+				...base,
+				kind: 'number',
+				unit: 'px',
+				range: { ...MASK_EXPANSION_RANGE, softMin: -200, softMax: 200, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 0,
+			};
+	}
+}
+
+// ---------------------------------------------------------------- sim-warp: Puppet pins
+
+/** The Effect Controls / Properties spec of a Puppet pin property (`puppet.<pinId>.<prop>`). */
+export function puppetPinPropertySpec(pinId: string, prop: PuppetPinProp): PropertySpec {
+	const base = {
+		key: `puppet.${pinId}.${prop}`,
+		label: PUPPET_PIN_LABELS[prop],
+		group: 'effect' as const,
+		animatable: 'continuous' as const,
+		storagePath: ['$puppetPin', pinId, prop],
+		appliesTo: (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.visual,
+	};
+	switch (prop) {
+		case 'position':
+			return {
+				...base,
+				kind: 'vec2',
+				spatial: 'auto-bezier',
+				ui: { control: 'vec2', precision: 3 },
+				range: { step: 0.001 },
+			};
+		case 'scale':
+			return {
+				...base,
+				kind: 'number',
+				unit: '%',
+				range: { min: 0, max: 10000, softMax: 400, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 100,
+			};
+		case 'rotation':
+			return {
+				...base,
+				kind: 'number',
+				unit: 'deg',
+				range: { step: 0.1 },
+				ui: { control: 'angle', precision: 1 },
+				defaultValue: 0,
+			};
+		case 'amount':
+			return {
+				...base,
+				kind: 'number',
+				range: { min: 0, max: 100, step: 0.1 },
+				ui: { control: 'slider', precision: 1 },
+				defaultValue: 50,
+			};
+		case 'extent':
+			return {
+				...base,
+				kind: 'number',
+				unit: 'px',
+				range: { min: 0, max: 10000, softMax: 500, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 15,
+			};
+		default:
+			return {
+				...base,
+				kind: 'number',
+				range: { min: -100, max: 100, step: 0.1 },
+				ui: { control: 'slider', precision: 1, bipolar: true },
+				defaultValue: 50,
+			};
+	}
+}
+
+/** Pin properties a pin kind shows (After Effects: Position; + Scale, Rotation (Advanced); Bend: Scale, Rotation;
+ * Starch: Amount, Extent; Overlap: In Front, Extent). */
+export function puppetPinPropsOf(kind: PuppetPinKind): PuppetPinProp[] {
+	switch (kind) {
+		case 'advanced':
+			return ['position', 'scale', 'rotation'];
+		case 'bend':
+			return ['scale', 'rotation'];
+		case 'starch':
+			return ['amount', 'extent'];
+		case 'overlap':
+			return ['inFront', 'extent'];
+		default:
+			return ['position'];
+	}
 }

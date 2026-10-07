@@ -9,6 +9,8 @@
 // frame's picture (parallel/random-order renders stay deterministic); its own delayRender lasts until it delivered.
 // Player: draws on delivery and coalesces stage-driven redraws to one per animation frame (smooth paused scrubbing).
 // `FxDomPicture` is the DOM-layer variant: the layer's DOM content inside Remotion's `<HtmlInCanvas>`.
+
+import type { Lut } from '@jasper/project';
 import {
 	type CSSProperties,
 	createContext,
@@ -33,10 +35,14 @@ import {
 } from 'remotion';
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
-import { loadedLutAsset } from '../color/luts.ts';
-import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
+import { loadedLutAsset, ocioConversionLut } from '../color/luts.ts';
+import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
+import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
+import { fxMaskApply, fxMasked } from './mask.ts';
+import { fxMatteTap, useTrackMattes } from './matte.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
+import { fxStatus } from './status.ts';
 
 export type FxFeed = {
 	/** Copies a picture into a slot (`source`, `sample@<frame>`, `media:<mediaId>`) and redraws. */
@@ -84,15 +90,45 @@ const canvasEl = (w: number, h: number) => {
 
 // ---------------------------------------------------------------- media images
 
-type LoadedImage = { img: HTMLImageElement | null; promise: Promise<HTMLImageElement | null> };
+type LoadedImage = {
+	img: HTMLImageElement | null;
+	failed: boolean;
+	promise: Promise<HTMLImageElement | null>;
+};
 const imageCache = new Map<string, LoadedImage>();
+/**
+ * parity (roto): per-frame pictures (object-matte frames) are transient: at most this many are kept (least recently
+ * used first out), so long mattes do not hold every decoded frame. Effect media (textures, maps) stay cached.
+ */
+const TRANSIENT_IMAGES = 96;
+const transient = new Set<string>();
+/** URLs whose last load failed (renders turn a failed object-matte frame into an error). */
+const failedImages = new Set<string>();
+
+/** parity (roto): the matte frame at `url` failed to load. */
+export function fxImageFailed(url: string): boolean {
+	return failedImages.has(url) && !imageCache.get(url)?.img;
+}
+
+function touch(url: string, entry: LoadedImage): void {
+	if (!transient.has(url)) return;
+	imageCache.delete(url);
+	imageCache.set(url, entry);
+}
 
 /** Loads an image for WebGL (`crossOrigin = anonymous`: render pages read the engine's signed URLs cross-origin). */
-export function loadFxImage(url: string): Promise<HTMLImageElement | null> {
+export function loadFxImage(
+	url: string,
+	opts: { transient?: boolean } = {},
+): Promise<HTMLImageElement | null> {
 	const hit = imageCache.get(url);
-	if (hit) return hit.promise;
+	if (hit) {
+		touch(url, hit);
+		return hit.promise;
+	}
 	const entry: LoadedImage = {
 		img: null,
+		failed: false,
 		promise: new Promise((resolve) => {
 			const img = new Image();
 			img.crossOrigin = 'anonymous';
@@ -104,17 +140,46 @@ export function loadFxImage(url: string): Promise<HTMLImageElement | null> {
 						resolve(img);
 					});
 			};
-			img.onerror = () => resolve(null);
+			img.onerror = () => {
+				entry.failed = true;
+				failedImages.add(url);
+				if (failedImages.size > 1024) failedImages.delete(failedImages.values().next().value!);
+				// A failed transient frame may be computed later (a running propagation): do not cache the failure.
+				if (transient.has(url)) {
+					imageCache.delete(url);
+					transient.delete(url);
+				}
+				resolve(null);
+			};
 			img.src = url;
 		}),
 	};
 	imageCache.set(url, entry);
+	if (opts.transient) {
+		transient.add(url);
+		if (transient.size > TRANSIENT_IMAGES)
+			for (const u of imageCache.keys()) {
+				if (transient.size <= TRANSIENT_IMAGES) break;
+				if (!transient.has(u) || u === url) continue;
+				imageCache.delete(u);
+				transient.delete(u);
+			}
+	}
 	return entry.promise;
+}
+
+/** The loaded image of `url` (null while loading or after a failure). */
+function loadedFxImage(url: string): HTMLImageElement | null {
+	return imageCache.get(url)?.img ?? null;
 }
 
 /** The loaded images of `urls` (renders wait for them with a delayRender); re-renders on arrival. Also used by the
  * transition stage for image params. */
-export function useFxImages(urls: readonly string[], rendering: boolean): Map<string, HTMLImageElement> {
+export function useFxImages(
+	urls: readonly string[],
+	rendering: boolean,
+	transientUrls?: ReadonlySet<string>,
+): Map<string, HTMLImageElement> {
 	const key = urls.join('\n');
 	const missing = urls.filter((u) => !imageCache.get(u)?.img);
 	const [initial] = useState(() =>
@@ -130,7 +195,7 @@ export function useFxImages(urls: readonly string[], rendering: boolean): Map<st
 		}
 		let alive = true;
 		const handle = rendering && initial === null ? delayRender(`Loading fx image ${need[0]}`) : initial;
-		Promise.all(need.map(loadFxImage)).then(() => {
+		Promise.all(need.map((u) => loadFxImage(u, { transient: transientUrls?.has(u) }))).then(() => {
 			if (alive) setVersion((v) => v + 1);
 			if (handle !== null) continueRender(handle);
 		});
@@ -166,6 +231,8 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 	const cpu = colorStageBackend() === 'cpu';
 	const box = stage.layout.box;
 	for (const s of stage.steps) {
+		// wp masks: a masked step's effect applies inside its masks only (mix with its input by coverage).
+		const at = out.length;
 		switch (s.kind) {
 			case 'gpu': {
 				const textures: FxRunInputs['textures'] = {};
@@ -219,7 +286,50 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 			case 'tap':
 				out.push(fxTap({ key: s.key, tap: s.tap, meta: s.meta }));
 				break;
+			case 'stash':
+				out.push(fxStash({ key: s.key, holder: s.holder }));
+				break;
+			case 'mix':
+				out.push(
+					fxAdjustmentMix({
+						key: s.key,
+						holder: s.holder,
+						opacity: s.opacity,
+						blend: s.blend,
+						seed: s.seed,
+						// Dissolve hashes sequence pixels: canvas px → sequence px.
+						noise: { x: box.x, y: box.y, scale: stage.layout.pxScale },
+						region: s.insets
+							? {
+									x: box.x + s.insets[0] * box.w,
+									y: box.y + s.insets[1] * box.h,
+									w: Math.max(0, box.w * (1 - s.insets[0] - s.insets[2])),
+									h: Math.max(0, box.h * (1 - s.insets[1] - s.insets[3])),
+								}
+							: null,
+						masks: s.opacityMasks?.length
+							? { masks: s.opacityMasks, box, pxScale: stage.layout.pxScale }
+							: null,
+					}),
+				);
+				break;
+			case 'mask':
+				out.push(fxMaskApply({ key: s.key, geometry: s.geometry }));
+				break;
+			case 'matteTap':
+				out.push(fxMatteTap({ key: s.key, tap: s.tap, meta: s.meta, hide: s.hide }));
+				break;
 		}
+		if (
+			s.kind !== 'mask' &&
+			s.kind !== 'tap' &&
+			s.kind !== 'matteTap' &&
+			s.kind !== 'stash' &&
+			s.kind !== 'mix' &&
+			s.masks &&
+			out.length === at + 1
+		)
+			out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
 	}
 	return out;
 }
@@ -256,9 +366,25 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 	const [pictureId] = useState(() => `p${++pictureSerial}`);
 	const raf = useRef<number | null>(null);
 	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
-	const images = useFxImages(imageUrls, rendering);
+	const matteUrls = useMemo(
+		() => new Set(stage.media.filter((m) => m.matte).map((m) => m.url)),
+		[stage.media],
+	);
+	const images = useFxImages(imageUrls, rendering, matteUrls);
 	const imagesRef = useRef(images);
 	imagesRef.current = images;
+	/** parity (roto): last drawn frame of each matte store (preview: shown while the next frame loads). */
+	const lastMatte = useRef(new Map<string, HTMLImageElement>());
+	// Preview: load the next frames of playing mattes ahead.
+	useEffect(() => {
+		if (rendering) return;
+		for (const m of stage.media)
+			for (const u of m.matte?.prefetch ?? []) void loadFxImage(u, { transient: true });
+	}, [stage.media, rendering]);
+	// wp masks: composites of the tracks the stack's Track Matte Keys read.
+	const mattes = useTrackMattes(stage.trackMattes, stage.seqFrame);
+	const mattesRef = useRef(mattes.media);
+	mattesRef.current = mattes.media;
 
 	const placeSlot = useCallback((name: string, w: number, h: number) => {
 		let c = placed.current.get(name);
@@ -299,21 +425,27 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			const blank = s.steps.some((st) => st.kind === 'gpu' && st.sampleFrames.includes(null))
 				? placeSlot('sample@blank', W, H)
 				: undefined;
-			const media = new Map<string, FxTextureInput>();
+			const media = new Map<string, FxTextureInput>(mattesRef.current);
 			for (const m of s.media) {
 				if (m.kind === 'lut') {
-					const lut = loadedLutAsset(m.url);
-					if (lut) media.set(m.mediaId, { lut, version: m.url });
+					const lut = colorLutOf(m, rendering);
+					if (lut) media.set(m.mediaId, { lut, version: m.mediaId });
 					continue;
 				}
 				if (m.kind === 'image') {
-					const img = imagesRef.current.get(m.url);
+					let img = imagesRef.current.get(m.url) ?? (m.matte ? loadedFxImage(m.url) : null);
+					if (m.matte) {
+						if (img) lastMatte.current.set(m.matte.group, img);
+						else if (rendering && fxImageFailed(m.url))
+							throw new Error(`ROTO_MATTE_MISSING: the object matte frame ${m.url} could not be loaded`);
+						else if (!rendering) img = lastMatte.current.get(m.matte.group) ?? null;
+					}
 					if (img)
 						media.set(m.mediaId, {
 							source: img,
 							width: img.naturalWidth,
 							height: img.naturalHeight,
-							version: m.url,
+							version: img.src,
 						});
 					continue;
 				}
@@ -385,7 +517,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			raf.current = null;
 			void draw();
 		});
-	}, [stage.key, images.size, draw]);
+	}, [stage.key, images.size, mattes.key, draw]);
 	useEffect(
 		() => () => {
 			if (raf.current !== null) cancelAnimationFrame(raf.current);
@@ -415,32 +547,11 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
  * and runs the same descriptors. No time samples here (the DOM exists at one time only): `u_sampleCount` is 0.
  */
 export function FxDomPicture({ stage, children }: { stage: FxStage; children?: ReactNode }) {
-	const rendering = getRemotionEnvironment().isRendering;
-	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
-	const images = useFxImages(imageUrls, rendering);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage and the loaded images
-	const effects = useMemo(() => {
-		const media = new Map<string, FxTextureInput>();
-		for (const m of stage.media) {
-			if (m.kind === 'lut') {
-				const lut = loadedLutAsset(m.url);
-				if (lut) media.set(m.mediaId, { lut, version: m.url });
-				continue;
-			}
-			const img = m.kind === 'image' ? images.get(m.url) : undefined;
-			if (img)
-				media.set(m.mediaId, {
-					source: img,
-					width: img.naturalWidth,
-					height: img.naturalHeight,
-					version: m.url,
-				});
-		}
-		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
-	}, [stage.key, images.size, rendering]);
+	const effects = useDomFxDescriptors(stage);
 	const L = stage.layout;
 	return (
-		<HtmlInCanvas
+		<ScopedHtmlInCanvas
+			scope="A layer's effects"
 			width={L.cssWidth}
 			height={L.cssHeight}
 			pixelDensity={L.pxScale}
@@ -460,11 +571,63 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 			>
 				{children}
 			</div>
-		</HtmlInCanvas>
+		</ScopedHtmlInCanvas>
 	);
 }
 
+/**
+ * The canvas effect chain of a DOM picture's stage (`HtmlInCanvas effects`): loads the stage's image inputs (renders
+ * wait), LUT assets as loaded. No time samples (the DOM exists at one time only). `null` stage → no effects.
+ */
+const NO_TRACKS: readonly string[] = [];
+
+export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
+	const rendering = getRemotionEnvironment().isRendering;
+	const imageUrls = stage ? stage.media.filter((m) => m.kind === 'image').map((m) => m.url) : [];
+	const images = useFxImages(imageUrls, rendering);
+	// wp masks: composites of the tracks the stack's Track Matte Keys read.
+	const mattes = useTrackMattes(stage?.trackMattes ?? NO_TRACKS, stage?.seqFrame ?? 0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage, the loaded images and the mattes
+	return useMemo(() => {
+		if (!stage) return [];
+		const media = new Map<string, FxTextureInput>(mattes.media);
+		for (const m of stage.media) {
+			if (m.kind === 'lut') {
+				const lut = colorLutOf(m, rendering);
+				if (lut) media.set(m.mediaId, { lut, version: m.mediaId });
+				continue;
+			}
+			const img = m.kind === 'image' ? images.get(m.url) : undefined;
+			if (img)
+				media.set(m.mediaId, {
+					source: img,
+					width: img.naturalWidth,
+					height: img.naturalHeight,
+					version: m.url,
+				});
+		}
+		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
+	}, [stage?.key, images.size, rendering, mattes.key]);
+}
+
 /** HTML-in-Canvas is available here (Chrome ≥ 148 with the feature; always in Remotion renders). */
+/**
+ * A `lut` media input: a LUT asset, or (color-mgmt) the conversion LUT of a custom OCIO config. A conversion the config
+ * cannot apply fails renders and shows its message in the preview (never drawn as the identity silently).
+ */
+function colorLutOf(m: FxMediaInput, rendering: boolean): Lut | null {
+	if (!m.ocio) return loadedLutAsset(m.url) ?? null;
+	const r = ocioConversionLut(m.url, m.ocio.from, m.ocio.to);
+	if (!r) return null;
+	if ('error' in r) {
+		const msg = `S_OCIOTransform: ${r.error}`;
+		if (rendering) throw new Error(`OCIO_UNSUPPORTED: ${msg}`);
+		fxStatus.shaderFailed('jasper.s.ocio-transform', msg);
+		return null;
+	}
+	return r;
+}
+
 export function canUseHtmlInCanvas(): boolean {
 	try {
 		return HtmlInCanvas.isSupported();

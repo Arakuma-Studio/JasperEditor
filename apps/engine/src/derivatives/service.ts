@@ -119,7 +119,11 @@ function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, alpha = 
 }
 
 /** Which derivative kinds make sense for a media record. */
-function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeKind[] {
+function applicableKinds(
+	r: Pick<MediaRecord, 'kind' | 'hasAudio'> & Partial<Pick<MediaRecord, 'vector' | 'lottie'>>,
+): DerivativeKind[] {
+	// imports: vector stills and Lottie animations are drawn by the composition (posters come from the client).
+	if (r.vector || r.lottie) return [];
 	switch (r.kind) {
 		case 'video':
 			return [
@@ -142,7 +146,10 @@ function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeK
 }
 
 /** Kinds queued automatically after registration (S04:IN-011, ARCHITECTURE §9.4). */
-function autoKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'>): DerivativeKind[] {
+function autoKinds(
+	r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'> &
+		Partial<Pick<MediaRecord, 'vector' | 'lottie'>>,
+): DerivativeKind[] {
 	if (r.kind !== 'video') return applicableKinds(r);
 	return [
 		'keyframes',
@@ -561,7 +568,10 @@ export class DerivativeService {
 		const outH = Math.min(height, srcH || height);
 		const outW = Math.max(2, Math.round(((srcW || outH) * outH) / (srcH || outH) / 2) * 2);
 		const rate = vs?.type === 'video' && vs.frameRate ? vs.frameRate : { num: 30, den: 1 };
-		const scale = `scale=w=-2:h='min(${height},ih)':flags=bicubic`;
+		// color-mgmt: a signal proxy — R'G'B' of the file kept exactly (YUV with the file's matrix in, BT.709 out) and
+		// tagged BT.709, so the browser decodes it without converting colours; the colour input transform does that.
+		const srcMatrix = vs?.type === 'video' && /^bt2020/.test(vs.color.matrix) ? 'bt2020' : null;
+		const scale = `scale=w=-2:h='min(${height},ih)':flags=bicubic${srcMatrix ? `:in_color_matrix=${srcMatrix}:out_color_matrix=bt709` : ''}`;
 		const deinterlace = r.interlaced ? ['yadif'] : [];
 		let args: string[];
 		if (this.alphaProxy(r)) {
@@ -623,8 +633,14 @@ export class DerivativeService {
 				'-map',
 				'0:a:0?',
 				'-vf',
-				[...deinterlace, scale, ...enc.filters].join(','),
+				[
+					...deinterlace,
+					scale,
+					'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709',
+					...enc.filters,
+				].join(','),
 				...enc.video,
+				...['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'],
 				// Proxies are always MP4 (VP9/AV1 in MP4 play in Chromium) with AAC audio.
 				...audioEncodeArgs('aac', 128),
 				'-ac',

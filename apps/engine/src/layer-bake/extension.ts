@@ -78,7 +78,7 @@ function entryOf(
 export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 	return {
 		id: LAYER_BAKE_EXTENSION_ID,
-		kinds: new Set(['text', 'shape']),
+		kinds: new Set(['text', 'shape', 'captions']),
 		claimsLayer: (c) => needsBake(c),
 		bakes: (c) => (needsBake(c) ? 'remotion' : null),
 		bakesTransition: () => (svc.unavailableReason() ? null : 'remotion'),
@@ -100,7 +100,12 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			// On the Remotion path only DOM layers with colour effects need graded masters (LBK-010).
 			const clips = planned.snapshot.videoTracks
 				.flatMap((t) => t.clips)
-				.filter((c) => (remotion ? isDomLayer(c) && hasColorEffects(c) : needsBake(c)));
+				.filter((c) =>
+					remotion
+						? // three-d: a 3D layer runs its colour effects in its own capture chain (no graded master).
+							isDomLayer(c) && hasColorEffects(c) && !c.threeD
+						: needsBake(c),
+				);
 			// wave1c: GPU transition spans drawn in the export range (native composite only).
 			const spans = remotion
 				? []

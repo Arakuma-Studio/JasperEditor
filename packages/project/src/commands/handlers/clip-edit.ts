@@ -10,9 +10,10 @@
 import { current, type Draft, isDraft } from 'immer';
 import { type Box, scaleForMode } from '../../factories.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
-import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
+import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Clip, Track } from '../../schema/sequence.ts';
-import { contentSpanFlicks, FRAME_EPS, flicksPerFrame } from '../../time.ts';
+import { contentSpanFlicks, flicksPerFrame } from '../../time.ts';
+import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -35,6 +36,7 @@ import {
 	syncFollowerTracks,
 	trackClips,
 } from '../placement.ts';
+import { contentHandles, contentWindow } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, idList } from './util.ts';
 
@@ -54,14 +56,7 @@ function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
  * tail but still cannot show content before content time 0.
  */
 function contentRoom(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
-	const step = flicksPerFrame(seq.settings.frameRate) * c.speed.rate;
-	const dur = contentDurationFlicks(doc, c);
-	const bounded = isBoundedContent(c as Clip) && dur !== null;
-	const before = Math.max(0, Math.floor(c.sourceIn / step + FRAME_EPS));
-	const after = bounded
-		? Math.max(0, Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration)
-		: Number.POSITIVE_INFINITY;
-	return c.speed.reverse ? { head: after, tail: before } : { head: before, tail: after };
+	return contentHandles(doc, seq, c);
 }
 
 /** The clip on the same track ending exactly at `frame` (outgoing side of an edit point). */
@@ -83,7 +78,7 @@ function prevEnd(seq: DSeq, trackId: string, frame: number, except: ReadonlySet<
 }
 
 /** Start of the first clip that starts at or after `frame` (Infinity when none). */
-function nextStart(seq: DSeq, trackId: string, frame: number, except: ReadonlySet<string>): number {
+export function nextStart(seq: DSeq, trackId: string, frame: number, except: ReadonlySet<string>): number {
 	let best = Number.POSITIVE_INFINITY;
 	for (const c of trackClips(seq, trackId))
 		if (!except.has(c.id) && c.start >= frame) best = Math.min(best, c.start);
@@ -144,6 +139,20 @@ function planRoll(doc: DDoc, seq: DSeq, m: DClip, edge: 'in' | 'out'): RollPlan 
 		if (Number.isFinite(n)) range.hi = Math.min(range.hi, n - edit);
 	}
 	return { out, inc, edit, range };
+}
+
+/** edit-ux: the delta range a roll at `clip`'s `edge` allows (with coincident link partners unless `linked` is false). */
+export function rollRange(
+	doc: DDoc,
+	seq: DSeq,
+	clip: DClip,
+	edge: 'in' | 'out',
+	linked: boolean,
+): { lo: number; hi: number } {
+	const pick = (c: DClip) => (edge === 'in' ? c.start : end(c));
+	const members = [clip, ...(linked ? coincidentPartners(seq, clip, pick) : [])];
+	const ranges = members.map((m) => planRoll(doc, seq, m, edge).range);
+	return { lo: Math.max(...ranges.map((r) => r.lo)), hi: Math.min(...ranges.map((r) => r.hi)) };
 }
 
 /** `clip.trim` with `mode: 'roll'` (S02:TL-545). Called by the core `clip.trim` handler. */
@@ -233,7 +242,7 @@ function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	assertUnlocked(trackOf(seq, clip, h), h);
 	// Linked partners that start with the clip slide with it (S02:TL-630).
-	const members = [clip, ...coincidentPartners(seq, clip, (c) => c.start)];
+	const members = [clip, ...(cmd.linked === false ? [] : coincidentPartners(seq, clip, (c) => c.start))];
 	const plans = members.map((m) => planSlide(doc, seq, m));
 	const d = clampDelta(
 		cmd.deltaFrames,
@@ -259,7 +268,7 @@ function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext
  * clip's track shift, and sync-locked unlocked tracks outside `edited` get the same insert/removal once
  * per (frame, delta) event (S01:TRK-006, S02:TL-543).
  */
-function rippleAfterEnd(
+export function rippleAfterEnd(
 	seq: DSeq,
 	h: HandlerContext,
 	clip: DClip,
@@ -297,15 +306,18 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		h.fail('E_INVALID_PARAM', 'Duration must be >= 1 frame');
 	for (const c of clips) assertUnlocked(trackOf(seq, c, h), h);
 
-	// Right to left per track, so a ripple never moves a clip that is processed later.
-	const ordered = [...clips].sort((a, b) => b.start - a.start);
-	const edited = new Set(clips.map((c) => c.trackId));
-	const rippled = new Set<string>();
-	const results: { clipId: string; rate: number; duration: number }[] = [];
-	for (const c of ordered) {
+	// The new rate and duration of every clip (S01:CLP-008).
+	const plans = new Map<string, { rate: number; duration: number }>();
+	for (const c of clips) {
 		const caps = kindCapabilities(c.kind);
 		const speedable = !!caps?.supportsSpeed;
 		if (cmd.maintainPitch !== undefined) c.speed.maintainPitch = cmd.maintainPitch;
+		if (cmd.reverse === true && !c.speed.reverse && isRemapped(c as Clip))
+			h.fail(
+				'E_INVALID_PARAM',
+				`Clip ${c.id} is time-remapped: add a reverse speed segment (timeRemap.addReverse) instead of Reverse Speed`,
+				{ blocking: [c.id] },
+			);
 		if (cmd.reverse !== undefined) {
 			if (speedable)
 				c.speed.reverse = cmd.reverse; // flips the mapping only (S01:CLP-008)
@@ -321,10 +333,10 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		} else if (cmd.rate !== undefined && wantDuration !== undefined) {
 			rate = cmd.rate;
 			duration = wantDuration;
-			const dur = contentDurationFlicks(doc, c);
-			if (isBoundedContent(c as Clip) && dur !== null) {
+			const w = contentWindow(doc, c);
+			if (w.end !== null) {
 				const need = c.sourceIn + contentSpanFlicks(duration, r, rate);
-				if (need > dur + F * rate + 1)
+				if (need > w.end + F * rate + 1)
 					h.fail('E_OUT_OF_MEDIA', `Clip ${c.id} would run past the end of its media`, { blocking: [c.id] });
 			}
 		} else if (cmd.rate !== undefined) {
@@ -339,22 +351,74 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 				h.warn('W_DURATION_CLAMPED', `Speed of clip ${c.id} clamped to ${Math.round(rate * 10000) / 100}%`);
 			}
 		}
-		const oldEnd = end(c);
-		if (!cmd.ripple && duration > c.duration) {
-			// Premiere clamps to the free space and keeps the rate (S01:CLP-008, S02:TL-685).
-			const n = nextStart(seq, c.trackId, oldEnd, new Set([c.id]));
-			if (c.start + duration > n) {
-				duration = n - c.start;
-				h.warn('W_DURATION_CLAMPED', `Clip ${c.id} duration clamped to the next clip`);
+		plans.set(c.id, { rate, duration });
+	}
+	const results: { clipId: string; rate: number; duration: number }[] = [];
+	if (!cmd.ripple) {
+		for (const c of clips) {
+			const p = plans.get(c.id)!;
+			let duration = p.duration;
+			if (duration > c.duration) {
+				// Premiere clamps to the free space and keeps the rate (S01:CLP-008, S02:TL-685).
+				const n = nextStart(seq, c.trackId, end(c), new Set([c.id]));
+				if (c.start + duration > n) {
+					duration = n - c.start;
+					h.warn('W_DURATION_CLAMPED', `Clip ${c.id} duration clamped to the next clip`);
+				}
 			}
+			c.speed.rate = p.rate;
+			c.duration = duration;
+			results.push({ clipId: c.id, rate: p.rate, duration });
 		}
-		c.speed.rate = rate;
-		c.duration = duration;
-		if (cmd.ripple) rippleAfterEnd(seq, h, c, oldEnd, end(c) - oldEnd, edited, rippled);
-		results.push({ clipId: c.id, rate, duration });
+		cleanupSequence(seq, h);
+		return { clips: results };
+	}
+	// edit-ux: with ripple, a clip and its linked partners change as one group (FilmCraft `set_speed_group`):
+	// later material moves once, by the largest change, so a split edit stays in sync. Groups go right to left
+	// so a ripple never moves a clip that is processed later.
+	const groups: DClip[][] = [];
+	const byLink = new Map<string, DClip[]>();
+	for (const c of clips) {
+		const g = c.linkId ? byLink.get(c.linkId) : undefined;
+		if (g && !g.some((m) => m.trackId === c.trackId)) g.push(c);
+		else {
+			const ng = [c];
+			groups.push(ng);
+			if (c.linkId && !g) byLink.set(c.linkId, ng);
+		}
+	}
+	groups.sort((a, b) => Math.max(...b.map((c) => c.start)) - Math.max(...a.map((c) => c.start)));
+	for (const g of groups) {
+		// The picture leads (its end anchors sync-locked tracks).
+		g.sort(
+			(a, b) =>
+				(findTrackIn(seq, a.trackId)!.kind === 'video' ? -1 : 0) -
+				(findTrackIn(seq, b.trackId)!.kind === 'video' ? -1 : 0),
+		);
+		const ids = new Set(g.map((c) => c.id));
+		const oldEnds = g.map((c) => end(c));
+		const shift = Math.max(...g.map((c) => plans.get(c.id)!.duration - c.duration));
+		for (const c of g) {
+			const p = plans.get(c.id)!;
+			c.speed.rate = p.rate;
+			c.duration = p.duration;
+			results.push({ clipId: c.id, rate: p.rate, duration: p.duration });
+		}
+		if (shift === 0) continue;
+		g.forEach((m, i) => {
+			for (const c of trackClips(seq, m.trackId))
+				if (!ids.has(c.id) && c.start >= oldEnds[i]!) c.start += shift;
+		});
+		const from = oldEnds[0]!;
+		const followers = syncFollowerTracks(seq, new Set(g.map((c) => c.trackId))).map((t) => t.id);
+		if (shift > 0) relinkSplits(seq, insertShift(seq, followers, from, shift, h), h);
+		else removeShift(seq, followers, from + shift, -shift, h);
+		shiftMarkers(seq, shift > 0 ? from : from + shift, shift);
 	}
 	cleanupSequence(seq, h);
-	return { clips: results.reverse() };
+	const order = new Map(clips.map((c, i) => [c.id, i]));
+	results.sort((a, b) => order.get(a.clipId)! - order.get(b.clipId)!);
+	return { clips: results };
 }
 
 // ---------------------------------------------------------------- duplicate (S01 clip.duplicate, S02:TL-683)

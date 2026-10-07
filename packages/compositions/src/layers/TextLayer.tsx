@@ -25,12 +25,14 @@ import {
 	textAnimationUnit,
 	type UnitValues,
 } from '@jasper/motion/text';
-import type { TextContent, TextStyle } from '@jasper/project';
+import { sourceTextAt, type TextContent, type TextStyle } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FALLBACK_FONT_STACK, fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { type TypesetSourceProps, TypesetText } from './text/TypesetText.tsx';
+import { needsTypeset } from './text/typography.ts';
 
 type TextSource = Extract<LayerProps['clip']['source'], { text: unknown }>;
 type Fonts = LayerProps['fonts'];
@@ -634,7 +636,18 @@ function TextOverlay({
 // ---------------------------------------------------------------- layer
 
 export function TextLayer(layer: LayerProps) {
-	const source = layer.clip.source;
+	const raw = layer.clip.source;
+	// Wave expressions: a Source Text expression replaces the text at this frame. When it changes the text the
+	// styled runs no longer line up with it, so the base style applies to all of it (as AE applies the first
+	// character's style).
+	const text = 'text' in raw ? sourceTextAt(raw.text, layer.contentTime) : '';
+	const source = useMemo(
+		() =>
+			!('text' in raw) || text === raw.text.text
+				? raw
+				: { ...raw, text: { ...raw.text, text, runs: undefined } },
+		[raw, text],
+	);
 	if (!('text' in source)) return null;
 	const bg = source.text.style.background;
 	return (
@@ -659,19 +672,27 @@ export function TextLayer(layer: LayerProps) {
 }
 
 function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) {
-	const { style, runs } = source.text;
+	const keyed = (source as TypesetSourceProps).sourceTextKeyframes;
 	const families = useMemo(
 		() =>
 			[
 				...new Set(
-					[style, ...(runs ?? []).map((r) => ({ ...style, ...r.style }))]
+					[source.text, ...(keyed ?? []).map((k) => k.value)]
+						.flatMap((c) => [c.style, ...(c.runs ?? []).map((r) => ({ ...c.style, ...r.style }))])
 						.map((s) => faceFamily(s, layer.fonts))
 						.filter((f): f is string => !!f),
 				),
 			].sort(),
-		[style, runs, layer.fonts],
+		[source.text, keyed, layer.fonts],
 	);
 	const fontsReady = useFontsReady(families);
+	// text-animators workstream: animators, Path Options, Source Text keys or extended typography → typeset renderer.
+	if (needsTypeset(source as TypesetSourceProps) || keyed?.length)
+		return fontsReady ? (
+			<TypesetText layer={layer} source={source as TypesetSourceProps} hidden={false} />
+		) : (
+			<RestText source={source} fonts={layer.fonts} hidden />
+		);
 	const active = activeTextAnimation(source.animation, layer.localFrame, layer.clip.duration, layer.fps);
 	const impl = active ? textAnimationImpl(active.animator) : undefined;
 	if (!fontsReady || !active || !impl)
