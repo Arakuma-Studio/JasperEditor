@@ -29,6 +29,9 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'wave-world-wire', id: 'jasper.wave-world', over: { producer1Frequency: 2 }, frame: 60 },
 	{ name: 'caustics', id: 'jasper.caustics', over: { causticsStrength: 0.6 } },
 	{ name: 'playground', id: 'jasper.particle-playground', over: { cannonParticlesPerSecond: 120, cannonText: 'JASPER', cannonParticleRadius: 12, cannonVelocity: 300, gravityForce: 150 }, frame: 60, bg: '#000' },
+	{ name: 'bezier-warp', id: 'jasper.bezier-warp', over: { topLeftTangent: [0.4, -0.2], bottomRightTangent: [0.6, 1.3], rightTopVertex: [0.9, 0.1] } },
+	{ name: 'optics', id: 'jasper.optics-compensation', over: { fieldOfView: 120 } },
+	{ name: 'polar', id: 'jasper.polar-coordinates', over: { interpolation: 100 } },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -159,6 +162,20 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.spread[1]).toBeGreaterThan(r.spread[0] + 4);
 		expect(r.textAlpha).toBeGreaterThan(1);
 		expect(Math.abs(r.explodeColour[1] - r.sourceColour[1])).toBeLessThan(40); // exploded particles carry the layer's colours
+	});
+
+	it('distort: Displacement Map, Optics Compensation, Polar, Bezier Warp, Reshape, Smear', async () => {
+		const r = await page.call<Record<string, any>>('distort');
+		for (const [k, v] of Object.entries(r.identities)) expect(v, k).toBeLessThanOrEqual(2);
+		expect(r.optics).toBeGreaterThan(20);
+		expect(r.polar).toBeGreaterThan(20);
+		// Red map = +1 horizontally: each pixel shows the one 10 px to its right.
+		for (let k = 0; k < 4; k++) expect(Math.abs(r.dmShift[0][k] - r.dmShift[1][k])).toBeLessThanOrEqual(3);
+		expect(r.reshape).toBeGreaterThan(20);
+		expect(r.reshapeOutside).toBe(0); // outside the boundary mask: untouched
+		expect(r.smear).toBeGreaterThan(5);
+		expect(r.bezier).toBeGreaterThan(20);
+		expect(r.bezierCorner).toBe(0); // the corner moved in: transparent
 	});
 
 	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean; frame?: number }[] = [

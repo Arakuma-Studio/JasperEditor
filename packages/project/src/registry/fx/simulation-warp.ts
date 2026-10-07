@@ -12,6 +12,7 @@ import { FOAM_EFFECTS } from './simulation-warp/foam.ts';
 import { WAVE_WORLD_EFFECTS } from './simulation-warp/wave-world.ts';
 import { CAUSTICS_EFFECTS } from './simulation-warp/caustics.ts';
 import { PLAYGROUND_EFFECTS } from './simulation-warp/playground.ts';
+import { DISTORT_EFFECTS } from './simulation-warp/distort.ts';
 import { PARTICLE_EFFECTS } from './simulation-warp/particles.ts';
 import { WEATHER_EFFECTS } from './simulation-warp/weather.ts';
 
@@ -26,4 +27,5 @@ export const SIMULATION_WARP_EFFECTS: readonly EffectSpec[] = [
 	...CAUSTICS_EFFECTS,
 	...WEATHER_EFFECTS,
 	...CARD_TRANSITION_EFFECTS,
+	...DISTORT_EFFECTS,
 ];

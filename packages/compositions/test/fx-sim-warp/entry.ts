@@ -12,6 +12,11 @@ const fx = (id: string, over: Record<string, unknown> = {}, extra: Parameters<ty
 	return run(s, defaults(s, over), box, paint, extra);
 };
 
+/** A copy of a region of a canvas. */
+function canvasRegion(c: HTMLCanvasElement, x: number, y: number, w: number, h: number): HTMLCanvasElement {
+	return canvas(w, h, (ctx) => ctx.drawImage(c, x, y, w, h, 0, 0, w, h));
+}
+
 /** A larger render as a PNG data URL (contact-sheet gallery). */
 function png(arg: { id: string; over?: Record<string, unknown>; frame?: number; w?: number; h?: number; bg?: string }) {
 	const s = spec(arg.id);
@@ -264,6 +269,53 @@ const api = {
 			textAlpha: mean(text.out)[3],
 			explodeColour: mean(explode.out),
 			sourceColour: mean(explode.input),
+		};
+	},
+
+	distort() {
+		const id = (fxId: string, over: Record<string, unknown> = {}) => {
+			const r = fx(fxId, over);
+			return maxDiff(r.out, r.input);
+		};
+		const sq = (x0: number, y0: number, x1: number, y1: number) => ({
+			id: `${x0}`,
+			closed: true,
+			inverted: false,
+			points: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] as [number, number][],
+		});
+		const masks = [sq(30, 20, 50, 40), sq(20, 10, 70, 50), sq(5, 2, 90, 60)];
+		const ctxMasks = { structures: { masks } };
+		const rs = fx('jasper.reshape', { sourceMask: 'mask1', destinationMask: 'mask2', boundaryMask: 'mask3' }, ctxMasks);
+		const sm = fx('jasper.smear', { sourceMask: 'mask1', boundaryMask: 'mask3', maskOffset: [10, 5] }, ctxMasks);
+		const dmMap = canvas(96, 64, (ctx) => {
+			ctx.fillStyle = 'rgb(255,128,0)';
+			ctx.fillRect(0, 0, 96, 64);
+		});
+		const dm = fx('jasper.displacement-map', { displacementMapLayer: { mediaId: 'm' }, displacementMapBehavior: 'stretchMapToFit', maxHorizontal: 10, maxVertical: 0, expandOutput: false }, {
+			textures: { u_displacementMapLayer: { source: dmMap, width: 96, height: 64, version: '1' } },
+		});
+		const bw = fx('jasper.bezier-warp', { topLeftVertex: [0.2, 0.1] });
+		return {
+			identities: {
+				dmOff: id('jasper.displacement-map', { useForHorizontal: 'off', useForVertical: 'off', expandOutput: false }),
+				dmHalf: id('jasper.displacement-map', { useForHorizontal: 'half', useForVertical: 'half', expandOutput: false }),
+				optics: id('jasper.optics-compensation'),
+				polar: id('jasper.polar-coordinates'),
+				bezier: id('jasper.bezier-warp'),
+				reshapeNoMasks: id('jasper.reshape', { sourceMask: 'mask1', destinationMask: 'mask2' }),
+				smearNoMasks: id('jasper.smear'),
+			},
+			optics: sumDiff(fx('jasper.optics-compensation', { fieldOfView: 90 }).out, fx('jasper.optics-compensation').out),
+			polar: sumDiff(fx('jasper.polar-coordinates', { interpolation: 100 }).out, fx('jasper.polar-coordinates').input),
+			dmShift: [px(dm.out, 20, 30), px(dm.input, 30, 30)],
+			reshape: sumDiff(rs.out, rs.input),
+			reshapeOutside: maxDiff(
+				canvasRegion(rs.out, 0, 0, 4, 64),
+				canvasRegion(rs.input, 0, 0, 4, 64),
+			),
+			smear: sumDiff(sm.out, sm.input),
+			bezier: sumDiff(bw.out, bw.input),
+			bezierCorner: px(bw.out, 1, 1)[3],
 		};
 	},
 
