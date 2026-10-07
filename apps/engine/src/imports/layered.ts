@@ -3,19 +3,20 @@
 // turns the tree into project items (individual layers, a sequence with the layers stacked, or merged layers).
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { EngineJob, LayeredExtractResult, LayeredLayer } from '@jasper/api';
+import type { EngineJob, LayeredExtractResult, LayeredLayer, RegisteredMedia } from '@jasper/api';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRegistry } from '../media/registry.ts';
 import type { MediaService } from '../media/service.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { type ExtractedLayer, extractPsdLayers, psdLayeredInfo, readPsdFile } from './psd.ts';
+import { writeRgbaPng } from './png.ts';
+import { type ExtractedLayer, extractPsdLayers, psdCompositeSubset, psdLayeredInfo, readPsdFile } from './psd.ts';
 
 /** Bump to re-extract cached layers. */
 const EXTRACT_VERSION = 1;
 
-type JobInput = { mediaKey: string; projectId?: string };
+type JobInput = { mediaKey: string; projectId?: string; merge?: number[] };
 
 export class LayeredService {
 	constructor(
@@ -32,7 +33,7 @@ export class LayeredService {
 		this.deps.queue.registerRunner('layers', (ctx) => this.run(ctx));
 	}
 
-	submit(mediaKey: string, projectId?: string): EngineJob {
+	submit(mediaKey: string, projectId?: string, merge?: number[]): EngineJob {
 		const r = this.deps.registry.get(mediaKey);
 		if (!r) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
 		if (!r.layered) throw new JobError('BAD_REQUEST', `${r.originalName} is not a layered document`, false);
@@ -44,8 +45,8 @@ export class LayeredService {
 			origin: { type: 'user' },
 			assetId: mediaKey,
 			...(projectId ? { projectId } : {}),
-			dedupeKey: `layers:${fingerprintHex(r.fingerprint)}`,
-			input: { mediaKey, ...(projectId ? { projectId } : {}) } satisfies JobInput,
+			dedupeKey: `layers:${fingerprintHex(r.fingerprint)}${merge ? `:${[...merge].sort((a, b) => a - b).join(',')}` : ''}`,
+			input: { mediaKey, ...(projectId ? { projectId } : {}), ...(merge ? { merge } : {}) } satisfies JobInput,
 		});
 	}
 
@@ -89,7 +90,23 @@ export class LayeredService {
 		};
 		const out: LayeredLayer[] = [];
 		for (const l of layers) out.push(await register(l));
+		let merged: RegisteredMedia | undefined;
+		if (input.merge?.length) {
+			const sel = [...new Set(input.merge)].sort((a, b) => a - b);
+			const file = join(dir, `merged-${sel.join('-').slice(0, 120)}.png`);
+			await writeRgbaPng(this.deps.ff, psdCompositeSubset(psd, new Set(sel)), file, { signal: ctx.signal });
+			merged = await this.deps.media.registerProduced(file, {
+				name: `${docName} (merged).png`,
+				...(input.projectId ? { projectId: input.projectId } : {}),
+			});
+		}
 		ctx.progress(1);
-		return { mediaKey: r.mediaKey, info: psdLayeredInfo(psd, r.originalName), layers: out, warnings };
+		return {
+			mediaKey: r.mediaKey,
+			info: psdLayeredInfo(psd, r.originalName),
+			layers: out,
+			warnings,
+			...(merged ? { merged } : {}),
+		};
 	}
 }

@@ -346,9 +346,9 @@ export class EngineClient {
 		return this.call('importsImageSequenceDetect', { body: { path } });
 	}
 	/** The layers of a PSD extracted and registered (job `layers`, result LayeredExtractResult). */
-	extractLayers(mediaKey: string, projectId?: string, wait = false): Promise<EngineJob> {
+	extractLayers(mediaKey: string, projectId?: string, wait = false, merge?: number[]): Promise<EngineJob> {
 		return this.call('importsLayers', {
-			body: { mediaKey, ...(projectId ? { projectId } : {}) },
+			body: { mediaKey, ...(projectId ? { projectId } : {}), ...(merge ? { merge } : {}) },
 			...(wait ? { query: { wait: '1' as const } } : {}),
 		});
 	}

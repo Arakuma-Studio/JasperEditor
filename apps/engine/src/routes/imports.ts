@@ -232,7 +232,7 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 		guarded<Wait>(async (req, reply) => {
 			const body = parseOr400(LayeredExtractRequestSchema, req.body);
 			record(body.mediaKey);
-			const job = layers.submit(body.mediaKey, body.projectId);
+			const job = layers.submit(body.mediaKey, body.projectId, body.merge);
 			if (req.query.wait !== '1') return reply.code(202).send(job);
 			return waitJob(reply, job.id, 'LAYERS_FAILED');
 		}),

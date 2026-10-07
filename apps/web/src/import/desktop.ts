@@ -48,7 +48,24 @@ const IMPORT_ACCEPT = [
 	'.tif',
 	'.tiff',
 	'.svg',
-	// M3 (S07:PRC-019): a source-range sidecar picked together with a rendered video.
+	// imports workstream: vector, layered, Lottie and the still formats of the LGPL build.
+	'.svgz',
+	'.pdf',
+	'.ai',
+	'.psd',
+	'.psb',
+	'.lottie',
+	'.exr',
+	'.dpx',
+	'.tga',
+	'.jxl',
+	'.heif',
+	'.hdr',
+	'.qoi',
+	'.sgi',
+	'.pcx',
+	'.jp2',
+	// M3 (S07:PRC-019): a source-range sidecar picked together with a rendered video (or a Lottie animation).
 	'.json',
 	// wp captions: caption files import onto caption tracks.
 	'.srt',

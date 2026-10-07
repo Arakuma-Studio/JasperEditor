@@ -287,6 +287,34 @@ export function psdComposite(psd: Psd): { image: RgbaImage; source: 'file' | 'la
 	return { image: out, source: 'layers' };
 }
 
+/**
+ * The document composited with only the layers whose index (pre-order, as `extractPsdLayers` numbers them) is in
+ * `selected` (Premiere's "Merged Layers"); a group is drawn when one of its layers is selected.
+ */
+export function psdCompositeSubset(psd: Psd, selected: ReadonlySet<number>): RgbaImage {
+	let index = 0;
+	const prune = (layers: Layer[], depth: number): { list: Layer[]; any: boolean } => {
+		const list: Layer[] = [];
+		let any = false;
+		for (const l of layers) {
+			if (depth > MAX_DEPTH) break;
+			const i = index++;
+			if (l.children) {
+				const sub = prune(l.children, depth + 1);
+				list.push({ ...l, children: sub.list, hidden: l.hidden || !sub.any });
+				any ||= sub.any && !l.hidden;
+			} else {
+				const on = selected.has(i) && !l.hidden;
+				list.push({ ...l, hidden: !on });
+				any ||= on;
+			}
+		}
+		return { list, any };
+	};
+	const children = prune(psd.children ?? [], 0).list;
+	return psdComposite({ ...psd, children, imageData: undefined }).image;
+}
+
 function blendIndex(mode: PsdBlend): number {
 	const i = BLEND_MODES.indexOf(editorBlendMode(mode));
 	return i < 0 ? 0 : i;

@@ -62,6 +62,8 @@ export type LayeredImportInput = {
 	/** Bin to create the import bin in (null = root). */
 	binId?: string | null;
 	now: string;
+	/** Prefix of the temp refs (several documents in one transaction need different ones). Default `$l`. */
+	refPrefix?: string;
 };
 
 /** Whether a group must become a nested sequence (its blend mode, opacity or mask isolate it). */
@@ -74,18 +76,19 @@ const isolated = (g: LayeredImportLayer) =>
  * (bottom layer on V1) at its position, with its opacity, blend mode and visibility; layers clipped to the layer below
  * (Photoshop clipping masks) read that layer's track through a Track Matte Key (Matte Alpha); groups that isolate
  * (blend mode other than Pass Through, opacity, group mask) become nested sequences, the others are flattened into the
- * parent. Temp refs: `$lbin`, `$lseq`, `$lm<i>` (media), `$lt<i>` / `$lc<i>` (track / clip of layer i).
+ * parent. Temp refs (prefix `$l`): `$lbin`, `$lseq`, `$lm<i>` (media), `$lseq…t<i>` / `$lseq…c<i>` (track / clip).
  */
 export function layeredImportCommands(input: LayeredImportInput): { commands: Command[]; notes: string[] } {
 	const commands: Command[] = [];
 	const notes: string[] = [];
 	const all = flattenLayers(input.layers);
+	const P = input.refPrefix ?? '$l';
 	const chosen = (l: LayeredImportLayer) => !input.selected || input.selected.has(l.index);
 	commands.push({
 		type: 'bin.create',
 		name: `${input.docName} Layers`,
 		parentBinId: input.binId ?? null,
-		ref: '$lbin',
+		ref: `${P}bin`,
 	} as Command);
 	for (const l of all) {
 		if (!l.asset || !chosen(l)) continue;
@@ -102,14 +105,14 @@ export function layeredImportCommands(input: LayeredImportInput): { commands: Co
 					...(groupPath(input.layers, l.index).length ? { groups: groupPath(input.layers, l.index) } : {}),
 				},
 			},
-			binId: '$lbin',
+			binId: `${P}bin`,
 			name: l.name,
-			ref: `$lm${l.index}`,
+			ref: `${P}m${l.index}`,
 		} as Command);
 		for (const n of l.notes ?? []) notes.push(`${l.name}: ${n}`);
 	}
 	if (input.mode === 'individual') return { commands, notes };
-	stack(input, input.layers, '$lseq', input.docName, commands, notes, chosen, 0);
+	stack(input, input.layers, `${P}seq`, input.docName, commands, notes, chosen, 0, P);
 	return { commands, notes };
 }
 
@@ -150,6 +153,7 @@ function stack(
 	notes: string[],
 	chosen: (l: LayeredImportLayer) => boolean,
 	depth: number,
+	P: string,
 ): boolean {
 	if (depth > 32) return false;
 	const list = drawList(layers).filter(
@@ -164,7 +168,7 @@ function stack(
 			height: Math.max(16, input.documentSize.height - (input.documentSize.height % 2)),
 			frameRate: input.frameRate,
 		},
-		binId: '$lbin',
+		binId: `${P}bin`,
 		tracks: { video: 1, audio: 1 },
 		ref: seqRef,
 	} as Command);
@@ -180,12 +184,12 @@ function stack(
 		let h: number;
 		if (l.kind === 'group') {
 			const sub = `${seqRef}g${l.index}`;
-			stack(input, l.children ?? [], sub, `${name} ▸ ${l.name}`, commands, notes, chosen, depth + 1);
+			stack(input, l.children ?? [], sub, `${name} ▸ ${l.name}`, commands, notes, chosen, depth + 1, P);
 			source = { sequenceId: sub };
 			w = input.documentSize.width;
 			h = input.documentSize.height;
 		} else {
-			source = { mediaId: `$lm${l.index}` };
+			source = { mediaId: `${P}m${l.index}` };
 			w = l.width;
 			h = l.height;
 		}

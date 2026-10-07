@@ -152,12 +152,16 @@ export const LayeredLayerSchema: z.ZodType<LayeredLayer> = z.lazy(() =>
 export const LayeredExtractRequestSchema = z.object({
 	mediaKey: z.string(),
 	projectId: z.string().optional(),
+	/** Premiere's "Merged Layers": also composite these layers (indexes) into one picture (`merged`). */
+	merge: z.array(z.number().int().min(0)).max(5000).optional(),
 });
 export const LayeredExtractResultSchema = z.object({
 	mediaKey: z.string(),
 	info: LayeredInfoSchema,
 	layers: z.array(LayeredLayerSchema),
 	warnings: z.array(z.string()),
+	/** The merged picture of `merge` (document size). */
+	merged: RegisteredMediaSchema.optional(),
 });
 export type LayeredExtractResult = z.infer<typeof LayeredExtractResultSchema>;
 

@@ -163,6 +163,19 @@ function meanDiff(a: Buffer, b: Buffer): { mean: number; over8: number } {
 	return { mean: s / Math.max(1, n), over8: over / Math.max(1, n) };
 }
 
+let conformAt = -1;
+
+/** The frame code of frame-code.mp4 (top-left aligned, unscaled) in frame `n` of an export. */
+function frameCode(file: string, n: number): number {
+	const rgb = frameRgb(file, n);
+	let c = 0;
+	for (let b = 0; b < 6; b++) {
+		const o = (70 * 1280 + 70 + 70 * b) * 3;
+		if (rgb[o]! > 127) c |= 1 << b;
+	}
+	return c;
+}
+
 async function main() {
 	const sections: { name: string; at: number; frames: number }[] = [];
 	let t = 0;
@@ -247,7 +260,9 @@ async function main() {
 		const m = addMedia(await register('frame-code.mp4'));
 		tx([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: { num: 15, den: 1 } } }]);
 		const c = place(m, s.at, 12, 'V1');
-		void c;
+		// Top-left aligned so the 6-bit frame code (60 px blocks at x = 40 + 70·b, y = 40) is in the 720p frame.
+		tx([{ type: 'param.set', target: ['clip', c, 'transform', 'position'], value: [960, 540] }]);
+		conformAt = s.at;
 	}
 	console.log(sections.map((s) => `${s.name} ${s.at}–${s.at + s.frames - 1}`).join(', '));
 	const native = await exportWith('auto', 'native');
@@ -262,6 +277,18 @@ async function main() {
 			savePng(remotion, n, join(OUT, `${s.name}-${n}-remotion.png`));
 			console.log(`${s.name} frame ${n}: native vs remotion mean |Δ| ${d.mean.toFixed(2)}, >8: ${(d.over8 * 100).toFixed(2)} %`);
 		}
+	}
+	if (conformAt >= 0) {
+		// 30 fps footage assumed to be 15 fps in a 30 fps sequence: clip frame k shows file frame floor(k / 2).
+		let ok = 0;
+		for (let k = 0; k < 12; k++) {
+			const want = Math.floor(k / 2);
+			const a = frameCode(native, conformAt + k);
+			const b = frameCode(remotion, conformAt + k);
+			if (a === want && b === want) ok++;
+			else console.log(`conform clip frame ${k}: native ${a}, remotion ${b}, expected ${want}`);
+		}
+		console.log(`conform (assumed 15 fps): ${ok}/12 frames show the expected file frame on both paths`);
 	}
 }
 
