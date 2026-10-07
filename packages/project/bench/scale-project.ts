@@ -211,7 +211,7 @@ export function buildScaleProject(opts: ScaleOptions = {}): ProjectDocument {
 			);
 			if (g % 2 === 0)
 				cmds.push({ type: 'effect.add', target: { clipId: `$x${g}` }, effectId: 'jasper.lumetri' });
-			if (g > 0 && !process.env.NOTR)
+			if (g > 0)
 				cmds.push({
 					type: 'transition.add',
 					clipId: `$m${g}`,

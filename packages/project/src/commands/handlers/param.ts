@@ -17,7 +17,7 @@ import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { ensureShapeStorage } from './shape.ts';
-import type { HandlerMap } from './util.ts';
+import { type HandlerMap, peek, peekKeys } from './util.ts';
 
 type ValueRule = {
 	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
@@ -76,21 +76,44 @@ type EffectLocation = {
 	track: Draft<Track> | null;
 };
 
-/** Finds an effect instance in a clip, track or master stack. */
+/** Index of effect `fxId` in a (draft or plain) effect list, read without creating drafts; -1 when absent. */
+function effectIndex(list: readonly EffectInstance[] | undefined, fxId: string): number {
+	if (!list) return -1;
+	for (let i = 0; i < list.length; i++) if (peek<EffectInstance>(list, i)?.id === fxId) return i;
+	return -1;
+}
+
+/**
+ * Finds an effect instance in a clip, track or master stack. The search reads the document without creating drafts
+ * (`peek`; it runs for every parameter and keyframe command), then resolves only the found path through the draft.
+ */
 export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
-	for (const seq of Object.values(doc.sequences)) {
-		for (const clip of Object.values(seq.clips)) {
-			const list = (clip as { effects?: Draft<EffectInstance>[] }).effects;
-			const index = list?.findIndex((e) => e.id === fxId) ?? -1;
-			if (list && index >= 0) return { seq, list, index, fx: list[index]!, clip, track: null };
+	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+	for (const sid of peekKeys(sequences)) {
+		const s = peek<Sequence>(sequences, sid)!;
+		const clips = peek<Record<string, Clip>>(s, 'clips')!;
+		for (const cid of peekKeys(clips)) {
+			const c = peek<Clip>(clips, cid)!;
+			if (effectIndex(peek<EffectInstance[]>(c, 'effects'), fxId) < 0) continue;
+			const seq = doc.sequences[sid]!;
+			const clip = seq.clips[cid]!;
+			const list = (clip as { effects: Draft<EffectInstance>[] }).effects;
+			const index = list.findIndex((e) => e.id === fxId);
+			return { seq, list, index, fx: list[index]!, clip, track: null };
 		}
-		for (const t of [...seq.videoTracks, ...seq.audioTracks]) {
-			const index = t.effects?.findIndex((e) => e.id === fxId) ?? -1;
-			if (t.effects && index >= 0)
-				return { seq, list: t.effects, index, fx: t.effects[index]!, clip: null, track: t };
+		for (const kind of ['videoTracks', 'audioTracks'] as const) {
+			const tracks = peek<Track[]>(s, kind)!;
+			for (let ti = 0; ti < tracks.length; ti++) {
+				if (effectIndex(peek<Track>(tracks, ti)?.effects, fxId) < 0) continue;
+				const seq = doc.sequences[sid]!;
+				const t = seq[kind][ti]!;
+				const index = t.effects!.findIndex((e) => e.id === fxId);
+				return { seq, list: t.effects!, index, fx: t.effects![index]!, clip: null, track: t };
+			}
 		}
-		const index = seq.master.effects.findIndex((e) => e.id === fxId);
-		if (index >= 0)
+		if (effectIndex(peek<Sequence['master']>(s, 'master')?.effects, fxId) >= 0) {
+			const seq = doc.sequences[sid]!;
+			const index = seq.master.effects.findIndex((e) => e.id === fxId);
 			return {
 				seq,
 				list: seq.master.effects,
@@ -99,6 +122,7 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 				clip: null,
 				track: null,
 			};
+		}
 	}
 	return null;
 }

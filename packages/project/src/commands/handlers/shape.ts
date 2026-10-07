@@ -6,7 +6,7 @@
 // are none, plus the stroke drawn outside) and the geometry is centred in it. When an edit changes that box, the
 // anchor (value and keys) moves by half the change, so the geometry stays where it was on screen
 // (M(c) = P + R·S·(c − A) is unchanged).
-import type { Draft } from 'immer';
+import { type Draft, isDraft } from 'immer';
 import {
 	anim,
 	type Box,
@@ -18,13 +18,13 @@ import {
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { DEFAULT_SHAPE_STROKE, type PropertySpec, SHAPE_LIMITS } from '../../registry/properties.ts';
 import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
-import type { ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
+import type { Clip, Sequence, ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { cleanupSequence } from '../placement.ts';
 import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
 import type { CommandType } from '../schemas/index.ts';
 import { applyTransformPatch, commonFields, frameBox, newGeneratorClip, visualFields } from './clip-core.ts';
-import type { Handler, HandlerMap } from './util.ts';
+import { type Handler, type HandlerMap, memoPlain, peek, peekKeys } from './util.ts';
 
 export const SHAPE_OWNER = 'wp-m2-shapes';
 
@@ -94,14 +94,42 @@ function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
  * Wraps a handler of a command that can change shape boxes (clip.update, param.set, keyframe edits): every
  * shape whose box changed during the command is re-centred on its anchor.
  */
+/** Boxes of the shape clips of a clips record (memoized per untouched record). */
+const shapeBoxCache = new WeakMap<object, [string, Box][]>();
+function shapeBoxes(clips: Record<string, Clip>): [string, Box][] {
+	return memoPlain(shapeBoxCache, clips, () => {
+		const out: [string, Box][] = [];
+		for (const cid of peekKeys(clips)) {
+			const c = peek<Clip>(clips, cid);
+			if (c?.kind === 'shape') out.push([cid, shapeIntrinsicBox(c.shape as ShapeData)]);
+		}
+		return out;
+	});
+}
+
 export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
 	return (doc, cmd, h) => {
-		const before: [Draft<ShapeClip>, Box][] = [];
-		for (const seq of Object.values(doc.sequences))
-			for (const c of Object.values(seq.clips))
-				if (c.kind === 'shape') before.push([c as Draft<ShapeClip>, shapeIntrinsicBox(c.shape as ShapeData)]);
+		// This wraps every parameter and keyframe command. Reading every clip of a large document through the draft
+		// cost more than the command itself, so the document is read with `peek` (no drafts) and per-record box lists
+		// are memoized; after the command only records the command touched (drafts) can hold a changed box, and only
+		// a shape whose box changed is written through the draft.
+		const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		const before = new Map<string, Map<string, Box>>();
+		for (const sid of peekKeys(sequences)) {
+			const boxes = shapeBoxes(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!);
+			if (boxes.length) before.set(sid, new Map(boxes));
+		}
 		const result = handler(doc, cmd, h);
-		for (const [clip, box] of before) recenterShape(clip, box);
+		const after = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		for (const [sid, boxes] of before) {
+			const clips = peek<Record<string, Clip>>(peek<Sequence>(after, sid) ?? {}, 'clips');
+			if (!clips || !isDraft(clips)) continue;
+			for (const [cid, box] of shapeBoxes(clips)) {
+				const was = boxes.get(cid);
+				if (was && (was.width !== box.width || was.height !== box.height))
+					recenterShape(doc.sequences[sid]!.clips[cid] as Draft<ShapeClip>, was);
+			}
+		}
 		return result;
 	};
 }
