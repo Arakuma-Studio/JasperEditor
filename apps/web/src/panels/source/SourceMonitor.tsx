@@ -25,7 +25,7 @@ import {
 	X,
 } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { chordFromEvent } from '../../commands/index.ts';
+import { chordFromEvent, runCommand } from '../../commands/index.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	durationLabel,
@@ -52,7 +52,6 @@ import {
 	closeSource,
 	flicksToSourceFrames,
 	openInSource,
-	performSourceEdit,
 	setSourceMarks,
 	sourceAsset,
 	sourceItem,
@@ -156,12 +155,35 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			})),
 		[itemMarkerList, fps],
 	);
-	const markIn = seqItem ? seqItem.inPoint : marks?.in ? flicksToSourceFrames(marks.in.flicks, fps) : null;
+	// edit-ux: a subclip without marks shows its own range as In/Out.
+	const sub = item?.kind === 'subclip' ? item : null;
+	const markIn = seqItem
+		? seqItem.inPoint
+		: marks?.in
+			? flicksToSourceFrames(marks.in.flicks, fps)
+			: sub
+				? flicksToSourceFrames(sub.range.in, fps)
+				: null;
 	const markOut = seqItem
 		? seqItem.outPoint
 		: marks?.out
 			? flicksToSourceFrames(marks.out.flicks, fps)
-			: null;
+			: sub
+				? flicksToSourceFrames(sub.range.out, fps)
+				: null;
+	// edit-ux (Mark Split): the video/audio marks on the mini ruler.
+	const split = (marks as { split?: Record<string, { flicks: number } | null | undefined> } | null)?.split;
+	const splitMarkers = useMemo(
+		() =>
+			Object.entries(split ?? {})
+				.filter((e): e is [string, { flicks: number }] => !!e[1])
+				.map(([k, v]) => ({
+					id: `split-${k}`,
+					frame: flicksToSourceFrames(v.flicks, fps) - (k.endsWith('Out') ? 1 : 0),
+					color: k.startsWith('video') ? 'var(--pr-trim-regular)' : 'var(--pr-trim-ripple)',
+				})),
+		[split, fps],
+	);
 	useEffect(() => {
 		sourceMonitorState.setState({ fps, durationFrames: duration, markIn, markOut });
 		transport.setMaxFrame(Math.max(0, duration - 1));
@@ -218,14 +240,16 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 		transport.seek(Math.max(0, Math.min(duration - 1, f)));
 	};
 	const frameNow = () => transport.getState().frame;
-	const edit = (mode: 'insert' | 'overwrite') => {
-		const r = performSourceEdit(session, mode);
-		if (!r.ok) console.info(`[source] ${r.message}`);
-	};
+	// edit-ux: through the commands (three/four-point editing, Fit Clip dialog, toasts).
+	const edit = (mode: 'insert' | 'overwrite') =>
+		void runCommand(mode === 'insert' ? 'timeline.insertFromSource' : 'timeline.overwriteFromSource', ctx);
 	const mediaItems = useMemo(
 		() =>
 			Object.values(doc.items)
-				.filter((it) => it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence')
+				.filter(
+					(it) =>
+						it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence' || it.kind === 'subclip',
+				)
 				.map((it) => ({ value: it.id, label: it.name })),
 		[doc.items],
 	);
@@ -409,7 +433,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				duration={duration}
 				markIn={markIn}
 				markOut={markOut}
-				markers={sourceMarkers}
+				markers={splitMarkers.length ? [...sourceMarkers, ...splitMarkers] : sourceMarkers}
 				fps={fps}
 				onSeek={seek}
 				testId="source-ruler"

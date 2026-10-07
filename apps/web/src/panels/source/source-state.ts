@@ -8,6 +8,7 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	type FitClip,
 	FLICKS_PER_SECOND,
 	framesToFlicks,
 	type MediaAsset,
@@ -15,10 +16,10 @@ import {
 	type ProjectItem,
 	type RenderSnapshot,
 	type Sequence,
-	syntheticDefaultFlicks,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
+import { resolvePatch, sourceTracksOf } from './patching.ts';
 
 type SourceMonitorState = {
 	itemId: string | null;
@@ -42,12 +43,13 @@ export const sourceMonitorState = createStore<SourceMonitorState>(() => ({
 	markOut: null,
 }));
 
-// edit-structure: sequences and synthetic sources open in the Source monitor too (Premiere).
-type SourceItem = Extract<ProjectItem, { kind: 'media' | 'synthetic' | 'sequence' }>;
+// edit-structure: sequences and synthetic sources open in the Source monitor too (Premiere); edit-ux: subclips.
+type SourceItem = Extract<ProjectItem, { kind: 'media' | 'synthetic' | 'sequence' | 'subclip' }>;
 
 export function sourceItem(doc: ProjectDocument, itemId: string | null): SourceItem | null {
 	const it = itemId ? doc.items[itemId] : undefined;
-	return it && (it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence')
+	return it &&
+		(it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence' || it.kind === 'subclip')
 		? (it as SourceItem)
 		: null;
 }
@@ -96,7 +98,7 @@ export function syntheticPreviewDoc(
 }
 
 export function sourceAsset(doc: ProjectDocument, item: SourceItem | null): MediaAsset | null {
-	return item?.kind === 'media' ? (doc.media[item.mediaId] ?? null) : null;
+	return item?.kind === 'media' || item?.kind === 'subclip' ? (doc.media[item.mediaId] ?? null) : null;
 }
 
 /** Nominal rate of an asset's first video stream (stills/audio: the fallback). */
@@ -167,70 +169,57 @@ export function setSourceMarks(
 }
 
 /**
- * Insert (`,`) / Overwrite (`.`) from the Source monitor (S03:SRC-004, S05:PGM-010): `clip.place` of the
- * marked range at the sequence playhead on the source-patched (else targeted) tracks.
+ * Insert (`,`) / Overwrite (`.`) from the Source monitor (S03:SRC-004, S05:PGM-010; edit-ux three- and
+ * four-point editing): `clip.sourceEdit` of the open item with its marks (split marks too), the sequence In/Out
+ * (the sequence In wins over the playhead; an Out alone backtimes), the playhead and the source patching. When all
+ * four points are set and their durations differ, the result asks for a Fit Clip choice (`needsFit`) unless one
+ * is given.
  */
 export function performSourceEdit(
 	session: EditorSession,
 	mode: 'insert' | 'overwrite',
-): { ok: boolean; message?: string; clipIds?: string[] } {
+	opts: { fit?: FitClip } = {},
+): { ok: boolean; message?: string; clipIds?: string[]; needsFit?: boolean } {
 	const state = session.getState();
 	const doc = state.document;
 	const src = sourceMonitorState.getState();
 	const item = sourceItem(doc, src.itemId);
 	if (!item) return { ok: false, message: 'Open a clip in the Source monitor first' };
 	const seqId = state.activeSequenceId;
-	if (!seqId || !doc.sequences[seqId]) return { ok: false, message: 'No active sequence' };
-	const view = state.views[seqId];
-	const patch = view?.sourcePatching ?? {};
-	const pick = (label: string, targeted: readonly string[] | undefined): string | null | undefined =>
-		label in patch ? patch[label] : targeted?.[0];
-	const video = pick('V1', view?.targeting.video);
-	const audio = pick('A1', view?.targeting.audio);
-	const at = session.transport.getState().frame;
-	// edit-structure: synthetics place with their marks (else their default length); sequences with their In/Out,
-	// as nests or individual clips (the timeline toggle).
-	const marks = item.kind === 'sequence' ? null : item.marks;
-	const source =
-		item.kind === 'media'
-			? { mediaId: item.mediaId }
-			: item.kind === 'synthetic'
-				? { syntheticId: item.syntheticId }
-				: { sequenceId: item.sequenceId };
-	const fullOut =
-		item.kind === 'media'
-			? (doc.media[item.mediaId]?.probe.durationFlicks ?? 0)
-			: item.kind === 'synthetic' && doc.synthetics[item.syntheticId]
-				? (marks?.in?.flicks ?? 0) +
-					syntheticDefaultFlicks(
-						doc.synthetics[item.syntheticId]!.kind,
-						(doc.settings.defaultStillDurationFrames / 30) * FLICKS_PER_SECOND,
-					)
-				: 0;
+	const seq = seqId ? doc.sequences[seqId] : undefined;
+	if (!seqId || !seq) return { ok: false, message: 'No active sequence' };
+	if (item.kind === 'sequence' && item.sequenceId === seqId)
+		return { ok: false, message: 'A sequence cannot be edited into itself' };
+	const asNests = state.toggles.insertSequencesAsNests !== false;
+	const counts = sourceTracksOf(doc, item, asNests);
+	const patch = resolvePatch(seq as Sequence, state.views[seqId], counts);
+	if (counts.video + counts.audio > 0 && [...patch.video, ...patch.audio].every((p) => p === null))
+		return { ok: false, message: 'Every source track is patched off' };
 	const cmd = {
-		type: 'clip.place',
+		type: 'clip.sourceEdit',
 		sequenceId: seqId,
-		source,
-		at,
+		source: { projectItemId: item.id },
 		mode,
-		...(marks && (marks.in || marks.out)
-			? { sourceRange: { in: marks.in ?? { flicks: 0 }, out: marks.out ?? { flicks: fullOut } } }
-			: {}),
-		...(item.kind === 'sequence' ? { nest: state.toggles.insertSequencesAsNests !== false } : {}),
-		...(video === null ? { video: false } : {}),
-		...(audio === null ? { audio: false } : {}),
-		...(video || audio ? { tracks: { ...(video ? { video } : {}), ...(audio ? { audio } : {}) } } : {}),
+		playhead: session.transport.getState().frame,
+		patch,
+		...(item.kind === 'sequence' ? { sequenceAs: asNests ? 'nest' : 'clips' } : {}),
+		...(opts.fit ? { fit: opts.fit } : {}),
+		rippleMarkers: state.toggles.rippleMarkers,
 	} as Command;
 	const r = session.apply({
 		label: mode === 'insert' ? 'Insert' : 'Overwrite',
 		origin: 'user',
 		sequenceId: seqId,
 		commands: [cmd],
+		selectAfter: (res) => ({ timeline: (res.results[0] as { clipIds: string[] }).clipIds }),
 	});
-	if (!r.ok) return { ok: false, message: r.errors[0]?.message };
-	const seq = session.getCommitted().sequences[seqId]!;
-	const created = r.created.filter((id) => seq.clips[id]);
-	const end = Math.max(at, ...created.map((id) => seq.clips[id]!.start + seq.clips[id]!.duration));
-	session.transport.seek(end);
-	return { ok: true, clipIds: created };
+	if (!r.ok) {
+		const e = r.errors[0];
+		if (!opts.fit && e?.path?.[0] === 'fit') return { ok: false, needsFit: true, message: e.message };
+		return { ok: false, message: e?.message };
+	}
+	const res = r.results[0] as { clipIds: string[]; end: number };
+	// Premiere: the playhead moves to the end of the new material.
+	session.transport.seek(res.end);
+	return { ok: true, clipIds: res.clipIds };
 }

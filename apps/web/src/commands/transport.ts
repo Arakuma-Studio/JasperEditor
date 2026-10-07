@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { activeSequence, NUDGE_LARGE, NUDGE_SMALL, nudgeSelection } from '../panels/program/edits.ts';
 import { monitorStores } from '../panels/program/monitor-store.ts';
 import { driverFor, getSourceTransport, shuttleFor } from '../panels/program/transport-registry.ts';
-import { openInSource, performSourceEdit, sourceMonitorState } from '../panels/source/source-state.ts';
+import { openInSource, sourceMonitorState } from '../panels/source/source-state.ts';
 import { inTrimMode, trimModePlay, trimModeShuttle } from './edit-ux.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
@@ -358,28 +358,4 @@ export const transportCommands: UiCommand[] = [
 			if (ctx.session) openInSource(ctx.session, (args as { itemId: string }).itemId);
 		},
 	},
-	{
-		id: 'timeline.insertFromSource',
-		label: 'Insert',
-		scope: 'editing',
-		when: (ctx) => !!ctx.session && sourceMonitorState.getState().itemId !== null,
-		run: (ctx) => runSourceEdit(ctx, 'insert'),
-	},
-	{
-		id: 'timeline.overwriteFromSource',
-		label: 'Overwrite',
-		scope: 'editing',
-		when: (ctx) => !!ctx.session && sourceMonitorState.getState().itemId !== null,
-		run: (ctx) => runSourceEdit(ctx, 'overwrite'),
-	},
 ];
-
-function runSourceEdit(ctx: CommandCtx, mode: 'insert' | 'overwrite') {
-	if (!ctx.session) return;
-	const r = performSourceEdit(ctx.session, mode);
-	if (!r.ok)
-		ctx.ui.toast({
-			kind: 'warning',
-			message: r.message ?? `${mode === 'insert' ? 'Insert' : 'Overwrite'} failed`,
-		});
-}

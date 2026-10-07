@@ -16,6 +16,7 @@ import type { ProjectDocument, ProjectItem, SourceMarks, SubclipItem } from '../
 import type { MediaAsset } from '../../schema/media.ts';
 import type { Sequence } from '../../schema/sequence.ts';
 import { wouldCreateNestCycle } from '../../structure/nest.ts';
+import { syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, end, findTrackIn, setClipRange } from '../placement.ts';
@@ -178,6 +179,7 @@ export function resolveThreePoint(
 					return h.fail(
 						'E_INVALID_PARAM',
 						`Four-point edit: the source (${L} frames) and sequence (${D} frames) durations differ; pass fit: change-speed, ignore-source-in, ignore-source-out, ignore-sequence-in or ignore-sequence-out`,
+						{ path: ['fit'] },
 					);
 			}
 		}
@@ -318,7 +320,10 @@ function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: Hand
 			seqOut,
 			playhead,
 			window,
-			defaultLen: stillFrames * F,
+			defaultLen:
+				src.kind === 'synthetic' && doc.synthetics[src.syntheticId]
+					? syntheticDefaultFlicks(doc.synthetics[src.syntheticId]!.kind, stillFrames * F)
+					: stillFrames * F,
 			F,
 			fit: cmd.fit,
 			elastic,
