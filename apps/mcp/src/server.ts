@@ -30,6 +30,7 @@ import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { ROTO_GUIDE, registerRotoTools } from './tools/roto.ts';
 import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerSimWarpTools, SIM_WARP_GUIDE } from './tools/sim-warp.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
@@ -89,6 +90,7 @@ const FULL_GUIDE = [
 	CAPTIONS_GUIDE,
 	SPEECH_GUIDE,
 	ROTO_GUIDE,
+	SIM_WARP_GUIDE,
 	INTERCHANGE_GUIDE,
 	INSPECT_GUIDE,
 	UI_GUIDE,
@@ -140,6 +142,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);
 	registerRotoTools(ctx);
+	registerSimWarpTools(ctx);
 	registerInterchangeTools(ctx);
 	registerInspectTools(ctx);
 	registerUiTools(ctx);
