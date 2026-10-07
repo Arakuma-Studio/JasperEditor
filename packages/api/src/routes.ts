@@ -100,6 +100,7 @@ import {
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
+import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -120,6 +121,8 @@ export type RouteOwner =
 	// M3
 	| 'wp-m3-cachegc'
 	| 'wp-m3-presets'
+	// Synchronize / Merge Clips / multi-camera
+	| 'wp-multicam'
 	// parity program: versions and crash recovery (D-39)
 	| 'process'
 	// parity program: audio buses, loudness
@@ -571,6 +574,14 @@ export const ROUTES = {
 		body: TrackRequestSchema,
 		response: EngineJobSchema,
 		owner: 'wp-m2-track',
+	},
+	/** wp-multicam: offsets of recordings of one event by their audio (two-pass GCC-PHAT). */
+	syncAudio: {
+		method: 'POST',
+		path: '/api/sync/audio',
+		body: SyncAudioRequestSchema,
+		response: SyncAudioResponseSchema,
+		owner: 'wp-multicam',
 	},
 	// ---- M2 animation (ARCHITECTURE §20.5)
 	/** Graded VP9-alpha preview of one DOM layer (S11:LBK-010). */

@@ -12,7 +12,7 @@ import {
 	type Transcript,
 	TranscriptSchema,
 } from './media.ts';
-import { CaptionStyleSchema, type Sequence, SequenceSchema } from './sequence.ts';
+import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } from './sequence.ts';
 
 /** v3 (M2): additive fields only — media kind `mg-bundle`, `lut`/`mgBundle` headers, `process` recipes, trackers,
  * `trackedBy`, curve params (ARCHITECTURE §19.1). Older builds open v3 files read-only (S01:MIG-003).
@@ -44,6 +44,9 @@ export const MediaItemSchema = z.looseObject({
 	label: LabelColorSchema,
 	marks: SourceMarksSchema,
 	poster: z.looseObject({ flicks: nonNegInt() }).optional(),
+	/** wp-multicam: source clip markers (media time), set in the Source monitor; sync points of Merge Clips and
+	 * Create Multi-Camera Source Sequence by "Clip Marker". */
+	markers: z.array(ClipMarkerSchema).optional(),
 });
 export const SequenceItemSchema = z.looseObject({
 	id: z.string(),

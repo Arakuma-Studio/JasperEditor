@@ -21,6 +21,7 @@ import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
 import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
 import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
+import { MULTICAM_GUIDE, registerMulticamTools } from './tools/multicam.ts';
 import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
@@ -75,6 +76,7 @@ const FULL_GUIDE = [
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
 	STRUCTURE_GUIDE,
+	MULTICAM_GUIDE,
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
 	AUDIO_FX_GUIDE,
@@ -120,6 +122,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
 	registerStructureTools(ctx);
+	registerMulticamTools(ctx);
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);
 	registerAudioFxTools(ctx);

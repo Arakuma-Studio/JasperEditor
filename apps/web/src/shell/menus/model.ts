@@ -154,6 +154,18 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.ungroup', 'Ungroup'),
 			c('clip.nest', 'Nest…'),
 			c('clip.unnest', 'Unnest'),
+			// wp-multicam (Premiere: Clip ▸ Synchronize…, Merge Clips…, Create Multi-Camera Source Sequence…, Multi-Camera ▸)
+			c('clip.synchronize', 'Synchronize…'),
+			c('clip.mergeClips', 'Merge Clips…'),
+			c('clip.createMulticam', 'Create Multi-Camera Source Sequence…'),
+			sub('Multi-Camera', [
+				c('multicam.enable', 'Enable'),
+				c('multicam.flatten', 'Flatten'),
+				sep,
+				c('multicam.editCameras', 'Edit Cameras…'),
+				c('multicam.audioFollowsVideo', 'Multi-Camera Audio Follows Video'),
+				c('multicam.selectionTopDown', 'Multi-Camera Selection Top Down'),
+			]),
 			// edit-structure (Premiere: Clip ▸ Video Options).
 			sub('Video Options', [
 				c('timeline.frameHoldOptions', 'Frame Hold Options…'),

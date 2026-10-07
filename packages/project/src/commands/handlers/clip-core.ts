@@ -21,7 +21,15 @@ import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
-import type { Clip, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
+import type {
+	Clip,
+	Sequence,
+	TextBox,
+	TextContent,
+	TextStyle,
+	Track,
+	Transform,
+} from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -54,6 +62,7 @@ import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';
+import { markMulticamClips } from './multicam.ts';
 import { applyShapePatch } from './shape.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
@@ -178,8 +187,12 @@ export function placeSource(
 	}
 	// edit-structure (S01:SEQ-010, KND-011): a sequence is placed as nest clips or as its individual clips.
 	const sequenceSource = o.source.sequenceId ?? (item?.kind === 'sequence' ? item.sequenceId : undefined);
-	if (sequenceSource)
-		return placeSequence(doc, seq, h, {
+	if (sequenceSource) {
+		// wp-multicam: a multi-camera source always places as linked multi-camera clips (camera 1); a merged clip
+		// places as the clips it holds unless nesting is asked for explicitly.
+		const placedSrc = doc.sequences[sequenceSource] as Sequence | undefined;
+		const nest = placedSrc?.multicam ? true : placedSrc?.merged ? (o.nest ?? false) : o.nest;
+		const placed = placeSequence(doc, seq, h, {
 			sequenceId: sequenceSource,
 			...(o.sourceRange ? { sourceRange: o.sourceRange } : {}),
 			at: o.at,
@@ -188,12 +201,15 @@ export function placeSource(
 			...(o.audioTracks ? { audioTracks: o.audioTracks } : {}),
 			...(o.video !== undefined ? { video: o.video } : {}),
 			...(o.audio !== undefined ? { audio: o.audio } : {}),
-			...(o.nest !== undefined ? { nest: o.nest } : {}),
+			...(nest !== undefined ? { nest } : {}),
 			...(o.createTracks !== undefined ? { createTracks: o.createTracks } : {}),
 			...(o.rippleMarkers !== undefined ? { rippleMarkers: o.rippleMarkers } : {}),
 			...(o.ref ? { ref: o.ref } : {}),
 			...(item ? { name: item.name, label: item.label } : {}),
 		});
+		if (placedSrc?.multicam) markMulticamClips(seq, placed.clipIds, placedSrc.multicam);
+		return placed;
+	}
 	const marks = item && (item.kind === 'media' || item.kind === 'synthetic') ? item.marks : null;
 	if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
 	const scaling = o.scaling ?? doc.settings.defaultScaling;

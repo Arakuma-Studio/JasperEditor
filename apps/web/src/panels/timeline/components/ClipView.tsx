@@ -8,11 +8,15 @@ import {
 	clipEngines,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
+	isMulticamClip,
 	kindCapabilities,
 	type MediaAsset,
+	multicamBadge,
+	multicamSourceOf,
 	type Rational,
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
+import { useSessionOrNull } from '@jasper/session/react';
 import { labelColor } from '@jasper/ui';
 import { memo, useCallback } from 'react';
 import {
@@ -70,8 +74,8 @@ type ClipViewProps = {
 	mediaVersion: number;
 };
 
-function nameFor(c: Clip, linked: boolean, isAudio: boolean): string {
-	let s = c.name;
+function nameFor(c: Clip, linked: boolean, isAudio: boolean, mcBadge = ''): string {
+	let s = mcBadge ? `[${mcBadge}] ${c.name}` : c.name;
 	if (linked) s += isAudio ? ' [A]' : ' [V]';
 	if (c.speed.rate !== 1) s += ` ${Math.round(c.speed.rate * 10000) / 100}%`;
 	if (c.speed.reverse) s += ' (reversed)';
@@ -85,6 +89,12 @@ function ClipViewImpl(p: ClipViewProps) {
 	const extBadge = useClipBadge(c);
 	const decorations = decorationsFor(useRegistry(clipDecorations), c);
 	const isAudio = caps ? !caps.visual && caps.audio : false;
+	// wp-multicam: Premiere labels multi-camera clips "[MC<camera>] name".
+	const session = useSessionOrNull();
+	const mcBadge =
+		session && isMulticamClip(c)
+			? multicamBadge(multicamSourceOf(session.getCommitted().sequences[c.sequenceId]), c)
+			: '';
 	const dprv = dpr();
 	const xr = snapPx(p.x, dprv);
 	const wr = Math.max(1 / dprv, snapPx(p.x + p.w, dprv) - xr);
@@ -312,7 +322,7 @@ function ClipViewImpl(p: ClipViewProps) {
 				>
 					{showName ? (
 						<span className="min-w-0 flex-1 truncate">
-							{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio)}
+							{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio, mcBadge)}
 						</span>
 					) : (
 						<span className="flex-1" />

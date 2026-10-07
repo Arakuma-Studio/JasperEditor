@@ -21,4 +21,5 @@ export * from './processing.ts';
 export * from './projects.ts';
 export * from './routes.ts';
 export * from './speech.ts';
+export * from './sync.ts';
 export * from './tracking.ts';

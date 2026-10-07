@@ -499,11 +499,26 @@ export const CompositionClipSchema = z.looseObject({
 	canvas: canvasSchema,
 	...visualShape,
 });
+// ---------------------------------------------------------------- multi-camera (wp-multicam)
+
+/**
+ * wp-multicam: the angle a nest clip of a multi-camera source sequence shows (Clip ▸ Multi-Camera). `enabled`
+ * false (Multi-Camera ▸ Enable off) = the clip plays like an ordinary nest. `angle` = an angle id of the source's
+ * `multicam.angles`: the picture of video clips, and the sound of audio clips when the source switches audio.
+ */
+export const MulticamSelectionSchema = z.looseObject({
+	enabled: z.boolean(),
+	angle: z.string(),
+});
+export type MulticamSelection = DeepStrip<z.infer<typeof MulticamSelectionSchema>>;
+
 export const NestVideoClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('nest-video'),
 	sequenceId: z.string(),
 	...visualShape,
+	/** wp-multicam: present = a multi-camera clip. */
+	multicam: MulticamSelectionSchema.optional(),
 });
 export const NestAudioClipSchema = z.looseObject({
 	...commonShape,
@@ -513,6 +528,8 @@ export const NestAudioClipSchema = z.looseObject({
 	volumeDb: AnimNumberSchema,
 	pan: AnimNumberSchema,
 	effects: z.array(EffectInstanceSchema),
+	/** wp-multicam: present = a multi-camera clip. */
+	multicam: MulticamSelectionSchema.optional(),
 });
 export const AdjustmentClipSchema = z.looseObject({
 	...commonShape,
@@ -685,6 +702,58 @@ export const SequenceSettingsSchema = z.looseObject({
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
 
+// ---------------------------------------------------------------- multi-camera sources and merged clips (wp-multicam)
+
+/** Sync point of Synchronize, Merge Clips and Create Multi-Camera Source Sequence. */
+export const SYNC_METHODS = ['in', 'out', 'timecode', 'marker', 'audio'] as const;
+export const SyncMethodSchema = z.enum(SYNC_METHODS);
+export type SyncMethod = DeepStrip<z.infer<typeof SyncMethodSchema>>;
+
+/**
+ * Multi-camera source audio (Create Multi-Camera Source Sequence ▸ Audio): `camera1` plays the first video angle's
+ * audio, `all` mixes every camera, `switch` plays the selected angle's audio (multi-camera audio clips switch with
+ * their angle). Audio-only angles always play.
+ */
+export const MULTICAM_AUDIO_MODES = ['camera1', 'all', 'switch'] as const;
+export const MulticamAudioModeSchema = z.enum(MULTICAM_AUDIO_MODES);
+export type MulticamAudioMode = DeepStrip<z.infer<typeof MulticamAudioModeSchema>>;
+
+/** One camera (angle) of a multi-camera source sequence: one video track plus its audio tracks. */
+export const MulticamAngleSchema = z.looseObject({
+	/** Stable id within the source (the id of the track the angle was created on). */
+	id: z.string(),
+	name: z.string(),
+	/** null = an audio-only source: never an angle of the grid, mixed in by every audio mode. */
+	videoTrackId: z.string().nullable(),
+	audioTrackIds: z.array(z.string()),
+	/** Shown in the Multi-Camera view (Edit Cameras); hidden angles keep their clips. */
+	enabled: z.boolean(),
+	/** Project item the angle was made from (informational, Match Frame). */
+	itemId: z.string().nullable().optional(),
+});
+export type MulticamAngle = DeepStrip<z.infer<typeof MulticamAngleSchema>>;
+
+/** What makes a sequence a multi-camera source sequence. Angle order = camera order (Camera 1 = angles[0]). */
+export const MulticamSourceSchema = z.looseObject({
+	angles: z.array(MulticamAngleSchema),
+	audio: MulticamAudioModeSchema,
+	/** How the cameras were synchronised (informational). */
+	sync: SyncMethodSchema.optional(),
+});
+export type MulticamSource = DeepStrip<z.infer<typeof MulticamSourceSchema>>;
+
+/**
+ * What makes a sequence a merged clip (Clip ▸ Merge Clips): one video clip on V1 and its separately recorded audio
+ * on the audio tracks, synchronised. Placing it edits the clips it holds (linked), not a nest.
+ */
+export const MergedClipSchema = z.looseObject({
+	videoItemId: z.string().nullable(),
+	audioItemIds: z.array(z.string()),
+	sync: SyncMethodSchema,
+	removeVideoAudio: z.boolean(),
+});
+export type MergedClip = DeepStrip<z.infer<typeof MergedClipSchema>>;
+
 export const SequenceSchema = z.looseObject({
 	id: z.string(),
 	settings: SequenceSettingsSchema,
@@ -709,6 +778,10 @@ export const SequenceSchema = z.looseObject({
 	inPoint: nonNegInt().nullable(),
 	outPoint: nonNegInt().nullable(),
 	workArea: z.looseObject({ start: nonNegInt(), end: nonNegInt() }).nullable(),
+	/** wp-multicam: present = a multi-camera source sequence. */
+	multicam: MulticamSourceSchema.optional(),
+	/** wp-multicam: present = a merged clip. */
+	merged: MergedClipSchema.optional(),
 	/** wp captions: the caption track the Captions panel edits and that export embeds first (null = C1). */
 	activeCaptionTrackId: z.string().nullable().optional(),
 });

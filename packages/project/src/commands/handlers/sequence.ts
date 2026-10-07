@@ -1,10 +1,12 @@
 // sequence.*, marker.*, track.* (S01 §7, §8, SEQ-006/007/008).
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
+import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
-import type { ClipMarker, Marker, SequenceSettings, Track } from '../../schema/sequence.ts';
+import type { ClipMarker, Marker, Sequence, SequenceSettings, Track } from '../../schema/sequence.ts';
 import {
 	isAllowedSequenceRate,
 	mapFrameBetweenRates,
@@ -144,6 +146,17 @@ function findMarker(doc: DDoc, markerId: string, h: HandlerContext) {
 	return h.fail('E_NOT_FOUND', `Marker not found: ${markerId}`);
 }
 
+/** wp-multicam: a source clip marker of a media item. */
+function findItemMarker(doc: DDoc, markerId: string) {
+	for (const it of Object.values(doc.items)) {
+		if (it.kind !== 'media') continue;
+		const list = (it as { markers?: Draft<ClipMarker>[] }).markers;
+		const marker = list?.find((m) => m.id === markerId);
+		if (list && marker) return { item: it, list, marker };
+	}
+	return null;
+}
+
 export const sequenceHandlers: HandlerMap = {
 	'sequence.create': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
@@ -248,7 +261,22 @@ export const sequenceHandlers: HandlerMap = {
 			...(cmd.url !== undefined ? { url: cmd.url } : {}),
 			author: h.agentAuthor(),
 		} as const;
-		if (cmd.clipId) {
+		if (cmd.itemId) {
+			// wp-multicam: source clip markers live on the media item (media time).
+			const it = doc.items[cmd.itemId];
+			if (!it) h.fail('E_NOT_FOUND', `Project item not found: ${cmd.itemId}`);
+			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', 'Source clip markers go on media items');
+			const asset = doc.media[it.mediaId] as MediaAsset | undefined;
+			const fallback = { num: 30, den: 1 };
+			const flicks = cmd.flicks ? h.flicks(cmd.flicks, asset, fallback) : (it.marks.in?.flicks ?? 0);
+			if (flicks < 0) h.fail('E_INVALID_PARAM', 'Marker time must be >= 0');
+			const dur = asset?.probe.durationFlicks;
+			if (dur !== null && dur !== undefined && flicks > dur)
+				h.fail('E_OUT_OF_MEDIA', 'Marker is after the end of the media');
+			const list = ((it as { markers?: ClipMarker[] }).markers ??= []) as Draft<ClipMarker>[];
+			list.push({ ...base, flicks, duration: 0 });
+			list.sort((a, b) => a.flicks - b.flicks);
+		} else if (cmd.clipId) {
 			const { seq, clip } = h.clip(doc, cmd.clipId);
 			assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 			let flicks: number;
@@ -278,6 +306,21 @@ export const sequenceHandlers: HandlerMap = {
 		return { markerId: id };
 	},
 	'marker.update': (doc, cmd, h: HandlerContext) => {
+		const im = findItemMarker(doc, cmd.markerId);
+		if (im) {
+			const m = im.marker;
+			if (cmd.name !== undefined) m.name = cmd.name;
+			if (cmd.comment !== undefined) m.comment = cmd.comment;
+			if (cmd.color !== undefined) m.color = cmd.color;
+			if (cmd.markerType !== undefined) m.type = cmd.markerType;
+			if (cmd.url !== undefined) m.url = cmd.url;
+			if (cmd.flicks) {
+				const asset = doc.media[im.item.mediaId] as MediaAsset | undefined;
+				m.flicks = h.flicks(cmd.flicks, asset, { num: 30, den: 1 });
+			}
+			im.list.sort((a, b) => a.flicks - b.flicks);
+			return;
+		}
 		const found = findMarker(doc, cmd.markerId, h);
 		const m = found.marker as Draft<Marker & ClipMarker>;
 		if (found.clip) assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
@@ -298,6 +341,11 @@ export const sequenceHandlers: HandlerMap = {
 	},
 	'marker.remove': (doc, cmd, h: HandlerContext) => {
 		for (const id of cmd.markerIds) {
+			const im = findItemMarker(doc, id);
+			if (im) {
+				im.list.splice(im.list.indexOf(im.marker), 1);
+				continue;
+			}
 			const found = findMarker(doc, id, h);
 			if (found.clip) {
 				assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
@@ -346,6 +394,11 @@ export const sequenceHandlers: HandlerMap = {
 		seq.captionTracks = seq.captionTracks.filter((t) => !ids.includes(t.id));
 		if (seq.videoTracks.length === 0 || seq.audioTracks.length === 0) {
 			h.fail('E_INVALID_PARAM', 'A sequence needs at least one video and one audio track');
+		}
+		// wp-multicam: angles of a multi-camera source lose the removed tracks; clips of a removed angle fall back.
+		if ((seq as Sequence).multicam) {
+			pruneMulticamAngles(seq as Sequence);
+			fixMulticamSelections(doc as ProjectDocument);
 		}
 		cleanupSequence(seq, h);
 	},

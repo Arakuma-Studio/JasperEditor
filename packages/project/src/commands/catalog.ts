@@ -12,6 +12,7 @@ import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
+import { multicamHandlers } from './handlers/multicam.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
@@ -43,6 +44,8 @@ export type CommandOwner =
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
 	| 'wp-m3-presets'
+	// Synchronize, Merge Clips, multi-camera (docs/wp-notes/multicam.md)
+	| 'wp-multicam'
 	// Nests, adjustment layers, groups, synthetics, frame holds, through edits (docs/wp-notes/edit-structure.md)
 	| 'edit-structure'
 	// Masks (S03 §17)
@@ -169,6 +172,14 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'clip.synchronize': 'Synchronize',
+	'item.mergeClips': 'Merge Clips',
+	'multicam.create': 'Create Multi-Camera Source Sequence',
+	'multicam.switchAngle': 'Switch Multi-Camera Angle',
+	'multicam.record': 'Record Multi-Camera',
+	'multicam.setEnabled': 'Multi-Camera Enable',
+	'multicam.flatten': 'Flatten Multi-Camera',
+	'multicam.editAngles': 'Edit Cameras',
 	// audio-mix
 	'mixer.updateStrip': 'Audio Track Mixer',
 	'mixer.addSubmix': 'Add Submix Track',
@@ -251,6 +262,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[multicamHandlers, 'wp-multicam'],
 	[audioHandlers, AUDIO_MIX_OWNER],
 	[structureHandlers, STRUCTURE_OWNER],
 	[maskHandlers, 'wp-m3-masks'],
@@ -281,7 +293,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === AUDIO_MIX_OWNER ||
 				owner === 'keyframes-blend' ||
 				owner === SPEECH_OWNER ||
-				owner === ESSENTIAL_OWNER
+				owner === ESSENTIAL_OWNER ||
+				owner === 'wp-multicam'
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

@@ -1,7 +1,8 @@
 /**
  * @jasper/audio-dsp — pure, deterministic, allocation-free-in-the-hot-path audio DSP (AudioWorklet friendly):
  * BS.1770-4 / EBU R128 loudness, true-peak detection and limiting, level meters, channel layouts and pan
- * laws, auto-ducking analysis, WAV I/O and band-limited resampling. Audio is planar `Float32Array[]`.
+ * laws, auto-ducking analysis, WAV I/O, band-limited resampling and audio sync (two-pass GCC-PHAT, wp-multicam).
+ * Audio is planar `Float32Array[]`.
  *
  * Large parts are ported from FilmCraft `crates/audio-dsp` (MIT OR Apache-2.0,
  * Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors); see licenses/ported/audio-mix.md.
@@ -62,6 +63,7 @@ export {
 	planDucking,
 	sensitivityThresholdDb,
 } from './ducking.ts';
+export { fft, nextPow2 } from './fft.ts';
 export { K_PREFILTER_PROTOTYPE, K_RLB_PROTOTYPE, kPrefilter, kRlb, kWeightingPower } from './kweight.ts';
 export { limitBuffer, TruePeakLimiter, type TruePeakLimiterOptions } from './limiter.ts';
 export {
@@ -96,4 +98,20 @@ export {
 } from './oversample.ts';
 export { type ResampleQuality, resample } from './resample.ts';
 export { Smoothed } from './smooth.ts';
+export {
+	type CoarseResult,
+	coarseOffset,
+	decimate,
+	findOffset,
+	isReliable,
+	loudestCommonWindow,
+	mixdown,
+	RELIABLE_CONFIDENCE,
+	RELIABLE_DISTINCT,
+	refineMargin,
+	refineOffset,
+	SYNC_DEFAULTS,
+	type SyncOptions,
+	type SyncResult,
+} from './sync.ts';
 export { type DecodedWav, decodeWav, encodeWav, type WavFormat, wavChannelMask } from './wav.ts';

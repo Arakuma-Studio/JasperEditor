@@ -6,6 +6,7 @@ import { CLIPBOARD_COMMANDS } from './clipboard.ts';
 import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
 import { MASK_COMMANDS } from './mask.ts';
+import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
@@ -23,6 +24,7 @@ export * from './common.ts';
 export * from './essential.ts';
 export * from './expression.ts';
 export * from './mask.ts';
+export * from './multicam.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
@@ -45,6 +47,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
+	// Synchronize, Merge Clips, multi-camera (wp-multicam)
+	...MULTICAM_COMMANDS,
 	// Audio buses (audio-mix)
 	...AUDIO_COMMANDS,
 	// edit-structure (nests, frame holds, through edits, subsequences)
