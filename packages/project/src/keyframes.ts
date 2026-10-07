@@ -421,6 +421,36 @@ export function stopRoving(kfs: Keyframe<unknown>[], i: number): void {
 	k.easeOut = { influence: AUTO_INFLUENCE, slope: vout > 0 ? v / vout : 1 };
 }
 
+// ---------------------------------------------------------------- reversed traversal (keyframes-blend)
+
+/**
+ * The temporal fields key `i` of `kfs` (time order) needs when the keys are traversed backwards (pasted / re-timed
+ * onto a clip running the other way): each segment mirrored, so the motion plays exactly in reverse. A segment's
+ * shape is its left key's out-ease and its right key's in-ease (a Linear left key makes it linear), so after the
+ * reversal key i is a Bezier key with easeOut = its old effective arriving ease and easeIn = its old effective
+ * leaving ease (a Bézier ease mirrored about (½, ½) swaps its two controls). A Hold segment cannot be mirrored (a hold
+ * shows its left key): it becomes a hold of the key it now starts from. Hold-only values keep holding.
+ */
+export function reversedKeyTiming(
+	kfs: readonly Keyframe<unknown>[],
+	i: number,
+): Pick<Keyframe<unknown>, 'interpolation' | 'easeIn' | 'easeOut'> {
+	const k = kfs[i]!;
+	if (isHoldOnlyValue(k.value)) return { interpolation: 'hold', easeIn: k.easeIn, easeOut: k.easeOut };
+	const prev = kfs[i - 1];
+	const next = kfs[i + 1];
+	// Arriving side of the old segment (prev, k) → leaving side now.
+	const arriving = !prev || prev.interpolation === 'linear' ? LINEAR_EASE : incomingEase(kfs, i);
+	// Leaving side of the old segment (k, next) → arriving side now.
+	const leaving = !next || k.interpolation === 'linear' ? LINEAR_EASE : outgoingEase(kfs, i);
+	const interpolation = prev?.interpolation === 'hold' ? 'hold' : 'bezier';
+	return {
+		interpolation,
+		easeIn: { influence: leaving.influence, slope: leaving.slope },
+		easeOut: { influence: arriving.influence, slope: arriving.slope },
+	};
+}
+
 /** True when the property has at least one keyframe (stopwatch on). */
 export function isAnimated(anim: { keyframes: readonly unknown[] } | undefined | null): boolean {
 	return !!anim && anim.keyframes.length > 0;
