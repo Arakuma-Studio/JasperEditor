@@ -15,12 +15,15 @@ import {
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type ImageSequenceRequest,
 	type InterchangeExportRequest,
 	type InterchangeImportRequest,
 	type InterchangePrerenderPlanRequestSchema,
 	type JobListQuery,
+	type LottieExportRequest,
 	type LoudnessNormalizeRequest,
 	type MediaRegisterRequest,
+	type MediaVariantRequest,
 	type MgRenderRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
@@ -329,6 +332,62 @@ export class EngineClient {
 			body: req,
 			...(wait ? { query: { wait: '1' as const } } : {}),
 		});
+	}
+	// ---- imports workstream
+	/** The interpreted picture of a media (display / proxy / master of a pixel variant); queues it when missing. */
+	requestMediaVariant(mediaKey: string, req: MediaVariantRequest) {
+		return this.call('mediaVariant', { params: { mediaKey }, body: req });
+	}
+	/** Numbered stills → one media (job `image-sequence`, result RegisteredMedia). */
+	importImageSequence(req: ImageSequenceRequest, wait = false): Promise<EngineJob> {
+		return this.call('importsImageSequence', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	detectImageSequence(path: string) {
+		return this.call('importsImageSequenceDetect', { body: { path } });
+	}
+	/** The layers of a PSD extracted and registered (job `layers`, result LayeredExtractResult). */
+	extractLayers(mediaKey: string, projectId?: string, wait = false): Promise<EngineJob> {
+		return this.call('importsLayers', {
+			body: { mediaKey, ...(projectId ? { projectId } : {}) },
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+	vectorPages(mediaKey: string) {
+		return this.call('importsVectorPages', { params: { mediaKey } });
+	}
+	exportLottie(req: LottieExportRequest) {
+		return this.call('importsLottieExport', { body: req });
+	}
+	/**
+	 * Uploads one frame of an image sequence (purpose `sequence-frame`): the upload is not registered as media, it is
+	 * consumed by `importImageSequence({uploadIds})`. Returns the upload id.
+	 */
+	async uploadSequenceFrame(
+		blob: Blob,
+		opts: { projectId: string; fileName?: string; signal?: AbortSignal; onProgress?(p: UploadProgress): void },
+	): Promise<string> {
+		const fileName = opts.fileName ?? (blob as File).name ?? 'frame.bin';
+		const session = await this.createUpload({
+			projectId: opts.projectId,
+			fileName,
+			byteSize: blob.size,
+			mimeType: blob.type || 'application/octet-stream',
+			purpose: 'sequence-frame',
+		});
+		const chunkSize = session.chunkSize || UPLOAD_CHUNK_BYTES;
+		let offset = session.offset;
+		try {
+			while (offset < blob.size) {
+				if (opts.signal?.aborted) throw opts.signal.reason ?? new DOMException('Aborted', 'AbortError');
+				const end = Math.min(blob.size, offset + chunkSize);
+				offset = (await this.appendUpload(session.uploadId, offset, blob.slice(offset, end), opts.signal)).offset;
+				opts.onProgress?.({ loaded: offset, total: blob.size });
+			}
+		} catch (e) {
+			await this.abortUpload(session.uploadId).catch(() => undefined);
+			throw e;
+		}
+		return session.uploadId;
 	}
 	/** Workstream `time`: Scene Edit Detection of a media range (job; result SceneDetectResult). */
 	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {

@@ -129,6 +129,8 @@ export function interpretMediaHandle(asset: MediaAsset, handle: MediaHandle | nu
 	if (pixel) {
 		out.pixel = pixel;
 		out.pixelVariant = pixelVariantKey(pixel);
+		// Browsers show the engine's interpreted picture (display / proxy / master), never the original.
+		out.browserDecodable = false;
 		// The interpreted alpha decides whether compositing keeps it.
 		if (pixel.alpha?.mode === 'ignore' && !pixel.alpha.invert) delete out.alpha;
 		else if (pixel.alpha) out.alpha = true;

@@ -62,7 +62,12 @@ function useBakedLayerRuntime(): BakedLayerRuntime | null {
 /** DOM layers (S11 §0): text, shapes and Remotion-rendered motion graphics (anime templates). */
 export function isDomLayerClip(clip: Pick<RenderVisualClip, 'kind' | 'engine'>): boolean {
 	return (
-		(clip.kind === 'text' || clip.kind === 'shape' || clip.kind === 'motion-graphic') &&
+		(clip.kind === 'text' ||
+			clip.kind === 'shape' ||
+			clip.kind === 'motion-graphic' ||
+			// imports: Lottie animations and vector stills (the snapshot gives them engine `remotion`).
+			clip.kind === 'still' ||
+			clip.kind === 'animated-image') &&
 		clip.engine === 'remotion'
 	);
 }

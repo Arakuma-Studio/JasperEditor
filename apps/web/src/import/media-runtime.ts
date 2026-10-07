@@ -10,7 +10,7 @@ import type {
 } from '@jasper/api';
 import { TERMINAL_JOB_STATES } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import type { MediaAsset } from '@jasper/project';
+import { browserPictureNeed, type MediaAsset } from '@jasper/project';
 import type { DerivativeStatus, EditorSession, MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from './assets.ts';
 
@@ -164,6 +164,60 @@ export function createMediaRuntimeSync(
 		}
 	};
 
+	// ---- imports: interpreted pictures (display PNG of stills a browser cannot show / with a pixel interpretation,
+	// interpreted proxy of videos with one). Keyed per asset: two assets of one file may be interpreted differently.
+	const variantKeyOf = (m: MediaAsset): string | null => {
+		const need = browserPictureNeed(m);
+		return need.picture ? `${need.picture}:${need.variant}` : null;
+	};
+	const requested = new Map<string, string>();
+	const syncVariants = (ids?: readonly string[]) => {
+		if (disposed) return;
+		const media = session.getCommitted().media as Record<string, MediaAsset>;
+		for (const m of ids ? ids.map((id) => media[id]).filter((x): x is MediaAsset => !!x) : Object.values(media)) {
+			const key = mediaKeyOf(m);
+			const vk = variantKeyOf(m);
+			if (!key || !vk) {
+				if (requested.has(m.id)) {
+					requested.delete(m.id);
+					session.setMediaRuntime(m.id, { variant: undefined });
+				}
+				continue;
+			}
+			if (requested.get(m.id) === vk) continue;
+			requested.set(m.id, vk);
+			const [kind, variant] = [vk.slice(0, vk.indexOf(':')), vk.slice(vk.indexOf(':') + 1)] as [
+				'display' | 'proxy',
+				string,
+			];
+			session.setMediaRuntime(m.id, { variant: { key: vk, state: 'queued' } });
+			engine
+				.requestMediaVariant(key, { kind, variant })
+				.then((st) => {
+					if (disposed || requested.get(m.id) !== vk) return;
+					session.setMediaRuntime(m.id, {
+						variant: {
+							key: vk,
+							state: st.state,
+							...(st.url ? { url: st.url } : {}),
+							...(st.error ? { error: st.error } : {}),
+						},
+					});
+				})
+				.catch((e: unknown) => {
+					if (disposed || requested.get(m.id) !== vk) return;
+					session.setMediaRuntime(m.id, {
+						variant: { key: vk, state: 'failed', error: e instanceof Error ? e.message : String(e) },
+					});
+				});
+		}
+	};
+	const onVariantReady = (p: { mediaKey: string; kind: string; variant: string; url: string }) => {
+		const vk = `${p.kind}:${p.variant}`;
+		for (const id of byKey.get(p.mediaKey) ?? [])
+			if (requested.get(id) === vk) session.setMediaRuntime(id, { variant: { key: vk, state: 'ready', url: p.url } });
+	};
+
 	const jobTargets = (job: EngineJob): string[] => {
 		const keys: string[] = [];
 		if (job.assetId && byKey.has(job.assetId)) keys.push(job.assetId);
@@ -182,6 +236,9 @@ export function createMediaRuntimeSync(
 		switch (e.type) {
 			case 'derivative.ready':
 				applyDerivative(e.payload.mediaKey, e.payload.kind, { state: 'ready', progress: 1 }, e.payload.url);
+				break;
+			case 'media.variant.ready':
+				onVariantReady(e.payload);
 				break;
 			case 'media.updated':
 				applyStatus({
@@ -218,10 +275,14 @@ export function createMediaRuntimeSync(
 	};
 
 	syncNew();
+	syncVariants();
 	const offDoc = session.on('doc.changed', (ev) => {
 		if (ev.created.some((id) => id.startsWith('med_')) || ev.deleted.some((id) => id.startsWith('med_')))
 			syncNew();
 		else if (ev.isUndo || ev.isRedo) syncNew();
+		// imports: Interpret Footage changed a media (or it was just added): its interpreted picture.
+		const touched = [...ev.created, ...ev.changed].filter((id) => id.startsWith('med_'));
+		if (touched.length || ev.isUndo || ev.isRedo) syncVariants(ev.isUndo || ev.isRedo ? undefined : touched);
 	});
 	const offEvents = subscribe ? subscribe(onEvent) : () => undefined;
 
