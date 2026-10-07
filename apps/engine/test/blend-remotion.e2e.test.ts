@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	BLEND_MODES,
+	blendModeInfo,
 	blendPixel,
 	dissolveNoise,
 	dissolveSeed,
@@ -122,6 +123,7 @@ describe.runIf(enabled)('blend modes on the Remotion path (REMOTION_E2E=1)', () 
 		await engine?.stop();
 	});
 
+	const CSS = new Set(MODES.filter((m) => !!blendModeInfo(m)?.css));
 	const STEEP = new Set([
 		'dissolve',
 		'color-burn',
@@ -161,7 +163,21 @@ describe.runIf(enabled)('blend modes on the Remotion path (REMOTION_E2E=1)', () 
 				let e = 0;
 				for (let k = 0; k < 3; k++) e = Math.max(e, Math.abs(want[k]! * 255 - out.rgb[k3 + k]!));
 				worst = Math.max(worst, e);
-				if (e > 2.5) bad++;
+				// CSS modes are drawn by Chrome's compositor: ≤ 3 code values with layer opacity (blend-gl.test.ts).
+				if (e > (CSS.has(mode) ? 3.5 : 2.5)) {
+					bad++;
+					if (process.env.BLEND_DEBUG && bad < 6)
+						console.info(
+							'BAD',
+							mode,
+							p % W,
+							Math.floor(p / W),
+							[...base.subarray(k3, k3 + 3)],
+							[...layer.subarray(k3, k3 + 3)],
+							want.map((v) => Math.round(v * 255)),
+							[...out.rgb.subarray(k3, k3 + 3)],
+						);
+				}
 			}
 			console.info(`[blend remotion] ${mode}: ${bad}/${n} off, worst ${worst.toFixed(1)}`);
 			expect(bad / n, `${mode}: ${bad} of ${n} pixels off (worst ${worst})`).toBeLessThanOrEqual(

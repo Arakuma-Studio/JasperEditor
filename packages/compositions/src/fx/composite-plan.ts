@@ -148,7 +148,11 @@ void main() {
   vec2 e = min(c, u_placeSize - c) / fw;
   bool live = q.z > 1e-6 && u_placeSize.x > 0.0 && u_placeSize.y > 0.0;
   float cov = live ? clamp(min(e.x, e.y) + 0.5, 0.0, 1.0) : 0.0;
-  vec4 src = texture(${name}, c / max(u_placeSize, vec2(1.0))) * (cov * clamp(u_placeOpacity, 0.0, 1.0));
+  // A pixel-aligned layer samples texel centres exactly (float error in the map must not mix in a neighbour: modes
+  // like Divide amplify a 1e-4 blend of a neighbour into a full code value).
+  vec2 snap = floor(c) + 0.5;
+  vec2 cc = mix(c, snap, step(abs(c - snap), vec2(1e-3)));
+  vec4 src = texture(${name}, cc / max(u_placeSize, vec2(1.0))) * (cov * clamp(u_placeOpacity, 0.0, 1.0));
   uvec2 px = uvec2(max(floor((v_uv * u_compSize - u_noiseXform.xy) / u_noiseXform.z), vec2(0.0)));
   fragColor = fx_clampPremul(fx_layerBlend(u_mode, dst, src, fx_blendNoise(px, uint(u_dissolveSeed))));
 }`,
