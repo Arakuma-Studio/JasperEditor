@@ -23,7 +23,9 @@ export function EyedropperOverlay() {
 		e.preventDefault();
 		e.stopPropagation();
 		const root = ref.current?.parentElement;
-		const c = root ? sampleProgram(root, e.clientX, e.clientY, req.clipId) : null;
+		// Premiere: a 5 × 5 average, 10 × 10 with Ctrl (Cmd on macOS).
+		const size = e.ctrlKey || e.metaKey ? 10 : 5;
+		const c = root ? sampleProgram(root, e.clientX, e.clientY, req.clipId, size) : null;
 		if (c) eyedropper.pick(c);
 	};
 	return (
