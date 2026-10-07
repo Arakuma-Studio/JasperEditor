@@ -60,11 +60,23 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			// M2 (wp-m2-mg, S08:MGU-001)
 			c('mg.importRemotionProject', 'Import Remotion Project…'),
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
+			// wp captions
+			c('captions.import', 'Import Captions…'),
 			sub('Export', [
 				c('export.media', 'Media…'),
 				c('export.queue', 'Add to Render Queue'),
 				c('export.frame', 'Frame…'),
 				c('export.quick', 'Quick Export'),
+				// wp captions: the active caption track as a file
+				sub('Captions', [
+					c('captions.export', 'SubRip (.srt)', { format: 'srt' }),
+					c('captions.export', 'WebVTT (.vtt)', { format: 'vtt' }),
+					c('captions.export', 'Scenarist SCC (.scc)', { format: 'scc' }),
+					c('captions.export', 'MacCaption MCC (.mcc)', { format: 'mcc' }),
+					c('captions.export', 'EBU STL (.stl)', { format: 'stl' }),
+					c('captions.export', 'TTML / IMSC1 (.ttml)', { format: 'ttml' }),
+					c('captions.export', 'DFXP (.dfxp)', { format: 'dfxp' }),
+				]),
 			]),
 			sep,
 			c('project.settings', 'Project Settings…'),
@@ -199,6 +211,24 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('sequence.loudness', 'Loudness Normalization…'),
 			c('audio.voiceoverRecord', 'Record Voice-over'),
 			c('audio.voiceoverSettings', 'Voice-Over Record Settings…'),
+			// wp captions (FilmCraft / Premiere Sequence ▸ Captions)
+			sub('Captions', [
+				c('timeline.addCaptionTrack', 'Add New Caption Track'),
+				c('timeline.addCaptionAtPlayhead', 'Add Caption at Playhead'),
+				c('timeline.nextCaptionSegment', 'Go to Next Caption Segment'),
+				c('timeline.prevCaptionSegment', 'Go to Previous Caption Segment'),
+				sep,
+				c('captions.split', 'Split Caption'),
+				c('captions.merge', 'Merge Captions'),
+				sep,
+				c('captions.showAll', 'Show All Caption Tracks'),
+				c('captions.hideAll', 'Hide All Caption Tracks'),
+				sep,
+				c('transcript.openPanel', 'Transcript'),
+				c('transcript.createCaptions', 'Create Captions from Transcript…'),
+				c('transcript.removeFillers', 'Remove Filler Words…'),
+				c('transcript.removePauses', 'Remove Pauses…'),
+			]),
 			sep,
 			c('timeline.zoomIn', 'Zoom In'),
 			c('timeline.zoomOut', 'Zoom Out'),

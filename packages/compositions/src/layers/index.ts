@@ -2,6 +2,7 @@
 import type { ComponentType } from 'react';
 import type { LayerProps } from '../types.ts';
 import { needsBakedPicture, withBakedLayer } from './BakedLayer.tsx';
+import { CaptionsLayer } from './CaptionsLayer.tsx';
 import { CompositionLayer } from './CompositionLayer.tsx';
 import { GeneratorLayer } from './GeneratorLayer.tsx';
 import { MotionGraphicLayer } from './MotionGraphicLayer.tsx';
@@ -26,6 +27,7 @@ export {
 	setBakedLayerRuntime,
 	withBakedLayer,
 } from './BakedLayer.tsx';
+export { CAPTION_TITLE_SAFE, captionBlockPlacement, captionPageAt } from './CaptionsLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
 export {
@@ -36,6 +38,7 @@ export {
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export {
+	CaptionsLayer,
 	CompositionLayer,
 	GeneratorLayer,
 	MotionGraphicLayer,
@@ -62,6 +65,8 @@ export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>
 	shape: ShapeLayer,
 	// edit-structure: nested sequences (adjustment clips are drawn by VideoTracks' AdjustmentScope).
 	'nest-video': NestLayer,
+	// wp captions
+	captions: CaptionsLayer,
 };
 
 const MEDIA_KINDS = new Set(['video', 'still', 'animated-image']);

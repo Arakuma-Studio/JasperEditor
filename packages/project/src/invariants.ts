@@ -1,7 +1,11 @@
 // Document invariants INV-001…INV-015 (S01 §16.3, with the ARCHITECTURE §2.3 locked-track change:
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
+
+import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
+import { normalizeCaptionOwnership } from './captions/model.ts';
+import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
@@ -267,7 +271,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	for (const t of Object.values(doc.transcripts)) {
 		if (t.mediaId && !doc.media[t.mediaId])
 			issues.push(inv('INV-006', `Transcript ${t.id} references missing media`, ['transcripts', t.id]));
+		// wp captions (S01:AST-030): words sorted by start, non-overlapping, integer flicks
+		const bad = wordsWellFormed(t.words);
+		if (bad) issues.push(inv('INV-012', `Transcript ${t.id}: ${bad}`, ['transcripts', t.id]));
 	}
+	const captionTrsUsers = new Map<string, number>();
 
 	// Sequences
 	const usedMedia = new Set<string>();
@@ -310,10 +318,21 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						]),
 					);
 				tracks.set(t.id, t);
+				if (t.styleDefaults && !doc.fonts[t.styleDefaults.fontId])
+					issues.push(
+						inv('INV-006', `Track ${t.id} style references missing font ${t.styleDefaults.fontId}`, [
+							...where,
+							'tracks',
+							t.id,
+						]),
+					);
 				effects(t.effects, [...where, 'tracks', t.id, 'effects']);
 				anims(t, [...where, 'tracks', t.id]);
 			}
 		}
+		const active = (seq as { activeCaptionTrackId?: string | null }).activeCaptionTrackId;
+		if (active && !seq.captionTracks.some((t) => t.id === active))
+			issues.push(inv('INV-006', `Active caption track ${active} does not exist`, where));
 		effects(seq.master.effects, [...where, 'master', 'effects']);
 		anims(seq.master, [...where, 'master']);
 		// audio-mix: submix tracks (ids, effects, keyframes), sends, routing (INV-MIX).
@@ -413,8 +432,20 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			}
 			if (typeof r.transcriptId === 'string') {
 				usedTrs.add(r.transcriptId);
-				if (!doc.transcripts[r.transcriptId])
-					issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
+				const tr = doc.transcripts[r.transcriptId];
+				if (!tr) issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
+				else if (tr.mediaId === null) {
+					// wp captions: a caption transcript belongs to one clip
+					const n = (captionTrsUsers.get(tr.id) ?? 0) + 1;
+					captionTrsUsers.set(tr.id, n);
+					if (n === 2)
+						issues.push(inv('INV-014', `Caption transcript ${tr.id} is shared by several clips`, cw));
+				}
+			}
+			if (c.kind === 'captions') {
+				const fid = (r.style as { fontId?: string } | undefined)?.fontId;
+				if (fid && !doc.fonts[fid])
+					issues.push(inv('INV-006', `Caption ${c.id} references missing font ${fid}`, cw));
 			}
 			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
 				if (!doc.sequences[r.sequenceId])
@@ -758,6 +789,44 @@ export function repairDocument(
 		}
 	}
 	// ---- end wp-m2-anime-templates
+
+	// ---- wp captions: well-formed transcript words, an existing active caption track, caption fonts, and one clip
+	// per caption transcript.
+	for (const t of Object.values(doc.transcripts)) {
+		if (wordsWellFormed(t.words)) {
+			t.words = normalizeWords(t.words);
+			note('normalize-words', t.id, 'transcript words sorted and overlaps cut');
+		}
+	}
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const s = seq as Sequence & { activeCaptionTrackId?: string | null };
+		if (s.activeCaptionTrackId && !s.captionTracks.some((t) => t.id === s.activeCaptionTrackId)) {
+			s.activeCaptionTrackId = s.captionTracks[0]?.id ?? null;
+			note('reset-active-caption-track', seq.id, 'active caption track did not exist');
+		}
+		const fallbackFont = Object.keys(doc.fonts)[0];
+		for (const t of s.captionTracks) {
+			if (t.styleDefaults && !doc.fonts[t.styleDefaults.fontId]) {
+				if (fallbackFont) t.styleDefaults.fontId = fallbackFont;
+				else delete t.styleDefaults;
+				note('reset-caption-font', t.id, 'caption track style referenced a missing font');
+			}
+		}
+		for (const c of Object.values(seq.clips)) {
+			const st = (c as { style?: { fontId?: string } }).style;
+			if (c.kind === 'captions' && st?.fontId && !doc.fonts[st.fontId]) {
+				delete st.fontId;
+				note('reset-caption-font', c.id, 'caption style referenced a missing font');
+			}
+		}
+	}
+	{
+		const before = new Set(Object.keys(doc.transcripts));
+		normalizeCaptionOwnership(doc as Draft<ProjectDocument>, () => ids.next('trs'));
+		for (const id of Object.keys(doc.transcripts))
+			if (!before.has(id)) note('split-caption-transcript', id, 'shared caption transcript copied per clip');
+	}
+	// ---- end wp captions
 
 	// Bin tree: drop missing references and duplicates, reattach orphans at the root.
 	const placed = new Set<string>();

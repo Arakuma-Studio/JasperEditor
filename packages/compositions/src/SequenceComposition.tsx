@@ -75,6 +75,8 @@ const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 	'composition',
 	// edit-structure: a nested sequence plays its own content.
 	'nest-video',
+	// wp captions: pages and the active-word highlight change with the frame
+	'captions',
 ]);
 
 const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =>

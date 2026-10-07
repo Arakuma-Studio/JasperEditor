@@ -59,6 +59,7 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	scopes: 'Lumetri Scopes',
 	audioTrackMixer: 'Audio Track Mixer',
 	audioClipMixer: 'Audio Clip Mixer',
+	text: 'Text',
 };
 
 // ------------------------------------------------------------------ save

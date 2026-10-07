@@ -48,6 +48,8 @@ export function buildExportSettings(
 		encoder?: string | null;
 		/** audio-mix: delivered audio (defaults: the Mix's channels, the sequence rate, the sequence loudness). */
 		audio?: ExportAudioChoice;
+		/** wp captions: caption output (burn-in, embedded streams, sidecars). */
+		captions?: CaptionExportChoice;
 	},
 ): ExportSettings {
 	const s = seq.settings;
@@ -85,6 +87,34 @@ export function buildExportSettings(
 		},
 		engine: choice.engine,
 		destination: { type: 'download' },
+		...(seq.captionTracks.length && choice.captions ? { captions: captionSettings(choice.captions) } : {}),
+	};
+}
+
+// ------------------------------------------------------------ captions (wp captions, S04:TR-061/062)
+
+export type CaptionExportChoice = {
+	/** Burn the visible caption tracks into the picture. */
+	burnIn: boolean;
+	/** Embed every caption track as a subtitle stream (mov_text in MP4/MOV, WebVTT in WebM). */
+	embed: boolean;
+	/** Sidecar file format, or none. */
+	sidecar: 'none' | 'srt' | 'vtt' | 'scc' | 'mcc' | 'stl' | 'ttml' | 'dfxp';
+	sidecarTracks: 'active' | 'all';
+};
+
+export const DEFAULT_CAPTION_CHOICE: CaptionExportChoice = {
+	burnIn: true,
+	embed: false,
+	sidecar: 'none',
+	sidecarTracks: 'active',
+};
+
+export function captionSettings(c: CaptionExportChoice): NonNullable<ExportSettings['captions']> {
+	return {
+		burnIn: c.burnIn,
+		embed: c.embed,
+		...(c.sidecar !== 'none' ? { sidecar: [c.sidecar], sidecarTracks: c.sidecarTracks } : {}),
 	};
 }
 
@@ -272,6 +302,8 @@ export type ExportAudioChoice = {
 
 type Remembered = {
 	audio?: ExportAudioChoice;
+	/** wp captions */
+	captions?: CaptionExportChoice;
 	range: ExportRangeChoice;
 	engine: ExportEngineChoice;
 	fileName?: string;
@@ -291,9 +323,23 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			v.codec === 'av1' || v.codec === 'vp9' || v.codec === 'h264' || v.codec === 'prores'
 				? v.codec
 				: undefined;
+		const c = v.captions as Partial<CaptionExportChoice> | undefined;
+		const sidecars = ['none', 'srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
+		const captions: CaptionExportChoice | undefined =
+			c && typeof c === 'object'
+				? {
+						burnIn: c.burnIn !== false,
+						embed: c.embed === true,
+						sidecar: sidecars.includes(c.sidecar as never)
+							? (c.sidecar as CaptionExportChoice['sidecar'])
+							: 'none',
+						sidecarTracks: c.sidecarTracks === 'all' ? 'all' : 'active',
+					}
+				: undefined;
 		return {
 			range,
 			engine,
+			...(captions ? { captions } : {}),
 			...(typeof v.fileName === 'string' ? { fileName: v.fileName } : {}),
 			...(codec ? { codec } : {}),
 			...(typeof v.encoder === 'string' && v.encoder ? { encoder: v.encoder } : {}),

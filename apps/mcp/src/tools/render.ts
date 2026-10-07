@@ -386,6 +386,29 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.max(0)
 					.optional()
 					.describe('True-peak ceiling of the normalisation (default -1 dBTP)'),
+				captions: z
+					.object({
+						burnIn: z
+							.union([z.boolean(), z.array(z.string())])
+							.optional()
+							.describe(
+								'Burn captions into the picture: true (default) = visible caption tracks, false, or ["C1", …]',
+							),
+						embed: z
+							.union([z.boolean(), z.array(z.string())])
+							.optional()
+							.describe(
+								'Embedded subtitle streams (mov_text in MP4/MOV, WebVTT in WebM): true = all caption tracks',
+							),
+						sidecar: z
+							.array(z.enum(['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp']))
+							.optional()
+							.describe('Sidecar caption files written next to the output (result.captions.sidecars)'),
+						sidecarTracks: z.union([z.enum(['active', 'all']), z.array(z.string())]).optional(),
+						dropFrame: z.boolean().optional(),
+					})
+					.optional()
+					.describe('Caption output (wp captions)'),
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 		},
@@ -402,6 +425,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			audioSampleRate,
 			normalizeLufs,
 			truePeakDb,
+			captions,
 		}) => {
 			const p = findExportPreset(preset);
 			if (!p)
@@ -448,6 +472,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 						}
 					: {}),
 			});
+			if (captions) settings.captions = captions;
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),

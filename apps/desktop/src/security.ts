@@ -46,6 +46,14 @@ export const MEDIA_EXTENSIONS = [
 	'tiff',
 	'bmp',
 	'svg',
+	// wp captions: caption files (imported onto caption tracks)
+	'srt',
+	'vtt',
+	'scc',
+	'mcc',
+	'stl',
+	'ttml',
+	'dfxp',
 ] as const;
 
 /** `revealInFolder` accepts only absolute paths without NUL bytes. */

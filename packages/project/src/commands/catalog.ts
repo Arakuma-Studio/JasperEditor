@@ -2,13 +2,13 @@
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
+import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
-import { m2Handlers } from './handlers/m2.ts';
 import { maskHandlers } from './handlers/mask.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
@@ -45,7 +45,9 @@ export type CommandOwner =
 	| 'wp-m3-masks'
 
 	// Audio buses (parity workstream audio-mix)
-	| 'audio-mix';
+	| 'audio-mix'
+	// Captions, transcripts and text-based editing
+	| 'wp-captions';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -177,6 +179,31 @@ const LABELS: Record<CommandType, string> = {
 	'mask.duplicate': 'Duplicate Mask',
 	'mask.editPath': 'Edit Mask Path',
 	'mask.setPathKeys': 'Track Mask',
+	// wp captions
+	'caption.addTrack': 'Add Caption Track',
+	'caption.setActiveTrack': 'Active Caption Track',
+	'caption.add': 'Add Caption',
+	'caption.import': 'Import Captions',
+	'caption.setText': 'Edit Caption',
+	'caption.split': 'Split Caption',
+	'caption.merge': 'Merge Captions',
+	'caption.delete': 'Delete Captions',
+	'caption.setTimes': 'Caption Timing',
+	'caption.setStyle': 'Caption Style',
+	'caption.applyPreset': 'Apply Caption Style',
+	'caption.savePreset': 'Save Caption Style',
+	'caption.deletePreset': 'Delete Caption Style',
+	'transcript.import': 'Import Transcript',
+	'transcript.delete': 'Delete Transcript',
+	'transcript.renameSpeaker': 'Rename Speaker',
+	'transcript.setSpeaker': 'Set Speaker',
+	'transcript.select': 'Mark Text Selection',
+	'transcript.extract': 'Extract Text',
+	'transcript.lift': 'Lift Text',
+	'transcript.insertInto': 'Insert Text Selection',
+	'transcript.removeFillers': 'Remove Filler Words',
+	'transcript.removePauses': 'Remove Pauses',
+	'transcript.createCaptions': 'Create Captions',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -199,7 +226,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[audioHandlers, AUDIO_MIX_OWNER],
 	[structureHandlers, STRUCTURE_OWNER],
 	[maskHandlers, 'wp-m3-masks'],
-	[m2Handlers, 'M2'],
+	[captionHandlers, CAPTIONS_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -220,7 +247,10 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			milestone:
 				owner.startsWith('wp-m3-') || owner === STRUCTURE_OWNER || owner === AUDIO_MIX_OWNER
 					? 'M3'
-					: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+					: owner === 'M2' ||
+							owner.startsWith('wp-m2-') ||
+							owner === CLIPBOARD_OWNER ||
+							owner === CAPTIONS_OWNER
 						? 'M2'
 						: 'M1',
 		};

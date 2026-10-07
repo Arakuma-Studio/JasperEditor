@@ -24,6 +24,7 @@ import {
 	type RenderVisualClip,
 	rationalEquals,
 	resolveLayerProps,
+	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';
 import type { FontCatalogService } from '../fonts/catalog.ts';
@@ -37,6 +38,7 @@ import {
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
+import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { needsSubpixel } from './stream/plan.ts';
 
@@ -113,6 +115,9 @@ export type PlannedExport = {
 	/** mediaId → online local file. */
 	media: Record<string, LocalMedia>;
 	output: OutputSpec;
+	/** wp captions: caption tracks burned in (snapshot option) and the caption output settings. */
+	captions?: SnapshotOptions['captions'];
+	captionSettings?: ExportSettings['captions'];
 };
 
 /** The engine media key of an asset (engine-store locator), or null. */
@@ -204,7 +209,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		else offline.push(asset.id);
 	}
 	const fontFallbacks = new Set<string>();
+	// wp captions: caption settings name existing tracks; burn-in is a snapshot option.
+	let captionWarnings: RenderPlan['warnings'] = [];
+	try {
+		captionWarnings = captionPlanWarnings(document, seq, settings, range);
+	} catch (e) {
+		if (e instanceof CaptionExportError) throw new PlanError('VALIDATION_FAILED', 400, e.message);
+		throw e;
+	}
 	const snapshot = buildRenderSnapshot(document, input.sequenceId, {
+		captions: captionBurnMode(settings),
 		range,
 		resolveMedia: (asset): MediaHandle | null => {
 			const m = media[asset.id];
@@ -334,7 +348,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	if (fontFallbacks.size > 0) {
 		const ids = visual
-			.filter((c) => c.kind === 'text' && 'text' in c.source && fontFallbacks.has(c.source.text.style.fontId))
+			.filter(
+				(c) =>
+					(c.kind === 'text' && 'text' in c.source && fontFallbacks.has(c.source.text.style.fontId)) ||
+					('captions' in c.source && fontFallbacks.has(c.source.captions.style.fontId)),
+			)
 			.map((c) => c.clipId);
 		warnings.push({
 			code: 'FONT_FALLBACK',
@@ -343,6 +361,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
+	warnings.push(...captionWarnings);
 	// M2 (§19.6): warnings of the extensions for the clips they provide (e.g. MG_FPS_MISMATCH).
 	for (const ext of deps.extensions ?? []) {
 		if (!ext.warnings) continue;
@@ -506,7 +525,17 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		estimate: { seconds: Math.round(estimateSeconds * 10) / 10, bytes: Math.max(0, estimateBytes) },
 		...(encoder ? { encoder } : {}),
 	};
-	return { plan, document, sequenceId: input.sequenceId, range, snapshot, media, output };
+	return {
+		plan,
+		document,
+		sequenceId: input.sequenceId,
+		range,
+		snapshot,
+		media,
+		output,
+		captions: captionBurnMode(settings),
+		captionSettings: settings.captions,
+	};
 }
 
 /** Enabled audio effects (clips, tracks, submixes, the Mix) with no export processor (`registerAudioProcessor`). */

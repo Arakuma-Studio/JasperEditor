@@ -384,7 +384,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (124; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (145; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -417,6 +417,11 @@ Tools (124; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   (docs/project-files.md).
 - Audio buses and loudness: `measure_loudness` `get_mixer` `set_mixer_strip` `add_submix` `add_send` `write_automation`
   `set_audio_gain` `auto_duck` `set_loudness_normalization` `normalize_media_loudness` (`docs/wp-notes/audio-mix.md`).
+- Captions and transcripts: `import_captions` `export_captions` `list_captions` `add_caption` `edit_caption`
+  `split_captions` `merge_captions` `delete_captions` `style_captions` `caption_track` · `import_transcript`
+  `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
+  `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
+  (`docs/wp-notes/captions.md`).
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.

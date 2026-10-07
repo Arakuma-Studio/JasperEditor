@@ -5,6 +5,7 @@ import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
 import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
+import captionRoutes from './captions.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
@@ -52,6 +53,8 @@ const ROUTE_PLUGINS = [
 	maskRoutes,
 	// audio-mix: audio analysis (loudness, peaks, ducking activity) and loudness-normalised media versions.
 	audioRoutes,
+	// wp captions: caption / transcript files by path.
+	captionRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

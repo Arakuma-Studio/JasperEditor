@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { AudioChannelFormatSchema, SequenceSampleRateSchema } from '../../schema/audio.ts';
 import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
-import { CaptionStyleSchema, MarkerTypeSchema, TrackKindSchema } from '../../schema/sequence.ts';
+import {
+	CaptionStandardSchema,
+	CaptionStyleSchema,
+	MarkerTypeSchema,
+	TrackKindSchema,
+} from '../../schema/sequence.ts';
 import {
 	ContentTimeInputSchema,
 	cmd,
@@ -92,6 +97,9 @@ export const TrackAddCmd = cmd('track.add', {
 	index: z.number().int().min(0).optional(),
 	count: z.number().int().min(1).max(99).optional(),
 	name: z.string().nullable().optional(),
+	/** wp captions (caption tracks): language and standard. */
+	language: z.string().optional(),
+	captionStandard: CaptionStandardSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TrackRemoveCmd = cmd('track.remove', {
@@ -115,6 +123,9 @@ export const TrackUpdateCmd = cmd('track.update', {
 		channelFormat: AudioChannelFormatSchema.optional(),
 		visible: z.boolean().optional(),
 		styleDefaults: CaptionStyleSchema.optional(),
+		// wp captions
+		language: z.string().optional(),
+		captionStandard: CaptionStandardSchema.optional(),
 	}),
 });
 

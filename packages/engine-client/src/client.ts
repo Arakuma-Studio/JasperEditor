@@ -7,6 +7,7 @@ import {
 	API_VERSION,
 	type AudioAnalyzeRequest,
 	buildPath,
+	type CaptionFileReadRequest,
 	type DerivativeKind,
 	type EngineJob,
 	ErrorShapeSchema,
@@ -236,6 +237,10 @@ export class EngineClient {
 	releaseLease(projectId: string, leaseId: string) {
 		return this.call('leaseRelease', { params: { projectId, leaseId } });
 	}
+	/** wp captions: a caption / transcript file by path (local engines). */
+	readCaptionFile(req: CaptionFileReadRequest) {
+		return this.call('captionFileRead', { body: req });
+	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
 	}
@@ -368,6 +373,10 @@ export class EngineClient {
 	}
 	renderOutputUrl(jobId: string): string {
 		return this.url(buildPath(ROUTES.renderOutput.path, { jobId }));
+	}
+	/** wp captions: download URL of an export's sidecar caption file. */
+	renderCaptionFileUrl(jobId: string, name: string): string {
+		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
 	}
 	mgFileUrl(key: string, file: string): string {
 		return this.url(buildPath(ROUTES.mgFile.path, { key, file }));

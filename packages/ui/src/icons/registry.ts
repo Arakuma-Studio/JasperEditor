@@ -217,6 +217,8 @@ export const ICONS = {
 	'panel.jobs': ListTodo,
 	'panel.lumetri': Palette,
 	'panel.scopes': Activity,
+	// wp captions: Text panel (Captions / Transcript)
+	'panel.text': Captions,
 
 	// ------------------------------------------------------------ media
 	'media.video': Film,

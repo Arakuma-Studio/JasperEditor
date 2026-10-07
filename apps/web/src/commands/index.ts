@@ -7,6 +7,7 @@ import '../fx/register.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
+import { captionCommands } from './captions.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
@@ -61,6 +62,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	structureCommands,
 	projectFileCommands,
 	maskCommands,
+	captionCommands,
 ];
 
 let registered = false;
