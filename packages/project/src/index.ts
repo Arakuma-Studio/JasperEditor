@@ -8,6 +8,7 @@ export * from './animation/index.ts';
 export * from './audio/index.ts';
 export * from './blend-modes.ts';
 export * from './captions/index.ts';
+export * from './speech/index.ts';
 export * from './clipboard/index.ts';
 export * from './color/curves.ts';
 export * from './color/lumetri.ts';

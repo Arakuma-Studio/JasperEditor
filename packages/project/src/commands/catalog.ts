@@ -18,6 +18,7 @@ import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
+import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
@@ -50,7 +51,9 @@ export type CommandOwner =
 	// Roving keyframes, blend modes (docs/wp-notes/keyframes-blend.md)
 	| 'keyframes-blend'
 	// Captions, transcripts and text-based editing
-	| 'wp-captions';
+	| 'wp-captions'
+	// Local speech-to-text (Whisper), VAD, diarization
+	| 'speech';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -208,6 +211,8 @@ const LABELS: Record<CommandType, string> = {
 	'transcript.removeFillers': 'Remove Filler Words',
 	'transcript.removePauses': 'Remove Pauses',
 	'transcript.createCaptions': 'Create Captions',
+	// wp speech
+	'transcript.attach': 'Generate Transcript',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -232,6 +237,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[structureHandlers, STRUCTURE_OWNER],
 	[maskHandlers, 'wp-m3-masks'],
 	[captionHandlers, CAPTIONS_OWNER],
+	[speechHandlers, SPEECH_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -253,7 +259,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner.startsWith('wp-m3-') ||
 				owner === STRUCTURE_OWNER ||
 				owner === AUDIO_MIX_OWNER ||
-				owner === 'keyframes-blend'
+				owner === 'keyframes-blend' ||
+				owner === SPEECH_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||
