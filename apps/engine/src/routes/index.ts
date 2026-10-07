@@ -22,6 +22,7 @@ import mcpRoutes from './mcp.ts';
 import mediaRoutes from './media.ts';
 import mgRoutes from './mg.ts';
 import mgBundleRoutes from './mg-bundles.ts';
+import previewsRoutes from './previews.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import rotoRoutes from './roto.ts';
@@ -80,6 +81,8 @@ const ROUTE_PLUGINS = [
 	camtrackRoutes,
 	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
 	interchangeRoutes,
+	// previews: render previews (segments rendered through the export service) and perf stats.
+	previewsRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

@@ -5,6 +5,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import {
+	copyFile,
 	type FileHandle,
 	mkdir,
 	open,
@@ -947,6 +948,24 @@ export class ExportService {
 		}
 		const r = await this.renderPlanned(ctx, req, planned, output);
 		return { frames: r.frames, renderPath: r.path, warnings: r.warnings };
+	}
+
+	/**
+	 * previews (Render Audio): the offline mix of an export request's range (`settings.audio`: channels, rate) as a
+	 * 32-bit float WAV at `output`. The same mixer as every export's audio.
+	 */
+	async mixdownToFile(ctx: JobContext, req: ExportStartRequest, output: string): Promise<{ samples: number }> {
+		let planned: PlannedExport;
+		try {
+			planned = await this.plan(req);
+		} catch (e) {
+			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
+			throw e;
+		}
+		const audio = await this.renderAudio(planned, ctx);
+		if (!audio.path) throw new JobError('MIXDOWN_FAILED', 'The mixer wrote no audio', true);
+		await copyFile(audio.path, output);
+		return { samples: audio.samples };
 	}
 
 	/** The container (file extension) an export request will be written in. */

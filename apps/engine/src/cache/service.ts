@@ -612,6 +612,7 @@ export class CacheService {
 									mgRenderKeys: new Set([...saved.mgRenderKeys, ...live.mgRenderKeys]),
 									bundleHashes: new Set([...saved.bundleHashes, ...live.bundleHashes]),
 									rotoKeys: new Set([...(saved.rotoKeys ?? []), ...(live.rotoKeys ?? [])]),
+									previewHashes: new Set([...(saved.previewHashes ?? []), ...(live.previewHashes ?? [])]),
 								}
 							: live,
 					);

@@ -91,6 +91,13 @@ import {
 	MgTextMeasureResultSchema,
 } from './mg-bundles.ts';
 import {
+	PreviewDeleteRequestSchema,
+	PreviewDeleteResultSchema,
+	PreviewRenderRequestSchema,
+	PreviewStatusRequestSchema,
+	PreviewStatusSchema,
+} from './previews.ts';
+import {
 	ProcessingModelsResponseSchema,
 	ProcessingSettingsSchema,
 	ProcessRequestSchema,
@@ -140,6 +147,8 @@ export type RouteOwner =
 	| 'WP-2H'
 	| 'wp-mcp'
 	| 'mcp-cli'
+	// render previews, perf stats (docs/wp-notes/previews.md)
+	| 'previews'
 	| 'wp-m2-color'
 	| 'wp-m2-process'
 	| 'wp-m2-mg'
@@ -438,6 +447,37 @@ export const ROUTES = {
 		body: StillRequestSchema,
 		response: EngineJobSchema,
 		owner: 'WP-2F',
+	},
+	/** previews: which segment hashes have render preview files. */
+	previewStatus: {
+		method: 'POST',
+		path: '/api/previews/status',
+		body: PreviewStatusRequestSchema,
+		response: PreviewStatusSchema,
+		owner: 'previews',
+	},
+	/** previews: Render Effects In to Out / Render In to Out / Render Selection / Render Audio (job `preview`). */
+	previewRender: {
+		method: 'POST',
+		path: '/api/previews/render',
+		body: PreviewRenderRequestSchema,
+		response: EngineJobSchema,
+		owner: 'previews',
+	},
+	/** previews: Delete Render Files (all) / Delete Render Files In to Out (hashes). */
+	previewDelete: {
+		method: 'POST',
+		path: '/api/previews/delete',
+		body: PreviewDeleteRequestSchema,
+		response: PreviewDeleteResultSchema,
+		owner: 'previews',
+	},
+	/** previews: a preview file (`<hash>.mp4|webm|wav`), byte ranges, immutable. */
+	previewFile: {
+		method: 'GET',
+		path: '/renders/previews/:format/:name',
+		response: 'binary',
+		owner: 'previews',
 	},
 
 	fontsList: { method: 'GET', path: '/api/fonts', response: FontCatalogSchema, owner: 'WP-2F' },
