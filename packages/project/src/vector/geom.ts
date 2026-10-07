@@ -361,13 +361,13 @@ export function rotateDeg(deg: number): Affine {
 	return [c, s, -s, c, 0, 0];
 }
 /**
- * After Effects skew: shear by `skewDeg` along the axis at `axisDeg` (rotate the axis to x, shear x by y, rotate
- * back). A positive skew leans the top of the layer to the right (like AE's Skew with Skew Axis 0).
+ * Shear along an axis: rotate the axis onto x, x' = x + tan(skew)·y, rotate back (EffectCraft's `Mat3::skew_deg`).
+ * Shape group transforms pass −Skew, so a positive After Effects Skew leans the top of the content to the right.
  */
 export function skewDeg(skewDegrees: number, axisDeg: number): Affine {
 	if (skewDegrees === 0) return IDENTITY;
 	const k = Math.tan((Math.max(-89.9, Math.min(89.9, skewDegrees)) * Math.PI) / 180);
-	const shear: Affine = [1, 0, -k, 1, 0, 0];
+	const shear: Affine = [1, 0, k, 1, 0, 0];
 	return compose(rotateDeg(axisDeg), compose(shear, rotateDeg(-axisDeg)));
 }
 

@@ -9,6 +9,7 @@ import type { Draft } from 'immer';
 import { autoSlope, EASE_PRESETS, evaluate, isHoldOnlyValue } from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyframes-spatial.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
+import { shapeItemPropertySpecs } from '../../vector/properties.ts';
 import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
@@ -56,6 +57,13 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
 	}
+	// wp shapes: every item property of a vector shape (dynamic `shape.items.<id>.<field>` keys).
+	if (clip.kind === 'shape')
+		for (const s of shapeItemPropertySpecs(clip as never)) {
+			if (s.animatable === 'no') continue;
+			const a = getAt(clip, s.storagePath);
+			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
+		}
 	// S11:ATP-006: keyframed params of anime templates (dynamic `params.<name>` keys; edits validate through
 	// param.ts target resolution, which needs the template to be installed).
 	if (clip.kind === 'motion-graphic') {

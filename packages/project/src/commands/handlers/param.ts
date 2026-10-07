@@ -26,6 +26,8 @@ type ValueRule = {
 	holdOnly: boolean;
 	/** vec2 point parameters: the spatial interpolation of new keys (S03:KF-021); absent = not a point. */
 	spatial?: SpatialInterpolation;
+	/** wp shapes: structural check of the value (vector shape paths and gradients). */
+	check?: (v: unknown) => boolean;
 };
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
@@ -46,6 +48,7 @@ function ruleFromProperty(s: PropertySpec): ValueRule {
 		options: s.options,
 		holdOnly: s.animatable === 'hold-only',
 		...(s.kind === 'vec2' && s.animatable === 'continuous' && s.spatial ? { spatial: s.spatial } : {}),
+		...(s.validate ? { check: s.validate } : {}),
 	};
 }
 export function ruleFromParam(p: ParamSpec): ValueRule {
@@ -289,6 +292,7 @@ export function validateValue(
 			Math.max(rule.range?.min ?? Number.NEGATIVE_INFINITY, x),
 		);
 	const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+	if (rule.check && !rule.check(v)) return fail();
 	switch (rule.kind) {
 		case 'number': {
 			if (!isNum(v)) return fail();

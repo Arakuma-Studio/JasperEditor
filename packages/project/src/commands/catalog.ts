@@ -138,6 +138,15 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	// wp shapes
+	'shape.addItems': 'Add Shape Items',
+	'shape.updateItem': 'Edit Shape Item',
+	'shape.removeItems': 'Delete Shape Items',
+	'shape.moveItem': 'Move Shape Item',
+	'shape.duplicateItem': 'Duplicate Shape Item',
+	'shape.groupItems': 'Group Shapes',
+	'shape.setContents': 'Replace Shape Contents',
+	'shape.convertToVector': 'Convert to Vector Shape',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

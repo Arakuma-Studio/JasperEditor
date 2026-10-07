@@ -1,6 +1,9 @@
 // Document invariants INV-001…INV-015 (S01 §16.3, with the ARCHITECTURE §2.3 locked-track change:
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
+import type { ShapeItem } from './schema/shapes.ts';
+import { walkItems } from './vector/defaults.ts';
+import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
@@ -399,8 +402,22 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						issues.push(inv('INV-012', `Clip ${c.id} ${side} animation params are invalid`, cw));
 				}
 			}
+			// wp shapes: vector shape items are well-formed (every field, value and keyframe) with ids unique in the clip.
+			if (c.kind === 'shape' && (r.shape as { type?: string }).type === 'vector') {
+				const contents = (r.shape as { contents?: unknown }).contents;
+				if (!Array.isArray(contents)) issues.push(inv('INV-012', `Shape ${c.id} has no contents`, cw));
+				else {
+					contents.forEach((it, i) => {
+						const e = checkShapeItem(it as ShapeItem);
+						if (e)
+							issues.push(inv('INV-012', `Shape ${c.id} item ${i}: ${e.message}`, [...cw, 'shape', 'contents', String(i), ...e.path]));
+					});
+					const dup = duplicateItemIds(contents as ShapeItem[]);
+					if (dup.length) issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
+				}
+			}
 			// M2 (S11:SHP-001): shape geometry is non-negative.
-			if (c.kind === 'shape') {
+			else if (c.kind === 'shape') {
 				const sh = r.shape as {
 					size?: AnimLike;
 					cornerRadius?: AnimLike;
@@ -630,6 +647,40 @@ export function repairDocument(
 		}
 	}
 	// ---- end wp-m2-anime-templates
+
+	// ---- wp shapes: vector shape items — malformed items dropped, duplicate item ids renumbered.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'shape' || c.shape.type !== 'vector') continue;
+			const shape = c.shape as { contents: ShapeItem[] };
+			if (!Array.isArray(shape.contents)) {
+				shape.contents = [];
+				note('reset-shape', c.id, 'vector shape without contents');
+				continue;
+			}
+			const clean = (items: ShapeItem[]): ShapeItem[] =>
+				items.filter((it) => {
+					const e = checkShapeItem(it, false);
+					if (e) {
+						note('drop-shape-item', c.id, e.message);
+						return false;
+					}
+					if (it.type === 'group') it.contents = clean(it.contents);
+					return true;
+				});
+			shape.contents = clean(shape.contents);
+			const seen = new Set<string>();
+			walkItems(shape.contents, (it) => {
+				if (seen.has(it.id)) {
+					const old = it.id;
+					it.id = ids.next('shp');
+					note('reid-shape-item', c.id, `duplicate item id ${old} renamed ${it.id}`);
+				}
+				seen.add(it.id);
+			});
+		}
+	}
+	// ---- end wp shapes
 
 	// Bin tree: drop missing references and duplicates, reattach orphans at the root.
 	const placed = new Set<string>();

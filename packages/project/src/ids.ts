@@ -23,6 +23,8 @@ export const ID_PREFIXES = {
 	font: 'fnt',
 	/** M2 (S09): trackers placed on a clip. */
 	tracker: 'tkr',
+	/** wp shapes: items of a vector shape (unique within their clip). */
+	shapeItem: 'shp',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

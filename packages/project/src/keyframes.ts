@@ -3,6 +3,7 @@
 // path (S03:KF-030/031) are evaluated along the path by `keyframes-spatial.ts`.
 import { isVec2Value, pathPointAt, spatialSegment, spatialSegmentLength } from './keyframes-spatial.ts';
 import type { Animatable, Ease, Keyframe } from './schema/common.ts';
+import { isShapeValue, lerpShapeValue } from './vector/values.ts';
 
 const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
 const AUTO_INFLUENCE = 1 / 3;
@@ -109,12 +110,15 @@ export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 /** True for value types that only step (booleans, strings, enums, font ids, media refs; S01:KF-007). */
 export function isHoldOnlyValue(v: unknown): boolean {
 	if (typeof v === 'number') return false;
+	// wp shapes: Bézier paths and gradients interpolate (vector/values.ts).
+	if (isShapeValue(v)) return false;
 	if (Array.isArray(v)) return !v.every((x) => typeof x === 'number');
 	return true;
 }
 
 function lerpValue<T>(a: T, b: T, p: number): T {
 	if (typeof a === 'number' && typeof b === 'number') return (a + p * (b - a)) as T;
+	if (isShapeValue(a) && isShapeValue(b)) return lerpShapeValue(a, b, p);
 	if (Array.isArray(a) && Array.isArray(b)) {
 		// Per component; colors interpolate in straight sRGB in v1.
 		return a.map((x: number, i) => x + p * ((b[i] as number) - x)) as T;

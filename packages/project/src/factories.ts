@@ -6,11 +6,12 @@ import type { DefaultScaling, ProjectDocument, ProjectSettings, SequenceItem } f
 import { CURRENT_SCHEMA_VERSION } from './schema/document.ts';
 import type { FontRef } from './schema/media.ts';
 import type {
+	LegacyShapeData,
+	LegacyShapeType,
 	Sequence,
 	SequenceSettings,
 	ShapeData,
 	ShapeStroke,
-	ShapeType,
 	Speed,
 	TextStyle,
 	Track,
@@ -189,14 +190,14 @@ export const DEFAULT_SHAPE_SECONDS = 5;
 
 /** A new shape: white fill, no stroke, radius 0 (S11:SHP-003). Values are static Animatables. */
 export function defaultShape(
-	type: ShapeType,
+	type: LegacyShapeType,
 	opts: {
 		size?: Vec2;
 		fill?: RGBA | null;
 		stroke?: { color: RGBA; width: number; position?: ShapeStroke['position'] } | null;
 		cornerRadius?: number;
 	} = {},
-): ShapeData {
+): LegacyShapeData {
 	const fill = opts.fill === undefined ? WHITE : opts.fill;
 	const stroke = opts.stroke ?? null;
 	return {
@@ -227,7 +228,10 @@ const maxOf = (a: Animatable<number>): number => Math.max(...valuesOf(a));
  * when there are none) plus the part of the stroke drawn outside the geometry — the whole width for `outside`,
  * half for `center`. The geometry is centred in the box.
  */
-export function shapeIntrinsicBox(shape: ShapeData): Box {
+export function shapeIntrinsicBox(shape: ShapeData, frame?: Box): Box {
+	// wp shapes: a vector shape's layer is the frame (After Effects shape layers are comp-sized); its contents are
+	// drawn around the box centre, so the box never depends on the contents.
+	if (shape.type === 'vector') return frame ? { width: frame.width, height: frame.height } : { width: 1920, height: 1080 };
 	const sizes = valuesOf(shape.size);
 	const w = Math.max(...sizes.map((v) => v[0]));
 	const h = Math.max(...sizes.map((v) => v[1]));

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ShapeItemInputSchema } from '../../vector/input.ts';
 import {
 	AnimNumberSchema,
 	AnimRGBASchema,
@@ -97,7 +98,12 @@ export type TextAnimationPatch = z.infer<typeof TextAnimationPatchSchema>;
 const vec2 = z.tuple([z.number(), z.number()]);
 /** clip.addShape geometry (static values; keyframes through the keyframe commands). */
 export const ShapeInputSchema = z.strictObject({
+	/** rect / ellipse: the parametric shapes below; vector (wp shapes): `contents` or a `preset`. */
 	type: ShapeTypeSchema,
+	/** Vector shapes: the items (groups, paths, paints, operators) in the relaxed input form. */
+	contents: z.array(ShapeItemInputSchema).max(10000).optional(),
+	/** Vector shapes: a shape preset id (SHAPE_PRESETS) instead of contents. */
+	preset: z.string().optional(),
 	/** Layer pixels; default 400×400. */
 	size: z.tuple([z.number().min(0), z.number().min(0)]).optional(),
 	/** Default white; `null` = no fill. */

@@ -5,6 +5,7 @@ import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
+import { SHAPE_COMMANDS } from './shape.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
@@ -15,6 +16,7 @@ export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
 export * from './sequence.ts';
+export * from './shape.ts';
 export * from './simplify.ts';
 export * from './tracker.ts';
 
@@ -31,6 +33,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
+	// wp shapes: vector shape items
+	...SHAPE_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

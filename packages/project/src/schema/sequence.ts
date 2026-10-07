@@ -14,6 +14,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -408,9 +409,15 @@ export const AdjustmentClipSchema = z.looseObject({
 
 // ---------------------------------------------------------------- shapes (M2, S11:SHP-001, schema v4)
 
-export const SHAPE_TYPES = ['rect', 'ellipse'] as const;
+/**
+ * `rect` / `ellipse`: the parametric shapes of M2 (size, fill, stroke, corner radius). `vector` (wp shapes): an After
+ * Effects-style shape layer whose `contents` hold groups, paths, paints and path operators (`schema/shapes.ts`).
+ */
+export const SHAPE_TYPES = ['rect', 'ellipse', 'vector'] as const;
 export const ShapeTypeSchema = z.enum(SHAPE_TYPES);
 export type ShapeType = DeepStrip<z.infer<typeof ShapeTypeSchema>>;
+export const LEGACY_SHAPE_TYPES = ['rect', 'ellipse'] as const;
+export type LegacyShapeType = (typeof LEGACY_SHAPE_TYPES)[number];
 export const SHAPE_STROKE_POSITIONS = ['inside', 'center', 'outside'] as const;
 export const ShapeStrokeSchema = z.looseObject({
 	color: AnimRGBASchema,
@@ -419,9 +426,9 @@ export const ShapeStrokeSchema = z.looseObject({
 	position: z.enum(SHAPE_STROKE_POSITIONS),
 });
 export type ShapeStroke = DeepStrip<z.infer<typeof ShapeStrokeSchema>>;
-/** Geometry and paint of a shape clip; every numeric/colour field is an Animatable (KF evaluator). */
-export const ShapeDataSchema = z.looseObject({
-	type: ShapeTypeSchema,
+/** Geometry and paint of a rectangle / ellipse clip; every numeric/colour field is an Animatable (KF evaluator). */
+export const LegacyShapeDataSchema = z.looseObject({
+	type: z.enum(LEGACY_SHAPE_TYPES),
 	/** Width and height in layer pixels. */
 	size: AnimVec2Schema,
 	/** `null` = no fill. */
@@ -431,7 +438,11 @@ export const ShapeDataSchema = z.looseObject({
 	/** Rectangle corner radius in layer pixels (ignored by ellipses). */
 	cornerRadius: AnimNumberSchema,
 });
-export type ShapeData = DeepStrip<z.infer<typeof ShapeDataSchema>>;
+export type LegacyShapeData = DeepStrip<z.infer<typeof LegacyShapeDataSchema>>;
+export const ShapeDataSchema = z.union([LegacyShapeDataSchema, VectorShapeDataSchema]);
+export type ShapeData = LegacyShapeData | VectorShapeData;
+export const isVectorShape = (s: ShapeData): s is VectorShapeData => s.type === 'vector';
+export const isLegacyShape = (s: ShapeData): s is LegacyShapeData => s.type !== 'vector';
 export const ShapeClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('shape'),
@@ -467,7 +478,7 @@ export type CompositionClip = DeepStrip<z.infer<typeof CompositionClipSchema>>;
 export type NestVideoClip = DeepStrip<z.infer<typeof NestVideoClipSchema>>;
 export type NestAudioClip = DeepStrip<z.infer<typeof NestAudioClipSchema>>;
 export type AdjustmentClip = DeepStrip<z.infer<typeof AdjustmentClipSchema>>;
-export type ShapeClip = DeepStrip<z.infer<typeof ShapeClipSchema>>;
+export type ShapeClip = Omit<DeepStrip<z.infer<typeof ShapeClipSchema>>, 'shape'> & { shape: ShapeData };
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 
 const ClipCommonSchema = z.looseObject(commonShape);
