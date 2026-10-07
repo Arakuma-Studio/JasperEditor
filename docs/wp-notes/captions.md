@@ -195,7 +195,7 @@ README tool list updated. Text-based tools take word indices or a `query` + `occ
   replace / Ctrl+Alt+C / style, Program monitor draws the caption, Text ▸ Transcript import / click-to-seek / search /
   Mark In/Out / Remove Fillers / Create Captions, and an export with burn-in (luma of the caption band, frame checked
   by eye: `test-results/e2e-captions/burned.png`), two embedded `mov_text` streams (ffprobe) and an SRT sidecar
-  downloaded from the Jobs panel.
+  downloaded from the Jobs panel; a Remotion-path export burns in the same pixels (`burned-remotion.png`).
 
 ## 8. Compared with FilmCraft (reference) — equal or better
 
