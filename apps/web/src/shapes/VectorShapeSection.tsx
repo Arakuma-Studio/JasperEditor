@@ -32,15 +32,30 @@ import { useInspectorOps } from '../panels/properties/lib/ops.ts';
 import { isVectorClip, useVectorUi, vectorUi } from './vector.ts';
 
 const ROW = 'flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1 pl-2';
-const ADD_TYPES: readonly ShapeItemType[] = ['group', ...PATH_ITEM_TYPES, ...PAINT_ITEM_TYPES, ...OPERATOR_ITEM_TYPES];
+const ADD_TYPES: readonly ShapeItemType[] = [
+	'group',
+	...PATH_ITEM_TYPES,
+	...PAINT_ITEM_TYPES,
+	...OPERATOR_ITEM_TYPES,
+];
 const ADD_GROUPS = ADD_TYPES.map((t) =>
-	t === 'group' ? 'Group' : (PATH_ITEM_TYPES as readonly string[]).includes(t) ? 'Paths' : (PAINT_ITEM_TYPES as readonly string[]).includes(t) ? 'Paint' : 'Path Operations',
+	t === 'group'
+		? 'Group'
+		: (PATH_ITEM_TYPES as readonly string[]).includes(t)
+			? 'Paths'
+			: (PAINT_ITEM_TYPES as readonly string[]).includes(t)
+				? 'Paint'
+				: 'Path Operations',
 );
 const ADD_OPTIONS = [...ADD_TYPES, ...SHAPE_PRESETS.map((p) => `preset:${p.id}`)];
 const ADD_LABELS = [...ADD_TYPES.map((t) => SHAPE_ITEM_LABELS[t]), ...SHAPE_PRESETS.map((p) => p.label)];
-const ADD_OPTION_GROUPS = [...ADD_GROUPS, ...SHAPE_PRESETS.map((p) => `Presets · ${p.category[0]!.toUpperCase()}${p.category.slice(1)}`)];
+const ADD_OPTION_GROUPS = [
+	...ADD_GROUPS,
+	...SHAPE_PRESETS.map((p) => `Presets · ${p.category[0]!.toUpperCase()}${p.category.slice(1)}`),
+];
 
-export const isVectorShapeSelection = (clips: readonly Clip[]) => clips.length === 1 && isVectorClip(clips[0]);
+export const isVectorShapeSelection = (clips: readonly Clip[]) =>
+	clips.length === 1 && isVectorClip(clips[0]);
 
 const PATH_LIKE = new Set<string>([...PATH_ITEM_TYPES, 'group']);
 
@@ -97,7 +112,10 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 		confirmStopwatchOff: notices.confirmStopwatchOff,
 	};
 	const run = (label: string, commands: Record<string, unknown>[]) =>
-		ops.apply(label, commands.map((c) => ({ clipId: clip.id, ...c }) as Command));
+		ops.apply(
+			label,
+			commands.map((c) => ({ clipId: clip.id, ...c }) as Command),
+		);
 	const select = (itemId: string | null) => vectorUi.select(itemId ? { clipId: clip.id, itemId } : null);
 
 	const add = (option: string) => {
@@ -148,7 +166,12 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 		const index = sel.index + delta;
 		if (index < 0 || index >= sel.list.length) return;
 		run('Move Shape Item', [
-			{ type: 'shape.moveItem', itemId: sel.item.id, parentId: sel.ancestors[sel.ancestors.length - 1] ?? null, index },
+			{
+				type: 'shape.moveItem',
+				itemId: sel.item.id,
+				parentId: sel.ancestors[sel.ancestors.length - 1] ?? null,
+				index,
+			},
 		]);
 	};
 
@@ -163,7 +186,9 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 		const moving = findItem(contents, id);
 		if (!t || !moving) return;
 		if (lower && target.type === 'group') {
-			run('Move Shape Item', [{ type: 'shape.moveItem', itemId: id, parentId: target.id, index: target.contents.length }]);
+			run('Move Shape Item', [
+				{ type: 'shape.moveItem', itemId: id, parentId: target.id, index: target.contents.length },
+			]);
 			return;
 		}
 		const parentId = t.ancestors[t.ancestors.length - 1] ?? null;
@@ -217,12 +242,19 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 				<MiniButton
 					label="Duplicate"
 					disabled={!sel}
-					onClick={() => sel && run('Duplicate Shape Item', [{ type: 'shape.duplicateItem', itemId: sel.item.id }])}
+					onClick={() =>
+						sel && run('Duplicate Shape Item', [{ type: 'shape.duplicateItem', itemId: sel.item.id }])
+					}
 					data-testid="vector-duplicate"
 				>
 					<Icon id="app.copy" size={12} />
 				</MiniButton>
-				<MiniButton label="Move up" disabled={!sel || sel.index === 0} onClick={() => move(-1)} data-testid="vector-up">
+				<MiniButton
+					label="Move up"
+					disabled={!sel || sel.index === 0}
+					onClick={() => move(-1)}
+					data-testid="vector-up"
+				>
 					<Icon id="app.chevronDown" size={12} className="rotate-180" />
 				</MiniButton>
 				<MiniButton
@@ -246,9 +278,16 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 					<Icon id="app.close" size={12} />
 				</MiniButton>
 			</div>
-			<div role="tree" aria-label="Shape contents" className="mx-2 mb-1 rounded-pr-control border border-pr-border" data-testid="vector-tree">
+			<div
+				role="tree"
+				aria-label="Shape contents"
+				className="mx-2 mb-1 rounded-pr-control border border-pr-border"
+				data-testid="vector-tree"
+			>
 				{rows.length === 0 ? (
-					<div className="px-2 py-1 text-pr-small text-pr-muted">Empty: use Add to create paths, paints and operators.</div>
+					<div className="px-2 py-1 text-pr-small text-pr-muted">
+						Empty: use Add to create paths, paints and operators.
+					</div>
 				) : null}
 				{rows.map(({ item, depth }) => {
 					const on = item.enabled !== false;
@@ -316,10 +355,14 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 									label="Name"
 									onCommit={(name) => {
 										setRenaming(null);
-										if (name.trim()) run('Rename Shape Item', [{ type: 'shape.updateItem', itemId: item.id, patch: { name: name.trim() } }]);
+										if (name.trim())
+											run('Rename Shape Item', [
+												{ type: 'shape.updateItem', itemId: item.id, patch: { name: name.trim() } },
+											]);
 									}}
 								/>
 							) : (
+								// biome-ignore lint/a11y/noStaticElementInteractions: double-click renames (the row itself is the treeitem)
 								<span
 									className={`min-w-0 flex-1 truncate ${on ? '' : 'text-pr-muted line-through'}`}
 									onDoubleClick={() => setRenaming(item.id)}
@@ -364,7 +407,11 @@ function ItemProperties({
 				<div className={`${ROW} flex-wrap gap-2`}>
 					<OptionButton
 						label={stroke.dashes ? 'Remove Dashes' : 'Add Dashes'}
-						onClick={() => toggle(stroke.dashes ? 'Remove Dashes' : 'Add Dashes', { dashes: stroke.dashes ? null : [10, 10] })}
+						onClick={() =>
+							toggle(stroke.dashes ? 'Remove Dashes' : 'Add Dashes', {
+								dashes: stroke.dashes ? null : [10, 10],
+							})
+						}
 						testId="vector-dashes"
 					/>
 					{stroke.dashes && stroke.dashes.segments.length < 3 ? (
@@ -372,11 +419,7 @@ function ItemProperties({
 							label="Add Dash/Gap"
 							onClick={() =>
 								toggle('Add Dash', {
-									dashes: [
-										...stroke.dashes!.segments.flatMap((s) => [s.dash.value, s.gap.value]),
-										10,
-										10,
-									],
+									dashes: [...stroke.dashes!.segments.flatMap((s) => [s.dash.value, s.gap.value]), 10, 10],
 								})
 							}
 							testId="vector-dash-add"
@@ -384,12 +427,18 @@ function ItemProperties({
 					) : null}
 					<OptionButton
 						label={stroke.taper ? 'Remove Taper' : 'Add Taper'}
-						onClick={() => toggle(stroke.taper ? 'Remove Taper' : 'Add Taper', { taper: stroke.taper ? null : { startLength: 25, endLength: 25 } })}
+						onClick={() =>
+							toggle(stroke.taper ? 'Remove Taper' : 'Add Taper', {
+								taper: stroke.taper ? null : { startLength: 25, endLength: 25 },
+							})
+						}
 						testId="vector-taper"
 					/>
 					<OptionButton
 						label={stroke.wave ? 'Remove Wave' : 'Add Wave'}
-						onClick={() => toggle(stroke.wave ? 'Remove Wave' : 'Add Wave', { wave: stroke.wave ? null : { amount: 50 } })}
+						onClick={() =>
+							toggle(stroke.wave ? 'Remove Wave' : 'Add Wave', { wave: stroke.wave ? null : { amount: 50 } })
+						}
 						testId="vector-wave"
 					/>
 				</div>

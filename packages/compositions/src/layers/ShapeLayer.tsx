@@ -58,7 +58,8 @@ export function ShapeLayer(layer: LayerProps) {
 			</LayerBox>
 		);
 	}
-	const g = 'shape' in src && src.shape.type !== 'vector' ? evaluateShape(src.shape, layer.contentTime, box) : null;
+	const g =
+		'shape' in src && src.shape.type !== 'vector' ? evaluateShape(src.shape, layer.contentTime, box) : null;
 	const [w, h] = g?.size ?? [0, 0];
 	const drawn = !!g && h > 0 && w >= (g.type === 'ellipse' ? 1 : 0) && w > 0;
 	return (

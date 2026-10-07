@@ -10,13 +10,14 @@
 // Addressing (`ExpressionRef`): `{seq, owner, path}` with `owner` = a clip id, `track:<id>`, `master` or
 // `transition:<id>`, and `path` = the property-registry key (`transform.position`, `opacity`,
 // `effects.<fxId>.<param>`, `shape.size`, `volumeDb`, `text.content`, …; transitions: the param name).
-import type { ShapeItem } from './schema/shapes.ts';
-import { shapeItemAnimatables } from './vector/properties.ts';
+
 import { EXPRESSION_BINDING, type ExpressionBinding, hasActiveExpression } from './keyframes.ts';
 import { intrinsicBoxOf } from './registry/properties.ts';
 import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
+import type { ShapeItem } from './schema/shapes.ts';
+import { shapeItemAnimatables } from './vector/properties.ts';
 
 export type ExpressionRef = { seq: string; owner: string; path: string };
 

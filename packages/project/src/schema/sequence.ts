@@ -22,8 +22,8 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
-import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 import { MaskSchema } from './mask.ts';
+import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 
 // ---------------------------------------------------------------- effects
 

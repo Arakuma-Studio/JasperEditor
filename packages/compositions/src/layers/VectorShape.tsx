@@ -10,7 +10,7 @@
 // Shape clips are always rendered by this composition (preview, stills, the Remotion path and the layer bake), so
 // preview and export are the same pixels. Inline styles only (ARCHITECTURE D-14).
 import {
-		type ShapeAffine as Affine,
+	type ShapeAffine as Affine,
 	dissolveSeed,
 	evaluateVectorShape,
 	gradientSvgStops,
@@ -34,13 +34,25 @@ const rgb = (c: readonly number[]) =>
 	`rgb(${Math.round(Math.min(1, Math.max(0, c[0]!)) * 255)}, ${Math.round(Math.min(1, Math.max(0, c[1]!)) * 255)}, ${Math.round(Math.min(1, Math.max(0, c[2]!)) * 255)})`;
 
 /** Focal point of a radial gradient: Highlight Length (% of the radius) at Highlight Angle from the start→end axis. */
-export function radialFocal(p: Exclude<ShapePaint, { type: 'solid' }>): { cx: number; cy: number; r: number; fx: number; fy: number } {
+export function radialFocal(p: Exclude<ShapePaint, { type: 'solid' }>): {
+	cx: number;
+	cy: number;
+	r: number;
+	fx: number;
+	fy: number;
+} {
 	const dx = p.end[0] - p.start[0];
 	const dy = p.end[1] - p.start[1];
 	const r = Math.max(1e-6, Math.hypot(dx, dy));
 	const hl = Math.max(-0.99, Math.min(0.99, p.highlightLength / 100));
 	const a = Math.atan2(dy, dx) + (p.highlightAngle * Math.PI) / 180;
-	return { cx: p.start[0], cy: p.start[1], r, fx: p.start[0] + r * hl * Math.cos(a), fy: p.start[1] + r * hl * Math.sin(a) };
+	return {
+		cx: p.start[0],
+		cy: p.start[1],
+		r,
+		fx: p.start[0] + r * hl * Math.cos(a),
+		fy: p.start[1] + r * hl * Math.sin(a),
+	};
 }
 
 export type VectorShapeProps = {
@@ -67,7 +79,9 @@ export function VectorShape(props: VectorShapeProps) {
 
 // ---------------------------------------------------------------- SVG
 
-type Node = { prim: PlanPrimitive; index: number } | { group: { key: string; blend: string }; children: Node[] };
+type Node =
+	| { prim: PlanPrimitive; index: number }
+	| { group: { key: string; blend: string }; children: Node[] };
 
 /** Nests consecutive primitives of the same blended group instance. */
 function nest(plan: readonly PlanPrimitive[]): Node[] {
@@ -75,7 +89,12 @@ function nest(plan: readonly PlanPrimitive[]): Node[] {
 	const stack: { key: string; children: Node[] }[] = [];
 	plan.forEach((prim, index) => {
 		let depth = 0;
-		while (depth < stack.length && depth < prim.groups.length && stack[depth]!.key === prim.groups[depth]!.key) depth++;
+		while (
+			depth < stack.length &&
+			depth < prim.groups.length &&
+			stack[depth]!.key === prim.groups[depth]!.key
+		)
+			depth++;
 		stack.length = depth;
 		for (let k = depth; k < prim.groups.length; k++) {
 			const g = prim.groups[k]!;
@@ -95,7 +114,10 @@ function SvgShape({ plan, box, uid }: VectorShapeProps & { plan: PlanPrimitive[]
 			'prim' in node ? (
 				<SvgPrimitive key={`p${node.index}`} prim={node.prim} id={`${uid}-${node.index}`} />
 			) : (
-				<g key={`g${node.group.key}`} style={{ mixBlendMode: blendModeCss(node.group.blend), isolation: 'isolate' }}>
+				<g
+					key={`g${node.group.key}`}
+					style={{ mixBlendMode: blendModeCss(node.group.blend), isolation: 'isolate' }}
+				>
 					{render(node.children)}
 				</g>
 			),
@@ -116,8 +138,8 @@ function SvgShape({ plan, box, uid }: VectorShapeProps & { plan: PlanPrimitive[]
 
 function SvgPaintDef({ paint, id }: { paint: ShapePaint; id: string }) {
 	if (paint.type === 'solid') return null;
-	const stops = gradientSvgStops(paint.gradient).map((s, i) => (
-		<stop key={i} offset={n(s.offset)} stopColor={rgb(s.color)} stopOpacity={n(s.alpha)} />
+	const stops = gradientSvgStops(paint.gradient).map((s) => (
+		<stop key={s.offset} offset={n(s.offset)} stopColor={rgb(s.color)} stopOpacity={n(s.alpha)} />
 	));
 	if (paint.type === 'linear')
 		return (
@@ -134,7 +156,15 @@ function SvgPaintDef({ paint, id }: { paint: ShapePaint; id: string }) {
 		);
 	const f = radialFocal(paint);
 	return (
-		<radialGradient id={id} gradientUnits="userSpaceOnUse" cx={n(f.cx)} cy={n(f.cy)} r={n(f.r)} fx={n(f.fx)} fy={n(f.fy)}>
+		<radialGradient
+			id={id}
+			gradientUnits="userSpaceOnUse"
+			cx={n(f.cx)}
+			cy={n(f.cy)}
+			r={n(f.r)}
+			fx={n(f.fx)}
+			fy={n(f.fy)}
+		>
 			{stops}
 		</radialGradient>
 	);
@@ -163,8 +193,21 @@ function SvgPrimitive({ prim, id }: { prim: PlanPrimitive; id: string }) {
 					</clipPath>
 				) : null}
 				{prim.cut && b ? (
-					<mask id={`${id}-cut`} maskUnits="userSpaceOnUse" x={b.x0 - pad} y={b.y0 - pad} width={b.x1 - b.x0 + 2 * pad} height={b.y1 - b.y0 + 2 * pad}>
-						<rect x={b.x0 - pad} y={b.y0 - pad} width={b.x1 - b.x0 + 2 * pad} height={b.y1 - b.y0 + 2 * pad} fill="white" />
+					<mask
+						id={`${id}-cut`}
+						maskUnits="userSpaceOnUse"
+						x={b.x0 - pad}
+						y={b.y0 - pad}
+						width={b.x1 - b.x0 + 2 * pad}
+						height={b.y1 - b.y0 + 2 * pad}
+					>
+						<rect
+							x={b.x0 - pad}
+							y={b.y0 - pad}
+							width={b.x1 - b.x0 + 2 * pad}
+							height={b.y1 - b.y0 + 2 * pad}
+							fill="white"
+						/>
 						<path d={prim.cut} fill="black" fillRule="nonzero" />
 					</mask>
 				) : null}
@@ -211,7 +254,8 @@ export function paintPrimitive(ctx: Canvas2D, prim: PlanPrimitive, toDevice: Aff
 	ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
 	const p = prim.paint;
 	let style: string | CanvasGradient;
-	if (p.type === 'solid') style = `rgba(${Math.round(p.color[0] * 255)}, ${Math.round(p.color[1] * 255)}, ${Math.round(p.color[2] * 255)}, ${Math.min(1, Math.max(0, p.color[3]))})`;
+	if (p.type === 'solid')
+		style = `rgba(${Math.round(p.color[0] * 255)}, ${Math.round(p.color[1] * 255)}, ${Math.round(p.color[2] * 255)}, ${Math.min(1, Math.max(0, p.color[3]))})`;
 	else {
 		const g =
 			p.type === 'linear'
@@ -221,7 +265,10 @@ export function paintPrimitive(ctx: Canvas2D, prim: PlanPrimitive, toDevice: Aff
 						return ctx.createRadialGradient(f.fx, f.fy, 0, f.cx, f.cy, f.r);
 					})();
 		for (const s of gradientSvgStops(p.gradient))
-			g.addColorStop(Math.min(1, Math.max(0, s.offset)), `rgba(${Math.round(s.color[0] * 255)}, ${Math.round(s.color[1] * 255)}, ${Math.round(s.color[2] * 255)}, ${s.alpha})`);
+			g.addColorStop(
+				Math.min(1, Math.max(0, s.offset)),
+				`rgba(${Math.round(s.color[0] * 255)}, ${Math.round(s.color[1] * 255)}, ${Math.round(s.color[2] * 255)}, ${s.alpha})`,
+			);
 		style = g;
 	}
 	if (prim.clip) ctx.clip(new Path2D(prim.clip), 'nonzero');
@@ -278,7 +325,16 @@ export function compositePlan(
 	let cur = new Float64Array(w * h * 4);
 	const d = new Float64Array(4);
 	const sp = new Float64Array(4);
-	const blendInto = (dst: Float64Array, src: Float64Array, mode: number, stencil: boolean, x0 = 0, y0 = 0, x1 = w, y1 = h) => {
+	const blendInto = (
+		dst: Float64Array,
+		src: Float64Array,
+		mode: number,
+		stencil: boolean,
+		x0 = 0,
+		y0 = 0,
+		x1 = w,
+		y1 = h,
+	) => {
 		for (let y = y0; y < y1; y++)
 			for (let x = x0; x < x1; x++) {
 				const i = (y * w + x) * 4;
@@ -301,7 +357,12 @@ export function compositePlan(
 	};
 	for (const prim of plan) {
 		let depth = 0;
-		while (depth < stack.length && depth < prim.groups.length && stack[depth]!.key === prim.groups[depth]!.key) depth++;
+		while (
+			depth < stack.length &&
+			depth < prim.groups.length &&
+			stack[depth]!.key === prim.groups[depth]!.key
+		)
+			depth++;
 		while (stack.length > depth) pop();
 		for (let k = depth; k < prim.groups.length; k++) {
 			stack.push({ key: prim.groups[k]!.key, buf: cur, blend: prim.groups[k]!.blend });
@@ -350,7 +411,13 @@ export function compositePlan(
 /** Largest canvas side the compositor allocates (device pixels). */
 const MAX_SIDE = 8192;
 
-function CanvasShape({ plan, box, resScale, seedKey, localFrame }: VectorShapeProps & { plan: PlanPrimitive[] }) {
+function CanvasShape({
+	plan,
+	box,
+	resScale,
+	seedKey,
+	localFrame,
+}: VectorShapeProps & { plan: PlanPrimitive[] }) {
 	const ref = useRef<HTMLCanvasElement>(null);
 	const k = Math.min(resScale, MAX_SIDE / Math.max(1, box.width), MAX_SIDE / Math.max(1, box.height));
 	const w = Math.max(1, Math.ceil(box.width * k));

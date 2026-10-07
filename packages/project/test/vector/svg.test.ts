@@ -8,12 +8,12 @@ import {
 	parseCssColor,
 	parseSvgPath,
 	parseTransform,
+	type ShapeItem,
+	SvgImportError,
 	shapeBoolean,
 	shapeGeom,
-	type ShapeItem,
 	svgPathToShapeItems,
 	svgToShapeContents,
-	SvgImportError,
 } from '../../src/index.ts';
 
 let n = 0;
@@ -26,7 +26,9 @@ const fillArea = (items: ShapeItem[]) => {
 
 describe('parseSvgPath', () => {
 	it('reads every command, relative forms and implicit repeats', () => {
-		const p = parseSvgPath('M10 10 h20 v20 H10 z m40 0 l10 0 10 10 Q60 40 50 40 T40 30 C40 20 45 15 50 10 S60 5 70 10 A10 10 0 0 1 90 10');
+		const p = parseSvgPath(
+			'M10 10 h20 v20 H10 z m40 0 l10 0 10 10 Q60 40 50 40 T40 30 C40 20 45 15 50 10 S60 5 70 10 A10 10 0 0 1 90 10',
+		);
 		expect(p).toHaveLength(2);
 		expect(p[0]!.closed).toBe(true);
 		expect(shapeGeom.signedArea([p[0]!])).toBeCloseTo(400, 6);
@@ -75,7 +77,13 @@ describe('colours and transforms', () => {
 	it('decomposes affine matrices exactly into group transforms', () => {
 		const m = parseTransform('translate(30 40) rotate(25) skewX(20) scale(2 -0.5)');
 		const t = matrixToGroupTransform(m)!;
-		const items = build([{ type: 'group', transform: t, contents: [{ type: 'rect', size: [10, 10], position: [3, 4] }, { type: 'fill' }] }]);
+		const items = build([
+			{
+				type: 'group',
+				transform: t,
+				contents: [{ type: 'rect', size: [10, 10], position: [3, 4] }, { type: 'fill' }],
+			},
+		]);
 		const pts = evaluateVectorShape(items, 0)[0]!.paths[0]!.segs.map((c) => c[0]);
 		const raw: [number, number][] = [
 			[8, -1],
@@ -117,7 +125,9 @@ describe('svgToShapeContents', () => {
 		const g = root.contents[0] as Extract<ShapeItem, { type: 'group' }>;
 		expect(g.transform.opacity.value).toBe(50);
 		const draws = evaluateVectorShape(items, 0);
-		const blue = draws.find((d) => d.paint.type === 'solid' && d.paint.color[2] === 1 && d.paint.color[0] === 0)!;
+		const blue = draws.find(
+			(d) => d.paint.type === 'solid' && d.paint.color[2] === 1 && d.paint.color[0] === 0,
+		)!;
 		expect(blue.kind).toBe('fill');
 		const red = draws.find((d) => d.kind === 'stroke')!;
 		expect(red.stroke!.width).toBe(2);
@@ -160,7 +170,11 @@ describe('svgToShapeContents', () => {
 		const items = build(r.contents);
 		const draws = evaluateVectorShape(items, 0);
 		const st = draws.find((d) => d.kind === 'stroke')!;
-		expect(st.stroke).toMatchObject({ width: 3, cap: 'round', dash: { pattern: [5, 2, 1, 5, 2, 1], offset: 1 } });
+		expect(st.stroke).toMatchObject({
+			width: 3,
+			cap: 'round',
+			dash: { pattern: [5, 2, 1, 5, 2, 1], offset: 1 },
+		});
 		expect(draws.some((d) => d.fillRule === 'evenodd')).toBe(true);
 		expect(fillArea(items)).toBeGreaterThan(0);
 	});
@@ -170,7 +184,9 @@ describe('svgToShapeContents', () => {
 		fc.assert(
 			fc.property(fc.string({ maxLength: 200 }), (s) => {
 				try {
-					const r = svgToShapeContents(`<svg viewBox="0 0 10 10"><path d="${s.replace(/"/g, '')}" fill="${s.slice(0, 5)}"/>${s}</svg>`);
+					const r = svgToShapeContents(
+						`<svg viewBox="0 0 10 10"><path d="${s.replace(/"/g, '')}" fill="${s.slice(0, 5)}"/>${s}</svg>`,
+					);
 					build(r.contents);
 				} catch (e) {
 					expect(e).toBeInstanceOf(Error);
@@ -181,7 +197,12 @@ describe('svgToShapeContents', () => {
 	});
 
 	it('svgPathToShapeItems gives one path per subpath and paints', () => {
-		const items = build(svgPathToShapeItems('M0 0 H10 V10Z M20 20 h5 v5z', { fill: '#ff0000', stroke: { color: '#000000', width: 2 } }));
+		const items = build(
+			svgPathToShapeItems('M0 0 H10 V10Z M20 20 h5 v5z', {
+				fill: '#ff0000',
+				stroke: { color: '#000000', width: 2 },
+			}),
+		);
 		expect(items.map((i) => i.type)).toEqual(['path', 'path', 'stroke', 'fill']);
 	});
 });

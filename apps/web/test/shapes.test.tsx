@@ -6,8 +6,8 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	resolveSceneAt,
 	type LegacyShapeClip,
+	resolveSceneAt,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -36,7 +36,9 @@ function makeSession() {
 }
 const seqOf = (session: EditorSession, seqId: string) => session.getCommitted().sequences[seqId]!;
 const shapes = (session: EditorSession, seqId: string) =>
-	Object.values(seqOf(session, seqId).clips).filter((c): c is LegacyShapeClip => c.kind === 'shape' && c.shape.type !== 'vector');
+	Object.values(seqOf(session, seqId).clips).filter(
+		(c): c is LegacyShapeClip => c.kind === 'shape' && c.shape.type !== 'vector',
+	);
 const snapshot = (session: EditorSession, seqId: string) =>
 	buildRenderSnapshot(session.getDrawn(), seqId, { resolveMedia: () => null, resolveFont: () => null });
 function addShape(

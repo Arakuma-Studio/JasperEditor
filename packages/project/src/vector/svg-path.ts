@@ -28,7 +28,11 @@ function tokenize(d: string): (string | number)[] {
 			continue;
 		}
 		// Arc flags (args 3 and 4 of each 7-arg group) are single characters "0" or "1".
-		if ((lastCmd === 'A' || lastCmd === 'a') && (argIndex % 7 === 3 || argIndex % 7 === 4) && (ch === '0' || ch === '1')) {
+		if (
+			(lastCmd === 'A' || lastCmd === 'a') &&
+			(argIndex % 7 === 3 || argIndex % 7 === 4) &&
+			(ch === '0' || ch === '1')
+		) {
 			out.push(ch === '1' ? 1 : 0);
 			argIndex++;
 			i++;
@@ -78,7 +82,8 @@ export function arcToCubics(
 	const cy1 = (-co * ry * x1) / rx;
 	const cx = cos * cx1 - sin * cy1 + (p0[0] + p1[0]) / 2;
 	const cy = sin * cx1 + cos * cy1 + (p0[1] + p1[1]) / 2;
-	const ang = (ux: number, uy: number, vx: number, vy: number) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+	const ang = (ux: number, uy: number, vx: number, vy: number) =>
+		Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
 	const t1 = ang(1, 0, (x1 - cx1) / rx, (y1 - cy1) / ry);
 	let dt = ang((x1 - cx1) / rx, (y1 - cy1) / ry, (-x1 - cx1) / rx, (-y1 - cy1) / ry);
 	if (!sweep && dt > 0) dt -= 2 * Math.PI;
@@ -86,8 +91,14 @@ export function arcToCubics(
 	const n = Math.max(1, Math.ceil(Math.abs(dt) / (Math.PI / 2) - 1e-9));
 	const step = dt / n;
 	const k = (4 / 3) * Math.tan(step / 4);
-	const pt = (t: number): P => [cx + rx * Math.cos(t) * cos - ry * Math.sin(t) * sin, cy + rx * Math.cos(t) * sin + ry * Math.sin(t) * cos];
-	const der = (t: number): P => [-rx * Math.sin(t) * cos - ry * Math.cos(t) * sin, -rx * Math.sin(t) * sin + ry * Math.cos(t) * cos];
+	const pt = (t: number): P => [
+		cx + rx * Math.cos(t) * cos - ry * Math.sin(t) * sin,
+		cy + rx * Math.cos(t) * sin + ry * Math.sin(t) * cos,
+	];
+	const der = (t: number): P => [
+		-rx * Math.sin(t) * cos - ry * Math.cos(t) * sin,
+		-rx * Math.sin(t) * sin + ry * Math.cos(t) * cos,
+	];
 	const out: Cubic[] = [];
 	for (let i = 0; i < n; i++) {
 		const a = t1 + step * i;
@@ -230,5 +241,10 @@ export function parseSvgPath(d: string): BezPath {
 }
 
 function quadToCubic(p0: P, q: P, p1: P): Cubic {
-	return [p0, [p0[0] + ((q[0] - p0[0]) * 2) / 3, p0[1] + ((q[1] - p0[1]) * 2) / 3], [p1[0] + ((q[0] - p1[0]) * 2) / 3, p1[1] + ((q[1] - p1[1]) * 2) / 3], p1];
+	return [
+		p0,
+		[p0[0] + ((q[0] - p0[0]) * 2) / 3, p0[1] + ((q[1] - p0[1]) * 2) / 3],
+		[p1[0] + ((q[0] - p1[0]) * 2) / 3, p1[1] + ((q[1] - p1[1]) * 2) / 3],
+		p1,
+	];
 }

@@ -19,13 +19,13 @@ import {
 	evaluate,
 	hasCurvedSpatialPath,
 	type Keyframe,
+	type LegacyShapeClip,
 	loadProject,
 	pathPointAt,
 	type Rational,
 	type Spatial,
 	spatialSegment,
 	type Vec2,
-	type LegacyShapeClip,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 

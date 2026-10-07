@@ -12,13 +12,12 @@ import {
 	evaluateShape,
 	exportAgentSchema,
 	flicksPerFrame,
+	type LegacyShapeClip,
 	propertiesForClip,
 	resolveSceneAt,
-	type ShapeClip,
 	shapeContainsPoint,
 	shapeIntrinsicBox,
 	type Vec2,
-	type LegacyShapeClip,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 

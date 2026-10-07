@@ -2,11 +2,12 @@
 // `shape.items.<itemId>.<field…>` (e.g. `shape.items.shp_…​.size`, `….transform.position`, `….dashes.segments.0.dash`,
 // `….taper.startLength`), so `param.set`, the keyframe commands, Effect Controls, the graph editor and agents work on
 // them like on any other property. Labels, units and ranges follow After Effects' names for these controls.
-import type { Clip } from '../schema/sequence.ts';
-import type { ShapeItem, ShapeItemType } from '../schema/shapes.ts';
+
 import { BLEND_MODE_LABELS } from '../blend-modes.ts';
-import { BLEND_MODES } from '../schema/sequence.ts';
 import type { PropertySpec } from '../registry/properties.ts';
+import type { Clip } from '../schema/sequence.ts';
+import { BLEND_MODES } from '../schema/sequence.ts';
+import type { ShapeItem, ShapeItemType } from '../schema/shapes.ts';
 import { validGradientValue, validPathValue } from './values.ts';
 
 type F = {
@@ -38,7 +39,8 @@ const n = (f: string[], label: string, extra: Partial<F> = {}): F => ({
 	precision: 1,
 	...extra,
 });
-const deg = (f: string[], label: string, d = 0): F => n(f, label, { unit: 'deg', control: 'angle', defaultValue: d });
+const deg = (f: string[], label: string, d = 0): F =>
+	n(f, label, { unit: 'deg', control: 'angle', defaultValue: d });
 const pct = (f: string[], label: string, d: number, range: PropertySpec['range'] = PCT): F =>
 	n(f, label, { unit: '%', range, control: 'slider', defaultValue: d });
 const v2 = (f: string[], label: string, d: [number, number], extra: Partial<F> = {}): F => ({
@@ -51,7 +53,13 @@ const v2 = (f: string[], label: string, d: [number, number], extra: Partial<F> =
 	defaultValue: d,
 	...extra,
 });
-const en = (f: string[], label: string, options: readonly string[], labels: readonly string[], d: string): F => ({
+const en = (
+	f: string[],
+	label: string,
+	options: readonly string[],
+	labels: readonly string[],
+	d: string,
+): F => ({
 	f,
 	label,
 	kind: 'enum',
@@ -62,7 +70,13 @@ const en = (f: string[], label: string, options: readonly string[], labels: read
 	defaultValue: d,
 });
 
-const DIRECTION = en(['direction'], 'Path Direction', ['normal', 'reversed'], ['Normal', 'Reversed'], 'normal');
+const DIRECTION = en(
+	['direction'],
+	'Path Direction',
+	['normal', 'reversed'],
+	['Normal', 'Reversed'],
+	'normal',
+);
 const BLEND = en(['blendMode'], 'Blend Mode', BLEND_MODES, BLEND_MODE_LABELS, 'normal');
 const COMPOSITE = en(
 	['composite'],
@@ -71,13 +85,27 @@ const COMPOSITE = en(
 	['Below Previous in Same Group', 'Above Previous in Same Group'],
 	'below',
 );
-const FILL_RULE = en(['fillRule'], 'Fill Rule', ['nonzero', 'evenodd'], ['Non-Zero Winding', 'Even-Odd'], 'nonzero');
-const LINE_JOIN = en(['lineJoin'], 'Line Join', ['miter', 'round', 'bevel'], ['Miter Join', 'Round Join', 'Bevel Join'], 'miter');
-const POINTS = (d: 'corner' | 'smooth') => en(['points'], 'Points', ['corner', 'smooth'], ['Corner', 'Smooth'], d);
+const FILL_RULE = en(
+	['fillRule'],
+	'Fill Rule',
+	['nonzero', 'evenodd'],
+	['Non-Zero Winding', 'Even-Odd'],
+	'nonzero',
+);
+const LINE_JOIN = en(
+	['lineJoin'],
+	'Line Join',
+	['miter', 'round', 'bevel'],
+	['Miter Join', 'Round Join', 'Bevel Join'],
+	'miter',
+);
+const POINTS = (d: 'corner' | 'smooth') =>
+	en(['points'], 'Points', ['corner', 'smooth'], ['Corner', 'Smooth'], d);
 
 const GRADIENT_SCHEMA = {
 	type: 'object',
-	description: 'Gradient: colour stops [{position 0..1, color [r,g,b] 0..1, midpoint?}] and opacity stops [{position, opacity 0..1, midpoint?}]',
+	description:
+		'Gradient: colour stops [{position 0..1, color [r,g,b] 0..1, midpoint?}] and opacity stops [{position, opacity 0..1, midpoint?}]',
 } as const;
 const PATH_SCHEMA = {
 	type: 'object',
@@ -104,13 +132,31 @@ const gradientFields: F[] = [
 const strokeFields = (gradient: boolean): F[] => [
 	COMPOSITE,
 	BLEND,
-	...(gradient ? gradientFields : [{ f: ['color'], label: 'Color', kind: 'color', control: 'color', defaultValue: [1, 1, 1, 1] } as F]),
+	...(gradient
+		? gradientFields
+		: [{ f: ['color'], label: 'Color', kind: 'color', control: 'color', defaultValue: [1, 1, 1, 1] } as F]),
 	pct(['opacity'], 'Opacity', 100),
-	n(['width'], 'Stroke Width', { unit: 'px', range: { min: 0, max: 4096, softMax: 100, step: 0.1 }, defaultValue: 2 }),
-	en(['lineCap'], 'Line Cap', ['butt', 'round', 'square'], ['Butt Cap', 'Round Cap', 'Projecting Cap'], 'butt'),
+	n(['width'], 'Stroke Width', {
+		unit: 'px',
+		range: { min: 0, max: 4096, softMax: 100, step: 0.1 },
+		defaultValue: 2,
+	}),
+	en(
+		['lineCap'],
+		'Line Cap',
+		['butt', 'round', 'square'],
+		['Butt Cap', 'Round Cap', 'Projecting Cap'],
+		'butt',
+	),
 	LINE_JOIN,
 	n(['miterLimit'], 'Miter Limit', { range: { min: 1, max: 100, softMax: 10, step: 0.1 }, defaultValue: 4 }),
-	en(['position'], 'Stroke Position', ['center', 'inside', 'outside'], ['Center', 'Inside', 'Outside'], 'center'),
+	en(
+		['position'],
+		'Stroke Position',
+		['center', 'inside', 'outside'],
+		['Center', 'Inside', 'Outside'],
+		'center',
+	),
 ];
 
 const ITEM_FIELDS: Record<ShapeItemType, F[]> = {
@@ -119,23 +165,58 @@ const ITEM_FIELDS: Record<ShapeItemType, F[]> = {
 		DIRECTION,
 		v2(['size'], 'Size', [100, 100], { range: PX }),
 		v2(['position'], 'Position', [0, 0]),
-		n(['roundness'], 'Roundness', { unit: 'px', range: { min: 0, max: 16384, softMax: 200, step: 0.1 }, defaultValue: 0 }),
+		n(['roundness'], 'Roundness', {
+			unit: 'px',
+			range: { min: 0, max: 16384, softMax: 200, step: 0.1 },
+			defaultValue: 0,
+		}),
 	],
 	ellipse: [DIRECTION, v2(['size'], 'Size', [100, 100], { range: PX }), v2(['position'], 'Position', [0, 0])],
 	polystar: [
 		DIRECTION,
 		en(['starType'], 'Type', ['star', 'polygon'], ['Star', 'Polygon'], 'star'),
-		n(['points'], 'Points', { range: { min: 3, max: 100, softMax: 20, step: 1 }, precision: 1, defaultValue: 5 }),
+		n(['points'], 'Points', {
+			range: { min: 3, max: 100, softMax: 20, step: 1 },
+			precision: 1,
+			defaultValue: 5,
+		}),
 		v2(['position'], 'Position', [0, 0]),
 		deg(['rotation'], 'Rotation'),
-		n(['innerRadius'], 'Inner Radius', { unit: 'px', range: { min: 0, max: 32768, softMax: 500, step: 0.1 }, defaultValue: 50 }),
-		n(['outerRadius'], 'Outer Radius', { unit: 'px', range: { min: 0, max: 32768, softMax: 500, step: 0.1 }, defaultValue: 100 }),
-		pct(['innerRoundness'], 'Inner Roundness', 0, { min: -1000, max: 1000, softMin: -100, softMax: 100, step: 0.1 }),
-		pct(['outerRoundness'], 'Outer Roundness', 0, { min: -1000, max: 1000, softMin: -100, softMax: 100, step: 0.1 }),
+		n(['innerRadius'], 'Inner Radius', {
+			unit: 'px',
+			range: { min: 0, max: 32768, softMax: 500, step: 0.1 },
+			defaultValue: 50,
+		}),
+		n(['outerRadius'], 'Outer Radius', {
+			unit: 'px',
+			range: { min: 0, max: 32768, softMax: 500, step: 0.1 },
+			defaultValue: 100,
+		}),
+		pct(['innerRoundness'], 'Inner Roundness', 0, {
+			min: -1000,
+			max: 1000,
+			softMin: -100,
+			softMax: 100,
+			step: 0.1,
+		}),
+		pct(['outerRoundness'], 'Outer Roundness', 0, {
+			min: -1000,
+			max: 1000,
+			softMin: -100,
+			softMax: 100,
+			step: 0.1,
+		}),
 	],
 	path: [
 		DIRECTION,
-		{ f: ['path'], label: 'Path', kind: 'json', control: 'json', description: PATH_SCHEMA.description, validate: validPathValue },
+		{
+			f: ['path'],
+			label: 'Path',
+			kind: 'json',
+			control: 'json',
+			description: PATH_SCHEMA.description,
+			validate: validPathValue,
+		},
 	],
 	fill: [
 		COMPOSITE,
@@ -151,7 +232,13 @@ const ITEM_FIELDS: Record<ShapeItemType, F[]> = {
 		pct(['start'], 'Start', 0),
 		pct(['end'], 'End', 100),
 		deg(['offset'], 'Offset'),
-		en(['mode'], 'Trim Multiple Shapes', ['simultaneous', 'individual'], ['Simultaneously', 'Individually'], 'simultaneous'),
+		en(
+			['mode'],
+			'Trim Multiple Shapes',
+			['simultaneous', 'individual'],
+			['Simultaneously', 'Individually'],
+			'simultaneous',
+		),
 	],
 	repeater: [
 		n(['copies'], 'Copies', { range: { min: 0, max: 1000, softMax: 30, step: 0.1 }, defaultValue: 3 }),
@@ -159,34 +246,69 @@ const ITEM_FIELDS: Record<ShapeItemType, F[]> = {
 		en(['composite'], 'Composite', ['below', 'above'], ['Below', 'Above'], 'below'),
 		v2(['transform', 'anchor'], 'Anchor Point', [0, 0]),
 		v2(['transform', 'position'], 'Position', [100, 0]),
-		v2(['transform', 'scale'], 'Scale', [100, 100], { unit: '%', range: { softMin: -200, softMax: 200, step: 0.1 } }),
+		v2(['transform', 'scale'], 'Scale', [100, 100], {
+			unit: '%',
+			range: { softMin: -200, softMax: 200, step: 0.1 },
+		}),
 		deg(['transform', 'rotation'], 'Rotation'),
 		pct(['transform', 'startOpacity'], 'Start Opacity', 100),
 		pct(['transform', 'endOpacity'], 'End Opacity', 100),
 	],
 	offsetPaths: [
-		n(['amount'], 'Amount', { unit: 'px', range: { min: -16384, max: 16384, softMin: -100, softMax: 100, step: 0.1 }, defaultValue: 0, bipolar: true }),
+		n(['amount'], 'Amount', {
+			unit: 'px',
+			range: { min: -16384, max: 16384, softMin: -100, softMax: 100, step: 0.1 },
+			defaultValue: 0,
+			bipolar: true,
+		}),
 		LINE_JOIN,
-		n(['miterLimit'], 'Miter Limit', { range: { min: 1, max: 100, softMax: 10, step: 0.1 }, defaultValue: 4 }),
+		n(['miterLimit'], 'Miter Limit', {
+			range: { min: 1, max: 100, softMax: 10, step: 0.1 },
+			defaultValue: 4,
+		}),
 		n(['copies'], 'Copies', { range: { min: 1, max: 1000, softMax: 20, step: 1 }, defaultValue: 1 }),
 		n(['copyOffset'], 'Copy Offset', { range: { softMin: -10, softMax: 10, step: 0.1 }, defaultValue: 0 }),
 	],
-	roundCorners: [n(['radius'], 'Radius', { unit: 'px', range: { min: 0, max: 16384, softMax: 200, step: 0.1 }, defaultValue: 10 })],
+	roundCorners: [
+		n(['radius'], 'Radius', {
+			unit: 'px',
+			range: { min: 0, max: 16384, softMax: 200, step: 0.1 },
+			defaultValue: 10,
+		}),
+	],
 	zigZag: [
-		n(['size'], 'Size', { unit: 'px', range: { min: -16384, max: 16384, softMin: -100, softMax: 100, step: 0.1 }, defaultValue: 10 }),
-		n(['ridges'], 'Ridges per segment', { range: { min: 0, max: 1000, softMax: 50, step: 1 }, defaultValue: 5 }),
+		n(['size'], 'Size', {
+			unit: 'px',
+			range: { min: -16384, max: 16384, softMin: -100, softMax: 100, step: 0.1 },
+			defaultValue: 10,
+		}),
+		n(['ridges'], 'Ridges per segment', {
+			range: { min: 0, max: 1000, softMax: 50, step: 1 },
+			defaultValue: 5,
+		}),
 		POINTS('corner'),
 	],
 	twist: [deg(['angle'], 'Angle'), v2(['center'], 'Center', [0, 0])],
 	wiggle: [
-		n(['size'], 'Size', { unit: 'px', range: { min: 0, max: 16384, softMax: 100, step: 0.1 }, defaultValue: 10 }),
+		n(['size'], 'Size', {
+			unit: 'px',
+			range: { min: 0, max: 16384, softMax: 100, step: 0.1 },
+			defaultValue: 10,
+		}),
 		n(['detail'], 'Detail', { range: { min: 0, max: 1000, softMax: 50, step: 1 }, defaultValue: 10 }),
 		POINTS('smooth'),
-		n(['speed'], 'Wiggles/Second', { range: { min: -100, max: 100, softMin: 0, softMax: 10, step: 0.1 }, defaultValue: 2 }),
+		n(['speed'], 'Wiggles/Second', {
+			range: { min: -100, max: 100, softMin: 0, softMax: 10, step: 0.1 },
+			defaultValue: 2,
+		}),
 		pct(['correlation'], 'Correlation', 50),
 		deg(['temporalPhase'], 'Temporal Phase'),
 		deg(['spatialPhase'], 'Spatial Phase'),
-		n(['seed'], 'Random Seed', { range: { min: -100000, max: 100000, softMin: 0, softMax: 100, step: 1 }, precision: 0, defaultValue: 0 }),
+		n(['seed'], 'Random Seed', {
+			range: { min: -100000, max: 100000, softMin: 0, softMax: 100, step: 1 },
+			precision: 0,
+			defaultValue: 0,
+		}),
 	],
 	puckerBloat: [pct(['amount'], 'Amount', 0, { min: -100, max: 100, step: 0.1 })],
 	mergePaths: [
@@ -203,8 +325,16 @@ const ITEM_FIELDS: Record<ShapeItemType, F[]> = {
 const GROUP_TRANSFORM: F[] = [
 	v2(['transform', 'anchor'], 'Anchor Point', [0, 0]),
 	v2(['transform', 'position'], 'Position', [0, 0]),
-	v2(['transform', 'scale'], 'Scale', [100, 100], { unit: '%', range: { softMin: -200, softMax: 200, step: 0.1 } }),
-	n(['transform', 'skew'], 'Skew', { unit: 'deg', range: { min: -85, max: 85, step: 0.1 }, defaultValue: 0, control: 'slider' }),
+	v2(['transform', 'scale'], 'Scale', [100, 100], {
+		unit: '%',
+		range: { softMin: -200, softMax: 200, step: 0.1 },
+	}),
+	n(['transform', 'skew'], 'Skew', {
+		unit: 'deg',
+		range: { min: -85, max: 85, step: 0.1 },
+		defaultValue: 0,
+		control: 'slider',
+	}),
 	deg(['transform', 'skewAxis'], 'Skew Axis'),
 	deg(['transform', 'rotation'], 'Rotation'),
 	pct(['transform', 'opacity'], 'Opacity', 100),
@@ -212,8 +342,14 @@ const GROUP_TRANSFORM: F[] = [
 
 const TAPER: F[] = [
 	en(['taper', 'units'], 'Length Units', ['percent', 'pixels'], ['Percent', 'Pixels'], 'percent'),
-	n(['taper', 'startLength'], 'Start Length', { range: { min: 0, max: 32768, softMax: 100, step: 0.1 }, defaultValue: 0 }),
-	n(['taper', 'endLength'], 'End Length', { range: { min: 0, max: 32768, softMax: 100, step: 0.1 }, defaultValue: 0 }),
+	n(['taper', 'startLength'], 'Start Length', {
+		range: { min: 0, max: 32768, softMax: 100, step: 0.1 },
+		defaultValue: 0,
+	}),
+	n(['taper', 'endLength'], 'End Length', {
+		range: { min: 0, max: 32768, softMax: 100, step: 0.1 },
+		defaultValue: 0,
+	}),
 	pct(['taper', 'startWidth'], 'Start Width', 0),
 	pct(['taper', 'endWidth'], 'End Width', 0),
 	pct(['taper', 'startEase'], 'Start Ease', 0),
@@ -222,8 +358,15 @@ const TAPER: F[] = [
 const WAVE: F[] = [
 	pct(['wave', 'amount'], 'Amount', 0),
 	en(['wave', 'units'], 'Units', ['pixels', 'cycles'], ['Pixels', 'Cycles'], 'pixels'),
-	n(['wave', 'wavelength'], 'Wavelength', { unit: 'px', range: { min: 0, max: 32768, softMax: 200, step: 0.1 }, defaultValue: 20 }),
-	n(['wave', 'cycles'], 'Cycles', { range: { min: 0, max: 10000, softMax: 50, step: 0.1 }, defaultValue: 10 }),
+	n(['wave', 'wavelength'], 'Wavelength', {
+		unit: 'px',
+		range: { min: 0, max: 32768, softMax: 200, step: 0.1 },
+		defaultValue: 20,
+	}),
+	n(['wave', 'cycles'], 'Cycles', {
+		range: { min: 0, max: 10000, softMax: 50, step: 0.1 },
+		defaultValue: 10,
+	}),
 	deg(['wave', 'phase'], 'Phase'),
 ];
 
@@ -236,8 +379,16 @@ function itemFields(it: ShapeItem): F[] {
 			it.dashes.segments.forEach((_, i) => {
 				const s = i === 0 ? '' : ` ${i + 1}`;
 				out.push(
-					n(['dashes', 'segments', String(i), 'dash'], `Dash${s}`, { unit: 'px', range: { min: 0, max: 32768, softMax: 100, step: 0.1 }, defaultValue: 10 }),
-					n(['dashes', 'segments', String(i), 'gap'], `Gap${s}`, { unit: 'px', range: { min: 0, max: 32768, softMax: 100, step: 0.1 }, defaultValue: 10 }),
+					n(['dashes', 'segments', String(i), 'dash'], `Dash${s}`, {
+						unit: 'px',
+						range: { min: 0, max: 32768, softMax: 100, step: 0.1 },
+						defaultValue: 10,
+					}),
+					n(['dashes', 'segments', String(i), 'gap'], `Gap${s}`, {
+						unit: 'px',
+						range: { min: 0, max: 32768, softMax: 100, step: 0.1 },
+						defaultValue: 10,
+					}),
 				);
 			});
 			out.push(n(['dashes', 'offset'], 'Offset', { unit: 'px', range: ANY, defaultValue: 0 }));
@@ -254,7 +405,8 @@ const isVector = (c: Pick<Clip, 'kind'>) =>
 export const SHAPE_ITEM_KEY_PREFIX = 'shape.items.';
 
 /** Property key of an item field. */
-export const shapeItemKey = (itemId: string, field: readonly string[]) => `${SHAPE_ITEM_KEY_PREFIX}${itemId}.${field.join('.')}`;
+export const shapeItemKey = (itemId: string, field: readonly string[]) =>
+	`${SHAPE_ITEM_KEY_PREFIX}${itemId}.${field.join('.')}`;
 
 /** Parses `shape.items.<id>.<field…>`. */
 export function parseShapeItemKey(key: string): { itemId: string; field: string[] } | null {
@@ -280,11 +432,17 @@ function specsOfItem(it: ShapeItem, storage: string[]): ShapeItemPropertySpec[] 
 			...(d.options ? { options: d.options, optionLabels: d.optionLabels } : {}),
 			storagePath: [...storage, ...d.f],
 			appliesTo: isVector,
-			ui: { control: d.control, ...(d.precision !== undefined ? { precision: d.precision } : {}), ...(d.bipolar ? { bipolar: true } : {}) },
+			ui: {
+				control: d.control,
+				...(d.precision !== undefined ? { precision: d.precision } : {}),
+				...(d.bipolar ? { bipolar: true } : {}),
+			},
 			...(d.defaultValue !== undefined ? { defaultValue: d.defaultValue } : {}),
 			description: `${it.name}: ${d.description ?? d.label}`,
 			...(d.validate ? { validate: d.validate } : {}),
-			...(kind === 'json' ? { valueSchema: (d.f[0] === 'path' ? PATH_SCHEMA : GRADIENT_SCHEMA) as never } : {}),
+			...(kind === 'json'
+				? { valueSchema: (d.f[0] === 'path' ? PATH_SCHEMA : GRADIENT_SCHEMA) as never }
+				: {}),
 			itemId: it.id,
 			itemType: it.type,
 		} satisfies ShapeItemPropertySpec;
@@ -325,16 +483,20 @@ const EXPRESSION_SPEC_KINDS = new Set(['number', 'vec2', 'color']);
  * Every expression-capable item property of a vector shape's contents: the Animatable, its property key and the
  * storage path relative to the contents array (expressions: enumeration and binding).
  */
-export function shapeItemAnimatables(
-	contents: readonly ShapeItem[],
-): { key: string; path: (string | number)[]; anim: { value: unknown; keyframes: unknown[]; expression?: unknown } }[] {
-	const out: { key: string; path: (string | number)[]; anim: { value: unknown; keyframes: unknown[] } }[] = [];
+export function shapeItemAnimatables(contents: readonly ShapeItem[]): {
+	key: string;
+	path: (string | number)[];
+	anim: { value: unknown; keyframes: unknown[]; expression?: unknown };
+}[] {
+	const out: { key: string; path: (string | number)[]; anim: { value: unknown; keyframes: unknown[] } }[] =
+		[];
 	const walk = (items: readonly ShapeItem[], at: (string | number)[]) => {
 		items.forEach((it, i) => {
 			for (const s of specsOfItem(it, [])) {
 				if (s.animatable === 'no' || !EXPRESSION_SPEC_KINDS.has(s.kind)) continue;
 				let v: unknown = it;
-				for (const k of s.storagePath) v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
+				for (const k of s.storagePath)
+					v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
 				if (v && typeof v === 'object' && Array.isArray((v as { keyframes?: unknown }).keyframes))
 					out.push({ key: s.key, path: [...at, i, ...s.storagePath], anim: v as never });
 			}

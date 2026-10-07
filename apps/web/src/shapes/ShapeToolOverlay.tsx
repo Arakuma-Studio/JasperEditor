@@ -13,9 +13,9 @@ import { useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
+import { addBoxToVector, addPolystar, type DrawnStar, dragStar, polystarPreview } from './draw.ts';
 import { type DrawnBox, dragShapeBox } from './geometry.ts';
 import { addShapeAt } from './insert.ts';
-import { addBoxToVector, addPolystar, type DrawnStar, dragStar, polystarPreview } from './draw.ts';
 import { selectedVectorClip } from './vector.ts';
 
 const DRAG_THRESHOLD = 3;
@@ -161,8 +161,12 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: DrawKind }) {
 			onPointerCancel={cancel}
 			role="presentation"
 		>
-			{box && (type === 'rect' || type === 'ellipse') ? <DrawPreview box={box} type={type} view={view} /> : null}
-			{star && (type === 'polygon' || type === 'star') ? <StarPreview star={star} type={type} view={view} /> : null}
+			{box && (type === 'rect' || type === 'ellipse') ? (
+				<DrawPreview box={box} type={type} view={view} />
+			) : null}
+			{star && (type === 'polygon' || type === 'star') ? (
+				<StarPreview star={star} type={type} view={view} />
+			) : null}
 		</svg>
 	);
 }

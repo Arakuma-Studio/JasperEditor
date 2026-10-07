@@ -14,7 +14,6 @@ import {
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
-import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import { type EvaluateOptions, evaluate } from '../keyframes.ts';
 import {
 	MASK_DEFAULT_FEATHER,
@@ -43,6 +42,7 @@ import {
 	type TextAnimationSide,
 } from '../text-animations.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
+import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';

@@ -43,7 +43,12 @@ const px = (img: Uint8Array, x: number, y: number): RGB => {
 };
 
 function scene(d: DocBuilder) {
-	const shape = (track: string, contents: unknown[], position: [number, number], extra: Record<string, unknown> = {}) => ({
+	const shape = (
+		track: string,
+		contents: unknown[],
+		position: [number, number],
+		extra: Record<string, unknown> = {},
+	) => ({
 		type: 'clip.addShape',
 		at: 0,
 		duration: 30,
@@ -78,7 +83,12 @@ function scene(d: DocBuilder) {
 			[
 				{ type: 'rect', size: [40, 40] },
 				{ type: 'fill', color: [1, 1, 1, 1] },
-				{ type: 'repeater', copies: 4, composite: 'above', transform: { position: [80, 0], startOpacity: 100, endOpacity: 25 } },
+				{
+					type: 'repeater',
+					copies: 4,
+					composite: 'above',
+					transform: { position: [80, 0], startOpacity: 100, endOpacity: 25 },
+				},
 			],
 			[200, 560],
 		),
@@ -110,9 +120,19 @@ function scene(d: DocBuilder) {
 				{
 					type: 'group',
 					name: 'Top',
-					contents: [{ type: 'rect', size: [100, 60], position: [50, 0] }, { type: 'fill', color: [1, 1, 0, 1], blendMode: 'linear-burn' }],
+					contents: [
+						{ type: 'rect', size: [100, 60], position: [50, 0] },
+						{ type: 'fill', color: [1, 1, 0, 1], blendMode: 'linear-burn' },
+					],
 				},
-				{ type: 'group', name: 'Bottom', contents: [{ type: 'rect', size: [200, 60] }, { type: 'fill', color: [0.5, 0.5, 0.5, 1] }] },
+				{
+					type: 'group',
+					name: 'Bottom',
+					contents: [
+						{ type: 'rect', size: [200, 60] },
+						{ type: 'fill', color: [0.5, 0.5, 0.5, 1] },
+					],
+				},
 			],
 			[620, 660],
 		),
@@ -150,7 +170,11 @@ function scene(d: DocBuilder) {
 		),
 		shape(
 			'V8',
-			[{ type: 'rect', size: [80, 80] }, { type: 'wiggle', size: 15, detail: 4, speed: 4 }, { type: 'fill', color: [1, 0, 1, 1] }],
+			[
+				{ type: 'rect', size: [80, 80] },
+				{ type: 'wiggle', size: 15, detail: 4, speed: 4 },
+				{ type: 'fill', color: [1, 0, 1, 1] },
+			],
 			[1150, 600],
 		),
 		// V9 = V1 plus a Linear Burn paint hidden under its opaque fill (no visible change), which switches the layer to the
@@ -162,7 +186,14 @@ function scene(d: DocBuilder) {
 				{ type: 'stroke', color: [0, 0, 1, 1], width: 10, position: 'inside' },
 				{ type: 'fill', color: [1, 0, 0, 1] },
 				// Below the paints: not painted by them, drawn under the opaque red fill.
-				{ type: 'group', name: 'Force canvas', contents: [{ type: 'rect', size: [100, 50] }, { type: 'fill', color: [1, 1, 1, 1], blendMode: 'linear-burn' }] },
+				{
+					type: 'group',
+					name: 'Force canvas',
+					contents: [
+						{ type: 'rect', size: [100, 50] },
+						{ type: 'fill', color: [1, 1, 1, 1], blendMode: 'linear-burn' },
+					],
+				},
 			],
 			[300, 410],
 		),
@@ -173,7 +204,10 @@ const near = (c: RGB, want: RGB, tol: number) => c.every((v, k) => Math.abs(v - 
 
 function probes(img: Uint8Array, tol: number) {
 	const check = (x: number, y: number, want: RGB, what: string) =>
-		expect(near(px(img, x, y), want, tol), `${what} at ${x},${y}: ${px(img, x, y).join(',')} vs ${want.join(',')}`).toBe(true);
+		expect(
+			near(px(img, x, y), want, tol),
+			`${what} at ${x},${y}: ${px(img, x, y).join(',')} vs ${want.join(',')}`,
+		).toBe(true);
 	// V1: red interior, 10 px blue inside stroke.
 	check(320, 200, [255, 0, 0], 'rect fill');
 	check(125, 200, [0, 0, 255], 'inside stroke');
@@ -182,7 +216,8 @@ function probes(img: Uint8Array, tol: number) {
 	check(900, 250, [0, 0, 0], 'subtracted hole');
 	check(900 + 110, 250, [255, 255, 0], 'ring');
 	// V3: four squares with opacity 100, 75, 50, 25 % (white over black).
-	[255, 191, 128, 64].forEach((g, i) => check(200 + 80 * i, 560, [g, g, g], `repeater copy ${i}`));
+	for (const [i, g] of [255, 191, 128, 64].entries())
+		check(200 + 80 * i, 560, [g, g, g], `repeater copy ${i}`);
 	// V4: black → white along x: a quarter and three quarters.
 	check(900 - 75, 560, [64, 64, 64], 'gradient 25 %');
 	check(900 + 75, 560, [191, 191, 191], 'gradient 75 %');
@@ -208,7 +243,9 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 			dev: true,
 			env: {
 				PATH: process.env.PATH,
-				...(process.env.JASPER_BROWSER_EXECUTABLE ? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE } : {}),
+				...(process.env.JASPER_BROWSER_EXECUTABLE
+					? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE }
+					: {}),
 			},
 		});
 		const hostH = { host: `127.0.0.1:${engine.port}` };
@@ -226,11 +263,16 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 				expect(r.statusCode, r.body).toBeLessThan(300);
 				const done = await coreServices(engine.app).queue.wait(r.json().id);
 				expect(done.error, JSON.stringify(done.error)).toBeUndefined();
-				const png = await engine.app.inject({ method: 'GET', url: `/renders/${r.json().id}/output`, headers: hostH });
+				const png = await engine.app.inject({
+					method: 'GET',
+					url: `/renders/${r.json().id}/output`,
+					headers: hostH,
+				});
 				expect(r.statusCode, r.body).toBeLessThan(300);
 				const f = join(dir, `still-${frame}.png`);
 				writeFileSync(f, png.rawPayload);
-				if (process.env.SHAPES_DUMP) writeFileSync(join(process.env.SHAPES_DUMP, `still-${frame}.png`), png.rawPayload);
+				if (process.env.SHAPES_DUMP)
+					writeFileSync(join(process.env.SHAPES_DUMP, `still-${frame}.png`), png.rawPayload);
 				return rgbOf(f);
 			};
 			const s5 = await still(5);
@@ -314,7 +356,8 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 					const c = px(s5, x, y);
 					let uniform = true;
 					for (let j = -8; j <= 8 && uniform; j += 2)
-						for (let i = -8; i <= 8 && uniform; i += 2) if (!near(px(s5, x + i, y + j), c, 2)) uniform = false;
+						for (let i = -8; i <= 8 && uniform; i += 2)
+							if (!near(px(s5, x + i, y + j), c, 2)) uniform = false;
 					if (!uniform) continue;
 					flat++;
 					const e = px(e5, x, y);
@@ -324,7 +367,8 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 				}
 			const flatStats = `[shapes] flat pixels ${flat}: ${flatOff} differ by > 8 (encoder ringing next to saturated edges), worst ${flatWorst}`;
 			console.info(flatStats);
-			if (process.env.SHAPES_STATS) writeFileSync(process.env.SHAPES_STATS, `${rStats}\n${stats}\n${flatStats}`);
+			if (process.env.SHAPES_STATS)
+				writeFileSync(process.env.SHAPES_STATS, `${rStats}\n${stats}\n${flatStats}`);
 			expect(flat).toBeGreaterThan(W * H * 0.6);
 			expect(flatOff).toBeLessThanOrEqual(50);
 			expect(flatWorst).toBeLessThanOrEqual(40);

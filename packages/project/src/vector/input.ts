@@ -4,7 +4,17 @@
 // group contents nest. `buildShapeItems` fills in After Effects' defaults and fresh ids, `patchShapeItem` merges a
 // patch into an item, and `checkShapeItem` validates a whole item (also used by the document invariants).
 import { z } from 'zod';
-import { AnimNumberSchema, AnimRGBASchema, AnimVec2Schema, type Animatable, RGBASchema, type RGBA, type Vec2 } from '../schema/common.ts';
+import type { BezierPath } from '../path/model.ts';
+import {
+	type Animatable,
+	AnimNumberSchema,
+	AnimRGBASchema,
+	AnimVec2Schema,
+	type RGBA,
+	RGBASchema,
+} from '../schema/common.ts';
+import { BezierPathSchema } from '../schema/mask.ts';
+import { BlendModeSchema } from '../schema/sequence.ts';
 import {
 	AnimGradientSchema,
 	AnimPathSchema,
@@ -13,15 +23,21 @@ import {
 	type ShapeItem,
 	type ShapeItemType,
 } from '../schema/shapes.ts';
-import { defaultDashes, defaultTaper, defaultWave, newShapeItem, nextItemName, walkItems } from './defaults.ts';
+import {
+	defaultDashes,
+	defaultTaper,
+	defaultWave,
+	newShapeItem,
+	nextItemName,
+	walkItems,
+} from './defaults.ts';
 import { shapeItemSpecsOf } from './properties.ts';
 import { parseSvgPath } from './svg-path.ts';
-import { BezierPathSchema } from '../schema/mask.ts';
-import { BlendModeSchema } from '../schema/sequence.ts';
-import type { BezierPath } from '../path/model.ts';
 import { bezToBezierPaths } from './values.ts';
 
-const HEX = z.string().regex(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8}|[0-9a-fA-F]{3})$/, 'colour "#RRGGBB" or "#RRGGBBAA"');
+const HEX = z
+	.string()
+	.regex(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8}|[0-9a-fA-F]{3})$/, 'colour "#RRGGBB" or "#RRGGBBAA"');
 const num = z.union([z.number(), AnimNumberSchema]);
 const vec = z.union([z.tuple([z.number(), z.number()]), AnimVec2Schema]);
 const color = z.union([RGBASchema, HEX, AnimRGBASchema]);
@@ -132,7 +148,11 @@ export function hexToRgba(hex: string): RGBA {
 }
 
 const isAnim = (v: unknown): v is Animatable<unknown> =>
-	!!v && typeof v === 'object' && !Array.isArray(v) && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes);
+	!!v &&
+	typeof v === 'object' &&
+	!Array.isArray(v) &&
+	'value' in v &&
+	Array.isArray((v as { keyframes?: unknown }).keyframes);
 
 /** A static value (wrapped) or an Animatable (keyframe ids refreshed). */
 function toAnim(v: unknown, ids: IdGen, conv: (x: unknown) => unknown = (x) => x): Animatable<unknown> {
@@ -154,7 +174,12 @@ function setAnimField(target: Record<string, unknown>, key: string, v: unknown, 
 }
 
 /** Applies the fields of `src` onto `item` (a fresh default item or a draft), following the item's own shape. */
-function assign(item: Record<string, unknown>, src: Record<string, unknown>, ids: IdGen, path: string[]): void {
+function assign(
+	item: Record<string, unknown>,
+	src: Record<string, unknown>,
+	ids: IdGen,
+	path: string[],
+): void {
 	for (const [k, v] of Object.entries(src)) {
 		if (v === undefined || k === 'type' || k === 'id' || k === 'contents') continue;
 		const cur = item[k];
@@ -179,20 +204,25 @@ function assign(item: Record<string, unknown>, src: Record<string, unknown>, ids
 				const base = (item.dashes as Record<string, unknown> | null | undefined) ?? defaultDashes();
 				const next: Record<string, unknown> = { ...base };
 				if (o.segments)
-					next.segments = o.segments.slice(0, 3).map((s) => ({ dash: toAnim(s.dash, ids), gap: toAnim(s.gap ?? s.dash, ids) }));
+					next.segments = o.segments
+						.slice(0, 3)
+						.map((s) => ({ dash: toAnim(s.dash, ids), gap: toAnim(s.gap ?? s.dash, ids) }));
 				if (o.offset !== undefined) next.offset = toAnim(o.offset, ids);
 				item.dashes = next;
 			}
 		} else if (k === 'taper' || k === 'wave') {
 			if (v === null) item[k] = null;
 			else {
-				const base = (cur as Record<string, unknown> | null | undefined) ?? (k === 'taper' ? defaultTaper() : defaultWave());
+				const base =
+					(cur as Record<string, unknown> | null | undefined) ??
+					(k === 'taper' ? defaultTaper() : defaultWave());
 				const next: Record<string, unknown> = { ...base };
 				assign(next, v as Record<string, unknown>, ids, p);
 				item[k] = next;
 			}
 		} else if (k === 'transform') {
-			if (!cur || typeof cur !== 'object') throw new ShapeInputError(`${String(item.type)} has no transform`, p);
+			if (!cur || typeof cur !== 'object')
+				throw new ShapeInputError(`${String(item.type)} has no transform`, p);
 			const next = { ...(cur as Record<string, unknown>) };
 			assign(next, v as Record<string, unknown>, ids, p);
 			item.transform = next;
@@ -267,7 +297,8 @@ export function buildShapeItems(
 	inputs.forEach((raw, i) => {
 		const p = [...path, String(i)];
 		const parsed = ItemFields.safeParse(raw);
-		if (!parsed.success) throw new ShapeInputError(`Invalid shape item: ${parsed.error.issues[0]?.message ?? ''}`, p);
+		if (!parsed.success)
+			throw new ShapeInputError(`Invalid shape item: ${parsed.error.issues[0]?.message ?? ''}`, p);
 		const src = parsed.data as Record<string, unknown>;
 		const type = src.type as ShapeItemType;
 		checkKnownFields(type, src, p);
@@ -280,18 +311,30 @@ export function buildShapeItems(
 				throw new ShapeInputError((e as Error).message, [...p, 'path']);
 			}
 			if (values.length > 1) {
-				const expanded = values.map((v, k) => ({ ...src, path: v, ...(src.name ? { name: `${String(src.name)} ${k + 1}` } : {}) }));
+				const expanded = values.map((v, k) => ({
+					...src,
+					path: v,
+					...(src.name ? { name: `${String(src.name)} ${k + 1}` } : {}),
+				}));
 				const items = buildShapeItems(expanded, ids, [...existing, ...out], path);
 				out.push(...items);
 				naming.push(...items);
 				return;
 			}
 		}
-		const item = newShapeItem(type, { id: ids.item(), name: nextItemName(naming, type) }) as unknown as Record<string, unknown>;
+		const item = newShapeItem(type, {
+			id: ids.item(),
+			name: nextItemName(naming, type),
+		}) as unknown as Record<string, unknown>;
 		assign(item, src, ids, p);
 		if (type === 'group') {
 			const kids = (src.contents as unknown[] | undefined) ?? [];
-			(item as { contents: ShapeItem[] }).contents = buildShapeItems(kids, ids, [...naming, ...out], [...p, 'contents']);
+			(item as { contents: ShapeItem[] }).contents = buildShapeItems(
+				kids,
+				ids,
+				[...naming, ...out],
+				[...p, 'contents'],
+			);
 		}
 		const err = checkShapeItem(item as ShapeItem);
 		if (err) throw new ShapeInputError(err.message, [...p, ...err.path]);
@@ -341,8 +384,14 @@ export function checkShapeItem(item: ShapeItem, deep = true): { message: string;
 		if (!isAnim(v)) return { message: `${label} is missing`, path: [...rel] };
 		const values = [v.value, ...v.keyframes.map((k) => k.value)];
 		for (const x of values) {
-			const bad = (): { message: string; path: string[] } => ({ message: `${label}: invalid value ${JSON.stringify(x)}`, path: [...rel] });
-			const inRange = (n: unknown) => finite(n) && (spec.range?.min === undefined || n >= spec.range.min - 1e-9) && (spec.range?.max === undefined || n <= spec.range.max + 1e-9);
+			const bad = (): { message: string; path: string[] } => ({
+				message: `${label}: invalid value ${JSON.stringify(x)}`,
+				path: [...rel],
+			});
+			const inRange = (n: unknown) =>
+				finite(n) &&
+				(spec.range?.min === undefined || n >= spec.range.min - 1e-9) &&
+				(spec.range?.max === undefined || n <= spec.range.max + 1e-9);
 			switch (spec.kind) {
 				case 'number':
 					if (!inRange(x)) return bad();
@@ -351,17 +400,21 @@ export function checkShapeItem(item: ShapeItem, deep = true): { message: string;
 					if (!Array.isArray(x) || x.length !== 2 || !x.every(inRange)) return bad();
 					break;
 				case 'color':
-					if (!Array.isArray(x) || x.length !== 4 || !x.every((c) => finite(c) && c >= 0 && c <= 1)) return bad();
+					if (!Array.isArray(x) || x.length !== 4 || !x.every((c) => finite(c) && c >= 0 && c <= 1))
+						return bad();
 					break;
 				case 'json':
 					if (spec.validate && !spec.validate(x)) return bad();
 					break;
 			}
 		}
-		for (const k of v.keyframes) if (typeof k.id !== 'string' || !finite(k.time)) return { message: `${label}: malformed keyframe`, path: [...rel] };
+		for (const k of v.keyframes)
+			if (typeof k.id !== 'string' || !finite(k.time))
+				return { message: `${label}: malformed keyframe`, path: [...rel] };
 	}
 	if (item.type === 'group') {
-		if (!Array.isArray(item.contents)) return { message: `${item.name}: contents missing`, path: ['contents'] };
+		if (!Array.isArray(item.contents))
+			return { message: `${item.name}: contents missing`, path: ['contents'] };
 		if (deep)
 			for (let i = 0; i < item.contents.length; i++) {
 				const e = checkShapeItem(item.contents[i]!);
@@ -381,5 +434,3 @@ export function duplicateItemIds(contents: readonly ShapeItem[]): string[] {
 	});
 	return [...dup];
 }
-
-

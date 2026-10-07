@@ -12,6 +12,7 @@
 // Group opacity multiplies into its paints (After Effects applies it per paint); a group blend mode composites the
 // group's paints together and blends the result (draws carry their blended-group chain).
 import { evaluate, isAnimated } from '../keyframes.ts';
+import type { BezierPath } from '../path/model.ts';
 import type { Animatable, RGBA, Vec2 } from '../schema/common.ts';
 import type {
 	FillRuleValue,
@@ -26,6 +27,7 @@ import type {
 import { FLICKS_PER_SECOND } from '../time.ts';
 import {
 	type Affine,
+	apply,
 	type BezPath,
 	type Bounds,
 	compose,
@@ -42,13 +44,21 @@ import {
 	translate,
 	unionBounds,
 	windingAt,
-	apply,
 } from './geom.ts';
-import { merge, offset, puckerBloat, roundCorners, trim, trimIndividually, twist, wiggle, zigzag } from './ops.ts';
+import {
+	merge,
+	offset,
+	puckerBloat,
+	roundCorners,
+	trim,
+	trimIndividually,
+	twist,
+	wiggle,
+	zigzag,
+} from './ops.ts';
 import { ellipseShapePath, polystarShapePath, rectShapePath } from './primitives.ts';
-import type { BezierPath } from '../path/model.ts';
 import { bezierPathToBez, type GradientValue } from './values.ts';
-import { type Taper, type Wave, varStrokeOutline } from './varstroke.ts';
+import { type Taper, varStrokeOutline, type Wave } from './varstroke.ts';
 
 export type ShapePaint =
 	| { type: 'solid'; color: RGBA }
@@ -134,7 +144,7 @@ export function shapeTransformMatrix(tr: ShapeTransform, t: number): { m: Affine
 function strokeStyle(it: ShapeItemOf<'stroke'> | ShapeItemOf<'gradientStroke'>, t: number): ShapeStrokeStyle {
 	let dash: ShapeStrokeStyle['dash'] = null;
 	const d = it.dashes;
-	if (d && d.segments.length) {
+	if (d?.segments.length) {
 		const pattern: number[] = [];
 		for (const s of d.segments) {
 			const dv = Math.max(0, num(s.dash, t, 0));
@@ -224,12 +234,21 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 		if (it.enabled === false) continue;
 		switch (it.type) {
 			case 'rect': {
-				const p = rectShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0]), num(it.roundness, t, 0));
+				const p = rectShapePath(
+					vec(it.size, t, [100, 100]),
+					vec(it.position, t, [0, 0]),
+					num(it.roundness, t, 0),
+				);
 				pushPath(ctx, live, p, it.direction === 'reversed');
 				break;
 			}
 			case 'ellipse':
-				pushPath(ctx, live, ellipseShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0])), it.direction === 'reversed');
+				pushPath(
+					ctx,
+					live,
+					ellipseShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0])),
+					it.direction === 'reversed',
+				);
 				break;
 			case 'polystar':
 				pushPath(
@@ -301,7 +320,9 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 				const s = num(it.start, t, 0);
 				const e = num(it.end, t, 100);
 				const o = num(it.offset, t, 0);
-				applyOp(ctx, live, (p) => (it.mode === 'individual' ? trimIndividually(p, s, e, o) : trim(p, s, e, o)));
+				applyOp(ctx, live, (p) =>
+					it.mode === 'individual' ? trimIndividually(p, s, e, o) : trim(p, s, e, o),
+				);
 				break;
 			}
 			case 'puckerBloat': {
@@ -367,7 +388,8 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 				for (const d of inner.draws) {
 					d.xf = compose(m, d.xf);
 					d.opacity *= opacity;
-					if (it.blendMode && it.blendMode !== 'normal') d.groups = [{ key: it.id, blend: it.blendMode }, ...d.groups];
+					if (it.blendMode && it.blendMode !== 'normal')
+						d.groups = [{ key: it.id, blend: it.blendMode }, ...d.groups];
 					draws.push(d);
 				}
 				live.push(...inner.live);
@@ -392,7 +414,10 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 							compose(
 								rotateDeg(rot * k),
 								compose(
-									scale(Math.sign(sc[0]) * Math.abs(sc[0] / 100) ** k, Math.sign(sc[1]) * Math.abs(sc[1] / 100) ** k),
+									scale(
+										Math.sign(sc[0]) * Math.abs(sc[0] / 100) ** k,
+										Math.sign(sc[1]) * Math.abs(sc[1] / 100) ** k,
+									),
 									translate(-anchor[0], -anchor[1]),
 								),
 							),
@@ -503,7 +528,9 @@ export function drawBounds(d: ShapeDraw): Bounds | null {
 	if (!b) return null;
 	const s = d.stroke;
 	const half = s ? (s.position === 'outside' ? s.width : s.position === 'inside' ? 0 : s.width / 2) : 0;
-	const grow = s ? half * (s.join === 'miter' ? Math.max(1, s.miterLimit) : 1) * Math.max(1, meanScale(d.xf)) + 1 : 1;
+	const grow = s
+		? half * (s.join === 'miter' ? Math.max(1, s.miterLimit) : 1) * Math.max(1, meanScale(d.xf)) + 1
+		: 1;
 	return { x0: b.x0 - grow, y0: b.y0 - grow, x1: b.x1 + grow, y1: b.y1 + grow };
 }
 
@@ -553,7 +580,11 @@ export function vectorShapeIsTimeDependent(contents: readonly ShapeItem[]): bool
 		for (const it of items) {
 			if (dep) return;
 			if (keyed(it)) dep = true;
-			else if (it.type === 'wiggle' && it.enabled !== false && (it.speed.value !== 0 || it.speed.keyframes.length))
+			else if (
+				it.type === 'wiggle' &&
+				it.enabled !== false &&
+				(it.speed.value !== 0 || it.speed.keyframes.length)
+			)
 				dep = true;
 			else if (it.type === 'group') visit(it.contents);
 		}

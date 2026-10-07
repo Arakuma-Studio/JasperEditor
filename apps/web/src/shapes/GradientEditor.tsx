@@ -4,10 +4,10 @@
 // midpoint), Delete removes it (one colour stop always stays). Every change is one undo step: drags preview locally
 // and commit on release. Writes go through the row (`param.set` at the playhead: a keyframe when Colors is animated).
 import { type GradientValue, gradientSvgStops, sampleGradient } from '@jasper/project';
+import { Icon } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { ColorField, MiniButton } from '../panels/properties/controls/fields.tsx';
 import { ScrubbyNumber } from '../panels/properties/controls/ScrubbyNumber.tsx';
-import { Icon } from '@jasper/ui';
 
 type Sel = { kind: 'color' | 'opacity'; index: number } | null;
 
@@ -24,10 +24,17 @@ export function gradientCss(g: GradientValue): string {
 }
 
 /** Adds a stop at `pos` sampled from the gradient. */
-export function addStop(g: GradientValue, kind: 'color' | 'opacity', pos: number): { g: GradientValue; index: number } {
+export function addStop(
+	g: GradientValue,
+	kind: 'color' | 'opacity',
+	pos: number,
+): { g: GradientValue; index: number } {
 	const c = sampleGradient(g, pos);
 	if (kind === 'color') {
-		const colors = [...g.colors, { position: round(pos), color: [c[0], c[1], c[2]] as [number, number, number] }];
+		const colors = [
+			...g.colors,
+			{ position: round(pos), color: [c[0], c[1], c[2]] as [number, number, number] },
+		];
 		return { g: { ...g, colors }, index: colors.length - 1 };
 	}
 	const opacities = [...g.opacities, { position: round(pos), opacity: round(c[3]) }];
@@ -36,7 +43,8 @@ export function addStop(g: GradientValue, kind: 'color' | 'opacity', pos: number
 
 /** Removes a stop (the last colour stop stays). */
 export function removeStop(g: GradientValue, sel: NonNullable<Sel>): GradientValue {
-	if (sel.kind === 'color') return g.colors.length <= 1 ? g : { ...g, colors: g.colors.filter((_, i) => i !== sel.index) };
+	if (sel.kind === 'color')
+		return g.colors.length <= 1 ? g : { ...g, colors: g.colors.filter((_, i) => i !== sel.index) };
 	return { ...g, opacities: g.opacities.filter((_, i) => i !== sel.index) };
 }
 
@@ -61,7 +69,7 @@ export function GradientEditor(props: {
 	const [draft, setDraft] = useState<GradientValue | null>(null);
 	const [sel, setSel] = useState<Sel>(null);
 	const barRef = useRef<HTMLDivElement>(null);
-	useEffect(() => setDraft(null), [props.value]);
+	useEffect(() => setDraft(null), []);
 	const g = draft ?? props.value;
 	if (!g) return <span className="text-pr-small text-pr-muted">–</span>;
 	const selected = sel && (sel.kind === 'color' ? g.colors[sel.index] : g.opacities[sel.index]) ? sel : null;
@@ -81,7 +89,10 @@ export function GradientEditor(props: {
 		const move = (ev: PointerEvent) => {
 			moved = true;
 			const p = posAt(ev.clientX);
-			const list = (s.kind === 'color' ? start.colors : start.opacities) as { position: number; midpoint?: number }[];
+			const list = (s.kind === 'color' ? start.colors : start.opacities) as {
+				position: number;
+				midpoint?: number;
+			}[];
 			const next = list.map((x, i) => {
 				if (i !== s.index) return x;
 				if (what === 'stop') return { ...x, position: round(p) };
@@ -91,7 +102,10 @@ export function GradientEditor(props: {
 				const b = list[j]!.position;
 				return { ...x, midpoint: round(Math.min(0.95, Math.max(0.05, b > a ? (p - a) / (b - a) : 0.5))) };
 			});
-			cur = s.kind === 'color' ? { ...start, colors: next as GradientValue['colors'] } : { ...start, opacities: next as GradientValue['opacities'] };
+			cur =
+				s.kind === 'color'
+					? { ...start, colors: next as GradientValue['colors'] }
+					: { ...start, opacities: next as GradientValue['opacities'] };
 			setDraft(cur);
 		};
 		const up = () => {
@@ -120,7 +134,8 @@ export function GradientEditor(props: {
 					? `rgb(${(g.colors[i]!.color as number[]).map((x) => Math.round(clamp01(x) * 255)).join(', ')})` // tokens-allow: document color
 					: `rgba(255, 255, 255, ${(g.opacities[i]!.opacity ?? 1).toFixed(3)})`; // tokens-allow: opacity swatch
 			return (
-				<span key={`${kind}${i}`}>
+				// biome-ignore lint/suspicious/noArrayIndexKey: stops are positional (two may share a position)
+				<span key={`${kind}${s.position}:${i}`}>
 					<span
 						role="slider"
 						tabIndex={0}
@@ -128,7 +143,8 @@ export function GradientEditor(props: {
 						aria-valuenow={Math.round(s.position * 100)}
 						onPointerDown={(e) => dragStop(e, { kind, index: i }, 'stop')}
 						onKeyDown={(e) => {
-							if ((e.key === 'Delete' || e.key === 'Backspace') && !props.disabled) props.onChange(removeStop(g, { kind, index: i }));
+							if ((e.key === 'Delete' || e.key === 'Backspace') && !props.disabled)
+								props.onChange(removeStop(g, { kind, index: i }));
 						}}
 						className={`absolute h-[10px] w-[8px] -translate-x-1/2 cursor-ew-resize border ${active ? 'border-pr-focus' : 'border-pr-border-strong'}`}
 						style={{ left: `${s.position * 100}%`, top: kind === 'color' ? 18 : 0, background: swatch }}
@@ -168,6 +184,7 @@ export function GradientEditor(props: {
 						top: 8,
 						background: `${gradientCss(g)}, repeating-conic-gradient(var(--pr-border-strong) 0 25%, transparent 0 50%) 0 0 / 8px 8px`,
 					}}
+					role="img"
 					aria-label={props.label}
 				/>
 				<div
@@ -182,9 +199,15 @@ export function GradientEditor(props: {
 			</div>
 			{selected ? (
 				<div className="flex flex-wrap items-center gap-2">
-					<span className="text-pr-small text-pr-muted">{selected.kind === 'color' ? 'Color stop' : 'Opacity stop'}</span>
+					<span className="text-pr-small text-pr-muted">
+						{selected.kind === 'color' ? 'Color stop' : 'Opacity stop'}
+					</span>
 					<ScrubbyNumber
-						value={Math.round(((selected.kind === 'color' ? g.colors : g.opacities)[selected.index]!.position) * 1000) / 10}
+						value={
+							Math.round(
+								(selected.kind === 'color' ? g.colors : g.opacities)[selected.index]!.position * 1000,
+							) / 10
+						}
 						label="Location"
 						step={0.1}
 						precision={1}
@@ -194,8 +217,12 @@ export function GradientEditor(props: {
 						onCommit={(fn) =>
 							update((x) => {
 								const list = (selected.kind === 'color' ? x.colors : x.opacities) as { position: number }[];
-								const next = list.map((s, i) => (i === selected.index ? { ...s, position: round(clamp01(fn(s.position * 100) / 100)) } : s));
-								return selected.kind === 'color' ? { ...x, colors: next as never } : { ...x, opacities: next as never };
+								const next = list.map((s, i) =>
+									i === selected.index ? { ...s, position: round(clamp01(fn(s.position * 100) / 100)) } : s,
+								);
+								return selected.kind === 'color'
+									? { ...x, colors: next as never }
+									: { ...x, opacities: next as never };
 							})
 						}
 						data-testid="gradient-stop-location"
@@ -208,7 +235,9 @@ export function GradientEditor(props: {
 							onChange={(c) =>
 								update((x) => ({
 									...x,
-									colors: x.colors.map((s, i) => (i === selected.index ? { ...s, color: [c[0], c[1], c[2]] } : s)),
+									colors: x.colors.map((s, i) =>
+										i === selected.index ? { ...s, color: [c[0], c[1], c[2]] } : s,
+									),
 								}))
 							}
 							data-testid="gradient-stop-color"

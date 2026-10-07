@@ -8,8 +8,7 @@
 // - synthetics, transcripts, fonts: same project and same id → reused; else copied under new ids (a font with the
 //   same family and source already in the target is reused instead of duplicated).
 // Resolution is lazy: only the entities the pasted content actually uses are added.
-import type { ShapeItem } from '../../schema/shapes.ts';
-import { reidItems } from '../../vector/defaults.ts';
+
 import { current, type Draft, isDraft } from 'immer';
 import { intrinsicOf } from '../../clipboard/build.ts';
 import {
@@ -36,8 +35,10 @@ import {
 	type TextAnimator,
 	type TrackKind,
 } from '../../schema/sequence.ts';
+import type { ShapeItem } from '../../schema/shapes.ts';
 import { scaleAnimationFrames } from '../../text-animations.ts';
 import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
+import { reidItems } from '../../vector/defaults.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	assertKindFits,
@@ -647,7 +648,13 @@ function applyAttributes(
 			const contents = retimed((shape.shape as { contents: ShapeItem[] }).contents, shape);
 			(c.shape as DRec).contents = reidItems(contents, () => h.ids.next('shp')) as never;
 			done.push('shapeStyle');
-		} else if (attrs.shapeStyle && shape && t.kind === 'shape' && srcType !== 'vector' && tgtType !== 'vector') {
+		} else if (
+			attrs.shapeStyle &&
+			shape &&
+			t.kind === 'shape' &&
+			srcType !== 'vector' &&
+			tgtType !== 'vector'
+		) {
 			const tgt = c.shape as DRec;
 			const srcShape = shape.shape!;
 			tgt.fill = retimed(srcShape.fill ?? null, shape) as never;

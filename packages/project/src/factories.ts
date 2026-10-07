@@ -231,7 +231,8 @@ const maxOf = (a: Animatable<number>): number => Math.max(...valuesOf(a));
 export function shapeIntrinsicBox(shape: ShapeData, frame?: Box): Box {
 	// wp shapes: a vector shape's layer is the frame (After Effects shape layers are comp-sized); its contents are
 	// drawn around the box centre, so the box never depends on the contents.
-	if (shape.type === 'vector') return frame ? { width: frame.width, height: frame.height } : { width: 1920, height: 1080 };
+	if (shape.type === 'vector')
+		return frame ? { width: frame.width, height: frame.height } : { width: 1920, height: 1080 };
 	const sizes = valuesOf(shape.size);
 	const w = Math.max(...sizes.map((v) => v[0]));
 	const h = Math.max(...sizes.map((v) => v[1]));

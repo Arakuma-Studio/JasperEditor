@@ -22,14 +22,14 @@ import {
 	type P,
 	perp,
 	reversePath,
-	startTangent,
 	type SubPath,
+	startTangent,
 	sub,
 	tangentAt,
 	unit,
 	walkSegments,
 } from './geom.ts';
-import { offsetPath, type LineJoin } from './offset.ts';
+import { type LineJoin, offsetPath } from './offset.ts';
 
 const ACC = 1e-3;
 
@@ -157,7 +157,9 @@ export function puckerBloat(paths: BezPath[], amount: number): BezPath[] {
 		const mvh = (q: P): P => [q[0] + (q[0] - c[0]) * a, q[1] + (q[1] - c[1]) * a];
 		return norm.map((sp) => ({
 			closed: sp.closed,
-			segs: sp.segs.map((s) => [mv(s[0]), mvh(isLine(s) ? s[0] : s[1]), mvh(isLine(s) ? s[3] : s[2]), mv(s[3])] as Cubic),
+			segs: sp.segs.map(
+				(s) => [mv(s[0]), mvh(isLine(s) ? s[0] : s[1]), mvh(isLine(s) ? s[3] : s[2]), mv(s[3])] as Cubic,
+			),
 		}));
 	});
 }
@@ -336,7 +338,12 @@ function emit(samples: Sample[], disp: P[], closed: boolean, smooth: boolean, ha
 		if (smooth) {
 			const a = samples[i]!;
 			const b = samples[j]!;
-			segs.push([pt(i), add(pt(i), mul(a.tan, a.lenNext * handle)), sub(pt(j), mul(b.tan, b.lenPrev * handle)), pt(j)]);
+			segs.push([
+				pt(i),
+				add(pt(i), mul(a.tan, a.lenNext * handle)),
+				sub(pt(j), mul(b.tan, b.lenPrev * handle)),
+				pt(j),
+			]);
 		} else segs.push(lineCubic(pt(i), pt(j)));
 	}
 	return { segs, closed };
@@ -398,14 +405,26 @@ function hash3(seed: number, idx: number, t: number): number {
 
 /** Catmull-Rom through four lattice values (C1-continuous). */
 function cr(p0: number, p1: number, p2: number, p3: number, f: number): number {
-	return 0.5 * (2 * p1 + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f + (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f);
+	return (
+		0.5 *
+		(2 * p1 +
+			(-p0 + p2) * f +
+			(2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f +
+			(-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f)
+	);
 }
 
 /** Smooth 1D value noise in [−1, 1]. */
 function noise1(seed: number, idx: number, t: number): number {
 	const i = Math.floor(t);
 	const f = t - i;
-	return Math.min(1, Math.max(-1, cr(hash3(seed, idx, i - 1), hash3(seed, idx, i), hash3(seed, idx, i + 1), hash3(seed, idx, i + 2), f)));
+	return Math.min(
+		1,
+		Math.max(
+			-1,
+			cr(hash3(seed, idx, i - 1), hash3(seed, idx, i), hash3(seed, idx, i + 1), hash3(seed, idx, i + 2), f),
+		),
+	);
 }
 
 /** Point noise smooth in both the point index u (spatial) and time t. */

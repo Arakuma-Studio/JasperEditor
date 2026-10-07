@@ -7,7 +7,17 @@ import type { RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { editLabel, planSet, type Row } from '../panels/properties/lib/model.ts';
 import { GradientEditor } from './GradientEditor.tsx';
 
-export function ShapeJsonValue({ row, ctx, value, mixed }: { row: Row; ctx: RowContext; value: unknown; mixed: boolean }) {
+export function ShapeJsonValue({
+	row,
+	ctx,
+	value,
+	mixed,
+}: {
+	row: Row;
+	ctx: RowContext;
+	value: unknown;
+	mixed: boolean;
+}) {
 	const parsed = parseShapeItemKey(row.spec.key);
 	const field = parsed?.field.join('.');
 	if (field === 'path') {
@@ -49,5 +59,3 @@ export function ShapeJsonValue({ row, ctx, value, mixed }: { row: Row; ctx: RowC
 		/>
 	);
 }
-
-

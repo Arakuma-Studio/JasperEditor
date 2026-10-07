@@ -26,10 +26,14 @@ export const dot = (a: P, b: P): number => a[0] * b[0] + a[1] * b[1];
 export const cross = (a: P, b: P): number => a[0] * b[1] - a[1] * b[0];
 export const hypot = (a: P): number => Math.hypot(a[0], a[1]);
 export const dist = (a: P, b: P): number => Math.hypot(a[0] - b[0], a[1] - b[1]);
-export const lerp = (a: P, b: P, t: number): [number, number] => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+export const lerp = (a: P, b: P, t: number): [number, number] => [
+	a[0] + (b[0] - a[0]) * t,
+	a[1] + (b[1] - a[1]) * t,
+];
 /** Left normal (rotate +90° in a y-down frame it points to the right of travel… callers only rely on consistency). */
 export const perp = (v: P): [number, number] => [-v[1], v[0]];
-export const samePoint = (a: P, b: P, eps = 1e-9): boolean => Math.abs(a[0] - b[0]) <= eps && Math.abs(a[1] - b[1]) <= eps;
+export const samePoint = (a: P, b: P, eps = 1e-9): boolean =>
+	Math.abs(a[0] - b[0]) <= eps && Math.abs(a[1] - b[1]) <= eps;
 
 /** Unit vector, or null when (nearly) zero. */
 export function unit(v: P): [number, number] | null {
@@ -139,7 +143,7 @@ export function tangentAt(c: Cubic, t: number): [number, number] {
 
 // Gauss–Legendre 8-point nodes/weights on [-1, 1].
 const GL_X = [
-	-0.9602898564975363, -0.7966664774136267, -0.5255324099163290, -0.1834346424956498, 0.1834346424956498,
+	-0.9602898564975363, -0.7966664774136267, -0.525532409916329, -0.1834346424956498, 0.1834346424956498,
 	0.525532409916329, 0.7966664774136267, 0.9602898564975363,
 ];
 const GL_W = [
@@ -245,7 +249,12 @@ export function cBounds(c: Cubic): Bounds {
 export function unionBounds(a: Bounds | null, b: Bounds | null): Bounds | null {
 	if (!a) return b;
 	if (!b) return a;
-	return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+	return {
+		x0: Math.min(a.x0, b.x0),
+		y0: Math.min(a.y0, b.y0),
+		x1: Math.max(a.x1, b.x1),
+		y1: Math.max(a.y1, b.y1),
+	};
 }
 
 export function pathBounds(p: BezPath): Bounds | null {
@@ -311,14 +320,8 @@ export function cFlatten(c: Cubic, tol: number, out: [number, number][]): void {
 		return;
 	}
 	// Number of pieces from the second-difference bound (Wang's formula).
-	const ddx = Math.max(
-		Math.abs(c[0][0] - 2 * c[1][0] + c[2][0]),
-		Math.abs(c[1][0] - 2 * c[2][0] + c[3][0]),
-	);
-	const ddy = Math.max(
-		Math.abs(c[0][1] - 2 * c[1][1] + c[2][1]),
-		Math.abs(c[1][1] - 2 * c[2][1] + c[3][1]),
-	);
+	const ddx = Math.max(Math.abs(c[0][0] - 2 * c[1][0] + c[2][0]), Math.abs(c[1][0] - 2 * c[2][0] + c[3][0]));
+	const ddy = Math.max(Math.abs(c[0][1] - 2 * c[1][1] + c[2][1]), Math.abs(c[1][1] - 2 * c[2][1] + c[3][1]));
 	const dd = Math.hypot(ddx, ddy);
 	const n = Math.min(4096, Math.max(1, Math.ceil(Math.sqrt((3 * dd) / (4 * Math.max(tol, 1e-6))))));
 	for (let i = 1; i <= n; i++) out.push(cEval(c, i / n));

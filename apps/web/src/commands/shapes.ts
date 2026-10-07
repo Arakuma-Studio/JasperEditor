@@ -4,7 +4,7 @@
 // Program monitor shape tools (XF-061; no default keys, S05:TOOL-002). Owner: wp-m2-shapes. This module is imported
 // at start-up (commands/index.ts), so it also registers the package's UI extensions: Properties ▸ Shape, the
 // Program monitor shape-tool overlay and Edit ▸ Preferences ▸ Graphics ("Resize shapes by size", SHP-007).
-import type { LegacyShapeType } from '@jasper/project';
+import type { Command, LegacyShapeType } from '@jasper/project';
 import { clipSections, programOverlays } from '../extensions/index.ts';
 import { TOOLS } from '../panels/timeline/model/tools.ts';
 import { addShapeAt, SHAPE_LABELS } from '../shapes/insert.ts';
@@ -15,7 +15,6 @@ import { VectorPathOverlay } from '../shapes/VectorPathOverlay.tsx';
 import { isVectorShapeSelection, VectorShapeSection } from '../shapes/VectorShapeSection.tsx';
 import { registerPreferencesPage } from '../shell/preferences/index.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
-import type { Command } from '@jasper/project';
 
 const hasSequence = (ctx: CommandCtx) => !!ctx.session?.getState().activeSequenceId;
 

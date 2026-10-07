@@ -6,6 +6,7 @@
 // then holes (when growing) / islands (when shrinking) that lie entirely within |delta| of the path are dropped
 // (they appear where the offset distance exceeds a curvature radius).
 import { booleanLoops, type FillRule, loopsToPath, tidyFree } from './boolean.ts';
+import { fitSingle } from './fit.ts';
 import {
 	add,
 	arcCubics,
@@ -22,15 +23,14 @@ import {
 	mul,
 	type P,
 	perp,
+	type SubPath,
 	signedArea,
 	startTangent,
-	type SubPath,
 	sub,
 	tangentAt,
 	walkSegments,
 	windingAt,
 } from './geom.ts';
-import { fitSingle } from './fit.ts';
 
 export type LineJoin = 'miter' | 'round' | 'bevel';
 export type LineCap = 'butt' | 'round' | 'square';
@@ -226,10 +226,7 @@ export function offsetPath(path: BezPath, delta: number, join: LineJoin, miterLi
 		openComplex.push(...r.complex);
 	}
 	const nz = (p: BezPath) => ({ path: p, rule: 'nonzero' as FillRule });
-	const ringInputs = [
-		...(ringSimple.length ? [nz(ringSimple)] : []),
-		...ringComplex.map((sp) => nz([sp])),
-	];
+	const ringInputs = [...(ringSimple.length ? [nz(ringSimple)] : []), ...ringComplex.map((sp) => nz([sp]))];
 	const openInputs = [...(openSimple.length ? [nz(openSimple)] : []), ...openComplex.map((sp) => nz([sp]))];
 	let loops: Cubic[][];
 	if (delta > 0) {
@@ -276,4 +273,3 @@ export function offsetPath(path: BezPath, delta: number, join: LineJoin, miterLi
 	const keep = loops.filter((_, i) => !marked(i));
 	return loopsToPath(keep, tidyFree());
 }
-

@@ -27,12 +27,9 @@ import {
 	evaluate,
 	evaluateKeyframes,
 	FLICKS_PER_SECOND,
+	findItem,
 	flicksPerFrame,
 	getPropertySpec,
-	resolvePropertySpec,
-	type ShapeItem,
-	findItem,
-	shapeItemSpecs,
 	hasActiveExpression,
 	invertMat3,
 	isAnimated,
@@ -45,8 +42,11 @@ import {
 	type Rational,
 	type RenderVisualClip,
 	resolveLayerProps,
+	resolvePropertySpec,
 	type Sequence,
+	type ShapeItem,
 	sequenceDuration,
+	shapeItemSpecs,
 	type TextContent,
 	type Track,
 	transitionSpec,
@@ -1042,7 +1042,12 @@ const MATCH: Record<string, string> = {
 };
 
 /** Sub-groups of an item's fields (the first path segment of nested fields). */
-const SUBGROUP_NAMES: Record<string, string> = { transform: 'Transform', dashes: 'Dashes', taper: 'Taper', wave: 'Wave' };
+const SUBGROUP_NAMES: Record<string, string> = {
+	transform: 'Transform',
+	dashes: 'Dashes',
+	taper: 'Taper',
+	wave: 'Wave',
+};
 
 function vectorShapeChildren(clip: unknown, contents: ShapeItem[], group: string, leaf: LeafFn): Node[] {
 	const itemNode = (it: ShapeItem): Node => ({
@@ -1081,7 +1086,13 @@ function vectorShapeChildren(clip: unknown, contents: ShapeItem[], group: string
 		}
 	}
 	if (sub.length === 0 && it.type === 'group')
-		out.unshift({ path: `${group}.contents`, group: true, name: 'Contents', matchName: 'ADBE Vectors Group', aliases: ['content', 'contents'] });
+		out.unshift({
+			path: `${group}.contents`,
+			group: true,
+			name: 'Contents',
+			matchName: 'ADBE Vectors Group',
+			aliases: ['content', 'contents'],
+		});
 	return out;
 }
 

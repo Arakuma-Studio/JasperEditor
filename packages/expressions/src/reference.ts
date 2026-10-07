@@ -245,7 +245,11 @@ export const EXPRESSION_REFERENCE: readonly RefEntry[] = [
 		'thisLayer.text.sourceText',
 		'Text clips: the Source Text (string; .style.fontSize, .fillColor, … read the style).',
 	),
-	L('shape', 'thisLayer.shape', 'Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius (rectangles / ellipses); vector shapes: their contents.'),
+	L(
+		'shape',
+		'thisLayer.shape',
+		'Shape clips: size, fillColor, strokeColor, strokeWidth, cornerRadius (rectangles / ellipses); vector shapes: their contents.',
+	),
 	L(
 		'content',
 		'content("Group 1").content("Rectangle Path 1").size',

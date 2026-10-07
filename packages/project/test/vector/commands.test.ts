@@ -1,6 +1,7 @@
 // Vector shape commands (wp shapes): clip.addShape {type: 'vector'}, shape.* item commands, property keys through
 // param.set / keyframes, conversion of rectangles and ellipses, presets, invariants and repair.
 import { describe, expect, it } from 'vitest';
+import { createCounterIdSource } from '../../src/ids.ts';
 import {
 	applyMatrix,
 	buildRenderSnapshot,
@@ -20,18 +21,20 @@ import {
 	type Vec2,
 	type VectorShapeData,
 } from '../../src/index.ts';
-import { createCounterIdSource } from '../../src/ids.ts';
 import { Harness } from '../helpers.ts';
 
 const F = flicksPerFrame({ num: 30, den: 1 });
 
 function addVector(h: Harness, shape: Record<string, unknown>, extra: Record<string, unknown> = {}) {
-	const r = h.ok([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', ...shape }, ref: '$s', ...extra }]);
+	const r = h.ok([
+		{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', ...shape }, ref: '$s', ...extra },
+	]);
 	return r.refs.$s!;
 }
 const clipOf = (h: Harness, id: string) => h.seq.clips[id] as ShapeClip;
 const contentsOf = (h: Harness, id: string) => (clipOf(h, id).shape as VectorShapeData).contents;
-const snapshot = (h: Harness) => buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+const snapshot = (h: Harness) =>
+	buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
 
 describe('clip.addShape type vector', () => {
 	it('creates a frame-sized layer whose contents sit around the frame centre', () => {
@@ -82,7 +85,9 @@ describe('clip.addShape type vector', () => {
 	it('builds every preset into valid contents', () => {
 		for (const p of SHAPE_PRESETS) {
 			const h = new Harness();
-			const r = h.tx([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', preset: p.id }, ref: '$s' }]);
+			const r = h.tx([
+				{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', preset: p.id }, ref: '$s' },
+			]);
 			if (!r.ok) throw new Error(`${p.id}: ${JSON.stringify(r.errors)}`);
 			const id = r.refs.$s!;
 			expect(contentsOf(h, id).length, p.id).toBeGreaterThan(0);
@@ -95,20 +100,32 @@ describe('clip.addShape type vector', () => {
 	it('expands SVG path data with several subpaths into several path items', () => {
 		const h = new Harness();
 		const id = addVector(h, {
-			contents: [{ type: 'path', path: 'M0 0 L10 0 L10 10 Z M20 20 h5 v5 z' }, { type: 'fill', fillRule: 'evenodd' }],
+			contents: [
+				{ type: 'path', path: 'M0 0 L10 0 L10 10 Z M20 20 h5 v5 z' },
+				{ type: 'fill', fillRule: 'evenodd' },
+			],
 		});
 		const items = contentsOf(h, id);
 		expect(items.map((i) => i.type)).toEqual(['path', 'path', 'fill']);
 		const p = items[1] as Extract<ShapeItem, { type: 'path' }>;
 		expect(p.path.value.closed).toBe(true);
-		expect(p.path.value.vertices.map((v) => v.p)).toEqual([[20, 20], [25, 20], [25, 25]]);
+		expect(p.path.value.vertices.map((v) => v.p)).toEqual([
+			[20, 20],
+			[25, 20],
+			[25, 25],
+		]);
 	});
 });
 
 describe('shape item commands', () => {
 	const setup = () => {
 		const h = new Harness();
-		const id = addVector(h, { contents: [{ type: 'ellipse', size: [100, 100] }, { type: 'fill', color: '#00ff00' }] });
+		const id = addVector(h, {
+			contents: [
+				{ type: 'ellipse', size: [100, 100] },
+				{ type: 'fill', color: '#00ff00' },
+			],
+		});
 		return { h, id };
 	};
 
@@ -121,10 +138,17 @@ describe('shape item commands', () => {
 		const g = h.ok([{ type: 'shape.groupItems', clipId: id, itemIds: [f!.id, e!.id], ref: '$g' }]).refs.$g!;
 		let top = contentsOf(h, id);
 		expect(top.map((i) => i.type)).toEqual(['group', 'trim']);
-		expect((top[0] as Extract<ShapeItem, { type: 'group' }>).contents.map((i) => i.id)).toEqual([e!.id, f!.id]);
+		expect((top[0] as Extract<ShapeItem, { type: 'group' }>).contents.map((i) => i.id)).toEqual([
+			e!.id,
+			f!.id,
+		]);
 		h.ok([{ type: 'shape.moveItem', clipId: id, itemId: trimId, parentId: g, index: 1 }]);
 		top = contentsOf(h, id);
-		expect((top[0] as Extract<ShapeItem, { type: 'group' }>).contents.map((i) => i.type)).toEqual(['ellipse', 'trim', 'fill']);
+		expect((top[0] as Extract<ShapeItem, { type: 'group' }>).contents.map((i) => i.type)).toEqual([
+			'ellipse',
+			'trim',
+			'fill',
+		]);
 		expect(h.tx([{ type: 'shape.moveItem', clipId: id, itemId: g, parentId: g, index: 0 }]).ok).toBe(false);
 		const dup = h.ok([{ type: 'shape.duplicateItem', clipId: id, itemId: g, ref: '$d' }]).refs.$d!;
 		top = contentsOf(h, id);
@@ -145,7 +169,14 @@ describe('shape item commands', () => {
 				type: 'shape.updateItem',
 				clipId: id,
 				itemId: st.id,
-				patch: { width: 12, lineCap: 'round', dashes: [10, 5, 2], taper: { startLength: 30 }, wave: { amount: 50 }, name: 'Outline' },
+				patch: {
+					width: 12,
+					lineCap: 'round',
+					dashes: [10, 5, 2],
+					taper: { startLength: 30 },
+					wave: { amount: 50 },
+					name: 'Outline',
+				},
 			},
 		]);
 		const s = contentsOf(h, id)[1] as Extract<ShapeItem, { type: 'stroke' }>;
@@ -162,7 +193,10 @@ describe('shape item commands', () => {
 		h.ok([{ type: 'shape.updateItem', clipId: id, itemId: st.id, patch: { dashes: null, enabled: false } }]);
 		expect(contentsOf(h, id)[1]).toMatchObject({ dashes: null, enabled: false });
 		for (const patch of [{ lineCap: 'pointy' }, { width: -3 }, { roundness: 3 }, { color: 'red' }])
-			expect(h.tx([{ type: 'shape.updateItem', clipId: id, itemId: st.id, patch }]).ok, JSON.stringify(patch)).toBe(false);
+			expect(
+				h.tx([{ type: 'shape.updateItem', clipId: id, itemId: st.id, patch }]).ok,
+				JSON.stringify(patch),
+			).toBe(false);
 	});
 
 	it('animates item fields through param.set and the keyframe commands', () => {
@@ -181,7 +215,9 @@ describe('shape item commands', () => {
 		// The keyframe machinery sees the property (move, remove).
 		const kf = r.size.keyframes[1]!.id;
 		h.ok([{ type: 'keyframe.move', keyframeIds: [kf], delta: { frames: 10 } }]);
-		expect((contentsOf(h, id)[0] as Extract<ShapeItem, { type: 'rect' }>).size.keyframes[1]!.time).toBe(40 * F);
+		expect((contentsOf(h, id)[0] as Extract<ShapeItem, { type: 'rect' }>).size.keyframes[1]!.time).toBe(
+			40 * F,
+		);
 		// Ranges clamp, wrong kinds fail.
 		const round = ['clip', id, 'shape', 'items', rect.id, 'roundness'];
 		const res = h.ok([{ type: 'param.set', target: round, value: -5 }]);
@@ -208,7 +244,15 @@ describe('shape item commands', () => {
 			{
 				type: 'param.set',
 				target: pt,
-				value: { closed: true, vertices: [[0, 0], [200, 0], [200, 200], [0, 200]].map((p) => ({ p, in: [0, 0], out: [0, 0] })) },
+				value: {
+					closed: true,
+					vertices: [
+						[0, 0],
+						[200, 0],
+						[200, 200],
+						[0, 200],
+					].map((p) => ({ p, in: [0, 0], out: [0, 0] })),
+				},
 				at: { sequenceFrame: 10 },
 			},
 		]);
@@ -221,14 +265,23 @@ describe('shape item commands', () => {
 		expect(Math.max(...xs)).toBeGreaterThan(100);
 		expect(Math.max(...xs)).toBeLessThan(200);
 		// A malformed path is refused.
-		expect(h.tx([{ type: 'param.set', target: pt, value: { closed: false, vertices: [{ p: [0, 'x'] }] } }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'param.set', target: pt, value: { closed: false, vertices: [{ p: [0, 'x'] }] } }]).ok,
+		).toBe(false);
 		const gt = ['clip', id, 'shape', 'items', g!.id, 'colors'];
 		h.ok([{ type: 'param.setAnimated', target: gt, animated: true, at: { sequenceFrame: 0 } }]);
 		h.ok([
 			{
 				type: 'param.set',
 				target: gt,
-				value: { colors: [{ position: 0, color: [1, 0, 0] }, { position: 0.5, color: [0, 1, 0] }, { position: 1, color: [0, 0, 1] }], opacities: [{ position: 0, opacity: 1 }] },
+				value: {
+					colors: [
+						{ position: 0, color: [1, 0, 0] },
+						{ position: 0.5, color: [0, 1, 0] },
+						{ position: 1, color: [0, 0, 1] },
+					],
+					opacities: [{ position: 0, opacity: 1 }],
+				},
 				at: { sequenceFrame: 10 },
 			},
 		]);
@@ -247,18 +300,40 @@ describe('shape.convertToVector', () => {
 				type: 'clip.addShape',
 				at: 0,
 				track: 'V1',
-				shape: { type: 'rect', size: [300, 120], cornerRadius: 20, stroke: { color: [1, 0, 0, 1], width: 6, position: 'outside' } },
+				shape: {
+					type: 'rect',
+					size: [300, 120],
+					cornerRadius: 20,
+					stroke: { color: [1, 0, 0, 1], width: 6, position: 'outside' },
+				},
 				transform: { position: [400, 300] },
 				ref: '$s',
 			},
 		]);
 		const id = r.refs.$s!;
-		h.ok([{ type: 'param.setAnimated', target: ['clip', id, 'shape', 'size'], animated: true, at: { sequenceFrame: 0 } }]);
-		h.ok([{ type: 'param.set', target: ['clip', id, 'shape', 'size'], value: [400, 200], at: { sequenceFrame: 20 } }]);
+		h.ok([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', id, 'shape', 'size'],
+				animated: true,
+				at: { sequenceFrame: 0 },
+			},
+		]);
+		h.ok([
+			{
+				type: 'param.set',
+				target: ['clip', id, 'shape', 'size'],
+				value: [400, 200],
+				at: { sequenceFrame: 20 },
+			},
+		]);
 		const before = resolveSceneAt(snapshot(h), 10).find((l) => l.clip.clipId === id)!;
 		const legacy = clipOf(h, id).shape as LegacyShapeData;
 		const g = evaluateShape(legacy, 10 * F, before.props.box);
-		const centreBefore = applyMatrix(before.props.matrix, [g.origin[0] + g.size[0] / 2, g.origin[1] + g.size[1] / 2]);
+		const centreBefore = applyMatrix(before.props.matrix, [
+			g.origin[0] + g.size[0] / 2,
+			g.origin[1] + g.size[1] / 2,
+		]);
 		h.ok([{ type: 'shape.convertToVector', clipId: id }]);
 		const c = clipOf(h, id);
 		expect(c.shape.type).toBe('vector');
@@ -284,7 +359,8 @@ describe('invariants and repair', () => {
 		const h = new Harness();
 		const id = addVector(h, { contents: [{ type: 'rect' }, { type: 'fill' }] });
 		const doc = JSON.parse(JSON.stringify(h.doc));
-		const clip = Object.values(doc.sequences as Record<string, { clips: Record<string, ShapeClip> }>)[0]!.clips[id]!;
+		const clip = Object.values(doc.sequences as Record<string, { clips: Record<string, ShapeClip> }>)[0]!
+			.clips[id]!;
 		const items = (clip.shape as VectorShapeData).contents;
 		items[1]!.id = items[0]!.id;
 		const bad = JSON.parse(JSON.stringify(items[0])) as { id: string; size: { value: number[] } };
@@ -295,7 +371,9 @@ describe('invariants and repair', () => {
 		expect(issues.some((i) => i.invariant === 'INV-001')).toBe(true);
 		expect(issues.some((i) => i.invariant === 'INV-012')).toBe(true);
 		const { document, report } = repairDocument(doc, createCounterIdSource(99));
-		expect(report.map((r) => r.action)).toEqual(expect.arrayContaining(['drop-shape-item', 'reid-shape-item']));
+		expect(report.map((r) => r.action)).toEqual(
+			expect.arrayContaining(['drop-shape-item', 'reid-shape-item']),
+		);
 		expect(checkInvariants(document)).toEqual([]);
 	});
 });

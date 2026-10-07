@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ShapeItemInputSchema } from '../../vector/input.ts';
 import {
 	AnimNumberSchema,
 	AnimRGBASchema,
@@ -17,6 +16,7 @@ import {
 	TextBoxSchema,
 	TextStyleSchema,
 } from '../../schema/sequence.ts';
+import { ShapeItemInputSchema } from '../../vector/input.ts';
 import { CaptionRulesSchema } from './captions.ts';
 import {
 	ContentTimeInputSchema,

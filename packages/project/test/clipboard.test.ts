@@ -19,12 +19,12 @@ import {
 	EMPTY_PROBE,
 	encodeClipboardHtml,
 	flicksPerFrame,
+	type LegacyShapeClip,
 	type MediaAsset,
 	type MgTemplateInfo,
 	parseClipboardPayload,
 	RATES,
 	resolveAgentAddresses,
-	type LegacyShapeClip,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 

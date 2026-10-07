@@ -20,6 +20,7 @@ import {
 	rowStatus,
 	setExpressionCommand,
 } from '../../../expressions/row.ts';
+import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
 	animState,
@@ -39,7 +40,6 @@ import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from '.
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { MediaParamPicker } from './MediaParamPicker.tsx';
 import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
-import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 
 export type RowContext = {
 	doc: ProjectDocument;

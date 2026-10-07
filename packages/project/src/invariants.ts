@@ -1,9 +1,6 @@
 // Document invariants INV-001…INV-015 (S01 §16.3, with the ARCHITECTURE §2.3 locked-track change:
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
-import type { ShapeItem } from './schema/shapes.ts';
-import { walkItems } from './vector/defaults.ts';
-import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
 
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
@@ -36,6 +33,7 @@ import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
 import type { AudioClip, Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
+import type { ShapeItem } from './schema/shapes.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import {
@@ -45,6 +43,8 @@ import {
 	type Rational,
 	supportsDropFrame,
 } from './time.ts';
+import { walkItems } from './vector/defaults.ts';
+import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
 
 const inv = (invariant: string, message: string, path?: string[]): Issue => ({
 	commandIndex: -1,
@@ -552,10 +552,19 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					contents.forEach((it, i) => {
 						const e = checkShapeItem(it as ShapeItem);
 						if (e)
-							issues.push(inv('INV-012', `Shape ${c.id} item ${i}: ${e.message}`, [...cw, 'shape', 'contents', String(i), ...e.path]));
+							issues.push(
+								inv('INV-012', `Shape ${c.id} item ${i}: ${e.message}`, [
+									...cw,
+									'shape',
+									'contents',
+									String(i),
+									...e.path,
+								]),
+							);
 					});
 					const dup = duplicateItemIds(contents as ShapeItem[]);
-					if (dup.length) issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
+					if (dup.length)
+						issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
 				}
 			}
 			// M2 (S11:SHP-001): shape geometry is non-negative.

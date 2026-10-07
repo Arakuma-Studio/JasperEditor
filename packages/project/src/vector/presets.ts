@@ -81,7 +81,14 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 		category: 'basic',
 		description: 'A 20-point burst with rounded tips, for price tags and callouts.',
 		items: () => [
-			{ type: 'polystar', starType: 'star', points: 20, outerRadius: 220, innerRadius: 185, outerRoundness: 20 },
+			{
+				type: 'polystar',
+				starType: 'star',
+				points: 20,
+				outerRadius: 220,
+				innerRadius: 185,
+				outerRoundness: 20,
+			},
 			{ type: 'fill', color: [0.95, 0.2, 0.25, 1] },
 		],
 	},
@@ -215,7 +222,13 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 		items: () => [
 			{ type: 'ellipse', size: [400, 400] },
 			{ type: 'stroke', color: WHITE, width: 14, lineCap: 'round' },
-			{ type: 'trim', end: keys([[0, 0], [1, 100]]) },
+			{
+				type: 'trim',
+				end: keys([
+					[0, 0],
+					[1, 100],
+				]),
+			},
 		],
 	},
 	{
@@ -226,7 +239,18 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 		items: () => [
 			{ type: 'ellipse', size: [240, 240] },
 			{ type: 'stroke', color: ACCENT, width: 20, lineCap: 'round' },
-			{ type: 'trim', start: 0, end: 25, offset: keys([[0, 0], [5, 3600]], true) },
+			{
+				type: 'trim',
+				start: 0,
+				end: 25,
+				offset: keys(
+					[
+						[0, 0],
+						[5, 3600],
+					],
+					true,
+				),
+			},
 		],
 	},
 	{
@@ -242,7 +266,12 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 					{ type: 'ellipse', size: [120, 120] },
 					{ type: 'stroke', color: WHITE, width: 6 },
 				],
-				transform: { scale: keys([[0, [60, 60]], [2, [110, 110]]]) },
+				transform: {
+					scale: keys([
+						[0, [60, 60]],
+						[2, [110, 110]],
+					]),
+				},
 			},
 			{
 				type: 'repeater',
@@ -272,7 +301,14 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 			{ type: 'path', path: 'M-500 0 L500 0' },
 			{ type: 'zigZag', size: 30, ridges: 12, points: 'smooth' },
 			{ type: 'stroke', color: WHITE, width: 8, lineCap: 'round' },
-			{ type: 'trim', start: 0, end: keys([[0, 0], [1.5, 100]]) },
+			{
+				type: 'trim',
+				start: 0,
+				end: keys([
+					[0, 0],
+					[1.5, 100],
+				]),
+			},
 		],
 	},
 	{
@@ -283,7 +319,17 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 		items: () => [
 			{ type: 'path', path: 'M0 -80 L0 -220' },
 			{ type: 'stroke', color: [1, 0.85, 0.2, 1], width: 10, lineCap: 'round' },
-			{ type: 'trim', start: keys([[0.2, 0], [0.8, 100]]), end: keys([[0, 0], [0.6, 100]]) },
+			{
+				type: 'trim',
+				start: keys([
+					[0.2, 0],
+					[0.8, 100],
+				]),
+				end: keys([
+					[0, 0],
+					[0.6, 100],
+				]),
+			},
 			{ type: 'repeater', copies: 12, transform: { position: [0, 0], rotation: 30 } },
 		],
 	},
@@ -298,7 +344,16 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 				type: 'stroke',
 				color: WHITE,
 				width: 6,
-				dashes: { segments: [{ dash: 24, gap: 16 }], offset: keys([[0, 0], [5, -400]], true) },
+				dashes: {
+					segments: [{ dash: 24, gap: 16 }],
+					offset: keys(
+						[
+							[0, 0],
+							[5, -400],
+						],
+						true,
+					),
+				},
 			},
 		],
 	},
@@ -314,9 +369,23 @@ export const SHAPE_PRESETS: readonly ShapePreset[] = [
 				color: WHITE,
 				width: 36,
 				lineCap: 'round',
-				taper: { units: 'percent', startLength: 40, endLength: 40, startWidth: 0, endWidth: 0, startEase: 50, endEase: 50 },
+				taper: {
+					units: 'percent',
+					startLength: 40,
+					endLength: 40,
+					startWidth: 0,
+					endWidth: 0,
+					startEase: 50,
+					endEase: 50,
+				},
 			},
-			{ type: 'trim', end: keys([[0, 0], [0.8, 100]]) },
+			{
+				type: 'trim',
+				end: keys([
+					[0, 0],
+					[0.8, 100],
+				]),
+			},
 		],
 	},
 ];

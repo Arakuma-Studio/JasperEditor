@@ -5,7 +5,13 @@ import type { Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { activeSequence } from '../panels/program/edits.ts';
 import type { DrawnBox } from './geometry.ts';
-import { addItemsToVector, addVectorClipAt, drawnGroup, selectedVectorClip, sequenceToContent } from './vector.ts';
+import {
+	addItemsToVector,
+	addVectorClipAt,
+	drawnGroup,
+	selectedVectorClip,
+	sequenceToContent,
+} from './vector.ts';
 
 export type DrawnStar = { center: Vec2; radius: number; rotation: number };
 
@@ -15,7 +21,8 @@ export function dragStar(p0: Vec2, p1: Vec2, upright: boolean): DrawnStar {
 	const dy = p1[1] - p0[1];
 	const radius = Math.round(Math.hypot(dx, dy) * 10) / 10;
 	// Rotation 0 puts the first point straight up (−90° on screen).
-	const rotation = upright || radius === 0 ? 0 : Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 90) * 10) / 10;
+	const rotation =
+		upright || radius === 0 ? 0 : Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 90) * 10) / 10;
 	return { center: [Math.round(p0[0]), Math.round(p0[1])], radius, rotation };
 }
 
@@ -48,16 +55,35 @@ function polystarItem(type: 'polygon' | 'star', radius: number, rotation: number
 }
 
 /** Polygon / Star tool release: into the selected vector shape, or a new vector shape centred on the drag. */
-export function addPolystar(session: EditorSession, type: 'polygon' | 'star', frame: number, s: DrawnStar): boolean {
+export function addPolystar(
+	session: EditorSession,
+	type: 'polygon' | 'star',
+	frame: number,
+	s: DrawnStar,
+): boolean {
 	const label = type === 'star' ? 'Star' : 'Polygon';
 	const target = selectedVectorClip(session, frame);
 	if (target) {
 		const seq = activeSequence(session);
 		const c = seq ? sequenceToContent(seq, target, frame, s.center) : null;
 		if (!c) return false;
-		return addItemsToVector(session, target.id, [drawnGroup(polystarItem(type, s.radius, s.rotation, c), label)], `Add ${label}`).length > 0;
+		return (
+			addItemsToVector(
+				session,
+				target.id,
+				[drawnGroup(polystarItem(type, s.radius, s.rotation, c), label)],
+				`Add ${label}`,
+			).length > 0
+		);
 	}
-	return !!addVectorClipAt(session, frame, [polystarItem(type, s.radius, s.rotation), { type: 'fill', color: [1, 1, 1, 1] }], `New ${label}`, s.center, label);
+	return !!addVectorClipAt(
+		session,
+		frame,
+		[polystarItem(type, s.radius, s.rotation), { type: 'fill', color: [1, 1, 1, 1] }],
+		`New ${label}`,
+		s.center,
+		label,
+	);
 }
 
 /** Rectangle / Ellipse drawn with a vector shape selected: a new group in it (the box mapped into its content space). */

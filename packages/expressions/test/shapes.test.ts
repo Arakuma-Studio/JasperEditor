@@ -5,11 +5,16 @@ import {
 	evaluate,
 	evaluateVectorShape,
 	resolveSceneAt,
-	shapeGeom,
 	type ShapeItem,
+	shapeGeom,
 } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { bindDocumentExpressions, loadExpressionEngine, propertyStatusAt, storedTimeAtFrame } from '../src/index.ts';
+import {
+	bindDocumentExpressions,
+	loadExpressionEngine,
+	propertyStatusAt,
+	storedTimeAtFrame,
+} from '../src/index.ts';
 import { basicDoc } from './fixture.ts';
 
 beforeAll(async () => {
@@ -30,7 +35,11 @@ function shapeDoc() {
 			shape: {
 				type: 'vector',
 				contents: [
-					{ type: 'group', name: 'Box', contents: [{ type: 'rect', name: 'Body', size: [100, 50] }, { type: 'fill' }] },
+					{
+						type: 'group',
+						name: 'Box',
+						contents: [{ type: 'rect', name: 'Body', size: [100, 50] }, { type: 'fill' }],
+					},
 					{ type: 'trim', name: 'Trim', end: 100 },
 				],
 			},
@@ -46,7 +55,11 @@ describe('vector shape expressions', () => {
 	it('drive item properties in documents and render snapshots; content() reaches nested items', () => {
 		const { d, groupId, rectId } = shapeDoc();
 		d.tx([
-			{ type: 'expression.set', target: ['clip', '$s', 'shape', 'items', rectId, 'size'], text: '[time * 100, 40]' },
+			{
+				type: 'expression.set',
+				target: ['clip', '$s', 'shape', 'items', rectId, 'size'],
+				text: '[time * 100, 40]',
+			},
 			{
 				type: 'expression.set',
 				target: ['clip', '$s', 'shape', 'items', groupId, 'transform', 'rotation'],
@@ -61,12 +74,20 @@ describe('vector shape expressions', () => {
 		expect(rot?.value).toBeCloseTo(20, 9);
 		// The bound document and the render snapshot draw the expression's geometry.
 		const bound = bindDocumentExpressions(d.doc);
-		const clip = bound.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as { shape: { contents: ShapeItem[] } };
-		const rect = (clip.shape.contents[0] as Extract<ShapeItem, { type: 'group' }>).contents[0] as Extract<ShapeItem, { type: 'rect' }>;
+		const clip = bound.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as {
+			shape: { contents: ShapeItem[] };
+		};
+		const rect = (clip.shape.contents[0] as Extract<ShapeItem, { type: 'group' }>).contents[0] as Extract<
+			ShapeItem,
+			{ type: 'rect' }
+		>;
 		expect(evaluate(rect.size, t)).toEqual([200, 40]);
 		const snap = buildRenderSnapshot(d.doc, d.seqId, snapOpts);
 		const layer = resolveSceneAt(snap, 60).find((l) => l.clip.clipId === d.refs.$s)!;
-		const draws = evaluateVectorShape((layer.clip.source as { shape: { contents: ShapeItem[] } }).shape.contents, layer.contentTime);
+		const draws = evaluateVectorShape(
+			(layer.clip.source as { shape: { contents: ShapeItem[] } }).shape.contents,
+			layer.contentTime,
+		);
 		const b = shapeGeom.pathBounds(draws[0]!.paths)!;
 		// 200×40 rotated by 20°: width = 200·cos20 + 40·sin20.
 		expect(b.x1 - b.x0).toBeCloseTo(200 * Math.cos(Math.PI / 9) + 40 * Math.sin(Math.PI / 9), 3);
@@ -83,8 +104,26 @@ describe('vector shape expressions', () => {
 				ref: '$s',
 			},
 		]);
-		const items = (d.doc.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as { shape: { contents: ShapeItem[] } }).shape.contents;
-		expect(() => d.tx([{ type: 'expression.set', target: ['clip', '$s', 'shape', 'items', items[0]!.id, 'path'], text: 'value' }])).toThrow(/E_INVALID_PARAM/);
-		expect(() => d.tx([{ type: 'expression.set', target: ['clip', '$s', 'shape', 'items', items[1]!.id, 'colors'], text: 'value' }])).toThrow(/E_INVALID_PARAM/);
+		const items = (
+			d.doc.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as { shape: { contents: ShapeItem[] } }
+		).shape.contents;
+		expect(() =>
+			d.tx([
+				{
+					type: 'expression.set',
+					target: ['clip', '$s', 'shape', 'items', items[0]!.id, 'path'],
+					text: 'value',
+				},
+			]),
+		).toThrow(/E_INVALID_PARAM/);
+		expect(() =>
+			d.tx([
+				{
+					type: 'expression.set',
+					target: ['clip', '$s', 'shape', 'items', items[1]!.id, 'colors'],
+					text: 'value',
+				},
+			]),
+		).toThrow(/E_INVALID_PARAM/);
 	});
 });

@@ -14,12 +14,12 @@ import {
 	type ExpressionWorldData,
 	expressionBindingOf,
 	hasActiveExpression,
+	mapShapeItemAnimatables,
 	type ProjectDocument,
 	type RenderSnapshot,
 	type Sequence,
-	sequenceAnimatables,
 	type ShapeItem,
-	mapShapeItemAnimatables,
+	sequenceAnimatables,
 } from '@jasper/project';
 import { isExpressionEngineLoaded } from './runtime.ts';
 import { World } from './world.ts';
@@ -215,7 +215,8 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 			if (src.shape && (src.shape as { type?: string }).type === 'vector') {
 				const sh = src.shape as { contents: ShapeItem[] };
 				const contents = mapShapeItemAnimatables(sh.contents, (a, key) => bind(a, o, key) as object);
-				if (contents !== sh.contents) out = { ...out, source: { ...src, shape: { ...sh, contents } } as never };
+				if (contents !== sh.contents)
+					out = { ...out, source: { ...src, shape: { ...sh, contents } } as never };
 			} else if (src.shape) {
 				const sh = src.shape as Record<string, unknown>;
 				let shape = sh;

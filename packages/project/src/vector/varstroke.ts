@@ -12,8 +12,8 @@ import {
 	lerp,
 	type P,
 	polyline,
-	signedArea,
 	type SubPath,
+	signedArea,
 } from './geom.ts';
 import type { LineCap } from './offset.ts';
 
@@ -127,7 +127,8 @@ function measure(pts: P[], closed: boolean, step: number): Poly | null {
 		for (let k = 1; k <= n; k++) fine.push(lerp(a, b, k / n));
 	}
 	const s = [0];
-	for (let i = 1; i < fine.length; i++) s.push(s[i - 1]! + Math.hypot(fine[i]![0] - fine[i - 1]![0], fine[i]![1] - fine[i - 1]![1]));
+	for (let i = 1; i < fine.length; i++)
+		s.push(s[i - 1]! + Math.hypot(fine[i]![0] - fine[i - 1]![0], fine[i]![1] - fine[i - 1]![1]));
 	return { pts: fine, s, closed };
 }
 
@@ -149,7 +150,9 @@ function at(poly: Poly, t: number): { p: P; i: number } {
 function pushPositive(out: BezPath, sp: SubPath): void {
 	const a = signedArea([sp]);
 	if (Math.abs(a) <= 1e-12) return;
-	out.push(a < 0 ? { closed: true, segs: sp.segs.map((c) => [c[3], c[2], c[1], c[0]] as const).reverse() } : sp);
+	out.push(
+		a < 0 ? { closed: true, segs: sp.segs.map((c) => [c[3], c[2], c[1], c[0]] as const).reverse() } : sp,
+	);
 }
 
 function quad(out: BezPath, pts: [P, P, P, P]): void {
@@ -188,8 +191,9 @@ export function varStrokeOutline(paths: BezPath, st: VarStroke, resScale: number
 		if (!poly) continue;
 		const len = poly.s[poly.s.length - 1]!;
 		const wf = (s: number) => half * widthFactor(taper, wave, s, len);
-		const intervals =
-			st.dash && st.dash.pattern.some((v) => v > 0) ? dashIntervals(st.dash.pattern, st.dash.offset, len) : [[0, len] as [number, number]];
+		const intervals = st.dash?.pattern.some((v) => v > 0)
+			? dashIntervals(st.dash.pattern, st.dash.offset, len)
+			: [[0, len] as [number, number]];
 		const whole = intervals.length === 1 && intervals[0]![0] <= 0 && intervals[0]![1] >= len;
 		for (const [a, b] of intervals) {
 			const pa = at(poly, a);
@@ -197,7 +201,9 @@ export function varStrokeOutline(paths: BezPath, st: VarStroke, resScale: number
 			let pts: [P, number][] = [[pa.p, a]];
 			for (let i = pa.i; i < pb.i; i++) pts.push([poly.pts[i]!, poly.s[i]!]);
 			pts.push([pb.p, b]);
-			pts = pts.filter((x, i) => i === 0 || Math.hypot(x[0][0] - pts[i - 1]![0][0], x[0][1] - pts[i - 1]![0][1]) >= 1e-9);
+			pts = pts.filter(
+				(x, i) => i === 0 || Math.hypot(x[0][0] - pts[i - 1]![0][0], x[0][1] - pts[i - 1]![0][1]) >= 1e-9,
+			);
 			if (pts.length < 2) {
 				// A zero-length dash: only its caps show.
 				if (st.cap === 'round') disc(out, pa.p, wf(a));

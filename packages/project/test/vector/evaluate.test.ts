@@ -9,17 +9,17 @@ import {
 	evaluateVectorShape,
 	FLICKS_PER_SECOND,
 	planIsCssExact,
-	shapeBoolean,
-	shapeGeom,
 	type ShapeClip,
 	type ShapeItem,
+	shapeBoolean,
+	shapeGeom,
 	shapeItemMatrix,
 	shapeItemsText,
+	type VectorShapeData,
 	vectorRenderPlan,
 	vectorShapeBounds,
 	vectorShapeContainsPoint,
 	vectorShapeIsTimeDependent,
-	type VectorShapeData,
 } from '../../src/index.ts';
 import { ellipseShapePath, polystarShapePath, rectShapePath } from '../../src/vector/primitives.ts';
 import { Harness } from '../helpers.ts';
@@ -42,11 +42,29 @@ describe('primitives', () => {
 	it('ellipses start at the top; polystars have 2n vertices with the first point up', () => {
 		const e = ellipseShapePath([100, 60], [10, 0]);
 		expect(e[0]!.segs[0]![0]).toEqual([10, -30]);
-		const s = polystarShapePath({ star: true, points: 5, position: [0, 0], rotation: 0, innerRadius: 20, outerRadius: 50, innerRoundness: 0, outerRoundness: 0 });
+		const s = polystarShapePath({
+			star: true,
+			points: 5,
+			position: [0, 0],
+			rotation: 0,
+			innerRadius: 20,
+			outerRadius: 50,
+			innerRoundness: 0,
+			outerRoundness: 0,
+		});
 		expect(s[0]!.segs).toHaveLength(10);
 		expect(s[0]!.segs[0]![0][0]).toBeCloseTo(0, 9);
 		expect(s[0]!.segs[0]![0][1]).toBeCloseTo(-50, 9);
-		const p = polystarShapePath({ star: false, points: 6, position: [0, 0], rotation: 30, innerRadius: 0, outerRadius: 50, innerRoundness: 0, outerRoundness: 50 });
+		const p = polystarShapePath({
+			star: false,
+			points: 6,
+			position: [0, 0],
+			rotation: 30,
+			innerRadius: 0,
+			outerRadius: 50,
+			innerRoundness: 0,
+			outerRoundness: 50,
+		});
 		expect(p[0]!.segs).toHaveLength(6);
 		expect(p[0]!.segs.every((c) => !shapeGeom.isLine(c))).toBe(true);
 	});
@@ -67,7 +85,11 @@ describe('stacking', () => {
 
 	it('operators reach the paths of nested groups (in the group space they live in)', () => {
 		const items = build([
-			{ type: 'group', contents: [{ type: 'path', path: 'M0 0 L100 0' }, { type: 'stroke' }], transform: { scale: [200, 200] } },
+			{
+				type: 'group',
+				contents: [{ type: 'path', path: 'M0 0 L100 0' }, { type: 'stroke' }],
+				transform: { scale: [200, 200] },
+			},
 			{ type: 'trim', end: 25 },
 		]);
 		const d = evaluateVectorShape(items, 0);
@@ -77,7 +99,12 @@ describe('stacking', () => {
 	});
 
 	it('items higher in the list draw on top; composite "above" lifts a paint over the paints before it', () => {
-		const items = build([{ type: 'rect' }, { type: 'stroke', color: '#00ff00' }, { type: 'fill', color: '#ff0000' }, { type: 'fill', color: '#0000ff', composite: 'above' }]);
+		const items = build([
+			{ type: 'rect' },
+			{ type: 'stroke', color: '#00ff00' },
+			{ type: 'fill', color: '#ff0000' },
+			{ type: 'fill', color: '#0000ff', composite: 'above' },
+		]);
 		const d = evaluateVectorShape(items, 0);
 		// Top first: the lifted blue fill, then the green stroke, then the red fill.
 		expect(d.map((x) => x.paint.type === 'solid' && x.paint.color.slice(0, 3))).toEqual([
@@ -104,7 +131,11 @@ describe('stacking', () => {
 		const items = build([
 			{ type: 'rect', size: [10, 10] },
 			{ type: 'fill' },
-			{ type: 'repeater', copies: 3, transform: { position: [20, 0], rotation: 90, startOpacity: 100, endOpacity: 40 } },
+			{
+				type: 'repeater',
+				copies: 3,
+				transform: { position: [20, 0], rotation: 90, startOpacity: 100, endOpacity: 40 },
+			},
 			{ type: 'trim', end: 50 },
 		]);
 		const d = evaluateVectorShape(items, 0);
@@ -119,7 +150,10 @@ describe('stacking', () => {
 		});
 		expect(new Set(cx).size).toBe(3);
 		// Fractional copies: the last copy's opacity scales by the fraction.
-		const frac = evaluateVectorShape(build([{ type: 'rect' }, { type: 'fill' }, { type: 'repeater', copies: 2.5 }]), 0);
+		const frac = evaluateVectorShape(
+			build([{ type: 'rect' }, { type: 'fill' }, { type: 'repeater', copies: 2.5 }]),
+			0,
+		);
 		expect(frac).toHaveLength(3);
 		expect(frac[2]!.opacity).toBeCloseTo(0.5, 9);
 	});
@@ -156,17 +190,26 @@ describe('stacking', () => {
 
 describe('render plan', () => {
 	it('inside / outside strokes clip / cut with the geometry; CSS-exact detection', () => {
-		const items = build([{ type: 'rect' }, { type: 'stroke', position: 'outside', width: 4 }, { type: 'fill', blendMode: 'dissolve' }]);
+		const items = build([
+			{ type: 'rect' },
+			{ type: 'stroke', position: 'outside', width: 4 },
+			{ type: 'fill', blendMode: 'dissolve' },
+		]);
 		const plan = vectorRenderPlan(evaluateVectorShape(items, 0));
 		expect(plan.map((p) => p.kind)).toEqual(['fill', 'stroke']);
 		expect(plan[1]!.cut).toBeTruthy();
 		expect(plan[1]!.stroke!.width).toBe(8);
 		expect(planIsCssExact(plan)).toBe(false);
-		const css = vectorRenderPlan(evaluateVectorShape(build([{ type: 'rect' }, { type: 'fill', blendMode: 'multiply' }]), 0));
+		const css = vectorRenderPlan(
+			evaluateVectorShape(build([{ type: 'rect' }, { type: 'fill', blendMode: 'multiply' }]), 0),
+		);
 		expect(planIsCssExact(css)).toBe(true);
 	});
 	it('tapered and waved strokes become fill outlines', () => {
-		const items = build([{ type: 'path', path: 'M0 0 L200 0' }, { type: 'stroke', width: 20, taper: { units: 'pixels', startLength: 100, startWidth: 0 } }]);
+		const items = build([
+			{ type: 'path', path: 'M0 0 L200 0' },
+			{ type: 'stroke', width: 20, taper: { units: 'pixels', startLength: 100, startWidth: 0 } },
+		]);
 		const plan = vectorRenderPlan(evaluateVectorShape(items, 0));
 		expect(plan[0]!.stroke).toBeNull();
 		expect(plan[0]!.d.length).toBeGreaterThan(10);
@@ -176,7 +219,12 @@ describe('render plan', () => {
 describe('queries', () => {
 	it('bounds, hit-testing, item matrices and text summaries', () => {
 		const items = build([
-			{ type: 'group', name: 'G', transform: { position: [100, 0] }, contents: [{ type: 'ellipse', size: [50, 50] }, { type: 'stroke', width: 10 }, { type: 'fill' }] },
+			{
+				type: 'group',
+				name: 'G',
+				transform: { position: [100, 0] },
+				contents: [{ type: 'ellipse', size: [50, 50] }, { type: 'stroke', width: 10 }, { type: 'fill' }],
+			},
 		]);
 		const d = evaluateVectorShape(items, 0);
 		const b = vectorShapeBounds(d)!;
@@ -193,7 +241,24 @@ describe('queries', () => {
 		expect(vectorShapeIsTimeDependent(build([{ type: 'rect' }, { type: 'fill' }]))).toBe(false);
 		expect(vectorShapeIsTimeDependent(build([{ type: 'rect' }, { type: 'wiggle' }]))).toBe(true);
 		expect(vectorShapeIsTimeDependent(build([{ type: 'rect' }, { type: 'wiggle', speed: 0 }]))).toBe(false);
-		const keyed = build([{ type: 'rect', size: { value: [1, 1], keyframes: [{ id: 'k', time: 0, value: [1, 1], interpolation: 'linear', easeIn: { influence: 0.3, slope: 0 }, easeOut: { influence: 0.3, slope: 0 } }] } }]);
+		const keyed = build([
+			{
+				type: 'rect',
+				size: {
+					value: [1, 1],
+					keyframes: [
+						{
+							id: 'k',
+							time: 0,
+							value: [1, 1],
+							interpolation: 'linear',
+							easeIn: { influence: 0.3, slope: 0 },
+							easeOut: { influence: 0.3, slope: 0 },
+						},
+					],
+				},
+			},
+		]);
 		expect(vectorShapeIsTimeDependent(keyed)).toBe(true);
 		const w = build([{ type: 'rect', size: [100, 100] }, { type: 'wiggle', size: 20 }, { type: 'fill' }]);
 		const a = evaluateVectorShape(w, 0);
@@ -205,12 +270,25 @@ describe('queries', () => {
 describe('shape.editPath', () => {
 	it('moves, inserts, converts, removes and closes vertices; keyframed paths get keys', () => {
 		const h = new Harness();
-		const r = h.ok([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', contents: [{ type: 'path', path: 'M0 0 L100 0 L100 100' }, { type: 'stroke' }] }, ref: '$s' }]);
+		const r = h.ok([
+			{
+				type: 'clip.addShape',
+				at: 0,
+				track: 'V1',
+				shape: {
+					type: 'vector',
+					contents: [{ type: 'path', path: 'M0 0 L100 0 L100 100' }, { type: 'stroke' }],
+				},
+				ref: '$s',
+			},
+		]);
 		const id = r.refs.$s!;
 		const clip = () => h.seq.clips[id] as ShapeClip;
-		const path = () => ((clip().shape as VectorShapeData).contents[0] as Extract<ShapeItem, { type: 'path' }>).path;
+		const path = () =>
+			((clip().shape as VectorShapeData).contents[0] as Extract<ShapeItem, { type: 'path' }>).path;
 		const itemId = (clip().shape as VectorShapeData).contents[0]!.id;
-		const edit = (ops: unknown[], extra: Record<string, unknown> = {}) => h.ok([{ type: 'shape.editPath', clipId: id, itemId, ops, ...extra }]);
+		const edit = (ops: unknown[], extra: Record<string, unknown> = {}) =>
+			h.ok([{ type: 'shape.editPath', clipId: id, itemId, ops, ...extra }]);
 		edit([{ op: 'moveVertices', vertices: [1], delta: [10, 5] }]);
 		expect(path().value.vertices[1]!.p).toEqual([110, 5]);
 		edit([{ op: 'insertVertex', segment: 0, t: 0.5 }]);
@@ -221,16 +299,38 @@ describe('shape.editPath', () => {
 		expect(path().value.closed).toBe(true);
 		edit([{ op: 'removeVertices', vertices: [1] }]);
 		expect(path().value.vertices).toHaveLength(3);
-		expect(h.tx([{ type: 'shape.editPath', clipId: id, itemId, ops: [{ op: 'removeVertices', vertices: [0] }] }]).ok).toBe(false);
-		expect(h.tx([{ type: 'shape.editPath', clipId: id, itemId, ops: [{ op: 'addFeatherPoint', point: { segment: 0, t: 0.5, radius: 3, tension: 0 } }] }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'shape.editPath', clipId: id, itemId, ops: [{ op: 'removeVertices', vertices: [0] }] }])
+				.ok,
+		).toBe(false);
+		expect(
+			h.tx([
+				{
+					type: 'shape.editPath',
+					clipId: id,
+					itemId,
+					ops: [{ op: 'addFeatherPoint', point: { segment: 0, t: 0.5, radius: 3, tension: 0 } }],
+				},
+			]).ok,
+		).toBe(false);
 		// Animated: an edit at another time adds a key, topology edits apply to every key.
-		h.ok([{ type: 'param.setAnimated', target: ['clip', id, 'shape', 'items', itemId, 'path'], animated: true, at: { sequenceFrame: 0 } }]);
+		h.ok([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', id, 'shape', 'items', itemId, 'path'],
+				animated: true,
+				at: { sequenceFrame: 0 },
+			},
+		]);
 		edit([{ op: 'moveVertices', vertices: [0], delta: [0, 50] }], { at: { sequenceFrame: 20 } });
 		expect(path().keyframes).toHaveLength(2);
 		edit([{ op: 'insertVertex', segment: 0, t: 0.5 }]);
 		expect(path().keyframes.every((k) => k.value.vertices.length === 4)).toBe(true);
 		const st = (clip().shape as VectorShapeData).contents[1]!.id;
-		expect(h.tx([{ type: 'shape.editPath', clipId: id, itemId: st, ops: [{ op: 'setClosed', closed: false }] }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'shape.editPath', clipId: id, itemId: st, ops: [{ op: 'setClosed', closed: false }] }])
+				.ok,
+		).toBe(false);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });

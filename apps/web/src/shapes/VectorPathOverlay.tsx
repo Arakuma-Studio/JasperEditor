@@ -18,16 +18,22 @@ import {
 	invertMat3,
 	layerMapOf,
 	nearestOnPath,
+	pathToSvg,
 	type ResolvedLayer,
 	resolveSceneAt,
 	type ShapeAffine,
 	shapePathItemsAt,
-	pathToSvg,
 } from '@jasper/project';
 import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef } from 'react';
+import {
+	type KeyboardEvent as ReactKeyboardEvent,
+	type PointerEvent as ReactPointerEvent,
+	useEffect,
+	useMemo,
+	useRef,
+} from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
@@ -119,9 +125,13 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 	];
 
 	const paths = vector
-		? shapePathItemsAt((vector.clip.source as unknown as { shape: { contents: never } }).shape.contents, vector.contentTime)
+		? shapePathItemsAt(
+				(vector.clip.source as unknown as { shape: { contents: never } }).shape.contents,
+				vector.contentTime,
+			)
 		: [];
-	const selId = ui.selected && vector && ui.selected.clipId === vector.clip.clipId ? ui.selected.itemId : null;
+	const selId =
+		ui.selected && vector && ui.selected.clipId === vector.clip.clipId ? ui.selected.itemId : null;
 	const active = paths.find((p) => p.item.id === selId) ?? null;
 	const space = (m: ShapeAffine) => (vector ? itemSpace(vector, m, view) : null);
 	const selVerts = new Set(ui.vertices);
@@ -148,7 +158,9 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 			const sp = space([1, 0, 0, 1, 0, 0]);
 			const q = sp?.fromScreen(s);
 			if (!q) return;
-			const r = apply('Pen', [{ type: 'shape.addItems', clipId: vector.clip.clipId, items: items(q), index: 0 } as Command]);
+			const r = apply('Pen', [
+				{ type: 'shape.addItems', clipId: vector.clip.clipId, items: items(q), index: 0 } as Command,
+			]);
 			if (!r.ok) return;
 			cid = vector.clip.clipId;
 			const groupId = (r.results[0] as { itemIds: string[] }).itemIds[0]!;
@@ -190,7 +202,9 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 				const a = sp?.fromScreen(s0) ?? (toSequence(view, s0) as Pt);
 				const b = sp?.fromScreen(p) ?? (toSequence(view, p) as Pt);
 				const d: Pt = [b[0] - a[0], b[1] - a[1]];
-				return edit(cid, itemId, [{ op: 'setVertex', vertex, out: d, in: [-d[0], -d[1]], breakHandles: true }]);
+				return edit(cid, itemId, [
+					{ op: 'setVertex', vertex, out: d, in: [-d[0], -d[1]], breakHandles: true },
+				]);
 			},
 		});
 	};
@@ -200,7 +214,8 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 		e.stopPropagation();
 		const s = at(e);
 		const cur = penItem.current;
-		const drawing = cur && vector && cur.clipId === vector.clip.clipId ? paths.find((p) => p.item.id === cur.itemId) : null;
+		const drawing =
+			cur && vector && cur.clipId === vector.clip.clipId ? paths.find((p) => p.item.id === cur.itemId) : null;
 		if (drawing && !drawing.path.closed) {
 			const sp = space(drawing.m);
 			const q = sp?.fromScreen(s);
@@ -226,7 +241,12 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 			if (sp && near) {
 				const ps = sp.toScreen(near.point as Pt);
 				if (Math.hypot(ps[0] - s[0], ps[1] - s[1]) <= HIT && near.t > 1e-3 && near.t < 1 - 1e-3) {
-					apply('Add Vertex', edit(vector.clip.clipId, active.item.id, [{ op: 'insertVertex', segment: near.segment, t: near.t }]));
+					apply(
+						'Add Vertex',
+						edit(vector.clip.clipId, active.item.id, [
+							{ op: 'insertVertex', segment: near.segment, t: near.t },
+						]),
+					);
 					vectorUi.set({ vertices: [near.segment + 1] });
 					return;
 				}
@@ -279,7 +299,9 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 					const b = sp?.fromScreen(p);
 					if (!a || !b) return null;
 					const d: Pt = [b[0] - a[0], b[1] - a[1]];
-					return edit(cid, id, [{ op: 'setVertex', vertex: i, out: d, in: [-d[0], -d[1]], breakHandles: true }]);
+					return edit(cid, id, [
+						{ op: 'setVertex', vertex: i, out: d, in: [-d[0], -d[1]], breakHandles: true },
+					]);
 				},
 			});
 			return;
@@ -302,12 +324,19 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 			label: 'Move Vertices',
 			commandsAt: (p) => {
 				const q = sp.fromScreen(p);
-				return q ? edit(cid, id, [{ op: 'moveVertices', vertices: indices, delta: [q[0] - q0[0], q[1] - q0[1]] }]) : null;
+				return q
+					? edit(cid, id, [{ op: 'moveVertices', vertices: indices, delta: [q[0] - q0[0], q[1] - q0[1]] }])
+					: null;
 			},
 		});
 	};
 
-	const onHandleDown = (e: ReactPointerEvent, info: (typeof paths)[number], i: number, which: 'in' | 'out') => {
+	const onHandleDown = (
+		e: ReactPointerEvent,
+		info: (typeof paths)[number],
+		i: number,
+		which: 'in' | 'out',
+	) => {
 		if (e.button !== 0 || readOnly || !vector) return;
 		e.stopPropagation();
 		const cid = vector.clip.clipId;
@@ -334,19 +363,29 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 	};
 
 	const onKeyDown = (e: ReactKeyboardEvent) => {
-		if ((e.key !== 'Delete' && e.key !== 'Backspace') || !active || !vector || !ui.vertices.length || readOnly) return;
+		if (
+			(e.key !== 'Delete' && e.key !== 'Backspace') ||
+			!active ||
+			!vector ||
+			!ui.vertices.length ||
+			readOnly
+		)
+			return;
 		e.preventDefault();
 		e.stopPropagation();
 		const left = active.path.vertices.length - new Set(ui.vertices).size;
 		if (left < (active.path.closed ? 3 : 1)) return;
-		apply('Delete Vertices', edit(vector.clip.clipId, active.item.id, [{ op: 'removeVertices', vertices: ui.vertices }]));
+		apply(
+			'Delete Vertices',
+			edit(vector.clip.clipId, active.item.id, [{ op: 'removeVertices', vertices: ui.vertices }]),
+		);
 		vectorUi.set({ vertices: [] });
 	};
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: focus target for Delete on the selected vertices
 		<svg
 			ref={drag.svgRef}
-			// biome-ignore lint/a11y/noNoninteractiveTabindex: focus target for Delete on selected vertices
 			tabIndex={-1}
 			onKeyDown={onKeyDown}
 			className="pointer-events-none absolute inset-0 h-full w-full touch-none select-none outline-none"
@@ -383,7 +422,14 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 							onPointerDown={(e) => onOutlineDown(e, info)}
 							data-testid={`vector-outline-${info.item.id}`}
 						/>
-						<path d={d} fill="none" stroke="var(--pr-accent)" strokeWidth={isActive ? 1.5 : 1} opacity={isActive ? 1 : 0.6} pointerEvents="none" />
+						<path
+							d={d}
+							fill="none"
+							stroke="var(--pr-accent)"
+							strokeWidth={isActive ? 1.5 : 1}
+							opacity={isActive ? 1 : 0.6}
+							pointerEvents="none"
+						/>
 					</g>
 				);
 			})}
@@ -403,7 +449,15 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 								<g key={i}>
 									{showHandles && hasIn ? (
 										<>
-											<line x1={p[0]} y1={p[1]} x2={hIn[0]} y2={hIn[1]} stroke="var(--pr-accent)" strokeWidth={1} pointerEvents="none" />
+											<line
+												x1={p[0]}
+												y1={p[1]}
+												x2={hIn[0]}
+												y2={hIn[1]}
+												stroke="var(--pr-accent)"
+												strokeWidth={1}
+												pointerEvents="none"
+											/>
 											<circle
 												cx={hIn[0]}
 												cy={hIn[1]}
@@ -418,7 +472,15 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 									) : null}
 									{showHandles && hasOut ? (
 										<>
-											<line x1={p[0]} y1={p[1]} x2={hOut[0]} y2={hOut[1]} stroke="var(--pr-accent)" strokeWidth={1} pointerEvents="none" />
+											<line
+												x1={p[0]}
+												y1={p[1]}
+												x2={hOut[0]}
+												y2={hOut[1]}
+												stroke="var(--pr-accent)"
+												strokeWidth={1}
+												pointerEvents="none"
+											/>
 											<circle
 												cx={hOut[0]}
 												cy={hOut[1]}

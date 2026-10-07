@@ -23,13 +23,13 @@ import type { CommandCtx } from '../src/commands/types.ts';
 import { buildGroups } from '../src/panels/effectControls/items.ts';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
-import { addStop, removeStop } from '../src/shapes/GradientEditor.tsx';
 import { dragStar, polystarPreview } from '../src/shapes/draw.ts';
+import { addStop, removeStop } from '../src/shapes/GradientEditor.tsx';
 import { hitsLayerGeometry, layerEditQuad, layerEditRect } from '../src/shapes/geometry.ts';
 import { ShapeToolOverlay } from '../src/shapes/ShapeToolOverlay.tsx';
-import { vectorUi } from '../src/shapes/vector.ts';
-import { insertionPoint } from '../src/shapes/VectorShapeSection.tsx';
 import { VectorPathOverlay } from '../src/shapes/VectorPathOverlay.tsx';
+import { insertionPoint } from '../src/shapes/VectorShapeSection.tsx';
+import { vectorUi } from '../src/shapes/vector.ts';
 
 function makeSession() {
 	const ids = createCounterIdSource(1);
@@ -52,7 +52,9 @@ function addVector(session: EditorSession, contents: unknown[]) {
 	const r = session.apply({
 		label: 'setup',
 		origin: 'user',
-		commands: [{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', contents }, ref: '$s' }] as never,
+		commands: [
+			{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'vector', contents }, ref: '$s' },
+		] as never,
 	});
 	if (!r.ok) throw new Error(JSON.stringify(r.errors));
 	return r.refs.$s!;
@@ -72,7 +74,15 @@ describe('pure helpers', () => {
 		const items = [
 			{ id: 'a', type: 'rect', name: 'R' },
 			{ id: 'b', type: 'fill', name: 'F' },
-			{ id: 'g', type: 'group', name: 'G', contents: [{ id: 'c', type: 'ellipse', name: 'E' }, { id: 'd', type: 'stroke', name: 'S' }] },
+			{
+				id: 'g',
+				type: 'group',
+				name: 'G',
+				contents: [
+					{ id: 'c', type: 'ellipse', name: 'E' },
+					{ id: 'd', type: 'stroke', name: 'S' },
+				],
+			},
 		] as unknown as ShapeItem[];
 		expect(insertionPoint(items, null, 'ellipse')).toEqual({ parentId: null, index: 1 });
 		expect(insertionPoint(items, null, 'trim')).toEqual({ parentId: null, index: 3 });
@@ -117,11 +127,18 @@ describe('Properties ▸ Shape Contents', () => {
 
 	it('lists the tree; adds, groups, moves, renames, toggles and deletes items (one undo step each)', () => {
 		const { session, seqId } = makeSession();
-		const id = addVector(session, [{ type: 'rect', size: [200, 100] }, { type: 'fill', color: '#ff0000' }]);
+		const id = addVector(session, [
+			{ type: 'rect', size: [200, 100] },
+			{ type: 'fill', color: '#ff0000' },
+		]);
 		session.select('timeline', [id]);
 		mount(session);
 		const tree = screen.getByTestId('vector-tree');
-		expect(within(tree).getAllByRole('treeitem').map((r) => r.getAttribute('data-item-type'))).toEqual(['rect', 'fill']);
+		expect(
+			within(tree)
+				.getAllByRole('treeitem')
+				.map((r) => r.getAttribute('data-item-type')),
+		).toEqual(['rect', 'fill']);
 		const [rect, fill] = clipOf(session, seqId, id).shape.contents;
 		// Select the rectangle, add an Ellipse Path: it lands right after it (above the fill).
 		fireEvent.click(screen.getByTestId(`vector-item-${rect!.id}`));
@@ -133,12 +150,27 @@ describe('Properties ▸ Shape Contents', () => {
 		expect(screen.getByTestId('vector-item-properties')).toBeTruthy();
 		// Add Trim Paths: after the selected ellipse.
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'trim' } });
-		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual(['rect', 'ellipse', 'trim', 'fill']);
+		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual([
+			'rect',
+			'ellipse',
+			'trim',
+			'fill',
+		]);
 		// Group the trim, then move it down.
 		fireEvent.click(screen.getByTestId('vector-group'));
-		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual(['rect', 'ellipse', 'group', 'fill']);
+		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual([
+			'rect',
+			'ellipse',
+			'group',
+			'fill',
+		]);
 		fireEvent.click(screen.getByTestId('vector-down'));
-		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual(['rect', 'ellipse', 'fill', 'group']);
+		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual([
+			'rect',
+			'ellipse',
+			'fill',
+			'group',
+		]);
 		// Eye and delete.
 		fireEvent.click(screen.getByTestId(`vector-eye-${fill!.id}`));
 		expect(findItem(clipOf(session, seqId, id).shape.contents, fill!.id)!.item.enabled).toBe(false);
@@ -146,7 +178,9 @@ describe('Properties ▸ Shape Contents', () => {
 		fireEvent.click(screen.getByTestId('vector-delete'));
 		expect(findItem(clipOf(session, seqId, id).shape.contents, fill!.id)).toBeNull();
 		// Rename by double-click.
-		fireEvent.doubleClick(within(screen.getByTestId(`vector-item-${rect!.id}`)).getByText('Rectangle Path 1'));
+		fireEvent.doubleClick(
+			within(screen.getByTestId(`vector-item-${rect!.id}`)).getByText('Rectangle Path 1'),
+		);
 		const input = within(screen.getByTestId(`vector-item-${rect!.id}`)).getByLabelText('Name');
 		fireEvent.change(input, { target: { value: 'Box' } });
 		fireEvent.keyDown(input, { key: 'Enter' });
@@ -157,7 +191,12 @@ describe('Properties ▸ Shape Contents', () => {
 
 	it('adds presets as groups; stroke options toggle dashes / taper / wave; the gradient editor writes stops', () => {
 		const { session, seqId } = makeSession();
-		const id = addVector(session, [{ type: 'path', path: 'M0 0 L100 0' }, { type: 'stroke' }, { type: 'rect' }, { type: 'gradientFill' }]);
+		const id = addVector(session, [
+			{ type: 'path', path: 'M0 0 L100 0' },
+			{ type: 'stroke' },
+			{ type: 'rect' },
+			{ type: 'gradientFill' },
+		]);
 		session.select('timeline', [id]);
 		mount(session);
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'preset:star' } });
@@ -168,18 +207,28 @@ describe('Properties ▸ Shape Contents', () => {
 		fireEvent.click(screen.getByTestId('vector-dashes'));
 		fireEvent.click(screen.getByTestId('vector-taper'));
 		fireEvent.click(screen.getByTestId('vector-wave'));
-		const st = findItem(clipOf(session, seqId, id).shape.contents, stroke.id)!.item as Extract<ShapeItem, { type: 'stroke' }>;
+		const st = findItem(clipOf(session, seqId, id).shape.contents, stroke.id)!.item as Extract<
+			ShapeItem,
+			{ type: 'stroke' }
+		>;
 		expect(st.dashes?.segments).toHaveLength(1);
 		expect(st.taper?.startLength.value).toBe(25);
 		expect(st.wave?.amount.value).toBe(50);
 		fireEvent.click(screen.getByTestId('vector-dash-add'));
-		expect((findItem(clipOf(session, seqId, id).shape.contents, stroke.id)!.item as typeof st).dashes?.segments).toHaveLength(2);
+		expect(
+			(findItem(clipOf(session, seqId, id).shape.contents, stroke.id)!.item as typeof st).dashes?.segments,
+		).toHaveLength(2);
 		const gf = top.find((i) => i.type === 'gradientFill')!;
 		fireEvent.click(screen.getByTestId(`vector-item-${gf.id}`));
 		const editor = screen.getByTestId('gradient-editor');
 		const lane = within(editor).getByTestId('gradient-color-lane');
 		fireEvent.pointerDown(lane, { clientX: 0, button: 0 });
-		const colors = (findItem(clipOf(session, seqId, id).shape.contents, gf.id)!.item as Extract<ShapeItem, { type: 'gradientFill' }>).colors;
+		const colors = (
+			findItem(clipOf(session, seqId, id).shape.contents, gf.id)!.item as Extract<
+				ShapeItem,
+				{ type: 'gradientFill' }
+			>
+		).colors;
 		expect(colors.value.colors).toHaveLength(3);
 	});
 
@@ -189,7 +238,15 @@ describe('Properties ▸ Shape Contents', () => {
 		const r = session.apply({
 			label: 'setup',
 			origin: 'user',
-			commands: [{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'ellipse', size: [200, 200] }, ref: '$e' }] as never,
+			commands: [
+				{
+					type: 'clip.addShape',
+					at: 0,
+					track: 'V1',
+					shape: { type: 'ellipse', size: [200, 200] },
+					ref: '$e',
+				},
+			] as never,
 		});
 		const id = r.ok ? r.refs.$e! : '';
 		session.select('timeline', [id]);
@@ -204,12 +261,25 @@ describe('Properties ▸ Shape Contents', () => {
 describe('Effect Controls ▸ Contents', () => {
 	it('one section per item with its keyframable rows', () => {
 		const { session, seqId } = makeSession();
-		const id = addVector(session, [{ type: 'group', name: 'G', contents: [{ type: 'rect' }, { type: 'fill' }] }, { type: 'trim' }]);
+		const id = addVector(session, [
+			{ type: 'group', name: 'G', contents: [{ type: 'rect' }, { type: 'fill' }] },
+			{ type: 'trim' },
+		]);
 		const doc = session.getCommitted();
 		const seq = doc.sequences[seqId]!;
-		const groups = buildGroups(doc, seq, [seq.clips[id]!], 0, { effects: defaultRegistries().effects, mgTemplates: defaultRegistries().mgTemplates });
+		const groups = buildGroups(doc, seq, [seq.clips[id]!], 0, {
+			effects: defaultRegistries().effects,
+			mgTemplates: defaultRegistries().mgTemplates,
+		});
 		const titles = groups[0]!.sections.map((s) => s.title);
-		expect(titles).toEqual(expect.arrayContaining(['Contents › G', 'Contents › G › Rectangle Path 1', 'Contents › G › Fill 1', 'Contents › Trim Paths 1']));
+		expect(titles).toEqual(
+			expect.arrayContaining([
+				'Contents › G',
+				'Contents › G › Rectangle Path 1',
+				'Contents › G › Fill 1',
+				'Contents › Trim Paths 1',
+			]),
+		);
 		const trim = groups[0]!.sections.find((s) => s.title === 'Contents › Trim Paths 1')!;
 		expect(trim.rows.map((r) => r.label)).toEqual(['Start', 'End', 'Offset', 'Trim Multiple Shapes']);
 	});
@@ -225,9 +295,19 @@ describe('Program monitor', () => {
 		transport: session.transport,
 		monitor: monitorStores.program.getState(),
 	});
-	const drag = (el: Element, from: [number, number], to: [number, number], mods: { shiftKey?: boolean } = {}) => {
+	const drag = (
+		el: Element,
+		from: [number, number],
+		to: [number, number],
+		mods: { shiftKey?: boolean } = {},
+	) => {
 		fireEvent.pointerDown(el, { clientX: from[0], clientY: from[1], button: 0, pointerId: 1, ...mods });
-		fireEvent.pointerMove(el, { clientX: (from[0] + to[0]) / 2, clientY: (from[1] + to[1]) / 2, pointerId: 1, ...mods });
+		fireEvent.pointerMove(el, {
+			clientX: (from[0] + to[0]) / 2,
+			clientY: (from[1] + to[1]) / 2,
+			pointerId: 1,
+			...mods,
+		});
 		fireEvent.pointerMove(el, { clientX: to[0], clientY: to[1], pointerId: 1, ...mods });
 		fireEvent.pointerUp(el, { clientX: to[0], clientY: to[1], pointerId: 1, ...mods });
 	};
@@ -284,7 +364,12 @@ describe('Program monitor', () => {
 			[600 - 960, 600 - 540],
 		]);
 		// Close on the first vertex (now drawn as a handle by the overlay).
-		fireEvent.pointerDown(screen.getByTestId('vector-vertex-0'), { clientX: 100, clientY: 100, button: 0, pointerId: 1 });
+		fireEvent.pointerDown(screen.getByTestId('vector-vertex-0'), {
+			clientX: 100,
+			clientY: 100,
+			button: 0,
+			pointerId: 1,
+		});
 		expect(path().closed).toBe(true);
 		// Selection tool: drag vertex 1 by (10, 20) screen px = (20, 40) sequence px.
 		act(() => session.setToggles({ activeTool: 'selection' }));

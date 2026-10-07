@@ -86,7 +86,11 @@ export function bezToBezierPaths(p: BezPath): BezierPath[] {
 			});
 		}
 		// A closing segment ending on the first vertex duplicates it.
-		if (sp.closed && vertices.length > 1 && samePoint(vertices[0]!.p, vertices[vertices.length - 1]!.p, 1e-9)) {
+		if (
+			sp.closed &&
+			vertices.length > 1 &&
+			samePoint(vertices[0]!.p, vertices[vertices.length - 1]!.p, 1e-9)
+		) {
 			const last = vertices.pop()!;
 			vertices[0]!.in = last.in;
 		}
@@ -235,7 +239,9 @@ export function lerpShapeValue<T>(a: T, b: T, t: number): T {
  * SVG gradient stops (offset, straight colour, alpha) for a gradient: the union of colour and opacity stop
  * positions, plus samples along midpoint curves, so a linear-interpolating renderer reproduces the gradient.
  */
-export function gradientSvgStops(g: GradientValue): { offset: number; color: [number, number, number]; alpha: number }[] {
+export function gradientSvgStops(
+	g: GradientValue,
+): { offset: number; color: [number, number, number]; alpha: number }[] {
 	const set = new Set<number>([0, 1]);
 	for (const list of [sortedStops(g.colors), sortedStops(g.opacities)] as {
 		position: number;

@@ -58,7 +58,10 @@ export const isVectorClip = (c: unknown): c is ShapeClip & { shape: VectorShapeD
 	!!c && (c as { kind?: string }).kind === 'shape' && (c as ShapeClip).shape?.type === 'vector';
 
 /** The single selected vector shape clip of the active sequence visible at `frame` (unlocked), or null. */
-export function selectedVectorClip(session: EditorSession, frame?: number): (ShapeClip & { shape: VectorShapeData }) | null {
+export function selectedVectorClip(
+	session: EditorSession,
+	frame?: number,
+): (ShapeClip & { shape: VectorShapeData }) | null {
 	const seq = activeSequence(session);
 	if (!seq) return null;
 	const ids = session.getState().selection.timeline.clips;
@@ -148,7 +151,11 @@ export function addItemsToVector(
 }
 
 /** A group holding one path item, a stroke and a fill (what a drawing tool adds into a selected shape). */
-export function drawnGroup(path: Record<string, unknown>, name: string, opts: { stroke?: boolean; fill?: boolean } = {}) {
+export function drawnGroup(
+	path: Record<string, unknown>,
+	name: string,
+	opts: { stroke?: boolean; fill?: boolean } = {},
+) {
 	const contents: Record<string, unknown>[] = [path];
 	if (opts.stroke) contents.push({ type: 'stroke', color: [1, 1, 1, 1], width: 4 });
 	if (opts.fill !== false) contents.push({ type: 'fill', color: [1, 1, 1, 1] });

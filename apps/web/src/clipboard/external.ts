@@ -13,11 +13,11 @@ import {
 	svgPathToShapeItems,
 	svgToShapeContents,
 } from '@jasper/project';
-import { selectedVectorClip } from '../shapes/vector.ts';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import type { CommandCtx } from '../commands/types.ts';
 import { EngineImportService } from '../import/service.ts';
 import { activeProjectBin, getProjectPanel } from '../panels/project/instances.ts';
+import { selectedVectorClip } from '../shapes/vector.ts';
 import { getImportService, type ImportTarget } from '../state/services.ts';
 import { type ExternalContent, imageExtension } from './system.ts';
 
@@ -212,7 +212,8 @@ export async function pasteExternal(
 /** SVG path data on its own ("M10 10 L…"): a move command first, then path syntax only. */
 export function looksLikeSvgPathData(text: string): boolean {
 	const t = text.trim();
-	if (!/^[Mm]/.test(t) || t.length > 1_000_000 || !/^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]*$/.test(t)) return false;
+	if (!/^[Mm]/.test(t) || t.length > 1_000_000 || !/^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]*$/.test(t))
+		return false;
 	try {
 		return parseSvgPath(t).some((sp) => sp.segs.length > 0);
 	} catch {
@@ -234,17 +235,29 @@ export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): 
 			warnings = r.warnings;
 		} else items = [{ type: 'group', name: 'Pasted Path', contents: svgPathToShapeItems(text.trim()) }];
 	} catch (e) {
-		ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: e instanceof Error ? e.message : String(e) });
+		ctx.ui.toast({
+			kind: 'warning',
+			message: 'Paste SVG: not possible',
+			detail: e instanceof Error ? e.message : String(e),
+		});
 		return true;
 	}
 	if (!items.length) {
-		ctx.ui.toast({ kind: 'info', message: 'The SVG has nothing a shape can draw', detail: warnings.join('; ') || undefined });
+		ctx.ui.toast({
+			kind: 'info',
+			message: 'The SVG has nothing a shape can draw',
+			detail: warnings.join('; ') || undefined,
+		});
 		return true;
 	}
 	const target = selectedVectorClip(session, env.playhead);
 	const track = lowestTargetedTrack(seq, env.view, 'video');
 	if (!target && !track) {
-		ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: 'Every video track is locked' });
+		ctx.ui.toast({
+			kind: 'warning',
+			message: 'Paste SVG: not possible',
+			detail: 'Every video track is locked',
+		});
 		return true;
 	}
 	const rate = seq.settings.frameRate;
@@ -265,9 +278,17 @@ export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): 
 						shape: { type: 'vector', contents: items },
 					} as Command),
 		],
-		...(target ? {} : { selectAfter: (res: { results: unknown[] }) => ({ timeline: [(res.results[0] as { clipId: string }).clipId] }) }),
+		...(target
+			? {}
+			: {
+					selectAfter: (res: { results: unknown[] }) => ({
+						timeline: [(res.results[0] as { clipId: string }).clipId],
+					}),
+				}),
 	});
-	if (!r.ok) ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: r.errors[0]?.message });
-	else if (warnings.length) ctx.ui.toast({ kind: 'info', message: 'Pasted SVG', detail: `Not converted: ${warnings.join('; ')}` });
+	if (!r.ok)
+		ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: r.errors[0]?.message });
+	else if (warnings.length)
+		ctx.ui.toast({ kind: 'info', message: 'Pasted SVG', detail: `Not converted: ${warnings.join('; ')}` });
 	return true;
 }

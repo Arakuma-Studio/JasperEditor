@@ -2,6 +2,8 @@
 // Sources: After Effects' Add ▸ menu defaults as documented by Adobe ("Shape attributes, paint operations, and path
 // operations for shape layers"), the Lottie format's property set (lottie-docs) and EffectCraft's
 // `crates/project/src/build.rs`; where Adobe documents no default the most plausible one is used (wp-note §Defaults).
+
+import type { BezierPath } from '../path/model.ts';
 import type { Animatable, RGBA, Vec2 } from '../schema/common.ts';
 import type {
 	ShapeItem,
@@ -12,7 +14,6 @@ import type {
 	StrokeTaper,
 	StrokeWave,
 } from '../schema/shapes.ts';
-import type { BezierPath } from '../path/model.ts';
 import { DEFAULT_GRADIENT, type GradientValue } from './values.ts';
 
 export const a = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });

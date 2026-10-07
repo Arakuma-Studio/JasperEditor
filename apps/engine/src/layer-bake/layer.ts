@@ -6,6 +6,7 @@ import {
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	evaluateVectorShape,
 	gpuIsTimeDependent,
 	hasActiveExpression,
 	hasEffectMasks,
@@ -14,9 +15,8 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
-	type Transform,
-	evaluateVectorShape,
 	type ShapeItem,
+	type Transform,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';

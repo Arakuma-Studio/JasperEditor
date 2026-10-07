@@ -57,10 +57,20 @@ describe('path values', () => {
 	it('round-trips compound paths and keeps closed curves', () => {
 		fc.assert(
 			fc.property(
-				fc.array(fc.tuple(fc.integer({ min: -500, max: 500 }), fc.integer({ min: -500, max: 500 })), { minLength: 2, maxLength: 12 }),
+				fc.array(fc.tuple(fc.integer({ min: -500, max: 500 }), fc.integer({ min: -500, max: 500 })), {
+					minLength: 2,
+					maxLength: 12,
+				}),
 				fc.boolean(),
 				(pts, closed) => {
-					const v = { closed, vertices: pts.map((p, i) => ({ p: p as [number, number], in: i % 2 ? ([3, 4] as [number, number]) : ([0, 0] as [number, number]), out: [0, 0] as [number, number] })) };
+					const v = {
+						closed,
+						vertices: pts.map((p, i) => ({
+							p: p as [number, number],
+							in: i % 2 ? ([3, 4] as [number, number]) : ([0, 0] as [number, number]),
+							out: [0, 0] as [number, number],
+						})),
+					};
 					const back = bezToBezierPaths(bezierPathToBez(v));
 					const again = bezierPathToBez(back[0]!);
 					expect(shapeGeom.toSvgPath(again)).toBe(shapeGeom.toSvgPath(bezierPathToBez(v)));
@@ -73,7 +83,15 @@ describe('path values', () => {
 
 describe('variable strokes', () => {
 	it('taper and wave width profiles (EffectCraft cases)', () => {
-		const t = { percent: false, startLength: 50, endLength: 0, startWidth: 0, endWidth: 1, startEase: 0, endEase: 0 };
+		const t = {
+			percent: false,
+			startLength: 50,
+			endLength: 0,
+			startWidth: 0,
+			endWidth: 1,
+			startEase: 0,
+			endEase: 0,
+		};
 		expect(widthFactor(t, null, 0, 200)).toBeCloseTo(0, 9);
 		expect(widthFactor(t, null, 25, 200)).toBeCloseTo(0.5, 9);
 		expect(widthFactor({ ...t, startEase: 1 }, null, 25, 200)).toBeGreaterThan(0.8);

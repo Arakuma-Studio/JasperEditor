@@ -8,8 +8,6 @@
 import { z } from 'zod';
 import type { BezierPath } from '../path/model.ts';
 import type { GradientValue } from '../vector/values.ts';
-import { BezierPathSchema } from './mask.ts';
-import { type BlendMode, BlendModeSchema } from './sequence.ts';
 import {
 	type Animatable,
 	AnimNumberSchema,
@@ -19,6 +17,8 @@ import {
 	type RGBA,
 	type Vec2,
 } from './common.ts';
+import { BezierPathSchema } from './mask.ts';
+import { type BlendMode, BlendModeSchema } from './sequence.ts';
 
 /**
  * Blend modes of shape groups, fills and strokes: the full clip set (`BLEND_MODES`, keyframes-blend). Paints blend
@@ -164,7 +164,12 @@ export type ShapeRectItem = ItemBase & {
 	position: AV;
 	roundness: AN;
 };
-export type ShapeEllipseItem = ItemBase & { type: 'ellipse'; direction?: PathDirectionValue; size: AV; position: AV };
+export type ShapeEllipseItem = ItemBase & {
+	type: 'ellipse';
+	direction?: PathDirectionValue;
+	size: AV;
+	position: AV;
+};
 export type ShapePolystarItem = ItemBase & {
 	type: 'polystar';
 	direction?: PathDirectionValue;
@@ -178,7 +183,11 @@ export type ShapePolystarItem = ItemBase & {
 	innerRoundness: AN;
 	outerRoundness: AN;
 };
-export type ShapePathItem = ItemBase & { type: 'path'; direction?: PathDirectionValue; path: Animatable<BezierPath> };
+export type ShapePathItem = ItemBase & {
+	type: 'path';
+	direction?: PathDirectionValue;
+	path: Animatable<BezierPath>;
+};
 export type ShapeFillItem = ItemBase & {
 	type: 'fill';
 	composite?: CompositeValue;
@@ -196,7 +205,9 @@ export type ShapeGradientFillItem = ItemBase &
 		blendMode?: ShapeBlendMode;
 		opacity: AN;
 	};
-export type ShapeGradientStrokeItem = ItemBase & StrokeStyleFields & GradientFields & { type: 'gradientStroke' };
+export type ShapeGradientStrokeItem = ItemBase &
+	StrokeStyleFields &
+	GradientFields & { type: 'gradientStroke' };
 export type ShapeTrimItem = ItemBase & {
 	type: 'trim';
 	/** Percent. */
@@ -387,7 +398,13 @@ export const ShapeItemSchema: z.ZodType<ShapeItem> = z.lazy(() =>
 			position: AnimVec2Schema,
 			roundness: AnimNumberSchema,
 		}),
-		z.looseObject({ ...base, type: z.literal('ellipse'), direction, size: AnimVec2Schema, position: AnimVec2Schema }),
+		z.looseObject({
+			...base,
+			type: z.literal('ellipse'),
+			direction,
+			size: AnimVec2Schema,
+			position: AnimVec2Schema,
+		}),
 		z.looseObject({
 			...base,
 			type: z.literal('polystar'),

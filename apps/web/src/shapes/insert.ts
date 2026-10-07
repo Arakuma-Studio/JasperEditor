@@ -2,11 +2,21 @@
 // Program monitor shape tools. One `clip.addShape` transaction = one undo step; the clip goes at the playhead on
 // the targeted video track when it is free there, else the first free track or a new one (placed like text,
 // XF-060), and becomes the selection.
-import { type Command, DEFAULT_SHAPE_SECONDS, type LegacyShapeType, type ShapeType, type Vec2 } from '@jasper/project';
+import {
+	type Command,
+	DEFAULT_SHAPE_SECONDS,
+	type LegacyShapeType,
+	type ShapeType,
+	type Vec2,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { activeSequence, freeVideoTrack } from '../panels/program/edits.ts';
 
-export const SHAPE_LABELS: Record<ShapeType, string> = { rect: 'Rectangle', ellipse: 'Ellipse', vector: 'Shape' };
+export const SHAPE_LABELS: Record<ShapeType, string> = {
+	rect: 'Rectangle',
+	ellipse: 'Ellipse',
+	vector: 'Shape',
+};
 
 /** Adds a shape at `frame`; default size 400×400 at the frame centre. Returns the new clip id. */
 export function addShapeAt(

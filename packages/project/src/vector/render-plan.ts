@@ -5,9 +5,9 @@
 import { blendModeIndex, isCssBlend } from '../blend-modes.ts';
 import type { FillRuleValue, ShapeBlendMode } from '../schema/shapes.ts';
 import {
+	drawLocalPaths,
 	type ShapeDraw,
 	type ShapePaint,
-	drawLocalPaths,
 	strokeIsVariable,
 	variableStrokeOutline,
 } from './evaluate.ts';
@@ -53,7 +53,7 @@ export function vectorRenderPlan(draws: readonly ShapeDraw[], resScale = 1): Pla
 	for (let i = draws.length - 1; i >= 0; i--) {
 		const dr = draws[i]!;
 		const local = drawLocalPaths(dr);
-		if (!local || !local.length) continue;
+		if (!local?.length) continue;
 		const base = {
 			itemId: dr.itemId,
 			kind: dr.kind,
@@ -65,7 +65,15 @@ export function vectorRenderPlan(draws: readonly ShapeDraw[], resScale = 1): Pla
 		};
 		if (dr.kind === 'fill') {
 			const b = pathBounds(local);
-			out.push({ ...base, d: toSvgPath(local), fillRule: dr.fillRule, stroke: null, clip: null, cut: null, bounds: b && grow(b, 1) });
+			out.push({
+				...base,
+				d: toSvgPath(local),
+				fillRule: dr.fillRule,
+				stroke: null,
+				clip: null,
+				cut: null,
+				bounds: b && grow(b, 1),
+			});
 			continue;
 		}
 		const s = dr.stroke!;
@@ -77,11 +85,21 @@ export function vectorRenderPlan(draws: readonly ShapeDraw[], resScale = 1): Pla
 			const outline: BezPath = variableStrokeOutline(dr, resScale);
 			if (!outline.length) continue;
 			const b = pathBounds(outline);
-			out.push({ ...base, d: toSvgPath(outline), fillRule: 'nonzero', stroke: null, clip, cut, bounds: b && grow(b, 1) });
+			out.push({
+				...base,
+				d: toSvgPath(outline),
+				fillRule: 'nonzero',
+				stroke: null,
+				clip,
+				cut,
+				bounds: b && grow(b, 1),
+			});
 			continue;
 		}
 		const b = pathBounds(local);
-		const reach = (visible / 2) * (s.join === 'miter' ? Math.max(1, s.miterLimit) : 1) + (s.cap === 'square' ? visible : 0);
+		const reach =
+			(visible / 2) * (s.join === 'miter' ? Math.max(1, s.miterLimit) : 1) +
+			(s.cap === 'square' ? visible : 0);
 		out.push({
 			...base,
 			d: geometry,

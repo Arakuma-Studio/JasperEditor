@@ -24,7 +24,8 @@ export function shapeItemsSummary(contents: readonly ShapeItem[]): ShapeItemSumm
 		const animated: string[] = [];
 		for (const spec of shapeItemSpecsOf(it)) {
 			let v: unknown = it;
-			for (const k of spec.storagePath) v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
+			for (const k of spec.storagePath)
+				v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
 			const key = spec.storagePath.join('.');
 			if (spec.animatable === 'no') {
 				if (v !== undefined) values[key] = v;

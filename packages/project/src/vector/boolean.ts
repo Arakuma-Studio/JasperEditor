@@ -4,16 +4,17 @@
 // module chains its output into closed contours and re-joins the pieces that came from one input curve (exactly)
 // or one smooth run (least-squares refit within `precision`), so results carry about as few vertices as the inputs.
 // The tidy-up follows EffectCraft's `crates/path/src/boolean.rs` (adapted from VectorCraft, MIT OR Apache-2.0).
-import { FillRule as PBFillRule, PathBoolean, PathBooleanOperation, type Path as PBPath } from 'path-bool';
+import { PathBoolean, PathBooleanOperation, FillRule as PBFillRule, type Path as PBPath } from 'path-bool';
+import { fitSingle, isStraight, sampleCubic } from './fit.ts';
 import {
 	type BezPath,
 	type Cubic,
 	cBounds,
-	cNearest,
-	cSub,
 	cDegenerate,
 	cEval,
+	cNearest,
 	cross,
+	cSub,
 	dot,
 	endTangent,
 	isLine,
@@ -21,13 +22,12 @@ import {
 	type P,
 	pathBounds,
 	pathLength,
+	type SubPath,
 	samePoint,
 	signedArea,
 	startTangent,
-	type SubPath,
 	walkSegments,
 } from './geom.ts';
-import { fitSingle, isStraight, sampleCubic } from './fit.ts';
 
 export type FillRule = 'nonzero' | 'evenodd';
 
@@ -40,7 +40,9 @@ type PBSeg = ['L', PBVec, PBVec] | ['C', PBVec, PBVec, PBVec, PBVec];
 const v = (p: P): PBVec => [p[0], p[1]];
 
 function finitePath(p: BezPath): boolean {
-	return p.every((sp) => sp.segs.every((c) => c.every((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]))));
+	return p.every((sp) =>
+		sp.segs.every((c) => c.every((q) => Number.isFinite(q[0]) && Number.isFinite(q[1]))),
+	);
 }
 
 /** Every subpath closed (a filled open path is painted as if closed), degenerate pieces dropped. */
@@ -63,7 +65,12 @@ function fromPBSeg(s: PBPath[number]): Cubic | null {
 			return [s[1] as P, s[2] as P, s[3] as P, s[4] as P];
 		case 'Q': {
 			const [, a, q, b] = s as unknown as [string, P, P, P];
-			return [a, [a[0] + ((q[0] - a[0]) * 2) / 3, a[1] + ((q[1] - a[1]) * 2) / 3], [b[0] + ((q[0] - b[0]) * 2) / 3, b[1] + ((q[1] - b[1]) * 2) / 3], b];
+			return [
+				a,
+				[a[0] + ((q[0] - a[0]) * 2) / 3, a[1] + ((q[1] - a[1]) * 2) / 3],
+				[b[0] + ((q[0] - b[0]) * 2) / 3, b[1] + ((q[1] - b[1]) * 2) / 3],
+				b,
+			];
 		}
 		default:
 			return null;
@@ -156,14 +163,16 @@ function isKept(t: Tidy, p: P): boolean {
 	return false;
 }
 
-const lineLike = (c: Cubic) => isLine(c) || isStraight(c, 1e-9 * (1 + Math.hypot(c[3][0] - c[0][0], c[3][1] - c[0][1])));
+const lineLike = (c: Cubic) =>
+	isLine(c) || isStraight(c, 1e-9 * (1 + Math.hypot(c[3][0] - c[0][0], c[3][1] - c[0][1])));
 
 function exactMerge(run: Cubic[], t: Tidy): Cubic | null {
 	const a = run[0]![0];
 	const b = run[run.length - 1]![3];
 	const scale = 1 + Math.max(Math.abs(a[0]), Math.abs(a[1]), Math.abs(b[0]), Math.abs(b[1]));
 	const tol = 1e-6 * scale;
-	const inside = (r: Tidy['curves'][number]['b'], p: P) => p[0] >= r.x0 && p[0] <= r.x1 && p[1] >= r.y0 && p[1] <= r.y1;
+	const inside = (r: Tidy['curves'][number]['b'], p: P) =>
+		p[0] >= r.x0 && p[0] <= r.x1 && p[1] >= r.y0 && p[1] <= r.y1;
 	for (const { b: r, c } of t.curves) {
 		if (!inside(r, a) || !inside(r, b)) continue;
 		const na = cNearest(c, a);
@@ -171,10 +180,13 @@ function exactMerge(run: Cubic[], t: Tidy): Cubic | null {
 		if (Math.sqrt(na.d2) > tol || Math.sqrt(nb.d2) > tol) continue;
 		if (!run.every((s) => Math.sqrt(cNearest(c, cEval(s, 0.5)).d2) <= tol * 10)) continue;
 		if (Math.abs(na.t - nb.t) < 1e-12) continue;
-		const s = na.t < nb.t ? cSub(c, na.t, nb.t) : (() => {
-			const r2 = cSub(c, nb.t, na.t);
-			return [r2[3], r2[2], r2[1], r2[0]] as Cubic;
-		})();
+		const s =
+			na.t < nb.t
+				? cSub(c, na.t, nb.t)
+				: (() => {
+						const r2 = cSub(c, nb.t, na.t);
+						return [r2[3], r2[2], r2[1], r2[0]] as Cubic;
+					})();
 		return [a, s[1], s[2], b];
 	}
 	return null;
@@ -188,14 +200,15 @@ function tryMerge(run: Cubic[], t: Tidy): Cubic | null {
 		const len = Math.hypot(chord[0], chord[1]);
 		if (len < 1e-12) return null;
 		const ok = run.every(
-			(s) => Math.abs(cross([s[3][0] - first[0][0], s[3][1] - first[0][1]], chord) / len) <= t.precision * 0.5,
+			(s) =>
+				Math.abs(cross([s[3][0] - first[0][0], s[3][1] - first[0][1]], chord) / len) <= t.precision * 0.5,
 		);
 		return ok ? lineCubic(first[0], last[3]) : null;
 	}
 	const exact = exactMerge(run, t);
 	if (exact) return exact;
 	const pts: P[] = [];
-	run.forEach((s, k) => sampleCubic(s, 12, pts, k === 0));
+	for (const [k, s] of run.entries()) sampleCubic(s, 12, pts, k === 0);
 	const { c, err } = fitSingle(pts, startTangent(first), endTangent(last));
 	return err > t.precision ? null : c;
 }

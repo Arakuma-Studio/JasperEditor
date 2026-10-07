@@ -7,15 +7,24 @@ import {
 	SHAPE_ITEM_TYPES,
 	SHAPE_PRESETS,
 	type ShapeItem,
-	shapeItemsSummary,
 	ShapeItemInputSchema,
 	ShapeItemPatchSchema,
 	SvgImportError,
+	shapeItemsSummary,
 	svgToShapeContents,
 	TrackRefSchema,
 } from '@jasper/project';
 import { z } from 'zod';
-import { DESTRUCTIVE_IDEMPOTENT, defineTool, EDIT, EDIT_IDEMPOTENT, frameOf, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import {
+	DESTRUCTIVE_IDEMPOTENT,
+	defineTool,
+	EDIT,
+	EDIT_IDEMPOTENT,
+	frameOf,
+	loadDoc,
+	READ_ONLY,
+	type ToolContext,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper, hexToRgba, timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
@@ -110,26 +119,41 @@ export function registerShapeTools(ctx: ToolContext): void {
 
 // ---------------------------------------------------------------- vector shapes (wp shapes)
 
-const ItemsArg = z.array(ShapeItemInputSchema).min(1).max(1000).describe('Shape items (see the guide): {type, …fields}; groups take contents');
+const ItemsArg = z
+	.array(ShapeItemInputSchema)
+	.min(1)
+	.max(1000)
+	.describe('Shape items (see the guide): {type, …fields}; groups take contents');
 const ClipIdArg = z.string().describe('Vector shape clip id ("clp_…")');
 const ItemIdArg = z.string().describe('Shape item id ("shp_…", from get_shape)');
-const AtArg = timeArg('Sequence time of the edit (a keyframe when the path is animated; default: the playhead / clip start)').optional();
+const AtArg = timeArg(
+	'Sequence time of the edit (a keyframe when the path is animated; default: the playhead / clip start)',
+).optional();
 
 function vectorClip(doc: ProjectDocument, clipId: string) {
 	for (const seq of Object.values(doc.sequences)) {
 		const c = seq.clips[clipId];
 		if (!c) continue;
-		if (c.kind !== 'shape') throw new ToolError('E_INVALID_PARAM', `Clip ${clipId} is not a shape`, 'Use get_timeline for clip ids.');
+		if (c.kind !== 'shape')
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				`Clip ${clipId} is not a shape`,
+				'Use get_timeline for clip ids.',
+			);
 		return { seq, clip: c };
 	}
 	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
 }
 
-function pathsOf(items: readonly ShapeItem[], t: number): { itemId: string; name: string; path: BezierPath }[] {
+function pathsOf(
+	items: readonly ShapeItem[],
+	t: number,
+): { itemId: string; name: string; path: BezierPath }[] {
 	const out: { itemId: string; name: string; path: BezierPath }[] = [];
 	const walk = (list: readonly ShapeItem[]) => {
 		for (const it of list) {
-			if (it.type === 'path') out.push({ itemId: it.id, name: it.name, path: evaluate(it.path, t) as BezierPath });
+			if (it.type === 'path')
+				out.push({ itemId: it.id, name: it.name, path: evaluate(it.path, t) as BezierPath });
 			if (it.type === 'group') walk(it.contents);
 		}
 	};
@@ -142,7 +166,10 @@ async function atFrame(ctx: ToolContext, projectId: string, clipId: string, at: 
 	return frameOf(vectorClip(doc, clipId).seq, at);
 }
 
-const seqArg = z.string().optional().describe('Sequence id ("seq_…"); default: the project\'s first sequence');
+const seqArg = z
+	.string()
+	.optional()
+	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 
 export function registerVectorShapeTools(ctx: ToolContext): void {
 	defineTool(
@@ -150,13 +177,19 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 		'list_shape_presets',
 		{
 			title: 'List shape presets',
-			description: 'Ready-made vector shapes (id, label, category, description) for add_vector_shape {preset} and add_shape_items {preset}.',
+			description:
+				'Ready-made vector shapes (id, label, category, description) for add_vector_shape {preset} and add_shape_items {preset}.',
 			input: {},
 			annotations: READ_ONLY,
 		},
 		async () =>
 			jsonResult({
-				presets: SHAPE_PRESETS.map((p) => ({ id: p.id, label: p.label, category: p.category, description: p.description })),
+				presets: SHAPE_PRESETS.map((p) => ({
+					id: p.id,
+					label: p.label,
+					category: p.category,
+					description: p.description,
+				})),
 				itemTypes: SHAPE_ITEM_TYPES,
 			}),
 	);
@@ -175,14 +208,22 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 				at: timeArg('Start time'),
 				duration: timeArg('Length (default 5 s)').optional(),
 				track: TrackRefSchema.optional().describe('Video track (default V2)'),
-				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] of the shape centre in sequence pixels (default: frame centre)'),
+				position: z
+					.tuple([z.number(), z.number()])
+					.optional()
+					.describe('[x, y] of the shape centre in sequence pixels (default: frame centre)'),
 				name: z.string().max(200).optional(),
 				sequenceId: seqArg,
 			},
 			annotations: EDIT,
 		},
 		async (a, extra) => {
-			if (!a.items === !a.preset) throw new ToolError('E_INVALID_PARAM', 'Give either items or a preset', 'list_shape_presets lists the presets.');
+			if (!a.items === !a.preset)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give either items or a preset',
+					'list_shape_presets lists the presets.',
+				);
 			return applyHelper(
 				ctx,
 				a.projectId,
@@ -217,7 +258,10 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 				at: timeArg('Start time'),
 				duration: timeArg('Length (default 5 s)').optional(),
 				track: TrackRefSchema.optional().describe('Video track (default V2)'),
-				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] of the drawing centre in sequence pixels (default: frame centre)'),
+				position: z
+					.tuple([z.number(), z.number()])
+					.optional()
+					.describe('[x, y] of the drawing centre in sequence pixels (default: frame centre)'),
 				fill: z.string().optional().describe('Path data only: fill colour "#RRGGBB(AA)" (default white)'),
 				name: z.string().max(200).optional(),
 				dryRun: z.boolean().optional(),
@@ -236,14 +280,26 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 					warnings = r.warnings;
 					size = [r.width, r.height];
 				} else {
-					items = [{ type: 'path', path: a.svg }, { type: 'fill', color: a.fill ? hexToRgba(a.fill) : [1, 1, 1, 1] }];
+					items = [
+						{ type: 'path', path: a.svg },
+						{ type: 'fill', color: a.fill ? hexToRgba(a.fill) : [1, 1, 1, 1] },
+					];
 				}
 			} catch (e) {
 				if (e instanceof SvgImportError || e instanceof Error)
-					throw new ToolError('E_INVALID_PARAM', `Could not read the SVG: ${e.message}`, 'Pass SVG markup with an <svg> root or valid path data.');
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`Could not read the SVG: ${e.message}`,
+						'Pass SVG markup with an <svg> root or valid path data.',
+					);
 				throw e;
 			}
-			if (!items.length) throw new ToolError('E_INVALID_PARAM', 'The SVG has nothing a shape layer can draw', warnings.join('; ') || undefined);
+			if (!items.length)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'The SVG has nothing a shape layer can draw',
+					warnings.join('; ') || undefined,
+				);
 			if (a.dryRun) return jsonResult({ items, warnings, size });
 			const res = await applyHelper(
 				ctx,
@@ -263,7 +319,9 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 				],
 				extra,
 			);
-			return warnings.length ? jsonResult({ warnings, result: JSON.parse((res.content[0] as { text: string }).text) }) : res;
+			return warnings.length
+				? jsonResult({ warnings, result: JSON.parse((res.content[0] as { text: string }).text) })
+				: res;
 		},
 	);
 
@@ -282,7 +340,11 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			const { seq, clip } = vectorClip(doc, a.clipId);
 			if (clip.shape.type !== 'vector') return jsonResult({ clipId: clip.id, shape: clip.shape });
 			const frame = a.at !== undefined ? frameOf(seq, a.at) : clip.start;
-			const t = contentTimeAt(clip, Math.max(clip.start, Math.min(clip.start + clip.duration - 1, frame)), seq.settings.frameRate);
+			const t = contentTimeAt(
+				clip,
+				Math.max(clip.start, Math.min(clip.start + clip.duration - 1, frame)),
+				seq.settings.frameRate,
+			);
 			return jsonResult({
 				clipId: clip.id,
 				type: 'vector',
@@ -311,16 +373,22 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Add Shape Items', [
-				{
-					type: 'shape.addItems',
-					clipId: a.clipId,
-					...(a.items ? { items: a.items } : {}),
-					...(a.preset ? { preset: a.preset } : {}),
-					...(a.parentId ? { parentId: a.parentId } : {}),
-					...(a.index !== undefined ? { index: a.index } : {}),
-				},
-			], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Add Shape Items',
+				[
+					{
+						type: 'shape.addItems',
+						clipId: a.clipId,
+						...(a.items ? { items: a.items } : {}),
+						...(a.preset ? { preset: a.preset } : {}),
+						...(a.parentId ? { parentId: a.parentId } : {}),
+						...(a.index !== undefined ? { index: a.index } : {}),
+					},
+				],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -334,7 +402,13 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Edit Shape Item', [{ type: 'shape.updateItem', clipId: a.clipId, itemId: a.itemId, patch: a.patch }], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Edit Shape Item',
+				[{ type: 'shape.updateItem', clipId: a.clipId, itemId: a.itemId, patch: a.patch }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -347,7 +421,13 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Delete Shape Items', [{ type: 'shape.removeItems', clipId: a.clipId, itemIds: a.itemIds }], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Delete Shape Items',
+				[{ type: 'shape.removeItems', clipId: a.clipId, itemIds: a.itemIds }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -355,7 +435,8 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 		'move_shape_item',
 		{
 			title: 'Move shape item',
-			description: "Moves an item to index in a group's list (parentId) or the top level: reorders, or moves it into / out of a group.",
+			description:
+				"Moves an item to index in a group's list (parentId) or the top level: reorders, or moves it into / out of a group.",
 			input: {
 				projectId: ProjectIdArg,
 				clipId: ClipIdArg,
@@ -366,9 +447,21 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Move Shape Item', [
-				{ type: 'shape.moveItem', clipId: a.clipId, itemId: a.itemId, parentId: a.parentId ?? null, index: a.index },
-			], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Move Shape Item',
+				[
+					{
+						type: 'shape.moveItem',
+						clipId: a.clipId,
+						itemId: a.itemId,
+						parentId: a.parentId ?? null,
+						index: a.index,
+					},
+				],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -377,13 +470,29 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 		{
 			title: 'Group shape items',
 			description: 'Wraps sibling items in a new group (at the position of the topmost one).',
-			input: { projectId: ProjectIdArg, clipId: ClipIdArg, itemIds: z.array(z.string()).min(1), name: z.string().max(200).optional() },
+			input: {
+				projectId: ProjectIdArg,
+				clipId: ClipIdArg,
+				itemIds: z.array(z.string()).min(1),
+				name: z.string().max(200).optional(),
+			},
 			annotations: EDIT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Group Shapes', [
-				{ type: 'shape.groupItems', clipId: a.clipId, itemIds: a.itemIds, ...(a.name ? { name: a.name } : {}) },
-			], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Group Shapes',
+				[
+					{
+						type: 'shape.groupItems',
+						clipId: a.clipId,
+						itemIds: a.itemIds,
+						...(a.name ? { name: a.name } : {}),
+					},
+				],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -396,7 +505,13 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Duplicate Shape Item', [{ type: 'shape.duplicateItem', clipId: a.clipId, itemId: a.itemId }], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Duplicate Shape Item',
+				[{ type: 'shape.duplicateItem', clipId: a.clipId, itemId: a.itemId }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -417,16 +532,24 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Edit Shape Path', [
-				{
-					type: 'shape.editPath',
-					clipId: a.clipId,
-					itemId: a.itemId,
-					ops: a.ops,
-					...(a.at !== undefined ? { at: { sequenceFrame: await atFrame(ctx, a.projectId, a.clipId, a.at) } } : {}),
-					...(a.allKeyframes ? { allKeyframes: true } : {}),
-				},
-			], extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Edit Shape Path',
+				[
+					{
+						type: 'shape.editPath',
+						clipId: a.clipId,
+						itemId: a.itemId,
+						ops: a.ops,
+						...(a.at !== undefined
+							? { at: { sequenceFrame: await atFrame(ctx, a.projectId, a.clipId, a.at) } }
+							: {}),
+						...(a.allKeyframes ? { allKeyframes: true } : {}),
+					},
+				],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -434,11 +557,18 @@ export function registerVectorShapeTools(ctx: ToolContext): void {
 		'convert_shape_to_vector',
 		{
 			title: 'Convert shape to vector',
-			description: 'Turns rectangle / ellipse clips into vector shapes (path, stroke and fill items with the same values and keyframes); the picture does not change.',
+			description:
+				'Turns rectangle / ellipse clips into vector shapes (path, stroke and fill items with the same values and keyframes); the picture does not change.',
 			input: { projectId: ProjectIdArg, clipIds: z.array(z.string()).min(1) },
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) =>
-			applyHelper(ctx, a.projectId, 'Convert to Vector Shape', a.clipIds.map((clipId) => ({ type: 'shape.convertToVector', clipId })), extra),
+			applyHelper(
+				ctx,
+				a.projectId,
+				'Convert to Vector Shape',
+				a.clipIds.map((clipId) => ({ type: 'shape.convertToVector', clipId })),
+				extra,
+			),
 	);
 }

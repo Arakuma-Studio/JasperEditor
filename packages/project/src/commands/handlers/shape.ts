@@ -7,9 +7,6 @@
 // anchor (value and keys) moves by half the change, so the geometry stays where it was on screen
 // (M(c) = P + R·S·(c − A) is unchanged).
 import type { Draft } from 'immer';
-import { evaluate } from '../../keyframes.ts';
-import type { BezierPath } from '../../path/model.ts';
-import { applyPathEditOp, applyPathTopologyOp, mapAllPaths, PATH_TOPOLOGY_OPS, writePathAt } from './mask.ts';
 import {
 	anim,
 	type Box,
@@ -18,6 +15,8 @@ import {
 	defaultTransform,
 	shapeIntrinsicBox,
 } from '../../factories.ts';
+import { evaluate } from '../../keyframes.ts';
+import type { BezierPath } from '../../path/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { DEFAULT_SHAPE_STROKE, type PropertySpec, SHAPE_LIMITS } from '../../registry/properties.ts';
 import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
@@ -31,6 +30,7 @@ import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
 import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
 import { applyTransformPatch, commonFields, frameBox, newGeneratorClip, visualFields } from './clip-core.ts';
+import { applyPathEditOp, applyPathTopologyOp, mapAllPaths, PATH_TOPOLOGY_OPS, writePathAt } from './mask.ts';
 import type { Handler, HandlerMap } from './util.ts';
 
 export const SHAPE_OWNER = 'wp-m2-shapes';
@@ -228,13 +228,18 @@ function build<T>(h: HandlerContext, f: () => T, at: string[] = []): T {
 	try {
 		return f();
 	} catch (e) {
-		if (e instanceof ShapeInputError) return h.fail('E_INVALID_PARAM', e.message, { path: [...at, ...e.path] });
+		if (e instanceof ShapeInputError)
+			return h.fail('E_INVALID_PARAM', e.message, { path: [...at, ...e.path] });
 		throw e;
 	}
 }
 
 /** The items a preset or an item list stands for. */
-function inputItems(h: HandlerContext, items: readonly unknown[] | undefined, preset: string | undefined): unknown[] {
+function inputItems(
+	h: HandlerContext,
+	items: readonly unknown[] | undefined,
+	preset: string | undefined,
+): unknown[] {
 	if (preset !== undefined) {
 		if (items) h.fail('E_INVALID_PARAM', 'Give either items or a preset, not both');
 		const p = getShapePreset(preset);
@@ -327,7 +332,9 @@ const vectorHandlers: HandlerMap = {
 	'shape.updateItem': (doc, cmd, h) => {
 		const { shape } = vectorOf(doc, cmd.clipId, h);
 		const found = locateItem(shape, cmd.itemId, h);
-		const next = build(h, () => patchShapeItem(found.item, cmd.patch as Record<string, unknown>, idGen(h)), ['patch']);
+		const next = build(h, () => patchShapeItem(found.item, cmd.patch as Record<string, unknown>, idGen(h)), [
+			'patch',
+		]);
 		found.list[found.index] = next;
 		return { itemId: next.id };
 	},
@@ -374,7 +381,8 @@ const vectorHandlers: HandlerMap = {
 		const { shape } = vectorOf(doc, cmd.clipId, h);
 		const located = cmd.itemIds.map((id) => locateItem(shape, id, h));
 		const list = located[0]!.list;
-		if (located.some((l) => l.list !== list)) h.fail('E_INVALID_PARAM', 'Only items of the same group can be grouped');
+		if (located.some((l) => l.list !== list))
+			h.fail('E_INVALID_PARAM', 'Only items of the same group can be grouped');
 		const order = [...located].sort((a, b) => a.index - b.index);
 		const at = order[0]!.index;
 		const members = order.map((l) => l.item);
@@ -453,9 +461,14 @@ function reidKeyframes<T>(v: T, next: () => string): T {
 
 // ---------------------------------------------------------------- clip.addShape
 
-function legacyShapeFromInput(input: CommandOf<'clip.addShape'>['shape'], h: HandlerContext): LegacyShapeData {
+function legacyShapeFromInput(
+	input: CommandOf<'clip.addShape'>['shape'],
+	h: HandlerContext,
+): LegacyShapeData {
 	if (input.contents !== undefined || input.preset !== undefined)
-		h.fail('E_INVALID_PARAM', 'contents and preset apply to vector shapes (type "vector")', { path: ['shape'] });
+		h.fail('E_INVALID_PARAM', 'contents and preset apply to vector shapes (type "vector")', {
+			path: ['shape'],
+		});
 	const shape = defaultShape(input.type as 'rect' | 'ellipse', {
 		...(input.size ? { size: checkSize(input.size, 'shape.size', h) } : {}),
 		...(input.fill !== undefined
@@ -484,11 +497,18 @@ function legacyShapeFromInput(input: CommandOf<'clip.addShape'>['shape'], h: Han
 function vectorShapeFromInput(input: CommandOf<'clip.addShape'>['shape'], h: HandlerContext): ShapeData {
 	for (const k of ['size', 'fill', 'stroke', 'cornerRadius'] as const)
 		if (input[k] !== undefined)
-			h.fail('E_INVALID_PARAM', `${k} applies to rectangles and ellipses; vector shapes take contents or a preset`, {
-				path: ['shape', k],
-			});
+			h.fail(
+				'E_INVALID_PARAM',
+				`${k} applies to rectangles and ellipses; vector shapes take contents or a preset`,
+				{
+					path: ['shape', k],
+				},
+			);
 	const items = inputItems(h, input.contents, input.preset);
-	return { type: 'vector', contents: build(h, () => buildShapeItems(items, idGen(h)), ['shape', 'contents']) };
+	return {
+		type: 'vector',
+		contents: build(h, () => buildShapeItems(items, idGen(h)), ['shape', 'contents']),
+	};
 }
 
 export const shapeHandlers: HandlerMap = {

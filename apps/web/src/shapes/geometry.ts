@@ -6,6 +6,7 @@ import {
 	applyMatrix,
 	type Command,
 	evaluateShape,
+	evaluateVectorShape,
 	invertMatrix,
 	type LayerTransformValues,
 	layerMatrix,
@@ -13,7 +14,6 @@ import {
 	SHAPE_LIMITS,
 	shapeContainsPoint,
 	type Vec2,
-	evaluateVectorShape,
 	vectorShapeBounds,
 	vectorShapeContainsPoint,
 	visibleRect,
@@ -143,7 +143,10 @@ export function resizeShapeBySize(i: SizeResizeInput): { size: Vec2; position?: 
 
 // ---------------------------------------------------------------- vector shapes (wp shapes)
 
-const rectCache = new WeakMap<object, Map<number, { x: number; y: number; width: number; height: number } | null>>();
+const rectCache = new WeakMap<
+	object,
+	Map<number, { x: number; y: number; width: number; height: number } | null>
+>();
 
 /**
  * The rectangle (layer px) the Program monitor frames for a layer: a vector shape's painted contents at its
@@ -172,7 +175,8 @@ export function layerEditRect(l: ResolvedLayer): { x: number; y: number; width: 
 /** The sequence-px quad of `layerEditRect` (TL, TR, BR, BL); the layer's quad for other layers. */
 export function layerEditQuad(l: ResolvedLayer): [Vec2, Vec2, Vec2, Vec2] {
 	const src = l.clip.source;
-	if (!('shape' in src) || src.shape.type !== 'vector' || l.props.projective) return l.props.quad as [Vec2, Vec2, Vec2, Vec2];
+	if (!('shape' in src) || src.shape.type !== 'vector' || l.props.projective)
+		return l.props.quad as [Vec2, Vec2, Vec2, Vec2];
 	const r = layerEditRect(l);
 	const m = l.props.matrix;
 	return [
