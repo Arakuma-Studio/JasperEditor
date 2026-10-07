@@ -29,7 +29,7 @@ import { useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { type ReactNode, useState } from 'react';
 import { monitorExtras, setComparison } from '../panels/program/monitor-view.ts';
-import { CheckboxField, MiniButton } from '../panels/properties/controls/fields.tsx';
+import { MiniButton } from '../panels/properties/controls/fields.tsx';
 import { ResetGlyph } from '../panels/properties/controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { Section } from '../panels/properties/controls/Section.tsx';
@@ -781,16 +781,20 @@ function MatchControls(props: {
 			>
 				Comparison View
 			</button>
-			<CheckboxField
-				value={faces}
-				label="Face Detection"
-				onChange={(v) => {
-					setFaces(v);
-					setFaceDetectionPref(v);
-				}}
-			>
-				<span data-testid="lumetri-face-detection">Face Detection</span>
-			</CheckboxField>
+			<label className="inline-flex cursor-pointer items-center gap-1 text-pr-small text-pr-text">
+				<input
+					type="checkbox"
+					aria-label="Face Detection"
+					checked={faces}
+					onChange={(e) => {
+						setFaces(e.target.checked);
+						setFaceDetectionPref(e.target.checked);
+					}}
+					className="size-[12px] accent-[var(--pr-text-primary)]"
+					data-testid="lumetri-face-detection"
+				/>
+				Face Detection
+			</label>
 			<span className="flex-1" />
 			<button
 				type="button"

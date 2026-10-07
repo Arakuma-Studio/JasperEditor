@@ -216,7 +216,8 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 			canvas.height = H * dpr;
 		}
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
-		colors.current ??= readColors(box);
+		// Tokens resolve only once the panel is in the document: never cache an unresolved read.
+		if (!colors.current?.bg) colors.current = readColors(box);
 		drawLayout(g, W, H, live.current.layout.slots, live.current.settings, last.current, colors.current);
 	}, []);
 
@@ -266,9 +267,9 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 			const key = `${frameHash(frame)}|${lay.slots.join(',')}|${st.waveformType}|${st.paradeType}|${st.matrix}|${st.clamp}|${st.brightness}`;
 			if (!force && key === lastHash.current) return;
 			lastHash.current = key;
-			colors.current ??= boxRef.current ? readColors(boxRef.current) : null;
+			if (!colors.current?.bg && boxRef.current) colors.current = readColors(boxRef.current);
 			const c = colors.current;
-			if (!c) return;
+			if (!c?.bg) return;
 			pending.current = performance.now();
 			computer.current.post({
 				id: ++reqId.current,
@@ -474,7 +475,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 					data-has-trace={hasTrace ? 'true' : 'false'}
 					data-compute-ms={last.current ? Math.round(last.current.ms) : undefined}
 				/>
-				<span className="pointer-events-none absolute top-1 right-2 text-pr-small text-pr-dim">
+				<span className="pointer-events-none absolute right-2 bottom-1 text-pr-small text-pr-dim">
 					Selected clip (graded)
 				</span>
 				{status ? (
@@ -552,7 +553,8 @@ function drawLayout(
 		else drawVectorscope(g, rect, kind, img, st, c);
 		if (slots.length > 1) {
 			g.fillStyle = c.label;
-			g.fillText(SCOPE_KIND_LABELS[kind], rect.x + PAD, rect.y + rect.h - 4);
+			const name = SCOPE_KIND_LABELS[kind];
+			g.fillText(name, rect.x + rect.w - g.measureText(name).width - 6, rect.y + 12);
 			g.strokeStyle = c.graticule;
 			g.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
 		}
@@ -660,7 +662,7 @@ function drawVectorscope(
 			g.fillText(t.name, tx - 4, ty + 3);
 		}
 	}
-	g.fillText(SCOPE_MATRIX_LABELS[st.matrix], vx + 2, vy + 10);
+	g.fillText(SCOPE_MATRIX_LABELS[st.matrix], r.x + 4, r.y + r.h - 4);
 	const bmp = img ? bitmap(img) : null;
 	if (bmp) g.drawImage(bmp, vx, vy, size, size);
 }
@@ -720,5 +722,5 @@ function drawHistogram(
 	const lowPct = ((hist.y[0]! + hist.below[3]) / n) * 100;
 	const highPct = ((hist.y[255]! + hist.above[3]) / n) * 100;
 	g.fillStyle = c.label;
-	g.fillText(`▼ ${lowPct.toFixed(1)}%  ▲ ${highPct.toFixed(1)}%`, x0 + 2, y0 + 10);
+	g.fillText(`▼ ${lowPct.toFixed(1)}%  ▲ ${highPct.toFixed(1)}%`, x0 + 2, y0 + 22);
 }
