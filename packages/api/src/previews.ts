@@ -90,3 +90,6 @@ export const PreviewDeleteRequestSchema = z.union([
 export type PreviewDeleteRequest = z.infer<typeof PreviewDeleteRequestSchema>;
 export const PreviewDeleteResultSchema = z.object({ deleted: z.number().int(), bytes: z.number().int() });
 export type PreviewDeleteResult = z.infer<typeof PreviewDeleteResultSchema>;
+
+/** Answer of `POST /api/previews/render` when every segment of the range has its file already. */
+export const PreviewRenderNothingSchema = z.object({ job: z.null(), existing: z.number().int() });

@@ -25,6 +25,11 @@ import {
 	type MediaRegisterRequest,
 	type MediaVariantRequest,
 	type MgRenderRequest,
+	type PreviewDeleteRequest,
+	type PreviewDeleteResult,
+	type PreviewRenderRequest,
+	type PreviewStatus,
+	type PreviewStatusRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
 	type RecoveryPutRequest,
@@ -404,6 +409,25 @@ export class EngineClient {
 	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });
+	}
+	// ---- previews workstream (render previews, docs/wp-notes/previews.md)
+	/** Which segment hashes have render preview files (video / audio) in a preview format. */
+	previewStatus(req: PreviewStatusRequest): Promise<PreviewStatus> {
+		return this.call('previewStatus', { body: req as never });
+	}
+	/** Sequence ▸ Render…: a `preview` job, or `{job: null}` when every segment is rendered already. */
+	renderPreviews(
+		req: PreviewRenderRequest,
+		wait = false,
+	): Promise<EngineJob | { job: null; existing: number }> {
+		return this.call('previewRender', {
+			body: req as never,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		}) as Promise<EngineJob | { job: null; existing: number }>;
+	}
+	/** Delete Render Files (`{all: true}`) / Delete Render Files In to Out (`{hashes}`). */
+	deletePreviews(req: PreviewDeleteRequest): Promise<PreviewDeleteResult> {
+		return this.call('previewDelete', { body: req });
 	}
 	listFonts() {
 		return this.call('fontsList');

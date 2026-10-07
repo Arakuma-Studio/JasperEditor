@@ -93,6 +93,7 @@ import {
 import {
 	PreviewDeleteRequestSchema,
 	PreviewDeleteResultSchema,
+	PreviewRenderNothingSchema,
 	PreviewRenderRequestSchema,
 	PreviewStatusRequestSchema,
 	PreviewStatusSchema,
@@ -461,7 +462,8 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/previews/render',
 		body: PreviewRenderRequestSchema,
-		response: EngineJobSchema,
+		query: z.object({ wait: z.literal('1').optional() }),
+		response: z.union([EngineJobSchema, PreviewRenderNothingSchema]),
 		owner: 'previews',
 	},
 	/** previews: Delete Render Files (all) / Delete Render Files In to Out (hashes). */

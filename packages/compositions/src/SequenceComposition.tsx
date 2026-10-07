@@ -87,6 +87,7 @@ import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
+import { applyPreviews, PreviewLayers } from './previews.tsx';
 import { FrameRepaint } from './repaint.tsx';
 import { ShowFrame } from './show-frame.tsx';
 import {
@@ -816,6 +817,12 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 	const fontsReady = useFontsReadyState(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const offset = doc.range.start;
+	// previews: rendered segments play from their files; covered live layers are not mounted.
+	const previewed = useMemo(
+		() => applyPreviews(doc, options.isPreview ? options.previews : undefined),
+		[doc, options.isPreview, options.previews],
+	);
+	const live = previewed.doc;
 	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
 	const color = useMemo<ColorDocValue>(
 		() => ({
@@ -832,10 +839,17 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 					<ColorDocContext.Provider value={color}>
 						<NestTracksContext.Provider value={VideoTracks}>
 							<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
-								<VideoTracks doc={doc} options={options} offset={offset} />
-								{graph ? <MixGraphDriver graph={graph} doc={doc} offset={offset} /> : null}
+								<VideoTracks doc={live} options={options} offset={offset} />
+								<PreviewLayers
+									video={previewed.video}
+									audio={previewed.audio}
+									offset={offset}
+									premount={premountFrames(fps)}
+									options={options}
+								/>
+								{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}
 								{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
-								{(options.isPreview ? doc.audioClips : []).map((clip) => {
+								{(options.isPreview ? live.audioClips : []).map((clip) => {
 									// An audio crossfade plays the clip's handles (S10:TUI-052).
 									const head = clip.headHandle ?? 0;
 									const from = clip.start - head - offset;

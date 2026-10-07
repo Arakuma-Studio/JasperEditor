@@ -37,6 +37,14 @@ export type RenderOptions = {
 		zoom: number;
 		ortho: boolean;
 	};
+	/**
+	 * previews (preview only): rendered preview files of segments, played instead of the live layers (video) and the
+	 * live mix (audio) where they are valid (see previews.tsx). Ignored in renders and in nested sequences.
+	 */
+	previews?: {
+		video: { start: number; frames: number; url: string }[];
+		audio: { start: number; frames: number; url: string }[];
+	};
 };
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };
