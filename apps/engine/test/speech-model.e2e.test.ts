@@ -170,7 +170,7 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		);
 		expect(res.language).toBe('en');
 		expect(res.languageProbability).toBeGreaterThan(0.8);
-		// measured: 8.3 % (FilmCraft whisper-tiny on the same file: 6.4 %); 18 ms mean (FilmCraft: 438 ms)
+		// measured: 5.8 % (FilmCraft whisper-tiny on the same file: 6.4 %); 18 ms mean (FilmCraft: 438 ms)
 		expect(wer).toBeLessThanOrEqual(0.1);
 		expect(t.mean).toBeLessThanOrEqual(0.06);
 		expect(t.outside).toBe(0);
