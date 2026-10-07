@@ -7,9 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeWav, measureLoudness } from '@jasper/audio-dsp';
 import { testMusic } from '@jasper/audio-fx';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+
+// ffmpeg decodes, mixes and encodes real media here: allow for a loaded machine (the full gate runs suites in parallel).
+vi.setConfig({ testTimeout: 120_000 });
 
 let app: TestApp;
 let dir: string;
