@@ -225,7 +225,7 @@ export const essentialHandlers: HandlerMap = {
 				loudness: { enabled: true, measuredLufs: measured, targetLufs: target, gainDb },
 			};
 			update(c, next, timeIn(seq, c, undefined, h), h);
-			out[c.id] = { gainDb };
+			out[c.id] = { gainDb: Math.round(gainDb * 1000) / 1000 };
 		}
 		return { clips: out };
 	},

@@ -40,7 +40,7 @@ import { ProjectIdArg } from './projects.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const AUDIO_FX_GUIDE = `Audio effects (Premiere's Audio Effects folders: Amplitude and Compression, Delay and Echo, Filter and EQ, Modulation, Noise Reduction/Restoration, Reverb, Special, Stereo Imagery, Time and Pitch): list_audio_effects gives every effect id ("jasper.audio.…") with its parameters (units dB, Hz, ms, Q, ratio, %, st, cents, LUFS; every number keyframable). add_audio_effect puts one on an audio clip, an audio track ("A1"…, a submix "S1"…) or the Mix ("Mix"); set_audio_effect changes parameters (a value, or {"keyframes": [{at, value}…]} for automation), enables/bypasses or reorders it; remove_audio_effect deletes it; get_audio_effects lists the stacks with values at a time. The same DSP runs in the preview (AudioWorklet) and every export. Order: clip effects → clip gain / Volume / fades → pan → track effects → fader.
-Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Podcast Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect. clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs). generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
+Essential Sound: set_essential_sound gives clips an audio type (dialogue | music | sfx | ambience), applies a preset (get_essential_sound lists them) and/or sets options by dotted key (e.g. {"repair.noise.on": true, "repair.noise.amount": 6, "clarity.eqPreset": "Balanced Voice", "creative.reverb.on": true}); the options become ordinary keyframable clip effects you can also edit with set_audio_effect. clear_essential_sound removes the type and every change it made. auto_match_loudness measures each clip (BS.1770, its own signal) and sets its gain to −23 LUFS (or targetLufs). generate_essential_ducking ducks Music / Ambience clips under the clips of their "Duck against" types (ducking.* options) with Volume keyframes.
 Music Remix: remix_audio clips a music clip to a target duration by beat tracking and re-cutting on beats (grouped pieces joined by short crossfades, one undo step); revert_remix restores the original.`;
 
 const SequenceIdArg = z
@@ -574,7 +574,7 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		{
 			title: 'Generate Essential Sound ducking',
 			description:
-				'Essential Sound ▸ Ducking ▸ Generate Keyframes: Music / Ambience clips duck under the clips of their "Duck against" types (options ducking.against, ducking.againstUntyped, ducking.sensitivity, ducking.reduceDb, ducking.fadeSeconds; set them with set_essential_sound). Replaces the clips\' Volume keyframes in the ducked ranges. Use auto_duck for explicit triggers.',
+				'Essential Sound ▸ Ducking ▸ Generate Keyframes: Music / Ambience clips duck under the clips of their "Duck against" types (options ducking.against, ducking.againstUntyped, ducking.sensitivity, ducking.reduceDb, ducking.fadeSeconds; set them with set_essential_sound). Turns Ducking on and replaces the clips\' Volume keyframes in the ducked ranges. Use auto_duck for explicit triggers.',
 			input: { projectId: ProjectIdArg, sequenceId: SequenceIdArg, clipIds: ClipIdsArg },
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
@@ -609,6 +609,9 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 				a.projectId,
 				'Auto Duck',
 				[
+					...(s.ducking.enabled
+						? []
+						: [{ type: 'essentialSound.set', clipIds: a.clipIds, values: { 'ducking.enabled': true } }]),
 					{
 						type: 'audio.autoDuck',
 						targetClipIds: a.clipIds,

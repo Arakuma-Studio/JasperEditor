@@ -287,6 +287,7 @@ describe('Essential Sound and Remix MCP tools', () => {
 		const duck = await call('generate_essential_ducking', { projectId: 'prj_t', clipIds: [engine.music] });
 		expect(duck.r.isError, duck.text).toBeFalsy();
 		expect(duck.json.triggerClips).toBe(1);
+		expect(readEssentialSound(clipOf(engine.doc(), engine.music).essential)?.ducking.enabled).toBe(true);
 		expect(clipOf(engine.doc(), engine.music).volumeDb.keyframes.length).toBeGreaterThan(0);
 		const notMusic = await call('generate_essential_ducking', {
 			projectId: 'prj_t',
