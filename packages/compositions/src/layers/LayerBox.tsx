@@ -59,7 +59,13 @@ export function LayerBox({
 	const domFx = useLayerFx(layer, {
 		enabled:
 			effects === undefined &&
-			(DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap || !!layer.matte || !!layer.composite),
+			(DOM_FX_KINDS.has(clip.kind) ||
+				// imports: Lottie / vector pictures are DOM content too.
+				!!layer.media?.lottie ||
+				!!layer.media?.vector ||
+				!!layer.transition?.tap ||
+				!!layer.matte ||
+				!!layer.composite),
 		canRun: canUseHtmlInCanvas(),
 		chain,
 	});

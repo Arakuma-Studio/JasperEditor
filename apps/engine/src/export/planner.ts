@@ -21,7 +21,9 @@ import {
 	type MediaHandle,
 	maskExportRoute,
 	mediaDecodeHints,
+	type PixelInterpretation,
 	type ProjectDocument,
+	pixelInterpretation,
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
@@ -113,7 +115,17 @@ export type OutputSpec = {
 	alpha?: boolean;
 };
 
-export type LocalMedia = { path: string; record: MediaRecord };
+export type LocalMedia = {
+	path: string;
+	record: MediaRecord;
+	/** imports (Interpret Footage): the asset's pixel interpretation (deinterlace, alpha), applied by every decoder. */
+	pixel?: PixelInterpretation | null;
+	/**
+	 * imports: a picture to decode instead of the file (set by the `imports` extension's `prepare`: the composite of a
+	 * Photoshop document, its pixel interpretation already applied).
+	 */
+	display?: string;
+};
 
 export type PlannedExport = {
 	plan: RenderPlan & { planId: string; documentRevision: number };
@@ -217,7 +229,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		const key = mediaKeyOf(asset);
 		const record = key ? deps.registry.get(key) : null;
 		const path = record ? await deps.registry.resolvePath(record.mediaKey) : null;
-		if (record && path) media[asset.id] = { path, record };
+		if (record && path) media[asset.id] = { path, record, pixel: pixelInterpretation(asset) };
 		else offline.push(asset.id);
 	}
 	const fontFallbacks = new Set<string>();

@@ -13,6 +13,7 @@ import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './ess
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
 import { isRovingKey, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
@@ -318,7 +319,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				);
 			if (it.parentItemId !== null && doc.items[it.parentItemId]?.kind !== 'media')
 				issues.push(inv('INV-006', `Subclip ${it.id} references a missing parent item`, ['items', it.id]));
-			const dur = asset?.probe.durationFlicks ?? null;
+			const dur = asset ? mediaDurationFlicks(asset) : null;
 			if (
 				!(it.range.out > it.range.in) ||
 				it.range.in < 0 ||
@@ -345,6 +346,12 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
+		// imports: Interpret Footage sections must fit the media (frame rate on a still, a loop without a duration…).
+		if (m.interpretation)
+			for (const msg of interpretationIssues(m, m.interpretation))
+				issues.push(
+					inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']),
+				);
 	}
 	for (const t of Object.values(doc.transcripts)) {
 		if (t.mediaId && !doc.media[t.mediaId])
@@ -469,21 +476,18 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				usedMedia.add(r.mediaId);
 				const asset = doc.media[r.mediaId];
 				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
-				else if (c.frameHold && isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				else if (c.frameHold && isBoundedContent(c) && mediaDurationFlicks(asset) !== null) {
 					// edit-structure: a held clip shows one frame; only that frame must exist.
-					if (c.frameHold.flicks >= asset.probe.durationFlicks + flicksPerFrame(rate) + 1)
+					if (c.frameHold.flicks >= mediaDurationFlicks(asset)! + flicksPerFrame(rate) + 1)
 						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
-				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null && !isRemapped(c)) {
-					// INV-005 media bounds with one frame of tolerance
+				} else if (isBoundedContent(c) && mediaDurationFlicks(asset) !== null && !isRemapped(c)) {
+					// INV-005 media bounds with one frame of tolerance (imports: the interpreted duration).
+					const mediaDur = mediaDurationFlicks(asset)!;
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
-					if (c.sourceIn + span > asset.probe.durationFlicks + tol) {
+					if (c.sourceIn + span > mediaDur + tol) {
 						issues.push(
-							inv(
-								'INV-005',
-								`Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${asset.probe.durationFlicks})`,
-								cw,
-							),
+							inv('INV-005', `Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${mediaDur})`, cw),
 						);
 					}
 				}
@@ -1086,6 +1090,21 @@ export function repairDocument(
 			}
 		}
 	}
+	// ---- imports: Interpret Footage sections that do not fit the media are dropped (the file's own value is used).
+	for (const m of Object.values(doc.media)) {
+		const it = m.interpretation as Record<string, unknown> | undefined;
+		if (!it) continue;
+		for (const key of ['frameRate', 'pixelAspect', 'fieldOrder', 'alpha', 'loop'] as const) {
+			if (it[key] === undefined) continue;
+			const bad = interpretationIssues(m, { [key]: it[key] } as never);
+			if (bad.length) {
+				delete it[key];
+				note('drop-interpretation', m.id, `${key}: ${bad.join('; ')}`);
+			}
+		}
+		if (Object.keys(it).length === 0) delete (m as { interpretation?: unknown }).interpretation;
+	}
+	// ---- end imports
 
 	// ---- wp shapes: vector shape items — malformed items dropped, duplicate item ids renumbered.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {

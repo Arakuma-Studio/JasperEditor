@@ -19,6 +19,7 @@ import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/composition
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
+import { IMPORTS_GUIDE, registerImportsTools } from './tools/imports.ts';
 import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
 import { INTERCHANGE_GUIDE, registerInterchangeTools } from './tools/interchange.ts';
 import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
@@ -97,6 +98,7 @@ const FULL_GUIDE = [
 	ROTO_GUIDE,
 	SIM_WARP_GUIDE,
 	INTERCHANGE_GUIDE,
+	IMPORTS_GUIDE,
 	INSPECT_GUIDE,
 	UI_GUIDE,
 	EXPRESSIONS_GUIDE,
@@ -141,6 +143,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerCacheTools(ctx);
 	registerStructureTools(ctx);
 	registerTimeTools(ctx);
+	registerImportsTools(ctx);
 	registerEditUxTools(ctx);
 	registerMulticamTools(ctx);
 	registerVersionTools(ctx);

@@ -2,6 +2,8 @@
 // so a reversed clip plays a WAV of its media range decoded in the page (mediabunny, the decoder @remotion/media uses)
 // and reversed sample by sample — the native export does the same with `areverse` (engine audio/decode.ts). The WAV
 // keeps the source's channels and rate; the clip's channel map, levels, effects and the mix apply as for any clip.
+import { resample } from '@jasper/audio-dsp';
+import { FLICKS_PER_SECOND, filePieces, type MediaTimeMap } from '@jasper/project';
 import { ALL_FORMATS, AudioBufferSink, Input, UrlSource } from 'mediabunny';
 
 const urls = new Map<string, Promise<string>>();
@@ -75,6 +77,70 @@ export function reversedAudioUrl(src: string, loSec: number, hiSec: number): Pro
 				}
 			}
 			const wav = encodeWav16(reverseChannels(out), rate);
+			return URL.createObjectURL(new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }));
+		} finally {
+			input.dispose();
+		}
+	})();
+	urls.set(key, p);
+	p.catch(() => urls.delete(key));
+	return p;
+}
+
+// ---------------------------------------------------------------- imports: interpreted (time-mapped) audio
+
+/**
+ * Blob URL of a WAV of interpreted media time [loFlicks, hiFlicks) of `src` (imports, Interpret Footage): the file
+ * pieces of that range (`filePieces`: assumed frame rate, loop) decoded and laid end to end in interpreted time, then
+ * reversed when `reverse`. WAV time 0 = `loFlicks` (or `hiFlicks` reversed). The engine's export decoder reads the same
+ * pieces with ffmpeg (`-stream_loop`, `asetrate`). Cached per (src, map, range, reverse) for the page's life.
+ */
+export function mappedAudioUrl(
+	src: string,
+	map: MediaTimeMap,
+	loFlicks: number,
+	hiFlicks: number,
+	reverse: boolean,
+): Promise<string> {
+	const key = `${src}|${map.scale}|${map.period ?? 0}|${Math.round(loFlicks)}|${Math.round(hiFlicks)}|${reverse}`;
+	const hit = urls.get(key);
+	if (hit) return hit;
+	const p = (async () => {
+		const input = new Input({ source: new UrlSource(src), formats: ALL_FORMATS });
+		try {
+			const track = await input.getPrimaryAudioTrack();
+			if (!track) throw new Error(`No audio track in ${src}`);
+			const origin = await input.getFirstTimestamp();
+			const rate = track.sampleRate;
+			const nc = track.numberOfChannels;
+			const total = Math.max(1, Math.round(((hiFlicks - loFlicks) / FLICKS_PER_SECOND) * rate));
+			const out = Array.from({ length: nc }, () => new Float32Array(total));
+			const sink = new AudioBufferSink(track);
+			for (const piece of filePieces(map, loFlicks, hiFlicks)) {
+				const f0 = piece.fileFrom / FLICKS_PER_SECOND;
+				const f1 = piece.fileTo / FLICKS_PER_SECOND;
+				const n = Math.max(1, Math.round((f1 - f0) * rate));
+				const part = Array.from({ length: nc }, () => new Float32Array(n));
+				for await (const w of sink.buffers(origin + f0, origin + f1)) {
+					const b = w.buffer;
+					const at = Math.round((w.timestamp - origin - f0) * rate);
+					for (let c = 0; c < nc; c++) {
+						const ch = b.getChannelData(Math.min(c, b.numberOfChannels - 1));
+						const from = Math.max(0, -at);
+						const to = Math.min(ch.length, n - at);
+						if (to > from) part[c]!.set(ch.subarray(from, to), at + from);
+					}
+				}
+				const scaled = Math.abs(map.scale - 1) > 1e-9 ? resample(part, rate * map.scale, rate, 'fast') : part;
+				const at = Math.round(((piece.from - loFlicks) / FLICKS_PER_SECOND) * rate);
+				for (let c = 0; c < nc; c++) {
+					const s = scaled[c] ?? scaled[0];
+					if (!s) continue;
+					const m = Math.min(s.length, total - at);
+					if (m > 0) out[c]!.set(s.subarray(0, m), at);
+				}
+			}
+			const wav = encodeWav16(reverse ? reverseChannels(out) : out, rate);
 			return URL.createObjectURL(new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }));
 		} finally {
 			input.dispose();

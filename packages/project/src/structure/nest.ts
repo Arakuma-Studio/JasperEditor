@@ -140,7 +140,17 @@ export function nestContentKey(doc: ProjectDocument, seqId: string, depth = 0): 
 		const a = doc.media[id];
 		const key = a?.locators.find((l) => l.type === 'engine-store') as { key?: string } | undefined;
 		return a
-			? [id, key?.key ?? null, a.fingerprint ?? null, a.probe.durationFlicks, a.sourceRange ?? null]
+			? [
+					id,
+					key?.key ?? null,
+					a.fingerprint ?? null,
+					a.probe.durationFlicks,
+					a.sourceRange ?? null,
+					// imports: an interpretation changes what the nest shows.
+					...(a.interpretation || a.vector || a.lottie
+						? [a.interpretation ?? null, a.vector ?? null, a.lottie ?? null]
+						: []),
+				]
 			: [id, null];
 	});
 	const body = {

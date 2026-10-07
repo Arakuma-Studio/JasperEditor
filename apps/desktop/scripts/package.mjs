@@ -162,9 +162,10 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 }
 
 // onnxruntime-node (MIT): the super-resolution runtime of jasper-proc and the speech-to-text runtime of
-// jasper-speech (native binding, loaded lazily).
+// jasper-speech (native binding, loaded lazily). pdfjs-dist (Apache-2.0): PDF / Illustrator page sizes (imports), kept
+// external because it loads its worker module from its own package directory.
 const packages = copyRuntimeClosure(
-	['@remotion/renderer', '@techstark/opencv-js', 'onnxruntime-node'],
+	['@remotion/renderer', '@techstark/opencv-js', 'onnxruntime-node', 'pdfjs-dist'],
 	engine,
 	deploy,
 );

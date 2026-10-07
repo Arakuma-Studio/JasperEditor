@@ -1144,7 +1144,7 @@ function ContextMenu(props: {
 			</MenuEntry>
 			{/* M2 entries registered by feature packages (Process…, Rebuild bundle…; ARCHITECTURE §19.10). */}
 			<ExtensionEntries
-				items={extensionItems(props.session, props.itemIds, props.readOnly)}
+				items={extensionItems(props.session, props.itemIds, props.readOnly, props.onCommandArgs)}
 				onClose={props.onClose}
 			/>
 		</Menu>
@@ -1175,11 +1175,17 @@ function extensionItems(
 	session: EditorSession,
 	itemIds: readonly string[],
 	readOnly: boolean,
+	runCommand?: (commandId: string, args: unknown) => void,
 ): MenuItemSpec[] {
 	const doc = session.getCommitted();
 	const items = itemIds.map((id) => doc.items[id]).filter((i): i is ProjectItem => !!i);
 	if (!items.length) return [];
-	return collectMenuItems(projectItemMenuExtensions.list(), { session, items, readOnly });
+	return collectMenuItems(projectItemMenuExtensions.list(), {
+		session,
+		items,
+		readOnly,
+		...(runCommand ? { runCommand } : {}),
+	});
 }
 
 function ExtensionEntries(props: { items: MenuItemSpec[]; onClose(): void; depth?: number }) {

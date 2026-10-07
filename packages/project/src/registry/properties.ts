@@ -14,6 +14,7 @@ import {
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
+import { mediaDisplaySize } from '../interpret/model.ts';
 import { type EvaluateOptions, evaluate } from '../keyframes.ts';
 import {
 	MASK_DEFAULT_FEATHER,
@@ -199,10 +200,8 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	const r = clip as Record<string, unknown>;
 	if (clip.kind === 'video' || clip.kind === 'still' || clip.kind === 'animated-image') {
 		const asset = doc.media[r.mediaId as string];
-		const vs = asset?.probe.streams.find((s) => s.type === 'video');
-		if (!asset || !vs || vs.type !== 'video') return frame;
-		const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-		return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
+		// imports: rotation and the (conformed) pixel aspect ratio.
+		return (asset && mediaDisplaySize(asset)) ?? frame;
 	}
 	if (clip.kind === 'text') {
 		const box = r.box as { width: number; height: number };

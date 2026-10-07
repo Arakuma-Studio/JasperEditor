@@ -13,6 +13,7 @@ import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
+import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
 import { multicamHandlers } from './handlers/multicam.ts';
@@ -84,7 +85,9 @@ export type CommandOwner =
 	// 3D layers, cameras, lights, 3D camera tracker (docs/wp-notes/three-d.md)
 	| 'three-d'
 	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
-	| 'sim-warp';
+	| 'sim-warp'
+	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
+	| 'imports';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -343,6 +346,7 @@ const LABELS: Record<CommandType, string> = {
 	'cameraTracker.setGround': 'Set Ground Plane and Origin',
 	'cameraTracker.create': 'Create Camera',
 	'cameraTracker.remove': 'Remove 3D Camera Tracker',
+	'media.interpret': 'Interpret Footage',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -379,6 +383,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[threeDHandlers, THREE_D_OWNER],
 	[cameraTrackerHandlers, THREE_D_OWNER],
 	[simWarpHandlers, SIM_WARP_OWNER],
+	[interpretHandlers, INTERPRET_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -409,7 +414,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux' ||
-				owner === THREE_D_OWNER
+				owner === THREE_D_OWNER ||
+				owner === INTERPRET_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

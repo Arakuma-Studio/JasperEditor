@@ -7,6 +7,7 @@ import {
 	FLICKS_PER_SECOND,
 	type FramePick,
 	type FrameTimes,
+	fileTimeOf,
 	pickFrames,
 	type Rational,
 	type RenderVisualClip,
@@ -50,7 +51,8 @@ export function mediaSecondsAt(
 ): number {
 	const pt = clipPictureTime(c, c.start + pictureLocal(c, f - c.start), fps);
 	const m = ev ? ev(pt).m : pt;
-	return Math.max(0, m / FLICKS_PER_SECOND);
+	// imports (Interpret Footage): interpreted media time → file time (assumed frame rate, loop).
+	return Math.max(0, fileTimeOf(c.mediaTime, m) / FLICKS_PER_SECOND);
 }
 
 /** The retime plan of a clip over sequence frames [f0, f1). */

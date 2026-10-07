@@ -10,6 +10,15 @@ import {
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
+import {
+	interpretedFrameRate,
+	type MediaTimeMap,
+	mediaDisplaySize,
+	mediaTimeMap,
+	type PixelInterpretation,
+	pixelInterpretation,
+	pixelVariantKey,
+} from '../interpret/model.ts';
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { multicamView } from '../multicam/model.ts';
@@ -82,7 +91,74 @@ export type MediaHandle = {
 	 * `proxyUrl`, engine renders decode the original natively. Absent = decodable or unknown.
 	 */
 	browserDecodable?: boolean;
+	// ---- imports workstream (set by buildRenderSnapshot from the asset; consumers only read them)
+	/**
+	 * Interpret Footage ▸ field order / alpha: what decoders apply to the pixels (deinterlace, unpremultiply, drop or
+	 * invert the alpha). The browser cannot, so previews and Remotion renders show the variant picture the engine made
+	 * with exactly these filters (`pixelVariant`: proxy / display derivative); the native export applies them itself.
+	 */
+	pixel?: PixelInterpretation;
+	/** `pixelVariantKey(pixel)`: the derivative variant of the interpreted picture ('' or absent = none). */
+	pixelVariant?: string;
+	/** Interpret Footage ▸ assumed frame rate / loop: interpreted media time → file time (absent = linear). */
+	timeMap?: MediaTimeMap;
+	/** The interpreted frame rate (absent = the file's). */
+	frameRate?: Rational;
+	/** A vector still (SVG / PDF): drawn as vector at the scale it is shown at, by the composition. */
+	vector?: { format: 'svg' | 'pdf'; page: number; width: number; height: number };
+	/** A Lottie animation drawn by the Lottie player (from `loaderUrl`: its JSON, images embedded). */
+	lottie?: { fps: number; inFrame: number; outFrame: number; width: number; height: number };
+	/**
+	 * Lottie / vector media: the URL of the document the composition draws (the engine's `/media/<key>/lottie.json`
+	 * or `/media/<key>/vector`, signed for renders). Set by the consumer that resolves URLs.
+	 */
+	loaderUrl?: string;
 };
+
+/**
+ * imports: adds what the asset's interpretation and kind say to a media handle a consumer resolved (display size with
+ * the conformed pixel aspect ratio, pixel / time interpretation, vector and Lottie descriptors). Idempotent.
+ */
+export function interpretMediaHandle(asset: MediaAsset, handle: MediaHandle | null): MediaHandle | null {
+	if (!handle) return null;
+	const out: MediaHandle = { ...handle };
+	const size = mediaDisplaySize(asset);
+	if (size) {
+		out.width = size.width;
+		out.height = size.height;
+	}
+	const pixel = pixelInterpretation(asset);
+	if (pixel) {
+		out.pixel = pixel;
+		out.pixelVariant = pixelVariantKey(pixel);
+		// Browsers show the engine's interpreted picture (display / proxy / master), never the original.
+		out.browserDecodable = false;
+		// The interpreted alpha decides whether compositing keeps it.
+		if (pixel.alpha?.mode === 'ignore' && !pixel.alpha.invert) delete out.alpha;
+		else if (pixel.alpha) out.alpha = true;
+	}
+	const tm = mediaTimeMap(asset);
+	if (tm) out.timeMap = tm;
+	const fr = interpretedFrameRate(asset);
+	if (fr && asset.interpretation?.frameRate) out.frameRate = fr;
+	if (asset.vector)
+		out.vector = {
+			format: asset.vector.format,
+			page: asset.vector.page ?? 1,
+			width: asset.vector.width,
+			height: asset.vector.height,
+		};
+	if (asset.lottie)
+		out.lottie = {
+			fps: asset.lottie.fps,
+			inFrame: asset.lottie.inFrame,
+			outFrame: asset.lottie.outFrame,
+			width: asset.lottie.width,
+			height: asset.lottie.height,
+		};
+	if (asset.vector || asset.lottie) delete out.browserDecodable;
+	return out;
+}
 
 /** The `alpha` / `browserDecodable` hints of a MediaHandle, from the asset's probe (S04:PB-004). */
 export function mediaDecodeHints(
@@ -286,6 +362,11 @@ export type RenderVisualClip = {
 	 */
 	rotos?: Record<string, RenderRotoMatte>;
 	/**
+	 * imports (Interpret Footage): how the clip's media time maps to its file (assumed frame rate, loop). Every decoder
+	 * reads file time `fileTimeOf(mediaTime, t)` for the clip's media time `t`. Absent = file time = media time.
+	 */
+	mediaTime?: MediaTimeMap;
+	/**
 	 * three-d: the clip is a 3D layer (its 3D Layer switch is on): its 3D transform and material, unevaluated. The
 	 * composition draws it as a plane of the sequence's 3D scene (`scene3d`); absent = a 2D layer.
 	 */
@@ -331,6 +412,8 @@ export type RenderRetime = {
 };
 
 export type RenderAudioClip = {
+	/** imports (Interpret Footage): media time → file time (assumed frame rate, loop). Absent = linear. */
+	mediaTime?: MediaTimeMap;
 	clipId: string;
 	trackId: string;
 	start: number;
@@ -523,6 +606,15 @@ function transitionFields<T>(
 	};
 }
 
+/** imports: the clip's media time map (Interpret Footage ▸ assumed frame rate / loop), when it has one. */
+function mediaTimeFields(c: Clip, doc: ProjectDocument): { mediaTime?: MediaTimeMap } {
+	const id = (c as { mediaId?: unknown }).mediaId;
+	if (typeof id !== 'string' || c.kind === 'still') return {};
+	const asset = doc.media[id];
+	const tm = asset ? mediaTimeMap(asset) : null;
+	return tm ? { mediaTime: tm } : {};
+}
+
 /** Workstream `time`: the `timeRemap` / `retime` fields of a render clip. */
 function retimeFields(
 	c: Clip,
@@ -535,11 +627,17 @@ function retimeFields(
 		return r ? { timeRemap: r } : {};
 	}
 	if (c.kind !== 'video') return {};
-	const vs = doc.media[c.mediaId]?.probe.streams.find((x) => x.type === 'video');
+	const asset = doc.media[c.mediaId];
+	const vs = asset?.probe.streams.find((x) => x.type === 'video');
+	// `mediaRate` = the file's frame grid (the retime decoders pick file frames); imports: whether frames fall between
+	// source frames is decided at the interpreted (assumed) rate.
 	const mediaRate = vs?.type === 'video' ? vs.frameRate : rate;
-	const vfr = doc.media[c.mediaId]?.probe.variableFrameRate === true;
+	const shownRate = (asset && interpretedFrameRate(asset)) ?? mediaRate;
+	const vfr = asset?.probe.variableFrameRate === true;
 	const remap = activeRemap(c);
-	const retimed = vfr || needsRetime(c, { sequenceRate: rate, mediaRate, vfr });
+	// imports: an assumed frame rate or a loop maps media time to file time non-trivially: frame-exact retime pipeline.
+	const mapped = !!asset && !!mediaTimeMap(asset);
+	const retimed = vfr || mapped || needsRetime(c, { sequenceRate: rate, mediaRate: shownRate, vfr });
 	return {
 		...(remap ? { timeRemap: remap } : {}),
 		...(retimed
@@ -592,7 +690,8 @@ export function buildRenderSnapshot(
 	const useMedia = (id: string) => {
 		if (id in media) return;
 		const asset = doc.media[id];
-		media[id] = asset ? opts.resolveMedia(asset) : null;
+		// imports: interpreted size, pixel / time interpretation, vector and Lottie descriptors.
+		media[id] = asset ? interpretMediaHandle(asset, opts.resolveMedia(asset)) : null;
 	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
@@ -909,7 +1008,10 @@ export function buildRenderSnapshot(
 				// edit-structure: a nest renders with the engines its nested layers need. three-d: a 3D layer is drawn by
 				// the compositions' 3D renderer.
 				engine:
-					threeD || ('nest' in source && nestNeedsRemotion(source.nest.snapshot))
+					threeD ||
+					('nest' in source && nestNeedsRemotion(source.nest.snapshot)) ||
+					// imports: Lottie and vector pictures are drawn by the composition (baked for the native path).
+					('mediaId' in source && (doc.media[source.mediaId]?.lottie || doc.media[source.mediaId]?.vector))
 						? 'remotion'
 						: (clipEngines(c)?.export ?? caps.engines.export),
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
@@ -922,6 +1024,7 @@ export function buildRenderSnapshot(
 				...retimeFields(c, doc, seq.settings.frameRate as Rational),
 				...rotosOf(r.rotos as ClipRoto[] | undefined, opts),
 				...(threeD ? { threeD } : {}),
+				...mediaTimeFields(c, doc),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);
@@ -1142,6 +1245,7 @@ export function buildRenderSnapshot(
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
 				...streamChannelsOf(doc.media[c.mediaId], c.channels.streamIndex),
 				...transitionFields(x),
+				...mediaTimeFields(c, doc),
 			});
 		}
 	}

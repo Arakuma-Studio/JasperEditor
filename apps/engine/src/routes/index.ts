@@ -13,6 +13,7 @@ import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
+import importsRoutes from './imports.ts';
 import interchangeRoutes from './interchange.ts';
 import jobsRoutes from './jobs.ts';
 import layerBakeRoutes from './layer-bake.ts';
@@ -52,6 +53,9 @@ const ROUTE_PLUGINS = [
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,
+	// imports workstream: Lottie / vector / PSD probers, interpreted pictures, image sequences, layers, Lottie export;
+	// its extension prepares the pictures browser-drawn layers need (before the layer bake's prepare reads them).
+	importsRoutes,
 	// Workstream `time`: the retime extension's `layer` overrides are the sources of the warp / layer-bake stages.
 	timeRoutes,
 	// M2 animation (ARCHITECTURE §20.5): layer-bake's extension sits between mg-bundles and tracking (warp).

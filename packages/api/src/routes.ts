@@ -46,6 +46,17 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import {
+	ImageSequenceDetectRequestSchema,
+	ImageSequenceDetectResponseSchema,
+	ImageSequenceRequestSchema,
+	LayeredExtractRequestSchema,
+	LottieExportRequestSchema,
+	LottieExportResultSchema,
+	MediaVariantRequestSchema,
+	MediaVariantStatusSchema,
+	VectorPagesResponseSchema,
+} from './imports.ts';
+import {
 	AssetRelinkRequestSchema,
 	AssetRelinkResponseSchema,
 	InterchangeExportRequestSchema,
@@ -159,7 +170,9 @@ export type RouteOwner =
 	// parity program: roto / object mattes, face tracking
 	| 'roto'
 	// parity program: 3D layers, cameras, lights, 3D Camera Tracker
-	| 'three-d';
+	| 'three-d'
+	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
+	| 'imports';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -610,6 +623,56 @@ export const ROUTES = {
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
 		owner: 'wp-time',
+	},
+	// ---- imports workstream (docs/wp-notes/imports.md)
+	/** Interpreted picture of a media (display PNG / proxy / master of a pixel variant); queues its job. */
+	mediaVariant: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/variants',
+		body: MediaVariantRequestSchema,
+		response: MediaVariantStatusSchema,
+		owner: 'imports',
+	},
+	/** Numbered stills → one clip (job `image-sequence`; `?wait=1` = the finished job, result RegisteredMedia). */
+	importsImageSequence: {
+		method: 'POST',
+		path: '/api/imports/image-sequence',
+		body: ImageSequenceRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'imports',
+	},
+	/** The sequence a frame on the engine host belongs to (local mode). */
+	importsImageSequenceDetect: {
+		method: 'POST',
+		path: '/api/imports/image-sequence/detect',
+		body: ImageSequenceDetectRequestSchema,
+		response: ImageSequenceDetectResponseSchema,
+		owner: 'imports',
+	},
+	/** Every layer of a PSD extracted and registered (job `layers`; result LayeredExtractResult). */
+	importsLayers: {
+		method: 'POST',
+		path: '/api/imports/layers',
+		body: LayeredExtractRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'imports',
+	},
+	/** Pages of a PDF / Illustrator media. */
+	importsVectorPages: {
+		method: 'GET',
+		path: '/api/imports/vector/:mediaKey',
+		response: VectorPagesResponseSchema,
+		owner: 'imports',
+	},
+	/** A sequence as a Lottie document (`.json` / `.lottie`) with the warnings of what Lottie cannot carry. */
+	importsLottieExport: {
+		method: 'POST',
+		path: '/api/imports/lottie/export',
+		body: LottieExportRequestSchema,
+		response: LottieExportResultSchema,
+		owner: 'imports',
 	},
 	/** wp-multicam: offsets of recordings of one event by their audio (two-pass GCC-PHAT). */
 	syncAudio: {

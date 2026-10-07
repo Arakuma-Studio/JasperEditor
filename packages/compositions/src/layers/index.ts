@@ -5,6 +5,7 @@ import { needsBakedPicture, withBakedLayer } from './BakedLayer.tsx';
 import { CaptionsLayer } from './CaptionsLayer.tsx';
 import { CompositionLayer } from './CompositionLayer.tsx';
 import { GeneratorLayer } from './GeneratorLayer.tsx';
+import { LottieLayer } from './LottieLayer.tsx';
 import { ModelLayer } from './ModelLayer.tsx';
 import { MotionGraphicLayer } from './MotionGraphicLayer.tsx';
 import { NestLayer } from './NestLayer.tsx';
@@ -14,6 +15,7 @@ import { SolidLayer } from './SolidLayer.tsx';
 import { StillLayer } from './StillLayer.tsx';
 import { TextLayer } from './TextLayer.tsx';
 import { UnsupportedLayer } from './UnsupportedLayer.tsx';
+import { VectorLayer } from './VectorLayer.tsx';
 import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
@@ -31,6 +33,7 @@ export {
 export { CAPTION_TITLE_SAFE, captionBlockPlacement, captionPageAt } from './CaptionsLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
+export { lottieDocument, lottieFrameForLayer } from './LottieLayer.tsx';
 export {
 	type MgRenderState,
 	MgRenderStateContext,
@@ -38,10 +41,13 @@ export {
 	type MgTemplatePreviewProps,
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
+export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
+export { drawPdfPage, pdfPagePicture, VECTOR_MAX_SIDE, vectorRasterScale } from './VectorLayer.tsx';
 export {
 	CaptionsLayer,
 	CompositionLayer,
 	GeneratorLayer,
+	LottieLayer,
 	MotionGraphicLayer,
 	NestLayer,
 	OfflineCard,
@@ -51,6 +57,7 @@ export {
 	StillLayer,
 	TextLayer,
 	UnsupportedLayer,
+	VectorLayer,
 	VideoLayer,
 };
 
@@ -79,7 +86,9 @@ export function layerComponentFor(layer: Pick<LayerProps, 'clip' | 'media'>): Co
 	if (MEDIA_KINDS.has(layer.clip.kind) && !layer.media) return OfflineCard;
 	// edit-structure: Bars and Tone / counting leader pictures (solid clips of generator sources).
 	if ('generator' in layer.clip.source) return GeneratorLayer;
-	const component = LAYER_COMPONENTS[layer.clip.kind] ?? UnsupportedLayer;
+	// imports: Lottie animations and vector stills (SVG, PDF) are drawn by the composition from their documents.
+	const imported = layer.media?.lottie ? LottieLayer : layer.media?.vector ? VectorLayer : null;
+	const component = imported ?? LAYER_COMPONENTS[layer.clip.kind] ?? UnsupportedLayer;
 	// M2 (S11:LBK-010, wp-m2-layer-bake): a DOM layer with a baked (graded) picture or colour effects is wrapped.
 	return needsBakedPicture(layer.clip) ? withBakedLayer(component) : component;
 }

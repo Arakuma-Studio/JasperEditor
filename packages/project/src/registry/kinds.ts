@@ -1,4 +1,5 @@
 // Clip kind capabilities (S01 §10.1 kind table, S02:TL-022, S03:KND-001 idea, ARCHITECTURE §10.4).
+import { mediaDurationFlicks } from '../interpret/model.ts';
 import type { LabelColor } from '../schema/common.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import { type Clip, isKnownClipKind, type KnownClipKind, type TrackKind } from '../schema/sequence.ts';
@@ -405,7 +406,9 @@ export function contentDurationFlicks(
 		return Math.round((end * FLICKS_PER_SECOND * r.den) / r.num);
 	}
 	if (!c.mediaId) return null;
-	return media[c.mediaId]?.probe.durationFlicks ?? null;
+	// imports: the interpreted duration (assumed frame rate, loop count).
+	const asset = media[c.mediaId];
+	return asset ? mediaDurationFlicks(asset) : null;
 }
 
 /** What `contentDurationFlicks` reads of a nested sequence. */

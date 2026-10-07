@@ -1,5 +1,7 @@
 // project.*, bin.create, item.* (S01 §5, §16.2).
+
 import type { Draft } from 'immer';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
@@ -202,7 +204,7 @@ export const projectHandlers: HandlerMap = {
 			v ? h.flicks(v, asset, fallback) : null;
 		// Subclips: marks live in the media's content time, inside the subclip's range (edit-ux).
 		const lo = it.kind === 'subclip' ? it.range.in : 0;
-		const hiDur = it.kind === 'subclip' ? it.range.out : asset?.probe.durationFlicks;
+		const hiDur = it.kind === 'subclip' ? it.range.out : asset ? mediaDurationFlicks(asset) : undefined;
 		const check = (a: number | null, b: number | null, what: string) => {
 			if (a !== null && b !== null && b <= a)
 				h.fail('E_INVALID_PARAM', `${what} Out mark must be after its In mark`);
@@ -242,8 +244,13 @@ export const projectHandlers: HandlerMap = {
 	},
 	'media.register': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
+		// imports: the pages of one PDF share the file's fingerprint and are different media.
+		const page = (a: { vector?: { page?: number } | null }) => a.vector?.page ?? 1;
 		const existing = Object.values(doc.media).find(
-			(m) => m.fingerprint === cmd.asset.fingerprint && !m.fingerprint.startsWith('pending:'),
+			(m) =>
+				m.fingerprint === cmd.asset.fingerprint &&
+				!m.fingerprint.startsWith('pending:') &&
+				page(m) === page(cmd.asset),
 		);
 		let mediaId: string;
 		let deduped = false;

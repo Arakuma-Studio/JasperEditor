@@ -66,6 +66,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
 			// wp captions
 			c('captions.import', 'Import Captions…'),
+			// imports workstream: an SVG as an editable vector shape layer
+			c('project.importSvgAsShape', 'Import SVG as Shape Layer…'),
 			// wp interchange (S04:AS-011)
 			c('project.linkMedia', 'Link Media…'),
 			sub('Export', [
@@ -73,6 +75,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('export.queue', 'Add to Render Queue'),
 				c('export.frame', 'Frame…'),
 				c('export.quick', 'Quick Export'),
+				// imports workstream
+				c('export.lottie', 'Lottie…'),
 				// wp interchange: timeline documents (Premiere's File ▸ Export entries, plus FCPXML, OTIO and ALE)
 				sep,
 				...TIMELINE_FORMATS.map((f) => c('file.exportTimeline', f.label, { format: f.id })),
@@ -148,6 +152,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.speedDuration', 'Speed/Duration…'),
 			c('timeline.audioGain', 'Audio Gain…'),
 			c('timeline.audioChannels', 'Audio Channels…'),
+			// imports workstream (Premiere: Clip ▸ Modify ▸ Interpret Footage…)
+			sub('Modify', [c('media.interpretFootage', 'Interpret Footage…')]),
 			// audio-mix
 			sub('Audio Options', [
 				c('audio.autoDuck', 'Auto Duck…'),

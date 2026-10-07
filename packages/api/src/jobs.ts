@@ -35,6 +35,10 @@ export const JOB_KINDS = [
 	'roto',
 	// parity (three-d): 3D Camera Tracker (feature tracking + camera solve)
 	'camtrack',
+	// imports: interpreted variants, image sequences, layered documents
+	'interpret',
+	'image-sequence',
+	'layers',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

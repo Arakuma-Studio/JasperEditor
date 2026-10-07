@@ -1046,3 +1046,23 @@ export function svgPathToShapeItems(
 export function looksLikeSvg(text: string): boolean {
 	return /<svg[\s>]/i.test(text.slice(0, 4096));
 }
+
+/**
+ * imports workstream: the document size of an SVG (px: `width`/`height` with units, else the viewBox size, else
+ * 300×150 as CSS sizes a replaced element) and its viewBox — the same rule `svgToShapeContents` uses, so an SVG
+ * imported as a picture and as a shape layer have the same size. Throws SvgImportError when it is not SVG.
+ */
+export function svgDocumentSize(svg: string): {
+	width: number;
+	height: number;
+	viewBox: [number, number, number, number];
+} {
+	const doc = parseXml(svg);
+	const root = findFirst(doc, 'svg');
+	if (!root) throw new SvgImportError('Not an SVG document (no <svg> element)');
+	const vb = nums(root.attrs.viewBox);
+	const hasVb = vb.length === 4 && vb[2]! > 0 && vb[3]! > 0;
+	const width = parseLength(root.attrs.width, 0, hasVb ? vb[2]! : 300) || (hasVb ? vb[2]! : 300);
+	const height = parseLength(root.attrs.height, 0, hasVb ? vb[3]! : 150) || (hasVb ? vb[3]! : 150);
+	return { width, height, viewBox: hasVb ? [vb[0]!, vb[1]!, vb[2]!, vb[3]!] : [0, 0, width, height] };
+}

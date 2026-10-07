@@ -1,5 +1,6 @@
 // Bundles the engine to dist/engine.mjs (ESM) for Electron's utilityProcess and server installs
-// (ARCHITECTURE §9.1, D-17). Remotion packages and binaries stay external.
+// (ARCHITECTURE §9.1, D-17). Remotion packages and binaries stay external; so does pdfjs-dist (imports: it loads its
+// worker module relative to its own files), staged with the runtime closure by the desktop packager.
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,7 @@ await build({
 	target: 'node20',
 	sourcemap: true,
 	legalComments: 'none',
-	external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', '*.node'],
+	external: ['@remotion/*', 'remotion', 'esbuild', 'fsevents', 'pdfjs-dist', 'pdfjs-dist/*', '*.node'],
 	banner: {
 		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
 	},
