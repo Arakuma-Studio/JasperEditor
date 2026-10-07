@@ -26,6 +26,7 @@ import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/ses
 import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
+import { remixClip } from '../../audio-fx/ops.ts';
 import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
 import { cameraMenuEntries } from '../../commands/multicam.ts';
@@ -221,6 +222,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	// replace it and orphan the active session gesture), so toasts go through a ref.
 	const envRef = useRef(env);
 	envRef.current = env;
+	const engineRef = useRef(engine);
+	engineRef.current = engine;
 	const toast = useCallback(
 		(kind: 'info' | 'warning' | 'error', message: string) => envRef.current.toast({ kind, message }),
 		[],
@@ -234,6 +237,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				geometry: () => geomRef.current,
 				toast,
 				platform: { mac, wheelHorizontal: timelinePrefs().getState().wheelHorizontal },
+				// audio-fx: the Remix tool's release plans the remix on the engine and commits `clip.remix`.
+				remix: (clipId, targetFrames) => {
+					const engine = engineRef.current;
+					if (!engine || !seqId) return toast('error', 'The engine is not connected');
+					const seq = session.getCommitted().sequences[seqId];
+					if (!seq) return;
+					const secs = (targetFrames * seq.settings.frameRate.den) / seq.settings.frameRate.num;
+					const clip = seq.clips[clipId] as { remix?: { segments: number; variations: number } } | undefined;
+					remixClip(session, engine, seqId, clipId, secs, {
+						...(clip?.remix ? { segments: clip.remix.segments, variations: clip.remix.variations } : {}),
+					}).then(
+						(r) =>
+							toast(
+								'info',
+								`Remixed to ${r.lengthSeconds.toFixed(2)} s (${r.pieces} segments, ${Math.round(r.bpm)} BPM)`,
+							),
+						(e: Error) => toast('error', e.message),
+					);
+				},
 			}),
 		[session, seqId, ui, toast, mac],
 	);

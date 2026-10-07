@@ -79,6 +79,15 @@ export const LAYERS = {
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'the pure model: zod, immer and @jasper/audio-dsp only, no DOM, no Node, no UI, no Remotion, no engine',
 	},
+	// audio-fx: the audio effect DSP (docs/wp-notes/audio-fx.md). Above the model (it reads the effect catalogue,
+	// keyframes and the mixer's processor interface from the light `@jasper/project/audio` subpath) and audio-dsp
+	// (biquads, smoothing, true peak, pan laws); runs in AudioWorklets and in the engine's offline mixer.
+	'packages/audio-fx': {
+		name: '@jasper/audio-fx',
+		deps: ['@jasper/audio-dsp', '@jasper/project'],
+		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
+		note: 'pure effect DSP: no DOM, no Node, no UI',
+	},
 	'packages/mg-templates': {
 		name: '@jasper/mg-templates',
 		deps: ['@jasper/project'],
@@ -136,6 +145,7 @@ export const LAYERS = {
 			'@jasper/mg-templates',
 			'@jasper/motion',
 			'@jasper/audio-dsp',
+			'@jasper/audio-fx',
 			'@jasper/expressions',
 		],
 		forbid: [...BROWSER_LAYER, 'uiLibs', 'tailwind', 'anime'],
@@ -152,6 +162,7 @@ export const LAYERS = {
 		deps: [
 			'@jasper/api',
 			'@jasper/audio-dsp',
+			'@jasper/audio-fx',
 			'@jasper/compositions',
 			'@jasper/engine-client',
 			'@jasper/expressions',
@@ -172,6 +183,7 @@ export const LAYERS = {
 		deps: [
 			'@jasper/api',
 			'@jasper/audio-dsp',
+			'@jasper/audio-fx',
 			'@jasper/compositions',
 			'@jasper/config',
 			'@jasper/expressions',

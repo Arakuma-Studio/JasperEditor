@@ -2,8 +2,10 @@
 // classifies every layer for the native path and returns an S04:RP-010 RenderPlan with per-clip blockers
 // (RP-008) and warnings (offline media, VFR sources, missing fonts). Paths: `native` | `remotion`, and M2
 // `hybrid` = the native composite with layers an extension baked (S11:LBK-002).
+
 import { createHash } from 'node:crypto';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
+import { installAudioFxProcessors } from '@jasper/audio-fx';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	blendModeInfo,
@@ -42,6 +44,9 @@ import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { needsSubpixel } from './stream/plan.ts';
+
+// audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
+installAudioFxProcessors();
 
 export type PlanCapabilities = {
 	/** ffmpeg + encoders present (self-check). */

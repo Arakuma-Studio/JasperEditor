@@ -60,6 +60,7 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	audioTrackMixer: 'Audio Track Mixer',
 	audioClipMixer: 'Audio Clip Mixer',
 	text: 'Text',
+	essentialSound: 'Essential Sound',
 };
 
 // ------------------------------------------------------------------ save

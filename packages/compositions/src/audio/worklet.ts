@@ -4,9 +4,11 @@
 // * `jasper-meter`: pass-through tap; posts per-channel peak / RMS / clip every ~33 ms and, with
 //   `processorOptions.loudness`, the BS.1770-4 / R128 readouts (momentary, short-term, integrated, LRA, true peak).
 // * `jasper-limiter`: look-ahead true-peak limiter at the loudness-normalisation ceiling (bypass when disabled).
+// * `jasper-audio-fx` (audio-fx): one audio effect slot running the shared effect DSP (fx-processor.ts).
 // * `jasper-capture`: voice-over recording tap: posts the input (planar copies, ~85 ms batches) with the frame
 //   index of the first sample (`currentFrame`), plus per-channel input peaks for the record meter.
 import { LevelMeter, LoudnessMeter, TruePeakLimiter } from '@jasper/audio-dsp';
+import { FX_PROCESSOR_NAME, FxSlotCore, type FxSlotMessage } from './fx-processor.ts';
 
 declare const sampleRate: number;
 declare function registerProcessor(name: string, ctor: unknown): void;
@@ -202,3 +204,21 @@ class CaptureProcessor extends AudioWorkletProcessor {
 registerProcessor('jasper-meter', MeterProcessor);
 registerProcessor('jasper-capture', CaptureProcessor);
 registerProcessor('jasper-limiter', LimiterProcessor);
+
+/** audio-fx: one audio effect slot (clip effect or strip insert), see fx-processor.ts. */
+class FxProcessor extends AudioWorkletProcessor {
+	private readonly core: FxSlotCore;
+	constructor(options: { processorOptions?: { channels?: number } }) {
+		super(options);
+		const channels = Math.max(1, options.processorOptions?.channels ?? 2);
+		this.core = new FxSlotCore(sampleRate, channels, this.port);
+		this.port.onmessage = (e: MessageEvent) => this.core.message(e.data as FxSlotMessage);
+	}
+	process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+		if (!this.core.alive) return false;
+		const out = outputs[0];
+		if (out) this.core.render(inputs[0], out);
+		return true;
+	}
+}
+registerProcessor(FX_PROCESSOR_NAME, FxProcessor);

@@ -8,6 +8,7 @@ import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
+import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
@@ -62,7 +63,9 @@ export type CommandOwner =
 	// Local speech-to-text (Whisper), VAD, diarization
 	| 'speech'
 	// Expressions (docs/wp-notes/expressions.md)
-	| 'wp-m3-expressions';
+	| 'wp-m3-expressions'
+	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
+	| 'audio-fx';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -235,6 +238,14 @@ const LABELS: Record<CommandType, string> = {
 	'expression.clear': 'Clear Expression',
 	'expression.setEnabled': 'Enable Expression',
 	'effect.rename': 'Rename Effect',
+	// audio-fx
+	'essentialSound.setType': 'Set Audio Type',
+	'essentialSound.clearType': 'Clear Audio Type',
+	'essentialSound.set': 'Essential Sound',
+	'essentialSound.applyPreset': 'Apply Sound Preset',
+	'essentialSound.autoMatch': 'Auto-Match Loudness',
+	'clip.remix': 'Remix',
+	'clip.remixRevert': 'Revert Remix',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -263,6 +274,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[captionHandlers, CAPTIONS_OWNER],
 	[speechHandlers, SPEECH_OWNER],
 	[expressionHandlers, EXPRESSION_OWNER],
+	[essentialHandlers, ESSENTIAL_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -287,6 +299,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === AUDIO_MIX_OWNER ||
 				owner === 'keyframes-blend' ||
 				owner === SPEECH_OWNER ||
+				owner === ESSENTIAL_OWNER ||
 				owner === 'wp-multicam'
 					? 'M3'
 					: owner === 'M2' ||

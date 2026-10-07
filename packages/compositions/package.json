@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@jasper/audio-dsp": "workspace:*",
+    "@jasper/audio-fx": "workspace:*",
     "@jasper/expressions": "workspace:*",
     "@jasper/mg-templates": "workspace:*",
     "@jasper/motion": "workspace:*",

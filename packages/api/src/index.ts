@@ -1,6 +1,7 @@
 // @jasper/api — zod contracts for the engine HTTP API, events, jobs and capabilities (ARCHITECTURE §9).
 export * from './agent.ts';
 export * from './audio.ts';
+export * from './audio-fx.ts';
 export * from './cache.ts';
 export * from './capabilities.ts';
 export * from './captions.ts';

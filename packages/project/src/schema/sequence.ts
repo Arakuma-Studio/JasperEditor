@@ -34,6 +34,11 @@ export const EffectInstanceSchema = z.looseObject({
 	params: z.record(z.string(), AnimParamSchema),
 	/** audio-mix: a track / submix / Mix insert placed after the fader (absent = pre-fader). */
 	postFader: z.boolean().optional(),
+	/**
+	 * audio-fx: this instance is managed by the clip's Essential Sound settings (the slot: `rumble`, `noise`, `dehum`,
+	 * `deess`, `reverbReduce`, `dynamics`, `eq`, `enhance`, `width`, `reverb`, `mute`). Absent = the user's own.
+	 */
+	essential: z.string().optional(),
 	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
 	/**
@@ -387,6 +392,24 @@ export const VideoClipSchema = z.looseObject({
 	/** M2 (S09): trackers placed on this clip's picture. */
 	trackers: z.array(ClipTrackerSchema).optional(),
 });
+/**
+ * audio-fx: one piece of a music remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool). The remixed clip became
+ * `count` clips (grouped, constant-power crossfades at the joints); every piece remembers the original clip so the
+ * remix can be redone at another duration or reverted.
+ */
+export const ClipRemixSchema = z.looseObject({
+	/** Shared by the pieces of one remix (also their clip group id). */
+	id: z.string(),
+	index: z.number().int().min(0),
+	count: z.number().int().min(1),
+	original: z.looseObject({ start: nonNegInt(), duration: z.number().int().min(1), sourceIn: nonNegInt() }),
+	targetFrames: z.number().int().min(1),
+	segments: z.number().min(0).max(100),
+	variations: z.number().min(0).max(100),
+	bpm: z.number().positive(),
+});
+export type ClipRemix = DeepStrip<z.infer<typeof ClipRemixSchema>>;
+
 export const AudioClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('audio'),
@@ -396,6 +419,10 @@ export const AudioClipSchema = z.looseObject({
 	volumeDb: AnimNumberSchema,
 	pan: AnimNumberSchema,
 	effects: z.array(EffectInstanceSchema),
+	/** audio-fx: Essential Sound audio type and settings (absent = no type); read with `readEssentialSound`. */
+	essential: z.unknown().optional(),
+	/** audio-fx: this clip is a piece of a music remix. */
+	remix: ClipRemixSchema.optional(),
 });
 export const StillClipSchema = z.looseObject({
 	...commonShape,

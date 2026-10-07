@@ -3,6 +3,7 @@ import { AUDIO_COMMANDS } from './audio.ts';
 import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
+import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
 import { MASK_COMMANDS } from './mask.ts';
@@ -21,6 +22,7 @@ export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
+export * from './essential.ts';
 export * from './expression.ts';
 export * from './interchange.ts';
 export * from './mask.ts';
@@ -63,6 +65,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...SPEECH_COMMANDS,
 	// Expressions (wave expressions)
 	...EXPRESSION_COMMANDS,
+	// Essential Sound and Remix (audio-fx)
+	...ESSENTIAL_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

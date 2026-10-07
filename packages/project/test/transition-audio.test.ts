@@ -284,3 +284,19 @@ describe('gain law of the crossfade curves', () => {
 		expect(audioFadeGain(inc('linear'), 95)).toBeCloseTo(0.25, 12);
 	});
 });
+
+describe('Exponential Fade (audio-fx)', () => {
+	it('is an audio transition whose fades are dB-linear over 60 dB, exact at the ends', () => {
+		const { h, trackId } = twoAudioClips();
+		h.ok([{ type: 'transition.add', trackId, at: 100, effectId: 'jasper.exponential-fade', duration: 20 }]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		const fades = snapshotOf(h).audioClips.flatMap((c) => c.fades ?? []);
+		expect(fades.map((f) => f.curve)).toEqual(['exponential', 'exponential']);
+		const out: RenderAudioFade[] = [{ type: 'out', start: 90, frames: 20, curve: 'exponential' }];
+		expect(audioFadeGain(out, 90)).toBe(1);
+		expect(audioFadeGain(out, 110)).toBe(0);
+		// halfway: (1000^0.5 − 1) / 999 ≈ −30.3 dB; a quarter of the way out: ≈ −15.1 dB
+		expect(20 * Math.log10(audioFadeGain(out, 100))).toBeCloseTo(-30.27, 1);
+		expect(20 * Math.log10(audioFadeGain(out, 95))).toBeCloseTo(-15.06, 1);
+	});
+});

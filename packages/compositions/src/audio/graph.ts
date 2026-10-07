@@ -19,6 +19,7 @@ import {
 	panMonoGains,
 } from '@jasper/audio-dsp';
 import {
+	audioFadeGain,
 	contentTimeAt,
 	type EffectInstance,
 	evaluate,
@@ -26,11 +27,13 @@ import {
 	flicksPerFrame,
 	holdValueAt,
 	isAnimated,
+	nestGainDbAt,
 	type Rational,
 	type RenderAudioClip,
 	type RenderAudioMix,
 	type RenderStrip,
 } from '@jasper/project';
+import { audioGainAt, dbToGain as pipelineDbToGain } from '../pipeline.ts';
 import { discreteGain, MatrixNode, setParam } from './matrix-node.ts';
 
 export type LoudnessReading = {
@@ -88,6 +91,11 @@ const workletLoads = new WeakMap<BaseAudioContext, Promise<boolean>>();
 export function setMixWorkletUrl(url: string | null): void {
 	workletUrl = url;
 }
+/** audio-fx: resolves true once the mix worklet module (with the `jasper-audio-fx` effect slot) is loaded on `ctx`. */
+export function mixWorkletReady(ctx: BaseAudioContext): Promise<boolean> {
+	return loadWorklet(ctx);
+}
+
 function loadWorklet(ctx: BaseAudioContext): Promise<boolean> {
 	let p = workletLoads.get(ctx);
 	if (!p) {
@@ -283,12 +291,36 @@ class StripNodes {
 
 // ------------------------------------------------------------------ clips
 
+/** audio-fx: a clip whose levels are applied after its effects in the preview (enabled clip effects). */
+export function clipHasEffects(clip: Pick<RenderAudioClip, 'effects'>): boolean {
+	return clip.effects.some((e) => e.enabled);
+}
+
+/**
+ * Linear clip level (gain + Volume + fades + nested gain, no track/Mix faders) at clip-local frame `f` (negative in
+ * the head handle) — the AudioLayer's volume callback, applied after the effect slots instead.
+ */
+export function clipLevelAt(clip: RenderAudioClip, f: number, fps: Rational): number {
+	const { fades, nestGain, ...levels } = clip;
+	return (
+		audioGainAt(levels, f, fps, undefined, false) *
+		audioFadeGain(fades, clip.start + f) *
+		(nestGain ? pipelineDbToGain(nestGainDbAt(nestGain, clip.start + f)) : 1)
+	);
+}
+
 class ClipNodes {
 	/** Remotion's per-clip gain node connects here (the `gainNode` of our SharedAudioContext override). */
 	readonly input: GainNode;
 	private select: MatrixNode | null = null;
 	readonly trim: GainNode;
 	private slots: SlotChain | null = null;
+	/**
+	 * audio-fx: the clip's levels (gain, Volume, fades, nested gain) AFTER its effects, as in the export's mixer
+	 * (`gain → clip effects → volume → fades`). Used when the clip has enabled effects (Remotion then plays at unity,
+	 * AudioLayer); otherwise unity (Remotion applies the levels before the — empty — slot chain).
+	 */
+	private level: GainNode | null = null;
 	private pan: MatrixNode | null = null;
 	trackWidth = 0;
 	width = 0;
@@ -322,6 +354,9 @@ class ClipNodes {
 			this.select = new MatrixNode(this.ctx, stream, w);
 			this.trim.channelCount = w;
 			this.slots = new SlotChain(this.ctx, w);
+			this.level?.disconnect();
+			this.level = discreteGain(this.ctx, w);
+			this.slots.output.connect(this.level);
 			this.input.connect(this.select.input);
 			this.select.output.connect(this.trim);
 			this.trim.connect(this.slots.input);
@@ -337,7 +372,7 @@ class ClipNodes {
 		if (!this.pan || this.trackWidth !== trackWidth) {
 			this.pan?.dispose();
 			this.pan = new MatrixNode(this.ctx, w, trackWidth);
-			this.slots!.output.connect(this.pan.input);
+			this.level!.connect(this.pan.input);
 			this.trackWidth = trackWidth;
 			this.dest = null;
 		}
@@ -379,11 +414,19 @@ class ClipNodes {
 			clip.effects.filter((e) => e.enabled),
 			content,
 		);
+		if (this.level)
+			setParam(
+				this.level.gain,
+				clipHasEffects(clip) ? clipLevelAt(clip, t / F - clip.start, rate) : 1,
+				this.ctx,
+				instant,
+			);
 	}
 
 	dispose(): void {
 		this.input.disconnect();
 		this.select?.dispose();
+		this.level?.disconnect();
 		this.trim.disconnect();
 		this.slots?.dispose();
 		this.pan?.dispose();

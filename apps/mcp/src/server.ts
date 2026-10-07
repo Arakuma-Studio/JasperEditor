@@ -9,6 +9,7 @@ import type { EngineConnection } from './link.ts';
 import { installStrictValidation } from './strict.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
+import { AUDIO_FX_GUIDE, registerAudioFxTools } from './tools/audio-fx.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
@@ -79,6 +80,7 @@ const FULL_GUIDE = [
 	MULTICAM_GUIDE,
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
+	AUDIO_FX_GUIDE,
 	CAPTIONS_GUIDE,
 	SPEECH_GUIDE,
 	INTERCHANGE_GUIDE,
@@ -125,6 +127,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerMulticamTools(ctx);
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);
+	registerAudioFxTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);
 	registerInterchangeTools(ctx);

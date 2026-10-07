@@ -7,6 +7,8 @@
 // (opacity ramps / mattes / audio gain, native ffmpeg export) + the GPU transition catalogue
 // (`registry/transitions/*`, `FX_TRANSITIONS`). A GPU transition resolves to a `RenderTransition` of its track (the
 // frame-space shader stage of the compositions) instead of ramps; both clips get the handles the span needs.
+
+import type { RenderAudioFade } from './audio-fade.ts';
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
 import type { ParamSpec } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
@@ -21,6 +23,7 @@ export const CROSS_DISSOLVE = 'jasper.cross-dissolve';
 export const DIP_TO_BLACK = 'jasper.dip-to-black';
 export const CONSTANT_GAIN = 'jasper.constant-gain';
 export const CONSTANT_POWER = 'jasper.constant-power';
+export const EXPONENTIAL_FADE = 'jasper.exponential-fade';
 
 /**
  * A transition type (the transition registry, S01:TRN-001 `effectId`). Built-ins render as opacity ramps, mattes
@@ -105,6 +108,20 @@ export const BUILTIN_TRANSITION_SPECS: readonly TransitionSpec[] = [
 		description:
 			'Equal-power (quarter sine) audio crossfade between two clips (no level dip or bump); at a single clip edge an equal-power fade.',
 		bin: 'Crossfade',
+		params: [],
+		capabilities: BUILTIN,
+	},
+	{
+		// audio-fx: Premiere's third audio transition (helpx "Audio effects and transitions": the outgoing clip fades
+		// out and the incoming one in over smooth logarithmic curves).
+		id: EXPONENTIAL_FADE,
+		version: 1,
+		label: 'Exponential Fade',
+		appliesTo: 'audio',
+		description:
+			'Audio crossfade on exponential (dB-linear) curves: the outgoing clip drops quickly, the incoming one rises late; at a single clip edge an exponential fade.',
+		bin: 'Crossfade',
+		keywords: ['fade', 'log', 'logarithmic'],
 		params: [],
 		capabilities: BUILTIN,
 	},
@@ -468,13 +485,8 @@ export function resolveVideoTransitions(
 }
 
 /** Gain ramp of an audio clip edge: `in` at the head, `out` at the tail (S01:TRN-004). */
-export type RenderAudioFade = {
-	type: 'in' | 'out';
-	/** Sequence frame where the ramp begins. */
-	start: number;
-	frames: number;
-	curve: 'linear' | 'equal-power';
-};
+// audio-fx: the fade type and its gain live in `audio-fade.ts` (light module shared with the AudioWorklet chain).
+export type { RenderAudioFade } from './audio-fade.ts';
 
 /** What the audio transitions of a sequence mean for one audio clip (S01:TRN-004, S10:TUI-052). */
 export type AudioClipTransitionRender = {
@@ -520,7 +532,12 @@ export function resolveAudioTransitions(
 		if (!audioTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
 		if (spec?.appliesTo !== 'audio') continue;
-		const curve = t.effectId === CONSTANT_POWER ? 'equal-power' : 'linear';
+		const curve =
+			t.effectId === CONSTANT_POWER
+				? 'equal-power'
+				: t.effectId === EXPONENTIAL_FADE
+					? 'exponential'
+					: 'linear';
 		const o = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 		const i = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 		if (o && i) {
@@ -568,17 +585,7 @@ export function resolveAudioFades(
 	return out;
 }
 
-/** Gain factor (0…1) of audio fades at a (fractional) sequence frame. */
-export function audioFadeGain(fades: readonly RenderAudioFade[] | undefined, frame: number): number {
-	if (!fades || fades.length === 0) return 1;
-	let k = 1;
-	for (const f of fades) {
-		const p = Math.min(1, Math.max(0, (frame - f.start) / f.frames));
-		const x = f.type === 'in' ? p : 1 - p;
-		k *= f.curve === 'equal-power' ? Math.sin((x * Math.PI) / 2) : x;
-	}
-	return k;
-}
+export { audioFadeGain, fadeCurve } from './audio-fade.ts';
 
 /** Clips that meet at frame `at` on a track: the one ending there and the one starting there. */
 export function clipsAtEditPoint(

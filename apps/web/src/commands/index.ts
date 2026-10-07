@@ -4,6 +4,9 @@
 import '../layer-bake/commands.ts';
 // Register the fx framework's on-canvas point handles (wave 1).
 import '../fx/register.ts';
+// audio-fx: Effect Controls editors of the audio effects (EQ curves, dynamics, meters).
+import '../audio-fx/register.ts';
+import { audioFxCommands } from '../audio-fx/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
@@ -43,6 +46,7 @@ export * from './types.ts';
 const COMMAND_MODULES: UiCommand[][] = [
 	appCommands,
 	audioCommands,
+	audioFxCommands,
 	editCommands,
 	timelineCommands,
 	transportCommands,

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
+import audioFxRoutes from './audio-fx.ts';
 import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
@@ -58,6 +59,8 @@ const ROUTE_PLUGINS = [
 	maskRoutes,
 	// audio-mix: audio analysis (loudness, peaks, ducking activity) and loudness-normalised media versions.
 	audioRoutes,
+	// audio-fx: music remix planning.
+	audioFxRoutes,
 	// wp captions: caption / transcript files by path.
 	captionRoutes,
 	// wp speech: Whisper transcription (after processing: the model catalogue and its installer).

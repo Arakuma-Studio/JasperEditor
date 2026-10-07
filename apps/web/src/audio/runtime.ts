@@ -2,6 +2,7 @@
 // graph and exposes it to panels (Audio Meters, Audio Track / Clip Mixer) as React hooks.
 import {
 	activeMixGraph,
+	installAudioFxPreview,
 	type MeterReading,
 	type MixGraph,
 	onActiveMixGraph,
@@ -17,6 +18,8 @@ export function installAudioRuntime(): void {
 	if (installed) return;
 	installed = true;
 	setMixWorkletUrl(MIX_WORKLET_URL);
+	// audio-fx: audio effects play through their preview slots (AudioWorklet, the export's DSP code).
+	installAudioFxPreview();
 	const apply = (g: MixGraph | null) => g?.setMixdown(audioPrefs.get().mixdown);
 	onActiveMixGraph(apply);
 	audioPrefs.subscribe(() => apply(activeMixGraph()));

@@ -98,6 +98,9 @@ importers:
       '@jasper/audio-dsp':
         specifier: workspace:*
         version: link:../../packages/audio-dsp
+      '@jasper/audio-fx':
+        specifier: workspace:*
+        version: link:../../packages/audio-fx
       '@jasper/compositions':
         specifier: workspace:*
         version: link:../../packages/compositions
@@ -223,6 +226,9 @@ importers:
       '@jasper/audio-dsp':
         specifier: workspace:*
         version: link:../../packages/audio-dsp
+      '@jasper/audio-fx':
+        specifier: workspace:*
+        version: link:../../packages/audio-fx
       '@jasper/compositions':
         specifier: workspace:*
         version: link:../../packages/compositions
@@ -339,11 +345,23 @@ importers:
 
   packages/audio-dsp: {}
 
+  packages/audio-fx:
+    dependencies:
+      '@jasper/audio-dsp':
+        specifier: workspace:*
+        version: link:../audio-dsp
+      '@jasper/project':
+        specifier: workspace:*
+        version: link:../project
+
   packages/compositions:
     dependencies:
       '@jasper/audio-dsp':
         specifier: workspace:*
         version: link:../audio-dsp
+      '@jasper/audio-fx':
+        specifier: workspace:*
+        version: link:../audio-fx
       '@jasper/expressions':
         specifier: workspace:*
         version: link:../expressions

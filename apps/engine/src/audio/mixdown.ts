@@ -3,6 +3,7 @@
 // loudness normalisation — applies `target − measured` and a look-ahead true-peak limiter at the ceiling in a second
 // pass (two-pass normalisation on the final mix, S04:RN-032). Output: a float32 WAV (WAVE_FORMAT_EXTENSIBLE) that
 // every export path muxes as the deliverable's audio.
+
 import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -13,6 +14,7 @@ import {
 	type Mixdown,
 	TruePeakLimiter,
 } from '@jasper/audio-dsp';
+import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
 	type AudioStream,
 	type ClipReader,
@@ -23,6 +25,9 @@ import {
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { clipDecodeArgs, hasSoxr, PcmStreamReader } from './decode.ts';
+
+// audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
+installAudioFxProcessors();
 
 export type MixSource = { path: string; streams: readonly AudioStream[] };
 

@@ -2,6 +2,7 @@
 // native playback — dragging in the timeline or a monitor, stepping frames, reverse / fast shuttle — each new frame
 // plays a short snippet of the full mix (clip levels, pan, buses, automation, normalisation) rendered by the offline
 // mixer from audio decoded in the browser. Reverse shuttle plays the snippet backwards.
+import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
 	buildRenderSnapshot,
 	frameToSample,
@@ -15,6 +16,9 @@ import type { EditorSession, TransportState } from '@jasper/session';
 import { resolveMediaHandle } from '../panels/program/render-doc.ts';
 import { browserOpenClip } from './browser-decode.ts';
 import { audioPrefs } from './prefs.ts';
+
+// audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
+installAudioFxProcessors();
 
 const MIN_SNIPPET_S = 0.04;
 const MAX_SNIPPET_S = 0.12;

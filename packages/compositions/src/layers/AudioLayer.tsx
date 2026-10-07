@@ -9,6 +9,8 @@
 // volume, fades and nested gain, and the graph does clip pan, the track strip (fader, pan law, sends, mute/solo),
 // submixes, the Mix, loudness normalisation and metering. Without a graph (no Web Audio) the callback also applies
 // the track and master faders as before.
+
+import { effectLatency } from '@jasper/audio-fx';
 import {
 	audioFadeGain,
 	encodeWavStereo16,
@@ -24,6 +26,7 @@ import { Audio } from '@remotion/media';
 import { useCallback, useContext, useEffect, useMemo } from 'react';
 import { Internals } from 'remotion';
 import { MixGraphContext } from '../audio/context.ts';
+import { clipHasEffects } from '../audio/graph.ts';
 import { audioGainAt, dbToGain, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
 
@@ -83,12 +86,19 @@ export function AudioLayer({
 	const shared = useContext(Internals.SharedAudioContext);
 	const node = graph ? graph.clipInput(clip) : null;
 	useEffect(() => (graph ? () => graph.releaseClip(clip.clipId) : undefined), [graph, clip.clipId]);
+	// audio-fx: a clip with enabled effects plays at unity into the graph, which applies its levels after the effect
+	// slots (export order); the source is scheduled `latency` early so look-ahead / spectral effects stay in sync.
+	const fx = !!node && clipHasEffects(clip);
+	const latencySec = useMemo(() => (fx ? clipEffectsLatency(clip.effects) / 48000 : 0), [fx, clip.effects]);
 	// A stable context value: Remotion re-creates its media player when the context object changes.
-	const routed = useMemo(() => (shared && node ? { ...shared, gainNode: node } : null), [shared, node]);
+	const routed = useMemo(
+		() => (shared && node ? { ...shared, gainNode: node, ...compensate(shared, latencySec) } : null),
+		[shared, node, latencySec],
+	);
 	const volume = useCallback(
 		(f: number) =>
-			audioLayerGain(clip, volumeFrameToClipFrame(f, sequenceFrom), { num, den }, master, !routed),
-		[clip, num, den, master, sequenceFrom, routed],
+			fx ? 1 : audioLayerGain(clip, volumeFrameToClipFrame(f, sequenceFrom), { num, den }, master, !routed),
+		[clip, num, den, master, sequenceFrom, routed, fx],
 	);
 	const generated = useGeneratedAudio(clip, { num, den });
 	const src =
@@ -108,6 +118,37 @@ export function AudioLayer({
 	) : (
 		audio
 	);
+}
+
+// ---------------------------------------------------------------- audio-fx: latency compensation
+
+type SharedAudio = NonNullable<React.ContextType<typeof Internals.SharedAudioContext>>;
+
+/** Total latency (samples at 48 kHz) of a clip's enabled effects. */
+function clipEffectsLatency(effects: RenderAudioClip['effects']): number {
+	let l = 0;
+	for (const e of effects) l += effectLatency(e);
+	return l;
+}
+
+/** A `scheduleAudioNode` that starts every source buffer `shift` seconds early (effect latency compensation). */
+function compensate(shared: SharedAudio, shift: number): Partial<SharedAudio> {
+	if (shift <= 0) return {};
+	return {
+		scheduleAudioNode: (opts) => {
+			const ctx = shared.audioContext;
+			let { scheduledTime, offset, duration } = opts;
+			scheduledTime -= shift;
+			const now = ctx?.currentTime ?? scheduledTime;
+			if (scheduledTime < now) {
+				const late = (now - scheduledTime) * opts.node.playbackRate.value;
+				offset += late;
+				duration -= late;
+				scheduledTime = now;
+			}
+			return shared.scheduleAudioNode({ ...opts, scheduledTime, offset, duration });
+		},
+	};
 }
 
 // ---------------------------------------------------------------- edit-structure: synthetic sounds
