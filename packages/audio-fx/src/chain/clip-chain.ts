@@ -147,7 +147,8 @@ export class ClipChain {
 			evaluate(c.volumeDb, content) +
 			evaluate(c.track.volumeDb, seqT) +
 			(this.cfg.master ? evaluate(this.cfg.master.volumeDb, seqT) : 0);
-		const g = dbToGain(db) * audioFadeGain(c.fades, c.start + i);
+		// ≤ −96 dB is silence (the Player's and the native volume filter's rule).
+		const g = (db <= -96 ? 0 : dbToGain(db)) * audioFadeGain(c.fades, c.start + i);
 		const [pl, pr] = panGains(evaluate(c.pan, content) / 100);
 		const [tl, tr] = panGains(evaluate(c.track.pan, seqT) / 100);
 		out[0] = g * pl * tl;

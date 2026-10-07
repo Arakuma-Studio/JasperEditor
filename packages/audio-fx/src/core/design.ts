@@ -274,7 +274,8 @@ function factorial(m: number): number {
 function bessel(n: number): Zpk {
 	// Reverse Bessel polynomial: a_k = (2n − k)! / (2^(n−k) k! (n − k)!), monic (a_n = 1).
 	const c: number[] = [];
-	for (let k = 0; k <= n; k++) c.push(factorial(2 * n - k) / (2 ** (n - k) * factorial(k) * factorial(n - k)));
+	for (let k = 0; k <= n; k++)
+		c.push(factorial(2 * n - k) / (2 ** (n - k) * factorial(k) * factorial(n - k)));
 	const f = new Zpk();
 	polyRoots(c, f.p);
 	// H(s) = a0 / θ(s); find Ω where |H(jΩ)| = 1/√2 and normalise it to 1.

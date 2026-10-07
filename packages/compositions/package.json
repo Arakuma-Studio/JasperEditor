@@ -15,6 +15,7 @@
     "still:smoke": "tsx scripts/still-smoke.ts"
   },
   "dependencies": {
+    "@jasper/audio-fx": "workspace:*",
     "@jasper/mg-templates": "workspace:*",
     "@jasper/motion": "workspace:*",
     "@jasper/project": "workspace:*",

@@ -1,5 +1,6 @@
 // @jasper/compositions — SequenceComposition + layers for the Player and @remotion/renderer (ARCHITECTURE §8).
 export * from './AssetComposition.tsx';
+export { audioFxMeters, audioFxPreviewAvailable, clipChainConfig, setAudioFxWorkletUrl } from './audio/clip-fx.tsx';
 export * from './color/index.ts';
 export * from './fonts.ts';
 // Wave 1: GPU shader-effect framework runtime.

@@ -3,12 +3,14 @@
 // packages/audio-fx/src/effects/filter-eq.ts (ported from filmcraft `effects/eq.rs`, `effects/filters.rs`,
 // `design.rs`; the simple filters are RBJ cookbook biquads).
 import type { EffectSpec, ParamSpec } from '../effects.ts';
-import { audioParam as P, defineAudioEffect } from './define.ts';
+import { defineAudioEffect, audioParam as P } from './define.ts';
 
 const FOLDER = 'Filter and EQ' as const;
+/** Butterworth Q 1/√2, as shown in the controls (0.707). */
+const Q707 = Math.round(Math.SQRT1_2 * 1000) / 1000;
 
 /** Band filter types of the 8-band parametric EQ (order = `FILTER_TYPES` of `@jasper/audio-fx` biquads). */
-export const EQ_BAND_TYPES = [
+const EQ_BAND_TYPES = [
 	['peaking', 'Peaking'],
 	['lowShelf', 'Low Shelf'],
 	['highShelf', 'High Shelf'],
@@ -19,7 +21,7 @@ export const EQ_BAND_TYPES = [
 ] as const;
 
 /** Pass-filter slopes of the Parametric Equalizer (Butterworth order = index + 1). */
-export const EQ_PASS_SLOPES = [
+const EQ_PASS_SLOPES = [
 	['6', '6 dB/oct'],
 	['12', '12 dB/oct'],
 	['18', '18 dB/oct'],
@@ -31,14 +33,15 @@ export const EQ_PASS_SLOPES = [
 ] as const;
 
 /** ISO 266 nominal centre frequencies of the graphic equalisers: octave, half-octave and third-octave bands. */
-export const GRAPHIC_EQ_FREQS: Readonly<Record<10 | 20 | 30, readonly number[]>> = {
+const GRAPHIC_EQ_FREQS: Readonly<Record<10 | 20 | 30, readonly number[]>> = {
 	10: [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
 	20: [
-		31.5, 45, 63, 90, 125, 180, 250, 355, 500, 710, 1000, 1400, 2000, 2800, 4000, 5600, 8000, 11200, 16000, 22400,
+		31.5, 45, 63, 90, 125, 180, 250, 355, 500, 710, 1000, 1400, 2000, 2800, 4000, 5600, 8000, 11200, 16000,
+		22400,
 	],
 	30: [
-		25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150,
-		4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+		25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500,
+		3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
 	],
 };
 
@@ -71,13 +74,14 @@ function band(
 	params: ParamSpec[],
 	description: string,
 	keywords: readonly string[],
+	editor: 'filter-response' | 'parametric-eq' = 'filter-response',
 ): EffectSpec {
 	return defineAudioEffect({
 		id: `jasper.audio.${id}`,
 		label,
 		category: FOLDER,
 		params,
-		editor: 'filter-response',
+		editor,
 		description,
 		keywords,
 	});
@@ -88,19 +92,20 @@ function parametricBand(prefix: string, name: string, freq: number, q: number): 
 		P.toggle(`${prefix}On`, `${name} On`, true, { group: name }),
 		P.hz(`${prefix}Freq`, `${name} Frequency`, freq, 20, 20000, { group: name }),
 		P.db(`${prefix}Gain`, `${name} Gain`, 0, -30, 30, { group: name }),
-		P.q(`${prefix}Q`, `${name} Q`, q, 0.1, 30, { group: name }),
+		// Adobe: "Q values of 1–10 are best for general equalization", "close to 100" for notches.
+		P.q(`${prefix}Q`, `${name} Q`, q, 0.1, 100, { group: name }),
 	];
 }
 
 const EQ8_DEFAULTS: readonly [boolean, string, number, number][] = [
-	[false, 'highPass', 30, 0.707],
-	[true, 'lowShelf', 100, 0.707],
+	[false, 'highPass', 30, Q707],
+	[true, 'lowShelf', 100, Q707],
 	[true, 'peaking', 250, 1],
 	[true, 'peaking', 700, 1],
 	[true, 'peaking', 2000, 1],
 	[true, 'peaking', 5000, 1],
-	[true, 'highShelf', 10000, 0.707],
-	[false, 'lowPass', 18000, 0.707],
+	[true, 'highShelf', 10000, Q707],
+	[false, 'lowPass', 18000, Q707],
 ];
 
 const NOTCH_DEFAULT_FREQS = [60, 120, 180, 240, 300, 360];
@@ -156,7 +161,7 @@ export const AUDIO_FILTER_EQ_EFFECTS: readonly EffectSpec[] = [
 		[
 			P.hz('frequency', 'Frequency', 4000, 20, 20000),
 			P.db('gain', 'Gain', 0, -24, 24),
-			P.q('q', 'Q', 0.707, 0.1, 10),
+			P.q('q', 'Q', Q707, 0.1, 10),
 		],
 		'Boosts or cuts everything above the shelf frequency by the same amount.',
 		['shelf', 'treble', 'high', 'tone', 'eq', 'air'],
@@ -174,7 +179,7 @@ export const AUDIO_FILTER_EQ_EFFECTS: readonly EffectSpec[] = [
 		[
 			P.hz('frequency', 'Frequency', 200, 20, 20000),
 			P.db('gain', 'Gain', 0, -24, 24),
-			P.q('q', 'Q', 0.707, 0.1, 10),
+			P.q('q', 'Q', Q707, 0.1, 10),
 		],
 		'Boosts or cuts everything below the shelf frequency by the same amount.',
 		['shelf', 'bass', 'low', 'tone', 'eq', 'warmth'],
@@ -211,33 +216,9 @@ export const AUDIO_FILTER_EQ_EFFECTS: readonly EffectSpec[] = [
 			),
 		],
 		editor: 'filter-response',
-		description: 'Removes up to six narrow frequency bands (hum and its harmonics, whistles) and leaves the rest.',
-		keywords: ['notch', 'hum', 'buzz', '50 hz', '60 hz', 'whistle', 'filter'],
-	}),
-	defineAudioEffect({
-		id: 'jasper.audio.parametric-equalizer',
-		label: 'Parametric Equalizer',
-		category: FOLDER,
-		params: [
-			P.db('masterGain', 'Master Gain', 0, -30, 30),
-			P.toggle('hpOn', 'High Pass On', false, { group: 'High Pass' }),
-			P.hz('hpFreq', 'High Pass Frequency', 30, 10, 20000, { group: 'High Pass' }),
-			P.choice('hpSlope', 'High Pass Slope', EQ_PASS_SLOPES, '12', { group: 'High Pass' }),
-			...parametricBand('low', 'Low Shelf', 100, 0.707),
-			...parametricBand('b1', 'Band 1', 200, 1),
-			...parametricBand('b2', 'Band 2', 500, 1),
-			...parametricBand('b3', 'Band 3', 1000, 1),
-			...parametricBand('b4', 'Band 4', 2000, 1),
-			...parametricBand('b5', 'Band 5', 5000, 1),
-			...parametricBand('high', 'High Shelf', 8000, 0.707),
-			P.toggle('lpOn', 'Low Pass On', false, { group: 'Low Pass' }),
-			P.hz('lpFreq', 'Low Pass Frequency', 18000, 20, 22000, { group: 'Low Pass' }),
-			P.choice('lpSlope', 'Low Pass Slope', EQ_PASS_SLOPES, '12', { group: 'Low Pass' }),
-		],
-		editor: 'parametric-eq',
 		description:
-			'Master gain, high-pass and low-pass (6–48 dB/oct), low and high shelves and five peaking bands.',
-		keywords: ['eq', 'equalizer', 'parametric', 'shelf', 'high pass', 'low pass', 'tone'],
+			'Removes up to six narrow frequency bands (hum and its harmonics, whistles) and leaves the rest.',
+		keywords: ['notch', 'hum', 'buzz', '50 hz', '60 hz', 'whistle', 'filter'],
 	}),
 	defineAudioEffect({
 		id: 'jasper.audio.parametric-eq-8-band',
@@ -260,6 +241,31 @@ export const AUDIO_FILTER_EQ_EFFECTS: readonly EffectSpec[] = [
 		description:
 			'Eight free bands, each peaking, shelf, pass, notch or band-pass, with smooth gliding changes and output gain.',
 		keywords: ['eq', 'equalizer', 'parametric', 'bands', 'shelf', 'notch', 'tone'],
+	}),
+	defineAudioEffect({
+		id: 'jasper.audio.parametric-equalizer',
+		label: 'Parametric Equalizer',
+		category: FOLDER,
+		params: [
+			P.db('masterGain', 'Master Gain', 0, -30, 30),
+			P.toggle('hpOn', 'High Pass On', false, { group: 'High Pass' }),
+			P.hz('hpFreq', 'High Pass Frequency', 30, 10, 20000, { group: 'High Pass' }),
+			P.choice('hpSlope', 'High Pass Slope', EQ_PASS_SLOPES, '12', { group: 'High Pass' }),
+			...parametricBand('low', 'Low Shelf', 100, Q707),
+			...parametricBand('b1', 'Band 1', 200, 1),
+			...parametricBand('b2', 'Band 2', 500, 1),
+			...parametricBand('b3', 'Band 3', 1000, 1),
+			...parametricBand('b4', 'Band 4', 2000, 1),
+			...parametricBand('b5', 'Band 5', 5000, 1),
+			...parametricBand('high', 'High Shelf', 8000, Q707),
+			P.toggle('lpOn', 'Low Pass On', false, { group: 'Low Pass' }),
+			P.hz('lpFreq', 'Low Pass Frequency', 18000, 20, 22000, { group: 'Low Pass' }),
+			P.choice('lpSlope', 'Low Pass Slope', EQ_PASS_SLOPES, '12', { group: 'Low Pass' }),
+		],
+		editor: 'parametric-eq',
+		description:
+			'Master gain, high-pass and low-pass (6–48 dB/oct), low and high shelves and five peaking bands.',
+		keywords: ['eq', 'equalizer', 'parametric', 'shelf', 'high pass', 'low pass', 'tone'],
 	}),
 	defineAudioEffect({
 		id: 'jasper.audio.scientific-filter',
@@ -331,10 +337,11 @@ export const AUDIO_FILTER_EQ_EFFECTS: readonly EffectSpec[] = [
 		[
 			P.hz('center', 'Center', 1000, 20, 20000),
 			P.q('q', 'Q', 1, 0.1, 30),
-			P.db('boost', 'Boost', 0, -20, 20),
+			P.db('boost', 'Boost', 0, -24, 24),
 		],
-		'Boosts or cuts the frequencies around Center by up to 20 dB; Q sets the width of the band.',
+		'Boosts or cuts the frequencies around Center by up to 24 dB; Q sets the width of the band.',
 		['eq', 'peak', 'bell', 'boost', 'cut', 'tone'],
+		'parametric-eq',
 	),
 	band(
 		'treble',

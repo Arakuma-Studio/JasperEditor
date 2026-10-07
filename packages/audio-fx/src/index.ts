@@ -13,3 +13,4 @@ export * from './registry.ts';
 export * from './core/pan.ts';
 export * from './chain/clip-chain.ts';
 export * from './chain/effect-chain.ts';
+export * from './worklet/protocol.ts';

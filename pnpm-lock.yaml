@@ -95,6 +95,9 @@ importers:
       '@jasper/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@jasper/audio-fx':
+        specifier: workspace:*
+        version: link:../../packages/audio-fx
       '@jasper/compositions':
         specifier: workspace:*
         version: link:../../packages/compositions
@@ -190,6 +193,9 @@ importers:
       '@jasper/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@jasper/audio-fx':
+        specifier: workspace:*
+        version: link:../../packages/audio-fx
       '@jasper/compositions':
         specifier: workspace:*
         version: link:../../packages/compositions
@@ -297,6 +303,9 @@ importers:
 
   packages/compositions:
     dependencies:
+      '@jasper/audio-fx':
+        specifier: workspace:*
+        version: link:../audio-fx
       '@jasper/mg-templates':
         specifier: workspace:*
         version: link:../mg-templates

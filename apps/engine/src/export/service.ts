@@ -3,7 +3,7 @@
 // progress mapping (S04:RN-030); `export.finished` event. Motion-graphic masters come from a provider that
 // WP-2G registers (`registerMgMasterProvider`).
 import type { ChildProcess } from 'node:child_process';
-import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
@@ -23,7 +23,7 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
-import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
+import { audioEncodeArgs, type EncoderService, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
@@ -42,6 +42,8 @@ import {
 	type PlannedExport,
 	planExport,
 } from './planner.ts';
+import { renderAudioMix } from './audio/mix-file.ts';
+import { streamAudioClip } from './audio/stream.ts';
 import { streamLayer } from './stream/run.ts';
 
 /**
@@ -398,7 +400,21 @@ export class ExportService {
 		const producers: Promise<void>[] = [];
 		let streamError: Error | null = null;
 		const workers = Math.max(2, Math.floor(Math.max(1, ctx.slots) / Math.max(1, graph.streams.length)));
+		const pipes = graph.streams.length + graph.audioStreams.length;
 		const runStreams = (child: ChildProcess) => {
+			// audio-fx: DSP clips stream their chain output into their pipes (audio/stream.ts).
+			for (const s of graph.audioStreams) {
+				const sink = child.stdio[s.fd] as Writable;
+				producers.push(
+					streamAudioClip(this.deps.ff, s.plan, sink, { signal: streamAbort.signal, onSpawn: ctx.trackChild }).catch(
+						(e: Error) => {
+							if (streamAbort.signal.aborted) return;
+							streamError ??= e;
+							void terminateTree(child, 500);
+						},
+					),
+				);
+			}
 			for (const s of graph.streams) {
 				const sink = child.stdio[s.fd] as Writable;
 				producers.push(
@@ -417,10 +433,10 @@ export class ExportService {
 		try {
 			await this.deps.ff.run(args, {
 				signal: ctx.signal,
-				...(graph.streams.length > 0 ? { pipes: graph.streams.length } : {}),
+				...(pipes > 0 ? { pipes } : {}),
 				onSpawn: (child) => {
 					ctx.trackChild(child);
-					if (graph.streams.length > 0) runStreams(child);
+					if (pipes > 0) runStreams(child);
 				},
 				onProgress: (p) => {
 					if (still || total <= 0) return;
@@ -459,6 +475,37 @@ export class ExportService {
 		return count;
 	}
 
+	/** audio-fx: swaps the audio of a finished (direct) Remotion output for the native mix (video stream copied). */
+	private async replaceAudio(planned: PlannedExport, output: string, audioFile: string, ctx: JobContext) {
+		const o = planned.output;
+		const choice = o.encoder ?? LEGACY_X264_CHOICE;
+		const tmp = join(dirname(output), `remux-${basename(output)}`);
+		const args = [
+			'-i',
+			output,
+			'-i',
+			audioFile,
+			'-map',
+			'0:v:0',
+			'-map',
+			'1:a:0',
+			'-c:v',
+			'copy',
+			...audioEncodeArgs(choice.audioEncoder, o.audioBitrateKbps),
+			'-ar',
+			'48000',
+			'-ac',
+			String(o.audioChannels),
+			...(choice.container !== 'webm' ? ['-movflags', '+faststart'] : []),
+			'-f',
+			choice.container,
+			tmp,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+		await rename(tmp, output);
+	}
+
 	/** Encodes Remotion's ProRes/PCM intermediate with the selected encoder (D-13). */
 	private async encodeIntermediate(
 		planned: PlannedExport,
@@ -468,6 +515,8 @@ export class ExportService {
 		ctx: JobContext,
 		from: number,
 		stage: string,
+		/** audio-fx: the native audio mix replacing the intermediate's audio. */
+		audioFile?: string,
 	): Promise<void> {
 		const o = planned.output;
 		const choice = o.encoder!;
@@ -490,10 +539,11 @@ export class ExportService {
 			...enc.pre,
 			'-i',
 			input,
+			...(audioFile ? ['-i', audioFile] : []),
 			'-map',
 			'0:v:0',
 			'-map',
-			'0:a:0?',
+			audioFile ? '1:a:0' : '0:a:0?',
 			'-vf',
 			vf.join(','),
 			...enc.video,
@@ -712,6 +762,18 @@ export class ExportService {
 			const target =
 				rp.mode === 'direct' ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
 			const prepared = await this.prepareForRemotion(planned, ctx);
+			// audio-fx: audio effects, pan and reversed audio are mixed natively (the DSP chain) and replace Remotion's
+			// audio track (planner `audio.mode: 'native-mix'`).
+			let audioMix: string | undefined;
+			if (planned.plan.audio.mode === 'native-mix') {
+				audioMix = join(await ctx.scratchDir(), 'audio-mix.wav');
+				ctx.progress(0, { stage: 'Mixing audio (native)' });
+				await renderAudioMix(this.deps.ff, planned, audioMix, {
+					signal: ctx.signal,
+					onSpawn: ctx.trackChild,
+					log: (l) => ctx.log(l),
+				});
+			}
 			ctx.progress(0, { stage: `${render.label} · Preparing bundle` });
 			const res = await this.deps.remotion.renderMedia({
 				inputProps: this.remotionProps(planned, prepared),
@@ -744,8 +806,9 @@ export class ExportService {
 					ctx,
 					render.weight,
 					rp.phases[1]!.label,
+					audioMix,
 				);
-			}
+			} else if (audioMix) await this.replaceAudio(planned, output, audioMix, ctx);
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(

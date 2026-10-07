@@ -45,6 +45,8 @@ import {
 	type PreparedExtensions,
 } from './native-ext.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
+import { buildAudioMix } from './audio/graph.ts';
+import type { AudioDspPlan } from './audio/plan.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
 
 const SAMPLE_RATE = 48000;
@@ -93,6 +95,11 @@ type NativeGraph = {
 	 * (`streamLayer`, spawn the composite with `pipes: streams.length`, fds 3, 4, …).
 	 */
 	streams: { fd: number; plan: StreamLayerPlan }[];
+	/**
+	 * audio-fx: clips rendered by the shared DSP chain (audio/stream.ts), written to the composite's pipes after the
+	 * video streams (fds `3 + streams.length`, …).
+	 */
+	audioStreams: { fd: number; plan: AudioDspPlan }[];
 };
 
 const fmt = (n: number) => {
@@ -110,23 +117,6 @@ function colorHex([r, g, b, a]: readonly number[]): string {
 
 function rate(r: Rational): string {
 	return `${r.num}/${r.den}`;
-}
-
-/** atempo chain for a constant speed (each instance limited to 0.5…100). */
-function atempoChain(speed: number): string[] {
-	if (Math.abs(speed - 1) < 1e-9) return [];
-	const parts: number[] = [];
-	let s = speed;
-	while (s < 0.5) {
-		parts.push(0.5);
-		s /= 0.5;
-	}
-	while (s > 100) {
-		parts.push(100);
-		s /= 100;
-	}
-	parts.push(s);
-	return parts.map((p) => `atempo=${fmt(p)}`);
 }
 
 /** Matrix of `in_color_matrix` for a probed stream (untagged HD is BT.709 like browsers assume). */
@@ -166,29 +156,6 @@ export function fadeFilters(fades: readonly RenderFade[] | undefined, f0: number
 		...(pad > 0 ? [`tpad=start=${pad}`] : []),
 		...live.map((f) => `fade=t=${f.type}:s=${f.start - f0 + pad}:n=${f.frames}:alpha=1`),
 		...(pad > 0 ? [`trim=start_frame=${pad}`] : []),
-	];
-}
-
-/**
- * Audio fades of a clip chain whose first sample is sequence frame `f0`, as `afade` (sample accurate;
- * `tri` = linear, `qsin` = equal power). A fade that began before `f0` is padded like `fadeFilters`.
- */
-function audioFadeFilters(
-	fades: readonly RenderAudioFade[] | undefined,
-	f0: number,
-	frameSec: number,
-): string[] {
-	const samplesOf = (frames: number) => Math.round(frames * frameSec * SAMPLE_RATE);
-	const live = (fades ?? []).filter((f) => !(f.type === 'in' && f.start + f.frames <= f0));
-	if (live.length === 0) return [];
-	const pad = samplesOf(Math.max(0, ...live.map((f) => f0 - f.start)));
-	return [
-		...(pad > 0 ? [`adelay=delays=${pad}S:all=1`] : []),
-		...live.map(
-			(f) =>
-				`afade=t=${f.type}:ss=${samplesOf(f.start - f0) + pad}:ns=${samplesOf(f.frames)}:curve=${f.curve === 'equal-power' ? 'qsin' : 'tri'}`,
-		),
-		...(pad > 0 ? [`atrim=start_sample=${pad}`, 'asetpts=PTS-STARTPTS'] : []),
 	];
 }
 
@@ -743,56 +710,19 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	}
 	chains.push(`[${last}]${vout.join(',')}[vout]`);
 
-	// Audio (skipped for stills).
+	// Audio (skipped for stills): the ffmpeg-only clip chains and the audio-fx DSP clips (audio/graph.ts).
+	const audioStreams: NativeGraph['audioStreams'] = [];
 	if (!o.still) {
-		const totalSamples = Math.round(output.durationSec * SAMPLE_RATE);
-		const mixIn: string[] = [];
-		let ai = 0;
-		for (const a of snap.audioClips) {
-			const m = o.sources.media(a.mediaId);
-			if (!m) continue; // offline audio is silent
-			const stream = m.record.probe.streams.find(
-				(s) => s.index === a.channels.streamIndex && s.type === 'audio',
-			)
-				? a.channels.streamIndex
-				: m.record.probe.streams.find((s) => s.type === 'audio')?.index;
-			if (stream === undefined) continue;
-			// A crossfade plays the clip's handles: content from `headHandle` frames before its start to
-			// `tailHandle` frames after its end (S10:TUI-052); its fades cover the span.
-			const f0 = Math.max(a.start - (a.headHandle ?? 0), R0);
-			const f1 = Math.min(a.start + a.duration + (a.tailHandle ?? 0), R1);
-			if (f1 <= f0) continue;
-			const n = f1 - f0;
-			const startSec = Math.max(0, audioContentSec(a, f0, F));
-			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec * a.speed.rate + 0.1), '-i', m.path]);
-			const samples = Math.round(n * frameSec * SAMPLE_RATE);
-			const delay = Math.round((f0 - R0) * frameSec * SAMPLE_RATE);
-			const chain = [
-				'asetpts=PTS-STARTPTS',
-				...atempoChain(a.speed.rate),
-				`aresample=${SAMPLE_RATE}`,
-				`aformat=sample_fmts=fltp:channel_layouts=${output.audioChannels === 1 ? 'mono' : 'stereo'}`,
-				// Clip, track and master volume (keyframed: per-frame gain, keyframed.ts).
-				...audioVolumeFilters(a, snap.master, f0, f1, fps),
-				`atrim=end_sample=${samples}`,
-				'asetpts=PTS-STARTPTS',
-				...audioFadeFilters(a.fades, f0, frameSec),
-				...(delay > 0 ? [`adelay=delays=${delay}S:all=1`] : []),
-			];
-			chains.push(`[${k}:${stream}]${chain.join(',')}[a${ai}]`);
-			mixIn.push(`[a${ai}]`);
-			ai++;
-		}
-		const layout = output.audioChannels === 1 ? 'mono' : 'stereo';
-		if (mixIn.length === 0) {
-			chains.push(`anullsrc=r=${SAMPLE_RATE}:cl=${layout},atrim=end_sample=${totalSamples}[aout]`);
-		} else {
-			const mix =
-				mixIn.length === 1
-					? `${mixIn[0]}anull`
-					: `${mixIn.join('')}amix=inputs=${mixIn.length}:normalize=0:duration=longest:dropout_transition=0`;
-			chains.push(`${mix},apad=whole_len=${totalSamples},atrim=end_sample=${totalSamples}[aout]`);
-		}
+		const mix = buildAudioMix({
+			snapshot: snap,
+			durationSec: output.durationSec,
+			audioChannels: output.audioChannels,
+			media: (id) => o.sources.media(id),
+			addInput,
+			firstFd: 3 + streams.length,
+		});
+		chains.push(...mix.chains);
+		audioStreams.push(...mix.streams);
 	}
 
 	const filter = chains.join(';\n');
@@ -831,11 +761,13 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			o.outputFile,
 		);
 	}
-	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec, streams };
-}
-
-/** Content time in seconds of an audio clip at sequence frame `f` (S01:CLP-004; before `start` = head handle). */
-function audioContentSec(a: RenderAudioClip, f: number, F: number): number {
-	const i = f - a.start;
-	return (a.sourceIn + i * F * a.speed.rate) / FLICKS_PER_SECOND;
+	return {
+		args,
+		filter,
+		inputs,
+		outputFrames: output.frames,
+		durationSec: output.durationSec,
+		streams,
+		audioStreams,
+	};
 }

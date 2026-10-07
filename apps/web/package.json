@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@jasper/api": "workspace:*",
+    "@jasper/audio-fx": "workspace:*",
     "@jasper/compositions": "workspace:*",
     "@jasper/engine-client": "workspace:*",
     "@jasper/mg-templates": "workspace:*",

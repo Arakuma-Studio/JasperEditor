@@ -32,6 +32,7 @@ import {
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
+import { audioClipNeedsDsp } from './audio/plan.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 
 export type PlanCapabilities = {
@@ -257,18 +258,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition and no span renderer is available (rendered by the Remotion path)`,
 			});
 		}
-	for (const a of snapshot.audioClips) {
-		const why: string[] = [];
-		// Keyframed clip / track / master volume is native (per-frame gain, keyframed.ts). Pan is not: the composition
-		// does not pan either (S03:KND-012 is P1), so a native pan would make the export differ from the preview.
-		if (isAnimated(a.pan) || isAnimated(a.track.pan))
-			why.push('animated audio pan is not supported by the native path');
-		else if (a.pan.value !== 0 || a.track.pan.value !== 0)
-			why.push('audio pan is not supported by the native path in M1');
-		if (a.effects.some((fx) => fx.enabled)) why.push('audio effects require the Remotion path in M1');
-		if (a.speed.reverse) why.push('reversed audio is not supported by the native path');
-		for (const reason of why) blockers.push({ itemId: a.clipId, path: 'native', reason });
-	}
+	// audio-fx: audio effects, clip/track pan and reversed audio are native — the shared DSP chain (the preview's
+	// AudioWorklet code) streams those clips into the composite (audio/graph.ts). On the Remotion path the same
+	// native mix replaces Remotion's audio (`audio.mode: 'native-mix'`), since Remotion cannot render them.
+	const dspAudio = snapshot.audioClips.some((a) => audioClipNeedsDsp(a));
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -467,7 +460,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				graphicsGroups,
 			},
 		],
-		audio: { mode: path === 'remotion' ? 'remotion' : 'native-mix' },
+		audio: { mode: path === 'remotion' && !dspAudio ? 'remotion' : 'native-mix' },
 		blockers,
 		warnings,
 		estimate: { seconds: Math.round(estimateSeconds * 10) / 10, bytes: Math.max(0, estimateBytes) },

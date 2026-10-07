@@ -3,9 +3,15 @@
 // Track mute/solo are already resolved in the snapshot (muted tracks are omitted). Pan is not
 // previewed in M1 (S03:KND-012 is P1). An audio crossfade (S10:TUI-052) plays the clip's handles: the
 // enclosing <Sequence> starts `headHandle` frames before the clip and lasts `duration + head + tail`.
+// audio-fx: in the preview, a clip with enabled audio effects or a pan plays through its DSP chain (an
+// AudioWorkletNode running the same code as the export, ../audio/clip-fx.tsx); levels, fades and pan are then applied
+// by the chain after the effects. Renders never host the chain: the engine mixes such audio natively.
+import { clipNeedsChain } from '@jasper/audio-fx';
 import { audioFadeGain, type MediaHandle, type Rational, type RenderAudioClip } from '@jasper/project';
 import { Audio } from '@remotion/media';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { Internals } from 'remotion';
+import { audioFxPreviewAvailable, clipChainConfig, useClipFxAudioContext } from '../audio/clip-fx.tsx';
 import { audioGainAt, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
 
@@ -61,6 +67,17 @@ export function AudioLayer({
 		[clip, num, den, master, sequenceFrom],
 	);
 	if (!media || (!media.hasAudio && media.kind !== 'audio')) return null;
+	if (options.isPreview && clipNeedsChain(clip) && audioFxPreviewAvailable())
+		return (
+			<FxAudioLayer
+				clip={clip}
+				media={media}
+				options={options}
+				fps={{ num, den }}
+				master={master}
+				sequenceFrom={sequenceFrom}
+			/>
+		);
 	return (
 		<Audio
 			src={mediaSrc(media, options)}
@@ -69,5 +86,35 @@ export function AudioLayer({
 			volume={volume}
 			showInTimeline={false}
 		/>
+	);
+}
+
+/** A clip played through its audio-fx chain (preview only). */
+function FxAudioLayer(p: {
+	clip: RenderAudioClip;
+	media: MediaHandle;
+	options: RenderOptions;
+	fps: Rational;
+	master?: { volumeDb: RenderAudioClip['volumeDb'] } | undefined;
+	sequenceFrom: number;
+}) {
+	const config = useMemo(() => clipChainConfig(p.clip, p.fps, p.master), [p.clip, p.fps, p.master]);
+	const value = useClipFxAudioContext({
+		clipId: p.clip.clipId,
+		config,
+		sequenceFrom: p.sequenceFrom,
+		fps: p.fps,
+	});
+	if (!value) return null;
+	return (
+		<Internals.SharedAudioContext.Provider value={value}>
+			<Audio
+				src={mediaSrc(p.media, p.options)}
+				trimBefore={videoTrimBefore(p.clip, p.fps)}
+				playbackRate={p.clip.speed.rate}
+				volume={1}
+				showInTimeline={false}
+			/>
+		</Internals.SharedAudioContext.Provider>
 	);
 }
