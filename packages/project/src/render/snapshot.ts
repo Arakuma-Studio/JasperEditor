@@ -135,6 +135,7 @@ export type RenderVisualSource =
 
 export type RenderCaptionSource = {
 	style: ResolvedCaptionStyle;
+	/** Pages with frames relative to the clip's first frame (frame 0 = `start`), so moving a caption keeps it. */
 	pages: CaptionPage[];
 	/** Caption track standard (CEA-608 tracks are drawn in a monospace caption face when the style has no font). */
 	standard?: string;
@@ -349,6 +350,15 @@ export function nestGainDbAt(runs: RenderAudioClip['nestGain'], frame: number): 
 }
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
+
+function relativePage(p: CaptionPage, origin: number): CaptionPage {
+	return {
+		...p,
+		start: p.start - origin,
+		end: p.end - origin,
+		lines: p.lines.map((l) => l.map((w) => ({ ...w, start: w.start - origin, end: w.end - origin }))),
+	};
+}
 
 function transitionFields<T>(
 	x:
@@ -791,7 +801,13 @@ export function buildRenderSnapshot(
 				duration: c.duration,
 				sourceIn: c.sourceIn,
 				speed: c.speed,
-				source: { captions: { style, pages, ...(t.captionStandard ? { standard: t.captionStandard } : {}) } },
+				source: {
+					captions: {
+						style,
+						pages: pages.map((p) => relativePage(p, c.start)),
+						...(t.captionStandard ? { standard: t.captionStandard } : {}),
+					},
+				},
 				transform: c.transform,
 				opacity: c.opacity,
 				blendMode: 'normal',
