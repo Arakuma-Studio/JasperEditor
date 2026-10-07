@@ -15,6 +15,7 @@ import { useId } from 'react';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { VectorShape } from './VectorShape.tsx';
 
 /** SVG path of the geometry with its top-left at (0, 0) (ellipses: see `ellipseOffset`). */
 function shapePath(g: Pick<ShapeGeometry, 'type' | 'size' | 'cornerRadius'>): string {
@@ -37,7 +38,28 @@ export function ShapeLayer(layer: LayerProps) {
 	const uid = `shape-${useId().replace(/[^\w-]/g, '')}`;
 	const { box } = layer.props;
 	const src = layer.clip.source;
-	const g = 'shape' in src ? evaluateShape(src.shape, layer.contentTime, box) : null;
+	// wp shapes: vector shapes (groups, paths, paints, operators).
+	if ('shape' in src && src.shape.type === 'vector') {
+		const m = layer.props.matrix;
+		const layerScale = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
+		const out = layer.options.isPreview ? (layer.options.fxPreviewScale ?? 1) : 1;
+		const dpr = typeof window !== 'undefined' && layer.options.isPreview ? window.devicePixelRatio || 1 : 1;
+		return (
+			<LayerBox layer={layer}>
+				<VectorShape
+					contents={src.shape.contents}
+					contentTime={layer.contentTime}
+					box={box}
+					resScale={Math.min(8, Math.max(0.25, layerScale * out * dpr))}
+					seedKey={layer.clip.clipId}
+					localFrame={layer.localFrame}
+					uid={uid}
+				/>
+			</LayerBox>
+		);
+	}
+	const g =
+		'shape' in src && src.shape.type !== 'vector' ? evaluateShape(src.shape, layer.contentTime, box) : null;
 	const [w, h] = g?.size ?? [0, 0];
 	const drawn = !!g && h > 0 && w >= (g.type === 'ellipse' ? 1 : 0) && w > 0;
 	return (

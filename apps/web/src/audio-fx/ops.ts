@@ -103,7 +103,7 @@ export async function remixClip(
 	const doc = session.getCommitted();
 	const seq = doc.sequences[sequenceId] as Sequence;
 	const clip = seq.clips[clipId] as AudioClip | undefined;
-	if (!clip || clip.kind !== 'audio') throw new Error('Select a music clip');
+	if (clip?.kind !== 'audio') throw new Error('Select a music clip');
 	const key = mediaKeyOf(doc.media[clip.mediaId] as MediaAsset | undefined);
 	if (!key) throw new Error('The music is not on the engine');
 	const rate = seq.settings.frameRate as Rational;

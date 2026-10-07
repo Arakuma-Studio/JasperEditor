@@ -19,6 +19,7 @@ import {
 	evaluate,
 	hasCurvedSpatialPath,
 	type Keyframe,
+	type LegacyShapeClip,
 	loadProject,
 	pathPointAt,
 	type Rational,
@@ -440,7 +441,7 @@ describe('documents and copies (S01:MIG-005, S03 §12.5)', () => {
 		const shape = h.clips('V1')[2]!.id;
 		payload.keyframes.tracks[0].address = { property: 'shape.size' };
 		h.ok([{ type: 'keyframe.paste', payload, clipId: shape, at: { frames: 0 } }]);
-		const size = (h.seq.clips[shape] as Extract<Clip, { kind: 'shape' }>).shape.size.keyframes;
+		const size = (h.seq.clips[shape] as LegacyShapeClip).shape.size.keyframes;
 		expect(size.length).toBe(3);
 		expect(size.every((k) => k.spatial === undefined)).toBe(true);
 		expect(checkInvariants(h.doc)).toEqual([]);

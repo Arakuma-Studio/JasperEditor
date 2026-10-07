@@ -10,12 +10,15 @@
 // Addressing (`ExpressionRef`): `{seq, owner, path}` with `owner` = a clip id, `track:<id>`, `master` or
 // `transition:<id>`, and `path` = the property-registry key (`transform.position`, `opacity`,
 // `effects.<fxId>.<param>`, `shape.size`, `volumeDb`, `text.content`, …; transitions: the param name).
+
 import { EXPRESSION_BINDING, type ExpressionBinding, hasActiveExpression } from './keyframes.ts';
 import { intrinsicBoxOf } from './registry/properties.ts';
 import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
+import type { ShapeItem } from './schema/shapes.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
+import { shapeItemAnimatables } from './vector/properties.ts';
 
 export type ExpressionRef = { seq: string; owner: string; path: string };
 
@@ -100,7 +103,16 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 				yield { ref: { seq: seqId, owner: id, path: k }, at: [...at, k], kind: 'anim', target: a };
 		}
 		const shape = c.shape as Record<string, unknown> | undefined;
-		if (shape) {
+		// wp shapes: every number / point / colour property of a vector shape's items.
+		if (shape?.type === 'vector' && Array.isArray(shape.contents))
+			for (const x of shapeItemAnimatables(shape.contents as ShapeItem[]))
+				yield {
+					ref: { seq: seqId, owner: id, path: x.key },
+					at: [...at, 'shape', 'contents', ...x.path],
+					kind: 'anim',
+					target: x.anim as Animatable<unknown>,
+				};
+		if (shape && shape.type !== 'vector') {
 			for (const k of ['size', 'fill', 'cornerRadius'] as const) {
 				const a = shape[k] as Animatable<unknown> | null | undefined;
 				if (a)

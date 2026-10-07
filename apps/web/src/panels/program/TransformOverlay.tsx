@@ -10,10 +10,10 @@ import {
 	applyMatrix,
 	type LayerTransformValues,
 	layerMatrix,
+	quadBounds,
 	type Rect,
 	type ResolvedLayer,
 	resolveSceneAt,
-	visibleRect,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
@@ -29,6 +29,8 @@ import { layerDoubleClickHandlers } from '../../extensions/index.ts';
 // wp-m2-shapes: geometry hit-test (XF-001) and "Resize shapes by size" handles (S11:SHP-007).
 import {
 	hitsLayerGeometry,
+	layerEditQuad,
+	layerEditRect,
 	resizeShapeBySize,
 	shapeLayerSize,
 	shapeSizeCommand,
@@ -367,16 +369,16 @@ export function TransformOverlay({
 	};
 
 	const layerScreenQuad = (l: ResolvedLayer): Quad =>
-		l.props.quad.map((p) => toScreen(view, p as Vec2)) as Quad;
+		layerEditQuad(l).map((p) => toScreen(view, p as Vec2)) as Quad;
 
 	const groupBox = (layers: readonly ResolvedLayer[]): Rect | null =>
-		unionBounds(layers.map((l) => l.props.bounds));
+		unionBounds(layers.map((l) => quadBounds(layerEditQuad(l))));
 
 	const layerAt = (p: Vec2): string | null =>
 		hitTest(
 			live.current.scene
 				.filter((l) => l.props.transform && hitsLayerGeometry(l, p))
-				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
+				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: layerEditQuad(l) as Quad })),
 			p,
 			locked,
 		);
@@ -439,7 +441,7 @@ export function TransformOverlay({
 									layers: [
 										...live.current.scene
 											.filter((l) => l.clip.clipId !== mp.clipId)
-											.map((l) => l.props.bounds),
+											.map((l) => quadBounds(layerEditQuad(l))),
 										// The path's other keys (points) are targets too.
 										...mp.keys
 											.filter((k) => !drag.group.some((g) => g.id === k.id))
@@ -454,7 +456,7 @@ export function TransformOverlay({
 		// Handles / anchor / rotation of the current selection (XF-010…012, XF-037).
 		if (sel.length === 1) {
 			const l = sel[0]!;
-			const rect = visibleRect(l.props.box, l.props.crop ?? undefined);
+			const rect = layerEditRect(l);
 			const anchorScreen = toScreen(view, applyMatrix(l.props.matrix, l.props.transform!.anchor));
 			const cs = clipStart(l.clip.clipId);
 			if (!cs) return;
@@ -568,7 +570,9 @@ export function TransformOverlay({
 		);
 		const clips = moving.map((l) => clipStart(l.clip.clipId)).filter((c): c is ClipStart => !!c);
 		if (clips.length === 0) return;
-		const others = live.current.scene.filter((l) => !ids.has(l.clip.clipId)).map((l) => l.props.bounds);
+		const others = live.current.scene
+			.filter((l) => !ids.has(l.clip.clipId))
+			.map((l) => quadBounds(layerEditQuad(l)));
 		svg.setPointerCapture?.(e.pointerId);
 		gestureRef.current = {
 			kind: 'move',
@@ -576,7 +580,7 @@ export function TransformOverlay({
 			start: p,
 			startScreen: screen,
 			clips,
-			bounds0: unionBounds(moving.map((l) => l.props.bounds))!,
+			bounds0: unionBounds(moving.map((l) => quadBounds(layerEditQuad(l))))!,
 			targets: buildSnapTargets({
 				width: doc.settings.width,
 				height: doc.settings.height,
@@ -799,7 +803,7 @@ export function TransformOverlay({
 		else if (pathHitAt(screen)) c = 'pointer';
 		else if (sel.length === 1) {
 			const l = sel[0]!;
-			const h = handleUnder(l, visibleRect(l.props.box, l.props.crop ?? undefined), screen);
+			const h = handleUnder(l, layerEditRect(l), screen);
 			if (h) c = handleCursor(h, l.props.transform!.rotation);
 			else if (rotationZoneHit(layerScreenQuad(l), screen)) c = 'alias';
 		}
@@ -1020,9 +1024,9 @@ function handleCursor(h: HandleId, rotation: number): string {
 }
 
 function SelectionBox({ layer, view }: { layer: ResolvedLayer; view: View }) {
-	const quad = layer.props.quad.map((p) => toScreen(view, p as Vec2)) as Quad;
+	const quad = layerEditQuad(layer).map((p) => toScreen(view, p as Vec2)) as Quad;
 	const t = layer.props.transform!;
-	const rect = visibleRect(layer.props.box, layer.props.crop ?? undefined);
+	const rect = layerEditRect(layer);
 	const small = Math.min(dist(quad[0], quad[1]), dist(quad[1], quad[2])) < SMALL_QUAD;
 	const ids: readonly HandleId[] = small ? CORNERS : HANDLE_IDS;
 	const anchor = toScreen(view, applyMatrix(layer.props.matrix, t.anchor));
@@ -1189,7 +1193,7 @@ function PlaybackOutlines({
 			const scene = resolveSceneAt(d, transport.getState().frame);
 			for (const [id, el] of refs.current) {
 				const l = scene.find((x) => x.clip.clipId === id);
-				el.setAttribute('points', l ? pts(l.props.quad.map((p) => toScreen(v, p as Vec2))) : '');
+				el.setAttribute('points', l ? pts(layerEditQuad(l).map((p) => toScreen(v, p as Vec2))) : '');
 			}
 		};
 		draw();

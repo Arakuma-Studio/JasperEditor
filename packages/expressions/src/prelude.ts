@@ -587,7 +587,11 @@ Layer.prototype = {
   },
   property: function (k) { return this.__group(__v(k)); },
   mask: function (k) { return this.__group('masks').__get(k); },
-  content: function (k) { __err('content(): clips have no shape contents; use thisLayer.shape'); },
+  content: function (k) {
+    var g = __child(this.__s, this.__o, '', 'shape');
+    if (g === undefined) __err('content(): layer "' + this.name + '" is not a shape');
+    return g.__get(k);
+  },
   __x: function (t) { return __h(__XFORM, this.__s, this.__o, t === undefined ? time : __v(t)); },
   toComp: function (p, t) { return __m3(this.__x(t)[0], __v(p)); },
   fromComp: function (p, t) { return __m3(this.__x(t)[1], __v(p)); },

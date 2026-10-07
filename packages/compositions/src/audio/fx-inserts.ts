@@ -39,9 +39,9 @@ class FxInsert implements PreviewInsert {
 	private sentKey = '';
 
 	constructor(
-		private readonly ctx: BaseAudioContext,
+		readonly ctx: BaseAudioContext,
 		effect: EffectInstance,
-		private readonly channels: number,
+		readonly channels: number,
 	) {
 		this.effect = effect;
 		this.input = discreteGain(ctx, channels);

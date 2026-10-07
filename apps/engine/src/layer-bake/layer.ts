@@ -6,6 +6,7 @@ import {
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	evaluateVectorShape,
 	gpuIsTimeDependent,
 	hasActiveExpression,
 	hasEffectMasks,
@@ -14,8 +15,11 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
+	type ShapeItem,
 	type Transform,
 	textAnimatorsTimeVarying,
+	vectorShapeBounds,
+	vectorShapeIsTimeDependent,
 } from '@jasper/project';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
@@ -171,6 +175,9 @@ export function isStaticLayer(
 		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));
 		if (gpuIsTimeDependent(spec, held)) return false;
 	}
+	// wp shapes: a vector shape with a self-animating Wiggle Paths (or keys / expressions in its contents).
+	const shape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	if (shape?.type === 'vector' && vectorShapeIsTimeDependent(shape.contents ?? [])) return false;
 	return !hasKeyframesDeep(c.source);
 }
 
@@ -412,6 +419,19 @@ export function contentBleed(
 			px = Math.max(px, (s.widthPx ?? 0) * (s.position === 'outside' ? 2 : 1));
 		if (st.shadow) px += (st.shadow.distancePx ?? 0) + 3 * (st.shadow.blurPx ?? 0);
 		if (st.background) px += st.background.paddingPx ?? 0;
+	}
+	// wp shapes: a vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
+	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
+	const vshape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	if (vshape?.type === 'vector') {
+		const contents = vshape.contents ?? [];
+		if (vectorShapeIsTimeDependent(contents)) return null;
+		const b = vectorShapeBounds(evaluateVectorShape(contents, 0));
+		if (b) {
+			const W = c.intrinsicBox.width / 2;
+			const H = c.intrinsicBox.height / 2;
+			px = Math.max(px, Math.ceil(Math.max(0, -W - b.x0, b.x1 - W, -H - b.y0, b.y1 - H)) + 2);
+		}
 	}
 	const maxDim = Math.max(c.intrinsicBox.width, c.intrinsicBox.height);
 	for (const side of [src.animation?.in, src.animation?.out]) {
