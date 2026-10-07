@@ -283,10 +283,13 @@ describe('invariants and repair', () => {
 		const clip = Object.values(doc.sequences as Record<string, { clips: Record<string, ShapeClip> }>)[0]!.clips[id]!;
 		const items = (clip.shape as VectorShapeData).contents;
 		items[1]!.id = items[0]!.id;
-		items.push({ id: 'shp_bad', type: 'rect', name: 'x' } as never);
+		const bad = JSON.parse(JSON.stringify(items[0])) as { id: string; size: { value: number[] } };
+		bad.id = 'shp_bad';
+		bad.size.value = [-5, 10];
+		items.push(bad as never);
 		const issues = checkInvariants(doc);
-		expect(issues.some((i) => i.code === 'INV-001')).toBe(true);
-		expect(issues.some((i) => i.code === 'INV-012')).toBe(true);
+		expect(issues.some((i) => i.invariant === 'INV-001')).toBe(true);
+		expect(issues.some((i) => i.invariant === 'INV-012')).toBe(true);
 		const { document, report } = repairDocument(doc, createCounterIdSource(99));
 		expect(report.map((r) => r.action)).toEqual(expect.arrayContaining(['drop-shape-item', 'reid-shape-item']));
 		expect(checkInvariants(document)).toEqual([]);
