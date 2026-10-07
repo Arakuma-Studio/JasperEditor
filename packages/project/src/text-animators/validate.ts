@@ -11,6 +11,9 @@ import {
 import { ANIMATOR_PROPERTY_BY_KEY, selectorFields } from './catalog.ts';
 
 type Issue = { message: string; path: string[] };
+
+const hasMask = (clip: Record<string, unknown>, id: string) =>
+	Array.isArray(clip.masks) && (clip.masks as { id?: string }[]).some((m) => m.id === id);
 type Claim = (id: string, prefix: IdPrefix, where: string[]) => void;
 type AnimLike = { value: unknown; keyframes: { value: unknown }[] };
 
@@ -75,6 +78,8 @@ export function textAnimatorIssues(clip: Record<string, unknown>, cw: string[], 
 	}
 	if (clip.pathOptions !== undefined && !TextPathOptionsSchema.safeParse(clip.pathOptions).success)
 		out.push({ message: 'Path Options are malformed', path: [...cw, 'pathOptions'] });
+	else if (clip.pathOptions !== undefined && !hasMask(clip, (clip.pathOptions as { maskId: string }).maskId))
+		out.push({ message: 'Path Options reference a missing mask', path: [...cw, 'pathOptions', 'maskId'] });
 	if (clip.moreOptions !== undefined && !TextMoreOptionsSchema.safeParse(clip.moreOptions).success)
 		out.push({ message: 'More Options are malformed', path: [...cw, 'moreOptions'] });
 	if (clip.perCharacter3d !== undefined && typeof clip.perCharacter3d !== 'boolean')
@@ -150,6 +155,9 @@ export function repairTextAnimators(clip: Record<string, unknown>): string[] {
 	if (clip.pathOptions !== undefined && !TextPathOptionsSchema.safeParse(clip.pathOptions).success) {
 		delete clip.pathOptions;
 		notes.push('malformed Path Options removed');
+	} else if (clip.pathOptions !== undefined && !hasMask(clip, (clip.pathOptions as { maskId: string }).maskId)) {
+		delete clip.pathOptions;
+		notes.push('Path Options of a missing mask removed (Path: None)');
 	}
 	if (clip.moreOptions !== undefined && !TextMoreOptionsSchema.safeParse(clip.moreOptions).success) {
 		delete clip.moreOptions;

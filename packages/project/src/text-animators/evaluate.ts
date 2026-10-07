@@ -5,11 +5,13 @@
 // Ported from EffectCraft `crates/render/src/text.rs` (`CharXf`, `animator_selection`, `char_transforms`,
 // `substitute`, `adjust_color`; MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the EffectCraft
 // contributors; see licenses/ported/text-animators.md).
-import { evaluate } from '../keyframes.ts';
-import type { Animatable, RGBA } from '../schema/common.ts';
+import { evaluate, evaluateKeyframes, expressionBindingOf } from '../keyframes.ts';
+import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
+import type { TextContent } from '../schema/sequence.ts';
 import type {
 	TextAnimatorGroup,
 	TextAnimatorProperties,
+	TextExpressionSelector,
 	TextRangeSelector,
 	TextSelector,
 	TextSelectorBasedOn,
@@ -147,6 +149,8 @@ export type AnimatorEvalContext = {
 	time: number;
 	/** The layer identity the random seeds are mixed with (`clipLayerId(clipId)`). */
 	layerId: bigint;
+	/** Expression Selector evaluation (absent: the expression engine is not loaded; static Amount applies). */
+	expressions?: TextSelectorExpressionHost;
 };
 
 const num = (a: Animatable<number> | undefined, t: number, d: number) => (a ? evaluate(a, t) : d);
@@ -194,7 +198,7 @@ export function registerTextSelectorEvaluator(kind: string, e: TextSelectorEvalu
 }
 
 registerTextSelectorEvaluator('range', {
-	mode: (s) => s.mode,
+	mode: (s) => (s as TextRangeSelector).mode,
 	basedOn: (s) => s.basedOn,
 	prepare: (s, ctx) => {
 		const sel = s as TextRangeSelector;
@@ -211,7 +215,7 @@ registerTextSelectorEvaluator('range', {
 });
 
 registerTextSelectorEvaluator('wiggly', {
-	mode: (s) => s.mode,
+	mode: (s) => (s as TextWigglySelector).mode,
 	basedOn: (s) => s.basedOn,
 	prepare: (s, ctx) => {
 		const sel = s as TextWigglySelector;
@@ -227,6 +231,49 @@ registerTextSelectorEvaluator('wiggly', {
 			seed: layerSeed(ctx.layerId, num(sel.randomSeed, t, 0)),
 		};
 		return (i) => [0, 1, 2].map((d) => wigglyValue(w, ctx.seconds, i, d)) as Sel3;
+	},
+});
+
+/**
+ * The Expression Selector's per-unit evaluation, installed by the expression engine (`@jasper/expressions`
+ * `installTextSelectorExpressions`): `amount` in percent per dimension, or null when the expression fails (the
+ * selector then falls back to its static Amount, like a property whose expression errors).
+ */
+export type TextSelectorExpressionHost = (input: {
+	selectorId: string;
+	text: string;
+	/** Content time (flicks). */
+	time: number;
+	textIndex: number;
+	textTotal: number;
+	/** Percent. */
+	selectorValue: [number, number, number];
+}) => [number, number, number] | null;
+
+registerTextSelectorEvaluator('expression', {
+	mode: () => 'add',
+	basedOn: (s) => s.basedOn,
+	replaces: true,
+	prepare: (s, ctx) => {
+		const sel = s as TextExpressionSelector;
+		// The Amount's expression is per unit (below): its keyframed value is the static fallback.
+		const stat = evaluateKeyframes(sel.amount, ctx.time);
+		const expr = sel.amount.expression;
+		const host = expr?.enabled && expr.text.trim() ? ctx.expressions : undefined;
+		return (i, n, prev) => {
+			const pv = prev.map((x) => x * 100) as Sel3;
+			const r = host?.({
+				selectorId: sel.id,
+				text: expr!.text,
+				time: ctx.time,
+				textIndex: i + 1,
+				textTotal: n,
+				selectorValue: pv,
+			});
+			// Without an engine (or on error): the static Amount scales the selection above (EffectCraft fallback).
+			const v = r ?? (pv.map((x) => (x * stat) / 100) as Sel3);
+			return v.map((x) => Math.min(1, Math.max(-1, x / 100))) as Sel3;
+		};
 	},
 });
 
@@ -536,4 +583,28 @@ export function adjustColor(
 	}
 	c[3] *= Math.min(1, Math.max(0, opacity / 100));
 	return c;
+}
+
+/**
+ * The text content a text clip shows at content time `t`: its Source Text hold keys (the last key at or before
+ * `t`, the first key before it; none = `content`), then a Source Text expression (bound by the expression engine)
+ * replaces the text — when it changes the text the styled runs no longer line up, so the base style applies to all
+ * of it (as AE applies the first character's style).
+ */
+export function sourceTextContentAt(
+	src: { text: TextContent; sourceTextKeyframes?: readonly Keyframe<TextContent>[] },
+	t: number,
+): TextContent {
+	const keys = src.sourceTextKeyframes ?? [];
+	let keyed = src.text;
+	if (keys.length) {
+		let k = keys[0]!;
+		for (const x of keys) if (x.time <= t) k = x;
+		keyed = k.value;
+	}
+	const b = expressionBindingOf(src.text);
+	if (!b) return keyed;
+	const v = b.evaluate(t);
+	const text = typeof v === 'string' ? v : keyed.text;
+	return text === keyed.text ? keyed : { ...keyed, text, runs: undefined };
 }

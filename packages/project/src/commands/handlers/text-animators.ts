@@ -412,20 +412,31 @@ export const textAnimatorHandlers: HandlerMap = {
 		}
 		return { animatorIds: out };
 	},
-	'text.setPath': (doc, cmd: CommandOf<'text.setPath'>, h) => {
+	'text.setPathOptions': (doc, cmd: CommandOf<'text.setPathOptions'>, h) => {
 		const { clips } = textClips(doc, idList(cmd.clipIds), h);
 		for (const clip of clips) {
-			if (cmd.path === null) {
+			if (cmd.maskId === null) {
 				delete clip.pathOptions;
 				continue;
 			}
-			if (cmd.path.vertices.length < 2)
-				h.fail('E_INVALID_PARAM', 'A text path needs at least two vertices', { path: ['path', 'vertices'] });
 			const prev = clip.pathOptions;
-			const margin = (v: number | undefined, a: Draft<Animatable<number>> | undefined) =>
-				v !== undefined ? { value: v, keyframes: [] } : (a ?? { value: 0, keyframes: [] });
+			const maskId = cmd.maskId ?? prev?.maskId;
+			if (!maskId)
+				return h.fail('E_INVALID_PARAM', `${clip.id} has no text path yet: give maskId (a mask of the clip)`, {
+					path: ['maskId'],
+				});
+			const masks = (clip as { masks?: { id: string }[] }).masks ?? [];
+			if (!masks.some((m) => m.id === maskId))
+				h.fail('E_NOT_FOUND', `Mask ${maskId} is not a mask of ${clip.id}`, { path: ['maskId'] });
+			const margin = (v: number | undefined, a: Draft<Animatable<number>> | undefined) => {
+				if (v === undefined) return a ?? { value: 0, keyframes: [] };
+				if (a && a.keyframes.length) {
+					h.fail('E_INVALID_PARAM', 'The margin is keyframed: set it with param.set at a time', { path: ['firstMargin'] });
+				}
+				return { ...(a ?? {}), value: v, keyframes: [] };
+			};
 			const next: TextPathOptions = {
-				path: cmd.path,
+				maskId,
 				reversePath: cmd.reversePath ?? prev?.reversePath ?? false,
 				perpendicularToPath: cmd.perpendicularToPath ?? prev?.perpendicularToPath ?? true,
 				forceAlignment: cmd.forceAlignment ?? prev?.forceAlignment ?? false,

@@ -4,58 +4,30 @@
 // Ported from EffectCraft `crates/text/src/path_text.rs` (MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and
 // the EffectCraft contributors; see licenses/ported/text-animators.md). The path is flattened to a polyline with a
 // 0.05 px tolerance (kurbo's `flatten` tolerance there) by adaptive subdivision of each cubic segment.
-import type { TextPathGeometry } from '../schema/text-animators.ts';
+import { type BezierPath, flattenPath, mapPath } from '../path/model.ts';
 
 type P = [number, number];
 
 const dist = (a: P, b: P) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 
-function cubicAt(p0: P, p1: P, p2: P, p3: P, t: number): P {
-	const u = 1 - t;
-	const a = u * u * u;
-	const b = 3 * u * u * t;
-	const c = 3 * u * t * t;
-	const d = t * t * t;
-	return [a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0], a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]];
-}
-
 /**
- * Number of line segments that keep a cubic within `tol` of its chords: the second-difference bound
- * `n = ceil(sqrt(sqrt(dd) · 3 / (4·tol)))` with `dd` the largest squared second difference of the control points.
+ * The flattened points of a path (shared Bezier model, `path/model.ts`); closed paths end on their first point
+ * (EffectCraft measures the closing chord too).
  */
-function cubicSegments(p0: P, p1: P, p2: P, p3: P, tol: number): number {
-	const ddx = Math.max(Math.abs(p0[0] - 2 * p1[0] + p2[0]), Math.abs(p1[0] - 2 * p2[0] + p3[0]));
-	const ddy = Math.max(Math.abs(p0[1] - 2 * p1[1] + p2[1]), Math.abs(p1[1] - 2 * p2[1] + p3[1]));
-	const dd = Math.hypot(ddx, ddy);
-	return Math.max(1, Math.min(4096, Math.ceil(Math.sqrt((dd * 3) / (4 * tol)))));
-}
-
-/** The flattened points of a path (closed paths end on their first point). */
-export function flattenTextPath(path: TextPathGeometry, tol = 0.05): { pts: P[]; closed: boolean } {
-	const v = path.vertices;
+export function flattenTextPath(path: Pick<BezierPath, 'closed' | 'vertices'>, tol = 0.05): { pts: P[]; closed: boolean } {
 	const pts: P[] = [];
-	if (v.length === 0) return { pts, closed: false };
-	const push = (p: P) => {
+	for (const q of flattenPath(path, tol).pts) {
 		const last = pts[pts.length - 1];
-		if (!last || dist(last, p) > 1e-9) pts.push(p);
-	};
-	push([v[0]!.point[0], v[0]!.point[1]]);
-	const segs = path.closed ? v.length : v.length - 1;
-	for (let i = 0; i < segs; i++) {
-		const a = v[i]!;
-		const b = v[(i + 1) % v.length]!;
-		const p0: P = [a.point[0], a.point[1]];
-		const p1: P = [a.point[0] + a.outTangent[0], a.point[1] + a.outTangent[1]];
-		const p2: P = [b.point[0] + b.inTangent[0], b.point[1] + b.inTangent[1]];
-		const p3: P = [b.point[0], b.point[1]];
-		const straight =
-			a.outTangent[0] === 0 && a.outTangent[1] === 0 && b.inTangent[0] === 0 && b.inTangent[1] === 0;
-		const n = straight ? 1 : cubicSegments(p0, p1, p2, p3, tol);
-		for (let k = 1; k <= n; k++) push(k === n ? p3 : cubicAt(p0, p1, p2, p3, k / n));
+		if (!last || dist(last, q) > 1e-9) pts.push([q[0], q[1]]);
 	}
-	const closed = path.closed && v.length > 1;
+	const closed = path.closed && path.vertices.length > 1;
 	if (closed && pts.length > 1 && dist(pts[0]!, pts[pts.length - 1]!) > 1e-9) pts.push(pts[0]!);
 	return { pts, closed };
+}
+
+/** A mask path (normalised over the layer box) in text-box pixels. */
+export function maskPathInPixels(path: BezierPath, box: { width: number; height: number }): BezierPath {
+	return mapPath(path, (q) => [q[0] * box.width, q[1] * box.height]);
 }
 
 /** A flattened path measured by arc length. */
@@ -65,7 +37,7 @@ export class PathMeasure {
 	readonly cum: number[];
 	readonly closed: boolean;
 
-	constructor(path: TextPathGeometry, reverse: boolean) {
+	constructor(path: Pick<BezierPath, 'closed' | 'vertices'>, reverse: boolean) {
 		const f = flattenTextPath(path);
 		this.pts = reverse ? [...f.pts].reverse() : f.pts;
 		this.closed = f.closed;
@@ -159,19 +131,4 @@ export function arcPositions(
 	}
 	if (align === 2) return xs.map((x) => length - lastMargin - (line[1] - x));
 	return xs.map((x) => firstMargin + x - line[0]);
-}
-
-/** SVG path data of a text path (for overlays and previews). */
-export function textPathSvg(path: TextPathGeometry): string {
-	const v = path.vertices;
-	if (v.length === 0) return '';
-	const f = (n: number) => Number(n.toFixed(3));
-	let d = `M${f(v[0]!.point[0])} ${f(v[0]!.point[1])}`;
-	const segs = path.closed ? v.length : v.length - 1;
-	for (let i = 0; i < segs; i++) {
-		const a = v[i]!;
-		const b = v[(i + 1) % v.length]!;
-		d += ` C${f(a.point[0] + a.outTangent[0])} ${f(a.point[1] + a.outTangent[1])} ${f(b.point[0] + b.inTangent[0])} ${f(b.point[1] + b.inTangent[1])} ${f(b.point[0])} ${f(b.point[1])}`;
-	}
-	return path.closed ? `${d} Z` : d;
 }

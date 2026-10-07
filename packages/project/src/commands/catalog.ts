@@ -189,7 +189,7 @@ const LABELS: Record<CommandType, string> = {
 	'textSelector.update': 'Edit Text Selector',
 	'textAnimator.applyPreset': 'Apply Text Animator Preset',
 	'textAnimator.convertLegacy': 'Convert Text Animation to Animators',
-	'text.setPath': 'Text Path Options',
+	'text.setPathOptions': 'Text Path Options',
 	'text.setPerCharacter3d': 'Per-character 3D',
 	'project.importTimeline': 'Import Timeline',
 	'clip.synchronize': 'Synchronize',

@@ -390,6 +390,9 @@ export const maskHandlers: HandlerMap = {
 		for (const id of ids) {
 			const loc = mustLocate(doc, id, h);
 			loc.list.splice(loc.index, 1);
+			// text-animators: a text clip's Path Options on this mask go back to Path: None (as in AE).
+			const po = (loc.clip as { pathOptions?: { maskId?: string } } | null)?.pathOptions;
+			if (!loc.fx && po?.maskId === id) delete (loc.clip as { pathOptions?: unknown }).pathOptions;
 			// An emptied list is dropped (absent = no masks), keeping documents minimal.
 			if (loc.list.length === 0) {
 				if (loc.fx) delete (loc.fx as { masks?: unknown }).masks;

@@ -9,6 +9,7 @@
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type {
 	TextAnimatorGroup,
+	TextExpressionSelector,
 	TextAnimatorProperties,
 	TextRangeSelector,
 	TextSelector,
@@ -451,13 +452,30 @@ export function newWigglySelector(id: string, name = 'Wiggly Selector 1'): TextW
 	};
 }
 
+/** AE's default Expression Selector amount: a ramp across the units. */
+export const EXPRESSION_SELECTOR_DEFAULT = 'selectorValue * textIndex / textTotal';
+
+/** Expression Selector (Amount driven by its expression per unit; AE default text). */
+export function newExpressionSelector(id: string, name = 'Expression Selector 1'): TextExpressionSelector {
+	return {
+		id,
+		kind: 'expression',
+		name,
+		enabled: true,
+		basedOn: 'characters',
+		amount: { value: 100, keyframes: [], expression: { text: EXPRESSION_SELECTOR_DEFAULT, enabled: true } },
+	};
+}
+
 export function newTextSelector(kind: TextSelectorKind, id: string, name: string): TextSelector {
+	if (kind === 'expression') return newExpressionSelector(id, name);
 	return kind === 'wiggly' ? newWigglySelector(id, name) : newRangeSelector(id, name);
 }
 
 export const SELECTOR_LABEL: Record<TextSelectorKind, string> = {
 	range: 'Range Selector',
 	wiggly: 'Wiggly Selector',
+	expression: 'Expression Selector',
 };
 
 /** The next "Range Selector N" style name among existing selectors. */
@@ -725,6 +743,12 @@ export const WIGGLY_SELECTOR_FIELDS: readonly SelectorFieldDef[] = [
 	},
 ];
 
+export const EXPRESSION_SELECTOR_FIELDS: readonly SelectorFieldDef[] = [
+	BASED_ON_FIELD,
+	{ key: 'amount', label: 'Amount', kind: 'number', animatable: true, unit: '%', ui: 'scrub', range: { step: 1 }, default: 100 },
+];
+
 export function selectorFields(kind: TextSelectorKind): readonly SelectorFieldDef[] {
+	if (kind === 'expression') return EXPRESSION_SELECTOR_FIELDS;
 	return kind === 'wiggly' ? WIGGLY_SELECTOR_FIELDS : RANGE_SELECTOR_FIELDS;
 }

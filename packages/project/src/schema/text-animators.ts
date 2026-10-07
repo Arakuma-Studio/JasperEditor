@@ -4,7 +4,7 @@
 // `{value, keyframes}` storage (S01:KF-001) and are evaluated per frame at the clip's content time by the text
 // layer, like shapes (RND-001).
 import { z } from 'zod';
-import { AnimNumberSchema, AnimRGBASchema, AnimVec2Schema, type DeepStrip, Vec2Schema } from './common.ts';
+import { AnimNumberSchema, AnimRGBASchema, AnimVec2Schema, type DeepStrip } from './common.ts';
 
 // ---------------------------------------------------------------- selectors
 
@@ -66,13 +66,29 @@ export const TextWigglySelectorSchema = z.looseObject({
 });
 export type TextWigglySelector = DeepStrip<z.infer<typeof TextWigglySelectorSchema>>;
 
-export const TEXT_SELECTOR_KINDS = ['range', 'wiggly'] as const;
+/**
+ * AE Expression Selector: `amount` is evaluated per unit by its expression (`textIndex`, `textTotal`,
+ * `selectorValue` = the selection of the selectors above, in percent) and replaces that selection (no Mode). Its
+ * static value (percent) scales the selection above when the expression is disabled or fails.
+ */
+export const TextExpressionSelectorSchema = z.looseObject({
+	id: z.string(),
+	kind: z.literal('expression'),
+	name: z.string(),
+	enabled: z.boolean(),
+	basedOn: z.enum(TEXT_SELECTOR_BASED_ON),
+	amount: AnimNumberSchema,
+});
+export type TextExpressionSelector = DeepStrip<z.infer<typeof TextExpressionSelectorSchema>>;
+
+export const TEXT_SELECTOR_KINDS = ['range', 'wiggly', 'expression'] as const;
 export type TextSelectorKind = (typeof TEXT_SELECTOR_KINDS)[number];
 export const TextSelectorSchema = z.discriminatedUnion('kind', [
 	TextRangeSelectorSchema,
 	TextWigglySelectorSchema,
+	TextExpressionSelectorSchema,
 ]);
-export type TextSelector = TextRangeSelector | TextWigglySelector;
+export type TextSelector = TextRangeSelector | TextWigglySelector | TextExpressionSelector;
 
 // ---------------------------------------------------------------- animator properties
 
@@ -135,22 +151,12 @@ export type TextAnimatorGroup = DeepStrip<z.infer<typeof TextAnimatorGroupSchema
 
 // ---------------------------------------------------------------- path options and more options
 
-/** A vertex of a text path: point and Bezier handles relative to it (layer pixels). */
-export const TextPathVertexSchema = z.looseObject({
-	point: Vec2Schema,
-	inTangent: Vec2Schema,
-	outTangent: Vec2Schema,
-});
-/** A Bezier path in the text box's space (pixels, origin top-left, Y down). */
-export const TextPathGeometrySchema = z.looseObject({
-	closed: z.boolean(),
-	vertices: z.array(TextPathVertexSchema),
-});
-export type TextPathGeometry = DeepStrip<z.infer<typeof TextPathGeometrySchema>>;
-
-/** AE Path Options: the characters are placed along `path`. */
+/**
+ * AE Path Options: the characters are placed along the path of one of the clip's masks (`clip.masks`, the shared
+ * Bezier model; give the mask mode "none" so it only guides the text, as in AE). A missing mask = no path.
+ */
 export const TextPathOptionsSchema = z.looseObject({
-	path: TextPathGeometrySchema,
+	maskId: z.string(),
 	reversePath: z.boolean(),
 	perpendicularToPath: z.boolean(),
 	forceAlignment: z.boolean(),

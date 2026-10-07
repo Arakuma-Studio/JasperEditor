@@ -41,6 +41,7 @@ export * from './registry/fx/index.ts';
 export * from './registry/kinds.ts';
 export * from './registry/mg.ts';
 export * from './registry/properties.ts';
+export * from './registry/text-animator-properties.ts';
 export * from './registry/transitions/index.ts';
 export * from './render/index.ts';
 export * from './schema/index.ts';

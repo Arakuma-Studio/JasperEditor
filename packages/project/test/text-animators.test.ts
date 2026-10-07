@@ -108,7 +108,8 @@ describe('textAnimator.add / properties / selectors', () => {
 			.refs.$w!;
 		const a = () => clipOf(h, id).animators![0]!;
 		expect(a().selectors.map((s) => s.name)).toEqual(['Range Selector 1', 'Wiggly Selector 1']);
-		expect(a().selectors[1]!.kind === 'wiggly' && a().selectors[1]!.mode).toBe('intersect');
+		const w = a().selectors[1]!;
+		expect(w.kind === 'wiggly' && w.mode).toBe('intersect');
 		const range = a().selectors[0]!.id;
 		h.ok([
 			{
@@ -339,14 +340,15 @@ describe('Path Options, More Options, Source Text', () => {
 	const path = {
 		closed: false,
 		vertices: [
-			{ point: [0, 100], inTangent: [0, 0], outTangent: [100, -100] },
-			{ point: [400, 100], inTangent: [-100, -100], outTangent: [0, 0] },
+			{ p: [0, 0.5], in: [0, 0], out: [0.25, -0.5] },
+			{ p: [1, 0.5], in: [-0.25, -0.5], out: [0, 0] },
 		],
 	};
-	it('text.setPath sets / updates / removes; margins are keyframable', () => {
+	it('text.setPathOptions on a mask; margins keyframable; mask removal resets to Path: None', () => {
 		const h = new Harness();
 		const id = withText(h);
-		h.ok([{ type: 'text.setPath', clipIds: [id], path, firstMargin: 12 }]);
+		const mask = h.ok([{ type: 'mask.add', clipId: id, shape: 'bezier', path, mode: 'none', ref: '$m' }]).refs.$m!;
+		h.ok([{ type: 'text.setPathOptions', clipIds: [id], maskId: mask, firstMargin: 12 }]);
 		expect(clipOf(h, id).pathOptions!.firstMargin.value).toBe(12);
 		expect(clipOf(h, id).pathOptions!.perpendicularToPath).toBe(true);
 		h.ok([
@@ -355,14 +357,15 @@ describe('Path Options, More Options, Source Text', () => {
 		]);
 		expect(clipOf(h, id).pathOptions!.lastMargin.keyframes).toHaveLength(1);
 		expect(clipOf(h, id).pathOptions!.reversePath).toBe(true);
-		expect(
-			err(
-				h.tx([
-					{ type: 'text.setPath', clipIds: [id], path: { closed: false, vertices: [path.vertices[0]] } },
-				]),
-			)?.code,
-		).toBe('E_INVALID_PARAM');
-		h.ok([{ type: 'text.setPath', clipIds: [id], path: null }]);
+		expect(err(h.tx([{ type: 'text.setPathOptions', clipIds: [id], maskId: 'msk_0000000000000ZZZ' }]))?.code).toBe('E_NOT_FOUND');
+		invariantsOk(h);
+		h.ok([{ type: 'mask.remove', maskIds: [mask] }]);
+		expect(clipOf(h, id).pathOptions).toBeUndefined();
+		h.ok([
+			{ type: 'mask.add', clipId: id, shape: 'bezier', path, mode: 'none', ref: '$m2' },
+			{ type: 'text.setPathOptions', clipIds: [id], maskId: '$m2' },
+		]);
+		h.ok([{ type: 'text.setPathOptions', clipIds: [id], maskId: null }]);
 		expect(clipOf(h, id).pathOptions).toBeUndefined();
 		invariantsOk(h);
 	});

@@ -109,21 +109,9 @@ describe('text selectors match the reference implementation', () => {
 		const line = {
 			closed: false,
 			vertices: [
-				{
-					point: [0, 0] as [number, number],
-					inTangent: [0, 0] as [number, number],
-					outTangent: [0, 0] as [number, number],
-				},
-				{
-					point: [100, 0] as [number, number],
-					inTangent: [0, 0] as [number, number],
-					outTangent: [0, 0] as [number, number],
-				},
-				{
-					point: [100, 50] as [number, number],
-					inTangent: [0, 0] as [number, number],
-					outTangent: [0, 0] as [number, number],
-				},
+				{ p: [0, 0] as [number, number], in: [0, 0] as [number, number], out: [0, 0] as [number, number] },
+				{ p: [100, 0] as [number, number], in: [0, 0] as [number, number], out: [0, 0] as [number, number] },
+				{ p: [100, 50] as [number, number], in: [0, 0] as [number, number], out: [0, 0] as [number, number] },
 			],
 		};
 		const m = new PathMeasure(line, false);

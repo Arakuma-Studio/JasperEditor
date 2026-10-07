@@ -5,13 +5,19 @@ import {
 	flicksPerFrame,
 	installExpressionSupport,
 	locateExpressionTarget,
+	type ExpressionWorldData,
 	type ProjectDocument,
 	type Rational,
+	type TextSelectorExpressionHost,
 } from '@jasper/project';
-import { bindDocumentExpressions, worldOfDocument } from './bind.ts';
-import { checkExpressionSyntax, loadExpressionEngine as loadRuntime } from './runtime.ts';
+import { bindDocumentExpressions, bindWorld, worldOfDocument } from './bind.ts';
+import {
+	checkExpressionSyntax,
+	isExpressionEngineLoaded,
+	loadExpressionEngine as loadRuntime,
+} from './runtime.ts';
 import type { PropKind } from './values.ts';
-import type { SelectorInput } from './world.ts';
+import type { SelectorInput, World } from './world.ts';
 
 /**
  * Loads the QuickJS engine and installs expression support into @jasper/project (`bindExpressions`, used by
@@ -114,7 +120,16 @@ export function evaluateSelectorExpression(
 ): SelectorAmount {
 	const syntax = checkExpressionSyntax(text);
 	if (syntax) return { ok: false, error: syntax };
-	const world = worldOfDocument(doc);
+	return selectorAmount(worldOfDocument(doc), at, text, contentTime, input);
+}
+
+function selectorAmount(
+	world: World,
+	at: { sequenceId: string; clipId: string; selectorId: string },
+	text: string,
+	contentTime: number,
+	input: Omit<SelectorInput, 'seedKey'>,
+): SelectorAmount {
 	const ref = { seq: at.sequenceId, owner: at.clipId, path: 'text.content' };
 	if (!world.prop(ref)) return { ok: false, error: 'Error: the Expression Selector needs a text clip' };
 	const r = world.evaluateText(ref, text, contentTime, { ...input, seedKey: `selector:${at.selectorId}` });
@@ -133,6 +148,37 @@ export function evaluateSelectorExpression(
 	if (out.some((x) => x === null))
 		return { ok: false, error: 'Error: expression selector amount must be a number or an array of numbers' };
 	return { ok: true, amount: out as [number, number, number] };
+}
+
+/**
+ * The Expression Selector host of a text clip for the renderer (`AnimatorEvalContext.expressions`): evaluates
+ * selector expressions in the world of a render snapshot (`snapshot.expressions`, so it works after JSON, in the
+ * Remotion renderer) or of a document. Null when the engine is not loaded or the clip is not in the world. Failing
+ * expressions return null (the selector falls back to its static Amount) and report the error once per text.
+ */
+export function textSelectorExpressionHost(
+	data: ExpressionWorldData | ProjectDocument,
+	clipId: string,
+): TextSelectorExpressionHost | null {
+	if (!isExpressionEngineLoaded()) return null;
+	const world = 'version' in data && 'boxes' in data ? bindWorld(data as ExpressionWorldData).world : worldOfDocument(data as ProjectDocument);
+	const sequences = 'version' in data && 'boxes' in data ? (data as ExpressionWorldData).sequences : (data as ProjectDocument).sequences;
+	const sequenceId = Object.keys(sequences).find((id) => sequences[id]!.clips[clipId]);
+	if (!sequenceId) return null;
+	const reported = new Set<string>();
+	return (q) => {
+		const r = selectorAmount(world, { sequenceId, clipId, selectorId: q.selectorId }, q.text, q.time, {
+			textIndex: q.textIndex,
+			textTotal: q.textTotal,
+			selectorValue: q.selectorValue,
+		});
+		if (r.ok) return r.amount;
+		if (!reported.has(q.text)) {
+			reported.add(q.text);
+			console.warn(`[expressions] text selector ${q.selectorId}: ${r.error}`);
+		}
+		return null;
+	};
 }
 
 // ---------------------------------------------------------------- pick-whip

@@ -3,7 +3,6 @@
 // properties and selector fields are set with `param.set` / keyframe commands on their property keys
 // (`["clip", clipId, "textAnimators", animatorId, "properties", "position"]`, …).
 import { z } from 'zod';
-import { TextPathGeometrySchema } from '../../schema/text-animators.ts';
 import { cmd, IdListSchema, IdRefSchema, ParamAtSchema, RefDeclSchema } from './common.ts';
 
 const AnimatorEntries = z
@@ -66,7 +65,7 @@ export const TextAnimatorRemovePropertyCmd = cmd('textAnimator.removeProperty', 
 export const TextSelectorAddCmd = cmd('textSelector.add', {
 	clipId: IdRefSchema,
 	animatorId: IdRefSchema,
-	kind: z.enum(['range', 'wiggly']),
+	kind: z.enum(['range', 'wiggly', 'expression']),
 	name: z.string().min(1).max(200).optional(),
 	ref: RefDeclSchema.optional(),
 });
@@ -108,10 +107,13 @@ export const TextAnimatorConvertLegacyCmd = cmd('textAnimator.convertLegacy', {
 	clipIds: IdListSchema,
 });
 
-/** Path Options: puts the characters on `path` (text-box pixels), or removes it (`null`). */
-export const TextSetPathCmd = cmd('text.setPath', {
+/**
+ * Path Options (AE): puts the characters on the path of one of the clip's masks (`maskId`; `null` = Path: None).
+ * Give the mask mode "none" so it only guides the text.
+ */
+export const TextSetPathOptionsCmd = cmd('text.setPathOptions', {
 	clipIds: IdListSchema,
-	path: TextPathGeometrySchema.nullable(),
+	maskId: IdRefSchema.nullable().optional(),
 	reversePath: z.boolean().optional(),
 	perpendicularToPath: z.boolean().optional(),
 	forceAlignment: z.boolean().optional(),
@@ -137,6 +139,6 @@ export const TEXT_ANIMATOR_COMMANDS = [
 	TextSelectorUpdateCmd,
 	TextAnimatorApplyPresetCmd,
 	TextAnimatorConvertLegacyCmd,
-	TextSetPathCmd,
+	TextSetPathOptionsCmd,
 	TextSetPerCharacter3dCmd,
 ] as const;
