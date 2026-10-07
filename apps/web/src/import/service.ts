@@ -33,6 +33,7 @@ import {
 	mismatchPatch,
 	type SequenceSettingsPatch,
 } from './assets.ts';
+import { importCaptionFiles, isCaptionFileName, isCaptionXml } from './captions.ts';
 import { type ClientJobStore, clientJobs } from './client-jobs.ts';
 import { baseName, type DesktopBridge, getDesktopBridge } from './desktop.ts';
 import { type ImportFailure, type ImportPrompts, importPrompts } from './prompts.ts';
@@ -156,6 +157,23 @@ export class EngineImportService implements ImportService {
 		const failed: ImportFailure[] = [];
 		const acquired: Acquired[] = [];
 		const projectId = this.session.projectId;
+		// wp captions: caption files go onto caption tracks of the open sequence, not into the media pipeline.
+		{
+			const all = input.files ?? [];
+			const capFiles: File[] = [];
+			const rest: File[] = [];
+			for (const f of all) (isCaptionFileName(f.name) || (await isCaptionXml(f)) ? capFiles : rest).push(f);
+			const capPaths = (input.paths ?? []).filter(isCaptionFileName);
+			if ((capFiles.length || capPaths.length) && !this.session.getState().readOnly) {
+				const r = await importCaptionFiles(this.session, this.engine, { files: capFiles, paths: capPaths });
+				failed.push(...r.failed);
+				input = { ...input, files: rest, paths: (input.paths ?? []).filter((p) => !isCaptionFileName(p)) };
+				if (!rest.length && !input.paths?.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: r.trackIds.length });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+			}
+		}
 		if (this.session.getState().readOnly) {
 			// Nothing can be committed: do not upload bytes for nothing.
 			const names = [...(input.files ?? []).map((f) => f.name), ...(input.paths ?? []).map(baseName)];

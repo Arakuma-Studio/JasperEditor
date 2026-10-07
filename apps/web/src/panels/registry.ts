@@ -14,6 +14,7 @@ import project from './project/index.ts';
 import properties from './properties/index.ts';
 import scopes from './scopes/index.ts';
 import source from './source/index.ts';
+import text from './text/index.ts';
 import timeline from './timeline/index.ts';
 import tools from './tools/index.ts';
 import type { PanelDefinition } from './types.ts';
@@ -35,6 +36,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	jobs,
 	lumetri,
 	scopes,
+	text,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

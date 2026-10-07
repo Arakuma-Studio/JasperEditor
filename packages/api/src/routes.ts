@@ -22,6 +22,7 @@ import {
 	CacheUsageSchema,
 } from './cache.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
+import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
@@ -109,7 +110,9 @@ export type RouteOwner =
 	| 'wp-m3-cachegc'
 	| 'wp-m3-presets'
 	// parity program: versions and crash recovery (D-39)
-	| 'process';
+	| 'process'
+	// parity program: captions and transcripts
+	| 'wp-captions';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -651,6 +654,14 @@ export const ROUTES = {
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
 		owner: 'wp-m3-presets',
+	},
+	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
+	captionFileRead: {
+		method: 'POST',
+		path: '/api/captions/read',
+		body: CaptionFileReadRequestSchema,
+		response: CaptionFileReadResponseSchema,
+		owner: 'wp-captions',
 	},
 } as const satisfies Record<string, RouteDef>;
 

@@ -6,6 +6,7 @@ import {
 	API_HEADER,
 	API_VERSION,
 	buildPath,
+	type CaptionFileReadRequest,
 	type DerivativeKind,
 	type EngineJob,
 	ErrorShapeSchema,
@@ -233,6 +234,10 @@ export class EngineClient {
 	}
 	releaseLease(projectId: string, leaseId: string) {
 		return this.call('leaseRelease', { params: { projectId, leaseId } });
+	}
+	/** wp captions: a caption / transcript file by path (local engines). */
+	readCaptionFile(req: CaptionFileReadRequest) {
+		return this.call('captionFileRead', { body: req });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });

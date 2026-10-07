@@ -50,6 +50,7 @@ import { setDefaultTransition, TRANSITION_ALIGNMENTS } from '../effects/transiti
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { projectItemOf } from '../program/layer-ops.ts';
 import type { PanelProps } from '../types.ts';
+import { CaptionLanes } from './components/CaptionLanes.tsx';
 import { ContextMenu, GestureTooltip, SequenceTabs, Toolbar, ZoomBar } from './components/Chrome.tsx';
 import { PlayheadLine, TimecodeReadout } from './components/Playhead.tsx';
 import { RULER_H, Ruler } from './components/Ruler.tsx';
@@ -1220,6 +1221,21 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					/>
 				</div>
 			</div>
+			{/* wp captions: caption tracks above the video tracks */}
+			<CaptionLanes
+				seq={seq}
+				session={session}
+				viewport={viewport}
+				headerWidth={headerWidth}
+				selected={selectedSet}
+				openMenu={openMenu}
+				toast={toast}
+				run={run}
+				openCaption={(clipId) => {
+					session.select('timeline', [clipId], 'replace', { primary: clipId });
+					run('captions.openPanel');
+				}}
+			/>
 			<div className="flex min-h-0 flex-1">
 				<div className="relative shrink-0 border-r border-pr-border" style={{ width: headerWidth }}>
 					<TrackHeaders
