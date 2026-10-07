@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+
+<fcpxml version="1.10">
+    <resources>
+        <format id="r1" name="FFVideoFormat1080p2997" frameDuration="1001/30000s" width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>
+        <format id="r2" name="FFVideoFormat3840x2160p2997" frameDuration="1001/30000s" width="3840" height="2160" colorSpace="1-1-1 (Rec. 709)"/>
+        <asset id="r3" name="Harbour_A" uid="0E2A8F" start="3600s" duration="72072/1000s" hasVideo="1" format="r2" hasAudio="1" videoSources="1" audioSources="1" audioChannels="2" audioRate="48000">
+            <media-rep kind="original-media" sig="0E2A8F" src="file:///Volumes/Shoot/Harbour%20A.mov"/>
+        </asset>
+        <asset id="r4" name="Gulls" start="0s" duration="60s" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
+            <media-rep kind="original-media" src="file:///Volumes/Shoot/Gulls.wav"/>
+        </asset>
+        <asset id="r5" name="Harbour_B" start="0s" duration="30030/1000s" hasVideo="1" format="r1" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">
+            <media-rep kind="original-media" src="file:///Volumes/Shoot/Harbour_B.mov"/>
+        </asset>
+        <effect id="r6" name="Cross Dissolve" uid="FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265"/>
+        <effect id="r7" name="Basic Title" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"/>
+        <effect id="r8" name="Gaussian Blur" uid="FFGaussianBlur"/>
+        <media id="r9" name="Compound Clip 1">
+            <sequence format="r1" duration="60060/30000s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+                <spine>
+                    <asset-clip ref="r5" offset="0s" name="Harbour_B" start="0s" duration="60060/30000s" format="r1" tcFormat="NDF" audioRole="dialogue"/>
+                </spine>
+            </sequence>
+        </media>
+    </resources>
+    <library location="file:///Users/editor/Movies/Harbour.fcpbundle/">
+        <event name="Harbour Day" uid="5C1D">
+            <project name="Harbour Cut" uid="9F2A" modDate="2026-09-01 10:00:00 +0000">
+                <sequence format="r1" duration="300300/30000s" tcStart="3600/1s" tcFormat="DF" audioLayout="stereo" audioRate="48k">
+                    <spine>
+                        <asset-clip ref="r3" offset="3600/1s" name="Harbour_A" start="3601001/1000s" duration="150150/30000s" format="r2" tcFormat="NDF" audioRole="dialogue">
+                            <adjust-transform position="10 -5" scale="1.2 1.2" rotation="-15"/>
+                            <adjust-blend amount="0.8"/>
+                            <adjust-volume amount="-6dB">
+                                <param name="amount">
+                                    <keyframeAnimation>
+                                        <keyframe time="3601001/1000s" value="-20dB"/>
+                                        <keyframe time="3602002/1000s" value="-6dB" interp="ease"/>
+                                    </keyframeAnimation>
+                                </param>
+                            </adjust-volume>
+                            <filter-video ref="r8" name="Gaussian Blur">
+                                <param name="Amount" key="9999/gaussianBlur/radius" value="12"/>
+                            </filter-video>
+                            <marker start="3602002/1000s" duration="1001/30000s" value="Boat enters" note="good"/>
+                            <chapter-marker start="3603003/1000s" duration="1001/30000s" value="Chapter 2" posterOffset="11/30s"/>
+                            <asset-clip ref="r4" lane="-1" offset="3601001/1000s" name="Gulls" start="10s" duration="120120/30000s" audioRole="effects"/>
+                            <title ref="r7" lane="1" offset="3601001/1000s" name="Opening Title" start="3600s" duration="60060/30000s">
+                                <text><text-style ref="ts1">HARBOUR</text-style></text>
+                            </title>
+                            <caption lane="2" offset="3601001/1000s" name="Morning" start="3600s" duration="60060/30000s" role="iTT?captionFormat=ITT.en">
+                                <text placement="bottom"><text-style ref="ts2">Morning at the harbour</text-style></text>
+                                <text-style-def id="ts2"><text-style font=".AppleSystemUIFont" fontSize="13" fontFace="Regular" fontColor="1 1 1 1" backgroundColor="0 0 0 1"/></text-style-def>
+                            </caption>
+                        </asset-clip>
+                        <transition name="Cross Dissolve" offset="7209009/2000s" duration="30030/30000s">
+                            <filter-video ref="r6" name="Cross Dissolve"/>
+                        </transition>
+                        <ref-clip ref="r9" offset="721001/200s" name="Compound Clip 1" duration="60060/30000s">
+                            <timeMap>
+                                <timept time="0s" value="0s" interp="linear"/>
+                                <timept time="60060/30000s" value="120120/30000s" interp="linear"/>
+                            </timeMap>
+                        </ref-clip>
+                        <gap name="Gap" offset="3607007/1000s" start="3600s" duration="90090/30000s"/>
+                    </spine>
+                </sequence>
+            </project>
+        </event>
+    </library>
+</fcpxml>

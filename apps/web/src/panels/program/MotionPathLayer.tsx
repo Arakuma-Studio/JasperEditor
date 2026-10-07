@@ -10,14 +10,21 @@ type Props = { path: MotionPath; view: View; selected: ReadonlySet<string> };
 
 export const MotionPathLayer = memo(function MotionPathLayer({ path, view, selected }: Props) {
 	const d = dotsPathData(path, view);
+	// keyframes-blend: the Anchor Point path draws in the accent colour (its keys are layer-space values).
+	const anchor = path.property === 'anchor';
 	return (
-		<g data-testid="overlay-motion-path" data-clip-id={path.clipId} pointerEvents="none">
+		<g
+			data-testid={anchor ? 'overlay-anchor-path' : 'overlay-motion-path'}
+			data-clip-id={path.clipId}
+			data-property={path.property}
+			pointerEvents="none"
+		>
 			<path d={d} stroke={MONITOR_COLORS.casing} strokeWidth={4} strokeLinecap="round" fill="none" />
 			<path
-				data-testid="motion-path-dots"
+				data-testid={anchor ? 'anchor-path-dots' : 'motion-path-dots'}
 				data-count={path.dots.length}
 				d={d}
-				stroke={MONITOR_COLORS.handleFill}
+				stroke={anchor ? 'var(--pr-accent)' : MONITOR_COLORS.handleFill}
 				strokeWidth={2}
 				strokeLinecap="round"
 				fill="none"

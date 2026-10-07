@@ -197,7 +197,7 @@ export function cutSelection(ctx: CommandCtx, target: ClipboardTarget, args: Cli
 	}
 	let commands: Command[] = [];
 	if (p.kind === 'clips')
-		commands = [{ type: 'clip.lift', clipIds: p.clips!.clips.map((c) => c.id) } as Command];
+		commands = [{ type: 'clip.lift', clipIds: p.clips!.clips.map((c) => c.id), groups: false } as Command];
 	else if (p.kind === 'keyframes') {
 		commands = [
 			{

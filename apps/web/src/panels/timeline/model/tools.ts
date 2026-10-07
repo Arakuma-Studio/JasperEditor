@@ -26,6 +26,8 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	ripple: { id: 'ripple', label: 'Ripple Edit Tool', key: 'B', icon: 'tool.ripple' },
 	rolling: { id: 'rolling', label: 'Rolling Edit Tool', key: 'N', icon: 'tool.rolling' },
 	rateStretch: { id: 'rateStretch', label: 'Rate Stretch Tool', key: 'R', icon: 'tool.rateStretch' },
+	// audio-fx: Premiere's Remix tool has no default key.
+	remix: { id: 'remix', label: 'Remix Tool', key: '', icon: 'tool.remix' },
 	razor: { id: 'razor', label: 'Razor Tool', key: 'C', icon: 'tool.razor' },
 	slip: { id: 'slip', label: 'Slip Tool', key: 'Y', icon: 'tool.slip' },
 	slide: { id: 'slide', label: 'Slide Tool', key: 'U', icon: 'tool.slide' },
@@ -42,7 +44,7 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 export const TOOL_GROUPS: readonly (readonly ToolId[])[] = [
 	['selection'],
 	['trackSelectForward', 'trackSelectBackward'],
-	['ripple', 'rolling', 'rateStretch'],
+	['ripple', 'rolling', 'rateStretch', 'remix'],
 	['razor'],
 	['slip', 'slide'],
 	['pen', 'rectangle', 'ellipse'],
@@ -58,6 +60,7 @@ export type GestureKind =
 	| 'ripple'
 	| 'roll'
 	| 'stretch'
+	| 'remix'
 	| 'slip'
 	| 'slide'
 	| 'razor'
@@ -108,6 +111,10 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 			const caps = kindCapabilities(hit.clip.kind);
 			return caps?.supportsSpeed && isBoundedContent(hit.clip) ? 'stretch' : 'trim';
 		}
+		case 'remix':
+			// audio-fx: the end of an audio (music) clip remixes it; anything else only selects.
+			if (onClip && hit.zone === 'out' && hit.clip.kind === 'audio') return 'remix';
+			return onClip ? 'select' : 'marquee';
 		case 'razor':
 			return onClip ? 'razor' : 'none';
 		case 'slip':
@@ -142,6 +149,7 @@ export function cursorFor(tool: ToolId, hit: Hit, mods: Mods): string {
 		case 'trim':
 		case 'ripple':
 		case 'stretch':
+		case 'remix':
 			return hit.kind === 'clip' && hit.zone === 'in' ? 'w-resize' : 'e-resize';
 		case 'roll':
 			return 'col-resize';

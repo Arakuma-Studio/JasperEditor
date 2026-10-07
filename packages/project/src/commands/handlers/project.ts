@@ -249,7 +249,16 @@ export const projectHandlers: HandlerMap = {
 		const fingerprintChanges = !!cmd.fingerprint && cmd.fingerprint !== asset.fingerprint;
 		// A rebuilt Remotion bundle is new content by definition (S08:MGC-013), and Replace Footage (S07:PRC-018)
 		// says so explicitly: no force needed.
-		if (fingerprintChanges && !cmd.force && !cmd.replace && !(asset.kind === 'mg-bundle' && cmd.mgBundle))
+		// An offline placeholder of an imported timeline (wp interchange) has no content to compare: linking it to its
+		// file is the first time the fingerprint is known (the Link Media dialog compares name, size and duration).
+		const placeholder = asset.fingerprint.startsWith('pending:interchange:');
+		if (
+			fingerprintChanges &&
+			!cmd.force &&
+			!cmd.replace &&
+			!placeholder &&
+			!(asset.kind === 'mg-bundle' && cmd.mgBundle)
+		)
 			h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
 		const sr = cmd.sourceRange;
 		if (sr?.mediaId && sr.mediaId !== asset.id && !doc.media[sr.mediaId])

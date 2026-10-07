@@ -3,7 +3,7 @@
 // anime.js gets its own vendor chunk (S11:ANM-023).
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ThirdPartyLicenses } from '../src/shell/licenses.tsx';
+import { portedSection, ThirdPartyLicenses } from '../src/shell/licenses.tsx';
 
 afterEach(() => {
 	cleanup();
@@ -46,5 +46,27 @@ describe('About ▸ third-party notices (S11:FIX-010)', () => {
 		render(<ThirdPartyLicenses />);
 		open(screen.getByTestId('third-party-notices'));
 		await waitFor(() => expect(screen.getByText(/not available in this build/)).toBeTruthy());
+	});
+
+	it('shows the ported source records on their own (licenses/ported, D-36)', async () => {
+		const file = [
+			'# Third-party notices',
+			'| animejs | 4.5.0 | MIT |',
+			'<!-- ported-source:start -->',
+			'# Ported source code',
+			'| Blur kernels | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 |',
+			'<!-- ported-source:end -->',
+		].join('\n');
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(file)),
+		);
+		render(<ThirdPartyLicenses />);
+		open(screen.getByTestId('ported-source-notices'));
+		await waitFor(() =>
+			expect(screen.getByTestId('ported-source-notices-text').textContent).toContain('Blur kernels'),
+		);
+		expect(screen.getByTestId('ported-source-notices-text').textContent).not.toContain('animejs');
+		expect(portedSection('# no records')).toBeNull();
 	});
 });

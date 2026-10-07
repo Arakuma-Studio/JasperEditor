@@ -19,7 +19,7 @@ import {
 } from '../../clipboard/payload.ts';
 import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
-import { isHoldOnlyValue } from '../../keyframes.ts';
+import { isHoldOnlyValue, retimeRoving, reversedKeyTiming } from '../../keyframes.ts';
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
@@ -256,13 +256,16 @@ function retimeKeys<T>(
 	h: HandlerContext,
 	scale = false,
 ): Keyframe<T>[] {
-	const fromSpan = from.timing.duration * flicksPerFrame(from.rate);
-	const toSpan = to.timing.duration * flicksPerFrame(to.rate);
+	// keyframes-blend: sequence offsets run from the first to the LAST frame of the clip, (duration − 1) frames,
+	// exactly as `contentTimeAt` maps a reversed clip (a full `duration` span landed reversed pastes one frame off).
+	const fromSpan = Math.max(0, from.timing.duration - 1) * flicksPerFrame(from.rate);
+	const toSpan = Math.max(0, to.timing.duration - 1) * flicksPerFrame(to.rate);
 	const k = scale && fromSpan > 0 ? toSpan / fromSpan : 1;
-	// Onto a clip running the other way the path is traversed backwards: spatial in/out tangents swap.
+	// Onto a clip running the other way the path is traversed backwards: spatial in/out tangents swap and every
+	// segment's temporal ease is mirrored (`reversedKeyTiming`).
 	const flip = from.timing.speed.reverse !== to.timing.speed.reverse;
 	const byTime = new Map<number, Keyframe<T>>();
-	for (const key of keys) {
+	keys.forEach((key, i) => {
 		const c = (key.time - from.timing.sourceIn) / from.timing.speed.rate;
 		const seqOffset = (from.timing.speed.reverse ? fromSpan - c : c) * k;
 		const content = to.timing.speed.reverse
@@ -270,9 +273,13 @@ function retimeKeys<T>(
 			: to.timing.sourceIn + seqOffset * to.timing.speed.rate;
 		const time = Math.max(0, Math.round(content));
 		const copy: Keyframe<T> = { ...clone(key), id: h.ids.next('kf'), time };
-		if (flip && copy.spatial) copy.spatial = reversedSpatial(copy.spatial);
+		if (flip) {
+			Object.assign(copy, clone(reversedKeyTiming(keys as readonly Keyframe<unknown>[], i)));
+			if (copy.spatial) copy.spatial = reversedSpatial(copy.spatial);
+			// A roving key stays roving (its run reverses with it).
+		}
 		byTime.set(time, copy);
-	}
+	});
 	return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
@@ -588,7 +595,10 @@ function applyAttributes(
 				const spec =
 					h.registries.effects.get(fx.effectId, fx.effectVersion) ?? h.registries.effects.get(fx.effectId);
 				const medium =
-					spec?.appliesTo ?? (src.kind === 'audio' || src.kind === 'nest-audio' ? 'audio' : 'video');
+					spec?.appliesTo ??
+					(src.kind === 'audio' || src.kind === 'nest-audio' || src.kind === 'synthetic-audio'
+						? 'audio'
+						: 'video');
 				if ((medium === 'audio' && !caps.audio) || (medium === 'video' && !caps.visual)) continue;
 				const copy = clone(fx);
 				resolver.remapEffectMedia([copy]);
@@ -788,14 +798,20 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 						? reversedSpatial(k.spatial)
 						: clone(k.spatial)
 					: undefined;
+			// keyframes-blend: pasted the other way round, each segment's temporal ease is mirrored too.
+			const timing =
+				dir < 0
+					? reversedKeyTiming(track.keyframes as readonly Keyframe<unknown>[], track.keyframes.indexOf(k))
+					: k;
 			incoming.set(time, {
 				id: h.ids.next('kf'),
 				time,
 				value: v.value,
-				interpolation: hold ? 'hold' : k.interpolation,
-				easeIn: { influence: k.easeIn.influence, slope: k.easeIn.slope },
-				easeOut: { influence: k.easeOut.influence, slope: k.easeOut.slope },
+				interpolation: hold ? 'hold' : timing.interpolation,
+				easeIn: { influence: timing.easeIn.influence, slope: timing.easeIn.slope },
+				easeOut: { influence: timing.easeOut.influence, slope: timing.easeOut.slope },
 				...(spatial ? { spatial } : {}),
+				...(k.roving ? { roving: true } : {}),
 			});
 		}
 		if (incoming.size === 0) continue;
@@ -806,6 +822,8 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 		].sort((a, b) => a.time - b.time);
 		target.anim.keyframes = merged as never;
 		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[]);
+		// keyframes-blend: roving keys sit where the motion passes them.
+		retimeRoving(target.anim.keyframes as Keyframe<unknown>[]);
 		refreshAutoBezier(target.anim);
 		(target.anim as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
 		pasted.push(...[...incoming.values()].map((k) => k.id));
@@ -839,6 +857,13 @@ function copySequence(
 	}
 	reidentifyClipChildren(seq.master as never, h);
 	resolver.remapEffectMedia(seq.master.effects);
+	// wp-multicam: a multi-camera source's angles name its tracks (angle ids stay: clips select them).
+	const mc = seq.multicam;
+	if (mc)
+		for (const a of mc.angles) {
+			if (a.videoTrackId !== null) a.videoTrackId = trackMap.get(a.videoTrackId) ?? a.videoTrackId;
+			a.audioTrackIds = a.audioTrackIds.map((id) => trackMap.get(id) ?? id);
+		}
 	for (const m of seq.markers) m.id = h.ids.next('mrk');
 	const clipMap = new Map<string, string>();
 	const trackerMaps = new Map<string, Map<string, string>>();
@@ -906,6 +931,28 @@ function copySequence(
 
 function pasteItems(doc: DDoc, cmd: CommandOf<'project.pasteItems'>, h: HandlerContext): unknown {
 	const p = payloadOf(cmd.payload, h, ['project-items']);
+	return insertProjectItems(doc, p, cmd.binId, cmd.index, h);
+}
+
+/**
+ * Adds a validated `project-items` payload to the project (CLB-007): bins, items, deep-copied sequences and every
+ * referenced entity, all with new ids. Shared by Paste and the interchange import (`project.importTimeline`).
+ */
+export function insertProjectItems(
+	doc: DDoc,
+	p: ClipboardPayload,
+	targetBin: string | null | undefined,
+	targetIndex: number | undefined,
+	h: HandlerContext,
+): {
+	itemIds: string[];
+	map: Record<string, string>;
+	sequenceIds: string[];
+	sequenceMap: Record<string, string>;
+	createdMedia: string[];
+	reusedMedia: string[];
+} {
+	const cmd = { binId: targetBin, index: targetIndex };
 	const sec = p.items!;
 	assertBin(doc, cmd.binId, h);
 	const binId = cmd.binId ?? null;
@@ -982,6 +1029,7 @@ function pasteItems(doc: DDoc, cmd: CommandOf<'project.pasteItems'>, h: HandlerC
 		itemIds: roots,
 		map: itemMap,
 		sequenceIds,
+		sequenceMap: Object.fromEntries(nestMap),
 		createdMedia: resolver.createdMedia,
 		reusedMedia: [...new Set(resolver.reusedMedia)],
 	};

@@ -11,10 +11,8 @@ import {
 	type Animatable,
 	clipContentTime,
 	evaluate,
-	flicksPerFrame,
 	isAnimated,
 	type Rational,
-	type RenderAudioClip,
 	type RenderVisualClip,
 	type ResolvedLayerProps,
 	resolveLayerProps,
@@ -482,51 +480,6 @@ export function cropMaskFilter(o: {
 		`pad=w=${2 * bw}:h=${2 * bh}:x=${bw}:y=${bh}:color=black:eval=frame,` +
 		`crop=w=${bw}:h=${bh}:x='${offset(bw, px('left'), px('right'))}':y='${offset(bh, px('top'), px('bottom'))}'`;
 	return alphaMultiply(o.label, mask);
-}
-
-// ---- Audio levels (S01:FX-010: gain → clip volume → track volume → master volume)
-
-/** Audio blocks between two evaluations of a keyframed volume (2.7 ms at 48 kHz). */
-const VOLUME_BLOCK = 128;
-
-/**
- * The volume filters of an audio clip chain whose first sample is sequence frame `f0` (after the clip's time
- * stretch, 48 kHz): constant `volume=…dB` without keyframes; otherwise the gain of every frame, sampled like the
- * composition's per-frame volume (`audioGainAt`: clip volume at the clip frame's content time, track and master
- * volume at its sequence time, handles take the nearest clip frame), as a `volume` expression evaluated every
- * `VOLUME_BLOCK` samples that steps at frame boundaries (≤ -96 dB is silence, like `dbToGain`).
- */
-export function audioVolumeFilters(
-	a: Pick<RenderAudioClip, 'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track'>,
-	master: { volumeDb: Animatable<number> },
-	f0: number,
-	f1: number,
-	fps: Rational,
-): string[] {
-	if (!isAnimated(a.volumeDb) && !isAnimated(a.track.volumeDb) && !isAnimated(master.volumeDb)) {
-		const db = a.gainDb + a.volumeDb.value + a.track.volumeDb.value + master.volumeDb.value;
-		return [`volume=${fmt6(db)}dB`];
-	}
-	const F = flicksPerFrame(fps);
-	const n = f1 - f0;
-	const db = new Float64Array(n);
-	for (let k = 0; k < n; k++) {
-		const i = Math.max(0, Math.min(a.duration - 1, f0 + k - a.start));
-		const content = a.sourceIn + i * F * a.speed.rate;
-		const seqT = (a.start + i) * F;
-		db[k] = Math.max(
-			-200,
-			a.gainDb +
-				evaluate(a.volumeDb, content) +
-				evaluate(a.track.volumeDb, seqT) +
-				evaluate(master.volumeDb, seqT),
-		);
-	}
-	const value = piecewiseExpr(fitPieces(db, FIT_TOLERANCE.db), frameIndex(fps, 0, true));
-	return [
-		`asetnsamples=n=${VOLUME_BLOCK}:p=0`,
-		`volume=volume='st(1,(${value}));if(lte(ld(1),-96),0,pow(10,ld(1)/20))':eval=frame`,
-	];
 }
 
 const fmt6 = (n: number) => {

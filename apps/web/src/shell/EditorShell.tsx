@@ -14,7 +14,9 @@ import {
 	useSyncExternalStore,
 } from 'react';
 import { useNavigate } from 'react-router';
+import { setUiAutomationHost } from '../agent-bridge/ui-automation.ts';
 import { installClipboardEvents } from '../clipboard/events.ts';
+import { isCommandChecked, isCommandEnabled, listCommands, runCommand } from '../commands/registry.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { claimExportModeHost, exportMode, useExportMode } from '../export/mode.ts';
 import { setMonitorPanelServices } from '../panels/program/monitor-commands.ts';
@@ -32,7 +34,7 @@ import { focusStore, installFocusTracking } from './focus.ts';
 import { HeaderBar, useFullscreen } from './header/HeaderBar.tsx';
 import { AppMenu, TitleBar, useDocumentTitle, useMenubarMenus } from './header/TitleBar.tsx';
 import { installKeyboardDispatcher } from './keymap/dispatcher.ts';
-import { loadKeyboardLayoutMap } from './keymap/format.ts';
+import { loadKeyboardLayoutMap, shortcutFor } from './keymap/format.ts';
 import { useLayoutMode } from './layout-mode.ts';
 import { MENUBAR, WORKSPACES_MENU } from './menus/model.ts';
 import type { MenuEnv, ShellMenuItem } from './menus/resolve.ts';
@@ -273,6 +275,27 @@ function ShellBody() {
 	);
 
 	useEffect(() => runtime.services.register('shell', 'shell', shell), [runtime.services, shell]);
+	// mcp-cli (live-UI automation): ui_commands / ui_command / ui_state run against this shell.
+	useEffect(
+		() =>
+			setUiAutomationHost({
+				getCtx: runtime.getCtx,
+				runCommand: (id, args) => runCommand(id, runtime.getCtx(), args),
+				listCommands: () => listCommands(),
+				isEnabled: isCommandEnabled,
+				isChecked: isCommandChecked,
+				shortcutFor: (id) => shortcutFor(id, { platform: runtime.platform, runtime: runtime.runtime }),
+				labelFor: (c, ctx) => {
+					try {
+						return c.labelFor?.(ctx) ?? c.label;
+					} catch {
+						return c.label;
+					}
+				},
+				shell: () => shell,
+			}),
+		[runtime, shell],
+	);
 	// Dev/E2E hook: inspect the dock and workspaces from the console or Playwright.
 	useEffect(() => {
 		if (!import.meta.env.DEV) return;

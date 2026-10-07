@@ -41,7 +41,7 @@ playwright-report/
 .stage/tmp/*
 !.stage/tmp/.gitkeep
 
-# Paid Remotion Editor Starter: reference-only, never committed (clean-room rewrite)
+# Paid Remotion Editor Starter: never open, read or commit (licence; AGENTS.md §1)
 .reference/
 editor-starter.zip
 vendor/
@@ -49,3 +49,4 @@ vendor/
 # Desktop packaging stages (apps/desktop/scripts/package.mjs)
 dist-deploy/
 native/bin/
+.stage-am/

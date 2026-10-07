@@ -92,5 +92,18 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			texts: text ? [{ title: 'Creative Commons Attribution 4.0 International', text }] : [],
 		});
 	}
+	// wp speech: Whisper weights of the speech models (MIT / Apache-2.0)
+	for (const m of await svc.speechModels.list()) {
+		out.push({
+			id: `model:${m.id}`,
+			name: `${m.name} — speech model weights${m.installed ? '' : ' (not installed)'}`,
+			version: m.revision.slice(0, 12),
+			license: m.license,
+			bundled: false,
+			sourceUrl: m.sourceUrl,
+			notice: `Attribution: ${m.attribution}. Licence: ${m.licenseUrl}`,
+			texts: [],
+		});
+	}
 	return out;
 }

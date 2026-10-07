@@ -18,6 +18,8 @@ export const JOB_KINDS = [
 	'browser-download',
 	'gc',
 	'relink-scan',
+	// wp interchange: timeline export (pre-renders, audio essence, the document)
+	'interchange-export',
 	// M2 (ARCHITECTURE §19.7)
 	'process',
 	'track',

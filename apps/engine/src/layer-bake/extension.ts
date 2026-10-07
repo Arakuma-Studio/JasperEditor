@@ -78,7 +78,7 @@ function entryOf(
 export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 	return {
 		id: LAYER_BAKE_EXTENSION_ID,
-		kinds: new Set(['text', 'shape']),
+		kinds: new Set(['text', 'shape', 'captions']),
 		claimsLayer: (c) => needsBake(c),
 		bakes: (c) => (needsBake(c) ? 'remotion' : null),
 		bakesTransition: () => (svc.unavailableReason() ? null : 'remotion'),

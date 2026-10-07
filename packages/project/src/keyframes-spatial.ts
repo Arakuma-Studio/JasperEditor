@@ -29,9 +29,15 @@ export function spatialModeOf(k: Pick<Keyframe<unknown>, 'spatial'>): SpatialInt
 	return k.spatial?.mode ?? 'linear';
 }
 
-/** Auto Bezier tangents of key `i` (Catmull-Rom, S03:KF-030): `out = (next − prev) / 6`, `in = −out`. */
+/**
+ * Auto Bezier tangents of key `i` (S03:KF-030). keyframes-blend: keys with `spatial.auto: 'proportional'` (every key
+ * made Auto Bezier now) use After Effects' rule — direction (next − prev), each handle ⅓ of its neighbouring chord,
+ * none on the first / last key (EffectCraft `auto_spatial`); others keep the Catmull-Rom rule `out = (next − prev) / 6`,
+ * `in = −out` they were written with.
+ */
 export function autoTangents(kfs: readonly Keyframe<unknown>[], i: number): Tangents {
 	const k = kfs[i]!;
+	if (k.spatial?.auto === 'proportional') return proportionalTangents(kfs, i);
 	const prev = kfs[i - 1] ?? k;
 	const next = kfs[i + 1] ?? k;
 	if (!isVec2Value(k.value) || !isVec2Value(prev.value) || !isVec2Value(next.value))
@@ -39,6 +45,24 @@ export function autoTangents(kfs: readonly Keyframe<unknown>[], i: number): Tang
 	const dx = (next.value[0] - prev.value[0]) / 6;
 	const dy = (next.value[1] - prev.value[1]) / 6;
 	return { inTangent: [0 - dx, 0 - dy], outTangent: [dx, dy] };
+}
+
+function proportionalTangents(kfs: readonly Keyframe<unknown>[], i: number): Tangents {
+	const k = kfs[i]!;
+	const prev = kfs[i - 1];
+	const next = kfs[i + 1];
+	const none: Tangents = { inTangent: [0, 0], outTangent: [0, 0] };
+	if (!prev || !next || !isVec2Value(k.value) || !isVec2Value(prev.value) || !isVec2Value(next.value))
+		return none;
+	const dx = next.value[0] - prev.value[0];
+	const dy = next.value[1] - prev.value[1];
+	const dl = Math.hypot(dx, dy);
+	if (!(dl > 1e-12)) return none;
+	const lin = Math.hypot(k.value[0] - prev.value[0], k.value[1] - prev.value[1]) / 3;
+	const lout = Math.hypot(next.value[0] - k.value[0], next.value[1] - k.value[1]) / 3;
+	const nx = dx / dl;
+	const ny = dy / dl;
+	return { inTangent: [0 - nx * lin, 0 - ny * lin], outTangent: [nx * lout, ny * lout] };
 }
 
 /** Tangents of key `i` as the evaluator uses them (zero for linear, derived for auto, stored otherwise). */
@@ -211,7 +235,12 @@ function isOpposite(a: Vec2, b: Vec2): boolean {
 /** Spatial data of a NEW key of a point property whose default mode is `mode` (S03:KF-021). */
 export function newKeySpatial(mode: SpatialInterpolation | undefined, value: unknown): Spatial | undefined {
 	if (!mode || mode === 'linear' || !isVec2Value(value)) return undefined;
-	return { mode, inTangent: [0, 0], outTangent: [0, 0] };
+	return {
+		mode,
+		inTangent: [0, 0],
+		outTangent: [0, 0],
+		...(mode === 'auto-bezier' ? { auto: 'proportional' as const } : {}),
+	};
 }
 
 /**
@@ -227,10 +256,12 @@ export function setSpatialMode(kfs: Keyframe<unknown>[], i: number, input: Spati
 		return;
 	}
 	if (mode === 'auto-bezier') {
-		k.spatial = { mode, ...autoTangents(kfs, i) };
+		// keyframes-blend: (re-)applying Auto Bezier uses After Effects' proportional rule.
+		k.spatial = { mode, inTangent: [0, 0], outTangent: [0, 0], auto: 'proportional' };
+		k.spatial = { ...k.spatial, ...autoTangents(kfs, i) };
 		return;
 	}
-	const base = spatialModeOf(k) === 'linear' ? autoTangents(kfs, i) : effectiveTangents(kfs, i);
+	const base = spatialModeOf(k) === 'linear' ? proportionalTangents(kfs, i) : effectiveTangents(kfs, i);
 	let inTangent: Vec2 = input.inTangent ? [input.inTangent[0], input.inTangent[1]] : base.inTangent;
 	let outTangent: Vec2 = input.outTangent ? [input.outTangent[0], input.outTangent[1]] : base.outTangent;
 	if (mode === 'continuous-bezier') {

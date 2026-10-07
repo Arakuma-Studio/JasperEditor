@@ -3,9 +3,10 @@
 //   `{ok: false, conflict: true, revision}` result (S01:PER-025) instead of an exception.
 // - leases (S01:PER-040): acquire / heartbeat / release, with transparent re-acquisition when the engine
 //   forgot the lease (restart, expiry while the laptop slept) and "take over" support.
-// - duplicate / export / import are composed client-side from the M1 routes; restoring a version needs a
-//   route that M1 does not have (see docs/wp-notes/WP-2E.md).
-import type { Lease, ProjectSummary, VersionInfo } from '@jasper/api';
+// - duplicate / export / import are composed client-side from the M1 routes;
+// - saved versions (read, restore in place or as a copy) and the crash-recovery journal use the routes of the
+//   process workstream (ARCHITECTURE D-39, docs/project-files.md).
+import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	createRandomIdSource,
@@ -19,6 +20,9 @@ import {
 	type OpenedProject,
 	type ProjectStore,
 	type ProjectViewState,
+	type RecoveredSnapshot,
+	type RecoveryStore,
+	type RecoveryWrite,
 	type SaveResult,
 } from './types.ts';
 
@@ -50,7 +54,7 @@ function randomSessionId(): string {
 	return c?.randomUUID ? c.randomUUID() : `ses_${Math.random().toString(36).slice(2, 14)}`;
 }
 
-export class EngineProjectStore implements ProjectStore {
+export class EngineProjectStore implements ProjectStore, RecoveryStore {
 	private readonly ids = createRandomIdSource();
 	private readonly mgTemplates: MgTemplateRegistry | undefined;
 	private readonly platform: string;
@@ -146,12 +150,55 @@ export class EngineProjectStore implements ProjectStore {
 		return [...versions].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 	}
 
+	/** S01:PER-001: restores a saved version as a new project copy; returns its id. */
 	async restoreVersion(projectId: string, versionId: string): Promise<string> {
-		// TODO(WP-2F/M2): needs `GET /api/projects/:pid/versions/:versionId` (not in the M1 route table).
-		throw new EngineError(
-			'NOT_IMPLEMENTED',
-			`Restoring version ${versionId} of ${projectId} needs an engine route that arrives after M1`,
-		);
+		return (await this.engine.restoreVersion(projectId, versionId, { mode: 'copy' })).projectId;
+	}
+
+	/** Writes a saved version over the project (the engine keeps the replaced state as a version). */
+	async revertToVersion(projectId: string, versionId: string, leaseId?: string): Promise<number> {
+		const r = await this.engine.restoreVersion(projectId, versionId, {
+			mode: 'replace',
+			...(leaseId ? { leaseId } : {}),
+		});
+		return r.revision;
+	}
+
+	async saveDocumentAs(doc: ProjectDocument, name: string): Promise<string> {
+		return this.createFrom(doc, name);
+	}
+
+	// ------------------------------------------------------------ crash recovery (S01:PER-021, AC-18)
+
+	async writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void> {
+		await this.engine.putRecovery(projectId, sessionId, {
+			leaseId: w.leaseId,
+			baseRevision: w.baseRevision,
+			revision: w.revision,
+			changes: w.changes,
+			changeCount: w.changeCount,
+			envelope: this.envelope(w.document, w.revision),
+		});
+	}
+
+	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {
+		return (await this.engine.listRecovery(projectId)).candidates;
+	}
+
+	async readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot> {
+		const r = await this.engine.getRecovery(projectId, sessionId);
+		const loaded = loadProject(r.envelope, { ids: this.ids, mgTemplates: this.mgTemplates });
+		if (loaded.readOnly)
+			throw new EngineError('VALIDATION_FAILED', 'The unsaved changes were made by a newer JasperEditor');
+		return { info: r.candidate, document: loaded.document, repairs: loaded.repairs };
+	}
+
+	async discardRecovery(projectId: string, sessionId: string, leaseId?: string): Promise<void> {
+		try {
+			await this.engine.deleteRecovery(projectId, sessionId, leaseId);
+		} catch (e) {
+			if (!isCode(e, 'NOT_FOUND', 'PROJECT_NOT_FOUND')) throw e;
+		}
 	}
 
 	async duplicate(projectId: string, name: string): Promise<string> {
