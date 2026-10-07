@@ -343,3 +343,57 @@ describe('Essential Sound invariants and repair', () => {
 		expect(checkInvariants(r2.document)).toEqual([]);
 	});
 });
+
+describe('audio effects through the clipboard and effect presets', () => {
+	it('copy/paste and Save/Apply Preset carry audio effects with their keys; Essential markers are dropped', async () => {
+		const { buildEffectsPayload, buildEffectPreset, parseEffectPreset, defaultRegistries } = await import(
+			'../src/index.ts'
+		);
+		const h = new Harness();
+		const m = h.registerVideo({ kind: 'audio', seconds: 20 });
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { audio: 'A1' } }]);
+		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { audio: 'A2' } }]);
+		const a = h.clips('A1')[0]!.id;
+		const b = h.clips('A2')[0]!.id;
+		const r = h.ok([
+			{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.audio.amplify', ref: '$amp' },
+			{ type: 'param.set', target: ['effect', '$amp', 'leftGain'], value: -6 },
+			{ type: 'param.setAnimated', target: ['effect', '$amp', 'leftGain'], animated: true, at: { frames: 0 } },
+			{ type: 'param.set', target: ['effect', '$amp', 'leftGain'], value: 3, at: { frames: 30 } },
+			{ type: 'essentialSound.setType', clipIds: [a], audioType: 'dialogue' },
+			{ type: 'essentialSound.set', clipIds: [a], values: { 'repair.dehum.on': true } },
+		]);
+		const amp = r.refs.$amp!;
+		const A = () => h.seq.clips[a] as unknown as { effects: { id: string; essential?: string }[] };
+		const B = () =>
+			h.seq.clips[b] as unknown as {
+				effects: {
+					effectId: string;
+					essential?: string;
+					params: Record<string, { keyframes: { value: unknown }[] }>;
+				}[];
+			};
+		const all = A().effects.filter((e) => e.id === amp || e.essential).map((e) => e.id);
+		expect(all.length).toBe(2);
+		const payload = JSON.parse(JSON.stringify(buildEffectsPayload(h.doc, a, { effectIds: all })));
+		h.ok([{ type: 'effect.paste', payload, clipIds: [b] }]);
+		const pasted = B().effects.filter((e) => e.effectId.startsWith('jasper.audio.'));
+		expect(pasted.map((e) => e.effectId).sort()).toEqual(['jasper.audio.amplify', 'jasper.audio.dehummer']);
+		expect(pasted.find((e) => e.effectId === 'jasper.audio.amplify')!.params.leftGain!.keyframes.map((k) => k.value)).toEqual([-6, 3]);
+		// B has no Essential Sound settings: the pasted DeHummer is an ordinary effect.
+		expect(pasted.every((e) => e.essential === undefined)).toBe(true);
+		expect(checkInvariants(h.doc)).toEqual([]);
+
+		const preset = buildEffectPreset(h.doc, a, {
+			name: 'Voice chain',
+			type: 'scale',
+			sections: { effectIds: [amp] },
+			id: 'fxp_AUDIO',
+		});
+		const parsed = parseEffectPreset(JSON.parse(JSON.stringify(preset)));
+		if (!parsed.ok) throw new Error(parsed.message);
+		h.ok([{ type: 'effect.applyPreset', preset: parsed.preset, clipIds: [b] }]);
+		expect(B().effects.filter((e) => e.effectId === 'jasper.audio.amplify').length).toBe(2);
+		expect(checkInvariants(h.doc, { effects: defaultRegistries().effects })).toEqual([]);
+	});
+});
