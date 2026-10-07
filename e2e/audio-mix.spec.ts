@@ -146,20 +146,23 @@ test('Audio Gain (G): Normalize Max Peak measures and sets the clip gain', async
 	await expect.poll(async () => (await doc()).sequences[seq]!.clips[a!.id]!.gainDb ?? 0).toBe(0);
 });
 
-test('native export renders the mixer balance', async ({ request }) => {
-	const { file, job } = await exportViaUi(page, request, {
-		engine: 'native',
-		fileName: 'audio-mix.mp4',
-		expectPath: /native/i,
-		outDir,
+for (const engine of ['native', 'remotion'] as const)
+	test(`${engine} export renders the mixer balance`, async ({ request }) => {
+		test.setTimeout(900_000);
+		const { file, job } = await exportViaUi(page, request, {
+			engine,
+			fileName: `audio-mix-${engine}.mp4`,
+			expectPath: new RegExp(engine, 'i'),
+			outDir,
+			jobTimeoutMs: 900_000,
+		});
+		expect(job.state).toBe('succeeded');
+		const left = channelDbOf(file, 0);
+		const right = channelDbOf(file, 1);
+		// A1 is muted; the tone on A2 (mean −19.1 dB) is balanced hard left
+		expect(left).toBeGreaterThan(-25);
+		expect(right).toBeLessThan(left - 40);
 	});
-	expect(job.state).toBe('succeeded');
-	const left = channelDbOf(file, 0);
-	const right = channelDbOf(file, 1);
-	// A1 is muted; the tone on A2 (mean −19.1 dB) is balanced hard left
-	expect(left).toBeGreaterThan(-25);
-	expect(right).toBeLessThan(left - 40);
-});
 
 test('Voice-over: the fake microphone is recorded into A3 at the playhead', async () => {
 	const summary = await sequenceSummary(page);
