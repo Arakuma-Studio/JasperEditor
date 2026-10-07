@@ -11,7 +11,6 @@
 //   POST /api/imports/lottie/export      LottieExportRequest → LottieExportResult
 // and the `imports` native extension (interpreted pictures for the Remotion render path).
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import {
 	ImageSequenceDetectRequestSchema,
 	ImageSequenceRequestSchema,
@@ -248,19 +247,19 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 			if (body.outputPath) localOnly();
 			return exportLottie(body, {
 				registry,
-				readMedia: async (key) => {
+				readMedia: async (key: string) => {
 					const p = await registry.resolvePath(key);
 					return p ? readFile(p) : null;
 				},
-				lottieJson: async (r) =>
+				lottieJson: async (r: MediaRecord) =>
 					JSON.parse(
 						await readFile(
 							await normalizedLottieFile(await sourcePath(r), cacheDir, fingerprintHex(r.fingerprint)),
 							'utf8',
 						),
 					),
-				displayPng: async (r, variant) => readFile(await variants.ensureAndWait(r, 'display', variant)),
-				outDir: join(core.config.paths.appdir, 'renders'),
+				displayPng: async (r: MediaRecord, variant: string) => readFile(await variants.ensureAndWait(r, 'display', variant)),
+				outDir: core.config.paths.rendersDir,
 			});
 		}),
 	);
