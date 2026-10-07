@@ -78,7 +78,9 @@ export type ParamSpec = {
 			| 'wheel'
 			| 'curve'
 			| 'media'
-			| 'point';
+			| 'point'
+			// parity (roto): a string param naming a roto object of the clip (picker of the clip's objects).
+			| 'roto-object';
 		bipolar?: boolean;
 	};
 	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */

@@ -109,7 +109,9 @@ export type PropertySpec = {
 			| 'curve'
 			| 'media'
 			/** M2 (S08): a JSON editor (arrays, free-form objects). */
-			| 'json';
+			| 'json'
+			/** parity (roto): picker of the clip's roto objects (string param holding a roto id). */
+			| 'roto-object';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
