@@ -960,6 +960,9 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const fps = snap.settings.fps;
 	const W = snap.settings.width;
 	const H = snap.settings.height;
+	const R0 = snap.range.start;
+	const R1 = snap.range.end;
+	const frameSec = fps.den / fps.num;
 
 	const encoder = output.encoder ?? LEGACY_X264_CHOICE;
 	const enc = o.still
