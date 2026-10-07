@@ -538,7 +538,7 @@ export function packAtlas(
 	sizes: { w: number; h: number }[],
 	max: number,
 ): { slots: AtlasSlot[]; width: number; height: number } | null {
-	const order = sizes.map((s, i) => i).sort((a, b) => sizes[b]!.h - sizes[a]!.h);
+	const order = sizes.map((_s, i) => i).sort((a, b) => sizes[b]!.h - sizes[a]!.h);
 	const area = sizes.reduce((s, x) => s + x.w * x.h, 0);
 	const widest = sizes.reduce((m, x) => Math.max(m, x.w), 1);
 	const width = Math.min(max, Math.max(widest, Math.ceil(Math.sqrt(area) * 1.2)));

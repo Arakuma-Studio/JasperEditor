@@ -157,7 +157,7 @@ const round = (v: number, d = 1e4) => {
 const roundV = (v: Vec3): Vec3 => [round(v[0]), round(v[1]), round(v[2])];
 
 /** The lowest video track above `trackId` free over [at, at + duration), else a new top track. */
-function freeTrackAbove(seq: DSeq, h: HandlerContext, trackId: string, at: number, duration: number): string {
+function freeTrackAbove(seq: DSeq, trackId: string, at: number, duration: number): string {
 	const i = seq.videoTracks.findIndex((t) => t.id === trackId);
 	for (let k = i + 1; k < seq.videoTracks.length; k++) {
 		const t = seq.videoTracks[k]!;
@@ -173,7 +173,7 @@ export const cameraTrackerHandlers: HandlerMap = {
 		const c = clip as { cameraTracker?: DTracker };
 		if (c.cameraTracker) h.fail('E_INVALID_PARAM', `Clip "${clip.name}" already has a 3D Camera Tracker`);
 		const asset = doc.media[clip.mediaId];
-		if (!asset || asset.kind !== 'video') h.fail('E_INVALID_PARAM', 'The 3D Camera Tracker needs a video');
+		if (asset?.kind !== 'video') h.fail('E_INVALID_PARAM', 'The 3D Camera Tracker needs a video');
 		const rate = rotoRateOf(asset, seq.settings.frameRate as Rational);
 		const n = rotoFrameCount(asset, rate);
 		const span = checkSpan(
@@ -281,7 +281,7 @@ export const cameraTrackerHandlers: HandlerMap = {
 			const depth = Math.max(1, dot3(sub3(centre, wc.eye), fwd));
 			const settings = cameraTrackerSettingsOf(tracker.settings);
 			const worldWidth = (0.25 * frame.width * depth * settings.targetSize) / (100 * wc.zoom);
-			const track = freeTrackAbove(seq, h, clip.trackId, clip.start, clip.duration);
+			const track = freeTrackAbove(seq, clip.trackId, clip.start, clip.duration);
 			const place = { sequenceId: seq.id, at: clip.start, duration: clip.duration, track };
 			const res =
 				layerKind === 'text'
@@ -336,7 +336,7 @@ export const cameraTrackerHandlers: HandlerMap = {
 
 		let cameraId = cmd.replaceCamera ? tracker.createdCameraId : undefined;
 		let camClip = cameraId ? (seq.clips[cameraId] as Draft<CameraClip> | undefined) : undefined;
-		if (!camClip || camClip.kind !== 'camera') {
+		if (camClip?.kind !== 'camera') {
 			const r = (
 				threeDHandlers['clip.addCamera'] as never as (
 					d: DDoc,

@@ -21,8 +21,11 @@ function val(d: Doc, _owner: string, _path: string, text: string, frame = 60) {
 	if (r.error) throw new Error(r.error);
 	return JSON.parse(String(r.value)) as number[];
 }
-const close = (a: number[], b: number[], eps = 1e-6) =>
-	a.forEach((x, i) => expect(Math.abs(x - b[i]!)).toBeLessThan(eps));
+const close = (a: number[], b: number[], eps = 1e-6) => {
+	a.forEach((x, i) => {
+		expect(Math.abs(x - b[i]!)).toBeLessThan(eps);
+	});
+};
 
 describe('3D layer transforms in expressions', () => {
 	it('a 3D layer at its defaults maps like its 2D Motion; toWorld returns [x, y, z]', () => {
