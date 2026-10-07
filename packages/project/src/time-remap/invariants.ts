@@ -17,8 +17,14 @@ type RemapClip = Clip & { timeRemap?: TimeRemap; timeInterpolation?: string };
 export function remapIssues(clip: Clip, rate: Rational, mediaDur: number | null): RemapIssue[] {
 	const c = clip as RemapClip;
 	const out: RemapIssue[] = [];
-	if (c.timeInterpolation !== undefined && !(TIME_INTERPOLATIONS as readonly string[]).includes(c.timeInterpolation))
-		out.push({ code: 'INV-012', message: `Clip ${c.id} has an unknown time interpolation "${c.timeInterpolation}"` });
+	if (
+		c.timeInterpolation !== undefined &&
+		!(TIME_INTERPOLATIONS as readonly string[]).includes(c.timeInterpolation)
+	)
+		out.push({
+			code: 'INV-012',
+			message: `Clip ${c.id} has an unknown time interpolation "${c.timeInterpolation}"`,
+		});
 	const r = c.timeRemap;
 	if (!r) return out;
 	if (c.kind !== 'video') {
@@ -31,7 +37,10 @@ export function remapIssues(clip: Clip, rate: Rational, mediaDur: number | null)
 		if (!Number.isFinite(k.time) || !Number.isFinite(k.source))
 			out.push({ code: 'INV-011', message: `Speed keyframe ${k.id} of ${c.id} is not finite` });
 		if (i > 0 && !(k.time > keys[i - 1]!.time))
-			out.push({ code: 'INV-011', message: `Speed keyframes of ${c.id} must have strictly increasing times` });
+			out.push({
+				code: 'INV-011',
+				message: `Speed keyframes of ${c.id} must have strictly increasing times`,
+			});
 		if (k.ramp !== undefined && !(k.ramp >= 0))
 			out.push({ code: 'INV-012', message: `Speed keyframe ${k.id} of ${c.id} has a negative transition` });
 		if (k.ease !== undefined && !(k.ease >= 0 && k.ease <= 1))
@@ -42,7 +51,10 @@ export function remapIssues(clip: Clip, rate: Rational, mediaDur: number | null)
 			out.push({ code: 'INV-012', message: `Clip ${c.id} has a non-finite edge speed` });
 	if (out.length > 0 || !r.enabled) return out;
 	if (c.speed.reverse)
-		out.push({ code: 'INV-012', message: `Clip ${c.id} is time-remapped and plays in reverse at the same time` });
+		out.push({
+			code: 'INV-012',
+			message: `Clip ${c.id} is time-remapped and plays in reverse at the same time`,
+		});
 	const max = MAX_REMAP_SPEED / c.speed.rate + 1e-9;
 	if (remapSlopes(r).some((s) => Math.abs(s) > max))
 		out.push({ code: 'INV-012', message: `Clip ${c.id} has a speed segment beyond ±20,000 %` });
@@ -58,7 +70,10 @@ export function remapIssues(clip: Clip, rate: Rational, mediaDur: number | null)
 export function repairRemap(clip: Clip, rate: Rational, mediaDur: number | null): string[] {
 	const c = clip as RemapClip;
 	const notes: string[] = [];
-	if (c.timeInterpolation !== undefined && !(TIME_INTERPOLATIONS as readonly string[]).includes(c.timeInterpolation)) {
+	if (
+		c.timeInterpolation !== undefined &&
+		!(TIME_INTERPOLATIONS as readonly string[]).includes(c.timeInterpolation)
+	) {
 		delete c.timeInterpolation;
 		notes.push('unknown time interpolation reset to Frame Sampling');
 	}
