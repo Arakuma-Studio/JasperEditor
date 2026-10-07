@@ -16,6 +16,7 @@ import {
 } from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyframes-spatial.ts';
 import { MASK_PROPS } from '../../masks/model.ts';
+import { PUPPET_PIN_PROPS } from '../../schema/puppet.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import { textAnimatorPropertySpecs } from '../../registry/text-animator-properties.ts';
 import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
@@ -102,6 +103,13 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			for (const prop of MASK_PROPS) {
 				const a = m[prop];
 				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['mask', m.id, prop], seq, clip });
+			}
+	// sim-warp: Puppet pin properties (`["puppetPin", id, prop]`).
+	for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? [])
+		for (const pin of fx.puppet?.pins ?? [])
+			for (const prop of PUPPET_PIN_PROPS) {
+				const a = pin[prop];
+				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['puppetPin', pin.id, prop], seq, clip });
 			}
 	// S11:ATP-006: keyframed params of anime templates (dynamic `params.<name>` keys; edits validate through
 	// param.ts target resolution, which needs the template to be installed).

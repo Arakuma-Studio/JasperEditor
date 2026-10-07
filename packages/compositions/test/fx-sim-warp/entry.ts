@@ -1,6 +1,6 @@
 // Browser entry of fx-sim-warp-gl.test.ts: characteristic pixels, determinism and seed stability of every effect of
 // the simulation-warp family through the real GPU host. Each function returns plain data to assert on.
-import { FX_FAMILIES } from '@jasper/project';
+import { FX_FAMILIES, liquifyApplyStroke, liquifyEmpty, meshWarpRest, meshWarpSetVertex, resolvePuppet } from '@jasper/project';
 import { canvas, centroid, centroidLum, defaults, pixelsOf, maxDiff, mean, picture, premulOk, px, run, solid, spec, sumDiff } from './harness.ts';
 
 const W = 96;
@@ -316,6 +316,49 @@ const api = {
 			smear: sumDiff(sm.out, sm.input),
 			bezier: sumDiff(bw.out, bw.input),
 			bezierCorner: px(bw.out, 1, 1)[3],
+		};
+	},
+
+	warps() {
+		const mwRest = fx('jasper.mesh-warp', { distortionMesh: meshWarpRest(7, 7) });
+		const mwEmpty = fx('jasper.mesh-warp', {});
+		const moved = meshWarpSetVertex(meshWarpRest(4, 4), 2, 2, [0.7, 0.5]);
+		const mw = fx('jasper.mesh-warp', { rows: 4, columns: 4, distortionMesh: moved });
+		const lq0 = fx('jasper.liquify', {});
+		const mesh = liquifyApplyStroke(liquifyEmpty(W, H), W, H, { tool: 'warp', points: [[30, 32], [60, 32]], size: 40, pressure: 100 });
+		const lq = fx('jasper.liquify', { distortionMesh: mesh });
+		const lqHalf = fx('jasper.liquify', { distortionMesh: mesh, distortionPercentage: 50 });
+		const lqView = fx('jasper.liquify', { distortionMesh: mesh, viewMesh: true });
+		const pupDoc = {
+			meshes: [{ id: 'm', name: 'M', seed: [0.5, 0.5], density: 50, expansion: 0, triangles: 200 }],
+			pins: [
+				{ id: 'a', name: 'a', kind: 'position', meshId: 'm', rest: [0.1, 0.5], position: { value: [0.1, 0.5], keyframes: [] }, scale: { value: 100, keyframes: [] }, rotation: { value: 0, keyframes: [] }, amount: { value: 50, keyframes: [] }, extent: { value: 15, keyframes: [] }, inFront: { value: 50, keyframes: [] } },
+				{ id: 'b', name: 'b', kind: 'position', meshId: 'm', rest: [0.9, 0.5], position: { value: [0.9, 0.1], keyframes: [] }, scale: { value: 100, keyframes: [] }, rotation: { value: 0, keyframes: [] }, amount: { value: 50, keyframes: [] }, extent: { value: 15, keyframes: [] }, inFront: { value: 50, keyframes: [] } },
+			],
+		};
+		const rest = JSON.parse(JSON.stringify(pupDoc));
+		rest.pins[1].position.value = [0.9, 0.5];
+		const pp0 = fx('jasper.puppet', {}, { structures: { puppet: resolvePuppet(rest as never, 0) } });
+		const pp = fx('jasper.puppet', {}, { structures: { puppet: resolvePuppet(pupDoc as never, 0) } });
+		const ppNone = fx('jasper.puppet', {});
+		return {
+			mwRest: maxDiff(mwRest.out, mwRest.input),
+			mwEmpty: maxDiff(mwEmpty.out, mwEmpty.input),
+			mw: sumDiff(mw.out, mw.input),
+			lq0: maxDiff(lq0.out, lq0.input),
+			lq: sumDiff(lq.out, lq.input),
+			lqHalf: sumDiff(lqHalf.out, lqHalf.input),
+			lqView: sumDiff(lqView.out, lq.out),
+			pp0: maxDiff(
+				canvasRegion(pp0.out, pp0.layout.box.x, pp0.layout.box.y, W, H),
+				canvasRegion(pp0.input, pp0.layout.box.x, pp0.layout.box.y, W, H),
+			),
+			pp: sumDiff(
+				canvasRegion(pp.out, pp.layout.box.x, pp.layout.box.y, W, H),
+				canvasRegion(pp.input, pp.layout.box.x, pp.layout.box.y, W, H),
+			),
+			ppCanvas: [pp.out.width, pp.out.height],
+			ppNone: maxDiff(ppNone.out, ppNone.input),
 		};
 	},
 

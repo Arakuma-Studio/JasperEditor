@@ -4,6 +4,7 @@
 import { contentTimeAt } from '../derive/index.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
+import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import {
 	applyMat3,
@@ -35,6 +36,8 @@ export type ResolvedEffect = {
 	params: Record<string, ParamValue>;
 	/** wp masks: the effect applies inside these masks (absent = no masks: everywhere). */
 	masks?: ResolvedMask[];
+	/** sim-warp: the Puppet effect's meshes and pins at the frame. */
+	puppet?: ResolvedPuppet;
 };
 
 /** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
@@ -162,6 +165,7 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 		enabled: fx.enabled,
 		params: Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t)])),
 		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
+		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
 	}));
 	const cropFx = effects.find((e) => e.effectId === 'jasper.crop' && e.enabled);
 	const crop: Crop | null = cropFx

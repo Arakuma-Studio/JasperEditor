@@ -25,6 +25,7 @@ export * from './motion-blur.ts';
 export * from './params.ts';
 export * from './passes.ts';
 export * from './shader.ts';
+export * from './simulation-warp/meshes.ts';
 
 /** The families, with the id prefix every entry of a family uses (checked by the catalogue test). */
 export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: readonly EffectSpec[] }[] = [

@@ -169,6 +169,12 @@ export const AnimRGBASchema = animatable(RGBASchema);
 export const CurveValueSchema = z.looseObject({ curve: z.array(Vec2Schema).min(2) });
 export type CurveValue = { curve: Vec2[] };
 
+/** Most numbers of a mesh param value (sim-warp: Mesh Warp / Liquify distortion meshes). */
+export const MESH_VALUE_MAX = 400_000;
+/** sim-warp: a distortion mesh value (`mesh` params): finite numbers, layout defined by the effect. */
+export const MeshValueSchema = z.array(z.number()).max(MESH_VALUE_MAX);
+export type MeshValue = number[];
+
 /** Effect/transition parameter values (S01:FX-020; `curve` added in M2, ARCHITECTURE §19.2). */
 export const ParamValueSchema = z.union([
 	z.number(),
@@ -180,6 +186,18 @@ export const ParamValueSchema = z.union([
 	RGBASchema,
 	z.looseObject({ mediaId: z.string() }),
 	CurveValueSchema,
+	// sim-warp: a keyframable distortion mesh (Mesh Warp, Liquify): a flat list of numbers whose layout the effect
+	// defines; keys interpolate number by number (lists of different lengths hold).
+	MeshValueSchema,
 ]);
-export type ParamValue = number | boolean | string | Vec2 | Vec3 | RGBA | { mediaId: string } | CurveValue;
+export type ParamValue =
+	| number
+	| boolean
+	| string
+	| Vec2
+	| Vec3
+	| RGBA
+	| { mediaId: string }
+	| CurveValue
+	| MeshValue;
 export const AnimParamSchema = animatable(ParamValueSchema);

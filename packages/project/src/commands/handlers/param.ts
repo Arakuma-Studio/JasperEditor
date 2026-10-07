@@ -12,8 +12,9 @@ import {
 	type MaskProp,
 } from '../../masks/model.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
+import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
-import type { Animatable, Keyframe, SpatialInterpolation } from '../../schema/common.ts';
+import { type Animatable, type Keyframe, MESH_VALUE_MAX, type SpatialInterpolation } from '../../schema/common.ts';
 import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
@@ -25,6 +26,7 @@ import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
 import { locateMask, validateMaskPath } from './mask.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
+import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './sim-warp.ts';
 import { ensureShapeStorage } from './shape.ts';
 import { ensureMoreOptions, parseSourceText, sourceTextDraftAnim } from './text-animators.ts';
 import type { HandlerMap } from './util.ts';
@@ -41,7 +43,8 @@ type ValueRule = {
 		| 'media'
 		| 'curve'
 		| 'json'
-		| 'maskPath';
+		| 'maskPath'
+		| 'mesh';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
@@ -282,6 +285,26 @@ export function resolveTarget(
 			label: `${loc.mask.name}.${MASK_PROP_LABELS[prop]}`,
 		};
 	}
+	// sim-warp: `["puppetPin", pinId, "position" | "scale" | "rotation" | "amount" | "extent" | "inFront"]` (content time of
+	// the owning clip; position layer-box-normalised).
+	if (head === 'puppetPin' && a && rest.length === 1) {
+		const prop = rest[0]!;
+		if (!isPinProp(prop)) return bad();
+		const loc = locatePin(doc, a);
+		if (!loc) return h.fail('E_NOT_FOUND', `Puppet pin not found: ${a}`);
+		assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
+		const rule: ValueRule =
+			prop === 'position'
+				? { kind: 'vec2', holdOnly: false, spatial: 'auto-bezier' }
+				: { kind: 'number', range: PUPPET_PIN_RANGES[prop], holdOnly: false };
+		return {
+			type: 'anim',
+			anim: loc.pin[prop] as Draft<Animatable<unknown>>,
+			rule,
+			time: (at) => h.clipContentTime(loc.seq, loc.clip, at),
+			label: `${loc.pin.name}.${PUPPET_PIN_LABELS[prop]}`,
+		};
+	}
 	// Wave-2 transition framework: `["transition", trnId, param]`; keyframe times are flicks from the span's start.
 	if (head === 'transition' && a && rest.length === 1) {
 		let seq: DSeq | undefined;
@@ -404,6 +427,10 @@ export function validateValue(
 		}
 		case 'maskPath':
 			return { value: validateMaskPath(v, h, label), clamped: false };
+		case 'mesh':
+			// sim-warp: a distortion mesh — a list of finite numbers (layout checked by the effect when it renders).
+			if (!Array.isArray(v) || v.length > MESH_VALUE_MAX || !v.every(isNum)) return fail();
+			return { value: [...v], clamped: false };
 		case 'curve': {
 			// {curve: [[x, y], …]}: ≥ 2 points in 0..1 (clamped), sorted by x, x strictly increasing.
 			const pts = (v as { curve?: unknown } | null)?.curve;

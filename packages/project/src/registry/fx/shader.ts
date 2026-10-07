@@ -146,6 +146,8 @@ export type FxPlanContext = {
 	paramsAt?: FxParamsAt;
 	/** The clip (names, source in-point, source timecode); see `FxClipInfo`. */
 	clip?: FxClipInfo;
+	/** sim-warp: structured data of the instance at this frame (Puppet; the layer's masks), see `FxStructures`. */
+	structures?: FxStructures;
 };
 
 /** Per-frame context of `GpuEffect.uniforms` (also the values behind the built-in uniforms). */
@@ -170,8 +172,6 @@ export type FxFrameContext = FxPlanContext & {
 	 * custom map). Null when none is bound, it is not loaded yet (renders wait) or it is not an image.
 	 */
 	pixels?: (param: string) => FxPixels | null;
-	/** sim-warp: structured data of the instance at this frame (Puppet: the resolved meshes and pins). */
-	structures?: FxStructures;
 };
 
 /** sim-warp: CPU pixels of a media picture (`FxFrameContext.pixels`). */

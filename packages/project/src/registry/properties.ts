@@ -69,7 +69,9 @@ export type ValueKind =
 	| 'string'
 	| 'curve'
 	| 'media'
-	| 'json';
+	| 'json'
+	/** sim-warp: a keyframable distortion mesh (flat number list; edited on the Program monitor). */
+	| 'mesh';
 export type PropertyGroup =
 	| 'motion'
 	| 'opacity'
@@ -144,7 +146,9 @@ export type PropertySpec = {
 			/** Wave expressions: a clip picker (Layer Control; value = clip id, '' = none). */
 			| 'layer'
 			/** Wave expressions: Dropdown Menu Control (1-based index into the effect's `items`). */
-			| 'menu';
+			| 'menu'
+			/** sim-warp: a distortion mesh row (stopwatch and keyframe navigation; edited on the Program monitor). */
+			| 'mesh';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
@@ -1440,7 +1444,9 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		hint ??
 		(kind === 'curve'
 			? 'curve'
-			: kind === 'media'
+			: kind === 'mesh'
+				? 'mesh'
+				: kind === 'media'
 				? 'media'
 				: kind === 'number'
 					? 'scrub'
@@ -1751,6 +1757,14 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 			};
 		case 'json':
 			return { ...(s.valueSchema ?? {}), ...base };
+		case 'mesh':
+			return {
+				...base,
+				type: 'array',
+				description: `${s.description ? `${s.description} ` : ''}Distortion mesh: a flat list of numbers in the effect's layout (edit it with the effect's mesh/brush commands).`,
+				items: { type: 'number' },
+				maxItems: 400000,
+			};
 	}
 }
 

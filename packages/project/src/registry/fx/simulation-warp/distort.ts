@@ -7,7 +7,7 @@ import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
-import type { FxFrameContext, FxLayerMask } from '../shader.ts';
+import type { FxFrameContext, FxLayerMask, GlslChunk } from '../shader.ts';
 import { n, popup, values } from './common.ts';
 import { bool, choice, clamp, num, vec2 } from './core.ts';
 import { MASK_CHOICES, maskOf } from './playground.ts';
@@ -453,6 +453,13 @@ float rs_dist(vec4 a[32], vec2 p) {
 `;
 
 const flatPoly = (pts: [number, number][] | null) => (pts ? pts.flat() : new Array(POLY_POINTS * 2).fill(0));
+
+/** The polygon helpers as a chunk (64-point polygons in vec4[32] uniforms: `rs_inside`, `rs_dist`). */
+export const GLSL_POLY_CHUNK: GlslChunk = { name: 'sim/poly', source: GLSL_POLY };
+/** A mask as a 64-point polygon uniform (zeros without one). */
+export const polyUniform = (m: FxLayerMask | null) => ({
+	vec4s: flatPoly(m && m.points.length >= 3 ? resample({ ...m, closed: true }, POLY_POINTS) : null),
+});
 
 export const RESHAPE = defineShaderEffect({
 	id: 'jasper.reshape',

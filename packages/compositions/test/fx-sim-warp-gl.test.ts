@@ -32,6 +32,7 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'bezier-warp', id: 'jasper.bezier-warp', over: { topLeftTangent: [0.4, -0.2], bottomRightTangent: [0.6, 1.3], rightTopVertex: [0.9, 0.1] } },
 	{ name: 'optics', id: 'jasper.optics-compensation', over: { fieldOfView: 120 } },
 	{ name: 'polar', id: 'jasper.polar-coordinates', over: { interpolation: 100 } },
+	{ name: 'liquify-view', id: 'jasper.liquify', over: { viewMesh: true } },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -176,6 +177,21 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.smear).toBeGreaterThan(5);
 		expect(r.bezier).toBeGreaterThan(20);
 		expect(r.bezierCorner).toBe(0); // the corner moved in: transparent
+	});
+
+	it('warps: Mesh Warp, Liquify, Puppet', async () => {
+		const r = await page.call<Record<string, any>>('warps');
+		expect(r.mwRest).toBeLessThanOrEqual(3);
+		expect(r.mwEmpty).toBeLessThanOrEqual(3);
+		expect(r.mw).toBeGreaterThan(20);
+		expect(r.lq0).toBe(0);
+		expect(r.lq).toBeGreaterThan(5);
+		expect(r.lqHalf).toBeLessThan(r.lq);
+		expect(r.lqView).toBeGreaterThan(5);
+		expect(r.pp0).toBeLessThanOrEqual(3); // pins at rest: the layer as is
+		expect(r.pp).toBeGreaterThan(50);
+		expect(r.ppCanvas[1]).toBeGreaterThan(64); // the pulled pin leaves the box: padded canvas
+		expect(r.ppNone).toBe(0);
 	});
 
 	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean; frame?: number }[] = [

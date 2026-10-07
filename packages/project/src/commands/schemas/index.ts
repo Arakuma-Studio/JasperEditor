@@ -8,6 +8,7 @@ import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
 import { MASK_COMMANDS } from './mask.ts';
+import { SIM_WARP_COMMANDS } from './sim-warp.ts';
 import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
@@ -30,6 +31,7 @@ export * from './essential.ts';
 export * from './expression.ts';
 export * from './interchange.ts';
 export * from './mask.ts';
+export * from './sim-warp.ts';
 export * from './multicam.ts';
 export * from './param.ts';
 export * from './preset.ts';
@@ -69,6 +71,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...STRUCTURE_COMMANDS,
 	// wp masks (S03 §17)
 	...MASK_COMMANDS,
+	// sim-warp: Liquify, Mesh Warp, Puppet
+	...SIM_WARP_COMMANDS,
 	// wp captions
 	...CAPTION_COMMANDS,
 	// wp speech
