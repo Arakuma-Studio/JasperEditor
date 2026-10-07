@@ -4,6 +4,7 @@
 // Keys follow Premiere Pro's defaults (keymap-defaults.ts).
 import { editPointFrame, type NearestKind, type Sequence } from '@jasper/project';
 import { z } from 'zod';
+import { defaultTransitionFields } from '../panels/effects/transition-prefs.ts';
 import { driverFor } from '../panels/program/transport-registry.ts';
 import {
 	activeDynamicTrim,
@@ -180,15 +181,6 @@ export const editUxCommands: UiCommand[] = [
 		},
 		{ when: hasEditPoints },
 	),
-	cmd(
-		'timeline.cycleTrimType',
-		'Toggle Trim Type',
-		T,
-		(_ctx, e) => {
-			if (e.handle) cycleTrimTypes(e.handle.ui, e.seq);
-		},
-		{ when: hasEditPoints, hidden: true },
-	),
 	...NEAREST.map(([id, label, kind]) => cmd(id, label, T, (ctx, e) => nearest(ctx, e, kind))),
 	cmd('timeline.trimBack', 'Trim Backward', T, (ctx, e) => trimBy(ctx, e, -1), {
 		repeat: true,
@@ -216,21 +208,23 @@ export const editUxCommands: UiCommand[] = [
 		if (f === null) return;
 		toastResult(ctx, trimSelected(e.session, e.handle, e.seq.id, e.playhead - f, { label: 'Extend Edit' }));
 	}),
-	cmd(
-		'timeline.trimNumericEntry',
-		'Trim by Number',
-		T,
-		(_ctx, e) => {
-			if (!e.handle) return;
+	{
+		id: 'timeline.trimNumericEntry',
+		label: 'Trim by Number',
+		description: 'Type a number of frames (with + or −), then Enter, to trim the selected edit points',
+		scope: T,
+		agentExposed: true,
+		argsSchema: z.object({ sign: z.union([z.literal(1), z.literal(-1)]).optional() }).optional(),
+		when: hasEditPoints,
+		run: (ctx, args) => {
+			const e = envOf(ctx);
+			if (!e?.handle) return;
 			commitDynamicTrim();
-			trimMode.setState({ numeric: trimMode.getState().numeric ?? '+' });
-			if (!trimMode.getState().active) enterTrimMode(e.seq.id);
+			const sign = (args as { sign?: 1 | -1 } | undefined)?.sign ?? 1;
+			if (!trimMode.getState().active || trimMode.getState().sequenceId !== e.seq.id) enterTrimMode(e.seq.id);
+			trimMode.setState({ numeric: sign < 0 ? '-' : '+' });
 		},
-		{
-			when: hasEditPoints,
-			description: 'Type +/− and a number of frames, then Enter, to trim the selected edit points',
-		},
-	),
+	},
 	{
 		id: 'timeline.trimByFrames',
 		label: 'Trim Selected Edit Points by Frames',
@@ -251,6 +245,45 @@ export const editUxCommands: UiCommand[] = [
 		when: () => activeDynamicTrim() !== null,
 		run: () => void commitDynamicTrim(),
 	},
+	cmd(
+		'timeline.applyDefaultTransitionsAtEditPoints',
+		'Apply Default Transitions to Selection',
+		T,
+		(ctx, e) => {
+			// Premiere Shift+D with edit points selected (Trim Monitor button): the default video/audio transition at
+			// every selected edit point (FilmCraft trim.applyDefaultTransition).
+			const commands = editPointsOf(e.handle?.ui).flatMap((p) => {
+				const c = e.seq.clips[p.clipId];
+				if (!c) return [];
+				const video = e.seq.videoTracks.some((t) => t.id === c.trackId);
+				const audio = e.seq.audioTracks.some((t) => t.id === c.trackId);
+				if (!video && !audio) return [];
+				const medium = video ? 'video' : 'audio';
+				return [
+					{
+						type: 'transition.applyDefault',
+						clipIds: [c.id],
+						edges: p.edge,
+						...defaultTransitionFields([medium]),
+					},
+				];
+			});
+			if (!commands.length) return;
+			const r = e.session.apply({
+				label: 'Apply Default Transitions',
+				origin: 'user',
+				sequenceId: e.seq.id,
+				commands: commands as never[],
+			});
+			if (!r.ok)
+				ctx.ui.toast({
+					kind: 'warning',
+					message: 'Apply Default Transitions: not possible',
+					detail: r.errors[0]?.message,
+				});
+		},
+		{ when: hasEditPoints },
+	),
 	cmd(
 		'timeline.playAroundEdit',
 		'Play Around the Edit',

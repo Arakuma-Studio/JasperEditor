@@ -11,8 +11,8 @@
 import {
 	type EditPoint,
 	editPointFrame,
-	nearestEditPoints,
 	type NearestKind,
+	nearestEditPoints,
 	nextTrimType,
 	type Sequence,
 	type TrimType,
@@ -83,7 +83,10 @@ export function refreshEditPoints(ui: TimelineUiStore, seq: Sequence): void {
 	const cur = ui.getState().editPoints;
 	if (cur.length === 0) return;
 	const next = cur.map((p) => toSel(seq, toEditPoint(p))).filter((p): p is EditPointSel => !!p);
-	if (next.length !== cur.length || next.some((p, i) => p.frame !== cur[i]!.frame || p.trackId !== cur[i]!.trackId))
+	if (
+		next.length !== cur.length ||
+		next.some((p, i) => p.frame !== cur[i]!.frame || p.trackId !== cur[i]!.trackId)
+	)
 		ui.setState({ editPoints: next });
 }
 
@@ -130,12 +133,19 @@ function rollable(seq: Sequence, p: EditPointSel): boolean {
 	if (!c) return false;
 	const f = p.side === 'out' ? c.start + c.duration : c.start;
 	return Object.values(seq.clips).some(
-		(o) => o.trackId === c.trackId && o.id !== c.id && (p.side === 'out' ? o.start === f : o.start + o.duration === f),
+		(o) =>
+			o.trackId === c.trackId &&
+			o.id !== c.id &&
+			(p.side === 'out' ? o.start === f : o.start + o.duration === f),
 	);
 }
 
 /** Adds an applied movement of the primary edit point to the counters (FilmCraft `add_shift`). */
-export function addShift(points: readonly EditPoint[], applied: number, base?: { outShift: number; inShift: number }): void {
+export function addShift(
+	points: readonly EditPoint[],
+	applied: number,
+	base?: { outShift: number; inShift: number },
+): void {
 	const p = points[0];
 	if (!p) return;
 	const s = base ?? trimMode.getState();
@@ -156,7 +166,12 @@ export function trimCommand(points: readonly EditPoint[], delta: number, clamp =
 
 function labelFor(points: readonly EditPoint[], dynamicTrim: boolean): string {
 	const kind = points[0]?.mode;
-	if (dynamicTrim) return kind === 'roll' ? 'Dynamic Rolling Edit' : kind === 'ripple' ? 'Dynamic Ripple Trim' : 'Dynamic Trim';
+	if (dynamicTrim)
+		return kind === 'roll'
+			? 'Dynamic Rolling Edit'
+			: kind === 'ripple'
+				? 'Dynamic Ripple Trim'
+				: 'Dynamic Trim';
 	return kind === 'roll' ? 'Rolling Edit' : kind === 'ripple' ? 'Ripple Trim' : 'Trim';
 }
 
@@ -197,9 +212,12 @@ type Clock = () => number;
 type Raf = { request(cb: () => void): unknown; cancel(h: unknown): void };
 
 const defaultRaf: Raf = {
-	request: (cb) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : setTimeout(cb, 16)),
+	request: (cb) =>
+		typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : setTimeout(cb, 16),
 	cancel: (h) =>
-		typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame(h as number) : clearTimeout(h as number),
+		typeof cancelAnimationFrame === 'function'
+			? cancelAnimationFrame(h as number)
+			: clearTimeout(h as number),
 };
 
 export class DynamicTrim {
@@ -246,7 +264,8 @@ export class DynamicTrim {
 		this.tick();
 		let speed: number;
 		if (slow) speed = SLOW_DYNAMIC_SPEED * dir;
-		else if (this.speed * dir > 0 && !this.atLimit) speed = Math.max(-MAX_DYNAMIC_SPEED, Math.min(MAX_DYNAMIC_SPEED, this.speed * 2));
+		else if (this.speed * dir > 0 && !this.atLimit)
+			speed = Math.max(-MAX_DYNAMIC_SPEED, Math.min(MAX_DYNAMIC_SPEED, this.speed * 2));
 		else speed = dir;
 		this.speed = speed;
 		this.anchorClock = this.clock();
@@ -303,7 +322,9 @@ export class DynamicTrim {
 	}
 
 	private publish(): void {
-		trimMode.setState({ dynamic: this.done ? null : { speed: this.speed, offset: this.offset, atLimit: this.atLimit } });
+		trimMode.setState({
+			dynamic: this.done ? null : { speed: this.speed, offset: this.offset, atLimit: this.atLimit },
+		});
 		addShift(this.points, this.offset, this.base);
 	}
 
@@ -362,7 +383,7 @@ export class DynamicTrim {
 let dynamic: DynamicTrim | null = null;
 
 export function activeDynamicTrim(): DynamicTrim | null {
-	return dynamic && dynamic.active ? dynamic : null;
+	return dynamic?.active ? dynamic : null;
 }
 
 /** J/L in trim mode. */
@@ -376,7 +397,7 @@ export function dynamicShuttle(
 	opts: { clock?: Clock; raf?: Raf } = {},
 ): DynamicTrim | null {
 	stopPlayAround();
-	if (!dynamic || !dynamic.active) {
+	if (!dynamic?.active) {
 		if (!editPointsOf(handle.ui).length || session.gestureActive) return null;
 		if (session.transport.getState().playing) session.transport.pause();
 		dynamic = new DynamicTrim(session, handle, sequenceId, fps, opts.clock, opts.raf);
@@ -391,7 +412,7 @@ export function commitDynamicTrim(): number {
 }
 
 export function cancelDynamicTrim(): boolean {
-	if (!dynamic || !dynamic.active) return false;
+	if (!dynamic?.active) return false;
 	dynamic.cancel();
 	return true;
 }

@@ -66,6 +66,7 @@ import {
 import { PlaybackDriver } from './playback-driver.ts';
 import { buildProgramDoc, playerDurationFrames, usesProxies } from './render-doc.ts';
 import { TransformOverlay } from './TransformOverlay.tsx';
+import { TrimMonitor, useTrimMonitorVisible } from './TrimMonitor.tsx';
 import { registerDriver } from './transport-registry.ts';
 import {
 	clampPan,
@@ -224,6 +225,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, frameSize, monitor.zoom, monitor.pan);
 	const ctx = useMonitorCommandCtx({ session, panel: 'program', instanceId, engine });
+	const trimVisible = useTrimMonitorVisible(session, seqId);
 	// S03:XF-050 (wp-clipboard): layer context menu; inside the shell its commands get the live context (toasts).
 	const shell = useShellRuntimeOrNull();
 	const [layerMenu, setLayerMenu] = useState<{ x: number; y: number; clipId: string | null } | null>(null);
@@ -510,6 +512,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 							monitor={monitor}
 						/>
 					))}
+				{/* edit-ux: the Trim Monitor replaces the picture while trim mode is on. */}
+				{trimVisible && seqId ? <TrimMonitor session={session} sequenceId={seqId} ctx={ctx} /> : null}
 				{proxyChip ? (
 					<span
 						className="pointer-events-none absolute top-2 right-2 rounded-pr-control bg-pr-raised px-1.5 text-pr-small text-pr-strong"

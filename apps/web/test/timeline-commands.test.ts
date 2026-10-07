@@ -222,7 +222,10 @@ describe('playhead trims (TL-549, AC-11d)', () => {
 		};
 		const { registerTimelineInstance } = await import('../src/panels/timeline/env.tsx');
 		const off = registerTimelineInstance(handle);
-		await h.run('timeline.cycleTrimType');
+		// Toggle Trim Type cycles Ripple → Roll → Trim (Premiere): Trim → Ripple → Roll.
+		await h.run('timeline.toggleTrimType');
+		expect(h.ui.getState().editPoints[0]!.type).toBe('ripple');
+		await h.run('timeline.toggleTrimType');
 		expect(h.ui.getState().editPoints[0]!.type).toBe('roll');
 		h.session.transport.seek(120);
 		await h.run('timeline.extendEditToPlayhead');

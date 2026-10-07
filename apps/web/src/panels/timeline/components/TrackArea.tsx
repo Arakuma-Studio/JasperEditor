@@ -191,29 +191,41 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 }
 
 function EditPointMarks(props: { points: readonly EditPointSel[]; layout: TrackAreaLayout; v: Viewport }) {
+	// Premiere: Trim edit points are red brackets on one side, Ripple yellow, Roll red on both sides of the cut.
+	const mark = (e: EditPointSel, side: 'in' | 'out', color: string, key: string) => {
+		const row = rowOf(props.layout, e.trackId);
+		if (!row) return null;
+		const x = frameToX(props.v, e.frame);
+		return (
+			<div
+				key={key}
+				className="pointer-events-none absolute"
+				style={{
+					left: side === 'out' ? x - 6 : x,
+					top: row.y + 1,
+					width: 6,
+					height: row.height - 2,
+					borderTop: `2px solid ${color}`,
+					borderBottom: `2px solid ${color}`,
+					[side === 'out' ? 'borderRight' : 'borderLeft']: `2px solid ${color}`,
+				}}
+				data-edit-point={e.frame}
+				data-edit-type={e.type}
+			/>
+		);
+	};
 	return (
 		<>
-			{props.points.map((e) => {
-				const row = rowOf(props.layout, e.trackId);
-				if (!row) return null;
-				const x = frameToX(props.v, e.frame);
-				const color = e.type === 'ripple' ? 'var(--pr-trim-ripple)' : 'var(--pr-trim-regular)';
-				return (
-					<div
-						key={`${e.trackId}:${e.frame}:${e.side}`}
-						className="pointer-events-none absolute"
-						style={{
-							left: e.side === 'out' ? x - 6 : x,
-							top: row.y + 1,
-							width: 6,
-							height: row.height - 2,
-							borderTop: `2px solid ${color}`,
-							borderBottom: `2px solid ${color}`,
-							[e.side === 'out' ? 'borderRight' : 'borderLeft']: `2px solid ${color}`,
-						}}
-						data-edit-point={e.frame}
-					/>
-				);
+			{props.points.flatMap((e) => {
+				const key = `${e.trackId}:${e.frame}:${e.side}`;
+				if (e.type === 'roll')
+					return [
+						mark(e, 'out', 'var(--pr-trim-regular)', `${key}:o`),
+						mark(e, 'in', 'var(--pr-trim-regular)', `${key}:i`),
+					];
+				return [
+					mark(e, e.side, e.type === 'ripple' ? 'var(--pr-trim-ripple)' : 'var(--pr-trim-regular)', key),
+				];
 			})}
 		</>
 	);
