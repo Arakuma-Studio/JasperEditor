@@ -137,7 +137,8 @@ export function frameShowing(c: Clip, t: number, rate: Rational): number | null 
 	const F = flicksPerFrame(rate);
 	if (c.frameHold) return Math.abs(c.frameHold.flicks - t) < F / 2 ? c.start : null;
 	const step = F * c.speed.rate;
-	const i = Math.floor((t - c.sourceIn) / step + 1e-6);
+	// A thousandth of a frame of slack (agents pass rounded seconds).
+	const i = Math.floor((t - c.sourceIn) / step + 1e-3);
 	const local = c.speed.reverse ? c.duration - 1 - i : i;
 	return local >= 0 && local < c.duration ? c.start + local : null;
 }
