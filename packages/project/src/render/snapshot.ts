@@ -655,7 +655,26 @@ export function buildRenderSnapshot(
 			if (!caps.visual) continue;
 			const r = c as Record<string, unknown>;
 			const threeD = isLayer3D(c) ? (r.threeD as Layer3D) : undefined;
-			if (threeD) has3dLayer = true;
+			if (threeD) {
+				has3dLayer = true;
+				// Advanced 3D draws physically: what it does not reproduce is said, not dropped silently.
+				if (seq.threeD?.renderer === 'advanced') {
+					const mode = (r.blendMode as string | undefined) ?? 'normal';
+					if (mode !== 'normal')
+						warnings.push({
+							clipId: c.id,
+							code: 'THREE_D_ADVANCED_BLEND',
+							message: `3D layer "${c.name}": Advanced 3D draws 3D layers with Normal blending (its blend mode ${mode} needs Classic 3D)`,
+						});
+					const lt = threeD.material?.lightTransmission;
+					if (lt && (lt.value > 0 || lt.keyframes.some((k) => (k.value as number) > 0)))
+						warnings.push({
+							clipId: c.id,
+							code: 'THREE_D_ADVANCED_TRANSMISSION',
+							message: `3D layer "${c.name}": Advanced 3D shadows are opaque (Light Transmission needs Classic 3D)`,
+						});
+				}
+			}
 			let source: RenderVisualSource;
 			const box = intrinsicBoxOf({ clip: c, doc, seq });
 			switch (c.kind) {

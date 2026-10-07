@@ -42,6 +42,7 @@ import {
 	useContext,
 	useEffect,
 	useMemo,
+	useReducer,
 	useRef,
 	useSyncExternalStore,
 } from 'react';
@@ -59,6 +60,8 @@ import { CompositeChip } from '../fx/composite.tsx';
 import { fxHost } from '../fx/host.ts';
 import type { FxGpuState } from '../fx/status.ts';
 import type { LayerTap } from '../types.ts';
+import { type AdvancedEnvironment, type AdvancedMember, renderAdvancedGL } from './advanced.ts';
+import { extrudedMesh, geometryAt } from './extruded.ts';
 import { type GlPlane, renderClassicGL } from './gl.ts';
 
 // ---------------------------------------------------------------- hub
@@ -150,7 +153,7 @@ export type Run3D = { members: string[]; topTrack: number; bottomTrack: number }
 
 export type Scene3DValue = {
 	mode: Scene3DMode;
-	doc: Pick<RenderSnapshot, 'settings' | 'scene3d' | 'videoTracks'>;
+	doc: Pick<RenderSnapshot, 'settings' | 'scene3d' | 'videoTracks'> & Partial<Pick<RenderSnapshot, 'media'>>;
 	/** The hub of the scope of track `trackIndex` (tracks holding 3D clips). */
 	hubOf(trackIndex: number): Scene3DHub | undefined;
 	/** The runs at an absolute sequence frame (cached). */
@@ -257,15 +260,19 @@ type Fx3DParams = {
 		props: ResolvedLayerProps;
 		material: MaterialState;
 		localFrame: number;
+		contentTime: number;
 	}[];
 	pictures: ReadonlyMap<string, HubPicture>;
 	preview: boolean;
+	renderer: 'classic' | 'advanced';
+	environment: AdvancedEnvironment | null;
+	shadowMapSize: number;
 };
 
 /** Renders a 3D run over the captured backdrop (the chain's source) on the fx GPU host. */
 export const fx3dRun = createEffect<Fx3DParams, null>({
 	type: 'jasper.three-d-run',
-	label: '3D layers (Classic 3D)',
+	label: '3D layers (Classic / Advanced 3D)',
 	documentationLink: null,
 	backend: '2d',
 	calculateKey: (p) => p.key,
@@ -279,6 +286,47 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 		const out = (target as HTMLCanvasElement | OffscreenCanvas).getContext('2d') as CanvasRenderingContext2D;
 		if (!h) throw new Error('WEBGL_UNAVAILABLE: 3D layers need WebGL2');
 		const setup = { ...params.setup, width, height, scale: width / Math.max(1, params.setup.frame.width) };
+		if (params.renderer === 'advanced') {
+			const members: AdvancedMember[] = [];
+			for (const m of params.members) {
+				const pic = params.pictures.get(m.clip.clipId);
+				if (!pic?.compToCanvas || pic.opacity <= 0) continue;
+				const layerToPicture = multiplyMat3(pic.compToCanvas.slice(0, 9) as Mat3, mat3FromMat2D(m.props.matrix));
+				const g = geometryAt(m.clip, m.contentTime);
+				members.push({
+					key: m.clip.clipId,
+					picture: pic.canvas,
+					pictureWidth: pic.width,
+					pictureHeight: pic.height,
+					layerToPicture,
+					world: m.world,
+					mesh: g ? extrudedMesh(m.clip.clipId, pic, layerToPicture, g) : null,
+					material: m.material,
+					opacity: Math.min(1, Math.max(0, pic.opacity)),
+					draw: m.clip.threeD!.material.castsShadows !== 'only',
+				});
+			}
+			try {
+				renderAdvancedGL(
+					h,
+					{
+						setup,
+						members,
+						backdrop: source as TexImageSource,
+						environment: params.environment,
+						shadowMapSize: params.shadowMapSize,
+					},
+					out,
+				);
+			} catch (e) {
+				if (!params.preview) throw e;
+				console.error('[3d]', e);
+				out.globalCompositeOperation = 'copy';
+				out.drawImage(source as CanvasImageSource, 0, 0, width, height);
+				out.globalCompositeOperation = 'source-over';
+			}
+			return;
+		}
 		const planes: GlPlane[] = [];
 		params.members.forEach((m, order) => {
 			const pic = params.pictures.get(m.clip.clipId);
@@ -318,6 +366,32 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 
 // ---------------------------------------------------------------- scope
 
+const envImages = new Map<string, HTMLImageElement | 'error'>();
+
+/** The decoded environment image of a URL (null while loading; renders fail when it cannot be loaded). */
+function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageElement | null {
+	const hit = url ? envImages.get(url) : undefined;
+	const [, bump] = useReducer((n: number) => n + 1, 0);
+	useEffect(() => {
+		if (!url || envImages.has(url)) return;
+		const handle = rendering ? delayRender(`environment image ${url}`) : null;
+		const img = new Image();
+		img.crossOrigin = 'anonymous';
+		img.onload = () => {
+			envImages.set(url, img);
+			bump();
+			if (handle !== null) continueRender(handle);
+		};
+		img.onerror = () => {
+			envImages.set(url, 'error');
+			if (rendering) cancelRender(new Error(`THREE_D_UNSUPPORTED: the environment image could not be loaded (${url})`));
+			bump();
+		};
+		img.src = url;
+	}, [url, rendering]);
+	return hit && hit !== 'error' ? hit : null;
+}
+
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
 
 /**
@@ -345,6 +419,16 @@ export function Scene3DScope({
 	const gpu = scene.mode.mode === 'gpu';
 	const run = gpu ? scene.runsAt(frame).find((r) => r.bottomTrack === trackIndex) : undefined;
 	const version = useSyncExternalStore(hub.subscribe, hub.getVersion, () => 0);
+	// Advanced 3D: the environment light's image (the first environment light that is on).
+	const envLight =
+		run && scene.doc.scene3d?.renderer === 'advanced' && !(isPreview && scene.doc.scene3d?.draft)
+			? (lightsAt(scene.doc.scene3d, frame, scene.doc.settings.fps, { environment: true }).find(
+					(l) => l.type === 'environment' && l.environment?.mediaId,
+				) ?? null)
+			: null;
+	const envMedia = envLight?.environment?.mediaId ? scene.doc.media?.[envLight.environment.mediaId] : null;
+	const envUrl = envMedia ? (isPreview && envMedia.proxyUrl ? envMedia.proxyUrl : envMedia.url) : null;
+	const envImage = useEnvironmentImage(envUrl, rendering);
 	const pictures = new Map<string, HubPicture>();
 	let complete = true;
 	for (const id of run?.members ?? []) {
@@ -352,6 +436,7 @@ export function Scene3DScope({
 		if (p && (p.frame === frame || !rendering)) pictures.set(id, p);
 		else complete = false;
 	}
+	if (rendering && run && envUrl && !envImage) complete = false;
 	const pictureKey = [...pictures.entries()].map(([k, p]) => `${k}:${p.version}`).join(',');
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the frame's run and delivered pictures
 	const effects = useMemo(() => {
@@ -370,6 +455,7 @@ export function Scene3DScope({
 					props: m.props,
 					material: materialAt(clip.threeD!.material, m.contentTime),
 					localFrame: frame - clip.start,
+					contentTime: m.contentTime,
 				};
 			});
 		const setup: ClassicSetup = {
@@ -381,9 +467,30 @@ export function Scene3DScope({
 			lights: sceneLightsAt(doc, frame, draft),
 			draft,
 		};
-		const key = `${frame}|${run.members.join(',')}|${pictureKey}`;
-		return [fx3dRun({ key, setup, members, pictures, preview: isPreview })];
-	}, [frame, run, pictureKey, complete, rendering, isPreview, version, scene, comp.width, comp.height]);
+		const renderer = doc.scene3d?.renderer === 'advanced' ? 'advanced' : 'classic';
+		const environment: AdvancedEnvironment | null =
+			renderer === 'advanced' && envLight && envImage
+				? {
+						image: envImage,
+						rotation: envLight.environment?.rotation ?? 0,
+						color: envLight.color,
+						background: !!envLight.environment?.background,
+					}
+				: null;
+		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${envImage ? envUrl : ''}`;
+		return [
+			fx3dRun({
+				key,
+				setup,
+				members,
+				pictures,
+				preview: isPreview,
+				renderer,
+				environment,
+				shadowMapSize: doc.scene3d?.shadowMapSize ?? 1024,
+			}),
+		];
+	}, [frame, run, pictureKey, complete, rendering, isPreview, version, scene, comp.width, comp.height, envImage]);
 	const hold = useRef<number | null>(null);
 	if (rendering && run && !complete && hold.current === null)
 		hold.current = delayRender(`3D layers at frame ${frame}`);
