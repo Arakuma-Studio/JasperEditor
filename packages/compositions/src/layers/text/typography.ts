@@ -102,7 +102,7 @@ export type TypesetSource = {
  * documents from before render byte-identically.
  */
 export function needsTypeset(src: TypesetSource): boolean {
-	if ((src.animators?.length ?? 0) > 0 || !!src.pathOptions) return true;
+	if ((src.animators?.length ?? 0) > 0 || src.pathOptions) return true;
 	const c = src.text;
 	if (c.paragraphs?.length) return true;
 	return usesTypography(c.style) || (c.runs ?? []).some((r) => usesTypography(r.style));
@@ -127,7 +127,8 @@ export function featureSettings(s: TextStyle): string | undefined {
 	if (o.figureStyle === 'oldStyle') f.push('"onum" 1');
 	if (o.figureWidth === 'proportional') f.push('"pnum" 1');
 	if (o.figureWidth === 'tabular') f.push('"tnum" 1');
-	for (const n of [...new Set(o.stylisticSets ?? [])].sort((a, b) => a - b)) f.push(`"ss${String(n).padStart(2, '0')}" 1`);
+	for (const n of [...new Set(o.stylisticSets ?? [])].sort((a, b) => a - b))
+		f.push(`"ss${String(n).padStart(2, '0')}" 1`);
 	return f.length ? f.join(', ') : undefined;
 }
 
@@ -137,7 +138,8 @@ export function variationSettings(
 	delta?: Readonly<Record<string, number>>,
 ): string | undefined {
 	const axes: Record<string, number> = { ...(s.fontVariations ?? {}) };
-	for (const [tag, d] of Object.entries(delta ?? {})) if (d !== 0) axes[tag] = (axes[tag] ?? defaultAxisValue(tag)) + d;
+	for (const [tag, d] of Object.entries(delta ?? {}))
+		if (d !== 0) axes[tag] = (axes[tag] ?? defaultAxisValue(tag)) + d;
 	const tags = Object.keys(axes).sort();
 	return tags.length ? tags.map((t) => `"${t}" ${css(axes[t]!)}`).join(', ') : undefined;
 }
@@ -167,7 +169,12 @@ export function glyphSize(s: Pick<TextStyle, 'sizePx' | 'script'>): number {
 
 /** Upward offset of a run: baseline shift plus the superscript / subscript rise. */
 export function rise(s: Pick<TextStyle, 'sizePx' | 'script' | 'baselineShiftPx'>): number {
-	const script = s.script === 'superscript' ? s.sizePx * SCRIPT_OFFSET : s.script === 'subscript' ? -s.sizePx * SCRIPT_OFFSET : 0;
+	const script =
+		s.script === 'superscript'
+			? s.sizePx * SCRIPT_OFFSET
+			: s.script === 'subscript'
+				? -s.sizePx * SCRIPT_OFFSET
+				: 0;
 	return (s.baselineShiftPx ?? 0) + script;
 }
 

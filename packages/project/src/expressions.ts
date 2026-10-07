@@ -171,7 +171,10 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 }
 
 const isAnimObj = (v: unknown): v is Animatable<unknown> =>
-	!!v && typeof v === 'object' && Array.isArray((v as Animatable<unknown>).keyframes) && 'value' in (v as object);
+	!!v &&
+	typeof v === 'object' &&
+	Array.isArray((v as Animatable<unknown>).keyframes) &&
+	'value' in (v as object);
 
 function* textAnimatorAnims(
 	seq: string,
@@ -225,7 +228,12 @@ function* textAnimatorAnims(
 		const g = c[group] as Record<string, unknown> | undefined;
 		for (const [key, v] of Object.entries(g ?? {}))
 			if (isAnimObj(v))
-				yield { ref: { seq, owner, path: `${prefix}.${key}` }, at: [...at, group, key], kind: 'anim', target: v };
+				yield {
+					ref: { seq, owner, path: `${prefix}.${key}` },
+					at: [...at, group, key],
+					kind: 'anim',
+					target: v,
+				};
 	}
 }
 

@@ -9,8 +9,8 @@
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type {
 	TextAnimatorGroup,
-	TextExpressionSelector,
 	TextAnimatorProperties,
+	TextExpressionSelector,
 	TextRangeSelector,
 	TextSelector,
 	TextSelectorKind,
@@ -745,7 +745,16 @@ export const WIGGLY_SELECTOR_FIELDS: readonly SelectorFieldDef[] = [
 
 export const EXPRESSION_SELECTOR_FIELDS: readonly SelectorFieldDef[] = [
 	BASED_ON_FIELD,
-	{ key: 'amount', label: 'Amount', kind: 'number', animatable: true, unit: '%', ui: 'scrub', range: { step: 1 }, default: 100 },
+	{
+		key: 'amount',
+		label: 'Amount',
+		kind: 'number',
+		animatable: true,
+		unit: '%',
+		ui: 'scrub',
+		range: { step: 1 },
+		default: 100,
+	},
 ];
 
 export function selectorFields(kind: TextSelectorKind): readonly SelectorFieldDef[] {

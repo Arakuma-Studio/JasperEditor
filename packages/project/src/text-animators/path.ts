@@ -14,7 +14,10 @@ const dist = (a: P, b: P) => Math.hypot(b[0] - a[0], b[1] - a[1]);
  * The flattened points of a path (shared Bezier model, `path/model.ts`); closed paths end on their first point
  * (EffectCraft measures the closing chord too).
  */
-export function flattenTextPath(path: Pick<BezierPath, 'closed' | 'vertices'>, tol = 0.05): { pts: P[]; closed: boolean } {
+export function flattenTextPath(
+	path: Pick<BezierPath, 'closed' | 'vertices'>,
+	tol = 0.05,
+): { pts: P[]; closed: boolean } {
 	const pts: P[] = [];
 	for (const q of flattenPath(path, tol).pts) {
 		const last = pts[pts.length - 1];

@@ -22,7 +22,6 @@ import {
 	type EvaluateOptions,
 	type Expression,
 	type ExpressionRef,
-	type Keyframe,
 	type ExpressionWorldData,
 	effectParamPropertySpec,
 	evaluate,
@@ -33,6 +32,7 @@ import {
 	hasActiveExpression,
 	invertMat3,
 	isAnimated,
+	type Keyframe,
 	kindCapabilities,
 	layerMapOf,
 	maskPropertySpec,
@@ -42,15 +42,15 @@ import {
 	type Rational,
 	type RenderVisualClip,
 	resolveLayerProps,
+	resolveTextAnimatorSpec,
 	type Sequence,
 	sequenceDuration,
+	type TextAnimatorGroup,
 	type TextContent,
 	type Track,
+	textAnimatorPropertySpecs,
 	transitionSpec,
 	transitionStartFrame,
-	resolveTextAnimatorSpec,
-	type TextAnimatorGroup,
-	textAnimatorPropertySpecs,
 } from '@jasper/project';
 import { OP } from './ops.ts';
 import { type HostHandler, type RunState, runExpression } from './runtime.ts';
@@ -427,16 +427,31 @@ export class World {
 				});
 			const c = info.clip as { pathOptions?: unknown; moreOptions?: unknown };
 			if (c.pathOptions)
-				out.push({ path: 'textPath', group: true, name: 'Path Options', matchName: 'pathOption', aliases: ['pathOptions'] });
+				out.push({
+					path: 'textPath',
+					group: true,
+					name: 'Path Options',
+					matchName: 'pathOption',
+					aliases: ['pathOptions'],
+				});
 			if (c.moreOptions)
-				out.push({ path: 'textMore', group: true, name: 'More Options', matchName: 'moreOption', aliases: ['moreOptions'] });
+				out.push({
+					path: 'textMore',
+					group: true,
+					name: 'More Options',
+					matchName: 'moreOption',
+					aliases: ['moreOptions'],
+				});
 			return out;
 		}
 		if ((group === 'textPath' || group === 'textMore') && info.kind === 'clip') {
 			const owner = group === 'textPath' ? 'pathOptions' : 'moreOptions';
 			const g = (info.clip as unknown as Record<string, Record<string, unknown> | undefined>)[owner] ?? {};
 			return textAnimatorPropertySpecs(info.clip as never)
-				.filter((sp) => sp.key.startsWith(`${group}.`) && sp.animatable !== 'no' && g[sp.key.slice(group.length + 1)])
+				.filter(
+					(sp) =>
+						sp.key.startsWith(`${group}.`) && sp.animatable !== 'no' && g[sp.key.slice(group.length + 1)],
+				)
 				.map((sp) => leaf(sp.key, sp.label, sp.key.slice(group.length + 1)));
 		}
 		if (group.startsWith('textAnimators') && info.kind === 'clip') {
@@ -455,14 +470,28 @@ export class World {
 			if (!a) return [];
 			if (parts.length === 2)
 				return [
-					{ path: `${group}.properties`, group: true, name: 'Properties', matchName: 'property', aliases: ['properties'] },
-					{ path: `${group}.selectors`, group: true, name: 'Selectors', matchName: 'selector', aliases: ['selectors'] },
+					{
+						path: `${group}.properties`,
+						group: true,
+						name: 'Properties',
+						matchName: 'property',
+						aliases: ['properties'],
+					},
+					{
+						path: `${group}.selectors`,
+						group: true,
+						name: 'Selectors',
+						matchName: 'selector',
+						aliases: ['selectors'],
+					},
 				];
 			const specs = textAnimatorPropertySpecs(info.clip as never).filter(
 				(sp) => sp.key.startsWith(`${group}.`) && sp.animatable !== 'no',
 			);
 			if (parts[2] === 'properties' && parts.length === 3)
-				return specs.map((sp) => leaf(sp.key, sp.label, sp.key.slice(group.length + 1).replace(/^axes\./, '')));
+				return specs.map((sp) =>
+					leaf(sp.key, sp.label, sp.key.slice(group.length + 1).replace(/^axes\./, '')),
+				);
 			if (parts[2] === 'selectors' && parts.length === 3)
 				return a.selectors.map((sel) => ({
 					path: `${group}.${sel.id}`,
@@ -652,7 +681,9 @@ export class World {
 		if (!anim || typeof anim !== 'object' || !Array.isArray((anim as Animatable<unknown>).keyframes))
 			return null;
 		const a = anim as Animatable<unknown>;
-		const textGroup = /^(textAnimators\.[^.]+\.(properties|selectors\.[^.]+)|textPath|textMore)\./.exec(ref.path);
+		const textGroup = /^(textAnimators\.[^.]+\.(properties|selectors\.[^.]+)|textPath|textMore)\./.exec(
+			ref.path,
+		);
 		const group =
 			ref.path.startsWith('transform.') || ref.path === 'opacity'
 				? 'transform'

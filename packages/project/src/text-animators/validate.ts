@@ -155,7 +155,10 @@ export function repairTextAnimators(clip: Record<string, unknown>): string[] {
 	if (clip.pathOptions !== undefined && !TextPathOptionsSchema.safeParse(clip.pathOptions).success) {
 		delete clip.pathOptions;
 		notes.push('malformed Path Options removed');
-	} else if (clip.pathOptions !== undefined && !hasMask(clip, (clip.pathOptions as { maskId: string }).maskId)) {
+	} else if (
+		clip.pathOptions !== undefined &&
+		!hasMask(clip, (clip.pathOptions as { maskId: string }).maskId)
+	) {
 		delete clip.pathOptions;
 		notes.push('Path Options of a missing mask removed (Path: None)');
 	}

@@ -22,8 +22,8 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
-import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 import { MaskSchema } from './mask.ts';
+import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 
 // ---------------------------------------------------------------- effects
 

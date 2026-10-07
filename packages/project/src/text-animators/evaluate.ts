@@ -608,3 +608,39 @@ export function sourceTextContentAt(
 	const text = typeof v === 'string' ? v : keyed.text;
 	return text === keyed.text ? keyed : { ...keyed, text, runs: undefined };
 }
+
+type AnimatedTextSource = {
+	animators?: readonly TextAnimatorGroup[];
+	sourceTextKeyframes?: readonly unknown[];
+	pathOptions?: unknown;
+};
+
+/**
+ * True when a text layer's animators draw differently over time without keyframes: an enabled Wiggly selector
+ * (noise in time) or an Expression Selector (any function of time). Keyframes, active expressions on properties and
+ * Source Text keys are found by the generic deep scans (layer bake `hasKeyframesDeep`).
+ */
+export function textAnimatorsTimeVarying(src: AnimatedTextSource): boolean {
+	return (src.animators ?? []).some(
+		(a) =>
+			a.enabled &&
+			a.selectors.some(
+				(s) =>
+					s.enabled &&
+					(s.kind === 'wiggly' ||
+						(s.kind === 'expression' && !!s.amount.expression?.enabled && !!s.amount.expression.text.trim())),
+			),
+	);
+}
+
+/** True when the layer's drawing depends on its clip id (Randomize Order / Wiggly seeds mix in the layer id). */
+export function textAnimatorsSeeded(src: AnimatedTextSource): boolean {
+	return (src.animators ?? []).some((a) =>
+		a.selectors.some((s) => s.kind === 'wiggly' || s.kind === 'expression' || (s.kind === 'range' && s.randomize)),
+	);
+}
+
+/** True when a text source changes with the frame (animators, Source Text keys, keyed / expression-driven values). */
+export function textSourceFrameDependent(src: AnimatedTextSource): boolean {
+	return !!src.animators?.length || !!src.sourceTextKeyframes?.length || !!src.pathOptions;
+}

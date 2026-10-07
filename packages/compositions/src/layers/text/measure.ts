@@ -64,7 +64,8 @@ const graphemeSegmenter =
 
 /** Graphemes of a string with their UTF-16 offsets. */
 export function graphemes(text: string): { text: string; offset: number }[] {
-	if (graphemeSegmenter) return [...graphemeSegmenter.segment(text)].map((s) => ({ text: s.segment, offset: s.index }));
+	if (graphemeSegmenter)
+		return [...graphemeSegmenter.segment(text)].map((s) => ({ text: s.segment, offset: s.index }));
 	const out: { text: string; offset: number }[] = [];
 	let i = 0;
 	for (const ch of text) {
@@ -82,7 +83,9 @@ export function styledPieces(content: TextContent): { from: number; to: number; 
 	const { text, style: base, runs } = content;
 	if (!runs?.length) return text ? [{ from: 0, to: text.length, style: base }] : [];
 	const clampI = (i: number) => Math.min(text.length, Math.max(0, i));
-	const cuts = [...new Set([0, text.length, ...runs.flatMap((r) => [clampI(r.from), clampI(r.to)])])].sort((a, b) => a - b);
+	const cuts = [...new Set([0, text.length, ...runs.flatMap((r) => [clampI(r.from), clampI(r.to)])])].sort(
+		(a, b) => a - b,
+	);
 	const out: { from: number; to: number; style: TextStyle }[] = [];
 	for (let i = 0; i + 1 < cuts.length; i++) {
 		const from = cuts[i]!;
@@ -99,7 +102,10 @@ export function paragraphStyles(content: TextContent, count: number): TextStyle[
 		const o = content.paragraphs?.find((p) => p.index === i)?.style;
 		if (!o) return content.style;
 		const pick = Object.fromEntries(
-			PARAGRAPH_FIELDS.filter((f) => (o as Record<string, unknown>)[f] !== undefined).map((f) => [f, (o as Record<string, unknown>)[f]]),
+			PARAGRAPH_FIELDS.filter((f) => (o as Record<string, unknown>)[f] !== undefined).map((f) => [
+				f,
+				(o as Record<string, unknown>)[f],
+			]),
 		);
 		return { ...content.style, ...pick } as TextStyle;
 	});
@@ -110,7 +116,14 @@ export function paragraphStyles(content: TextContent, count: number): TextStyle[
 const ascentCache = new Map<string, number>();
 
 function fontKey(css: CSSProperties): string {
-	return [css.fontFamily, css.fontWeight, css.fontStyle, css.fontSize, css.fontVariantCaps, css.fontVariationSettings].join('|');
+	return [
+		css.fontFamily,
+		css.fontWeight,
+		css.fontStyle,
+		css.fontSize,
+		css.fontVariantCaps,
+		css.fontVariationSettings,
+	].join('|');
 }
 
 /** Ascent of a font (distance from the content-area top to the baseline), measured in the DOM once per font. */
@@ -232,20 +245,28 @@ export type FlowInput = {
 	substitutions?: ReadonlyMap<number, string>;
 };
 
-type Piece = { from: number; to: number; style: number };
-
-const PARAGRAPH_BREAK = /\r\n|[\n\r ]/g;
+const PARAGRAPH_BREAK = /\r\n|[\n\r\u2029]/g;
 
 /** Builds the flow DOM of a text (paragraph blocks, run spans, per-grapheme spans where spacing is adjusted). */
 function buildFlow(
 	input: FlowInput,
 	host: HTMLElement,
-): { root: HTMLElement; layoutGlyphs: TypesetGlyph[]; nodes: ({ node: Text; start: number; end: number } | null)[]; styles: TextStyle[]; paragraphs: TextStyle[] } {
+): {
+	root: HTMLElement;
+	layoutGlyphs: TypesetGlyph[];
+	nodes: ({ node: Text; start: number; end: number } | null)[];
+	styles: TextStyle[];
+	paragraphs: TextStyle[];
+} {
 	const { content } = input;
 	const text = content.text;
 	const pieces = styledPieces(content);
 	const styles = pieces.map((p) => p.style);
-	const styleAt = (offset: number) => Math.max(0, pieces.findIndex((p) => offset >= p.from && offset < p.to));
+	const styleAt = (offset: number) =>
+		Math.max(
+			0,
+			pieces.findIndex((p) => offset >= p.from && offset < p.to),
+		);
 	// Paragraph ranges [start, end) excluding the separator.
 	const paras: { start: number; end: number; sepEnd: number }[] = [];
 	let from = 0;
@@ -264,7 +285,10 @@ function buildFlow(
 		const space = isSpaceGrapheme(g.text);
 		if (!space && !inWord) words++;
 		inWord = !space;
-		const p = Math.max(0, paras.findIndex((x) => g.offset < x.sepEnd));
+		const p = Math.max(
+			0,
+			paras.findIndex((x) => g.offset < x.sepEnd),
+		);
 		const out: TypesetGlyph = {
 			text: g.text,
 			offset: g.offset,
@@ -283,7 +307,11 @@ function buildFlow(
 		return out;
 	});
 	const adjust = spacingAdjustments(
-		glyphs.map((g) => ({ text: g.text, style: g.style, paragraphStart: g.offset === paras[g.paragraph]!.start })),
+		glyphs.map((g) => ({
+			text: g.text,
+			style: g.style,
+			paragraphStart: g.offset === paras[g.paragraph]!.start,
+		})),
 		styles,
 		(s) => input.family(s),
 	);
@@ -302,7 +330,10 @@ function buildFlow(
 	const nodes: ({ node: Text; start: number; end: number } | null)[] = glyphs.map(() => null);
 	paras.forEach((pr, pi) => {
 		const block = document.createElement('div');
-		applyCss(block, { ...paragraphCss(paraStyles[pi]!, input.pointText, pi === 0, pi === paras.length - 1), lineHeight: content.style.lineHeight });
+		applyCss(block, {
+			...paragraphCss(paraStyles[pi]!, input.pointText, pi === 0, pi === paras.length - 1),
+			lineHeight: content.style.lineHeight,
+		});
 		const inPara = glyphs.filter((g) => g.offset >= pr.start && g.offset < pr.end);
 		// Group consecutive graphemes of one style into run spans; graphemes with spacing or substitutions get their own.
 		let k = 0;
@@ -380,7 +411,13 @@ export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayou
 	if (hit) return hit;
 	const h = host();
 	const inner = document.createElement('div');
-	applyCss(inner, { position: 'absolute', left: 0, top: 0, width: Math.max(1, input.width), contain: 'layout style' } as CSSProperties);
+	applyCss(inner, {
+		position: 'absolute',
+		left: 0,
+		top: 0,
+		width: Math.max(1, input.width),
+		contain: 'layout style',
+	} as CSSProperties);
 	h.append(inner);
 	const { root, layoutGlyphs, nodes, styles, paragraphs } = buildFlow(input, inner);
 	const origin = root.getBoundingClientRect();
@@ -416,7 +453,11 @@ export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayou
 		g.lineIndex = line;
 	}
 	const lines = line + 1;
-	const lineBoxes: [number, number, number][] = Array.from({ length: lines }, () => [Infinity, -Infinity, -Infinity]);
+	const lineBoxes: [number, number, number][] = Array.from({ length: lines }, () => [
+		Infinity,
+		-Infinity,
+		-Infinity,
+	]);
 	for (const g of layoutGlyphs) {
 		if (!g.rect) continue;
 		const lb = lineBoxes[g.lineIndex]!;

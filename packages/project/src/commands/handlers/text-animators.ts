@@ -422,16 +422,22 @@ export const textAnimatorHandlers: HandlerMap = {
 			const prev = clip.pathOptions;
 			const maskId = cmd.maskId ?? prev?.maskId;
 			if (!maskId)
-				return h.fail('E_INVALID_PARAM', `${clip.id} has no text path yet: give maskId (a mask of the clip)`, {
-					path: ['maskId'],
-				});
+				return h.fail(
+					'E_INVALID_PARAM',
+					`${clip.id} has no text path yet: give maskId (a mask of the clip)`,
+					{
+						path: ['maskId'],
+					},
+				);
 			const masks = (clip as { masks?: { id: string }[] }).masks ?? [];
 			if (!masks.some((m) => m.id === maskId))
 				h.fail('E_NOT_FOUND', `Mask ${maskId} is not a mask of ${clip.id}`, { path: ['maskId'] });
 			const margin = (v: number | undefined, a: Draft<Animatable<number>> | undefined) => {
 				if (v === undefined) return a ?? { value: 0, keyframes: [] };
-				if (a && a.keyframes.length) {
-					h.fail('E_INVALID_PARAM', 'The margin is keyframed: set it with param.set at a time', { path: ['firstMargin'] });
+				if (a?.keyframes.length) {
+					h.fail('E_INVALID_PARAM', 'The margin is keyframed: set it with param.set at a time', {
+						path: ['firstMargin'],
+					});
 				}
 				return { ...(a ?? {}), value: v, keyframes: [] };
 			};

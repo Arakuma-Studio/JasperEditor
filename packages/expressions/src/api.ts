@@ -1,11 +1,11 @@
 // High-level expression API for the editor, the engine and agents.
 import {
 	type ExpressionRef,
+	type ExpressionWorldData,
 	expressionBindingOf,
 	flicksPerFrame,
 	installExpressionSupport,
 	locateExpressionTarget,
-	type ExpressionWorldData,
 	type ProjectDocument,
 	type Rational,
 	type TextSelectorExpressionHost,
@@ -161,8 +161,14 @@ export function textSelectorExpressionHost(
 	clipId: string,
 ): TextSelectorExpressionHost | null {
 	if (!isExpressionEngineLoaded()) return null;
-	const world = 'version' in data && 'boxes' in data ? bindWorld(data as ExpressionWorldData).world : worldOfDocument(data as ProjectDocument);
-	const sequences = 'version' in data && 'boxes' in data ? (data as ExpressionWorldData).sequences : (data as ProjectDocument).sequences;
+	const world =
+		'version' in data && 'boxes' in data
+			? bindWorld(data as ExpressionWorldData).world
+			: worldOfDocument(data as ProjectDocument);
+	const sequences =
+		'version' in data && 'boxes' in data
+			? (data as ExpressionWorldData).sequences
+			: (data as ProjectDocument).sequences;
 	const sequenceId = Object.keys(sequences).find((id) => sequences[id]!.clips[clipId]);
 	if (!sequenceId) return null;
 	const reported = new Set<string>();
