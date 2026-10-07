@@ -10,6 +10,8 @@ import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { defaultEffectRegistry } from './registry/effects.ts';
+import { expressionIssues, repairExpressions } from './expressions.ts';
 import { isRovingKey, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
@@ -704,6 +706,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		if (!usedTrs.has(t.id) && !(t.mediaId && usedMedia.has(t.mediaId)))
 			issues.push(inv('INV-014', `Transcript ${t.id} is not referenced`, ['transcripts', t.id]));
 	}
+	// Wave expressions (INV-EXPR): well-formed expressions on properties that take them.
+	for (const m of expressionIssues(doc, isAudioEffectId)) issues.push(inv('INV-EXPR', m.message, m.path));
 	return issues;
 }
 
@@ -798,6 +802,9 @@ export function repairDocument(
 		}
 	}
 	// ---- end wp-m2-anime-templates
+
+	// Wave expressions: drop malformed expressions and expressions on properties that take none.
+	for (const r of repairExpressions(doc, isAudioEffectId)) note('drop-expression', r.entity, r.detail);
 
 	// keyframes-blend: roving flags where a key cannot rove are dropped; roving keys get their run's times.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
@@ -1134,4 +1141,9 @@ function findNestCycleClip(doc: ProjectDocument): { seqId: string; clipId: strin
 	};
 	for (const s of Object.keys(doc.sequences)) if (!state.has(s) && visit(s)) return hit;
 	return null;
+}
+
+/** Wave expressions: audio effects take no expressions (the mixer processes them per sample). */
+function isAudioEffectId(effectId: string): boolean {
+	return defaultEffectRegistry.get(effectId)?.appliesTo === 'audio';
 }

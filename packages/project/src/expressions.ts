@@ -370,3 +370,85 @@ export function expressionWorldData(doc: ProjectDocument): ExpressionWorldData |
 	if (!documentHasActiveExpressions(doc)) return null;
 	return buildExpressionWorldData(doc);
 }
+
+// ---------------------------------------------------------------- invariants and repair
+
+const MAX_TEXT = 65_536;
+
+/** Where expressions may live: clip properties (no audio effects), transition params, Source Text. */
+function allowedTargets(seqId: string, seq: Sequence, audioEffect: (effectId: string) => boolean): Set<object> {
+	const out = new Set<object>();
+	for (const loc of sequenceAnimatables(seqId, seq)) {
+		const o = loc.ref.owner;
+		if (o === 'master' || o.startsWith('track:')) continue;
+		if (loc.ref.path.startsWith('effects.') && !o.startsWith('transition:')) {
+			const fxId = loc.ref.path.split('.')[1];
+			const fx = ((seq.clips[o] as { effects?: EffectInstance[] } | undefined)?.effects ?? []).find(
+				(e) => e.id === fxId,
+			);
+			if (!fx || audioEffect(fx.effectId)) continue;
+		}
+		out.add(loc.target as object);
+	}
+	return out;
+}
+
+/** Every object of a sequence carrying an `expression` field, with its path. */
+function* expressionHolders(root: unknown, path: (string | number)[]): Generator<{ holder: Record<string, unknown>; path: (string | number)[] }> {
+	if (!root || typeof root !== 'object') return;
+	if (Array.isArray(root)) {
+		for (let i = 0; i < root.length; i++) yield* expressionHolders(root[i], [...path, i]);
+		return;
+	}
+	const o = root as Record<string, unknown>;
+	if ('expression' in o && o.expression !== undefined) yield { holder: o, path };
+	for (const [k, v] of Object.entries(o)) if (k !== 'expression') yield* expressionHolders(v, [...path, k]);
+}
+
+function wellFormed(e: unknown): e is Expression {
+	return (
+		!!e &&
+		typeof e === 'object' &&
+		typeof (e as Expression).text === 'string' &&
+		typeof (e as Expression).enabled === 'boolean' &&
+		(e as Expression).text.length <= MAX_TEXT
+	);
+}
+
+/**
+ * INV-EXPR: an expression is `{text: string, enabled: boolean}` (text ≤ 64 Ki characters) and sits on a property that
+ * takes expressions (clip properties except audio effect params and mask paths, transition params, Source Text).
+ */
+export function expressionIssues(
+	doc: Pick<ProjectDocument, 'sequences'>,
+	audioEffect: (effectId: string) => boolean,
+): { message: string; path: string[] }[] {
+	const out: { message: string; path: string[] }[] = [];
+	for (const [seqId, seq] of Object.entries(doc.sequences)) {
+		const allowed = allowedTargets(seqId, seq, audioEffect);
+		for (const { holder, path } of expressionHolders(seq, ['sequences', seqId])) {
+			const p = path.map(String);
+			if (!wellFormed(holder.expression))
+				out.push({ message: 'Malformed expression (expected {text, enabled})', path: p });
+			else if (!allowed.has(holder)) out.push({ message: 'This property does not take expressions', path: p });
+		}
+	}
+	return out;
+}
+
+/** Drops malformed or misplaced expressions (mutates `doc`); returns what was removed. */
+export function repairExpressions(
+	doc: Pick<ProjectDocument, 'sequences'>,
+	audioEffect: (effectId: string) => boolean,
+): { entity: string; detail: string }[] {
+	const out: { entity: string; detail: string }[] = [];
+	for (const [seqId, seq] of Object.entries(doc.sequences)) {
+		const allowed = allowedTargets(seqId, seq, audioEffect);
+		for (const { holder, path } of [...expressionHolders(seq, [])]) {
+			if (wellFormed(holder.expression) && allowed.has(holder)) continue;
+			delete holder.expression;
+			out.push({ entity: seqId, detail: `${path.join('.')}: unusable expression removed` });
+		}
+	}
+	return out;
+}
