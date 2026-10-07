@@ -230,18 +230,19 @@ JasperEditor/
 audio-dsp      → nothing                         (pure DSP: no DOM, no Node, no deps; runs in AudioWorklets; audio-mix)
 project        → zod, immer, audio-dsp           (no DOM, no Node built-ins, no React/UI, no Remotion, no anime.js)
 mg-templates   → zod, project (types)
+expressions    → project, quickjs-emscripten (WebAssembly), acorn   (no DOM, no Node, no UI, no Remotion; expressions)
 api            → zod, project
 engine-client  → api                             (fetch + ReadableStream; runs in browser and Node 20)
 session        → project, api, engine-client, zustand; react only in src/react (the ./react subpath)
 ui             → react, radix-ui, lucide-react, @fontsource; project (labels, timecode helpers)
 motion         → animejs, remotion, project, mg-templates; react as peer   (only compositions imports it)
-compositions   → remotion, @remotion/*, project, mg-templates, motion, audio-dsp   (NO session, ui, engine-client, tailwind)
+compositions   → remotion, @remotion/*, project, mg-templates, motion, audio-dsp, expressions   (NO session, ui, engine-client, tailwind)
 config         → node built-ins
-web            → api, audio-dsp, compositions, engine-client, mg-templates, project, session, ui (NOT config, motion, apps/*;
+web            → api, audio-dsp, compositions, engine-client, expressions, mg-templates, project, session, ui (NOT config, motion, apps/*;
                  no Node built-ins except the `node` script src/pwa/generate-icons.mjs)
-engine         → project, api, audio-dsp, config, mg-templates, compositions (bundled via @remotion/bundler), mcp (serves /mcp,
+engine         → project, api, audio-dsp, config, expressions, mg-templates, compositions (bundled via @remotion/bundler), mcp (serves /mcp,
                  D-18), fastify…; tests also use engine-client and session
-mcp            → api, config, engine-client, project
+mcp            → api, config, engine-client, expressions, project
 desktop        → electron, config (paths only)
 ```
 

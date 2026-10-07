@@ -84,6 +84,15 @@ export const LAYERS = {
 		deps: ['@jasper/project'],
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 	},
+	// Wave expressions (docs/wp-notes/expressions.md): the After Effects-style expression engine (QuickJS compiled to
+	// WebAssembly, acorn). It sits right above the model: @jasper/project only holds the storage and the evaluator hook
+	// (`EXPRESSION_BINDING`), so the model stays free of WebAssembly. Runs in the browser, the Remotion bundle and Node.
+	'packages/expressions': {
+		name: '@jasper/expressions',
+		deps: ['@jasper/project'],
+		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
+		note: 'QuickJS-wasm + the AE object model: no DOM, no Node, no UI, no Remotion',
+	},
 	'packages/api': {
 		name: '@jasper/api',
 		deps: ['@jasper/project'],
@@ -114,7 +123,7 @@ export const LAYERS = {
 	},
 	'packages/compositions': {
 		name: '@jasper/compositions',
-		deps: ['@jasper/project', '@jasper/mg-templates', '@jasper/motion', '@jasper/audio-dsp'],
+		deps: ['@jasper/project', '@jasper/mg-templates', '@jasper/motion', '@jasper/audio-dsp', '@jasper/expressions'],
 		forbid: [...BROWSER_LAYER, 'uiLibs', 'tailwind', 'anime'],
 		note: 'the Remotion bundle: no session, ui, engine-client or Tailwind',
 	},
@@ -131,6 +140,7 @@ export const LAYERS = {
 			'@jasper/audio-dsp',
 			'@jasper/compositions',
 			'@jasper/engine-client',
+			'@jasper/expressions',
 			'@jasper/mg-templates',
 			'@jasper/project',
 			'@jasper/session',
@@ -149,6 +159,7 @@ export const LAYERS = {
 			'@jasper/audio-dsp',
 			'@jasper/compositions',
 			'@jasper/config',
+			'@jasper/expressions',
 			'@jasper/mcp',
 			'@jasper/mg-templates',
 			'@jasper/project',
@@ -158,7 +169,7 @@ export const LAYERS = {
 	},
 	'apps/mcp': {
 		name: '@jasper/mcp',
-		deps: ['@jasper/api', '@jasper/config', '@jasper/engine-client', '@jasper/project'],
+		deps: ['@jasper/api', '@jasper/config', '@jasper/engine-client', '@jasper/expressions', '@jasper/project'],
 		forbid: ['react', 'uiLibs', 'tailwind', 'remotion', 'anime', 'electron', 'server'],
 	},
 	'apps/desktop': {
