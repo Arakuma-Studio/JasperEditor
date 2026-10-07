@@ -503,7 +503,7 @@ export class EditorSession {
 		domain: SelectionDomain,
 		ids: readonly string[],
 		mode: SelectMode = 'replace',
-		opts: { linked?: boolean; primary?: string | null } = {},
+		opts: { linked?: boolean; primary?: string | null; groups?: boolean } = {},
 	): void {
 		const s = this.store.getState();
 		const sel = s.selection;
@@ -511,7 +511,7 @@ export class EditorSession {
 		switch (domain) {
 			case 'timeline': {
 				const linked = opts.linked ?? s.toggles.linkedSelection;
-				const expanded = expandClipSelection(this.getDrawn(), ids, linked);
+				const expanded = expandClipSelection(this.getDrawn(), ids, linked, opts.groups ?? true);
 				const clips = combine(sel.timeline.clips, expanded, mode);
 				const primary =
 					opts.primary !== undefined

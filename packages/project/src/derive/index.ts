@@ -270,7 +270,6 @@ export function isThroughEdit(a: Clip, b: Clip, rate: Rational): boolean {
 	return Math.abs(b.sourceIn - sourceOut(a, rate)) < tolerance;
 }
 
-
 /**
  * Out-of-sync offsets (S01:CLP-011): for each linked clip from the same asset as its group's
  * reference member (the video member, else the first), the signed frame offset of its content origin.

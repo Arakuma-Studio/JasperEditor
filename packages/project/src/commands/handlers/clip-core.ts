@@ -18,11 +18,11 @@ import {
 	kindCapabilities,
 } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
-import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
+import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
@@ -55,8 +55,8 @@ import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';
 import { applyShapePatch } from './shape.ts';
-import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { expandGroups, placeSequence } from './structure.ts';
+import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;

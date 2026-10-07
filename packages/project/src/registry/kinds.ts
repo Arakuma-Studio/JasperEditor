@@ -318,8 +318,14 @@ export function hasTransform(clip: Clip): clip is Extract<Clip, { transform: unk
  */
 export function contentDurationFlicks(
 	doc:
-		| { media: Record<string, MediaAsset | undefined>; sequences?: Record<string, NestedSequenceLike | undefined> }
-		| { media: Readonly<Record<string, MediaAsset>>; sequences?: Readonly<Record<string, NestedSequenceLike>> },
+		| {
+				media: Record<string, MediaAsset | undefined>;
+				sequences?: Record<string, NestedSequenceLike | undefined>;
+		  }
+		| {
+				media: Readonly<Record<string, MediaAsset>>;
+				sequences?: Readonly<Record<string, NestedSequenceLike>>;
+		  },
 	clip:
 		| Clip
 		| { kind: string; mediaId?: string; sequenceId?: string; composition?: { id: string; mediaId?: string } },

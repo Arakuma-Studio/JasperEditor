@@ -12,7 +12,7 @@ import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, Sequence, Track, TrackKind, Transition } from '../../schema/sequence.ts';
 import { conformSequenceRate, isNestClip, wouldCreateNestCycle } from '../../structure/nest.ts';
 import { SYNTHETIC_INFO, syntheticFromParams } from '../../structure/synthetic.ts';
-import { clipToRange, throughEdits } from '../../structure/through.ts';
+import { clipToRange } from '../../structure/through.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
@@ -63,7 +63,9 @@ function numberedName(doc: DDoc, base: string, sep = ' '): string {
 
 /** Inserts `itemId` after `afterId` in its bin (or at the end of `binId`). */
 function insertAfter(doc: DDoc, itemId: string, binId: string | null, afterId: string | null): void {
-	const list = binId ? (doc.items[binId] as Draft<Extract<ProjectItem, { kind: 'bin' }>>).children : doc.rootItems;
+	const list = binId
+		? (doc.items[binId] as Draft<Extract<ProjectItem, { kind: 'bin' }>>).children
+		: doc.rootItems;
 	const i = afterId ? list.indexOf(afterId) : -1;
 	insertItem(doc, itemId, binId, i >= 0 ? i + 1 : undefined);
 }
@@ -177,7 +179,10 @@ function regroup(
 		const field = kind === 'links' ? 'linkId' : 'groupId';
 		const byOld = new Map<string, DClip[]>();
 		for (const { oldId, clip } of clips) {
-			const g = (src.clips[oldId] as Record<string, unknown> | undefined)?.[field] as string | null | undefined;
+			const g = (src.clips[oldId] as Record<string, unknown> | undefined)?.[field] as
+				| string
+				| null
+				| undefined;
 			clip[field] = null;
 			if (!g) continue;
 			const list = byOld.get(g) ?? [];
@@ -223,7 +228,8 @@ function nestHandler(doc: DDoc, cmd: CommandOf<'clip.nest'>, h: HandlerContext) 
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	for (const c of clips) {
 		assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
-		if (!kindCapabilities(c.kind)) h.fail('E_INVALID_PARAM', `Clip ${c.id} has an unsupported kind (${c.kind})`);
+		if (!kindCapabilities(c.kind))
+			h.fail('E_INVALID_PARAM', `Clip ${c.id} has an unsupported kind (${c.kind})`);
 		if (c.kind === 'captions') h.fail('E_INVALID_PARAM', 'Caption clips cannot be nested');
 	}
 	const start = Math.min(...clips.map((c) => c.start));
@@ -312,8 +318,9 @@ function nestHandler(doc: DDoc, cmd: CommandOf<'clip.nest'>, h: HandlerContext) 
 // ---------------------------------------------------------------- clip.unnest
 
 function isIdentityMotion(c: Clip, seq: DSeq, box: { width: number; height: number }): boolean {
-	const t = (c as { transform?: Clip extends never ? never : Record<string, { value: unknown; keyframes: unknown[] }> })
-		.transform as Record<string, { value: unknown; keyframes: unknown[] } | boolean> | undefined;
+	const t = (
+		c as { transform?: Clip extends never ? never : Record<string, { value: unknown; keyframes: unknown[] }> }
+	).transform as Record<string, { value: unknown; keyframes: unknown[] } | boolean> | undefined;
 	if (!t) return true;
 	const def = defaultTransform(box, frameBox(seq), 'none') as unknown as Record<
 		string,
@@ -321,7 +328,10 @@ function isIdentityMotion(c: Clip, seq: DSeq, box: { width: number; height: numb
 	>;
 	for (const k of ['position', 'anchor', 'scale', 'scaleWidth', 'rotation'] as const) {
 		const a = t[k] as { value: unknown; keyframes: unknown[] };
-		if (a.keyframes.length > 0 || JSON.stringify(a.value) !== JSON.stringify((def[k] as { value: unknown }).value))
+		if (
+			a.keyframes.length > 0 ||
+			JSON.stringify(a.value) !== JSON.stringify((def[k] as { value: unknown }).value)
+		)
 			return false;
 	}
 	return !t.flipH && !t.flipV;
@@ -355,7 +365,10 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 					`Clip ${n.id} has Motion or Opacity changes that cannot be moved onto its clips (reset them first)`,
 				);
 			if (r.blendMode !== 'normal')
-				h.fail('E_INVALID_PARAM', `Clip ${n.id} uses blend mode ${String(r.blendMode)}; set it to Normal first`);
+				h.fail(
+					'E_INVALID_PARAM',
+					`Clip ${n.id} uses blend mode ${String(r.blendMode)}; set it to Normal first`,
+				);
 			if (src.settings.width !== seq.settings.width || src.settings.height !== seq.settings.height)
 				h.fail(
 					'E_INVALID_PARAM',
@@ -379,8 +392,10 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 		const kind: TrackKind = n.kind === 'nest-video' ? 'video' : 'audio';
 		const srcTracks = kind === 'video' ? conformed.videoTracks : conformed.audioTracks;
 		const extraFx = plain((r.effects as unknown[]) ?? []);
-		if (extraFx.length) h.warn('W_EFFECTS_DISTRIBUTED', `The effects of ${n.id} now apply to each of its clips`);
-		const gainAdd = n.kind === 'nest-audio' ? (r.gainDb as number) + (r.volumeDb as { value: number }).value : 0;
+		if (extraFx.length)
+			h.warn('W_EFFECTS_DISTRIBUTED', `The effects of ${n.id} now apply to each of its clips`);
+		const gainAdd =
+			n.kind === 'nest-audio' ? (r.gainDb as number) + (r.volumeDb as { value: number }).value : 0;
 		const groupId = n.groupId;
 		const linkKey = `${n.linkId ?? n.id}/`;
 		removeClip(seq, n.id, h);
@@ -497,7 +512,7 @@ export function placeSequence(
 	const hasAudio = Object.values(nested.clips).some((c) => audioTracks.has(c.trackId));
 	const create = o.createTracks !== false;
 	const name = o.name ?? sequenceName(doc, nested.id);
-	if (o.nest === false) return placeIndividually(doc, seq, h, o, nested, range, frames);
+	if (o.nest === false) return placeIndividually(seq, h, o, nested, range, frames);
 	const wantVideo = o.video !== false && (hasVideo || !hasAudio);
 	const wantAudio = o.audio !== false && hasAudio;
 	if (!wantVideo && !wantAudio) h.fail('E_INVALID_PARAM', 'Nothing to place from this sequence');
@@ -577,7 +592,6 @@ function sequenceName(doc: DDoc, seqId: string): string {
 
 /** "Individual clips": copies of the nested sequence's clips in range, track for track from the targets. */
 function placeIndividually(
-	doc: DDoc,
 	seq: DSeq,
 	h: HandlerContext,
 	o: SequencePlaceOptions,
@@ -589,7 +603,7 @@ function placeIndividually(
 	const nested = rationalEquals(nestedIn.settings.frameRate as Rational, rate)
 		? nestedIn
 		: conformSequenceRate(nestedIn, rate);
-	if (nested !== nestedIn) h.warn('W_CONFORMED', 'The sequence was conformed to this sequence\'s frame rate');
+	if (nested !== nestedIn) h.warn('W_CONFORMED', "The sequence was conformed to this sequence's frame rate");
 	const F = flicksPerFrame(rate);
 	const n0 = Math.round(range.in / F);
 	const n1 = n0 + frames;
@@ -618,7 +632,8 @@ function placeIndividually(
 				.map((c) => ({ oldId: c.id, clip: clipToRange(c, n0, n1, rate)! }));
 			if (pieces.length === 0) return;
 			const list = tracksOfKind(seq, kind);
-			if (!list[b + j] && !create) h.fail('E_TRACK_KIND', `No ${kind} track ${b + j + 1} (pass createTracks)`);
+			if (!list[b + j] && !create)
+				h.fail('E_TRACK_KIND', `No ${kind} track ${b + j + 1} (pass createTracks)`);
 			const dest = list[b + j] ?? ensureTrackAt(seq, kind, b + j, h);
 			assertUnlocked(dest, h);
 			jobs.push({ dest, pieces });
@@ -707,19 +722,17 @@ function addFrameHold(doc: DDoc, cmd: CommandOf<'clip.addFrameHold'>, h: Handler
 	return { clipIds: held };
 }
 
-function insertFrameHoldSegment(
-	doc: DDoc,
-	cmd: CommandOf<'clip.insertFrameHoldSegment'>,
-	h: HandlerContext,
-) {
+function insertFrameHoldSegment(doc: DDoc, cmd: CommandOf<'clip.insertFrameHoldSegment'>, h: HandlerContext) {
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	if (!VIDEO_TRACK_KINDS(clip)) h.fail('E_INVALID_PARAM', 'Frame holds apply to video-track clips');
 	const track = findTrackIn(seq, clip.trackId)!.track;
 	assertUnlocked(track, h);
 	const at = h.frame(seq, cmd.at);
-	if (!(clip.start <= at && at < end(clip))) h.fail('E_INVALID_PARAM', `Frame ${at} is not inside clip ${clip.id}`);
+	if (!(clip.start <= at && at < end(clip)))
+		h.fail('E_INVALID_PARAM', `Frame ${at} is not inside clip ${clip.id}`);
 	const rate = seq.settings.frameRate as Rational;
-	const n = cmd.duration === undefined ? Math.round((2 * rate.num) / rate.den) : h.durationFrames(seq, cmd.duration);
+	const n =
+		cmd.duration === undefined ? Math.round((2 * rate.num) / rate.den) : h.durationFrames(seq, cmd.duration);
 	if (n < 1) h.fail('E_INVALID_PARAM', 'The segment must be at least one frame long');
 	const hold = clip.frameHold ? clip.frameHold.flicks : movingTime(clip as Clip, at, rate);
 	const segment = plain(clip) as Clip;
@@ -760,7 +773,9 @@ function frameHoldOptions(doc: DDoc, cmd: CommandOf<'clip.frameHoldOptions'>, h:
 		else if (mode === 'out') t = movingTime(c as Clip, end(c) - 1, rate);
 		else if (mode === 'source-time') {
 			if (!cmd.sourceTime) h.fail('E_INVALID_PARAM', 'holdOn "source-time" needs sourceTime');
-			const asset = (c as { mediaId?: string }).mediaId ? doc.media[(c as { mediaId: string }).mediaId] : null;
+			const asset = (c as { mediaId?: string }).mediaId
+				? doc.media[(c as { mediaId: string }).mediaId]
+				: null;
 			t = h.flicks(cmd.sourceTime, asset as MediaAsset | null, rate);
 		} else {
 			if (cmd.at === undefined) h.fail('E_INVALID_PARAM', `holdOn "${mode}" needs at (a sequence time)`);
@@ -971,7 +986,8 @@ function usedMediaIds(doc: DDoc): Set<string> {
 		walk(seq.master);
 		for (const t of [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks]) walk(t);
 	}
-	for (const m of Object.values(doc.media)) if (m.derivation && used.has(m.id)) used.add(m.derivation.fromMediaId);
+	for (const m of Object.values(doc.media))
+		if (m.derivation && used.has(m.id)) used.add(m.derivation.fromMediaId);
 	for (const f of Object.values(doc.fonts)) if (f.source.type === 'asset') used.add(f.source.mediaId);
 	for (const t of Object.values(doc.transcripts)) if (t.mediaId) used.add(t.mediaId);
 	// Derived media of a used derivation chain keep their sources (several levels).
@@ -1093,7 +1109,11 @@ export const structureHandlers: HandlerMap = {
 		if (!itemId) h.fail('E_NOT_FOUND', `Sequence ${cmd.sequenceId} has no project item`);
 		(projectHandlers['item.delete'] as (d: DDoc, c: CommandOf<'item.delete'>, h: HandlerContext) => unknown)(
 			doc,
-			{ type: 'item.delete', itemIds: [itemId], ...(cmd.force ? { force: true } : {}) } as CommandOf<'item.delete'>,
+			{
+				type: 'item.delete',
+				itemIds: [itemId],
+				...(cmd.force ? { force: true } : {}),
+			} as CommandOf<'item.delete'>,
 			h,
 		);
 		return { sequenceId: cmd.sequenceId, itemId };
@@ -1103,7 +1123,9 @@ export const structureHandlers: HandlerMap = {
 		const id = h.ids.next('syn');
 		const { source, issues } = syntheticFromParams(cmd.kind, id, cmd.params ?? {});
 		if (!source)
-			h.fail('E_INVALID_PARAM', issues.map((i) => i.message).join('; '), { path: ['params', issues[0]!.param] });
+			h.fail('E_INVALID_PARAM', issues.map((i) => i.message).join('; '), {
+				path: ['params', issues[0]!.param],
+			});
 		if (cmd.binId) {
 			const bin = doc.items[cmd.binId];
 			if (bin?.kind !== 'bin') h.fail('E_NOT_FOUND', `Bin not found: ${cmd.binId}`);
@@ -1127,7 +1149,9 @@ export const structureHandlers: HandlerMap = {
 		if (!base) h.fail('E_NOT_FOUND', `Synthetic source not found: ${cmd.syntheticId}`);
 		const { source, issues } = syntheticFromParams(base.kind, base.id, cmd.params, base);
 		if (!source)
-			h.fail('E_INVALID_PARAM', issues.map((i) => i.message).join('; '), { path: ['params', issues[0]!.param] });
+			h.fail('E_INVALID_PARAM', issues.map((i) => i.message).join('; '), {
+				path: ['params', issues[0]!.param],
+			});
 		doc.synthetics[base.id] = source as Draft<SyntheticSource>;
 		return { syntheticId: base.id };
 	},

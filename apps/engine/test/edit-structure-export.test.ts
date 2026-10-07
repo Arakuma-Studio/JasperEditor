@@ -5,7 +5,16 @@
 import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+} from './helpers.ts';
 
 let app: TestApp;
 beforeAll(async () => {
@@ -175,7 +184,13 @@ describe('frame holds and freeze-frame handles (native)', () => {
 			ref,
 		});
 		d.tx([place(0, 0, 30, '$a')]);
-		d.tx([{ type: 'clip.addFrameHold', at: 10, clipIds: [d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'video')] }]);
+		d.tx([
+			{
+				type: 'clip.addFrameHold',
+				at: 10,
+				clipIds: [d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'video')],
+			},
+		]);
 		const held = await exportDoc(d);
 		expect(frameCode(held, 5)).toBe(5);
 		expect(frameCode(held, 10)).toBe(10);

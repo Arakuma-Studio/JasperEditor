@@ -32,7 +32,6 @@ import {
 } from '@jasper/project';
 import { type ComponentType, Fragment, memo, type ReactNode, useContext, useMemo, useRef } from 'react';
 import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
-import { ShowFrame } from './show-frame.tsx';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import { useFxStatus } from './fx/status.ts';
@@ -53,6 +52,7 @@ import { NestTracksContext } from './layers/nest-context.ts';
 import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
+import { ShowFrame } from './show-frame.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
@@ -257,7 +257,15 @@ const ClipLayer = memo(function ClipLayer({
 export function pictureLocalFrame(
 	clip: Pick<
 		RenderVisualClip,
-		'start' | 'duration' | 'sourceIn' | 'speed' | 'frameHold' | 'headHandle' | 'tailHandle' | 'freezeHead' | 'freezeTail'
+		| 'start'
+		| 'duration'
+		| 'sourceIn'
+		| 'speed'
+		| 'frameHold'
+		| 'headHandle'
+		| 'tailHandle'
+		| 'freezeHead'
+		| 'freezeTail'
 	>,
 	localFrame: number,
 	fps: { num: number; den: number },

@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
-	checkInvariants,
 	type Clip,
+	checkInvariants,
 	clipPictureTime,
 	contentTimeAt,
 	createCounterIdSource,
@@ -16,6 +16,7 @@ import {
 	LEADER_DURATION,
 	leaderBlipTimes,
 	leaderPhaseAt,
+	leaderStyleOf,
 	type MediaHandle,
 	nestContentKey,
 	nestGainDbAt,
@@ -30,7 +31,6 @@ import {
 	syntheticSamples,
 	throughEdits,
 	trackGaps,
-	leaderStyleOf,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -95,7 +95,9 @@ describe('clip.nest', () => {
 		expect([nv!.start, nv!.duration]).toEqual([30, 90]);
 		expect(nv!.linkId).toBe(na!.linkId);
 		expect(h.seq.clips[v1!]).toBeUndefined();
-		const item = Object.values(h.doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === res.sequenceId);
+		const item = Object.values(h.doc.items).find(
+			(i) => i.kind === 'sequence' && i.sequenceId === res.sequenceId,
+		);
 		expect(item?.name).toBe('My Nest');
 		clean(h);
 	});
@@ -107,7 +109,9 @@ describe('clip.nest', () => {
 		h.ok([{ type: 'clip.addText', at: 10, duration: 10, track: 'V1', content: { text: 'x' } }]);
 		const r = h.ok([{ type: 'clip.nest', clipIds: [v1] }]);
 		const res = r.results[0] as { sequenceId: string; clipIds: string[] };
-		const it0 = Object.values(h.doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === res.sequenceId);
+		const it0 = Object.values(h.doc.items).find(
+			(i) => i.kind === 'sequence' && i.sequenceId === res.sequenceId,
+		);
 		expect(it0?.name).toBe('Nested Sequence 01');
 		clean(h);
 	});
@@ -117,7 +121,9 @@ describe('clip.nest', () => {
 		const m = h.registerVideo({ seconds: 30 });
 		const [a] = placeAV(h, m, 0, 'V1', [0, 60]);
 		const [b] = placeAV(h, m, 60, 'V1', [200, 300]);
-		h.ok([{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 }]);
+		h.ok([
+			{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 },
+		]);
 		const r = h.ok([{ type: 'clip.nest', clipIds: [a, b] }]);
 		const nid = (r.results[0] as { sequenceId: string }).sequenceId;
 		expect(Object.keys(h.doc.sequences[nid]!.transitions)).toHaveLength(1);
@@ -274,7 +280,9 @@ describe('render snapshot of nests', () => {
 		const inner = h.ok([
 			{ type: 'sequence.create', name: 'Inner25', settings: { frameRate: { num: 25, den: 1 } }, ref: '$s' },
 		]).refs.$s!;
-		h.ok([{ type: 'clip.place', sequenceId: inner, source: { mediaId: m }, at: 25, tracks: { video: 'V1' } }]);
+		h.ok([
+			{ type: 'clip.place', sequenceId: inner, source: { mediaId: m }, at: 25, tracks: { video: 'V1' } },
+		]);
 		const r = h.ok([{ type: 'clip.place', source: { sequenceId: inner }, at: 0, tracks: { video: 'V1' } }]);
 		const [nv, na] = (r.results[0] as { clipIds: string[] }).clipIds;
 		h.ok([{ type: 'clip.setSpeed', clipIds: [nv, na], rate: 2, ripple: false }]);
@@ -310,8 +318,9 @@ describe('adjustment layers and groups', () => {
 		const h = new Harness();
 		const m = h.registerVideo({ seconds: 20 });
 		const [a] = placeAV(h, m, 0, 'V1', [0, 30]);
-		const t = h.ok([{ type: 'clip.addText', at: 10, duration: 40, track: 'V2', content: { text: 'g' }, ref: '$t' }])
-			.refs.$t!;
+		const t = h.ok([
+			{ type: 'clip.addText', at: 10, duration: 40, track: 'V2', content: { text: 'g' }, ref: '$t' },
+		]).refs.$t!;
 		const g = h.ok([{ type: 'clip.group', clipIds: [a, t], ref: '$g' }]);
 		const gid = g.refs.$g!;
 		expect([...h.seq.groups[gid]!.members].sort()).toEqual([a!, t].sort());
@@ -407,16 +416,22 @@ describe('synthetic sources', () => {
 
 	it('validates and updates params', () => {
 		const h = new Harness();
-		const r = h.ok([{ type: 'synthetic.create', kind: 'color-matte', params: { color: [1, 0, 0, 1] }, ref: '$m' }]);
+		const r = h.ok([
+			{ type: 'synthetic.create', kind: 'color-matte', params: { color: [1, 0, 0, 1] }, ref: '$m' },
+		]);
 		const id = r.refs.$m!;
-		expect(h.tx([{ type: 'synthetic.update', syntheticId: id, params: { color: [2, 0, 0, 1] } }]).ok).toBe(false);
+		expect(h.tx([{ type: 'synthetic.update', syntheticId: id, params: { color: [2, 0, 0, 1] } }]).ok).toBe(
+			false,
+		);
 		expect(h.tx([{ type: 'synthetic.update', syntheticId: id, params: { hue: 3 } }]).ok).toBe(false);
 		h.ok([{ type: 'synthetic.update', syntheticId: id, params: { color: [0, 1, 0, 1] } }]);
 		expect(h.doc.synthetics[id]).toMatchObject({ color: [0, 1, 0, 1] });
 		const l = h.ok([
 			{ type: 'synthetic.create', kind: 'counting-leader', params: { cueBlipAllSeconds: true }, ref: '$l' },
 		]);
-		expect(leaderStyleOf((h.doc.synthetics[l.refs.$l!] as { style: Record<string, unknown> }).style)).toMatchObject({
+		expect(
+			leaderStyleOf((h.doc.synthetics[l.refs.$l!] as { style: Record<string, unknown> }).style),
+		).toMatchObject({
 			cueBlipAllSeconds: true,
 			cueBlipOnTwo: true,
 		});
@@ -463,7 +478,13 @@ describe('generators', () => {
 		const tone = syntheticSamples({ kind: 'tone', hz: 1000, db: -20 }, 0, 4800, 48000, 1 / 30);
 		const peak = Math.max(...tone.map(Math.abs));
 		expect(peak).toBeCloseTo(0.1, 3);
-		const blip = syntheticSamples({ kind: 'leader-blips', style: leaderStyleOf({}) }, 7.9, 9600, 48000, 1 / 30);
+		const blip = syntheticSamples(
+			{ kind: 'leader-blips', style: leaderStyleOf({}) },
+			7.9,
+			9600,
+			48000,
+			1 / 30,
+		);
 		const nonZero = [...blip].map((v, i) => (Math.abs(v) > 1e-6 ? i : -1)).filter((i) => i >= 0);
 		expect(nonZero[0]).toBeGreaterThanOrEqual(4800 - 1);
 		expect(nonZero[nonZero.length - 1]! - nonZero[0]!).toBeLessThan(1600);
@@ -518,7 +539,9 @@ describe('frame holds', () => {
 		const [v] = placeAV(h, m, 0, 'V1', [30, 130]);
 		h.ok([{ type: 'clip.frameHoldOptions', clipIds: [v], holdOn: 'out', holdFilters: true }]);
 		expect(h.seq.clips[v!]!.frameHold).toEqual({ flicks: 129 * F30, holdFilters: true });
-		h.ok([{ type: 'clip.frameHoldOptions', clipIds: [v], holdOn: 'source-time', sourceTime: { seconds: 2 } }]);
+		h.ok([
+			{ type: 'clip.frameHoldOptions', clipIds: [v], holdOn: 'source-time', sourceTime: { seconds: 2 } },
+		]);
 		expect(h.seq.clips[v!]!.frameHold?.flicks).toBe(2 * FLICKS_PER_SECOND);
 		h.ok([{ type: 'clip.frameHoldOptions', clipIds: [v], holdOn: 'sequence-time', at: 10 }]);
 		expect(h.seq.clips[v!]!.frameHold?.flicks).toBe(40 * F30);
@@ -587,7 +610,9 @@ describe('through edits, gaps, subsequences', () => {
 		const m = h.registerVideo({ seconds: 30 });
 		placeAV(h, m, 0, 'V1', [0, 60]);
 		placeAV(h, m, 60, 'V1', [200, 300]);
-		h.ok([{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 }]);
+		h.ok([
+			{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 },
+		]);
 		h.ok([{ type: 'sequence.setInOut', in: 40, out: 120 }]);
 		const r = h.ok([{ type: 'sequence.makeSubsequence', ref: '$s' }]);
 		const sub = h.doc.sequences[r.refs.$s!]!;
@@ -612,9 +637,12 @@ describe('freeze-frame transition handles', () => {
 		const m = h.registerVideo({ seconds: 10 });
 		placeAV(h, m, 0, 'V1', [240, 300]); // 0 frames after the out-point
 		placeAV(h, m, 60, 'V1', [0, 60]); // 0 frames before the in-point
-		const shorten = h.tx([{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 20 }], {
-			dryRun: true,
-		});
+		const shorten = h.tx(
+			[{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 20 }],
+			{
+				dryRun: true,
+			},
+		);
 		expect(shorten.ok).toBe(false);
 		const r = h.ok([
 			{
@@ -657,9 +685,14 @@ describe('invariants and repair', () => {
 			linkId: null,
 		} as Clip;
 		const issues = checkInvariants(doc);
-		expect(issues.some((i) => (i as { invariant?: string }).invariant === 'INV-009'), JSON.stringify(issues)).toBe(true);
+		expect(
+			issues.some((i) => (i as { invariant?: string }).invariant === 'INV-009'),
+			JSON.stringify(issues),
+		).toBe(true);
 		const fixed = repairDocument(doc, createCounterIdSource(900));
-		expect(checkInvariants(fixed.document).some((i) => (i as { invariant?: string }).invariant === 'INV-009')).toBe(false);
+		expect(
+			checkInvariants(fixed.document).some((i) => (i as { invariant?: string }).invariant === 'INV-009'),
+		).toBe(false);
 		expect(fixed.report.some((r) => r.action === 'drop-clip')).toBe(true);
 	});
 

@@ -146,7 +146,11 @@ export function nestContentKey(doc: ProjectDocument, seqId: string, depth = 0): 
 	const body = {
 		v: 1,
 		settings: seq.settings,
-		videoTracks: seq.videoTracks.map((t) => ({ id: t.id, output: t.output ?? true, effects: t.effects ?? [] })),
+		videoTracks: seq.videoTracks.map((t) => ({
+			id: t.id,
+			output: t.output ?? true,
+			effects: t.effects ?? [],
+		})),
 		audioTracks: seq.audioTracks.map((t) => ({
 			id: t.id,
 			mute: t.mute ?? false,

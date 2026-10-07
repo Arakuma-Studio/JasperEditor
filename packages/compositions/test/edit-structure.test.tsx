@@ -13,9 +13,9 @@ import {
 import { Thumbnail } from '@remotion/player';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { pictureLocalFrame } from '../src/SequenceComposition.tsx';
-import { cssExactAdjustment } from '../src/layers/AdjustmentScope.tsx';
 import { DEFAULT_RENDER_OPTIONS, type RenderDoc, SequenceComposition } from '../src/index.ts';
+import { cssExactAdjustment } from '../src/layers/AdjustmentScope.tsx';
+import { pictureLocalFrame } from '../src/SequenceComposition.tsx';
 
 function snapshot(commands: Command[]): RenderDoc {
 	const ids = createCounterIdSource(1);
@@ -46,8 +46,22 @@ function renderFrame(doc: RenderDoc, frame: number) {
 
 const nestCommands: Command[] = [
 	{ type: 'sequence.create', name: 'Inner', ref: '$s' } as Command,
-	{ type: 'clip.addSolid', sequenceId: '$s', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] } as Command,
-	{ type: 'clip.addSolid', sequenceId: '$s', at: 30, duration: 30, track: 'V1', color: [0, 0, 1, 1] } as Command,
+	{
+		type: 'clip.addSolid',
+		sequenceId: '$s',
+		at: 0,
+		duration: 30,
+		track: 'V1',
+		color: [1, 0, 0, 1],
+	} as Command,
+	{
+		type: 'clip.addSolid',
+		sequenceId: '$s',
+		at: 30,
+		duration: 30,
+		track: 'V1',
+		color: [0, 0, 1, 1],
+	} as Command,
 	{ type: 'clip.place', source: { sequenceId: '$s' }, at: 10, tracks: { video: 'V2' } } as Command,
 ];
 
@@ -141,10 +155,37 @@ describe('nest speed', () => {
 	it('shows the nested frame at 2× through Freeze', () => {
 		const doc = snapshot([
 			{ type: 'sequence.create', name: 'Inner', ref: '$s' } as Command,
-			{ type: 'clip.addSolid', sequenceId: '$s', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] } as Command,
-			{ type: 'clip.addSolid', sequenceId: '$s', at: 30, duration: 30, track: 'V1', color: [0, 0, 1, 1] } as Command,
-			{ type: 'clip.addSolid', sequenceId: '$s', at: 60, duration: 30, track: 'V1', color: [0, 1, 0, 1] } as Command,
-			{ type: 'clip.place', source: { sequenceId: '$s' }, at: 0, tracks: { video: 'V1' }, ref: '$n' } as Command,
+			{
+				type: 'clip.addSolid',
+				sequenceId: '$s',
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				color: [1, 0, 0, 1],
+			} as Command,
+			{
+				type: 'clip.addSolid',
+				sequenceId: '$s',
+				at: 30,
+				duration: 30,
+				track: 'V1',
+				color: [0, 0, 1, 1],
+			} as Command,
+			{
+				type: 'clip.addSolid',
+				sequenceId: '$s',
+				at: 60,
+				duration: 30,
+				track: 'V1',
+				color: [0, 1, 0, 1],
+			} as Command,
+			{
+				type: 'clip.place',
+				source: { sequenceId: '$s' },
+				at: 0,
+				tracks: { video: 'V1' },
+				ref: '$n',
+			} as Command,
 			{ type: 'clip.setSpeed', clipIds: ['$n'], rate: 2, ripple: false } as Command,
 		]);
 		const nest = doc.videoTracks[0]!.clips[0]!;
@@ -153,7 +194,9 @@ describe('nest speed', () => {
 		expect(sub.range).toEqual({ start: 0, end: 90 });
 		const r = renderFrame(doc, 35);
 		expect(r.container.querySelector('[data-nest]')!.getAttribute('data-nest-frame')).toBe('70');
-		expect(r.container.querySelector('[data-nest]')!.innerHTML.match(/rgba\([^)]*\)/g)).toEqual(['rgba(0, 255, 0, 1)']);
+		expect(r.container.querySelector('[data-nest]')!.innerHTML.match(/rgba\([^)]*\)/g)).toEqual([
+			'rgba(0, 255, 0, 1)',
+		]);
 		r.unmount();
 	});
 });

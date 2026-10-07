@@ -112,14 +112,22 @@ type TimedClip = Parameters<typeof contentTimeAt>[0] & {
  * sequence frame `frame` (S01:CLP-004). A frame hold with Hold Filters (edit-structure) evaluates them at the held
  * time; otherwise they keep animating through the hold (Premiere).
  */
-export function clipContentTime(clip: TimedClip, frame: number, rate: Parameters<typeof contentTimeAt>[2]): number {
+export function clipContentTime(
+	clip: TimedClip,
+	frame: number,
+	rate: Parameters<typeof contentTimeAt>[2],
+): number {
 	const hold = clip.frameHold;
 	if (hold?.holdFilters) return hold.flicks;
 	return contentTimeAt(clip, frame, rate);
 }
 
 /** Content time of the picture a clip shows at `frame`: the held time under a frame hold (edit-structure). */
-export function clipPictureTime(clip: TimedClip, frame: number, rate: Parameters<typeof contentTimeAt>[2]): number {
+export function clipPictureTime(
+	clip: TimedClip,
+	frame: number,
+	rate: Parameters<typeof contentTimeAt>[2],
+): number {
 	const hold = clip.frameHold;
 	if (hold) return hold.flicks;
 	return contentTimeAt(clip, frame, rate);

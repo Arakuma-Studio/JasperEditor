@@ -7,6 +7,7 @@ import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	buildRenderSnapshot,
+	clipContentTime,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	isAnimated,
@@ -18,12 +19,10 @@ import {
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
-	clipContentTime,
 	rationalEquals,
 	resolveLayerProps,
 	transitionSpec,
 } from '@jasper/project';
-import { needsSubpixel } from './stream/plan.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
@@ -36,6 +35,7 @@ import {
 } from '../mg/templates.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
+import { needsSubpixel } from './stream/plan.ts';
 
 export type PlanCapabilities = {
 	/** ffmpeg + encoders present (self-check). */
@@ -61,7 +61,14 @@ export class PlanError extends Error {
 }
 
 // edit-structure: nest clips draw their nested stack in the same graph; adjustment layers process the composite.
-const NATIVE_VISUAL_KINDS = new Set(['video', 'still', 'solid', 'motion-graphic', 'nest-video', 'adjustment']);
+const NATIVE_VISUAL_KINDS = new Set([
+	'video',
+	'still',
+	'solid',
+	'motion-graphic',
+	'nest-video',
+	'adjustment',
+]);
 
 export type OutputSpec = {
 	width: number;
@@ -223,7 +230,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
 	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
 	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
-	for (const reason of nestBlockers(snapshot)) blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
+	for (const reason of nestBlockers(snapshot))
+		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
@@ -609,7 +617,8 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 		for (const c of t.clips) {
 			if (!('nest' in c.source)) continue;
 			const sub = c.source.nest.snapshot;
-			const ownProcess = subpixel(c) || c.effects.some((e) => e.enabled && e.effectId === 'jasper.corner-pin');
+			const ownProcess =
+				subpixel(c) || c.effects.some((e) => e.enabled && e.effectId === 'jasper.corner-pin');
 			if (ownProcess && allVisualClips(sub).some((x) => !('nest' in x.source) && subpixelIn(sub, x)))
 				out.push({
 					clipId: c.clipId,

@@ -46,7 +46,10 @@ describe.runIf(enabled)('edit-structure in Remotion renders (REMOTION_E2E=1)', {
 
 	async function still(commands: Command[], frame: number, name: string): Promise<Buffer> {
 		const doc = fxSnapshot(commands);
-		const inputProps = { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } };
+		const inputProps = {
+			doc,
+			options: { isPreview: false, useProxies: false, transparentBackground: false },
+		};
 		const composition = await renderer.selectComposition({
 			serveUrl,
 			id: SEQUENCE_COMPOSITION_ID,
@@ -77,7 +80,13 @@ describe.runIf(enabled)('edit-structure in Remotion renders (REMOTION_E2E=1)', {
 	it('draws a nested sequence at the nested frame, scaled by the nest clip, at 2× speed', async () => {
 		const cmds: Command[] = [
 			...nested,
-			{ type: 'clip.place', source: { sequenceId: '$s' }, at: 0, tracks: { video: 'V1' }, ref: '$n' } as Command,
+			{
+				type: 'clip.place',
+				source: { sequenceId: '$s' },
+				at: 0,
+				tracks: { video: 'V1' },
+				ref: '$n',
+			} as Command,
 			{ type: 'param.set', target: ['clip', '$n', 'transform', 'scale'], value: 50 } as Command,
 		];
 		const a = await still(cmds, 40, 'nest-40');
@@ -86,7 +95,13 @@ describe.runIf(enabled)('edit-structure in Remotion renders (REMOTION_E2E=1)', {
 		expect(close(at(a, FX_W / 4 + 4, FX_H / 4 + 4), [0, 0, 255])).toBe(true);
 		const fast: Command[] = [
 			...nested,
-			{ type: 'clip.place', source: { sequenceId: '$s' }, at: 0, tracks: { video: 'V1' }, ref: '$n' } as Command,
+			{
+				type: 'clip.place',
+				source: { sequenceId: '$s' },
+				at: 0,
+				tracks: { video: 'V1' },
+				ref: '$n',
+			} as Command,
 			{ type: 'clip.setSpeed', clipIds: ['$n'], rate: 2, ripple: false } as Command,
 		];
 		const b = await still(fast, 35, 'nest-fast-35'); // nested frame 70 = green
@@ -111,7 +126,12 @@ describe.runIf(enabled)('edit-structure in Remotion renders (REMOTION_E2E=1)', {
 				...base,
 				{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.black-white' } as Command,
 				{ type: 'param.set', target: ['clip', '$a', 'opacity'], value: 50 } as Command,
-				{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.crop', params: { left: 50 } } as Command,
+				{
+					type: 'effect.add',
+					target: { clipId: '$a' },
+					effectId: 'jasper.crop',
+					params: { left: 50 },
+				} as Command,
 			],
 			10,
 			'adjust-half-crop',
@@ -170,7 +190,11 @@ describe.runIf(enabled)('edit-structure in Remotion renders (REMOTION_E2E=1)', {
 
 	it('holds a frame of a moving video', async () => {
 		const video: Command[] = [
-			{ type: 'media.register', ref: '$m', asset: fxAsset(media, 'video', media.video, FX_W, FX_H) } as unknown as Command,
+			{
+				type: 'media.register',
+				ref: '$m',
+				asset: fxAsset(media, 'video', media.video, FX_W, FX_H),
+			} as unknown as Command,
 			{
 				type: 'clip.place',
 				source: { mediaId: '$m' },

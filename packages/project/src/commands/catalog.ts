@@ -185,11 +185,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-') || owner === STRUCTURE_OWNER
-				? 'M3'
-				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
-					? 'M2'
-					: 'M1',
+			milestone:
+				owner.startsWith('wp-m3-') || owner === STRUCTURE_OWNER
+					? 'M3'
+					: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+						? 'M2'
+						: 'M1',
 		};
 	}
 	return out;

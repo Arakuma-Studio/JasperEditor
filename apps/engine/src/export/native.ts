@@ -359,10 +359,24 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 	if (o.composite) {
 		// edit-structure: an adjustment layer's source is the composite below it.
 		src = `[${o.composite.label}]`;
-		f.push(`trim=start_frame=${f0 - o.composite.R0}`, 'setpts=PTS-STARTPTS', `trim=end_frame=${n}`, 'format=rgba');
+		f.push(
+			`trim=start_frame=${f0 - o.composite.R0}`,
+			'setpts=PTS-STARTPTS',
+			`trim=end_frame=${n}`,
+			'format=rgba',
+		);
 	} else if (override?.still) {
 		// edit-structure: a still picture for the whole layer (Bars and Tone).
-		const k = addInput(['-loop', '1', '-framerate', rate(fps), '-t', sec(n * frameSec + margin), '-i', override.path]);
+		const k = addInput([
+			'-loop',
+			'1',
+			'-framerate',
+			rate(fps),
+			'-t',
+			sec(n * frameSec + margin),
+			'-i',
+			override.path,
+		]);
 		src = `[${k}:v:0]`;
 		f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
 		resizeAt(`:${SWS_FLAGS}`);
@@ -477,7 +491,14 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 	} else if (c.kind === 'motion-graphic' && mg) {
 		const shown = c.frameHold ? c.start + heldLocalFrame(c, fps) : f0;
 		const startSec = (shown - c.start) * frameSec;
-		const k = addInput(['-ss', sec(startSec), '-t', sec(c.frameHold ? margin : n * frameSec + margin), '-i', mg]);
+		const k = addInput([
+			'-ss',
+			sec(startSec),
+			'-t',
+			sec(c.frameHold ? margin : n * frameSec + margin),
+			'-i',
+			mg,
+		]);
 		src = `[${k}:v:0]`;
 		if (c.frameHold) f.push(...holdFilters());
 		else f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
@@ -592,214 +613,165 @@ function drawStack(ctx: StackContext): string {
 	const R1 = snap.range.end;
 	const frameSec = fps.den / fps.num;
 	const T = (R1 - R0) * frameSec;
-		// Background: sequence-sized, sequence colour, one extra frame of margin (the final trim is exact).
-		const bgLabel = `${P}bg`;
-		chains.push(
-			`color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${bgLabel}]`,
-		);
-		let last = bgLabel;
-		let li = 0;
+	// Background: sequence-sized, sequence colour, one extra frame of margin (the final trim is exact).
+	const bgLabel = `${P}bg`;
+	chains.push(
+		`color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${bgLabel}]`,
+	);
+	let last = bgLabel;
+	let li = 0;
 
-		const layers: LayerPlan[] = [];
-		for (const track of snap.videoTracks) {
-			for (const m of track.mattes ?? []) {
-				const f0 = Math.max(m.start, R0);
-				const f1 = Math.min(m.start + m.duration, R1);
-				if (f1 > f0) layers.push({ matte: m, f0, f1 });
-			}
-			// wave1c: GPU transitions an extension pre-rendered: their spans replace the sides (drawn above the track's
-			// clips, like the composition's stage); the side clips are drawn only outside them.
-			const spans: { t: { start: number; duration: number }; ov: LayerOverride; sides: Set<string> }[] = [];
-			for (const t of track.transitions ?? []) {
-				const ov = exts
-					? (exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
-						null)
-					: null;
-				if (ov)
-					spans.push({
-						t,
-						ov,
-						sides: new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x)),
-					});
-			}
-			for (const c of track.clips) {
-				// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
-				let f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
-				let f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
-				for (const sp of spans) {
-					if (!sp.sides.has(c.clipId)) continue;
-					const a = sp.t.start;
-					const b = sp.t.start + sp.t.duration;
-					// The span sits at one end of the clip (it is a side): cut that end off.
-					if (a <= f0) f0 = Math.max(f0, b);
-					else f1 = Math.min(f1, a);
-				}
-				if (f1 > f0) layers.push({ clip: c, f0, f1 });
-			}
+	const layers: LayerPlan[] = [];
+	for (const track of snap.videoTracks) {
+		for (const m of track.mattes ?? []) {
+			const f0 = Math.max(m.start, R0);
+			const f1 = Math.min(m.start + m.duration, R1);
+			if (f1 > f0) layers.push({ matte: m, f0, f1 });
+		}
+		// wave1c: GPU transitions an extension pre-rendered: their spans replace the sides (drawn above the track's
+		// clips, like the composition's stage); the side clips are drawn only outside them.
+		const spans: { t: { start: number; duration: number }; ov: LayerOverride; sides: Set<string> }[] = [];
+		for (const t of track.transitions ?? []) {
+			const ov = exts
+				? (exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
+					null)
+				: null;
+			if (ov)
+				spans.push({
+					t,
+					ov,
+					sides: new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x)),
+				});
+		}
+		for (const c of track.clips) {
+			// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
+			let f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
+			let f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
 			for (const sp of spans) {
-				const f0 = Math.max(sp.t.start, R0);
-				const f1 = Math.min(sp.t.start + sp.t.duration, R1);
-				if (f1 > f0) layers.push({ span: sp.ov, f0, f1 });
+				if (!sp.sides.has(c.clipId)) continue;
+				const a = sp.t.start;
+				const b = sp.t.start + sp.t.duration;
+				// The span sits at one end of the clip (it is a side): cut that end off.
+				if (a <= f0) f0 = Math.max(f0, b);
+				else f1 = Math.min(f1, a);
 			}
+			if (f1 > f0) layers.push({ clip: c, f0, f1 });
+		}
+		for (const sp of spans) {
+			const f0 = Math.max(sp.t.start, R0);
+			const f1 = Math.min(sp.t.start + sp.t.duration, R1);
+			if (f1 > f0) layers.push({ span: sp.ov, f0, f1 });
+		}
+	}
+
+	const half = frameSec / 2;
+	for (const layer of layers) {
+		const { f0, f1 } = layer;
+		const n = f1 - f0;
+		const t0 = (f0 - R0) * frameSec;
+		const shift = `setpts=PTS-STARTPTS+round(${f0 - R0}*${fps.den}/(${fps.num}*TB))`;
+		const enable = `enable='between(t,${fmt(t0 - half)},${fmt(t0 + n * frameSec - half)})'`;
+		if ('matte' in layer) {
+			const label = `${P}l${li++}`;
+			chains.push(
+				`color=c=${colorHex(layer.matte.color)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)},format=rgba,trim=end_frame=${n},${shift}[${label}]`,
+				`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[o${label}]`,
+			);
+			last = `o${label}`;
+			continue;
+		}
+		if ('span' in layer) {
+			const ov = layer.span;
+			const label = `${P}l${li++}`;
+			const rect = ov.rect ?? null;
+			const k = addInput([
+				...(ov.decoder ? ['-c:v', ov.decoder] : []),
+				...(ov.still
+					? ['-loop', '1', '-framerate', rate(fps)]
+					: ['-ss', sec((f0 - ov.startFrame) * frameSec)]),
+				'-t',
+				sec(n * frameSec + 2 * frameSec),
+				'-i',
+				ov.path,
+			]);
+			const g = [
+				'setpts=PTS-STARTPTS',
+				`fps=${rate(fps)}`,
+				`trim=end_frame=${n}`,
+				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
+				'setsar=1',
+				'format=rgba',
+				shift,
+			];
+			chains.push(
+				`[${k}:v:0]${g.join(',')}[${label}]`,
+				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[o${label}]`,
+			);
+			last = `o${label}`;
+			continue;
+		}
+		const c = layer.clip;
+		const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
+		const label = `${P}l${li++}`;
+		const margin = 2 * frameSec;
+
+		// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
+		// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
+		const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
+		if (override?.space === 'sequence') {
+			// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
+			// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's
+			// colour runs are applied here, to the straight-alpha override stream.
+			const rect = override.rect ?? null;
+			const k = addInput([
+				...(override.decoder ? ['-c:v', override.decoder] : []),
+				...(override.still
+					? ['-loop', '1', '-framerate', rate(fps)]
+					: ['-ss', sec((f0 - override.startFrame) * frameSec)]),
+				'-t',
+				sec(n * frameSec + margin),
+				'-i',
+				override.path,
+			]);
+			const g = [
+				'setpts=PTS-STARTPTS',
+				`fps=${rate(fps)}`,
+				`trim=end_frame=${n}`,
+				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
+				'setsar=1',
+				'format=rgba',
+				...(override.colorRuns && exts
+					? colorRunFilters({
+							clip: c,
+							props,
+							box: { width: rect?.w ?? W, height: rect?.h ?? H },
+							fps,
+							f0,
+							f1: layer.f1,
+							extensions: exts,
+						})
+					: []),
+				...(override.includesFades ? [] : fadeFilters(c.fades, f0)),
+				shift,
+			];
+			chains.push(`[${k}:v:0]${g.join(',')}[${label}]`);
+			const next = `o${label}`;
+			chains.push(
+				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			);
+			last = next;
+			continue;
 		}
 
-		const half = frameSec / 2;
-		for (const layer of layers) {
-			const { f0, f1 } = layer;
-			const n = f1 - f0;
-			const t0 = (f0 - R0) * frameSec;
-			const shift = `setpts=PTS-STARTPTS+round(${f0 - R0}*${fps.den}/(${fps.num}*TB))`;
-			const enable = `enable='between(t,${fmt(t0 - half)},${fmt(t0 + n * frameSec - half)})'`;
-			if ('matte' in layer) {
-				const label = `${P}l${li++}`;
-				chains.push(
-					`color=c=${colorHex(layer.matte.color)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)},format=rgba,trim=end_frame=${n},${shift}[${label}]`,
-					`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[o${label}]`,
-				);
-				last = `o${label}`;
-				continue;
-			}
-			if ('span' in layer) {
-				const ov = layer.span;
-				const label = `${P}l${li++}`;
-				const rect = ov.rect ?? null;
-				const k = addInput([
-					...(ov.decoder ? ['-c:v', ov.decoder] : []),
-					...(ov.still
-						? ['-loop', '1', '-framerate', rate(fps)]
-						: ['-ss', sec((f0 - ov.startFrame) * frameSec)]),
-					'-t',
-					sec(n * frameSec + 2 * frameSec),
-					'-i',
-					ov.path,
-				]);
-				const g = [
-					'setpts=PTS-STARTPTS',
-					`fps=${rate(fps)}`,
-					`trim=end_frame=${n}`,
-					`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
-					'setsar=1',
-					'format=rgba',
-					shift,
-				];
-				chains.push(
-					`[${k}:v:0]${g.join(',')}[${label}]`,
-					`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[o${label}]`,
-				);
-				last = `o${label}`;
-				continue;
-			}
-			const c = layer.clip;
-			const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
-			const label = `${P}l${li++}`;
-			const margin = 2 * frameSec;
-
-			// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
-			// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
-			const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
-			if (override?.space === 'sequence') {
-				// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
-				// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's
-				// colour runs are applied here, to the straight-alpha override stream.
-				const rect = override.rect ?? null;
-				const k = addInput([
-					...(override.decoder ? ['-c:v', override.decoder] : []),
-					...(override.still
-						? ['-loop', '1', '-framerate', rate(fps)]
-						: ['-ss', sec((f0 - override.startFrame) * frameSec)]),
-					'-t',
-					sec(n * frameSec + margin),
-					'-i',
-					override.path,
-				]);
-				const g = [
-					'setpts=PTS-STARTPTS',
-					`fps=${rate(fps)}`,
-					`trim=end_frame=${n}`,
-					`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
-					'setsar=1',
-					'format=rgba',
-					...(override.colorRuns && exts
-						? colorRunFilters({
-								clip: c,
-								props,
-								box: { width: rect?.w ?? W, height: rect?.h ?? H },
-								fps,
-								f0,
-								f1: layer.f1,
-								extensions: exts,
-							})
-						: []),
-					...(override.includesFades ? [] : fadeFilters(c.fades, f0)),
-					shift,
-				];
-				chains.push(`[${k}:v:0]${g.join(',')}[${label}]`);
-				const next = `o${label}`;
-				chains.push(
-					`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[${next}]`,
-				);
-				last = next;
-				continue;
-			}
-
-			// Sub-pixel layers (keyframed Motion, or a static one between pixels): the warp kernel draws them into a small
-			// frame streamed on a pipe, overlaid at a whole-pixel offset (stream/plan.ts).
-			const box = {
-				bw: Math.max(1, Math.round(c.intrinsicBox.width)),
-				bh: Math.max(1, Math.round(c.intrinsicBox.height)),
-			};
-			if (needsSubpixel(c, props, box)) {
-				const decInputs: string[][] = [];
-				const chain = layerSourceChain({
-					clip: c,
-					f0,
-					f1,
-					fps,
-					props,
-					sources: srcs,
-					override,
-					...(exts ? { extensions: exts } : {}),
-					addInput: (args) => {
-						decInputs.push(args);
-						return decInputs.length - 1;
-					},
-					label,
-					skipCrop: true,
-					nest: { nested: ctx.nested, path: ctx.path, threads },
-				});
-				const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
-				if (!ctx.addStream)
-					throw new Error(
-						`Sub-pixel layer ${c.clipId} inside a nested sequence whose nest clip is drawn sub-pixel (route through Remotion)`,
-					);
-				const fd = ctx.addStream(plan);
-				const k = addInput([
-					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
-					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
-				]);
-				chains.push(
-					`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
-				);
-				const next = `o${label}`;
-				chains.push(
-					`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[${next}]`,
-				);
-				last = next;
-				continue;
-			}
-
-			// edit-structure (KND-012): an adjustment layer's source is the composite so far; its output (effects,
-			// crop as transparency, opacity, fades) goes back over that composite.
-			let composite: { label: string; R0: number } | undefined;
-			if (c.kind === 'adjustment') {
-				const keep = `${label}k`;
-				const adj = `${label}s`;
-				chains.push(`[${last}]split[${keep}][${adj}]`);
-				last = keep;
-				composite = { label: adj, R0 };
-			}
-			// Source decode, source chain and effects (shared with the warp stage), then Motion.
-			const source = layerSourceChain({
+		// Sub-pixel layers (keyframed Motion, or a static one between pixels): the warp kernel draws them into a small
+		// frame streamed on a pipe, overlaid at a whole-pixel offset (stream/plan.ts).
+		const box = {
+			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+		};
+		if (needsSubpixel(c, props, box)) {
+			const decInputs: string[][] = [];
+			const chain = layerSourceChain({
 				clip: c,
 				f0,
 				f1,
@@ -808,50 +780,98 @@ function drawStack(ctx: StackContext): string {
 				sources: srcs,
 				override,
 				...(exts ? { extensions: exts } : {}),
-				addInput,
-				label,
-				...(composite ? { composite } : {}),
-				nest: {
-					nested: ctx.nested,
-					path: ctx.path,
-					threads,
-					...(ctx.addStream ? { addStream: ctx.addStream } : {}),
+				addInput: (args) => {
+					decInputs.push(args);
+					return decInputs.length - 1;
 				},
-			});
-			const src = source.input;
-			const f = source.filters;
-
-			// Motion → Opacity: M = P + R·S·(q − A) (S03:DM-010), flips → scale → rotation about the centre → alpha;
-			// keyframed Motion / Opacity sampled per frame into per-frame expressions (S03:ENG-032, keyframed.ts). The
-			// Motion scale folds into the source's scale to the box when no effect sits between them (one resample).
-			const motion = motionStage({
-				clip: c,
-				f0,
-				f1,
-				R0,
-				fps,
-				props,
-				bw: source.width,
-				bh: source.height,
-				W,
-				H,
 				label,
-				opaque: source.opaque,
-				threads: threads,
+				skipCrop: true,
+				nest: { nested: ctx.nested, path: ctx.path, threads },
 			});
-			if (!(source.resize && mergeResize(f, source.resize, motion))) f.push(...motionFilters(motion));
-			f.push(...fadeFilters(c.fades, f0));
-			// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
-			// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
-			f.push(shift);
-			chains.push(`${src}${f.join(',')}[${label}]`);
-
-			const { x, y } = motion;
+			const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
+			if (!ctx.addStream)
+				throw new Error(
+					`Sub-pixel layer ${c.clipId} inside a nested sequence whose nest clip is drawn sub-pixel (route through Remotion)`,
+				);
+			const fd = ctx.addStream(plan);
+			const k = addInput([
+				...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
+				...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+			]);
+			chains.push(
+				`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
+			);
 			const next = `o${label}`;
-			chains.push(`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`);
+			chains.push(
+				`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			);
 			last = next;
+			continue;
 		}
 
+		// edit-structure (KND-012): an adjustment layer's source is the composite so far; its output (effects,
+		// crop as transparency, opacity, fades) goes back over that composite.
+		let composite: { label: string; R0: number } | undefined;
+		if (c.kind === 'adjustment') {
+			const keep = `${label}k`;
+			const adj = `${label}s`;
+			chains.push(`[${last}]split[${keep}][${adj}]`);
+			last = keep;
+			composite = { label: adj, R0 };
+		}
+		// Source decode, source chain and effects (shared with the warp stage), then Motion.
+		const source = layerSourceChain({
+			clip: c,
+			f0,
+			f1,
+			fps,
+			props,
+			sources: srcs,
+			override,
+			...(exts ? { extensions: exts } : {}),
+			addInput,
+			label,
+			...(composite ? { composite } : {}),
+			nest: {
+				nested: ctx.nested,
+				path: ctx.path,
+				threads,
+				...(ctx.addStream ? { addStream: ctx.addStream } : {}),
+			},
+		});
+		const src = source.input;
+		const f = source.filters;
+
+		// Motion → Opacity: M = P + R·S·(q − A) (S03:DM-010), flips → scale → rotation about the centre → alpha;
+		// keyframed Motion / Opacity sampled per frame into per-frame expressions (S03:ENG-032, keyframed.ts). The
+		// Motion scale folds into the source's scale to the box when no effect sits between them (one resample).
+		const motion = motionStage({
+			clip: c,
+			f0,
+			f1,
+			R0,
+			fps,
+			props,
+			bw: source.width,
+			bh: source.height,
+			W,
+			H,
+			label,
+			opaque: source.opaque,
+			threads: threads,
+		});
+		if (!(source.resize && mergeResize(f, source.resize, motion))) f.push(...motionFilters(motion));
+		f.push(...fadeFilters(c.fades, f0));
+		// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
+		// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
+		f.push(shift);
+		chains.push(`${src}${f.join(',')}[${label}]`);
+
+		const { x, y } = motion;
+		const next = `o${label}`;
+		chains.push(`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`);
+		last = next;
+	}
 
 	return last;
 }
@@ -864,9 +884,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const H = snap.settings.height;
 	const R0 = snap.range.start;
 	const R1 = snap.range.end;
-	const frames = R1 - R0;
 	const frameSec = fps.den / fps.num;
-	const T = frames * frameSec;
 	const F = flicksPerFrame(fps);
 
 	const encoder = output.encoder ?? LEGACY_X264_CHOICE;

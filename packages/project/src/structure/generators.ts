@@ -4,7 +4,12 @@
 // Bars: SMPTE RP 219-1 / ARIB STD-B28 HD colour bars (Premiere's HD bars "comply with ARIB STD-B28"), in full-range
 // sRGB code values. Leader: Premiere's Universal Counting Leader Setup (wipe, background, line, target and numeral
 // colours; cue blips). Ported and extended from FilmCraft `crates/media/src/generators.rs` (MIT OR Apache-2.0).
-import { type CountingLeaderStyle, LEADER_BLIP_DB, LEADER_BLIP_HZ, type SyntheticSound } from './synthetic.ts';
+import {
+	type CountingLeaderStyle,
+	LEADER_BLIP_DB,
+	LEADER_BLIP_HZ,
+	type SyntheticSound,
+} from './synthetic.ts';
 
 // ---------------------------------------------------------------- bars
 
@@ -91,10 +96,9 @@ export const LEADER_COUNT_END = LEADER_LEAD_IN + (LEADER_FIRST_NUMERAL - LEADER_
 export const LEADER_DURATION = 11;
 
 /** What the leader shows at content time `t` (seconds). */
-export function leaderPhaseAt(t: number):
-	| { phase: 'lead-in' }
-	| { phase: 'count'; numeral: number; sweep: number }
-	| { phase: 'black' } {
+export function leaderPhaseAt(
+	t: number,
+): { phase: 'lead-in' } | { phase: 'count'; numeral: number; sweep: number } | { phase: 'black' } {
 	if (t < LEADER_LEAD_IN) return { phase: 'lead-in' };
 	if (t < LEADER_COUNT_END) {
 		const k = Math.floor(t - LEADER_LEAD_IN);
@@ -104,7 +108,9 @@ export function leaderPhaseAt(t: number):
 }
 
 /** Times (seconds) at which a blip starts, for the style's cue options. */
-export function leaderBlipTimes(style: Pick<CountingLeaderStyle, 'cueBlipOnTwo' | 'cueBlipAllSeconds'>): number[] {
+export function leaderBlipTimes(
+	style: Pick<CountingLeaderStyle, 'cueBlipOnTwo' | 'cueBlipAllSeconds'>,
+): number[] {
 	const out: number[] = [];
 	if (style.cueBlipAllSeconds)
 		for (let n = LEADER_FIRST_NUMERAL; n >= LEADER_LAST_NUMERAL; n--)
@@ -135,13 +141,7 @@ const DIGITS: Readonly<Record<string, readonly Pt[][]>> = {
 			[0.55, 1],
 		],
 	],
-	'2': [
-		[
-			...arc(0.5, 0.27, 0.4, 0.27, 190, 380),
-			[0.06, 1],
-			[0.94, 1],
-		],
-	],
+	'2': [[...arc(0.5, 0.27, 0.4, 0.27, 190, 380), [0.06, 1], [0.94, 1]]],
 	'3': [arc(0.5, 0.26, 0.38, 0.26, 200, 450), arc(0.5, 0.74, 0.42, 0.26, 270, 520)],
 	'4': [
 		[
@@ -151,14 +151,7 @@ const DIGITS: Readonly<Record<string, readonly Pt[][]>> = {
 			[0.96, 0.7],
 		],
 	],
-	'5': [
-		[
-			[0.88, 0],
-			[0.2, 0],
-			[0.14, 0.46],
-			...arc(0.5, 0.68, 0.4, 0.32, 215, 500),
-		],
-	],
+	'5': [[[0.88, 0], [0.2, 0], [0.14, 0.46], ...arc(0.5, 0.68, 0.4, 0.32, 215, 500)]],
 	'6': [
 		arc(0.5, 0.68, 0.42, 0.32, 0, 360),
 		[
@@ -204,15 +197,6 @@ function segDist(px: number, py: number, ax: number, ay: number, bx: number, by:
 }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-
-/** Composites colour `c` (0..1 RGBA) with coverage `k` over pixel `i` of an opaque canvas. */
-function over(px: Float32Array, i: number, c: readonly number[], k: number): void {
-	const a = k * (c[3] ?? 1);
-	if (a <= 0) return;
-	px[i] = px[i]! + (c[0]! - px[i]!) * a;
-	px[i + 1] = px[i + 1]! + (c[1]! - px[i + 1]!) * a;
-	px[i + 2] = px[i + 2]! + (c[2]! - px[i + 2]!) * a;
-}
 
 /** Per size and style: the static layers of the leader (background / wipe with rings and lines) and the geometry. */
 type LeaderLayers = {

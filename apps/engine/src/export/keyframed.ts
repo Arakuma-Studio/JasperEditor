@@ -509,7 +509,12 @@ export function audioVolumeFilters(
 	// edit-structure: a clip of a nested sequence carries its nested gain per frame (`nestGain`).
 	const nestVaries = (a.nestGain?.length ?? 0) > 1;
 	const nest0 = a.nestGain?.[0]?.db ?? 0;
-	if (!isAnimated(a.volumeDb) && !isAnimated(a.track.volumeDb) && !isAnimated(master.volumeDb) && !nestVaries) {
+	if (
+		!isAnimated(a.volumeDb) &&
+		!isAnimated(a.track.volumeDb) &&
+		!isAnimated(master.volumeDb) &&
+		!nestVaries
+	) {
 		const db = a.gainDb + a.volumeDb.value + a.track.volumeDb.value + master.volumeDb.value + nest0;
 		return [`volume=${fmt6(db)}dB`];
 	}

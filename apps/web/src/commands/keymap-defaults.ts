@@ -118,6 +118,9 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('timeline.audioChannels', 'Shift+KeyG', T),
 	b('timeline.matchFrame', 'KeyF', E),
 	b('timeline.reverseMatchFrame', 'Shift+KeyR', E),
+	// edit-structure (Premiere defaults: Sequence ▸ Make Subsequence Shift+U, Reveal Nested Sequence Ctrl+Shift+F).
+	b('sequence.makeSubsequence', 'Shift+KeyU', E),
+	b('timeline.revealNested', 'Ctrl+Shift+KeyF', E, { mac: 'Shift+Cmd+KeyF' }),
 	b('timeline.applyDefaultVideoTransition', 'Ctrl+KeyD', T),
 	b('timeline.applyDefaultAudioTransition', 'Ctrl+Shift+KeyD', T),
 	b('timeline.applyDefaultTransitionsToSelection', 'Shift+KeyD', T),

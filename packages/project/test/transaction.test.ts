@@ -157,7 +157,9 @@ describe('transactions (S01 §16)', () => {
 describe('catalog (ARCHITECTURE §5.3)', () => {
 	it('stubs refuse with E_NOT_IMPLEMENTED', () => {
 		const h = new Harness();
-		const r = h.tx([{ type: 'transcript.setBreak', transcriptId: 'trs_x', wordIndex: 0, breakBefore: 'line' }]);
+		const r = h.tx([
+			{ type: 'transcript.setBreak', transcriptId: 'trs_x', wordIndex: 0, breakBefore: 'line' },
+		]);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.errors.map((e) => e.code)).toContain('E_NOT_IMPLEMENTED');
 	});

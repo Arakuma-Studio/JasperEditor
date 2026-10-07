@@ -49,7 +49,9 @@ export function LayerBox({
 	// edit-structure: a nested sequence's colour effects run in the canvas chain too (no colour stage for DOM).
 	const chain =
 		clip.kind === 'nest-video' &&
-		props.effects.some((fx) => fx.enabled && !!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color);
+		props.effects.some(
+			(fx) => fx.enabled && !!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color,
+		);
 	const domFx = useLayerFx(layer, {
 		enabled: effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap),
 		canRun: canUseHtmlInCanvas(),

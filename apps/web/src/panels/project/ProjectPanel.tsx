@@ -497,6 +497,43 @@ export function ProjectPanel(props: PanelProps) {
 						<MenuEntry onClick={() => void runIfRegistered('panel.open.motionTemplates', ctx)}>
 							Motion Graphic…
 						</MenuEntry>
+						{/* edit-structure: Premiere's synthetic New Items. */}
+						<MenuEntry
+							testId="new-item-adjustment"
+							onClick={() => void runIfRegistered('project.newAdjustmentLayer', ctx, { binId })}
+						>
+							Adjustment Layer
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-bars"
+							onClick={() => void runIfRegistered('project.newBarsAndTone', ctx, { binId })}
+						>
+							Bars and Tone
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-black"
+							onClick={() => void runIfRegistered('project.newBlackVideo', ctx, { binId })}
+						>
+							Black Video
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-matte"
+							onClick={() => void runIfRegistered('project.newColorMatte', ctx, { binId })}
+						>
+							Color Matte…
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-transparent"
+							onClick={() => void runIfRegistered('project.newTransparentVideo', ctx, { binId })}
+						>
+							Transparent Video
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-leader"
+							onClick={() => void runIfRegistered('project.newCountingLeader', ctx, { binId })}
+						>
+							Universal Counting Leader…
+						</MenuEntry>
 					</Menu>
 				) : null}
 			</div>
@@ -513,6 +550,7 @@ export function ProjectPanel(props: PanelProps) {
 					onOpen={() => menu.itemId && void openItem(session, menu.itemId, ctx, setBinId)}
 					onNewBin={() => createBin(session, binId)}
 					onCommand={(id) => void runIfRegistered(id, ctx)}
+					onCommandArgs={(id, args) => void runIfRegistered(id, ctx, args)}
 				/>
 			) : null}
 		</div>
@@ -980,8 +1018,18 @@ function ContextMenu(props: {
 	onNewBin(): void;
 	/** Runs an Edit command for this panel (wp-clipboard: Cut / Copy / Paste, S01:CLB-007). */
 	onCommand(commandId: string): void;
+	onCommandArgs(commandId: string, args: unknown): void;
 }) {
 	const [labels, setLabels] = useState(false);
+	const doc = props.session.getCommitted();
+	const editableSynthetic =
+		props.itemIds.length === 1 &&
+		doc.items[props.itemIds[0]!]?.kind === 'synthetic' &&
+		['color-matte', 'counting-leader'].includes(
+			doc.synthetics[(doc.items[props.itemIds[0]!] as { syntheticId: string }).syntheticId]?.kind ?? '',
+		)
+			? props.itemIds[0]!
+			: null;
 	return (
 		<Menu anchor={{ x: props.x, y: props.y }} onClose={props.onClose}>
 			<MenuEntry onClick={props.onOpen}>Open</MenuEntry>
@@ -1033,6 +1081,29 @@ function ContextMenu(props: {
 				: null}
 			<MenuEntry disabled={props.readOnly} onClick={props.onNewBin}>
 				New Bin
+			</MenuEntry>
+			{/* edit-structure: Duplicate (sequences), synthetic settings, Remove Unused. */}
+			<MenuEntry
+				disabled={props.readOnly || !props.itemIds.some((id) => doc.items[id]?.kind === 'sequence')}
+				onClick={() => props.onCommandArgs('project.duplicateSequence', { itemIds: props.itemIds })}
+				testId="project-menu-duplicate"
+			>
+				Duplicate
+			</MenuEntry>
+			{editableSynthetic ? (
+				<MenuEntry
+					disabled={props.readOnly}
+					onClick={() => props.onCommandArgs('project.editSynthetic', { itemId: editableSynthetic })}
+					testId="project-menu-edit-synthetic"
+				>
+					{doc.synthetics[(doc.items[editableSynthetic] as { syntheticId: string }).syntheticId]?.kind ===
+					'counting-leader'
+						? 'Universal Counting Leader Setup…'
+						: 'Color Picker…'}
+				</MenuEntry>
+			) : null}
+			<MenuEntry disabled={props.readOnly} onClick={() => props.onCommand('edit.removeUnused')}>
+				Remove Unused
 			</MenuEntry>
 			<MenuEntry
 				disabled={props.readOnly || !props.itemIds.length}

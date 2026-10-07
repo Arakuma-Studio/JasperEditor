@@ -1,7 +1,7 @@
 // edit-structure: how a nest layer draws its nested sequence's tracks. `SequenceComposition` provides its own
 // `VideoTracks` (no import cycle between the composition and the layer table).
 import { type ComponentType, createContext } from 'react';
-import type { RenderOptions, RenderDoc } from '../types.ts';
+import type { RenderDoc, RenderOptions } from '../types.ts';
 
 export type NestTracksComponent = ComponentType<{ doc: RenderDoc; options: RenderOptions; offset: number }>;
 

@@ -54,10 +54,12 @@ export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 	for (const fx of clip.effects) {
 		if (!fx.enabled) continue;
 		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
-		if (!spec || spec.appliesTo !== 'video') continue;
+		if (spec?.appliesTo !== 'video') continue;
 		if (fx.effectId === CROP || spec.gpu || spec.color) return false;
 		// Only filter-type CSS (or an SVG filter): anything else (transforms, clip paths) changes geometry.
-		const probe = spec.preview.css?.(Object.fromEntries(spec.params.map((p) => [p.name, p.default])) as never);
+		const probe = spec.preview.css?.(
+			Object.fromEntries(spec.params.map((p) => [p.name, p.default])) as never,
+		);
 		if (probe && Object.keys(probe).some((k) => k !== 'filter')) return false;
 		if (!probe && !spec.preview.svgFilter) return false;
 	}
@@ -86,17 +88,17 @@ export function AdjustmentScope({
 	const frame = useCurrentFrame() + offset;
 	const css = useMemo(() => clips.every(cssExactAdjustment), [clips]);
 	const active = activeAt(clips, frame);
-	const props = active ? resolveCachedLayerProps(active, clipContentTime(active, frame, doc.settings.fps)) : null;
-	if (css) return <CssScope active={active} effects={props?.effects ?? []}>{children}</CssScope>;
+	const props = active
+		? resolveCachedLayerProps(active, clipContentTime(active, frame, doc.settings.fps))
+		: null;
+	if (css)
+		return (
+			<CssScope active={active} effects={props?.effects ?? []}>
+				{children}
+			</CssScope>
+		);
 	return (
-		<CanvasScope
-			clips={clips}
-			active={active}
-			frame={frame}
-			doc={doc}
-			options={options}
-			props={props}
-		>
+		<CanvasScope clips={clips} active={active} frame={frame} doc={doc} options={options} props={props}>
 			{children}
 		</CanvasScope>
 	);
@@ -130,7 +132,11 @@ function CssScope({
 				// biome-ignore lint/security/noDangerouslySetInnerHtml: effect registry SVG filter markup (app code)
 				dangerouslySetInnerHTML={{ __html: markup }}
 			/>
-			<div data-adjustment-scope="css" data-adjustment-active={active?.clipId ?? ''} style={{ ...FILL, filter: filter || undefined }}>
+			<div
+				data-adjustment-scope="css"
+				data-adjustment-active={active?.clipId ?? ''}
+				style={{ ...FILL, filter: filter || undefined }}
+			>
 				{children}
 			</div>
 		</>
@@ -194,8 +200,7 @@ function CanvasScope({
 				},
 			],
 		};
-		// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by `key`
-	}, [key, holder]);
+	}, [key, holder, opacity, blend, insets]);
 	const fx = useLayerFx(layer, {
 		enabled: !!active,
 		canRun,
@@ -212,7 +217,10 @@ function CanvasScope({
 					{children}
 				</div>
 				{active && options.isPreview ? (
-					<GradeChip layer={layer} text="Adjustment layers need HTML-in-Canvas here (chrome://flags/#canvas-draw-element)" />
+					<GradeChip
+						layer={layer}
+						text="Adjustment layers need HTML-in-Canvas here (chrome://flags/#canvas-draw-element)"
+					/>
 				) : null}
 			</>
 		);
@@ -223,31 +231,36 @@ function CanvasScope({
 		) : null;
 	return (
 		<>
-		<HtmlInCanvas
-			width={L?.cssWidth ?? W}
-			height={L?.cssHeight ?? H}
-			pixelDensity={L?.pxScale ?? 1}
-			effects={stage ? descriptors : []}
-			style={{
-				position: 'absolute',
-				left: -(L?.padding.left ?? 0),
-				top: -(L?.padding.top ?? 0),
-				width: L?.cssWidth ?? W,
-				height: L?.cssHeight ?? H,
-				display: 'block',
-			}}
-			showInTimeline={false}
-		>
-			<div
-				data-adjustment-scope="canvas"
-				data-adjustment-active={active?.clipId ?? ''}
-				style={{ position: 'absolute', left: L?.padding.left ?? 0, top: L?.padding.top ?? 0, width: W, height: H }}
+			<HtmlInCanvas
+				width={L?.cssWidth ?? W}
+				height={L?.cssHeight ?? H}
+				pixelDensity={L?.pxScale ?? 1}
+				effects={stage ? descriptors : []}
+				style={{
+					position: 'absolute',
+					left: -(L?.padding.left ?? 0),
+					top: -(L?.padding.top ?? 0),
+					width: L?.cssWidth ?? W,
+					height: L?.cssHeight ?? H,
+					display: 'block',
+				}}
+				showInTimeline={false}
 			>
-				{children}
-			</div>
-		</HtmlInCanvas>
-		{chip}
+				<div
+					data-adjustment-scope="canvas"
+					data-adjustment-active={active?.clipId ?? ''}
+					style={{
+						position: 'absolute',
+						left: L?.padding.left ?? 0,
+						top: L?.padding.top ?? 0,
+						width: W,
+						height: H,
+					}}
+				>
+					{children}
+				</div>
+			</HtmlInCanvas>
+			{chip}
 		</>
 	);
-
 }

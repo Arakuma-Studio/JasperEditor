@@ -1,6 +1,8 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
+import { contentTimeAt } from '../derive/index.ts';
+import { evaluate } from '../keyframes.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
@@ -19,22 +21,19 @@ import {
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
-import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
-import { conformSequenceRate, isNestClip, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
+import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
 import {
 	type CountingLeaderStyle,
 	type SyntheticSound,
 	syntheticPicture,
 	syntheticSound,
 } from '../structure/synthetic.ts';
+import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../time.ts';
 import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
-import { contentTimeAt } from '../derive/index.ts';
-import { evaluate } from '../keyframes.ts';
-import { clipPictureTime } from './scene.ts';
 import {
-	audioFadeGain,
 	type AudioClipTransitionRender,
+	audioFadeGain,
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
@@ -42,6 +41,7 @@ import {
 	resolveAudioTransitions,
 	resolveVideoTransitions,
 } from '../transitions.ts';
+import { clipPictureTime } from './scene.ts';
 
 export type MediaHandle = {
 	url: string;
@@ -314,7 +314,9 @@ export function nestGainDbAt(runs: RenderAudioClip['nestGain'], frame: number): 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
 
 function transitionFields<T>(
-	x: { headHandle: number; tailHandle: number; fades: T[]; freezeHead?: number; freezeTail?: number } | undefined,
+	x:
+		| { headHandle: number; tailHandle: number; fades: T[]; freezeHead?: number; freezeTail?: number }
+		| undefined,
 ): {
 	headHandle?: number;
 	tailHandle?: number;
@@ -403,7 +405,9 @@ export function buildRenderSnapshot(
 		const f1 = Math.min(c.start + c.duration + extent.tail, range.end) - 1;
 		if (f1 < f0) return { error: 'outside the range' };
 		const timeAt = (f: number) =>
-			kind === 'video' ? clipPictureTime(c, f, seq.settings.frameRate as Rational) : contentTimeAt(c, f, seq.settings.frameRate as Rational);
+			kind === 'video'
+				? clipPictureTime(c, f, seq.settings.frameRate as Rational)
+				: contentTimeAt(c, f, seq.settings.frameRate as Rational);
 		const ta = timeAt(f0);
 		const tb = timeAt(f1);
 		const n0 = Math.max(0, Math.floor(Math.min(ta, tb) / F + 1e-6));

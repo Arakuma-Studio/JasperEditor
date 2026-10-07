@@ -180,7 +180,8 @@ export function syntheticFromParams(
 		}
 		case 'bars-and-tone': {
 			unknown(['toneHz', 'toneDb']);
-			const prev = base?.kind === 'bars-and-tone' ? base : { toneHz: DEFAULT_TONE_HZ, toneDb: DEFAULT_TONE_DB };
+			const prev =
+				base?.kind === 'bars-and-tone' ? base : { toneHz: DEFAULT_TONE_HZ, toneDb: DEFAULT_TONE_DB };
 			const toneHz = params.toneHz ?? prev.toneHz;
 			const toneDb = params.toneDb ?? prev.toneDb;
 			if (typeof toneHz !== 'number' || !(toneHz >= 20 && toneHz <= 20000))

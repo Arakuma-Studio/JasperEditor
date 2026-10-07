@@ -61,7 +61,10 @@ type Prepared = {
 };
 
 /** The content frames (sequence-rate grid) a generator clip shows over its drawn frames. */
-function shownFrames(c: RenderVisualClip, fps: RenderSnapshot['settings']['fps']): { k0: number; k1: number } {
+function shownFrames(
+	c: RenderVisualClip,
+	fps: RenderSnapshot['settings']['fps'],
+): { k0: number; k1: number } {
 	const F = flicksPerFrame(fps);
 	const a = c.start - (c.headHandle ?? 0);
 	const b = c.start + c.duration + (c.tailHandle ?? 0) - 1;
@@ -147,7 +150,10 @@ export function createSyntheticExtension(deps: { ffmpeg: Ffmpeg }): NativeExtens
 			}
 			for (const [mediaId, { clip, seconds }] of needs) {
 				const n = Math.ceil(Math.max(1, seconds) * SAMPLE_RATE);
-				const wav = encodeWavStereo16(syntheticSamples(clip.generator!, 0, n, SAMPLE_RATE, frameSec), SAMPLE_RATE);
+				const wav = encodeWavStereo16(
+					syntheticSamples(clip.generator!, 0, n, SAMPLE_RATE, frameSec),
+					SAMPLE_RATE,
+				);
 				const path = join(await scratch(), `${mediaId.replace(/[^\w-]/g, '_')}.wav`);
 				await writeFile(path, wav);
 				planned.media[mediaId] = generatedWav(path, n / SAMPLE_RATE, wav.length);
@@ -179,7 +185,14 @@ function generatedWav(path: string, seconds: number, bytes: number): LocalMedia 
 				durationFlicks: Math.round(seconds * FLICKS_PER_SECOND),
 				startTimecode: null,
 				streams: [
-					{ index: 0, type: 'audio', codec: 'pcm_s16le', sampleRate: SAMPLE_RATE, channels: 2, channelLayout: 'stereo' },
+					{
+						index: 0,
+						type: 'audio',
+						codec: 'pcm_s16le',
+						sampleRate: SAMPLE_RATE,
+						channels: 2,
+						channelLayout: 'stereo',
+					},
 				],
 				rotationDegrees: 0,
 				hasAlpha: false,

@@ -20,6 +20,7 @@ import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { registerCommands } from './registry.ts';
 import { shapeCommands } from './shapes.ts';
+import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
@@ -53,6 +54,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
+	structureCommands,
 ];
 
 let registered = false;

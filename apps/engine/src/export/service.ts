@@ -32,9 +32,9 @@ import {
 	layerOverride,
 	type NativeExtension,
 	NativeExtensionRegistry,
+	type PreparedExtensions,
 	prepareExtensions,
 	prepareNestedExtensions,
-	type PreparedExtensions,
 } from './native-ext.ts';
 import {
 	isAnimeTemplate,

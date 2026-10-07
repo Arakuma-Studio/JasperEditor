@@ -26,6 +26,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
+import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
@@ -62,7 +63,7 @@ import {
 	useTimelineEnv,
 } from './env.tsx';
 import { mediaCacheVersion } from './media/media-cache.ts';
-import { itemDurationFrames } from './model/drop.ts';
+import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt } from './model/layout.ts';
 import { renderSegments } from './model/renderbar.ts';
@@ -131,6 +132,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	// ------------------------------------------------------------ store selections (no transport!)
 	const seq = useSessionState((s) => (s.transient ?? s.document).sequences[seqId] as Sequence);
 	const committedSeq = useSessionState((s) => s.document.sequences[seqId] as Sequence);
+	// edit-structure: Sequence ▸ Show Through Edits.
+	const showThroughEdits = useSessionState((s) => s.toggles.showThroughEdits !== false);
 	const committedDoc = useSessionState((s) => s.document);
 	const view = useSessionState((s) => s.views[seqId]!);
 	const selectedClips = useSessionState((s) => s.selection.timeline.clips);
@@ -470,7 +473,73 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			{ kind: 'separator' },
 			{ kind: 'item', label: 'Enable', checked: c.enabled, run: () => run('timeline.toggleEnable') },
 			{ kind: 'item', label: linked ? 'Unlink' : 'Link', run: () => run('timeline.linkUnlink') },
+			// edit-structure (Premiere clip menu): Group / Ungroup, Nest…, Make Subsequence, frame holds.
+			{
+				kind: 'item',
+				label: 'Group',
+				shortcut: 'Ctrl+G',
+				disabled: readOnly,
+				run: () => run('timeline.group'),
+			},
+			{
+				kind: 'item',
+				label: 'Ungroup',
+				shortcut: 'Ctrl+Shift+G',
+				disabled: readOnly || !c.groupId,
+				run: () => run('timeline.ungroup'),
+			},
 			{ kind: 'item', label: 'Duplicate', run: () => run('timeline.duplicate') },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Nest…', disabled: readOnly, run: () => run('clip.nest') },
+			...(c.kind === 'nest-video' || c.kind === 'nest-audio'
+				? [
+						{ kind: 'item' as const, label: 'Unnest', disabled: readOnly, run: () => run('clip.unnest') },
+						{
+							kind: 'item' as const,
+							label: 'Reveal Nested Sequence',
+							shortcut: 'Ctrl+Shift+F',
+							run: () => run('timeline.revealNested'),
+						},
+					]
+				: []),
+			{
+				kind: 'item',
+				label: 'Make Subsequence',
+				shortcut: 'Shift+U',
+				disabled: readOnly,
+				run: () => run('sequence.makeSubsequence'),
+			},
+			{
+				kind: 'item',
+				label: 'Join Through Edits',
+				disabled: readOnly,
+				run: () => run('timeline.joinThroughEdits'),
+			},
+			...(c.kind !== 'audio' &&
+			c.kind !== 'nest-audio' &&
+			c.kind !== 'synthetic-audio' &&
+			c.kind !== 'adjustment'
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Frame Hold Options…',
+							disabled: readOnly,
+							run: () => run('timeline.frameHoldOptions'),
+						},
+						{
+							kind: 'item' as const,
+							label: 'Add Frame Hold',
+							disabled: readOnly,
+							run: () => run('timeline.addFrameHold'),
+						},
+						{
+							kind: 'item' as const,
+							label: 'Insert Frame Hold Segment',
+							disabled: readOnly,
+							run: () => run('timeline.insertFrameHoldSegment'),
+						},
+					]
+				: []),
 			{ kind: 'separator' },
 			{
 				kind: 'submenu',
@@ -610,7 +679,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const yh = hitY(g.layout, p.y);
 		if (yh.kind !== 'track') return;
 		const th = hitTransition(transitions, yh.row, g.viewport, p.x, p.y - yh.row.y);
-		if (!th) return;
+		if (!th) {
+			// edit-structure: double-clicking a nest clip opens its sequence at the frame under the pointer.
+			const hit = hitTest(committedSeq, g.layout, g.viewport, p.x, p.y);
+			if (hit.kind === 'clip' && (hit.clip.kind === 'nest-video' || hit.clip.kind === 'nest-audio'))
+				revealNested(session, committedSeq, hit.clip, boundaryFrameAt(g.viewport, p.x));
+			return;
+		}
 		session.select('timeline', [], 'replace');
 		session.select('transitions', [th.geom.t.id], 'replace');
 		run('panel.focus.effectControls');
@@ -983,8 +1058,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			const dur = itemDurationFrames(doc, item, committedSeq.settings.frameRate);
 			if (dur === null) continue;
 			const asset = item.kind === 'media' ? (doc.media[item.mediaId] as MediaAsset | undefined) : undefined;
-			const hasVideo = asset ? asset.probe.streams.some((s) => s.type === 'video') : true;
-			const hasAudio = asset ? asset.probe.streams.some((s) => s.type === 'audio') : false;
+			// edit-structure: sequences (nests or individual clips) and synthetics with sound have both kinds.
+			const av = itemAvKinds(doc, item);
+			const hasVideo = asset ? asset.probe.streams.some((s) => s.type === 'video') : av.video;
+			const hasAudio = asset ? asset.probe.streams.some((s) => s.type === 'audio') : av.audio;
 			// TL-493/494: pointer track for its kind; the other kind mirrors the index; retarget to V1/A1.
 			const tracks: Record<string, unknown> = {};
 			if (t.region === 'video') {
@@ -1001,6 +1078,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				tracks,
 				mode: t.insert ? 'insert' : 'overwrite',
 				createTracks: true,
+				...(item.kind === 'sequence'
+					? { nest: session.getState().toggles.insertSequencesAsNests !== false }
+					: {}),
 			});
 			at += dur;
 		}
@@ -1182,6 +1262,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						overlays={overlays}
 						transitions={transitions}
 						selectedTransitions={selectedTransitions}
+						showThroughEdits={showThroughEdits}
 					/>
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>

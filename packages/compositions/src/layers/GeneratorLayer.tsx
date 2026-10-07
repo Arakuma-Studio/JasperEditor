@@ -2,12 +2,7 @@
 // on a canvas from the pure rasterizers of @jasper/project (`renderBars`, `renderCountingLeader`), the same pixels the
 // native export writes into its intermediates. Then the clip's pipeline like a picture: GPU shader effects through
 // `FxPicture`, colour runs through the colour stage, CSS effects, Motion, opacity and blend.
-import {
-	FLICKS_PER_SECOND,
-	type RenderVisualClip,
-	renderBars,
-	renderCountingLeader,
-} from '@jasper/project';
+import { FLICKS_PER_SECOND, type RenderVisualClip, renderBars, renderCountingLeader } from '@jasper/project';
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { ColorCanvas } from '../color/ColorCanvas.tsx';
 import { useColorStage } from '../color/chain.ts';
@@ -19,11 +14,24 @@ import { GradeChip, LayerBox } from './LayerBox.tsx';
 
 type Generator = Extract<RenderVisualClip['source'], { generator: unknown }>['generator'];
 
-const FILL = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'block' } as const;
+const FILL = {
+	position: 'absolute',
+	left: 0,
+	top: 0,
+	width: '100%',
+	height: '100%',
+	display: 'block',
+} as const;
 const barsCache = new Map<string, HTMLCanvasElement>();
 
 /** The generator's picture at content time `t` (flicks) as a canvas of `w × h`. */
-export function generatorCanvas(g: Generator, w: number, h: number, t: number, fps: number): HTMLCanvasElement {
+export function generatorCanvas(
+	g: Generator,
+	w: number,
+	h: number,
+	t: number,
+	fps: number,
+): HTMLCanvasElement {
 	const key = `${w}x${h}`;
 	if (g.kind === 'bars') {
 		const hit = barsCache.get(key);
@@ -33,7 +41,9 @@ export function generatorCanvas(g: Generator, w: number, h: number, t: number, f
 	c.width = w;
 	c.height = h;
 	const px =
-		g.kind === 'bars' ? renderBars(w, h) : renderCountingLeader(w, h, t / FLICKS_PER_SECOND, g.style, 1 / fps);
+		g.kind === 'bars'
+			? renderBars(w, h)
+			: renderCountingLeader(w, h, t / FLICKS_PER_SECOND, g.style, 1 / fps);
 	const ctx = c.getContext('2d');
 	if (ctx) ctx.putImageData(new ImageData(px as Uint8ClampedArray<ArrayBuffer>, w, h), 0, 0);
 	if (g.kind === 'bars') barsCache.set(key, c);

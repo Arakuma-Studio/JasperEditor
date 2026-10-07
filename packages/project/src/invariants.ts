@@ -377,7 +377,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			// edit-structure: frame holds are for clips with a picture (not adjustment layers, captions or sound).
 			if (c.frameHold !== undefined) {
 				const caps = kindCapabilities(c.kind);
-				if (!caps || caps.trackKind !== 'video' || c.kind === 'adjustment')
+				if (caps?.trackKind !== 'video' || c.kind === 'adjustment')
 					issues.push(inv('INV-012', `Clip ${c.id} cannot have a frame hold`, cw));
 				else if (!Number.isInteger(c.frameHold.flicks) || c.frameHold.flicks < 0)
 					issues.push(inv('INV-012', `Clip ${c.id} has an invalid frame hold time`, cw));
