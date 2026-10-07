@@ -226,26 +226,8 @@ clipMenuExtensions.register({
 		const readOnly = session.getState().readOnly;
 		const ids = selection.includes(clip.id) ? selection : [clip.id];
 		const remapped = !!activeRemap(clip as TimedClip);
-		const items: MenuItemSpec[] = [
-			{
-				kind: 'submenu',
-				label: 'Show Clip Keyframes',
-				items: [
-					{
-						kind: 'submenu',
-						label: 'Time Remapping',
-						items: [
-							{
-								kind: 'item',
-								label: 'Speed',
-								checked: remapped || isBandShown(clip.id),
-								run: () => setBandShown(ids, !(remapped || isBandShown(clip.id))),
-							},
-						],
-					},
-				],
-			},
-		];
+		// Show Clip Keyframes ▸ Time Remapping ▸ Speed lives in edit-ux's Show Clip Keyframes menu (edit-ux/menus.ts).
+		const items: MenuItemSpec[] = [];
 		if (remapped)
 			items.push({
 				kind: 'item',

@@ -65,7 +65,8 @@ clip never shows frames beyond its media) and to the next clip. Refusals:
 - clips with a tracker: their analysis is in content time. `tracker.add` is refused on remapped clips too.
 
 Speed/Duration, trim, rate stretch, transitions' handles, paste attributes ("Time Remapping" row) and Remove
-Attributes are remap-aware (`clip-edit.ts`, `clip-core.ts`, `transitions.ts`, `clipboard`). The source-range
+Attributes are remap-aware (handles in `commands/ripple.ts` `contentHandles`, shared with edit-ux's trims; `clip-edit.ts`,
+`transitions.ts`, `clipboard`). The source-range
 process (media management) covers the remapped media extent (`process/source-range.ts`).
 
 ## 3. Preview and Remotion renders (`packages/compositions/src/retime/`)
@@ -196,7 +197,9 @@ The scenes.mp4 guards are a one-frame white flash, a 0.4 s dissolve, a 12 px/fra
 ## 8. UI (apps/web/src/time/)
 
 - **Speed band** (`SpeedBand.tsx`, a clip decoration). Shown via clip menu ▸ Show Clip Keyframes ▸ Time Remapping ▸
-  Speed, or always on remapped clips. The scale is logarithmic, ±3 octaves around the 100 % line (our choice; Adobe
+  Speed, or always on remapped clips. The entry is part of edit-ux's Show Clip Keyframes menu
+  (`edit-ux/menus.ts`), after Opacity as in Premiere. Choosing it hides the clip's property lane; choosing a property
+  hides the band (remapped clips keep it). The scale is logarithmic, ±3 octaves around the 100 % line (our choice; Adobe
   does not document its scale). Gestures follow the Premiere CS6 reference:
   - drag up/down to change the segment speed (Shift: 5 % steps);
   - Ctrl/Cmd-click to add a keyframe;

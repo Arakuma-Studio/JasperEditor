@@ -1,7 +1,7 @@
 // Workstream `time` UI: the speed band geometry and the Time Remapping / Time Interpolation / Scene Edit Detection
 // commands against a real session.
 import { EngineClient } from '@jasper/engine-client';
-import { activeRemap, RATES, type TimedClip, type VideoClip } from '@jasper/project';
+import { activeRemap, RATES, type Sequence, type TimedClip, type VideoClip } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
 	type CommandCtx,
@@ -10,9 +10,10 @@ import {
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
+import { keyframeMenu } from '../src/edit-ux/menus.ts';
 import { bandArea, bandKeys, bandSegments, keyAt, speedLabel, speedToY, yToSpeed } from '../src/time/band.ts';
 import { sceneTargets } from '../src/time/scenes.ts';
-import { isBandShown } from '../src/time/store.ts';
+import { isBandShown, setBandShown } from '../src/time/store.ts';
 import { setupTimeline, videoAsset } from './timeline-helpers.ts';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
@@ -123,5 +124,30 @@ describe('time commands', () => {
 		expect(t).toHaveLength(1);
 		expect(t[0]!.startSec).toBe(0);
 		expect(t[0]!.endSec).toBeCloseTo(4, 1);
+	});
+});
+
+describe('Show Clip Keyframes ▸ Time Remapping ▸ Speed (edit-ux keyframe menu)', () => {
+	it('sits after Opacity, shows the band and hides the property lane; another property hides the band', async () => {
+		const h = harness();
+		const v = h.movie();
+		// The band set is UI state shared by the module (clip ids repeat across harnesses).
+		setBandShown([v], false);
+		const seq = h.seq() as Sequence;
+		const menu = keyframeMenu(h.session, seq, seq.clips[v]!);
+		const labels = (menu as { items: { label?: string }[] }).items.map((i) => i.label);
+		expect(labels.indexOf('Time Remapping')).toBe(labels.indexOf('Opacity') + 1);
+		const tr = (menu as { items: { label?: string; items?: { label: string; run(): void }[] }[] }).items.find(
+			(i) => i.label === 'Time Remapping',
+		)!;
+		tr.items![0]!.run();
+		expect(isBandShown(v)).toBe(true);
+		expect(h.session.getState().views[seq.id]?.keyframeDisplay?.[v]).toBe('none');
+		const again = keyframeMenu(h.session, h.seq() as Sequence, h.seq().clips[v]!);
+		const opacity = (again as { items: { label?: string; items?: { run(): void }[] }[] }).items.find(
+			(i) => i.label === 'Opacity',
+		)!;
+		opacity.items![0]!.run();
+		expect(isBandShown(v)).toBe(false);
 	});
 });
