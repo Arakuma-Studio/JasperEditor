@@ -207,6 +207,8 @@ active sequence's.
   clipped one as in Photoshop); a group's blend mode applies to its nested sequence.
 - Deinterlacing on the retime path runs per decoded chunk (`bwdif` at a chunk boundary sees one neighbour).
 - An assumed frame rate on variable-frame-rate media scales its timestamps (no CFR conform).
+- Lottie and vector media have no engine derivatives (poster, filmstrip sprite, proxy): their posters are drawn in
+  the page, and timeline filmstrips of Lottie clips repeat the poster rather than showing each frame.
 - Lottie export has no layer parenting or track mattes (the editor has no layer links of that kind) and plays a
   looping Lottie clip once.
 - Project Manager (collect / consolidate), listed in `docs/gaps.md` under imports, is not part of this workstream's
