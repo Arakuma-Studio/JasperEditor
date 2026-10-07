@@ -120,6 +120,11 @@ clip opacity, are keyframable, track forward/backward, and export natively.
 ### roto
 **Done when:** a segmentation model (permissive licence) propagates a roto mask across frames with manual correction,
 usable as a track matte or effect mask, measured on synthetic clips (IoU) and documented.
+**Status (merged):** done — see [wp-notes/roto.md](wp-notes/roto.md): SAM 2.1 tiny (Apache-2.0, downloaded on
+request) + graph cut, propagation with corrections, Object Matte / Object Blur effects (compose with effect masks,
+usable as a Track Matte source since the Track Matte Key reads the matte track's finished picture — not separately
+tested —, Convert to Masks), IoU 0.98 on the synthetic plate. Limits: CPU speed with the model
+(≈ 3 s per 640×360 frame unloaded), refine mattes' temporal controls read the source, no default tool key.
 
 ### expressions
 **Done when:** After Effects-style expressions (JavaScript, `time`, `value`, `wiggle`, `loopOut`, property links)

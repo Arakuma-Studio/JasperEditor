@@ -149,7 +149,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | MT-1 | Point and planar tracking, corner pin, screen replacement (beyond Premiere) | P1 | done | wp-m2-track, wp-m3-trackui | — |
-| MT-2 | Roto brush / segmentation (After Effects overlap) | P2 | missing | none | roto |
+| MT-2 | Roto brush / segmentation (After Effects overlap) | P2 | done | wp-notes/roto, `apps/mcp/test/roto.test.ts`, `e2e/roto.spec.ts` | roto |
 
 ### Graphics
 
