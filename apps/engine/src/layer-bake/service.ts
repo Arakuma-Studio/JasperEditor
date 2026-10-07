@@ -41,6 +41,7 @@ import { binaryNames } from '../tools/lgpl.ts';
 import type { CoreServices } from '../tools/services.ts';
 import {
 	type BakeEnvironment,
+	expressionKeyPart,
 	FileHashCache,
 	KEY_RE,
 	type KeyFont,
@@ -601,6 +602,11 @@ export class LayerBakeService {
 			still: variant.recipe !== 'master',
 			rect,
 			...(clip.kind === 'motion-graphic' ? { renderVersion: templateRenderVersion(clip) } : {}),
+			...(() => {
+				const e = expressionKeyPart(clip, snap.expressions);
+				// The clip's sequence position matters too (`time` is sequence time).
+				return e ? { expressions: `${e}:${clip.start}` } : {};
+			})(),
 			graded: false,
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>

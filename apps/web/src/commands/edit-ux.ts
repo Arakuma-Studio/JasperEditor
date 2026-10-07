@@ -2,16 +2,9 @@
 // Forward/Backward, Extend Edit, numeric trim entry, dynamic J/K/L trimming, Play Around the Edit), Match Frame,
 // Reverse Match Frame, Linked Selection, Speed/Duration, Make Subclip, source patching and track targeting.
 // Keys follow Premiere Pro's defaults (keymap-defaults.ts).
-import {
-	editPointFrame,
-	matchFrame,
-	type NearestKind,
-	reverseMatchFrame,
-	type Sequence,
-} from '@jasper/project';
+import { editPointFrame, type NearestKind, type Sequence } from '@jasper/project';
 import { z } from 'zod';
-import { driverFor, getSourceTransport } from '../panels/program/transport-registry.ts';
-import { activeTimeline } from '../panels/timeline/env.tsx';
+import { driverFor } from '../panels/program/transport-registry.ts';
 import {
 	activeDynamicTrim,
 	commitDynamicTrim,
@@ -213,24 +206,16 @@ export const editUxCommands: UiCommand[] = [
 		repeat: true,
 		when: hasEditPoints,
 	}),
-	cmd(
-		'timeline.extendEditToPlayhead',
-		'Extend Selected Edit to Playhead',
-		T,
-		(ctx, e) => {
-			const points = editPointsOf(e.handle?.ui);
-			if (!points.length || !e.handle) {
-				ctx.ui.toast({ kind: 'info', message: 'Select an edit point first' });
-				return;
-			}
-			const f = editPointFrame(e.seq, points[0]!);
-			if (f === null) return;
-			toastResult(
-				ctx,
-				trimSelected(e.session, e.handle, e.seq.id, e.playhead - f, { label: 'Extend Edit' }),
-			);
-		},
-	),
+	cmd('timeline.extendEditToPlayhead', 'Extend Selected Edit to Playhead', T, (ctx, e) => {
+		const points = editPointsOf(e.handle?.ui);
+		if (!points.length || !e.handle) {
+			ctx.ui.toast({ kind: 'info', message: 'Select an edit point first' });
+			return;
+		}
+		const f = editPointFrame(e.seq, points[0]!);
+		if (f === null) return;
+		toastResult(ctx, trimSelected(e.session, e.handle, e.seq.id, e.playhead - f, { label: 'Extend Edit' }));
+	}),
 	cmd(
 		'timeline.trimNumericEntry',
 		'Trim by Number',

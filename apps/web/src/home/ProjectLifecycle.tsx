@@ -4,7 +4,9 @@
 // - the ImportService registration (state/services.ts) and media runtime sync (S01:LIFE-050);
 // - OS file drops anywhere in the editor that no other target handled (S05:PRJ-007);
 // - export completion toasts with Download (S05:EX-013) and the Export mode overlay (S05:EX-001);
-// - hosts for import prompts, Project panel dialogs and notices.
+// - hosts for import prompts, Project panel dialogs and notices;
+// - File ▸ Save As / Save a Copy / Revert / Project Versions / Recover Unsaved Changes, and the crash-recovery prompt
+//   when the project opens with unsaved changes of a session that ended uncleanly (project-files.tsx, D-39).
 // Rendered by App.tsx inside ProjectSessionHost, around the shell.
 import { TERMINAL_JOB_STATES } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
@@ -20,8 +22,9 @@ import {
 	takeOverSession,
 } from '@jasper/session';
 import { SessionProvider, useSession, useStoreSelector } from '@jasper/session/react';
-import { Button, Z } from '@jasper/ui';
+import { Button, openDialog, Z } from '@jasper/ui';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
+import { useNavigate } from 'react-router';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
@@ -32,6 +35,11 @@ import { activeProjectBin } from '../panels/project/instances.ts';
 import { useEngine } from '../state/engine.tsx';
 import { registerImportService } from '../state/services.ts';
 import { NoticeHost, notices } from './notices.tsx';
+import {
+	createProjectFileActions,
+	PROJECT_FILE_DIALOGS,
+	registerProjectFileActions,
+} from './project-files.tsx';
 
 const IDLE_STATUS: AutosaveStatus = {
 	saving: false,
@@ -41,6 +49,7 @@ const IDLE_STATUS: AutosaveStatus = {
 	error: null,
 	paused: null,
 	saves: 0,
+	serverRevision: 0,
 };
 
 /** Autosave status of a session (header dirty dot / "Saving…"; S01:PER-020, S05:HD-002). */
@@ -103,6 +112,45 @@ function LifecycleBody(props: {
 			void c.dispose();
 		};
 	}, [session]);
+
+	// File actions (Save As, Revert, versions, recovery) and the crash-recovery prompt (S01:PER-021, AC-18).
+	const navigate = useNavigate();
+	const { onReplace } = props;
+	useEffect(() => {
+		const actions = createProjectFileActions(session, {
+			replace: onReplace,
+			open: (projectId) => navigate(`/project/${projectId}`),
+		});
+		const off = registerProjectFileActions(actions);
+		let live = true;
+		if (!session.getState().readOnly)
+			void actions
+				.listRecovery()
+				.then((candidates) => {
+					if (!live || candidates.length === 0) return;
+					return openDialog(PROJECT_FILE_DIALOGS.recovery, { actions, candidates, atOpen: true }).then(
+						(r) => {
+							if (r === 'recovered')
+								notices.push({
+									kind: 'success',
+									message: 'Unsaved changes recovered',
+									detail: 'Edit ▸ Undo takes them back.',
+								});
+						},
+					);
+				})
+				.catch((e) =>
+					notices.push({
+						kind: 'warning',
+						message: 'Could not check for unsaved changes',
+						detail: e instanceof Error ? e.message : String(e),
+					}),
+				);
+		return () => {
+			live = false;
+			off();
+		};
+	}, [session, onReplace, navigate]);
 
 	// ImportService for timeline/program/project drops and File ▸ Import
 	useEffect(() => {

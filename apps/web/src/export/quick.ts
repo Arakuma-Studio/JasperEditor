@@ -44,6 +44,7 @@ export async function startQuickExport(
 		engine: engineChoice,
 		...(remembered?.codec ? { codec: remembered.codec } : {}),
 		...(remembered?.encoder ? { encoder: remembered.encoder } : {}),
+		...(remembered?.audio ? { audio: remembered.audio } : {}),
 	});
 	const envelope = exportEnvelope(doc, session.revision);
 	const plan = await engine.planExport({ envelope, sequenceId: seq.id, settings });

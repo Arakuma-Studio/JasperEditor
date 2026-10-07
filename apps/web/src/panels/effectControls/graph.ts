@@ -269,7 +269,11 @@ export function influenceAt(
 	return clamp((map.toTime(tipX) - k.time) / span, MIN_INFLUENCE, MAX_INFLUENCE);
 }
 
-/** New ease for a dragged velocity handle: x → influence, y (velocity) → slope (≥ 0). */
+/**
+ * New ease for a dragged velocity handle: x → influence, y (velocity) → slope. keyframes-blend: the slope may cross
+ * zero (the key leaves backwards: anticipation) or exceed the segment's average (overshoot), as Premiere's handles
+ * allow; the property's range still clamps the evaluated value.
+ */
 export function easeFromVelocityDrag(
 	anim: Anim,
 	h: Pick<VelocityHandle, 'key' | 'other' | 'unit' | 'ease'>,
@@ -279,7 +283,7 @@ export function easeFromVelocityDrag(
 ): Ease {
 	const influence = influenceAt(anim.keyframes, h.key, h.other, tipX, map);
 	const slope = h.unit === 0 ? h.ease.slope : velocity / h.unit;
-	return { influence, slope: Number.isFinite(slope) ? Math.max(0, slope) : h.ease.slope };
+	return { influence, slope: Number.isFinite(slope) ? slope : h.ease.slope };
 }
 
 export type ValueHandle = { side: Side; key: number; other: number; ease: Ease; tipX: number; tipY: number };
@@ -323,7 +327,105 @@ export function easeFromValueDrag(
 	const dv = kfs[h.other]!.value - kfs[h.key]!.value;
 	if (dv === 0) return { influence, slope: h.ease.slope };
 	const slope = (tipY - kfs[h.key]!.value) / (influence * dv);
-	return { influence, slope: Number.isFinite(slope) ? Math.max(0, slope) : h.ease.slope };
+	return { influence, slope: Number.isFinite(slope) ? slope : h.ease.slope };
+}
+
+// ---------------------------------------------------------------- vec2 value-graph handles (keyframes-blend)
+
+/** Rate of change (component `d` per flick) at key `i` on one side, one-sided, from `evaluate()`. */
+function componentRate(anim: Anim, i: number, other: number, d: number): number {
+	const k = anim.keyframes[i]!;
+	const o = anim.keyframes[other]!;
+	// A short one-sided step (1e-6 of the segment): the tangent, not a chord.
+	const h = (o.time - k.time) * 1e-6;
+	if (h === 0) return 0;
+	const a = componentsOf(evaluate(anim, k.time))[d]!;
+	const b = componentsOf(evaluate(anim, k.time + h))[d]!;
+	return (b - a) / h;
+}
+
+export type Vec2ValueHandle = ValueHandle & {
+	/** The component (0 = X, 1 = Y) whose curve the handle sits on. */
+	dim: number;
+	/** The key's value of that component. */
+	keyY: number;
+	/** Rate of change of the component (per flick, towards the other key) per unit of slope. */
+	unitRate: number;
+};
+
+/**
+ * Value-graph Bezier handles of a vec2 key, one per side and component (keyframes-blend): tangent to the evaluated
+ * X / Y curve at the key (`evaluate()`, so curved spatial paths work too), `influence · T` long in time. Both
+ * components share the key's one temporal ease (speed along the path), so dragging either edits that ease.
+ */
+export function vec2ValueHandles(anim: Anim, i: number, map: TimeMap): Vec2ValueHandle[] {
+	const kfs = anim.keyframes;
+	const k = kfs[i]!;
+	const v = componentsOf(k.value);
+	if (v.length !== 2) return [];
+	const out: Vec2ValueHandle[] = [];
+	for (const side of ['in', 'out'] as const) {
+		const seg = segmentOf(kfs, i, side);
+		if (!seg) continue;
+		const other = side === 'out' ? seg[1] : seg[0];
+		const ease = effectiveEase(kfs, i, side);
+		const span = kfs[other]!.time - k.time;
+		// The linear-equivalent probe gives the rate per unit slope (as `unitVelocity`).
+		const [ai, bi] = seg;
+		const probe = {
+			value: anim.value,
+			keyframes: kfs.map((x, j) =>
+				j === ai || j === bi
+					? { ...x, interpolation: 'bezier' as Interpolation, easeIn: { ...LINEAR }, easeOut: { ...LINEAR } }
+					: x,
+			),
+		};
+		for (let d = 0; d < 2; d++) {
+			const rate = componentRate(anim, i, other, d);
+			out.push({
+				side,
+				key: i,
+				other,
+				ease,
+				dim: d,
+				keyY: v[d]!,
+				unitRate: componentRate(probe, i, other, d),
+				tipX: map.toX(k.time + ease.influence * span),
+				tipY: v[d]! + rate * ease.influence * span,
+			});
+		}
+	}
+	return out;
+}
+
+/** New ease for a dragged vec2 value-graph handle (inverse of `vec2ValueHandles`). */
+export function easeFromVec2ValueDrag(
+	anim: Anim,
+	h: Pick<Vec2ValueHandle, 'key' | 'other' | 'ease' | 'keyY' | 'unitRate'>,
+	tipX: number,
+	tipY: number,
+	map: TimeMap,
+): Ease {
+	const kfs = anim.keyframes;
+	const influence = influenceAt(kfs, h.key, h.other, tipX, map);
+	const span = kfs[h.other]!.time - kfs[h.key]!.time;
+	// A component that does not change along the segment has no speed scale: only the influence changes.
+	if (span === 0 || Math.abs(h.unitRate * span) < 1e-9) return { influence, slope: h.ease.slope };
+	const slope = (tipY - h.keyY) / (influence * span) / h.unitRate;
+	return { influence, slope: Number.isFinite(slope) ? slope : h.ease.slope };
+}
+
+// ---------------------------------------------------------------- vertical zoom (keyframes-blend)
+
+/** Zooms a range about value `at` by `factor` (> 1 = zoom out). */
+export function zoomRange(r: YRange, at: number, factor: number): YRange {
+	const f = Math.min(1e6, Math.max(1e-6, factor));
+	return { min: at - (at - r.min) * f, max: at + (r.max - at) * f };
+}
+
+/** Pans a range by `delta` value units. */
+export function panRange(r: YRange, delta: number): YRange {
+	return { min: r.min + delta, max: r.max + delta };
 }
 
 /**
@@ -425,4 +527,49 @@ export function roundToStep(v: number, step = 1): number {
 	const q = step / 100;
 	const digits = Math.max(0, Math.ceil(-Math.log10(q)));
 	return Number((Math.round(v / q) * q).toFixed(digits));
+}
+
+// ---------------------------------------------------------------- post-expression curves (wave expressions)
+
+/**
+ * Post-expression value curves (AE's "Show Post-Expression Graph"): an expression is any function of time, so the
+ * curve is sampled evenly over the visible range (about one sample every 2 px, at most 600, plus the frames of the
+ * keys) from the bound Animatable through the shared `evaluate()`.
+ */
+export function samplePostValueCurves(
+	bound: Anim,
+	map: TimeMap,
+	range: Range,
+	width: number,
+	opts?: EvaluateOptions,
+): Pt[][] {
+	const n = clamp(Math.ceil(width / 2), 16, 600);
+	const xs: number[] = [];
+	for (let i = 0; i <= n; i++) xs.push(range.start + ((range.end - range.start) * i) / n);
+	for (const k of bound.keyframes) {
+		const x = map.toX(k.time);
+		if (x > range.start && x < range.end) xs.push(x);
+	}
+	xs.sort((a, b) => a - b);
+	const pts = xs.map((x) => ({ x, v: componentsOf(evaluate(bound, map.toTime(x), opts)) }));
+	const dims = pts[0]?.v.length ?? 0;
+	return Array.from({ length: dims }, (_, d) => pts.map((p) => ({ x: p.x, y: p.v[d] ?? 0 })));
+}
+
+/** Post-expression velocity (units / second, speed for vectors): central differences over the visible range. */
+export function samplePostVelocityCurve(
+	bound: Anim,
+	map: TimeMap,
+	range: Range,
+	width: number,
+	opts?: EvaluateOptions,
+): Pt[] {
+	const n = clamp(Math.ceil(width / 2), 16, 600);
+	const out: Pt[] = [];
+	const h = Math.max(1e-6, (range.end - range.start) / n / 4);
+	for (let i = 0; i <= n; i++) {
+		const x = range.start + ((range.end - range.start) * i) / n;
+		out.push({ x, y: rateBetween(bound, map.toTime(x - h), map.toTime(x + h), map, opts) });
+	}
+	return out;
 }

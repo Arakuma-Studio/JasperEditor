@@ -31,11 +31,15 @@ export function combine(current: readonly string[], ids: readonly string[], mode
 	}
 }
 
-/** Link-group and clip-group expansion (S01:SEL-004). Groups always expand; links only when enabled. */
+/**
+ * Link-group and clip-group expansion (S01:SEL-004). Links only when enabled; groups unless `groups` is false
+ * (Premiere: Alt-click selects one clip of a group).
+ */
 export function expandClipSelection(
 	doc: ProjectDocument,
 	clipIds: readonly string[],
 	linked: boolean,
+	groups = true,
 ): string[] {
 	const out = new Set<string>();
 	for (const id of clipIds) {
@@ -44,7 +48,7 @@ export function expandClipSelection(
 			const c = seq.clips[id];
 			if (!c) continue;
 			if (linked && c.linkId) for (const m of seq.links[c.linkId]?.members ?? []) out.add(m);
-			if (c.groupId) for (const m of seq.groups[c.groupId]?.members ?? []) out.add(m);
+			if (groups && c.groupId) for (const m of seq.groups[c.groupId]?.members ?? []) out.add(m);
 		}
 	}
 	return [...out];

@@ -8,6 +8,7 @@
 import type { Lut, Rgb } from '../color/lut.ts';
 import type { ParamValue, SpatialInterpolation } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
+import { AUDIO_EFFECTS } from './audio/index.ts';
 import {
 	BLACK_WHITE_OP,
 	BRIGHTNESS_CONTRAST_OP,
@@ -17,6 +18,7 @@ import {
 	HUE_SATURATION_OP,
 	hueSaturationValues,
 } from './color-effects.ts';
+import { EXPRESSION_CONTROL_EFFECTS } from './expression-controls.ts';
 import { FX_EFFECTS } from './fx/index.ts';
 import type { GpuEffect } from './fx/shader.ts';
 
@@ -43,16 +45,46 @@ export type EffectCategory =
 	| 'Time and Pitch'
 	| 'Noise & Grain'
 	| 'Transition'
-	| 'Video';
+	| 'Video'
+	// Audio effects (audio-fx): Premiere's Audio Effects folders (Premiere Pro 2020+, helpx "Audio effects and
+	// transitions"); the folder is the category.
+	| 'Amplitude and Compression'
+	| 'Delay and Echo'
+	| 'Filter and EQ'
+	| 'Modulation'
+	| 'Noise Reduction/Restoration'
+	| 'Reverb'
+	| 'Special'
+	| 'Stereo Imagery'
+	| 'Expression Controls';
 
 export type ParamSpec = {
 	name: string;
 	label: string;
 	/** `curve` = `{curve: [x, y][]}` tone curve (M2); `media` = `{mediaId}` (LUT assets: `mediaKinds: ['lut']`). */
-	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'color' | 'media' | 'curve';
+	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'vec3' | 'color' | 'media' | 'curve';
 	default: ParamValue;
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
-	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's' | 'Hz';
+	/**
+	 * Display unit. Audio effects (audio-fx) add `ms`, `Q` (filter quality), `ratio` (`x:1`), `st` (semitones),
+	 * `cents`, `LUFS`, `dBTP` and `bpm`.
+	 */
+	unit?:
+		| 'px'
+		| '%'
+		| 'deg'
+		| 'dB'
+		| 'frames'
+		| 's'
+		| 'Hz'
+		| 'ms'
+		| 'Q'
+		| 'ratio'
+		| 'st'
+		| 'cents'
+		| 'LUFS'
+		| 'dBTP'
+		| 'bpm';
 	/** Enums, booleans, strings and media refs are hold-only (S01:KF-007). */
 	animatable: boolean;
 	/**
@@ -78,8 +110,18 @@ export type ParamSpec = {
 			| 'wheel'
 			| 'curve'
 			| 'media'
-			| 'point';
+			| 'point'
+			/** wp masks: a `string` param holding a video track id ('' = none), picked from the sequence's tracks. */
+			| 'track'
+			/** Wave expressions: Layer Control (a clip of the sequence; the value is its id, '' = none). */
+			| 'layer'
+			/** Wave expressions: Dropdown Menu Control (1-based index into the instance's `items` param lines). */
+			| 'menu';
 		bipolar?: boolean;
+		/** audio-fx: a logarithmic control (frequencies, times, Q). */
+		scale?: 'log';
+		/** Wave expressions: a multi-line text field (Dropdown Menu Control's items, one per line). */
+		multiline?: boolean;
 	};
 	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */
 	mediaKinds?: readonly MediaKind[];
@@ -149,15 +191,48 @@ export type EffectSpec = {
 	 * and docs/wp-notes/fx-shader-framework.md.
 	 */
 	gpu?: GpuEffect;
+	/**
+	 * audio-fx: the effect is realized by the shared TypeScript DSP (`@jasper/audio-fx`): an AudioWorklet chain in
+	 * the preview and the same code streamed into ffmpeg on the native path (and in the Remotion path's native audio
+	 * mix). `editor` selects a graphical editor in Effect Controls; `meters` the live meters it shows.
+	 */
+	audio?: AudioEffectInfo;
 	/** Engine capability flags driving badges, render bar and planner (S01:FX-021). */
 	capabilities: { preview: 'css' | 'webgl' | 'webaudio' | 'none'; export: ('remotion' | 'native')[] };
 	expensive?: boolean;
+	/**
+	 * Wave expressions: the effect draws nothing (Expression Controls hold values for expressions). Render snapshots
+	 * leave it out, so no renderer or export path sees it; expressions still read its params from the document.
+	 */
+	passthrough?: boolean;
+	/**
+	 * Wave expressions: defaults that depend on the clip the effect is applied to (Point Control starts at the
+	 * clip's centre). Applied by `effect.add` on clips for params the command does not set.
+	 */
+	instanceDefaults?(ctx: { box: { width: number; height: number } }): Record<string, ParamValue>;
 	/** One line for the Effects panel tooltip and the agent catalogue. */
 	description?: string;
 	/** Extra search terms for the Effects panel. */
 	keywords?: readonly string[];
 	/** Upgrades params from an older version of this effect. */
 	migrate?(fromVersion: number, params: Record<string, unknown>): Record<string, unknown>;
+};
+
+/** audio-fx: how Effect Controls draws an audio effect (besides its parameter rows). */
+export type AudioEffectEditor =
+	| 'parametric-eq'
+	| 'graphic-eq'
+	| 'filter-response'
+	| 'compressor'
+	| 'multiband-compressor'
+	| 'dynamics'
+	| 'limiter';
+
+export type AudioEffectInfo = {
+	dsp: true;
+	editor?: AudioEffectEditor;
+	/** Live meters the editor shows (gain reduction per band, input/output level). */
+	meters?: readonly ('gain-reduction' | 'level' | 'loudness')[];
 };
 
 export interface EffectRegistry {
@@ -196,7 +271,9 @@ export function defaultParams(spec: EffectSpec): EffectParams {
 export function effectBadges(spec: EffectSpec): { realtime: boolean; native: boolean } {
 	return {
 		realtime: spec.capabilities.preview !== 'none',
-		native: (spec.native !== null || spec.color !== undefined) && spec.capabilities.export.includes('native'),
+		native:
+			(spec.native !== null || spec.color !== undefined || spec.audio !== undefined) &&
+			spec.capabilities.export.includes('native'),
 	};
 }
 
@@ -535,6 +612,10 @@ export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([
 	...M2_EFFECTS,
 	// Wave 1/2 fx catalogue (registry/fx/*, one file per effect family).
 	...FX_EFFECTS,
+	// audio-fx: the audio effect catalogue (registry/audio/*; DSP in @jasper/audio-fx).
+	...AUDIO_EFFECTS,
+	// Wave expressions: Expression Controls (no visual output).
+	...EXPRESSION_CONTROL_EFFECTS,
 ]);
 
 // ---------------------------------------------------------------- realization helpers (shared by engines)

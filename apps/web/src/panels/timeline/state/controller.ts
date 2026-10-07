@@ -89,6 +89,8 @@ interface ControllerEnv {
 	ui: TimelineUiStore;
 	geometry(): Geometry;
 	toast?(kind: 'info' | 'warning' | 'error', message: string): void;
+	/** audio-fx: the Remix tool's release — remix a music clip to `targetFrames` (async, engine plan). */
+	remix?(clipId: string, targetFrames: number): void;
 	/** Platform flags for wheel mapping (TL-111). */
 	platform?: { mac: boolean; wheelHorizontal?: boolean | null };
 }
@@ -114,8 +116,10 @@ type MoveDrag = DragBase & {
 };
 
 type EdgeDrag = DragBase & {
-	kind: 'trim' | 'ripple' | 'roll' | 'stretch';
+	kind: 'trim' | 'ripple' | 'roll' | 'stretch' | 'remix';
 	gesture: Gesture | null;
+	/** audio-fx: the Remix tool's target duration (frames) while dragging. */
+	remixTarget?: number;
 	clip: Clip;
 	edge: 'in' | 'out';
 	linked: boolean;
@@ -271,6 +275,7 @@ export class TimelineController {
 			case 'ripple':
 			case 'roll':
 			case 'stretch':
+			case 'remix':
 				return this.beginEdge(seq, hit, p, kind, base);
 			case 'slip':
 			case 'slide':
@@ -312,11 +317,13 @@ export class TimelineController {
 	private clickSelect(seq: Sequence, clip: Clip, p: PointerInfo): boolean {
 		if (this.isLocked(seq, clip.trackId)) return false;
 		const linked = this.session.getState().toggles.linkedSelection && !p.alt;
+		// edit-structure (Premiere): Alt-click selects one clip of a group.
+		const groups = !p.alt;
 		this.session.selectGaps([]);
 		// S10:TUI-002: selecting a clip clears the transition selection unless Shift.
 		if (!p.shift) this.session.select('transitions', [], 'replace');
-		if (p.shift) this.session.select('timeline', [clip.id], 'toggle', { linked, primary: clip.id });
-		else this.session.select('timeline', [clip.id], 'replace', { linked, primary: clip.id });
+		if (p.shift) this.session.select('timeline', [clip.id], 'toggle', { linked, groups, primary: clip.id });
+		else this.session.select('timeline', [clip.id], 'replace', { linked, groups, primary: clip.id });
 		this.env.ui.setState({ editPoints: [] });
 		return true;
 	}
@@ -391,7 +398,7 @@ export class TimelineController {
 		// TL-536: other selected clips whose same edge sits on the same frame trim together.
 		const sel = this.session.getState().selection.timeline.clips;
 		const extras =
-			kind === 'roll' || kind === 'stretch' || !sel.includes(clip.id)
+			kind === 'roll' || kind === 'stretch' || kind === 'remix' || !sel.includes(clip.id)
 				? []
 				: sel
 						.map((id) => seq.clips[id])
@@ -582,6 +589,9 @@ export class TimelineController {
 			case 'stretch':
 				this.updateEdge(d, p, dxPx);
 				break;
+			case 'remix':
+				this.updateRemix(d, p, dxPx);
+				break;
 			case 'slip':
 			case 'slide':
 				this.updateBody(d, p, dxPx);
@@ -659,6 +669,8 @@ export class TimelineController {
 			deltaFrames: delta,
 			mode,
 			linked: d.linked,
+			// edit-structure: the selection already holds the group (Alt picks one clip): no second expansion.
+			group: false,
 			...(mode === 'ripple' ? { clampToSyncLock: true } : {}),
 		});
 		return [one(d.clip), ...d.extras.map(one)];
@@ -696,6 +708,45 @@ export class TimelineController {
 		const move = { type: 'clip.move', clipIds: ids, deltaFrames: dd };
 		const speed = { type: 'clip.setSpeed', clipIds: ids, duration: dur, ripple: false };
 		return dd < 0 ? [move, speed] : [speed, move];
+	}
+
+	/**
+	 * audio-fx Remix tool: the dragged end sets the remix's target duration (from the remix's original start for a
+	 * remixed clip); nothing changes until release, which plans and commits the remix (`env.remix`).
+	 */
+	private updateRemix(d: EdgeDrag, p: PointerInfo, dxPx: number): void {
+		const base = this.committedSeq();
+		if (!base) return;
+		const { viewport } = this.env.geometry();
+		const raw = deltaFramesFromPx(dxPx, viewport.pxPerFrame);
+		const { frame, snap } = snapEdge(endOf(d.clip) + raw, d.targets, viewport.pxPerFrame, this.snapping());
+		const remix = (d.clip as { remix?: { original: { start: number } } }).remix;
+		const start = remix ? remix.original.start : d.clip.start;
+		let target = Math.max(1, frame - start);
+		const others = Object.values(base.clips).filter(
+			(x) =>
+				x.trackId === d.clip.trackId &&
+				x.start >= start &&
+				!(
+					(x as { remix?: { id: string } }).remix &&
+					(x as { remix?: { id: string } }).remix?.id === (remix as { id?: string } | undefined)?.id
+				) &&
+				x.id !== d.clip.id,
+		);
+		const next = others.reduce((a, x) => Math.min(a, x.start), Number.POSITIVE_INFINITY);
+		const limited = start + target > next;
+		if (limited) target = next - start;
+		d.remixTarget = target;
+		const rate = base.settings.frameRate;
+		this.env.ui.setState({
+			snapFrame: snap && !limited ? snap.target.frame : null,
+			limit: { trackId: d.clip.trackId, frame: start + target },
+			tooltip: {
+				x: p.x,
+				y: p.y,
+				lines: [`Remix to ${formatTimecode(target, rate, { dropFrame: base.settings.dropFrame })}`],
+			},
+		});
 	}
 
 	private updateEdge(d: EdgeDrag, p: PointerInfo, dxPx: number): void {
@@ -943,6 +994,9 @@ export class TimelineController {
 					else this.report(d.gesture?.commit() ?? null);
 					break;
 				}
+				case 'remix':
+					if (d.remixTarget !== undefined) this.env.remix?.(d.clip.id, d.remixTarget);
+					break;
 				case 'zoom': {
 					const { viewport } = this.env.geometry();
 					const f0 = viewport.scrollFrame + Math.min(d.downX, p.x) / viewport.pxPerFrame;

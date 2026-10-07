@@ -10,39 +10,22 @@
 // Split edits (Mark Split ▸ Video/Audio In/Out) give the picture and the sound different source ranges: each
 // channel lands offset by the difference of its In from the earliest In (FilmCraft `split_source_ranges` /
 // `edit_at_source`, MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors).
-import { current, type Draft, isDraft } from 'immer';
-import { anim, defaultTransform } from '../../factories.ts';
+import type { Draft } from 'immer';
 import { kindCapabilities } from '../../registry/kinds.ts';
-import type { ProjectItem, SourceMarks, SubclipItem } from '../../schema/document.ts';
+import type { ProjectDocument, ProjectItem, SourceMarks, SubclipItem } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
-import type { Clip, Sequence, Track } from '../../schema/sequence.ts';
+import type { Sequence } from '../../schema/sequence.ts';
+import { wouldCreateNestCycle } from '../../structure/nest.ts';
 import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
-import {
-	assertKindFits,
-	assertUnlocked,
-	cleanupSequence,
-	clearRange,
-	end,
-	findTrackIn,
-	insertShift,
-	reidentifyClipChildren,
-	relinkSplits,
-	resolveOrCreateTrack,
-	type SplitRecord,
-	setClipRange,
-	shiftMarkers,
-	syncFollowerTracks,
-	tracksOfKind,
-} from '../placement.ts';
+import type { DClip, DDoc, HandlerContext } from '../context.ts';
+import { assertUnlocked, cleanupSequence, end, findTrackIn, setClipRange } from '../placement.ts';
 import { contentWindow, rippleTrimGroup, trimLimits } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { commonFields, frameBox, placeSource, visualFields } from './clip-core.ts';
+import { placeSource } from './clip-core.ts';
 import { rollRange, rollTrim } from './clip-edit.ts';
 import { insertItem } from './project.ts';
 import type { HandlerMap } from './util.ts';
 
-type DTrack = Draft<Track>;
 const FALLBACK_RATE: Rational = { num: 30, den: 1 };
 
 // ---------------------------------------------------------------- sources
@@ -110,20 +93,6 @@ function sequenceFrames(seq: Pick<Sequence, 'clips'>): number {
 	let n = 0;
 	for (const c of Object.values(seq.clips)) n = Math.max(n, c.start + c.duration);
 	return n;
-}
-
-/** True when `inner` contains `outer` (directly or through nests), so nesting it would recurse. */
-function nestsInto(doc: DDoc, inner: string, outer: string, seen = new Set<string>()): boolean {
-	if (inner === outer) return true;
-	if (seen.has(inner)) return false;
-	seen.add(inner);
-	const seq = doc.sequences[inner];
-	if (!seq) return false;
-	for (const c of Object.values(seq.clips)) {
-		const nested = (c as { sequenceId?: unknown }).sequenceId;
-		if (typeof nested === 'string' && nestsInto(doc, nested, outer, seen)) return true;
-	}
-	return false;
 }
 
 // ---------------------------------------------------------------- three- and four-point resolution
@@ -290,8 +259,8 @@ function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: Hand
 		};
 		window = { start: 0, end: sequenceFrames(src.sequence) * Fs };
 		if (window.end === 0) h.fail('E_INVALID_PARAM', 'The source sequence is empty');
-		if (nestsInto(doc, src.sequence.id, seq.id))
-			h.fail('E_CYCLE', 'A sequence cannot be edited into itself or into a sequence it contains');
+		if (wouldCreateNestCycle(doc as Pick<ProjectDocument, 'sequences'>, seq.id, src.sequence.id))
+			h.fail('E_CYCLE', 'A sequence cannot contain itself (directly or through nested sequences)');
 	}
 	const sIn = cmd.sourceIn === null ? null : cmd.sourceIn !== undefined ? conv(cmd.sourceIn) : marks.in;
 	const sOut = cmd.sourceOut === null ? null : cmd.sourceOut !== undefined ? conv(cmd.sourceOut) : marks.out;
@@ -388,11 +357,30 @@ function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: Hand
 		});
 		result = out;
 	} else {
-		const as = cmd.sequenceAs ?? 'nest';
-		result =
-			as === 'nest'
-				? placeNest(doc, seq, h, src.sequence, r, ch, mode, cmd)
-				: placeSequenceClips(doc, seq, h, src.sequence, r, mode, cmd);
+		// Sequences go in through edit-structure's placement (nests, or individual clips; multi-camera sources as
+		// multi-camera clips). Fit to fill sets the nest clips' speed over the resolved length.
+		const videoRef = patchV?.[0];
+		const audioRefs = patchA?.filter((x): x is string => x !== null);
+		const out = placeSource(doc, seq, h, {
+			source: src.item ? { projectItemId: src.item.id } : { sequenceId: src.sequence.id },
+			sourceRange: { in: r.in, out: Math.round(r.in + r.frames * F) },
+			at: r.at,
+			mode,
+			videoTrack: videoRef ?? undefined,
+			...(audioRefs?.length ? { audioTracks: audioRefs } : {}),
+			video: videoRef === null ? false : undefined,
+			audio: patchA && patchA.length > 0 && patchA.every((x) => x === null) ? false : undefined,
+			nest: (cmd.sequenceAs ?? 'nest') === 'nest',
+			createTracks: true,
+			rippleMarkers: cmd.rippleMarkers,
+			ref: cmd.ref,
+		});
+		if (r.rate !== 1)
+			for (const id of out.clipIds) {
+				const c = seq.clips[id];
+				if (c && kindCapabilities(c.kind)?.supportsSpeed) c.speed.rate = r.rate;
+			}
+		result = out;
 	}
 	cleanupSequence(seq, h);
 	const placed = result.clipIds.map((id) => seq.clips[id]).filter((c): c is DClip => !!c);
@@ -405,214 +393,6 @@ function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: Hand
 		sourceRange: { in: r.in, out: Math.round(r.in + contentSpanFlicks(r.frames, rate, r.rate)) },
 		end: endFrame,
 	};
-}
-
-/** Destination track for source track `index` of `kind` (patch, else the same index). */
-function destTrack(
-	seq: DSeq,
-	h: HandlerContext,
-	kind: 'video' | 'audio',
-	index: number,
-	patch: readonly (string | null)[] | undefined,
-): DTrack | null {
-	const ref = patch ? patch[index] : `${kind === 'video' ? 'V' : 'A'}${index + 1}`;
-	if (ref === null) return null;
-	const t = resolveOrCreateTrack(seq, ref ?? `${kind === 'video' ? 'V' : 'A'}${index + 1}`, h, true);
-	assertUnlocked(t, h);
-	if (t.kind !== kind)
-		h.fail('E_TRACK_KIND', `Source ${kind} track ${index + 1} cannot go on ${t.kind} track ${ref}`);
-	return t;
-}
-
-/** Overwrite or insert room for slots `[start, start+frames)` on their tracks (insert: one union shift). */
-function makeRoomFor(
-	seq: DSeq,
-	h: HandlerContext,
-	slots: { track: DTrack; start: number; frames: number }[],
-	mode: 'insert' | 'overwrite',
-	rippleMarkers: boolean | undefined,
-): void {
-	if (slots.length === 0) return;
-	let splits: SplitRecord[] = [];
-	if (mode === 'overwrite') {
-		for (const s of slots) splits.push(...clearRange(seq, s.track.id, s.start, s.start + s.frames, h));
-	} else {
-		const a = Math.min(...slots.map((s) => s.start));
-		const b = Math.max(...slots.map((s) => s.start + s.frames));
-		const edited = new Set(slots.map((s) => s.track.id));
-		const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-		splits = insertShift(seq, tracks, a, b - a, h);
-		if (rippleMarkers !== false) shiftMarkers(seq, a, b - a);
-	}
-	relinkSplits(seq, splits, h);
-}
-
-function placeNest(
-	doc: DDoc,
-	seq: DSeq,
-	h: HandlerContext,
-	nested: Draft<Sequence>,
-	r: PointResolution,
-	ch: { video: Channel; audio: Channel },
-	mode: 'insert' | 'overwrite',
-	cmd: CommandOf<'clip.sourceEdit'>,
-): { clipIds: string[] } {
-	const name =
-		(Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === nested.id)
-			?.name as string) ?? 'Nested Sequence';
-	const hasVideo =
-		nested.videoTracks.length > 0 &&
-		Object.values(nested.clips).some((c) => kindCapabilities(c.kind)?.visual);
-	const hasAudio = nested.audioTracks.length > 0;
-	const slots: { kind: 'video' | 'audio'; track: DTrack; start: number; frames: number; in: number }[] = [];
-	const v = hasVideo ? destTrack(seq, h, 'video', 0, cmd.patch?.video) : null;
-	const a = hasAudio ? destTrack(seq, h, 'audio', 0, cmd.patch?.audio) : null;
-	if (v && ch.video.frames >= 1)
-		slots.push({
-			kind: 'video',
-			track: v,
-			start: r.at + ch.video.offset,
-			frames: ch.video.frames,
-			in: ch.video.in,
-		});
-	if (a && ch.audio.frames >= 1)
-		slots.push({
-			kind: 'audio',
-			track: a,
-			start: r.at + ch.audio.offset,
-			frames: ch.audio.frames,
-			in: ch.audio.in,
-		});
-	if (slots.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to edit in: every source track is patched off');
-	makeRoomFor(seq, h, slots, mode, cmd.rippleMarkers);
-	const ids: string[] = [];
-	for (const s of slots) {
-		const id = h.ids.next('clp');
-		const base = commonFields(id, s.track.id, s.start, s.frames, s.in, name, 'forest');
-		const clip =
-			s.kind === 'video'
-				? {
-						...base,
-						kind: 'nest-video' as const,
-						sequenceId: nested.id,
-						...visualFields(defaultTransform(frameBox(nested as DSeq), frameBox(seq), 'none')),
-					}
-				: {
-						...base,
-						kind: 'nest-audio' as const,
-						sequenceId: nested.id,
-						gainDb: 0,
-						volumeDb: anim(0),
-						pan: anim(0),
-						effects: [],
-					};
-		clip.speed.rate = r.rate;
-		seq.clips[id] = clip as DClip;
-		ids.push(id);
-	}
-	if (ids.length > 1) {
-		const linkId = h.ids.next('lnk');
-		seq.links[linkId] = { id: linkId, members: [...ids] };
-		for (const id of ids) seq.clips[id]!.linkId = linkId;
-	}
-	h.defineRef(cmd.ref, ids[0]!);
-	return { clipIds: ids };
-}
-
-function snapshot<T>(v: T): T {
-	const plain = isDraft(v) ? current(v as Draft<T>) : v;
-	return JSON.parse(JSON.stringify(plain)) as T;
-}
-
-/**
- * Premiere's "Insert and overwrite sequences as nests or individual clips" turned off: the source sequence's clips
- * in the source range land on the patched tracks (source V1 → patch.video[0] …), trimmed to the range, with their
- * links and the transitions between copied clips.
- */
-function placeSequenceClips(
-	_doc: DDoc,
-	seq: DSeq,
-	h: HandlerContext,
-	nested: Draft<Sequence>,
-	r: PointResolution,
-	mode: 'insert' | 'overwrite',
-	cmd: CommandOf<'clip.sourceEdit'>,
-): { clipIds: string[] } {
-	const srcRate = nested.settings.frameRate as Rational;
-	const dstRate = seq.settings.frameRate as Rational;
-	if (srcRate.num * dstRate.den !== dstRate.num * srcRate.den)
-		h.fail('E_INVALID_PARAM', 'A sequence with another frame rate can only be edited in as a nest');
-	const Fs = flicksPerFrame(srcRate);
-	const a = Math.round(r.in / Fs);
-	const b = a + r.frames;
-	type Plan = { src: Clip; dest: DTrack; start: number; end: number };
-	const plans: Plan[] = [];
-	for (const kind of ['video', 'audio'] as const) {
-		const list = tracksOfKind(nested as DSeq, kind);
-		list.forEach((t, i) => {
-			const clips = Object.values(nested.clips).filter(
-				(c) => c.trackId === t.id && c.start < b && end(c) > a,
-			);
-			if (clips.length === 0) return;
-			const dest = destTrack(seq, h, kind, i, kind === 'video' ? cmd.patch?.video : cmd.patch?.audio);
-			if (!dest) return;
-			for (const c of clips) {
-				assertKindFits(c.kind, dest, h);
-				plans.push({ src: snapshot(c as Clip), dest, start: Math.max(c.start, a), end: Math.min(end(c), b) });
-			}
-		});
-	}
-	if (plans.length === 0)
-		h.fail('E_INVALID_PARAM', 'Nothing to edit in from the source sequence in this range');
-	const tracks = [...new Map(plans.map((p) => [p.dest.id, p.dest])).values()];
-	makeRoomFor(
-		seq,
-		h,
-		tracks.map((t) => ({ track: t, start: r.at, frames: r.frames })),
-		mode,
-		cmd.rippleMarkers,
-	);
-	const map = new Map<string, string>();
-	for (const p of plans) {
-		const copy = p.src as Clip;
-		reidentifyClipChildren(copy, h);
-		const id = h.ids.next('clp');
-		map.set(copy.id, id);
-		const placed = { ...copy, id, trackId: p.dest.id, linkId: null, groupId: null } as DClip;
-		seq.clips[id] = placed;
-		setClipRange(seq, placed, p.start, p.end);
-		placed.start = r.at + (p.start - a);
-	}
-	// Links among the copies.
-	const byLink = new Map<string, string[]>();
-	for (const p of plans) {
-		if (!p.src.linkId) continue;
-		byLink.set(p.src.linkId, [...(byLink.get(p.src.linkId) ?? []), map.get(p.src.id)!]);
-	}
-	for (const members of byLink.values()) {
-		if (members.length < 2) continue;
-		const lid = h.ids.next('lnk');
-		seq.links[lid] = { id: lid, members };
-		for (const m of members) seq.clips[m]!.linkId = lid;
-	}
-	// Transitions whose clips were both copied (and still meet).
-	for (const t of Object.values(nested.transitions)) {
-		const out = t.outgoingClipId ? map.get(t.outgoingClipId) : null;
-		const inc = t.incomingClipId ? map.get(t.incomingClipId) : null;
-		if ((t.outgoingClipId && !out) || (t.incomingClipId && !inc)) continue;
-		const any = (out ?? inc)!;
-		const tid = h.ids.next('trn');
-		seq.transitions[tid] = {
-			...snapshot(t),
-			id: tid,
-			trackId: seq.clips[any]!.trackId,
-			outgoingClipId: out ?? null,
-			incomingClipId: inc ?? null,
-		};
-	}
-	const ids = [...map.values()];
-	h.defineRef(cmd.ref, ids[0]!);
-	return { clipIds: ids };
 }
 
 // ---------------------------------------------------------------- clip.trimEdits

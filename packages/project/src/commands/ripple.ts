@@ -46,7 +46,8 @@ export function contentWindow(doc: DDoc, c: DClip | Clip): { start: number; end:
 		dur = frames * flicksPerFrame(ns.settings.frameRate);
 	}
 	let start = 0;
-	let stop = isBoundedContent(c as Clip) && dur !== null ? dur : null;
+	// edit-structure frame holds show one frame for the whole clip: only content time 0 bounds the edges.
+	let stop = isBoundedContent(c as Clip) && dur !== null && !(c as Clip).frameHold ? dur : null;
 	const subId = (c as { subclipId?: string }).subclipId;
 	const sub = subId ? (doc.items[subId] as ProjectItem | undefined) : undefined;
 	if (sub && sub.kind === 'subclip' && sub.restrictTrims) {

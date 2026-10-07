@@ -83,7 +83,7 @@ export type FxHost = {
 
 let host: FxHost | null | undefined;
 
-function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | string {
+export function compileShader(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader | string {
 	const sh = gl.createShader(type);
 	if (!sh) return 'cannot create a shader';
 	gl.shaderSource(sh, src);
@@ -96,7 +96,7 @@ function compileShader(gl: WebGL2RenderingContext, type: number, src: string): W
 	return sh;
 }
 
-function texture2d(gl: WebGL2RenderingContext, filter: number): WebGLTexture {
+export function texture2d(gl: WebGL2RenderingContext, filter: number): WebGLTexture {
 	const t = gl.createTexture()!;
 	gl.bindTexture(gl.TEXTURE_2D, t);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
@@ -339,7 +339,7 @@ function target(h: FxHost, pass: FxPassPlan): Target {
 }
 
 /** Grows the shared canvas (never shrinks; 256-px steps) so a `w`×`h` result fits its bottom-left corner. */
-function ensureCanvas(h: FxHost, w: number, h2: number): void {
+export function ensureCanvas(h: FxHost, w: number, h2: number): void {
 	const c = h.canvas;
 	const W = Math.max(c.width, Math.ceil(w / 256) * 256);
 	const H = Math.max(c.height, Math.ceil(h2 / 256) * 256);
@@ -347,7 +347,7 @@ function ensureCanvas(h: FxHost, w: number, h2: number): void {
 	if (H !== c.height) c.height = H;
 }
 
-function upload(h: FxHost, tex: WebGLTexture, source: TexImageSource): void {
+export function upload(h: FxHost, tex: WebGLTexture, source: TexImageSource): void {
 	const { gl } = h;
 	gl.bindTexture(gl.TEXTURE_2D, tex);
 	gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -577,7 +577,7 @@ export function runShaderPlan(
 }
 
 /** Copies the bottom-left `w`×`h` of the shared canvas (the last draw) into a 2D context. */
-function blit(h: FxHost, out: CanvasRenderingContext2D, w: number, hgt: number): void {
+export function blit(h: FxHost, out: CanvasRenderingContext2D, w: number, hgt: number): void {
 	const prevOp = out.globalCompositeOperation;
 	out.globalCompositeOperation = 'copy';
 	out.drawImage(h.canvas, 0, h.canvas.height - hgt, w, hgt, 0, 0, w, hgt);

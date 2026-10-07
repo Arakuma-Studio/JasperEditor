@@ -1,5 +1,21 @@
 // @jasper/compositions — SequenceComposition + layers for the Player and @remotion/renderer (ARCHITECTURE §8).
 export * from './AssetComposition.tsx';
+// audio-fx: preview slots of the audio effects and their live meters.
+export { audioFxMeters, installAudioFxPreview } from './audio/fx-inserts.ts';
+// audio-mix: the preview mix graph (meters, live mixer controls, effect slots).
+export {
+	activeMixGraph,
+	hasPreviewInsert,
+	type LoudnessReading,
+	type MeterReading,
+	type MixGraph,
+	onActiveMixGraph,
+	type PreviewInsert,
+	type PreviewInsertFactory,
+	panStageMatrix,
+	registerPreviewInsert,
+	setMixWorkletUrl,
+} from './audio/graph.ts';
 export * from './color/index.ts';
 export * from './fonts.ts';
 // Wave 1: GPU shader-effect framework runtime.

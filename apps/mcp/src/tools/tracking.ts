@@ -30,8 +30,10 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	isTerminal,
 	loadDoc,
@@ -202,7 +204,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 				wait: z.boolean().optional().describe('Wait for the job (default true)'),
 				jobId: z.string().optional().describe('A track job started with wait: false, to wait for and store'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (args, extra) => {
 			const { projectId, trackerId } = args;
@@ -341,7 +343,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 						'Also simplify the baked per-frame keyframes in the same step, keeping the result within this many sequence pixels of the track at every frame (e.g. 0.1–0.5)',
 					),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, trackerId, targetClipId, mode, smoothing, range, simplifyTolerance }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
@@ -456,7 +458,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 					.describe('Units of `corners` (default sequence)'),
 				at: timeArg('Keyframe time').optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, corners, space, at }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
@@ -543,7 +545,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 				keyframeIds: z.array(z.string().min(1)).min(1).optional().describe('Only these keys may be removed'),
 				dryRun: z.boolean().optional().describe('Report what would happen without changing the project'),
 			},
-			annotations: EDIT,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, tolerance, clipId, trackedOnly, trackerId, targets, keyframeIds, dryRun }, extra) => {
 			const given = [clipId, trackerId, targets, keyframeIds].filter((x) => x !== undefined).length;

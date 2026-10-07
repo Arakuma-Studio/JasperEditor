@@ -497,6 +497,43 @@ export function ProjectPanel(props: PanelProps) {
 						<MenuEntry onClick={() => void runIfRegistered('panel.open.motionTemplates', ctx)}>
 							Motion Graphic…
 						</MenuEntry>
+						{/* edit-structure: Premiere's synthetic New Items. */}
+						<MenuEntry
+							testId="new-item-adjustment"
+							onClick={() => void runIfRegistered('project.newAdjustmentLayer', ctx, { binId })}
+						>
+							Adjustment Layer
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-bars"
+							onClick={() => void runIfRegistered('project.newBarsAndTone', ctx, { binId })}
+						>
+							Bars and Tone
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-black"
+							onClick={() => void runIfRegistered('project.newBlackVideo', ctx, { binId })}
+						>
+							Black Video
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-matte"
+							onClick={() => void runIfRegistered('project.newColorMatte', ctx, { binId })}
+						>
+							Color Matte…
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-transparent"
+							onClick={() => void runIfRegistered('project.newTransparentVideo', ctx, { binId })}
+						>
+							Transparent Video
+						</MenuEntry>
+						<MenuEntry
+							testId="new-item-leader"
+							onClick={() => void runIfRegistered('project.newCountingLeader', ctx, { binId })}
+						>
+							Universal Counting Leader…
+						</MenuEntry>
 					</Menu>
 				) : null}
 			</div>
@@ -513,6 +550,7 @@ export function ProjectPanel(props: PanelProps) {
 					onOpen={() => menu.itemId && void openItem(session, menu.itemId, ctx, setBinId)}
 					onNewBin={() => createBin(session, binId)}
 					onCommand={(id) => void runIfRegistered(id, ctx)}
+					onCommandArgs={(id, args) => void runIfRegistered(id, ctx, args)}
 				/>
 			) : null}
 		</div>
@@ -980,8 +1018,18 @@ function ContextMenu(props: {
 	onNewBin(): void;
 	/** Runs an Edit command for this panel (wp-clipboard: Cut / Copy / Paste, S01:CLB-007). */
 	onCommand(commandId: string): void;
+	onCommandArgs(commandId: string, args: unknown): void;
 }) {
 	const [labels, setLabels] = useState(false);
+	const doc = props.session.getCommitted();
+	const editableSynthetic =
+		props.itemIds.length === 1 &&
+		doc.items[props.itemIds[0]!]?.kind === 'synthetic' &&
+		['color-matte', 'counting-leader'].includes(
+			doc.synthetics[(doc.items[props.itemIds[0]!] as { syntheticId: string }).syntheticId]?.kind ?? '',
+		)
+			? props.itemIds[0]!
+			: null;
 	return (
 		<Menu anchor={{ x: props.x, y: props.y }} onClose={props.onClose}>
 			<MenuEntry onClick={props.onOpen}>Open</MenuEntry>
@@ -1034,6 +1082,52 @@ function ContextMenu(props: {
 			<MenuEntry disabled={props.readOnly} onClick={props.onNewBin}>
 				New Bin
 			</MenuEntry>
+			{/* edit-structure: Duplicate (sequences), synthetic settings, Remove Unused. */}
+			<MenuEntry
+				disabled={props.readOnly || !props.itemIds.some((id) => doc.items[id]?.kind === 'sequence')}
+				onClick={() => props.onCommandArgs('project.duplicateSequence', { itemIds: props.itemIds })}
+				testId="project-menu-duplicate"
+			>
+				Duplicate
+			</MenuEntry>
+			{/* wp-multicam: Premiere's Project panel context menu entries. */}
+			<MenuEntry
+				disabled={props.readOnly || mediaCount(doc, props.itemIds) < 2}
+				onClick={() => props.onCommand('clip.mergeClips')}
+				testId="project-menu-merge-clips"
+			>
+				Merge Clips…
+			</MenuEntry>
+			<MenuEntry
+				disabled={props.readOnly || mediaCount(doc, props.itemIds) < 1}
+				onClick={() => props.onCommand('clip.createMulticam')}
+				testId="project-menu-create-multicam"
+			>
+				Create Multi-Camera Source Sequence…
+			</MenuEntry>
+			{editableSynthetic ? (
+				<MenuEntry
+					disabled={props.readOnly}
+					onClick={() => props.onCommandArgs('project.editSynthetic', { itemId: editableSynthetic })}
+					testId="project-menu-edit-synthetic"
+				>
+					{doc.synthetics[(doc.items[editableSynthetic] as { syntheticId: string }).syntheticId]?.kind ===
+					'counting-leader'
+						? 'Universal Counting Leader Setup…'
+						: 'Color Picker…'}
+				</MenuEntry>
+			) : null}
+			{/* wp interchange (S04:AS-011): relink offline media. */}
+			<MenuEntry
+				disabled={props.readOnly || !props.itemIds.some((id) => isOfflineItem(props.session, id))}
+				onClick={() => props.onCommand('project.linkMedia')}
+				testId="project-menu-link-media"
+			>
+				Link Media…
+			</MenuEntry>
+			<MenuEntry disabled={props.readOnly} onClick={() => props.onCommand('edit.removeUnused')}>
+				Remove Unused
+			</MenuEntry>
 			<MenuEntry
 				disabled={props.readOnly || !props.itemIds.length}
 				onClick={() => deleteItems(props.session, props.itemIds)}
@@ -1047,6 +1141,26 @@ function ContextMenu(props: {
 			/>
 		</Menu>
 	);
+}
+
+/** wp interchange: a media item whose file is offline (an imported placeholder or a missing file). */
+function isOfflineItem(session: EditorSession, id: string): boolean {
+	const st = session.getState();
+	const item = st.document.items[id];
+	if (item?.kind !== 'media') return false;
+	const m = st.document.media[item.mediaId];
+	return (
+		!!m && (m.fingerprint.startsWith('pending:interchange:') || st.media[m.id]?.availability === 'offline')
+	);
+}
+
+/** wp-multicam: audio/video media items among `ids`. */
+function mediaCount(doc: ReturnType<EditorSession['getCommitted']>, ids: readonly string[]): number {
+	return ids.filter((id) => {
+		const it = doc.items[id];
+		const k = it?.kind === 'media' ? doc.media[it.mediaId]?.kind : undefined;
+		return k === 'video' || k === 'audio';
+	}).length;
 }
 
 function extensionItems(

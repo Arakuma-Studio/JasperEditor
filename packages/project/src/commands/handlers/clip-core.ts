@@ -16,7 +16,16 @@ import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
-import type { Clip, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
+import type {
+	Clip,
+	Sequence,
+	TextBox,
+	TextContent,
+	TextStyle,
+	Track,
+	Transform,
+} from '../../schema/sequence.ts';
+import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
@@ -47,7 +56,9 @@ import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';
+import { markMulticamClips } from './multicam.ts';
 import { applyShapePatch } from './shape.ts';
+import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
 
@@ -102,7 +113,7 @@ export function applyTransformPatch(t: Transform, p: TransformPatch | undefined)
 }
 
 /** Overwrite `[at, at+n)` on the destination tracks, or insert-shift them plus sync-locked tracks. */
-function makeRoom(
+export function makeRoom(
 	seq: DSeq,
 	h: HandlerContext,
 	dest: readonly DTrack[],
@@ -156,6 +167,8 @@ type PlaceOptions = {
 		video?: { in: number; offset: number; frames: number };
 		audio?: { in: number; offset: number; frames: number };
 	};
+	/** edit-structure: sequence sources as nests (default) or individual clips. */
+	nest?: boolean;
 };
 
 /** Premiere Insert/Overwrite from a source (S01 `clip.place`, KND-003, FX-004, S02:TL-493). */
@@ -175,11 +188,33 @@ export function placeSource(
 		if (!item) h.fail('E_NOT_FOUND', `Project item not found: ${o.source.projectItemId}`);
 		if (item.kind === 'media' || item.kind === 'subclip') mediaId = item.mediaId;
 		else if (item.kind === 'synthetic') syntheticId = item.syntheticId;
-		else if (item.kind === 'sequence')
-			h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
-		else h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
+		else if (item.kind !== 'sequence') h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
 	}
-	if (o.source.sequenceId) h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
+	// edit-structure (S01:SEQ-010, KND-011): a sequence is placed as nest clips or as its individual clips.
+	const sequenceSource = o.source.sequenceId ?? (item?.kind === 'sequence' ? item.sequenceId : undefined);
+	if (sequenceSource) {
+		// wp-multicam: a multi-camera source always places as linked multi-camera clips (camera 1); a merged clip
+		// places as the clips it holds unless nesting is asked for explicitly.
+		const placedSrc = doc.sequences[sequenceSource] as Sequence | undefined;
+		const nest = placedSrc?.multicam ? true : placedSrc?.merged ? (o.nest ?? false) : o.nest;
+		const placed = placeSequence(doc, seq, h, {
+			sequenceId: sequenceSource,
+			...(o.sourceRange ? { sourceRange: o.sourceRange } : {}),
+			at: o.at,
+			mode: o.mode,
+			...(o.videoTrack ? { videoTrack: o.videoTrack } : {}),
+			...(o.audioTracks ? { audioTracks: o.audioTracks.filter((t): t is string => t !== null) } : {}),
+			...(o.video !== undefined ? { video: o.video } : {}),
+			...(o.audio !== undefined ? { audio: o.audio } : {}),
+			...(nest !== undefined ? { nest } : {}),
+			...(o.createTracks !== undefined ? { createTracks: o.createTracks } : {}),
+			...(o.rippleMarkers !== undefined ? { rippleMarkers: o.rippleMarkers } : {}),
+			...(o.ref ? { ref: o.ref } : {}),
+			...(item ? { name: item.name, label: item.label } : {}),
+		});
+		if (placedSrc?.multicam) markMulticamClips(seq, placed.clipIds, placedSrc.multicam);
+		return placed;
+	}
 	const marks =
 		item && (item.kind === 'media' || item.kind === 'synthetic' || item.kind === 'subclip')
 			? item.marks
@@ -343,11 +378,14 @@ export function placeSource(
 	} else if (syntheticId) {
 		const syn = doc.synthetics[syntheticId] as SyntheticSource | undefined;
 		if (!syn) h.fail('E_NOT_FOUND', `Synthetic source not found: ${syntheticId}`);
-		frames = o.sourceRange
-			? Math.max(1, Math.round((o.sourceRange.out - o.sourceRange.in) / F))
-			: stillFrames;
-		sourceIn = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
-		const name = item?.name ?? (syn.kind === 'color-matte' ? 'Color Matte' : syn.kind);
+		// edit-structure: the item's marks, else the generator's own length (bars 1 s, leader 11 s) or the still default.
+		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
+		const outF =
+			o.sourceRange?.out ?? marks?.out?.flicks ?? inF + syntheticDefaultFlicks(syn.kind, stillFrames * F);
+		if (outF <= inF) h.fail('E_INVALID_PARAM', 'Source out must be after source in');
+		frames = Math.max(1, Math.round((outF - inF) / F));
+		sourceIn = inF;
+		const name = item?.name ?? SYNTHETIC_INFO[syn.kind].label;
 		if (syn.kind === 'adjustment') {
 			plans.push({
 				kind: 'adjustment',
@@ -361,18 +399,44 @@ export function placeSource(
 					effects: [],
 				}),
 			});
-		} else if (syn.kind === 'color-matte' || syn.kind === 'black-video' || syn.kind === 'transparent') {
-			plans.push({
-				kind: 'solid',
-				trackRef: o.videoTrack ?? 'V1',
-				build: (id, trackId, start, duration, si) => ({
-					...commonFields(id, trackId, start, duration, si, name, item?.label ?? 'tan'),
+		} else {
+			// Mattes, black / transparent video, and the pictures of Bars and Tone and the counting leader.
+			const info = SYNTHETIC_INFO[syn.kind];
+			if (o.video !== false || !info.hasAudio)
+				plans.push({
 					kind: 'solid',
-					syntheticId: syn.id,
-					...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
-				}),
-			});
-		} else h.fail('E_NOT_IMPLEMENTED', `Placing ${syn.kind} sources arrives later`);
+					trackRef: o.videoTrack ?? 'V1',
+					build: (id, trackId, start, duration, si) => ({
+						...commonFields(id, trackId, start, duration, si, name, item?.label ?? 'tan'),
+						kind: 'solid',
+						syntheticId: syn.id,
+						...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
+					}),
+				});
+			// edit-structure: their sound, linked like a media file's audio (Premiere's synthetics with tone/blips).
+			if (info.hasAudio && o.audio !== false) {
+				const videoIndex = (() => {
+					const id = resolveTrackIn(seq, o.videoTrack ?? 'V1');
+					if (id) return findTrackIn(seq, id)?.index ?? 0;
+					const m = /^V(\d+)$/i.exec(o.videoTrack ?? 'V1');
+					return m ? Number(m[1]) - 1 : 0;
+				})();
+				plans.push({
+					kind: 'synthetic-audio',
+					trackRef: o.audioTracks?.[0] ?? `A${videoIndex + 1}`,
+					build: (id, trackId, start, duration, si) => ({
+						...commonFields(id, trackId, start, duration, si, name, 'caribbean'),
+						kind: 'synthetic-audio',
+						syntheticId: syn.id,
+						gainDb: 0,
+						volumeDb: anim(0),
+						pan: anim(0),
+						effects: [],
+					}),
+				});
+			}
+			if (plans.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to place from this source');
+		}
 	} else {
 		return h.fail('E_INVALID_PARAM', 'clip.place needs a source');
 	}
@@ -435,7 +499,7 @@ export function newGeneratorClip(
 		id?: string;
 	},
 	h: HandlerContext,
-	kind: 'text' | 'solid' | 'motion-graphic' | 'shape',
+	kind: 'text' | 'solid' | 'motion-graphic' | 'shape' | 'adjustment',
 ): { seq: DSeq; track: DTrack; at: number; duration: number; id: string } {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const at = h.frame(seq, cmd.at);
@@ -520,6 +584,19 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 			members.push(p);
 		}
 	}
+	// edit-structure (Premiere groups): the outer edge of a clip group (its first In / last Out) trims every member
+	// at that edge; inner edges trim the clip alone.
+	if (cmd.group !== false && clip.groupId && seq.groups[clip.groupId]) {
+		const group = seq.groups[clip.groupId]!.members.map((m) => seq.clips[m]).filter((c): c is DClip => !!c);
+		const outer =
+			cmd.edge === 'in' ? Math.min(...group.map((c) => c.start)) : Math.max(...group.map((c) => end(c)));
+		if (edgeFrame(clip) === outer)
+			for (const g of group) {
+				if (members.some((m) => m.id === g.id) || edgeFrame(g) !== outer) continue;
+				if (findTrackIn(seq, g.trackId)?.track.locked) continue;
+				members.push(g);
+			}
+	}
 	if (mode === 'ripple') {
 		// edit-ux: one group edit that keeps split edits in sync (ripple.ts).
 		const d = rippleTrimGroup(
@@ -581,6 +658,7 @@ export const clipCoreHandlers: HandlerMap = {
 			createTracks: cmd.createTracks,
 			rippleMarkers: cmd.rippleMarkers,
 			ref: cmd.ref,
+			...(cmd.nest !== undefined ? { nest: cmd.nest } : {}),
 		});
 	},
 	'clip.addText': (doc, cmd, h: HandlerContext) => {
@@ -662,7 +740,10 @@ export const clipCoreHandlers: HandlerMap = {
 	},
 	'clip.move': (doc, cmd, h: HandlerContext) => {
 		const ids = idList(cmd.clipIds);
-		const { seq, clips } = h.clipsOf(doc, ids);
+		const found = h.clipsOf(doc, ids);
+		const seq = found.seq;
+		// edit-structure (S01:CLP-012): grouped clips move together.
+		const clips = cmd.groups === false ? found.clips : expandGroups(seq, found.clips);
 		const mode = cmd.mode ?? 'overwrite';
 		const deltaFor = (kind: Track['kind']) =>
 			typeof cmd.deltaTracks === 'number' ? cmd.deltaTracks : (cmd.deltaTracks?.[kind] ?? 0);
@@ -748,14 +829,18 @@ export const clipCoreHandlers: HandlerMap = {
 		return { left: [...set.keys()], right: splits.map((s) => s.rightId) };
 	},
 	'clip.lift': (doc, cmd, h: HandlerContext) => {
-		const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
+		const found = h.clipsOf(doc, idList(cmd.clipIds));
+		const seq = found.seq;
+		const clips = cmd.groups === false ? found.clips : expandGroups(seq, found.clips);
 		for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
 		for (const c of clips) removeClip(seq, c.id, h);
 		cleanupSequence(seq, h);
 		return { removed: clips.map((c) => c.id) };
 	},
 	'clip.extract': (doc, cmd, h: HandlerContext) => {
-		const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
+		const found = h.clipsOf(doc, idList(cmd.clipIds));
+		const seq = found.seq;
+		const clips = cmd.groups === false ? found.clips : expandGroups(seq, found.clips);
 		for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
 		// edit-ux: close the time the clips free on every track that loses one, once (split edits, ripple.ts).
 		const ids = new Set(clips.map((c) => c.id));
@@ -847,7 +932,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		(c.transform as Record<string, unknown>)[f] = p[f];
 	}
 	if (p.gainDb !== undefined) {
-		need(clip.kind === 'audio' || clip.kind === 'nest-audio', 'gainDb');
+		need(clip.kind === 'audio' || clip.kind === 'nest-audio' || clip.kind === 'synthetic-audio', 'gainDb');
 		c.gainDb = p.gainDb;
 	}
 	if (p.channels !== undefined) {

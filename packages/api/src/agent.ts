@@ -16,6 +16,8 @@ export const AGENT_QUERIES = [
 	'preferences.get',
 	'validate',
 	'frame.capture',
+	'clip.properties',
+	'param.get',
 ] as const;
 export const AgentQueryNameSchema = z.enum(AGENT_QUERIES);
 export type AgentQueryName = z.infer<typeof AgentQueryNameSchema>;
@@ -119,7 +121,7 @@ export const AgentWsHelloSchema = z.object({
 export const AgentWsRequestSchema = z.object({
 	type: z.literal('request'),
 	id: z.string(),
-	kind: z.enum(['tx', 'query', 'schema']),
+	kind: z.enum(['tx', 'query', 'schema', 'ui']),
 	payload: z.unknown(),
 });
 export const AgentWsResponseSchema = z.object({
@@ -208,3 +210,39 @@ export const AgentMcpInfoSchema = z.object({
 	tokenRequired: z.boolean(),
 });
 export type AgentMcpInfo = z.infer<typeof AgentMcpInfoSchema>;
+
+// ---------------------------------------------------------------- live-UI automation (mcp-cli)
+
+/**
+ * What `POST /api/agent/ui` can ask an open editor window to do (docs/wp-notes/mcp-cli.md §4). Coordinates are
+ * CSS pixels of the window's content area, origin top-left; elements are addressed by automation id.
+ */
+export const AGENT_UI_ACTIONS = [
+	'state',
+	'elements',
+	'screenshot',
+	'click',
+	'drag',
+	'scroll',
+	'key',
+	'type',
+	'set',
+	'locate',
+	'hit',
+	'commands',
+	'command',
+] as const;
+export type AgentUiAction = (typeof AGENT_UI_ACTIONS)[number];
+export const AgentUiRequestSchema = z.object({
+	/** The editor window that has this project open (default: the only / most recently connected window). */
+	projectId: z.string().min(1).optional(),
+	action: z.enum(AGENT_UI_ACTIONS),
+	args: z.record(z.string(), z.unknown()).optional(),
+});
+export type AgentUiRequest = z.infer<typeof AgentUiRequestSchema>;
+export const AgentUiResponseSchema = z.object({
+	result: z.unknown(),
+	/** The window that answered. */
+	window: z.object({ projectId: z.string(), sessionId: z.string() }),
+});
+export type AgentUiResponse = z.infer<typeof AgentUiResponseSchema>;

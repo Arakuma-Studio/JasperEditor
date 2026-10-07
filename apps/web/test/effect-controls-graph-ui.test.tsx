@@ -169,15 +169,16 @@ describe('Effect Controls graphs (S03:KF-022)', () => {
 		drag(screen.getByTestId(`graph-velocity-handle-${mid.id}-out`), 0, 10);
 		let k = keysOf()[1]!;
 		expect(k.interpolation).toBe('continuous-bezier');
-		expect(k.easeOut.slope).toBeGreaterThan(0);
-		// Linked: equal speeds on both sides (both segments are 60 over 20 frames).
-		expect(k.easeIn.slope).toBeCloseTo(k.easeOut.slope, 6);
+		expect(k.easeOut.slope).not.toBe(0);
+		// Linked: the same signed velocity on both sides — at this maximum the segments run in opposite directions
+		// (+60 / −60 over 20 frames), so the normalised slopes are opposite (a smooth zero crossing; keyframes-blend).
+		expect(k.easeIn.slope).toBeCloseTo(-k.easeOut.slope, 6);
 		const inBefore = k.easeIn.slope;
 		drag(screen.getByTestId(`graph-velocity-handle-${mid.id}-out`), 0, 10, { altKey: true });
 		k = keysOf()[1]!;
 		expect(k.interpolation).toBe('bezier');
 		expect(k.easeIn.slope).toBeCloseTo(inBefore, 6);
-		expect(k.easeOut.slope).not.toBeCloseTo(inBefore, 3);
+		expect(k.easeOut.slope).not.toBeCloseTo(-inBefore, 3);
 	});
 
 	it('value-graph Bezier handles edit the ease; graph keys share selection and the context menu', () => {

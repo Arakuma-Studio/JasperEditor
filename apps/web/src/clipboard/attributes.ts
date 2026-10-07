@@ -22,7 +22,7 @@ export type AttributeOption = {
 	reason?: string;
 };
 
-const isAudio = (k: string) => k === 'audio' || k === 'nest-audio';
+const isAudio = (k: string) => k === 'audio' || k === 'nest-audio' || k === 'synthetic-audio';
 
 function effectLabel(
 	registry: EffectRegistry,

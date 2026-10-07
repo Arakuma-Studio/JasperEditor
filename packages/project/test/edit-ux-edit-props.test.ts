@@ -51,7 +51,11 @@ const op: fc.Arbitrary<Op> = fc.oneof(
 		at: fc.integer({ min: 0, max: 200 }),
 		dur: fc.integer({ min: 1, max: 30 }),
 	}),
-	fc.record({ k: fc.constant('trimOut' as const), clip: fc.nat(19), delta: fc.integer({ min: -20, max: 20 }) }),
+	fc.record({
+		k: fc.constant('trimOut' as const),
+		clip: fc.nat(19),
+		delta: fc.integer({ min: -20, max: 20 }),
+	}),
 	fc.record({
 		k: fc.constant('rippleTrim' as const),
 		clip: fc.nat(19),
@@ -241,7 +245,8 @@ describe('FilmCraft never_overlaps (fast-check over Jasper command handlers)', (
 					const bad = overlapsOrNegative(seq);
 					if (bad) throw new Error(`${bad} after ${JSON.stringify(commands)}`);
 					const issues = checkInvariants(document);
-					if (issues.length) throw new Error(`invariants ${JSON.stringify(issues)} after ${JSON.stringify(commands)}`);
+					if (issues.length)
+						throw new Error(`invariants ${JSON.stringify(issues)} after ${JSON.stringify(commands)}`);
 					doc = document;
 					revision = result.revision;
 				}
@@ -249,7 +254,18 @@ describe('FilmCraft never_overlaps (fast-check over Jasper command handlers)', (
 			{ numRuns: 150 },
 		);
 		// Every kind of op must actually exercise the handlers, not just be refused.
-		for (const k of ['over', 'ins', 'razor', 'extract', 'trimOut', 'rippleTrim', 'splitTrim', 'rippleDelete', 'speed', 'move'])
+		for (const k of [
+			'over',
+			'ins',
+			'razor',
+			'extract',
+			'trimOut',
+			'rippleTrim',
+			'splitTrim',
+			'rippleDelete',
+			'speed',
+			'move',
+		])
 			expect(stats.get(k)?.ok ?? 0, `${k}: ${JSON.stringify(stats.get(k))}`).toBeGreaterThan(20);
 	});
 });
