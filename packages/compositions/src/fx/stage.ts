@@ -23,6 +23,8 @@ import {
 	fxParamsAtFn,
 	fxSeed,
 	fxStackTime,
+	fxUniformsKey,
+	hashString,
 	isLutMediaParam,
 	type Lut,
 	layerMapOf,
@@ -52,6 +54,7 @@ import {
 } from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
+import { fxPixelsOf, useFxPixels } from './pixels.ts';
 import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
@@ -212,6 +215,21 @@ export function useLayerFx(
 		};
 	}, [clip, fps, realFrame]);
 	const clipInfo = useMemo((): FxClipInfo => fxClipInfoOf(clip), [clip]);
+	// sim-warp: identity of each instance's animation (params with keys and expressions, the clip's timing) — the key
+	// of stepped simulations' checkpoint caches.
+	const instanceKeyOf = useMemo(() => {
+		const cache = new Map<string, string>();
+		const timing = `${clip.clipId}|${clip.sourceIn}|${clip.speed.rate}|${clip.speed.reverse ? 1 : 0}|${clip.duration}|${fps}`;
+		const byId = new Map(clip.effects.map((e) => [e.id, e]));
+		return (fxId: string): string => {
+			const hit = cache.get(fxId);
+			if (hit !== undefined) return hit;
+			const inst = byId.get(fxId);
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}`;
+			cache.set(fxId, k);
+			return k;
+		};
+	}, [clip, fps]);
 	const mediaKind = useMemo(() => (id: string) => doc.media[id]?.kind, [doc.media]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
@@ -282,6 +300,26 @@ export function useLayerFx(
 			) ?? [],
 		[plan],
 	);
+	// sim-warp: images whose pixels simulations read on the CPU (`gpu.cpuPixels`).
+	const pixelUrls = useMemo(
+		() =>
+			[
+				...new Set(
+					plan?.steps.flatMap((s) =>
+						s.kind === 'gpu'
+							? (s.spec.gpu?.cpuPixels ?? [])
+									.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
+									.filter((id): id is string => typeof id === 'string' && !!id)
+									.map((id) => doc.media[id])
+									.filter((h) => h?.kind === 'image')
+									.map((h) => h!.url)
+							: [],
+					) ?? [],
+				),
+			],
+		[plan, doc.media],
+	);
+	const pixelsVersion = useFxPixels(pixelUrls, !doc.isPreview);
 	const lutUrls = [...referencedMedia(lutEffects), ...fxLutIds]
 		.map((id) => doc.media[id]?.url)
 		.filter((u): u is string => !!u);
@@ -383,6 +421,15 @@ export function useLayerFx(
 						progress,
 						clip: clipInfo,
 						...(paramsAt ? { paramsAt } : {}),
+						instanceKey: instanceKeyOf(s.fx.id),
+						pixels: (param: string) => {
+							const id = (s.fx.params[param] as { mediaId?: unknown } | undefined)?.mediaId;
+							const h = typeof id === 'string' && id ? doc.media[id] : undefined;
+							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
+						},
+						...((s.fx as { puppet?: unknown }).puppet
+							? { structures: { puppet: (s.fx as { puppet?: unknown }).puppet } }
+							: {}),
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
 					// wp masks: a Track Matte Key reading a track binds the track's composite as `u_matte`.
@@ -407,7 +454,7 @@ export function useLayerFx(
 					}
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${JSON.stringify(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
+						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
 						sampleOffsets: offsets,
@@ -508,6 +555,8 @@ export function useLayerFx(
 		paramsAtOf,
 		clipInfo,
 		opts.extraSteps,
+		instanceKeyOf,
+		pixelsVersion,
 	]);
 
 	if (!plan) return NONE;

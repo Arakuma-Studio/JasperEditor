@@ -26,6 +26,7 @@ const FAMILY_FILES = [
 	'sapphire-render-textures',
 	'sapphire-textures-clouds',
 	'sapphire-time-flicker',
+	'simulation-warp',
 ];
 
 describe('fx catalogue', () => {
