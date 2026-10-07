@@ -21,6 +21,7 @@ import {
 	Menu,
 	session,
 	shell,
+	systemPreferences,
 } from 'electron';
 import { type EngineProcess, startEngineProcess } from './engine-process.ts';
 import {
@@ -31,6 +32,7 @@ import {
 	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
@@ -282,8 +284,36 @@ async function startPackagedLike(): Promise<string> {
 	return `${engine.origin}/`;
 }
 
+/**
+ * audio-mix: media permissions for voice-over recording. Microphone requests from the app origin are granted (on
+ * macOS after the system prompt, `askForMediaAccess`); every other permission request and origin is denied.
+ */
+function registerPermissions(): void {
+	const ses = session.defaultSession;
+	ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+		const url = (details as { requestingUrl?: string }).requestingUrl ?? wc.getURL();
+		const types = ((details as { mediaTypes?: string[] }).mediaTypes ?? []) as string[];
+		if (!isPermissionAllowed(permission, url, appOrigin, types)) return callback(false);
+		if (permission === 'media' && process.platform === 'darwin') {
+			systemPreferences
+				.askForMediaAccess('microphone')
+				.then(callback)
+				.catch(() => callback(false));
+			return;
+		}
+		callback(true);
+	});
+	ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+		const types = (details as { mediaType?: string }).mediaType
+			? [(details as { mediaType: string }).mediaType]
+			: ['audio'];
+		return isPermissionAllowed(permission, requestingOrigin, appOrigin, permission === 'media' ? types : []);
+	});
+}
+
 async function boot(): Promise<void> {
 	registerIpc();
+	registerPermissions();
 	if (process.platform !== 'darwin') Menu.setApplicationMenu(null); // Row A renders the in-app menubar (S05:EL-002)
 	let url: string;
 	if (mode === 'dev') {

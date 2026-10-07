@@ -263,7 +263,14 @@ export class AgentBridge {
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
 				// M3 (S10:TUI-034): the user's default transitions, so agents apply the same ones as Ctrl+D.
-				preferences: () => ({ transitions: transitionPreferences() }),
+				// edit-structure: how the editor places sequences (nests or individual clips) and shows through edits.
+				preferences: () => ({
+					transitions: transitionPreferences(),
+					timeline: {
+						insertSequencesAsNests: s.getState().toggles.insertSequencesAsNests !== false,
+						showThroughEdits: s.getState().toggles.showThroughEdits !== false,
+					},
+				}),
 			},
 		};
 	}

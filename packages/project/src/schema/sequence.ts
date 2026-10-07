@@ -1,5 +1,12 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 import { z } from 'zod';
+import {
+	AudioChannelFormatSchema,
+	LoudnessNormalizeSchema,
+	MasterMixerSchema,
+	MixerStripSchema,
+	SequenceSampleRateSchema,
+} from './audio.ts';
 import type { DeepStrip } from './common.ts';
 import {
 	AnimNumberSchema,
@@ -14,6 +21,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { MaskSchema } from './mask.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -23,6 +31,10 @@ export const EffectInstanceSchema = z.looseObject({
 	effectVersion: int(),
 	enabled: z.boolean(),
 	params: z.record(z.string(), AnimParamSchema),
+	/** audio-mix: a track / submix / Mix insert placed after the fader (absent = pre-fader). */
+	postFader: z.boolean().optional(),
+	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
+	masks: z.array(MaskSchema).optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
@@ -101,8 +113,23 @@ export const CaptionStyleSchema = TextStyleSchema.extend({
 	maxSegmentMs: z.number().positive(),
 	minGapMs: z.number().min(0),
 	boxWidthPct: z.number().positive().max(100),
+	// ---- wp captions (all optional, defaults at read time: `resolveCaptionStyle`)
+	/** Vertical placement inside the title-safe area (default `bottom`). */
+	placement: z.enum(['bottom', 'middle', 'top']).optional(),
+	/** Extra distance from the title-safe edge, % of the frame height (0–45, default 0). */
+	marginPct: z.number().min(0).max(45).optional(),
+	/** WebVTT `line:N%`: top of the caption block at N % of the frame height; null = placement. */
+	linePct: z.number().min(0).max(100).nullable().optional(),
+	/** WebVTT `position:N%`: horizontal anchor of the caption block at N % of the frame width; null = centred. */
+	positionPct: z.number().min(0).max(100).nullable().optional(),
+	// ---- end wp captions
 });
 export type CaptionStyle = DeepStrip<z.infer<typeof CaptionStyleSchema>>;
+
+/** wp captions: caption track standards (Premiere's caption track "Format"). */
+export const CAPTION_STANDARDS = ['subtitle', 'cea-608', 'cea-708', 'teletext'] as const;
+export const CaptionStandardSchema = z.enum(CAPTION_STANDARDS);
+export type CaptionStandard = DeepStrip<z.infer<typeof CaptionStandardSchema>>;
 
 // ---------------------------------------------------------------- tracks
 
@@ -121,11 +148,22 @@ export const TrackSchema = z.looseObject({
 	solo: z.boolean().optional(),
 	volumeDb: AnimNumberSchema.optional(),
 	pan: AnimNumberSchema.optional(),
-	channelFormat: z.enum(['mono', 'stereo']).optional(),
+	/** audio-mix: `5.1` added (L, R, C, LFE, Ls, Rs). Absent = stereo. */
+	channelFormat: AudioChannelFormatSchema.optional(),
 	effects: z.array(EffectInstanceSchema).optional(),
+	/** audio-mix: Audio Track Mixer state (automation mode, output, sends, record-arm, lanes). */
+	mixer: MixerStripSchema.optional(),
 	captionFormat: z.literal('open').optional(),
 	visible: z.boolean().optional(),
 	styleDefaults: CaptionStyleSchema.optional(),
+	// ---- wp captions (caption tracks; optional)
+	/** BCP-47 language of the captions (`en`, `fr-CA`); written to embedded streams and sidecars. */
+	language: z.string().optional(),
+	/** Caption standard of the track (default `subtitle`). */
+	captionStandard: CaptionStandardSchema.optional(),
+	/** WebVTT STYLE / REGION / NOTE blocks kept from an imported file for round trips. */
+	vttBlocks: z.array(z.string()).optional(),
+	// ---- end wp captions
 });
 export type Track = DeepStrip<z.infer<typeof TrackSchema>>;
 
@@ -155,15 +193,46 @@ export type ClipMarker = DeepStrip<z.infer<typeof ClipMarkerSchema>>;
 
 // ---------------------------------------------------------------- clips
 
+/**
+ * Clip blend modes (keyframes-blend): Premiere Pro's 27 in its menu order (Normal, Dissolve | Darken, Multiply, Color
+ * Burn, Linear Burn, Darker Color | Lighten, Screen, Color Dodge, Linear Dodge (Add), Lighter Color | Overlay, Soft
+ * Light, Hard Light, Vivid Light, Linear Light, Pin Light, Hard Mix | Difference, Exclusion, Subtract, Divide | Hue,
+ * Saturation, Color, Luminosity), then After Effects' utility modes (Stencil / Silhouette Alpha / Luma, Alpha Add).
+ * `add` is Linear Dodge (Add) (the id predates the full set). Formulas, groups and labels: `blend-modes.ts`.
+ */
 export const BLEND_MODES = [
 	'normal',
-	'multiply',
-	'screen',
-	'overlay',
+	'dissolve',
 	'darken',
+	'multiply',
+	'color-burn',
+	'linear-burn',
+	'darker-color',
 	'lighten',
+	'screen',
+	'color-dodge',
 	'add',
+	'lighter-color',
+	'overlay',
+	'soft-light',
+	'hard-light',
+	'vivid-light',
+	'linear-light',
+	'pin-light',
+	'hard-mix',
 	'difference',
+	'exclusion',
+	'subtract',
+	'divide',
+	'hue',
+	'saturation',
+	'color',
+	'luminosity',
+	'stencil-alpha',
+	'stencil-luma',
+	'silhouette-alpha',
+	'silhouette-luma',
+	'alpha-add',
 ] as const;
 export const BlendModeSchema = z.enum(BLEND_MODES);
 export type BlendMode = DeepStrip<z.infer<typeof BlendModeSchema>>;
@@ -202,6 +271,8 @@ export const KNOWN_CLIP_KINDS = [
 	'adjustment',
 	// M2 (S11:SHP-001, schema v4)
 	'shape',
+	// edit-structure: the sound of a synthetic source (Bars and Tone's tone, the counting leader's blips).
+	'synthetic-audio',
 ] as const;
 export type KnownClipKind = (typeof KNOWN_CLIP_KINDS)[number];
 
@@ -218,6 +289,13 @@ const commonShape = {
 	linkId: z.string().nullable(),
 	groupId: z.string().nullable(),
 	markers: z.array(ClipMarkerSchema),
+	/**
+	 * edit-structure (Premiere Frame Hold, docs/wp-notes/edit-structure.md): the clip shows one frame of its content —
+	 * the content time `flicks` — for its whole duration. `holdFilters`: effects, Motion and Opacity keyframes are
+	 * evaluated at the held time too (Premiere "Hold Filters"); otherwise they keep animating. Absent = no hold.
+	 * Visual clips only (not adjustment layers or captions).
+	 */
+	frameHold: z.looseObject({ flicks: nonNegInt(), holdFilters: z.boolean().optional() }).optional(),
 };
 // ---------------------------------------------------------------- tracking (M2, ARCHITECTURE §19.5, S09)
 
@@ -282,6 +360,8 @@ const visualShape = {
 	effects: z.array(EffectInstanceSchema),
 	/** M2 (S09): this clip follows a tracker of another clip. */
 	trackedBy: TrackedBySchema.optional(),
+	/** wp masks: the Opacity masks of the layer (S03:MSK-001). Absent = none. */
+	masks: z.array(MaskSchema).optional(),
 };
 const canvasSchema = z.union([
 	z.literal('sequence'),
@@ -345,6 +425,8 @@ export const CaptionsClipSchema = z.looseObject({
 	style: CaptionStyleSchema.partial(),
 	transform: TransformSchema,
 	opacity: AnimNumberSchema,
+	/** wp captions: the WebVTT cue identifier and cue settings (verbatim) kept from an imported file. */
+	cue: z.looseObject({ id: z.string().nullable().optional(), settings: z.string().optional() }).optional(),
 });
 /** M2 (S11:ATP-001): how a motion-graphic template is drawn — `fframes` (jasper-mg + SVG twin) or `anime`. */
 export const MG_RENDERERS = ['fframes', 'anime'] as const;
@@ -406,6 +488,20 @@ export const AdjustmentClipSchema = z.looseObject({
 	effects: z.array(EffectInstanceSchema),
 });
 
+/**
+ * edit-structure: the audio half of a synthetic source with sound (`bars-and-tone`: a sine tone; `counting-leader`:
+ * its cue blips). Placed linked to the source's `solid` video clip, like a media file's audio clip. Stereo.
+ */
+export const SyntheticAudioClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('synthetic-audio'),
+	syntheticId: z.string(),
+	gainDb: z.number(),
+	volumeDb: AnimNumberSchema,
+	pan: AnimNumberSchema,
+	effects: z.array(EffectInstanceSchema),
+});
+
 // ---------------------------------------------------------------- shapes (M2, S11:SHP-001, schema v4)
 
 export const SHAPE_TYPES = ['rect', 'ellipse'] as const;
@@ -453,6 +549,7 @@ export const KnownClipSchema = z.discriminatedUnion('kind', [
 	NestAudioClipSchema,
 	AdjustmentClipSchema,
 	ShapeClipSchema,
+	SyntheticAudioClipSchema,
 ]);
 
 export type VideoClip = DeepStrip<z.infer<typeof VideoClipSchema>>;
@@ -468,6 +565,7 @@ export type NestVideoClip = DeepStrip<z.infer<typeof NestVideoClipSchema>>;
 export type NestAudioClip = DeepStrip<z.infer<typeof NestAudioClipSchema>>;
 export type AdjustmentClip = DeepStrip<z.infer<typeof AdjustmentClipSchema>>;
 export type ShapeClip = DeepStrip<z.infer<typeof ShapeClipSchema>>;
+export type SyntheticAudioClip = DeepStrip<z.infer<typeof SyntheticAudioClipSchema>>;
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 
 const ClipCommonSchema = z.looseObject(commonShape);
@@ -520,6 +618,12 @@ export const TransitionSchema = z.looseObject({
 	duration: z.number().int().min(1),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']),
 	params: z.record(z.string(), AnimParamSchema),
+	/**
+	 * edit-structure (S01:TRN-003 `handles: 'freeze'`): the transition keeps its duration where the media has too few
+	 * frames beyond the cut; the missing handle frames repeat the clip's first / last frame (Premiere's freeze-frame
+	 * handles, drawn with a warning stripe). Absent = handles come from the media only.
+	 */
+	freezeHandles: z.boolean().optional(),
 });
 export type Transition = DeepStrip<z.infer<typeof TransitionSchema>>;
 
@@ -537,8 +641,10 @@ export const SequenceSettingsSchema = z.looseObject({
 	pixelAspect: z.looseObject({ num: z.literal(1), den: z.literal(1) }),
 	dropFrame: z.boolean(),
 	startTimecodeFrames: nonNegInt(),
-	audioSampleRate: z.literal(48000),
-	masterLayout: z.literal('stereo'),
+	/** audio-mix: 44.1 / 48 / 96 kHz (the mix and exports run at this rate). */
+	audioSampleRate: SequenceSampleRateSchema,
+	/** audio-mix: channel format of the Mix (stereo, mono or 5.1). */
+	masterLayout: AudioChannelFormatSchema,
 	backgroundColor: RGBASchema,
 	workingColorSpace: z.literal('rec709'),
 });
@@ -550,7 +656,16 @@ export const SequenceSchema = z.looseObject({
 	videoTracks: z.array(TrackSchema),
 	audioTracks: z.array(TrackSchema),
 	captionTracks: z.array(TrackSchema),
-	master: z.looseObject({ volumeDb: AnimNumberSchema, effects: z.array(EffectInstanceSchema) }),
+	master: z.looseObject({
+		volumeDb: AnimNumberSchema,
+		effects: z.array(EffectInstanceSchema),
+		/** audio-mix: the Mix's automation mode. */
+		mixer: MasterMixerSchema.optional(),
+		/** audio-mix: loudness normalisation of the Mix (preview and export). */
+		loudness: LoudnessNormalizeSchema.optional(),
+	}),
+	/** audio-mix: submix tracks (buses without clips), mixer order S1, S2 … */
+	submixTracks: z.array(TrackSchema).optional(),
 	clips: z.record(z.string(), ClipSchema),
 	transitions: z.record(z.string(), TransitionSchema),
 	links: z.record(z.string(), LinkGroupSchema),
@@ -559,6 +674,8 @@ export const SequenceSchema = z.looseObject({
 	inPoint: nonNegInt().nullable(),
 	outPoint: nonNegInt().nullable(),
 	workArea: z.looseObject({ start: nonNegInt(), end: nonNegInt() }).nullable(),
+	/** wp captions: the caption track the Captions panel edits and that export embeds first (null = C1). */
+	activeCaptionTrackId: z.string().nullable().optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

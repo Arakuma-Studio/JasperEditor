@@ -1,0 +1,99 @@
+/**
+ * @jasper/audio-dsp — pure, deterministic, allocation-free-in-the-hot-path audio DSP (AudioWorklet friendly):
+ * BS.1770-4 / EBU R128 loudness, true-peak detection and limiting, level meters, channel layouts and pan
+ * laws, auto-ducking analysis, WAV I/O and band-limited resampling. Audio is planar `Float32Array[]`.
+ *
+ * Large parts are ported from FilmCraft `crates/audio-dsp` (MIT OR Apache-2.0,
+ * Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors); see licenses/ported/audio-mix.md.
+ */
+export {
+	BIQUAD_IDENTITY,
+	Biquad,
+	type BiquadCoeffs,
+	bilinearHighPass,
+	bilinearHighShelf,
+	bilinearSection,
+	biquadMagnitude,
+	biquadMagnitudeDb,
+	designBiquad,
+	type FilterType,
+	flushDenormal,
+} from './biquad.ts';
+export {
+	applyMatrix,
+	balanceGains,
+	CH_C,
+	CH_L,
+	CH_LFE,
+	CH_LS,
+	CH_R,
+	CH_RS,
+	channelCount,
+	channelNames,
+	channelPeaks,
+	conversionMatrix,
+	convertChannels,
+	convertLayout,
+	DEFAULT_PAN51,
+	K,
+	LAYOUTS,
+	type Layout,
+	layoutFromChannels,
+	MIXDOWNS,
+	type Mixdown,
+	mixdownFromId,
+	type Pan51,
+	pan51Matrix,
+	panMonoGains,
+	pointGains51,
+} from './channels.ts';
+export {
+	activeRegions,
+	DUCK_BRIDGE_S,
+	DUCK_HOP_S,
+	DUCK_MIN_ON_S,
+	DUCK_WINDOW_S,
+	type DuckingPlan,
+	type DuckingPlanInput,
+	type DuckKeyframe,
+	duckKeyframes,
+	envelopeDb,
+	FLOOR_DB,
+	planDucking,
+	sensitivityThresholdDb,
+} from './ducking.ts';
+export { K_PREFILTER_PROTOTYPE, K_RLB_PROTOTYPE, kPrefilter, kRlb, kWeightingPower } from './kweight.ts';
+export { limitBuffer, TruePeakLimiter, type TruePeakLimiterOptions } from './limiter.ts';
+export {
+	defaultChannelWeights,
+	energyToLufs,
+	LoudnessMeter,
+	type LoudnessMeterOptions,
+	type LoudnessSummary,
+	lufsToEnergy,
+	measureLoudness,
+	type NormalizeGain,
+	normalizeGainDb,
+} from './loudness.ts';
+export {
+	dbToLin,
+	faderDbToGain,
+	LevelMeter,
+	type LevelMeterOptions,
+	type LevelReading,
+	linToDb,
+	MeterBallistics,
+	type MeterBallisticsOptions,
+} from './meter.ts';
+export {
+	besselI0,
+	blockTruePeak,
+	Interpolator,
+	PolyphaseBank,
+	TAPS_PER_PHASE,
+	TruePeakDetector,
+	truePeakFactor,
+} from './oversample.ts';
+export { type ResampleQuality, resample } from './resample.ts';
+export { Smoothed } from './smooth.ts';
+export { type DecodedWav, decodeWav, encodeWav, type WavFormat, wavChannelMask } from './wav.ts';

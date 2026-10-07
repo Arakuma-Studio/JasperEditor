@@ -4,18 +4,20 @@
 // WP-2G registers (`registerMgMasterProvider`).
 import type { ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { type FileHandle, mkdir, open, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { type FileHandle, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { EngineJob, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
+import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import {
 	buildRenderSnapshot,
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderVisualClip,
 } from '@jasper/project';
+import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
+import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
@@ -29,14 +31,27 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
+import { runBlendPipeline } from './blend/run.ts';
+import {
+	embedArgs,
+	embeddedTracks,
+	sidecarBytes,
+	sidecarName,
+	sidecarTracks,
+	subtitleCodecFor,
+	vttFor,
+} from './captions.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
 	type NativeExtension,
 	NativeExtensionRegistry,
+	type PreparedExtensions,
 	prepareExtensions,
+	prepareNestedExtensions,
 } from './native-ext.ts';
 import {
+	audioCodecOf,
 	isAnimeTemplate,
 	mediaKeyOf,
 	type PlanCapabilities,
@@ -45,6 +60,7 @@ import {
 	planExport,
 } from './planner.ts';
 import { streamLayer } from './stream/run.ts';
+import { createSyntheticExtension } from './synthetic.ts';
 
 /**
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
@@ -56,6 +72,9 @@ class NativePrepareError extends Error {
 		this.name = 'NativePrepareError';
 	}
 }
+
+/** edit-structure: what the Remotion-path extensions prepared for nested sequences, per top-level preparation. */
+const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, PreparedExtensions>>();
 
 /** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; bakes follow it, S11:LBK-022). */
 function remotionConcurrency(slots: number): number {
@@ -114,7 +133,10 @@ export class ExportService {
 	 */
 	cache: CacheService | null = null;
 
-	constructor(private readonly deps: ExportServiceDeps) {}
+	constructor(private readonly deps: ExportServiceDeps) {
+		// edit-structure: Bars and Tone / counting leader pictures and tones (always available: ffmpeg only).
+		this.nativeExtensions.register(createSyntheticExtension({ ffmpeg: deps.ff }));
+	}
 
 	/** M2 hook: colour (LUT), motion-graphics pre-renders, warp stage… keep features on the native path. */
 	registerNativeExtension(ext: NativeExtension): () => void {
@@ -252,6 +274,75 @@ export class ExportService {
 		});
 	}
 
+	/**
+	 * wp captions (S04:TR-061/062): embeds the selected caption tracks as subtitle streams (`mov_text` in MP4/MOV,
+	 * WebVTT in WebM; stream copy for picture and sound) and writes the sidecar files into the job directory.
+	 */
+	private async writeCaptionOutputs(
+		planned: PlannedExport,
+		output: string,
+		dir: string,
+		ctx: JobContext,
+	): Promise<NonNullable<ExportResult['captions']> | null> {
+		const c = planned.captionSettings;
+		if (!c?.embed && !c?.sidecar?.length) return null;
+		const seq = planned.document.sequences[planned.sequenceId]!;
+		const embedded: NonNullable<ExportResult['captions']>['embedded'] = [];
+		const sidecars: NonNullable<ExportResult['captions']>['sidecars'] = [];
+		const tracks = embeddedTracks(planned.document, seq, c, planned.range);
+		if (tracks.length) {
+			ctx.progress(0.99, { stage: 'Embedding captions' });
+			const scratch = await ctx.scratchDir();
+			const files = [];
+			for (const [i, t] of tracks.entries()) {
+				const path = join(scratch, `captions-${i}.vtt`);
+				await writeFile(path, vttFor(t));
+				files.push({ path, language: t.language, title: t.name });
+			}
+			const container = extname(output).slice(1);
+			const tmp = join(dir, `captioned${extname(output)}`);
+			const args = embedArgs(output, files, container, tmp);
+			ctx.log(`ffmpeg ${args.join(' ')}`);
+			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+			await rename(tmp, output);
+			for (const t of tracks)
+				embedded.push({
+					trackId: t.track.id,
+					name: t.name,
+					language: t.language,
+					codec: subtitleCodecFor(container),
+					cues: t.doc.cues.length,
+				});
+		}
+		const side = sidecarTracks(planned.document, seq, c, planned.range);
+		// sidecars live in `captions/` so `output.*` stays the only output file of the job
+		if (side.length) await mkdir(join(dir, 'captions'), { recursive: true });
+		for (const format of c.sidecar ?? []) {
+			for (const t of side) {
+				const name = sidecarName('output', t, format, side.length === 1);
+				await writeFile(join(dir, 'captions', name), sidecarBytes(t, format, seq, c.dropFrame));
+				sidecars.push({
+					trackId: t.track.id,
+					format,
+					name,
+					url: `/renders/${ctx.job.id}/captions/${encodeURIComponent(name)}`,
+					cues: t.doc.cues.length,
+				});
+			}
+		}
+		return { embedded, sidecars };
+	}
+
+	/** A sidecar caption file of a finished render job (`/renders/:jobId/captions/:name`). */
+	async sidecarFile(jobId: string, name: string): Promise<string | null> {
+		if (!JOB_ID_RE.test(jobId) || !/^output(\.[A-Za-z0-9_-]+)*\.(srt|vtt|scc|mcc|stl|ttml|dfxp)$/.test(name))
+			return null;
+		const job = this.deps.queue.get(jobId);
+		if (job && job.state !== 'succeeded') return null;
+		const file = join(this.deps.rendersDir, jobId, 'captions', name);
+		return (await exists(file)) ? file : null;
+	}
+
 	/** Output file of a finished render job (`/renders/:jobId/output`). */
 	async outputFile(jobId: string): Promise<string | null> {
 		if (!JOB_ID_RE.test(jobId)) return null;
@@ -323,17 +414,24 @@ export class ExportService {
 	): Promise<Map<string, string> | null> {
 		const masters = new Map<string, string>();
 		// Anime templates (S11:ATP-008) are Remotion graphics: baked by the layer-bake extension, not by fframes.
-		const clips = planned.snapshot.videoTracks
-			.flatMap((t) => t.clips)
-			.filter((c) => c.kind === 'motion-graphic' && !isAnimeTemplate(c));
+		// edit-structure: motion graphics inside nested sequences are drawn in the nested frame.
+		const clips: { clip: RenderVisualClip; snap: PlannedExport['snapshot'] }[] = [];
+		const collect = (snap: PlannedExport['snapshot']) => {
+			for (const c of snap.videoTracks.flatMap((t) => t.clips)) {
+				if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) clips.push({ clip: c, snap });
+				if ('nest' in c.source) collect(c.source.nest.snapshot);
+			}
+		};
+		collect(planned.snapshot);
 		if (clips.length === 0) return masters;
 		if (!this.mgProvider) return null;
-		for (const clip of clips) {
+		for (const { clip, snap } of clips) {
+			if (masters.has(clip.clipId)) continue;
 			ctx.progress(0, { stage: 'Rendering motion graphics' });
 			const p = await this.mgProvider({
 				clip,
-				fps: planned.snapshot.settings.fps,
-				sequence: { width: planned.snapshot.settings.width, height: planned.snapshot.settings.height },
+				fps: snap.settings.fps,
+				sequence: { width: snap.settings.width, height: snap.settings.height },
 				projectId: planned.document.projectId,
 				parentId: ctx.job.id,
 				signal: ctx.signal,
@@ -350,26 +448,41 @@ export class ExportService {
 		output: string,
 		ctx: JobContext,
 		still = false,
+		audio: MixdownResult | null = null,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
+		let nested: Map<string, PreparedExtensions>;
 		try {
-			prepared = await prepareExtensions(exts, planned, {
+			const pctx = {
 				signal: ctx.signal,
-				stage: (text) => ctx.progress(0, { stage: text }),
+				stage: (text: string) => ctx.progress(0, { stage: text }),
 				scratchDir: () => ctx.scratchDir(),
-				log: (text) => ctx.log(text),
+				log: (text: string) => ctx.log(text),
 				jobId: ctx.job.id,
 				...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
-				purpose: 'native',
+				purpose: 'native' as const,
 				concurrency: remotionConcurrency(ctx.slots),
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
-			});
+			};
+			prepared = await prepareExtensions(exts, planned, pctx);
+			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations.
+			nested = await prepareNestedExtensions(exts, planned, pctx);
 		} catch (e) {
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		}
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
+		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
+			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
+				if (!('nest' in c.source)) continue;
+				const path = parent ? `${parent}>${c.clipId}` : c.clipId;
+				const sub = { ...pl, snapshot: c.source.nest.snapshot, range: c.source.nest.snapshot.range };
+				await this.pinInputs(ctx, sub, exts, nested.get(path) ?? new Map());
+				await pinNested(sub, path);
+			}
+		};
+		await pinNested(planned, '');
 		const graph = buildNativeGraph({
 			snapshot: planned.snapshot,
 			output: planned.output,
@@ -381,6 +494,10 @@ export class ExportService {
 			threads: ctx.slots,
 			still,
 			extensions: { list: exts, prepared },
+			...(audio?.path
+				? { audio: { file: audio.path, sampleRate: audio.sampleRate, soxr: await hasSoxr(this.deps.ff) } }
+				: {}),
+			nested,
 		});
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {
@@ -388,6 +505,15 @@ export class ExportService {
 			await writeFile(script, graph.filter);
 			const i = args.indexOf('-filter_complex');
 			args = [...args.slice(0, i), '-filter_complex_script', script, ...args.slice(i + 2)];
+		}
+		for (const [i, seg] of (graph.blend?.segments ?? []).entries()) {
+			if (seg.filter.length > 60_000) {
+				const script = join(await ctx.scratchDir(), `blend-${i}.txt`);
+				await writeFile(script, seg.filter);
+				const k = seg.args.indexOf('-filter_complex');
+				seg.args = [...seg.args.slice(0, k), '-filter_complex_script', script, ...seg.args.slice(k + 2)];
+			}
+			ctx.log(`ffmpeg (blend layer ${i + 1}) ${seg.args.join(' ')}`);
 		}
 		ctx.log(`ffmpeg ${args.join(' ')}`);
 		const total = graph.durationSec;
@@ -399,9 +525,15 @@ export class ExportService {
 		ctx.signal.addEventListener('abort', onJobAbort, { once: true });
 		const producers: Promise<void>[] = [];
 		let streamError: Error | null = null;
-		const workers = Math.max(2, Math.floor(Math.max(1, ctx.slots) / Math.max(1, graph.streams.length)));
-		const runStreams = (child: ChildProcess) => {
-			for (const s of graph.streams) {
+		const blend = graph.blend;
+		const allStreams =
+			graph.streams.length + (blend?.segments.reduce((n, sg) => n + sg.streams.length, 0) ?? 0);
+		const workers = Math.max(
+			2,
+			Math.floor(Math.max(1, ctx.slots) / Math.max(1, allStreams + (blend?.segments.length ?? 0))),
+		);
+		const runStreams = (child: ChildProcess, streams = graph.streams) => {
+			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
 				producers.push(
 					streamLayer(this.deps.ff, s.plan, sink, {
@@ -416,13 +548,37 @@ export class ExportService {
 				);
 			}
 		};
+		// keyframes-blend: the processes before the composite run while it runs; the last kernel feeds its pipe:3.
+		const runBlend = (child: ChildProcess) => {
+			if (!blend) return;
+			producers.push(
+				runBlendPipeline(
+					this.deps.ff,
+					blend.segments,
+					{ width: blend.width, height: blend.height },
+					child.stdio[blend.backdropFd] as Writable,
+					{
+						workers,
+						signal: streamAbort.signal,
+						onSpawn: ctx.trackChild,
+						runStreams: (c, streams) => runStreams(c, streams),
+					},
+				).catch((e: Error) => {
+					if (streamAbort.signal.aborted) return;
+					streamError ??= e;
+					void terminateTree(child, 500);
+				}),
+			);
+		};
+		const pipes = graph.streams.length + (blend ? 1 : 0);
 		try {
 			await this.deps.ff.run(args, {
 				signal: ctx.signal,
-				...(graph.streams.length > 0 ? { pipes: graph.streams.length } : {}),
+				...(pipes > 0 ? { pipes } : {}),
 				onSpawn: (child) => {
 					ctx.trackChild(child);
 					if (graph.streams.length > 0) runStreams(child);
+					runBlend(child);
 				},
 				onProgress: (p) => {
 					if (still || total <= 0) return;
@@ -461,6 +617,78 @@ export class ExportService {
 		return count;
 	}
 
+	/**
+	 * audio-mix: the deliverable's audio for every path — the offline mixer over the export range (clip levels, pan,
+	 * buses, sends, automation, 5.1) with two-pass loudness normalisation when requested.
+	 */
+	private async renderAudio(planned: PlannedExport, ctx: JobContext): Promise<MixdownResult> {
+		ctx.progress(0, { stage: 'Mixing audio' });
+		const o = planned.output;
+		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
+		return renderMixdown({
+			ff: this.deps.ff,
+			snapshot: planned.snapshot,
+			media: (id) => {
+				const m = planned.media[id];
+				if (!m) return null;
+				return {
+					path: m.path,
+					streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
+				};
+			},
+			range: planned.range,
+			length: Math.round(o.durationSec * sr),
+			outputLayout: layoutOf(o.audioChannels),
+			normalize: o.normalize,
+			scratchDir: await ctx.scratchDir(),
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			onProgress: (_f, stage) => ctx.progress(0, { stage }),
+		});
+	}
+
+	/** Remotion's direct output (VP9/Opus or GPL H.264) with the mixdown as its audio (stream copy of the video). */
+	private async muxAudio(
+		planned: PlannedExport,
+		video: string,
+		audio: MixdownResult,
+		output: string,
+		ctx: JobContext,
+	) {
+		const o = planned.output;
+		const codec = audioCodecOf(o.encoder, o);
+		const soxr = await hasSoxr(this.deps.ff);
+		const af =
+			audio.sampleRate !== o.audioSampleRate
+				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+				: [];
+		const args = [
+			'-i',
+			video,
+			'-i',
+			audio.path!,
+			'-map',
+			'0:v:0',
+			'-map',
+			'1:a:0',
+			'-c:v',
+			'copy',
+			...af,
+			...audioEncodeArgs(codec, o.audioBitrateKbps, o.audioChannels),
+			'-ar',
+			String(o.audioSampleRate),
+			'-ac',
+			String(o.audioChannels),
+			'-shortest',
+			...(o.encoder?.container !== 'webm' ? ['-movflags', '+faststart'] : []),
+			'-f',
+			o.encoder?.container ?? 'mp4',
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+	}
+
 	/** Encodes Remotion's ProRes/PCM intermediate with the selected encoder (D-13). */
 	private async encodeIntermediate(
 		planned: PlannedExport,
@@ -470,6 +698,7 @@ export class ExportService {
 		ctx: JobContext,
 		from: number,
 		stage: string,
+		audio: MixdownResult | null = null,
 	): Promise<void> {
 		const o = planned.output;
 		const choice = o.encoder!;
@@ -488,16 +717,21 @@ export class ExportService {
 			BT709_FRAME_TAGS,
 			...enc.filters,
 		];
+		const soxr = await hasSoxr(this.deps.ff);
 		const args = [
 			...enc.pre,
 			'-i',
 			input,
+			...(audio?.path ? ['-i', audio.path] : []),
 			'-map',
 			'0:v:0',
 			'-map',
-			'0:a:0?',
+			audio?.path ? '1:a:0' : '0:a:0?',
 			'-vf',
 			vf.join(','),
+			...(audio?.path && audio.sampleRate !== o.audioSampleRate
+				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+				: []),
 			...enc.video,
 			'-colorspace',
 			'bt709',
@@ -509,9 +743,9 @@ export class ExportService {
 			'tv',
 			'-frames:v',
 			String(frames),
-			...audioEncodeArgs(choice.audioEncoder, o.audioBitrateKbps),
+			...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
 			'-ar',
-			'48000',
+			String(o.audioSampleRate),
 			'-ac',
 			String(o.audioChannels),
 			'-threads',
@@ -538,20 +772,22 @@ export class ExportService {
 	private async prepareForRemotion(planned: PlannedExport, ctx: JobContext): Promise<Map<string, unknown>> {
 		const exts = this.nativeExtensions.all().filter((e) => e.prepareForRemotion);
 		if (exts.length === 0) return new Map();
-		return prepareExtensions(exts, planned, {
+		const pctx = {
 			signal: ctx.signal,
-			stage: (text) => ctx.progress(0, { stage: text }),
+			stage: (text: string) => ctx.progress(0, { stage: text }),
 			scratchDir: () => ctx.scratchDir(),
-			log: (text) => ctx.log(text),
+			log: (text: string) => ctx.log(text),
 			jobId: ctx.job.id,
 			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
-			purpose: 'remotion',
+			purpose: 'remotion' as const,
 			concurrency: remotionConcurrency(ctx.slots),
 			...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
-		}).then(async (prepared) => {
-			await this.pinInputs(ctx, planned, exts, prepared);
-			return prepared;
-		});
+		};
+		const prepared = await prepareExtensions(exts, planned, pctx);
+		await this.pinInputs(ctx, planned, exts, prepared);
+		// edit-structure: nested sequences' layers (graded DOM layers inside nests…) are prepared too.
+		NESTED_REMOTION.set(prepared, await prepareNestedExtensions(exts, planned, pctx));
+		return prepared;
 	}
 
 	/**
@@ -611,6 +847,7 @@ export class ExportService {
 		const origin = this.deps.origin();
 		const sign = (path: string) => this.deps.signer.signUrl(origin, path);
 		let doc = buildRenderSnapshot(planned.document, planned.sequenceId, {
+			captions: planned.captions,
 			range: planned.range,
 			resolveMedia: (asset): MediaHandle | null => {
 				const local = planned.media[asset.id];
@@ -634,10 +871,28 @@ export class ExportService {
 				return f ? sign(f.url) : null;
 			},
 		});
-		for (const ext of this.nativeExtensions.all()) {
-			if (ext.prepareForRemotion && ext.adaptRemotionDoc)
-				doc = ext.adaptRemotionDoc(doc, prepared.get(ext.id), { signUrl: sign });
-		}
+		const nested = NESTED_REMOTION.get(prepared);
+		const adapt = (d: typeof doc, prep: ReadonlyMap<string, unknown>, path: string): typeof doc => {
+			for (const ext of this.nativeExtensions.all()) {
+				if (ext.prepareForRemotion && ext.adaptRemotionDoc)
+					d = ext.adaptRemotionDoc(d, prep.get(ext.id), { signUrl: sign });
+			}
+			if (!nested || nested.size === 0) return d;
+			// edit-structure: adapt the nested snapshots of nest clips with what was prepared for them.
+			return {
+				...d,
+				videoTracks: d.videoTracks.map((t) => ({
+					...t,
+					clips: t.clips.map((c) => {
+						if (!('nest' in c.source)) return c;
+						const p = path ? `${path}>${c.clipId}` : c.clipId;
+						const sub = adapt(c.source.nest.snapshot, nested.get(p) ?? new Map(), p);
+						return { ...c, source: { nest: { ...c.source.nest, snapshot: sub } } };
+					}),
+				})),
+			};
+		};
+		doc = adapt(doc, prepared, '');
 		return {
 			doc,
 			options: { isPreview: false, useProxies: false, transparentBackground: false },
@@ -665,6 +920,7 @@ export class ExportService {
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
+		const audio = await this.renderAudio(planned, ctx);
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -676,7 +932,7 @@ export class ExportService {
 		}
 		if (path === 'native' || path === 'hybrid') {
 			try {
-				frames = await this.runNative(planned, masters, output, ctx);
+				frames = await this.runNative(planned, masters, output, ctx, false, audio);
 			} catch (e) {
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
 				const replanned = await this.fallbackToRemotion(
@@ -711,8 +967,11 @@ export class ExportService {
 			ctx.log(`remotion export: ${rp.mode} (${rp.reason})`);
 			remotionOutput = rp.mode;
 			const render = rp.phases[0]!;
-			const target =
-				rp.mode === 'direct' ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
+			// audio-mix: Remotion renders the picture only; the deliverable's audio is the mixdown.
+			const target = join(
+				await ctx.scratchDir(),
+				rp.mode === 'direct' ? `remotion-video.${encoder?.container ?? 'mp4'}` : 'remotion-intermediate.mov',
+			);
 			const prepared = await this.prepareForRemotion(planned, ctx);
 			ctx.progress(0, { stage: `${render.label} · Preparing bundle` });
 			const res = await this.deps.remotion.renderMedia({
@@ -734,6 +993,7 @@ export class ExportService {
 						}
 					: {}),
 				...(planned.output.width !== seqW ? { scale: planned.output.width / seqW } : {}),
+				muted: true,
 				onProgress: (p) =>
 					ctx.progress(p.progress * render.weight, { stage: `${render.label} · ${p.stage}` }),
 			});
@@ -746,8 +1006,9 @@ export class ExportService {
 					ctx,
 					render.weight,
 					rp.phases[1]!.label,
+					audio,
 				);
-			}
+			} else await this.muxAudio(planned, target, audio, output, ctx);
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(
@@ -758,6 +1019,8 @@ export class ExportService {
 			}
 			frames = count;
 		}
+		// wp captions: embedded caption streams (remux) and sidecar files.
+		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
@@ -768,6 +1031,16 @@ export class ExportService {
 				withExtension(req.settings.destination.path, extname(output)),
 				{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 			);
+			const stem = basename(finalPath, extname(finalPath));
+			for (const sc of captionResult?.sidecars ?? []) {
+				const ext = extname(sc.name);
+				const rest = sc.name.slice(sc.name.indexOf('.'), -ext.length || undefined);
+				sc.path = await copyNoOverwrite(
+					join(dir, 'captions', sc.name),
+					join(dirname(finalPath), `${stem}${rest}${ext}`),
+					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
+				);
+			}
 		}
 		const result = {
 			downloadUrl,
@@ -779,6 +1052,13 @@ export class ExportService {
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(warnings.length ? { warnings } : {}),
+			audioLoudness: {
+				integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
+				truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
+				lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
+				...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
+			},
+			...(captionResult ? { captions: captionResult } : {}),
 			planId: planned.plan.planId,
 		};
 		this.commitRefs(ctx, planned, 'export');

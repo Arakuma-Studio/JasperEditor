@@ -27,6 +27,7 @@ import {
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
+import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
 import { programOverlays } from '../../extensions/index.ts';
@@ -121,6 +122,8 @@ const FX_PREVIEW_SCALE: Record<PlaybackResolution, number> = {
 function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const engine = useEngineOrNull()?.client ?? null;
 	const transport = session.transport;
+	// audio-mix: automation passes and audio scrubbing follow this session's transport.
+	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	const drawn = useSessionState((s) => s.transient ?? s.document);

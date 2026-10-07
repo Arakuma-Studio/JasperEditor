@@ -1,11 +1,13 @@
 // Persistence controller: one per open session. Wires autosave (S01:PER-020) to the page lifecycle
 // (flush on `visibilitychange` → hidden and `pagehide`, S01:PER-022), exposes the read-only reason
-// (lease held elsewhere S01:PER-040, newer schema S01:MIG-003) and implements "Take over editing".
+// (lease held elsewhere S01:PER-040, newer schema S01:MIG-003) and implements "Take over editing". The crash-
+// recovery journal (S01:PER-021, AC-18, D-39) runs next to autosave when the store supports it.
 import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
 import { EditorSession, type SessionContext } from '../session.ts';
 import type { SessionState } from '../types.ts';
 import { type AutosaveOptions, type Autosaver, createAutosaver } from './autosave.ts';
-import type { ProjectStore } from './types.ts';
+import { createRecoveryJournal, type RecoveryJournalWriter } from './recovery.ts';
+import { hasRecovery, type ProjectStore } from './types.ts';
 
 export type ReadOnlyReason = 'lease' | 'schema' | 'requested' | null;
 
@@ -26,9 +28,14 @@ export type LifecycleTarget = {
 export type PersistenceController = {
 	readonly session: EditorSession;
 	readonly autosaver: Autosaver;
+	/** The crash-recovery journal, when the store keeps one. */
+	readonly journal: RecoveryJournalWriter | null;
 	flush(): Promise<void>;
-	/** Flushes, stops autosave and removes the page listeners (the caller closes the session). */
-	dispose(): Promise<void>;
+	/**
+	 * Flushes, stops autosave and removes the page listeners (the caller closes the session). With
+	 * `discardUnsaved` (File ▸ Revert) nothing is saved and the session's recovery journal is deleted.
+	 */
+	dispose(opts?: { discardUnsaved?: boolean }): Promise<void>;
 };
 
 const controllers = new WeakMap<EditorSession, PersistenceController>();
@@ -45,13 +52,28 @@ export function attachPersistence(
 		/** Window-like target for pagehide/beforeunload; `document` for visibilitychange. */
 		window?: LifecycleTarget | null;
 		document?: (LifecycleTarget & { visibilityState?: string }) | null;
+		/** Crash-recovery journal timing (`false` turns it off). */
+		recovery?: { idleMs?: number; maxIntervalMs?: number } | false;
 	} = {},
 ): PersistenceController {
 	const existing = controllers.get(session);
 	if (existing) return existing;
 	const store = opts.store ?? session.projectStore;
 	if (!store) throw new Error('attachPersistence: the session has no ProjectStore');
-	const autosaver = createAutosaver(session, store, opts);
+	let journal: RecoveryJournalWriter | null = null;
+	const autosaver = createAutosaver(session, store, {
+		...opts,
+		onSaved: (revision) => {
+			opts.onSaved?.(revision);
+			void journal?.saved(revision);
+		},
+	});
+	if (opts.recovery !== false && hasRecovery(store))
+		journal = createRecoveryJournal(session, store, {
+			...(opts.recovery ?? {}),
+			baseRevision: () => autosaver.getStatus().serverRevision,
+			onError: (e) => console.warn('[recovery] journal write failed', e),
+		});
 	const win =
 		opts.window === undefined ? (globalThis as unknown as { window?: LifecycleTarget }).window : opts.window;
 	const doc =
@@ -61,6 +83,7 @@ export function attachPersistence(
 
 	const flushQuietly = () => {
 		void autosaver.flush().catch(() => undefined);
+		void journal?.flush().catch(() => undefined);
 	};
 	const onVisibility = () => {
 		if (doc?.visibilityState === 'hidden') flushQuietly();
@@ -82,8 +105,9 @@ export function attachPersistence(
 	const controller: PersistenceController = {
 		session,
 		autosaver,
+		journal,
 		flush: () => autosaver.flush(),
-		async dispose() {
+		async dispose(o = {}) {
 			if (disposed) return;
 			disposed = true;
 			win?.removeEventListener('pagehide', flushQuietly);
@@ -91,6 +115,11 @@ export function attachPersistence(
 			doc?.removeEventListener('visibilitychange', onVisibility);
 			// Detach synchronously so a re-attach (React StrictMode remount) gets a fresh controller.
 			if (controllers.get(session) === controller) controllers.delete(session);
+			if (o.discardUnsaved) {
+				autosaver.dispose();
+				await journal?.discard();
+				return;
+			}
 			try {
 				await autosaver.flush();
 			} catch {
@@ -98,6 +127,8 @@ export function attachPersistence(
 			} finally {
 				autosaver.dispose();
 			}
+			// A clean close deletes the journal; changes a failed save left unsaved stay journalled.
+			await journal?.close().catch(() => undefined);
 		},
 	};
 	controllers.set(session, controller);
@@ -126,14 +157,17 @@ export async function takeOverSession(
 	});
 }
 
-/** Re-opens a project (after a conflict "Reload" or a lost lease). The old session is closed first. */
+/**
+ * Re-opens a project (after a conflict "Reload", a lost lease, File ▸ Revert with `discardUnsaved`, or a version
+ * restore). The old session is closed first.
+ */
 export async function reopenSession(
 	old: EditorSession,
-	opts: { readOnly?: boolean; sessionId?: string } = {},
+	opts: { readOnly?: boolean; sessionId?: string; discardUnsaved?: boolean } = {},
 ): Promise<EditorSession> {
 	const store = old.projectStore;
 	if (!store) throw new Error('reopenSession: the session has no ProjectStore');
-	await persistenceFor(old)?.dispose();
+	await persistenceFor(old)?.dispose({ discardUnsaved: opts.discardUnsaved });
 	await old.close();
 	return EditorSession.open({
 		store,

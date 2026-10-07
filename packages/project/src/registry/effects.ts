@@ -78,7 +78,9 @@ export type ParamSpec = {
 			| 'wheel'
 			| 'curve'
 			| 'media'
-			| 'point';
+			| 'point'
+			/** wp masks: a `string` param holding a video track id ('' = none), picked from the sequence's tracks. */
+			| 'track';
 		bipolar?: boolean;
 	};
 	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */

@@ -112,6 +112,8 @@ export function moveCommand(
 		deltaTracks: { [kind]: trackOffset },
 		mode,
 		createTracks: true,
+		// edit-structure: the selection already holds whole groups (Alt-click picks one member).
+		groups: false,
 	};
 }
 

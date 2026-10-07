@@ -9,6 +9,7 @@ import {
 	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
@@ -156,5 +157,22 @@ describe('capture-page rect (mcp-cli ui_screenshot)', () => {
 			{ x: 0, y: 0, width: 10 },
 		])
 			expect(isCaptureRect(bad)).toBe(false);
+	});
+});
+
+describe('isPermissionAllowed (audio-mix: voice-over microphone)', () => {
+	const app = 'http://127.0.0.1:47900';
+	it('grants audio-only media requests from the app origin', () => {
+		expect(isPermissionAllowed('media', `${app}/project/x`, app, ['audio'])).toBe(true);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['audio', 'video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, [])).toBe(false);
+	});
+	it('denies other origins and other permissions', () => {
+		expect(isPermissionAllowed('media', 'https://evil.example/', app, ['audio'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, '', ['audio'])).toBe(false);
+		expect(isPermissionAllowed('geolocation', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('notifications', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('fullscreen', `${app}/`, app)).toBe(true);
 	});
 });
