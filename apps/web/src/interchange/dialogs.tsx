@@ -688,6 +688,7 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 	const [locate, setLocate] = useState<Record<string, string>>({});
 	const [busy, setBusy] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [summary, setSummary] = useState<string | null>(null);
 
 	const criteria = [
 		...(byName ? (['name'] as const) : []),
@@ -713,8 +714,7 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 				const next = { ...f };
 				for (const c of res.found) {
 					const needsConfirm =
-						c.match === 'different' ||
-						c.diff.some((d) => ['kind', 'duration', 'frameRate'].includes(d.field));
+						c.match === 'different' || c.diff.some((d) => ['kind', 'duration'].includes(d.field));
 					next[c.assetId] = {
 						assetId: c.assetId,
 						path: c.path,
@@ -727,7 +727,11 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 				}
 				return next;
 			});
-			if (res.truncated) setError(`Only the first ${res.scannedFiles} files were searched`);
+			setSummary(
+				`Found ${res.found.length} of ${assets.length} in ${res.scannedFiles} files${
+					res.truncated ? ' (only the first files were searched)' : ''
+				}`,
+			);
 		} catch (e) {
 			setError(errorText(e));
 		} finally {
@@ -890,9 +894,9 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 						})}
 					</tbody>
 				</table>
-				{busy ? (
-					<p className="text-pr-small text-pr-muted" role="status">
-						{busy}
+				{busy || summary ? (
+					<p className="text-pr-small text-pr-muted" role="status" data-testid="link-media-status">
+						{busy ?? summary}
 					</p>
 				) : null}
 				{error ? (

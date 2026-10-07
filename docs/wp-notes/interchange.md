@@ -89,9 +89,11 @@ from the list (each source's hour) and rebased on the real file's start timecode
 
 `POST /api/assets/:aid/relink {projectId, path, asset}` registers the file and compares it with the asset:
 `match` = `fingerprint` (same bytes), `placeholder` (an imported placeholder: no fingerprint to compare) or
-`different`, plus the differences a user would notice (kind, duration beyond one frame, resolution, frame rate,
-audio layout, name, size). A different file, or a placeholder whose kind, length or frame rate disagree, is relinked
-only after confirmation (`force`). `POST /api/projects/:pid/relink-scan {folder, assets, match, ignoreExtension}` is a
+`different`, plus the differences a user would notice (kind, duration beyond one frame — for a placeholder only a
+file *shorter* than the length the document gives, since documents often know only the used range —, resolution,
+frame rate, audio layout, name, size). A different file, or a placeholder whose kind differs or whose file is shorter than its clips
+need, is relinked only after confirmation (`force`); a placeholder's resolution and frame rate are often guesses
+(EDL, ALE), so their differences are shown but do not block. `POST /api/projects/:pid/relink-scan {folder, assets, match, ignoreExtension}` is a
 `relink-scan` job: it walks the folder (≤ 200 000 files, depth 32, hidden entries skipped), matches by file name
 (optionally without the extension), then size and duration as asked, and — for assets with a real fingerprint — by
 fingerprint among files of the same size (moved and renamed copies). The client applies one `media.relink` per

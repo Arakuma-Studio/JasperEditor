@@ -129,8 +129,15 @@ export function relinkDiff(asset: MediaAsset, reg: RegisteredMedia): AssetRelink
 	const va = v(asset.probe);
 	const vb = v(reg.probe as MediaAsset['probe']);
 	const frame = va ? (FLICKS * va.frameRate.den) / va.frameRate.num : FLICKS / 100;
-	if ((a === null) !== (b === null) || (a !== null && b !== null && Math.abs(a - b) > frame))
-		out.push({ field: 'duration', was: fmtDur(a), now: fmtDur(b) });
+	// An imported placeholder knows at least the length its clips use (often only that): a longer file is fine.
+	const placeholder = asset.fingerprint.startsWith('pending:interchange:');
+	const durationDiffers =
+		a !== null && b !== null
+			? placeholder
+				? b < a - frame
+				: Math.abs(a - b) > frame
+			: !placeholder && a !== b;
+	if (durationDiffers) out.push({ field: 'duration', was: fmtDur(a), now: fmtDur(b) });
 	if (va && vb && (va.width !== vb.width || va.height !== vb.height))
 		out.push({ field: 'resolution', was: `${va.width}×${va.height}`, now: `${vb.width}×${vb.height}` });
 	if (va && vb && va.frameRate.num * vb.frameRate.den !== vb.frameRate.num * va.frameRate.den) {
@@ -153,14 +160,18 @@ export function relinkMatch(asset: MediaAsset, reg: RegisteredMedia): AssetRelin
 	return asset.fingerprint.startsWith('pending:interchange:') ? 'placeholder' : 'different';
 }
 
-/** A different file, or a placeholder whose kind, length or frame rate disagree, is relinked only when confirmed. */
+/**
+ * A different file is relinked only when confirmed; so is a placeholder whose kind differs or whose file is shorter
+ * than the document's clips need. A placeholder's resolution and frame rate are often guesses (EDL, ALE): their
+ * differences are listed but do not block.
+ */
 export function relinkNeedsConfirm(
 	match: AssetRelinkResponse['match'],
 	diff: AssetRelinkResponse['diff'],
 ): boolean {
 	if (match === 'fingerprint') return false;
 	if (match === 'different') return true;
-	return diff.some((d) => d.field === 'kind' || d.field === 'duration' || d.field === 'frameRate');
+	return diff.some((d) => d.field === 'kind' || d.field === 'duration');
 }
 
 const nameKey = (name: string, ignoreExt: boolean) =>

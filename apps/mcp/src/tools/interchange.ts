@@ -95,8 +95,7 @@ function relinkCommand(mediaId: string, reg: RegisteredMedia, force: boolean) {
 
 const needsConfirm = (match: AssetRelinkResponse['match'], diff: AssetRelinkResponse['diff']) =>
 	match === 'different' ||
-	(match === 'placeholder' &&
-		diff.some((d) => d.field === 'kind' || d.field === 'duration' || d.field === 'frameRate'));
+	(match === 'placeholder' && diff.some((d) => d.field === 'kind' || d.field === 'duration'));
 
 export function registerInterchangeTools(ctx: ToolContext): void {
 	defineTool(
