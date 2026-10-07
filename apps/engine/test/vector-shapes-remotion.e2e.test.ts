@@ -53,7 +53,7 @@ function scene(d: DocBuilder) {
 		...extra,
 	});
 	d.tx([
-		{ type: 'track.add', kind: 'video', count: 6 },
+		{ type: 'track.add', kind: 'video', count: 7 },
 		shape(
 			'V1',
 			[
@@ -123,7 +123,7 @@ function scene(d: DocBuilder) {
 				{ type: 'stroke', color: [0, 1, 0, 1], width: 20, dashes: [40, 20] },
 				{ type: 'trim', start: 0, end: 50 },
 			],
-			[620, 420],
+			[680, 470],
 		),
 		shape(
 			'V7',
@@ -153,6 +153,19 @@ function scene(d: DocBuilder) {
 			[{ type: 'rect', size: [80, 80] }, { type: 'wiggle', size: 15, detail: 4, speed: 4 }, { type: 'fill', color: [1, 0, 1, 1] }],
 			[1150, 600],
 		),
+		// V9 = V1 plus a Linear Burn paint hidden under its opaque fill (no visible change), which switches the layer to the
+		// canvas compositor: the two renderers must draw the same pixels.
+		shape(
+			'V9',
+			[
+				{ type: 'rect', size: [400, 200] },
+				{ type: 'stroke', color: [0, 0, 1, 1], width: 10, position: 'inside' },
+				{ type: 'fill', color: [1, 0, 0, 1] },
+				// Below the paints: not painted by them, drawn under the opaque red fill.
+				{ type: 'group', name: 'Force canvas', contents: [{ type: 'rect', size: [100, 50] }, { type: 'fill', color: [1, 1, 1, 1], blendMode: 'linear-burn' }] },
+			],
+			[300, 410],
+		),
 	]);
 }
 
@@ -177,11 +190,11 @@ function probes(img: Uint8Array, tol: number) {
 	check(560, 660, [128, 128, 128], 'linear burn backdrop');
 	check(650, 660, [128, 128, 0], 'linear burn');
 	check(690, 660, [128, 128, 0], 'linear burn');
-	// V6: dashes 40 on / 20 off from x = 470, trimmed at the middle (x = 620).
-	check(490, 420, [0, 255, 0], 'dash');
-	check(520, 420, [0, 0, 0], 'gap');
-	check(550, 420, [0, 255, 0], 'dash');
-	check(660, 420, [0, 0, 0], 'trimmed away');
+	// V6: dashes 40 on / 20 off from x = 530, trimmed at the middle (x = 680).
+	check(550, 470, [0, 255, 0], 'dash');
+	check(580, 470, [0, 0, 0], 'gap');
+	check(610, 470, [0, 255, 0], 'dash');
+	check(720, 470, [0, 0, 0], 'trimmed away');
 	// V7: radial white → black over r = 80: half way = 128.
 	check(1150, 120, [255, 255, 255], 'radial centre');
 	check(1150 + 40, 120, [128, 128, 128], 'radial 50 %');
@@ -217,10 +230,26 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 				expect(r.statusCode, r.body).toBeLessThan(300);
 				const f = join(dir, `still-${frame}.png`);
 				writeFileSync(f, png.rawPayload);
+				if (process.env.SHAPES_DUMP) writeFileSync(join(process.env.SHAPES_DUMP, `still-${frame}.png`), png.rawPayload);
 				return rgbOf(f);
 			};
 			const s5 = await still(5);
 			probes(s5, 4);
+			// SVG renderer (V1) vs canvas compositor (V9, the same picture 20 px left, 210 px down).
+			let rWorst = 0;
+			let rOff = 0;
+			for (let y = 92; y < 306; y++)
+				for (let x = 110; x < 532; x++) {
+					const a = px(s5, x, y);
+					const b = px(s5, x - 20, y + 210);
+					const dv = Math.max(...a.map((v, k) => Math.abs(v - b[k]!)));
+					rWorst = Math.max(rWorst, dv);
+					if (dv > 3) rOff++;
+				}
+			const rStats = `[shapes] SVG vs canvas renderer: ${rOff} pixels differ by > 3, worst ${rWorst}`;
+			console.info(rStats);
+			expect(rOff).toBeLessThan(40);
+			expect(rWorst).toBeLessThan(140);
 
 			const start = await engine.app.inject({
 				method: 'POST',
@@ -275,17 +304,17 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 
 			expect(mean).toBeLessThan(1.5);
 			expect(big / s5.length).toBeLessThan(0.003);
-			// Away from edges (H.264 4:2:0 chroma and its deblocking smear saturated edges by a few pixels) the export
+			// Away from edges (H.264 4:2:0 chroma, DCT ringing and deblocking spread saturated edges up to a block) the export
 			// equals the still.
 			let flatWorst = 0;
 			let flatOff = 0;
 			let flat = 0;
-			for (let y = 6; y < H - 6; y++)
-				for (let x = 6; x < W - 6; x++) {
+			for (let y = 8; y < H - 8; y++)
+				for (let x = 8; x < W - 8; x++) {
 					const c = px(s5, x, y);
 					let uniform = true;
-					for (let j = -6; j <= 6 && uniform; j += 2)
-						for (let i = -6; i <= 6 && uniform; i += 2) if (!near(px(s5, x + i, y + j), c, 2)) uniform = false;
+					for (let j = -8; j <= 8 && uniform; j += 2)
+						for (let i = -8; i <= 8 && uniform; i += 2) if (!near(px(s5, x + i, y + j), c, 2)) uniform = false;
 					if (!uniform) continue;
 					flat++;
 					const e = px(e5, x, y);
@@ -295,8 +324,8 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 				}
 			const flatStats = `[shapes] flat pixels ${flat}: ${flatOff} differ by > 8 (encoder ringing next to saturated edges), worst ${flatWorst}`;
 			console.info(flatStats);
-			if (process.env.SHAPES_STATS) writeFileSync(process.env.SHAPES_STATS, `${stats}\n${flatStats}`);
-			expect(flat).toBeGreaterThan(W * H * 0.7);
+			if (process.env.SHAPES_STATS) writeFileSync(process.env.SHAPES_STATS, `${rStats}\n${stats}\n${flatStats}`);
+			expect(flat).toBeGreaterThan(W * H * 0.6);
 			expect(flatOff).toBeLessThanOrEqual(50);
 			expect(flatWorst).toBeLessThanOrEqual(40);
 			// Wiggle Paths animates: frames 5 and 20 differ around V8 in both the still and the export.
