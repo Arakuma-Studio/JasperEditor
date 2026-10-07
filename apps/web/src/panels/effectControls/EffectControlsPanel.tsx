@@ -481,7 +481,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		}
 		const target = clips.find((c) => {
 			const spec = registries.effects.get(payload.effectId);
-			return spec && (spec.appliesTo === 'audio') === (c.kind === 'audio' || c.kind === 'nest-audio');
+			return (
+				spec &&
+				(spec.appliesTo === 'audio') ===
+					(c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio')
+			);
 		});
 		const r = target
 			? applyEffectToClips(session, payload.effectId, [target.id], slot === 'end' ? undefined : slot)

@@ -605,7 +605,11 @@ export function buildRenderSnapshot(
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
 				effects: (r.effects as EffectInstance[] | undefined) ?? [],
 				intrinsicBox: box,
-				engine: clipEngines(c)?.export ?? caps.engines.export,
+				// edit-structure: a nest renders with the engines its nested layers need.
+				engine:
+					'nest' in source && nestNeedsRemotion(source.nest.snapshot)
+						? 'remotion'
+						: (clipEngines(c)?.export ?? caps.engines.export),
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				...(c.frameHold && c.kind !== 'adjustment' ? { frameHold: c.frameHold } : {}),
 				bounded: isBoundedContent(c),
@@ -888,4 +892,11 @@ export function flattenNestAudio(
 
 function isAnimatedOrNonZero(a: Animatable<number>): boolean {
 	return a.keyframes.length > 0 || a.value !== 0;
+}
+
+/** A nested snapshot draws a Remotion-rendered layer (recursively). */
+function nestNeedsRemotion(snap: RenderSnapshot): boolean {
+	return snap.videoTracks.some(
+		(t) => (t.transitions?.length ?? 0) > 0 || t.clips.some((c) => c.engine === 'remotion'),
+	);
 }

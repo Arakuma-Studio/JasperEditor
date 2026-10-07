@@ -588,7 +588,10 @@ function applyAttributes(
 				const spec =
 					h.registries.effects.get(fx.effectId, fx.effectVersion) ?? h.registries.effects.get(fx.effectId);
 				const medium =
-					spec?.appliesTo ?? (src.kind === 'audio' || src.kind === 'nest-audio' ? 'audio' : 'video');
+					spec?.appliesTo ??
+					(src.kind === 'audio' || src.kind === 'nest-audio' || src.kind === 'synthetic-audio'
+						? 'audio'
+						: 'video');
 				if ((medium === 'audio' && !caps.audio) || (medium === 'video' && !caps.visual)) continue;
 				const copy = clone(fx);
 				resolver.remapEffectMedia([copy]);

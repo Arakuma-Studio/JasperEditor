@@ -1,11 +1,11 @@
 // edit-structure dialogs (Premiere's): Nested Sequence Name, Frame Hold Options, Color Matte (Color Picker) and the
 // Universal Counting Leader Setup. Each applies one undoable transaction.
 import {
+	type CountingLeaderStyle,
 	DEFAULT_LEADER_STYLE,
 	DEFAULT_MATTE_COLOR,
 	FLICKS_PER_SECOND,
 	leaderStyleOf,
-	type CountingLeaderStyle,
 	type Rational,
 	type RGBA,
 } from '@jasper/project';
@@ -160,7 +160,12 @@ export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>)
 			if (holdOn === 'sequence-time') cmd.at = seqFrame;
 			if (holdOn === 'playhead') cmd.at = playhead;
 		}
-		const r = session.apply({ label: 'Frame Hold Options', origin: 'user', sequenceId, commands: [cmd as never] });
+		const r = session.apply({
+			label: 'Frame Hold Options',
+			origin: 'user',
+			sequenceId,
+			commands: [cmd as never],
+		});
 		if (!r.ok) {
 			setError(r.errors[0]?.message ?? 'Frame Hold Options failed');
 			return false;
@@ -192,12 +197,24 @@ export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>)
 				</div>
 				{enabled && holdOn === 'source-time' ? (
 					<Row label="Source Timecode">
-						<TimecodeField frame={sourceFrame} rate={rate} onCommit={setSourceFrame} size="ui" label="Source Timecode" />
+						<TimecodeField
+							frame={sourceFrame}
+							rate={rate}
+							onCommit={setSourceFrame}
+							size="ui"
+							label="Source Timecode"
+						/>
 					</Row>
 				) : null}
 				{enabled && holdOn === 'sequence-time' ? (
 					<Row label="Sequence Time">
-						<TimecodeField frame={seqFrame} rate={rate} onCommit={setSeqFrame} size="ui" label="Sequence Time" />
+						<TimecodeField
+							frame={seqFrame}
+							rate={rate}
+							onCommit={setSeqFrame}
+							size="ui"
+							label="Sequence Time"
+						/>
 					</Row>
 				) : null}
 				<Checkbox
@@ -290,7 +307,8 @@ export function CountingLeaderDialog(props: HostedDialogProps<LeaderProps>) {
 	const { open, finish } = useClose(props.close);
 	const existing = syntheticId ? session.getCommitted().synthetics[syntheticId] : undefined;
 	const initial = useMemo(
-		() => (existing?.kind === 'counting-leader' ? leaderStyleOf(existing.style) : { ...DEFAULT_LEADER_STYLE }),
+		() =>
+			existing?.kind === 'counting-leader' ? leaderStyleOf(existing.style) : { ...DEFAULT_LEADER_STYLE },
 		[existing],
 	);
 	const [style, setStyle] = useState<CountingLeaderStyle>(initial);
@@ -339,8 +357,16 @@ export function CountingLeaderDialog(props: HostedDialogProps<LeaderProps>) {
 						/>
 					</Row>
 				))}
-				<Checkbox checked={style.cueBlipOnOut} onCheckedChange={(v) => set('cueBlipOnOut', v)} label="Cue Blip on out" />
-				<Checkbox checked={style.cueBlipOnTwo} onCheckedChange={(v) => set('cueBlipOnTwo', v)} label="Cue Blip on 2" />
+				<Checkbox
+					checked={style.cueBlipOnOut}
+					onCheckedChange={(v) => set('cueBlipOnOut', v)}
+					label="Cue Blip on out"
+				/>
+				<Checkbox
+					checked={style.cueBlipOnTwo}
+					onCheckedChange={(v) => set('cueBlipOnTwo', v)}
+					label="Cue Blip on 2"
+				/>
 				<Checkbox
 					checked={style.cueBlipAllSeconds}
 					onCheckedChange={(v) => set('cueBlipAllSeconds', v)}

@@ -971,7 +971,7 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		(c.transform as Record<string, unknown>)[f] = p[f];
 	}
 	if (p.gainDb !== undefined) {
-		need(clip.kind === 'audio' || clip.kind === 'nest-audio', 'gainDb');
+		need(clip.kind === 'audio' || clip.kind === 'nest-audio' || clip.kind === 'synthetic-audio', 'gainDb');
 		c.gainDb = p.gainDb;
 	}
 	if (p.channels !== undefined) {

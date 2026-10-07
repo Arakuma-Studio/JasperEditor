@@ -130,7 +130,8 @@ export type PropertySpec = {
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
 const hasOpacity = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasOpacity;
-const isAudio = (c: Pick<Clip, 'kind'>) => c.kind === 'audio' || c.kind === 'nest-audio';
+const isAudio = (c: Pick<Clip, 'kind'>) =>
+	c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 const isText = (c: Pick<Clip, 'kind'>) => c.kind === 'text';
 
 const styleWrite = (field: string): PropertySpec['write'] => ({
