@@ -5,9 +5,6 @@
 // (≤ 2.7 s each at 48 kHz) around the coarse lag, chosen as the loudest stretch both recordings share.
 import type { ChildProcess } from 'node:child_process';
 import type { SyncAudioClip, SyncAudioRequest, SyncAudioResponse, SyncAudioResult } from '@jasper/api';
-import { FLICKS_PER_SECOND } from '@jasper/project';
-import type { MediaRegistry } from '../media/registry.ts';
-import { HttpError } from '../tools/reply.ts';
 import {
 	coarseOffset,
 	isReliable,
@@ -15,7 +12,10 @@ import {
 	refineMargin,
 	refineOffset,
 	SYNC_DEFAULTS,
-} from './gcc-phat.ts';
+} from '@jasper/audio-dsp';
+import { FLICKS_PER_SECOND } from '@jasper/project';
+import type { MediaRegistry } from '../media/registry.ts';
+import { HttpError } from '../tools/reply.ts';
 
 export const ANALYSIS_RATE = 48_000;
 export const COARSE_RATE = 8_000;
@@ -86,9 +86,7 @@ type Prepared = {
 
 export class SyncService {
 	private busy = 0;
-	constructor(
-		private readonly deps: { ffmpeg: Spawner; registry: MediaRegistry; maxConcurrent?: number },
-	) {}
+	constructor(private readonly deps: { ffmpeg: Spawner; registry: MediaRegistry; maxConcurrent?: number }) {}
 
 	private async prepare(c: SyncAudioClip, signal?: AbortSignal): Promise<Prepared> {
 		const rec = this.deps.registry.get(c.mediaKey);
@@ -96,14 +94,27 @@ export class SyncService {
 		const audio = rec.probe.streams.filter((s) => s.type === 'audio');
 		if (audio.length === 0) throw new HttpError(415, 'UNSUPPORTED_MEDIA', `${rec.originalName} has no audio`);
 		if (c.streamIndex !== undefined && !audio.some((s) => s.index === c.streamIndex))
-			throw new HttpError(400, 'VALIDATION_FAILED', `${rec.originalName} has no audio stream ${c.streamIndex}`);
+			throw new HttpError(
+				400,
+				'VALIDATION_FAILED',
+				`${rec.originalName} has no audio stream ${c.streamIndex}`,
+			);
 		const path = await this.deps.registry.resolvePath(c.mediaKey);
+		if (!path) throw new HttpError(409, 'MEDIA_OFFLINE', `${rec.originalName} is offline`);
 		const mediaSec = rec.probe.durationFlicks !== null ? rec.probe.durationFlicks / FLICKS_PER_SECOND : null;
 		const startSec = (c.startFlicks ?? 0) / FLICKS_PER_SECOND;
-		let durSec = c.durationFlicks !== undefined ? c.durationFlicks / FLICKS_PER_SECOND : (mediaSec ?? MAX_ANALYSIS_SECONDS) - startSec;
+		let durSec =
+			c.durationFlicks !== undefined
+				? c.durationFlicks / FLICKS_PER_SECOND
+				: (mediaSec ?? MAX_ANALYSIS_SECONDS) - startSec;
 		if (mediaSec !== null) durSec = Math.min(durSec, mediaSec - startSec);
 		durSec = Math.min(durSec, MAX_ANALYSIS_SECONDS);
-		if (!(durSec > 0)) throw new HttpError(400, 'VALIDATION_FAILED', `${rec.originalName}: nothing to analyse after the start`);
+		if (!(durSec > 0))
+			throw new HttpError(
+				400,
+				'VALIDATION_FAILED',
+				`${rec.originalName}: nothing to analyse after the start`,
+			);
 		const coarse = await decodeMono(this.deps.ffmpeg, path, {
 			...(c.streamIndex !== undefined ? { streamIndex: c.streamIndex } : {}),
 			startSec,
@@ -114,7 +125,12 @@ export class SyncService {
 		return { clip: c, path, startSec, durSec, coarse };
 	}
 
-	private window(p: Prepared, startSample: number, length: number, signal?: AbortSignal): Promise<Float32Array> {
+	private window(
+		p: Prepared,
+		startSample: number,
+		length: number,
+		signal?: AbortSignal,
+	): Promise<Float32Array> {
 		// Samples outside the analysed stretch read as silence.
 		const total = Math.floor(p.durSec * ANALYSIS_RATE);
 		const a = Math.max(0, startSample);
@@ -134,7 +150,12 @@ export class SyncService {
 	}
 
 	/** One clip against the reference. */
-	private async match(ref: Prepared, p: Prepared, maxLagSec: number | undefined, signal?: AbortSignal): Promise<SyncAudioResult> {
+	private async match(
+		ref: Prepared,
+		p: Prepared,
+		maxLagSec: number | undefined,
+		signal?: AbortSignal,
+	): Promise<SyncAudioResult> {
 		const fail = (error: string): SyncAudioResult => ({
 			key: p.clip.key,
 			offsetFlicks: 0,
@@ -202,7 +223,8 @@ export class SyncService {
 			}
 			const refKey = req.reference ?? req.clips[0]!.key;
 			const refClip = req.clips.find((c) => c.key === refKey);
-			if (!refClip) throw new HttpError(400, 'VALIDATION_FAILED', `Reference ${refKey} is not among the clips`);
+			if (!refClip)
+				throw new HttpError(400, 'VALIDATION_FAILED', `Reference ${refKey} is not among the clips`);
 			const ref = await this.prepare(refClip, signal);
 			const results: SyncAudioResult[] = [];
 			for (const c of req.clips) {

@@ -21,7 +21,15 @@ import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
-import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
+import type {
+	Clip,
+	Sequence,
+	TextBox,
+	TextContent,
+	TextStyle,
+	Track,
+	Transform,
+} from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -54,8 +62,8 @@ import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';
-import { applyShapePatch } from './shape.ts';
 import { markMulticamClips } from './multicam.ts';
+import { applyShapePatch } from './shape.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';

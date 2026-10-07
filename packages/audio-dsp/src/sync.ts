@@ -1,7 +1,7 @@
 // Synchronising recordings of the same event by their audio (Clip ▸ Synchronize, Merge Clips and Create
 // Multi-Camera Source Sequence by "Audio"). Ported from FilmCraft `crates/audio-dsp/src/sync.rs`
 // (MIT OR Apache-2.0, see licenses/ported/multicam.md) and split so the engine can run the coarse pass on an
-// 8 kHz decode and the fine pass on two short full-rate windows (sync/audio.ts) instead of holding whole
+// 8 kHz decode and the fine pass on two short full-rate windows (apps/engine/src/sync/service.ts) instead of holding whole
 // recordings at 48 kHz in memory.
 //
 // `findOffset(a, b)` returns the lag `L` (samples) for which `b[n] ≈ g · a[n + L]`: when `b` started recording
@@ -84,7 +84,8 @@ export function decimate(x: Float32Array, d: number): Float32Array {
 	for (let k = 0; k < n; k++) {
 		const t = k - half;
 		const sinc = t === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * t) / (Math.PI * t);
-		const w = 0.42 - 0.5 * Math.cos((2 * Math.PI * k) / (n - 1)) + 0.08 * Math.cos((4 * Math.PI * k) / (n - 1));
+		const w =
+			0.42 - 0.5 * Math.cos((2 * Math.PI * k) / (n - 1)) + 0.08 * Math.cos((4 * Math.PI * k) / (n - 1));
 		h[k] = sinc * w;
 		sum += h[k]!;
 	}
@@ -128,7 +129,13 @@ function normalise(x: Float32Array): Float32Array {
  * `r[L mod n] = Σ a[i + L]·b[i]` with whitened spectra. Only bins whose frequency (cycles per sample) lies in
  * `band` contribute. One complex FFT carries both real signals (x = a + i·b).
  */
-function gcc(a: Float32Array, b: Float32Array, n: number, beta: number, band: [number, number]): Float64Array {
+function gcc(
+	a: Float32Array,
+	b: Float32Array,
+	n: number,
+	beta: number,
+	band: [number, number],
+): Float64Array {
 	const re = new Float64Array(n);
 	const im = new Float64Array(n);
 	re.set(a);

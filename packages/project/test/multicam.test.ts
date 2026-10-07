@@ -3,15 +3,18 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
-	checkInvariants,
 	type Clip,
+	checkInvariants,
+	clipPictureTime,
 	contentTimeAt,
 	createCounterIdSource,
-	evaluate,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
+	type Mat2D,
 	type MediaAsset,
 	type MulticamSource,
+	multiplyMatrix,
+	nestGainDbAt,
 	type ProjectDocument,
 	type RenderSnapshot,
 	repairDocument,
@@ -46,9 +49,9 @@ function setup(opts: { audioOnly?: boolean } = {}) {
 	// clap at 2 s / 3 s / 1.5 s (+ 4.25 s on the recorder)
 	const marks = [2, 3, 1.5, 4.25];
 	const items = [...cams, ...(rec ? [rec] : [])];
-	items.forEach((it, i) =>
-		h.ok([{ type: 'item.setMarks', itemId: it.itemId, in: { seconds: marks[i]! }, out: null }]),
-	);
+	items.forEach((it, i) => {
+		h.ok([{ type: 'item.setMarks', itemId: it.itemId, in: { seconds: marks[i]! }, out: null }]);
+	});
 	return { h, cams, rec, items };
 }
 
@@ -64,6 +67,46 @@ function placeMc(h: Harness, sequenceId: string, at = 0) {
 }
 
 const mcOf = (doc: ProjectDocument, id: string) => doc.sequences[id]!.multicam as MulticamSource;
+
+type Flat = { mediaId: string; contentTime: number; opacity: number; matrix: Mat2D; effects: string[] };
+
+/** The media layers a frame draws, nests resolved (the oracle: what the compositions draw through NestLayer). */
+function flatLayers(s: RenderSnapshot, f: number, rate = { num: 30, den: 1 }): Flat[] {
+	const out: Flat[] = [];
+	for (const l of resolveSceneAt(s, f)) {
+		const src = l.clip.source as { mediaId?: string; nest?: { snapshot: RenderSnapshot } };
+		if (src.nest) {
+			const n = Math.round(clipPictureTime(l.clip, f, rate) / flicksPerFrame(rate));
+			for (const x of flatLayers(src.nest.snapshot, n, rate))
+				out.push({
+					...x,
+					opacity: (x.opacity * l.props.opacity) / 100,
+					matrix: multiplyMatrix(l.props.matrix, x.matrix),
+					effects: [...x.effects, ...l.clip.effects.map((e) => e.effectId)],
+				});
+		} else if (src.mediaId)
+			out.push({
+				mediaId: src.mediaId,
+				contentTime: l.contentTime,
+				opacity: l.props.opacity,
+				matrix: l.props.matrix,
+				effects: l.clip.effects.map((e) => e.effectId),
+			});
+	}
+	return out;
+}
+
+function expectSameFrame(a: Flat[], b: Flat[]) {
+	expect(b.map((x) => [x.mediaId, x.contentTime, x.effects])).toEqual(
+		a.map((x) => [x.mediaId, x.contentTime, x.effects]),
+	);
+	a.forEach((x, i) => {
+		const y = b[i]!;
+		expect(y.opacity).toBeCloseTo(x.opacity, 6);
+		for (const k of ['a', 'b', 'c', 'd'] as const) expect(y.matrix[k]).toBeCloseTo(x.matrix[k], 6);
+		for (const k of ['e', 'f'] as const) expect(y.matrix[k]).toBeCloseTo(x.matrix[k], 3);
+	});
+}
 
 describe('sync points', () => {
 	const src = (key: string, p: Partial<SyncSource>): SyncSource => ({
@@ -153,7 +196,11 @@ describe('Create Multi-Camera Source Sequence', () => {
 		expect(src.audioTracks).toHaveLength(4);
 		expect(src.videoTracks.map((t) => t.name)).toEqual(['A Cam', 'B Cam', 'C Cam']);
 		// automatic preset = the reference camera's format
-		expect([src.settings.width, src.settings.height, src.settings.frameRate]).toEqual([1920, 1080, { num: 30, den: 1 }]);
+		expect([src.settings.width, src.settings.height, src.settings.frameRate]).toEqual([
+			1920,
+			1080,
+			{ num: 30, den: 1 },
+		]);
 		// In points (3, 2, 1.5, 4.25 s for A, B, C, Recorder) line up: the recorder (latest In) starts at 0
 		const at = (trackId: string) => Object.values(src.clips).find((c) => c.trackId === trackId)!;
 		const inOf = { A: 3, B: 2, C: 1.5, R: 4.25 };
@@ -198,12 +245,19 @@ describe('Create Multi-Camera Source Sequence', () => {
 		const r = h.tx([{ type: 'multicam.create', itemIds: [v.itemId, a.itemId], method: 'audio' }]);
 		expect(r.ok).toBe(false);
 		const ok = h.ok([
-			{ type: 'multicam.create', itemIds: [v.itemId, a.itemId], method: 'audio', audioOffsets: { [a.itemId]: SEC } },
+			{
+				type: 'multicam.create',
+				itemIds: [v.itemId, a.itemId],
+				method: 'audio',
+				audioOffsets: { [a.itemId]: SEC },
+			},
 		]);
 		const src = h.doc.sequences[(ok.results[0] as { sequenceId: string }).sequenceId]!;
 		// a's content t = v's content t + 1 s → a starts 1 s (30 frames) before v
 		const vClip = Object.values(src.clips).find((c) => c.kind === 'video')!;
-		const aClip = Object.values(src.clips).find((c) => c.kind === 'audio' && c.trackId === src.audioTracks[1]!.id)!;
+		const aClip = Object.values(src.clips).find(
+			(c) => c.kind === 'audio' && c.trackId === src.audioTracks[1]!.id,
+		)!;
 		expect(vClip.start - aClip.start).toBe(30);
 	});
 });
@@ -211,12 +265,20 @@ describe('Create Multi-Camera Source Sequence', () => {
 describe('multi-camera clips: placing and rendering', () => {
 	it('places linked multi-camera video and audio clips showing camera 1', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
 		const { video, audio } = placeMc(h, sequenceId, 10);
 		const v = h.seq.clips[video]!;
 		const a = h.seq.clips[audio]!;
 		const mc = mcOf(h.doc, sequenceId);
-		expect(v).toMatchObject({ kind: 'nest-video', sequenceId, start: 10, multicam: { enabled: true, angle: mc.angles[0]!.id } });
+		expect(v).toMatchObject({
+			kind: 'nest-video',
+			sequenceId,
+			start: 10,
+			multicam: { enabled: true, angle: mc.angles[0]!.id },
+		});
 		expect(a).toMatchObject({ kind: 'nest-audio', sequenceId, multicam: { enabled: true } });
 		expect(v.linkId).toBe(a.linkId);
 		const src = h.doc.sequences[sequenceId]!;
@@ -231,9 +293,12 @@ describe('multi-camera clips: placing and rendering', () => {
 		expect(self.ok).toBe(false);
 	});
 
-	it('renders the active angle’s media at the synced media time, with outer effects and Motion', () => {
+	it('renders through the nest: only the active angle’s track, outer effects and Motion on top', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
 		const { video } = placeMc(h, sequenceId, 0);
 		const src = h.doc.sequences[sequenceId]!;
 		const mc = mcOf(h.doc, sequenceId);
@@ -242,80 +307,66 @@ describe('multi-camera clips: placing and rendering', () => {
 			{ type: 'param.set', target: ['clip', video, 'opacity'], value: 50 },
 			{ type: 'param.set', target: ['clip', video, 'transform', 'position'], value: [1000, 500] },
 		]);
-		for (const [k, angle] of mc.angles.entries()) {
+		const keys = new Set<string>();
+		for (const angle of mc.angles) {
 			h.ok([{ type: 'multicam.switchAngle', clipIds: [video], angle: angle.id }]);
 			const s = snap(h.doc, h.seqId);
 			const layers = s.videoTracks.flatMap((t) => t.clips);
-			const inner = Object.values(src.clips).find((c) => c.trackId === angle.videoTrackId)!;
 			expect(layers.map((l) => l.clipId)).toEqual([video]);
 			const l = layers[0]!;
-			expect(l.kind).toBe('video');
-			expect((l.source as { mediaId: string }).mediaId).toBe((inner as { mediaId: string }).mediaId);
-			expect(l.multicamOf).toEqual({ clipId: video, sequenceId, angle: angle.id });
-			expect(l.start).toBe(inner.start);
-			expect(l.sourceIn).toBe(inner.sourceIn);
+			expect(l.kind).toBe('nest-video');
 			expect(l.effects.map((e) => e.effectId)).toEqual(['jasper.gaussian-blur']);
 			expect(l.opacity.value).toBe(50);
 			expect(l.transform!.position.value).toEqual([1000, 500]);
-			// every outer frame shows the inner clip's media at the right time
-			for (const f of [l.start, l.start + 7, l.start + l.duration - 1]) {
-				const scene = resolveSceneAt(s, f);
-				expect(scene).toHaveLength(1);
-				expect(contentTimeAt(l, f, { num: 30, den: 1 })).toBe(contentTimeAt(inner, f, src.settings.frameRate));
+			const nest = (l.source as { nest: { snapshot: RenderSnapshot; contentKey: string } }).nest;
+			keys.add(nest.contentKey);
+			const inner = Object.values(src.clips).find((c) => c.trackId === angle.videoTrackId)!;
+			const shown = nest.snapshot.videoTracks.flatMap((t) => t.clips);
+			expect(shown.map((c) => (c.source as { mediaId: string }).mediaId)).toEqual([
+				(inner as { mediaId: string }).mediaId,
+			]);
+			// every outer frame shows the angle clip's media at the synced media time
+			for (const f of [inner.start, inner.start + 7, inner.start + inner.duration - 1]) {
+				const flat = flatLayers(s, f);
+				expect(flat).toHaveLength(1);
+				expect(flat[0]!.mediaId).toBe((inner as { mediaId: string }).mediaId);
+				expect(flat[0]!.contentTime).toBe(contentTimeAt(inner, f, src.settings.frameRate));
+				expect(flat[0]!.opacity).toBeCloseTo(50, 9);
 			}
-			void k;
 		}
+		// each angle has its own render content key (render caches never mix angles)
+		expect(keys.size).toBe(3);
 	});
 
-	it('Motion composes with a scaled angle (a 4K camera fitted into a 1080 source) and keyframes re-time', () => {
-		const h = new Harness();
-		const a = register(h, { seconds: 10, width: 3840, height: 2160 });
-		const b = register(h, { seconds: 10 });
-		h.ok([{ type: 'project.updateSettings', settings: { defaultScaling: 'fit' } }]);
-		const { sequenceId } = createMc(h, [b.itemId, a.itemId], { preset: 'hd-1080p-30' });
-		const src = h.doc.sequences[sequenceId]!;
-		const mc = mcOf(h.doc, sequenceId);
-		const inner4k = Object.values(src.clips).find((c) => c.trackId === mc.angles[1]!.videoTrackId)!;
-		expect((inner4k as { transform: { scale: { value: number } } }).transform.scale.value).toBe(50);
-		const { video } = placeMc(h, sequenceId, 30);
-		h.ok([
-			{ type: 'multicam.switchAngle', clipIds: [video], angle: 2 },
-			{ type: 'param.setAnimated', target: ['clip', video, 'transform', 'scale'], animated: true, at: { frames: 0 } },
-			{ type: 'param.set', target: ['clip', video, 'transform', 'scale'], value: 100, at: { frames: 0 } },
-			{ type: 'param.set', target: ['clip', video, 'transform', 'scale'], value: 200, at: { frames: 60 } },
-			{ type: 'param.set', target: ['clip', video, 'transform', 'rotation'], value: 30 },
-		]);
-		const s = snap(h.doc, h.seqId);
-		const l = s.videoTracks.flatMap((t) => t.clips)[0]!;
-		const outer = h.seq.clips[video] as Extract<Clip, { kind: 'nest-video' }>;
-		for (const f of [30, 60, 90, 120]) {
-			const scene = resolveSceneAt(s, f)[0]!;
-			// expected: outer matrix × inner matrix applied to the media's corners
-			const to = contentTimeAt(outer, f, { num: 30, den: 1 });
-			const oScale = evaluate(outer.transform.scale, to) / 100;
-			const th = (30 * Math.PI) / 180;
-			// media centre → sequence: outer anchor (960,540 of the 1080 source) is the media centre's image
-			const centre = scene.props.matrix;
-			const mx = centre.a * 1920 + centre.c * 1080 + centre.e;
-			const my = centre.b * 1920 + centre.d * 1080 + centre.f;
-			expect(mx).toBeCloseTo(960, 6);
-			expect(my).toBeCloseTo(540, 6);
-			// the matrix's linear part = rotation(30°) · (outer scale × inner 0.5)
-			expect(centre.a).toBeCloseTo(Math.cos(th) * oScale * 0.5, 6);
-			expect(centre.b).toBeCloseTo(Math.sin(th) * oScale * 0.5, 6);
-		}
-		expect(l.intrinsicBox).toEqual({ width: 3840, height: 2160 });
+	it('a disabled multi-camera clip renders the nested composite', () => {
+		const { h, cams } = setup();
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
+		const { video } = placeMc(h, sequenceId, 0);
+		h.ok([{ type: 'multicam.setEnabled', clipIds: [video], enabled: false }]);
+		const l = snap(h.doc, h.seqId).videoTracks.flatMap((t) => t.clips)[0]!;
+		const nest = (l.source as { nest: { snapshot: RenderSnapshot } }).nest;
+		expect(nest.snapshot.videoTracks.flatMap((t) => t.clips)).toHaveLength(3);
+		expect((h.seq.clips[video] as { multicam: { enabled: boolean } }).multicam.enabled).toBe(false);
 	});
 
 	it('audio follows the source’s audio mode: camera 1, all cameras, switch', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
 		const { video, audio } = placeMc(h, sequenceId, 0);
 		const mc = mcOf(h.doc, sequenceId);
 		const src = h.doc.sequences[sequenceId]!;
 		const mediaOfTrack = (t: string) =>
 			(Object.values(src.clips).find((c) => c.trackId === t) as { mediaId: string }).mediaId;
-		const played = () => snap(h.doc, h.seqId).audioClips.map((c) => c.mediaId).sort();
+		const played = () =>
+			snap(h.doc, h.seqId)
+				.audioClips.map((c) => c.mediaId)
+				.sort();
 		h.ok([{ type: 'multicam.switchAngle', clipIds: [video], angle: 3 }]);
 		expect(played()).toEqual([mediaOfTrack(mc.angles[0]!.audioTrackIds[0]!)]);
 		h.ok([{ type: 'multicam.editAngles', sequenceId, audio: 'all' }]);
@@ -332,39 +383,42 @@ describe('multi-camera clips: placing and rendering', () => {
 		// gain/volume of the outer and inner clips add up
 		h.ok([{ type: 'clip.update', clipId: audio, patch: { gainDb: -6 } }]);
 		const a0 = snap(h.doc, h.seqId).audioClips[0]!;
-		expect(a0.gainDb).toBe(-6);
-		expect(a0.clipId).toBe(audio);
+		expect(nestGainDbAt(a0.nestGain, 10)).toBeCloseTo(-6, 9);
 	});
 
-	it('changes in the source sequence (adjusting sync) are reflected; disabled clips render as nests', () => {
+	it('changes in the source sequence (adjusting sync) are reflected', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
-		const { video } = placeMc(h, sequenceId, 0);
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
+		placeMc(h, sequenceId, 0);
 		const mc = mcOf(h.doc, sequenceId);
 		const src = h.doc.sequences[sequenceId]!;
 		const inner = Object.values(src.clips).find((c) => c.trackId === mc.angles[0]!.videoTrackId)!;
-		const before = snap(h.doc, h.seqId).videoTracks.flatMap((t) => t.clips)[0]!;
+		const f = inner.start + 10;
+		const before = flatLayers(snap(h.doc, h.seqId), f)[0]!;
 		h.ok([{ type: 'clip.move', clipIds: [inner.id], deltaFrames: 3 }]);
-		const after = snap(h.doc, h.seqId).videoTracks.flatMap((t) => t.clips)[0]!;
-		expect(after.start).toBe(before.start + 3);
-		h.ok([{ type: 'multicam.setEnabled', clipIds: [video], enabled: false }]);
-		const off = snap(h.doc, h.seqId).videoTracks.flatMap((t) => t.clips);
-		expect(off[0]!.kind).toBe('nest-video');
-		expect((h.seq.clips[video] as { multicam: { enabled: boolean } }).multicam.enabled).toBe(false);
-		h.ok([{ type: 'multicam.setEnabled', clipIds: [video], enabled: true }]);
-		expect(snap(h.doc, h.seqId).videoTracks.flatMap((t) => t.clips)[0]!.kind).toBe('video');
+		const after = flatLayers(snap(h.doc, h.seqId), f)[0]!;
+		expect(after.contentTime).toBe(before.contentTime - 3 * F30);
 	});
 });
 
 describe('switching angles', () => {
 	function placed() {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId), { audio: 'switch' });
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+			{ audio: 'switch' },
+		);
 		const ids = placeMc(h, sequenceId, 0);
 		return { h, sequenceId, ...ids, mc: mcOf(h.doc, sequenceId) };
 	}
 	const anglesOn = (h: Harness, track: string) =>
-		h.clips(track).map((c) => [c.start, c.start + c.duration, (c as { multicam: { angle: string } }).multicam.angle]);
+		h
+			.clips(track)
+			.map((c) => [c.start, c.start + c.duration, (c as { multicam: { angle: string } }).multicam.angle]);
 
 	it('at the playhead switches the whole clip (and its audio); a range adds edits; same angle heals', () => {
 		const { h, mc, video } = placed();
@@ -421,8 +475,8 @@ describe('switching angles', () => {
 	});
 
 	it('every outer frame renders the angle the cuts selected (property check)', () => {
-		const { h, mc } = placed();
-		const src = h.doc.sequences[mc.angles.length ? Object.values(h.doc.sequences).find((s) => s.multicam)!.id : '']!;
+		const { h, mc, sequenceId } = placed();
+		const src = h.doc.sequences[sequenceId]!;
 		let seed = 7;
 		const rnd = () => {
 			seed = (seed * 1103515245 + 12345) & 0x7fffffff;
@@ -437,13 +491,12 @@ describe('switching angles', () => {
 			h.ok([{ type: 'multicam.record', cuts, to }]);
 			expect(checkInvariants(h.doc)).toEqual([]);
 			const s = snap(h.doc, h.seqId);
-			const layers = s.videoTracks.flatMap((t) => t.clips);
 			for (let f = 0; f < 240; f += 3) {
 				const outer = h.clips('V1').find((c) => c.start <= f && f < c.start + c.duration) as
 					| (Clip & { multicam: { angle: string } })
 					| undefined;
-				const live = layers.filter((l) => l.start <= f && f < l.start + l.duration);
 				if (!outer) continue;
+				const live = flatLayers(s, f);
 				const angle = mc.angles.find((a) => a.id === outer.multicam.angle)!;
 				const inner = Object.values(src.clips).find(
 					(c) => c.trackId === angle.videoTrackId && c.start <= f && f < c.start + c.duration,
@@ -453,8 +506,8 @@ describe('switching angles', () => {
 					continue;
 				}
 				expect(live).toHaveLength(1);
-				expect((live[0]!.source as { mediaId: string }).mediaId).toBe((inner as { mediaId: string }).mediaId);
-				expect(contentTimeAt(live[0]!, f, { num: 30, den: 1 })).toBe(contentTimeAt(inner, f, src.settings.frameRate));
+				expect(live[0]!.mediaId).toBe((inner as { mediaId: string }).mediaId);
+				expect(live[0]!.contentTime).toBe(contentTimeAt(inner, f, src.settings.frameRate));
 			}
 		}
 	});
@@ -465,7 +518,10 @@ describe('switching angles', () => {
 			{
 				type: 'multicam.editAngles',
 				sequenceId,
-				angles: [{ angle: 2, enabled: false }, { angle: mc.angles[0]!.id, name: 'Wide' }],
+				angles: [
+					{ angle: 2, enabled: false },
+					{ angle: mc.angles[0]!.id, name: 'Wide' },
+				],
 				order: [mc.angles[2]!.id, mc.angles[0]!.id, mc.angles[1]!.id],
 			},
 		]);
@@ -480,13 +536,25 @@ describe('switching angles', () => {
 });
 
 describe('Flatten', () => {
-	it('replaces multi-camera clips by the angle’s clips and renders identically', () => {
+	it('replaces multi-camera clips by the angle’s clips; every frame draws the same picture', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId), { audio: 'switch' });
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+			{ audio: 'switch' },
+		);
 		const { video } = placeMc(h, sequenceId, 5);
 		h.ok([
-			{ type: 'multicam.record', cuts: [{ at: 40, angle: 2 }, { at: 100, angle: 3 }], to: 160 },
 			{ type: 'effect.add', target: { clipId: video }, effectId: 'jasper.gaussian-blur' },
+			{ type: 'param.set', target: ['clip', video, 'opacity'], value: 80 },
+			{
+				type: 'multicam.record',
+				cuts: [
+					{ at: 40, angle: 2 },
+					{ at: 100, angle: 3 },
+				],
+				to: 160,
+			},
 		]);
 		const before = snap(h.doc, h.seqId);
 		const ids = h.clips('V1').map((c) => c.id);
@@ -495,13 +563,10 @@ describe('Flatten', () => {
 		expect(h.clips('V1').every((c) => c.kind === 'video')).toBe(true);
 		expect(h.clips('A1').every((c) => c.kind === 'audio')).toBe(true);
 		expect((r.results[0] as { clipIds: string[] }).clipIds.length).toBeGreaterThan(3);
-		const strip = (s: RenderSnapshot) => ({
-			video: s.videoTracks
-				.flatMap((t) => t.clips)
-				.map((l) => [l.start, l.duration, l.sourceIn, (l.source as { mediaId: string }).mediaId, l.effects.map((e) => e.effectId)]),
-			audio: s.audioClips.map((a) => [a.start, a.duration, a.sourceIn, a.mediaId, a.gainDb]),
-		});
-		expect(strip(after)).toEqual(strip(before));
+		for (let f = 0; f < 320; f += 7) expectSameFrame(flatLayers(before, f), flatLayers(after, f));
+		const audio = (s: RenderSnapshot) =>
+			s.audioClips.map((a) => [a.start, a.duration, a.sourceIn, a.mediaId]);
+		expect(audio(after)).toEqual(audio(before));
 		// flattened video and audio of one camera stay linked
 		for (const v of h.clips('V1')) {
 			const partner = h.clips('A1').find((a) => a.start === v.start);
@@ -509,6 +574,77 @@ describe('Flatten', () => {
 			expect(partner?.linkId).toBe(v.linkId);
 		}
 		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('composes Motion with a scaled angle (a 4K camera fitted into a 1080 source), keyframes re-timed', () => {
+		const h = new Harness();
+		const b = register(h, { seconds: 10 });
+		const a = register(h, { seconds: 10, width: 3840, height: 2160 });
+		h.ok([{ type: 'project.updateSettings', settings: { defaultScaling: 'fit' } }]);
+		const { sequenceId } = createMc(h, [b.itemId, a.itemId], { preset: 'hd-1080p-30' });
+		const src = h.doc.sequences[sequenceId]!;
+		const mc = mcOf(h.doc, sequenceId);
+		const inner4k = Object.values(src.clips).find((c) => c.trackId === mc.angles[1]!.videoTrackId)!;
+		expect((inner4k as { transform: { scale: { value: number } } }).transform.scale.value).toBe(50);
+		const { video } = placeMc(h, sequenceId, 30);
+		h.ok([
+			{ type: 'multicam.switchAngle', clipIds: [video], angle: 2 },
+			{
+				type: 'param.setAnimated',
+				target: ['clip', video, 'transform', 'scale'],
+				animated: true,
+				at: { frames: 0 },
+			},
+			{ type: 'param.set', target: ['clip', video, 'transform', 'scale'], value: 100, at: { frames: 0 } },
+			{ type: 'param.set', target: ['clip', video, 'transform', 'scale'], value: 200, at: { frames: 60 } },
+			{ type: 'param.set', target: ['clip', video, 'transform', 'rotation'], value: 30 },
+			{ type: 'param.set', target: ['clip', video, 'transform', 'anchor'], value: [700, 300] },
+		]);
+		const before = snap(h.doc, h.seqId);
+		h.ok([{ type: 'multicam.flatten', clipIds: [video] }]);
+		const after = snap(h.doc, h.seqId);
+		for (const f of [30, 45, 60, 90, 120, 200]) expectSameFrame(flatLayers(before, f), flatLayers(after, f));
+	});
+
+	it('composes an animated angle Motion by sampling (rotation + non-uniform outer scale warns about skew)', () => {
+		const { h, cams } = setup();
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
+		const mc = mcOf(h.doc, sequenceId);
+		const src = h.doc.sequences[sequenceId]!;
+		const inner = Object.values(src.clips).find((c) => c.trackId === mc.angles[0]!.videoTrackId)!;
+		h.ok([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', inner.id, 'transform', 'position'],
+				animated: true,
+				at: { frames: 0 },
+				sequenceId,
+			},
+			{
+				type: 'param.set',
+				target: ['clip', inner.id, 'transform', 'position'],
+				value: [800, 500],
+				at: { frames: 0 },
+				sequenceId,
+			},
+			{
+				type: 'param.set',
+				target: ['clip', inner.id, 'transform', 'position'],
+				value: [1100, 600],
+				at: { frames: 90 },
+				sequenceId,
+			},
+		]);
+		const { video } = placeMc(h, sequenceId, 0);
+		h.ok([{ type: 'param.set', target: ['clip', video, 'transform', 'rotation'], value: 15 }]);
+		const before = snap(h.doc, h.seqId);
+		h.ok([{ type: 'multicam.flatten', clipIds: [video] }]);
+		const after = snap(h.doc, h.seqId);
+		for (let f = inner.start; f < inner.start + 90; f += 11)
+			expectSameFrame(flatLayers(before, f), flatLayers(after, f));
 	});
 });
 
@@ -578,7 +714,12 @@ describe('Merge Clips', () => {
 		const res = r.results[0] as { itemId: string; sequenceId: string };
 		expect(h.doc.items[res.itemId]).toMatchObject({ name: 'Interview - Merged', kind: 'sequence' });
 		const merged = h.doc.sequences[res.sequenceId]!;
-		expect(merged.merged).toEqual({ videoItemId: v.itemId, audioItemIds: [rec.itemId], sync: 'marker', removeVideoAudio: true });
+		expect(merged.merged).toEqual({
+			videoItemId: v.itemId,
+			audioItemIds: [rec.itemId],
+			sync: 'marker',
+			removeVideoAudio: true,
+		});
 		const clips = Object.values(merged.clips);
 		expect(clips.map((c) => c.kind).sort()).toEqual(['audio', 'video']);
 		const mv = clips.find((c) => c.kind === 'video')!;
@@ -599,7 +740,9 @@ describe('Merge Clips', () => {
 		expect(pv.linkId).toBe(pa.linkId);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// limits
-		expect(h.tx([{ type: 'item.mergeClips', itemIds: [v.itemId, register(h).itemId], method: 'in' }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'item.mergeClips', itemIds: [v.itemId, register(h).itemId], method: 'in' }]).ok,
+		).toBe(false);
 	});
 
 	it('keeps the camera audio by default and takes up to 16 audio clips', () => {
@@ -609,7 +752,9 @@ describe('Merge Clips', () => {
 		expect(
 			h.tx([{ type: 'item.mergeClips', itemIds: [v.itemId, ...auds.map((a) => a.itemId)], method: 'in' }]).ok,
 		).toBe(false);
-		const r = h.ok([{ type: 'item.mergeClips', itemIds: [v.itemId, auds[0]!.itemId, auds[1]!.itemId], method: 'in' }]);
+		const r = h.ok([
+			{ type: 'item.mergeClips', itemIds: [v.itemId, auds[0]!.itemId, auds[1]!.itemId], method: 'in' },
+		]);
 		const merged = h.doc.sequences[(r.results[0] as { sequenceId: string }).sequenceId]!;
 		expect(Object.values(merged.clips).filter((c) => c.kind === 'audio')).toHaveLength(3);
 	});
@@ -618,7 +763,10 @@ describe('Merge Clips', () => {
 describe('invariants and repair', () => {
 	it('removing an angle’s tracks prunes the angle and re-points clips; repair fixes hand-broken data', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
 		const { video } = placeMc(h, sequenceId, 0);
 		const mc = mcOf(h.doc, sequenceId);
 		h.ok([{ type: 'multicam.switchAngle', clipIds: [video], angle: 3 }]);
@@ -640,7 +788,9 @@ describe('invariants and repair', () => {
 		expect(issues.some((i) => /missing video track/.test(i.message))).toBe(true);
 		expect(issues.some((i) => /missing angle/.test(i.message))).toBe(true);
 		const { document } = repairDocument(broken, createCounterIdSource(900));
-		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-006' || /angle|multi/i.test(i.message))).toEqual([]);
+		expect(
+			checkInvariants(document).filter((i) => i.invariant === 'INV-006' || /angle|multi/i.test(i.message)),
+		).toEqual([]);
 	});
 
 	it('source clip markers live on media items', () => {

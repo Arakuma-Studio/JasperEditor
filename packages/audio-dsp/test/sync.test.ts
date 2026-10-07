@@ -1,9 +1,9 @@
-// GCC-PHAT audio sync (sync/gcc-phat.ts): synthetic offsets, noise, gains, colouring, echo, inverted polarity,
+// GCC-PHAT audio sync (src/sync.ts): synthetic offsets, noise, gains, colouring, echo, inverted polarity,
 // partial overlap and unrelated material. The test signals and cases follow FilmCraft's
 // `crates/audio-dsp/src/sync.rs` tests (licenses/ported/multicam.md), plus partial-overlap and sub-sample cases.
 import { describe, expect, it } from 'vitest';
-import { fft } from '../src/sync/fft.ts';
-import { decimate, findOffset, mixdown } from '../src/sync/gcc-phat.ts';
+import { fft } from '../src/fft.ts';
+import { decimate, findOffset, mixdown } from '../src/sync.ts';
 
 /** Deterministic uniform noise in [−1, 1). */
 function rng(seed: number): () => number {
@@ -128,7 +128,8 @@ describe('fft', () => {
 describe('decimate', () => {
 	it('keeps low frequencies and removes high ones', () => {
 		const sr = 48_000;
-		const sine = (f: number) => Float32Array.from({ length: sr }, (_, i) => Math.sin((2 * Math.PI * f * i) / sr));
+		const sine = (f: number) =>
+			Float32Array.from({ length: sr }, (_, i) => Math.sin((2 * Math.PI * f * i) / sr));
 		const dl = decimate(sine(300), 6);
 		const dh = decimate(sine(7000), 6);
 		expect(dl.length).toBe(8000);

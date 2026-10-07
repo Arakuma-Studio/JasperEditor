@@ -14,8 +14,7 @@
 // Placing a multi-camera source sequence (clip.place with its sequence) makes multi-camera clips; placing a merged
 // clip edits the clips it holds (see placeSequenceSource).
 import type { Draft } from 'immer';
-import { anim, createSequence, defaultTransform } from '../../factories.ts';
-import { sequenceDuration } from '../../derive/index.ts';
+import { createSequence } from '../../factories.ts';
 import {
 	angleById,
 	firstVideoAngle,
@@ -30,13 +29,12 @@ import {
 	clipSyncSource,
 	commonPlacements,
 	itemSyncSource,
+	SyncError,
 	type SyncSource,
 	type SyncSpec,
-	SyncError,
 	syncOffsets,
 } from '../../multicam/sync.ts';
 import { contentDurationFlicks, isBoundedContent } from '../../registry/kinds.ts';
-import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type {
 	Clip,
@@ -48,7 +46,13 @@ import type {
 	Track,
 	Transition,
 } from '../../schema/sequence.ts';
-import { FRAME_EPS, flicksPerFrame, nearestAllowedRate, type Rational, supportsDropFrame } from '../../time.ts';
+import {
+	FRAME_EPS,
+	flicksPerFrame,
+	nearestAllowedRate,
+	type Rational,
+	supportsDropFrame,
+} from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	assertUnlocked,
@@ -118,7 +122,10 @@ function synchronize(doc: DDoc, cmd: CommandOf<'clip.synchronize'>, h: HandlerCo
 	};
 	for (const c of clips) {
 		if (seen.has(c.id)) continue;
-		const members = c.linkId && seq.links[c.linkId] ? seq.links[c.linkId]!.members.map((m) => seq.clips[m]!).filter(Boolean) : [c];
+		const members =
+			c.linkId && seq.links[c.linkId]
+				? seq.links[c.linkId]!.members.map((m) => seq.clips[m]!).filter(Boolean)
+				: [c];
 		for (const m of members) seen.add(m.id);
 		const prefer = cmd.method === 'audio' ? 'audio' : 'video';
 		const ranked = [...members]
@@ -136,7 +143,8 @@ function synchronize(doc: DDoc, cmd: CommandOf<'clip.synchronize'>, h: HandlerCo
 			h.fail('E_INVALID_PARAM', `Clip ${c.id} has no audio clip to synchronize by`);
 		units.push({ members, rep });
 	}
-	if (units.length < 2) h.fail('E_INVALID_PARAM', 'Select clips from at least two different sources to synchronize');
+	if (units.length < 2)
+		h.fail('E_INVALID_PARAM', 'Select clips from at least two different sources to synchronize');
 	for (const u of units) for (const m of u.members) assertUnlocked(findTrackIn(seq, m.trackId)!.track, h);
 	let ref: number;
 	if (cmd.referenceClipId) {
@@ -211,9 +219,18 @@ function synchronize(doc: DDoc, cmd: CommandOf<'clip.synchronize'>, h: HandlerCo
 
 // ---------------------------------------------------------------- shared by Merge Clips / Create Multi-Camera
 
-type ItemSource = NonNullable<ReturnType<typeof itemSyncSource>> & { asset: MediaAsset; hasVideo: boolean; hasAudio: boolean };
+type ItemSource = NonNullable<ReturnType<typeof itemSyncSource>> & {
+	asset: MediaAsset;
+	hasVideo: boolean;
+	hasAudio: boolean;
+};
 
-function itemSources(doc: DDoc, ids: readonly string[], fallbackRate: Rational, h: HandlerContext): ItemSource[] {
+function itemSources(
+	doc: DDoc,
+	ids: readonly string[],
+	fallbackRate: Rational,
+	h: HandlerContext,
+): ItemSource[] {
 	const out: ItemSource[] = [];
 	for (const id of ids) {
 		if (out.some((s) => s.key === id)) continue;
@@ -235,7 +252,8 @@ function itemSources(doc: DDoc, ids: readonly string[], fallbackRate: Rational, 
 
 /** Bin that holds an item (null = root). */
 function parentBinOf(doc: DDoc, itemId: string): string | null {
-	for (const it of Object.values(doc.items)) if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
+	for (const it of Object.values(doc.items))
+		if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
 	return null;
 }
 
@@ -253,8 +271,14 @@ function settingsFromMedia(asset: MediaAsset | undefined, base: SequenceSettings
 	return settings;
 }
 
-function presetSettings(doc: DDoc, h: HandlerContext, presetId: string | undefined, ref: MediaAsset | undefined) {
-	const fallback = h.registries.presets.get(doc.settings.defaultSequencePreset) ?? h.registries.presets.list()[0]!;
+function presetSettings(
+	doc: DDoc,
+	h: HandlerContext,
+	presetId: string | undefined,
+	ref: MediaAsset | undefined,
+) {
+	const fallback =
+		h.registries.presets.get(doc.settings.defaultSequencePreset) ?? h.registries.presets.list()[0]!;
 	if (presetId && presetId !== 'automatic') {
 		const p = h.registries.presets.get(presetId);
 		if (!p) h.fail('E_INVALID_PARAM', `Unknown sequence preset: ${presetId}`);
@@ -319,13 +343,15 @@ function newSequenceItem(
 
 function mergeClips(doc: DDoc, cmd: CommandOf<'item.mergeClips'>, h: HandlerContext) {
 	assertBin(doc, cmd.binId, h);
-	const fallback = (h.registries.presets.get(doc.settings.defaultSequencePreset) ?? h.registries.presets.list()[0]!)
-		.settings;
+	const fallback = (
+		h.registries.presets.get(doc.settings.defaultSequencePreset) ?? h.registries.presets.list()[0]!
+	).settings;
 	const all = itemSources(doc, cmd.itemIds, fallback.frameRate, h);
 	const videos = all.filter((s) => s.hasVideo);
 	if (videos.length > 1) h.fail('E_INVALID_PARAM', 'Merge Clips takes one video clip plus audio clips');
 	const audios = all.filter((s) => !s.hasVideo);
-	if (audios.length === 0) h.fail('E_INVALID_PARAM', 'Merge Clips needs at least one audio clip besides the video');
+	if (audios.length === 0)
+		h.fail('E_INVALID_PARAM', 'Merge Clips needs at least one audio clip besides the video');
 	if (audios.length > 16) h.fail('E_LIMIT', 'Merge Clips takes at most 16 audio clips');
 	for (const a of audios) if (!a.hasAudio) h.fail('E_INVALID_PARAM', `${a.name} has no audio`);
 	const ordered = [...videos, ...audios];
@@ -344,7 +370,14 @@ function mergeClips(doc: DDoc, cmd: CommandOf<'item.mergeClips'>, h: HandlerCont
 	const nAudio = audios.length + (videoAudio ? 1 : 0);
 	const name = cmd.name ?? `${ordered[0]!.name} - Merged`;
 	const binId = cmd.binId !== undefined ? cmd.binId : parentBinOf(doc, ordered[0]!.key);
-	const { seq, itemId } = newSequenceItem(doc, h, name, settings, { video: 1, audio: Math.max(1, nAudio) }, binId);
+	const { seq, itemId } = newSequenceItem(
+		doc,
+		h,
+		name,
+		settings,
+		{ video: 1, audio: Math.max(1, nAudio) },
+		binId,
+	);
 	const ids: string[] = [];
 	let a = 1;
 	if (video) {
@@ -406,10 +439,12 @@ function detach(doc: DDoc, itemId: string): void {
 
 function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: HandlerContext) {
 	assertBin(doc, cmd.binId, h);
-	const fallback = (h.registries.presets.get(doc.settings.defaultSequencePreset) ?? h.registries.presets.list()[0]!)
-		.settings;
+	const fallback = (
+		h.registries.presets.get(doc.settings.defaultSequencePreset) ?? h.registries.presets.list()[0]!
+	).settings;
 	let all = itemSources(doc, cmd.itemIds, fallback.frameRate, h);
-	if (!all.some((s) => s.hasVideo)) h.fail('E_INVALID_PARAM', 'Select at least one clip with video (a camera)');
+	if (!all.some((s) => s.hasVideo))
+		h.fail('E_INVALID_PARAM', 'Select at least one clip with video (a camera)');
 	// Camera order.
 	const order = cmd.order ?? 'selection';
 	if (Array.isArray(order)) {
@@ -419,7 +454,9 @@ function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: Handler
 		};
 		all = [...all].sort((x, y) => pos(x.key) - pos(y.key));
 	} else if (order === 'name') {
-		all = [...all].sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' }));
+		all = [...all].sort((x, y) =>
+			x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' }),
+		);
 	} else if (order === 'timecode') {
 		const tc = (s: ItemSource) => s.timecode?.flicks ?? Number.POSITIVE_INFINITY;
 		all = [...all].sort((x, y) => tc(x) - tc(y));
@@ -431,7 +468,12 @@ function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: Handler
 		ref = all.findIndex((s) => s.key === cmd.referenceItemId);
 		if (ref < 0) h.fail('E_INVALID_PARAM', '`referenceItemId` is not among the items');
 	}
-	const settings = presetSettings(doc, h, cmd.preset, all[ref]!.asset.kind === 'video' ? all[ref]!.asset : all[0]!.asset);
+	const settings = presetSettings(
+		doc,
+		h,
+		cmd.preset,
+		all[ref]!.asset.kind === 'video' ? all[ref]!.asset : all[0]!.asset,
+	);
 	const F = flicksPerFrame(settings.frameRate);
 	const offsets = offsetsOrFail(all, ref, syncSpec(cmd), h);
 	const extra = all.map((_, i) => (i === ref ? 0 : (cmd.offsetFrames ?? 0) * F));
@@ -493,7 +535,14 @@ function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: Handler
 	return {
 		sequenceId: seq.id,
 		itemId,
-		angles: angles.map((a, i) => ({ angle: a.id, name: a.name, itemId: a.itemId, video: a.videoTrackId !== null, offsetFlicks: offsets[i]!, startFrame: placements[i]!.start })),
+		angles: angles.map((a, i) => ({
+			angle: a.id,
+			name: a.name,
+			itemId: a.itemId,
+			video: a.videoTrackId !== null,
+			offsetFlicks: offsets[i]!,
+			startFrame: placements[i]!.start,
+		})),
 	};
 }
 
@@ -509,7 +558,10 @@ export function markMulticamClips(seq: DSeq, clipIds: readonly string[], mc: Mul
 	for (const id of clipIds) {
 		const c = seq.clips[id];
 		if (c && (c.kind === 'nest-video' || c.kind === 'nest-audio'))
-			(c as Draft<{ multicam?: { enabled: boolean; angle: string } }>).multicam = { enabled: true, angle: first.id };
+			(c as Draft<{ multicam?: { enabled: boolean; angle: string } }>).multicam = {
+				enabled: true,
+				angle: first.id,
+			};
 	}
 }
 
@@ -560,9 +612,9 @@ function multicamTrackAt(
 /** Linked multi-camera audio clips of a multi-camera video clip. */
 function audioPartners(seq: DSeq, c: Clip): DClip[] {
 	if (!c.linkId || !seq.links[c.linkId]) return [];
-	return seq.links[c.linkId]!.members
-		.map((m) => seq.clips[m]!)
-		.filter((m) => m && m.id !== c.id && m.kind === 'nest-audio' && isMulticamClip(m as Clip));
+	return seq.links[c.linkId]!.members.map((m) => seq.clips[m]!).filter(
+		(m) => m && m.id !== c.id && m.kind === 'nest-audio' && isMulticamClip(m as Clip),
+	);
 }
 
 function setAngle(doc: DDoc, c: DClip, ref: string | number, h: HandlerContext): boolean {
@@ -600,7 +652,13 @@ function sameExceptRange(a: Clip, b: Clip): boolean {
  * Heal through edits between pieces of one multi-camera clip that show the same angle, for edit points inside
  * `[from, to]` on `trackIds` (a recording pass that presses the angle already shown adds no edit).
  */
-function healTracks(seq: DSeq, trackIds: Iterable<string>, from: number, to: number, h: HandlerContext): void {
+function healTracks(
+	seq: DSeq,
+	trackIds: Iterable<string>,
+	from: number,
+	to: number,
+	h: HandlerContext,
+): void {
 	const rate = seq.settings.frameRate as Rational;
 	const F = flicksPerFrame(rate);
 	for (const tid of trackIds) {
@@ -647,7 +705,8 @@ function runEnd(seq: DSeq, trackId: string, frame: number): number {
 	let e = end(list[i]!);
 	for (let k = i + 1; k < list.length; k++) {
 		const c = list[k]!;
-		if (c.start !== e || !isMulticamClip(c as Clip) || (c as { sequenceId?: string }).sequenceId !== src) break;
+		if (c.start !== e || !isMulticamClip(c as Clip) || (c as { sequenceId?: string }).sequenceId !== src)
+			break;
 		e = end(c);
 	}
 	return e;
@@ -785,7 +844,10 @@ function record(doc: DDoc, cmd: CommandOf<'multicam.record'>, h: HandlerContext)
 	const track = multicamTrackAt(seq, first, h, cmd);
 	const to = cmd.to !== undefined ? h.frame(seq, cmd.to) : runEnd(seq, track.id, first);
 	if (to <= first) h.fail('E_INVALID_PARAM', '`to` must be after the first cut');
-	return recordPass(doc, seq, h, track.id, cuts, to, { video: cmd.video !== false, audio: cmd.audio !== false });
+	return recordPass(doc, seq, h, track.id, cuts, to, {
+		video: cmd.video !== false,
+		audio: cmd.audio !== false,
+	});
 }
 
 // ---------------------------------------------------------------- Enable / Flatten / Edit Cameras
@@ -852,7 +914,10 @@ function flatten(doc: DDoc, cmd: CommandOf<'multicam.flatten'>, h: HandlerContex
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const targets = new Map<string, DClip>();
 	for (const c of clips) {
-		const all = [c, ...(c.linkId && seq.links[c.linkId] ? seq.links[c.linkId]!.members.map((m) => seq.clips[m]!) : [])];
+		const all = [
+			c,
+			...(c.linkId && seq.links[c.linkId] ? seq.links[c.linkId]!.members.map((m) => seq.clips[m]!) : []),
+		];
 		for (const m of all) if (m && isMulticamClip(m as Clip)) targets.set(m.id, m);
 	}
 	const enabled = [...targets.values()].filter((c) => (c as Draft<MulticamClip>).multicam.enabled);
@@ -887,8 +952,22 @@ function flatten(doc: DDoc, cmd: CommandOf<'multicam.flatten'>, h: HandlerContex
 			const id = h.ids.next('clp');
 			const piece =
 				outer.kind === 'nest-video'
-					? pieceVideoClip(doc as never, r.source, outer as MulticamClip & { kind: 'nest-video' }, p, id, warn)
-					: pieceAudioClip(r.source, outer as MulticamClip & { kind: 'nest-audio' }, p, audioTracks.get(p.innerTrackId)!, id, warn);
+					? pieceVideoClip(
+							doc as never,
+							r.source,
+							outer as MulticamClip & { kind: 'nest-video' },
+							p,
+							id,
+							warn,
+						)
+					: pieceAudioClip(
+							r.source,
+							outer as MulticamClip & { kind: 'nest-audio' },
+							p,
+							audioTracks.get(p.innerTrackId)!,
+							id,
+							warn,
+						);
 			const copy = plain(piece) as Clip;
 			reidentifyClipChildren(copy, h);
 			const k = innerTracks.indexOf(p.innerTrackId);
@@ -911,7 +990,10 @@ function flatten(doc: DDoc, cmd: CommandOf<'multicam.flatten'>, h: HandlerContex
 			const o = t.outgoingClipId === c.id ? firstLast.last : t.outgoingClipId;
 			const i = t.incomingClipId === c.id ? firstLast.first : t.incomingClipId;
 			if ((t.outgoingClipId && !o) || (t.incomingClipId && !i)) {
-				h.warn('W_TRANSITION_REMOVED', `Transition ${t.id} removed: the flattened angle has no clip at that edge`);
+				h.warn(
+					'W_TRANSITION_REMOVED',
+					`Transition ${t.id} removed: the flattened angle has no clip at that edge`,
+				);
 				continue;
 			}
 			seq.transitions[t.id] = { ...t, outgoingClipId: o, incomingClipId: i } as Draft<Transition>;
@@ -936,7 +1018,11 @@ function editAngles(doc: DDoc, cmd: CommandOf<'multicam.editAngles'>, h: Handler
 	}
 	if (cmd.order) {
 		const ids = mc.angles.map((a) => a.id);
-		if (cmd.order.length !== ids.length || new Set(cmd.order).size !== ids.length || cmd.order.some((id) => !ids.includes(id)))
+		if (
+			cmd.order.length !== ids.length ||
+			new Set(cmd.order).size !== ids.length ||
+			cmd.order.some((id) => !ids.includes(id))
+		)
 			h.fail('E_INVALID_PARAM', '`order` must list every angle id exactly once');
 		const by = new Map(mc.angles.map((a) => [a.id, plain(a)]));
 		mc.angles = cmd.order.map((id) => by.get(id)!) as typeof mc.angles;

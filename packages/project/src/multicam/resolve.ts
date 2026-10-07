@@ -1,20 +1,19 @@
-// What a multi-camera clip shows (wp-multicam), as ordinary clips: the render snapshot expands every enabled
-// multi-camera clip into the clips of its angle (`expandMulticam`, so the Remotion preview, the native export and
-// every other snapshot consumer render it with no special path), and Flatten writes the same clips into the
-// sequence (`flattenPieces`).
+// What a multi-camera clip shows, as ordinary clips (wp-multicam): Clip ▸ Multi-Camera ▸ Flatten writes the clips
+// of the active angle into the sequence (`resolveMulticamClip` + `pieceVideoClip` / `pieceAudioClip`).
 //
-// Semantics. An enabled multi-camera video clip shows its angle's video track of the source sequence: at outer
-// frame f it shows the inner clip under source time T(f) (the outer clip's content time), at that clip's media
-// time. The outer clip's Motion is applied after the inner clip's (composed into one transform), its Opacity
-// multiplies the inner one, its blend mode applies unless the inner clip has its own, and its effects run after
-// the inner clip's effects on the angle's picture. Audio clips play the audible tracks of their angle (audio
-// mode of the source): gain, volume and pan add up with the inner clip's and its track's; effects chain inner →
-// inner track → outer. Keyframes of the outer clip (stored in the outer content time = source sequence time)
-// are re-timed to the inner media time. When the inner Motion is animated, or the composition would need a skew
-// (inner rotation with a non-uniform outer scale), the composed Motion/Opacity are sampled per frame.
+// Rendering does not use this: an enabled multi-camera clip renders as the nest it is, with only its angle's track
+// visible (`multicamView`, render snapshot) — exactly Premiere's model. Flatten must therefore draw the same picture
+// as that nest, which these functions guarantee (tests compare the two frame by frame): at outer frame f the piece
+// shows the inner clip under source time T(f) at that clip's media time; the outer clip's Motion is applied after
+// the inner clip's (composed into one transform), its Opacity multiplies the inner one, its blend mode applies unless
+// the inner clip has its own, and its effects run after the inner clip's effects. Audio pieces add gain, volume and
+// pan of the outer clip, the inner clip and its track; effects chain inner → inner track → outer. Keyframes of the
+// outer clip (outer content time = source-sequence time) are re-timed to the inner media time. When the inner
+// Motion is animated, or the composition would need a skew (inner rotation with a non-uniform outer scale), the
+// composed Motion/Opacity are sampled per frame.
 import { contentTimeAt } from '../derive/index.ts';
 import { evaluate } from '../keyframes.ts';
-import { layerMatrix, multiplyMatrix, type Mat2D } from '../render/transform.ts';
+import { layerMatrix, type Mat2D, multiplyMatrix } from '../render/transform.ts';
 import type { Animatable, Keyframe, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type {
@@ -27,11 +26,15 @@ import type {
 	Speed,
 	Track,
 	Transform,
-	Transition,
-	VideoClip,
 } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
-import { angleById, audibleTrackIds, firstVideoAngle, isEnabledMulticamClip, type MulticamClip } from './model.ts';
+import {
+	angleById,
+	audibleTrackIds,
+	firstVideoAngle,
+	isEnabledMulticamClip,
+	type MulticamClip,
+} from './model.ts';
 
 /** `m = a + b·t`. */
 export type Affine = { a: number; b: number };
@@ -59,8 +62,7 @@ const EPS = 1e-9;
 export function innerTimeMap(inner: Clip, sourceRate: Rational): Affine {
 	const F = flicksPerFrame(sourceRate);
 	const r = inner.speed.rate;
-	if (inner.speed.reverse)
-		return { a: inner.sourceIn + (inner.start + inner.duration - 1) * F * r, b: -r };
+	if (inner.speed.reverse) return { a: inner.sourceIn + (inner.start + inner.duration - 1) * F * r, b: -r };
 	return { a: inner.sourceIn - inner.start * F * r, b: r };
 }
 
@@ -129,7 +131,9 @@ export function piecesOf(outer: Clip, rate: Rational, source: Sequence, trackId:
 // ---------------------------------------------------------------- keyframe re-timing
 
 function isAnim(v: unknown): v is Animatable<unknown> {
-	return !!v && typeof v === 'object' && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes);
+	return (
+		!!v && typeof v === 'object' && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes)
+	);
 }
 
 /** Re-time one animatable through `m` (a decreasing map reverses the keys, swapping eases and tangents). */
@@ -142,7 +146,8 @@ export function retimeAnim<T>(a: Animatable<T>, m: Affine): Animatable<T> {
 			const e = k.easeIn;
 			k.easeIn = k.easeOut;
 			k.easeOut = e;
-			if (k.spatial) k.spatial = { ...k.spatial, inTangent: k.spatial.outTangent, outTangent: k.spatial.inTangent };
+			if (k.spatial)
+				k.spatial = { ...k.spatial, inTangent: k.spatial.outTangent, outTangent: k.spatial.inTangent };
 		}
 	}
 	return { ...a, keyframes: keys as Keyframe<T>[] };
@@ -155,7 +160,8 @@ export function retimeDeep<T>(v: T, m: Affine): T {
 	if (isAnim(v)) {
 		const r = retimeAnim(v, m) as Animatable<unknown>;
 		const rest: Record<string, unknown> = {};
-		for (const [k, x] of Object.entries(v)) if (k !== 'value' && k !== 'keyframes') rest[k] = retimeDeep(x, m);
+		for (const [k, x] of Object.entries(v))
+			if (k !== 'value' && k !== 'keyframes') rest[k] = retimeDeep(x, m);
 		return { ...rest, value: r.value, keyframes: r.keyframes } as T;
 	}
 	const out: Record<string, unknown> = {};
@@ -657,124 +663,4 @@ export function resolveMulticamClip(
 		pieces.push(...piecesOf(clip, rate, source, t.id));
 	}
 	return { source, multicam: mc, angleId: angle?.id ?? null, pieces };
-}
-
-// ---------------------------------------------------------------- render expansion
-
-export type MulticamExpansion = {
-	/** The sequence with every enabled multi-camera clip replaced by the clips it shows (same object when none). */
-	seq: Sequence;
-	/** Virtual clip id → the multi-camera clip and angle it comes from. */
-	origin: Map<string, { clipId: string; sequenceId: string; angle: string | null }>;
-	warnings: { clipId: string; code: string; message: string }[];
-};
-
-/**
- * Replace enabled multi-camera clips by the clips their angle shows (render snapshot). The first piece keeps the
- * multi-camera clip's id (selection, overlays and per-clip caches line up); further pieces get `<id>~<n>`.
- * Transitions on a multi-camera clip move to the pieces at its edges.
- */
-export function expandMulticam(doc: Pick<ProjectDocument, 'sequences' | 'media'>, seq: Sequence): MulticamExpansion {
-	const origin: MulticamExpansion['origin'] = new Map();
-	const warnings: MulticamExpansion['warnings'] = [];
-	let cur = seq;
-	// Angle clips can themselves be multi-camera clips: expand level by level (nesting is acyclic, INV-009).
-	for (let depth = 0; depth < 8; depth++) {
-		const r = expandOnce(doc, cur);
-		if (r.seq === cur) break;
-		for (const [id, o] of r.origin) {
-			const up = origin.get(o.clipId) ?? origin.get(id.replace(/~\d+$/, ''));
-			origin.set(id, up ?? o);
-		}
-		warnings.push(...r.warnings);
-		cur = r.seq;
-	}
-	return { seq: cur, origin, warnings };
-}
-
-function expandOnce(doc: Pick<ProjectDocument, 'sequences' | 'media'>, seq: Sequence): MulticamExpansion {
-	const origin: MulticamExpansion['origin'] = new Map();
-	const warnings: MulticamExpansion['warnings'] = [];
-	let any = false;
-	for (const c of Object.values(seq.clips)) {
-		if (isEnabledMulticamClip(c)) {
-			any = true;
-			break;
-		}
-	}
-	if (!any) return { seq, origin, warnings };
-	const rate = seq.settings.frameRate;
-	const clips: Record<string, Clip> = {};
-	/** Per multi-camera clip: its pieces' ids keyed by inner track, first and last (for transitions). */
-	const edges = new Map<string, { first: Map<string, string>; last: Map<string, string>; order: string[] }>();
-	for (const c of Object.values(seq.clips)) {
-		const r = resolveMulticamClip(doc, rate, c);
-		if (!r) {
-			if (isEnabledMulticamClip(c))
-				warnings.push({
-					clipId: c.id,
-					code: 'MULTICAM_SOURCE_MISSING',
-					message: `Multi-camera clip ${c.id} has no multi-camera source sequence; it is not rendered`,
-				});
-			else clips[c.id] = c;
-			continue;
-		}
-		const mc = c as MulticamClip;
-		const warn = (code: string, message: string) => warnings.push({ clipId: c.id, code, message });
-		const e = { first: new Map<string, string>(), last: new Map<string, string>(), order: [] as string[] };
-		const tracks = new Map(r.source.audioTracks.map((t) => [t.id, t]));
-		r.pieces.forEach((p, k) => {
-			const id = k === 0 ? c.id : `${c.id}~${k}`;
-			const v =
-				c.kind === 'nest-video'
-					? pieceVideoClip(doc, r.source, mc as MulticamClip & { kind: 'nest-video' }, p, id, warn)
-					: pieceAudioClip(
-							r.source,
-							mc as MulticamClip & { kind: 'nest-audio' },
-							p,
-							tracks.get(p.innerTrackId)!,
-							id,
-							warn,
-						);
-			clips[id] = v;
-			origin.set(id, { clipId: c.id, sequenceId: r.source.id, angle: r.angleId });
-			if (p.start === c.start && !e.first.has(p.innerTrackId)) {
-				e.first.set(p.innerTrackId, id);
-				if (!e.order.includes(p.innerTrackId)) e.order.push(p.innerTrackId);
-			}
-			if (p.start + p.duration === c.start + c.duration) {
-				e.last.set(p.innerTrackId, id);
-				if (!e.order.includes(p.innerTrackId)) e.order.push(p.innerTrackId);
-			}
-		});
-		edges.set(c.id, e);
-	}
-	// Transitions: a multi-camera side becomes the piece at that edge (audio: one transition per inner track).
-	const transitions: Record<string, Transition> = {};
-	for (const t of Object.values(seq.transitions)) {
-		const out = t.outgoingClipId ? edges.get(t.outgoingClipId) : undefined;
-		const inc = t.incomingClipId ? edges.get(t.incomingClipId) : undefined;
-		if (!out && !inc) {
-			transitions[t.id] = t;
-			continue;
-		}
-		const keys = [...new Set([...(out?.order ?? []), ...(inc?.order ?? [])])];
-		const sideOf = (side: typeof out, clipId: string | null, key: string, edge: 'first' | 'last', k: number) => {
-			if (!side) return k === 0 ? clipId : null;
-			return side[edge].get(key) ?? null;
-		};
-		keys.forEach((key, k) => {
-			const o = sideOf(out, t.outgoingClipId, key, 'last', k);
-			const i = sideOf(inc, t.incomingClipId, key, 'first', k);
-			if (!o && !i) return;
-			const id = k === 0 ? t.id : `${t.id}~${k}`;
-			transitions[id] = { ...t, id, outgoingClipId: o, incomingClipId: i };
-		});
-	}
-	return { seq: { ...seq, clips, transitions }, origin, warnings };
-}
-
-/** A video clip produced by the expansion (type guard used by consumers). */
-export function isVideoPiece(c: Clip): c is VideoClip {
-	return c.kind === 'video';
 }

@@ -12,6 +12,7 @@ import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
+import { multicamView } from '../multicam/model.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
@@ -32,7 +33,6 @@ import {
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
-import { multicamView } from '../multicam/model.ts';
 import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
 import {
 	type CountingLeaderStyle,

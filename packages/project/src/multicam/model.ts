@@ -19,7 +19,9 @@ export type MulticamClip = (NestVideoClip | NestAudioClip) & { multicam: Multica
 
 /** A nest clip carrying a multi-camera selection (enabled or not). */
 export function isMulticamClip(c: Clip | undefined | null): c is MulticamClip {
-	return !!c && (c.kind === 'nest-video' || c.kind === 'nest-audio') && !!(c as { multicam?: unknown }).multicam;
+	return (
+		!!c && (c.kind === 'nest-video' || c.kind === 'nest-audio') && !!(c as { multicam?: unknown }).multicam
+	);
 }
 
 /** An enabled multi-camera clip (Multi-Camera ▸ Enable on). */
@@ -115,7 +117,9 @@ export function multicamBadge(src: MulticamSource | null, clip: MulticamClip): s
  * track.remove or on repair). Works on drafts. Returns the ids of removed angles; removes `multicam` when none is
  * left.
  */
-export function pruneMulticamAngles(seq: Pick<Sequence, 'videoTracks' | 'audioTracks'> & { multicam?: MulticamSource }): string[] {
+export function pruneMulticamAngles(
+	seq: Pick<Sequence, 'videoTracks' | 'audioTracks'> & { multicam?: MulticamSource },
+): string[] {
 	const mc = seq.multicam;
 	if (!mc) return [];
 	const v = new Set(seq.videoTracks.map((t) => t.id));
@@ -137,7 +141,10 @@ export function pruneMulticamAngles(seq: Pick<Sequence, 'videoTracks' | 'audioTr
 }
 
 /** Problems of a multi-camera source description (invariants). */
-export function multicamSourceIssues(seq: Pick<Sequence, 'videoTracks' | 'audioTracks'>, mc: MulticamSource): string[] {
+export function multicamSourceIssues(
+	seq: Pick<Sequence, 'videoTracks' | 'audioTracks'>,
+	mc: MulticamSource,
+): string[] {
 	const out: string[] = [];
 	const v = new Set(seq.videoTracks.map((t) => t.id));
 	const a = new Set(seq.audioTracks.map((t) => t.id));
@@ -150,7 +157,8 @@ export function multicamSourceIssues(seq: Pick<Sequence, 'videoTracks' | 'audioT
 			out.push(`angle ${angle.id} references missing video track ${angle.videoTrackId}`);
 		for (const t of angle.audioTrackIds)
 			if (!a.has(t)) out.push(`angle ${angle.id} references missing audio track ${t}`);
-		if (angle.videoTrackId === null && angle.audioTrackIds.length === 0) out.push(`angle ${angle.id} has no tracks`);
+		if (angle.videoTrackId === null && angle.audioTrackIds.length === 0)
+			out.push(`angle ${angle.id} has no tracks`);
 	}
 	const vt = mc.angles.flatMap((x) => (x.videoTrackId ? [x.videoTrackId] : []));
 	if (new Set(vt).size !== vt.length) out.push('two angles share a video track');
@@ -176,7 +184,8 @@ export function fixMulticamSelections(doc: { sequences: Record<string, Sequence>
 			const a = angleById(mc, c.multicam.angle);
 			const ok = a && (c.kind === 'nest-audio' || a.videoTrackId !== null);
 			if (!ok) {
-				const next = (c.kind === 'nest-video' ? firstVideoAngle(mc) : (firstVideoAngle(mc) ?? mc.angles[0])) ?? null;
+				const next =
+					(c.kind === 'nest-video' ? firstVideoAngle(mc) : (firstVideoAngle(mc) ?? mc.angles[0])) ?? null;
 				if (next) c.multicam.angle = next.id;
 				else delete (c as { multicam?: unknown }).multicam;
 				changed.push(c.id);

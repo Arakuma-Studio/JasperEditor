@@ -3,8 +3,8 @@ import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
 import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
-import type { ProjectDocument } from '../../schema/document.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { ClipMarker, Marker, Sequence, SequenceSettings, Track } from '../../schema/sequence.ts';
 import {
@@ -271,7 +271,8 @@ export const sequenceHandlers: HandlerMap = {
 			const flicks = cmd.flicks ? h.flicks(cmd.flicks, asset, fallback) : (it.marks.in?.flicks ?? 0);
 			if (flicks < 0) h.fail('E_INVALID_PARAM', 'Marker time must be >= 0');
 			const dur = asset?.probe.durationFlicks;
-			if (dur !== null && dur !== undefined && flicks > dur) h.fail('E_OUT_OF_MEDIA', 'Marker is after the end of the media');
+			if (dur !== null && dur !== undefined && flicks > dur)
+				h.fail('E_OUT_OF_MEDIA', 'Marker is after the end of the media');
 			const list = ((it as { markers?: ClipMarker[] }).markers ??= []) as Draft<ClipMarker>[];
 			list.push({ ...base, flicks, duration: 0 });
 			list.sort((a, b) => a.flicks - b.flicks);

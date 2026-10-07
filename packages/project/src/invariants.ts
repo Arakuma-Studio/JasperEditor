@@ -11,6 +11,10 @@ import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createTrack } from './factories.ts';
+import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { isRovingKey, retimeRoving } from './keyframes.ts';
+import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
+import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
 import {
 	angleById,
 	fixMulticamSelections,
@@ -18,10 +22,6 @@ import {
 	multicamSourceOf,
 	pruneMulticamAngles,
 } from './multicam/model.ts';
-import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
-import { isRovingKey, retimeRoving } from './keyframes.ts';
-import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
-import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
@@ -489,7 +489,13 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (c.kind !== 'nest-video' && c.kind !== 'nest-audio')
 					issues.push(inv('INV-012', `Clip ${c.id}: only nest clips can be multi-camera clips`, cw));
 				else if (!mc)
-					issues.push(inv('INV-006', `Clip ${c.id} is a multi-camera clip of a sequence that is not a multi-camera source`, cw));
+					issues.push(
+						inv(
+							'INV-006',
+							`Clip ${c.id} is a multi-camera clip of a sequence that is not a multi-camera source`,
+							cw,
+						),
+					);
 				else {
 					const a = typeof sel.angle === 'string' ? angleById(mc, sel.angle) : null;
 					if (!a) issues.push(inv('INV-006', `Clip ${c.id} shows a missing angle ${String(sel.angle)}`, cw));
@@ -1087,7 +1093,8 @@ export function repairDocument(
 		}
 		for (const id of pruneMulticamAngles(seq)) note('drop-angle', seq.id, `angle ${id} had no tracks left`);
 	}
-	for (const id of fixMulticamSelections(doc)) note('fix-multicam', id, 'multi-camera selection pointed at a missing angle or source');
+	for (const id of fixMulticamSelections(doc))
+		note('fix-multicam', id, 'multi-camera selection pointed at a missing angle or source');
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		for (const c of Object.values(seq.clips)) {
 			const r = c as Record<string, unknown>;

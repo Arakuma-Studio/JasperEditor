@@ -13,11 +13,12 @@
 // | audio    | measured by the engine (GCC-PHAT, `POST /api/sync/audio`) and passed in as offsets      |
 //
 // Adapted from FilmCraft `crates/engine/src/sync.rs` (MIT OR Apache-2.0, licenses/ported/multicam.md).
-import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../time.ts';
-import { fieldsToFrames, parseTimecode } from '../timecode.ts';
+
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, SyncMethod } from '../schema/sequence.ts';
+import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../time.ts';
+import { fieldsToFrames, parseTimecode } from '../timecode.ts';
 
 /** What syncing needs to know about one clip (a project item or a timeline clip), in content flicks. */
 export type SyncSource = {
@@ -93,7 +94,7 @@ export function itemSyncSource(
 	fallbackRate: Rational,
 ): (SyncSource & { mediaId: string; duration: number }) | null {
 	const it = doc.items[itemId];
-	if (!it || it.kind !== 'media') return null;
+	if (it?.kind !== 'media') return null;
 	const asset = doc.media[it.mediaId];
 	if (!asset || (asset.kind !== 'video' && asset.kind !== 'audio')) return null;
 	const duration = asset.probe.durationFlicks;
