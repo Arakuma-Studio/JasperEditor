@@ -10,7 +10,8 @@ import type {
 } from '@jasper/api';
 import { TERMINAL_JOB_STATES } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import { browserPictureNeed, type MediaAsset } from '@jasper/project';
+import { lottieThumbnail, pdfThumbnail } from '@jasper/compositions';
+import { browserPictureNeed, type MediaAsset, mediaLoaderPath } from '@jasper/project';
 import type { DerivativeStatus, EditorSession, MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from './assets.ts';
 
@@ -202,6 +203,7 @@ export function createMediaRuntimeSync(
 							...(st.url ? { url: st.url } : {}),
 							...(st.error ? { error: st.error } : {}),
 						},
+						...(st.state === 'ready' && st.url && kind === 'display' ? { posterUrl: st.url } : {}),
 					});
 				})
 				.catch((e: unknown) => {
@@ -215,7 +217,34 @@ export function createMediaRuntimeSync(
 	const onVariantReady = (p: { mediaKey: string; kind: string; variant: string; url: string }) => {
 		const vk = `${p.kind}:${p.variant}`;
 		for (const id of byKey.get(p.mediaKey) ?? [])
-			if (requested.get(id) === vk) session.setMediaRuntime(id, { variant: { key: vk, state: 'ready', url: p.url } });
+			if (requested.get(id) === vk)
+				session.setMediaRuntime(id, {
+					variant: { key: vk, state: 'ready', url: p.url },
+					// A still's display picture is its poster too (the engine's ffmpeg poster may not read the format).
+					...(p.kind === 'display' ? { posterUrl: p.url } : {}),
+				});
+	};
+	// imports: posters of media the engine does not decode — SVG is its own poster, PDF pages and Lottie animations are
+	// drawn in the page (pdf.js, the Lottie player).
+	const posters = new Map<string, string>();
+	const syncPosters = () => {
+		if (disposed) return;
+		const media = session.getCommitted().media as Record<string, MediaAsset>;
+		const base = engine.mediaUrl('k').replace(/\/media\/.*$/, '');
+		for (const m of Object.values(media)) {
+			const path = mediaLoaderPath(m);
+			if (!path) continue;
+			const key = `${path}|${m.vector?.page ?? ''}`;
+			if (posters.get(m.id) === key) continue;
+			posters.set(m.id, key);
+			const url = `${base}${path}`;
+			const done = (posterUrl: string) => {
+				if (!disposed && posters.get(m.id) === key) session.setMediaRuntime(m.id, { posterUrl });
+			};
+			if (m.vector?.format === 'svg') done(url);
+			else if (m.vector?.format === 'pdf') void pdfThumbnail(url, m.vector.page ?? 1).then(done, () => undefined);
+			else if (m.lottie) void lottieThumbnail(url).then(done, () => undefined);
+		}
 	};
 
 	const jobTargets = (job: EngineJob): string[] => {
@@ -276,13 +305,17 @@ export function createMediaRuntimeSync(
 
 	syncNew();
 	syncVariants();
+	syncPosters();
 	const offDoc = session.on('doc.changed', (ev) => {
 		if (ev.created.some((id) => id.startsWith('med_')) || ev.deleted.some((id) => id.startsWith('med_')))
 			syncNew();
 		else if (ev.isUndo || ev.isRedo) syncNew();
 		// imports: Interpret Footage changed a media (or it was just added): its interpreted picture.
 		const touched = [...ev.created, ...ev.changed].filter((id) => id.startsWith('med_'));
-		if (touched.length || ev.isUndo || ev.isRedo) syncVariants(ev.isUndo || ev.isRedo ? undefined : touched);
+		if (touched.length || ev.isUndo || ev.isRedo) {
+			syncVariants(ev.isUndo || ev.isRedo ? undefined : touched);
+			syncPosters();
+		}
 	});
 	const offEvents = subscribe ? subscribe(onEvent) : () => undefined;
 

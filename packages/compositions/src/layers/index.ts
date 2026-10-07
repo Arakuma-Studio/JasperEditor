@@ -40,7 +40,8 @@ export {
 } from './MotionGraphicLayer.tsx';
 export { lottieDocument, lottieFrameForLayer } from './LottieLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
-export { VECTOR_MAX_SIDE, vectorRasterScale } from './VectorLayer.tsx';
+export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
+export { drawPdfPage, pdfPagePicture, VECTOR_MAX_SIDE, vectorRasterScale } from './VectorLayer.tsx';
 export {
 	CaptionsLayer,
 	CompositionLayer,

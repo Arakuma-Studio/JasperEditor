@@ -130,6 +130,48 @@ function pdfDocument(url: string): Promise<PdfDoc> {
 	return p;
 }
 
+/**
+ * Draws `page` of the PDF at `url` into `canvas` at `w` × `h` (the page stretched to the size; transparent where the
+ * page has no content). Resolves when drawn; `signal` cancels.
+ */
+export async function drawPdfPage(
+	canvas: HTMLCanvasElement,
+	url: string,
+	page: number,
+	w: number,
+	h: number,
+	signal?: { cancelled: boolean; task?: { cancel(): void } | null },
+): Promise<void> {
+	const doc = await pdfDocument(url);
+	const p = await doc.getPage(Math.min(Math.max(1, page), doc.numPages));
+	if (signal?.cancelled) return;
+	const base = p.getViewport({ scale: 1 });
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('No 2D canvas');
+	ctx.clearRect(0, 0, w, h);
+	const r = p.render({
+		canvasContext: ctx,
+		viewport: p.getViewport({ scale: w / base.width }),
+		transform: [1, 0, 0, h / base.height / (w / base.width), 0, 0],
+		background: 'rgba(0,0,0,0)',
+	});
+	if (signal) signal.task = r;
+	await r.promise;
+}
+
+/** A canvas with `page` of the PDF at `url`, at most `maxSide` px on its long side (posters). */
+export async function pdfPagePicture(url: string, page: number, maxSide: number): Promise<HTMLCanvasElement> {
+	const doc = await pdfDocument(url);
+	const p = await doc.getPage(Math.min(Math.max(1, page), doc.numPages));
+	const v = p.getViewport({ scale: 1 });
+	const k = maxSide / Math.max(v.width, v.height);
+	const canvas = document.createElement('canvas');
+	await drawPdfPage(canvas, url, page, Math.max(1, Math.round(v.width * k)), Math.max(1, Math.round(v.height * k)));
+	return canvas;
+}
+
 function PdfPicture({ layer }: { layer: LayerProps }) {
 	const url = layer.media?.loaderUrl ?? null;
 	const page = layer.media?.vector?.page ?? 1;
@@ -142,29 +184,8 @@ function PdfPicture({ layer }: { layer: LayerProps }) {
 	const h = Math.max(1, Math.round(box.height * S));
 	useEffect(() => {
 		if (!url || !canvas.current) return;
-		let alive = true;
-		let task: { cancel(): void } | null = null;
-		void pdfDocument(url)
-			.then(async (doc) => {
-				const p = await doc.getPage(Math.min(Math.max(1, page), doc.numPages));
-				if (!alive || !canvas.current) return;
-				const base = p.getViewport({ scale: 1 });
-				const c = canvas.current;
-				c.width = w;
-				c.height = h;
-				const ctx = c.getContext('2d');
-				if (!ctx) throw new Error('No 2D canvas');
-				ctx.clearRect(0, 0, w, h);
-				// The page fills the layer box (its size at 100 % is the page size in points).
-				const r = p.render({
-					canvasContext: ctx,
-					viewport: p.getViewport({ scale: w / base.width }),
-					transform: [1, 0, 0, h / base.height / (w / base.width), 0, 0],
-					background: 'rgba(0,0,0,0)',
-				});
-				task = r;
-				await r.promise;
-			})
+		const signal: { cancelled: boolean; task?: { cancel(): void } | null } = { cancelled: false };
+		void drawPdfPage(canvas.current, url, page, w, h, signal)
 			.then(release)
 			.catch((e: unknown) => {
 				if ((e as { name?: string })?.name === 'RenderingCancelledException') return;
@@ -172,8 +193,8 @@ function PdfPicture({ layer }: { layer: LayerProps }) {
 				release();
 			});
 		return () => {
-			alive = false;
-			task?.cancel();
+			signal.cancelled = true;
+			signal.task?.cancel();
 		};
 	}, [url, page, w, h, rendering, release]);
 	return (

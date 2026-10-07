@@ -119,7 +119,9 @@ function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, alpha = 
 }
 
 /** Which derivative kinds make sense for a media record. */
-function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeKind[] {
+function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'> & Partial<Pick<MediaRecord, 'vector' | 'lottie'>>): DerivativeKind[] {
+	// imports: vector stills and Lottie animations are drawn by the composition (posters come from the client).
+	if (r.vector || r.lottie) return [];
 	switch (r.kind) {
 		case 'video':
 			return [
@@ -142,7 +144,9 @@ function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeK
 }
 
 /** Kinds queued automatically after registration (S04:IN-011, ARCHITECTURE §9.4). */
-function autoKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'>): DerivativeKind[] {
+function autoKinds(
+	r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'> & Partial<Pick<MediaRecord, 'vector' | 'lottie'>>,
+): DerivativeKind[] {
 	if (r.kind !== 'video') return applicableKinds(r);
 	return [
 		'keyframes',
