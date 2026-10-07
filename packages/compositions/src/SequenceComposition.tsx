@@ -69,6 +69,7 @@ import {
 	CompositeHub,
 	compositeRunMode,
 	LINEAR_MARK,
+	makeBlendGroup,
 	makeBlendTrack,
 	makeLinearBlendGroup,
 	useCompositeTap,
@@ -539,7 +540,18 @@ export function VideoTracks({
 		type Run = { members: Parameters<typeof makeLinearBlendGroup>[0][number][]; first: string };
 		const runs: Run[] = [];
 		let run: Run | null = null;
-		for (const t of tracks) {
+		// previews (scope nesting): consecutive GL-blend tracks share one scope; an adjustment layer or the bottom of a
+		// 3D run (scopes of their own over the stack) ends a run.
+		const glRuns: Run[] = [];
+		let glRun: Run | null = null;
+		const bottoms3d: ReadonlySet<number> = doc.videoTracks.some((t) => t.clips.some((c) => c.threeD))
+			? runBottomTracks(
+					doc.videoTracks,
+					doc.range.end > doc.range.start ? doc.range : { start: 0, end: Number.MAX_SAFE_INTEGER },
+					{},
+				)
+			: new Set<number>();
+		for (const [ti, t] of tracks.entries()) {
 			const input: CompositeTrackInput = {
 				trackId: t.trackId,
 				// three-d: 3D layers are composited by their run's 3D scope (blend modes included), never here.
@@ -572,7 +584,47 @@ export function VideoTracks({
 				run.members.push({ input, mattes: t.mattes });
 				continue;
 			}
-			if (!trackHasGlBlend(input, false)) continue;
+			if (t.adjustments.length > 0 || bottoms3d.has(ti)) glRun = null;
+			if (!glRun) {
+				if (!trackHasGlBlend(input, false)) continue;
+				glRun = { members: [], first: t.trackId };
+				glRuns.push(glRun);
+			}
+			glRun.members.push({ input, mattes: t.mattes });
+		}
+		for (const r of glRuns) {
+			if (r.members.length > 1) {
+				const key = `group:${r.first}`;
+				let hub = compositeHubs.current.get(key);
+				if (!hub) {
+					hub = new CompositeHub();
+					compositeHubs.current.set(key, hub);
+				}
+				const all = r.members.flatMap((m) => [
+					...m.input.clips.map((c) => ({ ...c, kind: 'clip' as const })),
+					...m.input.stages.map((st) => ({ ...st, kind: 'stage' as const })),
+				]);
+				const mode = compositeRunMode(
+					{ gpu, htmlInCanvas },
+					all.map((x) => x.blendMode).filter((m) => !isCssBlend(m)),
+				);
+				const value = makeBlendGroup(r.members, isGpuSide, mode, hub);
+				const glModesAt = (f: number) =>
+					all
+						.filter((x) =>
+							x.kind === 'clip'
+								? f >= x.start - (x.headHandle ?? 0) && f < x.start + x.duration + (x.tailHandle ?? 0)
+								: f >= x.start && f < x.start + x.duration,
+						)
+						.map((x) => x.blendMode)
+						.filter((m) => !isCssBlend(m));
+				r.members.forEach((m, i) => {
+					out.set(m.input.trackId, { value, glModesAt: i === 0 ? glModesAt : () => [], scope: i === 0 });
+				});
+				continue;
+			}
+			const input = r.members[0]!.input;
+			const t = { trackId: input.trackId };
 			let hub = compositeHubs.current.get(t.trackId);
 			if (!hub) {
 				hub = new CompositeHub();
@@ -612,7 +664,7 @@ export function VideoTracks({
 			});
 		}
 		return out;
-	}, [tracks, options.layerFilter, gpu, htmlInCanvas, linearCurve]);
+	}, [tracks, options.layerFilter, gpu, htmlInCanvas, linearCurve, doc.videoTracks, doc.range]);
 	// three-d: a 3D scope (and its hub) per track that holds a 3D clip; the runs of every frame.
 	// One hub for every scope: a member's tap stays the same when the run it belongs to moves to another bottom track
 	// (a layer only delivers when it repaints, so a new hub would never get its picture).
