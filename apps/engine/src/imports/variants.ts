@@ -44,7 +44,10 @@ export class VariantError extends Error {
 }
 
 /** Whether a variant kind applies to a media record (display: stills; proxy / master: videos). */
-export function variantApplies(r: Pick<MediaRecord, 'kind' | 'vector' | 'lottie'>, kind: MediaVariantKind): boolean {
+export function variantApplies(
+	r: Pick<MediaRecord, 'kind' | 'vector' | 'lottie'>,
+	kind: MediaVariantKind,
+): boolean {
 	if (r.vector || r.lottie) return false;
 	return kind === 'display' ? r.kind === 'image' : r.kind === 'video';
 }
@@ -80,7 +83,8 @@ export class VariantService {
 		if (!variantApplies(r, kind))
 			throw new VariantError('BAD_REQUEST', `A ${kind} picture does not apply to ${r.kind} media`);
 		const pixel = parsePixelVariant(variant);
-		if (variant !== '' && !pixel) throw new VariantError('BAD_REQUEST', `Malformed variant "${variant.slice(0, 80)}"`);
+		if (variant !== '' && !pixel)
+			throw new VariantError('BAD_REQUEST', `Malformed variant "${variant.slice(0, 80)}"`);
 		if (kind !== 'display' && !pixel)
 			throw new VariantError('BAD_REQUEST', 'Videos without an interpretation use the regular proxies');
 		return pixel;
@@ -97,7 +101,11 @@ export class VariantService {
 	path(r: MediaRecord, kind: MediaVariantKind, variant: string): string {
 		const alpha = kind === 'proxy' && variantHasAlpha(r, parsePixelVariant(variant));
 		const ext = alpha ? 'webm' : EXT[kind];
-		return join(this.deps.cacheDir, fingerprintHex(r.fingerprint), `variant-${kind}-${this.hash(kind, variant, r)}.${ext}`);
+		return join(
+			this.deps.cacheDir,
+			fingerprintHex(r.fingerprint),
+			`variant-${kind}-${this.hash(kind, variant, r)}.${ext}`,
+		);
 	}
 
 	url(r: MediaRecord, kind: MediaVariantKind, variant: string): string {
@@ -141,7 +149,8 @@ export class VariantService {
 		const dk = this.dedupeKey(r, kind, variant);
 		if (this.failures.has(dk) && !opts.retry) return null;
 		this.failures.delete(dk);
-		const label = kind === 'display' ? 'Display picture' : kind === 'proxy' ? 'Interpreted proxy' : 'Interpreted master';
+		const label =
+			kind === 'display' ? 'Display picture' : kind === 'proxy' ? 'Interpreted proxy' : 'Interpreted master';
 		return this.deps.queue.submit({
 			kind: 'interpret',
 			title: `${label} – ${r.originalName}`,
@@ -187,7 +196,8 @@ export class VariantService {
 			}
 		}
 		const p = this.path(r, kind, variant);
-		if (!(await exists(p))) throw new JobError('INTERPRET_FAILED', `The ${kind} picture of ${r.originalName} is missing`, true);
+		if (!(await exists(p)))
+			throw new JobError('INTERPRET_FAILED', `The ${kind} picture of ${r.originalName} is missing`, true);
 		return p;
 	}
 

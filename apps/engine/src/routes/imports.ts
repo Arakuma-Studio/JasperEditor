@@ -100,7 +100,9 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 	const waitJob = async (reply: FastifyReply, jobId: string, failCode: string) => {
 		const done = await queue.wait(jobId);
 		if (done.state !== 'succeeded')
-			throw new HttpError(422, done.error?.code ?? failCode, done.error?.message ?? done.state, { jobId: done.id });
+			throw new HttpError(422, done.error?.code ?? failCode, done.error?.message ?? done.state, {
+				jobId: done.id,
+			});
 		return reply.send(done);
 	};
 
@@ -124,27 +126,30 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 
 	app.get<{ Params: { mediaKey: string; kind: string }; Querystring: { v?: string } }>(
 		'/media/:mediaKey/variant/:kind',
-		guarded<{ Params: { mediaKey: string; kind: string }; Querystring: { v?: string } }>(async (req, reply) => {
-			const r = record(req.params.mediaKey);
-			const kind = MediaVariantKindSchema.safeParse(req.params.kind.replace(/\.(png|mp4|webm|mov)$/, ''));
-			if (!kind.success) return fail(reply, 404, 'NOT_FOUND', 'Unknown picture kind');
-			const variant = typeof req.query.v === 'string' ? req.query.v : '';
-			try {
-				variants.check(r, kind.data, variant);
-			} catch (e) {
-				return fail(reply, 400, 'BAD_REQUEST', (e as Error).message);
-			}
-			if (!(await variants.isReady(r, kind.data, variant))) return fail(reply, 404, 'NOT_FOUND', 'Not ready');
-			const p = variants.path(r, kind.data, variant);
-			const type = p.endsWith('.png')
-				? 'image/png'
-				: p.endsWith('.webm')
-					? 'video/webm'
-					: p.endsWith('.mov')
-						? 'video/quicktime'
-						: 'video/mp4';
-			return serveFile(req, reply, p, { cache: 'immutable', contentType: type });
-		}),
+		guarded<{ Params: { mediaKey: string; kind: string }; Querystring: { v?: string } }>(
+			async (req, reply) => {
+				const r = record(req.params.mediaKey);
+				const kind = MediaVariantKindSchema.safeParse(req.params.kind.replace(/\.(png|mp4|webm|mov)$/, ''));
+				if (!kind.success) return fail(reply, 404, 'NOT_FOUND', 'Unknown picture kind');
+				const variant = typeof req.query.v === 'string' ? req.query.v : '';
+				try {
+					variants.check(r, kind.data, variant);
+				} catch (e) {
+					return fail(reply, 400, 'BAD_REQUEST', (e as Error).message);
+				}
+				if (!(await variants.isReady(r, kind.data, variant)))
+					return fail(reply, 404, 'NOT_FOUND', 'Not ready');
+				const p = variants.path(r, kind.data, variant);
+				const type = p.endsWith('.png')
+					? 'image/png'
+					: p.endsWith('.webm')
+						? 'video/webm'
+						: p.endsWith('.mov')
+							? 'video/quicktime'
+							: 'video/mp4';
+				return serveFile(req, reply, p, { cache: 'immutable', contentType: type });
+			},
+		),
 	);
 
 	// ---------------------------------------------------------------- Lottie and vector sources
@@ -258,8 +263,8 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 							'utf8',
 						),
 					),
-				displayPng: async (r: MediaRecord, variant: string) => readFile(await variants.ensureAndWait(r, 'display', variant)),
-				outDir: core.config.paths.rendersDir,
+				displayPng: async (r: MediaRecord, variant: string) =>
+					readFile(await variants.ensureAndWait(r, 'display', variant)),
 			});
 		}),
 	);

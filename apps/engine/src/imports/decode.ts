@@ -3,11 +3,7 @@
 // - Scene-linear stills (OpenEXR, Radiance HDR) are shown with the sRGB transfer (EXR decoder `apply_trc`, `zscale`
 //   for HDR); values above 1 clip. 16-bit output keeps the precision of half / float sources.
 // - Interpret Footage ▸ field order / alpha: `pixelInterpretationFilters` (bwdif, unpremultiply / geq, lutrgb).
-import {
-	type MediaProbe,
-	type PixelInterpretation,
-	pixelInterpretationFilters,
-} from '@jasper/project';
+import { type MediaProbe, type PixelInterpretation, pixelInterpretationFilters } from '@jasper/project';
 
 type RecordLike = { probe: Pick<MediaProbe, 'streams'>; kind: string };
 
@@ -32,7 +28,11 @@ export function decodeFilters(r: RecordLike): string[] {
 export function isDeep(r: RecordLike): boolean {
 	const vs = r.probe.streams.find((s) => s.type === 'video');
 	if (vs?.type !== 'video') return false;
-	return vs.bitDepth > 8 || /(f32|f16|16le|16be|48|64|p10|p12|p16)/.test(vs.pixelFormat) || ['exr', 'hdr'].includes(vs.codec);
+	return (
+		vs.bitDepth > 8 ||
+		/(f32|f16|16le|16be|48|64|p10|p12|p16)/.test(vs.pixelFormat) ||
+		['exr', 'hdr'].includes(vs.codec)
+	);
 }
 
 /** Every filter from the decoded picture to the interpreted one. */

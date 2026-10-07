@@ -36,7 +36,12 @@ function ensureNoCanvas(): void {
 			throw new Error('No canvas in the engine (ag-psd useImageData)');
 		},
 		(width: number, height: number) =>
-			({ width, height, data: new Uint8ClampedArray(width * height * 4), colorSpace: 'srgb' }) as unknown as ImageData,
+			({
+				width,
+				height,
+				data: new Uint8ClampedArray(width * height * 4),
+				colorSpace: 'srgb',
+			}) as unknown as ImageData,
 	);
 }
 
@@ -103,7 +108,11 @@ export async function readPsdFile(file: string, opts: { images: boolean }): Prom
 			totalMemoryLimit: MEMORY_LIMIT,
 		});
 		if (opts.images && psd.width * psd.height > MAX_PIXELS)
-			throw new JobError('UNSUPPORTED_MEDIA', `The document is too large (${psd.width}×${psd.height})`, false);
+			throw new JobError(
+				'UNSUPPORTED_MEDIA',
+				`The document is too large (${psd.width}×${psd.height})`,
+				false,
+			);
 		return psd;
 	} catch (e) {
 		if (e instanceof JobError) throw e;
@@ -129,7 +138,9 @@ export function psdLayeredInfo(psd: Psd, file: string): LayeredInfo {
 		width: psd.width,
 		height: psd.height,
 		layerCount: countLayers(psd.children),
-		...(psd.colorMode !== undefined ? { colorMode: COLOR_MODES[psd.colorMode] ?? String(psd.colorMode) } : {}),
+		...(psd.colorMode !== undefined
+			? { colorMode: COLOR_MODES[psd.colorMode] ?? String(psd.colorMode) }
+			: {}),
 		...(psd.bitsPerChannel ? { bitDepth: psd.bitsPerChannel } : {}),
 	};
 }
@@ -142,7 +153,10 @@ const srgbEncode = (v: number) => {
 };
 
 /** ag-psd pixel data (RGBA at 8/16/32 bits) → an 8- or 16-bit straight RGBA image (32-bit: linear → sRGB). */
-export function toRgba(px: { data: ArrayLike<number>; width: number; height: number }, bitsPerChannel: number): RgbaImage {
+export function toRgba(
+	px: { data: ArrayLike<number>; width: number; height: number },
+	bitsPerChannel: number,
+): RgbaImage {
 	const n = px.width * px.height * 4;
 	if (bitsPerChannel <= 8) {
 		const data = new Uint8Array(n);
@@ -183,7 +197,13 @@ function maskSampler(
 }
 
 /** The vector mask of a layer as coverage over the layer bounds (null = none or disabled). */
-function vectorMaskCoverage(layer: Layer, left: number, top: number, w: number, h: number): Uint8Array | null {
+function vectorMaskCoverage(
+	layer: Layer,
+	left: number,
+	top: number,
+	w: number,
+	h: number,
+): Uint8Array | null {
 	const vm = layer.vectorMask;
 	if (!vm || vm.disable || !vm.paths?.length) return null;
 	let acc: Float32Array = new Float32Array(w * h).fill(vm.fillStartsWithAllPixels ? 1 : 0);
@@ -208,7 +228,13 @@ function vectorMaskCoverage(layer: Layer, left: number, top: number, w: number, 
 			const a = acc[i]!;
 			const b = cov[i]! / 255;
 			next[i] =
-				op === 'subtract' ? a * (1 - b) : op === 'intersect' ? a * b : op === 'exclude' ? Math.abs(a - b) : Math.max(a, b);
+				op === 'subtract'
+					? a * (1 - b)
+					: op === 'intersect'
+						? a * b
+						: op === 'exclude'
+							? Math.abs(a - b)
+							: Math.max(a, b);
 		}
 		acc = next;
 	}
@@ -254,7 +280,8 @@ const KERNEL = makeBlendKernel();
  * placeholder — a uniform merged image over a document whose layers are not uniform is not trusted.
  */
 function hasRealComposite(psd: Psd): boolean {
-	const vi = (psd.imageResources as { versionInfo?: { hasRealMergedData?: boolean } } | undefined)?.versionInfo;
+	const vi = (psd.imageResources as { versionInfo?: { hasRealMergedData?: boolean } } | undefined)
+		?.versionInfo;
 	if (vi && vi.hasRealMergedData === false) return false;
 	if (vi?.hasRealMergedData) return true;
 	if (!psd.children?.length) return true;
@@ -271,17 +298,26 @@ function hasRealComposite(psd: Psd): boolean {
  */
 export function psdComposite(psd: Psd): { image: RgbaImage; source: 'file' | 'layers' } {
 	const bits = psd.bitsPerChannel ?? 8;
-	if (psd.imageData && psd.imageData.width === psd.width && psd.imageData.height === psd.height && hasRealComposite(psd))
+	if (
+		psd.imageData &&
+		psd.imageData.width === psd.width &&
+		psd.imageData.height === psd.height &&
+		hasRealComposite(psd)
+	)
 		return { image: toRgba(psd.imageData, bits), source: 'file' };
 	const W = psd.width;
 	const H = psd.height;
 	const stack = new Float64Array(W * H * 4); // premultiplied, 0..1
 	compositeLayers(psd.children ?? [], stack, W, H, bits, 0);
-	const out: RgbaImage = bits <= 8 ? { width: W, height: H, bits: 8, data: new Uint8Array(W * H * 4) } : { width: W, height: H, bits: 16, data: new Uint16Array(W * H * 4) };
+	const out: RgbaImage =
+		bits <= 8
+			? { width: W, height: H, bits: 8, data: new Uint8Array(W * H * 4) }
+			: { width: W, height: H, bits: 16, data: new Uint16Array(W * H * 4) };
 	const max = maxOf(out);
 	for (let i = 0; i < W * H; i++) {
 		const a = stack[i * 4 + 3]!;
-		for (let c = 0; c < 3; c++) out.data[i * 4 + c] = a > 0 ? Math.round(Math.min(1, stack[i * 4 + c]! / a) * max) : 0;
+		for (let c = 0; c < 3; c++)
+			out.data[i * 4 + c] = a > 0 ? Math.round(Math.min(1, stack[i * 4 + c]! / a) * max) : 0;
 		out.data[i * 4 + 3] = Math.round(Math.min(1, a) * max);
 	}
 	return { image: out, source: 'layers' };
@@ -320,7 +356,14 @@ function blendIndex(mode: PsdBlend): number {
 	return i < 0 ? 0 : i;
 }
 
-function compositeLayers(layers: Layer[], dst: Float64Array, W: number, H: number, bits: number, depth: number): void {
+function compositeLayers(
+	layers: Layer[],
+	dst: Float64Array,
+	W: number,
+	H: number,
+	bits: number,
+	depth: number,
+): void {
 	if (depth > MAX_DEPTH) return;
 	// ag-psd lists children bottom → top.
 	let clipBase: Float64Array | null = null;
@@ -342,11 +385,12 @@ function compositeLayers(layers: Layer[], dst: Float64Array, W: number, H: numbe
 			compositeLayers(l.children, pic, W, H, bits, depth + 1);
 			const m = l.mask ? maskSampler(l.mask, bits) : null;
 			if (m)
-				for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-					const k = (y * W + x) * 4;
-					const v = m(x, y);
-					for (let c = 0; c < 4; c++) pic[k + c]! *= v;
-				}
+				for (let y = 0; y < H; y++)
+					for (let x = 0; x < W; x++) {
+						const k = (y * W + x) * 4;
+						const v = m(x, y);
+						for (let c = 0; c < 4; c++) pic[k + c]! *= v;
+					}
 		} else {
 			const img = layerPicture(l, bits);
 			pic = new Float64Array(W * H * 4);
@@ -427,7 +471,8 @@ export async function extractPsdLayers(
 	const warnings: string[] = [];
 	let index = 0;
 	const total = Math.min(MAX_LAYERS, countLayers(psd.children));
-	if (countLayers(psd.children) > MAX_LAYERS) warnings.push(`Only the first ${MAX_LAYERS} layers are imported`);
+	if (countLayers(psd.children) > MAX_LAYERS)
+		warnings.push(`Only the first ${MAX_LAYERS} layers are imported`);
 	const walk = async (layers: Layer[], depth: number): Promise<ExtractedLayer[]> => {
 		const out: ExtractedLayer[] = [];
 		if (depth > MAX_DEPTH) return out;
@@ -439,12 +484,23 @@ export async function extractPsdLayers(
 			const notes: string[] = [];
 			const blend = psdBlendMode(l.blendMode);
 			if (blend.note) notes.push(blend.note);
-			if (l.effects && Object.values(l.effects).some((v) => v && (Array.isArray(v) ? v.some((e) => (e as { enabled?: boolean }).enabled !== false) : (v as { enabled?: boolean }).enabled !== false)))
+			if (
+				l.effects &&
+				Object.values(l.effects).some(
+					(v) =>
+						v &&
+						(Array.isArray(v)
+							? v.some((e) => (e as { enabled?: boolean }).enabled !== false)
+							: (v as { enabled?: boolean }).enabled !== false),
+				)
+			)
 				notes.push('layer effects (styles) are not carried');
-			if (kind === 'adjustment') notes.push(`${l.adjustment?.type ?? 'adjustment'} adjustment layer is not carried`);
+			if (kind === 'adjustment')
+				notes.push(`${l.adjustment?.type ?? 'adjustment'} adjustment layer is not carried`);
 			if (kind === 'text') notes.push('text is imported as pixels');
 			if (kind === 'smart-object') notes.push('smart object is imported as its rendered pixels');
-			if (l.mask && !l.mask.disabled && kind === 'group') notes.push('the group mask is applied to the group');
+			if (l.mask && !l.mask.disabled && kind === 'group')
+				notes.push('the group mask is applied to the group');
 			const left = l.left ?? 0;
 			const top = l.top ?? 0;
 			let png: string | null = null;

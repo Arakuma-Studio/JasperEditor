@@ -48,7 +48,6 @@ export async function exportLottie(
 		readMedia(key: string): Promise<Buffer | null>;
 		lottieJson(r: MediaRecord): Promise<Record<string, unknown>>;
 		displayPng(r: MediaRecord, variant: string): Promise<Buffer>;
-		outDir: string;
 	},
 ): Promise<LottieExportResult> {
 	let doc: ProjectDocument;
@@ -132,7 +131,6 @@ export async function exportLottie(
 		await rename(tmp, out);
 		return { warnings: allWarnings, layers: result.layers, bytes: bytes.length, outputPath: out, fileName };
 	}
-	void deps.outDir;
 	return {
 		warnings: allWarnings,
 		layers: result.layers,

@@ -6,7 +6,12 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import type { EngineJob, ImageSequenceDetectResponse, ImageSequenceRequest, RegisteredMedia } from '@jasper/api';
+import type {
+	EngineJob,
+	ImageSequenceDetectResponse,
+	ImageSequenceRequest,
+	RegisteredMedia,
+} from '@jasper/api';
 import {
 	type ImageSequenceGroup,
 	type ImageSequenceInfo,
@@ -51,7 +56,9 @@ export class ImageSequenceError extends Error {
 }
 
 /** The sequence `path` belongs to (its numbered siblings in the same folder). */
-export async function detectSequence(path: string): Promise<{ group: ImageSequenceGroup; directory: string }> {
+export async function detectSequence(
+	path: string,
+): Promise<{ group: ImageSequenceGroup; directory: string }> {
 	const abs = resolve(path);
 	const f = parseFrameName(basename(abs));
 	if (!f) throw new ImageSequenceError('NOT_A_SEQUENCE', `${basename(abs)} has no frame number`);
@@ -80,7 +87,12 @@ export function detectResponse(group: ImageSequenceGroup, directory: string): Im
 }
 
 const validRate = (r: Rational) =>
-	Number.isInteger(r.num) && Number.isInteger(r.den) && r.num > 0 && r.den > 0 && r.num / r.den >= 1 && r.num / r.den <= 1000;
+	Number.isInteger(r.num) &&
+	Number.isInteger(r.den) &&
+	r.num > 0 &&
+	r.den > 0 &&
+	r.num / r.den >= 1 &&
+	r.num / r.den <= 1000;
 
 export class ImageSequenceService {
 	constructor(
@@ -99,7 +111,8 @@ export class ImageSequenceService {
 
 	/** Resolves the request into frames and queues the conform job. */
 	async submit(req: ImageSequenceRequest): Promise<EngineJob> {
-		if (!validRate(req.frameRate)) throw new ImageSequenceError('BAD_REQUEST', 'Frame rate must be 1…1000 fps');
+		if (!validRate(req.frameRate))
+			throw new ImageSequenceError('BAD_REQUEST', 'Frame rate must be 1…1000 fps');
 		let group: ImageSequenceGroup;
 		let directory: string | null = null;
 		let byName: Map<string, string>;
@@ -115,7 +128,9 @@ export class ImageSequenceService {
 			if (sequences.length !== 1)
 				throw new ImageSequenceError(
 					'NOT_A_SEQUENCE',
-					sequences.length === 0 ? 'The files are not numbered frames of one sequence' : 'The files form several sequences: import them one by one',
+					sequences.length === 0
+						? 'The files are not numbered frames of one sequence'
+						: 'The files form several sequences: import them one by one',
 				);
 			group = sequences[0]!;
 			byName = new Map(abs.map((p) => [basename(p), p]));
@@ -123,7 +138,11 @@ export class ImageSequenceService {
 			directory = dirs.size === 1 ? [...dirs][0]! : null;
 		} else {
 			// Uploaded frames: moved into a staging folder under their own names (decoders detect some formats by name).
-			staging = join(this.deps.mediaDir, 'sequences', `staging-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+			staging = join(
+				this.deps.mediaDir,
+				'sequences',
+				`staging-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+			);
 			await mkdir(staging, { recursive: true });
 			byName = new Map();
 			try {
@@ -142,7 +161,10 @@ export class ImageSequenceService {
 			const { sequences } = groupImageSequences([...byName.keys()]);
 			if (sequences.length !== 1) {
 				await rm(staging, { recursive: true, force: true });
-				throw new ImageSequenceError('NOT_A_SEQUENCE', 'The uploaded files are not numbered frames of one sequence');
+				throw new ImageSequenceError(
+					'NOT_A_SEQUENCE',
+					'The uploaded files are not numbered frames of one sequence',
+				);
 			}
 			group = sequences[0]!;
 		}
@@ -187,15 +209,25 @@ export class ImageSequenceService {
 		const frames = input.frames;
 		if (frames.length === 0) throw new JobError('NOT_A_SEQUENCE', 'No frames', false);
 		const first = frames[0]!;
-		const probe = await probeWithFfprobe(this.deps.ff, first, { signal: ctx.signal, onSpawn: ctx.trackChild }).catch(
-			(e: Error) => {
-				throw new JobError('UNSUPPORTED_MEDIA', `The first frame cannot be read: ${e.message.slice(0, 300)}`, false);
-			},
-		);
+		const probe = await probeWithFfprobe(this.deps.ff, first, {
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+		}).catch((e: Error) => {
+			throw new JobError(
+				'UNSUPPORTED_MEDIA',
+				`The first frame cannot be read: ${e.message.slice(0, 300)}`,
+				false,
+			);
+		});
 		if (probe.kind !== 'image')
-			throw new JobError('UNSUPPORTED_MEDIA', `${basename(first)} is not a still image (${probe.kind})`, false);
+			throw new JobError(
+				'UNSUPPORTED_MEDIA',
+				`${basename(first)} is not a still image (${probe.kind})`,
+				false,
+			);
 		const vs = probe.probe.streams.find((s) => s.type === 'video');
-		if (vs?.type !== 'video') throw new JobError('UNSUPPORTED_MEDIA', 'The first frame has no picture', false);
+		if (vs?.type !== 'video')
+			throw new JobError('UNSUPPORTED_MEDIA', 'The first frame has no picture', false);
 		const record = { kind: 'image', probe: probe.probe };
 		// Content address: the frames (path, size, mtime), the rate and the conform version.
 		const h = createHash('sha256');
@@ -222,7 +254,8 @@ export class ImageSequenceService {
 			for (const f of frames) lines.push(`file ${quote(f)}`, `duration ${step}`);
 			await writeFile(list, `${lines.join('\n')}\n`);
 			const alpha = probe.probe.hasAlpha;
-			const deep = vs.bitDepth > 8 || ['exr', 'hdr'].includes(vs.codec) || /(16|f32|f16|48|64)/.test(vs.pixelFormat);
+			const deep =
+				vs.bitDepth > 8 || ['exr', 'hdr'].includes(vs.codec) || /(16|f32|f16|48|64)/.test(vs.pixelFormat);
 			const gray = /^(gray|ya|monob|monow)/.test(vs.pixelFormat) && !alpha;
 			const yuv = /^yuvj?4/.test(vs.pixelFormat) && !alpha && !deep;
 			// (8-bit RGB is stored as `bgra`, not `bgr0`: Remotion's compositor cannot read `bgr0` FFV1.)
@@ -286,7 +319,7 @@ export class ImageSequenceService {
 					{
 						signal: ctx.signal,
 						onSpawn: ctx.trackChild,
-						onProgress: (pr) => ctx.progress(Math.min(1, (pr.outTimeUs / 1e6) * fps / frames.length)),
+						onProgress: (pr) => ctx.progress(Math.min(1, ((pr.outTimeUs / 1e6) * fps) / frames.length)),
 					},
 				);
 				const count = await this.deps.ff.countVideoFrames(tmp, { signal: ctx.signal });

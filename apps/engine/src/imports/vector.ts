@@ -74,7 +74,8 @@ export function svgText(buf: Buffer, file: string): string {
 export async function probeVector(file: string): Promise<ProbeResult> {
 	const st = await stat(file);
 	const isSvg = /\.svgz?$/i.test(file);
-	if (st.size > (isSvg ? MAX_SVG_BYTES : MAX_PDF_BYTES)) throw new JobError('UNSUPPORTED_MEDIA', 'File too large', false);
+	if (st.size > (isSvg ? MAX_SVG_BYTES : MAX_PDF_BYTES))
+		throw new JobError('UNSUPPORTED_MEDIA', 'File too large', false);
 	const buf = await readFile(file);
 	let vector: VectorInfo;
 	if (isSvg) {

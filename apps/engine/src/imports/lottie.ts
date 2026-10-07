@@ -32,7 +32,8 @@ const MIME: Record<string, string> = {
 	gif: 'image/gif',
 	svg: 'image/svg+xml',
 };
-const mimeOf = (name: string) => MIME[name.toLowerCase().split('.').pop() ?? ''] ?? 'application/octet-stream';
+const mimeOf = (name: string) =>
+	MIME[name.toLowerCase().split('.').pop() ?? ''] ?? 'application/octet-stream';
 
 export const isLottieFileName = (file: string) => /\.(lottie|json)$/i.test(file);
 
@@ -64,15 +65,19 @@ export async function loadLottieFile(file: string): Promise<Loaded> {
 		throw e;
 	}
 	const warnings: string[] = [];
-	await embedImages(doc, async (dir, name) => {
-		// External images next to the document (Bodymovin's `images/` folder): only inside the document's folder.
-		const base = dirname(resolve(file));
-		const p = normalize(join(base, dir, name));
-		if (!p.startsWith(base + sep)) return null;
-		const s = await stat(p).catch(() => null);
-		if (!s?.isFile() || s.size > MAX_IMAGE_BYTES) return null;
-		return readFile(p);
-	}, warnings);
+	await embedImages(
+		doc,
+		async (dir, name) => {
+			// External images next to the document (Bodymovin's `images/` folder): only inside the document's folder.
+			const base = dirname(resolve(file));
+			const p = normalize(join(base, dir, name));
+			if (!p.startsWith(base + sep)) return null;
+			const s = await stat(p).catch(() => null);
+			if (!s?.isFile() || s.size > MAX_IMAGE_BYTES) return null;
+			return readFile(p);
+		},
+		warnings,
+	);
 	return { doc, info: lottieInfo(doc, { warnings }) };
 }
 
@@ -133,7 +138,11 @@ function loadDotLottie(buf: Buffer): Promise<Loaded> {
 			doc,
 			async (dir, name) => {
 				const clean = `${dir}${name}`.replace(/^\/+/, '');
-				return read(clean, MAX_IMAGE_BYTES) ?? read(`images/${name}`, MAX_IMAGE_BYTES) ?? read(`i/${name}`, MAX_IMAGE_BYTES);
+				return (
+					read(clean, MAX_IMAGE_BYTES) ??
+					read(`images/${name}`, MAX_IMAGE_BYTES) ??
+					read(`i/${name}`, MAX_IMAGE_BYTES)
+				);
 			},
 			warnings,
 		);
@@ -227,7 +236,11 @@ export function fpsRational(fps: number): { num: number; den: number } {
  * The normalised JSON of a Lottie media (`<cacheDir>/<fingerprint>/lottie-<v>.json`), written once (atomic rename)
  * and served to every player.
  */
-export async function normalizedLottieFile(src: string, cacheDir: string, fingerprintHex: string): Promise<string> {
+export async function normalizedLottieFile(
+	src: string,
+	cacheDir: string,
+	fingerprintHex: string,
+): Promise<string> {
 	const key = createHash('sha256').update(`${LOTTIE_NORMALIZE_VERSION}`).digest('hex').slice(0, 8);
 	const out = join(cacheDir, fingerprintHex, `lottie-${key}.json`);
 	if ((await stat(out).catch(() => null))?.isFile()) return out;

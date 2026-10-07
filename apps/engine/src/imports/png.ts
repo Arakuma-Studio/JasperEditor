@@ -14,7 +14,12 @@ export type RgbaImage = {
 };
 
 /** Writes `img` as a PNG at `out` (atomic: temp file + rename). */
-export async function writeRgbaPng(ff: Ffmpeg, img: RgbaImage, out: string, opts: SpawnOptions = {}): Promise<void> {
+export async function writeRgbaPng(
+	ff: Ffmpeg,
+	img: RgbaImage,
+	out: string,
+	opts: SpawnOptions = {},
+): Promise<void> {
 	if (img.width < 1 || img.height < 1) throw new Error('Empty image');
 	const tag = randomBytes(4).toString('hex');
 	const raw = `${out}.${tag}.rgba`;

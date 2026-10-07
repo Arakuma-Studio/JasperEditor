@@ -66,7 +66,10 @@ function browserDrawnMedia(snapshot: RenderSnapshot, purpose: 'native' | 'remoti
 	return out;
 }
 
-export function createImportsExtension(deps: { variants: VariantService; registry: MediaRegistry }): NativeExtension {
+export function createImportsExtension(deps: {
+	variants: VariantService;
+	registry: MediaRegistry;
+}): NativeExtension {
 	return {
 		id: 'imports',
 		prepareForRemotion: true,
@@ -80,10 +83,20 @@ export function createImportsExtension(deps: { variants: VariantService; registr
 				const r = local.record;
 				// Photoshop documents (ag-psd composite) and stills ffmpeg does not demux as images (HEIF items in an ISO BMFF
 				// container: no `-loop`): the native composite also uses the display picture.
-				if (asset.kind === 'image' && !asset.vector && (r.layered || !/(^|,)(image2|[a-z0-9]+_pipe|png|webp)(,|$)/.test(r.container))) {
+				if (
+					asset.kind === 'image' &&
+					!asset.vector &&
+					(r.layered || !/(^|,)(image2|[a-z0-9]+_pipe|png|webp)(,|$)/.test(r.container))
+				) {
 					const need = browserPictureNeed(asset);
 					ctx.stage('Preparing pictures');
-					local.display = await deps.variants.ensureAndWait(r, 'display', need.variant, ctx.signal, ctx.jobId);
+					local.display = await deps.variants.ensureAndWait(
+						r,
+						'display',
+						need.variant,
+						ctx.signal,
+						ctx.jobId,
+					);
 				}
 				if (!drawn.has(mediaId)) continue;
 				const need = browserPictureNeed(asset);

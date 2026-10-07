@@ -23,10 +23,7 @@ function flatten(seg: [Pt, Pt, Pt, Pt], out: Pt[]): void {
 		const b = 3 * u * u * t;
 		const c = 3 * u * t * t;
 		const d = t * t * t;
-		out.push([
-			a * p0[0] + b * c0[0] + c * c1[0] + d * p1[0],
-			a * p0[1] + b * c0[1] + c * c1[1] + d * p1[1],
-		]);
+		out.push([a * p0[0] + b * c0[0] + c * c1[0] + d * p1[0], a * p0[1] + b * c0[1] + c * c1[1] + d * p1[1]]);
 	}
 }
 
@@ -97,7 +94,14 @@ function coverage(polys: Pt[][], rule: 'non-zero' | 'even-odd', width: number, h
 }
 
 /** Adds the horizontal coverage of [xa, xb) on one row (fractional ends), weighted by `w`. */
-function spanCoverage(acc: Float32Array, row: number, width: number, xa: number, xb: number, w: number): void {
+function spanCoverage(
+	acc: Float32Array,
+	row: number,
+	width: number,
+	xa: number,
+	xb: number,
+	w: number,
+): void {
 	const a = Math.max(0, xa);
 	const b = Math.min(width, xb);
 	if (b <= a) return;

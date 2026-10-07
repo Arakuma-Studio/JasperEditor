@@ -35,7 +35,10 @@ export function psdProber(ff: Ffmpeg, fallback: (file: string) => Promise<ProbeR
 			try {
 				psd = await readPsdFile(file, { images: false });
 			} catch (e) {
-				if (e instanceof JobError && (e.detail as { unsupportedColorMode?: boolean } | undefined)?.unsupportedColorMode)
+				if (
+					e instanceof JobError &&
+					(e.detail as { unsupportedColorMode?: boolean } | undefined)?.unsupportedColorMode
+				)
 					return fallback(file);
 				throw e;
 			}

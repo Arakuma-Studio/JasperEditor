@@ -57,7 +57,8 @@ export function listZip(buf: Buffer): ZipEntry[] {
 	const out: ZipEntry[] = [];
 	let p = cdOffset;
 	for (let n = 0; n < count; n++) {
-		if (p + 46 > buf.length || buf.readUInt32LE(p) !== CEN_SIG) throw new ZipError('Corrupt central directory');
+		if (p + 46 > buf.length || buf.readUInt32LE(p) !== CEN_SIG)
+			throw new ZipError('Corrupt central directory');
 		const flags = buf.readUInt16LE(p + 8);
 		const method = buf.readUInt16LE(p + 10);
 		const compressedSize = buf.readUInt32LE(p + 20);

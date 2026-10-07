@@ -11,7 +11,13 @@ import type { MediaRegistry } from '../media/registry.ts';
 import type { MediaService } from '../media/service.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { writeRgbaPng } from './png.ts';
-import { type ExtractedLayer, extractPsdLayers, psdCompositeSubset, psdLayeredInfo, readPsdFile } from './psd.ts';
+import {
+	type ExtractedLayer,
+	extractPsdLayers,
+	psdCompositeSubset,
+	psdLayeredInfo,
+	readPsdFile,
+} from './psd.ts';
 
 /** Bump to re-extract cached layers. */
 const EXTRACT_VERSION = 1;
@@ -46,7 +52,11 @@ export class LayeredService {
 			assetId: mediaKey,
 			...(projectId ? { projectId } : {}),
 			dedupeKey: `layers:${fingerprintHex(r.fingerprint)}${merge ? `:${[...merge].sort((a, b) => a - b).join(',')}` : ''}`,
-			input: { mediaKey, ...(projectId ? { projectId } : {}), ...(merge ? { merge } : {}) } satisfies JobInput,
+			input: {
+				mediaKey,
+				...(projectId ? { projectId } : {}),
+				...(merge ? { merge } : {}),
+			} satisfies JobInput,
 		});
 	}
 
