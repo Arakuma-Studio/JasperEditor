@@ -5,7 +5,13 @@
 // ./simulation-warp/ (one file per group); this file is the family's single export.
 // Design and verified behaviour: docs/wp-notes/sim-warp.md. Authoring guide: docs/wp-notes/fx-shader-framework.md.
 import type { EffectSpec } from '../effects.ts';
+import { CARD_EFFECTS, CARD_TRANSITION_EFFECTS } from './simulation-warp/cards.ts';
 import { PARTICLE_EFFECTS } from './simulation-warp/particles.ts';
 import { WEATHER_EFFECTS } from './simulation-warp/weather.ts';
 
-export const SIMULATION_WARP_EFFECTS: readonly EffectSpec[] = [...PARTICLE_EFFECTS, ...WEATHER_EFFECTS];
+export const SIMULATION_WARP_EFFECTS: readonly EffectSpec[] = [
+	...PARTICLE_EFFECTS,
+	...CARD_EFFECTS,
+	...WEATHER_EFFECTS,
+	...CARD_TRANSITION_EFFECTS,
+];

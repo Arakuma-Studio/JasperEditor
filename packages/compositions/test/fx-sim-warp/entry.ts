@@ -1,7 +1,7 @@
 // Browser entry of fx-sim-warp-gl.test.ts: characteristic pixels, determinism and seed stability of every effect of
 // the simulation-warp family through the real GPU host. Each function returns plain data to assert on.
 import { FX_FAMILIES } from '@jasper/project';
-import { centroid, centroidLum, defaults, maxDiff, mean, picture, premulOk, run, solid, spec, sumDiff } from './harness.ts';
+import { centroid, centroidLum, defaults, maxDiff, mean, picture, premulOk, px, run, solid, spec, sumDiff } from './harness.ts';
 
 const W = 96;
 const H = 64;
@@ -94,6 +94,31 @@ const api = {
 			psRight: ps(90)[0],
 			mercuryAlpha: mean(mercury.out)[3],
 			noMercuryAlpha: mean(noMercury.out)[3],
+		};
+	},
+
+	cards() {
+		const cd = fx('jasper.card-dance', {});
+		const cdRot = fx('jasper.card-dance', { yRotationSource: 'intensity1', yRotationMultiplier: 90 });
+		const cdZ = fx('jasper.card-dance', { zPositionOffset: -1 });
+		const cw0 = fx('jasper.card-wipe', { transitionCompletion: 0 });
+		const cw50 = fx('jasper.card-wipe', { transitionCompletion: 50, rows: 1, columns: 8 });
+		const cw100 = fx('jasper.card-wipe', { transitionCompletion: 100 });
+		const pp0 = fx('jasper.pixel-polly', { startTime: 1 }, { frame: 15 });
+		const pp = fx('jasper.pixel-polly', { gridSpacing: 6 }, { frame: 15 });
+		const ppTex = fx('jasper.pixel-polly', { gridSpacing: 6, object: 'texturedSquare' }, { frame: 15 });
+		const at = (c: HTMLCanvasElement, x: number, y: number) => px(c, x, y);
+		return {
+			cdRest: maxDiff(cd.out, cd.input),
+			cdRot: sumDiff(cdRot.out, cdRot.input),
+			cdZ: sumDiff(cdZ.out, cdZ.input),
+			cwRest: maxDiff(cw0.out, cw0.input),
+			cwLeft: at(cw50.out, 4, 32)[3],
+			cwRight: at(cw50.out, 92, 32)[3],
+			cwDone: mean(cw100.out)[3],
+			ppBefore: maxDiff(pp0.out, pp0.input),
+			ppAfter: sumDiff(pp.out, pp.input),
+			ppTex: sumDiff(pp.out, ppTex.out),
 		};
 	},
 

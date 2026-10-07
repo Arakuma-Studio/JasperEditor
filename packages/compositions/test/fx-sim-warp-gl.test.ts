@@ -16,6 +16,9 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'particle-world-cubes', id: 'jasper.particle-world', over: { birthRate: 1, particleType: 'cube', birthSize: 0.4, deathSize: 0.3, showGrid: true, floorAction: 'bounce', floorPosition: 0.3, gravity: 1.5 }, frame: 60, bg: '#000' },
 	{ name: 'particle-systems', id: 'jasper.particle-systems', over: { particleType: 'star' }, frame: 40, bg: '#000' },
 	{ name: 'mercury', id: 'jasper.mercury', over: { birthRate: 3 }, frame: 60 },
+	{ name: 'card-dance', id: 'jasper.card-dance', over: { rows: 12, columns: 16, yRotationSource: 'intensity1', yRotationMultiplier: 120, zPositionSource: 'red1', zPositionMultiplier: -2, cameraYRotation: 20, specularReflection: 0.5 } },
+	{ name: 'card-wipe', id: 'jasper.card-wipe', over: { transitionCompletion: 50, cameraXRotation: 15, cameraYRotation: -20 } },
+	{ name: 'pixel-polly', id: 'jasper.pixel-polly', over: { gridSpacing: 16 }, frame: 20 },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -42,6 +45,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 
 	it('compiles and runs every effect of the family', { timeout: 600_000 }, async () => {
 		const r = await page.call<{ count: number; errors: string[] }>('catalogue');
+		if (r.errors.length) console.error(r.errors.join('\n'));
 		expect(r.errors).toEqual([]);
 		expect(r.count).toBeGreaterThanOrEqual(5);
 	});
@@ -77,11 +81,38 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.noMercuryAlpha).toBe(0);
 	});
 
-	for (const id of ['jasper.particle-world', 'jasper.particle-systems', 'jasper.mercury', 'jasper.rainfall', 'jasper.snowfall', 'jasper.bubbles', 'jasper.drizzle', 'jasper.star-burst'])
-		it(`${id}: deterministic, seeded, animated`, async () => {
-			const r = await page.call<{ same: number; seed: number; moves: number }>('determinism', { id });
+	it('cards: Card Dance, Card Wipe, Pixel Polly', async () => {
+		const r = await page.call<Record<string, any>>('cards');
+		expect(r.cdRest).toBeLessThanOrEqual(3); // flat cards reproduce the layer
+		expect(r.cdRot).toBeGreaterThan(50);
+		expect(r.cdZ).toBeGreaterThan(50); // cards pulled towards the camera grow
+		expect(r.cwRest).toBeLessThanOrEqual(3);
+		expect(r.cwLeft).toBe(0); // left to right: the left cards have turned (no back layer: gone)
+		expect(r.cwRight).toBe(255);
+		expect(r.cwDone).toBe(0);
+		expect(r.ppBefore).toBe(0); // before Start Time: the layer as is
+		expect(r.ppAfter).toBeGreaterThan(50);
+		expect(r.ppTex).toBeGreaterThan(1);
+	});
+
+	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean }[] = [
+		{ id: 'jasper.card-dance', over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 }, seeded: false, animated: false },
+		{ id: 'jasper.card-wipe', over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 } },
+		{ id: 'jasper.pixel-polly' },
+		{ id: 'jasper.particle-world' },
+		{ id: 'jasper.particle-systems' },
+		{ id: 'jasper.mercury' },
+		{ id: 'jasper.rainfall' },
+		{ id: 'jasper.snowfall' },
+		{ id: 'jasper.bubbles' },
+		{ id: 'jasper.drizzle' },
+		{ id: 'jasper.star-burst' },
+	];
+	for (const c of DETERMINISM)
+		it(`${c.id}: deterministic${c.seeded === false ? '' : ', seeded'}${c.animated === false ? '' : ', animated'}`, async () => {
+			const r = await page.call<{ same: number; seed: number; moves: number }>('determinism', c);
 			expect(r.same).toBe(0);
-			expect(r.seed).toBeGreaterThan(1);
-			expect(r.moves).toBeGreaterThan(1);
+			if (c.seeded !== false) expect(r.seed).toBeGreaterThan(1);
+			if (c.animated !== false) expect(r.moves).toBeGreaterThan(1);
 		});
 });
