@@ -131,6 +131,8 @@ type RemotionRenderInput = {
 	/** Direct VP9/Opus WebM (LGPL components); see export-plan.ts. */
 	vp9?: { crf: number; colorSpace: 'bt709' | null; ffmpegOverride?: RemotionFfmpegOverride };
 	audioBitrateKbps?: number;
+	/** audio-mix: render the picture only (exports mux the offline mixer's audio). */
+	muted?: boolean;
 };
 
 type RemotionFfmpegOverride = (info: { type: 'pre-stitcher' | 'stitcher'; args: string[] }) => string[];
@@ -750,11 +752,15 @@ export class RemotionService {
 				composition,
 				inputProps: input.inputProps,
 				...(input.intermediate
-					? { codec: 'prores' as const, proResProfile: 'hq' as const, audioCodec: 'pcm-16' as const }
+					? {
+							codec: 'prores' as const,
+							proResProfile: 'hq' as const,
+							...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
+						}
 					: input.vp9
 						? {
 								codec: 'vp9' as const,
-								audioCodec: 'opus' as const,
+								...(input.muted ? {} : { audioCodec: 'opus' as const }),
 								pixelFormat: 'yuv420p' as const,
 								crf: input.vp9.crf,
 								...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
@@ -763,13 +769,14 @@ export class RemotionService {
 							}
 						: {
 								codec: 'h264' as const,
-								audioCodec: 'aac' as const,
+								...(input.muted ? {} : { audioCodec: 'aac' as const }),
 								pixelFormat: 'yuv420p' as const,
 								crf: input.crf ?? 18,
 								x264Preset: input.x264Preset ?? 'medium',
 							}),
 				...this.binariesOption(),
 				outputLocation: input.output,
+				...(input.muted ? { muted: true } : {}),
 				concurrency,
 				cancelSignal,
 				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,

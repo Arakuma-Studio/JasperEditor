@@ -95,6 +95,9 @@ importers:
       '@jasper/api':
         specifier: workspace:*
         version: link:../../packages/api
+      '@jasper/audio-dsp':
+        specifier: workspace:*
+        version: link:../../packages/audio-dsp
       '@jasper/compositions':
         specifier: workspace:*
         version: link:../../packages/compositions

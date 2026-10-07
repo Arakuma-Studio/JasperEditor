@@ -27,6 +27,8 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
+import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
+import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -35,6 +37,7 @@ import {
 	prepareExtensions,
 } from './native-ext.ts';
 import {
+	audioCodecOf,
 	isAnimeTemplate,
 	mediaKeyOf,
 	type PlanCapabilities,
@@ -348,6 +351,7 @@ export class ExportService {
 		output: string,
 		ctx: JobContext,
 		still = false,
+		audio: MixdownResult | null = null,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
@@ -379,6 +383,9 @@ export class ExportService {
 			threads: ctx.slots,
 			still,
 			extensions: { list: exts, prepared },
+			...(audio?.path
+				? { audio: { file: audio.path, sampleRate: audio.sampleRate, soxr: await hasSoxr(this.deps.ff) } }
+				: {}),
 		});
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {
@@ -459,6 +466,70 @@ export class ExportService {
 		return count;
 	}
 
+	/**
+	 * audio-mix: the deliverable's audio for every path — the offline mixer over the export range (clip levels, pan,
+	 * buses, sends, automation, 5.1) with two-pass loudness normalisation when requested.
+	 */
+	private async renderAudio(planned: PlannedExport, ctx: JobContext): Promise<MixdownResult> {
+		ctx.progress(0, { stage: 'Mixing audio' });
+		const o = planned.output;
+		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
+		return renderMixdown({
+			ff: this.deps.ff,
+			snapshot: planned.snapshot,
+			media: (id) => {
+				const m = planned.media[id];
+				if (!m) return null;
+				return {
+					path: m.path,
+					streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
+				};
+			},
+			range: planned.range,
+			length: Math.round(o.durationSec * sr),
+			outputLayout: layoutOf(o.audioChannels),
+			normalize: o.normalize,
+			scratchDir: await ctx.scratchDir(),
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			onProgress: (_f, stage) => ctx.progress(0, { stage }),
+		});
+	}
+
+	/** Remotion's direct output (VP9/Opus or GPL H.264) with the mixdown as its audio (stream copy of the video). */
+	private async muxAudio(planned: PlannedExport, video: string, audio: MixdownResult, output: string, ctx: JobContext) {
+		const o = planned.output;
+		const codec = audioCodecOf(o.encoder, o);
+		const soxr = await hasSoxr(this.deps.ff);
+		const af =
+			audio.sampleRate !== o.audioSampleRate ? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`] : [];
+		const args = [
+			'-i',
+			video,
+			'-i',
+			audio.path!,
+			'-map',
+			'0:v:0',
+			'-map',
+			'1:a:0',
+			'-c:v',
+			'copy',
+			...af,
+			...audioEncodeArgs(codec, o.audioBitrateKbps, o.audioChannels),
+			'-ar',
+			String(o.audioSampleRate),
+			'-ac',
+			String(o.audioChannels),
+			'-shortest',
+			...(o.encoder?.container !== 'webm' ? ['-movflags', '+faststart'] : []),
+			'-f',
+			o.encoder?.container ?? 'mp4',
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+	}
+
 	/** Encodes Remotion's ProRes/PCM intermediate with the selected encoder (D-13). */
 	private async encodeIntermediate(
 		planned: PlannedExport,
@@ -468,6 +539,7 @@ export class ExportService {
 		ctx: JobContext,
 		from: number,
 		stage: string,
+		audio: MixdownResult | null = null,
 	): Promise<void> {
 		const o = planned.output;
 		const choice = o.encoder!;
@@ -486,16 +558,21 @@ export class ExportService {
 			BT709_FRAME_TAGS,
 			...enc.filters,
 		];
+		const soxr = await hasSoxr(this.deps.ff);
 		const args = [
 			...enc.pre,
 			'-i',
 			input,
+			...(audio?.path ? ['-i', audio.path] : []),
 			'-map',
 			'0:v:0',
 			'-map',
-			'0:a:0?',
+			audio?.path ? '1:a:0' : '0:a:0?',
 			'-vf',
 			vf.join(','),
+			...(audio?.path && audio.sampleRate !== o.audioSampleRate
+				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+				: []),
 			...enc.video,
 			'-colorspace',
 			'bt709',
@@ -507,9 +584,9 @@ export class ExportService {
 			'tv',
 			'-frames:v',
 			String(frames),
-			...audioEncodeArgs(choice.audioEncoder, o.audioBitrateKbps),
+			...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
 			'-ar',
-			'48000',
+			String(o.audioSampleRate),
 			'-ac',
 			String(o.audioChannels),
 			'-threads',
@@ -663,6 +740,7 @@ export class ExportService {
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
+		const audio = await this.renderAudio(planned, ctx);
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -674,7 +752,7 @@ export class ExportService {
 		}
 		if (path === 'native' || path === 'hybrid') {
 			try {
-				frames = await this.runNative(planned, masters, output, ctx);
+				frames = await this.runNative(planned, masters, output, ctx, false, audio);
 			} catch (e) {
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
 				const replanned = await this.fallbackToRemotion(
@@ -709,8 +787,11 @@ export class ExportService {
 			ctx.log(`remotion export: ${rp.mode} (${rp.reason})`);
 			remotionOutput = rp.mode;
 			const render = rp.phases[0]!;
-			const target =
-				rp.mode === 'direct' ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
+			// audio-mix: Remotion renders the picture only; the deliverable's audio is the mixdown.
+			const target = join(
+				await ctx.scratchDir(),
+				rp.mode === 'direct' ? `remotion-video.${encoder?.container ?? 'mp4'}` : 'remotion-intermediate.mov',
+			);
 			const prepared = await this.prepareForRemotion(planned, ctx);
 			ctx.progress(0, { stage: `${render.label} · Preparing bundle` });
 			const res = await this.deps.remotion.renderMedia({
@@ -732,6 +813,7 @@ export class ExportService {
 						}
 					: {}),
 				...(planned.output.width !== seqW ? { scale: planned.output.width / seqW } : {}),
+				muted: true,
 				onProgress: (p) =>
 					ctx.progress(p.progress * render.weight, { stage: `${render.label} · ${p.stage}` }),
 			});
@@ -744,8 +826,9 @@ export class ExportService {
 					ctx,
 					render.weight,
 					rp.phases[1]!.label,
+					audio,
 				);
-			}
+			} else await this.muxAudio(planned, target, audio, output, ctx);
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(
@@ -775,6 +858,12 @@ export class ExportService {
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(warnings.length ? { warnings } : {}),
+			audioLoudness: {
+				integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
+				truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
+				lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
+				...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
+			},
 			planId: planned.plan.planId,
 		};
 		this.commitRefs(ctx, planned, 'export');

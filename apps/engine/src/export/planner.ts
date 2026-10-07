@@ -9,6 +9,7 @@ import {
 	buildRenderSnapshot,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	hasAudioProcessor,
 	isAnimated,
 	loadProject,
 	type MediaAsset,
@@ -72,8 +73,15 @@ export type OutputSpec = {
 	speed: 'fast' | 'balanced' | 'best';
 	/** Video encoder (D-13); null = no usable encoder (the native path is blocked). */
 	encoder: EncoderChoice | null;
-	audioChannels: 1 | 2;
+	/** audio-mix: 1, 2 or 6 (discrete 5.1). */
+	audioChannels: 1 | 2 | 6;
 	audioBitrateKbps: number;
+	/** audio-mix: delivered sample rate (the mix runs at the sequence rate and is resampled with SoX when different). */
+	audioSampleRate: number;
+	/** audio-mix: 24-bit PCM requested (MOV). */
+	audioPcm?: boolean;
+	/** audio-mix: two-pass loudness normalisation of the final mix. */
+	normalize: { targetLufs: number; truePeakDb: number } | null;
 	/** Average video bitrate override (see ExportSettings `video.bitrateKbps`). */
 	bitrateKbps?: number;
 	/** ProRes profile of a `prores` export. */
@@ -257,18 +265,17 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition and no span renderer is available (rendered by the Remotion path)`,
 			});
 		}
-	for (const a of snapshot.audioClips) {
-		const why: string[] = [];
-		// Keyframed clip / track / master volume is native (per-frame gain, keyframed.ts). Pan is not: the composition
-		// does not pan either (S03:KND-012 is P1), so a native pan would make the export differ from the preview.
-		if (isAnimated(a.pan) || isAnimated(a.track.pan))
-			why.push('animated audio pan is not supported by the native path');
-		else if (a.pan.value !== 0 || a.track.pan.value !== 0)
-			why.push('audio pan is not supported by the native path in M1');
-		if (a.effects.some((fx) => fx.enabled)) why.push('audio effects require the Remotion path in M1');
-		if (a.speed.reverse) why.push('reversed audio is not supported by the native path');
-		for (const reason of why) blockers.push({ itemId: a.clipId, path: 'native', reason });
-	}
+	// audio-mix: every path's audio is the offline mixer's (clip levels, pan, buses, sends, automation, 5.1,
+	// normalisation), so audio never blocks a path — except effects the mixer cannot run, which block them all.
+	const unrenderable = unrenderableAudioEffects(snapshot);
+	if (unrenderable.length > 0)
+		throw new PlanError(
+			'AUDIO_EFFECT_UNSUPPORTED',
+			409,
+			`Audio effects without an export processor: ${[...new Set(unrenderable.map((u) => u.effectId))].join(', ')}`,
+			{ effects: unrenderable },
+		);
+	const audioOut = audioOutputOf(seq, settings, deps.selectEncoder ? null : null);
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -349,8 +356,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			video?.encoderSpeed === 'fast' ? 'veryfast' : video?.encoderSpeed === 'best' ? 'slow' : 'medium',
 		speed: video?.encoderSpeed ?? 'balanced',
 		encoder,
-		audioChannels: settings.audio?.channels ?? 2,
-		audioBitrateKbps: settings.audio?.bitrateKbps ?? 192,
+		audioChannels: audioOut.channels,
+		audioBitrateKbps: settings.audio?.bitrateKbps ?? (audioOut.channels === 6 ? 384 : 192),
+		audioSampleRate: audioOut.sampleRate,
+		audioPcm: settings.audio?.codec === 'pcm',
+		normalize: audioOut.normalize,
 		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
 		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
 	};
@@ -467,13 +477,63 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				graphicsGroups,
 			},
 		],
-		audio: { mode: path === 'remotion' ? 'remotion' : 'native-mix' },
+		audio: {
+			mode: 'native-mix',
+			...(audioOut.normalize ? { normalize: audioOut.normalize } : {}),
+			sampleRate: output.audioSampleRate,
+			channels: output.audioChannels,
+			codec: audioCodecOf(encoder, output),
+		},
 		blockers,
 		warnings,
 		estimate: { seconds: Math.round(estimateSeconds * 10) / 10, bytes: Math.max(0, estimateBytes) },
 		...(encoder ? { encoder } : {}),
 	};
 	return { plan, document, sequenceId: input.sequenceId, range, snapshot, media, output };
+}
+
+/** Enabled audio effects (clips, tracks, submixes, the Mix) with no export processor (`registerAudioProcessor`). */
+export function unrenderableAudioEffects(
+	snapshot: RenderSnapshot,
+): { itemId: string; effectId: string; where: 'clip' | 'strip' }[] {
+	const out: { itemId: string; effectId: string; where: 'clip' | 'strip' }[] = [];
+	for (const a of snapshot.audioClips)
+		for (const fx of a.effects)
+			if (fx.enabled && !hasAudioProcessor(fx.effectId)) out.push({ itemId: a.clipId, effectId: fx.effectId, where: 'clip' });
+	for (const s of snapshot.audioMix?.strips ?? [])
+		if (!s.inaudible || s.kind !== 'track')
+			for (const fx of s.inserts)
+				if (!hasAudioProcessor(fx.effectId)) out.push({ itemId: s.id, effectId: fx.effectId, where: 'strip' });
+	return out;
+}
+
+/** Delivered audio format: channels, rate (Opus is 48 kHz only) and the loudness normalisation in effect. */
+export function audioOutputOf(
+	seq: { settings: { audioSampleRate?: number; masterLayout?: string }; master: { loudness?: { enabled: boolean; targetLufs: number; truePeakDb: number } } },
+	settings: Pick<ExportSettings, 'audio'>,
+	_encoder: unknown,
+): { channels: 1 | 2 | 6; sampleRate: number; normalize: { targetLufs: number; truePeakDb: number } | null } {
+	const a = settings.audio;
+	const master = seq.settings.masterLayout === '5.1' ? 6 : seq.settings.masterLayout === 'mono' ? 1 : 2;
+	const channels = (a?.channels ?? (master === 6 ? 6 : 2)) as 1 | 2 | 6;
+	const sampleRate = a?.codec === 'opus' ? 48000 : (a?.sampleRate ?? seq.settings.audioSampleRate ?? 48000);
+	const l = seq.master.loudness;
+	const normalize =
+		a?.normalize === null
+			? null
+			: a?.normalize
+				? { targetLufs: a.normalize.targetLufs, truePeakDb: a.normalize.truePeakDb ?? -1 }
+				: l?.enabled
+					? { targetLufs: l.targetLufs, truePeakDb: l.truePeakDb }
+					: null;
+	return { channels, sampleRate, normalize };
+}
+
+/** The audio codec of the deliverable (ffmpeg encoder name). */
+export function audioCodecOf(encoder: EncoderChoice | null, output: Pick<OutputSpec, 'audioPcm'>): string {
+	const base = encoder?.audioEncoder ?? 'aac';
+	if (base.startsWith('pcm_')) return output.audioPcm ? 'pcm_s24le' : base;
+	return base;
 }
 
 function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {

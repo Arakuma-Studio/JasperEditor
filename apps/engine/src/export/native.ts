@@ -1,53 +1,43 @@
 // Native export builder (S03:ENG-030, S04:RN-021/022, ARCHITECTURE §9.5): one input per clip with input
 // seeking; per layer setpts (speed) → fps → scale to the box → format=rgba → effects (crop…) → Motion: flips →
 // scale → rotate (premultiplied, transparent, grown bounds) → alpha multiply → overlay at the offset derived from
-// the @jasper/project layer matrix; bottom → top over a `color` background; audio
-// atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
-// keyframed Opacity, crop edges and volumes are sampled per frame into per-frame expressions (S03:ENG-032,
+// the @jasper/project layer matrix; bottom → top over a `color` background; audio = the offline mixer's mixdown
+// (audio-mix, `audio/mixdown.ts`) as one more input, resampled with SoX when the delivered rate differs;
+// keyframed Opacity and crop edges are sampled per frame into per-frame expressions (S03:ENG-032,
 // `keyframed.ts`); layers whose geometry is not whole pixels (keyframed Motion, fractional position/scale/rotation/crop)
 // are drawn sub-pixel by our kernel and streamed in on pipes (`stream/`, `NativeGraph.streams`);
 // the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
 // AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
 // `fade=…:alpha=1` on the layer (the same linear ramps `fadeFactor` evaluates for the composition), the black
-// of a dip to black is a colour layer under the track's clips, and audio fades are `afade`.
+// of a dip to black is a colour layer under the track's clips (audio crossfades are part of the mixdown).
 import {
 	clipContentTime,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	FLICKS_PER_SECOND,
-	flicksPerFrame,
 	isAnimated,
 	type Rational,
-	type RenderAudioClip,
-	type RenderAudioFade,
 	type RenderFade,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	type ResolvedLayerProps,
 	resolveLayerProps,
 } from '@jasper/project';
+import { resamplerArgs } from '../audio/decode.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
-import {
-	audioVolumeFilters,
-	CROP_EDGES,
-	cropMaskFilter,
-	mergeResize,
-	motionFilters,
-	motionStage,
-} from './keyframed.ts';
+import { CROP_EDGES, cropMaskFilter, mergeResize, motionFilters, motionStage } from './keyframed.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
 	type NativeExtension,
 	type PreparedExtensions,
 } from './native-ext.ts';
-import type { LocalMedia, OutputSpec } from './planner.ts';
+import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
 
-const SAMPLE_RATE = 48000;
 /**
  * swscale flags for every YUV ↔ RGB conversion of the composite. Without `accurate_rnd` the default
  * converters round down (a full-frame clip came out about one code value darker per generation), and
@@ -78,6 +68,8 @@ type NativeBuildOptions = {
 	still?: boolean;
 	/** M2 native extensions (ARCHITECTURE §19.6) and what their `prepare` returned for this export. */
 	extensions?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
+	/** audio-mix: the mixdown WAV of the export range (absent = silence; stills have no audio). */
+	audio?: { file: string; sampleRate: number; soxr?: boolean };
 };
 
 type NativeGraph = {
@@ -110,23 +102,6 @@ function colorHex([r, g, b, a]: readonly number[]): string {
 
 function rate(r: Rational): string {
 	return `${r.num}/${r.den}`;
-}
-
-/** atempo chain for a constant speed (each instance limited to 0.5…100). */
-function atempoChain(speed: number): string[] {
-	if (Math.abs(speed - 1) < 1e-9) return [];
-	const parts: number[] = [];
-	let s = speed;
-	while (s < 0.5) {
-		parts.push(0.5);
-		s /= 0.5;
-	}
-	while (s > 100) {
-		parts.push(100);
-		s /= 100;
-	}
-	parts.push(s);
-	return parts.map((p) => `atempo=${fmt(p)}`);
 }
 
 /** Matrix of `in_color_matrix` for a probed stream (untagged HD is BT.709 like browsers assume). */
@@ -166,29 +141,6 @@ export function fadeFilters(fades: readonly RenderFade[] | undefined, f0: number
 		...(pad > 0 ? [`tpad=start=${pad}`] : []),
 		...live.map((f) => `fade=t=${f.type}:s=${f.start - f0 + pad}:n=${f.frames}:alpha=1`),
 		...(pad > 0 ? [`trim=start_frame=${pad}`] : []),
-	];
-}
-
-/**
- * Audio fades of a clip chain whose first sample is sequence frame `f0`, as `afade` (sample accurate;
- * `tri` = linear, `qsin` = equal power). A fade that began before `f0` is padded like `fadeFilters`.
- */
-function audioFadeFilters(
-	fades: readonly RenderAudioFade[] | undefined,
-	f0: number,
-	frameSec: number,
-): string[] {
-	const samplesOf = (frames: number) => Math.round(frames * frameSec * SAMPLE_RATE);
-	const live = (fades ?? []).filter((f) => !(f.type === 'in' && f.start + f.frames <= f0));
-	if (live.length === 0) return [];
-	const pad = samplesOf(Math.max(0, ...live.map((f) => f0 - f.start)));
-	return [
-		...(pad > 0 ? [`adelay=delays=${pad}S:all=1`] : []),
-		...live.map(
-			(f) =>
-				`afade=t=${f.type}:ss=${samplesOf(f.start - f0) + pad}:ns=${samplesOf(f.frames)}:curve=${f.curve === 'equal-power' ? 'qsin' : 'tri'}`,
-		),
-		...(pad > 0 ? [`atrim=start_sample=${pad}`, 'asetpts=PTS-STARTPTS'] : []),
 	];
 }
 
@@ -457,7 +409,6 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const frames = R1 - R0;
 	const frameSec = fps.den / fps.num;
 	const T = frames * frameSec;
-	const F = flicksPerFrame(fps);
 
 	const encoder = output.encoder ?? LEGACY_X264_CHOICE;
 	const enc = o.still
@@ -743,55 +694,22 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	}
 	chains.push(`[${last}]${vout.join(',')}[vout]`);
 
-	// Audio (skipped for stills).
+	// Audio (skipped for stills): the offline mixer's mixdown (audio-mix: clip levels, pan, buses, sends, automation,
+	// 5.1, loudness normalisation — `audio/mixdown.ts`), resampled with SoX to the delivered rate when it differs.
 	if (!o.still) {
-		const totalSamples = Math.round(output.durationSec * SAMPLE_RATE);
-		const mixIn: string[] = [];
-		let ai = 0;
-		for (const a of snap.audioClips) {
-			const m = o.sources.media(a.mediaId);
-			if (!m) continue; // offline audio is silent
-			const stream = m.record.probe.streams.find(
-				(s) => s.index === a.channels.streamIndex && s.type === 'audio',
-			)
-				? a.channels.streamIndex
-				: m.record.probe.streams.find((s) => s.type === 'audio')?.index;
-			if (stream === undefined) continue;
-			// A crossfade plays the clip's handles: content from `headHandle` frames before its start to
-			// `tailHandle` frames after its end (S10:TUI-052); its fades cover the span.
-			const f0 = Math.max(a.start - (a.headHandle ?? 0), R0);
-			const f1 = Math.min(a.start + a.duration + (a.tailHandle ?? 0), R1);
-			if (f1 <= f0) continue;
-			const n = f1 - f0;
-			const startSec = Math.max(0, audioContentSec(a, f0, F));
-			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec * a.speed.rate + 0.1), '-i', m.path]);
-			const samples = Math.round(n * frameSec * SAMPLE_RATE);
-			const delay = Math.round((f0 - R0) * frameSec * SAMPLE_RATE);
-			const chain = [
-				'asetpts=PTS-STARTPTS',
-				...atempoChain(a.speed.rate),
-				`aresample=${SAMPLE_RATE}`,
-				`aformat=sample_fmts=fltp:channel_layouts=${output.audioChannels === 1 ? 'mono' : 'stereo'}`,
-				// Clip, track and master volume (keyframed: per-frame gain, keyframed.ts).
-				...audioVolumeFilters(a, snap.master, f0, f1, fps),
-				`atrim=end_sample=${samples}`,
-				'asetpts=PTS-STARTPTS',
-				...audioFadeFilters(a.fades, f0, frameSec),
-				...(delay > 0 ? [`adelay=delays=${delay}S:all=1`] : []),
-			];
-			chains.push(`[${k}:${stream}]${chain.join(',')}[a${ai}]`);
-			mixIn.push(`[a${ai}]`);
-			ai++;
-		}
-		const layout = output.audioChannels === 1 ? 'mono' : 'stereo';
-		if (mixIn.length === 0) {
-			chains.push(`anullsrc=r=${SAMPLE_RATE}:cl=${layout},atrim=end_sample=${totalSamples}[aout]`);
+		const totalSamples = Math.round(output.durationSec * output.audioSampleRate);
+		const layout = output.audioChannels === 1 ? 'mono' : output.audioChannels === 6 ? '5.1' : 'stereo';
+		if (o.audio) {
+			const k = addInput(['-i', o.audio.file]);
+			const rs =
+				o.audio.sampleRate !== output.audioSampleRate
+					? [`aresample=${output.audioSampleRate}:${resamplerArgs(o.audio.soxr ?? false)}`]
+					: [];
+			chains.push(
+				`[${k}:a]${[...rs, `aformat=sample_fmts=fltp:channel_layouts=${layout}`, `apad=whole_len=${totalSamples}`, `atrim=end_sample=${totalSamples}`].join(',')}[aout]`,
+			);
 		} else {
-			const mix =
-				mixIn.length === 1
-					? `${mixIn[0]}anull`
-					: `${mixIn.join('')}amix=inputs=${mixIn.length}:normalize=0:duration=longest:dropout_transition=0`;
-			chains.push(`${mix},apad=whole_len=${totalSamples},atrim=end_sample=${totalSamples}[aout]`);
+			chains.push(`anullsrc=r=${output.audioSampleRate}:cl=${layout},atrim=end_sample=${totalSamples}[aout]`);
 		}
 	}
 
@@ -818,9 +736,9 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			rate(output.fps),
 			'-frames:v',
 			String(output.frames),
-			...audioEncodeArgs(encoder.audioEncoder, output.audioBitrateKbps),
+			...audioEncodeArgs(audioCodecOf(encoder, output), output.audioBitrateKbps, output.audioChannels),
 			'-ar',
-			String(SAMPLE_RATE),
+			String(output.audioSampleRate),
 			'-ac',
 			String(output.audioChannels),
 			'-threads',
@@ -832,10 +750,4 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		);
 	}
 	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec, streams };
-}
-
-/** Content time in seconds of an audio clip at sequence frame `f` (S01:CLP-004; before `start` = head handle). */
-function audioContentSec(a: RenderAudioClip, f: number, F: number): number {
-	const i = f - a.start;
-	return (a.sourceIn + i * F * a.speed.rate) / FLICKS_PER_SECOND;
 }
