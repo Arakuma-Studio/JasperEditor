@@ -25,7 +25,8 @@ import type { WorkingColorSettings } from './cms/transform.ts';
 
 /** Sequence Settings ▸ Colour beyond the working space. Absent fields take the defaults below. */
 export const SequenceColorSchema = z.looseObject({
-	/** Linearize Working Space: blending and GPU effects work in linear light (the composite stays encoded). */
+	/** Linearize Working Space: layers composite in linear light (implies Blend Using 1.0 Gamma); effects and the
+	 * stored composite keep the encoded working signal (docs/wp-notes/color-mgmt.md, limits). */
 	linearize: z.boolean().optional(),
 	/** Blend Using 1.0 Gamma: layers, opacity and blend modes composite in linear light. */
 	blendLinear: z.boolean().optional(),

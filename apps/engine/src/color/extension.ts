@@ -20,7 +20,7 @@
 // lattice, same 6-decimal values), so the export output does not change. Files are pinned for the export
 // (`ctx.pin`) before they are reused or written: the cache GC never removes a LUT an export is about to read.
 import { createHash } from 'node:crypto';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	bakeColorRun,
@@ -33,16 +33,15 @@ import {
 	effectRuns,
 	evaluate,
 	isAnimated,
+	isOcioBundle,
 	type Lut,
+	OcioConfig,
 	type ParamValue,
 	type RenderVisualClip,
-	isOcioBundle,
-	OcioConfig,
 	type ResolvedEffect,
 	serializeCube,
 	workingKey,
 } from '@jasper/project';
-import { readFile } from 'node:fs/promises';
 import { type EffectFilterContext, type NativeExtension, sampleRuns } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
 import { exists } from '../tools/fs.ts';
@@ -97,7 +96,7 @@ export function quoteFilterPath(path: string): string {
 }
 
 /** Referenced `{mediaId}` values of a clip's colour effects (static values and keyframes). */
-function lutRefs(clip: RenderVisualClip): string[] {
+export function lutRefs(clip: RenderVisualClip): string[] {
 	const out = new Set<string>();
 	for (const fx of clip.effects) {
 		if (!fx.enabled) continue;

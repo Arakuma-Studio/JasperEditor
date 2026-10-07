@@ -34,7 +34,8 @@ import {
 	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';
-import { ExportColorError, type ExportColor, exportColorOf } from '../color/output.ts';
+import { lutRefs } from '../color/extension.ts';
+import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
@@ -216,7 +217,8 @@ type PlanDeps = {
 function linearBlendSequences(snap: RenderSnapshot, name = ''): string[] {
 	const out = snap.settings.color?.blendLinear ? [name] : [];
 	for (const t of snap.videoTracks)
-		for (const c of t.clips) if ('nest' in c.source) out.push(...linearBlendSequences(c.source.nest.snapshot, c.name));
+		for (const c of t.clips)
+			if ('nest' in c.source) out.push(...linearBlendSequences(c.source.nest.snapshot, c.name));
 	return out;
 }
 
@@ -408,6 +410,20 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			itemIds: [...offlineUsed],
 		});
 	}
+	// color-mgmt: LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
+	// offline: those steps are skipped (the clips render ungraded / uninterpreted there), so the export says so.
+	const lutOffline = new Set<string>();
+	for (const c of visual)
+		for (const id of lutRefs(c)) {
+			const kind = document.media[id]?.kind;
+			if ((kind === 'lut' || kind === 'color-config') && !media[id]) lutOffline.add(c.clipId);
+		}
+	if (lutOffline.size > 0)
+		warnings.push({
+			code: 'LUT_OFFLINE',
+			message: `${lutOffline.size} clip(s) use an offline LUT or colour config; the colour steps using it are skipped`,
+			itemIds: [...lutOffline],
+		});
 	// Workstream `time`: VFR media are mapped by their real timestamps by the retime stage (native) and the preview
 	// decoder (Remotion); only an engine without the retime stage still conforms them.
 	const vfr = new Set<string>();
@@ -488,7 +504,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		throw new PlanError('VALIDATION_FAILED', 400, 'Alpha output needs ProRes 4444 in a MOV container');
 	// color-mgmt: the written colour space (working by default), bit depth and HDR metadata.
 	try {
-		output.color = exportColorOf(video, snapshot.settings.color, input.still ? null : (encoder?.encoder ?? null));
+		output.color = exportColorOf(
+			video,
+			snapshot.settings.color,
+			input.still ? null : (encoder?.encoder ?? null),
+		);
 	} catch (e) {
 		if (e instanceof ExportColorError) throw new PlanError('VALIDATION_FAILED', 400, e.message);
 		throw e;

@@ -14,6 +14,7 @@ import {
 	outputTransformFn,
 	pqFromNits,
 	type Rgb,
+	serializeCube,
 	write3dl,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -48,7 +49,16 @@ function ff(args: string[]): void {
 }
 
 function probe(file: string) {
-	const r = spawnSync(FFPROBE, ['-v', 'error', '-show_streams', '-select_streams', 'v:0', '-of', 'json', file]);
+	const r = spawnSync(FFPROBE, [
+		'-v',
+		'error',
+		'-show_streams',
+		'-select_streams',
+		'v:0',
+		'-of',
+		'json',
+		file,
+	]);
 	return (JSON.parse(r.stdout.toString()) as { streams: Record<string, unknown>[] }).streams[0]!;
 }
 
@@ -59,7 +69,10 @@ function rgbAt(file: string, matrix: 'bt709' | 'bt2020', frame = 0, x = 0, y = 0
 		FFMPEG,
 		[
 			...['-v', 'error', '-i', file],
-			...['-vf', `select=eq(n\\,${frame}),scale=in_color_matrix=${matrix}:in_range=tv:flags=accurate_rnd+full_chroma_int${crop}`],
+			...[
+				'-vf',
+				`select=eq(n\\,${frame}),scale=in_color_matrix=${matrix}:in_range=tv:flags=accurate_rnd+full_chroma_int${crop}`,
+			],
 			...['-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb48le', '-'],
 		],
 		{ maxBuffer: 1 << 28 },
@@ -79,7 +92,10 @@ const mean = (v: number[], ch: number) => {
 	return s / n;
 };
 
-async function job(url: string, payload: Record<string, unknown>): Promise<{ id: string; result: Record<string, unknown> }> {
+async function job(
+	url: string,
+	payload: Record<string, unknown>,
+): Promise<{ id: string; result: Record<string, unknown> }> {
 	const r = await app.inject({ method: 'POST', url, headers: JSON_H, payload });
 	expect(r.statusCode, r.body).toBe(202);
 	const done = await coreServices(app).queue.wait(r.json().id);
@@ -89,7 +105,13 @@ async function job(url: string, payload: Record<string, unknown>): Promise<{ id:
 
 async function still(d: DocBuilder, frame = 0): Promise<string> {
 	const { id, result } = await job('/api/stills', { envelope: d.envelope(), sequenceId: d.seqId, frame });
-	if (process.env.CM_DEBUG) console.log(JSON.stringify(result), (coreServices(app).queue as unknown as { entries: Map<string, { logLines: string[] }> }).entries?.get(id)?.logLines?.join('\n'));
+	if (process.env.CM_DEBUG)
+		console.log(
+			JSON.stringify(result),
+			(coreServices(app).queue as unknown as { entries: Map<string, { logLines: string[] }> }).entries
+				?.get(id)
+				?.logLines?.join('\n'),
+		);
 	const png = await app.inject({ method: 'GET', url: `/renders/${id}/output`, headers: H });
 	const f = join(mkdtempSync(join(tmp, 's-')), 'still.png');
 	writeFileSync(f, png.rawPayload);
@@ -143,7 +165,9 @@ describe('export colour spaces', () => {
 		expect(s.color_space).toBe('bt2020nc');
 		expect(s.pix_fmt).toBe('yuv420p10le');
 		const sd = (s.side_data_list as { side_data_type: string; max_luminance?: string }[]) ?? [];
-		expect(sd.some((x) => /Mastering display/.test(x.side_data_type) && x.max_luminance === '10000000/10000')).toBe(true);
+		expect(
+			sd.some((x) => /Mastering display/.test(x.side_data_type) && x.max_luminance === '10000000/10000'),
+		).toBe(true);
 		const px = rgbAt(file, 'bt2020', 2, 300, 160, 40, 40);
 		for (const ch of [0, 1, 2]) expect(mean(px, ch)).toBeCloseTo(0.75, 2);
 	}, 240_000);
@@ -193,7 +217,11 @@ describe('export colour spaces', () => {
 			method: 'POST',
 			url: '/api/exports/plan',
 			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: exportSettings(d.seqId, { codec: 'h264', bitDepth: 10 }) },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: exportSettings(d.seqId, { codec: 'h264', bitDepth: 10 }),
+			},
 		});
 		expect(r.statusCode).toBe(400);
 		expect(r.body).toMatch(/8-bit/);
@@ -216,14 +244,35 @@ describe('interpreted sources and probe metadata', () => {
 		// A flat HLG grey (signal v) tagged BT.2100 HLG, ProRes 10-bit, with mastering metadata written by our box writer.
 		ff([
 			...['-f', 'lavfi', '-i', `color=c=0x808080:s=320x180:d=1:r=30`],
-			...['-vf', `format=rgb48le,geq=r='${v}*65535':g='${v}*65535':b='${v}*65535',scale=out_color_matrix=bt2020:out_range=tv,format=yuv422p10le,setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc:range=tv`],
-			...['-c:v', 'prores_ks', '-profile:v', '3', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc'],
+			...[
+				'-vf',
+				`format=rgb48le,geq=r='${v}*65535':g='${v}*65535':b='${v}*65535',scale=out_color_matrix=bt2020:out_range=tv,format=yuv422p10le,setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc:range=tv`,
+			],
+			...[
+				'-c:v',
+				'prores_ks',
+				'-profile:v',
+				'3',
+				'-color_primaries',
+				'bt2020',
+				'-color_trc',
+				'arib-std-b67',
+				'-colorspace',
+				'bt2020nc',
+			],
 			src,
 		]);
 		const { writeHdrBoxes } = await import('../src/color/hdr-boxes.ts');
 		await writeHdrBoxes(
 			src,
-			{ r: [0.708, 0.292], g: [0.17, 0.797], b: [0.131, 0.046], white: [0.3127, 0.329], maxNits: 1000, minNits: 0.005 },
+			{
+				r: [0.708, 0.292],
+				g: [0.17, 0.797],
+				b: [0.131, 0.046],
+				white: [0.3127, 0.329],
+				maxNits: 1000,
+				minNits: 0.005,
+			},
 			{ maxCll: 600, maxFall: 100 },
 		);
 		const m = await register(app, src);
@@ -238,6 +287,34 @@ describe('interpreted sources and probe metadata', () => {
 		const px = rgbAt(f, 'bt709', 0, 900, 500, 20, 20);
 		expect(mean(px, 1)).toBeCloseTo(want[1]!, 1);
 	}, 180_000);
+
+	it('an offline input LUT is announced by the plan (LUT_OFFLINE), never skipped silently', async () => {
+		const lut = bakeLut(5, () => {});
+		const file = join(tmp, 'input.cube');
+		writeFileSync(file, serializeCube(lut));
+		const m = await register(app, file);
+		const chart = await register(app, fixture('chart.png'));
+		const d = new DocBuilder();
+		const offline = d.addMedia({
+			...m,
+			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
+		});
+		const c = d.addMedia(chart);
+		const r = d.tx([{ type: 'clip.place', source: { mediaId: c }, at: 0, tracks: { video: 'V1' } }]);
+		const clipId = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
+		d.tx([{ type: 'clip.setColorInterpretation', clipIds: [clipId], color: { inputLut: offline } }]);
+		const plan = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: exportSettings(d.seqId, { codec: 'h264' }) },
+		});
+		expect(plan.statusCode, plan.body).toBe(200);
+		const w = (plan.json().warnings as { code: string; itemIds?: string[] }[]).find(
+			(x) => x.code === 'LUT_OFFLINE',
+		);
+		expect(w?.itemIds).toEqual([clipId]);
+	});
 
 	it('a .3dl look LUT imports and grades like its .cube twin', async () => {
 		const lut = bakeLut(17, (c) => {
@@ -256,7 +333,14 @@ describe('interpreted sources and probe metadata', () => {
 		const c = d.addMedia(chart);
 		const r = d.tx([{ type: 'clip.place', source: { mediaId: c }, at: 0, tracks: { video: 'V1' } }]);
 		const clipId = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
-		d.tx([{ type: 'effect.add', target: { clipId }, effectId: 'jasper.lumetri', params: { look: { mediaId: look } } }]);
+		d.tx([
+			{
+				type: 'effect.add',
+				target: { clipId },
+				effectId: 'jasper.lumetri',
+				params: { look: { mediaId: look } },
+			},
+		]);
 		const f = await still(d);
 		const px = rgbAt(f, 'bt709', 0, 0, 0, 0, 0);
 		const src = rgbAt(fixture('chart.png'), 'bt709', 0, 0, 0, 0, 0);
