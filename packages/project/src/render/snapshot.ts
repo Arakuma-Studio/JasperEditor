@@ -50,12 +50,12 @@ import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition
 import {
 	type AudioClipTransitionRender,
 	audioFadeGain,
+	isLayer3D,
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
 	type RenderTransition,
 	resolveAudioTransitions,
-	isLayer3D,
 	resolveVideoTransitions,
 } from '../transitions.ts';
 import { clipPictureTime } from './scene.ts';

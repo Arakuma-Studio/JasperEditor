@@ -5,6 +5,7 @@ import { contentTimeAt } from '../derive/index.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
+import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
 import {
 	applyMat3,
 	boxToQuad,
@@ -238,14 +239,27 @@ function clipCovering(clips: readonly RenderVisualClip[], frame: number): Render
 	return undefined;
 }
 
-/** Visible layers at a sequence frame, bottom (V1) → top (S01:RND-005). */
-export function resolveSceneAt(snapshot: RenderSnapshot, frame: number): ResolvedLayer[] {
+/**
+ * Visible layers at a sequence frame, bottom (V1) → top (S01:RND-005). three-d: a 3D layer's props carry its
+ * projective map through the active camera (or `opts.camera`, a Program monitor 3D view), so overlays, picking and
+ * masks follow it on screen.
+ */
+export function resolveSceneAt(
+	snapshot: RenderSnapshot,
+	frame: number,
+	opts: { camera?: CameraState } = {},
+): ResolvedLayer[] {
 	const out: ResolvedLayer[] = [];
+	let cam: CameraState | null = opts.camera ?? null;
 	snapshot.videoTracks.forEach((track, trackIndex) => {
 		const c = clipCovering(track.clips, frame);
 		if (!c) return;
 		const t = clipContentTime(c, frame, snapshot.settings.fps);
-		const props = resolveCachedLayerProps(c, t);
+		let props = resolveCachedLayerProps(c, t);
+		if (c.threeD && c.kind !== 'adjustment') {
+			cam ??= activeCameraAt(snapshot, frame);
+			props = project3dProps(c, props, t, cam, snapshot.settings);
+		}
 		out.push({ clip: c, trackIndex, localFrame: frame - c.start, contentTime: t, props });
 	});
 	return out;

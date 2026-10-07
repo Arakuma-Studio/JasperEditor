@@ -157,6 +157,8 @@ export type Scene3DValue = {
 	runsAt(frame: number): Run3D[];
 	/** Render clips by id. */
 	clips: ReadonlyMap<string, RenderVisualClip>;
+	/** The camera 3D layers are seen through at a frame (the active camera, or the preview's 3D view). */
+	cameraAt(frame: number): CameraState;
 };
 
 export const Scene3DContext = createContext<Scene3DValue | null>(null);
@@ -166,6 +168,7 @@ export function makeScene3D(
 	mode: Scene3DMode,
 	hubs: Map<number, Scene3DHub>,
 	layerFilter?: readonly string[],
+	view?: CameraState | null,
 ): Scene3DValue {
 	const cache = new Map<number, Run3D[]>();
 	const clips = new Map<string, RenderVisualClip>();
@@ -175,6 +178,7 @@ export function makeScene3D(
 		doc,
 		clips,
 		hubOf: (i) => hubs.get(i),
+		cameraAt: (frame) => view ?? activeCameraAt(doc, frame),
 		runsAt: (frame) => {
 			const hit = cache.get(frame);
 			if (hit) return hit;
@@ -228,8 +232,9 @@ export function fallbackProjective(
 	props: ResolvedLayerProps,
 	frame: number,
 	doc: Pick<RenderSnapshot, 'settings' | 'scene3d'>,
+	camera?: CameraState,
 ): Mat3 | null {
-	const cam = activeCameraAt(doc, frame);
+	const cam = camera ?? activeCameraAt(doc, frame);
 	const t = clipContentTime(clip, frame, doc.settings.fps);
 	const world = layerWorldMatrix(clip, t, { cameraEye: cam.eye });
 	const h = planeHomography(cam, doc.settings.width, doc.settings.height, world);
@@ -352,7 +357,7 @@ export function Scene3DScope({
 	const effects = useMemo(() => {
 		if (!run || (rendering && !complete)) return [];
 		const { doc } = scene;
-		const camera = activeCameraAt(doc, frame);
+		const camera = scene.cameraAt(frame);
 		const draft = isPreview && !!doc.scene3d?.draft;
 		const members = run.members
 			.map((id) => scene.clips.get(id))

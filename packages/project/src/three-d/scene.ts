@@ -1,9 +1,10 @@
 // three-d: evaluation of a sequence's 3D scene at a frame — the active camera, the lights, every 3D layer's world
 // matrix and material, and the 3D runs of the layer stack. Pure (preview, export, overlays, agents and the GL /
 // CPU renderers all use it). Ported from EffectCraft `render/three_d/{camera,light}.rs` (MIT OR Apache-2.0).
+
+import { contentTimeAt } from '../derive/index.ts';
 import { bezierProgress, evaluate, incomingEase, isHoldOnlyValue, outgoingEase } from '../keyframes.ts';
 import type { Mat3 } from '../render/homography.ts';
-import { clipContentTime } from '../render/scene.ts';
 import type {
 	RenderCameraClip,
 	RenderLightClip,
@@ -217,8 +218,9 @@ export function rigFrameAt(
 	};
 }
 
+/** Content time of a camera / light at a sequence frame (Hold Filters of a frame hold freeze it). */
 const rigTime = (c: RenderCameraClip | RenderLightClip, frame: number, fps: Rational) =>
-	clipContentTime(c, frame, fps);
+	c.frameHold?.holdFilters ? c.frameHold.flicks : contentTimeAt(c, frame, fps);
 
 /** An evaluated camera clip at a sequence frame. */
 export function cameraStateOf(
@@ -628,4 +630,88 @@ export function runBottomTracks(
 	const out = new Set<number>();
 	for (const f of frames) for (const r of runs3d(stackAt(tracks, f, opts))) out.add(r.bottomTrack);
 	return out;
+}
+
+/**
+ * A 3D layer's resolved props seen through `cam`: the projective layer map (`projective`: layer px → frame px, the
+ * corner pin first), its quad and bounds — what overlays, picking and masks use. An edge-on or behind-the-camera
+ * layer gets a degenerate quad at its anchor's projection (nothing to pick).
+ */
+export function project3dProps<
+	P extends {
+		matrix: { a: number; b: number; c: number; d: number; e: number; f: number };
+		projective: Mat3 | null;
+		quad: [Vec2, Vec2, Vec2, Vec2];
+		bounds: { x: number; y: number; width: number; height: number };
+		box: { width: number; height: number };
+		crop: { left: number; top: number; right: number; bottom: number } | null;
+	},
+>(
+	clip: Pick<RenderVisualClip, 'transform' | 'threeD'>,
+	props: P,
+	t: number,
+	cam: CameraState,
+	frame: { width: number; height: number },
+): P {
+	const world = layerWorldMatrix(clip, t, { cameraEye: cam.eye });
+	const h = planeHomography(cam, frame.width, frame.height, world);
+	const m = props.matrix;
+	// The corner pin acts in layer space: pin = M2D⁻¹ · projective (projective = M2D · pin).
+	let map = h;
+	if (h && props.projective) {
+		const det = m.a * m.d - m.b * m.c;
+		if (Math.abs(det) > 1e-12) {
+			const inv: Mat3 = [
+				m.d / det,
+				-m.c / det,
+				(m.c * m.f - m.d * m.e) / det,
+				-m.b / det,
+				m.a / det,
+				(m.b * m.e - m.a * m.f) / det,
+				0,
+				0,
+				1,
+			];
+			const mul = (a: Mat3, b: Mat3): Mat3 => {
+				const o = new Array(9).fill(0) as Mat3;
+				for (let r = 0; r < 3; r++)
+					for (let c = 0; c < 3; c++)
+						o[3 * r + c] = a[3 * r]! * b[c]! + a[3 * r + 1]! * b[3 + c]! + a[3 * r + 2]! * b[6 + c]!;
+				return o;
+			};
+			map = mul(h, mul(inv, props.projective));
+		}
+	}
+	const crop = props.crop;
+	const W = props.box.width;
+	const H = props.box.height;
+	const x0 = ((crop?.left ?? 0) / 100) * W;
+	const y0 = ((crop?.top ?? 0) / 100) * H;
+	const x1 = W - ((crop?.right ?? 0) / 100) * W;
+	const y1 = H - ((crop?.bottom ?? 0) / 100) * H;
+	const ap = (p: Vec2): Vec2 | null => {
+		if (!map) return null;
+		const w = map[6] * p[0] + map[7] * p[1] + map[8];
+		if (!(w > 1e-9)) return null;
+		return [(map[0] * p[0] + map[1] * p[1] + map[2]) / w, (map[3] * p[0] + map[4] * p[1] + map[5]) / w];
+	};
+	const corners = [ap([x0, y0]), ap([x1, y0]), ap([x1, y1]), ap([x0, y1])];
+	if (!map || corners.some((c) => !c)) {
+		const anchor = projectPoint(cam, frame.width, frame.height, mat4Apply(world, [W / 2, H / 2, 0])) ?? [
+			-1e6, -1e6,
+		];
+		const quad: [Vec2, Vec2, Vec2, Vec2] = [anchor, anchor, anchor, anchor];
+		return { ...props, projective: map, quad, bounds: { x: anchor[0], y: anchor[1], width: 0, height: 0 } };
+	}
+	const quad = corners as [Vec2, Vec2, Vec2, Vec2];
+	const xs = quad.map((q) => q[0]);
+	const ys = quad.map((q) => q[1]);
+	const bx = Math.min(...xs);
+	const by = Math.min(...ys);
+	return {
+		...props,
+		projective: map,
+		quad,
+		bounds: { x: bx, y: by, width: Math.max(...xs) - bx, height: Math.max(...ys) - by },
+	};
 }

@@ -33,6 +33,7 @@ import {
 	isAnimated,
 	isCssBlend,
 	isStencilBlend,
+	lookAtCamera,
 	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
@@ -82,7 +83,7 @@ import {
 } from './fx/transition.tsx';
 import { AdjustmentScope } from './layers/AdjustmentScope.tsx';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
-import { NestTracksContext } from './layers/nest-context.ts';
+import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
@@ -267,7 +268,9 @@ const ClipLayer = memo(function ClipLayer({
 		(entry && !gpuSide ? transitionFallbackFactor(entry.t, entry.side, frame) : 1);
 	// three-d: without the GPU scope (Player fallback) a 3D layer is drawn through its 3D homography (no depth sort).
 	const fallback3d = !!clip.threeD && !!scene3d && scene3d.mode.mode === 'fallback';
-	const projective3d = fallback3d ? fallbackProjective(clip, resolved, frame, scene3d!.doc) : null;
+	const projective3d = fallback3d
+		? fallbackProjective(clip, resolved, frame, scene3d!.doc, scene3d!.cameraAt(frame))
+		: null;
 	const props = useMemo(() => {
 		const base = fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade };
 		if (!fallback3d) return base;
@@ -558,6 +561,7 @@ export function VideoTracks({
 	}, [tracks, options.layerFilter, gpu, htmlInCanvas]);
 	// three-d: a 3D scope (and its hub) per track that holds a 3D clip; the runs of every frame.
 	const scene3dHubs = useRef(new Map<string, Scene3DHub>());
+	const nested = useContext(NestCompSizeContext) !== null;
 	const scene3d = useMemo(() => {
 		const hubs = new Map<number, Scene3DHub>();
 		if (!doc.videoTracks.some((t) => t.clips.some((c) => c.threeD))) return null;
@@ -576,8 +580,16 @@ export function VideoTracks({
 			}
 			hubs.set(i, hub);
 		});
-		return makeScene3D(doc, scene3dRunMode({ gpu, htmlInCanvas }), hubs, options.layerFilter);
-	}, [doc, gpu, htmlInCanvas, options.layerFilter]);
+		// The Program monitor's 3D view (preview only, the top-level sequence only).
+		const v = options.isPreview && !nested ? options.view3d : undefined;
+		return makeScene3D(
+			doc,
+			scene3dRunMode({ gpu, htmlInCanvas }),
+			hubs,
+			options.layerFilter,
+			v ? lookAtCamera(v.eye, v.poi, v.zoom, v.ortho, v.down) : null,
+		);
+	}, [doc, gpu, htmlInCanvas, options.layerFilter, options.view3d, options.isPreview, nested]);
 	const gpu3d = scene3d?.mode.mode === 'gpu';
 	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
 	let stack: ReactNode =
