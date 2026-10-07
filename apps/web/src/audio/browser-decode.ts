@@ -6,9 +6,11 @@ import { resample } from '@jasper/audio-dsp';
 import {
 	type ClipReader,
 	FLICKS_PER_SECOND,
+	filePieces,
 	flicksPerFrame,
 	frameToSample,
 	type MediaHandle,
+	type MediaTimeMap,
 	type Rational,
 	type RenderAudioClip,
 } from '@jasper/project';
@@ -77,6 +79,35 @@ async function decodeRange(
 }
 
 /**
+ * Decoded planar samples of interpreted media time [c0, c1) (flicks) at the track's rate: the file pieces
+ * (`filePieces`) decoded one by one, each resampled from `scale` × the rate so that it spans its interpreted length.
+ */
+async function decodeMapped(
+	track: InputAudioTrack,
+	map: MediaTimeMap | undefined,
+	c0: number,
+	c1: number,
+): Promise<{ rate: number; data: Float32Array[] }> {
+	if (!map) return decodeRange(track, c0 / FLICKS_PER_SECOND, c1 / FLICKS_PER_SECOND);
+	const rate = track.sampleRate;
+	const nch = track.numberOfChannels;
+	const total = Math.max(0, Math.ceil(((c1 - c0) / FLICKS_PER_SECOND) * rate));
+	const data = Array.from({ length: nch }, () => new Float32Array(total));
+	for (const piece of filePieces(map, c0, c1)) {
+		const part = await decodeRange(track, piece.fileFrom / FLICKS_PER_SECOND, piece.fileTo / FLICKS_PER_SECOND);
+		const scaled = Math.abs(map.scale - 1) > 1e-9 ? resample(part.data, rate * map.scale, rate, 'fast') : part.data;
+		const at = Math.round(((piece.from - c0) / FLICKS_PER_SECOND) * rate);
+		for (let c = 0; c < nch; c++) {
+			const src = scaled[c] ?? scaled[0];
+			if (!src) continue;
+			const n = Math.min(src.length, total - at);
+			if (n > 0) data[c]!.set(src.subarray(0, n), at);
+		}
+	}
+	return { rate, data };
+}
+
+/**
  * An `OpenClip` for the offline mixer reading media from the browser. `media(mediaId)` returns the clip's media
  * handle (the Program doc's URL).
  */
@@ -105,7 +136,9 @@ export function browserOpenClip(media: (mediaId: string) => MediaHandle | null, 
 			: clip.sourceIn + u1 * F * rate;
 		const t0 = c0 / FLICKS_PER_SECOND;
 		const t1 = c1 / FLICKS_PER_SECOND;
-		const dec = await decodeRange(track, Math.max(0, t0), Math.max(0, t1));
+		// imports (Interpret Footage): the file pieces of the interpreted range (assumed frame rate, loop), each
+		// decoded and laid end to end in interpreted time (the sound follows the scale, pitch with it).
+		const dec = await decodeMapped(track, clip.mediaTime, Math.max(0, c0), Math.max(0, c1));
 		const lead = t0 < 0 ? Math.round((-t0 / rate) * sr) : 0;
 		const map = clip.channels.map.length ? clip.channels.map : dec.data.map((_, i) => i);
 		const chosen = map.map((i) => dec.data[i] ?? dec.data[0] ?? new Float32Array(0));

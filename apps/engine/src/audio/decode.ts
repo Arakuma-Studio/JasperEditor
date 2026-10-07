@@ -4,7 +4,7 @@
 // decoded forwards and reversed) and resamples with SoX (VHQ) when the build has it, else swr with a long filter.
 import type { ChildProcess } from 'node:child_process';
 import type { AudioStream, ClipReader, Rational, RenderAudioClip } from '@jasper/project';
-import { FLICKS_PER_SECOND, flicksPerFrame, frameToSample } from '@jasper/project';
+import { FLICKS_PER_SECOND, fileTimeOf, flicksPerFrame, frameToSample } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 
@@ -80,8 +80,14 @@ export function clipDecodeArgs(o: {
 	}
 	// Content before the start of the media (a head handle reaching past 0) is silence: delay it in.
 	const lead = c0 < 0 ? -c0 : 0;
-	const startSec = Math.max(0, c0) / FLICKS_PER_SECOND;
-	const durSec = Math.max(0, c1 - Math.max(0, c0)) / FLICKS_PER_SECOND;
+	// imports (Interpret Footage): content time is interpreted media time; the file is read at
+	// `fileTimeOf(mediaTime, t)` — an assumed frame rate scales it (the sound plays `scale` times faster, pitch
+	// following like the picture) and a loop wraps it (`-stream_loop`: the file restarts at its end).
+	const map = clip.mediaTime;
+	const scale = map?.scale ?? 1;
+	const startSec = fileTimeOf(map, Math.max(0, c0)) / FLICKS_PER_SECOND;
+	const durSec = (Math.max(0, c1 - Math.max(0, c0)) * scale) / FLICKS_PER_SECOND;
+	const loops = !!map?.period && Math.max(0, c0) + (c1 - Math.max(0, c0)) > map.period;
 	const channels = clipChannels(clip, o.stream);
 	const map = clip.channels.map;
 	const chain: string[] = [];
@@ -91,10 +97,12 @@ export function clipDecodeArgs(o: {
 		chain.push(`pan=${layout}|${picks.join('|')}`);
 	} else if (!PAN_LAYOUT[o.stream.channels]) chain.push('aformat=channel_layouts=stereo');
 	if (clip.speed.reverse) chain.push('areverse');
+	// The interpretation's scale is a rate change (pitch follows); the clip's own speed honours Maintain Pitch.
+	if (Math.abs(scale - 1) > 1e-9) chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale)}`);
 	if (Math.abs(rate - 1) > 1e-9) {
 		if (clip.speed.maintainPitch) chain.push(...atempoChain(rate));
 		// Rate change: the pitch follows the speed (as the Web Audio preview plays it).
-		else chain.push(`asetrate=${Math.round(o.stream.sampleRate * rate)}`);
+		else chain.push(`asetrate=${Math.round(o.stream.sampleRate * scale * rate)}`);
 	}
 	chain.push(`aresample=${sampleRate}:${resamplerArgs(o.soxr)}`);
 	if (lead > 0) {
@@ -103,6 +111,7 @@ export function clipDecodeArgs(o: {
 	}
 	chain.push(`apad=whole_len=${o.length}`, `atrim=end_sample=${o.length}`);
 	const args = [
+		...(loops ? ['-stream_loop', '-1'] : []),
 		'-ss',
 		sec(startSec),
 		'-t',
