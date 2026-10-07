@@ -108,8 +108,9 @@ describe('time commands', () => {
 		expect((h.seq().clips[v] as VideoClip).timeInterpolation).toBe('optical-flow');
 		await h.run('timeline.removeTimeRemapping');
 		expect((h.seq().clips[v] as VideoClip).timeRemap).toBeUndefined();
-		// One History entry per command.
-		expect(h.session.history.entries.at(-1)?.label).toBe('Remove Time Remapping');
+		// One History entry per command: undo brings the remap back.
+		expect(h.session.undo().label).toBe('Remove Time Remapping');
+		expect(activeRemap(h.seq().clips[v] as TimedClip)).not.toBeNull();
 	});
 
 	it('Scene Edit Detection opens its dialog for the selected video clips with their media ranges', async () => {
