@@ -20,6 +20,7 @@ export * from './color/lumetri-spatial.ts';
 export * from './color/lut.ts';
 export * from './color/retime.ts';
 export * from './color/runs.ts';
+export * from './color/scopes.ts';
 export * from './commands/index.ts';
 export * from './composition/index.ts';
 export * from './derive/index.ts';
