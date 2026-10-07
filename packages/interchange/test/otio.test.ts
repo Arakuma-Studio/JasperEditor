@@ -208,7 +208,7 @@ describe('OTIO', () => {
 		for (let i = 0; i < 200; i++)
 			deep +=
 				'{"OTIO_SCHEMA":"Stack.1","source_range":null,"children":[{"OTIO_SCHEMA":"Track.1","children":[';
-		deep += ']}]}'.repeat(200) + ']}]}}';
+		deep += `${']}]}'.repeat(200)}]}]}}`;
 		expectOnlyInterchangeErrors((b) => importOtio(new TextDecoder().decode(b), {}, new Report()), enc(deep), {
 			runs: 20,
 			truncations: 8,
