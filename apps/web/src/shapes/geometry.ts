@@ -14,7 +14,9 @@ import {
 	shapeContainsPoint,
 	type Vec2,
 	evaluateVectorShape,
+	vectorShapeBounds,
 	vectorShapeContainsPoint,
+	visibleRect,
 } from '@jasper/project';
 import type { HandleId } from '../panels/program/transform-math.ts';
 
@@ -137,4 +139,46 @@ export function resizeShapeBySize(i: SizeResizeInput): { size: Vec2; position?: 
 	const o = applyMatrix(M, [0, 0]);
 	const s = applyMatrix(M, shift);
 	return { size, position: [i.values.position[0] + s[0] - o[0], i.values.position[1] + s[1] - o[1]] };
+}
+
+// ---------------------------------------------------------------- vector shapes (wp shapes)
+
+const rectCache = new WeakMap<object, Map<number, { x: number; y: number; width: number; height: number } | null>>();
+
+/**
+ * The rectangle (layer px) the Program monitor frames for a layer: a vector shape's painted contents at its
+ * frame (its layer is frame-sized, so the box would frame the whole picture); other layers their visible box.
+ */
+export function layerEditRect(l: ResolvedLayer): { x: number; y: number; width: number; height: number } {
+	const src = l.clip.source;
+	if ('shape' in src && src.shape.type === 'vector') {
+		const contents = src.shape.contents;
+		let m = rectCache.get(contents);
+		if (!m) rectCache.set(contents, (m = new Map()));
+		let r = m.get(l.contentTime);
+		if (r === undefined) {
+			const b = vectorShapeBounds(evaluateVectorShape(contents, l.contentTime));
+			const W = l.props.box.width / 2;
+			const H = l.props.box.height / 2;
+			r = b ? { x: b.x0 + W, y: b.y0 + H, width: b.x1 - b.x0, height: b.y1 - b.y0 } : null;
+			if (m.size > 64) m.clear();
+			m.set(l.contentTime, r);
+		}
+		if (r && r.width > 0 && r.height > 0) return r;
+	}
+	return visibleRect(l.props.box, l.props.crop ?? undefined);
+}
+
+/** The sequence-px quad of `layerEditRect` (TL, TR, BR, BL); the layer's quad for other layers. */
+export function layerEditQuad(l: ResolvedLayer): [Vec2, Vec2, Vec2, Vec2] {
+	const src = l.clip.source;
+	if (!('shape' in src) || src.shape.type !== 'vector' || l.props.projective) return l.props.quad as [Vec2, Vec2, Vec2, Vec2];
+	const r = layerEditRect(l);
+	const m = l.props.matrix;
+	return [
+		applyMatrix(m, [r.x, r.y]),
+		applyMatrix(m, [r.x + r.width, r.y]),
+		applyMatrix(m, [r.x + r.width, r.y + r.height]),
+		applyMatrix(m, [r.x, r.y + r.height]),
+	] as [Vec2, Vec2, Vec2, Vec2];
 }
