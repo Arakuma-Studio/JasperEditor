@@ -282,7 +282,7 @@ export function holdValueAt(a: Animatable<number>, t: number): number {
 export function clampLane(lane: string, v: number): number {
 	const i = laneInfo(lane);
 	if (!i) return v;
-	const c = Math.min(i.max, Math.max(i.min, v));
+	const c = Math.min(i.max, Math.max(i.min, v)) + 0; // + 0: no −0 in documents
 	return i.hold ? (c >= 0.5 ? 1 : 0) : c;
 }
 
