@@ -3,15 +3,18 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+	addColorToKey,
 	bakeColorRun,
 	type ColorOpContext,
 	CREATIVE_LOOKS,
+	DEFAULT_SECONDARY_KEY,
 	defaultEffectRegistry,
 	defaultParams,
 	expandLumetriSpatial,
 	hslToRgb,
 	hueCurveEyedropper,
 	isNeutralHueCurve,
+	keyFromColor,
 	LUMETRI_EFFECT,
 	LUMETRI_EFFECT_ID,
 	LUMETRI_GROUPS,
@@ -26,7 +29,9 @@ import {
 	lumetriUsesSpatial,
 	offsetCurveFn,
 	type Rgb,
+	removeColorFromKey,
 	rgbToHsl,
+	type SecondaryKey,
 	secondaryKey,
 	vignetteWeight,
 	wheelOfRgb,
@@ -518,5 +523,35 @@ describe('render snapshot expansion', () => {
 			} as never,
 		};
 		expect(lumetriUsesSpatial(fx)).toBe(true);
+	});
+});
+
+describe('HSL Secondary eyedroppers', () => {
+	const s0 = (p: Record<string, unknown>) => lumetriSpatialSettings({ secSaturation: 0, ...p } as never);
+	const key = (k: SecondaryKey, rgb: [number, number, number]) => secondaryKey(s0(k as never), ...rgb);
+	const orange: [number, number, number] = [0.9, 0.5, 0.1];
+	const red: [number, number, number] = [0.85, 0.1, 0.1];
+	const blue: [number, number, number] = [0.1, 0.2, 0.9];
+	it('Set Color keys the picked colour, not others; greys key on lightness only', () => {
+		const k = keyFromColor(orange);
+		expect(key(k, orange)).toBe(1);
+		expect(key(k, blue)).toBe(0);
+		const g = keyFromColor([0.5, 0.5, 0.5]);
+		expect(g.secHueOn).toBe(false);
+		expect(key(g, [0.52, 0.5, 0.5])).toBe(1);
+		expect(key(g, [0.95, 0.95, 0.95])).toBe(0);
+	});
+	it('Add Color extends the key to the new colour and keeps the old one', () => {
+		const k = addColorToKey(keyFromColor(orange), red);
+		expect(key(k, orange)).toBe(1);
+		expect(key(k, red)).toBe(1);
+		expect(key(k, blue)).toBe(0);
+	});
+	it('Remove Color drops the picked colour and keeps the rest of the key', () => {
+		const wide = addColorToKey(keyFromColor(orange), red);
+		const k = removeColorFromKey(wide, red);
+		expect(key(k, red)).toBe(0);
+		expect(key(k, orange)).toBeGreaterThan(0.99);
+		expect(removeColorFromKey(DEFAULT_SECONDARY_KEY, blue)).not.toEqual(DEFAULT_SECONDARY_KEY);
 	});
 });

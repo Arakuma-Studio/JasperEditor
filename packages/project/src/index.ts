@@ -24,6 +24,7 @@ export * from './color/match.ts';
 export * from './color/retime.ts';
 export * from './color/runs.ts';
 export * from './color/scopes.ts';
+export * from './color/secondary-key.ts';
 export * from './commands/index.ts';
 export * from './composition/index.ts';
 export * from './derive/index.ts';
