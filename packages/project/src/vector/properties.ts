@@ -317,3 +317,54 @@ export function shapeItemSpecs(clip: Pick<Clip, 'kind'>, itemId: string): ShapeI
 export function shapeItemSpecsOf(it: ShapeItem): ShapeItemPropertySpec[] {
 	return specsOfItem(it, []);
 }
+
+/** Spec kinds that take expressions (gradients and paths are structured values and do not). */
+const EXPRESSION_SPEC_KINDS = new Set(['number', 'vec2', 'color']);
+
+/**
+ * Every expression-capable item property of a vector shape's contents: the Animatable, its property key and the
+ * storage path relative to the contents array (expressions: enumeration and binding).
+ */
+export function shapeItemAnimatables(
+	contents: readonly ShapeItem[],
+): { key: string; path: (string | number)[]; anim: { value: unknown; keyframes: unknown[]; expression?: unknown } }[] {
+	const out: { key: string; path: (string | number)[]; anim: { value: unknown; keyframes: unknown[] } }[] = [];
+	const walk = (items: readonly ShapeItem[], at: (string | number)[]) => {
+		items.forEach((it, i) => {
+			for (const s of specsOfItem(it, [])) {
+				if (s.animatable === 'no' || !EXPRESSION_SPEC_KINDS.has(s.kind)) continue;
+				let v: unknown = it;
+				for (const k of s.storagePath) v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
+				if (v && typeof v === 'object' && Array.isArray((v as { keyframes?: unknown }).keyframes))
+					out.push({ key: s.key, path: [...at, i, ...s.storagePath], anim: v as never });
+			}
+			if (it.type === 'group') walk(it.contents, [...at, i, 'contents']);
+		});
+	};
+	walk(contents, []);
+	return out;
+}
+
+/**
+ * Copy-on-write map over the expression-capable animatables of a contents tree: `f` returns the same object to keep
+ * it; the tree is copied along changed paths only.
+ */
+export function mapShapeItemAnimatables(
+	contents: readonly ShapeItem[],
+	f: (anim: object, key: string) => object,
+): readonly ShapeItem[] {
+	let root: unknown = contents;
+	for (const { key, path, anim } of shapeItemAnimatables(contents)) {
+		const next = f(anim, key);
+		if (next === anim) continue;
+		const set = (node: unknown, i: number): unknown => {
+			const k = path[i]!;
+			const copy = Array.isArray(node) ? [...node] : { ...(node as object) };
+			(copy as Record<string | number, unknown>)[k] =
+				i === path.length - 1 ? next : set((node as Record<string | number, unknown>)[k], i + 1);
+			return copy;
+		};
+		root = set(root, 0);
+	}
+	return root as readonly ShapeItem[];
+}

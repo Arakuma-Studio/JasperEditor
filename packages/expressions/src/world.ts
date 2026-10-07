@@ -29,6 +29,10 @@ import {
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	getPropertySpec,
+	resolvePropertySpec,
+	type ShapeItem,
+	findItem,
+	shapeItemSpecs,
 	hasActiveExpression,
 	invertMat3,
 	isAnimated,
@@ -374,6 +378,12 @@ export class World {
 			if (!spec) return Object.keys(fx.params).map((n) => leaf(`${group}.${n}`, n, n));
 			return spec.params.map((p) => leaf(`${group}.${p.name}`, p.label, p.name));
 		}
+		// wp shapes: a vector shape's contents (AE: content("Group 1").content("Rectangle Path 1").size,
+		// content("Group 1").transform.position).
+		if (info.kind === 'clip' && (group === 'shape' || group.startsWith('shape.items.'))) {
+			const sh = (info.clip as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+			if (sh?.type === 'vector') return vectorShapeChildren(info.clip, sh.contents ?? [], group, leaf);
+		}
 		if (group === 'shape' && info.kind === 'clip') {
 			const shape = (info.clip as { shape?: { stroke?: unknown } }).shape;
 			const out = [
@@ -574,15 +584,19 @@ export class World {
 				propertyIndex: indexIn('params'),
 			};
 		}
-		const spec = getPropertySpec(ref.path);
+		// wp shapes: dynamic `shape.items.<id>.<field>` keys resolve against the clip.
+		const spec = ref.path.startsWith('shape.items.')
+			? resolvePropertySpec(ref.path, undefined, undefined, info.clip as never)
+			: getPropertySpec(ref.path);
 		if (!spec || spec.animatable === 'no' || !spec.appliesTo(info.clip)) return null;
 		let anim: unknown = clip;
 		for (const k of spec.storagePath) anim = (anim as Record<string, unknown> | null | undefined)?.[k];
 		if (!anim || typeof anim !== 'object' || !Array.isArray((anim as Animatable<unknown>).keyframes))
 			return null;
 		const a = anim as Animatable<unknown>;
-		const group =
-			ref.path.startsWith('transform.') || ref.path === 'opacity'
+		const group = ref.path.startsWith('shape.items.')
+			? vectorLeafGroup(info.clip, ref.path)
+			: ref.path.startsWith('transform.') || ref.path === 'opacity'
 				? 'transform'
 				: ref.path.startsWith('shape.')
 					? 'shape'
@@ -994,3 +1008,84 @@ function clampOut(v: unknown, o: EvaluateOptions): unknown {
 }
 
 export { evaluate, isAnimated };
+
+// ---------------------------------------------------------------- wp shapes: vector shape contents
+
+type LeafFn = (path: string, name: string, ...aliases: string[]) => Node;
+
+/** Lower-camel alias of a display name ("Rectangle Path 1" → "rectanglePath1"). */
+const camel = (s: string) =>
+	s
+		.replace(/[^A-Za-z0-9]+(.)?/g, (_, c: string | undefined) => (c ? c.toUpperCase() : ''))
+		.replace(/^./, (c) => c.toLowerCase());
+
+/** After Effects match names of shape items (`ADBE Vector …`), for `matchName` and as lookup aliases. */
+const MATCH: Record<string, string> = {
+	group: 'ADBE Vector Group',
+	rect: 'ADBE Vector Shape - Rect',
+	ellipse: 'ADBE Vector Shape - Ellipse',
+	polystar: 'ADBE Vector Shape - Star',
+	path: 'ADBE Vector Shape - Group',
+	fill: 'ADBE Vector Graphic - Fill',
+	stroke: 'ADBE Vector Graphic - Stroke',
+	gradientFill: 'ADBE Vector Graphic - G-Fill',
+	gradientStroke: 'ADBE Vector Graphic - G-Stroke',
+	trim: 'ADBE Vector Filter - Trim',
+	repeater: 'ADBE Vector Filter - Repeater',
+	offsetPaths: 'ADBE Vector Filter - Offset',
+	roundCorners: 'ADBE Vector Filter - RC',
+	zigZag: 'ADBE Vector Filter - Zigzag',
+	twist: 'ADBE Vector Filter - Twist',
+	wiggle: 'ADBE Vector Filter - Roughen',
+	puckerBloat: 'ADBE Vector Filter - PB',
+	mergePaths: 'ADBE Vector Filter - Merge',
+};
+
+/** Sub-groups of an item's fields (the first path segment of nested fields). */
+const SUBGROUP_NAMES: Record<string, string> = { transform: 'Transform', dashes: 'Dashes', taper: 'Taper', wave: 'Wave' };
+
+function vectorShapeChildren(clip: unknown, contents: ShapeItem[], group: string, leaf: LeafFn): Node[] {
+	const itemNode = (it: ShapeItem): Node => ({
+		path: `shape.items.${it.id}`,
+		group: true,
+		name: it.name,
+		matchName: MATCH[it.type] ?? it.type,
+		aliases: [it.id, camel(it.name)],
+		enabled: it.enabled !== false,
+	});
+	if (group === 'shape') return contents.map(itemNode);
+	const rest = group.slice('shape.items.'.length).split('.');
+	const id = rest[0]!;
+	const found = findItem(contents, id);
+	if (!found) return [];
+	const it = found.item;
+	const sub = rest.slice(1);
+	if (sub[0] === 'contents' && it.type === 'group') return it.contents.map(itemNode);
+	const prefix = `shape.items.${id}.`;
+	const specs = shapeItemSpecs(clip as never, id).filter((s) => s.animatable !== 'no' && s.kind !== 'json');
+	const out: Node[] = [];
+	const seen = new Set<string>();
+	for (const s of specs) {
+		const field = s.key.slice(prefix.length).split('.');
+		const within = field.slice(0, sub.length).join('.') === sub.join('.');
+		if (!within) continue;
+		const restField = field.slice(sub.length);
+		if (restField.length === 1) {
+			const name = restField[0]!;
+			out.push(leaf(s.key, s.label, name, camel(s.label), ...(name === 'anchor' ? ['anchorPoint'] : [])));
+		} else if (restField.length > 1 && !seen.has(restField[0]!)) {
+			seen.add(restField[0]!);
+			const k = restField[0]!;
+			const label = SUBGROUP_NAMES[k] ?? (/^\d+$/.test(k) ? `Dash ${Number(k) + 1}` : k);
+			out.push({ path: `${group}.${k}`, group: true, name: label, matchName: k, aliases: [k, camel(label)] });
+		}
+	}
+	if (sub.length === 0 && it.type === 'group')
+		out.unshift({ path: `${group}.contents`, group: true, name: 'Contents', matchName: 'ADBE Vectors Group', aliases: ['content', 'contents'] });
+	return out;
+}
+
+/** The group path a vector item leaf belongs to (its key without the last segment). */
+function vectorLeafGroup(_clip: unknown, path: string): string {
+	return path.slice(0, path.lastIndexOf('.'));
+}
