@@ -128,6 +128,16 @@ function DecodedRetimed(
 	const buffer = useBufferState();
 	const onPicture = useRef(props.onPicture);
 	onPicture.current = props.onPicture;
+	// Renders: the decoder and compositor are created in effects, after the first paint. Hold the frame from the
+	// first render until its picture is drawn, or a tab's first frame of this layer is captured empty.
+	const [mountHold] = useState(() => (rendering ? delayRender(`Retimed layer ${src}`) : null));
+	const mountReleased = useRef(false);
+	const releaseMount = useRef(() => {
+		if (mountReleased.current || mountHold === null) return;
+		mountReleased.current = true;
+		continueRender(mountHold);
+	});
+	useEffect(() => releaseMount.current, []);
 	useEffect(() => {
 		const s = acquireFrameSource(src, size.decode.w, size.decode.h, media.alpha === true);
 		setSource(s);
@@ -167,9 +177,15 @@ function DecodedRetimed(
 		};
 		void framesFor(source, t, mode)
 			.then((p) => {
-				if (id !== seq.current || !p) return;
+				if (id !== seq.current) return;
+				if (!p) {
+					// Past the media: nothing to draw.
+					releaseMount.current();
+					return;
+				}
 				const out = compose(comp, p, mode, size);
 				onPicture.current(out, size.decode.w, size.decode.h);
+				releaseMount.current();
 			})
 			.catch((e: unknown) => {
 				if (rendering) throw e;

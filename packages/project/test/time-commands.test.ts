@@ -1,7 +1,6 @@
 // Time Remapping / Time Interpolation / frame hold / Scene Edit Detection commands (workstream `time`).
 import { describe, expect, it } from 'vitest';
 import {
-	type Clip,
 	checkInvariants,
 	clipMediaTimeAt,
 	clipSpeedAt,
@@ -297,9 +296,9 @@ describe('interplay with trackers and media versions', () => {
 		const h = new Harness();
 		const { v } = place(h, 0);
 		h.ok([{ type: 'timeRemap.enable', clipIds: [v], enabled: true }]);
-		expect(h.tx([{ type: 'tracker.add', clipId: v, kind: 'point', at: { frames: 0 }, point: [100, 100] }]).ok).toBe(
-			false,
-		);
+		expect(
+			h.tx([{ type: 'tracker.add', clipId: v, kind: 'point', at: { frames: 0 }, point: [100, 100] }]).ok,
+		).toBe(false);
 		const h2 = new Harness();
 		const p = place(h2, 0);
 		h2.ok([{ type: 'tracker.add', clipId: p.v, kind: 'point', at: { frames: 0 }, point: [100, 100] }]);

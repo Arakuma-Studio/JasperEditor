@@ -18,12 +18,22 @@ function code(c: HTMLCanvasElement | OffscreenCanvas, w: number, h: number, scal
 
 const api = {
 	async codes(arg?: string) {
-		const { src, w, h, scale, times } = JSON.parse(arg!) as { src: string; w: number; h: number; scale: number; times: number[] };
+		const { src, w, h, scale, times } = JSON.parse(arg!) as {
+			src: string;
+			w: number;
+			h: number;
+			scale: number;
+			times: number[];
+		};
 		const s = new FrameSource(src, w, h, false);
 		const out: { t: number; code: number; time: number }[] = [];
 		for (const t of times) {
 			const f = await s.frameAt(t);
-			out.push({ t, code: f ? code(f.canvas, w, h, scale) : -1, time: f ? Math.round(f.time * 1e4) / 1e4 : -1 });
+			out.push({
+				t,
+				code: f ? code(f.canvas, w, h, scale) : -1,
+				time: f ? Math.round(f.time * 1e4) / 1e4 : -1,
+			});
 		}
 		const next = await s.nextAfter((await s.frameAt(times[0]!))!);
 		s.dispose();

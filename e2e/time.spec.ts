@@ -31,7 +31,8 @@ let page: Page;
 let coded = '';
 
 test.beforeAll(async ({ browser }) => {
-	page = await browser.newPage();
+	// Tall enough for the whole clip context menu.
+	page = await browser.newPage({ viewport: { width: 1600, height: 1400 } });
 	await enableAgentBridge(page);
 });
 
@@ -138,9 +139,9 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 		button: 'right',
 		position: { x: box.width / 2, y: box.height / 2 },
 	});
-	await page.getByRole('menuitem', { name: 'Show Clip Keyframes' }).hover();
-	await page.getByRole('menuitem', { name: 'Time Remapping' }).hover();
-	await page.getByRole('menuitem', { name: 'Speed' }).click();
+	await page.getByRole('menu').getByText('Show Clip Keyframes', { exact: true }).hover();
+	await page.getByRole('menu').getByText('Time Remapping', { exact: true }).hover();
+	await page.getByRole('menuitem', { name: /Speed$/ }).click();
 	const line = page.locator(`[data-speed-band="${coded}"] [data-speed-band-line]`);
 	await expect(line).toBeAttached();
 	const lb = (await line.boundingBox())!;
@@ -168,11 +169,8 @@ test('Time Interpolation menu and the Effect Controls Time Remapping section', a
 		['Frame Sampling', 'frame-sampling'],
 	] as const) {
 		await clipElement(page, coded).click({ button: 'right', position: { x: 40, y: box.height / 2 } });
-		await page.getByRole('menuitem', { name: 'Time Interpolation' }).hover();
-		await page
-			.getByRole('menuitemcheckbox', { name: label })
-			.or(page.getByRole('menuitem', { name: label }))
-			.click();
+		await page.getByRole('menu').getByText('Time Interpolation', { exact: true }).hover();
+		await page.getByRole('menuitem', { name: new RegExp(`${label}$`) }).click();
 		await expect.poll(async () => (await clipDoc(coded)).timeInterpolation ?? 'frame-sampling').toBe(mode);
 	}
 	await page.mouse.click(box.x + 40, box.y + box.height / 2);

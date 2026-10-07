@@ -34,7 +34,7 @@ async function api<T>(method: string, path: string, body?: unknown, tries = 5): 
 	let r: Response;
 	try {
 		r = await fetch(`${ENGINE}${path}`, {
-		method,
+			method,
 			headers: { 'content-type': 'application/json', host: '127.0.0.1:47900' },
 			...(body ? { body: JSON.stringify(body) } : {}),
 		});
@@ -77,8 +77,9 @@ function tx(commands: unknown[]) {
 }
 function addMedia(m: Registered): string {
 	const { mediaKey: _k, browserPlayable: _b, ...asset } = m;
-	return (tx([{ type: 'media.register', asset: { ...asset, derivation: null } }]).results[0] as { mediaId: string })
-		.mediaId;
+	return (
+		tx([{ type: 'media.register', asset: { ...asset, derivation: null } }]).results[0] as { mediaId: string }
+	).mediaId;
 }
 const place = (mediaId: string, at: number, inF: number, outF: number, track = 'V1') =>
 	(
@@ -97,9 +98,14 @@ const place = (mediaId: string, at: number, inF: number, outF: number, track = '
 		]).results[0] as { clipIds: string[] }
 	).clipIds[0]!;
 
-async function waitJob(id: string): Promise<{ state: string; result?: unknown; error?: { message: string } }> {
+async function waitJob(
+	id: string,
+): Promise<{ state: string; result?: unknown; error?: { message: string } }> {
 	for (;;) {
-		const j = await api<{ state: string; result?: unknown; error?: { message: string } }>('GET', `/api/jobs/${id}`);
+		const j = await api<{ state: string; result?: unknown; error?: { message: string } }>(
+			'GET',
+			`/api/jobs/${id}`,
+		);
 		if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state)) return j;
 		await new Promise((r) => setTimeout(r, 1000));
 	}
@@ -132,7 +138,9 @@ async function exportWith(engine: 'native' | 'remotion', name: string): Promise<
 	const file = join(OUT, `${name}.mov`);
 	const r = await fetch(`${ENGINE}/renders/${job.id}/output`, { headers: { host: '127.0.0.1:47900' } });
 	writeFileSync(file, Buffer.from(await r.arrayBuffer()));
-	console.log(`${engine}: ${((Date.now() - t0) / 1000).toFixed(1)} s → ${file} (${(done.result as { renderPath?: string })?.renderPath})`);
+	console.log(
+		`${engine}: ${((Date.now() - t0) / 1000).toFixed(1)} s → ${file} (${(done.result as { renderPath?: string })?.renderPath})`,
+	);
 	return file;
 }
 
@@ -173,22 +181,24 @@ async function main() {
 	const remClip = seq.clips[rem] as Clip;
 	const vfrAt = remClip.start + remClip.duration;
 	const vfrId = place(vfr, vfrAt, 0, 50);
-	const total = (doc.sequences[seqId]!.clips[vfrId] as Clip).start + (doc.sequences[seqId]!.clips[vfrId] as Clip).duration;
-	console.log(`sequence: ${total} frames; reversed 0–29, remapped ${remClip.start}–${vfrAt - 1}, VFR ${vfrAt}–${total - 1}`);
-	const vfrTimes = (
-		await (async () => {
-			const r = spawnSync('ffprobe', [
-				...['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time', '-of', 'csv=p=0'],
-				join(ROOT, 'fixtures/media/vfr-code.mp4'),
-			]);
-			return r.stdout
-				.toString()
-				.trim()
-				.split('\n')
-				.map(Number)
-				.sort((a, b) => a - b);
-		})()
+	const total =
+		(doc.sequences[seqId]!.clips[vfrId] as Clip).start +
+		(doc.sequences[seqId]!.clips[vfrId] as Clip).duration;
+	console.log(
+		`sequence: ${total} frames; reversed 0–29, remapped ${remClip.start}–${vfrAt - 1}, VFR ${vfrAt}–${total - 1}`,
 	);
+	const vfrTimes = await (async () => {
+		const r = spawnSync('ffprobe', [
+			...['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time', '-of', 'csv=p=0'],
+			join(ROOT, 'fixtures/media/vfr-code.mp4'),
+		]);
+		return r.stdout
+			.toString()
+			.trim()
+			.split('\n')
+			.map(Number)
+			.sort((a, b) => a - b);
+	})();
 	const expect = (f: number): { code: number; geom: { sx: number; x0: number; y: number } } => {
 		const s = doc.sequences[seqId]!;
 		const c = Object.values(s.clips).find((x) => x.start <= f && f < x.start + x.duration)! as Clip;
@@ -211,7 +221,9 @@ async function main() {
 			if (got !== e.code) wrong.push(f);
 		}
 		results[engine] = { checked: total, wrong };
-		console.log(`${engine}: ${total - wrong.length}/${total} frames show the model's source frame${wrong.length ? `; wrong at ${wrong.join(',')}` : ''}`);
+		console.log(
+			`${engine}: ${total - wrong.length}/${total} frames show the model's source frame${wrong.length ? `; wrong at ${wrong.join(',')}` : ''}`,
+		);
 	}
 	writeFileSync(join(OUT, 'result.json'), JSON.stringify(results, null, 2));
 }

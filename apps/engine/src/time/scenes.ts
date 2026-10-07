@@ -4,7 +4,6 @@
 // times of the frames that start a new shot (`detectSceneCuts`). Frame times come from the media's real timestamps
 // (variable-frame-rate footage too).
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
 import type { EngineJob, SceneDetectRequest, SceneDetectResult } from '@jasper/api';
 import {
 	detectSceneCuts,

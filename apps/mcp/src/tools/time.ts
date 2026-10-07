@@ -418,7 +418,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 				}
 				const asset = doc.media[(clip as { mediaId: string }).mediaId];
 				const key = asset?.locators.find((l) => l.type === 'engine-store');
-				if (!key || key.type !== 'engine-store')
+				if (key?.type !== 'engine-store')
 					throw new ToolError(
 						'E_NOT_FOUND',
 						`Clip ${clipId} has no engine media`,
