@@ -54,6 +54,14 @@ export const MEDIA_EXTENSIONS = [
 	'stl',
 	'ttml',
 	'dfxp',
+	// wp interchange: timeline documents (FCP7 XML as .xml)
+	'xml',
+	'fcpxml',
+	'otio',
+	'edl',
+	'aaf',
+	'omf',
+	'ale',
 ] as const;
 
 /** `revealInFolder` accepts only absolute paths without NUL bytes. */

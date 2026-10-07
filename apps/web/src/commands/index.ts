@@ -16,6 +16,7 @@ import { exportCommands } from './export.ts';
 import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
+import { interchangeCommands } from './interchange.ts';
 import { layerCommands } from './layer.ts';
 import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
@@ -67,6 +68,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	captionCommands,
 	speechCommands,
 	multicamCommands,
+	interchangeCommands,
 ];
 
 let registered = false;

@@ -16,6 +16,9 @@ import {
 	type TransactionResult,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { showImportReports } from '../interchange/dialogs.tsx';
+import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';
+import { importTimelineFiles } from '../interchange/import.ts';
 import {
 	type DragPayload,
 	type ImportProgress,
@@ -157,6 +160,31 @@ export class EngineImportService implements ImportService {
 		const failed: ImportFailure[] = [];
 		const acquired: Acquired[] = [];
 		const projectId = this.session.projectId;
+		// wp interchange: timeline documents (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) are read by the engine and
+		// added as sequences and media items in one transaction; the report names what was not carried.
+		{
+			const all = input.files ?? [];
+			const docs: File[] = [];
+			const rest: File[] = [];
+			for (const f of all) (isTimelineFileName(f.name) || (await isTimelineXmlFile(f)) ? docs : rest).push(f);
+			const docPaths = (input.paths ?? []).filter((p) => isTimelineFileName(p) || /\.xml$/i.test(p));
+			if ((docs.length || docPaths.length) && !this.session.getState().readOnly) {
+				const binId = target.kind === 'bin' ? (target.binId ?? null) : null;
+				const r = await importTimelineFiles(
+					this.session,
+					this.engine,
+					{ files: docs, paths: docPaths },
+					binId,
+				);
+				failed.push(...r.failed);
+				if (r.reports.length) showImportReports(this.session, this.engine, r.reports);
+				input = { ...input, files: rest, paths: (input.paths ?? []).filter((p) => !docPaths.includes(p)) };
+				if (!rest.length && !input.paths?.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: r.reports.length });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+			}
+		}
 		// wp captions: caption files go onto caption tracks of the open sequence, not into the media pipeline.
 		{
 			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)

@@ -93,8 +93,6 @@ export const InterchangeAudioOptionsSchema = z.object({
 	bitDepth: z.union([z.literal(16), z.literal(24)]).default(24),
 	/** Separate files: WAV or AIFF. */
 	fileFormat: z.enum(['wav', 'aiff']).default('wav'),
-	/** Render clip volume into the samples (one file per clip) instead of writing it as gain. */
-	renderClipLevels: z.boolean().default(false),
 });
 export type InterchangeAudioOptions = z.infer<typeof InterchangeAudioOptionsSchema>;
 
@@ -128,7 +126,7 @@ export const InterchangeExportOptionsSchema = z.object({
 	aafSmallSectors: z.boolean().optional(),
 	ale: z.object({ scope: z.enum(['sequence', 'project']) }).optional(),
 });
-export type InterchangeExportOptions = z.infer<typeof InterchangeExportOptionsSchema>;
+export type InterchangeExportOptions = z.input<typeof InterchangeExportOptionsSchema>;
 
 export const InterchangeExportRequestSchema = z.object({
 	envelope: EnvelopeSchema,

@@ -3,6 +3,7 @@
 // WP-2E, mg WP-2G). There is no Agent menu: external agents connect over MCP (Help ▸ Connect an AI
 // Agent…). Unregistered ids render disabled with a reason (SH-031); the label here is only the fallback
 // shown until the owner registers the command (MN-001).
+import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
 import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
 import type { ShellMenuItem } from './resolve.ts';
 
@@ -62,11 +63,17 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
 			// wp captions
 			c('captions.import', 'Import Captions…'),
+			// wp interchange (S04:AS-011)
+			c('project.linkMedia', 'Link Media…'),
 			sub('Export', [
 				c('export.media', 'Media…'),
 				c('export.queue', 'Add to Render Queue'),
 				c('export.frame', 'Frame…'),
 				c('export.quick', 'Quick Export'),
+				// wp interchange: timeline documents (Premiere's File ▸ Export entries, plus FCPXML, OTIO and ALE)
+				sep,
+				...TIMELINE_FORMATS.map((f) => c('file.exportTimeline', f.label, { format: f.id })),
+				sep,
 				// wp captions: the active caption track as a file
 				sub('Captions', [
 					c('captions.export', 'SubRip (.srt)', { format: 'srt' }),

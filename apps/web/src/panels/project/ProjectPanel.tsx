@@ -1117,6 +1117,14 @@ function ContextMenu(props: {
 						: 'Color Picker…'}
 				</MenuEntry>
 			) : null}
+			{/* wp interchange (S04:AS-011): relink offline media. */}
+			<MenuEntry
+				disabled={props.readOnly || !props.itemIds.some((id) => isOfflineItem(props.session, id))}
+				onClick={() => props.onCommand('project.linkMedia')}
+				testId="project-menu-link-media"
+			>
+				Link Media…
+			</MenuEntry>
 			<MenuEntry disabled={props.readOnly} onClick={() => props.onCommand('edit.removeUnused')}>
 				Remove Unused
 			</MenuEntry>
@@ -1132,6 +1140,17 @@ function ContextMenu(props: {
 				onClose={props.onClose}
 			/>
 		</Menu>
+	);
+}
+
+/** wp interchange: a media item whose file is offline (an imported placeholder or a missing file). */
+function isOfflineItem(session: EditorSession, id: string): boolean {
+	const st = session.getState();
+	const item = st.document.items[id];
+	if (item?.kind !== 'media') return false;
+	const m = st.document.media[item.mediaId];
+	return (
+		!!m && (m.fingerprint.startsWith('pending:interchange:') || st.media[m.id]?.availability === 'offline')
 	);
 }
 

@@ -59,6 +59,13 @@ const IMPORT_ACCEPT = [
 	'.ttml',
 	'.dfxp',
 	'.xml',
+	// wp interchange: timeline documents.
+	'.fcpxml',
+	'.otio',
+	'.edl',
+	'.aaf',
+	'.omf',
+	'.ale',
 ].join(',');
 
 /** Opens the browser file picker (web) and resolves with the chosen files (empty when cancelled). */
