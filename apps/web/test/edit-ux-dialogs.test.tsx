@@ -96,7 +96,7 @@ describe('Fit Clip', () => {
 		await runCommand('timeline.overwriteFromSource', h.ctx());
 		expect(h.dialogs.map((d) => d.kind)).toEqual(['editux.fitClip']);
 		const props = h.dialogs[0]!.props as { apply(f: string): { ok: boolean } };
-		render(<FitClipDialog {...(props as never)} close={() => {}} />);
+		render(<FitClipDialog {...(props as unknown as Parameters<typeof FitClipDialog>[0])} close={() => {}} />);
 		fireEvent.click(screen.getByText('Always use this choice'));
 		fireEvent.click(screen.getByText('OK'));
 		const v = h.clipsOn('V1')[0]!;
@@ -131,7 +131,7 @@ describe('subclips and Mark Split', () => {
 			itemId: h.itemId,
 			range: { in: 2 * FLICKS_PER_SECOND, out: 4 * FLICKS_PER_SECOND },
 		});
-		render(<SubclipDialog {...(d.props as never)} close={() => {}} />);
+		render(<SubclipDialog {...(d.props as unknown as Parameters<typeof SubclipDialog>[0])} close={() => {}} />);
 		fireEvent.change(screen.getByTestId('subclip-name'), { target: { value: 'Take A' } });
 		fireEvent.click(screen.getByText('Restrict Trims To Subclip Boundaries'));
 		fireEvent.click(screen.getByText('OK'));

@@ -4,7 +4,7 @@
 // Keys follow Premiere Pro's defaults (keymap-defaults.ts).
 
 import type { FitClip } from '@jasper/project';
-import { editPointFrame, type NearestKind, type Sequence } from '@jasper/project';
+import { editPointFrame, type NearestKind, resolvePropertyAt, type Sequence } from '@jasper/project';
 import { z } from 'zod';
 import {
 	FIT_CLIP_DIALOG,
@@ -18,6 +18,7 @@ import { registerEditUxMenus } from '../edit-ux/menus.ts';
 import { defaultTransitionFields } from '../panels/effects/transition-prefs.ts';
 import { driverFor, getSourceTransport } from '../panels/program/transport-registry.ts';
 import { assetFps, performSourceEdit, sourceMonitorState } from '../panels/source/source-state.ts';
+import { laneSpec } from '../panels/timeline/model/keyframe-lane.ts';
 import {
 	activeDynamicTrim,
 	commitDynamicTrim,
@@ -29,6 +30,8 @@ import {
 	playAroundEdit,
 	selectNearest,
 	stopPlayAround,
+	TRIM_POSTROLL_SECONDS,
+	TRIM_PREROLL_SECONDS,
 	trimMode,
 	trimSelected,
 } from '../panels/timeline/state/trim-mode.ts';
@@ -42,6 +45,8 @@ import { type Env, envOf, isLocked, seekReveal, selectedClips, targetedTracks } 
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const T = 'timeline' as const;
+/** Premiere Preferences ▸ Audio ▸ Large Volume Adjustment (default 3 dB). */
+export const LARGE_VOLUME_DB = 3;
 const E = 'editing' as const;
 
 const fpsOf = (seq: Sequence) => seq.settings.frameRate.num / seq.settings.frameRate.den;
@@ -518,6 +523,72 @@ export const editUxCommands: UiCommand[] = [
 			ctx.ui.openDialog(KEYBOARD_SHORTCUTS_DIALOG, { platform: detectPlatform(), runtime: detectRuntime() });
 		},
 	},
+	// ---------------------------------------------------------------- keyboard parity (Premiere keyboard-only commands)
+	cmd('timeline.extendPreviousEditToPlayhead', 'Extend Previous Edit to Playhead', T, (ctx, e) =>
+		extendEditTo(ctx, e, -1),
+	),
+	cmd('timeline.extendNextEditToPlayhead', 'Extend Next Edit to Playhead', T, (ctx, e) =>
+		extendEditTo(ctx, e, 1),
+	),
+	cmd('transport.goToSelectedClipStart', 'Go to Selected Clip Start', E, (_ctx, e) => {
+		const sel = selectedClips(e);
+		if (sel.length) seekReveal(e, Math.min(...sel.map((c) => c.start)));
+	}),
+	cmd('transport.goToSelectedClipEnd', 'Go to Selected Clip End', E, (_ctx, e) => {
+		const sel = selectedClips(e);
+		if (sel.length) seekReveal(e, Math.max(...sel.map((c) => c.start + c.duration)) - 1);
+	}),
+	cmd('transport.playToOut', 'Play from Playhead to Out', E, (_ctx, e) => {
+		const end =
+			e.seq.outPoint ?? Object.values(e.seq.clips).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+		if (end > e.playhead) playRange(e, e.playhead, end);
+	}),
+	cmd('transport.playInToOutPreroll', 'Play In to Out with Preroll/Postroll', E, (_ctx, e) => {
+		const fps = fpsOf(e.seq);
+		const end = Object.values(e.seq.clips).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+		const a = Math.max(0, (e.seq.inPoint ?? 0) - Math.round(TRIM_PREROLL_SECONDS * fps));
+		const b = Math.min(end + 1, (e.seq.outPoint ?? end) + Math.round(TRIM_POSTROLL_SECONDS * fps));
+		if (b > a) playRange(e, a, b);
+	}),
+	...(
+		[
+			['timeline.toggleAllVideoTargets', 'Toggle All Video Targets', 'video', 'targeting'],
+			['timeline.toggleAllAudioTargets', 'Toggle All Audio Targets', 'audio', 'targeting'],
+			['timeline.toggleAllSourceVideo', 'Toggle All Source Video', 'video', 'source'],
+			['timeline.toggleAllSourceAudio', 'Toggle All Source Audio', 'audio', 'source'],
+		] as const
+	).map(([id, label, kind, what]) =>
+		cmd(id, label, T, (_ctx, e) => {
+			const tracks = (kind === 'video' ? e.seq.videoTracks : e.seq.audioTracks).filter((t) => !t.locked);
+			if (what === 'targeting') {
+				const cur = e.view.targeting[kind];
+				const all = tracks.length > 0 && tracks.every((t) => cur.includes(t.id));
+				e.session.setView(e.seq.id, {
+					targeting: { ...e.view.targeting, [kind]: all ? [] : tracks.map((t) => t.id) },
+				});
+				return;
+			}
+			// Source patching: switch every source track of the kind off, or back on (to its default track).
+			const patch = { ...e.view.sourcePatching };
+			const labels = Object.keys(patch).filter((l) => l.startsWith(kind === 'video' ? 'V' : 'A'));
+			const anyOn = labels.length === 0 || labels.some((l) => patch[l] !== null);
+			const n = Math.max(1, labels.length, tracks.length);
+			for (let i = 0; i < n; i++) {
+				const l = `${kind === 'video' ? 'V' : 'A'}${i + 1}`;
+				if (anyOn) patch[l] = null;
+				else delete patch[l];
+			}
+			e.session.setView(e.seq.id, { sourcePatching: patch });
+		}),
+	),
+	...(
+		[
+			['timeline.clipVolumeUp', 'Increase Clip Volume', 1],
+			['timeline.clipVolumeDown', 'Decrease Clip Volume', -1],
+			['timeline.clipVolumeUpMany', 'Increase Clip Volume Many', LARGE_VOLUME_DB],
+			['timeline.clipVolumeDownMany', 'Decrease Clip Volume Many', -LARGE_VOLUME_DB],
+		] as const
+	).map(([id, label, db]) => cmd(id, label, T, (ctx, e) => nudgeVolume(ctx, e, db), { repeat: true })),
 ];
 
 function rememberFitChoiceReset(): void {
@@ -568,4 +639,93 @@ function setSplitMark(
 		],
 	});
 	if (!r.ok) console.info(`[source] ${r.errors[0]?.message}`);
+}
+
+/** Increase/Decrease Clip Volume (] / [, Shift = Many): the selected audio clips' Level, keyed at the playhead when animated. */
+function nudgeVolume(ctx: CommandCtx, e: Env, db: number): void {
+	const clips = selectedClips(e).filter(
+		(c) => (c.kind === 'audio' || c.kind === 'nest-audio') && !isLocked(e.seq, c.trackId),
+	);
+	if (!clips.length) return;
+	const commands = clips.map((c) => {
+		const v = (c as { volumeDb: { value: number; keyframes: unknown[] } }).volumeDb;
+		const animated = v.keyframes.length > 0;
+		const inside = e.playhead >= c.start && e.playhead < c.start + c.duration;
+		const at = animated ? (inside ? e.playhead : c.start) : undefined;
+		const doc = e.session.getCommitted();
+		const spec = laneSpec(c, 'volumeDb', e.session.ctx.registries);
+		const cur =
+			spec && at !== undefined
+				? (resolvePropertyAt({ doc, seq: e.seq, clip: c }, spec, at).value as number)
+				: v.value;
+		const next = Math.max(-96, Math.min(15, Math.round((cur + db) * 100) / 100));
+		return {
+			type: 'param.set',
+			target: ['clip', c.id, 'volumeDb'],
+			value: next,
+			...(at !== undefined ? { at: { sequenceFrame: at } } : {}),
+		};
+	});
+	const r = e.session.apply({
+		label: 'Audio Level',
+		origin: 'user',
+		sequenceId: e.seq.id,
+		commands: commands as never[],
+		coalesceKey: 'clip-volume',
+	});
+	if (!r.ok)
+		ctx.ui.toast({ kind: 'warning', message: 'Audio Level: not possible', detail: r.errors[0]?.message });
+}
+
+/** Extend Previous/Next Edit to Playhead (Shift+Q / Shift+W): roll the nearest cut on each targeted track. */
+function extendEditTo(ctx: CommandCtx, e: Env, dir: -1 | 1): void {
+	const p = e.playhead;
+	const commands: unknown[] = [];
+	for (const trackId of targetedTracks(e)) {
+		const list = Object.values(e.seq.clips).filter((c) => c.trackId === trackId);
+		const edges = list.flatMap((c) => [
+			{ clip: c, edge: 'in' as const, f: c.start },
+			{ clip: c, edge: 'out' as const, f: c.start + c.duration },
+		]);
+		const cand = edges
+			.filter((x) => (dir < 0 ? x.f < p : x.f > p))
+			.sort((a, b) => (dir < 0 ? b.f - a.f : a.f - b.f));
+		const pick = cand[0];
+		if (!pick) continue;
+		// A cut between two clips rolls; a lone edge trims (regular).
+		const pair = list.some(
+			(o) =>
+				o.id !== pick.clip.id && (pick.edge === 'out' ? o.start === pick.f : o.start + o.duration === pick.f),
+		);
+		commands.push({
+			clipId: pick.clip.id,
+			edge: pick.edge,
+			mode: pair ? 'roll' : 'regular',
+			delta: p - pick.f,
+		});
+	}
+	if (!commands.length) return;
+	const tx = (commands as { clipId: string; edge: 'in' | 'out'; mode: string; delta: number }[]).map((c) => ({
+		type: 'clip.trimEdits',
+		edits: [{ clipId: c.clipId, edge: c.edge, mode: c.mode }],
+		deltaFrames: c.delta,
+	}));
+	const r = e.session.apply({
+		label: dir < 0 ? 'Extend Previous Edit to Playhead' : 'Extend Next Edit to Playhead',
+		origin: 'user',
+		sequenceId: e.seq.id,
+		commands: tx as never[],
+	});
+	if (!r.ok)
+		ctx.ui.toast({ kind: 'warning', message: 'Extend Edit: not possible', detail: r.errors[0]?.message });
+}
+
+function playRange(e: Env, from: number, to: number): void {
+	const t = e.session.transport;
+	const driver = driverFor(t);
+	if (driver) driver.playRange(from, to);
+	else {
+		t.seek(from);
+		t.play(1);
+	}
 }
