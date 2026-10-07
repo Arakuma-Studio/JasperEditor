@@ -272,9 +272,11 @@ export function useTrackMattes(
 ): { media: Map<string, FxTextureInput>; key: string } {
 	const hubs = useContext(TrackMatteContext);
 	const rendering = getRemotionEnvironment().isRendering;
+	const trackKey = trackIds.join('\n');
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the track ids' content, not the array identity
 	const list = useMemo(
 		() => trackIds.map((id) => hubs.get(id)).filter((h): h is TrackMatteHub => !!h),
-		[hubs, trackIds.join('\n')],
+		[hubs, trackKey],
 	);
 	const subscribe = useMemo(
 		() => (cb: () => void) => {

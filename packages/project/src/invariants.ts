@@ -836,6 +836,34 @@ export function repairDocument(
 				delete fx.masks;
 				note('drop-mask', fx.id, 'masks on a track or master effect removed');
 			}
+		// wp masks: Track Matte Keys reading a missing / own track, or closing a cycle, lose their track.
+		{
+			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+			const reach = (from: string, to: string, seen = new Set<string>()): boolean => {
+				if (from === to) return true;
+				if (seen.has(from)) return false;
+				seen.add(from);
+				for (const c of Object.values(seq.clips))
+					if (c.trackId === from)
+						for (const t of trackMatteTracksOf({
+							effects: ((c as { effects?: EffectInstance[] }).effects ?? []) as never,
+						}))
+							if (reach(t, to, seen)) return true;
+				return false;
+			};
+			for (const c of Object.values(seq.clips))
+				for (const fx of (c as { effects?: EffectInstance[] }).effects ?? []) {
+					if (fx.effectId !== TRACK_MATTE_EFFECT_ID || !fx.params.matteTrack) continue;
+					const a = fx.params.matteTrack;
+					const bad = (v: unknown) =>
+						typeof v === 'string' && v !== '' && (!videoIds.has(v) || v === c.trackId || reach(v, c.trackId));
+					if ([a.value, ...a.keyframes.map((k) => k.value)].some(bad)) {
+						a.value = '';
+						a.keyframes = [];
+						note('clear-track-matte', fx.id, 'track matte referenced a missing track or formed a cycle');
+					}
+				}
+		}
 		// M2 (wp-m2-text-anim, S11:TXA-008): animator params a known preset rejects are reset to its defaults.
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'text' || !c.textAnimation) continue;

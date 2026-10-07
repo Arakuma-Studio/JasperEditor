@@ -288,4 +288,57 @@ describe('mask commands', () => {
 		expect(report.some((r) => r.action === 'drop-mask')).toBe(true);
 		expect(checkInvariants(document, { effects: defaultEffectRegistry })).toEqual([]);
 	});
+
+	it('track mattes: the hidden matte track stays in the snapshot; cycles and own tracks are refused; repair clears', () => {
+		const { h, clipId } = setup();
+		const v2 = h.seq.videoTracks[1]!.id;
+		const v1 = h.seq.videoTracks[0]!.id;
+		h.ok([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 1, 1, 1], ref: '$m' }]);
+		const matte = h.clips('V2')[0]!.id;
+		h.ok([
+			{
+				type: 'effect.add',
+				target: { clipId },
+				effectId: 'jasper.track-matte-key',
+				params: { matteTrack: v2 },
+			},
+			{ type: 'track.update', trackId: v2, patch: { output: false } },
+		]);
+		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		expect(snap.videoTracks.map((t) => t.trackId)).not.toContain(v2);
+		expect(snap.matteTracks?.map((t) => t.trackId)).toEqual([v2]);
+		expect(snap.matteTracks![0]!.clips[0]!.clipId).toBe(matte);
+		// V2 reading V1 back would be a cycle; a clip reading its own track too.
+		expect(
+			h.tx([
+				{
+					type: 'effect.add',
+					target: { clipId: matte },
+					effectId: 'jasper.track-matte-key',
+					params: { matteTrack: v1 },
+				},
+			]).ok,
+		).toBe(false);
+		expect(
+			h.tx([
+				{
+					type: 'effect.add',
+					target: { clipId: matte },
+					effectId: 'jasper.track-matte-key',
+					params: { matteTrack: v2 },
+				},
+			]).ok,
+		).toBe(false);
+		const doc = JSON.parse(JSON.stringify(h.doc));
+		const seq = Object.values(doc.sequences)[0] as {
+			clips: Record<string, { effects: { params: Record<string, { value: unknown }> }[] }>;
+		};
+		seq.clips[clipId]!.effects.at(-1)!.params.matteTrack!.value = 'trk_missing';
+		expect(
+			checkInvariants(doc, { effects: defaultEffectRegistry }).some((i) => i.message.includes('matte track')),
+		).toBe(true);
+		const { document, report } = repairDocument(doc, createCounterIdSource(900));
+		expect(report.some((r) => r.action === 'clear-track-matte')).toBe(true);
+		expect(checkInvariants(document, { effects: defaultEffectRegistry })).toEqual([]);
+	});
 });

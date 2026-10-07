@@ -3,9 +3,12 @@
 // Ids bound in keymap-defaults.ts: effectControls.removeEffect (Backspace/Delete), effectControls.toggleLoop
 // (Ctrl+L), history.stepBackward/stepForward (←/→ in the History panel). The inspector.* ids are
 // unbound by default and reachable from panel menus and the command palette.
+
 import type { Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
+import { deleteMasks } from '../masks/actions.ts';
+import { maskUi } from '../masks/store.ts';
 import { applyEffectToClips } from '../panels/effects/drag.ts';
 import { inspectorFocus } from '../panels/properties/lib/focus.ts';
 import {
@@ -109,7 +112,11 @@ export const inspectorCommands: UiCommand[] = [
 			if (fx) {
 				run(session, 'Remove Effect', [{ type: 'effect.remove', effectInstanceId: fx } as Command]);
 				inspectorFocus.set({ effectInstanceId: null });
+				return;
 			}
+			// wp masks: a mask selected in Effect Controls (its header clears the effect focus).
+			const mask = maskUi.get().selected;
+			if (mask) deleteMasks(session, [mask.maskId]);
 		},
 	},
 	{

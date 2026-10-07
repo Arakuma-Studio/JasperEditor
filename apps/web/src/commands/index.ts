@@ -15,6 +15,7 @@ import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
 import { layerCommands } from './layer.ts';
+import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
@@ -53,6 +54,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
+	maskCommands,
 ];
 
 let registered = false;
