@@ -820,11 +820,10 @@ describe('native export of keyframed audio levels (S01:FX-010)', () => {
 		expect(planned.plan).toMatchObject({ path: 'native', blockers: [] });
 		const keyed = await runExport(d, settings);
 
-		// Expected gain (audio-mix: the offline mixer evaluates every lane per sample, so the RMS over the middle of a
-		// frame is the gain in the middle of the frame): clip volume at the content time, track and master volume at
+		// Expected gain (audio-mix: the offline mixer evaluates every lane per sample; the reference shaped by it over
+		// the middle of each frame): clip volume at the content time, track and master volume at
 		// the sequence time.
 		const a = planned.snapshot.audioClips[0]!;
-		const F = 705_600_000 / 30;
 		const { evaluate } = await import('@jasper/project');
 		const gainDbAt = (t: number) =>
 			evaluate(a.volumeDb, a.sourceIn + t) +

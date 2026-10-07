@@ -19,7 +19,11 @@ export default async function audioRoutes(app: FastifyInstance): Promise<void> {
 	app.jasper.services.audio = svc;
 	svc.registerRunners();
 
-	const finish = async (job: { id: string }, wait: string | undefined, reply: { code(n: number): { send(x: unknown): unknown } }) => {
+	const finish = async (
+		job: { id: string },
+		wait: string | undefined,
+		reply: { code(n: number): { send(x: unknown): unknown } },
+	) => {
 		if (wait !== '1') return reply.code(202).send(job);
 		const done = await core.queue.wait(job.id);
 		if (done.state !== 'succeeded')

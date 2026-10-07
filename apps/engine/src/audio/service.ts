@@ -116,14 +116,19 @@ export class AudioService {
 	registerRunners(): void {
 		// One runner for both: loudness normalisation jobs carry `loudnessNormalize` in their input.
 		this.core.queue.registerRunner('analysis', (ctx) =>
-			(ctx.input as { loudnessNormalize?: unknown }).loudnessNormalize ? this.runNormalize(ctx) : this.runAnalysis(ctx),
+			(ctx.input as { loudnessNormalize?: unknown }).loudnessNormalize
+				? this.runNormalize(ctx)
+				: this.runAnalysis(ctx),
 		);
 	}
 
 	// ------------------------------------------------------------------ analysis
 
 	/** Validates by planning (synchronous errors) and submits the job. */
-	async submitAnalysis(req: AudioAnalyzeRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+	async submitAnalysis(
+		req: AudioAnalyzeRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
 		await this.plan(req); // PlanErrors surface synchronously
 		const doc = req.envelope.document as { projectId?: string };
 		const projectId = req.projectId ?? (typeof doc.projectId === 'string' ? doc.projectId : undefined);
@@ -141,7 +146,10 @@ export class AudioService {
 
 	private async plan(req: AudioAnalyzeRequest): Promise<PlannedExport> {
 		const doc = req.envelope.document as {
-			sequences?: Record<string, { inPoint: number | null; outPoint: number | null; clips: Record<string, unknown> }>;
+			sequences?: Record<
+				string,
+				{ inPoint: number | null; outPoint: number | null; clips: Record<string, unknown> }
+			>;
 		};
 		const seq = doc.sequences?.[req.sequenceId];
 		if (!seq) throw new PlanError('NOT_FOUND', 404, `Sequence ${req.sequenceId} not found`);
@@ -175,7 +183,10 @@ export class AudioService {
 		return (id: string) => {
 			const m = planned.media[id];
 			if (!m) return null;
-			return { path: m.path, streams: m.record.probe.streams.filter((x) => x.type === 'audio') as AudioStream[] };
+			return {
+				path: m.path,
+				streams: m.record.probe.streams.filter((x) => x.type === 'audio') as AudioStream[],
+			};
 		};
 	}
 
@@ -212,7 +223,11 @@ export class AudioService {
 			const found = snap.audioClips.filter((c) => wanted.has(c.clipId));
 			const missing = scope.clipIds.filter((id) => !found.some((c) => c.clipId === id));
 			if (missing.length)
-				throw new JobError('NOT_FOUND', `Not audible audio clips of the sequence: ${missing.join(', ')}`, false);
+				throw new JobError(
+					'NOT_FOUND',
+					`Not audible audio clips of the sequence: ${missing.join(', ')}`,
+					false,
+				);
 			const levels = req.levels ?? 'mix';
 			for (const [i, c] of found.entries()) {
 				ctx.progress(i / (found.length + 1), { stage: `Measuring clip ${i + 1}/${found.length}` });
@@ -239,7 +254,11 @@ export class AudioService {
 				...(env ? { onBlock: (p: Float32Array[], n: number) => env.push(p, n) } : {}),
 			});
 		} else {
-			if (req.activity?.startFrame !== undefined && req.activity.endFrame !== undefined && scope.type !== 'range')
+			if (
+				req.activity?.startFrame !== undefined &&
+				req.activity.endFrame !== undefined &&
+				scope.type !== 'range'
+			)
 				range = { start: req.activity.startFrame, end: req.activity.endFrame };
 			mix = await renderMixdown({
 				...base,
@@ -262,7 +281,10 @@ export class AudioService {
 			const t0 = (frameToSample(range.start, fps, sr) / sr) * FLICKS_PER_SECOND;
 			activity = {
 				thresholdDb,
-				regions: rel.map(([a, b]) => [Math.round(t0 + a * FLICKS_PER_SECOND), Math.round(t0 + b * FLICKS_PER_SECOND)]),
+				regions: rel.map(([a, b]) => [
+					Math.round(t0 + a * FLICKS_PER_SECOND),
+					Math.round(t0 + b * FLICKS_PER_SECOND),
+				]),
 			};
 		}
 		return {
@@ -291,7 +313,8 @@ export class AudioService {
 		const record = this.core.registry.get(mediaKey);
 		if (!record) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
 		const streams = record.probe.streams.filter((s) => s.type === 'audio');
-		const stream = req.streamIndex !== undefined ? streams.find((s) => s.index === req.streamIndex) : streams[0];
+		const stream =
+			req.streamIndex !== undefined ? streams.find((s) => s.index === req.streamIndex) : streams[0];
 		if (!stream) throw new JobError('NO_AUDIO', 'The media has no such audio stream', false);
 		return this.core.queue.submit({
 			kind: 'analysis',
@@ -307,8 +330,9 @@ export class AudioService {
 
 	/** Runs a normalisation job created by `submitNormalize`. */
 	async runNormalize(ctx: JobContext): Promise<LoudnessNormalizeResult> {
-		const { mediaKey, req } = (ctx.input as { loudnessNormalize: { mediaKey: string; req: LoudnessNormalizeRequest } })
-			.loudnessNormalize;
+		const { mediaKey, req } = (
+			ctx.input as { loudnessNormalize: { mediaKey: string; req: LoudnessNormalizeRequest } }
+		).loudnessNormalize;
 		const record = this.core.registry.get(mediaKey);
 		const path = record ? await this.core.registry.resolvePath(mediaKey) : null;
 		if (!record || !path) throw new JobError('ASSET_NOT_FOUND', 'The media is offline', false);
@@ -318,14 +342,31 @@ export class AudioService {
 		if (!stream) throw new JobError('NO_AUDIO', 'The media has no such audio stream', false);
 		const sr = Math.max(8000, Math.min(192_000, stream.sampleRate || 48000));
 		const channels = stream.channels === 1 || stream.channels === 6 ? stream.channels : 2;
-		const recipe = { op: 'loudness-normalize', targetLufs: req.targetLufs, truePeakDb: req.truePeakDb, stream: stream.index };
+		const recipe = {
+			op: 'loudness-normalize',
+			targetLufs: req.targetLufs,
+			truePeakDb: req.truePeakDb,
+			stream: stream.index,
+		};
 		const recipeHash = createHash('sha256')
 			.update(JSON.stringify({ v: LOUDNESS_RECIPE_VERSION, recipe }))
 			.digest('hex')
 			.slice(0, 16);
 		const decode = () =>
 			this.core.ffmpeg.spawnRaw(
-				['-i', path, '-map', `0:${stream.index}`, '-ac', String(channels), '-ar', String(sr), '-f', 'f32le', 'pipe:1'],
+				[
+					'-i',
+					path,
+					'-map',
+					`0:${stream.index}`,
+					'-ac',
+					String(channels),
+					'-ar',
+					String(sr),
+					'-f',
+					'f32le',
+					'pipe:1',
+				],
 				{ signal: ctx.signal, onSpawn: ctx.trackChild },
 			);
 		const BLOCK = 65536;
@@ -346,7 +387,11 @@ export class AudioService {
 		}
 		const before = m1.summary();
 		if (!Number.isFinite(before.integrated))
-			throw new JobError('SILENT', 'The audio is silent (below the −70 LUFS gate): nothing to normalise', false);
+			throw new JobError(
+				'SILENT',
+				'The audio is silent (below the −70 LUFS gate): nothing to normalise',
+				false,
+			);
 		const gainDb = req.targetLufs - before.integrated;
 		const g = 10 ** (gainDb / 20);
 		// pass 2: gain + true-peak limiter → 24-bit WAV (via ffmpeg from a float WAV)
@@ -355,7 +400,11 @@ export class AudioService {
 		const tmp = join(scratch, 'normalized.f32.wav');
 		const { wavHeaderF32 } = await import('./mixdown.ts');
 		const fh = await open(tmp, 'w');
-		const lim = new TruePeakLimiter(sr, channels, { ceilingDb: req.truePeakDb, lookaheadMs: 5, releaseMs: 100 });
+		const lim = new TruePeakLimiter(sr, channels, {
+			ceilingDb: req.truePeakDb,
+			lookaheadMs: 5,
+			releaseMs: 100,
+		});
 		const m2 = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 		let written = 0;
 		let skip = lim.latency;
@@ -368,7 +417,8 @@ export class AudioService {
 			const view = buf.map((c) => c.subarray(from, from + m));
 			m2.process(view, 0, m);
 			const out = Buffer.alloc(m * channels * 4);
-			for (let i = 0; i < m; i++) for (let c = 0; c < channels; c++) out.writeFloatLE(view[c]![i]!, (i * channels + c) * 4);
+			for (let i = 0; i < m; i++)
+				for (let c = 0; c < channels; c++) out.writeFloatLE(view[c]![i]!, (i * channels + c) * 4);
 			await fh.write(out);
 			written += m;
 		};
@@ -392,7 +442,13 @@ export class AudioService {
 			await fh.close();
 		}
 		const after = m2.summary();
-		const outDir = join(this.core.config.paths.root, 'media', 'processed', record.fingerprint.replace(/[^\w-]/g, '_'), recipeHash);
+		const outDir = join(
+			this.core.config.paths.root,
+			'media',
+			'processed',
+			record.fingerprint.replace(/[^\w-]/g, '_'),
+			recipeHash,
+		);
 		await mkdir(outDir, { recursive: true });
 		const name = `${(record.originalName || 'audio').replace(/\.[^.]+$/, '')} [Normalized ${req.targetLufs} LUFS].wav`;
 		const finalTmp = join(scratch, 'normalized.wav');
