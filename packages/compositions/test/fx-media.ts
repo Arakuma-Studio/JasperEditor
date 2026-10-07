@@ -138,6 +138,7 @@ export function fxSnapshot(commands: Command[]) {
 		{
 			label: 'fx',
 			origin: 'user',
+			sequenceId: seqId,
 			commands: [
 				{
 					type: 'sequence.updateSettings',

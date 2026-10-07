@@ -6,7 +6,8 @@
 // `NestTracksContext` (the composition's own `VideoTracks`); the snapshot builder already refuses cycles.
 import { flicksPerFrame } from '@jasper/project';
 import { useContext } from 'react';
-import { AbsoluteFill, Freeze, Sequence } from 'remotion';
+import { AbsoluteFill, Sequence } from 'remotion';
+import { ShowFrame } from '../show-frame.tsx';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 import { NestCompSizeContext, NestTracksContext } from './nest-context.ts';
@@ -34,13 +35,17 @@ export function NestLayer(layer: LayerProps) {
 	return (
 		<LayerBox layer={layer}>
 			<NestCompSizeContext.Provider value={{ width: sub.settings.width, height: sub.settings.height }}>
-				<AbsoluteFill data-nest={src.nest.sequenceId} style={{ overflow: 'hidden' }}>
+				<AbsoluteFill
+					data-nest={src.nest.sequenceId}
+					data-nest-frame={nestedFrame}
+					style={{ overflow: 'hidden' }}
+				>
 					{linear ? (
 						<Sequence from={-shift} layout="none" name="Nested sequence">
 							{tracks}
 						</Sequence>
 					) : (
-						<Freeze frame={inner}>{tracks}</Freeze>
+						<ShowFrame frame={Math.max(0, inner)}>{tracks}</ShowFrame>
 					)}
 				</AbsoluteFill>
 			</NestCompSizeContext.Provider>

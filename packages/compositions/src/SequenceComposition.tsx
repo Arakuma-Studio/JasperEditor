@@ -32,6 +32,7 @@ import {
 } from '@jasper/project';
 import { type ComponentType, Fragment, memo, type ReactNode, useContext, useMemo, useRef } from 'react';
 import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
+import { ShowFrame } from './show-frame.tsx';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import { useFxStatus } from './fx/status.ts';
@@ -150,6 +151,21 @@ const ClipLayer = memo(function ClipLayer({
 	// edit-structure: the frame whose picture is shown (frame holds, freeze-frame handles).
 	const pictureLocal = pictureLocalFrame(clip, localFrame, doc.settings.fps);
 	const pictureTime = clipPictureTime(clip, clip.start + pictureLocal, doc.settings.fps);
+	// A held clip is drawn as a clip whose first frame is the held content (its axis starts at the hold).
+	const heldClip = useMemo(
+		() =>
+			clip.frameHold
+				? {
+						...clip,
+						sourceIn: clip.frameHold.flicks,
+						speed: { ...clip.speed, reverse: false },
+						// Its axis starts at the held content (frame 0), handles included.
+						headHandle: 0,
+						tailHandle: 0,
+					}
+				: null,
+		[clip],
+	);
 	const resolved = resolveCachedLayerProps(clip, contentTime);
 	// Transition framework: the GPU transition this clip is a side of at this frame (if any).
 	const sides = useContext(TransitionSidesContext).get(clip.clipId);
@@ -178,15 +194,15 @@ const ClipLayer = memo(function ClipLayer({
 	if (!fontsReady) return null;
 	if (remapped === null && pictureLocal !== localFrame)
 		return (
-			<Freeze frame={pictureLocal + (clip.headHandle ?? 0)}>
+			<ShowFrame frame={heldClip ? 0 : Math.max(0, pictureLocal + (clip.headHandle ?? 0))}>
 				<LayerView
 					Component={Component}
 					frameDependent={frameDependent}
-					clip={clip}
+					clip={heldClip ?? clip}
 					props={props}
-					localFrame={pictureLocal}
+					localFrame={heldClip ? 0 : pictureLocal}
 					realFrame={localFrame}
-					contentTime={clip.frameHold?.holdFilters ? contentTime : pictureTime}
+					contentTime={contentTime}
 					pictureTime={pictureTime}
 					fps={fps}
 					media={media}
@@ -194,7 +210,7 @@ const ClipLayer = memo(function ClipLayer({
 					fonts={doc.fonts}
 					transition={transition}
 				/>
-			</Freeze>
+			</ShowFrame>
 		);
 	if (remapped !== null)
 		return (

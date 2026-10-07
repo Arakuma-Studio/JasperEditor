@@ -136,3 +136,24 @@ describe('generators and frame holds', () => {
 		expect(pictureLocalFrame({ ...base, tailHandle: 10, freezeTail: 4 }, 58, fps)).toBe(55);
 	});
 });
+
+describe('nest speed', () => {
+	it('shows the nested frame at 2× through Freeze', () => {
+		const doc = snapshot([
+			{ type: 'sequence.create', name: 'Inner', ref: '$s' } as Command,
+			{ type: 'clip.addSolid', sequenceId: '$s', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] } as Command,
+			{ type: 'clip.addSolid', sequenceId: '$s', at: 30, duration: 30, track: 'V1', color: [0, 0, 1, 1] } as Command,
+			{ type: 'clip.addSolid', sequenceId: '$s', at: 60, duration: 30, track: 'V1', color: [0, 1, 0, 1] } as Command,
+			{ type: 'clip.place', source: { sequenceId: '$s' }, at: 0, tracks: { video: 'V1' }, ref: '$n' } as Command,
+			{ type: 'clip.setSpeed', clipIds: ['$n'], rate: 2, ripple: false } as Command,
+		]);
+		const nest = doc.videoTracks[0]!.clips[0]!;
+		expect([nest.duration, nest.speed.rate]).toEqual([45, 2]);
+		const sub = (nest.source as { nest: { snapshot: RenderDoc } }).nest.snapshot;
+		expect(sub.range).toEqual({ start: 0, end: 90 });
+		const r = renderFrame(doc, 35);
+		expect(r.container.querySelector('[data-nest]')!.getAttribute('data-nest-frame')).toBe('70');
+		expect(r.container.querySelector('[data-nest]')!.innerHTML.match(/rgba\([^)]*\)/g)).toEqual(['rgba(0, 255, 0, 1)']);
+		r.unmount();
+	});
+});
