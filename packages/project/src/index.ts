@@ -19,6 +19,8 @@ export * from './color/runs.ts';
 export * from './commands/index.ts';
 export * from './composition/index.ts';
 export * from './derive/index.ts';
+export * from './edit/match-frame.ts';
+export * from './edit/trim-mode.ts';
 export * from './effect-presets/index.ts';
 export * from './essential/index.ts';
 export * from './expressions.ts';

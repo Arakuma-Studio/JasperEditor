@@ -47,6 +47,7 @@ import { activeSequence, addTextAt, transformAt, transformCommands } from './edi
 import { MotionPathLayer } from './MotionPathLayer.tsx';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
+import { guidesOf, monitorExtras } from './monitor-view.ts';
 import {
 	buildMotionPath,
 	convertVertexCommand,
@@ -96,6 +97,8 @@ const AXIS_LOCK_PX = 6;
 type ClipStart = { id: string; v0: LayerTransformValues };
 type GestureState =
 	| { kind: 'pan'; start: Vec2; pan0: Vec2 }
+	/** edit-ux: marquee selection on empty canvas (Premiere Program monitor; Shift/Ctrl add to the selection). */
+	| { kind: 'marquee'; start: Vec2; base: string[]; startScreen: Vec2; moved: boolean }
 	| {
 			kind: 'move';
 			g: Gesture;
@@ -289,6 +292,7 @@ export function TransformOverlay({
 		[motionPath, anchorPath, keySel],
 	);
 	const [hover, setHover] = useState<string | null>(null);
+	const [marquee, setMarquee] = useState<Rect | null>(null);
 	const [snapHits, setSnapHits] = useState<{ x: SnapHit | null; y: SnapHit | null } | null>(null);
 	const [readout, setReadout] = useState<Readout>(null);
 	const [cursor, setCursor] = useState('default');
@@ -313,7 +317,7 @@ export function TransformOverlay({
 		const g = gestureRef.current;
 		const p = pendingRef.current;
 		pendingRef.current = null;
-		if (g && g.kind !== 'pan' && p) g.g.update(p.cmds);
+		if (g && g.kind !== 'pan' && g.kind !== 'marquee' && p) g.g.update(p.cmds);
 	};
 	const scheduleUpdate = (cmds: Parameters<Gesture['update']>[0]) => {
 		pendingRef.current = { cmds };
@@ -323,11 +327,12 @@ export function TransformOverlay({
 	const endGesture = (commit: boolean) => {
 		const g = gestureRef.current;
 		// Apply the last pointer position before the gesture is released.
-		if (commit && g && g.kind !== 'pan' && g.moved) flushUpdate();
+		if (commit && g && g.kind !== 'pan' && g.kind !== 'marquee' && g.moved) flushUpdate();
 		gestureRef.current = null;
 		setSnapHits(null);
 		setReadout(null);
-		if (!g || g.kind === 'pan') return;
+		setMarquee(null);
+		if (!g || g.kind === 'pan' || g.kind === 'marquee') return;
 		if (commit && g.moved) {
 			g.g.commit();
 		} else {
@@ -432,6 +437,7 @@ export function TransformOverlay({
 									width: doc.settings.width,
 									height: doc.settings.height,
 									safeMargins: monitor.safeMargins ? SAFE_MARGINS : null,
+									guides: snapGuides(session),
 									layers: [
 										...live.current.scene
 											.filter((l) => l.clip.clipId !== mp.clipId)
@@ -540,7 +546,16 @@ export function TransformOverlay({
 		// Hit test and selection (XF-001, XF-003, XF-005).
 		const hit = layerAt(p);
 		if (!hit) {
-			if (!e.shiftKey && !e.ctrlKey && !e.metaKey) session.clearSelection('timeline');
+			const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+			if (!additive) session.clearSelection('timeline');
+			svg.setPointerCapture?.(e.pointerId);
+			gestureRef.current = {
+				kind: 'marquee',
+				start: p,
+				base: additive ? [...session.getState().selection.timeline.clips] : [],
+				startScreen: screen,
+				moved: false,
+			};
 			return;
 		}
 		if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -570,6 +585,7 @@ export function TransformOverlay({
 				width: doc.settings.width,
 				height: doc.settings.height,
 				safeMargins: monitor.safeMargins ? SAFE_MARGINS : null,
+				guides: snapGuides(session),
 				layers: others,
 			}),
 			moved: false,
@@ -625,6 +641,27 @@ export function TransformOverlay({
 		}
 		if (g.kind === 'pan') {
 			onPan([g.pan0[0] + screen[0] - g.start[0], g.pan0[1] + screen[1] - g.start[1]]);
+			return;
+		}
+		if (g.kind === 'marquee') {
+			if (!g.moved && dist(screen, g.startScreen) < DRAG_THRESHOLD) return;
+			g.moved = true;
+			const r: Rect = {
+				x: Math.min(g.start[0], p[0]),
+				y: Math.min(g.start[1], p[1]),
+				width: Math.abs(p[0] - g.start[0]),
+				height: Math.abs(p[1] - g.start[1]),
+			};
+			setMarquee(r);
+			// Layers whose bounds intersect the marquee (unlocked tracks only).
+			const hits = live.current.scene
+				.filter((l) => l.props.transform && !locked.has(l.clip.trackId))
+				.filter((l) => {
+					const b = l.props.bounds;
+					return b.x < r.x + r.width && b.x + b.width > r.x && b.y < r.y + r.height && b.y + b.height > r.y;
+				})
+				.map((l) => l.clip.clipId);
+			session.select('timeline', [...new Set([...g.base, ...hits])], 'replace');
 			return;
 		}
 		if (!g.moved && dist(screen, g.startScreen) < DRAG_THRESHOLD) return;
@@ -778,8 +815,9 @@ export function TransformOverlay({
 
 	const onPointerUp = () => {
 		const g = gestureRef.current;
-		if (g?.kind === 'pan') {
+		if (g?.kind === 'pan' || g?.kind === 'marquee') {
 			gestureRef.current = null;
+			setMarquee(null);
 			return;
 		}
 		// keyframes-blend: a Pen / Ctrl click on a path key (no drag) converts the vertex (corner ↔ smooth).
@@ -943,6 +981,19 @@ export function TransformOverlay({
 			)}
 			{motionPath ? <MotionPathLayer path={motionPath} view={view} selected={selectedKeys} /> : null}
 			{anchorPath ? <MotionPathLayer path={anchorPath} view={view} selected={selectedKeys} /> : null}
+			{marquee ? (
+				<rect
+					x={toScreen(view, [marquee.x, marquee.y])[0]}
+					y={toScreen(view, [marquee.x, marquee.y])[1]}
+					width={marquee.width * view.scale}
+					height={marquee.height * view.scale}
+					fill="var(--pr-marquee-fill, transparent)"
+					stroke="var(--pr-accent)"
+					strokeDasharray="4 3"
+					pointerEvents="none"
+					data-testid="program-marquee"
+				/>
+			) : null}
 			{readout ? (
 				<g pointerEvents="none">
 					<rect
@@ -1170,4 +1221,10 @@ function PlaybackOutlines({
 			))}
 		</g>
 	);
+}
+
+/** edit-ux: visible guides of the active sequence are snap targets (Premiere: Snap in Program Monitor). */
+function snapGuides(session: EditorSession) {
+	if (!monitorExtras.getState().showGuides) return [];
+	return guidesOf(session.getState().activeSequenceId);
 }

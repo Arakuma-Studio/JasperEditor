@@ -17,6 +17,12 @@ export type KeyBinding = {
 	repeat?: boolean;
 	/** Dispatch keyup too (KB-007). */
 	keyup?: boolean;
+	/**
+	 * edit-ux: deliberately shares its chord with another binding of the same scope; the dispatcher runs the first
+	 * enabled one in keymap order, so a contextual binding comes first and its command is only enabled in its
+	 * context (e.g. trims with edit points selected). Not a conflict for the keymap tests or the shortcut editor.
+	 */
+	contextual?: boolean;
 	args?: unknown;
 };
 
@@ -27,6 +33,8 @@ const b = (
 	extra: Omit<KeyBinding, 'command' | 'key' | 'scope'> = {},
 ): KeyBinding => ({ command, key, scope, ...extra });
 const R = { repeat: true };
+/** Hold-to-act (spring-loaded tools, edit-ux): the command also receives keyup. */
+const K = { keyup: true };
 /** Transport keys work in the Timeline, Program and Source monitors (S02:TL-900) → `editing` scope. */
 const E: CommandScope = 'editing';
 const T: CommandScope = 'timeline';
@@ -75,16 +83,45 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('timeline.clearAllMarkers', 'Ctrl+Alt+Shift+KeyM', E, { mac: 'Opt+Cmd+KeyM' }),
 	b('timeline.addEdit', 'Ctrl+KeyK', E),
 	b('timeline.addEditAllTracks', 'Ctrl+Shift+KeyK', E),
+	// edit-ux keyboard parity (Premiere keyboard-only commands)
+	b('timeline.extendPreviousEditToPlayhead', 'Shift+KeyQ', T),
+	b('timeline.extendNextEditToPlayhead', 'Shift+KeyW', T),
+	b('transport.goToSelectedClipStart', 'Shift+Home', E),
+	b('transport.goToSelectedClipEnd', 'Shift+End', E),
+	b('transport.playToOut', 'Ctrl+Space', E, { mac: 'Ctrl+Space' }),
+	b('transport.playInToOutPreroll', 'Shift+Space', E),
+	b('timeline.toggleAllVideoTargets', 'Ctrl+Digit0', T),
+	b('timeline.toggleAllAudioTargets', 'Ctrl+Digit9', T),
+	b('timeline.toggleAllSourceVideo', 'Ctrl+Alt+Digit0', T),
+	b('timeline.toggleAllSourceAudio', 'Ctrl+Alt+Digit9', T),
+	b('timeline.clipVolumeUp', 'BracketRight', T, R),
+	b('timeline.clipVolumeDown', 'BracketLeft', T, R),
+	b('timeline.clipVolumeUpMany', 'Shift+BracketRight', T, R),
+	b('timeline.clipVolumeDownMany', 'Shift+BracketLeft', T, R),
 	b('timeline.rippleTrimPrevToPlayhead', 'KeyQ', T),
 	b('timeline.rippleTrimNextToPlayhead', 'KeyW', T),
 	b('timeline.trimPrevToPlayhead', 'Alt+KeyQ', T),
 	b('timeline.trimNextToPlayhead', 'Alt+KeyW', T),
 	b('timeline.extendEditToPlayhead', 'KeyE', T),
-	b('timeline.cycleTrimType', 'Shift+KeyT', T, { mac: 'Cmd+KeyT' }),
-	b('timeline.trimBack', 'Ctrl+ArrowLeft', T, { ...R, mac: 'Ctrl+ArrowLeft' }),
-	b('timeline.trimForward', 'Ctrl+ArrowRight', T, { ...R, mac: 'Ctrl+ArrowRight' }),
-	b('timeline.trimBackMany', 'Ctrl+Shift+ArrowLeft', T, { ...R, mac: 'Ctrl+Shift+ArrowLeft' }),
-	b('timeline.trimForwardMany', 'Ctrl+Shift+ArrowRight', T, { ...R, mac: 'Ctrl+Shift+ArrowRight' }),
+	// edit-ux trim mode (Premiere: Trim Edit ⇧T, Toggle Trim Type ⌃T on macOS / Ctrl+T in the Timeline on Windows,
+	// Trim Backward/Forward ⌥←/→ (Windows Ctrl+←/→), …Many with Shift = Large Trim Offset, 5 frames).
+	b('timeline.trimEdit', 'Shift+KeyT', T),
+	b('timeline.toggleTrimType', 'Ctrl+KeyT', T, { mac: 'Ctrl+KeyT', web: 'Ctrl+Alt+KeyT', contextual: true }),
+	b('timeline.trimBack', 'Ctrl+ArrowLeft', T, { ...R, mac: 'Opt+ArrowLeft' }),
+	b('timeline.trimForward', 'Ctrl+ArrowRight', T, { ...R, mac: 'Opt+ArrowRight' }),
+	b('timeline.trimBackMany', 'Ctrl+Shift+ArrowLeft', T, { ...R, mac: 'Opt+Shift+ArrowLeft' }),
+	b('timeline.trimForwardMany', 'Ctrl+Shift+ArrowRight', T, { ...R, mac: 'Opt+Shift+ArrowRight' }),
+	// Five-frame trims also on the slip chord while edit points are selected (contextual: the slip binding
+	// below runs when no edit point is selected).
+	b('timeline.trimBackMany', 'Ctrl+Alt+ArrowLeft', T, { ...R, mac: 'Opt+Cmd+ArrowLeft', contextual: true }),
+	b('timeline.trimForwardMany', 'Ctrl+Alt+ArrowRight', T, {
+		...R,
+		mac: 'Opt+Cmd+ArrowRight',
+		contextual: true,
+	}),
+	// Numeric trim entry: keypad +/− with edit points selected (else zoom, below).
+	b('timeline.trimNumericEntry', 'NumpadAdd', T, { contextual: true, args: { sign: 1 } }),
+	b('timeline.trimNumericEntry', 'NumpadSubtract', T, { contextual: true, args: { sign: -1 } }),
 	b('timeline.nudgeLeft', 'Alt+ArrowLeft', T, { ...R, mac: 'Cmd+ArrowLeft' }),
 	b('timeline.nudgeRight', 'Alt+ArrowRight', T, { ...R, mac: 'Cmd+ArrowRight' }),
 	b('timeline.nudgeLeftMany', 'Alt+Shift+ArrowLeft', T, { ...R, mac: 'Shift+Cmd+ArrowLeft' }),
@@ -123,6 +160,8 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('timeline.revealNested', 'Ctrl+Shift+KeyF', E, { mac: 'Shift+Cmd+KeyF' }),
 	b('timeline.applyDefaultVideoTransition', 'Ctrl+KeyD', T),
 	b('timeline.applyDefaultAudioTransition', 'Ctrl+Shift+KeyD', T),
+	// edit-ux: with edit points selected Shift+D applies at the edit points (Premiere), else to the selected clips.
+	b('timeline.applyDefaultTransitionsAtEditPoints', 'Shift+KeyD', T, { contextual: true }),
 	b('timeline.applyDefaultTransitionsToSelection', 'Shift+KeyD', T),
 	b('timeline.duplicate', 'Ctrl+Shift+Slash', T),
 	b('timeline.copy', 'Ctrl+KeyC', T),
@@ -153,19 +192,19 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('gesture.cancel', 'Escape', E),
 
 	// ---------------------------------------------------------------- tools (S02:TL-590, R-PUI §16.3)
-	b('tool.selection', 'KeyV', E),
-	b('tool.trackSelectForward', 'KeyA', E),
-	b('tool.trackSelectBackward', 'Shift+KeyA', E),
-	b('tool.ripple', 'KeyB', E),
-	b('tool.rolling', 'KeyN', E),
-	b('tool.rateStretch', 'KeyR', E),
-	b('tool.razor', 'KeyC', E),
-	b('tool.slip', 'KeyY', E),
-	b('tool.slide', 'KeyU', E),
-	b('tool.pen', 'KeyP', E),
+	b('tool.selection', 'KeyV', E, K),
+	b('tool.trackSelectForward', 'KeyA', E, K),
+	b('tool.trackSelectBackward', 'Shift+KeyA', E, K),
+	b('tool.ripple', 'KeyB', E, K),
+	b('tool.rolling', 'KeyN', E, K),
+	b('tool.rateStretch', 'KeyR', E, K),
+	b('tool.razor', 'KeyC', E, K),
+	b('tool.slip', 'KeyY', E, K),
+	b('tool.slide', 'KeyU', E, K),
+	b('tool.pen', 'KeyP', E, K),
 	b('tool.hand', 'KeyH', E, { keyup: true }),
-	b('tool.zoom', 'KeyZ', E),
-	b('tool.type', 'KeyT', E),
+	b('tool.zoom', 'KeyZ', E, K),
+	b('tool.type', 'KeyT', E, K),
 
 	// ---------------------------------------------------------------- global (R-PUI §16.1)
 	b('app.newProject', 'Ctrl+Alt+KeyN', G),
@@ -275,6 +314,7 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	// Moved from Ctrl+Shift+P (now the command palette, S05:KB-010).
 	b('project.clearPosterFrame', 'Alt+Shift+KeyP', 'project', { mac: 'Opt+Shift+KeyP' }),
 	b('project.makeSubclip', 'Ctrl+KeyU', 'project'),
+	b('project.makeSubclip', 'Ctrl+KeyU', 'source'),
 	b('effects.newCustomBin', 'Ctrl+Slash', 'effects'),
 	b('effects.deleteCustomItem', 'Backspace', 'effects'),
 	b('effectControls.removeEffect', 'Backspace', 'effectControls'),
@@ -286,8 +326,30 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];
 
+// ---------------------------------------------------------------- active keymap (edit-ux: Keyboard Shortcuts editor)
+
+let activeKeymap: readonly KeyBinding[] = DEFAULT_KEYMAP;
+const keymapListeners = new Set<() => void>();
+
+/** The keymap in effect: the chosen layout (Premiere default, Avid, FCP 7, FCP) with the user's changes. */
+export function getActiveKeymap(): readonly KeyBinding[] {
+	return activeKeymap;
+}
+
+/** Replaces the keymap in effect (the shortcut editor's store); dispatch, menus and tooltips follow at once. */
+export function setActiveKeymap(keymap: readonly KeyBinding[]): void {
+	if (keymap === activeKeymap) return;
+	activeKeymap = keymap;
+	for (const l of [...keymapListeners]) l();
+}
+
+export function subscribeActiveKeymap(listener: () => void): () => void {
+	keymapListeners.add(listener);
+	return () => keymapListeners.delete(listener);
+}
+
 /** Browser-reserved chords that never reach web pages (S05:KB-013). */
-const BROWSER_RESERVED: readonly string[] = [
+export const BROWSER_RESERVED: readonly string[] = [
 	'Ctrl+KeyN',
 	'Ctrl+KeyW',
 	'Ctrl+KeyT',
@@ -345,7 +407,7 @@ export function resolveBindings(
 	scopes: readonly CommandScope[],
 	opts: { platform: Platform; runtime: Runtime; keymap?: readonly KeyBinding[] },
 ): KeyBinding[] {
-	const keymap = opts.keymap ?? DEFAULT_KEYMAP;
+	const keymap = opts.keymap ?? activeKeymap;
 	const target = normalizeChord(chord);
 	const out: KeyBinding[] = [];
 	for (const scope of scopes) {

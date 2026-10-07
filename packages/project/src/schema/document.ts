@@ -23,9 +23,22 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * later M3 additions may share v5 (older builds open v5 files read-only). */
 export const CURRENT_SCHEMA_VERSION = 5;
 
+const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({
-	in: z.looseObject({ flicks: nonNegInt() }).nullable(),
-	out: z.looseObject({ flicks: nonNegInt() }).nullable(),
+	in: markSchema.nullable(),
+	out: markSchema.nullable(),
+	/**
+	 * edit-ux (Premiere Mark Split): separate video/audio In/Out marks for split edits (J/L cuts from the source).
+	 * Absent / null fields fall back to `in`/`out`.
+	 */
+	split: z
+		.looseObject({
+			videoIn: markSchema.nullable().optional(),
+			videoOut: markSchema.nullable().optional(),
+			audioIn: markSchema.nullable().optional(),
+			audioOut: markSchema.nullable().optional(),
+		})
+		.optional(),
 });
 export type SourceMarks = DeepStrip<z.infer<typeof SourceMarksSchema>>;
 
@@ -63,6 +76,23 @@ export const SyntheticItemSchema = z.looseObject({
 	label: LabelColorSchema,
 	marks: SourceMarksSchema,
 });
+/**
+ * edit-ux (Premiere Make Subclip): a named range of a media item's content, usable in the Source monitor and on
+ * timelines. `range` is in content flicks `[in, out)`. With `restrictTrims` ("Restrict Trims to Subclip
+ * Boundaries") clips placed from it cannot be trimmed past the range (they carry `subclipId`).
+ */
+export const SubclipItemSchema = z.looseObject({
+	id: z.string(),
+	kind: z.literal('subclip'),
+	name: z.string(),
+	label: LabelColorSchema,
+	mediaId: z.string(),
+	/** The media item it was made from (null when that item was deleted). */
+	parentItemId: z.string().nullable(),
+	range: z.looseObject({ in: nonNegInt(), out: nonNegInt() }),
+	restrictTrims: z.boolean(),
+	marks: SourceMarksSchema,
+});
 export const SearchBinItemSchema = z.looseObject({
 	id: z.string(),
 	kind: z.literal('search-bin'),
@@ -76,11 +106,13 @@ export const ProjectItemSchema = z.discriminatedUnion('kind', [
 	SequenceItemSchema,
 	SyntheticItemSchema,
 	SearchBinItemSchema,
+	SubclipItemSchema,
 ]);
 export type BinItem = DeepStrip<z.infer<typeof BinItemSchema>>;
 export type MediaItem = DeepStrip<z.infer<typeof MediaItemSchema>>;
 export type SequenceItem = DeepStrip<z.infer<typeof SequenceItemSchema>>;
 export type SyntheticItem = DeepStrip<z.infer<typeof SyntheticItemSchema>>;
+export type SubclipItem = DeepStrip<z.infer<typeof SubclipItemSchema>>;
 export type ProjectItem = DeepStrip<z.infer<typeof ProjectItemSchema>>;
 
 export const ProxyPolicySchema = z.looseObject({

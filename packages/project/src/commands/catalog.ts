@@ -7,6 +7,7 @@ import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
+import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
@@ -67,6 +68,8 @@ export type CommandOwner =
 	| 'wp-m3-expressions'
 	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
 	| 'audio-fx'
+	// Editorial UX: 3/4-point editing, trim mode, subclips
+	| 'edit-ux'
 	// AE text animators (parity program)
 	| 'text-animators';
 
@@ -274,6 +277,10 @@ const LABELS: Record<CommandType, string> = {
 	'essentialSound.autoMatch': 'Auto-Match Loudness',
 	'clip.remix': 'Remix',
 	'clip.remixRevert': 'Revert Remix',
+	'clip.sourceEdit': 'Overwrite',
+	'clip.trimEdits': 'Trim',
+	'item.makeSubclip': 'Make Subclip',
+	'item.updateSubclip': 'Edit Subclip',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -304,6 +311,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[speechHandlers, SPEECH_OWNER],
 	[expressionHandlers, EXPRESSION_OWNER],
 	[essentialHandlers, ESSENTIAL_OWNER],
+	[editUxHandlers, 'edit-ux'],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -330,7 +338,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'keyframes-blend' ||
 				owner === SPEECH_OWNER ||
 				owner === ESSENTIAL_OWNER ||
-				owner === 'wp-multicam'
+				owner === 'wp-multicam' ||
+				owner === 'edit-ux'
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

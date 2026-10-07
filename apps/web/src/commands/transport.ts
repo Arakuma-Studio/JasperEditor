@@ -11,7 +11,8 @@ import { z } from 'zod';
 import { activeSequence, NUDGE_LARGE, NUDGE_SMALL, nudgeSelection } from '../panels/program/edits.ts';
 import { monitorStores } from '../panels/program/monitor-store.ts';
 import { driverFor, getSourceTransport, shuttleFor } from '../panels/program/transport-registry.ts';
-import { openInSource, performSourceEdit, sourceMonitorState } from '../panels/source/source-state.ts';
+import { openInSource, sourceMonitorState } from '../panels/source/source-state.ts';
+import { inTrimMode, trimModePlay, trimModeShuttle } from './edit-ux.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 /** Large step for Shift+←/→ (S02:TL-876 preference default). */
@@ -78,14 +79,19 @@ function goToEdit(ctx: CommandCtx, dir: 1 | -1, any: boolean) {
 	if (next !== null) seek(ctx, next);
 }
 
+// edit-ux: in trim mode J/K/L trim dynamically instead of shuttling (Premiere Trim Monitor).
 const shuttleKey =
 	(key: 'J' | 'K' | 'L') =>
-	(ctx: CommandCtx): void =>
+	(ctx: CommandCtx): void => {
+		if (trimModeShuttle(ctx, key)) return;
 		shuttleFor(activeTransport(ctx)).keyDown(key);
+	};
 const shuttleKeyUp =
 	(key: 'J' | 'K' | 'L') =>
-	(ctx: CommandCtx): void =>
+	(ctx: CommandCtx): void => {
+		if (inTrimMode(ctx)) return;
 		shuttleFor(activeTransport(ctx)).keyUp(key);
+	};
 
 const hasSequence = (ctx: CommandCtx) => isSource(ctx) || !!(ctx.session && activeSequence(ctx.session));
 
@@ -109,7 +115,10 @@ export const transportCommands: UiCommand[] = [
 		scope: 'editing',
 		agentExposed: true,
 		checked: (ctx) => activeTransport(ctx).getState().playing,
-		run: (ctx) => shuttleFor(activeTransport(ctx)).playStop(),
+		run: (ctx) => {
+			if (trimModePlay(ctx)) return;
+			shuttleFor(activeTransport(ctx)).playStop();
+		},
 	},
 	{
 		id: 'transport.shuttleForward',
@@ -136,13 +145,19 @@ export const transportCommands: UiCommand[] = [
 		id: 'transport.shuttleSlowForward',
 		label: 'Shuttle Slow Right',
 		scope: 'editing',
-		run: (ctx) => shuttleFor(activeTransport(ctx)).slow(1),
+		run: (ctx) => {
+			if (trimModeShuttle(ctx, 'L', true)) return;
+			shuttleFor(activeTransport(ctx)).slow(1);
+		},
 	},
 	{
 		id: 'transport.shuttleSlowReverse',
 		label: 'Shuttle Slow Left',
 		scope: 'editing',
-		run: (ctx) => shuttleFor(activeTransport(ctx)).slow(-1),
+		run: (ctx) => {
+			if (trimModeShuttle(ctx, 'J', true)) return;
+			shuttleFor(activeTransport(ctx)).slow(-1);
+		},
 	},
 	// ---------------------------------------------------------------- stepping and jumps (TL-876/879/880)
 	{
@@ -343,28 +358,4 @@ export const transportCommands: UiCommand[] = [
 			if (ctx.session) openInSource(ctx.session, (args as { itemId: string }).itemId);
 		},
 	},
-	{
-		id: 'timeline.insertFromSource',
-		label: 'Insert',
-		scope: 'editing',
-		when: (ctx) => !!ctx.session && sourceMonitorState.getState().itemId !== null,
-		run: (ctx) => runSourceEdit(ctx, 'insert'),
-	},
-	{
-		id: 'timeline.overwriteFromSource',
-		label: 'Overwrite',
-		scope: 'editing',
-		when: (ctx) => !!ctx.session && sourceMonitorState.getState().itemId !== null,
-		run: (ctx) => runSourceEdit(ctx, 'overwrite'),
-	},
 ];
-
-function runSourceEdit(ctx: CommandCtx, mode: 'insert' | 'overwrite') {
-	if (!ctx.session) return;
-	const r = performSourceEdit(ctx.session, mode);
-	if (!r.ok)
-		ctx.ui.toast({
-			kind: 'warning',
-			message: r.message ?? `${mode === 'insert' ? 'Insert' : 'Overwrite'} failed`,
-		});
-}

@@ -39,6 +39,7 @@ import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import {
 	contentSpanFlicks,
+	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	isAllowedSequenceRate,
 	type Rational,
@@ -280,6 +281,23 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			issues.push(
 				inv('INV-006', `Item ${it.id} references missing synthetic ${it.syntheticId}`, ['items', it.id]),
 			);
+		// edit-ux: subclips reference their media (and parent item when it still exists) and hold a valid range.
+		if (it.kind === 'subclip') {
+			const asset = doc.media[it.mediaId];
+			if (!asset)
+				issues.push(
+					inv('INV-006', `Subclip ${it.id} references missing media ${it.mediaId}`, ['items', it.id]),
+				);
+			if (it.parentItemId !== null && doc.items[it.parentItemId]?.kind !== 'media')
+				issues.push(inv('INV-006', `Subclip ${it.id} references a missing parent item`, ['items', it.id]));
+			const dur = asset?.probe.durationFlicks ?? null;
+			if (
+				!(it.range.out > it.range.in) ||
+				it.range.in < 0 ||
+				(dur !== null && it.range.out > dur + FLICKS_PER_SECOND / 10)
+			)
+				issues.push(inv('INV-005', `Subclip ${it.id} has an invalid range`, ['items', it.id]));
+		}
 		if (it.kind === 'sequence') {
 			if (!doc.sequences[it.sequenceId])
 				issues.push(
@@ -412,6 +430,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
 			const r = c as Record<string, unknown>;
 			// INV-006 references
+			if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip')
+				issues.push(inv('INV-006', `Clip ${c.id} references missing subclip ${c.subclipId}`, cw));
 			if (typeof r.mediaId === 'string') {
 				usedMedia.add(r.mediaId);
 				const asset = doc.media[r.mediaId];
@@ -769,7 +789,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	}
 	// INV-014 no leaks
 	for (const it of Object.values(doc.items)) {
-		if (it.kind === 'media') usedMedia.add(it.mediaId);
+		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
 		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
 	}
 	for (const m of Object.values(doc.media)) if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
@@ -1073,6 +1093,7 @@ export function repairDocument(
 		const dangling =
 			(it.kind === 'media' && !doc.media[it.mediaId]) ||
 			(it.kind === 'synthetic' && !doc.synthetics[it.syntheticId]) ||
+			(it.kind === 'subclip' && !doc.media[it.mediaId]) ||
 			(it.kind === 'sequence' && !doc.sequences[it.sequenceId]);
 		if (dangling) {
 			delete doc.items[it.id];
@@ -1288,11 +1309,26 @@ export function repairDocument(
 				note('drop-frame-hold', c.id, 'invalid frame hold removed');
 			}
 		}
+	// edit-ux: a subclip whose parent item is gone keeps its media; clips drop a dangling `subclipId`.
+	for (const it of Object.values(doc.items)) {
+		if (it.kind === 'subclip' && it.parentItemId !== null && doc.items[it.parentItemId]?.kind !== 'media') {
+			it.parentItemId = null;
+			note('clear-parent', it.id, 'subclip parent item is missing');
+		}
+	}
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const c of Object.values(seq.clips)) {
+			if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip') {
+				delete c.subclipId;
+				note('clear-subclip', c.id, 'clip referenced a missing subclip');
+			}
+		}
+	}
 	// Leaked media/synthetics get a project item so nothing silently disappears (INV-014).
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
 	for (const it of Object.values(doc.items)) {
-		if (it.kind === 'media') usedMedia.add(it.mediaId);
+		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
 		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
 	}
 	for (const seq of Object.values(doc.sequences)) {

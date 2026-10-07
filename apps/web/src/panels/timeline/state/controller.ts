@@ -320,6 +320,8 @@ export class TimelineController {
 		// edit-structure (Premiere): Alt-click selects one clip of a group.
 		const groups = !p.alt;
 		this.session.selectGaps([]);
+		// edit-ux: a clip click ends a keyframe (lane) selection.
+		if (this.session.getState().selection.keyframes) this.session.selectKeyframes(null);
 		// S10:TUI-002: selecting a clip clears the transition selection unless Shift.
 		if (!p.shift) this.session.select('transitions', [], 'replace');
 		if (p.shift) this.session.select('timeline', [clip.id], 'toggle', { linked, groups, primary: clip.id });
@@ -822,7 +824,7 @@ export class TimelineController {
 		const cmd =
 			d.kind === 'slip'
 				? { type: 'clip.slip', clipIds: d.ids, deltaFrames: delta }
-				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta };
+				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta, linked: d.ids.length > 1 };
 		const r = d.gesture.update([cmd as never]);
 		const rate = base.settings.frameRate;
 		const actual = r.ok ? ((r.results[0] as { deltaFrames?: number })?.deltaFrames ?? delta) : 0;

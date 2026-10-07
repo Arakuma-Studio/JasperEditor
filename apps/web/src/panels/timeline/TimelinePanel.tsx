@@ -85,6 +85,7 @@ import { boundaryFrameAt, extentEnd, followPage, followSmooth, type Viewport } f
 import { type Geometry, type PointerInfo, TimelineController } from './state/controller.ts';
 import { timelineGesturePreview } from './state/gesture-preview.ts';
 import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.ts';
+import { enterTrimMode, refreshEditPoints } from './state/trim-mode.ts';
 import { type ContextMenuItem, createTimelineUiStore, type TransitionGhost } from './state/ui-store.ts';
 
 const EMPTY: readonly string[] = [];
@@ -185,6 +186,19 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		(a, b) => a.w === b.w && a.h === b.h,
 	);
 	const readoutFrames = useStoreSelector(ui, (s) => s.readoutFrames);
+	// edit-ux: keyframe lanes (rubber bands) on expanded tracks.
+	const activeTool = useSessionState((s) => s.toggles.activeTool);
+	const keyframeSel = useSessionState((s) => s.selection.keyframes);
+	const lanes = useMemo(
+		() => ({
+			session,
+			tool: activeTool,
+			display: view.keyframeDisplay as Record<string, string>,
+			selectedKeys: new Set(keyframeSel?.keyframeIds ?? []),
+			mac,
+		}),
+		[session, activeTool, view.keyframeDisplay, keyframeSel, mac],
+	);
 	const snapping = useSessionState((s) => s.toggles.snapping);
 
 	// ------------------------------------------------------------ geometry
@@ -303,6 +317,16 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	useEffect(() => {
 		if (import.meta.env.DEV) exposeForDev(session);
 	}, [session]);
+
+	// edit-ux: selected edit points follow their clips through edits, undo and redo (trim mode).
+	useEffect(
+		() =>
+			session.on('doc.changed', () => {
+				const s = seqId ? session.getCommitted().sequences[seqId] : undefined;
+				if (s) refreshEditPoints(ui, s);
+			}),
+		[session, ui, seqId],
+	);
 
 	// Agent flash (TL-954): 200 ms outline pulse on clips an agent changed.
 	useEffect(
@@ -856,6 +880,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		if (!th) {
 			// edit-structure: double-clicking a nest clip opens its sequence at the frame under the pointer.
 			const hit = hitTest(committedSeq, g.layout, g.viewport, p.x, p.y);
+			// edit-ux (Premiere): double-clicking an edit point opens the Trim Monitor (trim mode).
+			if (hit.kind === 'clip' && hit.zone !== 'body' && ui.getState().editPoints.length) {
+				enterTrimMode(committedSeq.id);
+				return;
+			}
 			if (hit.kind === 'clip' && (hit.clip.kind === 'nest-video' || hit.clip.kind === 'nest-audio'))
 				revealNested(session, committedSeq, hit.clip, boundaryFrameAt(g.viewport, p.x));
 			return;
@@ -1453,6 +1482,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						transitions={transitions}
 						selectedTransitions={selectedTransitions}
 						showThroughEdits={showThroughEdits}
+						lanes={lanes}
 					/>
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>
