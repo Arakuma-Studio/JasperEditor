@@ -36,9 +36,13 @@ import {
 	type Lut,
 	type ParamValue,
 	type RenderVisualClip,
+	isOcioBundle,
+	OcioConfig,
 	type ResolvedEffect,
 	serializeCube,
+	workingKey,
 } from '@jasper/project';
+import { readFile } from 'node:fs/promises';
 import { type EffectFilterContext, type NativeExtension, sampleRuns } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
 import { exists } from '../tools/fs.ts';
@@ -110,6 +114,28 @@ function lutRefs(clip: RenderVisualClip): string[] {
 export function createColorExtension(opts: ColorExtensionOptions): NativeExtension {
 	const registry = opts.effects ?? defaultEffectRegistry;
 	const assetCache = new Map<string, Promise<Lut | null>>();
+	const configCache = new Map<string, Promise<OcioConfig | null>>();
+
+	/** color-mgmt: a custom OCIO config asset (the engine-written bundle), parsed once per fingerprint. */
+	const loadConfig = (path: string, fingerprint: string): Promise<OcioConfig | null> => {
+		const k = `${fingerprint}:${path}`;
+		let p = configCache.get(k);
+		if (!p) {
+			p = readFile(path, 'utf8')
+				.then((text) => {
+					const json = JSON.parse(text) as unknown;
+					if (!isOcioBundle(json)) throw new Error('not a JasperEditor OCIO bundle');
+					return OcioConfig.fromBundle(json);
+				})
+				.catch((e) => {
+					opts.log?.(`[color] cannot read OCIO config ${path}: ${(e as Error).message}`);
+					return null;
+				});
+			configCache.set(k, p);
+			if (configCache.size > 16) configCache.delete(configCache.keys().next().value!);
+		}
+		return p;
+	};
 	const writes = new Map<string, Promise<string>>();
 
 	const loadAsset = (path: string, fingerprint: string): Promise<Lut | null> => {
@@ -190,13 +216,19 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 			const pin = ctx.pin ?? exists;
 
 			// LUT assets referenced by any colour effect: load them once (the bake reads them synchronously).
+			// color-mgmt: so are custom OCIO configs (`color-config` media of colour input transforms).
 			const luts = new Map<string, Lut | null>();
+			const configs = new Map<string, OcioConfig | null>();
 			const clips = snap.videoTracks.flatMap((t) => t.clips);
 			for (const c of clips) {
 				for (const id of lutRefs(c)) {
-					if (luts.has(id)) continue;
+					if (luts.has(id) || configs.has(id)) continue;
 					const local = planned.media[id];
 					const asset = planned.document.media[id];
+					if (asset?.kind === 'color-config') {
+						configs.set(id, local ? await loadConfig(local.path, asset.fingerprint) : null);
+						continue;
+					}
 					const lut = local && asset ? await loadAsset(local.path, asset.fingerprint) : null;
 					luts.set(id, lut);
 					if (!lut) out.offlineLuts.push(id);
@@ -205,10 +237,17 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 			if (out.offlineLuts.length)
 				ctx.log(`LUT_OFFLINE: ${out.offlineLuts.length} LUT asset(s) offline; the grades skip them`);
 			const lutKey = (id: string) => {
-				const l = luts.get(id);
+				const l = luts.get(id) ?? configs.get(id);
 				return l ? (planned.document.media[id]?.fingerprint ?? id) : `offline:${id}`;
 			};
-			const colorCtx = { lut: (id: string) => luts.get(id) ?? null };
+			// color-mgmt: the working space (input transforms, Lumetri's HDR grading signal) and OCIO configs.
+			const working = snap.settings.color;
+			const extra = workingKey(working);
+			const colorCtx = {
+				lut: (id: string) => luts.get(id) ?? null,
+				...(working ? { working } : {}),
+				colorConfig: (id: string) => configs.get(id) ?? null,
+			};
 			const bakes = new Map<string, Promise<string | null>>();
 
 			for (const c of clips) {
@@ -242,7 +281,7 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 								Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t) as ParamValue]),
 							),
 						}));
-						return { effects, key: colorRunKey(effects, lutKey, size) };
+						return { effects, key: colorRunKey(effects, lutKey, size, extra) };
 					};
 					let states: { start: number; end: number; value: RunState }[];
 					if (!animated) states = [{ start: f0, end: f1, value: stateAt(f0) }];

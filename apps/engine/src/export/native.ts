@@ -11,6 +11,7 @@
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
 // `fade=…:alpha=1` on the layer (the same linear ramps `fadeFactor` evaluates for the composition), the black
 // of a dip to black is a colour layer under the track's clips (audio crossfades are part of the mixdown).
+import { colorTagArgs, outputFilters, svtHdrParams } from '../color/output.ts';
 import {
 	blendModeIndex,
 	clipContentTime,
@@ -77,6 +78,11 @@ type NativeBuildOptions = {
 	audio?: { file: string; sampleRate: number; soxr?: boolean };
 	/** edit-structure: what the extensions prepared for each nested sequence (`nestPath` keys). */
 	nested?: ReadonlyMap<string, PreparedExtensions>;
+	/**
+	 * color-mgmt: the working → output (exports) or working → display (stills) LUT filter (`lut3d=…`), null when the
+	 * output is the working space. The tags, matrix and bit depth come from `output.color`.
+	 */
+	colorLut?: string | null;
 };
 
 type NativeGraph = {
@@ -163,14 +169,17 @@ export function inColor(m: LocalMedia | null): string {
 	const vs = m?.record.probe.streams.find((s) => s.type === 'video');
 	if (vs?.type !== 'video') return '';
 	const matrix = vs.color.matrix;
+	// color-mgmt: BT.2020 (HDR / wide-gamut) media decode with the BT.2020 non-constant-luminance matrix.
 	const cm =
 		matrix === 'bt709'
 			? 'bt709'
-			: matrix === 'bt470bg' || matrix === 'smpte170m'
-				? 'bt601'
-				: vs.height >= 720
-					? 'bt709'
-					: 'bt601';
+			: matrix === 'bt2020nc' || matrix === 'bt2020c'
+				? 'bt2020'
+				: matrix === 'bt470bg' || matrix === 'smpte170m'
+					? 'bt601'
+					: vs.height >= 720
+						? 'bt709'
+						: 'bt601';
 	return `:in_color_matrix=${cm}:in_range=${vs.color.range === 'pc' ? 'pc' : 'tv'}`;
 }
 
@@ -984,6 +993,14 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				fps: output.fps,
 				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
 				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
+				// color-mgmt: bit depth, colour code points, HDR metadata.
+				...(output.color
+					? {
+							bitDepth: output.color.bitDepth,
+							colorCodes: output.color.codes,
+							svtHdr: svtHdrParams(output.color),
+						}
+					: {}),
 			});
 	// keyframes-blend: the composite runs as a pipeline of ffmpeg processes when the stack has blend layers: each blend
 	// layer ends a process (its output = the composite below ‖ the layer on transparency, side by side, raw RGBA) and
@@ -1098,10 +1115,12 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			);
 	}
 	vout.push(`trim=end_frame=${output.frames}`, 'setpts=PTS-STARTPTS');
-	if (o.still) vout.push('format=rgb24');
+	// color-mgmt: stills are the display rendition (working → display LUT), exports the output colour space.
+	if (o.still) vout.push(...(o.colorLut ? ['format=rgba', o.colorLut] : []), 'format=rgb24');
 	else {
 		// The encoder's pixel format (yuv420p; nv12 + hwupload for QSV/VAAPI; 4:2:2/4:4:4 10-bit for ProRes).
-		vout.push(`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'setsar=1', BT709_FRAME_TAGS);
+		if (output.color) vout.push(...outputFilters(output.color, o.colorLut ?? null, SWS_FLAGS));
+		else vout.push(`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'setsar=1', BT709_FRAME_TAGS);
 		vout.push(...enc!.filters);
 	}
 	chains.push(`[${last}]${vout.join(',')}[vout]`);
@@ -1136,14 +1155,9 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			'-map',
 			'[aout]',
 			...enc!.video,
-			'-colorspace',
-			'bt709',
-			'-color_primaries',
-			'bt709',
-			'-color_trc',
-			'bt709',
-			'-color_range',
-			'tv',
+			...(output.color
+				? colorTagArgs(output.color)
+				: ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv']),
 			'-r',
 			rate(output.fps),
 			'-frames:v',

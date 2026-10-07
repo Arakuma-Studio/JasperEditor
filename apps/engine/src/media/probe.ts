@@ -6,6 +6,7 @@ import {
 	type MediaProbe,
 	type MediaStream,
 	secondsToFlicks,
+	type VideoStream,
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import type { SpawnOptions } from '../tools/process.ts';
@@ -72,7 +73,15 @@ type FfStream = {
 	duration?: string;
 	disposition?: { attached_pic?: number };
 	tags?: Record<string, string>;
-	side_data_list?: { side_data_type?: string; rotation?: number }[];
+	side_data_list?: {
+		side_data_type?: string;
+		rotation?: number;
+		/** color-mgmt: "Mastering display metadata" (rationals, cd/m²) and "Content light level metadata". */
+		max_luminance?: string | number;
+		min_luminance?: string | number;
+		max_content?: string | number;
+		max_average?: string | number;
+	}[];
 };
 type FfFormat = { format_name?: string; duration?: string; tags?: Record<string, string> };
 
@@ -142,6 +151,35 @@ function streamHasAlpha(s: Pick<FfStream, 'pix_fmt' | 'tags'>): boolean {
 }
 
 /** First guess of WebCodecs/`<video>` decodability (S04:PB-004); null = depends on the client (HEVC). */
+/** A number or an ffprobe rational ("10000000/10000"); null when absent or not finite. */
+function ffNumber(v: string | number | undefined): number | null {
+	if (v === undefined) return null;
+	if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+	const [a, b] = v.split('/').map(Number);
+	const x = b === undefined ? a! : a! / b;
+	return Number.isFinite(x) ? x : null;
+}
+
+/** color-mgmt: HDR static metadata of a video stream (mastering display luminance, MaxCLL / MaxFALL). */
+export function hdrOf(s: Pick<FfStream, 'side_data_list'>): { hdr?: NonNullable<VideoStream['hdr']> } {
+	const hdr: NonNullable<VideoStream['hdr']> = {};
+	for (const sd of s.side_data_list ?? []) {
+		const t = sd.side_data_type ?? '';
+		if (/mastering display/i.test(t)) {
+			const max = ffNumber(sd.max_luminance);
+			const min = ffNumber(sd.min_luminance);
+			if (max !== null && max > 0) hdr.masteringMaxNits = max;
+			if (min !== null && min >= 0) hdr.masteringMinNits = min;
+		} else if (/content light level/i.test(t)) {
+			const cll = ffNumber(sd.max_content);
+			const fall = ffNumber(sd.max_average);
+			if (cll !== null && cll > 0) hdr.maxCll = cll;
+			if (fall !== null && fall > 0) hdr.maxFall = fall;
+		}
+	}
+	return Object.keys(hdr).length ? { hdr } : {};
+}
+
 function browserDecodable(s: FfStream, interlaced: boolean): boolean | null {
 	if (interlaced) return false;
 	const codec = s.codec_name ?? '';
@@ -211,6 +249,7 @@ function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResul
 					range: s.color_range === 'pc' || s.color_range === 'jpeg' ? 'pc' : 'tv',
 				},
 				browserDecodable: browserDecodable(s, interlaced),
+				...hdrOf(s),
 			});
 		} else if (s.codec_type === 'audio') {
 			streams.push({

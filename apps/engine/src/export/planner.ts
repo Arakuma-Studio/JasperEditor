@@ -32,6 +32,7 @@ import {
 	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';
+import { ExportColorError, type ExportColor, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
@@ -111,6 +112,8 @@ export type OutputSpec = {
 	proresProfile?: 'hq' | '4444';
 	/** wp interchange: straight-alpha ProRes 4444 on a transparent background, no audio (Remotion path). */
 	alpha?: boolean;
+	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
+	color?: ExportColor;
 };
 
 export type LocalMedia = { path: string; record: MediaRecord };
@@ -456,6 +459,23 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		(video.codec !== 'prores' || video.proresProfile !== '4444' || settings.container !== 'mov')
 	)
 		throw new PlanError('VALIDATION_FAILED', 400, 'Alpha output needs ProRes 4444 in a MOV container');
+	// color-mgmt: the written colour space (working by default), bit depth and HDR metadata.
+	try {
+		output.color = exportColorOf(video, snapshot.settings.color, input.still ? null : (encoder?.encoder ?? null));
+	} catch (e) {
+		if (e instanceof ExportColorError) throw new PlanError('VALIDATION_FAILED', 400, e.message);
+		throw e;
+	}
+	if (output.color.hdr && output.color.bitDepth === 8 && !input.still)
+		warnings.push({
+			code: 'HDR_8BIT',
+			message: `${output.color.space.label} at 8 bits per component bands in smooth gradients; choose ProRes, AV1 or VP9 for 10-bit`,
+		});
+	if (output.color.hdr && !input.still && settings.container === 'webm' && encoder?.encoder === 'libvpx-vp9')
+		warnings.push({
+			code: 'HDR_METADATA_UNSUPPORTED',
+			message: 'VP9 in WebM carries the PQ/HLG tags but no mastering-display or content-light metadata here',
+		});
 	if (!rationalEquals(outFps, seqFps)) {
 		warnings.push({
 			code: 'FRAME_RATE_CONVERSION',

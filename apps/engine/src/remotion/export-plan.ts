@@ -61,8 +61,14 @@ export function planRemotionExport(input: {
 	crf: number;
 	speed: 'fast' | 'balanced' | 'best';
 	fps: { num: number; den: number };
+	/**
+	 * color-mgmt: the export writes 8-bit BT.709 SDR as Remotion's encoders do. False (another colour space, a
+	 * conversion or more bits) always takes the intermediate, so the engine's encode sets the pixels and tags.
+	 */
+	plainRec709?: boolean;
 }): RemotionExportPlan {
 	const { encoder, remotion } = input;
+	const plain = input.plainRec709 !== false;
 	const gplDirectH264 = (): RemotionExportPlan => ({
 		mode: 'direct',
 		codec: 'h264',
@@ -84,11 +90,12 @@ export function planRemotionExport(input: {
 		};
 	}
 	// Dev with GPL builds on both sides and libx264 selected: unchanged behaviour (one pass in Remotion).
-	if (encoder.encoder === 'libx264' && !remotion.lgpl && !input.lgplOnly && has(remotion.encoders, 'libx264'))
+	if (plain && encoder.encoder === 'libx264' && !remotion.lgpl && !input.lgplOnly && has(remotion.encoders, 'libx264'))
 		return gplDirectH264();
 
 	// VP9 in WebM + Opus: Remotion encodes it directly with LGPL components.
 	if (
+		plain &&
 		encoder.encoder === 'libvpx-vp9' &&
 		encoder.container === 'webm' &&
 		encoder.audioEncoder === 'libopus' &&

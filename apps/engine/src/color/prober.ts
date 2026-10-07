@@ -12,7 +12,7 @@ const MAX_CUBE_BYTES = 64 * 1024 * 1024;
 
 /** Reads and parses a LUT file; throws `JobError('INVALID_LUT', …)` with the parser's line number. */
 export async function readCubeFile(file: string): Promise<Lut> {
-	const format = lutFormatOf(file) ?? 'cube';
+	const format = lutFormatOf(file);
 	const st = await stat(file);
 	if (st.size > MAX_CUBE_BYTES)
 		throw new JobError('INVALID_LUT', `LUT file too large (${st.size} bytes, max ${MAX_CUBE_BYTES})`, false);
@@ -21,7 +21,7 @@ export async function readCubeFile(file: string): Promise<Lut> {
 		return parseLutFile(text, format);
 	} catch (e) {
 		if (e instanceof CubeParseError)
-			throw new JobError('INVALID_LUT', `Invalid .${format} LUT: ${e.message}`, false, { line: e.line });
+			throw new JobError('INVALID_LUT', `Invalid ${format ? `.${format} ` : ''}LUT: ${e.message}`, false, { line: e.line });
 		throw e;
 	}
 }
