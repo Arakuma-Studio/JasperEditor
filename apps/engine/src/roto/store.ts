@@ -1,19 +1,20 @@
 // The roto matte store (`<appdir>/cache/roto/`), content-addressed so undo, redo, corrections and re-propagation
 // reuse every frame whose inputs did not change:
 //
-// - `seg/<chainKey>.seg`: a frame's segmentation (binary matte, Refine Edge band, colour models). The chain key of a
-//   frame hashes everything its segmentation depends on: the media, the segmentation settings and model, and the
-//   strokes / boxes of every frame from the base frame out to it (`chainKeys`) — a correction stroke on frame 50
-//   changes the keys of frames 50… only.
-// - `png/<matteKey>.png`: the frame's final 8-bit matte (edge refinement applied); matteKey = chain key + edge
-//   settings. Faces rotos write mattes keyed per frame by their inputs.
-// - `set/<key>.json`: a computed roto (`RotoResult.key`): frame → matte key over [start, end] and the size. The
-//   engine serves frame n of a set at `GET /roto/<key>?n=<n>` (signable for headless renders).
+// - `pool/seg/<chainKey>.seg`: a frame's segmentation (binary matte, Refine Edge band, colour models). The chain key
+//   of a frame hashes everything its segmentation depends on: the media, the segmentation settings and model, and
+//   the strokes / boxes of every frame from the base frame out to it (worker/run.ts `chainKeys`) — a correction
+//   stroke on frame 50 changes the keys of frames 50… only.
+// - `pool/png/<matteKey>.png`: a frame's final 8-bit matte (edge refinement applied); matteKey = chain key + edge
+//   settings (faces: per frame of the tracked span).
+// - `sets/<key>/`: a computed roto (`RotoResult.key`): `set.json` and frame n's matte as `<n>.png` (a hard link to
+//   the pool file, a copy where links are not possible). Served at `GET /mg/roto/<key>?n=<n>` (signable for
+//   headless renders).
 //
-// Writes are atomic (temp file + rename). The cache layer (cache/layout.ts kind `roto`) cleans sets, and the
-// frames only they reference, like other caches; saved projects keep the sets of their rotos.
+// Writes are atomic (temp file + rename). The cache registry (cache/layout.ts kind `roto`) cleans sets that no
+// project references and the pool (a reuse accelerator: losing it only costs recomputation).
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 export type RotoSet = {
@@ -30,7 +31,7 @@ export type RotoSet = {
 	createdAt: string;
 };
 
-const KEY_RE = /^[a-f0-9]{16,64}$/;
+const KEY_RE = /^[a-f0-9]{32}$/;
 
 export function isRotoKey(k: string): boolean {
 	return KEY_RE.test(k);
@@ -48,13 +49,19 @@ export class RotoStore {
 	constructor(readonly root: string) {}
 
 	segPath(chainKey: string): string {
-		return join(this.root, 'seg', `${chainKey}.seg`);
+		return join(this.root, 'pool', 'seg', `${chainKey}.seg`);
 	}
 	pngPath(matteKey: string): string {
-		return join(this.root, 'png', `${matteKey}.png`);
+		return join(this.root, 'pool', 'png', `${matteKey}.png`);
+	}
+	setDir(key: string): string {
+		return join(this.root, 'sets', key);
 	}
 	setPath(key: string): string {
-		return join(this.root, 'set', `${key}.json`);
+		return join(this.setDir(key), 'set.json');
+	}
+	setFramePath(key: string, n: number): string {
+		return join(this.setDir(key), `${n}.png`);
 	}
 
 	async has(path: string): Promise<boolean> {
@@ -81,7 +88,21 @@ export class RotoStore {
 		return s;
 	}
 
+	/**
+	 * Publishes a set: links every frame's pool matte into `sets/<key>/` (frames already there are kept), then writes
+	 * `set.json` (last, atomically: readers never see a set with missing frames).
+	 */
 	async writeSet(s: RotoSet): Promise<void> {
+		const dir = this.setDir(s.key);
+		await mkdir(dir, { recursive: true });
+		for (let n = s.start; n <= s.end; n++) {
+			const mk = s.frames[n - s.start]!;
+			const dest = this.setFramePath(s.key, n);
+			const tmp = `${dest}.${process.pid}.tmp`;
+			await rm(tmp, { force: true });
+			await link(this.pngPath(mk), tmp).catch(() => copyFile(this.pngPath(mk), tmp));
+			await rename(tmp, dest);
+		}
 		await this.write(this.setPath(s.key), JSON.stringify(s));
 		this.sets.set(s.key, s);
 	}
@@ -96,9 +117,7 @@ export class RotoStore {
 	async framePath(key: string, n: number): Promise<string | null> {
 		const s = await this.readSet(key);
 		if (!s || !Number.isInteger(n) || n < s.start || n > s.end) return null;
-		const mk = s.frames[n - s.start];
-		if (!mk || !isRotoKey(mk)) return null;
-		const p = this.pngPath(mk);
+		const p = this.setFramePath(key, n);
 		return (await this.has(p)) ? p : null;
 	}
 }

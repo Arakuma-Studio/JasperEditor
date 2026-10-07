@@ -225,7 +225,7 @@ export type RenderRotoMatte = {
 
 /** Engine path of a matte store (signable, like `/media/…`). */
 export function rotoStorePath(key: string): string {
-	return `/roto/${encodeURIComponent(key)}`;
+	return `/mg/roto/${encodeURIComponent(key)}`;
 }
 
 /** URL of one frame's matte. */
