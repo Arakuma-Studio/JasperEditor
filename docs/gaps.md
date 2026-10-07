@@ -142,6 +142,12 @@ on canvas and exported natively.
 ### sim-warp
 **Done when:** the simulation and warp effects editors use (particles, mesh warp, liquify, turbulent displace, a Warp
 Stabilizer-style effect with in-clip analysis) render deterministically in preview and export.
+**Status (merged):** partial — see [wp-notes/sim-warp.md](wp-notes/sim-warp.md): the 18 After Effects simulation
+effects + Card Wipe and Bezier Warp, Mesh Warp, Liquify, Puppet, Displacement Map, Optics Compensation, Polar
+Coordinates, Reshape, Smear as deterministic GPU effects (seek = play, GL tests per effect, export via the layer
+bake verified by extracted frames), Program-monitor Puppet / Liquify / Mesh Warp tools, MCP tools. Turbulent Displace
+existed already. Not done here: a Warp Stabilizer-style *effect* (stabilisation is a clip-processing recipe),
+Comp Camera / Lights for the 3D simulations, Puppet Sketch recording in the UI.
 
 ### three-d
 **Done when:** 3D layers with a camera and lights (After Effects overlap) position and render text, shapes and footage
