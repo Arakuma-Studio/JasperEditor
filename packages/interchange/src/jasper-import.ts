@@ -10,6 +10,7 @@ import {
 	type FontRef,
 	type IdSource,
 	isAllowedSequenceRate,
+	isRemapped,
 	isValidId,
 	type LabelColor,
 	type LinkGroup,
@@ -20,12 +21,15 @@ import {
 	makeSequenceSettings,
 	nearestAllowedRate,
 	type ProjectItem,
+	remapFitDuration,
 	type Sequence,
 	type SyntheticSource,
+	type TimedClip,
 	type Track,
 	type Transcript,
 	type Transform,
 	type Transition,
+	timeMapToRemap,
 	transitionSpec,
 } from '@jasper/project';
 import type { IBinEntry, IClip, IMedia, IProject, ISequence, ITrack, Rate } from './model.ts';
@@ -674,6 +678,53 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		});
 		const reid = <T extends { id: string }>(list: T[], prefix: 'fx'): T[] =>
 			list.map((x) => ({ ...clone(x), id: isValidId(x.id) ? x.id : ids.next(prefix) }));
+		// Workstream `time`: a time map becomes Time Remapping (video and nested pictures); audio cannot be remapped.
+		const hasMap = !!c.timeMap && c.timeMap.length >= 2 && c.hold == null;
+		const remapFields = (): Record<string, unknown> => {
+			// OTIO carries JasperEditor's own remap in its metadata (the format has no variable speed).
+			const jr = (j as { timeRemap?: { enabled?: boolean } } | null)?.timeRemap;
+			if (!hasMap && jr?.enabled && j && typeof j.sourceIn === 'number')
+				return {
+					timeRemap: reidKeys(clone(jr) as { keyframes?: { id: string }[] }),
+					sourceIn: j.sourceIn,
+					speed: { ...common.speed, rate: j.speed?.rate ?? 1, reverse: false },
+				};
+			if (!hasMap) return {};
+			const r = timeMapToRemap(c.timeMap!, common.sourceIn, () => ids.next('kf'), speed);
+			if (r.approximated)
+				report.info(`the eased speed changes of clip "${c.name}" became symmetric speed transitions`, {
+					subject: where,
+				});
+			return { timeRemap: r.remap, speed: { ...common.speed, reverse: false } };
+		};
+		const reidKeys = <T extends { keyframes?: { id: string }[] }>(r: T): T => {
+			for (const k of r.keyframes ?? []) k.id = ids.next('kf');
+			return r;
+		};
+		const interpField = (): Record<string, unknown> =>
+			c.frameSampling && c.frameSampling !== 'frame-sampling'
+				? { timeInterpolation: c.frameSampling }
+				: typeof (j as { timeInterpolation?: unknown } | null)?.timeInterpolation === 'string'
+					? { timeInterpolation: (j as { timeInterpolation: string }).timeInterpolation }
+					: {};
+		if (hasMap && track.kind === 'audio') {
+			const a = c.timeMap![0]!;
+			const b = c.timeMap![c.timeMap!.length - 1]!;
+			const avg = (b.value - a.value) / Math.max(1, b.time - a.time);
+			report.warn(
+				`the variable speed of audio clip "${c.name}" is not supported (Premiere keeps audio at 100 %)`,
+				{
+					subject: where,
+					instead: 'its average speed',
+				},
+			);
+			common.speed = {
+				...common.speed,
+				rate: Math.min(100, Math.max(0.01, Math.abs(avg) || 1)),
+				reverse: avg < 0,
+			};
+			common.sourceIn = Math.max(0, Math.round(Math.min(a.value, b.value)));
+		}
 
 		// JasperEditor clips without media (OTIO metadata round trip): restore the clip itself.
 		if (c.source.type === 'none') {
@@ -727,6 +778,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 					sequenceId: sid,
 					...visual(c, { width: inner.width, height: inner.height }),
 					effects: reid(effects, 'fx'),
+					...remapFields(),
 				} as Clip,
 			];
 		}
@@ -779,6 +831,17 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		const bounded = asset.kind === 'video' || asset.kind === 'audio';
 		const fit = (clip: Clip): Clip | null => {
 			if (!bounded || dur === null) return clip;
+			if (isRemapped(clip as TimedClip)) {
+				const n = remapFitDuration(clip as TimedClip, clip.duration, rate, dur);
+				if (n < clip.duration) {
+					report.warn(
+						`clip "${c.name}" uses more media than the file holds; it was shortened by ${clip.duration - n} frames`,
+						{ subject: where, instead: `a clip of ${n} frames` },
+					);
+					clip.duration = n;
+				}
+				return clip;
+			}
 			const span = Math.round(clip.duration * F * clip.speed.rate);
 			if (clip.sourceIn >= dur) {
 				report.warn(`clip "${c.name}" starts after the end of its media and was skipped`, { subject: where });
@@ -855,6 +918,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 				...vis,
 				effects: reid(effects, 'fx'),
 				...(j?.trackers ? { trackers: clone(j.trackers) } : {}),
+				...(kind === 'video' ? { ...remapFields(), ...interpField() } : {}),
 				...over,
 			}) as Clip;
 		if (c.hold != null && kind !== 'still') {

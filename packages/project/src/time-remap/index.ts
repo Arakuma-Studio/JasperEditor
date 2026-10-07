@@ -5,3 +5,4 @@ export * from './model.ts';
 export * from './ops.ts';
 export * from './sampling.ts';
 export * from './scenes.ts';
+export * from './timemap.ts';

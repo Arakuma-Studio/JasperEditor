@@ -296,3 +296,19 @@ describe('frame selection', () => {
 		expect(FLICKS_PER_SECOND).toBeGreaterThan(0);
 	});
 });
+
+describe('time maps (interchange)', () => {
+	it('round-trips a remap with segments, a ramp, a freeze and a reverse', async () => {
+		const { remapToTimeMap, timeMapToRemap } = await import('../src/index.ts');
+		const base = remap([key(0, 0), key(30 * F, 15 * F, { ramp: 4 * F }), key(60 * F, 75 * F)], { speedAfter: 0 });
+		const c = clipWith(base, { start: 0, duration: 90 });
+		const pts = remapToTimeMap(c, R30)!;
+		expect(pts[0]).toMatchObject({ time: 0, value: 0 });
+		expect(pts.some((p) => p.interp === 'smooth')).toBe(true);
+		const back = timeMapToRemap(pts, 0, newId);
+		expect(back.approximated).toBe(false);
+		const c2 = clipWith(back.remap, { start: 0, duration: 90 });
+		for (let f = 0; f < 90; f += 1) expect(clipMediaTimeAt(c2, f, R30)).toBeCloseTo(clipMediaTimeAt(c, f, R30), -2);
+		expect(remapToTimeMap(clipWith(null), R30)).toBeNull();
+	});
+});
