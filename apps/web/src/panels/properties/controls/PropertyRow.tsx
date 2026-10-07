@@ -39,6 +39,7 @@ import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from '.
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { MediaParamPicker } from './MediaParamPicker.tsx';
 import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
+import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
 
 export type RowContext = {
 	doc: ProjectDocument;
@@ -288,6 +289,8 @@ export function PropertyRow(props: {
 			}
 			// wp masks: Mask Path has no value editor (edited on the monitor): its vertex count.
 			case 'json':
+				// wp shapes: gradients (editor) and shape paths (vertex count, Closed).
+				if (spec.group === 'shape') return <ShapeJsonValue row={row} ctx={ctx} value={value} mixed={mixed} />;
 				if (spec.group === 'mask') {
 					const p = value as { vertices?: unknown[]; closed?: boolean } | null;
 					return (

@@ -13,13 +13,17 @@ import {
 	SHAPE_LIMITS,
 	shapeContainsPoint,
 	type Vec2,
+	evaluateVectorShape,
+	vectorShapeContainsPoint,
 } from '@jasper/project';
 import type { HandleId } from '../panels/program/transform-math.ts';
 
 /** Evaluated size of a shape layer at its frame, or null for other layers. */
 export function shapeLayerSize(l: ResolvedLayer): Vec2 | null {
 	const src = l.clip.source;
-	return 'shape' in src ? evaluateShape(src.shape, l.contentTime, l.props.box).size : null;
+	return 'shape' in src && src.shape.type !== 'vector'
+		? evaluateShape(src.shape, l.contentTime, l.props.box).size
+		: null;
 }
 
 /**
@@ -30,9 +34,16 @@ export function hitsLayerGeometry(l: ResolvedLayer, p: Vec2): boolean {
 	const src = l.clip.source;
 	if (!('shape' in src) || l.props.projective) return true;
 	const inv = invertMatrix(l.props.matrix);
-	return (
-		!inv || shapeContainsPoint(evaluateShape(src.shape, l.contentTime, l.props.box), applyMatrix(inv, p))
-	);
+	if (!inv) return true;
+	const q = applyMatrix(inv, p);
+	// wp shapes: vector shapes are hit by their painted fills and strokes (content origin = box centre).
+	if (src.shape.type === 'vector')
+		return vectorShapeContainsPoint(
+			evaluateVectorShape(src.shape.contents, l.contentTime),
+			[q[0] - l.props.box.width / 2, q[1] - l.props.box.height / 2],
+			3,
+		);
+	return shapeContainsPoint(evaluateShape(src.shape, l.contentTime, l.props.box), q);
 }
 
 /** `param.set shape.size` at the playhead (a keyframe when the size is animated, PRP-020). */

@@ -561,3 +561,38 @@ export function vectorShapeIsTimeDependent(contents: readonly ShapeItem[]): bool
 	visit(contents);
 	return dep;
 }
+
+/**
+ * Item space → content space at time `t`: the product of the transforms of the groups enclosing `itemId` (null when
+ * the item is not in the tree). Content space has its origin at the layer box centre.
+ */
+export function shapeItemMatrix(contents: readonly ShapeItem[], itemId: string, t: number): Affine | null {
+	const walk = (items: readonly ShapeItem[], m: Affine): Affine | null => {
+		for (const it of items) {
+			if (it.id === itemId) return m;
+			if (it.type === 'group') {
+				const r = walk(it.contents, compose(m, shapeTransformMatrix(it.transform, t).m));
+				if (r) return r;
+			}
+		}
+		return null;
+	};
+	return walk(contents, IDENTITY);
+}
+
+/** The path items of a tree with their item → content matrices and evaluated paths (vertex editing). */
+export function shapePathItemsAt(
+	contents: readonly ShapeItem[],
+	t: number,
+): { item: ShapeItemOf<'path'>; m: Affine; path: BezierPath }[] {
+	const out: { item: ShapeItemOf<'path'>; m: Affine; path: BezierPath }[] = [];
+	const walk = (items: readonly ShapeItem[], m: Affine) => {
+		for (const it of items) {
+			if (it.enabled === false) continue;
+			if (it.type === 'path') out.push({ item: it, m, path: evaluate(it.path, t) as BezierPath });
+			if (it.type === 'group') walk(it.contents, compose(m, shapeTransformMatrix(it.transform, t).m));
+		}
+	};
+	walk(contents, IDENTITY);
+	return out;
+}

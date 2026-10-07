@@ -35,6 +35,9 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	// M2 (S11:SHP-006, wp-m2-shapes): no default keys (S05:TOOL-002 lists none), commands in commands/shapes.ts.
 	rectangle: { id: 'rectangle', label: 'Rectangle Tool', key: '', icon: 'tool.rectangle' },
 	ellipse: { id: 'ellipse', label: 'Ellipse Tool', key: '', icon: 'tool.ellipse' },
+	// wp shapes: no default keys (Premiere has no Polygon / Star tools; After Effects' Q would clash with Ripple Trim).
+	polygon: { id: 'polygon', label: 'Polygon Tool', key: '', icon: 'tool.polygon' },
+	star: { id: 'star', label: 'Star Tool', key: '', icon: 'tool.star' },
 	hand: { id: 'hand', label: 'Hand Tool', key: 'H', icon: 'tool.hand' },
 	zoom: { id: 'zoom', label: 'Zoom Tool', key: 'Z', icon: 'tool.zoom' },
 	type: { id: 'type', label: 'Type Tool', key: 'T', icon: 'tool.type' },
@@ -47,7 +50,7 @@ export const TOOL_GROUPS: readonly (readonly ToolId[])[] = [
 	['ripple', 'rolling', 'rateStretch', 'remix'],
 	['razor'],
 	['slip', 'slide'],
-	['pen', 'rectangle', 'ellipse'],
+	['pen', 'rectangle', 'ellipse', 'polygon', 'star'],
 	['hand', 'zoom'],
 	['type'],
 ];
@@ -91,6 +94,8 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 		// The shape tools draw in the Program monitor; in the timeline they act like the Selection tool (wp-m2-shapes).
 		case 'rectangle':
 		case 'ellipse':
+		case 'polygon':
+		case 'star':
 			if (edge) return mods.ctrl ? 'ripple' : 'trim';
 			if (onClip) return 'move';
 			if (hit.kind === 'gap') return 'gap';
