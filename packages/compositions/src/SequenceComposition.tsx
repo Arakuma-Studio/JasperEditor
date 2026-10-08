@@ -82,6 +82,7 @@ import { type CompositeTrackInput, type LinearBlendCurve, trackHasGlBlend } from
 import {
 	FlatCompositor,
 	FlatDisplayContext,
+	FlatDomCapture,
 	FlatRegistry,
 	FlatStackContext,
 	makeFlatStack,
@@ -91,6 +92,7 @@ import {
 	docUsesCanvas,
 	type FlatTrackInput,
 	flatStackReason,
+	isDomPictureClip,
 	type StackScope,
 } from './fx/flat-plan.ts';
 import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
@@ -133,6 +135,17 @@ import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } f
 // clock must never freeze between a resume and a suspend (audio/serial-audio-context.ts: the stall after seeks).
 installCaptureSafeCanvases();
 installSerialAudioContext();
+
+/** compositor: whether a nested snapshot draws through HTML-in-Canvas (cached per snapshot). */
+const nestCanvas = new WeakMap<object, boolean>();
+function nestUsesCanvas(sub: RenderDoc): boolean {
+	let v = nestCanvas.get(sub);
+	if (v === undefined) {
+		v = docUsesCanvas(sub, cssExactAdjustment);
+		nestCanvas.set(sub, v);
+	}
+	return v;
+}
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
 const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
@@ -282,14 +295,30 @@ const ClipLayer = memo(function ClipLayer({
 	// three-d: a 3D layer of a run hands its layer-space picture to the run's 3D scope.
 	const scene3d = useContext(Scene3DContext);
 	const tap3d = useScene3DTap(clip.clipId, frame);
+	const media0 = 'mediaId' in clip.source ? (doc.media[clip.source.mediaId] ?? null) : null;
+	// compositor: in a flat stack a DOM layer that needs no canvas chain of its own (no effects run on its pixels, not
+	// read as a matte) is captured in composition space as Chrome draws it (FlatDomCapture), not in layer space and
+	// resampled: text and shapes keep the exact edges they have in the nested structure.
+	const flatStack = useContext(FlatStackContext);
+	const compSpace =
+		!!flatStack &&
+		!!compositeTap &&
+		!gpuSide &&
+		!matteOnly &&
+		!tap3d &&
+		!matteHub?.tap(clip.clipId) &&
+		isDomPictureClip(clip, media0) &&
+		!clipDrawsThroughCanvas(clip, media0, false) &&
+		// A nested sequence that draws through HTML-in-Canvas itself is a canvas source (NestLayer), never captured.
+		!('nest' in clip.source && nestUsesCanvas(clip.source.nest.snapshot));
 	const composite = useMemo(
 		() =>
 			tap3d && !matteOnly
 				? { tap: tap3d }
-				: compositeTap && !gpuSide && !matteOnly
+				: compositeTap && !gpuSide && !matteOnly && !compSpace
 					? { tap: compositeTap }
 					: undefined,
-		[tap3d, compositeTap, gpuSide, matteOnly],
+		[tap3d, compositeTap, gpuSide, matteOnly, compSpace],
 	);
 	const matteTap = matteHub?.tap(clip.clipId);
 	const matte = useMemo(
@@ -306,12 +335,15 @@ const ClipLayer = memo(function ClipLayer({
 		? fallbackProjective(clip, resolved, frame, scene3d!.doc, scene3d!.cameraAt(frame))
 		: null;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the projective map is compared by value (a new array per render)
-	const props = useMemo(() => {
+	const shown = useMemo(() => {
 		const base = fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade };
 		if (!fallback3d) return base;
 		return projective3d ? { ...base, projective: projective3d } : { ...base, opacity: 0 };
 	}, [resolved, fade, fallback3d, projective3d?.join(',')]);
-	const media = 'mediaId' in clip.source ? (doc.media[clip.source.mediaId] ?? null) : null;
+	// compositor: a composition-space capture draws the layer opaque and Normal; the compositor applies both.
+	const props = useMemo(() => (compSpace ? { ...shown, opacity: 100 } : shown), [compSpace, shown]);
+	const drawnClip = useMemo(() => (compSpace ? { ...clip, blendMode: 'normal' as const } : clip), [compSpace, clip]);
+	const media = media0;
 	const Component = layerComponentFor({ clip, media });
 	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
 	const fontsReady = useLayerFontsReady(clip, doc.fonts);
@@ -319,13 +351,14 @@ const ClipLayer = memo(function ClipLayer({
 	const remapped = fxRemapFrame(clip, props.effects, pictureLocal, fps);
 	const frameDependent = frameDependentIn(clip, doc.media);
 	if (!fontsReady) return null;
+	let view: ReactNode;
 	if (remapped === null && pictureLocal !== localFrame)
-		return (
+		view = (
 			<ShowFrame frame={heldClip ? 0 : Math.max(0, pictureLocal + (clip.headHandle ?? 0))}>
 				<LayerView
 					Component={Component}
 					frameDependent={frameDependent}
-					clip={heldClip ?? clip}
+					clip={heldClip ? (compSpace ? { ...heldClip, blendMode: 'normal' as const } : heldClip) : drawnClip}
 					props={props}
 					localFrame={heldClip ? 0 : pictureLocal}
 					realFrame={localFrame}
@@ -341,13 +374,13 @@ const ClipLayer = memo(function ClipLayer({
 				/>
 			</ShowFrame>
 		);
-	if (remapped !== null)
-		return (
+	else if (remapped !== null)
+		view = (
 			<Freeze frame={remapped + (clip.headHandle ?? 0)}>
 				<LayerView
 					Component={Component}
 					frameDependent={frameDependent}
-					clip={clip}
+					clip={drawnClip}
 					props={props}
 					localFrame={remapped}
 					realFrame={localFrame}
@@ -363,24 +396,38 @@ const ClipLayer = memo(function ClipLayer({
 				/>
 			</Freeze>
 		);
-	return (
-		<LayerView
-			Component={Component}
-			frameDependent={frameDependent}
-			clip={clip}
-			props={props}
-			localFrame={localFrame}
-			contentTime={contentTime}
-			pictureTime={pictureTime}
-			fps={fps}
-			media={media}
-			options={options}
-			fonts={doc.fonts}
-			transition={transition}
-			matte={matte}
-			composite={composite}
-		/>
-	);
+	else
+		view = (
+			<LayerView
+				Component={Component}
+				frameDependent={frameDependent}
+				clip={drawnClip}
+				props={props}
+				localFrame={localFrame}
+				contentTime={contentTime}
+				pictureTime={pictureTime}
+				fps={fps}
+				media={media}
+				options={options}
+				fonts={doc.fonts}
+				transition={transition}
+				matte={matte}
+				composite={composite}
+			/>
+		);
+	if (compSpace && compositeTap)
+		return (
+			<FlatDomCapture
+				tap={compositeTap}
+				frame={frame}
+				opacity={shown.opacity / 100}
+				width={doc.settings.width}
+				height={doc.settings.height}
+			>
+				{view}
+			</FlatDomCapture>
+		);
+	return view;
 });
 
 /**

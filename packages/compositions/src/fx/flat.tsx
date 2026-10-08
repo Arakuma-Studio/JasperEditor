@@ -33,6 +33,8 @@ import {
 	Internals,
 	useCurrentFrame,
 } from 'remotion';
+import type { LayerTap } from '../types.ts';
+import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import {
 	type BlendTrackValue,
 	type CompositeHub,
@@ -40,6 +42,7 @@ import {
 	fxBlendComposite,
 } from './composite.tsx';
 import type { CompositeItem, LinearBlendCurve } from './composite-plan.ts';
+import { fxTap } from './effects.ts';
 import { type FxFeed, FxFeedContext } from './FxPicture.tsx';
 import { type FlatOp, type FlatTrackInput, flatLayerItems, flatOpsAt } from './flat-plan.ts';
 import type { FxLayout } from './stage.ts';
@@ -457,6 +460,52 @@ export function FlatCompositor({
 }
 
 const NONE: readonly EffectDescriptor[] = [];
+
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const;
+
+/**
+ * A DOM layer of a flat stack captured in composition space: its transformed element (drawn opaque and Normal) inside
+ * a frame-sized HTML-in-Canvas whose only effect hands the capture to the compositor (identity placement, the layer's
+ * opacity), so its pixels are exactly the ones Chrome draws for it in the nested structure. The key changes every
+ * frame: a static layer delivers each frame too (renders wait for the frame's picture).
+ */
+export function FlatDomCapture({
+	tap,
+	frame,
+	opacity,
+	width,
+	height,
+	children,
+}: {
+	tap: LayerTap;
+	frame: number;
+	opacity: number;
+	width: number;
+	height: number;
+	children?: ReactNode;
+}) {
+	const o = Math.min(1, Math.max(0, opacity));
+	const effects = useMemo(
+		() => [
+			fxTap({ key: `flat-dom:${tap.side}:${frame}:${o}`, tap, meta: { compToCanvas: IDENTITY, opacity: o } }),
+		],
+		[tap, frame, o],
+	);
+	return (
+		<ScopedHtmlInCanvas
+			scope="A layer of the flat compositor"
+			width={width}
+			height={height}
+			effects={effects}
+			style={{ ...FILL, width, height, pointerEvents: 'none' }}
+			showInTimeline={false}
+		>
+			<div data-flat-dom-capture="" style={{ position: 'absolute', left: 0, top: 0, width, height }}>
+				{children}
+			</div>
+		</ScopedHtmlInCanvas>
+	);
+}
 
 /** Publishes a chain into the flat stack's registry (adjustment tracks and 3D runs of a flat stack). */
 export function usePublishFlatChain(key: string, chain: FlatChain): void {
