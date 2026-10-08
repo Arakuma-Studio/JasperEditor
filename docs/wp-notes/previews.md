@@ -148,8 +148,10 @@ wait — and playback — never ended until play() was issued again (which is al
 `installSerialAudioContext` serialises each context's `resume()` / `suspend()` (each waits for the previous one to
 settle) and lets the clock advance before a suspend that follows a resume (≤ 250 ms). Measured after the fix:
 **0 stalls in 40 cycles** without the watchdog (before: 2 in 20), and the e2e cycles report `stallsRecovered: 0`. The
-watchdog stays as a last-resort net (it never fires in these runs); `perf_stats` reports `stallsRecovered`, so a new
-stall source would show.
+watchdog stays as a last-resort net; `perf_stats` reports `stallsRecovered`, so a new stall source would show. Its
+window now also grows with the play's measured frame interval (4 ×, at most 2.5 s): in `pnpm perf` a 3-layer stack
+rendering at ≈ 4 fps had frames more than 600 ms apart and was "recovered" once although it was only slow
+(`apps/web/test/transport.test.ts` covers both a slow Player and a stall after slow frames).
 
 **Dropped-frame data source and prefetch.** `PlaybackDriver.stats` counts plays, frames shown and dropped (a
 `frameupdate` jumping past the next frame), stalls recovered, buffering time and the last play's fps; the editor's
@@ -224,7 +226,9 @@ GL / Remotion suites); the remaining combinations still fail fast with CANVAS_NE
 - `pnpm perf` (`scripts/performance.mjs`): micro benchmarks, whole-editor playback FPS per scenario in the built app
   (single 1080p H.264; 3-layer stack; GPU effects live, then from their previews), and export throughput (native H.264,
   ProRes, smart-rendered H.264, preview renders), with a JSON/markdown report and the documented budgets
-  (`docs/performance.md`).
+  (`docs/performance.md`, with the measured results: e.g. a GPU-effect stack plays at 5 fps live and 16–19 fps from its
+  previews on this CPU-only host, where one plain 1080p clip reaches 16–21.5 fps; smart-rendered H.264 exports at
+  143–168 fps vs 38–58 fps native).
 - **Load-tolerant budgets** (`scripts/perf/budget.ts`): the normal gate scales every timing budget by the host's
   measured slowdown (a fixed workload timed against its 15 ms reference); a real regression still fails because the
   workload does not slow down with the code; `PERF=1` enforces the documented budgets exactly. Applied to every timing

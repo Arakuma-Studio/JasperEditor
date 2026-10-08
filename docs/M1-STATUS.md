@@ -58,8 +58,10 @@ These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-n
 - **Not run on real hardware:** hardware H.264 export has not run on a GPU host (only the argument sets are
   unit-tested). OpenH264 now runs for real: with `vendor/ffmpeg-lgpl` present every H.264 export and proxy in
   the unit tests and in `pnpm e2e` is encoded by libopenh264.
-- **Remotion Player stall (4.0.499):** the root cause is unknown. The playback watchdog works around it
-  (E2E is stable).
+- **Remotion Player stall (4.0.499):** root cause found and fixed by workstream `previews` (2026-10-08): Chrome
+  leaves `AudioContext.resume()` pending when `suspend()` follows before it settled, and the Player waits for the
+  audio clock forever; `installSerialAudioContext` serialises them (docs/wp-notes/previews.md §5). The watchdog
+  stays as a counted safety net (`stallsRecovered`, 0 in the measured runs).
 - **Editing lock (corrected 2026-10-07):** an earlier version of this list said the lock is not released on
   `pagehide`. That was wrong: `EngineProjectStore` (`packages/session/src/persistence/engine.ts`) sends a
   keepalive `DELETE …/lease/:id` for every held lease on `pagehide`, with the bearer token in token-only auth
@@ -108,9 +110,9 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
 
 ## Follow-ups for M2 (by owner package and spec ID)
 
-- **WP-2C / compositions (S03:ARC-010, PGM-003): Player stall.** Find the root cause of the Remotion Player
-  4.0.499 not starting after seeks with `@remotion/media`. The playback watchdog (`PLAY_WATCHDOG_MS`) is a
-  workaround.
+- **WP-2C / compositions (S03:ARC-010, PGM-003): Player stall.** Done (workstream `previews`): root cause
+  (AudioContext resume/suspend race) fixed in `packages/compositions/src/audio/serial-audio-context.ts`; the watchdog
+  (`PLAY_WATCHDOG_MS`) remains as a counted safety net.
 - **WP-2G / session (S01:LIFE-045): automatic renders.** Request preview/master renders automatically,
   500 ms after MG param, duration or canvas changes. Today the Program badge only tracks renders started
   with `mg.rerender`.

@@ -4,7 +4,7 @@
 //   editor  — whole-editor playback in the built app (headless Chrome): Program-monitor frames shown / dropped and
 //             measured fps per scenario (one 1080p clip; a 3-layer stack; a GPU-effect stack live, then from its
 //             render previews), the UI frame rate and the render bar of each scenario
-//   export  — export throughput through the engine: native H.264, ProRes, smart-rendered ProRes, preview renders
+//   export  — export throughput through the engine: native H.264, ProRes, smart-rendered H.264, preview renders
 // Usage: pnpm perf [--sections micro,editor,export] [--label name] [--seconds 6]
 //   The editor/export sections start the built stack (e2e/serve.mjs, needs `pnpm build`) on PERF_PORT (default
 //   49465) unless BASE_URL points at a running one. Results: test-results/performance/<label>.{json,md}, with the
