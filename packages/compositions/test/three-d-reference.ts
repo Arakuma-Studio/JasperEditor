@@ -57,7 +57,12 @@ export function referenceFrame(
 			for (let i = 0; i < W * H; i++) {
 				const a = canvas.data[i * 4 + 3]!;
 				if (a <= 0) continue;
-				const s: Rgba = [canvas.data[i * 4]! / a, canvas.data[i * 4 + 1]! / a, canvas.data[i * 4 + 2]! / a, a];
+				const s: Rgba = [
+					canvas.data[i * 4]! / a,
+					canvas.data[i * 4 + 1]! / a,
+					canvas.data[i * 4 + 2]! / a,
+					a,
+				];
 				const r = opts.adjust(s);
 				canvas.data.set([r[0] * r[3], r[1] * r[3], r[2] * r[3], r[3]], i * 4);
 			}

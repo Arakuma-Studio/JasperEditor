@@ -228,7 +228,12 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 
 	it('a DOM layer with GPU effects under an adjustment layer with GPU effects', async () => {
 		const raw = await still(
-			[rect('V1', base, '$s'), effect('$s', 'jasper.invert'), adjustment('V2', '$adj'), effect('$adj', 'jasper.invert')],
+			[
+				rect('V1', base, '$s'),
+				effect('$s', 'jasper.invert'),
+				adjustment('V2', '$adj'),
+				effect('$adj', 'jasper.invert'),
+			],
 			5,
 			'dom-fx-under-adjust',
 		);
@@ -285,7 +290,9 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		const want = linMix(invert(linMix(base, mid, 0.5)), top, 0.5);
 		expectAt(raw, FX_W / 2, FX_H / 2, want);
 		// Encoded blending would be visibly different.
-		const encoded = over([{ c: invert(over([{ c: base }, { c: [mid[0] * 0.5, mid[1] * 0.5, mid[2] * 0.5, 0.5] }])) }]);
+		const encoded = over([
+			{ c: invert(over([{ c: base }, { c: [mid[0] * 0.5, mid[1] * 0.5, mid[2] * 0.5, 0.5] }])) },
+		]);
 		expect(near(at(raw, FX_W / 2, FX_H / 2), to8(encoded), 4)).toBe(false);
 	});
 
@@ -325,7 +332,12 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 
 	it('an adjustment layer with GPU effects over a 3D run = the CPU reference', async () => {
 		await matchesReference(
-			[solid('V1', base, '$a'), ...card3d('V2', '$c'), adjustment('V3', '$adj'), effect('$adj', 'jasper.invert')],
+			[
+				solid('V1', base, '$a'),
+				...card3d('V2', '$c'),
+				adjustment('V3', '$adj'),
+				effect('$adj', 'jasper.invert'),
+			],
 			'adjust-over-run',
 			invert,
 		);
@@ -333,7 +345,12 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 
 	it('a 3D run over an adjustment layer with GPU effects = the CPU reference', async () => {
 		await matchesReference(
-			[solid('V1', base, '$a'), adjustment('V2', '$adj'), effect('$adj', 'jasper.invert'), ...card3d('V3', '$c')],
+			[
+				solid('V1', base, '$a'),
+				adjustment('V2', '$adj'),
+				effect('$adj', 'jasper.invert'),
+				...card3d('V3', '$c'),
+			],
 			'run-over-adjust',
 			invert,
 		);
@@ -397,7 +414,12 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 			'nest-canvas-source',
 		);
 		// The nest shows invert(invert(burn)) = burn; dodged by V2.
-		expectAt(raw, FX_W / 2, FX_H / 2, over([{ c: base }, { c: mid, mode: 'linear-burn' }, { c: top, mode: 'color-dodge' }]));
+		expectAt(
+			raw,
+			FX_W / 2,
+			FX_H / 2,
+			over([{ c: base }, { c: mid, mode: 'linear-burn' }, { c: top, mode: 'color-dodge' }]),
+		);
 	});
 
 	it('a nest whose nested sequence holds a GL blend, under an adjustment layer with GPU effects', async () => {
@@ -421,7 +443,14 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 	const flatter = (): Command[] => [
 		{ type: 'clip.addAdjustment', at: 40, duration: 10, track: 'V6', ref: '$flatAdj' } as Command,
 		effect('$flatAdj', 'jasper.invert'),
-		{ type: 'clip.addSolid', at: 40, duration: 10, track: 'V7', color: [0.5, 0.5, 0.5, 1], ref: '$flat' } as Command,
+		{
+			type: 'clip.addSolid',
+			at: 40,
+			duration: 10,
+			track: 'V7',
+			color: [0.5, 0.5, 0.5, 1],
+			ref: '$flat',
+		} as Command,
 		mode('$flat', 'linear-burn'),
 	];
 	const parity = async (cmds: Command[], name: string, tol: number, maxBad = 0.002) => {

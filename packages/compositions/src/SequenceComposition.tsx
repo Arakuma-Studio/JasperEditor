@@ -342,7 +342,10 @@ const ClipLayer = memo(function ClipLayer({
 	}, [resolved, fade, fallback3d, projective3d?.join(',')]);
 	// compositor: a composition-space capture draws the layer opaque and Normal; the compositor applies both.
 	const props = useMemo(() => (compSpace ? { ...shown, opacity: 100 } : shown), [compSpace, shown]);
-	const drawnClip = useMemo(() => (compSpace ? { ...clip, blendMode: 'normal' as const } : clip), [compSpace, clip]);
+	const drawnClip = useMemo(
+		() => (compSpace ? { ...clip, blendMode: 'normal' as const } : clip),
+		[compSpace, clip],
+	);
 	const media = media0;
 	const Component = layerComponentFor({ clip, media });
 	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
