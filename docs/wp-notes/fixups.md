@@ -98,6 +98,10 @@ render). It is an action, so it is now a `DropdownMenu` whose items are built wh
 4.6 s to 1.1–1.3 s for the slow case (two runs each, same shared machine, `--maxWorkers=2`); no timeout change was needed. A new test checks the
 menu is empty while closed, lists every audio effect when open and inserts the chosen one.
 
+Found in the merge gate: `packages/interchange/test/cfb.test.ts` › "handles DIFAT" timed out (145 s under load,
+≈ 70 s alone). The CFB code takes ≈ 0.2 s for the 8 MiB stream; the time went into `toEqual` walking 8 Mi array
+elements. The test now compares the bytes natively (same assertion, ≈ 2 s).
+
 ## 7–8. Decision log, parity and gaps
 
 ARCHITECTURE D-40…D-45 (interchange in process, QuickJS expressions, audio DSP packages, CANVAS_NESTED, multicam on
