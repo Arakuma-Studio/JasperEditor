@@ -85,11 +85,14 @@ Results (dev stack engine 48630 / web 52630, appdir `/tmp/wp-m3-mgtext/appdir`):
   hint).
 - Properties: typing a 62-character single row previews live in Plus Jakarta Sans (the bundle's font); applied, the
   editor shows "has 62 characters (designed for 48)", "runs off the frame (right by 58 px)" and "goes outside its
-  safe area (1882×91 px in a 874×270 px box)" (screenshot `trailer-mg07-overflow-warnings.jpg`).
+  safe area (1882×91 px in a 874×270 px box)" (the trailer screenshots were removed on 2026-10-07 because they showed
+  third-party footage; the same warnings on the repository fixture: `docs/screenshots/m3-mgtext/fixture-properties-text-warnings.jpg`).
 - On canvas: double-click on the caption → the editor sits on the caption in `jmg-…-Plus Jakarta Sans`, grows
   upwards; two rows with `*ha llegado.*` → Ctrl+Enter → one History entry; the caption re-renders with the accent
   lighting up; remaining warning "goes outside its safe area (892×169 px in a 874×270 px box)" — true: the accent
-  row ends 18 px past the monitor line (screenshots `trailer-mg07-on-canvas-editor.jpg`, `trailer-mg07-applied.jpg`).
+  row ends 18 px past the monitor line (same features on the repository fixture `fixtures/mg-project`:
+  `docs/screenshots/m3-mgtext/fixture-on-canvas-editor.jpg` and `fixture-applied.jpg`, rendered by
+  `e2e/mg-texts.spec.ts` with `DOCS_SCREENSHOTS=1`).
 - Native export (MCP `start_export`, `master-prores-422hq`, frames 380–500, plan `native`, new master for the
   edited props) vs an independent reference — the trailer's own `remotion render MG07 --props '{"headline": …}'`
   (ProRes 4444) composited straight-alpha over `timeline.mp4` with ffmpeg: caption frames 99.05 % of values within

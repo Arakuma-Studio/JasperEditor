@@ -324,7 +324,7 @@ export function booleanLoops(inputs: { path: BezPath; rule: FillRule }[], op: Bo
 	}
 }
 
-/** An angle no input is aligned to in practice (≈ 0.4 rad, irrational in degrees). */
+/** An angle no input is aligned to in practice (≈ 0.45 rad, irrational in degrees). */
 const RETRY_ANGLE = Math.SQRT2 / Math.PI;
 
 function rotator(a: number): (p: PBVec) => PBVec {
