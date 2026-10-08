@@ -261,19 +261,29 @@ export type SplitRecord = { originalLinkId: string | null; rightId: string };
  */
 export type TrackCandidates = { trackId: string; lo: number; hi: number; ids: string[] };
 
+/** Candidates for several tracks at once (one scan of the sequence); `hulls` maps track ids to `[lo, hi)`. */
 export function trackCandidates(
 	seq: DSeq,
-	trackId: string,
-	lo: number,
-	hi: number,
+	hulls: ReadonlyMap<string, { lo: number; hi: number }>,
 	except: ReadonlySet<string> = new Set(),
-): TrackCandidates {
-	return {
-		trackId,
-		lo,
-		hi,
-		ids: trackClipIds(seq, trackId, (c) => !except.has(c.id) && end(c) > lo && c.start < hi),
-	};
+): Map<string, TrackCandidates> {
+	const lists = new Map<string, { key: string; start: number }[]>();
+	for (const id of hulls.keys()) lists.set(id, []);
+	const raw = latest(seq.clips) as Record<string, Clip>;
+	for (const key in raw) {
+		if (!Object.hasOwn(raw, key)) continue;
+		const c = latest(raw[key]!);
+		const hull = hulls.get(c.trackId);
+		if (hull && !except.has(c.id) && end(c) > hull.lo && c.start < hull.hi)
+			lists.get(c.trackId)!.push({ key, start: c.start });
+	}
+	const out = new Map<string, TrackCandidates>();
+	for (const [trackId, list] of lists) {
+		list.sort((x, y) => x.start - y.start);
+		const hull = hulls.get(trackId)!;
+		out.set(trackId, { trackId, lo: hull.lo, hi: hull.hi, ids: list.map((x) => x.key) });
+	}
+	return out;
 }
 
 /**
@@ -428,11 +438,19 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
 				delete table[g.id];
 			} else if (members.length !== g.members.length) table[key]!.members = members;
 		}
-		const rawTable = latest(table);
-		for (const key of keysOf(seq.clips)) {
-			const id = peekIn(seq.clips, key)![field];
-			if (id && !rawTable[id]) seq.clips[key]![field] = null;
-		}
+	}
+	// One scan for both fields (each only reads and clears its own field and table).
+	const links = latest(seq.links);
+	const groups = latest(seq.groups);
+	const raw = latest(seq.clips);
+	for (const key in raw) {
+		if (!Object.hasOwn(raw, key)) continue;
+		const c = latest(raw[key]!);
+		const dangling = (c.linkId && !links[c.linkId]) || (c.groupId && !groups[c.groupId]);
+		if (!dangling) continue;
+		const d = seq.clips[key]!;
+		if (c.linkId && !links[c.linkId]) d.linkId = null;
+		if (c.groupId && !groups[c.groupId]) d.groupId = null;
 	}
 	for (const t of valuesOf(seq.transitions)) {
 		const out = t.outgoingClipId ? peekIn(seq.clips, t.outgoingClipId) : null;

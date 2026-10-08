@@ -8,7 +8,7 @@ import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
-import { keysOf, latest, valuesOf } from '../draft-read.ts';
+import { cachedRead, keysOf, latest, valuesOf } from '../draft-read.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { type HandlerMap, idList } from './util.ts';
@@ -63,22 +63,44 @@ function item(doc: DDoc, id: string, h: HandlerContext): ProjectItem {
 }
 
 /** Removes assets/synthetics/transcripts no longer referenced by any item or clip (INV-014). */
+type ClipUses = { media: readonly string[]; syn: readonly string[]; trs: readonly string[] };
+const clipUses = new WeakMap<object, ClipUses>();
+const itemUses = new WeakMap<object, ClipUses>();
+
 export function collectOrphans(doc: DDoc): void {
-	// perf-core: reads current values without drafting every sequence and clip (draft-read.ts).
+	// perf-core: reads current values without drafting every sequence and clip (draft-read.ts); the uses of
+	// unchanged item and clip records are cached.
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
 	const usedTrs = new Set<string>();
-	for (const it of valuesOf(doc.items)) {
-		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
-		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
-	}
+	const add = (u: ClipUses) => {
+		for (const id of u.media) usedMedia.add(id);
+		for (const id of u.syn) usedSyn.add(id);
+		for (const id of u.trs) usedTrs.add(id);
+	};
+	add(
+		cachedRead(itemUses, doc.items, (items) => {
+			const u = { media: [] as string[], syn: [] as string[], trs: [] };
+			for (const it of valuesOf(items)) {
+				if (it.kind === 'media' || it.kind === 'subclip') u.media.push(it.mediaId);
+				if (it.kind === 'synthetic') u.syn.push(it.syntheticId);
+			}
+			return u;
+		}),
+	);
 	for (const seq of valuesOf(doc.sequences)) {
-		for (const c of valuesOf(seq.clips)) {
-			const r = c as Record<string, unknown>;
-			if (typeof r.mediaId === 'string') usedMedia.add(r.mediaId);
-			if (typeof r.syntheticId === 'string') usedSyn.add(r.syntheticId);
-			if (typeof r.transcriptId === 'string') usedTrs.add(r.transcriptId);
-		}
+		add(
+			cachedRead(clipUses, seq.clips, (clips) => {
+				const u = { media: [] as string[], syn: [] as string[], trs: [] as string[] };
+				for (const c of valuesOf(clips)) {
+					const r = c as Record<string, unknown>;
+					if (typeof r.mediaId === 'string') u.media.push(r.mediaId);
+					if (typeof r.syntheticId === 'string') u.syn.push(r.syntheticId);
+					if (typeof r.transcriptId === 'string') u.trs.push(r.transcriptId);
+				}
+				return u;
+			}),
+		);
 	}
 	for (const m of valuesOf(doc.media)) {
 		const d = latest(m.derivation);

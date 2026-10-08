@@ -51,7 +51,6 @@ import {
 	shiftMarkers,
 	splitClipAt,
 	syncFollowerTracks,
-	type TrackCandidates,
 	trackCandidates,
 	tracksOfKind,
 } from '../placement.ts';
@@ -790,19 +789,16 @@ export const clipCoreHandlers: HandlerMap = {
 			return { clip: c, dest, start, end: start + c.duration };
 		});
 		if (mode === 'overwrite') {
-			// perf-core: one scan per destination track (the ranges and their order are unchanged).
-			const pools = new Map<string, TrackCandidates>();
+			// perf-core: one scan of the sequence for all destination tracks (the ranges and their order are unchanged).
+			const hulls = new Map<string, { lo: number; hi: number }>();
 			for (const p of plan) {
-				const hull = pools.get(p.dest.id);
-				pools.set(p.dest.id, {
-					trackId: p.dest.id,
+				const hull = hulls.get(p.dest.id);
+				hulls.set(p.dest.id, {
 					lo: Math.min(hull?.lo ?? p.start, p.start),
 					hi: Math.max(hull?.hi ?? p.end, p.end),
-					ids: [],
 				});
 			}
-			for (const [trackId, hull] of pools)
-				pools.set(trackId, trackCandidates(seq, trackId, hull.lo, hull.hi, moving));
+			const pools = trackCandidates(seq, hulls, moving);
 			for (const p of plan)
 				relinkSplits(seq, clearRange(seq, p.dest.id, p.start, p.end, h, moving, pools.get(p.dest.id)), h);
 		} else {

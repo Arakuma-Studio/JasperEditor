@@ -8,6 +8,7 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	invariantStats,
 	type ProjectDocument,
 } from '@jasper/project';
 import { MemoryProjectStore } from '../src/persistence/memory.ts';
@@ -109,14 +110,21 @@ await profiled('gesture', () => {
 });
 g.cancel();
 console.log(`gesture update (50 clips): best ${ges.best.toFixed(2)} ms, median ${ges.median.toFixed(2)} ms`);
-const g2 = s.beginGesture('Move');
-const mv = best(runs, () => {
+// Gesture commit (the 50-clip move as one undoable transaction, invariants included) and its undo, best of N.
+const commits: number[] = [];
+const undos: number[] = [];
+for (let i = 0; i < Math.min(runs, 20); i++) {
+	const g2 = s.beginGesture('Move');
 	const r = g2.update([{ type: 'clip.move', clipIds: fifty, deltaFrames: 1000 + ++d }]);
 	if (!r.ok) throw new Error(JSON.stringify(r.errors));
-});
-const c0 = performance.now();
-g2.commit();
-console.log(`gesture commit: ${(performance.now() - c0).toFixed(2)} ms (updates best ${mv.best.toFixed(2)})`);
-const u0 = performance.now();
-s.undo();
-console.log(`undo: ${(performance.now() - u0).toFixed(2)} ms`);
+	const c0 = performance.now();
+	g2.commit();
+	commits.push(performance.now() - c0);
+	const u0 = performance.now();
+	s.undo();
+	undos.push(performance.now() - u0);
+}
+console.log(
+	`gesture commit: best ${Math.min(...commits).toFixed(2)} ms; undo best ${Math.min(...undos).toFixed(2)} ms`,
+);
+console.log('invariants:', JSON.stringify(invariantStats()));

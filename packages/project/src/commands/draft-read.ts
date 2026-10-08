@@ -31,7 +31,7 @@ function fastLatest<T>(v: T): T {
 }
 
 function slowLatest<T>(v: T): T {
-	return isDraft(v) ? (current(v) as T) : v;
+	return isDraft(v) ? (current(v as never) as T) : v;
 }
 
 /** Whether Immer's internal state has the shape `fastLatest` reads (checked once at load). */
@@ -78,4 +78,23 @@ export function valuesOf<T>(rec: Readonly<Record<string, T>>): T[] {
 export function peekIn<T>(rec: Readonly<Record<string, T>>, key: string): T | undefined {
 	const raw = latest(rec);
 	return Object.hasOwn(raw, key) ? latest(raw[key] as T) : undefined;
+}
+
+/**
+ * `compute(latest(rec))`, cached per object while `rec` is unchanged in this and later transactions: only frozen
+ * values are cached (finished documents; a draft's working copy never is), keyed by identity.
+ */
+export function cachedRead<K extends object, V>(
+	cache: WeakMap<object, V>,
+	rec: K,
+	compute: (raw: K) => V,
+): V {
+	const raw = latest(rec);
+	if (!Object.isFrozen(raw)) return compute(raw);
+	let v = cache.get(raw);
+	if (v === undefined) {
+		v = compute(raw);
+		cache.set(raw, v);
+	}
+	return v;
 }

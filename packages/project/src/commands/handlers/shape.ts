@@ -28,6 +28,7 @@ import { buildShapeItems, type IdGen, patchShapeItem, ShapeInputError } from '..
 import { getShapePreset } from '../../vector/presets.ts';
 import { bezToBezierPaths } from '../../vector/values.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { keysOf, latest, peekIn } from '../draft-read.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
 import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
@@ -107,12 +108,24 @@ function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
  */
 export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
 	return (doc, cmd, h) => {
-		const before: [Draft<ShapeClip>, Box][] = [];
-		for (const seq of Object.values(doc.sequences))
-			for (const c of Object.values(seq.clips))
-				if (c.kind === 'shape') before.push([c as Draft<ShapeClip>, shapeIntrinsicBox(c.shape as ShapeData)]);
+		// perf-core: found on current values (draft-read.ts); only shapes whose box changed are drafted.
+		const before: [string, string, Box][] = [];
+		for (const sid of keysOf(doc.sequences)) {
+			const clips = latest(peekIn(doc.sequences, sid)!.clips);
+			for (const k of Object.keys(clips)) {
+				const c = latest(clips[k]!);
+				if (c.kind === 'shape') before.push([sid, k, shapeIntrinsicBox(c.shape as ShapeData)]);
+			}
+		}
 		const result = handler(doc, cmd, h);
-		for (const [clip, box] of before) recenterShape(clip, box);
+		for (const [sid, k, box] of before) {
+			const seq = peekIn(doc.sequences, sid);
+			const c = seq && (peekIn(seq.clips, k) as ShapeClip | undefined);
+			if (!c || latest(c.shape).type === 'vector') continue;
+			const after = shapeIntrinsicBox(latest(c.shape) as ShapeData);
+			if (after.width !== box.width || after.height !== box.height)
+				recenterShape(doc.sequences[sid]!.clips[k] as Draft<ShapeClip>, box);
+		}
 		return result;
 	};
 }

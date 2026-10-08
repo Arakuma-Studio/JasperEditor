@@ -201,7 +201,7 @@ export function compressionWarnings(
 	const out: { code: 'W_ANIMATION_COMPRESSED'; message: string; path: string[] }[] = [];
 	for (const [seqId, seq] of Object.entries(after.sequences)) {
 		const prevSeq = before.sequences[seqId];
-		if (prevSeq === seq) continue;
+		if (prevSeq === seq || (prevSeq && prevSeq.clips === seq.clips)) continue;
 		for (const clip of Object.values(seq.clips)) {
 			if (clip.kind !== 'text' || !clip.textAnimation || prevSeq?.clips[clip.id] === clip) continue;
 			if (!compressionOf(clip)) continue;

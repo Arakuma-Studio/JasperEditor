@@ -5,7 +5,7 @@ import { produce } from 'immer';
 import { z } from 'zod';
 import { normalizeCaptionData } from '../captions/model.ts';
 import { looksLikeId } from '../ids.ts';
-import { checkInvariants } from '../invariants.ts';
+import { checkTransactionInvariants } from '../invariants-incremental.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
 import { HandlerContext, substituteRefs } from './context.ts';
@@ -197,7 +197,7 @@ export function applyTransaction(
 	}
 
 	if (next !== doc && ctx.checkInvariants !== false) {
-		const issues = checkInvariants(next, { effects: ctx.registries.effects });
+		const issues = checkTransactionInvariants(doc, next, { effects: ctx.registries.effects }, ctx.invariants);
 		if (issues.length > 0) return { document: doc, result: fail(ctx.revision, issues) };
 	}
 	const diff = diffDocuments(doc, next);

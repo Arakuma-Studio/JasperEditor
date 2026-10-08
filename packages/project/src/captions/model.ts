@@ -8,7 +8,7 @@
 // line break. Word times drive the active-word highlight and splits. A clip that references a media transcript
 // (`mediaId` set) shows the words whose midpoint lies in its content range.
 import type { Draft } from 'immer';
-import { latest, peekIn } from '../commands/draft-read.ts';
+import { cachedRead, latest, peekIn } from '../commands/draft-read.ts';
 import type { RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Transcript, TranscriptWord } from '../schema/media.ts';
@@ -454,16 +454,28 @@ export function captionCuesForTrack(
  * left without words gets all of them, so both halves of a split keep the text when no word boundary lies between
  * them. Runs once per transaction, before orphans are collected.
  */
+const captionClipCache = new WeakMap<object, readonly (readonly [string, string])[]>();
+/** Keys and transcripts of the captions clips of a clips record. */
+function captionClipKeys(clips: Readonly<Record<string, Clip>>): (readonly [string, string])[] {
+	const out: (readonly [string, string])[] = [];
+	for (const key of Object.keys(clips)) {
+		const c = latest(clips[key]!);
+		if (c.kind === 'captions') out.push([key, (c as CaptionsClip).transcriptId]);
+	}
+	return out;
+}
+
 export function normalizeCaptionOwnership(doc: Draft<ProjectDocument>, newId: () => string): void {
 	// perf-core: found on current values (draft-read.ts); only clips sharing a transcript are drafted.
 	const found = new Map<string, Array<{ seqId: string; key: string }>>();
 	const seqs = latest(doc.sequences);
 	for (const seqId of Object.keys(seqs)) {
-		const clips = latest(latest(seqs[seqId]!).clips);
-		for (const key of Object.keys(clips)) {
-			const c = latest(clips[key]!);
-			if (c.kind !== 'captions') continue;
-			const t = peekIn(doc.transcripts, (c as CaptionsClip).transcriptId);
+		for (const [key, transcriptId] of cachedRead(
+			captionClipCache,
+			latest(seqs[seqId]!).clips,
+			captionClipKeys,
+		)) {
+			const t = peekIn(doc.transcripts, transcriptId);
 			if (!t || !isCaptionTranscript(t)) continue;
 			const list = found.get(t.id) ?? [];
 			list.push({ seqId, key });

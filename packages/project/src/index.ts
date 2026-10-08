@@ -42,6 +42,15 @@ export * from './factories.ts';
 export * from './ids.ts';
 export * from './interpret/index.ts';
 export * from './invariants.ts';
+export {
+	checkTransactionInvariants,
+	type InvariantMode,
+	type InvariantStats,
+	invariantMode,
+	invariantStats,
+	isVerifiedDocument,
+	setInvariantMode,
+} from './invariants-incremental.ts';
 export * from './keyframes.ts';
 export * from './keyframes-spatial.ts';
 export * from './lottie/index.ts';
