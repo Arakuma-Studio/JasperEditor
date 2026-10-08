@@ -76,15 +76,38 @@ export class HandlerContext {
 	}
 
 	clip(doc: DDoc, clipId: string): { seq: DSeq; clip: DClip } {
-		// Found with `peek` (no draft per sequence scanned), then resolved through the draft.
+		const sid = this.sequenceOfClip(doc, clipId);
+		if (sid === null) return this.fail('E_NOT_FOUND', `Clip not found: ${clipId}`);
+		const seq = doc.sequences[sid]!;
+		return { seq, clip: seq.clips[clipId]! };
+	}
+
+	private clipLookups = 0;
+	private clipIndex: Map<string, string> | null = null;
+
+	/**
+	 * The id of the sequence holding clip `clipId` (read with `peek`, nothing drafted), or null. perf-core: after a
+	 * few lookups in one transaction (a 300-clip edit across 200 sequences) an index of the document's clips answers
+	 * them; a hit is confirmed on the current document, a miss (a clip added since) falls back to the scan.
+	 */
+	sequenceOfClip(doc: DDoc, clipId: string): string | null {
 		const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
-		for (const sid of peekKeys(sequences)) {
-			const clips = peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!;
-			if (!peek(clips, clipId)) continue;
-			const seq = doc.sequences[sid]!;
-			return { seq, clip: seq.clips[clipId]! };
+		const has = (sid: string) => {
+			const s = peek<Sequence>(sequences, sid);
+			return !!s && !!peek(peek<Record<string, Clip>>(s, 'clips')!, clipId);
+		};
+		if (++this.clipLookups > 8) {
+			if (!this.clipIndex) {
+				this.clipIndex = new Map();
+				for (const sid of peekKeys(sequences))
+					for (const cid of peekKeys(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!))
+						this.clipIndex.set(cid, sid);
+			}
+			const sid = this.clipIndex.get(clipId);
+			if (sid !== undefined && has(sid)) return sid;
 		}
-		return this.fail('E_NOT_FOUND', `Clip not found: ${clipId}`);
+		for (const sid of peekKeys(sequences)) if (has(sid)) return sid;
+		return null;
 	}
 
 	/** Clips of one sequence; all ids must exist and share a sequence. */
