@@ -62,3 +62,48 @@ export const ScratchCheckSchema = ScratchLocationSchema.extend({
 	message: z.string().optional(),
 });
 export type ScratchCheck = z.infer<typeof ScratchCheckSchema>;
+
+// ---------------------------------------------------------------- Proxies and ingest (PRJ-8)
+
+/**
+ * Where Create Proxies / ingest writes: `next-to-media` = a `Proxies` (or `Ingested Media`) folder beside the source
+ * (managed uploads fall back to the project), `project` = the project's scratch media folder (Project Settings ▸
+ * Scratch Disks, default "Same as Project"), `folder` = `folder`.
+ */
+export const MediaJobDestinationSchema = z.object({
+	mode: z.enum(['next-to-media', 'project', 'folder']),
+	folder: z.string().min(1).max(4096).optional(),
+});
+export type MediaJobDestination = z.infer<typeof MediaJobDestinationSchema>;
+
+/**
+ * `POST /api/media-jobs` → 202 EngineJob kind `proxy-create`: one job over several media. `op`: `proxy` (Create
+ * Proxies / ingest proxies, preset from `PROXY_PRESETS`), `transcode` (ingest Transcode, full size), `copy` (ingest
+ * Copy: byte copy verified by fingerprint). The result lists each output as RegisteredMedia; the client attaches
+ * proxies (`media.attachProxy`) or relinks copies / transcodes (`media.relink`).
+ */
+export const MediaJobRequestSchema = z.object({
+	projectId: z.string().optional(),
+	op: z.enum(['proxy', 'transcode', 'copy']),
+	preset: z.string().max(64).optional(),
+	destination: MediaJobDestinationSchema,
+	items: z
+		.array(
+			z.object({
+				mediaKey: z.string().min(1),
+				mediaId: z.string().min(1),
+				name: z.string().max(400).optional(),
+			}),
+		)
+		.min(1)
+		.max(2000),
+});
+export type MediaJobRequest = z.infer<typeof MediaJobRequestSchema>;
+
+export const MediaJobResultSchema = z.object({
+	op: z.enum(['proxy', 'transcode', 'copy']),
+	preset: z.string().nullable(),
+	outputs: z.array(z.object({ mediaId: z.string(), path: z.string(), registered: z.unknown() })),
+	skipped: z.array(z.object({ mediaId: z.string(), reason: z.string() })),
+});
+export type MediaJobResult = z.infer<typeof MediaJobResultSchema>;

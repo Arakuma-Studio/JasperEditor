@@ -1,15 +1,25 @@
 // Workstream `gaps` (docs/wp-notes/gaps.md):
 //   GET  /api/media/:mediaKey/location   where the media file is on this host (Edit Original)
 //   POST /api/media/:mediaKey/open       reveal it in the file browser / open it in its default application
-// (local engines only: a remote engine must never launch programs on its host for a browser client).
+//                                        (local engines only: a remote engine never launches programs for a browser)
+//   GET  /api/projects/:projectId/scratch the folders behind Project Settings ▸ Scratch Disks, with free space
+//   POST /api/scratch/check              whether a folder can take generated media
+//   POST /api/media-jobs                 Create Proxies / ingest copies and transcodes (job `proxy-create`)
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, mkdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
-import { MediaOpenRequestSchema, ScratchCheckRequestSchema, type ScratchLocation } from '@jasper/api';
+import {
+	MediaJobRequestSchema,
+	MediaOpenRequestSchema,
+	ScratchCheckRequestSchema,
+	type ScratchLocation,
+} from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
+import { MediaJobService } from '../gaps/media-jobs.ts';
+import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { freeDiskBytes } from '../tools/fs.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -19,8 +29,6 @@ type K = { Params: { mediaKey: string } };
 type P = { Params: { projectId: string } };
 
 const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
-/** "Same as Project" for generated media: a folder inside the project's engine folder. */
-export const PROJECT_MEDIA_DIR = 'Generated Media';
 
 /** Exists / writable / free space of a folder (the nearest existing parent for the space of a missing one). */
 export async function describeFolder(path: string, expose: boolean): Promise<ScratchLocation> {
@@ -100,6 +108,18 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 			}
 		return { path: path ?? null, exists };
 	};
+
+	// ---- Create Proxies / ingest (PRJ-8)
+	const mediaJobs = new MediaJobService(core);
+	mediaJobs.registerRunner();
+	app.jasper.services.mediaJobs = mediaJobs;
+	app.post(
+		'/api/media-jobs',
+		guarded(async (req, reply) => {
+			const body = parseOr400(MediaJobRequestSchema, req.body);
+			return reply.code(202).send(await mediaJobs.submit(body));
+		}),
+	);
 
 	// ---- Project Settings ▸ Scratch Disks
 	app.get<P>(

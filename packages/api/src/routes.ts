@@ -46,6 +46,7 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import {
+	MediaJobRequestSchema,
 	MediaLocationSchema,
 	MediaOpenRequestSchema,
 	MediaOpenResponseSchema,
@@ -1091,6 +1092,14 @@ export const ROUTES = {
 		path: '/api/scratch/check',
 		body: ScratchCheckRequestSchema,
 		response: ScratchCheckSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Create Proxies, ingest copies / transcodes (PRJ-8)
+	mediaJobs: {
+		method: 'POST',
+		path: '/api/media-jobs',
+		body: MediaJobRequestSchema,
+		response: EngineJobSchema,
 		owner: 'gaps',
 	},
 } as const satisfies Record<string, RouteDef>;
