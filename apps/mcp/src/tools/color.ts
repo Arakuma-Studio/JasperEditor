@@ -49,6 +49,9 @@ type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels' | 'secondary' | '
 /** grade_clip / get_grade field → `jasper.lumetri` param name (S06:CG-002 is the contract). */
 const GRADE_FIELDS: readonly { section: GradeSection; key: string; param: string }[] = [
 	{ section: 'basic', key: 'inputLut', param: 'inputLut' },
+	// color-mgmt: HDR White (nits) / HDR Specular — they act in Rec. 2100 PQ / HLG sequences only.
+	{ section: 'basic', key: 'hdrWhite', param: 'hdrWhite' },
+	{ section: 'basic', key: 'hdrSpecular', param: 'hdrSpecular' },
 	{ section: 'basic', key: 'temperature', param: 'temperature' },
 	{ section: 'basic', key: 'tint', param: 'tint' },
 	{ section: 'basic', key: 'exposure', param: 'exposure' },
@@ -643,7 +646,7 @@ function checkFile(path: string): void {
 		throw new ToolError(
 			'NOT_ABSOLUTE',
 			`Not an absolute path: ${path}`,
-			'Pass the absolute path of the .cube file.',
+			'Pass the absolute path of the file.',
 		);
 	if (!existsSync(path) || !statSync(path).isFile())
 		throw new ToolError('FILE_NOT_FOUND', `No such file on this machine: ${path}`, 'Check the path.');
@@ -672,13 +675,15 @@ export function registerColorTools(ctx: ToolContext): void {
 		{
 			title: 'Import LUT',
 			description:
-				'Imports a colour lookup table (.cube file: 3D or 1D, Adobe/Resolve dialect) into a project by absolute path. Returns its mediaId, lattice size and title; use the mediaId as grade_clip basic.inputLut or creative.look. An invalid file fails with the parser message including the line number. LUTs cannot be placed on the timeline.',
+				'Imports a colour lookup table into a project by absolute path: .cube (3D, 1D, or Resolve 1D shaper + 3D), Autodesk .3dl, Sony Imageworks .spi1d / .spi3d or cineSpace .csp. Returns its mediaId, lattice size and title; use the mediaId as grade_clip basic.inputLut or creative.look. An invalid file fails with the parser message including the line number. LUTs cannot be placed on the timeline.',
 			input: {
 				projectId: ProjectIdArg,
 				path: z
 					.string()
 					.min(1)
-					.describe('Absolute path of the .cube file, e.g. "/home/me/luts/teal-orange.cube"'),
+					.describe(
+						'Absolute path of the LUT file, e.g. "/home/me/luts/teal-orange.cube" (.cube, .3dl, .spi1d, .spi3d, .csp)',
+					),
 			},
 			annotations: EDIT,
 		},
@@ -691,8 +696,8 @@ export function registerColorTools(ctx: ToolContext): void {
 					err.code,
 					err.message,
 					err.code === 'INVALID_LUT'
-						? 'The file is not a valid .cube LUT; fix the reported line or export the LUT again (.cube, LUT_3D_SIZE ≤ 256).'
-						: 'Check that the file is a readable .cube LUT.',
+						? 'The file is not a valid LUT; fix the reported line or export the LUT again (.cube with LUT_3D_SIZE ≤ 256, .3dl, .spi1d, .spi3d, .csp).'
+						: 'Check that the file is a readable LUT (.cube, .3dl, .spi1d, .spi3d, .csp).',
 					{ path },
 				);
 			const item = reg.items[0];
@@ -701,7 +706,7 @@ export function registerColorTools(ctx: ToolContext): void {
 				throw new ToolError(
 					'NOT_A_LUT',
 					`${path} is a ${item.kind} file, not a LUT`,
-					'Use import_media for video, audio and images; import_lut takes .cube files.',
+					'Use import_media for video, audio and images, import_ocio_config for .ocio configs; import_lut takes LUT files.',
 				);
 			const res = await transact(
 				ctx,

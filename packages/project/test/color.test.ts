@@ -46,6 +46,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 		// The S06:CG-002 contract comes first; color-grade appends its params (test/lumetri-grade.test.ts).
 		expect(LUMETRI_PARAMS.slice(0, 23).map((p) => p.name)).toEqual([
 			'inputLut',
+			'hdrWhite', // color-mgmt
 			'temperature',
 			'tint',
 			'exposure',
@@ -54,6 +55,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 			'shadows',
 			'whites',
 			'blacks',
+			'hdrSpecular', // color-mgmt
 			'saturation',
 			'look',
 			'lookIntensity',

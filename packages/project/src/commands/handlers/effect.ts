@@ -134,11 +134,14 @@ export const effectHandlers: HandlerMap = {
 	'effect.add': (doc, cmd: CommandOf<'effect.add'>, h: HandlerContext) => {
 		const spec = h.registries.effects.get(cmd.effectId);
 		if (!spec) return h.fail('E_UNKNOWN_EFFECT', `Unknown effect: ${cmd.effectId}`);
-		// color-grade: internal render stages (Lumetri's spatial stage) are inserted by the renderers, never added.
+		// Internal render stages (color-mgmt's colour input transform, color-grade's Lumetri spatial stage) are inserted
+		// by the renderers, never added by users.
 		if (spec.internal)
 			return h.fail(
 				'E_UNKNOWN_EFFECT',
-				`${cmd.effectId} is an internal render stage; add jasper.lumetri instead`,
+				spec.id === 'jasper.lumetri-spatial'
+					? `${cmd.effectId} is an internal render stage; add jasper.lumetri instead`
+					: `${spec.label} is applied by colour management, not as an effect`,
 			);
 		let list: DEffect[];
 		let instanceDefaults: Record<string, unknown> = {};

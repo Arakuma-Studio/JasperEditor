@@ -7,6 +7,7 @@ import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
+import { colorIssues, repairColor } from './color/model.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
@@ -899,6 +900,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	// audio-fx (INV-ESSENTIAL): Essential Sound settings are readable, essential effects name a known slot and sit
 	// on clips with a type; remix pieces of one remix share a group and a count.
 	for (const m of essentialIssues(doc)) issues.push(inv('INV-ESSENTIAL', m.message, m.path));
+	// color-mgmt (INV-COLOR): working spaces, colour settings and colour interpretations are valid.
+	issues.push(...colorIssues(doc as never));
 	return issues;
 }
 
@@ -1597,6 +1600,8 @@ export function repairDocument(
 			note('add-item', s, 'sequence had no project item');
 		}
 	}
+	// color-mgmt: unknown spaces and dangling LUT / OCIO references go back to automatic.
+	repairColor(doc as never, note);
 	return { document: doc, report };
 }
 

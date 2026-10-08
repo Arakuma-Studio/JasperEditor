@@ -1,6 +1,7 @@
 // Media registration, uploads, derivatives and their JSON headers (ARCHITECTURE §9.2/§9.4, D-09, D-10,
 // S04:IN-005, TH-002, WF-001).
 import {
+	ColorConfigInfoSchema,
 	ImageSequenceInfoSchema,
 	LayeredInfoSchema,
 	LottieInfoSchema,
@@ -30,6 +31,8 @@ export const RegisteredMediaSchema = z.object({
 	lut: LutInfoSchema.optional(),
 	/** kind `mg-bundle` (M2, S08): compositions, copied into `MediaAsset.mgBundle`. */
 	mgBundle: MgBundleInfoSchema.optional(),
+	/** color-mgmt: kind `color-config` (a custom OCIO config bundle): header, copied into `MediaAsset.colorConfig`. */
+	colorConfig: ColorConfigInfoSchema.optional(),
 	/** imports: SVG / PDF / Illustrator vector still, copied into `MediaAsset.vector`. */
 	vector: VectorInfoSchema.optional(),
 	/** imports: Lottie animation, copied into `MediaAsset.lottie`. */

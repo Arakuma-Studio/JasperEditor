@@ -8,7 +8,16 @@ import type {
 	RenderPlan,
 	VideoCodec,
 } from '@jasper/api';
-import { fpsOf, makeEnvelope, type ProjectDocument, type Sequence, sequenceDuration } from '@jasper/project';
+import {
+	colorSpace,
+	fpsOf,
+	makeEnvelope,
+	OUTPUT_SPACE_IDS,
+	type ProjectDocument,
+	type Sequence,
+	sequenceColorInfo,
+	sequenceDuration,
+} from '@jasper/project';
 
 export const MATCH_SEQUENCE_PRESET = { id: 'match-sequence-h264', label: 'Match Sequence – H.264' } as const;
 const DEFAULT_CRF = 18;
@@ -50,8 +59,11 @@ export function buildExportSettings(
 		audio?: ExportAudioChoice;
 		/** wp captions: caption output (burn-in, embedded streams, sidecars). */
 		captions?: CaptionExportChoice;
+		/** color-mgmt: written colour space, bit depth and HDR metadata. */
+		color?: ExportColorChoice;
 	},
 ): ExportSettings {
+	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
 	const s = seq.settings;
 	const a = choice.audio ?? {};
 	const channels = a.channels && a.channels !== 'auto' ? a.channels : s.masterLayout === '5.1' ? 6 : 2;
@@ -73,6 +85,17 @@ export function buildExportSettings(
 			quality: { mode: 'crf', value: choice.crf ?? DEFAULT_CRF },
 			encoderSpeed: 'balanced',
 			colorTags: 'rec709',
+			// color-mgmt
+			...(col.colorSpace !== 'working' ? { colorSpace: col.colorSpace } : {}),
+			...(col.bitDepth !== 'auto' ? { bitDepth: col.bitDepth } : {}),
+			...(col.maxCll || col.maxFall
+				? {
+						hdrMetadata: {
+							...(col.maxCll ? { maxCll: col.maxCll } : {}),
+							...(col.maxFall ? { maxFall: col.maxFall } : {}),
+						},
+					}
+				: {}),
 		},
 		audio: {
 			codec: 'aac',
@@ -298,9 +321,58 @@ export type ExportAudioChoice = {
 	truePeakDb?: number;
 };
 
+// ------------------------------------------------------------ colour (color-mgmt)
+
+export type ExportColorChoice = {
+	/** `working` = the sequence's working space; else an output space id. */
+	colorSpace: 'working' | (typeof OUTPUT_SPACE_IDS)[number];
+	bitDepth: 'auto' | 8 | 10 | 12;
+	/** CTA-861.3 MaxCLL / MaxFALL (cd/m²) of PQ/HLG outputs; 0 = not written. */
+	maxCll: number;
+	maxFall: number;
+};
+
+export const DEFAULT_COLOR_CHOICE: ExportColorChoice = {
+	colorSpace: 'working',
+	bitDepth: 'auto',
+	maxCll: 0,
+	maxFall: 0,
+};
+
+/** Colour space choices of the Export settings: Working (its name) and every output space. */
+export function exportColorSpaceOptions(seq: Sequence | null): { value: string; label: string }[] {
+	const w = colorSpace(sequenceColorInfo(seq?.settings).space)?.label ?? 'Rec. 709';
+	return [
+		{ value: 'working', label: `Working (${w})` },
+		...OUTPUT_SPACE_IDS.map((id) => ({ value: id, label: colorSpace(id)!.label })),
+	];
+}
+
+/** Whether the chosen output is PQ / HLG (MaxCLL / MaxFALL apply). */
+export function hdrOutput(seq: Sequence | null, c: ExportColorChoice): boolean {
+	const id = c.colorSpace === 'working' ? sequenceColorInfo(seq?.settings).space : c.colorSpace;
+	return id === 'rec2100-pq' || id === 'rec2100-hlg';
+}
+
+function sanitizeColorChoice(c: Partial<ExportColorChoice>): ExportColorChoice {
+	const n = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 10000 ? v : 0);
+	return {
+		colorSpace:
+			c.colorSpace &&
+			(c.colorSpace === 'working' || (OUTPUT_SPACE_IDS as readonly string[]).includes(c.colorSpace))
+				? c.colorSpace
+				: 'working',
+		bitDepth: c.bitDepth === 8 || c.bitDepth === 10 || c.bitDepth === 12 ? c.bitDepth : 'auto',
+		maxCll: n(c.maxCll),
+		maxFall: n(c.maxFall),
+	};
+}
+
 // ------------------------------------------------------------ remembered choices (EX-014)
 
 type Remembered = {
+	/** color-mgmt */
+	color?: ExportColorChoice;
 	audio?: ExportAudioChoice;
 	/** wp captions */
 	captions?: CaptionExportChoice;
@@ -344,6 +416,7 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(codec ? { codec } : {}),
 			...(typeof v.encoder === 'string' && v.encoder ? { encoder: v.encoder } : {}),
 			...(v.audio && typeof v.audio === 'object' ? { audio: sanitizeAudioChoice(v.audio) } : {}),
+			...(v.color && typeof v.color === 'object' ? { color: sanitizeColorChoice(v.color) } : {}),
 		};
 	} catch {
 		return null;

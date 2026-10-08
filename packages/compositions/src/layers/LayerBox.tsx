@@ -51,8 +51,10 @@ export function LayerBox({
 	// Transition framework: a side of a GPU transition whose component did not capture it already (cards, proxies,
 	// any DOM content) is captured here through HTML-in-Canvas.
 	// edit-structure: a nested sequence's colour effects run in the canvas chain too (no colour stage for DOM).
+	// color-mgmt: so do every DOM layer's (text, shapes, motion graphics, captions): grades and the colour input
+	// transform of graphics in a non-Rec.709 working space.
 	const chain =
-		clip.kind === 'nest-video' &&
+		(DOM_FX_KINDS.has(clip.kind) || clip.kind === 'captions') &&
 		props.effects.some(
 			(fx) => fx.enabled && !!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color,
 		);
@@ -60,6 +62,7 @@ export function LayerBox({
 		enabled:
 			effects === undefined &&
 			(DOM_FX_KINDS.has(clip.kind) ||
+				chain ||
 				// imports: Lottie / vector pictures are DOM content too.
 				!!layer.media?.lottie ||
 				!!layer.media?.vector ||

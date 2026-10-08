@@ -4,9 +4,10 @@
 // forward speed the nested tracks play through a shifted `<Sequence>` (smooth playback, no per-frame seeks); speed
 // changes, reverse and frame holds show the nested frame through `<Freeze>`. Recursion goes through
 // `NestTracksContext` (the composition's own `VideoTracks`); the snapshot builder already refuses cycles.
-import { activeRemap, flicksPerFrame, remapSourceAt } from '@jasper/project';
-import { useContext } from 'react';
+import { activeRemap, flicksPerFrame, remapSourceAt, type SequenceColorInfo } from '@jasper/project';
+import { type ReactNode, useContext, useMemo } from 'react';
 import { AbsoluteFill, Sequence } from 'remotion';
+import { ColorDocContext } from '../color/chain.ts';
 import { ShowFrame } from '../show-frame.tsx';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
@@ -33,7 +34,12 @@ export function NestLayer(layer: LayerProps) {
 		!clip.frameHold &&
 		!remap &&
 		Math.abs(sourceFrames - Math.round(sourceFrames)) < 1e-6;
-	const tracks = <Tracks doc={sub} options={layer.options} offset={sub.range.start} />;
+	// color-mgmt: the nested sequence's layers work in its own working space.
+	const tracks = (
+		<NestedColorScope working={sub.settings.color}>
+			<Tracks doc={sub} options={layer.options} offset={sub.range.start} />
+		</NestedColorScope>
+	);
 	// Inside the clip's Sequence the frame is `localFrame + headHandle`; the nested axis needs `inner`.
 	const shift = inner - (layer.localFrame + (clip.headHandle ?? 0));
 	return (
@@ -55,4 +61,20 @@ export function NestLayer(layer: LayerProps) {
 			</NestCompSizeContext.Provider>
 		</LayerBox>
 	);
+}
+
+/** color-mgmt: the colour document of a nested sequence: the parent's media and bypass, the nested working space. */
+function NestedColorScope({
+	working,
+	children,
+}: {
+	working: SequenceColorInfo | undefined;
+	children: ReactNode;
+}) {
+	const parent = useContext(ColorDocContext);
+	const value = useMemo(() => {
+		const { working: _w, ...rest } = parent;
+		return working ? { ...rest, working } : rest;
+	}, [parent, working]);
+	return <ColorDocContext.Provider value={value}>{children}</ColorDocContext.Provider>;
 }

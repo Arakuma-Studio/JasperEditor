@@ -166,6 +166,21 @@ layers are not carried, Illustrator layers are not split, EPS is not read (wp-no
 **Done when:** projects have a working colour space (Rec.709, Rec.2100 PQ/HLG), clips can be interpreted (log
 profiles, colour space overrides), and preview and export apply the right transforms, checked against published
 transfer functions.
+**Status (merged):** done — see [wp-notes/color-mgmt.md](wp-notes/color-mgmt.md). This covers:
+- working spaces: Rec. 709 / sRGB / Rec. 2020 / P3 / Rec. 2100 PQ and HLG, plus linear variants;
+- Blend Using 1.0 Gamma;
+- interpretation of media and clips: 18 log curves, 16 gamuts, custom OCIO configs;
+- BT.2390 tone mapping and ACES RGC;
+- 10/12-bit HDR exports with tags and mdcv/clli metadata;
+- `.cube` shaper / 1D, `.3dl`, `.spi1d/.spi3d/.csp` with tetrahedral interpolation;
+- Lumetri HDR White and HDR Specular, and an HDR scale for the scopes.
+
+Remaining limits:
+- the HDR monitor is tone mapped (no HDR display output);
+- no HEVC Main10 in the LGPL build;
+- the composite is 8-bit encoded;
+- linear-light compositing renders on the Remotion path only;
+- HTML-in-Canvas scopes cannot nest (renders fail with CANVAS_NESTED, and the HDR display stage steps aside).
 
 ### color-grade
 **Done when:** Lumetri's HSL secondary, hue-vs curves, vignette, comparison view and Color Match exist, each with

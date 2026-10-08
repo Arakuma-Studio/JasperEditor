@@ -34,6 +34,8 @@ import {
 	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';
+import { lutRefs } from '../color/extension.ts';
+import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
@@ -113,6 +115,8 @@ export type OutputSpec = {
 	proresProfile?: 'hq' | '4444';
 	/** wp interchange: straight-alpha ProRes 4444 on a transparent background, no audio (Remotion path). */
 	alpha?: boolean;
+	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
+	color?: ExportColor;
 };
 
 export type LocalMedia = {
@@ -208,6 +212,15 @@ type PlanDeps = {
 	/** parity (roto): frames a matte set holds on this engine (null = gone, e.g. cleaned from the cache). */
 	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
 };
+
+/** color-mgmt: the (nested) sequences of a snapshot that blend in linear light ('' = the exported one). */
+function linearBlendSequences(snap: RenderSnapshot, name = ''): string[] {
+	const out = snap.settings.color?.blendLinear ? [name] : [];
+	for (const t of snap.videoTracks)
+		for (const c of t.clips)
+			if ('nest' in c.source) out.push(...linearBlendSequences(c.source.nest.snapshot, c.name));
+	return out;
+}
 
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
 	let document: ProjectDocument;
@@ -311,6 +324,13 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
 	for (const reason of nestBlockers(snapshot))
 		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
+	// color-mgmt: linear-light compositing (Blend using 1.0 gamma / Linearize Working Space) is drawn by the GPU
+	// compositor; the native compositor blends encoded values, so it is refused (the Remotion path renders it).
+	for (const where of linearBlendSequences(snapshot))
+		blockers.push({
+			path: 'native',
+			reason: `${where ? `nested sequence of clip "${where}": ` : ''}Blend using 1.0 gamma composites in linear light on the GPU compositor (the native compositor blends encoded values)`,
+		});
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
@@ -390,6 +410,20 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			itemIds: [...offlineUsed],
 		});
 	}
+	// color-mgmt: LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
+	// offline: those steps are skipped (the clips render ungraded / uninterpreted there), so the export says so.
+	const lutOffline = new Set<string>();
+	for (const c of visual)
+		for (const id of lutRefs(c)) {
+			const kind = document.media[id]?.kind;
+			if ((kind === 'lut' || kind === 'color-config') && !media[id]) lutOffline.add(c.clipId);
+		}
+	if (lutOffline.size > 0)
+		warnings.push({
+			code: 'LUT_OFFLINE',
+			message: `${lutOffline.size} clip(s) use an offline LUT or colour config; the colour steps using it are skipped`,
+			itemIds: [...lutOffline],
+		});
 	// Workstream `time`: VFR media are mapped by their real timestamps by the retime stage (native) and the preview
 	// decoder (Remotion); only an engine without the retime stage still conforms them.
 	const vfr = new Set<string>();
@@ -468,6 +502,27 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		(video.codec !== 'prores' || video.proresProfile !== '4444' || settings.container !== 'mov')
 	)
 		throw new PlanError('VALIDATION_FAILED', 400, 'Alpha output needs ProRes 4444 in a MOV container');
+	// color-mgmt: the written colour space (working by default), bit depth and HDR metadata.
+	try {
+		output.color = exportColorOf(
+			video,
+			snapshot.settings.color,
+			input.still ? null : (encoder?.encoder ?? null),
+		);
+	} catch (e) {
+		if (e instanceof ExportColorError) throw new PlanError('VALIDATION_FAILED', 400, e.message);
+		throw e;
+	}
+	if (output.color.hdr && output.color.bitDepth === 8 && !input.still)
+		warnings.push({
+			code: 'HDR_8BIT',
+			message: `${output.color.space.label} at 8 bits per component bands in smooth gradients; choose ProRes, AV1 or VP9 for 10-bit`,
+		});
+	if (output.color.hdr && !input.still && settings.container === 'webm' && encoder?.encoder === 'libvpx-vp9')
+		warnings.push({
+			code: 'HDR_METADATA_UNSUPPORTED',
+			message: 'VP9 in WebM carries the PQ/HLG tags but no mastering-display or content-light metadata here',
+		});
 	if (!rationalEquals(outFps, seqFps)) {
 		warnings.push({
 			code: 'FRAME_RATE_CONVERSION',

@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import type { RegisteredMedia } from '@jasper/api';
 import type {
+	ColorConfigInfo,
 	ImageSequenceInfo,
 	LayeredInfo,
 	LottieInfo,
@@ -50,6 +51,8 @@ export type MediaRecord = {
 	imageSequence?: ImageSequenceInfo;
 	/** M2: kind `mg-bundle` header (wp-m2-mg; storage is the bundle directory). */
 	mgBundle?: MgBundleInfo;
+	/** color-mgmt: kind `color-config` header (OCIO bundle prober). */
+	colorConfig?: ColorConfigInfo;
 	/**
 	 * M2: an engine-produced processed version (wp-m2-process): source key and recipe hash; M3 (S07:PRC-015): the
 	 * processed source frames when a range was processed.
@@ -142,6 +145,7 @@ export class MediaRegistry {
 			browserPlayable: r.browserPlayable,
 			...(r.lut ? { lut: r.lut } : {}),
 			...(r.mgBundle ? { mgBundle: r.mgBundle } : {}),
+			...(r.colorConfig ? { colorConfig: r.colorConfig } : {}),
 			...(r.vector ? { vector: r.vector } : {}),
 			...(r.lottie ? { lottie: r.lottie } : {}),
 			...(r.layered ? { layered: r.layered } : {}),

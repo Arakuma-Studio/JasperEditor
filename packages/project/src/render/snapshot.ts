@@ -1,5 +1,6 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
+
 import { buildAudioMix, playedTracks, type RenderAudioMix } from '../audio/plan.ts';
 import {
 	type CaptionPage,
@@ -7,6 +8,13 @@ import {
 	type ResolvedCaptionStyle,
 	resolveCaptionStyle,
 } from '../captions/model.ts';
+import { type SequenceColorInfo, sequenceColorInfo } from '../color/model.ts';
+import {
+	graphicsColorEffect,
+	graphicsColorIn,
+	nestColorEffect,
+	sourceColorEffect,
+} from '../color/snapshot.ts';
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
@@ -456,7 +464,15 @@ export type RenderSnapshot = {
 	version: 1;
 	sequenceId: string;
 	/** `sampleRate`: the sequence audio rate (audio-mix: 44.1 / 48 / 96 kHz). */
-	settings: { width: number; height: number; fps: Rational; backgroundColor: RGBA; sampleRate: number };
+	settings: {
+		width: number;
+		height: number;
+		fps: Rational;
+		backgroundColor: RGBA;
+		sampleRate: number;
+		/** color-mgmt: the working space and colour settings (absent in snapshots made before colour management). */
+		color?: SequenceColorInfo;
+	};
 	/** Frames; export range or whole sequence. */
 	range: { start: number; end: number };
 	durationFrames: number;
@@ -756,6 +772,8 @@ export function buildRenderSnapshot(
 		return { snap: sub, nestedFps };
 	};
 
+	// color-mgmt: the sequence's working space and colour settings.
+	const colorInfo = sequenceColorInfo(seq.settings);
 	const videoTracks: RenderSnapshot['videoTracks'] = [];
 	const hiddenMattes: NonNullable<RenderSnapshot['matteTracks']> = [];
 	// three-d: cameras and lights of the shown tracks, and whether a 3D layer is drawn.
@@ -979,8 +997,13 @@ export function buildRenderSnapshot(
 				default:
 					source = { unsupported: c.kind };
 			}
+			// color-mgmt: the source's colour input transform (media interpretation, graphics, nested working space).
+			const colorFx = colorEffectOf(c, doc, colorInfo);
 			// M2 (S06:LUT-003): LUT assets referenced by effect params (`{mediaId}`) get media handles too.
-			for (const fx of (r.effects as EffectInstance[] | undefined) ?? []) {
+			for (const fx of [
+				...(colorFx ? [colorFx] : []),
+				...((r.effects as EffectInstance[] | undefined) ?? []),
+			]) {
 				if (!fx.enabled) continue;
 				for (const p of Object.values(fx.params)) {
 					const refs = [p.value, ...p.keyframes.map((k) => k.value)];
@@ -1003,7 +1026,9 @@ export function buildRenderSnapshot(
 				transform: (r.transform as Transform | undefined) ?? null,
 				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
-				effects: visibleEffects(r.effects as EffectInstance[] | undefined),
+				effects: colorFx
+					? [colorFx, ...visibleEffects(r.effects as EffectInstance[] | undefined)]
+					: visibleEffects(r.effects as EffectInstance[] | undefined),
 				intrinsicBox: box,
 				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
 				// edit-structure: a nest renders with the engines its nested layers need. three-d: a 3D layer is drawn by
@@ -1029,9 +1054,10 @@ export function buildRenderSnapshot(
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);
-		const mattes = (transitions.mattes.get(t.id) ?? []).filter(
-			(m) => m.start < range.end && m.start + m.duration > range.start,
-		);
+		const mattes = (transitions.mattes.get(t.id) ?? [])
+			.filter((m) => m.start < range.end && m.start + m.duration > range.start)
+			// color-mgmt: a dip's colour is a graphics colour (white = HDR Graphics White in HDR).
+			.map((m) => ({ ...m, color: graphicsColorIn(m.color as RGBA, colorInfo) }));
 		const allStages = (transitions.stages.get(t.id) ?? []).filter(
 			(x) => x.start < range.end && x.start + x.duration > range.start,
 		);
@@ -1164,7 +1190,8 @@ export function buildRenderSnapshot(
 				transform: c.transform,
 				opacity: c.opacity,
 				blendMode: 'normal',
-				effects: [],
+				// color-mgmt: captions are graphics.
+				effects: ((fx) => (fx ? [fx] : []))(graphicsColorEffect(c.id, colorInfo)),
 				intrinsicBox: { ...frame },
 				engine: clipEngines(c)?.export ?? 'remotion',
 				bounded: false,
@@ -1260,8 +1287,9 @@ export function buildRenderSnapshot(
 		settings: {
 			...frame,
 			fps: seq.settings.frameRate,
-			backgroundColor: seq.settings.backgroundColor,
+			backgroundColor: graphicsColorIn(seq.settings.backgroundColor as RGBA, colorInfo),
 			sampleRate: audioMix.sampleRate,
+			color: colorInfo,
 		},
 		range,
 		durationFrames: Math.max(0, range.end - range.start),
@@ -1403,6 +1431,26 @@ function nestNeedsRemotion(snap: RenderSnapshot): boolean {
 	return snap.videoTracks.some(
 		(t) => (t.transitions?.length ?? 0) > 0 || t.clips.some((c) => c.engine === 'remotion' || !!c.threeD),
 	);
+}
+
+/** color-mgmt: the colour input effect of a visual clip (null = none needed). */
+function colorEffectOf(c: Clip, doc: ProjectDocument, info: SequenceColorInfo): EffectInstance | null {
+	switch (c.kind) {
+		case 'video':
+		case 'still':
+		case 'animated-image': {
+			const asset = doc.media[c.mediaId];
+			return asset ? sourceColorEffect(c.id, asset, c, info) : null;
+		}
+		case 'nest-video': {
+			const nested = doc.sequences[c.sequenceId];
+			return nested ? nestColorEffect(c.id, sequenceColorInfo(nested.settings).space, info) : null;
+		}
+		case 'adjustment':
+			return null;
+		default:
+			return graphicsColorEffect(c.id, info);
+	}
 }
 
 /**

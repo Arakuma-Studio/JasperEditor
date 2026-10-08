@@ -94,6 +94,8 @@ export function colorRunKey(
 	effects: readonly ColorRunEffect[],
 	lutKey: (mediaId: string) => string,
 	size = EXPORT_LUT_SIZE,
+	/** color-mgmt: identity of the context the ops read (`workingKey` of the working space); '' = none. */
+	extra = '',
 ): string {
 	const luts: string[] = [];
 	const walk = (v: unknown) => {
@@ -108,5 +110,6 @@ export function colorRunKey(
 		size,
 		effects: effects.map((fx) => [fx.effectId, fx.effectVersion, fx.params]),
 		luts,
+		...(extra ? { ctx: extra } : {}),
 	});
 }

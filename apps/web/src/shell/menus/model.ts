@@ -231,6 +231,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('transcript.generateForClips', 'Generate Transcript…'),
 			// wp-m3-inpoint (S07:PRC-018): Replace Footage… for the selected Project item / clip's media.
 			c('media.replaceFootage', 'Replace Footage…'),
+			// color-mgmt: the clip colour override (timeline clips; media use Interpret Footage ▸ Colour).
+			c('clip.colorSpace', 'Clip Colour Space…'),
 		],
 	},
 	{

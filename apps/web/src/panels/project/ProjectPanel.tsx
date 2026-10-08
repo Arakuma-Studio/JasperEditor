@@ -70,6 +70,7 @@ const TYPE_ICON: Record<ProjectRow['type'], IconId> = {
 	font: 'tool.type',
 	lut: 'media.lut',
 	'mg-bundle': 'panel.motionTemplates',
+	'color-config': 'media.lut',
 	model: 'tool.camera',
 };
 

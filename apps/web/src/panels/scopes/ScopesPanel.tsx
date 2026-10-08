@@ -20,6 +20,7 @@ import {
 	type ScopeMatrix,
 	type ScopeScale,
 	scaleLabels,
+	sequenceColorInfo,
 	skinToneLine,
 	VECTOR_EXTENT,
 	type VectorTargets,
@@ -27,6 +28,7 @@ import {
 	WAVEFORM_TYPE_LABELS,
 	WAVEFORM_TYPES,
 	type WaveformType,
+	workingSignalOfNits,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
@@ -79,7 +81,9 @@ export const SCOPE_LAYOUTS: readonly {
 	},
 ];
 
-type PanelSettings = ScopeSettings & { layout: string; scale: ScopeScale; targets: VectorTargets };
+/** The levels axis: a ScopeScale, or `hdr` = cd/m² of an HDR working space (color-mgmt; Premiere's "HDR"). */
+type PanelScale = ScopeScale | 'hdr';
+type PanelSettings = ScopeSettings & { layout: string; scale: PanelScale; targets: VectorTargets };
 
 const DEFAULTS: PanelSettings = {
 	layout: 'waveform',
@@ -107,7 +111,7 @@ function loadSettings(): PanelSettings {
 			matrix: pick(raw.matrix, SCOPE_MATRICES, DEFAULTS.matrix),
 			clamp: typeof raw.clamp === 'boolean' ? raw.clamp : DEFAULTS.clamp,
 			brightness: pick<ScopeBrightness>(raw.brightness, ['dimmed', 'normal', 'bright'], DEFAULTS.brightness),
-			scale: pick(raw.scale, SCOPE_SCALES, DEFAULTS.scale),
+			scale: pick<PanelScale>(raw.scale, [...SCOPE_SCALES, 'hdr'], DEFAULTS.scale),
 			targets: pick<VectorTargets>(raw.targets, [75, 100], DEFAULTS.targets),
 		};
 	} catch {
@@ -194,6 +198,12 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		return gradeEligible(clip) ? clip.id : null;
 	});
 	const revision = useSessionState((s) => (s.transient ? -s.revision - 1 : s.revision));
+	// color-mgmt: the working space; HDR sequences show the levels in cd/m² (PQ / HLG signal positions).
+	const working = useSessionState((s) => {
+		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
+		return sequenceColorInfo(seq?.settings).space;
+	});
+	const hdr = working === 'rec2100-pq' || working === 'rec2100-hlg';
 	const setSettings = (patch: Partial<PanelSettings>) => {
 		setSettingsState((cur) => {
 			const next = { ...cur, ...patch };
@@ -208,8 +218,20 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 	const layout = SCOPE_LAYOUTS.find((l) => l.id === settings.layout) ?? SCOPE_LAYOUTS[0]!;
 
 	// Latest state for the loop (no re-subscription per change).
-	const live = useRef({ settings, layout, clipId, visible });
-	live.current = { settings, layout, clipId, visible };
+	// An HDR scale outside an HDR sequence reads as 8-bit; HDR sequences default to cd/m² (Premiere: "For HDR footage,
+	// the scope scale automatically adjusts to display a range between 0–10000 nits").
+	const shown: PanelSettings = {
+		...settings,
+		scale: hdr
+			? settings.scale === '8bit' || settings.scale === 'hdr'
+				? 'hdr'
+				: settings.scale
+			: settings.scale === 'hdr'
+				? '8bit'
+				: settings.scale,
+	};
+	const live = useRef({ settings: shown, layout, clipId, visible, working });
+	live.current = { settings: shown, layout, clipId, visible, working };
 	const last = useRef<ScopesResult | null>(null);
 	/** Time the in-flight request was posted (0 = none); a lost reply unblocks after a second. */
 	const pending = useRef(0);
@@ -235,7 +257,16 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
 		// Tokens resolve only once the panel is in the document: never cache an unresolved read.
 		if (!colors.current?.bg) colors.current = readColors(box);
-		drawLayout(g, W, H, live.current.layout.slots, live.current.settings, last.current, colors.current);
+		drawLayout(
+			g,
+			W,
+			H,
+			live.current.layout.slots,
+			live.current.settings,
+			last.current,
+			colors.current,
+			live.current.working,
+		);
 	}, []);
 
 	// Result handling + worker lifetime.
@@ -334,7 +365,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 	useEffect(() => {
 		draw();
 		captureNow.current?.(true);
-	}, [settings, clipId, revision, visible, draw]);
+	}, [settings, clipId, revision, visible, draw, working]);
 
 	// Redraw on resize.
 	useEffect(() => {
@@ -436,8 +467,8 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 						<select
 							aria-label="Scale"
 							className={SELECT}
-							value={settings.scale}
-							onChange={(e) => setSettings({ scale: e.target.value as ScopeScale })}
+							value={shown.scale}
+							onChange={(e) => setSettings({ scale: e.target.value as PanelScale })}
 							data-testid="scopes-scale"
 						>
 							{SCOPE_SCALES.map((s) => (
@@ -445,6 +476,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 									{SCOPE_SCALE_LABELS[s]}
 								</option>
 							))}
+							{hdr ? <option value="hdr">HDR (cd/m²)</option> : null}
 						</select>
 					</label>
 					<label className="inline-flex items-center gap-1">
@@ -514,6 +546,8 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 // ---------------------------------------------------------------- drawing (tokens only)
 
 const PAD = 30;
+/** color-mgmt: cd/m² graticule of HDR waveforms. */
+const NITS_LINES = [0.1, 1, 10, 100, 203, 1000, 4000, 10000];
 
 function bitmap(img: ScopeImage): HTMLCanvasElement | null {
 	if (!img.width || !img.height || typeof document === 'undefined') return null;
@@ -554,6 +588,7 @@ function drawLayout(
 	st: PanelSettings,
 	r: ScopesResult | null,
 	c: Colors,
+	working = 'rec709',
 ): void {
 	g.clearRect(0, 0, W, H);
 	g.fillStyle = c.bg;
@@ -568,7 +603,7 @@ function drawLayout(
 		g.rect(rect.x, rect.y, rect.w, rect.h);
 		g.clip();
 		const img = r?.images.find((x) => x.kind === kind) ?? null;
-		if (kind === 'waveform' || kind === 'parade') drawLevels(g, rect, kind, img, st, c);
+		if (kind === 'waveform' || kind === 'parade') drawLevels(g, rect, kind, img, st, c, working);
 		else if (kind === 'histogram') drawHistogram(g, rect, r?.histogram ?? null, st, c);
 		else drawVectorscope(g, rect, kind, img, st, c);
 		if (slots.length > 1) {
@@ -589,6 +624,7 @@ function drawLevels(
 	img: ScopeImage | null,
 	st: PanelSettings,
 	c: Colors,
+	working = 'rec709',
 ): void {
 	const lo = img?.lo ?? (st.clamp ? 0 : -0.1);
 	const hi = img?.hi ?? (st.clamp ? 1 : 1.1);
@@ -607,7 +643,20 @@ function drawLevels(
 		g.stroke();
 	}
 	g.fillStyle = c.label;
-	for (const [v, label] of scaleLabels(st.scale, 0, 1)) g.fillText(label, r.x + 2, Math.round(yOf(v)) + 3);
+	if (st.scale === 'hdr') {
+		// color-mgmt: cd/m² lines at their PQ / HLG signal positions (BT.2408 reference white 203 labelled).
+		for (const n of NITS_LINES) {
+			if (working === 'rec2100-hlg' && n > 1000) continue;
+			const y = Math.round(yOf(workingSignalOfNits(working as 'rec2100-pq', n))) + 0.5;
+			g.strokeStyle = n === 203 || n === 1000 ? c.target : c.graticule;
+			g.beginPath();
+			g.moveTo(x0, y);
+			g.lineTo(x0 + w, y);
+			g.stroke();
+			g.fillText(n < 1 ? String(n) : n >= 1000 ? `${n / 1000}k` : String(n), r.x + 2, y + 3);
+		}
+	} else
+		for (const [v, label] of scaleLabels(st.scale, 0, 1)) g.fillText(label, r.x + 2, Math.round(yOf(v)) + 3);
 	const blocks = img?.blocks ?? 1;
 	if (kind === 'parade')
 		for (let k = 1; k < blocks; k++) {
@@ -707,7 +756,9 @@ function drawHistogram(
 		g.stroke();
 	}
 	g.fillStyle = c.label;
-	for (const [v, label] of scaleLabels(st.scale, 0, 1).filter((_, i) => i % 5 === 0))
+	for (const [v, label] of scaleLabels(st.scale === 'hdr' ? 'float' : st.scale, 0, 1).filter(
+		(_, i) => i % 5 === 0,
+	))
 		g.fillText(label, Math.min(x0 + v * w - 6, x0 + w - 18), y0 + h + 11);
 	if (!hist) return;
 	let max = 1;

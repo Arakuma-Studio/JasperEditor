@@ -4,10 +4,21 @@
 // the native export applies it with `lut3d`, so the three renderers agree to the LUT's precision.
 // This module imports only types from `effects.ts` (which imports the values from here), so there is no
 // evaluation-order cycle.
+import { gamutToXyzD65 } from '../color/cms/gamut.ts';
+import { apply3InPlace, inv3 } from '../color/cms/matrix.ts';
+import { colorSpace } from '../color/cms/spaces.ts';
+import {
+	DEFAULT_HDR_WHITE_NITS,
+	defaultWorkingSettings,
+	gradeSpace,
+	inputTransformFn,
+	outputTransformFn,
+} from '../color/cms/transform.ts';
 import { NEUTRAL_HUE_CURVE } from '../color/hue-curves.ts';
 import { CREATIVE_LOOKS } from '../color/looks.ts';
 import { lumetriFn } from '../color/lumetri.ts';
-import type { ColorFn, ColorOp, EffectParams, EffectSpec, ParamSpec } from './effects.ts';
+import { applyLut, type Rgb } from '../color/lut.ts';
+import type { ColorFn, ColorOp, ColorOpContext, EffectParams, EffectSpec, ParamSpec } from './effects.ts';
 
 const num = (p: EffectParams, k: string, d = 0) =>
 	typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d;
@@ -266,6 +277,18 @@ const hueCurveParam = (name: string, label: string): ParamSpec => ({
 /** Param names of the Lumetri effect, in editor order (S06:CG-002 is the contract). */
 export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	lutParam('inputLut', 'Input LUT', 'basic'),
+	// color-mgmt: HDR White (Basic Correction): in an HDR working space the sliders and curves span 0 … HDR White.
+	{
+		name: 'hdrWhite',
+		label: 'HDR White',
+		type: 'number',
+		default: DEFAULT_HDR_WHITE_NITS,
+		range: { min: 100, max: 10000, step: 1 },
+		unit: 'nits',
+		animatable: true,
+		group: 'basic',
+		ui: { control: 'slider', scale: 'log' },
+	},
 	bipolar('temperature', 'Temperature', 'basic'),
 	bipolar('tint', 'Tint', 'basic'),
 	{
@@ -283,6 +306,8 @@ export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	bipolar('shadows', 'Shadows', 'basic'),
 	bipolar('whites', 'Whites', 'basic'),
 	bipolar('blacks', 'Blacks', 'basic'),
+	// color-mgmt: HDR Specular: brightness of the highlights above HDR White (HDR working spaces).
+	bipolar('hdrSpecular', 'HDR Specular', 'basic'),
 	{
 		name: 'saturation',
 		label: 'Saturation',
@@ -478,9 +503,152 @@ export const LUMETRI_EFFECT: EffectSpec = {
 	// The colour stage (WebGL LUT) realizes it; there is no CSS approximation.
 	preview: {},
 	native: null,
-	color: { build: lumetriFn },
+	color: { build: lumetriHdrFn },
 	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
 };
+
+/**
+ * color-mgmt: Lumetri in the working space. SDR working spaces grade the working signal directly (the M2 maths). In
+ * an HDR working space (Rec. 2100 PQ / HLG) the maths run on the grading signal normalised to HDR White
+ * (`gradeSpace`, FilmCraft grade.rs): 1 = HDR White, highlights above it (speculars) are graded like their colour at
+ * HDR White (scaled into the unit range and back, so they keep their hue and ratio) and then scaled by HDR Specular
+ * (1 + (q − 1)·(1 + specular/100)), instead of clipping.
+ */
+export function lumetriHdrFn(p: EffectParams, ctx: ColorOpContext): ColorFn | null {
+	const base = lumetriFn(p, ctx);
+	const w = ctx.working;
+	if (!w) return base;
+	const white =
+		typeof p.hdrWhite === 'number' && Number.isFinite(p.hdrWhite) ? p.hdrWhite : DEFAULT_HDR_WHITE_NITS;
+	const gs = gradeSpace(w.space, white);
+	if (!gs) return base;
+	const specular =
+		typeof p.hdrSpecular === 'number' && Number.isFinite(p.hdrSpecular) ? p.hdrSpecular / 100 : 0;
+	if (!base && Math.abs(specular) < 1e-9) return null;
+	const k = Math.max(0, 1 + Math.max(-1, Math.min(1, specular)));
+	return (c) => {
+		gs.toGrade(c);
+		const m = Math.max(1, c[0], c[1], c[2]);
+		if (base) {
+			if (m > 1) {
+				c[0] /= m;
+				c[1] /= m;
+				c[2] /= m;
+				base(c);
+				c[0] *= m;
+				c[1] *= m;
+				c[2] *= m;
+			} else base(c);
+		}
+		if (k !== 1) for (let i = 0; i < 3; i++) if (c[i]! > 1) c[i] = 1 + (c[i]! - 1) * k;
+		gs.fromGrade(c);
+	};
+}
+
+// ---------------------------------------------------------------- jasper.color-input (color-mgmt, internal)
+
+export const COLOR_INPUT_EFFECT_ID = 'jasper.color-input';
+
+/**
+ * The colour input transform of a source (render-only, added by the snapshot): source signal → the working space's
+ * signal (Interpret Footage ▸ Colour, the clip override, or graphics in a non-Rec.709 working space). Fused with the
+ * colour runs after it, so preview and native export bake it into the same LUT.
+ */
+export function colorInputFn(p: EffectParams, ctx: ColorOpContext): ColorFn | null {
+	const working = ctx.working ?? {
+		...defaultWorkingSettings('rec709'),
+		linearize: false,
+		blendLinear: false,
+	};
+	const str = (k: string) => (typeof p[k] === 'string' ? (p[k] as string) : '');
+	const mediaOf = (k: string) => {
+		const v = p[k] as { mediaId?: unknown } | null | undefined;
+		return v && typeof v === 'object' && typeof v.mediaId === 'string' && v.mediaId ? v.mediaId : null;
+	};
+	const range = str('range') === 'pc' ? 'pc' : 'tv';
+	const tm = str('toneMap');
+	const toneMap = tm === 'on' ? true : tm === 'off' ? false : undefined;
+	const peak = typeof p.peakNits === 'number' && p.peakNits > 0 ? p.peakNits : null;
+	const lutId = mediaOf('inputLut');
+	const lut = lutId ? ctx.lut(lutId) : null;
+	const ocioId = mediaOf('ocioConfig');
+	let pre: ((c: Rgb) => void) | null = null;
+	let space = str('space') || 'rec709';
+	if (ocioId) {
+		const cfg = ctx.colorConfig?.(ocioId) ?? null;
+		if (!cfg) return null; // offline / unreadable: the planner blocks exports, the preview shows a chip
+		try {
+			const ic = cfg.interchange(str('ocioSpace'));
+			if (ic.space === 'aces2065') {
+				pre = ic.fn;
+				space = 'aces2065';
+			} else {
+				// display-referred CIE XYZ (OCIO: 1 = 100 cd/m², SDR white) → BT.709 linear → BT.1886 Rec. 709
+				const m = inv3(gamutToXyzD65('bt709'));
+				pre = (c) => {
+					ic.fn(c);
+					apply3InPlace(m, c);
+					for (let k = 0; k < 3; k++) c[k] = Math.max(0, c[k]!) ** (1 / 2.4);
+				};
+				space = 'rec709';
+			}
+		} catch {
+			return null;
+		}
+	}
+	if (!colorSpace(space)) return null;
+	const xf = inputTransformFn(
+		{ space, range, peakNits: peak, ...(toneMap !== undefined ? { toneMap } : {}) },
+		working,
+	);
+	if (!lut && !pre && !xf) return null;
+	return (c) => {
+		if (lut) applyLut(lut, c);
+		if (pre) pre(c);
+		if (xf) xf(c);
+	};
+}
+
+const strParam = (name: string, label: string, def = ''): ParamSpec => ({
+	name,
+	label,
+	type: 'string',
+	default: def,
+	animatable: false,
+});
+
+export const COLOR_INPUT_EFFECT: EffectSpec = {
+	id: COLOR_INPUT_EFFECT_ID,
+	version: 1,
+	label: 'Colour Input Transform',
+	category: 'Color Correction',
+	appliesTo: 'video',
+	description: 'Source colour space → working space (added by colour management; not an effect you apply).',
+	internal: true,
+	params: [
+		strParam('space', 'Source Space', 'rec709'),
+		strParam('range', 'Range', 'tv'),
+		strParam('toneMap', 'Tone Map', 'auto'),
+		{ name: 'peakNits', label: 'Peak', type: 'number', default: 0, animatable: false },
+		lutParam('inputLut', 'Input LUT', 'basic'),
+		{ ...lutParam('ocioConfig', 'OCIO Config', 'basic'), mediaKinds: ['color-config'] },
+		strParam('ocioSpace', 'OCIO Space'),
+	],
+	preview: {},
+	native: null,
+	color: { build: colorInputFn },
+	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
+};
+
+/** color-mgmt: the working → output conversion as a colour op (exports in another space than the working one). */
+export function colorOutputFn(outSpace: string, ctx: ColorOpContext): ColorFn | null {
+	const working = ctx.working ?? {
+		...defaultWorkingSettings('rec709'),
+		linearize: false,
+		blendLinear: false,
+	};
+	return outputTransformFn(working, outSpace);
+}
 
 /** The colour effects added by M2 (registered by default through `M2_EFFECTS`). */
 export const COLOR_EFFECTS: readonly EffectSpec[] = [LUMETRI_EFFECT];

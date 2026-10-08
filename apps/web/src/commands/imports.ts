@@ -211,7 +211,7 @@ export const importsCommands: UiCommand[] = [
 			const s = ctx.session;
 			const mediaId = (args as { mediaId?: string } | undefined)?.mediaId;
 			const asset = s && mediaId ? (s.getCommitted().media[mediaId] as MediaAsset | undefined) : undefined;
-			if (!asset || asset.vector?.format !== 'svg') {
+			if (asset?.vector?.format !== 'svg') {
 				ctx.ui.toast({ kind: 'info', message: 'Select an SVG item' });
 				return;
 			}

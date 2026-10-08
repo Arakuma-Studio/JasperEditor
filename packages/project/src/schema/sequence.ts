@@ -1,5 +1,7 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
+
 import { z } from 'zod';
+import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
 import {
 	AudioChannelFormatSchema,
 	LoudnessNormalizeSchema,
@@ -587,6 +589,8 @@ const visualShape = {
 	trackedBy: TrackedBySchema.optional(),
 	/** wp masks: the Opacity masks of the layer (S03:MSK-001). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
+	/** color-mgmt: this clip's colour interpretation (over its media's Interpret Footage ▸ Colour). Media clips only. */
+	colorInterpretation: ColorInterpretationSchema.optional(),
 	/** three-d: the 3D Layer switch and 3D transform / material (schema/three-d.ts). Absent = a 2D layer. */
 	threeD: Layer3DSchema.optional(),
 };
@@ -978,7 +982,14 @@ export const SequenceSettingsSchema = z.looseObject({
 	/** audio-mix: channel format of the Mix (stereo, mono or 5.1). */
 	masterLayout: AudioChannelFormatSchema,
 	backgroundColor: RGBASchema,
-	workingColorSpace: z.literal('rec709'),
+	/**
+	 * color-mgmt: the working colour space (`WORKING_SPACE_IDS`: rec709, srgb, rec2020, p3d65, displayp3, rec2100-pq,
+	 * rec2100-hlg). A string so an unknown id loads and is repaired to Rec. 709 (INV-COLOR); read with
+	 * `sequenceColorInfo`.
+	 */
+	workingColorSpace: z.string(),
+	/** color-mgmt: Sequence Settings ▸ Colour (linearize, blend using 1.0 gamma, tone mapping, HDR white/peak). */
+	color: SequenceColorSchema.optional(),
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
 

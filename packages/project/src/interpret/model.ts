@@ -432,7 +432,7 @@ export function mediaLoaderPath(
 	asset: Pick<MediaAsset, 'locators'> & { lottie?: unknown; vector?: unknown },
 ): string | null {
 	const loc = asset.locators.find((l) => l.type === 'engine-store');
-	if (!loc || loc.type !== 'engine-store') return null;
+	if (loc?.type !== 'engine-store') return null;
 	const k = encodeURIComponent(loc.key);
 	if (asset.lottie) return `/media/${k}/lottie.json`;
 	if (asset.vector) return `/media/${k}/vector`;

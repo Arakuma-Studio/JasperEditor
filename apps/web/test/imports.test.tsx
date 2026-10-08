@@ -63,6 +63,7 @@ describe('Interpret Footage dialog', () => {
 			'fieldOrder',
 			'alpha',
 			'loop',
+			'color', // color-mgmt: its Colour section (order 60)
 		]);
 		fireEvent.click(screen.getByTestId('interpret-fr-assume'));
 		fireEvent.change(screen.getByTestId('interpret-fr-value'), { target: { value: '23.976' } });
@@ -89,7 +90,7 @@ describe('Interpret Footage dialog', () => {
 		const sections = [...screen.getByTestId('interpret-footage-dialog').querySelectorAll('section')].map(
 			(s) => s.getAttribute('data-section'),
 		);
-		expect(sections).toEqual(['pixelAspect', 'alpha']);
+		expect(sections).toEqual(['pixelAspect', 'alpha', 'color']); // color-mgmt's Colour section applies to stills
 		// A later workstream (colour management) adds a section with its own commands.
 		registerInterpretSection({
 			id: 'test-colour',

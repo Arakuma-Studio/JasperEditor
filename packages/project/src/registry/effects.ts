@@ -5,7 +5,10 @@
 // for the native export path. Unknown ids are preserved and bypassed by the renderers (S01:FX-022).
 // Wave 1 (fx framework): `gpu` = GLSL shader passes run on the GPU in the preview and the Remotion path, `bin` =
 // Effects-panel folder; the fx catalogue (`./fx/`, one file per effect family) is part of the default registry.
+
 import type { Lut, Rgb } from '../color/lut.ts';
+import type { SequenceColorInfo } from '../color/model.ts';
+import type { OcioConfig } from '../color/ocio/config.ts';
 import type { ParamValue, SpatialInterpolation } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
 import { AUDIO_EFFECTS } from './audio/index.ts';
@@ -15,6 +18,7 @@ import {
 	blackWhiteAmount,
 	brightnessContrastLinear,
 	COLOR_EFFECTS,
+	COLOR_INPUT_EFFECT,
 	HUE_SATURATION_OP,
 	hueSaturationValues,
 } from './color-effects.ts';
@@ -91,7 +95,9 @@ export type ParamSpec = {
 		| 'cents'
 		| 'LUFS'
 		| 'dBTP'
-		| 'bpm';
+		| 'bpm'
+		/** color-mgmt: luminance in cd/m² (Lumetri HDR White). */
+		| 'nits';
 	/** Enums, booleans, strings and media refs are hold-only (S01:KF-007). */
 	animatable: boolean;
 	/**
@@ -148,6 +154,13 @@ export type ParamSpec = {
 export type ColorOpContext = {
 	/** A parsed LUT asset (`{mediaId}` params), or null when missing/offline (the op then skips it). */
 	lut(mediaId: string): Lut | null;
+	/**
+	 * color-mgmt: the sequence's working space and colour settings (absent = Rec. 709 defaults). Colour ops whose maths
+	 * depend on it (input transforms, Lumetri's HDR grading signal) read it; run keys include it (`colorRunKey` extra).
+	 */
+	working?: SequenceColorInfo;
+	/** color-mgmt: a parsed custom OCIO config (`color-config` media), or null when missing/offline/unreadable. */
+	colorConfig?(mediaId: string): OcioConfig | null;
 };
 /** Transforms `c` in place. Must be deterministic and must not allocate per call in hot paths. */
 export type ColorFn = (c: Rgb) => void;
@@ -215,15 +228,16 @@ export type EffectSpec = {
 	 */
 	passthrough?: boolean;
 	/**
+	 * color-mgmt: a render-only effect the snapshot adds (the colour input transform of a source; color-grade:
+	 * `jasper.lumetri-spatial` after a Lumetri instance): never listed in the Effects panel or the agent catalogue,
+	 * refused by `effect.add`, removed from documents by `repairDocument`.
+	 */
+	internal?: boolean;
+	/**
 	 * Wave expressions: defaults that depend on the clip the effect is applied to (Point Control starts at the
 	 * clip's centre). Applied by `effect.add` on clips for params the command does not set.
 	 */
 	instanceDefaults?(ctx: { box: { width: number; height: number } }): Record<string, ParamValue>;
-	/**
-	 * color-grade: an implementation stage the renderers insert themselves (e.g. `jasper.lumetri-spatial` after a
-	 * Lumetri instance): never listed in the Effects panel or the agent catalogue, and `effect.add` refuses it.
-	 */
-	internal?: boolean;
 	/** color-grade: bypassed together with the colour effects by the before/after toggle (`colorBypass`). */
 	gradeBypass?: boolean;
 	/** One line for the Effects panel tooltip and the agent catalogue. */
@@ -621,7 +635,7 @@ export const M1_EFFECTS: readonly EffectSpec[] = [
 ];
 
 /** M2 additions registered by default (the colour effects come from `registry/color-effects.ts`). */
-export const M2_EFFECTS: readonly EffectSpec[] = [...COLOR_EFFECTS, CORNER_PIN_EFFECT];
+export const M2_EFFECTS: readonly EffectSpec[] = [...COLOR_EFFECTS, CORNER_PIN_EFFECT, COLOR_INPUT_EFFECT];
 
 /** color-grade: internal render stages (never listed; inserted by render snapshots). */
 export const INTERNAL_EFFECTS: readonly EffectSpec[] = [LUMETRI_SPATIAL_EFFECT];

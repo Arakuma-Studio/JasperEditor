@@ -1,4 +1,6 @@
 // Export planning and rendering (ARCHITECTURE §9.5, S04 §10.2 subset, RP-010, EX-030).
+
+import { OUTPUT_SPACE_IDS } from '@jasper/project';
 import { z } from 'zod';
 import { EncoderChoiceSchema, VideoCodecSchema } from './capabilities.ts';
 import { RationalSchema } from './common.ts';
@@ -67,7 +69,37 @@ export const ExportSettingsSchema = z.object({
 			 */
 			alpha: z.boolean().optional(),
 			encoderSpeed: z.enum(['fast', 'balanced', 'best']),
+			/** Legacy field (always Rec. 709): the written colour space is `colorSpace` (color-mgmt). */
 			colorTags: z.literal('rec709').default('rec709'),
+			/**
+			 * color-mgmt: the colour space written (pixels converted from the working space, tags set): `working`
+			 * (default: the sequence's working space) or an output space (rec709, srgb, rec2020, p3d65, displayp3,
+			 * rec2100-pq, rec2100-hlg). An HDR sequence exported as Rec. 709 is tone mapped (BT.2390).
+			 */
+			colorSpace: z.enum(['working', ...OUTPUT_SPACE_IDS]).optional(),
+			/**
+			 * color-mgmt: bits per component of the encoded video. Default: 10 for HDR outputs and ProRes, else 8.
+			 * 10/12-bit needs ProRes (10), AV1 (libsvtav1 10, libaom 10/12) or VP9 (10/12); H.264 encoders are 8-bit.
+			 */
+			bitDepth: z.union([z.literal(8), z.literal(10), z.literal(12)]).optional(),
+			/**
+			 * color-mgmt: HDR static metadata written with PQ/HLG outputs (MP4/MOV `mdcv`/`clli` boxes, AV1 metadata OBUs):
+			 * the mastering display (default: the output primaries, peak = the sequence's HDR mastering peak, black
+			 * 0.0001 cd/m²) and MaxCLL / MaxFALL in cd/m² (absent = not written, i.e. unknown).
+			 */
+			hdrMetadata: z
+				.object({
+					masteringDisplay: z
+						.object({
+							primaries: z.enum(['bt2020', 'p3d65', 'bt709']),
+							maxNits: z.number().min(1).max(10000),
+							minNits: z.number().min(0).max(1),
+						})
+						.optional(),
+					maxCll: z.number().int().min(0).max(10000).optional(),
+					maxFall: z.number().int().min(0).max(10000).optional(),
+				})
+				.optional(),
 		})
 		.optional(),
 	audio: z

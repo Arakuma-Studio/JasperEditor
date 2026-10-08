@@ -138,6 +138,7 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 		protocol: TX_PROTOCOL,
 		transaction: toJsonSchema(TransactionSchema),
 		commands,
+		// color-mgmt: internal (render-only) effects are not offered.
 		effects: registries.effects
 			.list()
 			.filter((e) => !e.internal)
