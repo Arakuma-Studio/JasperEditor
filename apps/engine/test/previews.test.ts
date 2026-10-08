@@ -302,6 +302,104 @@ describe('render previews', () => {
 	}, 300_000);
 });
 
+describe('Export ▸ Use Previews', () => {
+	it('takes the rendered segments from their files and renders the rest; frame-exact, one encode', async () => {
+		const d = await build();
+		await app.inject({
+			method: 'POST',
+			url: '/api/previews/delete',
+			headers: JSON_H,
+			payload: { all: true },
+		});
+		const segs = previewSegments(d.doc, d.seqId);
+		// render only the first segment
+		const r = await render(d, 'all', { range: { start: 0, end: 40 } });
+		expect((r.json() as { result: PreviewRenderResult }).result.rendered.map((x) => x.hash)).toEqual([
+			segs[0]!.hash,
+		]);
+		const settings = {
+			sequenceId: d.seqId,
+			range: { type: 'entire' },
+			container: 'mp4',
+			video: {
+				codec: 'h264',
+				width: 1920,
+				height: 1080,
+				frameRate: { num: 30, den: 1 },
+				scaling: 'fit',
+				quality: { mode: 'crf', value: 18 },
+				encoderSpeed: 'fast',
+				colorTags: 'rec709',
+			},
+			audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
+			engine: 'auto',
+			usePreviews: true,
+		};
+		const plan = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		const p = plan.json() as {
+			warnings: { code: string; message: string }[];
+			segments: { startFrame: number; endFrame: number }[];
+		};
+		expect(p.warnings.find((w) => w.code === 'USING_PREVIEWS')?.message).toMatch(/^40 of 60 frames/);
+		expect(p.segments.map((x) => [x.startFrame, x.endFrame])).toEqual([
+			[0, 40],
+			[40, 60],
+		]);
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(start.statusCode, start.body).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const count = Number(
+			spawnSync('ffprobe', [
+				'-v',
+				'error',
+				'-count_frames',
+				'-select_streams',
+				'v:0',
+				'-show_entries',
+				'stream=nb_read_frames',
+				'-of',
+				'csv=p=0',
+				file,
+			])
+				.stdout.toString()
+				.trim(),
+		);
+		expect(count).toBe(60);
+		for (const n of [0, 20, 39]) expect(frameCode(file, n)).toBe(n);
+		// without previews of a different format nothing is used, and the plan says why
+		const halfDoc = structuredClone(d.doc) as ProjectDocument;
+		(halfDoc.sequences[d.seqId] as { previews?: unknown }).previews = {
+			format: 'h264-iframe',
+			size: 'half',
+			quality: 'standard',
+		};
+		d.doc = halfDoc;
+		const half = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(
+			(half.json() as { warnings: { code: string; message: string }[] }).warnings.find(
+				(w) => w.code === 'PREVIEWS_UNUSED',
+			)?.message,
+		).toMatch(/half size/);
+	}, 300_000);
+});
+
 describe('previews in the cache registry', () => {
 	it('maps preview files to entries and partials to orphans', async () => {
 		const root = '/x/appdir';
