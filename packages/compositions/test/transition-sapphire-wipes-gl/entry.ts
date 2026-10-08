@@ -2,6 +2,7 @@
 // ../transition-sapphire-wipes-gl.test.ts): runs S_Wipe* stages on the real fx GPU host (planGpuTransition +
 // runShaderPlan, as transition-gl/entry.ts) with A = solid red and B = solid blue, at an exact progress (Start = End),
 // and reports pixels / the share of the frame showing B.
+import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_FAMILIES,

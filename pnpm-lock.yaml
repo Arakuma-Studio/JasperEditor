@@ -405,6 +405,9 @@ importers:
         specifier: 4.0.499
         version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
+      '@jasper/testkit':
+        specifier: workspace:*
+        version: link:../testkit
       '@remotion/bundler':
         specifier: 4.0.499
         version: 4.0.499(lightningcss@1.32.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

@@ -2,6 +2,7 @@
 // ../transition-premiere-gl.test.ts): drives the real fx GPU host with planned transition stages (planGpuTransition
 // + runShaderPlan, as test/transition-gl/entry.ts does) and reports characteristic pixels of each Premiere transition
 // at a fixed progress (Start = End = the progress), Reverse, borders, one-sided use and determinism.
+import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_SPECS,

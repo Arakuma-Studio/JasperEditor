@@ -1,6 +1,7 @@
 // Browser entry of the "Sapphire other stylize" GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-stylize-other-gl.test.ts): runs the family's production effects on the real GPU host with painted
 // scenes (or a photo) and reports probe pixels, a checksum and optionally a PNG. Pattern of test/fx-gl/entry.ts.
+import '../gl-poison.ts';
 import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';

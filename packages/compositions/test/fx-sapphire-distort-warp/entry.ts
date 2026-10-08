@@ -1,6 +1,7 @@
 // Browser entry of the Sapphire Distort family GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-distort-warp-gl.test.ts): runs the family's effects through the real GPU host on a procedural test
 // picture (or a given image) and reports pixels / PNGs.
+import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,

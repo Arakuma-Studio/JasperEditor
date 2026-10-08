@@ -1,6 +1,7 @@
 // Browser entry of the mask GL test (bundled with esbuild, run in headless Chrome by ../masks-gl.test.ts): the GL
 // mask rasteriser (src/fx/mask.ts on the fx GPU host) against the CPU rasteriser, and the masked-effect /
 // Opacity-mask descriptors inside Remotion's effect chain (as FxPicture runs them).
+import '../gl-poison.ts';
 import { boxToCanvas, packMasks, prepareMasks, type ResolvedMask, rasterizeMaskPack } from '@jasper/project';
 import { Internals } from 'remotion';
 import { cssFilter } from '../../src/color/effects.ts';

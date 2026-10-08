@@ -1,6 +1,7 @@
 // Browser entry of the fx GL test (bundled with esbuild, run in headless Chrome by ../fx-gl.test.ts): drives the
 // real GPU host (src/fx/host.ts) with planned effects and reports pixels. No React, no Remotion chain — the host's
 // contract (passes, padding layout, orientation, premultiplied alpha, samples, media textures, LUT, errors).
+import '../gl-poison.ts';
 import {
 	bakeLut,
 	defaultEffectRegistry,
@@ -16,6 +17,7 @@ import {
 	lutParam,
 	planGpuEffect,
 } from '@jasper/project';
+import { meanGrid } from '@jasper/testkit/image';
 import { TRANSFORM } from '../../../project/src/registry/fx/premiere-adjust-color-keying/transform.ts';
 import { chainGpuStandIn } from '../../src/fx/builtins.ts';
 import { FxShaderError, fxHost, runLutPass, runShaderPlan } from '../../src/fx/host.ts';
@@ -41,6 +43,63 @@ const defaults = (spec: EffectSpec, over: Record<string, unknown> = {}) => ({
 	...Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
 	...over,
 });
+
+/**
+ * The golden test card painted into a layer box (golden-fuzz fingerprints): a horizontal colour ramp, dark and light
+ * bars, a bright disc and a transparent corner — edges, gradients, highlights and alpha for every kind of effect.
+ */
+function testCard(ctx: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }): void {
+	const g = ctx.createLinearGradient(b.x, 0, b.x + b.w, 0);
+	g.addColorStop(0, '#1a2a6c');
+	g.addColorStop(0.5, '#b21f1f');
+	g.addColorStop(1, '#fdbb2d');
+	ctx.fillStyle = g;
+	ctx.fillRect(b.x, b.y, b.w, b.h);
+	ctx.fillStyle = '#000';
+	ctx.fillRect(b.x + b.w * 0.15, b.y, b.w * 0.08, b.h);
+	ctx.fillStyle = '#fff';
+	ctx.fillRect(b.x + b.w * 0.7, b.y, b.w * 0.06, b.h);
+	ctx.beginPath();
+	ctx.arc(b.x + b.w * 0.45, b.y + b.h * 0.5, b.h * 0.25, 0, Math.PI * 2);
+	ctx.fill();
+	ctx.clearRect(b.x, b.y, b.w * 0.12, b.h * 0.25);
+}
+
+/**
+ * Every parameter moved off its default in a deterministic way (numbers to 70 % of their soft / hard range, the
+ * next enum option, booleans flipped, colours and points set): the second fingerprint of each effect, so effects that
+ * are an identity at their defaults are covered too, and parameter wiring is exercised.
+ */
+function perturbed(spec: EffectSpec): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const p of spec.params) {
+		const d = p.default as unknown;
+		if (p.type === 'number' && typeof d === 'number') {
+			// A third of the way towards the soft maximum (else the hard one), at most ±max(|default|, 1) without a
+			// soft range: visible, but never the extreme sizes that exhaust a software GPU.
+			const hi = p.range?.softMax ?? p.range?.max;
+			const lo = p.range?.softMin ?? p.range?.min;
+			const toward =
+				hi !== undefined && hi > d ? hi : lo !== undefined && lo < d ? lo : d + Math.max(Math.abs(d), 1);
+			let v = d + (toward - d) / 3;
+			if (p.range?.softMax === undefined)
+				v = d + Math.sign(v - d) * Math.min(Math.abs(v - d), Math.max(Math.abs(d), 1));
+			out[p.name] = p.range?.step === 1 || Number.isInteger(p.range?.step) ? Math.round(v) : v;
+		} else if (p.type === 'boolean') out[p.name] = !d;
+		else if (p.type === 'enum' && p.options?.length)
+			out[p.name] = p.options[(p.options.indexOf(d as string) + 1) % p.options.length];
+		else if (p.type === 'color') out[p.name] = [0.9, 0.25, 0.45, 1];
+		else if (p.type === 'vec2' && Array.isArray(d)) out[p.name] = (d as number[]).map((v) => v * 0.8 + 0.1);
+		else out[p.name] = d;
+	}
+	return out;
+}
+
+/** 4×4 mean-RGB grid of a whole canvas (the testkit fingerprint). */
+function fingerprintOf(c: HTMLCanvasElement): number[] {
+	const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+	return meanGrid({ width: c.width, height: c.height, data: new Uint8Array(d.buffer) }, 4);
+}
 
 /** Runs one effect on a layer of `box` size whose box is painted by `paint` (layer px = canvas px here). */
 function run(
@@ -206,6 +265,40 @@ void main() {
 			}
 		}
 		return { count: specs.length, errors };
+	},
+
+	/**
+	 * Fingerprints (4×4 mean RGB) of every GPU effect of a family at its defaults on the golden test card, frame 12:
+	 * compared with goldens/fx-fingerprints.json by fx-gl.test.ts (JASPER_BLESS=1 re-blesses). Effects that fail to
+	 * run are left out here (`catalogue` reports them).
+	 */
+	fingerprints(family?: string) {
+		const familySpecs = FX_FAMILIES.find((f) => f.file === family)?.effects;
+		const inFamily = new Set(FX_FAMILIES.flatMap((f) => f.effects.map((e) => e.id)));
+		const specs = familySpecs
+			? familySpecs.filter((s) => s.gpu)
+			: [...defaultEffectRegistry.list().filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_FX];
+		const out: Record<string, number[]> = {};
+		for (const spec of specs) {
+			try {
+				out[spec.id] = fingerprintOf(
+					run(spec, defaults(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
+				);
+			} catch {
+				// reported by `catalogue`
+			}
+			try {
+				out[`${spec.id}@perturbed`] = fingerprintOf(
+					run(spec, perturbed(spec), { width: 64, height: 36 }, testCard, { frame: 12 }).out,
+				);
+				if (fxHost()?.gl.isContextLost()) throw new Error('the WebGL context was lost');
+			} catch (e) {
+				// Failing at other settings is a bug: recorded as NaNs, which no golden accepts.
+				out[`${spec.id}@perturbed`] = new Array(48).fill(Number.NaN);
+				console.error(`${spec.id} @perturbed: ${(e as Error).message}`);
+			}
+		}
+		return out;
 	},
 
 	orientation() {

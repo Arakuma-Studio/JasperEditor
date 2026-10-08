@@ -2,6 +2,7 @@
 // renders scenes with the Advanced 3D renderer and, for unlit scenes, the Classic 3D CPU reference of the same
 // pictures; lit scenes report what the test checks (shadow masks with and without the caster's shadows, coverage of
 // extruded vs flat text, colours at given pixels).
+import '../gl-poison.ts';
 import {
 	anim,
 	type CameraState,
