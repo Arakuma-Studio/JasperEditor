@@ -120,6 +120,11 @@ procedurally generated scenes; written by `JASPER_BLESS=1`.
 
 | Asset | Author | Source | Licence |
 |---|---|---|---|
+| `apps/engine/test/goldens/native/blend-linear-burn.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/blend-screen.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/colour-run.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/crop.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/transform-opacity.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/motion-blur/blur-mo-curves-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/motion-blur/corner-pin-blur-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/motion-blur/corner-pin-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |

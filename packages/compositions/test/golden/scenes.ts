@@ -4,7 +4,7 @@
 // effects of every family, text, text animators, shapes, 3D, time remapping, sim-warp effects, captions and an
 // in-composition transition. Each scene is one frame rendered by Remotion (test/golden-scenes.e2e.test.ts) and
 // compared with goldens/scenes/<name>.png.
-import { BLEND_MODES, type Command } from '@jasper/project';
+import { BLEND_MODES, type BlendMode, type Command, isCssBlend } from '@jasper/project';
 import { type Rgba8, rgba8 } from '@jasper/testkit/image';
 
 export const GW = 256;
@@ -120,11 +120,11 @@ const fx = (clip: string, effectId: string, ref: string, params: Record<string, 
 	...Object.entries(params).map(([k, v]) => set(['effect', ref, k], v)),
 ];
 
-/** One small tile per blend mode over the card, in a 4×2 grid. */
-function blendScene(modes: readonly string[], part: number): Scene {
+/** One small tile per CSS-drawable blend mode over the card, in a 4×2 grid (these stack freely). */
+function cssBlendScene(modes: readonly string[], part: number): Scene {
 	return {
-		name: `blend-modes-${part}`,
-		covers: `blend modes ${modes.join(', ')}`,
+		name: `blend-css-${part}`,
+		covers: `blend modes ${modes.join(', ')} (stacked tracks)`,
 		frame: 10,
 		commands: (m) => [
 			...background(m),
@@ -143,6 +143,30 @@ function blendScene(modes: readonly string[], part: number): Scene {
 		],
 	};
 }
+
+/**
+ * A GPU-composited blend mode: the tile at 60 % over the card. One per scene — two tracks with GL blend modes cannot
+ * render on the Remotion path (HTML-in-Canvas scopes do not nest; CANVAS_NESTED, docs/gaps.md) — with Opacity 80 %
+ * so the opacity path of the compositing shader is covered too.
+ */
+function glBlendScene(mode: string): Scene {
+	return {
+		name: `blend-${mode}`,
+		covers: `blend mode ${mode} (GPU compositing) at 80 % opacity`,
+		frame: 10,
+		commands: (m) => [
+			...background(m),
+			tracks(1),
+			...tile(m, 'V2', '$t'),
+			set(['clip', '$t', 'transform', 'scale'], 60),
+			set(['clip', '$t', 'opacity'], 80),
+			cmd({ type: 'clip.update', clipId: '$t', patch: { blendMode: mode } }),
+		],
+	};
+}
+
+const CSS_BLENDS = BLEND_MODES.filter((b) => b !== 'normal' && isCssBlend(b as BlendMode));
+const GL_BLENDS = BLEND_MODES.filter((b) => !isCssBlend(b as BlendMode));
 
 // ---------------------------------------------------------------- the scenes
 
@@ -184,7 +208,9 @@ export const SCENES: Scene[] = [
 			}),
 		],
 	},
-	...[0, 1, 2, 3].map((p) => blendScene(BLEND_MODES.slice(p * 8, p * 8 + 8), p + 1)),
+	cssBlendScene(CSS_BLENDS.slice(0, 6), 1),
+	cssBlendScene(CSS_BLENDS.slice(6), 2),
+	...GL_BLENDS.map(glBlendScene),
 	{
 		name: 'masks',
 		covers: 'masks: a feathered, expanded ellipse minus a polygon (subtract)',
@@ -193,7 +219,7 @@ export const SCENES: Scene[] = [
 			...background(m),
 			tracks(1),
 			...tile(m, 'V2', '$t'),
-			cmd({ type: 'mask.add', clipId: '$t', shape: 'ellipse', feather: 14, expansion: 4, ref: '$a' }),
+			cmd({ type: 'mask.add', clipId: '$t', shape: 'ellipse', feather: 4, expansion: 6, ref: '$a' }),
 			cmd({ type: 'mask.add', clipId: '$t', shape: 'polygon', mode: 'subtract', feather: 0, ref: '$b' }),
 		],
 	},
@@ -278,7 +304,7 @@ export const SCENES: Scene[] = [
 	},
 	{
 		name: 'text',
-		covers: 'a text layer (Inter, size, colour) over the card',
+		covers: 'a text layer (Inter, size, fill, drop shadow) over the card',
 		frame: 10,
 		commands: (m) => [
 			...background(m),
@@ -288,14 +314,21 @@ export const SCENES: Scene[] = [
 				at: 0,
 				duration: 60,
 				track: 'V2',
-				content: { text: 'Golden 42 ✓', style: { size: 34, color: [1, 1, 0.2, 1] } },
+				content: {
+					text: 'Golden 42 ✓',
+					style: {
+						sizePx: 26,
+						fill: [1, 1, 0.2, 1],
+						shadow: { color: [0, 0, 0, 1], angleDeg: 135, distancePx: 2, blurPx: 1 },
+					},
+				},
 				ref: '$x',
 			}),
 		],
 	},
 	{
 		name: 'text-animator',
-		covers: 'a text animator preset mid-animation (per-character offsets and opacity)',
+		covers: 'a text animator: per-character position offset and opacity through the default range selector',
 		frame: 8,
 		commands: (m) => [
 			...background(m),
@@ -305,12 +338,12 @@ export const SCENES: Scene[] = [
 				at: 0,
 				duration: 60,
 				track: 'V2',
-				content: { text: 'ANIMATE', style: { size: 40 } },
+				content: { text: 'ANIMATE', style: { sizePx: 30 } },
 				ref: '$x',
 			}),
 			cmd({ type: 'textAnimator.add', clipId: '$x', properties: ['position', 'opacity'], ref: '$a' }),
 			set(['clip', '$x', 'textAnimators', '$a', 'properties', 'position'], [0, -30]),
-			set(['clip', '$x', 'textAnimators', '$a', 'properties', 'opacity'], 0),
+			set(['clip', '$x', 'textAnimators', '$a', 'properties', 'opacity'], 35),
 		],
 	},
 	{
@@ -438,23 +471,40 @@ export const SCENES: Scene[] = [
 			}),
 		],
 	},
+	{
+		name: 'fx-time',
+		covers:
+			'GPU time effect jasper.s.trails (time-flicker family) on the generated movie: earlier frames blended in',
+		frame: 20,
+		commands: (m) => [
+			cmd({ type: 'media.register', ref: '$vm', asset: m.asset('video', m.video, GW, GH) }),
+			cmd({
+				type: 'clip.place',
+				source: { mediaId: '$vm' },
+				at: 0,
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 1.5 } },
+				tracks: { video: 'V1' },
+				ref: '$v',
+			}),
+			...fx('$v', 'jasper.s.trails', '$fx'),
+		],
+	},
 	// GPU effects: one representative of every effect family, at visible settings, on the card.
 	...(
 		[
 			['fx-premiere-adjust', 'jasper.black-white', {}],
 			['fx-premiere-stylize', 'jasper.wave-warp', { waveHeight: 12 }],
 			['fx-glows', 'jasper.s.glow', {}],
-			['fx-paint', 'jasper.s.sketch', {}],
-			['fx-film', 'jasper.s.film-effect', {}],
+			['fx-paint', 'jasper.s.posterize', {}],
+			['fx-film', 'jasper.s.bleach-bypass', {}],
 			['fx-stylize', 'jasper.s.mosaic', {}],
 			['fx-adjust-composite', 'jasper.s.duo-tone', {}],
 			['fx-blur-sharpen', 'jasper.s.blur', {}],
 			['fx-distort', 'jasper.s.warp-bubble', {}],
 			['fx-render', 'jasper.s.gradient-radial', {}],
 			['fx-textures', 'jasper.s.clouds', {}],
-			['fx-time', 'jasper.s.flicker', {}],
 			['fx-keying', 'jasper.screen-keyer', { screenColour: [0.94, 0.86, 0.12, 1] }],
-			['fx-simulation', 'jasper.card-dance', {}],
+			['fx-simulation', 'jasper.pixel-polly', {}],
 		] as const
 	).map(
 		([name, id, params]): Scene => ({
