@@ -372,11 +372,15 @@ export const sequenceHandlers: HandlerMap = {
 		const created: Track[] = [];
 		if ((cmd.language !== undefined || cmd.captionStandard !== undefined) && cmd.kind !== 'caption')
 			h.fail('E_INVALID_PARAM', 'language and captionStandard apply to caption tracks only');
+		if (cmd.channelFormat !== undefined && cmd.kind !== 'audio')
+			h.fail('E_INVALID_PARAM', 'channelFormat applies to audio tracks only');
 		for (let i = 0; i < (cmd.count ?? 1); i++) {
 			const t = createTrack(h.ids, cmd.kind, cmd.name ?? null);
 			// wp captions
 			if (cmd.language !== undefined) t.language = cmd.language;
 			if (cmd.captionStandard !== undefined) t.captionStandard = cmd.captionStandard;
+			// gaps: Add Tracks… ▸ Track Type
+			if (cmd.channelFormat !== undefined) t.channelFormat = cmd.channelFormat;
 			created.push(t);
 		}
 		list.splice(index, 0, ...(created as Draft<Track>[]));

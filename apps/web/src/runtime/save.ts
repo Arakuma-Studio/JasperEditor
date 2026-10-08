@@ -37,8 +37,18 @@ export async function saveNow(session: EditorSession): Promise<SaveOutcome> {
 	return saver.lastSavedRevision === before ? 'unchanged' : 'saved';
 }
 
+let skipUnloadFlush = false;
+/**
+ * gaps (File ▸ Exit ▸ Don't Save): the window is closing on purpose without saving; the pagehide / beforeunload flush
+ * must not save the pending edits (they stay in the crash-recovery journal and are offered on the next open).
+ */
+export function setSkipUnloadFlush(on: boolean): void {
+	skipUnloadFlush = on;
+}
+
 /** Flushes every live saver (pagehide/beforeunload). */
 export function flushAutosaver(session: EditorSession | null | undefined): void {
+	if (skipUnloadFlush) return;
 	if (session)
 		void persistenceFor(session)
 			?.flush()

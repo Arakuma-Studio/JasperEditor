@@ -3,8 +3,14 @@
 import { type Sequence, type Track, trackList } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
-import { IconButton } from '@jasper/ui';
+import { IconButton, openDialog } from '@jasper/ui';
 import { useRef, useState } from 'react';
+import {
+	ADD_TRACKS_DIALOG,
+	DELETE_TRACKS_DIALOG,
+	registerTrackDialogs,
+} from '../../../gaps/TrackDialogs.tsx';
+import { trackHeightSubmenu } from '../../../gaps/track-height-menu.ts';
 import { useShellRuntimeOrNull } from '../../../shell/context.tsx';
 import { patchedLabelOn, setPatch, sourceLabel, sourceTracksOf } from '../../source/patching.ts';
 import { sourceMonitorState } from '../../source/source-state.ts';
@@ -169,8 +175,27 @@ function headerMenu(
 				p.session.setView(p.seq.id, { keyframeDisplay: d });
 			},
 		},
+		// gaps (TL-10): one track's height, and Premiere's Add Tracks… / Delete Tracks… dialogs.
+		trackHeightSubmenu(p.session, p.seq, track.id, kind),
 		{ kind: 'separator' },
 		{ kind: 'item', label: 'Rename', run: startRename },
+		{ kind: 'separator' },
+		{
+			kind: 'item',
+			label: 'Add Tracks…',
+			run: () => {
+				registerTrackDialogs();
+				void openDialog(ADD_TRACKS_DIALOG, { session: p.session, sequenceId: p.seq.id });
+			},
+		},
+		{
+			kind: 'item',
+			label: 'Delete Tracks…',
+			run: () => {
+				registerTrackDialogs();
+				void openDialog(DELETE_TRACKS_DIALOG, { session: p.session, sequenceId: p.seq.id });
+			},
+		},
 	];
 }
 

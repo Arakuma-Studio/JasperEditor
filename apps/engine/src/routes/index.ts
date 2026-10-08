@@ -13,6 +13,7 @@ import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
+import gapsRoutes from './gaps.ts';
 import gradingRoutes from './grading.ts';
 import importsRoutes from './imports.ts';
 import interchangeRoutes from './interchange.ts';
@@ -86,6 +87,8 @@ const ROUTE_PLUGINS = [
 	gradingRoutes,
 	// previews: render previews (segments rendered through the export service) and perf stats.
 	previewsRoutes,
+	// gaps: Edit Original, scratch disks, proxies, Project Manager, Export Frame, Warp Stabilizer / Auto Reframe analysis.
+	gapsRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

@@ -118,6 +118,8 @@ export const TrackAddCmd = cmd('track.add', {
 	/** wp captions (caption tracks): language and standard. */
 	language: z.string().optional(),
 	captionStandard: CaptionStandardSchema.optional(),
+	/** gaps (Add Tracks… ▸ Track Type): channel format of new audio tracks (default stereo). */
+	channelFormat: AudioChannelFormatSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TrackRemoveCmd = cmd('track.remove', {

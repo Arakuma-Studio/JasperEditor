@@ -4,6 +4,7 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { cx, IconButton, labelColor, PointMenu, placeBeside, useMenuFit, Z } from '@jasper/ui';
 import { useEffect, useRef, useState } from 'react';
+import { trackHeightDisplayMenu } from '../../../gaps/track-height-menu.ts';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -114,6 +115,9 @@ export function Toolbar(props: {
 			})),
 		},
 		check('Snap Playhead When Snap Is On', 'snapPlayhead', p.snapPlayhead),
+		// gaps (TL-10): Expand / Minimize All Tracks and the track height presets.
+		{ kind: 'separator' },
+		...trackHeightDisplayMenu(props.session),
 		...(props.extraMenu?.length ? [{ kind: 'separator' as const }, ...props.extraMenu] : []),
 	];
 	return (

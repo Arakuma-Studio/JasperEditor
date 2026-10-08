@@ -13,6 +13,13 @@ const c = (command: string, label: string, args?: unknown): ShellMenuItem => ({
 	label,
 	args,
 });
+/** A desktop-only entry (hidden on the web and in the PWA). */
+const desktopOnly = (command: string, label: string): ShellMenuItem => ({
+	type: 'command',
+	command,
+	label,
+	runtimes: ['desktop'],
+});
 const sub = (label: string, items: ShellMenuItem[]): ShellMenuItem => ({ type: 'submenu', label, items });
 const sep: ShellMenuItem = { type: 'separator' };
 
@@ -97,7 +104,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sub('Engine', [c('engine.connect', 'Connect…'), c('engine.status', 'Engine Status')]),
 			sep,
 			c('app.goHome', 'Go to Home'),
-			c('app.quit', 'Exit'),
+			desktopOnly('app.quit', 'Exit'),
 		],
 	},
 	{

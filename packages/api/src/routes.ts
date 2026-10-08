@@ -45,6 +45,7 @@ import {
 	StillRequestSchema,
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
+import { MediaLocationSchema, MediaOpenRequestSchema, MediaOpenResponseSchema } from './gaps.ts';
 import {
 	AutoToneRequestSchema,
 	AutoToneResponseSchema,
@@ -192,7 +193,9 @@ export type RouteOwner =
 	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
 	| 'imports'
 	// parity program: Lumetri completion, Colour Match, scopes
-	| 'color-grade';
+	| 'color-grade'
+	// parity program: Edit Original, scratch disks, proxies, Project Manager, Export Frame, analyses (gaps)
+	| 'gaps';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -1054,6 +1057,20 @@ export const ROUTES = {
 		body: AutoToneRequestSchema,
 		response: AutoToneResponseSchema,
 		owner: 'color-grade',
+	},
+	// ---- gaps: Edit Original (UI-5)
+	mediaLocation: {
+		method: 'GET',
+		path: '/api/media/:mediaKey/location',
+		response: MediaLocationSchema,
+		owner: 'gaps',
+	},
+	mediaOpen: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/open',
+		body: MediaOpenRequestSchema,
+		response: MediaOpenResponseSchema,
+		owner: 'gaps',
 	},
 } as const satisfies Record<string, RouteDef>;
 
