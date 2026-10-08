@@ -21,6 +21,7 @@ export * from './masks.ts';
 export * from './media.ts';
 export * from './mg.ts';
 export * from './mg-bundles.ts';
+export * from './previews.ts';
 export * from './processing.ts';
 export * from './projects.ts';
 export * from './roto.ts';

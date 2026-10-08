@@ -527,6 +527,19 @@ function allowedTargets(
 	return out;
 }
 
+/** Whether any object under `root` has an `expression` field (no allocations; bounded depth). */
+function hasExpressionKey(root: unknown, depth = 0): boolean {
+	if (!root || typeof root !== 'object' || depth > 256) return false;
+	if (Array.isArray(root)) {
+		for (let i = 0; i < root.length; i++) if (hasExpressionKey(root[i], depth + 1)) return true;
+		return false;
+	}
+	const o = root as Record<string, unknown>;
+	if ('expression' in o && o.expression !== undefined) return true;
+	for (const k in o) if (k !== 'expression' && hasExpressionKey(o[k], depth + 1)) return true;
+	return false;
+}
+
 /** Every object of a sequence carrying an `expression` field, with its path. */
 function* expressionHolders(
 	root: unknown,
@@ -575,7 +588,8 @@ export function expressionIssues(
 			continue;
 		}
 		const local: { message: string; path: string[] }[] = [];
-		const holders = [...expressionHolders(seq, ['sequences', seqId])];
+		// previews (perf budgets): most sequences carry no expression at all; a plain walk says so cheaply.
+		const holders = hasExpressionKey(seq) ? [...expressionHolders(seq, ['sequences', seqId])] : [];
 		// The allowed targets are only needed when the sequence holds expressions at all.
 		const allowed = holders.length ? allowedTargets(seqId, seq, audioEffect) : new Set<object>();
 		for (const { holder, path } of holders) {

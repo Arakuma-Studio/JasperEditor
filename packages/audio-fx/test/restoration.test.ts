@@ -1,6 +1,7 @@
 // Restoration: DeHummer notch depth, DeNoise (adaptive and learned print), DeEsser, DeReverb, click removal,
 // Enhance Speech, latency = measured delay, determinism.
 import { describe, expect, it } from 'vitest';
+import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import { Biquad, designBiquad } from '../src/core/biquad.ts';
 import { Prng } from '../src/core/util.ts';
 import { createProcessor } from '../src/registry.ts';
@@ -202,7 +203,9 @@ describe('DeReverb, click remover, Enhance Speech', () => {
 			const r = noise(2, SR * 10, 0.3);
 			const t0 = performance.now();
 			e.process([l, r], 0, l.length);
-			expect(performance.now() - t0, id).toBeLessThan(1250);
+			const ms = performance.now() - t0;
+			console.info(budgetReport(`${id}, 10 s stereo`, ms, 1250));
+			expect(ms, id).toBeLessThan(budgetMs(1250));
 		}
 	});
 });

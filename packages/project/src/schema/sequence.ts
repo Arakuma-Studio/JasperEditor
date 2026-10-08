@@ -1045,6 +1045,35 @@ export const MergedClipSchema = z.looseObject({
 });
 export type MergedClip = DeepStrip<z.infer<typeof MergedClipSchema>>;
 
+/**
+ * previews workstream: Sequence Settings ▸ Video Previews (Premiere's Preview File Format / Codec / Width / Height).
+ * `format`: `h264-iframe` = I-frame-only H.264 (every frame a keyframe: frame-exact, instant seeks; Premiere's default
+ * "I-Frame Only MPEG"), `h264` = H.264 with a keyframe every 15 frames (≈ ⅓ smaller), `vp9` = VP9 in WebM. `size`:
+ * full or half the sequence frame size (half renders and plays faster; exports never use half-size previews).
+ * `quality`: the bitrate class. Absent = `h264-iframe`, full size, standard quality.
+ */
+export const PREVIEW_FORMATS = ['h264-iframe', 'h264', 'vp9'] as const;
+export type PreviewFormat = (typeof PREVIEW_FORMATS)[number];
+export const SequencePreviewSettingsSchema = z.looseObject({
+	format: z.enum(PREVIEW_FORMATS).optional(),
+	size: z.enum(['full', 'half']).optional(),
+	quality: z.enum(['standard', 'high']).optional(),
+});
+export type SequencePreviewSettings = DeepStrip<z.infer<typeof SequencePreviewSettingsSchema>>;
+/** The effective preview settings of a sequence (defaults applied at read time). */
+export function previewSettingsOf(seq: { previews?: SequencePreviewSettings | undefined }): {
+	format: PreviewFormat;
+	size: 'full' | 'half';
+	quality: 'standard' | 'high';
+} {
+	const p = seq.previews;
+	return {
+		format: p?.format && (PREVIEW_FORMATS as readonly string[]).includes(p.format) ? p.format : 'h264-iframe',
+		size: p?.size === 'half' ? 'half' : 'full',
+		quality: p?.quality === 'high' ? 'high' : 'standard',
+	};
+}
+
 export const SequenceSchema = z.looseObject({
 	id: z.string(),
 	settings: SequenceSettingsSchema,
@@ -1077,6 +1106,8 @@ export const SequenceSchema = z.looseObject({
 	activeCaptionTrackId: z.string().nullable().optional(),
 	/** three-d: 3D renderer settings (absent = Classic 3D). */
 	threeD: Sequence3DSchema.optional(),
+	/** previews: render preview file settings (absent = defaults, see `previewSettingsOf`). */
+	previews: SequencePreviewSettingsSchema.optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

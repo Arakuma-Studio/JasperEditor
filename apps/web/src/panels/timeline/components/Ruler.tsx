@@ -265,11 +265,7 @@ export function Ruler(props: RulerProps) {
 							className="absolute top-0 h-full"
 							data-render-state={s.state}
 							style={{ left: x0, width: Math.max(1, x1 - x0), background: `var(--pr-render-${s.state})` }}
-							title={
-								s.state === 'red'
-									? 'Needs render: motion graphics (fframes) without a ready master'
-									: 'Plays in real time in the live preview'
-							}
+							title={s.title}
 						/>
 					);
 				})}

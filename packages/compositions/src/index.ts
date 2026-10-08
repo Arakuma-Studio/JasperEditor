@@ -25,6 +25,8 @@ export * from './metadata.ts';
 export * from './mg-host/protocol.ts';
 export * from './mg-host/runtime.ts';
 export * from './pipeline.ts';
+// previews: render preview playback in the Program monitor.
+export { applyPreviews, type PreviewFiles, type PreviewSpan, usableAudioSpans } from './previews.tsx';
 export { RemotionRoot } from './Root.tsx';
 export { renderPagesInOwnWindows } from './render-host.ts';
 export { FrameRepaint } from './repaint.tsx';

@@ -56,10 +56,12 @@ import {
 import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remotion';
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
+import { installSerialAudioContext } from './audio/serial-audio-context.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { installCaptureSafeCanvases } from './fx/capture-safe-canvas.ts';
 import {
 	BlendFallback,
 	BlendScope,
@@ -68,6 +70,7 @@ import {
 	CompositeHub,
 	compositeRunMode,
 	LINEAR_MARK,
+	makeBlendGroup,
 	makeBlendTrack,
 	makeLinearBlendGroup,
 	useCompositeTap,
@@ -92,6 +95,7 @@ import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
+import { applyPreviews, PreviewLayers } from './previews.tsx';
 import { FrameRepaint } from './repaint.tsx';
 import { ShowFrame } from './show-frame.tsx';
 import {
@@ -106,6 +110,11 @@ import {
 	useScene3DTap,
 } from './three-d/scope.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
+
+// Video canvases must stay capturable by HTML-in-Canvas scopes (fx/capture-safe-canvas.ts), and the Player's audio
+// clock must never freeze between a resume and a suspend (audio/serial-audio-context.ts: the stall after seeks).
+installCaptureSafeCanvases();
+installSerialAudioContext();
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
 const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
@@ -534,7 +543,18 @@ export function VideoTracks({
 		type Run = { members: Parameters<typeof makeLinearBlendGroup>[0][number][]; first: string };
 		const runs: Run[] = [];
 		let run: Run | null = null;
-		for (const t of tracks) {
+		// previews (scope nesting): consecutive GL-blend tracks share one scope; an adjustment layer or the bottom of a
+		// 3D run (scopes of their own over the stack) ends a run.
+		const glRuns: Run[] = [];
+		let glRun: Run | null = null;
+		const bottoms3d: ReadonlySet<number> = doc.videoTracks.some((t) => t.clips.some((c) => c.threeD))
+			? runBottomTracks(
+					doc.videoTracks,
+					doc.range.end > doc.range.start ? doc.range : { start: 0, end: Number.MAX_SAFE_INTEGER },
+					{},
+				)
+			: new Set<number>();
+		for (const [ti, t] of tracks.entries()) {
 			const input: CompositeTrackInput = {
 				trackId: t.trackId,
 				// three-d: 3D layers are composited by their run's 3D scope (blend modes included), never here.
@@ -567,7 +587,47 @@ export function VideoTracks({
 				run.members.push({ input, mattes: t.mattes });
 				continue;
 			}
-			if (!trackHasGlBlend(input, false)) continue;
+			if (t.adjustments.length > 0 || bottoms3d.has(ti)) glRun = null;
+			if (!glRun) {
+				if (!trackHasGlBlend(input, false)) continue;
+				glRun = { members: [], first: t.trackId };
+				glRuns.push(glRun);
+			}
+			glRun.members.push({ input, mattes: t.mattes });
+		}
+		for (const r of glRuns) {
+			if (r.members.length > 1) {
+				const key = `group:${r.first}`;
+				let hub = compositeHubs.current.get(key);
+				if (!hub) {
+					hub = new CompositeHub();
+					compositeHubs.current.set(key, hub);
+				}
+				const all = r.members.flatMap((m) => [
+					...m.input.clips.map((c) => ({ ...c, kind: 'clip' as const })),
+					...m.input.stages.map((st) => ({ ...st, kind: 'stage' as const })),
+				]);
+				const mode = compositeRunMode(
+					{ gpu, htmlInCanvas },
+					all.map((x) => x.blendMode).filter((m) => !isCssBlend(m)),
+				);
+				const value = makeBlendGroup(r.members, isGpuSide, mode, hub);
+				const glModesAt = (f: number) =>
+					all
+						.filter((x) =>
+							x.kind === 'clip'
+								? f >= x.start - (x.headHandle ?? 0) && f < x.start + x.duration + (x.tailHandle ?? 0)
+								: f >= x.start && f < x.start + x.duration,
+						)
+						.map((x) => x.blendMode)
+						.filter((m) => !isCssBlend(m));
+				r.members.forEach((m, i) => {
+					out.set(m.input.trackId, { value, glModesAt: i === 0 ? glModesAt : () => [], scope: i === 0 });
+				});
+				continue;
+			}
+			const input = r.members[0]!.input;
+			const t = { trackId: input.trackId };
 			let hub = compositeHubs.current.get(t.trackId);
 			if (!hub) {
 				hub = new CompositeHub();
@@ -607,7 +667,7 @@ export function VideoTracks({
 			});
 		}
 		return out;
-	}, [tracks, options.layerFilter, gpu, htmlInCanvas, linearCurve]);
+	}, [tracks, options.layerFilter, gpu, htmlInCanvas, linearCurve, doc.videoTracks, doc.range]);
 	// three-d: a 3D scope (and its hub) per track that holds a 3D clip; the runs of every frame.
 	// One hub for every scope: a member's tap stays the same when the run it belongs to moves to another bottom track
 	// (a layer only delivers when it repaints, so a new hub would never get its picture).
@@ -873,6 +933,12 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 	const fontsReady = useFontsReadyState(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const offset = doc.range.start;
+	// previews: rendered segments play from their files; covered live layers are not mounted.
+	const previewed = useMemo(
+		() => applyPreviews(doc, options.isPreview ? options.previews : undefined),
+		[doc, options.isPreview, options.previews],
+	);
+	const live = previewed.doc;
 	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
 	const color = useMemo<ColorDocValue>(
 		() => ({
@@ -897,11 +963,19 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 									width={doc.settings.width}
 									height={doc.settings.height}
 								>
-									<VideoTracks doc={doc} options={options} offset={offset} />
+									<VideoTracks doc={live} options={options} offset={offset} />
+									{/* previews: rendered segments (the export's picture of the working signal) */}
+									<PreviewLayers
+										video={previewed.video}
+										audio={previewed.audio}
+										offset={offset}
+										premount={premountFrames(fps)}
+										options={options}
+									/>
 								</DisplayStage>
-								{graph ? <MixGraphDriver graph={graph} doc={doc} offset={offset} /> : null}
+								{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}
 								{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
-								{(options.isPreview ? doc.audioClips : []).map((clip) => {
+								{(options.isPreview ? live.audioClips : []).map((clip) => {
 									// An audio crossfade plays the clip's handles (S10:TUI-052).
 									const head = clip.headHandle ?? 0;
 									const from = clip.start - head - offset;

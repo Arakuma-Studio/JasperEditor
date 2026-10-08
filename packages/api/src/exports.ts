@@ -72,6 +72,11 @@ export const ExportSettingsSchema = z.object({
 			/** Legacy field (always Rec. 709): the written colour space is `colorSpace` (color-mgmt). */
 			colorTags: z.literal('rec709').default('rec709'),
 			/**
+			 * previews (additive): frames between keyframes (1 = every frame is a keyframe). Absent = the encoder default
+			 * (≈ 2 s). Render previews use short intervals so the Program monitor seeks inside them quickly.
+			 */
+			keyframeInterval: z.number().int().min(1).max(600).optional(),
+			/**
 			 * color-mgmt: the colour space written (pixels converted from the working space, tags set): `working`
 			 * (default: the sequence's working space) or an output space (rec709, srgb, rec2020, p3d65, displayp3,
 			 * rec2100-pq, rec2100-hlg). An HDR sequence exported as Rec. 709 is tone mapped (BT.2390).
@@ -134,6 +139,20 @@ export const ExportSettingsSchema = z.object({
 		.default({ type: 'download' }),
 	/** wp captions: burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
 	captions: ExportCaptionsSchema.optional(),
+	/** previews (additive): picture only — no audio stream and no mixdown (render previews of the picture). */
+	videoOnly: z.boolean().optional(),
+	/**
+	 * previews (additive): use the sequence's valid render previews for the segments they cover (Premiere "Use
+	 * Previews"). Segments without a preview render as usual. Ignored for alpha masters.
+	 */
+	usePreviews: z.boolean().optional(),
+	/**
+	 * previews (smart rendering, additive): with the `auto` engine and an H.264 or ProRes export matching its sources,
+	 * stretches that show a source untouched are stream-copied (whole closed GOPs; ProRes frame by frame) and only the
+	 * rest is rendered. Absent = on for ProRes (lossless), off for H.264 (opt-in: the copies keep the sources' bitrate
+	 * and profile); true = on; false = off. The plan's `smart` says what is copied or why nothing can be.
+	 */
+	smartRender: z.boolean().optional(),
 });
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 
@@ -171,6 +190,10 @@ export const RenderPlanSchema = z.object({
 		z.object({ code: z.string(), message: z.string(), itemIds: z.array(z.string()).optional() }),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
+	/** previews (smart rendering): whether stream copy is used, how many frames are copied, and why not (additive). */
+	smart: z
+		.object({ used: z.boolean(), copiedFrames: z.number().int(), reasons: z.array(z.string()) })
+		.optional(),
 	/** Encoder that will write the file (D-13); absent when the engine cannot encode at all. */
 	encoder: EncoderChoiceSchema.optional(),
 });
@@ -200,7 +223,7 @@ export const ExportResultSchema = z.object({
 	 */
 	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
 	/** M2 (wp-m2-layer-bake, additive): the path that produced the file (`hybrid` = native with baked layers). */
-	renderPath: z.enum(['native', 'hybrid', 'remotion']).optional(),
+	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion']).optional(),
 	/**
 	 * M2 (S11:LBK-023, additive): run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
 	 * and an `auto` export was rendered on the Remotion path instead.

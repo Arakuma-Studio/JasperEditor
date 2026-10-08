@@ -21,6 +21,8 @@ export const CACHE_KINDS = [
 	'bundles',
 	// parity (roto): computed object mattes (Roto Brush, faces) and the reusable frame pool
 	'roto',
+	// previews: rendered preview files of sequence segments (Sequence ▸ Render…)
+	'previews',
 ] as const;
 export const CacheKindSchema = z.enum(CACHE_KINDS);
 export type CacheKind = z.infer<typeof CacheKindSchema>;

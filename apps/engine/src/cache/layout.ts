@@ -17,6 +17,7 @@
 //   bundles      remotion/bundle/<hash>/, cache/jasper-proc-bundle/           remotion/<hash> | jasper-proc
 //   roto         cache/roto/sets/<key32>/ (computed object mattes),           <key32> | pool
 //                cache/roto/pool/ (reusable segmentations and frames)
+//   previews     cache/previews/<format16>/<hash32>.{mp4,webm,wav}           <format16>/<hash32>.<ext>
 import type { Dirent } from 'node:fs';
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
@@ -85,6 +86,13 @@ export const KIND_DEFS: readonly KindDef[] = [
 			'Roto Brush and face-tracking mattes computed by propagation (projects keep the mattes of their roto objects)',
 	},
 	{
+		kind: 'previews',
+		label: 'Render previews',
+		description:
+			'Rendered preview files of sequence segments (Sequence ▸ Render…); projects keep the files of their current edits',
+		defaultMaxAgeDays: 30,
+	},
+	{
 		kind: 'bundles',
 		label: 'Build caches',
 		description: 'Remotion composition bundles and the jasper-proc bundle (the current one is kept)',
@@ -119,6 +127,8 @@ const KEY40 = /^[0-9a-f]{40}$/;
 const DERIVATIVE = /^(keyframes|poster|sprite|peaks|proxy-720|proxy-540)-([0-9a-f]{6,64})(\.[a-z0-9]+)?$/;
 const JOB_ID = /^job_[0-9a-f]{16}$/;
 const ROTO_KEY = /^[0-9a-f]{32}$/;
+const PREVIEW_FORMAT = /^[0-9a-f]{16}$/;
+const PREVIEW_FILE = /^[0-9a-f]{32}\.(mp4|webm|wav)$/;
 /** Temporary names used by the engine's writers (`x.partial`, `x.<n>.partial.mp4`, `.x.<rand>.tmp`, `.tmp-<job>`…). */
 const TEMP_NAME = /\.partial(\.|-|$)|\.tmp(\.|$)|\.part\.|^\.tmp-|^\.trash-|\.partial-\d+$/;
 
@@ -195,6 +205,10 @@ export function entryOfPath(appdir: string, abs: string, stillHint?: boolean): E
 		}
 		if (b === 'layers' && c) return KEY40.test(c) ? entryRef('layers', c) : null;
 		if (b === 'jasper-proc-bundle') return entryRef('bundles', 'jasper-proc');
+		if (b === 'previews' && c && PREVIEW_FORMAT.test(c)) {
+			const f = s[3];
+			return f && PREVIEW_FILE.test(f) ? entryRef('previews', `${c}/${f}`) : null;
+		}
 		if (b === 'roto' && c) {
 			if (c === 'pool') return entryRef('roto', 'pool');
 			const d = s[3];
@@ -307,6 +321,21 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 				for (const f of await list(join(pool, sub)))
 					if (isTempName(f.name)) orphans.push(await orphanFrom(join(pool, sub, f.name)));
 			if ((await list(pool)).length) entries.push(await entryFrom(entryRef('roto', 'pool'), [pool]));
+		} else if (d.name === 'previews' && d.isDirectory()) {
+			// previews: one entry per file; `<hash>.part.<ext>` of interrupted renders are orphans.
+			for (const f of await list(p)) {
+				const fp = join(p, f.name);
+				if (!PREVIEW_FORMAT.test(f.name) || !f.isDirectory()) {
+					if (isTempName(f.name)) orphans.push(await orphanFrom(fp));
+					continue;
+				}
+				for (const g of await list(fp)) {
+					const gp = join(fp, g.name);
+					if (PREVIEW_FILE.test(g.name))
+						entries.push(await entryFrom(entryRef('previews', `${f.name}/${g.name}`), [gp]));
+					else if (isTempName(g.name)) orphans.push(await orphanFrom(gp));
+				}
+			}
 		} else if (d.name === 'jasper-proc-bundle') {
 			entries.push(await entryFrom(entryRef('bundles', 'jasper-proc'), [p]));
 		} else if (HEX64.test(d.name) && d.isDirectory()) {

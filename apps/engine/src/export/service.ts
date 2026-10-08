@@ -6,6 +6,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import {
+	copyFile,
 	type FileHandle,
 	mkdir,
 	open,
@@ -23,6 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import {
 	buildRenderSnapshot,
+	copyableRuns,
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderVisualClip,
@@ -81,8 +83,17 @@ import {
 	type PlannedExport,
 	planExport,
 } from './planner.ts';
+import {
+	probeSourceFrames,
+	proresProfileMatches,
+	SOURCE_CODECS,
+	type SourceFrames,
+	smartCodecOf,
+	smartPieces,
+} from './smart.ts';
 import { streamLayer } from './stream/run.ts';
 import { createSyntheticExtension } from './synthetic.ts';
+import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
 
 /**
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
@@ -117,6 +128,12 @@ export type MgMasterRequest = {
  * clip's first frame and whose size is the clip canvas, or null when fframes cannot render it.
  */
 export type MgMasterProvider = (req: MgMasterRequest) => Promise<string | null>;
+
+/** previews: the render previews of a document's sequence (full size, current format), or why there are none. */
+export type PreviewSource = (
+	doc: PlannedExport['document'],
+	sequenceId: string,
+) => Promise<{ pieces: PreviewPiece[] } | { reason: string }>;
 
 type StoredRequest =
 	| { kind: 'export'; request: ExportStartRequest }
@@ -234,7 +251,7 @@ export class ExportService {
 		settings: ExportSettings;
 	}): Promise<PlannedExport> {
 		const caps = await this.deps.capabilities();
-		return planExport(
+		const planned = await planExport(
 			{
 				envelope: req.envelope,
 				sequenceId: req.sequenceId,
@@ -242,6 +259,563 @@ export class ExportService {
 			},
 			this.planDeps(caps),
 		);
+		if (req.settings.usePreviews) await this.attachPreviews(planned, req.settings);
+		if (!planned.previews) await this.attachSmart(planned, req.settings);
+		return planned;
+	}
+
+	// ------------------------------------------------------------------ smart rendering (workstream `previews`)
+
+	/**
+	 * Smart rendering: with the `auto` engine and an H.264 / ProRes export matching its sources, the plan copies the
+	 * whole closed GOPs of stretches that show a source untouched and renders the rest; otherwise `plan.smart.reasons`
+	 * says why not.
+	 */
+	private async attachSmart(planned: PlannedExport, settings: ExportSettings): Promise<void> {
+		const reasons: string[] = [];
+		const o = planned.output;
+		const seq = planned.snapshot.settings;
+		const codec = smartCodecOf(settings);
+		if (settings.smartRender === false) reasons.push('Smart rendering is off for this export');
+		if (settings.engine !== 'auto')
+			reasons.push(`The ${settings.engine} engine was chosen (smart rendering runs with Auto)`);
+		if (!codec)
+			reasons.push(
+				`${settings.video?.codec ?? 'This'} exports are always encoded (H.264 and ProRes exports can copy their sources)`,
+			);
+		else if (!o.encoder || o.encoder.codec !== codec)
+			reasons.push(`No ${codec} encoder is available for the frames around the copied stretches`);
+		if (settings.container === 'webm') reasons.push('WebM exports are always encoded');
+		if (o.width !== seq.width || o.height !== seq.height)
+			reasons.push('The export frame size differs from the sequence');
+		if (o.fps.num * seq.fps.den !== seq.fps.num * o.fps.den)
+			reasons.push('The export frame rate differs from the sequence');
+		if (o.alpha) reasons.push('Alpha masters are always rendered');
+		if (o.color?.converts || o.color?.hdr)
+			reasons.push('The export converts colours (Colour Space / HDR): every frame is encoded');
+		if (codec === 'h264' && o.color && o.color.bitDepth !== 8)
+			reasons.push('H.264 smart rendering copies 8-bit streams');
+		if (o.gop) reasons.push('A keyframe interval was requested: every frame is encoded');
+		if (reasons.length) {
+			planned.plan.smart = { used: false, copiedFrames: 0, reasons };
+			return;
+		}
+		// H.264 copies keep the sources' own bitrate and profile next to the encoder's frames: the user opts in.
+		const optIn = codec === 'h264' && settings.smartRender !== true;
+		const runs = copyableRuns(planned.document, planned.sequenceId, planned.range);
+		const frames = new Map<string, SourceFrames>();
+		const usable: typeof runs = [];
+		for (const r of runs) {
+			const local = planned.media[r.mediaId];
+			if (!local) continue;
+			let src: SourceFrames;
+			try {
+				src = await probeSourceFrames(
+					this.deps.ff,
+					local.path,
+					`${local.record.sizeBytes}:${local.record.mtimeMs}`,
+				);
+			} catch {
+				reasons.push(`${local.record.originalName}: its packets could not be read`);
+				continue;
+			}
+			const name = local.record.originalName;
+			if (src.codec !== SOURCE_CODECS[codec!]) {
+				reasons.push(`${name} is ${src.codec}, the export is ${codec}`);
+				continue;
+			}
+			if (src.width !== seq.width || src.height !== seq.height) {
+				reasons.push(`${name} is not at the sequence frame size`);
+				continue;
+			}
+			if (codec === 'h264' && src.pixFmt !== 'yuv420p') {
+				reasons.push(`${name} is ${src.pixFmt ?? 'an unknown pixel format'}; H.264 exports are 8-bit 4:2:0`);
+				continue;
+			}
+			if (codec === 'prores' && !proresProfileMatches(o.proresProfile, src.profile)) {
+				reasons.push(
+					`${name} is ProRes ${src.profile ?? '?'}, the export ProRes ${o.proresProfile === '4444' ? '4444' : '422 HQ'}`,
+				);
+				continue;
+			}
+			frames.set(r.mediaId, src);
+			usable.push(r);
+		}
+		if (runs.length === 0)
+			reasons.push(
+				'No stretch shows a source untouched at the sequence frame size and rate (effects, Motion, transitions, speed or other layers need encoding)',
+			);
+		const pieces = smartPieces(planned.range, usable, (id) => frames.get(id));
+		const copied = pieces.filter((p) => p.kind === 'copy').reduce((n, p) => n + p.end - p.start, 0);
+		if (copied === 0) {
+			if (usable.length)
+				reasons.push('No whole closed GOP of the sources lies inside the copyable stretches');
+			planned.plan.smart = { used: false, copiedFrames: 0, reasons };
+			return;
+		}
+		if (optIn) {
+			planned.plan.smart = {
+				used: false,
+				copiedFrames: 0,
+				reasons: [
+					...reasons,
+					`Smart rendering is opt-in for H.264 exports (Smart Render): it would copy ${copied} of ${planned.range.end - planned.range.start} frames`,
+				],
+			};
+			return;
+		}
+		planned.smart = { codec: codec!, pieces };
+		planned.plan.path = 'copy';
+		const renderMode = planned.plan.segments[0]?.mode ?? 'native';
+		planned.plan.segments = pieces.map((p) => ({
+			startFrame: p.start,
+			endFrame: p.end,
+			mode: p.kind === 'copy' ? 'copy' : renderMode,
+			graphicsGroups: p.kind === 'copy' ? [] : (planned.plan.segments[0]?.graphicsGroups ?? []),
+		}));
+		planned.plan.smart = { used: true, copiedFrames: copied, reasons };
+		planned.plan.warnings.push({
+			code: 'SMART_RENDER',
+			message: `${copied} of ${planned.range.end - planned.range.start} frames are copied from the sources without re-encoding`,
+		});
+	}
+
+	/** Smart rendering: copies the closed GOPs, renders the rest with the export's path, joins them seamlessly. */
+	private async renderSmart(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+		smart: NonNullable<PlannedExport['smart']>,
+	): Promise<{
+		planned: PlannedExport;
+		frames: number;
+		path: 'copy' | 'native' | 'hybrid' | 'remotion';
+		remotionOutput: 'direct' | 'intermediate' | undefined;
+		warnings: { code: string; message: string }[];
+		audio: MixdownResult | null;
+	}> {
+		const o = planned.output;
+		const audio = o.videoOnly ? null : await this.renderAudio(planned, ctx);
+		const scratch = await ctx.scratchDir();
+		const ext = smart.codec === 'prores' ? 'mov' : 'mp4';
+		const total = Math.max(1, planned.range.end - planned.range.start);
+		const files: string[] = [];
+		const warnings: { code: string; message: string }[] = [];
+		let done = 0;
+		for (const [i, p] of smart.pieces.entries()) {
+			const n = p.end - p.start;
+			const file = join(scratch, `piece-${i}.${ext}`);
+			if (p.kind === 'copy') {
+				const local = planned.media[p.mediaId]!;
+				const src = await probeSourceFrames(
+					this.deps.ff,
+					local.path,
+					`${local.record.sizeBytes}:${local.record.mtimeMs}`,
+				);
+				// Input seeking with stream copy starts at the keyframe at or before the time: a quarter frame into the
+				// GOP's first frame lands on its own keyframe; timestamps restart at 0 for the join.
+				const t = (src.times[p.sourceFrame] ?? 0) + (0.25 * o.fps.den) / o.fps.num;
+				const args = [
+					'-y',
+					'-ss',
+					t.toFixed(6),
+					'-i',
+					local.path,
+					'-map',
+					'0:v:0',
+					'-c:v',
+					'copy',
+					'-frames:v',
+					String(n),
+					'-an',
+					'-sn',
+					'-dn',
+					'-avoid_negative_ts',
+					'make_zero',
+					'-f',
+					ext === 'mov' ? 'mov' : 'mp4',
+					file,
+				];
+				ctx.log(`ffmpeg ${args.join(' ')}`);
+				ctx.progress((done / total) * 0.95, { stage: `Copying frames ${p.start}–${p.end}` });
+				await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+				const count = await this.deps.ff.countVideoFrames(file, { signal: ctx.signal });
+				if (count !== n)
+					throw new JobError(
+						'SMART_COPY_MISMATCH',
+						`Copied ${count} frames of ${local.record.originalName}, expected ${n}`,
+						true,
+					);
+			} else {
+				const sub: JobContext = {
+					...ctx,
+					progress: (v, extra) =>
+						ctx.progress(((done + (v ?? 0) * n) / total) * 0.95, {
+							...extra,
+							stage: `Encoding frames ${p.start}–${p.end} · ${extra?.stage ?? ''}`,
+						}),
+				};
+				const r = await this.renderToFile(
+					sub,
+					{
+						...req,
+						settings: {
+							...req.settings,
+							smartRender: false,
+							usePreviews: false,
+							videoOnly: true,
+							container: ext,
+							range: { type: 'custom', startFrame: p.start, endFrame: p.end },
+						},
+					},
+					file,
+				);
+				warnings.push(...r.warnings.filter((w) => w.code !== 'SMART_RENDER'));
+			}
+			files.push(file);
+			done += n;
+		}
+		ctx.progress(0.96, { stage: 'Joining copied and encoded frames' });
+		const soxr = await hasSoxr(this.deps.ff);
+		// Exports always carry a sound stream (silence when nothing is heard), as the native path does.
+		const layout = o.audioChannels === 1 ? 'mono' : o.audioChannels === 6 ? '5.1' : 'stereo';
+		const audioInput = o.videoOnly
+			? []
+			: audio?.path
+				? ['-i', audio.path]
+				: [
+						'-f',
+						'lavfi',
+						'-t',
+						o.durationSec.toFixed(6),
+						'-i',
+						`anullsrc=r=${o.audioSampleRate}:cl=${layout}`,
+					];
+		const audioArgs = (input: number): string[] =>
+			!o.videoOnly
+				? [
+						'-map',
+						`${input}:a:0`,
+						...(audio?.path && audio.sampleRate !== o.audioSampleRate
+							? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+							: []),
+						...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+						'-ar',
+						String(o.audioSampleRate),
+						'-ac',
+						String(o.audioChannels),
+					]
+				: ['-an'];
+		const rate = `${o.fps.num}/${o.fps.den}`;
+		let args: string[];
+		if (smart.codec === 'prores') {
+			const list = join(scratch, 'pieces.txt');
+			await writeFile(list, files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n'));
+			args = [
+				'-y',
+				'-f',
+				'concat',
+				'-safe',
+				'0',
+				'-i',
+				list,
+				...audioInput,
+				'-map',
+				'0:v:0',
+				'-c:v',
+				'copy',
+				...audioArgs(1),
+				'-frames:v',
+				String(o.frames),
+				'-f',
+				'mov',
+				output,
+			];
+		} else {
+			// One Annex B stream: every IDR carries its own SPS/PPS (copied GOPs the source's, encoded ones the encoder's).
+			const joined = join(scratch, 'joined.h264');
+			const handle = await open(joined, 'w');
+			try {
+				for (const [i, f] of files.entries()) {
+					const raw = join(scratch, `piece-${i}.h264`);
+					await this.deps.ff.run(
+						['-y', '-i', f, '-map', '0:v:0', '-c:v', 'copy', '-bsf:v', 'h264_mp4toannexb', '-f', 'h264', raw],
+						{
+							signal: ctx.signal,
+							onSpawn: ctx.trackChild,
+						},
+					);
+					await handle.writeFile(await readFile(raw));
+					await rm(raw, { force: true });
+				}
+			} finally {
+				await handle.close();
+			}
+			// The raw stream has no timestamps: mux the picture first (CFR at the export rate), then the sound with it.
+			const video = join(scratch, `joined.${o.encoder?.container === 'mov' ? 'mov' : 'mp4'}`);
+			const vargs = [
+				'-y',
+				'-fflags',
+				'+genpts',
+				'-r',
+				rate,
+				'-f',
+				'h264',
+				'-i',
+				joined,
+				'-map',
+				'0:v:0',
+				'-c:v',
+				'copy',
+				'-tag:v',
+				'avc3',
+				'-frames:v',
+				String(o.frames),
+				video,
+			];
+			ctx.log(`ffmpeg ${vargs.join(' ')}`);
+			await this.deps.ff.run(vargs, { signal: ctx.signal, onSpawn: ctx.trackChild });
+			args = [
+				'-y',
+				'-i',
+				video,
+				...audioInput,
+				'-map',
+				'0:v:0',
+				'-c:v',
+				'copy',
+				'-tag:v',
+				'avc3',
+				...audioArgs(1),
+				...(o.color
+					? colorTagArgs(o.color)
+					: [
+							'-colorspace',
+							'bt709',
+							'-color_primaries',
+							'bt709',
+							'-color_trc',
+							'bt709',
+							'-color_range',
+							'tv',
+						]),
+				...(o.encoder?.container !== 'webm' ? ['-movflags', '+faststart'] : []),
+				'-f',
+				o.encoder?.container === 'mov' ? 'mov' : 'mp4',
+				output,
+			];
+		}
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
+		if (count !== o.frames)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`Expected ${o.frames} frames, the output has ${count}`,
+				true,
+				{
+					expected: o.frames,
+					actual: count,
+				},
+			);
+		return { planned, frames: count, path: 'copy', remotionOutput: undefined, warnings, audio };
+	}
+
+	// ------------------------------------------------------------------ Use Previews (workstream `previews`)
+
+	private previewSource: PreviewSource | null = null;
+	/** previews: where an export finds the render previews of a document (the preview service registers it). */
+	registerPreviewSource(fn: PreviewSource | null): void {
+		this.previewSource = fn;
+	}
+
+	/** Use Previews: which stretches of the range come from preview files (plan segments + a warning say so). */
+	private async attachPreviews(planned: PlannedExport, settings: ExportSettings): Promise<void> {
+		const warn = (message: string): void => {
+			planned.plan.warnings.push({ code: 'PREVIEWS_UNUSED', message });
+		};
+		if (!this.previewSource) return warn('Render previews are not available on this engine');
+		if (planned.output.alpha) return warn('Alpha masters are always rendered (previews have no alpha)');
+		const burn = settings.captions?.burnIn;
+		if (burn === false || Array.isArray(burn))
+			return warn(
+				'Previews burn in the visible caption tracks; this export burns in others, so they are not used',
+			);
+		const found = await this.previewSource(planned.document, planned.sequenceId);
+		if ('reason' in found) return warn(found.reason);
+		const runs = exportRuns(planned.range, found.pieces);
+		const used = runs.filter((r) => r.kind === 'preview');
+		if (used.length === 0) return warn('No segment of the export range has a render preview');
+		const frames = used.reduce((n, r) => n + r.end - r.start, 0);
+		planned.previews = runs;
+		planned.plan.segments = runs.map((r) => ({
+			startFrame: r.start,
+			endFrame: r.end,
+			mode: r.kind === 'preview' ? 'native' : (planned.plan.segments[0]?.mode ?? 'native'),
+			graphicsGroups: r.kind === 'preview' ? [] : (planned.plan.segments[0]?.graphicsGroups ?? []),
+		}));
+		planned.plan.warnings.push({
+			code: 'USING_PREVIEWS',
+			message: `${frames} of ${planned.range.end - planned.range.start} frames come from render previews (${used.length} segment${used.length === 1 ? '' : 's'}); the rest is rendered`,
+		});
+	}
+
+	/**
+	 * Use Previews: renders the stretches without a preview to ProRes intermediates (the export's own path), then
+	 * encodes previews + intermediates with the export's encoder and mix.
+	 */
+	private async renderWithPreviews(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+		runs: ExportRun[],
+	): Promise<{
+		planned: PlannedExport;
+		frames: number;
+		path: 'copy' | 'native' | 'hybrid' | 'remotion';
+		remotionOutput: 'direct' | 'intermediate' | undefined;
+		warnings: { code: string; message: string }[];
+		audio: MixdownResult | null;
+	}> {
+		const audio = planned.output.videoOnly ? null : await this.renderAudio(planned, ctx);
+		const seq = planned.snapshot.settings;
+		const files: string[] = [];
+		const counts: number[] = [];
+		const warnings: { code: string; message: string }[] = [];
+		let path: 'native' | 'hybrid' | 'remotion' = 'native';
+		const total = Math.max(1, planned.range.end - planned.range.start);
+		let done = 0;
+		for (const [i, r] of runs.entries()) {
+			const n = r.end - r.start;
+			if (r.kind === 'preview') {
+				if (!(await exists(r.file)))
+					throw new JobError('PREVIEW_MISSING', 'A render preview was deleted during the export', true);
+				files.push(r.file);
+			} else {
+				const file = join(await ctx.scratchDir(), `run-${i}.mov`);
+				const sub: JobContext = {
+					...ctx,
+					progress: (v, extra) =>
+						ctx.progress(((done + (v ?? 0) * n) / total) * 0.9, {
+							...extra,
+							stage: `Rendering frames ${r.start}–${r.end} · ${extra?.stage ?? ''}`,
+						}),
+				};
+				const res = await this.renderToFile(
+					sub,
+					{
+						...req,
+						settings: {
+							...req.settings,
+							usePreviews: false,
+							videoOnly: true,
+							container: 'mov',
+							range: { type: 'custom', startFrame: r.start, endFrame: r.end },
+							video: {
+								codec: 'prores',
+								proresProfile: 'hq',
+								width: seq.width,
+								height: seq.height,
+								frameRate: { num: seq.fps.num, den: seq.fps.den },
+								scaling: 'stretch',
+								quality: { mode: 'crf', value: 10 },
+								encoderSpeed: 'fast',
+								colorTags: 'rec709',
+							},
+						},
+					},
+					file,
+				);
+				if (res.renderPath === 'remotion') path = 'remotion';
+				else if (res.renderPath === 'hybrid' && path === 'native') path = 'hybrid';
+				warnings.push(...res.warnings);
+				files.push(file);
+			}
+			counts.push(n);
+			done += n;
+		}
+		const o = planned.output;
+		const enc = videoEncodeArgs(o.encoder!, {
+			crf: o.crf,
+			speed: o.speed,
+			width: o.width,
+			height: o.height,
+			fps: o.fps,
+			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
+			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
+			...(o.gop ? { gop: o.gop } : {}),
+		});
+		const filter = concatFilter({
+			frames: counts,
+			size: { width: seq.width, height: seq.height },
+			fps: seq.fps,
+			output: o,
+			encoderFilters: enc.filters,
+		});
+		const script = join(await ctx.scratchDir(), 'previews-graph.txt');
+		await writeFile(script, filter);
+		const soxr = await hasSoxr(this.deps.ff);
+		const ai = files.length;
+		const args = [
+			...enc.pre,
+			...files.flatMap((f) => ['-i', f]),
+			...(audio?.path ? ['-i', audio.path] : []),
+			'-filter_complex_script',
+			script,
+			'-map',
+			'[vout]',
+			...(audio?.path ? ['-map', `${ai}:a:0`] : []),
+			...(audio?.path && audio.sampleRate !== o.audioSampleRate
+				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+				: []),
+			...enc.video,
+			...['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'],
+			'-r',
+			`${o.fps.num}/${o.fps.den}`,
+			'-frames:v',
+			String(o.frames),
+			...(audio?.path
+				? [
+						...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+						'-ar',
+						String(o.audioSampleRate),
+						'-ac',
+						String(o.audioChannels),
+						'-shortest',
+					]
+				: ['-an']),
+			'-threads',
+			String(Math.max(1, ctx.slots)),
+			...(o.encoder?.container !== 'webm' ? ['-movflags', '+faststart'] : []),
+			'-f',
+			o.encoder?.container ?? 'mp4',
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		const durationSec = o.durationSec;
+		await this.deps.ff.run(args, {
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			onProgress: (p) => {
+				if (durationSec <= 0) return;
+				const t = Math.min(durationSec, p.outTimeUs / 1e6);
+				ctx.progress(0.9 + (t / durationSec) * 0.09, { stage: 'Encoding (previews + rendered frames)' });
+			},
+		});
+		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
+		if (count !== o.frames)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`Expected ${o.frames} frames, the output has ${count}`,
+				true,
+				{
+					expected: o.frames,
+					actual: count,
+				},
+			);
+		return { planned, frames: count, path, remotionOutput: undefined, warnings, audio };
 	}
 
 	private async storeRequest(r: StoredRequest): Promise<string> {
@@ -765,6 +1339,7 @@ export class ExportService {
 			fps: o.fps,
 			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
 			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
+			...(o.gop ? { gop: o.gop } : {}),
 			...(o.color
 				? { bitDepth: o.color.bitDepth, colorCodes: o.color.codes, svtHdr: svtHdrParams(o.color) }
 				: {}),
@@ -785,8 +1360,7 @@ export class ExportService {
 			...(audio?.path ? ['-i', audio.path] : []),
 			'-map',
 			'0:v:0',
-			'-map',
-			audio?.path ? '1:a:0' : '0:a:0?',
+			...(o.videoOnly ? [] : ['-map', audio?.path ? '1:a:0' : '0:a:0?']),
 			'-vf',
 			vf.join(','),
 			...(audio?.path && audio.sampleRate !== o.audioSampleRate
@@ -798,11 +1372,15 @@ export class ExportService {
 				: ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv']),
 			'-frames:v',
 			String(frames),
-			...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
-			'-ar',
-			String(o.audioSampleRate),
-			'-ac',
-			String(o.audioChannels),
+			...(o.videoOnly
+				? ['-an']
+				: [
+						...audioEncodeArgs(audioCodecOf(choice, o), o.audioBitrateKbps, o.audioChannels),
+						'-ar',
+						String(o.audioSampleRate),
+						'-ac',
+						String(o.audioChannels),
+					]),
 			'-threads',
 			String(Math.max(1, ctx.slots)),
 			...(choice.container !== 'webm' ? ['-movflags', '+faststart'] : []),
@@ -957,6 +1535,60 @@ export class ExportService {
 		};
 	}
 
+	/**
+	 * previews: renders an export request (its range, picture settings) into `output` inside the calling job — the same
+	 * planning, paths, fallbacks and frame-count check as an export job, without the job's output directory, captions
+	 * or destination copy. `output` must carry the container's extension; the caller owns the file (partials).
+	 */
+	async renderToFile(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		output: string,
+	): Promise<{
+		frames: number;
+		renderPath: 'copy' | 'native' | 'hybrid' | 'remotion';
+		warnings: { code: string; message: string }[];
+	}> {
+		ctx.progress(0, { stage: 'Planning' });
+		let planned: PlannedExport;
+		try {
+			planned = await this.plan(req);
+		} catch (e) {
+			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
+			throw e;
+		}
+		const r = await this.renderPlanned(ctx, req, planned, output);
+		return { frames: r.frames, renderPath: r.path, warnings: r.warnings };
+	}
+
+	/**
+	 * previews (Render Audio): the offline mix of an export request's range (`settings.audio`: channels, rate) as a
+	 * 32-bit float WAV at `output`. The same mixer as every export's audio.
+	 */
+	async mixdownToFile(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		output: string,
+	): Promise<{ samples: number }> {
+		let planned: PlannedExport;
+		try {
+			planned = await this.plan(req);
+		} catch (e) {
+			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
+			throw e;
+		}
+		const audio = await this.renderAudio(planned, ctx);
+		if (!audio.path) throw new JobError('MIXDOWN_FAILED', 'The mixer wrote no audio', true);
+		await copyFile(audio.path, output);
+		return { samples: audio.samples };
+	}
+
+	/** The container (file extension) an export request will be written in. */
+	async containerOf(req: ExportStartRequest): Promise<string> {
+		const planned = await this.plan(req);
+		return planned.output.encoder?.container ?? 'mp4';
+	}
+
 	private async runExport(ctx: JobContext): Promise<unknown> {
 		const stored = await this.loadRequest(ctx);
 		if (stored.kind !== 'export') throw new JobError('BAD_REQUEST', 'Not an export request', false);
@@ -973,12 +1605,44 @@ export class ExportService {
 		const encoder = planned.output.encoder;
 		const output = join(dir, `output.${encoder?.container ?? 'mp4'}`);
 		ctx.addPartial(dir);
+		const rendered = planned.previews?.some((r) => r.kind === 'preview')
+			? await this.renderWithPreviews(ctx, req, planned, output, planned.previews)
+			: planned.smart
+				? await this.renderSmart(ctx, req, planned, output, planned.smart)
+				: await this.renderPlanned(ctx, req, planned, output);
+		planned = rendered.planned;
+		const { frames, path, remotionOutput, warnings, audio } = rendered;
+		return this.finishExport(ctx, req, planned, output, dir, {
+			frames,
+			path,
+			remotionOutput,
+			warnings,
+			audio,
+		});
+	}
+
+	/** Renders a planned export into `output` (native / hybrid with the Remotion fallback, or Remotion). */
+	private async renderPlanned(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+	): Promise<{
+		planned: PlannedExport;
+		frames: number;
+		path: 'copy' | 'native' | 'hybrid' | 'remotion';
+		remotionOutput: 'direct' | 'intermediate' | undefined;
+		warnings: { code: string; message: string }[];
+		audio: MixdownResult | null;
+	}> {
+		const encoder = planned.output.encoder;
 		let frames = 0;
 		let remotionOutput: 'direct' | 'intermediate' | undefined;
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
-		const audio = await this.renderAudio(planned, ctx);
+		// previews: picture-only renders skip the mixdown.
+		const audio = planned.output.videoOnly ? null : await this.renderAudio(planned, ctx);
 		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
@@ -1086,7 +1750,8 @@ export class ExportService {
 					rp.phases[1]!.label,
 					audio,
 				);
-			} else await this.muxAudio(planned, target, audio, output, ctx);
+			} else if (audio) await this.muxAudio(planned, target, audio, output, ctx);
+			else await rename(target, output);
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(
@@ -1097,6 +1762,32 @@ export class ExportService {
 			}
 			frames = count;
 		}
+		return {
+			planned,
+			frames,
+			path: path as 'native' | 'hybrid' | 'remotion',
+			remotionOutput,
+			warnings,
+			audio,
+		};
+	}
+
+	private async finishExport(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+		dir: string,
+		r: {
+			frames: number;
+			path: 'copy' | 'native' | 'hybrid' | 'remotion';
+			remotionOutput: 'direct' | 'intermediate' | undefined;
+			warnings: { code: string; message: string }[];
+			audio: MixdownResult | null;
+		},
+	): Promise<unknown> {
+		const { frames, path, remotionOutput, warnings, audio } = r;
+		const encoder = planned.output.encoder;
 		// color-mgmt: HDR static metadata boxes (`mdcv` / `clli`) in MP4 / MOV outputs.
 		await this.writeHdrMetadata(planned, output, ctx);
 		// wp captions: embedded caption streams (remux) and sidecar files.
@@ -1132,12 +1823,16 @@ export class ExportService {
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(warnings.length ? { warnings } : {}),
-			audioLoudness: {
-				integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
-				truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
-				lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
-				...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
-			},
+			...(audio
+				? {
+						audioLoudness: {
+							integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
+							truePeakDbtp: Number.isFinite(audio.loudness.truePeakDb) ? audio.loudness.truePeakDb : null,
+							lra: Number.isFinite(audio.loudness.lra) ? audio.loudness.lra : null,
+							...(audio.normalized ? { normalizedGainDb: audio.normalized.gainDb } : {}),
+						},
+					}
+				: {}),
 			...(captionResult ? { captions: captionResult } : {}),
 			planId: planned.plan.planId,
 		};

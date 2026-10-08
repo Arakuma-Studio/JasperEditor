@@ -9,9 +9,8 @@
 //   JASPER_PERF_NO_BUDGET=1 …                                 # measure only, never fail
 //
 // Budgets are wall-clock milliseconds on the reference machine (12-core x86-64, Node 20, idle); without PERF=1 they
-// are scaled by the host's measured slowdown (a fixed single-threaded workload against its reference time), the
-// load-tolerant policy of the test gate, so a shared machine does not fail them while an order-of-magnitude
-// regression still does.
+// are scaled by the host's measured slowdown (`loadFactor` of scripts/perf/budget.ts, the test gate's policy), so a
+// shared machine does not fail them while an order-of-magnitude regression still does.
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { cpus, loadavg } from 'node:os';
@@ -29,38 +28,14 @@ import {
 	type ProjectDocument,
 	resolveSceneAt,
 } from '@jasper/project';
+import { loadFactor, PERF_STRICT as STRICT } from '../../../scripts/perf/budget.ts';
 import { buildScaleProject, countClips } from '../../project/bench/scale-project.ts';
 import { EditorSession } from '../src/session.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SEQUENCES = Number(process.env.SCALE_SEQUENCES ?? 200);
 const FULL = SEQUENCES === 200;
-const STRICT = process.env.PERF === '1';
 const NO_BUDGET = process.env.JASPER_PERF_NO_BUDGET === '1';
-
-// ---------------------------------------------------------------- load factor (the test gate's policy)
-
-/** A fixed CPU workload: ≈ 15 ms on the reference machine. */
-function calibrationWork(): number {
-	const a = new Uint32Array(1 << 16);
-	let h = 2166136261;
-	for (let r = 0; r < 160; r++)
-		for (let i = 0; i < a.length; i++) {
-			a[i] = (a[i]! + i + r) | 0;
-			h = Math.imul(h ^ a[i]!, 16777619);
-		}
-	return h >>> 0;
-}
-function loadFactor(): number {
-	calibrationWork();
-	let best = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < 5; i++) {
-		const t0 = performance.now();
-		calibrationWork();
-		best = Math.min(best, performance.now() - t0);
-	}
-	return Math.max(1, best / 15);
-}
 
 // ---------------------------------------------------------------- measuring
 
