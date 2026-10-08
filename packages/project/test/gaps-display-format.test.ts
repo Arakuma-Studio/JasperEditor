@@ -32,10 +32,14 @@ describe('video display formats', () => {
 	});
 	it('round-trips every format (property)', () => {
 		fc.assert(
-			fc.property(fc.integer({ min: 0, max: 5_000_000 }), fc.constantFrom('timecode', 'frames', 'feet35', 'feet16'), (f, display) => {
-				const s = formatTimeDisplay(f, r30, { display: display as never });
-				return parseTimeDisplayEntry(s, r30, { current: 0, display: display as never }) === f;
-			}),
+			fc.property(
+				fc.integer({ min: 0, max: 5_000_000 }),
+				fc.constantFrom('timecode', 'frames', 'feet35', 'feet16'),
+				(f, display) => {
+					const s = formatTimeDisplay(f, r30, { display: display as never });
+					return parseTimeDisplayEntry(s, r30, { current: 0, display: display as never }) === f;
+				},
+			),
 		);
 	});
 	it('audio time units', () => {
@@ -58,7 +62,12 @@ describe('project settings model', () => {
 				settings: {
 					display: { video: 'feet35', audio: 'milliseconds' },
 					scratch: { media: '/data/media' },
-					ingest: { enabled: true, action: 'copyAndProxies', preset: 'prores-proxy-quarter', destination: null },
+					ingest: {
+						enabled: true,
+						action: 'copyAndProxies',
+						preset: 'prores-proxy-quarter',
+						destination: null,
+					},
 				},
 			},
 		]);

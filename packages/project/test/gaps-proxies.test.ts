@@ -39,7 +39,9 @@ describe('proxies', () => {
 		expect(proxyMismatch(orig, proxyOf({ seconds: 11 }).probe)).toMatch(/long/);
 		expect(proxyMismatch(orig, proxyOf({ fps: { num: 25, den: 1 } }).probe)).toMatch(/fps/);
 		expect(proxyMismatch(orig, proxyOf({ width: 720, height: 1280 }).probe)).toMatch(/turned/);
-		expect(proxyMismatch({ ...(orig as object), kind: 'audio' } as never, proxyOf().probe)).toMatch(/not a video/);
+		expect(proxyMismatch({ ...(orig as object), kind: 'audio' } as never, proxyOf().probe)).toMatch(
+			/not a video/,
+		);
 	});
 
 	it('attach / detach are undoable commands with refusals', () => {

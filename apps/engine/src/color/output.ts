@@ -61,6 +61,12 @@ const DEEP_ENCODERS: Record<string, 10 | 12> = {
 	libsvtav1: 10,
 	'libaom-av1': 12,
 	'libvpx-vp9': 12,
+	// gaps (EX-2): hardware HEVC Main10 (libkvazaar in the LGPL build is 8-bit only).
+	hevc_videotoolbox: 10,
+	hevc_nvenc: 10,
+	hevc_qsv: 10,
+	hevc_amf: 10,
+	hevc_vaapi: 10,
 };
 
 export class ExportColorError extends Error {
@@ -90,7 +96,7 @@ export function exportColorOf(
 	const bitDepth = video?.bitDepth ?? (encoder === 'prores_ks' ? 10 : hdr && max >= 10 ? 10 : 8);
 	if (bitDepth > max)
 		throw new ExportColorError(
-			`${encoder ?? 'This encoder'} writes ${max}-bit video; ${bitDepth}-bit needs ProRes, AV1 or VP9`,
+			`${encoder ?? 'This encoder'} writes ${max}-bit video; ${bitDepth}-bit needs ProRes, AV1, VP9 or a hardware HEVC encoder (Main10)`,
 		);
 	let trc = space.tags.trc;
 	// BT.2020 SDR at 10/12 bits carries the BT.2020 transfer code of its depth (H.273: same curve as BT.709).

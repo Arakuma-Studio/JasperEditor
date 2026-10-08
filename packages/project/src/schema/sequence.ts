@@ -990,6 +990,13 @@ export const SequenceSettingsSchema = z.looseObject({
 	workingColorSpace: z.string(),
 	/** color-mgmt: Sequence Settings ▸ Colour (linearize, blend using 1.0 gamma, tone mapping, HDR white/peak). */
 	color: SequenceColorSchema.optional(),
+	// ---- gaps (Sequence Settings, docs/wp-notes/gaps.md §TL-11; read with `sequenceFormatOf`)
+	/** Pixel Aspect Ratio of the delivered files; absent / 1:1 = square pixels. `width` is then the display width. */
+	pixelAspectRatio: z.looseObject({ num: z.number(), den: z.number() }).nullable().optional(),
+	/** Frame width the delivered files carry (with a non-square pixel aspect ratio). */
+	storageWidth: z.number().nullable().optional(),
+	/** Fields: progressive (absent), upper or lower field first. */
+	fieldOrder: z.string().nullable().optional(),
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
 

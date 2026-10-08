@@ -33,6 +33,14 @@ const SettingsPatch = z.strictObject({
 	 * variant (`rec709-linear`…) which also turns on Linearize Working Space.
 	 */
 	workingColorSpace: z.enum(WORKING_SPACE_CHOICES).optional(),
+	/**
+	 * gaps (Sequence Settings ▸ Pixel Aspect Ratio): null or 1:1 = square pixels. With another ratio `width` becomes the
+	 * display width of `storageWidth` (the delivered frame width; default the current one) at that ratio.
+	 */
+	pixelAspectRatio: RationalSchema.nullable().optional(),
+	storageWidth: z.number().int().min(16).max(8192).optional(),
+	/** gaps (Sequence Settings ▸ Fields): progressive, upper or lower field first. */
+	fieldOrder: z.enum(['progressive', 'upper', 'lower']).optional(),
 	/** color-mgmt: Sequence Settings ▸ Colour; each field null = back to the default. */
 	color: z
 		.strictObject({

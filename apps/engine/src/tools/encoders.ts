@@ -43,6 +43,50 @@ const HW_H264: readonly HwEncoderSpec[] = [
 	{ encoder: 'h264_vaapi', label: 'VA-API', platforms: ['linux'], pixFmt: 'nv12', vaapi: true },
 ];
 
+/**
+ * gaps (EX-2): hardware HEVC encoders in preference order (Main and Main10; `pixFmt10` = their 10-bit input). The
+ * software HEVC encoder of the LGPL build is libkvazaar (BSD-3-Clause), 8-bit (Main) only.
+ */
+const HW_HEVC: readonly (HwEncoderSpec & { pixFmt10: string })[] = [
+	{
+		encoder: 'hevc_videotoolbox',
+		label: 'Apple VideoToolbox',
+		platforms: ['darwin'],
+		pixFmt: 'yuv420p',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_nvenc',
+		label: 'NVIDIA NVENC',
+		platforms: ['linux', 'win32'],
+		pixFmt: 'yuv420p',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_qsv',
+		label: 'Intel Quick Sync',
+		platforms: ['linux', 'win32'],
+		pixFmt: 'nv12',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_amf',
+		label: 'AMD AMF',
+		platforms: ['win32', 'linux'],
+		pixFmt: 'yuv420p',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_vaapi',
+		label: 'VA-API',
+		platforms: ['linux'],
+		pixFmt: 'nv12',
+		pixFmt10: 'p010le',
+		vaapi: true,
+	},
+];
+const HW_ALL: readonly HwEncoderSpec[] = [...HW_H264, ...HW_HEVC];
+
 const VAAPI_DEVICE = '/dev/dri/renderD128';
 
 const SOFTWARE_LABELS: Record<string, string> = {
@@ -51,6 +95,7 @@ const SOFTWARE_LABELS: Record<string, string> = {
 	'libvpx-vp9': 'libvpx',
 	libsvtav1: 'SVT-AV1',
 	'libaom-av1': 'libaom',
+	libkvazaar: 'Kvazaar',
 };
 
 /** AV1/VP9 fallback order for exports (quality/speed) and for proxies (cheap browser decode). */
@@ -153,15 +198,27 @@ export function usableByCodec(inv: EncoderInventory): Record<VideoCodec, string[
 		vp9: ['libvpx-vp9'].filter((e) => have.has(e)),
 		av1: ['libsvtav1', 'libaom-av1'].filter((e) => have.has(e)),
 		prores: ['prores_ks'].filter((e) => have.has(e)),
+		hevc: [
+			...HW_HEVC.filter((h) => have.has(h.encoder) && hwOk.has(h.encoder)).map((h) => h.encoder),
+			...['libkvazaar'].filter((e) => have.has(e)),
+		],
 	};
 }
 
 function codecName(c: VideoCodec): string {
-	return c === 'h264' ? 'H.264' : c === 'vp9' ? 'VP9' : c === 'prores' ? 'ProRes' : 'AV1';
+	return c === 'h264'
+		? 'H.264'
+		: c === 'vp9'
+			? 'VP9'
+			: c === 'prores'
+				? 'ProRes'
+				: c === 'hevc'
+					? 'HEVC'
+					: 'AV1';
 }
 
 function encoderLabel(codec: VideoCodec, encoder: string): string {
-	const hw = HW_H264.find((h) => h.encoder === encoder);
+	const hw = HW_ALL.find((h) => h.encoder === encoder);
 	if (hw) return `${codecName(codec)} · ${hw.label} (hardware)`;
 	return `${codecName(codec)} · ${SOFTWARE_LABELS[encoder] ?? encoder} (software)`;
 }
@@ -175,9 +232,14 @@ function rateControlOf(encoder: string): EncoderChoice['rateControl'] {
 			return 'crf';
 		case 'h264_nvenc':
 		case 'h264_qsv':
+		case 'hevc_nvenc':
+		case 'hevc_qsv':
 			return 'cq';
 		case 'h264_amf':
 		case 'h264_vaapi':
+		case 'hevc_amf':
+		case 'hevc_vaapi':
+		case 'libkvazaar':
 			return 'qp';
 		case 'prores_ks':
 			return 'profile';
@@ -203,7 +265,7 @@ function makeChoice(
 		codec,
 		encoder,
 		label: encoderLabel(codec, encoder),
-		hardware: HW_H264.some((h) => h.encoder === encoder),
+		hardware: HW_ALL.some((h) => h.encoder === encoder),
 		container,
 		audioEncoder: container === 'webm' ? 'libopus' : container === 'mov' ? 'pcm_s16le' : 'aac',
 		rateControl: rateControlOf(encoder),
@@ -317,6 +379,35 @@ function bitrateForCrf(crf: number, width: number, height: number, fps: number, 
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
+/** Kvazaar's intra period must be a multiple of its 8-frame B-GOP (1 = intra only). */
+export const kvazaarPeriod = (gop: number) => (gop <= 1 ? 1 : Math.ceil(gop / 8) * 8);
+/** H.273 code points → Kvazaar's VUI names (`--colorprim`, `--transfer`, `--colormatrix`). */
+const KVZ_PRIMARIES: Record<number, string> = {
+	1: 'bt709',
+	5: 'bt470bg',
+	6: 'smpte170m',
+	9: 'bt2020',
+	11: 'smpte431',
+	12: 'smpte432',
+};
+const KVZ_TRANSFER: Record<number, string> = {
+	1: 'bt709',
+	6: 'smpte170m',
+	8: 'linear',
+	13: 'srgb',
+	14: 'bt2020-10',
+	15: 'bt2020-12',
+	16: 'smpte2084',
+	18: 'arib-std-b67',
+};
+const KVZ_MATRIX: Record<number, string> = {
+	0: 'GBR',
+	1: 'bt709',
+	5: 'bt470bg',
+	6: 'smpte170m',
+	9: 'bt2020nc',
+	10: 'bt2020c',
+};
 /** x264 CRF → libvpx-vp9 CRF (0–63): 18 → 32, 23 → 38, 26 → 42. */
 export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 /** x264 CRF → AV1 CRF (SVT-AV1/libaom 0–63): 18 → 28, 23 → 35, 26 → 39. */
@@ -327,6 +418,8 @@ function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq', bitDept
 	if (encoder === 'prores_ks') return proresProfile === '4444' ? 'yuv444p10le' : 'yuv422p10le';
 	if (bitDepth > 8 && (encoder === 'libsvtav1' || encoder === 'libaom-av1' || encoder === 'libvpx-vp9'))
 		return bitDepth === 12 && encoder !== 'libsvtav1' ? 'yuv420p12le' : 'yuv420p10le';
+	const hevc = HW_HEVC.find((h) => h.encoder === encoder);
+	if (hevc) return bitDepth > 8 ? hevc.pixFmt10 : hevc.pixFmt;
 	return HW_H264.find((h) => h.encoder === encoder)?.pixFmt ?? 'yuv420p';
 }
 
@@ -429,6 +522,99 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 			filters = ['format=nv12', 'hwupload'];
 			video.push('-rc_mode', 'CQP', '-qp', String(Math.max(1, crf)), '-g', String(gop));
 			break;
+		// gaps (EX-2): HEVC. Kvazaar: constant QP (x264 CRF + 3 ≈ the same visual quality at ≈ 60 % of the size),
+		// presets by speed, intra period = the GOP, VUI colour description from the export colour space; `hvc1` so
+		// QuickTime / Apple players accept the file.
+		case 'libkvazaar': {
+			const preset = p.realtime || p.speed === 'fast' ? 'ultrafast' : p.speed === 'best' ? 'slow' : 'medium';
+			const vui = p.colorCodes
+				? [
+						`colorprim=${KVZ_PRIMARIES[p.colorCodes.primaries] ?? 'bt709'}`,
+						`transfer=${KVZ_TRANSFER[p.colorCodes.trc] ?? 'bt709'}`,
+						`colormatrix=${KVZ_MATRIX[p.colorCodes.matrix] ?? 'bt709'}`,
+					]
+				: ['colorprim=bt709', 'transfer=bt709', 'colormatrix=bt709'];
+			video.push(
+				'-kvazaar-params',
+				[`preset=${preset}`, `qp=${clamp(crf + 3, 0, 51)}`, `period=${kvazaarPeriod(gop)}`, ...vui].join(','),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		}
+		case 'hevc_videotoolbox':
+			video.push(
+				...rate(0.8),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_nvenc':
+			video.push(
+				'-preset',
+				p.realtime || p.speed === 'fast' ? 'p2' : p.speed === 'best' ? 'p6' : 'p4',
+				'-rc',
+				'vbr',
+				'-cq',
+				String(Math.max(1, crf + 3)),
+				'-b:v',
+				'0',
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_qsv':
+			video.push(
+				'-global_quality',
+				String(Math.max(1, crf + 3)),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_amf':
+			video.push(
+				'-rc',
+				'cqp',
+				'-qp_i',
+				String(crf + 3),
+				'-qp_p',
+				String(crf + 3),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_vaapi':
+			pre.push('-vaapi_device', VAAPI_DEVICE);
+			filters = [`format=${p.bitDepth && p.bitDepth > 8 ? 'p010' : 'nv12'}`, 'hwupload'];
+			video.push(
+				'-rc_mode',
+				'CQP',
+				'-qp',
+				String(Math.max(1, crf + 3)),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
 		case 'libvpx-vp9':
 			video.push(
 				'-b:v',
@@ -476,7 +662,7 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 			video.push(...rate(1.2), '-g', String(gop));
 	}
 	if (!filters.includes('hwupload')) video.push('-pix_fmt', pix);
-	if (p.threads && !HW_H264.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));
+	if (p.threads && !HW_ALL.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));
 	return { pre, filters, video };
 }
 
@@ -535,7 +721,7 @@ export function probeHardwareEncoders(
 	opts: { platform?: NodeJS.Platform; timeoutMs?: number; disabled?: boolean } = {},
 ): Promise<HwTestResult[]> {
 	const platform = opts.platform ?? process.platform;
-	const specs = HW_H264.filter((h) => listed.includes(h.encoder));
+	const specs = HW_ALL.filter((h) => listed.includes(h.encoder));
 	if (!ffmpeg || specs.length === 0) return Promise.resolve([]);
 	if (opts.disabled)
 		return Promise.resolve(

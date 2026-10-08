@@ -436,7 +436,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 				draftUseProxies: z
 					.boolean()
 					.optional()
-					.describe('Use Proxies: render attached proxies instead of full-resolution media (a draft; never the default)'),
+					.describe(
+						'Use Proxies: render attached proxies instead of full-resolution media (a draft; never the default)',
+					),
 			},
 			annotations: EDIT,
 		},

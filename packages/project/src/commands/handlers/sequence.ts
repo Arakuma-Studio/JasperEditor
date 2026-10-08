@@ -2,7 +2,8 @@
 
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
-import { mediaDurationFlicks } from '../../interpret/model.ts';
+import { displayWidthOf, isSquarePar, sequenceFormatOf, validPar } from '../../gaps/sequence-format.ts';
+import { mediaDurationFlicks, mediaFieldOrder, mediaPixelAspect } from '../../interpret/model.ts';
 import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
@@ -32,6 +33,40 @@ import { assertBin, insertItem } from './project.ts';
 import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
 
+/**
+ * gaps: with a non-square pixel aspect ratio the working `width` is the display width of `storageWidth`; square or
+ * null clears both fields (width = the storage width when it was anamorphic and no width was given).
+ */
+function normalizeFormat(
+	next: SequenceSettings,
+	prev: SequenceSettings,
+	patch: { width?: number; pixelAspectRatio?: Rational | null; storageWidth?: number },
+	h: HandlerContext,
+): void {
+	const n = next as SequenceSettings & Record<string, unknown>;
+	const prevFmt = sequenceFormatOf(prev);
+	const touched = patch.pixelAspectRatio !== undefined || patch.storageWidth !== undefined;
+	if (!touched) return;
+	const par = n.pixelAspectRatio as Rational | null | undefined;
+	if (!par || isSquarePar(par)) {
+		delete n.pixelAspectRatio;
+		delete n.storageWidth;
+		if (patch.width === undefined && !isSquarePar(prevFmt.par)) next.width = prevFmt.storageWidth;
+		return;
+	}
+	if (!validPar(par)) h.fail('E_INVALID_PARAM', 'pixel aspect ratio must be between 0.1 and 10');
+	const sw =
+		patch.storageWidth ?? (isSquarePar(prevFmt.par) ? (patch.width ?? prev.width) : prevFmt.storageWidth);
+	n.storageWidth = sw;
+	const display = displayWidthOf(sw, par);
+	if (patch.width !== undefined && patch.width !== display)
+		h.fail(
+			'E_INVALID_PARAM',
+			`width ${patch.width} is not the display width ${display} of ${sw} at ${par.num}:${par.den}`,
+		);
+	next.width = display;
+}
+
 function validateSettings(s: SequenceSettings, h: HandlerContext): void {
 	if (!isAllowedSequenceRate(s.frameRate))
 		h.fail('E_INVALID_PARAM', `Frame rate ${s.frameRate.num}/${s.frameRate.den} is not allowed`);
@@ -43,6 +78,17 @@ function validateSettings(s: SequenceSettings, h: HandlerContext): void {
 			h.fail('E_INVALID_PARAM', `${k} must be an even integer 16..8192`);
 	}
 	if (s.dropFrame && !supportsDropFrame(s.frameRate)) s.dropFrame = false;
+}
+
+/** gaps (New Sequence From Clip): the media's non-square pixel aspect ratio and interlaced field order. */
+function mediaFormat(asset: MediaAsset): { par: Rational | null; fieldOrder: 'upper' | 'lower' | null } {
+	if (asset.kind !== 'video') return { par: null, fieldOrder: null };
+	const par = mediaPixelAspect(asset);
+	const fo = mediaFieldOrder(asset);
+	return {
+		par: !isSquarePar(par) && validPar(par) && asset.probe.rotationDegrees === 0 ? par : null,
+		fieldOrder: fo === 'upper' || fo === 'lower' ? fo : null,
+	};
 }
 
 function videoInfo(asset: MediaAsset) {
@@ -182,7 +228,19 @@ export const sequenceHandlers: HandlerMap = {
 			}
 		}
 		const { workingColorSpace: _w, color: _c, ...plain } = cmd.settings ?? {};
+		// gaps (New Sequence From Clip): non-square pixels and fields of the media.
+		if (asset && !cmd.settings?.pixelAspectRatio) {
+			const f = mediaFormat(asset);
+			if (f.par) {
+				settings.pixelAspectRatio = f.par;
+				settings.storageWidth = settings.width;
+				settings.width = displayWidthOf(settings.width, f.par);
+			}
+			if (f.fieldOrder) settings.fieldOrder = f.fieldOrder;
+		}
+		const before = JSON.parse(JSON.stringify(settings)) as SequenceSettings;
 		Object.assign(settings, plain);
+		normalizeFormat(settings, before, cmd.settings ?? {}, h);
 		if (cmd.settings?.frameRate && cmd.settings.dropFrame === undefined)
 			settings.dropFrame = supportsDropFrame(settings.frameRate);
 		// color-mgmt: a sequence made from HDR media works in its HDR space (Premiere: New Sequence From Clip).
@@ -219,6 +277,8 @@ export const sequenceHandlers: HandlerMap = {
 			...(JSON.parse(JSON.stringify(seq.settings)) as SequenceSettings),
 			...p0,
 		};
+		// gaps: pixel aspect ratio / storage width give the display width.
+		normalizeFormat(next, seq.settings as SequenceSettings, p, h);
 		validateSettings(next, h);
 		if (
 			p.frameRate &&
@@ -226,11 +286,14 @@ export const sequenceHandlers: HandlerMap = {
 		) {
 			changeFrameRate(seq, next.frameRate, h);
 		}
-		if (
-			(p.width !== undefined && p.width !== seq.settings.width) ||
-			(p.height !== undefined && p.height !== seq.settings.height)
-		) {
+		if (next.width !== seq.settings.width || next.height !== seq.settings.height) {
 			changeFrameSize(seq, next.width, next.height, cmd.reposition ?? 'keep-offset-from-center');
+		}
+		// gaps: delivery format (pixel aspect, storage width, fields).
+		for (const k of ['pixelAspectRatio', 'storageWidth', 'fieldOrder'] as const) {
+			const v = (next as Record<string, unknown>)[k];
+			if (v === undefined || v === null) delete (seq.settings as Record<string, unknown>)[k];
+			else (seq.settings as Record<string, unknown>)[k] = JSON.parse(JSON.stringify(v));
 		}
 		if (p.dropFrame !== undefined)
 			seq.settings.dropFrame = p.dropFrame && supportsDropFrame(seq.settings.frameRate as Rational);

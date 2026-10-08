@@ -1319,6 +1319,42 @@ export class ExportService {
 	}
 
 	/** color-mgmt: writes the mastering display / content light boxes of PQ and HLG exports into MP4 and MOV files. */
+	/**
+	 * gaps (Sequence Settings ▸ Pixel Aspect Ratio): a stream-copy remux that signals the pixel aspect ratio (H.264 /
+	 * HEVC VUI through `*_metadata`, MP4 / MOV `pasp`, Matroska display size). Nothing is re-encoded.
+	 */
+	private async writeSequenceFormat(planned: PlannedExport, output: string, ctx: JobContext): Promise<void> {
+		const o = planned.output;
+		if (!o.pixelAspect) return;
+		const codec = o.encoder?.codec;
+		const par = o.pixelAspect;
+		const bsf =
+			par && codec === 'h264'
+				? ['-bsf:v', `h264_metadata=sample_aspect_ratio=${par.num}/${par.den}`]
+				: par && codec === 'hevc'
+					? ['-bsf:v', `hevc_metadata=sample_aspect_ratio=${par.num}/${par.den}`]
+					: [];
+		const ext = extname(output);
+		const tmp = join(dirname(output), `format${ext}`);
+		await this.deps.ff.run(
+			[
+				'-i',
+				output,
+				'-map',
+				'0',
+				'-c',
+				'copy',
+				...bsf,
+				...(par ? ['-aspect', `${o.width * par.num}:${o.height * par.den}`] : []),
+				...(ext === '.mp4' || ext === '.mov' ? ['-movflags', '+faststart'] : []),
+				tmp,
+			],
+			{ signal: ctx.signal, onSpawn: ctx.trackChild },
+		);
+		await rename(tmp, output);
+		ctx.log(`[format] pixel aspect ${par!.num}:${par!.den}`);
+	}
+
 	private async writeHdrMetadata(planned: PlannedExport, output: string, ctx: JobContext): Promise<void> {
 		const c = planned.output.color;
 		const container = planned.output.encoder?.container;
@@ -1809,6 +1845,8 @@ export class ExportService {
 	): Promise<unknown> {
 		const { frames, path, remotionOutput, warnings, audio } = r;
 		const encoder = planned.output.encoder;
+		// gaps: the sequence's pixel aspect ratio and field order signalled in the file.
+		await this.writeSequenceFormat(planned, output, ctx);
 		// color-mgmt: HDR static metadata boxes (`mdcv` / `clli`) in MP4 / MOV outputs.
 		await this.writeHdrMetadata(planned, output, ctx);
 		// wp captions: embedded caption streams (remux) and sidecar files.

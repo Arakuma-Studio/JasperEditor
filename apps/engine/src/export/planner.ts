@@ -33,6 +33,7 @@ import {
 	resolveLayerProps,
 	rotoExportIssues,
 	type SnapshotOptions,
+	sequenceFormatOf,
 	transitionSpec,
 } from '@jasper/project';
 import { lutRefs } from '../color/extension.ts';
@@ -118,6 +119,8 @@ export type OutputSpec = {
 	alpha?: boolean;
 	/** previews: no audio stream (`ExportSettings.videoOnly`). */
 	videoOnly?: boolean;
+	/** gaps (Sequence Settings ▸ Pixel Aspect Ratio): the pixel aspect ratio signalled in the file (absent = square). */
+	pixelAspect?: Rational;
 	/** previews: frames between keyframes (`video.keyframeInterval`); absent = the encoder default. */
 	gop?: number;
 	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
@@ -313,6 +316,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
+	{
+		const f = sequenceFormatOf(seq.settings);
+		if (f.fieldOrder !== 'progressive' && !settings.videoOnly && !input.still)
+			warnings.push({
+				code: 'FIELDS_PROGRESSIVE',
+				message: `The sequence is ${f.fieldOrder} field first; exports are progressive (field-rendered interlaced output is not available)`,
+			});
+	}
 	if (draftProxies.length)
 		warnings.push({
 			code: 'DRAFT_PROXIES',
@@ -515,8 +526,18 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const video = settings.video;
 	const outFps = video?.frameRate ?? seqFps;
 	const durationSec = ((range.end - range.start) * seqFps.den) / seqFps.num;
+	// gaps: a non-square-pixel sequence exported at its own frame size delivers the storage width at its pixel aspect
+	// ratio (the anamorphic file of a DV / HDV / DVCPRO HD sequence); another size is a square-pixel output.
+	const fmt = sequenceFormatOf(seq.settings);
+	const matchesSequence =
+		!video ||
+		(video.width === seq.settings.width && video.height === seq.settings.height) ||
+		(video.width === fmt.storageWidth && video.height === fmt.height);
+	const anamorphic = fmt.par.num !== fmt.par.den && matchesSequence && !input.still;
+	const interlaced =
+		fmt.fieldOrder !== 'progressive' && matchesSequence && !settings.videoOnly && !input.still;
 	const output: OutputSpec = {
-		width: video?.width ?? seq.settings.width,
+		width: anamorphic ? fmt.storageWidth : (video?.width ?? seq.settings.width),
 		height: video?.height ?? seq.settings.height,
 		fps: { num: outFps.num, den: outFps.den },
 		frames: rationalEquals(outFps, seqFps)
@@ -539,7 +560,9 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		...(video?.alpha ? { alpha: true } : {}),
 		...(settings.videoOnly ? { videoOnly: true } : {}),
 		...(video?.keyframeInterval ? { gop: video.keyframeInterval } : {}),
+		...(anamorphic ? { pixelAspect: { ...fmt.par } } : {}),
 	};
+	if (anamorphic) output.scaling = 'stretch';
 	if (
 		video?.alpha &&
 		(video.codec !== 'prores' || video.proresProfile !== '4444' || settings.container !== 'mov')

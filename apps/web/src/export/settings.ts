@@ -239,6 +239,7 @@ export const CODEC_LABELS: Record<VideoCodec, string> = {
 	vp9: 'VP9',
 	av1: 'AV1',
 	prores: 'ProRes 422 HQ',
+	hevc: 'HEVC (H.265)',
 };
 
 /** Encoders the engine may pick per codec, in its preference order (mirrors the engine selector). */
@@ -247,6 +248,7 @@ const CODEC_ENCODERS: Record<VideoCodec, string[]> = {
 	vp9: ['libvpx-vp9'],
 	av1: ['libsvtav1', 'libaom-av1'],
 	prores: ['prores_ks'],
+	hevc: ['hevc_videotoolbox', 'hevc_nvenc', 'hevc_qsv', 'hevc_amf', 'hevc_vaapi', 'libkvazaar'],
 };
 const ENCODER_NAMES: Record<string, string> = {
 	h264_videotoolbox: 'Apple VideoToolbox (hardware)',
@@ -260,6 +262,12 @@ const ENCODER_NAMES: Record<string, string> = {
 	libsvtav1: 'SVT-AV1',
 	'libaom-av1': 'libaom',
 	prores_ks: 'prores_ks',
+	hevc_videotoolbox: 'Apple VideoToolbox (hardware, Main10)',
+	hevc_nvenc: 'NVIDIA NVENC (hardware, Main10)',
+	hevc_qsv: 'Intel Quick Sync (hardware, Main10)',
+	hevc_amf: 'AMD AMF (hardware, Main10)',
+	hevc_vaapi: 'VA-API (hardware, Main10)',
+	libkvazaar: 'Kvazaar (8-bit Main)',
 };
 const GPL = new Set(['libx264', 'libx264rgb', 'libx265']);
 
@@ -267,7 +275,7 @@ type ChoiceOption<T extends string> = { value: T; label: string; available: bool
 
 /** Codec choices; unavailable ones stay listed but disabled (S05:EX-012). */
 export function codecOptions(enc: EncodingCapabilities | undefined): ChoiceOption<VideoCodec>[] {
-	return (['h264', 'av1', 'vp9', 'prores'] as const).map((c) => {
+	return (['h264', 'hevc', 'av1', 'vp9', 'prores'] as const).map((c) => {
 		const available = !enc || (enc.codecs[c]?.length ?? 0) > 0;
 		const container = c === 'prores' ? 'MOV' : c === 'vp9' && enc?.audio.opus ? 'WebM' : 'MP4';
 		return {
@@ -406,7 +414,11 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 		const range = v.range === 'in-out' ? 'in-out' : 'entire';
 		const engine = v.engine === 'native' || v.engine === 'remotion' ? v.engine : 'auto';
 		const codec =
-			v.codec === 'av1' || v.codec === 'vp9' || v.codec === 'h264' || v.codec === 'prores'
+			v.codec === 'av1' ||
+			v.codec === 'vp9' ||
+			v.codec === 'h264' ||
+			v.codec === 'prores' ||
+			v.codec === 'hevc'
 				? v.codec
 				: undefined;
 		const c = v.captions as Partial<CaptionExportChoice> | undefined;
