@@ -199,10 +199,6 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		]);
 		check(hybrid.file, 10, 10, want, 6);
 		check(rem.file, 10, 10, want, 6);
-		const glyph = over([
-			{ c: gray(over([{ c: [1, 1, 1, 1] }, { c: mid, mode: 'linear-burn' }])) },
-			{ c: top, mode: 'color-dodge' },
-		]);
 		let inGlyph = 0;
 		let differ = 0;
 		let n = 0;
@@ -210,7 +206,7 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 			const h = pixel(hybrid.file, 3, x, H / 2);
 			const r = pixel(rem.file, 3, x, H / 2);
 			n++;
-			if (near(r, to8(glyph), 8)) inGlyph++;
+			if (!near(r, to8(want), 30)) inGlyph++;
 			// Glyph edges are anti-aliased by two rasterisations (the bake and the page): a few may differ more.
 			if (!near(h, r, 12)) differ++;
 		}

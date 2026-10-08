@@ -1,4 +1,5 @@
 // Derived data (S01:SES-010): computed from the document, memoized by reference, never stored.
+import { isDraft } from 'immer';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame, type Rational } from '../time.ts';
@@ -18,7 +19,11 @@ const indexCache = new WeakMap<object, TrackIndex>();
 function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
 ): TrackIndex {
-	const cached = indexCache.get(seq.clips);
+	// A draft (inside a transaction) keeps its identity while commands add, move and remove clips: never cache it, or a
+	// later command of the same transaction would read the clips as they were (compositor: transition.add after
+	// clip.addSolid on another track found no edit point).
+	const draft = isDraft(seq.clips);
+	const cached = draft ? undefined : indexCache.get(seq.clips);
 	if (cached) return cached;
 	const byTrack = new Map<string, Clip[]>();
 	for (const t of allTracks(seq)) byTrack.set(t.id, []);
@@ -32,7 +37,7 @@ function sequenceIndex(
 	}
 	for (const list of byTrack.values()) list.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
 	const idx = { byTrack };
-	indexCache.set(seq.clips, idx);
+	if (!draft) indexCache.set(seq.clips, idx);
 	return idx;
 }
 

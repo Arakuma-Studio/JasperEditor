@@ -776,7 +776,8 @@ export function VideoTracks({
 	const flatDisplay = useContext(FlatDisplayContext);
 	const [flatRequested, setFlatRequested] = useState(false);
 	const requestFlat = useCallback(() => setFlatRequested(true), []);
-	const canFlat = gpu === 'ok' && htmlInCanvas && !options.layerFilter;
+	// Layer renders (bakes of single clips) composite nothing; a nest's canvas source always draws its picture.
+	const canFlat = gpu === 'ok' && htmlInCanvas && (!options.layerFilter || !!flatOutput);
 	const flatReason = useMemo(() => {
 		if (!canFlat) return null;
 		const scopes: StackScope[] = [];

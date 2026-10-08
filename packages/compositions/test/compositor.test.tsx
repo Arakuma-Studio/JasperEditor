@@ -44,6 +44,25 @@ vi.mock('../src/fx/FxPicture.tsx', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../src/fx/FxPicture.tsx')>()),
 	canUseHtmlInCanvas: () => true,
 }));
+// The structure is under test, not the GPU: the matte tap step delivers nothing here (it would composite on the GPU).
+vi.mock('../src/fx/matte.ts', async (importOriginal) => {
+	const { createEffect } = await import('remotion');
+	return {
+		...(await importOriginal<typeof import('../src/fx/matte.ts')>()),
+		fxMatteTap: createEffect<{ key: string }, null>({
+			type: 'test.matte-tap',
+			label: 'matte tap (test)',
+			documentationLink: null,
+			backend: '2d',
+			calculateKey: (p) => p.key,
+			schema: {},
+			validateParams: () => {},
+			setup: () => null,
+			apply: () => {},
+			cleanup: () => {},
+		}),
+	};
+});
 vi.mock('../src/three-d/gl.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../src/three-d/gl.ts')>()),
 	renderClassicGL: () => {},
@@ -99,10 +118,13 @@ afterAll(() => {
 });
 afterEach(() => cleanup());
 
-function makeDoc(commands: Command[]): RenderSnapshot {
+function makeDoc(
+	commands: Command[] | ((p: ReturnType<typeof createEmptyProject>) => Command[]),
+): RenderSnapshot {
 	const ids = createCounterIdSource(1);
 	const base = createEmptyProject({ ids, name: 'F', preset: 'hd-720p-30' });
 	const seqId = Object.keys(base.sequences)[0]!;
+	if (typeof commands === 'function') commands = commands(base);
 	const { document, result } = applyTransaction(
 		base,
 		{
@@ -321,7 +343,11 @@ const GL_MODES: string[] = [...BLEND_MODES];
 type TrackSpec =
 	| { kind: 'solid'; mode: string; three: boolean }
 	| { kind: 'adjustment'; effects: string[] }
-	| { kind: 'text' | 'shape'; fx: boolean; mode: string };
+	| { kind: 'text' | 'shape'; fx: boolean; mode: string }
+	/** Two DOM or media clips meeting at frame 30 with a GPU transition (Push) between them. */
+	| { kind: 'transition'; dom: boolean }
+	/** A solid keyed by a Track Matte Key reading the track below it. */
+	| { kind: 'matte' };
 
 const trackSpec: fc.Arbitrary<TrackSpec> = fc.oneof(
 	fc.record({ kind: fc.constant('solid' as const), mode: fc.constantFrom(...GL_MODES), three: fc.boolean() }),
@@ -334,14 +360,58 @@ const trackSpec: fc.Arbitrary<TrackSpec> = fc.oneof(
 		fx: fc.boolean(),
 		mode: fc.constantFrom('normal', 'multiply', 'linear-burn'),
 	}),
+	fc.record({ kind: fc.constant('transition' as const), dom: fc.boolean() }),
+	fc.record({ kind: fc.constant('matte' as const) }),
 );
 
-function commandsOf(tracks: TrackSpec[], prefix: string, sequenceId?: string): Command[] {
+function commandsOf(
+	tracks: TrackSpec[],
+	prefix: string,
+	sequenceId?: string,
+	trackIds?: readonly string[],
+): Command[] {
 	const out: Command[] = [];
 	const seq = sequenceId ? { sequenceId } : {};
 	tracks.forEach((t, i) => {
 		const track = `V${i + 1}`;
 		const ref = `$${prefix}${i}`;
+		if (t.kind === 'transition' || t.kind === 'matte') {
+			// Top-level tracks only (transitions and Track Matte Keys name the sequence's own tracks).
+			if (sequenceId || !trackIds) {
+				out.push({ ...solid(track, ref), ...seq } as Command);
+				return;
+			}
+			if (t.kind === 'matte') {
+				out.push(solid(track, ref));
+				if (i > 0)
+					out.push({
+						type: 'effect.add',
+						target: { clipId: ref },
+						effectId: 'jasper.track-matte-key',
+						params: { matteTrack: trackIds[i - 1] },
+					} as Command);
+				return;
+			}
+			const side = (at: number, r: string): Command =>
+				t.dom
+					? ({
+							type: 'clip.addShape',
+							at,
+							duration: 30,
+							track,
+							shape: { type: 'rect', size: [320, 180], fill: [1, 1, 1, 1] },
+							ref: r,
+						} as Command)
+					: ({ type: 'clip.addSolid', at, duration: 30, track, color: [1, 0, 0, 1], ref: r } as Command);
+			out.push(side(0, ref), side(30, `${ref}b`), {
+				type: 'transition.add',
+				trackId: track,
+				at: 30,
+				effectId: 'jasper.push',
+				duration: 10,
+			} as Command);
+			return;
+		}
 		if (t.kind === 'solid') {
 			out.push({ ...solid(track, ref), ...seq } as Command, mode(ref, t.mode));
 			if (t.three) out.push(threeD(ref));
@@ -382,29 +452,34 @@ describe('no HTML-in-Canvas canvas is ever nested (property)', () => {
 					{ nil: null },
 				),
 				(tracks, lin, nest) => {
-					const cmds: Command[] = lin ? [linear] : [];
-					cmds.push(...commandsOf(tracks, 't'));
-					if (nest) {
-						cmds.push({
-							type: 'sequence.create',
-							name: 'N',
-							preset: 'hd-720p-30',
-							settings: { width: 320, height: 180 },
-							tracks: { video: 4, audio: 1 },
-							ref: '$seq',
-						} as Command);
-						cmds.push(...commandsOf(nest.inner, 'n', '$seq'));
-						cmds.push({
-							type: 'clip.place',
-							source: { sequenceId: '$seq' },
-							at: 0,
-							tracks: { video: `V${tracks.length + 1}` },
-							ref: '$nest',
-						} as unknown as Command);
-						if (nest.fx) cmds.push(effect('$nest', 'jasper.invert'));
-					}
-					const doc = makeDoc(cmds);
-					const { container, unmount } = renderFrame(doc);
+					const build = (p: ReturnType<typeof createEmptyProject>) => {
+						const trackIds = Object.values(p.sequences)[0]!.videoTracks.map((x) => x.id);
+						const cmds: Command[] = lin ? [linear] : [];
+						cmds.push(...commandsOf(tracks, 't', undefined, trackIds));
+						if (nest) {
+							cmds.push({
+								type: 'sequence.create',
+								name: 'N',
+								preset: 'hd-720p-30',
+								settings: { width: 320, height: 180 },
+								tracks: { video: 4, audio: 1 },
+								ref: '$seq',
+							} as Command);
+							cmds.push(...commandsOf(nest.inner, 'n', '$seq'));
+							cmds.push({
+								type: 'clip.place',
+								source: { sequenceId: '$seq' },
+								at: 0,
+								tracks: { video: `V${tracks.length + 1}` },
+								ref: '$nest',
+							} as unknown as Command);
+							if (nest.fx) cmds.push(effect('$nest', 'jasper.invert'));
+						}
+						return cmds;
+					};
+					const doc = makeDoc(build);
+					// Frame 28: inside the transition spans (25…35) and every other clip (0…30).
+					const { container, unmount } = renderFrame(doc, 28);
 					try {
 						rendered(container);
 						expect(nestedCanvases(container)).toEqual([]);
