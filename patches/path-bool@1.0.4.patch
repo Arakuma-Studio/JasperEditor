@@ -1,0 +1,35 @@
+diff --git a/dist/path-bool.js b/dist/path-bool.js
+index 5d0481fedb50c84567ffa363fd08fbfd216cd5db..f39ab0ad76a62fe6578de4a8d79ec8d02464d81a 100644
+--- a/dist/path-bool.js
++++ b/dist/path-bool.js
+@@ -2904,10 +2904,29 @@ function sortOutgoingEdgesByAngle({ vertices }) {
+              it come out wrong.
+             */
+             const turnCache = new WeakMap();
++            let maxTurn = ANGLE_MIN_DIFF;
+             for (const edge of vertex.outgoingEdges) {
+                 const primary = getIncidenceAngle(edge);
+                 angleCache.set(edge, primary);
+-                turnCache.set(edge, normalizeAngle(getIncidenceAngle(edge, tieBreakDistance) - primary));
++                const turn = normalizeAngle(getIncidenceAngle(edge, tieBreakDistance) - primary);
++                turnCache.set(edge, turn);
++                maxTurn = Math.max(maxTurn, Math.abs(turn));
++            }
++            /*
++             (JasperEditor patch) atan2 puts a direction pointing along -x at
++             either +pi or -pi depending on the sign of a vanishing y
++             component, so two edges leaving in that same direction (a curve
++             tangent to a horizontal line, for example) would compare as far
++             apart as possible instead of tying, and the curvature tie-break
++             never ran: the pair was ordered backwards and face tracing merged
++             the whole arrangement into one face. Fold every angle within the
++             tie tolerance of +pi down below -pi so both read as the same
++             direction; the cyclic order is unchanged.
++            */
++            for (const edge of vertex.outgoingEdges) {
++                const a = angleCache.get(edge);
++                if (a > Math.PI - maxTurn)
++                    angleCache.set(edge, a - TAU_ANGLE);
+             }
+             vertex.outgoingEdges.sort((a, b) => {
+                 const turnA = turnCache.get(a);
