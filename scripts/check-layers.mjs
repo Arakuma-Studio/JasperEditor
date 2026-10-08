@@ -216,6 +216,7 @@ export const LAYERS = {
 			'@jasper/expressions',
 			'@jasper/project',
 		],
+		testDeps: ['@jasper/testkit'],
 		forbid: ['react', 'uiLibs', 'tailwind', 'remotion', 'anime', 'electron', 'server'],
 	},
 	'apps/desktop': {

@@ -205,6 +205,7 @@ procedurally generated scenes; written by `JASPER_BLESS=1`.
 | `packages/compositions/test/goldens/scenes/lumetri.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/masks.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/nest.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/optical-flow.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/shapes.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/sim-warp.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/text-animator.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
@@ -214,6 +215,7 @@ procedurally generated scenes; written by `JASPER_BLESS=1`.
 | `packages/compositions/test/goldens/scenes/transform-opacity.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/transition-cross-dissolve.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/working-space-linear.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/working-space-pq.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 
 ## Generated test media (never committed)
 

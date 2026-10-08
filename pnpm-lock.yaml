@@ -208,6 +208,9 @@ importers:
         specifier: ^4.1.0
         version: 4.6.5
     devDependencies:
+      '@jasper/testkit':
+        specifier: workspace:*
+        version: link:../../packages/testkit
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12

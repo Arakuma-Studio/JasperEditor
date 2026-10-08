@@ -293,6 +293,39 @@ export const SCENES: Scene[] = [
 		],
 	},
 	{
+		name: 'working-space-pq',
+		covers:
+			'colour management: a Rec. 2100 PQ working space (HDR) with Opacity over the card, shown tone mapped',
+		frame: 10,
+		commands: (m) => [
+			cmd({ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq' } }),
+			...background(m),
+			tracks(1),
+			...tile(m, 'V2', '$t'),
+			set(['clip', '$t', 'transform', 'scale'], 50),
+			set(['clip', '$t', 'opacity'], 70),
+		],
+	},
+	{
+		name: 'optical-flow',
+		covers:
+			'Time Interpolation ▸ Optical Flow on the generated movie at 30 % speed (in-between frames synthesised)',
+		frame: 13,
+		commands: (m) => [
+			cmd({ type: 'media.register', ref: '$vm', asset: m.asset('video', m.video, GW, GH) }),
+			cmd({
+				type: 'clip.place',
+				source: { mediaId: '$vm' },
+				at: 0,
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 1 } },
+				tracks: { video: 'V1' },
+				ref: '$v',
+			}),
+			cmd({ type: 'clip.setSpeed', clipIds: ['$v'], rate: 0.3, ripple: false }),
+			cmd({ type: 'clip.setTimeInterpolation', clipIds: ['$v'], mode: 'optical-flow' }),
+		],
+	},
+	{
 		name: 'interpret-log',
 		covers:
 			'colour management: footage interpreted as S-Log3 / S-Gamut3.Cine into the Rec. 709 working space',
