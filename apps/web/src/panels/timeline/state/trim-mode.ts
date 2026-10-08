@@ -19,6 +19,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
+import { gapsPrefs } from '../../../gaps/app-prefs.ts';
 import type { TimelineHandle } from '../env.tsx';
 import type { EditPointSel, TimelineUiStore } from './ui-store.ts';
 
@@ -27,6 +28,10 @@ export const LARGE_TRIM_OFFSET = 5;
 /** Preferences ▸ Playback ▸ Preroll / Postroll (Premiere defaults 2 s / 2 s) for Play Around the Edit. */
 export const TRIM_PREROLL_SECONDS = 2;
 export const TRIM_POSTROLL_SECONDS = 2;
+/** gaps (Preferences ▸ Trim / Playback): the current values (the constants above are the defaults). */
+export const largeTrimOffset = (): number => gapsPrefs.get().trim.largeTrimOffset;
+export const prerollSeconds = (): number => gapsPrefs.get().playback.prerollSeconds;
+export const postrollSeconds = (): number => gapsPrefs.get().playback.postrollSeconds;
 const MAX_DYNAMIC_SPEED = 8;
 const SLOW_DYNAMIC_SPEED = 0.25;
 
@@ -450,8 +455,8 @@ export function playAroundEdit(
 	if (!seq || edit === null) return null;
 	let end = 0;
 	for (const c of Object.values(seq.clips)) end = Math.max(end, c.start + c.duration);
-	const from = Math.max(0, edit - Math.round(TRIM_PREROLL_SECONDS * fps));
-	const to = Math.max(from + 1, Math.min(end, edit + Math.round(TRIM_POSTROLL_SECONDS * fps)));
+	const from = Math.max(0, edit - Math.round(prerollSeconds() * fps));
+	const to = Math.max(from + 1, Math.min(end, edit + Math.round(postrollSeconds() * fps)));
 	const t = session.transport;
 	let restarting = false;
 	const off = t.subscribe((s, prev) => {

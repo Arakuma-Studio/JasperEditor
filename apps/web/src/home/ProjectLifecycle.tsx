@@ -32,6 +32,7 @@ import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
 import { ProjectDialogHost } from '../panels/project/dialogs.tsx';
 import { activeProjectBin } from '../panels/project/instances.ts';
+import { autoSavePolicy } from '../runtime/save.ts';
 import { useEngine } from '../state/engine.tsx';
 import { registerImportService } from '../state/services.ts';
 import { NoticeHost, notices } from './notices.tsx';
@@ -100,6 +101,8 @@ function LifecycleBody(props: {
 	useEffect(() => {
 		if (!session.projectStore) return;
 		const c = attachPersistence(session, {
+			// gaps: Preferences ▸ Auto Save.
+			policy: autoSavePolicy,
 			onError: (e) =>
 				notices.push({
 					kind: 'error',

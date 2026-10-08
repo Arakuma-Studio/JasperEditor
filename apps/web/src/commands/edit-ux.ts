@@ -26,12 +26,12 @@ import {
 	dynamicShuttle,
 	editPointsOf,
 	enterTrimMode,
-	LARGE_TRIM_OFFSET,
+	largeTrimOffset,
 	playAroundEdit,
+	postrollSeconds,
+	prerollSeconds,
 	selectNearest,
 	stopPlayAround,
-	TRIM_POSTROLL_SECONDS,
-	TRIM_PREROLL_SECONDS,
 	trimMode,
 	trimSelected,
 } from '../panels/timeline/state/trim-mode.ts';
@@ -282,11 +282,11 @@ export const editUxCommands: UiCommand[] = [
 		repeat: true,
 		when: hasEditPoints,
 	}),
-	cmd('timeline.trimBackMany', 'Trim Backward Many', T, (ctx, e) => trimBy(ctx, e, -LARGE_TRIM_OFFSET), {
+	cmd('timeline.trimBackMany', 'Trim Backward Many', T, (ctx, e) => trimBy(ctx, e, -largeTrimOffset()), {
 		repeat: true,
 		when: hasEditPoints,
 	}),
-	cmd('timeline.trimForwardMany', 'Trim Forward Many', T, (ctx, e) => trimBy(ctx, e, LARGE_TRIM_OFFSET), {
+	cmd('timeline.trimForwardMany', 'Trim Forward Many', T, (ctx, e) => trimBy(ctx, e, largeTrimOffset()), {
 		repeat: true,
 		when: hasEditPoints,
 	}),
@@ -546,8 +546,8 @@ export const editUxCommands: UiCommand[] = [
 	cmd('transport.playInToOutPreroll', 'Play In to Out with Preroll/Postroll', E, (_ctx, e) => {
 		const fps = fpsOf(e.seq);
 		const end = Object.values(e.seq.clips).reduce((m, c) => Math.max(m, c.start + c.duration), 0);
-		const a = Math.max(0, (e.seq.inPoint ?? 0) - Math.round(TRIM_PREROLL_SECONDS * fps));
-		const b = Math.min(end + 1, (e.seq.outPoint ?? end) + Math.round(TRIM_POSTROLL_SECONDS * fps));
+		const a = Math.max(0, (e.seq.inPoint ?? 0) - Math.round(prerollSeconds() * fps));
+		const b = Math.min(end + 1, (e.seq.outPoint ?? end) + Math.round(postrollSeconds() * fps));
 		if (b > a) playRange(e, a, b);
 	}),
 	...(

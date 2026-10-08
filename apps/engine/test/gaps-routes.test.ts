@@ -63,3 +63,50 @@ describe('Edit Original routes', () => {
 		expect(bad.statusCode).toBe(400);
 	});
 });
+
+describe('Preferences ▸ Auto Save / Memory (engine side)', () => {
+	it('reads, validates, persists and applies the version policy and render optimisation', async () => {
+		const { renderParallelism } = await import('../src/gaps/render-budget.ts');
+		const app = await makeApp();
+		const get = await app.inject({ method: 'GET', url: '/api/settings/gaps', headers: H });
+		expect(get.statusCode).toBe(200);
+		expect(get.json()).toMatchObject({
+			versionIntervalMinutes: 5,
+			keepVersions: 20,
+			optimizeFor: 'performance',
+		});
+		expect(get.json().memory.totalBytes).toBeGreaterThan(0);
+		const put = await app.inject({
+			method: 'PUT',
+			url: '/api/settings/gaps',
+			headers: JSON_H,
+			payload: { versionIntervalMinutes: 15, keepVersions: 3, optimizeFor: 'memory' },
+		});
+		expect(put.statusCode, put.body).toBe(200);
+		const { coreServices } = await import('../src/tools/services.ts');
+		expect(coreServices(app).projects.versionPolicy()).toEqual({
+			versionIntervalMs: 15 * 60_000,
+			keepVersions: 3,
+		});
+		expect(renderParallelism(16)).toBe(4);
+		const bad = await app.inject({
+			method: 'PUT',
+			url: '/api/settings/gaps',
+			headers: JSON_H,
+			payload: { keepVersions: 0 },
+		});
+		expect(bad.statusCode).toBe(400);
+		// A new engine on the same appdir reads the saved settings.
+		const again = await makeApp({ appdir: app.appdir });
+		const g2 = await again.inject({ method: 'GET', url: '/api/settings/gaps', headers: H });
+		expect(g2.json()).toMatchObject({ versionIntervalMinutes: 15, keepVersions: 3, optimizeFor: 'memory' });
+		const reset = await again.inject({
+			method: 'PUT',
+			url: '/api/settings/gaps',
+			headers: JSON_H,
+			payload: { optimizeFor: 'performance' },
+		});
+		expect(reset.statusCode).toBe(200);
+		expect(renderParallelism(16)).toBe(8);
+	});
+});

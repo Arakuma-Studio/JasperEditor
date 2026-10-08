@@ -107,3 +107,28 @@ export const MediaJobResultSchema = z.object({
 	skipped: z.array(z.object({ mediaId: z.string(), reason: z.string() })),
 });
 export type MediaJobResult = z.infer<typeof MediaJobResultSchema>;
+
+// ---------------------------------------------------------------- Preferences ▸ Auto Save / Memory (UI-4)
+
+/**
+ * Engine-wide preferences of workstream gaps: saved versions (Premiere's "Automatically save every N minutes" and
+ * "Maximum Project Versions" — a version of the project file is kept at most every `versionIntervalMinutes`, the
+ * newest `keepVersions` are kept) and Memory ▸ "Optimize rendering for" (`memory` halves the parallel render pages
+ * and browser tabs of exports, previews and pre-renders).
+ */
+export const EngineGapsSettingsSchema = z.object({
+	versionIntervalMinutes: z.number().min(1).max(240),
+	keepVersions: z.number().int().min(1).max(500),
+	optimizeFor: z.enum(['performance', 'memory']),
+});
+export type EngineGapsSettings = z.infer<typeof EngineGapsSettingsSchema>;
+
+/** `GET /api/settings/gaps` also reports the host memory (Preferences ▸ Memory). */
+export const EngineGapsInfoSchema = EngineGapsSettingsSchema.extend({
+	memory: z.object({
+		totalBytes: z.number(),
+		freeBytes: z.number(),
+		engineRssBytes: z.number(),
+		cpuCount: z.number(),
+	}),
+});

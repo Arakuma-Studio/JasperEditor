@@ -124,7 +124,7 @@ export const projectHandlers: HandlerMap = {
 	'bin.create': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.parentBinId, h);
 		const id = h.newId(doc, 'bin', cmd.id);
-		doc.items[id] = { id, kind: 'bin', name: cmd.name, children: [], label: 'mango' };
+		doc.items[id] = { id, kind: 'bin', name: cmd.name, children: [], label: cmd.label ?? 'mango' };
 		insertItem(doc, id, cmd.parentBinId, cmd.index);
 		h.defineRef(cmd.ref, id);
 		return { itemId: id };

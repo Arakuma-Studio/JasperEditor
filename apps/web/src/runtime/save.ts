@@ -3,6 +3,13 @@
 // reuses it; only when nothing attached one yet (e.g. the shell mounted without ProjectLifecycle) does
 // ensureAutosaver attach it through the same registry, so two savers never race on If-Match.
 import { type Autosaver, attachPersistence, type EditorSession, persistenceFor } from '@jasper/session';
+import { gapsPrefs } from '../gaps/app-prefs.ts';
+
+/** gaps (Preferences ▸ Auto Save): the autosave policy every saver of this window follows. */
+export function autoSavePolicy(): { enabled: boolean; maxIntervalMs: number } {
+	const a = gapsPrefs.get().autoSave;
+	return { enabled: a.enabled, maxIntervalMs: a.maxIntervalSeconds * 1000 };
+}
 
 /** The session's autosaver (shared); null when the session has no store or is read-only. */
 export function ensureAutosaver(session: EditorSession): Autosaver | null {
@@ -10,6 +17,7 @@ export function ensureAutosaver(session: EditorSession): Autosaver | null {
 	if (existing) return existing.autosaver;
 	if (!session.projectStore || session.getState().readOnly) return null;
 	const controller = attachPersistence(session, {
+		policy: autoSavePolicy,
 		onError: (e) => console.warn('[autosave] save failed', e),
 	});
 	const off = session.on('closed', () => {
@@ -49,6 +57,13 @@ export function setSkipUnloadFlush(on: boolean): void {
 /** Flushes every live saver (pagehide/beforeunload). */
 export function flushAutosaver(session: EditorSession | null | undefined): void {
 	if (skipUnloadFlush) return;
+	// gaps (Preferences ▸ Auto Save off): journal the unsaved edits, do not save.
+	if (session && !gapsPrefs.get().autoSave.enabled) {
+		void persistenceFor(session)
+			?.journal?.flush()
+			.catch(() => undefined);
+		return;
+	}
 	if (session)
 		void persistenceFor(session)
 			?.flush()

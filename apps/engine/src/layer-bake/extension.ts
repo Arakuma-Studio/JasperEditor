@@ -11,6 +11,7 @@ import { availableParallelism } from 'node:os';
 import type { RenderSnapshot, RenderTransition, RenderVisualClip } from '@jasper/project';
 import type { LayerOverride, NativeExtension, NativePrepareContext } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
+import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { MAX_RENDERS_IN_FLIGHT, type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
 import {
@@ -125,7 +126,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			const env = await svc.environment();
 			const single = planned.range.end - planned.range.start === 1 ? planned.range.start : null;
 			// The export's Remotion page budget (S11:LBK-022): its Remotion concurrency, shared by the bakes in flight.
-			const budget = Math.max(1, ctx.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2)));
+			const budget = Math.max(1, ctx.concurrency ?? renderParallelism());
 			const par = svc.parallelism;
 			const maxInFlight = Math.max(1, par.maxInFlight ?? Math.min(budget, MAX_RENDERS_IN_FLIGHT));
 			// Plans first (keys, documents, grades: cheap, in clip order), then the renders side by side.

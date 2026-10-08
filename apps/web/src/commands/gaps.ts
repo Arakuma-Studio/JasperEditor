@@ -10,12 +10,14 @@ import {
 	registerAudioChannelsDialog,
 	routingOf,
 } from '../gaps/AudioChannelsDialog.tsx';
+import { labelDefault } from '../gaps/app-prefs.ts';
 import {
 	EXPORT_FRAME_DIALOG,
 	type FrameSource,
 	registerExportFrameDialog,
 } from '../gaps/ExportFrameDialog.tsx';
 import { FIND_DIALOG, type FindScope, registerFindDialog } from '../gaps/FindDialog.tsx';
+import { registerGapsPreferencePages } from '../gaps/PreferencePages.tsx';
 import { PROJECT_SETTINGS_DIALOG, registerProjectSettingsDialog } from '../gaps/ProjectSettingsDialog.tsx';
 import {
 	ATTACH_PROXIES_DIALOG,
@@ -41,6 +43,8 @@ import { saveNow, setSkipUnloadFlush } from '../runtime/save.ts';
 import { runCommand } from './registry.ts';
 import { apply, envOf, seekReveal, selectedClips } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
+
+registerGapsPreferencePages();
 
 // gaps: Project panel item context menu — New Sequence From Clip and the Proxy submenu (Premiere's).
 projectItemMenuExtensions.register({

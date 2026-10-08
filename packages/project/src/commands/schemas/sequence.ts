@@ -55,6 +55,8 @@ const SettingsPatch = z.strictObject({
 
 export const SequenceCreateCmd = cmd('sequence.create', {
 	name: z.string().min(1),
+	/** gaps (Preferences ▸ Labels ▸ Label Defaults): the sequence item's label (default forest). */
+	label: LabelColorSchema.optional(),
 	preset: z.string().optional(),
 	settings: SettingsPatch.optional(),
 	fromMediaId: IdRefSchema.optional(),

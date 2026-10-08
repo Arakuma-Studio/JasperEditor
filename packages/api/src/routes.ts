@@ -46,6 +46,8 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import {
+	EngineGapsInfoSchema,
+	EngineGapsSettingsSchema,
 	MediaJobRequestSchema,
 	MediaLocationSchema,
 	MediaOpenRequestSchema,
@@ -1092,6 +1094,20 @@ export const ROUTES = {
 		path: '/api/scratch/check',
 		body: ScratchCheckRequestSchema,
 		response: ScratchCheckSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Preferences ▸ Auto Save / Memory (UI-4)
+	gapsSettingsGet: {
+		method: 'GET',
+		path: '/api/settings/gaps',
+		response: EngineGapsInfoSchema,
+		owner: 'gaps',
+	},
+	gapsSettingsPut: {
+		method: 'PUT',
+		path: '/api/settings/gaps',
+		body: EngineGapsSettingsSchema.partial(),
+		response: EngineGapsInfoSchema,
 		owner: 'gaps',
 	},
 	// ---- gaps: Create Proxies, ingest copies / transcodes (PRJ-8)

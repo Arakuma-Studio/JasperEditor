@@ -16,6 +16,7 @@ import {
 } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
+import { labelName } from '../../gaps/app-prefs.ts';
 import { runIfRegistered, useLocalCommandCtx } from '../../home/ui-bridge.ts';
 import { mediaKeyOf } from '../../import/assets.ts';
 import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
@@ -1102,7 +1103,7 @@ function ContextMenu(props: {
 						<MenuEntry key={l} onClick={() => setLabel(props.session, props.itemIds, l)}>
 							<span className="flex items-center gap-2">
 								<span className="block size-3 rounded-[2px]" style={{ background: labelVar(l) }} />
-								{LABEL_DISPLAY_NAMES[l]}
+								{labelName(l)}
 							</span>
 						</MenuEntry>
 					))

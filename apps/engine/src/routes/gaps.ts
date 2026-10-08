@@ -7,10 +7,12 @@
 //   POST /api/media-jobs                 Create Proxies / ingest copies and transcodes (job `proxy-create`)
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
-import { access, mkdir, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { access, mkdir, readFile, stat } from 'node:fs/promises';
+import { availableParallelism, freemem, homedir, totalmem } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import {
+	type EngineGapsSettings,
+	EngineGapsSettingsSchema,
 	MediaJobRequestSchema,
 	MediaOpenRequestSchema,
 	ScratchCheckRequestSchema,
@@ -20,8 +22,9 @@ import type { FastifyInstance } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
 import { MediaJobService } from '../gaps/media-jobs.ts';
 import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
+import { renderOptimization, setRenderOptimization } from '../gaps/render-budget.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
-import { freeDiskBytes } from '../tools/fs.ts';
+import { atomicWriteJson, freeDiskBytes } from '../tools/fs.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
@@ -108,6 +111,58 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 			}
 		return { path: path ?? null, exists };
 	};
+
+	// ---- Preferences ▸ Auto Save / Memory (UI-4): engine-wide, persisted in <appdir>/engine/gaps-settings.json
+	const settingsFile = join(core.config.paths.engineDir, 'gaps-settings.json');
+	const readSettings = async (): Promise<EngineGapsSettings> => {
+		const p = core.projects.versionPolicy();
+		const base: EngineGapsSettings = {
+			versionIntervalMinutes: p.versionIntervalMs / 60_000,
+			keepVersions: p.keepVersions,
+			optimizeFor: renderOptimization(),
+		};
+		try {
+			const raw = JSON.parse(await readFile(settingsFile, 'utf8')) as unknown;
+			const r = EngineGapsSettingsSchema.partial().safeParse(raw);
+			return r.success ? { ...base, ...r.data } : base;
+		} catch {
+			return base;
+		}
+	};
+	const apply = (st: EngineGapsSettings) => {
+		core.projects.setVersionPolicy({
+			versionIntervalMs: st.versionIntervalMinutes * 60_000,
+			keepVersions: st.keepVersions,
+		});
+		setRenderOptimization(st.optimizeFor);
+	};
+	apply(await readSettings());
+	const info = async () => {
+		const st = await readSettings();
+		return {
+			...st,
+			memory: {
+				totalBytes: totalmem(),
+				freeBytes: freemem(),
+				engineRssBytes: process.memoryUsage().rss,
+				cpuCount: availableParallelism(),
+			},
+		};
+	};
+	app.get(
+		'/api/settings/gaps',
+		guarded(async () => info()),
+	);
+	app.put(
+		'/api/settings/gaps',
+		guarded(async (req) => {
+			const patch = parseOr400(EngineGapsSettingsSchema.partial(), req.body ?? {});
+			const next = { ...(await readSettings()), ...patch };
+			await atomicWriteJson(settingsFile, next);
+			apply(next);
+			return info();
+		}),
+	);
 
 	// ---- Create Proxies / ingest (PRJ-8)
 	const mediaJobs = new MediaJobService(core);

@@ -21,6 +21,8 @@ export const ProjectUpdateSettingsCmd = cmd('project.updateSettings', {
 
 export const BinCreateCmd = cmd('bin.create', {
 	name: z.string().min(1),
+	/** gaps (Preferences ▸ Labels ▸ Label Defaults): the bin's label (default mango). */
+	label: LabelColorSchema.optional(),
 	parentBinId: IdRefSchema.nullable().optional(),
 	index: z.number().int().min(0).optional(),
 	ref: RefDeclSchema.optional(),

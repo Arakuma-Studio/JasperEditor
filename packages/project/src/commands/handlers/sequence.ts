@@ -254,7 +254,13 @@ export const sequenceHandlers: HandlerMap = {
 		if (cmd.settings) applyColorSettings(seq as DSeq, cmd.settings, h);
 		doc.sequences[id] = seq;
 		const itemId = h.ids.next('itm');
-		doc.items[itemId] = { id: itemId, kind: 'sequence', name: cmd.name, sequenceId: id, label: 'forest' };
+		doc.items[itemId] = {
+			id: itemId,
+			kind: 'sequence',
+			name: cmd.name,
+			sequenceId: id,
+			label: cmd.label ?? 'forest',
+		};
 		insertItem(doc, itemId, cmd.binId);
 		h.defineRef(cmd.ref, id);
 		let clipIds: string[] = [];
