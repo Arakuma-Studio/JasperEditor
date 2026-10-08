@@ -46,6 +46,46 @@ const TAB_SESSIONS = new Set<string>();
 const LOCAL_RELEASE_RETRIES = 20;
 const LOCAL_RELEASE_WAIT_MS = 150;
 
+/**
+ * Session ids that held leases in this browser tab before a reload (`sessionStorage` survives a reload of the tab and
+ * is never shared with other tabs). On reload the old page releases its leases with a keepalive DELETE while the new
+ * page already asks for the lease; when the new request wins that race, the holder is one of these and its release is
+ * in flight, so acquireLease waits for it instead of opening the user's own project read-only (verify workstream:
+ * e2e/effect-presets reloads and found the editor read-only). A duplicated tab copies `sessionStorage`, but there the
+ * original tab keeps heartbeating its lease, so the bounded wait ends read-only as before.
+ */
+const PRIOR_TAB_SESSIONS_KEY = 'jasper:tab-lease-sessions';
+const PRIOR_TAB_SESSIONS_MAX = 16;
+
+function tabStorage(): Storage | null {
+	try {
+		return (globalThis as { sessionStorage?: Storage }).sessionStorage ?? null;
+	} catch {
+		return null; // sandboxed / storage disabled
+	}
+}
+
+function priorTabSessions(): string[] {
+	try {
+		const v = JSON.parse(tabStorage()?.getItem(PRIOR_TAB_SESSIONS_KEY) ?? '[]') as unknown;
+		return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+function rememberTabSession(sessionId: string, keep: boolean): void {
+	const st = tabStorage();
+	if (!st) return;
+	try {
+		const ids = priorTabSessions().filter((x) => x !== sessionId);
+		if (keep) ids.push(sessionId);
+		st.setItem(PRIOR_TAB_SESSIONS_KEY, JSON.stringify(ids.slice(-PRIOR_TAB_SESSIONS_MAX)));
+	} catch {
+		// quota / storage disabled: the race just ends read-only as before
+	}
+}
+
 const isCode = (e: unknown, ...codes: string[]): e is EngineError =>
 	e instanceof EngineError && codes.includes(e.code);
 
@@ -279,9 +319,10 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 				if (!isCode(e, 'LEASE_HELD')) throw e;
 				const d = (e.detail ?? {}) as { holderSessionId?: string; expiresAt?: string };
 				const holder = d.holderSessionId ?? 'unknown';
-				// A session of this same page is closing (route change, React StrictMode double mount):
-				// its release is in flight, so wait for it instead of opening read-only.
-				if (!opts.takeOver && TAB_SESSIONS.has(holder) && attempt < LOCAL_RELEASE_RETRIES) {
+				// A session of this same page is closing (route change, React StrictMode double mount), or of this
+				// tab before a reload: its release is in flight, so wait for it instead of opening read-only.
+				const ours = TAB_SESSIONS.has(holder) || priorTabSessions().includes(holder);
+				if (!opts.takeOver && ours && attempt < LOCAL_RELEASE_RETRIES) {
 					await new Promise((resolve) => setTimeout(resolve, LOCAL_RELEASE_WAIT_MS));
 					continue;
 				}
@@ -289,6 +330,7 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 			}
 		}
 		TAB_SESSIONS.add(sessionId);
+		rememberTabSession(sessionId, true);
 		const aliases = new Set(
 			held && held.sessionId === sessionId ? [...held.aliases, held.lease.leaseId] : [],
 		);
@@ -369,7 +411,11 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		} catch (e) {
 			if (!isCode(e, 'LEASE_NOT_FOUND', 'NOT_FOUND', 'NETWORK')) throw e;
 		} finally {
-			if (rec) TAB_SESSIONS.delete(rec.sessionId);
+			if (rec) {
+				TAB_SESSIONS.delete(rec.sessionId);
+				// Released and confirmed: no longer a holder to wait for after a reload.
+				rememberTabSession(rec.sessionId, false);
+			}
 		}
 	}
 }
