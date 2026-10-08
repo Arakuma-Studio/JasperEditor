@@ -4,7 +4,13 @@
 // index and visible clips, through edits, out-of-sync offsets, transitions, duration).
 // Run: pnpm exec tsx apps/web/bench/timeline-gesture.ts [clips=1000] [moves=60]
 import { performance } from 'node:perf_hooks';
-import { clipsInRange, outOfSyncOffsets, type Sequence, sequenceDuration, throughEdits } from '@jasper/project';
+import {
+	clipsInRange,
+	outOfSyncOffsets,
+	type Sequence,
+	sequenceDuration,
+	throughEdits,
+} from '@jasper/project';
 import { transitionIndex } from '../src/panels/timeline/model/transitions.ts';
 import { setupTimeline, solid } from '../test/timeline-helpers.ts';
 

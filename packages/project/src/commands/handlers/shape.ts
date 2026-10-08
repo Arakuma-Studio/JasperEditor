@@ -181,7 +181,6 @@ export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): H
 				if (b) before.set(cid, b);
 			}
 			const result = handler(doc, cmd, h);
-			const after = peek<Record<string, Sequence>>(doc, 'sequences')!;
 			for (const [cid, [sid, was]] of before) {
 				const now = shapeBoxOf(doc, cid, h);
 				if (now && now[0] === sid && (now[1].width !== was.width || now[1].height !== was.height))
