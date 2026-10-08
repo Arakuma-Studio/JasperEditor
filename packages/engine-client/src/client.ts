@@ -8,13 +8,16 @@ import {
 	API_VERSION,
 	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
+	type AutoToneRequest,
 	buildPath,
 	type CaptionFileReadRequest,
+	type ColorMatchRequest,
 	type DerivativeKind,
 	type EngineJob,
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type GradingScopesRequest,
 	type ImageSequenceRequest,
 	type InterchangeExportRequest,
 	type InterchangeImportRequest,
@@ -428,6 +431,18 @@ export class EngineClient {
 	/** Delete Render Files (`{all: true}`) / Delete Render Files In to Out (`{hashes}`). */
 	deletePreviews(req: PreviewDeleteRequest): Promise<PreviewDeleteResult> {
 		return this.call('previewDelete', { body: req });
+	}
+	/** color-grade: Lumetri Scopes of a rendered frame as numbers. */
+	gradingScopes(req: GradingScopesRequest, signal?: AbortSignal) {
+		return this.call('gradingScopes', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** color-grade: Colour Match of a clip to a reference frame (Lumetri params to apply). */
+	gradingMatch(req: ColorMatchRequest, signal?: AbortSignal) {
+		return this.call('gradingMatch', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** color-grade: Basic Correction ▸ Auto of a clip (Lumetri params to apply). */
+	gradingAutoTone(req: AutoToneRequest, signal?: AbortSignal) {
+		return this.call('gradingAutoTone', { body: req, ...(signal ? { signal } : {}) });
 	}
 	listFonts() {
 		return this.call('fontsList');

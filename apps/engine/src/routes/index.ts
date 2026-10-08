@@ -13,6 +13,7 @@ import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
+import gradingRoutes from './grading.ts';
 import importsRoutes from './imports.ts';
 import interchangeRoutes from './interchange.ts';
 import jobsRoutes from './jobs.ts';
@@ -81,6 +82,8 @@ const ROUTE_PLUGINS = [
 	camtrackRoutes,
 	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
 	interchangeRoutes,
+	// color-grade: scopes as numbers, Colour Match, Auto tone (after roto: Face Detection uses its face model).
+	gradingRoutes,
 	// previews: render previews (segments rendered through the export service) and perf stats.
 	previewsRoutes,
 ] as const;

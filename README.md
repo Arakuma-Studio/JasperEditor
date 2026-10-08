@@ -407,7 +407,7 @@ Tools (295; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
   `add_transition` · `get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
   `render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
-- Colour: `import_lut` `grade_clip` `get_grade` `copy_grade`.
+- Colour: `import_lut` `grade_clip` `get_grade` `copy_grade`; grading analysis: `scopes_read` (scopes as numbers) `color_match` (Apply Match into Lumetri) `auto_tone` `list_looks`.
 - Colour management, HDR, OCIO: `list_color_spaces` `get_color_settings` `set_working_color_space`
   `interpret_footage_color` `set_clip_color_space` `import_ocio_config`.
 - Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`

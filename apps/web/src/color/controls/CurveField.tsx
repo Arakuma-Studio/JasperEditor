@@ -2,7 +2,7 @@
 // its neighbours), dragging out of the box or double-clicking removes it; at most 64 points. Every pointer
 // gesture is one undo step and writes a sorted `{curve}` value. The spline drawn is the model's PCHIP
 // (`sampleCurve`), so the line is exactly what the grade applies.
-import { MAX_CURVE_POINTS, sampleCurve } from '@jasper/project';
+import { MAX_CURVE_POINTS, sampleCurve, sampleHueCurve } from '@jasper/project';
 import { type MouseEvent, type PointerEvent, useEffect, useRef, useState } from 'react';
 import type { Row } from '../../panels/properties/lib/model.ts';
 import {
@@ -12,6 +12,7 @@ import {
 	curveValue,
 	hitCurvePoint,
 	moveCurvePoint,
+	NEUTRAL_POINTS,
 	removeCurvePoint,
 } from '../model.ts';
 import { type RowWriteContext, useRowWriter } from '../rowEdit.ts';
@@ -33,8 +34,14 @@ const STROKE: Record<CurveChannel, string> = {
 	blue: 'var(--pr-curve-blue)',
 };
 
-const pathOf = (pts: readonly (readonly number[])[], n = 97) => {
-	const ys = sampleCurve(pts, n);
+/**
+ * color-grade: `tone` = an RGB tone curve (diagonal identity); `hue` = a periodic hue/saturation curve (x = hue
+ * from red, y 0.5 neutral); `offset` = Luma vs Sat / Sat vs Sat (non-periodic, y 0.5 neutral).
+ */
+export type CurveKind = 'tone' | 'hue' | 'offset';
+
+const pathOf = (pts: readonly (readonly number[])[], n = 97, kind: CurveKind = 'tone') => {
+	const ys = kind === 'tone' ? sampleCurve(pts, n) : sampleHueCurve(pts, kind === 'hue', n);
 	return ys
 		.map((y, i) => {
 			const x = (i / (n - 1)) * CURVE_BOX;
@@ -50,6 +57,10 @@ export function CurveField(props: {
 	row: Row;
 	ctx: RowWriteContext;
 	channel?: CurveChannel;
+	/** color-grade: curve family (default `tone`). */
+	kind?: CurveKind;
+	/** color-grade: CSS background of the box (hue / luma / saturation gradient), drawn under the grid. */
+	background?: string;
 	/** Other curves drawn faintly behind the edited one. */
 	ghosts?: { channel: CurveChannel; value: unknown }[];
 	disabled?: boolean;
@@ -57,9 +68,10 @@ export function CurveField(props: {
 }) {
 	const { row } = props;
 	const channel = props.channel ?? 'master';
+	const kind = props.kind ?? 'tone';
 	const writer = useRowWriter(row, props.ctx);
 	const value = row.bindings[0]?.resolved.value;
-	const stored = curvePoints(value);
+	const stored = curvePoints(value, kind === 'tone' ? undefined : NEUTRAL_POINTS);
 	const [preview, setPreview] = useState<CurvePoint[] | null>(null);
 	const [active, setActive] = useState<number | null>(null);
 	const drag = useRef<Drag | null>(null);
@@ -160,7 +172,7 @@ export function CurveField(props: {
 			<svg
 				viewBox={`${-MARGIN} ${-MARGIN} ${CURVE_BOX + 2 * MARGIN} ${CURVE_BOX + 2 * MARGIN}`}
 				className="aspect-square w-full max-w-[240px] cursor-crosshair rounded-pr-control"
-				style={{ background: 'var(--pr-curve-bg)', touchAction: 'none' }}
+				style={{ background: props.background ?? 'var(--pr-curve-bg)', touchAction: 'none' }}
 				overflow="visible"
 				role="img"
 				aria-label={`${row.label} editor (${pts.length} points)`}
@@ -176,11 +188,14 @@ export function CurveField(props: {
 						<line x1={0} y1={g} x2={CURVE_BOX} y2={g} />
 					</g>
 				))}
+				{props.background ? (
+					<rect x={0} y={0} width={CURVE_BOX} height={CURVE_BOX} fill="var(--pr-curve-hue-fade)" />
+				) : null}
 				<line
 					x1={0}
-					y1={CURVE_BOX}
+					y1={kind === 'tone' ? CURVE_BOX : CURVE_BOX / 2}
 					x2={CURVE_BOX}
-					y2={0}
+					y2={kind === 'tone' ? 0 : CURVE_BOX / 2}
 					stroke="var(--pr-curve-grid)"
 					strokeWidth={1}
 					strokeDasharray="3 3"
@@ -188,14 +203,14 @@ export function CurveField(props: {
 				{(props.ghosts ?? []).map((gh) => (
 					<path
 						key={gh.channel}
-						d={pathOf(curvePoints(gh.value))}
+						d={pathOf(curvePoints(gh.value, kind === 'tone' ? undefined : NEUTRAL_POINTS), 97, kind)}
 						fill="none"
 						stroke={STROKE[gh.channel]}
 						strokeOpacity={0.35}
 						strokeWidth={1}
 					/>
 				))}
-				<path d={pathOf(pts)} fill="none" stroke={STROKE[channel]} strokeWidth={1.5} />
+				<path d={pathOf(pts, 97, kind)} fill="none" stroke={STROKE[channel]} strokeWidth={1.5} />
 				{pts.map(([x, y], i) => (
 					<circle
 						// biome-ignore lint/suspicious/noArrayIndexKey: points are ordered by x; the index is their identity

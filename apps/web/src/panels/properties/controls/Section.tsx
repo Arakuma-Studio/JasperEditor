@@ -49,6 +49,8 @@ export function Section(props: {
 	id: string;
 	title: ReactNode;
 	actions?: ReactNode;
+	/** color-grade: a control before the caret (Lumetri's section on/off checkbox). */
+	lead?: ReactNode;
 	children?: ReactNode;
 	defaultOpen?: boolean;
 	/** Effect Controls style: 22 px bold group header. */
@@ -91,6 +93,7 @@ export function Section(props: {
 					props.variant === 'group' ? 'h-[var(--pr-row-h)] font-semibold' : 'h-[28px]',
 				)}
 			>
+				{props.lead ? <span className="flex items-center pl-1">{props.lead}</span> : null}
 				<button
 					type="button"
 					aria-expanded={open}

@@ -117,16 +117,25 @@ const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const round4 = (x: number) => Math.round(x * 10000) / 10000;
 
 /** Points of a curve param value (`{curve}`), sorted; the identity for anything unusable. */
-export function curvePoints(value: unknown): CurvePoint[] {
+export function curvePoints(value: unknown, fallback: readonly CurvePoint[] = IDENTITY): CurvePoint[] {
 	const raw = (value as { curve?: unknown } | null)?.curve;
-	if (!Array.isArray(raw)) return IDENTITY.map((p) => [...p] as CurvePoint);
+	if (!Array.isArray(raw)) return fallback.map((p) => [...p] as CurvePoint);
 	const pts = raw
 		.filter((p): p is number[] => Array.isArray(p) && p.length >= 2)
 		.map((p) => [clamp01(Number(p[0])), clamp01(Number(p[1]))] as CurvePoint)
 		.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]))
 		.sort((a, b) => a[0] - b[0]);
-	return pts.length >= 2 ? pts : IDENTITY.map((p) => [...p] as CurvePoint);
+	return pts.length >= 2 ? pts : fallback.map((p) => [...p] as CurvePoint);
 }
+
+/** color-grade: the neutral (flat) hue/saturation curve. */
+export const NEUTRAL_POINTS: readonly CurvePoint[] = [
+	[0, 0.5],
+	[1, 0.5],
+];
+
+/** True when every point of a hue/saturation curve sits at the neutral 0.5. */
+export const isNeutralPoints = (pts: readonly CurvePoint[]) => pts.every((p) => Math.abs(p[1] - 0.5) < 1e-9);
 
 export const curveValue = (pts: readonly CurvePoint[]) => ({
 	curve: pts.map(([x, y]) => [round4(x), round4(y)]),
