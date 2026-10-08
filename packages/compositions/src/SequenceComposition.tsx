@@ -1154,6 +1154,11 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 		[doc, options.isPreview, options.previews],
 	);
 	const live = previewed.doc;
+	// compositor: the display transform cannot capture a stack that draws through HTML-in-Canvas (DisplayStage).
+	const displayFlat = useMemo(
+		() => options.isPreview && !!doc.settings.color && docUsesCanvas(live, cssExactAdjustment),
+		[options.isPreview, doc.settings.color, live],
+	);
 	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
 	const color = useMemo<ColorDocValue>(
 		() => ({
@@ -1177,6 +1182,7 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 									enabled={options.isPreview && options.displayColor !== false}
 									width={doc.settings.width}
 									height={doc.settings.height}
+									flat={displayFlat}
 								>
 									<VideoTracks doc={live} options={options} offset={offset} />
 									{/* previews: rendered segments (the export's picture of the working signal) */}

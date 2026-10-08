@@ -1,6 +1,8 @@
 // three-d test helper: the CPU reference picture of a snapshot frame whose layers are solids (pictures known without
 // a browser): the background, 2D solids (their Motion), and every 3D run drawn by `compositeClassicCPU` — what the
 // composition's GPU renderer must match.
+// compositor: adjustment layers whose effects are pointwise (`opts.adjust`: the effect on straight RGBA) apply to the
+// whole picture below them, so stacks mixing 3D runs, blend modes and adjustment layers have a reference too.
 import {
 	activeCameraAt,
 	applyMat3,
@@ -25,7 +27,11 @@ import {
 	stackAt,
 } from '@jasper/project';
 
-export function referenceFrame(snap: RenderSnapshot, frame: number): Uint8ClampedArray {
+export function referenceFrame(
+	snap: RenderSnapshot,
+	frame: number,
+	opts: { adjust?: (straight: Rgba) => Rgba } = {},
+): Uint8ClampedArray {
 	const W = snap.settings.width;
 	const H = snap.settings.height;
 	const canvas = newFloatImage(W, H);
@@ -47,6 +53,16 @@ export function referenceFrame(snap: RenderSnapshot, frame: number): Uint8Clampe
 	for (let k = 0; k < stack.length; k++) {
 		const item = stack[k]!;
 		const c = clips.get(item.key);
+		if (c?.kind === 'adjustment' && opts.adjust) {
+			for (let i = 0; i < W * H; i++) {
+				const a = canvas.data[i * 4 + 3]!;
+				if (a <= 0) continue;
+				const s: Rgba = [canvas.data[i * 4]! / a, canvas.data[i * 4 + 1]! / a, canvas.data[i * 4 + 2]! / a, a];
+				const r = opts.adjust(s);
+				canvas.data.set([r[0] * r[3], r[1] * r[3], r[2] * r[3], r[3]], i * 4);
+			}
+			continue;
+		}
 		if (!c || !('color' in c.source)) throw new Error(`reference: only solids (${item.key})`);
 		const col = c.source.color;
 		const t = clipContentTime(c, frame, snap.settings.fps);
