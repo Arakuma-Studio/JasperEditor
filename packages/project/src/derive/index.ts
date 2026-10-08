@@ -1,5 +1,6 @@
 // Derived data (S01:SES-010): computed from the document, memoized by reference, never stored.
 import { isDraft } from 'immer';
+import { keyDiff } from '../commands/draft-read.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame, type Rational } from '../time.ts';
@@ -25,7 +26,12 @@ function sequenceIndex(
 ): TrackIndex {
 	const draft = isDraft(seq.clips);
 	const cached = draft ? undefined : indexCache.get(seq.clips);
-	if (cached) return cached;
+	if (cached) {
+		remember(seq, cached);
+		return cached;
+	}
+	const derived = draft ? null : derivedIndex(seq);
+	if (derived) return derived;
 	const byTrack = new Map<string, Clip[]>();
 	for (const t of allTracks(seq)) byTrack.set(t.id, []);
 	for (const c of Object.values(seq.clips)) {
@@ -36,9 +42,68 @@ function sequenceIndex(
 		}
 		list.push(c);
 	}
-	for (const list of byTrack.values()) list.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+	for (const list of byTrack.values()) list.sort(byStart);
 	const idx = { byTrack };
-	if (!draft) indexCache.set(seq.clips, idx);
+	if (!draft) {
+		indexCache.set(seq.clips, idx);
+		remember(seq, idx);
+	}
+	return idx;
+}
+
+const byStart = (a: Clip, b: Clip) => a.start - b.start || a.id.localeCompare(b.id);
+
+/** The last index built per sequence id (perf-core): the next version of the sequence derives from it. */
+const lastIndex = new Map<string, { clips: object; tracks: string; idx: TrackIndex }>();
+const trackKey = (seq: Pick<Sequence, 'videoTracks' | 'audioTracks' | 'captionTracks'>) =>
+	allTracks(seq)
+		.map((t) => t.id)
+		.join(',');
+function remember(
+	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
+	idx: TrackIndex,
+) {
+	const id = (seq as { id?: unknown }).id;
+	if (typeof id !== 'string' || lastIndex.get(id)?.clips === seq.clips) return;
+	if (lastIndex.size > 256 && !lastIndex.has(id)) lastIndex.clear(); // bounded: one entry per open sequence
+	lastIndex.set(id, { clips: seq.clips, tracks: trackKey(seq), idx });
+}
+
+/**
+ * The index of a new version of a sequence from its previous version's (S01:SES-010/011, ARCHITECTURE §13: "indexes
+ * rebuilt only for tracks in `changed`"): the clips that changed (by identity) leave and re-enter their tracks' lists;
+ * other tracks share the previous lists. Null when there is no previous version, the tracks changed, or most clips
+ * did (a full build is as fast).
+ */
+function derivedIndex(
+	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
+): TrackIndex | null {
+	const id = (seq as { id?: unknown }).id;
+	const prev = typeof id === 'string' ? lastIndex.get(id) : undefined;
+	if (!prev || prev.tracks !== trackKey(seq)) return null;
+	const before = prev.clips as Record<string, Clip>;
+	const d = keyDiff(before, seq.clips);
+	if (d.changed.length + d.deleted.length > Math.max(32, Object.keys(seq.clips).length / 8)) return null;
+	const gone = new Set<Clip>();
+	const tracks = new Set<string>();
+	for (const k of [...d.changed, ...d.deleted]) {
+		const old = before[k];
+		if (old) {
+			gone.add(old);
+			tracks.add(old.trackId);
+		}
+		const now = seq.clips[k];
+		if (now) tracks.add(now.trackId);
+	}
+	const byTrack = new Map(prev.idx.byTrack);
+	for (const t of tracks) {
+		const list = (prev.idx.byTrack.get(t) ?? []).filter((c) => !gone.has(c));
+		for (const k of d.changed) if (seq.clips[k]!.trackId === t) list.push(seq.clips[k]!);
+		byTrack.set(t, list.sort(byStart));
+	}
+	const idx = { byTrack };
+	indexCache.set(seq.clips, idx);
+	remember(seq, idx);
 	return idx;
 }
 
