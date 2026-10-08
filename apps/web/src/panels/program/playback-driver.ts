@@ -26,6 +26,12 @@ const SEEK_HZ = 30;
 const PLAY_WATCHDOG_MS = 600;
 /** Consecutive kicks without any progress in between; progress restores the budget. */
 const PLAY_WATCHDOG_RETRIES = 3;
+/**
+ * A Player that renders slowly (heavy layers on a loaded machine: one frame every 300–700 ms) is not
+ * stalled: the window also grows to four times the recent frame interval of this play, up to this bound
+ * (measured: the 3-layer `pnpm perf` scenario at ≈ 4 fps was kicked once with the fixed 600 ms window).
+ */
+const PLAY_WATCHDOG_MAX_ADAPTIVE_MS = 2500;
 
 function isNativeRate(rate: number): boolean {
 	return rate >= NATIVE_MIN_RATE && rate <= NATIVE_MAX_RATE;
@@ -99,6 +105,9 @@ export class PlaybackDriver implements PlayerController {
 	private stepOrigin = { t: 0, frame: 0 };
 	private lastSeekAt = Number.NEGATIVE_INFINITY;
 	private frameEvents = 0;
+	/** Frame-update arrival of this play: last time and a moving average of the interval (ms). */
+	private lastFrameAt = -1;
+	private frameInterval = 0;
 	private dropped = 0;
 	private buffering = false;
 	private watchdog: ReturnType<typeof setTimeout> | null = null;
@@ -229,6 +238,8 @@ export class PlaybackDriver implements PlayerController {
 			if (!p.isPlaying()) p.play();
 			if (!this.current) {
 				this.counters.plays++;
+				this.lastFrameAt = Date.now(); // the first interval is the time to the first frame
+				this.frameInterval = 0;
 				this.current = { at: performance.now(), frames: 0, dropped: 0, rate: this.rate };
 			}
 			this.armWatchdog(PLAY_WATCHDOG_RETRIES);
@@ -258,7 +269,11 @@ export class PlaybackDriver implements PlayerController {
 		if (retries <= 0 || typeof setTimeout === 'undefined') return;
 		const seen = this.frameEvents;
 		const framesPerSec = Math.max(1e-3, this.opts.getFps() * Math.abs(this.rate));
-		const window = Math.max(PLAY_WATCHDOG_MS, 3000 / framesPerSec);
+		const window = Math.max(
+			PLAY_WATCHDOG_MS,
+			3000 / framesPerSec,
+			Math.min(PLAY_WATCHDOG_MAX_ADAPTIVE_MS, 4 * this.frameInterval),
+		);
 		this.watchdog = setTimeout(() => {
 			this.watchdog = null;
 			const p = this.player;
@@ -333,6 +348,12 @@ export class PlaybackDriver implements PlayerController {
 	private readonly onFrame: Listener = (e) => {
 		this.frameEvents++;
 		if (this.mode !== 'native') return;
+		const now = Date.now();
+		if (this.lastFrameAt >= 0) {
+			const d = now - this.lastFrameAt;
+			this.frameInterval = this.frameInterval > 0 ? this.frameInterval * 0.7 + d * 0.3 : d;
+		}
+		this.lastFrameAt = now;
 		const frame = (e.detail as { frame: number }).frame;
 		const t = this.opts.transport;
 		if (this.stopAt !== null && frame >= this.stopAt - 1) {
