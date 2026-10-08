@@ -155,7 +155,7 @@ test('Path popup puts the text on a mask; Character settings apply', async () =>
 		{ type: 'mask.add', clipId: textId, shape: 'ellipse', mode: 'none', ref: '$m' },
 	]);
 	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
-	const maskId = (r as { refs: Record<string, string> }).refs.$m!;
+	const maskId = (r as unknown as { refs: Record<string, string> }).refs.$m!;
 	await page.getByTestId(`text-path-${textId}`).selectOption(maskId);
 	await expect
 		.poll(() =>

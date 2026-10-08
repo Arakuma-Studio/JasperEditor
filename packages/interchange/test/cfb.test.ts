@@ -75,7 +75,13 @@ describe('MS-CFB', () => {
 		const big = pattern(8 * 1024 * 1024, 5);
 		w.stream(CfbWriter.ROOT, 'big', big);
 		const cf = CompoundFile.open(w.finish());
-		expect(cf.readPath('big')).toEqual(big);
+		// Byte-exact, compared natively: `toEqual` walks 8 Mi elements one by one (≈ 70 s alone, a timeout under load;
+		// the read itself takes ≈ 70 ms) — wp fixups.
+		const read = cf.readPath('big');
+		expect(read.length).toBe(big.length);
+		expect(Buffer.compare(Buffer.from(read.buffer, read.byteOffset, read.byteLength), Buffer.from(big))).toBe(
+			0,
+		);
 	});
 
 	it('rejects bad names and duplicates', () => {

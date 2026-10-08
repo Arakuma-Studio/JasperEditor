@@ -16,7 +16,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession, SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector, useTransportFrame } from '@jasper/session/react';
-import { EmptyState, Select } from '@jasper/ui';
+import { DropdownMenu, EmptyState, Icon, type ResolvedMenuItem, Select } from '@jasper/ui';
 import { useEffect, useReducer } from 'react';
 import { type MixerController, mixerControllerFor } from '../../audio/automation.ts';
 import { dbText, Fader, Knob, Panner51 } from '../../audio/components/controls.tsx';
@@ -190,24 +190,41 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 				{postInserts.length ? <div className="h-px bg-pr-border" title="Post-fader" /> : null}
 				{insertList(postInserts, true)}
 				{strip.effects.length < 5 ? (
-					<Select
-						label={`Add effect to ${strip.label}`}
-						value=""
-						placeholder={audioEffects.length ? '+ Effect' : 'No audio effects'}
-						disabled={audioEffects.length === 0}
-						onValueChange={(effectId) =>
-							apply(session, 'Apply Effect', [
-								master
-									? { type: 'effect.add', sequenceId: seq.id, effectId, target: 'master' }
-									: {
-											type: 'effect.add',
-											sequenceId: seq.id,
-											effectId,
-											target: { sequenceId: seq.id, trackId: strip.id },
-										},
-							])
+					// An action menu, built when it opens: a Select renders every option of every strip hidden on each
+					// render (the whole audio effect list per strip), which made the mixer slow to draw (wp fixups).
+					<DropdownMenu
+						trigger={
+							<button
+								type="button"
+								aria-label={`Add effect to ${strip.label}`}
+								disabled={audioEffects.length === 0}
+								data-testid={`mixer-add-effect-${strip.label}`}
+								className="inline-flex h-[22px] items-center justify-between gap-1 rounded-pr-control bg-pr-field pr-1 pl-2 text-left font-pr text-pr-ui text-pr-dim outline-none hover:text-pr-text focus-visible:border focus-visible:border-pr-focus disabled:opacity-40"
+							>
+								<span className="truncate">{audioEffects.length ? '+ Effect' : 'No audio effects'}</span>
+								<Icon id="app.chevronDown" size={14} />
+							</button>
 						}
-						options={audioEffects.map((e) => ({ value: e.id, label: e.label }))}
+						items={() =>
+							audioEffects.map(
+								(e): ResolvedMenuItem => ({
+									type: 'item',
+									id: `mixer-fx-${e.id}`,
+									label: e.label,
+									onSelect: () =>
+										apply(session, 'Apply Effect', [
+											master
+												? { type: 'effect.add', sequenceId: seq.id, effectId: e.id, target: 'master' }
+												: {
+														type: 'effect.add',
+														sequenceId: seq.id,
+														effectId: e.id,
+														target: { sequenceId: seq.id, trackId: strip.id },
+													},
+										]),
+								}),
+							)
+						}
 					/>
 				) : null}
 			</div>

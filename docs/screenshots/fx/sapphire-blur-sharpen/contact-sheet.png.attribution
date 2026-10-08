@@ -1,0 +1,8 @@
+asset:        contact-sheet.png
+title:        Contact sheet of the Sapphire-style Blur+Sharpen effects
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-08 by JasperDev (fixups workstream)
+notes:        Remotion stills from packages/compositions/test/fx-sapphire-blur-sharpen.e2e.test.ts (REMOTION_E2E=1, SBS_SHEET) with SBS_SCENE set to the procedural picture of scripts/docs/gallery-scenes.mjs (ffmpeg lavfi sources only, no photographs); Z buffers and kernels are the test's generated images. Replaces the sheet removed on 2026-10-07 (third-party photographs).

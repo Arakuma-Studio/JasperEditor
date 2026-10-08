@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  path-bool@1.0.4:
+    hash: 2eafc346b60fb5b01fbb0c40297c35fa3d608334f3e5be0386fc5ab7deba3f37
+    path: patches/path-bool@1.0.4.patch
+
 importers:
 
   .:
@@ -523,7 +528,7 @@ importers:
         version: 11.1.18
       path-bool:
         specifier: 1.0.4
-        version: 1.0.4
+        version: 1.0.4(patch_hash=2eafc346b60fb5b01fbb0c40297c35fa3d608334f3e5be0386fc5ab7deba3f37)
       zod:
         specifier: ^4.1.0
         version: 4.6.5
@@ -7931,7 +7936,7 @@ snapshots:
 
   parseurl@1.3.3: {}
 
-  path-bool@1.0.4:
+  path-bool@1.0.4(patch_hash=2eafc346b60fb5b01fbb0c40297c35fa3d608334f3e5be0386fc5ab7deba3f37):
     dependencies:
       gl-matrix: 3.4.4
 

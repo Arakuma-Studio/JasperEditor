@@ -100,6 +100,12 @@ answer says which window replied. Works identically in the browser and in Electr
   (cell centres), tracks ↔ row centres, clips and their edges, and hit-tests a point to frame/timecode/track/clip/
   edge zone with the panel's own `hitTest`; the Program monitor maps sequence pixels ↔ window points with its
   live view transform (zoom, pan, fit).
+- Aiming (follow-up, `docs/wp-notes/fixups.md`): an `{id}` target, a `{timeline: {clipId}}` target and `ui_locate`
+  aim at the middle of the *visible* part (the element's box clipped by its overflow-clipping ancestors and the
+  window; a clip's frames clipped to the visible range and its row to its region's band), so a clip that runs off
+  the timeline is still hit. A target with nothing on screen is scrolled into view first: timeline clips, frames
+  and track rows through the Timeline's own scroll (`reveal` on its locator; a scrolled-away clip may have no DOM
+  element at all), anything else with `scrollIntoView`.
 - Screenshots: Electron — `webContents.capturePage` via a new preload IPC (`jasper:capture-page`, rect validated
   in `security.ts`), the real pixels; web — `modern-screenshot` (MIT) DOM rasterisation of the window or one
   element/panel (canvases and videos included; a WebGL canvas without preserved buffers can come out stale — the

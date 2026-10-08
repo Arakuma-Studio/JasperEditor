@@ -4,7 +4,9 @@ import type { EngineJob, RotoSegmentResult, RotoTraceResponse, VisionModel } fro
 import { EngineError } from '@jasper/engine-client';
 import {
 	type ClipRoto,
+	contentTimeAt,
 	findRoto,
+	mediaFrameAt,
 	type ProjectDocument,
 	rotoIsStale,
 	rotoMaskCommands,
@@ -420,7 +422,6 @@ export function registerRotoTools(ctx: ToolContext): void {
 				const seq = doc.sequences[loc.sequenceId]!;
 				const clip = seq.clips[loc.clipId]!;
 				const f = frameOf(seq, args.at, TIME_FORMATS);
-				const { contentTimeAt, mediaFrameAt } = await import('@jasper/project');
 				frame =
 					clip.kind === 'still'
 						? 0
@@ -543,7 +544,6 @@ export function registerRotoTools(ctx: ToolContext): void {
 				if (args.at !== undefined) {
 					const seq = doc.sequences[loc.sequenceId]!;
 					const clip = seq.clips[loc.clipId]!;
-					const { contentTimeAt, mediaFrameAt } = await import('@jasper/project');
 					const sf = frameOf(seq, args.at, TIME_FORMATS);
 					f =
 						clip.kind === 'still' ? 0 : mediaFrameAt(contentTimeAt(clip, sf, seq.settings.frameRate), r.rate);

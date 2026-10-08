@@ -523,7 +523,8 @@ With a project open in the web app or the desktop app, `ui_state`, `ui_elements`
 drive the window itself through the engine relay (`POST /api/agent/ui` → WS `/agent`). Elements have stable
 automation ids (`timeline-toolbar/button[Snap in Timeline]`, `timeline.clip.<id>`, `effectControls.fx.<id>`…);
 `ui_locate` / `ui_hit` map timeline frames ↔ x and tracks ↔ y, and Program monitor sequence pixels ↔ window
-points, so `ui_drag {from: {timeline: {clipId}}, to: {x, y}}` moves a clip like a user. `ui_commands` lists every
+points, so `ui_drag {from: {timeline: {clipId}}, to: {x, y}}` moves a clip like a user. An element or clip target
+aims at the middle of its visible part, and one with nothing on screen is scrolled into view first. `ui_commands` lists every
 UI command with `enabled` and, when disabled, `why`. `e2e/ui-audit.spec.ts` keeps every interactive element of
 every panel in every workspace addressable. Details: `docs/wp-notes/mcp-cli.md`.
 

@@ -21,7 +21,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
-import { Button, EmptyState, SearchField, Select, TextField, toast } from '@jasper/ui';
+import { Button, EmptyState, PointMenu, SearchField, Select, TextField, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GenerateTranscriptButton, TranscriptionStatus } from '../../speech/TextPanelHooks.tsx';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
@@ -496,17 +496,17 @@ function WordMenu(p: {
 		</button>
 	);
 	return (
-		<div
-			className="fixed z-50 min-w-40 rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
-			style={{ left: p.x, top: p.y }}
-			role="menu"
+		<PointMenu
+			x={p.x}
+			y={p.y}
+			className="min-w-40 rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
 		>
 			{item('Correct Word', p.onEdit, 'edit')}
 			{item('Speaker…', p.onSpeaker, 'speaker')}
 			{item('Caption Line Break Before', () => p.onBreak('line'), 'line')}
 			{item('New Caption Before', () => p.onBreak('segment'), 'segment')}
 			{item('No Break Before', () => p.onBreak('none'), 'none')}
-		</div>
+		</PointMenu>
 	);
 }
 

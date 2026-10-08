@@ -52,6 +52,9 @@
       "electron",
       "esbuild",
       "@biomejs/biome"
-    ]
+    ],
+    "patchedDependencies": {
+      "path-bool@1.0.4": "patches/path-bool@1.0.4.patch"
+    }
   }
 }

@@ -17,7 +17,7 @@ import {
 	useStoreSelector,
 	useTransportFrame,
 } from '@jasper/session/react';
-import { cx, TimecodeText } from '@jasper/ui';
+import { cx, PointMenu, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
@@ -1006,10 +1006,10 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 				/>
 			) : null}
 			{menu ? (
-				<div
-					role="menu"
-					className="fixed z-[var(--pr-z-popover)] min-w-[160px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
-					style={{ left: menu.x, top: menu.y }}
+				<PointMenu
+					x={menu.x}
+					y={menu.y}
+					className="min-w-[160px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
 					onPointerDown={(e) => e.stopPropagation()}
 					data-testid="ec-kf-menu"
 				>
@@ -1094,7 +1094,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					>
 						Delete
 					</button>
-				</div>
+				</PointMenu>
 			) : null}
 		</div>
 	);
