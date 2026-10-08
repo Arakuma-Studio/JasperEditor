@@ -52,7 +52,7 @@ const unit = fc.double({ min: 0, max: 1, noNaN: true });
 describe('Lumetri completion params', () => {
 	it('appends the color-grade params after the S06 contract, with identity defaults', () => {
 		const names = LUMETRI_PARAMS.map((p) => p.name);
-		expect(names.slice(23)).toContain('hueVsSat');
+		expect(names.slice(25)).toContain('hueVsSat');
 		expect(names).toContain('vignetteAmount');
 		expect(names).toContain('secHueCenter');
 		expect(new Set(names).size).toBe(names.length);

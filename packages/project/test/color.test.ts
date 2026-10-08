@@ -44,7 +44,9 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 		expect(spec?.appliesTo).toBe('video');
 		expect(spec?.version).toBe(1);
 		// The S06:CG-002 contract comes first; color-grade appends its params (test/lumetri-grade.test.ts).
-		expect(LUMETRI_PARAMS.slice(0, 23).map((p) => p.name)).toEqual([
+		// The S06:CG-002 contract (with color-mgmt's HDR White / HDR Specular) comes first; color-grade appends its
+		// params (test/lumetri-grade.test.ts).
+		expect(LUMETRI_PARAMS.slice(0, 25).map((p) => p.name)).toEqual([
 			'inputLut',
 			'hdrWhite', // color-mgmt
 			'temperature',
