@@ -91,14 +91,14 @@ measured frame interval (4 ×, at most 2.5 s; `apps/web/test/transport.test.ts`)
 "recovered". True stalls (the AudioContext race, wp-note §5) measured 0 in 40 seek-and-play cycles and in the e2e
 spec's 12 cycles.
 
-**ARCHITECTURE §13** (`packages/*/test/perf-budgets.test.ts`, same host):
+**ARCHITECTURE §13** (`pnpm vitest run packages/project/test/perf-budgets.test.ts packages/session/test/perf-budgets.test.ts --reporter=verbose`, same host, load factor 1.24–1.26, 2026-10-08):
 
 | Budget | Measured | Status |
 |---|---|---|
-| `resolveSceneAt`, 50 layers | RESOLVE_MS | met |
-| Render bar, 1 000 clips | RENDERBAR_MS | met |
-| Command + reindex, 1 000 clips | COMMAND_MS (budget 4 ms) | **missed** |
-| 50-clip gesture update | GESTURE_MS (budget 8 ms) | **missed** |
+| `resolveSceneAt`, 50 layers | < 0.05 ms | met |
+| Render bar, 1 000 clips | 90 ms (52 ms at lower load) | met |
+| Command + reindex, 1 000 clips | 31.9 ms (budget 4 ms) | **missed** |
+| 50-clip gesture update | 135.8 ms (budget 8 ms) | **missed** |
 
 Where the command time goes (profiled on 1 000 clips, `checkInvariants` before → after this workstream):
 
