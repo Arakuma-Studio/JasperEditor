@@ -1,12 +1,14 @@
 // Ruler tick selection and labels (S02:TL-201/202, Appendix A.9).
 import {
+	type AudioDisplayFormat,
 	dropFrameToNominal,
 	fieldsToFrames,
-	formatTimecode,
+	formatAudioTime,
 	nominalFps,
 	type Rational,
 	supportsDropFrame,
 } from '@jasper/project';
+import { formatTimecode } from '../../../gaps/time-display.ts';
 import { frameToX, type Viewport } from './viewport.ts';
 
 const MIN_MAJOR_PX = 80;
@@ -68,7 +70,15 @@ function shortLabel(tc: string, sequenceUnderHour: boolean): string {
 export function rulerTicks(
 	v: Viewport,
 	rate: Rational,
-	opts: { dropFrame: boolean; startFrames: number; sequenceEnd: number; x0?: number; x1?: number },
+	opts: {
+		dropFrame: boolean;
+		startFrames: number;
+		sequenceEnd: number;
+		x0?: number;
+		x1?: number;
+		/** gaps (Show Audio Time Units): label in audio time units of the sequence sample rate. */
+		audio?: { sampleRate: number; format: AudioDisplayFormat };
+	},
 ): Tick[] {
 	const drop = opts.dropFrame && supportsDropFrame(rate);
 	const plan = chooseTicks(v.pxPerFrame, rate);
@@ -88,10 +98,9 @@ export function rulerTicks(
 		seen.add(frame);
 		const t: Tick = { frame, x, kind };
 		if (kind === 'major')
-			t.label = shortLabel(
-				formatTimecode(frame, rate, { dropFrame: drop, startFrames: opts.startFrames }),
-				underHour,
-			);
+			t.label = opts.audio
+				? formatAudioTime(frame, rate, opts.audio.sampleRate, opts.audio.format, opts.startFrames)
+				: shortLabel(formatTimecode(frame, rate, { dropFrame: drop, startFrames: opts.startFrames }), underHour);
 		ticks.push(t);
 	};
 	for (let n = Math.ceil(n0 / plan.major) * plan.major; n <= n1; n += plan.major)

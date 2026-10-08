@@ -2,7 +2,9 @@
 // brackets and shading, the marker lane and the render bar. Clicking/dragging scrubs (TL-203).
 import { type Marker, type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useDisplayFormat } from '../../../gaps/time-display.ts';
+import { timelinePrefs } from '../state/prefs.ts';
 import type { RenderSegment } from '../model/renderbar.ts';
 import { rulerTicks } from '../model/ruler.ts';
 import { boundaryFrameAt, frameToX, type Viewport } from '../model/viewport.ts';
@@ -42,6 +44,12 @@ type MarkDrag =
 export function Ruler(props: RulerProps) {
 	const { seq, viewport: v, session, controller } = props;
 	const drag = useRef<MarkDrag | null>(null);
+	// gaps: Project Settings display formats and Show Audio Time Units.
+	const display = useDisplayFormat();
+	const audioUnits = useSyncExternalStore(
+		timelinePrefs().subscribe,
+		() => !!timelinePrefs().getState().showAudioTimeUnits,
+	);
 	const draw = useCallback<TileDraw>(
 		(ctx, tile) => {
 			const color = cssVar(ctx.canvas, '--pr-text-secondary');
@@ -54,6 +62,7 @@ export function Ruler(props: RulerProps) {
 				sequenceEnd: sequenceDuration({ clips: seq.clips }),
 				x0: tile.x0 - 120,
 				x1: tile.x0 + tile.width + 120,
+				...(audioUnits ? { audio: { sampleRate: seq.settings.audioSampleRate, format: display.audio } } : {}),
 			});
 			for (const t of ticks) {
 				const x = Math.round(t.x) + 0.5;
@@ -66,7 +75,8 @@ export function Ruler(props: RulerProps) {
 				}
 			}
 		},
-		[v, seq.settings, seq.clips],
+		// biome-ignore lint/correctness/useExhaustiveDependencies: `display.video` changes the labels formatTimecode draws
+		[v, seq.settings, seq.clips, audioUnits, display.audio, display.video],
 	);
 
 	const setInOut = (g: Gesture, i: number | null, o: number | null) => {

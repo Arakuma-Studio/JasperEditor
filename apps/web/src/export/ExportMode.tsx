@@ -4,10 +4,11 @@
 // view returns to Edit and the Jobs panel shows progress (completion toast with Download: ProjectLifecycle).
 import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import { formatTimecode, type Sequence } from '@jasper/project';
+import type { Sequence } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, IconButton, TimecodeText } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { formatTimecode } from '../gaps/time-display.ts';
 import { notices } from '../home/notices.tsx';
 import { runIfRegistered, useLocalCommandCtx } from '../home/ui-bridge.ts';
 import { mediaKeyOf } from '../import/assets.ts';

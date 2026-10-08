@@ -115,6 +115,8 @@ export function Toolbar(props: {
 			})),
 		},
 		check('Snap Playhead When Snap Is On', 'snapPlayhead', p.snapPlayhead),
+		// gaps: Premiere's Show Audio Time Units (Project Settings ▸ Audio Display Format).
+		check('Show Audio Time Units', 'showAudioTimeUnits', !!p.showAudioTimeUnits),
 		// gaps (TL-10): Expand / Minimize All Tracks and the track height presets.
 		{ kind: 'separator' },
 		...trackHeightDisplayMenu(props.session),

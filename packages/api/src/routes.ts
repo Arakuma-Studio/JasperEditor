@@ -45,7 +45,14 @@ import {
 	StillRequestSchema,
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
-import { MediaLocationSchema, MediaOpenRequestSchema, MediaOpenResponseSchema } from './gaps.ts';
+import {
+	MediaLocationSchema,
+	MediaOpenRequestSchema,
+	MediaOpenResponseSchema,
+	ScratchCheckRequestSchema,
+	ScratchCheckSchema,
+	ScratchInfoSchema,
+} from './gaps.ts';
 import {
 	AutoToneRequestSchema,
 	AutoToneResponseSchema,
@@ -1070,6 +1077,20 @@ export const ROUTES = {
 		path: '/api/media/:mediaKey/open',
 		body: MediaOpenRequestSchema,
 		response: MediaOpenResponseSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Project Settings ▸ Scratch Disks (PRJ-4)
+	projectScratch: {
+		method: 'GET',
+		path: '/api/projects/:projectId/scratch',
+		response: ScratchInfoSchema,
+		owner: 'gaps',
+	},
+	scratchCheck: {
+		method: 'POST',
+		path: '/api/scratch/check',
+		body: ScratchCheckRequestSchema,
+		response: ScratchCheckSchema,
 		owner: 'gaps',
 	},
 } as const satisfies Record<string, RouteDef>;

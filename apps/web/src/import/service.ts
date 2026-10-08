@@ -8,7 +8,6 @@
 import type { RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
-	formatTimecode,
 	type ProjectDocument,
 	parseSourceSidecar,
 	type SourceSidecarInfo,
@@ -17,6 +16,7 @@ import {
 	type TxInput,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { formatTimecode } from '../gaps/time-display.ts';
 import { acquireImageSequences, expandImports } from '../imports/import-flow.ts';
 import { showImportReports } from '../interchange/dialogs.tsx';
 import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';

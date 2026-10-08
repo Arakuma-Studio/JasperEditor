@@ -1,8 +1,9 @@
-import { formatTimecode, type Sequence } from '@jasper/project';
+import type { Sequence } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { EmptyState, labelColor, SearchField } from '@jasper/ui';
 import { useState } from 'react';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import type { PanelProps } from '../types.ts';
 

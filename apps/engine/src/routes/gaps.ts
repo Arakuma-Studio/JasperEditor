@@ -3,16 +3,46 @@
 //   POST /api/media/:mediaKey/open       reveal it in the file browser / open it in its default application
 // (local engines only: a remote engine must never launch programs on its host for a browser client).
 import { spawn } from 'node:child_process';
-import { stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { MediaOpenRequestSchema } from '@jasper/api';
+import { constants } from 'node:fs';
+import { access, mkdir, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join } from 'node:path';
+import { MediaOpenRequestSchema, ScratchCheckRequestSchema, type ScratchLocation } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
+import { freeDiskBytes } from '../tools/fs.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 type K = { Params: { mediaKey: string } };
+type P = { Params: { projectId: string } };
+
+const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
+/** "Same as Project" for generated media: a folder inside the project's engine folder. */
+export const PROJECT_MEDIA_DIR = 'Generated Media';
+
+/** Exists / writable / free space of a folder (the nearest existing parent for the space of a missing one). */
+export async function describeFolder(path: string, expose: boolean): Promise<ScratchLocation> {
+	let exists = false;
+	let writable = false;
+	try {
+		exists = (await stat(path)).isDirectory();
+		await access(path, constants.W_OK);
+		writable = exists;
+	} catch {
+		// missing or read-only
+	}
+	let probe = path;
+	let free: number | null = null;
+	for (let i = 0; i < 64 && free === null; i++) {
+		free = await freeDiskBytes(probe);
+		const up = dirname(probe);
+		if (up === probe) break;
+		probe = up;
+	}
+	return { path: expose ? path : null, exists, writable: exists ? writable : false, freeBytes: free };
+}
 
 /** Never `open` these with the host opener: it would run a program instead of showing media. */
 const EXECUTABLE =
@@ -70,6 +100,60 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 			}
 		return { path: path ?? null, exists };
 	};
+
+	// ---- Project Settings ▸ Scratch Disks
+	app.get<P>(
+		'/api/projects/:projectId/scratch',
+		guarded<P>(async (req) => {
+			const id = req.params.projectId;
+			if (!PROJECT_ID_RE.test(id)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const paths = core.config.paths;
+			const expose = local();
+			return {
+				local: expose,
+				projectMedia: await describeFolder(join(paths.projectDir(id), PROJECT_MEDIA_DIR), expose),
+				previews: await describeFolder(join(paths.cacheDir, 'previews'), expose),
+				mediaCache: await describeFolder(paths.cacheDir, expose),
+				autoSave: await describeFolder(paths.projectVersionsDir(id), expose),
+				home: expose ? homedir() : null,
+			};
+		}),
+	);
+
+	app.post(
+		'/api/scratch/check',
+		guarded(async (req) => {
+			if (!local())
+				throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Scratch folders can only be chosen on a local engine');
+			const body = parseOr400(ScratchCheckRequestSchema, req.body);
+			if (!isAbsolute(body.path) || body.path.includes('\0'))
+				return {
+					ok: false,
+					path: body.path,
+					exists: false,
+					writable: false,
+					freeBytes: null,
+					message: 'Use an absolute folder path',
+				};
+			if (body.create)
+				try {
+					await mkdir(body.path, { recursive: true });
+				} catch (e) {
+					return {
+						ok: false,
+						...(await describeFolder(body.path, true)),
+						message: `The folder cannot be created: ${(e as Error).message}`,
+					};
+				}
+			const d = await describeFolder(body.path, true);
+			const ok = d.exists ? d.writable : true;
+			return {
+				ok,
+				...d,
+				...(ok ? {} : { message: d.exists ? 'The folder is not writable' : 'The folder does not exist' }),
+			};
+		}),
+	);
 
 	app.get<K>(
 		'/api/media/:mediaKey/location',

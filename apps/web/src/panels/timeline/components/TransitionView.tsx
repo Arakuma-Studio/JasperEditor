@@ -3,8 +3,9 @@
 // dissolve between two clips; quarter-sine curves for constant-power audio), an elided label, selection
 // accent and hatched end caps where the span reaches the end of the available media. Memoised on
 // primitive props: never re-rendered per playhead frame (S02:TL-155).
-import { fadeCurve, formatTimecode, type Rational } from '@jasper/project';
+import { fadeCurve, type Rational } from '@jasper/project';
 import { memo } from 'react';
+import { formatTimecode } from '../../../gaps/time-display.ts';
 import type { TransitionGeom } from '../model/transitions.ts';
 import { transitionBand } from '../model/transitions.ts';
 import { frameToX, snapPx, type Viewport } from '../model/viewport.ts';

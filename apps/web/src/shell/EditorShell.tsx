@@ -24,6 +24,7 @@ import { listPanels } from '../panels/registry.ts';
 import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.tsx';
 import type { PanelDefinition, PanelKind } from '../panels/types.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
+import { syncDisplayFormat } from '../gaps/time-display.ts';
 import { ensureAutosaver, flushAutosaver } from '../runtime/save.ts';
 import { AgentApprovals } from './AgentApprovals.tsx';
 import { type ShellController, type ShellMode, ShellRuntimeProvider, useShellRuntime } from './context.tsx';
@@ -163,6 +164,9 @@ function ShellBody() {
 			flush();
 		};
 	}, [store, session]);
+
+	// gaps: Project Settings ▸ display formats follow the open project.
+	useEffect(() => syncDisplayFormat(session), [session]);
 
 	// Autosave normally comes from <ProjectLifecycle> (a parent, whose effects run after ours); defer so
 	// the shell only attaches the shared saver when no lifecycle host did.

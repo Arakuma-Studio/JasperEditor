@@ -21,7 +21,14 @@ import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
+import {
+	type EngineJob,
+	type ExportResult,
+	type ExportSettings,
+	type ExportStartRequest,
+	STILL_FORMAT_EXTENSIONS,
+	type StillRequest,
+} from '@jasper/api';
 import {
 	buildRenderSnapshot,
 	copyableRuns,
@@ -91,6 +98,7 @@ import {
 	smartCodecOf,
 	smartPieces,
 } from './smart.ts';
+import { convertStill, stillCurveFor } from './still-formats.ts';
 import { streamLayer } from './stream/run.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
@@ -862,6 +870,17 @@ export class ExportService {
 
 	/** `POST /api/stills`. */
 	async still(req: StillRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+		if (req.destination) {
+			// gaps (Export Frame to a folder): a local/desktop feature like exports to a path (S04:SC-002).
+			if (!this.deps.localMode)
+				throw new PlanError(
+					'LOCAL_MODE_ONLY',
+					403,
+					'Export Frame to a folder is only available in local mode',
+				);
+			if (!isAbsolute(req.destination.folder))
+				throw new PlanError('VALIDATION_FAILED', 400, 'The Export Frame folder must be an absolute path');
+		}
 		const file = await this.storeRequest({ kind: 'still', request: req });
 		const doc = req.envelope.document as { projectId?: string };
 		return this.deps.queue.submit({
@@ -1932,11 +1951,54 @@ export class ExportService {
 				await rename(tmp, output);
 			}
 		}
+		// gaps (File ▸ Export ▸ Frame): the chosen file format and destination folder.
+		const format = req.format ?? 'png';
+		const ext = STILL_FORMAT_EXTENSIONS[format];
+		let written = output;
+		try {
+			written = await convertStill(this.deps.ff, output, format, ext, {
+				...(req.jpegQuality ? { jpegQuality: req.jpegQuality } : {}),
+				curve: stillCurveFor(planned.snapshot.settings.color?.space),
+				scratch: await ctx.scratchDir(),
+				signal: ctx.signal,
+				onSpawn: ctx.trackChild,
+			});
+		} catch (e) {
+			if (ctx.signal.aborted) throw e;
+			throw new JobError(
+				'STILL_FORMAT_FAILED',
+				`Writing the ${format.toUpperCase()} file failed: ${(e as Error).message}`,
+				false,
+			);
+		}
+		let destPath: string | undefined;
+		if (req.destination) {
+			try {
+				destPath = await copyNoOverwrite(
+					written,
+					join(req.destination.folder, `${req.destination.name}.${ext}`),
+					{
+						signal: ctx.signal,
+						claimed: (p) => ctx.addPartial(p),
+					},
+				);
+			} catch (e) {
+				if (ctx.signal.aborted) throw e;
+				const code = (e as NodeJS.ErrnoException).code;
+				throw new JobError(
+					code === 'ENOSPC' ? 'DISK_FULL' : 'DESTINATION_FAILED',
+					`Could not write the frame to ${req.destination.folder}: ${(e as Error).message}`,
+					false,
+				);
+			}
+		}
 		this.commitRefs(ctx, planned, 'still');
 		await rm((ctx.input as { request: string }).request, { force: true });
 		return {
 			url: `/renders/${ctx.job.id}/output`,
 			renderPath: path,
+			format,
+			...(destPath ? { path: destPath } : {}),
 			...(warnings.length ? { warnings } : {}),
 		};
 	}

@@ -24,3 +24,41 @@ export const MediaOpenResponseSchema = z.object({
 	action: z.enum(['reveal', 'open']),
 });
 export type MediaOpenResponse = z.infer<typeof MediaOpenResponseSchema>;
+
+// ---------------------------------------------------------------- Project Settings ▸ Scratch Disks (PRJ-4)
+
+/** One scratch location: where it is on the engine host and the space left there. */
+export const ScratchLocationSchema = z.object({
+	/** Absolute folder (null on a remote engine: paths are not exposed). */
+	path: z.string().nullable(),
+	exists: z.boolean(),
+	writable: z.boolean(),
+	freeBytes: z.number().nullable(),
+});
+export type ScratchLocation = z.infer<typeof ScratchLocationSchema>;
+
+/** `GET /api/projects/:projectId/scratch`: the engine folders behind the Scratch Disks page. */
+export const ScratchInfoSchema = z.object({
+	local: z.boolean(),
+	/** "Same as Project" for Captured and Generated Media (proxies, frames, Project Manager, ingest). */
+	projectMedia: ScratchLocationSchema,
+	/** Video and audio render previews (in the media cache). */
+	previews: ScratchLocationSchema,
+	mediaCache: ScratchLocationSchema,
+	/** Saved versions (Project Auto Save). */
+	autoSave: ScratchLocationSchema,
+	/** The engine host's home folder (folder pickers start there). */
+	home: z.string().nullable(),
+});
+export type ScratchInfo = z.infer<typeof ScratchInfoSchema>;
+
+/** `POST /api/scratch/check`: whether a folder can take generated media (created when `create`). */
+export const ScratchCheckRequestSchema = z.object({
+	path: z.string().min(1).max(4096),
+	create: z.boolean().optional(),
+});
+export const ScratchCheckSchema = ScratchLocationSchema.extend({
+	ok: z.boolean(),
+	message: z.string().optional(),
+});
+export type ScratchCheck = z.infer<typeof ScratchCheckSchema>;

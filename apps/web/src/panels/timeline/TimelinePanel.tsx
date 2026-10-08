@@ -6,13 +6,11 @@ import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	defaultTransitionFrames,
-	formatTimecode,
 	gapAt,
 	isMulticamClip,
 	LABEL_COLORS,
 	type MediaAsset,
 	type ProjectItem,
-	parseTimecodeEntry,
 	type Rational,
 	type Sequence,
 	sequenceDuration,
@@ -33,6 +31,7 @@ import { cameraMenuEntries } from '../../commands/multicam.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
+import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';

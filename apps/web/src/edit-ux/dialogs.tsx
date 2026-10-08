@@ -6,18 +6,11 @@
 // this choice"); "Change clip speed and duration" (Speed %, Duration linked by the chain toggle, Reverse Speed,
 // Maintain Audio Pitch, Ripple Edit, Shifting Trailing Clips; speed 0.01%–10000%); "Create subclips" (Name, Start /
 // End, Restrict Trims To Subclip Boundaries).
-import {
-	type Clip,
-	type FitClip,
-	FLICKS_PER_SECOND,
-	formatTimecode,
-	parseTimecodeEntry,
-	type Rational,
-	type Sequence,
-} from '@jasper/project';
+import { type Clip, type FitClip, FLICKS_PER_SECOND, type Rational, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useId, useMemo, useState } from 'react';
+import { formatTimecode, parseTimecodeEntry } from '../gaps/time-display.ts';
 
 export const FIT_CLIP_DIALOG = 'editux.fitClip';
 export const SPEED_DURATION_DIALOG = 'editux.speedDuration';

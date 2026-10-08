@@ -8,7 +8,6 @@
 import {
 	type EditPoint,
 	editPointFrame,
-	formatTimecode,
 	type Rational,
 	type Sequence,
 	trackLabel,
@@ -19,6 +18,7 @@ import { useSessionState, useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { runCommand } from '../../commands/registry.ts';
 import type { CommandCtx } from '../../commands/types.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { activeTimeline, type TimelineHandle } from '../timeline/env.tsx';
 import {
 	editPointsOf,

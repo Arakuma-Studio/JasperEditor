@@ -1,7 +1,7 @@
 // Mini-timeline pieces for Effect Controls (S03:EC-020…024, S05:ECP-006): ruler with clip range bar,
 // per-row keyframe lanes with interpolation glyphs, summary diamonds on effect headers, and the
 // playhead line that follows the TransportStore imperatively (no React render per frame).
-import { formatTimecode, isRovingKey, type Keyframe, type Sequence } from '@jasper/project';
+import { isRovingKey, type Keyframe, type Sequence } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import {
@@ -14,6 +14,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { exactFrameOf, type Row } from '../properties/lib/model.ts';
 import { glyphHalves, halfPath, pctOf, type Range, rulerTicks } from './lib.ts';
 
