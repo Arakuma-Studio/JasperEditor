@@ -1,39 +1,24 @@
 // Corruption helpers: truncations, byte mutations and garbage must only ever raise `InterchangeError`.
-import fc from 'fast-check';
-import { expect } from 'vitest';
+// Runs on the shared fuzz harness (@jasper/testkit, docs/testing.md §Fuzzing): every truncation point (`truncations`
+// evenly spaced cuts, as before), seeded xorshift byte mutations, and fast-check arbitrary bytes (`runs` each, ×20
+// with FUZZ=1); failing inputs are saved under test-results/fuzz-failures/.
+import { assertFuzzSync, bytesTarget } from '@jasper/testkit/fuzz';
 import { InterchangeError } from '../../src/report.ts';
 
 export function expectOnlyInterchangeErrors(
 	run: (bytes: Uint8Array) => unknown,
 	seed: Uint8Array,
-	opts: { runs?: number; truncations?: number } = {},
+	opts: { runs?: number; truncations?: number; name?: string } = {},
 ): void {
-	const check = (b: Uint8Array) => {
-		try {
-			run(b);
-		} catch (e) {
-			if (!(e instanceof InterchangeError))
-				throw new Error(`unexpected ${(e as Error)?.name}: ${(e as Error)?.message}\n${(e as Error)?.stack}`);
-		}
-	};
+	// The harness cuts every seed at 32 points; the original helper's finer truncation grid is kept on top.
 	const n = opts.truncations ?? 64;
-	for (let i = 0; i <= n; i++) check(seed.subarray(0, Math.floor((seed.length * i) / n)));
-	fc.assert(
-		fc.property(
-			fc.array(fc.tuple(fc.nat(), fc.integer({ min: 0, max: 255 })), { minLength: 1, maxLength: 24 }),
-			(muts) => {
-				const b = Uint8Array.from(seed);
-				for (const [pos, v] of muts) if (b.length) b[pos % b.length] = v;
-				check(b);
-			},
-		),
-		{ numRuns: opts.runs ?? 300 },
+	const cuts = Array.from({ length: n + 1 }, (_, i) => seed.subarray(0, Math.floor((seed.length * i) / n)));
+	assertFuzzSync(
+		bytesTarget(opts.name ?? 'interchange import', [seed, ...cuts], run, InterchangeError, {
+			iterations: opts.runs ?? 300,
+			properties: 100,
+		}),
 	);
-	fc.assert(
-		fc.property(fc.uint8Array({ maxLength: 2048 }), (b) => check(b)),
-		{ numRuns: 100 },
-	);
-	expect(true).toBe(true);
 }
 
 /** Path of the Python with opentimelineio / pyaaf2 (validators), or null. */

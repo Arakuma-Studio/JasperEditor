@@ -3,6 +3,7 @@
 // thin bright line on black, a grid), with keyframed params (`keys` → `ctx.paramsAt`, piecewise linear between keys
 // at fractional frames, as the shared keyframe evaluator does for linear keys) and an optional preview scale, and
 // reports intensity profiles across the smear, checksums, PNGs and timings.
+import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	defineShaderEffect,

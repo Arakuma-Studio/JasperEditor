@@ -1,0 +1,71 @@
+# The gate (`pnpm verify`) on every push and pull request: lint, typecheck, tests, build.
+#
+# - No GPU: the WebGL tests run on SwiftShader in the runner's Google Chrome (headless, software GL); without a Chrome
+#   they skip.
+# - No LGPL FFmpeg and no opt-in suites: the system ffmpeg/ffprobe from apt are the test oracles
+#   (JASPER_REQUIRE_ORACLES=1 turns any oracle skip into a failure, so a broken install cannot pass by skipping);
+#   REMOTION_E2E, FUZZ, PERF, MG_E2E and the Playwright / desktop suites stay off (docs/testing.md).
+# - Timing budgets scale with the measured host load (PERF=1 is not set; see docs/testing.md §Performance).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint, typecheck, test, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      JASPER_REQUIRE_ORACLES: "1"
+      JASPER_BROWSER_EXECUTABLE: /usr/bin/google-chrome
+      # Golden-frame and fuzz failure artefacts land here (uploaded below).
+      JASPER_TEST_RESULTS: ${{ github.workspace }}/test-results
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19
+          cache: pnpm
+
+      - name: Install ffmpeg (test oracles and fixtures)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test --maxWorkers=2
+
+      - name: Build
+        run: pnpm build
+
+      - name: Upload golden / fuzz failure artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14

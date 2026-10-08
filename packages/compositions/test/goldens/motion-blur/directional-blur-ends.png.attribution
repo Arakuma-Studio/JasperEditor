@@ -1,0 +1,8 @@
+asset:        directional-blur-ends.png
+title:        directional-blur-ends
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-08 by the golden-frame harness (JASPER_BLESS=1)
+notes:        Golden reference frame rendered by JasperEditor's own renderer from a procedurally generated scene (no external media, no third-party artwork), by packages/compositions/test/fx-motion-blur-gl.test.ts. Regenerate with JASPER_BLESS=1 and review the PNG (docs/testing.md).

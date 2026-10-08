@@ -1,6 +1,7 @@
 // Browser entry of the Classic 3D GL test (bundled with esbuild, run in headless Chrome by ../three-d-gl.test.ts):
 // renders scenes with the real GL renderer (fx host context) and with the CPU reference of @jasper/project from the
 // same pictures, and reports both outputs.
+import '../gl-poison.ts';
 import {
 	anim,
 	type CameraState,

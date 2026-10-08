@@ -772,6 +772,11 @@ crash-safe (rename to `.trash-*`, then delete; leftovers of interrupted writes a
 
 ## Tests
 
+The testing guide is [docs/testing.md](docs/testing.md): golden frames and fingerprints (`JASPER_BLESS=1`), the
+fuzz harness for every parser, route and MCP tool (`FUZZ=1`), ffmpeg oracles (`JASPER_REQUIRE_ORACLES=1`), the scale
+benchmark, and the CI workflow (`.github/workflows/ci.yml`: lint, typecheck, test, build on every push and pull
+request). Shared helpers live in `@jasper/testkit`.
+
 ```bash
 pnpm fixtures && pnpm mg:build   # optional first: some engine tests skip without jasper-mg
 pnpm verify              # lint + typecheck + unit/integration tests + build
@@ -877,7 +882,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm dev:web` | Vite dev server on 5173 with the engine proxy |
 | `pnpm dev:desktop` | builds the Electron main/preload and launches it against `JASPER_DESKTOP_DEV_URL` (default 5173) |
 | `pnpm typecheck` | `tsc --noEmit` in every package |
-| `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
+| `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property and fuzz sweeps; `JASPER_BLESS=1` re-blesses goldens (docs/testing.md) |
 | `pnpm perf` | Sequential snapshot, scene, selection, timeline-transition, and cache-reference microbenchmarks |
 | `pnpm lint` | Biome + design-token, anime.js, dependency-layer and asset-attribution checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`, `scripts/check-layers.mjs`, `scripts/check-assets.mjs`) |
 | `pnpm format` | Biome formatter |

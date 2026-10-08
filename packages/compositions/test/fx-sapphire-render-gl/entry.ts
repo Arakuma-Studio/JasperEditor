@@ -1,6 +1,7 @@
 // Browser entry of the Sapphire Render family GL test (fx-sapphire-render-gl.test.ts): runs the family's effects on
 // the real GPU host (src/fx/host.ts) over a picture (a photo data URL, a solid or a transparent canvas) and returns
 // pixels or PNG data URLs. Pattern of test/fx-gl/entry.ts.
+import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,

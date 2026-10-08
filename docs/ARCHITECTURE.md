@@ -252,6 +252,8 @@ engine         → project, api, audio-dsp, audio-fx, config, expressions, inter
                  D-18), fastify…; tests also use engine-client and session
 mcp            → api, config, engine-client, expressions, project
 desktop        → electron, config (paths only)
+testkit        → node built-ins, vitest, fast-check, @playwright/test   (test-only: a devDependency of project, interchange, mcp,
+                 expressions, compositions and engine tests; golden frames, fuzzing, oracles; golden-fuzz)
 ```
 
 Everywhere: `packages/*` never import `apps/*`; relative imports never leave the package root (use the target's

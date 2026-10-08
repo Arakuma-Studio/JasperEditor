@@ -19,7 +19,8 @@
       "!**/native/mg/target",
       "!**/pnpm-lock.yaml",
       "!**/.stage",
-      "!**/*.css"
+      "!**/*.css",
+      "!**/goldens/**/*.json"
     ]
   },
   "formatter": {

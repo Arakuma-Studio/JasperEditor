@@ -2,6 +2,7 @@
 // ../fx-sapphire-film-grain-gl.test.ts): runs one effect of the family on the real GPU host (src/fx/host.ts) over a
 // synthetic picture or a loaded photo and reports pixels (and, for the visual check, a PNG data URL). The seed is
 // derived like the compositions do (`fxSeed(clip, instance, params)`), so the Seed param changes the pattern.
+import '../gl-poison.ts';
 import { defaultEffectRegistry, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';

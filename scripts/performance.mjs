@@ -74,6 +74,8 @@ if (sections.includes('micro')) {
 		'packages/session/bench/selection.ts',
 		'apps/web/bench/timeline-transitions.ts',
 		'apps/engine/bench/cache-references.ts',
+		// golden-fuzz: 200 sequences / ~5,000 clips with budgets (docs/testing.md §6); writes scale.results.json
+		'packages/session/bench/scale.ts',
 	]) {
 		console.log(`\n${benchmark}`);
 		const result = spawnSync(process.execPath, ['--import', 'tsx', benchmark], {

@@ -1,6 +1,7 @@
 // Browser entry of the Premiere Adjust/Color/Keying family GL tests (fx-premiere-adjust-color-keying-gl.test.ts) and
 // of the contact-sheet script (fx-pacg/shots.ts): drives the real GPU host (src/fx/host.ts) with one family effect on
 // a picture (a test image or a painted pattern) and returns pixels or a PNG. Same `run` contract as fx-gl/entry.ts.
+import '../gl-poison.ts';
 import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';

@@ -3,7 +3,7 @@
 
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
-import { checkInvariants, type RepairEntry, repairDocument } from './invariants.ts';
+import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
@@ -91,14 +91,19 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 4, to: 5, migrate: migrateV4ToV5 },
 ];
 
+/** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */
+export class ProjectLoadError extends Error {
+	override readonly name = 'ProjectLoadError';
+}
+
 function unwrap(raw: unknown): Record<string, unknown> {
-	if (!raw || typeof raw !== 'object') throw new Error('Project data is not an object');
+	if (!raw || typeof raw !== 'object') throw new ProjectLoadError('Project data is not an object');
 	const o = raw as Record<string, unknown>;
 	if (o.format === 'jasper-project') {
-		if (!o.document || typeof o.document !== 'object') throw new Error('Envelope has no document');
+		if (!o.document || typeof o.document !== 'object') throw new ProjectLoadError('Envelope has no document');
 		return o.document as Record<string, unknown>;
 	}
-	if (o.format !== undefined) throw new Error(`Unknown project format ${String(o.format)}`);
+	if (o.format !== undefined) throw new ProjectLoadError(`Unknown project format ${String(o.format)}`);
 	return o;
 }
 
@@ -124,7 +129,7 @@ export function migrate(raw: unknown): {
 	const steps: string[] = [];
 	for (let v = version; v < CURRENT_SCHEMA_VERSION; v++) {
 		const step = MIGRATIONS.find((m) => m.from === v);
-		if (!step) throw new Error(`No migration from schema version ${v}`);
+		if (!step) throw new ProjectLoadError(`No migration from schema version ${v}`);
 		cur = step.migrate(cur);
 		cur.schemaVersion = step.to;
 		steps.push(`v${step.from}→v${step.to}`);
@@ -174,9 +179,9 @@ export function loadProject(
 			.slice(0, 5)
 			.map((i) => `${i.path.join('.')}: ${i.message}`)
 			.join('; ');
-		throw new Error(`Project does not match the schema: ${msg}`);
+		throw new ProjectLoadError(`Project does not match the schema: ${msg}`);
 	}
-	let document = parsed.data as ProjectDocument;
+	let document = nullPrototypeRecords(parsed.data as ProjectDocument);
 	let repairs: RepairEntry[] = [];
 	const invOpts = { effects: opts.effects, mgTemplates: opts.mgTemplates };
 	let issues = checkInvariants(document, invOpts);

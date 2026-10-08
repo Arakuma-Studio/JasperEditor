@@ -6,7 +6,7 @@
 // are none, plus the stroke drawn outside) and the geometry is centred in it. When an edit changes that box, the
 // anchor (value and keys) moves by half the change, so the geometry stays where it was on screen
 // (M(c) = P + R·S·(c − A) is unchanged).
-import type { Draft } from 'immer';
+import { type Draft, isDraft } from 'immer';
 import {
 	anim,
 	type Box,
@@ -15,12 +15,20 @@ import {
 	defaultTransform,
 	shapeIntrinsicBox,
 } from '../../factories.ts';
+import { idPrefixOf, isValidId } from '../../ids.ts';
 import { evaluate } from '../../keyframes.ts';
 import type { BezierPath } from '../../path/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { DEFAULT_SHAPE_STROKE, type PropertySpec, SHAPE_LIMITS } from '../../registry/properties.ts';
 import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
-import type { Clip, LegacyShapeData, ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
+import type {
+	Clip,
+	LegacyShapeData,
+	Sequence,
+	ShapeClip,
+	ShapeData,
+	ShapeStroke,
+} from '../../schema/sequence.ts';
 import type { ShapeItem } from '../../schema/shapes.ts';
 import { findItem, newShapeItem, nextItemName, reidItems, walkItems } from '../../vector/defaults.ts';
 import { evaluateVectorShape } from '../../vector/evaluate.ts';
@@ -28,13 +36,12 @@ import { buildShapeItems, type IdGen, patchShapeItem, ShapeInputError } from '..
 import { getShapePreset } from '../../vector/presets.ts';
 import { bezToBezierPaths } from '../../vector/values.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
-import { cachedRead, keysOf, latest, peekIn } from '../draft-read.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
 import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
 import { applyTransformPatch, commonFields, frameBox, newGeneratorClip, visualFields } from './clip-core.ts';
 import { applyPathEditOp, applyPathTopologyOp, mapAllPaths, PATH_TOPOLOGY_OPS, writePathAt } from './mask.ts';
-import type { Handler, HandlerMap } from './util.ts';
+import { type Handler, type HandlerMap, memoPlain, peek, peekKeys } from './util.ts';
 
 export const SHAPE_OWNER = 'wp-m2-shapes';
 
@@ -102,43 +109,100 @@ function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
 	if (dx !== 0 || dy !== 0) shiftVec(clip.transform.anchor, dx, dy);
 }
 
-const shapeBoxCache = new WeakMap<object, readonly (readonly [string, Box])[]>();
-/** Keys and boxes of the shape clips of a clips record. */
-function shapeBoxesOf(clips: Readonly<Record<string, Clip>>): (readonly [string, Box])[] {
-	const out: (readonly [string, Box])[] = [];
-	for (const k of Object.keys(clips)) {
-		const c = latest(clips[k]!);
-		if (c.kind === 'shape') out.push([k, shapeIntrinsicBox(latest(c.shape) as ShapeData)]);
-	}
-	return out;
-}
-
 /**
  * Wraps a handler of a command that can change shape boxes (clip.update, param.set, keyframe edits): every
  * shape whose box changed during the command is re-centred on its anchor.
  */
+/** Boxes of the shape clips of a clips record (memoized per untouched record). */
+const shapeBoxCache = new WeakMap<object, [string, Box][]>();
+function shapeBoxes(clips: Record<string, Clip>): [string, Box][] {
+	return memoPlain(shapeBoxCache, clips, () => {
+		const out: [string, Box][] = [];
+		for (const cid of peekKeys(clips)) {
+			const c = peek<Clip>(clips, cid);
+			// Vector shapes keep their frame box whatever their contents (never re-centred).
+			if (c?.kind === 'shape' && (c as ShapeClip).shape.type !== 'vector')
+				out.push([cid, shapeIntrinsicBox(c.shape as ShapeData)]);
+		}
+		return out;
+	});
+}
+
+/** Entity-id prefixes a shape-box command may name without touching shape geometry through them. */
+const NEUTRAL_PREFIXES = new Set(['clp', 'fx', 'seq', 'trk', 'mrk', 'trn', 'lnk', 'grp']);
+
+/**
+ * The clips a command names, when that is all it can touch: every id in it is a clip id or an id that cannot lead to
+ * shape geometry (effects, sequences, tracks…). Null when it names keyframes (or anything else) — those can sit on
+ * any clip — or no clip at all: then every shape is checked.
+ */
+function namedClips(cmd: unknown): string[] | null {
+	const out: string[] = [];
+	let open = false;
+	const walk = (v: unknown): void => {
+		if (open) return;
+		if (typeof v === 'string') {
+			const p = isValidId(v) ? idPrefixOf(v) : null;
+			if (p === 'clp') out.push(v);
+			else if (p && !NEUTRAL_PREFIXES.has(p)) open = true;
+			else if (v.startsWith('$')) open = true; // an unresolved reference or selection
+		} else if (Array.isArray(v)) for (const x of v) walk(x);
+		else if (v && typeof v === 'object') for (const x of Object.values(v)) walk(x);
+	};
+	walk(cmd);
+	// Naming no clip (e.g. keyframes.simplify of a whole sequence) means "anything": check every shape.
+	return open || out.length === 0 ? null : out;
+}
+
+/** Sequence id and box of shape clip `cid` (via `peek`), or null when it is not a box-sized shape. */
+function shapeBoxOf(sequences: Record<string, Sequence>, cid: string): [string, Box] | null {
+	for (const sid of peekKeys(sequences)) {
+		const c = peek<Clip>(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!, cid);
+		if (!c) continue;
+		return c.kind === 'shape' && (c as ShapeClip).shape.type !== 'vector'
+			? [sid, shapeIntrinsicBox(c.shape as ShapeData)]
+			: null;
+	}
+	return null;
+}
+
 export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
 	return (doc, cmd, h) => {
-		// perf-core: shapes are found on current values (draft-read.ts), per clips record (cached while a record is
-		// unchanged); after the command only shapes whose box changed are drafted.
-		const before: [string, Readonly<Record<string, Clip>>, readonly (readonly [string, Box])[]][] = [];
-		for (const sid of keysOf(doc.sequences)) {
-			const rec = latest(peekIn(doc.sequences, sid)!.clips);
-			const boxes = cachedRead(shapeBoxCache, rec, shapeBoxesOf);
-			if (boxes.length) before.push([sid, rec, boxes]);
+		// This wraps every parameter and keyframe command, so it must stay cheap on large documents: the document is
+		// read with `peek` (no drafts); a command that names its clips only checks those, others check every shape
+		// (per-record box lists memoized; after the command only records it touched — drafts — can hold a changed box).
+		// Only a shape whose box changed is written through the draft.
+		const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		const named = namedClips(cmd);
+		if (named) {
+			const before = new Map<string, [string, Box]>();
+			for (const cid of new Set(named)) {
+				const b = shapeBoxOf(sequences, cid);
+				if (b) before.set(cid, b);
+			}
+			const result = handler(doc, cmd, h);
+			const after = peek<Record<string, Sequence>>(doc, 'sequences')!;
+			for (const [cid, [sid, was]] of before) {
+				const now = shapeBoxOf(after, cid);
+				if (now && now[0] === sid && (now[1].width !== was.width || now[1].height !== was.height))
+					recenterShape(doc.sequences[sid]!.clips[cid] as Draft<ShapeClip>, was);
+			}
+			return result;
+		}
+		const before = new Map<string, Map<string, Box>>();
+		for (const sid of peekKeys(sequences)) {
+			const boxes = shapeBoxes(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!);
+			if (boxes.length) before.set(sid, new Map(boxes));
 		}
 		const result = handler(doc, cmd, h);
-		for (const [sid, rec, boxes] of before) {
-			const seq = peekIn(doc.sequences, sid);
-			if (!seq) continue;
-			const now = latest(seq.clips);
-			if (now === rec && Object.isFrozen(rec)) continue; // untouched record: no box changed
-			for (const [k, box] of boxes) {
-				const c = peekIn(now, k) as ShapeClip | undefined;
-				if (!c || latest(c.shape).type === 'vector') continue;
-				const after = shapeIntrinsicBox(latest(c.shape) as ShapeData);
-				if (after.width !== box.width || after.height !== box.height)
-					recenterShape(doc.sequences[sid]!.clips[k] as Draft<ShapeClip>, box);
+		const after = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		for (const [sid, boxes] of before) {
+			const clips = peek<Record<string, Clip>>(peek<Sequence>(after, sid) ?? {}, 'clips');
+			if (!clips || !isDraft(clips)) continue;
+			for (const [cid, box] of shapeBoxes(clips)) {
+				const was = boxes.get(cid);
+				if (was && (was.width !== box.width || was.height !== box.height))
+					recenterShape(doc.sequences[sid]!.clips[cid] as Draft<ShapeClip>, was);
 			}
 		}
 		return result;

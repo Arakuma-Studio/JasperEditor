@@ -123,7 +123,7 @@ export function recordDelta<T>(rec: Readonly<Record<string, T>>): RecordDelta<T>
 		cur = s.copy_ as Record<string, T>;
 	} else {
 		if (!isDraft(rec)) return { base: rec, changed: [], deleted: [] };
-		base = original(rec) as Record<string, T>;
+		base = original(rec as never) as Record<string, T>;
 		cur = current(rec as never) as Record<string, T>;
 	}
 	const changed: string[] = [];
@@ -156,6 +156,6 @@ export function markNormalized(doc: object): void {
 /** The base document of draft `doc` when it is normalized (see markNormalized), else null. */
 export function normalizedBase<T extends object>(doc: T): T | null {
 	if (!isDraft(doc)) return null;
-	const base = original(doc) as T;
+	const base = original(doc as never) as T;
 	return normalized.has(base) ? base : null;
 }

@@ -397,6 +397,7 @@ function target(h: FxHost, pass: FxPassPlan): Target {
 		gl.bindTexture(gl.TEXTURE_2D, hit.tex);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+		if (poisonEnabled()) poison(h, hit);
 		return hit;
 	}
 	while (h.targets.size >= MAX_TARGETS) {
@@ -416,7 +417,54 @@ function target(h: FxHost, pass: FxPassPlan): Target {
 	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
 	const t: Target = { tex, fbo, width: pass.width, height: pass.height, format };
 	h.targets.set(key, t);
+	if (poisonEnabled()) poison(h, t);
 	return t;
+}
+
+/**
+ * GL tests only (golden-fuzz; EffectCraft's NaN-poisoned scratch images): pooled intermediates are reused without
+ * clearing, so a pass whose shader skips pixels (`discard`, an early return path) would show another layer's or
+ * frame's leftovers. With `globalThis.__JASPER_FX_POISON__ = true` (set by the GL test entries, never in the app)
+ * every target is filled before its pass draws — NaN in float targets, opaque magenta in 8-bit ones — so such a
+ * kernel fails its test instead of passing by luck.
+ */
+function poisonEnabled(): boolean {
+	return (globalThis as { __JASPER_FX_POISON__?: boolean }).__JASPER_FX_POISON__ === true;
+}
+
+const POISON_FS = `#version 300 es
+precision highp float;
+uniform float u_nan;
+out vec4 fragColor;
+void main() {
+  fragColor = u_nan > 0.5 ? vec4(uintBitsToFloat(0x7fc00000u)) : vec4(1.0, 0.0, 1.0, 1.0);
+}
+`;
+const poisonPrograms = new WeakMap<WebGL2RenderingContext, WebGLProgram>();
+
+function poison(h: FxHost, t: Target): void {
+	const { gl } = h;
+	let p = poisonPrograms.get(gl);
+	if (!p) {
+		const fs = compileShader(gl, gl.FRAGMENT_SHADER, POISON_FS);
+		if (typeof fs === 'string') throw new Error(`poison shader: ${fs}`);
+		p = gl.createProgram()!;
+		gl.attachShader(p, h.vs);
+		gl.attachShader(p, fs);
+		gl.bindAttribLocation(p, 0, 'a_pos');
+		gl.linkProgram(p);
+		poisonPrograms.set(gl, p);
+	}
+	gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+	gl.viewport(0, 0, t.width, t.height);
+	// biome-ignore lint/correctness/useHookAtTopLevel: WebGL call, not a React hook
+	gl.useProgram(p);
+	gl.uniform1f(gl.getUniformLocation(p, 'u_flipY'), 0);
+	gl.uniform1f(gl.getUniformLocation(p, 'u_nan'), t.format === 'rgba8' ? 0 : 1);
+	gl.disable(gl.BLEND);
+	gl.bindVertexArray(h.vao);
+	gl.drawArrays(gl.TRIANGLES, 0, 3);
+	gl.bindVertexArray(null);
 }
 
 /** Grows the shared canvas (never shrinks; 256-px steps) so a `w`×`h` result fits its bottom-left corner. */

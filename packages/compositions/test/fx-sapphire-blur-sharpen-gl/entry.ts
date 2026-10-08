@@ -1,6 +1,7 @@
 // Browser entry of the Sapphire Blur+Sharpen GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-blur-sharpen-gl.test.ts): runs the family's effects through the real GPU host on synthetic scenes
 // (or a supplied picture) and returns pixels / PNGs. Same host contract as test/fx-gl/entry.ts.
+import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,

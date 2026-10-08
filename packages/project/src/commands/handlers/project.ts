@@ -5,13 +5,13 @@ import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
-import type { MediaAsset } from '../../schema/media.ts';
+import type { MediaAsset, Transcript } from '../../schema/media.ts';
+import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
-import { cachedRead, keysOf, latest, valuesOf } from '../draft-read.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
 function detachItem(doc: DDoc, itemId: string): void {
 	const ri = doc.rootItems.indexOf(itemId);
@@ -63,57 +63,55 @@ function item(doc: DDoc, id: string, h: HandlerContext): ProjectItem {
 }
 
 /** Removes assets/synthetics/transcripts no longer referenced by any item or clip (INV-014). */
-type ClipUses = { media: readonly string[]; syn: readonly string[]; trs: readonly string[] };
-const clipUses = new WeakMap<object, ClipUses>();
-const itemUses = new WeakMap<object, ClipUses>();
+type ClipRefs = { media: string[]; synthetics: string[]; transcripts: string[] };
+const clipRefsCache = new WeakMap<object, ClipRefs>();
+/** Media / synthetic / transcript ids referenced by a clips record (memoized per untouched record). */
+function clipRefs(clips: Record<string, Clip>): ClipRefs {
+	return memoPlain(clipRefsCache, clips, () => {
+		const out: ClipRefs = { media: [], synthetics: [], transcripts: [] };
+		for (const cid of peekKeys(clips)) {
+			const r = peek<Record<string, unknown>>(clips, cid)!;
+			if (typeof r.mediaId === 'string') out.media.push(r.mediaId);
+			if (typeof r.syntheticId === 'string') out.synthetics.push(r.syntheticId);
+			if (typeof r.transcriptId === 'string') out.transcripts.push(r.transcriptId);
+		}
+		return out;
+	});
+}
 
 export function collectOrphans(doc: DDoc): void {
-	// perf-core: reads current values without drafting every sequence and clip (draft-read.ts); the uses of
-	// unchanged item and clip records are cached.
+	// Runs after every transaction: reads through `peek` (no drafts for the thousands of untouched clips); only the
+	// records that lose entries are written through the draft.
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
 	const usedTrs = new Set<string>();
-	const add = (u: ClipUses) => {
-		for (const id of u.media) usedMedia.add(id);
-		for (const id of u.syn) usedSyn.add(id);
-		for (const id of u.trs) usedTrs.add(id);
-	};
-	add(
-		cachedRead(itemUses, doc.items, (items) => {
-			const u = { media: [] as string[], syn: [] as string[], trs: [] };
-			for (const it of valuesOf(items)) {
-				if (it.kind === 'media' || it.kind === 'subclip') u.media.push(it.mediaId);
-				if (it.kind === 'synthetic') u.syn.push(it.syntheticId);
-			}
-			return u;
-		}),
-	);
-	for (const seq of valuesOf(doc.sequences)) {
-		add(
-			cachedRead(clipUses, seq.clips, (clips) => {
-				const media = new Set<string>();
-				const syn = new Set<string>();
-				const trs = new Set<string>();
-				for (const c of valuesOf(clips)) {
-					const r = c as Record<string, unknown>;
-					if (typeof r.mediaId === 'string') media.add(r.mediaId);
-					if (typeof r.syntheticId === 'string') syn.add(r.syntheticId);
-					if (typeof r.transcriptId === 'string') trs.add(r.transcriptId);
-				}
-				return { media: [...media], syn: [...syn], trs: [...trs] };
-			}),
-		);
+	const items = peek<Record<string, ProjectItem>>(doc, 'items')!;
+	for (const key of peekKeys(items)) {
+		const it = peek<ProjectItem>(items, key)!;
+		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
+		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
 	}
-	for (const m of valuesOf(doc.media)) {
-		const d = latest(m.derivation);
-		if (d) usedMedia.add(d.fromMediaId);
+	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+	for (const sid of peekKeys(sequences)) {
+		const refs = clipRefs(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!);
+		for (const id of refs.media) usedMedia.add(id);
+		for (const id of refs.synthetics) usedSyn.add(id);
+		for (const id of refs.transcripts) usedTrs.add(id);
 	}
-	for (const t of valuesOf(doc.transcripts)) {
-		if (!usedTrs.has(t.id) && (t.mediaId === null || !usedMedia.has(t.mediaId))) delete doc.transcripts[t.id];
-		else if (t.mediaId && !usedMedia.has(t.mediaId)) doc.transcripts[t.id]!.mediaId = null;
+	const media = peek<Record<string, MediaAsset>>(doc, 'media')!;
+	for (const id of peekKeys(media)) {
+		const m = peek<MediaAsset>(media, id)!;
+		if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
 	}
-	for (const id of keysOf(doc.media)) if (!usedMedia.has(id)) delete doc.media[id];
-	for (const id of keysOf(doc.synthetics)) if (!usedSyn.has(id)) delete doc.synthetics[id];
+	const transcripts = peek<Record<string, Transcript>>(doc, 'transcripts')!;
+	for (const id of peekKeys(transcripts)) {
+		const t = peek<Transcript>(transcripts, id)!;
+		if (!usedTrs.has(t.id) && (t.mediaId === null || !usedMedia.has(t.mediaId))) delete doc.transcripts[id];
+		else if (t.mediaId && !usedMedia.has(t.mediaId)) doc.transcripts[id]!.mediaId = null;
+	}
+	for (const id of peekKeys(media)) if (!usedMedia.has(id)) delete doc.media[id];
+	const synthetics = peek<Record<string, unknown>>(doc, 'synthetics')!;
+	for (const id of peekKeys(synthetics)) if (!usedSyn.has(id)) delete doc.synthetics[id];
 }
 
 export const projectHandlers: HandlerMap = {
