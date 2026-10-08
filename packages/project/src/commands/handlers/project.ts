@@ -8,6 +8,7 @@ import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
+import { keysOf, latest, valuesOf } from '../draft-read.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { type HandlerMap, idList } from './util.ts';
@@ -63,30 +64,32 @@ function item(doc: DDoc, id: string, h: HandlerContext): ProjectItem {
 
 /** Removes assets/synthetics/transcripts no longer referenced by any item or clip (INV-014). */
 export function collectOrphans(doc: DDoc): void {
+	// perf-core: reads current values without drafting every sequence and clip (draft-read.ts).
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
 	const usedTrs = new Set<string>();
-	for (const it of Object.values(doc.items)) {
+	for (const it of valuesOf(doc.items)) {
 		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
 		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
 	}
-	for (const seq of Object.values(doc.sequences)) {
-		for (const c of Object.values(seq.clips)) {
+	for (const seq of valuesOf(doc.sequences)) {
+		for (const c of valuesOf(seq.clips)) {
 			const r = c as Record<string, unknown>;
 			if (typeof r.mediaId === 'string') usedMedia.add(r.mediaId);
 			if (typeof r.syntheticId === 'string') usedSyn.add(r.syntheticId);
 			if (typeof r.transcriptId === 'string') usedTrs.add(r.transcriptId);
 		}
 	}
-	for (const m of Object.values(doc.media)) {
-		if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
+	for (const m of valuesOf(doc.media)) {
+		const d = latest(m.derivation);
+		if (d) usedMedia.add(d.fromMediaId);
 	}
-	for (const t of Object.values(doc.transcripts)) {
+	for (const t of valuesOf(doc.transcripts)) {
 		if (!usedTrs.has(t.id) && (t.mediaId === null || !usedMedia.has(t.mediaId))) delete doc.transcripts[t.id];
-		else if (t.mediaId && !usedMedia.has(t.mediaId)) t.mediaId = null;
+		else if (t.mediaId && !usedMedia.has(t.mediaId)) doc.transcripts[t.id]!.mediaId = null;
 	}
-	for (const id of Object.keys(doc.media)) if (!usedMedia.has(id)) delete doc.media[id];
-	for (const id of Object.keys(doc.synthetics)) if (!usedSyn.has(id)) delete doc.synthetics[id];
+	for (const id of keysOf(doc.media)) if (!usedMedia.has(id)) delete doc.media[id];
+	for (const id of keysOf(doc.synthetics)) if (!usedSyn.has(id)) delete doc.synthetics[id];
 }
 
 export const projectHandlers: HandlerMap = {

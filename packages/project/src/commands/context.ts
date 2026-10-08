@@ -9,6 +9,7 @@ import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { flicksPerFrame, nominalFps, type Rational, secondsToFlicks, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
+import { keysOf, latest, peekIn } from './draft-read.ts';
 import { findTrackIn, resolveTrackIn } from './placement.ts';
 import type { ContentTimeInput, ParamAt, TimeInput } from './schemas/common.ts';
 import { type CommandContext, CommandError, type ErrorCode, type Issue, type Origin } from './types.ts';
@@ -69,15 +70,18 @@ export class HandlerContext {
 			if (!seq) this.fail('E_NOT_FOUND', `Sequence not found: ${id}`);
 			return seq;
 		}
-		const all = Object.values(doc.sequences);
-		if (all.length === 1) return all[0]!;
+		const all = keysOf(doc.sequences);
+		if (all.length === 1) return doc.sequences[all[0]!]!;
 		return this.fail('E_INVALID_PARAM', 'sequenceId is required when the project has several sequences');
 	}
 
 	clip(doc: DDoc, clipId: string): { seq: DSeq; clip: DClip } {
-		for (const seq of Object.values(doc.sequences)) {
-			const clip = seq.clips[clipId];
-			if (clip) return { seq, clip };
+		// perf-core: find the sequence on current values; only it and the clip are drafted.
+		const seqs = latest(doc.sequences);
+		for (const sid in seqs) {
+			if (!Object.hasOwn(seqs, sid) || !peekIn(latest(seqs[sid]!).clips, clipId)) continue;
+			const seq = doc.sequences[sid]!;
+			return { seq, clip: seq.clips[clipId]! };
 		}
 		return this.fail('E_NOT_FOUND', `Clip not found: ${clipId}`);
 	}
@@ -175,8 +179,10 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 	if (doc.projectId === id || doc.items[id] || doc.media[id] || doc.synthetics[id] || doc.transcripts[id])
 		return true;
 	if (doc.fonts[id] || doc.sequences[id]) return true;
-	for (const seq of Object.values(doc.sequences)) {
-		if (seq.clips[id] || seq.transitions[id] || seq.links[id] || seq.groups[id]) return true;
+	for (const seq of Object.values(latest(doc.sequences))) {
+		const s = latest(seq);
+		if (peekIn(s.clips, id) || peekIn(s.transitions, id) || peekIn(s.links, id) || peekIn(s.groups, id))
+			return true;
 	}
 	return false;
 }

@@ -51,6 +51,8 @@ import {
 	shiftMarkers,
 	splitClipAt,
 	syncFollowerTracks,
+	type TrackCandidates,
+	trackCandidates,
 	tracksOfKind,
 } from '../placement.ts';
 import { rippleDeleteSpans, rippleTrimGroup, tracksHolding, trimLimits } from '../ripple.ts';
@@ -788,7 +790,21 @@ export const clipCoreHandlers: HandlerMap = {
 			return { clip: c, dest, start, end: start + c.duration };
 		});
 		if (mode === 'overwrite') {
-			for (const p of plan) relinkSplits(seq, clearRange(seq, p.dest.id, p.start, p.end, h, moving), h);
+			// perf-core: one scan per destination track (the ranges and their order are unchanged).
+			const pools = new Map<string, TrackCandidates>();
+			for (const p of plan) {
+				const hull = pools.get(p.dest.id);
+				pools.set(p.dest.id, {
+					trackId: p.dest.id,
+					lo: Math.min(hull?.lo ?? p.start, p.start),
+					hi: Math.max(hull?.hi ?? p.end, p.end),
+					ids: [],
+				});
+			}
+			for (const [trackId, hull] of pools)
+				pools.set(trackId, trackCandidates(seq, trackId, hull.lo, hull.hi, moving));
+			for (const p of plan)
+				relinkSplits(seq, clearRange(seq, p.dest.id, p.start, p.end, h, moving, pools.get(p.dest.id)), h);
 		} else {
 			const at = Math.min(...plan.map((p) => p.start));
 			const n = Math.max(...plan.map((p) => p.end)) - at;
