@@ -87,6 +87,9 @@ were never canvases (Player fallback with chips, renders refuse as before), so n
 
 ## 3. Exports and the planner
 
+ARCHITECTURE D-43 (HTML-in-Canvas scopes cannot nest) stays true of the browser; its "open limitation" is what this
+workstream removes (the decision table is not edited here, per the brief).
+
 Nothing changes in the planner: it already routed these stacks honestly; only the Remotion path used to fail at render
 time. Adjustment layers with GPU effects, 3D runs and linear light go to Remotion (named blockers, as before) and now
 render; blend modes plus adjustment layers with native effects stay native; DOM layers in such stacks are baked
@@ -120,10 +123,29 @@ through Remotion, against the formulas.
   adjustment layer and a GL blend (decoded frames reach the compositor; two seeks), a nest drawn as a canvas source, an
   adjustment layer over a 3D run, and a Rec. 2100 PQ sequence with a GL blend scope whose graphics white is shown
   through the display transform (> 220; it was the raw 148 with a chip before) without the chip.
+  `COMPOSITOR_ELECTRON=1 xvfb-run -a …` runs the same four Players in the desktop app's **Electron 44** (Chrome 152,
+  `CanvasDrawElement` as `apps/desktop` sets it; SwiftShader for WebGL2 because xvfb has no GPU): 4 / 4 pass.
+- **`e2e/compositor.spec.ts`** (built app, Playwright): Program monitor of an adjustment layer (Invert) over Linear
+  Burn = (179, 230, 179) with no chip, the Remotion export of the same stack (centre within 4), a 3D layer added on
+  top, and a Rec. 2100 PQ working space with the display transform running (no chip). Screenshots
+  `test-results/compositor-*.png`.
 - **`apps/engine/test/compositor-export.e2e.test.ts`** (REMOTION_E2E=1, real engine): see §3.
 - **`apps/engine/test/color-mgmt-remotion.test.ts`**: the adjustment layer between linear-light tracks that failed with
   CANVAS_NESTED now renders the linear mix.
 - `color-mgmt.test.tsx`: the nested guard asks the owner to flatten instead of failing.
+- Regressions run with these changes (all pass): `scope-nesting`, `edit-structure-render`, `three-d-render`,
+  `masks-render`, `text-animators`, `transition-render`, `fx-render`, `fx-player`, `transition-player` (REMOTION_E2E,
+  compositions); `blend-remotion.e2e` (31 / 31 modes) and `color-mgmt-remotion` (engine); `blend-gl`, `three-d-gl`,
+  `masks-gl`, `capture-safe-canvas` (GL). The Player suites failed before on `integrate/parity` for an unrelated reason
+  (their test pages served the bundle without a charset, and a non-ASCII XML-name regex of `@jasper/project` broke
+  the whole bundle): `fx-media.ts` now serves test pages as UTF-8.
+
+**Found on the way and fixed** (`packages/project/src/derive/index.ts`): the per-track clip index was memoised by the
+`clips` record identity, which an Immer draft keeps for the whole transaction, so a command that read the index made
+later commands of the same transaction see stale clips (`transition.add` after `clip.addSolid` on another track was
+refused: "not an edit point"; overwrites could miss a clip added earlier in the same transaction). Drafts are no
+longer cached; `packages/project/test/derive-draft-index.test.ts`. The session §13 benchmarks (command on 1 000 clips,
+50-clip gesture) measured the same before and after (≈ 31–44 ms and 140–210 ms both ways on this loaded host).
 
 ## 5. Limits
 
