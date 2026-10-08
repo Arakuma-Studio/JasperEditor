@@ -175,9 +175,9 @@ function cssBlendScene(modes: readonly string[], part: number): Scene {
 }
 
 /**
- * A GPU-composited blend mode: the tile at 60 % over the card. One per scene — two tracks with GL blend modes cannot
- * render on the Remotion path (HTML-in-Canvas scopes do not nest; CANVAS_NESTED, docs/gaps.md) — with Opacity 80 %
- * so the opacity path of the compositing shader is covered too.
+ * A GPU-composited blend mode: the tile at 60 % over the card, with Opacity 80 % so the opacity path of the
+ * compositing shader is covered too. One per scene (each mode's own golden); stacks of them, with adjustment layers,
+ * linear light and 3D between them, are the `combo-*` scenes (the flat compositor, docs/wp-notes/compositor.md).
  */
 function glBlendScene(mode: string): Scene {
 	return {

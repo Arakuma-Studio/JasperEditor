@@ -140,12 +140,26 @@ through Remotion, against the formulas.
   (their test pages served the bundle without a charset, and a non-ASCII XML-name regex of `@jasper/project` broke
   the whole bundle): `fx-media.ts` now serves test pages as UTF-8.
 
-**Found on the way and fixed** (`packages/project/src/derive/index.ts`): the per-track clip index was memoised by the
+- **Golden frames** (golden-fuzz's harness, `golden-scenes.e2e.test.ts`): the 56 existing scenes pass unchanged on this
+  branch (the pixel-parity safety net). Six combined scenes are added (`combo-*` in `test/golden/scenes.ts`), each
+  checked against a computed reference *before* its golden is compared or blessed (`Scene.reference`):
+
+  | Scene | Reference | Measured against it |
+  |---|---|---|
+  | `combo-gl-blends-stacked` (Linear Burn 60 % + Color Dodge 50 %) | `blendPixel` per pixel, RGBA8 between layers | PSNR 68.2 dB, max 1 |
+  | `combo-adjust-over-gl-blend` (Invert over Linear Burn 70 %) | Invert of `blendPixel` | PSNR 69.1 dB, max 1 |
+  | `combo-blend-adjust-blend` (Vivid Light, Invert, Subtract) | `blendPixel`, Invert, `blendPixel` | PSNR 76.7 dB, max 1 |
+  | `combo-linear-adjust-between` (1.0 gamma: Normal 50 %, Invert, Screen 40 %) | BT.1886 decode / blend / encode | PSNR 95.1 dB, max 1 |
+  | `combo-3d-blend-adjust` (Linear Burn, a 3D run, Invert; solids) | Classic 3D CPU reference + pointwise Invert | 1.3 % of the pixels off by > 6 (edges: the reference does not antialias) |
+  | `combo-hdr-display-scope` (PQ, Program monitor, a GPU blend scope) | the export render (working signal, nested structure) through the display LUT on the CPU | PSNR 72.1 dB, max 3 |
+
+**Found on the way** (`packages/project/src/derive/index.ts`): the per-track clip index was memoised by the
 `clips` record identity, which an Immer draft keeps for the whole transaction, so a command that read the index made
 later commands of the same transaction see stale clips (`transition.add` after `clip.addSolid` on another track was
 refused: "not an edit point"; overwrites could miss a clip added earlier in the same transaction). Drafts are no
 longer cached; `packages/project/test/derive-draft-index.test.ts`. The session §13 benchmarks (command on 1 000 clips,
-50-clip gesture) measured the same before and after (≈ 31–44 ms and 140–210 ms both ways on this loaded host).
+50-clip gesture) measured the same before and after (≈ 31–44 ms and 140–210 ms both ways on this loaded host). The same
+fix landed concurrently on `integrate/parity` (with `derive-draft.test.ts`); the merge kept that version and both tests.
 
 ## 5. Limits
 
@@ -162,4 +176,24 @@ longer cached; `packages/project/test/derive-draft-index.test.ts`. The session �
 
 ## 6. Performance
 
-See the measurements recorded in this section after the `pnpm perf` run (§6 is filled in from the measured report).
+Measured with `node scripts/performance.mjs --sections editor` (the `pnpm perf` editor section: whole-editor playback
+in the built app, headless Chrome 150 with HTML-in-Canvas, SwiftShader, 6 s per scenario) on the same 12-core shared
+host, alternating the baseline (`integrate/parity` 7ac85235 built in a separate worktree) and this branch, with this
+branch's script on both (so both run the two new scenarios). fps = frames shown per second; the host load factor of
+`scripts/perf/budget.ts` is given per run.
+
+| Scenario | base run 1 (×1.29) | base run 2 (×1.82) | compositor run 1 (×1.73) | compositor run 2 (×1.74) |
+|---|---|---|---|---|
+| single 1080p H.264 | 12.5 | 9.3 | 11.2 | 8.2 |
+| stack of 3 (scaled, translucent) | 3.1 | 3.0 | 2.8 | 2.5 |
+| GL blend scope over video (nested structure) | 2.0 | 1.1 | 1.0 | 1.2 |
+| adjustment (Invert) over GL blend over video | 1.5 *(wrong picture: chip, no Invert)* | 1.0 *(idem)* | 1.0 | 1.4 |
+| GPU effects, live | 3.8 | 3.7 | 3.9 | 3.7 |
+| GPU effects, from previews | 15.5 | 9.5 | 16.6 | 10.6 |
+
+The differences are within the run-to-run spread of this loaded host (the same build varies by 30–40 % between runs):
+no measurable regression of the stacks that keep the nested structure (their code path is unchanged apart from a
+context read per layer and a memoised decision per stack). The flat compositor plays the nested-scope stack at the
+speed the one-scope stack plays (≈ 1–1.5 fps of 1080p on this CPU-only SwiftShader host), and now draws it right.
+Raw reports: `test-results/performance/compositor*.{json,md}` (not committed). `pnpm perf` gained the two scenarios;
+its previewed-playback budget now finds its scenario by name.
