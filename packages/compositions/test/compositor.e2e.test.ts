@@ -74,7 +74,11 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 	}, 300_000);
 	afterAll(() => media?.close());
 
-	async function still(commands: Command[], frame: number, name: string): Promise<Buffer> {
+	async function still(
+		commands: Parameters<typeof fxSnapshot>[0],
+		frame: number,
+		name: string,
+	): Promise<Buffer> {
 		const doc = fxSnapshot(commands);
 		const inputProps = {
 			doc,
@@ -257,6 +261,34 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		// Push at the middle of the span: B came in from the left, A moved right.
 		expectAt(raw, 10, FX_H / 2, invert(b), 6);
 		expectAt(raw, FX_W - 10, FX_H / 2, invert(a), 6);
+	});
+
+	it('a visible DOM track read as a Track Matte under an adjustment layer', async () => {
+		const raw = await still(
+			(p) => [
+				{
+					type: 'clip.addShape',
+					at: 0,
+					duration: 30,
+					track: 'V1',
+					shape: { type: 'rect', size: [200, 100], fill: [0.5, 0.5, 0.5, 1] },
+				} as Command,
+				solid('V2', [1, 0, 0, 1], '$fill'),
+				{
+					type: 'effect.add',
+					target: { clipId: '$fill' },
+					effectId: 'jasper.track-matte-key',
+					params: { matteTrack: Object.values(p.sequences)[0]!.videoTracks[0]!.id },
+				} as Command,
+				adjustment('V3', '$adj'),
+				effect('$adj', 'jasper.invert'),
+			],
+			2,
+			'matte-under-adjust',
+		);
+		// Inside the matte: red over the grey rect, inverted; outside: the black background, inverted.
+		expectAt(raw, FX_W / 2, FX_H / 2, [0, 1, 1, 1]);
+		expectAt(raw, 20, 20, [1, 1, 1, 1]);
 	});
 
 	// ------------------------------------------------------------ linear light
@@ -502,6 +534,20 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 			'parity-blend-text',
 			3,
 			0.01,
+		);
+	});
+
+	it('parity: Stencil Alpha over video reveals the background', async () => {
+		await parity(
+			[
+				{ type: 'sequence.updateSettings', settings: { backgroundColor: [0.2, 0.4, 0.6, 1] } } as Command,
+				...fxCmd.video(media),
+				solid('V2', [1, 1, 1, 1], '$st'),
+				scale('$st', 50),
+				mode('$st', 'stencil-alpha'),
+			],
+			'parity-stencil',
+			2,
 		);
 	});
 

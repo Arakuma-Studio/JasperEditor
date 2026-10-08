@@ -47,7 +47,9 @@ export async function startFxMedia(prefix: string): Promise<FxMedia> {
 	const server = createServer((req, res) => {
 		const name = decodeURIComponent((req.url ?? '/').split('?')[0]!.slice(1));
 		const mem = pages.get(name);
-		if (mem) return void res.writeHead(200, { 'Content-Type': mem.type }).end(mem.body);
+		// UTF-8 always: bundles carry non-ASCII literals (XML name regexes), which Latin-1 decoding breaks.
+		const type = /charset=/i.test(mem?.type ?? '') ? mem!.type : `${mem?.type}; charset=utf-8`;
+		if (mem) return void res.writeHead(200, { 'Content-Type': type }).end(mem.body);
 		const file = join(dir, name);
 		if (!file.startsWith(dir) || !existsSync(file)) return void res.writeHead(404).end();
 		const size = statSync(file).size;

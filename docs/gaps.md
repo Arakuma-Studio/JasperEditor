@@ -180,7 +180,6 @@ Remaining limits:
 - no HEVC Main10 in the LGPL build;
 - the composite is 8-bit encoded;
 - linear-light compositing renders on the Remotion path only;
-- HTML-in-Canvas scopes cannot nest (renders fail with CANVAS_NESTED, and the HDR display stage steps aside).
 
 ### color-grade
 **Done when:** Lumetri's HSL secondary, hue-vs curves, vignette, comparison view and Color Match exist, each with
@@ -194,8 +193,8 @@ cost model, Render Effects In to Out / In to Out / Selection / Audio, Delete Ren
 files the Program monitor plays, Export ▸ Use Previews, smart rendering (H.264 opt-in, ProRes), the Player stall
 root cause, perf instrumentation ([performance.md](performance.md)). Proxies and Export Frame predate this workstream
 and were not reworked. Remaining limits: no HEVC smart rendering; browser playback of mixed-parameter `avc3` smart
-renders unverified; razor cuts re-render both halves; ARCHITECTURE §13 command / gesture budgets missed; some
-canvas-scope nesting combinations still fail with CANVAS_NESTED (wp-note §5).
+renders unverified; razor cuts re-render both halves; ARCHITECTURE §13 command / gesture budgets missed. Canvas-scope
+nesting (wp-note §5) was lifted by the compositor workstream ([wp-notes/compositor.md](wp-notes/compositor.md)).
 
 ### process
 Guardrails and the project format: AGENTS.md / CLAUDE.md, layering and asset-attribution lints, ported-source
