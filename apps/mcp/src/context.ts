@@ -254,10 +254,31 @@ export type TxInput = {
 	sequenceId?: string;
 };
 
+/** The command system's refusal when a sequence-scoped command has no sequenceId and the project has several. */
+const SEQUENCE_REQUIRED = /sequenceId is required when the project has several sequences/;
+
+/** The project's first sequence: the documented default of every tool's optional `sequenceId`. */
+async function firstSequenceId(ctx: ToolContext, projectId: string): Promise<string | undefined> {
+	const r = await ctx.engine((c) => c.agentQuery({ projectId, query: 'doc.get', args: {} }));
+	const doc = r.result as ProjectDocument | undefined;
+	return doc?.sequences ? Object.keys(doc.sequences)[0] : undefined;
+}
+
+function refusedForSequence(res: AgentTxResponse): boolean {
+	const r = res.result as TransactionResult;
+	return !r.ok && r.errors.some((e) => SEQUENCE_REQUIRED.test(e.message));
+}
+
 /**
  * Sends an agent transaction (`POST /api/agent/tx`): the engine applies it through the open editor (live,
  * one "Agent: <label>" undo entry) or headlessly. Destructive transactions wait for the user's approval in
  * the editor (up to 60 s); meanwhile the client gets progress notifications.
+ *
+ * Without `sequenceId`, sequence-scoped commands use the project's first sequence, as every tool documents
+ * ("default: the project's first sequence"). The command system itself refuses them when the project has several
+ * sequences (a nest or a multi-camera source is enough), so such a refusal is retried once with the first sequence
+ * (a refused transaction applied nothing). A transaction that needs the user's approval resolves the sequence first
+ * instead, so the user is never asked twice.
  */
 export async function transact(
 	ctx: ToolContext,
@@ -275,8 +296,8 @@ export async function transact(
 		tick();
 		timer = setInterval(tick, 5000);
 	}
-	try {
-		return await ctx.engine((c) =>
+	const send = (sequenceId: string | undefined) =>
+		ctx.engine((c) =>
 			c.agentTx({
 				projectId,
 				transaction: {
@@ -286,10 +307,17 @@ export async function transact(
 					commands: input.commands as never,
 					...(input.dryRun ? { dryRun: true } : {}),
 					...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
-					...(input.sequenceId ? { sequenceId: input.sequenceId } : {}),
+					...(sequenceId ? { sequenceId } : {}),
 				} as never,
 			}),
 		);
+	try {
+		if (input.sequenceId) return await send(input.sequenceId);
+		if (needsApproval.length) return await send(await firstSequenceId(ctx, projectId));
+		const res = await send(undefined);
+		if (!refusedForSequence(res)) return res;
+		const first = await firstSequenceId(ctx, projectId);
+		return first ? await send(first) : res;
 	} finally {
 		if (timer) clearInterval(timer);
 	}
