@@ -75,13 +75,7 @@ export function frameRenderDoc(
 			fromMediaId: it.mediaId,
 			ref: '$seq',
 		} as Command);
-		commands.push({
-			type: 'clip.place',
-			sequenceId: '$seq',
-			source: { mediaId: it.mediaId },
-			at: 0,
-			audio: false,
-		} as Command);
+		// sequence.create from the media places it at 0 (New Sequence From Clip).
 		if (it.kind === 'subclip') {
 			const vs = asset.probe.streams.find((s) => s.type === 'video');
 			const fps = vs?.type === 'video' && vs.frameRate.den > 0 ? vs.frameRate.num / vs.frameRate.den : 30;

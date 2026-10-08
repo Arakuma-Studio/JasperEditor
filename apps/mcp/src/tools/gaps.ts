@@ -17,6 +17,7 @@ import {
 	proxyMismatch,
 	resolveFrameInput,
 	type Sequence,
+	sequenceFormatOf,
 	sequenceTimecode,
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
@@ -51,6 +52,7 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - get_project_settings / set_project_settings: Project Settings (video display format timecode / frames / feet35 / feet16, audio display format samples / milliseconds, the Captured and Generated Media folder, ingest at import: copy / transcode / proxies / copyAndProxies) and the engine folders behind Scratch Disks.
 - create_proxies transcodes video media to a proxy preset in the background and attaches the proxies when the job ends (wait: true waits and attaches); attach_proxy attaches an existing file (duration ± 1 frame and frame rate must match unless force); detach_proxies removes them; reconnect_full_resolution links a clip to its full-resolution file (the file it used becomes its proxy). The editor's Toggle Proxies plays proxies; exports never use them unless start_export gets draftUseProxies.
 - export_frame writes the sequence frame at a time as png / jpeg / tiff / dpx (10-bit) / exr (linear half float) / bmp / tga to a folder on this machine (never overwriting), optionally importing it into the project.
+- get_sequence_settings / set_sequence_settings: Sequence Settings (timebase, frame size, pixel aspect ratio, fields, drop frame, audio sample rate, Mix channels). A non-square pixel aspect ratio means the sequence is edited at its display width (storageWidth × ratio) and exports at storageWidth with the ratio signalled; changing the timebase of a sequence with clips conforms them and needs conform: true (Premiere does not allow it); a frame size change takes reposition. new_sequence_from_clip makes a sequence matching a media item (size, rate, pixel aspect, fields) with the clip in it. Fields are kept with the sequence; exports are progressive (the plan warns FIELDS_PROGRESSIVE).
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -728,6 +730,131 @@ export function registerGapsTools(ctx: ToolContext): void {
 				format: result.format ?? format ?? 'png',
 				...(mediaId ? { mediaId } : {}),
 			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'get_sequence_settings',
+		{
+			title: 'Get Sequence Settings',
+			description:
+				'Sequence Settings of a sequence: timebase, display and storage frame size, pixel aspect ratio, fields, drop frame, start timecode, audio sample rate, Mix channels, working colour space and Video Previews.',
+			input: { projectId: ProjectIdArg, sequenceId: SequenceIdArg },
+			annotations: READ_ONLY,
+		},
+		async ({ projectId, sequenceId }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const seq = seqOf(doc, sequenceId);
+			const st = seq.settings;
+			const f = sequenceFormatOf(st);
+			return jsonResult({
+				sequenceId: seq.id,
+				frameRate: st.frameRate,
+				width: st.width,
+				height: st.height,
+				storageWidth: f.storageWidth,
+				pixelAspectRatio: f.par,
+				fieldOrder: f.fieldOrder,
+				dropFrame: st.dropFrame,
+				startTimecodeFrames: st.startTimecodeFrames,
+				audioSampleRate: st.audioSampleRate,
+				masterLayout: st.masterLayout,
+				workingColorSpace: st.workingColorSpace,
+				previews: seq.previews ?? null,
+				hasClips: Object.keys(seq.clips).length > 0,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_sequence_settings',
+		{
+			title: 'Set Sequence Settings',
+			description:
+				'Changes Sequence Settings in one undoable step. frameRate {num,den} (a sequence with clips needs conform: true: clips, markers and keyframes move to the new rate); width/height (square pixels) or storageWidth + pixelAspectRatio {num,den} (null = square); fieldOrder progressive|upper|lower; dropFrame; audioSampleRate 44100|48000|96000; masterLayout mono|stereo|5.1; reposition of existing clips when the size changes.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				frameRate: z
+					.object({ num: z.number().int().positive(), den: z.number().int().positive() })
+					.optional(),
+				width: z.number().int().optional(),
+				height: z.number().int().optional(),
+				storageWidth: z.number().int().optional(),
+				pixelAspectRatio: z
+					.object({ num: z.number().int().positive(), den: z.number().int().positive() })
+					.nullable()
+					.optional(),
+				fieldOrder: z.enum(['progressive', 'upper', 'lower']).optional(),
+				dropFrame: z.boolean().optional(),
+				audioSampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]).optional(),
+				masterLayout: z.enum(['mono', 'stereo', '5.1']).optional(),
+				reposition: z.enum(['keep-offset-from-center', 'scale-proportionally', 'keep-pixels']).optional(),
+				conform: z.boolean().optional(),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, sequenceId, conform, reposition, ...rest }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const seq = seqOf(doc, sequenceId);
+			const settings = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
+			if (!Object.keys(settings).length)
+				throw new ToolError('E_INVALID_PARAM', 'Nothing to change', 'Pass at least one setting.');
+			const fr = rest.frameRate;
+			const changesRate = fr && fr.num * seq.settings.frameRate.den !== seq.settings.frameRate.num * fr.den;
+			if (changesRate && Object.keys(seq.clips).length && !conform)
+				throw new ToolError(
+					'E_IN_USE',
+					'The sequence has clips: changing its timebase conforms them to the new rate',
+					'Pass conform: true to do it anyway (Premiere locks the timebase of a sequence with clips).',
+				);
+			const res = await transact(ctx, projectId, {
+				label: 'Sequence Settings',
+				sequenceId: seq.id,
+				commands: [
+					{
+						type: 'sequence.updateSettings',
+						sequenceId: seq.id,
+						settings,
+						...(reposition ? { reposition } : {}),
+					},
+				],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'new_sequence_from_clip',
+		{
+			title: 'New sequence from clip',
+			description:
+				"Premiere's New Sequence From Clip: a sequence named after the item matching its media's frame size, frame rate, pixel aspect ratio and fields (HDR media: an HDR working space), with the clip placed at the start.",
+			input: {
+				projectId: ProjectIdArg,
+				itemId: z.string().min(1).describe('Media item id ("itm_…") or media id'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, itemId }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const it = doc.items[itemId];
+			const mediaId = it && it.kind === 'media' ? it.mediaId : doc.media[itemId] ? itemId : null;
+			if (!mediaId)
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Media item not found: ${itemId}`,
+					'Call get_project for item ids.',
+				);
+			const name = it?.name ?? doc.media[mediaId]!.originalName;
+			const res = await transact(ctx, projectId, {
+				label: 'New Sequence From Clip',
+				commands: [{ type: 'sequence.create', name, fromMediaId: mediaId }],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
 		},
 	);
 }

@@ -43,6 +43,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sub('New', [
 				c('app.newProject', 'Project…'),
 				c('app.newSequence', 'Sequence…'),
+				// gaps (TL-11)
+				c('project.newSequenceFromClip', 'Sequence From Clip'),
 				c('project.newBin', 'Bin'),
 				c('graphics.newTextLayer', 'Text Layer'),
 				c('mg.insertTemplate', 'fframes Motion Graphic…'),

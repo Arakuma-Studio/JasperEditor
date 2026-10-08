@@ -3,6 +3,7 @@
 // gaps dialogs (Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels…).
 import { trackLabel } from '@jasper/project';
 import { z } from 'zod';
+import { projectItemMenuExtensions } from '../extensions/index.ts';
 import {
 	EXPORT_FRAME_DIALOG,
 	type FrameSource,
@@ -16,6 +17,7 @@ import {
 	RECONNECT_FULL_RES_DIALOG,
 	registerProxyDialogs,
 } from '../gaps/ProxyDialogs.tsx';
+import { registerSequenceSettingsDialog, SEQUENCE_SETTINGS_DIALOG } from '../gaps/SequenceSettingsDialog.tsx';
 import {
 	askExit,
 	MANAGE_HEIGHT_PRESETS_DIALOG,
@@ -33,6 +35,64 @@ import { saveNow, setSkipUnloadFlush } from '../runtime/save.ts';
 import { runCommand } from './registry.ts';
 import { apply, envOf, seekReveal, selectedClips } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
+
+// gaps: Project panel item context menu — New Sequence From Clip and the Proxy submenu (Premiere's).
+projectItemMenuExtensions.register({
+	id: 'gaps.items',
+	order: 6,
+	items: ({ items, readOnly, runCommand: run }) => {
+		if (!run || !items.length) return [];
+		const one = items.length === 1 && items[0]!.kind === 'media';
+		const media = items.some((i) => i.kind === 'media' || i.kind === 'subclip');
+		return [
+			...(one
+				? [
+						{
+							kind: 'item' as const,
+							label: 'New Sequence From Clip',
+							disabled: readOnly,
+							run: () => run('project.newSequenceFromClip', undefined),
+						},
+					]
+				: []),
+			...(media
+				? [
+						{
+							kind: 'submenu' as const,
+							label: 'Proxy',
+							items: [
+								{
+									kind: 'item' as const,
+									label: 'Create Proxies…',
+									disabled: readOnly,
+									run: () => run('project.createProxies', undefined),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Attach Proxies…',
+									disabled: readOnly,
+									run: () => run('project.attachProxies', undefined),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Reconnect Full Resolution Media…',
+									disabled: readOnly,
+									run: () => run('project.reconnectFullRes', undefined),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Detach Proxies',
+									disabled: readOnly,
+									run: () => run('project.detachProxies', undefined),
+								},
+							],
+						},
+						{ kind: 'item' as const, label: 'Edit Original', run: () => run('edit.editOriginal', undefined) },
+					]
+				: []),
+		];
+	},
+});
 
 const hasSession = (ctx: CommandCtx) => !!ctx.session;
 const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
@@ -522,7 +582,81 @@ const exportFrame: UiCommand = {
 	},
 };
 
+// ---------------------------------------------------------------- Sequence ▸ Sequence Settings… (TL-11)
+
+const sequenceSettings: UiCommand = {
+	id: 'sequence.settings',
+	label: 'Sequence Settings…',
+	description:
+		'Timebase, frame size, pixel aspect ratio, fields, audio sample rate and channels of the active sequence, with its Video Previews and working colour space.',
+	scope: 'global',
+	agentExposed: true,
+	when: (ctx) => hasSeq(ctx) && !ctx.session?.getState().readOnly,
+	disabledReason: () => 'Open a sequence',
+	run: (ctx) => {
+		const e = envOf(ctx);
+		if (!e) return;
+		registerSequenceSettingsDialog();
+		ctx.ui.openDialog(SEQUENCE_SETTINGS_DIALOG, {
+			session: e.session,
+			sequenceId: e.seq.id,
+			runCommand: (id: string) => void runCommand(id, ctx),
+		});
+	},
+};
+
+/** The media item of the selection for New Sequence From Clip (a picture or sound with a duration). */
+function fromClipMedia(ctx: CommandCtx): { mediaId: string; name: string; binId: string | null } | null {
+	const s = ctx.session;
+	if (!s) return null;
+	const st = s.getState();
+	const doc = s.getCommitted();
+	const id = st.selection.project.primary ?? st.selection.project.items[0];
+	const it = id ? doc.items[id] : undefined;
+	if (!it || it.kind !== 'media') return null;
+	const a = doc.media[it.mediaId];
+	if (!a || (a.kind !== 'video' && a.kind !== 'audio' && a.kind !== 'image' && a.kind !== 'animated-image'))
+		return null;
+	const bin = Object.values(doc.items).find((b) => b.kind === 'bin' && b.children.includes(it.id));
+	return { mediaId: a.id, name: it.name, binId: bin?.id ?? null };
+}
+
+const newSequenceFromClip: UiCommand = {
+	id: 'project.newSequenceFromClip',
+	label: 'New Sequence From Clip',
+	description:
+		"A sequence matching the selected clip's frame size, rate, pixel aspect and fields, with the clip in it.",
+	scope: 'global',
+	agentExposed: true,
+	when: (ctx) => !!fromClipMedia(ctx) && !ctx.session?.getState().readOnly,
+	disabledReason: () => 'Select a media item in the Project panel',
+	run: (ctx) => {
+		const m = fromClipMedia(ctx);
+		const s = ctx.session;
+		if (!m || !s) return;
+		const r = s.apply({
+			label: 'New Sequence From Clip',
+			origin: 'user',
+			commands: [
+				{ type: 'sequence.create', name: m.name, fromMediaId: m.mediaId, binId: m.binId },
+			] as never[],
+		});
+		if (!r.ok) {
+			ctx.ui.toast({
+				kind: 'warning',
+				message: 'New Sequence From Clip: not possible',
+				detail: r.errors[0]?.message,
+			});
+			return;
+		}
+		const out = r.results[0] as { sequenceId?: string; itemId?: string } | undefined;
+		if (out?.sequenceId) s.openSequence(out.sequenceId);
+	},
+};
+
 gapsCommands.push(
+	sequenceSettings,
+	newSequenceFromClip,
 	projectSettings,
 	proxyDialog(
 		'project.createProxies',

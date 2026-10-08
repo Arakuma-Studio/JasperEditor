@@ -97,6 +97,7 @@ describe('Sequence Settings ▸ Colour', () => {
 	it('the commands and menus are wired', () => {
 		const { session } = makeSession();
 		expect(getCommand('sequence.settings')).toBeTruthy();
+		expect(getCommand('sequence.colorSettings')).toBeTruthy();
 		expect(getCommand('clip.colorSpace')).toBeTruthy();
 		const ids = JSON.stringify(MENUBAR);
 		expect(ids).toContain('sequence.settings');
