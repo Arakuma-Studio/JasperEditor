@@ -62,7 +62,17 @@ const DEFAULT_MATERIAL = (): ModelMaterial => ({
 
 /** Parses a model file. Throws `ModelParseError` with the reason. */
 export function parseModel(bytes: Uint8Array, format: ModelFormat): ParsedModel {
-	const primitives = format === 'obj' ? parseObj(utf8Decode(bytes)) : parseGltf(bytes, format);
+	let primitives: ModelPrimitive[];
+	try {
+		primitives = format === 'obj' ? parseObj(utf8Decode(bytes)) : parseGltf(bytes, format);
+	} catch (e) {
+		// glTF JSON is walked without a schema: a structurally wrong document (a number where an array belongs, an
+		// index past an array, an out-of-range typed-array view) surfaces as TypeError / RangeError — it is a
+		// malformed file, reported as such (golden-fuzz).
+		if (e instanceof TypeError || e instanceof RangeError)
+			throw new ModelParseError(`The model file is malformed (${e.message})`);
+		throw e;
+	}
 	if (primitives.length === 0) throw new ModelParseError('The model has no triangles');
 	const min: Vec3 = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
 	const max: Vec3 = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
@@ -94,7 +104,8 @@ function utf8Decode(b: Uint8Array): string {
 		else if (c < 0xe0) cp = ((c & 0x1f) << 6) | (b[i++]! & 0x3f);
 		else if (c < 0xf0) cp = ((c & 0x0f) << 12) | ((b[i++]! & 0x3f) << 6) | (b[i++]! & 0x3f);
 		else cp = ((c & 0x07) << 18) | ((b[i++]! & 0x3f) << 12) | ((b[i++]! & 0x3f) << 6) | (b[i++]! & 0x3f);
-		out += String.fromCodePoint(cp);
+		// Malformed sequences (overlong tails, surrogates, > U+10FFFF) become U+FFFD instead of throwing.
+		out += cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) ? '\ufffd' : String.fromCodePoint(cp);
 	}
 	return out;
 }
@@ -160,7 +171,11 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			off += 8 + len;
 		}
 		if (!jsonText) throw new ModelParseError('The .glb file has no JSON chunk');
-		json = JSON.parse(jsonText) as Json;
+		try {
+			json = JSON.parse(jsonText) as Json;
+		} catch {
+			throw new ModelParseError('The .glb JSON chunk is not valid JSON');
+		}
 	} else {
 		try {
 			json = JSON.parse(utf8Decode(bytes)) as Json;
@@ -168,6 +183,8 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			throw new ModelParseError('The .gltf file is not valid JSON');
 		}
 	}
+	if (!json || typeof json !== 'object' || Array.isArray(json))
+		throw new ModelParseError('The glTF JSON is not an object');
 	if (!String(json.asset?.version ?? '').startsWith('2'))
 		throw new ModelParseError('Only glTF 2.0 is supported');
 	const required: string[] = json.extensionsRequired ?? [];

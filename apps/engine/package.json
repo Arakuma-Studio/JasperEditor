@@ -58,6 +58,7 @@
   "devDependencies": {
     "@jasper/engine-client": "workspace:*",
     "@jasper/session": "workspace:*",
-    "@types/ws": "^8.18.2"
+    "@types/ws": "^8.18.2",
+    "@jasper/testkit": "workspace:*"
   }
 }

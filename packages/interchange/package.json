@@ -12,5 +12,8 @@
   },
   "dependencies": {
     "@jasper/project": "workspace:*"
+  },
+  "devDependencies": {
+    "@jasper/testkit": "workspace:*"
   }
 }

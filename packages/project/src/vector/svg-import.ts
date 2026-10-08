@@ -429,6 +429,21 @@ export function parseTransform(s: string | undefined): Mat {
  * Decomposes an affine matrix into a shape group transform (position · rotation · skew · scale, anchor 0), or null
  * when the skew is outside After Effects' ±85° (the caller bakes the matrix into the geometry).
  */
+/** Inverse of `matrixToGroupTransform`: translate(position) · rotate · skew · scale as a matrix. */
+function groupTransformMatrix(tr: Record<string, unknown>): Mat {
+	const v2 = (x: unknown, d: number): [number, number] =>
+		Array.isArray(x) && typeof x[0] === 'number' && typeof x[1] === 'number' ? [x[0], x[1]] : [d, d];
+	const [e, f] = v2(tr.position, 0);
+	const [sxp, syp] = v2(tr.scale, 100);
+	const th = ((typeof tr.rotation === 'number' ? tr.rotation : 0) * Math.PI) / 180;
+	const k = -Math.tan(((typeof tr.skew === 'number' ? tr.skew : 0) * Math.PI) / 180);
+	const sx = sxp / 100;
+	const sy = syp / 100;
+	const cs = Math.cos(th);
+	const sn = Math.sin(th);
+	return [sx * cs, sx * sn, cs * k * sy - sn * sy, sn * k * sy + cs * sy, e, f];
+}
+
 export function matrixToGroupTransform(m: Mat): Record<string, unknown> | null {
 	const [a, b, c, d, e, f] = m;
 	const sx = Math.hypot(a, b);
@@ -951,12 +966,13 @@ function bake(items: Item[], m: Mat): void {
 		} else if (it.type === 'group') {
 			const tr = it.transform as Record<string, unknown> | undefined;
 			if (tr?.position || tr?.scale || tr?.rotation || tr?.skew) {
-				// Nested transforms stay; the outer matrix goes into the group's own children.
-				it.contents = [{ type: 'group', name: String(it.name), contents: it.contents, transform: tr }];
-				it.transform = tr.opacity !== undefined ? { opacity: tr.opacity } : undefined;
-				if (!it.transform) delete it.transform;
-			}
-			bake(it.contents as Item[], m);
+				// The group's own transform T sits inside the outer matrix: its children get m·T baked in and the
+				// group keeps only its opacity. (Re-wrapping the group instead recursed forever: golden-fuzz.)
+				const inner = mul(m, groupTransformMatrix(tr));
+				if (tr.opacity !== undefined) it.transform = { opacity: tr.opacity };
+				else delete it.transform;
+				bake(it.contents as Item[], inner);
+			} else bake(it.contents as Item[], m);
 		}
 	}
 }

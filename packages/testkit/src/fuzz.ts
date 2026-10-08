@@ -493,15 +493,17 @@ function describeError(e: unknown): string {
 	return `non-Error thrown: ${String(e)}`;
 }
 
-/** Runs one input; returns a failure description, or undefined when the outcome is allowed. */
-async function exercise<K extends FuzzKind>(
+/** Classifies one finished run of an input: a failure description, or undefined when the outcome is allowed. */
+function verdict<K extends FuzzKind>(
 	t: FuzzTarget<K>,
 	input: InputOf<K>,
-): Promise<string | undefined> {
-	const t0 = performance.now();
+	t0: number,
+	run: () => unknown,
+): string | undefined {
 	let failure: string | undefined;
 	try {
-		const result = await t.run(input);
+		// (not `t.check?.(run(), …)`: optional-call short-circuits its arguments, so `run` would never run)
+		const result = run();
 		t.check?.(result, input);
 	} catch (e) {
 		if (!isExpected(e, t.expected)) failure = describeError(e);
@@ -512,6 +514,35 @@ async function exercise<K extends FuzzKind>(
 	return failure;
 }
 
+/** Runs one input (async targets awaited). */
+async function exercise<K extends FuzzKind>(
+	t: FuzzTarget<K>,
+	input: InputOf<K>,
+): Promise<string | undefined> {
+	const t0 = performance.now();
+	let result: unknown;
+	let thrown: { e: unknown } | undefined;
+	try {
+		result = await t.run(input);
+	} catch (e) {
+		thrown = { e };
+	}
+	return verdict(t, input, t0, () => {
+		if (thrown) throw thrown.e;
+		return result;
+	});
+}
+
+/** Runs one input of a synchronous target. */
+function exerciseSync<K extends FuzzKind>(t: FuzzTarget<K>, input: InputOf<K>): string | undefined {
+	const t0 = performance.now();
+	return verdict(t, input, t0, () => {
+		const r = t.run(input);
+		if (r instanceof Promise) throw new Error('runFuzzTargetSync: the target returned a Promise');
+		return r;
+	});
+}
+
 function arbitraryOf(kind: FuzzKind): fc.Arbitrary<unknown> {
 	if (kind === 'bytes') return fc.uint8Array({ maxLength: 2048 });
 	if (kind === 'text')
@@ -519,46 +550,29 @@ function arbitraryOf(kind: FuzzKind): fc.Arbitrary<unknown> {
 	return fc.oneof(fc.jsonValue({ maxDepth: 6 }), fc.anything({ maxDepth: 4, withNullPrototype: true }));
 }
 
-/**
- * Fuzzes one target; returns every failure (empty = pass). Deterministic for a given `seed`. Exported so targets
- * can be exercised outside vitest (e.g. a long soak run).
- */
-export async function runFuzzTarget<K extends FuzzKind>(
+export type FuzzOptions = { seed?: number; scale?: number; maxFailures?: number };
+
+/** Phases 1–3 (seeds, truncations, seeded mutations) as a deterministic stream of inputs. */
+function* fuzzInputs<K extends FuzzKind>(
 	t: FuzzTarget<K>,
-	opts: { seed?: number; scale?: number; maxFailures?: number } = {},
-): Promise<FuzzFailure[]> {
-	const seed = opts.seed ?? fuzzSeed();
-	const scale = opts.scale ?? fuzzScale();
-	const maxFailures = opts.maxFailures ?? 5;
-	const seeds = [...(typeof t.seeds === 'function' ? await t.seeds() : t.seeds)];
-	const failures: FuzzFailure[] = [];
-	const record = async (phase: string, index: number, input: InputOf<K>) => {
-		if (failures.length >= maxFailures) return;
-		const error = await exercise(t, input);
-		if (error)
-			failures.push({
-				phase,
-				index,
-				error,
-				file: saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
-			});
-	};
-	// 1. Seeds as they are.
-	for (let i = 0; i < seeds.length; i++) await record('seed', i, seeds[i]!);
-	// 2. Truncations (bytes and text): up to 32 evenly spaced cut points per seed, plus the empty input.
-	if (t.kind !== 'json') {
+	seeds: readonly InputOf<K>[],
+	seed: number,
+	scale: number,
+): Generator<{ phase: string; index: number; input: InputOf<K> }> {
+	for (let i = 0; i < seeds.length; i++) yield { phase: 'seed', index: i, input: seeds[i]! };
+	// Truncations (bytes and text): up to 32 evenly spaced cut points per seed, plus the empty input.
+	if (t.kind !== 'json')
 		for (let i = 0; i < seeds.length; i++) {
 			const s = seeds[i] as Uint8Array | string;
 			const cuts = new Set<number>([0, 1, s.length - 1]);
 			for (let k = 1; k < 32; k++) cuts.add(Math.floor((s.length * k) / 32));
 			for (const c of cuts)
-				if (c >= 0 && c < s.length) await record('truncate', i * 1000 + c, s.slice(0, c) as InputOf<K>);
+				if (c >= 0 && c < s.length)
+					yield { phase: 'truncate', index: i * 1000 + c, input: s.slice(0, c) as InputOf<K> };
 		}
-	}
-	// 3. Seeded mutations.
 	const rng = new Rng(seed ^ hashName(t.name));
 	const n = (t.iterations ?? 300) * scale;
-	for (let i = 0; i < n && failures.length < maxFailures; i++) {
+	for (let i = 0; i < n; i++) {
 		const base = seeds.length
 			? seeds[rng.below(seeds.length)]!
 			: t.kind === 'bytes'
@@ -568,21 +582,45 @@ export async function runFuzzTarget<K extends FuzzKind>(
 					: null;
 		const input =
 			t.kind === 'bytes'
-				? mutateBytes(rng, base as Uint8Array, seeds as Uint8Array[])
+				? mutateBytes(rng, base as Uint8Array, seeds as unknown as Uint8Array[])
 				: t.kind === 'text'
-					? mutateText(rng, base as string, seeds as string[])
+					? mutateText(rng, base as string, seeds as unknown as string[])
 					: mutateJson(rng, base, seeds);
-		await record('mutate', i, input as InputOf<K>);
+		yield { phase: 'mutate', index: i, input: input as InputOf<K> };
 	}
-	// 4. fast-check property over arbitrary inputs of the kind.
+}
+
+/**
+ * Fuzzes one target; returns every failure (empty = pass). Deterministic for a given `seed`. Exported so targets
+ * can be exercised outside vitest (e.g. a long soak run).
+ */
+export async function runFuzzTarget<K extends FuzzKind>(
+	t: FuzzTarget<K>,
+	opts: FuzzOptions = {},
+): Promise<FuzzFailure[]> {
+	const seed = opts.seed ?? fuzzSeed();
+	const scale = opts.scale ?? fuzzScale();
+	const maxFailures = opts.maxFailures ?? 5;
+	const seeds = [...(typeof t.seeds === 'function' ? await t.seeds() : t.seeds)];
+	const failures: FuzzFailure[] = [];
+	for (const { phase, index, input } of fuzzInputs(t, seeds, seed, scale)) {
+		if (failures.length >= maxFailures) break;
+		const error = await exercise(t, input);
+		if (error)
+			failures.push({
+				phase,
+				index,
+				error,
+				file: saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
+			});
+	}
 	if (failures.length < maxFailures) {
-		const runs = (t.properties ?? 100) * scale;
 		const result = await fc.check(
 			fc.asyncProperty(
 				arbitraryOf(t.kind),
 				async (input) => (await exercise(t, input as InputOf<K>)) === undefined,
 			),
-			{ numRuns: runs, seed },
+			{ numRuns: (t.properties ?? 100) * scale, seed },
 		);
 		if (result.failed) {
 			const input = result.counterexample?.[0] as InputOf<K>;
@@ -595,6 +633,53 @@ export async function runFuzzTarget<K extends FuzzKind>(
 		}
 	}
 	return failures;
+}
+
+/** `runFuzzTarget` for synchronous targets (seeds given as values): usable inside a synchronous test body. */
+export function runFuzzTargetSync<K extends FuzzKind>(
+	t: FuzzTarget<K>,
+	opts: FuzzOptions = {},
+): FuzzFailure[] {
+	const seed = opts.seed ?? fuzzSeed();
+	const scale = opts.scale ?? fuzzScale();
+	const maxFailures = opts.maxFailures ?? 5;
+	const given = typeof t.seeds === 'function' ? t.seeds() : t.seeds;
+	if (given instanceof Promise) throw new Error('runFuzzTargetSync: seeds must not be a Promise');
+	const seeds = [...given];
+	const failures: FuzzFailure[] = [];
+	for (const { phase, index, input } of fuzzInputs(t, seeds, seed, scale)) {
+		if (failures.length >= maxFailures) break;
+		const error = exerciseSync(t, input);
+		if (error)
+			failures.push({
+				phase,
+				index,
+				error,
+				file: saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
+			});
+	}
+	if (failures.length < maxFailures) {
+		const result = fc.check(
+			fc.property(arbitraryOf(t.kind), (input) => exerciseSync(t, input as InputOf<K>) === undefined),
+			{ numRuns: (t.properties ?? 100) * scale, seed },
+		);
+		if (result.failed) {
+			const input = result.counterexample?.[0] as InputOf<K>;
+			failures.push({
+				phase: 'property',
+				index: result.numRuns,
+				error: `${exerciseSync(t, input) ?? 'flaky failure'} (fast-check seed ${seed}, path ${result.counterexamplePath})`,
+				file: saveInput(t.name, `${seed}-property`, input, t.kind),
+			});
+		}
+	}
+	return failures;
+}
+
+/** Throws the formatted failures of a synchronous target (for use inside any test body). */
+export function assertFuzzSync<K extends FuzzKind>(t: FuzzTarget<K>, opts: FuzzOptions = {}): void {
+	const failures = runFuzzTargetSync(t, opts);
+	if (failures.length) throw new Error(formatFailures(t as FuzzTarget, failures));
 }
 
 function hashName(s: string): number {

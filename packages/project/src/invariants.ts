@@ -12,7 +12,7 @@ import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
-import { createTrack } from './factories.ts';
+import { createFontRef, createTrack, DEFAULT_FONT_FAMILY } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
 import { isRovingKey, retimeRoving } from './keyframes.ts';
@@ -143,23 +143,365 @@ function templateStampIssue(
 }
 // ---- end wp-m2-anime-templates
 
+/**
+ * The id-keyed tables of a loaded document as null-prototype objects (golden-fuzz): a reference such as
+ * `mediaId: "__proto__"` or `"constructor"` must look up as missing (and be repaired), not as `Object.prototype`.
+ * JSON, Immer and every reader treat them as plain records.
+ */
+export function nullPrototypeRecords(doc: ProjectDocument): ProjectDocument {
+	const np = <T extends object>(rec: T): T => Object.assign(Object.create(null) as T, rec);
+	const d = doc as unknown as Record<string, Record<string, unknown>>;
+	for (const k of ['items', 'media', 'synthetics', 'transcripts', 'fonts', 'sequences'])
+		if (d[k] && typeof d[k] === 'object') d[k] = np(d[k]);
+	for (const seq of Object.values(doc.sequences) as unknown as Record<string, Record<string, unknown>>[])
+		for (const k of ['clips', 'links', 'groups', 'transitions'])
+			if (seq[k] && typeof seq[k] === 'object') seq[k] = np(seq[k]);
+	return doc;
+}
+
+/**
+ * Structural repairs found by fuzzing the load pipeline (golden-fuzz): sequence records whose key disagrees with the
+ * entity id, tracks listed under the wrong kind, impossible sequence settings and text clips naming a missing font.
+ */
+function repairStructure(
+	doc: ProjectDocument,
+	ids: IdSource,
+	note: (a: string, e: string, d: string) => void,
+): void {
+	const prefixOf = { links: 'lnk', groups: 'grp', transitions: 'trn' } as const;
+	for (const m of Object.values(doc.media))
+		if (m.derivation && !doc.media[m.derivation.fromMediaId]) {
+			m.derivation = null;
+			note('drop-derivation', m.id, 'the source of this derived media is missing');
+		}
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const kind of ['links', 'groups', 'transitions'] as const) {
+			const rec = seq[kind] as Record<string, { id: string }>;
+			for (const key of Object.keys(rec)) {
+				const v = rec[key]!;
+				if (v.id === key) continue;
+				const ok = (x: string) => isValidId(x) && idPrefixOf(x) === prefixOf[kind];
+				const next = ok(key) ? key : ok(v.id) && !(v.id in rec) ? v.id : ids.next(prefixOf[kind]);
+				delete rec[key];
+				v.id = next;
+				rec[next] = v;
+				if (kind !== 'transitions')
+					for (const m of (v as unknown as { members: string[] }).members ?? []) {
+						const c = seq.clips[m] as Record<string, unknown> | undefined;
+						if (c) c[kind === 'links' ? 'linkId' : 'groupId'] = next;
+					}
+				note('fix-id', next, `${kind} record key ${JSON.stringify(key)} and id made equal`);
+			}
+		}
+		for (const [list, kind] of [
+			[seq.videoTracks, 'video'],
+			[seq.audioTracks, 'audio'],
+			[seq.captionTracks, 'caption'],
+		] as const)
+			for (const t of list)
+				if (t.kind !== kind) {
+					note('fix-track-kind', t.id, `track kind ${t.kind} set to its list's kind ${kind}`);
+					(t as { kind: string }).kind = kind;
+				}
+		const st = seq.settings;
+		if (!isAllowedSequenceRate(st.frameRate)) {
+			st.frameRate = { num: 30, den: 1 };
+			note('fix-settings', seq.id, 'frame rate not allowed: set to 30 fps');
+		}
+		for (const k of ['width', 'height'] as const) {
+			const v = st[k];
+			if (!Number.isInteger(v) || v % 2 !== 0 || v < 16 || v > 8192) {
+				const fixed = Number.isFinite(v)
+					? Math.min(8192, Math.max(16, Math.round(v / 2) * 2))
+					: k === 'width'
+						? 1920
+						: 1080;
+				st[k] = fixed;
+				note('fix-settings', seq.id, `${k} ${v} set to ${fixed}`);
+			}
+		}
+		if (st.dropFrame && !supportsDropFrame(st.frameRate)) {
+			st.dropFrame = false;
+			note('fix-settings', seq.id, 'drop-frame cleared (only 29.97/59.94)');
+		}
+		for (const c of Object.values(seq.clips)) {
+			repairShapeValues(c, note);
+			const op = (c as { opacity?: AnimLike }).opacity;
+			if (op && typeof op === 'object' && Array.isArray(op.keyframes)) {
+				const fix = (v: unknown) =>
+					typeof v === 'number' && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 100;
+				const bad = [op.value, ...op.keyframes.map((k) => k.value)].some((v) => fix(v) !== v);
+				if (bad) {
+					op.value = fix(op.value);
+					for (const k of op.keyframes) k.value = fix(k.value);
+					note('fix-opacity', c.id, 'opacity values clamped to 0..100');
+				}
+			}
+		}
+		repairMediaBounds(doc, seq, note);
+		for (const c of Object.values(seq.clips)) {
+			const style = (c as { content?: { style?: { fontId?: string } } }).content?.style;
+			if (c.kind !== 'text' || !style?.fontId || doc.fonts[style.fontId]) continue;
+			let font = Object.values(doc.fonts).find((f) => f.family === DEFAULT_FONT_FAMILY);
+			if (!font) {
+				font = createFontRef(ids);
+				doc.fonts[font.id] = font;
+			}
+			note('reset-font', c.id, `missing font ${style.fontId} replaced by ${font.family}`);
+			style.fontId = font.id;
+		}
+	}
+}
+
+/** Shape geometry and paint values made valid (non-finite / negative → 0, colours clamped to 0..1). */
+function repairShapeValues(c: Clip, note: (a: string, e: string, d: string) => void): void {
+	const sh = (c as unknown as { shape?: Record<string, unknown> }).shape;
+	if (!sh || sh.type === 'vector') return;
+	let changed = false;
+	const fixNum = (v: unknown, max = Number.POSITIVE_INFINITY) => {
+		const n = typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 0;
+		if (n !== v) changed = true;
+		return n;
+	};
+	const each = (a: unknown, fix: (v: unknown) => unknown) => {
+		if (!a || typeof a !== 'object' || !Array.isArray((a as AnimLike).keyframes)) return;
+		const x = a as AnimLike;
+		x.value = fix(x.value);
+		for (const k of x.keyframes) k.value = fix(k.value);
+	};
+	const vec = (n: number, max?: number) => (v: unknown) => {
+		if (!Array.isArray(v) || v.length !== n) {
+			changed = true;
+			return Array.from({ length: n }, (_, i) => (n === 4 && i === 3 ? 1 : 0));
+		}
+		return v.map((x) => fixNum(x, max));
+	};
+	each(sh.size, vec(2));
+	each(sh.cornerRadius, (v) => fixNum(v));
+	const stroke = sh.stroke as { width?: unknown; color?: unknown } | null | undefined;
+	if (stroke) {
+		each(stroke.width, (v) => fixNum(v));
+		each(stroke.color, vec(4, 1));
+	}
+	if (sh.fill) each(sh.fill, vec(4, 1));
+	if (changed) note('fix-shape', c.id, 'invalid shape size, radius, width or colour values made valid');
+}
+
+/** Clips longer than their media are shortened (or start at the media's head) so they fit (INV-005). */
+function repairMediaBounds(
+	doc: ProjectDocument,
+	seq: Sequence,
+	note: (a: string, e: string, d: string) => void,
+): void {
+	const rate = seq.settings.frameRate as Rational;
+	const fpf = flicksPerFrame(rate);
+	for (const c of Object.values(seq.clips)) {
+		const id = (c as { mediaId?: unknown }).mediaId;
+		const asset = typeof id === 'string' ? doc.media[id] : undefined;
+		if (!asset || !isBoundedContent(c) || isRemapped(c)) continue;
+		const mediaDur = mediaDurationFlicks(asset);
+		if (mediaDur === null) continue;
+		if (c.frameHold) {
+			if (c.frameHold.flicks >= mediaDur + fpf + 1) {
+				c.frameHold.flicks = Math.max(0, mediaDur - fpf);
+				note('fix-media-bounds', c.id, 'held frame moved into the media');
+			}
+			continue;
+		}
+		const tol = fpf * c.speed.rate + 1;
+		if (c.sourceIn + contentSpanFlicks(c.duration, rate, c.speed.rate) <= mediaDur + tol) continue;
+		if (c.sourceIn >= mediaDur) c.sourceIn = 0;
+		let frames = Math.max(1, Math.floor((mediaDur - c.sourceIn) / (fpf * c.speed.rate)));
+		while (frames > 1 && c.sourceIn + contentSpanFlicks(frames, rate, c.speed.rate) > mediaDur + tol)
+			frames--;
+		note('fix-media-bounds', c.id, `clip shortened from ${c.duration} to ${frames} frames to fit its media`);
+		c.duration = frames;
+	}
+}
+
+/** Transitions that no longer satisfy INV-010 after the other repairs are removed. */
+function repairTransitionsFinal(seq: Sequence, note: (a: string, e: string, d: string) => void): void {
+	const edges = new Set<string>();
+	for (const key of Object.keys(seq.transitions)) {
+		const t = seq.transitions[key]!;
+		const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : null;
+		const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : null;
+		const keys = [out ? `${out.id}:out` : null, inc ? `${inc.id}:in` : null].filter((k): k is string => !!k);
+		const bad =
+			(!t.outgoingClipId && !t.incomingClipId) ||
+			(t.outgoingClipId && !out) ||
+			(t.incomingClipId && !inc) ||
+			(out && inc && (out.trackId !== inc.trackId || clipEnd(out) !== inc.start)) ||
+			[out, inc].some((c) => c && (c.trackId !== t.trackId || t.duration > c.duration)) ||
+			keys.some((k) => edges.has(k));
+		if (bad) {
+			delete seq.transitions[key];
+			note('drop-transition', t.id, 'transition no longer fits its clips');
+		} else for (const k of keys) edges.add(k);
+	}
+}
+
+/** Structured form of the INV-001 id issues (for `repairIds`), keyed by the issue object. */
+type IdIssue =
+	| { kind: 'malformed'; id: string; prefix: IdPrefix }
+	| { kind: 'duplicate'; id: string }
+	| { kind: 'key'; key: string; id: string; path: string[] };
+const ID_ISSUES = new WeakMap<Issue, IdIssue>();
+
+/** Id prefix of the records of a table, by the table's name in a record path. */
+const TABLE_PREFIX: Record<string, IdPrefix> = {
+	media: 'med',
+	synthetics: 'syn',
+	transcripts: 'trs',
+	fonts: 'fnt',
+	sequences: 'seq',
+	clips: 'clp',
+};
+
+/** Arrays whose strings are entity ids. */
+const ID_ARRAYS = new Set(['members', 'rootItems', 'children']);
+
+/**
+ * Replaces the id `from` by `to` where ids live (deep, in place): `id` fields, reference fields (`…Id`), id lists
+ * (`…Ids`, `members`, `rootItems`, bin `children`) and the keys of the id-keyed tables. Other strings — a text, a
+ * kind named like the id — are never touched.
+ */
+function replaceIdDeep(doc: ProjectDocument, from: string, to: string): void {
+	const rekey = (rec: Record<string, unknown> | undefined) => {
+		if (rec && Object.hasOwn(rec, from)) {
+			rec[to] = rec[from];
+			delete rec[from];
+		}
+	};
+	const d = doc as unknown as Record<string, Record<string, unknown>>;
+	for (const k of ['items', 'media', 'synthetics', 'transcripts', 'fonts', 'sequences']) rekey(d[k]);
+	for (const seq of Object.values(doc.sequences) as unknown as Record<string, Record<string, unknown>>[])
+		for (const k of ['clips', 'links', 'groups', 'transitions']) rekey(seq[k]);
+	const walk = (v: unknown, key: string): void => {
+		if (Array.isArray(v)) {
+			const ids = ID_ARRAYS.has(key) || key.endsWith('Ids');
+			for (let i = 0; i < v.length; i++) {
+				if (ids && v[i] === from) v[i] = to;
+				else if (v[i] && typeof v[i] === 'object') walk(v[i], '');
+			}
+		} else if (v && typeof v === 'object') {
+			const o = v as Record<string, unknown>;
+			for (const k of Object.keys(o)) {
+				const x = o[k];
+				if (x === from && (k === 'id' || k.endsWith('Id'))) o[k] = to;
+				else if (x && typeof x === 'object') walk(x, k);
+			}
+		}
+	};
+	walk(doc, '');
+}
+
+/**
+ * INV-001 repair (golden-fuzz): record keys that disagree with their entity's id, malformed ids and duplicate ids.
+ * A record takes its key when the key is a valid id (references to the entity's own id then dangle and are dropped
+ * by the reference repairs that follow), else the entity's id, else a new id. A malformed id is replaced by a new id
+ * everywhere it occurs (references included). Every occurrence of a duplicated id after the first gets a new id.
+ */
+function repairIds(
+	doc: ProjectDocument,
+	ids: IdSource,
+	note: (a: string, e: string, d: string) => void,
+): void {
+	for (let pass = 0; pass < 4; pass++) {
+		const problems = checkInvariants(doc)
+			.map((i) => ID_ISSUES.get(i))
+			.filter((x): x is IdIssue => !!x);
+		if (!problems.length) return;
+		const keys = problems.filter((p) => p.kind === 'key');
+		for (const p of keys) {
+			const rec = p.path.slice(0, -1).reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], doc) as
+				| Record<string, { id: string }>
+				| undefined;
+			const v = rec?.[p.key];
+			if (!rec || !v) continue;
+			const table = p.path[p.path.length - 2]!;
+			const prefix =
+				table === 'items' ? ((v as { kind?: string }).kind === 'bin' ? 'bin' : 'itm') : TABLE_PREFIX[table];
+			const ok = (x: unknown) =>
+				typeof x === 'string' && isValidId(x) && (!prefix || idPrefixOf(x) === prefix);
+			if (ok(p.key)) {
+				v.id = p.key;
+				note('fix-id', p.key, `record id ${JSON.stringify(p.id)} set to its key`);
+			} else {
+				const next = ok(p.id) && !(p.id in rec) ? p.id : ids.next(prefix ?? 'itm');
+				delete rec[p.key];
+				v.id = next;
+				rec[next] = v;
+				note('fix-id', next, `record re-keyed from ${JSON.stringify(p.key)}`);
+			}
+		}
+		if (keys.length) continue;
+		const done = new Set<string>();
+		for (const p of problems) {
+			if (done.has(p.id)) continue;
+			done.add(p.id);
+			if (p.kind === 'malformed') {
+				const next = ids.next(p.prefix);
+				replaceIdDeep(doc, p.id, next);
+				note('fix-id', next, `malformed id ${JSON.stringify(p.id)} replaced`);
+			} else if (p.kind === 'duplicate') {
+				const prefix = idPrefixOf(p.id);
+				if (!prefix) continue;
+				let first = true;
+				const walk = (v: unknown, parent: Record<string, unknown> | null, key: string | null): void => {
+					if (Array.isArray(v)) {
+						for (const x of v) if (x && typeof x === 'object') walk(x, null, null);
+						return;
+					}
+					if (!v || typeof v !== 'object') return;
+					const o = v as Record<string, unknown>;
+					if (o.id === p.id) {
+						if (first) first = false;
+						else {
+							const next = ids.next(prefix);
+							o.id = next;
+							if (parent && key === p.id) {
+								delete parent[key];
+								parent[next] = o;
+							}
+							note('fix-id', next, `duplicate id ${p.id} renamed`);
+						}
+					}
+					for (const k of Object.keys(o)) if (o[k] && typeof o[k] === 'object') walk(o[k], o, k);
+				};
+				walk(doc, null, null);
+			}
+		}
+	}
+}
+
 export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
 	const issues: Issue[] = [];
 	const seen = new Set<string>();
 	const claim = (id: string, prefix: IdPrefix | IdPrefix[], where: string[]) => {
 		const prefixes = Array.isArray(prefix) ? prefix : [prefix];
 		if (!isValidId(id) || !prefixes.includes(idPrefixOf(id)!)) {
-			issues.push(inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where));
+			const issue = inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where);
+			ID_ISSUES.set(issue, { kind: 'malformed', id, prefix: prefixes[0]! });
+			issues.push(issue);
 		}
-		if (seen.has(id)) issues.push(inv('INV-001', `Duplicate id ${id}`, where));
-		else seen.add(id);
+		if (seen.has(id)) {
+			const issue = inv('INV-001', `Duplicate id ${id}`, where);
+			ID_ISSUES.set(issue, { kind: 'duplicate', id });
+			issues.push(issue);
+		} else seen.add(id);
+	};
+	const keyIssue = (key: string, id: string, path: string[], message: string) => {
+		const issue = inv('INV-001', message, path);
+		ID_ISSUES.set(issue, { kind: 'key', key, id, path });
+		issues.push(issue);
 	};
 
 	// INV-001: ids, record keys
 	claim(doc.projectId, 'prj', ['projectId']);
 	const table = (rec: Record<string, { id: string }>, name: string, prefix: IdPrefix | IdPrefix[]) => {
 		for (const [key, v] of Object.entries(rec)) {
-			if (v.id !== key) issues.push(inv('INV-001', `Key ${key} does not match id ${v.id}`, [name, key]));
+			if (v.id !== key) keyIssue(key, v.id, [name, key], `Key ${key} does not match id ${v.id}`);
 			claim(v.id, prefix, [name, key]);
 		}
 	};
@@ -444,7 +786,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		const byTrack = new Map<string, Clip[]>();
 		for (const [key, c] of Object.entries(seq.clips)) {
 			const cw = [...where, 'clips', key];
-			if (c.id !== key) issues.push(inv('INV-001', `Key ${key} does not match clip id ${c.id}`, cw));
+			if (c.id !== key) keyIssue(key, c.id, cw, `Key ${key} does not match clip id ${c.id}`);
 			claim(c.id, 'clp', cw);
 			const t = tracks.get(c.trackId);
 			if (!t) issues.push(inv('INV-002', `Clip ${c.id} is on missing track ${c.trackId}`, cw));
@@ -1029,9 +1371,11 @@ export function repairDocument(
 	ids: IdSource,
 	opts: Pick<InvariantOptions, 'mgTemplates'> = {},
 ): { document: ProjectDocument; report: RepairEntry[] } {
-	const doc = JSON.parse(JSON.stringify(input)) as ProjectDocument;
+	const doc = nullPrototypeRecords(JSON.parse(JSON.stringify(input)) as ProjectDocument);
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
+	repairIds(doc, ids, note);
+	repairStructure(doc, ids, note);
 
 	// ---- wp-m2-anime-templates (S11:ATP-002/006): re-stamp renderers from the registry; drop malformed param
 	// keyframe lists (unsorted / duplicate times / wrong value type) — the static params stay.
@@ -1602,6 +1946,7 @@ export function repairDocument(
 	}
 	// color-mgmt: unknown spaces and dangling LUT / OCIO references go back to automatic.
 	repairColor(doc as never, note);
+	for (const seq of Object.values(doc.sequences) as Sequence[]) repairTransitionsFinal(seq, note);
 	return { document: doc, report };
 }
 
