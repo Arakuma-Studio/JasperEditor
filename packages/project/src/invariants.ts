@@ -102,17 +102,30 @@ function isAnimLike(v: unknown): v is AnimLike {
 
 /** Visits every Animatable (with a path) inside an entity. */
 function forEachAnimatable(root: unknown, path: string[], cb: (a: AnimLike, path: string[]) => void): void {
-	if (isAnimLike(root)) {
-		cb(root, path);
-		return;
-	}
-	if (Array.isArray(root)) {
-		root.forEach((v, i) => {
-			forEachAnimatable(v, [...path, String(i)], cb);
-		});
-	} else if (root && typeof root === 'object') {
-		for (const [k, v] of Object.entries(root)) forEachAnimatable(v, [...path, k], cb);
-	}
+	// previews (perf budgets): one shared path stack instead of a new array per visited node; the callback gets its
+	// own copy (issues keep it).
+	const stack = [...path];
+	const walk = (v: unknown): void => {
+		if (isAnimLike(v)) {
+			cb(v, stack.slice());
+			return;
+		}
+		if (Array.isArray(v)) {
+			for (let i = 0; i < v.length; i++) {
+				stack.push(String(i));
+				walk(v[i]);
+				stack.pop();
+			}
+		} else if (v && typeof v === 'object') {
+			for (const k in v as Record<string, unknown>) {
+				if (!Object.hasOwn(v as object, k)) continue;
+				stack.push(k);
+				walk((v as Record<string, unknown>)[k]);
+				stack.pop();
+			}
+		}
+	};
+	walk(root);
 }
 
 function valueShape(v: unknown): string {
