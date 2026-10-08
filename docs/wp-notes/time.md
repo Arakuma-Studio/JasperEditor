@@ -168,7 +168,12 @@ The detector ports effectcraft `cuts.rs`.
   - a sensitivity control, using filmcraft's 0…100 idea: threshold `0.45 − 0.4·s/100`, 0.25 at the default 50,
     effectcraft's value;
   - a flash test: frame i+1/i+2 matches i−1, or i matches i−2/i−3, so a one-frame flash is not a cut;
-  - a shortest-shot merge.
+  - a shortest-shot merge;
+  - soft (trilinear) histogram bins (verify workstream): each channel splits its weight between the two nearest bin
+    centres, so the histogram distance is continuous in colour. With effectcraft's hard bins a flat area whose colour
+    drifts a few levels across a bin edge moves wholesale into the next bin: the last step of the `scenes.mp4`
+    dissolve onto a flat gradient (green 73 → 59 across the 64 edge) scored 0.6 histogram distance and was reported
+    as a cut. Pinned by `packages/project/test/time-scenes.test.ts` (both new cases fail with hard bins).
 - Frame times are the media's real timestamps, so VFR is handled.
 
 The job is `scene-detect`, at `POST /api/scenes/detect` (`?wait=1`). The engine client calls it as `detectScenes`.

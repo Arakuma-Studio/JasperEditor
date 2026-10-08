@@ -223,6 +223,54 @@ describe('scene edit detection', () => {
 		expect(detectSceneCuts([], { sensitivity: 50, minShotFrames: 2 })).toEqual([]);
 	});
 
+	it('a dissolve onto a flat colour at a histogram bin edge does not end in a cut (soft bins)', () => {
+		// Regression (verify workstream): scenes.mp4 dissolves a binary cellular automaton onto a flat gradient; one
+		// random instance had green at 59–73, across the 64 bin edge, and the hard-binned histogram scored the last
+		// dissolve step 0.6 → a false cut at the end of the dissolve.
+		const flat: [number, number, number] = [67, 59, 253];
+		const texture = (x: number, y: number) => (noise(x * 3, y * 3, 5) > 0.5 ? 235 : 20);
+		const frame = (w: number, shift: number): FlowImage => {
+			const data = new Uint8ClampedArray(W * H * 4);
+			for (let y = 0; y < H; y++)
+				for (let x = 0; x < W; x++) {
+					const o = (y * W + x) * 4;
+					const t = texture(x, y + shift);
+					for (let c = 0; c < 3; c++) data[o + c] = Math.round(t * (1 - w) + flat[c]! * w);
+					data[o + 3] = 255;
+				}
+			return { width: W, height: H, data };
+		};
+		const seq: FlowImage[] = [];
+		for (let i = 0; i < 10; i++) seq.push(frame(0, i));
+		for (let i = 1; i <= 12; i++) seq.push(frame(i / 13, 10 + i));
+		for (let i = 0; i < 10; i++) seq.push(frame(1, 0));
+		const s = seq.map((f) => sceneSignature(f));
+		const sc = sceneScores(s);
+		expect(sc[22]!).toBeLessThan(sceneThreshold(50));
+		expect(detectSceneCuts(sc, { sensitivity: 50, minShotFrames: 2 }, s)).toEqual([]);
+	});
+
+	it('soft bins: the histogram sums to 1 and a colour drifting across a bin edge moves it continuously', () => {
+		const flat = (r: number, g: number, b: number): FlowImage => {
+			const data = new Uint8ClampedArray(W * H * 4);
+			for (let i = 0; i < W * H; i++) data.set([r, g, b, 255], i * 4);
+			return { width: W, height: H, data };
+		};
+		const sig = sceneSignature(flat(67, 59, 253));
+		expect(sig.hist.reduce((a, v) => a + v, 0)).toBeCloseTo(1, 3);
+		const h = (a: FlowImage, b: FlowImage) => {
+			const x = sceneSignature(a).hist;
+			const y = sceneSignature(b).hist;
+			let d = 0;
+			for (let i = 0; i < x.length; i++) d += Math.abs(x[i]! - y[i]!);
+			return d / 2;
+		};
+		// 2 levels across the 64 edge: a hard bin would move everything (distance 1).
+		expect(h(flat(67, 63, 253), flat(67, 65, 253))).toBeLessThan(0.05);
+		// Far apart colours are still fully distinct.
+		expect(h(flat(10, 10, 10), flat(245, 245, 245))).toBeGreaterThan(0.99);
+	});
+
 	it('the flash test: a one-frame flash is not a cut, a real cut is kept', () => {
 		const a = sceneSignature(shotFrame(1, 0, 0));
 		const flash = sceneSignature(white());

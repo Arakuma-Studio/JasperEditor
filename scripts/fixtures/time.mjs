@@ -6,6 +6,9 @@
 // - scenes.mp4: 320×180 30 fps shots with hard cuts at frames 45, 75, 120 and 198 and the false-positive guards of
 //   Scene Edit Detection: moving test pattern, bars, a Mandelbrot zoom with a one-frame white flash at frame 95, a
 //   0.4 s cross dissolve (frames 153–164) between a cellular automaton and moving gradients, and a 12 px/frame pan.
+//   Every random source is pinned (cellauto seed; gradients colours, end points and seed): with the defaults each
+//   regeneration made different footage. The gradient colours are a random instance whose green straddles the 64
+//   histogram bin edge, which made hard-binned scene detection report a false cut at the end of the dissolve.
 export function fixtures({ h264 }) {
 	const bits = [0, 1, 2, 3, 4, 5]
 		.map(
@@ -60,8 +63,8 @@ export function fixtures({ h264 }) {
 					...['-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=30:d=1.5'],
 					...['-f', 'lavfi', '-i', 'smptehdbars=s=320x180:r=30:d=1'],
 					...['-f', 'lavfi', '-i', 'mandelbrot=s=320x180:r=30,trim=end_frame=45'],
-					...['-f', 'lavfi', '-i', 'cellauto=s=320x180:r=30:rule=110,trim=end_frame=45'],
-					...['-f', 'lavfi', '-i', 'gradients=s=320x180:r=30:speed=0.03:d=1.5'],
+					...['-f', 'lavfi', '-i', 'cellauto=s=320x180:r=30:rule=110:seed=7,trim=end_frame=45'],
+					...['-f', 'lavfi', '-i', 'gradients=s=320x180:r=30:speed=0.03:d=1.5:c0=0x433bfd:c1=0xb24d88:x0=40:y0=0:x1=300:y1=180:seed=1'],
 					...['-f', 'lavfi', '-i', 'testsrc2=s=960x180:r=30:d=1'],
 					...[
 						'-filter_complex',

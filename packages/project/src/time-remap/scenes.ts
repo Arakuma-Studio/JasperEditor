@@ -55,13 +55,37 @@ export function sceneSignature(img: FlowImage, scale = 255): SceneSignature {
 	const hist = new Float32Array(BINS * BINS * BINS);
 	const d = img.data;
 	const n = img.width * img.height;
-	const bin = (v: number) => Math.min(BINS - 1, Math.max(0, Math.floor((v / scale) * BINS)));
+	// Soft (trilinear) binning: each channel value splits its weight between the two nearest bin centres, so the
+	// histogram distance is continuous in colour. effectcraft's hard bins move a whole flat area to the next bin when
+	// its colour drifts a few levels across a bin edge (the last step of a dissolve onto a flat gradient whose green sat
+	// at 64 scored 0.6 and was reported as a cut).
+	const lo = [0, 0, 0];
+	const wt = [0, 0, 0];
+	const split = (c: number, v: number) => {
+		const p = Math.min(BINS - 0.5, Math.max(0.5, (v / scale) * BINS)) - 0.5;
+		const i = Math.min(BINS - 2, Math.floor(p));
+		lo[c] = i;
+		wt[c] = p - i;
+	};
 	for (let i = 0; i < n; i++) {
 		const o = i * 4;
 		const a = d[o + 3]! / scale;
 		// Straight colours over black by their alpha (effectcraft: premultiplied by min(a, 1)).
 		const k = a > 1e-6 ? Math.min(1, a) : 0;
-		hist[bin(d[o]! * k) * BINS * BINS + bin(d[o + 1]! * k) * BINS + bin(d[o + 2]! * k)]! += 1;
+		split(0, d[o]! * k);
+		split(1, d[o + 1]! * k);
+		split(2, d[o + 2]! * k);
+		for (let r = 0; r < 2; r++) {
+			const wr = r ? wt[0]! : 1 - wt[0]!;
+			if (wr === 0) continue;
+			for (let g = 0; g < 2; g++) {
+				const wg = wr * (g ? wt[1]! : 1 - wt[1]!);
+				if (wg === 0) continue;
+				const base = (lo[0]! + r) * BINS * BINS + (lo[1]! + g) * BINS + lo[2]!;
+				hist[base]! += wg * (1 - wt[2]!);
+				hist[base + 1]! += wg * wt[2]!;
+			}
+		}
 	}
 	if (n > 0) for (let i = 0; i < hist.length; i++) hist[i]! /= n;
 	// Thumbnail: box resample to a long side of SCENE_THUMB (at least 8 px a side).
