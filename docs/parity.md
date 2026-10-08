@@ -258,7 +258,7 @@ evidence in their wp-notes. Still running, and **not** credited:
 |---|---|
 | `golden-fuzz` | stability evidence in gaps.md (golden frames per effect / transition family, fuzzed loaders, HTTP and MCP), PF-2 |
 
-Still open after `previews`: some HTML-in-Canvas scope nestings fail with CANVAS_NESTED (D-43, wp-notes/previews.md §5).
+HTML-in-Canvas scope nestings (D-43, wp-notes/previews.md §5), still open after `previews`, are drawn by the flat compositor since `compositor` (wp-notes/compositor.md).
 
 Rows still missing or partial with no workstream: PRJ-4, PRJ-6 (Project Manager), PRJ-8 (proxy UI), TL-10, TL-11
 (one Sequence Settings dialog), FX-6, GR-4, GR-5, AU-7, EX-2, EX-3 (Export Frame), UI-4, UI-5, UI-6, AI-2, PL-2.

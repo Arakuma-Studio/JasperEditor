@@ -31,10 +31,11 @@ far less than breadth because what limits real use now is not measured by a feat
 3. **Heavy timelines**: render previews and smart rendering exist now (`previews`), but proxies cannot be toggled
    from the UI, playback was measured only on a CPU-only shared host ([performance.md](performance.md)), and the
    ARCHITECTURE §13 command / gesture budgets are missed; nothing measured at 4K, hour-long or thousands of clips.
-4. **Known render limits**: HTML-in-Canvas scopes cannot nest (CANVAS_NESTED, D-43), so some combinations of
-   linear-light blending, adjustment layers with GPU effects and GL blend modes still refuse to render after
-   `previews` fixed the commonest ones (consecutive GL-blend tracks share one scope; its wp-note §5); several exports of masked nests, remapped nests and blend modes inside nests go through
-   Remotion instead of the native path.
+4. **Known render limits**: HTML-in-Canvas scopes cannot nest in Chrome (D-43); since `compositor` the stacks whose
+   scopes would nest are drawn by one flat GPU compositor, so every combination of linear-light blending, adjustment
+   layers with GPU effects, GL blend modes, 3D runs and the HDR display transform renders
+   ([wp-notes/compositor.md](wp-notes/compositor.md)); several exports of masked nests, remapped nests and blend modes
+   inside nests go through Remotion instead of the native path.
 5. **Stability evidence**: golden frames per effect / transition family and fuzzing of loaders, HTTP and MCP are in
    flight (`golden-fuzz`); a fast-check property of the Merge Paths booleans failed once at random before `fixups`
    fixed the library bug behind it, the kind of defect only broader fuzzing finds.
@@ -73,7 +74,7 @@ Premiere's full keyframe and blend-mode behaviour. **Done when:** all 27 Premier
 preview and native export (oracle-tested against the published formulas), keyframe interpolation covers linear,
 Bezier, auto Bezier, continuous Bezier, hold, ease in/out with temporal and spatial variants, and every one is
 editable in Effect Controls and through MCP.
-**Status (merged):** done — see [wp-notes/keyframes-blend.md](wp-notes/keyframes-blend.md): Premiere's 27 blend modes native and in preview (oracle `blendPixel`, Remotion parity 31/31 in `apps/engine/test/blend-remotion.e2e.test.ts`), auto / continuous Bezier and the temporal / spatial variants. Limits: blend modes inside nests export through Remotion; GL modes need HTML-in-Canvas (CANVAS_NESTED, D-43).
+**Status (merged):** done — see [wp-notes/keyframes-blend.md](wp-notes/keyframes-blend.md): Premiere's 27 blend modes native and in preview (oracle `blendPixel`, Remotion parity 31/31 in `apps/engine/test/blend-remotion.e2e.test.ts`), auto / continuous Bezier and the temporal / spatial variants. Limits: blend modes inside nests export through Remotion; GL modes need HTML-in-Canvas (scope nesting lifted by `compositor`).
 
 ### golden-fuzz
 Evidence that features stay correct. **Done when:** golden-frame tests pin preview and export output for every effect
