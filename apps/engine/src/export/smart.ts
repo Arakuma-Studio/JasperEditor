@@ -42,7 +42,7 @@ export function analysePackets(
 ): Omit<SourceFrames, 'codec' | 'profile' | 'pixFmt' | 'width' | 'height'> {
 	const order = packets.map((p, i) => ({ ...p, i })).sort((a, b) => a.pts - b.pts);
 	const presIndex = new Map<number, number>();
-	order.forEach((p, k) => presIndex.set(p.i, k));
+	for (const [k, p] of order.entries()) presIndex.set(p.i, k);
 	const gopStarts: number[] = [];
 	const keys = packets.map((p, i) => (p.key ? i : -1)).filter((i) => i >= 0);
 	for (let g = 0; g < keys.length; g++) {

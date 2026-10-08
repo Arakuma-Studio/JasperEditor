@@ -130,10 +130,16 @@ class PreviewStatusStore {
 	/** Engine events: a rendered segment is green at once; deletions and cleaning forget what is known. */
 	onEvent(e: TypedEvent | null): void {
 		if (!e) return;
-		if (e.type === 'cache.cleaned') return this.reset();
+		if (e.type === 'cache.cleaned') {
+			this.reset();
+			return;
+		}
 		if (e.type !== 'previews.changed') return;
 		const p = e.payload;
-		if (p.deleted !== undefined) return this.reset();
+		if (p.deleted !== undefined) {
+			this.reset();
+			return;
+		}
 		const key = p.formatKey ? this.byFormat.get(p.formatKey) : undefined;
 		const entry = key ? this.entries.get(key) : undefined;
 		if (!entry || !p.hash) return;

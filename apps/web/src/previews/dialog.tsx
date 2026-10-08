@@ -62,7 +62,7 @@ export function PreviewSettingsDialog(props: HostedDialogProps<Props>) {
 			}}
 		>
 			<div className="flex flex-col gap-2">
-				<label className="flex items-center gap-2">
+				<div className="flex items-center gap-2">
 					<span className="w-[120px] shrink-0 text-pr-muted">Preview File Format</span>
 					<Select
 						label="Preview File Format"
@@ -71,8 +71,8 @@ export function PreviewSettingsDialog(props: HostedDialogProps<Props>) {
 						options={PREVIEW_FORMATS.map((f) => ({ value: f, label: FORMAT_LABELS[f] }))}
 						className="flex-1"
 					/>
-				</label>
-				<label className="flex items-center gap-2">
+				</div>
+				<div className="flex items-center gap-2">
 					<span className="w-[120px] shrink-0 text-pr-muted">Frame Size</span>
 					<Select
 						label="Frame Size"
@@ -84,8 +84,8 @@ export function PreviewSettingsDialog(props: HostedDialogProps<Props>) {
 						]}
 						className="flex-1"
 					/>
-				</label>
-				<label className="flex items-center gap-2">
+				</div>
+				<div className="flex items-center gap-2">
 					<span className="w-[120px] shrink-0 text-pr-muted">Quality</span>
 					<Select
 						label="Quality"
@@ -97,7 +97,7 @@ export function PreviewSettingsDialog(props: HostedDialogProps<Props>) {
 						]}
 						className="flex-1"
 					/>
-				</label>
+				</div>
 				{error ? (
 					<p className="text-pr-small text-pr-danger" role="alert">
 						{error}

@@ -44,12 +44,14 @@ export function installSerialAudioContext(): void {
 		maxMs: number,
 	) =>
 		new Promise<void>((resolve) => {
+			// anime-allow: wall-clock bound of an AudioContext state change, never animation time
 			const t0 = performance.now();
 			const check = () => {
 				const now = stamp(ctx);
 				if (
 					(now.contextTime > since.contextTime && now.performanceTime > since.performanceTime) ||
 					ctx.state !== 'running' ||
+					// anime-allow: wall-clock bound of an AudioContext state change, never animation time
 					performance.now() - t0 >= maxMs
 				)
 					resolve();

@@ -261,7 +261,11 @@ export class PreviewService {
 		// One file per hash: identical segments (copies) render once.
 		const uniq = <T extends { hash: string }>(list: T[]) => {
 			const seen = new Set<string>();
-			return list.filter((s) => (seen.has(s.hash) ? false : (seen.add(s.hash), true)));
+			return list.filter((s) => {
+				if (seen.has(s.hash)) return false;
+				seen.add(s.hash);
+				return true;
+			});
 		};
 		const pick = (s: { startFrame: number; frames: number; hash: string }) => ({
 			startFrame: s.startFrame,
