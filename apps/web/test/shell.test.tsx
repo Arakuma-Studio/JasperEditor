@@ -241,6 +241,34 @@ describe('keyboard dispatcher', () => {
 		off();
 	});
 
+	it('Esc during a pointer drag is left to the drag; after the release it runs gesture.cancel (XF-053)', () => {
+		const cancel = vi.fn();
+		const { off } = mount('program', [cmd('gesture.cancel', 'editing', cancel)]);
+		const esc = () =>
+			new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true, cancelable: true });
+		const pointer = (type: string, buttons: number) =>
+			new PointerEvent(type, { pointerId: 1, buttons, bubbles: true });
+		window.dispatchEvent(pointer('pointerdown', 1));
+		const during = esc();
+		window.dispatchEvent(during);
+		expect(cancel).not.toHaveBeenCalled();
+		expect(during.defaultPrevented).toBe(false); // the gesture's own listener still sees it untouched
+		window.dispatchEvent(pointer('pointerup', 0));
+		window.dispatchEvent(esc());
+		expect(cancel).toHaveBeenCalledOnce();
+		// A release the window never saw: the next move without buttons clears the press.
+		window.dispatchEvent(pointer('pointerdown', 1));
+		window.dispatchEvent(pointer('pointermove', 0));
+		window.dispatchEvent(esc());
+		expect(cancel).toHaveBeenCalledTimes(2);
+		// Losing focus mid-drag clears it too.
+		window.dispatchEvent(pointer('pointerdown', 1));
+		window.dispatchEvent(new Event('blur'));
+		window.dispatchEvent(esc());
+		expect(cancel).toHaveBeenCalledTimes(3);
+		off();
+	});
+
 	it('disabled commands fall through to an enabled global binding (KB-002)', () => {
 		const global = vi.fn();
 		registerCommands([
