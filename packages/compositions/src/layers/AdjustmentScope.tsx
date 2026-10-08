@@ -22,9 +22,10 @@ import {
 	resolveCachedLayerProps,
 } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo, useRef } from 'react';
-import { useCurrentFrame } from 'remotion';
+import { type EffectDescriptor, useCurrentFrame } from 'remotion';
 import { ScopedHtmlInCanvas } from '../fx/canvas-scope.tsx';
 import { canUseHtmlInCanvas, useDomFxDescriptors } from '../fx/FxPicture.tsx';
+import { usePublishFlatChain } from '../fx/flat.tsx';
 import { type AdjustmentHolder, type FxPreparedStep, useLayerFx } from '../fx/stage.ts';
 import { effectStages } from '../pipeline.ts';
 import type { LayerProps, RenderDoc, RenderOptions } from '../types.ts';
@@ -56,7 +57,7 @@ export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 }
 
 /** The clips of `clips` covering sequence frame `frame` (adjustment clips have no transition handles). */
-function activeAt(clips: readonly RenderVisualClip[], frame: number): RenderVisualClip | null {
+export function activeAt(clips: readonly RenderVisualClip[], frame: number): RenderVisualClip | null {
 	for (const c of clips) if (frame >= c.start && frame < c.start + c.duration) return c;
 	return null;
 }
@@ -132,27 +133,21 @@ function CssScope({
 	);
 }
 
-function CanvasScope({
-	clips,
-	active,
-	frame,
-	doc,
-	options,
-	props,
-	children,
-}: {
-	clips: readonly RenderVisualClip[];
-	active: RenderVisualClip | null;
-	frame: number;
-	doc: RenderDoc;
-	options: RenderOptions;
-	props: ReturnType<typeof resolveCachedLayerProps> | null;
-	children?: ReactNode;
-}) {
+/**
+ * The canvas chain of an adjustment track at the current frame (`stash` → effects → `mix`), in the padded layout of the
+ * active clip's effects: shared by the canvas scope (HTML-in-Canvas capture of the stack below) and by the flat
+ * compositor (fx/flat.tsx), which runs the same descriptors on its accumulated composite.
+ */
+export function useAdjustmentChain(
+	clips: readonly RenderVisualClip[],
+	active: RenderVisualClip | null,
+	frame: number,
+	doc: RenderDoc,
+	options: RenderOptions,
+	props: ReturnType<typeof resolveCachedLayerProps> | null,
+	canRun: boolean,
+) {
 	const holder = useRef<AdjustmentHolder>({ canvas: null }).current;
-	const canRun = canUseHtmlInCanvas();
-	const W = doc.settings.width;
-	const H = doc.settings.height;
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const clip = active ?? clips[0]!;
 	const effects = useMemo(() => (props?.effects ?? []).filter((e) => e.effectId !== CROP), [props]);
@@ -215,6 +210,38 @@ function CanvasScope({
 	});
 	const stage = fx.mode === 'active' ? fx.stage : null;
 	const descriptors = useDomFxDescriptors(stage);
+	return { layer, fx, stage, descriptors };
+}
+
+function CanvasScope({
+	clips,
+	active,
+	frame,
+	doc,
+	options,
+	props,
+	children,
+}: {
+	clips: readonly RenderVisualClip[];
+	active: RenderVisualClip | null;
+	frame: number;
+	doc: RenderDoc;
+	options: RenderOptions;
+	props: ReturnType<typeof resolveCachedLayerProps> | null;
+	children?: ReactNode;
+}) {
+	const canRun = canUseHtmlInCanvas();
+	const W = doc.settings.width;
+	const H = doc.settings.height;
+	const { layer, fx, stage, descriptors } = useAdjustmentChain(
+		clips,
+		active,
+		frame,
+		doc,
+		options,
+		props,
+		canRun,
+	);
 	if (!canRun)
 		return (
 			<>
@@ -270,3 +297,49 @@ function CanvasScope({
 		</>
 	);
 }
+
+/**
+ * compositor: an adjustment track of a flat stack (fx/flat.tsx). Nothing is captured: the track's chain at the current
+ * frame is published for the compositor, which runs it on the composite of everything below.
+ */
+export function FlatAdjustment({
+	trackId,
+	clips,
+	doc,
+	options,
+	offset,
+}: {
+	trackId: string;
+	clips: readonly RenderVisualClip[];
+	doc: RenderDoc;
+	options: RenderOptions;
+	offset: number;
+}) {
+	const frame = useCurrentFrame() + offset;
+	const active = activeAt(clips, frame);
+	const props = active
+		? resolveCachedLayerProps(active, clipContentTime(active, frame, doc.settings.fps))
+		: null;
+	const { layer, fx, stage, descriptors } = useAdjustmentChain(
+		clips,
+		active,
+		frame,
+		doc,
+		options,
+		props,
+		true,
+	);
+	usePublishFlatChain(`adjust:${trackId}`, {
+		frame,
+		effects: stage ? descriptors : NO_EFFECTS,
+		layout: stage?.layout ?? null,
+		// Renders wait for the chain's LUT assets (the scope's capture would draw again when they arrive).
+		ready: !active || (!!stage && !stage.pending),
+		key: stage ? `${stage.key}|${descriptors.length}` : active ? 'unavailable' : 'idle',
+	});
+	if (active && options.isPreview && fx.mode !== 'active')
+		return <GradeChip layer={layer} text={fx.mode === 'bypass' ? fx.chip : 'Adjustment layer unavailable'} />;
+	return null;
+}
+
+const NO_EFFECTS: EffectDescriptor[] = [];

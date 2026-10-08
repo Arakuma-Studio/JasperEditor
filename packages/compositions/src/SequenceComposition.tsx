@@ -48,10 +48,12 @@ import {
 	Fragment,
 	memo,
 	type ReactNode,
+	useCallback,
 	useContext,
 	useEffect,
 	useMemo,
 	useRef,
+	useState,
 } from 'react';
 import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remotion';
 import { MixGraphContext } from './audio/context.ts';
@@ -61,6 +63,7 @@ import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { CanvasOwnerContext } from './fx/canvas-scope.tsx';
 import { installCaptureSafeCanvases } from './fx/capture-safe-canvas.ts';
 import {
 	BlendFallback,
@@ -76,6 +79,20 @@ import {
 	useCompositeTap,
 } from './fx/composite.tsx';
 import { type CompositeTrackInput, type LinearBlendCurve, trackHasGlBlend } from './fx/composite-plan.ts';
+import {
+	FlatCompositor,
+	FlatDisplayContext,
+	FlatRegistry,
+	FlatStackContext,
+	makeFlatStack,
+} from './fx/flat.tsx';
+import {
+	clipDrawsThroughCanvas,
+	docUsesCanvas,
+	type FlatTrackInput,
+	flatStackReason,
+	type StackScope,
+} from './fx/flat-plan.ts';
 import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
@@ -89,7 +106,7 @@ import {
 	transitionProgressAt,
 	transitionRunMode,
 } from './fx/transition.tsx';
-import { AdjustmentScope } from './layers/AdjustmentScope.tsx';
+import { AdjustmentScope, cssExactAdjustment, FlatAdjustment } from './layers/AdjustmentScope.tsx';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
@@ -99,6 +116,7 @@ import { applyPreviews, PreviewLayers } from './previews.tsx';
 import { FrameRepaint } from './repaint.tsx';
 import { ShowFrame } from './show-frame.tsx';
 import {
+	FlatRun3D,
 	fallbackProjective,
 	makeScene3D,
 	runBottomTracks,
@@ -406,10 +424,16 @@ export function VideoTracks({
 	doc,
 	options,
 	offset,
+	flat: flatOutput,
 }: {
 	doc: SequenceCompositionProps['doc'];
 	options: SequenceCompositionProps['options'];
 	offset: number;
+	/**
+	 * compositor: draw flat and hand the picture to the enclosing `FxPicture` (a nest layer whose effects run on its
+	 * nested sequence's picture, NestLayer).
+	 */
+	flat?: 'feed';
 }) {
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const premount = premountFrames(fps);
@@ -695,6 +719,230 @@ export function VideoTracks({
 		);
 	}, [doc, gpu, htmlInCanvas, options.layerFilter, options.view3d, options.isPreview, nested]);
 	const gpu3d = scene3d?.mode.mode === 'gpu';
+	// compositor: a stack whose canvas scopes would nest is drawn flat (fx/flat.tsx, fx/flat-plan.ts). Decided
+	// statically from the stack; a scope that still finds itself inside another asks for it at run time
+	// (CanvasOwnerContext). The Program monitor's display transform makes the sequence's own stack flat whenever
+	// anything in it draws through HTML-in-Canvas (FlatDisplayContext).
+	const flatDisplay = useContext(FlatDisplayContext);
+	const [flatRequested, setFlatRequested] = useState(false);
+	const requestFlat = useCallback(() => setFlatRequested(true), []);
+	const canFlat = gpu === 'ok' && htmlInCanvas && !options.layerFilter;
+	const flatReason = useMemo(() => {
+		if (!canFlat) return null;
+		const scopes: StackScope[] = [];
+		const canvasTracks: number[] = [];
+		tracks.forEach((t, i) => {
+			if (t.adjustments.length > 0 && !t.adjustments.every(cssExactAdjustment))
+				scopes.push({ track: i, kind: 'adjustment' });
+			const b = blendTracks.get(t.trackId);
+			if (b?.scope && b.value.mode.mode === 'gpu')
+				scopes.push({ track: i, kind: b.value.linear ? 'linear' : 'blend' });
+			if (gpu3d && scene3d?.hubOf(i)) scopes.push({ track: i, kind: '3d' });
+			const readAsMatte = matteContext.has(t.trackId);
+			const canvas = t.clips.some((c) => {
+				// 3D members draw outside every scope.
+				if (gpu3d && c.threeD) return false;
+				const media = 'mediaId' in c.source ? doc.media[c.source.mediaId] : null;
+				const side = t.sides.get(c.clipId)?.some((e) => e.mode.mode === 'gpu') ?? false;
+				if (clipDrawsThroughCanvas(c, media, side || readAsMatte)) return true;
+				return 'nest' in c.source && docUsesCanvas(c.source.nest.snapshot, cssExactAdjustment);
+			});
+			if (canvas) canvasTracks.push(i);
+		});
+		return flatStackReason(scopes, canvasTracks);
+	}, [canFlat, tracks, blendTracks, gpu3d, scene3d, matteContext, doc.media]);
+	const flat =
+		canFlat && (!!flatOutput || flatRequested || (!nested && !!flatDisplay) || flatReason !== null);
+	const flatHub = useRef<CompositeHub | null>(null);
+	const flatRegistry = useRef<FlatRegistry | null>(null);
+	const background0 = options.transparentBackground ? null : doc.settings.backgroundColor;
+	const flatStack = useMemo(() => {
+		if (!flat) return null;
+		flatHub.current ??= new CompositeHub();
+		flatRegistry.current ??= new FlatRegistry();
+		const inputs: FlatTrackInput[] = tracks.map((t, index) => ({
+			trackId: t.trackId,
+			index,
+			layers: {
+				trackId: t.trackId,
+				// three-d: 3D layers are drawn by their run (FlatRun3D), never as items.
+				clips: t.clips
+					.filter((c) => !(gpu3d && c.threeD))
+					.map((c) => ({
+						clipId: c.clipId,
+						start: c.start,
+						duration: c.duration,
+						headHandle: c.headHandle ?? 0,
+						tailHandle: c.tailHandle ?? 0,
+						blendMode: c.blendMode,
+					})),
+				stages: t.stages.map((st) => ({
+					id: st.t.id,
+					start: st.t.start,
+					duration: st.t.duration,
+					blendMode: st.blendModeId,
+				})),
+			},
+			mattes: t.mattes,
+			adjustments: t.adjustments,
+		}));
+		const isGpuSide = (clipId: string, f: number) => {
+			for (const t of tracks) {
+				const e = t.sides.get(clipId);
+				if (e?.some((x) => x.mode.mode === 'gpu' && f >= x.t.start && f < x.t.start + x.t.duration))
+					return true;
+			}
+			return false;
+		};
+		return makeFlatStack(
+			inputs,
+			{
+				background: background0 && background0[3] > 0 ? background0 : null,
+				isGpuSide,
+				run3dAt: (i, f) =>
+					!!gpu3d && !!scene3d?.hubOf(i) && scene3d.runsAt(f).some((r) => r.bottomTrack === i),
+			},
+			flatHub.current,
+			flatRegistry.current,
+			{ mode: 'gpu' },
+			linearCurve,
+		);
+	}, [flat, tracks, gpu3d, scene3d, background0, linearCurve]);
+	const stencilledIn = (bg: typeof background0) =>
+		!!bg &&
+		bg[3] > 0 &&
+		tracks.some(
+			(t) =>
+				t.clips.some((c) => isStencilBlend(c.blendMode)) ||
+				t.stages.some((st) => isStencilBlend(st.blendModeId)),
+		);
+	const hiddenMatteLayers = hiddenMattes.map((track) => (
+		<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
+			{track.clips.map((clip) => {
+				const head = clip.headHandle ?? 0;
+				return (
+					<Sequence
+						key={clip.clipId}
+						from={clip.start - head - offset}
+						durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+						name={`${clip.name} (matte)`}
+						premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+					>
+						<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
+					</Sequence>
+				);
+			})}
+		</AbsoluteFill>
+	));
+	const members3d = gpu3d ? (
+		<AbsoluteFill data-scene3d-members="" style={{ pointerEvents: 'none' }}>
+			{tracks.flatMap((track) =>
+				track.clips
+					.filter((clip) => clip.threeD)
+					.map((clip) => (
+						<Sequence
+							key={clip.clipId}
+							from={clip.start - offset}
+							durationInFrames={clip.duration}
+							name={`${clip.name} (3D)`}
+							premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+						>
+							<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+						</Sequence>
+					)),
+			)}
+		</AbsoluteFill>
+	) : null;
+	if (flat && flatStack)
+		return (
+			<Scene3DContext.Provider value={scene3d}>
+				<TrackMatteContext.Provider value={matteContext}>
+					<FlatStackContext.Provider value={flatStack.stack}>
+						<BlendTrackContext.Provider value={flatStack.track}>
+							<FlatCompositor
+								stack={flatStack.stack}
+								comp={comp}
+								offset={offset}
+								isPreview={options.isPreview}
+								linear={linearCurve}
+								display={!nested && flatDisplay ? flatDisplay : undefined}
+								underlay={stencilledIn(background0) ? background0 : null}
+								output={flatOutput === 'feed' ? 'feed' : 'canvas'}
+							/>
+							{hiddenMatteLayers}
+							{tracks.map((track) => (
+								<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
+									<AbsoluteFill data-track-id={track.trackId} data-flat-track="">
+										{track.clips.map((clip) => {
+											if (gpu3d && clip.threeD) return null;
+											const head = clip.headHandle ?? 0;
+											return (
+												<Sequence
+													key={clip.clipId}
+													from={clip.start - head - offset}
+													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+													name={clip.name}
+													premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+												>
+													<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+												</Sequence>
+											);
+										})}
+										{track.stages.map((st) => (
+											<Sequence
+												key={`transition-${st.t.id}`}
+												from={st.t.start - offset}
+												durationInFrames={st.t.duration}
+												name={st.spec.label}
+											>
+												<TransitionStage
+													t={st.t}
+													spec={st.spec}
+													hub={st.hub}
+													mode={st.mode}
+													comp={comp}
+													flicksPerFrame={fpf}
+													isPreview={options.isPreview}
+													blendMode={st.blendMode}
+													media={doc.media}
+												/>
+											</Sequence>
+										))}
+									</AbsoluteFill>
+								</TransitionSidesContext.Provider>
+							))}
+							{tracks.map((track) =>
+								track.adjustments.length > 0 ? (
+									<FlatAdjustment
+										key={`adj-${track.trackId}`}
+										trackId={track.trackId}
+										clips={track.adjustments}
+										doc={doc}
+										options={options}
+										offset={offset}
+									/>
+								) : null,
+							)}
+							{gpu3d && scene3d
+								? tracks.map((track, i) =>
+										scene3d.hubOf(i) ? (
+											<FlatRun3D
+												key={`scene3d-${track.trackId}`}
+												scene={scene3d}
+												trackIndex={i}
+												comp={comp}
+												offset={offset}
+												isPreview={options.isPreview}
+											/>
+										) : null,
+									)
+								: null}
+							{members3d}
+						</BlendTrackContext.Provider>
+					</FlatStackContext.Provider>
+				</TrackMatteContext.Provider>
+			</Scene3DContext.Provider>
+		);
 	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
 	let stack: ReactNode =
 		background && background[3] > 0 ? (
@@ -828,52 +1076,19 @@ export function VideoTracks({
 				t.stages.some((st) => isStencilBlend(st.blendModeId)),
 		);
 	return (
-		<Scene3DContext.Provider value={scene3d}>
-			<TrackMatteContext.Provider value={matteContext}>
-				{stencilled ? (
-					<AbsoluteFill data-stencil-background="" style={{ backgroundColor: rgbaCss(background) }} />
-				) : null}
-				{hiddenMattes.map((track) => (
-					<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
-						{track.clips.map((clip) => {
-							const head = clip.headHandle ?? 0;
-							return (
-								<Sequence
-									key={clip.clipId}
-									from={clip.start - head - offset}
-									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-									name={`${clip.name} (matte)`}
-									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-								>
-									<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
-								</Sequence>
-							);
-						})}
-					</AbsoluteFill>
-				))}
-				{stack}
-				{gpu3d ? (
-					<AbsoluteFill data-scene3d-members="" style={{ pointerEvents: 'none' }}>
-						{tracks.flatMap((track) =>
-							track.clips
-								.filter((clip) => clip.threeD)
-								.map((clip) => (
-									<Sequence
-										key={clip.clipId}
-										from={clip.start - offset}
-										durationInFrames={clip.duration}
-										name={`${clip.name} (3D)`}
-										premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-									>
-										<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
-									</Sequence>
-								)),
-						)}
-					</AbsoluteFill>
-				) : null}
-				{scene3d ? <Scene3DFallback scene={scene3d} offset={offset} isPreview={options.isPreview} /> : null}
-			</TrackMatteContext.Provider>
-		</Scene3DContext.Provider>
+		<CanvasOwnerContext.Provider value={canFlat ? requestFlat : null}>
+			<Scene3DContext.Provider value={scene3d}>
+				<TrackMatteContext.Provider value={matteContext}>
+					{stencilled ? (
+						<AbsoluteFill data-stencil-background="" style={{ backgroundColor: rgbaCss(background) }} />
+					) : null}
+					{hiddenMatteLayers}
+					{stack}
+					{members3d}
+					{scene3d ? <Scene3DFallback scene={scene3d} offset={offset} isPreview={options.isPreview} /> : null}
+				</TrackMatteContext.Provider>
+			</Scene3DContext.Provider>
+		</CanvasOwnerContext.Provider>
 	);
 }
 
