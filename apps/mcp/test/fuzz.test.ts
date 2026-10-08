@@ -16,7 +16,7 @@ import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import { afterAll } from 'vitest';
+import { afterAll, expect, it } from 'vitest';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
@@ -46,10 +46,13 @@ function engineLink(): EngineConnection {
 	};
 	const client = new Proxy(known, {
 		get: (t, name: string) =>
-			t[name] ??
-			(async () => {
-				throw new EngineError('NOT_FOUND', `the fuzz engine does not answer ${name}`, { status: 404 });
-			}),
+			// Not a thenable: `client()` resolves to this object, and a `then` here would swallow the resolution.
+			name === 'then'
+				? undefined
+				: (t[name] ??
+					(async () => {
+						throw new EngineError('NOT_FOUND', `the fuzz engine does not answer ${name}`, { status: 404 });
+					})),
 	});
 	return {
 		target: { url: 'http://engine.fuzz', token: null, source: 'explicit' },
@@ -123,3 +126,12 @@ describeFuzz(
 	),
 	600_000,
 );
+
+// The harness itself: tools answer (a refusal is still an answer), so the targets above exercise real handlers.
+it('the in-memory engine reaches the tool handlers', async () => {
+	const r = await client.callTool({ name: 'get_document', arguments: { projectId: 'prj_0000000000000001' } });
+	expect(Array.isArray(r.content) && r.content.length > 0).toBe(true);
+	const refused = await client.callTool({ name: 'list_projects', arguments: {} });
+	expect(refused.isError).toBe(true);
+	expect(JSON.stringify(refused.content)).toMatch(/fuzz engine does not answer/);
+});
