@@ -159,3 +159,41 @@ export function normalizedBase<T extends object>(doc: T): T | null {
 	const base = original(doc as never) as T;
 	return normalized.has(base) ? base : null;
 }
+
+export type KeyDiff = { changed: readonly string[]; deleted: readonly string[] };
+const keyDiffCache = new WeakMap<object, { base: object; diff: KeyDiff }>();
+
+/**
+ * Keys of record `next` that are new or hold another object than in `base`, and keys of `base` gone from `next`,
+ * by identity. Finished (frozen) records cache their diff against the last base asked for, so the steps after a
+ * transaction (entity diff, invariants, warnings) scan a changed sequence's clips once.
+ */
+export function keyDiff<T>(base: Readonly<Record<string, T>>, next: Readonly<Record<string, T>>): KeyDiff {
+	if (base === next) return { changed: [], deleted: [] };
+	const hit = keyDiffCache.get(next);
+	if (hit && hit.base === base) return hit.diff;
+	const changed: string[] = [];
+	let kept = 0;
+	for (const k of Object.keys(next)) {
+		if (!Object.hasOwn(base, k)) changed.push(k);
+		else {
+			kept++;
+			if (next[k] !== base[k]) changed.push(k);
+		}
+	}
+	const deleted: string[] = [];
+	if (kept !== Object.keys(base).length)
+		for (const k of Object.keys(base)) if (!Object.hasOwn(next, k)) deleted.push(k);
+	const diff = { changed, deleted };
+	if (Object.isFrozen(next)) keyDiffCache.set(next, { base, diff });
+	return diff;
+}
+
+const cleanSequences = new WeakSet<object>();
+/** Sequences of a document that passed the invariants (no dangling links, groups or transitions). */
+export function markClean(seq: object): void {
+	cleanSequences.add(seq);
+}
+export function isClean(seq: object): boolean {
+	return cleanSequences.has(seq);
+}

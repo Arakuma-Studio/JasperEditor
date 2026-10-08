@@ -4,12 +4,13 @@ import type { Draft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
-import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
+import type { ProjectDocument, ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
+import { noNewOrphans } from '../tx-delta.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
@@ -80,6 +81,8 @@ function clipRefs(clips: Record<string, Clip>): ClipRefs {
 }
 
 export function collectOrphans(doc: DDoc): void {
+	// perf-core: after a transaction that gave up no reference, nothing can be orphaned (tx-delta.ts).
+	if (noNewOrphans(doc as ProjectDocument)) return;
 	// Runs after every transaction: reads through `peek` (no drafts for the thousands of untouched clips); only the
 	// records that lose entries are written through the draft.
 	const usedMedia = new Set<string>();

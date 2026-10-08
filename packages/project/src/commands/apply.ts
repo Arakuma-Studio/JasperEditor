@@ -10,6 +10,7 @@ import type { ProjectDocument } from '../schema/document.ts';
 import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
 import { HandlerContext, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
+import { markNormalized } from './draft-read.ts';
 import { collectOrphans } from './handlers/project.ts';
 import { compressionWarnings } from './handlers/text-animation.ts';
 import type { Command } from './schemas/index.ts';
@@ -196,6 +197,8 @@ export function applyTransaction(
 		};
 	}
 
+	// perf-core: the normalizers ran on `next`; the next transaction's only need to look at what it changes.
+	markNormalized(next);
 	if (next !== doc && ctx.checkInvariants !== false) {
 		const issues = checkTransactionInvariants(doc, next, { effects: ctx.registries.effects }, ctx.invariants);
 		if (issues.length > 0) return { document: doc, result: fail(ctx.revision, issues) };

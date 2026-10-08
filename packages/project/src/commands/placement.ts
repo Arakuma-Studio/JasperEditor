@@ -2,7 +2,7 @@
 // removals and link/transition cleanup (S01:CLP-003, CLP-007, TRK-006; S02 Appendix A.4–A.6;
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized; scans read the drafts'
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
-import { current, type Draft, isDraft } from 'immer';
+import { current, type Draft, isDraft, original } from 'immer';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
@@ -10,7 +10,7 @@ import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { HandlerContext } from './context.ts';
-import { keysOf, latest, peekIn, valuesOf } from './draft-read.ts';
+import { isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';
 
 type DSeq = Draft<Sequence>;
@@ -425,11 +425,14 @@ export function shiftMarkers(seq: DSeq, at: number, delta: number): void {
  * are no longer adjacent (S01:TRN-005, INV-007, INV-010).
  */
 export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
+	// perf-core: on a sequence that passed the invariants, only what this transaction changed can need cleaning.
+	const scope = cleanupScope(seq);
 	for (const kind of ['links', 'groups'] as const) {
 		const field = kind === 'links' ? 'linkId' : 'groupId';
 		const table = seq[kind];
-		for (const key of keysOf(table)) {
-			const g = peekIn(table, key)!;
+		for (const key of scope ? scope[kind] : keysOf(table)) {
+			const g = peekIn(table, key);
+			if (!g) continue;
 			const members = latest(g.members).filter(
 				(m, i, arr) => peekIn(seq.clips, m)?.[field] === g.id && arr.indexOf(m) === i,
 			);
@@ -443,9 +446,9 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
 	const links = latest(seq.links);
 	const groups = latest(seq.groups);
 	const raw = latest(seq.clips);
-	for (const key in raw) {
-		if (!Object.hasOwn(raw, key)) continue;
-		const c = latest(raw[key]!);
+	for (const key of scope ? scope.clips : Object.keys(raw)) {
+		const c = peekIn(raw, key);
+		if (!c) continue;
 		const dangling = (c.linkId && !links[c.linkId]) || (c.groupId && !groups[c.groupId]);
 		if (!dangling) continue;
 		const d = seq.clips[key]!;
@@ -464,6 +467,32 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
 			h.warn('W_TRANSITION_REMOVED', `Transition ${t.id} removed because its clips were separated`);
 		}
 	}
+}
+
+/**
+ * The links, groups and clips cleanupSequence must look at when the sequence started the transaction clean
+ * (it passed the invariants: no dangling memberships): the changed ones, the groups changed clips name before and
+ * after, and the members of removed groups. Null: look at everything.
+ */
+function cleanupScope(seq: DSeq): { links: string[]; groups: string[]; clips: string[] } | null {
+	if (!isDraft(seq)) return null;
+	const base = original(seq) as Sequence;
+	if (!isClean(base)) return null;
+	const dc = recordDelta(seq.clips as Readonly<Record<string, Clip>>);
+	const dl = recordDelta(seq.links as Readonly<Record<string, { members: string[] }>>);
+	const dg = recordDelta(seq.groups as Readonly<Record<string, { members: string[] }>>);
+	if (dc.base !== base.clips || dl.base !== base.links || dg.base !== base.groups) return null;
+	const clips = new Set(dc.changed);
+	const links = new Set(dl.changed);
+	const groups = new Set(dg.changed);
+	for (const k of dl.deleted) for (const m of base.links[k]!.members) clips.add(m);
+	for (const k of dg.deleted) for (const m of base.groups[k]!.members) clips.add(m);
+	for (const k of [...dc.changed, ...dc.deleted])
+		for (const c of [base.clips[k], peekIn(seq.clips, k)]) {
+			if (c?.linkId) links.add(c.linkId);
+			if (c?.groupId) groups.add(c.groupId);
+		}
+	return { links: [...links], groups: [...groups], clips: [...clips] };
 }
 
 export function setStatic<T>(anim: Draft<Animatable<T>>, value: T): void {

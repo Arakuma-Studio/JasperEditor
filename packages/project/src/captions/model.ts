@@ -9,6 +9,7 @@
 // (`mediaId` set) shows the words whose midpoint lies in its content range.
 import type { Draft } from 'immer';
 import { cachedRead, latest, peekIn } from '../commands/draft-read.ts';
+import { captionsUnchanged } from '../commands/tx-delta.ts';
 import type { RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Transcript, TranscriptWord } from '../schema/media.ts';
@@ -466,6 +467,8 @@ function captionClipKeys(clips: Readonly<Record<string, Clip>>): (readonly [stri
 }
 
 export function normalizeCaptionOwnership(doc: Draft<ProjectDocument>, newId: () => string): void {
+	// perf-core: after a transaction that touched no captions clip and no transcript, nothing changed (tx-delta.ts).
+	if (captionsUnchanged(doc as ProjectDocument)) return;
 	// perf-core: found on current values (draft-read.ts); only clips sharing a transcript are drafted.
 	const found = new Map<string, Array<{ seqId: string; key: string }>>();
 	const seqs = latest(doc.sequences);

@@ -21,6 +21,7 @@
 // incremental one must agree on validity and on the id index, else the transaction fails with E_INTERNAL.
 import { audioMixIssues } from './audio/invariants.ts';
 import { colorIssues } from './color/model.ts';
+import { keyDiff, markClean } from './commands/draft-read.ts';
 import type { Issue } from './commands/types.ts';
 import { expressionIssues } from './expressions.ts';
 import { type IdPrefix, idPrefixOf, isValidId } from './ids.ts';
@@ -99,7 +100,16 @@ class IdIndex {
 
 type Verified = { ids: IdIndex; opts: InvariantOptions };
 /** Documents known to pass every invariant, with their id index. */
-const verified = new WeakMap<ProjectDocument, Verified>();
+const verifiedDocs = new WeakMap<ProjectDocument, Verified>();
+const verified = {
+	get: (doc: ProjectDocument) => verifiedDocs.get(doc),
+	delete: (doc: ProjectDocument) => verifiedDocs.delete(doc),
+	/** Also marks the document's sequences clean for cleanupSequence (draft-read.ts). */
+	set(doc: ProjectDocument, v: Verified) {
+		verifiedDocs.set(doc, v);
+		for (const seq of Object.values(doc.sequences)) markClean(seq);
+	},
+};
 
 const sameOpts = (a: InvariantOptions, b: InvariantOptions) =>
 	a.effects === b.effects && a.mgTemplates === b.mgTemplates;
@@ -179,12 +189,8 @@ type Rec<T> = Readonly<Record<string, T>>;
 
 /** Keys of `next` whose value is new or changed, and keys of `base` gone from `next`. */
 function diffKeys<T>(base: Rec<T>, next: Rec<T>): { changed: string[]; deleted: string[] } {
-	const changed: string[] = [];
-	const deleted: string[] = [];
-	if (base === next) return { changed, deleted };
-	for (const k of Object.keys(next)) if (next[k] !== base[k]) changed.push(k);
-	for (const k of Object.keys(base)) if (!Object.hasOwn(next, k)) deleted.push(k);
-	return { changed, deleted };
+	const d = keyDiff(base, next);
+	return { changed: [...d.changed], deleted: [...d.deleted] };
 }
 
 const noClaim: Claim = () => {};
@@ -396,7 +402,7 @@ function incrementalCheck(
 		const r = sequenceDelta(base, next, sid, B, N, opts, delta, issues);
 		if (typeof r === 'string' || r === false) return r;
 		if (r.nests) nestsChanged = true;
-		if (B.clips !== N.clips && clipsEnd(B.clips) !== clipsEnd(N.clips)) longer.push(sid);
+		if (r.endChanged) longer.push(sid);
 	}
 	if (issues.length) return false;
 	// A nest shows its sequence's duration (INV-005): when a nested sequence got longer or shorter, its nests are
@@ -464,7 +470,7 @@ function sequenceDelta(
 	opts: InvariantOptions,
 	delta: ClaimDelta,
 	issues: Issue[],
-): { nests: boolean } | false | string {
+): { nests: boolean; endChanged: boolean } | false | string {
 	if (!sameExcept(B, N, FINE_SEQUENCE_FIELDS)) return 'sequence fields';
 	const clips = diffKeys(B.clips, N.clips);
 	const olds: [string, Clip][] = [];
@@ -506,9 +512,14 @@ function sequenceDelta(
 		for (const [, c] of olds) for (const ref of refsOf(c)) if (!kept.has(ref)) delta.givenUp.add(ref);
 	}
 
-	// INV-003 on every track a changed clip is on now.
-	if (news.length) {
-		const touched = new Set(news.map(([, c]) => c.trackId).filter((t) => scope.tracks.has(t)));
+	// INV-003 on every track a clip arrived on, moved on or changed length on.
+	const was = new Map(olds);
+	const placed = news.filter(([k, c]) => {
+		const o = was.get(k);
+		return !o || o.trackId !== c.trackId || o.start !== c.start || o.duration !== c.duration;
+	});
+	if (placed.length) {
+		const touched = new Set(placed.map(([, c]) => c.trackId).filter((t) => scope.tracks.has(t)));
 		const byTrack = new Map<string, Clip[]>();
 		if (touched.size)
 			for (const c of Object.values(N.clips))
@@ -579,5 +590,17 @@ function sequenceDelta(
 	if (essentialIssues({ sequences: { [sid]: remix ? N : partial } } as never).length) return false;
 	if (colorIssues({ media: next.media, sequences: { [sid]: partial } } as never).length) return false;
 	if (audioMixIssues({ ...N, clips: changedClips } as Sequence, scope.where).length) return false;
-	return { nests };
+	// The sequence's end (a nest's INV-005 bound) from the base's: rescanned only when a clip that reached it changed.
+	let endChanged = false;
+	if (B.clips !== N.clips) {
+		const before = clipsEnd(B.clips);
+		const end = (c: Clip) => c.start + c.duration;
+		if (olds.some(([, c]) => end(c) >= before)) endChanged = clipsEnd(N.clips) !== before;
+		else {
+			const after = Math.max(before, ...news.map(([, c]) => end(c)));
+			endCache.set(N.clips, after);
+			endChanged = after !== before;
+		}
+	}
+	return { nests, endChanged };
 }
