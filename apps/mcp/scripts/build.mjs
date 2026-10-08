@@ -6,6 +6,7 @@ import { chmodSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { BUILD_OPTIONS } from './build-options.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 for (const [entry, out] of [
@@ -14,19 +15,6 @@ for (const [entry, out] of [
 	['src/jasper.ts', 'dist/jasper.mjs'],
 ]) {
 	const outfile = join(root, out);
-	await build({
-		entryPoints: [join(root, entry)],
-		outfile,
-		bundle: true,
-		platform: 'node',
-		format: 'esm',
-		target: 'node20',
-		sourcemap: false,
-		legalComments: 'none',
-		banner: {
-			js: "#!/usr/bin/env node\nimport { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
-		},
-		logLevel: 'info',
-	});
+	await build({ ...BUILD_OPTIONS, entryPoints: [join(root, entry)], outfile, logLevel: 'info' });
 	chmodSync(outfile, 0o755);
 }

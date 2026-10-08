@@ -258,7 +258,7 @@ test('a clip running off the visible timeline is aimed at its visible part; one 
 	expect(el.center.x).toBeLessThan(area.x + area.width);
 	await tool('ui_command', { projectId, id: 'gesture.cancel' }).catch(() => undefined);
 	await tool('ui_click', { projectId, id: `timeline.clip.${clip.id}` });
-	await expect.poll(sel).toEqual([clip.id]);
+	await expect.poll(async () => (await sel()).includes(clip.id)).toBe(true); // with its linked audio
 	// Scroll the clip away entirely (to a second clip far past it), then click it by id: it is scrolled back.
 	await tool('ui_command', { projectId, id: 'gesture.cancel' }).catch(() => undefined);
 	await expect.poll(sel).toEqual([]);
@@ -274,7 +274,7 @@ test('a clip running off the visible timeline is aimed at its visible part; one 
 	});
 	expect(away.timeline.view.visibleFrames[0]).toBeGreaterThan(clip.start + clip.duration);
 	const clicked = await tool<{ x: number }>('ui_click', { projectId, id: `timeline.clip.${clip.id}` });
-	await expect.poll(sel).toEqual([clip.id]);
+	await expect.poll(async () => (await sel()).includes(clip.id)).toBe(true); // with its linked audio
 	const back = await tool<Loc>('ui_locate', { projectId, timeline: { clipId: clip.id } });
 	expect(back.timeline.visible).toBe(true);
 	expect(clicked.x).toBeGreaterThan(area.x);
