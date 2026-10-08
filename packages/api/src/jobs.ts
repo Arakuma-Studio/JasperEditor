@@ -39,6 +39,8 @@ export const JOB_KINDS = [
 	'interpret',
 	'image-sequence',
 	'layers',
+	// previews: Render Effects In to Out / Render In to Out / Render Selection / Render Audio
+	'preview',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

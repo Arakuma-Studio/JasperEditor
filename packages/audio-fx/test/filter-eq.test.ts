@@ -5,6 +5,7 @@
 // latency, and a performance sanity check.
 import { AUDIO_EFFECTS, type ParamValue } from '@jasper/project/audio';
 import { describe, expect, it } from 'vitest';
+import { budgetMs } from '../../../scripts/perf/budget.ts';
 import type { AudioProcessor } from '../src/core/effect.ts';
 import { GRAPHIC_EQ_FREQS, graphicEqQ } from '../src/effects/filter-eq/eq.ts';
 import { FILTER_EQ_PROCESSORS } from '../src/effects/filter-eq.ts';
@@ -652,7 +653,7 @@ describe('family contract', () => {
 			for (let s = 0; s < n; s += 128) e.process([l, r], s, Math.min(n, s + 128));
 			const dt = (performance.now() - t0) / 1000;
 			console.log(`${id}: ${(secs / dt).toFixed(0)}× realtime`);
-			expect(dt, id).toBeLessThan(limit);
+			expect(dt * 1000, id).toBeLessThan(budgetMs(limit * 1000));
 		}
 	});
 });

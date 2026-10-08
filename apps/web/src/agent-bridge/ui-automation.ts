@@ -5,6 +5,7 @@
 // themselves (Timeline time ↔ x and track ↔ y, Program monitor sequence pixels ↔ window points).
 import type { RunResult } from '../commands/registry.ts';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
+import { editorPerfStats } from '../previews/perf.ts';
 import type { ShellController } from '../shell/context.tsx';
 import {
 	accessibleName,
@@ -845,6 +846,9 @@ async function dispatchUiAction(action: string, raw: unknown): Promise<unknown> 
 			return doCommands(a);
 		case 'command':
 			return doCommand(a);
+		case 'perf':
+			// previews: playback, render bar and UI counters (MCP perf_stats)
+			return editorPerfStats(a as { sampleMs?: number });
 		default:
 			throw new UiAutomationError('E_INVALID_PARAM', `Unknown UI action "${action}"`);
 	}

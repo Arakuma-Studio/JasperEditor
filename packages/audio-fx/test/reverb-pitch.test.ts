@@ -1,6 +1,7 @@
 // Reverbs (RT60 by Schroeder backward integration, IR determinism, mix law, stability) and the pitch shifter
 // (frequency accuracy for several shifts, latency = measured delay, identity at 0).
 import { describe, expect, it } from 'vitest';
+import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import { generateIr, IR_SPECS, irLength } from '../src/effects/reverb/convolution.ts';
 import { createProcessor } from '../src/registry.ts';
 import { db, noise, rms, SR, sine, toneAmplitude } from './util.ts';
@@ -176,6 +177,8 @@ describe('Pitch Shifter', () => {
 		const r = noise(2, SR * 10, 0.3);
 		const t0 = performance.now();
 		p.process([l, r], 0, l.length);
-		expect(performance.now() - t0).toBeLessThan(1250);
+		const ms = performance.now() - t0;
+		console.info(budgetReport('pitch shifter, 10 s stereo', ms, 1250));
+		expect(ms).toBeLessThan(budgetMs(1250));
 	});
 });

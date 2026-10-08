@@ -11,20 +11,19 @@ by feature.
 
 ## Current status
 
-Assessed 8 October 2026 at `integrate/parity` after 22 of the 24 parallel workstreams merged (workstream `fixups`).
-Every row that changed cites the wp-note and the tests that show it. `previews` and `golden-fuzz` are still running
-and are not credited (EX-3, EX-4, PRJ-8 keep their old grades). The breadth number is recomputed from the table below
-(`P0 ×3, P1 ×2, P2 ×1`, each row's fraction).
+Assessed 8 October 2026 at `integrate/parity` after 23 of the 24 parallel workstreams merged (workstream `fixups`).
+Every row that changed cites the wp-note and the tests that show it. `golden-fuzz` is still running and is not
+credited. The breadth number is recomputed from the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction).
 
 | Measure | Value |
 |---|---|
-| **Breadth, weighted by tier** (P0 ×3, P1 ×2, P2 ×1) | **≈ 90%** using the fractions below; ≈ 90% counting every partial feature as half (was ≈ 59% at `main` 051cf53) |
-| P0 / P1 / P2 | 97% / 86% / 79% (fractions) |
-| Features done / partial / missing | 74 / 13 / 5 of 92 |
+| **Breadth, weighted by tier** (P0 ×3, P1 ×2, P2 ×1) | **≈ 91%** using the fractions below; ≈ 91% counting every partial feature as half (was ≈ 59% at `main` 051cf53) |
+| P0 / P1 / P2 | 97% / 89% / 79% (fractions) |
+| Features done / partial / missing | 75 / 13 / 4 of 92 |
 | Video effects / transitions | 384 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
-| Menu entries | 277, of which 15 are unregistered and render disabled (counted from `MENUBAR` against the registry after `registerAllCommands()`) |
-| Document commands | 243 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
-| Agent tools | 295 MCP tools (counted from a live `listTools`) |
+| Menu entries | 283, of which 15 are unregistered and render disabled (counted from `MENUBAR` against the registry after `registerAllCommands()`) |
+| Document commands | 244 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
+| Agent tools | 299 MCP tools (counted from a live `listTools`) |
 
 How a row is graded: **done** when the model, an undoable command, the UI, the preview and every export path exist
 (per its wp-note and tests); **partial** with a fraction when part of that is missing; **missing** when there is no
@@ -49,7 +48,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Audio | 97% | 7 |
 | Captions & speech | 100% | 2 |
 | Interchange | 100% | 1 |
-| Export | 62% | 4 |
+| Export | 82% | 4 |
 | Processing | 62% | 2 |
 | Project files | 100% | 5 |
 | Interface | 75% | 6 |
@@ -69,7 +68,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | PRJ-5 | Color mattes and other synthetic items | P1 | done | `synthetic.create/update` (Bars and Tone, Black Video, Color Matte, Transparent Video, Universal Counting Leader, Adjustment Layer), New Item menu, preview and native/Remotion export (edit-structure tests) | edit-structure |
 | PRJ-6 | Remove unused media, Project Manager (collect / consolidate) | P2 | partial (0.5) | Remove Unused done (`media.removeUnused`, Edit menu, MCP, edit-structure); no Project Manager | imports |
 | PRJ-7 | Media cache: usage, cleaning, location | P1 | done | wp-m3-cachegc | — |
-| PRJ-8 | Proxies: create, attach, toggle | P1 | partial (0.5) | 720p/540p playback proxies exist (S04); Clip ▸ Create Proxies unregistered, no attach/toggle UI | previews |
+| PRJ-8 | Proxies: create, attach, toggle | P1 | partial (0.5) | 720p/540p playback proxies exist (S04); Clip ▸ Create Proxies unregistered, no attach/toggle UI (`previews` did not rework them) | — |
 
 ### Import
 
@@ -206,8 +205,8 @@ behaviour still counts as done here; gaps.md tracks that separately.
 |---|---|---|---|---|---|
 | EX-1 | Export mode, presets, planner with native / hybrid / Remotion paths and named blockers | P0 | done | D-11, D-22, D-34, D-35 | — |
 | EX-2 | Codecs: H.264 (hardware or OpenH264), VP9, AV1, ProRes, alpha; AAC / Opus | P0 | partial (0.75) | D-13; no HEVC software encoder, OpenH264 quality below x264 | — |
-| EX-3 | Export Frame, Quick Export, export queue | P1 | partial (0.5) | Quick Export and queue registered; File ▸ Export ▸ Frame unregistered (MCP `render_frame` exists) | previews |
-| EX-4 | Render previews (timeline render bar), smart rendering | P1 | missing | none | previews |
+| EX-3 | Export Frame, Quick Export, export queue | P1 | partial (0.5) | Quick Export and queue registered; File ▸ Export ▸ Frame still unregistered (MCP `render_frame` exists; `previews` did not rework it) | — |
+| EX-4 | Render previews (timeline render bar), smart rendering | P1 | done | render bar with reasons, Render Effects In to Out / In to Out / Selection / Audio, Delete Render Files, previews played by the Program monitor, Export ▸ Use Previews, smart rendering (ProRes; H.264 opt-in) (wp-notes/previews.md; `apps/engine/test/previews.test.ts`, `apps/engine/test/smart-render.test.ts`, `e2e/previews.spec.ts`); no HEVC smart rendering | previews |
 
 ### Processing
 
@@ -241,7 +240,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| AG-1 | MCP server: 295 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools` | mcp-cli |
+| AG-1 | MCP server: 299 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools` | mcp-cli |
 
 ### Platforms
 
@@ -252,16 +251,17 @@ behaviour still counts as done here; gaps.md tracks that separately.
 
 ## In flight
 
-22 of the 24 parallel workstreams have merged into `integrate/parity` and are credited above, row by row, with the
+23 of the 24 parallel workstreams have merged into `integrate/parity` and are credited above, row by row, with the
 evidence in their wp-notes. Still running, and **not** credited:
 
 | Workstream | Targets |
 |---|---|
-| `previews` | EX-3 (Export Frame), EX-4 (render bar, Render In to Out), PRJ-8 (proxies); also the CANVAS_NESTED / capture compositor limit (D-43) |
 | `golden-fuzz` | stability evidence in gaps.md (golden frames per effect / transition family, fuzzed loaders, HTTP and MCP), PF-2 |
 
-Rows still missing or partial with no workstream: PRJ-4, PRJ-6 (Project Manager), TL-10, TL-11 (one Sequence
-Settings dialog), FX-6, GR-4, GR-5, AU-7, UI-4, UI-5, UI-6, AI-2, EX-2, PL-2.
+Still open after `previews`: some HTML-in-Canvas scope nestings fail with CANVAS_NESTED (D-43, wp-notes/previews.md §5).
+
+Rows still missing or partial with no workstream: PRJ-4, PRJ-6 (Project Manager), PRJ-8 (proxy UI), TL-10, TL-11
+(one Sequence Settings dialog), FX-6, GR-4, GR-5, AU-7, EX-2, EX-3 (Export Frame), UI-4, UI-5, UI-6, AI-2, PL-2.
 
 ## Out of scope or intentionally absent
 

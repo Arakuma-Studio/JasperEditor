@@ -12,6 +12,7 @@ import {
 	TrackResultSchema,
 } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { budgetMs } from '../../../scripts/perf/budget.ts';
 import { Ffmpeg, resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { decodeSpan } from '../src/tracking/decode.ts';
@@ -357,6 +358,6 @@ describe('cancellation (S09:TRK-014)', () => {
 		const ms = performance.now() - t0;
 		console.log(`[tracking] cancel latency ${ms.toFixed(0)} ms`);
 		expect(job.state).toBe('cancelled');
-		expect(ms).toBeLessThan(500);
+		expect(ms).toBeLessThan(budgetMs(500, { parallel: true }));
 	}, 120_000);
 });

@@ -115,6 +115,10 @@ export type OutputSpec = {
 	proresProfile?: 'hq' | '4444';
 	/** wp interchange: straight-alpha ProRes 4444 on a transparent background, no audio (Remotion path). */
 	alpha?: boolean;
+	/** previews: no audio stream (`ExportSettings.videoOnly`). */
+	videoOnly?: boolean;
+	/** previews: frames between keyframes (`video.keyframeInterval`); absent = the encoder default. */
+	gop?: number;
 	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
 	color?: ExportColor;
 };
@@ -144,6 +148,10 @@ export type PlannedExport = {
 	/** wp captions: caption tracks burned in (snapshot option) and the caption output settings. */
 	captions?: SnapshotOptions['captions'];
 	captionSettings?: ExportSettings['captions'];
+	/** previews (smart rendering): the stream-copied and rendered pieces of the range. */
+	smart?: { codec: import('./smart.ts').SmartCodec; pieces: import('./smart.ts').SmartPiece[] };
+	/** previews (Use Previews): the stretches of the range read from render previews, and those rendered. */
+	previews?: import('./use-previews.ts').ExportRun[];
 };
 
 /** The engine media key of an asset (engine-store locator), or null. */
@@ -496,6 +504,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
 		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
 		...(video?.alpha ? { alpha: true } : {}),
+		...(settings.videoOnly ? { videoOnly: true } : {}),
+		...(video?.keyframeInterval ? { gop: video.keyframeInterval } : {}),
 	};
 	if (
 		video?.alpha &&

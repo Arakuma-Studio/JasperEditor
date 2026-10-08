@@ -14,6 +14,7 @@ export function indexProjectCacheRefs(
 	const renderKeys = new Map<string, Set<string>>();
 	const bundleHashes = new Map<string, Set<string>>();
 	const rotoKeys = new Map<string, Set<string>>();
+	const previewHashes = new Map<string, Set<string>>();
 	const add = (index: Map<string, Set<string>>, keys: ReadonlySet<string>, projectId: string) => {
 		for (const key of keys) {
 			let projects = index.get(key);
@@ -26,6 +27,7 @@ export function indexProjectCacheRefs(
 		add(renderKeys, refs.mgRenderKeys, projectId);
 		add(bundleHashes, refs.bundleHashes, projectId);
 		if (refs.rotoKeys) add(rotoKeys, refs.rotoKeys, projectId);
+		if (refs.previewHashes) add(previewHashes, refs.previewHashes, projectId);
 	}
 	return (entry) => {
 		const out = new Set(recorded.get(entry.id) ?? []);
@@ -38,7 +40,9 @@ export function indexProjectCacheRefs(
 						? bundleHashes.get(entry.key)
 						: entry.kind === 'roto'
 							? rotoKeys.get(entry.key)
-							: undefined;
+							: entry.kind === 'previews'
+								? previewHashes.get(entry.key.slice(17, 49))
+								: undefined;
 		if (projects) for (const projectId of projects) out.add(projectId);
 		return out;
 	};

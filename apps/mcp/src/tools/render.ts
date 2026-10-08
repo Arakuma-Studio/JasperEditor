@@ -423,6 +423,16 @@ export function registerRenderTools(ctx: ToolContext): void {
 					})
 					.optional()
 					.describe('Caption output (wp captions)'),
+				usePreviews: z
+					.boolean()
+					.optional()
+					.describe('Take the frames of rendered segments from their render previews (render_previews)'),
+				smartRender: z
+					.boolean()
+					.optional()
+					.describe(
+						'Stream-copy untouched stretches of H.264 sources into an H.264 export (ProRes copies automatically; false = always encode)',
+					),
 			},
 			annotations: EDIT,
 		},
@@ -441,6 +451,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 				normalizeLufs,
 				truePeakDb,
 				captions,
+				usePreviews,
+				smartRender,
 				wait,
 				timeoutSeconds,
 			},
@@ -492,6 +504,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 					: {}),
 			});
 			if (captions) settings.captions = captions;
+			if (usePreviews) settings.usePreviews = true;
+			if (smartRender !== undefined) settings.smartRender = smartRender;
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),
@@ -525,6 +539,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					: {}),
 				...(plan.encoder ? { encoder: plan.encoder.label } : {}),
 				...(plan.warnings.length ? { warnings: plan.warnings.slice(0, 5).map((w) => w.message) } : {}),
+				...(plan.smart ? { smartRender: plan.smart } : {}),
 			};
 			if (wait) {
 				const { job: done, timedOut } = await waitJob(ctx, job.id, (timeoutSeconds ?? 900) * 1000, extra);

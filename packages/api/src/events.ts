@@ -64,6 +64,17 @@ export const EVENT_PAYLOADS = {
 	'cache.cleaned': CacheGcReportSchema,
 	/** M3 (wp-m3-presets, S03:FX-030): the user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
+	/**
+	 * previews: preview files appeared (a segment finished rendering) or were deleted; the render bar asks again. A
+	 * deletion carries `deleted` (count), a render the segment.
+	 */
+	'previews.changed': z.object({
+		formatKey: z.string().optional(),
+		hash: z.string().optional(),
+		kind: z.enum(['video', 'audio']).optional(),
+		sequenceId: z.string().optional(),
+		deleted: z.number().int().optional(),
+	}),
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];

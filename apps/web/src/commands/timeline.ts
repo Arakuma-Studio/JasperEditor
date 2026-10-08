@@ -711,13 +711,6 @@ export const timelineCommands: UiCommand[] = [
 		if (e.playhead + 1 > start)
 			apply(ctx, e, 'Work Area', [{ type: 'sequence.setWorkArea', start, end: e.playhead + 1 }]);
 	}),
-	cmd('timeline.renderInToOut', 'Render In to Out', T, (ctx) =>
-		ctx.ui.toast({
-			kind: 'info',
-			message: 'Preview rendering arrives with the render cache (M2)',
-			detail: 'Red and yellow render-bar ranges play live in M1.',
-		}),
-	),
 	{
 		id: 'gesture.cancel',
 		label: 'Cancel Gesture',

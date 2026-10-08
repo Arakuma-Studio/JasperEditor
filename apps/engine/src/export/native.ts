@@ -1004,6 +1004,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				fps: output.fps,
 				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
 				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
+				...(output.gop ? { gop: output.gop } : {}),
 				// color-mgmt: bit depth, colour code points, HDR metadata.
 				...(output.color
 					? {
@@ -1138,7 +1139,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 
 	// Audio (skipped for stills): the offline mixer's mixdown (audio-mix: clip levels, pan, buses, sends, automation,
 	// 5.1, loudness normalisation — `audio/mixdown.ts`), resampled with SoX to the delivered rate when it differs.
-	if (!o.still) {
+	if (!o.still && !output.videoOnly) {
 		const totalSamples = Math.round(output.durationSec * output.audioSampleRate);
 		const layout = output.audioChannels === 1 ? 'mono' : output.audioChannels === 6 ? '5.1' : 'stereo';
 		if (o.audio) {
@@ -1163,8 +1164,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		args.push('-frames:v', '1', '-update', '1', '-f', 'image2', '-c:v', 'png', o.outputFile);
 	} else {
 		args.push(
-			'-map',
-			'[aout]',
+			...(output.videoOnly ? [] : ['-map', '[aout]']),
 			...enc!.video,
 			...(output.color
 				? colorTagArgs(output.color)
@@ -1173,11 +1173,15 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			rate(output.fps),
 			'-frames:v',
 			String(output.frames),
-			...audioEncodeArgs(audioCodecOf(encoder, output), output.audioBitrateKbps, output.audioChannels),
-			'-ar',
-			String(output.audioSampleRate),
-			'-ac',
-			String(output.audioChannels),
+			...(output.videoOnly
+				? ['-an']
+				: [
+						...audioEncodeArgs(audioCodecOf(encoder, output), output.audioBitrateKbps, output.audioChannels),
+						'-ar',
+						String(output.audioSampleRate),
+						'-ac',
+						String(output.audioChannels),
+					]),
 			'-threads',
 			String(Math.max(1, o.threads)),
 			...(encoder.container !== 'webm' ? ['-movflags', '+faststart'] : []),

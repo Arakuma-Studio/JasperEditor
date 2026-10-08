@@ -185,6 +185,35 @@ export function makeBlendTrack(
 }
 
 /**
+ * previews (scope nesting): the context value shared by a run of consecutive tracks holding GL blend modes in encoded
+ * blending (one scope under the lowest of them). At frames where any member draws a GL item every layer of every
+ * member is composited by the scope (`linearGroupItemsAt` with forced items), elsewhere it passes the backdrop through
+ * and the tracks draw the CSS way. Chrome cannot nest HTML-in-Canvas scopes (fx/canvas-scope.tsx), so two GL-blend
+ * tracks used to fail with CANVAS_NESTED.
+ */
+export function makeBlendGroup(
+	members: Parameters<typeof linearGroupItemsAt>[0],
+	isGpuSide: (clipId: string, f: number) => boolean,
+	mode: CompositeMode,
+	hub: CompositeHub,
+): BlendTrackValue {
+	const cache = new Map<number, CompositeItem[] | null>();
+	return {
+		hub,
+		mode,
+		linear: null,
+		itemsAt: (frame) => {
+			if (cache.has(frame)) return cache.get(frame)!;
+			const gl = members.some((m) => compositeItemsAt(m.input, frame, isGpuSide, false) !== null);
+			const items = gl ? linearGroupItemsAt(members, frame, isGpuSide) : null;
+			if (cache.size > 512) cache.clear();
+			cache.set(frame, items);
+			return items;
+		},
+	};
+}
+
+/**
  * color-mgmt: the context value shared by a run of tracks blending in linear light (one scope under the lowest of
  * them, `linearGroupItemsAt`).
  */

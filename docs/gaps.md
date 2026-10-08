@@ -4,19 +4,19 @@ An honest assessment of how far JasperEditor is from being a real replacement fo
 of After Effects that editors reach for), and the work that closes the gap. It is for contributors and agents
 choosing what to work on. [parity.md](parity.md) is the feature-by-feature checklist it builds on.
 
-*Assessed 8 October 2026 at `integrate/parity` after 22 of the 24 parallel workstreams merged (the first assessment
+*Assessed 8 October 2026 at `integrate/parity` after 23 of the 24 parallel workstreams merged (the first assessment
 was 7 October at `main` 051cf53). Estimates marked "≈" are judgements from the evidence listed, not measurements.
 Update this file when the evidence changes.*
 
 ## Two different questions
 
-[parity.md](parity.md) reports **≈ 90% breadth** (it was ≈ 59% before the parallel workstreams). That number answers
+[parity.md](parity.md) reports **≈ 91% breadth** (it was ≈ 59% before the parallel workstreams). That number answers
 one question: *does each Premiere feature exist?* It scores a 92-row catalogue we wrote ourselves, weighted by tier,
-graded from the code, the wp-notes and their tests: 74 rows done, 13 partial, 5 missing (P0 97%, P1 86%, P2 79%).
+graded from the code, the wp-notes and their tests: 75 rows done, 13 partial, 4 missing (P0 97%, P1 89%, P2 79%).
 Since 7 October the merged workstreams added the audio mixer, meters, 60 audio effects and loudness tools; nests,
 adjustment layers, multicam and time remapping; captions, speech to text and timeline interchange (FCP 7 XML,
 FCPXML, EDL, AAF, OMF, ALE, OTIO); masks, roto, expressions, vector shapes, text animators, 3D layers, simulation and
-warp effects; colour management with HDR; crash recovery and saved versions.
+warp effects; colour management with HDR; render previews and smart rendering; crash recovery and saved versions.
 
 It does not answer the question users care about: *can someone who edits in Premiere for a living do real work in
 JasperEditor?* Nobody has tried. Our best estimate is **≈ 35–45% ready for real use** (was ≈ 20–30%). Reasoning: the
@@ -28,11 +28,12 @@ far less than breadth because what limits real use now is not measured by a feat
    documentation was researched per feature but never reviewed as a whole workflow.
 2. **Platforms**: everything was checked on Linux only; macOS and Windows builds have never run, and hardware
    H.264/HEVC export has never run on a real GPU.
-3. **Heavy timelines**: no render bar, cached previews or proxy toggling yet (`previews`, in flight); nothing measured
-   at 4K, hour-long or thousands of clips.
+3. **Heavy timelines**: render previews and smart rendering exist now (`previews`), but proxies cannot be toggled
+   from the UI, playback was measured only on a CPU-only shared host ([performance.md](performance.md)), and the
+   ARCHITECTURE §13 command / gesture budgets are missed; nothing measured at 4K, hour-long or thousands of clips.
 4. **Known render limits**: HTML-in-Canvas scopes cannot nest (CANVAS_NESTED, D-43), so some combinations of
-   linear-light blending, GL blend modes and GPU-effect adjustment layers refuse to render (`previews` works on the
-   capture compositor); several exports of masked nests, remapped nests and blend modes inside nests go through
+   linear-light blending, adjustment layers with GPU effects and GL blend modes still refuse to render after
+   `previews` fixed the commonest ones (consecutive GL-blend tracks share one scope; its wp-note §5); several exports of masked nests, remapped nests and blend modes inside nests go through
    Remotion instead of the native path.
 5. **Stability evidence**: golden frames per effect / transition family and fuzzing of loaders, HTTP and MCP are in
    flight (`golden-fuzz`); a fast-check property of the Merge Paths booleans failed once at random before `fixups`
@@ -42,13 +43,13 @@ far less than breadth because what limits real use now is not measured by a feat
 
 | Dimension | Estimate | Evidence |
 |---|---|---|
-| Breadth of features | ≈ 90% (P0 97%, P1 86%, P2 79%) | [parity.md](parity.md): 74 done, 13 partial, 5 missing of 92, each changed row citing its wp-note and tests |
+| Breadth of features | ≈ 91% (P0 97%, P1 89%, P2 79%) | [parity.md](parity.md): 75 done, 13 partial, 4 missing of 92, each changed row citing its wp-note and tests |
 | Behaves like Premiere | largely unreviewed as workflows, ≈ 60–75% where it exists | Fidelity comes from research during implementation (Adobe's help pages, parameter references, shortcut lists, published formulas), not from captures of Adobe software; each merged workstream cites its sources in its wp-note. The keymap follows Premiere's published defaults and is conflict-checked (`keymap.test.ts`). Many M1 behaviours (trim modes, sync lock, targeting) follow our own specs S01–S05 without a recorded source review |
 | Preview = export | measured for the native paths and the audio mix | Sub-pixel streamed layers: lossless-still parity with Remotion SSIM 0.99999, 0.05 px/frame pans smooth to 0.001 px RMS (D-34); GPU spans and effect bakes: 100% of samples within 3/255 (D-35); one offline mixer renders the audio of every export path (D-42, `apps/engine/test/audio-mix.test.ts`); ffprobe frame counts in `smoke.spec.ts` |
 | Opening existing Premiere work | ≈ 40% | No `.prproj` (out of scope); FCP 7 XML, FCPXML, EDL, AAF, OMF and OTIO import with a report of what each format loses (`docs/wp-notes/interchange.md` §7). Not tried on real projects exported by Premiere |
 | Stability | improving, partly measured | Atomic writes, leases, 409 handling, invariant repair, a crash-recovery journal and saved versions (D-39, `apps/engine/test/recovery-versions.test.ts`); `fast-check` property tests and a 10 000-transaction invariant fuzz in `packages/project`. Golden frames and fuzzing of media, HTTP and MCP inputs are in flight (`golden-fuzz`); no crash reports from users |
 | Real-user experience | unknown | No outside users yet. The October audits (`docs/audits/`) are internal |
-| Performance | internal numbers only | README "Performance measurements"; first export ≈ 2× the warp stage and 9–14× Remotion (D-34). No render cache yet (`previews`); nothing at 4K with long timelines, nothing on GPUs |
+| Performance | internal numbers only | README "Performance measurements"; first export ≈ 2× the warp stage and 9–14× Remotion (D-34). Render previews and a perf monitor exist (`previews`, [performance.md](performance.md)); nothing at 4K with long timelines, nothing on GPUs |
 | Media formats | ≈ 75% | Everything the LGPL FFmpeg 7.1 decodes, plus image sequences, layered PSD, PDF / Illustrator, SVG, Lottie, EXR / DPX / HEIC / JPEG XL stills (`docs/wp-notes/imports.md`); export H.264 (OpenH264 or hardware), VP9, AV1, ProRes, 10/12-bit HDR. No software HEVC export; camera RAW not supported |
 | AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`). No auto reframe, morph cut or enhance speech; all models run on the CPU |
 | Platforms | Linux only | Web, PWA and Electron on Linux (M1-STATUS); macOS / Windows packaging written, never run |
@@ -57,15 +58,15 @@ far less than breadth because what limits real use now is not measured by a feat
 ## Workstreams
 
 Twenty-four workstreams ran in parallel (branches `feat/<name>`, merged through `integrate/parity`). Each says what
-"done" means, so progress is checked rather than self-graded. 22 have merged and are counted in the numbers above
-with their evidence; `previews` and `golden-fuzz` are still running and are not counted.
+"done" means, so progress is checked rather than self-graded. 23 have merged and are counted in the numbers above
+with their evidence; `golden-fuzz` is still running and is not counted.
 
 ### mcp-cli
 Agents drive everything without a window: a CLI over the same command catalogue and MCP depth (every UI command
 reachable, batch steps, rendered checks). **Done when:** each File/Edit/Clip/Sequence menu command is reachable from
 MCP or the CLI with a JSON schema, a scripted end-to-end session (import → edit → grade → export) runs headless in
 CI, and the README tool list is checked by a test.
-**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 295 MCP tools with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI belongs to `golden-fuzz` (in flight). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
+**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 299 MCP tools with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI belongs to `golden-fuzz` (in flight). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
 
 ### keyframes-blend
 Premiere's full keyframe and blend-mode behaviour. **Done when:** all 27 Premiere blend modes exist in the model,
@@ -177,7 +178,7 @@ Comp Camera / Lights for the 3D simulations, Puppet Sketch recording in the UI.
 ### three-d
 **Done when:** 3D layers with a camera and lights (After Effects overlap) position and render text, shapes and footage
 in preview and export with tests against analytic projections.
-**Status (merged):** done — see [wp-notes/three-d.md](wp-notes/three-d.md): classic and advanced 3D, cameras, lights, glTF models, a 3D camera tracker (`packages/compositions/test/three-d-gl.test.ts`, `e2e/three-d.spec.ts`). Limits: no transitions on 3D layers; video below a 3D run shows black in headless Program-monitor captures (renders are correct; the capture compositor is `previews`'s).
+**Status (merged):** done — see [wp-notes/three-d.md](wp-notes/three-d.md): classic and advanced 3D, cameras, lights, glTF models, a 3D camera tracker (`packages/compositions/test/three-d-gl.test.ts`, `e2e/three-d.spec.ts`). Limits: no transitions on 3D layers; the black capture of video below a 3D run in headless Program-monitor captures was fixed by `previews` (`capture-safe-canvas.ts`).
 
 ### imports
 **Done when:** image sequences, layered PSD and Illustrator files, relinking with a Link Media dialog, and Project
@@ -216,7 +217,13 @@ oracle tests of the maths and native export.
 ### previews
 **Done when:** the timeline shows a render bar, Render In to Out caches previews that playback uses, proxies can be
 created, attached and toggled, and File ▸ Export ▸ Frame writes the frame the Program monitor shows.
-**Status: in flight** (not merged when this was assessed; not counted). It also owns the CANVAS_NESTED / capture compositor limit (D-43).
+**Status (merged):** render previews done — see [wp-notes/previews.md](wp-notes/previews.md): render bar with a
+cost model, Render Effects In to Out / In to Out / Selection / Audio, Delete Render Files, content-hashed preview
+files the Program monitor plays, Export ▸ Use Previews, smart rendering (H.264 opt-in, ProRes), the Player stall
+root cause, perf instrumentation ([performance.md](performance.md)). Proxies and Export Frame predate this workstream
+and were not reworked. Remaining limits: no HEVC smart rendering; browser playback of mixed-parameter `avc3` smart
+renders unverified; razor cuts re-render both halves; ARCHITECTURE §13 command / gesture budgets missed; some
+canvas-scope nesting combinations still fail with CANVAS_NESTED (wp-note §5).
 
 ### process
 Guardrails and the project format: AGENTS.md / CLAUDE.md, layering and asset-attribution lints, ported-source
