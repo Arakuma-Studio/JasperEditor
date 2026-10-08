@@ -158,7 +158,8 @@ describe.runIf(oraclesAvailable('ffmpeg', 'ffprobe'))('…', () => {          //
 
 ## 6. Performance
 
-`pnpm perf` (`scripts/performance.mjs`) runs the benchmarks one after another; each also runs alone with
+`pnpm perf` (`scripts/performance.mjs`, [docs/performance.md](performance.md)) runs the benchmarks one after
+another; the micro section includes the scale benchmark below. Each benchmark also runs alone with
 `pnpm exec tsx <file>` and records its results next to it.
 
 **Scale benchmark** (`packages/session/bench/scale.ts`, results in `scale.results.json`): a 200-sequence, ~5,000-clip
@@ -167,7 +168,7 @@ audio, titles, solids, stills, shapes, GPU effects with keyframes, Lumetri, opac
 markers), timed for load (parse + migrate + zod + invariants), migration from schema v1, a full invariant check, a
 small and a 300-clip edit through `EditorSession`, undo, redo, a render snapshot (one sequence and all 200), scene
 resolution at a frame, and the autosave serialisation. Each operation has a budget (reference-machine milliseconds,
-scaled by the host's measured load factor unless `PERF=1`; `JASPER_PERF_NO_BUDGET=1` never fails); the script exits
+scaled by the host's measured load factor of `scripts/perf/budget.ts` unless `PERF=1`; `JASPER_PERF_NO_BUDGET=1` never fails); the script exits
 non-zero when one is exceeded. `SCALE_SEQUENCES=<n>` runs a smaller project without writing results.
 
 Timing assertions in tests use load-tolerant budgets the same way; CI does not set `PERF=1`.
