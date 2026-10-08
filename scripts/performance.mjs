@@ -313,7 +313,7 @@ async function editorSection() {
 	report.sections.editor = results;
 	const fps = 30;
 	budget('single 1080p H.264 playback (fps)', results[0].fps, 0.9 * fps, { higherIsBetter: true });
-	budget('previewed GPU-effect playback (fps)', results[3].fps, 0.9 * fps, { higherIsBetter: true });
+	budget('previewed GPU-effect playback (fps)', results.find((r) => r.scenario === 'GPU effects, from previews').fps, 0.9 * fps, { higherIsBetter: true });
 	budget(
 		'stalls recovered by the watchdog',
 		results.reduce((n, r) => n + r.stallsRecovered, 0),
