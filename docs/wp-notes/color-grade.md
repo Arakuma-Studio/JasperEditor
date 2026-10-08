@@ -225,4 +225,8 @@ magnitude in % of 0.5). MCP `scopes_read` defaults to 8 columns, 6 peaks, no bin
   sky band at the top loses that band from the statistics).
 - A Lumetri instance with spatial steps takes the fx chain: on a GPU-less host its preview is slower than the
   CPU colour pass (SwiftShader); the export bakes the layer (hybrid) instead of the native `lut3d`.
-- The HDR scope scale and working spaces are `color-mgmt`'s.
+- With color-mgmt (merged): in HDR working spaces the pointwise Lumetri steps run through color-mgmt's
+  `lumetriHdrFn` (graded relative to HDR White), the spatial stage and Colour Match / Auto work on the encoded working
+  signal (PQ / HLG code values), and the Lumetri Scopes panel offers color-mgmt's cd/m² scale as **HDR (cd/m²)**
+  (the default in HDR sequences, as Premiere). Colour Match / Auto targets assume SDR-like code values; in HDR
+  sequences they are untested beyond the unit level.
