@@ -149,7 +149,7 @@ describe('proxies in the UI', () => {
 			'media.relink',
 			'media.attachProxy',
 		]);
-		const wrongRate = { ...reg, probe: videoAsset(10, true).probe };
+		const wrongRate = { ...(reg as object), probe: videoAsset(10, true).probe };
 		(wrongRate.probe.streams[0] as { frameRate: unknown }).frameRate = { num: 25, den: 1 };
 		expect('error' in reconnectCommands(small, wrongRate as never)).toBe(true);
 		void session;

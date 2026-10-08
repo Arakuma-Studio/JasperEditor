@@ -430,7 +430,8 @@ export type RenderAudioClip = {
 	sourceIn: number;
 	speed: Speed;
 	mediaId: string;
-	channels: { streamIndex: number; map: number[] };
+	/** gaps (Modify ▸ Audio Channels): `mute` = clip channels that play silence. */
+	channels: { streamIndex: number; map: number[]; mute?: number[] };
 	gainDb: number;
 	volumeDb: Animatable<number>;
 	pan: Animatable<number>;

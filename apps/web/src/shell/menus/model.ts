@@ -160,9 +160,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('project.editSubclip', 'Edit Subclip…'),
 			c('timeline.speedDuration', 'Speed/Duration…'),
 			c('timeline.audioGain', 'Audio Gain…'),
-			c('timeline.audioChannels', 'Audio Channels…'),
-			// imports workstream (Premiere: Clip ▸ Modify ▸ Interpret Footage…)
-			sub('Modify', [c('media.interpretFootage', 'Interpret Footage…')]),
+			// imports workstream (Premiere: Clip ▸ Modify ▸ Interpret Footage…); gaps: Modify ▸ Audio Channels…
+			sub('Modify', [
+				c('timeline.audioChannels', 'Audio Channels…'),
+				c('media.interpretFootage', 'Interpret Footage…'),
+			]),
 			// audio-mix
 			sub('Audio Options', [
 				c('audio.autoDuck', 'Auto Duck…'),

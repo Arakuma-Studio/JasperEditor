@@ -1,4 +1,5 @@
 // Workstream gaps command handlers (docs/wp-notes/gaps.md).
+import { channelsProblem } from '../../gaps/audio-channels.ts';
 import { proxyMismatch } from '../../gaps/proxies.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { HandlerContext } from '../context.ts';
@@ -35,6 +36,51 @@ export const gapsHandlers: HandlerMap = {
 			});
 		(asset as MediaAsset).proxy = { ...cmd.proxy, attachedAt: cmd.proxy.attachedAt ?? h.ctx.now() } as never;
 		return { mediaId: asset.id };
+	},
+	'clip.setAudioChannels': (doc, cmd: CommandOf<'clip.setAudioChannels'>, h) => {
+		const seq = h.sequence(doc, cmd.sequenceId);
+		if (cmd.channels.length !== cmd.clipIds.length)
+			h.fail('E_INVALID_PARAM', 'One routing per clip: clipIds and channels differ in length');
+		cmd.clipIds.forEach((ref, i) => {
+			const clip = seq.clips[ref];
+			if (!clip) h.fail('E_NOT_FOUND', `Clip not found: ${ref}`);
+			if (clip.kind !== 'audio') h.fail('E_INVALID_PARAM', `${ref} is not an audio clip of media`);
+			const media = doc.media[(clip as { mediaId: string }).mediaId];
+			const ch = cmd.channels[i]!;
+			const why = channelsProblem(media, ch);
+			if (why) h.fail('E_INVALID_PARAM', `Clip ${i + 1}: ${why}`, { path: ['channels', String(i)] });
+			const track = [...seq.audioTracks].find((t) => t.id === clip.trackId);
+			if (track?.locked) h.fail('E_TRACK_LOCKED', `Track of ${ref} is locked`);
+			(clip as { channels: unknown }).channels = {
+				streamIndex: ch.streamIndex,
+				map: [...ch.map],
+				...(ch.mute?.length ? { mute: [...ch.mute] } : {}),
+			};
+		});
+	},
+	'item.setAudioChannels': (doc, cmd: CommandOf<'item.setAudioChannels'>, h) => {
+		for (const id of idList(cmd.itemIds)) {
+			const it = doc.items[id];
+			if (!it) h.fail('E_NOT_FOUND', `Item not found: ${id}`);
+			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', `${it.name} is not a media item`);
+			const r = it as { audioChannels?: unknown; mediaId: string };
+			if (cmd.clips === null) {
+				delete r.audioChannels;
+				continue;
+			}
+			const media = doc.media[r.mediaId];
+			cmd.clips.forEach((ch, i) => {
+				const why = channelsProblem(media, ch);
+				if (why) h.fail('E_INVALID_PARAM', `Clip ${i + 1}: ${why}`, { path: ['clips', String(i)] });
+			});
+			r.audioChannels = {
+				clips: cmd.clips.map((c) => ({
+					streamIndex: c.streamIndex,
+					map: [...c.map],
+					...(c.mute?.length ? { mute: [...c.mute] } : {}),
+				})),
+			};
+		}
 	},
 	'media.detachProxy': (doc, cmd: CommandOf<'media.detachProxy'>, h) => {
 		const detached: string[] = [];

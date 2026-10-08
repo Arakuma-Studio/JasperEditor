@@ -363,6 +363,8 @@ const LABELS: Record<CommandType, string> = {
 	// gaps
 	'media.attachProxy': 'Attach Proxies',
 	'media.detachProxy': 'Detach Proxies',
+	'clip.setAudioChannels': 'Audio Channels',
+	'item.setAudioChannels': 'Audio Channels',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

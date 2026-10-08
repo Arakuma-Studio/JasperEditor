@@ -16,4 +16,31 @@ export const MediaAttachProxyCmd = cmd('media.attachProxy', {
 /** Clip ▸ Proxy ▸ Detach Proxies: the media plays its original again (the proxy file is left on disk). */
 export const MediaDetachProxyCmd = cmd('media.detachProxy', { mediaIds: IdListSchema });
 
-export const GAPS_COMMANDS = [MediaAttachProxyCmd, MediaDetachProxyCmd] as const;
+const ChannelRouting = z.strictObject({
+	streamIndex: z.number().int().min(0),
+	map: z.array(z.number().int().min(0)).min(1).max(6),
+	mute: z.array(z.number().int().min(0)).max(6).optional(),
+});
+
+/**
+ * Clip ▸ Modify ▸ Audio Channels on timeline clips: `channels[i]` becomes the routing of `clipIds[i]` (audio clips of
+ * one media, typically a linked group). Each routing reads one stream with 1, 2 or 6 channels; refused when it does not
+ * fit the media.
+ */
+export const ClipSetAudioChannelsCmd = cmd('clip.setAudioChannels', {
+	sequenceId: IdRefSchema.optional(),
+	clipIds: z.array(IdRefSchema).min(1).max(32),
+	channels: z.array(ChannelRouting).min(1).max(32),
+});
+/** Modify ▸ Audio Channels on Project items: the audio clips future placements create (null = the default). */
+export const ItemSetAudioChannelsCmd = cmd('item.setAudioChannels', {
+	itemIds: IdListSchema,
+	clips: z.array(ChannelRouting).min(1).max(32).nullable(),
+});
+
+export const GAPS_COMMANDS = [
+	MediaAttachProxyCmd,
+	MediaDetachProxyCmd,
+	ClipSetAudioChannelsCmd,
+	ItemSetAudioChannelsCmd,
+] as const;

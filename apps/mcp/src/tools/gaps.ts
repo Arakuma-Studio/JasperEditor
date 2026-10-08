@@ -19,6 +19,7 @@ import {
 	type Sequence,
 	sequenceFormatOf,
 	sequenceTimecode,
+	sourceChannels,
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
 	VIDEO_DISPLAY_FORMATS,
@@ -53,6 +54,7 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - create_proxies transcodes video media to a proxy preset in the background and attaches the proxies when the job ends (wait: true waits and attaches); attach_proxy attaches an existing file (duration ± 1 frame and frame rate must match unless force); detach_proxies removes them; reconnect_full_resolution links a clip to its full-resolution file (the file it used becomes its proxy). The editor's Toggle Proxies plays proxies; exports never use them unless start_export gets draftUseProxies.
 - export_frame writes the sequence frame at a time as png / jpeg / tiff / dpx (10-bit) / exr (linear half float) / bmp / tga to a folder on this machine (never overwriting), optionally importing it into the project.
 - get_sequence_settings / set_sequence_settings: Sequence Settings (timebase, frame size, pixel aspect ratio, fields, drop frame, audio sample rate, Mix channels). A non-square pixel aspect ratio means the sequence is edited at its display width (storageWidth × ratio) and exports at storageWidth with the ratio signalled; changing the timebase of a sequence with clips conforms them and needs conform: true (Premiere does not allow it); a frame size change takes reposition. new_sequence_from_clip makes a sequence matching a media item (size, rate, pixel aspect, fields) with the clip in it. Fields are kept with the sequence; exports are progressive (the plan warns FIELDS_PROGRESSIVE).
+- set_audio_channels: Clip ▸ Modify ▸ Audio Channels. Each routed clip = {streamIndex, map: source channel per clip channel (1 mono, 2 stereo, 6 for 5.1), mute: clip channels that play silence}. On timeline clips (clipIds: one routing per clip, typically a linked group) or on Project media items (itemIds: the audio clips future placements create; clips null = default). get_audio_channels lists a media's source channels and the routing.
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -853,6 +855,97 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const res = await transact(ctx, projectId, {
 				label: 'New Sequence From Clip',
 				commands: [{ type: 'sequence.create', name, fromMediaId: mediaId }],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	const Routing = z.object({
+		streamIndex: z.number().int().min(0),
+		map: z.array(z.number().int().min(0)).min(1).max(6),
+		mute: z.array(z.number().int().min(0)).max(6).optional(),
+	});
+
+	defineTool(
+		ctx,
+		'get_audio_channels',
+		{
+			title: 'Get audio channels',
+			description:
+				'The source channels of a media (rows of the Audio Channels matrix) and the routing of its item or of timeline clips.',
+			input: {
+				projectId: ProjectIdArg,
+				itemId: z.string().min(1).optional().describe('A media item ("itm_…")'),
+				sequenceId: SequenceIdArg,
+				clipIds: z.array(z.string().min(1)).optional(),
+			},
+			annotations: READ_ONLY,
+		},
+		async ({ projectId, itemId, sequenceId, clipIds }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			if (itemId) {
+				const it = doc.items[itemId];
+				if (!it || it.kind !== 'media')
+					throw new ToolError('E_NOT_FOUND', `Media item not found: ${itemId}`, 'Call get_project.');
+				const asset = doc.media[it.mediaId]!;
+				return jsonResult({
+					sourceChannels: sourceChannels(asset),
+					routing: (it as { audioChannels?: unknown }).audioChannels ?? null,
+				});
+			}
+			const seq = seqOf(doc, sequenceId);
+			const clips = (clipIds ?? [])
+				.map((id) => seq.clips[id])
+				.filter((c) => c?.kind === 'audio') as unknown as {
+				id: string;
+				mediaId: string;
+				channels: unknown;
+			}[];
+			if (!clips.length)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Pass itemId or audio clipIds',
+					'Clip ids come from get_timeline.',
+				);
+			return jsonResult({
+				sourceChannels: sourceChannels(doc.media[clips[0]!.mediaId]!),
+				clips: clips.map((c) => ({ clipId: c.id, channels: c.channels })),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_audio_channels',
+		{
+			title: 'Set audio channels',
+			description:
+				'Clip ▸ Modify ▸ Audio Channels in one undoable step: clipIds + clips (one routing per audio clip of one media) or itemIds + clips (the audio clips placements of the items create; null = default). A routing reads one audio stream: map[i] = the source channel of clip channel i, mute = clip channels that are silent.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipIds: z.array(z.string().min(1)).min(1).max(32).optional(),
+				itemIds: z.array(z.string().min(1)).min(1).optional(),
+				clips: z.array(Routing).min(1).max(32).nullable(),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, sequenceId, clipIds, itemIds, clips }) => {
+			if (!!clipIds === !!itemIds)
+				throw new ToolError('E_INVALID_PARAM', 'Pass clipIds or itemIds', 'One of the two.');
+			let cmd: unknown;
+			let seqId: string | undefined;
+			if (clipIds) {
+				if (!clips)
+					throw new ToolError('E_INVALID_PARAM', 'Timeline clips need a routing per clip', 'Pass clips.');
+				const { doc } = await loadDoc(ctx, projectId);
+				seqId = seqOf(doc, sequenceId).id;
+				cmd = { type: 'clip.setAudioChannels', sequenceId: seqId, clipIds, channels: clips };
+			} else cmd = { type: 'item.setAudioChannels', itemIds, clips };
+			const res = await transact(ctx, projectId, {
+				label: 'Audio Channels',
+				commands: [cmd],
+				...(seqId ? { sequenceId: seqId } : {}),
 			});
 			return jsonResult(txBody(res, requireOk(res)));
 		},

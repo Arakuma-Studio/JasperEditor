@@ -599,7 +599,12 @@ const canvasSchema = z.union([
 	z.looseObject({ width: z.number().int().positive(), height: z.number().int().positive() }),
 ]);
 export type ClipCanvas = DeepStrip<z.infer<typeof canvasSchema>>;
-export const ChannelsSchema = z.looseObject({ streamIndex: nonNegInt(), map: z.array(nonNegInt()) });
+export const ChannelsSchema = z.looseObject({
+	streamIndex: nonNegInt(),
+	map: z.array(nonNegInt()),
+	/** gaps (Modify ▸ Audio Channels): clip channels no source channel is routed to (they play silence). */
+	mute: z.array(nonNegInt()).optional(),
+});
 
 export const VideoClipSchema = z.looseObject({
 	...commonShape,

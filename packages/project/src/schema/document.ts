@@ -60,6 +60,21 @@ export const MediaItemSchema = z.looseObject({
 	/** wp-multicam: source clip markers (media time), set in the Source monitor; sync points of Merge Clips and
 	 * Create Multi-Camera Source Sequence by "Clip Marker". */
 	markers: z.array(ClipMarkerSchema).optional(),
+	/**
+	 * gaps (Clip ▸ Modify ▸ Audio Channels on a Project item): the audio clips a placement of this item creates — one
+	 * entry per clip (its stream, channel map and muted channels). Absent = the default (one stereo clip).
+	 */
+	audioChannels: z
+		.looseObject({
+			clips: z.array(
+				z.looseObject({
+					streamIndex: nonNegInt(),
+					map: z.array(nonNegInt()),
+					mute: z.array(nonNegInt()).optional(),
+				}),
+			),
+		})
+		.optional(),
 });
 export const SequenceItemSchema = z.looseObject({
 	id: z.string(),

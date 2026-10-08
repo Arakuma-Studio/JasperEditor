@@ -365,8 +365,10 @@ class ClipNodes {
 			this.pan = null;
 		}
 		const map = clip.channels.map.length > 0 ? clip.channels.map : Array.from({ length: w }, (_, i) => i);
+		// gaps (Modify ▸ Audio Channels): muted clip channels (no source routed to them) are silent.
+		const mute = clip.channels.mute ?? [];
 		const sel = Array.from({ length: w }, (_, o) =>
-			Array.from({ length: stream }, (_, i) => (map[o] === i ? 1 : 0)),
+			Array.from({ length: stream }, (_, i) => (map[o] === i && !mute.includes(o) ? 1 : 0)),
 		);
 		this.select.set(sel, true);
 		if (!this.pan || this.trackWidth !== trackWidth) {

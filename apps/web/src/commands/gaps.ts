@@ -1,9 +1,15 @@
 // Workstream `gaps` UI commands (docs/wp-notes/gaps.md): Edit ▸ Find…, Edit Original, File ▸ Exit, Clip ▸ Rename…,
 // Sequence ▸ Add Tracks… / Delete Tracks…, track height presets. Later sections of this module register the other
 // gaps dialogs (Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels…).
-import { trackLabel } from '@jasper/project';
+import { linkedPartners, trackLabel } from '@jasper/project';
 import { z } from 'zod';
 import { projectItemMenuExtensions } from '../extensions/index.ts';
+import {
+	AUDIO_CHANNELS_DIALOG,
+	type AudioChannelsTarget,
+	registerAudioChannelsDialog,
+	routingOf,
+} from '../gaps/AudioChannelsDialog.tsx';
 import {
 	EXPORT_FRAME_DIALOG,
 	type FrameSource,
@@ -654,7 +660,60 @@ const newSequenceFromClip: UiCommand = {
 	},
 };
 
+// ---------------------------------------------------------------- Clip ▸ Modify ▸ Audio Channels… (AU-7)
+
+/** What Audio Channels edits: the selected Project media items, else the selected timeline audio clips (+ linked). */
+export function audioChannelsTarget(ctx: CommandCtx): AudioChannelsTarget | null {
+	const s = ctx.session;
+	if (!s) return null;
+	const st = s.getState();
+	const doc = s.getCommitted();
+	const projectFirst = ctx.focus.panel === 'project';
+	const items = st.selection.project.items.filter((id) => doc.items[id]?.kind === 'media');
+	const fromItems = (): AudioChannelsTarget | null => {
+		if (!items.length) return null;
+		const t: AudioChannelsTarget = { kind: 'items', itemIds: items };
+		return routingOf(s, t) ? t : null;
+	};
+	const fromClips = (): AudioChannelsTarget | null => {
+		const e = envOf(ctx);
+		if (!e) return null;
+		const ids = new Set<string>();
+		for (const c of selectedClips(e)) {
+			if (c.kind === 'audio') ids.add(c.id);
+			for (const p of linkedPartners(e.seq, c.id)) if (p.kind === 'audio') ids.add(p.id);
+		}
+		if (!ids.size) return null;
+		const clipIds = [...ids].sort((a, b) => {
+			const ta = e.seq.audioTracks.findIndex((t) => t.id === e.seq.clips[a]!.trackId);
+			const tb = e.seq.audioTracks.findIndex((t) => t.id === e.seq.clips[b]!.trackId);
+			return ta - tb;
+		});
+		const t: AudioChannelsTarget = { kind: 'clips', sequenceId: e.seq.id, clipIds };
+		return routingOf(s, t) ? t : null;
+	};
+	return projectFirst ? (fromItems() ?? fromClips()) : (fromClips() ?? fromItems());
+}
+
+const audioChannels: UiCommand = {
+	id: 'timeline.audioChannels',
+	label: 'Audio Channels…',
+	description:
+		'Clip channel format, number of audio clips and the source channel matrix of the selected clips or items.',
+	scope: 'global',
+	agentExposed: true,
+	when: (ctx) => !!audioChannelsTarget(ctx) && !ctx.session?.getState().readOnly,
+	disabledReason: () => 'Select audio clips of one media (or a media item in the Project panel)',
+	run: (ctx) => {
+		const target = audioChannelsTarget(ctx);
+		if (!ctx.session || !target) return;
+		registerAudioChannelsDialog();
+		ctx.ui.openDialog(AUDIO_CHANNELS_DIALOG, { session: ctx.session, target });
+	},
+};
+
 gapsCommands.push(
+	audioChannels,
 	sequenceSettings,
 	newSequenceFromClip,
 	projectSettings,
