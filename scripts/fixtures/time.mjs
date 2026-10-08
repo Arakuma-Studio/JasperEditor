@@ -64,7 +64,12 @@ export function fixtures({ h264 }) {
 					...['-f', 'lavfi', '-i', 'smptehdbars=s=320x180:r=30:d=1'],
 					...['-f', 'lavfi', '-i', 'mandelbrot=s=320x180:r=30,trim=end_frame=45'],
 					...['-f', 'lavfi', '-i', 'cellauto=s=320x180:r=30:rule=110:seed=7,trim=end_frame=45'],
-					...['-f', 'lavfi', '-i', 'gradients=s=320x180:r=30:speed=0.03:d=1.5:c0=0x433bfd:c1=0xb24d88:x0=40:y0=0:x1=300:y1=180:seed=1'],
+					...[
+						'-f',
+						'lavfi',
+						'-i',
+						'gradients=s=320x180:r=30:speed=0.03:d=1.5:c0=0x433bfd:c1=0xb24d88:x0=40:y0=0:x1=300:y1=180:seed=1',
+					],
 					...['-f', 'lavfi', '-i', 'testsrc2=s=960x180:r=30:d=1'],
 					...[
 						'-filter_complex',

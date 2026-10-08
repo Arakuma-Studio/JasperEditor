@@ -74,7 +74,10 @@ async function connect() {
 	await client.connect(b);
 	open.push(client);
 	const call = async (name: string, args: Record<string, unknown>) => {
-		const r = (await client.callTool({ name, arguments: { projectId: 'prj_test', ...args } })) as CallToolResult;
+		const r = (await client.callTool({
+			name,
+			arguments: { projectId: 'prj_test', ...args },
+		})) as CallToolResult;
 		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 		return { isError: !!r.isError, text };
 	};
@@ -106,7 +109,13 @@ describe('default sequence of MCP tools in a project with several sequences', ()
 
 	it('other refusals are returned unchanged: no retry with a sequenceId, one retry without', async () => {
 		const { engine, call } = await connect();
-		const r = await call('add_text', { text: 'x', at: 0, duration: 30, track: 'A1', sequenceId: engine.first });
+		const r = await call('add_text', {
+			text: 'x',
+			at: 0,
+			duration: 30,
+			track: 'A1',
+			sequenceId: engine.first,
+		});
 		expect(r.isError).toBe(true);
 		expect(engine.sent).toHaveLength(1);
 		// Without one: refused for the sequence, retried on the first, refused for the track — that error is returned.
