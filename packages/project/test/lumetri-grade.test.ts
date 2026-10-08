@@ -2,6 +2,7 @@
 // switches (pointwise, baked into the colour run) and the spatial stage's maths and snapshot expansion.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { budgetMs } from '../../../scripts/perf/budget.ts';
 import {
 	addColorToKey,
 	bakeColorRun,
@@ -412,7 +413,8 @@ describe('full grade: properties and bake budget', () => {
 		}
 		const best = Math.min(...times);
 		console.info(`[color-grade] 33³ Lumetri bake with every completion step: best ${best.toFixed(2)} ms`);
-		expect(best).toBeLessThan(30);
+		// Load-tolerant like every timing budget (docs/performance.md §2): exactly 30 ms with PERF=1.
+		expect(best).toBeLessThan(budgetMs(30));
 	});
 });
 
