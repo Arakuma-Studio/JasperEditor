@@ -1,3 +1,4 @@
+import { setInvariantMode } from '@jasper/project';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
@@ -5,6 +6,8 @@ import { registerAllCommands } from './commands/index.ts';
 import { registerServiceWorker } from './pwa/register.ts';
 import './app.css';
 
+// perf-core: dev builds check every transaction both incrementally and fully (they must agree).
+if (import.meta.env.DEV) setInvariantMode('verify');
 registerAllCommands();
 registerServiceWorker();
 
