@@ -3,6 +3,7 @@
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized; scans read the drafts'
 // current values without proxies (draft-read.ts) and draft only the clips they change (perf-core).
 import { current, type Draft, isDraft, original } from 'immer';
+import { clipsInRange } from '../derive/index.ts';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
@@ -35,7 +36,8 @@ export function findTrackIn(
 ): { track: DTrack; index: number; kind: TrackKind } | null {
 	for (const kind of ['video', 'audio', 'caption'] as const) {
 		const list = tracksOfKind(seq as DSeq, kind);
-		const index = list.findIndex((t) => t.id === trackId);
+		// perf-core: searched on current values; only the found track is drafted.
+		const index = latest(list).findIndex((t) => latest(t).id === trackId);
 		if (index >= 0) return { track: list[index]!, index, kind };
 	}
 	return null;
@@ -330,13 +332,20 @@ function scopedCandidates(
 	if (!Object.isFrozen(d.base)) return null;
 	const touched = new Set([...d.changed, ...d.deleted]);
 	const cur = latest(seq.clips) as Readonly<Record<string, Clip>>;
-	const base = byTrackOf(d.base);
+	const baseSeq = isDraft(seq) ? (original(seq) as Sequence) : null;
+	// On a sequence that passed the invariants the base's sorted per-track index (no overlaps: ends sorted too)
+	// finds a hull's clips by binary search; otherwise its per-track lists are filtered.
+	const sorted = baseSeq && baseSeq.clips === d.base && isClean(baseSeq) ? baseSeq : null;
+	const base = sorted ? null : byTrackOf(d.base);
 	const lists = new Map<string, Candidate[]>();
 	for (const [trackId, hull] of hulls) {
 		const list: Candidate[] = [];
-		for (const { key, clip } of base.get(trackId) ?? [])
+		const keep = (key: string, clip: Clip) => {
 			if (!touched.has(key) && !except.has(clip.id) && end(clip) > hull.lo && clip.start < hull.hi)
 				list.push({ key, start: clip.start });
+		};
+		if (sorted) for (const clip of clipsInRange(sorted, trackId, hull.lo, hull.hi)) keep(clip.id, clip);
+		else for (const { key, clip } of base!.get(trackId) ?? []) keep(key, clip);
 		lists.set(trackId, list);
 	}
 	for (const key of d.changed) {

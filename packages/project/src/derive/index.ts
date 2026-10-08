@@ -83,7 +83,7 @@ function derivedIndex(
 	if (!prev || prev.tracks !== trackKey(seq)) return null;
 	const before = prev.clips as Record<string, Clip>;
 	const d = keyDiff(before, seq.clips);
-	if (d.changed.length + d.deleted.length > Math.max(32, Object.keys(seq.clips).length / 8)) return null;
+	if (d.changed.length + d.deleted.length > Math.max(32, Object.keys(seq.clips).length / 2)) return null;
 	const gone = new Set<Clip>();
 	const tracks = new Set<string>();
 	for (const k of [...d.changed, ...d.deleted]) {
@@ -97,9 +97,21 @@ function derivedIndex(
 	}
 	const byTrack = new Map(prev.idx.byTrack);
 	for (const t of tracks) {
-		const list = (prev.idx.byTrack.get(t) ?? []).filter((c) => !gone.has(c));
-		for (const k of d.changed) if (seq.clips[k]!.trackId === t) list.push(seq.clips[k]!);
-		byTrack.set(t, list.sort(byStart));
+		// The kept clips stay sorted; the arrivals are sorted and merged in (O(track), no full sort).
+		const kept = (prev.idx.byTrack.get(t) ?? []).filter((c) => !gone.has(c));
+		const added: Clip[] = [];
+		for (const k of d.changed) if (seq.clips[k]!.trackId === t) added.push(seq.clips[k]!);
+		added.sort(byStart);
+		const list: Clip[] = [];
+		let i = 0;
+		let j = 0;
+		while (i < kept.length || j < added.length)
+			list.push(
+				j >= added.length || (i < kept.length && byStart(kept[i]!, added[j]!) <= 0)
+					? kept[i++]!
+					: added[j++]!,
+			);
+		byTrack.set(t, list);
 	}
 	const idx = { byTrack };
 	indexCache.set(seq.clips, idx);
