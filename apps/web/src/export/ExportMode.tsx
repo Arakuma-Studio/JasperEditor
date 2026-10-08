@@ -106,6 +106,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	// previews: Use Previews / Smart Render (Premiere's Export Settings options).
 	const [usePreviews, setUsePreviews] = useState(remembered?.usePreviews === true);
 	const [smartRender, setSmartRender] = useState(remembered?.smartRender === true);
+	// gaps (PRJ-8): Use Proxies (Premiere's Export Settings option; drafts only, off by default).
+	const [useProxies, setUseProxies] = useState(remembered?.useProxies === true);
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
@@ -122,6 +124,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setColorChoice(r?.color ?? DEFAULT_COLOR_CHOICE);
 		setUsePreviews(r?.usePreviews === true);
 		setSmartRender(r?.smartRender === true);
+		setUseProxies(r?.useProxies === true);
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -150,6 +153,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						color: colorChoice,
 						usePreviews,
 						smartRender,
+						useProxies,
 					})
 				: null,
 		[
@@ -163,6 +167,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 			colorChoice,
 			usePreviews,
 			smartRender,
+			useProxies,
 		],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
@@ -253,6 +258,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				color: colorChoice,
 				...(usePreviews ? { usePreviews } : {}),
 				...(smartRender ? { smartRender } : {}),
+				...(useProxies ? { useProxies } : {}),
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -613,6 +619,20 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 								onChange={(e) => setUsePreviews(e.target.checked)}
 							/>
 							Use Previews
+						</label>
+					</Field>
+					<Field label="Proxies">
+						<label
+							className="flex items-center gap-2 text-pr-small"
+							title="Render the attached proxies instead of the full-resolution media (a quick draft; the plan lists them)"
+						>
+							<input
+								type="checkbox"
+								data-testid="export-use-proxies"
+								checked={useProxies}
+								onChange={(e) => setUseProxies(e.target.checked)}
+							/>
+							Use Proxies
 						</label>
 					</Field>
 					<Field label="Smart Render">

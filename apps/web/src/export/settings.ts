@@ -65,6 +65,8 @@ export function buildExportSettings(
 		usePreviews?: boolean;
 		/** previews: stream-copy untouched stretches of H.264 sources (ProRes copies automatically). */
 		smartRender?: boolean;
+		/** gaps (PRJ-8): Use Proxies — render attached proxies (a draft; never the default). */
+		useProxies?: boolean;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -117,6 +119,7 @@ export function buildExportSettings(
 		...(seq.captionTracks.length && choice.captions ? { captions: captionSettings(choice.captions) } : {}),
 		...(choice.usePreviews ? { usePreviews: true } : {}),
 		...(choice.smartRender ? { smartRender: true } : {}),
+		...(choice.useProxies ? { draftUseProxies: true } : {}),
 	};
 }
 
@@ -390,6 +393,8 @@ type Remembered = {
 	/** previews */
 	usePreviews?: boolean;
 	smartRender?: boolean;
+	/** gaps: Use Proxies (draft exports) */
+	useProxies?: boolean;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
@@ -428,6 +433,7 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(v.color && typeof v.color === 'object' ? { color: sanitizeColorChoice(v.color) } : {}),
 			...(v.usePreviews === true ? { usePreviews: true } : {}),
 			...(v.smartRender === true ? { smartRender: true } : {}),
+			...(v.useProxies === true ? { useProxies: true } : {}),
 		};
 	} catch {
 		return null;

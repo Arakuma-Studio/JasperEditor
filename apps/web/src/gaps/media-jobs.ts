@@ -90,7 +90,7 @@ export async function startMediaJob(
 				return;
 			}
 			const result = done.result as MediaJobResult;
-			const { commands, skipped } = commandsForResult(
+			const { commands, skipped } = mediaJobCommands(
 				session.getCommitted(),
 				result,
 				opts.origin ?? 'created',
