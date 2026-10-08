@@ -1,10 +1,12 @@
 // color-mgmt end to end in the built app: Properties ▸ Colour sets a Rec. 2100 PQ working space, whose Program
 // monitor preview goes through the display transform (graphics white = 203 cd/m², BT.2390 tone mapped to Rec. 709);
-// "Blend using 1.0 gamma" composites in linear light (the display stage then steps aside, with a chip, because the
-// blend scope draws through HTML-in-Canvas, which the browser cannot nest); the export writes 10-bit PQ ProRes with
-// its tags and HDR metadata. HTML-in-Canvas is enabled for this browser (as in Electron and in Remotion renders).
-// Expected values from the TS colour science (packages/project/src/color/cms): PQ(203 cd/m²) = 148.1/255, its
-// display rendition 230.3/255; a 50 % blend of it over black in linear light 129.9/255 (encoded blending: 74.0).
+// "Blend using 1.0 gamma" composites in linear light and the display transform keeps running (the compositor draws
+// the stack flat and applies the display LUT last, so no "shown without display conversion" chip; wp-note
+// compositor); the export writes 10-bit PQ ProRes with its tags and HDR metadata. HTML-in-Canvas is enabled for this
+// browser (as in Electron and in Remotion renders). Expected values from the TS colour science
+// (packages/project/src/color/cms, `outputTransformFn(working, displaySpaceFor(working))`): PQ(203 cd/m²) =
+// 148.1/255, its display rendition 230.4/255; a 50 % blend of it over black in linear light 129.9/255, shown as
+// 190.3/255 (encoded blending: 74.0, shown as 69.1).
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -84,12 +86,12 @@ test('Blend using 1.0 gamma composites in linear light', async () => {
 	).toBe(true);
 	await page.getByLabel('Blend using 1.0 gamma').check();
 	expect((await settings()).color?.blendLinear).toBe(true);
-	// The blend scope draws through HTML-in-Canvas, so the display stage steps aside (chip): the monitor shows the
-	// working signal, 129.9 = the linear-light mix (encoded blending would give 74).
-	await expect(page.locator('[data-display-chip]')).toContainText('shown without display conversion');
+	// The blend scope draws through the flat compositor, which applies the display LUT last: no chip, and the monitor
+	// shows the linear-light mix (129.9) through the display transform = 190.3 (encoded blending would show 69.1).
 	await expect
-		.poll(async () => Math.abs((await programCenter()) - 130), { timeout: 20_000 })
+		.poll(async () => Math.abs((await programCenter()) - 190), { timeout: 20_000 })
 		.toBeLessThanOrEqual(3);
+	await expect(page.locator('[data-display-chip]')).toHaveCount(0);
 	await page.screenshot({ path: 'test-results/color-mgmt-linear-blend.png' });
 });
 

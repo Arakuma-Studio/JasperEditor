@@ -506,6 +506,8 @@ export async function captureStill(
 	failed?: (job: EngineJob) => Promise<Error>,
 ): Promise<StillResult> {
 	const loaded = doc ?? (await loadDoc(ctx, args.projectId));
+	// The documented default (the project's first sequence); `frame.capture` alone refuses when there are several.
+	const sequenceId = args.sequenceId ?? Object.keys(loaded.doc.sequences)[0];
 	let cap: { sequenceId: string; frame: number; width: number };
 	try {
 		cap = resolveCaptureArgs(
@@ -513,7 +515,7 @@ export async function captureStill(
 			{
 				frame: args.frame,
 				...(args.width ? { width: args.width } : {}),
-				...(args.sequenceId ? { sequenceId: args.sequenceId } : {}),
+				...(sequenceId ? { sequenceId } : {}),
 			},
 		);
 	} catch (e) {
