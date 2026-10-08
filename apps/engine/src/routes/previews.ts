@@ -11,6 +11,7 @@ import {
 } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { JobError } from '../jobs/types.ts';
+import { PerfMonitor } from '../perf/stats.ts';
 import { PreviewService } from '../previews/service.ts';
 import { serveFile } from '../tools/http.ts';
 import { fail, guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -36,6 +37,16 @@ export default async function previewsRoutes(app: FastifyInstance): Promise<void
 		if (e.type === 'cache.cleaned') previews.invalidate();
 	});
 	app.addHook('onClose', async () => off());
+
+	// Performance instrumentation (GET /api/perf, MCP perf_stats).
+	const perf = new PerfMonitor(core.queue);
+	perf.provide('previews', () => previews.usage());
+	app.jasper.services.perf = perf;
+	app.addHook('onClose', async () => perf.close());
+	app.get(
+		'/api/perf',
+		guarded(async () => perf.stats()),
+	);
 
 	app.post(
 		'/api/previews/status',

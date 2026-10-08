@@ -165,6 +165,28 @@ export class PreviewService {
 		};
 	}
 
+	/** Files and size of every preview format directory (perf stats). */
+	async usage(): Promise<{ formats: number; files: number; mb: number }> {
+		let formats = 0;
+		let files = 0;
+		let bytes = 0;
+		let dirs: string[] = [];
+		try {
+			dirs = (await readdir(this.root)).filter((f) => FORMAT_RE.test(f));
+		} catch {
+			return { formats: 0, files: 0, mb: 0 };
+		}
+		for (const f of dirs) {
+			formats++;
+			for (const n of await readdir(this.dirOf(f)).catch(() => [] as string[])) {
+				if (!FILE_RE.test(n)) continue;
+				files++;
+				bytes += (await stat(join(this.dirOf(f), n)).catch(() => ({ size: 0 }))).size;
+			}
+		}
+		return { formats, files, mb: Math.round((bytes / 1048576) * 10) / 10 };
+	}
+
 	/** Every preview hash present (any format), for Delete Render Files and the cache references. */
 	async delete(body: PreviewDeleteRequest): Promise<{ deleted: number; bytes: number }> {
 		let deleted = 0;

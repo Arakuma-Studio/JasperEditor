@@ -474,6 +474,13 @@ export const ROUTES = {
 		response: PreviewDeleteResultSchema,
 		owner: 'previews',
 	},
+	/** previews: engine performance counters (process, event loop, host load, jobs, render throughput, previews). */
+	perfStats: {
+		method: 'GET',
+		path: '/api/perf',
+		response: z.record(z.string(), z.unknown()),
+		owner: 'previews',
+	},
 	/** previews: a preview file (`<hash>.mp4|webm|wav`), byte ranges, immutable. */
 	previewFile: {
 		method: 'GET',
