@@ -88,7 +88,11 @@ below a desktop GPU's. The previews still turn a 5 fps effect stack into 16–19
 reaches for one plain clip (16–21.5 fps). The one watchdog kick happened in the 3-layer scenario at ≈ 4 fps: frames
 more than 600 ms apart looked like a stall. Fixed after this run: the watchdog window now grows with the play's
 measured frame interval (4 ×, at most 2.5 s; `apps/web/test/transport.test.ts`), so a slow render is no longer
-"recovered". True stalls (the AudioContext race, wp-note §5) measured 0 in 40 seek-and-play cycles and in the e2e
+"recovered". A rerun with the adaptive window on a much busier host (load factor 1.90, 2026-10-08,
+`previews-2026-10-08-watchdog`: single clip 6.2 fps, 3-layer stack 1.3 fps, GPU effects 2.7 fps live and 4.6 fps from
+previews, preview render 333 s) still kicked once in the 3-layer stack at 1.3 fps: there the first frame after play
+or a single frame took longer than the window. So the counter is reliable as a stall signal only when the machine
+renders at a few fps or more; at ≈ 1 fps a kick costs one extra seek. True stalls (the AudioContext race, wp-note §5) measured 0 in 40 seek-and-play cycles and in the e2e
 spec's 12 cycles.
 
 **ARCHITECTURE §13** (`pnpm vitest run packages/project/test/perf-budgets.test.ts packages/session/test/perf-budgets.test.ts --reporter=verbose`, same host, load factor 1.24–1.26, 2026-10-08):
