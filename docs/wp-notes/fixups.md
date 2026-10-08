@@ -126,5 +126,7 @@ Each has a sidecar and an `ATTRIBUTION.md` row; `docs/wp-notes/wp-m3-mgtext.md` 
 - The path-bool patch must be re-checked when the dependency is upgraded (the patch file pins 1.0.4).
 - Escape is left to the gesture only while a pointer button is held; keyboard-only gestures still go through
   `gesture.cancel`.
-- The regenerated contact sheets render every effect at its defaults; effects that need a map or matte input show
-  their no-input behaviour, as the earlier sheets did for most of them.
+- The regenerated contact sheets render every effect at its defaults, or — when the defaults leave the picture
+  unchanged (a blur of 0, a key colour absent from the picture) — with every numeric parameter 40 % of the way to its
+  (soft) maximum and key colours on the picture's green card; effects that need a map or matte input show their
+  no-input behaviour.

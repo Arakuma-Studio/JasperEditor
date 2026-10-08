@@ -3,14 +3,15 @@
 // @remotion/renderer (the export path) over procedural pictures from scripts/docs/gallery-scenes.mjs — ffmpeg lavfi
 // sources only, no photographs — and writes labelled contact sheets into docs/screenshots (each sheet's
 // `.attribution` sidecar names this file). They replace sheets that were removed because they showed third-party
-// photographs (ATTRIBUTION.md). Every effect / transition is rendered at its defaults on a 2 s clip panning over
-// the picture (frame 15); transitions at progress 0.25 / 0.5 / 0.75. Asserts each still rendered at full size.
+// photographs (ATTRIBUTION.md). Every effect is rendered at its defaults on a 2 s clip panning over the picture
+// (frame 15) — or, when the defaults leave the picture unchanged, with `representative` settings; transitions at
+// progress 0.25 / 0.5 / 0.75. Asserts each still rendered at full size.
 // Gated by REMOTION_E2E=1 and DOCS_GALLERY=1; DOCS_GALLERY_ONLY=<sheet ids, comma-separated> limits the run.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type Command, defaultRegistries, TRANSITION_SPECS } from '@jasper/project';
+import { type Command, defaultRegistries, type EffectSpec, TRANSITION_SPECS } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sceneA, sceneB } from '../../../scripts/docs/gallery-scenes.mjs';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
@@ -265,7 +266,10 @@ describe.runIf(enabled)(
 				ref: '$c',
 			} as unknown as Command,
 		];
-		const effectDoc = (effectId: string): Command[] => [...sideA(), fxCmd.effect(effectId, {})];
+		const effectDoc = (effectId: string, params: Record<string, unknown> = {}): Command[] => [
+			...sideA(),
+			fxCmd.effect(effectId, params),
+		];
 		const transitionDoc = (effectId: string): Command[] => [
 			...sideA(),
 			{
@@ -283,6 +287,36 @@ describe.runIf(enabled)(
 			} as unknown as Command,
 			{ type: 'transition.add', trackId: 'V1', at: 30, effectId, duration: 23 } as Command,
 		];
+
+		/**
+		 * Settings that show what an effect does when its defaults leave the picture unchanged (a blur of 0, a key colour
+		 * that is not in the picture…): every numeric parameter 40 % of the way from its default to its (soft) maximum,
+		 * key / matte colours on the picture's green card.
+		 */
+		function representative(spec: EffectSpec): Record<string, unknown> {
+			const params: Record<string, unknown> = {};
+			for (const p of spec.params) {
+				if (p.type === 'number' && typeof p.default === 'number' && p.range) {
+					const hi = p.range.softMax ?? p.range.max;
+					if (typeof hi === 'number' && Number.isFinite(hi) && hi > p.default)
+						params[p.name] = Math.round((p.default + (hi - p.default) * 0.4) * 100) / 100;
+				} else if (p.type === 'color' && /key|matte/i.test(p.name)) params[p.name] = [0.18, 0.75, 0.31, 1];
+			}
+			return params;
+		}
+		const meanDiff = (a: Buffer, b: Buffer) => {
+			let d = 0;
+			let n = 0;
+			for (let i = 0; i < a.length; i += 31) {
+				d += Math.abs(a[i]! - b[i]!);
+				n++;
+			}
+			return d / n;
+		};
+		const rawOf = (png: string) =>
+			execFileSync('ffmpeg', ['-v', 'error', '-i', png, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], {
+				maxBuffer: 1 << 26,
+			});
 
 		async function still(commands: Command[], frame: number, name: string): Promise<string> {
 			const inputProps = {
@@ -352,11 +386,16 @@ describe.runIf(enabled)(
 			it(s.id, async () => {
 				const tiles: { file: string; label: string | null }[] = [];
 				if (s.kind === 'effect') {
-					tiles.push({ file: await still(sideA(), 15, `${s.id}-source`), label: 'Source' });
+					const source = await still(sideA(), 15, `${s.id}-source`);
+					const sourceRaw = rawOf(source);
+					tiles.push({ file: source, label: 'Source' });
 					for (const label of s.labels) {
 						const spec = effects.find((e) => e.label === label);
 						expect(spec, `no effect labelled ${label}`).toBeTruthy();
-						tiles.push({ file: await still(effectDoc(spec!.id), 15, `${s.id}-${spec!.id}`), label });
+						let file = await still(effectDoc(spec!.id), 15, `${s.id}-${spec!.id}`);
+						if (meanDiff(rawOf(file), sourceRaw) < 0.5)
+							file = await still(effectDoc(spec!.id, representative(spec!)), 15, `${s.id}-${spec!.id}-rep`);
+						tiles.push({ file, label });
 					}
 				} else {
 					for (const label of s.labels) {

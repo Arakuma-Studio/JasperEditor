@@ -544,7 +544,7 @@ export function registerRotoTools(ctx: ToolContext): void {
 				if (args.at !== undefined) {
 					const seq = doc.sequences[loc.sequenceId]!;
 					const clip = seq.clips[loc.clipId]!;
-						const sf = frameOf(seq, args.at, TIME_FORMATS);
+					const sf = frameOf(seq, args.at, TIME_FORMATS);
 					f =
 						clip.kind === 'still' ? 0 : mediaFrameAt(contentTimeAt(clip, sf, seq.settings.frameRate), r.rate);
 				}
