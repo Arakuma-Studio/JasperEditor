@@ -5,8 +5,9 @@
 // catalogue's `vision` list (installed by its `model-download` job). A cancelled or failed job leaves no partial
 // files: the worker's temporary files are removed and no set is published (finished frames stay in the reuse pool).
 import { spawn } from 'node:child_process';
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	type EngineJob,
@@ -117,6 +118,63 @@ export class RotoService {
 		const e = this.models.entry(id);
 		if (!e || !(await this.models.installed(e))) return null;
 		return (await this.models.resolve(id)).dir;
+	}
+
+	/**
+	 * color-grade (Colour Match ▸ Face Detection): faces in still frames (raw RGB24), as normalised boxes per frame.
+	 * Runs `jasper-roto --faces` (the face model in its own process). `{unavailable}` when the face model is not
+	 * installed or ONNX Runtime is missing — the caller falls back to the skin-tone test.
+	 */
+	async detectFaces(
+		frames: readonly { rgb: Uint8Array; width: number; height: number }[],
+		signal?: AbortSignal,
+	): Promise<
+		| { faces: { x: number; y: number; w: number; h: number; score: number }[][] }
+		| { unavailable: 'FACE_MODEL_NOT_INSTALLED' | 'ORT_UNAVAILABLE' }
+	> {
+		const face = this.models.defaultFor('face');
+		if (!this.ortAvailable()) return { unavailable: 'ORT_UNAVAILABLE' };
+		const faceDir = face ? await this.modelDir(face.id) : null;
+		if (!faceDir) return { unavailable: 'FACE_MODEL_NOT_INSTALLED' };
+		const dir = await mkdtemp(join(tmpdir(), 'jasper-faces-'));
+		try {
+			const images = [];
+			for (const [i, f] of frames.entries()) {
+				const path = join(dir, `frame-${i}.rgb`);
+				await writeFile(path, f.rgb);
+				images.push({ path, width: f.width, height: f.height });
+			}
+			const specPath = join(dir, 'spec.json');
+			const outPath = join(dir, 'out.json');
+			await writeFile(specPath, JSON.stringify({ faceDir, threads: 2, images }));
+			const cmd = rotoCommand(this.env);
+			await new Promise<void>((resolve, reject) => {
+				const child = spawn(cmd.command, [...cmd.args, '--faces', specPath, outPath], {
+					stdio: ['ignore', 'pipe', 'pipe'],
+					env: { ...process.env, OMP_NUM_THREADS: '2' },
+				});
+				let stderr = '';
+				child.stdout.resume();
+				child.stderr.on('data', (c: Buffer) => {
+					stderr = (stderr + c.toString()).slice(-8000);
+				});
+				const abort = () => child.kill('SIGTERM');
+				signal?.addEventListener('abort', abort, { once: true });
+				child.on('error', (e) => reject(e));
+				child.on('close', (code) => {
+					signal?.removeEventListener('abort', abort);
+					if (signal?.aborted) reject(new Error('Face detection cancelled'));
+					else if (code === 0) resolve();
+					else reject(new Error(`Face detection failed: ${stderr.trim() || `exit ${code}`}`));
+				});
+			});
+			const out = JSON.parse(await readFile(outPath, 'utf8')) as {
+				faces: { x: number; y: number; w: number; h: number; score: number }[][];
+			};
+			return { faces: Array.isArray(out.faces) ? out.faces : frames.map(() => []) };
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
 	}
 
 	/** Validates a request and queues the `roto` job (HttpError 404/400/409). */

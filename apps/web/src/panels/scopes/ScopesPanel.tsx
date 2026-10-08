@@ -1,35 +1,123 @@
-// Lumetri Scopes panel (S06:SCP-001…003): waveform (luma), RGB parade, vectorscope (Rec.709 YUV, 75 % targets,
-// skin-tone line) and histogram of the selected clip's graded picture read back from the Program monitor
-// (≤ 256 px wide), computed in a worker; ≤ 15 updates/s while playing, on every change while paused. Drawn with
-// design tokens only (CSS variables read with getComputedStyle).
-import { sequenceColorInfo, workingSignalOfNits } from '@jasper/project';
+// Lumetri Scopes panel (S06:SCP-001…003; color-grade upgrade, FilmCraft `crates/scopes` port): Waveform (RGB, Luma,
+// YC, YC no Chroma), Parade (RGB, YUV, RGB-White), Histogram, Vectorscope YUV (75 % / 100 % targets, skin-tone line)
+// and Vectorscope HLS, alone or in layout presets (two and four scopes), with Premiere's settings — Color Space
+// (Rec. 601 / 709 / 2020), Clamp Signal, Brightness and the levels scale (8-bit, 10-bit, float). The selected
+// clip's graded picture is read back from the Program monitor and every scope of the layout is computed in a worker
+// by the shared maths (@jasper/project color/scopes.ts, the same code `scopes_read` runs); ≤ 15 updates/s while
+// playing, on every change while paused. Drawn with design tokens only (CSS variables read with getComputedStyle).
+import {
+	hlsTargets,
+	PARADE_TYPE_LABELS,
+	PARADE_TYPES,
+	type ParadeType,
+	SCOPE_KIND_LABELS,
+	SCOPE_MATRICES,
+	SCOPE_MATRIX_LABELS,
+	SCOPE_SCALE_LABELS,
+	SCOPE_SCALES,
+	type ScopeBrightness,
+	type ScopeKind,
+	type ScopeMatrix,
+	type ScopeScale,
+	scaleLabels,
+	sequenceColorInfo,
+	skinToneLine,
+	VECTOR_EXTENT,
+	type VectorTargets,
+	vectorTargets,
+	WAVEFORM_TYPE_LABELS,
+	WAVEFORM_TYPES,
+	type WaveformType,
+	workingSignalOfNits,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gradeEligible } from '../../color/model.ts';
 import { cssColorRgb, findClipSource, frameHash, readFrame } from '../../color/scopes/capture.ts';
-import { createScopeComputer } from '../../color/scopes/client.ts';
-import {
-	type RGB,
-	SCOPE_MODES,
-	type ScopeMode,
-	type ScopeResult,
-	skinToneDirection,
-	vectorscopePoint,
-	vectorscopeTargets,
-} from '../../color/scopes/math.ts';
+import { createScopesComputer } from '../../color/scopes/client.ts';
+import type { RGB, ScopeImage, ScopeSettings, ScopesResult } from '../../color/scopes/compute.ts';
 import type { PanelProps } from '../types.ts';
 
-const MODE_LABEL: Record<ScopeMode, string> = {
-	waveform: 'Waveform',
-	parade: 'Parade',
-	vectorscope: 'Vectorscope',
-	histogram: 'Histogram',
-};
 const PLAYING_INTERVAL_MS = 1000 / 15;
 const PAUSED_POLL_MS = 250;
-const MODE_KEY = 'jasper.scopes.mode';
+/** Read-back width (the maths decimate to ≤ 480 × 270 samples). */
+const CAPTURE_WIDTH = 480;
+const SETTINGS_KEY = 'jasper.scopes.settings.v2';
+
+/** Layout presets (Premiere's Lumetri Scopes presets: one scope, pairs, the four-scope layouts). */
+export const SCOPE_LAYOUTS: readonly {
+	id: string;
+	label: string;
+	slots: readonly ScopeKind[];
+	/** Types a preset sets when chosen (Premiere's "All Scopes RGB" / "All Scopes YUV/YC"). */
+	types?: { waveformType: WaveformType; paradeType: ParadeType };
+}[] = [
+	{ id: 'waveform', label: 'Waveform', slots: ['waveform'] },
+	{ id: 'parade', label: 'Parade', slots: ['parade'] },
+	{ id: 'vectorscopeYuv', label: 'Vectorscope YUV', slots: ['vectorscopeYuv'] },
+	{ id: 'vectorscopeHls', label: 'Vectorscope HLS', slots: ['vectorscopeHls'] },
+	{ id: 'histogram', label: 'Histogram', slots: ['histogram'] },
+	{ id: 'vector-waveform', label: 'Vectorscope + Waveform', slots: ['vectorscopeYuv', 'waveform'] },
+	{ id: 'parade-vector', label: 'Parade + Vectorscope', slots: ['parade', 'vectorscopeYuv'] },
+	{ id: 'waveform-histogram', label: 'Waveform + Histogram', slots: ['waveform', 'histogram'] },
+	{
+		id: 'four-up',
+		label: 'All Scopes RGB',
+		slots: ['vectorscopeYuv', 'histogram', 'parade', 'waveform'],
+		types: { waveformType: 'rgb', paradeType: 'rgb' },
+	},
+	{
+		id: 'four-up-yuv',
+		label: 'All Scopes YUV/YC',
+		slots: ['vectorscopeYuv', 'histogram', 'parade', 'waveform'],
+		types: { waveformType: 'yc', paradeType: 'yuv' },
+	},
+	{
+		id: 'four-up-hls',
+		label: 'All Scopes HLS',
+		slots: ['vectorscopeHls', 'histogram', 'parade', 'waveform'],
+	},
+];
+
+/** The levels axis: a ScopeScale, or `hdr` = cd/m² of an HDR working space (color-mgmt; Premiere's "HDR"). */
+type PanelScale = ScopeScale | 'hdr';
+type PanelSettings = ScopeSettings & { layout: string; scale: PanelScale; targets: VectorTargets };
+
+const DEFAULTS: PanelSettings = {
+	layout: 'waveform',
+	waveformType: 'rgb',
+	paradeType: 'rgb',
+	matrix: 'bt709',
+	clamp: true,
+	brightness: 'normal',
+	scale: '8bit',
+	targets: 75,
+};
+
+function loadSettings(): PanelSettings {
+	try {
+		const raw = JSON.parse(globalThis.localStorage?.getItem(SETTINGS_KEY) ?? '{}') as Partial<PanelSettings>;
+		const pick = <T,>(v: unknown, ok: readonly T[], d: T): T => (ok.includes(v as T) ? (v as T) : d);
+		return {
+			layout: pick(
+				raw.layout,
+				SCOPE_LAYOUTS.map((l) => l.id),
+				DEFAULTS.layout,
+			),
+			waveformType: pick(raw.waveformType, WAVEFORM_TYPES, DEFAULTS.waveformType),
+			paradeType: pick(raw.paradeType, PARADE_TYPES, DEFAULTS.paradeType),
+			matrix: pick(raw.matrix, SCOPE_MATRICES, DEFAULTS.matrix),
+			clamp: typeof raw.clamp === 'boolean' ? raw.clamp : DEFAULTS.clamp,
+			brightness: pick<ScopeBrightness>(raw.brightness, ['dimmed', 'normal', 'bright'], DEFAULTS.brightness),
+			scale: pick<PanelScale>(raw.scale, [...SCOPE_SCALES, 'hdr'], DEFAULTS.scale),
+			targets: pick<VectorTargets>(raw.targets, [75, 100], DEFAULTS.targets),
+		};
+	} catch {
+		return { ...DEFAULTS };
+	}
+}
 
 export function ScopesPanel(props: PanelProps) {
 	const session = useSessionOrNull();
@@ -52,16 +140,18 @@ export function ScopesPanel(props: PanelProps) {
 type Colors = {
 	bg: string;
 	graticule: string;
+	ire: string;
 	label: string;
 	skin: string;
 	target: string;
 	trace: RGB;
 	luma: RGB;
+	chroma: RGB;
 	red: RGB;
 	green: RGB;
 	blue: RGB;
 	/** Token values (CSS colours) of the channel traces, for the histogram fills. */
-	css: { red: string; green: string; blue: string };
+	css: { red: string; green: string; blue: string; luma: string };
 };
 
 function readColors(el: Element): Colors {
@@ -72,30 +162,33 @@ function readColors(el: Element): Colors {
 	return {
 		bg: v('--pr-scope-bg'),
 		graticule: v('--pr-scope-graticule'),
+		ire: v('--pr-scope-ire'),
 		label: v('--pr-scope-label'),
 		skin: v('--pr-scope-skin'),
 		target: v('--pr-scope-target'),
 		trace: tokenRgb('--pr-scope-trace'),
 		luma: tokenRgb('--pr-scope-trace-luma'),
+		chroma: tokenRgb('--pr-scope-chroma'),
 		red: tokenRgb('--pr-scope-red'),
 		green: tokenRgb('--pr-scope-green'),
 		blue: tokenRgb('--pr-scope-blue'),
-		css: { red: v('--pr-scope-red'), green: v('--pr-scope-green'), blue: v('--pr-scope-blue') },
+		css: {
+			red: v('--pr-scope-red'),
+			green: v('--pr-scope-green'),
+			blue: v('--pr-scope-blue'),
+			luma: v('--pr-scope-trace-luma'),
+		},
 	};
 }
 
-function loadMode(): ScopeMode {
-	try {
-		const m = globalThis.localStorage?.getItem(MODE_KEY) as ScopeMode | null;
-		return m && SCOPE_MODES.includes(m) ? m : 'waveform';
-	} catch {
-		return 'waveform';
-	}
-}
+const SELECT =
+	'h-[20px] min-w-0 rounded-pr-control border border-transparent bg-pr-field px-1 text-pr-small text-pr-text hover:border-pr-border-strong';
 
 function ScopesBody({ session, visible }: { session: EditorSession; visible: boolean }) {
-	const [mode, setModeState] = useState<ScopeMode>(loadMode);
+	const [settings, setSettingsState] = useState<PanelSettings>(loadSettings);
+	const [showSettings, setShowSettings] = useState(false);
 	const [status, setStatus] = useState<string>('');
+	const [hasTrace, setHasTrace] = useState(false);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const boxRef = useRef<HTMLDivElement>(null);
 	const clipId = useSessionState((s) => {
@@ -105,37 +198,45 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		return gradeEligible(clip) ? clip.id : null;
 	});
 	const revision = useSessionState((s) => (s.transient ? -s.revision - 1 : s.revision));
-	// color-mgmt: the working space; HDR sequences can show the waveform in cd/m² (PQ / HLG signal positions).
+	// color-mgmt: the working space; HDR sequences show the levels in cd/m² (PQ / HLG signal positions).
 	const working = useSessionState((s) => {
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 		return sequenceColorInfo(seq?.settings).space;
 	});
 	const hdr = working === 'rec2100-pq' || working === 'rec2100-hlg';
-	const [nitsPref, setNitsPref] = useState(() => {
-		try {
-			return globalThis.localStorage?.getItem(SCALE_KEY) !== 'percent';
-		} catch {
-			return true;
-		}
-	});
-	const scale: ScopeScale = hdr && nitsPref ? { kind: 'nits', space: working } : { kind: 'percent' };
-	const setMode = (m: ScopeMode) => {
-		setModeState(m);
-		try {
-			globalThis.localStorage?.setItem(MODE_KEY, m);
-		} catch {
-			// not persisted
-		}
+	const setSettings = (patch: Partial<PanelSettings>) => {
+		setSettingsState((cur) => {
+			const next = { ...cur, ...patch };
+			try {
+				globalThis.localStorage?.setItem(SETTINGS_KEY, JSON.stringify(next));
+			} catch {
+				// not persisted
+			}
+			return next;
+		});
 	};
+	const layout = SCOPE_LAYOUTS.find((l) => l.id === settings.layout) ?? SCOPE_LAYOUTS[0]!;
 
 	// Latest state for the loop (no re-subscription per change).
-	const live = useRef({ mode, clipId, visible, scale });
-	live.current = { mode, clipId, visible, scale };
-	const last = useRef<ScopeResult | null>(null);
+	// An HDR scale outside an HDR sequence reads as 8-bit; HDR sequences default to cd/m² (Premiere: "For HDR footage,
+	// the scope scale automatically adjusts to display a range between 0–10000 nits").
+	const shown: PanelSettings = {
+		...settings,
+		scale: hdr
+			? settings.scale === '8bit' || settings.scale === 'hdr'
+				? 'hdr'
+				: settings.scale
+			: settings.scale === 'hdr'
+				? '8bit'
+				: settings.scale,
+	};
+	const live = useRef({ settings: shown, layout, clipId, visible, working });
+	live.current = { settings: shown, layout, clipId, visible, working };
+	const last = useRef<ScopesResult | null>(null);
 	/** Time the in-flight request was posted (0 = none); a lost reply unblocks after a second. */
 	const pending = useRef(0);
 	const captureNow = useRef<((force?: boolean) => void) | null>(null);
-	const lastHash = useRef<number | null>(null);
+	const lastHash = useRef<string | null>(null);
 	const reqId = useRef(0);
 	const colors = useRef<Colors | null>(null);
 
@@ -154,17 +255,28 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 			canvas.height = H * dpr;
 		}
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
-		colors.current ??= readColors(box);
-		drawScope(g, W, H, live.current.mode, last.current, colors.current, live.current.scale);
+		// Tokens resolve only once the panel is in the document: never cache an unresolved read.
+		if (!colors.current?.bg) colors.current = readColors(box);
+		drawLayout(
+			g,
+			W,
+			H,
+			live.current.layout.slots,
+			live.current.settings,
+			last.current,
+			colors.current,
+			live.current.working,
+		);
 	}, []);
 
 	// Result handling + worker lifetime.
-	const computer = useRef<ReturnType<typeof createScopeComputer> | null>(null);
+	const computer = useRef<ReturnType<typeof createScopesComputer> | null>(null);
 	useEffect(() => {
-		const c = createScopeComputer((r) => {
+		const c = createScopesComputer((r) => {
 			pending.current = 0;
-			if (r.mode !== live.current.mode) return;
+			if (r.id !== reqId.current) return;
 			last.current = r;
+			setHasTrace(true);
 			draw();
 		});
 		computer.current = c;
@@ -178,45 +290,49 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 	useEffect(() => {
 		let disposed = false;
 		const capture = (force = false) => {
-			const { clipId: id, mode: m, visible: vis } = live.current;
+			const { clipId: id, settings: st, layout: lay, visible: vis } = live.current;
 			if (disposed || !vis || !computer.current) return;
 			if (!id) {
 				setStatus('Select a clip in the Timeline.');
 				last.current = null;
+				setHasTrace(false);
 				lastHash.current = null;
 				draw();
 				return;
 			}
 			if (pending.current && performance.now() - pending.current < 1000) return;
 			const el = findClipSource(id);
-			const frame = el ? readFrame(el) : null;
+			const frame = el ? readFrame(el, CAPTURE_WIDTH) : null;
 			if (!frame) {
 				setStatus(el ? 'Waiting for the picture…' : 'The selected clip is not visible at the playhead.');
 				last.current = null;
+				setHasTrace(false);
 				lastHash.current = null;
 				draw();
 				return;
 			}
 			setStatus('');
-			const h = frameHash(frame) ^ SCOPE_MODES.indexOf(m);
-			if (!force && h === lastHash.current) return;
-			lastHash.current = h;
-			colors.current ??= boxRef.current ? readColors(boxRef.current) : null;
+			const key = `${frameHash(frame)}|${lay.slots.join(',')}|${st.waveformType}|${st.paradeType}|${st.matrix}|${st.clamp}|${st.brightness}`;
+			if (!force && key === lastHash.current) return;
+			lastHash.current = key;
+			if (!colors.current?.bg && boxRef.current) colors.current = readColors(boxRef.current);
 			const c = colors.current;
-			if (!c) return;
-			const box = boxRef.current?.getBoundingClientRect();
-			const outW = Math.max(64, Math.min(512, Math.floor(box?.width || 256)));
-			const outH = Math.max(64, Math.min(256, Math.floor(box?.height || 128)));
+			if (!c?.bg) return;
 			pending.current = performance.now();
 			computer.current.post({
 				id: ++reqId.current,
-				mode: m,
 				data: frame.data,
 				width: frame.width,
 				height: frame.height,
-				outW,
-				outH,
-				colors: { trace: c.trace, luma: c.luma, red: c.red, green: c.green, blue: c.blue },
+				kinds: lay.slots,
+				settings: {
+					waveformType: st.waveformType,
+					paradeType: st.paradeType,
+					matrix: st.matrix,
+					clamp: st.clamp,
+					brightness: st.brightness,
+				},
+				colors: { trace: c.trace, luma: c.luma, chroma: c.chroma, red: c.red, green: c.green, blue: c.blue },
 			});
 		};
 		let timer: ReturnType<typeof setInterval> | null = null;
@@ -243,14 +359,13 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		};
 	}, [session, draw]);
 
-	// Immediate refresh on selection, document, mode or visibility changes (the paused poll catches pictures
+	// Immediate refresh on selection, document, settings or visibility changes (the paused poll catches pictures
 	// that land later, e.g. a re-baked grade or a decoded frame).
-	// biome-ignore lint/correctness/useExhaustiveDependencies: mode/clipId/revision/visible are triggers only
+	// biome-ignore lint/correctness/useExhaustiveDependencies: settings/clipId/revision/visible are triggers only
 	useEffect(() => {
-		if (last.current && last.current.mode !== mode) last.current = null;
 		draw();
 		captureNow.current?.(true);
-	}, [mode, clipId, revision, visible, draw, scale.kind, working]);
+	}, [settings, clipId, revision, visible, draw, working]);
 
 	// Redraw on resize.
 	useEffect(() => {
@@ -261,60 +376,158 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		return () => ro.disconnect();
 	}, [draw]);
 
+	const has = (k: ScopeKind) => layout.slots.includes(k);
 	return (
 		<>
 			<header className="flex h-[28px] shrink-0 items-center gap-1 border-b border-pr-border-subtle px-2">
-				<div
-					className="flex min-w-0 items-center gap-[2px] overflow-hidden"
-					role="tablist"
-					aria-label="Scope"
+				<select
+					aria-label="Scopes layout"
+					className={SELECT}
+					value={layout.id}
+					onChange={(e) => {
+						const preset = SCOPE_LAYOUTS.find((l) => l.id === e.target.value);
+						setSettings({ layout: e.target.value, ...(preset?.types ?? {}) });
+					}}
+					data-testid="scopes-layout"
 				>
-					{SCOPE_MODES.map((m) => (
-						<button
-							key={m}
-							type="button"
-							role="tab"
-							aria-selected={mode === m}
-							className={cx(
-								'h-[20px] shrink-0 whitespace-nowrap rounded-pr-control px-2 text-pr-small',
-								mode === m ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted hover:bg-pr-hover',
-							)}
-							onClick={() => setMode(m)}
-							data-testid={`scopes-mode-${m}`}
-						>
-							{MODE_LABEL[m]}
-						</button>
+					{SCOPE_LAYOUTS.map((l) => (
+						<option key={l.id} value={l.id}>
+							{l.label}
+						</option>
 					))}
-				</div>
-				{hdr ? (
-					<button
-						type="button"
-						className="ml-auto h-[20px] shrink-0 rounded-pr-control px-2 text-pr-small text-pr-muted hover:bg-pr-hover"
-						onClick={() => {
-							const next = !nitsPref;
-							setNitsPref(next);
-							try {
-								globalThis.localStorage?.setItem(SCALE_KEY, next ? 'nits' : 'percent');
-							} catch {
-								// not persisted
-							}
-						}}
-						title="Waveform scale: cd/m² (HDR) or percent of the signal"
-						data-testid="scopes-scale"
+				</select>
+				{has('waveform') ? (
+					<select
+						aria-label="Waveform type"
+						className={SELECT}
+						value={settings.waveformType}
+						onChange={(e) => setSettings({ waveformType: e.target.value as WaveformType })}
+						data-testid="scopes-waveform-type"
 					>
-						{nitsPref ? 'Scale: nits' : 'Scale: %'}
-					</button>
+						{WAVEFORM_TYPES.map((t) => (
+							<option key={t} value={t}>
+								{WAVEFORM_TYPE_LABELS[t]}
+							</option>
+						))}
+					</select>
 				) : null}
+				{has('parade') ? (
+					<select
+						aria-label="Parade type"
+						className={SELECT}
+						value={settings.paradeType}
+						onChange={(e) => setSettings({ paradeType: e.target.value as ParadeType })}
+						data-testid="scopes-parade-type"
+					>
+						{PARADE_TYPES.map((t) => (
+							<option key={t} value={t}>
+								{PARADE_TYPE_LABELS[t]}
+							</option>
+						))}
+					</select>
+				) : null}
+				<span className="flex-1" />
+				<button
+					type="button"
+					aria-label="Scope settings"
+					aria-expanded={showSettings}
+					className={cx(
+						'h-[20px] rounded-pr-control px-2 text-pr-small',
+						showSettings ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted hover:bg-pr-hover',
+					)}
+					onClick={() => setShowSettings((v) => !v)}
+					data-testid="scopes-settings"
+				>
+					Settings
+				</button>
 			</header>
+			{showSettings ? (
+				<div
+					className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-pr-border-subtle px-2 py-1 text-pr-small"
+					data-testid="scopes-settings-row"
+				>
+					<label className="inline-flex items-center gap-1">
+						Color Space
+						<select
+							aria-label="Color space"
+							className={SELECT}
+							value={settings.matrix}
+							onChange={(e) => setSettings({ matrix: e.target.value as ScopeMatrix })}
+							data-testid="scopes-matrix"
+						>
+							{SCOPE_MATRICES.map((m) => (
+								<option key={m} value={m}>
+									{SCOPE_MATRIX_LABELS[m]}
+								</option>
+							))}
+						</select>
+					</label>
+					<label className="inline-flex items-center gap-1">
+						Scale
+						<select
+							aria-label="Scale"
+							className={SELECT}
+							value={shown.scale}
+							onChange={(e) => setSettings({ scale: e.target.value as PanelScale })}
+							data-testid="scopes-scale"
+						>
+							{SCOPE_SCALES.map((s) => (
+								<option key={s} value={s}>
+									{SCOPE_SCALE_LABELS[s]}
+								</option>
+							))}
+							{hdr ? <option value="hdr">HDR (cd/m²)</option> : null}
+						</select>
+					</label>
+					<label className="inline-flex items-center gap-1">
+						Brightness
+						<select
+							aria-label="Brightness"
+							className={SELECT}
+							value={settings.brightness}
+							onChange={(e) => setSettings({ brightness: e.target.value as ScopeBrightness })}
+							data-testid="scopes-brightness"
+						>
+							<option value="dimmed">Dimmed</option>
+							<option value="normal">Normal</option>
+							<option value="bright">Bright</option>
+						</select>
+					</label>
+					<label className="inline-flex items-center gap-1">
+						Targets
+						<select
+							aria-label="Vectorscope targets"
+							className={SELECT}
+							value={settings.targets}
+							onChange={(e) => setSettings({ targets: Number(e.target.value) === 100 ? 100 : 75 })}
+							data-testid="scopes-targets"
+						>
+							<option value={75}>75%</option>
+							<option value={100}>100%</option>
+						</select>
+					</label>
+					<label className="inline-flex cursor-pointer items-center gap-1">
+						<input
+							type="checkbox"
+							checked={settings.clamp}
+							onChange={(e) => setSettings({ clamp: e.target.checked })}
+							className="size-[12px] accent-[var(--pr-text-primary)]"
+							data-testid="scopes-clamp"
+						/>
+						Clamp Signal
+					</label>
+				</div>
+			) : null}
 			<div ref={boxRef} className="relative min-h-0 flex-1" style={{ background: 'var(--pr-scope-bg)' }}>
 				<canvas
 					ref={canvasRef}
 					className="absolute inset-0 size-full"
 					data-testid="scopes-canvas"
-					data-mode={mode}
-					data-has-trace={last.current ? 'true' : 'false'}
+					data-layout={layout.id}
+					data-has-trace={hasTrace ? 'true' : 'false'}
+					data-compute-ms={last.current ? Math.round(last.current.ms) : undefined}
 				/>
-				<span className="pointer-events-none absolute top-1 right-2 text-pr-small text-pr-dim">
+				<span className="pointer-events-none absolute right-2 bottom-1 text-pr-small text-pr-dim">
 					Selected clip (graded)
 				</span>
 				{status ? (
@@ -332,151 +545,208 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 
 // ---------------------------------------------------------------- drawing (tokens only)
 
-const PAD = 24;
+const PAD = 30;
+/** color-mgmt: cd/m² graticule of HDR waveforms. */
+const NITS_LINES = [0.1, 1, 10, 100, 203, 1000, 4000, 10000];
 
-function traceBitmap(r: ScopeResult): HTMLCanvasElement | null {
-	if (!r.width || !r.height || typeof document === 'undefined') return null;
+function bitmap(img: ScopeImage): HTMLCanvasElement | null {
+	if (!img.width || !img.height || typeof document === 'undefined') return null;
 	const c = document.createElement('canvas');
-	c.width = r.width;
-	c.height = r.height;
+	c.width = img.width;
+	c.height = img.height;
 	const g = c.getContext('2d');
 	if (!g) return null;
-	g.putImageData(new ImageData(new Uint8ClampedArray(r.image), r.width, r.height), 0, 0);
+	const data = g.createImageData(img.width, img.height);
+	data.data.set(img.image);
+	g.putImageData(data, 0, 0);
 	return c;
 }
 
-/** color-mgmt: the waveform's vertical scale: percent of the signal, or cd/m² of an HDR working space. */
-type ScopeScale = { kind: 'percent' } | { kind: 'nits'; space: 'rec2100-pq' | 'rec2100-hlg' | string };
-const SCALE_KEY = 'jasper.scopes.hdrScale';
-/** cd/m² graticule of HDR waveforms (BT.2408 reference white 203 labelled). */
-const NITS_LINES = [0.1, 1, 10, 100, 203, 1000, 4000, 10000];
+type Rect = { x: number; y: number; w: number; h: number };
 
-/** color-mgmt: cd/m² lines at their PQ / HLG signal positions (the trace is the working signal). */
-function drawNitsGraticule(
-	g: CanvasRenderingContext2D,
-	space: string,
-	x0: number,
-	y0: number,
-	w: number,
-	h: number,
-	c: Colors,
-): void {
-	for (const n of NITS_LINES) {
-		if (space === 'rec2100-hlg' && n > 1000) continue;
-		const v = workingSignalOfNits(space as 'rec2100-pq', n);
-		const y = Math.round(y0 + h - v * h) + 0.5;
-		g.strokeStyle = c.graticule;
-		g.globalAlpha = n === 203 || n === 1000 ? 1 : 0.5;
-		g.beginPath();
-		g.moveTo(x0, y);
-		g.lineTo(x0 + w, y);
-		g.stroke();
-		g.globalAlpha = 1;
-		g.fillStyle = c.label;
-		g.fillText(n < 1 ? String(n) : n >= 1000 ? `${n / 1000}k` : String(n), 1, y + 3);
-	}
+/** Slot rectangles: one full, two side by side, four in a 2 × 2 grid. */
+function slotRects(n: number, W: number, H: number): Rect[] {
+	if (n <= 1) return [{ x: 0, y: 0, w: W, h: H }];
+	if (n === 2)
+		return [
+			{ x: 0, y: 0, w: W / 2, h: H },
+			{ x: W / 2, y: 0, w: W / 2, h: H },
+		];
+	return [
+		{ x: 0, y: 0, w: W / 2, h: H / 2 },
+		{ x: W / 2, y: 0, w: W / 2, h: H / 2 },
+		{ x: 0, y: H / 2, w: W / 2, h: H / 2 },
+		{ x: W / 2, y: H / 2, w: W / 2, h: H / 2 },
+	];
 }
 
-/** IRE-style graticule 0…100 every 10. */
-function drawPercentGraticule(
-	g: CanvasRenderingContext2D,
-	x0: number,
-	y0: number,
-	w: number,
-	h: number,
-	c: Colors,
-): void {
-	for (let i = 0; i <= 10; i++) {
-		const y = Math.round(y0 + h - (i / 10) * h) + 0.5;
-		g.strokeStyle = c.graticule;
-		g.globalAlpha = i % 5 === 0 ? 1 : 0.5;
-		g.beginPath();
-		g.moveTo(x0, y);
-		g.lineTo(x0 + w, y);
-		g.stroke();
-		g.globalAlpha = 1;
-		if (i % 2 === 0) {
-			g.fillStyle = c.label;
-			g.fillText(String(i * 10), 2, y + 3);
-		}
-	}
-}
-
-function drawScope(
+function drawLayout(
 	g: CanvasRenderingContext2D,
 	W: number,
 	H: number,
-	mode: ScopeMode,
-	r: ScopeResult | null,
+	slots: readonly ScopeKind[],
+	st: PanelSettings,
+	r: ScopesResult | null,
 	c: Colors,
-	scale: ScopeScale = { kind: 'percent' },
+	working = 'rec709',
 ): void {
 	g.clearRect(0, 0, W, H);
 	g.fillStyle = c.bg;
 	g.fillRect(0, 0, W, H);
 	g.font = '10px var(--pr-font-ui), sans-serif';
 	g.lineWidth = 1;
-	const x0 = PAD;
-	const y0 = 8;
-	const w = Math.max(10, W - PAD - 8);
-	const h = Math.max(10, H - 16);
-	if (mode === 'waveform' || mode === 'parade') {
-		if (scale.kind === 'nits') drawNitsGraticule(g, scale.space, x0, y0, w, h, c);
-		else drawPercentGraticule(g, x0, y0, w, h, c);
-		if (mode === 'parade')
-			for (const t of [1 / 3, 2 / 3]) {
-				const x = Math.round(x0 + w * t) + 0.5;
-				g.strokeStyle = c.graticule;
-				g.beginPath();
-				g.moveTo(x, y0);
-				g.lineTo(x, y0 + h);
-				g.stroke();
-			}
-		const bmp = r && (r.mode === 'waveform' || r.mode === 'parade') ? traceBitmap(r) : null;
-		if (bmp) {
-			g.imageSmoothingEnabled = true;
-			g.drawImage(bmp, x0, y0, w, h);
+	const rects = slotRects(slots.length, W, H);
+	slots.forEach((kind, i) => {
+		const rect = rects[i]!;
+		g.save();
+		g.beginPath();
+		g.rect(rect.x, rect.y, rect.w, rect.h);
+		g.clip();
+		const img = r?.images.find((x) => x.kind === kind) ?? null;
+		if (kind === 'waveform' || kind === 'parade') drawLevels(g, rect, kind, img, st, c, working);
+		else if (kind === 'histogram') drawHistogram(g, rect, r?.histogram ?? null, st, c);
+		else drawVectorscope(g, rect, kind, img, st, c);
+		if (slots.length > 1) {
+			g.fillStyle = c.label;
+			const name = SCOPE_KIND_LABELS[kind];
+			g.fillText(name, rect.x + rect.w - g.measureText(name).width - 6, rect.y + 12);
+			g.strokeStyle = c.graticule;
+			g.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
 		}
-		return;
+		g.restore();
+	});
+}
+
+function drawLevels(
+	g: CanvasRenderingContext2D,
+	r: Rect,
+	kind: 'waveform' | 'parade',
+	img: ScopeImage | null,
+	st: PanelSettings,
+	c: Colors,
+	working = 'rec709',
+): void {
+	const lo = img?.lo ?? (st.clamp ? 0 : -0.1);
+	const hi = img?.hi ?? (st.clamp ? 1 : 1.1);
+	const x0 = r.x + PAD;
+	const y0 = r.y + 8;
+	const w = Math.max(10, r.w - PAD - 8);
+	const h = Math.max(10, r.h - 22);
+	const yOf = (v: number) => y0 + h - ((v - lo) / (hi - lo)) * h;
+	// Fine IRE graticule every 5 %, labelled in the chosen scale every 10 %.
+	for (let i = 0; i <= 20; i++) {
+		const y = Math.round(yOf(i / 20)) + 0.5;
+		g.strokeStyle = i % 2 === 0 ? c.graticule : c.ire;
+		g.beginPath();
+		g.moveTo(x0, y);
+		g.lineTo(x0 + w, y);
+		g.stroke();
 	}
-	if (mode === 'vectorscope') {
-		const size = Math.max(10, Math.min(W, H) - 16);
-		const vx = (W - size) / 2;
-		const vy = (H - size) / 2;
-		const cx0 = vx + size / 2;
-		const cy0 = vy + size / 2;
-		g.strokeStyle = c.graticule;
+	g.fillStyle = c.label;
+	if (st.scale === 'hdr') {
+		// color-mgmt: cd/m² lines at their PQ / HLG signal positions (BT.2408 reference white 203 labelled).
+		for (const n of NITS_LINES) {
+			if (working === 'rec2100-hlg' && n > 1000) continue;
+			const y = Math.round(yOf(workingSignalOfNits(working as 'rec2100-pq', n))) + 0.5;
+			g.strokeStyle = n === 203 || n === 1000 ? c.target : c.graticule;
+			g.beginPath();
+			g.moveTo(x0, y);
+			g.lineTo(x0 + w, y);
+			g.stroke();
+			g.fillText(n < 1 ? String(n) : n >= 1000 ? `${n / 1000}k` : String(n), r.x + 2, y + 3);
+		}
+	} else
+		for (const [v, label] of scaleLabels(st.scale, 0, 1)) g.fillText(label, r.x + 2, Math.round(yOf(v)) + 3);
+	const blocks = img?.blocks ?? 1;
+	if (kind === 'parade')
+		for (let k = 1; k < blocks; k++) {
+			const x = Math.round(x0 + (w * k) / blocks) + 0.5;
+			g.strokeStyle = c.graticule;
+			g.beginPath();
+			g.moveTo(x, y0);
+			g.lineTo(x, y0 + h);
+			g.stroke();
+		}
+	const bmp = img ? bitmap(img) : null;
+	if (bmp) {
+		g.imageSmoothingEnabled = true;
+		g.drawImage(bmp, x0, y0, w, h);
+		if (kind === 'parade') {
+			g.fillStyle = c.label;
+			img!.names.forEach((n, k) => {
+				g.fillText(n, x0 + (w * k) / blocks + 3, y0 + 10);
+			});
+		}
+	}
+}
+
+function drawVectorscope(
+	g: CanvasRenderingContext2D,
+	r: Rect,
+	kind: ScopeKind,
+	img: ScopeImage | null,
+	st: PanelSettings,
+	c: Colors,
+): void {
+	const size = Math.max(10, Math.min(r.w, r.h) - 16);
+	const vx = r.x + (r.w - size) / 2;
+	const vy = r.y + (r.h - size) / 2;
+	const cx0 = vx + size / 2;
+	const cy0 = vy + size / 2;
+	const toPx = (cb: number, cr: number) =>
+		[cx0 + (cb / VECTOR_EXTENT) * (size / 2), cy0 - (cr / VECTOR_EXTENT) * (size / 2)] as const;
+	g.strokeStyle = c.graticule;
+	// Saturation circles at 25 %, 50 % (radius 0.25) … 100 % (radius 0.5).
+	for (const rad of [0.125, 0.25, 0.375, 0.5]) {
 		g.beginPath();
-		g.arc(cx0, cy0, size / 2, 0, Math.PI * 2);
+		g.arc(cx0, cy0, (rad / VECTOR_EXTENT) * (size / 2), 0, Math.PI * 2);
 		g.stroke();
-		g.beginPath();
-		g.moveTo(vx, cy0);
-		g.lineTo(vx + size, cy0);
-		g.moveTo(cx0, vy);
-		g.lineTo(cx0, vy + size);
-		g.stroke();
+	}
+	g.beginPath();
+	g.moveTo(vx, cy0);
+	g.lineTo(vx + size, cy0);
+	g.moveTo(cx0, vy);
+	g.lineTo(cx0, vy + size);
+	g.stroke();
+	g.fillStyle = c.label;
+	if (kind === 'vectorscopeYuv') {
 		// Skin-tone line.
-		const skin = skinToneDirection();
+		const [sx, sy] = skinToneLine();
+		const [ex, ey] = toPx(sx * VECTOR_EXTENT, sy * VECTOR_EXTENT);
 		g.strokeStyle = c.skin;
 		g.beginPath();
 		g.moveTo(cx0, cy0);
-		g.lineTo(cx0 + (skin.cb * size) / 2, cy0 - (skin.cr * size) / 2);
+		g.lineTo(ex, ey);
 		g.stroke();
-		// 75 % targets.
+		// Colour-bar targets at 75 % or 100 % for the chosen matrix.
 		g.strokeStyle = c.target;
-		g.fillStyle = c.label;
-		for (const t of vectorscopeTargets(0.75)) {
-			const p = vectorscopePoint(t.cb, t.cr, size);
-			const tx = vx + p.x;
-			const ty = vy + p.y;
+		for (const t of vectorTargets(st.matrix, st.targets)) {
+			const [tx, ty] = toPx(t.cb, t.cr);
 			g.strokeRect(tx - 4, ty - 4, 8, 8);
 			g.fillText(t.name, tx + 6, ty + 3);
 		}
-		const bmp = r?.mode === 'vectorscope' ? traceBitmap(r) : null;
-		if (bmp) g.drawImage(bmp, vx, vy, size, size);
-		return;
+	} else {
+		for (const t of hlsTargets(st.matrix)) {
+			const [tx, ty] = toPx(t.cb, t.cr);
+			g.fillText(t.name, tx - 4, ty + 3);
+		}
 	}
-	// Histogram: R, G, B overlaid (additive) plus the luma outline.
+	g.fillText(SCOPE_MATRIX_LABELS[st.matrix], r.x + 4, r.y + r.h - 4);
+	const bmp = img ? bitmap(img) : null;
+	if (bmp) g.drawImage(bmp, vx, vy, size, size);
+}
+
+function drawHistogram(
+	g: CanvasRenderingContext2D,
+	r: Rect,
+	hist: ScopesResult['histogram'] | null,
+	st: PanelSettings,
+	c: Colors,
+): void {
+	const x0 = r.x + PAD;
+	const y0 = r.y + 8;
+	const w = Math.max(10, r.w - PAD - 8);
+	const h = Math.max(10, r.h - 22);
 	for (const t of [0.25, 0.5, 0.75]) {
 		const x = Math.round(x0 + w * t) + 0.5;
 		g.strokeStyle = c.graticule;
@@ -485,7 +755,11 @@ function drawScope(
 		g.lineTo(x, y0 + h);
 		g.stroke();
 	}
-	const hist = r?.mode === 'histogram' ? r.histogram : undefined;
+	g.fillStyle = c.label;
+	for (const [v, label] of scaleLabels(st.scale === 'hdr' ? 'float' : st.scale, 0, 1).filter(
+		(_, i) => i % 5 === 0,
+	))
+		g.fillText(label, Math.min(x0 + v * w - 6, x0 + w - 18), y0 + h + 11);
 	if (!hist) return;
 	let max = 1;
 	for (const ch of [hist.r, hist.g, hist.b]) for (let i = 1; i < 255; i++) max = Math.max(max, ch[i]!);
@@ -505,7 +779,7 @@ function drawScope(
 	bar(hist.g, c.css.green);
 	bar(hist.b, c.css.blue);
 	g.globalCompositeOperation = 'source-over';
-	g.strokeStyle = c.label;
+	g.strokeStyle = c.css.luma;
 	g.beginPath();
 	for (let i = 0; i < 256; i++) {
 		const x = x0 + (i / 255) * w;
@@ -514,4 +788,10 @@ function drawScope(
 		else g.lineTo(x, y);
 	}
 	g.stroke();
+	// Clipping readout (samples outside 0..1 or in the end bins).
+	const n = Math.max(1, hist.samples);
+	const lowPct = ((hist.y[0]! + hist.below[3]) / n) * 100;
+	const highPct = ((hist.y[255]! + hist.above[3]) / n) * 100;
+	g.fillStyle = c.label;
+	g.fillText(`▼ ${lowPct.toFixed(1)}%  ▲ ${highPct.toFixed(1)}%`, x0 + 2, y0 + 22);
 }

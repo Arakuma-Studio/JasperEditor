@@ -32,6 +32,7 @@ import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { multicamView } from '../multicam/model.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
+import { expandLumetriSpatial } from '../registry/lumetri-spatial.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
@@ -1458,6 +1459,8 @@ function colorEffectOf(c: Clip, doc: ProjectDocument, info: SequenceColorInfo): 
  */
 function visibleEffects(effects: EffectInstance[] | undefined): EffectInstance[] {
 	if (!effects?.length) return [];
-	if (!effects.some((fx) => defaultEffectRegistry.get(fx.effectId)?.passthrough)) return effects;
-	return effects.filter((fx) => !defaultEffectRegistry.get(fx.effectId)?.passthrough);
+	// color-grade: Lumetri instances with spatial steps get their GPU companion stage (registry/lumetri-spatial.ts).
+	const list = expandLumetriSpatial(effects);
+	if (!list.some((fx) => defaultEffectRegistry.get(fx.effectId)?.passthrough)) return list;
+	return list.filter((fx) => !defaultEffectRegistry.get(fx.effectId)?.passthrough);
 }
