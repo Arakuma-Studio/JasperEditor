@@ -1,6 +1,7 @@
 // Music remix on synthetic beat tracks (port of filmcraft `remix.rs` tests): tempo and beats, similarity, plans hit the
 // target at beat boundaries keeping intro and outro, determinism and parameters, refusals, equal-power render.
 import { describe, expect, it } from 'vitest';
+import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import {
 	analyzeMusic,
 	beatLead,
@@ -151,7 +152,9 @@ describe('remix plans', () => {
 		const { audio: long } = testMusic(SR, 110, 82, 3);
 		const t0 = performance.now();
 		const r = analyzeMusic(long, SR);
-		expect(performance.now() - t0).toBeLessThan(6000);
+		const ms = performance.now() - t0;
+		console.info(budgetReport('remix analysis, 3 min', ms, 6000));
+		expect(ms).toBeLessThan(budgetMs(6000));
 		expect(Math.abs(r.bpm - 110)).toBeLessThan(1);
 	});
 });

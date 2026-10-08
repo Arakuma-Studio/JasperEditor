@@ -1,6 +1,7 @@
 // S06 §9.1: Lumetri reference maths (CG-020…023), PCHIP curves, the M1 colour ops and colour-run fusion.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { budgetMs } from '../../../scripts/perf/budget.ts';
 import {
 	applyLut,
 	BLACK_WHITE_OP,
@@ -452,6 +453,6 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		console.info(
 			`[S06 §9.9] 33³ Lumetri bake (full grade): best CPU ${best.toFixed(2)} ms, wall ${Math.min(...wall).toFixed(2)} ms (budget 15 ms)`,
 		);
-		expect(best).toBeLessThan(30);
+		expect(best).toBeLessThan(budgetMs(30));
 	});
 });

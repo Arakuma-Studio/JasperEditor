@@ -24,6 +24,7 @@ import {
 } from '@jasper/project';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { describe, expect, it } from 'vitest';
+import { budgetMs } from '../../../scripts/perf/budget.ts';
 import { TEST_FX } from './fx-examples.ts';
 import { TEST_TRANSITIONS } from './transition-examples.ts';
 
@@ -35,7 +36,9 @@ const CHROME = [
 	'/usr/bin/chromium-browser',
 ].find((p): p is string => !!p && existsSync(p));
 
-const BUDGET = Number(process.env.FX_COMPILE_BUDGET_MS ?? 5000);
+/** previews (perf harness): the documented budget, scaled by the host's load unless PERF=1 (scripts/perf/budget.ts). */
+const BASE_BUDGET = Number(process.env.FX_COMPILE_BUDGET_MS ?? 5000);
+const BUDGET = budgetMs(BASE_BUDGET, { parallel: true });
 const WORKERS = Math.max(1, Number(process.env.FX_COMPILE_WORKERS ?? 2));
 const FILTER = process.env.FX_COMPILE_FILTER ?? '';
 /** A program still compiling after this long is reported as a timeout (the page is then discarded). */
@@ -279,7 +282,9 @@ async function timeAll(programs: Program[]): Promise<Timing[]> {
 }
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')('fx programs compile fast on SwiftShader', () => {
-	it(`every effect and transition program compiles within ${BUDGET} ms`, { timeout: 3_600_000 }, async () => {
+	it(`every effect and transition program compiles within ${BASE_BUDGET} ms (× host load unless PERF=1)`, {
+		timeout: 3_600_000,
+	}, async () => {
 		const programs = collectPrograms();
 		expect(programs.length).toBeGreaterThan(FILTER ? 0 : 100);
 		const t0 = Date.now();
