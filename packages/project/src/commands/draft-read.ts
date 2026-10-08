@@ -118,7 +118,7 @@ export function recordDelta<T>(rec: Readonly<Record<string, T>>): RecordDelta<T>
 	let cur: Record<string, T>;
 	if (DRAFT_READ_FAST) {
 		const s = stateOf(rec);
-		if (!s || !s.copy_) return { base: latest(rec), changed: [], deleted: [] };
+		if (!s?.copy_) return { base: latest(rec), changed: [], deleted: [] };
 		base = s.base_ as Record<string, T>;
 		cur = s.copy_ as Record<string, T>;
 	} else {
@@ -126,6 +126,62 @@ export function recordDelta<T>(rec: Readonly<Record<string, T>>): RecordDelta<T>
 		base = original(rec as never) as Record<string, T>;
 		cur = current(rec as never) as Record<string, T>;
 	}
+	if (DELTA_FAST) {
+		const d = draftDelta(stateOf(rec) as InternalState, base, cur);
+		if (d) return { base, ...d };
+	}
+	return { base, ...scanDelta(base, cur) };
+}
+
+/** Immer's bookkeeping read by `draftDelta` (checked by `probeDeltaPath`). */
+type InternalState = DraftState & {
+	assigned_?: Map<string, boolean>;
+	scope_?: { drafts_?: unknown[] };
+	parent_?: unknown;
+	key_?: unknown;
+};
+
+/**
+ * The changes of a draft record from Immer's bookkeeping instead of a scan: keys assigned or deleted on the record
+ * (`assigned_`) and the record's child drafts that were written (`scope_.drafts_` with this record as `parent_`):
+ * O(drafts of the transaction) instead of O(entries). Null when the bookkeeping is not there.
+ */
+function draftDelta<T>(
+	s: InternalState | undefined,
+	base: Record<string, T>,
+	cur: Record<string, T>,
+): { changed: string[]; deleted: string[] } | null {
+	const assigned = s?.assigned_;
+	const drafts = s?.scope_?.drafts_;
+	if (!(assigned instanceof Map) || !Array.isArray(drafts)) return null;
+	const keys = new Set<string>();
+	const deleted: string[] = [];
+	for (const [k, v] of assigned) {
+		if (v || Object.hasOwn(cur, k)) keys.add(k);
+		else if (Object.hasOwn(base, k)) deleted.push(k);
+	}
+	for (const d of drafts) {
+		const st = stateOf(d) as InternalState | undefined;
+		if (st && st.parent_ === s && st.modified_ && typeof st.key_ === 'string') keys.add(st.key_);
+	}
+	const changed: string[] = [];
+	for (const k of keys) {
+		if (!Object.hasOwn(cur, k)) continue;
+		const v = cur[k];
+		const b = Object.hasOwn(base, k) ? base[k] : undefined;
+		if (v === b) continue;
+		const st = stateOf(v);
+		if (st && !st.modified_ && st.base_ === b) continue;
+		changed.push(k);
+	}
+	return { changed, deleted };
+}
+
+/** The changes of a record by comparing every entry with its base (identity). */
+function scanDelta<T>(
+	base: Record<string, T>,
+	cur: Record<string, T>,
+): { changed: string[]; deleted: string[] } {
 	const changed: string[] = [];
 	let added = 0;
 	for (const k of Object.keys(cur)) {
@@ -140,7 +196,47 @@ export function recordDelta<T>(rec: Readonly<Record<string, T>>): RecordDelta<T>
 	const deleted: string[] = [];
 	if (Object.keys(cur).length !== Object.keys(base).length + added)
 		for (const k of Object.keys(base)) if (!Object.hasOwn(cur, k)) deleted.push(k);
-	return { base, changed, deleted };
+	return { changed, deleted };
+}
+
+/** Whether `draftDelta` reads Immer's bookkeeping right (checked once at load against `scanDelta`). */
+function probeDeltaPath(): boolean {
+	if (!DRAFT_READ_FAST) return false;
+	try {
+		let ok = true;
+		const base: Record<string, { n: number }> = { a: { n: 1 }, b: { n: 2 }, c: { n: 3 }, d: { n: 4 } };
+		produce(base, (d) => {
+			d.a!.n = 5; // edited in place
+			void d.b!.n; // only read
+			delete d.c; // removed
+			d.e = { n: 6 }; // added
+			d.d = base.d!; // assigned its own base value
+			const s = stateOf(d) as InternalState;
+			const fast = draftDelta(s, base, s.copy_ as Record<string, { n: number }>);
+			const slow = scanDelta(base, s.copy_ as Record<string, { n: number }>);
+			ok &&=
+				!!fast &&
+				JSON.stringify([[...fast.changed].sort(), fast.deleted]) ===
+					JSON.stringify([[...slow.changed].sort(), slow.deleted]) &&
+				JSON.stringify([...slow.changed].sort()) === '["a","e"]';
+		});
+		return ok;
+	} catch {
+		return false;
+	}
+}
+
+/** True when recordDelta reads Immer's bookkeeping (O(changes)); asserted by tests. */
+export const DELTA_FAST = probeDeltaPath();
+
+/** recordDelta by a full identity scan (tests compare it with the fast path). */
+export function recordDeltaByScan<T>(rec: Readonly<Record<string, T>>): RecordDelta<T> {
+	const s = stateOf(rec);
+	if (!s?.copy_) return { base: latest(rec), changed: [], deleted: [] };
+	return {
+		base: s.base_ as Record<string, T>,
+		...scanDelta(s.base_ as Record<string, T>, s.copy_ as Record<string, T>),
+	};
 }
 
 const normalized = new WeakSet<object>();

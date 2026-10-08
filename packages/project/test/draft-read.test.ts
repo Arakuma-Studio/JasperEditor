@@ -1,9 +1,21 @@
 // perf-core: proxy-free draft reads (src/commands/draft-read.ts). The fast path must be active with the Immer we
 // ship (an Immer upgrade that changes its internal state shape fails here instead of silently slowing editing down),
 // reads must see the draft's current values, and reading must not draft anything.
+
+import fc from 'fast-check';
 import { isDraft, produce } from 'immer';
 import { describe, expect, it } from 'vitest';
-import { cachedRead, DRAFT_READ_FAST, keysOf, latest, peekIn, valuesOf } from '../src/commands/draft-read.ts';
+import {
+	cachedRead,
+	DELTA_FAST,
+	DRAFT_READ_FAST,
+	keysOf,
+	latest,
+	peekIn,
+	recordDelta,
+	recordDeltaByScan,
+	valuesOf,
+} from '../src/commands/draft-read.ts';
 
 type Doc = { clips: Record<string, { id: string; start: number; tags: string[] }> };
 const base = (): Doc => ({
@@ -74,5 +86,42 @@ describe('draft-read', () => {
 			expect(cachedRead(cache, d.clips, count)).toBe(5);
 		});
 		expect(calls).toBe(3);
+	});
+
+	it('reads record changes from Immer bookkeeping exactly like a full scan', () => {
+		expect(DELTA_FAST).toBe(true);
+		const op = fc.record({
+			k: fc.integer({ min: 0, max: 7 }),
+			what: fc.integer({ min: 0, max: 5 }),
+			v: fc.nat(9),
+		});
+		fc.assert(
+			fc.property(fc.array(op, { maxLength: 25 }), (ops) => {
+				const base: Record<string, { n: number; deep: { m: number } }> = {};
+				for (let i = 0; i < 6; i++) base[`k${i}`] = { n: i, deep: { m: i } };
+				produce(base, (d) => {
+					for (const o of ops) {
+						const k = `k${o.k}`;
+						const c = d[k];
+						if (o.what === 0 && c)
+							c.n = o.v; // edit in place
+						else if (o.what === 1 && c)
+							c.deep.m = o.v; // edit deeper
+						else if (o.what === 2) delete d[k];
+						else if (o.what === 3)
+							d[k] = { n: o.v, deep: { m: 0 } }; // add or replace
+						else if (o.what === 4 && c)
+							void c.deep.m; // read only
+						else if (o.what === 5 && base[k]) d[k] = base[k]!; // back to its base value
+					}
+					const sort = (x: { changed: string[]; deleted: string[] }) => [
+						[...x.changed].sort(),
+						[...x.deleted].sort(),
+					];
+					expect(sort(recordDelta(d))).toEqual(sort(recordDeltaByScan(d)));
+				});
+			}),
+			{ numRuns: 500, seed: 7 },
+		);
 	});
 });

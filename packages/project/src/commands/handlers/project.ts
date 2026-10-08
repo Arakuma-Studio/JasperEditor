@@ -10,7 +10,7 @@ import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
-import { noNewOrphans } from '../tx-delta.ts';
+import { orphanedSynthetics } from '../tx-delta.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
@@ -81,8 +81,12 @@ function clipRefs(clips: Record<string, Clip>): ClipRefs {
 }
 
 export function collectOrphans(doc: DDoc): void {
-	// perf-core: after a transaction that gave up no reference, nothing can be orphaned (tx-delta.ts).
-	if (noNewOrphans(doc as ProjectDocument)) return;
+	// perf-core: after a normalized base only what the transaction gave up can be orphaned (tx-delta.ts).
+	const scoped = orphanedSynthetics(doc as ProjectDocument);
+	if (scoped) {
+		for (const id of scoped) delete doc.synthetics[id];
+		return;
+	}
 	// Runs after every transaction: reads through `peek` (no drafts for the thousands of untouched clips); only the
 	// records that lose entries are written through the draft.
 	const usedMedia = new Set<string>();
