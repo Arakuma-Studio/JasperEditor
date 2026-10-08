@@ -18,6 +18,7 @@ import {
 } from '../gaps/ExportFrameDialog.tsx';
 import { FIND_DIALOG, type FindScope, registerFindDialog } from '../gaps/FindDialog.tsx';
 import { registerGapsPreferencePages } from '../gaps/PreferencePages.tsx';
+import { PROJECT_MANAGER_DIALOG, registerProjectManagerDialog } from '../gaps/ProjectManagerDialog.tsx';
 import { PROJECT_SETTINGS_DIALOG, registerProjectSettingsDialog } from '../gaps/ProjectSettingsDialog.tsx';
 import {
 	ATTACH_PROXIES_DIALOG,
@@ -716,7 +717,27 @@ const audioChannels: UiCommand = {
 	},
 };
 
+// ---------------------------------------------------------------- File ▸ Project Manager… (PRJ-6)
+
+const projectManager: UiCommand = {
+	id: 'file.projectManager',
+	label: 'Project Manager…',
+	description:
+		'Collect the media of chosen sequences into a folder, or consolidate and transcode the used parts.',
+	scope: 'global',
+	agentExposed: true,
+	capability: 'engine',
+	when: (ctx) => !!ctx.session && Object.keys(ctx.session.getCommitted().sequences).length > 0,
+	disabledReason: () => 'Open a project with a sequence',
+	run: (ctx) => {
+		if (!ctx.session) return;
+		registerProjectManagerDialog();
+		ctx.ui.openDialog(PROJECT_MANAGER_DIALOG, { session: ctx.session, engine: ctx.engine });
+	},
+};
+
 gapsCommands.push(
+	projectManager,
 	audioChannels,
 	sequenceSettings,
 	newSequenceFromClip,

@@ -52,6 +52,8 @@ import {
 	MediaLocationSchema,
 	MediaOpenRequestSchema,
 	MediaOpenResponseSchema,
+	ProjectManagerEstimateSchema,
+	ProjectManagerRequestSchema,
 	ScratchCheckRequestSchema,
 	ScratchCheckSchema,
 	ScratchInfoSchema,
@@ -1108,6 +1110,21 @@ export const ROUTES = {
 		path: '/api/settings/gaps',
 		body: EngineGapsSettingsSchema.partial(),
 		response: EngineGapsInfoSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: File ▸ Project Manager (PRJ-6)
+	projectManagerPlan: {
+		method: 'POST',
+		path: '/api/project-manager/plan',
+		body: ProjectManagerRequestSchema,
+		response: ProjectManagerEstimateSchema,
+		owner: 'gaps',
+	},
+	projectManagerStart: {
+		method: 'POST',
+		path: '/api/project-manager',
+		body: ProjectManagerRequestSchema,
+		response: EngineJobSchema,
 		owner: 'gaps',
 	},
 	// ---- gaps: Create Proxies, ingest copies / transcodes (PRJ-8)

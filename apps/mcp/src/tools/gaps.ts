@@ -55,6 +55,7 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - export_frame writes the sequence frame at a time as png / jpeg / tiff / dpx (10-bit) / exr (linear half float) / bmp / tga to a folder on this machine (never overwriting), optionally importing it into the project.
 - get_sequence_settings / set_sequence_settings: Sequence Settings (timebase, frame size, pixel aspect ratio, fields, drop frame, audio sample rate, Mix channels). A non-square pixel aspect ratio means the sequence is edited at its display width (storageWidth × ratio) and exports at storageWidth with the ratio signalled; changing the timebase of a sequence with clips conforms them and needs conform: true (Premiere does not allow it); a frame size change takes reposition. new_sequence_from_clip makes a sequence matching a media item (size, rate, pixel aspect, fields) with the clip in it. Fields are kept with the sequence; exports are progressive (the plan warns FIELDS_PROGRESSIVE).
 - set_audio_channels: Clip ▸ Modify ▸ Audio Channels. Each routed clip = {streamIndex, map: source channel per clip channel (1 mono, 2 stereo, 6 for 5.1), mute: clip channels that play silence}. On timeline clips (clipIds: one routing per clip, typically a linked group) or on Project media items (itemIds: the audio clips future placements create; clips null = default). get_audio_channels lists a media's source channels and the routing.
+- project_manager: File ▸ Project Manager — mode "collect" copies every used file into destination, "consolidate" writes only the used part of each video / audio media plus handlesFrames (ProRes 422 HQ / WAV) and re-bases the clips; excludeUnused drops unchosen sequences and unused media items; includePreviews / includeProxies; dryRun only estimates the disk space. The copy is written as <destination>/<projectName>.jasper and registered as a new project (its id comes back).
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -948,6 +949,63 @@ export function registerGapsTools(ctx: ToolContext): void {
 				...(seqId ? { sequenceId: seqId } : {}),
 			});
 			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'project_manager',
+		{
+			title: 'Project Manager',
+			description:
+				'File ▸ Project Manager: a self-contained copy of a project in a folder on this machine. mode collect (whole files) or consolidate (the used part + handlesFrames, ProRes 422 HQ / WAV, clips re-based so every edit stays put). sequenceIds (default all; nested ones follow), excludeUnused (default true), includePreviews, includeProxies (collect), projectName. dryRun returns the estimate only; otherwise waits for the job and returns the report (new projectId, files written, offline media).',
+			input: {
+				projectId: ProjectIdArg,
+				destination: z.string().min(1),
+				mode: z.enum(['collect', 'consolidate']),
+				sequenceIds: z.array(z.string()).optional(),
+				excludeUnused: z.boolean().optional(),
+				handlesFrames: z.number().int().min(0).max(10_000).optional(),
+				includePreviews: z.boolean().optional(),
+				includeProxies: z.boolean().optional(),
+				projectName: z.string().min(1).max(200).optional(),
+				dryRun: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, dryRun, ...o }, extra) => {
+			const loaded = await loadDoc(ctx, projectId);
+			const envelope = makeEnvelope(loaded.doc, {
+				revision: loaded.revision ?? 0,
+				savedAt: new Date().toISOString(),
+				platform: 'mcp',
+			}) as never;
+			const options = {
+				destination: o.destination,
+				mode: o.mode,
+				...(o.sequenceIds ? { sequenceIds: o.sequenceIds } : {}),
+				excludeUnused: o.excludeUnused ?? true,
+				handlesFrames: o.handlesFrames ?? 30,
+				includePreviews: o.includePreviews ?? false,
+				includeProxies: o.includeProxies ?? true,
+				...(o.projectName ? { projectName: o.projectName } : {}),
+			};
+			if (dryRun)
+				return jsonResult(
+					await ctx.engine((c) => c.call('projectManagerPlan', { body: { envelope, options } })),
+				);
+			const job = await ctx.engine((c) => c.call('projectManagerStart', { body: { envelope, options } }));
+			const { job: done, timedOut } = await waitJob(ctx, job.id, 6 * 60 * 60 * 1000, extra);
+			const base = ctx.link.target?.url ?? '';
+			if (timedOut) return jsonResult({ ...jobBody(done, base), timedOut: true });
+			if (done.state !== 'succeeded')
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `Project Manager ${done.state}`,
+					undefined,
+					{ jobId: done.id },
+				);
+			return jsonResult({ jobId: done.id, ...(done.result as object) });
 		},
 	);
 }

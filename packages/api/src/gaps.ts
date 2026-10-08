@@ -132,3 +132,71 @@ export const EngineGapsInfoSchema = EngineGapsSettingsSchema.extend({
 		cpuCount: z.number(),
 	}),
 });
+
+// ---------------------------------------------------------------- File ▸ Project Manager (PRJ-6)
+
+export const ProjectManagerOptionsSchema = z.object({
+	/** Absolute folder the copy is written to (created when missing). */
+	destination: z.string().min(1).max(4096),
+	/** Collect Files and Copy to New Location, or Consolidate and Transcode. */
+	mode: z.enum(['collect', 'consolidate']),
+	/** Sequences to keep (with the sequences nested in them); absent / empty = every sequence. */
+	sequenceIds: z.array(z.string()).max(1000).optional(),
+	/** Exclude Unused Clips (Premiere default on). */
+	excludeUnused: z.boolean().default(true),
+	/** Handles of consolidated clips, frames (Premiere default 30). */
+	handlesFrames: z.number().int().min(0).max(10_000).default(30),
+	/** Include Preview Files: the render previews of the kept sequences, under `Render Files/`. */
+	includePreviews: z.boolean().default(false),
+	/** Include Proxies (collect only: consolidated media lose their proxies, as in Premiere). */
+	includeProxies: z.boolean().default(true),
+	/** Name of the new project (default: the project's name + " Copy"). */
+	projectName: z.string().min(1).max(200).optional(),
+});
+export type ProjectManagerOptions = z.infer<typeof ProjectManagerOptionsSchema>;
+
+/** `POST /api/project-manager/plan` (estimate, Premiere's "Calculate") and `POST /api/project-manager` (job). */
+export const ProjectManagerRequestSchema = z.object({
+	envelope: z.looseObject({ document: z.record(z.string(), z.unknown()) }),
+	options: ProjectManagerOptionsSchema,
+});
+export type ProjectManagerRequest = z.infer<typeof ProjectManagerRequestSchema>;
+
+export const ProjectManagerEstimateSchema = z.object({
+	originalBytes: z.number(),
+	resultBytes: z.number(),
+	files: z.array(
+		z.object({
+			mediaId: z.string(),
+			name: z.string(),
+			action: z.enum(['copy', 'trim', 'offline']),
+			sizeBytes: z.number(),
+			estimatedBytes: z.number(),
+		}),
+	),
+	keptSequences: z.number().int(),
+	droppedSequences: z.number().int(),
+	droppedItems: z.number().int(),
+	destinationFreeBytes: z.number().nullable(),
+});
+export type ProjectManagerEstimate = z.infer<typeof ProjectManagerEstimateSchema>;
+
+/** Result of a `project-manager` job: the report. */
+export const ProjectManagerResultSchema = z.object({
+	projectId: z.string(),
+	projectFile: z.string(),
+	files: z.array(
+		z.object({
+			mediaId: z.string(),
+			from: z.string().nullable(),
+			to: z.string().nullable(),
+			action: z.string(),
+		}),
+	),
+	skipped: z.array(z.object({ mediaId: z.string(), reason: z.string() })),
+	previews: z.number().int(),
+	bytes: z.number(),
+	droppedSequences: z.number().int(),
+	droppedItems: z.number().int(),
+});
+export type ProjectManagerResult = z.infer<typeof ProjectManagerResultSchema>;

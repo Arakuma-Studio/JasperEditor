@@ -2,6 +2,7 @@
 // audio channels, Warp Stabilizer, Auto Reframe, Morph Cut and Essential Graphics.
 
 export * from './audio-channels.ts';
+export * from './project-manager.ts';
 export * from './proxies.ts';
 export * from './sequence-format.ts';
 export * from './settings.ts';

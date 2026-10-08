@@ -103,6 +103,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			sep,
 			c('project.settings', 'Project Settings…'),
+			// gaps (PRJ-6)
+			c('file.projectManager', 'Project Manager…'),
 			sub('Engine', [c('engine.connect', 'Connect…'), c('engine.status', 'Engine Status')]),
 			sep,
 			c('app.goHome', 'Go to Home'),

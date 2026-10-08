@@ -15,6 +15,7 @@ import {
 	EngineGapsSettingsSchema,
 	MediaJobRequestSchema,
 	MediaOpenRequestSchema,
+	ProjectManagerRequestSchema,
 	ScratchCheckRequestSchema,
 	type ScratchLocation,
 } from '@jasper/api';
@@ -22,6 +23,7 @@ import type { FastifyInstance } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
 import { MediaJobService } from '../gaps/media-jobs.ts';
 import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
+import { ProjectManagerService } from '../gaps/project-manager.ts';
 import { renderOptimization, setRenderOptimization } from '../gaps/render-budget.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { atomicWriteJson, freeDiskBytes } from '../tools/fs.ts';
@@ -162,6 +164,20 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 			apply(next);
 			return info();
 		}),
+	);
+
+	// ---- File ▸ Project Manager (PRJ-6)
+	const pm = new ProjectManagerService(core);
+	pm.registerRunner();
+	app.post(
+		'/api/project-manager/plan',
+		guarded(async (req) => pm.estimate(parseOr400(ProjectManagerRequestSchema, req.body))),
+	);
+	app.post(
+		'/api/project-manager',
+		guarded(async (req, reply) =>
+			reply.code(202).send(await pm.submit(parseOr400(ProjectManagerRequestSchema, req.body))),
+		),
 	);
 
 	// ---- Create Proxies / ingest (PRJ-8)
