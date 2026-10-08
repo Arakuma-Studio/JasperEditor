@@ -102,6 +102,9 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [captionChoice, setCaptionChoice] = useState<CaptionExportChoice>(
 		remembered?.captions ?? DEFAULT_CAPTION_CHOICE,
 	);
+	// previews: Use Previews / Smart Render (Premiere's Export Settings options).
+	const [usePreviews, setUsePreviews] = useState(remembered?.usePreviews === true);
+	const [smartRender, setSmartRender] = useState(remembered?.smartRender === true);
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
@@ -116,6 +119,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setAudioChoice(r?.audio ?? {});
 		setCaptionChoice(r?.captions ?? DEFAULT_CAPTION_CHOICE);
 		setColorChoice(r?.color ?? DEFAULT_COLOR_CHOICE);
+		setUsePreviews(r?.usePreviews === true);
+		setSmartRender(r?.smartRender === true);
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -142,6 +147,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						audio: audioChoice,
 						captions: captionChoice,
 						color: colorChoice,
+						usePreviews,
+						smartRender,
 					})
 				: null,
 		[
@@ -153,6 +160,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 			audioChoice,
 			captionChoice,
 			colorChoice,
+			usePreviews,
+			smartRender,
 		],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
@@ -241,6 +250,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				audio: audioChoice,
 				captions: captionChoice,
 				color: colorChoice,
+				...(usePreviews ? { usePreviews } : {}),
+				...(smartRender ? { smartRender } : {}),
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -588,6 +599,34 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 								</option>
 							))}
 						</select>
+					</Field>
+					<Field label="Previews">
+						<label
+							className="flex items-center gap-2 text-pr-small"
+							title="Take the frames of rendered segments from their preview files (they are encoded once more)"
+						>
+							<input
+								type="checkbox"
+								data-testid="export-use-previews"
+								checked={usePreviews}
+								onChange={(e) => setUsePreviews(e.target.checked)}
+							/>
+							Use Previews
+						</label>
+					</Field>
+					<Field label="Smart Render">
+						<label
+							className="flex items-center gap-2 text-pr-small"
+							title="Copy untouched stretches of H.264 sources without re-encoding (ProRes sources are always copied)"
+						>
+							<input
+								type="checkbox"
+								data-testid="export-smart-render"
+								checked={smartRender}
+								onChange={(e) => setSmartRender(e.target.checked)}
+							/>
+							Copy untouched H.264 sources
+						</label>
 					</Field>
 					{seq?.captionTracks.length ? (
 						<div

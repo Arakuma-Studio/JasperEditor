@@ -61,6 +61,10 @@ export function buildExportSettings(
 		captions?: CaptionExportChoice;
 		/** color-mgmt: written colour space, bit depth and HDR metadata. */
 		color?: ExportColorChoice;
+		/** previews: take the frames of rendered segments from their preview files (Use Previews). */
+		usePreviews?: boolean;
+		/** previews: stream-copy untouched stretches of H.264 sources (ProRes copies automatically). */
+		smartRender?: boolean;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -111,6 +115,8 @@ export function buildExportSettings(
 		engine: choice.engine,
 		destination: { type: 'download' },
 		...(seq.captionTracks.length && choice.captions ? { captions: captionSettings(choice.captions) } : {}),
+		...(choice.usePreviews ? { usePreviews: true } : {}),
+		...(choice.smartRender ? { smartRender: true } : {}),
 	};
 }
 
@@ -381,6 +387,9 @@ type Remembered = {
 	fileName?: string;
 	codec?: VideoCodec;
 	encoder?: string;
+	/** previews */
+	usePreviews?: boolean;
+	smartRender?: boolean;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
@@ -417,6 +426,8 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(typeof v.encoder === 'string' && v.encoder ? { encoder: v.encoder } : {}),
 			...(v.audio && typeof v.audio === 'object' ? { audio: sanitizeAudioChoice(v.audio) } : {}),
 			...(v.color && typeof v.color === 'object' ? { color: sanitizeColorChoice(v.color) } : {}),
+			...(v.usePreviews === true ? { usePreviews: true } : {}),
+			...(v.smartRender === true ? { smartRender: true } : {}),
 		};
 	} catch {
 		return null;

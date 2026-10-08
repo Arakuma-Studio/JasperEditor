@@ -55,6 +55,13 @@ export function PlanSummary(props: { state: PlanState; engine: ExportEngineChoic
 				{plan.segments.length} {plan.segments.length === 1 ? 'segment' : 'segments'} · audio {plan.audio.mode}{' '}
 				· ~{formatDuration(plan.estimate.seconds)} to render · {sizeEstimateText(plan)}
 			</p>
+			{plan.smart ? (
+				<p className={plan.smart.used ? 'text-pr-success' : 'text-pr-muted'} data-testid="plan-smart">
+					{plan.smart.used
+						? `Smart render: ${plan.smart.copiedFrames} frames copied from the sources`
+						: `Smart render not used: ${plan.smart.reasons.slice(0, 2).join('; ') || 'nothing to copy'}`}
+				</p>
+			) : null}
 			{blocking.length ? (
 				<p className="text-pr-danger" data-testid="plan-blocking">
 					This sequence cannot be exported with the {engine} engine:
