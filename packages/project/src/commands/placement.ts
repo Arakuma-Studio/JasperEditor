@@ -267,7 +267,24 @@ export function trackCandidates(
 	hulls: ReadonlyMap<string, { lo: number; hi: number }>,
 	except: ReadonlySet<string> = new Set(),
 ): Map<string, TrackCandidates> {
-	const lists = new Map<string, { key: string; start: number }[]>();
+	const lists = scopedCandidates(seq, hulls, except) ?? scannedCandidates(seq, hulls, except);
+	const out = new Map<string, TrackCandidates>();
+	for (const [trackId, list] of lists) {
+		list.sort((x, y) => x.start - y.start);
+		const hull = hulls.get(trackId)!;
+		out.set(trackId, { trackId, lo: hull.lo, hi: hull.hi, ids: list.map((x) => x.key) });
+	}
+	return out;
+}
+
+type Candidate = { key: string; start: number };
+
+function scannedCandidates(
+	seq: DSeq,
+	hulls: ReadonlyMap<string, { lo: number; hi: number }>,
+	except: ReadonlySet<string>,
+): Map<string, Candidate[]> {
+	const lists = new Map<string, Candidate[]>();
 	for (const id of hulls.keys()) lists.set(id, []);
 	const raw = latest(seq.clips) as Record<string, Clip>;
 	for (const key in raw) {
@@ -277,13 +294,62 @@ export function trackCandidates(
 		if (hull && !except.has(c.id) && end(c) > hull.lo && c.start < hull.hi)
 			lists.get(c.trackId)!.push({ key, start: c.start });
 	}
-	const out = new Map<string, TrackCandidates>();
-	for (const [trackId, list] of lists) {
-		list.sort((x, y) => x.start - y.start);
-		const hull = hulls.get(trackId)!;
-		out.set(trackId, { trackId, lo: hull.lo, hi: hull.hi, ids: list.map((x) => x.key) });
+	return lists;
+}
+
+/** Clips of a finished clips record per track, in record order (cached per record). */
+const trackLists = new WeakMap<object, ReadonlyMap<string, readonly { key: string; clip: Clip }[]>>();
+function byTrackOf(clips: Readonly<Record<string, Clip>>) {
+	let m = trackLists.get(clips);
+	if (!m) {
+		const out = new Map<string, { key: string; clip: Clip }[]>();
+		for (const key of Object.keys(clips)) {
+			const clip = clips[key]!;
+			const list = out.get(clip.trackId) ?? [];
+			list.push({ key, clip });
+			out.set(clip.trackId, list);
+		}
+		m = out;
+		trackLists.set(clips, m);
 	}
-	return out;
+	return m;
+}
+
+/**
+ * scannedCandidates from the base record's per-track lists and what the transaction changed (recordDelta), without
+ * reading every clip. Null (scan instead) when not on a finished base or when two candidates share a start (their
+ * order would then depend on record order).
+ */
+function scopedCandidates(
+	seq: DSeq,
+	hulls: ReadonlyMap<string, { lo: number; hi: number }>,
+	except: ReadonlySet<string>,
+): Map<string, Candidate[]> | null {
+	if (!deltaScans()) return null;
+	const d = recordDelta(seq.clips as Readonly<Record<string, Clip>>);
+	if (!Object.isFrozen(d.base)) return null;
+	const touched = new Set([...d.changed, ...d.deleted]);
+	const cur = latest(seq.clips) as Readonly<Record<string, Clip>>;
+	const base = byTrackOf(d.base);
+	const lists = new Map<string, Candidate[]>();
+	for (const [trackId, hull] of hulls) {
+		const list: Candidate[] = [];
+		for (const { key, clip } of base.get(trackId) ?? [])
+			if (!touched.has(key) && !except.has(clip.id) && end(clip) > hull.lo && clip.start < hull.hi)
+				list.push({ key, start: clip.start });
+		lists.set(trackId, list);
+	}
+	for (const key of d.changed) {
+		const c = latest(cur[key]!);
+		const hull = hulls.get(c.trackId);
+		if (hull && !except.has(c.id) && end(c) > hull.lo && c.start < hull.hi)
+			lists.get(c.trackId)!.push({ key, start: c.start });
+	}
+	for (const list of lists.values()) {
+		const starts = new Set(list.map((x) => x.start));
+		if (starts.size !== list.length) return null;
+	}
+	return lists;
 }
 
 /**
