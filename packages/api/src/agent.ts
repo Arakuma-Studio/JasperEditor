@@ -231,6 +231,8 @@ export const AGENT_UI_ACTIONS = [
 	'hit',
 	'commands',
 	'command',
+	// previews: the window's playback and render-bar counters (MCP perf_stats)
+	'perf',
 ] as const;
 export type AgentUiAction = (typeof AGENT_UI_ACTIONS)[number];
 export const AgentUiRequestSchema = z.object({

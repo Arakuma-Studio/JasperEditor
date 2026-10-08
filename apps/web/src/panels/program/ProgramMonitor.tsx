@@ -28,6 +28,7 @@ import { MulticamOverlay } from '../../multicam/MulticamOverlay.tsx';
 import { installMulticamRecorder } from '../../multicam/recorder.ts';
 import { multicamViewStore } from '../../multicam/state.ts';
 import { usePlaybackPreviews } from '../../previews/hooks.ts';
+import { registerProgramPerf } from '../../previews/perf.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
@@ -274,12 +275,14 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	useEffect(() => {
 		const detach = transport.attachPlayer(driver);
 		const unregister = registerDriver(transport, driver);
+		const unregisterPerf = registerProgramPerf(session, driver);
 		return () => {
 			detach();
 			unregister();
+			unregisterPerf();
 			driver.dispose();
 		};
-	}, [transport, driver]);
+	}, [transport, driver, session]);
 	const playerRef = useCallback((p: PlayerRef | null) => driver.setPlayer(p), [driver]);
 	useEffect(() => {
 		void drawn; // the session resets the bound on every commit
@@ -334,9 +337,17 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		[instanceId, viewportRef],
 	);
 
-	// Dev-only handle for manual checks and agents without the bridge (window.__jasperMonitor).
+	// Dev handle for manual checks, playback benchmarks (scripts/performance.mjs) and agents (window.__jasperMonitor);
+	// also in builds where the agent bridge is enabled (`localStorage['jasper:agent-bridge'] = '1'`).
 	useEffect(() => {
-		if (!import.meta.env.DEV || typeof window === 'undefined') return;
+		if (typeof window === 'undefined') return;
+		let bridge = false;
+		try {
+			bridge = window.localStorage.getItem('jasper:agent-bridge') === '1';
+		} catch {
+			// storage unavailable
+		}
+		if (!import.meta.env.DEV && !bridge) return;
 		const w = window as unknown as { __jasperMonitor?: { session: EditorSession; driver: PlaybackDriver } };
 		w.__jasperMonitor = { session, driver };
 		return () => {

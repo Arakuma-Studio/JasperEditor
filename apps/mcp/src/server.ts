@@ -28,6 +28,7 @@ import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
 import { MULTICAM_GUIDE, registerMulticamTools } from './tools/multicam.ts';
 import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
+import { PREVIEWS_GUIDE, registerPreviewTools } from './tools/previews.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
@@ -87,6 +88,7 @@ const FULL_GUIDE = [
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
+	PREVIEWS_GUIDE,
 	STRUCTURE_GUIDE,
 	TIME_GUIDE,
 	COLOR_MGMT_GUIDE,
@@ -143,6 +145,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
+	registerPreviewTools(ctx);
 	registerStructureTools(ctx);
 	registerTimeTools(ctx);
 	registerColorMgmtTools(ctx);
