@@ -67,7 +67,7 @@ expectGolden(join(here, 'goldens', 'scenes', `${name}.png`), frame /* Rgba8 */, 
 - **Scene guard.** `assertDistinctScenes(frames)` fails when a scene is blank (luma σ < 3 or fewer than 8 colours)
   or two scenes are nearly identical (PSNR ≥ 50 dB): a render that silently produced a flat frame, or two scenes that
   do not exercise different code.
-- **Fingerprints** (`expectFingerprints(file, record, ±levels)`) are FilmCraft's compact form for large matrices: the
+- **Fingerprints** (`expectFingerprints(file, record, ±levels)`; the records under `goldens/` are excluded from Biome so each case stays on one line) are FilmCraft's compact form for large matrices: the
   4×4 mean-RGB grid of a frame (`fingerprint`, 48 numbers) per case in a JSON record, one case per line. **Pins**
   (`expectPins`) are exact values (checksums, counts). Both bless with `JASPER_BLESS=1`; `{complete: true}` also
   reports stale entries.
