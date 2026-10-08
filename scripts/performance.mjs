@@ -197,6 +197,7 @@ async function editorSection() {
 			await new Promise((res) => setTimeout(res, 800));
 			t.play(1);
 			const frames0 = driver.stats.framesShown;
+			const stalls0 = driver.stats.stallsRecovered;
 			const dropped0 = driver.stats.framesDropped;
 			const t0 = performance.now();
 			let raf = 0;
@@ -214,7 +215,7 @@ async function editorSection() {
 				dropped: st.framesDropped - dropped0,
 				fps: (st.framesShown - frames0) / dt,
 				uiFps: raf / dt,
-				stallsRecovered: st.stallsRecovered,
+				stallsRecovered: st.stallsRecovered - stalls0,
 				bufferingMs: Math.round(st.bufferingMs),
 			};
 		}, seconds);
@@ -231,7 +232,7 @@ async function editorSection() {
 			renderBar: bar,
 		};
 		console.log(
-			`  ${name}: ${out.shown} shown, ${out.dropped} dropped, ${out.fps} fps, UI ${out.uiFps} fps, bar ${bar.join(',') || '(none)'}`,
+			`  ${name}: ${out.shown} shown, ${out.dropped} dropped, ${out.fps} fps, UI ${out.uiFps} fps, watchdog kicks ${out.stallsRecovered}, bar ${bar.join(',') || '(none)'}`,
 		);
 		return out;
 	};
@@ -303,7 +304,7 @@ async function editorSection() {
 	budget('previewed GPU-effect playback (fps)', results[3].fps, 0.9 * fps, { higherIsBetter: true });
 	budget(
 		'stalls recovered by the watchdog',
-		results.reduce((n, r) => Math.max(n, r.stallsRecovered), 0),
+		results.reduce((n, r) => n + r.stallsRecovered, 0),
 		0,
 		{ scale: false },
 	);
@@ -317,7 +318,7 @@ async function exportSection() {
 	const media = reg.items[0];
 	const docOf = async () => (await api('/api/agent/query', { projectId, query: 'doc.get', args: {} })).result;
 	const tx = (commands) =>
-		api('/api/agent/tx', { projectId, protocol: 'jasper.tx/1', label: 'perf', commands });
+		api('/api/agent/tx', { projectId, transaction: { protocol: 'jasper.tx/1', label: 'perf', commands } });
 	const { mediaKey: _k, browserPlayable: _b, ...asset } = media;
 	await tx([{ type: 'media.register', asset: { ...asset, derivation: null } }]);
 	await tx([{ type: 'clip.place', source: { mediaByName: 'clip-a.mp4' }, at: 0 }]);
