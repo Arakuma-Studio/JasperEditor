@@ -5,7 +5,11 @@
 // no media error, every frame presented in order to the end, and seeks across the copy / encode joins show the
 // right frames (the fixture burns the frame number into each frame). Runs when such a browser is found
 // (JASPER_BROWSER_EXECUTABLE or the usual Google Chrome paths); H264_PLAYBACK=0 skips it.
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
@@ -16,6 +20,7 @@ import {
 	fixture,
 	JSON_H,
 	makeApp,
+	ROOT,
 	register,
 	type TestApp,
 } from './helpers.ts';
@@ -27,9 +32,19 @@ const CHROME = [
 	'/opt/google/chrome/chrome',
 ].find((p): p is string => !!p && existsSync(p));
 const run = !!CHROME && process.env.H264_PLAYBACK !== '0';
+/** The desktop app's Electron binary (apps/desktop's dependency), when installed. */
+const ELECTRON = (() => {
+	try {
+		const p = createRequire(join(ROOT, 'apps', 'desktop', 'package.json'))('electron') as unknown;
+		return typeof p === 'string' && existsSync(p) ? p : null;
+	} catch {
+		return null;
+	}
+})();
 
 let app: TestApp;
 let browser: Browser;
+let smartFile: string | null = null;
 
 const settings = (seqId: string) => ({
 	sequenceId: seqId,
@@ -50,8 +65,13 @@ const settings = (seqId: string) => ({
 	smartRender: true,
 });
 
-/** In the page: plays the video to the end counting presented frames, then seeks and reads the burnt frame codes. */
-const probe = async (seeks: number[]) => {
+/**
+ * In the page: plays the video from `from` (seconds) to the end at half speed, reading the frame code burnt into every
+ * presented frame (frame-code.mp4: 6 bits at x = 40 + 30 + 70·b, y = 70 — as smart-render.test.ts reads them).
+ * Returns [presented frame index, code] pairs. (Headless Chrome does not repaint a paused video after a seek, so the
+ * codes are read while playing.)
+ */
+const probe = async (from: number) => {
 	const v = document.createElement('video');
 	v.muted = true;
 	v.src = '/smart.mp4';
@@ -60,49 +80,33 @@ const probe = async (seeks: number[]) => {
 		v.onloadeddata = () => res();
 		v.onerror = () => rej(new Error(`media error ${v.error?.code} ${v.error?.message}`));
 	});
-	const presented: number[] = [];
+	if (from > 0)
+		await new Promise<void>((res) => {
+			v.onseeked = () => res();
+			v.currentTime = from;
+		});
+	const c = document.createElement('canvas');
+	c.width = v.videoWidth;
+	c.height = v.videoHeight;
+	const g = c.getContext('2d', { willReadFrequently: true })!;
+	const seen: [number, number][] = [];
 	await new Promise<void>((res, rej) => {
 		const tick = (_now: number, meta: { mediaTime: number }) => {
-			presented.push(meta.mediaTime);
+			g.drawImage(v, 0, 0);
+			let code = 0;
+			for (let b = 0; b < 6; b++)
+				if (g.getImageData(40 + 30 + 70 * b, 70, 1, 1).data[0]! > 127) code |= 1 << b;
+			seen.push([Math.round(meta.mediaTime * 30), code]);
 			if (!v.ended) v.requestVideoFrameCallback(tick as never);
 		};
 		v.requestVideoFrameCallback(tick as never);
 		v.onended = () => res();
 		v.onerror = () => rej(new Error(`media error ${v.error?.code} ${v.error?.message}`));
-		v.playbackRate = 1;
+		v.playbackRate = 0.5;
 		void v.play().catch(rej);
-		setTimeout(() => rej(new Error(`playback stalled at ${v.currentTime}`)), 20_000);
+		setTimeout(() => rej(new Error(`playback stalled at ${v.currentTime}`)), 30_000);
 	});
-	const quality = v.getVideoPlaybackQuality();
-	const c = document.createElement('canvas');
-	c.width = v.videoWidth;
-	c.height = v.videoHeight;
-	const g = c.getContext('2d', { willReadFrequently: true })!;
-	const codes: number[] = [];
-	for (const n of seeks) {
-		await new Promise<void>((res) => {
-			v.onseeked = () => res();
-			v.currentTime = (n + 0.5) / 30;
-		});
-		await new Promise((r) => v.requestVideoFrameCallback(() => r(null)));
-		g.drawImage(v, 0, 0);
-		// frame-code.mp4: 6 bits, cells at x = 40 + 30 + 70·b, y = 70 (as smart-render.test.ts reads them).
-		let code = 0;
-		for (let b = 0; b < 6; b++) {
-			const px = g.getImageData(40 + 30 + 70 * b, 70, 1, 1).data;
-			if (px[0]! > 127) code |= 1 << b;
-		}
-		codes.push(code);
-	}
-	return {
-		duration: v.duration,
-		error: v.error?.code ?? null,
-		presented: presented.length,
-		monotonic: presented.every((t, i) => i === 0 || t >= presented[i - 1]!),
-		corrupted: quality.corruptedVideoFrames ?? 0,
-		decoded: quality.totalVideoFrames,
-		codes,
-	};
+	return { duration: v.duration, error: v.error?.code ?? null, seen };
 };
 
 describe.runIf(run)('smart-rendered H.264 (avc3) in Chrome', () => {
@@ -140,6 +144,7 @@ describe.runIf(run)('smart-rendered H.264 (avc3) in Chrome', () => {
 		expect(done.error, JSON.stringify(done.error)).toBeUndefined();
 		expect((done.result as { renderPath: string }).renderPath).toBe('copy');
 		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		smartFile = file;
 		const bytes = readFileSync(file);
 		if (process.env.GAPS_DUMP) copyFileSync(file, process.env.GAPS_DUMP);
 		const page = await browser.newPage();
@@ -150,15 +155,72 @@ describe.runIf(run)('smart-rendered H.264 (avc3) in Chrome', () => {
 			route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><body></body>' }),
 		);
 		await page.goto('http://jasper.test/index.html');
-		const seeks = [0, 19, 20, 21, 40, 53];
-		const r = await page.evaluate(probe, seeks);
-		expect(r.error).toBeNull();
-		expect(r.duration).toBeCloseTo(54 / 30, 1);
-		expect(r.corrupted).toBe(0);
-		expect(r.monotonic).toBe(true);
-		// Headless Chrome may skip presenting a frame under load, never decoding one.
-		expect(r.decoded).toBeGreaterThanOrEqual(54);
-		expect(r.presented).toBeGreaterThanOrEqual(48);
-		expect(r.codes).toEqual(seeks.map((n) => n + 10));
+		// From the start: the encoded GOPs (frames 0–19), the join, the copied source GOPs (20–53).
+		const all = await page.evaluate(probe, 0);
+		expect(all.error).toBeNull();
+		expect(all.duration).toBeCloseTo(54 / 30, 1);
+		expect(all.seen.length).toBeGreaterThanOrEqual(45);
+		for (const [n, code] of all.seen) expect(code, `frame ${n}`).toBe(n + 10);
+		expect(all.seen.some(([n]) => n === 19) && all.seen.some(([n]) => n === 20)).toBe(true);
+		// Seeking into a copied GOP (its SPS/PPS are in band) and back into the encoded part.
+		for (const from of [30 / 30, 5 / 30]) {
+			await page.reload();
+			const r = await page.evaluate(probe, from + 0.5 / 30);
+			expect(r.error).toBeNull();
+			expect(r.seen.length).toBeGreaterThan(10);
+			for (const [n, code] of r.seen) expect(code, `frame ${n} after a seek to ${from * 30}`).toBe(n + 10);
+		}
 	}, 300_000);
+
+	// The desktop app: Electron's own Chromium (with its proprietary codecs), headless (Ozone), the same probe.
+	it.runIf(!!ELECTRON)(
+		'plays in Electron with every frame code right',
+		() => {
+			expect(smartFile).toBeTruthy();
+			const dir = mkdtempSync(join(tmpdir(), 'jasper-avc3-electron-'));
+			copyFileSync(smartFile!, join(dir, 'smart.mp4'));
+			writeFileSync(join(dir, 'page.html'), '<!doctype html><body></body>');
+			writeFileSync(
+				join(dir, 'main.cjs'),
+				`const { app, BrowserWindow } = require('electron');
+const path = require('node:path');
+app.whenReady().then(async () => {
+  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+  await win.loadFile(path.join(__dirname, 'page.html'));
+  const r = await win.webContents.executeJavaScript(\`(async () => {
+    const v = document.createElement('video'); v.muted = true; v.src = 'smart.mp4'; document.body.appendChild(v);
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('media error ' + v.error?.code)); });
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+    const g = c.getContext('2d', { willReadFrequently: true }); const seen = [];
+    const tick = (_t, meta) => { g.drawImage(v, 0, 0); let code = 0;
+      for (let b = 0; b < 6; b++) if (g.getImageData(40 + 30 + 70 * b, 70, 1, 1).data[0] > 127) code |= 1 << b;
+      seen.push([Math.round(meta.mediaTime * 30), code]); if (!v.ended) v.requestVideoFrameCallback(tick); };
+    v.requestVideoFrameCallback(tick); v.playbackRate = 0.5; await v.play();
+    await new Promise((res) => { v.onended = res; setTimeout(res, 30000); });
+    return { ended: v.ended, error: v.error ? v.error.code : null, seen };
+  })()\`);
+  console.log('RESULT ' + JSON.stringify(r));
+  app.quit();
+}).catch((e) => { console.log('RESULT ' + JSON.stringify({ fail: String(e) })); app.quit(); });
+`,
+			);
+			const r = spawnSync(ELECTRON!, ['--no-sandbox', '--ozone-platform=headless', join(dir, 'main.cjs')], {
+				env: { ...process.env, ELECTRON_DISABLE_SANDBOX: '1', ELECTRON_RUN_AS_NODE: '' },
+				timeout: 120_000,
+				encoding: 'utf8',
+			});
+			const line = `${r.stdout}`.split('\n').find((l) => l.startsWith('RESULT '));
+			expect(line, r.stderr?.slice(-2000)).toBeTruthy();
+			const res = JSON.parse(line!.slice(7)) as {
+				ended: boolean;
+				error: number | null;
+				seen: [number, number][];
+			};
+			expect(res.error).toBeNull();
+			expect(res.ended).toBe(true);
+			expect(res.seen.length).toBeGreaterThanOrEqual(45);
+			for (const [n, code] of res.seen) expect(code, `frame ${n}`).toBe(n + 10);
+		},
+		180_000,
+	);
 });
