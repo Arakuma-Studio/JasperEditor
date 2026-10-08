@@ -251,16 +251,20 @@ export function collectPorted(repo) {
 			/^[A-Za-z0-9.+-]+(?:\s+(?:OR|AND|WITH)\s+[A-Za-z0-9.+-]+)*/.exec(
 				licenseLine.replace(/^[\s*"'`(]+/, ''),
 			)?.[0] ?? null;
-		const copyright =
-			field('Copyright')?.replace(/^(?!copyright)/i, 'Copyright ') ??
-			([
-				...new Set(
-					[...text.matchAll(/^.*\bcopyright\s*(?:\(c\)|©).*$/gim)].map((m) =>
-						m[0].replace(/^[-*\s]+/, '').trim(),
-					),
-				),
-			].join('; ') ||
-				null);
+		// One record can name several holders (`A; B` on the field, or several copyright lines): each once.
+		const copyrights = [
+			...new Set(
+				(field('Copyright')
+					? field('Copyright')
+							.split(/\s*;\s*/)
+							.map((c) => c.replace(/^(?!copyright)/i, 'Copyright '))
+					: [...text.matchAll(/^.*\bcopyright\s*(?:\(c\)|©).*$/gim)].map((m) => m[0].replace(/^[-*\s]+/, ''))
+				)
+					.map(normalizeCopyright)
+					.filter(Boolean),
+			),
+		];
+		const copyright = copyrights.join('; ') || null;
 		const missing = [
 			!upstream && 'an upstream URL (`- **Upstream:** https://…`)',
 			!license && 'a licence (`- **Licence:** MIT OR Apache-2.0`)',
@@ -280,12 +284,36 @@ export function collectPorted(repo) {
 				);
 		const title = /^#\s+(.+)$/m.exec(text)?.[1].trim() ?? name.slice(0, -3);
 		const body = text.replace(/^#\s+.+\n*/, '').trim();
-		records.push({ file: rel, title, upstream, license, licenseIds, copyright, body });
+		records.push({ file: rel, title, upstream, license, licenseIds, copyright, copyrights, body });
 	}
 	return records;
 }
 
-/** Licence texts of the ids the records use: `[{id, text, copyrights}]`. */
+/** One spelling per copyright line: single spaces, no trailing full stop. */
+function normalizeCopyright(line) {
+	return line
+		.replace(/\s+/g, ' ')
+		.replace(/[.\s]+$/, '')
+		.trim();
+}
+
+/**
+ * The distinct copyright lines of the records, each once, with the records it covers (per-record attribution
+ * without repeating the same line for every record ported from one project): `[{copyright, records}]`, sorted.
+ */
+export function portedCopyrightHolders(records) {
+	const by = new Map();
+	for (const r of records)
+		for (const c of r.copyrights ?? [r.copyright]) {
+			if (!by.has(c)) by.set(c, []);
+			by.get(c).push(`\`${r.file.split('/').pop().replace(/\.md$/, '')}\``);
+		}
+	return [...by.entries()]
+		.map(([copyright, titles]) => ({ copyright, records: titles }))
+		.sort((a, b) => a.copyright.localeCompare(b.copyright));
+}
+
+/** Licence texts of the ids the records use: `[{id, text, copyrights}]` (each copyright line once). */
 export function portedLicenseTexts(repo, records) {
 	const ids = [...new Set(records.flatMap((r) => r.licenseIds))].sort();
 	return ids.map((id) => ({
@@ -293,7 +321,9 @@ export function portedLicenseTexts(repo, records) {
 		text: readFileSync(join(repo, LICENSE_TEXTS_DIR, `${id}.txt`), 'utf8')
 			.replace(/\r\n/g, '\n')
 			.trimEnd(),
-		copyrights: [...new Set(records.filter((r) => r.licenseIds.includes(id)).map((r) => r.copyright))].sort(),
+		copyrights: portedCopyrightHolders(records.filter((r) => r.licenseIds.includes(id))).map(
+			(h) => h.copyright,
+		),
 	}));
 }
 
@@ -342,6 +372,8 @@ export function renderNotices(notices, ported = [], portedTexts = []) {
 			lines.push(`### ${t.file}`, '', '```text', t.text.replaceAll('```', '`​``'), '```', '');
 	}
 	if (ported.length) {
+		const holders = portedCopyrightHolders(ported);
+		const holderNo = new Map(holders.map((h, i) => [h.copyright, i + 1]));
 		lines.push(
 			PORTED_START,
 			'',
@@ -352,12 +384,19 @@ export function renderNotices(notices, ported = [], portedTexts = []) {
 			'',
 			'| Record | Upstream | Licence | Copyright |',
 			'|---|---|---|---|',
-			...ported.map((r) => `| ${r.title} | ${r.upstream} | ${r.license} | ${r.copyright} |`),
+			...ported.map(
+				(r) =>
+					`| ${r.title} | ${r.upstream} | ${r.license} | ${(r.copyrights ?? [r.copyright]).map((c) => `[${holderNo.get(c)}]`).join(' ')} |`,
+			),
+			'',
+			'Copyright holders (the numbers in the table), with the records (`licenses/ported/<name>.md`) each covers:',
+			'',
+			...holders.map((h, i) => `${i + 1}. ${h.copyright}: ${h.records.join(', ')}`),
 			'',
 		);
 		for (const r of ported) lines.push(`## ${r.title}`, '', `Record: \`${r.file}\``, '', r.body, '');
 		for (const t of portedTexts) {
-			lines.push(`## Licence text: ${t.id}`, '', `Applies to: ${t.copyrights.join('; ')}`, '');
+			lines.push(`## Licence text: ${t.id}`, '', 'Applies to:', '', ...t.copyrights.map((c) => `- ${c}`), '');
 			lines.push('```text', t.text.replaceAll('```', '`​``'), '```', '');
 		}
 		lines.push(PORTED_END, '');

@@ -9249,34 +9249,41 @@ licence texts below).
 
 | Record | Upstream | Licence | Copyright |
 |---|---|---|---|
-| Code ported by the `audio-fx` workstream (audio effects, Essential Sound, Music Remix) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Code ported by the `audio-mix` workstream (loudness, true peak, mixer, ducking, voice-over) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Ported code: caption files, transcripts and text-based editing (wp `captions`) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Code ported by the `color-grade` workstream from EffectCraft (Lumetri HSL Secondary, vignette, hue curves) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Code ported by the `color-grade` workstream from FilmCraft (Lumetri Scopes, Colour Match, Lumetri details) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Custom OpenColorIO configurations, ASC CDL, colour spaces with Bradford adaptation | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Colour science: camera log curves, gamuts, colour-managed transforms, HDR grading signal, LUT files | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Code ported by the `edit-structure` workstream | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Editorial UX: trim mode, split-edit ripple edits, edit property tests, keyboard layouts | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| After Effects-style expressions (object model, array maths, controls) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Lottie export mapping (workstream imports) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Code ported by the `interchange` workstream | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Blend-mode formulas, Dissolve noise, Bezier ease inverse, roving and Auto Bezier rules (keyframes-blend) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Ported code: masks and track mattes (wp `masks`) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Agent-interface QA harness, UI automation audit and CLI conventions (from EffectCraft) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| MCP conventions: strict arguments, annotations, export progress and cancellation (from FilmCraft) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Code ported by the `multicam` workstream | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Contributor rules, project-file and crash-recovery docs, layering and asset checks (process workstream) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Code ported by the `roto` workstream (Roto Brush, object mattes, keying and matte tools, face tracking) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Shape layers: path operators, curve booleans, offset, variable strokes, stacking semantics | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Code ported by the `sim-warp` workstream (particles and simulations, mesh and brush warps, Puppet) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Ported code: Whisper decoding and word-timestamp algorithms (wp `speech`) | https://github.com/openai/whisper | MIT | Copyright (c) 2022 OpenAI |
-| Ported code: speech-to-text front end, word timing, VAD and speaker labelling (wp `speech`) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
-| Text animators: selectors, character transforms, text on a path | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Polygon triangulation with holes (earcut), ported by the `three-d` workstream | https://github.com/mapbox/earcut | ISC | Copyright (c) 2016, Mapbox |
-| Code ported by the `three-d` workstream (3D layers, cameras, lights, Classic 3D, 3D Camera Tracker) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Optical flow, frame interpolation and cut detection (workstream time) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors |
-| Scene Edit Detection options and application (workstream time) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors |
+| Code ported by the `audio-fx` workstream (audio effects, Essential Sound, Music Remix) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Code ported by the `audio-mix` workstream (loudness, true peak, mixer, ducking, voice-over) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Ported code: caption files, transcripts and text-based editing (wp `captions`) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Code ported by the `color-grade` workstream from EffectCraft (Lumetri HSL Secondary, vignette, hue curves) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Code ported by the `color-grade` workstream from FilmCraft (Lumetri Scopes, Colour Match, Lumetri details) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Custom OpenColorIO configurations, ASC CDL, colour spaces with Bradford adaptation | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Colour science: camera log curves, gamuts, colour-managed transforms, HDR grading signal, LUT files | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Code ported by the `edit-structure` workstream | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Editorial UX: trim mode, split-edit ripple edits, edit property tests, keyboard layouts | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| After Effects-style expressions (object model, array maths, controls) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Lottie export mapping (workstream imports) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Code ported by the `interchange` workstream | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] [3] |
+| Blend-mode formulas, Dissolve noise, Bezier ease inverse, roving and Auto Bezier rules (keyframes-blend) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Ported code: masks and track mattes (wp `masks`) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] [4] |
+| Agent-interface QA harness, UI automation audit and CLI conventions (from EffectCraft) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| MCP conventions: strict arguments, annotations, export progress and cancellation (from FilmCraft) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Code ported by the `multicam` workstream | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Contributor rules, project-file and crash-recovery docs, layering and asset checks (process workstream) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] [4] |
+| Code ported by the `roto` workstream (Roto Brush, object mattes, keying and matte tools, face tracking) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Shape layers: path operators, curve booleans, offset, variable strokes, stacking semantics | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Code ported by the `sim-warp` workstream (particles and simulations, mesh and brush warps, Puppet) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Ported code: Whisper decoding and word-timestamp algorithms (wp `speech`) | https://github.com/openai/whisper | MIT | [2] |
+| Ported code: speech-to-text front end, word timing, VAD and speaker labelling (wp `speech`) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+| Text animators: selectors, character transforms, text on a path | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Polygon triangulation with holes (earcut), ported by the `three-d` workstream | https://github.com/mapbox/earcut | ISC | [1] |
+| Code ported by the `three-d` workstream (3D layers, cameras, lights, Classic 3D, 3D Camera Tracker) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Optical flow, frame interpolation and cut detection (workstream time) | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [3] |
+| Scene Edit Detection options and application (workstream time) | https://github.com/storytold/filmcraft | MIT OR Apache-2.0 | [4] |
+
+Copyright holders (the numbers in the table), with the records (`licenses/ported/<name>.md`) each covers:
+
+1. Copyright (c) 2016, Mapbox: `three-d-earcut`
+2. Copyright (c) 2022 OpenAI: `speech-openai-whisper`
+3. Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors: `color-grade-effectcraft`, `color-mgmt-effectcraft`, `expressions`, `imports`, `interchange`, `keyframes-blend`, `masks`, `mcp-cli-effectcraft`, `process`, `roto`, `shapes`, `sim-warp`, `text-animators`, `three-d`, `time-effectcraft`
+4. Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors: `audio-fx`, `audio-mix`, `captions`, `color-grade-filmcraft`, `color-mgmt-filmcraft`, `edit-structure`, `edit-ux`, `interchange`, `masks`, `mcp-cli-filmcraft`, `multicam`, `process`, `speech`, `time-filmcraft`
 
 ## Code ported by the `audio-fx` workstream (audio effects, Essential Sound, Music Remix)
 
@@ -9964,7 +9971,10 @@ ported. FilmCraft renders Optical Flow as frame blending; ours is a real motion-
 
 ## Licence text: Apache-2.0
 
-Applies to: Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors
+Applies to:
+
+- Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors
+- Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors
 
 ```text
 
@@ -10148,7 +10158,9 @@ Applies to: Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; C
 
 ## Licence text: ISC
 
-Applies to: Copyright (c) 2016, Mapbox
+Applies to:
+
+- Copyright (c) 2016, Mapbox
 
 ```text
 ISC License
@@ -10165,7 +10177,11 @@ PERFORMANCE OF THIS SOFTWARE.
 
 ## Licence text: MIT
 
-Applies to: Copyright (c) 2022 OpenAI; Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors; Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors
+Applies to:
+
+- Copyright (c) 2022 OpenAI
+- Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors
+- Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors
 
 ```text
 MIT License
