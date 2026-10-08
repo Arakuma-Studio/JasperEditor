@@ -191,7 +191,9 @@ these precise reasons:
    canvas steps (`ctx.filter`).
 3. *Nested sequences* with scopes inside would need recursive flattening into a canvas picture.
 These are a rewrite of the shared composition core (keyframes-blend, edit-structure, three-d, color-mgmt code and their
-GL / Remotion suites); the remaining combinations still fail fast with CANVAS_NESTED (never a different picture).
+GL / Remotion suites); the remaining combinations still failed fast with CANVAS_NESTED. **Done since** by the compositor
+workstream ([compositor.md](compositor.md)): a flat compositor for exactly the stacks whose scopes would nest, with the
+padded adjustment layouts, 3D runs on a texture backdrop and nested sequences as canvas sources.
 
 ## 6. Smart rendering (ARCHITECTURE D-11 `copy`)
 
@@ -307,7 +309,6 @@ clipIds?, wait?}` · `delete_render_files {scope: all|range, range?}` · `perf_s
   previews of the working signal (the display stage converts as for live frames).
 - H.264 smart-render outputs are `avc3` with changing parameter sets: ffmpeg/ffprobe decode them cleanly (tested);
   browser playback of such files was not verified (my headless-Chrome `<video>` probe could not read any file's frames).
-- Scope nesting: see §5 — adjustment layers with GPU effects over GL blends, linear runs split by adjustments, and 3D
-  around them still fail fast with CANVAS_NESTED.
+- Scope nesting (§5): lifted by the compositor workstream's flat compositor ([compositor.md](compositor.md)).
 - ARCHITECTURE §13 command / gesture budgets are missed (§7).
 - Playback measurements are from a CPU-only, shared host (SwiftShader, software decode): see docs/performance.md.

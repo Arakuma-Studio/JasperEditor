@@ -58,6 +58,7 @@ import {
 } from 'remotion';
 import { ScopedHtmlInCanvas } from '../fx/canvas-scope.tsx';
 import { CompositeChip } from '../fx/composite.tsx';
+import { usePublishFlatChain } from '../fx/flat.tsx';
 import { fxHost } from '../fx/host.ts';
 import type { FxGpuState } from '../fx/status.ts';
 import type { LayerTap } from '../types.ts';
@@ -484,24 +485,18 @@ function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageE
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
 
 /**
- * Everything below a track that holds a 3D clip: captured; at frames where a run tops out on this track the run is
- * drawn over it. `offset` = the doc frame at the enclosing Sequence's frame 0.
+ * The 3D run a scope draws at the current frame over its backdrop (the chain's source): the run topping out on track
+ * `trackIndex`, its members' delivered pictures, models and environment image, and the `fx3dRun` descriptor (empty
+ * while a render still waits for a picture). Shared by `Scene3DScope` (HTML-in-Canvas capture of the stack below) and
+ * the flat compositor (fx/flat.tsx), which runs the descriptor on its accumulated composite.
  */
-export function Scene3DScope({
-	scene,
-	trackIndex,
-	comp,
-	offset,
-	isPreview,
-	children,
-}: {
-	scene: Scene3DValue;
-	trackIndex: number;
-	comp: { width: number; height: number };
-	offset: number;
-	isPreview: boolean;
-	children?: ReactNode;
-}) {
+export function useScene3DRun(
+	scene: Scene3DValue,
+	trackIndex: number,
+	comp: { width: number; height: number },
+	offset: number,
+	isPreview: boolean,
+) {
 	const frame = useCurrentFrame() + offset;
 	const rendering = getRemotionEnvironment().isRendering;
 	const hub = scene.hubOf(trackIndex)!;
@@ -608,6 +603,31 @@ export function Scene3DScope({
 		envImage,
 		modelKey,
 	]);
+	return { frame, run, complete, effects };
+}
+
+/**
+ * Everything below a track that holds a 3D clip: captured; at frames where a run tops out on this track the run is
+ * drawn over it. `offset` = the doc frame at the enclosing Sequence's frame 0.
+ */
+export function Scene3DScope({
+	scene,
+	trackIndex,
+	comp,
+	offset,
+	isPreview,
+	children,
+}: {
+	scene: Scene3DValue;
+	trackIndex: number;
+	comp: { width: number; height: number };
+	offset: number;
+	isPreview: boolean;
+	children?: ReactNode;
+}) {
+	const rendering = getRemotionEnvironment().isRendering;
+	const gpu = scene.mode.mode === 'gpu';
+	const { frame, run, complete, effects } = useScene3DRun(scene, trackIndex, comp, offset, isPreview);
 	const hold = useRef<number | null>(null);
 	if (rendering && run && !complete && hold.current === null)
 		hold.current = delayRender(`3D layers at frame ${frame}`);
@@ -647,6 +667,34 @@ export function Scene3DScope({
 			</div>
 		</ScopedHtmlInCanvas>
 	);
+}
+
+/**
+ * compositor: a 3D run bottom of a flat stack (fx/flat.tsx): nothing is captured, the run's `fx3dRun` at the current
+ * frame is published for the compositor, which draws it over the composite of everything below.
+ */
+export function FlatRun3D({
+	scene,
+	trackIndex,
+	comp,
+	offset,
+	isPreview,
+}: {
+	scene: Scene3DValue;
+	trackIndex: number;
+	comp: { width: number; height: number };
+	offset: number;
+	isPreview: boolean;
+}) {
+	const { frame, run, complete, effects } = useScene3DRun(scene, trackIndex, comp, offset, isPreview);
+	usePublishFlatChain(`run3d:${trackIndex}`, {
+		frame,
+		effects,
+		layout: null,
+		ready: !run || (complete && effects.length > 0),
+		key: effects.length ? ((effects[0]!.params as { key?: string }).key ?? 'run') : run ? 'pending' : 'idle',
+	});
+	return null;
 }
 
 /** The fallback chip (Player without the GPU scope) at frames where 3D layers are drawn; renders cancel. */

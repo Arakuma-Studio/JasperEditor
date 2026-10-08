@@ -11,7 +11,9 @@
 //   twice.
 import type { RenderSnapshot } from '@jasper/project';
 import { Audio, Video } from '@remotion/media';
+import { useContext } from 'react';
 import { AbsoluteFill, Sequence } from 'remotion';
+import { FlatDisplayContext } from './fx/flat.tsx';
 import type { RenderOptions } from './types.ts';
 
 /** A preview file shown over sequence frames [start, start + frames); `offset` = its first frame used (audio). */
@@ -149,6 +151,8 @@ export function PreviewLayers(props: {
 	premount: number;
 	options: RenderOptions;
 }) {
+	// compositor: when the display stage does not capture (a flat stack), preview files get the display transform here.
+	const display = useContext(FlatDisplayContext);
 	if (!props.options.isPreview) return null;
 	return (
 		<>
@@ -161,7 +165,7 @@ export function PreviewLayers(props: {
 					premountFor={props.premount}
 				>
 					<AbsoluteFill data-render-preview={p.url}>
-						<Video src={p.url} muted style={FILL} />
+						<Video src={p.url} muted style={FILL} {...(display ? { effects: display } : {})} />
 					</AbsoluteFill>
 				</Sequence>
 			))}

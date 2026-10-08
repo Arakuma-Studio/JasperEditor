@@ -195,6 +195,12 @@ procedurally generated scenes; written by `JASPER_BLESS=1`.
 | `packages/compositions/test/goldens/scenes/captions.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/card.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/colour-run.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/combo-3d-blend-adjust.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/combo-adjust-over-gl-blend.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/combo-blend-adjust-blend.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/combo-gl-blends-stacked.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/combo-hdr-display-scope.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/combo-linear-adjust-between.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/crop-corner-pin.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/fx-adjust-composite.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/compositions/test/goldens/scenes/fx-blur-sharpen.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
