@@ -15,5 +15,8 @@
     "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
     "acorn": "^8.18.0",
     "quickjs-emscripten-core": "0.32.0"
+  },
+  "devDependencies": {
+    "@jasper/testkit": "workspace:*"
   }
 }

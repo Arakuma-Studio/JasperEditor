@@ -2,6 +2,7 @@
 // ../transition-sapphire-dissolves-gl.test.ts): plans transition stages of the sapphire-dissolves family exactly as
 // TransitionStage does (planGpuTransition + runShaderPlan on the fx GPU host) over procedural sides and reports
 // pixels / timings.
+import '../gl-poison.ts';
 import {
 	planGpuTransition,
 	TRANSITION_FAMILIES,

@@ -306,6 +306,13 @@ Free for every entry (no plumbing):
 pnpm vitest run packages/project/test/transition-framework.test.ts packages/compositions/test/transition-gl.test.ts
 ```
 
+**Golden fingerprints (golden-fuzz).** The same runs compare every GPU transition (p = 0.25 / 0.5 / 0.75) and every
+GPU effect (defaults and perturbed parameters) with `packages/compositions/test/goldens/{transition,fx}-fingerprints.json`.
+A new or changed entry fails with "not in … (bless with JASPER_BLESS=1)" or "off by …": run
+`JASPER_BLESS=1 pnpm vitest run packages/compositions/test/fx-gl.test.ts packages/compositions/test/transition-gl.test.ts`,
+review the JSON diff (only your ids may change) and commit it. GL entries poison pooled scratch targets (NaN /
+magenta), so a shader that skips pixels fails here ([testing.md](../testing.md) §2–§3).
+
 Add in your family's own test file (`packages/project/test/transition-<family>.test.ts` and/or
 `packages/compositions/test/transition-<family>-gl.test.ts`, copying the pattern of `test/transition-gl/entry.ts`:
 `run(spec, params, {frame, duration, sides, out, in})` → pixels): one characteristic pixel per transition mid-way

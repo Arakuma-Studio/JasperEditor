@@ -2,6 +2,7 @@
 // the real fx GPU host with the compositor's plans (planComposite + runShaderPlan, exactly what CompositeStage does)
 // and reports pixels, so the test can compare them with `blendPixel` (the native export kernel's formulas).
 
+import '../gl-poison.ts';
 import { type CompositeItem, type CompositePicture, planComposite } from '../../src/fx/composite-plan.ts';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 

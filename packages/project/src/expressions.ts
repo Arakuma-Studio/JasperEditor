@@ -569,22 +569,38 @@ function wellFormed(e: unknown): e is Expression {
  * INV-EXPR: an expression is `{text: string, enabled: boolean}` (text ≤ 64 Ki characters) and sits on a property that
  * takes expressions (clip properties except audio effect params and mask paths, transition params, Source Text).
  */
+/** Per frozen sequence: its expression issues (sequences an edit left untouched are re-checked for free). */
+const expressionIssueMemo = new WeakMap<
+	object,
+	{ seqId: string; audio: unknown; out: { message: string; path: string[] }[] }
+>();
+
 export function expressionIssues(
 	doc: Pick<ProjectDocument, 'sequences'>,
 	audioEffect: (effectId: string) => boolean,
 ): { message: string; path: string[] }[] {
 	const out: { message: string; path: string[] }[] = [];
 	for (const [seqId, seq] of Object.entries(doc.sequences)) {
+		const frozen = Object.isFrozen(seq) && Object.isFrozen(seq.clips);
+		const hit = frozen ? expressionIssueMemo.get(seq) : undefined;
+		if (hit && hit.seqId === seqId && hit.audio === audioEffect) {
+			out.push(...hit.out);
+			continue;
+		}
+		const local: { message: string; path: string[] }[] = [];
 		// previews (perf budgets): most sequences carry no expression at all; a plain walk says so cheaply.
-		if (!hasExpressionKey(seq)) continue;
-		const allowed = allowedTargets(seqId, seq, audioEffect);
-		for (const { holder, path } of expressionHolders(seq, ['sequences', seqId])) {
+		const holders = hasExpressionKey(seq) ? [...expressionHolders(seq, ['sequences', seqId])] : [];
+		// The allowed targets are only needed when the sequence holds expressions at all.
+		const allowed = holders.length ? allowedTargets(seqId, seq, audioEffect) : new Set<object>();
+		for (const { holder, path } of holders) {
 			const p = path.map(String);
 			if (!wellFormed(holder.expression))
-				out.push({ message: 'Malformed expression (expected {text, enabled})', path: p });
+				local.push({ message: 'Malformed expression (expected {text, enabled})', path: p });
 			else if (!allowed.has(holder))
-				out.push({ message: 'This property does not take expressions', path: p });
+				local.push({ message: 'This property does not take expressions', path: p });
 		}
+		if (frozen) expressionIssueMemo.set(seq, { seqId, audio: audioEffect, out: local });
+		out.push(...local);
 	}
 	return out;
 }

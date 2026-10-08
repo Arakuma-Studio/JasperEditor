@@ -268,7 +268,107 @@ function isHeifImage(format: FfFormat): boolean {
 }
 
 /** Maps raw ffprobe JSON to a ProbeResult. */
-function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): ProbeResult {
+const STRING_FIELDS = [
+	'codec_type',
+	'codec_name',
+	'profile',
+	'pix_fmt',
+	'sample_aspect_ratio',
+	'r_frame_rate',
+	'avg_frame_rate',
+	'bits_per_raw_sample',
+	'color_primaries',
+	'color_transfer',
+	'color_space',
+	'color_range',
+	'field_order',
+	'sample_rate',
+	'channel_layout',
+	'nb_frames',
+	'duration',
+] as const;
+
+/** Numbers ffprobe prints as numbers; strings of digits are accepted, anything else dropped. */
+function finiteOrUndefined(v: unknown): number | undefined {
+	const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : Number.NaN;
+	return Number.isFinite(n) ? n : undefined;
+}
+/** A numeric duration must be 0…1e7 s (~115 days); non-numeric text (e.g. "N/A") is left to the mapper (no duration). */
+const plausibleSeconds = (v: unknown) => {
+	const n = finiteOrUndefined(v);
+	return n === undefined || (n >= 0 && n <= 1e7);
+};
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const stringTags = (v: unknown): Record<string, string> | undefined =>
+	isObj(v)
+		? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string'))
+		: undefined;
+
+/**
+ * ffprobe JSON coerced into the shapes `mapProbe` reads (golden-fuzz): a field of the wrong type (a number where a
+ * string belongs, an object instead of a list…) is dropped or converted instead of crashing the mapping, and sizes
+ * and channel counts must be positive integers. ffprobe itself never prints such values, but a damaged file, an
+ * unusual ffprobe build or a remote executor's output must not take the probe job down with a TypeError.
+ */
+export function sanitizeProbeJson(raw: unknown): { streams: FfStream[]; format: FfFormat } {
+	const j = isObj(raw) ? raw : {};
+	const streams: FfStream[] = [];
+	for (const [i, x] of (Array.isArray(j.streams) ? j.streams : []).entries()) {
+		if (!isObj(x)) continue;
+		const s: Record<string, unknown> = {
+			index: Number.isInteger(x.index) && (x.index as number) >= 0 ? x.index : i,
+		};
+		for (const k of STRING_FIELDS) {
+			const v = x[k];
+			if (typeof v === 'string') s[k] = v;
+			else if (typeof v === 'number' && Number.isFinite(v)) s[k] = String(v);
+		}
+		// Plausible ranges: a duration up to ~115 days, a bit depth of 1…32.
+		if (s.duration !== undefined && !plausibleSeconds(s.duration)) delete s.duration;
+		const bits = finiteOrUndefined(s.bits_per_raw_sample);
+		if (
+			s.bits_per_raw_sample !== undefined &&
+			!(bits !== undefined && Number.isInteger(bits) && bits >= 1 && bits <= 32)
+		)
+			delete s.bits_per_raw_sample;
+		for (const k of ['width', 'height', 'channels'] as const) {
+			const n = finiteOrUndefined(x[k]);
+			if (n !== undefined && Number.isInteger(n) && n > 0 && n <= 1_000_000) s[k] = n;
+		}
+		if (isObj(x.disposition)) {
+			const ap = finiteOrUndefined(x.disposition.attached_pic);
+			s.disposition = ap === undefined ? {} : { attached_pic: ap };
+		}
+		const tags = stringTags(x.tags);
+		if (tags) s.tags = tags;
+		if (Array.isArray(x.side_data_list))
+			s.side_data_list = x.side_data_list.filter(isObj).map((d) => {
+				const out: Record<string, unknown> = {};
+				if (typeof d.side_data_type === 'string') out.side_data_type = d.side_data_type;
+				const rot = finiteOrUndefined(d.rotation);
+				if (rot !== undefined) out.rotation = rot;
+				for (const k of ['max_luminance', 'min_luminance', 'max_content', 'max_average'] as const)
+					if (typeof d[k] === 'string' || (typeof d[k] === 'number' && Number.isFinite(d[k]))) out[k] = d[k];
+				return out;
+			});
+		streams.push(s as FfStream);
+	}
+	const f = isObj(j.format) ? j.format : {};
+	const format: FfFormat = {};
+	if (typeof f.format_name === 'string') format.format_name = f.format_name;
+	if (
+		(typeof f.duration === 'string' || typeof f.duration === 'number') &&
+		plausibleSeconds(String(f.duration))
+	)
+		format.duration = String(f.duration);
+	const ftags = stringTags(f.tags);
+	if (ftags) format.tags = ftags;
+	return { streams, format };
+}
+
+/** Maps `ffprobe -show_format -show_streams` JSON to a probe result (input sanitized first; exported for tests). */
+export function mapProbe(input: unknown): ProbeResult {
+	const json = sanitizeProbeJson(input);
 	const format = json.format ?? {};
 	const container = format.format_name ?? 'unknown';
 	const all = json.streams ?? [];
@@ -418,5 +518,5 @@ export async function probeWithFfprobe(
 		}
 		throw e;
 	}
-	return mapProbe(json as { streams?: FfStream[]; format?: FfFormat });
+	return mapProbe(json);
 }

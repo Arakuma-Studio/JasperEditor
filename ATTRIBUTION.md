@@ -122,6 +122,110 @@ Screenshots and contact sheets of JasperEditor itself, showing only generated me
 | `docs/screenshots/wp-m3-trackui/08-simplify-from-ec.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `docs/screenshots/wp-m3-trackui/09-strip-tooltip.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 
+## Golden frames
+
+Reference frames of the golden-frame tests (`packages/testkit`, docs/testing.md), rendered by JasperEditor from
+procedurally generated scenes; written by `JASPER_BLESS=1`.
+
+| Asset | Author | Source | Licence |
+|---|---|---|---|
+| `apps/engine/test/goldens/native/blend-linear-burn.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/blend-screen.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/colour-run.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/crop.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `apps/engine/test/goldens/native/transform-opacity.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/blur-mo-curves-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/corner-pin-blur-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/corner-pin-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/corner-pin-moving-off.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/directional-blur-ends.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/dissolve-shake-off.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/dissolve-shake-still.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/earthquake-still.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/film-damage-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/freelens-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/freelens-shake-off.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.3d-roll-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.3d-spin-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.3d-spinback-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.film-roll-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.pull-motion-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.roll-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.spin-motion-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.stretch-transition-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.travel-motion-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/jasper.whip-blur0.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/perspective-blur-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/perspective-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/perspective-moving-off.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/shake-blur-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/shake-blur-zero.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/shake-default-grid.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/shake-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/shake-rgb-off.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/shake-twitchy-off.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/strip-slide-noblur.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/strip-slide-transition-noblur.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/swish-pan-noblur.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/transform-default.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/transform-moving-comp-shutter.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/motion-blur/transform-shutter-static.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/adjustment-layer.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-add.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-alpha-add.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-color-burn.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-color-dodge.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-css-1.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-css-2.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-darker-color.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-dissolve.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-divide.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-hard-mix.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-lighter-color.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-linear-burn.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-linear-light.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-pin-light.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-saturation.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-silhouette-alpha.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-silhouette-luma.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-stencil-alpha.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-stencil-luma.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-subtract.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/blend-vivid-light.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/captions.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/card.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/colour-run.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/crop-corner-pin.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-adjust-composite.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-blur-sharpen.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-distort.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-film.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-glows.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-keying.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-paint.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-premiere-adjust.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-premiere-stylize.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-render.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-simulation.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-stylize.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-textures.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/fx-time.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/interpret-log.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/lumetri.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/masks.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/nest.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/optical-flow.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/shapes.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/sim-warp.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/text-animator.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/text.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/three-d.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/time-remap.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/transform-opacity.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/transition-cross-dissolve.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/working-space-linear.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/compositions/test/goldens/scenes/working-space-pq.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+
 ## Generated test media (never committed)
 
 `fixtures/media/` is gitignored. `pnpm fixtures` ([scripts/make-fixtures.mjs](scripts/make-fixtures.mjs) and the recipe

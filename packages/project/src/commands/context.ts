@@ -9,6 +9,7 @@ import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { flicksPerFrame, nominalFps, type Rational, secondsToFlicks, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
+import { peek, peekKeys } from './handlers/util.ts';
 import { findTrackIn, resolveTrackIn } from './placement.ts';
 import type { ContentTimeInput, ParamAt, TimeInput } from './schemas/common.ts';
 import { type CommandContext, CommandError, type ErrorCode, type Issue, type Origin } from './types.ts';
@@ -75,9 +76,13 @@ export class HandlerContext {
 	}
 
 	clip(doc: DDoc, clipId: string): { seq: DSeq; clip: DClip } {
-		for (const seq of Object.values(doc.sequences)) {
-			const clip = seq.clips[clipId];
-			if (clip) return { seq, clip };
+		// Found with `peek` (no draft per sequence scanned), then resolved through the draft.
+		const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		for (const sid of peekKeys(sequences)) {
+			const clips = peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!;
+			if (!peek(clips, clipId)) continue;
+			const seq = doc.sequences[sid]!;
+			return { seq, clip: seq.clips[clipId]! };
 		}
 		return this.fail('E_NOT_FOUND', `Clip not found: ${clipId}`);
 	}
@@ -175,8 +180,11 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 	if (doc.projectId === id || doc.items[id] || doc.media[id] || doc.synthetics[id] || doc.transcripts[id])
 		return true;
 	if (doc.fonts[id] || doc.sequences[id]) return true;
-	for (const seq of Object.values(doc.sequences)) {
-		if (seq.clips[id] || seq.transitions[id] || seq.links[id] || seq.groups[id]) return true;
+	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+	for (const sid of peekKeys(sequences)) {
+		const seq = peek<Sequence>(sequences, sid)!;
+		for (const k of ['clips', 'transitions', 'links', 'groups'] as const)
+			if (peek(peek<Record<string, unknown>>(seq, k)!, id)) return true;
 	}
 	return false;
 }

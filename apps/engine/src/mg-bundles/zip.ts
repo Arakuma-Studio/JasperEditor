@@ -23,7 +23,16 @@ const LOC = 0x04034b50;
 /** Limits against zip bombs (a built bundle is a few MB plus its public/ folder). */
 const ZIP_LIMITS = { maxEntries: 50_000, maxTotalBytes: 8 * 1024 ** 3 };
 
-async function readAt(fh: Awaited<ReturnType<typeof open>>, pos: number, len: number): Promise<Buffer> {
+type Handle = Awaited<ReturnType<typeof open>> & { size?: number };
+
+/**
+ * `len` bytes at `pos`. Offsets and lengths come from the archive: anything outside the file is a broken archive
+ * (golden-fuzz: an out-of-range length reached `fh.read` and aborted the whole process in a native assertion).
+ */
+async function readAt(fh: Handle, pos: number, len: number): Promise<Buffer> {
+	const size = fh.size ?? Number.POSITIVE_INFINITY;
+	if (!Number.isSafeInteger(pos) || !Number.isSafeInteger(len) || pos < 0 || len < 0 || pos + len > size)
+		throw new ZipError('Broken zip (an offset or size points outside the file)');
 	const buf = Buffer.alloc(len);
 	let off = 0;
 	while (off < len) {
@@ -34,7 +43,8 @@ async function readAt(fh: Awaited<ReturnType<typeof open>>, pos: number, len: nu
 	return buf.subarray(0, off);
 }
 
-async function readEntries(fh: Awaited<ReturnType<typeof open>>, size: number): Promise<Entry[]> {
+async function readEntries(fh: Handle, size: number): Promise<Entry[]> {
+	fh.size = size;
 	const tailLen = Math.min(size, 65_557);
 	const tail = await readAt(fh, size - tailLen, tailLen);
 	let e = -1;
@@ -77,11 +87,19 @@ async function readEntries(fh: Awaited<ReturnType<typeof open>>, size: number): 
 		// zip64 extra field: the 0xffffffff fields in order (size, compressed size, offset).
 		let x = p + 46 + nameLen;
 		const xEnd = x + extraLen;
+		if (xEnd + commentLen > cd.length) throw new ZipError('Broken central directory');
+		if (name.includes('\0')) throw new ZipError('Invalid entry name (NUL character)');
 		while (x + 4 <= xEnd) {
 			const id = cd.readUInt16LE(x);
 			const len = cd.readUInt16LE(x + 2);
+			if (x + 4 + len > xEnd) throw new ZipError(`Broken extra field: ${name}`);
 			if (id === 0x0001) {
 				let q = x + 4;
+				const need =
+					(usize === 0xffffffff ? 8 : 0) +
+					(compSize === 0xffffffff ? 8 : 0) +
+					(offset === 0xffffffff ? 8 : 0);
+				if (need > len) throw new ZipError(`Broken zip64 extra field: ${name}`);
 				if (usize === 0xffffffff) {
 					usize = Number(cd.readBigUInt64LE(q));
 					q += 8;
@@ -117,6 +135,7 @@ export async function extractZip(zipFile: string, dest: string): Promise<number>
 	const fh = await open(zipFile, 'r');
 	try {
 		const { size } = await fh.stat();
+		(fh as Handle).size = size;
 		const entries = await readEntries(fh, size);
 		let total = 0;
 		let files = 0;
@@ -139,8 +158,13 @@ export async function extractZip(zipFile: string, dest: string): Promise<number>
 			const raw = await readAt(fh, dataStart, e.compSize);
 			let data: Buffer;
 			if (e.method === 0) data = raw;
-			else if (e.method === 8) data = inflateRawSync(raw, { maxOutputLength: Math.max(1, e.size) });
-			else throw new ZipError(`Unsupported compression method ${e.method}: ${e.name}`);
+			else if (e.method === 8) {
+				try {
+					data = inflateRawSync(raw, { maxOutputLength: Math.max(1, e.size) });
+				} catch (err) {
+					throw new ZipError(`Corrupt compressed data: ${e.name} (${(err as Error).message})`);
+				}
+			} else throw new ZipError(`Unsupported compression method ${e.method}: ${e.name}`);
 			if (data.length !== e.size) throw new ZipError(`Size mismatch: ${e.name}`);
 			await mkdir(dirname(target), { recursive: true });
 			await writeFile(target, data);

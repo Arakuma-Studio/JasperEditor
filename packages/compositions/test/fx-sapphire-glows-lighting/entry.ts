@@ -1,6 +1,7 @@
 // Browser entry of the Sapphire Glows + Lighting GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-glows-lighting-gl.test.ts): runs the family's effects on the real GPU host (src/fx/host.ts) over
 // painted test scenes and reports pixels, PNGs (visual review) and a contact sheet.
+import '../gl-poison.ts';
 import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';

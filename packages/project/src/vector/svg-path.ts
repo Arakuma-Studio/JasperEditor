@@ -39,7 +39,7 @@ function tokenize(d: string): (string | number)[] {
 			continue;
 		}
 		const m = num.exec(s.slice(i));
-		if (!m) throw new Error(`Invalid path data near "${s.slice(i, i + 12)}"`);
+		if (!m) throw new SvgPathError(`Invalid path data near "${s.slice(i, i + 12)}"`);
 		out.push(Number.parseFloat(m[0]));
 		argIndex++;
 		i += m[0].length;
@@ -112,7 +112,12 @@ export function arcToCubics(
 	return out;
 }
 
-/** Parses SVG path data into a compound Bézier path. Throws on malformed data. */
+/** Malformed SVG path data. */
+export class SvgPathError extends Error {
+	override readonly name = 'SvgPathError';
+}
+
+/** Parses SVG path data into a compound Bézier path. Throws `SvgPathError` on malformed data. */
 export function parseSvgPath(d: string): BezPath {
 	const tk = tokenize(d);
 	const out: BezPath = [];
@@ -125,7 +130,7 @@ export function parseSvgPath(d: string): BezPath {
 	let cmd = '';
 	const nextNum = (): number => {
 		const v = tk[i];
-		if (typeof v !== 'number') throw new Error(`Path data: expected a number after "${cmd}"`);
+		if (typeof v !== 'number') throw new SvgPathError(`Path data: expected a number after "${cmd}"`);
 		i++;
 		return v;
 	};
@@ -146,7 +151,7 @@ export function parseSvgPath(d: string): BezPath {
 		if (typeof t === 'string') {
 			cmd = t;
 			i++;
-		} else if (!cmd) throw new Error('Path data must start with a command');
+		} else if (!cmd) throw new SvgPathError('Path data must start with a command');
 		else if (cmd === 'M') cmd = 'L';
 		else if (cmd === 'm') cmd = 'l';
 		const rel = cmd === cmd.toLowerCase();
@@ -227,7 +232,7 @@ export function parseSvgPath(d: string): BezPath {
 				break;
 			}
 			default:
-				throw new Error(`Unknown path command "${cmd}"`);
+				throw new SvgPathError(`Unknown path command "${cmd}"`);
 		}
 		lastCtrl = ctrl;
 		lastQuad = quad;

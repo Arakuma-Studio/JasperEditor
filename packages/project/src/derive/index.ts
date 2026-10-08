@@ -15,13 +15,14 @@ export type TrackIndex = {
 
 const indexCache = new WeakMap<object, TrackIndex>();
 
-/** Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). */
+/**
+ * Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). Never memoized for an Immer
+ * draft: a transaction mutates its draft `clips` record in place (same proxy identity), so a cached index would go
+ * stale between the commands of one transaction (a clip added by one command was invisible to the next).
+ */
 function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
 ): TrackIndex {
-	// A draft (inside a transaction) keeps its identity while commands add, move and remove clips: never cache it, or a
-	// later command of the same transaction would read the clips as they were (compositor: transition.add after
-	// clip.addSolid on another track found no edit point).
 	const draft = isDraft(seq.clips);
 	const cached = draft ? undefined : indexCache.get(seq.clips);
 	if (cached) return cached;
@@ -122,13 +123,14 @@ export function resolveTrackRef(seq: Sequence, ref: string): string | null {
 
 const durationCache = new WeakMap<object, number>();
 
-/** Sequence duration = max clip end, or 0 (S01:TIME-007). */
+/** Sequence duration = max clip end, or 0 (S01:TIME-007). Not memoized for Immer drafts (see `sequenceIndex`). */
 export function sequenceDuration(seq: Pick<Sequence, 'clips'>): number {
-	const cached = durationCache.get(seq.clips);
+	const draft = isDraft(seq.clips);
+	const cached = draft ? undefined : durationCache.get(seq.clips);
 	if (cached !== undefined) return cached;
 	let end = 0;
 	for (const c of Object.values(seq.clips)) end = Math.max(end, clipEnd(c));
-	durationCache.set(seq.clips, end);
+	if (!draft) durationCache.set(seq.clips, end);
 	return end;
 }
 

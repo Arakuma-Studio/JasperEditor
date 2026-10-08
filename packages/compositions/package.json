@@ -34,6 +34,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@jasper/testkit": "workspace:*",
     "@remotion/bundler": "4.0.499",
     "@remotion/player": "4.0.499",
     "@remotion/renderer": "4.0.499",

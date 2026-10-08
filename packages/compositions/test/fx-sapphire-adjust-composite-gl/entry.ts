@@ -1,6 +1,7 @@
 // Browser entry of the sapphire-adjust-composite GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-adjust-composite-gl.test.ts): runs the family's effects on the real GPU host with small painted
 // layers and media textures and reports pixels (the same harness as fx-gl/entry.ts).
+import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,

@@ -1,6 +1,7 @@
 // Browser entry of the "sapphire-paint-kaleido-edges" GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-paint-kaleido-edges-gl.test.ts): runs the family's registered effects through the real GPU host on
 // synthetic pictures (or a loaded image) and reports pixels / PNGs.
+import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
 	type EffectSpec,

@@ -1,0 +1,193 @@
+{
+  "revision": "df0e7e4d",
+  "node": "v20.20.2",
+  "date": "2026-10-08",
+  "machine": {
+    "cpus": 12,
+    "model": "AMD EPYC Processor (with IBPB)",
+    "loadAverage": 9.64,
+    "loadFactor": 1.3415946000000076
+  },
+  "workload": {
+    "sequences": 200,
+    "clips": 5000,
+    "effects": 1600,
+    "keyframes": 5000,
+    "jsonBytes": 6734120,
+    "generateMs": 46258
+  },
+  "method": "packages/session/bench/scale.ts: wall-clock median and p95 (and process CPU median) after warm-up runs; budgets are reference-machine milliseconds scaled by the measured load factor unless PERF=1.",
+  "results": [
+    {
+      "op": "load",
+      "what": "JSON.parse + loadProject (migrate, zod, invariants)",
+      "runs": 9,
+      "medianMs": 773.4842959999951,
+      "p95Ms": 854.3912930000006,
+      "cpuMedianMs": 999.379,
+      "budgetMs": 3354,
+      "pass": true
+    },
+    {
+      "op": "migrate v1\u2192current",
+      "what": "migrate() of the same project stamped schema v1",
+      "runs": 9,
+      "medianMs": 159.3419219999996,
+      "p95Ms": 201.64641900000424,
+      "cpuMedianMs": 211.85,
+      "budgetMs": 2012,
+      "pass": true
+    },
+    {
+      "op": "invariants",
+      "what": "checkInvariants of the whole document (every transaction runs it)",
+      "runs": 9,
+      "medianMs": 24.902761999997892,
+      "p95Ms": 27.210001999999804,
+      "cpuMedianMs": 26.244,
+      "budgetMs": 805,
+      "pass": true
+    },
+    {
+      "op": "small edit",
+      "what": "session.apply: one Opacity value of one clip",
+      "runs": 9,
+      "medianMs": 75.53306500000326,
+      "p95Ms": 88.28943400000571,
+      "cpuMedianMs": 82.735,
+      "budgetMs": 335,
+      "pass": true
+    },
+    {
+      "op": "large edit",
+      "what": "session.apply: Opacity of 300 clips across sequences in one transaction",
+      "runs": 5,
+      "medianMs": 354.91857799999707,
+      "p95Ms": 441.3558720000001,
+      "cpuMedianMs": 418.295,
+      "budgetMs": 2683,
+      "pass": true
+    },
+    {
+      "op": "undo",
+      "what": "session.undo() of the last edit",
+      "runs": 9,
+      "medianMs": 0.2246690000029048,
+      "p95Ms": 0.3155570000017178,
+      "cpuMedianMs": 0.252,
+      "budgetMs": 67,
+      "pass": true
+    },
+    {
+      "op": "redo",
+      "what": "session.redo() of the undone edit",
+      "runs": 9,
+      "medianMs": 0.13514199999917764,
+      "p95Ms": 0.24915400000463706,
+      "cpuMedianMs": 0.162,
+      "budgetMs": 67,
+      "pass": true
+    },
+    {
+      "op": "render snapshot",
+      "what": "buildRenderSnapshot of one sequence (preview / export input)",
+      "runs": 9,
+      "medianMs": 0.7573309999934281,
+      "p95Ms": 3.060763000001316,
+      "cpuMedianMs": 1.762,
+      "budgetMs": 54,
+      "pass": true
+    },
+    {
+      "op": "render snapshots \u00d7200",
+      "what": "buildRenderSnapshot of every sequence",
+      "runs": 3,
+      "medianMs": 147.27936300000147,
+      "p95Ms": 182.59720299999753,
+      "cpuMedianMs": 356.438,
+      "budgetMs": 4025,
+      "pass": true
+    },
+    {
+      "op": "scene at a frame",
+      "what": "resolveSceneAt (the layers of one frame)",
+      "runs": 50,
+      "medianMs": 0.017300999999861233,
+      "p95Ms": 0.1439280000049621,
+      "cpuMedianMs": 0.02,
+      "budgetMs": 7,
+      "pass": true
+    },
+    {
+      "op": "autosave serialise",
+      "what": "makeEnvelope + JSON.stringify of the committed document",
+      "runs": 9,
+      "medianMs": 66.4341609999974,
+      "p95Ms": 97.55447800000547,
+      "cpuMedianMs": 66.419,
+      "budgetMs": 1610,
+      "pass": true
+    }
+  ],
+  "before": {
+    "revision": "cc1c2f88 (integrate/parity merged and the proxy-free scans in; before the invariant / expression memos and the named-clip shape centring)",
+    "note": "same machine and workload, measured 2026-10-08 at load average \u2248 10; small edit was over its budget",
+    "results": {
+      "load": {
+        "medianMs": 885.1,
+        "p95Ms": 964.3,
+        "cpuMedianMs": 1061.1
+      },
+      "migrate v1\u2192current": {
+        "medianMs": 159.4,
+        "p95Ms": 220.7,
+        "cpuMedianMs": 213.3
+      },
+      "invariants": {
+        "medianMs": 438.2,
+        "p95Ms": 564.7,
+        "cpuMedianMs": 451.2
+      },
+      "small edit": {
+        "medianMs": 511.1,
+        "p95Ms": 594.6,
+        "cpuMedianMs": 537.0
+      },
+      "large edit": {
+        "medianMs": 2112.3,
+        "p95Ms": 2193.5,
+        "cpuMedianMs": 2202.0
+      },
+      "undo": {
+        "medianMs": 0.2,
+        "p95Ms": 0.4,
+        "cpuMedianMs": 0.2
+      },
+      "redo": {
+        "medianMs": 0.2,
+        "p95Ms": 0.4,
+        "cpuMedianMs": 0.2
+      },
+      "render snapshot": {
+        "medianMs": 0.7,
+        "p95Ms": 1.3,
+        "cpuMedianMs": 0.7
+      },
+      "render snapshots \u00d7200": {
+        "medianMs": 129.9,
+        "p95Ms": 140.9,
+        "cpuMedianMs": 275.8
+      },
+      "scene at a frame": {
+        "medianMs": 0.0,
+        "p95Ms": 0.1,
+        "cpuMedianMs": 0.0
+      },
+      "autosave serialise": {
+        "medianMs": 69.7,
+        "p95Ms": 81.7,
+        "cpuMedianMs": 69.7
+      }
+    }
+  }
+}
