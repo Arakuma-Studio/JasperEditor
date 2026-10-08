@@ -175,7 +175,11 @@ describe('smart rendering exports (real ffmpeg)', () => {
 				sourceRange: { in: { sourceFrames: 10 }, out: { sourceFrames: 64 } },
 			},
 		]);
-		const p = await plan(d, settings(d.seqId));
+		// opt-in for H.264: the plan says what it would copy
+		const off = await plan(d, settings(d.seqId));
+		expect(off.path).not.toBe('copy');
+		expect(off.smart?.reasons.join(' ')).toMatch(/opt-in.*34 of 54/);
+		const p = await plan(d, settings(d.seqId, { smartRender: true }));
 		expect(p.path, JSON.stringify(p.smart)).toBe('copy');
 		expect(p.smart?.used).toBe(true);
 		expect(p.smart?.copiedFrames).toBe(34);
@@ -183,7 +187,7 @@ describe('smart rendering exports (real ffmpeg)', () => {
 			[0, 20, 'native'],
 			[20, 54, 'copy'],
 		]);
-		const { file, result } = await exportFile(d, settings(d.seqId));
+		const { file, result } = await exportFile(d, settings(d.seqId, { smartRender: true }));
 		expect(result.renderPath).toBe('copy');
 		const probe = JSON.parse(
 			execFileSync('ffprobe', [
@@ -200,7 +204,10 @@ describe('smart rendering exports (real ffmpeg)', () => {
 		const v = probe.streams.find((s) => s.codec_type === 'video')!;
 		expect(v.codec_tag_string).toBe('avc3');
 		expect(Number(v.nb_read_frames)).toBe(54);
-		expect(probe.streams.some((s) => s.codec_type === 'audio'), JSON.stringify(probe)).toBe(true);
+		expect(
+			probe.streams.some((s) => s.codec_type === 'audio'),
+			JSON.stringify(probe),
+		).toBe(true);
 		// a full decode reports nothing
 		expect(spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-f', 'null', '-']).stderr.toString().trim()).toBe(
 			'',
@@ -285,7 +292,7 @@ describe('smart rendering exports (real ffmpeg)', () => {
 		d.tx([{ type: 'clip.place', source: { mediaId: m }, at: 0, audio: false }]);
 		const id = d.clipIds()[0]!;
 		d.tx([{ type: 'param.set', target: ['clip', id, 'transform', 'scale'], value: 50 }]);
-		const p = await plan(d, settings(d.seqId));
+		const p = await plan(d, settings(d.seqId, { smartRender: true }));
 		expect(p.path).not.toBe('copy');
 		expect(p.smart?.used).toBe(false);
 		expect(p.smart?.reasons.join(' ')).toMatch(/untouched/);

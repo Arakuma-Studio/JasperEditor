@@ -300,6 +300,8 @@ export class ExportService {
 			planned.plan.smart = { used: false, copiedFrames: 0, reasons };
 			return;
 		}
+		// H.264 copies keep the sources' own bitrate and profile next to the encoder's frames: the user opts in.
+		const optIn = codec === 'h264' && settings.smartRender !== true;
 		const runs = copyableRuns(planned.document, planned.sequenceId, planned.range);
 		const frames = new Map<string, SourceFrames>();
 		const usable: typeof runs = [];
@@ -349,6 +351,17 @@ export class ExportService {
 			if (usable.length)
 				reasons.push('No whole closed GOP of the sources lies inside the copyable stretches');
 			planned.plan.smart = { used: false, copiedFrames: 0, reasons };
+			return;
+		}
+		if (optIn) {
+			planned.plan.smart = {
+				used: false,
+				copiedFrames: 0,
+				reasons: [
+					...reasons,
+					`Smart rendering is opt-in for H.264 exports (Smart Render): it would copy ${copied} of ${planned.range.end - planned.range.start} frames`,
+				],
+			};
 			return;
 		}
 		planned.smart = { codec: codec!, pieces };

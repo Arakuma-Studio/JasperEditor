@@ -148,8 +148,9 @@ export const ExportSettingsSchema = z.object({
 	usePreviews: z.boolean().optional(),
 	/**
 	 * previews (smart rendering, additive): with the `auto` engine and an H.264 or ProRes export matching its sources,
-	 * stretches that show a source untouched are stream-copied (whole closed GOPs) and only the rest is rendered.
-	 * Default true; false always re-encodes. The plan's `smart` says what was copied or why nothing could be.
+	 * stretches that show a source untouched are stream-copied (whole closed GOPs; ProRes frame by frame) and only the
+	 * rest is rendered. Absent = on for ProRes (lossless), off for H.264 (opt-in: the copies keep the sources' bitrate
+	 * and profile); true = on; false = off. The plan's `smart` says what is copied or why nothing can be.
 	 */
 	smartRender: z.boolean().optional(),
 });
