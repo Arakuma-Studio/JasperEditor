@@ -91,14 +91,16 @@ export function collectOrphans(doc: DDoc): void {
 	for (const seq of valuesOf(doc.sequences)) {
 		add(
 			cachedRead(clipUses, seq.clips, (clips) => {
-				const u = { media: [] as string[], syn: [] as string[], trs: [] as string[] };
+				const media = new Set<string>();
+				const syn = new Set<string>();
+				const trs = new Set<string>();
 				for (const c of valuesOf(clips)) {
 					const r = c as Record<string, unknown>;
-					if (typeof r.mediaId === 'string') u.media.push(r.mediaId);
-					if (typeof r.syntheticId === 'string') u.syn.push(r.syntheticId);
-					if (typeof r.transcriptId === 'string') u.trs.push(r.transcriptId);
+					if (typeof r.mediaId === 'string') media.add(r.mediaId);
+					if (typeof r.syntheticId === 'string') syn.add(r.syntheticId);
+					if (typeof r.transcriptId === 'string') trs.add(r.transcriptId);
 				}
-				return u;
+				return { media: [...media], syn: [...syn], trs: [...trs] };
 			}),
 		);
 	}

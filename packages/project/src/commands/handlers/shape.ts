@@ -20,7 +20,7 @@ import type { BezierPath } from '../../path/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { DEFAULT_SHAPE_STROKE, type PropertySpec, SHAPE_LIMITS } from '../../registry/properties.ts';
 import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
-import type { LegacyShapeData, ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
+import type { Clip, LegacyShapeData, ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
 import type { ShapeItem } from '../../schema/shapes.ts';
 import { findItem, newShapeItem, nextItemName, reidItems, walkItems } from '../../vector/defaults.ts';
 import { evaluateVectorShape } from '../../vector/evaluate.ts';
@@ -28,7 +28,7 @@ import { buildShapeItems, type IdGen, patchShapeItem, ShapeInputError } from '..
 import { getShapePreset } from '../../vector/presets.ts';
 import { bezToBezierPaths } from '../../vector/values.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
-import { keysOf, latest, peekIn } from '../draft-read.ts';
+import { cachedRead, keysOf, latest, peekIn } from '../draft-read.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
 import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
@@ -102,29 +102,44 @@ function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
 	if (dx !== 0 || dy !== 0) shiftVec(clip.transform.anchor, dx, dy);
 }
 
+const shapeBoxCache = new WeakMap<object, readonly (readonly [string, Box])[]>();
+/** Keys and boxes of the shape clips of a clips record. */
+function shapeBoxesOf(clips: Readonly<Record<string, Clip>>): (readonly [string, Box])[] {
+	const out: (readonly [string, Box])[] = [];
+	for (const k of Object.keys(clips)) {
+		const c = latest(clips[k]!);
+		if (c.kind === 'shape') out.push([k, shapeIntrinsicBox(latest(c.shape) as ShapeData)]);
+	}
+	return out;
+}
+
 /**
  * Wraps a handler of a command that can change shape boxes (clip.update, param.set, keyframe edits): every
  * shape whose box changed during the command is re-centred on its anchor.
  */
 export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
 	return (doc, cmd, h) => {
-		// perf-core: found on current values (draft-read.ts); only shapes whose box changed are drafted.
-		const before: [string, string, Box][] = [];
+		// perf-core: shapes are found on current values (draft-read.ts), per clips record (cached while a record is
+		// unchanged); after the command only shapes whose box changed are drafted.
+		const before: [string, Readonly<Record<string, Clip>>, readonly (readonly [string, Box])[]][] = [];
 		for (const sid of keysOf(doc.sequences)) {
-			const clips = latest(peekIn(doc.sequences, sid)!.clips);
-			for (const k of Object.keys(clips)) {
-				const c = latest(clips[k]!);
-				if (c.kind === 'shape') before.push([sid, k, shapeIntrinsicBox(c.shape as ShapeData)]);
-			}
+			const rec = latest(peekIn(doc.sequences, sid)!.clips);
+			const boxes = cachedRead(shapeBoxCache, rec, shapeBoxesOf);
+			if (boxes.length) before.push([sid, rec, boxes]);
 		}
 		const result = handler(doc, cmd, h);
-		for (const [sid, k, box] of before) {
+		for (const [sid, rec, boxes] of before) {
 			const seq = peekIn(doc.sequences, sid);
-			const c = seq && (peekIn(seq.clips, k) as ShapeClip | undefined);
-			if (!c || latest(c.shape).type === 'vector') continue;
-			const after = shapeIntrinsicBox(latest(c.shape) as ShapeData);
-			if (after.width !== box.width || after.height !== box.height)
-				recenterShape(doc.sequences[sid]!.clips[k] as Draft<ShapeClip>, box);
+			if (!seq) continue;
+			const now = latest(seq.clips);
+			if (now === rec && Object.isFrozen(rec)) continue; // untouched record: no box changed
+			for (const [k, box] of boxes) {
+				const c = peekIn(now, k) as ShapeClip | undefined;
+				if (!c || latest(c.shape).type === 'vector') continue;
+				const after = shapeIntrinsicBox(latest(c.shape) as ShapeData);
+				if (after.width !== box.width || after.height !== box.height)
+					recenterShape(doc.sequences[sid]!.clips[k] as Draft<ShapeClip>, box);
+			}
 		}
 		return result;
 	};

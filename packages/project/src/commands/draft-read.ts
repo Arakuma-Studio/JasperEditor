@@ -13,11 +13,11 @@
 // Immer keeps its state behind `Symbol.for("immer-state")` (also what `isDraft` checks) with the current value in
 // `copy_ ?? base_`. If a future Immer changes that shape, `latest` falls back to the public `current()` (correct,
 // only slower) and `test/draft-read.test.ts` fails, so the fast path cannot silently disappear.
-import { current, isDraft, produce } from 'immer';
+import { current, isDraft, original, produce } from 'immer';
 
 const DRAFT_STATE = Symbol.for('immer-state');
 
-type DraftState = { base_: unknown; copy_: unknown | null };
+type DraftState = { base_: unknown; copy_: unknown | null; modified_: boolean };
 
 function stateOf(v: unknown): DraftState | undefined {
 	if (v === null || typeof v !== 'object') return undefined;
@@ -46,6 +46,7 @@ function probeFastPath(): boolean {
 			const after = fastLatest(d) as { a: unknown; b: unknown };
 			ok &&=
 				after !== base && after.a === d.a && isDraft(after.b) && fastLatest(after.b as { n: number }).n === 3;
+			ok &&= stateOf(d.a)?.modified_ === false && stateOf(after.b)?.modified_ === true;
 		});
 		return ok;
 	} catch {
@@ -97,4 +98,64 @@ export function cachedRead<K extends object, V>(
 		cache.set(raw, v);
 	}
 	return v;
+}
+
+export type RecordDelta<T> = {
+	/** The record at the start of the transaction. */
+	base: Readonly<Record<string, T>>;
+	/** Keys added, replaced or edited in place since then (entries only read are not changed). */
+	changed: string[];
+	/** Keys removed since then. */
+	deleted: string[];
+};
+
+/**
+ * What a transaction changed in a (draft) record so far, by identity: O(entries) of cheap comparisons and nothing
+ * drafted. A plain record (not a draft, or a draft never written) has no changes.
+ */
+export function recordDelta<T>(rec: Readonly<Record<string, T>>): RecordDelta<T> {
+	let base: Record<string, T>;
+	let cur: Record<string, T>;
+	if (DRAFT_READ_FAST) {
+		const s = stateOf(rec);
+		if (!s || !s.copy_) return { base: latest(rec), changed: [], deleted: [] };
+		base = s.base_ as Record<string, T>;
+		cur = s.copy_ as Record<string, T>;
+	} else {
+		if (!isDraft(rec)) return { base: rec, changed: [], deleted: [] };
+		base = original(rec) as Record<string, T>;
+		cur = current(rec as never) as Record<string, T>;
+	}
+	const changed: string[] = [];
+	let added = 0;
+	for (const k of Object.keys(cur)) {
+		const v = cur[k];
+		const b = Object.hasOwn(base, k) ? base[k] : undefined;
+		if (v === b) continue;
+		const st = stateOf(v);
+		if (st && !st.modified_ && st.base_ === b) continue; // read through the draft, not written
+		changed.push(k);
+		if (b === undefined) added++;
+	}
+	const deleted: string[] = [];
+	if (Object.keys(cur).length !== Object.keys(base).length + added)
+		for (const k of Object.keys(base)) if (!Object.hasOwn(cur, k)) deleted.push(k);
+	return { base, changed, deleted };
+}
+
+const normalized = new WeakSet<object>();
+
+/**
+ * Documents a transaction produced: caption ownership is normalized and nothing is orphaned (applyTransaction's
+ * last steps ran on them), so the next transaction's normalizers only need to look at what it changes.
+ */
+export function markNormalized(doc: object): void {
+	normalized.add(doc);
+}
+
+/** The base document of draft `doc` when it is normalized (see markNormalized), else null. */
+export function normalizedBase<T extends object>(doc: T): T | null {
+	if (!isDraft(doc)) return null;
+	const base = original(doc) as T;
+	return normalized.has(base) ? base : null;
 }

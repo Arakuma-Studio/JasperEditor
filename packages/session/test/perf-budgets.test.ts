@@ -24,7 +24,13 @@ async function bigSession(clips: number) {
 	const store = new MemoryProjectStore({ ids, now: () => '2026-09-30T10:00:00.000Z' });
 	const doc = createEmptyProject({ ids, name: 'Perf', preset: 'hd-1080p-30' });
 	store.put(doc);
-	const ctx = { ids, now: () => '2026-09-30T10:00:00.000Z', registries: defaultRegistries() };
+	// The production invariant mode (tests default to `verify`, which also runs the full check).
+	const ctx = {
+		ids,
+		now: () => '2026-09-30T10:00:00.000Z',
+		registries: defaultRegistries(),
+		invariants: 'incremental' as const,
+	};
 	const s = await EditorSession.open({ store, projectId: doc.projectId, ctx, sessionId: 'perf' });
 	const commands = Array.from({ length: clips }, (_, i) => ({
 		type: 'clip.addSolid' as const,
