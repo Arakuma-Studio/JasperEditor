@@ -3,19 +3,25 @@
 // (bundled from fx-player/entry.tsx): stacks whose scopes used to nest draw in the Program monitor — an adjustment
 // layer over a GL blend over video (decoded frames reach the compositor), a nest drawn as a canvas source, a 3D run
 // under an adjustment layer — and the HDR display transform keeps running while a scope draws inside it (it used to
-// step aside with a chip). Gated by REMOTION_E2E=1.
+// step aside with a chip). Gated by REMOTION_E2E=1; COMPOSITOR_ELECTRON=1 (under xvfb-run) runs the same Players in the
+// desktop app's Electron.
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blendPixel, type Command, type Rgba } from '@jasper/project';
-import { type Browser, chromium, type Page } from '@playwright/test';
+import { _electron, type Browser, chromium, type ElectronApplication, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FX_H, FX_W, type FxMedia, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
+/** COMPOSITOR_ELECTRON=1: run the Players in the desktop app's Electron instead (under xvfb-run). */
+const ELECTRON =
+	process.env.COMPOSITOR_ELECTRON === '1'
+		? (createRequire(join(here, '..', '..', '..', 'apps', 'desktop', 'package.json'))('electron') as string)
+		: null;
 const CHROME =
 	process.env.JASPER_BROWSER_EXECUTABLE ??
 	(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
@@ -39,7 +45,8 @@ describe.runIf(enabled && !!CHROME)(
 	{ timeout: 120_000 },
 	() => {
 		let media: FxMedia;
-		let browser: Browser;
+		let browser: Browser | undefined;
+		let electronApp: ElectronApplication | undefined;
 		let page: Page;
 		let docs: Record<string, ReturnType<typeof fxSnapshot>>;
 		const base: Rgba = [0.8, 0.4, 0.2, 1];
@@ -116,26 +123,51 @@ describe.runIf(enabled && !!CHROME)(
 				'text/html',
 				`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#000"><script>window.__docs = ${JSON.stringify(docs)};</script><script src="/bundle.js"></script></body></html>`,
 			);
-			browser = await chromium.launch({
-				executablePath: CHROME!,
-				args: [
-					'--enable-features=CanvasDrawElement',
-					'--use-angle=swiftshader',
-					'--enable-unsafe-swiftshader',
-				],
-			});
-			page = await browser.newPage({ viewport: { width: FX_W, height: FX_H * 6 } });
+			if (ELECTRON) {
+				// The desktop app's Electron (apps/desktop: same feature switch), under xvfb.
+				const main = join(media.dir, 'electron-main.cjs');
+				writeFileSync(
+					main,
+					`const { app, BrowserWindow } = require('electron');
+app.commandLine.appendSwitch('enable-features', 'CanvasDrawElement');
+// xvfb has no GPU: WebGL2 through SwiftShader (a desktop with a GPU has it natively).
+app.commandLine.appendSwitch('use-angle', 'swiftshader');
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+app.whenReady().then(() => {
+  const w = new BrowserWindow({ width: ${FX_W}, height: ${FX_H * 6}, useContentSize: true, show: true });
+  w.loadURL(process.argv[process.argv.length - 1]);
+});`,
+				);
+				electronApp = await _electron.launch({
+					executablePath: ELECTRON,
+					args: [main, `${media.base}/index.html`],
+					env: { ...process.env, ELECTRON_DISABLE_SANDBOX: '1' },
+				});
+				page = await electronApp.firstWindow();
+				await page.waitForLoadState();
+			} else {
+				browser = await chromium.launch({
+					executablePath: CHROME!,
+					args: [
+						'--enable-features=CanvasDrawElement',
+						'--use-angle=swiftshader',
+						'--enable-unsafe-swiftshader',
+					],
+				});
+				page = await browser.newPage({ viewport: { width: FX_W, height: FX_H * 6 } });
+			}
 			page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 			page.on('console', (m) => {
 				if (m.type() === 'error') console.log('[page]', m.text());
 			});
-			await page.goto(`${media.base}/index.html`);
+			if (!ELECTRON) await page.goto(`${media.base}/index.html`);
 		}, 180_000);
 
 		afterAll(async () => {
 			await page?.screenshot({ path: join(media.dir, 'page.png'), fullPage: true }).catch(() => undefined);
 			console.info(`[compositor-player] screenshot ${join(media.dir, 'page.png')}`);
 			await browser?.close();
+			await electronApp?.close();
 			media?.close();
 		});
 
