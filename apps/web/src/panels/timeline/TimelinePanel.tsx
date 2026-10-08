@@ -71,7 +71,8 @@ import {
 import { mediaCacheVersion } from './media/media-cache.ts';
 import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
-import { computeLayout, hitY, regionIndexAt } from './model/layout.ts';
+import { computeLayout, hitY, regionIndexAt, type TrackRow } from './model/layout.ts';
+import { revealRowScroll, revealScroll, type Span, visiblePart, visibleRowBand } from './model/locate.ts';
 import { renderSegments } from './model/renderbar.ts';
 import {
 	type DropTarget,
@@ -370,6 +371,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			if (!row) throw new Error(`Track ${track} is not laid out`);
 			return { row, label: trackLabel(s, t.id) ?? track };
 		};
+		const regionOf = (row: TrackRow) =>
+			row.kind === 'video' ? geomRef.current.layout.video : geomRef.current.layout.audio;
 		const tc = (f: number) => {
 			const st = seqRef.current.settings;
 			return formatTimecode(f, st.frameRate as Rational, {
@@ -397,25 +400,75 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					if (!r) throw new Error('The timeline is not laid out');
 					const v = geomRef.current.viewport;
 					const xOf = (f: number) => r.left + (f - v.scrollFrame) * v.pxPerFrame;
+					// The middle of the row's visible band (a row half scrolled out of its region).
+					const yOf = (row: TrackRow) => {
+						const band = visibleRowBand(regionOf(row), row);
+						return r.top + (band ? (band[0] + band[1]) / 2 : row.y + row.height / 2);
+					};
 					if (a.clipId) {
 						const c = seqRef.current.clips[a.clipId];
 						if (!c) throw new Error(`No clip ${a.clipId} in this sequence`);
 						const { row, label } = rowOf(c.trackId);
 						const inset = Math.min(4, (c.duration * v.pxPerFrame) / 4);
+						// wp fixups: aim at the middle of the clip's visible part, not of the whole clip (which can lie
+						// off screen when the clip runs past the visible range).
+						const part = visiblePart(v, c.start, c.start + c.duration);
 						const x =
 							a.edge === 'in'
 								? xOf(c.start) + inset / 2
 								: a.edge === 'out'
 									? xOf(c.start + c.duration) - inset / 2
-									: xOf(c.start + c.duration / 2);
-						return { x, y: r.top + row.y + row.height / 2, frame: c.start, track: label };
+									: xOf(part ? (part[0] + part[1]) / 2 : c.start + c.duration / 2);
+						return { x, y: yOf(row), frame: c.start, track: label, visible: !!part };
 					}
 					const frame = a.frame ?? Math.round(v.scrollFrame + v.width / v.pxPerFrame / 2);
 					// A frame's cell centre, so a click there lands on that frame.
 					const x = xOf(frame + 0.5);
 					if (!a.track) return { x, y: r.top + 4, frame };
 					const { row, label } = rowOf(a.track);
-					return { x, y: r.top + row.y + row.height / 2, frame, track: label };
+					return { x, y: yOf(row), frame, track: label };
+				},
+				reveal: (a) => {
+					const v = geomRef.current.viewport;
+					const seq = seqRef.current;
+					let moved = false;
+					let span: Span | null = null;
+					let trackId: string | null = null;
+					if (a.clipId) {
+						const c = seq.clips[a.clipId];
+						if (!c) throw new Error(`No clip ${a.clipId} in this sequence`);
+						const end = c.start + c.duration;
+						const edge = Math.min(c.duration, 2 / Math.max(1e-9, v.pxPerFrame)); // ~2 px at the edge
+						span =
+							a.edge === 'in'
+								? [c.start, c.start + edge]
+								: a.edge === 'out'
+									? [end - edge, end]
+									: [c.start, end];
+						trackId = c.trackId;
+					} else {
+						if (typeof a.frame === 'number') span = [a.frame, a.frame + 1];
+						if (a.track) trackId = rowOf(a.track).row.trackId;
+					}
+					if (span) {
+						const next = revealScroll(v, span[0], span[1]);
+						if (next !== null) {
+							controller.setScroll(next);
+							moved = true;
+						}
+					}
+					if (trackId) {
+						const { row } = rowOf(trackId);
+						const region = regionOf(row);
+						const view = session.getState().views[seq.id];
+						const key = row.kind === 'video' ? 'scrollYVideo' : 'scrollYAudio';
+						const next = revealRowScroll(region, row, view?.[key] ?? 0);
+						if (next !== null) {
+							controller.setView({ [key]: next });
+							moved = true;
+						}
+					}
+					return moved;
 				},
 				hit: (x, y) => {
 					const r = area()?.getBoundingClientRect();
@@ -438,7 +491,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				},
 			},
 		});
-	}, [props.instanceId]);
+	}, [props.instanceId, controller, session]);
 
 	// ------------------------------------------------------------ pointer input (coalesced per frame, TL-156)
 	const pending = useRef<PointerInfo | null>(null);

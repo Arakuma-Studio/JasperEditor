@@ -81,8 +81,13 @@ export type TimelineHit = {
 
 export type TimelineLocator = {
 	sequenceId(): string | null;
-	/** Window point of a frame (x) on a track row (y): its centre, or of a clip's body / edge. */
-	locate(a: TimelineLocateArgs): { x: number; y: number; frame?: number; track?: string };
+	/**
+	 * Window point of a frame (x) on a track row (y): its centre, or of a clip's body (the middle of its visible
+	 * part) / edge. `visible: false` = the clip has no part on screen (call `reveal` first).
+	 */
+	locate(a: TimelineLocateArgs): { x: number; y: number; frame?: number; track?: string; visible?: boolean };
+	/** Scrolls the timeline so the clip / frame / track row is on screen; true when the view changed. */
+	reveal?(a: TimelineLocateArgs): boolean;
 	hit(x: number, y: number): TimelineHit | null;
 	view(): { scrollFrame: number; pxPerFrame: number; area: UiBounds; visibleFrames: [number, number] };
 };
@@ -154,7 +159,99 @@ function needElement(id: string): Element {
 	);
 }
 
-/** A target: {id, fx?, fy?} (a point inside the element, default its centre) or {x, y}. */
+type Box = { left: number; top: number; width: number; height: number };
+
+/**
+ * The part of an element that shows: its box clipped by every ancestor that clips its overflow and by the window,
+ * or null when less than a pixel of it shows (wp fixups: a clip running off the visible timeline).
+ */
+export function visibleBox(el: Element): Box | null {
+	const r = el.getBoundingClientRect();
+	let { left, top, right, bottom } = r;
+	for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+		const cs = getComputedStyle(p);
+		const clipX = cs.overflowX !== 'visible';
+		const clipY = cs.overflowY !== 'visible';
+		if (clipX || clipY) {
+			const q = p.getBoundingClientRect();
+			if (clipX) {
+				left = Math.max(left, q.left);
+				right = Math.min(right, q.right);
+			}
+			if (clipY) {
+				top = Math.max(top, q.top);
+				bottom = Math.min(bottom, q.bottom);
+			}
+		}
+		if (cs.position === 'fixed') break;
+	}
+	left = Math.max(left, 0);
+	top = Math.max(top, 0);
+	right = Math.min(right, window.innerWidth);
+	bottom = Math.min(bottom, window.innerHeight);
+	return right - left >= 1 && bottom - top >= 1
+		? { left, top, width: right - left, height: bottom - top }
+		: null;
+}
+
+const TIMELINE_CLIP_ID = /^timeline\.clip\.(.+)$/;
+const hasLocator = (kind: LocatorEntry['kind']) => [...locators.values()].some((l) => l.kind === kind);
+
+/** Waits until the panels have re-rendered after a scroll (or `ok` holds), at most `max` frames. */
+async function settle(ok: () => boolean, max = 10): Promise<void> {
+	await nextFrame();
+	for (let i = 1; i < max && !ok(); i++) await nextFrame();
+}
+
+/** A timeline point, after scrolling the target into view when none of it shows (wp fixups). */
+async function timelinePoint(a: TimelineLocateArgs) {
+	const t = locator('timeline');
+	let p = t.locate(a);
+	if (t.reveal?.(a)) {
+		await settle(() => t.locate(a).visible !== false);
+		p = t.locate(a);
+	}
+	return p;
+}
+
+/**
+ * An element by id and the box to aim at: its visible part. With nothing of it showing it is scrolled into view
+ * first: a timeline clip through the timeline's own scroll (the clip's element may not even exist while it is
+ * scrolled away), anything else with scrollIntoView. Falls back to the whole box when nothing helps.
+ */
+async function revealElement(id: string): Promise<{ element: Element; rect: Box; scrolled: boolean }> {
+	const clip = TIMELINE_CLIP_ID.exec(id);
+	let el = clip && hasLocator('timeline') ? resolveElement(id) : needElement(id);
+	let vis = el ? visibleBox(el) : null;
+	let scrolled = false;
+	if (!vis && clip && hasLocator('timeline')) {
+		const t = locator('timeline');
+		if (t.reveal?.({ clipId: clip[1] })) {
+			scrolled = true;
+			await settle(() => {
+				const e = resolveElement(id);
+				return !!e && !!visibleBox(e);
+			});
+		}
+		el = resolveElement(id);
+		vis = el ? visibleBox(el) : null;
+	}
+	if (!el) el = needElement(id);
+	if (!vis && !clip) {
+		el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+		scrolled = true;
+		await nextFrame();
+		vis = visibleBox(el);
+	}
+	const r = el.getBoundingClientRect();
+	return {
+		element: el,
+		rect: vis ?? { left: r.left, top: r.top, width: r.width, height: r.height },
+		scrolled,
+	};
+}
+
+/** A target: {id, fx?, fy?} (a point inside the element's visible part, default its centre) or {x, y}. */
 async function pointOf(
 	t: unknown,
 	label = 'target',
@@ -163,19 +260,14 @@ async function pointOf(
 		throw new UiAutomationError('E_INVALID_PARAM', `${label} must be {id} or {x, y}`);
 	const a = t as Args;
 	if (typeof a.id === 'string') {
-		const el = needElement(a.id);
-		let r = el.getBoundingClientRect();
-		if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) {
-			el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-			await nextFrame();
-			r = el.getBoundingClientRect();
-		}
+		const { element: el, rect: r } = await revealElement(a.id);
+		// fx / fy (default the centre) inside the element's visible part.
 		const fx = typeof a.fx === 'number' ? Math.min(1, Math.max(0, a.fx)) : 0.5;
 		const fy = typeof a.fy === 'number' ? Math.min(1, Math.max(0, a.fy)) : 0.5;
 		return { x: r.left + r.width * fx, y: r.top + r.height * fy, element: el };
 	}
 	if (a.timeline && typeof a.timeline === 'object') {
-		const p = locator('timeline').locate(a.timeline as TimelineLocateArgs);
+		const p = await timelinePoint(a.timeline as TimelineLocateArgs);
 		return { ...p, element: document.elementFromPoint(p.x, p.y) };
 	}
 	if (a.program && typeof a.program === 'object') {
@@ -493,10 +585,10 @@ async function doSet(a: Args) {
 	return { id, value: valueNow(after ?? el) };
 }
 
-function doLocate(a: Args) {
+async function doLocate(a: Args) {
 	if (a.timeline && typeof a.timeline === 'object') {
 		const t = locator('timeline');
-		const p = t.locate(a.timeline as TimelineLocateArgs);
+		const p = await timelinePoint(a.timeline as TimelineLocateArgs);
 		return { timeline: { ...a.timeline, ...p, view: t.view() } };
 	}
 	if (a.program && typeof a.program === 'object') {
@@ -512,12 +604,15 @@ function doLocate(a: Args) {
 		};
 	}
 	if (typeof a.id === 'string') {
-		const el = needElement(a.id);
-		const r = el.getBoundingClientRect();
+		const { element, rect: v, scrolled } = await revealElement(a.id);
+		const r = element.getBoundingClientRect();
 		return {
 			id: a.id,
 			bounds: { x: r.left, y: r.top, width: r.width, height: r.height },
-			center: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+			visible: { x: v.left, y: v.top, width: v.width, height: v.height },
+			// The middle of the visible part: where ui_click {id} aims.
+			center: { x: v.left + v.width / 2, y: v.top + v.height / 2 },
+			...(scrolled ? { scrolled } : {}),
 		};
 	}
 	throw new UiAutomationError(

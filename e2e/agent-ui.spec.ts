@@ -217,3 +217,66 @@ test('ui_screenshot returns the window and a cropped panel', async () => {
 	writeFileSync(join(ROOT, 'test-results', 'agent-ui', 'timeline.png'), Buffer.from(pimg.data, 'base64'));
 	expect(pm.bounds.width).toBeLessThan(page.viewportSize()!.width);
 });
+
+test('a clip running off the visible timeline is aimed at its visible part; one scrolled away is revealed (wp fixups)', async () => {
+	type Loc = {
+		timeline: {
+			x: number;
+			y: number;
+			visible?: boolean;
+			view: { visibleFrames: [number, number]; area: { x: number; width: number } };
+		};
+	};
+	const clip = (await clips(page)).find((c) => c.track === 'V1')!;
+	const sel = async () =>
+		(await query<{ selection: { timeline?: { clips?: string[] } } }>(page, 'selection.get')).selection
+			.timeline?.clips ?? [];
+	// Zoom in from the start until the middle of the whole clip lies past the right edge of the timeline.
+	let loc = await tool<Loc>('ui_locate', { projectId, timeline: { clipId: clip.id } });
+	for (let i = 0; i < 20 && loc.timeline.view.visibleFrames[1] > clip.start + clip.duration / 2; i++) {
+		await tool('ui_command', { projectId, id: 'timeline.zoomIn' });
+		loc = await tool<Loc>('ui_locate', { projectId, timeline: { clipId: clip.id } });
+	}
+	const { area, visibleFrames } = loc.timeline.view;
+	expect(visibleFrames[1]).toBeLessThan(clip.start + clip.duration / 2);
+	expect(visibleFrames[0]).toBeLessThan(clip.start + clip.duration);
+	// The point is on screen, inside the timeline, and on the clip.
+	expect(loc.timeline.x).toBeGreaterThan(area.x);
+	expect(loc.timeline.x).toBeLessThan(area.x + area.width);
+	const hit = await tool<{ timeline: { clipId: string } }>('ui_hit', {
+		projectId,
+		x: loc.timeline.x,
+		y: loc.timeline.y,
+	});
+	expect(hit.timeline.clipId).toBe(clip.id);
+	// The element target agrees: ui_locate {id} centres on the visible part, and ui_click selects the clip.
+	const el = await tool<{ center: { x: number }; bounds: { x: number; width: number } }>('ui_locate', {
+		projectId,
+		id: `timeline.clip.${clip.id}`,
+	});
+	expect(el.bounds.x + el.bounds.width / 2).toBeGreaterThan(area.x + area.width); // the whole clip's centre: off screen
+	expect(el.center.x).toBeLessThan(area.x + area.width);
+	await tool('ui_command', { projectId, id: 'gesture.cancel' }).catch(() => undefined);
+	await tool('ui_click', { projectId, id: `timeline.clip.${clip.id}` });
+	await expect.poll(sel).toEqual([clip.id]);
+	// Scroll the clip away entirely (to a second clip far past it), then click it by id: it is scrolled back.
+	await tool('ui_command', { projectId, id: 'gesture.cancel' }).catch(() => undefined);
+	await expect.poll(sel).toEqual([]);
+	const media = (await query<{ media: { mediaId: string }[] }>(page, 'media.list')).media;
+	const far = clip.start + clip.duration * 4;
+	const placed = await transact(page, [
+		{ type: 'clip.place', source: { mediaId: media[0]!.mediaId }, at: far, tracks: { video: 'V1' } },
+	]);
+	expect(placed.ok, JSON.stringify(placed)).toBe(true);
+	const away = await tool<Loc>('ui_locate', {
+		projectId,
+		timeline: { frame: Math.round(far + 10), track: 'V1' },
+	});
+	expect(away.timeline.view.visibleFrames[0]).toBeGreaterThan(clip.start + clip.duration);
+	const clicked = await tool<{ x: number }>('ui_click', { projectId, id: `timeline.clip.${clip.id}` });
+	await expect.poll(sel).toEqual([clip.id]);
+	const back = await tool<Loc>('ui_locate', { projectId, timeline: { clipId: clip.id } });
+	expect(back.timeline.visible).toBe(true);
+	expect(clicked.x).toBeGreaterThan(area.x);
+	expect(clicked.x).toBeLessThan(area.x + area.width);
+});
