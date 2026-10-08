@@ -15,6 +15,7 @@ import {
 	defaultTransform,
 	shapeIntrinsicBox,
 } from '../../factories.ts';
+import { idPrefixOf, isValidId } from '../../ids.ts';
 import { evaluate } from '../../keyframes.ts';
 import type { BezierPath } from '../../path/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
@@ -127,13 +128,67 @@ function shapeBoxes(clips: Record<string, Clip>): [string, Box][] {
 	});
 }
 
+/** Entity-id prefixes a shape-box command may name without touching shape geometry through them. */
+const NEUTRAL_PREFIXES = new Set(['clp', 'fx', 'seq', 'trk', 'mrk', 'trn', 'lnk', 'grp']);
+
+/**
+ * The clips a command names, when that is all it can touch: every id in it is a clip id or an id that cannot lead to
+ * shape geometry (effects, sequences, tracks…). Null when it names keyframes (or anything else) — those can sit on
+ * any clip — or no clip at all: then every shape is checked.
+ */
+function namedClips(cmd: unknown): string[] | null {
+	const out: string[] = [];
+	let open = false;
+	const walk = (v: unknown): void => {
+		if (open) return;
+		if (typeof v === 'string') {
+			const p = isValidId(v) ? idPrefixOf(v) : null;
+			if (p === 'clp') out.push(v);
+			else if (p && !NEUTRAL_PREFIXES.has(p)) open = true;
+			else if (v.startsWith('$')) open = true; // an unresolved reference or selection
+		} else if (Array.isArray(v)) for (const x of v) walk(x);
+		else if (v && typeof v === 'object') for (const x of Object.values(v)) walk(x);
+	};
+	walk(cmd);
+	// Naming no clip (e.g. keyframes.simplify of a whole sequence) means "anything": check every shape.
+	return open || out.length === 0 ? null : out;
+}
+
+/** Sequence id and box of shape clip `cid` (via `peek`), or null when it is not a box-sized shape. */
+function shapeBoxOf(sequences: Record<string, Sequence>, cid: string): [string, Box] | null {
+	for (const sid of peekKeys(sequences)) {
+		const c = peek<Clip>(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!, cid);
+		if (!c) continue;
+		return c.kind === 'shape' && (c as ShapeClip).shape.type !== 'vector'
+			? [sid, shapeIntrinsicBox(c.shape as ShapeData)]
+			: null;
+	}
+	return null;
+}
+
 export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
 	return (doc, cmd, h) => {
-		// This wraps every parameter and keyframe command. Reading every clip of a large document through the draft
-		// cost more than the command itself, so the document is read with `peek` (no drafts) and per-record box lists
-		// are memoized; after the command only records the command touched (drafts) can hold a changed box, and only
-		// a shape whose box changed is written through the draft.
+		// This wraps every parameter and keyframe command, so it must stay cheap on large documents: the document is
+		// read with `peek` (no drafts); a command that names its clips only checks those, others check every shape
+		// (per-record box lists memoized; after the command only records it touched — drafts — can hold a changed box).
+		// Only a shape whose box changed is written through the draft.
 		const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		const named = namedClips(cmd);
+		if (named) {
+			const before = new Map<string, [string, Box]>();
+			for (const cid of new Set(named)) {
+				const b = shapeBoxOf(sequences, cid);
+				if (b) before.set(cid, b);
+			}
+			const result = handler(doc, cmd, h);
+			const after = peek<Record<string, Sequence>>(doc, 'sequences')!;
+			for (const [cid, [sid, was]] of before) {
+				const now = shapeBoxOf(after, cid);
+				if (now && now[0] === sid && (now[1].width !== was.width || now[1].height !== was.height))
+					recenterShape(doc.sequences[sid]!.clips[cid] as Draft<ShapeClip>, was);
+			}
+			return result;
+		}
 		const before = new Map<string, Map<string, Box>>();
 		for (const sid of peekKeys(sequences)) {
 			const boxes = shapeBoxes(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!);

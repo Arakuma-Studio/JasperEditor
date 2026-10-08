@@ -73,9 +73,18 @@ export const LAYERS = {
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'dependency-free DSP: no DOM, no Node, no zod',
 	},
+	// golden-fuzz: test-only helpers (golden frames, fuzzing, ffmpeg oracles, headless WebGL). Only ever a
+	// devDependency (`testDeps`) of the packages whose tests use it; never imported by source.
+	'packages/testkit': {
+		name: '@jasper/testkit',
+		deps: [],
+		forbid: ['react', 'uiLibs', 'tailwind', 'remotion', 'anime', 'electron'],
+		note: 'test-only: Node, vitest, fast-check and Playwright; no workspace dependencies',
+	},
 	'packages/project': {
 		name: '@jasper/project',
 		deps: ['@jasper/audio-dsp'],
+		testDeps: ['@jasper/testkit'],
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'the pure model: zod, immer and @jasper/audio-dsp only, no DOM, no Node, no UI, no Remotion, no engine',
 	},
@@ -99,6 +108,7 @@ export const LAYERS = {
 	'packages/expressions': {
 		name: '@jasper/expressions',
 		deps: ['@jasper/project'],
+		testDeps: ['@jasper/testkit'],
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'QuickJS-wasm + the AE object model: no DOM, no Node, no UI, no Remotion',
 	},
@@ -107,6 +117,7 @@ export const LAYERS = {
 	'packages/interchange': {
 		name: '@jasper/interchange',
 		deps: ['@jasper/project'],
+		testDeps: ['@jasper/testkit'],
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'bytes in, bytes out: no DOM, no Node, no UI',
 	},
@@ -148,6 +159,7 @@ export const LAYERS = {
 			'@jasper/audio-fx',
 			'@jasper/expressions',
 		],
+		testDeps: ['@jasper/testkit'],
 		forbid: [...BROWSER_LAYER, 'uiLibs', 'tailwind', 'anime'],
 		note: 'the Remotion bundle: no session, ui, engine-client or Tailwind',
 	},
@@ -192,7 +204,7 @@ export const LAYERS = {
 			'@jasper/mg-templates',
 			'@jasper/project',
 		],
-		testDeps: ['@jasper/engine-client', '@jasper/session'],
+		testDeps: ['@jasper/engine-client', '@jasper/session', '@jasper/testkit'],
 		forbid: ['uiLibs', 'tailwind', 'anime', 'electron'],
 	},
 	'apps/mcp': {

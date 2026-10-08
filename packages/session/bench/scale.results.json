@@ -1,0 +1,132 @@
+{
+  "revision": "80547f35",
+  "node": "v20.20.2",
+  "date": "2026-10-08",
+  "machine": {
+    "cpus": 12,
+    "model": "AMD EPYC Processor (with IBPB)",
+    "loadAverage": 10.16,
+    "loadFactor": 1.2600968000000041
+  },
+  "workload": {
+    "sequences": 200,
+    "clips": 5000,
+    "effects": 1600,
+    "keyframes": 5000,
+    "jsonBytes": 6734120,
+    "generateMs": 47629
+  },
+  "method": "packages/session/bench/scale.ts: wall-clock median and p95 (and process CPU median) after warm-up runs; budgets are reference-machine milliseconds scaled by the measured load factor unless PERF=1.",
+  "results": [
+    {
+      "op": "load",
+      "what": "JSON.parse + loadProject (migrate, zod, invariants)",
+      "runs": 9,
+      "medianMs": 814.816055999996,
+      "p95Ms": 924.8157569999967,
+      "cpuMedianMs": 1017.368,
+      "budgetMs": 3150,
+      "pass": true
+    },
+    {
+      "op": "migrate v1→current",
+      "what": "migrate() of the same project stamped schema v1",
+      "runs": 9,
+      "medianMs": 165.22790099999838,
+      "p95Ms": 276.59208000000217,
+      "cpuMedianMs": 206.99,
+      "budgetMs": 1890,
+      "pass": true
+    },
+    {
+      "op": "invariants",
+      "what": "checkInvariants of the whole document (every transaction runs it)",
+      "runs": 9,
+      "medianMs": 38.7064790000004,
+      "p95Ms": 44.63616300000285,
+      "cpuMedianMs": 79.677,
+      "budgetMs": 756,
+      "pass": true
+    },
+    {
+      "op": "small edit",
+      "what": "session.apply: one Opacity value of one clip",
+      "runs": 9,
+      "medianMs": 70.96357599999465,
+      "p95Ms": 80.90410999999585,
+      "cpuMedianMs": 143.96,
+      "budgetMs": 315,
+      "pass": true
+    },
+    {
+      "op": "large edit",
+      "what": "session.apply: Opacity of 300 clips across sequences in one transaction",
+      "runs": 5,
+      "medianMs": 1686.4774599999946,
+      "p95Ms": 1781.7051880000072,
+      "cpuMedianMs": 1767.308,
+      "budgetMs": 2520,
+      "pass": true
+    },
+    {
+      "op": "undo",
+      "what": "session.undo() of the last edit",
+      "runs": 9,
+      "medianMs": 0.17410500001278706,
+      "p95Ms": 0.2890380000026198,
+      "cpuMedianMs": 0.197,
+      "budgetMs": 63,
+      "pass": true
+    },
+    {
+      "op": "redo",
+      "what": "session.redo() of the undone edit",
+      "runs": 9,
+      "medianMs": 0.1237810000020545,
+      "p95Ms": 0.255604999998468,
+      "cpuMedianMs": 0.152,
+      "budgetMs": 63,
+      "pass": true
+    },
+    {
+      "op": "render snapshot",
+      "what": "buildRenderSnapshot of one sequence (preview / export input)",
+      "runs": 9,
+      "medianMs": 0.8096269999950891,
+      "p95Ms": 1.4565729999885662,
+      "cpuMedianMs": 1.639,
+      "budgetMs": 50,
+      "pass": true
+    },
+    {
+      "op": "render snapshots ×200",
+      "what": "buildRenderSnapshot of every sequence",
+      "runs": 3,
+      "medianMs": 188.2928680000041,
+      "p95Ms": 193.25822399999015,
+      "cpuMedianMs": 382.029,
+      "budgetMs": 3780,
+      "pass": true
+    },
+    {
+      "op": "scene at a frame",
+      "what": "resolveSceneAt (the layers of one frame)",
+      "runs": 50,
+      "medianMs": 0.01912599999923259,
+      "p95Ms": 0.14352800000051502,
+      "cpuMedianMs": 0.022,
+      "budgetMs": 6,
+      "pass": true
+    },
+    {
+      "op": "autosave serialise",
+      "what": "makeEnvelope + JSON.stringify of the committed document",
+      "runs": 9,
+      "medianMs": 65.75589699999546,
+      "p95Ms": 70.75251399999252,
+      "cpuMedianMs": 65.779,
+      "budgetMs": 1512,
+      "pass": true
+    }
+  ]
+}

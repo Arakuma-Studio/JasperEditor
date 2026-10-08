@@ -475,11 +475,67 @@ function repairIds(
 	}
 }
 
+// ---- per-sequence invariant memo (golden-fuzz): see the sequence loop of `checkInvariants`.
+
+/** What a sequence's findings depend on besides the sequence object itself (compared by identity). */
+type SequenceDeps = {
+	media: unknown;
+	synthetics: unknown;
+	transcripts: unknown;
+	fonts: unknown;
+	items: unknown;
+	effects: unknown;
+	mgTemplates: unknown;
+};
+type SequenceMemo = {
+	deps: SequenceDeps;
+	ids: string[];
+	issues: Issue[];
+	media: string[];
+	synthetics: string[];
+	transcripts: string[];
+};
+const sequenceMemo = new WeakMap<object, SequenceMemo>();
+const NO_MEMO = Symbol('checkInvariants.noMemo');
+
+/** `checkInvariants` without the per-sequence memo (the reference the memo is tested against). */
+export function checkInvariantsUncached(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
+	return checkInvariants(doc, { ...opts, [NO_MEMO]: true } as InvariantOptions);
+}
+const sameDeps = (a: SequenceDeps, b: SequenceDeps) =>
+	a.media === b.media &&
+	a.synthetics === b.synthetics &&
+	a.transcripts === b.transcripts &&
+	a.fonts === b.fonts &&
+	a.items === b.items &&
+	a.effects === b.effects &&
+	a.mgTemplates === b.mgTemplates;
+
+/** A Set that can log what is added (the references one sequence contributes). */
+class LoggedSet extends Set<string> {
+	log: string[] | null = null;
+	override add(v: string): this {
+		this.log?.push(v);
+		return super.add(v);
+	}
+}
+/** A Map that remembers whether anything was set since `touched` was reset. */
+class TouchedMap<K, V> extends Map<K, V> {
+	touched = false;
+	override set(k: K, v: V): this {
+		this.touched = true;
+		return super.set(k, v);
+	}
+}
+
 export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
 	const issues: Issue[] = [];
 	const seen = new Set<string>();
+	/** Ids claimed by the sequence being walked (per-sequence memo, `SequenceMemo`). */
+	let claimLog: string[] | null = null;
 	const claim = (id: string, prefix: IdPrefix | IdPrefix[], where: string[]) => {
 		const prefixes = Array.isArray(prefix) ? prefix : [prefix];
+		claimLog?.push(id);
 		if (!isValidId(id) || !prefixes.includes(idPrefixOf(id)!)) {
 			const issue = inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where);
 			ID_ISSUES.set(issue, { kind: 'malformed', id, prefix: prefixes[0]! });
@@ -706,14 +762,46 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		const cov = coverageProblem(t.coverage);
 		if (cov) issues.push(inv('INV-012', `Transcript ${t.id}: ${cov}`, ['transcripts', t.id, 'coverage']));
 	}
-	const captionTrsUsers = new Map<string, number>();
+	const captionTrsUsers = new TouchedMap<string, number>();
 
 	// Sequences
-	const usedMedia = new Set<string>();
-	const usedSyn = new Set<string>();
-	const usedTrs = new Set<string>();
+	const usedMedia = new LoggedSet();
+	const usedSyn = new LoggedSet();
+	const usedTrs = new LoggedSet();
 	const nestEdges = new Map<string, Set<string>>();
+	// Per-sequence memo (golden-fuzz scale benchmark): a sequence the transaction left untouched is the same object,
+	// so its findings are replayed instead of walked again (every transaction checks the whole document).
+	const memoOn = !(opts as { [NO_MEMO]?: boolean })[NO_MEMO];
+	const deps: SequenceDeps = {
+		media: doc.media,
+		synthetics: doc.synthetics,
+		transcripts: doc.transcripts,
+		fonts: doc.fonts,
+		items: doc.items,
+		effects: opts.effects,
+		mgTemplates: opts.mgTemplates,
+	};
 	for (const seq of Object.values(doc.sequences)) {
+		// Only frozen (immutable) sequences are memoized: a mutable one may change in place between checks (repairs).
+		const frozen = memoOn && Object.isFrozen(seq) && Object.isFrozen(seq.clips);
+		const hit = frozen ? sequenceMemo.get(seq) : undefined;
+		if (hit && sameDeps(hit.deps, deps)) {
+			// A replayed id seen elsewhere in the document is a duplicate: check everything the slow way.
+			if (hit.ids.some((id) => seen.has(id)))
+				return checkInvariants(doc, { ...opts, [NO_MEMO]: true } as InvariantOptions);
+			for (const id of hit.ids) seen.add(id);
+			issues.push(...hit.issues);
+			for (const id of hit.media) usedMedia.add(id);
+			for (const id of hit.synthetics) usedSyn.add(id);
+			for (const id of hit.transcripts) usedTrs.add(id);
+			continue;
+		}
+		const seqMark = issues.length;
+		claimLog = [];
+		usedMedia.log = [];
+		usedSyn.log = [];
+		usedTrs.log = [];
+		captionTrsUsers.touched = false;
 		const where = ['sequences', seq.id];
 		const s = seq.settings;
 		if (!isAllowedSequenceRate(s.frameRate))
@@ -1202,6 +1290,25 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				edgeUse.add(k);
 			}
 		}
+		// Memoizable: no references into other sequences (nests, multicam), no order-dependent caption-transcript
+		// counting, no duplicate ids found (those depend on the rest of the document).
+		const segment = issues.slice(seqMark);
+		if (
+			frozen &&
+			!nestEdges.has(seq.id) &&
+			!captionTrsUsers.touched &&
+			!segment.some((i) => i.message.startsWith('INV-001: Duplicate id'))
+		)
+			sequenceMemo.set(seq, {
+				deps,
+				ids: claimLog,
+				issues: segment,
+				media: usedMedia.log,
+				synthetics: usedSyn.log,
+				transcripts: usedTrs.log,
+			});
+		claimLog = null;
+		usedMedia.log = usedSyn.log = usedTrs.log = null;
 	}
 	// INV-009 nesting acyclic
 	const visiting = new Set<string>();
