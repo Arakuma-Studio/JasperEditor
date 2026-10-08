@@ -1,36 +1,56 @@
 // Workstream `gaps` MCP tools (docs/wp-notes/gaps.md): Find, Edit Original, Add / Delete Tracks, and (further down)
 // Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels, Warp Stabilizer,
 // Auto Reframe, Morph Cut and Essential Graphics templates. Edits are document commands (one transaction each).
+import type { MediaJobResult, RegisteredMedia } from '@jasper/api';
 import {
+	AUDIO_DISPLAY_FORMATS,
+	attachedProxyFrom,
 	FIND_OPERATORS,
 	findProjectItems,
 	findTimelineHits,
+	INGEST_ACTIONS,
+	makeEnvelope,
+	mediaJobCommands,
 	PROJECT_FIND_FIELDS,
+	PROXY_PRESETS,
+	projectSettingsOf,
+	proxyMismatch,
+	resolveFrameInput,
 	type Sequence,
 	sequenceTimecode,
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
+	VIDEO_DISPLAY_FORMATS,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
 	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
+	jobBody,
 	loadDoc,
 	READ_ONLY,
 	requireOk,
 	type ToolContext,
 	transact,
 	txBody,
+	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
+import { mediaRegisterCommand } from '../media.ts';
+import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - find searches the Project panel (scope "project": name, label, type, path, codec, frameSize, any) or a sequence (scope "timeline": clipName, sourceName, text, marker, any) with up to two criteria (contains, matches, begins, ends, notContains), match all/any and matchCase, like Premiere's Edit ▸ Find. Timeline hits come in frame order with timecodes.
 - locate_media says where a media file is on the engine host; action "reveal" shows it in the file browser and "open" opens it in its default application (Edit Original; local engines only, never programs).
+- get_project_settings / set_project_settings: Project Settings (video display format timecode / frames / feet35 / feet16, audio display format samples / milliseconds, the Captured and Generated Media folder, ingest at import: copy / transcode / proxies / copyAndProxies) and the engine folders behind Scratch Disks.
+- create_proxies transcodes video media to a proxy preset in the background and attaches the proxies when the job ends (wait: true waits and attaches); attach_proxy attaches an existing file (duration ± 1 frame and frame rate must match unless force); detach_proxies removes them; reconnect_full_resolution links a clip to its full-resolution file (the file it used becomes its proxy). The editor's Toggle Proxies plays proxies; exports never use them unless start_export gets draftUseProxies.
+- export_frame writes the sequence frame at a time as png / jpeg / tiff / dpx (10-bit) / exr (linear half float) / bmp / tga to a folder on this machine (never overwriting), optionally importing it into the project.
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -319,6 +339,394 @@ export function registerGapsTools(ctx: ToolContext): void {
 				...txBody(res, requireOk(res)),
 				deletedTracks: ids.length,
 				deletedSubmixes: submixIds.length,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'get_project_settings',
+		{
+			title: 'Get Project Settings',
+			description:
+				'Project Settings: video / audio display formats, the Captured and Generated Media folder (null = "Same as Project"), the ingest settings, and the engine folders behind Scratch Disks (generated media, previews, media cache, auto-save versions) with free space.',
+			input: { projectId: ProjectIdArg },
+			annotations: READ_ONLY,
+		},
+		async ({ projectId }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const scratch = await ctx
+				.engine((c) => c.call('projectScratch', { params: { projectId } }))
+				.catch(() => null);
+			return jsonResult({ ...projectSettingsOf(doc), scratchDisks: scratch });
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_project_settings',
+		{
+			title: 'Set Project Settings',
+			description:
+				'Changes Project Settings in one undoable step: videoDisplayFormat (timecode, frames, feet35, feet16), audioDisplayFormat (samples, milliseconds), mediaFolder (absolute folder for proxies / exported frames / Project Manager / ingest, null = "Same as Project"), ingest {enabled, action copy|transcode|proxies|copyAndProxies, preset, destination folder or null = next to the media}.',
+			input: {
+				projectId: ProjectIdArg,
+				videoDisplayFormat: z.enum(VIDEO_DISPLAY_FORMATS).optional(),
+				audioDisplayFormat: z.enum(AUDIO_DISPLAY_FORMATS).optional(),
+				mediaFolder: z.string().min(1).nullable().optional(),
+				ingest: z
+					.object({
+						enabled: z.boolean(),
+						action: z.enum(INGEST_ACTIONS).optional(),
+						preset: z.string().optional(),
+						destination: z.string().min(1).nullable().optional(),
+					})
+					.optional(),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, videoDisplayFormat, audioDisplayFormat, mediaFolder, ingest }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const cur = projectSettingsOf(doc);
+			if (mediaFolder) {
+				const chk = await ctx.engine((c) => c.call('scratchCheck', { body: { path: mediaFolder } }));
+				if (!chk.ok)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						chk.message ?? 'The folder cannot be used',
+						'Pass an absolute, writable folder.',
+					);
+			}
+			if (ingest?.preset && !PROXY_PRESETS.some((p) => p.id === ingest.preset))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`Unknown preset ${ingest.preset}`,
+					`Presets: ${PROXY_PRESETS.map((p) => p.id).join(', ')}`,
+				);
+			const settings: Record<string, unknown> = {};
+			if (videoDisplayFormat || audioDisplayFormat)
+				settings.display = {
+					video: videoDisplayFormat ?? cur.display.video,
+					audio: audioDisplayFormat ?? cur.display.audio,
+				};
+			if (mediaFolder !== undefined) settings.scratch = { media: mediaFolder };
+			if (ingest)
+				settings.ingest = {
+					enabled: ingest.enabled,
+					action: ingest.action ?? cur.ingest.action,
+					...((ingest.preset ?? cur.ingest.preset) ? { preset: ingest.preset ?? cur.ingest.preset } : {}),
+					destination: ingest.destination === undefined ? cur.ingest.destination : ingest.destination,
+				};
+			if (!Object.keys(settings).length)
+				throw new ToolError('E_INVALID_PARAM', 'Nothing to change', 'Pass at least one setting.');
+			const res = await transact(ctx, projectId, {
+				label: 'Project Settings',
+				commands: [{ type: 'project.updateSettings', settings }],
+			});
+			requireOk(res);
+			const { doc: after } = await loadDoc(ctx, projectId);
+			return jsonResult(projectSettingsOf(after));
+		},
+	);
+
+	const mediaIdOf = (doc: Awaited<ReturnType<typeof loadDoc>>['doc'], id: string): string => {
+		const item = doc.items[id];
+		const m = item && (item.kind === 'media' || item.kind === 'subclip') ? item.mediaId : id;
+		if (!doc.media[m])
+			throw new ToolError('E_NOT_FOUND', `Media not found: ${id}`, 'Call get_project or list_media for ids.');
+		return m;
+	};
+	const engineKey = (doc: Awaited<ReturnType<typeof loadDoc>>['doc'], mediaId: string): string => {
+		const l = doc.media[mediaId]!.locators.find((x) => x.type === 'engine-store');
+		if (!l || l.type !== 'engine-store')
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				`${mediaId} has no file on the engine`,
+				'Only imported files have proxies.',
+			);
+		return l.key;
+	};
+
+	defineTool(
+		ctx,
+		'create_proxies',
+		{
+			title: 'Create proxies',
+			description: `Clip ▸ Proxy ▸ Create Proxies: transcodes video media to a smaller browser-playable proxy (presets ${PROXY_PRESETS.filter(
+				(p) => p.kind === 'proxy',
+			)
+				.map((p) => p.id)
+				.join(
+					', ',
+				)}; default proxy-720) as one background job and attaches the proxies when it ends (one undo step). destination: "next-to-media" (a Proxies folder beside each file, default), "project" (the project's generated-media folder) or an absolute folder. wait (default true) waits for the job and attaches; with wait false call wait_for_job and then create_proxies again is not needed — the editor attaches finished jobs only when it started them, so prefer wait.`,
+			input: {
+				projectId: ProjectIdArg,
+				mediaIds: z.array(z.string().min(1)).min(1).max(500),
+				preset: z.string().optional(),
+				destination: z.union([z.enum(['next-to-media', 'project']), z.string().min(1)]).optional(),
+				wait: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, mediaIds, preset, destination, wait }, extra) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const ids = [...new Set(mediaIds.map((id) => mediaIdOf(doc, id)))];
+			const items = ids.map((id) => ({
+				mediaKey: engineKey(doc, id),
+				mediaId: id,
+				name: doc.media[id]!.originalName,
+			}));
+			const scratch = projectSettingsOf(doc).scratch.media;
+			const dest =
+				!destination || destination === 'next-to-media'
+					? { mode: 'next-to-media' as const }
+					: destination === 'project'
+						? { mode: 'project' as const, ...(scratch ? { folder: scratch } : {}) }
+						: { mode: 'folder' as const, folder: destination };
+			const job = await ctx.engine((c) =>
+				c.call('mediaJobs', {
+					body: { projectId, op: 'proxy', ...(preset ? { preset } : {}), destination: dest, items },
+				}),
+			);
+			const base = ctx.link.target?.url ?? '';
+			if (wait === false)
+				return jsonResult({
+					...jobBody(job, base),
+					note: 'The proxies are not attached until a create_proxies call waits for them; call again with wait.',
+				});
+			const { job: done, timedOut } = await waitJob(ctx, job.id, 60 * 60 * 1000, extra);
+			if (timedOut) return jsonResult({ ...jobBody(done, base), timedOut: true });
+			if (done.state !== 'succeeded')
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `The job ${done.state}`,
+					undefined,
+					{ jobId: done.id },
+				);
+			const result = done.result as MediaJobResult;
+			const { doc: now } = await loadDoc(ctx, projectId);
+			const { commands, skipped } = mediaJobCommands(now, result, 'created');
+			let tx: unknown = null;
+			if (commands.length) {
+				const res = await transact(ctx, projectId, { label: 'Create Proxies', commands });
+				tx = txBody(res, requireOk(res));
+			}
+			return jsonResult({
+				jobId: done.id,
+				attached: result.outputs
+					.filter((o) => commands.some((c) => (c as { mediaId: string }).mediaId === o.mediaId))
+					.map((o) => ({ mediaId: o.mediaId, path: o.path })),
+				skipped: [...result.skipped, ...skipped.map((reason) => ({ reason }))],
+				transaction: tx,
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'attach_proxy',
+		{
+			title: 'Attach proxy',
+			description:
+				'Clip ▸ Proxy ▸ Attach Proxies: attaches an existing file (absolute path on this machine) as the proxy of a video media. Refused when its duration (± 1 frame) or frame rate differ, unless force.',
+			input: {
+				projectId: ProjectIdArg,
+				mediaId: z.string().min(1),
+				path: z.string().min(1),
+				force: z.boolean().optional(),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, mediaId, path, force }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const id = mediaIdOf(doc, mediaId);
+			const reg = await ctx.engine((c) => c.registerMedia({ projectId, paths: [path] }));
+			const file = reg.items[0];
+			if (!file)
+				throw new ToolError(
+					reg.errors[0]?.code ?? 'FILE_NOT_FOUND',
+					reg.errors[0]?.message ?? 'The file could not be registered',
+					'Pass an absolute path of an existing file.',
+				);
+			const why = proxyMismatch(doc.media[id]!, file.probe);
+			if (why && !force) throw new ToolError('E_INVALID_PARAM', why, 'Pass force: true to attach it anyway.');
+			const res = await transact(ctx, projectId, {
+				label: 'Attach Proxies',
+				commands: [
+					{
+						type: 'media.attachProxy',
+						mediaId: id,
+						proxy: attachedProxyFrom(file, 'attached'),
+						...(force ? { force: true } : {}),
+					},
+				],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'detach_proxies',
+		{
+			title: 'Detach proxies',
+			description:
+				'Clip ▸ Proxy ▸ Detach Proxies: the media play their originals again (proxy files stay on disk).',
+			input: { projectId: ProjectIdArg, mediaIds: z.array(z.string().min(1)).min(1) },
+			annotations: DESTRUCTIVE_IDEMPOTENT,
+		},
+		async ({ projectId, mediaIds }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const ids = [...new Set(mediaIds.map((m) => mediaIdOf(doc, m)))];
+			const res = await transact(ctx, projectId, {
+				label: 'Detach Proxies',
+				commands: [{ type: 'media.detachProxy', mediaIds: ids }],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'reconnect_full_resolution',
+		{
+			title: 'Reconnect full resolution media',
+			description:
+				'Clip ▸ Proxy ▸ Reconnect Full Resolution Media: links a video media to its full-resolution file (absolute path). When the media had no proxy, the file it used becomes its proxy (a project edited from proxies only). The full-resolution file must have the same duration (± 1 frame) and frame rate.',
+			input: { projectId: ProjectIdArg, mediaId: z.string().min(1), path: z.string().min(1) },
+			annotations: EDIT,
+		},
+		async ({ projectId, mediaId, path }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const id = mediaIdOf(doc, mediaId);
+			const asset = doc.media[id]!;
+			const reg = await ctx.engine((c) => c.registerMedia({ projectId, paths: [path] }));
+			const file = reg.items[0] as RegisteredMedia | undefined;
+			if (!file)
+				throw new ToolError(
+					reg.errors[0]?.code ?? 'FILE_NOT_FOUND',
+					reg.errors[0]?.message ?? 'The file could not be registered',
+					'Pass an absolute path of an existing file.',
+				);
+			const why = proxyMismatch(
+				{ kind: file.kind, probe: file.probe, originalName: file.originalName },
+				asset.proxy?.probe ?? asset.probe,
+			);
+			if (why) throw new ToolError('E_INVALID_PARAM', why, 'Choose the full-resolution file of this clip.');
+			const same = file.fingerprint === asset.fingerprint;
+			const commands: unknown[] = [
+				{
+					type: 'media.relink',
+					mediaId: id,
+					locator: file.locators[0],
+					locators: file.locators,
+					probe: file.probe,
+					sizeBytes: file.sizeBytes,
+					originalName: file.originalName,
+					container: file.container,
+					...(same ? {} : { fingerprint: file.fingerprint, replace: true }),
+				},
+			];
+			if (!asset.proxy && !same)
+				commands.push({
+					type: 'media.attachProxy',
+					mediaId: id,
+					force: true,
+					proxy: attachedProxyFrom(asset, 'attached'),
+				});
+			const res = await transact(ctx, projectId, { label: 'Reconnect Full Resolution Media', commands });
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'export_frame',
+		{
+			title: 'Export frame',
+			description:
+				'File ▸ Export ▸ Frame: renders the sequence frame at `at` at full resolution (never from proxies) and writes <folder>/<name>.<ext> on this machine (never overwriting: " (2)" is appended). format png (default), jpeg (jpegQuality), tiff, dpx (10-bit), exr (linear light, half float), bmp, tga. importIntoProject adds the file to the project like import_media.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				at: timeArg('Sequence frame to export'),
+				format: z.enum(['png', 'jpeg', 'tiff', 'dpx', 'exr', 'bmp', 'tga']).optional(),
+				jpegQuality: z.number().int().min(1).max(100).optional(),
+				folder: z.string().min(1),
+				name: z.string().min(1).max(200).optional(),
+				importIntoProject: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, at, format, jpegQuality, folder, name, importIntoProject }, extra) => {
+			const loaded = await loadDoc(ctx, projectId);
+			const seq = seqOf(loaded.doc, sequenceId);
+			let frame: number;
+			try {
+				frame = resolveFrameInput(seq, at);
+			} catch (e) {
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					(e as Error).message,
+					'Use frames, {"seconds": x} or "HH:MM:SS:FF".',
+				);
+			}
+			const item = Object.values(loaded.doc.items).find(
+				(i) => i.kind === 'sequence' && i.sequenceId === seq.id,
+			);
+			const fileName = (
+				name ?? `${item?.name ?? 'Sequence'} ${sequenceTimecode(seq, frame).replace(/[:;]/g, '_')}`
+			).replace(/[\\/]/g, '_');
+			const envelope = makeEnvelope(loaded.doc, {
+				revision: loaded.revision ?? 0,
+				savedAt: new Date().toISOString(),
+				platform: 'mcp',
+			}) as never;
+			const job = await ctx.engine((c) =>
+				c.requestStill({
+					envelope,
+					sequenceId: seq.id,
+					frame,
+					...(format ? { format } : {}),
+					...(jpegQuality ? { jpegQuality } : {}),
+					destination: { folder, name: fileName },
+				}),
+			);
+			const { job: done, timedOut } = await waitJob(ctx, job.id, 10 * 60 * 1000, extra);
+			if (timedOut)
+				throw new ToolError(
+					'RENDER_TIMEOUT',
+					'The frame is still rendering',
+					'Call wait_for_job with this jobId.',
+					{ jobId: job.id },
+				);
+			if (done.state !== 'succeeded')
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `The frame ${done.state}`,
+					undefined,
+					{ jobId: done.id },
+				);
+			const result = done.result as { path?: string; format?: string };
+			let mediaId: string | undefined;
+			if (importIntoProject && result.path) {
+				const reg = await ctx.engine((c) => c.registerMedia({ projectId, paths: [result.path!] }));
+				const file = reg.items[0];
+				if (file) {
+					const res = await transact(ctx, projectId, {
+						label: 'Import Frame',
+						commands: [mediaRegisterCommand(file, '$m', '$i')],
+					});
+					const ok = requireOk(res);
+					mediaId = (ok.results[0] as { mediaId?: string } | undefined)?.mediaId;
+				}
+			}
+			return jsonResult({
+				frame,
+				timecode: sequenceTimecode(seq, frame),
+				path: result.path,
+				format: result.format ?? format ?? 'png',
+				...(mediaId ? { mediaId } : {}),
 			});
 		},
 	);

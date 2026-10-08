@@ -12,6 +12,7 @@ import { pipeline } from 'node:stream/promises';
 import type { EngineJob, MediaJobRequest, MediaJobResult, RegisteredMedia } from '@jasper/api';
 import { DEFAULT_PROXY_PRESET, DEFAULT_TRANSCODE_PRESET, proxyPreset, proxySize } from '@jasper/project';
 import { isLoopbackHost } from '../context.ts';
+import { inColor } from '../export/native.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
 import { audioEncodeArgs, videoEncodeArgs } from '../tools/encoders.ts';
@@ -19,6 +20,35 @@ import { exists } from '../tools/fs.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { PROJECT_MEDIA_DIR } from './paths.ts';
+
+/** ITU-T H.273 code points of ffmpeg's colour names (unknown → 2, unspecified). */
+const H273_PRIMARIES: Record<string, number> = {
+	bt709: 1,
+	bt470m: 4,
+	bt470bg: 5,
+	smpte170m: 6,
+	smpte240m: 7,
+	film: 8,
+	bt2020: 9,
+	smpte428: 10,
+	smpte431: 11,
+	smpte432: 12,
+};
+const H273_TRC: Record<string, number> = {
+	bt709: 1,
+	gamma22: 4,
+	gamma28: 5,
+	smpte170m: 6,
+	smpte240m: 7,
+	linear: 8,
+	'iec61966-2-4': 11,
+	'iec61966-2-1': 13,
+	'bt2020-10': 14,
+	'bt2020-12': 15,
+	smpte2084: 16,
+	smpte428: 17,
+	'arib-std-b67': 18,
+};
 
 const SUBFOLDER = { proxy: 'Proxies', transcode: 'Ingested Media', copy: 'Ingested Media' } as const;
 const SUFFIX = { proxy: '_Proxy', transcode: '', copy: '' } as const;
@@ -123,6 +153,13 @@ export class MediaJobService {
 				skipped.push({ mediaId: it.mediaId, reason: `${name} is offline; link it first` });
 				continue;
 			}
+			if (req.op === 'copy' && rec.storage.type === 'managed') {
+				skipped.push({
+					mediaId: it.mediaId,
+					reason: `${name} was uploaded: the engine already keeps its own copy`,
+				});
+				continue;
+			}
 			if (req.op !== 'copy' && rec.kind !== 'video') {
 				skipped.push({
 					mediaId: it.mediaId,
@@ -171,6 +208,11 @@ export class MediaJobService {
 				await rm(out, { force: true }).catch(() => undefined);
 				throw new JobError('COPY_MISMATCH', `The copy of ${name} does not match the original`, false);
 			}
+			if (req.op === 'copy') {
+				// The same bytes have the same media key: the engine now reads them from the ingested copy.
+				const st = await stat(out);
+				await this.core.registry.put({ ...rec, storage: { type: 'path', path: out }, mtimeMs: st.mtimeMs });
+			}
 			outputs.push({ mediaId: it.mediaId, path: out, registered: reg });
 		}
 		ctx.progress(1, { stage: 'Done' });
@@ -207,15 +249,25 @@ export class MediaJobService {
 		const { width, height } = proxySize(vs.width, vs.height, preset);
 		const rate = vs.frameRate.num > 0 && vs.frameRate.den > 0 ? vs.frameRate : { num: 30, den: 1 };
 		const dur = rec.durationSec ?? 0;
-		const scale = `scale=${width}:${height}:flags=bicubic`;
+		// The proxy keeps the file's R'G'B' signal: decoded with the matrix every export path assumes for the original
+		// (`inColor`: its tag, else BT.709 from 720 lines up, BT.601 below) and re-encoded as BT.709 limited range;
+		// primaries and transfer keep the original's tags (untagged stays unspecified), so the proxy decodes to the
+		// same picture as the original on every path.
+		const known = (v: string | undefined): v is string => !!v && v !== 'unknown' && v !== 'unspecified';
+		const scale = `scale=${width}:${height}:flags=bicubic${inColor({ record: rec } as never)}:out_color_matrix=bt709:out_range=tv`;
 		const tags = [
-			'-color_primaries',
-			vs.color.primaries || 'bt709',
-			'-color_trc',
-			vs.color.transfer || 'bt709',
+			...(known(vs.color.primaries) ? ['-color_primaries', vs.color.primaries] : []),
+			...(known(vs.color.transfer) ? ['-color_trc', vs.color.transfer] : []),
 			'-colorspace',
-			vs.color.matrix || 'bt709',
-		].map((v) => (v === 'unknown' ? 'bt709' : v));
+			'bt709',
+			'-color_range',
+			'tv',
+		];
+		const colorCodes = {
+			primaries: H273_PRIMARIES[vs.color.primaries] ?? 2,
+			trc: H273_TRC[vs.color.transfer] ?? 2,
+			matrix: 1,
+		};
 		let args: string[];
 		if (preset.codec === 'prores-422-hq') {
 			const enc = videoEncodeArgs(
@@ -233,6 +285,7 @@ export class MediaJobService {
 				'-vf',
 				[scale, ...enc.filters].join(','),
 				...enc.video,
+				...tags,
 				...(hasAudio ? ['-c:a', 'pcm_s24le'] : []),
 				'-f',
 				'mov',
@@ -248,6 +301,7 @@ export class MediaJobService {
 				height,
 				fps: rate,
 				gop: preset.kind === 'proxy' ? 15 : undefined,
+				colorCodes,
 				realtime: preset.kind === 'proxy',
 				threads: ctx.slots,
 			});

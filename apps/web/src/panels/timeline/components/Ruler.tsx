@@ -4,11 +4,11 @@ import { type Marker, type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useDisplayFormat } from '../../../gaps/time-display.ts';
-import { timelinePrefs } from '../state/prefs.ts';
 import type { RenderSegment } from '../model/renderbar.ts';
 import { rulerTicks } from '../model/ruler.ts';
 import { boundaryFrameAt, frameToX, type Viewport } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
+import { timelinePrefs } from '../state/prefs.ts';
 import { markerVar } from './ClipView.tsx';
 import { CanvasTiles, cssVar, type TileDraw } from './canvas.tsx';
 

@@ -232,7 +232,15 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('clip.revealInTimeline', 'Reveal in Timeline'),
 			sep,
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
-			c('project.createProxies', 'Create Proxies'),
+			// gaps (PRJ-8): Premiere's Clip ▸ Proxy.
+			sub('Proxy', [
+				c('project.createProxies', 'Create Proxies…'),
+				c('project.attachProxies', 'Attach Proxies…'),
+				c('project.reconnectFullRes', 'Reconnect Full Resolution Media…'),
+				c('project.detachProxies', 'Detach Proxies'),
+				sep,
+				c('media.toggleProxies', 'Toggle Proxies'),
+			]),
 			c('process.processClip', 'Process Clip…'),
 			// wp speech: the selected clips' media
 			c('transcript.generateForClips', 'Generate Transcript…'),

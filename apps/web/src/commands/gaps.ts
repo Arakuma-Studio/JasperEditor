@@ -3,7 +3,19 @@
 // gaps dialogs (Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels…).
 import { trackLabel } from '@jasper/project';
 import { z } from 'zod';
+import {
+	EXPORT_FRAME_DIALOG,
+	type FrameSource,
+	registerExportFrameDialog,
+} from '../gaps/ExportFrameDialog.tsx';
 import { FIND_DIALOG, type FindScope, registerFindDialog } from '../gaps/FindDialog.tsx';
+import { PROJECT_SETTINGS_DIALOG, registerProjectSettingsDialog } from '../gaps/ProjectSettingsDialog.tsx';
+import {
+	ATTACH_PROXIES_DIALOG,
+	CREATE_PROXIES_DIALOG,
+	RECONNECT_FULL_RES_DIALOG,
+	registerProxyDialogs,
+} from '../gaps/ProxyDialogs.tsx';
 import {
 	askExit,
 	MANAGE_HEIGHT_PRESETS_DIALOG,
@@ -13,9 +25,12 @@ import {
 import { ADD_TRACKS_DIALOG, DELETE_TRACKS_DIALOG, registerTrackDialogs } from '../gaps/TrackDialogs.tsx';
 import { presetHeights, trackHeightPresets } from '../gaps/track-heights.ts';
 import { mediaKeyOf } from '../import/assets.ts';
+import { getSourceTransport } from '../panels/program/transport-registry.ts';
+import { sourceMonitorState } from '../panels/source/source-state.ts';
 import { trackHeight } from '../panels/timeline/model/layout.ts';
 import { detectRuntime, getDesktopBridge } from '../runtime/platform.ts';
 import { saveNow, setSkipUnloadFlush } from '../runtime/save.ts';
+import { runCommand } from './registry.ts';
 import { apply, envOf, seekReveal, selectedClips } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
@@ -334,3 +349,200 @@ export const gapsCommands: UiCommand[] = [
 	applyPresetByArgs,
 	setTrackHeight,
 ];
+
+// ---------------------------------------------------------------- File ▸ Project Settings… (PRJ-4)
+
+const projectSettings: UiCommand = {
+	id: 'project.settings',
+	label: 'Project Settings…',
+	description: 'General (renderers, display formats), Scratch Disks and Ingest Settings of the open project.',
+	scope: 'global',
+	agentExposed: true,
+	argsSchema: z.object({ tab: z.enum(['general', 'scratch', 'ingest']).optional() }).optional(),
+	when: hasSession,
+	disabledReason: () => 'Open a project first',
+	run: (ctx, args) => {
+		if (!ctx.session) return;
+		registerProjectSettingsDialog();
+		ctx.ui.openDialog(PROJECT_SETTINGS_DIALOG, {
+			session: ctx.session,
+			engine: ctx.engine,
+			...((args as { tab?: string } | undefined)?.tab ? { initialTab: (args as { tab: string }).tab } : {}),
+			openPreferences: (page: string) => void runCommand('app.preferences', ctx, { page }),
+		});
+	},
+};
+
+// ---------------------------------------------------------------- Clip ▸ Proxy (PRJ-8)
+
+/** Media of the selection (Project panel items first, else the selected timeline clips), in order, unique. */
+export function selectedMediaIds(ctx: CommandCtx): string[] {
+	const session = ctx.session;
+	if (!session) return [];
+	const doc = session.getCommitted();
+	const st = session.getState();
+	const out: string[] = [];
+	const add = (id: string | undefined) => {
+		if (id && doc.media[id] && !out.includes(id)) out.push(id);
+	};
+	const timelineFirst = ctx.focus.panel === 'timeline' || ctx.focus.panel === 'program';
+	const fromProject = () => {
+		for (const id of st.selection.project.items) {
+			const it = doc.items[id];
+			if (it && (it.kind === 'media' || it.kind === 'subclip')) add(it.mediaId);
+		}
+	};
+	const fromTimeline = () => {
+		const e = envOf(ctx);
+		if (e) for (const c of selectedClips(e)) add((c as { mediaId?: string }).mediaId);
+	};
+	if (timelineFirst) {
+		fromTimeline();
+		if (!out.length) fromProject();
+	} else {
+		fromProject();
+		if (!out.length) fromTimeline();
+	}
+	return out;
+}
+
+const videoSelected = (ctx: CommandCtx) =>
+	selectedMediaIds(ctx).some((id) => ctx.session?.getCommitted().media[id]?.kind === 'video');
+
+const proxyDialog = (id: string, label: string, kind: string, description: string): UiCommand => ({
+	id,
+	label,
+	description,
+	scope: 'global',
+	agentExposed: true,
+	when: videoSelected,
+	disabledReason: () => 'Select video clips or Project panel items',
+	run: (ctx) => {
+		if (!ctx.session) return;
+		registerProxyDialogs();
+		ctx.ui.openDialog(kind, {
+			session: ctx.session,
+			engine: ctx.engine,
+			mediaIds: selectedMediaIds(ctx),
+			localEngine: ctx.capabilities.has('nativeFfmpeg'),
+		});
+	},
+});
+
+const detachProxies: UiCommand = {
+	id: 'project.detachProxies',
+	label: 'Detach Proxies',
+	scope: 'global',
+	agentExposed: true,
+	when: (ctx) => selectedMediaIds(ctx).some((id) => !!ctx.session?.getCommitted().media[id]?.proxy),
+	disabledReason: () => 'Select clips with attached proxies',
+	run: (ctx) => {
+		const ids = selectedMediaIds(ctx).filter((id) => !!ctx.session?.getCommitted().media[id]?.proxy);
+		if (!ctx.session || !ids.length) return;
+		const r = ctx.session.apply({
+			label: 'Detach Proxies',
+			origin: 'user',
+			commands: [{ type: 'media.detachProxy', mediaIds: ids }] as never[],
+		});
+		if (!r.ok)
+			ctx.ui.toast({
+				kind: 'warning',
+				message: 'Detach Proxies: not possible',
+				detail: r.errors[0]?.message,
+			});
+	},
+};
+
+const toggleProxies: UiCommand = {
+	id: 'media.toggleProxies',
+	label: 'Toggle Proxies',
+	description: 'Play attached proxies in the monitors (exports always use the full-resolution media).',
+	scope: 'global',
+	agentExposed: true,
+	when: hasSession,
+	checked: (ctx) => !!ctx.session?.getState().toggles.attachedProxies,
+	run: (ctx) => {
+		const s = ctx.session;
+		if (!s) return;
+		const on = !s.getState().toggles.attachedProxies;
+		s.setToggles({ attachedProxies: on });
+		const attached = Object.values(s.getCommitted().media).filter((m) => !!m.proxy).length;
+		ctx.ui.toast({
+			kind: 'info',
+			message: on ? 'Proxies on' : 'Proxies off',
+			detail: on
+				? `${attached} clip${attached === 1 ? '' : 's'} with attached proxies`
+				: 'Full-resolution media',
+			durationMs: 2000,
+		});
+	},
+};
+
+// ---------------------------------------------------------------- File ▸ Export ▸ Frame (EX-3)
+
+/** The frame the focused monitor shows: the Source monitor's source, else the active sequence at the playhead. */
+export function frameSourceFor(ctx: CommandCtx): { source: FrameSource; baseName: string } | null {
+	const session = ctx.session;
+	if (!session) return null;
+	const doc = session.getCommitted();
+	if (ctx.focus.panel === 'source') {
+		const src = sourceMonitorState.getState();
+		const it = src.itemId ? doc.items[src.itemId] : undefined;
+		if (it)
+			return {
+				source: { kind: 'source', itemId: it.id, frame: getSourceTransport()?.getState().frame ?? 0 },
+				baseName: it.name,
+			};
+	}
+	const e = envOf(ctx);
+	if (!e) return null;
+	const item = Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === e.seq.id);
+	return {
+		source: { kind: 'sequence', sequenceId: e.seq.id, frame: e.playhead },
+		baseName: item?.name ?? 'Sequence',
+	};
+}
+
+const exportFrame: UiCommand = {
+	id: 'export.frame',
+	label: 'Export Frame…',
+	description:
+		'Export the frame the Program (or focused Source) monitor shows as PNG, JPEG, TIFF, DPX or OpenEXR.',
+	icon: 'app.export',
+	scope: 'global',
+	agentExposed: true,
+	capability: 'engine',
+	when: (ctx) => !!frameSourceFor(ctx),
+	disabledReason: () => 'Open a sequence or a source first',
+	run: (ctx) => {
+		const f = frameSourceFor(ctx);
+		if (!f || !ctx.session) return;
+		registerExportFrameDialog();
+		ctx.ui.openDialog(EXPORT_FRAME_DIALOG, { session: ctx.session, engine: ctx.engine, ...f });
+	},
+};
+
+gapsCommands.push(
+	projectSettings,
+	proxyDialog(
+		'project.createProxies',
+		'Create Proxies…',
+		CREATE_PROXIES_DIALOG,
+		'Transcode the selected video clips to smaller proxies in the background and attach them.',
+	),
+	proxyDialog(
+		'project.attachProxies',
+		'Attach Proxies…',
+		ATTACH_PROXIES_DIALOG,
+		'Attach existing files as the proxies of the selected video clips.',
+	),
+	proxyDialog(
+		'project.reconnectFullRes',
+		'Reconnect Full Resolution Media…',
+		RECONNECT_FULL_RES_DIALOG,
+		'Link the selected clips to their full-resolution files (the files they used become their proxies).',
+	),
+	detachProxies,
+	toggleProxies,
+	exportFrame,
+);

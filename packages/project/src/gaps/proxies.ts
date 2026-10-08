@@ -162,3 +162,89 @@ registerGapsCheck({
 		}
 	},
 });
+
+/** What the engine registered for an output file (structural subset of the API's RegisteredMedia). */
+export type RegisteredFile = {
+	fingerprint: string;
+	originalName: string;
+	sizeBytes: number;
+	container: string;
+	probe: MediaProbe;
+	locators: MediaAsset['locators'];
+};
+
+/** The `MediaAsset.proxy` record of a registered file. */
+export function attachedProxyFrom(
+	reg: RegisteredFile,
+	origin: 'created' | 'attached' | 'ingest',
+	preset?: string | null,
+) {
+	return {
+		fingerprint: reg.fingerprint,
+		originalName: reg.originalName,
+		sizeBytes: reg.sizeBytes,
+		container: reg.container,
+		probe: reg.probe,
+		locators: reg.locators,
+		origin,
+		...(preset ? { preset } : {}),
+	};
+}
+
+/**
+ * The commands that apply a finished `proxy-create` job (Create Proxies / ingest) to a document: `media.attachProxy`
+ * per proxy, `media.relink` to an ingested copy (same bytes, the copy's path), or a Replace-Footage `media.relink` to
+ * a transcode. Media no longer in the project and proxies that do not fit are reported in `skipped`.
+ */
+export function mediaJobCommands(
+	doc: { media: Record<string, MediaAsset> },
+	result: {
+		op: 'proxy' | 'transcode' | 'copy';
+		preset: string | null;
+		outputs: { mediaId: string; path: string; registered: unknown }[];
+	},
+	origin: 'created' | 'ingest',
+): { commands: unknown[]; skipped: string[] } {
+	const commands: unknown[] = [];
+	const skipped: string[] = [];
+	for (const o of result.outputs) {
+		const asset = doc.media[o.mediaId];
+		const reg = o.registered as RegisteredFile;
+		if (!asset) {
+			skipped.push(`${reg?.originalName ?? o.path}: the media is no longer in the project`);
+			continue;
+		}
+		if (result.op === 'proxy') {
+			const why = proxyMismatch(asset, reg.probe);
+			if (why) {
+				skipped.push(`${asset.originalName}: ${why}`);
+				continue;
+			}
+			commands.push({
+				type: 'media.attachProxy',
+				mediaId: asset.id,
+				proxy: attachedProxyFrom(reg, origin, result.preset),
+			});
+		} else if (result.op === 'copy') {
+			commands.push({
+				type: 'media.relink',
+				mediaId: asset.id,
+				locator: { type: 'path', path: o.path, relativeToProject: null },
+			});
+		} else {
+			commands.push({
+				type: 'media.relink',
+				mediaId: asset.id,
+				replace: true,
+				locator: reg.locators[0],
+				locators: reg.locators,
+				fingerprint: reg.fingerprint,
+				probe: reg.probe,
+				sizeBytes: reg.sizeBytes,
+				originalName: reg.originalName,
+				container: reg.container,
+			});
+		}
+	}
+	return { commands, skipped };
+}

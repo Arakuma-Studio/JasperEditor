@@ -285,6 +285,7 @@ export class ExportService {
 		const seq = planned.snapshot.settings;
 		const codec = smartCodecOf(settings);
 		if (settings.smartRender === false) reasons.push('Smart rendering is off for this export');
+		if (planned.draftProxies?.length) reasons.push('The export renders from proxies (Use Proxies)');
 		if (settings.engine !== 'auto')
 			reasons.push(`The ${settings.engine} engine was chosen (smart rendering runs with Auto)`);
 		if (!codec)
@@ -1504,7 +1505,8 @@ export class ExportService {
 			range: planned.range,
 			resolveMedia: (asset): MediaHandle | null => {
 				const local = planned.media[asset.id];
-				const key = mediaKeyOf(asset);
+				// gaps: a draft export with proxies serves the proxy file (its record) under its own key.
+				const key = local?.record.mediaKey ?? mediaKeyOf(asset);
 				if (!local || !key) return null;
 				const r = local.record;
 				return {

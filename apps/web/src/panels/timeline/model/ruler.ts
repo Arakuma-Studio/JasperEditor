@@ -100,7 +100,10 @@ export function rulerTicks(
 		if (kind === 'major')
 			t.label = opts.audio
 				? formatAudioTime(frame, rate, opts.audio.sampleRate, opts.audio.format, opts.startFrames)
-				: shortLabel(formatTimecode(frame, rate, { dropFrame: drop, startFrames: opts.startFrames }), underHour);
+				: shortLabel(
+						formatTimecode(frame, rate, { dropFrame: drop, startFrames: opts.startFrames }),
+						underHour,
+					);
 		ticks.push(t);
 	};
 	for (let n = Math.ceil(n0 / plan.major) * plan.major; n <= n1; n += plan.major)

@@ -9,11 +9,13 @@ import {
 	ArrowRightToLine,
 	ArrowUpFromLine,
 	Bookmark,
+	Camera,
 	ChevronFirst,
 	ChevronLast,
 	Columns2,
 	CornerRightDown,
 	Expand,
+	Film,
 	Play,
 	Plus,
 	Repeat,
@@ -277,8 +279,18 @@ export const BUTTONS: readonly ButtonDef[] = [
 		label: 'Export Frame',
 		command: 'export.frame',
 		shortcut: 'Shift+E',
-		icon: txt('▣'),
-		monitors: ['program'],
+		icon: <Camera size={16} />,
+		monitors: BOTH,
+		testId: { program: 'btn-export-frame', source: 'src-export-frame' },
+	},
+	{
+		// gaps (PRJ-8): Premiere's Toggle Proxies button (Button Editor; no default shortcut, assignable).
+		id: 'toggleProxies',
+		label: 'Toggle Proxies',
+		command: 'media.toggleProxies',
+		icon: <Film size={16} />,
+		monitors: BOTH,
+		testId: { program: 'btn-toggle-proxies', source: 'src-toggle-proxies' },
 	},
 	{
 		id: 'fullScreen',
@@ -303,6 +315,8 @@ export const DEFAULT_BUTTONS: Record<MonitorKind, string[]> = {
 		'goToOut',
 		'lift',
 		'extract',
+		// gaps (EX-3): Premiere's default rows end with Export Frame (the camera).
+		'exportFrame',
 	],
 	source: [
 		'markIn',
@@ -314,6 +328,7 @@ export const DEFAULT_BUTTONS: Record<MonitorKind, string[]> = {
 		'goToOut',
 		'insert',
 		'overwrite',
+		'exportFrame',
 	],
 };
 
