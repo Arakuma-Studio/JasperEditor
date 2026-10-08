@@ -10,7 +10,7 @@ import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { HandlerContext } from './context.ts';
-import { isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
+import { deltaScans, isClean, keysOf, latest, peekIn, recordDelta, valuesOf } from './draft-read.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';
 
 type DSeq = Draft<Sequence>;
@@ -475,7 +475,7 @@ export function cleanupSequence(seq: DSeq, h: HandlerContext): void {
  * after, and the members of removed groups. Null: look at everything.
  */
 function cleanupScope(seq: DSeq): { links: string[]; groups: string[]; clips: string[] } | null {
-	if (!isDraft(seq)) return null;
+	if (!deltaScans() || !isDraft(seq)) return null;
 	const base = original(seq) as Sequence;
 	if (!isClean(base)) return null;
 	const dc = recordDelta(seq.clips as Readonly<Record<string, Clip>>);

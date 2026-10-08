@@ -197,3 +197,15 @@ export function markClean(seq: object): void {
 export function isClean(seq: object): boolean {
 	return cleanSequences.has(seq);
 }
+
+let deltaScansOn = true;
+/**
+ * Whether the normalizers may scope their work to what a transaction changed (tx-delta.ts, cleanupSequence). Tests
+ * turn it off to prove the scoped results equal the full scans'.
+ */
+export function setDeltaScans(on: boolean): void {
+	deltaScansOn = on;
+}
+export function deltaScans(): boolean {
+	return deltaScansOn;
+}

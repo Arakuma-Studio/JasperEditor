@@ -5,7 +5,7 @@
 // changed clips alone and the full pass runs only when they cannot.
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
-import { latest, normalizedBase, recordDelta } from './draft-read.ts';
+import { deltaScans, latest, normalizedBase, recordDelta } from './draft-read.ts';
 
 type Rec<T> = Readonly<Record<string, T>>;
 
@@ -25,7 +25,7 @@ export type TxDelta = {
  * delta does not describe: a replaced `clips` record).
  */
 export function txDelta(doc: ProjectDocument): TxDelta | null {
-	const base = normalizedBase(doc);
+	const base = deltaScans() ? normalizedBase(doc) : null;
 	if (!base) return null;
 	const seqs = recordDelta(latest(doc).sequences as Rec<Sequence>);
 	if (seqs.base !== base.sequences) return null;
