@@ -56,6 +56,7 @@ import {
 import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remotion';
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
+import { installSerialAudioContext } from './audio/serial-audio-context.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
@@ -110,8 +111,10 @@ import {
 } from './three-d/scope.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
-// Video canvases must stay capturable by HTML-in-Canvas scopes (fx/capture-safe-canvas.ts).
+// Video canvases must stay capturable by HTML-in-Canvas scopes (fx/capture-safe-canvas.ts), and the Player's audio
+// clock must never freeze between a resume and a suspend (audio/serial-audio-context.ts: the stall after seeks).
 installCaptureSafeCanvases();
+installSerialAudioContext();
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
 const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
