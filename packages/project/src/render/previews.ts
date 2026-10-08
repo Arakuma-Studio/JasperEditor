@@ -677,15 +677,25 @@ function clipCost(ctx: CostCtx, c: RenderVisualClip, depth: number): number {
 	return ms;
 }
 
-function untouched(doc: ProjectDocument, snap: RenderSnapshot, c: RenderVisualClip): boolean {
+function untouched(
+	doc: ProjectDocument,
+	snap: RenderSnapshot,
+	c: RenderVisualClip,
+	opts: { browser?: boolean } = {},
+): boolean {
 	if (c.kind !== 'video' || !('mediaId' in c.source)) return false;
+	if (c.mediaTime) return false;
 	if (c.effects.length || c.masks?.length || c.blendMode !== 'normal' || c.retime || c.timeRemap || c.threeD)
 		return false;
 	if (c.speed.rate !== 1 || c.speed.reverse || c.frameHold || c.fades?.length || c.rotos) return false;
 	const asset = doc.media[c.source.mediaId];
 	const v = asset?.probe.streams.find((s) => s.type === 'video');
 	if (!asset || !v || v.type !== 'video') return false;
-	if ((v as { browserDecodable?: boolean }).browserDecodable === false) return false;
+	if (opts.browser !== false && (v as { browserDecodable?: boolean }).browserDecodable === false)
+		return false;
+	if (asset.probe.rotationDegrees) return false;
+	const handle = snap.media[c.source.mediaId];
+	if (handle?.pixel || handle?.timeMap) return false;
 	const { width, height, fps } = snap.settings;
 	if (v.width !== width || v.height !== height) return false;
 	if (v.frameRate.num * fps.den !== fps.num * v.frameRate.den) return false;
@@ -834,6 +844,61 @@ export function previewSegmentAt<T extends { startFrame: number; frames: number 
 		else return s;
 	}
 	return null;
+}
+
+// ---------------------------------------------------------------- smart rendering (stream copy)
+
+/** A stretch of the sequence that shows one source's frames untouched, frame for frame (smart rendering). */
+export type CopyableRun = {
+	/** Sequence frames [start, end). */
+	start: number;
+	end: number;
+	clipId: string;
+	mediaId: string;
+	/** The source frame shown at `start` (frames of the media's own rate, which equals the sequence's). */
+	sourceFrame: number;
+};
+
+/**
+ * Where an export may stream-copy the source (workstream `previews`, smart rendering): stretches where exactly one
+ * layer is drawn — an untouched video clip (no effects, masks, Motion, opacity, blend, speed, holds, retiming,
+ * transitions, interpretation) whose media has the sequence's frame size and rate — and nothing else (no other track,
+ * caption, matte, camera). Adjacent segments of one clip join. Pure; `range` limits the result.
+ */
+export function copyableRuns(
+	doc: ProjectDocument,
+	sequenceId: string,
+	range?: { start: number; end: number },
+): CopyableRun[] {
+	const seq = doc.sequences[sequenceId];
+	if (!seq) return [];
+	const snap = previewSnapshot(doc, sequenceId);
+	const F = flicksPerFrame(snap.settings.fps as Rational);
+	const { items, cuts } = indexSnapshot(snap);
+	const take = sweep(items);
+	const out: CopyableRun[] = [];
+	for (let i = 0; i + 1 < cuts.length; i++) {
+		let a = cuts[i]!;
+		let b = cuts[i + 1]!;
+		const at = take(a, b);
+		if (range) {
+			a = Math.max(a, range.start);
+			b = Math.min(b, range.end);
+			if (b <= a) continue;
+		}
+		if (at.length !== 1 || at[0]!.kind !== 'clip' || at[0]!.matteTrack) continue;
+		const c = at[0]!.clip;
+		if (c.headHandle || c.tailHandle || !untouched(doc, snap, c, { browser: false })) continue;
+		if (doc.media[(c.source as { mediaId?: string }).mediaId ?? '']?.probe.hasAlpha) continue;
+		if (!('mediaId' in c.source)) continue;
+		// The clip must start on a source frame boundary (stream copy moves whole frames).
+		if (Math.abs(c.sourceIn / F - Math.round(c.sourceIn / F)) > 1e-6) continue;
+		const sourceFrame = Math.round(c.sourceIn / F) + (a - c.start);
+		const last = out[out.length - 1];
+		if (last && last.clipId === c.clipId && last.end === a) last.end = b;
+		else out.push({ start: a, end: b, clipId: c.clipId, mediaId: c.source.mediaId, sourceFrame });
+	}
+	return out;
 }
 
 // ---------------------------------------------------------------- audio (Render Audio)

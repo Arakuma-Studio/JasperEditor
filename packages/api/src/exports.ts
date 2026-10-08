@@ -146,6 +146,12 @@ export const ExportSettingsSchema = z.object({
 	 * Previews"). Segments without a preview render as usual. Ignored for alpha masters.
 	 */
 	usePreviews: z.boolean().optional(),
+	/**
+	 * previews (smart rendering, additive): with the `auto` engine and an H.264 or ProRes export matching its sources,
+	 * stretches that show a source untouched are stream-copied (whole closed GOPs) and only the rest is rendered.
+	 * Default true; false always re-encodes. The plan's `smart` says what was copied or why nothing could be.
+	 */
+	smartRender: z.boolean().optional(),
 });
 export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 
@@ -183,6 +189,10 @@ export const RenderPlanSchema = z.object({
 		z.object({ code: z.string(), message: z.string(), itemIds: z.array(z.string()).optional() }),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
+	/** previews (smart rendering): whether stream copy is used, how many frames are copied, and why not (additive). */
+	smart: z
+		.object({ used: z.boolean(), copiedFrames: z.number().int(), reasons: z.array(z.string()) })
+		.optional(),
 	/** Encoder that will write the file (D-13); absent when the engine cannot encode at all. */
 	encoder: EncoderChoiceSchema.optional(),
 });
@@ -212,7 +222,7 @@ export const ExportResultSchema = z.object({
 	 */
 	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
 	/** M2 (wp-m2-layer-bake, additive): the path that produced the file (`hybrid` = native with baked layers). */
-	renderPath: z.enum(['native', 'hybrid', 'remotion']).optional(),
+	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion']).optional(),
 	/**
 	 * M2 (S11:LBK-023, additive): run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
 	 * and an `auto` export was rendered on the Remotion path instead.
