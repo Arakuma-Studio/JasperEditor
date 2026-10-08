@@ -2,8 +2,8 @@
 // Performance benchmarks (docs/performance.md). Sections, run one after another so they do not compete:
 //   micro   — synthetic hot paths of the model, session, timeline and engine (packages/*/bench, apps/*/bench)
 //   editor  — whole-editor playback in the built app (headless Chrome): Program-monitor frames shown / dropped and
-//             measured fps per scenario (one 1080p clip; a 3-layer stack; a GPU-effect stack live, then from its
-//             render previews), the UI frame rate and the render bar of each scenario
+//             measured fps per scenario (one 1080p clip; a 3-layer stack; a GL blend scope; the flat compositor;
+//             a GPU-effect stack live, then from its render previews), the UI frame rate and the render bar of each scenario
 //   export  — export throughput through the engine: native H.264, ProRes, smart-rendered H.264, preview renders
 // Usage: pnpm perf [--sections micro,editor,export] [--label name] [--seconds 6]
 //   The editor/export sections start the built stack (e2e/serve.mjs, needs `pnpm build`) on PERF_PORT (default
@@ -252,6 +252,18 @@ async function editorSection() {
 	]);
 	results.push(await play('stack of 3 (scaled, translucent)'));
 	await clear();
+	// compositor: one GL blend scope over video (the nested structure), then the same stack with an adjustment layer
+	// with a GPU effect over it (scopes that would nest: the flat compositor).
+	await tx([
+		{ type: 'clip.place', source: { mediaByName: 'clip-a.mp4' }, at: 0, tracks: { video: 'V1' } },
+		{ type: 'clip.place', source: { mediaByName: 'clip-b.mp4' }, at: 0, tracks: { video: 'V2' }, ref: '$b' },
+		{ type: 'clip.update', clipId: '$b', patch: { blendMode: 'linear-burn' } },
+	]);
+	results.push(await play('GL blend scope over video'));
+	await tx([{ type: 'clip.addAdjustment', at: 0, duration: 150, track: 'V3', ref: '$j' }]);
+	await tx([{ type: 'effect.add', target: { clipId: '$j' }, effectId: 'jasper.invert' }]);
+	results.push(await play('flat compositor (adjustment over GL blend over video)'));
+	await clear();
 	await tx([
 		{ type: 'clip.place', source: { mediaByName: 'clip-a.mp4' }, at: 0, ref: '$a' },
 		{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.gaussian-blur' },
@@ -303,7 +315,12 @@ async function editorSection() {
 	report.sections.editor = results;
 	const fps = 30;
 	budget('single 1080p H.264 playback (fps)', results[0].fps, 0.9 * fps, { higherIsBetter: true });
-	budget('previewed GPU-effect playback (fps)', results[3].fps, 0.9 * fps, { higherIsBetter: true });
+	budget(
+		'previewed GPU-effect playback (fps)',
+		results.find((r) => r.scenario === 'GPU effects, from previews').fps,
+		0.9 * fps,
+		{ higherIsBetter: true },
+	);
 	budget(
 		'stalls recovered by the watchdog',
 		results.reduce((n, r) => n + r.stallsRecovered, 0),

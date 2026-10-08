@@ -73,6 +73,30 @@ describe('nested HTML-in-Canvas guard', () => {
 		}
 	});
 
+	it('asks the owner of the enclosing scope to draw flat instead (compositor), without failing', () => {
+		let asked = 0;
+		const html = renderToStaticMarkup(
+			<CanvasScopeContext.Provider
+				value={{
+					kind: 'scope',
+					name: 'Blend modes',
+					flatten: () => {
+						asked++;
+					},
+				}}
+			>
+				<ScopedHtmlInCanvas scope="An adjustment layer" width={64} height={36}>
+					<span>content</span>
+				</ScopedHtmlInCanvas>
+			</CanvasScopeContext.Provider>,
+		);
+		// Server rendering runs no effects: the content is there without the inner canvas, and no render error.
+		expect(html).toContain('data-canvas-scope-flattening');
+		expect(html).toContain('<span>content</span>');
+		expect(html).not.toContain('<canvas');
+		expect(asked).toBe(0);
+	});
+
 	it('names both scopes in the render error', () => {
 		expect(nestedScopeMessage('A layer’s effects', 'Blend modes')).toMatch(
 			/^CANVAS_NESTED: A layer’s effects cannot be drawn inside Blend modes/,

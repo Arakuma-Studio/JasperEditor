@@ -5,8 +5,11 @@
 // so nothing is mounted for them. The whole composite is captured through HTML-in-Canvas (as adjustment layers and
 // the blend scope are) and drawn through the baked display LUT (tetrahedral, the same `colorLut` pass as grades).
 // Preview only: renders keep the working signal (exports convert to their output space on the engine; stills get
-// this same display LUT there). Without HTML-in-Canvas or WebGL2 the monitor shows the working signal with a chip, and
-// so it does while a layer inside draws through HTML-in-Canvas itself (the browser cannot nest them).
+// this same display LUT there). Without HTML-in-Canvas or WebGL2 the monitor shows the working signal with a chip.
+// compositor: when a layer inside draws through HTML-in-Canvas itself (the browser cannot nest them), the stage does
+// not capture: the sequence's stack is drawn by the flat compositor (fx/flat.tsx), which applies the same display LUT
+// as its last step (`FlatDisplayContext`; preview files get it as a `<Video>` effect). `flat` is the static guess
+// (fx/flat-plan.ts `docUsesCanvas`); a scope that registers inside the capture switches the stage over.
 import {
 	bakeLut,
 	colorSpace,
@@ -19,6 +22,8 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { AbsoluteFill, HtmlInCanvas } from 'remotion';
 import { CanvasScopeContext } from '../fx/canvas-scope.tsx';
 import { canUseHtmlInCanvas } from '../fx/FxPicture.tsx';
+import { FlatDisplayContext } from '../fx/flat.tsx';
+import { useFxStatus } from '../fx/status.ts';
 import { colorLut, colorLutCpu } from './effects.ts';
 import { colorStageBackend } from './gl.ts';
 import { useColorStageStatus } from './status.ts';
@@ -47,6 +52,7 @@ export function DisplayStage({
 	enabled,
 	width,
 	height,
+	flat = false,
 	children,
 }: {
 	working: SequenceColorInfo | undefined;
@@ -54,9 +60,12 @@ export function DisplayStage({
 	enabled: boolean;
 	width: number;
 	height: number;
+	/** compositor: something in the stack draws through HTML-in-Canvas (the stack is then drawn flat). */
+	flat?: boolean;
 	children: ReactNode;
 }) {
 	const status = useColorStageStatus();
+	const fxGpu = useFxStatus();
 	const display = enabled ? displayLutOf(working) : null;
 	// A scope drawn through HTML-in-Canvas inside the stage (adjustment layer, blend modes, a DOM layer's effects)
 	// cannot paint inside another canvas (fx/canvas-scope.tsx): the stage then steps aside for the rest of this
@@ -73,6 +82,9 @@ export function DisplayStage({
 	}, [display]);
 	if (!display) return <>{children}</>;
 	const label = colorSpace(working!.space)?.label;
+	// compositor: the stack draws through HTML-in-Canvas itself: the flat compositor applies the display transform.
+	if (canUseHtmlInCanvas() && status === 'ok' && fxGpu === 'ok' && (flat || yielded === key))
+		return <FlatDisplayContext.Provider value={effects}>{children}</FlatDisplayContext.Provider>;
 	if (!canUseHtmlInCanvas() || status !== 'ok' || yielded === key)
 		return (
 			<CanvasScopeContext.Provider value={enclosing}>

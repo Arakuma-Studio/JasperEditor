@@ -7,7 +7,7 @@
 // diff to test-results/golden-failures/). A guard checks that no scene is blank or a duplicate of another.
 // Media are generated here (pictures by the test, a movie by ffmpeg); text uses the repository's Inter font.
 // Gated by REMOTION_E2E=1 (bundling ≈ 15–40 s); needs ffmpeg and a Chrome.
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -18,7 +18,14 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 } from '@jasper/project';
-import { assertDistinctScenes, expectGolden, Tolerance } from '@jasper/testkit/golden';
+import {
+	assertDistinctScenes,
+	diffImages,
+	expectGolden,
+	failuresDir,
+	formatDiff,
+	Tolerance,
+} from '@jasper/testkit/golden';
 import type { Rgba8 } from '@jasper/testkit/image';
 import { ffmpeg, oraclesAvailable } from '@jasper/testkit/oracle';
 import { decodePng, encodePng } from '@jasper/testkit/png';
@@ -116,10 +123,15 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 		});
 	}
 
-	async function still(doc: ReturnType<typeof snapshot>, frame: number, name: string): Promise<Rgba8> {
+	async function still(
+		doc: ReturnType<typeof snapshot>,
+		frame: number,
+		name: string,
+		options: { isPreview?: boolean } = {},
+	): Promise<Rgba8> {
 		const inputProps = {
 			doc,
-			options: { isPreview: false, useProxies: false, transparentBackground: false },
+			options: { isPreview: false, useProxies: false, transparentBackground: false, ...options },
 		};
 		const composition = await renderer.selectComposition({
 			serveUrl,
@@ -149,9 +161,43 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 			const doc = snapshot(
 				scene.commands({ card: 'card.png', tile: 'tile.png', video: 'golden.webm', asset }),
 			);
-			const img = await still(doc, scene.frame, `golden-${scene.name}`);
+			const img = await still(doc, scene.frame, `golden-${scene.name}`, scene.options);
 			expect([img.width, img.height]).toEqual([GW, GH]);
 			frames[scene.name] = img;
+			// compositor: scenes with a computed reference are checked against it first (also when blessing).
+			if (scene.reference) {
+				const ref = await scene.reference.compute({
+					card: goldenCard(),
+					tile: goldenTile(),
+					snapshot: doc,
+					render: (options) => still(doc, scene.frame, `golden-${scene.name}-ref`, options),
+				});
+				const c = scene.reference.check;
+				let ok: boolean;
+				let detail: string;
+				if ('tolerance' in c) {
+					const d = diffImages(img, ref);
+					ok = Tolerance.accepts(c.tolerance, d);
+					detail = `${formatDiff(d)} (needs ${Tolerance.format(c.tolerance)})`;
+				} else {
+					let bad = 0;
+					for (let i = 0; i < img.data.length; i += 4) {
+						let e = 0;
+						for (let k = 0; k < 3; k++) e = Math.max(e, Math.abs(img.data[i + k]! - ref.data[i + k]!));
+						if (e > c.level) bad++;
+					}
+					ok = bad / (GW * GH) <= c.maxBad;
+					detail = `${((100 * bad) / (GW * GH)).toFixed(2)} % of the pixels off by more than ${c.level} (≤ ${100 * c.maxBad} %)`;
+				}
+				process.stderr.write(`[golden] ${scene.name} vs ${scene.reference.describe}: ${detail}\n`);
+				if (!ok) {
+					const dir = failuresDir();
+					mkdirSync(dir, { recursive: true });
+					writeFileSync(join(dir, `${scene.name}.reference.png`), encodePng(ref));
+					writeFileSync(join(dir, `${scene.name}.actual.png`), encodePng(img));
+				}
+				expect(ok, `${scene.name} against ${scene.reference.describe}: ${detail}`).toBe(true);
+			}
 			expectGolden(join(GOLDENS, `${scene.name}.png`), img, Tolerance.BROWSER);
 		});
 

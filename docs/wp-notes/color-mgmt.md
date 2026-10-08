@@ -290,17 +290,10 @@ pass with the scope changes (44 tests).
 
 - **HDR display output.** Not implemented: it needs HDR display hardware and an HDR canvas in Electron/Chrome. The
   Program monitor shows HDR tone mapped to Rec. 709.
-- **Display stage step-aside.** The display stage steps aside, with a chip, while any layer of the frame draws
-  through HTML-in-Canvas. That includes adjustment layers with GPU effects, GL blend modes, DOM layers with effects
-  and linear blending. The monitor then shows the working signal. This comes from the browser rule that HTML-in-Canvas
-  scopes cannot nest.
-- **Scope nesting** (also affects keyframes-blend and edit-structure; renders now fail fast with CANVAS_NESTED
-  instead of timing out):
-  - Blend Using 1.0 Gamma with an adjustment layer between blended tracks, or one with GPU effects below them,
-    cannot render;
-  - two tracks with GL blend modes;
-  - an adjustment layer with GPU effects over a GL blend mode;
-  - a DOM layer with GPU effects under either.
+- **Display stage step-aside and scope nesting: lifted by the compositor workstream**
+  ([compositor.md](compositor.md)). Stacks whose scopes would nest (Blend Using 1.0 Gamma around adjustment layers,
+  GPU blends with adjustment layers or 3D runs, DOM layers with effects under scopes) are drawn by one flat compositor,
+  and the display transform runs as its last step instead of stepping aside.
 - **Linearize Working Space** = linear-light compositing. GPU effects and Lumetri still see the encoded working signal.
 - **Linear-light compositing** renders on the Remotion path only; the native compositor blends encoded values, and the
   planner refuses native.

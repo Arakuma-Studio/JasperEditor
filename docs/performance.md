@@ -50,8 +50,10 @@ it afterwards (or use `BASE_URL` of a running stack).
   `apps/web/bench/*`, `apps/engine/bench/*`).
 - **editor** (headless Chrome with HTML-in-Canvas, the real app): per scenario, frames shown / dropped and fps from
   `PlaybackDriver.stats`, the UI frame rate (requestAnimationFrame count), watchdog kicks, the render bar. Scenarios:
-  one 1080p H.264 clip; a 3-layer stack (scaled, translucent); Gaussian Blur + Black & White live; the same after
-  Render Effects In to Out (`/api/previews/render`), from the previews.
+  one 1080p H.264 clip; a 3-layer stack (scaled, translucent); a GL blend scope over video and the same stack with an
+  adjustment layer (Invert) over it, which the flat compositor draws (compositor; measurements in
+  `wp-notes/compositor.md` §6); Gaussian Blur + Black & White live; the same after Render Effects In to Out
+  (`/api/previews/render`), from the previews.
 - **export**: 300 frames of 1080p30 through `/api/exports`: native H.264, native ProRes 422 HQ, smart-rendered H.264
   (copy path), and a preview render of the same range.
 

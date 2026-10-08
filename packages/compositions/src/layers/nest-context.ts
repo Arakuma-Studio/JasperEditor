@@ -3,7 +3,13 @@
 import { type ComponentType, createContext } from 'react';
 import type { RenderDoc, RenderOptions } from '../types.ts';
 
-export type NestTracksComponent = ComponentType<{ doc: RenderDoc; options: RenderOptions; offset: number }>;
+export type NestTracksComponent = ComponentType<{
+	doc: RenderDoc;
+	options: RenderOptions;
+	offset: number;
+	/** compositor: draw flat and hand the picture to the enclosing `FxPicture` (NestLayer's canvas source). */
+	flat?: 'feed';
+}>;
 
 export const NestTracksContext = createContext<NestTracksComponent | null>(null);
 

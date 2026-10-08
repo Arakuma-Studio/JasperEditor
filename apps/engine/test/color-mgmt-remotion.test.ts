@@ -2,8 +2,8 @@
 // sequence with Blend Using 1.0 Gamma (refused natively → Remotion) where a 50 % white solid over black blends in
 // linear light, graphics map white to the HDR graphics white, a text layer goes through the DOM colour chain, and the
 // still is the display rendition (BT.2390 tone mapped). Expected values from the TS colour science. The tracks of a
-// linear-light run share one blend scope (Chrome cannot nest HTML-in-Canvas scopes); where nesting is unavoidable
-// (an adjustment layer between linear tracks) the render fails at once with CANVAS_NESTED, never a timeout.
+// linear-light run share one blend scope; an adjustment layer between linear tracks (scopes that would nest) is drawn
+// by the flat compositor (compositor workstream).
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -146,7 +146,7 @@ describe.runIf(process.env.REMOTION_E2E === '1')(
 			);
 		}, 600_000);
 
-		it('an adjustment layer between linear-light tracks fails at once with CANVAS_NESTED', async () => {
+		it('an adjustment layer between linear-light tracks renders (compositor: the flat compositor)', async () => {
 			const d = build([
 				{ type: 'clip.addAdjustment', at: 0, duration: 30, track: 'V3' },
 				{
@@ -157,11 +157,19 @@ describe.runIf(process.env.REMOTION_E2E === '1')(
 					content: { text: 'MMMM', style: { fontSize: 400, fill: [1, 1, 1, 1] } },
 				},
 			]);
-			const t0 = Date.now();
-			const { done } = await still(d);
-			expect(done.error?.code, JSON.stringify(done.error)).toBe('CANVAS_NESTED');
-			expect(done.error?.message).toMatch(/Linear-light blending/);
-			expect(Date.now() - t0).toBeLessThan(45_000);
+			const { id, done } = await still(d);
+			expect(done.error, JSON.stringify(done.error)).toBeUndefined();
+			const png = await engine.app.inject({ method: 'GET', url: `/renders/${id}/output`, headers: hostH });
+			const f = join(mkdtempSync(join(tmpdir(), 'jasper-cm-rem-')), 'still.png');
+			writeFileSync(f, png.rawPayload);
+			// The adjustment layer has no effects: the corner is the linear-light mix of the tracks below, as without it.
+			const white = pqFromNits(203);
+			const mixed = pqEncode(0.5 * pqDecode(white));
+			const corner = rgbAt(f, 4, 4, 8, 8);
+			const mean = corner.reduce((a, b) => a + b, 0) / corner.length;
+			expect(Math.abs(mean - display(mixed))).toBeLessThanOrEqual(3);
+			const text = rgbAt(f, 0, 300, 1920, 480);
+			expect(Math.abs(text.reduce((a, b) => Math.max(a, b), 0) - display(white))).toBeLessThanOrEqual(3);
 		}, 600_000);
 	},
 );
