@@ -140,6 +140,11 @@ autosave (see §7). Nothing was ported (no `licenses/ported` record).
   APIs (slower, still correct) if the shape changes, and tests fail so it is noticed.
 - **Timing on this host.** The budgets are met at load ≤ 15 (three strict runs in §4); at load 25–45 single strict
   runs exceeded them (host contention; the load-scaled gate still passes). A quiet machine was not available.
+- **Browser rendering of a drag on 1 000 clips.** In the built app (headless Chrome, SwiftShader, load ≈ 19) a
+  30-step pointer drag of 11 clips took 6.8–10.7 s of wall time (`e2e/perf-core.spec.ts` logs it): the gesture
+  update and the timeline's derivations are a few ms (§4 benches), so the remaining per-move cost is React
+  rendering of the timeline and the Program monitor's re-render of the drawn sequence on a software-rendered
+  host; not profiled further in this workstream.
 - **Not changed:** autosave serialisation stays a debounced main-thread `JSON.stringify` (≈ 100 ms per 8 MB; a
   worker would need the same structured clone), the render snapshot of all 200 sequences (≈ 470 ms, only built
   per visible sequence in practice), project load (≈ 1.2 s for 8 MB, dominated by parse + zod).
