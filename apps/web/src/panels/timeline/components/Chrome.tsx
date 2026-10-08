@@ -2,9 +2,8 @@
 // (TL-112, TLC-030), context menu and gesture tooltip.
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
-import { cx, IconButton, labelColor, Z } from '@jasper/ui';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { cx, IconButton, labelColor, PointMenu, placeBeside, useMenuFit, Z } from '@jasper/ui';
+import { useEffect, useRef, useState } from 'react';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -221,20 +220,7 @@ export function ContextMenu(props: {
 	onClose(): void;
 	testId?: string;
 }) {
-	const ref = useRef<HTMLDivElement>(null);
-	const [pos, setPos] = useState({ x: props.x, y: props.y });
-	// Keep the menu inside the window (flip up/left when it would overflow).
-	useLayoutEffect(() => {
-		const el = ref.current;
-		if (!el || typeof window === 'undefined') return;
-		const r = el.getBoundingClientRect();
-		const x =
-			r.width && props.x + r.width > window.innerWidth
-				? Math.max(0, window.innerWidth - r.width - 4)
-				: props.x;
-		const y = r.height && props.y + r.height > window.innerHeight ? Math.max(0, props.y - r.height) : props.y;
-		setPos({ x, y });
-	}, [props.x, props.y]);
+	const ref = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
 		const down = (e: PointerEvent) => {
 			if (ref.current && !ref.current.contains(e.target as Node)) props.onClose();
@@ -252,20 +238,19 @@ export function ContextMenu(props: {
 			window.removeEventListener('keydown', key, true);
 		};
 	}, [props.onClose]);
-	// In a portal: `fixed` inside the docked panel is relative to the panel's containing block, not the window, so
-	// the menu opened offset by the panel's position (workstream `time`, e2e/time.spec.ts).
-	const menu = (
-		<div
-			ref={ref}
-			role="menu"
-			className="fixed min-w-[200px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-overlay"
-			style={{ left: pos.x, top: pos.y, zIndex: Z.popover }}
+	// PointMenu: in a portal (`fixed` inside the docked panel was relative to the panel, workstream `time`), and kept
+	// inside the window: flipped left / up, or pinned to the edge and scrolling when taller than the window (wp fixups).
+	return (
+		<PointMenu
+			x={props.x}
+			y={props.y}
+			menuRef={ref}
+			className="min-w-[200px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-overlay"
 			data-testid={props.testId ?? 'timeline-context-menu'}
 		>
 			<MenuItems items={props.items} onClose={props.onClose} />
-		</div>
+		</PointMenu>
 	);
-	return typeof document === 'undefined' ? menu : createPortal(menu, document.body);
 }
 
 function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
@@ -279,23 +264,13 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 					return <div key={`sep-${i}`} className="my-1 h-px bg-pr-border" />;
 				if (it.kind === 'submenu')
 					return (
-						// biome-ignore lint/a11y/noStaticElementInteractions: hover opens the submenu (pointer menus)
-						<div key={it.label} className="relative" onMouseEnter={() => setOpenSub(it.label)}>
-							<div
-								className={cx(
-									'flex h-[22px] items-center px-3 hover:bg-pr-hover',
-									openSub === it.label && 'bg-pr-hover',
-								)}
-							>
-								<span className="flex-1">{it.label}</span>
-								<span className="text-pr-muted">▸</span>
-							</div>
-							{openSub === it.label ? (
-								<div className="absolute top-0 left-full min-w-[180px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay">
-									<MenuItems items={it.items} onClose={props.onClose} />
-								</div>
-							) : null}
-						</div>
+						<SubmenuRow
+							key={it.label}
+							item={it}
+							open={openSub === it.label}
+							onOpen={() => setOpenSub(it.label)}
+							onClose={props.onClose}
+						/>
 					);
 				return (
 					<button
@@ -317,6 +292,53 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 				);
 			})}
 		</>
+	);
+}
+
+function SubmenuRow(props: {
+	item: Extract<ContextMenuItem, { kind: 'submenu' }>;
+	open: boolean;
+	onOpen(): void;
+	onClose(): void;
+}) {
+	const rowRef = useRef<HTMLDivElement>(null);
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: hover opens the submenu (pointer menus)
+		<div ref={rowRef} className="relative" onMouseEnter={props.onOpen}>
+			<div className={cx('flex h-[22px] items-center px-3 hover:bg-pr-hover', props.open && 'bg-pr-hover')}>
+				<span className="flex-1">{props.item.label}</span>
+				<span className="text-pr-muted">▸</span>
+			</div>
+			{props.open ? <Submenu row={rowRef} items={props.item.items} onClose={props.onClose} /> : null}
+		</div>
+	);
+}
+
+/** A submenu panel: `fixed` beside its row, flipped left / slid up / scrolling to stay inside the window. */
+function Submenu(props: {
+	row: React.RefObject<HTMLDivElement | null>;
+	items: ContextMenuItem[];
+	onClose(): void;
+}) {
+	const { ref, fit } = useMenuFit<HTMLDivElement>((size, viewport) => {
+		const r = props.row.current?.getBoundingClientRect();
+		return placeBeside(r ?? { left: 0, top: 0, right: 0, bottom: 0 }, size, viewport);
+	});
+	const r0 = props.row.current?.getBoundingClientRect();
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			className="fixed min-w-[180px] overflow-y-auto rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
+			style={{
+				left: fit?.left ?? r0?.right ?? 0,
+				top: fit?.top ?? r0?.top ?? 0,
+				maxHeight: fit?.maxHeight,
+				zIndex: Z.popover,
+			}}
+		>
+			<MenuItems items={props.items} onClose={props.onClose} />
+		</div>
 	);
 }
 

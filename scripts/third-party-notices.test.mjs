@@ -233,6 +233,34 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		).toThrow(/add licenses\/texts\/BSD-3-Clause\.txt/);
 	});
 
+	it('names each copyright line once, with the records it covers (wp fixups)', () => {
+		const ec = 'Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors';
+		const fc = 'Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors';
+		const root = tree({
+			'a.md': RECORD.replace('# Blur kernels', '# A'),
+			'b.md': RECORD.replace('# Blur kernels', '# B').replace(ec, `${fc}; ${ec}.`),
+			'c.md': RECORD.replace('# Blur kernels', '# C').replace(ec, `${ec}; ${fc}`),
+		});
+		const records = collectPorted(root);
+		expect(records.map((r) => r.copyrights)).toEqual([[ec], [fc, ec], [ec, fc]]);
+		const text = renderNotices([], records, portedLicenseTexts(root, records));
+		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
+		// Per-record attribution in the table, by number; each holder spelled out once in the list.
+		expect(section).toContain('| A | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [1] |');
+		expect(section).toContain(
+			'| B | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [2] [1] |',
+		);
+		expect(section).toContain(`1. ${ec}: \`a\`, \`b\`, \`c\``);
+		expect(section).toContain(`2. ${fc}: \`b\`, \`c\``);
+		// Each licence text lists each holder once.
+		const applies = section.slice(section.indexOf('## Licence text: MIT'));
+		expect(applies.split(ec).length - 1).toBe(1);
+		expect(applies.split(fc).length - 1).toBe(1);
+		// The table and holder list name each line exactly once outside the record bodies.
+		const summary = section.slice(0, section.indexOf('## A'));
+		expect(summary.split(ec).length - 1).toBe(1);
+	});
+
 	it('the checked-in notices contain every record of the repository', () => {
 		const file = readFileSync(join(repo, 'THIRD_PARTY_NOTICES.md'), 'utf8');
 		for (const r of collectPorted(repo)) expect(file).toContain(`Record: \`${r.file}\``);

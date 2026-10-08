@@ -9,7 +9,7 @@ export const UI_GUIDE = `Live UI (the editor window itself, web or desktop; need
 - ui_state: window size, workspace, mode, open panels with bounds, focused panel, dialogs, playhead.
 - ui_elements {panel?, query?}: every interactive element with a stable automation id (data-testid, or "<scope>/<role>[<name>]"), role, name, bounds, enabled, value/checked; entity targets too (timeline.clip.<id>, timeline.track.<id>, keyframe.<id>…).
 - ui_screenshot {panel?, id?}: a PNG of the window, one dock panel or one element (desktop: the real pixels; web: a DOM rasterisation — use render_frame for the rendered picture).
-- ui_click / ui_drag / ui_scroll / ui_key / ui_type / ui_set act like the user. Targets are {id} (optionally fx/fy 0..1 inside it), {x, y} window CSS pixels, {timeline: {frame?, track?, clipId?, edge?}} or {program: {x, y}} (sequence pixels).
+- ui_click / ui_drag / ui_scroll / ui_key / ui_type / ui_set act like the user. Targets are {id} (optionally fx/fy 0..1 inside it), {x, y} window CSS pixels, {timeline: {frame?, track?, clipId?, edge?}} or {program: {x, y}} (sequence pixels). An {id} or clip target aims at the middle of its visible part; a target with no part on screen is scrolled into view first (the timeline by its own scroll).
 - ui_locate / ui_hit map timeline time ↔ x and track ↔ y, and Program monitor sequence pixels ↔ window points.
 - ui_commands {filter?} lists the UI commands (menus, shortcuts) with enabled and why-not; ui_command {id, args?} runs one (e.g. "panel.focus.lumetri", "workspace.switch" {id: "color"}, "timeline.zoomToSequence").
 A good loop: ui_elements → ui_click/ui_drag → ui_screenshot {panel} to check. Prefer apply_commands for edits (exact, undoable, no pixels); use the UI tools to drive and verify the UI itself.`;
@@ -41,7 +41,10 @@ const TimelineTarget = z.strictObject({
 		.optional()
 		.describe('Sequence frame (x); default: the middle of the visible range'),
 	track: z.string().optional().describe('Track label "V1", "A2" or id (y: the row centre)'),
-	clipId: z.string().optional().describe('A clip: its body centre, or an edge'),
+	clipId: z
+		.string()
+		.optional()
+		.describe('A clip: the middle of its visible part (scrolled into view when none shows), or an edge'),
 	edge: z.enum(['in', 'out', 'center']).optional().describe('With clipId: the in edge, out edge or centre'),
 });
 const ProgramTarget = z.strictObject({
@@ -188,7 +191,7 @@ export function registerUiTools(ctx: ToolContext): void {
 		{
 			title: 'UI click',
 			description:
-				'Clicks like the user: by automation id (centre, or fx/fy inside it), at window coordinates, on the timeline (frame/track/clip) or in the Program monitor (sequence pixels). button left/right/middle (right opens context menus), count 2 = double-click, modifiers. Returns the point and the element clicked.',
+				'Clicks like the user: by automation id (the centre of its visible part, or fx/fy inside that part; scrolled into view when nothing of it shows), at window coordinates, on the timeline (frame/track/clip) or in the Program monitor (sequence pixels). button left/right/middle (right opens context menus), count 2 = double-click, modifiers. Returns the point and the element clicked.',
 			input: {
 				projectId: WindowArg,
 				id: z.string().optional().describe('Automation id from ui_elements'),
@@ -319,7 +322,7 @@ export function registerUiTools(ctx: ToolContext): void {
 		{
 			title: 'UI locate',
 			description:
-				'Window coordinates of a timeline position ({timeline: {frame?, track?, clipId?, edge?}} → x for the frame, y for the track row; with the visible range and zoom), of a Program monitor sequence pixel ({program: {x, y}} → window point; with the frame rectangle and scale), or of an element (id → bounds and centre).',
+				'Window coordinates of a timeline position ({timeline: {frame?, track?, clipId?, edge?}} → x for the frame, y for the track row; with the visible range and zoom), of a Program monitor sequence pixel ({program: {x, y}} → window point; with the frame rectangle and scale), or of an element (id → bounds, visible part and the centre of the visible part). Clips aim at the middle of their visible part; a target off screen is scrolled into view first (`scrolled: true`).',
 			input: {
 				projectId: WindowArg,
 				timeline: TimelineTarget.optional(),

@@ -44,6 +44,32 @@ describe('audio panels', () => {
 		r.unmount();
 	});
 
+	it('+ Effect builds its menu only when it opens, and inserts the chosen effect on the strip (wp fixups)', async () => {
+		const session = await openSession();
+		const r = render(
+			<SessionProvider session={session}>
+				<AudioTrackMixerPanel instanceId="m" visible />
+			</SessionProvider>,
+		);
+		// Closed: no effect entries rendered anywhere (the Select it replaced rendered all of them per strip).
+		expect(document.querySelectorAll('[data-command-id^="mixer-fx-"]')).toHaveLength(0);
+		const trigger = r.getByTestId('mixer-add-effect-A1');
+		await act(async () => {
+			fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' });
+		});
+		expect(JSON.stringify(Object.values(session.getCommitted().sequences)[0])).not.toContain('"effectId"');
+		const items = document.querySelectorAll<HTMLElement>('[data-command-id^="mixer-fx-"]');
+		const audio = session.ctx.registries.effects.list().filter((e) => e.appliesTo === 'audio');
+		expect(items).toHaveLength(audio.length);
+		await act(async () => {
+			fireEvent.click(items[0]!);
+		});
+		// One undoable step, and the strip now lists the insert.
+		expect(JSON.stringify(Object.values(session.getCommitted().sequences)[0])).toContain(`"${audio[0]!.id}"`);
+		expect(r.getByTestId('mixer-strip-A1').textContent).toContain(audio[0]!.label);
+		r.unmount();
+	});
+
 	it('the Audio Clip Mixer and Audio Meters render', async () => {
 		const session = await openSession();
 		const r = render(

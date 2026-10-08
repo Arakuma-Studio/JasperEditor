@@ -8,6 +8,8 @@ export * from './dialog/layer.ts';
 export * from './icons/index.ts';
 export * from './labels.ts';
 export * from './menu/Menu.tsx';
+export * from './menu/PointMenu.tsx';
+export * from './menu/placement.ts';
 export * from './primitives/Button.tsx';
 export * from './primitives/ColorPicker.tsx';
 export * from './primitives/ErrorBoundary.tsx';

@@ -340,6 +340,57 @@ describe('merge', () => {
 	});
 });
 
+// Inclusion–exclusion for one pair of filled shapes, under every merge mode.
+const inclusionExclusion = (a: BezPath, b: BezPath) => {
+	const aa = area([a]);
+	const ab = area([b]);
+	const u = area([merge([a, b], 'add')]);
+	const i = area([merge([a, b], 'intersect')]);
+	const s = area([merge([a, b], 'subtract')]);
+	const x = area([merge([a, b], 'exclude')]);
+	const tol = 2e-3 * (aa + ab) + 1e-6;
+	expect(Math.abs(u - (aa + ab - i))).toBeLessThanOrEqual(tol);
+	expect(Math.abs(s - (aa - i))).toBeLessThanOrEqual(tol);
+	expect(Math.abs(x - (u - i))).toBeLessThanOrEqual(tol);
+	expect(u + 1e-6).toBeGreaterThanOrEqual(Math.max(aa, ab) - tol);
+};
+
+describe('merge at tangencies', () => {
+	// fast-check counterexample of the property below (seed 1, run 460): the circle's bottom vertex (0, 2) lies on
+	// the square's top edge. Both pairs of edges at that vertex leave along ±x, and atan2 read the leftward pair as
+	// +π and -π, so PathBool.js ordered them backwards, traced one face for the whole arrangement and threw; every
+	// merge mode came out empty. Fixed in patches/path-bool@1.0.4.patch.
+	it('a circle resting on a square edge', () => {
+		const c = circle(0, -19, 21);
+		const s = sq(-1, 2, 10);
+		const add = area([merge([c, s], 'add')]);
+		close(add, area([c]) + 100, 1e-6);
+		expect(area([merge([c, s], 'intersect')])).toBeLessThan(1e-6);
+		close(area([merge([c, s], 'subtract')]), area([c]), 1e-6);
+		close(area([merge([s, c], 'subtract')]), 100, 1e-6);
+		inclusionExclusion(c, s);
+		inclusionExclusion(s, c);
+	});
+	it('circles tangent to squares on every side and to circles inside and out', () => {
+		for (const r of [5, 21]) {
+			const c = circle(0, 0, r);
+			for (const off of [-12, -10 - r / 2, -1, 0, 1]) {
+				for (const s of [sq(off, r, 12), sq(off, -r - 12, 12), sq(r, off, 12), sq(-r - 12, off, 12)]) {
+					inclusionExclusion(c, s);
+					inclusionExclusion(s, c);
+				}
+			}
+			for (const [dx, dy] of [
+				[1, 0],
+				[-1, 0],
+				[0, 1],
+				[0, -1],
+			] as const)
+				for (const d of [r + 13, Math.abs(r - 13)]) inclusionExclusion(c, circle(dx * d, dy * d, 13));
+		}
+	});
+});
+
 describe('merge (property)', () => {
 	it('inclusion–exclusion holds for random rectangles and circles (curve booleans are robust)', async () => {
 		const fc = (await import('fast-check')).default;
@@ -359,23 +410,35 @@ describe('merge (property)', () => {
 		);
 		const mk = (v: { k: 'sq' | 'c'; x: number; y: number; s: number }): BezPath =>
 			v.k === 'sq' ? sq(v.x, v.y, v.s) : circle(v.x, v.y, v.s / 2);
+		// A fixed seed keeps the suite deterministic. The property was swept over 90 000 random pairs (seeds 1–3)
+		// and 15 744 constructed tangencies with no failure after the PathBool.js fix (docs/wp-notes/fixups.md).
 		fc.assert(
-			fc.property(shape, shape, (a0, b0) => {
-				const a = mk(a0);
-				const b = mk(b0);
-				const aa = area([a]);
-				const ab = area([b]);
-				const u = area([merge([a, b], 'add')]);
-				const i = area([merge([a, b], 'intersect')]);
-				const s = area([merge([a, b], 'subtract')]);
-				const x = area([merge([a, b], 'exclude')]);
-				const tol = 2e-3 * (aa + ab) + 1e-6;
-				expect(Math.abs(u - (aa + ab - i))).toBeLessThanOrEqual(tol);
-				expect(Math.abs(s - (aa - i))).toBeLessThanOrEqual(tol);
-				expect(Math.abs(x - (u - i))).toBeLessThanOrEqual(tol);
-				expect(u + 1e-6).toBeGreaterThanOrEqual(Math.max(aa, ab) - tol);
+			fc.property(shape, shape, (a0, b0) => inclusionExclusion(mk(a0), mk(b0))),
+			{ numRuns: 150, seed: 0x5eed },
+		);
+	});
+	it('inclusion–exclusion holds for circles touching squares (tangencies are the hard case)', async () => {
+		const fc = (await import('fast-check')).default;
+		const pair = fc.record({
+			cx: fc.integer({ min: -60, max: 60 }),
+			cy: fc.integer({ min: -60, max: 60 }),
+			r: fc.integer({ min: 3, max: 60 }),
+			s: fc.integer({ min: 5, max: 120 }),
+			side: fc.integer({ min: 0, max: 3 }),
+			t: fc.double({ min: 0, max: 1, noNaN: true }),
+		});
+		fc.assert(
+			fc.property(pair, ({ cx, cy, r, s, side, t }) => {
+				const off = Math.round(-s - 1 + t * (s + 2));
+				const b = [
+					sq(cx + off, cy + r, s),
+					sq(cx + off, cy - r - s, s),
+					sq(cx + r, cy + off, s),
+					sq(cx - r - s, cy + off, s),
+				][side]!;
+				inclusionExclusion(circle(cx, cy, r), b);
 			}),
-			{ numRuns: 150 },
+			{ numRuns: 60, seed: 0x7a6 },
 		);
 	});
 });

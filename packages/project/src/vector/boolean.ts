@@ -301,12 +301,41 @@ export function booleanLoops(inputs: { path: BezPath; rule: FillRule }[], op: Bo
 		fillRule: x.rule === 'evenodd' ? PBFillRule.EvenOdd : PBFillRule.NonZero,
 	}));
 	if (!pb.some((x) => x.path.length)) return [];
+	const tol = eps(usable.map((x) => x.path)) * 100;
 	try {
-		const res = new PathBoolean(pb).get(OPS[op]);
-		return chain(res, eps(usable.map((x) => x.path)) * 100);
+		return chain(new PathBoolean(pb).get(OPS[op]), tol);
 	} catch {
-		return [];
+		// PathBool.js can trip over a degenerate configuration that depends on the orientation of the input (an edge
+		// leaving a vertex exactly along an axis, see patches/path-bool@1.0.4.patch). The arrangement itself is
+		// rotation invariant, so retry once in a rotated frame and rotate the result back (round-off ~1e-15 of the
+		// extent) rather than silently dropping the shape.
+		try {
+			const rot = rotator(RETRY_ANGLE);
+			const back = rotator(-RETRY_ANGLE);
+			const turned = pb.map((x) => ({ ...x, path: x.path.map((s) => mapSeg(s, rot)) as PBPath }));
+			const res = new PathBoolean(turned).get(OPS[op]);
+			return chain(
+				res.map((p) => p.map((s) => mapSeg(s, back)) as PBPath),
+				tol,
+			);
+		} catch {
+			return [];
+		}
 	}
+}
+
+/** An angle no input is aligned to in practice (≈ 0.45 rad, irrational in degrees). */
+const RETRY_ANGLE = Math.SQRT2 / Math.PI;
+
+function rotator(a: number): (p: PBVec) => PBVec {
+	const c = Math.cos(a);
+	const s = Math.sin(a);
+	return (p) => [p[0] * c - p[1] * s, p[0] * s + p[1] * c];
+}
+
+/** Maps the points of an L / C / Q segment (the only kinds we feed in, so the only kinds that come out). */
+function mapSeg(s: PBPath[number], f: (p: PBVec) => PBVec): PBPath[number] {
+	return (s as readonly unknown[]).map((q) => (Array.isArray(q) ? f(q as PBVec) : q)) as PBPath[number];
 }
 
 /** N-ary boolean (inputs in stacking order; difference = the first minus all the others) → one compound path. */

@@ -354,18 +354,21 @@ export function TransformOverlay({
 		}
 	};
 
-	// Esc cancels a drag (XF-053) before the keymap sees it.
+	// Esc cancels a drag (XF-053; the keymap leaves Esc to a held pointer). One listener for the overlay's lifetime
+	// calling the latest render's handler, so a re-render during the key event cannot drop it mid-dispatch.
+	const escRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+	escRef.current = (e: KeyboardEvent) => {
+		if (e.key === 'Escape' && gestureRef.current) {
+			e.preventDefault();
+			e.stopPropagation();
+			endGesture(false);
+		}
+	};
 	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape' && gestureRef.current) {
-				e.preventDefault();
-				e.stopPropagation();
-				endGesture(false);
-			}
-		};
+		const onKey = (e: KeyboardEvent) => escRef.current(e);
 		window.addEventListener('keydown', onKey, true);
 		return () => window.removeEventListener('keydown', onKey, true);
-	});
+	}, []);
 
 	// A playback start ends any gesture (S02:TL-882 in reverse: playback wins).
 	useEffect(() => {

@@ -4,7 +4,16 @@
 import type { LabelColor, ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSession, useSessionState } from '@jasper/session/react';
-import { Button, cx, Icon, IconButton, type IconId, LABEL_DISPLAY_NAMES, LABEL_NAMES } from '@jasper/ui';
+import {
+	Button,
+	cx,
+	Icon,
+	IconButton,
+	type IconId,
+	LABEL_DISPLAY_NAMES,
+	LABEL_NAMES,
+	PointMenu,
+} from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
 import { runIfRegistered, useLocalCommandCtx } from '../../home/ui-bridge.ts';
@@ -961,7 +970,7 @@ function Menu(props: {
 	onClose(): void;
 	anchor: 'footer' | { x: number; y: number };
 }) {
-	const ref = useRef<HTMLDivElement>(null);
+	const ref = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
 		const onDown = (e: PointerEvent) => {
 			if (!ref.current?.contains(e.target as Node)) props.onClose();
@@ -974,19 +983,29 @@ function Menu(props: {
 			window.removeEventListener('keydown', onKey, true);
 		};
 	}, [props.onClose]);
-	const style: React.CSSProperties =
-		props.anchor === 'footer'
-			? { right: 4, bottom: 'calc(var(--pr-row-h) + 2px)' }
-			: { left: props.anchor.x, top: props.anchor.y };
+	const className =
+		'flex min-w-40 flex-col rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui shadow-pr-overlay';
+	if (props.anchor !== 'footer')
+		// At the pointer: kept inside the window, flipped up / left or pinned and scrolling, also after the inline
+		// Label list opens (PointMenu, wp fixups).
+		return (
+			<PointMenu
+				x={props.anchor.x}
+				y={props.anchor.y}
+				menuRef={ref}
+				className={className}
+				onClick={() => props.onClose()}
+				onKeyDown={() => undefined}
+			>
+				{props.children}
+			</PointMenu>
+		);
 	return (
 		<div
 			ref={ref}
 			role="menu"
-			className={cx(
-				'z-10 flex min-w-40 flex-col rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui shadow-pr-overlay',
-				props.anchor === 'footer' ? 'absolute' : 'fixed',
-			)}
-			style={style}
+			className={cx(className, 'absolute z-10')}
+			style={{ right: 4, bottom: 'calc(var(--pr-row-h) + 2px)' }}
 			onClick={() => props.onClose()}
 			onKeyDown={() => undefined}
 		>

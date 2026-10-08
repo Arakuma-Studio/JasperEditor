@@ -69,32 +69,37 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: DrawKind }) {
 		setStar(null);
 	};
 
-	// Escape cancels the drag before the keymap sees it; Shift/Alt changes re-shape the box without a move.
+	// Escape cancels the drag (the keymap leaves Esc to a held pointer); Shift/Alt changes re-shape the box without
+	// a move. One listener for the surface's lifetime that calls the latest render's handler: re-subscribing on
+	// every render would let a re-render caused by an earlier listener of the same key event remove this one
+	// before it ran.
+	const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+	onKeyRef.current = (e: KeyboardEvent) => {
+		const d = dragRef.current;
+		if (!d) return;
+		if (e.type === 'keydown' && e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			cancel();
+			return;
+		}
+		if (e.key === 'Shift' || e.key === 'Alt') {
+			e.preventDefault();
+			e.stopPropagation();
+			d.shift = e.shiftKey;
+			d.alt = e.altKey;
+			refresh();
+		}
+	};
 	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			const d = dragRef.current;
-			if (!d) return;
-			if (e.type === 'keydown' && e.key === 'Escape') {
-				e.preventDefault();
-				e.stopPropagation();
-				cancel();
-				return;
-			}
-			if (e.key === 'Shift' || e.key === 'Alt') {
-				e.preventDefault();
-				e.stopPropagation();
-				d.shift = e.shiftKey;
-				d.alt = e.altKey;
-				refresh();
-			}
-		};
+		const onKey = (e: KeyboardEvent) => onKeyRef.current(e);
 		window.addEventListener('keydown', onKey, true);
 		window.addEventListener('keyup', onKey, true);
 		return () => {
 			window.removeEventListener('keydown', onKey, true);
 			window.removeEventListener('keyup', onKey, true);
 		};
-	});
+	}, []);
 
 	const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
 		if (e.button !== 0) return;
