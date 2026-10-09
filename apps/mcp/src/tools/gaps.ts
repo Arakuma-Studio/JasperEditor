@@ -176,7 +176,8 @@ export function registerGapsTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Default "none" (only report the path)'),
 			},
-			annotations: { ...READ_ONLY, idempotentHint: false },
+			// Not read-only: "reveal" / "open" act on the host's desktop (outside the project).
+			annotations: { ...EDIT, openWorldHint: true },
 		},
 		async ({ projectId, mediaId, action }) => {
 			const { doc } = await loadDoc(ctx, projectId);

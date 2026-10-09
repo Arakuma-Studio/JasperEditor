@@ -306,8 +306,15 @@ describe('Premiere transition planning', () => {
 		expect(transitionPasses(blur.gpu!, defaults(blur, { blur: 160 }) as never, plan)).toEqual(passes);
 		const morph = byLabel('Morph Cut');
 		const mp = transitionPasses(morph.gpu!, defaults(morph) as never, plan);
-		expect(mp.map((p) => p.output)).toEqual(['mcLuma', 'mcFlow', 'mcSmoothH', 'mcSmooth', undefined]);
-		expect(mp[1]!.format).toBe('rgba16f');
+		// gaps: the time workstream's pyramid flow (luma pyramid, coarse-to-fine vectors ping-ponged, the flow field).
+		const outs = mp.map((p) => p.output);
+		expect(outs.slice(0, 4)).toEqual(['mcL0', 'mcL1', 'mcL2', 'mcL3']);
+		expect(outs.slice(-2)).toEqual(['mcFlow', undefined]);
+		const vec = mp.filter((p) => p.output === 'mcVec');
+		expect(vec.length).toBeGreaterThanOrEqual(2);
+		expect(vec[0]!.update).toBeFalsy();
+		for (const v of vec.slice(1)) expect(v.update).toBe(true);
+		expect(mp[outs.indexOf('mcFlow')]!.format).toBe('rgba32f');
 	});
 
 	it('plans a stage with the family chunks and derived uniforms', () => {
