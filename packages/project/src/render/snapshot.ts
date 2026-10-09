@@ -80,6 +80,7 @@ import {
 	resolveVideoTransitions,
 } from '../transitions.ts';
 import { clipPictureTime } from './scene.ts';
+import { applyGraphics } from '../gaps/graphics.ts';
 
 export type MediaHandle = {
 	url: string;
@@ -676,7 +677,10 @@ export function buildRenderSnapshot(
 	opts: SnapshotOptions,
 ): RenderSnapshot {
 	// Wave expressions: Animatables with active expressions evaluate through their bound evaluators.
-	const doc = bindExpressions(rawDoc);
+	// gaps (GR-4/5): graphics' Responsive Design (time, position) and Roll / Crawl, for every render path.
+	const doc = bindExpressions(
+		applyGraphics(rawDoc, (clip, s) => intrinsicBoxOf({ clip, doc: rawDoc, seq: s } as never)),
+	);
 	// Nested snapshots share the root's world (bindSnapshotExpressions recurses into `nest` sources).
 	const world = opts.nestStack?.length ? null : expressionWorldData(rawDoc);
 	const seq = doc.sequences[sequenceId];

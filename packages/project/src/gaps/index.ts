@@ -13,3 +13,5 @@ import './warp/check.ts';
 export * from './warp/export.ts';
 export * from './warp/request.ts';
 export * from './auto-reframe.ts';
+export * from './graphics.ts';
+import './graphics-check.ts';

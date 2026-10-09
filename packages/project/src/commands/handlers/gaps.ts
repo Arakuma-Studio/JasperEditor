@@ -16,6 +16,17 @@ import type { DDoc } from '../context.ts';
 import { keyframeHandlers } from './keyframe.ts';
 import { sequenceHandlers } from './sequence.ts';
 import { structureHandlers } from './structure.ts';
+import { clipCoreHandlers } from './clip-core.ts';
+import { insertProjectItems } from './clipboard.ts';
+import { shapeHandlers } from './shape.ts';
+import {
+	alignOffsets,
+	graphicSettingsOf,
+	isGraphic,
+	type LayerPins,
+	layerBounds,
+	pinOffsets,
+} from '../../gaps/graphics.ts';
 import type { HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { locateEffect } from './param.ts';
@@ -40,6 +51,141 @@ type Run = (doc: DDoc, cmd: unknown, h: HandlerContext) => unknown;
 const run = (map: HandlerMap, type: string) => (map as Record<string, unknown>)[type] as Run;
 
 export const gapsHandlers: HandlerMap = {
+	'graphic.update': (doc, cmd: CommandOf<'graphic.update'>, h) => {
+		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		if (!seq) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
+		if (cmd.graphic === null) {
+			delete (seq as { graphic?: unknown }).graphic;
+			return { graphic: null };
+		}
+		const cur = graphicSettingsOf(seq) ?? { intro: 0, outro: 0, roll: null };
+		const next = {
+			intro: cmd.graphic.intro ?? cur.intro,
+			outro: cmd.graphic.outro ?? cur.outro,
+			roll: cmd.graphic.roll === undefined ? (cur.roll ?? null) : cmd.graphic.roll,
+		};
+		(seq as { graphic?: unknown }).graphic = next;
+		if (cmd.graphic.duration !== undefined) {
+			const end = Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));
+			for (const c of Object.values(seq.clips)) {
+				if (c.start + c.duration !== end) continue;
+				if (c.start >= cmd.graphic.duration) h.fail('E_INVALID_PARAM', `Layer ${c.id} starts after the new end`);
+				(c as { duration: number }).duration = cmd.graphic.duration - c.start;
+			}
+		}
+		return { graphic: next };
+	},
+	'graphic.addLayer': (doc, cmd: CommandOf<'graphic.addLayer'>, h) => {
+		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		if (!seq || !isGraphic(seq)) return h.fail('E_INVALID_PARAM', `${cmd.sequenceId} is not a graphic`);
+		const end = Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));
+		const rate = seq.settings.frameRate;
+		const duration = end > 0 ? end : Math.round((5 * rate.num) / rate.den);
+		run(sequenceHandlers, 'track.add')(doc, { type: 'track.add', sequenceId: seq.id, kind: 'video' }, h);
+		const track = seq.videoTracks[seq.videoTracks.length - 1]!.id;
+		const base = {
+			sequenceId: seq.id,
+			at: { frames: 0 },
+			duration: { frames: duration },
+			track,
+			...(cmd.name ? { name: cmd.name } : {}),
+			...(cmd.ref ? { ref: cmd.ref } : {}),
+		};
+		const r =
+			cmd.kind === 'text'
+				? run(clipCoreHandlers, 'clip.addText')(
+						doc,
+						{ type: 'clip.addText', ...base, content: { text: cmd.text ?? 'New Text' } },
+						h,
+					)
+				: run(shapeHandlers, 'clip.addShape')(
+						doc,
+						{
+							type: 'clip.addShape',
+							...base,
+							shape: { type: cmd.kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] },
+						},
+						h,
+					);
+		return r;
+	},
+	'graphic.align': (doc, cmd: CommandOf<'graphic.align'>, h) => {
+		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		if (!seq) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
+		const clips = cmd.clipIds.map((id) => {
+			const c = seq.clips[id];
+			if (!c) h.fail('E_NOT_FOUND', `Clip not found: ${id}`);
+			const track = seq.videoTracks.find((t) => t.id === c.trackId);
+			if (track?.locked) h.fail('E_TRACK_LOCKED', `Track of ${id} is locked`);
+			return c;
+		});
+		const rects = clips.map((c) => {
+			const r = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq } as never), c.sourceIn);
+			if (!r) h.fail('E_INVALID_PARAM', `${c.id} has no Motion to align`);
+			return r!;
+		});
+		const to = cmd.relativeTo === 'frame' ? { x: 0, y: 0, width: seq.settings.width, height: seq.settings.height } : null;
+		const offs = alignOffsets(rects, cmd.mode, to);
+		clips.forEach((c, i) => {
+			const [dx, dy] = offs[i]!;
+			if (!dx && !dy) return;
+			const pos = (c as unknown as { transform: { position: { value: [number, number]; keyframes: { value: [number, number] }[] } } })
+				.transform.position;
+			pos.value = [pos.value[0] + dx, pos.value[1] + dy];
+			for (const k of pos.keyframes) k.value = [k.value[0] + dx, k.value[1] + dy];
+		});
+		return { moved: offs.filter(([x, y]) => x || y).length };
+	},
+	'graphic.setPins': (doc, cmd: CommandOf<'graphic.setPins'>, h) => {
+		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		if (!seq || !isGraphic(seq)) return h.fail('E_INVALID_PARAM', `${cmd.sequenceId} is not a graphic`);
+		const c = seq.clips[cmd.clipId];
+		if (!c) return h.fail('E_NOT_FOUND', `Clip not found: ${cmd.clipId}`);
+		if (!cmd.edges.length) {
+			delete (c as { pins?: unknown }).pins;
+			return { pinned: false };
+		}
+		if (cmd.target === cmd.clipId) h.fail('E_INVALID_PARAM', 'A layer cannot be pinned to itself');
+		const tc = cmd.target === 'frame' ? null : seq.clips[cmd.target];
+		if (cmd.target !== 'frame' && !tc) h.fail('E_NOT_FOUND', `Layer not found: ${cmd.target}`);
+		if (tc && (tc as { pins?: LayerPins }).pins?.target === cmd.clipId)
+			h.fail('E_INVALID_PARAM', 'Two layers cannot be pinned to each other');
+		const own = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq } as never), c.sourceIn);
+		const target = tc
+			? layerBounds(tc, intrinsicBoxOf({ clip: tc, doc, seq } as never), tc.sourceIn)
+			: { x: 0, y: 0, width: seq.settings.width, height: seq.settings.height };
+		if (!own || !target) return h.fail('E_INVALID_PARAM', 'Both layers need Motion to be pinned');
+		const pins = { target: cmd.target, edges: pinOffsets(own, target, cmd.edges) };
+		(c as { pins?: unknown }).pins = pins;
+		return { pinned: true, pins };
+	},
+	'graphic.importTemplate': (doc, cmd: CommandOf<'graphic.importTemplate'>, h) => {
+		const seq = h.sequence(doc, cmd.sequenceId);
+		const pasted = insertProjectItems(doc, cmd.template.payload as never, cmd.binId, undefined, h) as {
+			itemIds: string[];
+			sequenceIds: string[];
+		};
+		const itemId = pasted.itemIds.find((id) => {
+			const it = doc.items[id] as { kind?: string; sequenceId?: string };
+			return it.kind === 'sequence' && isGraphic(doc.sequences[it.sequenceId!] as Sequence);
+		});
+		if (!itemId) return h.fail('E_INVALID_PARAM', 'The template holds no graphic');
+		const placed = run(clipCoreHandlers, 'clip.place')(
+			doc,
+			{
+				type: 'clip.place',
+				sequenceId: seq.id,
+				source: { projectItemId: itemId },
+				at: cmd.at,
+				...(cmd.track ? { tracks: { video: cmd.track } } : {}),
+				video: true,
+				audio: false,
+				matchSequence: 'keep',
+			},
+			h,
+		);
+		return { itemId, placed };
+	},
 	'sequence.autoReframe': (doc, cmd: CommandOf<'sequence.autoReframe'>, h) => {
 		const src = doc.sequences[cmd.sequenceId] as Sequence | undefined;
 		if (!src) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);

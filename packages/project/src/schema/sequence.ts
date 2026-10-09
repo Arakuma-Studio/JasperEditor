@@ -24,6 +24,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
 import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
@@ -599,6 +600,8 @@ const visualShape = {
 	colorInterpretation: ColorInterpretationSchema.optional(),
 	/** three-d: the 3D Layer switch and 3D transform / material (schema/three-d.ts). Absent = a 2D layer. */
 	threeD: Layer3DSchema.optional(),
+	/** gaps (GR-5): Responsive Design – Position of a graphic's layer (absent = not pinned). */
+	pins: LayerPinsSchema.optional(),
 };
 const canvasSchema = z.union([
 	z.literal('sequence'),
@@ -1126,6 +1129,8 @@ export const SequenceSchema = z.looseObject({
 	threeD: Sequence3DSchema.optional(),
 	/** previews: render preview file settings (absent = defaults, see `previewSettingsOf`). */
 	previews: SequencePreviewSettingsSchema.optional(),
+	/** gaps (GR-4/5): present = an Essential Graphics graphic (its tracks are the layers), see gaps/graphics.ts. */
+	graphic: GraphicSettingsSchema.optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

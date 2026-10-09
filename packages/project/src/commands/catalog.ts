@@ -367,6 +367,11 @@ const LABELS: Record<CommandType, string> = {
 	'item.setAudioChannels': 'Audio Channels',
 	'effect.setWarpAnalysis': 'Analyze (Warp Stabilizer)',
 	'sequence.autoReframe': 'Auto Reframe Sequence',
+	'graphic.update': 'Essential Graphics',
+	'graphic.addLayer': 'New Layer',
+	'graphic.align': 'Align',
+	'graphic.setPins': 'Responsive Design – Position',
+	'graphic.importTemplate': 'Add Graphic Template',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

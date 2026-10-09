@@ -2,7 +2,8 @@
 import { z } from 'zod';
 import { WarpAnalysisDataSchema } from '../../gaps/warp/analysis.ts';
 import { AttachedProxySchema } from '../../schema/media.ts';
-import { cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
+import { ALIGN_MODES, GraphicRollSchema, GraphicTemplateSchema, PIN_EDGES } from '../../gaps/graphics.ts';
+import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 
 /**
  * Clip ▸ Proxy ▸ Attach Proxies / Create Proxies (when the job finishes): attaches a registered file as the proxy of a
@@ -71,6 +72,56 @@ export const SequenceAutoReframeCmd = cmd('sequence.autoReframe', {
 	ref: RefDeclSchema.optional(),
 });
 
+const GraphicPatch = z.strictObject({
+	intro: z.number().int().min(0).max(1_000_000).optional(),
+	outro: z.number().int().min(0).max(1_000_000).optional(),
+	roll: GraphicRollSchema.nullable().optional(),
+	/** The graphic's duration (frames): layers that reach its end are extended / shortened with it. */
+	duration: z.number().int().min(1).max(10_000_000).optional(),
+});
+
+/**
+ * Essential Graphics: makes `sequenceId` a graphic (its tracks are the layers) or edits its Responsive Design – Time
+ * (Intro / Outro frames) and Roll / Crawl; `graphic: null` makes it a plain sequence again.
+ */
+export const GraphicUpdateCmd = cmd('graphic.update', {
+	sequenceId: IdRefSchema,
+	graphic: GraphicPatch.nullable(),
+});
+/** Essential Graphics ▸ New Layer: a text, rectangle or ellipse layer on a new top track, as long as the graphic. */
+export const GraphicAddLayerCmd = cmd('graphic.addLayer', {
+	sequenceId: IdRefSchema,
+	kind: z.enum(['text', 'rectangle', 'ellipse']),
+	text: z.string().max(10_000).optional(),
+	name: z.string().max(255).optional(),
+	ref: RefDeclSchema.optional(),
+});
+/** Essential Graphics ▸ Align and Transform: align or distribute layers to the video frame or the selection. */
+export const GraphicAlignCmd = cmd('graphic.align', {
+	sequenceId: IdRefSchema,
+	clipIds: z.array(IdRefSchema).min(1).max(200),
+	mode: z.enum(ALIGN_MODES),
+	relativeTo: z.enum(['frame', 'selection']).default('frame'),
+});
+/**
+ * Essential Graphics ▸ Responsive Design – Position: pins the layer's `edges` to the video frame (`target: "frame"`)
+ * or to another layer of the graphic, keeping their current offsets; no edges = unpinned.
+ */
+export const GraphicSetPinsCmd = cmd('graphic.setPins', {
+	sequenceId: IdRefSchema,
+	clipId: IdRefSchema,
+	target: z.string().min(1),
+	edges: z.array(z.enum(PIN_EDGES)).max(4),
+});
+/** Essential Graphics ▸ Browse: a `.jgt` template placed at `at` on `track` of the sequence (its graphic is added). */
+export const GraphicImportTemplateCmd = cmd('graphic.importTemplate', {
+	template: GraphicTemplateSchema,
+	sequenceId: IdRefSchema.optional(),
+	at: TimeInputSchema,
+	track: TrackRefSchema.optional(),
+	binId: IdRefSchema.nullable().optional(),
+});
+
 export const GAPS_COMMANDS = [
 	MediaAttachProxyCmd,
 	MediaDetachProxyCmd,
@@ -78,4 +129,9 @@ export const GAPS_COMMANDS = [
 	ItemSetAudioChannelsCmd,
 	EffectSetWarpAnalysisCmd,
 	SequenceAutoReframeCmd,
+	GraphicUpdateCmd,
+	GraphicAddLayerCmd,
+	GraphicAlignCmd,
+	GraphicSetPinsCmd,
+	GraphicImportTemplateCmd,
 ] as const;
