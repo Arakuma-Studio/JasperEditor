@@ -1,7 +1,7 @@
 // Filesystem helpers: atomic writes (S01:PER-016), JSON read/write, disk space (S04:IN-005).
 import { createHash, randomBytes } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
-import { mkdir, open, readFile, rename, rm, stat, statfs } from 'node:fs/promises';
+import { copyFile, mkdir, open, readFile, rename, rm, stat, statfs } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 export function sha256File(file: string): Promise<string> {
@@ -44,6 +44,30 @@ export async function atomicWriteFile(file: string, data: string | Uint8Array): 
 	}
 	try {
 		await rename(tmp, file);
+	} catch (e) {
+		await rm(tmp, { force: true });
+		throw e;
+	}
+	await fsyncDir(dir);
+}
+
+/**
+ * Copies `src` to `dest` so that `dest` is either absent or complete (temporary file, fsync, rename): a crash or a
+ * full disk mid-copy never leaves a truncated file under the final name (security review DATA-6).
+ */
+export async function atomicCopyFile(src: string, dest: string): Promise<void> {
+	const dir = dirname(dest);
+	await mkdir(dir, { recursive: true });
+	const tmp = join(dir, `.${basename(dest)}.${randomBytes(4).toString('hex')}.tmp`);
+	try {
+		await copyFile(src, tmp);
+		const fh = await open(tmp, 'r+');
+		try {
+			await fh.sync();
+		} finally {
+			await fh.close();
+		}
+		await rename(tmp, dest);
 	} catch (e) {
 		await rm(tmp, { force: true });
 		throw e;

@@ -1,6 +1,6 @@
 // Regressions of the adversarial security review (docs/security-review.md). One `it` per confirmed finding.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ import { openerFor } from '../src/routes/gaps.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { filterPath, filterValue } from '../src/tools/filter-text.ts';
+import { atomicCopyFile } from '../src/tools/fs.ts';
 import { closeApps, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
 
 /** An HTTP server whose every response is an endless body (stops after 256 MiB); counts the bytes it wrote. */
@@ -387,5 +388,21 @@ describe('ENG-5: Edit Original never runs a program', () => {
 			if (prev === undefined) delete process.env.JASPER_OPEN_COMMAND;
 			else process.env.JASPER_OPEN_COMMAND = prev;
 		}
+	});
+});
+
+describe('DATA-6: project backups and versions are copied atomically', () => {
+	it('atomicCopyFile leaves the destination complete or absent, and no temporary file', async () => {
+		const dir = tempAppdir('jasper-copy-');
+		const src = join(dir, 'project.jasper');
+		writeFileSync(src, '{"format":"jasper-project"}');
+		await atomicCopyFile(src, join(dir, 'versions', 'v1.jasper'));
+		expect(readFileSync(join(dir, 'versions', 'v1.jasper'), 'utf8')).toBe('{"format":"jasper-project"}');
+		expect(readdirSync(join(dir, 'versions'))).toEqual(['v1.jasper']);
+		// A failing copy (the source vanished) leaves nothing under the final name.
+		await expect(
+			atomicCopyFile(join(dir, 'gone.jasper'), join(dir, 'versions', 'v2.jasper')),
+		).rejects.toThrow();
+		expect(readdirSync(join(dir, 'versions'))).toEqual(['v1.jasper']);
 	});
 });

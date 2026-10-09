@@ -4,7 +4,7 @@
 // Process workstream (D-39, docs/project-files.md): the first save over a project migrated from an older schema keeps
 // `project (schema vN backup).jasper` next to it (S01:MIG-004); saved versions can be read and restored in place
 // (keeping the replaced state as a `before-restore` version) or as a new project (S01:PER-001 `restoreVersion`).
-import { copyFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ProjectSummary, VersionInfo, VersionKind } from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
@@ -17,7 +17,7 @@ import {
 	ProjectDocumentSchema,
 	type ProjectEnvelope,
 } from '@jasper/project';
-import { atomicWriteFile, atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
+import { atomicCopyFile, atomicWriteFile, atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import type { LeaseManager } from './leases.ts';
 
@@ -219,7 +219,7 @@ export class ProjectStoreFs {
 		if (from >= schemaVersionOf(next.document, next)) return;
 		const backup = join(this.opts.paths.projectDir(projectId), schemaBackupName(from));
 		if (await exists(backup)) return;
-		await copyFile(this.opts.paths.projectFile(projectId), backup);
+		await atomicCopyFile(this.opts.paths.projectFile(projectId), backup);
 	}
 
 	/** Keeps the previous file as a version when the newest version is older than 5 minutes (S01:PER-020). */
@@ -231,7 +231,7 @@ export class ProjectStoreFs {
 		if (newest && this.now().getTime() - versionTime(newest) < interval) return;
 		await mkdir(dir, { recursive: true });
 		const stamp = this.now().toISOString().replace(/[:.]/g, '-');
-		await copyFile(this.opts.paths.projectFile(projectId), join(dir, `${stamp}.jasper`));
+		await atomicCopyFile(this.opts.paths.projectFile(projectId), join(dir, `${stamp}.jasper`));
 		const keep = this.opts.keepVersions ?? KEEP_VERSIONS;
 		const all = await this.listVersionFiles(projectId);
 		for (const old of all.slice(0, Math.max(0, all.length - keep))) await rm(old.path, { force: true });
@@ -372,7 +372,7 @@ export class ProjectStoreFs {
 			const dir = this.opts.paths.projectVersionsDir(projectId);
 			await mkdir(dir, { recursive: true });
 			const keptAs = `${this.now().toISOString().replace(/[:.]/g, '-')}-restore`;
-			await copyFile(this.opts.paths.projectFile(projectId), join(dir, `${keptAs}.jasper`));
+			await atomicCopyFile(this.opts.paths.projectFile(projectId), join(dir, `${keptAs}.jasper`));
 			const revision = current.revision + 1;
 			const next: StoredEnvelope = { ...envelope, revision, savedAt: this.now().toISOString() };
 			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
