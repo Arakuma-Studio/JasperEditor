@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { quoteFilterPath } from '../src/color/extension.ts';
 import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
+import { loadLottieFile } from '../src/imports/lottie.ts';
 import { ModelStore } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
@@ -230,5 +231,40 @@ describe('DATA-4: an OCIO config only bundles the LUT and CDL files it names', (
 		expect(b.missing).toEqual([secret, 'notes.cube'].sort());
 		expect(JSON.stringify(b)).not.toContain('PRIVATE KEY');
 		expect(JSON.stringify(b)).not.toContain('private notes');
+	});
+});
+
+describe('DATA-5: a Lottie file embeds only picture files next to it', () => {
+	it('a non-image "image" asset is left empty (with a warning), a real PNG is embedded', async () => {
+		const dir = tempAppdir('jasper-lottie-');
+		mkdirSync(join(dir, 'images'));
+		// 1×1 PNG.
+		const png = Buffer.from(
+			'89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201ffa5e1a2a30000000049454e44ae426082',
+			'hex',
+		);
+		writeFileSync(join(dir, 'images', 'img_0.png'), png);
+		writeFileSync(join(dir, 'taxes.pdf'), '%PDF-1.4 my tax return');
+		const anim = {
+			v: '5.7.0',
+			fr: 30,
+			ip: 0,
+			op: 30,
+			w: 10,
+			h: 10,
+			layers: [],
+			assets: [
+				{ id: 'a', w: 1, h: 1, u: 'images/', p: 'img_0.png', e: 0 },
+				{ id: 'b', w: 1, h: 1, u: 'images/../', p: 'taxes.pdf', e: 0 },
+			],
+		};
+		const file = join(dir, 'anim.json');
+		writeFileSync(file, JSON.stringify(anim));
+		const { doc, info } = await loadLottieFile(file);
+		const assets = doc.assets as { p: string }[];
+		expect(assets[0]!.p.startsWith('data:image/png;base64,')).toBe(true);
+		expect(assets[1]!.p).not.toContain('base64');
+		expect(JSON.stringify(doc)).not.toContain(Buffer.from('%PDF-1.4 my tax').toString('base64').slice(0, 12));
+		expect(info.warnings.join(' ')).toContain('taxes.pdf');
 	});
 });
