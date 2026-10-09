@@ -4,6 +4,7 @@
 import { linToDb, MeterBallistics } from '@jasper/audio-dsp';
 import type { MeterReading } from '@jasper/compositions';
 import { useEffect, useRef, useState } from 'react';
+import { cssVar as tokenVar } from '../../panels/timeline/components/canvas.tsx';
 
 export const METER_FLOOR_DB = -60;
 
@@ -13,9 +14,9 @@ export function meterPos(db: number, floor = METER_FLOOR_DB): number {
 	return Math.min(1, Math.max(0, (db - floor) / -floor));
 }
 
+/** A design token (cached, ui-perf: the meters redraw every frame) or the fallback. */
 function cssVar(el: Element, name: string, fallback: string): string {
-	const v = getComputedStyle(el).getPropertyValue(name).trim();
-	return v || fallback;
+	return tokenVar(el, name) || fallback;
 }
 
 type Props = {

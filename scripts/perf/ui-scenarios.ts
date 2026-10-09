@@ -41,6 +41,8 @@ const CATEGORIES = [
 	'disabled-by-default-devtools.timeline.frame',
 	'toplevel',
 	'blink.console',
+	// Extra categories for investigations (e.g. `v8,disabled-by-default-v8.compile`).
+	...(process.env.UIPERF_TRACE_CATEGORIES ?? '').split(',').filter(Boolean),
 ];
 
 export class Tracer {
@@ -273,7 +275,15 @@ async function trackId(page: Page, label: string): Promise<string> {
 	}, label);
 }
 
-export type DragResult = FrameStats & { clips: number; dragWallMs: number; committed: boolean };
+export type DragResult = FrameStats & {
+	clips: number;
+	dragWallMs: number;
+	committed: boolean;
+	/** Gesture frames the Program monitor drew / skipped during the drag, and the cost of one (ms). */
+	programFrames?: number;
+	programSkipped?: number;
+	programCostMs?: number;
+};
 
 /**
  * The perf-core drag: zoom out once (−), Shift-click up to `pick` visible V1 clips, drag them 270 px right in `steps`
@@ -304,6 +314,18 @@ export async function dragScenario(
 				).__jasperMonitor.session.getState().revision,
 		);
 	const rev0 = await history();
+	const frames = () =>
+		page.evaluate(() => {
+			const g = (
+				window as unknown as {
+					__jasperMonitor: {
+						gestureFrames?: { stats(): { published: number; skipped: number; costMs: number } };
+					};
+				}
+			).__jasperMonitor.gestureFrames;
+			return g ? g.stats() : null;
+		});
+	const g0 = await frames();
 	const from = { x: clips[0]!.x + 10, y: clips[0]!.y + clips[0]!.h / 2 };
 	let dragWallMs = 0;
 	await marked(page, tracer, async () => {
@@ -328,7 +350,19 @@ export async function dragScenario(
 		)
 		.then(() => true)
 		.catch(() => false);
-	return { clips: clips.length, dragWallMs, committed };
+	const g1 = await frames();
+	return {
+		clips: clips.length,
+		dragWallMs,
+		committed,
+		...(g0 && g1
+			? {
+					programFrames: g1.published - g0.published,
+					programSkipped: g1.skipped - g0.skipped,
+					programCostMs: Math.round(g1.costMs * 10) / 10,
+				}
+			: {}),
+	};
 }
 
 /** Trims the out point of a visible V2 clip left and right in `steps` moves. */

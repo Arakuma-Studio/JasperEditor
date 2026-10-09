@@ -174,6 +174,15 @@ try {
 	const cdpOpen = scenario === 'open' ? await startProfile(page) : null;
 	const openMs = await openProject(page, base, projectId);
 	console.log(`opened in ${openMs} ms`);
+	// Investigation: UIPERF_CLOSE=properties,program closes those panels first (what they cost during the scenario).
+	for (const kind of (process.env.UIPERF_CLOSE ?? '').split(',').filter(Boolean))
+		await page.evaluate((k) => {
+			const el = document.querySelector(`[data-panel-body][data-slot="${k}"]`);
+			const id = el?.getAttribute('data-panel-instance') ?? el?.getAttribute('data-instance-id');
+			const shell = (window as unknown as { __jasperShell?: { dock: { close(id?: string): void } } })
+				.__jasperShell;
+			if (id && shell) shell.dock.close(id);
+		}, kind);
 	await settle(page, 1500);
 	const id = scenario;
 	let profile: CpuProfile;

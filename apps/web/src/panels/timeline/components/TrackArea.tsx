@@ -14,9 +14,10 @@ import { useMemo } from 'react';
 import { LANE_MIN_TRACK_PX, laneKeyFor } from '../model/keyframe-lane.ts';
 import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
 import { type TransitionIndex, transitionsInRange } from '../model/transitions.ts';
-import { frameToX, type Viewport } from '../model/viewport.ts';
+import { frameToX, snapPx, type Viewport } from '../model/viewport.ts';
 import type { EditPointSel, TimelineUiState } from '../state/ui-store.ts';
 import { type ClipDisplay, ClipView } from './ClipView.tsx';
+import { dpr } from './canvas.tsx';
 import { KeyframeLane } from './KeyframeLane.tsx';
 
 /** Lanes start under the clip name strip. */
@@ -96,6 +97,12 @@ function ThroughEditMarks({ seq, layout, v }: { seq: Sequence; layout: TrackArea
 	);
 }
 
+/** The viewport with its scroll offset snapped to device pixels. */
+function snappedScroll(v: Viewport): Viewport {
+	const px = snapPx(v.scrollFrame * v.pxPerFrame, dpr());
+	return px === v.scrollFrame * v.pxPerFrame ? v : { ...v, scrollFrame: px / v.pxPerFrame };
+}
+
 function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<string, number> }) {
 	const { seq, viewport: v, region } = props;
 	const rows = visibleRows(region);
@@ -104,6 +111,9 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 	const visible = v.width / v.pxPerFrame;
 	const f0 = Math.floor(v.scrollFrame - visible * 0.5);
 	const f1 = Math.ceil(v.scrollFrame + visible * 1.5);
+	// ui-perf: clips sit in content px on a layer moved by the scroll offset (snapped to device pixels, so every edge
+	// lands where it did when each clip was positioned in viewport px); a scroll moves the layer, not the clips.
+	const scrollPx = snapPx(v.scrollFrame * v.pxPerFrame, dpr());
 	return (
 		<div
 			className="absolute right-0 left-0 overflow-hidden"
@@ -153,37 +163,43 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 									data-gap-selected
 								/>
 							))}
-						{clips.map((c) => {
-							const x = frameToX(v, c.start);
-							const mediaId = (c as { mediaId?: string }).mediaId;
-							const asset = mediaId ? props.media[mediaId] : undefined;
-							const rt = mediaId ? props.runtime[mediaId] : undefined;
-							return (
-								<ClipView
-									key={c.id}
-									clip={c}
-									x={x}
-									w={c.duration * v.pxPerFrame}
-									height={row.height}
-									viewportWidth={v.width}
-									scrollFrame={v.scrollFrame}
-									pxPerFrame={v.pxPerFrame}
-									rate={seq.settings.frameRate}
-									selected={props.selected.has(c.id)}
-									trackLocked={track.locked}
-									trackDimmed={dimmed}
-									linked={!!c.linkId}
-									syncOffset={props.offsets[c.id] ?? null}
-									offline={!!mediaId && (!asset || rt?.availability === 'offline')}
-									flash={props.overlays.flash.includes(c.id)}
-									asset={asset}
-									runtime={rt}
-									engine={props.engine}
-									display={props.display}
-									mediaVersion={props.mediaVersion}
-								/>
-							);
-						})}
+						<div
+							className="absolute top-0 left-0"
+							style={{ transform: `translateX(${-scrollPx}px)` }}
+							data-clip-layer
+						>
+							{clips.map((c) => {
+								const mediaId = (c as { mediaId?: string }).mediaId;
+								const asset = mediaId ? props.media[mediaId] : undefined;
+								const rt = mediaId ? props.runtime[mediaId] : undefined;
+								return (
+									<ClipView
+										key={c.id}
+										clip={c}
+										x={c.start * v.pxPerFrame}
+										w={c.duration * v.pxPerFrame}
+										height={row.height}
+										viewportWidth={v.width}
+										scrollPx={scrollPx}
+										scrollFrame={v.scrollFrame}
+										pxPerFrame={v.pxPerFrame}
+										rate={seq.settings.frameRate}
+										selected={props.selected.has(c.id)}
+										trackLocked={track.locked}
+										trackDimmed={dimmed}
+										linked={!!c.linkId}
+										syncOffset={props.offsets[c.id] ?? null}
+										offline={!!mediaId && (!asset || rt?.availability === 'offline')}
+										flash={props.overlays.flash.includes(c.id)}
+										asset={asset}
+										runtime={rt}
+										engine={props.engine}
+										display={props.display}
+										mediaVersion={props.mediaVersion}
+									/>
+								);
+							})}
+						</div>
 						{props.lanes && row.height >= LANE_MIN_TRACK_PX
 							? clips.map((c) => {
 									const key = laneKeyFor(props.lanes!.display, c);
@@ -269,7 +285,11 @@ function EditPointMarks(props: { points: readonly EditPointSel[]; layout: TrackA
 	);
 }
 
-export function TrackArea(props: TrackAreaProps) {
+export function TrackArea(raw: TrackAreaProps) {
+	// ui-perf: the track area draws at a scroll offset snapped to device pixels (the clips' layer moves by it, Region),
+	// so every element of it is placed against the same offset as before the layer existed.
+	const viewport = useMemo(() => snappedScroll(raw.viewport), [raw.viewport]);
+	const props = { ...raw, viewport };
 	const { layout, viewport: v, seq, overlays } = props;
 	const offsets = useMemo(() => outOfSyncOffsets(seq), [seq]);
 	const inX = seq.inPoint !== null ? frameToX(v, seq.inPoint) : null;

@@ -2,17 +2,44 @@
 // clip length. Colors come from --pr-* tokens resolved at draw time (no literals, S05:DT-002).
 import { memo, useEffect, useRef } from 'react';
 
-const TILE_MAX_PX = 512;
+export const TILE_MAX_PX = 512;
 
 export type TileDraw = (
 	ctx: CanvasRenderingContext2D,
 	tile: { x0: number; width: number; height: number },
 ) => void;
 
-/** Resolves a CSS custom property (e.g. `--pr-text-secondary`) on an element. */
+// ui-perf: design tokens are defined on the root element only (packages/ui theme/tokens.css: `:root` and the
+// `data-pr-*` attributes `applyPrefs` sets on <html>), so their values are cached per name. Reading them through
+// `getComputedStyle` on every canvas redraw forced a style recalculation per tile while scrolling. The cache is
+// dropped when the root's attributes change (theme, contrast, density, label colours) or a style sheet is added or
+// removed (code-split CSS).
+const tokenCache = new Map<string, string>();
+let tokenWatch: { sheets: number } | null = null;
+
+function watchTokens(): void {
+	if (tokenWatch || typeof document === 'undefined') return;
+	tokenWatch = { sheets: document.styleSheets.length };
+	if (typeof MutationObserver === 'undefined') return;
+	const clear = () => tokenCache.clear();
+	new MutationObserver(clear).observe(document.documentElement, { attributes: true });
+	new MutationObserver(clear).observe(document.head, { childList: true, subtree: true, characterData: true });
+}
+
+/** Resolves a design token (CSS custom property such as `--pr-text-secondary`) for canvas drawing. */
 export function cssVar(el: Element | null, name: string): string {
-	if (!el || typeof getComputedStyle === 'undefined') return '';
-	return getComputedStyle(el).getPropertyValue(name).trim();
+	if (!el || typeof getComputedStyle === 'undefined' || typeof document === 'undefined') return '';
+	watchTokens();
+	if (tokenWatch && document.styleSheets.length !== tokenWatch.sheets) {
+		tokenWatch.sheets = document.styleSheets.length;
+		tokenCache.clear();
+	}
+	let v = tokenCache.get(name);
+	if (v === undefined) {
+		v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		tokenCache.set(name, v);
+	}
+	return v;
 }
 
 export function dpr(): number {

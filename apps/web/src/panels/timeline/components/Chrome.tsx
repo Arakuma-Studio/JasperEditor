@@ -3,7 +3,7 @@
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { cx, IconButton, labelColor, PointMenu, placeBeside, useMenuFit, Z } from '@jasper/ui';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -66,7 +66,8 @@ export function SequenceTabs(props: {
 
 // ---------------------------------------------------------------- header toolbar
 
-export function Toolbar(props: {
+/** ui-perf: memoised (its tooltip buttons do not re-render on every gesture frame of the timeline). */
+export const Toolbar = memo(function Toolbar(props: {
 	session: EditorSession;
 	prefs: TimelinePrefs;
 	openMenu(x: number, y: number, items: ContextMenuItem[]): void;
@@ -144,7 +145,7 @@ export function Toolbar(props: {
 			/>
 		</div>
 	);
-}
+});
 
 // ---------------------------------------------------------------- zoom scroll bar
 

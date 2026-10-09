@@ -10,7 +10,7 @@ import {
 	SequenceComposition,
 } from '@jasper/compositions';
 import type { EngineClient } from '@jasper/engine-client';
-import type { EditorSession } from '@jasper/session';
+import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
 import {
 	useGestureFrameDocument,
 	useSessionOrNull,
@@ -354,8 +354,10 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			// storage unavailable
 		}
 		if (!import.meta.env.DEV && !bridge) return;
-		const w = window as unknown as { __jasperMonitor?: { session: EditorSession; driver: PlaybackDriver } };
-		w.__jasperMonitor = { session, driver };
+		const w = window as unknown as {
+			__jasperMonitor?: { session: EditorSession; driver: PlaybackDriver; gestureFrames: GestureFrames };
+		};
+		w.__jasperMonitor = { session, driver, gestureFrames: gestureFrames(session.store) };
 		return () => {
 			if (w.__jasperMonitor?.session === session) delete w.__jasperMonitor;
 		};

@@ -179,19 +179,23 @@ function headerMenu(
 type HeaderProps = TrackHeadersProps & { row: TrackRow; track: Track };
 
 /**
- * ui-perf: a header row draws its track, its layout row and the view (targeting, source patching); the clips of
- * the sequence never reach it (the context menu reads them from the session). So a clip drag or trim does not
- * re-render the headers and their tooltip buttons.
+ * ui-perf: a header row draws its track, its layout row and the view's targeting, source patching and keyframe
+ * display; the clips of the sequence never reach it (the context menu reads them from the session). So a clip drag,
+ * a trim, a scroll or a zoom does not re-render the headers and their tooltip buttons.
  */
 function headerPropsEqual(a: HeaderProps, b: HeaderProps): boolean {
 	for (const k of Object.keys(a) as (keyof HeaderProps)[]) {
-		if (k === 'seq') continue;
+		if (k === 'seq' || k === 'view') continue;
 		if (a[k] !== b[k]) return false;
 	}
+	// The view parts a header uses (a scroll or zoom replaces the view record but not these).
 	return (
 		a.seq.id === b.seq.id &&
 		a.seq.videoTracks === b.seq.videoTracks &&
-		a.seq.audioTracks === b.seq.audioTracks
+		a.seq.audioTracks === b.seq.audioTracks &&
+		a.view.targeting === b.view.targeting &&
+		a.view.sourcePatching === b.view.sourcePatching &&
+		a.view.keyframeDisplay === b.view.keyframeDisplay
 	);
 }
 

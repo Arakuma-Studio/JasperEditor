@@ -620,6 +620,14 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		},
 		[engine, session, env, props.instanceId],
 	);
+	const addMarker = useCallback(() => run('timeline.addMarker'), [run]);
+	const devMenu = useMemo<ContextMenuItem[] | undefined>(
+		() =>
+			import.meta.env.DEV
+				? [{ kind: 'item', label: 'Dev: Insert Sample Clips', run: () => insertSampleClips(session, seqId) }]
+				: undefined,
+		[session, seqId],
+	);
 	const openMenu = useCallback(
 		(x: number, y: number, items: ContextMenuItem[]) => ui.setState({ contextMenu: { x, y, items } }),
 		[ui],
@@ -1428,18 +1436,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						session={session}
 						prefs={prefs}
 						openMenu={openMenu}
-						onAddMarker={() => run('timeline.addMarker')}
-						extraMenu={
-							import.meta.env.DEV
-								? [
-										{
-											kind: 'item',
-											label: 'Dev: Insert Sample Clips',
-											run: () => insertSampleClips(session, seqId),
-										},
-									]
-								: undefined
-						}
+						onAddMarker={addMarker}
+						extraMenu={devMenu}
 					/>
 				</div>
 				<div className="relative min-w-0 flex-1">
