@@ -20,6 +20,7 @@ import { isCommandChecked, isCommandEnabled, listCommands, runCommand } from '..
 import { ExportMode } from '../export/ExportMode.tsx';
 import { claimExportModeHost, exportMode, useExportMode } from '../export/mode.ts';
 import { syncDisplayFormat } from '../gaps/time-display.ts';
+import { useWarpWatcher } from '../gaps/warp-stabilizer.tsx';
 import { setMonitorPanelServices } from '../panels/program/monitor-commands.ts';
 import { listPanels } from '../panels/registry.ts';
 import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.tsx';
@@ -167,6 +168,8 @@ function ShellBody() {
 
 	// gaps: Project Settings ▸ display formats follow the open project.
 	useEffect(() => syncDisplayFormat(session), [session]);
+	// gaps (FX-6): Warp Stabilizer background analysis.
+	useWarpWatcher(session);
 
 	// Autosave normally comes from <ProjectLifecycle> (a parent, whose effects run after ours); defer so
 	// the shell only attaches the shared saver when no lifecycle host did.

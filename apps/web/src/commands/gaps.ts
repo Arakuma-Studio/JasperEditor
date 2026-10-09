@@ -41,11 +41,13 @@ import { sourceMonitorState } from '../panels/source/source-state.ts';
 import { trackHeight } from '../panels/timeline/model/layout.ts';
 import { detectRuntime, getDesktopBridge } from '../runtime/platform.ts';
 import { saveNow, setSkipUnloadFlush } from '../runtime/save.ts';
+import { registerWarpStabilizerUi } from '../gaps/warp-stabilizer.tsx';
 import { runCommand } from './registry.ts';
 import { apply, envOf, seekReveal, selectedClips } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerGapsPreferencePages();
+registerWarpStabilizerUi();
 
 // gaps: Project panel item context menu — New Sequence From Clip and the Proxy submenu (Premiere's).
 projectItemMenuExtensions.register({

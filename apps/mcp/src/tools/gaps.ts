@@ -1,7 +1,7 @@
 // Workstream `gaps` MCP tools (docs/wp-notes/gaps.md): Find, Edit Original, Add / Delete Tracks, and (further down)
 // Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels, Warp Stabilizer,
 // Auto Reframe, Morph Cut and Essential Graphics templates. Edits are document commands (one transaction each).
-import type { MediaJobResult, RegisteredMedia } from '@jasper/api';
+import type { MediaJobResult, RegisteredMedia, WarpAnalysisResult } from '@jasper/api';
 import {
 	AUDIO_DISPLAY_FORMATS,
 	attachedProxyFrom,
@@ -23,6 +23,8 @@ import {
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
 	VIDEO_DISPLAY_FORMATS,
+	WARP_STABILIZER_EFFECT_ID,
+	warpRequestFor,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -56,6 +58,7 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - get_sequence_settings / set_sequence_settings: Sequence Settings (timebase, frame size, pixel aspect ratio, fields, drop frame, audio sample rate, Mix channels). A non-square pixel aspect ratio means the sequence is edited at its display width (storageWidth × ratio) and exports at storageWidth with the ratio signalled; changing the timebase of a sequence with clips conforms them and needs conform: true (Premiere does not allow it); a frame size change takes reposition. new_sequence_from_clip makes a sequence matching a media item (size, rate, pixel aspect, fields) with the clip in it. Fields are kept with the sequence; exports are progressive (the plan warns FIELDS_PROGRESSIVE).
 - set_audio_channels: Clip ▸ Modify ▸ Audio Channels. Each routed clip = {streamIndex, map: source channel per clip channel (1 mono, 2 stereo, 6 for 5.1), mute: clip channels that play silence}. On timeline clips (clipIds: one routing per clip, typically a linked group) or on Project media items (itemIds: the audio clips future placements create; clips null = default). get_audio_channels lists a media's source channels and the routing.
 - project_manager: File ▸ Project Manager — mode "collect" copies every used file into destination, "consolidate" writes only the used part of each video / audio media plus handlesFrames (ProRes 422 HQ / WAV) and re-bases the clips; excludeUnused drops unchosen sequences and unused media items; includePreviews / includeProxies; dryRun only estimates the disk space. The copy is written as <destination>/<projectName>.jasper and registered as a new project (its id comes back).
+- stabilize_clip applies Effect ▸ Distort ▸ Warp Stabilizer to a video clip (Premiere params) and runs + stores its analysis (the editor also analyses in the background); exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -1006,6 +1009,87 @@ export function registerGapsTools(ctx: ToolContext): void {
 					{ jobId: done.id },
 				);
 			return jsonResult({ jobId: done.id, ...(done.result as object) });
+		},
+	);
+
+	defineTool(
+		ctx,
+		'stabilize_clip',
+		{
+			title: 'Warp Stabilizer',
+			description:
+				'Effect ▸ Distort ▸ Warp Stabilizer on a video clip, end to end: adds the effect when the clip has none (with params: result smoothMotion / noMotion, smoothness %, method position / positionScaleRotation / perspective / subspaceWarp, preserveScale, framing stabilizeOnly / stabilizeCrop / stabilizeCropAutoScale / synthesizeEdges, maxScale %, actionSafe %, additionalScale %, detailedAnalysis, rollingShutterRipple automatic / enhanced, cropLessSmoothMore 0-100, synthesisInputRange s, synthesisEdgeFeather, edgeCropLeft/Top/Right/Bottom px, hideWarningBanner; existing instances are updated with param.set), runs the engine analysis of the clip\'s media range (+15 frames handles) and stores it with the effect (no undo step). An analysed effect is reused while it covers the clip. Exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				clipId: z.string().min(1),
+				params: z.record(z.string(), z.unknown()).optional(),
+				reanalyze: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, clipId, params, reanalyze }, extra) => {
+			let { doc } = await loadDoc(ctx, projectId);
+			let seq = seqOf(doc, sequenceId);
+			const clip = seq.clips[clipId];
+			if (!clip) throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
+			if (clip.kind !== 'video') throw new ToolError('E_INVALID_PARAM', 'The Warp Stabilizer needs a video clip');
+			type Fx = { id: string; effectId: string; enabled: boolean; params: Record<string, unknown> };
+			const fxOf = (c: unknown) =>
+				((c as { effects?: Fx[] }).effects ?? []).find((e) => e.effectId === WARP_STABILIZER_EFFECT_ID);
+			let fx = fxOf(clip);
+			const edits: unknown[] = [];
+			if (!fx) edits.push({ type: 'effect.add', target: { clipId }, effectId: WARP_STABILIZER_EFFECT_ID, ...(params ? { params } : {}) });
+			else if (params)
+				for (const [name, value] of Object.entries(params))
+					edits.push({ type: 'param.set', target: ['effect', fx.id, name], value });
+			if (edits.length) {
+				const res = await transact(ctx, projectId, { label: 'Warp Stabilizer', sequenceId: seq.id, commands: edits });
+				requireOk(res);
+				({ doc } = await loadDoc(ctx, projectId));
+				seq = seqOf(doc, seq.id);
+				fx = fxOf(seq.clips[clipId]);
+			}
+			if (!fx) throw new ToolError('E_INTERNAL', 'The Warp Stabilizer was not added');
+			const request = warpRequestFor(
+				doc,
+				seq,
+				seq.clips[clipId]!,
+				(reanalyze ? { ...fx, warpAnalysis: undefined } : fx) as never,
+			);
+			if (!request) return jsonResult({ effectInstanceId: fx.id, analysed: true, reused: true });
+			const job = await ctx.engine((c) =>
+				c.call('warpAnalysis', {
+					body: {
+						projectId,
+						mediaKey: request.mediaKey,
+						mediaId: request.mediaId,
+						startFrame: request.startFrame,
+						frameCount: request.frameCount,
+						detailed: request.detailed,
+					},
+				}),
+			);
+			const { job: done, timedOut } = await waitJob(ctx, job.id, 60 * 60 * 1000, extra);
+			const base = ctx.link.target?.url ?? '';
+			if (timedOut) return jsonResult({ ...jobBody(done, base), timedOut: true });
+			if (done.state !== 'succeeded')
+				throw new ToolError(done.error?.code ?? 'JOB_FAILED', done.error?.message ?? `The analysis ${done.state}`, undefined, {
+					jobId: done.id,
+				});
+			const { analysedFrames, framesPerSec, ...analysis } = done.result as WarpAnalysisResult;
+			const res = await transact(ctx, projectId, {
+				label: 'Analyze (Warp Stabilizer)',
+				commands: [{ type: 'effect.setWarpAnalysis', effectInstanceId: fx.id, analysis }],
+			});
+			return jsonResult({
+				effectInstanceId: fx.id,
+				analysed: true,
+				frames: analysedFrames,
+				...(framesPerSec ? { framesPerSec } : {}),
+				confidence: analysis.confidence,
+				transaction: txBody(res, requireOk(res)),
+			});
 		},
 	);
 }
