@@ -2,7 +2,7 @@
 // brackets and shading, the marker lane and the render bar. Clicking/dragging scrubs (TL-203).
 import { type Marker, type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { RenderSegment } from '../model/renderbar.ts';
 import { rulerTicks } from '../model/ruler.ts';
 import { boundaryFrameAt, frameToX, type Viewport } from '../model/viewport.ts';
@@ -42,6 +42,9 @@ type MarkDrag =
 export function Ruler(props: RulerProps) {
 	const { seq, viewport: v, session, controller } = props;
 	const drag = useRef<MarkDrag | null>(null);
+	// ui-perf: the ticks depend on the sequence end only (not on every clip), so a drag that keeps the end does not
+	// redraw them.
+	const sequenceEnd = useMemo(() => sequenceDuration({ clips: seq.clips }), [seq.clips]);
 	const draw = useCallback<TileDraw>(
 		(ctx, tile) => {
 			const color = cssVar(ctx.canvas, '--pr-text-secondary');
@@ -51,7 +54,7 @@ export function Ruler(props: RulerProps) {
 			const ticks = rulerTicks(v, seq.settings.frameRate, {
 				dropFrame: seq.settings.dropFrame,
 				startFrames: seq.settings.startTimecodeFrames,
-				sequenceEnd: sequenceDuration({ clips: seq.clips }),
+				sequenceEnd,
 				x0: tile.x0 - 120,
 				x1: tile.x0 + tile.width + 120,
 			});
@@ -66,7 +69,7 @@ export function Ruler(props: RulerProps) {
 				}
 			}
 		},
-		[v, seq.settings, seq.clips],
+		[v, seq.settings, sequenceEnd],
 	);
 
 	const setInOut = (g: Gesture, i: number | null, o: number | null) => {

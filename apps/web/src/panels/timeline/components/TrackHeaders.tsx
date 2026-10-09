@@ -4,7 +4,7 @@ import { type Sequence, type Track, trackList } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { IconButton } from '@jasper/ui';
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { useShellRuntimeOrNull } from '../../../shell/context.tsx';
 import { patchedLabelOn, setPatch, sourceLabel, sourceTracksOf } from '../../source/patching.ts';
 import { sourceMonitorState } from '../../source/source-state.ts';
@@ -124,9 +124,11 @@ function headerMenu(
 	index: number,
 	startRename: () => void,
 ): ContextMenuItem[] {
-	const clipCount = Object.values(p.seq.clips).filter((c) => c.trackId === track.id).length;
+	// ui-perf: header rows do not re-render for clip-only changes (HeaderRow), so the clips come from the session.
+	const clips = Object.values((p.session.getDrawn().sequences[p.seq.id] ?? p.seq).clips);
+	const clipCount = clips.filter((c) => c.trackId === track.id).length;
 	const list = trackList(p.seq, kind);
-	const empty = list.filter((t) => !Object.values(p.seq.clips).some((c) => c.trackId === t.id));
+	const empty = list.filter((t) => !clips.some((c) => c.trackId === t.id));
 	return [
 		{
 			kind: 'item',
@@ -174,7 +176,28 @@ function headerMenu(
 	];
 }
 
-function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
+type HeaderProps = TrackHeadersProps & { row: TrackRow; track: Track };
+
+/**
+ * ui-perf: a header row draws its track, its layout row and the view (targeting, source patching); the clips of
+ * the sequence never reach it (the context menu reads them from the session). So a clip drag or trim does not
+ * re-render the headers and their tooltip buttons.
+ */
+function headerPropsEqual(a: HeaderProps, b: HeaderProps): boolean {
+	for (const k of Object.keys(a) as (keyof HeaderProps)[]) {
+		if (k === 'seq') continue;
+		if (a[k] !== b[k]) return false;
+	}
+	return (
+		a.seq.id === b.seq.id &&
+		a.seq.videoTracks === b.seq.videoTracks &&
+		a.seq.audioTracks === b.seq.audioTracks
+	);
+}
+
+const HeaderRow = memo(Header, headerPropsEqual);
+
+function Header(props: HeaderProps) {
 	const { row, track } = props;
 	const kind: Kind = row.kind;
 	const [editing, setEditing] = useState<string | null>(null);
@@ -382,7 +405,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 					<div className="absolute right-0 left-0" style={{ top: -region.top, height: layout.height }}>
 						{visibleRows(region).map((row) => {
 							const track = trackList(seq, row.kind)[row.index];
-							return track ? <Header key={track.id} {...props} row={row} track={track} /> : null;
+							return track ? <HeaderRow key={track.id} {...props} row={row} track={track} /> : null;
 						})}
 						{region.kind === 'audio' && layout.masterY !== null ? (
 							<div

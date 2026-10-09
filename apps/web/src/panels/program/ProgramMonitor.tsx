@@ -11,7 +11,12 @@ import {
 } from '@jasper/compositions';
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
+import {
+	useGestureFrameDocument,
+	useSessionOrNull,
+	useSessionState,
+	useStoreSelector,
+} from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -128,7 +133,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
-	const drawn = useSessionState((s) => s.transient ?? s.document);
+	// ui-perf: gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
+	const drawn = useGestureFrameDocument();
 	const media = useSessionState((s) => s.media);
 	const useProxies = useSessionState((s) => s.toggles.useProxies);
 	const monitor = useStoreSelector(monitorStores.program, (s) => s);

@@ -113,6 +113,7 @@ import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
+import { type FrameSpan, FrameWindow } from './frame-window.tsx';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { applyPreviews, PreviewLayers } from './previews.tsx';
 import { FrameRepaint } from './repaint.tsx';
@@ -487,6 +488,17 @@ export function VideoTracks({
 }) {
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const premount = premountFrames(fps);
+	// ui-perf: the frames a clip's Sequence draws or premounts in (FrameWindow mounts only the clips near the frame).
+	const clipSpan = useCallback(
+		(clip: RenderVisualClip): FrameSpan => {
+			const from = clip.start - (clip.headHandle ?? 0) - offset;
+			return [
+				from - (PREMOUNT_KINDS.has(clip.kind) ? premount : 0),
+				from + clip.duration + (clip.headHandle ?? 0) + (clip.tailHandle ?? 0),
+			];
+		},
+		[offset, premount],
+	);
 	const gpu = useFxStatus();
 	const htmlInCanvas = htmlInCanvasAvailable();
 	// One hub per transition id for the life of the composition (the sides' taps and the stage meet there).
@@ -869,20 +881,24 @@ export function VideoTracks({
 		);
 	const hiddenMatteLayers = hiddenMattes.map((track) => (
 		<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
-			{track.clips.map((clip) => {
-				const head = clip.headHandle ?? 0;
-				return (
-					<Sequence
-						key={clip.clipId}
-						from={clip.start - head - offset}
-						durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-						name={`${clip.name} (matte)`}
-						premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-					>
-						<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
-					</Sequence>
-				);
-			})}
+			<FrameWindow
+				items={track.clips}
+				span={clipSpan}
+				render={(clip) => {
+					const head = clip.headHandle ?? 0;
+					return (
+						<Sequence
+							key={clip.clipId}
+							from={clip.start - head - offset}
+							durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+							name={`${clip.name} (matte)`}
+							premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+						>
+							<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
+						</Sequence>
+					);
+				}}
+			/>
 		</AbsoluteFill>
 	));
 	const members3d = gpu3d ? (
@@ -924,21 +940,25 @@ export function VideoTracks({
 							{tracks.map((track) => (
 								<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
 									<AbsoluteFill data-track-id={track.trackId} data-flat-track="">
-										{track.clips.map((clip) => {
-											if (gpu3d && clip.threeD) return null;
-											const head = clip.headHandle ?? 0;
-											return (
-												<Sequence
-													key={clip.clipId}
-													from={clip.start - head - offset}
-													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-													name={clip.name}
-													premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-												>
-													<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
-												</Sequence>
-											);
-										})}
+										<FrameWindow
+											items={track.clips}
+											span={clipSpan}
+											render={(clip) => {
+												if (gpu3d && clip.threeD) return null;
+												const head = clip.headHandle ?? 0;
+												return (
+													<Sequence
+														key={clip.clipId}
+														from={clip.start - head - offset}
+														durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+														name={clip.name}
+														premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+													>
+														<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+													</Sequence>
+												);
+											}}
+										/>
 										{track.stages.map((st) => (
 											<Sequence
 												key={`transition-${st.t.id}`}
@@ -1056,24 +1076,28 @@ export function VideoTracks({
 				<AbsoluteFill data-track-id={track.trackId}>
 					{/* color-mgmt: the upper tracks of a linear-light run composite their mattes in the run's scope */}
 					{!blend || (!blend.scope && blend.value.mode.mode === 'fallback') ? mattes : null}
-					{track.clips.map((clip) => {
-						// three-d: on the GPU the 3D layers are drawn by their run's scope; their own (captured, empty)
-						// elements live outside every scope (below), never inside another HTML-in-Canvas capture.
-						if (gpu3d && clip.threeD) return null;
-						const head = clip.headHandle ?? 0;
-						const from = clip.start - head - offset;
-						return (
-							<Sequence
-								key={clip.clipId}
-								from={from}
-								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-								name={clip.name}
-								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-							>
-								<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
-							</Sequence>
-						);
-					})}
+					<FrameWindow
+						items={track.clips}
+						span={clipSpan}
+						render={(clip) => {
+							// three-d: on the GPU the 3D layers are drawn by their run's scope; their own (captured, empty)
+							// elements live outside every scope (below), never inside another HTML-in-Canvas capture.
+							if (gpu3d && clip.threeD) return null;
+							const head = clip.headHandle ?? 0;
+							const from = clip.start - head - offset;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={from}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={clip.name}
+									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+								>
+									<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+								</Sequence>
+							);
+						}}
+					/>
 					{track.stages.map((st) => (
 						<Sequence
 							key={`transition-${st.t.id}`}
@@ -1205,6 +1229,14 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 		[doc, options.isPreview, options.previews],
 	);
 	const live = previewed.doc;
+	// ui-perf: audio clips are windowed like the video layers (FrameWindow).
+	const audioSpan = useCallback(
+		(clip: RenderDoc['audioClips'][number]): FrameSpan => {
+			const from = clip.start - (clip.headHandle ?? 0) - offset;
+			return [from, from + clip.duration + (clip.headHandle ?? 0) + (clip.tailHandle ?? 0)];
+		},
+		[offset],
+	);
 	// compositor: the display transform cannot capture a stack that draws through HTML-in-Canvas (DisplayStage).
 	const displayFlat = useMemo(
 		() => options.isPreview && !!doc.settings.color && docUsesCanvas(live, cssExactAdjustment),
@@ -1247,30 +1279,36 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 								</DisplayStage>
 								{graph ? <MixGraphDriver graph={graph} doc={live} offset={offset} /> : null}
 								{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
-								{(options.isPreview ? live.audioClips : []).map((clip) => {
-									// An audio crossfade plays the clip's handles (S10:TUI-052).
-									const head = clip.headHandle ?? 0;
-									const from = clip.start - head - offset;
-									return (
-										<Sequence
-											key={clip.clipId}
-											from={from}
-											durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-											name={clip.clipId}
-											layout="none"
-										>
-											<AudioLayer
-												clip={clip}
-												media={doc.media[clip.mediaId] ?? null}
-												fps={fps}
-												fpsRational={doc.settings.fps}
-												options={options}
-												master={doc.master}
-												sequenceFrom={from}
-											/>
-										</Sequence>
-									);
-								})}
+								{options.isPreview ? (
+									<FrameWindow
+										items={live.audioClips}
+										span={audioSpan}
+										render={(clip) => {
+											// An audio crossfade plays the clip's handles (S10:TUI-052).
+											const head = clip.headHandle ?? 0;
+											const from = clip.start - head - offset;
+											return (
+												<Sequence
+													key={clip.clipId}
+													from={from}
+													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+													name={clip.clipId}
+													layout="none"
+												>
+													<AudioLayer
+														clip={clip}
+														media={doc.media[clip.mediaId] ?? null}
+														fps={fps}
+														fpsRational={doc.settings.fps}
+														options={options}
+														master={doc.master}
+														sequenceFrom={from}
+													/>
+												</Sequence>
+											);
+										}}
+									/>
+								) : null}
 								{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
 								<FrameRepaint target={root} deps={[doc, options]} />
 							</AbsoluteFill>

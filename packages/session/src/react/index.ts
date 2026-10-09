@@ -11,6 +11,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react';
+import { gestureFrames } from '../gesture-frames.ts';
 import type { EditorSession } from '../session.ts';
 import type { TransportState, TransportStore } from '../transport.ts';
 import type { Selection, SequenceViewState, SessionState } from '../types.ts';
@@ -33,8 +34,20 @@ export function useSession(): EditorSession {
 }
 
 /**
+ * ui-perf: subtrees that nobody sees (a panel in a background tab) stop following store updates while `frozen`:
+ * `useStoreSelector` keeps returning the value it last rendered, so a gesture or an edit does not re-render them;
+ * they read the current state again the moment they are unfrozen. Effects stay mounted (services, listeners).
+ */
+const FreezeContext = createContext(false);
+
+export function FreezeStoreUpdates(props: { frozen: boolean; children?: ReactNode }) {
+	return createElement(FreezeContext.Provider, { value: props.frozen }, props.children);
+}
+
+/**
  * Selector hook over the session store. The selector result is memoized by the store state
  * reference and compared with `equality` (default `Object.is`) so unrelated updates do not re-render.
+ * Inside a frozen subtree (`FreezeStoreUpdates`) it keeps the last rendered value until unfrozen.
  */
 export function useStoreSelector<S, T>(
 	store: { getState(): S; subscribe(l: (s: S, p: S) => void): () => void },
@@ -42,9 +55,12 @@ export function useStoreSelector<S, T>(
 	equality: (a: T, b: T) => boolean = Object.is,
 ): T {
 	const committed = useRef<{ value: T } | null>(null);
+	const frozen = useContext(FreezeContext);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `frozen` changes what the snapshot returns
 	const getSnapshot = useMemo(() => {
 		let cache: { state: S; value: T } | null = null;
 		return () => {
+			if (frozen && committed.current) return committed.current.value;
 			const state = store.getState();
 			if (cache && cache.state === state) return cache.value;
 			const selected = selector(state);
@@ -53,7 +69,7 @@ export function useStoreSelector<S, T>(
 			cache = { state, value };
 			return value;
 		};
-	}, [store, selector, equality]);
+	}, [store, selector, equality, frozen]);
 	const value = useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
 	useEffect(() => {
 		committed.current = { value };
@@ -68,6 +84,15 @@ export function useSessionState<T>(selector: (s: SessionState) => T, equality?: 
 /** Selects from the drawn document (transient gesture document when present, S01:SES-007). */
 export function useDocument<T>(selector: (doc: ProjectDocument) => T, equality?: (a: T, b: T) => boolean): T {
 	return useSessionState((s) => selector(s.transient ?? s.document), equality);
+}
+
+/**
+ * The drawn document for costly views (Program monitor): like `useDocument((d) => d)`, but gesture frames arrive
+ * throttled to what the views can afford (`gestureFrames`, ui-perf); commits, undo and cancels arrive at once.
+ */
+export function useGestureFrameDocument(): ProjectDocument {
+	const frames = gestureFrames(useSession().store);
+	return useSyncExternalStore(frames.subscribe, frames.getState, frames.getState);
 }
 
 export function useSelection(): Selection {

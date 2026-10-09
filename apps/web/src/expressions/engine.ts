@@ -1,7 +1,7 @@
 // Wave expressions in the editor: loading the QuickJS engine on demand (a lazy chunk) and the bound document that
 // every expression-aware view reads (Program overlays, Effect Controls values and graphs).
 import { isExpressionEngineLoaded, loadExpressionEngine } from '@jasper/expressions';
-import { bindExpressions, documentExpressions, type ProjectDocument } from '@jasper/project';
+import { bindExpressions, documentHasAnyExpressions, type ProjectDocument } from '@jasper/project';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
 let ready = isExpressionEngineLoaded();
@@ -42,14 +42,9 @@ export function expressionEngineError(): string | null {
 	return failed;
 }
 
-const hasAny = new WeakMap<object, boolean>();
-/** True when the document stores any expression (enabled or not). */
+/** True when the document stores any expression (enabled or not; memoised per clip and sequence in the model). */
 export function documentHasExpressions(doc: ProjectDocument): boolean {
-	const hit = hasAny.get(doc.sequences);
-	if (hit !== undefined) return hit;
-	const v = !documentExpressions(doc).next().done;
-	hasAny.set(doc.sequences, v);
-	return v;
+	return documentHasAnyExpressions(doc);
 }
 
 /**
