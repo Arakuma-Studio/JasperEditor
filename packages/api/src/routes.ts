@@ -103,6 +103,14 @@ import {
 	UploadCreateRequestSchema,
 	UploadCreateResponseSchema,
 } from './media.ts';
+import {
+	BrowseInfoSchema,
+	BrowseListQuerySchema,
+	BrowseListSchema,
+	BrowsePathQuerySchema,
+	BrowseRootsSchema,
+	BrowseThumbnailQuerySchema,
+} from './media-browser.ts';
 import { MgRenderRequestSchema, MgTemplatesResponseSchema } from './mg.ts';
 import {
 	MgBundleImportRequestSchema,
@@ -209,7 +217,9 @@ export type RouteOwner =
 	// parity program: Lumetri completion, Colour Match, scopes
 	| 'color-grade'
 	// parity program: Edit Original, scratch disks, proxies, Project Manager, Export Frame, analyses (gaps)
-	| 'gaps';
+	| 'gaps'
+	// parity program: Media Browser, Engine ▸ Connect / Status (polish)
+	| 'polish';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -1071,6 +1081,37 @@ export const ROUTES = {
 		body: AutoToneRequestSchema,
 		response: AutoToneResponseSchema,
 		owner: 'color-grade',
+	},
+	// ---- polish: Media Browser (local engines only)
+	browseRoots: { method: 'GET', path: '/api/browse/roots', response: BrowseRootsSchema, owner: 'polish' },
+	browseList: {
+		method: 'GET',
+		path: '/api/browse/list',
+		query: BrowseListQuerySchema,
+		response: BrowseListSchema,
+		owner: 'polish',
+	},
+	browseInfo: {
+		method: 'GET',
+		path: '/api/browse/info',
+		query: BrowsePathQuerySchema,
+		response: BrowseInfoSchema,
+		owner: 'polish',
+	},
+	browseThumbnail: {
+		method: 'GET',
+		path: '/api/browse/thumbnail',
+		query: BrowseThumbnailQuerySchema,
+		response: 'binary',
+		owner: 'polish',
+	},
+	browseFile: {
+		method: 'GET',
+		path: '/api/browse/file',
+		query: BrowsePathQuerySchema,
+		response: 'binary',
+		headers: ['range'],
+		owner: 'polish',
 	},
 	// ---- gaps: Edit Original (UI-5)
 	mediaLocation: {

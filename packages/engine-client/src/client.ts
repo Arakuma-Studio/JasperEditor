@@ -265,6 +265,24 @@ export class EngineClient {
 	releaseLease(projectId: string, leaseId: string) {
 		return this.call('leaseRelease', { params: { projectId, leaseId } });
 	}
+	// polish: Media Browser (local engines only)
+	browseRoots() {
+		return this.call('browseRoots');
+	}
+	browseList(path: string, opts: { all?: boolean } = {}) {
+		return this.call('browseList', { query: { path, ...(opts.all ? { all: '1' } : {}) } });
+	}
+	browseInfo(path: string) {
+		return this.call('browseInfo', { query: { path } });
+	}
+	/** URL of a JPEG thumbnail of a file on the engine host (for `<img src>`). */
+	browseThumbnailUrl(path: string, width = 160): string {
+		return this.url('/api/browse/thumbnail', { path, width });
+	}
+	/** URL of a media file's bytes on the engine host (for the preview `<video>` / `<audio>` / `<img>`). */
+	browseFileUrl(path: string): string {
+		return this.url('/api/browse/file', { path });
+	}
 	/** wp captions: a caption / transcript file by path (local engines). */
 	readCaptionFile(req: CaptionFileReadRequest) {
 		return this.call('captionFileRead', { body: req });

@@ -4,6 +4,7 @@ import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
 import audioFxRoutes from './audio-fx.ts';
+import browseRoutes from './browse.ts';
 import cacheRoutes from './cache.ts';
 import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
@@ -89,6 +90,8 @@ const ROUTE_PLUGINS = [
 	previewsRoutes,
 	// gaps: Edit Original, scratch disks, proxies, Project Manager, Export Frame, Warp Stabilizer / Auto Reframe analysis.
 	gapsRoutes,
+	// polish: Media Browser (folder listing, info, thumbnails and preview bytes of files on this host).
+	browseRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
