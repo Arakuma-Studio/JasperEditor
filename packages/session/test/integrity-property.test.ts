@@ -1,6 +1,6 @@
 // Security review DATA-1 (docs/security-review.md): data integrity under random edits across the command families
 // the parity workstreams added (masks, shapes, time remap, multicam recording, roto, camera tracking, 3D, captions,
-// text animators, expressions) mixed with the core edits that move, trim, split and delete what they hang off.
+// text animators, expressions; gaps: proxies, audio channel mapping, sequence format, Warp Stabilizer) mixed with the core edits that move, trim, split and delete what they hang off.
 //
 // For every random transaction sequence, through a real EditorSession:
 //  - a refused transaction leaves the document reference unchanged, and no handler produces an invalid document
@@ -123,7 +123,7 @@ function setup(): EditorSession {
 
 type Step = { k: number; a: number; b: number; c: number; flag: boolean };
 const STEP: fc.Arbitrary<Step> = fc.record({
-	k: fc.nat(25),
+	k: fc.nat(31),
 	a: fc.nat(1000),
 	b: fc.integer({ min: 0, max: 400 }),
 	c: fc.integer({ min: -60, max: 60 }),
@@ -203,7 +203,7 @@ function concretize(
 				? one({ type: 'caption.delete', clipIds: [pick(captions, st.a)!.id], ripple: st.flag })
 				: null;
 		case 13:
-			return text ? one({ type: 'textAnimator.add', clipId: text.id, properties: ['wobble'] }) : null;
+			return text ? one({ type: 'textAnimator.add', clipId: text.id, properties: ['position'] }) : null;
 		case 14:
 			return anyClip
 				? one({
@@ -267,6 +267,58 @@ function concretize(
 			return items.length
 				? one({ type: 'item.delete', itemIds: [pick(items, st.a)!.id], force: true })
 				: null;
+		// ---- workstream gaps: proxies, audio channel mapping, sequence format, Warp Stabilizer
+		case 26: {
+			const m = pick(
+				Object.values(doc.media).filter((x) => x.kind === 'video'),
+				st.a,
+			);
+			if (!m) return null;
+			const a = asset(st.flag ? 12 : 10);
+			return one({
+				type: 'media.attachProxy',
+				mediaId: m.id,
+				proxy: {
+					fingerprint: a.fingerprint,
+					originalName: 'clip_Proxy.mp4',
+					sizeBytes: a.sizeBytes,
+					container: a.container,
+					probe: { ...m.probe },
+					locators: a.locators,
+					origin: 'created',
+					preset: 'proxy-720',
+				},
+			});
+		}
+		case 27: {
+			const withProxy = Object.values(doc.media).filter((x) => (x as { proxy?: unknown }).proxy);
+			return withProxy.length
+				? one({ type: 'media.detachProxy', mediaIds: [pick(withProxy, st.a)!.id] })
+				: null;
+		}
+		case 28: {
+			const audio = clips.filter((c) => c.kind === 'audio');
+			return audio.length
+				? one({
+						type: 'clip.setAudioChannels',
+						clipIds: [pick(audio, st.a)!.id],
+						channels: [{ streamIndex: 1, map: st.flag ? [1, 0] : [0, 0] }],
+					})
+				: null;
+		}
+		case 29:
+			return one({
+				type: 'sequence.updateSettings',
+				settings: st.flag ? { pixelAspectRatio: { num: 10, den: 11 } } : { pixelAspectRatio: null },
+			});
+		case 30:
+			return video.length
+				? one({
+						type: 'effect.add',
+						target: { clipId: pick(video, st.a)!.id },
+						effectId: 'jasper.warp-stabilizer',
+					})
+				: null;
 		default:
 			return anyClip
 				? one({ type: 'param.set', target: ['clip', anyClip.id, 'opacity'], value: st.a % 101 })
@@ -325,7 +377,11 @@ describe('DATA-1: integrity under random edits of the new command families', () 
 			{ numRuns: RUNS, seed: FUZZ ? undefined : 20261009 },
 		);
 		expect(accepted).toBeGreaterThan(RUNS);
-		// The generator really reaches the families (each kind applied at least once across the runs).
-		expect(families.size).toBeGreaterThanOrEqual(18);
+		// The generator really reaches the families: every step kind is applied at least once across the runs, except
+		// the two that need an earlier step of the same run (roto.remove, media.detachProxy), which long runs reach.
+		const missing = Array.from({ length: 32 }, (_, k) => k).filter(
+			(k) => !families.has(k) && k !== 7 && k !== 27,
+		);
+		expect(missing).toEqual([]);
 	}, 600_000);
 });
