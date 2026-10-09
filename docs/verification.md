@@ -214,3 +214,22 @@ Bugs the smoke found, all fixed with regression tests:
    `packages/compositions/test/retime-frames.test.ts`.
 7. `get_timeline` reported a remapped clip's source as `sourceIn + duration` ("0–11 s" of 6 s media): now the media
    range its frames show. `apps/mcp/test/format.test.ts`.
+
+## 7. CI workflow on a clean checkout
+
+`act` is not installed, so the workflow's steps ran as written in a fresh clone of `feat/verify`
+(`git clone`, `pnpm install --frozen-lockfile`, no `vendor/`, no `fixtures/media/`), with the workflow's environment
+(`JASPER_REQUIRE_ORACLES=1`, `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome`, `JASPER_TEST_RESULTS`) and the
+apt FFmpeg 6.1.1 (libx264, no OpenH264) as the oracle — exactly what the runner has. Steps: `pnpm lint`,
+`pnpm typecheck`, `pnpm test --maxWorkers=2`, `pnpm build` (`/tmp/verify-logs/ci-run.sh`).
+
+**First run: lint and typecheck pass, `pnpm test` fails (12 tests, 7 files).** None of them shows in a developer
+checkout (fixtures present, the LGPL FFmpeg in `vendor/`), so the CI workflow could never have passed:
+
+| Failure | Cause | Fix |
+|---|---|---|
+| fixture generation crashed (`ENOTEMPTY` renaming `imports-seq`), `native-animated` / `cache` suites failed | many test files spawn `scripts/make-fixtures.mjs` at once on a clean checkout; concurrent runs made every fixture twice, replaced files under readers and collided on the directory fixture | a cross-process lock (pid, stale-lock takeover) serialises the generators; waiters then skip; checked with three concurrent runs on an empty `fixtures/media` |
+| `mcp grading` (2), `mcp roto` (1): `BINARY_MISSING` | the tests start a built-mode engine, which refuses Remotion without the LGPL FFmpeg folder (correct, D-13); CI has none | run a dev engine (`JASPER_DEV=1`), as `compositions.test` and the QA harness already do |
+| `engine color-mgmt` (7): `TypeError … null` | the test hard-coded `vendor/ffmpeg-lgpl/…/ffprobe` | vendor build when present, else `JASPER_FFMPEG` / PATH (`@jasper/testkit/oracle`) like the other tests |
+| `engine previews` (1): "not all I-frames" | ffprobe's CSV output puts x264's SEI side data on the first frame's line; the frames were all I | picture types read as JSON through `@jasper/testkit/oracle` |
+| `engine smart-render` (1): 52 of 54 frames | encoded pieces are joined with copied GOPs as one raw Annex B stream (no timestamps); libx264 pieces with B-frames lost frames there — a real bug for every B-frame encoder (NVENC, QSV, VideoToolbox, AMF, VAAPI) | smart-render pieces are encoded with `-bf 0` (`EncodeParams.noBFrames`); unit test in `encoders.test.ts`; 5/5 with libx264 and OpenH264 |
