@@ -5,7 +5,9 @@ CI workflow and a cross-feature smoke run together on the integrated branch, wit
 Each section gives the command, the result and the fixes. Machine: 12 cores, 47 GB, shared with other agents (load
 noted where it matters).
 
-Branch `feat/verify`, starting at `integrate/parity` 4870ea54.
+Branch `feat/verify`, starting at `integrate/parity` 4870ea54; merged again at ea17f67d (perf-core), 85a90e3d (ui-perf)
+and 065af535 (gaps). Sections 1–8 were run on the way (each says on which tree where it matters); **§9 is the gate on
+the final merged head.**
 
 ## 1. Static gates
 
