@@ -88,3 +88,32 @@ Failures and fixes:
 | interchange "any document" / ALE → project: 14–29 s per input | `project.importTimeline` (paste machinery) searched the payload and the draft `doc.media` linearly per media: quadratic | indexes in the clipboard `Resolver`; a 3,000-clip ALE bin: **50.8 s → 0.9 s** (same load), budget test in `packages/interchange/test/jasper.test.ts` |
 | 21 HTTP routes: `URIError` | the harness's `encodeURIComponent` threw on lone surrogates the mutator made, before any request | harness makes params well-formed (U+FFFD) (`apps/engine/test/fuzz-http.test.ts`) |
 | engine fuzz suite: `afterAll` timeout | removing 20× more temp inputs outlasted the 10 s hook timeout under load | 120 s hook timeout |
+
+### 3.3 Other opt-in suites
+
+| Flag | Command | Result |
+|---|---|---|
+| `MG_PARITY=1` | `pnpm mg:build`, then `MG_PARITY=1 pnpm vitest run packages/mg-templates/test/parity.test.ts` | **`pnpm mg:build` was broken** (below); after the fix 4/4 pass against the freshly built binary; `cargo test --release` in `native/mg` passes |
+| `SPEECH_E2E=1` | `SPEECH_E2E=1 pnpm vitest run apps/engine/test/speech-model.e2e.test.ts` (downloads whisper-tiny / tiny.en, 2 × 154 MB) | 5/5 pass |
+| `MG_E2E=1` | with the engine/MCP `REMOTION_E2E` run (§3.1) | pass |
+| `PERF=1`, `NATIVE_ANIM_BENCH=1`, `MB_PERF=1` | not run strictly: the host was 3–5× oversubscribed by other agents for the whole session (load average 25–65 on 12 cores), so exact budgets would only measure the other agents. The load-scaled budgets run in the normal suite (§2, §7). | — |
+
+**`pnpm mg:build` broken on `integrate/parity` (since the asset-sidecar commit).** `fframes::include_media_dir!`
+panics on any file it cannot decode, and `native/mg/crates/jasper-mg-templates/media/` now holds
+`Inter_24pt-*.ttf.attribution` sidecars (AGENTS.md §3). **Fix:** a `build.rs` stages the media files of `media/`
+(without sidecars) into a gitignored `.media/` that the macro embeds; the assets and their sidecars stay together.
+
+## 5. MCP scenario QA
+
+| Command | Result |
+|---|---|
+| `MCP_QA_PORT=49572 pnpm qa:mcp` | 7/7 scenarios pass (2 m 55 s) |
+| `MCP_QA_PORT=49572 REMOTION_E2E=1 pnpm qa:mcp` (render tier) | 7/7 pass (2 m 52 s) |
+
+## 6. Desktop checks (xvfb)
+
+| Command | Result |
+|---|---|
+| `DESKTOP_SMOKE_PORT=49576 pnpm e2e:desktop` | packaged-like PASS, dev PASS (screenshots looked at: the Home screen, engine connected), desktop clipboard 4/4 |
+| `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; Remotion with a named blocker without it) |
+| `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS: the packed app's FFmpeg is LGPL, a Remotion export used only the bundled FFmpeg (OpenH264), PATH ffmpeg never run |
