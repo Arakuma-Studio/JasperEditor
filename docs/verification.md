@@ -74,3 +74,17 @@ Failures and fixes:
   on the glyphs, 0 elsewhere; looked at), but the check took the max of a 64×36 area downscale (20×), which for ≈10 px
   strokes cannot exceed ≈60 % coverage (147). **Fix:** the same claim measured at full resolution: corner 0,
   peak > 250, more than 2,000 opaque pixels. Passes.
+- `apps/engine/test/blend-static-layer.e2e.test.ts` (new) and the smoke project: see §8, "GL blend modes on static layers".
+
+### 3.2 `FUZZ=1`
+
+`FUZZ=1 pnpm vitest run <every file using describeFuzz / runFuzzTarget / assertFuzzSync> --maxWorkers=2` (11 files,
+42 min at load ≈ 45): **25 failures in 4 files**, all fixed. Each fix has a regression test that fails without it.
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| ffprobe JSON → probe not schema-valid (8 inputs over two runs) | `mapProbe` let a `sample_aspect_ratio` / stream `index` beyond 2^53, a fractional `sample_rate` and a ±1e308 rotation through (degrees mod 360 of a huge float is no multiple of 90) | safe-integer rationals and index, integer sample rate, rotation reduced in quarter turns (`apps/engine/src/media/probe.ts`); pinned in `apps/engine/test/fuzz-regressions.test.ts` |
+| project load / repair left INV-001 issues | a `projectId` equal to an item's id: `repairIds` replaced the malformed id *everywhere*, renaming the item too, and the passes ping-ponged | a malformed project id is replaced in place (`packages/project/src/invariants.ts`); `packages/project/test/fuzz-regressions.test.ts` |
+| interchange "any document" / ALE → project: 14–29 s per input | `project.importTimeline` (paste machinery) searched the payload and the draft `doc.media` linearly per media: quadratic | indexes in the clipboard `Resolver`; a 3,000-clip ALE bin: **50.8 s → 0.9 s** (same load), budget test in `packages/interchange/test/jasper.test.ts` |
+| 21 HTTP routes: `URIError` | the harness's `encodeURIComponent` threw on lone surrogates the mutator made, before any request | harness makes params well-formed (U+FFFD) (`apps/engine/test/fuzz-http.test.ts`) |
+| engine fuzz suite: `afterAll` timeout | removing 20× more temp inputs outlasted the 10 s hook timeout under load | 120 s hook timeout |
