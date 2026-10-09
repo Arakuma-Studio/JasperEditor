@@ -47,12 +47,18 @@ export class SvgImportError extends Error {}
 type XNode = { name: string; attrs: Record<string, string>; children: XNode[]; text: string };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+/** A character reference's text; out-of-range or surrogate code points become U+FFFD (they used to throw RangeError). */
+function charRef(cp: number): string {
+	return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)
+		? String.fromCodePoint(cp)
+		: '\ufffd';
+}
 const decode = (s: string) =>
 	s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (m, e: string) =>
 		e.startsWith('#x')
-			? String.fromCodePoint(Number.parseInt(e.slice(2), 16))
+			? charRef(Number.parseInt(e.slice(2), 16))
 			: e.startsWith('#')
-				? String.fromCodePoint(Number.parseInt(e.slice(1), 10))
+				? charRef(Number.parseInt(e.slice(1), 10))
 				: (ENTITIES[e] ?? m),
 	);
 
