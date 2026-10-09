@@ -18,7 +18,13 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from '../src/export/native-ext.ts';
-import { allVideoTracks, allVisualClips, nativeBlockers, planExport } from '../src/export/planner.ts';
+import {
+	allVideoTracks,
+	allVisualClips,
+	nativeBlockers,
+	PlanError,
+	planExport,
+} from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, type TestApp } from './helpers.ts';
 
@@ -92,33 +98,59 @@ const videoEffects = defaultEffectRegistry
 
 describe('EXP-1: every video effect is rendered, baked or named by a blocker', () => {
 	it(`covers all ${videoEffects.length} video effects`, async () => {
-		const d = new DocBuilder();
 		const refused: string[] = [];
-		const clipOf = new Map<string, string>();
-		videoEffects.forEach((spec, i) => {
-			const at = i * 2;
-			const r = d.tx([
-				{
-					type: 'clip.addSolid',
-					at,
-					duration: 2,
-					track: 'V1',
-					color: [0.2, 0.4, 0.6, 1],
-					name: spec.id,
-					ref: '$c',
-				},
-			]);
-			const clipId = r.refs.$c!;
-			try {
-				d.tx([{ type: 'effect.add', target: { clipId }, effectId: spec.id }]);
-				clipOf.set(spec.id, clipId);
-			} catch (e) {
-				refused.push(`${spec.id}: ${(e as Error).message.slice(0, 160)}`);
-			}
-		});
+		/** Effects the planner refuses on every path with an error that names them (e.g. an unanalysed Warp Stabilizer). */
+		const refusedByName = new Map<string, string>();
+		const build = () => {
+			const d = new DocBuilder();
+			const clipOf = new Map<string, string>();
+			refused.length = 0;
+			videoEffects.forEach((spec, i) => {
+				if (refusedByName.has(spec.id)) return;
+				const at = i * 2;
+				const r = d.tx([
+					{
+						type: 'clip.addSolid',
+						at,
+						duration: 2,
+						track: 'V1',
+						color: [0.2, 0.4, 0.6, 1],
+						name: spec.id,
+						ref: '$c',
+					},
+				]);
+				const clipId = r.refs.$c!;
+				try {
+					d.tx([{ type: 'effect.add', target: { clipId }, effectId: spec.id }]);
+					clipOf.set(spec.id, clipId);
+				} catch (e) {
+					refused.push(`${spec.id}: ${(e as Error).message.slice(0, 160)}`);
+				}
+			});
+			return { d, clipOf };
+		};
+		let { d, clipOf } = build();
 		// effect.add on a solid may refuse an effect that needs another layer kind; that must be the exception.
 		expect(refused.length, refused.join('\n')).toBeLessThan(videoEffects.length / 10);
-		const planned = await snapshotOf(d);
+		let planned: Awaited<ReturnType<typeof snapshotOf>> | null = null;
+		for (let attempt = 0; attempt < 20 && !planned; attempt++) {
+			try {
+				planned = await snapshotOf(d);
+			} catch (e) {
+				// A refusal of the whole plan is fine when it names the effect and the clip that carries it.
+				if (!(e instanceof PlanError)) throw e;
+				const ids = (e.detail as { clipIds?: string[] } | undefined)?.clipIds ?? [];
+				const hit = [...clipOf].filter(([, clipId]) => ids.includes(clipId) || e.message.includes(clipId));
+				if (hit.length === 0) throw e;
+				for (const [effectId] of hit) {
+					const label = defaultEffectRegistry.get(effectId)?.label ?? effectId;
+					expect(e.message, `${effectId}: the refusal names the effect`).toContain(label);
+					refusedByName.set(effectId, e.message);
+				}
+				({ d, clipOf } = build());
+			}
+		}
+		if (!planned) throw new Error('the plan kept being refused');
 		const byClip = new Map(allVisualClips(planned.snapshot).map((c) => [c.clipId, c]));
 		const silent: string[] = [];
 		const undrawn: string[] = [];
@@ -147,6 +179,8 @@ describe('EXP-1: every video effect is rendered, baked or named by a blocker', (
 		expect(silent, silent.join('\n')).toEqual([]);
 		expect(undrawn, undrawn.join('\n')).toEqual([]);
 		expect((routes.blocked ?? 0) + (routes.baked ?? 0) + (routes.native ?? 0)).toBe(clipOf.size);
+		// Every effect was classified one way or the other.
+		expect(clipOf.size + refusedByName.size + refused.length).toBe(videoEffects.length);
 	}, 300_000);
 });
 
