@@ -14,7 +14,7 @@ import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
 import { pickFilesInBrowser } from '../../import/desktop.ts';
 import { EngineImportService, readDataTransfer, writeProjectItemsDrag } from '../../import/service.ts';
 import { useEngine } from '../../state/engine.tsx';
-import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
+import { getImportService, HOST_PATHS_MIME, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import type { PanelProps } from '../types.ts';
 import { createBin, createText, deleteItems, moveItems, openItem, renameItem, setLabel } from './actions.ts';
 import { projectDialogs } from './dialogs.tsx';
@@ -227,10 +227,12 @@ export function ProjectPanel(props: PanelProps) {
 
 	const onDragOver = (e: React.DragEvent, key: string) => {
 		const types = Array.from(e.dataTransfer.types);
-		if (readOnly || (!types.includes(PROJECT_ITEMS_MIME) && !types.includes('Files'))) return;
+		// polish: files dragged out of the Media Browser (paths on the engine host) import like OS files.
+		const external = types.includes('Files') || types.includes(HOST_PATHS_MIME);
+		if (readOnly || (!types.includes(PROJECT_ITEMS_MIME) && !external)) return;
 		e.preventDefault();
 		e.stopPropagation();
-		e.dataTransfer.dropEffect = types.includes('Files') ? 'copy' : 'move';
+		e.dataTransfer.dropEffect = external ? 'copy' : 'move';
 		if (dropTarget !== key) setDropTarget(key);
 	};
 	const onDrop = (e: React.DragEvent, targetBin: string | null) => {

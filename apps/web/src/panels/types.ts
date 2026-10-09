@@ -29,6 +29,8 @@ export const PANEL_KINDS = [
 	'essentialSound',
 	// gaps (GR-4/5)
 	'essentialGraphics',
+	// polish: Media Browser
+	'mediaBrowser',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 

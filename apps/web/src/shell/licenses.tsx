@@ -55,7 +55,8 @@ function Component({ c }: { c: LicenseComponent }) {
 	);
 }
 
-export function ThirdPartyLicenses() {
+/** `expanded` (Help ▸ Third-Party Notices): the notices of the packages and the ported source are shown open. */
+export function ThirdPartyLicenses(props: { expanded?: boolean } = {}) {
 	const engine = useEngineOrNull();
 	const client = engine?.client;
 	const connected = engine?.status === 'connected';
@@ -87,8 +88,8 @@ export function ThirdPartyLicenses() {
 					<ExternalLink href={MIT_HOME}>MIT License</ExternalLink>, Copyright (c) Julian Garnier).
 				</p>
 			)}
-			<ThirdPartyNotices />
-			<PortedSourceNotices />
+			<ThirdPartyNotices open={props.expanded} />
+			<PortedSourceNotices open={props.expanded} />
 			{warning ? (
 				<p className="text-pr-small text-pr-warning" role="alert" data-testid="licenses-warning">
 					{warning}
@@ -99,7 +100,7 @@ export function ThirdPartyLicenses() {
 }
 
 /** The JavaScript third-party notices (S11:FIX-010): a link to the file and its text, fetched when opened. */
-function ThirdPartyNotices() {
+function ThirdPartyNotices(props: { open?: boolean }) {
 	const [text, setText] = useState<string | null>(null);
 	const [failed, setFailed] = useState(false);
 	const requested = useRef(false);
@@ -110,8 +111,11 @@ function ThirdPartyNotices() {
 			.then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
 			.then(setText, () => setFailed(true));
 	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: load once when shown expanded
+	useEffect(() => load(!!props.open), [props.open]);
 	return (
 		<details
+			open={props.open || undefined}
 			className="text-pr-small"
 			data-testid="third-party-notices"
 			onToggle={(e) => load((e.currentTarget as HTMLDetailsElement).open)}
@@ -154,7 +158,7 @@ export function portedSection(notices: string): string | null {
 }
 
 /** Code ported from other open-source projects (licenses/ported/*.md), fetched when opened. */
-function PortedSourceNotices() {
+function PortedSourceNotices(props: { open?: boolean }) {
 	const [text, setText] = useState<string | null>(null);
 	const [failed, setFailed] = useState(false);
 	const requested = useRef(false);
@@ -168,8 +172,11 @@ function PortedSourceNotices() {
 				() => setFailed(true),
 			);
 	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: load once when shown expanded
+	useEffect(() => load(!!props.open), [props.open]);
 	return (
 		<details
+			open={props.open || undefined}
 			className="text-pr-small"
 			data-testid="ported-source-notices"
 			onToggle={(e) => load((e.currentTarget as HTMLDetailsElement).open)}

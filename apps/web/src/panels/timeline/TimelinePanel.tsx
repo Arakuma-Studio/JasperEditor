@@ -34,7 +34,12 @@ import { labelName } from '../../gaps/app-prefs.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
-import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
+import {
+	getImportService,
+	HOST_PATHS_MIME,
+	PROJECT_ITEMS_MIME,
+	readHostPathsDrag,
+} from '../../state/services.ts';
 import {
 	applyMessage,
 	applyTextAnimation,
@@ -1216,7 +1221,12 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			e.dataTransfer.dropEffect = 'copy';
 			return;
 		}
-		if (!types.includes(PROJECT_ITEMS_MIME) && !types.includes(MG_TEMPLATE_MIME) && !types.includes('Files'))
+		if (
+			!types.includes(PROJECT_ITEMS_MIME) &&
+			!types.includes(MG_TEMPLATE_MIME) &&
+			!types.includes('Files') &&
+			!types.includes(HOST_PATHS_MIME)
+		)
 			return;
 		e.preventDefault();
 		const t = dropTarget(e);
@@ -1290,7 +1300,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			return;
 		}
 		const files = Array.from(e.dataTransfer.files ?? []);
-		if (files.length === 0) return;
+		// polish: files dragged out of the Media Browser are paths on the engine host (registered in place).
+		const hostPaths = readHostPathsDrag(e.dataTransfer);
+		if (files.length === 0 && !hostPaths) return;
 		// WP-2E registers the import service module-wide (state/services.ts); a panel-scoped one wins.
 		const svc = env.services.get('importService') ?? getImportService();
 		if (!svc) {
@@ -1300,16 +1312,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const trackId =
 			(t.region === 'video' ? committedSeq.videoTracks : committedSeq.audioTracks)[t.index]?.id ?? t.label;
 		void svc
-			.importFiles(
-				{ files },
-				{
-					kind: 'timeline',
-					sequenceId: seqId,
-					at: t.frame,
-					trackId,
-					mode: t.insert ? 'insert' : 'overwrite',
-				},
-			)
+			.importFiles(hostPaths ? { paths: hostPaths } : { files }, {
+				kind: 'timeline',
+				sequenceId: seqId,
+				at: t.frame,
+				trackId,
+				mode: t.insert ? 'insert' : 'overwrite',
+			})
 			.catch((err: unknown) => toast('error', err instanceof Error ? err.message : String(err)));
 	};
 	const placeItems = (itemIds: string[], t: ReturnType<typeof dropTarget>) => {

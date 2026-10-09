@@ -62,6 +62,7 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	text: 'Text',
 	essentialSound: 'Essential Sound',
 	essentialGraphics: 'Essential Graphics',
+	mediaBrowser: 'Media Browser',
 };
 
 // ------------------------------------------------------------------ save

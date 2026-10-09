@@ -30,6 +30,7 @@ import {
 	type ImportTarget,
 	PROJECT_ITEMS_MIME,
 	type ProjectItemsDragPayload,
+	readHostPathsDrag,
 } from '../state/services.ts';
 import {
 	buildMediaAsset,
@@ -608,6 +609,9 @@ export function readDataTransfer(dt: DataTransfer): DragPayload | null {
 			// fall through to files
 		}
 	}
+	// polish: files dragged out of the Media Browser are paths on the engine host (registered in place).
+	const hostPaths = readHostPathsDrag(dt);
+	if (hostPaths) return { type: 'os-files', files: [], paths: hostPaths };
 	const files = Array.from(dt.files ?? []);
 	if (files.length) return { type: 'os-files', files };
 	return null;

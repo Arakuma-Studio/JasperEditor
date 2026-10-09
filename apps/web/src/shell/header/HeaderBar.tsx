@@ -208,6 +208,7 @@ function WorkspaceTabs(props: {
 
 function EngineChip() {
 	const engine = useEngine();
+	const runtime = useShellRuntime();
 	const { status, capabilities: caps } = engine;
 	const label =
 		status === 'connected'
@@ -270,14 +271,25 @@ function EngineChip() {
 						>
 							Reconnect
 						</button>
-						<button
-							type="button"
-							disabled
-							title="Remote engines arrive in M2"
-							className="h-6 rounded-pr-control px-2.5 text-pr-dim"
-						>
-							Connect to engine…
-						</button>
+						<Popover.Close asChild>
+							<button
+								type="button"
+								className="h-6 rounded-pr-control border border-pr-border-strong px-2.5 hover:bg-pr-hover"
+								onClick={() => void runtime?.run('engine.status')}
+								data-testid="engine-chip-status"
+							>
+								Engine Status…
+							</button>
+						</Popover.Close>
+						<Popover.Close asChild>
+							<button
+								type="button"
+								className="h-6 rounded-pr-control px-2.5 hover:bg-pr-hover"
+								onClick={() => void runtime?.run('engine.connect')}
+							>
+								Connect…
+							</button>
+						</Popover.Close>
 					</div>
 				</Popover.Content>
 			</Popover.Portal>

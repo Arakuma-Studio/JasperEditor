@@ -10,6 +10,30 @@ export type DragPayload = ProjectItemsDragPayload | OsFilesDragPayload;
 /** MIME type used on DataTransfer for in-app item drags. */
 export const PROJECT_ITEMS_MIME = 'application/x-jasper-project-items';
 
+/** polish (Media Browser): files on the engine host dragged onto the Project panel or the Timeline. */
+export const HOST_PATHS_MIME = 'application/x-jasper-host-paths';
+
+/** Writes the Media Browser drag payload: absolute paths on the engine host (registered in place on drop). */
+export function writeHostPathsDrag(dt: DataTransfer, paths: string[]): void {
+	dt.setData(HOST_PATHS_MIME, JSON.stringify({ paths }));
+	dt.setData('text/plain', paths.join('\n'));
+	dt.effectAllowed = 'copy';
+}
+
+/** The paths of a Media Browser drag, or null when the DataTransfer carries none. */
+export function readHostPathsDrag(dt: DataTransfer): string[] | null {
+	if (!Array.from(dt.types ?? []).includes(HOST_PATHS_MIME)) return null;
+	try {
+		const raw = JSON.parse(dt.getData(HOST_PATHS_MIME)) as { paths?: unknown };
+		const paths = Array.isArray(raw.paths)
+			? raw.paths.filter((x): x is string => typeof x === 'string' && x.length > 0)
+			: [];
+		return paths.length ? paths : null;
+	} catch {
+		return null;
+	}
+}
+
 export type ImportTarget =
 	| { kind: 'bin'; binId: string | null }
 	| {

@@ -121,7 +121,11 @@ function formatDuration(sec: number | null): string {
 }
 
 /** Filters a listing by the type filter and the search text (folders always stay, unless the search excludes them). */
-export function visibleEntries(entries: readonly BrowseEntry[], filter: Filter, query: string): BrowseEntry[] {
+export function visibleEntries(
+	entries: readonly BrowseEntry[],
+	filter: Filter,
+	query: string,
+): BrowseEntry[] {
 	const q = query.trim().toLowerCase();
 	return entries.filter(
 		(e) =>
@@ -180,7 +184,8 @@ export function MediaBrowserPanel(_props: PanelProps) {
 		};
 	}, [client, engine.status]);
 
-	// The folder listing.
+	// The folder listing (`reload` re-reads the same folder).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `reload` is the refresh trigger
 	useEffect(() => {
 		if (!path || engine.status !== 'connected') return;
 		let live = true;
@@ -219,22 +224,23 @@ export function MediaBrowserPanel(_props: PanelProps) {
 	// Preview info of the primary selected file.
 	useEffect(() => {
 		setInfo(null);
-		if (!primary || primary.kind !== 'file') return;
+		if (primary?.kind !== 'file') return;
 		let live = true;
 		client
 			.browseInfo(primary.path)
 			.then((r) => live && setInfo(r))
-			.catch((e) =>
-				live &&
-				setInfo({
-					path: primary.path,
-					name: primary.name,
-					size: primary.size ?? 0,
-					modifiedAt: primary.modifiedAt ?? '',
-					category: primary.category,
-					media: null,
-					error: errorMessage(e).message,
-				}),
+			.catch(
+				(e) =>
+					live &&
+					setInfo({
+						path: primary.path,
+						name: primary.name,
+						size: primary.size ?? 0,
+						modifiedAt: primary.modifiedAt ?? '',
+						category: primary.category,
+						media: null,
+						error: errorMessage(e).message,
+					}),
 			);
 		return () => {
 			live = false;
@@ -274,7 +280,7 @@ export function MediaBrowserPanel(_props: PanelProps) {
 		async (paths: string[]): Promise<number> => {
 			if (!session || !paths.length) return 0;
 			if (readOnly) {
-				toast({ kind: 'warning', message: 'The project is open read-only' });
+				toast({ kind: 'warning', title: 'The project is open read-only' });
 				return 0;
 			}
 			const service =
@@ -284,10 +290,10 @@ export function MediaBrowserPanel(_props: PanelProps) {
 			setImporting(true);
 			try {
 				const r = await service.importFiles({ paths }, { kind: 'bin', binId });
-				if (r.mediaIds.length) toast({ kind: 'success', message: service.describe(r, { kind: 'bin', binId }) });
+				if (r.mediaIds.length) toast({ kind: 'success', title: service.describe(r, { kind: 'bin', binId }) });
 				return r.mediaIds.length;
 			} catch (e) {
-				toast({ kind: 'error', message: 'Import failed', detail: errorMessage(e).message });
+				toast({ kind: 'error', title: 'Import failed', detail: errorMessage(e).message });
 				return 0;
 			} finally {
 				setImporting(false);
@@ -347,12 +353,17 @@ export function MediaBrowserPanel(_props: PanelProps) {
 			if (!ids.length) return;
 			e.preventDefault();
 			const cols =
-				view === 'thumbnails' && listRef.current ? Math.max(1, Math.floor(listRef.current.clientWidth / 132)) : 1;
-			const step = e.key === 'ArrowDown' ? cols : e.key === 'ArrowUp' ? -cols : e.key === 'ArrowRight' ? 1 : -1;
+				view === 'thumbnails' && listRef.current
+					? Math.max(1, Math.floor(listRef.current.clientWidth / 132))
+					: 1;
+			const step =
+				e.key === 'ArrowDown' ? cols : e.key === 'ArrowUp' ? -cols : e.key === 'ArrowRight' ? 1 : -1;
 			if (view === 'list' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
 			const next = entries[Math.max(0, Math.min(ids.length - 1, cur < 0 ? 0 : cur + step))]!;
 			select(next, e);
-			document.querySelector(`[data-browse-path="${CSS.escape(next.path)}"]`)?.scrollIntoView({ block: 'nearest' });
+			document
+				.querySelector(`[data-browse-path="${CSS.escape(next.path)}"]`)
+				?.scrollIntoView({ block: 'nearest' });
 		} else if (e.key === 'Enter' && primary) {
 			e.preventDefault();
 			activate(primary);
@@ -386,7 +397,11 @@ export function MediaBrowserPanel(_props: PanelProps) {
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard navigation (rows are focusable)
-		<div className="flex h-full min-h-0 flex-col font-pr text-pr-ui" data-testid="media-browser" onKeyDown={onKeyDown}>
+		<div
+			className="flex h-full min-h-0 flex-col font-pr text-pr-ui"
+			data-testid="media-browser"
+			onKeyDown={onKeyDown}
+		>
 			<div className="flex h-8 shrink-0 items-center gap-1 border-b border-pr-border-subtle px-1.5">
 				<IconButton
 					icon="app.chevronLeft"
@@ -521,7 +536,11 @@ export function MediaBrowserPanel(_props: PanelProps) {
 						data-testid="media-browser-list"
 					>
 						{error ? (
-							<EmptyState icon="panel.mediaBrowser" message="This folder cannot be shown" detail={error.message} />
+							<EmptyState
+								icon="panel.mediaBrowser"
+								message="This folder cannot be shown"
+								detail={error.message}
+							/>
 						) : entries.length === 0 && !loading ? (
 							<EmptyState
 								icon="media.folder"
@@ -555,7 +574,9 @@ export function MediaBrowserPanel(_props: PanelProps) {
 							{entries.length === 1 ? '1 item' : `${entries.length} items`}
 							{selectedFiles.length ? ` · ${selectedFiles.length} selected` : ''}
 						</span>
-						{listing?.truncated ? <span className="text-pr-warning">Only the first 2,000 entries are listed</span> : null}
+						{listing?.truncated ? (
+							<span className="text-pr-warning">Only the first 2,000 entries are listed</span>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -648,16 +669,25 @@ function ListView({ entries, selected, onSelect, onActivate, onDragStart }: View
 	);
 }
 
-function ThumbView({ entries, selected, onSelect, onActivate, onDragStart, thumbUrl }: ViewProps & { thumbUrl(p: string): string }) {
+function ThumbView({
+	entries,
+	selected,
+	onSelect,
+	onActivate,
+	onDragStart,
+	thumbUrl,
+}: ViewProps & { thumbUrl(p: string): string }) {
 	return (
 		<div className="grid grid-cols-[repeat(auto-fill,minmax(124px,1fr))] gap-2 p-2">
 			{entries.map((e) => {
 				const on = selected.includes(e.path);
 				const thumb = e.kind === 'file' && (e.category === 'video' || e.category === 'image');
 				return (
+					// biome-ignore lint/a11y/useKeyWithClickEvents: arrows / Enter are handled by the panel (onKeyDown above)
 					<div
 						key={e.path}
 						role="option"
+						tabIndex={-1}
 						aria-selected={on}
 						draggable={e.kind === 'file'}
 						onDragStart={(ev) => onDragStart(e, ev)}
