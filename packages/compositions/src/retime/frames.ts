@@ -71,7 +71,16 @@ export class FrameSource {
 		const track: InputVideoTrack | null = await this.input.getPrimaryVideoTrack();
 		if (!track) throw new Error(`No video track in ${this.src}`);
 		if (!(await track.canDecode())) throw new Error(`The browser cannot decode the video of ${this.src}`);
-		this.origin = Math.min(await this.input.getFirstTimestamp(), await track.getFirstTimestamp());
+		// ffmpeg's start_time (the origin of the native export and of input seeking): the earliest first timestamp of
+		// the tracks, where a negative one counts as 0 — it is encoder priming / pre-roll the container's edit list
+		// hides (AAC's -0.0213 s in nearly every MP4 with audio). Taken as is, it made every frame 21 ms late and media
+		// times exactly on a frame showed the one before (verify workstream).
+		const firsts = [await track.getFirstTimestamp()];
+		for (const t of await this.input.getTracks()) firsts.push(await t.getFirstTimestamp());
+		this.origin = Math.min(
+			...firsts.map((x) => (Number.isFinite(x) ? Math.max(0, x) : Number.POSITIVE_INFINITY)),
+		);
+		if (!Number.isFinite(this.origin)) this.origin = 0;
 		this.first = (await track.getFirstTimestamp()) - this.origin;
 		this.end = (await track.computeDuration()) - this.origin;
 		this.sink = new CanvasSink(track, {

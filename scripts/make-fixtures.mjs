@@ -125,6 +125,21 @@ const fixtures = [
 		],
 	},
 	{
+		// frame-code.mp4 with an AAC track: AAC's encoder priming gives the audio a negative first timestamp that the
+		// MP4 edit list hides (ffmpeg's start_time stays 0) — what most camera and phone files have (retime decoder).
+		name: 'frame-code-aac.mp4',
+		steps: (out) => [
+			[
+				...shapedTone(440, 3, '1'),
+				...frameCode('0x204080'),
+				...h264,
+				...bt709,
+				...aac,
+				...['-shortest', '-movflags', '+faststart', '-f', 'mp4', out],
+			],
+		],
+	},
+	{
 		// ProRes 4444 with alpha: what Remotion/After Effects write for overlays; browsers cannot decode it.
 		name: 'overlay-alpha.mov',
 		steps: (out) => [

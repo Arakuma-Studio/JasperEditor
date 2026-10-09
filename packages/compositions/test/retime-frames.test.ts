@@ -17,7 +17,10 @@ const CHROME = [
 	'/usr/bin/google-chrome-stable',
 	'/usr/bin/chromium',
 ].find((p): p is string => !!p && existsSync(p));
-const have = existsSync(join(MEDIA, 'frame-code.mp4')) && existsSync(join(MEDIA, 'vfr-code.mp4'));
+const have =
+	existsSync(join(MEDIA, 'frame-code.mp4')) &&
+	existsSync(join(MEDIA, 'frame-code-aac.mp4')) &&
+	existsSync(join(MEDIA, 'vfr-code.mp4'));
 
 describe.runIf(!!CHROME && have && process.env.RETIME_GL !== '0')(
 	'retime frame source (headless Chrome)',
@@ -137,6 +140,22 @@ describe.runIf(!!CHROME && have && process.env.RETIME_GL !== '0')(
 				times: rev,
 			});
 			expect(r.out.map((o) => o.code)).toEqual(Array.from({ length: 40 }, (_, k) => 39 - k));
+		});
+
+		it('an AAC track with encoder priming does not shift the frames (media time 0 = ffmpeg start_time)', async () => {
+			// Regression (verify workstream): the audio's first packet is at -0.0213 s (priming hidden by the MP4 edit list,
+			// ffmpeg's start_time 0). Taken as the file origin, every frame was 21 ms late and a time exactly on frame n
+			// showed frame n − 1 — remapped clips rendered one frame early in Remotion against the native export.
+			const times = [0, 1 / 30, 5 / 30, 12 / 30, 30 / 30, 39 / 30, 63 / 30];
+			const r = await call<{ out: { code: number; time: number }[] }>('codes', {
+				src: 'https://media.test/frame-code-aac.mp4',
+				w: 960,
+				h: 540,
+				scale: 0.5,
+				times,
+			});
+			expect(r.out.map((o) => o.code)).toEqual([0, 1, 5, 12, 30, 39, 63]);
+			expect(r.out[2]!.time).toBeCloseTo(5 / 30, 3);
 		});
 
 		it('VFR: frames by their real timestamps', async () => {
