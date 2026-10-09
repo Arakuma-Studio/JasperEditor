@@ -4,8 +4,10 @@ import {
 	type Animatable,
 	allTracks,
 	type Clip,
+	clipMediaRange,
 	flicksToSeconds,
 	fpsOf,
+	isRemapped,
 	linkedPartners,
 	type MediaAsset,
 	type ProjectDocument,
@@ -53,6 +55,11 @@ function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip): string
 	const c = clip as Clip & Record<string, unknown>;
 	const r = seq.settings.frameRate;
 	if (typeof c.mediaId === 'string') {
+		// Time Remapping: the media the visible frames show (first to last frame), not sourceIn + duration × speed.
+		if (isRemapped(clip)) {
+			const m = clipMediaRange(clip, r);
+			return `${mediaName(doc, c.mediaId)} [${c.mediaId}] ${round3(flicksToSeconds(m.min))}–${round3(flicksToSeconds(m.max))} s (time remapped)`;
+		}
 		const a = round3(flicksToSeconds(clip.sourceIn));
 		const b = round3(flicksToSeconds(sourceOut(clip, r)));
 		return `${mediaName(doc, c.mediaId)} [${c.mediaId}] ${a}–${b} s${clip.speed.rate !== 1 ? ` @${clip.speed.rate}x` : ''}`;
