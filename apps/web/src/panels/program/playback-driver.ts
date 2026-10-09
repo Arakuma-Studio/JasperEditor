@@ -28,7 +28,7 @@ const PLAY_WATCHDOG_MS = 600;
 const PLAY_WATCHDOG_RETRIES = 3;
 /**
  * A Player that renders slowly (heavy layers on a loaded machine: one frame every 300–700 ms) is not
- * stalled: the window also grows to four times the recent frame interval of this play, up to this bound
+ * stalled: the window also grows to four times the recent frame interval (of this play and the ones before), up to this bound
  * (measured: the 3-layer `pnpm perf` scenario at ≈ 4 fps was kicked once with the fixed 600 ms window).
  */
 const PLAY_WATCHDOG_MAX_ADAPTIVE_MS = 2500;
@@ -108,6 +108,8 @@ export class PlaybackDriver implements PlayerController {
 	/** Frame-update arrival of this play: last time and a moving average of the interval (ms). */
 	private lastFrameAt = -1;
 	private frameInterval = 0;
+	/** `frameEvents` when the current native play started: equal = its first frame is still pending. */
+	private playStartEvents = -1;
 	private dropped = 0;
 	private buffering = false;
 	private watchdog: ReturnType<typeof setTimeout> | null = null;
@@ -239,8 +241,11 @@ export class PlaybackDriver implements PlayerController {
 			if (!this.current) {
 				this.counters.plays++;
 				this.lastFrameAt = Date.now(); // the first interval is the time to the first frame
-				this.frameInterval = 0;
+				// The frame interval of earlier plays is kept: zeroed, every play's first frame got the fixed 600 ms window,
+				// and on a machine that renders a frame every 300 ms+ a slow first frame after a seek was "recovered" as a
+				// stall (verify workstream, e2e/previews "seek-and-play cycles never stall").
 				this.current = { at: performance.now(), frames: 0, dropped: 0, rate: this.rate };
+				this.playStartEvents = this.frameEvents;
 			}
 			this.armWatchdog(PLAY_WATCHDOG_RETRIES);
 			return;
@@ -272,7 +277,12 @@ export class PlaybackDriver implements PlayerController {
 		const window = Math.max(
 			PLAY_WATCHDOG_MS,
 			3000 / framesPerSec,
-			Math.min(PLAY_WATCHDOG_MAX_ADAPTIVE_MS, 4 * this.frameInterval),
+			// The first frame of a play (seek, decode, the first draw) costs more than the steady interval: twice the
+			// allowance (verify workstream: a 1.2 s first frame at a 300 ms interval was kicked as a stall).
+			Math.min(
+				PLAY_WATCHDOG_MAX_ADAPTIVE_MS,
+				(this.frameEvents === this.playStartEvents ? 8 : 4) * this.frameInterval,
+			),
 		);
 		this.watchdog = setTimeout(() => {
 			this.watchdog = null;
