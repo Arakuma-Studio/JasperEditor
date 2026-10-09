@@ -68,6 +68,20 @@ export type PlanCapabilities = {
 	decoders?: readonly string[];
 };
 
+/** Largest frame side any path renders (16K). */
+export const MAX_FRAME_SIDE = 16384;
+
+/** Refuses frame sizes no path can render (`VALIDATION_FAILED`, naming what is too large). */
+export function assertFrameSize(what: string, width: unknown, height: unknown): void {
+	const ok = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= MAX_FRAME_SIDE;
+	if (!ok(width) || !ok(height))
+		throw new PlanError(
+			'VALIDATION_FAILED',
+			400,
+			`${what} has a frame size of ${String(width)}×${String(height)}; frames are at most ${MAX_FRAME_SIDE} px wide and high`,
+		);
+}
+
 export class PlanError extends Error {
 	constructor(
 		readonly code: string,
@@ -301,6 +315,22 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			return r?.url ?? null;
 		},
 	});
+
+	// ---- security review ENG-6: frame buffers are sized by these numbers (`width × height × 4` per layer in the
+	// compositing kernels and in ffmpeg). Commands keep sequences within 8192 px; a hostile document or request is
+	// refused by name before anything is allocated.
+	assertFrameSize('The sequence', seq.settings.width, seq.settings.height);
+	if (settings.video?.width !== undefined || settings.video?.height !== undefined)
+		assertFrameSize(
+			'The export',
+			settings.video.width ?? seq.settings.width,
+			settings.video.height ?? seq.settings.height,
+		);
+	for (const c of allVisualClips(snapshot))
+		if ('nest' in c.source) {
+			const n = c.source.nest.snapshot.settings;
+			assertFrameSize(`The nested sequence of clip "${c.name}"`, n.width, n.height);
+		}
 
 	// ---- wp-m2-anime-templates (S11:ATP-010, FIX-008): templates this build lacks block every path (native,
 	// Remotion, stills) instead of exporting the placeholder card.

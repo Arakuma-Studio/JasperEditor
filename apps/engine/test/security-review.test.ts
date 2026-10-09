@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { quoteFilterPath } from '../src/color/extension.ts';
 import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
+import { assertFrameSize } from '../src/export/planner.ts';
 import { loadLottieFile } from '../src/imports/lottie.ts';
 import { ModelStore } from '../src/processing/models.ts';
 import { openerFor } from '../src/routes/gaps.ts';
@@ -14,7 +15,7 @@ import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { filterPath, filterValue } from '../src/tools/filter-text.ts';
 import { atomicCopyFile } from '../src/tools/fs.ts';
-import { closeApps, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
+import { closeApps, DocBuilder, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
 
 /** An HTTP server whose every response is an endless body (stops after 256 MiB); counts the bytes it wrote. */
 async function endlessServer(): Promise<{ url: string; sent: () => number; close: () => Promise<void> }> {
@@ -404,5 +405,90 @@ describe('DATA-6: project backups and versions are copied atomically', () => {
 			atomicCopyFile(join(dir, 'gone.jasper'), join(dir, 'versions', 'v2.jasper')),
 		).rejects.toThrow();
 		expect(readdirSync(join(dir, 'versions'))).toEqual(['v1.jasper']);
+	});
+});
+
+describe('WS /agent goes through the same Host, Origin and token checks as HTTP', () => {
+	const open = (app: Awaited<ReturnType<typeof makeApp>>, headers: Record<string, string>) =>
+		app.injectWS('/agent', { headers }).then(
+			(ws) => {
+				ws.terminate();
+				return 'open';
+			},
+			(e: Error) => `refused: ${e.message}`,
+		);
+
+	it('refuses a foreign Origin and a foreign Host (a web page cannot attach as an editor session)', async () => {
+		const app = await makeApp();
+		expect(await open(app, { ...H })).toBe('open');
+		expect(await open(app, { ...H, origin: 'http://127.0.0.1:47900' })).toBe('open');
+		expect(await open(app, { ...H, origin: 'https://evil.example' })).toMatch(/^refused/);
+		expect(await open(app, { ...H, origin: 'null' })).toMatch(/^refused/);
+		expect(await open(app, { host: 'evil.example:47900' })).toMatch(/^refused/);
+	});
+
+	it('needs the token in token mode', async () => {
+		const app = await makeApp({ dev: false, token: 's3cret' });
+		expect(await open(app, { ...H })).toMatch(/^refused/);
+		expect(await open(app, { ...H, authorization: 'Bearer wrong' })).toMatch(/^refused/);
+		expect(await open(app, { ...H, authorization: 'Bearer s3cret' })).toBe('open');
+		expect(await open(app, { ...H, cookie: 'jasper_session=s3cret' })).toBe('open');
+	});
+});
+
+describe('ENG-6: frame sizes no path can render are refused by name', () => {
+	it('assertFrameSize', () => {
+		expect(() => assertFrameSize('X', 16384, 16384)).not.toThrow();
+		for (const bad of [16385, 0, -1, Number.NaN, Number.POSITIVE_INFINITY, '100'])
+			expect(() => assertFrameSize('X', bad, 100)).toThrow(/at most 16384/);
+	});
+
+	const video = {
+		codec: 'h264',
+		width: 1920,
+		height: 1080,
+		frameRate: { num: 30, den: 1 },
+		scaling: 'fit',
+		quality: { mode: 'crf', value: 23 },
+		encoderSpeed: 'fast',
+		colorTags: 'rec709',
+	};
+	const plan = (app: Awaited<ReturnType<typeof makeApp>>, d: DocBuilder, size: Partial<typeof video> = {}) =>
+		app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: { ...H, 'content-type': 'application/json' },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					sequenceId: d.seqId,
+					range: { type: 'entire' },
+					container: 'mp4',
+					video: { ...video, ...size },
+					audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
+					engine: 'auto',
+				},
+			},
+		});
+
+	it('a gigantic export size is refused; a gigantic sequence in a hostile document is clamped on load', async () => {
+		const app = await makeApp();
+		const d = new DocBuilder();
+		d.tx([{ type: 'clip.addSolid', at: 0, duration: 10, track: 'V1', color: [1, 0, 0, 1] }]);
+		expect((await plan(app, d)).statusCode).toBe(200);
+		// What no command produces: a document edited by hand (or sent as the envelope of an export request).
+		// `repairDocument` clamps it to 8192 px on load (and says so), so it plans like any other.
+		const hostile = new DocBuilder();
+		hostile.tx([{ type: 'clip.addSolid', at: 0, duration: 10, track: 'V1', color: [1, 0, 0, 1] }]);
+		const doc = JSON.parse(JSON.stringify(hostile.doc));
+		doc.sequences[hostile.seqId].settings.width = 2_000_000;
+		doc.sequences[hostile.seqId].settings.height = 2_000_000;
+		hostile.doc = doc;
+		expect((await plan(app, hostile)).statusCode).toBe(200);
+		// The requested output size had no bound at all.
+		const big = await plan(app, d, { width: 500_000, height: 500_000 });
+		expect(big.statusCode).toBe(400);
+		expect(big.json().message).toMatch(/The export has a frame size/);
 	});
 });
