@@ -4,16 +4,7 @@
 import type { LabelColor, ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSession, useSessionState } from '@jasper/session/react';
-import {
-	Button,
-	cx,
-	Icon,
-	IconButton,
-	type IconId,
-	LABEL_DISPLAY_NAMES,
-	LABEL_NAMES,
-	PointMenu,
-} from '@jasper/ui';
+import { Button, cx, Icon, IconButton, type IconId, LABEL_NAMES, PointMenu } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
 import { labelName } from '../../gaps/app-prefs.ts';
