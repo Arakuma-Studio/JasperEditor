@@ -200,3 +200,40 @@ export const ProjectManagerResultSchema = z.object({
 	droppedItems: z.number().int(),
 });
 export type ProjectManagerResult = z.infer<typeof ProjectManagerResultSchema>;
+
+// ---------------------------------------------------------------- Warp Stabilizer analysis (FX-6)
+
+/**
+ * `POST /api/warp-analysis`: analyse source frames [startFrame, startFrame + frameCount) of a video for the Warp
+ * Stabilizer (job `warp-analysis`; its result is the analysis stored with the effect: `effect.setWarpAnalysis`).
+ */
+export const WarpAnalysisRequestSchema = z.object({
+	projectId: z.string().optional(),
+	mediaKey: z.string().min(1),
+	/** The project media id (recorded in the analysis). */
+	mediaId: z.string().optional(),
+	startFrame: z.number().int().min(0),
+	frameCount: z.number().int().min(2).max(54_000),
+	/** Advanced ▸ Detailed Analysis: twice the analysis resolution and more features. */
+	detailed: z.boolean().default(false),
+});
+export type WarpAnalysisRequest = z.infer<typeof WarpAnalysisRequestSchema>;
+
+/** The job result (the project's `WarpAnalysisData`; validated by the command when stored). */
+export const WarpAnalysisResultSchema = z.object({
+	version: z.literal(1),
+	key: z.string(),
+	mediaId: z.string().optional(),
+	start: z.number(),
+	frameDuration: z.number(),
+	size: z.tuple([z.number(), z.number()]),
+	detailed: z.boolean(),
+	frames: z.array(z.number()),
+	tracks: z.array(z.object({ start: z.number().int(), pts: z.array(z.number()) })).optional(),
+	confidence: z.number().optional(),
+	analyzedAt: z.string().optional(),
+	/** Frames actually decoded (fewer than requested when the file is shorter). */
+	analysedFrames: z.number().int(),
+	framesPerSec: z.number().optional(),
+});
+export type WarpAnalysisResult = z.infer<typeof WarpAnalysisResultSchema>;

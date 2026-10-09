@@ -49,6 +49,7 @@ import {
 	EngineGapsInfoSchema,
 	EngineGapsSettingsSchema,
 	MediaJobRequestSchema,
+	WarpAnalysisRequestSchema,
 	MediaLocationSchema,
 	MediaOpenRequestSchema,
 	MediaOpenResponseSchema,
@@ -1132,6 +1133,14 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/media-jobs',
 		body: MediaJobRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Warp Stabilizer background analysis (FX-6)
+	warpAnalysis: {
+		method: 'POST',
+		path: '/api/warp-analysis',
+		body: WarpAnalysisRequestSchema,
 		response: EngineJobSchema,
 		owner: 'gaps',
 	},

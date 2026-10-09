@@ -35,6 +35,7 @@ import {
 	type SnapshotOptions,
 	sequenceFormatOf,
 	transitionSpec,
+	warpExportIssues,
 } from '@jasper/project';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
@@ -336,6 +337,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			message: `${proxiesOffline.length} proxies are offline: those media render at full resolution`,
 			itemIds: proxiesOffline,
 		});
+	// ---- gaps (FX-6): a Warp Stabilizer exports only with its analysis; frames outside it are a warning.
+	{
+		const issues = warpExportIssues(snapshot);
+		const missing = issues.filter((i) => i.kind === 'not-analyzed');
+		if (missing.length)
+			throw new PlanError('WARP_NOT_ANALYZED', 409, missing.map((i) => i.message).join('; '), {
+				clipIds: missing.map((i) => i.clipId),
+			});
+		for (const i of issues) warnings.push({ code: 'WARP_PARTIAL', message: i.message, itemIds: [i.clipId] });
+	}
 	// ---- parity (roto): object mattes render on every path from computed matte sets; frames without one would come
 	// out unmatted, so they block every path (never silently dropped). Stale mattes are a warning.
 	{

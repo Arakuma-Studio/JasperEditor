@@ -9,8 +9,9 @@ import * as Geometry from './geometry.ts';
 import { createMaskTracker, type MaskConfig } from './mask.ts';
 import { createPlanarTracker, type FrameResult, type PlanarConfig } from './planar.ts';
 import { createPointTracker, type PointConfig } from './point.ts';
+import { createWarpTracker, type WarpConfig } from './warp.ts';
 
-export type TrackerConfig = PlanarConfig | PointConfig | MaskConfig;
+export type TrackerConfig = PlanarConfig | PointConfig | MaskConfig | WarpConfig;
 
 type WorkerRequest =
 	| { type: 'init'; cfg: TrackerConfig }
@@ -34,6 +35,7 @@ function workerMain(
 	makePlanar: typeof createPlanarTracker,
 	makePoint: typeof createPointTracker,
 	makeMask: typeof createMaskTracker,
+	makeWarp: typeof createWarpTracker,
 ): void {
 	const port = threads.parentPort;
 	const cvModule: any = load(cvPath);
@@ -61,7 +63,9 @@ function workerMain(
 						? makePlanar(cv, G, m.cfg)
 						: m.cfg.kind === 'mask'
 							? makeMask(cv, G, m.cfg)
-							: makePoint(cv, m.cfg);
+							: m.cfg.kind === 'warp'
+								? makeWarp(cv, G, m.cfg)
+								: makePoint(cv, m.cfg);
 				port.postMessage({ type: 'ok' });
 			} else if (m.type === 'reference' || m.type === 'frame') {
 				if (!tracker) throw new Error('tracker not initialised');
@@ -108,9 +112,10 @@ function workerSource(): string {
 		createPlanarTracker.toString(),
 		createPointTracker.toString(),
 		createMaskTracker.toString(),
+		createWarpTracker.toString(),
 		workerMain.toString(),
 		`const G = { ${geo.map(([k, f]) => `${k}: ${f.name}`).join(', ')} };`,
-		`${workerMain.name}(require('node:worker_threads'), require, ${JSON.stringify(openCvPath())}, G, ${createPlanarTracker.name}, ${createPointTracker.name}, ${createMaskTracker.name});`,
+		`${workerMain.name}(require('node:worker_threads'), require, ${JSON.stringify(openCvPath())}, G, ${createPlanarTracker.name}, ${createPointTracker.name}, ${createMaskTracker.name}, ${createWarpTracker.name});`,
 	].join('\n');
 	return cachedSource;
 }

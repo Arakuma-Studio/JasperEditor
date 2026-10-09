@@ -5,6 +5,7 @@
 //   GET  /api/projects/:projectId/scratch the folders behind Project Settings ▸ Scratch Disks, with free space
 //   POST /api/scratch/check              whether a folder can take generated media
 //   POST /api/media-jobs                 Create Proxies / ingest copies and transcodes (job `proxy-create`)
+//   POST /api/warp-analysis              Warp Stabilizer background analysis (job `warp-analysis`)
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, mkdir, readFile, stat } from 'node:fs/promises';
@@ -17,6 +18,7 @@ import {
 	MediaOpenRequestSchema,
 	ProjectManagerRequestSchema,
 	ScratchCheckRequestSchema,
+	WarpAnalysisRequestSchema,
 	type ScratchLocation,
 } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
@@ -25,6 +27,7 @@ import { MediaJobService } from '../gaps/media-jobs.ts';
 import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
 import { ProjectManagerService } from '../gaps/project-manager.ts';
 import { renderOptimization, setRenderOptimization } from '../gaps/render-budget.ts';
+import { WarpAnalysisService } from '../gaps/warp-analysis.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { atomicWriteJson, freeDiskBytes } from '../tools/fs.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -190,6 +193,16 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 			const body = parseOr400(MediaJobRequestSchema, req.body);
 			return reply.code(202).send(await mediaJobs.submit(body));
 		}),
+	);
+
+	// ---- Warp Stabilizer background analysis (FX-6)
+	const warp = new WarpAnalysisService(core);
+	warp.registerRunner();
+	app.post(
+		'/api/warp-analysis',
+		guarded(async (req, reply) =>
+			reply.code(202).send(await warp.submit(parseOr400(WarpAnalysisRequestSchema, req.body))),
+		),
 	);
 
 	// ---- Project Settings ▸ Scratch Disks

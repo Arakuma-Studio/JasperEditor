@@ -51,6 +51,7 @@ function jitter(p: [number, number][]): number {
 	return s / (p.length - 2);
 }
 
+const fxList = (c: unknown) => (c as { effects: { id: string; effectId: string }[] }).effects;
 const S = (o: Partial<StabSettings>): StabSettings => ({ ...DEFAULT_STAB_SETTINGS, ...o });
 
 describe('warp stabilizer maths', () => {
@@ -289,7 +290,7 @@ describe('stored analysis, command and invariant', () => {
 		expect(defaultEffectRegistry.get('jasper.warp-stabilizer')?.gpu).toBeTruthy();
 		h.ok([{ type: 'effect.add', target: { clipId: clip.id }, effectId: 'jasper.warp-stabilizer' }]);
 		const fxOf = () =>
-			h.seq.clips[clip.id]!.effects.find((e) => e.effectId === 'jasper.warp-stabilizer')! as {
+			fxList(h.seq.clips[clip.id]).find((e) => e.effectId === 'jasper.warp-stabilizer')! as {
 				id: string;
 				warpAnalysis?: WarpAnalysisData;
 			};
@@ -306,7 +307,7 @@ describe('stored analysis, command and invariant', () => {
 			]).ok,
 		).toBe(false);
 		h.ok([{ type: 'effect.add', target: { clipId: clip.id }, effectId: 'jasper.crop' }]);
-		const crop = h.seq.clips[clip.id]!.effects.find((e) => e.effectId === 'jasper.crop')!;
+		const crop = fxList(h.seq.clips[clip.id]).find((e) => e.effectId === 'jasper.crop')!;
 		expect(h.tx([{ type: 'effect.setWarpAnalysis', effectInstanceId: crop.id, analysis: analysis(4) }]).ok).toBe(
 			false,
 		);
@@ -317,7 +318,7 @@ describe('stored analysis, command and invariant', () => {
 		expect(fxOf().warpAnalysis).toBeUndefined();
 		// A broken stored analysis is reported and repaired.
 		const broken = structuredClone(analysed);
-		const bfx = Object.values(broken.sequences)[0]!.clips[clip.id]!.effects.find((e) => e.id === fxId)! as {
+		const bfx = fxList(Object.values(broken.sequences)[0]!.clips[clip.id]).find((e) => e.id === fxId)! as {
 			warpAnalysis?: { frames: number[] };
 		};
 		bfx.warpAnalysis!.frames = [1, 2];
