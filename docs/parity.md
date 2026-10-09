@@ -11,18 +11,19 @@ by feature.
 
 ## Current status
 
-Assessed 8 October 2026 at `integrate/parity` after 23 of the 24 parallel workstreams merged (workstream `fixups`).
+Assessed 8 October 2026 at `integrate/parity` after 23 of the 24 parallel workstreams merged (workstream `fixups`);
+recounted 9 October 2026 by workstream `gaps` (its rows, the counts and the breadth below).
 Every row that changed cites the wp-note and the tests that show it. `golden-fuzz` is still running and is not
 credited. The breadth number is recomputed from the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction).
 
 | Measure | Value |
 |---|---|
-| **Breadth, weighted by tier** (P0 ×3, P1 ×2, P2 ×1) | **≈ 91%** using the fractions below; ≈ 91% counting every partial feature as half (was ≈ 59% at `main` 051cf53) |
-| P0 / P1 / P2 | 97% / 89% / 79% (fractions) |
-| Features done / partial / missing | 75 / 13 / 4 of 92 |
-| Video effects / transitions | 384 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
-| Menu entries | 283, of which 15 are unregistered and render disabled (counted from `MENUBAR` against the registry after `registerAllCommands()`) |
-| Document commands | 244 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
+| **Breadth, weighted by tier** (P0 ×3, P1 ×2, P2 ×1) | **≈ 98%** using the fractions below; ≈ 98% counting every partial feature as half (was ≈ 91% before `gaps`, ≈ 59% at `main` 051cf53) |
+| P0 / P1 / P2 | 97% / 99% / 100% (fractions) |
+| Features done / partial / missing | 89 / 3 / 0 of 92 (partial: CL-4, EX-2, PL-2) |
+| Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
+| Menu entries | 290, of which 5 are unregistered and render disabled (`project.importFromMediaBrowser`, `engine.connect`, `engine.status`, `mg.editParameters`, `app.notices`; counted from `MENUBAR` against the registry after `registerAllCommands()`) |
+| Document commands | 255 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
 | Agent tools | 322 MCP tools (counted from a live `listTools`) |
 
 How a row is graded: **done** when the model, an undoable command, the UI, the preview and every export path exist
