@@ -6,6 +6,7 @@ import {
 	applyTransaction,
 	createCounterIdSource,
 	defaultRegistries,
+	jsonWarmUnits,
 	makeEnvelope,
 	type ProjectDocument,
 	stringifyJson,
@@ -67,6 +68,34 @@ for (let i = 0; i < 7; i++) {
 	if (i === 0 && s !== JSON.stringify(env())) throw new Error('stringifyJson differs after an edit');
 }
 void warm;
+// The autosave warms the cache in idle time (one unit per sequence / medium / item) before its first save.
+let fresh: ProjectDocument = buildScaleProject({ sequences: Number(process.env.SCALE_SEQUENCES ?? 200) });
+{
+	const r = applyTransaction(
+		fresh,
+		{
+			label: 'Opacity',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [{ type: 'param.set', target: ['clip', clipId, 'opacity'], value: 33 }],
+		} as never,
+		{ ids, now: () => '2026-10-09T00:00:00.000Z', revision: 1, registries: defaultRegistries() },
+	);
+	fresh = r.document;
+}
+let longest = 0;
+let units = 0;
+for (const u of jsonWarmUnits(fresh)) {
+	const t0 = performance.now();
+	u();
+	longest = Math.max(longest, performance.now() - t0);
+	units++;
+}
+const firstSave = (() => {
+	const t0 = performance.now();
+	stringifyJson(makeEnvelope(fresh, { revision: 1, savedAt: '2026-10-09T00:00:00.000Z', platform: 'bench' }));
+	return performance.now() - t0;
+})();
 console.log(
-	`document ${(bytes / 1e6).toFixed(1)} MB: JSON.stringify ${native.toFixed(1)} ms; stringifyJson cold ${cold.toFixed(1)} ms, after a one-clip edit ${median(warmOnly).toFixed(1)} ms (median of 7)`,
+	`document ${(bytes / 1e6).toFixed(1)} MB: JSON.stringify ${native.toFixed(1)} ms; stringifyJson cold ${cold.toFixed(1)} ms, after a one-clip edit ${median(warmOnly).toFixed(1)} ms (median of 7); idle warm-up ${units} units (longest ${longest.toFixed(1)} ms), then the first save ${firstSave.toFixed(1)} ms`,
 );

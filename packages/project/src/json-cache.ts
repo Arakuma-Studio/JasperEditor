@@ -10,46 +10,62 @@
 // deeply frozen objects are cached, so an object that can still change is always serialised afresh.
 // Property-tested against `JSON.stringify` (packages/project/test/json-cache.test.ts).
 
-/** JSON text of deeply frozen objects. */
+/** JSON text of deeply frozen objects (an entry implies the object is deeply frozen). */
 const textCache = new WeakMap<object, string>();
-/** Objects known to be deeply frozen (a final verdict: nothing below a deeply frozen object can change). */
-const deepFrozen = new WeakSet<object>();
-/** Containers with more entries than this are composed from their entries' (cached) text; smaller ones in one go. */
+/**
+ * Which containers are composed from their entries' (cached) text: every container in the top `COMPOSE_DEPTH` levels
+ * (envelope, document, its records, a sequence) and deeper ones with at least `COMPOSE_MIN_ENTRIES` entries (a long
+ * `clips` record); everything else is serialised in one native call and cached as a whole.
+ */
+const COMPOSE_DEPTH = 4;
 const COMPOSE_MIN_ENTRIES = 64;
 
-function isDeepFrozen(o: object): boolean {
-	if (deepFrozen.has(o)) return true;
-	if (!Object.isFrozen(o)) return false;
-	for (const k of Object.keys(o)) {
-		const v = (o as Record<string, unknown>)[k];
-		if (v !== null && typeof v === 'object' && !isDeepFrozen(v)) return false;
+/** Whether nothing in `o` can change (a subtree serialised natively; no bookkeeping per object). */
+function deepFrozen(o: object, stack: Set<object>): boolean {
+	if (textCache.has(o)) return true;
+	if (!Object.isFrozen(o) || stack.has(o)) return false;
+	stack.add(o);
+	try {
+		for (const k of Object.keys(o)) {
+			const v = (o as Record<string, unknown>)[k];
+			if (v !== null && typeof v === 'object' && !deepFrozen(v, stack)) return false;
+		}
+		return true;
+	} finally {
+		stack.delete(o);
 	}
-	deepFrozen.add(o);
-	return true;
 }
 
 const isBoxed = (v: object) =>
 	v instanceof Number || v instanceof String || v instanceof Boolean || v instanceof BigInt;
 
-function ser(value: unknown, key: string, stack: Set<object>): string | undefined {
+/** Text of one value and whether it is deeply frozen (so its container may be cached too). */
+type Out = { text: string | undefined; frozen: boolean };
+
+function ser(value: unknown, key: string, stack: Set<object>, depth: number): Out {
 	let v = value;
 	if (v !== null && (typeof v === 'object' || typeof v === 'bigint')) {
 		const toJSON = (v as { toJSON?: unknown }).toJSON;
 		if (typeof toJSON === 'function') v = toJSON.call(v, key);
 	}
-	if (v === null || typeof v !== 'object' || isBoxed(v)) return JSON.stringify(v);
+	// toJSON results are not the object itself: never cache through them.
+	const viaToJSON = v !== value;
+	if (v === null || typeof v !== 'object' || isBoxed(v))
+		return { text: JSON.stringify(v), frozen: !viaToJSON };
 	const o = v as object;
 	const hit = textCache.get(o);
-	if (hit !== undefined) return hit;
+	if (hit !== undefined) return { text: hit, frozen: !viaToJSON };
 	if (stack.has(o)) throw new TypeError('Converting circular structure to JSON');
 	const keys = Array.isArray(o) ? null : Object.keys(o);
 	const entries = keys ? keys.length : (o as unknown[]).length;
-	const frozen = isDeepFrozen(o);
 	let text: string;
-	if (entries < COMPOSE_MIN_ENTRIES && !composeSmall(o, keys)) {
-		// Small, with small children: the native serialiser is faster than composing.
+	let frozen: boolean;
+	if (depth >= COMPOSE_DEPTH && entries < COMPOSE_MIN_ENTRIES) {
+		// Deep and small: the native serialiser is faster than composing.
 		text = JSON.stringify(o);
+		frozen = deepFrozen(o, new Set());
 	} else {
+		frozen = Object.isFrozen(o);
 		stack.add(o);
 		try {
 			// String concatenation (not `join`): V8 builds ropes, so joining the cached text of unchanged entries copies
@@ -57,16 +73,20 @@ function ser(value: unknown, key: string, stack: Set<object>): string | undefine
 			if (keys === null) {
 				const arr = o as unknown[];
 				text = '[';
-				for (let i = 0; i < arr.length; i++)
-					text += (i ? ',' : '') + (ser(arr[i], String(i), stack) ?? 'null');
+				for (let i = 0; i < arr.length; i++) {
+					const r = ser(arr[i], String(i), stack, depth + 1);
+					frozen &&= r.frozen;
+					text += (i ? ',' : '') + (r.text ?? 'null');
+				}
 				text += ']';
 			} else {
 				text = '{';
 				let first = true;
 				for (const k of keys) {
-					const s = ser((o as Record<string, unknown>)[k], k, stack);
-					if (s === undefined) continue;
-					text += `${first ? '' : ','}${JSON.stringify(k)}:${s}`;
+					const r = ser((o as Record<string, unknown>)[k], k, stack, depth + 1);
+					frozen &&= r.frozen;
+					if (r.text === undefined) continue;
+					text += `${first ? '' : ','}${JSON.stringify(k)}:${r.text}`;
 					first = false;
 				}
 				text += '}';
@@ -76,23 +96,7 @@ function ser(value: unknown, key: string, stack: Set<object>): string | undefine
 		}
 	}
 	if (frozen) textCache.set(o, text);
-	return text;
-}
-
-/**
- * Whether a small container should still be composed: something within a few levels below it is cached already or is
- * a container worth composing (the envelope around a document, the document around its sequences).
- */
-function composeSmall(o: object, keys: string[] | null, depth = 3): boolean {
-	const vals = keys ? keys.map((k) => (o as Record<string, unknown>)[k]) : (o as unknown[]);
-	for (const c of vals) {
-		if (c === null || typeof c !== 'object') continue;
-		if (textCache.has(c)) return true;
-		const ck = Array.isArray(c) ? null : Object.keys(c);
-		if ((ck ? ck.length : (c as unknown[]).length) >= COMPOSE_MIN_ENTRIES) return true;
-		if (depth > 1 && composeSmall(c, ck, depth - 1)) return true;
-	}
-	return false;
+	return { text, frozen: frozen && !viaToJSON };
 }
 
 /**
@@ -100,5 +104,24 @@ function composeSmall(o: object, keys: string[] | null, depth = 3): boolean {
  * `undefined` where `JSON.stringify` does (a top-level `undefined`, function or symbol).
  */
 export function stringifyJson(value: unknown): string {
-	return ser(value, '', new Set()) as string;
+	return ser(value, '', new Set(), 0).text as string;
+}
+
+/**
+ * Small units of work that fill the cache for `value` ahead of a save: one per entry of its records (each sequence,
+ * medium, item…). Run them when the browser is idle (autosave does) and the save itself only joins cached text.
+ */
+export function* jsonWarmUnits(value: unknown): Generator<() => void> {
+	if (value === null || typeof value !== 'object') return;
+	for (const k of Object.keys(value)) {
+		const child = (value as Record<string, unknown>)[k];
+		if (child === null || typeof child !== 'object' || textCache.has(child)) continue;
+		for (const e of Object.keys(child)) {
+			const entry = (child as Record<string, unknown>)[e];
+			if (entry !== null && typeof entry === 'object' && !textCache.has(entry))
+				yield () => {
+					stringifyJson(entry);
+				};
+		}
+	}
 }

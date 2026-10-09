@@ -8,6 +8,7 @@ import {
 	applyTransaction,
 	createCounterIdSource,
 	defaultRegistries,
+	jsonWarmUnits,
 	makeEnvelope,
 	stringifyJson,
 } from '../src/index.ts';
@@ -130,5 +131,36 @@ describe('stringifyJson', () => {
 			});
 			expect(stringifyJson(env)).toBe(JSON.stringify(env));
 		}
+	});
+
+	it('warm-up units fill the cache with the same text, and a warmed document has none left', () => {
+		let doc = buildScaleProject({ sequences: 3 });
+		const r = applyTransaction(
+			doc,
+			{
+				label: 'Edit',
+				origin: 'user',
+				sequenceId: Object.keys(doc.sequences)[0],
+				commands: [
+					{
+						type: 'clip.update',
+						clipId: Object.keys(Object.values(doc.sequences)[0]!.clips)[0],
+						patch: { name: 'W' },
+					},
+				],
+			} as never,
+			{
+				ids: createCounterIdSource(800_000),
+				now: () => '2026-10-09T00:00:00.000Z',
+				revision: 1,
+				registries: defaultRegistries(),
+			},
+		);
+		doc = r.document;
+		const units = [...jsonWarmUnits(doc)];
+		expect(units.length).toBeGreaterThan(3);
+		for (const u of units) u();
+		expect([...jsonWarmUnits(doc)]).toEqual([]);
+		expect(stringifyJson(doc)).toBe(JSON.stringify(doc));
 	});
 });
