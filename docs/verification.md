@@ -117,3 +117,36 @@ panics on any file it cannot decode, and `native/mg/crates/jasper-mg-templates/m
 | `DESKTOP_SMOKE_PORT=49576 pnpm e2e:desktop` | packaged-like PASS, dev PASS (screenshots looked at: the Home screen, engine connected), desktop clipboard 4/4 |
 | `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; Remotion with a named blocker without it) |
 | `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS: the packed app's FFmpeg is LGPL, a Remotion export used only the bundled FFmpeg (OpenH264), PATH ffmpeg never run |
+
+## 4. Playwright (all specs)
+
+`node scripts/e2e-prepare.mjs` once (then again after fixes), then chunks with
+`E2E_PORT=49560 E2E_SKIP_BUILD=1 pnpm exec playwright test <specs> --reporter=list`; failures rerun alone (a serial
+spec is rerun as a whole file: its tests share one page).
+
+| Chunk | Result | Failures → cause → fix |
+|---|---|---|
+| 1 (agent-ui … captions) | 57 passed | — |
+| 2 (clipboard … fixups, compositor) | 35 passed, 2 failed | see below (both reproduced alone, 3/3) |
+| 3 | 35 passed | — |
+| 4 + 5 (perf-core … ui-audit, `SPEECH_E2E=1`) | 78 passed, 1 failed | `previews` "seek-and-play cycles never stall", see below |
+
+- **`effect-presets` "Save Preset… survives a reload".** After `page.reload()` the editor opened the project
+  **read-only** ("open in another session"): the old page's lease release (a keepalive `DELETE` sent on `pagehide`)
+  raced the new page's acquire, and the new page did not know the holder was itself. **Fix**
+  (`packages/session/src/persistence/engine.ts`): lease session ids of this tab are remembered in `sessionStorage`
+  (survives a reload, not shared with other tabs) and a holder from that list is waited for (bounded, like a closing
+  session of the same page); a duplicated tab whose original still holds the lease still opens read-only. Two tests in
+  `packages/session/test/persistence/engine-store.test.ts` (the reload case fails without the fix). One later run still
+  failed with the old page's release not arriving within 3.5 s; 8 further runs passed.
+- **`color-mgmt` "Blend using 1.0 gamma".** The spec expected the pre-compositor behaviour (display stage steps aside,
+  chip, raw 129.9). The compositor workstream keeps the display transform running (`compositor-player.e2e` asserts no
+  chip). Spec updated to that contract with the value computed by the TS colour science:
+  `outputTransformFn(working, displaySpaceFor('rec2100-pq'))` maps the linear-light mix 129.9 to **190.3** (encoded
+  blending: 69.1); 3/3 pass.
+- **`previews` "seek-and-play cycles never stall"** (4/4 failures). Instrumented: on this software-GL host a play's first
+  frame after a seek took 0.76–1.2 s while frames came every ≈ 300 ms; the playback watchdog reset its frame-interval
+  estimate at every play, so each first frame got the fixed 600 ms window (later `4 ×` the interval) and a healthy slow
+  play was "recovered" as a stall. **Fix** (`apps/web/src/panels/program/playback-driver.ts`): the interval is kept
+  across plays and a play's first frame gets `8 ×` (≤ 2.5 s); a genuine stall is still kicked (unit test in
+  `apps/web/test/transport.test.ts` fails without the fix). 5/5 pass afterwards.
