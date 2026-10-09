@@ -9,6 +9,7 @@ import { quoteFilterPath } from '../src/color/extension.ts';
 import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
 import { loadLottieFile } from '../src/imports/lottie.ts';
 import { ModelStore } from '../src/processing/models.ts';
+import { openerFor } from '../src/routes/gaps.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { filterPath, filterValue } from '../src/tools/filter-text.ts';
@@ -265,6 +266,126 @@ describe('DATA-5: a Lottie file embeds only picture files next to it', () => {
 		expect(assets[0]!.p.startsWith('data:image/png;base64,')).toBe(true);
 		expect(assets[1]!.p).not.toContain('base64');
 		expect(JSON.stringify(doc)).not.toContain(Buffer.from('%PDF-1.4 my tax').toString('base64').slice(0, 12));
-		expect(info.warnings.join(' ')).toContain('taxes.pdf');
+		expect((info.warnings ?? []).join(' ')).toContain('taxes.pdf');
+	});
+});
+
+describe('ENG-4: project ids in paths are validated', () => {
+	it('recovery routes cannot leave the project folder (no rm -rf of <elsewhere>/recovery/<name>)', async () => {
+		const app = await makeApp();
+		const outside = tempAppdir('jasper-victim-');
+		const victim = join(outside, 'recovery', 'victim');
+		mkdirSync(victim, { recursive: true });
+		writeFileSync(join(victim, 'thesis.txt'), 'months of work');
+		writeFileSync(join(victim, 'snapshot.jasper'), '{"secret":true}');
+		writeFileSync(
+			join(victim, 'session.json'),
+			'{"sessionId":"victim","projectId":"x","savedAt":"2026-01-01T00:00:00.000Z","baseRevision":0}',
+		);
+		// From <appdir>/projects up to the filesystem root, then down to the victim folder (a path parameter is at most
+		// 100 characters, which bounds the depth, not the bug).
+		const up = join(app.appdir, 'projects').split('/').filter(Boolean).length;
+		const id = `${'..%2F'.repeat(up)}${outside.replace(/^\/+/, '').replaceAll('/', '%2F')}`;
+		expect(id.length).toBeLessThanOrEqual(100);
+		const del = await app.inject({
+			method: 'DELETE',
+			url: `/api/projects/${id}/recovery/victim`,
+			headers: H,
+		});
+		expect(del.statusCode).toBe(404);
+		expect(existsSync(join(victim, 'thesis.txt'))).toBe(true);
+		const get = await app.inject({ method: 'GET', url: `/api/projects/${id}/recovery/victim`, headers: H });
+		expect(get.statusCode).toBe(404);
+		expect(get.body).not.toContain('secret');
+	});
+
+	it('media jobs refuse a project id that is not one', async () => {
+		const app = await makeApp();
+		const dir = tempAppdir('jasper-mj-');
+		const svg = join(dir, 'pic.svg');
+		writeFileSync(
+			svg,
+			'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>',
+		);
+		const reg = await register(app, svg);
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/media-jobs',
+			headers: { ...H, 'content-type': 'application/json' },
+			payload: {
+				projectId: '../../escaped',
+				op: 'copy',
+				destination: { mode: 'project' },
+				items: [{ mediaKey: reg.mediaKey, mediaId: 'med_1' }],
+			},
+		});
+		expect(r.statusCode).toBe(400);
+		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+		await new Promise((res) => setTimeout(res, 300));
+		expect(existsSync(join(app.appdir, 'escaped'))).toBe(false);
+	});
+});
+
+describe('ENG-5: Edit Original never runs a program', () => {
+	it('the Windows opener does not put the path on a command line', () => {
+		const hostile = 'C:\\media\\a&calc.exe&.mp4';
+		const o = openerFor('open', hostile, 'win32');
+		expect(o.cmd).not.toMatch(/cmd(\.exe)?$/i);
+		expect(o.args.join(' ')).not.toContain('calc');
+		expect(o.env).toEqual({ JASPER_OPEN_PATH: hostile });
+	});
+
+	it('only media and document files are opened; programs, launchers and extensionless files are refused', async () => {
+		const app = await makeApp();
+		const dir = tempAppdir('jasper-open-');
+		const svgText =
+			'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>';
+		const prev = process.env.JASPER_OPEN_COMMAND;
+		process.env.JASPER_OPEN_COMMAND = 'true';
+		try {
+			// A picture by content (a PNG; media are probed by content) under names the OS opener would run or launch.
+			const png = Buffer.from(
+				'89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201ffa5e1a2a30000000049454e44ae426082',
+				'hex',
+			);
+			let refused = 0;
+			for (const [i, name] of ['photo.hta', 'photo.pif', 'photo.scpt', 'photo.py', 'photo'].entries()) {
+				const file = join(dir, name);
+				writeFileSync(file, Buffer.concat([png, Buffer.alloc(i + 1, 0x20)]));
+				const reg = await register(app, file).catch(() => null);
+				if (!reg) continue; // not registrable under that name: nothing to open
+				const r = await app.inject({
+					method: 'POST',
+					url: `/api/media/${reg.mediaKey}/open`,
+					headers: { ...H, 'content-type': 'application/json' },
+					payload: { action: 'open' },
+				});
+				expect(r.statusCode, name).toBe(400);
+				expect(r.json().code).toBe('NOT_MEDIA');
+				refused++;
+				const reveal = await app.inject({
+					method: 'POST',
+					url: `/api/media/${reg.mediaKey}/open`,
+					headers: { ...H, 'content-type': 'application/json' },
+					payload: { action: 'reveal' },
+				});
+				expect(reveal.statusCode, name).toBe(200);
+			}
+			// The polyglots really register as media (so the refusal above is what protects).
+			expect(refused).toBeGreaterThanOrEqual(3);
+			const ok = join(dir, 'photo.svg');
+			writeFileSync(ok, svgText);
+			const reg = await register(app, ok);
+			const r = await app.inject({
+				method: 'POST',
+				url: `/api/media/${reg.mediaKey}/open`,
+				headers: { ...H, 'content-type': 'application/json' },
+				payload: { action: 'open' },
+			});
+			expect(r.statusCode).toBe(200);
+		} finally {
+			if (prev === undefined) delete process.env.JASPER_OPEN_COMMAND;
+			else process.env.JASPER_OPEN_COMMAND = prev;
+		}
 	});
 });

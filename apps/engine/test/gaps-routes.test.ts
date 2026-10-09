@@ -14,6 +14,11 @@ describe('Edit Original routes', () => {
 			cmd: 'explorer.exe',
 			args: ['/select,C:\\m\\a.mov'],
 		});
+		// Security review ENG-5: Windows "open" passes the path in the environment, never on a cmd.exe command line.
+		expect(openerFor('open', 'C:\\m\\a.mov', 'win32')).toMatchObject({
+			cmd: 'powershell.exe',
+			env: { JASPER_OPEN_PATH: 'C:\\m\\a.mov' },
+		});
 		expect(openerFor('reveal', '/m/a.mov', 'linux')).toEqual({ cmd: 'xdg-open', args: ['/m'] });
 		expect(openerFor('open', '/m/a.mov', 'linux')).toEqual({ cmd: 'xdg-open', args: ['/m/a.mov'] });
 		expect(openerFor('open', '/m/a.mov', 'linux', 'true')).toEqual({

@@ -22,6 +22,8 @@ import { KeyedMutex } from '../tools/mutex.ts';
 import type { LeaseManager } from './leases.ts';
 
 const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
+/** Whether `id` is an engine project id (what every path under `<appdir>/projects/` is built from). */
+export const isProjectId = (id: unknown): id is string => typeof id === 'string' && PROJECT_ID_RE.test(id);
 const VERSION_INTERVAL_MS = 5 * 60 * 1000;
 /** Version ids: `<ISO stamp>` (auto), `<ISO stamp>-restore` (before-restore), `schema-v<N>-backup`. */
 const VERSION_ID_RE = /^(?:\d{4}-\d{2}-\d{2}T[\d-]+Z(?:-restore)?|schema-v\d{1,4}-backup)$/;

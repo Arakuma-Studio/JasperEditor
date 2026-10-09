@@ -23,6 +23,7 @@ import {
 	type ScratchLocation,
 	WarpAnalysisRequestSchema,
 } from '@jasper/api';
+import { isOpenableFile } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
 import { MediaJobService } from '../gaps/media-jobs.ts';
@@ -32,6 +33,7 @@ import { ReframeService } from '../gaps/reframe.ts';
 import { renderOptimization, setRenderOptimization } from '../gaps/render-budget.ts';
 import { WarpAnalysisService } from '../gaps/warp-analysis.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
+import { isProjectId } from '../projects/store.ts';
 import type { RotoService } from '../roto/service.ts';
 import { atomicWriteJson, freeDiskBytes } from '../tools/fs.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -39,8 +41,6 @@ import { coreServices } from '../tools/services.ts';
 
 type K = { Params: { mediaKey: string } };
 type P = { Params: { projectId: string } };
-
-const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
 
 /** Exists / writable / free space of a folder (the nearest existing parent for the space of a missing one). */
 export async function describeFolder(path: string, expose: boolean): Promise<ScratchLocation> {
@@ -64,33 +64,45 @@ export async function describeFolder(path: string, expose: boolean): Promise<Scr
 	return { path: expose ? path : null, exists, writable: exists ? writable : false, freeBytes: free };
 }
 
-/** Never `open` these with the host opener: it would run a program instead of showing media. */
-const EXECUTABLE =
-	/\.(exe|com|bat|cmd|msi|scr|ps1|vbs|js|jse|wsf|lnk|url|jar|sh|bash|zsh|command|app|desktop|appimage|run|bin|pkg|dmg|deb|rpm)$/i;
-
 /** The host command that reveals / opens a path (overridable with `JASPER_OPEN_COMMAND` for tests and kiosks). */
 export function openerFor(
 	action: 'reveal' | 'open',
 	path: string,
 	platform: NodeJS.Platform = process.platform,
 	override?: string,
-): { cmd: string; args: string[] } {
+): { cmd: string; args: string[]; env?: Record<string, string> } {
 	if (override) return { cmd: override, args: [action, path] };
 	if (platform === 'darwin') return { cmd: 'open', args: action === 'reveal' ? ['-R', path] : [path] };
 	if (platform === 'win32')
 		return action === 'reveal'
 			? { cmd: 'explorer.exe', args: [`/select,${path}`] }
-			: { cmd: 'cmd.exe', args: ['/c', 'start', '""', path] };
+			: // Security review ENG-5: never through `cmd.exe /c start`, which parses the path as a command line (a
+				// file named `a&calc.exe&.mp4` ran calc.exe). The path travels in the environment; the command is fixed.
+				{
+					cmd: 'powershell.exe',
+					args: [
+						'-NoProfile',
+						'-NonInteractive',
+						'-Command',
+						'Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH',
+					],
+					env: { JASPER_OPEN_PATH: path },
+				};
 	// Linux / BSD: freedesktop. xdg-open cannot select a file, so reveal opens its folder.
 	return { cmd: 'xdg-open', args: [action === 'reveal' ? dirname(path) : path] };
 }
 
 /** Spawns the opener detached; resolves when it started (ENOENT → a typed error). */
-function launch(cmd: string, args: string[]): Promise<void> {
+function launch(cmd: string, args: string[], env?: Record<string, string>): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let child: ReturnType<typeof spawn>;
 		try {
-			child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
+			child = spawn(cmd, args, {
+				detached: true,
+				stdio: 'ignore',
+				windowsHide: true,
+				...(env ? { env: { ...process.env, ...env } } : {}),
+			});
 		} catch (e) {
 			reject(e);
 			return;
@@ -224,7 +236,7 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		'/api/projects/:projectId/scratch',
 		guarded<P>(async (req) => {
 			const id = req.params.projectId;
-			if (!PROJECT_ID_RE.test(id)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			if (!isProjectId(id)) throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
 			const paths = core.config.paths;
 			const expose = local();
 			return {
@@ -294,11 +306,15 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 			const { action } = parseOr400(MediaOpenRequestSchema, req.body ?? {});
 			const { path, exists } = await locate(req.params.mediaKey);
 			if (!path || !exists) throw new HttpError(404, 'MEDIA_OFFLINE', 'The media file is offline');
-			if (action === 'open' && EXECUTABLE.test(path))
-				throw new HttpError(400, 'NOT_MEDIA', 'This file is a program, not media; it is not opened');
-			const { cmd, args } = openerFor(action, path, process.platform, process.env.JASPER_OPEN_COMMAND);
+			if (action === 'open' && !isOpenableFile(path))
+				throw new HttpError(
+					400,
+					'NOT_MEDIA',
+					'Only media and document files are opened in their application; reveal this one in the file browser instead',
+				);
+			const { cmd, args, env } = openerFor(action, path, process.platform, process.env.JASPER_OPEN_COMMAND);
 			try {
-				await launch(cmd, args);
+				await launch(cmd, args, env);
 			} catch (e) {
 				const code = (e as NodeJS.ErrnoException).code;
 				throw new HttpError(
