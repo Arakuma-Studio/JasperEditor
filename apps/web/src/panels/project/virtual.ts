@@ -3,7 +3,7 @@
 // frame pay for all of them (opening a 2 000-item project took seconds; scrolling ran at ≈ 30 fps, layerization
 // bound). From `VIRTUALIZE_MIN_ROWS` items on, only the rows in view (plus a screen of overscan) are rendered between
 // two spacers that keep the scroll height; smaller bins render every row as before.
-import { type RefObject, useEffect, useLayoutEffect, useState } from 'react';
+import { type RefObject, useEffect, useState } from 'react';
 
 /** Bins with fewer items render every row (identical DOM to before windowing). */
 export const VIRTUALIZE_MIN_ROWS = 200;
@@ -36,7 +36,9 @@ export function useRowWindow(opts: {
 	const { scroll, list, rows, enabled, measure } = opts;
 	const [win, setWin] = useState<RowWindow>({ on: false, start: 0, end: rows, rowH: 0 });
 	const on = enabled && rows >= 1;
-	useLayoutEffect(() => {
+	// A passive effect: the scroll container is the parent's element, whose ref is attached after this component's
+	// layout effects run.
+	useEffect(() => {
 		if (!on) {
 			setWin((w) => (w.on || w.end !== rows ? { on: false, start: 0, end: rows, rowH: 0 } : w));
 			return;

@@ -121,7 +121,7 @@ test('scrolling and zooming a 5 000-clip timeline stay above 50 fps', async ({ p
 		const v = st.views[st.activeSequenceId]!;
 		const clips = s.getCommitted().sequences[st.activeSequenceId]!.clips;
 		const out: number[] = [];
-		for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-track-id] [data-clip-id]'))) {
+		for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-testid="timeline-track-area"] [data-track-id] [data-clip-id]'))) {
 			const r = el.getBoundingClientRect();
 			if (r.right < area.left || r.left > area.right) continue;
 			const c = clips[el.dataset.clipId!];
