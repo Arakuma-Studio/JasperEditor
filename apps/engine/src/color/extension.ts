@@ -19,6 +19,7 @@
 // memo (state key → file) skips the bake itself for states seen before. The text is byte-identical to before (same
 // lattice, same 6-decimal values), so the export output does not change. Files are pinned for the export
 // (`ctx.pin`) before they are reused or written: the cache GC never removes a LUT an export is about to read.
+
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -44,6 +45,7 @@ import {
 } from '@jasper/project';
 import { type EffectFilterContext, type NativeExtension, sampleRuns } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
+import { filterPath } from '../tools/filter-text.ts';
 import { exists } from '../tools/fs.ts';
 import { readCubeFile } from './prober.ts';
 
@@ -90,9 +92,9 @@ type RunState = { effects: ColorRunEffect[]; key: string };
 const hasKeyframes = (fx: RenderVisualClip['effects'][number]) =>
 	Object.values(fx.params).some((a) => isAnimated(a));
 
-/** Quoted filter-option value (single quotes; `'` itself is closed, escaped and reopened). */
+/** A file path as a filter-option value, escaped for both FFmpeg parsing levels (tools/filter-text.ts). */
 export function quoteFilterPath(path: string): string {
-	return `'${path.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`;
+	return filterPath(path);
 }
 
 /** Referenced `{mediaId}` values of a clip's colour effects (static values and keyframes). */

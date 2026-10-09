@@ -4,14 +4,13 @@
 // the WASM build of the same library (proc/vidstab/).
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
+import { filterPath } from '../../tools/filter-text.ts';
 import { exitOf, spawnFfmpeg } from './ffio.ts';
 import { assertLgplFilters, fromFormatToRgb48, toFormat } from './filters.ts';
 import type { DecodeSpec, FrameStep, StepContext } from './types.ts';
 
-/** Escapes a value for a filtergraph option (`:`, `\`, `'`, `,`). */
-function ffEscape(value: string): string {
-	return value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/,/g, '\\,');
-}
+/** A file path escaped for both filtergraph parsing levels (tools/filter-text.ts). */
+const ffEscape = filterPath;
 
 function vidstabDetectFilter(step: Extract<ProcessStep, { op: 'stabilize' }>, trf: string): string {
 	return `vidstabdetect=shakiness=${step.shakiness ?? 5}:accuracy=15:stepsize=4:mincontrast=0.2:result=${ffEscape(trf)}`;

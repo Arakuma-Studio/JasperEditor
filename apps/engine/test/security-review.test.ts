@@ -1,12 +1,16 @@
 // Regressions of the adversarial security review (docs/security-review.md). One `it` per confirmed finding.
-import { existsSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { quoteFilterPath } from '../src/color/extension.ts';
 import { ModelStore } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
-import { closeApps, H, makeApp, register, tempAppdir } from './helpers.ts';
+import { resolveBinaries } from '../src/tools/ffmpeg.ts';
+import { filterPath, filterValue } from '../src/tools/filter-text.ts';
+import { closeApps, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
 
 /** An HTTP server whose every response is an endless body (stops after 256 MiB); counts the bytes it wrote. */
 async function endlessServer(): Promise<{ url: string; sent: () => number; close: () => Promise<void> }> {
@@ -118,5 +122,66 @@ describe('ENG-2: model downloads stop at the catalogue size', () => {
 		} finally {
 			await srv.close();
 		}
+	});
+});
+
+describe('ENG-3: file paths and text in filter text survive both FFmpeg parsing levels', () => {
+	const { ffmpeg } = resolveBinaries({
+		vendorDir: join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`),
+	});
+	// An identity-ish 2³ LUT that turns red into blue: proves the LUT was really loaded.
+	const LUT = 'LUT_3D_SIZE 2\n0 0 0\n0 0 1\n0 1 0\n0 1 1\n1 0 0\n1 0 1\n1 1 0\n1 1 1\n';
+	const names = [
+		'plain.cube',
+		'drive:colon.cube',
+		"it's.cube",
+		'comma,semi;bracket[x].cube',
+		'back\\slash.cube',
+		'x:interp=nearest.cube',
+		"x',hflip,'.cube",
+		'spaces and = equals.cube',
+	];
+	it.skipIf(!ffmpeg).each(names)('lut3d loads %s', (name) => {
+		const dir = join(tempAppdir('jasper-filterpath-'), 'a:b');
+		mkdirSync(dir, { recursive: true });
+		const file = join(dir, name);
+		writeFileSync(file, LUT);
+		const r = spawnSync(
+			ffmpeg!,
+			[
+				'-hide_banner',
+				'-loglevel',
+				'error',
+				'-f',
+				'lavfi',
+				'-i',
+				'color=c=red:s=4x4',
+				'-filter_complex',
+				`[0:v]format=rgb24,lut3d=file=${quoteFilterPath(file)}:interp=tetrahedral[o]`,
+				'-map',
+				'[o]',
+				'-frames:v',
+				'1',
+				'-f',
+				'rawvideo',
+				'-pix_fmt',
+				'rgb24',
+				'-',
+			],
+			{ encoding: 'buffer' },
+		);
+		expect(r.stderr.toString()).toBe('');
+		expect(r.status).toBe(0);
+		const [red, green, blue] = [...r.stdout.subarray(0, 3)];
+		expect(red).toBeLessThan(8);
+		expect(green).toBeLessThan(8);
+		expect(blue).toBeGreaterThan(245);
+	});
+
+	it('filterValue escapes both levels', () => {
+		expect(filterValue('C:/a.cube')).toBe("'C\\:/a.cube'");
+		expect(filterValue("it's")).toBe("'it\\'\\''s'");
+		expect(filterPath('C:\\a\\b.cube', 'win32')).toBe("'C\\:/a/b.cube'");
+		expect(filterPath('/a\\b.cube', 'linux')).toBe("'/a\\\\b.cube'");
 	});
 });
