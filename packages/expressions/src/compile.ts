@@ -224,6 +224,72 @@ class Emitter {
 const cache = new Map<string, CompiledSource>();
 const MAX_CACHE = 4096;
 
+/** Names the expression realm defines on its (non-extensible) global object; see harden.ts. */
+let realmGlobals: ReadonlySet<string> = new Set();
+const NEVER_HOISTED = new Set(['arguments', 'eval', '__r']);
+
+/** Called by the runtime once its realm is built: implicit globals other than these become function locals. */
+export function setRealmGlobals(names: Iterable<string>): void {
+	realmGlobals = new Set(names);
+	cache.clear();
+}
+
+function patternNames(node: AnyNode | null | undefined, out: Set<string>): void {
+	if (!node) return;
+	switch (node.type) {
+		case 'Identifier':
+			out.add(node.name as string);
+			return;
+		case 'ArrayPattern':
+			for (const el of node.elements as (AnyNode | null)[]) patternNames(el, out);
+			return;
+		case 'ObjectPattern':
+			for (const p of node.properties as AnyNode[])
+				patternNames((p.type === 'RestElement' ? p.argument : p.value) as AnyNode, out);
+			return;
+		case 'AssignmentPattern':
+			patternNames(node.left as AnyNode, out);
+			return;
+		case 'RestElement':
+			patternNames(node.argument as AnyNode, out);
+			return;
+		default:
+			return; // member expressions assign properties, not bindings
+	}
+}
+
+/**
+ * Identifiers the program assigns without declaring them at its top level (sloppy-mode implicit globals). They are
+ * declared as `var`s of the compiled function: the realm's global object is non-extensible (harden.ts), and an
+ * expression's variables must not outlive its evaluation anyway (After Effects keeps no state between
+ * evaluations). Names declared with `let`/`const`/`class` at the top level are excluded (a `var` of the same name
+ * would be a redeclaration); names declared only in nested scopes are still hoisted, which is harmless (the
+ * nested declaration shadows the hoisted one exactly as it shadowed the global).
+ */
+function implicitGlobals(program: AnyNode): string[] {
+	const assigned = new Set<string>();
+	const stack: AnyNode[] = [program];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.type === 'AssignmentExpression') patternNames(node.left as AnyNode, assigned);
+		else if (node.type === 'UpdateExpression') patternNames(node.argument as AnyNode, assigned);
+		else if (
+			(node.type === 'ForInStatement' || node.type === 'ForOfStatement') &&
+			(node.left as AnyNode).type !== 'VariableDeclaration'
+		)
+			patternNames(node.left as AnyNode, assigned);
+		for (const c of children(node)) stack.push(c);
+	}
+	if (assigned.size === 0) return [];
+	const lexical = new Set<string>();
+	for (const s of program.body as AnyNode[]) {
+		if (s.type === 'VariableDeclaration' && s.kind !== 'var')
+			for (const d of s.declarations as AnyNode[]) patternNames(d.id as AnyNode, lexical);
+		else if (s.type === 'ClassDeclaration' && s.id) patternNames(s.id as AnyNode, lexical);
+	}
+	return [...assigned].filter((n) => !lexical.has(n) && !realmGlobals.has(n) && !NEVER_HOISTED.has(n)).sort();
+}
+
 /**
  * Transforms an expression's text into the source of a zero-argument function returning the expression's result
  * (array maths applied). Syntax errors come back as `Error at line N: message` (AE's wording). Cached per text.
@@ -263,13 +329,16 @@ function compileUncached(text: string): CompiledSource {
 	} catch {
 		return { ok: false, error: 'Error: expression is too complex' };
 	}
-	// `{`…`}` keeps `let`/`const` block-scoped; the trailing newline closes a final `//` comment.
-	return { ok: true, code: `(function(){var __r;${body}\n;return __r;})` };
+	// The trailing newline closes a final `//` comment.
+	const locals = implicitGlobals(ast)
+		.map((n) => `,${n}`)
+		.join('');
+	return { ok: true, code: `(function(){var __r${locals};${body}\n;return __r;})` };
 }
 
 /** Just the transformed body (tests and debugging). */
 export function rewriteForTest(text: string): string {
 	const c = compileExpressionSource(text);
 	if (!c.ok) throw new Error(c.error);
-	return c.code.slice('(function(){var __r;'.length, -'\n;return __r;})'.length);
+	return c.code.slice(c.code.indexOf(';') + 1, -'\n;return __r;})'.length);
 }
