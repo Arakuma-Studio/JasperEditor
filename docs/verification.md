@@ -35,3 +35,42 @@ Branch `feat/verify`, starting at `integrate/parity` 4870ea54.
     `scenes.mp4` is pinned (two regenerations are byte-identical), using the failing instance's colours. There are
     two new regression tests in `packages/project/test/time-scenes.test.ts`; both fail with hard bins. Before the
     change, 12 random instances of the fixture and the new pinned one all still gave P = R = 1.
+
+## 3. Opt-in suites
+
+Opt-in switches found with `grep -rn "process.env.<X>" … runIf/skipIf` across the repository (gating flags only; the
+`*_DUMP`, `*_GALLERY`, `*_OUT`, `SCENE_REPORT` and similar flags only write extra artefacts):
+
+| Flag | Gates |
+|---|---|
+| `REMOTION_E2E=1` | 31 compositions suites, 14 engine suites, motion render parity, MCP QA render tier |
+| `MG_E2E=1` | motion-graphics bundle suites (engine `mg-bundles`, MCP `compositions`) |
+| `MG_PARITY=1` | `packages/mg-templates` native jasper-mg comparison (needs `pnpm mg:build`) |
+| `SPEECH_E2E=1` | speech model download + transcription (`apps/engine/test/speech-model.e2e.test.ts`, `e2e/speech.spec.ts`) |
+| `FUZZ=1` (`FUZZ_SEED`) | 20× fuzz cases; `packages/project/test/fuzz.test.ts` 10,000 runs |
+| `JASPER_REQUIRE_ORACLES=1` | a missing ffmpeg/ffprobe fails instead of skipping (CI) |
+| `PERF=1`, `NATIVE_ANIM_BENCH=1`, `MB_PERF=1` | exact timing budgets / benchmarks |
+| `MCP_QA=1` | the MCP scenario QA (`pnpm qa:mcp`) |
+| `FX_GL=0`, `RETIME_GL=0` | opt-*out* of GL suites (they run when a Chrome is found) |
+
+Test ports: the MCP suites default to fixed ports (48145, 48551–48587, 49025–49026, 49443); every run here set them
+to this workstream's range (49564–49573) so parallel agents could not collide.
+
+### 3.1 `REMOTION_E2E=1`
+
+| Run | Command | Result |
+|---|---|---|
+| compositions | `REMOTION_E2E=1 pnpm vitest run --project @jasper/compositions --maxWorkers=2` | 73 files / 660 tests pass, 6 files skipped (gallery-only flags), 41 min |
+| engine + motion + MCP | `REMOTION_E2E=1 MG_E2E=1 … pnpm vitest run --project @jasper/engine --project @jasper/motion --project @jasper/mcp --maxWorkers=2` | 1,216 pass, **4 fail** (below) |
+
+Failures and fixes:
+
+- `packages/motion/test/determinism-render.e2e.test.ts`, 3 Player tests: `__parity` undefined. The harness page had no
+  `<meta charset>`, so Chrome read the `file://` bundle as Latin-1. `packages/project/src/captions/formats/xml.ts`
+  (captions workstream) wrote its XML-name regex with literal `À-￿`, which became an invalid range, so the whole bundle
+  failed to evaluate. **Fix:** the regex uses `À-￿` escapes (same set), and the harness declares UTF-8.
+  6/6 pass.
+- `apps/engine/test/interchange-prerender.e2e.test.ts`, text pre-render: the frame is correct ("Lower third", alpha 255
+  on the glyphs, 0 elsewhere; looked at), but the check took the max of a 64×36 area downscale (20×), which for ≈10 px
+  strokes cannot exceed ≈60 % coverage (147). **Fix:** the same claim measured at full resolution: corner 0,
+  peak > 250, more than 2,000 opaque pixels. Passes.
