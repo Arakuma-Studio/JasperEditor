@@ -181,7 +181,7 @@ high-contrast themes) runs over the main workspaces; see §4 for its result.
 | Morph Cut | `transition-premiere-gl.test.ts`: a moved square morphs (one square half-way); textured jump cut: mid-frame error < 0.5 × a film dissolve's and < 25 levels; contract A at 0 / B at 1; fingerprints re-blessed for the new algorithm | pass |
 | Essential Graphics | `packages/project/test/gaps-graphics.test.ts`: align / distribute, responsive time, roll positions, pins after a frame-size change, refusals, undo, remap in the snapshot, roll keys, INV-GRAPHIC repair, .jgt round trip | pass |
 | i18n | `apps/web/test/i18n.test.ts`: every extracted UI string and model name has Spanish with the same placeholders; transform rules | pass |
-| Built app | `e2e/gaps.spec.ts` (`E2E_PORT=49540 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/gaps.spec.ts`), screenshots in `test-results/gaps/` | see the final report |
+| Built app | `e2e/gaps.spec.ts` (`E2E_PORT=49540 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/gaps.spec.ts`), screenshots in `test-results/gaps/`: axe-core WCAG 2.1 A/AA audit of six workspaces × default and high-contrast themes with no serious or critical violation; Warp Stabilizer banner then analysis stored (> 420 frames); Essential Graphics New Text → second layer → align left; Auto Reframe Sequence → 608 × 1080 copy; Spanish UI after a restart | 5 / 5 pass |
 
 Plan cost (measured with `tsx` on a 12-core machine at load average ≈ 50 from other agents, synthetic 1080p analysis):
 Perspective plans 900 frames in ≈ 0.1 s; Subspace Warp 300 frames ≈ 1.3–2.7 s, 900 frames ≈ 2.5–4 s (the smoothing and
