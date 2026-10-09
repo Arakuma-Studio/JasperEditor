@@ -19,6 +19,8 @@ import {
 import { serverInfo } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
+// Playwright's trace snapshots the DOM on every pointer action: that, not the editor, would be measured.
+test.use({ trace: 'off', screenshot: 'off' });
 
 const base = () => `http://127.0.0.1:${serverInfo().port}`;
 /** Frame-rate floor at this load (the budget divided by the factor a time budget is multiplied by). */
