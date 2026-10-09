@@ -53,8 +53,8 @@ export class Tracer {
 	async start(): Promise<void> {
 		this.cdp = await this.page.context().newCDPSession(this.page);
 		this.events = [];
-		this.cdp.on('Tracing.dataCollected', (e: { value: TraceEvent[] }) => {
-			for (const ev of e.value) this.events.push(ev);
+		this.cdp.on('Tracing.dataCollected', (e) => {
+			for (const ev of e.value) this.events.push(ev as unknown as TraceEvent);
 		});
 		await this.cdp.send('Tracing.start', {
 			transferMode: 'ReportEvents',
