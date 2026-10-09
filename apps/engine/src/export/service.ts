@@ -1683,6 +1683,7 @@ export class ExportService {
 				signal: ctx.signal,
 				ffmpeg: this.deps.ff,
 				concurrency: remotionConcurrency(ctx.slots),
+				log: ctx.log,
 				onSpawn: ctx.trackChild,
 				onProgress: (p) =>
 					ctx.progress(p.progress, {
@@ -1721,6 +1722,7 @@ export class ExportService {
 				output: target,
 				signal: ctx.signal,
 				concurrency: remotionConcurrency(ctx.slots),
+				log: ctx.log,
 				crf: rp.mode === 'direct' ? rp.crf : planned.output.crf,
 				x264Preset: planned.output.x264Preset,
 				audioBitrateKbps: planned.output.audioBitrateKbps,

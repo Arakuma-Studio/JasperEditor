@@ -1207,6 +1207,7 @@ export class LayerBakeService {
 					ffmpeg: ff,
 					...(concurrency ? { concurrency } : {}),
 					...(o.browser ? { browser: o.browser } : {}),
+					log: ctx.log,
 					onSpawn: ctx.trackChild,
 					onProgress: (p) =>
 						ctx.progress(p.progress * weight * 0.9, {

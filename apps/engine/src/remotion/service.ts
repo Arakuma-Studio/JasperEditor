@@ -95,6 +95,8 @@ type AlphaMasterInput = {
 	browser?: SharedRenderBrowser;
 	onSpawn?(child: ChildProcess): void;
 	onProgress?(p: { renderedFrames: number; totalFrames: number; progress: number }): void;
+	/** Job log (the single-page retry after a timeout is noted there). */
+	log?(line: string): void;
 };
 
 type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
@@ -128,6 +130,8 @@ type RemotionRenderInput = {
 	output: string;
 	signal: AbortSignal;
 	concurrency?: number;
+	/** Job log (the single-page retry after a timeout is noted there). */
+	log?(line: string): void;
 	onProgress?(p: { progress: number; renderedFrames: number; encodedFrames: number; stage: string }): void;
 	crf?: number;
 	x264Preset?: 'veryfast' | 'medium' | 'slow';
@@ -756,58 +760,62 @@ export class RemotionService {
 		try {
 			instance = await this.renderBrowser(r, browser, concurrency);
 			await this.recordUsage('media', 'export');
-			await r.renderMedia({
-				serveUrl,
-				composition,
-				inputProps: input.inputProps,
-				...(input.intermediate
-					? {
-							codec: 'prores' as const,
-							proResProfile: 'hq' as const,
-							...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
-						}
-					: input.vp9
-						? {
-								codec: 'vp9' as const,
-								...(input.muted ? {} : { audioCodec: 'opus' as const }),
-								pixelFormat: 'yuv420p' as const,
-								crf: input.vp9.crf,
-								...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
-								...(input.vp9.ffmpegOverride ? { ffmpegOverride: input.vp9.ffmpegOverride } : {}),
-								...(input.audioBitrateKbps ? { audioBitrate: `${input.audioBitrateKbps}k` } : {}),
-							}
-						: {
-								codec: 'h264' as const,
-								...(input.muted ? {} : { audioCodec: 'aac' as const }),
-								pixelFormat: 'yuv420p' as const,
-								crf: input.crf ?? 18,
-								x264Preset: input.x264Preset ?? 'medium',
+			await withSinglePageRetry(concurrency, input.signal, input.log, (pages) =>
+				r
+					.renderMedia({
+						serveUrl,
+						composition,
+						inputProps: input.inputProps,
+						...(input.intermediate
+							? {
+									codec: 'prores' as const,
+									proResProfile: 'hq' as const,
+									...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
+								}
+							: input.vp9
+								? {
+										codec: 'vp9' as const,
+										...(input.muted ? {} : { audioCodec: 'opus' as const }),
+										pixelFormat: 'yuv420p' as const,
+										crf: input.vp9.crf,
+										...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
+										...(input.vp9.ffmpegOverride ? { ffmpegOverride: input.vp9.ffmpegOverride } : {}),
+										...(input.audioBitrateKbps ? { audioBitrate: `${input.audioBitrateKbps}k` } : {}),
+									}
+								: {
+										codec: 'h264' as const,
+										...(input.muted ? {} : { audioCodec: 'aac' as const }),
+										pixelFormat: 'yuv420p' as const,
+										crf: input.crf ?? 18,
+										x264Preset: input.x264Preset ?? 'medium',
+									}),
+						...this.binariesOption(),
+						outputLocation: input.output,
+						...(input.muted ? { muted: true } : {}),
+						concurrency: pages,
+						cancelSignal,
+						timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+						licenseKey: this.licenseKey,
+						logLevel: 'error',
+						overwrite: true,
+						...(input.scale ? { scale: input.scale } : {}),
+						...browser,
+						...(instance ? { puppeteerInstance: instance } : {}),
+						onProgress: (p) =>
+							input.onProgress?.({
+								progress: p.progress,
+								renderedFrames: p.renderedFrames,
+								encodedFrames: p.encodedFrames,
+								stage:
+									p.stitchStage === 'muxing'
+										? 'Muxing'
+										: p.renderedFrames < composition.durationInFrames
+											? 'Rendering frames'
+											: 'Encoding',
 							}),
-				...this.binariesOption(),
-				outputLocation: input.output,
-				...(input.muted ? { muted: true } : {}),
-				concurrency,
-				cancelSignal,
-				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
-				licenseKey: this.licenseKey,
-				logLevel: 'error',
-				overwrite: true,
-				...(input.scale ? { scale: input.scale } : {}),
-				...browser,
-				...(instance ? { puppeteerInstance: instance } : {}),
-				onProgress: (p) =>
-					input.onProgress?.({
-						progress: p.progress,
-						renderedFrames: p.renderedFrames,
-						encodedFrames: p.encodedFrames,
-						stage:
-							p.stitchStage === 'muxing'
-								? 'Muxing'
-								: p.renderedFrames < composition.durationInFrames
-									? 'Rendering frames'
-									: 'Encoding',
-					}),
-			});
+					})
+					.then(() => undefined),
+			);
 			return { frames: composition.durationInFrames };
 		} catch (e) {
 			throw mapRenderError(e, input.signal);
@@ -841,24 +849,32 @@ export class RemotionService {
 			if (!input.browser) instance = await this.renderBrowser(r, browser, concurrency);
 			const puppeteer = input.browser?.instance ?? instance;
 			await this.recordUsage('media', 'layer-bake');
-			await r.renderMedia({
-				serveUrl,
-				composition,
-				inputProps: input.inputProps,
-				...ALPHA_MASTER_OPTIONS,
-				...this.binariesOption(),
-				outputLocation: raw,
-				concurrency,
-				cancelSignal,
-				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
-				licenseKey: this.licenseKey,
-				logLevel: 'error',
-				overwrite: true,
-				...browser,
-				...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
-				onProgress: (p) =>
-					input.onProgress?.({ renderedFrames: p.renderedFrames, totalFrames: total, progress: p.progress }),
-			});
+			await withSinglePageRetry(concurrency, input.signal, input.log, (pages) =>
+				r
+					.renderMedia({
+						serveUrl,
+						composition,
+						inputProps: input.inputProps,
+						...ALPHA_MASTER_OPTIONS,
+						...this.binariesOption(),
+						outputLocation: raw,
+						concurrency: pages,
+						cancelSignal,
+						timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+						licenseKey: this.licenseKey,
+						logLevel: 'error',
+						overwrite: true,
+						...browser,
+						...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
+						onProgress: (p) =>
+							input.onProgress?.({
+								renderedFrames: p.renderedFrames,
+								totalFrames: total,
+								progress: p.progress,
+							}),
+					})
+					.then(() => undefined),
+			);
 		} catch (e) {
 			throw mapRenderError(e, input.signal);
 		} finally {
@@ -947,6 +963,34 @@ function docHasColorEffects(doc: unknown): boolean {
 				)
 					return true;
 	return false;
+}
+
+/**
+ * Runs a multi-page render; when it times out (RENDER_TIMEOUT: a page's first frame, a frame extraction or a
+ * delayRender beyond DELAY_RENDER_TIMEOUT_MS) it is rendered once more on a single page before failing. N pages that
+ * mount a heavy composition at the same time (software GL, a loaded machine) each take about N times as long as one
+ * page alone: the verify workstream's cross-feature project took 25 s per still on one page and timed out on six
+ * (exports, previews and short ranges failed while the same frames rendered on one page). A real hang still fails —
+ * one attempt later — with the same typed error.
+ */
+export async function withSinglePageRetry(
+	concurrency: number,
+	signal: AbortSignal,
+	log: ((line: string) => void) | undefined,
+	render: (concurrency: number) => Promise<void>,
+): Promise<void> {
+	try {
+		await render(concurrency);
+	} catch (e) {
+		const mapped = mapRenderError(e, signal);
+		if (concurrency <= 1 || signal.aborted || (mapped as JobError).code !== 'RENDER_TIMEOUT') throw mapped;
+		log?.(`remotion: ${mapped.message.slice(0, 300)} — rendering again on one page (was ${concurrency})`);
+		try {
+			await render(1);
+		} catch (e2) {
+			throw mapRenderError(e2, signal);
+		}
+	}
 }
 
 function mapRenderError(e: unknown, signal: AbortSignal): Error {
