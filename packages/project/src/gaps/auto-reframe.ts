@@ -155,3 +155,37 @@ export function clipMediaSecondsAt(
 	const d = ((f - clip.start) * rate.den * sp) / rate.num;
 	return (clip.sourceIn ?? 0) / flicksPerSecond + (clip.speed?.reverse ? -d : d);
 }
+
+/** The subject analyses a sequence needs: one per media range its video clips show (engine media only). */
+export function reframeJobsFor(
+	doc: {
+		sequences: Record<string, { clips: Record<string, unknown>; settings: { frameRate: Rational } }>;
+		media: Record<string, { locators: readonly { type: string; key?: string }[]; probe: { streams: readonly unknown[] } }>;
+	},
+	sequenceId: string,
+): { mediaKey: string; startFrame: number; frameCount: number; clipIds: string[] }[] {
+	const seq = doc.sequences[sequenceId];
+	if (!seq) return [];
+	const rate = seq.settings.frameRate;
+	const jobs = new Map<string, { mediaKey: string; startFrame: number; frameCount: number; clipIds: string[] }>();
+	for (const raw of Object.values(seq.clips)) {
+		const c = raw as { id: string; kind: string; mediaId?: string; duration: number; sourceIn?: number; speed?: { rate?: number } };
+		if (c.kind !== 'video' || !c.mediaId) continue;
+		const asset = doc.media[c.mediaId];
+		const key = asset?.locators.find((l) => l.type === 'engine-store')?.key;
+		const vs = asset?.probe.streams.find((s) => (s as { type: string }).type === 'video') as
+			| { frameRate: Rational }
+			| undefined;
+		if (!key || !vs || !(vs.frameRate.num > 0)) continue;
+		const mf = (705_600_000 * vs.frameRate.den) / vs.frameRate.num;
+		const sp = Math.abs(c.speed?.rate ?? 1) || 1;
+		const startFrame = Math.max(0, Math.floor((c.sourceIn ?? 0) / mf) - 2);
+		const secs = (c.duration * rate.den * sp) / rate.num;
+		const frameCount = Math.min(54_000, Math.ceil((secs * vs.frameRate.num) / vs.frameRate.den) + 4);
+		const k = `${key}|${startFrame}|${frameCount}`;
+		const j = jobs.get(k) ?? { mediaKey: key, startFrame, frameCount, clipIds: [] };
+		j.clipIds.push(c.id);
+		jobs.set(k, j);
+	}
+	return [...jobs.values()];
+}

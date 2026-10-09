@@ -1,7 +1,7 @@
 // Workstream `gaps` MCP tools (docs/wp-notes/gaps.md): Find, Edit Original, Add / Delete Tracks, and (further down)
 // Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels, Warp Stabilizer,
 // Auto Reframe, Morph Cut and Essential Graphics templates. Edits are document commands (one transaction each).
-import type { MediaJobResult, RegisteredMedia, WarpAnalysisResult } from '@jasper/api';
+import type { MediaJobResult, ReframeResult, RegisteredMedia, WarpAnalysisResult } from '@jasper/api';
 import {
 	AUDIO_DISPLAY_FORMATS,
 	attachedProxyFrom,
@@ -23,6 +23,8 @@ import {
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
 	VIDEO_DISPLAY_FORMATS,
+	reframeJobsFor,
+	reframeSize,
 	WARP_STABILIZER_EFFECT_ID,
 	warpRequestFor,
 } from '@jasper/project';
@@ -59,6 +61,7 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - set_audio_channels: Clip ▸ Modify ▸ Audio Channels. Each routed clip = {streamIndex, map: source channel per clip channel (1 mono, 2 stereo, 6 for 5.1), mute: clip channels that play silence}. On timeline clips (clipIds: one routing per clip, typically a linked group) or on Project media items (itemIds: the audio clips future placements create; clips null = default). get_audio_channels lists a media's source channels and the routing.
 - project_manager: File ▸ Project Manager — mode "collect" copies every used file into destination, "consolidate" writes only the used part of each video / audio media plus handlesFrames (ProRes 422 HQ / WAV) and re-bases the clips; excludeUnused drops unchosen sequences and unused media items; includePreviews / includeProxies; dryRun only estimates the disk space. The copy is written as <destination>/<projectName>.jasper and registered as a new project (its id comes back).
 - stabilize_clip applies Effect ▸ Distort ▸ Warp Stabilizer to a video clip (Premiere params) and runs + stores its analysis (the editor also analyses in the background); exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).
+- auto_reframe_sequence: Sequence ▸ Auto Reframe Sequence — a copy at another aspect ("9:16", "1:1", "4:5", "16:9", "W:H") whose clips follow their subject with Position keyframes (faces when the face model is installed, else motion / contrast saliency). Morph Cut is the transition jasper.morph-cut (add it on a jump cut with transition.add).
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -1092,4 +1095,77 @@ export function registerGapsTools(ctx: ToolContext): void {
 			});
 		},
 	);
+
+	defineTool(
+		ctx,
+		'auto_reframe_sequence',
+		{
+			title: 'Auto Reframe Sequence',
+			description:
+				'Sequence ▸ Auto Reframe Sequence: analyses the subject of every video clip of a sequence on the engine (faces when the face model is installed, else motion / contrast / skin saliency), then makes a copy at another aspect ratio (aspect "1:1", "4:5", "9:16", "16:9" or "W:H") whose clips fill the frame and follow their subject with Position keyframes (tracking slower / default / faster). One undo step; returns the new sequence id, the reframed clips and the clips kept (already animated Motion).',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				aspect: z.string().regex(/^\d{1,3}:\d{1,3}$/).default('9:16'),
+				tracking: z.enum(['slower', 'default', 'faster']).default('default'),
+				name: z.string().min(1).max(255).optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, aspect, tracking, name }, extra) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const seq = seqOf(doc, sequenceId);
+			const [num, den] = aspect.split(':').map(Number) as [number, number];
+			if (!(num > 0 && den > 0)) throw new ToolError('E_INVALID_PARAM', `Bad aspect ${aspect}`);
+			const jobs = reframeJobsFor(doc as never, seq.id);
+			if (!jobs.length)
+				throw new ToolError('E_INVALID_PARAM', 'The sequence has no video clips of engine media to reframe');
+			const subjects: { clipId: string; start: number; frameDuration: number; points: number[] }[] = [];
+			const sources: string[] = [];
+			const base = ctx.link.target?.url ?? '';
+			for (const j of jobs) {
+				const job = await ctx.engine((c) =>
+					c.call('reframeAnalysis', {
+						body: { projectId, mediaKey: j.mediaKey, startFrame: j.startFrame, frameCount: j.frameCount },
+					}),
+				);
+				const { job: done, timedOut } = await waitJob(ctx, job.id, 60 * 60 * 1000, extra);
+				if (timedOut) return jsonResult({ ...jobBody(done, base), timedOut: true });
+				if (done.state !== 'succeeded')
+					throw new ToolError(
+						done.error?.code ?? 'JOB_FAILED',
+						done.error?.message ?? `The analysis ${done.state}`,
+						undefined,
+						{ jobId: done.id },
+					);
+				const r = done.result as ReframeResult;
+				sources.push(r.source + (r.note ? ` (${r.note})` : ''));
+				for (const clipId of j.clipIds)
+					subjects.push({ clipId, start: r.start, frameDuration: r.frameDuration, points: r.points });
+			}
+			const size = reframeSize(seq.settings.width, seq.settings.height, { num, den });
+			const res = await transact(ctx, projectId, {
+				label: 'Auto Reframe Sequence',
+				commands: [
+					{
+						type: 'sequence.autoReframe',
+						sequenceId: seq.id,
+						width: size.width,
+						height: size.height,
+						tracking,
+						...(name ? { name } : {}),
+						subjects,
+					},
+				],
+			});
+			const ok = requireOk(res);
+			return jsonResult({
+				...(ok.results[0] as object),
+				size,
+				subjectSources: [...new Set(sources)],
+				transaction: txBody(res, ok),
+			});
+		},
+	);
 }
+

@@ -42,6 +42,7 @@ import { trackHeight } from '../panels/timeline/model/layout.ts';
 import { detectRuntime, getDesktopBridge } from '../runtime/platform.ts';
 import { saveNow, setSkipUnloadFlush } from '../runtime/save.ts';
 import { registerWarpStabilizerUi } from '../gaps/warp-stabilizer.tsx';
+import { AUTO_REFRAME_DIALOG, registerAutoReframeDialog } from '../gaps/AutoReframeDialog.tsx';
 import { runCommand } from './registry.ts';
 import { apply, envOf, seekReveal, selectedClips } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -618,6 +619,23 @@ const sequenceSettings: UiCommand = {
 	},
 };
 
+const autoReframe: UiCommand = {
+	id: 'sequence.autoReframe',
+	label: 'Auto Reframe Sequence…',
+	description:
+		'Makes a copy of the active sequence at another aspect ratio (1:1, 4:5, 9:16, 16:9 or custom) whose clips follow their subject with Position keyframes.',
+	scope: 'global',
+	agentExposed: true,
+	when: (ctx) => hasSeq(ctx) && !ctx.session?.getState().readOnly,
+	disabledReason: () => 'Open a sequence',
+	run: (ctx) => {
+		const e = envOf(ctx);
+		if (!e) return;
+		registerAutoReframeDialog();
+		ctx.ui.openDialog(AUTO_REFRAME_DIALOG, { session: e.session, engine: ctx.engine, sequenceId: e.seq.id });
+	},
+};
+
 /** The media item of the selection for New Sequence From Clip (a picture or sound with a duration). */
 function fromClipMedia(ctx: CommandCtx): { mediaId: string; name: string; binId: string | null } | null {
 	const s = ctx.session;
@@ -742,6 +760,7 @@ gapsCommands.push(
 	projectManager,
 	audioChannels,
 	sequenceSettings,
+	autoReframe,
 	newSequenceFromClip,
 	projectSettings,
 	proxyDialog(

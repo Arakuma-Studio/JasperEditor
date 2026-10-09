@@ -271,6 +271,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.deleteRenderFilesInToOut', 'Delete Render Files In to Out'),
 			c('sequence.previewSettings', 'Video Previews…'),
 			sep,
+			// gaps (AI-2)
+			c('sequence.autoReframe', 'Auto Reframe Sequence…'),
+			sep,
 			c('timeline.matchFrame', 'Match Frame'),
 			c('timeline.reverseMatchFrame', 'Reverse Match Frame'),
 			c('timeline.revealNested', 'Reveal Nested Sequence'),
