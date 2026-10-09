@@ -149,7 +149,7 @@ work per frame from the Chrome trace (main-thread time between frame begins).
 | Scenario | Before (two runs) | After (two runs) | Budget |
 |---|---|---|---|
 | 30-step drag of 11 clips on 1 000: mean work per frame | 49.7 / 22.7 ms (p95 234 / 71) | 11.5 / 12.4 ms (p95 32 / 28) | < 16 ms — **met** |
-| the same drag: wall time | 8.05 / 3.32 s | 2.10 / 2.01 s | < 1.5 s — **missed** (floor of the scripted drag on this host: 1.35 s on a blank page) |
+| the same drag: wall time | 8.05 / 3.32 s | 2.10 / 2.01 s | < 1.5 s — **missed** (floor of the scripted drag on this host: 1.0–1.35 s on a blank page) |
 | trim on 1 000: mean / p95 | 27.9 / 133, 13.9 / 54 ms | 9.4 / 24, 14.8 / 45 ms | — |
 | playhead scrub on 1 000: mean / p95 | 16.6 / 64, 10.5 / 31 ms | 8.1 / 16, 11.2 / 25 ms | — |
 | selection clicks on 1 000: mean / p95 | 48.3 / 156, 29.2 / 90 ms | 11.0 / 26, 15.4 / 38 ms | — |
