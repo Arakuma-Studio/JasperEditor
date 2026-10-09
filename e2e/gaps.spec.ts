@@ -112,12 +112,9 @@ test('accessibility: no serious or critical axe violation in the main workspaces
 	const workspaces = ['editing', 'color', 'audio', 'effects', 'motion', 'captions'];
 	for (const theme of ['default', 'high-contrast']) {
 		if (theme === 'high-contrast') {
-			await page.evaluate(() => {
-				const raw = localStorage.getItem('jasper:ui-prefs');
-				const p = raw ? JSON.parse(raw) : {};
-				localStorage.setItem('jasper:ui-prefs', JSON.stringify({ ...p, contrast: 'high' }));
-			});
-			await reloadEditable();
+			// View ▸ High Contrast applies live (no reload, so the session keeps its lease).
+			await runCommand('view.contrast.high');
+			await expect(page.locator('html')).toHaveAttribute('data-pr-contrast', 'high');
 		}
 		for (const ws of workspaces) {
 			await page.keyboard.press('Escape');
