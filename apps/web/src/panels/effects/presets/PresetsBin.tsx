@@ -361,6 +361,7 @@ function FolderRow(props: {
 	return (
 		<button
 			type="button"
+			role="treeitem"
 			aria-expanded={props.open}
 			onClick={props.onToggle}
 			title={props.title}

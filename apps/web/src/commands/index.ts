@@ -19,6 +19,7 @@ import { compositionCommands } from './composition.ts';
 import { editCommands } from './edit.ts';
 import { editUxCommands } from './edit-ux.ts';
 import { exportCommands } from './export.ts';
+import { gapsCommands } from './gaps.ts';
 import { helpCommands } from './help.ts';
 import { importsCommands } from './imports.ts';
 import { inspectorCommands } from './inspector.ts';
@@ -93,6 +94,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	monitorViewCommands,
 	// three-d: cameras, lights, 3D views, renderer
 	threeDCommands,
+	// gaps: Find, Edit Original, Exit, Add/Delete Tracks, track height presets, settings dialogs, proxies…
+	gapsCommands,
 ];
 
 let registered = false;

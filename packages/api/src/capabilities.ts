@@ -13,7 +13,8 @@ export type Health = z.infer<typeof HealthSchema>;
  * Video codecs the engine can encode (ARCHITECTURE D-13). `prores` is the mastering codec: ProRes 422 HQ
  * (or 4444) in MOV with PCM audio, written by `prores_ks` (LGPL).
  */
-export const VideoCodecSchema = z.enum(['h264', 'vp9', 'av1', 'prores']);
+/** gaps (EX-2): `hevc` = H.265 Main (libkvazaar, 8-bit) or Main / Main10 (hardware encoders). */
+export const VideoCodecSchema = z.enum(['h264', 'vp9', 'av1', 'prores', 'hevc']);
 export type VideoCodec = z.infer<typeof VideoCodecSchema>;
 
 /**
@@ -56,6 +57,8 @@ export const EncodingCapabilitiesSchema = z.object({
 		av1: z.array(z.string()),
 		/** ProRes master encoders (`prores_ks`); absent on engines that predate it. */
 		prores: z.array(z.string()).optional(),
+		/** gaps: HEVC encoders (usable hardware, then libkvazaar); absent on engines that predate it. */
+		hevc: z.array(z.string()).optional(),
 	}),
 	audio: z.object({ aac: z.boolean(), opus: z.boolean() }),
 	/** `prores_ks` for alpha intermediates (motion-graphic masters). */

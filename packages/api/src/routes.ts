@@ -46,6 +46,21 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import {
+	EngineGapsInfoSchema,
+	EngineGapsSettingsSchema,
+	MediaJobRequestSchema,
+	MediaLocationSchema,
+	MediaOpenRequestSchema,
+	MediaOpenResponseSchema,
+	ProjectManagerEstimateSchema,
+	ProjectManagerRequestSchema,
+	ReframeRequestSchema,
+	ScratchCheckRequestSchema,
+	ScratchCheckSchema,
+	ScratchInfoSchema,
+	WarpAnalysisRequestSchema,
+} from './gaps.ts';
+import {
 	AutoToneRequestSchema,
 	AutoToneResponseSchema,
 	ColorMatchRequestSchema,
@@ -192,7 +207,9 @@ export type RouteOwner =
 	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
 	| 'imports'
 	// parity program: Lumetri completion, Colour Match, scopes
-	| 'color-grade';
+	| 'color-grade'
+	// parity program: Edit Original, scratch disks, proxies, Project Manager, Export Frame, analyses (gaps)
+	| 'gaps';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -1054,6 +1071,87 @@ export const ROUTES = {
 		body: AutoToneRequestSchema,
 		response: AutoToneResponseSchema,
 		owner: 'color-grade',
+	},
+	// ---- gaps: Edit Original (UI-5)
+	mediaLocation: {
+		method: 'GET',
+		path: '/api/media/:mediaKey/location',
+		response: MediaLocationSchema,
+		owner: 'gaps',
+	},
+	mediaOpen: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/open',
+		body: MediaOpenRequestSchema,
+		response: MediaOpenResponseSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Project Settings ▸ Scratch Disks (PRJ-4)
+	projectScratch: {
+		method: 'GET',
+		path: '/api/projects/:projectId/scratch',
+		response: ScratchInfoSchema,
+		owner: 'gaps',
+	},
+	scratchCheck: {
+		method: 'POST',
+		path: '/api/scratch/check',
+		body: ScratchCheckRequestSchema,
+		response: ScratchCheckSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Preferences ▸ Auto Save / Memory (UI-4)
+	gapsSettingsGet: {
+		method: 'GET',
+		path: '/api/settings/gaps',
+		response: EngineGapsInfoSchema,
+		owner: 'gaps',
+	},
+	gapsSettingsPut: {
+		method: 'PUT',
+		path: '/api/settings/gaps',
+		body: EngineGapsSettingsSchema.partial(),
+		response: EngineGapsInfoSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: File ▸ Project Manager (PRJ-6)
+	projectManagerPlan: {
+		method: 'POST',
+		path: '/api/project-manager/plan',
+		body: ProjectManagerRequestSchema,
+		response: ProjectManagerEstimateSchema,
+		owner: 'gaps',
+	},
+	projectManagerStart: {
+		method: 'POST',
+		path: '/api/project-manager',
+		body: ProjectManagerRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Create Proxies, ingest copies / transcodes (PRJ-8)
+	mediaJobs: {
+		method: 'POST',
+		path: '/api/media-jobs',
+		body: MediaJobRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Warp Stabilizer background analysis (FX-6)
+	warpAnalysis: {
+		method: 'POST',
+		path: '/api/warp-analysis',
+		body: WarpAnalysisRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Auto Reframe subject analysis (AI-2)
+	reframeAnalysis: {
+		method: 'POST',
+		path: '/api/reframe',
+		body: ReframeRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
 	},
 } as const satisfies Record<string, RouteDef>;
 

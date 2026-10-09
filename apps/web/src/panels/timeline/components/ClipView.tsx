@@ -348,7 +348,7 @@ function ClipViewImpl(p: ClipViewProps) {
 					style={{ left: nameOffset, paddingLeft: 4 }}
 				>
 					{showName ? (
-						<span className="min-w-0 flex-1 truncate">
+						<span className="min-w-0 flex-1 truncate" data-no-i18n>
 							{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio, mcBadge)}
 						</span>
 					) : (

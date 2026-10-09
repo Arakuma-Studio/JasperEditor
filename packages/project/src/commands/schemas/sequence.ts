@@ -33,6 +33,14 @@ const SettingsPatch = z.strictObject({
 	 * variant (`rec709-linear`…) which also turns on Linearize Working Space.
 	 */
 	workingColorSpace: z.enum(WORKING_SPACE_CHOICES).optional(),
+	/**
+	 * gaps (Sequence Settings ▸ Pixel Aspect Ratio): null or 1:1 = square pixels. With another ratio `width` becomes the
+	 * display width of `storageWidth` (the delivered frame width; default the current one) at that ratio.
+	 */
+	pixelAspectRatio: RationalSchema.nullable().optional(),
+	storageWidth: z.number().int().min(16).max(8192).optional(),
+	/** gaps (Sequence Settings ▸ Fields): progressive, upper or lower field first. */
+	fieldOrder: z.enum(['progressive', 'upper', 'lower']).optional(),
 	/** color-mgmt: Sequence Settings ▸ Colour; each field null = back to the default. */
 	color: z
 		.strictObject({
@@ -47,6 +55,8 @@ const SettingsPatch = z.strictObject({
 
 export const SequenceCreateCmd = cmd('sequence.create', {
 	name: z.string().min(1),
+	/** gaps (Preferences ▸ Labels ▸ Label Defaults): the sequence item's label (default forest). */
+	label: LabelColorSchema.optional(),
 	preset: z.string().optional(),
 	settings: SettingsPatch.optional(),
 	fromMediaId: IdRefSchema.optional(),
@@ -118,6 +128,8 @@ export const TrackAddCmd = cmd('track.add', {
 	/** wp captions (caption tracks): language and standard. */
 	language: z.string().optional(),
 	captionStandard: CaptionStandardSchema.optional(),
+	/** gaps (Add Tracks… ▸ Track Type): channel format of new audio tracks (default stereo). */
+	channelFormat: AudioChannelFormatSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TrackRemoveCmd = cmd('track.remove', {

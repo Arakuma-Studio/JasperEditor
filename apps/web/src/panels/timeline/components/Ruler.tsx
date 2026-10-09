@@ -2,11 +2,13 @@
 // brackets and shading, the marker lane and the render bar. Clicking/dragging scrubs (TL-203).
 import { type Marker, type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useDisplayFormat } from '../../../gaps/time-display.ts';
 import type { RenderSegment } from '../model/renderbar.ts';
 import { rulerTicks } from '../model/ruler.ts';
 import { boundaryFrameAt, frameToX, type Viewport } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
+import { timelinePrefs } from '../state/prefs.ts';
 import { markerVar } from './ClipView.tsx';
 import { CanvasTiles, cssVar, TILE_MAX_PX, type TileDraw } from './canvas.tsx';
 
@@ -42,6 +44,12 @@ type MarkDrag =
 export function Ruler(props: RulerProps) {
 	const { seq, viewport: v, session, controller } = props;
 	const drag = useRef<MarkDrag | null>(null);
+	// gaps: Project Settings display formats and Show Audio Time Units.
+	const display = useDisplayFormat();
+	const audioUnits = useSyncExternalStore(
+		timelinePrefs().subscribe,
+		() => !!timelinePrefs().getState().showAudioTimeUnits,
+	);
 	// ui-perf: the ticks depend on the sequence end only (not on every clip), so a drag that keeps the end does not
 	// redraw them.
 	const sequenceEnd = useMemo(() => sequenceDuration({ clips: seq.clips }), [seq.clips]);
@@ -54,6 +62,7 @@ export function Ruler(props: RulerProps) {
 	const scrollPx = Math.round(v.scrollFrame * v.pxPerFrame);
 	const tilesX0 = Math.floor(scrollPx / TILE_MAX_PX) * TILE_MAX_PX;
 	const tilesX1 = Math.ceil((scrollPx + v.width) / TILE_MAX_PX) * TILE_MAX_PX;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `display.video` changes the labels formatTimecode draws
 	const draw = useCallback<TileDraw>(
 		(ctx, tile) => {
 			const color = cssVar(ctx.canvas, '--pr-text-secondary');
@@ -66,6 +75,7 @@ export function Ruler(props: RulerProps) {
 				sequenceEnd,
 				x0: tile.x0 - 120,
 				x1: tile.x0 + tile.width + 120,
+				...(audioUnits ? { audio: { sampleRate: seq.settings.audioSampleRate, format: display.audio } } : {}),
 			});
 			// Ticks first, then the labels: one fill style each (setting it per tick cost more than the drawing).
 			ctx.fillStyle = color;
@@ -76,7 +86,7 @@ export function Ruler(props: RulerProps) {
 			ctx.fillStyle = strong;
 			for (const t of ticks) if (t.label) ctx.fillText(t.label, Math.round(t.x) + 3.5, 3);
 		},
-		[contentView, seq.settings, sequenceEnd],
+		[contentView, seq.settings, sequenceEnd, audioUnits, display.audio, display.video],
 	);
 
 	const setInOut = (g: Gesture, i: number | null, o: number | null) => {

@@ -1,7 +1,9 @@
 // Project panel operations as document transactions (S01 §5, §16.2; S05:PRJ-003/006/007).
+
 import { clipsInRange, type LabelColor, type ProjectDocument } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import type { CommandCtx } from '../../commands/types.ts';
+import { labelDefault } from '../../gaps/app-prefs.ts';
 import { notices } from '../../home/notices.tsx';
 import { runIfRegistered } from '../../home/ui-bridge.ts';
 import { projectDialogs } from './dialogs.tsx';
@@ -26,7 +28,14 @@ export function createBin(session: EditorSession, parentBinId: string | null): s
 	const r = session.apply({
 		label: 'New Bin',
 		origin: 'user',
-		commands: [{ type: 'bin.create', name: nextBinName(session.getCommitted()), parentBinId }],
+		commands: [
+			{
+				type: 'bin.create',
+				name: nextBinName(session.getCommitted()),
+				parentBinId,
+				...(labelDefault('bin') ? { label: labelDefault('bin') } : {}),
+			},
+		],
 	});
 	if (!r.ok) {
 		fail('Could not create the bin', r.errors[0]?.message);

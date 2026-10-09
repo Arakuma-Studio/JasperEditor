@@ -8,7 +8,6 @@
 import {
 	type EditPoint,
 	editPointFrame,
-	formatTimecode,
 	type Rational,
 	type Sequence,
 	trackLabel,
@@ -19,10 +18,11 @@ import { useSessionState, useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { runCommand } from '../../commands/registry.ts';
 import type { CommandCtx } from '../../commands/types.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { activeTimeline, type TimelineHandle } from '../timeline/env.tsx';
 import {
 	editPointsOf,
-	LARGE_TRIM_OFFSET,
+	largeTrimOffset,
 	setEditPoints,
 	trimCommand,
 	trimMode,
@@ -223,9 +223,9 @@ export function TrimMonitor(props: { session: EditorSession; sequenceId: string;
 					label="Trim Backward by Large Trim Offset"
 					shortcut="Ctrl+Shift+Left"
 					testId="trim-btn-back-many"
-					onClick={() => trim(-LARGE_TRIM_OFFSET)}
+					onClick={() => trim(-largeTrimOffset())}
 				>
-					<span className="text-pr-small">−{LARGE_TRIM_OFFSET}</span>
+					<span className="text-pr-small">−{largeTrimOffset()}</span>
 				</TransportButton>
 				<TransportButton
 					label="Trim Backward"
@@ -255,9 +255,9 @@ export function TrimMonitor(props: { session: EditorSession; sequenceId: string;
 					label="Trim Forward by Large Trim Offset"
 					shortcut="Ctrl+Shift+Right"
 					testId="trim-btn-forward-many"
-					onClick={() => trim(LARGE_TRIM_OFFSET)}
+					onClick={() => trim(largeTrimOffset())}
 				>
-					<span className="text-pr-small">+{LARGE_TRIM_OFFSET}</span>
+					<span className="text-pr-small">+{largeTrimOffset()}</span>
 				</TransportButton>
 				<TransportButton
 					label="Play Around the Edit"

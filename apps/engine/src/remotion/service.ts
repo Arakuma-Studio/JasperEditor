@@ -7,13 +7,13 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
 import { ENV } from '@jasper/config';
 import { defaultEffectRegistry } from '@jasper/project';
 import { animejsVersion } from '../anime/index.ts';
+import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
@@ -751,7 +751,7 @@ export class RemotionService {
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
-		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		const concurrency = input.concurrency ?? renderParallelism();
 		let instance: RenderBrowser | null = null;
 		try {
 			instance = await this.renderBrowser(r, browser, concurrency);
@@ -834,7 +834,7 @@ export class RemotionService {
 		const total = composition.durationInFrames;
 		const raw = join(input.scratchDir, `alpha-${process.pid}-${Date.now().toString(36)}-raw.mov`);
 		const tagged = `${raw.slice(0, -'-raw.mov'.length)}.mov`;
-		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		const concurrency = input.concurrency ?? renderParallelism();
 		// Own browser (closed below) unless the caller shares one.
 		let instance: RenderBrowser | null = null;
 		try {

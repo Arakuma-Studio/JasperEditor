@@ -60,6 +60,21 @@ export const MediaItemSchema = z.looseObject({
 	/** wp-multicam: source clip markers (media time), set in the Source monitor; sync points of Merge Clips and
 	 * Create Multi-Camera Source Sequence by "Clip Marker". */
 	markers: z.array(ClipMarkerSchema).optional(),
+	/**
+	 * gaps (Clip ▸ Modify ▸ Audio Channels on a Project item): the audio clips a placement of this item creates — one
+	 * entry per clip (its stream, channel map and muted channels). Absent = the default (one stereo clip).
+	 */
+	audioChannels: z
+		.looseObject({
+			clips: z.array(
+				z.looseObject({
+					streamIndex: nonNegInt(),
+					map: z.array(nonNegInt()),
+					mute: z.array(nonNegInt()).optional(),
+				}),
+			),
+		})
+		.optional(),
 });
 export const SequenceItemSchema = z.looseObject({
 	id: z.string(),
@@ -126,6 +141,41 @@ export const DEFAULT_SCALING_MODES = ['none', 'fit-if-larger', 'fit', 'fill'] as
 export const DefaultScalingSchema = z.enum(DEFAULT_SCALING_MODES);
 export type DefaultScaling = DeepStrip<z.infer<typeof DefaultScalingSchema>>;
 
+// ---------------------------------------------------------------- gaps: Project Settings (docs/wp-notes/gaps.md §PRJ-4)
+
+/** Project Settings ▸ General ▸ Video Display Format (how times are shown and typed). */
+export const VIDEO_DISPLAY_FORMATS = ['timecode', 'frames', 'feet35', 'feet16'] as const;
+/** Project Settings ▸ General ▸ Audio Display Format (audio time units in the timeline ruler and Info). */
+export const AUDIO_DISPLAY_FORMATS = ['samples', 'milliseconds'] as const;
+export const ProjectDisplaySchema = z.looseObject({
+	video: z.enum(VIDEO_DISPLAY_FORMATS).optional(),
+	audio: z.enum(AUDIO_DISPLAY_FORMATS).optional(),
+});
+export type ProjectDisplay = DeepStrip<z.infer<typeof ProjectDisplaySchema>>;
+
+/**
+ * Project Settings ▸ Scratch Disks, as they map onto the engine: where files the project creates go. `media` =
+ * Captured and Generated Media (proxies, exported frames, Project Manager copies, ingest copies and transcodes);
+ * null / absent = the default (proxies and ingest next to the source media, frames in the engine's exports folder).
+ * Previews, the media cache and auto-save versions live in the engine's folders (shown, moved from Media Cache).
+ */
+export const ProjectScratchSchema = z.looseObject({
+	media: z.string().max(4096).nullable().optional(),
+});
+export type ProjectScratch = DeepStrip<z.infer<typeof ProjectScratchSchema>>;
+
+/** Project Settings ▸ Ingest Settings (Premiere: Copy, Transcode, Create Proxies, Copy and Create Proxies). */
+export const INGEST_ACTIONS = ['copy', 'transcode', 'proxies', 'copyAndProxies'] as const;
+export const ProjectIngestSchema = z.looseObject({
+	enabled: z.boolean(),
+	action: z.enum(INGEST_ACTIONS),
+	/** Proxy preset (`proxies` / `copyAndProxies`) or transcode preset (`transcode`); absent = the default. */
+	preset: z.string().max(64).optional(),
+	/** Folder for copies, transcodes and proxies; null = the scratch media folder, else next to the source. */
+	destination: z.string().max(4096).nullable().optional(),
+});
+export type ProjectIngest = DeepStrip<z.infer<typeof ProjectIngestSchema>>;
+
 export const ProjectSettingsSchema = z.looseObject({
 	defaultSequencePreset: z.string(),
 	mediaPolicy: z.looseObject({ copyOnImport: z.boolean() }),
@@ -139,6 +189,10 @@ export const ProjectSettingsSchema = z.looseObject({
 	captionStylePresets: z
 		.array(z.looseObject({ id: z.string(), name: z.string(), style: CaptionStyleSchema.partial() }))
 		.optional(),
+	// ---- gaps (optional; read with `projectSettingsOf`)
+	display: ProjectDisplaySchema.optional(),
+	scratch: ProjectScratchSchema.optional(),
+	ingest: ProjectIngestSchema.optional(),
 });
 export type ProjectSettings = DeepStrip<z.infer<typeof ProjectSettingsSchema>>;
 

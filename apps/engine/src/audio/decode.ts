@@ -93,7 +93,11 @@ export function clipDecodeArgs(o: {
 	const chain: string[] = [];
 	if (map.length > 0) {
 		const layout = PAN_LAYOUT[channels] ?? 'stereo';
-		const picks = Array.from({ length: channels }, (_, i) => `c${i}=c${map[i] ?? map[0] ?? 0}`);
+		// gaps (Modify ▸ Audio Channels): a muted clip channel is silence.
+		const mute = clip.channels.mute ?? [];
+		const picks = Array.from({ length: channels }, (_, i) =>
+			mute.includes(i) ? `c${i}=0*c0` : `c${i}=c${map[i] ?? map[0] ?? 0}`,
+		);
 		chain.push(`pan=${layout}|${picks.join('|')}`);
 	} else if (!PAN_LAYOUT[o.stream.channels]) chain.push('aformat=channel_layouts=stereo');
 	if (clip.speed.reverse) chain.push('areverse');

@@ -265,11 +265,50 @@ export const ExportResultSchema = z.object({
 });
 export type ExportResult = z.infer<typeof ExportResultSchema>;
 
+/**
+ * gaps (File ▸ Export ▸ Frame, EX-3): still file formats. `exr` holds linear light (the working space's transfer
+ * inverted, half float); `dpx` is 10-bit RGB; `jpeg` takes `jpegQuality`; the others are 8-bit RGB.
+ */
+export const STILL_FORMATS = ['png', 'jpeg', 'tiff', 'dpx', 'exr', 'bmp', 'tga'] as const;
+export type StillFormat = (typeof STILL_FORMATS)[number];
+export const STILL_FORMAT_EXTENSIONS: Record<StillFormat, string> = {
+	png: 'png',
+	jpeg: 'jpg',
+	tiff: 'tif',
+	dpx: 'dpx',
+	exr: 'exr',
+	bmp: 'bmp',
+	tga: 'tga',
+};
+
 export const StillRequestSchema = z.object({
 	envelope: EnvelopeSchema,
 	sequenceId: z.string(),
 	frame: z.number().int().min(0),
 	width: z.number().int().positive().optional(),
+	/** gaps (Export Frame): the file format (default PNG). */
+	format: z.enum(STILL_FORMATS).optional(),
+	/** gaps: JPEG quality 1–100 (default 90). */
+	jpegQuality: z.number().int().min(1).max(100).optional(),
+	/**
+	 * gaps (Export Frame): also copy the frame to `<folder>/<name>.<ext>` on the engine host (local engines; never
+	 * overwrites: " (2)" is appended). The result's `path` is the file written.
+	 */
+	destination: z
+		.object({
+			folder: z.string().min(1).max(4096),
+			name: z
+				.string()
+				.min(1)
+				.max(200)
+				.refine((n) => !/[\\/\0]/.test(n) && n !== '.' && n !== '..', 'A file name, not a path'),
+		})
+		.optional(),
 });
 export type StillRequest = z.infer<typeof StillRequestSchema>;
-export const StillResultSchema = z.object({ url: z.string() });
+export const StillResultSchema = z.object({
+	url: z.string(),
+	/** gaps: the file written at the destination, its format and pixel size. */
+	path: z.string().optional(),
+	format: z.enum(STILL_FORMATS).optional(),
+});

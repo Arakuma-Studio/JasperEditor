@@ -20,6 +20,7 @@ import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/composition
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
+import { GAPS_GUIDE, registerGapsTools } from './tools/gaps.ts';
 import { registerGradingTools } from './tools/grading.ts';
 import { IMPORTS_GUIDE, registerImportsTools } from './tools/imports.ts';
 import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
@@ -107,6 +108,7 @@ const FULL_GUIDE = [
 	INSPECT_GUIDE,
 	UI_GUIDE,
 	EXPRESSIONS_GUIDE,
+	GAPS_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -165,6 +167,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerInspectTools(ctx);
 	registerUiTools(ctx);
 	registerExpressionTools(ctx);
+	registerGapsTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };

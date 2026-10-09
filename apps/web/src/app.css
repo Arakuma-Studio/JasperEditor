@@ -10,3 +10,14 @@ body,
 	height: 100%;
 	margin: 0;
 }
+
+/* gaps (UI-6, Preferences ▸ Appearance ▸ Reduce motion): no UI animations or transitions. Pictures are unaffected
+   (the monitors draw frames, they do not use CSS animations). */
+[data-pr-motion="reduced"] *,
+[data-pr-motion="reduced"] *::before,
+[data-pr-motion="reduced"] *::after {
+	animation-duration: 0.001ms !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: 0.001ms !important;
+	scroll-behavior: auto !important;
+}

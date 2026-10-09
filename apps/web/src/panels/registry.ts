@@ -5,6 +5,7 @@ import audioMeters from './audioMeters/index.ts';
 import audioTrackMixer from './audioTrackMixer/index.ts';
 import effectControls from './effectControls/index.ts';
 import effects from './effects/index.ts';
+import essentialGraphics from './essentialGraphics/index.ts';
 import essentialSound from './essentialSound/index.ts';
 import history from './history/index.ts';
 import info from './info/index.ts';
@@ -43,6 +44,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	audioClipMixer,
 	text,
 	essentialSound,
+	essentialGraphics,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

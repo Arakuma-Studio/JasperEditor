@@ -192,3 +192,23 @@ describe('isPermissionAllowed (audio-mix: voice-over microphone)', () => {
 		expect(isPermissionAllowed('fullscreen', `${app}/`, app)).toBe(true);
 	});
 });
+
+describe('Edit Original (gaps, UI-5)', () => {
+	it('opens media paths but never programs or launchers', async () => {
+		const { isOpenablePath } = await import('../src/security.ts');
+		expect(isOpenablePath('/media/clip.mov')).toBe(true);
+		expect(isOpenablePath('C:\\media\\clip.MP4')).toBe(true);
+		expect(isOpenablePath('/media/noext')).toBe(true);
+		for (const bad of [
+			'/tmp/x.sh',
+			'C:\\x\\setup.EXE',
+			'/a/b.desktop',
+			'/a/b.AppImage',
+			'relative.mov',
+			'',
+			7,
+			null,
+		])
+			expect(isOpenablePath(bad)).toBe(false);
+	});
+});

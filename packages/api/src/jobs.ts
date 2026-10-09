@@ -41,6 +41,11 @@ export const JOB_KINDS = [
 	'layers',
 	// previews: Render Effects In to Out / Render In to Out / Render Selection / Render Audio
 	'preview',
+	// gaps: Create Proxies / ingest, Project Manager, Warp Stabilizer analysis, Auto Reframe analysis
+	'proxy-create',
+	'project-manager',
+	'warp-analysis',
+	'reframe',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

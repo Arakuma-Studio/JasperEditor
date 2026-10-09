@@ -84,6 +84,12 @@ export type SessionToggles = {
 	insertSequencesAsNests?: boolean;
 	/** edit-structure: Sequence ▸ Show Through Edits (default on) — through-edit markers on cuts. */
 	showThroughEdits?: boolean;
+	/**
+	 * gaps (Toggle Proxies, docs/wp-notes/gaps.md §PRJ-8): the monitors play attached proxies (`MediaAsset.proxy`)
+	 * instead of the originals. Independent of the playback resolution's engine proxies (`useProxies`). Exports never
+	 * use proxies unless asked.
+	 */
+	attachedProxies?: boolean;
 };
 
 export type DerivativeStatus = {

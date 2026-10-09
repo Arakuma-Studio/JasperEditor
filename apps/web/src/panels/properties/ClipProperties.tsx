@@ -7,7 +7,6 @@ import {
 	type Clip,
 	type Command,
 	type EffectInstance,
-	formatTimecode,
 	isKnownClipKind,
 	kindCapabilities,
 	paramsPropertySpecs,
@@ -18,6 +17,7 @@ import { cx, TimecodeText } from '@jasper/ui';
 import { type ReactNode, useEffect, useState } from 'react';
 import { clipSections } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';

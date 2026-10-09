@@ -13,6 +13,13 @@ const c = (command: string, label: string, args?: unknown): ShellMenuItem => ({
 	label,
 	args,
 });
+/** A desktop-only entry (hidden on the web and in the PWA). */
+const desktopOnly = (command: string, label: string): ShellMenuItem => ({
+	type: 'command',
+	command,
+	label,
+	runtimes: ['desktop'],
+});
 const sub = (label: string, items: ShellMenuItem[]): ShellMenuItem => ({ type: 'submenu', label, items });
 const sep: ShellMenuItem = { type: 'separator' };
 
@@ -36,6 +43,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sub('New', [
 				c('app.newProject', 'Project…'),
 				c('app.newSequence', 'Sequence…'),
+				// gaps (TL-11)
+				c('project.newSequenceFromClip', 'Sequence From Clip'),
 				c('project.newBin', 'Bin'),
 				c('graphics.newTextLayer', 'Text Layer'),
 				c('mg.insertTemplate', 'fframes Motion Graphic…'),
@@ -94,10 +103,12 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			sep,
 			c('project.settings', 'Project Settings…'),
+			// gaps (PRJ-6)
+			c('file.projectManager', 'Project Manager…'),
 			sub('Engine', [c('engine.connect', 'Connect…'), c('engine.status', 'Engine Status')]),
 			sep,
 			c('app.goHome', 'Go to Home'),
-			c('app.quit', 'Exit'),
+			desktopOnly('app.quit', 'Exit'),
 		],
 	},
 	{
@@ -151,9 +162,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('project.editSubclip', 'Edit Subclip…'),
 			c('timeline.speedDuration', 'Speed/Duration…'),
 			c('timeline.audioGain', 'Audio Gain…'),
-			c('timeline.audioChannels', 'Audio Channels…'),
-			// imports workstream (Premiere: Clip ▸ Modify ▸ Interpret Footage…)
-			sub('Modify', [c('media.interpretFootage', 'Interpret Footage…')]),
+			// imports workstream (Premiere: Clip ▸ Modify ▸ Interpret Footage…); gaps: Modify ▸ Audio Channels…
+			sub('Modify', [
+				c('timeline.audioChannels', 'Audio Channels…'),
+				c('media.interpretFootage', 'Interpret Footage…'),
+			]),
 			// audio-mix
 			sub('Audio Options', [
 				c('audio.autoDuck', 'Auto Duck…'),
@@ -225,7 +238,15 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('clip.revealInTimeline', 'Reveal in Timeline'),
 			sep,
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
-			c('project.createProxies', 'Create Proxies'),
+			// gaps (PRJ-8): Premiere's Clip ▸ Proxy.
+			sub('Proxy', [
+				c('project.createProxies', 'Create Proxies…'),
+				c('project.attachProxies', 'Attach Proxies…'),
+				c('project.reconnectFullRes', 'Reconnect Full Resolution Media…'),
+				c('project.detachProxies', 'Detach Proxies'),
+				sep,
+				c('media.toggleProxies', 'Toggle Proxies'),
+			]),
 			c('process.processClip', 'Process Clip…'),
 			// wp speech: the selected clips' media
 			c('transcript.generateForClips', 'Generate Transcript…'),
@@ -249,6 +270,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.deleteRenderFiles', 'Delete Render Files'),
 			c('timeline.deleteRenderFilesInToOut', 'Delete Render Files In to Out'),
 			c('sequence.previewSettings', 'Video Previews…'),
+			sep,
+			// gaps (AI-2)
+			c('sequence.autoReframe', 'Auto Reframe Sequence…'),
 			sep,
 			c('timeline.matchFrame', 'Match Frame'),
 			c('timeline.reverseMatchFrame', 'Reverse Match Frame'),

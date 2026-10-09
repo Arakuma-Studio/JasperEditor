@@ -348,7 +348,7 @@ function SaveStatus() {
 						? ['Saving…', 'text-pr-muted']
 						: dirty
 							? ['Edited', 'text-pr-muted']
-							: ['Saved', 'text-pr-dim'];
+							: ['Saved', 'text-pr-muted'];
 	const state = status.conflict
 		? 'conflict'
 		: status.error

@@ -224,6 +224,9 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('project.importFromMediaBrowser', 'Ctrl+Alt+KeyI', G),
 	b('export.media', 'Ctrl+KeyM', G),
 	b('export.queue', 'Alt+Shift+KeyM', G),
+	// gaps (EX-3): Premiere's Export Frame (Shift+E; Shift+Cmd+E on macOS) in the monitors.
+	b('export.frame', 'Shift+KeyE', 'program', { mac: 'Shift+Cmd+KeyE' }),
+	b('export.frame', 'Shift+KeyE', 'source', { mac: 'Shift+Cmd+KeyE' }),
 	b('project.mediaProperties', 'Ctrl+Shift+KeyH', G),
 	b('app.quit', 'Ctrl+KeyQ', G),
 	b('app.keyboardShortcuts', 'Ctrl+Alt+KeyK', G),

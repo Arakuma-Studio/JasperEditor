@@ -353,9 +353,24 @@ export function placeSource(
 			});
 		}
 		if ((asset.kind === 'video' || asset.kind === 'audio') && audioStreams.length > 0 && o.audio !== false) {
-			const channelSets: { streamIndex: number; map: number[] }[] = [];
+			const channelSets: { streamIndex: number; map: number[]; mute?: number[] }[] = [];
 			const mapping = o.audioMapping ?? 'stereo';
-			if (mapping === 'per-stream') {
+			// gaps (Modify ▸ Audio Channels on the Project item): the item's routing, unless a mapping was asked for.
+			const routed = ((item?.kind === 'media' ? item : undefined) ??
+				(Object.values(doc.items).find(
+					(x) =>
+						x.kind === 'media' && x.mediaId === asset.id && (x as { audioChannels?: unknown }).audioChannels,
+				) as ProjectItem | undefined)) as
+				| { audioChannels?: { clips?: { streamIndex: number; map: number[]; mute?: number[] }[] } }
+				| undefined;
+			if (!o.audioMapping && routed?.audioChannels?.clips?.length) {
+				for (const c of routed.audioChannels.clips)
+					channelSets.push({
+						streamIndex: c.streamIndex,
+						map: [...c.map],
+						...(c.mute?.length ? { mute: [...c.mute] } : {}),
+					});
+			} else if (mapping === 'per-stream') {
 				for (const s of audioStreams) {
 					if (s.type === 'audio')
 						channelSets.push({ streamIndex: s.index, map: [...Array(s.channels).keys()] });

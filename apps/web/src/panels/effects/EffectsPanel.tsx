@@ -385,7 +385,9 @@ function TreeFolder(props: { label: string; open: boolean; depth: number; onTogg
 	return (
 		<button
 			type="button"
+			role="treeitem"
 			aria-expanded={props.open}
+			aria-level={props.depth + 1}
 			onClick={props.onToggle}
 			className="flex h-[var(--pr-row-h)] w-full items-center gap-1 pr-2 text-left text-pr-ui text-pr-text hover:bg-pr-hover"
 			style={{ paddingLeft: 4 + props.depth * 16 }}

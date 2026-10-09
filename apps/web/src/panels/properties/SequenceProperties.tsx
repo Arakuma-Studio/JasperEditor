@@ -4,7 +4,6 @@
 import {
 	ALLOWED_SEQUENCE_RATES,
 	type Command,
-	formatTimecode,
 	type Rational,
 	rationalEquals,
 	type Sequence,
@@ -13,6 +12,7 @@ import {
 } from '@jasper/project';
 import { TimecodeText } from '@jasper/ui';
 import { workingChoiceOf, workingSpaceOptions } from '../../color-mgmt/model.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField } from './controls/fields.tsx';
 import { SwapGlyph } from './controls/glyphs.tsx';
 import type { Notices } from './controls/Notices.tsx';
