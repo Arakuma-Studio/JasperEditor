@@ -135,12 +135,21 @@ export function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 
 		kind === 'text'
 			? { type: 'clip.addText', ...place, content: { text: 'New Text' }, ref: '$l' }
 			: { type: 'clip.addShape', ...place, shape: { type: kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] }, ref: '$l' };
-	return apply(session, 'New Graphic', [
-		...(track ? [] : [{ type: 'track.add', kind: 'video' }]),
-		...(track ? [first] : [{ ...first, track: `V${seq.videoTracks.length + 1}` }]),
-		{ type: 'clip.nest', clipIds: ['$l'], name: 'Graphic', ref: '$g' },
-		{ type: 'graphic.update', sequenceId: '$g', graphic: { intro: 0, outro: 0 } },
-	]);
+	const nestAt = track ? 1 : 2;
+	const r = session.apply({
+		label: 'New Graphic',
+		origin: 'user',
+		commands: [
+			...(track ? [] : [{ type: 'track.add', kind: 'video' }]),
+			...(track ? [first] : [{ ...first, track: `V${seq.videoTracks.length + 1}` }]),
+			{ type: 'clip.nest', clipIds: ['$l'], name: 'Graphic', ref: '$g' },
+			{ type: 'graphic.update', sequenceId: '$g', graphic: { intro: 0, outro: 0 } },
+		] as never,
+		// The new nest clip becomes the selection, so the panel edits the new graphic right away.
+		selectAfter: (res) => ({ timeline: (res.results[nestAt] as { clipIds?: string[] } | undefined)?.clipIds ?? [] }),
+	});
+	if (!r.ok) toast({ kind: 'error', title: 'New Graphic', detail: r.errors.map((e) => e.message).join('; ') });
+	return r.ok;
 }
 
 // ---------------------------------------------------------------- small controls

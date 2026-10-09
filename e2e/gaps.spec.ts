@@ -54,6 +54,18 @@ async function ui<T = unknown>(action: string, args: Record<string, unknown> = {
 }
 const runCommand = (id: string, args?: unknown) => ui('command', { id, ...(args ? { args } : {}) });
 
+/** Reloads the window; if the old page's lease has not been released yet (a race), takes over editing. */
+async function reloadEditable() {
+	await page.reload();
+	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await page.waitForTimeout(500);
+	const ro = page.getByTestId('banner-read-only');
+	if (await ro.isVisible()) {
+		await ro.getByRole('button', { name: 'Take over editing' }).click();
+		await expect(ro).toHaveCount(0, { timeout: 15_000 });
+	}
+}
+
 test.beforeAll(async ({ browser }) => {
 	const context = await browser.newContext();
 	page = await context.newPage();
@@ -84,8 +96,7 @@ test('accessibility: no serious or critical axe violation in the main workspaces
 				const p = raw ? JSON.parse(raw) : {};
 				localStorage.setItem('jasper:ui-prefs', JSON.stringify({ ...p, contrast: 'high' }));
 			});
-			await page.reload();
-			await expect(page.getByTestId('editor-shell')).toBeVisible();
+			await reloadEditable();
 		}
 		for (const ws of workspaces) {
 			await page.keyboard.press('Escape');
@@ -140,7 +151,7 @@ test('Essential Graphics: a new graphic, a second layer, align and roll', async 
 	await runCommand('panel.focus.essentialGraphics');
 	const panel = page.getByTestId('essential-graphics-panel');
 	await expect(panel).toBeVisible();
-	await page.getByRole('tab', { name: 'Edit' }).click();
+	await panel.getByRole('tab', { name: 'Edit' }).click();
 	await page.getByTestId('eg-new-text').click();
 	await expect(page.getByTestId('eg-edit')).toBeVisible({ timeout: 15_000 });
 	await page.getByTestId('eg-add-rectangle').click();
@@ -155,6 +166,20 @@ test('Essential Graphics: a new graphic, a second layer, align and roll', async 
 });
 
 test('Auto Reframe Sequence makes a 9:16 copy that follows the subject', async () => {
+	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list')).media;
+	const rf = media.find((m) => m.originalName === 'reframe.mp4')!.mediaId;
+	// After everything the earlier specs placed, on V1 (where the analysis looks first).
+	const sum = await query<{ sequenceId: string; duration: { frames: number } }>(page, 'sequence.summary');
+	const placed = await page.evaluate(
+		(tx) => (window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact(tx),
+		{
+			protocol: 'jasper.tx/1',
+			label: 'E2E setup',
+			sequenceId: sum.sequenceId,
+			commands: [{ type: 'clip.place', source: { mediaId: rf }, at: sum.duration.frames + 30, tracks: { video: 'V1', audio: 'A1' } }],
+		},
+	);
+	expect(placed.ok, JSON.stringify(placed)).toBe(true);
 	await runCommand('sequence.autoReframe');
 	const dialog = page.getByTestId('auto-reframe-dialog');
 	await expect(dialog).toBeVisible();
@@ -172,8 +197,7 @@ test('Spanish UI after a restart', async () => {
 		const p = raw ? JSON.parse(raw) : {};
 		localStorage.setItem('jasper:gaps-prefs', JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'es' } }));
 	});
-	await page.reload();
-	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await reloadEditable();
 	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
 	await expect(page.getByRole('menuitem', { name: 'Archivo' }).or(page.getByText('Archivo').first())).toBeVisible();
 	await runCommand('panel.focus.effects');
