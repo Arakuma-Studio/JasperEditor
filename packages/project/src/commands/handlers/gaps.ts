@@ -1,24 +1,11 @@
 // Workstream gaps command handlers (docs/wp-notes/gaps.md).
 import { channelsProblem } from '../../gaps/audio-channels.ts';
-import { proxyMismatch } from '../../gaps/proxies.ts';
-import { WARP_STABILIZER_EFFECT_ID, warpAnalysisProblem } from '../../gaps/warp/analysis.ts';
 import {
 	clipMediaSecondsAt,
 	keyframeIndexes,
 	reframePosition,
 	smoothSubjectPath,
 } from '../../gaps/auto-reframe.ts';
-import { intrinsicBoxOf } from '../../registry/properties.ts';
-import type { MediaAsset } from '../../schema/media.ts';
-import type { Clip, Sequence } from '../../schema/sequence.ts';
-import { FLICKS_PER_SECOND } from '../../time.ts';
-import type { DDoc } from '../context.ts';
-import { keyframeHandlers } from './keyframe.ts';
-import { sequenceHandlers } from './sequence.ts';
-import { structureHandlers } from './structure.ts';
-import { clipCoreHandlers } from './clip-core.ts';
-import { insertProjectItems } from './clipboard.ts';
-import { shapeHandlers } from './shape.ts';
 import {
 	alignOffsets,
 	graphicSettingsOf,
@@ -27,9 +14,21 @@ import {
 	layerBounds,
 	pinOffsets,
 } from '../../gaps/graphics.ts';
-import type { HandlerContext } from '../context.ts';
+import { proxyMismatch } from '../../gaps/proxies.ts';
+import { WARP_STABILIZER_EFFECT_ID, warpAnalysisProblem } from '../../gaps/warp/analysis.ts';
+import { intrinsicBoxOf } from '../../registry/properties.ts';
+import type { MediaAsset } from '../../schema/media.ts';
+import type { Clip, Sequence } from '../../schema/sequence.ts';
+import { FLICKS_PER_SECOND } from '../../time.ts';
+import type { DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { clipCoreHandlers } from './clip-core.ts';
+import { insertProjectItems } from './clipboard.ts';
+import { keyframeHandlers } from './keyframe.ts';
 import { locateEffect } from './param.ts';
+import { sequenceHandlers } from './sequence.ts';
+import { shapeHandlers } from './shape.ts';
+import { structureHandlers } from './structure.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 export const GAPS_OWNER = 'gaps' as const;
@@ -69,7 +68,8 @@ export const gapsHandlers: HandlerMap = {
 			const end = Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));
 			for (const c of Object.values(seq.clips)) {
 				if (c.start + c.duration !== end) continue;
-				if (c.start >= cmd.graphic.duration) h.fail('E_INVALID_PARAM', `Layer ${c.id} starts after the new end`);
+				if (c.start >= cmd.graphic.duration)
+					h.fail('E_INVALID_PARAM', `Layer ${c.id} starts after the new end`);
 				(c as { duration: number }).duration = cmd.graphic.duration - c.start;
 			}
 		}
@@ -124,13 +124,19 @@ export const gapsHandlers: HandlerMap = {
 			if (!r) h.fail('E_INVALID_PARAM', `${c.id} has no Motion to align`);
 			return r!;
 		});
-		const to = cmd.relativeTo === 'frame' ? { x: 0, y: 0, width: seq.settings.width, height: seq.settings.height } : null;
+		const to =
+			cmd.relativeTo === 'frame'
+				? { x: 0, y: 0, width: seq.settings.width, height: seq.settings.height }
+				: null;
 		const offs = alignOffsets(rects, cmd.mode, to);
 		clips.forEach((c, i) => {
 			const [dx, dy] = offs[i]!;
 			if (!dx && !dy) return;
-			const pos = (c as unknown as { transform: { position: { value: [number, number]; keyframes: { value: [number, number] }[] } } })
-				.transform.position;
+			const pos = (
+				c as unknown as {
+					transform: { position: { value: [number, number]; keyframes: { value: [number, number] }[] } };
+				}
+			).transform.position;
 			pos.value = [pos.value[0] + dx, pos.value[1] + dy];
 			for (const k of pos.keyframes) k.value = [k.value[0] + dx, k.value[1] + dy];
 		});
@@ -223,11 +229,20 @@ export const gapsHandlers: HandlerMap = {
 		for (const path of cmd.subjects) {
 			const id = map.get(path.clipId);
 			const clip = id ? (seq.clips[id] as Clip | undefined) : undefined;
-			if (!clip || clip.kind !== 'video') {
+			if (clip?.kind !== 'video') {
 				skipped.push({ clipId: path.clipId, reason: 'not a video clip' });
 				continue;
 			}
-			const tr = (clip as { transform?: { position: { keyframes: unknown[]; value: [number, number] }; scale: { keyframes: unknown[]; value: number }; scaleWidth: { value: number }; anchor: { keyframes: unknown[]; value: [number, number] } } }).transform;
+			const tr = (
+				clip as {
+					transform?: {
+						position: { keyframes: unknown[]; value: [number, number] };
+						scale: { keyframes: unknown[]; value: number };
+						scaleWidth: { value: number };
+						anchor: { keyframes: unknown[]; value: [number, number] };
+					};
+				}
+			).transform;
 			if (!tr || tr.position.keyframes.length || tr.scale.keyframes.length || tr.anchor.keyframes.length) {
 				skipped.push({ clipId: path.clipId, reason: 'Motion is already animated' });
 				continue;

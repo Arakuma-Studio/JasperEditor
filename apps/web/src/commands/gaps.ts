@@ -10,7 +10,7 @@ import {
 	registerAudioChannelsDialog,
 	routingOf,
 } from '../gaps/AudioChannelsDialog.tsx';
-import { labelDefault } from '../gaps/app-prefs.ts';
+import { AUTO_REFRAME_DIALOG, registerAutoReframeDialog } from '../gaps/AutoReframeDialog.tsx';
 import {
 	EXPORT_FRAME_DIALOG,
 	type FrameSource,
@@ -35,14 +35,13 @@ import {
 } from '../gaps/SmallDialogs.tsx';
 import { ADD_TRACKS_DIALOG, DELETE_TRACKS_DIALOG, registerTrackDialogs } from '../gaps/TrackDialogs.tsx';
 import { presetHeights, trackHeightPresets } from '../gaps/track-heights.ts';
+import { registerWarpStabilizerUi } from '../gaps/warp-stabilizer.tsx';
 import { mediaKeyOf } from '../import/assets.ts';
 import { getSourceTransport } from '../panels/program/transport-registry.ts';
 import { sourceMonitorState } from '../panels/source/source-state.ts';
 import { trackHeight } from '../panels/timeline/model/layout.ts';
 import { detectRuntime, getDesktopBridge } from '../runtime/platform.ts';
 import { saveNow, setSkipUnloadFlush } from '../runtime/save.ts';
-import { registerWarpStabilizerUi } from '../gaps/warp-stabilizer.tsx';
-import { AUTO_REFRAME_DIALOG, registerAutoReframeDialog } from '../gaps/AutoReframeDialog.tsx';
 import { runCommand } from './registry.ts';
 import { apply, envOf, seekReveal, selectedClips } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -644,7 +643,7 @@ function fromClipMedia(ctx: CommandCtx): { mediaId: string; name: string; binId:
 	const doc = s.getCommitted();
 	const id = st.selection.project.primary ?? st.selection.project.items[0];
 	const it = id ? doc.items[id] : undefined;
-	if (!it || it.kind !== 'media') return null;
+	if (it?.kind !== 'media') return null;
 	const a = doc.media[it.mediaId];
 	if (!a || (a.kind !== 'video' && a.kind !== 'audio' && a.kind !== 'image' && a.kind !== 'animated-image'))
 		return null;

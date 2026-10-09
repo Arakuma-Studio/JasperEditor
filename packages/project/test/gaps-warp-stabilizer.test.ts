@@ -4,27 +4,27 @@ import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
 	corrections,
-	defaultEffectRegistry,
 	DEFAULT_STAB_SETTINGS,
+	defaultEffectRegistry,
 	hApply,
 	hInv,
 	hMaxDiff,
 	hTranslation,
 	leastSquares,
+	mediaTimeAtClipFrame,
 	planOutputOf,
 	planSourceOf,
 	repairDocument,
+	type StabSettings,
 	smoothTrajectories,
 	solveMesh,
 	stabPlan,
-	type StabSettings,
 	type WarpAnalysis,
 	type WarpAnalysisData,
 	WarpMesh,
 	warpFrameAt,
 	warpPlanFor,
 	warpSettingsOf,
-	mediaTimeAtClipFrame,
 } from '../src/index.ts';
 import { warpSynthesisOffsets } from '../src/registry/fx/warp-stabilizer.ts';
 import { Harness } from './helpers.ts';
@@ -62,12 +62,24 @@ describe('warp stabilizer maths', () => {
 		const dst = src.map((p) => hApply(h, p));
 		expect(hMaxDiff(leastSquares('homography', src, dst)!, h)).toBeLessThan(1e-6);
 		const sim = [0.9, -0.2, 4, 0.2, 0.9, 7, 0, 0, 1];
-		expect(hMaxDiff(leastSquares('similarity', src, src.map((p) => hApply(sim, p)))!, sim)).toBeLessThan(1e-9);
+		expect(
+			hMaxDiff(
+				leastSquares(
+					'similarity',
+					src,
+					src.map((p) => hApply(sim, p)),
+				)!,
+				sim,
+			),
+		).toBeLessThan(1e-9);
 	});
 
 	it('Smooth Motion removes jitter for every method; No Motion locks the scene', () => {
 		const { a, path } = shaky(90);
-		const scene = (k: number): [number, number] => [320 - path[k]![0] + path[0]![0], 180 - path[k]![1] + path[0]![1]];
+		const scene = (k: number): [number, number] => [
+			320 - path[k]![0] + path[0]![0],
+			180 - path[k]![1] + path[0]![1],
+		];
 		const before = Array.from({ length: 90 }, (_, k) => scene(k));
 		for (const method of ['position', 'positionScaleRotation', 'perspective'] as const) {
 			const p = stabPlan(a, S({ method, framing: 'stabilizeOnly' }));
@@ -209,7 +221,11 @@ describe('warp stabilizer maths', () => {
 			}
 		const frames = cams.map((c, k) => {
 			const d = k ? [c[0]! - cams[k - 1]![0]!, c[1]! - cams[k - 1]![1]!] : [0, 0];
-			return { t: [d[0]!, d[1]!] as const, s: [1, 0, d[0]!, d[1]!] as const, h: [1, 0, d[0]!, 0, 1, d[1]!, 0, 0] };
+			return {
+				t: [d[0]!, d[1]!] as const,
+				s: [1, 0, d[0]!, d[1]!] as const,
+				h: [1, 0, d[0]!, 0, 1, d[1]!, 0, 0],
+			};
 		});
 		const a: WarpAnalysis = { size: [320, 180], frames, tracks };
 		const residual = (out: (t: number, q: [number, number]) => [number, number] | null) => {
@@ -268,7 +284,9 @@ describe('stored analysis, command and invariant', () => {
 
 	it('maps clip frames to analysed frames through the clip in-point and speed', () => {
 		const a = analysis(30);
-		expect(mediaTimeAtClipFrame(a, 3, 30, { sourceInSeconds: 0.5, speed: 1, reverse: false })).toBeCloseTo(0.6);
+		expect(mediaTimeAtClipFrame(a, 3, 30, { sourceInSeconds: 0.5, speed: 1, reverse: false })).toBeCloseTo(
+			0.6,
+		);
 		expect(warpFrameAt(a, 0.6)).toEqual({ index: 18, inside: true });
 		expect(warpFrameAt(a, 5)).toEqual({ index: 29, inside: false });
 		expect(warpSettingsOf({ cropLessSmoothMore: 100 }, 30).cropLessSmoothMore).toBe(100);
@@ -303,14 +321,18 @@ describe('stored analysis, command and invariant', () => {
 		// Malformed data and other effects are refused.
 		expect(
 			h.tx([
-				{ type: 'effect.setWarpAnalysis', effectInstanceId: fxId, analysis: { ...analysis(10), frames: [1, 2, 3] } },
+				{
+					type: 'effect.setWarpAnalysis',
+					effectInstanceId: fxId,
+					analysis: { ...analysis(10), frames: [1, 2, 3] },
+				},
 			]).ok,
 		).toBe(false);
 		h.ok([{ type: 'effect.add', target: { clipId: clip.id }, effectId: 'jasper.crop' }]);
 		const crop = fxList(h.seq.clips[clip.id]).find((e) => e.effectId === 'jasper.crop')!;
-		expect(h.tx([{ type: 'effect.setWarpAnalysis', effectInstanceId: crop.id, analysis: analysis(4) }]).ok).toBe(
-			false,
-		);
+		expect(
+			h.tx([{ type: 'effect.setWarpAnalysis', effectInstanceId: crop.id, analysis: analysis(4) }]).ok,
+		).toBe(false);
 		h.ok([{ type: 'effect.setWarpAnalysis', effectInstanceId: fxId, analysis: null }]);
 		expect(fxOf().warpAnalysis).toBeUndefined();
 		// Undo = the previous document.

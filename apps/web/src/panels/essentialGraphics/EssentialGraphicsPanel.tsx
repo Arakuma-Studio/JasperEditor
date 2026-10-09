@@ -69,7 +69,11 @@ function writeLib(next: LibEntry[]): void {
 	try {
 		localStorage.setItem(LIB_KEY, JSON.stringify(next));
 	} catch {
-		toast({ kind: 'warning', title: 'My Templates', detail: 'The browser storage is full: export the template as a file instead.' });
+		toast({
+			kind: 'warning',
+			title: 'My Templates',
+			detail: 'The browser storage is full: export the template as a file instead.',
+		});
 	}
 	for (const l of libListeners) l();
 }
@@ -101,8 +105,9 @@ function targetOf(s: SessionState | null): Target {
 	const seq = doc.sequences[s.activeSequenceId];
 	if (!seq) return null;
 	const itemOf = (id: string) =>
-		Object.values(doc.items).find((i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === id)?.id ??
-		null;
+		Object.values(doc.items).find(
+			(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === id,
+		)?.id ?? null;
 	for (const id of s.selection.timeline.clips) {
 		const c = seq.clips[id];
 		const g = c?.kind === 'nest-video' ? doc.sequences[(c as { sequenceId: string }).sequenceId] : undefined;
@@ -113,7 +118,12 @@ function targetOf(s: SessionState | null): Target {
 }
 
 function apply(session: EditorSession, label: string, commands: unknown[], sequenceId?: string): boolean {
-	const r = session.apply({ label, origin: 'user', ...(sequenceId ? { sequenceId } : {}), commands: commands as never });
+	const r = session.apply({
+		label,
+		origin: 'user',
+		...(sequenceId ? { sequenceId } : {}),
+		commands: commands as never,
+	});
 	if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors.map((e) => e.message).join('; ') });
 	return r.ok;
 }
@@ -127,14 +137,27 @@ export function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 
 	const rate = seq.settings.frameRate;
 	const dur = Math.round((5 * rate.num) / rate.den);
 	const free = seq.videoTracks.find(
-		(t, i) => i > 0 && !Object.values(seq.clips).some((c) => c.trackId === t.id && c.start < at + dur && c.start + c.duration > at),
+		(t, i) =>
+			i > 0 &&
+			!Object.values(seq.clips).some(
+				(c) => c.trackId === t.id && c.start < at + dur && c.start + c.duration > at,
+			),
 	);
 	const track = free?.id ?? null;
-	const place = { at: { frames: at }, duration: { frames: dur }, track: track ?? seq.videoTracks[seq.videoTracks.length - 1]!.id };
+	const place = {
+		at: { frames: at },
+		duration: { frames: dur },
+		track: track ?? seq.videoTracks[seq.videoTracks.length - 1]!.id,
+	};
 	const first =
 		kind === 'text'
 			? { type: 'clip.addText', ...place, content: { text: 'New Text' }, ref: '$l' }
-			: { type: 'clip.addShape', ...place, shape: { type: kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] }, ref: '$l' };
+			: {
+					type: 'clip.addShape',
+					...place,
+					shape: { type: kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] },
+					ref: '$l',
+				};
 	const nestAt = track ? 1 : 2;
 	const r = session.apply({
 		label: 'New Graphic',
@@ -146,9 +169,12 @@ export function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 
 			{ type: 'graphic.update', sequenceId: '$g', graphic: { intro: 0, outro: 0 } },
 		] as never,
 		// The new nest clip becomes the selection, so the panel edits the new graphic right away.
-		selectAfter: (res) => ({ timeline: (res.results[nestAt] as { clipIds?: string[] } | undefined)?.clipIds ?? [] }),
+		selectAfter: (res) => ({
+			timeline: (res.results[nestAt] as { clipIds?: string[] } | undefined)?.clipIds ?? [],
+		}),
 	});
-	if (!r.ok) toast({ kind: 'error', title: 'New Graphic', detail: r.errors.map((e) => e.message).join('; ') });
+	if (!r.ok)
+		toast({ kind: 'error', title: 'New Graphic', detail: r.errors.map((e) => e.message).join('; ') });
 	return r.ok;
 }
 
@@ -156,14 +182,23 @@ export function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 
 
 function Section(props: { title: string; children: ReactNode; testId?: string }) {
 	return (
-		<section className="flex flex-col gap-1.5 border-b border-pr-border-subtle px-2 py-2" data-testid={props.testId}>
+		<section
+			className="flex flex-col gap-1.5 border-b border-pr-border-subtle px-2 py-2"
+			data-testid={props.testId}
+		>
 			<h3 className="text-pr-small font-semibold text-pr-strong">{props.title}</h3>
 			{props.children}
 		</section>
 	);
 }
 
-function FramesField(props: { label: string; value: number; onCommit(v: number): void; testId?: string; disabled?: boolean }) {
+function FramesField(props: {
+	label: string;
+	value: number;
+	onCommit(v: number): void;
+	testId?: string;
+	disabled?: boolean;
+}) {
 	const [text, setText] = useState(String(props.value));
 	const [last, setLast] = useState(props.value);
 	if (last !== props.value) {
@@ -171,7 +206,7 @@ function FramesField(props: { label: string; value: number; onCommit(v: number):
 		setText(String(props.value));
 	}
 	return (
-		<label className="flex items-center justify-between gap-2 text-pr-small">
+		<div className="flex items-center justify-between gap-2 text-pr-small">
 			<span>{props.label}</span>
 			<TextField
 				aria-label={props.label}
@@ -190,7 +225,7 @@ function FramesField(props: { label: string; value: number; onCommit(v: number):
 				}}
 				data-testid={props.testId}
 			/>
-		</label>
+		</div>
 	);
 }
 
@@ -229,26 +264,34 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 		apply(session, label, [{ type: 'graphic.update', sequenceId: g.id, graphic }]);
 	const roll: GraphicRoll | null = set.roll ?? null;
 	const setRoll = (patch: Partial<GraphicRoll> | null) =>
-		update({
-			roll:
-				patch === null
-					? null
-					: {
-							mode: 'roll',
-							startOffScreen: true,
-							endOffScreen: true,
-							preRoll: 0,
-							easeIn: 0,
-							easeOut: 0,
-							postRoll: 0,
-							...(roll ?? {}),
-							...patch,
-						},
-		}, 'Roll / Crawl');
+		update(
+			{
+				roll:
+					patch === null
+						? null
+						: {
+								mode: 'roll',
+								startOffScreen: true,
+								endOffScreen: true,
+								preRoll: 0,
+								easeIn: 0,
+								easeOut: 0,
+								postRoll: 0,
+								...(roll ?? {}),
+								...patch,
+							},
+			},
+			'Roll / Crawl',
+		);
 	return (
 		<div className="flex min-h-0 flex-col overflow-auto" data-testid="eg-edit">
 			<Section title={`Graphic: ${nameOf(doc, target.itemId) ?? 'Graphic'}`}>
-				<ul className="flex flex-col rounded-pr-control border border-pr-border-subtle" role="listbox" aria-label="Layers" aria-multiselectable>
+				<div
+					className="flex flex-col rounded-pr-control border border-pr-border-subtle"
+					role="listbox"
+					aria-label="Layers"
+					aria-multiselectable
+				>
 					{layers.map(({ clip }) => (
 						<LayerRow
 							key={clip.id}
@@ -256,20 +299,26 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 							selected={sel.includes(clip.id)}
 							onSelect={(add) =>
 								setSelected((cur) =>
-									add ? (cur.includes(clip.id) ? cur.filter((x) => x !== clip.id) : [...cur, clip.id]) : [clip.id],
+									add
+										? cur.includes(clip.id)
+											? cur.filter((x) => x !== clip.id)
+											: [...cur, clip.id]
+										: [clip.id],
 								)
 							}
 							session={session}
 							sequenceId={g.id}
 						/>
 					))}
-				</ul>
+				</div>
 				<div className="flex flex-wrap gap-1">
 					{(['text', 'rectangle', 'ellipse'] as const).map((k) => (
 						<Button
 							key={k}
 							variant="secondary"
-							onClick={() => apply(session, 'New Layer', [{ type: 'graphic.addLayer', sequenceId: g.id, kind: k }])}
+							onClick={() =>
+								apply(session, 'New Layer', [{ type: 'graphic.addLayer', sequenceId: g.id, kind: k }])
+							}
 							data-testid={`eg-add-${k}`}
 						>
 							{k === 'text' ? 'New Text' : k === 'rectangle' ? 'Rectangle' : 'Ellipse'}
@@ -306,7 +355,9 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 						</Button>
 					))}
 				</div>
-				<p className="text-pr-small text-pr-dim">One layer aligns to the video frame; several to their selection.</p>
+				<p className="text-pr-small text-pr-dim">
+					One layer aligns to the video frame; several to their selection.
+				</p>
 			</Section>
 			{one ? (
 				<Section title="Responsive Design – Position" testId="eg-pins">
@@ -326,7 +377,9 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 						}
 						options={[
 							{ value: 'frame', label: 'Video Frame' },
-							...layers.filter((l) => l.clip.id !== one.id).map((l) => ({ value: l.clip.id, label: l.clip.name || l.clip.id })),
+							...layers
+								.filter((l) => l.clip.id !== one.id)
+								.map((l) => ({ value: l.clip.id, label: l.clip.name || l.clip.id })),
 						]}
 					/>
 					<div className="flex gap-2">
@@ -340,7 +393,13 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 									if (c) edges.add(e);
 									else edges.delete(e);
 									apply(session, 'Responsive Design – Position', [
-										{ type: 'graphic.setPins', sequenceId: g.id, clipId: one.id, target: pins?.target ?? 'frame', edges: [...edges] },
+										{
+											type: 'graphic.setPins',
+											sequenceId: g.id,
+											clipId: one.id,
+											target: pins?.target ?? 'frame',
+											edges: [...edges],
+										},
 									]);
 								}}
 								data-testid={`eg-pin-${e}`}
@@ -351,9 +410,24 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 			) : (
 				<>
 					<Section title="Responsive Design – Time" testId="eg-time">
-						<FramesField label="Intro Duration (frames)" value={set.intro} onCommit={(v) => update({ intro: v })} testId="eg-intro" />
-						<FramesField label="Outro Duration (frames)" value={set.outro} onCommit={(v) => update({ outro: v })} testId="eg-outro" />
-						<FramesField label="Graphic Duration (frames)" value={end} onCommit={(v) => update({ duration: Math.max(1, v) })} testId="eg-duration" />
+						<FramesField
+							label="Intro Duration (frames)"
+							value={set.intro}
+							onCommit={(v) => update({ intro: v })}
+							testId="eg-intro"
+						/>
+						<FramesField
+							label="Outro Duration (frames)"
+							value={set.outro}
+							onCommit={(v) => update({ outro: v })}
+							testId="eg-outro"
+						/>
+						<FramesField
+							label="Graphic Duration (frames)"
+							value={end}
+							onCommit={(v) => update({ duration: Math.max(1, v) })}
+							testId="eg-duration"
+						/>
 					</Section>
 					<Section title="Roll / Crawl" testId="eg-roll">
 						<Select
@@ -369,12 +443,32 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 						/>
 						{roll ? (
 							<>
-								<Checkbox label="Start Off Screen" checked={roll.startOffScreen} onCheckedChange={(c) => setRoll({ startOffScreen: !!c })} />
-								<Checkbox label="End Off Screen" checked={roll.endOffScreen} onCheckedChange={(c) => setRoll({ endOffScreen: !!c })} />
-								<FramesField label="Pre-roll" value={roll.preRoll} onCommit={(v) => setRoll({ preRoll: v })} />
+								<Checkbox
+									label="Start Off Screen"
+									checked={roll.startOffScreen}
+									onCheckedChange={(c) => setRoll({ startOffScreen: !!c })}
+								/>
+								<Checkbox
+									label="End Off Screen"
+									checked={roll.endOffScreen}
+									onCheckedChange={(c) => setRoll({ endOffScreen: !!c })}
+								/>
+								<FramesField
+									label="Pre-roll"
+									value={roll.preRoll}
+									onCommit={(v) => setRoll({ preRoll: v })}
+								/>
 								<FramesField label="Ease-in" value={roll.easeIn} onCommit={(v) => setRoll({ easeIn: v })} />
-								<FramesField label="Ease-out" value={roll.easeOut} onCommit={(v) => setRoll({ easeOut: v })} />
-								<FramesField label="Post-roll" value={roll.postRoll} onCommit={(v) => setRoll({ postRoll: v })} />
+								<FramesField
+									label="Ease-out"
+									value={roll.easeOut}
+									onCommit={(v) => setRoll({ easeOut: v })}
+								/>
+								<FramesField
+									label="Post-roll"
+									value={roll.postRoll}
+									onCommit={(v) => setRoll({ postRoll: v })}
+								/>
 							</>
 						) : null}
 					</Section>
@@ -417,7 +511,9 @@ function nameOf(doc: ProjectDocument, itemId: string | null): string | null {
 }
 
 function templateOf(doc: ProjectDocument, itemId: string): GraphicTemplate | null {
-	return graphicTemplateOf(doc, itemId, nameOf(doc, itemId) ?? 'Graphic', (d, ids) => buildItemsPayload(d, ids));
+	return graphicTemplateOf(doc, itemId, nameOf(doc, itemId) ?? 'Graphic', (d, ids) =>
+		buildItemsPayload(d, ids),
+	);
 }
 
 function LayerRow(props: {
@@ -432,7 +528,7 @@ function LayerRow(props: {
 	const [name, setName] = useState(clip.name);
 	const kind = clip.kind === 'text' ? 'T' : clip.kind === 'shape' ? '■' : '▶';
 	return (
-		<li
+		<div
 			role="option"
 			aria-selected={props.selected}
 			tabIndex={0}
@@ -445,6 +541,9 @@ function LayerRow(props: {
 				if (e.key === 'Enter' || e.key === ' ') {
 					e.preventDefault();
 					props.onSelect(e.shiftKey);
+				} else if (e.key === 'F2') {
+					e.preventDefault();
+					setEditing(true);
 				}
 			}}
 			data-testid={`eg-layer-${clip.id}`}
@@ -489,6 +588,7 @@ function LayerRow(props: {
 					}}
 				/>
 			) : (
+				// biome-ignore lint/a11y/noStaticElementInteractions: double-click renames; the keyboard path is F2 on the row
 				<span className="min-w-0 flex-1 truncate" onDoubleClick={() => setEditing(true)}>
 					{clip.name || clip.kind}
 				</span>
@@ -508,7 +608,7 @@ function LayerRow(props: {
 			>
 				✕
 			</Button>
-		</li>
+		</div>
 	);
 }
 
@@ -523,13 +623,18 @@ function BrowseTab({ session }: { session: EditorSession }) {
 		if (!seq) return toast({ kind: 'warning', title: 'Add Graphic', detail: 'Open a sequence first.' });
 		const at = session.transport.getState().frame;
 		const track = seq.videoTracks[Math.min(1, seq.videoTracks.length - 1)]!.id;
-		apply(session, 'Add Graphic Template', [{ type: 'graphic.importTemplate', template: t, at: { frames: at }, track }]);
+		apply(session, 'Add Graphic Template', [
+			{ type: 'graphic.importTemplate', template: t, at: { frames: at }, track },
+		]);
 	};
 	const importFile = async (file: File) => {
 		try {
 			const parsed = GraphicTemplateSchema.safeParse(JSON.parse(await file.text()));
 			if (!parsed.success) throw new Error('not a Jasper Graphic Template (.jgt)');
-			writeLib([...lib, { id: `tpl_${Date.now()}`, template: parsed.data, savedAt: new Date().toISOString() }]);
+			writeLib([
+				...lib,
+				{ id: `tpl_${Date.now()}`, template: parsed.data, savedAt: new Date().toISOString() },
+			]);
 			toast({ kind: 'info', title: 'Template imported', detail: parsed.data.name });
 		} catch (e) {
 			toast({
@@ -568,7 +673,10 @@ function BrowseTab({ session }: { session: EditorSession }) {
 			) : (
 				<ul className="flex flex-col gap-1">
 					{entries.map((e) => (
-						<li key={e.id} className="flex items-center gap-2 rounded-pr-control border border-pr-border-subtle px-2 py-1 text-pr-small">
+						<li
+							key={e.id}
+							className="flex items-center gap-2 rounded-pr-control border border-pr-border-subtle px-2 py-1 text-pr-small"
+						>
 							<span className="min-w-0 flex-1 truncate">
 								{e.template.name}{' '}
 								<span className="text-pr-dim">
@@ -578,10 +686,19 @@ function BrowseTab({ session }: { session: EditorSession }) {
 							<Button onClick={() => add(e.template)} data-testid={`eg-tpl-add-${e.id}`}>
 								Add
 							</Button>
-							<Button variant="quiet" onClick={() => download(`${e.template.name}${GRAPHIC_TEMPLATE_EXTENSION}`, JSON.stringify(e.template))}>
+							<Button
+								variant="quiet"
+								onClick={() =>
+									download(`${e.template.name}${GRAPHIC_TEMPLATE_EXTENSION}`, JSON.stringify(e.template))
+								}
+							>
 								Export
 							</Button>
-							<Button variant="quiet" aria-label={`Delete ${e.template.name}`} onClick={() => writeLib(lib.filter((x) => x.id !== e.id))}>
+							<Button
+								variant="quiet"
+								aria-label={`Delete ${e.template.name}`}
+								onClick={() => writeLib(lib.filter((x) => x.id !== e.id))}
+							>
 								✕
 							</Button>
 						</li>
@@ -603,14 +720,24 @@ export function EssentialGraphicsPanel(_props: PanelProps) {
 	const items = useMemo(
 		() => [
 			{ value: 'browse', label: 'Browse', content: session ? <BrowseTab session={session} /> : null },
-			{ value: 'edit', label: 'Edit', content: session ? <EditTab session={session} target={target} /> : null },
+			{
+				value: 'edit',
+				label: 'Edit',
+				content: session ? <EditTab session={session} target={target} /> : null,
+			},
 		],
 		[session, target],
 	);
-	if (!session) return <EmptyState icon="panel.essentialGraphics" message="Open a project to use Essential Graphics" />;
+	if (!session)
+		return <EmptyState icon="panel.essentialGraphics" message="Open a project to use Essential Graphics" />;
 	return (
 		<div className="flex h-full min-h-0 flex-col" data-testid="essential-graphics-panel">
-			<Tabs items={items} value={tab} onValueChange={(v) => setTab(v as 'browse' | 'edit')} className="h-full" />
+			<Tabs
+				items={items}
+				value={tab}
+				onValueChange={(v) => setTab(v as 'browse' | 'edit')}
+				className="h-full"
+			/>
 		</div>
 	);
 }

@@ -21,7 +21,6 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
-import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { remixClip } from '../../audio-fx/ops.ts';

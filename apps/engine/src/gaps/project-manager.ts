@@ -39,8 +39,10 @@ import type { CoreServices } from '../tools/services.ts';
 import { uniquePath } from './media-jobs.ts';
 
 const safeName = (n: string) =>
-	n
-		.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_')
+	[...n]
+		.map((ch) => (ch.charCodeAt(0) < 32 ? '_' : ch))
+		.join('')
+		.replace(/[\\/:*?"<>|]+/g, '_')
 		.trim()
 		.slice(0, 120) || 'Project';
 

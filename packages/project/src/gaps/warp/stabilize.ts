@@ -331,7 +331,12 @@ function meshSystem(m: WarpMesh, o: WarpMeshOpts): BandMatrix {
  * Fits the content-preserving warp of one frame: `pairs` = (source position, wanted stabilised position) of its
  * features; `base` = the frame's perspective correction (source → stabilised), the prior.
  */
-export function solveMesh(size: P2, o: WarpMeshOpts, pairs: readonly (readonly [P2, P2])[], base: H3): WarpMesh {
+export function solveMesh(
+	size: P2,
+	o: WarpMeshOpts,
+	pairs: readonly (readonly [P2, P2])[],
+	base: H3,
+): WarpMesh {
 	const m = WarpMesh.fromHomography(o.cols, o.rows, size, base);
 	const n = m.verts.length;
 	const B = new Float64Array(n);
@@ -427,7 +432,7 @@ export function smoothTrajectories(
 		for (let a = 0; a < m; a++) for (let b = a + 1; b < m; b++) gram[b * m + a] = gram[a * m + b]!;
 		// Warm start: the previous window's basis shifted to this window's frames.
 		let start: number[][] | null = null;
-		if (warm && warm.vecs[0]) {
+		if (warm?.vecs[0]) {
 			const w = warm;
 			start = w.vecs.slice(0, k).map((v) => {
 				const o: number[] = [];
@@ -719,9 +724,7 @@ export function planOutputOf(plan: StabPlan, k: number, q: P2): [number, number]
 export function stabPlan(a: WarpAnalysis, s: StabSettings): StabPlan {
 	const base = corrections(a, s);
 	const meshes = stabMeshes(a, s, base);
-	let b: Warp[] = meshes
-		? meshes.map((mesh) => ({ h: null, mesh }))
-		: base.map((h) => ({ h, mesh: null }));
+	let b: Warp[] = meshes ? meshes.map((mesh) => ({ h: null, mesh })) : base.map((h) => ({ h, mesh: null }));
 	const size = a.size;
 	const c: P2 = [size[0] / 2, size[1] / 2];
 	const add = Math.max(0.01, s.additionalScale / 100);

@@ -9,8 +9,13 @@ import { isUiText, scan, transformI18n } from '../i18n/transform.mjs';
 import { __t } from '../src/i18n/runtime.ts';
 
 const root = join(__dirname, '../../..');
-const es = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<string, string>;
-const model = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8')) as string[];
+const es = JSON.parse(readFileSync(join(root, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
+	string,
+	string
+>;
+const model = JSON.parse(
+	readFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), 'utf8'),
+) as string[];
 
 function uiKeys(): Set<string> {
 	const keys = new Set<string>();
@@ -18,7 +23,11 @@ function uiKeys(): Set<string> {
 		for (const f of readdirSync(d)) {
 			const p = join(d, f);
 			if (statSync(p).isDirectory()) walk(p);
-			else if (/\.(tsx|ts)$/.test(f) && !/\.test\.|\.d\.ts$|\.tokens\.ts$/.test(f) && !/[\\/]i18n[\\/]/.test(p))
+			else if (
+				/\.(tsx|ts)$/.test(f) &&
+				!/\.test\.|\.d\.ts$|\.tokens\.ts$/.test(f) &&
+				!/[\\/]i18n[\\/]/.test(p)
+			)
 				scan(readFileSync(p, 'utf8'), p, { found: (k) => keys.add(k) });
 		}
 	};

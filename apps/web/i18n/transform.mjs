@@ -70,7 +70,10 @@ export function isUiText(s) {
 	if (t.length > 2000) return false;
 	if (/^[a-z0-9]+([._:/#-][a-z0-9]+)*$/.test(t)) return false; // ids, keys, single lowercase tokens
 	if (/^(https?:|mailto:|data:|\/|\.\/|\.\.\/|#|--)/.test(t)) return false;
-	if (/^[a-z-]+(\s+[a-z0-9-]+(:[a-z0-9-]+)?)+$/.test(t) && /(^|\s)(flex|grid|px-|py-|text-|bg-|border|rounded|gap-|items-|w-|h-)/.test(t))
+	if (
+		/^[a-z-]+(\s+[a-z0-9-]+(:[a-z0-9-]+)?)+$/.test(t) &&
+		/(^|\s)(flex|grid|px-|py-|text-|bg-|border|rounded|gap-|items-|w-|h-)/.test(t)
+	)
 		return false; // Tailwind class lists
 	if (/^[A-Z][A-Z0-9_]+$/.test(t)) return false; // CONSTANT_CODES
 	if (/^\{[^}]*\}$/.test(t)) return false;
@@ -90,11 +93,30 @@ function templateKey(node, src) {
 
 const q = (s) => JSON.stringify(s);
 
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', times: '×', middot: '·' };
+const ENTITIES = {
+	amp: '&',
+	lt: '<',
+	gt: '>',
+	quot: '"',
+	apos: "'",
+	nbsp: '\u00a0',
+	hellip: '…',
+	mdash: '—',
+	ndash: '–',
+	rsquo: '’',
+	lsquo: '‘',
+	ldquo: '“',
+	rdquo: '”',
+	times: '×',
+	middot: '·',
+};
 /** JSX text decodes HTML entities; a JS string does not: decode them before keying. */
 function decodeEntities(s) {
 	return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
-		if (e[0] === '#') return String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1)));
+		if (e[0] === '#')
+			return String.fromCodePoint(
+				e[1] === 'x' || e[1] === 'X' ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1)),
+			);
 		return ENTITIES[e.toLowerCase()] ?? m;
 	});
 }
@@ -104,7 +126,13 @@ function decodeEntities(s) {
  * `found(key)` every key (when extracting).
  */
 export function scan(code, fileName, { edit, found }) {
-	const sf = ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest, true, fileName.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+	const sf = ts.createSourceFile(
+		fileName,
+		code,
+		ts.ScriptTarget.Latest,
+		true,
+		fileName.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+	);
 	const src = code;
 	const seen = new Set();
 	const wrapExpr = (e, ctx) => {
@@ -115,7 +143,11 @@ export function scan(code, fileName, { edit, found }) {
 			wrapExpr(e.whenFalse, ctx);
 			return;
 		}
-		if (ts.isBinaryExpression(e) && (e.operatorToken.kind === ts.SyntaxKind.BarBarToken || e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)) {
+		if (
+			ts.isBinaryExpression(e) &&
+			(e.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+				e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+		) {
 			wrapExpr(e.right, ctx);
 			return;
 		}
@@ -124,7 +156,11 @@ export function scan(code, fileName, { edit, found }) {
 			if (!isUiText(e.text)) return;
 			seen.add(e.pos);
 			found?.(e.text);
-			edit?.(e.getStart(), e.getEnd(), `${ctx === 'jsx' ? '{' : ''}__t(${q(e.text)})${ctx === 'jsx' ? '}' : ''}`);
+			edit?.(
+				e.getStart(),
+				e.getEnd(),
+				`${ctx === 'jsx' ? '{' : ''}__t(${q(e.text)})${ctx === 'jsx' ? '}' : ''}`,
+			);
 			return;
 		}
 		if (ts.isTemplateExpression(e)) {
@@ -157,12 +193,26 @@ export function scan(code, fileName, { edit, found }) {
 		} else if (ts.isPropertyAssignment(n)) {
 			const name = ts.isIdentifier(n.name) || ts.isStringLiteral(n.name) ? n.name.text : null;
 			if (name && KEYS.has(name)) wrapExpr(n.initializer, 'expr');
-		} else if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && MAP_NAME.test(n.name.text) && n.initializer) {
+		} else if (
+			ts.isVariableDeclaration(n) &&
+			ts.isIdentifier(n.name) &&
+			MAP_NAME.test(n.name.text) &&
+			n.initializer
+		) {
 			let init = n.initializer;
-			while (ts.isAsExpression(init) || ts.isSatisfiesExpression?.(init) || ts.isParenthesizedExpression(init)) init = init.expression;
+			while (
+				ts.isAsExpression(init) ||
+				ts.isSatisfiesExpression?.(init) ||
+				ts.isParenthesizedExpression(init)
+			)
+				init = init.expression;
 			if (ts.isObjectLiteralExpression(init))
 				for (const p of init.properties) if (ts.isPropertyAssignment(p)) wrapExpr(p.initializer, 'expr');
-		} else if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && CALL_LABEL_ARGS[n.expression.text]) {
+		} else if (
+			ts.isCallExpression(n) &&
+			ts.isIdentifier(n.expression) &&
+			CALL_LABEL_ARGS[n.expression.text]
+		) {
 			for (const i of CALL_LABEL_ARGS[n.expression.text]) wrapExpr(n.arguments[i], 'expr');
 		}
 		ts.forEachChild(n, visit);

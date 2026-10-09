@@ -16,8 +16,8 @@ import {
 	warpPlanFor,
 	warpSettingsOf,
 } from '../../gaps/warp/analysis.ts';
+import { type H3, hInv, hMul } from '../../gaps/warp/math.ts';
 import { frameToFrame, type StabPlan } from '../../gaps/warp/stabilize.ts';
-import { hInv, hMul, type H3 } from '../../gaps/warp/math.ts';
 import type { EffectSpec } from '../effects.ts';
 import { defineShaderEffect } from './define.ts';
 import { GLSL_DATA } from './glsl/data.ts';
@@ -111,18 +111,21 @@ function uniformsOf(p: Record<string, unknown>, ctx: FxFrameContext): Record<str
 	if (s.framing === 'synthesizeEdges') {
 		const offs = warpSynthesisOffsets(p, ctx.fps);
 		const n: number[] = [];
-		for (const o of offs) n.push(...colMajor(toLayer(sx, sy, frameToFrame(decodeWarpAnalysis(a), k, indexAt(a, ctx.frame + o, ctx)))));
+		for (const o of offs)
+			n.push(
+				...colMajor(toLayer(sx, sy, frameToFrame(decodeWarpAnalysis(a), k, indexAt(a, ctx.frame + o, ctx)))),
+			);
 		while (n.length < 72) n.push(0);
 		u.u_wsSynth = offs.length > 0;
 		u.u_wsN = { floats: n };
-		const feather = typeof p.synthesisEdgeFeather === 'number' ? Math.max(0, Math.min(100, p.synthesisEdgeFeather)) : 0;
+		const feather =
+			typeof p.synthesisEdgeFeather === 'number' ? Math.max(0, Math.min(100, p.synthesisEdgeFeather)) : 0;
 		u.u_wsFeather = (feather / 100) * 0.1 * Math.min(ctx.width, ctx.height);
 	}
 	const px = (k2: string) => (typeof p[k2] === 'number' ? Math.max(0, p[k2] as number) : 0);
 	u.u_wsEdgeCrop = [px('edgeCropLeft'), px('edgeCropTop'), px('edgeCropRight'), px('edgeCropBottom')];
 	return u;
 }
-
 
 const FRAG = /* glsl */ `
 vec2 ws_apply(mat3 m, vec2 p) { vec3 q = m * vec3(p, 1.0); return q.xy / (abs(q.z) < 1e-9 ? 1e-9 : q.z); }
@@ -183,7 +186,13 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 			group: 'Stabilization',
 		}),
 		{
-			...fxParam.number('smoothness', 'Smoothness', 50, { min: 0, max: 1000, softMax: 200, step: 1 }, { unit: '%' }),
+			...fxParam.number(
+				'smoothness',
+				'Smoothness',
+				50,
+				{ min: 0, max: 1000, softMax: 200, step: 1 },
+				{ unit: '%' },
+			),
 			...hold,
 			group: 'Stabilization',
 		},
@@ -205,7 +214,13 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 			{ group: 'Borders' },
 		),
 		{
-			...fxParam.number('maxScale', 'Maximum Scale', 150, { min: 100, max: 1000, softMax: 300, step: 1 }, { unit: '%' }),
+			...fxParam.number(
+				'maxScale',
+				'Maximum Scale',
+				150,
+				{ min: 100, max: 1000, softMax: 300, step: 1 },
+				{ unit: '%' },
+			),
 			...hold,
 			group: 'Borders',
 		},
@@ -215,7 +230,13 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 			group: 'Borders',
 		},
 		{
-			...fxParam.number('additionalScale', 'Additional Scale', 100, { min: 1, max: 1000, softMax: 300, step: 1 }, { unit: '%' }),
+			...fxParam.number(
+				'additionalScale',
+				'Additional Scale',
+				100,
+				{ min: 1, max: 1000, softMax: 300, step: 1 },
+				{ unit: '%' },
+			),
 			...hold,
 			group: 'Borders',
 		},
@@ -229,12 +250,24 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 			{ group: 'Advanced' },
 		),
 		{
-			...fxParam.number('cropLessSmoothMore', 'Crop Less <-> Smooth More', 50, { min: 0, max: 100, step: 1 }, { unit: '%' }),
+			...fxParam.number(
+				'cropLessSmoothMore',
+				'Crop Less <-> Smooth More',
+				50,
+				{ min: 0, max: 100, step: 1 },
+				{ unit: '%' },
+			),
 			...hold,
 			group: 'Advanced',
 		},
 		{
-			...fxParam.number('synthesisInputRange', 'Synthesis Input Range (seconds)', 1, { min: 0, max: 10, step: 0.1 }, { unit: 's' }),
+			...fxParam.number(
+				'synthesisInputRange',
+				'Synthesis Input Range (seconds)',
+				1,
+				{ min: 0, max: 10, step: 0.1 },
+				{ unit: 's' },
+			),
 			...hold,
 			group: 'Advanced',
 		},
@@ -243,10 +276,22 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 			...hold,
 			group: 'Advanced',
 		},
-		{ ...fxParam.pixels('edgeCropLeft', 'Synthesis Edge Cropping: Left', 0, 200), ...hold, group: 'Advanced' },
+		{
+			...fxParam.pixels('edgeCropLeft', 'Synthesis Edge Cropping: Left', 0, 200),
+			...hold,
+			group: 'Advanced',
+		},
 		{ ...fxParam.pixels('edgeCropTop', 'Synthesis Edge Cropping: Top', 0, 200), ...hold, group: 'Advanced' },
-		{ ...fxParam.pixels('edgeCropRight', 'Synthesis Edge Cropping: Right', 0, 200), ...hold, group: 'Advanced' },
-		{ ...fxParam.pixels('edgeCropBottom', 'Synthesis Edge Cropping: Bottom', 0, 200), ...hold, group: 'Advanced' },
+		{
+			...fxParam.pixels('edgeCropRight', 'Synthesis Edge Cropping: Right', 0, 200),
+			...hold,
+			group: 'Advanced',
+		},
+		{
+			...fxParam.pixels('edgeCropBottom', 'Synthesis Edge Cropping: Bottom', 0, 200),
+			...hold,
+			group: 'Advanced',
+		},
 		fxParam.toggle('hideWarningBanner', 'Hide Warning Banner', false, { group: 'Advanced' }),
 	],
 	gpu: {
@@ -262,9 +307,6 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 export const WARP_STABILIZER_EFFECTS: readonly EffectSpec[] = [WARP_STABILIZER];
 
 /** The plan an instance renders with at a clip frame (tests, the Effect Controls status line). */
-export function warpPlanAt(
-	p: Record<string, unknown>,
-	a: WarpAnalysisData,
-): StabPlan {
+export function warpPlanAt(p: Record<string, unknown>, a: WarpAnalysisData): StabPlan {
 	return warpPlanFor(a, warpSettingsOf(p, warpAnalysisFps(a)));
 }

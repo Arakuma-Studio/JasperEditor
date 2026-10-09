@@ -30,7 +30,7 @@ export function eotf(curve: StillCurve, v: number): number {
 /** The display curve of the still of a sequence in `workingSpace` (HDR spaces are shown as Rec. 709 / BT.1886). */
 export function stillCurveFor(workingSpace: string | undefined): StillCurve {
 	const c = workingSpace ? colorSpace(workingSpace) : undefined;
-	if (!c || c.kind !== 'sdr') return 'bt1886';
+	if (c?.kind !== 'sdr') return 'bt1886';
 	return c.curve === 'srgb' || c.curve === 'gamma26' || c.curve === 'gamma22' ? c.curve : 'bt1886';
 }
 

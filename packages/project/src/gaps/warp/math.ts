@@ -54,7 +54,17 @@ export function hInv(m: H3): number[] | null {
 
 export const hTranslation = (t: P2): number[] => [1, 0, t[0], 0, 1, t[1], 0, 0, 1];
 /** Uniform scale `k` about `c`. */
-export const hScaleAbout = (k: number, c: P2): number[] => [k, 0, c[0] * (1 - k), 0, k, c[1] * (1 - k), 0, 0, 1];
+export const hScaleAbout = (k: number, c: P2): number[] => [
+	k,
+	0,
+	c[0] * (1 - k),
+	0,
+	k,
+	c[1] * (1 - k),
+	0,
+	0,
+	1,
+];
 
 /** `(1 − t)·a + t·b` element-wise (both normalised). */
 export function hLerp(a: H3, b: H3, t: number): number[] {
@@ -252,12 +262,19 @@ export function choleskySolve(a: Float64Array, n: number, b: Float64Array): bool
  * warm-started from `start` (k vectors of length n, e.g. the previous window's basis): rows of the result, largest
  * eigenvalue first. Converges in a few steps when the start is close (sliding windows).
  */
-export function topEigenvectors(g: Float64Array, n: number, k: number, start: number[][] | null, iters = 40): number[][] {
+export function topEigenvectors(
+	g: Float64Array,
+	n: number,
+	k: number,
+	start: number[][] | null,
+	iters = 40,
+): number[][] {
 	let q: number[][] = [];
 	for (let i = 0; i < k; i++) {
 		const s = start?.[i];
 		if (s && s.length === n) q.push(s.slice());
-		else q.push(Array.from({ length: n }, (_, j) => (j === i ? 1 : 0) + 0.01 * Math.sin(1 + i * 7.3 + j * 1.7)));
+		else
+			q.push(Array.from({ length: n }, (_, j) => (j === i ? 1 : 0) + 0.01 * Math.sin(1 + i * 7.3 + j * 1.7)));
 	}
 	const orth = (vs: number[][]) => {
 		for (let i = 0; i < vs.length; i++) {
@@ -310,5 +327,8 @@ export function topEigenvectors(g: Float64Array, n: number, k: number, start: nu
 		}
 		return s;
 	});
-	return q.map((v, i) => ({ v, r: rq[i]! })).sort((a, b) => b.r - a.r).map((e) => e.v);
+	return q
+		.map((v, i) => ({ v, r: rq[i]! }))
+		.sort((a, b) => b.r - a.r)
+		.map((e) => e.v);
 }

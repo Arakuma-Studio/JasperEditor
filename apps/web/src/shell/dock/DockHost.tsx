@@ -202,8 +202,7 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 						}
 					/>
 				) : null}
-				{/* biome-ignore lint/a11y/noStaticElementInteractions: pointer shortcut; keyboard users close panels with Close Panel (see above) */}
-				{/* biome-ignore lint/a11y/useKeyWithClickEvents: same */}
+				{/* Pointer shortcut (aria-hidden); keyboard users close panels with Close Panel (see above). */}
 				<span
 					aria-hidden="true"
 					title={`Close ${title}`}

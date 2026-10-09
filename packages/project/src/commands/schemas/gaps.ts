@@ -1,8 +1,8 @@
 // Workstream gaps (docs/wp-notes/gaps.md): proxies (PRJ-8) and the other gaps commands added below.
 import { z } from 'zod';
+import { ALIGN_MODES, GraphicRollSchema, GraphicTemplateSchema, PIN_EDGES } from '../../gaps/graphics.ts';
 import { WarpAnalysisDataSchema } from '../../gaps/warp/analysis.ts';
 import { AttachedProxySchema } from '../../schema/media.ts';
-import { ALIGN_MODES, GraphicRollSchema, GraphicTemplateSchema, PIN_EDGES } from '../../gaps/graphics.ts';
 import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 
 /**
@@ -54,7 +54,10 @@ const SubjectPath = z.strictObject({
 	start: z.number().min(0),
 	frameDuration: z.number().positive(),
 	/** x, y (0..1 of the media's display), confidence per sample. */
-	points: z.array(z.number().min(-1).max(2)).min(3).max(3 * 54_000),
+	points: z
+		.array(z.number().min(-1).max(2))
+		.min(3)
+		.max(3 * 54_000),
 });
 
 /**

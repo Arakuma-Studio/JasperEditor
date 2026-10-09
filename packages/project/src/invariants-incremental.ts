@@ -21,10 +21,10 @@
 // incremental one must agree on validity and on the id index, else the transaction fails with E_INTERNAL.
 import { audioMixIssues } from './audio/invariants.ts';
 import { colorIssues } from './color/model.ts';
-import { gapsClipIssues } from './gaps/index.ts';
 import { keyDiff, markClean } from './commands/draft-read.ts';
 import type { Issue } from './commands/types.ts';
 import { expressionIssues } from './expressions.ts';
+import { gapsClipIssues } from './gaps/index.ts';
 import { type IdPrefix, idPrefixOf, isValidId } from './ids.ts';
 import {
 	type Claim,

@@ -545,7 +545,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		(video.width === seq.settings.width && video.height === seq.settings.height) ||
 		(video.width === fmt.storageWidth && video.height === fmt.height);
 	const anamorphic = fmt.par.num !== fmt.par.den && matchesSequence && !input.still;
-	const interlaced =
+	const _interlaced =
 		fmt.fieldOrder !== 'progressive' && matchesSequence && !settings.videoOnly && !input.still;
 	const output: OutputSpec = {
 		width: anamorphic ? fmt.storageWidth : (video?.width ?? seq.settings.width),

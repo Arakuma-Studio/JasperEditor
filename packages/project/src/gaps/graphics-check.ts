@@ -9,7 +9,8 @@ function pinProblem(seq: { clips: Record<string, unknown> }, clipId: string, pin
 	const p = LayerPinsSchema.safeParse(pins);
 	if (!p.success) return 'unreadable pins';
 	if (p.data.target === clipId) return 'pinned to itself';
-	if (p.data.target !== 'frame' && !seq.clips[p.data.target]) return `pinned to a missing layer ${p.data.target}`;
+	if (p.data.target !== 'frame' && !seq.clips[p.data.target])
+		return `pinned to a missing layer ${p.data.target}`;
 	return null;
 }
 

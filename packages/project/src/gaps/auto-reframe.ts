@@ -22,7 +22,11 @@ export const REFRAME_TRACKING = {
 export type ReframeTracking = keyof typeof REFRAME_TRACKING;
 
 /** The reframed frame size: the source's smaller side kept, the other from the aspect ratio (even numbers). */
-export function reframeSize(width: number, height: number, aspect: { num: number; den: number }): { width: number; height: number } {
+export function reframeSize(
+	width: number,
+	height: number,
+	aspect: { num: number; den: number },
+): { width: number; height: number } {
 	const a = aspect.num / aspect.den;
 	const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
 	if (a <= width / height) return { width: even(height * a), height: even(height) };
@@ -115,7 +119,11 @@ export function reframePosition(
 }
 
 /** Indexes of the samples that linear interpolation needs (error ≤ tol px, gaps ≤ maxGap samples). */
-export function keyframeIndexes(values: readonly (readonly [number, number])[], tol = 1.5, maxGap = 60): number[] {
+export function keyframeIndexes(
+	values: readonly (readonly [number, number])[],
+	tol = 1.5,
+	maxGap = 60,
+): number[] {
 	const n = values.length;
 	if (n <= 2) return Array.from({ length: n }, (_, i) => i);
 	const keep = new Set<number>([0, n - 1]);
@@ -160,16 +168,29 @@ export function clipMediaSecondsAt(
 export function reframeJobsFor(
 	doc: {
 		sequences: Record<string, { clips: Record<string, unknown>; settings: { frameRate: Rational } }>;
-		media: Record<string, { locators: readonly { type: string; key?: string }[]; probe: { streams: readonly unknown[] } }>;
+		media: Record<
+			string,
+			{ locators: readonly { type: string; key?: string }[]; probe: { streams: readonly unknown[] } }
+		>;
 	},
 	sequenceId: string,
 ): { mediaKey: string; startFrame: number; frameCount: number; clipIds: string[] }[] {
 	const seq = doc.sequences[sequenceId];
 	if (!seq) return [];
 	const rate = seq.settings.frameRate;
-	const jobs = new Map<string, { mediaKey: string; startFrame: number; frameCount: number; clipIds: string[] }>();
+	const jobs = new Map<
+		string,
+		{ mediaKey: string; startFrame: number; frameCount: number; clipIds: string[] }
+	>();
 	for (const raw of Object.values(seq.clips)) {
-		const c = raw as { id: string; kind: string; mediaId?: string; duration: number; sourceIn?: number; speed?: { rate?: number } };
+		const c = raw as {
+			id: string;
+			kind: string;
+			mediaId?: string;
+			duration: number;
+			sourceIn?: number;
+			speed?: { rate?: number };
+		};
 		if (c.kind !== 'video' || !c.mediaId) continue;
 		const asset = doc.media[c.mediaId];
 		const key = asset?.locators.find((l) => l.type === 'engine-store')?.key;

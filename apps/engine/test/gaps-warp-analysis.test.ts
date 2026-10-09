@@ -4,16 +4,25 @@
 // the export planner refuses an un-analysed stabiliser (WARP_NOT_ANALYZED).
 import type { WarpAnalysisResult } from '@jasper/api';
 import {
+	decodeWarpAnalysis,
 	hApply,
 	planOutputOf,
 	WarpAnalysisDataSchema,
 	warpPlanFor,
 	warpSettingsOf,
-	decodeWarpAnalysis,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+} from './helpers.ts';
 
 let app: TestApp;
 
@@ -85,7 +94,9 @@ describe('Warp Stabilizer analysis', () => {
 		// A scene point at the centre of frame 0 is at centre − (walk − walk0) on frame k.
 		const at = (k: number): [number, number] => [960 - (w.xs[k]! - w.xs[0]!), 540 - (w.ys[k]! - w.ys[0]!)];
 		for (const method of ['position', 'perspective', 'subspaceWarp'] as const) {
-			const plan = warpPlanFor(a, { ...warpSettingsOf({ method, result: 'noMotion', framing: 'stabilizeOnly' }, 30) });
+			const plan = warpPlanFor(a, {
+				...warpSettingsOf({ method, result: 'noMotion', framing: 'stabilizeOnly' }, 30),
+			});
 			const outs = Array.from({ length: 90 }, (_, k) => planOutputOf(plan, k, at(k))!);
 			const spread = Math.max(...outs.map((p) => Math.hypot(p[0] - outs[45]![0], p[1] - outs[45]![1])));
 			expect(spread, method).toBeLessThan(method === 'subspaceWarp' ? 2.5 : 1.5);
@@ -129,7 +140,8 @@ describe('Warp Stabilizer analysis', () => {
 		const refused = await plan();
 		expect(refused.statusCode, refused.body).toBe(409);
 		expect(refused.json().code ?? refused.json().error?.code).toBe('WARP_NOT_ANALYZED');
-		const fx = (d.doc.sequences[d.seqId]!.clips[clipId] as unknown as { effects: { id: string }[] }).effects[0]!;
+		const fx = (d.doc.sequences[d.seqId]!.clips[clipId] as unknown as { effects: { id: string }[] })
+			.effects[0]!;
 		const { analysedFrames: _a, framesPerSec: _f, ...stored } = analysis;
 		d.tx([{ type: 'effect.setWarpAnalysis', effectInstanceId: fx.id, analysis: stored }]);
 		const ok = await plan();

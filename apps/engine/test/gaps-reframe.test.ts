@@ -5,7 +5,16 @@ import type { ReframeResult } from '@jasper/api';
 import { contentTimeAt, evaluate, smoothSubjectPath } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+} from './helpers.ts';
 
 let app: TestApp;
 beforeAll(async () => {
@@ -71,7 +80,11 @@ describe('Auto Reframe', () => {
 		expect([seq.settings.width, seq.settings.height]).toEqual([608, 1080]);
 		const c = seq.clips[r.reframed[0]!]! as unknown as {
 			start: number;
-			transform: { position: { keyframes: unknown[] }; scale: { value: number }; anchor: { value: [number, number] } };
+			transform: {
+				position: { keyframes: unknown[] };
+				scale: { value: number };
+				anchor: { value: [number, number] };
+			};
 		};
 		expect(c.transform.position.keyframes.length).toBeGreaterThan(2);
 		const s = c.transform.scale.value / 100;
@@ -80,7 +93,10 @@ describe('Auto Reframe', () => {
 		// The sequence of the fixture runs at 30 fps like the media: frame n shows media frame n.
 		let inside = 0;
 		for (const n of [10, 30, 45, 60, 80]) {
-			const pos = evaluate(c.transform.position as never, contentTimeAt(c as never, n, rate)) as [number, number];
+			const pos = evaluate(c.transform.position as never, contentTimeAt(c as never, n, rate)) as [
+				number,
+				number,
+			];
 			const sx = pos[0] + (truth(n)[0] * 848 - c.transform.anchor.value[0]) * s;
 			if (sx > 0.1 * 608 && sx < 0.9 * 608) inside++;
 			// The picture covers the frame.

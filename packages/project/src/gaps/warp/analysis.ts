@@ -6,7 +6,13 @@
 // x, y interleaved at 0.1 px.
 import { z } from 'zod';
 import type { FxClipInfo } from '../../registry/fx/shader.ts';
-import { DEFAULT_STAB_SETTINGS, type StabPlan, type StabSettings, stabPlan, type WarpAnalysis } from './stabilize.ts';
+import {
+	DEFAULT_STAB_SETTINGS,
+	type StabPlan,
+	type StabSettings,
+	stabPlan,
+	type WarpAnalysis,
+} from './stabilize.ts';
 
 export const WARP_STABILIZER_EFFECT_ID = 'jasper.warp-stabilizer';
 /** Numbers per analysed frame. */
@@ -113,7 +119,8 @@ export function warpFrameAt(
 
 /** The stabiliser's settings from the effect's params. */
 export function warpSettingsOf(p: Record<string, unknown>, fps: number): StabSettings {
-	const num = (k: string, d: number) => (typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d);
+	const num = (k: string, d: number) =>
+		typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d;
 	const pick = <T extends string>(k: string, opts: readonly T[], d: T): T =>
 		opts.includes(p[k] as T) ? (p[k] as T) : d;
 	return {

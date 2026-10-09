@@ -53,7 +53,7 @@ export function channelsProblem(
 ): string | null {
 	if (!asset) return 'the media is missing';
 	const s = asset.probe.streams.find((x) => x.type === 'audio' && x.index === ch.streamIndex);
-	if (!s || s.type !== 'audio') return `stream ${ch.streamIndex} is not an audio stream of the media`;
+	if (s?.type !== 'audio') return `stream ${ch.streamIndex} is not an audio stream of the media`;
 	const n = ch.map.length;
 	if (opts.format !== false && n !== 1 && n !== 2 && n !== 6)
 		return 'a clip has 1 (mono), 2 (stereo) or 6 (5.1) channels';
@@ -172,7 +172,7 @@ registerGapsCheck({
 				const asset = doc.media[r.mediaId];
 				if (!asset || !channelsProblem(asset, r.channels, { format: false })) continue;
 				const s = asset.probe.streams.find((x) => x.type === 'audio');
-				if (!s || s.type !== 'audio') continue;
+				if (s?.type !== 'audio') continue;
 				r.channels = { streamIndex: s.index, map: s.channels >= 2 ? [0, 1] : [0] };
 				note('reset-channels', c.id, 'audio channel routing outside the media: reset to its first channels');
 			}

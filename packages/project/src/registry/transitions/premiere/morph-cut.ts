@@ -8,7 +8,7 @@
 //   parabola → 3×3 median → per pixel ten motion hypotheses checked forward and backward, weighted by agreement.
 // The passes are the retime shaders adapted to the fx framework (uv-addressed texels, sides read with tr_from/tr_to,
 // premultiplied pictures). Exactly A at progress 0 and B at 1 (the interpolation weights vanish at the ends).
-import { GLSL_TR_EASE } from '../glsl.ts';
+
 import {
 	analysisFactor,
 	analysisSize,
@@ -24,6 +24,7 @@ import {
 } from '../../../time-remap/flow.ts';
 import type { ShaderPass } from '../../fx/shader.ts';
 import { defineShaderTransition, TRANSITION_BINS } from '../define.ts';
+import { GLSL_TR_EASE } from '../glsl.ts';
 
 const f6 = (x: number) => x.toFixed(6);
 
@@ -268,7 +269,10 @@ export function morphCutPasses(width: number, height: number): ShaderPass[] {
 	const nLevels = pyramidLevels(A.w, A.h);
 	const sizes = [{ w: A.w, h: A.h }];
 	for (let i = 1; i < nLevels; i++)
-		sizes.push({ w: Math.max(1, Math.floor(sizes[i - 1]!.w / 2)), h: Math.max(1, Math.floor(sizes[i - 1]!.h / 2)) });
+		sizes.push({
+			w: Math.max(1, Math.floor(sizes[i - 1]!.w / 2)),
+			h: Math.max(1, Math.floor(sizes[i - 1]!.h / 2)),
+		});
 	const passes: ShaderPass[] = [
 		{
 			output: 'mcL0',

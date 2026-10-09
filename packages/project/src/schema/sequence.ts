@@ -2,6 +2,8 @@
 
 import { z } from 'zod';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
+import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
+import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
 import {
 	AudioChannelFormatSchema,
 	LoudnessNormalizeSchema,
@@ -24,8 +26,6 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
-import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
-import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';

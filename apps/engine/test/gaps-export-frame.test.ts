@@ -30,11 +30,22 @@ async function still(payload: Record<string, unknown>) {
 	expect(r.statusCode, r.body).toBe(202);
 	const done = await coreServices(app).queue.wait(r.json().id);
 	expect(done.error, JSON.stringify(done.error)).toBeUndefined();
-	return { id: r.json().id as string, result: done.result as { url: string; path?: string; format?: string } };
+	return {
+		id: r.json().id as string,
+		result: done.result as { url: string; path?: string; format?: string },
+	};
 }
 
 function codecOf(file: string): string {
-	const r = spawnSync(FFPROBE, ['-v', 'error', '-show_entries', 'stream=codec_name,pix_fmt,width,height', '-of', 'csv=p=0', file]);
+	const r = spawnSync(FFPROBE, [
+		'-v',
+		'error',
+		'-show_entries',
+		'stream=codec_name,pix_fmt,width,height',
+		'-of',
+		'csv=p=0',
+		file,
+	]);
 	return r.stdout.toString().trim();
 }
 
@@ -56,26 +67,40 @@ describe('Export Frame formats', () => {
 		['bmp', 'bmp', /^bmp,1280,720,bgr24/],
 		['tga', 'tga', /^targa,1280,720,bgr24/],
 		['png', 'png', /^png,1280,720,rgb/],
-	])('%s to a folder', async (format, ext, codec) => {
-		const d = doc();
-		const { id, result } = await still({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			frame: 5,
-			format,
-			destination: { folder: out, name: `frame-${format}` },
-		});
-		expect(result.format).toBe(format);
-		expect(result.path).toBe(join(out, `frame-${format}.${ext}`));
-		expect(codecOf(result.path!)).toMatch(codec);
-		const served = await app.inject({ method: 'GET', url: `/renders/${id}/output`, headers: H });
-		expect(served.statusCode).toBe(200);
-	}, 120_000);
+	])(
+		'%s to a folder',
+		async (format, ext, codec) => {
+			const d = doc();
+			const { id, result } = await still({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				frame: 5,
+				format,
+				destination: { folder: out, name: `frame-${format}` },
+			});
+			expect(result.format).toBe(format);
+			expect(result.path).toBe(join(out, `frame-${format}.${ext}`));
+			expect(codecOf(result.path!)).toMatch(codec);
+			const served = await app.inject({ method: 'GET', url: `/renders/${id}/output`, headers: H });
+			expect(served.statusCode).toBe(200);
+		},
+		120_000,
+	);
 
 	it('never overwrites: a second frame with the same name gets " (2)"', async () => {
 		const d = doc();
-		const a = await still({ envelope: d.envelope(), sequenceId: d.seqId, frame: 0, destination: { folder: out, name: 'dup' } });
-		const b = await still({ envelope: d.envelope(), sequenceId: d.seqId, frame: 0, destination: { folder: out, name: 'dup' } });
+		const a = await still({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			frame: 0,
+			destination: { folder: out, name: 'dup' },
+		});
+		const b = await still({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			frame: 0,
+			destination: { folder: out, name: 'dup' },
+		});
 		expect(a.result.path).toBe(join(out, 'dup.png'));
 		expect(b.result.path).toBe(join(out, 'dup (2).png'));
 		expect(existsSync(b.result.path!)).toBe(true);
@@ -91,9 +116,13 @@ describe('Export Frame formats', () => {
 			destination: { folder: out, name: 'linear' },
 		});
 		expect(codecOf(result.path!)).toMatch(/^exr,/);
-		const raw = spawnSync(FFMPEG, ['-v', 'error', '-i', result.path!, '-f', 'rawvideo', '-pix_fmt', 'gbrpf32le', '-'], {
-			maxBuffer: 1 << 26,
-		}).stdout;
+		const raw = spawnSync(
+			FFMPEG,
+			['-v', 'error', '-i', result.path!, '-f', 'rawvideo', '-pix_fmt', 'gbrpf32le', '-'],
+			{
+				maxBuffer: 1 << 26,
+			},
+		).stdout;
 		const g = raw.readFloatLE(0);
 		// The solid renders as 128/255 (± 1 code value of the display transform): linear (v)^2.4.
 		const lo = (127 / 255) ** 2.4;
@@ -108,14 +137,24 @@ describe('Export Frame formats', () => {
 			method: 'POST',
 			url: '/api/stills',
 			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 0, destination: { folder: 'rel', name: 'x' } },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				frame: 0,
+				destination: { folder: 'rel', name: 'x' },
+			},
 		});
 		expect(rel.statusCode).toBe(400);
 		const bad = await app.inject({
 			method: 'POST',
 			url: '/api/stills',
 			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 0, destination: { folder: out, name: '../x' } },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				frame: 0,
+				destination: { folder: out, name: '../x' },
+			},
 		});
 		expect(bad.statusCode).toBe(400);
 	});

@@ -13,6 +13,7 @@ import { LABEL_COLORS, type LabelColor } from '@jasper/project';
 import { Button, Checkbox, Select, TextField, toast } from '@jasper/ui';
 import { useEffect, useState } from 'react';
 import { audioPrefs, useAudioPrefs } from '../audio/prefs.ts';
+import { currentLanguage } from '../i18n/runtime.ts';
 import { errorText, formatBytes } from '../processing/engine-jobs.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { registerPreferencesPage } from '../shell/preferences/registry.ts';
@@ -20,7 +21,6 @@ import { prefsStore, type UiPrefs, useUiPrefs } from '../shell/prefs.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { gapsPrefs, type LabelDefaultKind, labelName, useGapsPrefs } from './app-prefs.ts';
 import { canChooseOutput, listOutputDevices } from './audio-output.ts';
-import { currentLanguage } from '../i18n/runtime.ts';
 import { LANGUAGES } from './i18n-languages.ts';
 
 function NumberField(props: {

@@ -18,6 +18,7 @@ import {
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
+import { applyGraphics } from '../gaps/graphics.ts';
 import {
 	interpretedFrameRate,
 	type MediaTimeMap,
@@ -80,7 +81,6 @@ import {
 	resolveVideoTransitions,
 } from '../transitions.ts';
 import { clipPictureTime } from './scene.ts';
-import { applyGraphics } from '../gaps/graphics.ts';
 
 export type MediaHandle = {
 	url: string;

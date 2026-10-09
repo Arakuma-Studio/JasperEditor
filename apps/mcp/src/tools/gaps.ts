@@ -5,9 +5,11 @@ import type { MediaJobResult, ReframeResult, RegisteredMedia, WarpAnalysisResult
 import {
 	AUDIO_DISPLAY_FORMATS,
 	attachedProxyFrom,
+	buildItemsPayload,
 	FIND_OPERATORS,
 	findProjectItems,
 	findTimelineHits,
+	graphicTemplateOf,
 	INGEST_ACTIONS,
 	makeEnvelope,
 	mediaJobCommands,
@@ -15,6 +17,8 @@ import {
 	PROXY_PRESETS,
 	projectSettingsOf,
 	proxyMismatch,
+	reframeJobsFor,
+	reframeSize,
 	resolveFrameInput,
 	type Sequence,
 	sequenceFormatOf,
@@ -23,10 +27,6 @@ import {
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
 	VIDEO_DISPLAY_FORMATS,
-	buildItemsPayload,
-	graphicTemplateOf,
-	reframeJobsFor,
-	reframeSize,
 	WARP_STABILIZER_EFFECT_ID,
 	warpRequestFor,
 } from '@jasper/project';
@@ -186,7 +186,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 			if (!asset)
 				throw new ToolError('E_NOT_FOUND', `Media not found: ${mediaId}`, 'Call get_project for media ids.');
 			const loc = asset.locators.find((l) => l.type === 'engine-store');
-			if (!loc || loc.type !== 'engine-store')
+			if (loc?.type !== 'engine-store')
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					'This media has no file on the engine',
@@ -452,7 +452,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 	};
 	const engineKey = (doc: Awaited<ReturnType<typeof loadDoc>>['doc'], mediaId: string): string => {
 		const l = doc.media[mediaId]!.locators.find((x) => x.type === 'engine-store');
-		if (!l || l.type !== 'engine-store')
+		if (l?.type !== 'engine-store')
 			throw new ToolError(
 				'E_INVALID_PARAM',
 				`${mediaId} has no file on the engine`,
@@ -895,7 +895,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const { doc } = await loadDoc(ctx, projectId);
 			if (itemId) {
 				const it = doc.items[itemId];
-				if (!it || it.kind !== 'media')
+				if (it?.kind !== 'media')
 					throw new ToolError('E_NOT_FOUND', `Media item not found: ${itemId}`, 'Call get_project.');
 				const asset = doc.media[it.mediaId]!;
 				return jsonResult({
@@ -1024,7 +1024,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		{
 			title: 'Warp Stabilizer',
 			description:
-				'Effect ▸ Distort ▸ Warp Stabilizer on a video clip, end to end: adds the effect when the clip has none (with params: result smoothMotion / noMotion, smoothness %, method position / positionScaleRotation / perspective / subspaceWarp, preserveScale, framing stabilizeOnly / stabilizeCrop / stabilizeCropAutoScale / synthesizeEdges, maxScale %, actionSafe %, additionalScale %, detailedAnalysis, rollingShutterRipple automatic / enhanced, cropLessSmoothMore 0-100, synthesisInputRange s, synthesisEdgeFeather, edgeCropLeft/Top/Right/Bottom px, hideWarningBanner; existing instances are updated with param.set), runs the engine analysis of the clip\'s media range (+15 frames handles) and stores it with the effect (no undo step). An analysed effect is reused while it covers the clip. Exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).',
+				"Effect ▸ Distort ▸ Warp Stabilizer on a video clip, end to end: adds the effect when the clip has none (with params: result smoothMotion / noMotion, smoothness %, method position / positionScaleRotation / perspective / subspaceWarp, preserveScale, framing stabilizeOnly / stabilizeCrop / stabilizeCropAutoScale / synthesizeEdges, maxScale %, actionSafe %, additionalScale %, detailedAnalysis, rollingShutterRipple automatic / enhanced, cropLessSmoothMore 0-100, synthesisInputRange s, synthesisEdgeFeather, edgeCropLeft/Top/Right/Bottom px, hideWarningBanner; existing instances are updated with param.set), runs the engine analysis of the clip's media range (+15 frames handles) and stores it with the effect (no undo step). An analysed effect is reused while it covers the clip. Exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -1038,19 +1038,31 @@ export function registerGapsTools(ctx: ToolContext): void {
 			let { doc } = await loadDoc(ctx, projectId);
 			let seq = seqOf(doc, sequenceId);
 			const clip = seq.clips[clipId];
-			if (!clip) throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
-			if (clip.kind !== 'video') throw new ToolError('E_INVALID_PARAM', 'The Warp Stabilizer needs a video clip');
+			if (!clip)
+				throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
+			if (clip.kind !== 'video')
+				throw new ToolError('E_INVALID_PARAM', 'The Warp Stabilizer needs a video clip');
 			type Fx = { id: string; effectId: string; enabled: boolean; params: Record<string, unknown> };
 			const fxOf = (c: unknown) =>
 				((c as { effects?: Fx[] }).effects ?? []).find((e) => e.effectId === WARP_STABILIZER_EFFECT_ID);
 			let fx = fxOf(clip);
 			const edits: unknown[] = [];
-			if (!fx) edits.push({ type: 'effect.add', target: { clipId }, effectId: WARP_STABILIZER_EFFECT_ID, ...(params ? { params } : {}) });
+			if (!fx)
+				edits.push({
+					type: 'effect.add',
+					target: { clipId },
+					effectId: WARP_STABILIZER_EFFECT_ID,
+					...(params ? { params } : {}),
+				});
 			else if (params)
 				for (const [name, value] of Object.entries(params))
 					edits.push({ type: 'param.set', target: ['effect', fx.id, name], value });
 			if (edits.length) {
-				const res = await transact(ctx, projectId, { label: 'Warp Stabilizer', sequenceId: seq.id, commands: edits });
+				const res = await transact(ctx, projectId, {
+					label: 'Warp Stabilizer',
+					sequenceId: seq.id,
+					commands: edits,
+				});
 				requireOk(res);
 				({ doc } = await loadDoc(ctx, projectId));
 				seq = seqOf(doc, seq.id);
@@ -1080,9 +1092,14 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const base = ctx.link.target?.url ?? '';
 			if (timedOut) return jsonResult({ ...jobBody(done, base), timedOut: true });
 			if (done.state !== 'succeeded')
-				throw new ToolError(done.error?.code ?? 'JOB_FAILED', done.error?.message ?? `The analysis ${done.state}`, undefined, {
-					jobId: done.id,
-				});
+				throw new ToolError(
+					done.error?.code ?? 'JOB_FAILED',
+					done.error?.message ?? `The analysis ${done.state}`,
+					undefined,
+					{
+						jobId: done.id,
+					},
+				);
 			const { analysedFrames, framesPerSec, ...analysis } = done.result as WarpAnalysisResult;
 			const res = await transact(ctx, projectId, {
 				label: 'Analyze (Warp Stabilizer)',
@@ -1109,7 +1126,10 @@ export function registerGapsTools(ctx: ToolContext): void {
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
-				aspect: z.string().regex(/^\d{1,3}:\d{1,3}$/).default('9:16'),
+				aspect: z
+					.string()
+					.regex(/^\d{1,3}:\d{1,3}$/)
+					.default('9:16'),
 				tracking: z.enum(['slower', 'default', 'faster']).default('default'),
 				name: z.string().min(1).max(255).optional(),
 			},
@@ -1194,13 +1214,20 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const { doc } = await loadDoc(ctx, projectId);
 			const seq = seqOf(doc, sequenceId);
 			const frame = resolveFrameInput(seq, at);
-			const dur = Math.max(1, Math.round((seconds * seq.settings.frameRate.num) / seq.settings.frameRate.den));
+			const dur = Math.max(
+				1,
+				Math.round((seconds * seq.settings.frameRate.num) / seq.settings.frameRate.den),
+			);
 			const where = track ?? `V${seq.videoTracks.length + 1}`;
 			const place = { at: { frames: frame }, duration: { frames: dur }, track: where, ref: '$l' };
 			const first =
 				kind === 'text'
 					? { type: 'clip.addText', ...place, content: { text: text ?? 'New Text' } }
-					: { type: 'clip.addShape', ...place, shape: { type: kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] } };
+					: {
+							type: 'clip.addShape',
+							...place,
+							shape: { type: kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] },
+						};
 			const res = await transact(ctx, projectId, {
 				label: 'New Graphic',
 				sequenceId: seq.id,
@@ -1217,7 +1244,11 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const clip = Object.values(seqOf(now, seq.id).clips).find(
 				(c) => c.kind === 'nest-video' && (c as { sequenceId: string }).sequenceId === gid,
 			);
-			return jsonResult({ graphicSequenceId: gid, graphicClipId: clip?.id ?? null, transaction: txBody(res, ok) });
+			return jsonResult({
+				graphicSequenceId: gid,
+				graphicClipId: clip?.id ?? null,
+				transaction: txBody(res, ok),
+			});
 		},
 	);
 
@@ -1265,7 +1296,11 @@ export function registerGapsTools(ctx: ToolContext): void {
 			title: 'Export graphic template (.jgt)',
 			description:
 				'Essential Graphics ▸ Export As Template: the .jgt template (JSON) of a graphic sequence item — the graphic with its layers, fonts and media references. Save it with a .jgt extension; import_graphic_template adds it to any project. MOGRT files (Adobe Motion Graphics templates) cannot be imported: see the guide.',
-			input: { projectId: ProjectIdArg, graphicSequenceId: z.string().min(1), name: z.string().min(1).max(255).optional() },
+			input: {
+				projectId: ProjectIdArg,
+				graphicSequenceId: z.string().min(1),
+				name: z.string().min(1).max(255).optional(),
+			},
 			annotations: READ_ONLY,
 		},
 		async ({ projectId, graphicSequenceId, name }) => {
@@ -1316,4 +1351,3 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 	);
 }
-

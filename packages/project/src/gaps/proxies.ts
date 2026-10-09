@@ -100,8 +100,8 @@ export function proxyMismatch(
 		return `${original.originalName} is not a video: only video media takes proxies`;
 	const ov = videoOf(original.probe);
 	const pv = videoOf(probe);
-	if (!ov || ov.type !== 'video') return `${original.originalName} has no video stream`;
-	if (!pv || pv.type !== 'video') return 'The proxy has no video';
+	if (ov?.type !== 'video') return `${original.originalName} has no video stream`;
+	if (pv?.type !== 'video') return 'The proxy has no video';
 	const ofps = rateOf(ov.frameRate);
 	const pfps = rateOf(pv.frameRate);
 	if (!(Math.abs(ofps - pfps) < 0.01))

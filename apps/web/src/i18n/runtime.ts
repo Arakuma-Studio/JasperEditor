@@ -8,7 +8,9 @@ const PREFS_KEY = 'jasper:gaps-prefs';
 export function storedLanguage(): string {
 	try {
 		const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(PREFS_KEY);
-		const lang = raw ? (JSON.parse(raw) as { appearance?: { language?: unknown } }).appearance?.language : null;
+		const lang = raw
+			? (JSON.parse(raw) as { appearance?: { language?: unknown } }).appearance?.language
+			: null;
 		return typeof lang === 'string' && /^[a-z]{2}(-[A-Z]{2})?$/.test(lang) ? lang : 'en';
 	} catch {
 		return 'en';
@@ -28,7 +30,9 @@ if (currentLanguage.startsWith('es')) {
 if (typeof document !== 'undefined') document.documentElement.lang = catalog ? 'es' : 'en';
 
 const fill = (s: string, args: readonly unknown[]) =>
-	args.length ? s.replace(/\{(\d+)\}/g, (m, i: string) => (Number(i) < args.length ? String(args[Number(i)]) : m)) : s;
+	args.length
+		? s.replace(/\{(\d+)\}/g, (m, i: string) => (Number(i) < args.length ? String(args[Number(i)]) : m))
+		: s;
 
 /** The translation of a source string (`{0}`… are filled with `args`). */
 export function __t(key: string, ...args: unknown[]): string {

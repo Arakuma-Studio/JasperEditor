@@ -244,7 +244,7 @@ export class MediaJobService {
 		onFraction: (f: number) => void,
 	): Promise<void> {
 		const vs = rec.probe.streams.find((s) => s.type === 'video');
-		if (!vs || vs.type !== 'video') throw new JobError('UNSUPPORTED_MEDIA', 'No video stream', false);
+		if (vs?.type !== 'video') throw new JobError('UNSUPPORTED_MEDIA', 'No video stream', false);
 		const hasAudio = rec.probe.streams.some((s) => s.type === 'audio');
 		const { width, height } = proxySize(vs.width, vs.height, preset);
 		const rate = vs.frameRate.num > 0 && vs.frameRate.den > 0 ? vs.frameRate : { num: 30, den: 1 };

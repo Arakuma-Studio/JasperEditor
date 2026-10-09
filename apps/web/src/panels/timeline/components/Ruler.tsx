@@ -50,6 +50,7 @@ export function Ruler(props: RulerProps) {
 		timelinePrefs().subscribe,
 		() => !!timelinePrefs().getState().showAudioTimeUnits,
 	);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: `display.video` changes the labels formatTimecode draws
 	const draw = useCallback<TileDraw>(
 		(ctx, tile) => {
 			const color = cssVar(ctx.canvas, '--pr-text-secondary');
@@ -75,7 +76,6 @@ export function Ruler(props: RulerProps) {
 				}
 			}
 		},
-		// biome-ignore lint/correctness/useExhaustiveDependencies: `display.video` changes the labels formatTimecode draws
 		[v, seq.settings, seq.clips, audioUnits, display.audio, display.video],
 	);
 

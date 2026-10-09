@@ -26,14 +26,23 @@ type Props = { session: EditorSession; engine: EngineClient; sequenceId: string 
 export async function runAutoReframe(
 	engine: EngineClient,
 	session: EditorSession,
-	opts: { sequenceId: string; aspect: { num: number; den: number }; tracking: ReframeTracking; name?: string },
+	opts: {
+		sequenceId: string;
+		aspect: { num: number; den: number };
+		tracking: ReframeTracking;
+		name?: string;
+	},
 ): Promise<string | null> {
 	const doc = session.getCommitted();
 	const seq = doc.sequences[opts.sequenceId];
 	if (!seq) return null;
 	const jobs = reframeJobsFor(doc as never, opts.sequenceId);
 	if (!jobs.length) {
-		toast({ kind: 'warning', title: 'Auto Reframe', detail: 'The sequence has no video clips of engine media.' });
+		toast({
+			kind: 'warning',
+			title: 'Auto Reframe',
+			detail: 'The sequence has no video clips of engine media.',
+		});
 		return null;
 	}
 	const subjects: ReframeSubjectPath[] = [];
@@ -41,7 +50,12 @@ export async function runAutoReframe(
 	let note: string | undefined;
 	for (const j of jobs) {
 		const job = await engine.call('reframeAnalysis', {
-			body: { projectId: session.projectId, mediaKey: j.mediaKey, startFrame: j.startFrame, frameCount: j.frameCount },
+			body: {
+				projectId: session.projectId,
+				mediaKey: j.mediaKey,
+				startFrame: j.startFrame,
+				frameCount: j.frameCount,
+			},
 		});
 		const done = await followJob(engine, job.id, { intervalMs: 500 });
 		if (done.state !== 'succeeded') throw new Error(done.error?.message ?? `Analysis ${done.state}`);
@@ -106,7 +120,12 @@ function AutoReframeDialog(props: HostedDialogProps<Props>) {
 				setBusy(true);
 				setError(null);
 				try {
-					await runAutoReframe(engine, session, { sequenceId, aspect: ratio, tracking, name: name.trim() || undefined });
+					await runAutoReframe(engine, session, {
+						sequenceId,
+						aspect: ratio,
+						tracking,
+						name: name.trim() || undefined,
+					});
 					props.close();
 				} catch (e) {
 					setError(errorText(e));
@@ -117,7 +136,12 @@ function AutoReframeDialog(props: HostedDialogProps<Props>) {
 			data-testid="auto-reframe-dialog"
 		>
 			<div className="flex flex-col gap-2">
-				<TextField aria-label="Sequence Name" value={name} onChange={(e) => setName(e.target.value)} data-testid="reframe-name" />
+				<TextField
+					aria-label="Sequence Name"
+					value={name}
+					onChange={(e) => setName(e.target.value)}
+					data-testid="reframe-name"
+				/>
 				<Select
 					label="Target Aspect Ratio"
 					value={aspect}
@@ -126,7 +150,10 @@ function AutoReframeDialog(props: HostedDialogProps<Props>) {
 						const r = v === 'custom' ? custom : REFRAME_ASPECTS.find((a) => a.id === v)!;
 						setName(`${item?.name ?? 'Sequence'} - (${r.num}:${r.den})`);
 					}}
-					options={[...REFRAME_ASPECTS.map((a) => ({ value: a.id, label: a.label })), { value: 'custom', label: 'Custom' }]}
+					options={[
+						...REFRAME_ASPECTS.map((a) => ({ value: a.id, label: a.label })),
+						{ value: 'custom', label: 'Custom' },
+					]}
 				/>
 				{aspect === 'custom' ? (
 					<div className="flex items-center gap-2">
@@ -137,7 +164,9 @@ function AutoReframeDialog(props: HostedDialogProps<Props>) {
 							max={100}
 							className="w-16"
 							value={custom.num}
-							onChange={(e) => setCustom((c) => ({ ...c, num: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))}
+							onChange={(e) =>
+								setCustom((c) => ({ ...c, num: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))
+							}
 						/>
 						<span>:</span>
 						<TextField
@@ -147,7 +176,9 @@ function AutoReframeDialog(props: HostedDialogProps<Props>) {
 							max={100}
 							className="w-16"
 							value={custom.den}
-							onChange={(e) => setCustom((c) => ({ ...c, den: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))}
+							onChange={(e) =>
+								setCustom((c) => ({ ...c, den: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }))
+							}
 						/>
 					</div>
 				) : null}
@@ -155,7 +186,10 @@ function AutoReframeDialog(props: HostedDialogProps<Props>) {
 					label="Motion Tracking"
 					value={tracking}
 					onValueChange={(v) => setTracking(v as ReframeTracking)}
-					options={(Object.keys(REFRAME_TRACKING) as ReframeTracking[]).map((k) => ({ value: k, label: REFRAME_TRACKING[k].label }))}
+					options={(Object.keys(REFRAME_TRACKING) as ReframeTracking[]).map((k) => ({
+						value: k,
+						label: REFRAME_TRACKING[k].label,
+					}))}
 				/>
 				{size ? (
 					<p className="text-pr-small text-pr-muted">

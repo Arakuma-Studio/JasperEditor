@@ -12,8 +12,8 @@ import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { readFrames, spawnDecoder } from '../tracking/decode.ts';
 import * as G from '../tracking/geometry.ts';
-import { acquireWorker, openCvPath, releaseWorker } from '../tracking/worker.ts';
 import type { WarpConfig } from '../tracking/warp.ts';
+import { acquireWorker, openCvPath, releaseWorker } from '../tracking/worker.ts';
 
 type Input = {
 	request: WarpAnalysisRequest;
@@ -57,7 +57,11 @@ export class WarpAnalysisService {
 		try {
 			openCvPath();
 		} catch {
-			throw new HttpError(503, 'CAPABILITY_UNAVAILABLE', 'OpenCV.js is not installed: the analysis cannot run');
+			throw new HttpError(
+				503,
+				'CAPABILITY_UNAVAILABLE',
+				'OpenCV.js is not installed: the analysis cannot run',
+			);
 		}
 		const rec = this.core.registry.get(r.mediaKey);
 		if (!rec) throw new HttpError(404, 'ASSET_NOT_FOUND', `Unknown media key ${r.mediaKey}`);
@@ -69,11 +73,16 @@ export class WarpAnalysisService {
 			throw new HttpError(400, 'VALIDATION_FAILED', 'A still image has no motion to stabilise');
 		const display = rec.display ?? { width: vs.width, height: vs.height };
 		const fps = { num: vs.frameRate.num, den: vs.frameRate.den };
-		if (!(fps.num > 0 && fps.den > 0)) throw new HttpError(400, 'VALIDATION_FAILED', 'The video has no frame rate');
+		if (!(fps.num > 0 && fps.den > 0))
+			throw new HttpError(400, 'VALIDATION_FAILED', 'The video has no frame rate');
 		const frameCount =
 			rec.durationSec && fps.num > 0 ? Math.max(1, Math.round((rec.durationSec * fps.num) / fps.den)) : null;
 		if (frameCount !== null && r.startFrame >= frameCount)
-			throw new HttpError(400, 'VALIDATION_FAILED', `startFrame ${r.startFrame} is past the end of the media`);
+			throw new HttpError(
+				400,
+				'VALIDATION_FAILED',
+				`startFrame ${r.startFrame} is past the end of the media`,
+			);
 		const input: Input = { request: r, file, display, fps, frameCount };
 		return this.core.queue.submit({
 			kind: 'warp-analysis',
@@ -92,7 +101,8 @@ export class WarpAnalysisService {
 		const input = ctx.input as Input;
 		const r = input.request;
 		const size = warpAnalysisSize(input.display.width, input.display.height, r.detailed);
-		const count = input.frameCount === null ? r.frameCount : Math.min(r.frameCount, input.frameCount - r.startFrame);
+		const count =
+			input.frameCount === null ? r.frameCount : Math.min(r.frameCount, input.frameCount - r.startFrame);
 		const cfg: WarpConfig = {
 			kind: 'warp',
 			width: size.width,
@@ -160,7 +170,8 @@ export class WarpAnalysisService {
 			else worker.terminate();
 		}
 		const n = perFrame.length;
-		if (n < 2) throw new JobError('WARP_ANALYSIS_FAILED', 'The clip has fewer than two frames to analyse', false);
+		if (n < 2)
+			throw new JobError('WARP_ANALYSIS_FAILED', 'The clip has fewer than two frames to analyse', false);
 		ctx.progress(0.995, { stage: 'Stabilizing (step 2 of 2)' });
 		return buildWarpAnalysis(perFrame, {
 			size,
@@ -200,7 +211,8 @@ export function buildWarpAnalysis(
 		// A wild projective fit (few features): keep the similarity (effectcraft's sanity rule, in media px).
 		if (!(Math.abs(Hm[6]!) < 0.01 && Math.abs(Hm[7]!) < 0.01) || !Hm.every(Number.isFinite)) Hm = S;
 		if (k === 0) frames.push(0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0);
-		else frames.push(...t.map(r6), ...[S[0]!, S[3]!, S[2]!, S[5]!].map(r6), ...Hm.slice(0, 8).map((x) => r6(x)));
+		else
+			frames.push(...t.map(r6), ...[S[0]!, S[3]!, S[2]!, S[5]!].map(r6), ...Hm.slice(0, 8).map((x) => r6(x)));
 		if (k > 0) {
 			inl += v[14]!;
 			feat += v[15]!;
@@ -257,6 +269,8 @@ export function buildWarpAnalysis(
 		...body,
 		key: `warp-${key}`,
 		analysedFrames: perFrame.length,
-		...(o.seconds && o.seconds > 0 ? { framesPerSec: Math.round((perFrame.length / o.seconds) * 10) / 10 } : {}),
+		...(o.seconds && o.seconds > 0
+			? { framesPerSec: Math.round((perFrame.length / o.seconds) * 10) / 10 }
+			: {}),
 	};
 }

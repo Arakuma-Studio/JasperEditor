@@ -15,17 +15,18 @@
 // (`graphicTemplateOf` / `graphic.importTemplate`).
 import { z } from 'zod';
 import { evaluate } from '../keyframes.ts';
+import { layerMatrix, layerQuad, quadBounds, type Rect } from '../render/transform.ts';
 import type { Animatable, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
-import { layerMatrix, layerQuad, quadBounds, type Rect } from '../render/transform.ts';
 
 export * from './graphics-schema.ts';
+
 import {
-	GraphicSettingsSchema,
 	type GraphicRoll,
 	type GraphicSettings,
+	GraphicSettingsSchema,
 	type LayerPins,
 	type PinEdge,
 } from './graphics-schema.ts';
@@ -143,14 +144,22 @@ export const edgeOf = (r: Rect, e: PinEdge): number =>
 	e === 'left' ? r.x : e === 'right' ? r.x + r.width : e === 'top' ? r.y : r.y + r.height;
 
 /** The offsets of a layer's edges from a target's (what a pin stores). */
-export function pinOffsets(layer: Rect, target: Rect, edges: readonly PinEdge[]): Partial<Record<PinEdge, number>> {
+export function pinOffsets(
+	layer: Rect,
+	target: Rect,
+	edges: readonly PinEdge[],
+): Partial<Record<PinEdge, number>> {
 	const out: Partial<Record<PinEdge, number>> = {};
 	for (const e of edges) out[e] = edgeOf(layer, e) - edgeOf(target, e);
 	return out;
 }
 
 /** The translation that restores a pinned layer's offsets (left / top win over right / bottom when both are set). */
-export function pinTranslation(layer: Rect, target: Rect, pins: Partial<Record<PinEdge, number>>): [number, number] {
+export function pinTranslation(
+	layer: Rect,
+	target: Rect,
+	pins: Partial<Record<PinEdge, number>>,
+): [number, number] {
 	let dx = 0;
 	let dy = 0;
 	if (pins.left !== undefined) dx = target.x + pins.left - layer.x;
@@ -161,7 +170,13 @@ export function pinTranslation(layer: Rect, target: Rect, pins: Partial<Record<P
 }
 
 /** Graphic time (frames) shown at visible clip time `tau` (frames) with Intro / Outro protection. */
-export function responsiveGraphicTime(tau: number, clipFrames: number, graphicFrames: number, intro: number, outro: number): number {
+export function responsiveGraphicTime(
+	tau: number,
+	clipFrames: number,
+	graphicFrames: number,
+	intro: number,
+	outro: number,
+): number {
 	const i = Math.max(0, Math.min(intro, clipFrames, graphicFrames));
 	const o = Math.max(0, Math.min(outro, clipFrames - i, graphicFrames - i));
 	if (tau <= i) return tau;
@@ -203,7 +218,11 @@ export function rollPositionAt(
 		: sign > 0
 			? Math.max(restC, alignedStart)
 			: Math.min(restC, alignedStart);
-	const end = roll.endOffScreen ? offEnd : sign > 0 ? Math.min(restC, alignedEnd) : Math.max(restC, alignedEnd);
+	const end = roll.endOffScreen
+		? offEnd
+		: sign > 0
+			? Math.min(restC, alignedEnd)
+			: Math.max(restC, alignedEnd);
 	const t0 = Math.min(roll.preRoll, clipFrames);
 	const t1 = Math.max(t0, clipFrames - roll.postRoll);
 	let u = t1 > t0 ? (tau - t0) / (t1 - t0) : tau >= t1 ? 1 : 0;
@@ -372,5 +391,6 @@ export function graphicTemplateOf(
 }
 
 /** Seconds → frames at a rate. */
-export const framesOf = (seconds: number, rate: Rational): number => Math.round((seconds * rate.num) / rate.den);
+export const framesOf = (seconds: number, rate: Rational): number =>
+	Math.round((seconds * rate.num) / rate.den);
 export const FLICKS = FLICKS_PER_SECOND;

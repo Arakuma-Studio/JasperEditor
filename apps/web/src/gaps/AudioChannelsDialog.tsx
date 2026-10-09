@@ -159,6 +159,7 @@ function AudioChannelsDialog(
 								<th className="sticky left-0 bg-pr-panel-alt px-2 py-1 text-left">Media Source Channel</th>
 								{Array.from({ length: count }, (_, k) =>
 									Array.from({ length: n }, (_, c) => (
+										// biome-ignore lint/suspicious/noArrayIndexKey: the columns are fixed grid positions (clip k, channel c)
 										<th key={`${k}-${c}`} className="bg-pr-panel-alt px-1 py-1 text-center font-normal">
 											Clip {k + 1}
 											<br />
@@ -176,6 +177,7 @@ function AudioChannelsDialog(
 										Array.from({ length: n }, (_, c) => {
 											const on = !!assign[ri] && assign[ri]![0] === k && assign[ri]![1] === c;
 											return (
+												// biome-ignore lint/suspicious/noArrayIndexKey: the cells are fixed grid positions (clip k, channel c)
 												<td key={`${k}-${c}`} className="px-1 py-1 text-center">
 													<input
 														type="checkbox"

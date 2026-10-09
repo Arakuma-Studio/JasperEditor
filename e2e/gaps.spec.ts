@@ -6,7 +6,15 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, query, ROOT, serverInfo, transact } from './support.ts';
+import {
+	createProject,
+	enableAgentBridge,
+	importFiles,
+	query,
+	ROOT,
+	serverInfo,
+	transact,
+} from './support.ts';
 
 test.describe.configure({ mode: 'default' });
 
@@ -20,7 +28,13 @@ type Violation = {
 	id: string;
 	impact?: string | null;
 	help: string;
-	nodes: { target: unknown[]; html: string; any?: { relatedNodes?: { html: string }[] }[]; all?: { relatedNodes?: { html: string }[] }[]; none?: { relatedNodes?: { html: string }[] }[] }[];
+	nodes: {
+		target: unknown[];
+		html: string;
+		any?: { relatedNodes?: { html: string }[] }[];
+		all?: { relatedNodes?: { html: string }[] }[];
+		none?: { relatedNodes?: { html: string }[] }[];
+	}[];
 };
 
 async function audit(where: string): Promise<string[]> {
@@ -33,7 +47,11 @@ async function audit(where: string): Promise<string[]> {
 					.slice(0, 3)
 					.map(
 						(n) =>
-							`${JSON.stringify(n.target)} ${n.html.slice(0, 120)}${[...(n.any ?? []), ...(n.all ?? []), ...(n.none ?? [])]
+							`${JSON.stringify(n.target)} ${n.html.slice(0, 120)}${[
+								...(n.any ?? []),
+								...(n.all ?? []),
+								...(n.none ?? []),
+							]
 								.flatMap((c) => c.relatedNodes ?? [])
 								.slice(0, 2)
 								.map((r) => ` ⟶ ${r.html.slice(0, 160)}`)
@@ -47,7 +65,9 @@ let projectId = '';
 /** Live-UI automation of this window through the engine (the path agents use, POST /api/agent/ui). */
 async function ui<T = unknown>(action: string, args: Record<string, unknown> = {}): Promise<T> {
 	const { port } = serverInfo();
-	const r = await page.request.post(`http://127.0.0.1:${port}/api/agent/ui`, { data: { projectId, action, args } });
+	const r = await page.request.post(`http://127.0.0.1:${port}/api/agent/ui`, {
+		data: { projectId, action, args },
+	});
 	const body = await r.json();
 	expect(r.ok(), `${action} ${JSON.stringify(args)}: ${JSON.stringify(body)}`).toBe(true);
 	return body.result as T;
@@ -79,7 +99,8 @@ test.afterAll(async () => {
 });
 
 test('accessibility: no serious or critical axe violation in the main workspaces', async () => {
-	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list')).media;
+	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
+		.media;
 	const a = media.find((m) => m.originalName === 'clip-a.mp4')!.mediaId;
 	const r = await transact(page, [
 		{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: 'A1' } },
@@ -110,19 +131,29 @@ test('accessibility: no serious or critical axe violation in the main workspaces
 });
 
 test('Warp Stabilizer: background analysis stored with the effect, banner while analysing', async () => {
-	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list')).media;
+	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
+		.media;
 	const shaky = media.find((m) => m.originalName === 'shaky.mp4')!.mediaId;
 	const r = await transact(page, [
-		{ type: 'clip.place', source: { mediaId: shaky }, at: 300, tracks: { video: 'V1', audio: 'A1' }, ref: '$s' },
+		{
+			type: 'clip.place',
+			source: { mediaId: shaky },
+			at: 300,
+			tracks: { video: 'V1', audio: 'A1' },
+			ref: '$s',
+		},
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
-	const clips = (await query<{ clips: { id: string; start: number; kind: string }[] }>(page, 'sequence.clipsInRange', {
-		from: 300,
-		to: 301,
-	})).clips;
+	const clips = (
+		await query<{ clips: { id: string; start: number; kind: string }[] }>(page, 'sequence.clipsInRange', {
+			from: 300,
+			to: 301,
+		})
+	).clips;
 	const clipId = clips.find((c) => c.kind === 'video')!.id;
 	expect(
-		(await transact(page, [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.warp-stabilizer' }])).ok,
+		(await transact(page, [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.warp-stabilizer' }]))
+			.ok,
 	).toBe(true);
 	await query(page, 'playhead.set', { frame: 340 });
 	await expect(page.getByTestId('warp-banner')).toBeVisible({ timeout: 20_000 });
@@ -132,11 +163,31 @@ test('Warp Stabilizer: background analysis stored with the effect, banner while 
 		.poll(
 			async () => {
 				const doc = await query<{
-					document?: { sequences: Record<string, { clips: Record<string, { effects?: { effectId: string; warpAnalysis?: { frames: number[] } }[] }> }> };
-					sequences?: Record<string, { clips: Record<string, { effects?: { effectId: string; warpAnalysis?: { frames: number[] } }[] }> }>;
+					document?: {
+						sequences: Record<
+							string,
+							{
+								clips: Record<
+									string,
+									{ effects?: { effectId: string; warpAnalysis?: { frames: number[] } }[] }
+								>;
+							}
+						>;
+					};
+					sequences?: Record<
+						string,
+						{
+							clips: Record<
+								string,
+								{ effects?: { effectId: string; warpAnalysis?: { frames: number[] } }[] }
+							>;
+						}
+					>;
 				}>(page, 'doc.get').catch(() => null);
 				const seqs = doc?.document?.sequences ?? doc?.sequences ?? {};
-				const clip = Object.values(seqs).map((q) => q.clips[clipId]).find(Boolean);
+				const clip = Object.values(seqs)
+					.map((q) => q.clips[clipId])
+					.find(Boolean);
 				const fx = clip?.effects?.find((e) => e.effectId === 'jasper.warp-stabilizer');
 				return fx?.warpAnalysis?.frames?.length ?? 0;
 			},
@@ -160,23 +211,37 @@ test('Essential Graphics: a new graphic, a second layer, align and roll', async 
 	await layers.first().click();
 	await page.getByTestId('eg-align-left').click();
 	await shot(page, 'essential-graphics');
-	const doc = await query<{ document?: { sequences: Record<string, { graphic?: unknown }> }; sequences?: Record<string, { graphic?: unknown }> }>(page, 'doc.get');
+	const doc = await query<{
+		document?: { sequences: Record<string, { graphic?: unknown }> };
+		sequences?: Record<string, { graphic?: unknown }>;
+	}>(page, 'doc.get');
 	const seqs = Object.values(doc.document?.sequences ?? doc.sequences ?? {});
 	expect(seqs.filter((q) => q.graphic).length).toBeGreaterThanOrEqual(1);
 });
 
 test('Auto Reframe Sequence makes a 9:16 copy that follows the subject', async () => {
-	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list')).media;
+	const media = (await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list'))
+		.media;
 	const rf = media.find((m) => m.originalName === 'reframe.mp4')!.mediaId;
 	// After everything the earlier specs placed, on V1 (where the analysis looks first).
 	const sum = await query<{ sequenceId: string; duration: { frames: number } }>(page, 'sequence.summary');
 	const placed = await page.evaluate(
-		(tx) => (window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact(tx),
+		(tx) =>
+			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact(
+				tx,
+			),
 		{
 			protocol: 'jasper.tx/1',
 			label: 'E2E setup',
 			sequenceId: sum.sequenceId,
-			commands: [{ type: 'clip.place', source: { mediaId: rf }, at: sum.duration.frames + 30, tracks: { video: 'V1', audio: 'A1' } }],
+			commands: [
+				{
+					type: 'clip.place',
+					source: { mediaId: rf },
+					at: sum.duration.frames + 30,
+					tracks: { video: 'V1', audio: 'A1' },
+				},
+			],
 		},
 	);
 	expect(placed.ok, JSON.stringify(placed)).toBe(true);
@@ -195,17 +260,25 @@ test('Spanish UI after a restart', async () => {
 	await page.evaluate(() => {
 		const raw = localStorage.getItem('jasper:gaps-prefs');
 		const p = raw ? JSON.parse(raw) : {};
-		localStorage.setItem('jasper:gaps-prefs', JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'es' } }));
+		localStorage.setItem(
+			'jasper:gaps-prefs',
+			JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'es' } }),
+		);
 	});
 	await reloadEditable();
 	await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-	await expect(page.getByRole('menuitem', { name: 'Archivo' }).or(page.getByText('Archivo').first())).toBeVisible();
+	await expect(
+		page.getByRole('menuitem', { name: 'Archivo' }).or(page.getByText('Archivo').first()),
+	).toBeVisible();
 	await runCommand('panel.focus.effects');
 	await page.waitForTimeout(500);
 	await shot(page, 'spanish');
 	// Back to English for the following specs.
 	await page.evaluate(() => {
 		const p = JSON.parse(localStorage.getItem('jasper:gaps-prefs') ?? '{}');
-		localStorage.setItem('jasper:gaps-prefs', JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'en' } }));
+		localStorage.setItem(
+			'jasper:gaps-prefs',
+			JSON.stringify({ ...p, appearance: { ...(p.appearance ?? {}), language: 'en' } }),
+		);
 	});
 });

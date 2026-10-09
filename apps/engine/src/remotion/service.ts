@@ -7,7 +7,6 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';

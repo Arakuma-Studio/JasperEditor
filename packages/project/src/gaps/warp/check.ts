@@ -8,7 +8,8 @@ type Fx = { id: string; effectId: string; warpAnalysis?: unknown };
 
 function problemOf(fx: Fx): string | null {
 	if (fx.warpAnalysis === undefined) return null;
-	if (fx.effectId !== WARP_STABILIZER_EFFECT_ID) return 'an analysis on an effect that is not a Warp Stabilizer';
+	if (fx.effectId !== WARP_STABILIZER_EFFECT_ID)
+		return 'an analysis on an effect that is not a Warp Stabilizer';
 	const parsed = WarpAnalysisDataSchema.safeParse(fx.warpAnalysis);
 	if (!parsed.success) return 'an unreadable Warp Stabilizer analysis';
 	return warpAnalysisProblem(parsed.data);
@@ -62,7 +63,11 @@ registerGapsCheck({
 				for (const fx of ((c as { effects?: Fx[] }).effects ?? []) as Fx[])
 					if (problemOf(fx)) {
 						delete fx.warpAnalysis;
-						note('drop-warp-analysis', fx.id, 'unusable Warp Stabilizer analysis removed (it is re-analysed)');
+						note(
+							'drop-warp-analysis',
+							fx.id,
+							'unusable Warp Stabilizer analysis removed (it is re-analysed)',
+						);
 					}
 		for (const list of trackLists(doc))
 			for (const fx of list)

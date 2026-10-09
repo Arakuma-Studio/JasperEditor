@@ -31,4 +31,3 @@ export const LayerPinsSchema = z.looseObject({
 	edges: z.partialRecord(z.enum(PIN_EDGES), z.number()),
 });
 export type LayerPins = z.infer<typeof LayerPinsSchema>;
-

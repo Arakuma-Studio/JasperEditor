@@ -36,5 +36,5 @@ for (const p of PROPERTY_SPECS as readonly { label?: string; optionLabels?: read
 	for (const o of p.optionLabels ?? []) add(o);
 }
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
-writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, '\t')}\n`);
+writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);

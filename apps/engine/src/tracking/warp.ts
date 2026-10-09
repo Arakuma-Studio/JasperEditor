@@ -177,7 +177,18 @@ export function createWarpTracker(cv: CV, G: typeof Geometry, cfg: WarpConfig) {
 	}
 
 	function result(t: number[], s: number[], h: number[], inliers: number, features: number) {
-		const values = [t[0]!, t[1]!, s[0]!, s[3]!, s[2]!, s[5]!, ...h.slice(0, 8), inliers, features, ids.length];
+		const values = [
+			t[0]!,
+			t[1]!,
+			s[0]!,
+			s[3]!,
+			s[2]!,
+			s[5]!,
+			...h.slice(0, 8),
+			inliers,
+			features,
+			ids.length,
+		];
 		for (let i = 0; i < ids.length; i++) values.push(ids[i]!, pts[2 * i]!, pts[2 * i + 1]!);
 		return { values, confidence: features ? inliers / features : 0, lost: features < 8 };
 	}

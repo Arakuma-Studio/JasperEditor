@@ -42,7 +42,11 @@ export type FrameSource =
 
 /** A name safe as a file name: `<Sequence> HH_MM_SS_FF` (Premiere names exported frames after the sequence). */
 export function defaultFrameName(base: string, tc: string): string {
-	const clean = `${base} ${tc}`.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim();
+	const clean = [...`${base} ${tc}`]
+		.map((ch) => (ch.charCodeAt(0) < 32 ? '_' : ch))
+		.join('')
+		.replace(/[\\/:*?"<>|]+/g, '_')
+		.trim();
 	return clean.slice(0, 120) || 'Frame';
 }
 

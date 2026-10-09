@@ -193,7 +193,7 @@ export function topCentroid(map: Float32Array, w: number, h: number, share = 0.1
 			const v = map[y * w + x]! - thr;
 			if (v > 0) sp += v * Math.hypot((x + 0.5 - cx) / w, (y + 0.5 - cy) / h);
 		}
-	const conf = Math.max(0.05, Math.min(1, 1 - (sp / sw) / 0.35));
+	const conf = Math.max(0.05, Math.min(1, 1 - sp / sw / 0.35));
 	return [cx / w, cy / h, conf];
 }
 
@@ -215,7 +215,8 @@ export class ReframeService {
 		const vs = rec.probe.streams.find((s) => s.type === 'video');
 		if (vs?.type !== 'video') throw new HttpError(400, 'VALIDATION_FAILED', 'The media has no video stream');
 		const fps = { num: vs.frameRate.num, den: vs.frameRate.den };
-		if (!(fps.num > 0 && fps.den > 0)) throw new HttpError(400, 'VALIDATION_FAILED', 'The video has no frame rate');
+		if (!(fps.num > 0 && fps.den > 0))
+			throw new HttpError(400, 'VALIDATION_FAILED', 'The video has no frame rate');
 		const display = rec.display ?? { width: vs.width, height: vs.height };
 		const input: Input = { request: r, file, display, fps };
 		return this.core.queue.submit({
@@ -294,7 +295,9 @@ export class ReframeService {
 						sy += w * (b.y + b.h * 0.45);
 						sw += w;
 					}
-					return sw > 0 ? { x: sx / sw, y: sy / sw, conf: Math.min(1, 0.6 + Math.max(...list.map((b) => b.score)) * 0.4) } : null;
+					return sw > 0
+						? { x: sx / sw, y: sy / sw, conf: Math.min(1, 0.6 + Math.max(...list.map((b) => b.score)) * 0.4) }
+						: null;
 				});
 				faces = sal.map((_, i) => {
 					const k = Math.floor(i / every);

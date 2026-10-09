@@ -77,7 +77,11 @@ const api = {
 			}
 		// Transparent corner when the frame moved (Stabilize Only shows the edges): the right edge for a leftward shift.
 		const corner = px(r.out, bx + W - 2, by + H / 2);
-		return { ...best, expected: [path[4]![0] - path[arg.frame]![0], path[4]![1] - path[arg.frame]![1]], corner };
+		return {
+			...best,
+			expected: [path[4]![0] - path[arg.frame]![0], path[4]![1] - path[arg.frame]![1]],
+			corner,
+		};
 	},
 	/** Without an analysis the effect passes the picture through. */
 	passThrough() {

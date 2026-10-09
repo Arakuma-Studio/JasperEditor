@@ -1,13 +1,3 @@
-// The `layer-bake` native extension (M2, S11:LBK-001…025, ARCHITECTURE D-31, §19.6, §20.5): every DOM layer
-// (all text clips — option A —, shapes, anime templates) stays on the native path. wave1c (D-35): so do media layers
-// with browser-only effects (GPU shader effects, SVG/CSS effects: the whole layer is baked) and GPU transitions
-// (the span — sides A + B and the stage — is baked; the builder draws the sides only outside it). `prepare` bakes each claimed
-// layer through Remotion into a cached straight-alpha master (or one PNG for static layers) as child jobs of the
-// export/still — side by side within the export's Remotion page budget (`remotion/page-pool.ts`, S11:LBK-022) —;
-// `override` hands it to the builder as a `sequence` override (`still`, `rect`, `colorRuns`).
-// Colour effects of DOM layers (FIX-002) are applied by ffmpeg to the bake (native), or baked into a graded master
-// (PNG frame sequence) that the composition plays on the Remotion path (`prepareForRemotion` + `adaptRemotionDoc`).
-import { availableParallelism } from 'node:os';
 import type { RenderSnapshot, RenderTransition, RenderVisualClip } from '@jasper/project';
 import type { LayerOverride, NativeExtension, NativePrepareContext } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';

@@ -1,17 +1,26 @@
 // Warp Stabilizer ▸ which instances need a (new) analysis and over which media frames (workstream gaps, §FX-6): shared
 // by the editor's background analysis and the MCP `stabilize_clip` tool. An analysis is reused while it is for the
 // clip's media, with the same Detailed Analysis setting, and covers every frame the clip shows.
-import type { Clip, Sequence } from '../../schema/sequence.ts';
+
 import type { ProjectDocument } from '../../schema/document.ts';
+import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, type Rational } from '../../time.ts';
 import { WARP_STABILIZER_EFFECT_ID, type WarpAnalysisData, warpFrameCount } from './analysis.ts';
 
 /** Frames analysed beyond the clip on each side (trims and transition handles without a re-analysis). */
 export const WARP_HANDLE_FRAMES = 15;
 
-type FxInst = { id: string; effectId: string; enabled: boolean; params: Record<string, unknown>; warpAnalysis?: WarpAnalysisData };
+type FxInst = {
+	id: string;
+	effectId: string;
+	enabled: boolean;
+	params: Record<string, unknown>;
+	warpAnalysis?: WarpAnalysisData;
+};
 
-const mediaKeyOf = (asset: { locators: readonly { type: string; key?: string }[] } | undefined): string | null => {
+const mediaKeyOf = (
+	asset: { locators: readonly { type: string; key?: string }[] } | undefined,
+): string | null => {
 	const l = asset?.locators.find((x) => x.type === 'engine-store');
 	return l?.key ?? null;
 };
@@ -83,7 +92,6 @@ export function warpRequestFor(
 		detailed,
 	};
 }
-
 
 export const warpRequestSignature = (r: WarpRequest): string =>
 	`${r.mediaKey}|${r.startFrame}|${r.frameCount}|${r.detailed}`;

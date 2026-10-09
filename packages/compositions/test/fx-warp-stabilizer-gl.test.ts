@@ -37,7 +37,7 @@ describe.skipIf(!psdgGlEnabled)('Warp Stabilizer (GL)', () => {
 	it('Stabilize Only leaves the uncovered edge transparent; no analysis passes through', async () => {
 		const s = await page.call<Shift>('shift', { method: 'position', frame: 1 });
 		expect(s.expected[0]).toBeLessThan(0);
-		expect((await page.call<number[]>('passThrough'))).toEqual([10, 200, 30, 255]);
+		expect(await page.call<number[]>('passThrough')).toEqual([10, 200, 30, 255]);
 		const t = await page.call<Shift>('shift', { method: 'position', frame: 5 });
 		expect(t.corner[3]).toBe(0);
 	}, 120_000);

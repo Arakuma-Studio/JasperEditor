@@ -13,26 +13,37 @@ import {
 	pendingWarpRequests,
 	WARP_STABILIZER_EFFECT_ID,
 	type WarpAnalysisData,
+	type WarpRequest,
 	warpAnalysisFps,
 	warpFrameCount,
 	warpPlanFor,
-	warpSettingsOf,
-	type WarpRequest,
 	warpRequestFor,
 	warpRequestSignature,
+	warpSettingsOf,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
 import { RefreshCw, Square } from 'lucide-react';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import { effectEditors, type EffectEditorProps, type ProgramOverlayHostProps, programOverlays } from '../extensions/index.ts';
+import {
+	type EffectEditorProps,
+	effectEditors,
+	type ProgramOverlayHostProps,
+	programOverlays,
+} from '../extensions/index.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { errorText, followJob } from '../processing/engine-jobs.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { SmallButton } from '../tracking/controls.tsx';
 
-type FxInst = { id: string; effectId: string; enabled: boolean; params: Record<string, unknown>; warpAnalysis?: WarpAnalysisData };
+type FxInst = {
+	id: string;
+	effectId: string;
+	enabled: boolean;
+	params: Record<string, unknown>;
+	warpAnalysis?: WarpAnalysisData;
+};
 
 export type WarpStatus =
 	| { state: 'analyzing'; jobId: string | null; progress: number; signature: string }
@@ -120,7 +131,8 @@ async function analyse(engine: EngineClient, session: EditorSession, r: WarpRequ
 			const doc = session.getCommitted();
 			const again = pendingWarpRequests(doc).find((x) => x.fxId === r.fxId);
 			if (again && signatureOf(again) === signature) store(session, r, res);
-		} else if (done.state === 'cancelled') setStatus(r.fxId, { state: 'failed', error: 'Analysis cancelled', signature });
+		} else if (done.state === 'cancelled')
+			setStatus(r.fxId, { state: 'failed', error: 'Analysis cancelled', signature });
 		else setStatus(r.fxId, { state: 'failed', error: done.error?.message ?? done.state, signature });
 	} catch (e) {
 		setStatus(r.fxId, { state: 'failed', error: errorText(e), signature });
@@ -160,7 +172,11 @@ export async function analyzeNow(engine: EngineClient, session: EditorSession, f
 				if (fx.id !== fxId) continue;
 				const r = warpRequestFor(doc, seq, clip, { ...fx, warpAnalysis: undefined } as FxInst);
 				if (!r) {
-					toast({ kind: 'warning', title: 'Warp Stabilizer', detail: 'Only video clips of engine media can be analysed.' });
+					toast({
+						kind: 'warning',
+						title: 'Warp Stabilizer',
+						detail: 'Only video clips of engine media can be analysed.',
+					});
 					return;
 				}
 				results.delete(signatureOf(r));
@@ -207,7 +223,9 @@ function WarpStabilizerEditor(props: EffectEditorProps) {
 				? `Analysis failed: ${status.error}`
 				: summary
 					? `Analysed ${summary.frames} frames${a?.confidence !== undefined ? `, ${Math.round(a.confidence * 100)}% tracked` : ''}${
-							params.framing === 'stabilizeCropAutoScale' ? ` · Auto-scale ${Math.round(summary.autoScale * 100)}%` : ''
+							params.framing === 'stabilizeCropAutoScale'
+								? ` · Auto-scale ${Math.round(summary.autoScale * 100)}%`
+								: ''
 						}${summary.relaxed ? ` · ${summary.relaxed} frames limited by Maximum Scale` : ''}`
 					: inst.enabled
 						? 'Waiting for the analysis'
@@ -256,7 +274,8 @@ function WarpBanner(props: ProgramOverlayHostProps) {
 				if (fx.effectId !== WARP_STABILIZER_EFFECT_ID || !fx.enabled) continue;
 				if (paramValue(fx, 'hideWarningBanner') === true) continue;
 				const st = all.get(fx.id);
-				if (st?.state === 'analyzing') return `Analyzing in background (step 1 of 2) ${Math.round(st.progress * 100)}%`;
+				if (st?.state === 'analyzing')
+					return `Analyzing in background (step 1 of 2) ${Math.round(st.progress * 100)}%`;
 				if (st?.state === 'failed') return `Warp Stabilizer: ${st.error}`;
 				if (warpRequestFor(doc, seq, clip, fx)) return 'Analyzing in background (step 1 of 2)';
 			}
@@ -269,7 +288,10 @@ function WarpBanner(props: ProgramOverlayHostProps) {
 			className="pointer-events-none absolute inset-x-0 top-[38%] flex justify-center"
 			data-testid="warp-banner"
 		>
-			<span className="rounded-pr-control bg-pr-tooltip px-3 py-1 text-pr-small text-pr-strong shadow" role="status">
+			<span
+				className="rounded-pr-control bg-pr-tooltip px-3 py-1 text-pr-small text-pr-strong shadow"
+				role="status"
+			>
 				{banner}
 			</span>
 		</div>
@@ -280,7 +302,11 @@ let registered = false;
 export function registerWarpStabilizerUi(): void {
 	if (registered) return;
 	registered = true;
-	effectEditors.register({ id: 'gaps.warp-stabilizer', effectId: WARP_STABILIZER_EFFECT_ID, component: WarpStabilizerEditor });
+	effectEditors.register({
+		id: 'gaps.warp-stabilizer',
+		effectId: WARP_STABILIZER_EFFECT_ID,
+		component: WarpStabilizerEditor,
+	});
 	programOverlays.register({
 		id: 'gaps.warp-banner',
 		active: (session) => !!session.getState().activeSequenceId,

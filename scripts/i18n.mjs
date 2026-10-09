@@ -33,8 +33,14 @@ if (process.argv.includes('--check')) {
 	const bad = sorted.filter((k) => {
 		const v = es[k];
 		if (typeof v !== 'string') return false;
-		const want = [...k.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join();
-		const got = [...v.matchAll(/\{(\d+)\}/g)].map((m) => m[1]).sort().join();
+		const want = [...k.matchAll(/\{(\d+)\}/g)]
+			.map((m) => m[1])
+			.sort()
+			.join();
+		const got = [...v.matchAll(/\{(\d+)\}/g)]
+			.map((m) => m[1])
+			.sort()
+			.join();
 		return want !== got;
 	});
 	if (missing.length || bad.length) {
@@ -44,6 +50,6 @@ if (process.argv.includes('--check')) {
 	}
 	console.log(`es.json covers all ${sorted.length} strings`);
 } else {
-	writeFileSync(enPath, `${JSON.stringify(sorted, null, '\t')}\n`);
+	writeFileSync(enPath, `${JSON.stringify(sorted, null, 2)}\n`);
 	console.log(`${relative(root, enPath)}: ${sorted.length} strings (${uiCount} from the UI sources)`);
 }

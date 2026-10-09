@@ -20,7 +20,14 @@ import { Harness } from './helpers.ts';
 /** A graphic nest with one text layer in the harness's sequence (returns ids). */
 function makeGraphic(h: Harness) {
 	const r = h.ok([
-		{ type: 'clip.addText', at: { frames: 0 }, duration: { frames: 150 }, track: 'V1', content: { text: 'Title' }, ref: '$t' },
+		{
+			type: 'clip.addText',
+			at: { frames: 0 },
+			duration: { frames: 150 },
+			track: 'V1',
+			content: { text: 'Title' },
+			ref: '$t',
+		},
 		{ type: 'clip.nest', clipIds: ['$t'], name: 'Graphic', ref: '$g' },
 		{ type: 'graphic.update', sequenceId: '$g', graphic: { intro: 15, outro: 15 } },
 	]);
@@ -29,7 +36,8 @@ function makeGraphic(h: Harness) {
 	return { gid, nestId: nest.id };
 }
 
-const fxList = (c: unknown) => c as { transform: { position: { value: [number, number]; keyframes: unknown[] } } };
+const fxList = (c: unknown) =>
+	c as { transform: { position: { value: [number, number]; keyframes: unknown[] } } };
 
 describe('essential graphics', () => {
 	it('align / distribute offsets', () => {
@@ -43,7 +51,9 @@ describe('essential graphics', () => {
 		expect(alignOffsets(rects, 'center', frame)[0]).toEqual([960 - 60, 0]);
 		const d = alignOffsets(rects, 'distributeHorizontal', null);
 		// Equal gaps between consecutive layers after the move.
-		const xs = rects.map((r, i) => ({ l: r.x + d[i]![0], r: r.x + r.width + d[i]![0] })).sort((a, b) => a.l - b.l);
+		const xs = rects
+			.map((r, i) => ({ l: r.x + d[i]![0], r: r.x + r.width + d[i]![0] }))
+			.sort((a, b) => a.l - b.l);
 		expect(xs[1]!.l - xs[0]!.r).toBeCloseTo(xs[2]!.l - xs[1]!.r, 6);
 	});
 
@@ -54,13 +64,40 @@ describe('essential graphics', () => {
 	});
 
 	it('roll from below to above the frame with pre-roll and post-roll', () => {
-		const roll = { mode: 'roll' as const, startOffScreen: true, endOffScreen: true, preRoll: 10, easeIn: 0, easeOut: 0, postRoll: 10 };
-		const at = (t: number) => rollPositionAt(roll, t, 110, { width: 1920, height: 1080 }, { width: 1920, height: 3000 }, [960, 540], 100, [960, 1500]);
+		const roll = {
+			mode: 'roll' as const,
+			startOffScreen: true,
+			endOffScreen: true,
+			preRoll: 10,
+			easeIn: 0,
+			easeOut: 0,
+			postRoll: 10,
+		};
+		const at = (t: number) =>
+			rollPositionAt(
+				roll,
+				t,
+				110,
+				{ width: 1920, height: 1080 },
+				{ width: 1920, height: 3000 },
+				[960, 540],
+				100,
+				[960, 1500],
+			);
 		expect(at(0)[1]).toBeCloseTo(1080 + 1500, 6);
 		expect(at(10)[1]).toBeCloseTo(1080 + 1500, 6);
 		expect(at(100)[1]).toBeCloseTo(-1500, 6);
 		expect(at(55)[1]).toBeCloseTo((1080 + 1500 - 1500) / 2, 6);
-		const eased = rollPositionAt({ ...roll, easeIn: 20 }, 15, 110, { width: 1920, height: 1080 }, { width: 1920, height: 3000 }, [960, 540], 100, [960, 1500]);
+		const eased = rollPositionAt(
+			{ ...roll, easeIn: 20 },
+			15,
+			110,
+			{ width: 1920, height: 1080 },
+			{ width: 1920, height: 3000 },
+			[960, 540],
+			100,
+			[960, 1500],
+		);
 		expect(eased[1]).toBeGreaterThan(at(15)[1]);
 	});
 
@@ -77,15 +114,22 @@ describe('essential graphics', () => {
 		h.ok([{ type: 'graphic.align', sequenceId: gid, clipIds: [rect], mode: 'left', relativeTo: 'frame' }]);
 		const box = intrinsicBoxOf({ clip: g().clips[rect]!, doc: h.doc, seq: g() } as never);
 		expect(fxList(g().clips[rect]).transform.position.value[0]).toBeCloseTo(box.width / 2, 3);
-		h.ok([{ type: 'graphic.setPins', sequenceId: gid, clipId: rect, target: 'frame', edges: ['right', 'bottom'] }]);
-		expect((g().clips[rect] as { pins?: { edges: Record<string, number> } }).pins!.edges.right).toBeCloseTo(-(1920 - box.width), 3);
+		h.ok([
+			{ type: 'graphic.setPins', sequenceId: gid, clipId: rect, target: 'frame', edges: ['right', 'bottom'] },
+		]);
+		expect((g().clips[rect] as { pins?: { edges: Record<string, number> } }).pins!.edges.right).toBeCloseTo(
+			-(1920 - box.width),
+			3,
+		);
 		// A resized graphic frame keeps the pinned edges (applied when rendering).
 		h.ok([{ type: 'sequence.updateSettings', sequenceId: gid, settings: { width: 1280, height: 720 } }]);
 		const shown = applyGraphics(h.doc, (c, s) => intrinsicBoxOf({ clip: c, doc: h.doc, seq: s } as never));
 		const p = fxList(shown.sequences[gid]!.clips[rect]).transform.position.value;
 		// The right edge stays 1920 − width px left of the frame's right edge.
 		expect(p[0] + box.width / 2).toBeCloseTo(1280 - (1920 - box.width), 1);
-		expect(h.tx([{ type: 'graphic.setPins', sequenceId: gid, clipId: rect, target: rect, edges: ['left'] }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'graphic.setPins', sequenceId: gid, clipId: rect, target: rect, edges: ['left'] }]).ok,
+		).toBe(false);
 		expect(h.tx([{ type: 'graphic.addLayer', sequenceId: h.seqId, kind: 'text' }]).ok).toBe(false);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		h.doc = before;
@@ -103,11 +147,22 @@ describe('essential graphics', () => {
 			{
 				type: 'graphic.update',
 				sequenceId: gid,
-				graphic: { roll: { mode: 'roll', startOffScreen: true, endOffScreen: true, preRoll: 0, easeIn: 0, easeOut: 0, postRoll: 0 } },
+				graphic: {
+					roll: {
+						mode: 'roll',
+						startOffScreen: true,
+						endOffScreen: true,
+						preRoll: 0,
+						easeIn: 0,
+						easeOut: 0,
+						postRoll: 0,
+					},
+				},
 			},
 		]);
 		const shown = applyGraphics(h.doc, (c, s) => intrinsicBoxOf({ clip: c, doc: h.doc, seq: s } as never));
-		const pos = (shown.sequences[h.seqId]!.clips[nestId] as never as { transform: { position: never } }).transform.position;
+		const pos = (shown.sequences[h.seqId]!.clips[nestId] as never as { transform: { position: never } })
+			.transform.position;
 		expect((evaluate(pos, 0) as [number, number])[1]).toBeCloseTo(1080 + 540, 3);
 		const broken = structuredClone(h.doc);
 		const t = Object.values(broken.sequences[gid]!.clips)[0]! as { pins?: unknown };
@@ -119,7 +174,9 @@ describe('essential graphics', () => {
 	it('.jgt templates round-trip a graphic', () => {
 		const h = new Harness();
 		const { gid } = makeGraphic(h);
-		const item = Object.values(h.doc.items).find((i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === gid)!;
+		const item = Object.values(h.doc.items).find(
+			(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === gid,
+		)!;
 		const tpl = graphicTemplateOf(h.doc, item.id, 'Lower Third', (d, ids) => buildItemsPayload(d, ids))!;
 		expect(tpl.format).toBe(GRAPHIC_TEMPLATE_FORMAT);
 		const json = JSON.parse(JSON.stringify(tpl));
