@@ -1,6 +1,7 @@
 // JasperEditor document → format → JasperEditor document, through `project.importTimeline`.
 import { type CaptionsClip, captionClipText, checkInvariants, defaultRegistries } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
+import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import { exportTimeline, type Format, importTimeline, planPrerender } from '../src/index.ts';
 import { addCaptions, Harness, richProject, summarize } from './support/rich.ts';
 
@@ -37,6 +38,62 @@ const KEEP_ALL = [
 ];
 
 describe('JasperEditor round trips', () => {
+	it('a 3,000-clip ALE bin imports in linear time (< 2 s)', () => {
+		// Regression (verify workstream, interchange fuzzing): every imported media scanned the payload and the project's
+		// media (a draft) for a match, so 2,500 logged clips took ≈ 15–30 s in project.importTimeline.
+		const rows = Array.from(
+			{ length: 3000 },
+			(_, i) => `Clip_${i}\tVA1A2\t01:00:00:00\t01:00:10:00\tR${i % 50}\t/Volumes/Shoot/Clip_${i}.mov`,
+		);
+		const ale = [
+			'Heading',
+			'FIELD_DELIM\tTABS',
+			'VIDEO_FORMAT\t1080',
+			'FPS\t25',
+			'',
+			'Column',
+			'Name\tTracks\tStart\tEnd\tTape\tSource File',
+			'',
+			'Data',
+			...rows,
+		].join('\n');
+		const imp = importTimeline(new TextEncoder().encode(ale), {
+			format: 'ale',
+			now: '2026-10-07T00:00:00.000Z',
+			rate: { num: 25, den: 1 },
+		});
+		const target = new Harness({ preset: 'hd-1080p-25', seed: 7 });
+		const t0 = performance.now();
+		target.ok([{ type: 'project.importTimeline', fragment: imp }]);
+		const ms = performance.now() - t0;
+		console.info(budgetReport('ALE import, 3,000 clips', ms, 2000));
+		expect(Object.keys(target.doc.media)).toHaveLength(3000);
+		expect(ms).toBeLessThan(budgetMs(2000));
+	});
+
+	it('OTIO re-imported into its own project: restored clips get fresh child ids (animated title, masks, effects)', () => {
+		// Regression (verify workstream): a text clip restored from metadata.jasper kept its animator / selector ids and
+		// importing the export back into the same project was refused (INV-001 "Duplicate id tan_…").
+		const { h } = richProject();
+		const t = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V3', content: { text: 'Title' }, ref: '$t' },
+		]).refs.$t!;
+		h.ok([{ type: 'textAnimator.applyPreset', clipIds: [t], preset: 'fade-in' }]);
+		const out = exportTimeline(h.doc, h.seqId, 'otio');
+		const imp = importTimeline(out.files[0]!.bytes, {
+			format: 'otio',
+			now: '2026-10-07T00:00:00.000Z',
+			rate: { num: 30, den: 1 },
+		});
+		const r = h.ok([{ type: 'project.importTimeline', fragment: imp }]);
+		expect(checkInvariants(h.doc, { effects: defaultRegistries().effects })).toEqual([]);
+		const seqId = (r.results[0] as { topSequenceIds: string[] }).topSequenceIds[0]!;
+		const titles = Object.values(h.doc.sequences[seqId]!.clips).filter(
+			(c) => c.kind === 'text' && (c as { animators?: unknown[] }).animators?.length,
+		);
+		expect(titles).toHaveLength(1);
+	});
+
 	it('OTIO restores the sequence exactly (text, solids, effects, keyframes, transitions, links, markers)', () => {
 		const { h, target, seqId, binId, out } = roundTrip('otio');
 		expect(summarize(target.doc, seqId, { keep: KEEP_ALL })).toEqual(

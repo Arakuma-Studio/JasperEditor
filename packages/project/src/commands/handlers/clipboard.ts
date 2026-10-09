@@ -42,6 +42,7 @@ import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
 import { isRemapped, type TimedClip } from '../../time-remap/model.ts';
 import { reidItems } from '../../vector/defaults.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { peekIn, valuesOf } from '../draft-read.ts';
 import {
 	assertKindFits,
 	assertUnlocked,
@@ -94,6 +95,14 @@ class Resolver {
 	private readonly same: boolean;
 	/** Payload media used only as a derivation source or a font file: added without a project item. */
 	private readonly indirect = new Set<string>();
+	/** Payload media by id (first wins, as `find`): a lookup per media was a linear scan. */
+	private readonly payloadMedia = new Map<string, MediaAsset>();
+	/**
+	 * The first live project media per fingerprint, built on first use and extended with the media this paste
+	 * creates. Scanning `doc.media` (a draft) per pasted media made importing a 2,500-clip bin take ≈ 15–30 s
+	 * (verify workstream, interchange fuzzing).
+	 */
+	private byFingerprint: Map<string, string> | null = null;
 
 	constructor(
 		private readonly doc: DDoc,
@@ -102,7 +111,10 @@ class Resolver {
 		private readonly opts: { binId: string | null; noItemFor?: ReadonlySet<string> } = { binId: null },
 	) {
 		this.same = p.sourceProjectId === doc.projectId;
-		for (const m of p.media) if (m.derivation) this.indirect.add(m.derivation.fromMediaId);
+		for (const m of p.media) {
+			if (m.derivation) this.indirect.add(m.derivation.fromMediaId);
+			if (!this.payloadMedia.has(m.id)) this.payloadMedia.set(m.id, m);
+		}
 		for (const f of p.fonts) if (f.source.type === 'asset') this.indirect.add(f.source.mediaId);
 	}
 
@@ -115,23 +127,24 @@ class Resolver {
 	mediaId(id: string, direct = true): string {
 		const known = this.media.get(id);
 		if (known) return known;
-		const m = this.p.media.find((x) => x.id === id);
+		const m = this.payloadMedia.get(id);
 		if (!m) {
 			if (this.same && this.doc.media[id]) return id;
 			return this.missing('media', id);
 		}
 		const live = (x: MediaAsset | undefined) =>
 			!!x && x.fingerprint === m.fingerprint && !x.fingerprint.startsWith('pending:');
-		const existing =
-			(this.same && live(this.doc.media[id] as MediaAsset | undefined) ? this.doc.media[id] : undefined) ??
-			Object.values(this.doc.media).find((x) => live(x as MediaAsset));
-		if (existing) {
-			this.media.set(id, existing.id);
-			this.reusedMedia.push(existing.id);
-			return existing.id;
+		const same = this.same ? peekIn(this.doc.media as Record<string, MediaAsset>, id) : undefined;
+		const existingId = live(same) ? id : this.liveMediaWith(m.fingerprint);
+		if (existingId) {
+			this.media.set(id, existingId);
+			this.reusedMedia.push(existingId);
+			return existingId;
 		}
 		const newId = this.h.ids.next('med');
 		this.media.set(id, newId);
+		if (!m.fingerprint.startsWith('pending:') && !this.byFingerprint?.has(m.fingerprint))
+			this.byFingerprint?.set(m.fingerprint, newId);
 		const from = m.derivation ? this.mediaId(m.derivation.fromMediaId, false) : null;
 		this.doc.media[newId] = {
 			...clone(m),
@@ -154,6 +167,18 @@ class Resolver {
 			insertItem(this.doc, itemId, this.opts.binId);
 		}
 		return newId;
+	}
+
+	/** The first project media with this (non-pending) fingerprint, if any. */
+	private liveMediaWith(fingerprint: string): string | undefined {
+		if (fingerprint.startsWith('pending:')) return undefined;
+		if (!this.byFingerprint) {
+			this.byFingerprint = new Map();
+			for (const x of valuesOf(this.doc.media as Record<string, MediaAsset>))
+				if (!x.fingerprint.startsWith('pending:') && !this.byFingerprint.has(x.fingerprint))
+					this.byFingerprint.set(x.fingerprint, x.id);
+		}
+		return this.byFingerprint.get(fingerprint);
 	}
 
 	syntheticId(id: string): string {
