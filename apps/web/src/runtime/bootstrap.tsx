@@ -1,6 +1,8 @@
 // The engine provider checks /health on startup. This gate offers retry or continuing without the engine.
+
 import { Button, Icon } from '@jasper/ui';
 import { type ReactNode, useState } from 'react';
+import { useLanguageEpoch } from '../i18n/react.ts';
 import { useEngine } from '../state/engine.tsx';
 
 function EngineUnreachable({ onRetry, onContinue }: { onRetry(): void; onContinue(): void }) {
@@ -40,6 +42,7 @@ function EngineUnreachable({ onRetry, onContinue }: { onRetry(): void; onContinu
 /** Renders children once the engine answered (or while connecting); shows the unreachable screen otherwise. */
 export function EngineGate({ children }: { children?: ReactNode }) {
 	const engine = useEngine();
+	useLanguageEpoch();
 	const [bypass, setBypass] = useState(false);
 	if (engine.status === 'disconnected' && !bypass)
 		return <EngineUnreachable onRetry={() => engine.refresh()} onContinue={() => setBypass(true)} />;

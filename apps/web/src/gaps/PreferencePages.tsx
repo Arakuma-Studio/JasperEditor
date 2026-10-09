@@ -10,10 +10,10 @@
 // - Audio Hardware: the output device and latency of the editor's audio; the input device of voice-over.
 import type { EngineGapsSettings } from '@jasper/api';
 import { LABEL_COLORS, type LabelColor } from '@jasper/project';
-import { Button, Checkbox, Select, TextField, toast } from '@jasper/ui';
+import { Button, Checkbox, Select, TextField } from '@jasper/ui';
 import { useEffect, useState } from 'react';
 import { audioPrefs, useAudioPrefs } from '../audio/prefs.ts';
-import { currentLanguage } from '../i18n/runtime.ts';
+import { setLanguage } from '../i18n/runtime.ts';
 import { errorText, formatBytes } from '../processing/engine-jobs.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { registerPreferencesPage } from '../shell/preferences/registry.ts';
@@ -115,23 +115,14 @@ function AppearancePage() {
 						value={g.appearance.language}
 						onValueChange={(v) => {
 							gapsPrefs.set({ appearance: { language: v } });
-							if (v !== currentLanguage)
-								toast({
-									kind: 'info',
-									title: 'Language changed',
-									detail: 'The editor uses the new language after a restart.',
-									actions: [{ label: 'Restart Now', run: () => location.reload() }],
-								});
+							// polish: the language switches while the editor runs (no restart): the project, its undo
+							// history and the selection stay; the views are drawn again in the new language.
+							void setLanguage(v);
 						}}
 						options={LANGUAGES.map((l) => ({ value: l.id, label: l.label }))}
 						data-no-i18n
 					/>
 				</PrefRow>
-				{g.appearance.language !== currentLanguage ? (
-					<p className="text-pr-small text-pr-warning" data-testid="pref-language-restart">
-						Restart the editor to switch the language.
-					</p>
-				) : null}
 			</PrefGroup>
 		</div>
 	);

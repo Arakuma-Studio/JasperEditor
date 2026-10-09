@@ -4,6 +4,7 @@ import { Component, lazy, type ReactNode, Suspense, useEffect } from 'react';
 import { BrowserRouter, Route, Routes, useParams } from 'react-router';
 import { Home } from './home/Home.tsx';
 import { ProjectLifecycle } from './home/ProjectLifecycle.tsx';
+import { useLanguageEpoch } from './i18n/react.ts';
 import { EngineGate } from './runtime/bootstrap.tsx';
 import { AgentOpenProject } from './shell/AgentOpenProject.tsx';
 import { GlobalHosts } from './shell/GlobalHosts.tsx';
@@ -51,6 +52,9 @@ function OpeningProject() {
 
 function EditorRoute() {
 	const { projectId = '' } = useParams();
+	// polish: a language change remounts the editor views (the session, its undo history and selection are held
+	// above, by ProjectSessionHost / ProjectLifecycle, and stay as they are).
+	const epoch = useLanguageEpoch();
 	useEffect(() => {
 		// React.lazy reports a rejected import when rendered; avoid an unhandled preload rejection.
 		void loadEditorShell().catch(() => undefined);
@@ -72,7 +76,7 @@ function EditorRoute() {
 			}
 		>
 			<ProjectLifecycle>
-				<EditorLoadBoundary key={projectId}>
+				<EditorLoadBoundary key={`${projectId}:${epoch}`}>
 					<Suspense fallback={<OpeningProject />}>
 						<EditorShell />
 					</Suspense>
@@ -83,11 +87,12 @@ function EditorRoute() {
 }
 
 export function AppRoutes() {
+	const epoch = useLanguageEpoch();
 	return (
 		<Routes>
-			<Route path="/" element={<Home />} />
+			<Route path="/" element={<Home key={epoch} />} />
 			<Route path="/project/:projectId" element={<EditorRoute />} />
-			<Route path="*" element={<Home />} />
+			<Route path="*" element={<Home key={epoch} />} />
 		</Routes>
 	);
 }

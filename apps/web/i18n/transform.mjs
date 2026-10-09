@@ -7,9 +7,19 @@
 //   2. JSX attributes named in ATTRS (title, aria-label, placeholder, alt, label, description, …);
 //   3. object properties named in KEYS (label, title, description, detail, message, disabledReason, …) — also an arrow
 //      function's returned string (`disabledReason: () => 'Open a sequence'`);
-//   4. the values of `*_LABELS` / `*LABELS` / `*_NAMES` / `*_TITLES` maps;
+//   4. the values of `*_LABELS` / `*LABELS` / `*_NAMES` / `*_TITLES` / `*_TEXT` / `*_HINTS` / `*_REASONS` maps;
 //   5. label arguments of the menu helpers (`c(id, label)`, `sub(label, items)`, `sc(id, label)`, `alias(…)`);
+//   6. JSX children that are expressions (`{busy ? 'Saving…' : 'Save'}`);
+//   7. the literal of an explicit `t('…')` call (recorded only: `t` is the runtime lookup);
 // through `?:`, `||`, `??` and parentheses. Strings that look like identifiers, ids, CSS or paths are left alone.
+//
+// Live language switching (workstream polish): a string in a function body is looked up every time the function
+// runs, so a re-render shows the new language. Strings at module scope would be looked up once, when the module
+// loads, so they are made lazy instead:
+//   - an object property (rules 3 and 4) becomes a getter, `get label() { return __t("…"); }`: the command tables,
+//     option lists and `*_LABELS` maps answer in the language of the moment they are read;
+//   - a label argument of a menu helper (rule 5) is left as the English source and only recorded for the catalogue:
+//     the helpers (`c`, `sub` in shell/menus/model.ts, `sc` in commands/app.ts) translate it when the label is read.
 import ts from 'typescript';
 
 export const ATTRS = new Set([
@@ -60,7 +70,7 @@ export const KEYS = new Set([
 	'confirmLabel',
 	'cancelLabel',
 ]);
-const MAP_NAME = /(^|_)(LABELS?|NAMES|TITLES)$|Labels$/;
+const MAP_NAME = /(^|_)(LABELS?|NAMES|TITLES|TEXTS?|HINTS|REASONS|MESSAGES|DESCRIPTIONS|TOOLTIPS)$|Labels$/;
 const CALL_LABEL_ARGS = { c: [1], sub: [0], sc: [1], alias: [] };
 
 /** Whether a string reads as UI text (not an id, key, class list, path, URL or format token). */
@@ -135,6 +145,36 @@ export function scan(code, fileName, { edit, found }) {
 	);
 	const src = code;
 	const seen = new Set();
+	/** Not inside any function or class body: evaluated once, when the module loads. */
+	const atModuleScope = (n) => {
+		for (let p = n.parent; p; p = p.parent) if (ts.isFunctionLike(p) || ts.isClassLike(p)) return false;
+		return true;
+	};
+	/** The label is only recorded (module-scope menu helper arguments): the helper translates it lazily. */
+	let recordOnly = false;
+	let wrapped = 0;
+	/**
+	 * Wraps the strings of a property initializer and makes the property lazy (a getter, with a setter that turns it
+	 * back into a plain value so code that assigns the property keeps working):
+	 *   - at module scope, whatever the expression (it would otherwise be evaluated once, at load);
+	 *   - inside a function, only a plain string — it captures nothing, and factories called at load
+	 *     (`const importCommand = (id) => ({ id, label: 'Import…' })`) stay live too.
+	 * Arrow functions are lazy already.
+	 */
+	const wrapProperty = (p) => {
+		let init = p.initializer;
+		while (ts.isParenthesizedExpression(init)) init = init.expression;
+		const fn = ts.isArrowFunction(init) || ts.isFunctionExpression(init);
+		const plain = ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init);
+		const lazy = !fn && !ts.isComputedPropertyName(p.name) && (plain || atModuleScope(p));
+		const before = wrapped;
+		wrapExpr(p.initializer, 'expr');
+		if (!lazy || wrapped === before) return;
+		const name = p.name.getText();
+		const key = ts.isIdentifier(p.name) ? q(p.name.text) : name;
+		edit?.(p.getStart(), p.initializer.getStart(), `get ${name}() { return `);
+		edit?.(p.initializer.getEnd(), p.initializer.getEnd(), `; }, set ${name}(v) { __set(this, ${key}, v); }`);
+	};
 	const wrapExpr = (e, ctx) => {
 		if (!e || seen.has(e.pos)) return;
 		if (ts.isParenthesizedExpression(e)) return wrapExpr(e.expression, ctx);
@@ -151,11 +191,20 @@ export function scan(code, fileName, { edit, found }) {
 			wrapExpr(e.right, ctx);
 			return;
 		}
-		if (ts.isArrowFunction(e) && !ts.isBlock(e.body)) return wrapExpr(e.body, ctx);
+		if (ts.isArrowFunction(e) && !ts.isBlock(e.body)) {
+			// An arrow is lazy already: its string is wrapped even where a plain label would only be recorded.
+			const prev = recordOnly;
+			recordOnly = false;
+			wrapExpr(e.body, ctx);
+			recordOnly = prev;
+			return;
+		}
 		if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) {
 			if (!isUiText(e.text)) return;
 			seen.add(e.pos);
 			found?.(e.text);
+			if (recordOnly) return;
+			wrapped++;
 			edit?.(
 				e.getStart(),
 				e.getEnd(),
@@ -168,6 +217,7 @@ export function scan(code, fileName, { edit, found }) {
 			if (!isUiText(key.replace(/\{\d+\}/g, ''))) return;
 			seen.add(e.pos);
 			found?.(key);
+			wrapped++;
 			edit?.(e.getStart(), e.getEnd(), `__t(${q(key)}, ${args.join(', ')})`);
 		}
 	};
@@ -184,6 +234,13 @@ export function scan(code, fileName, { edit, found }) {
 				const r = trail.includes('\n') ? '' : trail ? ' ' : '';
 				edit?.(n.getStart(), n.getEnd(), `${l ? "{' '}" : ''}{__t(${q(t)})}${r ? "{' '}" : ''}`);
 			}
+		} else if (
+			ts.isJsxExpression(n) &&
+			n.expression &&
+			(ts.isJsxElement(n.parent) || ts.isJsxFragment(n.parent))
+		) {
+			// 6. JSX children that are expressions: `{busy ? 'Saving…' : 'Save'}`, `{`${n} items`}`
+			wrapExpr(n.expression, 'expr');
 		} else if (ts.isJsxAttribute(n)) {
 			const name = n.name.getText();
 			if (ATTRS.has(name) && n.initializer) {
@@ -192,7 +249,7 @@ export function scan(code, fileName, { edit, found }) {
 			}
 		} else if (ts.isPropertyAssignment(n)) {
 			const name = ts.isIdentifier(n.name) || ts.isStringLiteral(n.name) ? n.name.text : null;
-			if (name && KEYS.has(name)) wrapExpr(n.initializer, 'expr');
+			if (name && KEYS.has(name)) wrapProperty(n);
 		} else if (
 			ts.isVariableDeclaration(n) &&
 			ts.isIdentifier(n.name) &&
@@ -207,13 +264,28 @@ export function scan(code, fileName, { edit, found }) {
 			)
 				init = init.expression;
 			if (ts.isObjectLiteralExpression(init))
-				for (const p of init.properties) if (ts.isPropertyAssignment(p)) wrapExpr(p.initializer, 'expr');
+				for (const p of init.properties) if (ts.isPropertyAssignment(p)) wrapProperty(p);
+		} else if (
+			ts.isCallExpression(n) &&
+			ts.isIdentifier(n.expression) &&
+			n.expression.text === 't' &&
+			n.arguments.length &&
+			(ts.isStringLiteral(n.arguments[0]) || ts.isNoSubstitutionTemplateLiteral(n.arguments[0]))
+		) {
+			// 7. an explicit `t('…')` of the runtime: the string is recorded for the catalogue (t translates it itself)
+			if (isUiText(n.arguments[0].text) && !seen.has(n.arguments[0].pos)) {
+				seen.add(n.arguments[0].pos);
+				found?.(n.arguments[0].text);
+			}
 		} else if (
 			ts.isCallExpression(n) &&
 			ts.isIdentifier(n.expression) &&
 			CALL_LABEL_ARGS[n.expression.text]
 		) {
+			// Module scope: the menu / command tables are built once, so the helper translates the label when it is read.
+			recordOnly = atModuleScope(n);
 			for (const i of CALL_LABEL_ARGS[n.expression.text]) wrapExpr(n.arguments[i], 'expr');
+			recordOnly = false;
 		}
 		ts.forEachChild(n, visit);
 	};
@@ -233,5 +305,5 @@ export function transformI18n(code, fileName, runtime) {
 		out = out.slice(0, s) + t + out.slice(e);
 		lastStart = s;
 	}
-	return `import { __t } from ${q(runtime)};\n${out}`;
+	return `import { __t, __set } from ${q(runtime)};\n${out}`;
 }

@@ -11,6 +11,7 @@ const mediaBrowser: PanelDefinition = {
 	keymapScope: 'mediaBrowser',
 	touch: 'sheet',
 	requires: ['engine'],
+	dockWith: 'project',
 	agentDescription:
 		'Media Browser: browse folders on the engine host, preview video / audio / stills and import files in place.',
 	menu: [

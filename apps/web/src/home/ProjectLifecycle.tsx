@@ -27,6 +27,7 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react
 import { useNavigate } from 'react-router';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
+import { useLanguageEpoch } from '../i18n/react.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
@@ -94,6 +95,7 @@ function LifecycleBody(props: {
 }) {
 	const { session } = props;
 	const engine = useEngine();
+	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();
 	const exportHostedByShell = useExportModeHostedByShell();
 

@@ -398,7 +398,7 @@ export function MediaBrowserPanel(_props: PanelProps) {
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard navigation (rows are focusable)
 		<div
-			className="flex h-full min-h-0 flex-col font-pr text-pr-ui"
+			className="@container flex h-full min-h-0 flex-col font-pr text-pr-ui"
 			data-testid="media-browser"
 			onKeyDown={onKeyDown}
 		>
@@ -453,6 +453,14 @@ export function MediaBrowserPanel(_props: PanelProps) {
 			</div>
 			<div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-pr-border-subtle px-1.5">
 				<Select
+					value={roots?.roots.some((r) => r.path === path) ? (path ?? '') : ''}
+					onValueChange={(v) => go(v)}
+					options={(roots?.roots ?? []).map((r) => ({ value: r.path, label: r.label }))}
+					label="Places"
+					placeholder="Places"
+					className="w-[104px] @[480px]:hidden"
+				/>
+				<Select
 					value={filter}
 					onValueChange={(v) => {
 						setFilter(v as Filter);
@@ -460,7 +468,7 @@ export function MediaBrowserPanel(_props: PanelProps) {
 					}}
 					options={FILTERS}
 					label="File types displayed"
-					className="w-[150px]"
+					className="w-[150px] shrink-0"
 				/>
 				<SearchField
 					value={query}
@@ -501,7 +509,7 @@ export function MediaBrowserPanel(_props: PanelProps) {
 			<div className="flex min-h-0 flex-1">
 				<nav
 					aria-label="Places"
-					className="w-[140px] shrink-0 overflow-auto border-r border-pr-border-subtle py-1"
+					className="hidden w-[140px] shrink-0 overflow-auto border-r border-pr-border-subtle py-1 @[480px]:block"
 					data-testid="media-browser-places"
 				>
 					{(roots?.roots ?? []).map((r) => (
@@ -623,7 +631,7 @@ function ListView({ entries, selected, onSelect, onActivate, onDragStart }: View
 					<th className="pl-2 font-normal">Name</th>
 					<th className="w-[80px] font-normal">Type</th>
 					<th className="w-[72px] pr-2 text-right font-normal">Size</th>
-					<th className="w-[132px] font-normal">Modified</th>
+					<th className="hidden w-[132px] font-normal @[560px]:table-cell">Modified</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -658,7 +666,7 @@ function ListView({ entries, selected, onSelect, onActivate, onDragStart }: View
 								{e.kind === 'folder' ? 'Folder' : e.category ? TYPE_LABELS[e.category] : 'File'}
 							</td>
 							<td className="pr-2 text-right pr-tabular text-pr-muted">{formatBytes(e.size)}</td>
-							<td className="truncate pr-tabular text-pr-muted">
+							<td className="hidden truncate pr-tabular text-pr-muted @[560px]:table-cell">
 								{e.modifiedAt ? new Date(e.modifiedAt).toLocaleString() : ''}
 							</td>
 						</tr>
@@ -749,7 +757,7 @@ function Preview(props: { entry: BrowseEntry; info: BrowseInfo | null; fileUrl: 
 	].filter((x): x is string => !!x);
 	return (
 		<div
-			className="flex h-[150px] shrink-0 gap-2 border-t border-pr-border-subtle p-2"
+			className="flex h-[112px] shrink-0 gap-2 border-t border-pr-border-subtle p-2"
 			data-testid="media-browser-preview"
 		>
 			<div className="flex aspect-video h-full items-center justify-center overflow-hidden rounded-pr-control bg-pr-field">

@@ -42,7 +42,7 @@ import { activeSequenceName } from '../header/TitleBar.tsx';
 import { type MenuEnv, resolveMenu, type ShellMenuItem } from '../menus/resolve.ts';
 import { useUiPrefs } from '../prefs.ts';
 import { PANEL_COMPONENT, PANEL_TAB } from '../workspaces/layout.ts';
-import type { DockController } from './controller.ts';
+import { type DockController, labelFloatingGroup } from './controller.ts';
 
 type DockCtx = {
 	controller: DockController;
@@ -159,7 +159,9 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 	}, [props.api]);
 	useEffect(() => {
 		if (props.api.title !== title) props.api.setTitle(title);
-	}, [props.api, title]);
+		const panel = props.containerApi.getPanel(props.api.id);
+		if (panel) labelFloatingGroup(panel, title);
+	}, [props.api, props.containerApi, title]);
 
 	const onAux = (e: MouseEvent) => {
 		if (e.button === 1) {

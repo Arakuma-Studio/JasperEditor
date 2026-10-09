@@ -12,6 +12,7 @@ import type { EngineCapabilities, Health } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { Button, Dialog, type HostedDialogProps, registerDialog, TextField, toast } from '@jasper/ui';
 import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { ThirdPartyLicenses } from './licenses.tsx';
 
@@ -151,16 +152,18 @@ export async function readEngineSnapshot(client: EngineClient): Promise<Snapshot
 	return snap;
 }
 
-function Rows(props: { title: string; rows: [string, ReactNode][]; testId?: string }) {
+type Row = { label: string; value: ReactNode };
+
+function Rows(props: { title: string; rows: Row[]; testId?: string }) {
 	if (!props.rows.length) return null;
 	return (
 		<section className="flex flex-col gap-1" data-testid={props.testId}>
 			<h3 className="text-pr-strong">{props.title}</h3>
 			<dl className="grid grid-cols-[150px_1fr] gap-x-3 gap-y-0.5 text-pr-small">
-				{props.rows.map(([k, v]) => (
-					<div key={k} className="contents">
-						<dt className="text-pr-muted">{k}</dt>
-						<dd className="min-w-0 break-words pr-tabular select-text">{v}</dd>
+				{props.rows.map((r) => (
+					<div key={r.label} className="contents">
+						<dt className="text-pr-muted">{r.label}</dt>
+						<dd className="min-w-0 break-words pr-tabular select-text">{r.value}</dd>
 					</div>
 				))}
 			</dl>
@@ -196,72 +199,86 @@ function EngineStatusDialog(props: HostedDialogProps<{ engine?: EngineClient | n
 	const caps = snap?.capabilities ?? null;
 	const enc = caps?.media.encoding;
 	const connected = !!snap?.health;
-	const connection: [string, ReactNode][] = [
-		[
-			'Status',
-			<span key="s" data-testid="engine-status-state">
-				{snap ? (connected ? 'Connected' : 'Not connected') : 'Checking…'}
-			</span>,
-		],
-		[
-			'Address',
-			<span key="a" data-no-i18n="">
-				{snap?.address || engineAddress(client) || '—'}
-			</span>,
-		],
-		['Engine version', snap?.health?.version ?? '—'],
-		['API version', snap?.health ? String(snap.health.apiVersion) : '—'],
-		['Mode', caps?.engine.mode ?? '—'],
-		[
-			'Response time',
-			snap?.latencyMs !== null && snap?.latencyMs !== undefined ? `${snap.latencyMs} ms` : '—',
-		],
-		['Event stream', live?.events ?? '—'],
-		['Jobs', snap?.jobs ? `${snap.jobs.running} running, ${snap.jobs.queued} queued` : '—'],
+	const none = t('None');
+	const dash = '—';
+	const connection: Row[] = [
+		{
+			label: 'Status',
+			value: (
+				<span data-testid="engine-status-state">
+					{snap ? (connected ? 'Connected' : 'Not connected') : 'Checking…'}
+				</span>
+			),
+		},
+		{
+			label: 'Address',
+			value: <span data-no-i18n="">{snap?.address || engineAddress(client) || dash}</span>,
+		},
+		{ label: 'Engine version', value: snap?.health?.version ?? dash },
+		{ label: 'API version', value: snap?.health ? String(snap.health.apiVersion) : dash },
+		{ label: 'Mode', value: caps?.engine.mode ?? dash },
+		{
+			label: 'Response time',
+			value: snap?.latencyMs !== null && snap?.latencyMs !== undefined ? `${snap.latencyMs} ms` : dash,
+		},
+		{ label: 'Event stream', value: live?.events ?? dash },
+		{
+			label: 'Jobs',
+			value: snap?.jobs ? t('{0} running, {1} queued', snap.jobs.running, snap.jobs.queued) : dash,
+		},
 	];
-	const media: [string, ReactNode][] = caps
+	const media: Row[] = caps
 		? [
-				['FFmpeg', caps.media.ffmpegVersion ?? 'not found'],
-				['FFmpeg source', caps.media.ffmpegSource ?? '—'],
-				['FFmpeg licence', enc ? `${enc.license}${enc.lgplOnly ? ' (LGPL only)' : ''}` : '—'],
-				['Export encoder', enc?.export?.label ?? 'none'],
-				['Proxy encoder', enc?.proxy?.label ?? 'none'],
-				[
-					'Hardware encoders',
-					enc?.hardware.length
-						? enc.hardware.map((h) => `${h.encoder}${h.usable ? '' : ' (not usable)'}`).join(', ')
-						: 'none',
-				],
-				['Hardware decoding', enc?.hwaccels.length ? enc.hwaccels.join(', ') : 'none'],
+				{ label: 'FFmpeg', value: caps.media.ffmpegVersion ?? t('Not found') },
+				{ label: 'FFmpeg source', value: caps.media.ffmpegSource ?? dash },
+				{
+					label: 'FFmpeg licence',
+					value: enc ? `${enc.license.toUpperCase()}${enc.lgplOnly ? ` (${t('LGPL only')})` : ''}` : dash,
+				},
+				{ label: 'Export encoder', value: enc?.export?.label ?? none },
+				{ label: 'Proxy encoder', value: enc?.proxy?.label ?? none },
+				{
+					label: 'Hardware encoders',
+					value: enc?.hardware.length
+						? enc.hardware.map((h) => `${h.encoder}${h.usable ? '' : ` (${t('Not usable')})`}`).join(', ')
+						: none,
+				},
+				{ label: 'Hardware decoding', value: enc?.hwaccels.length ? enc.hwaccels.join(', ') : none },
 			]
 		: [];
-	const render: [string, ReactNode][] = caps
+	const ready = (ok: boolean) => (ok ? t('Ready') : t('Unavailable'));
+	const render: Row[] = caps
 		? [
-				['Native export', caps.render.native ? 'ready' : 'unavailable'],
-				['Remotion render', caps.render.remotionLocal],
-				[
-					'fframes',
-					`${caps.render.fframes}${caps.render.fframesReason ? ` (${caps.render.fframesReason})` : ''}`,
-				],
-				['Path import', caps.engine.pathRegistration ? 'allowed' : 'not allowed'],
+				{ label: 'Native export', value: ready(caps.render.native) },
+				{
+					label: 'Remotion render',
+					value:
+						caps.render.remotionLocal === 'needs-browser-download'
+							? t('Needs a browser download')
+							: ready(caps.render.remotionLocal === 'ready'),
+				},
+				{
+					label: 'fframes',
+					value: `${ready(caps.render.fframes === 'ready')}${caps.render.fframesReason ? ` (${caps.render.fframesReason})` : ''}`,
+				},
+				{ label: 'Import by path', value: caps.engine.pathRegistration ? t('Allowed') : t('Not allowed') },
 			]
 		: [];
-	const limits: [string, ReactNode][] = caps
+	const limits: Row[] = caps
 		? [
-				['CPU threads', String(caps.limits.cpuCount)],
-				['Free disk space', formatBytes(caps.limits.freeDiskBytes)],
-				[
-					'Largest upload',
-					caps.limits.maxUploadBytes === null ? 'no limit' : formatBytes(caps.limits.maxUploadBytes),
-				],
+				{ label: 'CPU threads', value: String(caps.limits.cpuCount) },
+				{ label: 'Free disk space', value: formatBytes(caps.limits.freeDiskBytes) },
+				{
+					label: 'Largest upload',
+					value:
+						caps.limits.maxUploadBytes === null ? t('No limit') : formatBytes(caps.limits.maxUploadBytes),
+				},
 			]
 		: [];
-	const features = featureRows(caps?.features).map(([k, v]): [string, ReactNode] => [
-		k,
-		<span key={k} data-no-i18n="">
-			{v}
-		</span>,
-	]);
+	const features: Row[] = featureRows(caps?.features).map(([k, v]) => ({
+		label: k,
+		value: <span data-no-i18n="">{v}</span>,
+	}));
 	const warning = enc?.message ?? caps?.render.remotionBinaries?.message;
 
 	return (

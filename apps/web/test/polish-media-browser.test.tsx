@@ -430,9 +430,9 @@ describe('engine dialogs', () => {
 		await waitFor(() => expect(screen.getByTestId('engine-status-state').textContent).toBe('Connected'));
 		const text = screen.getByTestId('engine-status-dialog').textContent ?? '';
 		expect(text).toContain('H.264 · OpenH264');
-		expect(text).toContain('lgpl (LGPL only)');
-		expect(text).toContain('h264_nvenc (not usable)');
-		expect(text).toContain('unavailable (jasper-mg not built)');
+		expect(text).toContain('LGPL (LGPL only)');
+		expect(text).toContain('h264_nvenc (Not usable)');
+		expect(text).toContain('Unavailable (jasper-mg not built)');
 		expect(text).toContain('12');
 		fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
