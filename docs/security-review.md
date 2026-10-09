@@ -291,9 +291,9 @@ drop was found.
    pages run in a same-origin, unsandboxed iframe in the editor, with the engine API and, in the desktop app, the
    desktop bridge of the parent window. A bundle is as trusted as a plug-in. Sandboxing the live host needs a
    different origin or a message-based protocol.
-2. **Dev engines have no token** (`pnpm dev`, and the engine an MCP client starts from a checkout uses a per-launch
-   token only with `--start-engine`). Any local process, including other users of the same machine, can use a
-   token-less engine with the engine user's file access.
+2. **Dev engines have no token** (`pnpm dev`; packaged builds and engines started by `jasper-mcp --start-engine`
+   use a per-launch token). Any local process, including other users of the same machine, can use a token-less
+   engine with the engine user's file access.
 3. **An authenticated local client is the user.** It can register media by path, read caption files, write exports
    to new paths, and attach to `/agent` as an editor session, which can answer approval requests. The approval gate
    protects against agents confined to the MCP tools, not against code that holds the token.
