@@ -97,6 +97,8 @@ import {
 	MediaDiscardResponseSchema,
 	MediaRegisterRequestSchema,
 	MediaRegisterResponseSchema,
+	MediaStatusBatchRequestSchema,
+	MediaStatusBatchResponseSchema,
 	MediaStatusSchema,
 	RegisteredMediaSchema,
 	UploadAppendResponseSchema,
@@ -398,6 +400,14 @@ export const ROUTES = {
 		path: '/api/media/:mediaKey',
 		response: MediaStatusSchema,
 		owner: 'WP-2F',
+	},
+	/** polish: the status of many media in one request (project open). */
+	mediaStatusBatch: {
+		method: 'POST',
+		path: '/api/media/status',
+		body: MediaStatusBatchRequestSchema,
+		response: MediaStatusBatchResponseSchema,
+		owner: 'polish',
 	},
 	/** M3 (wp-m3-inpoint, S07:PRC-018): discard an uncommitted upload (Replace Footage cancelled). */
 	mediaDiscard: {

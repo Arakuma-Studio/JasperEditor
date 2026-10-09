@@ -330,6 +330,10 @@ export class EngineClient {
 	mediaStatus(mediaKey: string) {
 		return this.call('mediaStatus', { params: { mediaKey } });
 	}
+	/** polish: the status of many media in one request (at most MEDIA_STATUS_BATCH_MAX keys). */
+	mediaStatusBatch(mediaKeys: string[]) {
+		return this.call('mediaStatusBatch', { body: { mediaKeys } });
+	}
 	requestDerivatives(mediaKey: string, kinds: DerivativeKind[]) {
 		return this.call('mediaDerivatives', { params: { mediaKey }, body: { kinds } });
 	}

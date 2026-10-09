@@ -8,7 +8,7 @@ import type {
 	MediaStatus,
 	TypedEvent,
 } from '@jasper/api';
-import { TERMINAL_JOB_STATES } from '@jasper/api';
+import { MEDIA_STATUS_BATCH_MAX, TERMINAL_JOB_STATES } from '@jasper/api';
 import { lottieThumbnail, pdfThumbnail } from '@jasper/compositions';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { browserPictureNeed, type MediaAsset, mediaLoaderPath } from '@jasper/project';
@@ -160,34 +160,76 @@ export function createMediaRuntimeSync(
 		}
 	};
 
+	const resolveFailed = (key: string, e: unknown) => {
+		if (e instanceof EngineError && (e.code === 'ASSET_NOT_FOUND' || e.code === 'NOT_FOUND'))
+			patchKey(key, { availability: 'offline' });
+		else if (e instanceof EngineError && e.code === 'NETWORK')
+			patchKey(key, { availability: 'needs-engine' });
+		// Older/stub engines: assume the original is served and wait for events.
+		else patchKey(key, { availability: 'online' });
+	};
 	const resolve = (key: string) => {
 		patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });
 		engine
 			.mediaStatus(key)
 			.then((s) => applyStatus(s))
-			.catch((e) => {
-				if (e instanceof EngineError && (e.code === 'ASSET_NOT_FOUND' || e.code === 'NOT_FOUND'))
-					patchKey(key, { availability: 'offline' });
-				else if (e instanceof EngineError && e.code === 'NETWORK')
-					patchKey(key, { availability: 'needs-engine' });
-				// Older/stub engines: assume the original is served and wait for events.
-				else patchKey(key, { availability: 'online' });
-			});
+			.catch((e) => resolveFailed(key, e));
+	};
+	/**
+	 * polish: resolves many media with one request per batch and applies each answer as one store update. Opening a
+	 * 2 000-item project used to send 2 000 status requests and update the store (and every subscriber) once per
+	 * answer. An engine without the batch route (older build) is asked per medium, as before.
+	 */
+	let batchRoute = true;
+	const resolveMany = (keys: readonly string[]) => {
+		if (keys.length === 0) return;
+		if (keys.length === 1 || !batchRoute) {
+			for (const key of keys) resolve(key);
+			return;
+		}
+		for (const key of keys) patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });
+		for (let i = 0; i < keys.length; i += MEDIA_STATUS_BATCH_MAX) {
+			const chunk = keys.slice(i, i + MEDIA_STATUS_BATCH_MAX);
+			engine
+				.mediaStatusBatch(chunk)
+				.then((r) =>
+					sweep(() => {
+						for (const st of r.statuses) applyStatus(st);
+						for (const key of r.unknown) patchKey(key, { availability: 'offline' });
+					}),
+				)
+				.catch((e) => {
+					// The engine is unreachable: every medium of the batch needs it.
+					if (e instanceof EngineError && e.code === 'NETWORK') {
+						sweep(() => {
+							for (const key of chunk) resolveFailed(key, e);
+						});
+						return;
+					}
+					// Anything else (an engine without the batch route, a refused body): ask per medium, as before.
+					batchRoute = false;
+					sweep(() => {
+						for (const key of chunk) resolve(key);
+					});
+				});
+		}
 	};
 
 	const syncNew = () =>
 		sweep(() => {
 			const media = reindex();
+			const toResolve = new Set<string>();
 			for (const m of Object.values(media) as MediaAsset[]) {
 				const key = mediaKeyOf(m);
 				if (known.has(m.id) && known.get(m.id) === key) continue;
 				known.set(m.id, key);
-				if (key) resolve(key);
+				if (key) toResolve.add(key);
 				// wp interchange: an imported placeholder has no file yet (Link Media links it).
 				else if (m.fingerprint.startsWith('pending:interchange:'))
 					setRuntime(m.id, { availability: 'offline' });
 				else setRuntime(m.id, { availability: 'needs-engine' });
 			}
+			resolveMany([...toResolve]);
 		});
 
 	// ---- imports: interpreted pictures (display PNG of stills a browser cannot show / with a pixel interpretation,
