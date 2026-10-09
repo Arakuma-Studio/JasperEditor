@@ -47,9 +47,11 @@ export function warpSynthesisOffsets(p: Record<string, unknown>, fps: number): n
 	const secs = typeof p.synthesisInputRange === 'number' ? Math.max(0, p.synthesisInputRange) : 1;
 	const range = Math.round(secs * fps);
 	if (range < 1) return [];
-	const step = Math.max(1, Math.round(range / 4));
 	const out: number[] = [];
-	for (let k = 1; k <= 4 && k * step <= Math.max(range, step); k++) out.push(k * step, -k * step);
+	for (let k = 1; k <= 4; k++) {
+		const o = Math.round((k * range) / 4);
+		if (o >= 1 && !out.includes(o)) out.push(o, -o);
+	}
 	return out.slice(0, 8);
 }
 

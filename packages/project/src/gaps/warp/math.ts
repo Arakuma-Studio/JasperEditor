@@ -178,43 +178,73 @@ export function leastSquares(model: MotionModel, src: readonly P2[], dst: readon
 }
 
 /**
- * Solves `A x = b` for a symmetric positive definite BANDED `A` (row-major `n × n`, nonzeros only within `band` of
- * the diagonal) in place (Cholesky restricted to the band). Returns false when `A` is not positive definite.
+ * A symmetric banded matrix in LOWER band storage: entry (i, j), j ≤ i ≤ j + band, at `data[i * (band + 1) + (i - j)]`.
  */
-export function bandedCholeskySolve(a: Float64Array, n: number, band: number, b: Float64Array): boolean {
+export class BandMatrix {
+	readonly data: Float64Array;
+	readonly w: number;
+	constructor(
+		readonly n: number,
+		readonly band: number,
+	) {
+		this.w = band + 1;
+		this.data = new Float64Array(n * this.w);
+	}
+	/** Adds `v` at (i, j) (and implicitly (j, i)); entries outside the band are an error. */
+	add(i: number, j: number, v: number): void {
+		const r = i >= j ? i : j;
+		const d = i >= j ? i - j : j - i;
+		if (d > this.band) throw new Error('BandMatrix: entry outside the band');
+		this.data[r * this.w + d]! += v;
+	}
+	clone(): BandMatrix {
+		const m = new BandMatrix(this.n, this.band);
+		m.data.set(this.data);
+		return m;
+	}
+}
+
+/**
+ * Solves `A x = b` for a symmetric positive definite banded `A` in place (Cholesky in band storage, O(n·band²)).
+ * Returns false when `A` is not positive definite.
+ */
+export function bandedCholeskySolve(A: BandMatrix, b: Float64Array): boolean {
+	const { n, band, w, data: a } = A;
+	const at = (i: number, j: number) => i * w + (i - j);
 	for (let j = 0; j < n; j++) {
 		const k0 = Math.max(0, j - band);
-		let d = a[j * n + j]!;
-		for (let k = k0; k < j; k++) d -= a[j * n + k]! * a[j * n + k]!;
+		let d = a[at(j, j)]!;
+		for (let k = k0; k < j; k++) d -= a[at(j, k)]! ** 2;
 		if (!(d > 0) || !Number.isFinite(d)) return false;
 		d = Math.sqrt(d);
-		a[j * n + j] = d;
+		a[at(j, j)] = d;
 		const iMax = Math.min(n - 1, j + band);
 		for (let i = j + 1; i <= iMax; i++) {
-			let s = a[i * n + j]!;
-			const kk = Math.max(k0, i - band);
-			for (let k = kk; k < j; k++) s -= a[i * n + k]! * a[j * n + k]!;
-			a[i * n + j] = s / d;
+			let s = a[at(i, j)]!;
+			for (let k = Math.max(k0, i - band); k < j; k++) s -= a[at(i, k)]! * a[at(j, k)]!;
+			a[at(i, j)] = s / d;
 		}
 	}
 	for (let i = 0; i < n; i++) {
 		let s = b[i]!;
-		for (let k = Math.max(0, i - band); k < i; k++) s -= a[i * n + k]! * b[k]!;
-		b[i] = s / a[i * n + i]!;
+		for (let k = Math.max(0, i - band); k < i; k++) s -= a[at(i, k)]! * b[k]!;
+		b[i] = s / a[at(i, i)]!;
 	}
 	for (let i = n - 1; i >= 0; i--) {
 		let s = b[i]!;
 		const kMax = Math.min(n - 1, i + band);
-		for (let k = i + 1; k <= kMax; k++) s -= a[k * n + i]! * b[k]!;
-		b[i] = s / a[i * n + i]!;
+		for (let k = i + 1; k <= kMax; k++) s -= a[at(k, i)]! * b[k]!;
+		b[i] = s / a[at(i, i)]!;
 	}
 	for (let i = 0; i < n; i++) if (!Number.isFinite(b[i]!)) return false;
 	return true;
 }
 
-/** Dense Cholesky solve (small `k × k` systems). */
+/** Dense Cholesky solve of a small `n × n` row-major SPD system. */
 export function choleskySolve(a: Float64Array, n: number, b: Float64Array): boolean {
-	return bandedCholeskySolve(a, n, n, b);
+	const m = new BandMatrix(n, Math.max(0, n - 1));
+	for (let i = 0; i < n; i++) for (let j = 0; j <= i; j++) m.data[i * m.w + (i - j)] = a[i * n + j]!;
+	return bandedCholeskySolve(m, b);
 }
 
 /**
@@ -232,12 +262,14 @@ export function topEigenvectors(g: Float64Array, n: number, k: number, start: nu
 	const orth = (vs: number[][]) => {
 		for (let i = 0; i < vs.length; i++) {
 			const v = vs[i]!;
-			for (let j = 0; j < i; j++) {
-				const u = vs[j]!;
-				let d = 0;
-				for (let t = 0; t < n; t++) d += v[t]! * u[t]!;
-				for (let t = 0; t < n; t++) v[t]! -= d * u[t]!;
-			}
+			// Modified Gram–Schmidt, twice ("twice is enough": the eigenvalues span many decades).
+			for (let pass = 0; pass < 2; pass++)
+				for (let j = 0; j < i; j++) {
+					const u = vs[j]!;
+					let d = 0;
+					for (let t = 0; t < n; t++) d += v[t]! * u[t]!;
+					for (let t = 0; t < n; t++) v[t]! -= d * u[t]!;
+				}
 			let l = 0;
 			for (let t = 0; t < n; t++) l += v[t]! * v[t]!;
 			l = Math.sqrt(l);

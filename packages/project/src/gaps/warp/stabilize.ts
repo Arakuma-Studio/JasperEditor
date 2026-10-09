@@ -10,6 +10,7 @@
 // Differences from the Rust: a banded Cholesky for the mesh systems and a warm-started subspace iteration instead of
 // a full Jacobi eigen-decomposition per frame (the same subspace, ~50× less work in JS).
 import {
+	BandMatrix,
 	bandedCholeskySolve,
 	choleskySolve,
 	H_IDENTITY,
@@ -275,40 +276,24 @@ export class WarpMesh {
  * Fits the content-preserving warp of one frame: `pairs` = (source position, wanted stabilised position) of its
  * features; `base` = the frame's perspective correction (source → stabilised), the prior.
  */
-export function solveMesh(size: P2, o: WarpMeshOpts, pairs: readonly (readonly [P2, P2])[], base: H3): WarpMesh {
-	const m = WarpMesh.fromHomography(o.cols, o.rows, size, base);
+/** The data-independent part of the mesh system (prior on the diagonal + the similarity term), per grid. */
+const meshSystems = new Map<string, BandMatrix>();
+function meshSystem(m: WarpMesh, o: WarpMeshOpts): BandMatrix {
+	const key = `${m.cols}x${m.rows}|${m.size[0]}x${m.size[1]}|${o.alpha}|${o.prior}`;
+	const hit = meshSystems.get(key);
+	if (hit) return hit;
 	const nv = (m.cols + 1) * (m.rows + 1);
-	const n = 2 * nv;
-	const A = new Float64Array(n * n);
-	const B = new Float64Array(n);
-	const row = (ix: number[], cf: number[], rhs: number, w: number) => {
-		for (let a = 0; a < ix.length; a++) {
-			B[ix[a]!]! += w * cf[a]! * rhs;
-			for (let b = 0; b < ix.length; b++) A[ix[a]! * n + ix[b]!]! += w * cf[a]! * cf[b]!;
-		}
-	};
-	for (let k = 0; k < nv; k++) {
-		row([2 * k], [1], m.verts[2 * k]!, o.prior);
-		row([2 * k + 1], [1], m.verts[2 * k + 1]!, o.prior);
-	}
-	let used = 0;
-	for (const [src, dst] of pairs) {
-		if (!(dst[0] >= 0 && dst[1] >= 0 && dst[0] <= size[0] && dst[1] <= size[1])) continue;
-		if (!Number.isFinite(src[0]) || !Number.isFinite(src[1])) continue;
-		const [i, j, u, v] = m.locate(dst);
-		const ks = [m.idx(i, j), m.idx(i + 1, j), m.idx(i, j + 1), m.idx(i + 1, j + 1)];
-		const w = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
-		for (let d = 0; d < 2; d++)
-			row(
-				ks.map((k) => 2 * k + d),
-				w,
-				src[d]!,
-				1,
-			);
-		used++;
-	}
-	if (used === 0) return m;
+	const A = new BandMatrix(2 * nv, 2 * (m.cols + 2) + 1);
+	for (let k = 0; k < 2 * nv; k++) A.add(k, k, o.prior);
 	const a2 = o.alpha * o.alpha;
+	const rowA = (ix: number[], cf: number[]) => {
+		for (let a = 0; a < ix.length; a++)
+			for (let b = 0; b <= a; b++) {
+				const v = a2 * cf[a]! * cf[b]!;
+				A.add(ix[a]!, ix[b]!, v);
+				if (a !== b && ix[a] === ix[b]) A.add(ix[a]!, ix[b]!, v);
+			}
+	};
 	for (let j = 0; j < m.rows; j++)
 		for (let i = 0; i < m.cols; i++) {
 			const a: P2 = [i, j];
@@ -332,13 +317,44 @@ export function solveMesh(size: P2, o: WarpMeshOpts, pairs: readonly (readonly [
 				const k1 = m.idx(v1[0], v1[1]);
 				const k2 = m.idx(v2[0], v2[1]);
 				const k3 = m.idx(v3[0], v3[1]);
-				row([2 * k1, 2 * k2, 2 * k3, 2 * k3 + 1, 2 * k2 + 1], [1, u - 1, -u, v, -v], 0, a2);
-				row([2 * k1 + 1, 2 * k2 + 1, 2 * k3 + 1, 2 * k3, 2 * k2], [1, u - 1, -u, -v, v], 0, a2);
+				// x: V1x − V2x − u (V3x − V2x) + v (V3y − V2y) = 0; y: V1y − V2y − u (V3y − V2y) − v (V3x − V2x) = 0
+				rowA([2 * k1, 2 * k2, 2 * k3, 2 * k3 + 1, 2 * k2 + 1], [1, u - 1, -u, v, -v]);
+				rowA([2 * k1 + 1, 2 * k2 + 1, 2 * k3 + 1, 2 * k3, 2 * k2], [1, u - 1, -u, -v, v]);
 			}
 		}
-	// Unknowns of one cell span at most (cols + 2) vertices: the system is banded.
-	const band = 2 * (m.cols + 2) + 1;
-	if (bandedCholeskySolve(A, n, band, B)) m.verts.set(B);
+	if (meshSystems.size > 8) meshSystems.clear();
+	meshSystems.set(key, A);
+	return A;
+}
+
+/**
+ * Fits the content-preserving warp of one frame: `pairs` = (source position, wanted stabilised position) of its
+ * features; `base` = the frame's perspective correction (source → stabilised), the prior.
+ */
+export function solveMesh(size: P2, o: WarpMeshOpts, pairs: readonly (readonly [P2, P2])[], base: H3): WarpMesh {
+	const m = WarpMesh.fromHomography(o.cols, o.rows, size, base);
+	const n = m.verts.length;
+	const B = new Float64Array(n);
+	for (let k = 0; k < n; k++) B[k] = o.prior * m.verts[k]!;
+	let A: BandMatrix | null = null;
+	const W = m.cols + 1;
+	for (const [src, dst] of pairs) {
+		if (!(dst[0] >= 0 && dst[1] >= 0 && dst[0] <= size[0] && dst[1] <= size[1])) continue;
+		if (!Number.isFinite(src[0]) || !Number.isFinite(src[1])) continue;
+		A ??= meshSystem(m, o).clone();
+		const [i, j, u, v] = m.locate(dst);
+		const k0 = j * W + i;
+		const ks = [k0, k0 + 1, k0 + W, k0 + W + 1];
+		const w = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
+		for (let d = 0; d < 2; d++)
+			for (let a = 0; a < 4; a++) {
+				const ia = 2 * ks[a]! + d;
+				B[ia]! += w[a]! * src[d]!;
+				for (let b = 0; b <= a; b++) A.add(ia, 2 * ks[b]! + d, w[a]! * w[b]!);
+			}
+	}
+	if (!A) return m;
+	if (bandedCholeskySolve(A, B)) m.verts.set(B);
 	return m;
 }
 
@@ -401,13 +417,14 @@ export function smoothTrajectories(
 			}
 		});
 		const gram = new Float64Array(m * m);
-		for (let a = 0; a < m; a++)
-			for (let b = a; b < m; b++) {
-				let s = 0;
-				for (let q = 0; q < rows; q++) s += mat[q * m + a]! * mat[q * m + b]!;
-				gram[a * m + b] = s;
-				gram[b * m + a] = s;
+		for (let q = 0; q < rows; q++) {
+			const o = q * m;
+			for (let a = 0; a < m; a++) {
+				const x = mat[o + a]!;
+				for (let b = a; b < m; b++) gram[a * m + b]! += x * mat[o + b]!;
 			}
+		}
+		for (let a = 0; a < m; a++) for (let b = a + 1; b < m; b++) gram[b * m + a] = gram[a * m + b]!;
 		// Warm start: the previous window's basis shifted to this window's frames.
 		let start: number[][] | null = null;
 		if (warm && warm.vecs[0]) {
@@ -421,7 +438,7 @@ export function smoothTrajectories(
 				return o;
 			});
 		}
-		const cmat = topEigenvectors(gram, m, k, start, start ? 12 : 60);
+		const cmat = topEigenvectors(gram, m, k, start, start ? 8 : 60);
 		warm = { lo, vecs: cmat };
 		const g = gauss(lo, hi, t, Math.max(sigma, 1e-6));
 		const chat = cmat.map((rw) => rw.reduce((s, a, i) => s + a * g[i]!, 0));
@@ -451,11 +468,24 @@ export function smoothTrajectories(
 			const atb = [new Float64Array(k), new Float64Array(k)];
 			for (const c of cols) {
 				const p = trackAt(tr, lo + c)!;
-				for (let a = 0; a < k; a++) {
-					for (let d = 0; d < 2; d++) atb[d]![a]! += cmat[a]![c]! * p[d]!;
-					for (let b = 0; b < k; b++) ata[a * k + b]! += cmat[a]![c]! * cmat[b]![c]!;
-				}
+				for (let a = 0; a < k; a++) for (let d = 0; d < 2; d++) atb[d]![a]! += cmat[a]![c]! * p[d]!;
 			}
+			// CᵀC over the covered columns = I − the missing columns' outer products (C's rows are orthonormal):
+			// the cheaper of the two sums.
+			const missing = m - cols.length;
+			if (missing < cols.length) {
+				for (let a = 0; a < k; a++) ata[a * k + a] = 1;
+				const have = new Uint8Array(m);
+				for (const c of cols) have[c] = 1;
+				for (let c = 0; c < m; c++) {
+					if (have[c]) continue;
+					for (let a = 0; a < k; a++)
+						for (let b = 0; b < k; b++) ata[a * k + b]! -= cmat[a]![c]! * cmat[b]![c]!;
+				}
+			} else
+				for (const c of cols)
+					for (let a = 0; a < k; a++)
+						for (let b = 0; b < k; b++) ata[a * k + b]! += cmat[a]![c]! * cmat[b]![c]!;
 			for (let a = 0; a < k; a++) ata[a * k + a]! += 1e-9;
 			const dst: [number, number] = [0, 0];
 			let ok = true;
