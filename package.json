@@ -36,6 +36,7 @@
     "i18n:check": "node scripts/i18n.mjs --check"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@biomejs/biome": "^2.5.14",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@playwright/test": "^1.63.0",
