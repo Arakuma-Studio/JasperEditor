@@ -17,7 +17,7 @@ import {
 	TRANSITION_SPECS,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BUILTIN_NATIVE_EFFECTS } from '../src/export/native-ext.ts';
+import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from '../src/export/native-ext.ts';
 import { allVideoTracks, allVisualClips, nativeBlockers, planExport } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, type TestApp } from './helpers.ts';
@@ -69,7 +69,7 @@ function drawnByCompositions(spec: EffectSpec): boolean {
 type Route = { route: 'native' | 'baked' | 'blocked'; reasons: string[] };
 
 function routeOf(c: RenderVisualClip): Route {
-	const exts = exportService().nativeExtensions.all() as Parameters<typeof nativeBlockers>[2];
+	const exts = exportService().nativeExtensions.all() as NativeExtension[];
 	const reasons = nativeBlockers(c, caps, exts, defaultEffectRegistry);
 	if (reasons.length) return { route: 'blocked', reasons };
 	if (exts.some((e) => (e.bakes?.(c) ?? null) !== null)) return { route: 'baked', reasons };
@@ -78,7 +78,7 @@ function routeOf(c: RenderVisualClip): Route {
 
 /** Native without a blocker: every enabled effect must be implemented by a native stage. */
 function nativelyImplemented(c: RenderVisualClip, effectId: string): boolean {
-	const exts = exportService().nativeExtensions.all() as Parameters<typeof nativeBlockers>[2];
+	const exts = exportService().nativeExtensions.all() as NativeExtension[];
 	const spec = defaultEffectRegistry.get(effectId);
 	if (BUILTIN_NATIVE_EFFECTS.has(effectId)) return true;
 	if (exts.some((e) => (e.effectSupport?.(effectId, spec ?? undefined) ?? false) !== false)) return true;
@@ -177,7 +177,7 @@ describe('EXP-1: transitions', () => {
 		const tracks = allVideoTracks(planned.snapshot);
 		const inSnapshot = new Set(tracks.flatMap((tr) => (tr.transitions ?? []).map((t) => t.effectId)));
 		const fades = allVisualClips(planned.snapshot).some((c) => (c.fades ?? []).length > 0);
-		const exts = exportService().nativeExtensions.all() as Parameters<typeof nativeBlockers>[2];
+		const exts = exportService().nativeExtensions.all() as NativeExtension[];
 		const silent: string[] = [];
 		for (const t of video) {
 			if (!inSnapshot.has(t.id)) {
