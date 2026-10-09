@@ -216,6 +216,7 @@ The installers themselves were not built (section 7).
 |---|---|
 | `packages/expressions/test/sandbox.test.ts` | Realm isolation (10 poisoning vectors), implicit globals, clock, override taming, limits, quarantine |
 | `apps/web/test/agent-ui-guard.test.tsx` | Session guard, irreversible commands, approval card |
+| `e2e/security-review.spec.ts` | AGT-1 in the real app over `jasper-mcp`: `ui_click` on Approve approves nothing (it did before the fix), the user's click does; `ui_command history.clear {confirmed}` is refused |
 | `apps/engine/test/security-review.test.ts` | ENG-1…6, DATA-4/5/6, WebSocket `/agent` Host, Origin and token checks |
 | `apps/engine/test/export-coverage.test.ts` | EXP-1, below |
 | `packages/session/test/integrity-property.test.ts` | DATA-1, below |
