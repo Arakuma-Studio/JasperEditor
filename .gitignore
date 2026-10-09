@@ -14,6 +14,8 @@ coverage/
 *.log
 target/
 native/mg/target/
+# jasper-mg-templates build.rs: media/ staged without attribution sidecars for fframes::include_media_dir!
+native/mg/crates/jasper-mg-templates/.media/
 fixtures/media/
 test-results/
 playwright-report/
