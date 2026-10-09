@@ -65,7 +65,7 @@ node each), all lanes re-rendered at every playhead step.
 | **Media runtime sweeps batched** (opening a project resolves every medium in one store update); title / tab / properties selectors look sequence names up in an index per `items` record | `import/media-runtime.ts`, `session.setMediaRuntimes`, `TitleBar.tsx`, `Chrome.tsx`, `PropertiesPanel.tsx` | none |
 | **Effect Controls**: key lanes and summary lanes memoised (stable handlers); key glyphs drawn as cached SVG background images (no compositor node per key); playheads on their own compositor layer | `MiniTimeline.tsx`, `EffectControlsPanel.tsx`, `Playhead.tsx` | none |
 | **Render-bar segments** memoised per committed document (the render bar and the monitor's previews asked for them separately after every commit) | `timeline/model/renderbar.ts` | none |
-| **Autosave and journal serialisation incremental.** `stringifyJson` = `JSON.stringify` with the text of deeply frozen objects cached by identity (Immer freezes every document a transaction produces, untouched subtrees included); containers with ≥ 64 entries, or holding such containers within three levels, are composed from their entries' cached text with rope concatenation; the engine client sends pre-serialised bodies (`JsonText`) | `packages/project/src/json-cache.ts`, `persistence/engine.ts`, `engine-client` | byte-identical files (property test); journal semantics, atomicity and file format unchanged |
+| **Autosave and journal serialisation incremental.** `stringifyJson` = `JSON.stringify` with the text of deeply frozen objects cached by identity (Immer freezes every document a transaction produces, untouched subtrees included); the top four levels (envelope, document, its records, a sequence) and deeper containers with ≥ 64 entries are composed from their entries' cached text with rope concatenation, the rest serialised natively per object; the autosaver warms the cache in idle slices after each edit (`jsonWarmUnits`: one unit per sequence, medium, item); the engine client sends pre-serialised bodies (`JsonText`) | `packages/project/src/json-cache.ts`, `persistence/{engine,autosave}.ts`, `engine-client` | byte-identical files (property test); journal semantics, atomicity and file format unchanged |
 | **Idle invariant verification.** After a project opens (or a document is replaced), the session runs the full invariant check in `requestIdleCallback` and records the document as verified, so the first edit takes the incremental check | `invariants-incremental.ts` (`verifyDocument`), `session.ts` | none (the result is exactly the full check's) |
 
 ### Decisions
@@ -75,9 +75,11 @@ node each), all lanes re-rendered at every playhead step.
   adaptive duty cycle keeps cheap monitors at full rate and bounds expensive ones at 20 % of the main thread.
 - **Why incremental serialisation, not a worker, for autosave.** A worker needs the document posted to it: a structured
   clone of 8 MB costs about what `JSON.stringify` does. Documents are immutable and frozen, so the text of an
-  unchanged subtree is reusable: after a one-clip edit the 8 MB scale project serialises in ≈ 0.5 ms instead of
-  ≈ 100–300 ms; the first save after opening costs what `JSON.stringify` did. Only deeply frozen objects are cached:
-  anything that can still change is serialised afresh (tested), so a stale file cannot be written.
+  unchanged subtree is reusable: after a one-clip edit the 8 MB scale project serialises in 0.5–5 ms instead of
+  ≈ 90–120 ms. The first save of a session has nothing cached and costs ≈ 2× `JSON.stringify` (checking that every
+  object is deeply frozen), so the autosaver warms the cache when the browser is idle after an edit, a few
+  milliseconds at a time; the save then takes ≈ 2 ms. Only deeply frozen objects are cached: anything that can still
+  change is serialised afresh (tested), so a stale file cannot be written.
 - **Render snapshots of all 200 sequences.** Profiling the editor opening the 200-sequence scale project showed that
   it builds the snapshot of the shown sequence only (Program monitor) — the ≈ 470 ms of the scale benchmark is the
   benchmark building every snapshot on purpose. Exports and previews build their own sequence's. The one place that
@@ -137,10 +139,13 @@ different trade-off (EffectCraft renders off-thread; here the throttle bounds th
 
 ## 7. Limits
 
+- **Drag wall time: target missed.** The scripted 30-step drag takes 2.0–2.1 s (before: 3.3–8.1 s) against the 1.5 s
+  target; the same script on a blank page takes 1.35 s on this host (30 pointer moves 16 ms apart through CDP, each
+  acknowledged after the renderer's frame), so ≈ 0.6 s is left to the page: about one extra frame per step for the
+  gesture update (≈ 4 ms, perf-core), the timeline's render and the Program monitor's gesture frames. The per-frame
+  budget (mean < 16 ms) is met (11.5–12.4 ms).
 - **Host.** Every number of §5 comes from a shared 12-core host at load average 20–60 (other agents' builds); the
-  frame budgets are met at lower load and the e2e spec scales them by the measured load factor (squared: the browser
-  is another process). The scripted drag cannot go below ≈ 1.35 s on this host whatever the page does (30 pointer
-  moves 16 ms apart through CDP: measured on a blank page).
+  e2e spec scales its budgets by the measured load factor squared (the browser is another process).
 - **Zoom** re-renders every visible clip (its position and width change); scrolling does not.
 - **Gesture frames** of a heavy Program monitor are 25–40 ms tasks; they are spaced (≤ 20 % of the main thread) but
   each one still makes one long frame.
