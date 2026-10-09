@@ -1005,6 +1005,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
 				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
 				...(output.gop ? { gop: output.gop } : {}),
+				...(output.noBFrames ? { noBFrames: true } : {}),
 				// color-mgmt: bit depth, colour code points, HDR metadata.
 				...(output.color
 					? {

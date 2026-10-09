@@ -470,6 +470,7 @@ export class ExportService {
 						},
 					},
 					file,
+					{ noBFrames: smart.codec === 'h264' },
 				);
 				warnings.push(...r.warnings.filter((w) => w.code !== 'SMART_RENDER'));
 			}
@@ -746,6 +747,7 @@ export class ExportService {
 			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
 			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
 			...(o.gop ? { gop: o.gop } : {}),
+			...(o.noBFrames ? { noBFrames: true } : {}),
 		});
 		const filter = concatFilter({
 			frames: counts,
@@ -1340,6 +1342,7 @@ export class ExportService {
 			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
 			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
 			...(o.gop ? { gop: o.gop } : {}),
+			...(o.noBFrames ? { noBFrames: true } : {}),
 			...(o.color
 				? { bitDepth: o.color.bitDepth, colorCodes: o.color.codes, svtHdr: svtHdrParams(o.color) }
 				: {}),
@@ -1544,6 +1547,7 @@ export class ExportService {
 		ctx: JobContext,
 		req: ExportStartRequest,
 		output: string,
+		opts: { noBFrames?: boolean } = {},
 	): Promise<{
 		frames: number;
 		renderPath: 'copy' | 'native' | 'hybrid' | 'remotion';
@@ -1557,6 +1561,7 @@ export class ExportService {
 			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
 			throw e;
 		}
+		if (opts.noBFrames) planned.output.noBFrames = true;
 		const r = await this.renderPlanned(ctx, req, planned, output);
 		return { frames: r.frames, renderPath: r.path, warnings: r.warnings };
 	}

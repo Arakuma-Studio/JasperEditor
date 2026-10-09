@@ -119,6 +119,11 @@ export type OutputSpec = {
 	videoOnly?: boolean;
 	/** previews: frames between keyframes (`video.keyframeInterval`); absent = the encoder default. */
 	gop?: number;
+	/**
+	 * Smart rendering: the encoded pieces are joined with copied GOPs as one raw H.264 stream, which keeps no
+	 * timestamps — they must not use B-frames (set by the engine, never by a request).
+	 */
+	noBFrames?: boolean;
 	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
 	color?: ExportColor;
 };

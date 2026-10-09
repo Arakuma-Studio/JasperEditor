@@ -118,7 +118,12 @@ beforeAll(async () => {
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-		{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe'] },
+		{
+			cwd: ROOT, // A dev engine (as compositions.test / the QA harness): Remotion renders also without the LGPL FFmpeg folder,
+			// which a clean CI checkout does not have (a built engine refuses with BINARY_MISSING, by design).
+			env: cleanEnv({ JASPER_LOCAL_TOKEN: token, JASPER_DEV: '1' }),
+			stdio: ['ignore', 'pipe', 'pipe'],
+		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => logs.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => logs.push(d.toString()));

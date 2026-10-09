@@ -284,6 +284,8 @@ type EncodeParams = {
 	gop?: number;
 	/** Proxy/realtime tuning (fast presets, no B-frame lookahead). */
 	realtime?: boolean;
+	/** No B-frames (smart-rendering pieces: joined as one raw H.264 stream without timestamps). */
+	noBFrames?: boolean;
 	threads?: number;
 	/**
 	 * Average bitrate (kbit/s): the target of bitrate-driven encoders instead of the CRF mapping, and a VBV
@@ -475,6 +477,9 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		default:
 			video.push(...rate(1.2), '-g', String(gop));
 	}
+	// Generic codec option, understood by every H.264 encoder (OpenH264 never makes B-frames anyway). Pieces encoded with
+	// B-frames lost frames at the join with copied GOPs (verify workstream: libx264, as with CI's apt ffmpeg).
+	if (p.noBFrames && (enc === 'libx264' || HW_H264.some((h) => h.encoder === enc))) video.push('-bf', '0');
 	if (!filters.includes('hwupload')) video.push('-pix_fmt', pix);
 	if (p.threads && !HW_H264.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));
 	return { pre, filters, video };

@@ -2,7 +2,7 @@
 // spaces (tags, 10-bit, HDR metadata boxes / OBUs), tone-mapped Rec. 709 outputs, display-rendition stills, HDR probe
 // metadata and the new LUT formats.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -17,6 +17,7 @@ import {
 	serializeCube,
 	write3dl,
 } from '@jasper/project';
+import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -34,8 +35,11 @@ import {
 
 let app: TestApp;
 const tmp = mkdtempSync(join(tmpdir(), 'jasper-cm-'));
-const FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffmpeg');
-const FFPROBE = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffprobe');
+// The LGPL build when it is there (pnpm ffmpeg:lgpl), else JASPER_FFMPEG / PATH like the engine (a clean CI checkout
+// has no vendor directory: the hard-coded vendor path made every probe here a null stdout).
+const VENDOR = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
+const FFMPEG = existsSync(join(VENDOR, 'ffmpeg')) ? join(VENDOR, 'ffmpeg') : (ffmpegPath() ?? 'ffmpeg');
+const FFPROBE = existsSync(join(VENDOR, 'ffprobe')) ? join(VENDOR, 'ffprobe') : (ffprobePath() ?? 'ffprobe');
 
 beforeAll(async () => {
 	ensureFixtures();

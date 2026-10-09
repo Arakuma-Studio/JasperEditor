@@ -6,6 +6,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PreviewRenderResult, PreviewStatus } from '@jasper/api';
 import { audioPreviewSegments, flicksPerFrame, type ProjectDocument, previewSegments } from '@jasper/project';
+import { probeFrames as oracleProbeFrames } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath, scanAppdir } from '../src/cache/layout.ts';
 import { previewFormatKey } from '../src/previews/service.ts';
@@ -44,10 +45,6 @@ function frameCode(file: string, frame: number): number {
 }
 
 function probeFrames(file: string): { pictTypes: string[]; codec: string; width: number; audio: boolean } {
-	const r = spawnSync('ffprobe', [
-		...['-v', 'error', '-select_streams', 'v:0', '-show_frames', '-show_entries', 'frame=pict_type'],
-		...['-of', 'csv=p=0', file],
-	]);
 	const s = spawnSync('ffprobe', [
 		...['-v', 'error', '-show_entries', 'stream=codec_type,codec_name,width', '-of', 'json', file],
 	]);
@@ -58,11 +55,9 @@ function probeFrames(file: string): { pictTypes: string[]; codec: string; width:
 	).streams;
 	const v = streams.find((x) => x.codec_type === 'video')!;
 	return {
-		pictTypes: r.stdout
-			.toString()
-			.trim()
-			.split('\n')
-			.map((x) => x.replace(/,/g, '').trim()),
+		// JSON (testkit): ffprobe's CSV puts frame side data (x264's "User Data Unregistered" SEI with a libx264 build,
+		// e.g. CI's apt ffmpeg) on the same line as the picture type.
+		pictTypes: oracleProbeFrames(file, 'v:0').map((f) => f.pictType ?? '?'),
 		codec: v.codec_name,
 		width: v.width ?? 0,
 		audio: streams.some((x) => x.codec_type === 'audio'),
