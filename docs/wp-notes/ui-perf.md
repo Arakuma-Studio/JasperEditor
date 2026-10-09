@@ -149,6 +149,10 @@ different trade-off (EffectCraft renders off-thread; here the throttle bounds th
 - **Zoom** re-renders every visible clip (its position and width change); scrolling does not.
 - **Gesture frames** of a heavy Program monitor are 25–40 ms tasks; they are spaced (≤ 20 % of the main thread) but
   each one still makes one long frame.
+- **Program monitor overlays** (transform handles, masks, tracking) follow a gesture at full rate while the picture
+  under them may lag by one throttled gesture frame on a heavy sequence; both agree again at the commit.
+- **Reveal in Project** on a windowed bin scrolls the item's row into view first; it is exercised by the code path
+  only (the e2e spec scrolls to the last item; no test reveals one).
 - **Effect Controls** with 1 800 keys still repaints the value column and the Program monitor per scrub step.
 - **Project panel windowing** takes rows out of view out of the DOM from 200 items: UI automation finds items in view.
 - **Not changed:** project loading (parse, zod, repair: ≈ 1.4 s for the 8 MB scale project; the loader's own invariant
