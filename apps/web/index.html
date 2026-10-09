@@ -16,6 +16,8 @@
 		<title>JasperEditor</title>
 		<!-- External (not inline) so a strict CSP `script-src 'self'` works; applies theme before first paint (S05:DT-003). -->
 		<script src="/theme-boot.js"></script>
+		<!-- Editor URLs: preloads the editor chunks and starts fetching the project (generated, vite.config.ts). -->
+		<script src="/editor-boot.js"></script>
 	</head>
 	<body>
 		<div id="root"></div>

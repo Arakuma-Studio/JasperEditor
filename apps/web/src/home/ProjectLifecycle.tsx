@@ -163,11 +163,14 @@ function LifecycleBody(props: {
 		return registerImportService(service);
 	}, [session, engine.client]);
 
-	// Media runtime (availability, poster/sprite/peaks/proxy URLs); re-resolved when the engine reconnects.
+	// Media runtime (availability, poster/sprite/peaks/proxy URLs); re-resolved when the engine reconnects (and only
+	// then: the engine's capabilities or event-stream state changing does not ask for every medium again).
+	const engineConnected = engine.status === 'connected';
 	useEffect(() => {
+		void engineConnected;
 		const sync = createMediaRuntimeSync(session, engine.client, engine.subscribe);
 		return () => sync.dispose();
-	}, [session, engine.client, engine.subscribe]);
+	}, [session, engine.client, engine.subscribe, engineConnected]);
 
 	// Export completion toasts (jobs started from Export mode / Quick Export)
 	useEffect(

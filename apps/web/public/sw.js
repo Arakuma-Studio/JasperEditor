@@ -12,6 +12,7 @@ const PRECACHE_URLS = [
 	'/',
 	'/index.html',
 	'/theme-boot.js',
+	'/editor-boot.js',
 	'/manifest.webmanifest',
 	'/icons/icon-192.png',
 	'/icons/icon-512.png',

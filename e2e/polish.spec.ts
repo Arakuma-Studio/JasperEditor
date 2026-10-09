@@ -5,6 +5,10 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { budgetMs, budgetReport } from '../scripts/perf/budget.ts';
+import { measureOpen } from '../scripts/perf/open-phases.ts';
+import { cachedFixture } from '../scripts/perf/ui-run.ts';
+import { uploadProject } from '../scripts/perf/ui-scenarios.ts';
 import {
 	appliedLabels,
 	createProject,
@@ -356,4 +360,48 @@ test('the language switches live in both directions: nothing is reloaded, undo s
 		leftBehind(reloadEn, new Map()).filter((line) => !/^“.{1,3}”/.test(line)),
 		'Spanish shown by an English page',
 	).toEqual([]);
+});
+
+// ---------------------------------------------------------------- large project open
+
+test('a 2 000-item project opens with two media status requests, a windowed bin and within the budget', async ({
+	browser,
+}) => {
+	test.setTimeout(300_000);
+	const base = `http://127.0.0.1:${serverInfo().port}`;
+	const id = await uploadProject(base, await cachedFixture('items:2000'));
+	// Three cold opens; the median is compared with the documented budget (2 s), scaled by the host load like every
+	// timing budget (the browser is another process: `parallel`). PERF=1 enforces it exactly.
+	const runs = [];
+	for (let i = 0; i < 3; i++)
+		runs.push(await measureOpen(browser, base, id, 'items:2000', { trace: i === 0 }));
+	const first = runs[0]!;
+	// One request per batch of 1 000 media, not one per medium (it was 2 000 requests and 2 000 store updates).
+	expect(first.requests['media status'] ?? 0).toBe(0);
+	expect(first.requests['media status (batch)']).toBe(2);
+	const median = [...runs].sort((a, b) => a.media - b.media)[1]!;
+	console.info(
+		budgetReport('open 2 000 items (interactive, every medium resolved)', median.media, 2000, {
+			parallel: true,
+		}),
+		`· runs ${runs.map((r) => r.media).join(' / ')} ms · main thread ${JSON.stringify(first.work)}`,
+	);
+	expect(median.media).toBeLessThanOrEqual(budgetMs(2000, { parallel: true }));
+
+	// The bin is windowed from its first render: a screen of rows, never all 2 000.
+	const p = await browser.newPage({ viewport: { width: 1600, height: 960 } });
+	let most = 0;
+	await p.addInitScript(() => {
+		const w = window as unknown as { __rows: number };
+		w.__rows = 0;
+		new MutationObserver(() => {
+			w.__rows = Math.max(w.__rows, document.querySelectorAll('[data-testid="project-row"]').length);
+		}).observe(document, { subtree: true, childList: true });
+	});
+	await p.goto(`${base}/project/${id}`);
+	await expect(p.getByTestId('project-count')).toHaveText(/2[\s,.]?0\d\d items/);
+	most = await p.evaluate(() => (window as unknown as { __rows: number }).__rows);
+	expect(most).toBeGreaterThan(5);
+	expect(most).toBeLessThan(200);
+	await p.close();
 });

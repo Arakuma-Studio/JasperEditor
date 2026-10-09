@@ -3,9 +3,11 @@
 import { DERIVATIVE_KINDS, MEDIA_STATUS_BATCH_MAX } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { editorBootScript, editorChunks } from '../editor-boot.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
+import { fetchWithEarly } from '../src/state/engine.tsx';
 import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
 afterEach(() => localStorage.clear());
@@ -131,5 +133,120 @@ describe('media resolution at project open', () => {
 		await until(() => settled(session) && Object.keys(session.getState().media).length === 4);
 		for (const id of ids) expect(session.getState().media[id]?.availability).toBe('needs-engine');
 		sync.dispose();
+	});
+});
+
+describe('editor boot script (preload + early project fetch)', () => {
+	const bundle = {
+		'assets/index.js': {
+			type: 'chunk',
+			fileName: 'assets/index.js',
+			isEntry: true,
+			imports: ['assets/vendor.js'],
+		},
+		'assets/vendor.js': { type: 'chunk', fileName: 'assets/vendor.js', imports: [] },
+		'assets/EditorShell.js': {
+			type: 'chunk',
+			fileName: 'assets/EditorShell.js',
+			isDynamicEntry: true,
+			facadeModuleId: '/repo/apps/web/src/shell/EditorShell.tsx',
+			imports: ['assets/vendor.js', 'assets/dock.js'],
+		},
+		'assets/dock.js': { type: 'chunk', fileName: 'assets/dock.js', imports: ['assets/vendor.js'] },
+		'assets/TimelinePanel.js': {
+			type: 'chunk',
+			fileName: 'assets/TimelinePanel.js',
+			isDynamicEntry: true,
+			facadeModuleId: 'C:\\repo\\apps\\web\\src\\panels\\timeline\\TimelinePanel.tsx',
+			imports: ['assets/ClipView.js'],
+		},
+		'assets/ClipView.js': { type: 'chunk', fileName: 'assets/ClipView.js', imports: [] },
+		'assets/pdf.js': {
+			type: 'chunk',
+			fileName: 'assets/pdf.js',
+			isDynamicEntry: true,
+			facadeModuleId: '/repo/node_modules/pdfjs/build/pdf.mjs',
+			imports: [],
+		},
+		'assets/index.css': { type: 'asset', fileName: 'assets/index.css' },
+	};
+
+	it('lists the shell, the panel bodies and what they import — not the entry’s own chunks or other lazy code', () => {
+		expect(editorChunks(bundle)).toEqual([
+			'/assets/ClipView.js',
+			'/assets/EditorShell.js',
+			'/assets/TimelinePanel.js',
+			'/assets/dock.js',
+		]);
+	});
+
+	function boot(pathname: string, fetchImpl: (url: string) => Promise<unknown>) {
+		const links: { rel: string; href: string }[] = [];
+		const win: Record<string, unknown> = {};
+		const script = editorBootScript(['/assets/EditorShell.js', '/assets/dock.js']);
+		new Function('location', 'document', 'window', 'fetch', script)(
+			{ pathname },
+			{
+				createElement: () => ({ rel: '', href: '' }),
+				head: { appendChild: (l: { rel: string; href: string }) => links.push(l) },
+			},
+			win,
+			fetchImpl,
+		);
+		return { links, early: win.__jasperEarly as { url: string; response: Promise<unknown> } | undefined };
+	}
+
+	it('on an editor URL preloads the chunks and starts fetching the project; elsewhere it does nothing', async () => {
+		const asked: string[] = [];
+		const ok = (url: string) => {
+			asked.push(url);
+			return Promise.resolve('answer');
+		};
+		const editor = boot('/project/prj_AB%20C', ok);
+		expect(editor.links.map((l) => `${l.rel} ${l.href}`)).toEqual([
+			'modulepreload /assets/EditorShell.js',
+			'modulepreload /assets/dock.js',
+		]);
+		expect(editor.early?.url).toBe('/api/projects/prj_AB%20C');
+		expect(asked).toEqual(['/api/projects/prj_AB%20C']);
+		expect(await editor.early?.response).toBe('answer');
+
+		for (const path of ['/', '/project/demo', '/projects/x', '/project/%E0%A4%A']) {
+			const r = boot(path, ok);
+			expect(r.early, path).toBeUndefined();
+		}
+		expect(boot('/', ok).links).toEqual([]);
+		// a failing early request is not an unhandled rejection
+		const failing = boot('/project/p1', () => Promise.reject(new Error('down')));
+		await expect(failing.early?.response).rejects.toThrow('down');
+	});
+
+	it('the engine client takes the early answer once, for exactly that GET, and asks again when it failed', async () => {
+		const w = window as unknown as {
+			__jasperEarly?: { url: string; response: Promise<Response>; at: number };
+		};
+		const real = vi.fn(async () => new Response('real'));
+		const f = fetchWithEarly(real as unknown as typeof fetch);
+		const early = () => ({
+			url: '/api/projects/p1',
+			response: Promise.resolve(new Response('early')),
+			at: Date.now(),
+		});
+
+		w.__jasperEarly = early();
+		expect(await (await f('/api/projects/p2')).text()).toBe('real'); // another URL: untouched
+		expect(await (await f('/api/projects/p1', { method: 'PUT' })).text()).toBe('real');
+		expect(w.__jasperEarly).toBeDefined();
+		expect(await (await f('/api/projects/p1')).text()).toBe('early');
+		expect(w.__jasperEarly).toBeUndefined();
+		expect(await (await f('/api/projects/p1')).text()).toBe('real'); // only once
+
+		w.__jasperEarly = { ...early(), response: Promise.reject(new Error('down')) };
+		w.__jasperEarly.response.catch(() => undefined);
+		expect(await (await f('/api/projects/p1')).text()).toBe('real');
+
+		w.__jasperEarly = { ...early(), at: Date.now() - 60_000 }; // stale: asked again
+		expect(await (await f('/api/projects/p1')).text()).toBe('real');
+		expect(w.__jasperEarly).toBeUndefined();
 	});
 });
