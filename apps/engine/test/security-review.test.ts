@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { quoteFilterPath } from '../src/color/extension.ts';
+import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
 import { ModelStore } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
@@ -183,5 +184,51 @@ describe('ENG-3: file paths and text in filter text survive both FFmpeg parsing 
 		expect(filterValue("it's")).toBe("'it\\'\\''s'");
 		expect(filterPath('C:\\a\\b.cube', 'win32')).toBe("'C\\:/a/b.cube'");
 		expect(filterPath('/a\\b.cube', 'linux')).toBe("'/a\\\\b.cube'");
+	});
+});
+
+describe('DATA-4: an OCIO config only bundles the LUT and CDL files it names', () => {
+	it('never copies other files (absolute paths, ../, non-LUT content) into the bundle', async () => {
+		const root = tempAppdir('jasper-ocio-');
+		const cfgDir = join(root, 'pack');
+		mkdirSync(join(cfgDir, 'luts'), { recursive: true });
+		writeFileSync(
+			join(cfgDir, 'luts', 'good.cube'),
+			'LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n',
+		);
+		const secret = join(root, 'id_rsa');
+		writeFileSync(secret, '-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n');
+		writeFileSync(join(root, 'notes.cube'), 'not a lut, but my private notes');
+		const config = join(cfgDir, 'evil.ocio');
+		writeFileSync(
+			config,
+			[
+				'ocio_profile_version: 2',
+				'search_path: "luts:.."',
+				'roles:',
+				'  scene_linear: lin',
+				'displays:',
+				'  sRGB:',
+				'    - !<View> {name: Raw, colorspace: lin}',
+				'colorspaces:',
+				'  - !<ColorSpace>',
+				'    name: lin',
+				'  - !<ColorSpace>',
+				'    name: good',
+				'    to_reference: !<FileTransform> {src: good.cube}',
+				'  - !<ColorSpace>',
+				'    name: key',
+				`    to_reference: !<FileTransform> {src: ${secret}}`,
+				'  - !<ColorSpace>',
+				'    name: notes',
+				'    to_reference: !<FileTransform> {src: notes.cube}',
+				'',
+			].join('\n'),
+		);
+		const b = await buildOcioBundle(config);
+		expect(Object.keys(b.files)).toEqual(['good.cube']);
+		expect(b.missing).toEqual([secret, 'notes.cube'].sort());
+		expect(JSON.stringify(b)).not.toContain('PRIVATE KEY');
+		expect(JSON.stringify(b)).not.toContain('private notes');
 	});
 });

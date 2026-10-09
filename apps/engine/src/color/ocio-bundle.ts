@@ -9,9 +9,13 @@ import {
 	type ColorConfigInfo,
 	EMPTY_PROBE,
 	isOcioBundle,
+	LUT_FILE_EXTENSIONS,
+	lutFormatOf,
 	type OcioBundle,
 	OcioConfig,
 	OcioError,
+	parseCdlXml,
+	parseLutFile,
 	parseYaml,
 	type Yaml,
 	yGet,
@@ -25,6 +29,21 @@ import type { AssetProber, ProbeResult } from '../media/probe.ts';
 const MAX_CONFIG_BYTES = 8 * 1024 * 1024;
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 256 * 1024 * 1024;
+
+/** OCIO reads FileTransform files by extension: LUT formats and CDL XML only. */
+const COLOR_FILE_RE = new RegExp(`\\.(${[...LUT_FILE_EXTENSIONS, 'cc', 'ccc', 'cdl'].join('|')})$`, 'i');
+
+/** A LUT or CDL file by name that also parses as one. */
+function isColorFile(path: string, text: string): boolean {
+	if (!COLOR_FILE_RE.test(path)) return false;
+	try {
+		if (/\.(cc|ccc|cdl)$/i.test(path)) return parseCdlXml(text).length > 0;
+		parseLutFile(text, lutFormatOf(path));
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 /** Every FileTransform `src` of a parsed config. */
 function fileSources(y: Yaml, out: Set<string>, depth = 0): void {
@@ -92,6 +111,12 @@ export async function buildOcioBundle(configPath: string): Promise<OcioBundle> {
 			continue;
 		}
 		const body = await readFile(found, 'utf8');
+		// A FileTransform names a LUT or CDL file; anything else (a config naming `/home/me/.ssh/id_rsa` or
+		// `../../secrets.env`) is never copied into the bundle, which travels with the project (security review DATA-4).
+		if (!isColorFile(found, body)) {
+			missing.push(src);
+			continue;
+		}
 		total += body.length;
 		if (total > MAX_BUNDLE_BYTES)
 			throw new JobError('INVALID_COLOR_CONFIG', 'The files of this OCIO config exceed 256 MB', false);
