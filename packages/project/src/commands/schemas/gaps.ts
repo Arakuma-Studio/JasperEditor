@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { WarpAnalysisDataSchema } from '../../gaps/warp/analysis.ts';
 import { AttachedProxySchema } from '../../schema/media.ts';
-import { cmd, IdListSchema, IdRefSchema } from './common.ts';
+import { cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
 
 /**
  * Clip ▸ Proxy ▸ Attach Proxies / Create Proxies (when the job finishes): attaches a registered file as the proxy of a
@@ -48,10 +48,34 @@ export const EffectSetWarpAnalysisCmd = cmd('effect.setWarpAnalysis', {
 	analysis: WarpAnalysisDataSchema.nullable(),
 });
 
+const SubjectPath = z.strictObject({
+	clipId: IdRefSchema,
+	start: z.number().min(0),
+	frameDuration: z.number().positive(),
+	/** x, y (0..1 of the media's display), confidence per sample. */
+	points: z.array(z.number().min(-1).max(2)).min(3).max(3 * 54_000),
+});
+
+/**
+ * Sequence ▸ Auto Reframe Sequence: duplicates `sequenceId` at `width × height` (named "<name> - (num:den)" unless
+ * `name`), scales each video clip with a subject path to fill the new frame and keyframes its Position to follow the
+ * subject (Motion Tracking `tracking`). Clips whose Position or Scale is already animated keep their Motion (reported).
+ */
+export const SequenceAutoReframeCmd = cmd('sequence.autoReframe', {
+	sequenceId: IdRefSchema,
+	width: z.number().int().min(16).max(16384),
+	height: z.number().int().min(16).max(16384),
+	tracking: z.enum(['slower', 'default', 'faster']).default('default'),
+	name: z.string().min(1).max(255).optional(),
+	subjects: z.array(SubjectPath).max(5000),
+	ref: RefDeclSchema.optional(),
+});
+
 export const GAPS_COMMANDS = [
 	MediaAttachProxyCmd,
 	MediaDetachProxyCmd,
 	ClipSetAudioChannelsCmd,
 	ItemSetAudioChannelsCmd,
 	EffectSetWarpAnalysisCmd,
+	SequenceAutoReframeCmd,
 ] as const;

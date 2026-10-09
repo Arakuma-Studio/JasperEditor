@@ -366,6 +366,7 @@ const LABELS: Record<CommandType, string> = {
 	'clip.setAudioChannels': 'Audio Channels',
 	'item.setAudioChannels': 'Audio Channels',
 	'effect.setWarpAnalysis': 'Analyze (Warp Stabilizer)',
+	'sequence.autoReframe': 'Auto Reframe Sequence',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

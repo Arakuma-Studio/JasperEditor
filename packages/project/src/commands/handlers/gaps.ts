@@ -2,7 +2,20 @@
 import { channelsProblem } from '../../gaps/audio-channels.ts';
 import { proxyMismatch } from '../../gaps/proxies.ts';
 import { WARP_STABILIZER_EFFECT_ID, warpAnalysisProblem } from '../../gaps/warp/analysis.ts';
+import {
+	clipMediaSecondsAt,
+	keyframeIndexes,
+	reframePosition,
+	smoothSubjectPath,
+} from '../../gaps/auto-reframe.ts';
+import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { MediaAsset } from '../../schema/media.ts';
+import type { Clip, Sequence } from '../../schema/sequence.ts';
+import { FLICKS_PER_SECOND } from '../../time.ts';
+import type { DDoc } from '../context.ts';
+import { keyframeHandlers } from './keyframe.ts';
+import { sequenceHandlers } from './sequence.ts';
+import { structureHandlers } from './structure.ts';
 import type { HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { locateEffect } from './param.ts';
@@ -23,7 +36,89 @@ function mediaOf(
 	return h.fail('E_NOT_FOUND', `Media not found: ${id}`);
 }
 
+type Run = (doc: DDoc, cmd: unknown, h: HandlerContext) => unknown;
+const run = (map: HandlerMap, type: string) => (map as Record<string, unknown>)[type] as Run;
+
 export const gapsHandlers: HandlerMap = {
+	'sequence.autoReframe': (doc, cmd: CommandOf<'sequence.autoReframe'>, h) => {
+		const src = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		if (!src) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
+		for (const s of cmd.subjects)
+			if (!src.clips[s.clipId]) h.fail('E_NOT_FOUND', `Clip not found in the sequence: ${s.clipId}`);
+		const item = Object.values(doc.items).find(
+			(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === src.id,
+		);
+		const g = (a: number, b: number): number => (b ? g(b, a % b) : a);
+		const k = g(cmd.width, cmd.height);
+		const name = cmd.name ?? `${item?.name ?? 'Sequence'} - (${cmd.width / k}:${cmd.height / k})`;
+		const dup = run(structureHandlers, 'sequence.duplicate')(
+			doc,
+			{ type: 'sequence.duplicate', sequenceId: src.id, name, ...(cmd.ref ? { ref: cmd.ref } : {}) },
+			h,
+		) as { sequenceId: string; itemId: string };
+		run(sequenceHandlers, 'sequence.updateSettings')(
+			doc,
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: dup.sequenceId,
+				settings: { width: cmd.width, height: cmd.height },
+				reposition: 'keep-offset-from-center',
+			},
+			h,
+		);
+		const seq = doc.sequences[dup.sequenceId] as Sequence;
+		const oldIds = Object.keys(src.clips);
+		const newIds = Object.keys(seq.clips);
+		const map = new Map(oldIds.map((id, i) => [id, newIds[i]!]));
+		const frame = { width: cmd.width, height: cmd.height };
+		const rate = seq.settings.frameRate;
+		const reframed: string[] = [];
+		const skipped: { clipId: string; reason: string }[] = [];
+		for (const path of cmd.subjects) {
+			const id = map.get(path.clipId);
+			const clip = id ? (seq.clips[id] as Clip | undefined) : undefined;
+			if (!clip || clip.kind !== 'video') {
+				skipped.push({ clipId: path.clipId, reason: 'not a video clip' });
+				continue;
+			}
+			const tr = (clip as { transform?: { position: { keyframes: unknown[]; value: [number, number] }; scale: { keyframes: unknown[]; value: number }; scaleWidth: { value: number }; anchor: { keyframes: unknown[]; value: [number, number] } } }).transform;
+			if (!tr || tr.position.keyframes.length || tr.scale.keyframes.length || tr.anchor.keyframes.length) {
+				skipped.push({ clipId: path.clipId, reason: 'Motion is already animated' });
+				continue;
+			}
+			const box = intrinsicBoxOf({ clip, doc, seq } as never);
+			const fill = Math.max(frame.width / box.width, frame.height / box.height) * 100;
+			const scale = Math.max(tr.scale.value, fill);
+			tr.scale.value = scale;
+			tr.scaleWidth.value = scale;
+			const smooth = smoothSubjectPath(path.points, path.frameDuration, cmd.tracking);
+			const values: [number, number][] = [];
+			for (let f = clip.start; f < clip.start + clip.duration; f++) {
+				const t = clipMediaSecondsAt(clip as never, f, rate, FLICKS_PER_SECOND);
+				const i = Math.max(0, Math.min(smooth.length - 1, Math.round((t - path.start) / path.frameDuration)));
+				values.push(reframePosition(smooth[i] ?? [0.5, 0.5], box, frame, scale, tr.anchor.value));
+			}
+			const keys = keyframeIndexes(values, 1.5, Math.max(2, Math.round((2 * rate.num) / rate.den)));
+			const first = values[0]!;
+			if (keys.length <= 2 && values.every((v) => Math.hypot(v[0] - first[0], v[1] - first[1]) < 0.5)) {
+				tr.position.value = [first[0], first[1]];
+			} else
+				for (const i of keys)
+					run(keyframeHandlers, 'keyframe.add')(
+						doc,
+						{
+							type: 'keyframe.add',
+							target: ['clip', clip.id, 'transform', 'position'],
+							at: { sequenceFrame: clip.start + i },
+							value: values[i],
+							sequenceId: seq.id,
+						},
+						h,
+					);
+			reframed.push(clip.id);
+		}
+		return { sequenceId: seq.id, itemId: dup.itemId, reframed, skipped };
+	},
 	'effect.setWarpAnalysis': (doc, cmd: CommandOf<'effect.setWarpAnalysis'>, h) => {
 		const loc = locateEffect(doc, cmd.effectInstanceId);
 		if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${cmd.effectInstanceId}`);
