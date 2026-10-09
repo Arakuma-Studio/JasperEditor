@@ -141,6 +141,22 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
 	});
+
+	// Security review ELE-1: packaged builds ignore NODE_OPTIONS and --inspect (which would let any process run code
+	// as the signed app, with its microphone permission), verify the asar, load only from it and encrypt cookies.
+	// Run-as-node stays on: Help ▸ Connect an AI Agent launches the bundled jasper-mcp that way (mcpLaunchInfo).
+	it('flips the Electron fuses', () => {
+		expect(pkg.build.asar).toBe(true);
+		expect(pkg.build.electronFuses).toEqual({
+			runAsNode: true,
+			enableCookieEncryption: true,
+			enableNodeOptionsEnvironmentVariable: false,
+			enableNodeCliInspectArguments: false,
+			enableEmbeddedAsarIntegrityValidation: true,
+			onlyLoadAppFromAsar: true,
+			grantFileProtocolExtraPrivileges: false,
+		});
+	});
 });
 
 describe('capture-page rect (mcp-cli ui_screenshot)', () => {
