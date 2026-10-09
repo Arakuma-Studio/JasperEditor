@@ -6,11 +6,13 @@ import {
 	type CommandContext,
 	diffDocuments,
 	type Issue,
+	invariantMode,
 	type Origin,
 	type ProjectDocument,
 	type TransactionResult,
 	TX_PROTOCOL,
 	type TxInput,
+	verifyDocument,
 } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { defaultMediaRuntime, defaultSequenceView, defaultToggles } from './defaults.ts';
@@ -142,6 +144,32 @@ export class EditorSession {
 			readOnly: !!opts.readOnly,
 			openIssues: opts.openIssues ?? [],
 		}));
+		this.verifyWhenIdle();
+	}
+
+	private verifyScheduled = false;
+	/**
+	 * ui-perf: checks an opened (or replaced) document's invariants when the browser is idle, so the first edit takes
+	 * the incremental check instead of the full one (25–40 ms on 5 000 clips) on the critical path. Browsers only
+	 * (`requestIdleCallback`); elsewhere the first edit checks the whole document as before.
+	 */
+	private verifyWhenIdle(): void {
+		const ric = (
+			globalThis as {
+				requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => unknown;
+			}
+		).requestIdleCallback;
+		if (typeof ric !== 'function' || this.verifyScheduled) return;
+		this.verifyScheduled = true;
+		ric(
+			() => {
+				this.verifyScheduled = false;
+				if (this.closed || invariantMode() === 'full') return;
+				const registries = (this.ctx as Partial<CommandContext>).registries;
+				verifyDocument(this.store.getState().document, registries ? { effects: registries.effects } : {});
+			},
+			{ timeout: 5000 },
+		);
 	}
 
 	/** Opens a project through a ProjectStore and takes the lease; a held lease opens read-only (S01:PER-040). */
@@ -429,6 +457,7 @@ export class EditorSession {
 			isRedo: false,
 		});
 		if (selection !== before.selection) this.emit('selection.changed', { selection });
+		this.verifyWhenIdle();
 		return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [] };
 	}
 
@@ -673,10 +702,20 @@ export class EditorSession {
 		this.store.setState({ toggles: { ...this.store.getState().toggles, ...patch } });
 	}
 	setMediaRuntime(mediaId: string, patch: Partial<MediaRuntime>): void {
-		const media = this.store.getState().media;
-		this.store.setState({
-			media: { ...media, [mediaId]: { ...(media[mediaId] ?? defaultMediaRuntime()), ...patch } },
-		});
+		this.setMediaRuntimes([[mediaId, patch]]);
+	}
+	/**
+	 * Applies several runtime patches in one store update (ui-perf: opening a project resolves every medium; one update
+	 * per medium re-ran every subscriber per medium). Patches apply in order, like successive `setMediaRuntime` calls.
+	 */
+	setMediaRuntimes(patches: Iterable<readonly [string, Partial<MediaRuntime>]>): void {
+		const media = { ...this.store.getState().media };
+		let any = false;
+		for (const [id, patch] of patches) {
+			media[id] = { ...(media[id] ?? defaultMediaRuntime()), ...patch };
+			any = true;
+		}
+		if (any) this.store.setState({ media });
 	}
 	/** The persisted view record (S01:SES-004). */
 	viewRecord(): ProjectViewState {

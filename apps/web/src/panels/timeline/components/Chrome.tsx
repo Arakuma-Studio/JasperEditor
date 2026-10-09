@@ -1,15 +1,31 @@
 // Timeline chrome: sequence tabs (S05:TLC-001), header toolbar (TLC-002/003), zoom scroll bar
 // (TL-112, TLC-030), context menu and gesture tooltip.
+import type { ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { cx, IconButton, labelColor, PointMenu, placeBeside, useMenuFit, Z } from '@jasper/ui';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
 import type { ContextMenuItem, Tooltip } from '../state/ui-store.ts';
 
 // ---------------------------------------------------------------- sequence tabs
+
+/** Sequence id → the first item naming it, per `items` record (ui-perf: the tab selector runs on every update). */
+const bySequence = new WeakMap<object, Map<string, ProjectItem>>();
+function itemsBySequence(items: Record<string, ProjectItem>): Map<string, ProjectItem> {
+	let m = bySequence.get(items);
+	if (!m) {
+		m = new Map();
+		for (const it of Object.values(items)) {
+			const id = (it as { sequenceId?: string }).sequenceId;
+			if (id !== undefined && !m.has(id)) m.set(id, it);
+		}
+		bySequence.set(items, m);
+	}
+	return m;
+}
 
 export function SequenceTabs(props: {
 	session: EditorSession;
@@ -24,9 +40,7 @@ export function SequenceTabs(props: {
 	const names = useSessionState(
 		(s) =>
 			tabs.map((id) => {
-				const item = Object.values(s.document.items).find(
-					(i) => (i as { sequenceId?: string }).sequenceId === id,
-				);
+				const item = itemsBySequence(s.document.items).get(id);
 				return { id, name: item?.name ?? 'Sequence', label: item?.label ?? 'forest' };
 			}),
 		(a, b) => JSON.stringify(a) === JSON.stringify(b),
@@ -66,7 +80,8 @@ export function SequenceTabs(props: {
 
 // ---------------------------------------------------------------- header toolbar
 
-export function Toolbar(props: {
+/** ui-perf: memoised (its tooltip buttons do not re-render on every gesture frame of the timeline). */
+export const Toolbar = memo(function Toolbar(props: {
 	session: EditorSession;
 	prefs: TimelinePrefs;
 	openMenu(x: number, y: number, items: ContextMenuItem[]): void;
@@ -144,7 +159,7 @@ export function Toolbar(props: {
 			/>
 		</div>
 	);
-}
+});
 
 // ---------------------------------------------------------------- zoom scroll bar
 

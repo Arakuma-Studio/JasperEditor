@@ -62,6 +62,14 @@ export type EngineClientOptions = {
 	token?: string;
 };
 
+/**
+ * A JSON request body that is already serialised (ui-perf: autosave and the recovery journal serialise documents
+ * incrementally, `stringifyJson` in @jasper/project). Sent as is with `content-type: application/json`.
+ */
+export class JsonText {
+	constructor(readonly text: string) {}
+}
+
 type CallOptions = {
 	params?: Record<string, string | number>;
 	query?: Record<string, string | number | boolean | undefined>;
@@ -129,7 +137,7 @@ export class EngineClient {
 				body = opts.body as BodyInit;
 			} else {
 				headers['content-type'] = 'application/json';
-				body = JSON.stringify(opts.body);
+				body = opts.body instanceof JsonText ? opts.body.text : JSON.stringify(opts.body);
 			}
 		}
 		let res: Response;
@@ -235,7 +243,7 @@ export class EngineClient {
 		return this.call('projectRecoveryGet', { params: { projectId, sessionId } });
 	}
 	/** Journals this session's unsaved document (needs the session's lease). */
-	putRecovery(projectId: string, sessionId: string, req: RecoveryPutRequest) {
+	putRecovery(projectId: string, sessionId: string, req: RecoveryPutRequest | JsonText) {
 		return this.call('projectRecoveryPut', { params: { projectId, sessionId }, body: req });
 	}
 	/** Deletes a journal: the session's own (pass its `leaseId`) or a candidate nobody holds. */

@@ -19,13 +19,31 @@ export type RenderSegment = {
 	title: string;
 };
 
+/** ui-perf: per committed document (the render bar and the Program monitor both ask after every commit). */
+const segmentCache = new WeakMap<ProjectDocument, Map<string, RenderPreviewSegment[]>>();
+
+/** The segments of a sequence if they are computed already for this document (else null). */
+export function cachedSegments(doc: ProjectDocument, sequenceId: string): RenderPreviewSegment[] | null {
+	return segmentCache.get(doc)?.get(sequenceId) ?? null;
+}
+
 /** The preview segments of a sequence (never throws: a document that cannot be drawn has none). */
 export function segmentsOf(doc: ProjectDocument, sequenceId: string): RenderPreviewSegment[] {
+	let bySeq = segmentCache.get(doc);
+	const hit = bySeq?.get(sequenceId);
+	if (hit) return hit;
+	let out: RenderPreviewSegment[];
 	try {
-		return previewSegments(doc, sequenceId);
+		out = previewSegments(doc, sequenceId);
 	} catch {
-		return [];
+		out = [];
 	}
+	if (!bySeq) {
+		bySeq = new Map();
+		segmentCache.set(doc, bySeq);
+	}
+	bySeq.set(sequenceId, out);
+	return out;
 }
 
 const COLOR: Record<RenderPreviewSegment['need'], RenderBarState | null> = {

@@ -234,7 +234,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		{
 			title: 'Get performance stats',
 			description:
-				'Performance counters: the engine (process CPU %, memory, event-loop delay, host load and cores, running/queued jobs, frames per second of recent exports and preview renders, preview files) and, when an editor window has the project open, its playback (frames shown and dropped since playback started, measured fps, stalls recovered, buffering time, UI frame rate) and its render bar (segments by state).',
+				'Performance counters: the engine (process CPU %, memory, event-loop delay, host load and cores, running/queued jobs, frames per second of recent exports and preview renders, preview files) and, when an editor window has the project open, its playback (frames shown and dropped since playback started, measured fps, stalls recovered, buffering time, UI frame rate), its render bar (segments by state), how its edits checked invariants, and its gesture frames (how many transient gesture documents the Program monitor drew or skipped and what one cost).',
 			input: { projectId: ProjectIdArg.optional() },
 			annotations: READ_ONLY,
 		},

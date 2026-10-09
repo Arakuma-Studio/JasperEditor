@@ -2,7 +2,7 @@
 // scripts/performance.mjs read from an open editor window through the agent relay (UI action `perf`) — the Program
 // monitor's playback (frames shown / dropped, fps, stalls recovered, buffering), the render bar and the UI frame rate.
 import { invariantMode, invariantStats, previewSettingsOf } from '@jasper/project';
-import type { EditorSession } from '@jasper/session';
+import { type EditorSession, gestureFrames } from '@jasper/session';
 import type { PlaybackDriver } from '../panels/program/playback-driver.ts';
 import { renderBarSpans, segmentsOf } from '../panels/timeline/model/renderbar.ts';
 import { previewStatusStore } from './store.ts';
@@ -83,5 +83,7 @@ export async function editorPerfStats(args: { sampleMs?: number } = {}): Promise
 		renderBar,
 		// perf-core: how this editor's transactions checked invariants (incremental / full and why).
 		invariants: { mode: invariantMode(), ...invariantStats() },
+		// ui-perf: gesture frames the Program monitor took / skipped and what one costs (gesture-frames.ts).
+		...(p ? { gestureFrames: gestureFrames(p.session.store).stats() } : {}),
 	};
 }

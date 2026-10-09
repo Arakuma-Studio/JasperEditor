@@ -6,9 +6,11 @@ import {
 	type ProjectDocument,
 	previewSettingsOf,
 	type RenderAudioPreviewSegment,
+	type RenderPreviewSegment,
 } from '@jasper/project';
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
+	cachedSegments,
 	playbackSpans,
 	type RenderSegment,
 	renderBarSpans,
@@ -49,19 +51,65 @@ function useStatus(settings: PreviewSettings) {
 	);
 }
 
+const NO_SEGMENTS: RenderPreviewSegment[] = [];
+
+/** Sequences with more clips than this compute their segments after the commit, when the browser is idle. */
+const DEFER_SEGMENTS_CLIPS = 200;
+
+const idle = (fn: () => void): (() => void) => {
+	const g = globalThis as {
+		requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number;
+		cancelIdleCallback?: (h: number) => void;
+	};
+	if (g.requestIdleCallback && g.cancelIdleCallback) {
+		const h = g.requestIdleCallback(fn, { timeout: 300 });
+		return () => g.cancelIdleCallback!(h);
+	}
+	const t = setTimeout(fn, 0);
+	return () => clearTimeout(t);
+};
+
+/**
+ * ui-perf: the preview segments of a committed document. On long sequences they are computed when the browser is
+ * idle after the commit (≈ 50–100 ms for 1 000 clips, which made the commit's frame long); meanwhile `segments` are
+ * the previous document's and `current` is false (the render bar keeps showing them; the Program monitor plays no
+ * preview file until they are current).
+ */
+function useCommittedSegments(
+	doc: ProjectDocument | null,
+	sequenceId: string | null,
+	enabled: boolean,
+): { segments: RenderPreviewSegment[]; current: boolean } {
+	const want = enabled && !!doc && !!sequenceId;
+	const big = want && Object.keys(doc!.sequences[sequenceId!]?.clips ?? {}).length > DEFER_SEGMENTS_CLIPS;
+	const ready = want ? (big ? cachedSegments(doc!, sequenceId!) : segmentsOf(doc!, sequenceId!)) : [];
+	const last = useRef<RenderPreviewSegment[]>([]);
+	const [, bump] = useState(0);
+	useEffect(() => {
+		if (ready || !doc || !sequenceId) return;
+		return idle(() => {
+			segmentsOf(doc, sequenceId);
+			bump((n) => n + 1);
+		});
+	}, [ready, doc, sequenceId]);
+	if (ready) last.current = ready;
+	return { segments: ready ?? last.current, current: !!ready };
+}
+
 /** The render bar spans of a sequence (committed document). */
 export function useRenderBar(doc: ProjectDocument, sequenceId: string): RenderSegment[] {
 	usePreviewEngine();
 	const settings = useSettings(doc, sequenceId);
-	const segments = useMemo(() => segmentsOf(doc, sequenceId), [doc, sequenceId]);
+	const { segments, current } = useCommittedSegments(doc, sequenceId, true);
 	const status = useStatus(settings);
 	useEffect(() => {
+		if (!current) return;
 		previewStatusStore.ensure(
 			settings,
 			segments.map((s) => s.hash),
 			[],
 		);
-	}, [segments, settings]);
+	}, [segments, settings, current]);
 	return useMemo(() => renderBarSpans(segments, status?.video ?? null), [segments, status]);
 }
 
@@ -80,10 +128,10 @@ export function usePlaybackPreviews(
 	usePreviewEngine();
 	const settings = useSettings(doc, sequenceId);
 	const status = useStatus(settings);
-	const segments = useMemo(
-		() => (enabled && doc && sequenceId ? segmentsOf(doc, sequenceId) : []),
-		[enabled, doc, sequenceId],
-	);
+	const committed = useCommittedSegments(doc, sequenceId, enabled);
+	const segments = committed.current ? committed.segments : NO_SEGMENTS;
+	// Until the segments of this document are known, nothing plays from a preview file (never a stale picture).
+	const segmentsCurrent = !enabled || committed.current;
 	const wantAudio = (status?.audioFiles ?? 0) > 0;
 	const audioSegments = useMemo<RenderAudioPreviewSegment[]>(() => {
 		if (!enabled || !wantAudio || !doc || !sequenceId) return [];
@@ -102,9 +150,9 @@ export function usePlaybackPreviews(
 		);
 	}, [enabled, segments, audioSegments, settings]);
 	return useMemo(() => {
-		if (!enabled || !status) return null;
+		if (!enabled || !status || !segmentsCurrent) return null;
 		const video = playbackSpans(segments, status.video, status.videoUrl);
 		const audio = playbackSpans(audioSegments, status.audio, status.audioUrl);
 		return video.length || audio.length ? { video, audio } : null;
-	}, [enabled, status, segments, audioSegments]);
+	}, [enabled, status, segments, audioSegments, segmentsCurrent]);
 }

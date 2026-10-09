@@ -1,7 +1,8 @@
 # Performance: budgets, instrumentation, benchmarks
 
 Owner: workstream `previews` (design notes in [`wp-notes/previews.md`](wp-notes/previews.md) §7); the editing-core
-budgets (§13 command and gesture) are workstream `perf-core` ([`wp-notes/perf-core.md`](wp-notes/perf-core.md)). The strategy is
+budgets (§13 command and gesture) are workstream `perf-core` ([`wp-notes/perf-core.md`](wp-notes/perf-core.md)); the editor UI at
+scale (§5) is workstream `ui-perf` ([`wp-notes/ui-perf.md`](wp-notes/ui-perf.md)). The strategy is
 [ARCHITECTURE §13](ARCHITECTURE.md#13-performance-strategy); this page lists the budgets, how each one is enforced,
 how to measure, and the last measured results.
 
@@ -18,6 +19,11 @@ how to measure, and the last measured results.
 | Player stalls recovered by the watchdog during playback | 0 | previews | `pnpm perf` (editor), `e2e/previews.spec.ts` |
 | Native H.264 export of 1080p30 | ≥ real time (30 fps) | previews | `pnpm perf` (export) |
 | Smart-rendered H.264 export of an untouched clip | ≥ 4 × real time | previews | `pnpm perf` (export) |
+| 30-step drag of 11 clips on a 1 000-clip sequence: mean main-thread work per frame | < 16 ms (p50 / p95 reported) | ui-perf | `pnpm perf` (ui), `e2e/ui-perf.spec.ts` (× load² in the gate: the browser is another process) |
+| The same drag, scripted (30 moves 16 ms apart), wall time | < 1.5 s | ui-perf | same |
+| Scrolling / zooming a 5 000-clip timeline | ≥ 50 fps | ui-perf | same |
+| Project panel with 2 000 items, scrolling | ≥ 50 fps | ui-perf | same |
+| Autosave of the 8 MB scale project after a one-clip edit (serialisation on the UI thread) | — (measured: ≈ 0.5 ms) | ui-perf | `packages/project/bench/json-cache.ts` |
 | Effect / audio budgets of earlier workstreams (audio effects, remix analysis, Lumetri bake, fx compile, tracking cancel latency) | as written in each test | their wp-notes | their tests, through `budgetMs` |
 
 ## 2. Load-tolerant enforcement
@@ -38,7 +44,7 @@ raised: at load factor 1 the enforced budget is the documented one.
 
 ```bash
 pnpm build                                   # the editor and export sections use the built stack
-pnpm perf                                    # micro, editor, export; report in test-results/performance/<label>.{json,md}
+pnpm perf                                    # micro, editor, export, ui; report in test-results/performance/<label>.{json,md}
 pnpm perf --sections editor --label my-run   # one section; --seconds N per playback scenario (default 6)
 PERF=1 pnpm perf                             # fail on any documented budget, no load scaling
 PERF=1 pnpm vitest run packages/project/test/perf-budgets.test.ts packages/session/test/perf-budgets.test.ts
@@ -57,6 +63,13 @@ it afterwards (or use `BASE_URL` of a running stack).
   (`/api/previews/render`), from the previews.
 - **export**: 300 frames of 1080p30 through `/api/exports`: native H.264, native ProRes 422 HQ, smart-rendered H.264
   (copy path), and a preview render of the same range.
+
+- **ui** (headless Chrome, the real app, `scripts/perf/ui-run.ts`): generated projects (1 000 / 5 000 colour mattes,
+  one clip with 1 800 keyframes, 2 000 media items) and scripted gestures — the perf-core drag, a trim, a playhead
+  scrub, selection clicks, wheel scroll and zoom, Effect Controls scrub, Project panel scroll — measured from a Chrome
+  trace: frames, fps, main-thread work per frame (p50 / p95 / mean), busy fraction, wall time. `--ui drag,scroll`
+  runs a subset. `scripts/perf/ui-profile.ts <fixture> <scenario>` adds a source-mapped CPU profile;
+  `scripts/perf/ui-compare.ts <webA> <webB>` runs two builds alternately for before/after at the same load.
 
 Live counters: `GET /api/perf` (engine CPU, memory, event-loop delay p50/p99, jobs, render throughput), the editor's
 `perf` UI action (playback counters, UI fps, render bar summary), MCP `perf_stats` (both).
@@ -124,3 +137,43 @@ not the code (the normal gate scales by the measured load factor, which stays ho
 (golden-fuzz) → 2.3–4.6 ms, 300-clip edit across sequences 355 → 95 ms, whole-document invariant check 25–40 ms
 (only on unverified documents now). How: incremental invariants, delta-scoped normalizers, proxy-free draft
 reads, a per-track index derived from the previous version — [`wp-notes/perf-core.md`](wp-notes/perf-core.md).
+
+## 5. Editor UI at scale (ui-perf)
+
+Workstream `ui-perf` ([`wp-notes/ui-perf.md`](wp-notes/ui-perf.md)): where the time went and what changed. Measured with
+`pnpm exec tsx scripts/perf/ui-compare.ts <before> <after> --rounds 2` (2026-10-09, same host as §4, load average
+20–30 during the run, other agents building): the web build of `integrate/parity` at `ea17f67d` (before) and of this
+workstream (after), served by the same built engine, every scenario run alternately on both. Two runs per build;
+work per frame from the Chrome trace (main-thread time between frame begins).
+
+| Scenario | Before (two runs) | After (two runs) | Budget |
+|---|---|---|---|
+| 30-step drag of 11 clips on 1 000: mean work per frame | 49.7 / 22.7 ms (p95 234 / 71) | 11.5 / 12.4 ms (p95 32 / 28) | < 16 ms — **met** |
+| the same drag: wall time | 8.05 / 3.32 s | 2.10 / 2.01 s | < 1.5 s — **missed** (floor of the scripted drag on this host: 1.0–1.35 s on a blank page) |
+| trim on 1 000: mean / p95 | 27.9 / 133, 13.9 / 54 ms | 9.4 / 24, 14.8 / 45 ms | — |
+| playhead scrub on 1 000: mean / p95 | 16.6 / 64, 10.5 / 31 ms | 8.1 / 16, 11.2 / 25 ms | — |
+| selection clicks on 1 000: mean / p95 | 48.3 / 156, 29.2 / 90 ms | 11.0 / 26, 15.4 / 38 ms | — |
+| scrolling 5 000 clips | 46.8 / 24.7 fps | 59.7 / 56.4 fps | ≥ 50 fps — **met** |
+| zooming 5 000 clips | 58.6 / 31.6 fps (mean work 15.7 / 30.7 ms) | 56.7 / 56.9 fps (15.9 / 16.2 ms) | ≥ 50 fps — **met** |
+| Project panel, 2 000 items, scrolling | 55.3 / 50.2 fps (mean 12.1 / 15.4 ms) | 60.2 / 58.5 fps (5.2 / 6.5 ms) | ≥ 50 fps — **met** |
+| Effect Controls, 1 800 keyframes, scrub | 30.8 / 24.0 fps (mean 28.3 / 38.2 ms) | 33.1 / 54.5 fps (25.3 / 12.6 ms) | — |
+| Opening the 1 000-clip project (to an interactive timeline) | 4.4 / 2.7 s | 2.7 / 2.8 s | — |
+
+At load ≈ 20 single runs of the after-build measured scrolling at 55 fps and zooming at 52 fps; at load 40–60 every
+number above degrades 2–3× for both builds (the e2e spec scales its budgets by the measured load factor squared).
+
+Profiles of the drag before the work (`scripts/perf/ui-profile.ts timeline:1000 drag`, load ≈ 19): 83 % of the window
+busy, of which ≈ 90 % JavaScript — the Program monitor rebuilding the 1 000-clip render snapshot and re-rendering
+1 000 Remotion Sequences per gesture frame, a whole-document expression walk per frame, hidden panels and the Properties
+panel's whole-document expression scans, timeline headers and toolbar. After: the Program monitor draws ≈ 15–20 of the
+≈ 35 gesture frames (≈ 12–35 ms each depending on load, `gestureFrames` in the editor's `perf` action), the rest is
+the gesture update itself (≈ 4 ms, perf-core) and the timeline's render.
+
+**Autosave serialisation** (`pnpm exec tsx packages/project/bench/json-cache.ts`, scale project, 8.2 MB, same day):
+`JSON.stringify` 88–118 ms per save before; after, a save following a one-clip edit takes 0.5–5 ms, and the first save
+of a session (nothing cached yet) 1.9 ms after the autosaver's idle warm-up (1 063 units, the longest 28 ms) or
+≈ 225–265 ms without it (the deep-frozen check of every object; once per session).
+
+**First edit after opening**: the session verifies the opened document when the browser is idle (≈ 340 ms on the
+5 000-clip scale project at load ≈ 40, in an idle callback), and the first edit takes the incremental check
+(`packages/session/test/ui-perf.test.tsx`: 1 incremental, 0 full).

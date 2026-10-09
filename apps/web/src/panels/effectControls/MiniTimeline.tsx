@@ -5,6 +5,7 @@ import { formatTimecode, isRovingKey, type Keyframe, type Sequence } from '@jasp
 import type { TransportStore } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import {
+	memo,
 	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
@@ -13,9 +14,39 @@ import {
 	useLayoutEffect,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from 'react';
 import { exactFrameOf, type Row } from '../properties/lib/model.ts';
+import { cssVar, designTokens } from '../timeline/components/canvas.tsx';
 import { glyphHalves, halfPath, pctOf, type Range, rulerTicks } from './lib.ts';
+
+/**
+ * ui-perf: key glyphs are CSS background images (an SVG data URI per shape and colour), not inline SVG: every inline
+ * <svg> is a transform node for the compositor, and a lane of hundreds of keys made each repaint (the playhead moves
+ * every frame of a scrub) pay for all of them. Colours are the design tokens, resolved (and re-resolved when the theme
+ * changes, `designTokens`).
+ */
+const glyphUris = new Map<string, string>();
+function glyphUri(
+	shape:
+		| { left: ReturnType<typeof glyphHalves>['left']; right: ReturnType<typeof glyphHalves>['right'] }
+		| 'roving',
+	fill: string,
+	stroke: string,
+): string {
+	const key = `${shape === 'roving' ? 'roving' : `${shape.left}/${shape.right}`}|${fill}|${stroke}`;
+	let uri = glyphUris.get(key);
+	if (!uri) {
+		const paint = `fill="${fill || 'currentColor'}" stroke="${stroke || 'currentColor'}" stroke-width="0.6"`;
+		const body =
+			shape === 'roving'
+				? `<circle cx="4.5" cy="4.5" r="2.2" ${paint}/>`
+				: `<path d="${halfPath(shape.left, 'left')}" ${paint}/><path d="${halfPath(shape.right, 'right')}" ${paint}/>`;
+		uri = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 9 9">${body}</svg>`)}")`;
+		glyphUris.set(key, uri);
+	}
+	return uri;
+}
 
 function KeyGlyph(props: {
 	left: ReturnType<typeof glyphHalves>['left'];
@@ -25,27 +56,32 @@ function KeyGlyph(props: {
 	/** keyframes-blend: a roving key (After Effects draws it as a small dot). */
 	roving?: boolean;
 }) {
-	const fill = props.summary
-		? 'var(--pr-text-tertiary)'
-		: props.selected
-			? 'var(--pr-keyframe-selected)'
-			: 'var(--pr-keyframe)';
-	const stroke = props.summary
-		? 'var(--pr-text-tertiary)'
-		: props.selected
-			? 'var(--pr-keyframe-selected-stroke)'
-			: 'var(--pr-keyframe-stroke)';
-	if (props.roving)
-		return (
-			<svg width={9} height={9} viewBox="0 0 9 9" aria-hidden className="block">
-				<circle cx={4.5} cy={4.5} r={2.2} fill={fill} stroke={stroke} strokeWidth={0.6} />
-			</svg>
-		);
+	const root = typeof document === 'undefined' ? null : document.documentElement;
+	const fill = cssVar(
+		root,
+		props.summary ? '--pr-text-tertiary' : props.selected ? '--pr-keyframe-selected' : '--pr-keyframe',
+	);
+	const stroke = cssVar(
+		root,
+		props.summary
+			? '--pr-text-tertiary'
+			: props.selected
+				? '--pr-keyframe-selected-stroke'
+				: '--pr-keyframe-stroke',
+	);
 	return (
-		<svg width={9} height={9} viewBox="0 0 9 9" aria-hidden className="block">
-			<path d={halfPath(props.left, 'left')} fill={fill} stroke={stroke} strokeWidth={0.6} />
-			<path d={halfPath(props.right, 'right')} fill={fill} stroke={stroke} strokeWidth={0.6} />
-		</svg>
+		<span
+			aria-hidden
+			className="block size-[9px]"
+			data-kf-glyph={props.roving ? 'roving' : `${props.left}/${props.right}`}
+			style={{
+				backgroundImage: glyphUri(
+					props.roving ? 'roving' : { left: props.left, right: props.right },
+					fill,
+					stroke,
+				),
+			}}
+		/>
 	);
 }
 
@@ -54,8 +90,7 @@ type KeyPointerHandler = (
 	info: { clipId: string; keyframeId: string; frame: number },
 ) => void;
 
-/** One property row's keyframes (S03:EC-022). */
-export function KeyLane(props: {
+type KeyLaneProps = {
 	row: Row;
 	seq: Sequence;
 	range: Range;
@@ -64,7 +99,34 @@ export function KeyLane(props: {
 	onKeyDoubleClick(frame: number): void;
 	onKeyContextMenu(e: ReactMouseEvent, clipId: string, keyframeId: string): void;
 	onLanePointerDown(e: ReactPointerEvent<HTMLElement>): void;
-}) {
+};
+
+/**
+ * ui-perf: a lane re-renders only when what it draws changes (its keyframes, clip, range, selection); the playhead
+ * moving (the rows are rebuilt with the values at the new frame) leaves it alone. Pass stable handlers.
+ */
+function keyLaneEqual(a: KeyLaneProps, b: KeyLaneProps): boolean {
+	const ba = a.row.bindings[0];
+	const bb = b.row.bindings[0];
+	return (
+		a.row.id === b.row.id &&
+		a.row.label === b.row.label &&
+		ba?.clip === bb?.clip &&
+		ba?.resolved.anim?.keyframes === bb?.resolved.anim?.keyframes &&
+		a.seq === b.seq &&
+		a.range.start === b.range.start &&
+		a.range.end === b.range.end &&
+		a.selected === b.selected &&
+		a.onKeyPointerDown === b.onKeyPointerDown &&
+		a.onKeyDoubleClick === b.onKeyDoubleClick &&
+		a.onKeyContextMenu === b.onKeyContextMenu &&
+		a.onLanePointerDown === b.onLanePointerDown
+	);
+}
+
+/** One property row's keyframes (S03:EC-022). */
+export const KeyLane = memo(function KeyLane(props: KeyLaneProps) {
+	useSyncExternalStore(designTokens.subscribe, designTokens.version, designTokens.version);
 	const b = props.row.bindings[0]!;
 	const kfs = b.resolved.anim?.keyframes ?? [];
 	return (
@@ -89,8 +151,10 @@ export function KeyLane(props: {
 						data-kf-shape={roving ? 'roving' : `${h.left}/${h.right}`}
 						aria-label={`${roving ? 'Roving keyframe' : 'Keyframe'} ${props.row.label} at frame ${Math.round(frame)}`}
 						aria-pressed={selected}
-						className="absolute top-1/2 flex size-[13px] -translate-x-1/2 -translate-y-1/2 items-center justify-center"
-						style={{ left: `${pct}%` }}
+						// ui-perf: centred with calc() rather than a CSS translate: a transform per key made every repaint
+						// of a lane with hundreds of keys pay for as many compositor transform nodes (layerization).
+						className="absolute flex size-[13px] items-center justify-center"
+						style={{ left: `calc(${pct}% - 6.5px)`, top: 'calc(50% - 6.5px)' }}
 						onPointerDown={(e) => {
 							e.stopPropagation();
 							props.onKeyPointerDown(e, { clipId: b.clip.id, keyframeId: k.id, frame });
@@ -104,10 +168,23 @@ export function KeyLane(props: {
 			})}
 		</div>
 	);
-}
+}, keyLaneEqual);
 
 /** Summary keys of a collapsed/expanded effect header: union of its rows' key frames (reference only). */
-export function SummaryLane(props: { rows: Row[]; seq: Sequence; range: Range }) {
+type SummaryLaneProps = { rows: Row[]; seq: Sequence; range: Range };
+/** ui-perf: like KeyLane, the summary re-renders only when the rows' keyframes change. */
+function summaryLaneEqual(a: SummaryLaneProps, b: SummaryLaneProps): boolean {
+	if (a.seq !== b.seq || a.range.start !== b.range.start || a.range.end !== b.range.end) return false;
+	if (a.rows.length !== b.rows.length) return false;
+	return a.rows.every((r, i) => {
+		const x = r.bindings[0];
+		const y = b.rows[i]!.bindings[0];
+		return x?.clip === y?.clip && x?.resolved.anim?.keyframes === y?.resolved.anim?.keyframes;
+	});
+}
+
+export const SummaryLane = memo(function SummaryLane(props: SummaryLaneProps) {
+	useSyncExternalStore(designTokens.subscribe, designTokens.version, designTokens.version);
 	const frames = new Set<number>();
 	for (const r of props.rows) {
 		const b = r.bindings[0]!;
@@ -119,15 +196,15 @@ export function SummaryLane(props: { rows: Row[]; seq: Sequence; range: Range })
 			{[...frames].map((f) => (
 				<span
 					key={f}
-					className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-					style={{ left: `${pctOf(props.range, f)}%` }}
+					className="absolute size-[9px]"
+					style={{ left: `calc(${pctOf(props.range, f)}% - 4.5px)`, top: 'calc(50% - 4.5px)' }}
 				>
 					<KeyGlyph left="linear" right="linear" summary />
 				</span>
 			))}
 		</div>
 	);
-}
+}, summaryLaneEqual);
 
 /** Premiere-style short ruler label: drop a leading zero hour field (`00:00:02:00` → `00:02:00`). */
 function rulerLabel(tc: string): string {

@@ -50,7 +50,9 @@ export {
 	invariantStats,
 	isVerifiedDocument,
 	setInvariantMode,
+	verifyDocument,
 } from './invariants-incremental.ts';
+export * from './json-cache.ts';
 export * from './keyframes.ts';
 export * from './keyframes-spatial.ts';
 export * from './lottie/index.ts';
