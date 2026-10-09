@@ -114,6 +114,11 @@ export interface CommandContext {
 	maxCommands?: number;
 	/** Run the invariant checker after the transaction (default true). Gestures may skip it in prod. */
 	checkInvariants?: boolean;
+	/**
+	 * perf-core: how invariants are checked — `incremental` (only what the transaction changed; production default),
+	 * `full`, or `verify` (both, must agree; the default under tests). Default: `invariantMode()`.
+	 */
+	invariants?: 'full' | 'incremental' | 'verify';
 }
 
 export class CommandError extends Error {

@@ -15,6 +15,7 @@ import {
 	textAnimationKey,
 } from '../../text-animations.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { keyDiff } from '../draft-read.ts';
 import type { ClipPatch, TextAnimationInput, TextAnimatorInput } from '../schemas/clip.ts';
 
 type DText = Draft<Extract<Clip, { kind: 'text' }>>;
@@ -201,9 +202,11 @@ export function compressionWarnings(
 	const out: { code: 'W_ANIMATION_COMPRESSED'; message: string; path: string[] }[] = [];
 	for (const [seqId, seq] of Object.entries(after.sequences)) {
 		const prevSeq = before.sequences[seqId];
-		if (prevSeq === seq) continue;
-		for (const clip of Object.values(seq.clips)) {
-			if (clip.kind !== 'text' || !clip.textAnimation || prevSeq?.clips[clip.id] === clip) continue;
+		if (prevSeq === seq || (prevSeq && prevSeq.clips === seq.clips)) continue;
+		const keys = prevSeq ? keyDiff(prevSeq.clips, seq.clips).changed : Object.keys(seq.clips);
+		for (const key of keys) {
+			const clip = seq.clips[key]!;
+			if (prevSeq?.clips[clip.id] === clip || clip.kind !== 'text' || !clip.textAnimation) continue;
 			if (!compressionOf(clip)) continue;
 			const prev = prevSeq?.clips[clip.id];
 			if (prev?.kind === 'text' && compressionOf(prev) && sameWindows(prev, clip)) continue;

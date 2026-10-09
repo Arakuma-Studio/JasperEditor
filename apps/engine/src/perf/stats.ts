@@ -4,6 +4,7 @@
 import { availableParallelism, freemem, loadavg, totalmem } from 'node:os';
 import { type IntervalHistogram, monitorEventLoopDelay } from 'node:perf_hooks';
 import type { EngineJob } from '@jasper/api';
+import { type InvariantMode, type InvariantStats, invariantMode, invariantStats } from '@jasper/project';
 import type { JobQueue } from '../jobs/queue.ts';
 
 export type EnginePerfStats = {
@@ -38,6 +39,11 @@ export type EnginePerfStats = {
 	}[];
 	/** Render previews: files and size per preview format directory (filled by the preview service). */
 	previews?: { formats: number; files: number; mb: number };
+	/**
+	 * perf-core: how the engine's transactions checked invariants since it started — the mode, incremental checks
+	 * and full checks with why the incremental one could not decide (docs/wp-notes/perf-core.md).
+	 */
+	invariants: { mode: InvariantMode } & InvariantStats;
 };
 
 const MB = 1024 * 1024;
@@ -120,6 +126,7 @@ export class PerfMonitor {
 			},
 			jobs: { running, queued, slotsTotal: this.queue.totalSlots, byKind },
 			renders: recentRenders(jobs),
+			invariants: { mode: invariantMode(), ...invariantStats() },
 		};
 		for (const [name, fn] of this.providers) {
 			try {

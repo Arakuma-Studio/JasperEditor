@@ -1,6 +1,7 @@
 # Performance: budgets, instrumentation, benchmarks
 
-Owner: workstream `previews` (design notes in [`wp-notes/previews.md`](wp-notes/previews.md) §7). The strategy is
+Owner: workstream `previews` (design notes in [`wp-notes/previews.md`](wp-notes/previews.md) §7); the editing-core
+budgets (§13 command and gesture) are workstream `perf-core` ([`wp-notes/perf-core.md`](wp-notes/perf-core.md)). The strategy is
 [ARCHITECTURE §13](ARCHITECTURE.md#13-performance-strategy); this page lists the budgets, how each one is enforced,
 how to measure, and the last measured results.
 
@@ -8,8 +9,8 @@ how to measure, and the last measured results.
 
 | Budget | Value | Source | Enforced by |
 |---|---|---|---|
-| One command + reindex on a 1 000-clip sequence | < 4 ms | §13, S01:SES-011 | `packages/session/test/perf-budgets.test.ts` (strict with `PERF=1`; see §4) |
-| 50-clip gesture update | < 8 ms | §13, S02:TL-160 | same file (strict with `PERF=1`; see §4) |
+| One command + reindex on a 1 000-clip sequence | < 4 ms | §13, S01:SES-011 | `packages/session/test/perf-budgets.test.ts` (× load × 1.5 in the gate, exact with `PERF=1`) |
+| 50-clip gesture update + reindex | < 8 ms | §13, S02:TL-160 | same file (× load × 1.5 in the gate, exact with `PERF=1`) |
 | `resolveSceneAt` with 50 layers | < 1 ms | §13, S03:NFR-002 | `packages/project/test/perf-budgets.test.ts` |
 | Render bar (segments, hashes, cost) of 1 000 clips | < 120 ms | previews | `packages/project/test/perf-budgets.test.ts` |
 | Program monitor, one 1080p H.264 clip | ≥ 90 % of the sequence rate | previews | `pnpm perf` (editor) |
@@ -103,17 +104,23 @@ spec's 12 cycles.
 |---|---|---|
 | `resolveSceneAt`, 50 layers | < 0.05 ms | met |
 | Render bar, 1 000 clips | 90 ms (52 ms at lower load) | met |
-| Command + reindex, 1 000 clips | 31.9 ms (budget 4 ms) | **missed** |
-| 50-clip gesture update | 135.8 ms (budget 8 ms) | **missed** |
+| Command + reindex, 1 000 clips | 31.9 ms (budget 4 ms) | missed then; **met by perf-core**, below |
+| 50-clip gesture update | 135.8 ms (budget 8 ms) | missed then; **met by perf-core**, below |
 
-Where the command time goes (profiled on 1 000 clips, `checkInvariants` before → after this workstream):
+**perf-core, 2026-10-08** (same host, `PERF=1 pnpm vitest run packages/session/test/perf-budgets.test.ts
+packages/project/test/perf-budgets.test.ts --maxWorkers=2 --reporter=verbose`, three runs at load average 10–13,
+load factor 1.5; the tests now include the per-track reindex in both budgets):
 
-- full `checkInvariants` on every commit: 42 ms → 21 ms (the animatable walk no longer allocates a path array per node;
-  sequences without expressions skip the expression walk);
-- per-clip track scans through Immer drafts in `clearRange` / `cleanupSequence` (proxy reads on every clip of the track);
-- reindexing the changed tracks.
+| Budget | Before (same build without perf-core, load ≈ 18) | After | Status |
+|---|---|---|---|
+| Command + reindex, 1 000 clips | 31.1 ms | 1.7 / 1.9 / 2.8 ms | met |
+| 50-clip gesture update + reindex | 144.2 ms | 3.6 / 4.6 / 6.5 ms | met |
+| 50-clip gesture commit (invariants included; `packages/session/bench/editing-core.ts`) | 181 ms | 7.5 ms | — |
+| Timeline pointer move of a 50-clip drag incl. the panel's derivations (`apps/web/bench/timeline-gesture.ts`) | — | best 2.8 ms, median 7.2 ms | — |
 
-Meeting 4 ms needs incremental invariants (only the changed clips, as §13 plans for gestures) and draft-free scans of
-the base track arrays. Until then the normal gate guards against regressions from the measured baseline
-(`COMMAND_BASELINE_MS = 34`, `GESTURE_BASELINE_MS = 146`, × 1.5 × load), and `PERF=1` enforces the §13 targets and
-fails.
+At load average 25–45 single strict runs measured up to 10 ms (command) and 57 ms (gesture): those are the host,
+not the code (the normal gate scales by the measured load factor, which stays honest). Scale benchmark
+(`packages/session/bench/scale.ts`, 200 sequences / 5 000 clips, load factor 1.29–2.0): small edit 76 ms
+(golden-fuzz) → 2.3–4.6 ms, 300-clip edit across sequences 355 → 95 ms, whole-document invariant check 25–40 ms
+(only on unverified documents now). How: incremental invariants, delta-scoped normalizers, proxy-free draft
+reads, a per-track index derived from the previous version — [`wp-notes/perf-core.md`](wp-notes/perf-core.md).

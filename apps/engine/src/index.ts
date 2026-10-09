@@ -10,6 +10,7 @@ import {
 	isTruthyEnv,
 	parseEngineRuntime,
 } from '@jasper/config';
+import { setInvariantMode } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import { repairCacheLocation } from './cache/location.ts';
 import { type EngineConfig, isLoopbackHost } from './context.ts';
@@ -78,6 +79,8 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 
 export async function startEngine(opts: StartEngineOptions): Promise<RunningEngine> {
 	const config = engineConfig(opts);
+	// perf-core: dev engines check every transaction both incrementally and fully (they must agree).
+	if (config.dev) setInvariantMode('verify');
 	// M1 binds loopback only (ARCHITECTURE §4.2, S04:ENG-020). The Host check alone does not protect a
 	// network-reachable engine (remote clients can send any Host header), so a non-loopback bind
 	// without a token is refused until remote password mode lands (M2).

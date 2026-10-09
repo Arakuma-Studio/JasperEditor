@@ -8,6 +8,8 @@
 // line break. Word times drive the active-word highlight and splits. A clip that references a media transcript
 // (`mediaId` set) shows the words whose midpoint lies in its content range.
 import type { Draft } from 'immer';
+import { cachedRead, latest, peekIn } from '../commands/draft-read.ts';
+import { captionsUnchanged } from '../commands/tx-delta.ts';
 import type { RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Transcript, TranscriptWord } from '../schema/media.ts';
@@ -453,17 +455,46 @@ export function captionCuesForTrack(
  * left without words gets all of them, so both halves of a split keep the text when no word boundary lies between
  * them. Runs once per transaction, before orphans are collected.
  */
+const captionClipCache = new WeakMap<object, readonly (readonly [string, string])[]>();
+/** Keys and transcripts of the captions clips of a clips record. */
+function captionClipKeys(clips: Readonly<Record<string, Clip>>): (readonly [string, string])[] {
+	const out: (readonly [string, string])[] = [];
+	for (const key of Object.keys(clips)) {
+		const c = latest(clips[key]!);
+		if (c.kind === 'captions') out.push([key, (c as CaptionsClip).transcriptId]);
+	}
+	return out;
+}
+
 export function normalizeCaptionOwnership(doc: Draft<ProjectDocument>, newId: () => string): void {
-	const refs = new Map<string, Array<{ seqId: string; clip: Draft<CaptionsClip> }>>();
-	for (const [seqId, seq] of Object.entries(doc.sequences)) {
-		for (const c of Object.values(seq.clips)) {
-			if (c.kind !== 'captions') continue;
-			const t = doc.transcripts[(c as CaptionsClip).transcriptId];
+	// perf-core: after a transaction that touched no captions clip and no transcript, nothing changed (tx-delta.ts).
+	if (captionsUnchanged(doc as ProjectDocument)) return;
+	// perf-core: found on current values (draft-read.ts); only clips sharing a transcript are drafted.
+	const found = new Map<string, Array<{ seqId: string; key: string }>>();
+	const seqs = latest(doc.sequences);
+	for (const seqId of Object.keys(seqs)) {
+		for (const [key, transcriptId] of cachedRead(
+			captionClipCache,
+			latest(seqs[seqId]!).clips,
+			captionClipKeys,
+		)) {
+			const t = peekIn(doc.transcripts, transcriptId);
 			if (!t || !isCaptionTranscript(t)) continue;
-			const list = refs.get(t.id) ?? [];
-			list.push({ seqId, clip: c as Draft<CaptionsClip> });
-			refs.set(t.id, list);
+			const list = found.get(t.id) ?? [];
+			list.push({ seqId, key });
+			found.set(t.id, list);
 		}
+	}
+	const refs = new Map<string, Array<{ seqId: string; clip: Draft<CaptionsClip> }>>();
+	for (const [tid, keys] of found) {
+		if (keys.length < 2) continue;
+		refs.set(
+			tid,
+			keys.map(({ seqId, key }) => ({
+				seqId,
+				clip: doc.sequences[seqId]!.clips[key] as Draft<CaptionsClip>,
+			})),
+		);
 	}
 	for (const [tid, list] of refs) {
 		if (list.length < 2) continue;
@@ -536,9 +567,10 @@ export function normalizeCaptionOwnership(doc: Draft<ProjectDocument>, newId: ()
  */
 export function normalizeCaptionData(doc: Draft<ProjectDocument>, newTranscriptId: () => string): void {
 	normalizeCaptionOwnership(doc, newTranscriptId);
-	for (const seq of Object.values(doc.sequences)) {
-		const s = seq as { activeCaptionTrackId?: string | null; captionTracks: Track[] };
-		if (s.activeCaptionTrackId && !s.captionTracks.some((t) => t.id === s.activeCaptionTrackId))
-			s.activeCaptionTrackId = s.captionTracks[0]?.id ?? null;
+	for (const [id, seq] of Object.entries(latest(doc.sequences))) {
+		const s = latest(seq) as { activeCaptionTrackId?: string | null; captionTracks: Track[] };
+		if (s.activeCaptionTrackId && !latest(s.captionTracks).some((t) => t.id === s.activeCaptionTrackId))
+			(doc.sequences[id] as { activeCaptionTrackId?: string | null }).activeCaptionTrackId =
+				latest(s.captionTracks)[0]?.id ?? null;
 	}
 }
