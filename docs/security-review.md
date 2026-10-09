@@ -188,7 +188,11 @@ Fix: served user content carries `X-Content-Type-Options: nosniff` and `Content-
 Packaged builds now disable `NODE_OPTIONS` and `--inspect`, validate and load only the asar, encrypt cookies and
 drop the `file://` extra privileges (`electronFuses` in `apps/desktop/package.json`, electron-builder 26).
 Run-as-node stays on because Help ▸ Connect an AI Agent launches the bundled `jasper-mcp` that way (section 6).
-The configuration is pinned by a test; a packaged build was not produced in this review (section 7).
+The configuration is pinned by a test. Checked on Linux with a copy of the Electron 44 binary: the desktop main
+packed as `app.asar`, the same fuses written with `@electron/fuses`, booted under Xvfb in packaged-like mode
+against the built engine and web app — the app loaded from the asar, the engine forked and the editor loaded;
+`--inspect` opened no port and a `NODE_OPTIONS=--require` script did not run; `ELECTRON_RUN_AS_NODE` still worked.
+The installers themselves were not built (section 7).
 
 ### Low
 
@@ -307,7 +311,9 @@ drop was found.
 
 ## 7. Not done
 
-- No packaged application was built: the fuses and the Windows opener are configuration and construction tests
-  only.
+- No installer was built: `scripts/package.mjs` stages FFmpeg under the shared `vendor/` directory, which this
+  workstream may not modify. The fuses were exercised on a fused copy of the Linux Electron binary (ELE-1); asar
+  integrity validation only exists on macOS and Windows and was not exercised. The Windows opener (ENG-5) is tested
+  by construction only: no Windows host.
 - Not re-audited line by line: the 375 shader sources, the Rust motion-graphics renderer, the audio DSP, the AAF /
   OMF binary readers and the glTF reader (their owners' fuzz suites cover them), and third-party packages.
