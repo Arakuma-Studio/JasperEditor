@@ -71,6 +71,7 @@ import {
 	SlidersHorizontal,
 	SlidersVertical,
 	Sparkles,
+	Shapes,
 	Speech,
 	Square,
 	SquareStack,
@@ -222,6 +223,8 @@ export const ICONS = {
 	'panel.audioClipMixer': AudioWaveform,
 	// audio-fx
 	'panel.essentialSound': Speech,
+	// gaps (GR-4/5)
+	'panel.essentialGraphics': Shapes,
 	'panel.history': History,
 	'panel.info': Info,
 	'panel.markers': Bookmark,

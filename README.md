@@ -401,7 +401,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (299; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (322; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -482,6 +482,13 @@ Tools (299; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
 - Expressions: `set_expression` `clear_expression` `enable_expression` `test_expression` `get_property_values`
   `list_expression_properties` `list_expression_presets` `add_expression_control` (`docs/expressions.md`,
   `docs/wp-notes/expressions.md`; the language reference is also the `jasper://guide` resource).
+- Premiere parity gaps (`docs/wp-notes/gaps.md`): Find and Edit Original `find` `locate_media`; tracks `add_tracks`
+  `delete_tracks`; Project and Sequence Settings `get_project_settings` `set_project_settings`
+  `get_sequence_settings` `set_sequence_settings` `new_sequence_from_clip`; proxies `create_proxies` `attach_proxy`
+  `detach_proxies` `reconnect_full_resolution`; Audio Channels `get_audio_channels` `set_audio_channels`; Export Frame
+  `export_frame`; Project Manager `project_manager`; Warp Stabilizer `stabilize_clip`; Auto Reframe
+  `auto_reframe_sequence`; Essential Graphics `create_graphic` `set_graphic` `export_graphic_template`
+  `import_graphic_template`.
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.

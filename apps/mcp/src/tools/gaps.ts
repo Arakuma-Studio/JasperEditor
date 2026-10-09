@@ -23,6 +23,8 @@ import {
 	TIMELINE_FIND_FIELDS,
 	trackLabel,
 	VIDEO_DISPLAY_FORMATS,
+	buildItemsPayload,
+	graphicTemplateOf,
 	reframeJobsFor,
 	reframeSize,
 	WARP_STABILIZER_EFFECT_ID,
@@ -62,6 +64,7 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - project_manager: File ▸ Project Manager — mode "collect" copies every used file into destination, "consolidate" writes only the used part of each video / audio media plus handlesFrames (ProRes 422 HQ / WAV) and re-bases the clips; excludeUnused drops unchosen sequences and unused media items; includePreviews / includeProxies; dryRun only estimates the disk space. The copy is written as <destination>/<projectName>.jasper and registered as a new project (its id comes back).
 - stabilize_clip applies Effect ▸ Distort ▸ Warp Stabilizer to a video clip (Premiere params) and runs + stores its analysis (the editor also analyses in the background); exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).
 - auto_reframe_sequence: Sequence ▸ Auto Reframe Sequence — a copy at another aspect ("9:16", "1:1", "4:5", "16:9", "W:H") whose clips follow their subject with Position keyframes (faces when the face model is installed, else motion / contrast saliency). Morph Cut is the transition jasper.morph-cut (add it on a jump cut with transition.add).
+- Essential Graphics: create_graphic makes a graphic (a nested sequence flagged graphic; its tracks are the layers) at a time; edit it with apply_commands graphic.addLayer {sequenceId, kind}, graphic.align {sequenceId, clipIds, mode, relativeTo}, graphic.setPins {sequenceId, clipId, target: "frame" | layer clip id, edges}, and set_graphic (intro / outro, duration, roll / crawl). export_graphic_template / import_graphic_template move graphics as .jgt JSON. Adobe .mogrt files are not supported (proprietary After Effects / Premiere project inside; no public format).
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
 
 const SequenceIdArg = z
@@ -1165,6 +1168,151 @@ export function registerGapsTools(ctx: ToolContext): void {
 				subjectSources: [...new Set(sources)],
 				transaction: txBody(res, ok),
 			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'create_graphic',
+		{
+			title: 'New graphic (Essential Graphics)',
+			description:
+				'Essential Graphics ▸ New Layer with nothing selected: a graphic clip at `at` on `track` (default: a new top track) whose first layer is a text (text), rectangle or ellipse. A graphic is a nested sequence flagged as graphic: its tracks are the layers. Then use apply_commands with graphic.addLayer, graphic.align (left/center/right/top/middle/bottom/distributeHorizontal/distributeVertical to the frame or the selection), graphic.setPins (Responsive Design – Position) and set_graphic. Returns the graphic sequence id and the graphic clip id.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				at: timeArg('Sequence time of the graphic'),
+				kind: z.enum(['text', 'rectangle', 'ellipse']).default('text'),
+				text: z.string().max(10_000).optional(),
+				seconds: z.number().positive().max(3600).default(5),
+				track: z.string().optional().describe('Video track label ("V2"); default a new top track'),
+				name: z.string().min(1).max(255).optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, at, kind, text, seconds, track, name }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const seq = seqOf(doc, sequenceId);
+			const frame = resolveFrameInput(seq, at);
+			const dur = Math.max(1, Math.round((seconds * seq.settings.frameRate.num) / seq.settings.frameRate.den));
+			const where = track ?? `V${seq.videoTracks.length + 1}`;
+			const place = { at: { frames: frame }, duration: { frames: dur }, track: where, ref: '$l' };
+			const first =
+				kind === 'text'
+					? { type: 'clip.addText', ...place, content: { text: text ?? 'New Text' } }
+					: { type: 'clip.addShape', ...place, shape: { type: kind === 'rectangle' ? 'rect' : 'ellipse', size: [400, 240] } };
+			const res = await transact(ctx, projectId, {
+				label: 'New Graphic',
+				sequenceId: seq.id,
+				commands: [
+					...(track ? [] : [{ type: 'track.add', kind: 'video' }]),
+					first,
+					{ type: 'clip.nest', clipIds: ['$l'], name: name ?? 'Graphic', ref: '$g' },
+					{ type: 'graphic.update', sequenceId: '$g', graphic: { intro: 0, outro: 0 } },
+				],
+			});
+			const ok = requireOk(res);
+			const gid = ok.refs.$g!;
+			const { doc: now } = await loadDoc(ctx, projectId);
+			const clip = Object.values(seqOf(now, seq.id).clips).find(
+				(c) => c.kind === 'nest-video' && (c as { sequenceId: string }).sequenceId === gid,
+			);
+			return jsonResult({ graphicSequenceId: gid, graphicClipId: clip?.id ?? null, transaction: txBody(res, ok) });
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_graphic',
+		{
+			title: 'Graphic settings',
+			description:
+				'Essential Graphics settings of a graphic sequence: Responsive Design – Time (intro / outro frames kept at their speed when the graphic clip is shorter or longer than the graphic), duration (frames; layers reaching the end follow), roll (null = still, or {mode: roll | crawlLeft | crawlRight, startOffScreen, endOffScreen, preRoll, easeIn, easeOut, postRoll} in frames). Roll and Responsive Time render on every path (they are applied to the graphic clip when rendering).',
+			input: {
+				projectId: ProjectIdArg,
+				graphicSequenceId: z.string().min(1),
+				intro: z.number().int().min(0).optional(),
+				outro: z.number().int().min(0).optional(),
+				duration: z.number().int().min(1).optional(),
+				roll: z
+					.object({
+						mode: z.enum(['roll', 'crawlLeft', 'crawlRight']),
+						startOffScreen: z.boolean().default(true),
+						endOffScreen: z.boolean().default(true),
+						preRoll: z.number().int().min(0).default(0),
+						easeIn: z.number().int().min(0).default(0),
+						easeOut: z.number().int().min(0).default(0),
+						postRoll: z.number().int().min(0).default(0),
+					})
+					.nullable()
+					.optional(),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, graphicSequenceId, ...graphic }) => {
+			const res = await transact(ctx, projectId, {
+				label: 'Essential Graphics',
+				commands: [{ type: 'graphic.update', sequenceId: graphicSequenceId, graphic }],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'export_graphic_template',
+		{
+			title: 'Export graphic template (.jgt)',
+			description:
+				'Essential Graphics ▸ Export As Template: the .jgt template (JSON) of a graphic sequence item — the graphic with its layers, fonts and media references. Save it with a .jgt extension; import_graphic_template adds it to any project. MOGRT files (Adobe Motion Graphics templates) cannot be imported: see the guide.',
+			input: { projectId: ProjectIdArg, graphicSequenceId: z.string().min(1), name: z.string().min(1).max(255).optional() },
+			annotations: READ_ONLY,
+		},
+		async ({ projectId, graphicSequenceId, name }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const item = Object.values(doc.items).find(
+				(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === graphicSequenceId,
+			);
+			if (!item) throw new ToolError('E_NOT_FOUND', `No sequence item for ${graphicSequenceId}`);
+			const t = graphicTemplateOf(doc, item.id, name ?? item.name, (d, ids) => buildItemsPayload(d, ids));
+			if (!t) throw new ToolError('E_INVALID_PARAM', `${graphicSequenceId} is not a graphic`);
+			return jsonResult(t);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'import_graphic_template',
+		{
+			title: 'Add graphic template (.jgt)',
+			description:
+				'Essential Graphics ▸ Browse ▸ add a template: places a .jgt template (the JSON from export_graphic_template) as a new graphic clip at `at` on `track` (default V2), adding its graphic sequence to the project.',
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: SequenceIdArg,
+				template: z.record(z.string(), z.unknown()),
+				at: timeArg('Sequence time of the graphic'),
+				track: z.string().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, template, at, track }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const seq = seqOf(doc, sequenceId);
+			const res = await transact(ctx, projectId, {
+				label: 'Add Graphic Template',
+				sequenceId: seq.id,
+				commands: [
+					{
+						type: 'graphic.importTemplate',
+						template,
+						sequenceId: seq.id,
+						at: { frames: resolveFrameInput(seq, at) },
+						track: track ?? 'V2',
+					},
+				],
+			});
+			return jsonResult(txBody(res, requireOk(res)));
 		},
 	);
 }

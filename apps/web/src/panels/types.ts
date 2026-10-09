@@ -27,6 +27,8 @@ export const PANEL_KINDS = [
 	'text',
 	// audio-fx
 	'essentialSound',
+	// gaps (GR-4/5)
+	'essentialGraphics',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
