@@ -1,9 +1,12 @@
 // Minimal zip reader for bundle uploads (S08:MGC-010, web path): stored and deflated entries, zip64 sizes and
 // offsets, no encryption. Entries are extracted under `dest` only (no absolute paths, no `..`, no symlinks).
 // Node's zlib does the inflate; no dependency.
-import { mkdir, open, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, open, rm } from 'node:fs/promises';
 import { dirname, join, normalize, sep } from 'node:path';
-import { inflateRawSync } from 'node:zlib';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createInflateRaw } from 'node:zlib';
 
 export class ZipError extends Error {
 	constructor(message: string) {
@@ -130,6 +133,35 @@ function safeEntryPath(dest: string, name: string): string | null {
 	return out === dest || out.startsWith(dest.endsWith(sep) ? dest : dest + sep) ? out : null;
 }
 
+/**
+ * Writes one entry to `target`, streaming (security review ZIP-1: an entry used to be inflated wholly in memory up to
+ * its declared size, so a small archive could ask for gigabytes). The output is cut at the declared size; a different
+ * size or corrupt data removes the file and throws.
+ */
+async function writeEntry(zipFile: string, e: Entry, dataStart: number, target: string): Promise<void> {
+	let written = 0;
+	const limit = new Transform({
+		transform(chunk: Buffer, _enc, cb) {
+			written += chunk.length;
+			if (written > e.size) return cb(new ZipError(`Size mismatch: ${e.name}`));
+			cb(null, chunk);
+		},
+	});
+	const source =
+		e.compSize > 0
+			? createReadStream(zipFile, { start: dataStart, end: dataStart + e.compSize - 1 })
+			: Readable.from([]);
+	try {
+		if (e.method === 0) await pipeline(source, limit, createWriteStream(target));
+		else await pipeline(source, createInflateRaw(), limit, createWriteStream(target));
+		if (written !== e.size) throw new ZipError(`Size mismatch: ${e.name}`);
+	} catch (err) {
+		await rm(target, { force: true }).catch(() => undefined);
+		if (err instanceof ZipError) throw err;
+		throw new ZipError(`Corrupt compressed data: ${e.name} (${(err as Error).message})`);
+	}
+}
+
 /** Extracts every file entry of `zipFile` into `dest`; returns the number of files written. */
 export async function extractZip(zipFile: string, dest: string): Promise<number> {
 	const fh = await open(zipFile, 'r');
@@ -155,19 +187,16 @@ export async function extractZip(zipFile: string, dest: string): Promise<number>
 			const head = await readAt(fh, e.offset, 30);
 			if (head.readUInt32LE(0) !== LOC) throw new ZipError(`Broken local header: ${e.name}`);
 			const dataStart = e.offset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28);
-			const raw = await readAt(fh, dataStart, e.compSize);
-			let data: Buffer;
-			if (e.method === 0) data = raw;
-			else if (e.method === 8) {
-				try {
-					data = inflateRawSync(raw, { maxOutputLength: Math.max(1, e.size) });
-				} catch (err) {
-					throw new ZipError(`Corrupt compressed data: ${e.name} (${(err as Error).message})`);
-				}
-			} else throw new ZipError(`Unsupported compression method ${e.method}: ${e.name}`);
-			if (data.length !== e.size) throw new ZipError(`Size mismatch: ${e.name}`);
+			if (
+				!Number.isSafeInteger(dataStart) ||
+				!Number.isSafeInteger(e.compSize) ||
+				dataStart + e.compSize > size
+			)
+				throw new ZipError('Broken zip (an offset or size points outside the file)');
+			if (e.method !== 0 && e.method !== 8)
+				throw new ZipError(`Unsupported compression method ${e.method}: ${e.name}`);
 			await mkdir(dirname(target), { recursive: true });
-			await writeFile(target, data);
+			await writeEntry(zipFile, e, dataStart, target);
 			files++;
 		}
 		return files;

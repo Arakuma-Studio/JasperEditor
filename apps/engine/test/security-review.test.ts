@@ -1,15 +1,18 @@
 // Regressions of the adversarial security review (docs/security-review.md). One `it` per confirmed finding.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import { deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { quoteFilterPath } from '../src/color/extension.ts';
 import { buildOcioBundle } from '../src/color/ocio-bundle.ts';
 import { assertFrameSize } from '../src/export/planner.ts';
 import { loadLottieFile } from '../src/imports/lottie.ts';
+import { extractZip } from '../src/mg-bundles/zip.ts';
 import { ModelStore } from '../src/processing/models.ts';
+import { ProcessingSettingsStore } from '../src/processing/settings.ts';
 import { openerFor } from '../src/routes/gaps.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
@@ -490,5 +493,94 @@ describe('ENG-6: frame sizes no path can render are refused by name', () => {
 		const big = await plan(app, d, { width: 500_000, height: 500_000 });
 		expect(big.statusCode).toBe(400);
 		expect(big.json().message).toMatch(/The export has a frame size/);
+	});
+});
+
+/** A one-entry deflated zip whose headers declare `declared` uncompressed bytes for `data`. */
+function zipOf(name: string, data: Buffer, declared = data.length): Buffer {
+	const comp = deflateRawSync(data);
+	const n = Buffer.from(name);
+	const loc = Buffer.alloc(30);
+	loc.writeUInt32LE(0x04034b50, 0);
+	loc.writeUInt16LE(20, 4);
+	loc.writeUInt16LE(8, 8);
+	loc.writeUInt32LE(comp.length, 18);
+	loc.writeUInt32LE(declared, 22);
+	loc.writeUInt16LE(n.length, 26);
+	const cen = Buffer.alloc(46);
+	cen.writeUInt32LE(0x02014b50, 0);
+	cen.writeUInt16LE(20, 4);
+	cen.writeUInt16LE(20, 6);
+	cen.writeUInt16LE(8, 10);
+	cen.writeUInt32LE(comp.length, 20);
+	cen.writeUInt32LE(declared, 24);
+	cen.writeUInt16LE(n.length, 28);
+	const end = Buffer.alloc(22);
+	end.writeUInt32LE(0x06054b50, 0);
+	end.writeUInt16LE(1, 8);
+	end.writeUInt16LE(1, 10);
+	end.writeUInt32LE(46 + n.length, 12);
+	end.writeUInt32LE(30 + n.length + comp.length, 16);
+	return Buffer.concat([loc, n, comp, cen, n, end]);
+}
+
+describe('ZIP-1: bundle zip entries are streamed and cut at their declared size', () => {
+	it('extracts a deflated entry and refuses one whose data outgrows its declared size', async () => {
+		const dir = tempAppdir('jasper-zip-');
+		const good = join(dir, 'good.zip');
+		writeFileSync(good, zipOf('index.html', Buffer.from('<html>ok</html>')));
+		expect(await extractZip(good, join(dir, 'out'))).toBe(1);
+		expect(readFileSync(join(dir, 'out', 'index.html'), 'utf8')).toBe('<html>ok</html>');
+		// 8 MiB of zeros declared as 1 KiB.
+		const bomb = join(dir, 'bomb.zip');
+		writeFileSync(bomb, zipOf('big.bin', Buffer.alloc(8 * 1024 * 1024), 1024));
+		await expect(extractZip(bomb, join(dir, 'out2'))).rejects.toThrow(/Size mismatch|Corrupt/);
+		expect(existsSync(join(dir, 'out2', 'big.bin'))).toBe(false);
+	});
+
+	it('a large entry is not held in memory (128 MiB entry, peak buffers under 64 MiB)', async () => {
+		const dir = tempAppdir('jasper-zip-');
+		const big = join(dir, 'big.zip');
+		const size = 128 * 1024 * 1024;
+		writeFileSync(big, zipOf('big.bin', Buffer.alloc(size)));
+		global.gc?.();
+		const base = process.memoryUsage().arrayBuffers;
+		let peak = 0;
+		const timer = setInterval(() => {
+			peak = Math.max(peak, process.memoryUsage().arrayBuffers - base);
+		}, 2);
+		try {
+			expect(await extractZip(big, join(dir, 'out'))).toBe(1);
+		} finally {
+			clearInterval(timer);
+		}
+		expect(statSync(join(dir, 'out', 'big.bin')).size).toBe(size);
+		rmSync(dir, { recursive: true, force: true });
+		expect(peak).toBeLessThan(64 * 1024 * 1024);
+	}, 120_000);
+
+	it('the extractor no longer inflates whole entries in memory', () => {
+		const src = readFileSync(join(ROOT, 'apps/engine/src/mg-bundles/zip.ts'), 'utf8');
+		expect(src).not.toContain('inflateRawSync');
+	});
+});
+
+describe('SSH-1: remote executor settings', () => {
+	it('refuses a user name that ssh would read as an option', async () => {
+		const store = new ProcessingSettingsStore(join(tempAppdir('jasper-ssh-'), 'engine.json'));
+		const remote = {
+			enabled: true,
+			host: 'render.example',
+			port: 22,
+			user: '-oProxyCommand',
+			identityFile: null,
+			remoteDir: '/srv/jasper',
+			useFor: [],
+			strictHostKeyChecking: 'accept-new' as const,
+		};
+		await expect(store.put({ remote })).rejects.toMatchObject({ code: 'INVALID_SETTINGS' });
+		await expect(store.put({ remote: { ...remote, user: 'render' } })).resolves.toMatchObject({
+			remote: { user: 'render' },
+		});
 	});
 });
