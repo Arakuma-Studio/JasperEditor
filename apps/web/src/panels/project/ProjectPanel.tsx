@@ -4,8 +4,17 @@
 import type { LabelColor, ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSession, useSessionState } from '@jasper/session/react';
-import { Button, cx, Icon, IconButton, type IconId, LABEL_NAMES, PointMenu } from '@jasper/ui';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+	Button,
+	cx,
+	Icon,
+	IconButton,
+	type IconId,
+	LABEL_DISPLAY_NAMES,
+	LABEL_NAMES,
+	PointMenu,
+} from '@jasper/ui';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
 import { labelName } from '../../gaps/app-prefs.ts';
 import { runIfRegistered, useLocalCommandCtx } from '../../home/ui-bridge.ts';
@@ -30,6 +39,7 @@ import {
 	type SortKey,
 } from './model.ts';
 import { loadSpriteIndex, spriteTileAt, spriteTileStyle } from './sprites.ts';
+import { useRowWindow, VIRTUALIZE_MIN_ROWS } from './virtual.ts';
 
 // ------------------------------------------------------------ persisted per-instance view state (PN-002)
 
@@ -204,6 +214,7 @@ export function ProjectPanel(props: PanelProps) {
 		[props.instanceId, binId, view, updateView, session, selection.primary, selected, ctx, importDialog],
 	);
 	const [revealId, setRevealId] = useState<string | null>(null);
+	const bodyRef = useRef<HTMLElement>(null);
 	useEffect(() => {
 		if (!revealId) return;
 		// The bin switch renders first: look for the row for a few frames.
@@ -366,6 +377,7 @@ export function ProjectPanel(props: PanelProps) {
 			{/* Body */}
 			{/* gaps (UI-6): the scrolling list is keyboard-reachable (axe scrollable-region-focusable). */}
 			<section
+				ref={bodyRef}
 				className="min-h-0 flex-1 overflow-auto"
 				data-testid="project-body"
 				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard
@@ -381,6 +393,8 @@ export function ProjectPanel(props: PanelProps) {
 					/>
 				) : view.view === 'list' ? (
 					<ListView
+						scrollRef={bodyRef}
+						revealId={revealId}
 						rows={rows}
 						selected={selectedSet}
 						primary={selection.primary}
@@ -409,6 +423,8 @@ export function ProjectPanel(props: PanelProps) {
 					/>
 				) : (
 					<IconView
+						scrollRef={bodyRef}
+						revealId={revealId}
 						session={session}
 						rows={rows}
 						selected={selectedSet}
@@ -708,7 +724,13 @@ const COLUMNS: {
 	{ key: 'status', label: 'Status', width: 104, sort: 'status', cell: (r) => <StatusCell row={r} /> },
 ];
 
+/** The height of a rendered list row (windowing). */
+const measureListRow = (l: HTMLElement) =>
+	l.querySelector<HTMLElement>('tr[data-testid="project-row"]')?.getBoundingClientRect().height || null;
+
 function ListView(props: {
+	scrollRef: React.RefObject<HTMLElement | null>;
+	revealId: string | null;
 	rows: ProjectRow[];
 	selected: Set<string>;
 	primary: string | null;
@@ -722,6 +744,24 @@ function ListView(props: {
 	handlers: Handlers;
 }) {
 	const arrow = (k: SortKey) => (props.sort.key === k ? (props.sort.dir === 1 ? ' ↑' : ' ↓') : '');
+	// ui-perf: large bins render only the rows in view (virtual.ts).
+	const tbodyRef = useRef<HTMLTableSectionElement>(null);
+	const revealIndex = props.revealId ? props.rows.findIndex((r) => r.id === props.revealId) : -1;
+	const win = useRowWindow({
+		scroll: props.scrollRef,
+		list: tbodyRef,
+		rows: props.rows.length,
+		enabled: props.rows.length >= VIRTUALIZE_MIN_ROWS,
+		measure: measureListRow,
+		reveal: revealIndex >= 0 ? revealIndex : null,
+	});
+	const shown = win.on ? props.rows.slice(win.start, win.end) : props.rows;
+	const spacer = (rows: number, key: string) =>
+		win.on && rows > 0 && win.rowH > 0 ? (
+			<tr key={key} aria-hidden data-virtual-spacer="">
+				<td colSpan={COLUMNS.length + 2} style={{ height: rows * win.rowH, padding: 0 }} />
+			</tr>
+		) : null;
 	return (
 		<table className="w-max min-w-full border-collapse text-pr-small" data-testid="project-list">
 			<thead className="sticky top-0 bg-pr-panel text-pr-muted">
@@ -746,8 +786,10 @@ function ListView(props: {
 					))}
 				</tr>
 			</thead>
-			<tbody>
-				{props.rows.map((row, i) => {
+			<tbody ref={tbodyRef}>
+				{spacer(win.start, 'above')}
+				{shown.map((row, k) => {
+					const i = win.start + k;
 					const sel = props.selected.has(row.id);
 					return (
 						<tr
@@ -809,12 +851,23 @@ function ListView(props: {
 						</tr>
 					);
 				})}
+				{spacer(props.rows.length - win.end, 'below')}
 			</tbody>
 		</table>
 	);
 }
 
+/** Icon view grid geometry: `p-2` padding and `gap-2` between tiles (px). */
+const GRID_PAD = 8;
+const GRID_GAP = 8;
+const measureTileRow = (l: HTMLElement) => {
+	const h = l.querySelector<HTMLElement>('[data-testid="project-tile"]')?.getBoundingClientRect().height;
+	return h ? h + GRID_GAP : null;
+};
+
 function IconView(props: {
+	scrollRef: React.RefObject<HTMLElement | null>;
+	revealId: string | null;
 	session: EditorSession;
 	rows: ProjectRow[];
 	selected: Set<string>;
@@ -825,16 +878,51 @@ function IconView(props: {
 	onRename(id: string, name: string | null): void;
 	handlers: Handlers;
 }) {
+	// ui-perf: large bins render only the grid rows in view (virtual.ts); columns follow CSS `auto-fill`.
+	const gridRef = useRef<HTMLDivElement>(null);
+	const [width, setWidth] = useState(0);
+	useLayoutEffect(() => {
+		const el = gridRef.current;
+		if (!el) return;
+		const read = () => setWidth(el.clientWidth);
+		read();
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(read);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
+	const cols = Math.max(1, Math.floor((width - 2 * GRID_PAD + GRID_GAP) / (props.tile + GRID_GAP)));
+	const gridRows = Math.ceil(props.rows.length / cols);
+	const revealIndex = props.revealId ? props.rows.findIndex((r) => r.id === props.revealId) : -1;
+	const win = useRowWindow({
+		scroll: props.scrollRef,
+		list: gridRef,
+		rows: gridRows,
+		enabled: props.rows.length >= VIRTUALIZE_MIN_ROWS && width > 0,
+		measure: measureTileRow,
+		reveal: revealIndex >= 0 ? Math.floor(revealIndex / cols) : null,
+	});
+	const shown = win.on ? props.rows.slice(win.start * cols, win.end * cols) : props.rows;
+	const pad = (rows: number) => (win.on && win.rowH > 0 ? rows * win.rowH : 0);
 	return (
 		<div
+			ref={gridRef}
 			role="listbox"
 			aria-multiselectable="true"
 			aria-label="Project items"
 			className="grid gap-2 p-2"
-			style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${props.tile}px, 1fr))` }}
+			style={{
+				gridTemplateColumns: `repeat(auto-fill, minmax(${props.tile}px, 1fr))`,
+				...(win.on
+					? {
+							paddingTop: GRID_PAD + pad(win.start),
+							paddingBottom: GRID_PAD + pad(gridRows - win.end),
+						}
+					: {}),
+			}}
 			data-testid="project-icons"
 		>
-			{props.rows.map((row) => (
+			{shown.map((row) => (
 				<Tile
 					key={row.id}
 					session={props.session}

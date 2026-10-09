@@ -6,6 +6,7 @@
 // - a 409 conflict pauses autosave until the user chooses Overwrite (or reloads) (S01:PER-025);
 // - read-only sessions and sessions whose lease was lost never save;
 // - the view record is saved with a 1 s debounce (S01:SES-004).
+import { jsonWarmUnits } from '@jasper/project';
 import type { EditorSession } from '../session.ts';
 import type { ProjectStore } from './types.ts';
 
@@ -165,7 +166,44 @@ export function createAutosaver(
 		return inFlight;
 	}
 
-	const offDoc = session.on('doc.changed', schedule);
+	// ui-perf: while the browser is idle after an edit, serialise the parts of the document the cache does not hold yet
+	// (`jsonWarmUnits`), a few milliseconds at a time, so the save joins cached text instead of serialising 8 MB at
+	// once (the first save after opening a large project). Browsers only.
+	let warm: { cancel(): void } | null = null;
+	const warmUp = () => {
+		const g = globalThis as {
+			requestIdleCallback?: (cb: (d: { timeRemaining(): number }) => void, o?: { timeout: number }) => number;
+			cancelIdleCallback?: (h: number) => void;
+		};
+		if (!g.requestIdleCallback || !g.cancelIdleCallback) return;
+		warm?.cancel();
+		const units = jsonWarmUnits(session.getCommitted());
+		let handle = 0;
+		let done = false;
+		const step = (d: { timeRemaining(): number }) => {
+			if (done || disposed) return;
+			while (d.timeRemaining() > 2) {
+				const u = units.next();
+				if (u.done) {
+					done = true;
+					return;
+				}
+				u.value();
+			}
+			handle = g.requestIdleCallback!(step);
+		};
+		handle = g.requestIdleCallback(step);
+		warm = {
+			cancel() {
+				done = true;
+				g.cancelIdleCallback!(handle);
+			},
+		};
+	};
+	const offDoc = session.on('doc.changed', () => {
+		schedule();
+		warmUp();
+	});
 	const offGesture = session.on('gesture.changed', ({ active }) => {
 		if (!active) schedule();
 	});
@@ -192,6 +230,7 @@ export function createAutosaver(
 		},
 		dispose() {
 			disposed = true;
+			warm?.cancel();
 			offDoc();
 			offGesture();
 			offStore();

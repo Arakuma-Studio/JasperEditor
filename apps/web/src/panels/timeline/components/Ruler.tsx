@@ -2,7 +2,7 @@
 // brackets and shading, the marker lane and the render bar. Clicking/dragging scrubs (TL-203).
 import { type Marker, type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
-import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useDisplayFormat } from '../../../gaps/time-display.ts';
 import type { RenderSegment } from '../model/renderbar.ts';
 import { rulerTicks } from '../model/ruler.ts';
@@ -10,7 +10,7 @@ import { boundaryFrameAt, frameToX, type Viewport } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { timelinePrefs } from '../state/prefs.ts';
 import { markerVar } from './ClipView.tsx';
-import { CanvasTiles, cssVar, type TileDraw } from './canvas.tsx';
+import { CanvasTiles, cssVar, TILE_MAX_PX, type TileDraw } from './canvas.tsx';
 
 const TICKS_H = 24;
 const MARKER_LANE_H = 14;
@@ -50,6 +50,18 @@ export function Ruler(props: RulerProps) {
 		timelinePrefs().subscribe,
 		() => !!timelinePrefs().getState().showAudioTimeUnits,
 	);
+	// ui-perf: the ticks depend on the sequence end only (not on every clip), so a drag that keeps the end does not
+	// redraw them.
+	const sequenceEnd = useMemo(() => sequenceDuration({ clips: seq.clips }), [seq.clips]);
+	// ui-perf: the ticks are drawn in content coordinates (frame × px per frame) on tiles aligned to the tile size and
+	// moved by the scroll offset, so scrolling redraws only the tiles that come into view (zoom redraws them all).
+	const contentView = useMemo<Viewport>(
+		() => ({ scrollFrame: 0, pxPerFrame: v.pxPerFrame, width: v.width }),
+		[v.pxPerFrame, v.width],
+	);
+	const scrollPx = Math.round(v.scrollFrame * v.pxPerFrame);
+	const tilesX0 = Math.floor(scrollPx / TILE_MAX_PX) * TILE_MAX_PX;
+	const tilesX1 = Math.ceil((scrollPx + v.width) / TILE_MAX_PX) * TILE_MAX_PX;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `display.video` changes the labels formatTimecode draws
 	const draw = useCallback<TileDraw>(
 		(ctx, tile) => {
@@ -57,26 +69,24 @@ export function Ruler(props: RulerProps) {
 			const strong = cssVar(ctx.canvas, '--pr-text-primary');
 			ctx.font = `11px ${cssVar(ctx.canvas, '--pr-font-ui') || 'sans-serif'}`;
 			ctx.textBaseline = 'top';
-			const ticks = rulerTicks(v, seq.settings.frameRate, {
+			const ticks = rulerTicks(contentView, seq.settings.frameRate, {
 				dropFrame: seq.settings.dropFrame,
 				startFrames: seq.settings.startTimecodeFrames,
-				sequenceEnd: sequenceDuration({ clips: seq.clips }),
+				sequenceEnd,
 				x0: tile.x0 - 120,
 				x1: tile.x0 + tile.width + 120,
 				...(audioUnits ? { audio: { sampleRate: seq.settings.audioSampleRate, format: display.audio } } : {}),
 			});
+			// Ticks first, then the labels: one fill style each (setting it per tick cost more than the drawing).
+			ctx.fillStyle = color;
 			for (const t of ticks) {
-				const x = Math.round(t.x) + 0.5;
 				const h = t.kind === 'major' ? 8 : t.kind === 'minor' ? 4 : 2;
-				ctx.fillStyle = color;
-				ctx.fillRect(x - 0.5, TICKS_H - h, 1, h);
-				if (t.label) {
-					ctx.fillStyle = strong;
-					ctx.fillText(t.label, x + 3, 3);
-				}
+				ctx.fillRect(Math.round(t.x), TICKS_H - h, 1, h);
 			}
+			ctx.fillStyle = strong;
+			for (const t of ticks) if (t.label) ctx.fillText(t.label, Math.round(t.x) + 3.5, 3);
 		},
-		[v, seq.settings, seq.clips, audioUnits, display.audio, display.video],
+		[contentView, seq.settings, sequenceEnd, audioUnits, display.audio, display.video],
 	);
 
 	const setInOut = (g: Gesture, i: number | null, o: number | null) => {
@@ -170,8 +180,10 @@ export function Ruler(props: RulerProps) {
 			}}
 			data-testid="timeline-ruler"
 		>
-			<div className="absolute top-0 right-0 left-0" style={{ height: TICKS_H }}>
-				<CanvasTiles x0={0} x1={v.width} height={TICKS_H} originX={0} draw={draw} />
+			<div className="absolute top-0 right-0 left-0 overflow-hidden" style={{ height: TICKS_H }}>
+				<div className="absolute top-0 left-0" style={{ transform: `translateX(${-scrollPx}px)` }}>
+					<CanvasTiles x0={tilesX0} x1={tilesX1} height={TICKS_H} originX={0} draw={draw} />
+				</div>
 			</div>
 			{inX !== null || outX !== null ? (
 				<>

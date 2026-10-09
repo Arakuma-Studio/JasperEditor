@@ -85,89 +85,101 @@ function* maskAnims(
 
 /** Every stored animatable property of a sequence (clips, tracks, master, transitions), in a stable order. */
 export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<AnimLocation> {
-	for (const [id, clip] of Object.entries(seq.clips)) {
-		const c = clip as Record<string, unknown>;
-		const at = ['clips', id];
-		const tr = c.transform as Record<string, Animatable<unknown>> | undefined;
-		if (tr)
-			for (const k of TRANSFORM_KEYS)
-				if (tr[k])
-					yield {
-						ref: { seq: seqId, owner: id, path: `transform.${k}` },
-						at: [...at, 'transform', k],
-						kind: 'anim',
-						target: tr[k]!,
-					};
-		for (const k of ['opacity', 'volumeDb', 'pan'] as const) {
-			const a = c[k] as Animatable<unknown> | undefined;
-			if (a && typeof a === 'object' && Array.isArray(a.keyframes))
-				yield { ref: { seq: seqId, owner: id, path: k }, at: [...at, k], kind: 'anim', target: a };
-		}
-		const shape = c.shape as Record<string, unknown> | undefined;
-		// wp shapes: every number / point / colour property of a vector shape's items.
-		if (shape?.type === 'vector' && Array.isArray(shape.contents))
-			for (const x of shapeItemAnimatables(shape.contents as ShapeItem[]))
+	for (const [id, clip] of Object.entries(seq.clips)) yield* clipAnimatables(seqId, id, clip);
+	yield* sequenceOwnAnimatables(seqId, seq);
+}
+
+/** The animatable properties of one clip (`sequenceAnimatables` order). */
+function* clipAnimatables(
+	seqId: string,
+	id: string,
+	clip: Sequence['clips'][string],
+): Generator<AnimLocation> {
+	const c = clip as Record<string, unknown>;
+	const at = ['clips', id];
+	const tr = c.transform as Record<string, Animatable<unknown>> | undefined;
+	if (tr)
+		for (const k of TRANSFORM_KEYS)
+			if (tr[k])
 				yield {
-					ref: { seq: seqId, owner: id, path: x.key },
-					at: [...at, 'shape', 'contents', ...x.path],
+					ref: { seq: seqId, owner: id, path: `transform.${k}` },
+					at: [...at, 'transform', k],
 					kind: 'anim',
-					target: x.anim as Animatable<unknown>,
+					target: tr[k]!,
 				};
-		if (shape && shape.type !== 'vector') {
-			for (const k of ['size', 'fill', 'cornerRadius'] as const) {
-				const a = shape[k] as Animatable<unknown> | null | undefined;
-				if (a)
+	for (const k of ['opacity', 'volumeDb', 'pan'] as const) {
+		const a = c[k] as Animatable<unknown> | undefined;
+		if (a && typeof a === 'object' && Array.isArray(a.keyframes))
+			yield { ref: { seq: seqId, owner: id, path: k }, at: [...at, k], kind: 'anim', target: a };
+	}
+	const shape = c.shape as Record<string, unknown> | undefined;
+	// wp shapes: every number / point / colour property of a vector shape's items.
+	if (shape?.type === 'vector' && Array.isArray(shape.contents))
+		for (const x of shapeItemAnimatables(shape.contents as ShapeItem[]))
+			yield {
+				ref: { seq: seqId, owner: id, path: x.key },
+				at: [...at, 'shape', 'contents', ...x.path],
+				kind: 'anim',
+				target: x.anim as Animatable<unknown>,
+			};
+	if (shape && shape.type !== 'vector') {
+		for (const k of ['size', 'fill', 'cornerRadius'] as const) {
+			const a = shape[k] as Animatable<unknown> | null | undefined;
+			if (a)
+				yield {
+					ref: { seq: seqId, owner: id, path: `shape.${k}` },
+					at: [...at, 'shape', k],
+					kind: 'anim',
+					target: a,
+				};
+		}
+		const stroke = shape.stroke as Record<string, Animatable<unknown>> | null | undefined;
+		if (stroke)
+			for (const k of ['color', 'width'] as const)
+				if (stroke[k])
 					yield {
-						ref: { seq: seqId, owner: id, path: `shape.${k}` },
-						at: [...at, 'shape', k],
+						ref: { seq: seqId, owner: id, path: `shape.stroke.${k}` },
+						at: [...at, 'shape', 'stroke', k],
+						kind: 'anim',
+						target: stroke[k]!,
+					};
+	}
+	if (clip.kind === 'text' && c.content)
+		yield {
+			ref: { seq: seqId, owner: id, path: 'text.content' },
+			at: [...at, 'content'],
+			kind: 'text',
+			target: c.content as TextContent,
+		};
+	// text-animators: animator properties, selector fields, Path / More Options (keys of
+	// registry/text-animator-properties.ts). Expression Selector amounts are `selector` locations: they run per
+	// unit through the Expression Selector, never as a per-frame property binding.
+	if (clip.kind === 'text') yield* textAnimatorAnims(seqId, id, c, at);
+	yield* effectAnims(seqId, id, c.effects as EffectInstance[] | undefined, [...at, 'effects']);
+	// wp masks: Mask Feather / Opacity / Expansion of the clip's masks and of its effects' masks.
+	yield* maskAnims(seqId, id, c.masks as MaskLike[] | undefined, [...at, 'masks']);
+	const fxs = (c.effects as (EffectInstance & { masks?: MaskLike[] })[] | undefined) ?? [];
+	for (let i = 0; i < fxs.length; i++)
+		yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
+	// sim-warp: Puppet pin properties (`puppet.<pinId>.<prop>`).
+	for (let i = 0; i < fxs.length; i++) {
+		const pins = fxs[i]!.puppet?.pins ?? [];
+		for (let j = 0; j < pins.length; j++)
+			for (const k of PUPPET_PIN_PROPS) {
+				const a = pins[j]![k] as Animatable<unknown> | undefined;
+				if (a && Array.isArray(a.keyframes))
+					yield {
+						ref: { seq: seqId, owner: id, path: `puppet.${pins[j]!.id}.${k}` },
+						at: [...at, 'effects', i, 'puppet', 'pins', j, k],
 						kind: 'anim',
 						target: a,
 					};
 			}
-			const stroke = shape.stroke as Record<string, Animatable<unknown>> | null | undefined;
-			if (stroke)
-				for (const k of ['color', 'width'] as const)
-					if (stroke[k])
-						yield {
-							ref: { seq: seqId, owner: id, path: `shape.stroke.${k}` },
-							at: [...at, 'shape', 'stroke', k],
-							kind: 'anim',
-							target: stroke[k]!,
-						};
-		}
-		if (clip.kind === 'text' && c.content)
-			yield {
-				ref: { seq: seqId, owner: id, path: 'text.content' },
-				at: [...at, 'content'],
-				kind: 'text',
-				target: c.content as TextContent,
-			};
-		// text-animators: animator properties, selector fields, Path / More Options (keys of
-		// registry/text-animator-properties.ts). Expression Selector amounts are `selector` locations: they run per
-		// unit through the Expression Selector, never as a per-frame property binding.
-		if (clip.kind === 'text') yield* textAnimatorAnims(seqId, id, c, at);
-		yield* effectAnims(seqId, id, c.effects as EffectInstance[] | undefined, [...at, 'effects']);
-		// wp masks: Mask Feather / Opacity / Expansion of the clip's masks and of its effects' masks.
-		yield* maskAnims(seqId, id, c.masks as MaskLike[] | undefined, [...at, 'masks']);
-		const fxs = (c.effects as (EffectInstance & { masks?: MaskLike[] })[] | undefined) ?? [];
-		for (let i = 0; i < fxs.length; i++)
-			yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
-		// sim-warp: Puppet pin properties (`puppet.<pinId>.<prop>`).
-		for (let i = 0; i < fxs.length; i++) {
-			const pins = fxs[i]!.puppet?.pins ?? [];
-			for (let j = 0; j < pins.length; j++)
-				for (const k of PUPPET_PIN_PROPS) {
-					const a = pins[j]![k] as Animatable<unknown> | undefined;
-					if (a && Array.isArray(a.keyframes))
-						yield {
-							ref: { seq: seqId, owner: id, path: `puppet.${pins[j]!.id}.${k}` },
-							at: [...at, 'effects', i, 'puppet', 'pins', j, k],
-							kind: 'anim',
-							target: a,
-						};
-				}
-		}
 	}
+}
+
+/** Tracks, master and transition parameters of a sequence (`sequenceAnimatables` order, after the clips). */
+function* sequenceOwnAnimatables(seqId: string, seq: Sequence): Generator<AnimLocation> {
 	for (const [list, name] of [
 		[seq.videoTracks, 'videoTracks'],
 		[seq.audioTracks, 'audioTracks'],
@@ -281,22 +293,81 @@ export function* documentExpressions(
 		}
 }
 
-const activeCache = new WeakMap<object, boolean>();
+/** Whether a set of locations stores any expression / an active (enabled, non-empty) one. */
+type ExpressionFlags = { any: boolean; active: boolean };
+const NO_EXPRESSIONS: ExpressionFlags = { any: false, active: false };
+
+function flagsOf(locs: Iterable<AnimLocation>): ExpressionFlags {
+	let any = false;
+	for (const loc of locs) {
+		const e = expressionOf(loc);
+		if (!e) continue;
+		any = true;
+		if (hasActiveExpression(loc.target as { expression?: Expression })) return { any: true, active: true };
+	}
+	return any ? { any: true, active: false } : NO_EXPRESSIONS;
+}
+
+// ui-perf: memoised per clip and per sequence object (documents are immutable), so a gesture frame or an edit only
+// rescans the clips and sequences it replaced instead of every animatable property of the document.
+const clipFlagsCache = new WeakMap<object, ExpressionFlags>();
+const seqFlagsCache = new WeakMap<object, ExpressionFlags>();
+const docFlagsCache = new WeakMap<object, ExpressionFlags>();
+
+function sequenceExpressionFlags(seqId: string, seq: Sequence): ExpressionFlags {
+	const hit = seqFlagsCache.get(seq);
+	if (hit) return hit;
+	let any = false;
+	let active = false;
+	for (const [id, clip] of Object.entries(seq.clips)) {
+		let f = clipFlagsCache.get(clip);
+		if (!f) {
+			f = flagsOf(clipAnimatables(seqId, id, clip));
+			clipFlagsCache.set(clip, f);
+		}
+		any ||= f.any;
+		if (f.active) {
+			active = true;
+			break;
+		}
+	}
+	if (!active) {
+		const own = flagsOf(sequenceOwnAnimatables(seqId, seq));
+		any ||= own.any;
+		active = own.active;
+	}
+	const flags = active ? { any: true, active: true } : any ? { any: true, active: false } : NO_EXPRESSIONS;
+	seqFlagsCache.set(seq, flags);
+	return flags;
+}
+
+function documentExpressionFlags(doc: Pick<ProjectDocument, 'sequences'>): ExpressionFlags {
+	const key = doc.sequences as object;
+	const hit = docFlagsCache.get(key);
+	if (hit) return hit;
+	let any = false;
+	let active = false;
+	for (const [seqId, seq] of Object.entries(doc.sequences)) {
+		const f = sequenceExpressionFlags(seqId, seq);
+		any ||= f.any;
+		if (f.active) {
+			active = true;
+			break;
+		}
+	}
+	const flags = active ? { any: true, active: true } : any ? { any: true, active: false } : NO_EXPRESSIONS;
+	docFlagsCache.set(key, flags);
+	return flags;
+}
 
 /** True when any sequence of the document has an active (enabled, non-empty) expression. Cached per sequences map. */
 export function documentHasActiveExpressions(doc: Pick<ProjectDocument, 'sequences'>): boolean {
-	const key = doc.sequences as object;
-	const hit = activeCache.get(key);
-	if (hit !== undefined) return hit;
-	let found = false;
-	outer: for (const [seqId, seq] of Object.entries(doc.sequences))
-		for (const loc of sequenceAnimatables(seqId, seq))
-			if (hasActiveExpression(loc.target as { expression?: Expression })) {
-				found = true;
-				break outer;
-			}
-	activeCache.set(key, found);
-	return found;
+	return documentExpressionFlags(doc).active;
+}
+
+/** True when the document stores any expression (enabled or not). Cached like `documentHasActiveExpressions`. */
+export function documentHasAnyExpressions(doc: Pick<ProjectDocument, 'sequences'>): boolean {
+	return documentExpressionFlags(doc).any;
 }
 
 // ---------------------------------------------------------------- ParamPath ↔ ExpressionRef
@@ -321,6 +392,39 @@ export function expressionRefToParamPath(ref: ExpressionRef): string[] {
 	return ['clip', ref.owner, ...ref.path.split('.')];
 }
 
+type Owners = { effects: Map<string, string>; masks: Map<string, string>; pins: Map<string, string> };
+const ownersCache = new WeakMap<object, Owners>();
+
+/**
+ * ui-perf: who holds each effect, mask and puppet pin id of a sequence (the first holder in scan order: clips, then
+ * tracks, then the master), memoised per sequence object, so resolving an inspector row is a lookup instead of a scan
+ * of every clip of every sequence.
+ */
+function ownersOf(seq: Sequence): Owners {
+	const hit = ownersCache.get(seq);
+	if (hit) return hit;
+	const o: Owners = { effects: new Map(), masks: new Map(), pins: new Map() };
+	const first = (m: Map<string, string>, id: unknown, owner: string) => {
+		if (typeof id === 'string' && !m.has(id)) m.set(id, owner);
+	};
+	const masksOf = (ms: unknown, owner: string) => {
+		if (Array.isArray(ms)) for (const m of ms) first(o.masks, (m as { id?: unknown } | null)?.id, owner);
+	};
+	for (const [id, c] of Object.entries(seq.clips)) {
+		const cc = c as { masks?: unknown; effects?: (EffectInstance & { masks?: unknown })[] };
+		const fxs = cc.effects ?? [];
+		for (const e of fxs) first(o.effects, e.id, id);
+		masksOf(cc.masks, id);
+		for (const fx of fxs) masksOf(fx.masks, id);
+		for (const fx of fxs) for (const p of fx.puppet?.pins ?? []) first(o.pins, p.id, id);
+	}
+	for (const t of [...seq.videoTracks, ...seq.audioTracks])
+		for (const e of t.effects ?? []) first(o.effects, e.id, `track:${t.id}`);
+	for (const e of seq.master.effects) first(o.effects, e.id, 'master');
+	ownersCache.set(seq, o);
+	return o;
+}
+
 /** The location of a ParamPath in a document (null when it does not exist / is not expression-capable). */
 export function paramPathToExpressionRef(
 	doc: Pick<ProjectDocument, 'sequences'>,
@@ -337,12 +441,8 @@ export function paramPathToExpressionRef(
 	if (head === 'effect') {
 		const path = `effects.${a}.${rest.join('.')}`;
 		for (const [seqId, seq] of Object.entries(doc.sequences)) {
-			for (const [id, c] of Object.entries(seq.clips))
-				if (((c as { effects?: EffectInstance[] }).effects ?? []).some((e) => e.id === a))
-					return { seq: seqId, owner: id, path };
-			for (const t of [...seq.videoTracks, ...seq.audioTracks])
-				if ((t.effects ?? []).some((e) => e.id === a)) return { seq: seqId, owner: `track:${t.id}`, path };
-			if (seq.master.effects.some((e) => e.id === a)) return { seq: seqId, owner: 'master', path };
+			const owner = ownersOf(seq).effects.get(a);
+			if (owner !== undefined) return { seq: seqId, owner, path };
 		}
 		return null;
 	}
@@ -352,24 +452,17 @@ export function paramPathToExpressionRef(
 		return null;
 	}
 	if (head === 'mask') {
-		const has = (ms: unknown) => Array.isArray(ms) && ms.some((m) => (m as { id?: string }).id === a);
-		for (const [seqId, seq] of Object.entries(doc.sequences))
-			for (const [id, c] of Object.entries(seq.clips)) {
-				const cc = c as { masks?: unknown; effects?: { masks?: unknown }[] };
-				if (has(cc.masks) || (cc.effects ?? []).some((fx) => has(fx.masks)))
-					return { seq: seqId, owner: id, path: `masks.${a}.${rest.join('.')}` };
-			}
+		for (const [seqId, seq] of Object.entries(doc.sequences)) {
+			const owner = ownersOf(seq).masks.get(a);
+			if (owner !== undefined) return { seq: seqId, owner, path: `masks.${a}.${rest.join('.')}` };
+		}
 		return null;
 	}
 	if (head === 'puppetPin') {
-		for (const [seqId, seq] of Object.entries(doc.sequences))
-			for (const [id, c] of Object.entries(seq.clips))
-				if (
-					((c as { effects?: EffectInstance[] }).effects ?? []).some((fx) =>
-						fx.puppet?.pins.some((p) => p.id === a),
-					)
-				)
-					return { seq: seqId, owner: id, path: `puppet.${a}.${rest.join('.')}` };
+		for (const [seqId, seq] of Object.entries(doc.sequences)) {
+			const owner = ownersOf(seq).pins.get(a);
+			if (owner !== undefined) return { seq: seqId, owner, path: `puppet.${a}.${rest.join('.')}` };
+		}
 		return null;
 	}
 	if (head === 'track') {
@@ -395,8 +488,11 @@ export function locateExpressionTarget(
 ): AnimLocation | null {
 	const seq = doc.sequences[ref.seq];
 	if (!seq) return null;
-	for (const loc of sequenceAnimatables(ref.seq, seq))
-		if (loc.ref.owner === ref.owner && loc.ref.path === ref.path) return loc;
+	// ui-perf: a clip's locations come only from that clip (owner = clip id), the others only from the sequence's own
+	// (tracks, master, transitions): walk just those instead of every clip of the sequence.
+	const clip = Object.hasOwn(seq.clips, ref.owner) ? seq.clips[ref.owner] : undefined;
+	const locs = clip ? clipAnimatables(ref.seq, ref.owner, clip) : sequenceOwnAnimatables(ref.seq, seq);
+	for (const loc of locs) if (loc.ref.owner === ref.owner && loc.ref.path === ref.path) return loc;
 	return null;
 }
 

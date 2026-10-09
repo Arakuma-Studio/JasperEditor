@@ -10,8 +10,13 @@ import {
 	SequenceComposition,
 } from '@jasper/compositions';
 import type { EngineClient } from '@jasper/engine-client';
-import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
+import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
+import {
+	useGestureFrameDocument,
+	useSessionOrNull,
+	useSessionState,
+	useStoreSelector,
+} from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -128,7 +133,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
-	const drawn = useSessionState((s) => s.transient ?? s.document);
+	// ui-perf: gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
+	const drawn = useGestureFrameDocument();
 	const media = useSessionState((s) => s.media);
 	const autoProxies = useSessionState((s) => s.toggles.useProxies);
 	// gaps (PRJ-8): Toggle Proxies plays attached proxies.
@@ -367,8 +373,10 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			// storage unavailable
 		}
 		if (!import.meta.env.DEV && !bridge) return;
-		const w = window as unknown as { __jasperMonitor?: { session: EditorSession; driver: PlaybackDriver } };
-		w.__jasperMonitor = { session, driver };
+		const w = window as unknown as {
+			__jasperMonitor?: { session: EditorSession; driver: PlaybackDriver; gestureFrames: GestureFrames };
+		};
+		w.__jasperMonitor = { session, driver, gestureFrames: gestureFrames(session.store) };
 		return () => {
 			if (w.__jasperMonitor?.session === session) delete w.__jasperMonitor;
 		};

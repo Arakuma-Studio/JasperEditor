@@ -4,7 +4,7 @@
 // context titles, the ≡ panel menu on the active tab, × on hover, middle-click close, overflow list,
 // the empty workspace shows DK-043; a maximized group shows a Restore button (DK-041).
 import type { SessionState } from '@jasper/session';
-import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
+import { FreezeStoreUpdates, useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import {
 	ContextMenu,
 	cx,
@@ -251,7 +251,11 @@ function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<st
 				<PanelErrorBoundary name={title}>
 					{/* Panel bodies are code-split (panels/lazy.ts): a skeleton until the chunk loads. */}
 					<Suspense fallback={<PanelLoading />}>
-						<Component instanceId={props.api.id} visible={visible} params={props.params} />
+						{/* ui-perf: a panel in a background tab stops following edits and gestures until it is shown again
+						    (its DOM is detached; keep-alive panels keep playing and following). */}
+						<FreezeStoreUpdates frozen={!visible && !def?.keepAlive}>
+							<Component instanceId={props.api.id} visible={visible} params={props.params} />
+						</FreezeStoreUpdates>
 					</Suspense>
 				</PanelErrorBoundary>
 			) : (

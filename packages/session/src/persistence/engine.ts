@@ -6,14 +6,15 @@
 // - duplicate / export / import are composed client-side from the M1 routes;
 // - saved versions (read, restore in place or as a copy) and the crash-recovery journal use the routes of the
 //   process workstream (ARCHITECTURE D-39, docs/project-files.md).
-import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
-import { type EngineClient, EngineError } from '@jasper/engine-client';
+import type { Lease, ProjectSummary, RecoveryInfo, RecoveryPutRequest, VersionInfo } from '@jasper/api';
+import { type EngineClient, EngineError, JsonText } from '@jasper/engine-client';
 import {
 	createRandomIdSource,
 	loadProject,
 	type MgTemplateRegistry,
 	makeEnvelope,
 	type ProjectDocument,
+	stringifyJson,
 } from '@jasper/project';
 import {
 	LeaseHeldError,
@@ -130,7 +131,9 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		meta: { revision: number; baseRevision: number },
 	): Promise<SaveResult> {
 		try {
-			const r = await this.engine.putProject(projectId, this.envelope(doc, meta.revision), meta.baseRevision);
+			// ui-perf: incremental serialisation (only the objects an edit replaced are serialised again; same JSON).
+			const body = new JsonText(stringifyJson(this.envelope(doc, meta.revision)));
+			const r = await this.engine.putProject(projectId, body, meta.baseRevision);
 			return { ok: true, revision: r.revision };
 		} catch (e) {
 			if (isCode(e, 'REVISION_CONFLICT')) {
@@ -171,14 +174,16 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 	// ------------------------------------------------------------ crash recovery (S01:PER-021, AC-18)
 
 	async writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void> {
-		await this.engine.putRecovery(projectId, sessionId, {
+		// ui-perf: the journal shares the autosave's incremental serialisation (the same document objects).
+		const req = {
 			leaseId: w.leaseId,
 			baseRevision: w.baseRevision,
 			revision: w.revision,
 			changes: w.changes,
 			changeCount: w.changeCount,
 			envelope: this.envelope(w.document, w.revision),
-		});
+		} satisfies RecoveryPutRequest;
+		await this.engine.putRecovery(projectId, sessionId, new JsonText(stringifyJson(req)));
 	}
 
 	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {

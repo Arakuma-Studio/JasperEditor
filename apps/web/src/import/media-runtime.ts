@@ -67,6 +67,30 @@ export function createMediaRuntimeSync(
 	/** mediaKey → last reported status of each proxy tier. */
 	const proxyTiers = new Map<string, ProxyTiers>();
 	let disposed = false;
+	// ui-perf: the patches of a sweep over every medium (opening a project resolves them all) reach the session as one
+	// store update; an update per medium re-ran every subscriber once per medium. Outside a sweep they apply at once.
+	let pending: [string, Partial<MediaRuntime>][] | null = null;
+	const setRuntime = (id: string, patch: Partial<MediaRuntime>) => {
+		if (pending) pending.push([id, patch]);
+		else session.setMediaRuntime(id, patch);
+	};
+	const sweep = (fn: () => void) => {
+		if (pending) return fn();
+		pending = [];
+		try {
+			fn();
+		} finally {
+			const batch = pending;
+			pending = null;
+			if (!disposed) session.setMediaRuntimes(batch);
+		}
+	};
+	/** The runtime of a medium including the patches of the current sweep. */
+	const runtimeOf = (id: string): Partial<MediaRuntime> | undefined => {
+		let r: Partial<MediaRuntime> | undefined = session.getState().media[id];
+		for (const [pid, patch] of pending ?? []) if (pid === id) r = { ...r, ...patch };
+		return r;
+	};
 
 	const reindex = () => {
 		const media = session.getCommitted().media;
@@ -82,7 +106,7 @@ export function createMediaRuntimeSync(
 
 	const patchKey = (key: string, patch: Partial<MediaRuntime>) => {
 		if (disposed) return;
-		for (const id of byKey.get(key) ?? []) session.setMediaRuntime(id, patch);
+		for (const id of byKey.get(key) ?? []) setRuntime(id, patch);
 	};
 
 	const applyDerivative = (key: string, kind: DerivativeKind, status: DerivativeStatus, url?: string) => {
@@ -151,19 +175,20 @@ export function createMediaRuntimeSync(
 			});
 	};
 
-	const syncNew = () => {
-		const media = reindex();
-		for (const m of Object.values(media) as MediaAsset[]) {
-			const key = mediaKeyOf(m);
-			if (known.has(m.id) && known.get(m.id) === key) continue;
-			known.set(m.id, key);
-			if (key) resolve(key);
-			// wp interchange: an imported placeholder has no file yet (Link Media links it).
-			else if (m.fingerprint.startsWith('pending:interchange:'))
-				session.setMediaRuntime(m.id, { availability: 'offline' });
-			else session.setMediaRuntime(m.id, { availability: 'needs-engine' });
-		}
-	};
+	const syncNew = () =>
+		sweep(() => {
+			const media = reindex();
+			for (const m of Object.values(media) as MediaAsset[]) {
+				const key = mediaKeyOf(m);
+				if (known.has(m.id) && known.get(m.id) === key) continue;
+				known.set(m.id, key);
+				if (key) resolve(key);
+				// wp interchange: an imported placeholder has no file yet (Link Media links it).
+				else if (m.fingerprint.startsWith('pending:interchange:'))
+					setRuntime(m.id, { availability: 'offline' });
+				else setRuntime(m.id, { availability: 'needs-engine' });
+			}
+		});
 
 	// ---- imports: interpreted pictures (display PNG of stills a browser cannot show / with a pixel interpretation,
 	// interpreted proxy of videos with one). Keyed per asset: two assets of one file may be interpreted differently.
@@ -174,7 +199,7 @@ export function createMediaRuntimeSync(
 	const requested = new Map<string, string>();
 	const timers = new Set<ReturnType<typeof setTimeout>>();
 	const isReady = (id: string, vk: string) => {
-		const v = session.getState().media[id]?.variant;
+		const v = runtimeOf(id)?.variant;
 		return v?.key === vk && v.state === 'ready';
 	};
 	/**
@@ -194,7 +219,7 @@ export function createMediaRuntimeSync(
 			.requestMediaVariant(key, { kind, variant })
 			.then((st) => {
 				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
-				session.setMediaRuntime(id, {
+				setRuntime(id, {
 					variant: {
 						key: vk,
 						state: st.state,
@@ -217,12 +242,13 @@ export function createMediaRuntimeSync(
 			})
 			.catch((e: unknown) => {
 				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
-				session.setMediaRuntime(id, {
+				setRuntime(id, {
 					variant: { key: vk, state: 'failed', error: e instanceof Error ? e.message : String(e) },
 				});
 			});
 	};
-	const syncVariants = (ids?: readonly string[]) => {
+	const syncVariants = (ids?: readonly string[]) => sweep(() => syncVariantsNow(ids));
+	const syncVariantsNow = (ids?: readonly string[]) => {
 		if (disposed) return;
 		const media = session.getCommitted().media as Record<string, MediaAsset>;
 		for (const m of ids
@@ -233,7 +259,7 @@ export function createMediaRuntimeSync(
 			if (!key || !vk) {
 				if (requested.has(m.id)) {
 					requested.delete(m.id);
-					session.setMediaRuntime(m.id, { variant: undefined });
+					setRuntime(m.id, { variant: undefined });
 				}
 				continue;
 			}
@@ -243,7 +269,7 @@ export function createMediaRuntimeSync(
 				'display' | 'proxy',
 				string,
 			];
-			session.setMediaRuntime(m.id, { variant: { key: vk, state: 'queued' } });
+			setRuntime(m.id, { variant: { key: vk, state: 'queued' } });
 			askVariant(m.id, key, vk, kind, variant, 0);
 		}
 	};
@@ -251,7 +277,7 @@ export function createMediaRuntimeSync(
 		const vk = `${p.kind}:${p.variant}`;
 		for (const id of byKey.get(p.mediaKey) ?? [])
 			if (requested.get(id) === vk)
-				session.setMediaRuntime(id, {
+				setRuntime(id, {
 					variant: { key: vk, state: 'ready', url: p.url },
 					// A still's display picture is its poster too (the engine's ffmpeg poster may not read the format).
 					...(p.kind === 'display' ? { posterUrl: p.url } : {}),
@@ -272,7 +298,7 @@ export function createMediaRuntimeSync(
 			posters.set(m.id, key);
 			const url = `${base}${path}`;
 			const done = (posterUrl: string) => {
-				if (!disposed && posters.get(m.id) === key) session.setMediaRuntime(m.id, { posterUrl });
+				if (!disposed && posters.get(m.id) === key) setRuntime(m.id, { posterUrl });
 			};
 			if (m.vector?.format === 'svg') done(url);
 			else if (m.vector?.format === 'pdf')

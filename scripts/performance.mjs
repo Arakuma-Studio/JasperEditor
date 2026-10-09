@@ -5,7 +5,9 @@
 //             measured fps per scenario (one 1080p clip; a 3-layer stack; a GL blend scope; the flat compositor;
 //             a GPU-effect stack live, then from its render previews), the UI frame rate and the render bar of each scenario
 //   export  — export throughput through the engine: native H.264, ProRes, smart-rendered H.264, preview renders
-// Usage: pnpm perf [--sections micro,editor,export] [--label name] [--seconds 6]
+//   ui      — the editor UI at scale (scripts/perf/ui-run.ts): drag / trim / scrub / selection on 1 000 clips, scroll
+//             and zoom on 5 000, Effect Controls with 200 keyframes per parameter, a 2 000-item Project panel
+// Usage: pnpm perf [--sections micro,editor,export,ui] [--ui drag,scroll] [--label name] [--seconds 6]
 //   The editor/export sections start the built stack (e2e/serve.mjs, needs `pnpm build`) on PERF_PORT (default
 //   49465) unless BASE_URL points at a running one. Results: test-results/performance/<label>.{json,md}, with the
 //   machine, its load average and the host load factor of scripts/perf/budget.ts. PERF=1 fails the run when a
@@ -23,7 +25,7 @@ const arg = (name, dflt) => {
 	const i = process.argv.indexOf(`--${name}`);
 	return i >= 0 ? process.argv[i + 1] : dflt;
 };
-const sections = (arg('sections', 'micro,editor,export') ?? '').split(',').filter(Boolean);
+const sections = (arg('sections', 'micro,editor,export,ui') ?? '').split(',').filter(Boolean);
 const label = arg('label', new Date().toISOString().replace(/[:.]/g, '-'));
 const seconds = Number(arg('seconds', '6'));
 const strict = process.env.PERF === '1';
@@ -38,8 +40,9 @@ const report = {
 };
 
 /** The documented budgets (docs/performance.md) checked here: name, measured value, budget, direction. */
-function budget(name, value, base, { higherIsBetter = false, scale = true } = {}) {
-	const factor = strict || !scale ? 1 : report.loadFactor;
+function budget(name, value, base, { higherIsBetter = false, scale = true, parallel = false } = {}) {
+	// `parallel`: the measured work runs in other processes too (the browser), so the load counts twice (budget.ts).
+	const factor = strict || !scale ? 1 : parallel ? report.loadFactor ** 2 : report.loadFactor;
 	const limit = higherIsBetter ? base / factor : base * factor;
 	const ok = higherIsBetter ? value >= limit : value <= limit;
 	report.budgets.push({
@@ -329,6 +332,39 @@ async function editorSection() {
 	);
 }
 
+// ------------------------------------------------------------------ editor UI at scale (ui-perf)
+// scripts/perf/ui-run.ts: scripted gestures on generated 1 000 / 5 000-clip sequences, Effect Controls with many
+// keyframes and a 2 000-item Project panel; main-thread work per frame from a Chrome trace (docs/performance.md §5).
+async function uiSection() {
+	const only = (arg('ui', '') ?? '').split(',').filter(Boolean);
+	const out = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/perf/ui-run.ts', ...only], {
+		cwd: root,
+		encoding: 'utf8',
+		env: { ...process.env, BASE_URL: base },
+		maxBuffer: 64 * 1024 * 1024,
+	});
+	const lines = (out.stdout ?? '').split('\n');
+	const results = lines.filter((l) => l.startsWith('UIPERF ')).map((l) => JSON.parse(l.slice(7)));
+	const budgets = lines.filter((l) => l.startsWith('UIBUDGET ')).map((l) => JSON.parse(l.slice(9)));
+	if (out.status !== 0) {
+		process.stderr.write(out.stderr ?? '');
+		throw new Error(`scripts/perf/ui-run.ts failed (${out.status})`);
+	}
+	for (const r of results)
+		console.log(
+			`  ${r.scenario}: ${r.frames} frames in ${r.wallMs} ms (${r.fps} fps), work per frame p50 ${r.p50} / p95 ${r.p95} / mean ${r.mean} ms, busy ${Math.round(r.busy * 100)} %${r.dragWallMs ? `, drag ${r.dragWallMs} ms wall` : ''}${r.openMs ? `, opened in ${r.openMs} ms` : ''}`,
+		);
+	report.sections.ui = results;
+	for (const b of budgets) {
+		const r = results.find((x) => x.scenario === b.scenario);
+		if (r && typeof r[b.metric] === 'number')
+			budget(`${b.scenario}: ${b.what}`, r[b.metric], b.budget, {
+				higherIsBetter: b.kind === 'min',
+				parallel: true,
+			});
+	}
+}
+
 // ------------------------------------------------------------------ export throughput
 async function exportSection() {
 	const proj = await api('/api/projects', { name: `perf-export-${label}`, preset: 'hd-1080p-30' });
@@ -429,7 +465,7 @@ async function exportSection() {
 }
 
 try {
-	if (sections.includes('editor') || sections.includes('export')) {
+	if (sections.includes('editor') || sections.includes('export') || sections.includes('ui')) {
 		await ensureServer();
 		console.log(`\nbuilt stack: ${base}`);
 	}
@@ -440,6 +476,10 @@ try {
 	if (sections.includes('export')) {
 		console.log('\nexport throughput');
 		await exportSection();
+	}
+	if (sections.includes('ui')) {
+		console.log('\neditor UI at scale');
+		await uiSection();
 	}
 } finally {
 	if (server) server.kill('SIGTERM');

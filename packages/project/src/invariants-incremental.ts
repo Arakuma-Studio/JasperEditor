@@ -126,6 +126,16 @@ export function isVerifiedDocument(doc: ProjectDocument, opts: InvariantOptions 
 	return !!v && sameOpts(v.opts, opts);
 }
 
+/**
+ * ui-perf: runs the full check on `doc` now and records it as verified when it is valid, so the next transaction on it
+ * takes the incremental path. Editors call it when idle after opening a project (the first edit would otherwise run
+ * the 25–40 ms full check of a 5 000-clip project on the critical path). Already verified: no work.
+ */
+export function verifyDocument(doc: ProjectDocument, opts: InvariantOptions = {}): boolean {
+	if (isVerifiedDocument(doc, opts)) return true;
+	return full(doc, opts).length === 0;
+}
+
 // ---------------------------------------------------------------- entry point
 
 /**

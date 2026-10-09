@@ -1,5 +1,6 @@
-// One clip body (S02 §7: TL-320…334; S05:TLC-040/041). DOM body positioned with translateX in viewport
-// coordinates (TL-153); filmstrip and waveform drawn into ≤ 512 px canvas tiles positioned from exact
+// One clip body (S02 §7: TL-320…334; S05:TLC-040/041). DOM body positioned in content px on its track's scroll
+// layer, which the scroll moves (TL-153; ui-perf: `left`, not a transform per clip — hundreds of compositor transform
+// nodes made every repaint pay for layerization); filmstrip and waveform drawn into ≤ 512 px canvas tiles positioned from exact
 // time so they never drift from the clip edges (TL-102, TL-158). Registered `clipDecorations` add badges to
 // the name strip and overlays to the body (S09:TRU-005 tracker/link glyphs, ARCHITECTURE §19.10).
 import type { EngineClient } from '@jasper/engine-client';
@@ -35,7 +36,7 @@ import { filmstripSlots, mappedFilmstripSlots, nearestTile, tileRect } from '../
 import { snapPx } from '../model/viewport.ts';
 import { drawGain, waveBars } from '../model/waveform.ts';
 import type { ThumbnailStyle } from '../state/prefs.ts';
-import { CanvasTiles, cssVar, dpr, type TileDraw } from './canvas.tsx';
+import { CanvasTiles, cssVar, dpr, TILE_MAX_PX, type TileDraw } from './canvas.tsx';
 
 const NAME_STRIP_PX = 14;
 const OVERSCAN_PX = 256;
@@ -54,11 +55,17 @@ export type ClipDisplay = {
 
 type ClipViewProps = {
 	clip: Clip;
-	/** Unrounded clip-area x of the clip start and its width (viewport px). */
+	/**
+	 * ui-perf: unrounded x of the clip start in content px (`start × px per frame`) and its width. The track's clip
+	 * layer is moved by `scrollPx`, so a scroll changes no clip position (ClipView skips it when nothing it draws
+	 * depends on the scroll, `clipViewEqual`).
+	 */
 	x: number;
 	w: number;
 	height: number;
 	viewportWidth: number;
+	/** Scroll offset of the clip layer (content px, snapped to device pixels) and the matching first frame. */
+	scrollPx: number;
 	scrollFrame: number;
 	pxPerFrame: number;
 	rate: Rational;
@@ -104,10 +111,11 @@ function ClipViewImpl(p: ClipViewProps) {
 	const dprv = dpr();
 	const xr = snapPx(p.x, dprv);
 	const wr = Math.max(1 / dprv, snapPx(p.x + p.w, dprv) - xr);
-
-	// Visible part of the clip (plus overscan) in clip-area px.
-	const vis0 = Math.max(p.x, -OVERSCAN_PX);
-	const vis1 = Math.min(p.x + p.w, p.viewportWidth + OVERSCAN_PX);
+	/** The clip start in viewport px (what decorations and the sticky name work with). */
+	const vx = p.x - p.scrollPx;
+	// Canvas tiles in clip-local px, aligned to the tile size, covering the visible part (plus overscan): scrolling
+	// moves them with the clip and redraws only tiles that come into view (ui-perf).
+	const [tile0, tile1] = visibleTiles(p);
 	const contentTop = NAME_STRIP_PX;
 	const contentH = Math.max(0, p.height - NAME_STRIP_PX - 1);
 	const hasMedia = !!(c as { mediaId?: string }).mediaId;
@@ -133,14 +141,15 @@ function ClipViewImpl(p: ClipViewProps) {
 		(ctx, tile) => {
 			if (!sprite) return;
 			const aspect = sprite.index.tileWidth / sprite.index.tileHeight;
+			// Clip-local px: the viewport of the slot functions starts at the clip start.
 			const slots =
 				c.kind === 'still'
-					? [{ x: p.x, w: contentH * aspect, timeSec: 0 }]
+					? [{ x: 0, w: contentH * aspect, timeSec: 0 }]
 					: isRemapped(c as TimedClip)
 						? mappedFilmstripSlots({
 								start: c.start,
 								duration: c.duration,
-								scrollFrame: p.scrollFrame,
+								scrollFrame: c.start,
 								pxPerFrame: p.pxPerFrame,
 								visibleX0: tile.x0,
 								visibleX1: tile.x0 + tile.width,
@@ -153,7 +162,7 @@ function ClipViewImpl(p: ClipViewProps) {
 								sourceIn: c.sourceIn,
 								rate: c.speed.rate,
 								reverse: c.speed.reverse,
-								scrollFrame: p.scrollFrame,
+								scrollFrame: c.start,
 								pxPerFrame: p.pxPerFrame,
 								visibleX0: tile.x0,
 								visibleX1: tile.x0 + tile.width,
@@ -164,9 +173,9 @@ function ClipViewImpl(p: ClipViewProps) {
 			ctx.save();
 			ctx.beginPath();
 			ctx.rect(
-				Math.max(p.x, tile.x0),
+				Math.max(0, tile.x0),
 				contentTop,
-				Math.min(p.x + p.w, tile.x0 + tile.width) - Math.max(p.x, tile.x0),
+				Math.min(p.w, tile.x0 + tile.width) - Math.max(0, tile.x0),
 				contentH,
 			);
 			ctx.clip();
@@ -181,7 +190,7 @@ function ClipViewImpl(p: ClipViewProps) {
 			}
 			ctx.restore();
 		},
-		[sprite, c, p.x, p.w, p.scrollFrame, p.pxPerFrame, p.rate, contentH, p.display.thumbnails],
+		[sprite, c, p.w, p.pxPerFrame, p.rate, contentH, p.display.thumbnails],
 	);
 
 	const drawWave = useCallback<TileDraw>(
@@ -189,11 +198,12 @@ function ClipViewImpl(p: ClipViewProps) {
 			if (!peaks) return;
 			const F = flicksPerFrame(p.rate);
 			const secPerPx = (F * c.speed.rate) / FLICKS_PER_SECOND / p.pxPerFrame;
-			const x0 = Math.max(tile.x0, p.x);
-			const x1 = Math.min(tile.x0 + tile.width, p.x + p.w);
+			const x0 = Math.max(tile.x0, 0);
+			const x1 = Math.min(tile.x0 + tile.width, p.w);
 			const columns = Math.max(0, Math.ceil(x1 - x0));
 			if (columns === 0) return;
-			const frameAt = (x: number) => p.scrollFrame + x / p.pxPerFrame - c.start;
+			// Clip-local px.
+			const frameAt = (x: number) => x / p.pxPerFrame;
 			const startSec = c.speed.reverse
 				? (c.sourceIn + (c.duration - frameAt(x0)) * F * c.speed.rate) / FLICKS_PER_SECOND
 				: (c.sourceIn + frameAt(x0) * F * c.speed.rate) / FLICKS_PER_SECOND;
@@ -247,7 +257,7 @@ function ClipViewImpl(p: ClipViewProps) {
 				}
 			});
 		},
-		[peaks, c, p.x, p.w, p.scrollFrame, p.pxPerFrame, p.rate, contentH, p.display.rectified],
+		[peaks, c, p.w, p.pxPerFrame, p.rate, contentH, p.display.rectified],
 	);
 
 	// Level of detail (TL-154).
@@ -257,7 +267,7 @@ function ClipViewImpl(p: ClipViewProps) {
 				className="pointer-events-none absolute top-0 left-0"
 				data-clip-id={c.id}
 				style={{
-					transform: `translateX(${xr}px)`,
+					left: xr,
 					width: 1,
 					height: p.height,
 					background: p.display.labelColors ? labelColor(c.label) : 'var(--pr-border-strong)',
@@ -272,7 +282,7 @@ function ClipViewImpl(p: ClipViewProps) {
 	const decoProps: ClipDecorationProps | null = decorations.length
 		? {
 				clip: c,
-				x: p.x,
+				x: vx,
 				w: p.w,
 				height: p.height,
 				viewportWidth: p.viewportWidth,
@@ -286,7 +296,7 @@ function ClipViewImpl(p: ClipViewProps) {
 	// M2 (S11:ATP-002): per clip, so anime templates show R.
 	const badge = clipEngines(c)?.badge ?? null;
 	const hasFx = ((c as { effects?: unknown[] }).effects?.length ?? 0) > 0;
-	const nameOffset = Math.max(0, -p.x);
+	const nameOffset = nameShift(p);
 	const body = p.offline
 		? 'var(--pr-offline-clip)'
 		: p.display.labelColors
@@ -299,7 +309,7 @@ function ClipViewImpl(p: ClipViewProps) {
 			data-clip-id={c.id}
 			data-selected={p.selected || undefined}
 			style={{
-				transform: `translateX(${xr}px)`,
+				left: xr,
 				width: wr,
 				height: p.height - 1,
 				background: body,
@@ -314,20 +324,20 @@ function ClipViewImpl(p: ClipViewProps) {
 		>
 			{showThumbs && sprite ? (
 				<CanvasTiles
-					x0={vis0}
-					x1={vis1}
+					x0={tile0}
+					x1={tile1}
 					height={p.height}
-					originX={p.x}
+					originX={0}
 					draw={drawThumbs}
 					version={p.mediaVersion}
 				/>
 			) : null}
 			{showWave && peaks ? (
 				<CanvasTiles
-					x0={vis0}
-					x1={vis1}
+					x0={tile0}
+					x1={tile1}
 					height={p.height}
-					originX={p.x}
+					originX={0}
 					draw={drawWave}
 					version={p.mediaVersion}
 				/>
@@ -447,4 +457,47 @@ export function markerVar(color: string): string {
 	return map[color] ?? 'green';
 }
 
-export const ClipView = memo(ClipViewImpl);
+/**
+ * How far the name strip is pushed right so the name stays in view when the clip starts left of the viewport, at most
+ * the clip's width (past that the strip has no width either way, and a scroll does not change it).
+ */
+function nameShift(p: Pick<ClipViewProps, 'x' | 'w' | 'scrollPx'>): number {
+	return Math.min(p.w, Math.max(0, p.scrollPx - p.x));
+}
+
+/**
+ * The clip-local range of canvas tiles to draw: the visible part of the clip plus the overscan, widened to whole tiles
+ * (so it changes only when a tile boundary scrolls into view).
+ */
+function visibleTiles(p: Pick<ClipViewProps, 'x' | 'w' | 'scrollPx' | 'viewportWidth'>): [number, number] {
+	const lo = Math.max(0, p.scrollPx - OVERSCAN_PX - p.x);
+	const hi = Math.min(p.w, p.scrollPx + p.viewportWidth + OVERSCAN_PX - p.x);
+	if (hi <= lo) return [0, 0];
+	return [
+		Math.floor(lo / TILE_MAX_PX) * TILE_MAX_PX,
+		Math.min(p.w, Math.ceil(hi / TILE_MAX_PX) * TILE_MAX_PX),
+	];
+}
+
+/**
+ * ui-perf: a scroll changes only `scrollPx` / `scrollFrame`; the clip re-renders for it only when something it draws
+ * depends on the scroll: the sticky name of a clip crossing the left edge, the canvas tiles in view, decorations
+ * (they work in viewport px).
+ */
+function clipViewEqual(a: ClipViewProps, b: ClipViewProps): boolean {
+	for (const k of Object.keys(a) as (keyof ClipViewProps)[]) {
+		if (k === 'scrollPx' || k === 'scrollFrame') continue;
+		if (a[k] !== b[k]) return false;
+	}
+	if (a.scrollPx === b.scrollPx && a.scrollFrame === b.scrollFrame) return true;
+	if (nameShift(a) !== nameShift(b)) return false;
+	// Only clips of media draw canvas tiles (thumbnails, waveforms).
+	if ((b.clip as { mediaId?: string }).mediaId) {
+		const ta = visibleTiles(a);
+		const tb = visibleTiles(b);
+		if (ta[0] !== tb[0] || ta[1] !== tb[1]) return false;
+	}
+	return decorationsFor(clipDecorations.list(), b.clip).length === 0;
+}
+
+export const ClipView = memo(ClipViewImpl, clipViewEqual);

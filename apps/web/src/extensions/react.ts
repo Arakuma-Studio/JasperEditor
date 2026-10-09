@@ -8,10 +8,39 @@ export function useRegistry<T extends { id: string; order?: number }>(reg: Regis
 	return useSyncExternalStore(reg.subscribe, reg.list, reg.list);
 }
 
-const badgeSubscribe = (cb: () => void) => {
-	const offs = [clipBadgeProviders.subscribe(cb), ...clipBadgeProviders.list().map((p) => p.subscribe?.(cb))];
-	return () => {
+// ui-perf: one subscription to the providers for every clip view (each used to subscribe on its own, and a
+// provider's subscription may run a timer: hundreds of them on a long timeline, re-created on every scroll).
+const badgeListeners = new Set<() => void>();
+let badgeOff: (() => void) | null = null;
+const notifyBadges = () => {
+	for (const l of [...badgeListeners]) l();
+};
+function subscribeProviders(): () => void {
+	let offs: ((() => void) | undefined)[] = [];
+	const attach = () => {
 		for (const off of offs) off?.();
+		offs = clipBadgeProviders.list().map((p) => p.subscribe?.(notifyBadges));
+	};
+	attach();
+	const offRegistry = clipBadgeProviders.subscribe(() => {
+		attach();
+		notifyBadges();
+	});
+	return () => {
+		offRegistry();
+		for (const off of offs) off?.();
+		offs = [];
+	};
+}
+const badgeSubscribe = (cb: () => void) => {
+	badgeListeners.add(cb);
+	badgeOff ??= subscribeProviders();
+	return () => {
+		badgeListeners.delete(cb);
+		if (badgeListeners.size === 0 && badgeOff) {
+			badgeOff();
+			badgeOff = null;
+		}
 	};
 };
 const badgeVersion = () => clipBadgeProviders.list().reduce((n, p) => n * 31 + (p.version?.() ?? 0), 0);
