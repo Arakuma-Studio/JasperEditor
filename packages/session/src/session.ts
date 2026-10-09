@@ -5,8 +5,8 @@ import {
 	applyTransaction,
 	type CommandContext,
 	diffDocuments,
-	invariantMode,
 	type Issue,
+	invariantMode,
 	type Origin,
 	type ProjectDocument,
 	type TransactionResult,
@@ -702,10 +702,20 @@ export class EditorSession {
 		this.store.setState({ toggles: { ...this.store.getState().toggles, ...patch } });
 	}
 	setMediaRuntime(mediaId: string, patch: Partial<MediaRuntime>): void {
-		const media = this.store.getState().media;
-		this.store.setState({
-			media: { ...media, [mediaId]: { ...(media[mediaId] ?? defaultMediaRuntime()), ...patch } },
-		});
+		this.setMediaRuntimes([[mediaId, patch]]);
+	}
+	/**
+	 * Applies several runtime patches in one store update (ui-perf: opening a project resolves every medium; one update
+	 * per medium re-ran every subscriber per medium). Patches apply in order, like successive `setMediaRuntime` calls.
+	 */
+	setMediaRuntimes(patches: Iterable<readonly [string, Partial<MediaRuntime>]>): void {
+		const media = { ...this.store.getState().media };
+		let any = false;
+		for (const [id, patch] of patches) {
+			media[id] = { ...(media[id] ?? defaultMediaRuntime()), ...patch };
+			any = true;
+		}
+		if (any) this.store.setState({ media });
 	}
 	/** The persisted view record (S01:SES-004). */
 	viewRecord(): ProjectViewState {

@@ -245,7 +245,10 @@ try {
 			writeFileSync(join(save, `${scenario}.trace.json`), JSON.stringify({ traceEvents: events }));
 		}
 	}
-	if (save) writeFileSync(join(save, `${scenario}.cpuprofile`), JSON.stringify(profile));
+	if (save) {
+		mkdirSync(save, { recursive: true });
+		writeFileSync(join(save, `${scenario}.cpuprofile`), JSON.stringify(profile));
+	}
 	report(profile);
 	await browser.close();
 } finally {
