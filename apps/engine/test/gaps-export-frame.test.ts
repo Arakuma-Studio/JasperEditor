@@ -7,11 +7,20 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eotf, jpegQscale, stillCurveFor } from '../src/export/still-formats.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, H, JSON_H, makeApp, ROOT, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	H,
+	JSON_H,
+	makeApp,
+	TEST_FFMPEG,
+	TEST_FFPROBE,
+	type TestApp,
+} from './helpers.ts';
 
 let app: TestApp;
-const FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffmpeg');
-const FFPROBE = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffprobe');
+const FFMPEG = TEST_FFMPEG;
+const FFPROBE = TEST_FFPROBE;
 const out = mkdtempSync(join(tmpdir(), 'jasper-export-frame-'));
 
 beforeAll(async () => {

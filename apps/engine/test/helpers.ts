@@ -15,11 +15,24 @@ import {
 	makeEnvelope,
 	type ProjectDocument,
 } from '@jasper/project';
+import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import type { FastifyInstance } from 'fastify';
 import { createServer, engineConfig } from '../src/index.ts';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
+/**
+ * ffmpeg / ffprobe for a test's own checks: the LGPL build in vendor/ when it is there (`pnpm ffmpeg:lgpl`), else the
+ * oracle resolution (JASPER_FFMPEG / JASPER_FFPROBE, PATH). A clean CI checkout has no vendor directory: a hard-coded
+ * vendor path made `spawnSync(...).stdout` null there (verify workstream).
+ */
+const VENDOR_FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
+export const TEST_FFMPEG = existsSync(join(VENDOR_FFMPEG, 'ffmpeg'))
+	? join(VENDOR_FFMPEG, 'ffmpeg')
+	: (ffmpegPath() ?? 'ffmpeg');
+export const TEST_FFPROBE = existsSync(join(VENDOR_FFMPEG, 'ffprobe'))
+	? join(VENDOR_FFMPEG, 'ffprobe')
+	: (ffprobePath() ?? 'ffprobe');
 export const H = { host: '127.0.0.1:47900' } as const;
 export const JSON_H = { ...H, 'content-type': 'application/json' } as const;
 

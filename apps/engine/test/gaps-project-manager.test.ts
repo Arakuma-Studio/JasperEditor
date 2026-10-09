@@ -16,14 +16,15 @@ import {
 	H,
 	JSON_H,
 	makeApp,
-	ROOT,
 	register,
+	TEST_FFMPEG,
+	TEST_FFPROBE,
 	type TestApp,
 } from './helpers.ts';
 
 let app: TestApp;
-const FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffmpeg');
-const FFPROBE = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffprobe');
+const FFMPEG = TEST_FFMPEG;
+const FFPROBE = TEST_FFPROBE;
 const out = mkdtempSync(join(tmpdir(), 'jasper-pm-'));
 
 beforeAll(async () => {

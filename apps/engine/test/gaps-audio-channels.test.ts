@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { clipDecodeArgs } from '../src/audio/decode.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, JSON_H, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
 
 let app: TestApp;
-const FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffmpeg');
+const FFMPEG = TEST_FFMPEG;
 const dir = mkdtempSync(join(tmpdir(), 'jasper-channels-'));
 const src = join(dir, 'lr.wav');
 

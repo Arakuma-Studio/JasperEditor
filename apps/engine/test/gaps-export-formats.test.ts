@@ -1,7 +1,6 @@
 // Workstream gaps: HEVC exports through libkvazaar (EX-2) and the Sequence Settings delivery format — non-square
 // pixel aspect ratio and field order (TL-11) — on real exports (ffprobe).
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -11,18 +10,16 @@ import {
 	fixture,
 	JSON_H,
 	makeApp,
-	ROOT,
 	register,
+	TEST_FFMPEG,
+	TEST_FFPROBE,
 	type TestApp,
 } from './helpers.ts';
 
 let app: TestApp;
-const FFPROBE = join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffprobe');
+const FFPROBE = TEST_FFPROBE;
 const kvazaar = (() => {
-	const r = spawnSync(join(ROOT, 'vendor', 'ffmpeg-lgpl', 'linux-x64', 'ffmpeg'), [
-		'-hide_banner',
-		'-encoders',
-	]);
+	const r = spawnSync(TEST_FFMPEG, ['-hide_banner', '-encoders']);
 	return r.stdout?.toString().includes('libkvazaar') ?? false;
 })();
 

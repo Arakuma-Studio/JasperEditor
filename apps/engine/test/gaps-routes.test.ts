@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openerFor } from '../src/routes/gaps.ts';
 import { closeApps, ensureFixtures, fixture, H, JSON_H, makeApp, register } from './helpers.ts';
 
-beforeAll(() => ensureFixtures());
+// A clean checkout generates (or waits for) every fixture here: minutes, not the default 10 s hook timeout.
+beforeAll(() => ensureFixtures(), 900_000);
 afterAll(() => closeApps());
 
 describe('Edit Original routes', () => {
