@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+// gaps (UI-6): UI strings through the active language's catalogue.
+import { jasperI18n } from './i18n/vite-plugin.mjs';
 
 const ENGINE = process.env.JASPER_ENGINE_URL ?? 'http://127.0.0.1:47900';
 const WS_ENGINE = ENGINE.replace(/^http/, 'ws');
@@ -48,7 +50,7 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-	plugins: [react(), tailwindcss(), thirdPartyNotices()],
+	plugins: [jasperI18n(), react(), tailwindcss(), thirdPartyNotices()],
 	server: {
 		host: '127.0.0.1',
 		port: 5173,

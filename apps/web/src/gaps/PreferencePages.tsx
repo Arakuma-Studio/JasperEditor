@@ -10,7 +10,7 @@
 // - Audio Hardware: the output device and latency of the editor's audio; the input device of voice-over.
 import type { EngineGapsSettings } from '@jasper/api';
 import { LABEL_COLORS, type LabelColor } from '@jasper/project';
-import { Button, Checkbox, Select, TextField } from '@jasper/ui';
+import { Button, Checkbox, Select, TextField, toast } from '@jasper/ui';
 import { useEffect, useState } from 'react';
 import { audioPrefs, useAudioPrefs } from '../audio/prefs.ts';
 import { errorText, formatBytes } from '../processing/engine-jobs.ts';
@@ -20,6 +20,7 @@ import { prefsStore, type UiPrefs, useUiPrefs } from '../shell/prefs.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { gapsPrefs, type LabelDefaultKind, labelName, useGapsPrefs } from './app-prefs.ts';
 import { canChooseOutput, listOutputDevices } from './audio-output.ts';
+import { currentLanguage } from '../i18n/runtime.ts';
 import { LANGUAGES } from './i18n-languages.ts';
 
 function NumberField(props: {
@@ -112,10 +113,25 @@ function AppearancePage() {
 						label="Language"
 						className="w-56"
 						value={g.appearance.language}
-						onValueChange={(v) => gapsPrefs.set({ appearance: { language: v } })}
+						onValueChange={(v) => {
+							gapsPrefs.set({ appearance: { language: v } });
+							if (v !== currentLanguage)
+								toast({
+									kind: 'info',
+									title: 'Language changed',
+									detail: 'The editor uses the new language after a restart.',
+									actions: [{ label: 'Restart Now', run: () => location.reload() }],
+								});
+						}}
 						options={LANGUAGES.map((l) => ({ value: l.id, label: l.label }))}
+						data-no-i18n
 					/>
 				</PrefRow>
+				{g.appearance.language !== currentLanguage ? (
+					<p className="text-pr-small text-pr-warning" data-testid="pref-language-restart">
+						Restart the editor to switch the language.
+					</p>
+				) : null}
 			</PrefGroup>
 		</div>
 	);

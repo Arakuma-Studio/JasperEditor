@@ -796,7 +796,9 @@ function ListView(props: {
 									{props.renaming === row.id ? (
 										<RenameField initial={row.name} onDone={(n) => props.onRename(row.id, n)} />
 									) : (
-										<span className="truncate">{row.name}</span>
+										<span className="truncate" data-no-i18n>
+											{row.name}
+										</span>
 									)}
 									{row.status === 'analyzing' ? <span className="animate-pulse text-pr-dim">•</span> : null}
 								</div>
