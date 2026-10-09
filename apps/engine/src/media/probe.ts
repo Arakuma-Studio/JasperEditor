@@ -145,14 +145,23 @@ function parseRational(s: string | undefined): { num: number; den: number } | nu
 	const num = Number(a);
 	const den = b === undefined ? 1 : Number(b);
 	if (!Number.isFinite(num) || !Number.isFinite(den) || num <= 0 || den <= 0) return null;
+	// Hostile input (golden-fuzz / verify): integers beyond 2^53 are not rationals the media schema accepts.
+	const safe = (r: { num: number; den: number }) =>
+		Number.isSafeInteger(r.num) && Number.isSafeInteger(r.den) && r.num > 0 && r.den > 0 ? r : null;
 	if (!Number.isInteger(num) || !Number.isInteger(den)) {
 		// e.g. "29.97": express with a 1000 denominator
-		return { num: Math.round((num / den) * 1000), den: 1000 };
+		return safe({ num: Math.round((num / den) * 1000), den: 1000 });
 	}
-	return { num, den };
+	return safe({ num, den });
 }
 
 const rate = (r: { num: number; den: number }) => r.num / r.den;
+
+/** A positive integer sample rate (48 kHz when ffprobe reports none or garbage). */
+function sampleRateOf(v: unknown): number {
+	const n = Math.round(Number(v));
+	return Number.isSafeInteger(n) && n > 0 ? n : 48000;
+}
 
 /** Display-matrix rotation normalized to 0/90/180/270 (ffmpeg convention: counter-clockwise degrees). */
 function rotationOf(s: FfStream): 0 | 90 | 180 | 270 {
@@ -160,8 +169,10 @@ function rotationOf(s: FfStream): 0 | 90 | 180 | 270 {
 	for (const sd of s.side_data_list ?? []) if (typeof sd.rotation === 'number') raw = sd.rotation;
 	if (raw === null && s.tags?.rotate !== undefined) raw = -Number(s.tags.rotate); // legacy tag is clockwise
 	if (raw === null || !Number.isFinite(raw)) return 0;
-	const n = (((Math.round(raw / 90) * 90) % 360) + 360) % 360;
-	return n as 0 | 90 | 180 | 270;
+	// Quarter turns modulo 4, then degrees: exact for any finite input (degrees modulo 360 of a huge value are not a
+	// multiple of 90 in floating point).
+	const q = ((Math.round(raw / 90) % 4) + 4) % 4;
+	return ([0, 90, 180, 270] as const)[q] ?? 0;
 }
 
 function bitDepthOf(s: FfStream): number {
@@ -316,7 +327,7 @@ export function sanitizeProbeJson(raw: unknown): { streams: FfStream[]; format: 
 	for (const [i, x] of (Array.isArray(j.streams) ? j.streams : []).entries()) {
 		if (!isObj(x)) continue;
 		const s: Record<string, unknown> = {
-			index: Number.isInteger(x.index) && (x.index as number) >= 0 ? x.index : i,
+			index: Number.isSafeInteger(x.index) && (x.index as number) >= 0 ? x.index : i,
 		};
 		for (const k of STRING_FIELDS) {
 			const v = x[k];
@@ -431,7 +442,7 @@ export function mapProbe(input: unknown): ProbeResult {
 				index: s.index,
 				type: 'audio',
 				codec: s.codec_name ?? 'unknown',
-				sampleRate: Math.max(1, Number(s.sample_rate) || 48000),
+				sampleRate: sampleRateOf(s.sample_rate),
 				channels: Math.max(1, s.channels ?? 1),
 				channelLayout:
 					s.channel_layout ?? (s.channels === 1 ? 'mono' : s.channels === 2 ? 'stereo' : 'unknown'),

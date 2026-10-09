@@ -33,6 +33,17 @@ describe('fuzz regressions: project load / repair', () => {
 		expect(r.repairs.some((x) => x.action === 'drop-clip')).toBe(true);
 	});
 
+	it('a project id equal to an item id is replaced in place; the item keeps its id (FUZZ=1, verify)', () => {
+		const d = v5();
+		const itemId = Object.keys(d.items)[0]!;
+		d.projectId = itemId;
+		const r = load(d);
+		expect(r.issues).toEqual([]);
+		expect(r.document.projectId).toMatch(/^prj_/);
+		expect(Object.keys(r.document.items)).toContain(itemId);
+		expect(r.document.items[itemId]!.id).toBe(itemId);
+	});
+
 	it('record keys that disagree with ids, malformed and duplicate ids are repaired', () => {
 		const d = v5();
 		const seq = Object.values(d.sequences)[0] as {

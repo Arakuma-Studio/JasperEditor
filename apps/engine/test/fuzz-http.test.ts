@@ -43,6 +43,10 @@ afterAll(async () => {
 	await closeApps();
 });
 
+/** `s` with every lone surrogate replaced by U+FFFD (String.prototype.toWellFormed). */
+const wellFormed = (s: string) =>
+	s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+
 /** One request; throws when the engine answers with an untyped failure. */
 async function request(method: string, path: string, input: unknown): Promise<void> {
 	const a = await engine();
@@ -55,7 +59,9 @@ async function request(method: string, path: string, input: unknown): Promise<vo
 	let i = 0;
 	const url =
 		path.replace(/:[A-Za-z]+(?:\|:[A-Za-z]+)?/g, () =>
-			encodeURIComponent(String(ps[i++] ?? 'x')).slice(0, 2000),
+			// A lone UTF-16 surrogate (the mutator makes them) cannot be percent-encoded: encodeURIComponent threw a
+			// URIError here, in the harness, before any request (FUZZ=1, verify). A URL carries U+FFFD instead.
+			encodeURIComponent(wellFormed(String(ps[i++] ?? 'x'))).slice(0, 2000),
 		) + (typeof query === 'string' ? `?${query.slice(0, 2000)}` : '');
 	const r = await a.inject({
 		method: method as 'GET',

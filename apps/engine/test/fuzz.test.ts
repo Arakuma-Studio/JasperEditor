@@ -24,7 +24,8 @@ import { safeFileName } from '../src/tools/fs.ts';
 import { ToolError } from '../src/tools/process.ts';
 
 const work = mkdtempSync(join(tmpdir(), 'engine-fuzz-'));
-afterAll(() => rmSync(work, { recursive: true, force: true }));
+// FUZZ=1 leaves 20× more inputs and extracted trees: removing them can outlast the default 10 s hook timeout.
+afterAll(() => rmSync(work, { recursive: true, force: true }), 120_000);
 let n = 0;
 /** A fresh file holding `data` (a new name each call: readers may cache by path). */
 function tempFile(data: Uint8Array | string, ext: string): string {

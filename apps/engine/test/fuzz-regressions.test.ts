@@ -2,6 +2,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { MediaProbeSchema } from '@jasper/project';
 import { afterAll, describe, expect, it } from 'vitest';
 import { writeStoredZip } from '../src/imports/zip.ts';
 import { mapProbe } from '../src/media/probe.ts';
@@ -64,6 +65,33 @@ describe('ffprobe JSON mapping', () => {
 		expect(r.probe.streams[0]).toMatchObject({ bitDepth: 8 });
 		expect(r.probe.streams[1]).toMatchObject({ index: 1 });
 		expect(r.durationSec).toBe(9);
+	});
+	it('unsafe integers, fractional sample rates and huge rotations still give a schema-valid probe (FUZZ=1, verify)', () => {
+		const r = mapProbe({
+			streams: [
+				{
+					...ok.streams[0],
+					index: 2 ** 60,
+					sample_aspect_ratio: '9007199254740994',
+					side_data_list: [{ rotation: -1e308 }],
+				},
+				{ index: 1, codec_type: 'audio', codec_name: 'aac', sample_rate: '10.010000', channels: 2 },
+			],
+			format: { format_name: 'mov,mp4', duration: '2.0' },
+		});
+		expect(MediaProbeSchema.safeParse(r.probe).error?.issues).toBeUndefined();
+		expect(r.probe.streams[0]).toMatchObject({ index: 0, pixelAspect: { num: 1, den: 1 } });
+		expect([0, 90, 180, 270]).toContain(r.probe.rotationDegrees);
+		expect(r.probe.streams[1]).toMatchObject({ sampleRate: 10 });
+		for (const rotation of [-90, 90, 450, -1e15, 1e300, 45.1])
+			expect([0, 90, 180, 270]).toContain(
+				mapProbe({ ...ok, streams: [{ ...ok.streams[0], side_data_list: [{ rotation }] }] }).probe
+					.rotationDegrees,
+			);
+		expect(
+			mapProbe({ ...ok, streams: [{ ...ok.streams[0], side_data_list: [{ rotation: -90 }] }] }).probe
+				.rotationDegrees,
+		).toBe(270);
 	});
 	it('no usable stream is UNSUPPORTED_MEDIA', () => {
 		for (const bad of [null, 1, 'x', { streams: 'no' }, { streams: [{ codec_type: 5 }] }])

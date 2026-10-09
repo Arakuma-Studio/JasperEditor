@@ -356,7 +356,7 @@ function repairTransitionsFinal(seq: Sequence, note: (a: string, e: string, d: s
 
 /** Structured form of the INV-001 id issues (for `repairIds`), keyed by the issue object. */
 type IdIssue =
-	| { kind: 'malformed'; id: string; prefix: IdPrefix }
+	| { kind: 'malformed'; id: string; prefix: IdPrefix; where: string[] }
 	| { kind: 'duplicate'; id: string }
 	| { kind: 'key'; key: string; id: string; path: string[] };
 const ID_ISSUES = new WeakMap<Issue, IdIssue>();
@@ -453,7 +453,13 @@ function repairIds(
 		for (const p of problems) {
 			if (done.has(p.id)) continue;
 			done.add(p.id);
-			if (p.kind === 'malformed') {
+			if (p.kind === 'malformed' && p.where.length === 1 && p.where[0] === 'projectId') {
+				// Nothing references the project id: replace it in place only. Replaced everywhere, a project id that
+				// equals another entity's (valid) id renamed that entity too and the passes ping-ponged (FUZZ=1, verify).
+				const next = ids.next('prj');
+				doc.projectId = next;
+				note('fix-id', next, `malformed project id ${JSON.stringify(p.id)} replaced`);
+			} else if (p.kind === 'malformed') {
 				const next = ids.next(p.prefix);
 				replaceIdDeep(doc, p.id, next);
 				note('fix-id', next, `malformed id ${JSON.stringify(p.id)} replaced`);
@@ -1126,7 +1132,7 @@ export function runInvariants(
 		claimLog?.push(id);
 		if (!isValidId(id) || !prefixes.includes(idPrefixOf(id)!)) {
 			const issue = inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where);
-			ID_ISSUES.set(issue, { kind: 'malformed', id, prefix: prefixes[0]! });
+			ID_ISSUES.set(issue, { kind: 'malformed', id, prefix: prefixes[0]!, where });
 			issues.push(issue);
 		}
 		if (seen.has(id)) {
