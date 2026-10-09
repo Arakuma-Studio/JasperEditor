@@ -1,5 +1,6 @@
-// One clip body (S02 §7: TL-320…334; S05:TLC-040/041). DOM body positioned with translateX in viewport
-// coordinates (TL-153); filmstrip and waveform drawn into ≤ 512 px canvas tiles positioned from exact
+// One clip body (S02 §7: TL-320…334; S05:TLC-040/041). DOM body positioned in content px on its track's scroll
+// layer, which the scroll moves (TL-153; ui-perf: `left`, not a transform per clip — hundreds of compositor transform
+// nodes made every repaint pay for layerization); filmstrip and waveform drawn into ≤ 512 px canvas tiles positioned from exact
 // time so they never drift from the clip edges (TL-102, TL-158). Registered `clipDecorations` add badges to
 // the name strip and overlays to the body (S09:TRU-005 tracker/link glyphs, ARCHITECTURE §19.10).
 import type { EngineClient } from '@jasper/engine-client';
@@ -266,7 +267,7 @@ function ClipViewImpl(p: ClipViewProps) {
 				className="pointer-events-none absolute top-0 left-0"
 				data-clip-id={c.id}
 				style={{
-					transform: `translateX(${xr}px)`,
+					left: xr,
 					width: 1,
 					height: p.height,
 					background: p.display.labelColors ? labelColor(c.label) : 'var(--pr-border-strong)',
@@ -295,7 +296,7 @@ function ClipViewImpl(p: ClipViewProps) {
 	// M2 (S11:ATP-002): per clip, so anime templates show R.
 	const badge = clipEngines(c)?.badge ?? null;
 	const hasFx = ((c as { effects?: unknown[] }).effects?.length ?? 0) > 0;
-	const nameOffset = Math.max(0, -vx);
+	const nameOffset = nameShift(p);
 	const body = p.offline
 		? 'var(--pr-offline-clip)'
 		: p.display.labelColors
@@ -308,7 +309,7 @@ function ClipViewImpl(p: ClipViewProps) {
 			data-clip-id={c.id}
 			data-selected={p.selected || undefined}
 			style={{
-				transform: `translateX(${xr}px)`,
+				left: xr,
 				width: wr,
 				height: p.height - 1,
 				background: body,
@@ -457,6 +458,14 @@ export function markerVar(color: string): string {
 }
 
 /**
+ * How far the name strip is pushed right so the name stays in view when the clip starts left of the viewport, at most
+ * the clip's width (past that the strip has no width either way, and a scroll does not change it).
+ */
+function nameShift(p: Pick<ClipViewProps, 'x' | 'w' | 'scrollPx'>): number {
+	return Math.min(p.w, Math.max(0, p.scrollPx - p.x));
+}
+
+/**
  * The clip-local range of canvas tiles to draw: the visible part of the clip plus the overscan, widened to whole tiles
  * (so it changes only when a tile boundary scrolls into view).
  */
@@ -481,7 +490,7 @@ function clipViewEqual(a: ClipViewProps, b: ClipViewProps): boolean {
 		if (a[k] !== b[k]) return false;
 	}
 	if (a.scrollPx === b.scrollPx && a.scrollFrame === b.scrollFrame) return true;
-	if (Math.max(0, a.scrollPx - a.x) !== Math.max(0, b.scrollPx - b.x)) return false;
+	if (nameShift(a) !== nameShift(b)) return false;
 	// Only clips of media draw canvas tiles (thumbnails, waveforms).
 	if ((b.clip as { mediaId?: string }).mediaId) {
 		const ta = visibleTiles(a);
