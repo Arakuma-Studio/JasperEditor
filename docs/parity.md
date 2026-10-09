@@ -23,7 +23,7 @@ credited. The breadth number is recomputed from the table below (`P0 ×3, P1 ×2
 | Video effects / transitions | 384 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
 | Menu entries | 283, of which 15 are unregistered and render disabled (counted from `MENUBAR` against the registry after `registerAllCommands()`) |
 | Document commands | 244 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
-| Agent tools | 299 MCP tools (counted from a live `listTools`) |
+| Agent tools | 322 MCP tools (counted from a live `listTools`) |
 
 How a row is graded: **done** when the model, an undoable command, the UI, the preview and every export path exist
 (per its wp-note and tests); **partial** with a fraction when part of that is missing; **missing** when there is no
@@ -234,7 +234,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | UI-3 | Keyboard Shortcuts editor | P1 | done | Edit ▸ Keyboard Shortcuts… (Ctrl+Alt+K) with layouts and conflict display (wp-notes/edit-ux.md; `apps/web/test/edit-ux-keyboard.test.tsx`) | edit-ux |
 | UI-4 | Preferences dialog | P1 | done | pages General, Timeline, Audio, Graphics, Media Cache, Transcription, Processing, Roto & Face Tracking plus Appearance, Auto Save, Labels, Memory, Playback, Trim, Audio Hardware wired to behaviour; Collaboration / Sync Settings omitted (no such services) (wp-notes/gaps.md; `apps/web/test/gaps-preferences.test.tsx`) | gaps |
 | UI-5 | Find, Edit Original, Exit | P2 | done | Edit ▸ Find…, Edit Original, File ▸ Exit (desktop) (wp-notes/gaps.md; `apps/web/test/gaps-ui5-tracks.test.tsx`, `apps/engine/test/gaps-routes.test.ts`) | gaps |
-| UI-6 | Localisation and accessibility | P2 | missing | none | — |
+| UI-6 | Localisation and accessibility | P2 | done | every UI string externalised at build time (English + complete Spanish, 8 054 strings, `pnpm i18n:check`), language in Preferences ▸ Appearance; ARIA roles/labels, focus rings, reduced motion, high-contrast theme; axe-core audit with no serious or critical violation in six workspaces × two themes (wp-notes/gaps.md; `apps/web/test/i18n.test.ts`, `e2e/gaps.spec.ts`) | gaps |
 
 ### Agents
 
