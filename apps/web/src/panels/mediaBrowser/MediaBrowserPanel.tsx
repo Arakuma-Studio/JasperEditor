@@ -21,6 +21,7 @@ import {
 	toast,
 } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { t } from '../../i18n/runtime.ts';
 import { EngineImportService } from '../../import/service.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { getImportService, writeHostPathsDrag } from '../../state/services.ts';
@@ -72,6 +73,13 @@ const TYPE_LABELS: Record<BrowseCategory, string> = {
 	model: '3D Model',
 	project: 'Project',
 };
+
+/** The engine names its own two places in English (Home, File System); folders and volumes keep their names. */
+function placeLabel(r: { label: string; kind: string }): string {
+	if (r.kind === 'home') return t('Home');
+	if (r.kind === 'root' && r.label === 'File System') return t('File System');
+	return r.label;
+}
 
 function iconFor(e: Pick<BrowseEntry, 'kind' | 'category'>): IconId {
 	if (e.kind === 'folder') return 'media.folder';
@@ -455,7 +463,7 @@ export function MediaBrowserPanel(_props: PanelProps) {
 				<Select
 					value={roots?.roots.some((r) => r.path === path) ? (path ?? '') : ''}
 					onValueChange={(v) => go(v)}
-					options={(roots?.roots ?? []).map((r) => ({ value: r.path, label: r.label }))}
+					options={(roots?.roots ?? []).map((r) => ({ value: r.path, label: placeLabel(r) }))}
 					label="Places"
 					placeholder="Places"
 					className="w-[104px] @[480px]:hidden"
@@ -528,7 +536,7 @@ export function MediaBrowserPanel(_props: PanelProps) {
 								size={14}
 							/>
 							<span className="truncate" data-no-i18n={r.kind === 'volume' ? '' : undefined}>
-								{r.label}
+								{placeLabel(r)}
 							</span>
 						</button>
 					))}

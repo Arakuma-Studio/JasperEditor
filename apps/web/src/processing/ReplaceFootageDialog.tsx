@@ -291,8 +291,9 @@ export function ReplaceFootageDialog(props: HostedDialogProps<ReplaceFootageDial
 						) : (
 							<div className="flex flex-col gap-1">
 								<span className="text-pr-warning">
-									{plan.uncovered.length} clip{plan.uncovered.length > 1 ? 's need' : ' needs'} frames the new
-									file does not hold:{' '}
+									{plan.uncovered.length > 1
+										? `${plan.uncovered.length} clips need frames the new file does not hold:`
+										: '1 clip needs frames the new file does not hold:'}{' '}
 									{plan.uncovered
 										.slice(0, 4)
 										.map((c) =>
