@@ -150,3 +150,67 @@ spec is rerun as a whole file: its tests share one page).
   play was "recovered" as a stall. **Fix** (`apps/web/src/panels/program/playback-driver.ts`): the interval is kept
   across plays and a play's first frame gets `8 ×` (≤ 2.5 s); a genuine stall is still kicked (unit test in
   `apps/web/test/transport.test.ts` fails without the fix). 5/5 pass afterwards.
+
+## 8. Cross-feature smoke (MCP against a dev engine on 49561)
+
+Driven through `jasper-mcp` (stdio, `--appdir .stage/verify`) by small scripts. Project "verify-cross-feature", 720p30,
+6 s:
+
+| Track | Content | Features |
+|---|---|---|
+| V1 | `Nested Multicam` nest of a multi-camera source (clip-a 1080p30, xfade-red 720p30) cut 1 → 2 → 1 at 2 s / 4 s | multicam create + record cuts, nest |
+| V2 | clip-b (720p**25**), Time Remapping (speed key at 1 s, 50 % after), ellipse mask, Hard Light | time remap, masks, CSS blend |
+| V3 | vector star, Color Dodge | vector shapes, GPU-composited blend |
+| V4 | adjustment layer: Lumetri (exposure, contrast, temperature) + HSL secondary (hue key, saturation 160) | adjustment layer, Lumetri, HSL secondary |
+| V5 | "CROSS FEATURE", text animator `fade-in`, opacity expression `50 + 50 * Math.sin(time * 3)` | text animators, expressions |
+| V6 / V7 | "3D" text as a 3D layer (rotation Y 35°, Z −200) + a 35 mm camera | 3D layer, camera |
+| C1 | two captions | captions |
+| A2 / A3 | voice-hum (1–4 s), music-beat with Dynamics (compressor), auto-ducked by the voice (−12 dB, 4 keys) | audio effects, ducking |
+| sequence | loudness normalisation to −16 LUFS / −1 dBTP | loudness |
+
+Results (frames looked at; numbers measured with ffprobe / ffmpeg `ebur128`, `ssim`, `psnr`):
+
+- **Preview** (`render_frame`): every layer as expected; the 3D layer is a perspective trapezoid (scene corners from
+  `get_3d_scene`, visible in a 1280 px crop); Hard Light / Color Dodge are invisible over identical / saturated bars
+  and visible over camera 2's red, as the formulas say.
+- **Native**: refused with named blockers (Lumetri spatial secondary, 3D layer) — AGENTS §4. A duplicate without those
+  two exports through the **hybrid** path (natively composited, text / shapes / captions baked) in 35–48 s; against
+  the Remotion export of the same sequence: SSIM 0.988 overall, worst frame 0.979 (edges and a 1 px column inside
+  the feathered mask; difference image looked at).
+- **Remotion / auto**: H.264 1280×720 30 fps, 180 frames, AAC 48 kHz stereo, 6.000 s; integrated **−16.0 LUFS**,
+  LRA 4.3 LU (normalisation gain −4.9 dB). The title opacity follows the expression (≈100 % at 0.5 / 2.5 / 4.5 s, ≈0
+  at 1.5 / 3.5 / 5.5 s), multicam cuts at 2 s / 4 s, captions at their times.
+- **Render previews**: 4 segments green; **export using previews + smart render**: 3 s instead of 424 s, SSIM 0.993 /
+  PSNR 42.6 dB against the full render (one more H.264 generation), same loudness.
+- **Interchange**: FCP7 XML (6 pre-renders: masked clip, shape, animated text, 3D, 2 captions; the report names the
+  colour-dodge blend, the adjustment layer, 12 Lumetri parameters and the camera it cannot carry) and OTIO (metadata
+  round trip) exported and **re-imported into the same project**.
+
+Bugs the smoke found, all fixed with regression tests:
+
+1. **MCP tools refused to work in any project with a nest or multicam.** Tools document "`sequenceId`: default the
+   project's first sequence" but forwarded nothing; the command system refuses sequence-scoped commands without one
+   when the project has several sequences (`add_text`, `add_marker`, `record_multicam_cuts`, `render_frame`, …).
+   `apps/mcp/src/context.ts`: a refusal for exactly that reason is retried once with the first sequence (approval
+   transactions resolve it first); `captureStill` defaults to the first sequence. `apps/mcp/test/default-sequence.test.ts`
+   (the fake engines of the existing tests injected a sequenceId, hiding it).
+2. **GL blend modes on static DOM layers hung Remotion renders** ("Blend modes at frame 6"): the composite hub's layer
+   tap was keyed by the clip, so a text / shape whose picture does not change delivered only on each page's first
+   frame. Keyed per frame (as the 3D scope already was). `apps/engine/test/blend-static-layer.e2e.test.ts` (fails with
+   the exact error before).
+3. **Worker pools hung the job forever when a worker died** (dev engine: eval'd worker sources contained esbuild's
+   `__name`, every blend worker died at start, `render_frame` stayed "running"). Dead workers now fail the pool
+   (blend, layer streams, warp, optical flow) and worker sources define `__name`. `apps/engine/test/worker-pools.test.ts`.
+4. **OTIO re-import into its own project / Ctrl+K on an animated title**: `INV-001 Duplicate id tan_…` — copies of a
+   clip re-identified effects, keyframes, masks… but not text animators / selectors nor Puppet meshes / pins.
+   `packages/project/test/reidentify-children.test.ts`, `packages/interchange/test/jasper.test.ts`.
+5. **Remotion renders of heavy compositions timed out under load** (frame extraction / first mount > 60 s with 6 pages;
+   one page renders a still of this project in 25 s at load 30): exports, short ranges and previews failed. A
+   multi-page render that times out is rendered once more on one page before failing (`withSinglePageRetry`,
+   `apps/engine/test/remotion-retry.test.ts`). Afterwards all of them succeed.
+6. **Remapped / retimed clips rendered one frame early in Remotion** (and the Program monitor) against the native export:
+   the retime decoder took the AAC priming timestamp (−0.0213 s) as the file origin. Origin = ffmpeg's start_time;
+   native vs Remotion SSIM 0.961 → 0.992. New fixture `frame-code-aac.mp4` and a browser test in
+   `packages/compositions/test/retime-frames.test.ts`.
+7. `get_timeline` reported a remapped clip's source as `sourceIn + duration` ("0–11 s" of 6 s media): now the media
+   range its frames show. `apps/mcp/test/format.test.ts`.
