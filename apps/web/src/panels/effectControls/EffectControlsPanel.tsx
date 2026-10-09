@@ -143,6 +143,11 @@ type KeyDrag = {
 	active: boolean;
 };
 
+type KeyPointerDown = (
+	e: ReactPointerEvent<HTMLElement>,
+	info: { clipId: string; keyframeId: string; frame: number },
+) => void;
+
 function EffectControlsBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const data = useInspectorData();
 	const frame = useTransportFrame(50).frame;
@@ -221,6 +226,22 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		};
 	}, [menu]);
 
+	// ui-perf: stable handlers for the memoised key lanes (they call the latest closures, set further down).
+	const laneHandlersRef = useRef<{
+		onKeyPointerDown: KeyPointerDown;
+		openKeyMenu: (e: ReactMouseEvent, clipId: string, id: string) => void;
+		onLanePointerDown: (e: ReactPointerEvent<Element>) => void;
+	} | null>(null);
+	const laneHandlers = useMemo(
+		() => ({
+			onKeyPointerDown: (...a: Parameters<KeyPointerDown>) => laneHandlersRef.current?.onKeyPointerDown(...a),
+			openKeyMenu: (e: ReactMouseEvent, clipId: string, id: string) =>
+				laneHandlersRef.current?.openKeyMenu(e, clipId, id),
+			onLanePointerDown: (e: ReactPointerEvent<Element>) => laneHandlersRef.current?.onLanePointerDown(e),
+			seek: (f: number) => session.transport.seek(f),
+		}),
+		[session],
+	);
 	if (!sel || !seq) return <Empty text="Open a sequence to edit effects." />;
 	// S10:TUI-040: a selected transition (no clip) shows its Transition section.
 	if (!primary && selectedTransitions > 0)
@@ -578,6 +599,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		if ((e.key === 'Delete' || e.key === 'Backspace') && deleteSelection()) e.preventDefault();
 	};
 
+	laneHandlersRef.current = { onKeyPointerDown, openKeyMenu, onLanePointerDown };
 	const lane = (children: ReactNode) =>
 		showTimeline ? (
 			<div className="flex min-w-0 flex-1 self-stretch border-l border-pr-border-subtle">{children}</div>
@@ -619,10 +641,10 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							seq={seq}
 							range={range}
 							selected={selectedKeys}
-							onKeyPointerDown={onKeyPointerDown}
-							onKeyDoubleClick={(f) => session.transport.seek(f)}
-							onKeyContextMenu={openKeyMenu}
-							onLanePointerDown={onLanePointerDown}
+							onKeyPointerDown={laneHandlers.onKeyPointerDown}
+							onKeyDoubleClick={laneHandlers.seek}
+							onKeyContextMenu={laneHandlers.openKeyMenu}
+							onLanePointerDown={laneHandlers.onLanePointerDown}
 						/>,
 					)}
 				</div>

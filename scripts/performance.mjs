@@ -40,8 +40,9 @@ const report = {
 };
 
 /** The documented budgets (docs/performance.md) checked here: name, measured value, budget, direction. */
-function budget(name, value, base, { higherIsBetter = false, scale = true } = {}) {
-	const factor = strict || !scale ? 1 : report.loadFactor;
+function budget(name, value, base, { higherIsBetter = false, scale = true, parallel = false } = {}) {
+	// `parallel`: the measured work runs in other processes too (the browser), so the load counts twice (budget.ts).
+	const factor = strict || !scale ? 1 : parallel ? report.loadFactor ** 2 : report.loadFactor;
 	const limit = higherIsBetter ? base / factor : base * factor;
 	const ok = higherIsBetter ? value >= limit : value <= limit;
 	report.budgets.push({
@@ -357,7 +358,10 @@ async function uiSection() {
 	for (const b of budgets) {
 		const r = results.find((x) => x.scenario === b.scenario);
 		if (r && typeof r[b.metric] === 'number')
-			budget(`${b.scenario}: ${b.what}`, r[b.metric], b.budget, { higherIsBetter: b.kind === 'min' });
+			budget(`${b.scenario}: ${b.what}`, r[b.metric], b.budget, {
+				higherIsBetter: b.kind === 'min',
+				parallel: true,
+			});
 	}
 }
 

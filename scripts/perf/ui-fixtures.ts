@@ -2,7 +2,8 @@
 // real command system so they are exactly what an editor or an agent produces:
 //   timeline:<n>  one sequence of <n> colour mattes on four video tracks (clip i at ⌊i/4⌋·40, 30 frames on V(i mod 4)+1,
 //                 the layout of e2e/perf-core.spec.ts), plus a fifth, empty video track;
-//   keyframes:<n> one sequence with a title clip carrying five effects and <n> keyframes per animated parameter;
+//   keyframes:<n> one sequence with a colour matte carrying five effects (Brightness & Contrast, four Slider Controls)
+//                 and <n> keyframes on each of its nine animated parameters;
 //   items:<n>     <n> media items (offline footage and stills) in the project, ten bins, one empty sequence;
 //   scale         the golden-fuzz scale project (200 sequences, ~5 000 clips; packages/project/bench/scale-project.ts).
 // `pnpm exec tsx scripts/perf/ui-fixtures.ts <spec> <out.json>` writes the project envelope (what PUT /api/projects
@@ -124,11 +125,12 @@ export function keyframesProject(n: number): ProjectDocument {
 	b.tx(
 		[
 			{ type: 'clip.addSolid', at: 0, duration, track: 'V1', color: [0.2, 0.3, 0.6, 1], ref: '$c' },
-			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.gaussian-blur', ref: '$f1' },
+			// Cheap to draw (CSS / no picture), so the scrub measures the panel, not a software-GL effect stack.
+			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.slider-control', ref: '$f1' },
 			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.brightness-contrast', ref: '$f2' },
-			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.s.glow', ref: '$f3' },
-			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.s.vignette', ref: '$f4' },
-			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.s.blur', ref: '$f5' },
+			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.slider-control', ref: '$f3' },
+			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.slider-control', ref: '$f4' },
+			{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.slider-control', ref: '$f5' },
 		],
 		'clip',
 	);
@@ -137,12 +139,12 @@ export function keyframesProject(n: number): ProjectDocument {
 		b.doc().sequences[Object.keys(b.doc().sequences)[0]!]!.clips[clipId] as { effects: { id: string }[] }
 	).effects;
 	const params: [number, string, number, number][] = [
-		[0, 'radius', 0, 20],
+		[0, 'slider', 0, 100],
 		[1, 'brightness', -20, 20],
 		[1, 'contrast', -20, 20],
-		[2, 'brightness', 0.5, 1.5],
-		[3, 'radius', 0.5, 1],
-		[4, 'blurAmount', 0, 1],
+		[2, 'slider', -50, 50],
+		[3, 'slider', 0, 10],
+		[4, 'slider', 5, 25],
 	];
 	const cmds: unknown[] = [];
 	for (const [k, param, lo, hi] of params)

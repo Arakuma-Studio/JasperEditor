@@ -162,7 +162,10 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 	return out;
 }
 
-/** Budget verdicts for `results` at load factor `factor` (1 = exact). */
+/**
+ * Budget verdicts for `results` at load factor `factor` (1 = exact). The browser runs in other processes, so pass the
+ * squared host factor (scripts/perf/budget.ts `parallel`).
+ */
 export function checkUiBudgets(results: UiScenarioResult[], factor: number) {
 	return UI_BUDGETS.flatMap((b) => {
 		const r = results.find((x) => x.scenario === b.scenario);

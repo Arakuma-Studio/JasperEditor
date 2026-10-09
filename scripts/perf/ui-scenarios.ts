@@ -501,8 +501,17 @@ export async function scrollContainerScenario(
 /** Selects the first clip and opens the Effect Controls panel (Shift+5), then scrubs the playhead over the clip. */
 export async function effectControlsScenario(page: Page, tracer: Window, steps = 40): Promise<void> {
 	const v1 = await trackId(page, 'V1');
-	const [c] = await visibleClips(page, v1, 1, 1500);
-	if (!c) throw new Error('no clip');
+	// The clip may run past the visible range: click its visible part.
+	const c = await page.evaluate((t) => {
+		const area = document.querySelector('[data-testid="timeline-clip-area"]')!.getBoundingClientRect();
+		const el = document.querySelector(`[data-testid="timeline-track-area"] [data-track-id="${t}"] [data-clip-id]`);
+		if (!el) return null;
+		const r = el.getBoundingClientRect();
+		const x0 = Math.max(r.left, area.left);
+		const x1 = Math.min(r.right, area.right);
+		return { x: x0, y: r.top, w: Math.max(0, x1 - x0), h: r.height };
+	}, v1);
+	if (!c || c.w < 4) throw new Error('no clip');
 	await page.mouse.click(c.x + c.w / 2, c.y + c.h / 2);
 	await page.keyboard.press('Shift+Digit5');
 	await page.locator('[data-testid="effect-controls-panel"]').first().waitFor({ timeout: 30_000 });

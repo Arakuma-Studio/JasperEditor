@@ -5,6 +5,7 @@ import { formatTimecode, isRovingKey, type Keyframe, type Sequence } from '@jasp
 import type { TransportStore } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import {
+	memo,
 	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
@@ -54,8 +55,7 @@ type KeyPointerHandler = (
 	info: { clipId: string; keyframeId: string; frame: number },
 ) => void;
 
-/** One property row's keyframes (S03:EC-022). */
-export function KeyLane(props: {
+type KeyLaneProps = {
 	row: Row;
 	seq: Sequence;
 	range: Range;
@@ -64,7 +64,33 @@ export function KeyLane(props: {
 	onKeyDoubleClick(frame: number): void;
 	onKeyContextMenu(e: ReactMouseEvent, clipId: string, keyframeId: string): void;
 	onLanePointerDown(e: ReactPointerEvent<HTMLElement>): void;
-}) {
+};
+
+/**
+ * ui-perf: a lane re-renders only when what it draws changes (its keyframes, clip, range, selection); the playhead
+ * moving (the rows are rebuilt with the values at the new frame) leaves it alone. Pass stable handlers.
+ */
+function keyLaneEqual(a: KeyLaneProps, b: KeyLaneProps): boolean {
+	const ba = a.row.bindings[0];
+	const bb = b.row.bindings[0];
+	return (
+		a.row.id === b.row.id &&
+		a.row.label === b.row.label &&
+		ba?.clip === bb?.clip &&
+		ba?.resolved.anim?.keyframes === bb?.resolved.anim?.keyframes &&
+		a.seq === b.seq &&
+		a.range.start === b.range.start &&
+		a.range.end === b.range.end &&
+		a.selected === b.selected &&
+		a.onKeyPointerDown === b.onKeyPointerDown &&
+		a.onKeyDoubleClick === b.onKeyDoubleClick &&
+		a.onKeyContextMenu === b.onKeyContextMenu &&
+		a.onLanePointerDown === b.onLanePointerDown
+	);
+}
+
+/** One property row's keyframes (S03:EC-022). */
+export const KeyLane = memo(function KeyLane(props: KeyLaneProps) {
 	const b = props.row.bindings[0]!;
 	const kfs = b.resolved.anim?.keyframes ?? [];
 	return (
@@ -104,10 +130,22 @@ export function KeyLane(props: {
 			})}
 		</div>
 	);
-}
+}, keyLaneEqual);
 
 /** Summary keys of a collapsed/expanded effect header: union of its rows' key frames (reference only). */
-export function SummaryLane(props: { rows: Row[]; seq: Sequence; range: Range }) {
+type SummaryLaneProps = { rows: Row[]; seq: Sequence; range: Range };
+/** ui-perf: like KeyLane, the summary re-renders only when the rows' keyframes change. */
+function summaryLaneEqual(a: SummaryLaneProps, b: SummaryLaneProps): boolean {
+	if (a.seq !== b.seq || a.range.start !== b.range.start || a.range.end !== b.range.end) return false;
+	if (a.rows.length !== b.rows.length) return false;
+	return a.rows.every((r, i) => {
+		const x = r.bindings[0];
+		const y = b.rows[i]!.bindings[0];
+		return x?.clip === y?.clip && x?.resolved.anim?.keyframes === y?.resolved.anim?.keyframes;
+	});
+}
+
+export const SummaryLane = memo(function SummaryLane(props: SummaryLaneProps) {
 	const frames = new Set<number>();
 	for (const r of props.rows) {
 		const b = r.bindings[0]!;
@@ -127,7 +165,7 @@ export function SummaryLane(props: { rows: Row[]; seq: Sequence; range: Range })
 			))}
 		</div>
 	);
-}
+}, summaryLaneEqual);
 
 /** Premiere-style short ruler label: drop a leading zero hour field (`00:00:02:00` → `00:02:00`). */
 function rulerLabel(tc: string): string {
