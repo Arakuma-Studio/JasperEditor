@@ -24,6 +24,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
 import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
@@ -60,6 +61,11 @@ export const EffectInstanceSchema = z.looseObject({
 	 * → "Speed"); absent = the effect's label. Expressions find effects by this name.
 	 */
 	name: z.string().optional(),
+	/**
+	 * gaps (FX-6): the Warp Stabilizer's analysis of the clip, stored with the effect as Premiere does (absent = not
+	 * analysed). See `gaps/warp/analysis.ts`.
+	 */
+	warpAnalysis: WarpAnalysisDataSchema.optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 

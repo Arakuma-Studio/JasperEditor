@@ -1,5 +1,6 @@
 // Workstream gaps (docs/wp-notes/gaps.md): proxies (PRJ-8) and the other gaps commands added below.
 import { z } from 'zod';
+import { WarpAnalysisDataSchema } from '../../gaps/warp/analysis.ts';
 import { AttachedProxySchema } from '../../schema/media.ts';
 import { cmd, IdListSchema, IdRefSchema } from './common.ts';
 
@@ -38,9 +39,19 @@ export const ItemSetAudioChannelsCmd = cmd('item.setAudioChannels', {
 	clips: z.array(ChannelRouting).min(1).max(32).nullable(),
 });
 
+/**
+ * Effect Controls ▸ Warp Stabilizer ▸ Analyze (when the engine's background analysis finishes): stores the analysis
+ * with the effect instance (null clears it, Premiere's re-analysis). Refused for other effects and malformed data.
+ */
+export const EffectSetWarpAnalysisCmd = cmd('effect.setWarpAnalysis', {
+	effectInstanceId: IdRefSchema,
+	analysis: WarpAnalysisDataSchema.nullable(),
+});
+
 export const GAPS_COMMANDS = [
 	MediaAttachProxyCmd,
 	MediaDetachProxyCmd,
 	ClipSetAudioChannelsCmd,
 	ItemSetAudioChannelsCmd,
+	EffectSetWarpAnalysisCmd,
 ] as const;

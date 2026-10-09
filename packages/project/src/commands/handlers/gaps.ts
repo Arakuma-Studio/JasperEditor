@@ -1,9 +1,11 @@
 // Workstream gaps command handlers (docs/wp-notes/gaps.md).
 import { channelsProblem } from '../../gaps/audio-channels.ts';
 import { proxyMismatch } from '../../gaps/proxies.ts';
+import { WARP_STABILIZER_EFFECT_ID, warpAnalysisProblem } from '../../gaps/warp/analysis.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { locateEffect } from './param.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 export const GAPS_OWNER = 'gaps' as const;
@@ -22,6 +24,22 @@ function mediaOf(
 }
 
 export const gapsHandlers: HandlerMap = {
+	'effect.setWarpAnalysis': (doc, cmd: CommandOf<'effect.setWarpAnalysis'>, h) => {
+		const loc = locateEffect(doc, cmd.effectInstanceId);
+		if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${cmd.effectInstanceId}`);
+		if (loc.fx.effectId !== WARP_STABILIZER_EFFECT_ID)
+			h.fail('E_INVALID_PARAM', `${cmd.effectInstanceId} is not a Warp Stabilizer`);
+		if (!loc.clip) h.fail('E_INVALID_PARAM', 'The Warp Stabilizer analyses clips only');
+		const fx = loc.fx as { warpAnalysis?: unknown };
+		if (cmd.analysis === null) {
+			delete fx.warpAnalysis;
+			return { analysed: false };
+		}
+		const why = warpAnalysisProblem(cmd.analysis);
+		if (why) h.fail('E_INVALID_PARAM', `The analysis is not usable: ${why}`, { path: ['analysis'] });
+		fx.warpAnalysis = cmd.analysis;
+		return { analysed: true, frames: Math.floor(cmd.analysis.frames.length / 14) };
+	},
 	'media.attachProxy': (doc, cmd: CommandOf<'media.attachProxy'>, h) => {
 		const asset = mediaOf(doc as never, cmd.mediaId, h);
 		if (asset.kind !== 'video')

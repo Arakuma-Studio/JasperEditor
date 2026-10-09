@@ -365,6 +365,7 @@ const LABELS: Record<CommandType, string> = {
 	'media.detachProxy': 'Detach Proxies',
 	'clip.setAudioChannels': 'Audio Channels',
 	'item.setAudioChannels': 'Audio Channels',
+	'effect.setWarpAnalysis': 'Analyze (Warp Stabilizer)',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [

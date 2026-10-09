@@ -215,7 +215,14 @@ export function planLayerFx(
 				...opts.ctx,
 				...(paramsAt ? { paramsAt } : {}),
 				...(opts.clip ? { clip: opts.clip } : {}),
-				...(fx.puppet ? { structures: { puppet: fx.puppet } } : {}),
+				...(fx.puppet || fx.warpAnalysis
+					? {
+							structures: {
+								...(fx.puppet ? { puppet: fx.puppet } : {}),
+								...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
+							},
+						}
+					: {}),
 			});
 			padding = addPadding(padding, pad);
 			timeDependent ||= gpuIsTimeDependent(gpuSpec, fx.params, opts.mediaKind);

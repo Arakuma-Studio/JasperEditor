@@ -6,3 +6,6 @@ export * from './project-manager.ts';
 export * from './proxies.ts';
 export * from './sequence-format.ts';
 export * from './settings.ts';
+export * from './warp/analysis.ts';
+export * from './warp/math.ts';
+export * from './warp/stabilize.ts';
