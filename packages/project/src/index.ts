@@ -51,6 +51,7 @@ export {
 	invariantStats,
 	isVerifiedDocument,
 	setInvariantMode,
+	verifyDocument,
 } from './invariants-incremental.ts';
 export * from './keyframes.ts';
 export * from './keyframes-spatial.ts';

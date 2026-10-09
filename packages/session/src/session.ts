@@ -5,12 +5,14 @@ import {
 	applyTransaction,
 	type CommandContext,
 	diffDocuments,
+	invariantMode,
 	type Issue,
 	type Origin,
 	type ProjectDocument,
 	type TransactionResult,
 	TX_PROTOCOL,
 	type TxInput,
+	verifyDocument,
 } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { defaultMediaRuntime, defaultSequenceView, defaultToggles } from './defaults.ts';
@@ -142,6 +144,32 @@ export class EditorSession {
 			readOnly: !!opts.readOnly,
 			openIssues: opts.openIssues ?? [],
 		}));
+		this.verifyWhenIdle();
+	}
+
+	private verifyScheduled = false;
+	/**
+	 * ui-perf: checks an opened (or replaced) document's invariants when the browser is idle, so the first edit takes
+	 * the incremental check instead of the full one (25–40 ms on 5 000 clips) on the critical path. Browsers only
+	 * (`requestIdleCallback`); elsewhere the first edit checks the whole document as before.
+	 */
+	private verifyWhenIdle(): void {
+		const ric = (
+			globalThis as {
+				requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => unknown;
+			}
+		).requestIdleCallback;
+		if (typeof ric !== 'function' || this.verifyScheduled) return;
+		this.verifyScheduled = true;
+		ric(
+			() => {
+				this.verifyScheduled = false;
+				if (this.closed || invariantMode() === 'full') return;
+				const registries = (this.ctx as Partial<CommandContext>).registries;
+				verifyDocument(this.store.getState().document, registries ? { effects: registries.effects } : {});
+			},
+			{ timeout: 5000 },
+		);
 	}
 
 	/** Opens a project through a ProjectStore and takes the lease; a held lease opens read-only (S01:PER-040). */
@@ -429,6 +457,7 @@ export class EditorSession {
 			isRedo: false,
 		});
 		if (selection !== before.selection) this.emit('selection.changed', { selection });
+		this.verifyWhenIdle();
 		return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [] };
 	}
 
