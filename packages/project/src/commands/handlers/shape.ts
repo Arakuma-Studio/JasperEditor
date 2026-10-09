@@ -155,15 +155,15 @@ function namedClips(cmd: unknown): string[] | null {
 }
 
 /** Sequence id and box of shape clip `cid` (via `peek`), or null when it is not a box-sized shape. */
-function shapeBoxOf(sequences: Record<string, Sequence>, cid: string): [string, Box] | null {
-	for (const sid of peekKeys(sequences)) {
-		const c = peek<Clip>(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!, cid);
-		if (!c) continue;
-		return c.kind === 'shape' && (c as ShapeClip).shape.type !== 'vector'
-			? [sid, shapeIntrinsicBox(c.shape as ShapeData)]
-			: null;
-	}
-	return null;
+function shapeBoxOf(doc: DDoc, cid: string, h: HandlerContext): [string, Box] | null {
+	// perf-core: the clip's sequence from the transaction's clip lookup (indexed for large transactions).
+	const sid = h.sequenceOfClip(doc, cid);
+	if (sid === null) return null;
+	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+	const c = peek<Clip>(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!, cid)!;
+	return c.kind === 'shape' && (c as ShapeClip).shape.type !== 'vector'
+		? [sid, shapeIntrinsicBox(c.shape as ShapeData)]
+		: null;
 }
 
 export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
@@ -177,13 +177,12 @@ export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): H
 		if (named) {
 			const before = new Map<string, [string, Box]>();
 			for (const cid of new Set(named)) {
-				const b = shapeBoxOf(sequences, cid);
+				const b = shapeBoxOf(doc, cid, h);
 				if (b) before.set(cid, b);
 			}
 			const result = handler(doc, cmd, h);
-			const after = peek<Record<string, Sequence>>(doc, 'sequences')!;
 			for (const [cid, [sid, was]] of before) {
-				const now = shapeBoxOf(after, cid);
+				const now = shapeBoxOf(doc, cid, h);
 				if (now && now[0] === sid && (now[1].width !== was.width || now[1].height !== was.height))
 					recenterShape(doc.sequences[sid]!.clips[cid] as Draft<ShapeClip>, was);
 			}

@@ -1,6 +1,7 @@
 // Entity-level diff between two document versions, cheap thanks to structural sharing (Immer).
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
+import { keyDiff } from './draft-read.ts';
 
 export type DocDiff = { created: string[]; changed: string[]; deleted: string[] };
 
@@ -62,7 +63,11 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 			}
 			if (prev === seq) continue;
 			if (seqOwnChanged(prev, seq)) out.changed.push(id);
-			diffRecord(prev.clips, seq.clips, out);
+			if (prev.clips !== seq.clips) {
+				const d = keyDiff(prev.clips, seq.clips);
+				for (const id of d.changed) (prev.clips[id] === undefined ? out.created : out.changed).push(id);
+				out.deleted.push(...d.deleted);
+			}
 			diffRecord(prev.transitions, seq.transitions, out);
 			diffRecord(prev.links, seq.links, out);
 			diffRecord(prev.groups, seq.groups, out);

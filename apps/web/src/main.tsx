@@ -1,3 +1,4 @@
+import { setInvariantMode } from '@jasper/project';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
@@ -8,6 +9,8 @@ import './app.css';
 
 // gaps: audio output routing and reduced motion, before anything creates an AudioContext.
 installGapsRuntime();
+// perf-core: dev builds check every transaction both incrementally and fully (they must agree).
+if (import.meta.env.DEV) setInvariantMode('verify');
 registerAllCommands();
 registerServiceWorker();
 

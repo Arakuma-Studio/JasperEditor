@@ -542,70 +542,49 @@ class TouchedMap<K, V> extends Map<K, V> {
 	}
 }
 
-export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
-	const issues: Issue[] = [];
-	const seen = new Set<string>();
-	/** Ids claimed by the sequence being walked (per-sequence memo, `SequenceMemo`). */
-	let claimLog: string[] | null = null;
-	const claim = (id: string, prefix: IdPrefix | IdPrefix[], where: string[]) => {
-		const prefixes = Array.isArray(prefix) ? prefix : [prefix];
-		claimLog?.push(id);
-		if (!isValidId(id) || !prefixes.includes(idPrefixOf(id)!)) {
-			const issue = inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where);
-			ID_ISSUES.set(issue, { kind: 'malformed', id, prefix: prefixes[0]! });
-			issues.push(issue);
-		}
-		if (seen.has(id)) {
-			const issue = inv('INV-001', `Duplicate id ${id}`, where);
-			ID_ISSUES.set(issue, { kind: 'duplicate', id });
-			issues.push(issue);
-		} else seen.add(id);
-	};
-	const keyIssue = (key: string, id: string, path: string[], message: string) => {
-		const issue = inv('INV-001', message, path);
-		ID_ISSUES.set(issue, { kind: 'key', key, id, path });
-		issues.push(issue);
-	};
+/** Records an id (INV-001): well-formed with one of the prefixes and claimed once in the document. */
+export type Claim = (id: string, prefix: IdPrefix | IdPrefix[], where: string[]) => void;
+/** Reports a record key that does not match its entity's id (INV-001). */
+export type KeyIssue = (key: string, id: string, path: string[], message: string) => void;
 
-	// INV-001: ids, record keys
-	claim(doc.projectId, 'prj', ['projectId']);
-	const table = (rec: Record<string, { id: string }>, name: string, prefix: IdPrefix | IdPrefix[]) => {
-		for (const [key, v] of Object.entries(rec)) {
-			if (v.id !== key) keyIssue(key, v.id, [name, key], `Key ${key} does not match id ${v.id}`);
-			claim(v.id, prefix, [name, key]);
-		}
-	};
-	table(doc.items, 'items', ['itm', 'bin']);
-	// wp-multicam: source clip markers of media items.
-	for (const it of Object.values(doc.items)) {
-		for (const m of (it as { markers?: { id: string; flicks: number }[] }).markers ?? []) {
-			claim(m.id, 'mrk', ['items', it.id, 'markers', m.id]);
-			if (!Number.isInteger(m.flicks) || m.flicks < 0)
-				issues.push(inv('INV-004', `Marker ${m.id} has an invalid time`, ['items', it.id, 'markers', m.id]));
-		}
-	}
-	for (const it of Object.values(doc.items)) {
-		if ((it.kind === 'bin') !== (idPrefixOf(it.id) === 'bin'))
-			issues.push(inv('INV-001', `Item ${it.id} prefix does not match its kind`, ['items', it.id]));
-	}
-	table(doc.media, 'media', 'med');
-	table(doc.synthetics, 'synthetics', 'syn');
-	table(doc.transcripts, 'transcripts', 'trs');
-	table(doc.fonts, 'fonts', 'fnt');
-	table(doc.sequences, 'sequences', 'seq');
-	// previews: Sequence Settings ▸ Video Previews must be one of the known formats / sizes / qualities.
-	for (const seq of Object.values(doc.sequences)) {
-		const p = (seq as { previews?: unknown }).previews;
-		if (p !== undefined && !SequencePreviewSettingsSchema.safeParse(p).success)
-			issues.push(
-				inv('INV-PREVIEWS', `Sequence ${seq.id}: invalid preview settings`, [
-					'sequences',
-					seq.id,
-					'previews',
-				]),
-			);
-	}
+/** What the clip checks collect for the document-wide invariants (INV-009 nesting, INV-014 leaks, caption owners). */
+export type ClipFacts = {
+	usedMedia: Set<string>;
+	usedSyn: Set<string>;
+	usedTrs: Set<string>;
+	captionTrsUsers: Map<string, number>;
+	nestEdges: Map<string, Set<string>>;
+};
 
+export const newClipFacts = (): ClipFacts => ({
+	usedMedia: new Set(),
+	usedSyn: new Set(),
+	usedTrs: new Set(),
+	captionTrsUsers: new Map(),
+	nestEdges: new Map(),
+});
+
+/** One sequence's context for the clip checks; `byTrack` collects the clips per existing track (INV-003). */
+export type SeqScope = {
+	seq: Sequence;
+	where: string[];
+	tracks: Map<string, Track>;
+	rate: Rational;
+	byTrack: Map<string, Clip[]>;
+};
+
+/**
+ * The per-entity checks of checkInvariants (perf-core): the full check runs them over the whole document and the
+ * incremental one (invariants-incremental.ts) over what a transaction changed, so both run the same code for
+ * every clip, link, clip group and transition.
+ */
+export function invariantCheckers(
+	doc: ProjectDocument,
+	opts: InvariantOptions,
+	issues: Issue[],
+	claim: Claim,
+	keyIssue: KeyIssue = (_key, _id, path, message) => issues.push(inv('INV-001', message, path)),
+) {
 	// wp masks: ids, value ranges and path structure of Opacity / effect masks.
 	const masks = (list: readonly Mask[] | undefined, where: string[]) => {
 		for (const m of list ?? []) {
@@ -696,6 +675,519 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			});
 		});
 	};
+
+	/** Every per-clip invariant of clip `c`, stored under `key` in `s.seq.clips`. */
+	const clip = (s: SeqScope, f: ClipFacts, key: string, c: Clip): void => {
+		const { seq, where, tracks, rate, byTrack } = s;
+		const { usedMedia, usedSyn, usedTrs, captionTrsUsers, nestEdges } = f;
+		const cw = [...where, 'clips', key];
+		if (c.id !== key) keyIssue(key, c.id, cw, `Key ${key} does not match clip id ${c.id}`);
+		claim(c.id, 'clp', cw);
+		const t = tracks.get(c.trackId);
+		if (!t) issues.push(inv('INV-002', `Clip ${c.id} is on missing track ${c.trackId}`, cw));
+		else {
+			const need = trackKindFor(c.kind);
+			if (need && need !== t.kind)
+				issues.push(inv('INV-002', `A ${c.kind} clip cannot be on ${t.kind} track ${t.id}`, cw));
+			const list = byTrack.get(t.id) ?? [];
+			list.push(c);
+			byTrack.set(t.id, list);
+		}
+		// INV-004
+		if (!Number.isInteger(c.start) || c.start < 0 || !Number.isInteger(c.duration) || c.duration < 1) {
+			issues.push(inv('INV-004', `Clip ${c.id} has invalid start/duration`, cw));
+		}
+		if (!Number.isInteger(c.sourceIn) || c.sourceIn < 0)
+			issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
+		if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
+			issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
+		// Workstream `time`: Time Remapping / Time Interpolation (INV-005/011/012).
+		for (const k of (c as { timeRemap?: { keyframes: { id: string }[] } }).timeRemap?.keyframes ?? [])
+			claim(k.id, 'kf', [...cw, 'timeRemap', k.id]);
+		for (const x of remapIssues(c, rate, contentDurationFlicks(doc, c)))
+			issues.push(inv(x.code, x.message, [...cw, 'timeRemap']));
+		const r = c as Record<string, unknown>;
+		// INV-006 references
+		if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip')
+			issues.push(inv('INV-006', `Clip ${c.id} references missing subclip ${c.subclipId}`, cw));
+		if (typeof r.mediaId === 'string') {
+			usedMedia.add(r.mediaId);
+			const asset = doc.media[r.mediaId];
+			if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
+			else if (c.frameHold && isBoundedContent(c) && mediaDurationFlicks(asset) !== null) {
+				// edit-structure: a held clip shows one frame; only that frame must exist.
+				if (c.frameHold.flicks >= mediaDurationFlicks(asset)! + flicksPerFrame(rate) + 1)
+					issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
+			} else if (isBoundedContent(c) && mediaDurationFlicks(asset) !== null && !isRemapped(c)) {
+				// INV-005 media bounds with one frame of tolerance (imports: the interpreted duration).
+				const mediaDur = mediaDurationFlicks(asset)!;
+				const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+				const tol = flicksPerFrame(rate) * c.speed.rate + 1;
+				if (c.sourceIn + span > mediaDur + tol) {
+					issues.push(
+						inv('INV-005', `Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${mediaDur})`, cw),
+					);
+				}
+			}
+		}
+		// S08: a composition clip references its mg-bundle asset and stays inside the composition's length
+		// (a composition that disappeared from its bundle is not a violation: it renders a card, MGC-014).
+		const comp = r.composition as { mediaId?: unknown } | undefined;
+		if (c.kind === 'composition' && typeof comp?.mediaId === 'string') {
+			usedMedia.add(comp.mediaId);
+			const asset = doc.media[comp.mediaId];
+			if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing bundle ${comp.mediaId}`, cw));
+			else if (asset.kind !== 'mg-bundle')
+				issues.push(inv('INV-006', `Clip ${c.id} references ${comp.mediaId}, which is not an mg-bundle`, cw));
+			else {
+				const dur = contentDurationFlicks(doc, c);
+				const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+				if (dur !== null && c.sourceIn + span > dur + flicksPerFrame(rate) + 1)
+					issues.push(
+						inv('INV-005', `Clip ${c.id} exceeds its composition (${c.sourceIn + span} > ${dur})`, cw),
+					);
+			}
+		}
+		if (typeof r.syntheticId === 'string') {
+			usedSyn.add(r.syntheticId);
+			const syn = doc.synthetics[r.syntheticId];
+			if (!syn) issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+			else if (!syntheticFitsClip(c.kind, syn.kind))
+				issues.push(inv('INV-006', `A ${c.kind} clip cannot show a ${syn.kind} source`, cw));
+		}
+		// edit-structure: frame holds are for clips with a picture (not adjustment layers, captions or sound).
+		if (c.frameHold !== undefined) {
+			const caps = kindCapabilities(c.kind);
+			if (caps?.trackKind !== 'video' || c.kind === 'adjustment')
+				issues.push(inv('INV-012', `Clip ${c.id} cannot have a frame hold`, cw));
+			else if (!Number.isInteger(c.frameHold.flicks) || c.frameHold.flicks < 0)
+				issues.push(inv('INV-012', `Clip ${c.id} has an invalid frame hold time`, cw));
+		}
+		if (typeof r.transcriptId === 'string') {
+			usedTrs.add(r.transcriptId);
+			const tr = doc.transcripts[r.transcriptId];
+			if (!tr) issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
+			else if (tr.mediaId === null) {
+				// wp captions: a caption transcript belongs to one clip
+				const n = (captionTrsUsers.get(tr.id) ?? 0) + 1;
+				captionTrsUsers.set(tr.id, n);
+				if (n === 2)
+					issues.push(inv('INV-014', `Caption transcript ${tr.id} is shared by several clips`, cw));
+			}
+		}
+		if (c.kind === 'captions') {
+			const fid = (r.style as { fontId?: string } | undefined)?.fontId;
+			if (fid && !doc.fonts[fid])
+				issues.push(inv('INV-006', `Caption ${c.id} references missing font ${fid}`, cw));
+		}
+		// wp-multicam: a multi-camera selection names an angle of a multi-camera source.
+		if (r.multicam !== undefined) {
+			const sel = r.multicam as { enabled?: unknown; angle?: unknown };
+			const mc = typeof r.sequenceId === 'string' ? multicamSourceOf(doc.sequences[r.sequenceId]) : null;
+			if (c.kind !== 'nest-video' && c.kind !== 'nest-audio')
+				issues.push(inv('INV-012', `Clip ${c.id}: only nest clips can be multi-camera clips`, cw));
+			else if (!mc)
+				issues.push(
+					inv(
+						'INV-006',
+						`Clip ${c.id} is a multi-camera clip of a sequence that is not a multi-camera source`,
+						cw,
+					),
+				);
+			else {
+				const a = typeof sel.angle === 'string' ? angleById(mc, sel.angle) : null;
+				if (!a) issues.push(inv('INV-006', `Clip ${c.id} shows a missing angle ${String(sel.angle)}`, cw));
+				else if (c.kind === 'nest-video' && a.videoTrackId === null)
+					issues.push(inv('INV-012', `Clip ${c.id} shows angle ${a.id}, which has no video`, cw));
+			}
+		}
+		if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
+			if (!doc.sequences[r.sequenceId])
+				issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
+			else {
+				// INV-005 for nests: inside the nested sequence's duration (KND-011).
+				const dur = contentDurationFlicks(doc, c);
+				const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+				const tol = flicksPerFrame(rate) * c.speed.rate + 1;
+				if (dur !== null && !c.frameHold && c.sourceIn + span > dur + tol)
+					issues.push(
+						inv('INV-005', `Clip ${c.id} exceeds its nested sequence (${c.sourceIn + span} > ${dur})`, cw),
+					);
+			}
+			const set = nestEdges.get(seq.id) ?? new Set<string>();
+			set.add(r.sequenceId);
+			nestEdges.set(seq.id, set);
+		}
+		const content = r.content as { style?: { fontId?: string } } | undefined;
+		if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
+			issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
+		}
+		// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
+		// presets are preserved and skipped by the renderers).
+		const ta = r.textAnimation as Record<string, { durationFrames?: unknown } | null | undefined> | undefined;
+		if (c.kind === 'text' && ta) {
+			for (const side of ['in', 'out'] as const) {
+				const d = ta[side]?.durationFrames;
+				if (ta[side] && (typeof d !== 'number' || !Number.isInteger(d) || d < 1))
+					issues.push(
+						inv('INV-012', `Clip ${c.id} ${side} animation duration must be a whole frame count ≥ 1`, cw),
+					);
+				if (invalidAnimatorParams(ta[side]))
+					issues.push(inv('INV-012', `Clip ${c.id} ${side} animation params are invalid`, cw));
+			}
+		}
+		// wp shapes: vector shape items are well-formed (every field, value and keyframe) with ids unique in the clip.
+		if (c.kind === 'shape' && (r.shape as { type?: string }).type === 'vector') {
+			const contents = (r.shape as { contents?: unknown }).contents;
+			if (!Array.isArray(contents)) issues.push(inv('INV-012', `Shape ${c.id} has no contents`, cw));
+			else {
+				contents.forEach((it, i) => {
+					const e = checkShapeItem(it as ShapeItem);
+					if (e)
+						issues.push(
+							inv('INV-012', `Shape ${c.id} item ${i}: ${e.message}`, [
+								...cw,
+								'shape',
+								'contents',
+								String(i),
+								...e.path,
+							]),
+						);
+				});
+				const dup = duplicateItemIds(contents as ShapeItem[]);
+				if (dup.length)
+					issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
+			}
+		}
+		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
+		if (r.threeD !== undefined && !canBe3d(c.kind))
+			issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
+		if (c.kind === 'light') {
+			const env = (r.light as { environmentMediaId?: string | null } | undefined)?.environmentMediaId;
+			if (env && !doc.media[env])
+				issues.push(inv('INV-006', `Light ${c.id} references missing environment media ${env}`, cw));
+		}
+		// three-d: a model layer shows a model media and is always 3D.
+		if (c.kind === 'model') {
+			const m = doc.media[(r as { mediaId: string }).mediaId];
+			if (m && m.kind !== 'model')
+				issues.push(inv('INV-012', `Clip ${c.id}: a model layer needs a 3D model media, not ${m.kind}`, cw));
+			if ((r.threeD as { enabled?: boolean } | undefined)?.enabled !== true)
+				issues.push(inv('INV-012', `Clip ${c.id}: a 3D model layer must be a 3D layer`, [...cw, 'threeD']));
+		}
+		// three-d: the 3D Camera Tracker sits on video clips, analyses existing media, its solve is whole.
+		if (r.cameraTracker !== undefined) {
+			const t = r.cameraTracker as ClipCameraTracker;
+			if (c.kind !== 'video')
+				issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot carry a 3D Camera Tracker`, cw));
+			else if (!doc.media[t.mediaId])
+				issues.push(
+					inv('INV-006', `Clip ${c.id}: 3D Camera Tracker references missing media ${t.mediaId}`, cw),
+				);
+			const bad = cameraTrackerProblem(t);
+			if (bad)
+				issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
+		}
+		// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
+		if (c.kind === 'text')
+			for (const i of textAnimatorIssues(r, cw, claim))
+				issues.push(inv('INV-012', `Clip ${c.id}: ${i.message}`, i.path));
+		// M2 (S11:SHP-001): shape geometry is non-negative.
+		else if (c.kind === 'shape') {
+			const sh = r.shape as {
+				size?: AnimLike;
+				cornerRadius?: AnimLike;
+				fill?: AnimLike | null;
+				stroke?: { width?: AnimLike; color?: AnimLike } | null;
+			};
+			const values = (a: AnimLike | undefined) => (a ? [a.value, ...a.keyframes.map((k) => k.value)] : []);
+			const bad = (v: unknown) => typeof v !== 'number' || !Number.isFinite(v) || v < 0;
+			if (values(sh.size).some((v) => !Array.isArray(v) || v.length !== 2 || v.some(bad)))
+				issues.push(inv('INV-012', `Shape ${c.id} size must be two numbers ≥ 0`, cw));
+			if (values(sh.cornerRadius).some(bad))
+				issues.push(inv('INV-012', `Shape ${c.id} corner radius must be ≥ 0`, cw));
+			if (sh.stroke && values(sh.stroke.width).some(bad))
+				issues.push(inv('INV-012', `Shape ${c.id} stroke width must be ≥ 0`, cw));
+			// wp-m2-shapes: paint colours are RGBA in 0..1 (value and keyframes).
+			const badColor = (v: unknown) =>
+				!Array.isArray(v) || v.length !== 4 || v.some((x) => bad(x) || (x as number) > 1);
+			if (values(sh.fill ?? undefined).some(badColor) || values(sh.stroke?.color).some(badColor))
+				issues.push(inv('INV-012', `Shape ${c.id} fill and stroke colours must be RGBA in 0..1`, cw));
+		}
+		// ---- wp-m2-anime-templates (S11:ATP-002/006): renderer stamp and template param keyframes
+		if (c.kind === 'motion-graphic') {
+			const stamp = templateStampIssue(c, opts.mgTemplates);
+			if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
+			for (const [name, list] of Object.entries(c.paramKeyframes ?? {})) {
+				const path = [...cw, 'paramKeyframes', name];
+				const shape = valueShape((c.params as Record<string, unknown>)[name]);
+				let last = Number.NEGATIVE_INFINITY;
+				for (const k of list) {
+					claim(k.id, 'kf', [...path, k.id]);
+					if (!(k.time > last))
+						issues.push(inv('INV-011', 'Keyframes must have strictly increasing times', path));
+					last = k.time;
+					if (valueShape(k.value) !== shape)
+						issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
+				}
+			}
+		}
+		// ---- end wp-m2-anime-templates
+		if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
+			issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
+		if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
+			issues.push(inv('INV-006', `Clip ${c.id} has a dangling groupId`, cw));
+		for (const m of c.markers) claim(m.id, 'mrk', [...cw, 'markers', m.id]);
+		// parity (roto): roto objects and the effect params that name them.
+		const rotoIds = new Set<string>();
+		for (const ro of (r.rotos as ClipRoto[] | undefined) ?? []) {
+			const rw = [...cw, 'rotos', ro.id];
+			claim(ro.id, 'rto', rw);
+			rotoIds.add(ro.id);
+			if (ro.mediaId !== r.mediaId)
+				issues.push(inv('INV-006', `Roto ${ro.id} belongs to media ${ro.mediaId}, not to its clip's`, rw));
+			if (ro.span[1] < ro.span[0]) issues.push(inv('INV-012', `Roto ${ro.id} has an empty span`, rw));
+			if (ro.base !== null && (ro.base < ro.span[0] || ro.base > ro.span[1]))
+				issues.push(inv('INV-012', `Roto ${ro.id} base frame lies outside its span`, rw));
+			if (ro.result && ro.result.end < ro.result.start)
+				issues.push(inv('INV-012', `Roto ${ro.id} result has end < start`, rw));
+		}
+		for (const fx of (r.effects as EffectInstance[] | undefined) ?? []) {
+			for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
+				const v = fx.params[name]?.value;
+				if (typeof v === 'string' && v !== '' && !rotoIds.has(v))
+					issues.push(
+						inv('INV-006', `${fx.effectId}.${name} names a missing roto ${v}`, [...cw, 'effects', fx.id]),
+					);
+			}
+		}
+		if (isKnownClipKind(c.kind)) {
+			effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects'], true);
+			masks(r.masks as Mask[] | undefined, [...cw, 'masks']);
+			anims({ ...r, content: undefined, params: undefined }, cw);
+			const opacity = r.opacity as AnimLike | undefined;
+			if (opacity) {
+				for (const v of [opacity.value, ...opacity.keyframes.map((k) => k.value)]) {
+					if (typeof v !== 'number' || v < 0 || v > 100)
+						issues.push(inv('INV-012', `Clip ${c.id} opacity out of 0..100`, cw));
+				}
+			}
+		}
+	};
+
+	/** wp masks: Track Matte Key tracks exist, are other video tracks, and mattes form no cycle. */
+	const trackMattes = (s: SeqScope): void => {
+		const { seq, where } = s;
+		const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+		const edges = new Map<string, Set<string>>();
+		for (const c of Object.values(seq.clips)) {
+			const fx = (c as { effects?: EffectInstance[] }).effects;
+			if (!fx) continue;
+			for (const t of trackMatteTracksOf({ effects: fx as never })) {
+				const cw = [...where, 'clips', c.id];
+				if (!videoIds.has(t)) issues.push(inv('INV-006', `Clip ${c.id} uses missing matte track ${t}`, cw));
+				else if (t === c.trackId)
+					issues.push(inv('INV-012', `Clip ${c.id} cannot use its own track as a track matte`, cw));
+				else {
+					const set = edges.get(c.trackId) ?? new Set<string>();
+					set.add(t);
+					edges.set(c.trackId, set);
+				}
+			}
+		}
+		const state = new Map<string, 1 | 2>();
+		const cyclic = (n: string): boolean => {
+			if (state.get(n) === 1) return true;
+			if (state.get(n) === 2) return false;
+			state.set(n, 1);
+			for (const m of edges.get(n) ?? []) if (cyclic(m)) return true;
+			state.set(n, 2);
+			return false;
+		};
+		for (const n of edges.keys())
+			if (cyclic(n)) {
+				issues.push(inv('INV-012', `Track mattes form a cycle through track ${n}`, where));
+				break;
+			}
+	};
+
+	/** INV-003: no overlaps among the clips collected per track. */
+	const overlaps = (where: string[], byTrack: Map<string, Clip[]>): void => {
+		for (const [trackId, list] of byTrack) {
+			list.sort((a, b) => a.start - b.start);
+			for (let i = 1; i < list.length; i++) {
+				if (list[i]!.start < clipEnd(list[i - 1]!)) {
+					issues.push(
+						inv('INV-003', `Clips ${list[i - 1]!.id} and ${list[i]!.id} overlap on ${trackId}`, [
+							...where,
+							'clips',
+							list[i]!.id,
+						]),
+					);
+				}
+			}
+		}
+	};
+
+	/** INV-007 (and INV-006) for one link group; `claimId` claims its id. */
+	const link = (s: SeqScope, key: string, l: Sequence['links'][string], claimId: Claim): void => {
+		const { seq, where, tracks } = s;
+		claimId(l.id, 'lnk', [...where, 'links', key]);
+		if (l.members.length < 2)
+			issues.push(inv('INV-007', `Link group ${l.id} has fewer than 2 members`, [...where, 'links', key]));
+		let videos = 0;
+		for (const m of l.members) {
+			const c = seq.clips[m];
+			if (!c)
+				issues.push(
+					inv('INV-006', `Link group ${l.id} references missing clip ${m}`, [...where, 'links', key]),
+				);
+			else {
+				if (c.linkId !== l.id)
+					issues.push(
+						inv('INV-007', `Clip ${m} is listed in ${l.id} but not linked to it`, [...where, 'links', key]),
+					);
+				if (tracks.get(c.trackId)?.kind === 'video') videos++;
+			}
+		}
+		if (videos > 1)
+			issues.push(
+				inv('INV-007', `Link group ${l.id} has more than one video member`, [...where, 'links', key]),
+			);
+	};
+
+	/** INV-007 (and INV-006) for one clip group; `claimId` claims its id. */
+	const group = (s: SeqScope, key: string, g: Sequence['groups'][string], claimId: Claim): void => {
+		const { seq, where } = s;
+		claimId(g.id, 'grp', [...where, 'groups', key]);
+		if (g.members.length < 2)
+			issues.push(inv('INV-007', `Clip group ${g.id} has fewer than 2 members`, [...where, 'groups', key]));
+		for (const m of g.members) {
+			if (!seq.clips[m])
+				issues.push(
+					inv('INV-006', `Clip group ${g.id} references missing clip ${m}`, [...where, 'groups', key]),
+				);
+			else if (seq.clips[m]!.groupId !== g.id)
+				issues.push(
+					inv('INV-007', `Clip ${m} is listed in ${g.id} but not grouped`, [...where, 'groups', key]),
+				);
+		}
+	};
+
+	/** INV-010 over all transitions of `s.seq`; `claimOf(key)` claims a transition's id. */
+	const transitions = (s: SeqScope, claimOf: (key: string) => Claim): void => {
+		const { seq, where } = s;
+		const edgeUse = new Set<string>();
+		for (const [key, t] of Object.entries(seq.transitions)) {
+			const tw = [...where, 'transitions', key];
+			claimOf(key)(t.id, 'trn', tw);
+			if (!t.outgoingClipId && !t.incomingClipId)
+				issues.push(inv('INV-010', `Transition ${t.id} has no clips`, tw));
+			const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
+			const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
+			if ((t.outgoingClipId && !out) || (t.incomingClipId && !inc)) {
+				issues.push(inv('INV-006', `Transition ${t.id} references a missing clip`, tw));
+				continue;
+			}
+			if (out && inc && (out.trackId !== inc.trackId || clipEnd(out) !== inc.start))
+				issues.push(inv('INV-010', `Transition ${t.id} joins non-adjacent clips`, tw));
+			for (const c of [out, inc]) {
+				if (c && c.trackId !== t.trackId)
+					issues.push(inv('INV-010', `Transition ${t.id} is not on its clips' track`, tw));
+				if (c && t.duration > c.duration)
+					issues.push(inv('INV-010', `Transition ${t.id} is longer than clip ${c.id}`, tw));
+			}
+			// A fade at a clip's head uses only its `in` edge, a fade at the tail only its `out` edge.
+			for (const k of [out ? `${out.id}:out` : null, inc ? `${inc.id}:in` : null]) {
+				if (!k) continue;
+				if (edgeUse.has(k)) issues.push(inv('INV-010', `Two transitions on the same clip edge (${k})`, tw));
+				edgeUse.add(k);
+			}
+		}
+	};
+
+	return { masks, effects, anims, clip, trackMattes, overlaps, link, group, transitions };
+}
+
+export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
+	return runInvariants(doc, opts).issues;
+}
+
+/** The full check; `seen` holds every id it claimed (the incremental check's id index). */
+export function runInvariants(
+	doc: ProjectDocument,
+	opts: InvariantOptions = {},
+): { issues: Issue[]; seen: Set<string> } {
+	const issues: Issue[] = [];
+	const seen = new Set<string>();
+	/** Ids claimed by the sequence being walked (per-sequence memo, `SequenceMemo`). */
+	let claimLog: string[] | null = null;
+	const claim = (id: string, prefix: IdPrefix | IdPrefix[], where: string[]) => {
+		const prefixes = Array.isArray(prefix) ? prefix : [prefix];
+		claimLog?.push(id);
+		if (!isValidId(id) || !prefixes.includes(idPrefixOf(id)!)) {
+			const issue = inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where);
+			ID_ISSUES.set(issue, { kind: 'malformed', id, prefix: prefixes[0]! });
+			issues.push(issue);
+		}
+		if (seen.has(id)) {
+			const issue = inv('INV-001', `Duplicate id ${id}`, where);
+			ID_ISSUES.set(issue, { kind: 'duplicate', id });
+			issues.push(issue);
+		} else seen.add(id);
+	};
+	const keyIssue = (key: string, id: string, path: string[], message: string) => {
+		const issue = inv('INV-001', message, path);
+		ID_ISSUES.set(issue, { kind: 'key', key, id, path });
+		issues.push(issue);
+	};
+
+	// INV-001: ids, record keys
+	claim(doc.projectId, 'prj', ['projectId']);
+	const table = (rec: Record<string, { id: string }>, name: string, prefix: IdPrefix | IdPrefix[]) => {
+		for (const [key, v] of Object.entries(rec)) {
+			if (v.id !== key) keyIssue(key, v.id, [name, key], `Key ${key} does not match id ${v.id}`);
+			claim(v.id, prefix, [name, key]);
+		}
+	};
+	table(doc.items, 'items', ['itm', 'bin']);
+	// wp-multicam: source clip markers of media items.
+	for (const it of Object.values(doc.items)) {
+		for (const m of (it as { markers?: { id: string; flicks: number }[] }).markers ?? []) {
+			claim(m.id, 'mrk', ['items', it.id, 'markers', m.id]);
+			if (!Number.isInteger(m.flicks) || m.flicks < 0)
+				issues.push(inv('INV-004', `Marker ${m.id} has an invalid time`, ['items', it.id, 'markers', m.id]));
+		}
+	}
+	for (const it of Object.values(doc.items)) {
+		if ((it.kind === 'bin') !== (idPrefixOf(it.id) === 'bin'))
+			issues.push(inv('INV-001', `Item ${it.id} prefix does not match its kind`, ['items', it.id]));
+	}
+	table(doc.media, 'media', 'med');
+	table(doc.synthetics, 'synthetics', 'syn');
+	table(doc.transcripts, 'transcripts', 'trs');
+	table(doc.fonts, 'fonts', 'fnt');
+	table(doc.sequences, 'sequences', 'seq');
+	// previews: Sequence Settings ▸ Video Previews must be one of the known formats / sizes / qualities.
+	for (const seq of Object.values(doc.sequences)) {
+		const p = (seq as { previews?: unknown }).previews;
+		if (p !== undefined && !SequencePreviewSettingsSchema.safeParse(p).success)
+			issues.push(
+				inv('INV-PREVIEWS', `Sequence ${seq.id}: invalid preview settings`, [
+					'sequences',
+					seq.id,
+					'previews',
+				]),
+			);
+	}
+
+	const { effects, anims, clip, trackMattes, overlaps, link, group, transitions } = invariantCheckers(
+		doc,
+		opts,
+		issues,
+		claim,
+		keyIssue,
+	);
 
 	// INV-008: bin tree
 	const parents = new Map<string, number>();
@@ -814,7 +1306,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		if (hit && sameDeps(hit.deps, deps)) {
 			// A replayed id seen elsewhere in the document is a duplicate: check everything the slow way.
 			if (hit.ids.some((id) => seen.has(id)))
-				return checkInvariants(doc, { ...opts, [NO_MEMO]: true } as InvariantOptions);
+				return runInvariants(doc, { ...opts, [NO_MEMO]: true } as InvariantOptions);
 			for (const id of hit.ids) seen.add(id);
 			issues.push(...hit.issues);
 			for (const id of hit.media) usedMedia.add(id);
@@ -898,424 +1390,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 
 		const rate = s.frameRate as Rational;
 		const byTrack = new Map<string, Clip[]>();
-		for (const [key, c] of Object.entries(seq.clips)) {
-			const cw = [...where, 'clips', key];
-			if (c.id !== key) keyIssue(key, c.id, cw, `Key ${key} does not match clip id ${c.id}`);
-			claim(c.id, 'clp', cw);
-			const t = tracks.get(c.trackId);
-			if (!t) issues.push(inv('INV-002', `Clip ${c.id} is on missing track ${c.trackId}`, cw));
-			else {
-				const need = trackKindFor(c.kind);
-				if (need && need !== t.kind)
-					issues.push(inv('INV-002', `A ${c.kind} clip cannot be on ${t.kind} track ${t.id}`, cw));
-				const list = byTrack.get(t.id) ?? [];
-				list.push(c);
-				byTrack.set(t.id, list);
-			}
-			// INV-004
-			if (!Number.isInteger(c.start) || c.start < 0 || !Number.isInteger(c.duration) || c.duration < 1) {
-				issues.push(inv('INV-004', `Clip ${c.id} has invalid start/duration`, cw));
-			}
-			if (!Number.isInteger(c.sourceIn) || c.sourceIn < 0)
-				issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
-			if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
-				issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
-			// Workstream `time`: Time Remapping / Time Interpolation (INV-005/011/012).
-			for (const k of (c as { timeRemap?: { keyframes: { id: string }[] } }).timeRemap?.keyframes ?? [])
-				claim(k.id, 'kf', [...cw, 'timeRemap', k.id]);
-			for (const x of remapIssues(c, rate, contentDurationFlicks(doc, c)))
-				issues.push(inv(x.code, x.message, [...cw, 'timeRemap']));
-			const r = c as Record<string, unknown>;
-			// INV-006 references
-			if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip')
-				issues.push(inv('INV-006', `Clip ${c.id} references missing subclip ${c.subclipId}`, cw));
-			if (typeof r.mediaId === 'string') {
-				usedMedia.add(r.mediaId);
-				const asset = doc.media[r.mediaId];
-				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
-				else if (c.frameHold && isBoundedContent(c) && mediaDurationFlicks(asset) !== null) {
-					// edit-structure: a held clip shows one frame; only that frame must exist.
-					if (c.frameHold.flicks >= mediaDurationFlicks(asset)! + flicksPerFrame(rate) + 1)
-						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
-				} else if (isBoundedContent(c) && mediaDurationFlicks(asset) !== null && !isRemapped(c)) {
-					// INV-005 media bounds with one frame of tolerance (imports: the interpreted duration).
-					const mediaDur = mediaDurationFlicks(asset)!;
-					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
-					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
-					if (c.sourceIn + span > mediaDur + tol) {
-						issues.push(
-							inv('INV-005', `Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${mediaDur})`, cw),
-						);
-					}
-				}
-			}
-			// S08: a composition clip references its mg-bundle asset and stays inside the composition's length
-			// (a composition that disappeared from its bundle is not a violation: it renders a card, MGC-014).
-			const comp = r.composition as { mediaId?: unknown } | undefined;
-			if (c.kind === 'composition' && typeof comp?.mediaId === 'string') {
-				usedMedia.add(comp.mediaId);
-				const asset = doc.media[comp.mediaId];
-				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing bundle ${comp.mediaId}`, cw));
-				else if (asset.kind !== 'mg-bundle')
-					issues.push(
-						inv('INV-006', `Clip ${c.id} references ${comp.mediaId}, which is not an mg-bundle`, cw),
-					);
-				else {
-					const dur = contentDurationFlicks(doc, c);
-					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
-					if (dur !== null && c.sourceIn + span > dur + flicksPerFrame(rate) + 1)
-						issues.push(
-							inv('INV-005', `Clip ${c.id} exceeds its composition (${c.sourceIn + span} > ${dur})`, cw),
-						);
-				}
-			}
-			if (typeof r.syntheticId === 'string') {
-				usedSyn.add(r.syntheticId);
-				const syn = doc.synthetics[r.syntheticId];
-				if (!syn) issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
-				else if (!syntheticFitsClip(c.kind, syn.kind))
-					issues.push(inv('INV-006', `A ${c.kind} clip cannot show a ${syn.kind} source`, cw));
-			}
-			// edit-structure: frame holds are for clips with a picture (not adjustment layers, captions or sound).
-			if (c.frameHold !== undefined) {
-				const caps = kindCapabilities(c.kind);
-				if (caps?.trackKind !== 'video' || c.kind === 'adjustment')
-					issues.push(inv('INV-012', `Clip ${c.id} cannot have a frame hold`, cw));
-				else if (!Number.isInteger(c.frameHold.flicks) || c.frameHold.flicks < 0)
-					issues.push(inv('INV-012', `Clip ${c.id} has an invalid frame hold time`, cw));
-			}
-			if (typeof r.transcriptId === 'string') {
-				usedTrs.add(r.transcriptId);
-				const tr = doc.transcripts[r.transcriptId];
-				if (!tr) issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
-				else if (tr.mediaId === null) {
-					// wp captions: a caption transcript belongs to one clip
-					const n = (captionTrsUsers.get(tr.id) ?? 0) + 1;
-					captionTrsUsers.set(tr.id, n);
-					if (n === 2)
-						issues.push(inv('INV-014', `Caption transcript ${tr.id} is shared by several clips`, cw));
-				}
-			}
-			if (c.kind === 'captions') {
-				const fid = (r.style as { fontId?: string } | undefined)?.fontId;
-				if (fid && !doc.fonts[fid])
-					issues.push(inv('INV-006', `Caption ${c.id} references missing font ${fid}`, cw));
-			}
-			// wp-multicam: a multi-camera selection names an angle of a multi-camera source.
-			if (r.multicam !== undefined) {
-				const sel = r.multicam as { enabled?: unknown; angle?: unknown };
-				const mc = typeof r.sequenceId === 'string' ? multicamSourceOf(doc.sequences[r.sequenceId]) : null;
-				if (c.kind !== 'nest-video' && c.kind !== 'nest-audio')
-					issues.push(inv('INV-012', `Clip ${c.id}: only nest clips can be multi-camera clips`, cw));
-				else if (!mc)
-					issues.push(
-						inv(
-							'INV-006',
-							`Clip ${c.id} is a multi-camera clip of a sequence that is not a multi-camera source`,
-							cw,
-						),
-					);
-				else {
-					const a = typeof sel.angle === 'string' ? angleById(mc, sel.angle) : null;
-					if (!a) issues.push(inv('INV-006', `Clip ${c.id} shows a missing angle ${String(sel.angle)}`, cw));
-					else if (c.kind === 'nest-video' && a.videoTrackId === null)
-						issues.push(inv('INV-012', `Clip ${c.id} shows angle ${a.id}, which has no video`, cw));
-				}
-			}
-			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
-				if (!doc.sequences[r.sequenceId])
-					issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
-				else {
-					// INV-005 for nests: inside the nested sequence's duration (KND-011).
-					const dur = contentDurationFlicks(doc, c);
-					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
-					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
-					if (dur !== null && !c.frameHold && c.sourceIn + span > dur + tol)
-						issues.push(
-							inv('INV-005', `Clip ${c.id} exceeds its nested sequence (${c.sourceIn + span} > ${dur})`, cw),
-						);
-				}
-				const set = nestEdges.get(seq.id) ?? new Set<string>();
-				set.add(r.sequenceId);
-				nestEdges.set(seq.id, set);
-			}
-			const content = r.content as { style?: { fontId?: string } } | undefined;
-			if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
-				issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
-			}
-			// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
-			// presets are preserved and skipped by the renderers).
-			const ta = r.textAnimation as
-				| Record<string, { durationFrames?: unknown } | null | undefined>
-				| undefined;
-			if (c.kind === 'text' && ta) {
-				for (const side of ['in', 'out'] as const) {
-					const d = ta[side]?.durationFrames;
-					if (ta[side] && (typeof d !== 'number' || !Number.isInteger(d) || d < 1))
-						issues.push(
-							inv('INV-012', `Clip ${c.id} ${side} animation duration must be a whole frame count ≥ 1`, cw),
-						);
-					if (invalidAnimatorParams(ta[side]))
-						issues.push(inv('INV-012', `Clip ${c.id} ${side} animation params are invalid`, cw));
-				}
-			}
-			// wp shapes: vector shape items are well-formed (every field, value and keyframe) with ids unique in the clip.
-			if (c.kind === 'shape' && (r.shape as { type?: string }).type === 'vector') {
-				const contents = (r.shape as { contents?: unknown }).contents;
-				if (!Array.isArray(contents)) issues.push(inv('INV-012', `Shape ${c.id} has no contents`, cw));
-				else {
-					contents.forEach((it, i) => {
-						const e = checkShapeItem(it as ShapeItem);
-						if (e)
-							issues.push(
-								inv('INV-012', `Shape ${c.id} item ${i}: ${e.message}`, [
-									...cw,
-									'shape',
-									'contents',
-									String(i),
-									...e.path,
-								]),
-							);
-					});
-					const dup = duplicateItemIds(contents as ShapeItem[]);
-					if (dup.length)
-						issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
-				}
-			}
-			// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
-			if (r.threeD !== undefined && !canBe3d(c.kind))
-				issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
-			if (c.kind === 'light') {
-				const env = (r.light as { environmentMediaId?: string | null } | undefined)?.environmentMediaId;
-				if (env && !doc.media[env])
-					issues.push(inv('INV-006', `Light ${c.id} references missing environment media ${env}`, cw));
-			}
-			// three-d: a model layer shows a model media and is always 3D.
-			if (c.kind === 'model') {
-				const m = doc.media[(r as { mediaId: string }).mediaId];
-				if (m && m.kind !== 'model')
-					issues.push(
-						inv('INV-012', `Clip ${c.id}: a model layer needs a 3D model media, not ${m.kind}`, cw),
-					);
-				if ((r.threeD as { enabled?: boolean } | undefined)?.enabled !== true)
-					issues.push(inv('INV-012', `Clip ${c.id}: a 3D model layer must be a 3D layer`, [...cw, 'threeD']));
-			}
-			// three-d: the 3D Camera Tracker sits on video clips, analyses existing media, its solve is whole.
-			if (r.cameraTracker !== undefined) {
-				const t = r.cameraTracker as ClipCameraTracker;
-				if (c.kind !== 'video')
-					issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot carry a 3D Camera Tracker`, cw));
-				else if (!doc.media[t.mediaId])
-					issues.push(
-						inv('INV-006', `Clip ${c.id}: 3D Camera Tracker references missing media ${t.mediaId}`, cw),
-					);
-				const bad = cameraTrackerProblem(t);
-				if (bad)
-					issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
-			}
-			// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
-			if (c.kind === 'text')
-				for (const i of textAnimatorIssues(r, cw, claim))
-					issues.push(inv('INV-012', `Clip ${c.id}: ${i.message}`, i.path));
-			// M2 (S11:SHP-001): shape geometry is non-negative.
-			else if (c.kind === 'shape') {
-				const sh = r.shape as {
-					size?: AnimLike;
-					cornerRadius?: AnimLike;
-					fill?: AnimLike | null;
-					stroke?: { width?: AnimLike; color?: AnimLike } | null;
-				};
-				const values = (a: AnimLike | undefined) => (a ? [a.value, ...a.keyframes.map((k) => k.value)] : []);
-				const bad = (v: unknown) => typeof v !== 'number' || !Number.isFinite(v) || v < 0;
-				if (values(sh.size).some((v) => !Array.isArray(v) || v.length !== 2 || v.some(bad)))
-					issues.push(inv('INV-012', `Shape ${c.id} size must be two numbers ≥ 0`, cw));
-				if (values(sh.cornerRadius).some(bad))
-					issues.push(inv('INV-012', `Shape ${c.id} corner radius must be ≥ 0`, cw));
-				if (sh.stroke && values(sh.stroke.width).some(bad))
-					issues.push(inv('INV-012', `Shape ${c.id} stroke width must be ≥ 0`, cw));
-				// wp-m2-shapes: paint colours are RGBA in 0..1 (value and keyframes).
-				const badColor = (v: unknown) =>
-					!Array.isArray(v) || v.length !== 4 || v.some((x) => bad(x) || (x as number) > 1);
-				if (values(sh.fill ?? undefined).some(badColor) || values(sh.stroke?.color).some(badColor))
-					issues.push(inv('INV-012', `Shape ${c.id} fill and stroke colours must be RGBA in 0..1`, cw));
-			}
-			// ---- wp-m2-anime-templates (S11:ATP-002/006): renderer stamp and template param keyframes
-			if (c.kind === 'motion-graphic') {
-				const stamp = templateStampIssue(c, opts.mgTemplates);
-				if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
-				for (const [name, list] of Object.entries(c.paramKeyframes ?? {})) {
-					const path = [...cw, 'paramKeyframes', name];
-					const shape = valueShape((c.params as Record<string, unknown>)[name]);
-					let last = Number.NEGATIVE_INFINITY;
-					for (const k of list) {
-						claim(k.id, 'kf', [...path, k.id]);
-						if (!(k.time > last))
-							issues.push(inv('INV-011', 'Keyframes must have strictly increasing times', path));
-						last = k.time;
-						if (valueShape(k.value) !== shape)
-							issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
-					}
-				}
-			}
-			// ---- end wp-m2-anime-templates
-			if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
-				issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
-			if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
-				issues.push(inv('INV-006', `Clip ${c.id} has a dangling groupId`, cw));
-			for (const m of c.markers) claim(m.id, 'mrk', [...cw, 'markers', m.id]);
-			// parity (roto): roto objects and the effect params that name them.
-			const rotoIds = new Set<string>();
-			for (const ro of (r.rotos as ClipRoto[] | undefined) ?? []) {
-				const rw = [...cw, 'rotos', ro.id];
-				claim(ro.id, 'rto', rw);
-				rotoIds.add(ro.id);
-				if (ro.mediaId !== r.mediaId)
-					issues.push(inv('INV-006', `Roto ${ro.id} belongs to media ${ro.mediaId}, not to its clip's`, rw));
-				if (ro.span[1] < ro.span[0]) issues.push(inv('INV-012', `Roto ${ro.id} has an empty span`, rw));
-				if (ro.base !== null && (ro.base < ro.span[0] || ro.base > ro.span[1]))
-					issues.push(inv('INV-012', `Roto ${ro.id} base frame lies outside its span`, rw));
-				if (ro.result && ro.result.end < ro.result.start)
-					issues.push(inv('INV-012', `Roto ${ro.id} result has end < start`, rw));
-			}
-			for (const fx of (r.effects as EffectInstance[] | undefined) ?? []) {
-				for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
-					const v = fx.params[name]?.value;
-					if (typeof v === 'string' && v !== '' && !rotoIds.has(v))
-						issues.push(
-							inv('INV-006', `${fx.effectId}.${name} names a missing roto ${v}`, [...cw, 'effects', fx.id]),
-						);
-				}
-			}
-			if (isKnownClipKind(c.kind)) {
-				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects'], true);
-				masks(r.masks as Mask[] | undefined, [...cw, 'masks']);
-				anims({ ...r, content: undefined, params: undefined }, cw);
-				const opacity = r.opacity as AnimLike | undefined;
-				if (opacity) {
-					for (const v of [opacity.value, ...opacity.keyframes.map((k) => k.value)]) {
-						if (typeof v !== 'number' || v < 0 || v > 100)
-							issues.push(inv('INV-012', `Clip ${c.id} opacity out of 0..100`, cw));
-					}
-				}
-			}
-		}
-		// wp masks: Track Matte Key tracks exist, are other video tracks, and mattes form no cycle.
-		{
-			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
-			const edges = new Map<string, Set<string>>();
-			for (const c of Object.values(seq.clips)) {
-				const fx = (c as { effects?: EffectInstance[] }).effects;
-				if (!fx) continue;
-				for (const t of trackMatteTracksOf({ effects: fx as never })) {
-					const cw = [...where, 'clips', c.id];
-					if (!videoIds.has(t)) issues.push(inv('INV-006', `Clip ${c.id} uses missing matte track ${t}`, cw));
-					else if (t === c.trackId)
-						issues.push(inv('INV-012', `Clip ${c.id} cannot use its own track as a track matte`, cw));
-					else {
-						const set = edges.get(c.trackId) ?? new Set<string>();
-						set.add(t);
-						edges.set(c.trackId, set);
-					}
-				}
-			}
-			const state = new Map<string, 1 | 2>();
-			const cyclic = (n: string): boolean => {
-				if (state.get(n) === 1) return true;
-				if (state.get(n) === 2) return false;
-				state.set(n, 1);
-				for (const m of edges.get(n) ?? []) if (cyclic(m)) return true;
-				state.set(n, 2);
-				return false;
-			};
-			for (const n of edges.keys())
-				if (cyclic(n)) {
-					issues.push(inv('INV-012', `Track mattes form a cycle through track ${n}`, where));
-					break;
-				}
-		}
-		// INV-003 overlaps
-		for (const [trackId, list] of byTrack) {
-			list.sort((a, b) => a.start - b.start);
-			for (let i = 1; i < list.length; i++) {
-				if (list[i]!.start < clipEnd(list[i - 1]!)) {
-					issues.push(
-						inv('INV-003', `Clips ${list[i - 1]!.id} and ${list[i]!.id} overlap on ${trackId}`, [
-							...where,
-							'clips',
-							list[i]!.id,
-						]),
-					);
-				}
-			}
-		}
-		// INV-007 link and clip groups
-		for (const [key, l] of Object.entries(seq.links)) {
-			claim(l.id, 'lnk', [...where, 'links', key]);
-			if (l.members.length < 2)
-				issues.push(inv('INV-007', `Link group ${l.id} has fewer than 2 members`, [...where, 'links', key]));
-			let videos = 0;
-			for (const m of l.members) {
-				const c = seq.clips[m];
-				if (!c)
-					issues.push(
-						inv('INV-006', `Link group ${l.id} references missing clip ${m}`, [...where, 'links', key]),
-					);
-				else {
-					if (c.linkId !== l.id)
-						issues.push(
-							inv('INV-007', `Clip ${m} is listed in ${l.id} but not linked to it`, [...where, 'links', key]),
-						);
-					if (tracks.get(c.trackId)?.kind === 'video') videos++;
-				}
-			}
-			if (videos > 1)
-				issues.push(
-					inv('INV-007', `Link group ${l.id} has more than one video member`, [...where, 'links', key]),
-				);
-		}
-		for (const [key, g] of Object.entries(seq.groups)) {
-			claim(g.id, 'grp', [...where, 'groups', key]);
-			if (g.members.length < 2)
-				issues.push(inv('INV-007', `Clip group ${g.id} has fewer than 2 members`, [...where, 'groups', key]));
-			for (const m of g.members) {
-				if (!seq.clips[m])
-					issues.push(
-						inv('INV-006', `Clip group ${g.id} references missing clip ${m}`, [...where, 'groups', key]),
-					);
-				else if (seq.clips[m]!.groupId !== g.id)
-					issues.push(
-						inv('INV-007', `Clip ${m} is listed in ${g.id} but not grouped`, [...where, 'groups', key]),
-					);
-			}
-		}
-		// INV-010 transitions
-		const edgeUse = new Set<string>();
-		for (const [key, t] of Object.entries(seq.transitions)) {
-			const tw = [...where, 'transitions', key];
-			claim(t.id, 'trn', tw);
-			if (!t.outgoingClipId && !t.incomingClipId)
-				issues.push(inv('INV-010', `Transition ${t.id} has no clips`, tw));
-			const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
-			const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
-			if ((t.outgoingClipId && !out) || (t.incomingClipId && !inc)) {
-				issues.push(inv('INV-006', `Transition ${t.id} references a missing clip`, tw));
-				continue;
-			}
-			if (out && inc && (out.trackId !== inc.trackId || clipEnd(out) !== inc.start))
-				issues.push(inv('INV-010', `Transition ${t.id} joins non-adjacent clips`, tw));
-			for (const c of [out, inc]) {
-				if (c && c.trackId !== t.trackId)
-					issues.push(inv('INV-010', `Transition ${t.id} is not on its clips' track`, tw));
-				if (c && t.duration > c.duration)
-					issues.push(inv('INV-010', `Transition ${t.id} is longer than clip ${c.id}`, tw));
-			}
-			// A fade at a clip's head uses only its `in` edge, a fade at the tail only its `out` edge.
-			for (const k of [out ? `${out.id}:out` : null, inc ? `${inc.id}:in` : null]) {
-				if (!k) continue;
-				if (edgeUse.has(k)) issues.push(inv('INV-010', `Two transitions on the same clip edge (${k})`, tw));
-				edgeUse.add(k);
-			}
-		}
+		const scope: SeqScope = { seq: seq as Sequence, where, tracks, rate, byTrack };
+		const facts: ClipFacts = { usedMedia, usedSyn, usedTrs, captionTrsUsers, nestEdges };
+		for (const [key, c] of Object.entries(seq.clips)) clip(scope, facts, key, c);
+		trackMattes(scope);
+		overlaps(where, byTrack);
+		for (const [key, l] of Object.entries(seq.links)) link(scope, key, l, claim);
+		for (const [key, g] of Object.entries(seq.groups)) group(scope, key, g, claim);
+		transitions(scope, () => claim);
 		// Memoizable: no references into other sequences (nests, multicam), no order-dependent caption-transcript
 		// counting, no duplicate ids found (those depend on the rest of the document).
 		const segment = issues.slice(seqMark);
@@ -1379,11 +1461,13 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	issues.push(...colorIssues(doc as never));
 	// gaps (INV-PROJECT-SETTINGS, INV-PROXY, INV-CHANNELS, INV-WARP, INV-GRAPHIC…): docs/wp-notes/gaps.md.
 	issues.push(...gapsIssues(doc));
-	return issues;
+	return { issues, seen };
 }
 
 /** audio-fx: problems of Essential Sound settings, essential effects and remix pieces (see repairDocument). */
-function essentialIssues(doc: ProjectDocument): { message: string; path: string[] }[] {
+export function essentialIssues(
+	doc: Pick<ProjectDocument, 'sequences'>,
+): { message: string; path: string[] }[] {
 	const out: { message: string; path: string[] }[] = [];
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		const remixes = new Map<string, number[]>();
@@ -2144,6 +2228,6 @@ export function coverageProblem(coverage: unknown): string | null {
 }
 
 /** Wave expressions: audio effects take no expressions (the mixer processes them per sample). */
-function isAudioEffectId(effectId: string): boolean {
+export function isAudioEffectId(effectId: string): boolean {
 	return defaultEffectRegistry.get(effectId)?.appliesTo === 'audio';
 }

@@ -5,6 +5,7 @@
 // (a clip channel no source channel is routed to). Media items carry the routing for future placements
 // (`MediaItem.audioChannels`); timeline clips carry their own. The offline mixer (export, analysis) and the preview
 // both decode through it.
+import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset, MediaStream } from '../schema/media.ts';
 import { registerGapsCheck } from './settings.ts';
 
@@ -121,22 +122,30 @@ export function matrixOfRouting(
 	});
 }
 
+function clipChannelIssues(
+	doc: Pick<ProjectDocument, 'media' | 'sequences'>,
+): { invariant: string; message: string; path: string[] }[] {
+	const out: { invariant: string; message: string; path: string[] }[] = [];
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'audio') continue;
+			const ch = (c as { channels: ClipChannels; mediaId: string }).channels;
+			const why = channelsProblem(doc.media[(c as { mediaId: string }).mediaId], ch, { format: false });
+			// Only routings that would fail to decode are invalid (a map into a missing stream / channel).
+			if (why && doc.media[(c as { mediaId: string }).mediaId])
+				out.push({
+					invariant: 'INV-CHANNELS',
+					message: `clip ${c.id}: ${why}`,
+					path: ['sequences', seq.id, 'clips', c.id, 'channels'],
+				});
+		}
+	return out;
+}
+
 registerGapsCheck({
+	clipIssues: clipChannelIssues,
 	issues(doc) {
-		const out: { invariant: string; message: string; path: string[] }[] = [];
-		for (const seq of Object.values(doc.sequences))
-			for (const c of Object.values(seq.clips)) {
-				if (c.kind !== 'audio') continue;
-				const ch = (c as { channels: ClipChannels; mediaId: string }).channels;
-				const why = channelsProblem(doc.media[(c as { mediaId: string }).mediaId], ch, { format: false });
-				// Only routings that would fail to decode are invalid (a map into a missing stream / channel).
-				if (why && doc.media[(c as { mediaId: string }).mediaId])
-					out.push({
-						invariant: 'INV-CHANNELS',
-						message: `clip ${c.id}: ${why}`,
-						path: ['sequences', seq.id, 'clips', c.id, 'channels'],
-					});
-			}
+		const out = clipChannelIssues(doc);
 		for (const it of Object.values(doc.items)) {
 			const ac = (it as { audioChannels?: { clips?: ClipChannels[] } }).audioChannels;
 			if (ac === undefined || it.kind !== 'media') continue;

@@ -48,9 +48,15 @@ export function projectSettingsOf(doc: Pick<ProjectDocument, 'settings'>): Resol
 }
 
 type Note = (action: string, entity: string, detail: string) => void;
+type GapsIssue = { invariant: string; message: string; path: string[] };
 type GapsCheck = {
-	issues(doc: ProjectDocument): { invariant: string; message: string; path: string[] }[];
+	issues(doc: ProjectDocument): GapsIssue[];
 	repair(doc: ProjectDocument, note: Note): void;
+	/**
+	 * perf-core: the clip-level part of `issues` (also included there), run by the incremental invariant check on the
+	 * changed clips only (`doc.sequences` holds partial sequences).
+	 */
+	clipIssues?(doc: Pick<ProjectDocument, 'media' | 'sequences'>): GapsIssue[];
 };
 
 /** Checks registered by the gaps modules (settings here; proxies, channels, warp, graphics register theirs). */
@@ -109,6 +115,14 @@ const issue = (invariant: string, message: string, path: string[]): Issue => ({
 export function gapsIssues(doc: ProjectDocument): Issue[] {
 	const out: Issue[] = [];
 	for (const c of CHECKS) for (const i of c.issues(doc)) out.push(issue(i.invariant, i.message, i.path));
+	return out;
+}
+
+/** The clip-level gaps violations of (partial) sequences: the incremental invariant check's share. */
+export function gapsClipIssues(doc: Pick<ProjectDocument, 'media' | 'sequences'>): Issue[] {
+	const out: Issue[] = [];
+	for (const c of CHECKS)
+		for (const i of c.clipIssues?.(doc) ?? []) out.push(issue(i.invariant, i.message, i.path));
 	return out;
 }
 
