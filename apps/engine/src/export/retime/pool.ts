@@ -6,6 +6,8 @@ import { Worker } from 'node:worker_threads';
 import { flowKernelSource } from '@jasper/project';
 
 const WORKER_SOURCE = `
+// Functions are inlined by their source text: under tsx (dev engine) esbuild's keepNames wraps them in __name().
+var __name = (f) => f;
 const { parentPort } = require('node:worker_threads');
 const K = ${flowKernelSource()};
 let pairKey = null;
@@ -41,6 +43,8 @@ export class FlowPool {
 	private readonly busy = new Map<Worker, number>();
 	private seq = 0;
 	private closed = false;
+	/** The first worker failure: the pool is broken from then on (a dead worker is never handed another task). */
+	private failed: Error | null = null;
 
 	constructor(workers = Math.max(1, Math.min(8, availableParallelism() - 1))) {
 		for (let i = 0; i < workers; i++) {
@@ -70,6 +74,10 @@ export class FlowPool {
 	}
 
 	private failWorker(w: Worker, e: Error): void {
+		this.failed ??= e;
+		const k = this.idle.indexOf(w);
+		if (k >= 0) this.idle.splice(k, 1);
+		for (const q of this.queue.splice(0)) q.job.reject(e);
 		const id = this.busy.get(w);
 		if (id !== undefined) {
 			this.pending.get(id)?.reject(e);
@@ -92,6 +100,7 @@ export class FlowPool {
 	/** The interpolated frames at fractions `ws` between `a` and `b` (`w`×`h` RGBA). `key` names the pair. */
 	run(key: string, a: Uint8Array, b: Uint8Array, w: number, h: number, ws: number[]): Promise<Uint8Array[]> {
 		if (this.closed) return Promise.reject(new Error('flow pool closed'));
+		if (this.failed) return Promise.reject(this.failed);
 		const ac = a.slice().buffer;
 		const bc = b.slice().buffer;
 		return new Promise<Uint8Array[]>((resolve, reject) => {

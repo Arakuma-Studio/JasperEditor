@@ -68,6 +68,8 @@ export function createPeakReducer(channels: number, samplesPerPeak: number): Pea
 
 // The worker evaluates the reducer's own source text, so preview (TS tests) and production share it.
 const WORKER_SOURCE = `
+// Functions are inlined by their source text: under tsx (dev engine) esbuild's keepNames wraps them in __name().
+var __name = (f) => f;
 const { parentPort, workerData } = require('node:worker_threads');
 const createPeakReducer = ${createPeakReducer.toString()};
 const reducer = createPeakReducer(workerData.channels, workerData.samplesPerPeak);

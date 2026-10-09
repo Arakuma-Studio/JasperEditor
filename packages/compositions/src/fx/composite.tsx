@@ -60,7 +60,14 @@ export class CompositeHub {
 		const hit = this.taps.get(id);
 		if (hit) return hit;
 		if (this.taps.size > 256) this.taps.clear();
-		const t: LayerTap = { side: key, deliver: (p, w, h, meta) => this.deliver(key, frame, p, w, h, meta) };
+		const t: LayerTap = {
+			// Per frame (as the 3D scope's taps): the layer's tap step is keyed by `side`, so it re-runs and delivers every
+			// frame even when the layer's picture is static (text, shapes). Keyed by the clip alone, a render of a static
+			// DOM layer in a GL blend mode delivered only on each page's first frame and the scope's delayRender timed
+			// out at the next one (verify workstream: "Blend modes at frame 6").
+			side: id,
+			deliver: (p, w, h, meta) => this.deliver(key, frame, p, w, h, meta),
+		};
 		this.taps.set(id, t);
 		return t;
 	}

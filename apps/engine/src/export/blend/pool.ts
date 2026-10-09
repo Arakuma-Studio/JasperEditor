@@ -9,6 +9,8 @@ import { blendStackedFrame } from './kernel.ts';
 export type BlendSlot = { index: number; src: Uint8Array; out: Uint8Array };
 
 const WORKER_SOURCE = `
+// Functions are inlined by their source text: under tsx (dev engine) esbuild's keepNames wraps them in __name().
+var __name = (f) => f;
 const { parentPort, workerData } = require('node:worker_threads');
 const makeBlendKernel = ${makeBlendKernel.toString()};
 const blendStackedFrame = ${blendStackedFrame.toString()};
@@ -34,6 +36,8 @@ export class BlendPool {
 	private readonly queue: { msg: Msg; done: (e?: Error) => void }[] = [];
 	private readonly pending = new Map<Worker, (e?: Error) => void>();
 	private closed = false;
+	/** The first worker failure: the pool is broken from then on (a dead worker is never handed another frame). */
+	private failed: Error | null = null;
 
 	constructor(size: { W: number; H: number }, opts: { workers: number; slots: number }) {
 		const len = size.W * size.H * 4;
@@ -62,6 +66,7 @@ export class BlendPool {
 	/** Blends the frame in `slot` on the next free worker. */
 	run(slot: BlendSlot, mode: number, seed: number, active: boolean): Promise<void> {
 		if (this.closed) return Promise.reject(new Error('blend pool closed'));
+		if (this.failed) return Promise.reject(this.failed);
 		return new Promise((resolve, reject) => {
 			this.queue.push({
 				msg: { slot: slot.index, mode, seed, active },
@@ -84,6 +89,11 @@ export class BlendPool {
 		const done = this.pending.get(w);
 		this.pending.delete(w);
 		if (e) {
+			// A worker that died while idle (e.g. its source failed to evaluate) must not stay in the idle list: the
+			// next frame posted to it would never be answered and the export would hang "running" forever.
+			this.failed ??= e;
+			const k = this.idle.indexOf(w);
+			if (k >= 0) this.idle.splice(k, 1);
 			for (const q of this.queue.splice(0)) q.done(e);
 			done?.(e);
 			return;
