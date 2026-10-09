@@ -179,6 +179,8 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 				}
 				return serveFile(req, reply, file, {
 					cache: 'immutable',
+					// The bundle's pages and scripts run in the editor's live frame host (MGC-021): trusted code.
+					allowScripts: true,
 					...(file.endsWith('.html') ? { contentType: 'text/html; charset=utf-8' } : {}),
 					...(file.endsWith('.js') ? { contentType: 'text/javascript; charset=utf-8' } : {}),
 					...(file.endsWith('.map') ? { contentType: 'application/json' } : {}),
