@@ -74,16 +74,11 @@ async function ui<T = unknown>(action: string, args: Record<string, unknown> = {
 }
 const runCommand = (id: string, args?: unknown) => ui('command', { id, ...(args ? { args } : {}) });
 
-/** Reloads the window; if the old page's lease has not been released yet (a race), takes over editing. */
+/** Reloads the window: the reloaded tab reclaims its own lease at once (polish), so it opens editable. */
 async function reloadEditable() {
 	await page.reload();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
-	await page.waitForTimeout(500);
-	const ro = page.getByTestId('banner-read-only');
-	if (await ro.isVisible()) {
-		await ro.getByRole('button', { name: 'Take over editing' }).click();
-		await expect(ro).toHaveCount(0, { timeout: 15_000 });
-	}
+	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
 }
 
 test.beforeAll(async ({ browser }) => {
