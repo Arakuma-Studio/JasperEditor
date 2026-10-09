@@ -90,6 +90,15 @@ function templateKey(node, src) {
 
 const q = (s) => JSON.stringify(s);
 
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', times: '×', middot: '·' };
+/** JSX text decodes HTML entities; a JS string does not: decode them before keying. */
+function decodeEntities(s) {
+	return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+		if (e[0] === '#') return String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1)));
+		return ENTITIES[e.toLowerCase()] ?? m;
+	});
+}
+
 /**
  * Finds the translatable strings of a source file. `edit(start, end, text)` receives replacements (when transforming);
  * `found(key)` every key (when extracting).
@@ -129,7 +138,7 @@ export function scan(code, fileName, { edit, found }) {
 	const visit = (n) => {
 		if (ts.isJsxText(n)) {
 			const raw = n.text;
-			const t = raw.replace(/\s+/g, ' ').trim();
+			const t = decodeEntities(raw.replace(/\s+/g, ' ').trim());
 			if (t && isUiText(t) && !/^[{}]+$/.test(t)) {
 				found?.(t);
 				const lead = raw.match(/^\s*/)[0];
