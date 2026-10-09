@@ -43,7 +43,8 @@ function decodeEntities(s: string): string {
 	});
 }
 
-const NAME = /^[A-Za-z_:À-￿][-A-Za-z0-9_:.·À-￿]*/;
+// Escaped (not literal) non-ASCII: a bundle of this code loaded without a declared charset must still parse.
+const NAME = /^[A-Za-z_:\u00C0-\uFFFF][-A-Za-z0-9_:.\u00B7\u00C0-\uFFFF]*/;
 
 /** Parse an XML document; returns the root element. */
 export function parseXml(src: string): XmlElement {

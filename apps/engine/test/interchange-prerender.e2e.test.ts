@@ -92,7 +92,8 @@ describe.runIf(enabled)('interchange pre-renders (REMOTION_E2E=1)', () => {
 			// ProRes 4444 with alpha: ffmpeg's decoder reports the alpha plane (10- or 12-bit)
 			expect(s.pix_fmt).toMatch(/^yuva444p1[02]le$/);
 			expect(Number(s.nb_read_frames)).toBe(15);
-			// a corner pixel is transparent, the text is not
+			// a corner pixel is transparent, the text is not (measured at full resolution: a 20× area downscale averages a
+			// glyph stroke with its surroundings, so its peak depends on the font's stroke width, not on the alpha)
 			const alpha = spawnSync(
 				'ffmpeg',
 				[
@@ -105,17 +106,25 @@ describe.runIf(enabled)('interchange pre-renders (REMOTION_E2E=1)', () => {
 					'-frames:v',
 					'1',
 					'-vf',
-					'alphaextract,scale=64:36',
+					'alphaextract',
 					'-pix_fmt',
 					'gray',
 					'-f',
 					'rawvideo',
 					'pipe:1',
 				],
-				{ maxBuffer: 1 << 20 },
+				{ maxBuffer: 1 << 22 },
 			).stdout as Buffer;
+			expect(alpha.length).toBe(1280 * 720);
 			expect(alpha[0]).toBe(0);
-			expect(Math.max(...alpha)).toBeGreaterThan(200);
+			let peak = 0;
+			let opaque = 0;
+			for (const v of alpha) {
+				if (v > peak) peak = v;
+				if (v > 200) opaque++;
+			}
+			expect(peak).toBeGreaterThan(250);
+			expect(opaque).toBeGreaterThan(2000);
 			const edl = await (
 				await fetch(`${engine.url}${res.files.find((f) => f.role === 'document')!.downloadUrl}`)
 			).text();
