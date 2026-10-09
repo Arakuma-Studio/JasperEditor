@@ -237,3 +237,28 @@ export const WarpAnalysisResultSchema = z.object({
 	framesPerSec: z.number().optional(),
 });
 export type WarpAnalysisResult = z.infer<typeof WarpAnalysisResultSchema>;
+
+// ---------------------------------------------------------------- Auto Reframe analysis (AI-2)
+
+/** `POST /api/reframe`: the subject of each frame of a media range (job `reframe`). */
+export const ReframeRequestSchema = z.object({
+	projectId: z.string().optional(),
+	mediaKey: z.string().min(1),
+	startFrame: z.number().int().min(0),
+	frameCount: z.number().int().min(1).max(54_000),
+	/** Use the face model when it is installed (default true). */
+	faces: z.boolean().optional(),
+});
+export type ReframeRequest = z.infer<typeof ReframeRequestSchema>;
+
+export const ReframeResultSchema = z.object({
+	start: z.number(),
+	frameDuration: z.number(),
+	/** x, y (0..1 of the display), confidence per frame. */
+	points: z.array(z.number()),
+	source: z.enum(['faces', 'saliency', 'mixed']),
+	frames: z.number().int(),
+	facesFound: z.number().int(),
+	note: z.string().optional(),
+});
+export type ReframeResult = z.infer<typeof ReframeResultSchema>;

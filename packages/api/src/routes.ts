@@ -50,6 +50,7 @@ import {
 	EngineGapsSettingsSchema,
 	MediaJobRequestSchema,
 	WarpAnalysisRequestSchema,
+	ReframeRequestSchema,
 	MediaLocationSchema,
 	MediaOpenRequestSchema,
 	MediaOpenResponseSchema,
@@ -1141,6 +1142,14 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/warp-analysis',
 		body: WarpAnalysisRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Auto Reframe subject analysis (AI-2)
+	reframeAnalysis: {
+		method: 'POST',
+		path: '/api/reframe',
+		body: ReframeRequestSchema,
 		response: EngineJobSchema,
 		owner: 'gaps',
 	},

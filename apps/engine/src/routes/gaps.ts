@@ -6,6 +6,7 @@
 //   POST /api/scratch/check              whether a folder can take generated media
 //   POST /api/media-jobs                 Create Proxies / ingest copies and transcodes (job `proxy-create`)
 //   POST /api/warp-analysis              Warp Stabilizer background analysis (job `warp-analysis`)
+//   POST /api/reframe                    Auto Reframe subject analysis (job `reframe`)
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, mkdir, readFile, stat } from 'node:fs/promises';
@@ -18,6 +19,7 @@ import {
 	MediaOpenRequestSchema,
 	ProjectManagerRequestSchema,
 	ScratchCheckRequestSchema,
+	ReframeRequestSchema,
 	WarpAnalysisRequestSchema,
 	type ScratchLocation,
 } from '@jasper/api';
@@ -27,7 +29,9 @@ import { MediaJobService } from '../gaps/media-jobs.ts';
 import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
 import { ProjectManagerService } from '../gaps/project-manager.ts';
 import { renderOptimization, setRenderOptimization } from '../gaps/render-budget.ts';
+import { ReframeService } from '../gaps/reframe.ts';
 import { WarpAnalysisService } from '../gaps/warp-analysis.ts';
+import type { RotoService } from '../roto/service.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { atomicWriteJson, freeDiskBytes } from '../tools/fs.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -202,6 +206,16 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		'/api/warp-analysis',
 		guarded(async (req, reply) =>
 			reply.code(202).send(await warp.submit(parseOr400(WarpAnalysisRequestSchema, req.body))),
+		),
+	);
+
+	// ---- Auto Reframe subject analysis (AI-2)
+	const reframe = new ReframeService(core, () => app.jasper.services.roto as RotoService | undefined);
+	reframe.registerRunner();
+	app.post(
+		'/api/reframe',
+		guarded(async (req, reply) =>
+			reply.code(202).send(await reframe.submit(parseOr400(ReframeRequestSchema, req.body))),
 		),
 	);
 
