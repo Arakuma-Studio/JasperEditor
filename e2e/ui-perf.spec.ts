@@ -157,10 +157,20 @@ test('the Project panel with 2 000 items scrolls smoothly and renders only what 
 	});
 	await expect(page.getByTestId('project-row').filter({ hasText: 'still-1999.png' })).toBeVisible();
 	await page.screenshot({ path: 'test-results/ui-perf-project.png' });
+	// The icon view is windowed the same way.
+	await page.getByTestId('project-icon-view').click();
+	await expect(page.getByTestId('project-tile').first()).toBeVisible();
+	expect(await page.getByTestId('project-tile').count()).toBeLessThan(600);
+	await page.getByTestId('project-body').evaluate((el) => {
+		el.scrollTop = el.scrollHeight;
+	});
+	await expect(page.getByTestId('project-tile').filter({ hasText: 'still-1999.png' })).toBeVisible();
+	await page.screenshot({ path: 'test-results/ui-perf-project-icons.png' });
+	await page.getByTestId('project-list-view').click();
 	expect(r.fps).toBeGreaterThanOrEqual(fpsFloor(50));
 });
 
-test('Effect Controls with 200 keyframes per parameter follow a scrub', async ({ page }) => {
+test('Effect Controls with 200 keyframes on nine parameters follow a scrub', async ({ page }) => {
 	test.setTimeout(300_000);
 	await page.setViewportSize({ width: 1600, height: 960 });
 	await open(page, 'keyframes:200');
