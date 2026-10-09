@@ -975,6 +975,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							<div
 								ref={lineRef}
 								className="absolute inset-y-0 w-px bg-pr-playhead"
+								// ui-perf: its own compositor layer, so a moving playhead does not repaint the key lanes below it.
+								style={{ willChange: 'transform' }}
 								data-testid="ec-playhead"
 							/>
 							<Splitter

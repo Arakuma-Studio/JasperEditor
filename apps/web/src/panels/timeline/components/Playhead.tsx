@@ -46,7 +46,7 @@ export function PlayheadLine(props: {
 		<div
 			ref={ref}
 			className="pointer-events-none absolute top-0 bottom-0 left-0"
-			style={{ zIndex: 20, width: 1 }}
+			style={{ zIndex: 20, width: 1, willChange: 'transform' }}
 			data-testid="timeline-playhead"
 		>
 			<div
