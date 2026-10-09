@@ -233,3 +233,13 @@ checkout (fixtures present, the LGPL FFmpeg in `vendor/`), so the CI workflow co
 | `engine color-mgmt` (7): `TypeError … null` | the test hard-coded `vendor/ffmpeg-lgpl/…/ffprobe` | vendor build when present, else `JASPER_FFMPEG` / PATH (`@jasper/testkit/oracle`) like the other tests |
 | `engine previews` (1): "not all I-frames" | ffprobe's CSV output puts x264's SEI side data on the first frame's line; the frames were all I | picture types read as JSON through `@jasper/testkit/oracle` |
 | `engine smart-render` (1): 52 of 54 frames | encoded pieces are joined with copied GOPs as one raw Annex B stream (no timestamps); libx264 pieces with B-frames lost frames there — a real bug for every B-frame encoder (NVENC, QSV, VideoToolbox, AMF, VAAPI) | smart-render pieces are encoded with `-bf 0` (`EncodeParams.noBFrames`); unit test in `encoders.test.ts`; 5/5 with libx264 and OpenH264 |
+
+**Second run, after merging ui-perf and gaps (`integrate/parity` 065af535):** the fixes above held; 10 new failures in
+5 files, all in tests that arrived with the merge or share their pattern:
+
+| Failure | Cause | Fix |
+|---|---|---|
+| `gaps-export-frame` (7), `gaps-export-formats` (2), `gaps-project-manager` (1), `gaps-audio-channels` (suite) | hard-coded `vendor/ffmpeg-lgpl/linux-x64/ffmpeg` / `ffprobe` | shared `TEST_FFMPEG` / `TEST_FFPROBE` in `apps/engine/test/helpers.ts` (vendor when present, else the oracle tools) |
+| `cache.test.ts` (suite; also in the first run), same pattern in `gaps-routes`, `cache-location` | `beforeAll(() => ensureFixtures())` with the default 10 s hook timeout, while a clean checkout generates fixtures for minutes | 900 s hook timeout |
+
+The seven files then pass in the clone (41 tests, apt FFmpeg). The final run on the merged head is in §9.
