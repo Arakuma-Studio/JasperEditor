@@ -22,6 +22,11 @@ export type RenderSegment = {
 /** ui-perf: per committed document (the render bar and the Program monitor both ask after every commit). */
 const segmentCache = new WeakMap<ProjectDocument, Map<string, RenderPreviewSegment[]>>();
 
+/** The segments of a sequence if they are computed already for this document (else null). */
+export function cachedSegments(doc: ProjectDocument, sequenceId: string): RenderPreviewSegment[] | null {
+	return segmentCache.get(doc)?.get(sequenceId) ?? null;
+}
+
 /** The preview segments of a sequence (never throws: a document that cannot be drawn has none). */
 export function segmentsOf(doc: ProjectDocument, sequenceId: string): RenderPreviewSegment[] {
 	let bySeq = segmentCache.get(doc);
