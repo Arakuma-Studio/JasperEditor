@@ -4,18 +4,10 @@
 import type { LabelColor, ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSession, useSessionState } from '@jasper/session/react';
-import {
-	Button,
-	cx,
-	Icon,
-	IconButton,
-	type IconId,
-	LABEL_DISPLAY_NAMES,
-	LABEL_NAMES,
-	PointMenu,
-} from '@jasper/ui';
+import { Button, cx, Icon, IconButton, type IconId, LABEL_NAMES, PointMenu } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
+import { labelName } from '../../gaps/app-prefs.ts';
 import { runIfRegistered, useLocalCommandCtx } from '../../home/ui-bridge.ts';
 import { mediaKeyOf } from '../../import/assets.ts';
 import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
@@ -213,7 +205,7 @@ export function ProjectPanel(props: PanelProps) {
 		[props.instanceId, binId, view, updateView, session, selection.primary, selected, ctx, importDialog],
 	);
 	const [revealId, setRevealId] = useState<string | null>(null);
-	const bodyRef = useRef<HTMLDivElement>(null);
+	const bodyRef = useRef<HTMLElement>(null);
 	useEffect(() => {
 		if (!revealId) return;
 		// The bin switch renders first: look for the row for a few frames.
@@ -374,7 +366,15 @@ export function ProjectPanel(props: PanelProps) {
 			</div>
 
 			{/* Body */}
-			<div ref={bodyRef} className="min-h-0 flex-1 overflow-auto" data-testid="project-body">
+			{/* gaps (UI-6): the scrolling list is keyboard-reachable (axe scrollable-region-focusable). */}
+			<section
+				ref={bodyRef}
+				className="min-h-0 flex-1 overflow-auto"
+				data-testid="project-body"
+				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard
+				tabIndex={0}
+				aria-label="Project items"
+			>
 				{uploads.length ? <PendingImports jobs={uploads} /> : null}
 				{rows.length === 0 && !uploads.length ? (
 					<EmptyState
@@ -430,7 +430,7 @@ export function ProjectPanel(props: PanelProps) {
 						handlers={rowHandlers}
 					/>
 				)}
-			</div>
+			</section>
 
 			{/* Footer (PRJ-003) */}
 			<div className="relative flex h-[var(--pr-row-h)] shrink-0 items-center gap-1 border-t border-pr-border-subtle px-1">
@@ -720,7 +720,7 @@ const measureListRow = (l: HTMLElement) =>
 	l.querySelector<HTMLElement>('tr[data-testid="project-row"]')?.getBoundingClientRect().height || null;
 
 function ListView(props: {
-	scrollRef: React.RefObject<HTMLDivElement | null>;
+	scrollRef: React.RefObject<HTMLElement | null>;
 	revealId: string | null;
 	rows: ProjectRow[];
 	selected: Set<string>;
@@ -827,7 +827,9 @@ function ListView(props: {
 									{props.renaming === row.id ? (
 										<RenameField initial={row.name} onDone={(n) => props.onRename(row.id, n)} />
 									) : (
-										<span className="truncate">{row.name}</span>
+										<span className="truncate" data-no-i18n>
+											{row.name}
+										</span>
 									)}
 									{row.status === 'analyzing' ? <span className="animate-pulse text-pr-dim">•</span> : null}
 								</div>
@@ -855,7 +857,7 @@ const measureTileRow = (l: HTMLElement) => {
 };
 
 function IconView(props: {
-	scrollRef: React.RefObject<HTMLDivElement | null>;
+	scrollRef: React.RefObject<HTMLElement | null>;
 	revealId: string | null;
 	session: EditorSession;
 	rows: ProjectRow[];
@@ -1180,7 +1182,7 @@ function ContextMenu(props: {
 						<MenuEntry key={l} onClick={() => setLabel(props.session, props.itemIds, l)}>
 							<span className="flex items-center gap-2">
 								<span className="block size-3 rounded-[2px]" style={{ background: labelVar(l) }} />
-								{LABEL_DISPLAY_NAMES[l]}
+								{labelName(l)}
 							</span>
 						</MenuEntry>
 					))

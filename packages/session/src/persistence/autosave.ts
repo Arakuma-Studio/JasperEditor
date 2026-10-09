@@ -11,6 +11,12 @@ import type { EditorSession } from '../session.ts';
 import type { ProjectStore } from './types.ts';
 
 export type AutosaveOptions = {
+	/**
+	 * gaps (Preferences ▸ Auto Save), read at every scheduling: `enabled` false = the timer never saves (Save / Ctrl+S
+	 * and closing the project still do; the crash-recovery journal keeps unsaved edits); `maxIntervalMs` = the longest
+	 * an unsaved change waits during continuous editing (default 10 s).
+	 */
+	policy?(): { enabled: boolean; maxIntervalMs?: number };
 	onConflict?(serverRevision: number): void;
 	onError?(e: unknown): void;
 	onSaved?(revision: number): void;
@@ -42,6 +48,8 @@ export type Autosaver = {
 	subscribe(listener: (s: AutosaveStatus) => void): () => void;
 	/** Conflict resolution "Overwrite": saves over the server revision reported by the 409. */
 	overwrite(): Promise<void>;
+	/** gaps: whether the timer saves automatically (Preferences ▸ Auto Save). */
+	readonly automatic: boolean;
 };
 
 export function createAutosaver(
@@ -50,7 +58,7 @@ export function createAutosaver(
 	opts: AutosaveOptions = {},
 ): Autosaver {
 	const idleMs = 1500;
-	const maxIntervalMs = 10_000;
+	const defaultMaxIntervalMs = 10_000;
 	const viewMs = 1000;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let viewTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,6 +103,9 @@ export function createAutosaver(
 	};
 	const schedule = () => {
 		if (disposed || syncPause() || !unsaved()) return;
+		const policy = opts.policy?.();
+		if (policy && !policy.enabled) return;
+		const maxIntervalMs = Math.max(idleMs, policy?.maxIntervalMs ?? defaultMaxIntervalMs);
 		firstDirtyAt ??= Date.now();
 		cancelTimer();
 		const wait = Math.max(0, Math.min(idleMs, firstDirtyAt + maxIntervalMs - Date.now()));
@@ -149,7 +160,7 @@ export function createAutosaver(
 				timer = globalThis.setTimeout(() => {
 					timer = null;
 					void save();
-				}, maxIntervalMs);
+				}, defaultMaxIntervalMs);
 			}
 		})();
 		return inFlight;
@@ -232,6 +243,9 @@ export function createAutosaver(
 		},
 		get lastSavedRevision() {
 			return status.lastSavedRevision;
+		},
+		get automatic() {
+			return opts.policy?.().enabled ?? true;
 		},
 		getStatus: () => status,
 		subscribe(listener) {

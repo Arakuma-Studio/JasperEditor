@@ -6,13 +6,11 @@ import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	defaultTransitionFrames,
-	formatTimecode,
 	gapAt,
 	isMulticamClip,
 	LABEL_COLORS,
 	type MediaAsset,
 	type ProjectItem,
-	parseTimecodeEntry,
 	type Rational,
 	type Sequence,
 	sequenceDuration,
@@ -23,7 +21,6 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
-import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { remixClip } from '../../audio-fx/ops.ts';
@@ -33,6 +30,8 @@ import { cameraMenuEntries } from '../../commands/multicam.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
+import { labelName } from '../../gaps/app-prefs.ts';
+import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
@@ -791,7 +790,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				label: 'Label',
 				items: LABEL_COLORS.map((l) => ({
 					kind: 'item' as const,
-					label: LABEL_DISPLAY_NAMES[l],
+					label: labelName(l),
 					checked: c.label === l,
 					run: () =>
 						apply('Label', [
@@ -1365,7 +1364,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						label: 'Color',
 						items: LABEL_COLORS.map((l) => ({
 							kind: 'item' as const,
-							label: LABEL_DISPLAY_NAMES[l],
+							label: labelName(l),
 							checked: m.color === l,
 							run: () => apply('Edit Marker', [{ type: 'marker.update', markerId: m.id, color: l }]),
 						})),

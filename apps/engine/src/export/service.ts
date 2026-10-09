@@ -21,7 +21,14 @@ import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
+import {
+	type EngineJob,
+	type ExportResult,
+	type ExportSettings,
+	type ExportStartRequest,
+	STILL_FORMAT_EXTENSIONS,
+	type StillRequest,
+} from '@jasper/api';
 import {
 	buildRenderSnapshot,
 	copyableRuns,
@@ -91,6 +98,7 @@ import {
 	smartCodecOf,
 	smartPieces,
 } from './smart.ts';
+import { convertStill, stillCurveFor } from './still-formats.ts';
 import { streamLayer } from './stream/run.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
@@ -277,6 +285,7 @@ export class ExportService {
 		const seq = planned.snapshot.settings;
 		const codec = smartCodecOf(settings);
 		if (settings.smartRender === false) reasons.push('Smart rendering is off for this export');
+		if (planned.draftProxies?.length) reasons.push('The export renders from proxies (Use Proxies)');
 		if (settings.engine !== 'auto')
 			reasons.push(`The ${settings.engine} engine was chosen (smart rendering runs with Auto)`);
 		if (!codec)
@@ -864,6 +873,17 @@ export class ExportService {
 
 	/** `POST /api/stills`. */
 	async still(req: StillRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+		if (req.destination) {
+			// gaps (Export Frame to a folder): a local/desktop feature like exports to a path (S04:SC-002).
+			if (!this.deps.localMode)
+				throw new PlanError(
+					'LOCAL_MODE_ONLY',
+					403,
+					'Export Frame to a folder is only available in local mode',
+				);
+			if (!isAbsolute(req.destination.folder))
+				throw new PlanError('VALIDATION_FAILED', 400, 'The Export Frame folder must be an absolute path');
+		}
 		const file = await this.storeRequest({ kind: 'still', request: req });
 		const doc = req.envelope.document as { projectId?: string };
 		return this.deps.queue.submit({
@@ -1301,6 +1321,42 @@ export class ExportService {
 	}
 
 	/** color-mgmt: writes the mastering display / content light boxes of PQ and HLG exports into MP4 and MOV files. */
+	/**
+	 * gaps (Sequence Settings ▸ Pixel Aspect Ratio): a stream-copy remux that signals the pixel aspect ratio (H.264 /
+	 * HEVC VUI through `*_metadata`, MP4 / MOV `pasp`, Matroska display size). Nothing is re-encoded.
+	 */
+	private async writeSequenceFormat(planned: PlannedExport, output: string, ctx: JobContext): Promise<void> {
+		const o = planned.output;
+		if (!o.pixelAspect) return;
+		const codec = o.encoder?.codec;
+		const par = o.pixelAspect;
+		const bsf =
+			par && codec === 'h264'
+				? ['-bsf:v', `h264_metadata=sample_aspect_ratio=${par.num}/${par.den}`]
+				: par && codec === 'hevc'
+					? ['-bsf:v', `hevc_metadata=sample_aspect_ratio=${par.num}/${par.den}`]
+					: [];
+		const ext = extname(output);
+		const tmp = join(dirname(output), `format${ext}`);
+		await this.deps.ff.run(
+			[
+				'-i',
+				output,
+				'-map',
+				'0',
+				'-c',
+				'copy',
+				...bsf,
+				...(par ? ['-aspect', `${o.width * par.num}:${o.height * par.den}`] : []),
+				...(ext === '.mp4' || ext === '.mov' ? ['-movflags', '+faststart'] : []),
+				tmp,
+			],
+			{ signal: ctx.signal, onSpawn: ctx.trackChild },
+		);
+		await rename(tmp, output);
+		ctx.log(`[format] pixel aspect ${par!.num}:${par!.den}`);
+	}
+
 	private async writeHdrMetadata(planned: PlannedExport, output: string, ctx: JobContext): Promise<void> {
 		const c = planned.output.color;
 		const container = planned.output.encoder?.container;
@@ -1488,7 +1544,8 @@ export class ExportService {
 			range: planned.range,
 			resolveMedia: (asset): MediaHandle | null => {
 				const local = planned.media[asset.id];
-				const key = mediaKeyOf(asset);
+				// gaps: a draft export with proxies serves the proxy file (its record) under its own key.
+				const key = local?.record.mediaKey ?? mediaKeyOf(asset);
 				if (!local || !key) return null;
 				const r = local.record;
 				return {
@@ -1795,6 +1852,8 @@ export class ExportService {
 	): Promise<unknown> {
 		const { frames, path, remotionOutput, warnings, audio } = r;
 		const encoder = planned.output.encoder;
+		// gaps: the sequence's pixel aspect ratio and field order signalled in the file.
+		await this.writeSequenceFormat(planned, output, ctx);
 		// color-mgmt: HDR static metadata boxes (`mdcv` / `clli`) in MP4 / MOV outputs.
 		await this.writeHdrMetadata(planned, output, ctx);
 		// wp captions: embedded caption streams (remux) and sidecar files.
@@ -1939,11 +1998,54 @@ export class ExportService {
 				await rename(tmp, output);
 			}
 		}
+		// gaps (File ▸ Export ▸ Frame): the chosen file format and destination folder.
+		const format = req.format ?? 'png';
+		const ext = STILL_FORMAT_EXTENSIONS[format];
+		let written = output;
+		try {
+			written = await convertStill(this.deps.ff, output, format, ext, {
+				...(req.jpegQuality ? { jpegQuality: req.jpegQuality } : {}),
+				curve: stillCurveFor(planned.snapshot.settings.color?.space),
+				scratch: await ctx.scratchDir(),
+				signal: ctx.signal,
+				onSpawn: ctx.trackChild,
+			});
+		} catch (e) {
+			if (ctx.signal.aborted) throw e;
+			throw new JobError(
+				'STILL_FORMAT_FAILED',
+				`Writing the ${format.toUpperCase()} file failed: ${(e as Error).message}`,
+				false,
+			);
+		}
+		let destPath: string | undefined;
+		if (req.destination) {
+			try {
+				destPath = await copyNoOverwrite(
+					written,
+					join(req.destination.folder, `${req.destination.name}.${ext}`),
+					{
+						signal: ctx.signal,
+						claimed: (p) => ctx.addPartial(p),
+					},
+				);
+			} catch (e) {
+				if (ctx.signal.aborted) throw e;
+				const code = (e as NodeJS.ErrnoException).code;
+				throw new JobError(
+					code === 'ENOSPC' ? 'DISK_FULL' : 'DESTINATION_FAILED',
+					`Could not write the frame to ${req.destination.folder}: ${(e as Error).message}`,
+					false,
+				);
+			}
+		}
 		this.commitRefs(ctx, planned, 'still');
 		await rm((ctx.input as { request: string }).request, { force: true });
 		return {
 			url: `/renders/${ctx.job.id}/output`,
 			renderPath: path,
+			format,
+			...(destPath ? { path: destPath } : {}),
 			...(warnings.length ? { warnings } : {}),
 		};
 	}

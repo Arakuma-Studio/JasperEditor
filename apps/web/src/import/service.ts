@@ -8,7 +8,6 @@
 import type { RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
-	formatTimecode,
 	type ProjectDocument,
 	parseSourceSidecar,
 	type SourceSidecarInfo,
@@ -17,6 +16,8 @@ import {
 	type TxInput,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { runIngest } from '../gaps/media-jobs.ts';
+import { formatTimecode } from '../gaps/time-display.ts';
 import { acquireImageSequences, expandImports } from '../imports/import-flow.ts';
 import { showImportReports } from '../interchange/dialogs.tsx';
 import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';
@@ -460,10 +461,13 @@ export class EngineImportService implements ImportService {
 			}
 			collectIds(result, built.registerIndex, built.placeIndex, mediaIds, clipIds);
 		}
+		// gaps (PRJ-8): Project Settings ▸ Ingest Settings act on the media this import added.
+		const added = [...mediaIds];
 		prepared.forEach((p, i) => {
 			if (built.registerIndex[i] === null && p.existingMediaId) mediaIds.push(p.existingMediaId);
 		});
 		this.selectImported(mediaIds, clipIds);
+		if (added.length) void runIngest(this.engine, this.session, added);
 		if (failed.length) this.prompts.failures({ failed, committed: prepared.length });
 		return { mediaIds: [...new Set(mediaIds)], clipIds, failed, registered: acquired.map((a) => a.reg) };
 	}

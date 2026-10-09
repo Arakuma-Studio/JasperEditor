@@ -44,7 +44,7 @@ far less than breadth because what limits real use now is not measured by a feat
 
 | Dimension | Estimate | Evidence |
 |---|---|---|
-| Breadth of features | ≈ 91% (P0 97%, P1 89%, P2 79%) | [parity.md](parity.md): 75 done, 13 partial, 4 missing of 92, each changed row citing its wp-note and tests |
+| Breadth of features | ≈ 98% (P0 97%, P1 99%, P2 100%) | [parity.md](parity.md): 89 done, 3 partial (CL-4, EX-2, PL-2), 0 missing of 92, each changed row citing its wp-note and tests |
 | Behaves like Premiere | largely unreviewed as workflows, ≈ 60–75% where it exists | Fidelity comes from research during implementation (Adobe's help pages, parameter references, shortcut lists, published formulas), not from captures of Adobe software; each merged workstream cites its sources in its wp-note. The keymap follows Premiere's published defaults and is conflict-checked (`keymap.test.ts`). Many M1 behaviours (trim modes, sync lock, targeting) follow our own specs S01–S05 without a recorded source review |
 | Preview = export | measured for the native paths and the audio mix | Sub-pixel streamed layers: lossless-still parity with Remotion SSIM 0.99999, 0.05 px/frame pans smooth to 0.001 px RMS (D-34); GPU spans and effect bakes: 100% of samples within 3/255 (D-35); one offline mixer renders the audio of every export path (D-42, `apps/engine/test/audio-mix.test.ts`); ffprobe frame counts in `smoke.spec.ts` |
 | Opening existing Premiere work | ≈ 40% | No `.prproj` (out of scope); FCP 7 XML, FCPXML, EDL, AAF, OMF and OTIO import with a report of what each format loses (`docs/wp-notes/interchange.md` §7). Not tried on real projects exported by Premiere |
@@ -52,7 +52,7 @@ far less than breadth because what limits real use now is not measured by a feat
 | Real-user experience | unknown | No outside users yet. The October audits (`docs/audits/`) are internal |
 | Performance | internal numbers only | README "Performance measurements"; first export ≈ 2× the warp stage and 9–14× Remotion (D-34). Render previews and a perf monitor exist (`previews`, [performance.md](performance.md)); nothing at 4K with long timelines, nothing on GPUs |
 | Media formats | ≈ 75% | Everything the LGPL FFmpeg 7.1 decodes, plus image sequences, layered PSD, PDF / Illustrator, SVG, Lottie, EXR / DPX / HEIC / JPEG XL stills (`docs/wp-notes/imports.md`); export H.264 (OpenH264 or hardware), VP9, AV1, ProRes, 10/12-bit HDR. No software HEVC export; camera RAW not supported |
-| AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`). No auto reframe, morph cut or enhance speech; all models run on the CPU |
+| AI-assisted tools | ≈ 60% | SPAN upscaler, stabilisation, denoise, de-judder; OpenCV tracking; local speech to text with diarization (`docs/wp-notes/speech.md`); SAM 2.1 roto and face tracking (`docs/wp-notes/roto.md`); scene edit detection and optical flow (`docs/wp-notes/time.md`); Music Remix (`docs/wp-notes/audio-fx.md`); Warp Stabilizer with background analysis (Subspace Warp included), Auto Reframe Sequence (face model when installed, else saliency) and Morph Cut on optical flow (`docs/wp-notes/gaps.md`). No enhance speech; all models run on the CPU |
 | Platforms | Linux only | Web, PWA and Electron on Linux (M1-STATUS); macOS / Windows packaging written, never run |
 | Maturity | early | First commit 29 September 2026. ≈ 530,000 lines of TypeScript and scripts (tests included), almost entirely agent-written; 489 test files and 47 Playwright specs (counted with `git ls-files`) |
 
@@ -67,7 +67,7 @@ Agents drive everything without a window: a CLI over the same command catalogue 
 reachable, batch steps, rendered checks). **Done when:** each File/Edit/Clip/Sequence menu command is reachable from
 MCP or the CLI with a JSON schema, a scripted end-to-end session (import → edit → grade → export) runs headless in
 CI, and the README tool list is checked by a test.
-**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 299 MCP tools with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI belongs to `golden-fuzz` (in flight). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
+**Status (merged):** done for MCP depth and the CLI — see [wp-notes/mcp-cli.md](wp-notes/mcp-cli.md): the `jasper` CLI over the same tools, `ui_*` tools that drive the live window, 322 MCP tools (counted after `gaps`) with a README list checked by `apps/mcp/test/readme-tools.test.ts`, `e2e/agent-ui.spec.ts`. The headless session in CI belongs to `golden-fuzz` (in flight). `fixups` made clip targets aim at their visible part and fixed a bundle that did not load (`apps/mcp/test/bundle.test.ts`).
 
 ### keyframes-blend
 Premiere's full keyframe and blend-mode behaviour. **Done when:** all 27 Premiere blend modes exist in the model,
@@ -159,7 +159,7 @@ drive any keyframable property deterministically in preview and export, sandboxe
 **Done when:** After Effects-style text animators (range selectors by character / word / line, animated properties)
 and an Essential Graphics panel (layers, alignment, responsive pins, rolling and crawling titles) work in preview
 and export, and templates can be saved and reused.
-**Status (merged):** partial — see [wp-notes/text-animators.md](wp-notes/text-animators.md): AE text animators with range / wiggly / expression selectors, text on a path, typography (`e2e/text-animators.spec.ts`). Not done: the Essential Graphics panel (layers, align, responsive pins) and rolling / crawling titles (parity GR-5).
+**Status (merged):** partial — see [wp-notes/text-animators.md](wp-notes/text-animators.md): AE text animators with range / wiggly / expression selectors, text on a path, typography (`e2e/text-animators.spec.ts`). The Essential Graphics panel (layers, align, responsive pins) and rolling / crawling titles (parity GR-5) were added by `gaps` (see below).
 
 ### shapes
 **Done when:** shape layers carry pen paths, polygons, stars, groups, fills, strokes, trim paths and repeaters, editable
@@ -173,7 +173,7 @@ Stabilizer-style effect with in-clip analysis) render deterministically in previ
 effects + Card Wipe and Bezier Warp, Mesh Warp, Liquify, Puppet, Displacement Map, Optics Compensation, Polar
 Coordinates, Reshape, Smear as deterministic GPU effects (seek = play, GL tests per effect, export via the layer
 bake verified by extracted frames), Program-monitor Puppet / Liquify / Mesh Warp tools, MCP tools. Turbulent Displace
-existed already. Not done here: a Warp Stabilizer-style *effect* (stabilisation is a clip-processing recipe),
+existed already. The Warp Stabilizer *effect* (FX-6) was added by `gaps` (see below). Not done here:
 Comp Camera / Lights for the 3D simulations, Puppet Sketch recording in the UI.
 
 ### three-d
@@ -233,19 +233,33 @@ schema version has a fixture that loads, unsaved edits survive a killed editor a
 and saved versions can be restored from the File menu and over MCP.
 **Status (merged):** done — see [wp-notes/process.md](wp-notes/process.md): AGENTS.md, layering and asset lints, ported-source notices, crash-recovery journal and versions (D-39). It removed 11 screenshots of unknown provenance; `fixups` replaced them with renders of generated media (ATTRIBUTION.md).
 
+### gaps
+**Done when:** the parity rows left partial or missing by the merged workstreams (PRJ-4, PRJ-6, PRJ-8, TL-10, TL-11,
+FX-6, GR-4, GR-5, AU-7, EX-2, EX-3, AI-2, UI-4, UI-5, UI-6) work end to end: model, undoable commands, UI, preview,
+export or a named blocker, MCP tools, tests.
+**Status (merged):** done except EX-2 (0.9) — see [wp-notes/gaps.md](wp-notes/gaps.md): Project Settings, Project
+Manager, Media Cache cleaning, Add / Delete Tracks, track names, Warp Stabilizer effect (port of EffectCraft's
+stabiliser and Subspace Warp, `licenses/ported/gaps.md`), graphic templates (`.jgt`), Essential Graphics panel with
+responsive design and Roll / Crawl, Audio Channels, pixel aspect / fields / HEVC export, Auto Reframe Sequence, Morph
+Cut on optical flow, more Preferences pages, Find / Edit Original / Exit, English + Spanish UI and an axe-core audit
+(`e2e/gaps.spec.ts`). Limits: HEVC through kvazaar is 8-bit; fields are stored but exports are progressive (plan
+warning); MOGRT import is not supported (Adobe's format is
+undocumented); the Subspace Warp plan takes seconds for long clips (measured 2.5–4 s for 900 frames under load);
+Auto Reframe does not reframe inside nested sequences; model names (effects, presets) are translated only where
+the DOM shows the exact name.
+
 ### Not covered by any workstream yet
 
 - **Platforms**: run and fix the desktop app on macOS and Windows; hardware H.264/HEVC export on real GPUs.
-- **Left over from the merged workstreams** (parity rows partial or missing): Essential Graphics panel and rolling /
-  crawling titles (GR-5), MOGRT import (GR-4), Project Manager (PRJ-6), a Warp Stabilizer-style effect (FX-6), the
-  15 unregistered menu entries (Project Settings, Add / Delete Tracks, Audio Channels, Find, Edit Original, Exit…),
-  more Preferences pages, auto reframe and morph cut (AI-2).
+- **Left over from the merged workstreams**: closed by `gaps` (see below), except five menu entries that still render
+  disabled (Import from Media Browser, Engine ▸ Connect / Status, Edit Parameters, Notices; parity.md "Current status").
 - **Real-user reliability**: get outside users, triage their reports within a day, a regression test per fix.
 - **Performance at scale**: 4K multi-layer timelines, hour-long projects, thousands of clips; track the numbers.
 - **Audio plug-ins** (VST3 / AU) and more codecs (software HEVC export, camera RAW).
 - **Behaviour review**: a documented-behaviour pass (helpx references) over the M1 editing features whose specs
   never cited Adobe's documentation.
-- **Reach**: localisation, accessibility (keyboard navigation, screen readers, contrast), user documentation.
+- **Reach**: user documentation; localisation beyond English and Spanish; a screen-reader pass with real assistive
+  technology (the axe audit in `e2e/gaps.spec.ts` checks markup, not the spoken experience).
 
 ## For agents choosing work
 

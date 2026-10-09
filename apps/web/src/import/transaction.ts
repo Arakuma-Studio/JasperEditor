@@ -1,6 +1,7 @@
 // Builds the ONE "Import N files" transaction of S01:LIFE-010 step 6: `media.register` for every file that
 // is committed (+ `clip.place` when the drop target is the timeline or the Program monitor), preceded by
 // `sequence.updateSettings` when the user accepted the clip-mismatch prompt (S01:SEQ-005, S04:IN-008).
+
 import {
 	type Command,
 	flicksPerFrame,
@@ -10,6 +11,7 @@ import {
 	sourceRangeFromSidecar,
 	type TxInput,
 } from '@jasper/project';
+import { labelDefault, labelKindOfMedia } from '../gaps/app-prefs.ts';
 import type { ImportTarget } from '../state/services.ts';
 import { placementFrames, type SequenceSettingsPatch } from './assets.ts';
 
@@ -103,11 +105,14 @@ export function buildImportTransaction(input: {
 			source = p.existingMediaId;
 		} else {
 			registerIndex.push(commands.length);
+			// gaps (Preferences ▸ Labels ▸ Label Defaults)
+			const label = labelDefault(labelKindOfMedia(p.asset as never));
 			commands.push({
 				type: 'media.register',
 				asset: p.asset,
 				binId,
 				name: p.name,
+				...(label ? { label } : {}),
 				ref: `$m${i}`,
 				itemRef: `$i${i}`,
 			} as Command);

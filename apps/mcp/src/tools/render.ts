@@ -433,6 +433,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.describe(
 						'Stream-copy untouched stretches of H.264 sources into an H.264 export (ProRes copies automatically; false = always encode)',
 					),
+				draftUseProxies: z
+					.boolean()
+					.optional()
+					.describe(
+						'Use Proxies: render attached proxies instead of full-resolution media (a draft; never the default)',
+					),
 			},
 			annotations: EDIT,
 		},
@@ -453,6 +459,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				captions,
 				usePreviews,
 				smartRender,
+				draftUseProxies,
 				wait,
 				timeoutSeconds,
 			},
@@ -506,6 +513,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			if (captions) settings.captions = captions;
 			if (usePreviews) settings.usePreviews = true;
 			if (smartRender !== undefined) settings.smartRender = smartRender;
+			if (draftUseProxies) settings.draftUseProxies = true;
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),

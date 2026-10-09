@@ -9,7 +9,6 @@
 // and have a context menu with Save Preset… (presets.ts), Reset and Remove; presets dropped here apply to the shown
 // clips.
 import type { Command } from '@jasper/project';
-import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	useSessionOrNull,
@@ -32,6 +31,7 @@ import {
 	useState,
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { MaskList } from '../../masks/MaskList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { LiquifyToolsRow, PuppetList } from '../../simwarp/PuppetList.tsx';

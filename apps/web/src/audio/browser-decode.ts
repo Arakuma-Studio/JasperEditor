@@ -145,7 +145,12 @@ export function browserOpenClip(media: (mediaId: string) => MediaHandle | null, 
 		const dec = await decodeMapped(track, clip.mediaTime, Math.max(0, c0), Math.max(0, c1));
 		const lead = t0 < 0 ? Math.round((-t0 / rate) * sr) : 0;
 		const map = clip.channels.map.length ? clip.channels.map : dec.data.map((_, i) => i);
-		const chosen = map.map((i) => dec.data[i] ?? dec.data[0] ?? new Float32Array(0));
+		// gaps (Modify ▸ Audio Channels): muted clip channels are silent.
+		const mute = clip.channels.mute ?? [];
+		const chosen = map.map((i, o) => {
+			const src = dec.data[i] ?? dec.data[0] ?? new Float32Array(0);
+			return mute.includes(o) ? new Float32Array(src.length) : src;
+		});
 		// speed: the content plays `rate` times faster (pitch follows, like the preview); then the mix rate
 		let out = resample(chosen, dec.rate * rate, sr, 'fast');
 		if (clip.speed.reverse) out = out.map((c) => c.slice().reverse());

@@ -18,6 +18,7 @@ import {
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
+import { applyGraphics } from '../gaps/graphics.ts';
 import {
 	interpretedFrameRate,
 	type MediaTimeMap,
@@ -430,7 +431,8 @@ export type RenderAudioClip = {
 	sourceIn: number;
 	speed: Speed;
 	mediaId: string;
-	channels: { streamIndex: number; map: number[] };
+	/** gaps (Modify ▸ Audio Channels): `mute` = clip channels that play silence. */
+	channels: { streamIndex: number; map: number[]; mute?: number[] };
 	gainDb: number;
 	volumeDb: Animatable<number>;
 	pan: Animatable<number>;
@@ -675,7 +677,10 @@ export function buildRenderSnapshot(
 	opts: SnapshotOptions,
 ): RenderSnapshot {
 	// Wave expressions: Animatables with active expressions evaluate through their bound evaluators.
-	const doc = bindExpressions(rawDoc);
+	// gaps (GR-4/5): graphics' Responsive Design (time, position) and Roll / Crawl, for every render path.
+	const doc = bindExpressions(
+		applyGraphics(rawDoc, (clip, s) => intrinsicBoxOf({ clip, doc: rawDoc, seq: s } as never)),
+	);
 	// Nested snapshots share the root's world (bindSnapshotExpressions recurses into `nest` sources).
 	const world = opts.nestStack?.length ? null : expressionWorldData(rawDoc);
 	const seq = doc.sequences[sequenceId];

@@ -3,11 +3,12 @@
 // workspaces and project items; prefixes `>` commands, `@` project items, `#` markers, `:` go to
 // timecode, `?` help. Recent commands come first when the query is empty. (There is no in-app agent row:
 // agents drive the editor over MCP.)
-import { formatTimecode, parseTimecodeEntry, type Sequence } from '@jasper/project';
+import type { Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, Dialog, Icon, type IconId, Kbd } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { listCommands } from '../../commands/registry.ts';
+import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import type { PanelDefinition } from '../../panels/types.ts';
 import { recentCommands, useCommandCtx, useShellRuntime } from '../context.tsx';
 import { commandState } from '../menus/resolve.ts';

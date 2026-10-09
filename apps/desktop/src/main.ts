@@ -32,6 +32,7 @@ import {
 	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isOpenablePath,
 	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
@@ -245,6 +246,16 @@ function registerIpc(): void {
 	});
 	ipcMain.on('jasper:reveal', (e, p: unknown) => {
 		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);
+	});
+	// gaps (Edit Original): open a media file in the OS default application.
+	ipcMain.handle('jasper:open-path', async (e, p: unknown) => {
+		if (!fromApp(e) || !isOpenablePath(p)) return 'This file cannot be opened from JasperEditor';
+		if (!existsSync(p)) return 'The file does not exist';
+		return shell.openPath(p);
+	});
+	// gaps (File ▸ Exit): the renderer asked about unsaved changes first.
+	ipcMain.on('jasper:quit', (e) => {
+		if (fromApp(e)) app.quit();
 	});
 	ipcMain.on('jasper:window', (e, action: unknown) => {
 		const win = BrowserWindow.fromWebContents(e.sender);

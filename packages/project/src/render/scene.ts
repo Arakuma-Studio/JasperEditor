@@ -2,6 +2,7 @@
 // layer matrices. Static clips resolve to the same `props` object on every frame.
 
 import { contentTimeAt } from '../derive/index.ts';
+import type { WarpAnalysisData } from '../gaps/warp/analysis.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
 import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
@@ -40,6 +41,8 @@ export type ResolvedEffect = {
 	masks?: ResolvedMask[];
 	/** sim-warp: the Puppet effect's meshes and pins at the frame. */
 	puppet?: ResolvedPuppet;
+	/** gaps (FX-6): the Warp Stabilizer's stored analysis (not time-dependent). */
+	warpAnalysis?: WarpAnalysisData;
 };
 
 /** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
@@ -170,6 +173,7 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 		params: Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t)])),
 		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
 		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
+		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
 	}));
 	const cropFx = effects.find((e) => e.effectId === 'jasper.crop' && e.enabled);
 	const crop: Crop | null = cropFx

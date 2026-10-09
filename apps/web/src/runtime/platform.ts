@@ -26,6 +26,10 @@ export interface JasperDesktopBridge {
 		rect: { x: number; y: number; width: number; height: number },
 		maxWidth: number,
 	): Promise<{ png: string; width: number; height: number }>;
+	/** gaps (Edit Original): opens a file in its default application; resolves with an error message or ''. */
+	openPath?(path: string): Promise<string>;
+	/** gaps (File ▸ Exit): quits the application (the renderer has already handled unsaved changes). */
+	quit?(): void;
 }
 
 /** The Electron clipboard as the preload exposes it (validated and size-capped in the main process). */

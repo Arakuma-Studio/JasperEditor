@@ -66,6 +66,19 @@ export class ProjectStoreFs {
 		this.now = opts.now ?? (() => new Date());
 	}
 
+	/** gaps (Preferences ▸ Auto Save): how often a saved version is kept and how many are kept. */
+	setVersionPolicy(p: { versionIntervalMs?: number; keepVersions?: number }): void {
+		if (p.versionIntervalMs !== undefined) this.opts.versionIntervalMs = p.versionIntervalMs;
+		if (p.keepVersions !== undefined) this.opts.keepVersions = p.keepVersions;
+	}
+
+	versionPolicy(): { versionIntervalMs: number; keepVersions: number } {
+		return {
+			versionIntervalMs: this.opts.versionIntervalMs ?? VERSION_INTERVAL_MS,
+			keepVersions: this.opts.keepVersions ?? KEEP_VERSIONS,
+		};
+	}
+
 	private check(projectId: string): void {
 		if (!PROJECT_ID_RE.test(projectId)) throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
 	}

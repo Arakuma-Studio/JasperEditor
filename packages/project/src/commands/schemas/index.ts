@@ -7,6 +7,7 @@ import { COLOR_MGMT_COMMANDS } from './color-mgmt.ts';
 import { EDIT_UX_COMMANDS } from './edit-ux.ts';
 import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
+import { GAPS_COMMANDS } from './gaps.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
 import { INTERPRET_COMMANDS } from './interpret.ts';
 import { MASK_COMMANDS } from './mask.ts';
@@ -36,6 +37,7 @@ export * from './common.ts';
 export * from './edit-ux.ts';
 export * from './essential.ts';
 export * from './expression.ts';
+export * from './gaps.ts';
 export * from './interchange.ts';
 export * from './interpret.ts';
 export * from './mask.ts';
@@ -107,6 +109,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...INTERPRET_COMMANDS,
 	// previews: Sequence Settings ▸ Video Previews
 	...PREVIEWS_COMMANDS,
+	// gaps: proxies, Sequence Settings, audio channels, Warp Stabilizer, graphics (docs/wp-notes/gaps.md)
+	...GAPS_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

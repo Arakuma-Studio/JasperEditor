@@ -29,6 +29,7 @@ const FAMILY_FILES = [
 	'object-matte',
 	'keying-matte',
 	'simulation-warp',
+	'warp-stabilizer',
 ];
 
 describe('fx catalogue', () => {

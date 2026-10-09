@@ -100,7 +100,7 @@ const motion: WorkspaceDefinition = {
 		[
 			0.58,
 			row(
-				[0.26, g(['motionTemplates', 'project'], 'motionTemplates')],
+				[0.26, g(['motionTemplates', 'essentialGraphics', 'project'], 'motionTemplates')],
 				['fill', g(['program'])],
 				[0.28, col([0.45, g(['properties'])], ['fill', g(['effectControls'])])],
 			),

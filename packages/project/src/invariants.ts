@@ -13,6 +13,7 @@ import { clipEnd } from './derive/index.ts';
 import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createFontRef, createTrack, DEFAULT_FONT_FAMILY } from './factories.ts';
+import { gapsIssues, repairGaps } from './gaps/index.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
 import { isRovingKey, retimeRoving } from './keyframes.ts';
@@ -1464,6 +1465,8 @@ export function runInvariants(
 	for (const m of essentialIssues(doc)) issues.push(inv('INV-ESSENTIAL', m.message, m.path));
 	// color-mgmt (INV-COLOR): working spaces, colour settings and colour interpretations are valid.
 	issues.push(...colorIssues(doc as never));
+	// gaps (INV-PROJECT-SETTINGS, INV-PROXY, INV-CHANNELS, INV-WARP, INV-GRAPHIC…): docs/wp-notes/gaps.md.
+	issues.push(...gapsIssues(doc));
 	return { issues, seen };
 }
 
@@ -2177,6 +2180,8 @@ export function repairDocument(
 	}
 	// color-mgmt: unknown spaces and dangling LUT / OCIO references go back to automatic.
 	repairColor(doc as never, note);
+	// gaps: unreadable project settings, dangling proxies, channel maps, analyses, graphic layers.
+	repairGaps(doc, note);
 	for (const seq of Object.values(doc.sequences) as Sequence[]) repairTransitionsFinal(seq, note);
 	return { document: doc, report };
 }

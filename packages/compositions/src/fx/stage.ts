@@ -254,7 +254,7 @@ export function useLayerFx(
 			const hit = cache.get(fxId);
 			if (hit !== undefined) return hit;
 			const inst = byId.get(fxId);
-			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}`;
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}|${(inst as { warpAnalysis?: { key?: string } } | undefined)?.warpAnalysis?.key ?? ''}`;
 			cache.set(fxId, k);
 			return k;
 		};
@@ -474,6 +474,9 @@ export function useLayerFx(
 						structures: {
 							...((s.fx as { puppet?: unknown }).puppet
 								? { puppet: (s.fx as { puppet?: unknown }).puppet }
+								: {}),
+							...((s.fx as { warpAnalysis?: unknown }).warpAnalysis
+								? { warpAnalysis: (s.fx as { warpAnalysis?: unknown }).warpAnalysis }
 								: {}),
 							...(layerMasks.length ? { masks: layerMasks } : {}),
 						},

@@ -64,6 +64,7 @@ import {
 	Search,
 	Server,
 	Settings,
+	Shapes,
 	Share,
 	Shrink,
 	SkipBack,
@@ -222,6 +223,8 @@ export const ICONS = {
 	'panel.audioClipMixer': AudioWaveform,
 	// audio-fx
 	'panel.essentialSound': Speech,
+	// gaps (GR-4/5)
+	'panel.essentialGraphics': Shapes,
 	'panel.history': History,
 	'panel.info': Info,
 	'panel.markers': Bookmark,

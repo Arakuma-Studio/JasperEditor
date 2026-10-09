@@ -16,6 +16,8 @@ type ExportPreset = {
 	audioKbps: number;
 	/** Average video bitrate (kbit/s) for bitrate-driven encoders (OpenH264); a ceiling for x264. */
 	videoKbps?: number;
+	/** gaps (EX-2): bits per component (HEVC Main10). */
+	bitDepth?: 10;
 };
 
 export const EXPORT_PRESETS: readonly ExportPreset[] = [
@@ -78,6 +80,31 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
 		audioKbps: 1536,
 	},
 	{
+		id: 'match-sequence-hevc',
+		label: 'Match Sequence – HEVC (H.265)',
+		description:
+			'Sequence size and rate, HEVC Main (Kvazaar, 8-bit; a hardware encoder when one works) + AAC 256 kb/s in MP4 (hvc1).',
+		container: 'mp4',
+		codec: 'hevc',
+		crf: 20,
+		speed: 'balanced',
+		maxWidth: null,
+		audioKbps: 256,
+	},
+	{
+		id: 'hevc-main10-hdr',
+		label: 'HEVC Main10 – HDR10 / HLG',
+		description:
+			'Sequence size, HEVC Main10 in MP4 tagged with the sequence colour space (HDR sequences: PQ or HLG with mastering metadata). Needs a hardware HEVC encoder: the LGPL build’s Kvazaar is 8-bit only (the plan refuses with the reason).',
+		container: 'mp4',
+		codec: 'hevc',
+		crf: 18,
+		speed: 'best',
+		maxWidth: null,
+		audioKbps: 320,
+		bitDepth: 10,
+	},
+	{
 		id: 'web-vp9',
 		label: 'Web – VP9 WebM',
 		description: 'Royalty-free VP9 + Opus in WebM at the sequence size (CRF 32).',
@@ -132,6 +159,7 @@ export function buildExportSettings(
 			encoderSpeed: preset.speed,
 			colorTags: 'rec709',
 			...(videoKbps ? { bitrateKbps: videoKbps } : {}),
+			...(preset.bitDepth ? { bitDepth: preset.bitDepth } : {}),
 		},
 		audio: {
 			// The engine pairs the audio encoder with the container (PCM in MOV); this is the request.

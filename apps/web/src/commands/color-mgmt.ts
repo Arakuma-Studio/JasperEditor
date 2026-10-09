@@ -59,10 +59,12 @@ clipMenuExtensions.register({
 
 export const colorMgmtCommands: UiCommand[] = [
 	{
-		id: 'sequence.settings',
-		label: 'Sequence Settings…',
+		// gaps: Sequence ▸ Sequence Settings… is the whole dialog (gaps/SequenceSettingsDialog.tsx); its Colour section
+		// opens this one.
+		id: 'sequence.colorSettings',
+		label: 'Sequence Colour Settings…',
 		description:
-			'Colour settings of the active sequence: working colour space (Rec. 709, sRGB, Rec. 2020, P3, Rec. 2100 PQ / HLG, linear variants), Blend Using 1.0 Gamma, Auto Tone Map Media, HDR graphics white and mastering peak. Frame size, rate and audio are in the Properties panel.',
+			'Colour settings of the active sequence: working colour space (Rec. 709, sRGB, Rec. 2020, P3, Rec. 2100 PQ / HLG, linear variants), Blend Using 1.0 Gamma, Auto Tone Map Media, HDR graphics white and mastering peak (Sequence Settings ▸ Colour).',
 		scope: 'global',
 		agentExposed: true,
 		when: (ctx) => writable(ctx) && !!ctx.session!.getState().activeSequenceId,

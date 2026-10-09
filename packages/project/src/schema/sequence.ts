@@ -2,6 +2,8 @@
 
 import { z } from 'zod';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
+import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
+import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
 import {
 	AudioChannelFormatSchema,
 	LoudnessNormalizeSchema,
@@ -60,6 +62,11 @@ export const EffectInstanceSchema = z.looseObject({
 	 * → "Speed"); absent = the effect's label. Expressions find effects by this name.
 	 */
 	name: z.string().optional(),
+	/**
+	 * gaps (FX-6): the Warp Stabilizer's analysis of the clip, stored with the effect as Premiere does (absent = not
+	 * analysed). See `gaps/warp/analysis.ts`.
+	 */
+	warpAnalysis: WarpAnalysisDataSchema.optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
@@ -593,13 +600,20 @@ const visualShape = {
 	colorInterpretation: ColorInterpretationSchema.optional(),
 	/** three-d: the 3D Layer switch and 3D transform / material (schema/three-d.ts). Absent = a 2D layer. */
 	threeD: Layer3DSchema.optional(),
+	/** gaps (GR-5): Responsive Design – Position of a graphic's layer (absent = not pinned). */
+	pins: LayerPinsSchema.optional(),
 };
 const canvasSchema = z.union([
 	z.literal('sequence'),
 	z.looseObject({ width: z.number().int().positive(), height: z.number().int().positive() }),
 ]);
 export type ClipCanvas = DeepStrip<z.infer<typeof canvasSchema>>;
-export const ChannelsSchema = z.looseObject({ streamIndex: nonNegInt(), map: z.array(nonNegInt()) });
+export const ChannelsSchema = z.looseObject({
+	streamIndex: nonNegInt(),
+	map: z.array(nonNegInt()),
+	/** gaps (Modify ▸ Audio Channels): clip channels no source channel is routed to (they play silence). */
+	mute: z.array(nonNegInt()).optional(),
+});
 
 export const VideoClipSchema = z.looseObject({
 	...commonShape,
@@ -990,6 +1004,13 @@ export const SequenceSettingsSchema = z.looseObject({
 	workingColorSpace: z.string(),
 	/** color-mgmt: Sequence Settings ▸ Colour (linearize, blend using 1.0 gamma, tone mapping, HDR white/peak). */
 	color: SequenceColorSchema.optional(),
+	// ---- gaps (Sequence Settings, docs/wp-notes/gaps.md §TL-11; read with `sequenceFormatOf`)
+	/** Pixel Aspect Ratio of the delivered files; absent / 1:1 = square pixels. `width` is then the display width. */
+	pixelAspectRatio: z.looseObject({ num: z.number(), den: z.number() }).nullable().optional(),
+	/** Frame width the delivered files carry (with a non-square pixel aspect ratio). */
+	storageWidth: z.number().nullable().optional(),
+	/** Fields: progressive (absent), upper or lower field first. */
+	fieldOrder: z.string().nullable().optional(),
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
 
@@ -1108,6 +1129,8 @@ export const SequenceSchema = z.looseObject({
 	threeD: Sequence3DSchema.optional(),
 	/** previews: render preview file settings (absent = defaults, see `previewSettingsOf`). */
 	previews: SequencePreviewSettingsSchema.optional(),
+	/** gaps (GR-4/5): present = an Essential Graphics graphic (its tracks are the layers), see gaps/graphics.ts. */
+	graphic: GraphicSettingsSchema.optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

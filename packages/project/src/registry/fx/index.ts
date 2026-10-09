@@ -20,6 +20,7 @@ import { SAPPHIRE_STYLIZE_OTHER_EFFECTS } from './sapphire-stylize-other.ts';
 import { SAPPHIRE_TEXTURES_CLOUDS_EFFECTS } from './sapphire-textures-clouds.ts';
 import { SAPPHIRE_TIME_FLICKER_EFFECTS } from './sapphire-time-flicker.ts';
 import { SIMULATION_WARP_EFFECTS } from './simulation-warp.ts';
+import { WARP_STABILIZER_EFFECTS } from './warp-stabilizer.ts';
 
 export * from './define.ts';
 export * from './glsl/index.ts';
@@ -60,6 +61,8 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	// parity (roto): screen keyer, matte refinement, key cleaner, spill suppression
 	{ file: 'keying-matte', idPrefix: 'jasper.', effects: KEYING_MATTE_EFFECTS },
 	{ file: 'simulation-warp', idPrefix: 'jasper.', effects: SIMULATION_WARP_EFFECTS },
+	// gaps: Warp Stabilizer (docs/wp-notes/gaps.md §FX-6)
+	{ file: 'warp-stabilizer', idPrefix: 'jasper.', effects: WARP_STABILIZER_EFFECTS },
 ];
 
 /** Every fx-catalogue effect (registered by default). */

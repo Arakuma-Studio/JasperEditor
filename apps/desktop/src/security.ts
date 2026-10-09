@@ -186,6 +186,48 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 	return out;
 }
 
+/** Extensions Edit Original never hands to the OS opener: they would run a program instead of opening media. */
+const EXECUTABLE_EXTENSIONS = new Set([
+	'exe',
+	'com',
+	'bat',
+	'cmd',
+	'msi',
+	'scr',
+	'ps1',
+	'vbs',
+	'js',
+	'jse',
+	'wsf',
+	'lnk',
+	'url',
+	'jar',
+	'sh',
+	'bash',
+	'zsh',
+	'command',
+	'app',
+	'desktop',
+	'appimage',
+	'run',
+	'bin',
+	'pkg',
+	'dmg',
+	'deb',
+	'rpm',
+]);
+
+/**
+ * gaps (Edit Original): a path the renderer may ask the OS to open in its default application — absolute, sane,
+ * and not an executable or launcher (a hostile project could otherwise point a media locator at a program).
+ */
+export function isOpenablePath(p: unknown): p is string {
+	if (!isRevealablePath(p)) return false;
+	const m = /\.([A-Za-z0-9]+)$/.exec(p);
+	if (!m) return true;
+	return !EXECUTABLE_EXTENSIONS.has(m[1]!.toLowerCase());
+}
+
 /** A CSS-pixel rectangle from the renderer (validated before it reaches capturePage). */
 export function isCaptureRect(v: unknown): v is { x: number; y: number; width: number; height: number } {
 	if (!v || typeof v !== 'object') return false;

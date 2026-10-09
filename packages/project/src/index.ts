@@ -39,6 +39,8 @@ export * from './effect-presets/index.ts';
 export * from './essential/index.ts';
 export * from './expressions.ts';
 export * from './factories.ts';
+export * from './find/index.ts';
+export * from './gaps/index.ts';
 export * from './ids.ts';
 export * from './interpret/index.ts';
 export * from './invariants.ts';

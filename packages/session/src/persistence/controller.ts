@@ -82,7 +82,8 @@ export function attachPersistence(
 			: opts.document;
 
 	const flushQuietly = () => {
-		void autosaver.flush().catch(() => undefined);
+		// gaps (Auto Save off): leaving the page journals the unsaved edits instead of saving them.
+		if (autosaver.automatic) void autosaver.flush().catch(() => undefined);
 		void journal?.flush().catch(() => undefined);
 	};
 	const onVisibility = () => {

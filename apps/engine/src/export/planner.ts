@@ -24,6 +24,7 @@ import {
 	type PixelInterpretation,
 	type ProjectDocument,
 	pixelInterpretation,
+	proxyKeyOf,
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
@@ -32,7 +33,9 @@ import {
 	resolveLayerProps,
 	rotoExportIssues,
 	type SnapshotOptions,
+	sequenceFormatOf,
 	transitionSpec,
+	warpExportIssues,
 } from '@jasper/project';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
@@ -117,6 +120,8 @@ export type OutputSpec = {
 	alpha?: boolean;
 	/** previews: no audio stream (`ExportSettings.videoOnly`). */
 	videoOnly?: boolean;
+	/** gaps (Sequence Settings ▸ Pixel Aspect Ratio): the pixel aspect ratio signalled in the file (absent = square). */
+	pixelAspect?: Rational;
 	/** previews: frames between keyframes (`video.keyframeInterval`); absent = the encoder default. */
 	gop?: number;
 	/**
@@ -157,6 +162,8 @@ export type PlannedExport = {
 	smart?: { codec: import('./smart.ts').SmartCodec; pieces: import('./smart.ts').SmartPiece[] };
 	/** previews (Use Previews): the stretches of the range read from render previews, and those rendered. */
 	previews?: import('./use-previews.ts').ExportRun[];
+	/** gaps (`draftUseProxies`): media rendered from their attached proxies (draft exports only). */
+	draftProxies?: string[];
 };
 
 /** The engine media key of an asset (engine-store locator), or null. */
@@ -251,12 +258,30 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// ---- media resolution (engine-store keys only: never trust path locators from a client, S04:SC-003)
 	const media: Record<string, LocalMedia> = {};
 	const offline: string[] = [];
+	// gaps (PRJ-8): exports use the full-resolution media; `draftUseProxies` (asked for explicitly) decodes attached
+	// proxies instead, scaled to the original's frame size (the layout keeps the original's dimensions).
+	const draftProxies: string[] = [];
+	const proxiesOffline: string[] = [];
 	for (const asset of Object.values(document.media)) {
 		const key = mediaKeyOf(asset);
 		const record = key ? deps.registry.get(key) : null;
 		const path = record ? await deps.registry.resolvePath(record.mediaKey) : null;
-		if (record && path) media[asset.id] = { path, record, pixel: pixelInterpretation(asset) };
-		else offline.push(asset.id);
+		if (record && path) {
+			const pk = settings.draftUseProxies ? proxyKeyOf(asset) : null;
+			const proxyRecord = pk ? deps.registry.get(pk) : null;
+			const proxyPath = proxyRecord ? await deps.registry.resolvePath(proxyRecord.mediaKey) : null;
+			if (proxyRecord && proxyPath) {
+				media[asset.id] = {
+					path: proxyPath,
+					record: { ...proxyRecord, display: record.display },
+					pixel: pixelInterpretation(asset),
+				};
+				draftProxies.push(asset.id);
+			} else {
+				if (pk) proxiesOffline.push(asset.id);
+				media[asset.id] = { path, record, pixel: pixelInterpretation(asset) };
+			}
+		} else offline.push(asset.id);
 	}
 	const fontFallbacks = new Set<string>();
 	// wp captions: caption settings name existing tracks; burn-in is a snapshot option.
@@ -297,6 +322,36 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
+	{
+		const f = sequenceFormatOf(seq.settings);
+		if (f.fieldOrder !== 'progressive' && !settings.videoOnly && !input.still)
+			warnings.push({
+				code: 'FIELDS_PROGRESSIVE',
+				message: `The sequence is ${f.fieldOrder} field first; exports are progressive (field-rendered interlaced output is not available)`,
+			});
+	}
+	if (draftProxies.length)
+		warnings.push({
+			code: 'DRAFT_PROXIES',
+			message: `${draftProxies.length} media render from their proxies (Use Proxies: a draft, not full resolution)`,
+			itemIds: draftProxies,
+		});
+	if (proxiesOffline.length)
+		warnings.push({
+			code: 'PROXY_OFFLINE',
+			message: `${proxiesOffline.length} proxies are offline: those media render at full resolution`,
+			itemIds: proxiesOffline,
+		});
+	// ---- gaps (FX-6): a Warp Stabilizer exports only with its analysis; frames outside it are a warning.
+	{
+		const issues = warpExportIssues(snapshot);
+		const missing = issues.filter((i) => i.kind === 'not-analyzed');
+		if (missing.length)
+			throw new PlanError('WARP_NOT_ANALYZED', 409, missing.map((i) => i.message).join('; '), {
+				clipIds: missing.map((i) => i.clipId),
+			});
+		for (const i of issues) warnings.push({ code: 'WARP_PARTIAL', message: i.message, itemIds: [i.clipId] });
+	}
 	// ---- parity (roto): object mattes render on every path from computed matte sets; frames without one would come
 	// out unmatted, so they block every path (never silently dropped). Stale mattes are a warning.
 	{
@@ -487,8 +542,18 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const video = settings.video;
 	const outFps = video?.frameRate ?? seqFps;
 	const durationSec = ((range.end - range.start) * seqFps.den) / seqFps.num;
+	// gaps: a non-square-pixel sequence exported at its own frame size delivers the storage width at its pixel aspect
+	// ratio (the anamorphic file of a DV / HDV / DVCPRO HD sequence); another size is a square-pixel output.
+	const fmt = sequenceFormatOf(seq.settings);
+	const matchesSequence =
+		!video ||
+		(video.width === seq.settings.width && video.height === seq.settings.height) ||
+		(video.width === fmt.storageWidth && video.height === fmt.height);
+	const anamorphic = fmt.par.num !== fmt.par.den && matchesSequence && !input.still;
+	const _interlaced =
+		fmt.fieldOrder !== 'progressive' && matchesSequence && !settings.videoOnly && !input.still;
 	const output: OutputSpec = {
-		width: video?.width ?? seq.settings.width,
+		width: anamorphic ? fmt.storageWidth : (video?.width ?? seq.settings.width),
 		height: video?.height ?? seq.settings.height,
 		fps: { num: outFps.num, den: outFps.den },
 		frames: rationalEquals(outFps, seqFps)
@@ -511,7 +576,9 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		...(video?.alpha ? { alpha: true } : {}),
 		...(settings.videoOnly ? { videoOnly: true } : {}),
 		...(video?.keyframeInterval ? { gop: video.keyframeInterval } : {}),
+		...(anamorphic ? { pixelAspect: { ...fmt.par } } : {}),
 	};
+	if (anamorphic) output.scaling = 'stretch';
 	if (
 		video?.alpha &&
 		(video.codec !== 'prores' || video.proresProfile !== '4444' || settings.container !== 'mov')
@@ -685,6 +752,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		output,
 		captions: captionBurnMode(settings),
 		captionSettings: settings.captions,
+		...(draftProxies.length ? { draftProxies } : {}),
 	};
 }
 

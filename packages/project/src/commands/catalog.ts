@@ -13,6 +13,7 @@ import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
+import { GAPS_OWNER, gapsHandlers } from './handlers/gaps.ts';
 import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
 import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
@@ -93,7 +94,9 @@ export type CommandOwner =
 	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
 	| 'imports'
 	// Render previews (docs/wp-notes/previews.md)
-	| 'previews';
+	| 'previews'
+	// Project Settings, proxies, Sequence Settings, audio channels, Warp Stabilizer, graphics (docs/wp-notes/gaps.md)
+	| 'gaps';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -357,6 +360,18 @@ const LABELS: Record<CommandType, string> = {
 	'media.interpret': 'Interpret Footage',
 	// previews
 	'sequence.setPreviewSettings': 'Preview Settings',
+	// gaps
+	'media.attachProxy': 'Attach Proxies',
+	'media.detachProxy': 'Detach Proxies',
+	'clip.setAudioChannels': 'Audio Channels',
+	'item.setAudioChannels': 'Audio Channels',
+	'effect.setWarpAnalysis': 'Analyze (Warp Stabilizer)',
+	'sequence.autoReframe': 'Auto Reframe Sequence',
+	'graphic.update': 'Essential Graphics',
+	'graphic.addLayer': 'New Layer',
+	'graphic.align': 'Align',
+	'graphic.setPins': 'Responsive Design – Position',
+	'graphic.importTemplate': 'Add Graphic Template',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -396,6 +411,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[colorMgmtHandlers, 'color-mgmt'],
 	[interpretHandlers, INTERPRET_OWNER],
 	[previewsHandlers, PREVIEWS_OWNER],
+	[gapsHandlers, GAPS_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -429,7 +445,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'color-mgmt' ||
 				owner === THREE_D_OWNER ||
 				owner === INTERPRET_OWNER ||
-				owner === PREVIEWS_OWNER
+				owner === PREVIEWS_OWNER ||
+				owner === GAPS_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

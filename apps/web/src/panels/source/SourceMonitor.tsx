@@ -71,7 +71,10 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const src = useStoreSelector(sourceMonitorState, (s) => s);
 	const doc = useStoreSelector(session.store, (s) => s.document);
 	const media = useStoreSelector(session.store, (s) => s.media);
-	const useProxies = useStoreSelector(session.store, (s) => s.toggles.useProxies);
+	const autoProxies = useStoreSelector(session.store, (s) => s.toggles.useProxies);
+	// gaps (PRJ-8): Toggle Proxies plays attached proxies here too.
+	const attachedProxies = useStoreSelector(session.store, (s) => !!s.toggles.attachedProxies);
+	const useProxies = autoProxies || attachedProxies;
 	const seqRate = useStoreSelector(session.store, (s) => {
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 		return seq?.settings.frameRate;
@@ -82,7 +85,13 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	// wp-multicam: source clip markers of a media item (sync points of Merge Clips / multi-camera).
 	const itemMarkerList = (item as { markers?: { id: string; flicks: number; color: string }[] } | null)
 		?.markers;
-	const handle = useMemo(() => (asset ? resolveMediaHandle(asset, media[asset.id]) : null), [asset, media]);
+	const handle = useMemo(
+		() =>
+			asset
+				? resolveMediaHandle(asset, media[asset.id], attachedProxies ? { attachedProxies, autoProxies } : {})
+				: null,
+		[asset, media, attachedProxies, autoProxies],
+	);
 	// edit-structure: sequences and synthetic sources are drawn by the sequence composition.
 	const activeSettings = useStoreSelector(session.store, (s) => {
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
@@ -94,7 +103,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			if (!sq) return null;
 			const r = sq.settings.frameRate;
 			return {
-				doc: buildProgramDoc({ doc, sequenceId: sq.id, media }, null),
+				doc: buildProgramDoc({ doc, sequenceId: sq.id, media, attachedProxies, autoProxies }, null),
 				fps: r.num / r.den,
 				frames: Math.max(1, sequenceDuration(sq)),
 				w: sq.settings.width,
@@ -111,7 +120,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			return d ? { doc: d, fps: fpsN, frames, w: activeSettings.width, h: activeSettings.height } : null;
 		}
 		return null;
-	}, [item, doc, media, activeSettings]);
+	}, [item, doc, media, activeSettings, attachedProxies, autoProxies]);
 	const fps = seqDoc ? seqDoc.fps : assetFps(asset, seqRate.num / seqRate.den);
 	const props = useMemo<AssetCompositionProps | null>(
 		() => (handle ? { asset: handle, fps, name: item?.name, useProxies } : null),

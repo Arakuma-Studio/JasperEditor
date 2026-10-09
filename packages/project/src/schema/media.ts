@@ -445,6 +445,25 @@ export const LayerSourceSchema = z.looseObject({
 });
 export type LayerSource = DeepStrip<z.infer<typeof LayerSourceSchema>>;
 
+/**
+ * gaps (Clip ▸ Proxy, docs/wp-notes/gaps.md §PRJ-8): a proxy file attached to a video asset. The monitors play it
+ * while Toggle Proxies is on; exports never use it unless asked (`draftUseProxies`). It has the original's duration
+ * (± 1 frame) and frame rate; its frame size may be smaller (it is scaled to the original's box everywhere).
+ */
+export const AttachedProxySchema = z.looseObject({
+	fingerprint: z.string(),
+	originalName: z.string(),
+	sizeBytes: nonNegInt(),
+	container: z.string(),
+	probe: MediaProbeSchema,
+	locators: z.array(MediaLocatorSchema).min(1),
+	/** The Create Proxies preset that made it (absent for attached files). */
+	preset: z.string().optional(),
+	origin: z.enum(['created', 'attached', 'ingest']),
+	attachedAt: z.string(),
+});
+export type AttachedProxy = DeepStrip<z.infer<typeof AttachedProxySchema>>;
+
 export const MediaAssetSchema = z.looseObject({
 	id: z.string(),
 	kind: MediaKindSchema,
@@ -478,6 +497,8 @@ export const MediaAssetSchema = z.looseObject({
 	/** One layer of a layered document. */
 	layerSource: LayerSourceSchema.optional(),
 	// ---- end imports
+	/** gaps (PRJ-8): the attached proxy. */
+	proxy: AttachedProxySchema.optional(),
 });
 export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 

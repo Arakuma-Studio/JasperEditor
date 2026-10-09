@@ -5,7 +5,6 @@
 import {
 	FLICKS_PER_SECOND,
 	flicksToFrames,
-	formatTimecode,
 	type MediaAsset,
 	mediaUsage,
 	type ProjectDocument,
@@ -14,6 +13,7 @@ import {
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
 import { lutSizeText } from '../../color/model.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { audioStreams, displayBox, formatRate, videoStream } from '../../import/assets.ts';
 
 export type ProjectFilter =

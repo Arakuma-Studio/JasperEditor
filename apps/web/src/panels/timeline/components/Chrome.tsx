@@ -5,6 +5,7 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { cx, IconButton, labelColor, PointMenu, placeBeside, useMenuFit, Z } from '@jasper/ui';
 import { memo, useEffect, useRef, useState } from 'react';
+import { trackHeightDisplayMenu } from '../../../gaps/track-height-menu.ts';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -129,6 +130,11 @@ export const Toolbar = memo(function Toolbar(props: {
 			})),
 		},
 		check('Snap Playhead When Snap Is On', 'snapPlayhead', p.snapPlayhead),
+		// gaps: Premiere's Show Audio Time Units (Project Settings ▸ Audio Display Format).
+		check('Show Audio Time Units', 'showAudioTimeUnits', !!p.showAudioTimeUnits),
+		// gaps (TL-10): Expand / Minimize All Tracks and the track height presets.
+		{ kind: 'separator' },
+		...trackHeightDisplayMenu(props.session),
 		...(props.extraMenu?.length ? [{ kind: 'separator' as const }, ...props.extraMenu] : []),
 	];
 	return (

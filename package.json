@@ -31,9 +31,12 @@
     "e2e:typecheck": "tsc -p e2e/tsconfig.json",
     "notices": "node scripts/third-party-notices.mjs",
     "jasper": "tsx apps/mcp/src/jasper.ts",
-    "qa:mcp": "node scripts/mcp-qa.mjs"
+    "qa:mcp": "node scripts/mcp-qa.mjs",
+    "i18n": "pnpm --filter @jasper/web exec tsx i18n/model-strings.ts && node scripts/i18n.mjs",
+    "i18n:check": "node scripts/i18n.mjs --check"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@biomejs/biome": "^2.5.14",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@playwright/test": "^1.63.0",

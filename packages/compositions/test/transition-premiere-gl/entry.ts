@@ -405,6 +405,45 @@ const api = {
 		return out;
 	},
 
+	/**
+	 * gaps (AI-2): Morph Cut on a textured shot moved by 12 px between the takes (a jump cut): the mid frame matches the
+	 * picture moved half-way (6 px) much better than a cross dissolve does. Mean abs error per channel, 0..255.
+	 */
+	morphTexture() {
+		const [w0, h0] = [W, H];
+		W = 256;
+		H = 144;
+		const tex = (dx: number) =>
+			canvas(W, H, (ctx) => {
+				for (let y = 0; y < H; y += 4)
+					for (let x = -16; x < W + 16; x += 4) {
+						const v = ((x * 37) ^ (y * 91) ^ ((x * y) >> 3)) & 255;
+						ctx.fillStyle = `rgb(${v},${(v * 3) & 255},${255 - v})`;
+						ctx.fillRect(x + dx, y, 4, 4);
+					}
+			});
+		try {
+			const a = tex(0);
+			const b = tex(12);
+			const half = tex(6);
+			const err = (c: HTMLCanvasElement) => {
+				const d = c.getContext('2d')!.getImageData(24, 24, W - 48, H - 48).data;
+				const e = half.getContext('2d')!.getImageData(24, 24, W - 48, H - 48).data;
+				let s = 0;
+				for (let i = 0; i < d.length; i += 4)
+					s += Math.abs(d[i]! - e[i]!) + Math.abs(d[i + 1]! - e[i + 1]!) + Math.abs(d[i + 2]! - e[i + 2]!);
+				return s / ((d.length / 4) * 3);
+			};
+			return {
+				morph: err(run('jasper.morph-cut', { at: 50, a, b })),
+				dissolve: err(run('jasper.film-dissolve', { at: 50, a, b })),
+			};
+		} finally {
+			W = w0;
+			H = h0;
+		}
+	},
+
 	/** Morph Cut over a moving square: the mid frame shows one square half-way, not two half-faded ones. */
 	morph() {
 		const [w0, h0] = [W, H];

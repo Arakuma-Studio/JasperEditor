@@ -24,6 +24,7 @@ import { colorIssues } from './color/model.ts';
 import { keyDiff, markClean } from './commands/draft-read.ts';
 import type { Issue } from './commands/types.ts';
 import { expressionIssues } from './expressions.ts';
+import { gapsClipIssues } from './gaps/index.ts';
 import { type IdPrefix, idPrefixOf, isValidId } from './ids.ts';
 import {
 	type Claim,
@@ -599,6 +600,8 @@ function sequenceDelta(
 	if (expressionIssues({ sequences: { [sid]: partial } }, isAudioEffectId).length) return false;
 	if (essentialIssues({ sequences: { [sid]: remix ? N : partial } } as never).length) return false;
 	if (colorIssues({ media: next.media, sequences: { [sid]: partial } } as never).length) return false;
+	// gaps: clip-level checks (audio channel routings, Warp Stabilizer analyses) of the changed clips.
+	if (gapsClipIssues({ media: next.media, sequences: { [sid]: partial } } as never).length) return false;
 	if (audioMixIssues({ ...N, clips: changedClips } as Sequence, scope.where).length) return false;
 	// The sequence's end (a nest's INV-005 bound) from the base's: rescanned only when a clip that reached it changed.
 	let endChanged = false;

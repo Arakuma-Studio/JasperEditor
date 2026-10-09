@@ -5,9 +5,11 @@
 // are realized by the Program monitor's PlaybackDriver with seek-stepping (TL-873).
 // Also registered here: monitor-scoped commands (fit, loop, nudge, snap) and the Source hand-off
 // (source.open, Insert `,` / Overwrite `.`), because the monitors own those behaviors.
+
 import { nextEditPoint, prevEditPoint, sequenceDuration } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { z } from 'zod';
+import { gapsPrefs } from '../gaps/app-prefs.ts';
 import { activeSequence, NUDGE_LARGE, NUDGE_SMALL, nudgeSelection } from '../panels/program/edits.ts';
 import { monitorStores } from '../panels/program/monitor-store.ts';
 import { driverFor, getSourceTransport, shuttleFor } from '../panels/program/transport-registry.ts';
@@ -18,7 +20,6 @@ import type { CommandCtx, UiCommand } from './types.ts';
 /** Large step for Shift+←/→ (S02:TL-876 preference default). */
 const LARGE_STEP_FRAMES = 5;
 /** Play Around pre/post-roll (S02:TL-877 preference default). */
-const PLAY_AROUND_SECONDS = 2;
 
 function isSource(ctx: CommandCtx): boolean {
 	return ctx.focus.panel === 'source' && getSourceTransport() !== null;
@@ -266,10 +267,11 @@ export const transportCommands: UiCommand[] = [
 		run: (ctx) => {
 			const t = activeTransport(ctx);
 			const at = t.getState().frame;
-			const n = Math.round(PLAY_AROUND_SECONDS * fps(ctx));
+			// gaps: Preferences ▸ Playback ▸ Preroll / Postroll.
+			const { prerollSeconds, postrollSeconds } = gapsPrefs.get().playback;
 			const driver = driverFor(t);
-			const from = Math.max(0, at - n);
-			const to = Math.min(endFrame(ctx) + 1, at + n);
+			const from = Math.max(0, at - Math.round(prerollSeconds * fps(ctx)));
+			const to = Math.min(endFrame(ctx) + 1, at + Math.round(postrollSeconds * fps(ctx)));
 			if (driver) driver.playRange(from, to, { returnTo: at });
 		},
 	},

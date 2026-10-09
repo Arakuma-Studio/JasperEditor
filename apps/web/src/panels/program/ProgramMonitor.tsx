@@ -136,7 +136,10 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	// ui-perf: gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
 	const drawn = useGestureFrameDocument();
 	const media = useSessionState((s) => s.media);
-	const useProxies = useSessionState((s) => s.toggles.useProxies);
+	const autoProxies = useSessionState((s) => s.toggles.useProxies);
+	// gaps (PRJ-8): Toggle Proxies plays attached proxies.
+	const attachedProxies = useSessionState((s) => !!s.toggles.attachedProxies);
+	const useProxies = autoProxies || attachedProxies;
 	const monitor = useStoreSelector(monitorStores.program, (s) => s);
 	const fontCatalog = useFontCatalog(engine);
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
@@ -194,13 +197,29 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		if (!seqId || !seq) return null;
 		const d = buildProgramDoc(
 			mcView
-				? { doc: mcView.doc, sequenceId: mcView.sequenceId, media, proxyTier: tier, fontCatalog }
-				: { doc: drawn, sequenceId: seqId, media, proxyTier: tier, fontCatalog },
+				? {
+						doc: mcView.doc,
+						sequenceId: mcView.sequenceId,
+						media,
+						proxyTier: tier,
+						fontCatalog,
+						attachedProxies,
+						autoProxies,
+					}
+				: {
+						doc: drawn,
+						sequenceId: seqId,
+						media,
+						proxyTier: tier,
+						fontCatalog,
+						attachedProxies,
+						autoProxies,
+					},
 			prevDoc.current,
 		);
 		prevDoc.current = d;
 		return d;
-	}, [drawn, seqId, seq, media, tier, fontCatalog, expressionsReady, mcView]);
+	}, [drawn, seqId, seq, media, tier, fontCatalog, expressionsReady, mcView, attachedProxies, autoProxies]);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();
