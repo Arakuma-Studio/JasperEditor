@@ -16,12 +16,30 @@ export type TileDraw = (
 // removed (code-split CSS).
 const tokenCache = new Map<string, string>();
 let tokenWatch: { sheets: number } | null = null;
+let tokenVersion = 0;
+const tokenListeners = new Set<() => void>();
+
+function clearTokens(): void {
+	tokenCache.clear();
+	tokenVersion++;
+	for (const l of [...tokenListeners]) l();
+}
+
+/** Changes whenever the cached token values may have changed (views drawing with tokens re-render on it). */
+export const designTokens = {
+	version: () => tokenVersion,
+	subscribe(l: () => void): () => void {
+		watchTokens();
+		tokenListeners.add(l);
+		return () => tokenListeners.delete(l);
+	},
+};
 
 function watchTokens(): void {
 	if (tokenWatch || typeof document === 'undefined') return;
 	tokenWatch = { sheets: document.styleSheets.length };
 	if (typeof MutationObserver === 'undefined') return;
-	const clear = () => tokenCache.clear();
+	const clear = clearTokens;
 	new MutationObserver(clear).observe(document.documentElement, { attributes: true });
 	new MutationObserver(clear).observe(document.head, { childList: true, subtree: true, characterData: true });
 }
@@ -32,7 +50,7 @@ export function cssVar(el: Element | null, name: string): string {
 	watchTokens();
 	if (tokenWatch && document.styleSheets.length !== tokenWatch.sheets) {
 		tokenWatch.sheets = document.styleSheets.length;
-		tokenCache.clear();
+		clearTokens();
 	}
 	let v = tokenCache.get(name);
 	if (v === undefined) {
