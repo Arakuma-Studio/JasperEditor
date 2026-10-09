@@ -64,11 +64,11 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | PRJ-1 | Project panel: bins, list and icon views, search, labels, drag to timeline | P0 | done | WP-2E | — |
 | PRJ-2 | Import media (upload / register path), probe, posters, filmstrips, waveforms | P0 | done | WP-2E, WP-2F | — |
 | PRJ-3 | Relink and Replace Footage | P1 | done | Link Media dialog (Project panel and File menu, folder search, relink by name / path), `media.relink`, MCP `link_media` / `replace_footage` (wp-notes/interchange.md §Link Media; `e2e/interchange.spec.ts`, `apps/engine/test/interchange.test.ts`); no Tape Name match | interchange |
-| PRJ-4 | Project Settings dialog | P1 | missing | File ▸ Project Settings… still unregistered (counted from `MENUBAR` and the registry) | edit-ux |
+| PRJ-4 | Project Settings dialog | P1 | done | File ▸ Project Settings…: display formats (timecode / frames / feet+frames, samples / ms), Scratch Disks, Ingest Settings (wp-notes/gaps.md; `apps/web/test/gaps-settings-dialogs.test.tsx`, `packages/project/test/gaps-display-format.test.ts`) | gaps |
 | PRJ-5 | Color mattes and other synthetic items | P1 | done | `synthetic.create/update` (Bars and Tone, Black Video, Color Matte, Transparent Video, Universal Counting Leader, Adjustment Layer), New Item menu, preview and native/Remotion export (edit-structure tests) | edit-structure |
-| PRJ-6 | Remove unused media, Project Manager (collect / consolidate) | P2 | partial (0.5) | Remove Unused done (`media.removeUnused`, Edit menu, MCP, edit-structure); no Project Manager | imports |
+| PRJ-6 | Remove unused media, Project Manager (collect / consolidate) | P2 | done | Remove Unused (edit-structure); File ▸ Project Manager: collect / consolidate with handles (ProRes 422 HQ / WAV), exclude unused, previews, proxies, disk estimate, report (wp-notes/gaps.md; `apps/engine/test/gaps-project-manager.test.ts`: the copy shows the same frame codes) | gaps |
 | PRJ-7 | Media cache: usage, cleaning, location | P1 | done | wp-m3-cachegc | — |
-| PRJ-8 | Proxies: create, attach, toggle | P1 | partial (0.5) | 720p/540p playback proxies exist (S04); Clip ▸ Create Proxies unregistered, no attach/toggle UI (`previews` did not rework them) | — |
+| PRJ-8 | Proxies: create, attach, toggle | P1 | done | Create / Attach Proxies, Reconnect Full Resolution, Detach, Toggle Proxies (monitors + button bar), ingest proxies, Export ▸ Use Proxies only when asked (wp-notes/gaps.md; `apps/engine/test/gaps-media-jobs.test.ts`, `packages/project/test/gaps-proxies.test.ts`) | gaps |
 
 ### Import
 
@@ -103,8 +103,8 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | TL-7 | Copy / paste, paste insert, paste attributes | P1 | done | wp-clipboard | — |
 | TL-8 | Nested sequences (Nest…, sequences as clips) | P1 | done | Nest…/Unnest, sequences as clips (nest or individual clips), double-click / Reveal Nested; preview, native in-graph and Remotion export (docs/wp-notes/edit-structure.md) | edit-structure |
 | TL-9 | Group / ungroup | P2 | done | `clip.group/ungroup`, select / move / delete / outer-edge trim as a group, Alt single select | edit-structure |
-| TL-10 | Add / delete tracks dialogs, track rename and heights | P1 | partial (0.5) | `track.add/remove/update` exist; Sequence ▸ Add Tracks… / Delete Tracks… still unregistered | edit-ux |
-| TL-11 | Multiple sequences: create, duplicate, delete, Sequence Settings | P1 | partial (0.75) | create, `sequence.duplicate`, `sequence.delete` (approval-gated for agents); Sequence ▸ Sequence Settings… covers colour (color-mgmt), frame size / rate / audio are edited in Properties, not in one dialog | edit-structure |
+| TL-10 | Add / delete tracks dialogs, track rename and heights | P1 | done | Add Tracks… / Delete Tracks…, Clip ▸ Rename…, track height presets, minimise / expand all (wp-notes/gaps.md; `apps/web/test/gaps-ui5-tracks.test.tsx`) | gaps |
+| TL-11 | Multiple sequences: create, duplicate, delete, Sequence Settings | P1 | done | one Sequence Settings dialog (timebase, frame size, pixel aspect, fields, audio rate, channels, links to Video Previews and colour), New Sequence From Clip; anamorphic delivery checked with ffprobe (wp-notes/gaps.md; `packages/project/test/gaps-sequence-format.test.ts`, `apps/engine/test/gaps-export-formats.test.ts`) | gaps |
 | TL-12 | Adjustment layers | P1 | done | effects on the composite below with opacity, blend, crop and Opacity masks; preview, native and Remotion export | edit-structure |
 | TL-13 | Multi-camera source sequences and live switching | P1 | done | create by timecode / audio / in points, Multi-Camera view, live switching recorded as cuts, flatten; nests (D-44) in preview, native and Remotion export (wp-notes/multicam.md; `packages/project/test/multicam.test.ts`, `apps/engine/test/multicam-export.test.ts`, `e2e/multicam.spec.ts`) | multicam |
 
@@ -135,7 +135,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | FX-3 | Keying (11 effects) | P1 | done | premiere-adjust-color-keying | — |
 | FX-4 | Shutter motion blur | P2 | done | fx-motion-blur | — |
 | FX-5 | Effect masks and opacity masks (ellipse, polygon, pen), mask tracking | P1 | done | masks on effects and Opacity, feather / expansion / invert, keyframes, tracking (wp-notes/masks.md; `packages/project/test/masks-commands.test.ts`, `apps/engine/test/masks-export.test.ts`, `apps/engine/test/masks-track.test.ts`, `e2e/masks.spec.ts`) | masks |
-| FX-6 | Warp Stabilizer-style stabilisation | P1 | partial (0.75) | vid.stab as clip processing (D-25), not a live effect with analysis in the clip (sim-warp did not build one: wp-notes/sim-warp.md) | — |
+| FX-6 | Warp Stabilizer-style stabilisation | P1 | done | live Warp Stabilizer effect with background analysis stored in the effect, Smooth Motion / No Motion, Position / PSR / Perspective / Subspace Warp, all four framings, Advanced options; preview + export, WARP_NOT_ANALYZED blocker (wp-notes/gaps.md; `packages/project/test/gaps-warp-stabilizer.test.ts`, `packages/compositions/test/fx-warp-stabilizer-gl.test.ts`, `apps/engine/test/gaps-warp-analysis.test.ts`); vid.stab processing stays (D-25) | gaps |
 
 ### Transitions
 
@@ -159,8 +159,8 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | GR-1 | Text clips: fonts, fill, strokes, shadow, background box | P0 | done | S01 text, layer bake (D-31) | — |
 | GR-2 | Shapes: pen paths, polygons, stars, groups, fills, strokes, path operators | P1 | done | vector shapes with the nine AE path operators, Pen / Rectangle / Ellipse / Polygon / Star tools (wp-notes/shapes.md; `packages/project/test/vector/*`, `apps/engine/test/vector-shapes-remotion.e2e.test.ts`, `e2e/vector-shapes.spec.ts`) | shapes |
 | GR-3 | Text animators: presets and After Effects range selectors | P1 | done | range / wiggly / expression selectors, text on a path, typography (wp-notes/text-animators.md; `packages/project/test/text-animators.test.ts`, `packages/compositions/test/text-animators.e2e.test.ts`, `e2e/text-animators.spec.ts`) | text-animators |
-| GR-4 | Motion graphics templates with editable parameters (fframes, anime.js) | P1 | partial (0.75) | wp-m2-mg, wp-m2-anime-templates; no MOGRT import, no responsive design | — |
-| GR-5 | Essential Graphics panel (layers, align, responsive pins), rolling / crawling titles | P1 | missing | not built by text-animators (wp-notes/text-animators.md); shapes has an Essential Graphics-style layer list for one vector shape only | — |
+| GR-4 | Motion graphics templates with editable parameters (fframes, anime.js) | P1 | done | wp-m2-mg, wp-m2-anime-templates; graphic templates (.jgt) export / import with responsive design; MOGRT import not supported, documented why (wp-notes/gaps.md §2) | gaps |
+| GR-5 | Essential Graphics panel (layers, align, responsive pins), rolling / crawling titles | P1 | done | Essential Graphics panel: layers, New Layer, align / distribute, Responsive Design position (pins) and time (intro / outro), Roll / Crawl with off-screen, pre-roll, ease, post-roll, applied on every render path (wp-notes/gaps.md; `packages/project/test/gaps-graphics.test.ts`, `e2e/gaps.spec.ts`) | gaps |
 | GR-6 | 3D layers, cameras and lights (After Effects overlap) | P2 | done | classic and advanced 3D, cameras, lights, models, 3D camera tracker (wp-notes/three-d.md; `packages/compositions/test/three-d-gl.test.ts`, `packages/compositions/test/three-d-render.e2e.test.ts`, `e2e/three-d.spec.ts`) | three-d |
 | GR-7 | Simulation and warp effects beyond the catalogue (particles, mesh warp, liquify) | P2 | done | 18 AE simulation effects, Mesh Warp, Liquify, Puppet, Bezier Warp… as deterministic GPU effects with monitor tools (wp-notes/sim-warp.md; `packages/compositions/test/fx-sim-warp-gl.test.ts`, `packages/project/test/sim-warp-commands.test.ts`, `e2e/sim-warp.spec.ts`) | sim-warp |
 
@@ -184,7 +184,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | AU-4 | Audio Track Mixer and Clip Mixer, submixes | P1 | done | mixers, sends, submixes, automation modes (wp-notes/audio-mix.md; `apps/web/test/audio-mix-panels.test.tsx`, `e2e/audio-mix.spec.ts`); submixes are not timeline rows | audio-mix |
 | AU-5 | Audio effects (EQ, dynamics, reverb, noise reduction, pitch) | P1 | done | 60 audio effects in one DSP for preview and export (D-42; wp-notes/audio-fx.md; `packages/audio-fx/test/*`, `apps/engine/test/audio-fx.test.ts`, `e2e/audio-fx.spec.ts`) | audio-fx |
 | AU-6 | Essential Sound, loudness normalisation, ducking | P1 | done | Essential Sound panel, two-pass loudness normalisation with true-peak limiter, auto-ducking, Music Remix (wp-notes/audio-mix.md, wp-notes/audio-fx.md; `packages/audio-fx/test/remix.test.ts`, `apps/engine/test/audio-mix.test.ts`) | audio-fx |
-| AU-7 | Audio channel mapping (Modify ▸ Audio Channels) | P2 | partial (0.5) | clip `channels` selection and track `channelFormat` mono / stereo / 5.1 in the model and mixer (wp-notes/audio-mix.md); Clip ▸ Audio Channels… still unregistered | audio-mix |
+| AU-7 | Audio channel mapping (Modify ▸ Audio Channels) | P2 | done | Clip ▸ Modify ▸ Audio Channels: matrix, clip channel format, number of clips, muted channels in preview and export, routings on Project items (wp-notes/gaps.md; `gaps-audio-channels` project + engine tests) | gaps |
 
 ### Captions & speech
 
@@ -204,8 +204,8 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | EX-1 | Export mode, presets, planner with native / hybrid / Remotion paths and named blockers | P0 | done | D-11, D-22, D-34, D-35 | — |
-| EX-2 | Codecs: H.264 (hardware or OpenH264), VP9, AV1, ProRes, alpha; AAC / Opus | P0 | partial (0.75) | D-13; no HEVC software encoder, OpenH264 quality below x264 | — |
-| EX-3 | Export Frame, Quick Export, export queue | P1 | partial (0.5) | Quick Export and queue registered; File ▸ Export ▸ Frame still unregistered (MCP `render_frame` exists; `previews` did not rework it) | — |
+| EX-2 | Codecs: H.264 (hardware or OpenH264), VP9, AV1, ProRes, alpha; AAC / Opus | P0 | partial (0.9) | D-13; HEVC Main via libkvazaar (hvc1, BT.709 / PQ / HLG tags), Main10 through hardware encoders only (wp-notes/gaps.md; `apps/engine/test/gaps-export-formats.test.ts`); OpenH264 quality below x264 | gaps |
+| EX-3 | Export Frame, Quick Export, export queue | P1 | done | File ▸ Export ▸ Frame (PNG / JPEG / TIFF / DPX / EXR / BMP / Targa, import into project, camera buttons in both monitors, Shift+E); smart-rendered avc3 plays in Chrome and Electron (wp-notes/gaps.md; `gaps-export-frame`, `gaps-avc3-playback`) | gaps |
 | EX-4 | Render previews (timeline render bar), smart rendering | P1 | done | render bar with reasons, Render Effects In to Out / In to Out / Selection / Audio, Delete Render Files, previews played by the Program monitor, Export ▸ Use Previews, smart rendering (ProRes; H.264 opt-in) (wp-notes/previews.md; `apps/engine/test/previews.test.ts`, `apps/engine/test/smart-render.test.ts`, `e2e/previews.spec.ts`); no HEVC smart rendering | previews |
 
 ### Processing
@@ -213,7 +213,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | AI-1 | Upscale (SPAN), stabilise, denoise, de-judder as derived media (beyond Premiere) | P2 | done | wp-m2-process | — |
-| AI-2 | Scene edit detection, auto reframe, morph cut | P2 | partial (0.25) | Scene Edit Detection (wp-notes/time.md; `apps/mcp/test/time.test.ts`); no auto reframe or morph cut | — |
+| AI-2 | Scene edit detection, auto reframe, morph cut | P2 | done | Scene Edit Detection (time); Auto Reframe Sequence (faces when installed, else saliency; keyed Position) and Morph Cut on the time workstream's optical flow (wp-notes/gaps.md; `apps/engine/test/gaps-reframe.test.ts`, `packages/compositions/test/transition-premiere-gl.test.ts`) | gaps |
 
 ### Project files
 
@@ -232,15 +232,15 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | UI-1 | Docked panels, workspaces (save, import, export, reset) | P0 | done | WP-2A | — |
 | UI-2 | Premiere default shortcuts, conflict-free keymap | P0 | done | keymap-defaults.ts, keymap.test.ts | — |
 | UI-3 | Keyboard Shortcuts editor | P1 | done | Edit ▸ Keyboard Shortcuts… (Ctrl+Alt+K) with layouts and conflict display (wp-notes/edit-ux.md; `apps/web/test/edit-ux-keyboard.test.tsx`) | edit-ux |
-| UI-4 | Preferences dialog | P1 | partial (0.5) | pages General, Timeline, Audio, Graphics, Media Cache, Transcription, Processing, Roto & Face Tracking (`registerPreferencesPage`); Premiere's Auto Save, Collaboration, Control Surface, Labels, Playback and Trim pages absent (themes live in Edit ▸ Preferences ▸ Appearance) | edit-ux |
-| UI-5 | Find, Edit Original, Exit | P2 | missing | Edit ▸ Find…, Edit Original and File ▸ Exit still unregistered | edit-ux |
+| UI-4 | Preferences dialog | P1 | done | pages General, Timeline, Audio, Graphics, Media Cache, Transcription, Processing, Roto & Face Tracking plus Appearance, Auto Save, Labels, Memory, Playback, Trim, Audio Hardware wired to behaviour; Collaboration / Sync Settings omitted (no such services) (wp-notes/gaps.md; `apps/web/test/gaps-preferences.test.tsx`) | gaps |
+| UI-5 | Find, Edit Original, Exit | P2 | done | Edit ▸ Find…, Edit Original, File ▸ Exit (desktop) (wp-notes/gaps.md; `apps/web/test/gaps-ui5-tracks.test.tsx`, `apps/engine/test/gaps-routes.test.ts`) | gaps |
 | UI-6 | Localisation and accessibility | P2 | missing | none | — |
 
 ### Agents
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| AG-1 | MCP server: 299 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools` | mcp-cli |
+| AG-1 | MCP server: 322 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools` | mcp-cli |
 
 ### Platforms
 
@@ -260,8 +260,8 @@ evidence in their wp-notes. Still running, and **not** credited:
 
 HTML-in-Canvas scope nestings (D-43, wp-notes/previews.md §5), still open after `previews`, are drawn by the flat compositor since `compositor` (wp-notes/compositor.md).
 
-Rows still missing or partial with no workstream: PRJ-4, PRJ-6 (Project Manager), PRJ-8 (proxy UI), TL-10, TL-11
-(one Sequence Settings dialog), FX-6, GR-4, GR-5, AU-7, EX-2, EX-3 (Export Frame), UI-4, UI-5, UI-6, AI-2, PL-2.
+Rows still missing or partial with no workstream: PL-2. `gaps` closed PRJ-4, PRJ-6, PRJ-8, TL-10, TL-11, FX-6, GR-4,
+GR-5, AU-7, EX-3, AI-2, UI-4, UI-5 and UI-6 and moved EX-2 to 0.9 (wp-notes/gaps.md).
 
 ## Out of scope or intentionally absent
 

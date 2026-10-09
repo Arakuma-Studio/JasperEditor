@@ -188,33 +188,38 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 					<DropdownMenu
 						items={menu}
 						trigger={
-							<button
-								type="button"
-								aria-label={`${title} panel menu`}
+							// gaps (UI-6, axe nested-interactive): a role=tab may not contain controls, so the menu and close
+							// glyphs are pointer shortcuts hidden from assistive technology; the tab's context menu
+							// (Shift+F10 / the Menu key) has the same items and Close Panel (Ctrl+W) closes it by keyboard.
+							<span
+								aria-hidden="true"
 								data-testid={`panel-menu-${kind}`}
 								onPointerDown={(e) => e.stopPropagation()}
-								className="inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
+								className="inline-flex size-4 shrink-0 cursor-default items-center justify-center rounded-[2px] text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
 							>
 								<Icon id="panel.menu" size={14} />
-							</button>
+							</span>
 						}
 					/>
 				) : null}
-				<button
-					type="button"
-					aria-label={`Close ${title}`}
+				{/* biome-ignore lint/a11y/noStaticElementInteractions: pointer shortcut; keyboard users close panels with Close Panel (see above) */}
+				{/* biome-ignore lint/a11y/useKeyWithClickEvents: same */}
+				<span
+					aria-hidden="true"
+					title={`Close ${title}`}
+					data-testid={`panel-close-${kind}`}
 					onPointerDown={(e) => e.stopPropagation()}
 					onClick={(e) => {
 						e.stopPropagation();
 						controller.close(props.api.id);
 					}}
 					className={cx(
-						'inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon opacity-0 group-hover/tab:opacity-100 hover:bg-pr-hover focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100',
+						'inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon opacity-0 group-hover/tab:opacity-100 hover:bg-pr-hover [@media(pointer:coarse)]:opacity-100',
 						narrow ? 'hidden' : '',
 					)}
 				>
 					<Icon id="app.close" size={12} />
-				</button>
+				</span>
 			</div>
 		</ContextMenu>
 	);

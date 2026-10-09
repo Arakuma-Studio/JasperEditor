@@ -8,7 +8,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 import { createProject, enableAgentBridge, importFiles, query, ROOT, serverInfo, transact } from './support.ts';
 
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'default' });
 
 const SHOTS = join(ROOT, 'test-results', 'gaps');
 mkdirSync(SHOTS, { recursive: true });
@@ -16,7 +16,12 @@ const shot = (page: Page, name: string) => page.screenshot({ path: join(SHOTS, `
 
 let page: Page;
 
-type Violation = { id: string; impact?: string | null; help: string; nodes: { target: unknown[]; html: string }[] };
+type Violation = {
+	id: string;
+	impact?: string | null;
+	help: string;
+	nodes: { target: unknown[]; html: string; any?: { relatedNodes?: { html: string }[] }[]; all?: { relatedNodes?: { html: string }[] }[]; none?: { relatedNodes?: { html: string }[] }[] }[];
+};
 
 async function audit(where: string): Promise<string[]> {
 	const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
@@ -26,7 +31,14 @@ async function audit(where: string): Promise<string[]> {
 			(v) =>
 				`${where}: ${v.id} (${v.impact}) ${v.help} — ${v.nodes.length} nodes, e.g. ${v.nodes
 					.slice(0, 3)
-					.map((n) => `${JSON.stringify(n.target)} ${n.html.slice(0, 120)}`)
+					.map(
+						(n) =>
+							`${JSON.stringify(n.target)} ${n.html.slice(0, 120)}${[...(n.any ?? []), ...(n.all ?? []), ...(n.none ?? [])]
+								.flatMap((c) => c.relatedNodes ?? [])
+								.slice(0, 2)
+								.map((r) => ` ⟶ ${r.html.slice(0, 160)}`)
+								.join('')}`,
+					)
 					.join(' | ')}`,
 		);
 }
@@ -43,7 +55,8 @@ async function ui<T = unknown>(action: string, args: Record<string, unknown> = {
 const runCommand = (id: string, args?: unknown) => ui('command', { id, ...(args ? { args } : {}) });
 
 test.beforeAll(async ({ browser }) => {
-	page = await browser.newPage();
+	const context = await browser.newContext();
+	page = await context.newPage();
 	await enableAgentBridge(page);
 	projectId = await createProject(page, 'E2E gaps');
 	await importFiles(page, ['clip-a.mp4', 'shaky.mp4', 'reframe.mp4']);

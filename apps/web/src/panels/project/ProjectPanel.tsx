@@ -373,7 +373,14 @@ export function ProjectPanel(props: PanelProps) {
 			</div>
 
 			{/* Body */}
-			<div className="min-h-0 flex-1 overflow-auto" data-testid="project-body">
+			{/* gaps (UI-6): the scrolling list is keyboard-reachable (axe scrollable-region-focusable). */}
+			<section
+				className="min-h-0 flex-1 overflow-auto"
+				data-testid="project-body"
+				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard
+				tabIndex={0}
+				aria-label="Project items"
+			>
 				{uploads.length ? <PendingImports jobs={uploads} /> : null}
 				{rows.length === 0 && !uploads.length ? (
 					<EmptyState
@@ -425,7 +432,7 @@ export function ProjectPanel(props: PanelProps) {
 						handlers={rowHandlers}
 					/>
 				)}
-			</div>
+			</section>
 
 			{/* Footer (PRJ-003) */}
 			<div className="relative flex h-[var(--pr-row-h)] shrink-0 items-center gap-1 border-t border-pr-border-subtle px-1">
