@@ -135,7 +135,9 @@ test('scrolling and zooming a 5 000-clip timeline stay above 50 fps', async ({ p
 	expect(zoom.fps).toBeGreaterThanOrEqual(fpsFloor(50));
 });
 
-test('the Project panel with 2 000 items scrolls smoothly and renders only what is in view', async ({ page }) => {
+test('the Project panel with 2 000 items scrolls smoothly and renders only what is in view', async ({
+	page,
+}) => {
 	test.setTimeout(300_000);
 	await page.setViewportSize({ width: 1600, height: 960 });
 	const openMs = await open(page, 'items:2000');

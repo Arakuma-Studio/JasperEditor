@@ -63,6 +63,7 @@ import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { type FrameSpan, FrameWindow } from './frame-window.tsx';
 import { CanvasOwnerContext } from './fx/canvas-scope.tsx';
 import { installCaptureSafeCanvases } from './fx/capture-safe-canvas.ts';
 import {
@@ -113,7 +114,6 @@ import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { NestCompSizeContext, NestTracksContext } from './layers/nest-context.ts';
 import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
-import { type FrameSpan, FrameWindow } from './frame-window.tsx';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { applyPreviews, PreviewLayers } from './previews.tsx';
 import { FrameRepaint } from './repaint.tsx';

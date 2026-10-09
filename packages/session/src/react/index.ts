@@ -56,7 +56,6 @@ export function useStoreSelector<S, T>(
 ): T {
 	const committed = useRef<{ value: T } | null>(null);
 	const frozen = useContext(FreezeContext);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: `frozen` changes what the snapshot returns
 	const getSnapshot = useMemo(() => {
 		let cache: { state: S; value: T } | null = null;
 		return () => {

@@ -38,7 +38,6 @@ export * from './edit/trim-mode.ts';
 export * from './effect-presets/index.ts';
 export * from './essential/index.ts';
 export * from './expressions.ts';
-export * from './json-cache.ts';
 export * from './factories.ts';
 export * from './ids.ts';
 export * from './interpret/index.ts';
@@ -53,6 +52,7 @@ export {
 	setInvariantMode,
 	verifyDocument,
 } from './invariants-incremental.ts';
+export * from './json-cache.ts';
 export * from './keyframes.ts';
 export * from './keyframes-spatial.ts';
 export * from './lottie/index.ts';

@@ -180,11 +180,19 @@ type Envelope = { document: { projectId: string; name: string } } & Record<strin
 
 /** Creates a project on the engine from an envelope (PUT over a fresh project) and returns its id. */
 export async function uploadProject(base: string, envelope: Envelope): Promise<string> {
-	const call = async (path: string, init: RequestInit = {}) => {
-		const r = await fetch(`${base}${path}`, {
-			...init,
-			headers: { 'content-type': 'application/json', 'x-jasper-api': '1', ...(init.headers ?? {}) },
-		});
+	const call = async (path: string, init: RequestInit = {}, attempt = 0): Promise<any> => {
+		let r: Response;
+		try {
+			r = await fetch(`${base}${path}`, {
+				...init,
+				headers: { 'content-type': 'application/json', 'x-jasper-api': '1', ...(init.headers ?? {}) },
+			});
+		} catch (e) {
+			// A busy engine may drop a large upload: retry a few times.
+			if (attempt >= 3) throw e;
+			await new Promise((res) => setTimeout(res, 2000));
+			return call(path, init, attempt + 1);
+		}
 		const text = await r.text();
 		if (!r.ok) throw new Error(`${init.method ?? 'GET'} ${path}: ${r.status} ${text.slice(0, 300)}`);
 		return text ? JSON.parse(text) : null;
@@ -504,7 +512,9 @@ export async function effectControlsScenario(page: Page, tracer: Window, steps =
 	// The clip may run past the visible range: click its visible part.
 	const c = await page.evaluate((t) => {
 		const area = document.querySelector('[data-testid="timeline-clip-area"]')!.getBoundingClientRect();
-		const el = document.querySelector(`[data-testid="timeline-track-area"] [data-track-id="${t}"] [data-clip-id]`);
+		const el = document.querySelector(
+			`[data-testid="timeline-track-area"] [data-track-id="${t}"] [data-clip-id]`,
+		);
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
 		const x0 = Math.max(r.left, area.left);
