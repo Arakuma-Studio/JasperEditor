@@ -254,7 +254,7 @@ export function registerPresetTools(ctx: ToolContext): void {
 		{
 			title: 'Delete effect preset',
 			description:
-				"Removes a preset from the user's library (built-ins cannot be deleted). Only when the user asks.",
+				"Removes a preset from the user's library (built-ins cannot be deleted; not undoable). Only when the user asks: it needs their approval in an open JasperEditor window (E_APPROVAL_DENIED without one).",
 			input: { presetId: z.string().min(1) },
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},

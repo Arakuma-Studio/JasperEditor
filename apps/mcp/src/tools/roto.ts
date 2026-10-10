@@ -257,7 +257,8 @@ export function registerRotoTools(ctx: ToolContext): void {
 		'remove_roto_model',
 		{
 			title: 'Remove roto model',
-			description: 'Deletes a downloaded segmentation / face model (computed mattes are kept).',
+			description:
+				"Deletes a downloaded segmentation / face model (computed mattes are kept). Needs the user's approval in an open JasperEditor window.",
 			input: { modelId: z.string().min(1) },
 			annotations: DESTRUCTIVE,
 		},
