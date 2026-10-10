@@ -50,6 +50,8 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 			origin: 'process',
 		},
 	}),
+	// v5 → v6: version bump only (parity-program additions; v5 builds open the files read-only).
+	'5→6': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {

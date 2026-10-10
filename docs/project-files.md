@@ -49,6 +49,7 @@ crash recovery).
 | 3 | M2 (D-29) | LUT and Remotion-bundle media, process recipes, trackers, curve parameters | `v2→v3`: version bump only, so M1 builds open M2 files read-only |
 | 4 | M2 (D-32) | text animators, anime.js template renderer, shape clips | `v3→v4`: version bump only |
 | 5 | M3 (D-33) | `MediaAsset.sourceRange` (which source frames a processed or rendered version holds) | `v4→v5`: processed versions made from the whole source get the explicit full-source range |
+| 6 | parity program (D-36…D-48) | masks and track mattes, nests and adjustment layers, groups, captions and transcripts, time remapping, vector shapes, text animators, expressions, 3D layers / cameras / lights, multicam, roto mattes, audio effects / buses / Essential Sound, working colour spaces, interpreted footage, and the other optional fields the parity workstreams added | `v5→v6`: version bump only, so v5 builds open v6 files read-only instead of dropping the new fields on save |
 
 Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
 forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:

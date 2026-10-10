@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
+	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	createCounterIdSource,
 	defaultEffectRegistry,
@@ -30,10 +31,10 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		expect(m.readOnly).toBe(false);
 		expect(m.report).toEqual({
 			fromVersion: 1,
-			toVersion: 5,
-			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5'],
+			toVersion: CURRENT_SCHEMA_VERSION,
+			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5', 'v5→v6'],
 		});
-		expect(m.document.schemaVersion).toBe(5);
+		expect(m.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
 		const before = Object.values(env.document.sequences)[0] as Record<string, any>;
 		const after = Object.values(m.document.sequences)[0]!;
 		for (const c of Object.values(before.clips as Record<string, any>)) {
@@ -59,19 +60,19 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		const m = migrate(env);
 		expect(Object.values(m.document.sequences)[0]!.clips[audio.id]!.label).toBe('rose');
 	});
-	it('the v2 fixture loads unchanged (v2 → v3 → v4 → v5 change no data it holds) and newer versions open read-only', () => {
+	it('the v2 fixture loads unchanged (v2 → … → v6 change no data it holds) and newer versions open read-only', () => {
 		const env = fixtureV2();
 		const m = migrate(env);
 		expect(m.readOnly).toBe(false);
-		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4', 'v4→v5']);
-		expect(m.document).toEqual({ ...env.document, schemaVersion: 5 });
+		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4', 'v4→v5', 'v5→v6']);
+		expect(m.document).toEqual({ ...env.document, schemaVersion: CURRENT_SCHEMA_VERSION });
 		const r2 = loadProject(env, { effects: defaultEffectRegistry });
 		expect(r2.repairs).toEqual([]);
 		expect(r2.issues).toEqual([]);
 		const newer = {
 			...env,
-			schemaVersion: 6,
-			document: { ...env.document, schemaVersion: 6, futureField: { a: 1 } },
+			schemaVersion: CURRENT_SCHEMA_VERSION + 1,
+			document: { ...env.document, schemaVersion: CURRENT_SCHEMA_VERSION + 1, futureField: { a: 1 } },
 		};
 		const r = loadProject(newer);
 		expect(r.readOnly).toBe(true);

@@ -89,6 +89,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 3, to: 4, migrate: (doc) => doc },
 	// v5 (M3): source ranges of processed versions (S07:PRC-015).
 	{ from: 4, to: 5, migrate: migrateV4ToV5 },
+	// v6 (parity program, D-36…D-48): masks, track mattes, nests, adjustment layers, groups, captions and
+	// transcripts, time remapping, vector shapes, text animators, expressions, 3D layers / cameras / lights,
+	// multicam, roto mattes, audio effects / buses / Essential Sound, working colour spaces, interpreted footage
+	// and the other optional fields the parity workstreams added. Existing data needs no changes; the bump makes
+	// v5 builds open v6 files read-only instead of silently dropping the new fields on their next save.
+	{ from: 5, to: 6, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

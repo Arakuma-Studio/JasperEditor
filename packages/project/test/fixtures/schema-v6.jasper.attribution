@@ -1,0 +1,8 @@
+asset:        schema-v6.jasper
+title:        Schema history fixture, v6
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-11 by the parity integrator
+notes:        Generated once through the command system from schema-v5.jasper for packages/project/test/schema-history.test.ts: v6 (parity program) adds an Opacity mask, an expression, a vector shape clip and a caption. References no media bytes.
