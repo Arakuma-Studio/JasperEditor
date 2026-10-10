@@ -105,21 +105,6 @@ panics on any file it cannot decode, and `native/mg/crates/jasper-mg-templates/m
 `Inter_24pt-*.ttf.attribution` sidecars (AGENTS.md §3). **Fix:** a `build.rs` stages the media files of `media/`
 (without sidecars) into a gitignored `.media/` that the macro embeds; the assets and their sidecars stay together.
 
-## 5. MCP scenario QA
-
-| Command | Result |
-|---|---|
-| `MCP_QA_PORT=49572 pnpm qa:mcp` | 7/7 scenarios pass (2 m 55 s) |
-| `MCP_QA_PORT=49572 REMOTION_E2E=1 pnpm qa:mcp` (render tier) | 7/7 pass (2 m 52 s) |
-
-## 6. Desktop checks (xvfb)
-
-| Command | Result |
-|---|---|
-| `DESKTOP_SMOKE_PORT=49576 pnpm e2e:desktop` | packaged-like PASS, dev PASS (screenshots looked at: the Home screen, engine connected), desktop clipboard 4/4 |
-| `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; Remotion with a named blocker without it) |
-| `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS: the packed app's FFmpeg is LGPL, a Remotion export used only the bundled FFmpeg (OpenH264), PATH ffmpeg never run |
-
 ## 4. Playwright (all specs)
 
 `node scripts/e2e-prepare.mjs` once (then again after fixes), then chunks with
@@ -152,6 +137,50 @@ spec is rerun as a whole file: its tests share one page).
   play was "recovered" as a stall. **Fix** (`apps/web/src/panels/program/playback-driver.ts`): the interval is kept
   across plays and a play's first frame gets `8 ×` (≤ 2.5 s); a genuine stall is still kicked (unit test in
   `apps/web/test/transport.test.ts` fails without the fix). 5/5 pass afterwards.
+
+## 5. MCP scenario QA
+
+| Command | Result |
+|---|---|
+| `MCP_QA_PORT=49572 pnpm qa:mcp` | 7/7 scenarios pass (2 m 55 s) |
+| `MCP_QA_PORT=49572 REMOTION_E2E=1 pnpm qa:mcp` (render tier) | 7/7 pass (2 m 52 s) |
+
+## 6. Desktop checks (xvfb)
+
+| Command | Result |
+|---|---|
+| `DESKTOP_SMOKE_PORT=49576 pnpm e2e:desktop` | packaged-like PASS, dev PASS (screenshots looked at: the Home screen, engine connected), desktop clipboard 4/4 |
+| `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; Remotion with a named blocker without it) |
+| `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS: the packed app's FFmpeg is LGPL, a Remotion export used only the bundled FFmpeg (OpenH264), PATH ffmpeg never run |
+
+## 7. CI workflow on a clean checkout
+
+`act` is not installed, so the workflow's steps ran as written in a fresh clone of `feat/verify`
+(`git clone`, `pnpm install --frozen-lockfile`, no `vendor/`, no `fixtures/media/`), with the workflow's environment
+(`JASPER_REQUIRE_ORACLES=1`, `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome`, `JASPER_TEST_RESULTS`) and the
+apt FFmpeg 6.1.1 (libx264, no OpenH264) as the oracle — exactly what the runner has. Steps: `pnpm lint`,
+`pnpm typecheck`, `pnpm test --maxWorkers=2`, `pnpm build` (`/tmp/verify-logs/ci-run.sh`).
+
+**First run: lint and typecheck pass, `pnpm test` fails (12 tests, 7 files).** None of them shows in a developer
+checkout (fixtures present, the LGPL FFmpeg in `vendor/`), so the CI workflow could never have passed:
+
+| Failure | Cause | Fix |
+|---|---|---|
+| fixture generation crashed (`ENOTEMPTY` renaming `imports-seq`), `native-animated` / `cache` suites failed | many test files spawn `scripts/make-fixtures.mjs` at once on a clean checkout; concurrent runs made every fixture twice, replaced files under readers and collided on the directory fixture | a cross-process lock (pid, stale-lock takeover) serialises the generators; waiters then skip; checked with three concurrent runs on an empty `fixtures/media` |
+| `mcp grading` (2), `mcp roto` (1): `BINARY_MISSING` | the tests start a built-mode engine, which refuses Remotion without the LGPL FFmpeg folder (correct, D-13); CI has none | run a dev engine (`JASPER_DEV=1`), as `compositions.test` and the QA harness already do |
+| `engine color-mgmt` (7): `TypeError … null` | the test hard-coded `vendor/ffmpeg-lgpl/…/ffprobe` | vendor build when present, else `JASPER_FFMPEG` / PATH (`@jasper/testkit/oracle`) like the other tests |
+| `engine previews` (1): "not all I-frames" | ffprobe's CSV output puts x264's SEI side data on the first frame's line; the frames were all I | picture types read as JSON through `@jasper/testkit/oracle` |
+| `engine smart-render` (1): 52 of 54 frames | encoded pieces are joined with copied GOPs as one raw Annex B stream (no timestamps); libx264 pieces with B-frames lost frames there — a real bug for every B-frame encoder (NVENC, QSV, VideoToolbox, AMF, VAAPI) | smart-render pieces are encoded with `-bf 0` (`EncodeParams.noBFrames`); unit test in `encoders.test.ts`; 5/5 with libx264 and OpenH264 |
+
+**Second run, after merging ui-perf and gaps (`integrate/parity` 065af535):** the fixes above held; 10 new failures in
+5 files, all in tests that arrived with the merge or share their pattern:
+
+| Failure | Cause | Fix |
+|---|---|---|
+| `gaps-export-frame` (7), `gaps-export-formats` (2), `gaps-project-manager` (1), `gaps-audio-channels` (suite) | hard-coded `vendor/ffmpeg-lgpl/linux-x64/ffmpeg` / `ffprobe` | shared `TEST_FFMPEG` / `TEST_FFPROBE` in `apps/engine/test/helpers.ts` (vendor when present, else the oracle tools) |
+| `cache.test.ts` (suite; also in the first run), same pattern in `gaps-routes`, `cache-location` | `beforeAll(() => ensureFixtures())` with the default 10 s hook timeout, while a clean checkout generates fixtures for minutes | 900 s hook timeout |
+
+The seven files then pass in the clone (41 tests, apt FFmpeg). The final run on the merged head is in §9.
 
 ## 8. Cross-feature smoke (MCP against a dev engine on 49561)
 
@@ -217,31 +246,42 @@ Bugs the smoke found, all fixed with regression tests:
 7. `get_timeline` reported a remapped clip's source as `sourceIn + duration` ("0–11 s" of 6 s media): now the media
    range its frames show. `apps/mcp/test/format.test.ts`.
 
-## 7. CI workflow on a clean checkout
+## 9. Final gate on the merged head
 
-`act` is not installed, so the workflow's steps ran as written in a fresh clone of `feat/verify`
-(`git clone`, `pnpm install --frozen-lockfile`, no `vendor/`, no `fixtures/media/`), with the workflow's environment
-(`JASPER_REQUIRE_ORACLES=1`, `JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome`, `JASPER_TEST_RESULTS`) and the
-apt FFmpeg 6.1.1 (libx264, no OpenH264) as the oracle — exactly what the runner has. Steps: `pnpm lint`,
-`pnpm typecheck`, `pnpm test --maxWorkers=2`, `pnpm build` (`/tmp/verify-logs/ci-run.sh`).
+Last merge: `integrate/parity` **c67a6dfb** (perf-core, ui-perf, gaps and review landed during the work). One merge
+follow-up: review's DATA-7 fix and §8's re-identification fix had landed separately, so the duplicate loop was
+dropped (both regression tests kept).
 
-**First run: lint and typecheck pass, `pnpm test` fails (12 tests, 7 files).** None of them shows in a developer
-checkout (fixtures present, the LGPL FFmpeg in `vendor/`), so the CI workflow could never have passed:
+Two more findings on the merged head, fixed:
 
-| Failure | Cause | Fix |
+- `packages/expressions/test/sandbox.test.ts` "an expression that exhausted the heap is not run again" failed 4/4 at
+  load ≈ 25: the 2 s wall clock stopped the heap-filling loop (≈ 2.3 s) before the memory limit, and the quarantine
+  only took expressions that ran past **twice** the limit, so the hostile expression ran again every frame. Now an
+  expression that fails after blocking for the limit or longer is quarantined too (`runtime.ts`; note added to
+  `docs/security-review.md` EXPR-2); the test accepts whichever guard fires.
+- `apps/web/test/shell-render.test.tsx` timed out (default 5 s) on the loaded CI run: it mounts the whole editor;
+  suite timeout 60 s (its assertions wait on conditions).
+
+| Gate | Command | Result |
 |---|---|---|
-| fixture generation crashed (`ENOTEMPTY` renaming `imports-seq`), `native-animated` / `cache` suites failed | many test files spawn `scripts/make-fixtures.mjs` at once on a clean checkout; concurrent runs made every fixture twice, replaced files under readers and collided on the directory fixture | a cross-process lock (pid, stale-lock takeover) serialises the generators; waiters then skip; checked with three concurrent runs on an empty `fixtures/media` |
-| `mcp grading` (2), `mcp roto` (1): `BINARY_MISSING` | the tests start a built-mode engine, which refuses Remotion without the LGPL FFmpeg folder (correct, D-13); CI has none | run a dev engine (`JASPER_DEV=1`), as `compositions.test` and the QA harness already do |
-| `engine color-mgmt` (7): `TypeError … null` | the test hard-coded `vendor/ffmpeg-lgpl/…/ffprobe` | vendor build when present, else `JASPER_FFMPEG` / PATH (`@jasper/testkit/oracle`) like the other tests |
-| `engine previews` (1): "not all I-frames" | ffprobe's CSV output puts x264's SEI side data on the first frame's line; the frames were all I | picture types read as JSON through `@jasper/testkit/oracle` |
-| `engine smart-render` (1): 52 of 54 frames | encoded pieces are joined with copied GOPs as one raw Annex B stream (no timestamps); libx264 pieces with B-frames lost frames there — a real bug for every B-frame encoder (NVENC, QSV, VideoToolbox, AMF, VAAPI) | smart-render pieces are encoded with `-bf 0` (`EncodeParams.noBFrames`); unit test in `encoders.test.ts`; 5/5 with libx264 and OpenH264 |
+| Lint, typecheck, e2e typecheck, notices, ffmpeg licence | `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck`, `pnpm notices --check`, `pnpm ffmpeg:check` | pass |
+| Every vitest suite with every opt-in | `REMOTION_E2E=1 MG_E2E=1 MG_PARITY=1 SPEECH_E2E=1 pnpm vitest run --maxWorkers=2` (MCP ports 49650–49659) | 514 files / 4,812 tests pass, 1 failure = the sandbox test above (fixed, 18/18 and the package's 75/75 after); 106 min |
+| All Playwright specs (53 files) | `SPEECH_E2E=1 E2E_PORT=49560 E2E_SKIP_BUILD=1 pnpm exec playwright test` | 214 passed, 5 failed, 6 did not run (serial followers), 1.2 h at load 42–65; **each failed file rerun alone passes**: project-files 2/2, color-mgmt 3/3, compositor 4/4, previews 3/3, ui-perf 4/4. The failures were 3-minute export timeouts, a playback stall and a UI frame budget under 4–5× oversubscription |
+| CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) on the final head | CI_RESULT |
 
-**Second run, after merging ui-perf and gaps (`integrate/parity` 065af535):** the fixes above held; 10 new failures in
-5 files, all in tests that arrived with the merge or share their pattern:
+On the previous head (065af535, before review) the clean-clone CI passed in full (lint, typecheck,
+`pnpm test` 464 files / 4,450 tests, build) and the full Playwright suite passed 223/223.
 
-| Failure | Cause | Fix |
-|---|---|---|
-| `gaps-export-frame` (7), `gaps-export-formats` (2), `gaps-project-manager` (1), `gaps-audio-channels` (suite) | hard-coded `vendor/ffmpeg-lgpl/linux-x64/ffmpeg` / `ffprobe` | shared `TEST_FFMPEG` / `TEST_FFPROBE` in `apps/engine/test/helpers.ts` (vendor when present, else the oracle tools) |
-| `cache.test.ts` (suite; also in the first run), same pattern in `gaps-routes`, `cache-location` | `beforeAll(() => ensureFixtures())` with the default 10 s hook timeout, while a clean checkout generates fixtures for minutes | 900 s hook timeout |
+## Not done or caveated
 
-The seven files then pass in the clone (41 tests, apt FFmpeg). The final run on the merged head is in §9.
+- `PERF=1` / `NATIVE_ANIM_BENCH` / `MB_PERF` strict benchmarks were not run: the host was 3–5× oversubscribed
+  throughout, so the numbers would measure other agents.
+- `act` is not installed; the workflow was simulated step by step in a clean clone with the runner's apt FFmpeg (§7).
+  GitHub's runner itself (Ubuntu 24.04 image, its Chrome) was not exercised.
+- The hybrid vs Remotion comparison of the cross-feature variant is SSIM 0.988 overall, worst frame 0.979, just under
+  the 0.98 the repo's parity tests use for simpler scenes; the residual is anti-aliasing at edges, a 1 px column inside
+  a feathered mask and H.264 loss (difference image looked at), not a feature difference.
+- The reload lease race (§4) is fixed for a release in flight; when the old page's keepalive release never arrives
+  (seen once in 9 runs before the bounded wait ends) the editor still opens read-only until the lease expires (30 s).
+- Remotion renders of heavy compositions on a loaded software-GL host now retry once on a single page (§8 #5); on a
+  real GPU machine the first attempt should succeed, but this was not measured here (no GPU).
