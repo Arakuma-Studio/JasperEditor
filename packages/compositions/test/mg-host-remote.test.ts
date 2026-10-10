@@ -9,6 +9,7 @@ import {
 	MG_HOST_PORT_PROTOCOL,
 	MG_HOST_SANDBOX,
 	MgHostProtocolError,
+	SANDBOX_STORAGE_SHIM,
 	TEXT_PROBE_SCRIPT,
 } from '../src/mg-host/protocol.ts';
 import {
@@ -215,6 +216,48 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 				error: { code: 'MG_HOST_PROTOCOL', message: 'Unknown operation' },
 			});
 		expect(await reply({ id: 8 })).toMatchObject({ id: 8, ok: false });
+	});
+});
+
+describe('storage stand-ins of a sandboxed page (MG-1)', () => {
+	it('replaces localStorage, sessionStorage and document.cookie only where the real ones throw', () => {
+		// An opaque-origin document: every access throws a SecurityError.
+		const denied = () => {
+			throw new DOMException('The document is sandboxed', 'SecurityError');
+		};
+		const win = {} as Record<string, unknown>;
+		const doc = {} as Record<string, unknown>;
+		for (const name of ['localStorage', 'sessionStorage'])
+			Object.defineProperty(win, name, { get: denied, configurable: true });
+		Object.defineProperty(doc, 'cookie', { get: denied, set: denied, configurable: true });
+		new Function('window', 'document', SANDBOX_STORAGE_SHIM)(win, doc);
+
+		const ls = win.localStorage as Storage;
+		expect(ls.getItem('missing')).toBeNull();
+		ls.setItem('a', 1 as unknown as string);
+		ls.setItem('__proto__', 'x');
+		expect([ls.getItem('a'), ls.getItem('__proto__'), ls.length, ls.key(0), ls.key(9)]).toEqual([
+			'1',
+			'x',
+			2,
+			'a',
+			null,
+		]);
+		ls.removeItem('a');
+		ls.clear();
+		expect(ls.length).toBe(0);
+		// Each kind is its own store, and nothing leaves the page.
+		(win.sessionStorage as Storage).setItem('s', '1');
+		expect(ls.getItem('s')).toBeNull();
+		doc.cookie = 'stolen=1';
+		expect(doc.cookie).toBe('');
+
+		// A page that is not sandboxed keeps the real things.
+		const real = { localStorage: { real: true }, sessionStorage: { real: true } } as Record<string, unknown>;
+		const realDoc = { cookie: 'a=b' };
+		new Function('window', 'document', SANDBOX_STORAGE_SHIM)(real, realDoc);
+		expect(real.localStorage).toEqual({ real: true });
+		expect(realDoc.cookie).toBe('a=b');
 	});
 });
 

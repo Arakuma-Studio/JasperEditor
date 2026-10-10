@@ -39,6 +39,34 @@ export function bundleServeUrl(mediaKey: string): string {
 }
 
 /**
+ * Security review MG-1: a sandboxed page has an opaque origin, where reading `localStorage`, `sessionStorage` or
+ * `document.cookie` throws a SecurityError. Remotion's root (and many libraries) read them while they start, so the
+ * page would not render at all. Where the real ones throw, the page gets stand-ins that live and die with the
+ * document: nothing persists, nothing is shared with the editor or with another bundle. A page that is not
+ * sandboxed (the engine's own headless measuring browser) keeps the real ones.
+ */
+export const SANDBOX_STORAGE_SHIM = String.raw`(function(){
+function memory() {
+	var m = Object.create(null);
+	var api = {
+		getItem: function (k) { k = String(k); return k in m ? m[k] : null; },
+		setItem: function (k, v) { m[String(k)] = String(v); },
+		removeItem: function (k) { delete m[String(k)]; },
+		clear: function () { m = Object.create(null); },
+		key: function (i) { var ks = Object.keys(m); return i >= 0 && i < ks.length ? ks[i] : null; }
+	};
+	Object.defineProperty(api, 'length', { get: function () { return Object.keys(m).length; } });
+	return api;
+}
+['localStorage', 'sessionStorage'].forEach(function (name) {
+	try { void window[name]; }
+	catch (e) { try { Object.defineProperty(window, name, { value: memory(), configurable: true }); } catch (e2) {} }
+});
+try { void document.cookie; }
+catch (e) { try { Object.defineProperty(document, 'cookie', { get: function () { return ''; }, set: function () {}, configurable: true }); } catch (e2) {} }
+})();`;
+
+/**
  * The script the engine injects at the top of `<head>` of a host page (before the bundle's own scripts): the
  * globals `setPropsAndEnv` sets with `evaluateOnNewDocument`, plus a transparent page background, then the
  * text probe (M3, S08:MGC-037/039: it must see the bundle's `new FontFace(…)` calls, so it runs first too) and
@@ -47,6 +75,7 @@ export function bundleServeUrl(mediaKey: string): string {
 export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: string } = {}): string {
 	const timeout = Math.max(1000, Math.floor(opts.timeoutMs ?? MG_HOST_TIMEOUT_MS));
 	return [
+		SANDBOX_STORAGE_SHIM,
 		'(function(){',
 		`window.remotion_puppeteerTimeout=${timeout};`,
 		'window.remotion_isMainTab=true;',

@@ -101,18 +101,12 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 			} catch {
 				parentReachable = false;
 			}
-			let cookies: string | null = null;
-			let storage = true;
-			try {
-				cookies = document.cookie;
-			} catch {
-				cookies = null;
-			}
-			try {
-				void window.localStorage;
-			} catch {
-				storage = false;
-			}
+			// What the page finds where storage and cookies would be: stand-ins of its own document (the bootstrap
+			// installs them because the real ones throw in an opaque origin, and Remotion reads them at start-up).
+			document.cookie = 'stolen=1';
+			const cookies = document.cookie;
+			window.localStorage.setItem('jasper-mg-probe', 'from-the-bundle');
+			const storage = window.localStorage.getItem('jasper-mg-probe');
 			return {
 				ready: w.remotion_renderReady,
 				text: document.querySelector('[data-testid="title-text"]')?.textContent,
@@ -141,8 +135,11 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 	expect(r.reachable).toBe(false);
 	expect(at45.origin).toBe('null');
 	expect(at45.parentReachable).toBe(false);
-	expect(at45.cookies ?? '').toBe('');
-	expect(at45.storage).toBe(false);
+	// Its "storage" works for the page and reaches nothing: not the editor's localStorage, not a cookie jar.
+	expect(at45.cookies).toBe('');
+	expect(at45.storage).toBe('from-the-bundle');
+	expect(await probe.evaluate(() => window.localStorage.getItem('jasper-mg-probe'))).toBeNull();
+	expect((await probe.context().cookies()).some((c) => c.name === 'stolen')).toBe(false);
 	// The bundle's own code cannot use the engine's API: no session from an opaque origin, and the origin is refused.
 	const api = await host.evaluate(async (origin) => {
 		const out: Record<string, number | string> = {};
