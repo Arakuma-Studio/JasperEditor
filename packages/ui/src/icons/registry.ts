@@ -4,9 +4,11 @@
 // No Adobe/Premiere artwork is copied or traced.
 import {
 	Activity,
+	ArrowUp,
 	AudioLines,
 	AudioWaveform,
 	Bookmark,
+	Box,
 	Camera,
 	Captions,
 	Check,
@@ -25,11 +27,14 @@ import {
 	Expand,
 	Eye,
 	EyeOff,
+	File,
 	FilePlus,
 	Film,
 	Folder,
 	FolderPlus,
+	FolderSearch,
 	Hand,
+	HardDrive,
 	History,
 	Home,
 	Image,
@@ -51,6 +56,7 @@ import {
 	Minus,
 	Monitor,
 	MousePointer2,
+	Music,
 	Palette,
 	Pause,
 	Pentagon,
@@ -233,11 +239,21 @@ export const ICONS = {
 	'panel.scopes': Activity,
 	// wp captions: Text panel (Captions / Transcript)
 	'panel.text': Captions,
+	// polish: Media Browser
+	'panel.mediaBrowser': FolderSearch,
 
 	// ------------------------------------------------------------ media
 	'media.video': Film,
 	'media.image': Image,
 	'media.captions': Captions,
+	// polish (Media Browser): folders, volumes, audio, graphics / 3D models and other files
+	'media.folder': Folder,
+	'media.drive': HardDrive,
+	'media.audio': Music,
+	'media.model': Box,
+	'media.file': File,
+	'app.up': ArrowUp,
+	'app.engine': Server,
 	/** LUT asset (wp-m2-color): a lattice cube. */
 	'media.lut': g('M12 3l8 4.5v9L12 21l-8-4.5v-9z', 'M4 7.5l8 4.5 8-4.5', 'M12 12v9'),
 	/** Before/after split (wp-m2-color, S06:CGU-005). */

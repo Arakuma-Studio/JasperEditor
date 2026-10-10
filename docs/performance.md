@@ -2,7 +2,8 @@
 
 Owner: workstream `previews` (design notes in [`wp-notes/previews.md`](wp-notes/previews.md) §7); the editing-core
 budgets (§13 command and gesture) are workstream `perf-core` ([`wp-notes/perf-core.md`](wp-notes/perf-core.md)); the editor UI at
-scale (§5) is workstream `ui-perf` ([`wp-notes/ui-perf.md`](wp-notes/ui-perf.md)). The strategy is
+scale (§5) is workstream `ui-perf` ([`wp-notes/ui-perf.md`](wp-notes/ui-perf.md)); project open (§6) is workstream
+`polish` ([`wp-notes/polish.md`](wp-notes/polish.md) §5). The strategy is
 [ARCHITECTURE §13](ARCHITECTURE.md#13-performance-strategy); this page lists the budgets, how each one is enforced,
 how to measure, and the last measured results.
 
@@ -23,6 +24,7 @@ how to measure, and the last measured results.
 | The same drag, scripted (30 moves 16 ms apart), wall time | < 1.5 s | ui-perf | same |
 | Scrolling / zooming a 5 000-clip timeline | ≥ 50 fps | ui-perf | same |
 | Project panel with 2 000 items, scrolling | ≥ 50 fps | ui-perf | same |
+| Opening a 2 000-item project: editor interactive and every medium resolved | < 2 s | polish | `pnpm perf --sections ui --ui open`, `e2e/polish.spec.ts` (× load² in the gate; the spec also asserts two status requests and a windowed bin, which do not depend on load) |
 | Autosave of the 8 MB scale project after a one-clip edit (serialisation on the UI thread) | — (measured: ≈ 0.5 ms) | ui-perf | `packages/project/bench/json-cache.ts` |
 | Effect / audio budgets of earlier workstreams (audio effects, remix analysis, Lumetri bake, fx compile, tracking cancel latency) | as written in each test | their wp-notes | their tests, through `budgetMs` |
 
@@ -177,3 +179,37 @@ of a session (nothing cached yet) 1.9 ms after the autosaver's idle warm-up (1 0
 **First edit after opening**: the session verifies the opened document when the browser is idle (≈ 340 ms on the
 5 000-clip scale project at load ≈ 40, in an idle callback), and the first edit takes the incremental check
 (`packages/session/test/ui-perf.test.tsx`: 1 incremental, 0 full).
+
+## 6. Opening a large project (polish)
+
+Workstream `polish` ([`wp-notes/polish.md`](wp-notes/polish.md) §5). §5 above still listed the 2 000-item project as
+slow to open (8–14 s). Measured with `pnpm exec tsx scripts/perf/open-phases.ts items:2000 --runs 6` on the same
+shared 12-core host (2026-10-09, other agents building; headless Chrome, a fresh browser context and so a cold HTTP
+cache per run): milliseconds from navigation start to `shell` (the timeline is on screen, the agent bridge is up)
+and `media` (every medium has left "resolving"), the requests by kind, and the renderer main thread's time by kind
+of work from a Chrome trace. `--warm` shares one context (no difference on loopback); `--compare key=value`
+alternates runs with and without a `localStorage` switch.
+
+| Step | Load average (factor) | Open to `media` | What it removed |
+|---|---|---|---|
+| before (`integrate/parity` 065af535; `ui-profile.ts items:2000 open`, CPU profiler attached) | ≈ 12 | 10.9 s | — |
+| media statuses in batches, one store update per answer | 19–23 | 4.7 – 5.9 s | 2 000 requests; `setMediaRuntimes` 1.4 s and a forced layout per answer 1.1 s of CPU |
+| the bin windowed from its first render | 13–18 | 2.45 – 3.0 s | style + layout of 2 000 rows: 1.0 → 0.2 s |
+| editor chunks preloaded, project fetched before the bundle boots (`/editor-boot.js`) | 14 (≈ 1.4) | 2.0 – 2.2 s | three round trips for 30 chunks; the project answer arrives at ≈ 0.35 s instead of ≈ 1.0 s |
+| final build, three sessions | 17–19 (1.3–1.8) | median 2.7 s, best 2.2 s | |
+| a 10-item project, same sessions | 17–19 (1.3–1.8) | median 2.3 s, best 1.9 s | (the editor's own start) |
+
+Main thread while opening the 2 000-item project (final build, one typical run at load ≈ 18): scripting 1.0 s (of
+which ≈ 0.45 s evaluating the bundle and ≈ 0.17 s validating the 2.1 MB project), style 0.08 s, layout 0.07 s,
+painting 0.07 s, garbage collection 0.1 s, other 0.6 s; longest task ≈ 0.4 s. Requests: 43 assets, 1 project,
+1 lease, 2 media status batches.
+
+**Budget: < 2 s — not demonstrated at this load.** At load factor 1.3–1.8 the open takes 2.0–2.9 s; `pnpm perf`
+and the e2e spec enforce 2 000 ms × load² (the browser is another process), which passes (3 188 ms measured against
+3 600 ms at factor 1.34), and `PERF=1` enforces it exactly on a quiet machine. What remains is the editor's start
+for any project (≈ 2.3 s here): downloading and evaluating ≈ 9 MB of JavaScript and the first render of the visible
+panels.
+
+Tried and dropped: mounting background-tab panels in idle periods after the shell is up — alternating runs showed
+no gain (median 2.85 s deferred against 2.64 s eager at load ≈ 18), so the panels mount with the shell as before.
+

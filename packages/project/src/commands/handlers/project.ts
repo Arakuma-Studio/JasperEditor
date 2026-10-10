@@ -4,7 +4,7 @@ import type { Draft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
-import type { ProjectDocument, ProjectItem, SourceMarks } from '../../schema/document.ts';
+import type { MediaItem, ProjectDocument, ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
 import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
@@ -224,6 +224,22 @@ export const projectHandlers: HandlerMap = {
 		for (const seq of Object.values(doc.sequences)) cleanupSequence(seq, h);
 		collectOrphans(doc);
 		return { deletedItems: [...toDelete], removedClips: clipRemovals.map((r) => r.clipId) };
+	},
+	// polish: Set / Clear Poster Frame (the thumbnail frame of a media item).
+	'item.setPoster': (doc, cmd, h: HandlerContext) => {
+		const it = item(doc, cmd.itemId, h);
+		if (it.kind !== 'media') h.fail('E_INVALID_PARAM', 'Only media items have a poster frame');
+		const media = it as Draft<MediaItem>;
+		if (cmd.time === null) {
+			delete media.poster;
+			return;
+		}
+		const asset = doc.media[media.mediaId] as MediaAsset | undefined;
+		const flicks = h.flicks(cmd.time, asset, { num: 30, den: 1 });
+		const duration = asset ? mediaDurationFlicks(asset) : undefined;
+		if (duration != null && duration > 0 && flicks >= duration)
+			h.fail('E_OUT_OF_MEDIA', 'The poster frame is past the end of the media');
+		media.poster = { flicks };
 	},
 	'item.setMarks': (doc, cmd, h: HandlerContext) => {
 		const it = item(doc, cmd.itemId, h);

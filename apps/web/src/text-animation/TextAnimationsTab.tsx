@@ -202,8 +202,10 @@ export function TextAnimationsTab() {
 						</span>
 					) : selected === 0 ? (
 						'Select text clips, then double-click a preset — or drag it onto a text clip'
+					) : selected > 1 ? (
+						`${selected} text clips selected · double-click to apply as ${side === 'in' ? 'In' : 'Out'}`
 					) : (
-						`${selected} text clip${selected > 1 ? 's' : ''} selected · double-click to apply as ${side === 'in' ? 'In' : 'Out'}`
+						`1 text clip selected · double-click to apply as ${side === 'in' ? 'In' : 'Out'}`
 					)}
 				</span>
 			</footer>

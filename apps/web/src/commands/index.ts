@@ -30,6 +30,7 @@ import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
 import { monitorViewCommands } from './monitor-view.ts';
 import { multicamCommands } from './multicam.ts';
+import { polishCommands } from './polish.ts';
 import { previewCommands } from './previews.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
@@ -96,6 +97,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	threeDCommands,
 	// gaps: Find, Edit Original, Exit, Add/Delete Tracks, track height presets, settings dialogs, proxies…
 	gapsCommands,
+	// polish: Import from Media Browser, Engine ▸ Connect / Status, Edit Parameters, Third-Party Notices.
+	polishCommands,
 ];
 
 let registered = false;

@@ -11,10 +11,10 @@ by feature.
 
 ## Current status
 
-Assessed 8 October 2026 at `integrate/parity` after 23 of the 24 parallel workstreams merged (workstream `fixups`);
-recounted 9 October 2026 by workstream `gaps` (its rows, the counts and the breadth below).
-Every row that changed cites the wp-note and the tests that show it. `golden-fuzz` is still running and is not
-credited. The breadth number is recomputed from the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction).
+Assessed 8 October 2026 at `integrate/parity` (workstream `fixups`); recounted 9 October by workstream `gaps` (its
+rows and the breadth below) and 10 October by workstream `polish` (the counts, with every workstream of the program
+merged). Every row that changed cites the wp-note and the tests that show it. The breadth number is recomputed from
+the table below (`P0 ×3, P1 ×2, P2 ×1`, each row's fraction); no row's grade changed after `gaps`.
 
 | Measure | Value |
 |---|---|
@@ -22,9 +22,11 @@ credited. The breadth number is recomputed from the table below (`P0 ×3, P1 ×2
 | P0 / P1 / P2 | 97% / 99% / 100% (fractions) |
 | Features done / partial / missing | 89 / 3 / 0 of 92 (partial: CL-4, EX-2, PL-2) |
 | Video effects / transitions | 385 video effects, 60 audio effects; 172 video transitions + 3 audio transitions (counted from `defaultRegistries().effects` and `TRANSITION_SPECS`) |
-| Menu entries | 290, of which 5 are unregistered and render disabled (`project.importFromMediaBrowser`, `engine.connect`, `engine.status`, `mg.editParameters`, `app.notices`; counted from `MENUBAR` against the registry after `registerAllCommands()`) |
-| Document commands | 255 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
-| Agent tools | 322 MCP tools (counted from a live `listTools`) |
+| Menu entries | 291, all registered; the 280 default key bindings resolve to commands too (`apps/web/test/polish-menu-wiring.test.ts` fails otherwise; counted from `MENUBAR` and `DEFAULT_KEYMAP` against the registry after `registerAllCommands()`) |
+| Panels | 22 (`listPanels()`), the Media Browser among them |
+| Document commands | 256 in `COMMAND_CATALOG`; none answers `E_NOT_IMPLEMENTED` (no `notImplemented()` handler left) |
+| Agent tools | 323 MCP tools (counted from a live `listTools`; the README list is checked by `apps/mcp/test/readme-tools.test.ts`) |
+| UI languages | English and Spanish, 8 614 strings (`pnpm i18n:check`), switched without a restart |
 
 How a row is graded: **done** when the model, an undoable command, the UI, the preview and every export path exist
 (per its wp-note and tests); **partial** with a fraction when part of that is missing; **missing** when there is no
@@ -62,8 +64,8 @@ behaviour still counts as done here; gaps.md tracks that separately.
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| PRJ-1 | Project panel: bins, list and icon views, search, labels, drag to timeline | P0 | done | WP-2E | — |
-| PRJ-2 | Import media (upload / register path), probe, posters, filmstrips, waveforms | P0 | done | WP-2E, WP-2F | — |
+| PRJ-1 | Project panel: bins, list and icon views, search, labels, drag to timeline | P0 | done | WP-2E; windowed from 200 items (ui-perf); Set / Clear Poster Frame and Get Properties for Selection (`item.setPoster`, wp-notes/polish.md; `packages/project/test/polish-poster.test.ts`, `apps/web/test/polish-keybindings.test.tsx`) | — |
+| PRJ-2 | Import media (upload / register path), probe, posters, filmstrips, waveforms | P0 | done | WP-2E, WP-2F; Media Browser panel: browse the engine host, preview, import in place, drag to the Project panel or Timeline (wp-notes/polish.md; `apps/engine/test/browse.test.ts`, `apps/web/test/polish-media-browser.test.tsx`, `e2e/polish.spec.ts`) | polish |
 | PRJ-3 | Relink and Replace Footage | P1 | done | Link Media dialog (Project panel and File menu, folder search, relink by name / path), `media.relink`, MCP `link_media` / `replace_footage` (wp-notes/interchange.md §Link Media; `e2e/interchange.spec.ts`, `apps/engine/test/interchange.test.ts`); no Tape Name match | interchange |
 | PRJ-4 | Project Settings dialog | P1 | done | File ▸ Project Settings…: display formats (timecode / frames / feet+frames, samples / ms), Scratch Disks, Ingest Settings (wp-notes/gaps.md; `apps/web/test/gaps-settings-dialogs.test.tsx`, `packages/project/test/gaps-display-format.test.ts`) | gaps |
 | PRJ-5 | Color mattes and other synthetic items | P1 | done | `synthetic.create/update` (Bars and Tone, Black Video, Color Matte, Transparent Video, Universal Counting Leader, Adjustment Layer), New Item menu, preview and native/Remotion export (edit-structure tests) | edit-structure |
@@ -172,7 +174,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | CL-1 | Lumetri-style grade: basic, creative, curves, colour wheels, HSL secondary, vignette | P0 | done | wp-m2-color plus HSL Secondary, hue-vs curves, vignette with native export (wp-notes/color-grade.md; `apps/web/test/color-grade.test.tsx`, `e2e/color-grade.spec.ts`) | color-grade |
 | CL-2 | Lumetri scopes: waveform, parade, vectorscope, histogram | P1 | done | apps/web/src/panels/scopes | — |
 | CL-3 | LUT import (.cube) | P1 | done | wp-m2-color | — |
-| CL-4 | Colour management: working space, log / HDR input, output transforms | P1 | partial (0.75) | working spaces incl. Rec. 2100 PQ / HLG, 18 log curves, OCIO, HDR exports (wp-notes/color-mgmt.md; `packages/project/test/color-mgmt-*.test.ts`, `e2e/color-mgmt.spec.ts`); no HDR display output (needs HDR hardware), 8-bit composite, CANVAS_NESTED limits (D-43) | color-mgmt |
+| CL-4 | Colour management: working space, log / HDR input, output transforms | P1 | partial (0.75) | working spaces incl. Rec. 2100 PQ / HLG, 18 log curves, OCIO, HDR exports (wp-notes/color-mgmt.md; `packages/project/test/color-mgmt-*.test.ts`, `e2e/color-mgmt.spec.ts`); no HDR display output (needs HDR hardware), 8-bit composite; stacks whose canvas scopes would nest render through the flat compositor since `compositor` (D-43) | color-mgmt |
 | CL-5 | Comparison view, Color Match | P2 | done | Program monitor Comparison View (edit-ux), Colour Match with Face Detection (wp-notes/color-grade.md; `apps/web/test/edit-ux-monitors.test.tsx`, `e2e/color-grade.spec.ts`) | color-grade |
 
 ### Audio
@@ -220,7 +222,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| PF-1 | Autosave, atomic writes, single-writer leases, conflict handling | P0 | done | WP-2E, WP-2F | — |
+| PF-1 | Autosave, atomic writes, single-writer leases, conflict handling | P0 | done | WP-2E, WP-2F; a reloaded tab keeps its own lease (wp-notes/polish.md §1; `packages/session/test/persistence/tab-leases.test.ts`, `e2e/project-files.spec.ts`) | — |
 | PF-2 | Schema migrations, read-only for newer files | P0 | done | migrations.ts | — |
 | PF-3 | Crash recovery of unsaved changes | P0 | done | engine-side per-session journal, Recover / Discard (D-39; wp-notes/process.md; `apps/engine/test/recovery-versions.test.ts`, `packages/session/test/persistence/recovery.test.ts`) | process |
 | PF-4 | Saved versions: browse and restore | P1 | done | File ▸ Project Versions…, restore in place or as a copy, MCP (wp-notes/process.md; `apps/engine/test/recovery-versions.test.ts`, `apps/mcp/test/versions.test.ts`) | process |
@@ -235,13 +237,13 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | UI-3 | Keyboard Shortcuts editor | P1 | done | Edit ▸ Keyboard Shortcuts… (Ctrl+Alt+K) with layouts and conflict display (wp-notes/edit-ux.md; `apps/web/test/edit-ux-keyboard.test.tsx`) | edit-ux |
 | UI-4 | Preferences dialog | P1 | done | pages General, Timeline, Audio, Graphics, Media Cache, Transcription, Processing, Roto & Face Tracking plus Appearance, Auto Save, Labels, Memory, Playback, Trim, Audio Hardware wired to behaviour; Collaboration / Sync Settings omitted (no such services) (wp-notes/gaps.md; `apps/web/test/gaps-preferences.test.tsx`) | gaps |
 | UI-5 | Find, Edit Original, Exit | P2 | done | Edit ▸ Find…, Edit Original, File ▸ Exit (desktop) (wp-notes/gaps.md; `apps/web/test/gaps-ui5-tracks.test.tsx`, `apps/engine/test/gaps-routes.test.ts`) | gaps |
-| UI-6 | Localisation and accessibility | P2 | done | every UI string externalised at build time (English + complete Spanish, 8 054 strings, `pnpm i18n:check`), language in Preferences ▸ Appearance; ARIA roles/labels, focus rings, reduced motion, high-contrast theme; axe-core audit with no serious or critical violation in six workspaces × two themes (wp-notes/gaps.md; `apps/web/test/i18n.test.ts`, `e2e/gaps.spec.ts`) | gaps |
+| UI-6 | Localisation and accessibility | P2 | done | every UI string externalised at build time (English + complete Spanish, 8 614 strings, `pnpm i18n:check`), language in Preferences ▸ Appearance, switched while the editor runs with the undo history kept (D-46; `e2e/polish.spec.ts` leaves no string behind in either direction), labels built from effect and preset names translated (`apps/web/test/polish-i18n.test.tsx`); ARIA roles/labels, focus rings, reduced motion, high-contrast theme; axe-core audit with no serious or critical violation in six workspaces × two themes (wp-notes/gaps.md; `apps/web/test/i18n.test.ts`, `e2e/gaps.spec.ts`) | gaps |
 
 ### Agents
 
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
-| AG-1 | MCP server: 322 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools` | mcp-cli |
+| AG-1 | MCP server: 323 tools, every edit an undoable transaction, approvals, the `jasper` CLI (beyond Premiere) | P1 | done | wp-mcp, wp-notes/mcp-cli.md, README; tools counted from a live `listTools`; the live-UI tools cannot answer approvals or run gated commands (security-review.md AGT-1, `e2e/security-review.spec.ts`) | mcp-cli |
 
 ### Platforms
 
@@ -250,19 +252,24 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | PL-1 | Web, PWA and Electron on Linux | P0 | done | M1-STATUS | — |
 | PL-2 | macOS and Windows checked | P0 | partial (0.25) | builds exist; never run (M1-STATUS) | — |
 
-## In flight
+## After the parallel workstreams
 
-23 of the 24 parallel workstreams have merged into `integrate/parity` and are credited above, row by row, with the
-evidence in their wp-notes. Still running, and **not** credited:
+Every workstream of the program has merged into `integrate/parity`; nothing is in flight. These merged after the
+assessment of 8 October; apart from `gaps` they changed the evidence behind rows, not their grades:
 
-| Workstream | Targets |
+| Workstream | What it added to the rows above |
 |---|---|
-| `golden-fuzz` | stability evidence in gaps.md (golden frames per effect / transition family, fuzzed loaders, HTTP and MCP), PF-2 |
+| `golden-fuzz` | golden frames and fingerprints per effect / transition family, fuzzed loaders, HTTP routes and MCP tools (gaps.md "Stability"; PF-2) |
+| `fixups` | Merge Paths at tangencies (GR-2), MCP clip targets (AG-1) |
+| `perf-core`, `ui-perf` | the ARCHITECTURE §13 budgets and the editor at 1 000 – 5 000 clips (docs/performance.md) |
+| `compositor` | stacks whose canvas scopes would nest render (KF-4, TL-12, GR-6, CL-4; D-43) |
+| `gaps` | PRJ-4, PRJ-6, PRJ-8, TL-10, TL-11, FX-6, GR-4, GR-5, AU-7, EX-3, AI-2, UI-4, UI-5, UI-6 to done, EX-2 to 0.9 (wp-notes/gaps.md) |
+| `review` | 19 security and integrity fixes with regression tests (docs/security-review.md) |
+| `polish` | the last disabled menu entries and dead shortcuts, the Media Browser, lease memory, live language switch, project open (wp-notes/polish.md) |
 
-HTML-in-Canvas scope nestings (D-43, wp-notes/previews.md §5), still open after `previews`, are drawn by the flat compositor since `compositor` (wp-notes/compositor.md).
-
-Rows still missing or partial with no workstream: PL-2. `gaps` closed PRJ-4, PRJ-6, PRJ-8, TL-10, TL-11, FX-6, GR-4,
-GR-5, AU-7, EX-3, AI-2, UI-4, UI-5 and UI-6 and moved EX-2 to 0.9 (wp-notes/gaps.md).
+Rows still partial: CL-4 (HDR display output needs hardware; the composite is 8-bit), EX-2 (HEVC Main10 needs a
+hardware encoder; OpenH264 quality), PL-2 (macOS and Windows builds have never run). No workstream is assigned to
+them.
 
 ## Out of scope or intentionally absent
 

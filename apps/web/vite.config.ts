@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 // gaps (UI-6): UI strings through the active language's catalogue.
+import { type BundleChunk, EDITOR_BOOT, editorBootScript, editorChunks } from './editor-boot.ts';
 import { jasperI18n } from './i18n/vite-plugin.mjs';
 
 const ENGINE = process.env.JASPER_ENGINE_URL ?? 'http://127.0.0.1:47900';
@@ -32,6 +33,27 @@ function thirdPartyNotices(): Plugin {
 	};
 }
 
+// polish (project open): `/editor-boot.js` (editor-boot.ts) preloads the editor's chunks and starts fetching the
+// project before the bundle has loaded. The build writes the chunk list; the dev server serves an empty one.
+function editorBoot(): Plugin {
+	return {
+		name: 'jasper-editor-boot',
+		configureServer(server) {
+			server.middlewares.use(`/${EDITOR_BOOT}`, (_req, res) => {
+				res.setHeader('content-type', 'text/javascript; charset=utf-8');
+				res.end(editorBootScript([]));
+			});
+		},
+		generateBundle(_options, bundle) {
+			this.emitFile({
+				type: 'asset',
+				fileName: EDITOR_BOOT,
+				source: editorBootScript(editorChunks(bundle as unknown as Record<string, BundleChunk>)),
+			});
+		},
+	};
+}
+
 /** Vendor chunk of a module id (stable chunks so app changes do not invalidate them, ARCHITECTURE §13). */
 function vendorChunk(id: string): string | undefined {
 	// The pure model (schema, commands, render snapshot) is the biggest first-party module and changes less
@@ -50,7 +72,7 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-	plugins: [jasperI18n(), react(), tailwindcss(), thirdPartyNotices()],
+	plugins: [jasperI18n(), react(), tailwindcss(), thirdPartyNotices(), editorBoot()],
 	server: {
 		host: '127.0.0.1',
 		port: 5173,

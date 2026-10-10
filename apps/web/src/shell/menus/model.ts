@@ -3,30 +3,28 @@
 // WP-2E, mg WP-2G). There is no Agent menu: external agents connect over MCP (Help ▸ Connect an AI
 // Agent…). Unregistered ids render disabled with a reason (SH-031); the label here is only the fallback
 // shown until the owner registers the command (MN-001).
+
+import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
 import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
 import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
 import type { ShellMenuItem } from './resolve.ts';
 
-const c = (command: string, label: string, args?: unknown): ShellMenuItem => ({
-	type: 'command',
-	command,
-	label,
-	args,
-});
+// Labels stay the English source and are translated when read (live language switching): the model is built once.
+const c = (command: string, label: LazyLabel, args?: unknown): ShellMenuItem =>
+	defineLazyLabel({ type: 'command', command, args } as ShellMenuItem, 'label', label);
 /** A desktop-only entry (hidden on the web and in the PWA). */
-const desktopOnly = (command: string, label: string): ShellMenuItem => ({
-	type: 'command',
-	command,
-	label,
-	runtimes: ['desktop'],
-});
-const sub = (label: string, items: ShellMenuItem[]): ShellMenuItem => ({ type: 'submenu', label, items });
+const desktopOnly = (command: string, label: LazyLabel): ShellMenuItem =>
+	defineLazyLabel({ type: 'command', command, runtimes: ['desktop'] } as ShellMenuItem, 'label', label);
+const sub = (label: LazyLabel, items: ShellMenuItem[]): ShellMenuItem =>
+	defineLazyLabel({ type: 'submenu', items } as ShellMenuItem, 'label', label);
 const sep: ShellMenuItem = { type: 'separator' };
 
 /** Anchor ▸ (S03:XF-038): Center, then the 9-point grid (same entries as the Program monitor layer menu). */
-const ANCHOR_MENU: ShellMenuItem[] = ANCHOR_POINTS.map((p) => c('motion.anchor', p.label, { point: p.id }));
+const ANCHOR_MENU: ShellMenuItem[] = ANCHOR_POINTS.map((p) =>
+	c('motion.anchor', () => p.label, { point: p.id }),
+);
 /** Arrange ▸ (S03:XF-050). */
-const ARRANGE_MENU: ShellMenuItem[] = ARRANGE_COMMANDS.map(([id, op]) => c(id, ARRANGE_LABELS[op]));
+const ARRANGE_MENU: ShellMenuItem[] = ARRANGE_COMMANDS.map(([id, op]) => c(id, () => ARRANGE_LABELS[op]));
 
 export type MenubarMenuModel = {
 	id: string;
@@ -79,6 +77,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('project.importSvgAsShape', 'Import SVG as Shape Layer…'),
 			// wp interchange (S04:AS-011)
 			c('project.linkMedia', 'Link Media…'),
+			// polish (Premiere: File ▸ Get Properties for ▸ Selection)
+			c('project.mediaProperties', 'Get Properties for Selection…'),
 			sub('Export', [
 				c('export.media', 'Media…'),
 				c('export.queue', 'Add to Render Queue'),

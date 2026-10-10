@@ -34,8 +34,14 @@ export function useRowWindow(opts: {
 	reveal?: number | null;
 }): RowWindow {
 	const { scroll, list, rows, enabled, measure } = opts;
-	const [win, setWin] = useState<RowWindow>({ on: false, start: 0, end: rows, rowH: 0 });
 	const on = enabled && rows >= 1;
+	// polish: a large bin never renders every row, not even on its first render (the effect below only runs after it:
+	// opening a 2 000-item project used to build, style and lay out 2 000 rows once, ≈ 1 s).
+	const [win, setWin] = useState<RowWindow>(() =>
+		on
+			? { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 }
+			: { on: false, start: 0, end: rows, rowH: 0 },
+	);
 	// A passive effect: the scroll container is the parent's element, whose ref is attached after this component's
 	// layout effects run.
 	useEffect(() => {
@@ -101,5 +107,7 @@ export function useRowWindow(opts: {
 		else if (y1 > s.scrollTop + s.clientHeight) s.scrollTop = y1 - s.clientHeight;
 	}, [on, reveal, win.rowH, scroll, list]);
 
-	return on ? win : { on: false, start: 0, end: rows, rowH: 0 };
+	if (!on) return { on: false, start: 0, end: rows, rowH: 0 };
+	// Windowing was just turned on (the bin grew past the threshold): the first rows until the effect has measured.
+	return win.on ? win : { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 };
 }

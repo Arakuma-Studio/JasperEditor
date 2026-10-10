@@ -185,6 +185,15 @@ export const TranscriptSetBreakCmd = cmd('transcript.setBreak', {
 	breakBefore: z.enum(['none', 'line', 'segment']),
 });
 
+/**
+ * polish (Premiere: Set Poster Frame / Clear Poster Frame in the Project panel): the frame a media item shows as
+ * its thumbnail. `time` is in the media's content time; null clears it (the default poster is shown again).
+ */
+export const ItemSetPosterCmd = cmd('item.setPoster', {
+	itemId: IdRefSchema,
+	time: ContentTimeInputSchema.nullable(),
+});
+
 export const PROJECT_COMMANDS = [
 	ProjectRenameCmd,
 	ProjectUpdateSettingsCmd,
@@ -194,6 +203,7 @@ export const PROJECT_COMMANDS = [
 	ItemMoveCmd,
 	ItemDeleteCmd,
 	ItemSetMarksCmd,
+	ItemSetPosterCmd,
 	MediaRegisterCmd,
 	MediaRelinkCmd,
 	MediaDeriveCmd,

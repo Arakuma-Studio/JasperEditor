@@ -27,6 +27,7 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react
 import { useNavigate } from 'react-router';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
+import { useLanguageEpoch } from '../i18n/react.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
@@ -94,6 +95,7 @@ function LifecycleBody(props: {
 }) {
 	const { session } = props;
 	const engine = useEngine();
+	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();
 	const exportHostedByShell = useExportModeHostedByShell();
 
@@ -161,11 +163,14 @@ function LifecycleBody(props: {
 		return registerImportService(service);
 	}, [session, engine.client]);
 
-	// Media runtime (availability, poster/sprite/peaks/proxy URLs); re-resolved when the engine reconnects.
+	// Media runtime (availability, poster/sprite/peaks/proxy URLs); re-resolved when the engine reconnects (and only
+	// then: the engine's capabilities or event-stream state changing does not ask for every medium again).
+	const engineConnected = engine.status === 'connected';
 	useEffect(() => {
+		void engineConnected;
 		const sync = createMediaRuntimeSync(session, engine.client, engine.subscribe);
 		return () => sync.dispose();
-	}, [session, engine.client, engine.subscribe]);
+	}, [session, engine.client, engine.subscribe, engineConnected]);
 
 	// Export completion toasts (jobs started from Export mode / Quick Export)
 	useEffect(

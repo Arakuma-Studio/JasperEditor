@@ -17,6 +17,46 @@ D-36). Code ported from permissively licensed projects is welcome, recorded in [
 and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)
 and [`docs/parity.md`](docs/parity.md). Project files, migrations and crash recovery: [`docs/project-files.md`](docs/project-files.md).
 
+## What it does
+
+A summary of the product as it stands; the feature-by-feature checklist with evidence is
+[`docs/parity.md`](docs/parity.md) (≈ 98% of our Premiere catalogue exists), and what that number does *not* say —
+nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/gaps.md).
+
+- **Editing.** Tracks with linked audio and video, targeting, sync lock; insert, overwrite, lift, extract, ripple,
+  roll, slip, slide, razor; three- and four-point edits from the Source monitor; markers; nested sequences,
+  adjustment layers, groups, subclips; multi-camera with live switching; speed, time remapping, frame blending and
+  optical flow; undo history with a History panel; Premiere's default shortcuts and a shortcut editor.
+- **Media.** Everything the LGPL FFmpeg decodes, image sequences, layered PSD, PDF / Illustrator, SVG, Lottie,
+  EXR / DPX / HEIC / JPEG XL, glTF models, Remotion projects as clips. A Media Browser panel over the engine's disks
+  with previews and in-place import; proxies; relinking; Project Manager (collect / consolidate); a managed media
+  cache.
+- **Effects and graphics.** 385 video effects and 172 video transitions on the GPU, 60 audio effects and 3 audio
+  transitions; keyframes with value and velocity graphs and motion paths; masks with tracking, roto (SAM 2.1), point,
+  planar and 3D camera tracking; text with After Effects-style animators, vector shapes with path operators, 3D
+  layers, cameras and lights; expressions in a QuickJS sandbox; motion-graphics templates (fframes, anime.js);
+  Essential Graphics with responsive design and rolls.
+- **Colour.** Lumetri-style grading (curves, wheels, HSL secondary, vignette, Colour Match), scopes, LUTs, colour
+  management with log inputs, Rec. 2100 PQ / HLG working spaces, OCIO configs and HDR export.
+- **Audio.** Track and clip mixers with automation, submixes and sends, loudness metering and normalisation
+  (BS.1770 / EBU R128), Essential Sound, ducking, remix; one DSP for preview and every export path.
+- **Captions and speech.** Caption tracks (SRT, VTT, SCC, MCC, STL, TTML), burn-in, local speech to text with
+  word timings and diarization, text-based editing.
+- **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
+  Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
+  smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
+- **Agents.** `jasper-mcp` exposes 323 tools and the whole command catalogue; every edit is an undoable
+  transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
+  operate the live window.
+- **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
+  versions, schema migrations; golden frames, fuzzed loaders and a security review
+  ([`docs/security-review.md`](docs/security-review.md)).
+- **Interface.** Docked panels and workspaces, command palette, Preferences, English and Spanish (switched without
+  a restart), high-contrast theme; web, installable PWA and Electron from one SPA.
+
+Not there: native `.prproj`, Adobe services and plug-ins, VST / AU audio plug-ins, camera RAW, HDR display output,
+macOS and Windows builds that have ever been run ([`docs/gaps.md`](docs/gaps.md)).
+
 ## Requirements
 
 - Node 20.19+ (tested on 20.20), pnpm 10 (`corepack enable` or `npm i -g pnpm@10`)
@@ -27,8 +67,9 @@ and [`docs/parity.md`](docs/parity.md). Project files, migrations and crash reco
   shipped one.
 - The LGPL FFmpeg that ships with the app: `pnpm ffmpeg:lgpl` (see "FFmpeg (LGPL)" below). Dev works without
   it; `pnpm e2e`, packaged builds and any non-dev engine need it for the Remotion render path.
-- Optional: cargo for the `jasper-mg` motion-graphics renderer (`pnpm mg:build`; without it motion graphics
-  export through Remotion).
+- Optional: cargo for the `jasper-mg` motion-graphics renderer (`pnpm mg:build`, also run by `pnpm e2e` when
+  cargo is installed; without it motion graphics export through Remotion and the native motion-graphic smoke
+  test skips with that reason).
 - E2E: Google Chrome at `/usr/bin/google-chrome` (Playwright `channel: 'chrome'`); desktop smoke: `xvfb-run`.
 
 ## Quick start
@@ -401,9 +442,9 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (322; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (323; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
-  `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
+  `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
   `add_transition` · `get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
   `render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
@@ -787,7 +828,7 @@ request). Shared helpers live in `@jasper/testkit`.
 ```bash
 pnpm fixtures && pnpm mg:build   # optional first: some engine tests skip without jasper-mg
 pnpm verify              # lint + typecheck + unit/integration tests + build
-pnpm e2e                 # builds engine + web + jasper-mcp, then Playwright (headless Chrome) against the built engine
+pnpm e2e                 # builds jasper-mg (if cargo), engine + web + jasper-mcp, then Playwright (headless Chrome) against the built engine
 pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/, then the clipboard check
 pnpm e2e:desktop-clipboard  # two packaged-like desktop apps over CDP: cross-app copy/paste and external pastes
 pnpm e2e:mg-fallback     # fframes ready → native plan; jasper-mg missing → Remotion plan with the reason
@@ -836,6 +877,12 @@ Playwright specs:
 - `e2e/ui-audit.spec.ts` — every interactive element of every panel in every workspace, the menu bar menus and the
   clip context menu has a stable automation id.
 - `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
+- `e2e/polish.spec.ts` — Engine Status / Connect, Third-Party Notices, the Media Browser (browse, preview, import
+  in place), Edit Parameters, the live language switch in both directions (no string left behind, undo history
+  kept) and the 2 000-item project open (two status requests, a windowed bin, the open-time budget).
+- `e2e/project-files.spec.ts` — crash recovery, saved versions, Save As; a reloaded tab keeps its lease even when
+  its release is lost, another tab stays read-only.
+- `e2e/security-review.spec.ts` — the live-UI tools cannot approve their own requests.
 - `e2e/layer-bake.spec.ts` — footage + static title + keyframed title, a Lumetri grade on a title ("Grade
   pending" → graded preview in the Program), Auto export planned `hybrid` with baked titles, output pixels.
 - `e2e/mg-clips.spec.ts` — Remotion page-protocol contract (4.0.499), File ▸ Import Remotion Project… →
@@ -847,6 +894,11 @@ Playwright specs:
 `pnpm exec tsx <path>`; its adjacent JSON records the original revision, workload, before/after results,
 and methodology. Run `node scripts/measure-web-bundle.mjs [dist-directory]` after a production web build
 to measure initial and total JavaScript bytes, including gzip sizes.
+
+Later work is measured in [`docs/performance.md`](docs/performance.md), which also lists every budget and how it
+is enforced: the editing-core budgets on 1 000 clips (§4), the editor UI at 1 000 – 5 000 clips (§5) and project
+open (§6: a 2 000-item project in 2.0–2.9 s at host load ≈ 18, from 8–14 s). `pnpm perf` runs them
+(`--sections ui --ui open` for the open alone).
 
 The October 2026 audit ranked these five opportunities by expected impact and implementation risk:
 

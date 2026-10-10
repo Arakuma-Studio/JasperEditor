@@ -117,6 +117,7 @@ const LABELS: Record<CommandType, string> = {
 	'item.move': 'Move Items',
 	'item.delete': 'Delete Items',
 	'item.setMarks': 'Set Source Marks',
+	'item.setPoster': 'Set Poster Frame',
 	'media.register': 'Import',
 	'media.relink': 'Link Media',
 	'media.derive': 'Process Media',

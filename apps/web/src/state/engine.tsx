@@ -7,7 +7,16 @@ import {
 	type TypedEvent,
 } from '@jasper/api';
 import { EngineClient, EngineError, type EventStreamState } from '@jasper/engine-client';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
 import type { Capability } from '../commands/types.ts';
 
 export type EngineStatus = 'connecting' | 'connected' | 'disconnected';
@@ -27,8 +36,41 @@ export type EngineState = {
 
 const EngineContext = createContext<EngineState | null>(null);
 
+type EarlyRequest = { url: string; response: Promise<Response>; at: number };
+/** An early answer is only used while it is this fresh (the page is still starting). */
+const EARLY_MAX_AGE_MS = 15_000;
+
+/**
+ * polish (project open): `/editor-boot.js` starts fetching the project file before the bundle has loaded; the first
+ * GET of exactly that URL takes the answer instead of asking again. A failed early request is asked again normally.
+ */
+export function fetchWithEarly(real: typeof fetch = (input, init) => fetch(input, init)): typeof fetch {
+	return (input, init) => {
+		const w = typeof window === 'undefined' ? null : (window as unknown as { __jasperEarly?: EarlyRequest });
+		const early = w?.__jasperEarly;
+		if (
+			w &&
+			early &&
+			typeof input === 'string' &&
+			input === early.url &&
+			(!init?.method || init.method.toUpperCase() === 'GET')
+		) {
+			w.__jasperEarly = undefined;
+			if (Date.now() - early.at <= EARLY_MAX_AGE_MS)
+				return early.response.then(
+					(r) => r,
+					() => real(input, init),
+				);
+		}
+		return real(input, init);
+	};
+}
+
 export function EngineProvider(props: { children?: ReactNode; client?: EngineClient }) {
-	const client = useMemo(() => props.client ?? new EngineClient({ baseUrl: '' }), [props.client]);
+	const client = useMemo(
+		() => props.client ?? new EngineClient({ baseUrl: '', fetch: fetchWithEarly() }),
+		[props.client],
+	);
 	const [status, setStatus] = useState<EngineStatus>('connecting');
 	const [version, setVersion] = useState<string | null>(null);
 	const [capabilities, setCapabilities] = useState<EngineCapabilities | null>(null);
@@ -82,21 +124,17 @@ export function EngineProvider(props: { children?: ReactNode; client?: EngineCli
 		return () => stream.close();
 	}, [client, status]);
 
+	// polish: `subscribe` and `refresh` keep their identity. They used to be new functions whenever the status, the
+	// capabilities or the event stream changed, which re-ran every effect that depends on them (the media runtime sync
+	// resolved every medium of the project again each time).
+	const subscribe = useCallback<EngineState['subscribe']>((l) => {
+		listeners.current.add(l);
+		return () => listeners.current.delete(l);
+	}, []);
+	const refresh = useCallback(() => setNonce((n) => n + 1), []);
 	const value = useMemo<EngineState>(
-		() => ({
-			client,
-			status,
-			version,
-			capabilities,
-			capabilitiesError,
-			events,
-			subscribe: (l) => {
-				listeners.current.add(l);
-				return () => listeners.current.delete(l);
-			},
-			refresh: () => setNonce((n) => n + 1),
-		}),
-		[client, status, version, capabilities, capabilitiesError, events],
+		() => ({ client, status, version, capabilities, capabilitiesError, events, subscribe, refresh }),
+		[client, status, version, capabilities, capabilitiesError, events, subscribe, refresh],
 	);
 	return <EngineContext.Provider value={value}>{props.children}</EngineContext.Provider>;
 }

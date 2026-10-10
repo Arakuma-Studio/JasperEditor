@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
+import { measureOpen } from './open-phases.ts';
 import { uiFixtureEnvelope } from './ui-fixtures.ts';
 import {
 	dragScenario,
@@ -49,6 +50,13 @@ export type UiScenarioResult = FrameStats & {
 	scenario: string;
 	fixture: string;
 	openMs?: number;
+	/** polish: until every medium of the project has left "resolving" (ms from navigation start). */
+	openMediaMs?: number;
+	openBestMs?: number;
+	/** Media status requests the open made (two batches for 2 000 media, not 2 000). */
+	statusRequests?: number;
+	/** Renderer main-thread time by kind of work while opening (ms). */
+	work?: Record<string, number>;
 	dragWallMs?: number;
 	clips?: number;
 	committed?: boolean;
@@ -66,6 +74,13 @@ export const UI_BUDGETS: {
 	{ scenario: 'drag 11 of 1 000', metric: 'dragWallMs', budget: 1500, kind: 'max', what: 'wall time (ms)' },
 	{ scenario: 'scroll 5 000', metric: 'fps', budget: 50, kind: 'min', what: 'frame rate' },
 	{ scenario: 'zoom 5 000', metric: 'fps', budget: 50, kind: 'min', what: 'frame rate' },
+	{
+		scenario: 'open 2 000 items',
+		metric: 'openMediaMs',
+		budget: 2000,
+		kind: 'max',
+		what: 'open to an interactive editor with every medium resolved (ms)',
+	},
 	{
 		scenario: 'project panel 2 000 items scroll',
 		metric: 'fps',
@@ -148,6 +163,32 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 			),
 		);
 		await page.close();
+	}
+	// polish (docs/performance.md §6): opening a 2 000-item project — to an interactive editor with every medium
+	// resolved. Three cold opens; the median counts (the phases of the best run are reported with it).
+	if (want('open')) {
+		const projectId = await uploadProject(ctx.base, await cachedFixture('items:2000'));
+		const runs = [];
+		for (let i = 0; i < 3; i++) runs.push(await measureOpen(ctx.browser, ctx.base, projectId, 'items:2000'));
+		runs.sort((a, b) => a.media - b.media);
+		const mid = runs[1]!;
+		log({
+			scenario: 'open 2 000 items',
+			fixture: 'items:2000',
+			frames: 0,
+			wallMs: mid.media,
+			fps: 0,
+			p50: 0,
+			p95: 0,
+			mean: 0,
+			max: mid.longestTask,
+			busy: 0,
+			openMs: mid.shell,
+			openMediaMs: mid.media,
+			openBestMs: runs[0]!.media,
+			statusRequests: (mid.requests['media status (batch)'] ?? 0) + (mid.requests['media status'] ?? 0),
+			work: mid.work,
+		});
 	}
 	if (want('project')) {
 		const { page, openMs } = await session(ctx, 'items:2000');

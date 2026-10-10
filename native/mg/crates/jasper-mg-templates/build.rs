@@ -1,45 +1,39 @@
-//! Stages the media files of `media/` into `.media/`, the flat folder `fframes::include_media_dir!` embeds.
+//! Stages the embedded media for `fframes::include_media_dir!` (src/lib.rs).
 //!
-//! Every asset in the repository has its `<file>.attribution` sidecar next to it (AGENTS.md §3, checked by
-//! `scripts/check-assets.mjs`), but the macro refuses any file it cannot decode, so `media/` itself cannot be the
-//! embedded folder. `.media/` is gitignored and holds only the media files (fonts, images, audio, subtitles).
-use std::fs;
-use std::path::Path;
-
-const MEDIA_EXTENSIONS: &[&str] = &[
-    "mp3", "wav", "flac", "aac", "ogg", "m4a", "ttf", "ttc", "otf", "otc", "jpeg", "png", "jpg", "vtt",
-];
-
-fn is_media(path: &Path) -> bool {
-    path.is_file()
-        && path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| MEDIA_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
-}
+//! Every asset in the repository has an `<file>.attribution` sidecar next to it (AGENTS.md §3), and
+//! `include_media_dir!` refuses a folder that holds anything but media ("File type is not
+//! supported"), so the macro cannot read `media/` directly. This script copies the media files —
+//! everything except the sidecars — to `<workspace>/target/mg-media`, the folder the macro embeds.
+//! The macro resolves its path against the workspace root (rustc's working directory), whatever
+//! `CARGO_TARGET_DIR` says, so the staged folder always sits there.
+use std::{env, fs, path::Path};
 
 fn main() {
-    let src = Path::new("media");
-    let dst = Path::new(".media");
+    let manifest = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let src = Path::new(&manifest).join("media");
+    let dest = Path::new(&manifest).join("../../target/mg-media");
     println!("cargo:rerun-if-changed=media");
-    fs::create_dir_all(dst).expect("create .media");
-    // Files removed from media/ leave the staged folder too.
-    for entry in fs::read_dir(dst).expect("read .media") {
-        let path = entry.expect("entry").path();
-        if path.is_file() && !src.join(path.file_name().expect("name")).exists() {
-            fs::remove_file(&path).expect("remove stale staged media");
-        }
+    println!("cargo:rerun-if-changed=build.rs");
+
+    // Start from an empty folder: a file removed from `media/` must not stay embedded.
+    if dest.exists() {
+        fs::remove_dir_all(&dest).expect("clear the staged media folder");
     }
-    for entry in fs::read_dir(src).expect("read media") {
-        let path = entry.expect("entry").path();
-        if !is_media(&path) {
+    fs::create_dir_all(&dest).expect("create the staged media folder");
+    let mut staged = 0;
+    for entry in fs::read_dir(&src).expect("read crates/jasper-mg-templates/media") {
+        let entry = entry.expect("media entry");
+        let path = entry.path();
+        if !path.is_file() {
             continue;
         }
-        let to = dst.join(path.file_name().expect("name"));
-        let bytes = fs::read(&path).expect("read media file");
-        // Rewritten only when changed, so the embedding crate is not rebuilt for nothing.
-        if fs::read(&to).ok().as_deref() != Some(bytes.as_slice()) {
-            fs::write(&to, &bytes).expect("stage media file");
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.ends_with(".attribution") || name.starts_with('.') {
+            continue;
         }
+        fs::copy(&path, dest.join(name.as_ref())).expect("stage a media file");
+        staged += 1;
     }
+    assert!(staged > 0, "crates/jasper-mg-templates/media holds no media file");
 }

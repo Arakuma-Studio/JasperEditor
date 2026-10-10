@@ -1,7 +1,7 @@
 // Project panel (S05:PRJ-001…010, R-PUI §7): breadcrumb, search + filter, List and Icon views, bins,
 // drag in/out, rename, labels, delete with in-use warning, New Item ▸, status visualization.
 
-import type { LabelColor, ProjectItem } from '@jasper/project';
+import { FLICKS_PER_SECOND, type LabelColor, type ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, cx, Icon, IconButton, type IconId, LABEL_NAMES, PointMenu } from '@jasper/ui';
@@ -14,7 +14,7 @@ import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
 import { pickFilesInBrowser } from '../../import/desktop.ts';
 import { EngineImportService, readDataTransfer, writeProjectItemsDrag } from '../../import/service.ts';
 import { useEngine } from '../../state/engine.tsx';
-import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
+import { getImportService, HOST_PATHS_MIME, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import type { PanelProps } from '../types.ts';
 import { createBin, createText, deleteItems, moveItems, openItem, renameItem, setLabel } from './actions.ts';
 import { projectDialogs } from './dialogs.tsx';
@@ -29,6 +29,7 @@ import {
 	projectRows,
 	type SortKey,
 } from './model.ts';
+import { clearPosterHover, setPosterHover } from './poster-frame.ts';
 import { loadSpriteIndex, spriteTileAt, spriteTileStyle } from './sprites.ts';
 import { useRowWindow, VIRTUALIZE_MIN_ROWS } from './virtual.ts';
 
@@ -227,10 +228,12 @@ export function ProjectPanel(props: PanelProps) {
 
 	const onDragOver = (e: React.DragEvent, key: string) => {
 		const types = Array.from(e.dataTransfer.types);
-		if (readOnly || (!types.includes(PROJECT_ITEMS_MIME) && !types.includes('Files'))) return;
+		// polish: files dragged out of the Media Browser (paths on the engine host) import like OS files.
+		const external = types.includes('Files') || types.includes(HOST_PATHS_MIME);
+		if (readOnly || (!types.includes(PROJECT_ITEMS_MIME) && !external)) return;
 		e.preventDefault();
 		e.stopPropagation();
-		e.dataTransfer.dropEffect = types.includes('Files') ? 'copy' : 'move';
+		e.dataTransfer.dropEffect = external ? 'copy' : 'move';
 		if (dropTarget !== key) setDropTarget(key);
 	};
 	const onDrop = (e: React.DragEvent, targetBin: string | null) => {
@@ -949,6 +952,26 @@ function Tile(props: {
 	const key = mediaKeyOf(asset);
 	const [posterFailed, setPosterFailed] = useState(false);
 	const [scrub, setScrub] = useState<React.CSSProperties | null>(null);
+	// polish: the item's own poster frame (Set Poster Frame), drawn from the sprite sheet like the hover scrub.
+	const posterFlicks = useSessionState(
+		(s) => (s.document.items[row.id] as { poster?: { flicks: number } } | undefined)?.poster?.flicks ?? null,
+	);
+	const [ownPoster, setOwnPoster] = useState<React.CSSProperties | null>(null);
+	const tileWidth = props.width;
+	useEffect(() => {
+		setOwnPoster(null);
+		if (posterFlicks === null || !key || row.type !== 'video') return;
+		let live = true;
+		void loadSpriteIndex(engine.client, key).then((index) => {
+			if (!live || !index) return;
+			const total = durationSeconds(asset);
+			const tile = spriteTileAt(index, total > 0 ? posterFlicks / FLICKS_PER_SECOND / total : 0, total);
+			if (tile) setOwnPoster(spriteTileStyle(engine.client, key, index, tile, tileWidth));
+		});
+		return () => {
+			live = false;
+		};
+	}, [posterFlicks, key, row.type, engine.client, asset, tileWidth]);
 	const poster =
 		rt?.posterUrl ??
 		(key && !posterFailed && row.type !== 'audio' ? engine.client.mediaUrl(key, 'poster') : null);
@@ -960,7 +983,9 @@ function Tile(props: {
 		void loadSpriteIndex(engine.client, key).then((index) => {
 			if (!index) return;
 			const tile = spriteTileAt(index, frac, durationSeconds(asset));
-			if (tile) setScrub(spriteTileStyle(engine.client, key, index, tile, w));
+			if (!tile) return;
+			setScrub(spriteTileStyle(engine.client, key, index, tile, w));
+			setPosterHover(row.id, tile.timeSec); // Set Poster Frame takes the frame shown
 		});
 	};
 	return (
@@ -984,10 +1009,15 @@ function Tile(props: {
 					row.status === 'offline' ? 'bg-pr-danger' : '',
 				)}
 				onPointerMove={onMove}
-				onPointerLeave={() => setScrub(null)}
+				onPointerLeave={() => {
+					setScrub(null);
+					clearPosterHover(row.id);
+				}}
 			>
 				{scrub ? (
 					<div className="absolute inset-0" style={scrub} />
+				) : ownPoster ? (
+					<div className="absolute inset-0" style={ownPoster} data-testid="project-tile-poster" />
 				) : poster ? (
 					<img
 						src={poster}

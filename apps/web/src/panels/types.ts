@@ -29,6 +29,8 @@ export const PANEL_KINDS = [
 	'essentialSound',
 	// gaps (GR-4/5)
 	'essentialGraphics',
+	// polish: Media Browser
+	'mediaBrowser',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
@@ -64,6 +66,11 @@ export interface PanelDefinition {
 	menu?: MenuModel;
 	touch: 'tab' | 'sheet' | 'hidden';
 	requires?: Capability[];
+	/**
+	 * polish: where the panel opens when the workspace layout has no place for it — as a tab next to this panel
+	 * (Premiere docks the Media Browser with the Project panel); without it the panel floats.
+	 */
+	dockWith?: PanelKind;
 	/** One line for the agent's UI catalog (S05 §17.6). */
 	agentDescription: string;
 	component: ComponentType<PanelProps>;
