@@ -7,7 +7,10 @@
 //   node scripts/agent-demo.mjs <projectId> [--engine http://127.0.0.1:47900] [--token <t>] [--agent <name>]
 //   node scripts/agent-demo.mjs --list            # list projects
 //
-// Env: JASPER_ENGINE_URL, JASPER_LOCAL_TOKEN.
+// Env: JASPER_ENGINE_URL, JASPER_LOCAL_TOKEN. Every engine has a token (docs/security-review.md §8): without
+// --token or the variable, the script reads it from the runtime file the engine's /health names (the file is
+// readable by the engine's user only).
+import { readFileSync } from 'node:fs';
 
 const argv = process.argv.slice(2);
 const flag = (name) => {
@@ -20,10 +23,19 @@ const engine = (flag('engine') ?? process.env.JASPER_ENGINE_URL ?? 'http://127.0
 	/\/$/,
 	'',
 );
-const token = flag('token') ?? process.env.JASPER_LOCAL_TOKEN;
+async function discoverToken() {
+	try {
+		const health = await (await fetch(`${engine}/health`)).json();
+		return JSON.parse(readFileSync(health.runtimeFile, 'utf8')).token ?? undefined;
+	} catch {
+		return undefined;
+	}
+}
+const token = flag('token') ?? process.env.JASPER_LOCAL_TOKEN ?? (await discoverToken());
 const agent = flag('agent') ?? 'agent-demo';
 const headers = {
 	'content-type': 'application/json',
+	'x-jasper-agent': encodeURIComponent(agent),
 	...(token ? { authorization: `Bearer ${token}` } : {}),
 };
 
