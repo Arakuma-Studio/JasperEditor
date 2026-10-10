@@ -8,7 +8,7 @@ import { type RefObject, useEffect, useState } from 'react';
 /** Bins with fewer items render every row (identical DOM to before windowing). */
 export const VIRTUALIZE_MIN_ROWS = 200;
 /** Rows rendered before the first measurement. */
-const INITIAL_ROWS = 80;
+export const INITIAL_ROWS = 80;
 
 export type RowWindow = {
 	/** Whether windowing is on (the views render spacers). */
@@ -34,8 +34,14 @@ export function useRowWindow(opts: {
 	reveal?: number | null;
 }): RowWindow {
 	const { scroll, list, rows, enabled, measure } = opts;
-	const [win, setWin] = useState<RowWindow>({ on: false, start: 0, end: rows, rowH: 0 });
 	const on = enabled && rows >= 1;
+	// The very first render of a large bin is already windowed. (It used to render every row once and trim them in
+	// the effect below: opening a 2 000-item project mounted — and painted — all 2 000 rows before the first window.)
+	const [win, setWin] = useState<RowWindow>(() =>
+		on
+			? { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 }
+			: { on: false, start: 0, end: rows, rowH: 0 },
+	);
 	// A passive effect: the scroll container is the parent's element, whose ref is attached after this component's
 	// layout effects run.
 	useEffect(() => {
@@ -101,5 +107,7 @@ export function useRowWindow(opts: {
 		else if (y1 > s.scrollTop + s.clientHeight) s.scrollTop = y1 - s.clientHeight;
 	}, [on, reveal, win.rowH, scroll, list]);
 
-	return on ? win : { on: false, start: 0, end: rows, rowH: 0 };
+	if (!on) return { on: false, start: 0, end: rows, rowH: 0 };
+	// A bin that grew past the threshold since the last effect: windowed from this render on, too.
+	return win.on ? win : { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 };
 }

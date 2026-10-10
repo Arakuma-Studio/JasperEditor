@@ -1,6 +1,6 @@
 // Fields (S05:CT-010…013): text field, search field, dropdown select, checkbox, toggle switch.
 import { Checkbox as RCheckbox, Select as RSelect, Switch as RSwitch } from 'radix-ui';
-import { type ComponentProps, type KeyboardEvent, type ReactNode, useId, useRef } from 'react';
+import { type ComponentProps, type KeyboardEvent, type ReactNode, useId, useMemo, useRef } from 'react';
 import { cx } from '../cx.ts';
 import { popoverZClass, useInDialog } from '../dialog/layer.ts';
 import { Icon } from '../icons/Icon.tsx';
@@ -103,6 +103,27 @@ export function Select({
 	id,
 }: SelectProps) {
 	const inDialog = useInDialog();
+	// Radix renders every item of a select also while it is closed (it takes the trigger's text from the selected
+	// item). With a stable `options` array the items keep their identity and React skips them when the owner renders
+	// for another reason: a 100-entry list (languages, fonts, frame rates) is not rebuilt on every keystroke of the
+	// form around it.
+	const items = useMemo(
+		() =>
+			options.map((o) => (
+				<RSelect.Item
+					key={o.value}
+					value={o.value}
+					disabled={o.disabled}
+					className="relative flex h-6 cursor-default items-center rounded-[3px] pr-3 pl-5 font-pr text-pr-ui text-pr-text outline-none select-none data-[disabled]:text-pr-dim data-[highlighted]:bg-pr-accent-fill data-[highlighted]:text-pr-on-accent"
+				>
+					<RSelect.ItemIndicator className="absolute left-1 inline-flex">
+						<Icon id="app.check" size={12} />
+					</RSelect.ItemIndicator>
+					<RSelect.ItemText>{o.label}</RSelect.ItemText>
+				</RSelect.Item>
+			)),
+		[options],
+	);
 	return (
 		<RSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
 			<RSelect.Trigger
@@ -128,21 +149,7 @@ export function Select({
 						'max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 shadow-pr-overlay',
 					)}
 				>
-					<RSelect.Viewport>
-						{options.map((o) => (
-							<RSelect.Item
-								key={o.value}
-								value={o.value}
-								disabled={o.disabled}
-								className="relative flex h-6 cursor-default items-center rounded-[3px] pr-3 pl-5 font-pr text-pr-ui text-pr-text outline-none select-none data-[disabled]:text-pr-dim data-[highlighted]:bg-pr-accent-fill data-[highlighted]:text-pr-on-accent"
-							>
-								<RSelect.ItemIndicator className="absolute left-1 inline-flex">
-									<Icon id="app.check" size={12} />
-								</RSelect.ItemIndicator>
-								<RSelect.ItemText>{o.label}</RSelect.ItemText>
-							</RSelect.Item>
-						))}
-					</RSelect.Viewport>
+					<RSelect.Viewport>{items}</RSelect.Viewport>
 				</RSelect.Content>
 			</RSelect.Portal>
 		</RSelect.Root>
