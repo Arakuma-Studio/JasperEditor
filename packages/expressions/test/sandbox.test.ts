@@ -2,12 +2,17 @@
 // nothing an expression does may outlive its evaluation, and an expression that exhausts the heap (where the
 // interrupt hook cannot stop it) is not re-run per frame.
 import type { ExpressionRef } from '@jasper/project';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpressionText, loadExpressionEngine, storedTimeAtFrame } from '../src/index.ts';
+import { clearExpressionQuarantineForTests, setExpressionClockForTests } from '../src/runtime.ts';
 import { basicDoc } from './fixture.ts';
 
 beforeAll(async () => {
 	await loadExpressionEngine();
+});
+afterEach(() => {
+	setExpressionClockForTests(null);
+	clearExpressionQuarantineForTests();
 });
 
 function setup() {
@@ -110,16 +115,68 @@ describe('resource limits', () => {
 		expect(run('var s = "x"; while (1) s += s;').error).toMatch(/string too long|memory/);
 	});
 
-	it('an expression that exhausted the heap is not run again', { timeout: 60_000 }, () => {
+	// EXPR-2 and the hardening follow-up: an expression stopped by any resource limit is not run again in the realm.
+	// Which limit trips first depends on the machine and its load, so each path is driven explicitly (the clock is
+	// replaced where the test is about it, frozen where it is not), and the slow allocation loop is checked for the
+	// one property that matters whatever trips first: the second run costs nothing.
+	const quarantined = /not run again until the editor or engine restarts/;
+
+	it('the heap limit: quarantined, the next run is immediate', () => {
 		const run = setup();
-		const text = 'var a = []; while (1) a.push([1, 2, 3]);';
-		const first = run(text);
-		expect(first.error).toMatch(/ran out of memory/);
+		const text = 'var big = new ArrayBuffer(200 * 1024 * 1024); 1';
+		expect(run(text).error).toMatch(/ran out of memory/);
 		const t0 = performance.now();
 		const second = run(text);
 		expect(performance.now() - t0).toBeLessThan(50);
-		expect(second.error).toMatch(/ran out of memory.*not run again/);
+		expect(second.error).toMatch(/ran out of memory/);
+		expect(second.error).toMatch(quarantined);
 		// Other expressions are unaffected.
 		expect(run('1 + 1')).toEqual({ value: 2, error: null });
+	});
+
+	it('the operation budget: quarantined (the clock is frozen, so only the budget can stop it)', () => {
+		const run = setup();
+		setExpressionClockForTests(() => 0);
+		const first = run('var n = 0; while (true) n++;');
+		expect(first.error).toMatch(/operation limit reached/);
+		expect(first.error).not.toMatch(quarantined);
+		const second = run('var n = 0; while (true) n++;');
+		expect(second.error).toMatch(/operation limit reached/);
+		expect(second.error).toMatch(quarantined);
+	});
+
+	it('the wall clock: quarantined, also when it trips before the heap or the budget would', () => {
+		const run = setup();
+		// A busy host: every reading of the clock is a second later.
+		let t = 0;
+		setExpressionClockForTests(() => (t += 1000));
+		const text = 'var a = []; while (1) a.push([1, 2, 3]);';
+		const first = run(text);
+		expect(first.error).toMatch(/took too long \(over 2 s\)/);
+		setExpressionClockForTests(null);
+		const t0 = performance.now();
+		const second = run(text);
+		expect(performance.now() - t0).toBeLessThan(50);
+		expect(second.error).toMatch(/over 2 s/);
+		expect(second.error).toMatch(quarantined);
+	});
+
+	it('the heap-growing loop is never run twice, whichever limit stops it on this host', {
+		timeout: 60_000,
+	}, () => {
+		const run = setup();
+		const text = 'var b = []; while (1) b.push([1, 2, 3]);';
+		expect(run(text).error).toMatch(/ran out of memory|took too long/);
+		const t0 = performance.now();
+		expect(run(text).error).toMatch(quarantined);
+		expect(performance.now() - t0).toBeLessThan(50);
+	});
+
+	it('ordinary errors are not quarantined (they are cheap and may depend on the frame)', () => {
+		const run = setup();
+		const first = run('nothingHere + 1');
+		expect(first.error).toMatch(/nothingHere/);
+		expect(run('nothingHere + 1')).toEqual(first);
+		expect(first.error).not.toMatch(quarantined);
 	});
 });

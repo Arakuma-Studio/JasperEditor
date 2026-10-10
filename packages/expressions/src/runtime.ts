@@ -36,10 +36,12 @@ export const WALL_CLOCK_MS = 2000;
 export const MAX_DEPTH = 16;
 const MAX_FUNCTIONS = 2048;
 /**
- * Expressions that exhausted the heap, or ran past twice the wall-clock limit (time spent where the interrupt hook
- * cannot fire: native built-ins, the garbage collector at the memory limit), are not run again in this realm. One
- * such evaluation blocks its thread for seconds; without the quarantine a hostile project paid that per frame and
- * per property, freezing the editor or the engine (docs/security-review.md, EXPR-2).
+ * Expressions stopped by a resource limit are not run again in this realm: the heap limit, the operation budget,
+ * the wall-clock guard, or a run past twice the wall-clock limit (time spent where the interrupt hook cannot fire:
+ * native built-ins, the garbage collector at the memory limit). One such evaluation blocks its thread for up to
+ * seconds; without the quarantine a hostile project paid that per frame and per property, freezing the editor or the
+ * engine (docs/security-review.md, EXPR-2). Which limit trips first depends on the machine and its load (on a busy
+ * host the wall clock can come before the heap), so every one of them quarantines (hardening follow-up).
  */
 const quarantine = new Map<string, string>();
 const MAX_QUARANTINE = 512;
@@ -109,6 +111,8 @@ const hosts: HostHandler[] = [];
 let depth = 0;
 let ticks = 0;
 let deadline = 0;
+/** Why the interrupt hook stopped the current top-level evaluation (null: it did not). */
+let interruptedBy: 'operations' | 'clock' | null = null;
 
 function createEngine(module: QuickJSWASMModule): Engine {
 	const runtime = module.newRuntime();
@@ -117,7 +121,9 @@ function createEngine(module: QuickJSWASMModule): Engine {
 	runtime.setInterruptHandler(() => {
 		if (depth === 0) return false;
 		ticks++;
-		return ticks > OPERATION_BUDGET || (ticks % 16 === 0 && now() > deadline);
+		if (ticks > OPERATION_BUDGET) interruptedBy = 'operations';
+		else if (ticks % 16 === 0 && now() > deadline) interruptedBy = 'clock';
+		return interruptedBy !== null;
 	});
 	const context = runtime.newContext();
 	const host = context.newFunction('__host', (opH, argsH) => {
@@ -161,8 +167,20 @@ function createEngine(module: QuickJSWASMModule): Engine {
 	return { module, runtime, context, run, functions: new Map() };
 }
 
+let clock: (() => number) | null = null;
 function now(): number {
+	if (clock) return clock();
 	return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+/** Tests: replace the wall clock the limits read (null restores it). */
+export function setExpressionClockForTests(fn: (() => number) | null): void {
+	clock = fn;
+}
+
+/** Tests: forget every quarantined expression. */
+export function clearExpressionQuarantineForTests(): void {
+	quarantine.clear();
 }
 
 /**
@@ -264,6 +282,7 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 	const started = now();
 	if (top) {
 		ticks = 0;
+		interruptedBy = null;
 		deadline = now() + WALL_CLOCK_MS;
 	}
 	depth++;
@@ -275,8 +294,19 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 		if (r.error) {
 			const dumped = e.context.dump(r.error);
 			r.error.dispose();
-			const error = formatError(dumped);
-			if (/ran out of memory/.test(error) || now() - started > 2 * WALL_CLOCK_MS) quarantineText(text, error);
+			let error = formatError(dumped);
+			const interrupted = /took too long/.test(error);
+			if (interrupted && interruptedBy === 'clock')
+				error = error.replace(
+					/the expression took too long \([^)]*\)/,
+					`the expression took too long (over ${WALL_CLOCK_MS / 1000} s)`,
+				);
+			// A resource limit, whichever tripped first: never run it again (EXPR-2). Ordinary errors (a typo, a bad
+			// reference) are cheap and are reported again on every evaluation. The operation budget and the clock belong
+			// to the top-level evaluation: an expression it reads that happened to be running when they ran out is not
+			// to blame, the one that started the evaluation is.
+			if ((interrupted && top) || /ran out of memory/.test(error) || now() - started > 2 * WALL_CLOCK_MS)
+				quarantineText(text, error);
 			return { ok: false, error };
 		}
 		const out = e.context.getString(r.value);
