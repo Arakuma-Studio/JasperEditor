@@ -114,6 +114,12 @@ export function createDevAuth(
 		return looking;
 	};
 	void refresh();
+	// The engine usually comes up after the dev server (`pnpm dev` starts both): keep looking until it is found, so
+	// the first request it could answer is already authenticated.
+	const poll = setInterval(() => {
+		if (!info) void refresh();
+	}, 1000);
+	poll.unref?.();
 
 	const current = (): RuntimeInfo | null => {
 		if (runtimeFile) {
