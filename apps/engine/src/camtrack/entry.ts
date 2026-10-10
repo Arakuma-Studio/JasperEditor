@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { nodeExecPath } from '../tools/node-runtime.ts';
 
 const ENV = 'JASPER_CAMTRACK';
 export const CAMTRACK_BUNDLE = 'jasper-camtrack.mjs';
@@ -35,7 +36,7 @@ export function camtrackCommand(env: Record<string, string | undefined> = proces
 	const src = sourceEntry();
 	if (src && !explicit) return tsx(src);
 	const b = bundle(env);
-	if (b) return { command: process.execPath, args: [b] };
+	if (b) return { command: nodeExecPath(env), args: [b] };
 	if (src) return tsx(src);
 	throw new Error('jasper-camtrack is not available (no bundle and no source)');
 }
@@ -48,5 +49,5 @@ function tsx(entry: string): { command: string; args: string[] } {
 	} catch {
 		loader = 'tsx/esm';
 	}
-	return { command: process.execPath, args: ['--import', loader, entry] };
+	return { command: nodeExecPath(), args: ['--import', loader, entry] };
 }

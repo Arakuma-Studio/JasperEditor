@@ -2,11 +2,17 @@
 // reports readiness to a forking parent (Electron utilityProcess or child_process.fork).
 import { ENV, readFlag, resolveAppdir, resolvePort } from '@jasper/config';
 import { startEngine } from './index.ts';
+import { insideElectron } from './tools/node-runtime.ts';
 import { coreServices } from './tools/services.ts';
 
 type ParentPort = { postMessage(msg: unknown): void };
 
 async function main(): Promise<void> {
+	// Inside the desktop app (an Electron utility process) `process.execPath` is the application binary. The
+	// engine's worker programs (speech, roto, camera tracking, jasper-proc, the bundle schema runner) are started
+	// with it unless a Node runtime is shipped (tools/node-runtime.ts), and it runs a script only as "run as Node":
+	// without this their processes start as a second application instance and the jobs fail.
+	if (insideElectron()) process.env.ELECTRON_RUN_AS_NODE = '1';
 	const argv = process.argv.slice(2);
 	const appdir = resolveAppdir({ argv, env: process.env, defaultDir: process.env[ENV.APPDIR] });
 	const port = resolvePort({ argv, env: process.env });

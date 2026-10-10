@@ -21,6 +21,7 @@ import type { MediaRecord } from '../media/registry.ts';
 import { VisionModelStore, visionModelsDir } from '../roto/models.ts';
 import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
 import { safeFileName, sha256File } from '../tools/fs.ts';
+import { nodeExecPath } from '../tools/node-runtime.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
 import { loadCatalog, ModelError, ModelStore } from './models.ts';
@@ -620,7 +621,7 @@ export class ProcessingService {
 		const out = join(this.core.config.paths.cacheDir, 'jasper-proc-bundle');
 		ctx.progress(0.05, { stage: 'Building the jasper-proc bundle' });
 		const code = await new Promise<number>((resolve) => {
-			const c = spawn(process.execPath, [script, '--out', out], { stdio: ['ignore', 'pipe', 'pipe'] });
+			const c = spawn(nodeExecPath(this.env), [script, '--out', out], { stdio: ['ignore', 'pipe', 'pipe'] });
 			ctx.trackChild(c);
 			c.stderr.on('data', (d: Buffer) => ctx.log(d.toString()));
 			c.on('close', (x) => resolve(x ?? 1));

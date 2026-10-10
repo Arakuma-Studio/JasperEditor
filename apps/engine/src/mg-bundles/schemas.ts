@@ -16,6 +16,7 @@ import {
 	schemaUiHints,
 } from '@jasper/project';
 import { z } from 'zod';
+import { nodeExecPath } from '../tools/node-runtime.ts';
 import { terminateTree } from '../tools/process.ts';
 
 const MANIFEST_FILE = 'jasper.mg.json';
@@ -171,7 +172,7 @@ export async function loadSchemaModule(
 		z2js = 'zod-to-json-schema';
 	}
 	const res = await new Promise<{ code: number | null; stdout: string; stderr: string }>((done) => {
-		const child = spawn(process.execPath, [runner, bundled, projectDir, z2js], {
+		const child = spawn(nodeExecPath(), [runner, bundled, projectDir, z2js], {
 			cwd: projectDir,
 			env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production' },
 			stdio: ['ignore', 'pipe', 'pipe'],

@@ -88,20 +88,24 @@ export function isWindowAction(a: unknown): a is WindowAction {
 type McpLaunchInfo = { entry: string | null; command: string; env: Record<string, string> };
 
 /**
- * Packaged builds have no `node`: the app binary runs the bundle as Node (ELECTRON_RUN_AS_NODE=1).
- * From a checkout (dev / packaged-like) plain `node` is used. `entry` is null when the bundle is missing.
+ * From a checkout (dev / packaged-like) plain `node` runs the bundle. A packaged build has no `node` on its own:
+ *  - when it ships a Node runtime (`<resources>/node/node`, `bundledNode`), that runs it, like any other program;
+ *  - otherwise the app binary runs the bundle as Node (ELECTRON_RUN_AS_NODE=1), which is what keeps the `runAsNode`
+ *    fuse enabled (docs/security-review.md §8, RUN-1: the engine's worker programs need the same).
+ * `entry` is null when the bundle is missing.
  */
 export function mcpLaunchInfo(opts: {
 	packaged: boolean;
 	entry: string;
 	exists: boolean;
 	execPath: string;
+	/** Path of the Node runtime shipped with the app, when there is one. */
+	bundledNode?: string | null;
 }): McpLaunchInfo {
-	return {
-		entry: opts.exists ? opts.entry : null,
-		command: opts.packaged ? opts.execPath : 'node',
-		env: opts.packaged ? { ELECTRON_RUN_AS_NODE: '1' } : {},
-	};
+	const entry = opts.exists ? opts.entry : null;
+	if (!opts.packaged) return { entry, command: 'node', env: {} };
+	if (opts.bundledNode) return { entry, command: opts.bundledNode, env: {} };
+	return { entry, command: opts.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } };
 }
 
 /**

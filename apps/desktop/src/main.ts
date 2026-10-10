@@ -164,11 +164,18 @@ function registerIpc(): void {
 	ipcMain.handle('jasper:mcp-info', (e) => {
 		if (!fromApp(e)) return null;
 		const { mcpEntry } = resources();
+		// A Node runtime shipped in the resources runs jasper-mcp (and the engine's workers) instead of the app
+		// binary as Node; without one the binary does (which is why the runAsNode fuse stays on, RUN-1).
+		const node =
+			mode === 'packaged'
+				? join(process.resourcesPath, 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+				: null;
 		return mcpLaunchInfo({
 			packaged: mode === 'packaged',
 			entry: mcpEntry,
 			exists: existsSync(mcpEntry),
 			execPath: process.execPath,
+			bundledNode: node && existsSync(node) ? node : null,
 		});
 	});
 	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
