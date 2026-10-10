@@ -85,6 +85,19 @@ test('the menu entries that used to be disabled are wired', async () => {
 	await shot(page, 'engine-connect');
 	await connect.getByRole('button', { name: 'Close' }).first().click();
 
+	// File ▸ Get Properties for Selection… (Ctrl+Shift+H): what the selected medium is, with its path on the engine.
+	await page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' }).click();
+	await openMenu('file');
+	await page.getByRole('menuitem', { name: /^Get Properties for Selection/ }).click();
+	const properties = page.getByTestId('media-properties-dialog');
+	await expect(properties).toBeVisible();
+	await expect(properties.getByTestId('media-properties')).toContainText('1920 × 1080');
+	await expect(properties.getByTestId('media-properties')).toContainText('File Path');
+	await expect(properties.getByTestId('media-properties')).toContainText('Total Duration');
+	await shot(page, 'media-properties');
+	await properties.getByRole('button', { name: 'Close' }).first().click();
+	await expect(properties).toBeHidden();
+
 	await openMenu('help');
 	await page.getByRole('menuitem', { name: 'Third-Party Notices' }).click();
 	const notices = page.getByTestId('notices-dialog');

@@ -314,7 +314,9 @@ for leases; the Media Browser panel, Engine Status / Connect, Edit Parameters, T
 poster frames and custom effect bins, with a test that every menu entry and key binding has a command; live
 language switch (ARCHITECTURE D-46) checked by a tour of the UI in both directions; project open 8–14 s → 2.0–2.9 s
 at host load ≈ 18 (**< 2 s not demonstrated** at that load; a 10-item project takes ≈ 2.3 s there);
-`jasper-mg` builds again (it had not since the asset sidecars landed).
+`jasper-mg` builds again (it had not since the asset sidecars landed); code-split panels mount through state
+instead of a Suspense retry, which frequent updates on a busy machine could starve for minutes (found by a failed
+e2e run, reproduced in a unit test).
 
 ### Not covered by any workstream yet
 
