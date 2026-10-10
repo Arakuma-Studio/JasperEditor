@@ -290,14 +290,24 @@ desktop stall fix (§11). Every tier was run again on the head that includes it.
 | Gate | Command | Result |
 |---|---|---|
 | Static gates | `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck`, `pnpm notices --check`, `pnpm ffmpeg:check`, `pnpm build` | pass |
-| Every vitest suite with every opt-in | VITEST_ROW |
-| `FUZZ=1` | FUZZ_ROW |
-| All Playwright specs | PLAYWRIGHT_ROW |
+| Every vitest suite with every opt-in | `REMOTION_E2E=1 MG_E2E=1 MG_PARITY=1 SPEECH_E2E=1 JASPER_REQUIRE_ORACLES=1 pnpm vitest run --maxWorkers=2` (MCP ports 49650–49659) | 540 files / 5,437 tests: 5,326 pass, 110 skipped by their own gates, **1 failure**, fixed (below); 85 min at load 10–19 |
+| `FUZZ=1` | `FUZZ=1 pnpm vitest run --maxWorkers=2` on the 7 files that read it | 7 files, 372 pass (48 skipped by their own gates) |
+| All Playwright specs (54 files) | `SPEECH_E2E=1 E2E_PORT=49560 E2E_SKIP_BUILD=1 pnpm exec playwright test` | **234/234 pass** (34.7 min), first run, no reruns; including `effect-presets` "survives a reload" and polish's bundle-failure spec with the automatic reloads |
 | MCP scenario QA | `MCP_QA_PORT=49662 pnpm qa:mcp`, then with `REMOTION_E2E=1` | 7/7 and 7/7 (82 s, 81 s) |
 | Desktop | `DESKTOP_SMOKE_PORT=49600 pnpm e2e:desktop` | packaged-like PASS, dev PASS (warm-up 1,183 modules in 8 s, 7 s to Home; screenshot looked at: Home, engine connected), clipboard 4/4 |
 | | `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; a named blocker and Remotion without it) |
 | | `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS (bundled LGPL FFmpeg n7.1.5, a Remotion export with OpenH264, no PATH ffmpeg used) |
 | CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) | CI_ROW |
+
+Findings on this head, fixed:
+
+- `apps/engine/test/blend-static-layer.e2e.test.ts` (verify's own, §8 #2): 401 "Missing or invalid engine token".
+  hardening gave every engine a token and marked the engine-driving tests `insecure: true`; this test was not on
+  `integrate/parity` yet, so it did not get the change. It now uses the same option; it passes.
+- Clean-clone CI: `packages/audio-dsp` "Tech 3342 loudness range" timed out at vitest's default 5 s at load ≈ 15.
+  Alone it takes 2.4 s at load 14: it measures minutes of 48 kHz audio. The package was the only DSP package
+  without a test timeout; it now has 60 s, like `project`, with `audio-fx` and `interchange` at 120 s. The assertions
+  are unchanged.
 
 **Cross-feature smoke on the merged code.** The §8 project was reopened by an engine built from this head. The dev
 engine now has a token; `jasper-mcp --appdir` found it through the runtime file. Every result was rendered again:
