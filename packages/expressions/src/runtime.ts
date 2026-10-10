@@ -36,10 +36,13 @@ export const WALL_CLOCK_MS = 2000;
 export const MAX_DEPTH = 16;
 const MAX_FUNCTIONS = 2048;
 /**
- * Expressions that exhausted the heap, or ran past twice the wall-clock limit (time spent where the interrupt hook
- * cannot fire: native built-ins, the garbage collector at the memory limit), are not run again in this realm. One
- * such evaluation blocks its thread for seconds; without the quarantine a hostile project paid that per frame and
- * per property, freezing the editor or the engine (docs/security-review.md, EXPR-2).
+ * Expressions that exhausted the heap, or failed after blocking for the wall-clock limit or longer (the wall-clock
+ * guard fired, or the time went where the interrupt hook cannot fire: native built-ins, the garbage collector at the
+ * memory limit), are not run again in this realm. One such evaluation blocks its thread for seconds; without the
+ * quarantine a hostile project paid that per frame and per property, freezing the editor or the engine
+ * (docs/security-review.md, EXPR-2). The threshold is the limit itself, not a multiple of it: on a slow or busy
+ * machine a heap-filling loop is stopped by the wall clock (≈ 2.3 s) before it runs out of memory, and at twice the
+ * limit it was run again every frame (verify workstream).
  */
 const quarantine = new Map<string, string>();
 const MAX_QUARANTINE = 512;
@@ -276,7 +279,7 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 			const dumped = e.context.dump(r.error);
 			r.error.dispose();
 			const error = formatError(dumped);
-			if (/ran out of memory/.test(error) || now() - started > 2 * WALL_CLOCK_MS) quarantineText(text, error);
+			if (/ran out of memory/.test(error) || now() - started >= WALL_CLOCK_MS) quarantineText(text, error);
 			return { ok: false, error };
 		}
 		const out = e.context.getString(r.value);

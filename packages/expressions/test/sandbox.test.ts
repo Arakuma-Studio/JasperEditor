@@ -114,11 +114,13 @@ describe('resource limits', () => {
 		const run = setup();
 		const text = 'var a = []; while (1) a.push([1, 2, 3]);';
 		const first = run(text);
-		expect(first.error).toMatch(/ran out of memory/);
+		// Which guard stops it depends on the machine: the memory limit, or — when filling 64 MiB takes longer than the
+		// wall-clock limit (a slow or busy host) — the wall clock. Either way it blocked for seconds and is quarantined.
+		expect(first.error).toMatch(/ran out of memory|took too long/);
 		const t0 = performance.now();
 		const second = run(text);
 		expect(performance.now() - t0).toBeLessThan(50);
-		expect(second.error).toMatch(/ran out of memory.*not run again/);
+		expect(second.error).toMatch(/(ran out of memory|took too long).*not run again/);
 		// Other expressions are unaffected.
 		expect(run('1 + 1')).toEqual({ value: 2, error: null });
 	});

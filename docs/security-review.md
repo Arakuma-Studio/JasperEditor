@@ -136,8 +136,10 @@ numeric op and JSON, and results are type-checked on the way out. Tests: `packag
 spent in QuickJS's allocator and collector, where the interrupt hook cannot fire, so neither the operation budget
 nor the wall clock stops it. Per frame and per property that freezes the editor or the engine.
 
-Fix: an expression text that ran out of memory, or failed after more than twice the wall-clock limit, is not run
-again in that realm (it reports the error at once). The loop, recursion and string limits were verified to work.
+Fix: an expression text that ran out of memory, or failed after blocking for the wall-clock limit or longer, is not
+run again in that realm (it reports the error at once). (The threshold was twice the limit at first; on a busy host
+the wall clock stops such a loop at ≈ 2.3 s, before the heap is exhausted, and it was then run again every frame —
+found by the verify workstream.) The loop, recursion and string limits were verified to work.
 
 ### DATA-2 — shortening a placed nested sequence was refused (High, correctness)
 
