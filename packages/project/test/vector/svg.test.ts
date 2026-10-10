@@ -12,6 +12,7 @@ import {
 	SvgImportError,
 	shapeBoolean,
 	shapeGeom,
+	svgDocumentSize,
 	svgPathToShapeItems,
 	svgToShapeContents,
 } from '../../src/index.ts';
@@ -204,5 +205,15 @@ describe('svgToShapeContents', () => {
 			}),
 		);
 		expect(items.map((i) => i.type)).toEqual(['path', 'path', 'stroke', 'fill']);
+	});
+});
+
+describe('hostile character references (security review PAR-1)', () => {
+	it('out-of-range and surrogate references become U+FFFD instead of throwing RangeError', () => {
+		const svg =
+			'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><title>&#x110000;&#99999999999;&#xD800;</title><rect width="5" height="5" fill="red"/></svg>';
+		expect(() => svgToShapeContents(svg)).not.toThrow();
+		expect(svgToShapeContents(svg).contents.length).toBeGreaterThan(0);
+		expect(svgDocumentSize(svg)).toMatchObject({ width: 10, height: 10 });
 	});
 });

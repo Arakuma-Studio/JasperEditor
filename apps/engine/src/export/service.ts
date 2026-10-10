@@ -82,6 +82,7 @@ import {
 	prepareNestedExtensions,
 } from './native-ext.ts';
 import {
+	assertFrameSize,
 	audioCodecOf,
 	isAnimeTemplate,
 	mediaKeyOf,
@@ -1951,6 +1952,12 @@ export class ExportService {
 		const seqW = planned.snapshot.settings.width;
 		const seqH = planned.snapshot.settings.height;
 		if (req.width && req.width !== seqW) {
+			try {
+				assertFrameSize('The frame', req.width, Math.round((req.width * seqH) / seqW));
+			} catch (e) {
+				if (e instanceof PlanError) throw new JobError(e.code, e.message, false);
+				throw e;
+			}
 			planned.output.width = req.width;
 			planned.output.height = Math.max(2, Math.round((req.width * seqH) / seqW / 2) * 2);
 			planned.output.scaling = 'stretch';

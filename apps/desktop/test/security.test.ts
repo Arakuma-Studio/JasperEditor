@@ -141,6 +141,22 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
 	});
+
+	// Security review ELE-1: packaged builds ignore NODE_OPTIONS and --inspect (which would let any process run code
+	// as the signed app, with its microphone permission), verify the asar, load only from it and encrypt cookies.
+	// Run-as-node stays on: Help ▸ Connect an AI Agent launches the bundled jasper-mcp that way (mcpLaunchInfo).
+	it('flips the Electron fuses', () => {
+		expect(pkg.build.asar).toBe(true);
+		expect(pkg.build.electronFuses).toEqual({
+			runAsNode: true,
+			enableCookieEncryption: true,
+			enableNodeOptionsEnvironmentVariable: false,
+			enableNodeCliInspectArguments: false,
+			enableEmbeddedAsarIntegrityValidation: true,
+			onlyLoadAppFromAsar: true,
+			grantFileProtocolExtraPrivileges: false,
+		});
+	});
 });
 
 describe('capture-page rect (mcp-cli ui_screenshot)', () => {
@@ -182,8 +198,17 @@ describe('Edit Original (gaps, UI-5)', () => {
 		const { isOpenablePath } = await import('../src/security.ts');
 		expect(isOpenablePath('/media/clip.mov')).toBe(true);
 		expect(isOpenablePath('C:\\media\\clip.MP4')).toBe(true);
-		expect(isOpenablePath('/media/noext')).toBe(true);
+		// Security review ELE-2: a file without an extension is not opened (macOS runs an extensionless Unix
+		// executable in Terminal); the allowlist replaced the list of known program types.
+		expect(isOpenablePath('/media/noext')).toBe(false);
 		for (const bad of [
+			'/media/photo.hta',
+			'C:\\media\\photo.pif',
+			'/media/photo.scpt',
+			'/media/run.py',
+			'/media/link.inetloc',
+			'/media/x.workflow',
+			'C:\\x\\tweak.reg',
 			'/tmp/x.sh',
 			'C:\\x\\setup.EXE',
 			'/a/b.desktop',
@@ -194,5 +219,14 @@ describe('Edit Original (gaps, UI-5)', () => {
 			null,
 		])
 			expect(isOpenablePath(bad)).toBe(false);
+	});
+
+	it('uses the same allowlist as the engine (@jasper/config)', async () => {
+		const { OPENABLE_EXTENSIONS } = await import('../src/security.ts');
+		const config = await import('../../../packages/config/src/index.ts');
+		expect([...OPENABLE_EXTENSIONS]).toEqual([...config.OPENABLE_EXTENSIONS]);
+		expect(config.isOpenableFile('/m/a.MOV')).toBe(true);
+		expect(config.isOpenableFile('/m/a')).toBe(false);
+		expect(config.isOpenableFile('/m/a.hta')).toBe(false);
 	});
 });

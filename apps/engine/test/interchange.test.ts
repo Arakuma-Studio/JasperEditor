@@ -1,7 +1,7 @@
 // wp interchange end to end through the engine: export jobs (FCP7, AAF with embedded and separate audio, OMF with
 // AIFF files, per-track EDLs), import by path and by bytes (media registered, embedded audio written, missing media
 // as offline placeholders), Link Media (relink and folder search).
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
 	AssetRelinkResponse,
@@ -138,6 +138,22 @@ describe('interchange through the engine', () => {
 				.sort((x, y) => x[0]! - y[0]! || x[1]! - y[1]!),
 		);
 		expect(s.markers.map((m) => [m.frame, m.name])).toEqual([[12, 'Check']]);
+	});
+
+	it('never overwrites an existing file at the destination (security review DATA-3)', async () => {
+		const dir = join(tempAppdir('jasper-ix-'), 'out');
+		mkdirSync(dir, { recursive: true });
+		const dest = join(dir, 'Cut.xml');
+		writeFileSync(dest, 'my own timeline');
+		mkdirSync(join(dir, 'Cut (2) Media'));
+		const { result } = await exportJob('fcp7', {}, dest);
+		expect(readFileSync(dest, 'utf8')).toBe('my own timeline');
+		const docFile = result.files.find((f) => f.role === 'document')!;
+		// "Cut (2)" has a side folder already: the next free name is "Cut (3)".
+		expect(docFile.path).toBe(join(dir, 'Cut (3).xml'));
+		expect(readFileSync(docFile.path!, 'utf8')).toContain('<xmeml');
+		const again = await exportJob('fcp7', {}, dest);
+		expect(again.result.files.find((f) => f.role === 'document')!.path).toBe(join(dir, 'Cut (4).xml'));
 	});
 
 	it('AAF with embedded audio: the essence is decoded by ffmpeg and comes back as WAV files', async () => {

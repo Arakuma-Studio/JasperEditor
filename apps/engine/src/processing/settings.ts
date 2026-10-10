@@ -32,7 +32,9 @@ export class SettingsError extends Error {
 function validateSettings(s: ProcessingSettings): void {
 	const r = s.remote;
 	if (!r) return;
-	if (!/^[A-Za-z0-9._-]+$/.test(r.user)) throw new SettingsError('INVALID_SETTINGS', 'Invalid SSH user name');
+	// (A leading `-` would make `user@host` an ssh option: security review SSH-1.)
+	if (!/^[A-Za-z0-9._-]+$/.test(r.user) || r.user.startsWith('-'))
+		throw new SettingsError('INVALID_SETTINGS', 'Invalid SSH user name');
 	if (!/^[A-Za-z0-9.:_-]+$/.test(r.host) || r.host.startsWith('-'))
 		throw new SettingsError('INVALID_SETTINGS', 'Invalid SSH host');
 	if (!r.remoteDir.startsWith('/') || /[\s'"`$\\;&|<>*?]/.test(r.remoteDir) || r.remoteDir.includes('..'))

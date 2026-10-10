@@ -186,46 +186,100 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 	return out;
 }
 
-/** Extensions Edit Original never hands to the OS opener: they would run a program instead of opening media. */
-const EXECUTABLE_EXTENSIONS = new Set([
-	'exe',
-	'com',
-	'bat',
-	'cmd',
-	'msi',
-	'scr',
-	'ps1',
-	'vbs',
-	'js',
-	'jse',
-	'wsf',
-	'lnk',
-	'url',
-	'jar',
-	'sh',
-	'bash',
-	'zsh',
-	'command',
-	'app',
-	'desktop',
-	'appimage',
-	'run',
-	'bin',
-	'pkg',
-	'dmg',
-	'deb',
-	'rpm',
-]);
+/**
+ * Security review ELE-2: file types Edit Original may hand to the OS opener — the same allowlist as the engine's
+ * (`OPENABLE_EXTENSIONS` in @jasper/config; test/security.test.ts keeps the two equal). It used to be a list of known
+ * program types, which the OS opener outruns (`.hta`, `.pif`, `.cpl`, `.reg`, `.scpt`, `.workflow`, `.inetloc`, `.py`,
+ * and on macOS any extensionless Unix executable, which opens in Terminal).
+ */
+export const OPENABLE_EXTENSIONS: readonly string[] = [
+	// video
+	'mp4',
+	'mov',
+	'm4v',
+	'mkv',
+	'webm',
+	'avi',
+	'mxf',
+	'mts',
+	'm2ts',
+	'ts',
+	'mpg',
+	'mpeg',
+	'wmv',
+	'flv',
+	'3gp',
+	'ogv',
+	// audio
+	'mp3',
+	'wav',
+	'aac',
+	'm4a',
+	'flac',
+	'ogg',
+	'opus',
+	'aif',
+	'aiff',
+	'wma',
+	'ac3',
+	'caf',
+	// pictures
+	'png',
+	'jpg',
+	'jpeg',
+	'webp',
+	'gif',
+	'tif',
+	'tiff',
+	'bmp',
+	'avif',
+	'heic',
+	'heif',
+	'tga',
+	'exr',
+	'dpx',
+	'psd',
+	'psb',
+	// vector pictures and documents
+	'svg',
+	'pdf',
+	'ai',
+	'eps',
+	// captions
+	'srt',
+	'vtt',
+	'scc',
+	'mcc',
+	'stl',
+	'ttml',
+	'dfxp',
+	// timeline documents
+	'xml',
+	'fcpxml',
+	'otio',
+	'edl',
+	'aaf',
+	'omf',
+	'ale',
+	// models, animations, colour
+	'glb',
+	'gltf',
+	'obj',
+	'json',
+	'lottie',
+	'cube',
+	'3dl',
+	'ocio',
+];
 
 /**
  * gaps (Edit Original): a path the renderer may ask the OS to open in its default application — absolute, sane,
- * and not an executable or launcher (a hostile project could otherwise point a media locator at a program).
+ * and of a media or document type (never a program, a launcher, or a file without an extension).
  */
 export function isOpenablePath(p: unknown): p is string {
 	if (!isRevealablePath(p)) return false;
 	const m = /\.([A-Za-z0-9]+)$/.exec(p);
-	if (!m) return true;
-	return !EXECUTABLE_EXTENSIONS.has(m[1]!.toLowerCase());
+	return !!m && OPENABLE_EXTENSIONS.includes(m[1]!.toLowerCase());
 }
 
 /** A CSS-pixel rectangle from the renderer (validated before it reaches capturePage). */

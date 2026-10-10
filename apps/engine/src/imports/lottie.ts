@@ -35,6 +35,19 @@ const MIME: Record<string, string> = {
 const mimeOf = (name: string) =>
 	MIME[name.toLowerCase().split('.').pop() ?? ''] ?? 'application/octet-stream';
 
+/** The MIME type of picture bytes (PNG, JPEG, WebP, GIF, SVG), else null. */
+export function imageMime(b: Uint8Array): string | null {
+	const at = (i: number, ...v: number[]) => v.every((x, k) => b[i + k] === x);
+	if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png';
+	if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
+	if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp';
+	if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif';
+	const head = Buffer.from(b.subarray(0, 512)).toString('utf8').trimStart();
+	if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE svg[^>]*>\s*)?<svg[\s>]/i.test(head))
+		return 'image/svg+xml';
+	return null;
+}
+
 export const isLottieFileName = (file: string) => /\.(lottie|json)$/i.test(file);
 
 type Loaded = { doc: LottieDoc; info: LottieInfo };
@@ -165,14 +178,17 @@ async function embedImages(
 	const missing: string[] = [];
 	for (const img of lottieImageAssets(doc)) {
 		if (img.embedded) continue;
-		const bytes = await fetch(img.dir, img.file);
+		const raw = await fetch(img.dir, img.file);
+		// Only picture bytes are embedded: a hostile animation naming `../Documents/taxes.pdf` (inside the folder
+		// it was downloaded to) never carries that file into the project (security review DATA-5).
+		const bytes = raw && imageMime(raw) ? raw : null;
 		const asset = (doc.assets as Record<string, unknown>[])[img.index]!;
 		if (!bytes) {
 			missing.push(img.file);
 			continue;
 		}
 		asset.u = '';
-		asset.p = `data:${mimeOf(img.file)};base64,${bytes.toString('base64')}`;
+		asset.p = `data:${imageMime(bytes) ?? mimeOf(img.file)};base64,${bytes.toString('base64')}`;
 		asset.e = 1;
 	}
 	if (missing.length)

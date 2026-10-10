@@ -18,7 +18,8 @@ import {
 	type QuickJSRuntime,
 	type QuickJSWASMModule,
 } from 'quickjs-emscripten-core';
-import { compileExpressionSource } from './compile.ts';
+import { compileExpressionSource, setRealmGlobals } from './compile.ts';
+import { HARDEN } from './harden.ts';
 import { PRELUDE } from './prelude.ts';
 
 export const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
@@ -34,6 +35,14 @@ export const WALL_CLOCK_MS = 2000;
 /** Expressions reading each other nest up to this depth (cycles stop here with an error). */
 export const MAX_DEPTH = 16;
 const MAX_FUNCTIONS = 2048;
+/**
+ * Expressions that exhausted the heap, or ran past twice the wall-clock limit (time spent where the interrupt hook
+ * cannot fire: native built-ins, the garbage collector at the memory limit), are not run again in this realm. One
+ * such evaluation blocks its thread for seconds; without the quarantine a hostile project paid that per frame and
+ * per property, freezing the editor or the engine (docs/security-review.md, EXPR-2).
+ */
+const quarantine = new Map<string, string>();
+const MAX_QUARANTINE = 512;
 
 /** Answers a host request (`op`, JSON args) with JSON. Throwing becomes a JavaScript error in the expression. */
 export type HostHandler = (op: number, args: unknown[]) => unknown;
@@ -132,6 +141,22 @@ function createEngine(module: QuickJSWASMModule): Engine {
 		throw new Error(`expression prelude: ${JSON.stringify(err)}`);
 	}
 	prelude.value.dispose();
+	// Nothing an expression does may outlive its evaluation (harden.ts): frozen intrinsics, read-only globals.
+	const hardened = context.evalCode(HARDEN, 'harden.js');
+	if (hardened.error) {
+		const err = context.dump(hardened.error);
+		hardened.error.dispose();
+		throw new Error(`expression realm hardening: ${JSON.stringify(err)}`);
+	}
+	hardened.value.dispose();
+	const names = context.evalCode('Object.getOwnPropertyNames(globalThis)', 'globals.js');
+	if (names.error) {
+		names.error.dispose();
+		throw new Error('expression realm: cannot list the global names');
+	}
+	// Implicit globals of expressions become locals of their function, except names the realm defines.
+	setRealmGlobals(context.dump(names.value) as string[]);
+	names.value.dispose();
 	const run = context.getProp(context.global, '__run');
 	return { module, runtime, context, run, functions: new Map() };
 }
@@ -208,6 +233,11 @@ function compiled(e: Engine, text: string): { fn: QuickJSHandle } | { error: str
 	return entry;
 }
 
+function quarantineText(text: string, error: string): void {
+	if (quarantine.size >= MAX_QUARANTINE) quarantine.clear();
+	quarantine.set(text, `${error} (it is not run again until the editor or engine restarts)`);
+}
+
 /** Syntax check of an expression (`null` = compiles). Needs no loaded engine for parse errors. */
 export function checkExpressionSyntax(text: string): string | null {
 	const src = compileExpressionSource(text);
@@ -226,9 +256,12 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 	if (!e) return { ok: false, error: loadError ?? 'Error: the expression engine is still loading' };
 	if (depth >= MAX_DEPTH)
 		return { ok: false, error: 'Error: expressions reference each other too deeply (circular reference?)' };
+	const banned = quarantine.get(text);
+	if (banned) return { ok: false, error: banned };
 	const c = compiled(e, text);
 	if ('error' in c) return { ok: false, error: c.error };
 	const top = depth === 0;
+	const started = now();
 	if (top) {
 		ticks = 0;
 		deadline = now() + WALL_CLOCK_MS;
@@ -242,7 +275,9 @@ export function runExpression(text: string, state: RunState, host: HostHandler):
 		if (r.error) {
 			const dumped = e.context.dump(r.error);
 			r.error.dispose();
-			return { ok: false, error: formatError(dumped) };
+			const error = formatError(dumped);
+			if (/ran out of memory/.test(error) || now() - started > 2 * WALL_CLOCK_MS) quarantineText(text, error);
+			return { ok: false, error };
 		}
 		const out = e.context.getString(r.value);
 		r.value.dispose();

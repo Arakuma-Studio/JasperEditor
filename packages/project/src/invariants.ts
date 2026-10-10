@@ -810,16 +810,12 @@ export function invariantCheckers(
 		if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
 			if (!doc.sequences[r.sequenceId])
 				issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
-			else {
-				// INV-005 for nests: inside the nested sequence's duration (KND-011).
-				const dur = contentDurationFlicks(doc, c);
-				const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
-				const tol = flicksPerFrame(rate) * c.speed.rate + 1;
-				if (dur !== null && !c.frameHold && c.sourceIn + span > dur + tol)
-					issues.push(
-						inv('INV-005', `Clip ${c.id} exceeds its nested sequence (${c.sourceIn + span} > ${dur})`, cw),
-					);
-			}
+			// INV-005 for nests (KND-011): the nested sequence's duration bounds the edits that set the nest clip's
+			// range (trim and slip handles, contentWindow in commands/ripple.ts), not the document. Its length follows
+			// its content, so shortening the content (lifting or trimming its last clip, deleting media used inside
+			// it) leaves the nest clips that show it overhanging — as in Premiere, where the nested clip keeps its
+			// length and shows nothing past the content. Refusing that made every such edit fail with E_INVARIANT
+			// once the nest was placed (security review DATA-2). (A negative content start is INV-004 above.)
 			const set = nestEdges.get(seq.id) ?? new Set<string>();
 			set.add(r.sequenceId);
 			nestEdges.set(seq.id, set);

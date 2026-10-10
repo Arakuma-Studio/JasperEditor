@@ -88,6 +88,13 @@ type ServeFileOptions = {
 	/** Content-Disposition download name. */
 	downloadName?: string;
 	extraHeaders?: Record<string, string>;
+	/**
+	 * Served bytes are user content (media, SVG, renders, fonts): by default a browser that opens one as a document
+	 * gets a sandboxed, script-less opaque origin (`Content-Security-Policy: sandbox`), so an imported SVG or HTML-ish
+	 * file never runs script with the engine's origin and API (security review ENG-1). Only motion-graphics bundle
+	 * files, which are meant to run in the editor's live host, opt out.
+	 */
+	allowScripts?: boolean;
 };
 
 function etagFor(size: number, mtimeMs: number): string {
@@ -159,6 +166,12 @@ export async function serveFile(
 			`attachment; filename="${opts.downloadName.replace(/[^\w.\- ]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(opts.downloadName)}`,
 		);
 	}
+	reply.header('x-content-type-options', 'nosniff');
+	if (!opts.allowScripts)
+		reply.header(
+			'content-security-policy',
+			"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'",
+		);
 	for (const [k, v] of Object.entries(opts.extraHeaders ?? {})) reply.header(k, v);
 	const type = opts.contentType ?? contentTypeFor(file);
 
