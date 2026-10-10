@@ -61,6 +61,9 @@ host (`apps/web/vitest.config.ts`): `5 s × loadFactor²`, at least 15 s, at mos
 test still fails within a minute, `waitFor` / `findBy…` keep their own 1 s deadlines, and no assertion was changed.
 `apps/web/test/test-timeout.test.ts` pins the scaling.
 
+Also moved to the load-scaled budget: the colour-scope timing test (`packages/project/test/scopes.test.ts`, 60 ms per
+scope at 1080p; it measured 63 ms on the loaded host with no code change). `PERF=1` enforces 60 ms exactly.
+
 ## 3. Measuring
 
 ```bash

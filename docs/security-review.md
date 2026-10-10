@@ -144,7 +144,9 @@ spent in QuickJS's allocator and collector, where the interrupt hook cannot fire
 nor the wall clock stops it. Per frame and per property that freezes the editor or the engine.
 
 Fix: an expression text that ran out of memory, or failed after more than twice the wall-clock limit, is not run
-again in that realm (it reports the error at once). The loop, recursion and string limits were verified to work.
+again in that realm (it reports the error at once). The loop, recursion and string limits were verified to work. (Follow-up: every
+resource-limit kill quarantines — heap, operation budget, wall clock — because on a busy host the 2 s wall clock
+tripped before the heap limit and the slow loop was run again every frame; section 8, EXPR-3.)
 
 ### DATA-2 — shortening a placed nested sequence was refused (High, correctness)
 
@@ -366,6 +368,7 @@ reproduced where it says **measured**. Nothing here was measured against other s
 | MG-1 | Bundle pages ran in a same-origin iframe with the engine API, the editor's DOM and the desktop bridge | A sandboxed, opaque-origin iframe under a capability path with a CSP, driven over one MessagePort |
 | RUN-1 | Run-as-node needed for `jasper-mcp` | Evaluated: also needed by five engine worker programs, which did not start in a packaged build at all; that is fixed, the fuse stays on until a Node runtime ships |
 | PAR-2 | AAF / OMF / CFB and glTF readers not audited | Audited; seven ways to crash, hang or exhaust memory with a small file fixed; fuzz targets extended |
+| EXPR-3 | The expression quarantine missed wall-clock kills (on a busy host the loop was re-run every frame) | Every resource-limit kill quarantines |
 | WIN-1 | Windows opener tested by construction only; commas in a path mis-selected in Explorer | Quoting tested under libuv, the C runtime and Explorer parsers and run through a real PowerShell; `/select` quoted verbatim |
 
 ### AGT-2 — approvals are bound to the editor window (High)
@@ -572,6 +575,18 @@ with the values that break container readers (1 500 files each, 20 000 with `FUZ
 fail with `InterchangeError` within a time limit; a JSON-aware target mutates the fields of glTF documents.
 Tests: `packages/interchange/test/hostile.test.ts`, `packages/project/test/three-d-hostile.test.ts`, seeds in
 `packages/interchange/test/fuzz.test.ts` and `packages/project/test/fuzz-parsers.test.ts`.
+
+### EXPR-3 — the quarantine missed the wall clock (Medium)
+
+`review`'s test "an expression that exhausted the heap is not run again" failed in isolation on the shared host:
+the 2 s wall-clock guard stopped the heap-growing loop before the 64 MiB limit, the result was "took too long", and
+the quarantine (heap or more than 4 s only) did not apply, so the loop would run again on every frame. Now the
+interrupt hook records why it stopped an evaluation, and any resource-limit kill quarantines the top-level
+expression: heap, operation budget, wall clock (reported as "took too long (over 2 s)"), or a run past twice the
+wall clock. Ordinary errors are not quarantined. An expression read by another one is not blamed for the reader's
+budget. Tests (`packages/expressions/test/sandbox.test.ts`) drive each path deterministically: an immediate 200 MiB
+allocation for the heap, a frozen clock for the budget, a clock that jumps a second per reading for the wall clock,
+and the original loop for "never twice, whichever limit trips"; the second run takes under 50 ms in each.
 
 ### WIN-1 — the Windows opener (Low; tests)
 
