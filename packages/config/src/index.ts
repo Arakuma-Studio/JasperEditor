@@ -86,6 +86,35 @@ export function isTruthyEnv(v: string | undefined): boolean {
 	return v !== undefined && v !== '' && v !== '0' && v.toLowerCase() !== 'false';
 }
 
+/** An id used as one path segment was not one (security review ENG-4): answered as HTTP 400 by the engine. */
+export class AppdirPathError extends Error {
+	readonly statusCode = 400;
+	readonly code = 'VALIDATION_FAILED';
+	constructor(what: string) {
+		super(`Invalid ${what}`);
+		this.name = 'AppdirPathError';
+	}
+}
+
+/**
+ * Ids become directory names under the appdir. A caller that forgot to validate one (a project id taken from a URL
+ * parameter or a request body) must not turn `../..` into a path outside the appdir, so the layout itself refuses
+ * anything that is not a single path segment.
+ */
+function segment(id: string, what: string): string {
+	if (
+		typeof id !== 'string' ||
+		id === '' ||
+		id === '.' ||
+		id === '..' ||
+		id.includes('/') ||
+		id.includes('\\') ||
+		id.includes('\0')
+	)
+		throw new AppdirPathError(what);
+	return id;
+}
+
 /** Appdir layout (ARCHITECTURE §4.3). All paths are absolute when `appdir` is. */
 export function appdirPaths(appdir: string) {
 	const engineDir = join(appdir, 'engine');
@@ -100,19 +129,28 @@ export function appdirPaths(appdir: string) {
 		logsDir: join(engineDir, 'logs'),
 		logFile: (date: Date) => join(engineDir, 'logs', `${date.toISOString().slice(0, 10)}.log`),
 		projectsDir: join(appdir, 'projects'),
-		projectDir: (projectId: string) => join(appdir, 'projects', projectId),
-		projectFile: (projectId: string) => join(appdir, 'projects', projectId, 'project.jasper'),
-		projectViewFile: (projectId: string) => join(appdir, 'projects', projectId, 'project.jasper-view'),
-		projectVersionsDir: (projectId: string) => join(appdir, 'projects', projectId, 'versions'),
+		projectDir: (projectId: string) => join(appdir, 'projects', segment(projectId, 'project id')),
+		projectFile: (projectId: string) =>
+			join(appdir, 'projects', segment(projectId, 'project id'), 'project.jasper'),
+		projectViewFile: (projectId: string) =>
+			join(appdir, 'projects', segment(projectId, 'project id'), 'project.jasper-view'),
+		projectVersionsDir: (projectId: string) =>
+			join(appdir, 'projects', segment(projectId, 'project id'), 'versions'),
 		mediaDir: join(appdir, 'media'),
-		mediaFile: (mediaKey: string, originalName: string) => join(appdir, 'media', mediaKey, originalName),
+		mediaFile: (mediaKey: string, originalName: string) =>
+			join(appdir, 'media', segment(mediaKey, 'media key'), segment(originalName, 'file name')),
 		cacheDir: join(appdir, 'cache'),
 		derivativeFile: (fingerprintHex: string, kind: string, paramsHash: string, ext: string) =>
-			join(appdir, 'cache', fingerprintHex, `${kind}-${paramsHash}.${ext}`),
+			join(
+				appdir,
+				'cache',
+				segment(fingerprintHex, 'fingerprint'),
+				segment(`${kind}-${paramsHash}.${ext}`, 'derivative'),
+			),
 		mgDir: join(appdir, 'mg'),
-		mgRenderDir: (renderKey: string) => join(appdir, 'mg', renderKey),
+		mgRenderDir: (renderKey: string) => join(appdir, 'mg', segment(renderKey, 'render key')),
 		rendersDir: join(appdir, 'renders'),
-		renderDir: (jobId: string) => join(appdir, 'renders', jobId),
+		renderDir: (jobId: string) => join(appdir, 'renders', segment(jobId, 'job id')),
 		remotionBundleDir: join(appdir, 'remotion', 'bundle'),
 		/** User libraries shared by every project and by agents (S03:FX-030 effect presets). */
 		presetsDir: join(appdir, 'presets'),
@@ -169,4 +207,98 @@ export function parseEngineRuntime(raw: unknown): EngineRuntimeInfo | null {
 		appdir: typeof r.appdir === 'string' ? r.appdir : '',
 		startedAt: typeof r.startedAt === 'string' ? r.startedAt : '',
 	};
+}
+
+/**
+ * File types "Edit Original" may hand to the operating system's opener (security review ELE-2 / ENG-5): media,
+ * pictures, vector and caption documents, timeline documents, models, LUTs. An allowlist, not a list of known
+ * program types: the OS opener runs whatever a file type is associated with (`.hta`, `.pif`, `.cpl`, `.reg`,
+ * `.scpt`, `.workflow`, `.inetloc`, `.py`… and, on macOS, any extensionless Unix executable in Terminal), media
+ * probing is by content (a picture/script polyglot registers as media), and the desktop bridge is called by the
+ * renderer with a path. Everything else is shown in the file browser instead.
+ */
+export const OPENABLE_EXTENSIONS: readonly string[] = [
+	// video
+	'mp4',
+	'mov',
+	'm4v',
+	'mkv',
+	'webm',
+	'avi',
+	'mxf',
+	'mts',
+	'm2ts',
+	'ts',
+	'mpg',
+	'mpeg',
+	'wmv',
+	'flv',
+	'3gp',
+	'ogv',
+	// audio
+	'mp3',
+	'wav',
+	'aac',
+	'm4a',
+	'flac',
+	'ogg',
+	'opus',
+	'aif',
+	'aiff',
+	'wma',
+	'ac3',
+	'caf',
+	// pictures
+	'png',
+	'jpg',
+	'jpeg',
+	'webp',
+	'gif',
+	'tif',
+	'tiff',
+	'bmp',
+	'avif',
+	'heic',
+	'heif',
+	'tga',
+	'exr',
+	'dpx',
+	'psd',
+	'psb',
+	// vector pictures and documents
+	'svg',
+	'pdf',
+	'ai',
+	'eps',
+	// captions
+	'srt',
+	'vtt',
+	'scc',
+	'mcc',
+	'stl',
+	'ttml',
+	'dfxp',
+	// timeline documents
+	'xml',
+	'fcpxml',
+	'otio',
+	'edl',
+	'aaf',
+	'omf',
+	'ale',
+	// models, animations, colour
+	'glb',
+	'gltf',
+	'obj',
+	'json',
+	'lottie',
+	'cube',
+	'3dl',
+	'ocio',
+];
+
+/** Whether the OS opener may be asked to open `path` (by extension; extensionless files never). */
+export function isOpenableFile(path: string): boolean {
+	const m = /\.([A-Za-z0-9]+)$/.exec(path);
+	return !!m && OPENABLE_EXTENSIONS.includes(m[1]!.toLowerCase());
 }

@@ -5,8 +5,10 @@ import type { EditorSession } from '@jasper/session';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 import { useEngineClient } from '../state/engine.tsx';
+import { agentUiTxGuard } from './agent-input.ts';
 import { AgentBridge, type AgentBridgeState, type JasperAgentApi } from './bridge.ts';
 
+export * from './agent-input.ts';
 export * from './bridge.ts';
 export * from './relay-client.ts';
 export * from './ui-automation.ts';
@@ -41,11 +43,14 @@ function startAgentBridge(session: EditorSession, engine: EngineClient): () => v
 	// drive it live; with no editor open its id is unknown to the engine store → 404).
 	const bridge = new AgentBridge(session, engine, { relay: true }).start();
 	bridges.set(session, bridge);
+	// Security review AGT-1: what the approval gate refuses through apply_commands, the live UI may not do either.
+	const offGuard = session.addTxGuard(agentUiTxGuard);
 	const expose = shouldExposeWindowApi();
 	const api = bridge.api();
 	if (expose) window.jasper = api;
 	for (const l of [...listeners]) l();
 	return () => {
+		offGuard();
 		bridge.dispose();
 		if (bridges.get(session) === bridge) bridges.delete(session);
 		if (expose && window.jasper === api) delete window.jasper;

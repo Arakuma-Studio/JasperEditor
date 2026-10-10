@@ -168,6 +168,28 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 				const a = fx.params[name];
 				if (a && typeof a.value === 'string' && rotoMap.has(a.value)) a.value = rotoMap.get(a.value)!;
 			}
+	// text-animators: animator groups and their selectors (INV-001 claims `tan` / `tsl`). Security review DATA-7:
+	// they were not re-identified, so a split, duplicate or paste of an animated text clip was refused (duplicate id).
+	for (const g of (clip as { animators?: { id: string; selectors?: { id: string }[] }[] }).animators ?? []) {
+		g.id = h.ids.next('tan');
+		for (const sel of g.selectors ?? []) sel.id = h.ids.next('tsl');
+	}
+	// sim-warp: the Puppet meshes and pins of an effect instance (`pms` / `ppn`); a pin follows its mesh.
+	for (const fx of (c.effects ?? []) as unknown as {
+		puppet?: { meshes?: { id: string }[]; pins?: { id: string; meshId?: string }[] };
+	}[]) {
+		if (!fx.puppet) continue;
+		const meshMap = new Map<string, string>();
+		for (const m of fx.puppet.meshes ?? []) {
+			const id = h.ids.next('pms');
+			meshMap.set(m.id, id);
+			m.id = id;
+		}
+		for (const pin of fx.puppet.pins ?? []) {
+			pin.id = h.ids.next('ppn');
+			if (pin.meshId && meshMap.has(pin.meshId)) pin.meshId = meshMap.get(pin.meshId)!;
+		}
+	}
 	const fxIndex = c.trackedBy?.effectInstanceId
 		? (c.effects ?? []).findIndex((fx) => fx.id === c.trackedBy!.effectInstanceId)
 		: -1;

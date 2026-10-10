@@ -12,7 +12,8 @@ export const UI_GUIDE = `Live UI (the editor window itself, web or desktop; need
 - ui_click / ui_drag / ui_scroll / ui_key / ui_type / ui_set act like the user. Targets are {id} (optionally fx/fy 0..1 inside it), {x, y} window CSS pixels, {timeline: {frame?, track?, clipId?, edge?}} or {program: {x, y}} (sequence pixels). An {id} or clip target aims at the middle of its visible part; a target with no part on screen is scrolled into view first (the timeline by its own scroll).
 - ui_locate / ui_hit map timeline time ↔ x and track ↔ y, and Program monitor sequence pixels ↔ window points.
 - ui_commands {filter?} lists the UI commands (menus, shortcuts) with enabled and why-not; ui_command {id, args?} runs one (e.g. "panel.focus.lumetri", "workspace.switch" {id: "color"}, "timeline.zoomToSequence").
-A good loop: ui_elements → ui_click/ui_drag → ui_screenshot {panel} to check. Prefer apply_commands for edits (exact, undoable, no pixels); use the UI tools to drive and verify the UI itself.`;
+A good loop: ui_elements → ui_click/ui_drag → ui_screenshot {panel} to check. Prefer apply_commands for edits (exact, undoable, no pixels); use the UI tools to drive and verify the UI itself.
+- Limits: UI input cannot make the edits that need the user's approval (deleting sequences, items or media, removing tracks, force: true → E_APPROVAL_DENIED: use apply_commands, which asks the user), cannot run Clear History or Revert, and cannot answer approval cards (only the user's own clicks approve).`;
 
 const WindowArg = z
 	.string()

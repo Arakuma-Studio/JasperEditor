@@ -10,6 +10,7 @@
 //             size, duration, and by fingerprint for files of the same size.
 //
 // @jasper/interchange is pure (no fs); everything that touches files lives here.
+import { constants as fsConstants } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, parse as parsePath } from 'node:path';
 import type {
@@ -100,6 +101,23 @@ export function assetFromRegistered(reg: RegisteredMedia, id: string, now: strin
 		...(reg.lut ? { lut: JSON.parse(JSON.stringify(reg.lut)) } : {}),
 		...importedDescriptors(reg),
 	} as MediaAsset;
+}
+
+/**
+ * The first of `stem`, `stem (2)`, `stem (3)`… with no document (`<stem>.<ext>`, `<stem>_<suffix>.<ext>`) and no side
+ * folder (`<stem> Media`) in `dir` (security review DATA-3: interchange exports used to overwrite both silently).
+ */
+export async function freeDestinationStem(dir: string, stem: string, ext: string): Promise<string> {
+	const names = new Set(await readdir(dir).catch(() => [] as string[]));
+	const clean = (s: string) => safeFileName(s, 'Sequence');
+	for (let i = 1; ; i++) {
+		const s = i === 1 ? stem : `${stem} (${i})`;
+		const doc = clean(`${s}.${ext}`).slice(0, -(ext.length + 1));
+		const clash =
+			names.has(`${s} Media`) ||
+			[...names].some((n) => n.endsWith(`.${ext}`) && (n === `${doc}.${ext}` || n.startsWith(`${doc}_`)));
+		if (!clash) return s;
+	}
 }
 
 const EXTENSION: Record<InterchangeFormat, string> = {
@@ -372,8 +390,9 @@ export class InterchangeService {
 		await mkdir(outDir, { recursive: true });
 		ctx.addPartial(outDir);
 		const destPath = req.destination.type === 'path' ? req.destination.path : null;
+		// Never overwrite (like media exports, copyNoOverwrite): a name whose document or side folder exists gets " (2)"….
 		const docStem = destPath
-			? parsePath(destPath).name
+			? await freeDestinationStem(dirname(destPath), parsePath(destPath).name, EXTENSION[req.format])
 			: safeFileName(opts.name ?? this.sequenceName(doc, req.sequenceId) ?? 'Sequence', 'Sequence');
 		/** Where referenced side files (pre-renders, audio) end up: next to the document, else in the job folder. */
 		const sideDir = destPath ? join(dirname(destPath), `${docStem} Media`) : outDir;
@@ -500,7 +519,17 @@ export class InterchangeService {
 			await mkdir(dirname(destPath), { recursive: true });
 			for (const f of files) {
 				if (f.role !== 'document') await mkdir(sideDir, { recursive: true });
-				await copyFile(join(outDir, f.name), f.path!);
+				try {
+					await copyFile(join(outDir, f.name), f.path!, fsConstants.COPYFILE_EXCL);
+				} catch (e) {
+					if ((e as NodeJS.ErrnoException).code === 'EEXIST')
+						throw new JobError(
+							'DESTINATION_EXISTS',
+							`${f.path} appeared while exporting; nothing was overwritten`,
+							true,
+						);
+					throw e;
+				}
 			}
 		}
 		ctx.progress(1, { stage: 'Done' });

@@ -105,6 +105,7 @@ export class EditorSession {
 		baseRevision: number;
 	} | null = null;
 	private closed = false;
+	private readonly txGuards = new Set<(tx: SessionTxInput) => Issue | null>();
 	private leaseTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(opts: EditorSessionOptions) {
@@ -295,6 +296,10 @@ export class EditorSession {
 				errors: [{ commandIndex: -1, code: 'E_NO_SESSION', message: 'Session closed' }],
 			};
 		if (s.readOnly) return READ_ONLY_RESULT(s.revision);
+		for (const guard of this.txGuards) {
+			const refused = guard(tx);
+			if (refused) return { ok: false, revision: s.revision, errors: [refused] };
+		}
 		if (this.gestureState && tx.origin !== 'user' && tx.origin !== 'system') {
 			return {
 				ok: false,
@@ -303,6 +308,18 @@ export class EditorSession {
 			};
 		}
 		return this.commit(tx, this.commandContext());
+	}
+
+	/**
+	 * A host check every transaction passes before it applies; returning an issue refuses it. The web app refuses
+	 * destructive edits that an agent's live-UI automation triggers (they need the user's approval, security
+	 * review AGT-1).
+	 */
+	addTxGuard(guard: (tx: SessionTxInput) => Issue | null): () => void {
+		this.txGuards.add(guard);
+		return () => {
+			this.txGuards.delete(guard);
+		};
 	}
 
 	/** Applies now, or after the active gesture ends (agent transactions, S01:SES-006, S02:TL-056). */

@@ -183,6 +183,14 @@ export class SpeechModelStore {
 					transform(chunk: Buffer, _enc, cb) {
 						hash.update(chunk);
 						got += chunk.length;
+						// A body longer than the catalogue size is never the pinned file: stop before it fills the disk.
+						if (got > f.sizeBytes)
+							return cb(
+								new SpeechModelError(
+									'SPEECH_MODEL_CHECKSUM',
+									`${f.path}: the download is larger than the expected ${f.sizeBytes} bytes`,
+								),
+							);
 						opts.onProgress?.(done + got, total, f.path);
 						cb(null, chunk);
 					},

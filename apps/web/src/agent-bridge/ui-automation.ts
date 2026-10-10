@@ -7,6 +7,7 @@ import type { RunResult } from '../commands/registry.ts';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { editorPerfStats } from '../previews/perf.ts';
 import type { ShellController } from '../shell/context.tsx';
+import { runAgentInput } from './agent-input.ts';
 import {
 	accessibleName,
 	isVisible,
@@ -806,9 +807,14 @@ async function screenshot(a: ShotArgs) {
 
 const round = (v: number) => Math.round(v * 10) / 10;
 
+/** Actions that act on the window like the user (input); the others only look. */
+const INPUT_ACTIONS = new Set(['click', 'drag', 'scroll', 'key', 'type', 'set', 'command']);
+
 /** Runs one UI action (the relay's `ui` request). */
 export async function runUiAction(action: string, raw: unknown): Promise<unknown> {
 	try {
+		// Security review AGT-1: input runs as agent input (destructive edits and irreversible commands refused).
+		if (INPUT_ACTIONS.has(action)) return await runAgentInput(() => dispatchUiAction(action, raw));
 		return await dispatchUiAction(action, raw);
 	} catch (e) {
 		if (e instanceof UiAutomationError) throw e;

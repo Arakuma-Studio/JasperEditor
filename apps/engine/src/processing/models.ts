@@ -5,7 +5,7 @@
 import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { ProcessingModel } from '@jasper/api';
@@ -166,12 +166,23 @@ export class ModelStore {
 		let done = 0;
 		const total = Number(res.headers.get('content-length')) || e.sizeBytes;
 		const body = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream);
-		body.on('data', (c: Buffer) => {
-			done += c.length;
-			opts.onProgress?.(done, total);
+		const meter = new Transform({
+			transform(c: Buffer, _enc, cb) {
+				done += c.length;
+				// A body longer than the catalogue size is never the pinned file: stop before it fills the disk.
+				if (e.sizeBytes > 0 && done > e.sizeBytes)
+					return cb(
+						new ModelError(
+							'MODEL_CHECKSUM',
+							`Downloaded ${e.name} is larger than the expected ${e.sizeBytes} bytes`,
+						),
+					);
+				opts.onProgress?.(done, total);
+				cb(null, c);
+			},
 		});
 		try {
-			await pipeline(body, createWriteStream(partial));
+			await pipeline(body, meter, createWriteStream(partial));
 			const got = await sha256File(partial);
 			if (got !== e.sha256)
 				throw new ModelError(

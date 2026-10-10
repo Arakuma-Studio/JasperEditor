@@ -15,6 +15,7 @@ import { isLoopbackHost } from '../context.ts';
 import { inColor } from '../export/native.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
+import { isProjectId } from '../projects/store.ts';
 import { audioEncodeArgs, videoEncodeArgs } from '../tools/encoders.ts';
 import { exists } from '../tools/fs.ts';
 import { HttpError } from '../tools/reply.ts';
@@ -90,6 +91,9 @@ export class MediaJobService {
 			if (!req.destination.folder || !isAbsolute(req.destination.folder))
 				throw new HttpError(400, 'VALIDATION_FAILED', 'The destination folder must be an absolute path');
 		}
+		// Security review ENG-4: the id names a folder under <appdir>/projects.
+		if (req.projectId !== undefined && !isProjectId(req.projectId))
+			throw new HttpError(400, 'VALIDATION_FAILED', 'Invalid project id');
 		if (req.destination.mode === 'project' && !req.projectId && !req.destination.folder)
 			throw new HttpError(400, 'VALIDATION_FAILED', 'A project destination needs the projectId');
 		const preset =
@@ -178,7 +182,8 @@ export class MediaJobService {
 			const stem = basename(src, extname(src));
 			const ext = req.op === 'copy' ? extname(src) : preset?.codec === 'prores-422-hq' ? '.mov' : '.mp4';
 			const out = await uniquePath(dir, stem, SUFFIX[req.op], ext, taken);
-			const partial = `${out.slice(0, -ext.length)}.partial${ext}`;
+			// (`slice(0, -0)` is empty: an extensionless file would get the partial `.partial` in the engine's cwd.)
+			const partial = `${ext ? out.slice(0, -ext.length) : out}.partial${ext}`;
 			ctx.addPartial(partial);
 			const onFraction = (f: number) => ctx.progress((i + Math.min(1, Math.max(0, f))) / total);
 			try {

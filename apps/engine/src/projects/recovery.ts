@@ -18,7 +18,7 @@ import type { AppdirPaths } from '@jasper/config';
 import { atomicWriteJson, randomId, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import type { LeaseManager } from './leases.ts';
-import { ProjectError } from './store.ts';
+import { isProjectId, ProjectError } from './store.ts';
 
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 /** Newest unsaved-change labels kept in `session.json` (shown in the recovery prompt). */
@@ -93,6 +93,8 @@ export class RecoveryJournal {
 	}
 
 	private dir(projectId: string, sessionId?: string): string {
+		// Security review ENG-4: the id comes from a URL parameter (`..%2F` decodes to `../`).
+		if (!isProjectId(projectId)) throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
 		const base = join(this.opts.paths.projectDir(projectId), 'recovery');
 		if (sessionId === undefined) return base;
 		if (!SESSION_ID_RE.test(sessionId))
