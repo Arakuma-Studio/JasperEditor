@@ -297,7 +297,7 @@ desktop stall fix (§11). Every tier was run again on the head that includes it.
 | Desktop | `DESKTOP_SMOKE_PORT=49600 pnpm e2e:desktop` | packaged-like PASS, dev PASS (warm-up 1,183 modules in 8 s, 7 s to Home; screenshot looked at: Home, engine connected), clipboard 4/4 |
 | | `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; a named blocker and Remotion without it) |
 | | `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS (bundled LGPL FFmpeg n7.1.5, a Remotion export with OpenH264, no PATH ffmpeg used) |
-| CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) | CI_ROW |
+| CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) | first run: lint, typecheck pass; `pnpm test` 1 failure (the audio-dsp timeout below). **Rerun on 3d2a6ff8: pass**: lint, typecheck, `pnpm test` 490 files / 5,026 tests (0 failures, `JASPER_REQUIRE_ORACLES=1`, apt FFmpeg), build |
 
 Findings on this head, fixed:
 
