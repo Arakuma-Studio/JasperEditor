@@ -28,6 +28,11 @@ export type OperationApproval = {
 	 * agree). null / omitted: not about one project.
 	 */
 	projectId?: string | null;
+	/**
+	 * How "no editor window is connected to ask in" is reported: `E_APPROVAL_DENIED` (default, like a destructive
+	 * transaction on a project nobody has open) or `E_NO_SESSION` (409: "open the project in the editor first").
+	 */
+	noEditor?: 'E_APPROVAL_DENIED' | 'E_NO_SESSION';
 };
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is being removed
@@ -60,11 +65,12 @@ export async function requireUserApproval(
 	const agent = app.jasper.services.agent as AgentService | undefined;
 	const refuse = (kind: 'DENIED' | 'TIMEOUT', message: string) =>
 		new HttpError(403, `APPROVAL_${kind}`, message, { code: `E_APPROVAL_${kind}` });
-	const noEditor = () =>
-		refuse(
-			'DENIED',
-			`${what.label} needs the user's approval, and no JasperEditor window with a project open is connected to ask in`,
-		);
+	const noEditor = () => {
+		const message = `${what.label} needs the user's approval, and no JasperEditor window with a project open is connected to ask in`;
+		return what.noEditor === 'E_NO_SESSION'
+			? new HttpError(409, 'NO_SESSION', message, { code: 'E_NO_SESSION' })
+			: refuse('DENIED', message);
+	};
 	if (!agent) throw noEditor();
 	// Prefer the windows that have the project open; a project nobody has open is asked about in any window.
 	const projectId = what.projectId && agent.hasEditor(what.projectId) ? what.projectId : null;

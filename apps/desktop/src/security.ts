@@ -104,6 +104,19 @@ export function mcpLaunchInfo(opts: {
 	};
 }
 
+/**
+ * The cookies the window needs for the engine it started (ARCH §4.2; security review AGT-2): the session token and
+ * the editor key, under per-port names (cookies are shared by every port of 127.0.0.1; `portCookieName` in
+ * @jasper/api — the engine accepts these names). Both are set HttpOnly and SameSite=Strict by the caller.
+ */
+export function sessionCookies(
+	port: string | number,
+	token: string,
+	editorKey: string,
+): Record<string, string> {
+	return { [`jasper_session_${port}`]: token, [`jasper_editor_${port}`]: editorKey };
+}
+
 // ---------------------------------------------------------------- clipboard (wp-clipboard, S01:CLB-002/009)
 
 /** The custom clipboard format next to `text/html` and `text/plain`. */

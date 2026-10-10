@@ -218,7 +218,7 @@ type Pending = { resolve(v: unknown): void; reject(e: Error): void; timer: Retur
 /** The subset of a MessagePort the remote uses (tests pass a fake). */
 export type MgHostPort = {
 	postMessage(message: unknown): void;
-	// biome-ignore lint/suspicious/noExplicitAny: a MessagePort's handler type; only `data` is read
+	/** A MessagePort's handler; only `data` is read. */
 	onmessage: ((ev: any) => void) | null;
 	close(): void;
 	start?(): void;

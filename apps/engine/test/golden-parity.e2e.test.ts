@@ -106,6 +106,8 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 		engine = await startEngine({
 			appdir: tempAppdir('jasper-golden-parity-'),
 			port: 0,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

@@ -40,6 +40,7 @@ import {
 	MEDIA_EXTENSIONS,
 	mcpLaunchInfo,
 	parseClipboardFileList,
+	sessionCookies,
 } from './security.ts';
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist-electron
@@ -279,19 +280,31 @@ async function startPackagedLike(): Promise<string> {
 	if (!existsSync(join(webDir, 'index.html')))
 		throw new Error(`web build missing: ${webDir} (run pnpm build)`);
 	const token = randomBytes(32).toString('base64url');
+	// Security review AGT-2: the editor key. The engine's runtime file tells local tools (jasper-mcp) the token; the
+	// key is known to the engine and to this window only, which is how the engine tells the user from an agent.
+	const editorKey = randomBytes(32).toString('base64url');
 	const dir = appdir();
 	mkdirSync(dir, { recursive: true });
-	engine = await startEngineProcess({ entry: engineEntry, appdir: dir, webDir, token, resourcesDir });
-	log(`engine ready on ${engine.origin} (appdir ${dir})`);
-	// HttpOnly SameSite=Strict session cookie so media elements and fetches carry the token (ARCH §4.2).
-	await session.defaultSession.cookies.set({
-		url: engine.origin,
-		name: 'jasper_session',
-		value: token,
-		httpOnly: true,
-		sameSite: 'strict',
-		secure: false,
+	engine = await startEngineProcess({
+		entry: engineEntry,
+		appdir: dir,
+		webDir,
+		token,
+		editorKey,
+		resourcesDir,
 	});
+	log(`engine ready on ${engine.origin} (appdir ${dir})`);
+	// HttpOnly SameSite=Strict cookies: media elements, fetches and the /agent WebSocket carry them, page scripts
+	// (and anything a page loads) cannot read them (ARCH §4.2).
+	for (const [name, value] of Object.entries(sessionCookies(new URL(engine.origin).port, token, editorKey)))
+		await session.defaultSession.cookies.set({
+			url: engine.origin,
+			name,
+			value,
+			httpOnly: true,
+			sameSite: 'strict',
+			secure: false,
+		});
 	return `${engine.origin}/`;
 }
 

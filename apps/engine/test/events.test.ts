@@ -7,7 +7,13 @@ import { closeApps, H, makeApp, tempAppdir } from './helpers.ts';
 
 let engine: RunningEngine;
 beforeAll(async () => {
-	engine = await startEngine({ appdir: tempAppdir(), port: 0, dev: true, env: { PATH: process.env.PATH } });
+	engine = await startEngine({
+		appdir: tempAppdir(),
+		port: 0,
+		insecure: true,
+		dev: true,
+		env: { PATH: process.env.PATH },
+	});
 });
 afterAll(async () => {
 	await engine.stop();

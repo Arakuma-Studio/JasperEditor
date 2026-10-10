@@ -13,6 +13,7 @@
 //   machine, its load average and the host load factor of scripts/perf/budget.ts. PERF=1 fails the run when a
 //   documented budget is missed (else budgets scale with the measured load and misses are reported).
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
@@ -96,6 +97,22 @@ if (sections.includes('micro')) {
 }
 
 // ------------------------------------------------------------------ the built stack
+// Every engine has a token and tells the editor from an agent by the editor key (docs/security-review.md DEV-1,
+// AGT-2). This harness plays the desktop shell for the stack it starts: it makes both, gives them to the engine and
+// uses them for its own requests and pages. The child scripts (scripts/perf/ui-run.ts) read the same variables; to
+// measure a stack that is already running (BASE_URL), export E2E_TOKEN and E2E_EDITOR_KEY of that stack.
+process.env.E2E_TOKEN ??= randomBytes(24).toString('base64url');
+process.env.E2E_EDITOR_KEY ??= randomBytes(24).toString('base64url');
+const secrets = { token: process.env.E2E_TOKEN, editorKey: process.env.E2E_EDITOR_KEY };
+const authHeaders = {
+	authorization: `Bearer ${secrets.token}`,
+	cookie: `jasper_editor=${secrets.editorKey}`,
+};
+const authCookies = (url) =>
+	[
+		['jasper_session', secrets.token],
+		['jasper_editor', secrets.editorKey],
+	].map(([name, value]) => ({ name, value, url, httpOnly: true, sameSite: 'Strict' }));
 let server = null;
 let base = process.env.BASE_URL ?? null;
 async function ensureServer() {
@@ -108,7 +125,12 @@ async function ensureServer() {
 		throw new Error('Run `pnpm build` first (the editor and export sections use the built stack)');
 	server = spawn(process.execPath, [join(root, 'e2e/serve.mjs')], {
 		cwd: root,
-		env: { ...process.env, E2E_PORT: port },
+		env: {
+			...process.env,
+			E2E_PORT: port,
+			JASPER_LOCAL_TOKEN: secrets.token,
+			JASPER_EDITOR_KEY: secrets.editorKey,
+		},
 		stdio: 'ignore',
 	});
 	base = `http://127.0.0.1:${port}`;
@@ -125,7 +147,7 @@ async function ensureServer() {
 const api = async (path, body, method = body ? 'POST' : 'GET') => {
 	const r = await fetch(`${base}${path}`, {
 		method,
-		headers: { 'content-type': 'application/json', 'x-jasper-api': '1' },
+		headers: { 'content-type': 'application/json', 'x-jasper-api': '1', ...authHeaders },
 		...(body ? { body: JSON.stringify(body) } : {}),
 	});
 	const text = await r.text();
@@ -164,6 +186,7 @@ async function editorSection() {
 		args: ['--enable-features=CanvasDrawElement', '--autoplay-policy=no-user-gesture-required'],
 	});
 	const page = await browser.newPage({ viewport: { width: 1600, height: 960 } });
+	await page.context().addCookies(authCookies(base));
 	await page.addInitScript(() => localStorage.setItem('jasper:agent-bridge', '1'));
 	await page.goto(`${base}/`);
 	await page.getByTestId('home-new').click();

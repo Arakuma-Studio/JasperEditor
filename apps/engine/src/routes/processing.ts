@@ -76,6 +76,7 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 					: 'remove the remote executor',
 				reasons: ['changes where media is sent for processing (remote executor)'],
 				projectId: req.query.approvalProjectId ?? null,
+				noEditor: 'E_NO_SESSION',
 			});
 			try {
 				const saved = await svc.settings.put(body);
