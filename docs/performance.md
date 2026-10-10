@@ -195,7 +195,7 @@ alternates runs with and without a `localStorage` switch.
 | before (`integrate/parity` 065af535; `ui-profile.ts items:2000 open`, CPU profiler attached) | ≈ 12 | 10.9 s | — |
 | media statuses in batches, one store update per answer | 19–23 | 4.7 – 5.9 s | 2 000 requests; `setMediaRuntimes` 1.4 s and a forced layout per answer 1.1 s of CPU |
 | the bin windowed from its first render | 13–18 | 2.45 – 3.0 s | style + layout of 2 000 rows: 1.0 → 0.2 s |
-| editor chunks preloaded, project fetched before the bundle boots (`/editor-boot.js`) | 14 (≈ 1.4) | 2.0 – 2.2 s | three round trips for 24 chunks; the project answer arrives at ≈ 0.35 s instead of ≈ 1.0 s |
+| editor chunks preloaded, project fetched before the bundle boots (`/editor-boot.js`) | 14 (≈ 1.4) | 2.0 – 2.2 s | three round trips for 30 chunks; the project answer arrives at ≈ 0.35 s instead of ≈ 1.0 s |
 | final build, three sessions | 17–19 (1.3–1.8) | median 2.7 s, best 2.2 s | |
 | a 10-item project, same sessions | 17–19 (1.3–1.8) | median 2.3 s, best 1.9 s | (the editor's own start) |
 

@@ -155,7 +155,7 @@ main-thread time by kind from a Chrome trace). Where the time went, and what cha
 |---|---|---|
 | ≈ 5 s | one `GET /api/media/:key` per medium (2 000 requests), each answer a store update that re-ran every subscriber and forced a layout | `POST /api/media/status` answers ≤ 1 000 keys; each answer is applied as one store update; an engine without the route is asked per medium as before |
 | ≈ 2 s | the bin rendered all 2 000 rows once: windowing turned on in an effect, after the first render (style + layout ≈ 1 s) | the row window starts windowed (`panels/project/virtual.ts`) |
-| ≈ 0.4 s | the editor's 24 chunks (shell, dock, panel bodies) were discovered in three round trips after the bundle had run | `/editor-boot.js` (generated at build from the bundle graph, an external script for `script-src 'self'`) adds `modulepreload` links on editor URLs |
+| ≈ 0.4 s | the editor’s 30 chunks (shell, dock, panel bodies) were discovered in three round trips after the bundle had run | `/editor-boot.js` (generated at build from the bundle graph, an external script for `script-src 'self'`) adds `modulepreload` links on editor URLs |
 | ≈ 0.1 s | the project file was requested only after the bundle had booted | the same script starts the request; the engine client's first matching GET takes the answer (`fetchWithEarly`) |
 | one extra sweep | `engine.subscribe` was a new function whenever the engine state changed, so the media sync was torn down and resolved every medium again | `subscribe` / `refresh` keep their identity; the sync restarts only on reconnect |
 
@@ -228,7 +228,7 @@ understood); the fix does not depend on it.
 
 `docs/gaps.md`, `docs/parity.md`, `docs/M1-STATUS.md` and the README were brought to the final state: no workstream
 is "in flight", the five disabled menu entries are gone, the counts are recounted (323 MCP tools from a live
-`listTools`, 291 menubar entries all registered, 256 document commands, 22 panels, 525 test files, 54 Playwright
+`listTools`, 291 menubar entries all registered, 256 document commands, 22 panels, 526 test files, 54 Playwright
 specs), the README opens with what the product does.
 
 ## 9. Tests added
