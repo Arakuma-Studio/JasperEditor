@@ -174,8 +174,9 @@ resolved; the load factor is `scripts/perf/budget.ts`):
 | + windowed first render | 13–18 | 2.45 – 3.0 s |
 | + preload and early fetch | 14 / ≈ 1.4 | 2.0 – 2.2 s |
 | final, several sessions | 17–19 / 1.3–1.8 | median 2.7 s, best 2.2 s (10-item project in the same runs: median 2.3 s, best 1.9 s) |
+| final, after §7 and §7.1 (5 runs) | 20–21 | median 2.9 s, best 2.6 s |
 
-**The 2 s target is not demonstrated**: on this host at its usual load the open takes 2.0–2.9 s, of which about
+**The 2 s target is not demonstrated**: on this host at its usual load the open takes 2.0–2.9 s (4.2–4.9 s in one e2e run while the load factor read 5), of which about
 2.3 s is the editor starting for any project. Divided by the measured load factor it is under 2 s, which is what
 the budget enforces (`pnpm perf --sections ui --ui open`, budget 2 000 ms × load², exact with `PERF=1`); a run on an
 idle machine was not possible. The deterministic guards do not depend on load: `e2e/polish.spec.ts` asserts two
