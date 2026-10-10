@@ -267,7 +267,7 @@ Two more findings on the merged head, fixed:
 | Lint, typecheck, e2e typecheck, notices, ffmpeg licence | `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck`, `pnpm notices --check`, `pnpm ffmpeg:check` | pass |
 | Every vitest suite with every opt-in | `REMOTION_E2E=1 MG_E2E=1 MG_PARITY=1 SPEECH_E2E=1 pnpm vitest run --maxWorkers=2` (MCP ports 49650–49659) | 514 files / 4,812 tests pass, 1 failure = the sandbox test above (fixed, 18/18 and the package's 75/75 after); 106 min |
 | All Playwright specs (53 files) | `SPEECH_E2E=1 E2E_PORT=49560 E2E_SKIP_BUILD=1 pnpm exec playwright test` | 214 passed, 5 failed, 6 did not run (serial followers), 1.2 h at load 42–65; **each failed file rerun alone passes**: project-files 2/2, color-mgmt 3/3, compositor 4/4, previews 3/3, ui-perf 4/4. The failures were 3-minute export timeouts, a playback stall and a UI frame budget under 4–5× oversubscription |
-| CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) on the final head | CI_RESULT |
+| CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) on the final head | **pass**: lint, typecheck, `pnpm test` 471 files / 4,512 tests (0 failures, JASPER_REQUIRE_ORACLES=1, apt FFmpeg), build (head 6ee6f517) |
 
 On the previous head (065af535, before review) the clean-clone CI passed in full (lint, typecheck,
 `pnpm test` 464 files / 4,450 tests, build) and the full Playwright suite passed 223/223.
