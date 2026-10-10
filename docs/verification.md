@@ -184,7 +184,7 @@ checkout (fixtures present, the LGPL FFmpeg in `vendor/`), so the CI workflow co
 | `gaps-export-frame` (7), `gaps-export-formats` (2), `gaps-project-manager` (1), `gaps-audio-channels` (suite) | hard-coded `vendor/ffmpeg-lgpl/linux-x64/ffmpeg` / `ffprobe` | shared `TEST_FFMPEG` / `TEST_FFPROBE` in `apps/engine/test/helpers.ts` (vendor when present, else the oracle tools) |
 | `cache.test.ts` (suite; also in the first run), same pattern in `gaps-routes`, `cache-location` | `beforeAll(() => ensureFixtures())` with the default 10 s hook timeout, while a clean checkout generates fixtures for minutes | 900 s hook timeout |
 
-The seven files then pass in the clone (41 tests, apt FFmpeg). The final run on the merged head is in §9.
+The seven files then pass in the clone (41 tests, apt FFmpeg). The runs on later heads are in §9 and §10.
 
 ## 8. Cross-feature smoke (MCP against a dev engine on 49561)
 
@@ -250,7 +250,7 @@ Bugs the smoke found, all fixed with regression tests:
 7. `get_timeline` reported a remapped clip's source as `sourceIn + duration` ("0–11 s" of 6 s media): now the media
    range its frames show. `apps/mcp/test/format.test.ts`.
 
-## 9. Final gate on the merged head
+## 9. Gate after the review merge
 
 Last merge: `integrate/parity` **c67a6dfb** (perf-core, ui-perf, gaps and review landed during the work). One merge
 follow-up: review's DATA-7 fix and §8's re-identification fix had landed separately, so the duplicate loop was
@@ -276,6 +276,50 @@ Two more findings on the merged head, fixed:
 
 On the previous head (065af535, before review) the clean-clone CI passed in full (lint, typecheck,
 `pnpm test` 464 files / 4,450 tests, build) and the full Playwright suite passed 223/223.
+
+## 10. Full re-run on the final merged head (polish and hardening)
+
+`integrate/parity` 8bcf5df5 (polish ee9cb4e2 and hardening 8bcf5df5) merged into `feat/verify`. Conflicts:
+
+- polish's lease engine and `jasper-mg-templates` `build.rs`: polish's version taken.
+- hardening's expression runtime, `sandbox.test.ts` and `security-review.md`: hardening's version taken.
+
+Each of these supersedes an equivalent verify fix (§3, §4, §9); verify's regression tests pass against them. Then the
+desktop stall fix (§11). Every tier was run again on the head that includes it.
+
+| Gate | Command | Result |
+|---|---|---|
+| Static gates | `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck`, `pnpm notices --check`, `pnpm ffmpeg:check`, `pnpm build` | pass |
+| Every vitest suite with every opt-in | VITEST_ROW |
+| `FUZZ=1` | FUZZ_ROW |
+| All Playwright specs | PLAYWRIGHT_ROW |
+| MCP scenario QA | `MCP_QA_PORT=49662 pnpm qa:mcp`, then with `REMOTION_E2E=1` | 7/7 and 7/7 (82 s, 81 s) |
+| Desktop | `DESKTOP_SMOKE_PORT=49600 pnpm e2e:desktop` | packaged-like PASS, dev PASS (warm-up 1,183 modules in 8 s, 7 s to Home; screenshot looked at: Home, engine connected), clipboard 4/4 |
+| | `MG_CHECK_PORT=49574 pnpm e2e:mg-fallback` | PASS (native with jasper-mg; a named blocker and Remotion without it) |
+| | `pnpm --filter @jasper/desktop dist:dir`, then `PACKAGED_CHECK_PORT=49578 pnpm e2e:packaged` | PASS (bundled LGPL FFmpeg n7.1.5, a Remotion export with OpenH264, no PATH ffmpeg used) |
+| CI workflow, clean clone | `/tmp/verify-logs/ci-run.sh` (§7) | CI_ROW |
+
+**Cross-feature smoke on the merged code.** The §8 project was reopened by an engine built from this head. The dev
+engine now has a token; `jasper-mcp --appdir` found it through the runtime file. Every result was rendered again:
+
+- **Stills** (`render_frame` at frames 80 and 95): same picture as before (looked at).
+- **Render Previews**: 4 of 4 segments red → green (415 s at load ≈ 16).
+- **Export `auto`**: the Remotion path, naming why (Lumetri spatial secondary, 3D layer). H.264 1280×720 30 fps,
+  180 frames, AAC 48 kHz stereo, 6.000 s, **−16.0 LUFS**, LRA 4.3 LU. A contact sheet at 0.5–5.5 s was looked at:
+  - the title opacity follows the expression;
+  - multicam cuts at 2 s and 4 s;
+  - both captions.
+- **Previews + smart render**: 3 s, SSIM 0.993 / PSNR 42.6 dB against the full render, the same loudness.
+- **Hybrid against Remotion** (the variant without Lumetri and 3D): SSIM 0.988, worst frame 0.979. Identical to
+  before the merges.
+- **FCP7 XML**: the same 6 pre-renders and the same not-carried report. **OTIO**: 5 not-carried entries. Both
+  re-imported into the same project.
+  - The destination never overwrites: with `timeline.xml`'s media folder left from an earlier run, the files were
+    written as `timeline (2).xml` and `timeline (N).otio`, and the job result names them.
+- **hardening's agent gate**, checked from the same MCP client:
+  - `sequence.delete` with no editor window open is refused with `E_APPROVAL_DENIED` ("headless mode rejects
+    destructive transactions").
+  - `delete_clips` is applied: an undoable edit, not one of the gated commands (`APPROVAL_COMMANDS`).
 
 ## 11. Desktop dev-mode smoke stalled on a cold Vite
 
