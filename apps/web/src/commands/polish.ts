@@ -7,11 +7,27 @@
 //                                   motion-graphic clips (Premiere edits a template's parameters in Essential
 //                                   Graphics ▸ Edit / the Properties panel, not in a dialog)
 //   app.notices                     Help ▸ Third-Party Notices
+// and the key bindings that had no command behind them (Premiere's defaults):
+//   project.mediaProperties         File ▸ Get Properties for Selection… (Ctrl+Shift+H)
+//   project.setPosterFrame / .clearPosterFrame   Project panel, Icon View (Shift+P / Alt+Shift+P)
+//   effects.newCustomBin / .deleteCustomItem     Effects panel (Ctrl+/ / Backspace)
 import type { Clip } from '@jasper/project';
 import { persistenceFor } from '@jasper/session';
+import { getCustomBins } from '../panels/effects/presets/custom-bins.ts';
 import { getMediaBrowser } from '../panels/mediaBrowser/instances.ts';
+import {
+	MEDIA_PROPERTIES_DIALOG,
+	registerMediaPropertiesDialog,
+} from '../panels/project/MediaPropertiesDialog.tsx';
+import {
+	clearPosterFrames,
+	posterHover,
+	selectedPosterItems,
+	setPosterFromHover,
+} from '../panels/project/poster-frame.ts';
 import { revealSection } from '../panels/properties/controls/Section.tsx';
 import { ENGINE_DIALOGS, registerEngineDialogs } from '../shell/engine-dialogs.tsx';
+import { selectedMediaIds } from './gaps.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const editable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
@@ -137,6 +153,94 @@ export const polishCommands: UiCommand[] = [
 				else if (tries > 0) setTimeout(() => focusFirst(tries - 1), 50);
 			};
 			setTimeout(() => focusFirst(10), 0);
+		},
+	},
+	{
+		id: 'project.mediaProperties',
+		label: 'Get Properties for Selection…',
+		description:
+			'Shows the file path, type, size, picture and sound format and duration of the selected media (Project panel items or timeline clips).',
+		icon: 'panel.info',
+		scope: 'global',
+		agentExposed: true,
+		when: (ctx) => selectedMediaIds(ctx).length > 0,
+		disabledReason: () => 'Select media in the Project panel or a clip in the Timeline',
+		run: (ctx) => {
+			if (!ctx.session) return;
+			const mediaIds = selectedMediaIds(ctx).slice(0, 20);
+			if (!mediaIds.length) return;
+			registerMediaPropertiesDialog();
+			ctx.ui.openDialog(MEDIA_PROPERTIES_DIALOG, { session: ctx.session, engine: ctx.engine, mediaIds });
+		},
+	},
+	{
+		id: 'project.setPosterFrame',
+		label: 'Set Poster Frame',
+		description:
+			'Makes the frame shown while hover-scrubbing a thumbnail in the Project panel (Icon View) the poster frame of that item.',
+		icon: 'project.posterFrame',
+		scope: 'project',
+		when: editable,
+		run: (ctx) => {
+			if (!ctx.session) return;
+			if (!setPosterFromHover(ctx.session))
+				ctx.ui.toast({
+					kind: 'info',
+					message: 'Hover over a clip thumbnail to choose its poster frame',
+					detail:
+						'In the Project panel’s Icon View, move the pointer across a thumbnail to the frame you want.',
+				});
+		},
+	},
+	{
+		id: 'project.clearPosterFrame',
+		label: 'Clear Poster Frame',
+		description: 'Shows the default thumbnail again for the hovered or selected items.',
+		icon: 'project.posterFrame',
+		scope: 'project',
+		when: (ctx) =>
+			editable(ctx) &&
+			!!ctx.session &&
+			(selectedPosterItems(ctx.session).length > 0 ||
+				!!(
+					posterHover() &&
+					(ctx.session.getState().document.items[posterHover()!.itemId] as { poster?: unknown } | undefined)
+						?.poster
+				)),
+		disabledReason: () => 'Select an item that has a poster frame',
+		run: (ctx) => {
+			if (ctx.session) clearPosterFrames(ctx.session);
+		},
+	},
+	{
+		id: 'effects.newCustomBin',
+		label: 'New Custom Bin',
+		description: 'Creates a bin for your effect presets (inside the picked bin, else under Presets).',
+		icon: 'project.newBin',
+		scope: 'effects',
+		when: () => !!getCustomBins(),
+		run: (ctx) => {
+			if (getCustomBins()?.newBin() === false)
+				ctx.ui.toast({ kind: 'warning', message: 'Your presets need the engine' });
+		},
+	},
+	{
+		id: 'effects.deleteCustomItem',
+		label: 'Delete Custom Item',
+		description: 'Deletes the picked preset or preset bin of yours (built-in ones cannot be deleted).',
+		scope: 'effects',
+		when: () => !!getCustomBins()?.focusedCustomItem(),
+		labelFor: () => {
+			const item = getCustomBins()?.focusedCustomItem();
+			return item
+				? item.kind === 'bin'
+					? 'Delete Custom Bin'
+					: 'Delete Custom Preset'
+				: 'Delete Custom Item';
+		},
+		disabledReason: () => 'Pick one of your presets or preset bins in the Effects panel',
+		run: () => {
+			getCustomBins()?.deleteFocused();
 		},
 	},
 	{

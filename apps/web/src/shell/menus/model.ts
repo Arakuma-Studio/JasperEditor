@@ -77,6 +77,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('project.importSvgAsShape', 'Import SVG as Shape Layer…'),
 			// wp interchange (S04:AS-011)
 			c('project.linkMedia', 'Link Media…'),
+			// polish (Premiere: File ▸ Get Properties for ▸ Selection)
+			c('project.mediaProperties', 'Get Properties for Selection…'),
 			sub('Export', [
 				c('export.media', 'Media…'),
 				c('export.queue', 'Add to Render Queue'),
