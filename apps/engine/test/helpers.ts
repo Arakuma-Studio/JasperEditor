@@ -58,6 +58,8 @@ export async function makeApp(
 	opts: {
 		appdir?: string;
 		token?: string | null;
+		/** Editor attestation (security review AGT-2); null/omitted: every authenticated client is the editor. */
+		editorKey?: string | null;
 		dev?: boolean;
 		totalSlots?: number;
 		env?: Record<string, string>;
@@ -71,6 +73,7 @@ export async function makeApp(
 		port: 47900,
 		dev: opts.dev ?? true,
 		token: opts.token ?? null,
+		editorKey: opts.editorKey ?? null,
 		webDir: null,
 		env: {},
 	});

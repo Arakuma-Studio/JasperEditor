@@ -431,13 +431,19 @@ describe('mg-bundles routes (no browser)', () => {
 				})
 			).statusCode,
 		).toBe(404);
-		const host = await app.inject({
+		// The live host page lives under the bundle's capability path (security review MG-1; the sandbox, its policy
+		// and the capability are tested in security-hardening.test.ts): the address the editor knows redirects there.
+		const redirect = await app.inject({
 			method: 'GET',
 			url: `${base}/index.html?jasper-host=1`,
 			headers: JSON_H,
 		});
+		expect(redirect.statusCode).toBe(302);
+		expect(redirect.headers['cache-control']).toBe('no-store');
+		const host = await app.inject({ method: 'GET', url: String(redirect.headers.location), headers: JSON_H });
 		expect(host.statusCode).toBe(200);
 		expect(host.headers['cache-control']).toBe('no-store');
+		expect(host.body).toContain('__jasperMgHost');
 		// Media status works for bundles (availability = the index file).
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: JSON_H })).json().status,

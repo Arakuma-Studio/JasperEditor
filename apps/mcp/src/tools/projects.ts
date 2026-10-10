@@ -154,7 +154,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Open project in the editor',
 			description:
-				'Asks every open JasperEditor window (desktop app or browser tab) to open this project, so your edits appear live with "Agent: …" undo entries and the user can approve destructive changes. Waits until the editor has the project open. If no editor window is running, returns the URL to open (launchBrowser: true opens it in the default browser; this only works for engines without a token, e.g. `pnpm dev`).',
+				'Asks every open JasperEditor window (desktop app or browser tab) to open this project, so your edits appear live with "Agent: …" undo entries and the user can approve destructive changes. Waits until the editor has the project open. If no editor window is running, returns the URL of the project and a note for the user: the editor is the desktop app, the dev server (`pnpm dev`, http://127.0.0.1:5173) or a browser the user paired with the engine. An agent cannot sign a browser in (launchBrowser only works on an engine started without a token, JASPER_INSECURE_DEV=1).',
 			input: {
 				projectId: ProjectIdArg,
 				launchBrowser: z
@@ -180,8 +180,8 @@ export function registerProjectTools(ctx: ToolContext): void {
 				if (ctx.link.target?.token)
 					throw new ToolError(
 						'NEEDS_DESKTOP_APP',
-						'This engine requires a token (desktop app or --start-engine), so a browser cannot open it.',
-						'Open the project from the JasperEditor desktop window instead.',
+						'This engine requires a token, so a browser opened from here would not be signed in to it.',
+						'Ask the user to open the project in JasperEditor: the desktop window, the dev server (`pnpm dev`), or a browser they paired with the link the engine printed.',
 					);
 				openUrl(url);
 				launched = true;
@@ -212,7 +212,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 					: {
 							note:
 								r.editors === 0 && !launched
-									? 'No editor window is running. Ask the user to open JasperEditor (desktop app, or the URL above for a dev engine); edits still work headlessly meanwhile.'
+									? 'No editor window is running. Ask the user to open JasperEditor (the desktop app, or the dev server of `pnpm dev`); edits still work headlessly meanwhile.'
 									: 'The editor did not open the project in time (it may be showing a dialog). Edits still work headlessly.',
 						}),
 			});
