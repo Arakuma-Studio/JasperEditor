@@ -147,6 +147,8 @@ export const polishCommands: UiCommand[] = [
 			// Put the caret in the first parameter once the section is on screen.
 			if (typeof document === 'undefined') return;
 			const focusFirst = (tries: number) => {
+				// The retries outlive the command: the page (or a test environment) may be gone by then.
+				if (typeof document === 'undefined') return;
 				const field = document.querySelector<HTMLElement>(
 					`[data-section="${MG_PARAMETERS_SECTION}"] input, [data-section="${MG_PARAMETERS_SECTION}"] [role="spinbutton"], [data-section="${MG_PARAMETERS_SECTION}"] button[role="combobox"]`,
 				);
