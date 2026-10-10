@@ -40,6 +40,25 @@ average 8–40 from parallel agents) fixed budgets failed without any regression
 A real regression still fails: the calibration workload does not get slower when the code does. No budget was
 raised: at load factor 1 the enforced budget is the documented one.
 
+### Test timeouts of the web project (workstream `hardening`)
+
+Three web tests were each seen once failing with Vitest's default 5 s limit on a loaded host and passing alone:
+`project-windowing`, `shell-render`, `speech`. They were profiled (`node --cpu-prof` over the Vitest run, and
+`process.cpuUsage()` per phase; times below are **measured** on the shared host at load average 20–25, so compare
+them with each other, not with a quiet machine):
+
+| Test | Where the time went | Change | Effect |
+|---|---|---|---|
+| `project-windowing` › "renders a window of a large bin" | `useRowWindow` started with windowing off: the first render mounted all 600 rows (nine columns each), the effect then trimmed them to 80 | The first render is already windowed (`apps/web/src/panels/project/virtual.ts`) | 2 059 ms → 296 ms. Also in the app: opening a 2 000-item project no longer mounts and paints every row once |
+| `shell-render` › header test | Five full mounts or re-layouts of the editor (≈ 900 ms for the first, 100–700 ms each after); no single hot spot. `ContextMenu` / `DropdownMenu` resolved and built their whole menu on every render of their owner although closed (357 ms of 5.6 s in the profile, two rounds) | Menu items are resolved when the menu opens (`packages/ui/src/menu/Menu.tsx`, as the menubar already did) | ≈ 6 % of the test; every panel with a context menu renders cheaper in the app |
+| `speech` › dialog test | A Radix select renders its items also while closed; the 101-entry language list was rebuilt on every render of the dialog. Role queries over the open list are the rest | `Select` keeps its items while `options` is the same array; the dialog's language list is one array | 1 272 → 1 187 ms of CPU for the test in its third round (≈ 7 %) |
+
+The rest of `shell-render` and `speech` is real work (the whole editor, a 101-option list, accessibility-tree
+queries in happy-dom with development React), not needless work. So the web project's limit is scaled with the
+host (`apps/web/vitest.config.ts`): `5 s × loadFactor²`, at least 15 s, at most 60 s; `PERF=1` keeps 5 s. A hung
+test still fails within a minute, `waitFor` / `findBy…` keep their own 1 s deadlines, and no assertion was changed.
+`apps/web/test/test-timeout.test.ts` pins the scaling.
+
 ## 3. Measuring
 
 ```bash

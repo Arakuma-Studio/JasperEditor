@@ -494,9 +494,9 @@ Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{project
 `jasper://guide`. Prompt: `edit-video`.
 
 The engine also serves the same tools over MCP Streamable HTTP at `/mcp`, for clients that connect by URL.
-With a dev or standalone engine (no token): `claude mcp add --transport http jasper http://127.0.0.1:47900/mcp`.
-The desktop engine needs `Authorization: Bearer <token>` and issues a new token on every launch, so use the
-stdio server there.
+Every engine has a token (it is in `<appdir>/engine/runtime.json`, readable by you only, and changes on every
+start), so a URL client must send `Authorization: Bearer <token>`; the stdio server reads the token by itself and
+is the simpler choice.
 
 The packaged desktop app ships the server as `resources/mcp/jasper-mcp.mjs`. It has no `node`: Help ▸ Connect
 an AI Agent… gives the command that runs the bundle with the app's own binary (`ELECTRON_RUN_AS_NODE=1`).
@@ -566,15 +566,22 @@ and hint on stderr), 2 = usage error. `jasper --help` is the reference.
 
 The MCP tools are thin wrappers over the engine's agent API (protocol `jasper.tx/1`): the JSON Schema of every
 command is at `GET /api/agent/schema`, read-only queries go to `POST /api/agent/query`, and transactions to
-`POST /api/agent/tx`. It can be used directly for scripting:
+`POST /api/agent/tx`. It can be used directly for scripting. The engine wants its token on every request (there is
+no unauthenticated mode): it is in the runtime file the engine's `/health` names. A client with the token is an
+agent: destructive commands and operations are asked about in the editor window, which only the user can answer
+([docs/security-review.md](docs/security-review.md) §8).
 
 ```bash
+# the token of the dev engine (pnpm dev); jq reads the runtime file that /health names
+TOKEN=$(jq -r .token "$(curl -s http://127.0.0.1:47900/health | jq -r .runtimeFile)")
+
 # create a project (or take a projectId from GET /api/projects)
-curl -s -X POST http://127.0.0.1:47900/api/projects -H 'content-type: application/json' \
-  -d '{"name":"Curl demo","preset":"hd-1080p-30"}'
+curl -s -X POST http://127.0.0.1:47900/api/projects -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"name":"Curl demo","preset":"hd-1080p-30"}'
 # → {"projectId":"prj_…"}
 
-curl -s -X POST http://127.0.0.1:47900/api/agent/tx -H 'content-type: application/json' -d '{
+curl -s -X POST http://127.0.0.1:47900/api/agent/tx -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{
   "projectId": "prj_…",
   "transaction": {
     "protocol": "jasper.tx/1",

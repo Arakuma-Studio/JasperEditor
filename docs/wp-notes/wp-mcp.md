@@ -123,7 +123,8 @@ plus `.mcp.json` (Claude Code, project scope), `~/.codex/config.toml` `[mcp_serv
 `.cursor/mcp.json`. The dialog fills in real paths: the desktop preload's `mcpInfo()` (packaged: the app
 binary with `ELECTRON_RUN_AS_NODE=1` and `resources/mcp/jasper-mcp.mjs`), else the engine's
 `GET /api/agent/mcp-info`, else a placeholder with build instructions. It offers the `/mcp` URL only when
-the engine has no token. The engine token is never shown.
+the engine has no token, which since the hardening follow-up (docs/security-review.md §8, DEV-1) is only an engine
+started with `JASPER_INSECURE_DEV=1`. The engine token is never shown.
 
 Checked with the real CLIs against throwaway config dirs (`HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` under
 `/tmp`; the user's configuration was not touched): Claude Code 2.1.285 `mcp add` + `mcp list` → "✔ Connected"
@@ -175,7 +176,8 @@ gained `mcpInfo()` and `focusWindow()` (IPC `jasper:mcp-info`, window action `fo
   checks and the SDK client). Cursor itself was not available here; its snippet is the standard
   `mcpServers` JSON.
 - **`open_project_in_editor` with several editor windows:** every window navigates to the project; only
-  one gets the editing lease. `launchBrowser` works only for engines without a token.
+  one gets the editing lease. `launchBrowser` works only for engines without a token (`JASPER_INSECURE_DEV=1`): a
+  browser opened by an agent is not signed in, and must not be (it would become the editor that approves).
 - **`--start-engine` uses the platform appdir** (`~/.local/share/jasper` on Linux) unless `--appdir` or
   `JASPER_APPDIR` is given, so it does not see the projects of `pnpm dev` (`./.stage`) by default. The started
   engine serves no web UI.
