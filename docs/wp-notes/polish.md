@@ -224,6 +224,26 @@ screen.
 The source of the frequent updates in that run was not identified (the trace was gone when the cause was
 understood); the fix does not depend on it.
 
+### 7.1 A bundle that could not be downloaded left a blank page
+
+A later run failed differently: the 2 000-item open waited 60 s on a black page with no error. The Playwright trace
+showed five of the entry's static imports (`app-project`, `vendor-icons`, `vendor-radix`, `vendor-remotion`,
+`vendor-anime`) aborted with `net::ERR_NETWORK_CHANGED` 60 ms after the navigation: the host's network configuration
+changed while the page loaded (another job on the machine was building containers) and Chrome aborts every request in
+flight when that happens. A module graph that cannot be fetched never runs, so nothing could report it. The same
+happens to a user whose laptop changes network, or whose engine restarts, during a page load.
+
+**Fix.** `/editor-boot.js` (a classic script that runs before the bundle, `apps/web/editor-boot.ts`) listens for the
+`error` event of the entry module script; when it fires and nothing is on screen it shows "JasperEditor could not
+load. Check your connection and reload." with a Reload button (English or Spanish by the stored preference: the
+catalogue is part of what failed to load). A lazy chunk that fails was already reported by the app ("Could not load
+the editor", Reload Panel). Tests: the unit test of the script in `polish-open.test.tsx`; `e2e/polish.spec.ts` aborts
+`vendor-react`, sees the message, reloads and reaches Home.
+
+The measurement helper (`scripts/perf/open-phases.ts`) now listens for console and page errors before navigating, so
+such a failure names its cause, and repeats a run (at most twice) when a request failed with exactly
+`net::ERR_NETWORK_CHANGED`: that run measured the host, not the editor. Every other failure is reported.
+
 ## 8. Documents
 
 `docs/gaps.md`, `docs/parity.md`, `docs/M1-STATUS.md` and the README were brought to the final state: no workstream
@@ -244,9 +264,9 @@ specs), the README opens with what the product does.
 | `apps/web/test/polish-media-browser.test.tsx` | the panel, the drag payload, the commands, the engine dialogs, the agent guard on Connect |
 | `apps/web/test/polish-keybindings.test.tsx` | Get Properties, poster frames, custom bins |
 | `apps/web/test/polish-i18n.test.tsx` | lazy strings, composite names, the observer, the epoch |
-| `apps/web/test/polish-open.test.tsx` | batch resolution, fallback, the boot script, the chunk list, the early fetch |
+| `apps/web/test/polish-open.test.tsx` | batch resolution, fallback, the boot script, the chunk list, the early fetch, the start-up failure message (§7.1) |
 | `apps/web/test/polish-panel-loading.test.tsx` | §7: the starved Suspense retry, the state-mounted panel, `loadable` |
-| `e2e/polish.spec.ts` | menus and dialogs, Media Browser import, Edit Parameters, the live language switch both ways, the 2 000-item open |
+| `e2e/polish.spec.ts` | menus and dialogs, Media Browser import, Edit Parameters, the live language switch both ways, the 2 000-item open, a bundle that cannot be downloaded (§7.1) |
 | `e2e/project-files.spec.ts` (one test added), `e2e/gaps.spec.ts`, `e2e/smoke.spec.ts` | §1, §6 |
 
 ## 10. Comparison with the references

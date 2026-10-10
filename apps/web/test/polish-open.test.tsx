@@ -4,7 +4,7 @@ import { DERIVATIVE_KINDS, MEDIA_STATUS_BATCH_MAX } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { editorBootScript, editorChunks } from '../editor-boot.ts';
+import { BOOT_FAILURE_TEXT, editorBootScript, editorChunks } from '../editor-boot.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import { fetchWithEarly } from '../src/state/engine.tsx';
@@ -182,7 +182,7 @@ describe('editor boot script (preload + early project fetch)', () => {
 
 	function boot(pathname: string, fetchImpl: (url: string) => Promise<unknown>) {
 		const links: { rel: string; href: string }[] = [];
-		const win: Record<string, unknown> = {};
+		const win: Record<string, unknown> = { addEventListener: () => undefined };
 		const script = editorBootScript(['/assets/EditorShell.js', '/assets/dock.js']);
 		new Function('location', 'document', 'window', 'fetch', script)(
 			{ pathname },
@@ -219,6 +219,62 @@ describe('editor boot script (preload + early project fetch)', () => {
 		// a failing early request is not an unhandled rejection
 		const failing = boot('/project/p1', () => Promise.reject(new Error('down')));
 		await expect(failing.early?.response).rejects.toThrow('down');
+	});
+
+	it('says so when the bundle cannot be downloaded, instead of a blank page', () => {
+		document.body.innerHTML = '<div id="root"></div>';
+		const root = document.getElementById('root')!;
+		const listeners: EventListener[] = [];
+		const add = window.addEventListener.bind(window);
+		const spy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+			type: string,
+			fn: EventListener,
+			opts?: boolean,
+		) => {
+			if (type === 'error') listeners.push(fn);
+			add(type, fn, opts);
+		}) as typeof window.addEventListener);
+		try {
+			new Function(editorBootScript([]))();
+		} finally {
+			spy.mockRestore();
+		}
+		try {
+			const fail = (el: HTMLElement) => {
+				document.body.appendChild(el);
+				el.dispatchEvent(new Event('error'));
+			};
+			// an image or a classic script that fails is not the app failing to start
+			fail(document.createElement('img'));
+			fail(document.createElement('script'));
+			expect(root.childElementCount).toBe(0);
+
+			const entry = document.createElement('script');
+			entry.type = 'module';
+			window.localStorage.setItem('jasper:gaps-prefs', JSON.stringify({ appearance: { language: 'es' } }));
+			fail(entry);
+			const alert = root.querySelector('[role="alert"][data-testid="app-load-error"]');
+			expect(alert?.querySelector('p')?.textContent).toBe(BOOT_FAILURE_TEXT.es!.message);
+			expect(alert?.querySelector('button')?.textContent).toBe('Recargar');
+			expect(document.activeElement).toBe(alert?.querySelector('button'));
+
+			// once something is on screen (the app, or the message itself) a later failure adds nothing
+			fail(entry);
+			expect(root.querySelectorAll('[data-testid="app-load-error"]')).toHaveLength(1);
+
+			// English without a stored language, and with a broken preference
+			for (const stored of [null, '{broken']) {
+				root.innerHTML = '';
+				if (stored === null) window.localStorage.removeItem('jasper:gaps-prefs');
+				else window.localStorage.setItem('jasper:gaps-prefs', stored);
+				fail(entry);
+				expect(root.querySelector('p')?.textContent).toBe(BOOT_FAILURE_TEXT.en!.message);
+			}
+		} finally {
+			for (const fn of listeners) window.removeEventListener('error', fn, true);
+			window.localStorage.removeItem('jasper:gaps-prefs');
+			document.body.innerHTML = '';
+		}
 	});
 
 	it('the engine client takes the early answer once, for exactly that GET, and asks again when it failed', async () => {

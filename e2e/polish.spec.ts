@@ -418,3 +418,25 @@ test('a 2 000-item project opens with two media status requests, a windowed bin 
 	expect(most).toBeLessThan(200);
 	await p.close();
 });
+
+test('a bundle that cannot be downloaded says so and reloads, instead of a blank page', async ({
+	browser,
+}) => {
+	// Request interception must bypass the service worker to exercise a failed download of a static import.
+	const context = await browser.newContext({ serviceWorkers: 'block' });
+	const p = await context.newPage();
+	try {
+		await p.route('**/assets/vendor-react-*.js', (route) => route.abort('internetdisconnected'));
+		await p.goto(`http://127.0.0.1:${serverInfo().port}/`);
+		const failed = p.getByTestId('app-load-error');
+		await expect(failed).toBeVisible();
+		await expect(failed).toContainText('JasperEditor could not load');
+		await shot(p, 'app-load-error');
+		await p.unroute('**/assets/vendor-react-*.js');
+		await failed.getByRole('button', { name: 'Reload' }).click();
+		await expect(p.getByTestId('home')).toBeVisible();
+		await expect(failed).toHaveCount(0);
+	} finally {
+		await context.close();
+	}
+});

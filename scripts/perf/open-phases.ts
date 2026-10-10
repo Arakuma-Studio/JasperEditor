@@ -114,13 +114,39 @@ function workByKind(
 	return { work, longest: Math.round(longest) };
 }
 
-/** Opens `projectId` on a fresh page and measures the phases. */
+type OpenOptions = { trace?: boolean; localStorage?: Record<string, string>; context?: BrowserContext };
+
+/** The host's network configuration changed while the page loaded: Chrome aborts every request in flight. */
+class NetworkChanged extends Error {}
+
+/**
+ * Opens `projectId` on a fresh page and measures the phases. A run during which the host's network changed
+ * (`net::ERR_NETWORK_CHANGED`: an interface came or went, as when another job on a shared machine starts a container)
+ * says nothing about the editor and is repeated, at most twice; every other failure is reported.
+ */
 export async function measureOpen(
 	browser: Browser,
 	base: string,
 	projectId: string,
 	fixture: string,
-	opts: { trace?: boolean; localStorage?: Record<string, string>; context?: BrowserContext } = {},
+	opts: OpenOptions = {},
+): Promise<OpenPhases> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await measureOpenOnce(browser, base, projectId, fixture, opts);
+		} catch (e) {
+			if (!(e instanceof NetworkChanged) || attempt >= 2) throw e;
+			console.warn(`open-phases: ${e.message.split('\n')[0]}; measuring again`);
+		}
+	}
+}
+
+async function measureOpenOnce(
+	browser: Browser,
+	base: string,
+	projectId: string,
+	fixture: string,
+	opts: OpenOptions,
 ): Promise<OpenPhases> {
 	// A fresh context has an empty HTTP cache (a first visit); a shared one keeps it (reopening the editor).
 	const page: Page = opts.context
@@ -167,24 +193,32 @@ export async function measureOpen(
 					})
 					.catch(() => undefined);
 		});
-		page.on('requestfailed', (r) => done(r.url()));
+		let networkChanged = false;
+		page.on('requestfailed', (r) => {
+			done(r.url());
+			if (r.failure()?.errorText === 'net::ERR_NETWORK_CHANGED') networkChanged = true;
+		});
+		const problems: string[] = [];
+		page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+		page.on('console', (m) => {
+			if (m.type() === 'error') problems.push(`console: ${m.text().slice(0, 300)} ${m.location().url}`);
+		});
 
 		const tracer = opts.trace === false ? null : new Tracer(page);
 		await tracer?.start();
 		t0 = Date.now();
 		await page.goto(`${base}/project/${encodeURIComponent(projectId)}`);
-		const problems: string[] = [];
-		page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-		page.on('console', (m) => {
-			if (m.type() === 'error') problems.push(`console: ${m.text().slice(0, 300)}`);
-		});
 		try {
-			await page.getByTestId('timeline-track-area').waitFor({ timeout: 60_000 });
+			// the editor, or the message of a bundle that could not be downloaded (editor-boot.ts)
+			const opened = page.getByTestId('timeline-track-area');
+			await opened.or(page.getByTestId('app-load-error')).first().waitFor({ timeout: 60_000 });
+			if (!(await opened.isVisible())) throw new Error('the bundle could not be downloaded');
 		} catch (e) {
 			const text = await page.evaluate(() => document.body.innerText.slice(0, 600)).catch(() => '');
-			throw new Error(
-				`the editor did not open: ${(e as Error).message.split('\n')[0]}\npage: ${text}\n${problems.join('\n')}`,
-			);
+			const report = `the editor did not open: ${(e as Error).message.split('\n')[0]}\npage: ${text}\n${problems.join('\n')}`;
+			if (networkChanged)
+				throw new NetworkChanged(`the network of the host changed during the open\n${report}`);
+			throw new Error(report);
 		}
 		await page.waitForFunction(() => !!(window as { jasper?: unknown }).jasper, null, { timeout: 120_000 });
 		const shell = Date.now() - t0;
