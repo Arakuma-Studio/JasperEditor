@@ -139,10 +139,15 @@ function createWindow(url: string): BrowserWindow {
 	return win;
 }
 
-/** IPC is answered only for frames on the app origin (not for any other frame that might get loaded). */
+/**
+ * IPC is answered only for the window's own document: the top frame, on the app origin. A subframe is never the
+ * app — a motion-graphics bundle's page is a sandboxed frame whose URL is on the engine's origin although its
+ * origin is opaque (security review MG-1); the preload does not run there, and this does not rely on that.
+ */
 function fromApp(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
-	const url = e.senderFrame?.url;
-	return !!url && !!appOrigin && isSameOrigin(url, appOrigin);
+	const frame = e.senderFrame;
+	const url = frame?.url;
+	return !!frame && frame.parent === null && !!url && !!appOrigin && isSameOrigin(url, appOrigin);
 }
 
 function registerIpc(): void {

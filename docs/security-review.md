@@ -508,6 +508,9 @@ Fix:
   in-memory stand-ins for `localStorage`, `sessionStorage` and `document.cookie` where the real ones throw.
 - Chrome pauses the rendering of cross-origin frames outside the viewport: the hidden measuring page stays inside
   the viewport (invisible), and a host frame that failed while out of view retries when it comes back.
+- The desktop bridge answers IPC only from the window's top frame on the app origin (`fromApp` in
+  `apps/desktop/src/main.ts`): a bundle page's URL is on the engine's origin although its origin is opaque. The
+  preload does not run in subframes either.
 
 **Trust model for export.** Preview is sandboxed as above. An export does not load bundles in the editor: the engine
 pre-renders a composition with Remotion's renderer in its own headless Chrome (a throwaway page on a private
