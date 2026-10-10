@@ -13,6 +13,7 @@
 //   effects.newCustomBin / .deleteCustomItem     Effects panel (Ctrl+/ / Backspace)
 import type { Clip } from '@jasper/project';
 import { persistenceFor } from '@jasper/session';
+import { t } from '../i18n/runtime.ts';
 import { getCustomBins } from '../panels/effects/presets/custom-bins.ts';
 import { getMediaBrowser } from '../panels/mediaBrowser/instances.ts';
 import {
@@ -232,11 +233,8 @@ export const polishCommands: UiCommand[] = [
 		when: () => !!getCustomBins()?.focusedCustomItem(),
 		labelFor: () => {
 			const item = getCustomBins()?.focusedCustomItem();
-			return item
-				? item.kind === 'bin'
-					? 'Delete Custom Bin'
-					: 'Delete Custom Preset'
-				: 'Delete Custom Item';
+			if (!item) return t('Delete Custom Item');
+			return item.kind === 'bin' ? t('Delete Custom Bin') : t('Delete Custom Preset');
 		},
 		disabledReason: () => 'Pick one of your presets or preset bins in the Effects panel',
 		run: () => {

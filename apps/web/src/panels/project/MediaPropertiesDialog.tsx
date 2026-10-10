@@ -6,6 +6,7 @@ import { FLICKS_PER_SECOND, type MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Dialog, type HostedDialogProps, registerDialog } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { t } from '../../i18n/runtime.ts';
 import { mediaKeyOf } from '../../import/assets.ts';
 
 export const MEDIA_PROPERTIES_DIALOG = 'project.mediaProperties';
@@ -46,43 +47,51 @@ export function mediaFacts(asset: MediaAsset, path: string | null | undefined): 
 	};
 	const video = asset.probe.streams.find((x) => x.type === 'video');
 	const audio = asset.probe.streams.filter((x) => x.type === 'audio');
-	add('File Path', path ?? (path === null ? 'Offline' : undefined));
-	add('Type', [asset.kind, asset.container].filter(Boolean).join(' · '));
-	add('File Size', bytes(asset.sizeBytes));
+	add(t('File Path'), path ?? (path === null ? t('Offline') : undefined));
+	add(t('Type'), [asset.kind, asset.container].filter(Boolean).join(' · '));
+	add(t('File Size'), bytes(asset.sizeBytes));
 	if (video && video.type === 'video') {
 		const rotated = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
 		add(
-			'Image Size',
+			t('Image Size'),
 			`${rotated ? video.height : video.width} × ${rotated ? video.width : video.height}${rotated ? ` (rotated ${asset.probe.rotationDegrees}°)` : ''}`,
 		);
 		if (asset.kind !== 'image' && video.frameRate.den > 0) {
 			const fps = video.frameRate.num / video.frameRate.den;
-			add('Frame Rate', `${Number(fps.toFixed(3))} fps${asset.probe.variableFrameRate ? ' (variable)' : ''}`);
+			add(
+				t('Frame Rate'),
+				`${Number(fps.toFixed(3))} fps${asset.probe.variableFrameRate ? ' (variable)' : ''}`,
+			);
 		}
-		add('Pixel Aspect Ratio', Number((video.pixelAspect.num / video.pixelAspect.den).toFixed(4)).toString());
-		add('Video Codec', video.codec);
-		add('Pixel Format', `${video.pixelFormat} · ${video.bitDepth}-bit`);
 		add(
-			'Colour',
+			t('Pixel Aspect Ratio'),
+			Number((video.pixelAspect.num / video.pixelAspect.den).toFixed(4)).toString(),
+		);
+		add(t('Video Codec'), video.codec);
+		add(t('Pixel Format'), `${video.pixelFormat} · ${video.bitDepth}-bit`);
+		add(
+			t('Colour'),
 			`${video.color.primaries} / ${video.color.transfer} / ${video.color.matrix} (${video.color.range === 'pc' ? 'full' : 'limited'} range)`,
 		);
 		if (video.fieldOrder && video.fieldOrder !== 'progressive' && video.fieldOrder !== 'unknown')
 			add(
-				'Field Order',
-				video.fieldOrder === 'tt' || video.fieldOrder === 'tb' ? 'Upper field first' : 'Lower field first',
+				t('Field Order'),
+				video.fieldOrder === 'tt' || video.fieldOrder === 'tb'
+					? t('Upper field first')
+					: t('Lower field first'),
 			);
-		add('Alpha', asset.probe.hasAlpha ? 'Yes' : 'No');
+		add(t('Alpha'), asset.probe.hasAlpha ? t('Yes') : t('No'));
 	}
 	audio.forEach((a, i) => {
 		if (a.type !== 'audio') return;
 		add(
-			audio.length > 1 ? `Audio ${i + 1}` : 'Audio',
+			audio.length > 1 ? t('Audio {0}', i + 1) : t('Audio'),
 			`${a.sampleRate} Hz · ${a.channels === 1 ? 'mono' : a.channels === 2 ? 'stereo' : `${a.channels} channels`}${a.channelLayout ? ` (${a.channelLayout})` : ''} · ${a.codec}`,
 		);
 	});
 	if (asset.probe.durationFlicks !== null && asset.probe.durationFlicks > 0)
-		add('Total Duration', clock(asset.probe.durationFlicks / FLICKS_PER_SECOND));
-	add('Start Timecode', asset.probe.startTimecode);
+		add(t('Total Duration'), clock(asset.probe.durationFlicks / FLICKS_PER_SECOND));
+	add(t('Start Timecode'), asset.probe.startTimecode);
 	return out;
 }
 

@@ -101,9 +101,9 @@ describe('browse_media_files', () => {
 		const limited = (await call({ path: '/m', limit: 2 })).json;
 		expect(limited.entries.length).toBe(2);
 		expect(limited.truncated).toBe(true);
+		// only importable media: the tool never asks for every file of a folder
 		expect(requests.some((r) => r.includes('all=1'))).toBe(false);
-		await call({ path: '/m', includeAll: true });
-		expect(requests.some((r) => r.includes('all=1'))).toBe(true);
+		expect((await call({ path: '/m', includeAll: true })).r.isError).toBe(true);
 	});
 
 	it('is read-only and reports a remote engine as an error result', async () => {

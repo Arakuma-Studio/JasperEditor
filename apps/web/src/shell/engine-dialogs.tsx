@@ -12,6 +12,7 @@ import type { EngineCapabilities, Health } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { Button, Dialog, type HostedDialogProps, registerDialog, TextField, toast } from '@jasper/ui';
 import { type ReactNode, useCallback, useEffect, useId, useState } from 'react';
+import { agentInputActive } from '../agent-bridge/agent-input.ts';
 import { t } from '../i18n/runtime.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { ThirdPartyLicenses } from './licenses.tsx';
@@ -371,7 +372,7 @@ function EngineConnectDialog(
 	const connect = async (): Promise<false> => {
 		if (!target) {
 			setState('failed');
-			setMessage('Enter an address like http://127.0.0.1:47900');
+			setMessage(t('Enter an address like http://127.0.0.1:47900'));
 			return false;
 		}
 		if (same) {
@@ -382,11 +383,18 @@ function EngineConnectDialog(
 			live?.refresh();
 			if (snap.health) {
 				setState('ok');
-				setMessage(`Connected to engine ${snap.health.version}`);
+				setMessage(t('Connected to engine {0}', snap.health.version));
 			} else {
 				setState('failed');
-				setMessage(snap.error ?? 'The engine did not answer');
+				setMessage(snap.error ?? t('The engine did not answer'));
 			}
+			return false;
+		}
+		// Leaving for another address is the user's decision: an agent driving the window through the live-UI tools
+		// may not send the editor to a URL of its choosing (security review AGT-1: synthetic input is not the user).
+		if (agentInputActive()) {
+			setState('failed');
+			setMessage(t('Only the user can open another engine: click Connect yourself.'));
 			return false;
 		}
 		// Another engine serves its own editor: check that something answers there, then open it.
@@ -400,7 +408,7 @@ function EngineConnectDialog(
 			});
 		} catch {
 			setState('failed');
-			setMessage(`Nothing answers at ${target}`);
+			setMessage(t('Nothing answers at {0}', target));
 			return false;
 		}
 		rememberEngine(target);

@@ -6,7 +6,7 @@ import { defineTool, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult } from '../errors.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
-export const POLISH_GUIDE = `Finding media: browse_media_files lists a folder on the engine's computer (sub-folders and the files JasperEditor imports, with size and kind: video, audio, image, graphics, captions, timeline, lut, model); without a path it answers the places to start from (Home, media folders, volumes). probe:true adds duration, frame size, frame rate and codecs for up to 20 audio / video / image files. Pass the paths you choose to import_media. It only works with a local engine (the same rule as import by path).`;
+export const POLISH_GUIDE = `Finding media: browse_media_files lists a folder on the engine's computer (sub-folders and only the files JasperEditor imports, with size and kind: video, audio, image, graphics, captions, timeline, lut, model); without a path it answers the places to start from (Home, media folders, volumes). probe:true adds duration, frame size, frame rate and codecs for up to 20 audio / video / image files. Pass the paths you choose to import_media. It only works with a local engine (the same rule as import by path).`;
 
 const PROBE_MAX = 20;
 
@@ -25,10 +25,6 @@ export function registerPolishTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Absolute folder on the engine host; omit for the places'),
 				kind: BrowseCategorySchema.optional().describe('Only files of this kind (folders are always listed)'),
-				includeAll: z
-					.boolean()
-					.optional()
-					.describe('Also list hidden entries and files JasperEditor cannot import (default false)'),
 				probe: z
 					.boolean()
 					.optional()
@@ -43,7 +39,7 @@ export function registerPolishTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ path, kind, includeAll, probe, limit }) => {
+		async ({ path, kind, probe, limit }) => {
 			if (!path) {
 				const r = await ctx.engine((c) => c.browseRoots());
 				return jsonResult({
@@ -52,7 +48,8 @@ export function registerPolishTools(ctx: ToolContext): void {
 					next: 'Call browse_media_files with one of these paths.',
 				});
 			}
-			const list = await ctx.engine((c) => c.browseList(path, { all: !!includeAll }));
+			// Importable media only: an agent never gets the listing of every file of a folder (docs/security-review.md).
+			const list = await ctx.engine((c) => c.browseList(path));
 			const max = limit ?? 200;
 			const matching = list.entries.filter((e) => e.kind === 'folder' || !kind || e.category === kind);
 			const shown = matching.slice(0, max);

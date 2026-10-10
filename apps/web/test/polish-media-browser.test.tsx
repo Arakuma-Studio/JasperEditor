@@ -7,6 +7,7 @@ import { DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { resetAgentInputForTests, runAgentInput } from '../src/agent-bridge/agent-input.ts';
 import { createCommandContext, getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import { MG_PARAMETERS_SECTION, selectedMotionGraphics } from '../src/commands/polish.ts';
 import { readDataTransfer } from '../src/import/service.ts';
@@ -445,6 +446,15 @@ describe('engine dialogs', () => {
 		await waitFor(() =>
 			expect(screen.getByTestId('engine-connect-result').textContent).toBe('Connected to engine 0.1.0'),
 		);
+		// an agent's live-UI input may not send the window to another address
+		fireEvent.change(field, { target: { value: 'http://127.0.0.1:9' } });
+		await runAgentInput(async () => {
+			await act(async () => {
+				fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+			});
+		});
+		expect(screen.getByTestId('engine-connect-result').textContent).toMatch(/Only the user/);
+		resetAgentInputForTests();
 		fireEvent.change(field, { target: { value: 'not a url ::' } });
 		await act(async () => {
 			fireEvent.click(screen.getByRole('button', { name: 'Connect' }));

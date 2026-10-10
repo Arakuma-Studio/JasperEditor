@@ -7,13 +7,25 @@
 //   GET /api/browse/file?path=         the bytes of a video / audio / image (Range) for the preview player
 // Import itself goes through `POST /api/media/register` (paths are registered in place), like File ▸ Import on
 // the desktop.
+//
+// Path safety (docs/security-review.md §5 "Path-taking routes", and what a browser of the whole disk adds):
+//   - local mode only; absolute paths without NUL, normalised;
+//   - bytes are served for video / audio / picture extensions only (an allowlist), checked on the name asked for
+//     and on the file it resolves to (a symlink `clip.mp4 → ~/.ssh/id_rsa` is refused), with the `nosniff` and
+//     `CSP: sandbox` headers of every served user file; thumbnails likewise for video and pictures;
+//   - a request a browser marks as coming from another site (`Sec-Fetch-Site: cross-site` / `same-site`) is
+//     refused: on an engine without a token a web page could otherwise embed (not read) the user's pictures and
+//     videos by guessing paths — media keys cannot be guessed, paths can;
+//   - FFmpeg reads the files with `-protocol_whitelist file,crypto,data`: a playlist-like file that names network
+//     or other local resources is not followed just because the user clicked it in a listing.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { homedir, platform as osPlatform, userInfo } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
 	BROWSE_PREVIEWABLE,
+	type BrowseCategory,
 	type BrowseEntry,
 	type BrowseInfo,
 	BrowseListQuerySchema,
@@ -22,11 +34,11 @@ import {
 	BrowseThumbnailQuerySchema,
 	browseCategoryOf,
 } from '@jasper/api';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
-import { probeFile } from '../media/probe.ts';
+import { mapProbe } from '../media/probe.ts';
 import { randomId } from '../tools/fs.ts';
-import { serveFile } from '../tools/http.ts';
+import { contentTypeFor, serveFile } from '../tools/http.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
@@ -39,6 +51,8 @@ const THUMB_TIMEOUT_MS = 20_000;
 const THUMB_CACHE_MAX = 1500;
 /** ffmpeg thumbnail renders at once (a folder of videos must not spawn one ffmpeg per tile). */
 const THUMB_CONCURRENCY = 2;
+/** FFmpeg may read the named file (and data it embeds), nothing it points at over the network. */
+const LOCAL_PROTOCOLS = ['-protocol_whitelist', 'file,crypto,data'] as const;
 
 /** Validates an absolute host path from a query (no NUL, absolute) and normalises it (`..` resolved). */
 export function checkBrowsePath(p: string): string {
@@ -190,6 +204,8 @@ function listDirSync(p: string): string[] {
 	}
 }
 
+const THUMBNAIL_KINDS: ReadonlySet<BrowseCategory> = new Set(['video', 'image']);
+
 /** A tiny counting semaphore. */
 function semaphore(n: number) {
 	let active = 0;
@@ -213,6 +229,29 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 		if (!local())
 			throw new HttpError(403, 'LOCAL_MODE_ONLY', 'The Media Browser is only available with a local engine');
 	};
+	/** Refuses outside local mode and for requests a browser sends on behalf of another site. */
+	const guard = (req: FastifyRequest) => {
+		requireLocal();
+		const site = req.headers['sec-fetch-site'];
+		if (site === 'cross-site' || site === 'same-site')
+			throw new HttpError(403, 'FORBIDDEN_ORIGIN', 'The Media Browser only answers the editor itself');
+	};
+	/**
+	 * The file to read for a previewable path: its real location, which must be a file of an allowed kind too (the
+	 * name asked for was checked by the caller).
+	 */
+	const previewable = async (path: string, kinds: ReadonlySet<BrowseCategory>): Promise<string> => {
+		let real: string;
+		try {
+			real = await realpath(path);
+		} catch (e) {
+			throw fsError(e, 'The file');
+		}
+		const category = browseCategoryOf(real);
+		if (!category || !kinds.has(category))
+			throw new HttpError(403, 'NOT_PREVIEWABLE', 'The file this path points at is not a media file');
+		return real;
+	};
 	const thumbsDir = join(core.config.paths.tmpDir, 'browse-thumbs');
 	const limitThumbs = semaphore(THUMB_CONCURRENCY);
 	let writes = 0;
@@ -230,8 +269,8 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 
 	app.get(
 		'/api/browse/roots',
-		guarded(async () => {
-			requireLocal();
+		guarded(async (req) => {
+			guard(req);
 			return { sep, home: homedir(), roots: browseRoots() };
 		}),
 	);
@@ -239,7 +278,7 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 	app.get(
 		'/api/browse/list',
 		guarded(async (req) => {
-			requireLocal();
+			guard(req);
 			const q = parseOr400(BrowseListQuerySchema, req.query);
 			const path = checkBrowsePath(q.path);
 			const { entries, truncated } = await listFolder(path, q.all === '1');
@@ -251,7 +290,7 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 	app.get(
 		'/api/browse/info',
 		guarded(async (req) => {
-			requireLocal();
+			guard(req);
 			const path = checkBrowsePath(parseOr400(BrowsePathQuerySchema, req.query).path);
 			const s = await fileStat(path);
 			const category = browseCategoryOf(path);
@@ -265,7 +304,12 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 			};
 			if (category && BROWSE_PREVIEWABLE.has(category)) {
 				try {
-					const r = await probeFile(core.ffmpeg, path, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+					const real = await previewable(path, BROWSE_PREVIEWABLE);
+					const r = mapProbe(
+						await core.ffmpeg.probeJson([...LOCAL_PROTOCOLS, '-show_format', '-show_streams', real], {
+							signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+						}),
+					);
 					const v = r.probe.streams.find((x) => x.type === 'video');
 					const a = r.probe.streams.find((x) => x.type === 'audio');
 					const fps =
@@ -292,7 +336,7 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 	app.get(
 		'/api/browse/thumbnail',
 		guarded(async (req, reply) => {
-			requireLocal();
+			guard(req);
 			const q = parseOr400(BrowseThumbnailQuerySchema, req.query);
 			const path = checkBrowsePath(q.path);
 			const width = q.width ?? 160;
@@ -300,7 +344,8 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 			const category = browseCategoryOf(path);
 			if (category !== 'video' && category !== 'image')
 				throw new HttpError(404, 'NO_THUMBNAIL', 'This kind of file has no thumbnail');
-			const key = createHash('sha1').update(`${path}\0${s.size}\0${s.mtimeMs}\0${width}`).digest('hex');
+			const real = await previewable(path, THUMBNAIL_KINDS);
+			const key = createHash('sha1').update(`${real}\0${s.size}\0${s.mtimeMs}\0${width}`).digest('hex');
 			const out = join(thumbsDir, `${key}.jpg`);
 			if (!existsSync(out)) {
 				await limitThumbs(async () => {
@@ -311,9 +356,10 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 					const render = (at: number | null) =>
 						core.ffmpeg.run(
 							[
+								...LOCAL_PROTOCOLS,
 								...(at !== null ? ['-ss', String(at)] : []),
 								'-i',
-								path,
+								real,
 								'-frames:v',
 								'1',
 								'-vf',
@@ -349,13 +395,14 @@ export default async function browseRoutes(app: FastifyInstance): Promise<void> 
 	app.get(
 		'/api/browse/file',
 		guarded(async (req, reply) => {
-			requireLocal();
+			guard(req);
 			const path = checkBrowsePath(parseOr400(BrowsePathQuerySchema, req.query).path);
 			const category = browseCategoryOf(path);
 			if (!category || !BROWSE_PREVIEWABLE.has(category))
 				throw new HttpError(403, 'NOT_PREVIEWABLE', 'Only video, audio and image files are served');
 			await fileStat(path);
-			return serveFile(req, reply, path, { cache: 'revalidate' });
+			const real = await previewable(path, BROWSE_PREVIEWABLE);
+			return serveFile(req, reply, real, { cache: 'revalidate', contentType: contentTypeFor(path) });
 		}),
 	);
 }
