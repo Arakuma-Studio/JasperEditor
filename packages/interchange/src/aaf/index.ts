@@ -42,6 +42,8 @@ export function importAaf(bytes: Uint8Array, opts: ImportOptions, report: Report
 		root = readStore(bytes);
 	} catch (e) {
 		if (e instanceof CfbError || e instanceof StoreError) throw parseError('AAF', e.message);
+		// A file that makes the reader run out of stack or address space is a damaged file, not an engine fault.
+		if (e instanceof RangeError) throw parseError('AAF', 'the file is damaged');
 		throw e;
 	}
 	const doc = readAaf(root, report);

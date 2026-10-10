@@ -96,7 +96,9 @@ export class MgTextMeasurer {
 			f.referrerPolicy = 'no-referrer';
 			f.title = 'Composition text measuring';
 			f.dataset.mgTextMeasure = '';
-			// Off screen but laid out and painted (hidden/display:none pages may be throttled).
+			// Invisible but inside the viewport. The page is a sandboxed frame with an opaque origin (MG-1), and Chrome
+			// stops the rendering lifecycle (requestAnimationFrame, which Remotion's render-ready handshake needs) of
+			// cross-origin frames that are display:none or outside the viewport: it must not be moved off screen.
 			Object.assign(f.style, {
 				position: 'fixed',
 				left: '0px',
@@ -106,7 +108,6 @@ export class MgTextMeasurer {
 				pointerEvents: 'none',
 				zIndex: '-1',
 				colorScheme: 'light',
-				transform: 'translate(-200vw, 0)',
 			});
 			document.body.appendChild(f);
 			this.iframe = f;

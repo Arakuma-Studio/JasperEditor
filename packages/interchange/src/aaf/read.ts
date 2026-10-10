@@ -15,7 +15,7 @@ import {
 	unitsToFlicks,
 } from '../comp.ts';
 import { fileUrlToPath } from '../paths.ts';
-import { InterchangeError, type Report } from '../report.ts';
+import { InterchangeError, parseError, type Report } from '../report.ts';
 import { reduceRate } from '../time.ts';
 import { parseAiff, parseWav } from '../wav.ts';
 import { CLS, DDEF, DEF, PID } from './ids.ts';
@@ -72,7 +72,21 @@ const rateOf = (o: Obj, pid: number): [number, number] | null => {
 
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 
+/**
+ * Security review PAR-2: the object tree is bounded by the file (store.ts), but mobs reference each other by id, so
+ * following source references is a walk on a graph: each clip resolves a chain of mobs and scans their segments.
+ * The walk is counted; a file that needs more steps than any real timeline is reported as damaged instead of
+ * keeping the importer busy for hours.
+ */
+const MAX_STEPS = 20_000_000;
+let steps = 0;
+function tick(n = 1): void {
+	steps += n;
+	if (steps > MAX_STEPS) throw parseError('AAF', 'the file is too complex to read (damaged?)');
+}
+
 export function readAaf(root: Obj, report: Report): CDocument {
+	steps = 0;
 	const header = root.strong(PID.ROOT_HEADER);
 	if (!header) throw new InterchangeError('PARSE', 'AAF: no header object');
 	const content = header.strong(PID.CONTENT);
@@ -107,6 +121,7 @@ export function readAaf(root: Obj, report: Report): CDocument {
 
 function collectRefs(o: Obj, out: Set<string>, depth: number): void {
 	if (depth > 200) return;
+	tick();
 	if (auidEq(o.cls, CLS.SOURCE_CLIP)) {
 		const id = o.mobId(PID.SOURCE_ID);
 		if (id) out.add(hex(id));
@@ -226,6 +241,7 @@ class AafReader {
 	}
 
 	component(c: Obj, rate: [number, number], kind: CKind, depth: number): CItem[] {
+		tick();
 		const len = unitsToFlicks(lenOf(c), rate[0], rate[1]);
 		if (auidEq(c.cls, CLS.FILLER)) return [{ type: 'filler', len }];
 		if (auidEq(c.cls, CLS.SOURCE_CLIP)) return [this.clip(c, rate, kind)];
@@ -339,6 +355,7 @@ class AafReader {
 		depth: number,
 	): [number, number] | null {
 		if (depth > 16) return null;
+		tick();
 		const mob = this.mobs.get(hex(id));
 		if (!mob) {
 			this.report.warn('a clip references a mob that is not in the file (imported as a gap)');
@@ -537,6 +554,7 @@ function fit(items: CItem[], len: number): void {
 
 function firstClip(seg: Obj, depth: number): Obj | null {
 	if (depth > 64) return null;
+	tick();
 	if (auidEq(seg.cls, CLS.SOURCE_CLIP)) return seg;
 	if (auidEq(seg.cls, CLS.SEQUENCE)) {
 		for (const c of seg.objs(PID.COMPONENTS)) {
@@ -554,6 +572,7 @@ function firstClip(seg: Obj, depth: number): Obj | null {
 
 function findClass(seg: Obj, cls: Uint8Array, depth: number): Obj | null {
 	if (depth > 64) return null;
+	tick();
 	if (auidEq(seg.cls, cls)) return seg;
 	for (const c of seg.objs(PID.COMPONENTS)) {
 		const r = findClass(c, cls, depth + 1);

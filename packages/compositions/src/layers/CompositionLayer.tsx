@@ -273,6 +273,22 @@ function LiveHost({
 		pump.current();
 	}, [frame, configKey, hidden]);
 
+	// The page has an opaque origin (MG-1), and the browser pauses the rendering of cross-origin frames that are not
+	// in the viewport (a Program monitor in a hidden tab group, a scrolled-away panel): a frame asked for meanwhile
+	// times out. When the frame comes back into view, a failed request is made again.
+	const failed = host.state === 'error';
+	useEffect(() => {
+		const f = iframeRef.current;
+		if (!f || !failed || typeof IntersectionObserver === 'undefined') return;
+		const io = new IntersectionObserver((entries) => {
+			if (!entries.some((e) => e.isIntersecting) || !want.current) return;
+			want.current = { ...want.current };
+			pump.current();
+		});
+		io.observe(f);
+		return () => io.disconnect();
+	}, [failed]);
+
 	// Security review MG-1: the page is sandboxed (opaque origin). It is driven through its host agent over a
 	// MessagePort, connected anew on every load of the page.
 	const onLoad = () => {

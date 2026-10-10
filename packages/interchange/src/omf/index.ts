@@ -26,14 +26,15 @@ export function sniffOmf(bytes: Uint8Array): boolean {
 }
 
 export function importOmf(bytes: Uint8Array, opts: ImportOptions, report: Report): IProject {
-	let c: BentoContainer;
 	try {
-		c = BentoContainer.open(bytes);
+		const c: BentoContainer = BentoContainer.open(bytes);
+		return toProject(readOmf(c, report), opts, report, 'OMF');
 	} catch (e) {
+		// The reader charges its work against the container's allowance while it walks the objects (PAR-2).
 		if (e instanceof BentoError) throw parseError('OMF', e.message);
+		if (e instanceof RangeError) throw parseError('OMF', 'the file is damaged');
 		throw e;
 	}
-	return toProject(readOmf(c, report), opts, report, 'OMF');
 }
 
 export function exportOmf(p: IProject, sequenceId: string, opts: ExportOptions, report: Report): Uint8Array {

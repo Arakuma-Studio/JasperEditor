@@ -6,7 +6,10 @@
 // siblings per storage, and a "mini stream" with a mini FAT for streams smaller than 4096 bytes.
 //
 // - `CompoundFile.open` parses a file held in memory; every chain is bounds- and cycle-checked, so damaged files
-//   give a `CfbError`, never an exception of another kind or an endless loop.
+//   give a `CfbError`, never an exception of another kind or an endless loop. A hostile file cannot make the reader
+//   allocate more than a small multiple of its own size either (security review PAR-2): a chain never visits a
+//   sector twice and never has more sectors than the file, and the bytes handed out by `read` are counted against
+//   a budget, so directory entries that all claim the same sectors cannot be read into gigabytes.
 // - `CfbWriter` builds a tree of storages and streams and lays it out in one pass: stream sectors, mini stream,
 //   mini FAT, directory, FAT and DIFAT.
 //
@@ -90,6 +93,13 @@ export class CompoundFile {
 	private minifat: Uint32Array = new Uint32Array(0);
 	private miniStream: Uint8Array = new Uint8Array(0);
 	entries: Entry[] = [];
+	/** Sectors the file can hold (the header occupies the first one). */
+	private sectorCount = 0;
+	/**
+	 * Bytes `read` may still hand out. Streams of a well-formed file do not overlap, so reading every stream once
+	 * costs at most the file's size; the budget leaves room for reading them a few times over.
+	 */
+	private readBudget = 0;
 
 	private constructor(private readonly data: Uint8Array) {}
 
@@ -103,6 +113,8 @@ export class CompoundFile {
 		if (u16(data, 32) !== 6) throw invalid(`mini sector shift ${u16(data, 32)}`);
 		const ss = 1 << shift;
 		cf.sectorSize = ss;
+		cf.sectorCount = Math.floor(data.length / ss);
+		cf.readBudget = data.length * 8 + (1 << 20);
 		const nFat = u32(data, 44);
 		const firstDir = u32(data, 48);
 		cf.miniCutoff = u32(data, 56);
@@ -165,9 +177,14 @@ export class CompoundFile {
 		let len = 0;
 		let s = start;
 		let steps = 0;
+		// A chain visits a sector at most once, so it has at most as many sectors as the file. (The FAT's length is
+		// no bound: a header can declare every sector a FAT sector, and a two-sector cycle would then be followed
+		// for a quarter of the file's size in steps, each adding a whole sector to the result.)
+		const seen = new Uint8Array(this.sectorCount + 1);
 		while (s !== ENDOFCHAIN) {
 			if (s > MAXREGSECT) throw invalid(`bad sector 0x${s.toString(16)} in a chain`);
-			if (++steps > Math.max(this.fat.length, 1)) throw invalid('sector chain loops');
+			if (++steps > this.sectorCount || s >= seen.length || seen[s]) throw invalid('sector chain loops');
+			seen[s] = 1;
 			const b = this.sector(s);
 			parts.push(b);
 			len += b.length;
@@ -267,6 +284,8 @@ export class CompoundFile {
 		if (e.kind !== 'stream') throw invalid(`${JSON.stringify(e.name)} is not a stream`);
 		if (e.size === 0) return new Uint8Array(0);
 		if (e.size > this.data.length) throw invalid(`stream ${JSON.stringify(e.name)} is larger than the file`);
+		this.readBudget -= e.size;
+		if (this.readBudget < 0) throw invalid('its streams overlap (more stream data than the file holds)');
 		return e.size < this.miniCutoff ? this.readMiniChain(e.start, e.size) : this.readChain(e.start, e.size);
 	}
 
