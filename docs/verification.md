@@ -8,7 +8,7 @@ noted where it matters).
 Branch `feat/verify`, starting at `integrate/parity` 4870ea54; merged again at ea17f67d (perf-core), 85a90e3d (ui-perf),
 065af535 (gaps), c67a6dfb (review), ee9cb4e2 (polish) and 8bcf5df5 (hardening). Sections 1–8 were run on the way (each
 says on which tree where it matters); §9 is the gate after review, **§10 the full re-run on the final merged head**
-(polish and hardening), §11 the desktop dev-mode stall.
+(polish and hardening), §11 the desktop dev-mode stall, §12 the merge of the owner's `main`.
 
 ## 1. Static gates
 
@@ -368,6 +368,95 @@ The app-level reloads are what users get (a network change during a slow first l
 warm-up keeps the smoke testing the desktop shell rather than the race with the host's interfaces. Under extreme
 starvation and constant interface churn, a cold load without the warm-up can still run out of its 8 reloads and then
 shows the message with its Reload button, never a blank page.
+
+## 12. Owner `main` merged into the parity program
+
+While the program ran, the owner pushed two commits to `origin/main` on top of 051cf53c, where the program branched:
+
+- 0451dcd7 deletes `docs/audits/*`;
+- 130f08d9 is the simplification audit: unused exports, unreachable fallbacks and redundant wrappers removed;
+  repeated logic and the GL test setup consolidated; the layer-cache stale-snapshot race fixed; the agent bridge
+  bound to the lifecycle session. It is recorded in [`docs/slop-audit.md`](slop-audit.md).
+
+They were merged into `feat/final` (on `integrate/parity` 915b0bdf) with `git merge origin/main`. The merge kept every
+parity feature and test and every owner simplification and race fix.
+
+**Conflicts (31 files), resolved:**
+
+| Area | Resolution |
+|---|---|
+| `cache/service.ts` | The owner's required queue, projects, leases and broadcaster, and non-null `renderKey`. The live-document merge keeps parity's `rotoKeys` and `previewHashes`. |
+| `color/extension.ts`, `export/planner.ts`, `layer-bake/extension.ts`, `media/service.ts`, `server.ts` | The owner's shorter header, serial bake map, removed offline accumulator, inline extension ID, required cache for `discard` and `fail()` (`sendError` gone; parity's pairing, sandbox and unpaired-page paths now use `fail`). Kept from parity: OCIO configs and the working space, draft proxies, captions layers, OCIO bundles, and the editor-key and pairing auth. |
+| MCP `context.ts`, `color.ts`, `motion-path.ts` | One shared `findClip` in `context.ts` (owner). Parity's `grading.ts`, `masks.ts` and `three-d.ts` were moved onto it; their identical copies were deleted. Kept from parity: `EDIT_IDEMPOTENT` and Anchor Point paths. |
+| `ProjectLifecycle.tsx` | The owner's `useAgentBridge(session)` in the lifecycle, beside polish's `useNavigate`. The bridge follows take-over and reopen, and carries hardening's answer keys and agent-input guard. |
+| `text-measure.ts`, `GraphEditor.tsx`, `PresetsBin.tsx`, `dispatcher.ts` | Owner privatisations: no `dispose`, a private `GraphHost`, the preset tree computed by `EffectsPanel`, and the `held` map of commands. Kept from parity: the sandboxed host driver, `GraphView`, the custom-bin handles, and `pressed.clear()` on blur. |
+| `packages/api/src/tracking.ts` | `RationalSchema` (owner) with parity's stride 9 (mask tracking). The same consolidation was applied to parity's `roto.ts` and `camtrack.ts`. |
+| compositions `SequenceComposition.tsx`, `fx/transition.tsx`, `mg-host/protocol.ts` | `canUseHtmlInCanvas` called directly (owner); `htmlInCanvasAvailable` and its test mock are gone. `protocol.ts` re-exports the constants by name, so `MG_HOST_REQUIRED_GLOBALS` stays private (owner). |
+| `fx-gl`, `fx-motion-blur-gl`, `transition-gl` tests | The owner's `gl-browser.ts`, with parity's fingerprints, goldens and NaN poisoning (the entries' `gl-poison.ts`). |
+| project `lumetri.ts`, `clipboard.ts`, `shape.ts`, `text-animation.ts`, `derive/index.ts`, `effect-presets/schema.ts`, `snapshot.ts`, `rescale.ts`, `keyframes-spatial.ts` | The owner's inferred `LumetriParams`; no `indirect` set; `applyShapePatch(shape, patch, h)`; text-animation signatures without `doc`; `Map` track index instead of `{byTrack}`; no `presetAnimOf`; shared `useParamMedia` and `effects`. Kept from parity: section switches, `payloadMedia` / `byFingerprint` lookups, vector-shape refusal, incremental derived index, expressions in presets, colour input transforms, 3D, retime, rotos, display-size rescale and `autoTangents`. |
+| `fx-transition-framework.md` | Parity's §14, without the trailing blank line the owner removed. |
+
+**Owner deletions overridden** (parity code needs them):
+
+- `multiplyMatrix`: multicam flattening (`multicam/resolve.ts`).
+- the `ClipboardPayloadSchema` export: interchange fragments.
+- the `newKeyframe` export: mask and sim-warp handlers.
+- the `hostBootstrapScript` export: `mg-host-remote.test.ts`.
+- the `autoTangents` export: `auto-tangents.test.ts`.
+- the `findClip` export: it stays in `context.ts`, where the owner put it.
+
+**Owner deletions followed, with the parity callers updated:**
+
+- `defaultParams` → `effectiveParams(spec, {})` (`lumetri-grade.test.ts`).
+- `activeClips` → `primaryClip` (parity's Auto Tone and Apply Match commands).
+- `PathHit` stays private (`TransformOverlay.tsx` infers it).
+- `projectCacheRefs(…, null)` → a render-key function (`roto.test.ts`).
+- testkit's unused `openGlPage` is removed.
+
+**Race fixes carried to the parity additions:**
+
+- **mg-renders.** `MgBundleService.markUsed` had the same stale-snapshot race as the layer cache. Its metadata write
+  happened after a cleaning pass had scanned, so the pass could remove a master that a native export had just looked
+  up. It now calls `cache.touch` synchronously first. The regression test (`mg-bundles.test.ts`, "a master looked up
+  while a cleaning pass works from an older scan survives it") failed without the fix (`expected false to be true`)
+  and passes with it.
+- **previews.** Use Previews exports read render previews (cache kind `previews`) with a bare `exists()`. They now
+  hold them for the job through `acquireForJob`: a pin, a touch, and a wait for any removal in progress. The Use
+  Previews test asserts the hold; it failed without the change.
+- **roto mattes, OCIO bundles and speech models** need no change:
+  - roto sets keep no on-disk usage stamp that a stale scan could miss. They are kept by project references
+    (`rotoKeys`, kept in the live merge above), by the adapter's `busy` while jobs run, and by the serve hook.
+  - OCIO bundles are managed media, not cache entries; `discard` now always goes through the registry.
+  - speech models live under `models/`, outside the cache registry.
+- **Layer cleanup** runs only through the central registry (the owner removed the fallback GC; no parity code called it).
+- **Agent bridge.** The bridge is bound in `ProjectLifecycle`. It follows the session that hardening's lease
+  take-over and polish's reopen produce.
+
+**GL test setup.** The parity GL suites use the owner's `test/gl-browser.ts`: `blend-gl`, `lumetri-spatial-gl`,
+`masks-gl`, `retime-gl`, `three-d-gl` and `three-d-advanced` (with a 64×64 viewport through a new `page` option).
+`retime-frames`, `capture-safe-canvas` and `serial-audio-context` share its `CHROME`; `retime-frames` also shares its
+bundler. `gl-browser.ts` now takes Chrome discovery, SwiftShader flags and bundling from `@jasper/testkit/browser`
+(golden-fuzz), so there is one implementation.
+
+**Docs.** `docs/audits/` stays deleted. `docs/gaps.md` no longer links to it. The golden-fuzz note points at
+`gl-browser.ts`.
+
+**Auto-merged files** (97 files changed on both sides) were reviewed for meaning, not only for conflicts:
+- The layer-bake `colorRuns` planning and shared-browser flag are unchanged in meaning.
+- The Remotion browser options are equivalent.
+- The clipboard `direct` item rule is equivalent to the removed `indirect` set: `false` is only passed for derivation
+  sources and fonts.
+- The typecheck, the unit suites and the E2E specs below cover the rest.
+
+| Gate | Command | Result |
+|---|---|---|
+| Install, static | `pnpm install`; `pnpm lint`; `pnpm typecheck`; `pnpm e2e:typecheck`; `pnpm notices --check`; `pnpm build` | pass |
+| Every vitest suite, with Remotion and MG | `REMOTION_E2E=1 MG_E2E=1 pnpm vitest run --maxWorkers=2`, MCP and CLI ports 49661–49669 | **533 files / 5,319 tests pass**, 120 skipped by their own gates, 7 files skipped, **0 failures** (87 min, load 15–40). Includes the compositions, golden and GL suites (Chrome found, `FX_GL` unset). |
+| All Playwright specs | `node scripts/e2e-prepare.mjs`, then `E2E_PORT=49660 E2E_SKIP_BUILD=1 pnpm exec playwright test` | 226 passed, 6 failed, 2 did not run (serial followers), 1.4 h. The load peaked at **95 on 12 cores** (another agent's C++ build); the failures were 3-minute export timeouts and 60 s import waits. **Rerun alone:** `color-grade`, `color-mgmt`, `color`, `compositor` and `edit-structure` gave 21/22. The `color-grade` export then passed alone twice: 2.2 m (with a raised ceiling) and **1.9 m under the default 3 min timeout** (the earlier runs above measured 1.6–2.3 m). Every one of the 234 tests has passed on this head. |
+| MCP scenario QA | `MCP_QA_PORT=49670 pnpm qa:mcp`, then `MCP_QA_PORT=49671 REMOTION_E2E=1 pnpm qa:mcp` | 7/7 and 7/7 (115 s, 135 s) |
+
+Not run on this head: the desktop checks (`pnpm e2e:desktop`, packaged checks). The merge changed no desktop application code (only the owner's desktop clipboard E2E helper);
+§10's results stand for it.
 
 ## Not done or caveated
 
