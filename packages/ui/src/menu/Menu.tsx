@@ -50,8 +50,11 @@ type Kit = Pick<
 	| 'Portal'
 >;
 
+// Height: Radix sets `--radix-popper-available-height` on the popper wrapper of every menu kind (dropdown, context,
+// menubar and their submenus); the kind-specific aliases exist only on their own kind, so the dropdown alias left
+// context menus and the menubar on the 80vh fallback and long ones ran off the window (wp fixups).
 export const MENU_CONTENT =
-	'z-[var(--pr-z-popover)] min-w-[200px] max-h-[var(--radix-dropdown-menu-content-available-height,80vh)] overflow-y-auto ' +
+	'z-[var(--pr-z-popover)] min-w-[200px] max-h-[var(--radix-popper-available-height,calc(100vh_-_16px))] overflow-y-auto ' +
 	'rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 font-pr text-pr-ui text-pr-text shadow-pr-overlay ' +
 	'outline-none select-none';
 
@@ -193,7 +196,7 @@ export function DropdownMenu({
 					sideOffset={2}
 					collisionPadding={8}
 				>
-					{renderItems(RDropdown, typeof items === 'function' ? items() : items)}
+					<LazyItems kit={RDropdown} items={items} />
 				</RDropdown.Content>
 			</RDropdown.Portal>
 		</RDropdown.Root>
@@ -217,7 +220,7 @@ export function ContextMenu({ children, items, onOpenChange, disabled }: Context
 			</RContext.Trigger>
 			<RContext.Portal>
 				<RContext.Content className={MENU_CONTENT} collisionPadding={8}>
-					{renderItems(RContext, typeof items === 'function' ? items() : items)}
+					<LazyItems kit={RContext} items={items} />
 				</RContext.Content>
 			</RContext.Portal>
 		</RContext.Root>
@@ -265,6 +268,21 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 			))}
 		</RMenubar.Root>
 	);
+}
+
+/**
+ * The items of a dropdown or context menu. A component of its own, so that they are resolved and built when the menu
+ * opens (Radix mounts the content then), not on every render of whatever carries the menu: every panel with a
+ * context menu used to resolve its whole menu — command states included — each time it rendered.
+ */
+function LazyItems({
+	kit,
+	items,
+}: {
+	kit: Kit;
+	items: readonly ResolvedMenuItem[] | (() => readonly ResolvedMenuItem[]);
+}) {
+	return <>{renderItems(kit, typeof items === 'function' ? items() : items)}</>;
 }
 
 function MenuBarItems({ menu }: { menu: MenuBarMenu }) {

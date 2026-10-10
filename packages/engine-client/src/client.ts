@@ -3,27 +3,52 @@ import {
 	type AgentOpenProjectRequest,
 	type AgentQueryRequest,
 	type AgentTxRequest,
+	type AgentUiRequest,
 	API_HEADER,
 	API_VERSION,
+	type AssetRelinkRequest,
+	type AudioAnalyzeRequest,
+	type AutoToneRequest,
 	buildPath,
+	type CaptionFileReadRequest,
+	type ColorMatchRequest,
 	type DerivativeKind,
 	type EngineJob,
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type GradingScopesRequest,
+	type ImageSequenceRequest,
+	type InterchangeExportRequest,
+	type InterchangeImportRequest,
+	type InterchangePrerenderPlanRequestSchema,
 	type JobListQuery,
+	type LottieExportRequest,
+	type LoudnessNormalizeRequest,
 	type MediaRegisterRequest,
+	type MediaVariantRequest,
 	type MgRenderRequest,
+	type PreviewDeleteRequest,
+	type PreviewDeleteResult,
+	type PreviewRenderRequest,
+	type PreviewStatus,
+	type PreviewStatusRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
+	type RecoveryPutRequest,
 	type RegisteredMedia,
+	type RelinkScanRequest,
+	type RemixPlanRequest,
+	type RemixPlanResult,
 	ROUTES,
 	type RouteName,
 	type RouteResponse,
+	type SceneDetectRequest,
 	type StillRequest,
 	UPLOAD_CHUNK_BYTES,
 	type UploadCreateRequest,
 	UploadOffsetMismatchSchema,
+	type VersionRestoreRequest,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
@@ -35,7 +60,21 @@ export type EngineClientOptions = {
 	fetch?: typeof fetch;
 	/** Bearer token (Electron packaged mode uses the cookie instead). */
 	token?: string;
+	/**
+	 * Extra headers for every request, read per request: jasper-mcp names its agent (`x-jasper-agent`, shown on
+	 * approval cards), the editor marks requests made while an agent's live-UI input is handled
+	 * (`x-jasper-agent-input`, security review AGT-3).
+	 */
+	requestHeaders?: () => Record<string, string>;
 };
+
+/**
+ * A JSON request body that is already serialised (ui-perf: autosave and the recovery journal serialise documents
+ * incrementally, `stringifyJson` in @jasper/project). Sent as is with `content-type: application/json`.
+ */
+export class JsonText {
+	constructor(readonly text: string) {}
+}
 
 type CallOptions = {
 	params?: Record<string, string | number>;
@@ -43,6 +82,12 @@ type CallOptions = {
 	body?: unknown;
 	headers?: Record<string, string>;
 	signal?: AbortSignal;
+	/**
+	 * The client makes this request by itself, not because of the input being handled (autosave, the recovery
+	 * journal, lease upkeep): `requestHeaders` are left out, so the editor never attributes its own housekeeping to
+	 * an agent whose live-UI input happens to be in flight.
+	 */
+	automatic?: boolean;
 };
 
 export type MediaVariant =
@@ -60,6 +105,7 @@ export class EngineClient {
 	readonly baseUrl: string;
 	private readonly fetchImpl: typeof fetch;
 	private readonly token?: string;
+	private readonly requestHeaders?: () => Record<string, string>;
 
 	constructor(opts: EngineClientOptions = {}) {
 		this.baseUrl = (opts.baseUrl ?? '').replace(/\/$/, '');
@@ -67,6 +113,7 @@ export class EngineClient {
 		if (!f) throw new Error('No fetch implementation available');
 		this.fetchImpl = (input, init) => f(input, init);
 		this.token = opts.token;
+		this.requestHeaders = opts.requestHeaders;
 	}
 
 	url(path: string, query?: CallOptions['query']): string {
@@ -81,10 +128,14 @@ export class EngineClient {
 
 	/**
 	 * Headers that authenticate a request made outside `call()` (e.g. keepalive requests during `pagehide`):
-	 * `Authorization: Bearer <token>` in token mode, nothing when the session cookie is used.
+	 * `Authorization: Bearer <token>` in token mode, nothing when the session cookie is used; plus the client's
+	 * `requestHeaders`.
 	 */
 	authorizationHeaders(): Record<string, string> {
-		return this.token ? { authorization: `Bearer ${this.token}` } : {};
+		return {
+			...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+			...(this.requestHeaders?.() ?? {}),
+		};
 	}
 
 	/** Low-level typed call by route name. */
@@ -94,7 +145,11 @@ export class EngineClient {
 		const binary = 'body' in route && route.body === 'binary';
 		const headers: Record<string, string> = {
 			accept: 'application/json',
-			...this.authorizationHeaders(),
+			...(opts.automatic
+				? this.token
+					? { authorization: `Bearer ${this.token}` }
+					: {}
+				: this.authorizationHeaders()),
 			...(opts.headers ?? {}),
 		};
 		let body: BodyInit | undefined;
@@ -104,7 +159,7 @@ export class EngineClient {
 				body = opts.body as BodyInit;
 			} else {
 				headers['content-type'] = 'application/json';
-				body = JSON.stringify(opts.body);
+				body = opts.body instanceof JsonText ? opts.body.text : JSON.stringify(opts.body);
 			}
 		}
 		let res: Response;
@@ -186,13 +241,44 @@ export class EngineClient {
 			params: { projectId },
 			body: envelope,
 			headers: { 'if-match': String(baseRevision) },
+			// A save writes the session's own document; what an agent may put into it was decided when it was edited.
+			automatic: true,
 		});
 	}
 	putView(projectId: string, view: ProjectViewJson) {
-		return this.call('projectPutView', { params: { projectId }, body: view });
+		return this.call('projectPutView', { params: { projectId }, body: view, automatic: true });
 	}
 	listVersions(projectId: string) {
 		return this.call('projectVersions', { params: { projectId } });
+	}
+	/** One saved version with its envelope (process, D-39). */
+	getVersion(projectId: string, versionId: string) {
+		return this.call('projectVersionGet', { params: { projectId, versionId } });
+	}
+	/** Restores a saved version in place (`replace`, with the caller's lease) or as a new project (`copy`). */
+	restoreVersion(projectId: string, versionId: string, req: VersionRestoreRequest) {
+		return this.call('projectVersionRestore', { params: { projectId, versionId }, body: req });
+	}
+	/** Crash-recovery candidates of a project (journals no session holds any more; S01:PER-021). */
+	listRecovery(projectId: string) {
+		return this.call('projectRecoveryList', { params: { projectId } });
+	}
+	getRecovery(projectId: string, sessionId: string) {
+		return this.call('projectRecoveryGet', { params: { projectId, sessionId } });
+	}
+	/** Journals this session's unsaved document (needs the session's lease). */
+	putRecovery(projectId: string, sessionId: string, req: RecoveryPutRequest | JsonText) {
+		return this.call('projectRecoveryPut', { params: { projectId, sessionId }, body: req, automatic: true });
+	}
+	/** Deletes a journal: the session's own (pass its `leaseId`) or a candidate nobody holds. */
+	deleteRecovery(projectId: string, sessionId: string, leaseId?: string) {
+		return this.call('projectRecoveryDelete', {
+			params: { projectId, sessionId },
+			...(leaseId ? { query: { leaseId } } : {}),
+			// With its lease, a session clears its own journal after a save (housekeeping); without one, somebody is
+			// discarding another session's unsaved changes, which is a decision.
+			automatic: !!leaseId,
+		});
 	}
 	deleteProject(projectId: string) {
 		return this.call('projectDelete', { params: { projectId } });
@@ -201,10 +287,52 @@ export class EngineClient {
 		return this.call('leaseAcquire', { params: { projectId }, body: { sessionId } });
 	}
 	heartbeatLease(projectId: string, leaseId: string) {
-		return this.call('leaseHeartbeat', { params: { projectId, leaseId } });
+		return this.call('leaseHeartbeat', { params: { projectId, leaseId }, automatic: true });
 	}
 	releaseLease(projectId: string, leaseId: string) {
-		return this.call('leaseRelease', { params: { projectId, leaseId } });
+		return this.call('leaseRelease', { params: { projectId, leaseId }, automatic: true });
+	}
+	// polish: Media Browser (local engines only)
+	browseRoots() {
+		return this.call('browseRoots');
+	}
+	browseList(path: string, opts: { all?: boolean } = {}) {
+		return this.call('browseList', { query: { path, ...(opts.all ? { all: '1' } : {}) } });
+	}
+	browseInfo(path: string) {
+		return this.call('browseInfo', { query: { path } });
+	}
+	/** URL of a JPEG thumbnail of a file on the engine host (for `<img src>`). */
+	browseThumbnailUrl(path: string, width = 160): string {
+		return this.url('/api/browse/thumbnail', { path, width });
+	}
+	/** URL of a media file's bytes on the engine host (for the preview `<video>` / `<audio>` / `<img>`). */
+	browseFileUrl(path: string): string {
+		return this.url('/api/browse/file', { path });
+	}
+	/** wp captions: a caption / transcript file by path (local engines). */
+	readCaptionFile(req: CaptionFileReadRequest) {
+		return this.call('captionFileRead', { body: req });
+	}
+	/** wp interchange: reads a timeline document into a `project.importTimeline` fragment. */
+	importTimeline(req: InterchangeImportRequest, signal?: AbortSignal) {
+		return this.call('interchangeImport', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** wp interchange: the clips an export to `format` would pre-render. */
+	interchangePrerenderPlan(req: z.input<typeof InterchangePrerenderPlanRequestSchema>) {
+		return this.call('interchangePrerenderPlan', { body: req });
+	}
+	/** wp interchange: exports a sequence as a timeline document (job `interchange-export`). */
+	exportTimeline(req: InterchangeExportRequest) {
+		return this.call('interchangeExport', { body: req });
+	}
+	/** S04:AS-011: registers a replacement file for an asset and compares them. */
+	relinkAsset(assetId: string, req: AssetRelinkRequest) {
+		return this.call('assetRelink', { params: { assetId }, body: req });
+	}
+	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`). */
+	relinkScan(projectId: string, req: RelinkScanRequest) {
+		return this.call('relinkScan', { params: { projectId }, body: req });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
@@ -229,6 +357,10 @@ export class EngineClient {
 	mediaStatus(mediaKey: string) {
 		return this.call('mediaStatus', { params: { mediaKey } });
 	}
+	/** polish: the status of many media in one request (at most MEDIA_STATUS_BATCH_MAX keys). */
+	mediaStatusBatch(mediaKeys: string[]) {
+		return this.call('mediaStatusBatch', { body: { mediaKeys } });
+	}
 	requestDerivatives(mediaKey: string, kinds: DerivativeKind[]) {
 		return this.call('mediaDerivatives', { params: { mediaKey }, body: { kinds } });
 	}
@@ -250,8 +382,124 @@ export class EngineClient {
 	startExport(req: ExportStartRequest): Promise<EngineJob> {
 		return this.call('exportStart', { body: req });
 	}
+	/** audio-mix: loudness / peaks / activity analysis job (`wait` answers the finished job). */
+	analyzeAudio(req: AudioAnalyzeRequest, wait = false): Promise<EngineJob> {
+		return this.call('audioAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** audio-fx: a music remix plan for a clip's content range (synchronous). */
+	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
+		return this.call('audioRemixPlan', { body: req }) as Promise<RemixPlanResult>;
+	}
+	/** audio-mix: a loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
+	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {
+		return this.call('mediaLoudnessNormalize', {
+			params: { key: mediaKey },
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+	// ---- imports workstream
+	/** The interpreted picture of a media (display / proxy / master of a pixel variant); queues it when missing. */
+	requestMediaVariant(mediaKey: string, req: MediaVariantRequest) {
+		return this.call('mediaVariant', { params: { mediaKey }, body: req });
+	}
+	/** Numbered stills → one media (job `image-sequence`, result RegisteredMedia). */
+	importImageSequence(req: ImageSequenceRequest, wait = false): Promise<EngineJob> {
+		return this.call('importsImageSequence', {
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+	detectImageSequence(path: string) {
+		return this.call('importsImageSequenceDetect', { body: { path } });
+	}
+	/** The layers of a PSD extracted and registered (job `layers`, result LayeredExtractResult). */
+	extractLayers(mediaKey: string, projectId?: string, wait = false, merge?: number[]): Promise<EngineJob> {
+		return this.call('importsLayers', {
+			body: { mediaKey, ...(projectId ? { projectId } : {}), ...(merge ? { merge } : {}) },
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+	vectorPages(mediaKey: string) {
+		return this.call('importsVectorPages', { params: { mediaKey } });
+	}
+	exportLottie(req: LottieExportRequest) {
+		return this.call('importsLottieExport', { body: req });
+	}
+	/**
+	 * Uploads one frame of an image sequence (purpose `sequence-frame`): the upload is not registered as media, it is
+	 * consumed by `importImageSequence({uploadIds})`. Returns the upload id.
+	 */
+	async uploadSequenceFrame(
+		blob: Blob,
+		opts: {
+			projectId: string;
+			fileName?: string;
+			signal?: AbortSignal;
+			onProgress?(p: UploadProgress): void;
+		},
+	): Promise<string> {
+		const fileName = opts.fileName ?? (blob as File).name ?? 'frame.bin';
+		const session = await this.createUpload({
+			projectId: opts.projectId,
+			fileName,
+			byteSize: blob.size,
+			mimeType: blob.type || 'application/octet-stream',
+			purpose: 'sequence-frame',
+		});
+		const chunkSize = session.chunkSize || UPLOAD_CHUNK_BYTES;
+		let offset = session.offset;
+		try {
+			while (offset < blob.size) {
+				if (opts.signal?.aborted) throw opts.signal.reason ?? new DOMException('Aborted', 'AbortError');
+				const end = Math.min(blob.size, offset + chunkSize);
+				offset = (await this.appendUpload(session.uploadId, offset, blob.slice(offset, end), opts.signal))
+					.offset;
+				opts.onProgress?.({ loaded: offset, total: blob.size });
+			}
+		} catch (e) {
+			await this.abortUpload(session.uploadId).catch(() => undefined);
+			throw e;
+		}
+		return session.uploadId;
+	}
+	/** Workstream `time`: Scene Edit Detection of a media range (job; result SceneDetectResult). */
+	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {
+		return this.call('scenesDetect', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });
+	}
+	// ---- previews workstream (render previews, docs/wp-notes/previews.md)
+	/** Which segment hashes have render preview files (video / audio) in a preview format. */
+	previewStatus(req: PreviewStatusRequest): Promise<PreviewStatus> {
+		return this.call('previewStatus', { body: req as never });
+	}
+	/** Sequence ▸ Render…: a `preview` job, or `{job: null}` when every segment is rendered already. */
+	renderPreviews(
+		req: PreviewRenderRequest,
+		wait = false,
+	): Promise<EngineJob | { job: null; existing: number }> {
+		return this.call('previewRender', {
+			body: req as never,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		}) as Promise<EngineJob | { job: null; existing: number }>;
+	}
+	/** Delete Render Files (`{all: true}`) / Delete Render Files In to Out (`{hashes}`). */
+	deletePreviews(req: PreviewDeleteRequest): Promise<PreviewDeleteResult> {
+		return this.call('previewDelete', { body: req });
+	}
+	/** color-grade: Lumetri Scopes of a rendered frame as numbers. */
+	gradingScopes(req: GradingScopesRequest, signal?: AbortSignal) {
+		return this.call('gradingScopes', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** color-grade: Colour Match of a clip to a reference frame (Lumetri params to apply). */
+	gradingMatch(req: ColorMatchRequest, signal?: AbortSignal) {
+		return this.call('gradingMatch', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** color-grade: Basic Correction ▸ Auto of a clip (Lumetri params to apply). */
+	gradingAutoTone(req: AutoToneRequest, signal?: AbortSignal) {
+		return this.call('gradingAutoTone', { body: req, ...(signal ? { signal } : {}) });
 	}
 	listFonts() {
 		return this.call('fontsList');
@@ -273,6 +521,10 @@ export class EngineClient {
 	}
 	agentOpenProject(req: AgentOpenProjectRequest) {
 		return this.call('agentOpenProject', { body: req });
+	}
+	/** mcp-cli: live-UI automation of an open editor window. */
+	agentUi(req: AgentUiRequest, signal?: AbortSignal) {
+		return this.call('agentUi', { body: req, signal });
 	}
 	agentMcpInfo() {
 		return this.call('agentMcpInfo');
@@ -326,6 +578,17 @@ export class EngineClient {
 	}
 	renderOutputUrl(jobId: string): string {
 		return this.url(buildPath(ROUTES.renderOutput.path, { jobId }));
+	}
+	/** wp interchange: download URL of a file of a finished interchange export. */
+	interchangeOutputUrl(jobId: string, name: string, download = false): string {
+		return this.url(
+			buildPath(ROUTES.interchangeOutput.path, { jobId, name }),
+			download ? { download: 1 } : undefined,
+		);
+	}
+	/** wp captions: download URL of an export's sidecar caption file. */
+	renderCaptionFileUrl(jobId: string, name: string): string {
+		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
 	}
 	mgFileUrl(key: string, file: string): string {
 		return this.url(buildPath(ROUTES.mgFile.path, { key, file }));

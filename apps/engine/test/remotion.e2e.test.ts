@@ -15,6 +15,8 @@ describe.runIf(enabled)('Remotion render (REMOTION_E2E=1)', () => {
 		const engine: RunningEngine = await startEngine({
 			appdir: tempAppdir(),
 			port: PORT,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,
@@ -35,9 +37,12 @@ describe.runIf(enabled)('Remotion render (REMOTION_E2E=1)', () => {
 					ref: '$t',
 				},
 			]).refs.$t!;
-			// M2 (S11:LBK-001, wp-m2-layer-bake): plain text is baked natively (`hybrid`); a blend mode keeps this
-			// sequence on the Remotion path, which is what this suite exercises (export and still).
-			d.tx([{ type: 'clip.update', clipIds: [t], patch: { blendMode: 'screen' } }]);
+			// M2 (S11:LBK-001, wp-m2-layer-bake): plain text is baked natively (`hybrid`); keyframes-blend: a blend mode
+			// inside a nested sequence keeps this sequence on the Remotion path, which is what this suite exercises.
+			d.tx([
+				{ type: 'clip.update', clipIds: [t], patch: { blendMode: 'screen' } },
+				{ type: 'clip.nest', clipIds: [t] },
+			]);
 			const base = {
 				envelope: d.envelope(),
 				sequenceId: d.seqId,

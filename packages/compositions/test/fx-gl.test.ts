@@ -8,11 +8,16 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FX_FAMILIES } from '@jasper/project';
+import { expectFingerprints } from '@jasper/testkit/golden';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** Golden fingerprints of every GPU effect (4×4 mean RGB at defaults on the test card; ±FP_TOL levels). */
+const FX_FINGERPRINTS = join(here, 'goldens', 'fx-fingerprints.json');
+const FP_TOL = 4;
 
 type Px = [number, number, number, number];
 const near = (a: Px, b: Px, tol = 3) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
@@ -50,6 +55,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const r = await call<{ count: number; errors: string[] }>('catalogue');
 			expect(r.errors).toEqual([]);
 			expect(r.count).toBeGreaterThanOrEqual(5);
+			expectFingerprints(FX_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints'), FP_TOL);
 		});
 
 		// One test per fx family: SwiftShader compiles slowly, so the whole catalogue does not fit one timeout.
@@ -57,6 +63,12 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			it(`compiles and runs every GPU effect of ${family}`, { timeout: 240_000 }, async () => {
 				const r = await call<{ count: number; errors: string[] }>('catalogue', family);
 				expect(r.errors).toEqual([]);
+				// Golden fingerprints (testkit): every effect of the family at its defaults on the test card.
+				expectFingerprints(
+					FX_FINGERPRINTS,
+					await call<Record<string, number[]>>('fingerprints', family),
+					FP_TOL,
+				);
 			});
 
 		it('keeps the picture upright and premultiplied alpha intact', async () => {

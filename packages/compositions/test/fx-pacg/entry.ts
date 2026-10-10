@@ -1,6 +1,7 @@
 // Browser entry of the Premiere Adjust/Color/Keying family GL tests (fx-premiere-adjust-color-keying-gl.test.ts) and
 // of the contact-sheet script (fx-pacg/shots.ts): drives the real GPU host (src/fx/host.ts) with one family effect on
 // a picture (a test image or a painted pattern) and returns pixels or a PNG. Same `run` contract as fx-gl/entry.ts.
+import '../gl-poison.ts';
 import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
@@ -115,6 +116,11 @@ export type RunRequest = {
 	/** Media params: param name → picture (drawn at `size` or the box size). */
 	media?: Record<string, Picture & { size?: [number, number] }>;
 	frame?: number;
+	/**
+	 * parity (roto): object-matte inputs by matte name (`GpuEffect.mattes`): the picture (red channel = matte) and
+	 * the state (`u_<name>_state`: 1 = bound, 2 = outside the span; default 1 with a picture, else 0).
+	 */
+	mattes?: Record<string, { picture?: Picture & { size?: [number, number] }; state?: number }>;
 	/** Background behind the result in PNGs (checkerboard shows transparency). */
 	background?: 'checker' | 'black' | 'none';
 };
@@ -152,6 +158,16 @@ async function run(req: RunRequest) {
 	const out = canvas(layout.width, layout.height);
 	const textures: Record<string, unknown> = {};
 	for (const t of plan.textures) {
+		if (t.matte) {
+			const mt = req.mattes?.[t.uniform.slice(2)];
+			const pic = mt?.picture;
+			textures[t.uniform] = pic
+				? await textureOf(pic, pic.size?.[0] ?? box.width, pic.size?.[1] ?? box.height)
+				: null;
+			const u = plan.uniforms.find((x) => x.name === `${t.uniform}_state`);
+			if (u) u.value = [mt?.state ?? (pic ? 1 : 0)];
+			continue;
+		}
 		const m = req.media?.[t.param];
 		textures[t.uniform] = m ? await textureOf(m, m.size?.[0] ?? box.width, m.size?.[1] ?? box.height) : null;
 	}

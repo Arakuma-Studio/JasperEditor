@@ -57,7 +57,91 @@ export const BUILTIN_PRESETS: readonly SequencePreset[] = [
 	preset('vertical-1080x1920-60', 'Vertical 1080×1920 60 fps', 1080, 1920, '60'),
 	preset('square-1080-30', 'Square 1080×1080 30 fps', 1080, 1080, '30'),
 	preset('hd-720p-30', '720p 30 fps', 1280, 720, '30'),
+	// gaps (Sequence Settings ▸ Pixel Aspect Ratio / Fields): Premiere's DV, HDV and DVCPRO HD presets. `width` is the
+	// display width; the files carry `storageWidth` pixels at the pixel aspect ratio (see gaps/sequence-format.ts).
+	formatPreset(
+		'dv-ntsc',
+		'DV NTSC (720×480, 0.9091, lower field)',
+		720,
+		480,
+		{ num: 10, den: 11 },
+		'29.97',
+		'lower',
+	),
+	formatPreset(
+		'dv-ntsc-wide',
+		'DV NTSC Widescreen (720×480, 1.2121, lower field)',
+		720,
+		480,
+		{ num: 40, den: 33 },
+		'29.97',
+		'lower',
+	),
+	formatPreset(
+		'dv-pal',
+		'DV PAL (720×576, 1.0940, lower field)',
+		720,
+		576,
+		{ num: 59, den: 54 },
+		'25',
+		'lower',
+	),
+	formatPreset(
+		'dv-pal-wide',
+		'DV PAL Widescreen (720×576, 1.4587, lower field)',
+		720,
+		576,
+		{ num: 118, den: 81 },
+		'25',
+		'lower',
+	),
+	formatPreset(
+		'hdv-1080i-29.97',
+		'HDV 1080i 29.97 (1440×1080, 1.333, upper field)',
+		1440,
+		1080,
+		{ num: 4, den: 3 },
+		'29.97',
+		'upper',
+	),
+	formatPreset(
+		'hdv-1080i-25',
+		'HDV 1080i 25 (1440×1080, 1.333, upper field)',
+		1440,
+		1080,
+		{ num: 4, den: 3 },
+		'25',
+		'upper',
+	),
+	formatPreset(
+		'dvcprohd-1080i-29.97',
+		'DVCPRO HD 1080i 29.97 (1280×1080, 1.5, upper field)',
+		1280,
+		1080,
+		{ num: 3, den: 2 },
+		'29.97',
+		'upper',
+	),
 ];
+
+function formatPreset(
+	id: string,
+	name: string,
+	storageWidth: number,
+	h: number,
+	par: Rational,
+	r: string,
+	fieldOrder: 'upper' | 'lower',
+): SequencePreset {
+	const display = Math.max(16, 2 * Math.round((storageWidth * par.num) / par.den / 2));
+	const settings: SequenceSettings = {
+		...makeSequenceSettings(display, h, rate(r)),
+		pixelAspectRatio: { ...par },
+		storageWidth,
+		fieldOrder,
+	};
+	return { id, name, settings, tracks: { ...DEFAULT_TRACK_LAYOUT } };
+}
 
 export const DEFAULT_PRESET_ID = 'hd-1080p-30';
 

@@ -3,13 +3,37 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+// Security review DEV-1: the dev server authenticates to the engine (token from its runtime file) and hands the
+// browser the dev editor key.
+import { authenticateProxy, createDevAuth, type DevAuth, editorCookieMiddleware } from './dev-auth.ts';
+// gaps (UI-6): UI strings through the active language's catalogue.
+import { type BundleChunk, EDITOR_BOOT, editorBootScript, editorChunks } from './editor-boot.ts';
+import { jasperI18n } from './i18n/vite-plugin.mjs';
 
 const ENGINE = process.env.JASPER_ENGINE_URL ?? 'http://127.0.0.1:47900';
 const WS_ENGINE = ENGINE.replace(/^http/, 'ws');
 
 // Same-origin in dev: the Vite server proxies every engine path (ARCHITECTURE §4.1). The Host header is
-// kept (changeOrigin: false); the dev engine accepts 127.0.0.1:5173 / localhost:5173.
-const http = { target: ENGINE, changeOrigin: false };
+// kept (changeOrigin: false); the dev engine accepts 127.0.0.1:5173 / localhost:5173. The proxy adds the engine's
+// token (dev-auth.ts): the engine has no unauthenticated mode.
+let devAuth: DevAuth | null = null;
+const auth = (): DevAuth => {
+	devAuth ??= createDevAuth(ENGINE, { log: (l) => console.warn(`[jasper dev] ${l}`) });
+	return devAuth;
+};
+const configure = (proxy: unknown) => authenticateProxy(auth())(proxy);
+const http = { target: ENGINE, changeOrigin: false, configure };
+
+/** Page loads (and the proxied /health poll) give the browser the dev editor key as an HttpOnly cookie. */
+function jasperDevAuth(): Plugin {
+	return {
+		name: 'jasper-dev-auth',
+		apply: 'serve',
+		configureServer(server) {
+			server.middlewares.use(editorCookieMiddleware(auth()));
+		},
+	};
+}
 
 // S11:FIX-010: the JavaScript third-party notices (generated at the repo root by `pnpm notices`) ship with the
 // web build as /THIRD_PARTY_NOTICES.md (Help ▸ About links to it); the dev server serves the same file.
@@ -26,6 +50,27 @@ function thirdPartyNotices(): Plugin {
 		},
 		generateBundle() {
 			this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: source() });
+		},
+	};
+}
+
+// polish (project open): `/editor-boot.js` (editor-boot.ts) preloads the editor's chunks and starts fetching the
+// project before the bundle has loaded. The build writes the chunk list; the dev server serves an empty one.
+function editorBoot(): Plugin {
+	return {
+		name: 'jasper-editor-boot',
+		configureServer(server) {
+			server.middlewares.use(`/${EDITOR_BOOT}`, (_req, res) => {
+				res.setHeader('content-type', 'text/javascript; charset=utf-8');
+				res.end(editorBootScript([]));
+			});
+		},
+		generateBundle(_options, bundle) {
+			this.emitFile({
+				type: 'asset',
+				fileName: EDITOR_BOOT,
+				source: editorBootScript(editorChunks(bundle as unknown as Record<string, BundleChunk>)),
+			});
 		},
 	};
 }
@@ -48,11 +93,15 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig({
-	plugins: [react(), tailwindcss(), thirdPartyNotices()],
+	plugins: [jasperDevAuth(), jasperI18n(), react(), tailwindcss(), thirdPartyNotices(), editorBoot()],
 	server: {
 		host: '127.0.0.1',
 		port: 5173,
 		strictPort: true,
+		// Transform the app's static module graph when the server starts, not when the first page asks for it: a cold
+		// first load was ~hundreds of on-demand transforms long, and on a loaded machine long enough for Chromium to
+		// abort it on a host network change (net::ERR_NETWORK_CHANGED; editor-boot.ts reloads it, verify workstream).
+		warmup: { clientFiles: ['./index.html', './src/main.tsx'] },
 		proxy: {
 			'/api': http,
 			'/events': http,
@@ -61,7 +110,7 @@ export default defineConfig({
 			'/renders': http,
 			'/fonts': http,
 			'/health': http,
-			'/agent': { target: WS_ENGINE, ws: true, changeOrigin: false },
+			'/agent': { target: WS_ENGINE, ws: true, changeOrigin: false, configure },
 		},
 	},
 	preview: { host: '127.0.0.1', port: 4173 },

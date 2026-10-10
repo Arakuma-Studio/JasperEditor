@@ -3,12 +3,14 @@
 // (S01:CMD-004…006, AGT-010, AGT-011; ARCHITECTURE §5.3).
 import { produce } from 'immer';
 import { z } from 'zod';
+import { normalizeCaptionData } from '../captions/model.ts';
 import { looksLikeId } from '../ids.ts';
-import { checkInvariants } from '../invariants.ts';
+import { checkTransactionInvariants } from '../invariants-incremental.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
 import { HandlerContext, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
+import { markNormalized } from './draft-read.ts';
 import { collectOrphans } from './handlers/project.ts';
 import { compressionWarnings } from './handlers/text-animation.ts';
 import type { Command } from './schemas/index.ts';
@@ -168,6 +170,8 @@ export function applyTransaction(
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);
 			});
+			// wp captions: a caption transcript belongs to one clip (splits, duplicates and pastes get copies).
+			normalizeCaptionData(draft, () => ctx.ids.next('trs'));
 			// Sources whose last reference disappeared (e.g. a solid's color matte) are collected (INV-014).
 			collectOrphans(draft);
 		});
@@ -193,8 +197,10 @@ export function applyTransaction(
 		};
 	}
 
+	// perf-core: the normalizers ran on `next`; the next transaction's only need to look at what it changes.
+	markNormalized(next);
 	if (next !== doc && ctx.checkInvariants !== false) {
-		const issues = checkInvariants(next, { effects: ctx.registries.effects });
+		const issues = checkTransactionInvariants(doc, next, { effects: ctx.registries.effects }, ctx.invariants);
 		if (issues.length > 0) return { document: doc, result: fail(ctx.revision, issues) };
 	}
 	const diff = diffDocuments(doc, next);

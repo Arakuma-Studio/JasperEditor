@@ -488,6 +488,9 @@ export class MgBundleService {
 		else {
 			await rm(finalDir, { recursive: true, force: true });
 			await rename(built, finalDir);
+			// A new bundle directory belongs to this import until it is registered: a cancelled or failed
+			// import removes it (a directory that already existed is shared and kept).
+			ctx.addPartial(finalDir);
 		}
 		ctx.progress(0.68, { stage: 'Reading compositions' });
 		const raw = await this.readCompositions(finalDir, ctx.signal);
@@ -501,7 +504,8 @@ export class MgBundleService {
 		if (o.schemaModule) {
 			ctx.progress(0.9, { stage: 'Reading props schemas' });
 			const res = await loadSchemaModule(o.schemaModule.projectDir, o.schemaModule.entry, {
-				scratchDir: join(this.core.config.paths.tmpDir, `mg-schemas-${ctx.job.id}`),
+				// The job's scratch directory: removed when the job ends, whatever the outcome.
+				scratchDir: join(await ctx.scratchDir(), 'schemas'),
 				signal: ctx.signal,
 			});
 			moduleSchemas = res.schemas;
@@ -769,6 +773,8 @@ export class MgBundleService {
 	}
 
 	private async markUsed(renderKey: string): Promise<void> {
+		// Synchronously, before the metadata write: a cleaning pass working from an older scan sees the use too.
+		this.core.cache.touch(this.renderDirOf(renderKey));
 		const file = join(this.renderDirOf(renderKey), 'meta.json');
 		const meta = await readJsonOrNull<RenderMeta>(file);
 		if (!meta) return;
@@ -1005,6 +1011,8 @@ export class MgBundleService {
 	/** VP9 + alpha (`yuva420p`) at half size, CRF 32, row-mt (MGC-030). */
 	private async encodePreview(ff: Ffmpeg, master: string, out: string, ctx: JobContext): Promise<void> {
 		const tmp = `${out}.part.webm`;
+		// Next to the cache entry (same disk for the rename); deleted if the job is cancelled or fails.
+		ctx.addPartial(tmp);
 		await ff.run(
 			[
 				'-i',
@@ -1050,6 +1058,9 @@ export class MgBundleService {
 	): Promise<void> {
 		const mid = Math.floor(req.durationFrames / 2);
 		const fps = req.fps.num / req.fps.den;
+		// Written beside the entry and renamed into place: a cancel never leaves a truncated poster in the cache.
+		const tmp = `${out}.part.png`;
+		ctx.addPartial(tmp);
 		await ff
 			.run(
 				[
@@ -1064,11 +1075,16 @@ export class MgBundleService {
 					'1',
 					'-f',
 					'image2',
-					out,
+					tmp,
 				],
 				{ signal: ctx.signal, onSpawn: ctx.trackChild },
 			)
-			.catch((e) => ctx.log(`poster failed: ${(e as Error).message} (${fps} fps)`));
+			.then(() => rename(tmp, out))
+			.catch((e) => {
+				// A cancelled job stops here (the poster is optional, a failed one is only logged).
+				if (ctx.signal.aborted) throw e;
+				ctx.log(`poster failed: ${(e as Error).message} (${fps} fps)`);
+			});
 	}
 
 	/**

@@ -16,10 +16,28 @@ export class ToolError extends Error {
 	}
 }
 
+/**
+ * The MCP request was cancelled (`notifications/cancelled`): the tool stopped, cancelled its engine job
+ * and the engine deleted the job's partial outputs. The SDK sends no response for a cancelled request.
+ */
+export class RequestCancelled extends Error {
+	constructor(readonly jobId?: string) {
+		super(
+			jobId ? `Cancelled; engine job ${jobId} was cancelled and its partial output deleted` : 'Cancelled',
+		);
+		this.name = 'RequestCancelled';
+	}
+}
+
+/** The result of a cancelled request (never sent by the SDK; kept well-formed for direct callers). */
+export function cancelledResult(): CallToolResult {
+	return errorResult('CANCELLED', 'The request was cancelled');
+}
+
 /** What to do about a transaction/query error code (S01 E_* codes, ARCHITECTURE §2.3). */
 export const TX_ERROR_HINTS: Record<string, string> = {
 	E_APPROVAL_DENIED:
-		'The user denied this change, or no editor had the project open (destructive commands such as track.remove, item.delete or force: true need the user to approve them in an open editor). Do not retry the same change without asking the user.',
+		'The user denied this, or no editor window was open to ask in. Destructive commands (track.remove, item.delete, force: true…) and destructive operations (deleting presets, models, all render files or referenced cache, restoring a version over a project, changing settings) need the user to approve them in an open JasperEditor window. Do not retry without asking the user.',
 	E_APPROVAL_TIMEOUT:
 		'Nobody answered the approval prompt in the editor within 60 s. Ask the user to look at the JasperEditor window, then retry.',
 	E_NO_SESSION:
@@ -58,10 +76,14 @@ const ENGINE_ERROR_HINTS: Record<string, string> = {
 	NETWORK:
 		'The JasperEditor engine is not reachable. Start the desktop app or `pnpm dev`, or restart jasper-mcp with --start-engine.',
 	UNAUTHORIZED:
-		'The engine rejected the token. The desktop app issues a new token on every launch: restart jasper-mcp (it re-reads <appdir>/engine/runtime.json) or pass JASPER_ENGINE_TOKEN.',
+		'The engine rejected the token. Every engine start issues a new token (desktop app, `pnpm dev`, headless): jasper-mcp re-reads <appdir>/engine/runtime.json by itself; if this persists, give it the engine with --appdir <dir> (or JASPER_APPDIR) or pass JASPER_ENGINE_TOKEN.',
 	PROJECT_NOT_FOUND: 'Unknown projectId. Call list_projects.',
 	NOT_FOUND: 'Not found. Check the id (list_projects, list_media, get_job).',
 	NO_SESSION: 'This needs an editor window with the project open. Call open_project_in_editor first.',
+	APPROVAL_DENIED:
+		'This needs the user to approve it in an open JasperEditor window, and they denied it or no window was open. Do not retry without asking the user.',
+	APPROVAL_TIMEOUT:
+		'Nobody answered the approval prompt in the editor within 60 s. Ask the user to look at the JasperEditor window, then retry.',
 	VALIDATION_FAILED: 'The request was invalid; check the tool arguments.',
 	LOCAL_MODE_ONLY: 'Path import only works with a local engine.',
 	ENGINE_NOT_FOUND: 'Start JasperEditor (desktop app or `pnpm dev`) or run jasper-mcp with --start-engine.',
@@ -81,6 +103,7 @@ function errorResult(code: string, message: string, hint?: string, details?: unk
 /** Converts anything thrown by a tool into an MCP tool error result. */
 export function toErrorResult(e: unknown): CallToolResult {
 	if (e instanceof ToolError) return errorResult(e.code, e.message, e.hint, e.details);
+	if (e instanceof RequestCancelled) return errorResult('CANCELLED', e.message);
 	if (e instanceof EngineError) {
 		const inner = (e.detail as { code?: unknown } | undefined)?.code;
 		const txHint = typeof inner === 'string' ? TX_ERROR_HINTS[inner] : undefined;

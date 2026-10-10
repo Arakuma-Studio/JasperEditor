@@ -6,13 +6,16 @@ import {
 	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
+	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
 	mcpLaunchInfo,
 	parseClipboardFileList,
+	sessionCookies,
 } from '../src/security.ts';
 
 describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
@@ -118,6 +121,37 @@ describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
 		// Not built: the dialog falls back to the engine's answer or a placeholder.
 		expect(mcpLaunchInfo({ packaged: false, entry: '/x', exists: false, execPath: '/e' }).entry).toBeNull();
 	});
+
+	// Security review RUN-1: a packaged build that ships a Node runtime never runs its own binary as Node.
+	it('a packaged app with a bundled Node runtime launches jasper-mcp with it, without ELECTRON_RUN_AS_NODE', () => {
+		expect(
+			mcpLaunchInfo({
+				packaged: true,
+				entry: '/opt/JasperEditor/resources/mcp/jasper-mcp.mjs',
+				exists: true,
+				execPath: '/opt/JasperEditor/jasper-editor',
+				bundledNode: '/opt/JasperEditor/resources/node/node',
+			}),
+		).toEqual({
+			entry: '/opt/JasperEditor/resources/mcp/jasper-mcp.mjs',
+			command: '/opt/JasperEditor/resources/node/node',
+			env: {},
+		});
+		// A checkout never uses it.
+		expect(
+			mcpLaunchInfo({ packaged: false, entry: '/x', exists: true, execPath: '/e', bundledNode: '/n' })
+				.command,
+		).toBe('node');
+	});
+
+	// Security review AGT-2: the window's cookies for the engine it started, under per-port names.
+	it('names the session and editor cookies by the engine port and keeps the two secrets apart', () => {
+		expect(sessionCookies(48123, 'tok', 'key')).toEqual({
+			jasper_session_48123: 'tok',
+			jasper_editor_48123: 'key',
+		});
+		expect(sessionCookies('48123', 'tok', 'key')).toEqual(sessionCookies(48123, 'tok', 'key'));
+	});
 });
 
 describe('desktop package config (R-OMS §8.5)', () => {
@@ -138,5 +172,96 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.files).toContain('!**/node_modules/@remotion/compositor-*/**');
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
+	});
+
+	// Security review ELE-1: packaged builds ignore NODE_OPTIONS and --inspect (which would let any process run code
+	// as the signed app, with its microphone permission), verify the asar, load only from it and encrypt cookies.
+	// Run-as-node stays on (security review RUN-1): the engine's worker programs (speech, roto, camera tracking,
+	// jasper-proc, the bundle schema runner) and the bundled jasper-mcp are Node programs, and a packaged build has no
+	// Node but its own binary. It can be switched off when the package ships a Node runtime in `resources/node`
+	// (apps/engine/src/tools/node-runtime.ts and mcpLaunchInfo use it when it is there).
+	it('flips the Electron fuses', () => {
+		expect(pkg.build.asar).toBe(true);
+		expect(pkg.build.electronFuses).toEqual({
+			runAsNode: true,
+			enableCookieEncryption: true,
+			enableNodeOptionsEnvironmentVariable: false,
+			enableNodeCliInspectArguments: false,
+			enableEmbeddedAsarIntegrityValidation: true,
+			onlyLoadAppFromAsar: true,
+			grantFileProtocolExtraPrivileges: false,
+		});
+	});
+});
+
+describe('capture-page rect (mcp-cli ui_screenshot)', () => {
+	it('accepts a finite, positive CSS-pixel rectangle only', () => {
+		expect(isCaptureRect({ x: 0, y: 0, width: 800, height: 600 })).toBe(true);
+		expect(isCaptureRect({ x: 10.5, y: 4, width: 1, height: 1 })).toBe(true);
+		for (const bad of [
+			null,
+			'rect',
+			{ x: 0, y: 0, width: 0, height: 10 },
+			{ x: -1, y: 0, width: 10, height: 10 },
+			{ x: 0, y: 0, width: Number.NaN, height: 10 },
+			{ x: 0, y: 0, width: 99999, height: 10 },
+			{ x: 0, y: 0, width: 10 },
+		])
+			expect(isCaptureRect(bad)).toBe(false);
+	});
+});
+
+describe('isPermissionAllowed (audio-mix: voice-over microphone)', () => {
+	const app = 'http://127.0.0.1:47900';
+	it('grants audio-only media requests from the app origin', () => {
+		expect(isPermissionAllowed('media', `${app}/project/x`, app, ['audio'])).toBe(true);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['audio', 'video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, [])).toBe(false);
+	});
+	it('denies other origins and other permissions', () => {
+		expect(isPermissionAllowed('media', 'https://evil.example/', app, ['audio'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, '', ['audio'])).toBe(false);
+		expect(isPermissionAllowed('geolocation', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('notifications', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('fullscreen', `${app}/`, app)).toBe(true);
+	});
+});
+
+describe('Edit Original (gaps, UI-5)', () => {
+	it('opens media paths but never programs or launchers', async () => {
+		const { isOpenablePath } = await import('../src/security.ts');
+		expect(isOpenablePath('/media/clip.mov')).toBe(true);
+		expect(isOpenablePath('C:\\media\\clip.MP4')).toBe(true);
+		// Security review ELE-2: a file without an extension is not opened (macOS runs an extensionless Unix
+		// executable in Terminal); the allowlist replaced the list of known program types.
+		expect(isOpenablePath('/media/noext')).toBe(false);
+		for (const bad of [
+			'/media/photo.hta',
+			'C:\\media\\photo.pif',
+			'/media/photo.scpt',
+			'/media/run.py',
+			'/media/link.inetloc',
+			'/media/x.workflow',
+			'C:\\x\\tweak.reg',
+			'/tmp/x.sh',
+			'C:\\x\\setup.EXE',
+			'/a/b.desktop',
+			'/a/b.AppImage',
+			'relative.mov',
+			'',
+			7,
+			null,
+		])
+			expect(isOpenablePath(bad)).toBe(false);
+	});
+
+	it('uses the same allowlist as the engine (@jasper/config)', async () => {
+		const { OPENABLE_EXTENSIONS } = await import('../src/security.ts');
+		const config = await import('../../../packages/config/src/index.ts');
+		expect([...OPENABLE_EXTENSIONS]).toEqual([...config.OPENABLE_EXTENSIONS]);
+		expect(config.isOpenableFile('/m/a.MOV')).toBe(true);
+		expect(config.isOpenableFile('/m/a')).toBe(false);
+		expect(config.isOpenableFile('/m/a.hta')).toBe(false);
 	});
 });

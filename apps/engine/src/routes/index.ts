@@ -2,22 +2,37 @@
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
+import audioRoutes from './audio.ts';
+import audioFxRoutes from './audio-fx.ts';
+import browseRoutes from './browse.ts';
 import cacheRoutes from './cache.ts';
+import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
+import captionRoutes from './captions.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
+import gapsRoutes from './gaps.ts';
+import gradingRoutes from './grading.ts';
+import importsRoutes from './imports.ts';
+import interchangeRoutes from './interchange.ts';
 import jobsRoutes from './jobs.ts';
 import layerBakeRoutes from './layer-bake.ts';
+import maskRoutes from './masks.ts';
 import mcpRoutes from './mcp.ts';
 import mediaRoutes from './media.ts';
 import mgRoutes from './mg.ts';
 import mgBundleRoutes from './mg-bundles.ts';
+import previewsRoutes from './previews.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
+import rotoRoutes from './roto.ts';
+import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
+import syncRoutes from './sync.ts';
+import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
 
@@ -42,10 +57,41 @@ const ROUTE_PLUGINS = [
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,
+	// imports workstream: Lottie / vector / PSD probers, interpreted pictures, image sequences, layers, Lottie export;
+	// its extension prepares the pictures browser-drawn layers need (before the layer bake's prepare reads them).
+	importsRoutes,
+	// Workstream `time`: the retime extension's `layer` overrides are the sources of the warp / layer-bake stages.
+	timeRoutes,
 	// M2 animation (ARCHITECTURE §20.5): layer-bake's extension sits between mg-bundles and tracking (warp).
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
+	// wp-multicam: audio sync for Synchronize / Merge Clips / multi-camera.
+	syncRoutes,
+	// wp masks: auto-trace (mask tracking runs as `track` jobs of kind `mask`).
+	maskRoutes,
+	// audio-mix: audio analysis (loudness, peaks, ducking activity) and loudness-normalised media versions.
+	audioRoutes,
+	// audio-fx: music remix planning.
+	audioFxRoutes,
+	// wp captions: caption / transcript files by path.
+	captionRoutes,
+	// wp speech: Whisper transcription (after processing: the model catalogue and its installer).
+	speechRoutes,
+	// parity roto: Roto Brush / face tracking (after processing: the model catalogue and its installer).
+	rotoRoutes,
+	// three-d: the 3D Camera Tracker (`camtrack` jobs).
+	camtrackRoutes,
+	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
+	interchangeRoutes,
+	// color-grade: scopes as numbers, Colour Match, Auto tone (after roto: Face Detection uses its face model).
+	gradingRoutes,
+	// previews: render previews (segments rendered through the export service) and perf stats.
+	previewsRoutes,
+	// gaps: Edit Original, scratch disks, proxies, Project Manager, Export Frame, Warp Stabilizer / Auto Reframe analysis.
+	gapsRoutes,
+	// polish: Media Browser (folder listing, info, thumbnails and preview bytes of files on this host).
+	browseRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

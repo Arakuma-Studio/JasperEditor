@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.9">
+    <resources>
+        <format id="r0" width="1920" frameDuration="1/25s" height="1080" name="FFVideoFormat1080p25"/>
+        <asset id="r1" format="r0" hasVideo="1" duration="20/1s" start="0/1s" name="A001.mov" audioChannels="2" hasAudio="1" audioSources="1">
+            <media-rep src="file:///Users/editor/Media/A001.mov" kind="original-media"/>
+        </asset>
+        <asset id="r2" format="r0" hasVideo="1" duration="12/1s" start="0/1s" name="A002.mov">
+            <media-rep src="file:///Users/editor/Media/A002.mov" kind="original-media"/>
+        </asset>
+    </resources>
+    <library>
+        <event name="Timeline 1 (Resolve)">
+            <project name="Timeline 1 (Resolve)">
+                <sequence format="r0" duration="10/1s" tcStart="3600/1s" tcFormat="NDF">
+                    <spine>
+                        <asset-clip format="r0" offset="3600/1s" ref="r1" start="1/1s" enabled="1" tcFormat="NDF" duration="5/1s" name="A001.mov">
+                            <adjust-transform scale="1.1 1.1" anchor="0 0" position="0 0"/>
+                            <asset-clip format="r0" offset="2/1s" ref="r2" start="0/1s" enabled="1" lane="1" tcFormat="NDF" duration="2/1s" name="A002.mov">
+                                <adjust-blend amount="0.5" mode="10 (Screen)"/>
+                            </asset-clip>
+                        </asset-clip>
+                        <gap offset="3605/1s" start="3600/1s" duration="5/1s" name="Gap"/>
+                    </spine>
+                </sequence>
+            </project>
+        </event>
+    </library>
+</fcpxml>

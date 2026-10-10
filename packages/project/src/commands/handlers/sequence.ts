@@ -1,10 +1,15 @@
 // sequence.*, marker.*, track.* (S01 §7, §8, SEQ-006/007/008).
+
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
+import { displayWidthOf, isSquarePar, sequenceFormatOf, validPar } from '../../gaps/sequence-format.ts';
+import { mediaDurationFlicks, mediaFieldOrder, mediaPixelAspect } from '../../interpret/model.ts';
+import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
+import type { ProjectDocument } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
-import type { ClipMarker, Marker, SequenceSettings, Track } from '../../schema/sequence.ts';
+import type { ClipMarker, Marker, Sequence, SequenceSettings, Track } from '../../schema/sequence.ts';
 import {
 	isAllowedSequenceRate,
 	mapFrameBetweenRates,
@@ -23,9 +28,44 @@ import {
 	tracksOfKind,
 } from '../placement.ts';
 import { placeSource } from './clip-core.ts';
+import { applyColorSettings, hdrWorkingSpaceOf } from './color-mgmt.ts';
 import { assertBin, insertItem } from './project.ts';
 import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
+
+/**
+ * gaps: with a non-square pixel aspect ratio the working `width` is the display width of `storageWidth`; square or
+ * null clears both fields (width = the storage width when it was anamorphic and no width was given).
+ */
+function normalizeFormat(
+	next: SequenceSettings,
+	prev: SequenceSettings,
+	patch: { width?: number; pixelAspectRatio?: Rational | null; storageWidth?: number },
+	h: HandlerContext,
+): void {
+	const n = next as SequenceSettings & Record<string, unknown>;
+	const prevFmt = sequenceFormatOf(prev);
+	const touched = patch.pixelAspectRatio !== undefined || patch.storageWidth !== undefined;
+	if (!touched) return;
+	const par = n.pixelAspectRatio as Rational | null | undefined;
+	if (!par || isSquarePar(par)) {
+		delete n.pixelAspectRatio;
+		delete n.storageWidth;
+		if (patch.width === undefined && !isSquarePar(prevFmt.par)) next.width = prevFmt.storageWidth;
+		return;
+	}
+	if (!validPar(par)) h.fail('E_INVALID_PARAM', 'pixel aspect ratio must be between 0.1 and 10');
+	const sw =
+		patch.storageWidth ?? (isSquarePar(prevFmt.par) ? (patch.width ?? prev.width) : prevFmt.storageWidth);
+	n.storageWidth = sw;
+	const display = displayWidthOf(sw, par);
+	if (patch.width !== undefined && patch.width !== display)
+		h.fail(
+			'E_INVALID_PARAM',
+			`width ${patch.width} is not the display width ${display} of ${sw} at ${par.num}:${par.den}`,
+		);
+	next.width = display;
+}
 
 function validateSettings(s: SequenceSettings, h: HandlerContext): void {
 	if (!isAllowedSequenceRate(s.frameRate))
@@ -38,6 +78,17 @@ function validateSettings(s: SequenceSettings, h: HandlerContext): void {
 			h.fail('E_INVALID_PARAM', `${k} must be an even integer 16..8192`);
 	}
 	if (s.dropFrame && !supportsDropFrame(s.frameRate)) s.dropFrame = false;
+}
+
+/** gaps (New Sequence From Clip): the media's non-square pixel aspect ratio and interlaced field order. */
+function mediaFormat(asset: MediaAsset): { par: Rational | null; fieldOrder: 'upper' | 'lower' | null } {
+	if (asset.kind !== 'video') return { par: null, fieldOrder: null };
+	const par = mediaPixelAspect(asset);
+	const fo = mediaFieldOrder(asset);
+	return {
+		par: !isSquarePar(par) && validPar(par) && asset.probe.rotationDegrees === 0 ? par : null,
+		fieldOrder: fo === 'upper' || fo === 'lower' ? fo : null,
+	};
 }
 
 function videoInfo(asset: MediaAsset) {
@@ -140,6 +191,17 @@ function findMarker(doc: DDoc, markerId: string, h: HandlerContext) {
 	return h.fail('E_NOT_FOUND', `Marker not found: ${markerId}`);
 }
 
+/** wp-multicam: a source clip marker of a media item. */
+function findItemMarker(doc: DDoc, markerId: string) {
+	for (const it of Object.values(doc.items)) {
+		if (it.kind !== 'media') continue;
+		const list = (it as { markers?: Draft<ClipMarker>[] }).markers;
+		const marker = list?.find((m) => m.id === markerId);
+		if (list && marker) return { item: it, list, marker };
+	}
+	return null;
+}
+
 export const sequenceHandlers: HandlerMap = {
 	'sequence.create': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);
@@ -161,15 +223,40 @@ export const sequenceHandlers: HandlerMap = {
 				settings.dropFrame = supportsDropFrame(info.rate);
 			}
 		}
-		Object.assign(settings, cmd.settings ?? {});
+		const { workingColorSpace: _w, color: _c, ...plain } = cmd.settings ?? {};
+		// gaps (New Sequence From Clip): non-square pixels and fields of the media.
+		if (asset && !cmd.settings?.pixelAspectRatio) {
+			const f = mediaFormat(asset);
+			if (f.par) {
+				settings.pixelAspectRatio = f.par;
+				settings.storageWidth = settings.width;
+				settings.width = displayWidthOf(settings.width, f.par);
+			}
+			if (f.fieldOrder) settings.fieldOrder = f.fieldOrder;
+		}
+		const before = JSON.parse(JSON.stringify(settings)) as SequenceSettings;
+		Object.assign(settings, plain);
+		normalizeFormat(settings, before, cmd.settings ?? {}, h);
 		if (cmd.settings?.frameRate && cmd.settings.dropFrame === undefined)
 			settings.dropFrame = supportsDropFrame(settings.frameRate);
+		// color-mgmt: a sequence made from HDR media works in its HDR space (Premiere: New Sequence From Clip).
+		if (asset && !cmd.settings?.workingColorSpace) {
+			const hdr = hdrWorkingSpaceOf(asset);
+			if (hdr) settings.workingColorSpace = hdr;
+		}
 		validateSettings(settings, h);
 		const id = h.newId(doc, 'seq', cmd.id);
 		const seq = createSequence(h.ids, settings, cmd.tracks ?? base.tracks, id);
+		if (cmd.settings) applyColorSettings(seq as DSeq, cmd.settings, h);
 		doc.sequences[id] = seq;
 		const itemId = h.ids.next('itm');
-		doc.items[itemId] = { id: itemId, kind: 'sequence', name: cmd.name, sequenceId: id, label: 'forest' };
+		doc.items[itemId] = {
+			id: itemId,
+			kind: 'sequence',
+			name: cmd.name,
+			sequenceId: id,
+			label: cmd.label ?? 'forest',
+		};
 		insertItem(doc, itemId, cmd.binId);
 		h.defineRef(cmd.ref, id);
 		let clipIds: string[] = [];
@@ -186,11 +273,14 @@ export const sequenceHandlers: HandlerMap = {
 	},
 	'sequence.updateSettings': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
+		const { workingColorSpace: _w, color: _c, ...p0 } = cmd.settings;
 		const p = cmd.settings;
 		const next: SequenceSettings = {
 			...(JSON.parse(JSON.stringify(seq.settings)) as SequenceSettings),
-			...p,
+			...p0,
 		};
+		// gaps: pixel aspect ratio / storage width give the display width.
+		normalizeFormat(next, seq.settings as SequenceSettings, p, h);
 		validateSettings(next, h);
 		if (
 			p.frameRate &&
@@ -198,17 +288,23 @@ export const sequenceHandlers: HandlerMap = {
 		) {
 			changeFrameRate(seq, next.frameRate, h);
 		}
-		if (
-			(p.width !== undefined && p.width !== seq.settings.width) ||
-			(p.height !== undefined && p.height !== seq.settings.height)
-		) {
+		if (next.width !== seq.settings.width || next.height !== seq.settings.height) {
 			changeFrameSize(seq, next.width, next.height, cmd.reposition ?? 'keep-offset-from-center');
+		}
+		// gaps: delivery format (pixel aspect, storage width, fields).
+		for (const k of ['pixelAspectRatio', 'storageWidth', 'fieldOrder'] as const) {
+			const v = (next as Record<string, unknown>)[k];
+			if (v === undefined || v === null) delete (seq.settings as Record<string, unknown>)[k];
+			else (seq.settings as Record<string, unknown>)[k] = JSON.parse(JSON.stringify(v));
 		}
 		if (p.dropFrame !== undefined)
 			seq.settings.dropFrame = p.dropFrame && supportsDropFrame(seq.settings.frameRate as Rational);
 		else if (p.frameRate) seq.settings.dropFrame = next.dropFrame;
 		if (p.startTimecodeFrames !== undefined) seq.settings.startTimecodeFrames = p.startTimecodeFrames;
 		if (p.backgroundColor) seq.settings.backgroundColor = [...p.backgroundColor];
+		if (p.audioSampleRate !== undefined) seq.settings.audioSampleRate = p.audioSampleRate;
+		if (p.masterLayout !== undefined) seq.settings.masterLayout = p.masterLayout;
+		applyColorSettings(seq, p, h);
 	},
 	'sequence.setInOut': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
@@ -242,7 +338,22 @@ export const sequenceHandlers: HandlerMap = {
 			...(cmd.url !== undefined ? { url: cmd.url } : {}),
 			author: h.agentAuthor(),
 		} as const;
-		if (cmd.clipId) {
+		if (cmd.itemId) {
+			// wp-multicam: source clip markers live on the media item (media time).
+			const it = doc.items[cmd.itemId];
+			if (!it) h.fail('E_NOT_FOUND', `Project item not found: ${cmd.itemId}`);
+			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', 'Source clip markers go on media items');
+			const asset = doc.media[it.mediaId] as MediaAsset | undefined;
+			const fallback = { num: 30, den: 1 };
+			const flicks = cmd.flicks ? h.flicks(cmd.flicks, asset, fallback) : (it.marks.in?.flicks ?? 0);
+			if (flicks < 0) h.fail('E_INVALID_PARAM', 'Marker time must be >= 0');
+			const dur = asset ? mediaDurationFlicks(asset) : undefined;
+			if (dur !== null && dur !== undefined && flicks > dur)
+				h.fail('E_OUT_OF_MEDIA', 'Marker is after the end of the media');
+			const list = ((it as { markers?: ClipMarker[] }).markers ??= []) as Draft<ClipMarker>[];
+			list.push({ ...base, flicks, duration: 0 });
+			list.sort((a, b) => a.flicks - b.flicks);
+		} else if (cmd.clipId) {
 			const { seq, clip } = h.clip(doc, cmd.clipId);
 			assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 			let flicks: number;
@@ -272,6 +383,21 @@ export const sequenceHandlers: HandlerMap = {
 		return { markerId: id };
 	},
 	'marker.update': (doc, cmd, h: HandlerContext) => {
+		const im = findItemMarker(doc, cmd.markerId);
+		if (im) {
+			const m = im.marker;
+			if (cmd.name !== undefined) m.name = cmd.name;
+			if (cmd.comment !== undefined) m.comment = cmd.comment;
+			if (cmd.color !== undefined) m.color = cmd.color;
+			if (cmd.markerType !== undefined) m.type = cmd.markerType;
+			if (cmd.url !== undefined) m.url = cmd.url;
+			if (cmd.flicks) {
+				const asset = doc.media[im.item.mediaId] as MediaAsset | undefined;
+				m.flicks = h.flicks(cmd.flicks, asset, { num: 30, den: 1 });
+			}
+			im.list.sort((a, b) => a.flicks - b.flicks);
+			return;
+		}
 		const found = findMarker(doc, cmd.markerId, h);
 		const m = found.marker as Draft<Marker & ClipMarker>;
 		if (found.clip) assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
@@ -292,6 +418,11 @@ export const sequenceHandlers: HandlerMap = {
 	},
 	'marker.remove': (doc, cmd, h: HandlerContext) => {
 		for (const id of cmd.markerIds) {
+			const im = findItemMarker(doc, id);
+			if (im) {
+				im.list.splice(im.list.indexOf(im.marker), 1);
+				continue;
+			}
 			const found = findMarker(doc, id, h);
 			if (found.clip) {
 				assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
@@ -304,7 +435,19 @@ export const sequenceHandlers: HandlerMap = {
 		const list = tracksOfKind(seq, cmd.kind);
 		const index = Math.min(cmd.index ?? list.length, list.length);
 		const created: Track[] = [];
-		for (let i = 0; i < (cmd.count ?? 1); i++) created.push(createTrack(h.ids, cmd.kind, cmd.name ?? null));
+		if ((cmd.language !== undefined || cmd.captionStandard !== undefined) && cmd.kind !== 'caption')
+			h.fail('E_INVALID_PARAM', 'language and captionStandard apply to caption tracks only');
+		if (cmd.channelFormat !== undefined && cmd.kind !== 'audio')
+			h.fail('E_INVALID_PARAM', 'channelFormat applies to audio tracks only');
+		for (let i = 0; i < (cmd.count ?? 1); i++) {
+			const t = createTrack(h.ids, cmd.kind, cmd.name ?? null);
+			// wp captions
+			if (cmd.language !== undefined) t.language = cmd.language;
+			if (cmd.captionStandard !== undefined) t.captionStandard = cmd.captionStandard;
+			// gaps: Add Tracks… ▸ Track Type
+			if (cmd.channelFormat !== undefined) t.channelFormat = cmd.channelFormat;
+			created.push(t);
+		}
 		list.splice(index, 0, ...(created as Draft<Track>[]));
 		h.defineRef(cmd.ref, created[0]!.id);
 		return { trackIds: created.map((t) => t.id) };
@@ -332,6 +475,11 @@ export const sequenceHandlers: HandlerMap = {
 		seq.captionTracks = seq.captionTracks.filter((t) => !ids.includes(t.id));
 		if (seq.videoTracks.length === 0 || seq.audioTracks.length === 0) {
 			h.fail('E_INVALID_PARAM', 'A sequence needs at least one video and one audio track');
+		}
+		// wp-multicam: angles of a multi-camera source lose the removed tracks; clips of a removed angle fall back.
+		if ((seq as Sequence).multicam) {
+			pruneMulticamAngles(seq as Sequence);
+			fixMulticamSelections(doc as ProjectDocument);
 		}
 		cleanupSequence(seq, h);
 	},
@@ -379,7 +527,18 @@ export const sequenceHandlers: HandlerMap = {
 		}
 		if (p.styleDefaults !== undefined) {
 			only('caption', 'styleDefaults');
+			if (!doc.fonts[p.styleDefaults.fontId])
+				h.fail('E_NOT_FOUND', `Font not found: ${p.styleDefaults.fontId}`);
 			track.styleDefaults = p.styleDefaults;
+		}
+		// wp captions
+		if (p.language !== undefined) {
+			only('caption', 'language');
+			track.language = p.language;
+		}
+		if (p.captionStandard !== undefined) {
+			only('caption', 'captionStandard');
+			track.captionStandard = p.captionStandard;
 		}
 	},
 };

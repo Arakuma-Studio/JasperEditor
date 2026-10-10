@@ -1,6 +1,13 @@
 import { CACHE_KINDS, type CacheGcReport, type CacheUsage } from '@jasper/api';
 import { z } from 'zod';
-import { DESTRUCTIVE, defineTool, jobBody, READ_ONLY, type ToolContext, waitJob } from '../context.ts';
+import {
+	DESTRUCTIVE_IDEMPOTENT,
+	defineTool,
+	jobBody,
+	READ_ONLY,
+	type ToolContext,
+	waitJob,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
@@ -48,14 +55,14 @@ export function registerCacheTools(ctx: ToolContext): void {
 		{
 			title: 'Set media cache location',
 			description:
-				'Moves the media cache to a folder (a "JasperEditor Media Cache" folder is made inside it) or back to the default (path null). mode "move" brings the current cache (instant on the same disk, copied otherwise); "fresh" starts empty there (keepOld keeps the old files). The folder is checked first (writable, free space). The move waits for running jobs and runs alone. Local engines only.',
+				'Moves the media cache to a folder (a "JasperEditor Media Cache" folder is made inside it) or back to the default (path null). mode "move" brings the current cache (instant on the same disk, copied otherwise); "fresh" starts empty there (keepOld keeps the old files). The folder is checked first (writable, free space). The move waits for running jobs and runs alone. Local engines only. Needs the user\'s approval in an open JasperEditor window.',
 			input: {
 				path: z.string().min(1).nullable().describe('Absolute folder, or null for the default location'),
 				mode: z.enum(['move', 'fresh']).optional().describe('"move" (default) or "fresh"'),
 				keepOld: z.boolean().optional().describe('fresh only: keep the old files instead of deleting them'),
 				wait: z.boolean().optional().describe('Wait until the move is done (default true)'),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ path, mode, keepOld, wait }, extra) => {
 			const check = await ctx.engine((c) => c.call('cacheLocationCheck', { body: { path } }));
@@ -95,7 +102,7 @@ export function registerCacheTools(ctx: ToolContext): void {
 		{
 			title: 'Clean media cache',
 			description:
-				'Removes cache files and answers what was freed. mode "unused": files no saved or open project references (safe). mode "all": also files saved projects reference — never files in use (running exports, open projects); they are regenerated when needed. kinds limits the cleaning (default: every kind).',
+				'Removes cache files and answers what was freed. mode "unused": files no saved or open project references (safe). mode "all": also files saved projects reference — never files in use (running exports, open projects); they are regenerated when needed, which can take long, so "all" needs the user\'s approval in an open JasperEditor window. kinds limits the cleaning (default: every kind).',
 			input: {
 				mode: z.enum(['unused', 'all']).describe('"unused" (default choice) or "all"'),
 				kinds: z
@@ -104,7 +111,7 @@ export function registerCacheTools(ctx: ToolContext): void {
 					.optional()
 					.describe(`Only these kinds: ${CACHE_KINDS.join(', ')}`),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ mode, kinds }) => {
 			const r: CacheGcReport = await ctx.engine((c) =>

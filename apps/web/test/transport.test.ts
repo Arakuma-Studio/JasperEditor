@@ -265,6 +265,72 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		}
 	});
 
+	it('does not kick a Player that renders slowly; a real stall after slow frames is still kicked', () => {
+		vi.useFakeTimers();
+		try {
+			const { transport, player } = setup();
+			transport.seek(10);
+			let plays = 0;
+			const orig = player.play.bind(player);
+			player.play = () => {
+				plays++;
+				orig();
+			};
+			transport.play(1);
+			// the first frame after 500 ms, then one every 700 ms (a heavy stack on a loaded machine): slower than
+			// the 600 ms window
+			vi.advanceTimersByTime(500);
+			player.advance(1);
+			for (let i = 0; i < 8; i++) {
+				vi.advanceTimersByTime(700);
+				player.advance(1);
+			}
+			expect(plays).toBe(1);
+			// then nothing: kicked within two windows (≤ 2 × 2.5 s)
+			vi.advanceTimersByTime(5000);
+			expect(plays).toBe(2);
+			transport.pause();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("a slow machine: the next play's slow first frame is not a stall; a real stall is still kicked", () => {
+		vi.useFakeTimers();
+		try {
+			const { transport, player } = setup();
+			let plays = 0;
+			const orig = player.play.bind(player);
+			player.play = () => {
+				plays++;
+				orig();
+			};
+			// a play rendering a frame every 400 ms
+			transport.seek(10);
+			transport.play(1);
+			for (let i = 0; i < 6; i++) {
+				vi.advanceTimersByTime(400);
+				player.advance(1);
+			}
+			transport.pause();
+			expect(plays).toBe(1);
+			// seek, play again: the first frame takes 900 ms (longer than the fixed 600 ms window)
+			transport.seek(40);
+			transport.play(1);
+			vi.advanceTimersByTime(900);
+			player.advance(1);
+			vi.advanceTimersByTime(400);
+			player.advance(1);
+			expect(plays).toBe(2);
+			// then nothing: still kicked, within two adaptive windows (≤ 2 × 2.5 s)
+			vi.advanceTimersByTime(5000);
+			expect(plays).toBe(3);
+			transport.pause();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('mutes audio below 1× (TL-874)', () => {
 		const { transport, player, rates } = setup();
 		transport.play(0.25);

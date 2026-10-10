@@ -14,12 +14,27 @@ const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () =>
 
 type DocumentTitle = { full: string; hint: string } | null;
 
+/**
+ * Sequence id → the name of its first sequence item, per `items` record (ui-perf: the title and tab selectors run on
+ * every store update; scanning every item there made opening a 2 000-item project quadratic).
+ */
+const sequenceNames = new WeakMap<object, Map<string, string>>();
+export function sequenceItemNames(items: SessionState['document']['items']): Map<string, string> {
+	let m = sequenceNames.get(items);
+	if (!m) {
+		m = new Map();
+		for (const it of Object.values(items)) {
+			const id = it.kind === 'sequence' ? (it as { sequenceId?: string }).sequenceId : undefined;
+			if (id !== undefined && !m.has(id)) m.set(id, it.name);
+		}
+		sequenceNames.set(items, m);
+	}
+	return m;
+}
+
 export function activeSequenceName(s: SessionState | null): string | null {
 	if (!s?.activeSequenceId) return null;
-	for (const it of Object.values(s.document.items))
-		if (it.kind === 'sequence' && (it as { sequenceId?: string }).sequenceId === s.activeSequenceId)
-			return it.name;
-	return null;
+	return sequenceItemNames(s.document.items).get(s.activeSequenceId) ?? null;
 }
 
 /** HD-002 title text. */

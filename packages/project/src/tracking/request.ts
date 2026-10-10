@@ -159,13 +159,15 @@ export function planTrack(
 
 /** A `track` job result (engine `TrackResult`, source frames) as document samples (content flicks). */
 export function samplesFromTrackResult(
-	result: { startFrame: number; stride: 2 | 8; data: readonly number[]; confidence: readonly number[] },
+	result: { startFrame: number; stride: 2 | 8 | 9; data: readonly number[]; confidence: readonly number[] },
 	step: number,
 ): TrackerSamples {
+	// wp masks: stride 9 (mask tracking homographies) never becomes tracker samples (see masks/tracking.ts).
+	if (result.stride === 9) throw new Error('A mask tracking result is not tracker samples');
 	return {
 		start: result.startFrame * step,
 		step,
-		stride: result.stride,
+		stride: result.stride as 2 | 8,
 		data: [...result.data],
 		confidence: result.confidence.map((c) => Math.min(1, Math.max(0, c))),
 	};

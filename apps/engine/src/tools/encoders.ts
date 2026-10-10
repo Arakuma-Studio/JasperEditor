@@ -43,6 +43,50 @@ const HW_H264: readonly HwEncoderSpec[] = [
 	{ encoder: 'h264_vaapi', label: 'VA-API', platforms: ['linux'], pixFmt: 'nv12', vaapi: true },
 ];
 
+/**
+ * gaps (EX-2): hardware HEVC encoders in preference order (Main and Main10; `pixFmt10` = their 10-bit input). The
+ * software HEVC encoder of the LGPL build is libkvazaar (BSD-3-Clause), 8-bit (Main) only.
+ */
+const HW_HEVC: readonly (HwEncoderSpec & { pixFmt10: string })[] = [
+	{
+		encoder: 'hevc_videotoolbox',
+		label: 'Apple VideoToolbox',
+		platforms: ['darwin'],
+		pixFmt: 'yuv420p',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_nvenc',
+		label: 'NVIDIA NVENC',
+		platforms: ['linux', 'win32'],
+		pixFmt: 'yuv420p',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_qsv',
+		label: 'Intel Quick Sync',
+		platforms: ['linux', 'win32'],
+		pixFmt: 'nv12',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_amf',
+		label: 'AMD AMF',
+		platforms: ['win32', 'linux'],
+		pixFmt: 'yuv420p',
+		pixFmt10: 'p010le',
+	},
+	{
+		encoder: 'hevc_vaapi',
+		label: 'VA-API',
+		platforms: ['linux'],
+		pixFmt: 'nv12',
+		pixFmt10: 'p010le',
+		vaapi: true,
+	},
+];
+const HW_ALL: readonly HwEncoderSpec[] = [...HW_H264, ...HW_HEVC];
+
 const VAAPI_DEVICE = '/dev/dri/renderD128';
 
 const SOFTWARE_LABELS: Record<string, string> = {
@@ -51,6 +95,7 @@ const SOFTWARE_LABELS: Record<string, string> = {
 	'libvpx-vp9': 'libvpx',
 	libsvtav1: 'SVT-AV1',
 	'libaom-av1': 'libaom',
+	libkvazaar: 'Kvazaar',
 };
 
 /** AV1/VP9 fallback order for exports (quality/speed) and for proxies (cheap browser decode). */
@@ -153,15 +198,27 @@ export function usableByCodec(inv: EncoderInventory): Record<VideoCodec, string[
 		vp9: ['libvpx-vp9'].filter((e) => have.has(e)),
 		av1: ['libsvtav1', 'libaom-av1'].filter((e) => have.has(e)),
 		prores: ['prores_ks'].filter((e) => have.has(e)),
+		hevc: [
+			...HW_HEVC.filter((h) => have.has(h.encoder) && hwOk.has(h.encoder)).map((h) => h.encoder),
+			...['libkvazaar'].filter((e) => have.has(e)),
+		],
 	};
 }
 
 function codecName(c: VideoCodec): string {
-	return c === 'h264' ? 'H.264' : c === 'vp9' ? 'VP9' : c === 'prores' ? 'ProRes' : 'AV1';
+	return c === 'h264'
+		? 'H.264'
+		: c === 'vp9'
+			? 'VP9'
+			: c === 'prores'
+				? 'ProRes'
+				: c === 'hevc'
+					? 'HEVC'
+					: 'AV1';
 }
 
 function encoderLabel(codec: VideoCodec, encoder: string): string {
-	const hw = HW_H264.find((h) => h.encoder === encoder);
+	const hw = HW_ALL.find((h) => h.encoder === encoder);
 	if (hw) return `${codecName(codec)} · ${hw.label} (hardware)`;
 	return `${codecName(codec)} · ${SOFTWARE_LABELS[encoder] ?? encoder} (software)`;
 }
@@ -175,9 +232,14 @@ function rateControlOf(encoder: string): EncoderChoice['rateControl'] {
 			return 'crf';
 		case 'h264_nvenc':
 		case 'h264_qsv':
+		case 'hevc_nvenc':
+		case 'hevc_qsv':
 			return 'cq';
 		case 'h264_amf':
 		case 'h264_vaapi':
+		case 'hevc_amf':
+		case 'hevc_vaapi':
+		case 'libkvazaar':
 			return 'qp';
 		case 'prores_ks':
 			return 'profile';
@@ -203,7 +265,7 @@ function makeChoice(
 		codec,
 		encoder,
 		label: encoderLabel(codec, encoder),
-		hardware: HW_H264.some((h) => h.encoder === encoder),
+		hardware: HW_ALL.some((h) => h.encoder === encoder),
 		container,
 		audioEncoder: container === 'webm' ? 'libopus' : container === 'mov' ? 'pcm_s16le' : 'aac',
 		rateControl: rateControlOf(encoder),
@@ -284,6 +346,8 @@ type EncodeParams = {
 	gop?: number;
 	/** Proxy/realtime tuning (fast presets, no B-frame lookahead). */
 	realtime?: boolean;
+	/** No B-frames (smart-rendering pieces: joined as one raw H.264 stream without timestamps). */
+	noBFrames?: boolean;
 	threads?: number;
 	/**
 	 * Average bitrate (kbit/s): the target of bitrate-driven encoders instead of the CRF mapping, and a VBV
@@ -292,6 +356,12 @@ type EncodeParams = {
 	bitrateKbps?: number;
 	/** ProRes profile (`prores_ks`): 422 HQ (default) or 4444. */
 	proresProfile?: 'hq' | '4444';
+	/** color-mgmt: bits per component (default 8; ProRes is always 10). */
+	bitDepth?: 8 | 10 | 12;
+	/** color-mgmt: H.273 code points of the output colour (default BT.709) for encoders that need them explicitly. */
+	colorCodes?: { primaries: number; trc: number; matrix: number };
+	/** color-mgmt: SVT-AV1 HDR metadata parameters (`mastering-display=…:content-light=…`). */
+	svtHdr?: string | null;
 };
 
 type EncodeArgs = {
@@ -311,14 +381,47 @@ function bitrateForCrf(crf: number, width: number, height: number, fps: number, 
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
+/** Kvazaar's intra period must be a multiple of its 8-frame B-GOP (1 = intra only). */
+export const kvazaarPeriod = (gop: number) => (gop <= 1 ? 1 : Math.ceil(gop / 8) * 8);
+/** H.273 code points → Kvazaar's VUI names (`--colorprim`, `--transfer`, `--colormatrix`). */
+const KVZ_PRIMARIES: Record<number, string> = {
+	1: 'bt709',
+	5: 'bt470bg',
+	6: 'smpte170m',
+	9: 'bt2020',
+	11: 'smpte431',
+	12: 'smpte432',
+};
+const KVZ_TRANSFER: Record<number, string> = {
+	1: 'bt709',
+	6: 'smpte170m',
+	8: 'linear',
+	13: 'srgb',
+	14: 'bt2020-10',
+	15: 'bt2020-12',
+	16: 'smpte2084',
+	18: 'arib-std-b67',
+};
+const KVZ_MATRIX: Record<number, string> = {
+	0: 'GBR',
+	1: 'bt709',
+	5: 'bt470bg',
+	6: 'smpte170m',
+	9: 'bt2020nc',
+	10: 'bt2020c',
+};
 /** x264 CRF → libvpx-vp9 CRF (0–63): 18 → 32, 23 → 38, 26 → 42. */
 export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 /** x264 CRF → AV1 CRF (SVT-AV1/libaom 0–63): 18 → 28, 23 → 35, 26 → 39. */
 const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
 
-/** Pixel format the encoder receives from the filter graph. */
-function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq'): string {
+/** Pixel format the encoder receives from the filter graph (color-mgmt: 10/12-bit 4:2:0 for AV1/VP9). */
+function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq', bitDepth: 8 | 10 | 12 = 8): string {
 	if (encoder === 'prores_ks') return proresProfile === '4444' ? 'yuv444p10le' : 'yuv422p10le';
+	if (bitDepth > 8 && (encoder === 'libsvtav1' || encoder === 'libaom-av1' || encoder === 'libvpx-vp9'))
+		return bitDepth === 12 && encoder !== 'libsvtav1' ? 'yuv420p12le' : 'yuv420p10le';
+	const hevc = HW_HEVC.find((h) => h.encoder === encoder);
+	if (hevc) return bitDepth > 8 ? hevc.pixFmt10 : hevc.pixFmt;
 	return HW_H264.find((h) => h.encoder === encoder)?.pixFmt ?? 'yuv420p';
 }
 
@@ -332,7 +435,7 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		return ['-b:v', `${b}k`, '-maxrate', `${Math.round(b * 1.5)}k`, '-bufsize', `${b * 2}k`];
 	};
 	const enc = choice.encoder;
-	const pix = pixFmtFor(enc, p.proresProfile);
+	const pix = pixFmtFor(enc, p.proresProfile, p.bitDepth);
 	const pre: string[] = [];
 	let filters = [`format=${pix}`];
 	const video: string[] = ['-c:v', enc];
@@ -362,11 +465,11 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		case 'libopenh264':
 			// No CRF: average bitrate with a VBV cap; frame skipping off so the frame count is exact.
 			video.push(...rate(1.3), '-rc_mode', 'bitrate', '-allow_skip_frames', '0', '-g', String(gop));
-			// FFmpeg 7.1's OpenH264 wrapper writes only the matrix into the VUI: set BT.709 primaries/transfer
-			// too (every Jasper export and proxy is BT.709 SDR), like x264 does from -color_primaries/-color_trc.
+			// FFmpeg 7.1's OpenH264 wrapper writes only the matrix into the VUI: set primaries/transfer too (BT.709
+			// unless the export's colour space says otherwise, color-mgmt), like x264 does from -color_primaries/-color_trc.
 			video.push(
 				'-bsf:v',
-				'h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1',
+				`h264_metadata=colour_primaries=${p.colorCodes?.primaries ?? 1}:transfer_characteristics=${p.colorCodes?.trc ?? 1}:matrix_coefficients=${p.colorCodes?.matrix ?? 1}`,
 			);
 			break;
 		case 'h264_videotoolbox':
@@ -421,6 +524,99 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 			filters = ['format=nv12', 'hwupload'];
 			video.push('-rc_mode', 'CQP', '-qp', String(Math.max(1, crf)), '-g', String(gop));
 			break;
+		// gaps (EX-2): HEVC. Kvazaar: constant QP (x264 CRF + 3 ≈ the same visual quality at ≈ 60 % of the size),
+		// presets by speed, intra period = the GOP, VUI colour description from the export colour space; `hvc1` so
+		// QuickTime / Apple players accept the file.
+		case 'libkvazaar': {
+			const preset = p.realtime || p.speed === 'fast' ? 'ultrafast' : p.speed === 'best' ? 'slow' : 'medium';
+			const vui = p.colorCodes
+				? [
+						`colorprim=${KVZ_PRIMARIES[p.colorCodes.primaries] ?? 'bt709'}`,
+						`transfer=${KVZ_TRANSFER[p.colorCodes.trc] ?? 'bt709'}`,
+						`colormatrix=${KVZ_MATRIX[p.colorCodes.matrix] ?? 'bt709'}`,
+					]
+				: ['colorprim=bt709', 'transfer=bt709', 'colormatrix=bt709'];
+			video.push(
+				'-kvazaar-params',
+				[`preset=${preset}`, `qp=${clamp(crf + 3, 0, 51)}`, `period=${kvazaarPeriod(gop)}`, ...vui].join(','),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		}
+		case 'hevc_videotoolbox':
+			video.push(
+				...rate(0.8),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_nvenc':
+			video.push(
+				'-preset',
+				p.realtime || p.speed === 'fast' ? 'p2' : p.speed === 'best' ? 'p6' : 'p4',
+				'-rc',
+				'vbr',
+				'-cq',
+				String(Math.max(1, crf + 3)),
+				'-b:v',
+				'0',
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_qsv':
+			video.push(
+				'-global_quality',
+				String(Math.max(1, crf + 3)),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_amf':
+			video.push(
+				'-rc',
+				'cqp',
+				'-qp_i',
+				String(crf + 3),
+				'-qp_p',
+				String(crf + 3),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
+		case 'hevc_vaapi':
+			pre.push('-vaapi_device', VAAPI_DEVICE);
+			filters = [`format=${p.bitDepth && p.bitDepth > 8 ? 'p010' : 'nv12'}`, 'hwupload'];
+			video.push(
+				'-rc_mode',
+				'CQP',
+				'-qp',
+				String(Math.max(1, crf + 3)),
+				'-profile:v',
+				p.bitDepth && p.bitDepth > 8 ? 'main10' : 'main',
+				'-g',
+				String(gop),
+				'-tag:v',
+				'hvc1',
+			);
+			break;
 		case 'libvpx-vp9':
 			video.push(
 				'-b:v',
@@ -445,6 +641,8 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 				String(p.realtime ? 12 : p.speed === 'fast' ? 10 : p.speed === 'best' ? 5 : 8),
 				'-g',
 				String(gop),
+				// color-mgmt: HDR10 static metadata as AV1 metadata OBUs.
+				...(p.svtHdr ? ['-svtav1-params', p.svtHdr] : []),
 			);
 			break;
 		case 'libaom-av1':
@@ -465,15 +663,26 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		default:
 			video.push(...rate(1.2), '-g', String(gop));
 	}
+	// Generic codec option, understood by every H.264 encoder (OpenH264 never makes B-frames anyway). Pieces encoded with
+	// B-frames lost frames at the join with copied GOPs (verify workstream: libx264, as with CI's apt ffmpeg).
+	if (p.noBFrames && (enc === 'libx264' || HW_H264.some((h) => h.encoder === enc))) video.push('-bf', '0');
 	if (!filters.includes('hwupload')) video.push('-pix_fmt', pix);
-	if (p.threads && !HW_H264.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));
+	if (p.threads && !HW_ALL.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));
 	return { pre, filters, video };
 }
 
 /** Audio encoder arguments for a container (`aac` in MP4, `libopus` in WebM). */
-export function audioEncodeArgs(audioEncoder: string, kbps: number): string[] {
-	if (audioEncoder === 'libopus') return ['-c:a', 'libopus', '-b:a', `${Math.min(510, kbps)}k`];
-	if (audioEncoder === 'pcm_s16le') return ['-c:a', 'pcm_s16le'];
+export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2): string[] {
+	// audio-mix: Opus needs the Vorbis channel mapping (family 1) above two channels (discrete 5.1).
+	if (audioEncoder === 'libopus')
+		return [
+			'-c:a',
+			'libopus',
+			'-b:a',
+			`${Math.min(510 * Math.max(1, channels / 2), kbps)}k`,
+			...(channels > 2 ? ['-mapping_family', '1'] : []),
+		];
+	if (audioEncoder === 'pcm_s16le' || audioEncoder === 'pcm_s24le') return ['-c:a', audioEncoder];
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
 
@@ -517,7 +726,7 @@ export function probeHardwareEncoders(
 	opts: { platform?: NodeJS.Platform; timeoutMs?: number; disabled?: boolean } = {},
 ): Promise<HwTestResult[]> {
 	const platform = opts.platform ?? process.platform;
-	const specs = HW_H264.filter((h) => listed.includes(h.encoder));
+	const specs = HW_ALL.filter((h) => listed.includes(h.encoder));
 	if (!ffmpeg || specs.length === 0) return Promise.resolve([]);
 	if (opts.disabled)
 		return Promise.resolve(

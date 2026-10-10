@@ -7,6 +7,8 @@ export type Rgb = [number, number, number];
 /**
  * A LUT. 3D: `size³` entries, red changing fastest (the `.cube` order), `data[3·(r + size·(g + size·b)) + c]`.
  * 1D: `size` entries per channel, `data[3·i + c]`.
+ * color-mgmt: a 3D LUT may carry a 1D `shaper` applied first (`.cube` files with both sizes, `.csp` pre-LUTs,
+ * non-uniform `.3dl` meshes); the cube's domain is then the shaper's output range.
  */
 export type Lut = {
 	dimensions: 1 | 3;
@@ -15,8 +17,10 @@ export type Lut = {
 	domainMin: Rgb;
 	domainMax: Rgb;
 	data: Float32Array;
+	shaper?: Lut | null;
 };
 
+/** A LUT file that cannot be read; `line` is 1-based (0 = the file as a whole). */
 export class CubeParseError extends Error {
 	constructor(
 		message: string,
@@ -26,23 +30,36 @@ export class CubeParseError extends Error {
 		this.name = 'CubeParseError';
 	}
 }
+/** color-mgmt: every LUT format reports errors as this class (`.cube` kept its historical name). */
+export const LutParseError = CubeParseError;
 
 const MAX_3D = 256;
 const MAX_1D = 65536;
 
 /**
- * Parses an Adobe/Resolve `.cube` file (TITLE, LUT_3D_SIZE / LUT_1D_SIZE, DOMAIN_MIN/MAX,
- * LUT_3D_INPUT_RANGE / LUT_1D_INPUT_RANGE, `#` comments). Throws `CubeParseError`.
+ * Parses an Adobe/Resolve `.cube` file: TITLE, LUT_3D_SIZE and/or LUT_1D_SIZE, DOMAIN_MIN/MAX,
+ * LUT_3D_INPUT_RANGE / LUT_1D_INPUT_RANGE, `#` comments. color-mgmt: a file with both sizes is a 1D shaper followed
+ * by the cube (Resolve); the shaper takes DOMAIN_MIN/MAX or LUT_1D_INPUT_RANGE, the cube LUT_3D_INPUT_RANGE (else
+ * 0..1, the shaper's output). Throws `CubeParseError`.
  */
 export function parseCube(text: string): Lut {
 	let title: string | null = null;
-	let dims: 1 | 3 | 0 = 0;
-	let size = 0;
+	let size1 = 0;
+	let size3 = 0;
 	let domainMin: Rgb = [0, 0, 0];
 	let domainMax: Rgb = [1, 1, 1];
+	let range1: [number, number] | null = null;
+	let range3: [number, number] | null = null;
 	let data: Float32Array | null = null;
 	let n = 0;
 	const lines = text.split(/\r?\n/);
+	const sizeKey = (key: string, args: string[], lineNo: number) => {
+		const v = Number(args[0]);
+		const max = key === 'LUT_3D_SIZE' ? MAX_3D : MAX_1D;
+		if (!Number.isInteger(v) || v < 2 || v > max)
+			throw new CubeParseError(`Invalid ${key} ${args.join(' ')}`, lineNo);
+		return v;
+	};
 	for (let li = 0; li < lines.length; li++) {
 		const raw = lines[li]!;
 		const hash = raw.indexOf('#');
@@ -61,16 +78,13 @@ export function parseCube(text: string): Lut {
 					break;
 				}
 				case 'LUT_3D_SIZE':
-				case 'LUT_1D_SIZE': {
-					if (dims) throw new CubeParseError('Duplicate LUT size', lineNo);
-					dims = key === 'LUT_3D_SIZE' ? 3 : 1;
-					size = args[0] ?? Number.NaN;
-					const max = dims === 3 ? MAX_3D : MAX_1D;
-					if (!Number.isInteger(size) || size < 2 || size > max)
-						throw new CubeParseError(`Invalid ${key} ${rest.join(' ')}`, lineNo);
-					data = new Float32Array((dims === 3 ? size * size * size : size) * 3);
+					if (size3 || data) throw new CubeParseError('Duplicate LUT_3D_SIZE', lineNo);
+					size3 = sizeKey(key, rest, lineNo);
 					break;
-				}
+				case 'LUT_1D_SIZE':
+					if (size1 || data) throw new CubeParseError('Duplicate LUT_1D_SIZE', lineNo);
+					size1 = sizeKey(key, rest, lineNo);
+					break;
 				case 'DOMAIN_MIN':
 				case 'DOMAIN_MAX': {
 					if (args.length !== 3 || args.some((x) => !Number.isFinite(x)))
@@ -82,10 +96,10 @@ export function parseCube(text: string): Lut {
 				case 'LUT_3D_INPUT_RANGE':
 				case 'LUT_1D_INPUT_RANGE': {
 					const [lo, hi] = args;
-					if (!Number.isFinite(lo) || !Number.isFinite(hi))
+					if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi! > lo!))
 						throw new CubeParseError(`Invalid ${key}`, lineNo);
-					domainMin = [lo!, lo!, lo!];
-					domainMax = [hi!, hi!, hi!];
+					if (key === 'LUT_1D_INPUT_RANGE') range1 = [lo!, hi!];
+					else range3 = [lo!, hi!];
 					break;
 				}
 				default:
@@ -94,7 +108,10 @@ export function parseCube(text: string): Lut {
 			}
 			continue;
 		}
-		if (!data) throw new CubeParseError('Table data before LUT_3D_SIZE / LUT_1D_SIZE', lineNo);
+		if (!data) {
+			if (!size1 && !size3) throw new CubeParseError('Table data before LUT_3D_SIZE / LUT_1D_SIZE', lineNo);
+			data = new Float32Array((size1 + size3 * size3 * size3) * 3);
+		}
 		const parts = line.split(/\s+/);
 		if (parts.length < 3) throw new CubeParseError('Expected three values', lineNo);
 		if (n + 3 > data.length) throw new CubeParseError('More table entries than the LUT size', lineNo);
@@ -104,12 +121,48 @@ export function parseCube(text: string): Lut {
 			data[n++] = v;
 		}
 	}
-	if (!data || !dims) throw new CubeParseError('No LUT_3D_SIZE or LUT_1D_SIZE', lines.length);
-	if (n !== data.length)
-		throw new CubeParseError(`Expected ${data.length / 3} table entries, found ${n / 3}`, lines.length);
+	if (!size1 && !size3) throw new CubeParseError('No LUT_3D_SIZE or LUT_1D_SIZE', lines.length);
+	const total = (size1 + size3 * size3 * size3) * 3;
+	if (n !== total || !data)
+		throw new CubeParseError(`Expected ${total / 3} table entries, found ${n / 3}`, lines.length);
 	for (let c = 0; c < 3; c++)
 		if (!(domainMax[c]! > domainMin[c]!)) throw new CubeParseError('DOMAIN_MAX must exceed DOMAIN_MIN', 0);
-	return { dimensions: dims, size, title, domainMin, domainMax, data };
+	const rangeDomain = (r: [number, number] | null, own: boolean): [Rgb, Rgb] =>
+		r
+			? [
+					[r[0], r[0], r[0]],
+					[r[1], r[1], r[1]],
+				]
+			: own
+				? [domainMin, domainMax]
+				: [
+						[0, 0, 0],
+						[1, 1, 1],
+					];
+	const both = size1 > 0 && size3 > 0;
+	let shaper: Lut | null = null;
+	if (size1) {
+		const [lo, hi] = rangeDomain(range1, true);
+		shaper = {
+			dimensions: 1,
+			size: size1,
+			title,
+			domainMin: lo,
+			domainMax: hi,
+			data: data.slice(0, size1 * 3),
+		};
+		if (!size3) return shaper;
+	}
+	const [lo, hi] = rangeDomain(range3, !both);
+	return {
+		dimensions: 3,
+		size: size3,
+		title,
+		domainMin: lo,
+		domainMax: hi,
+		data: both ? data.slice(size1 * 3) : data,
+		...(shaper ? { shaper } : {}),
+	};
 }
 
 const fmt6 = (x: number) => {
@@ -117,18 +170,42 @@ const fmt6 = (x: number) => {
 	return Object.is(r, -0) ? '0' : String(r);
 };
 
-/** Serializes a LUT as `.cube` text (what FFmpeg `lut3d`/`lut1d` read). Deterministic output. */
+const isUnitDomain = (l: Pick<Lut, 'domainMin' | 'domainMax'>) =>
+	l.domainMin.every((v) => v === 0) && l.domainMax.every((v) => v === 1);
+
+/**
+ * Serializes a LUT as `.cube` text (what FFmpeg `lut3d`/`lut1d` read; a shaper is written as the Resolve 1D + 3D
+ * layout). Deterministic output.
+ */
 export function serializeCube(lut: Lut): string {
 	const out: string[] = [];
 	if (lut.title) out.push(`TITLE "${lut.title.replace(/"/g, "'")}"`);
-	out.push(`${lut.dimensions === 3 ? 'LUT_3D_SIZE' : 'LUT_1D_SIZE'} ${lut.size}`);
-	const isUnit = lut.domainMin.every((v) => v === 0) && lut.domainMax.every((v) => v === 1);
-	if (!isUnit) {
-		out.push(`DOMAIN_MIN ${lut.domainMin.map(fmt6).join(' ')}`);
-		out.push(`DOMAIN_MAX ${lut.domainMax.map(fmt6).join(' ')}`);
+	const sh = lut.dimensions === 3 ? lut.shaper : null;
+	if (sh) {
+		out.push(`LUT_1D_SIZE ${sh.size}`);
+		const r = (l: Lut) =>
+			!isUnitDomain(l) &&
+			l.domainMin.every((v) => v === l.domainMin[0]) &&
+			l.domainMax.every((v) => v === l.domainMax[0]);
+		if (!isUnitDomain(sh)) {
+			if (!r(sh)) throw new RangeError('A shaper with per-channel domains cannot be written as .cube');
+			out.push(`LUT_1D_INPUT_RANGE ${fmt6(sh.domainMin[0])} ${fmt6(sh.domainMax[0])}`);
+		}
+		out.push(`LUT_3D_SIZE ${lut.size}`);
+		if (!isUnitDomain(lut)) {
+			if (!r(lut))
+				throw new RangeError('A cube with per-channel domains after a shaper cannot be written as .cube');
+			out.push(`LUT_3D_INPUT_RANGE ${fmt6(lut.domainMin[0])} ${fmt6(lut.domainMax[0])}`);
+		}
+	} else {
+		out.push(`${lut.dimensions === 3 ? 'LUT_3D_SIZE' : 'LUT_1D_SIZE'} ${lut.size}`);
+		if (!isUnitDomain(lut)) {
+			out.push(`DOMAIN_MIN ${lut.domainMin.map(fmt6).join(' ')}`);
+			out.push(`DOMAIN_MAX ${lut.domainMax.map(fmt6).join(' ')}`);
+		}
 	}
-	const d = lut.data;
-	for (let i = 0; i < d.length; i += 3) out.push(`${fmt6(d[i]!)} ${fmt6(d[i + 1]!)} ${fmt6(d[i + 2]!)}`);
+	for (const d of sh ? [sh.data, lut.data] : [lut.data])
+		for (let i = 0; i < d.length; i += 3) out.push(`${fmt6(d[i]!)} ${fmt6(d[i + 1]!)} ${fmt6(d[i + 2]!)}`);
 	return `${out.join('\n')}\n`;
 }
 
@@ -163,6 +240,7 @@ const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
  * WebGL preview implements), 1D linear per channel. Inputs are clamped to the domain.
  */
 export function applyLut(lut: Lut, c: Rgb): void {
+	if (lut.shaper) applyLut(lut.shaper, c);
 	// Allocation-free (it runs ~36k times per bake): same arithmetic as the reference formulation.
 	const s = lut.size - 1;
 	const dmin = lut.domainMin;

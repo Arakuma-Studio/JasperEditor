@@ -6,11 +6,13 @@ import {
 	type CommandContext,
 	diffDocuments,
 	type Issue,
+	invariantMode,
 	type Origin,
 	type ProjectDocument,
 	type TransactionResult,
 	TX_PROTOCOL,
 	type TxInput,
+	verifyDocument,
 } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { defaultMediaRuntime, defaultSequenceView, defaultToggles } from './defaults.ts';
@@ -103,6 +105,7 @@ export class EditorSession {
 		baseRevision: number;
 	} | null = null;
 	private closed = false;
+	private readonly txGuards = new Set<(tx: SessionTxInput) => Issue | null>();
 	private leaseTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(opts: EditorSessionOptions) {
@@ -142,6 +145,32 @@ export class EditorSession {
 			readOnly: !!opts.readOnly,
 			openIssues: opts.openIssues ?? [],
 		}));
+		this.verifyWhenIdle();
+	}
+
+	private verifyScheduled = false;
+	/**
+	 * ui-perf: checks an opened (or replaced) document's invariants when the browser is idle, so the first edit takes
+	 * the incremental check instead of the full one (25–40 ms on 5 000 clips) on the critical path. Browsers only
+	 * (`requestIdleCallback`); elsewhere the first edit checks the whole document as before.
+	 */
+	private verifyWhenIdle(): void {
+		const ric = (
+			globalThis as {
+				requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => unknown;
+			}
+		).requestIdleCallback;
+		if (typeof ric !== 'function' || this.verifyScheduled) return;
+		this.verifyScheduled = true;
+		ric(
+			() => {
+				this.verifyScheduled = false;
+				if (this.closed || invariantMode() === 'full') return;
+				const registries = (this.ctx as Partial<CommandContext>).registries;
+				verifyDocument(this.store.getState().document, registries ? { effects: registries.effects } : {});
+			},
+			{ timeout: 5000 },
+		);
 	}
 
 	/** Opens a project through a ProjectStore and takes the lease; a held lease opens read-only (S01:PER-040). */
@@ -267,6 +296,10 @@ export class EditorSession {
 				errors: [{ commandIndex: -1, code: 'E_NO_SESSION', message: 'Session closed' }],
 			};
 		if (s.readOnly) return READ_ONLY_RESULT(s.revision);
+		for (const guard of this.txGuards) {
+			const refused = guard(tx);
+			if (refused) return { ok: false, revision: s.revision, errors: [refused] };
+		}
 		if (this.gestureState && tx.origin !== 'user' && tx.origin !== 'system') {
 			return {
 				ok: false,
@@ -275,6 +308,18 @@ export class EditorSession {
 			};
 		}
 		return this.commit(tx, this.commandContext());
+	}
+
+	/**
+	 * A host check every transaction passes before it applies; returning an issue refuses it. The web app refuses
+	 * destructive edits that an agent's live-UI automation triggers (they need the user's approval, security
+	 * review AGT-1).
+	 */
+	addTxGuard(guard: (tx: SessionTxInput) => Issue | null): () => void {
+		this.txGuards.add(guard);
+		return () => {
+			this.txGuards.delete(guard);
+		};
 	}
 
 	/** Applies now, or after the active gesture ends (agent transactions, S01:SES-006, S02:TL-056). */
@@ -365,6 +410,72 @@ export class EditorSession {
 		const next: Record<string, SequenceViewState> = {};
 		for (const id of ids) next[id] = views[id] ?? defaultSequenceView();
 		return next;
+	}
+
+	/**
+	 * Replaces the committed document with `doc` as one undoable History step (File ▸ Recover Unsaved Changes,
+	 * S01:PER-021). `doc` must belong to this project and have been through the load pipeline (migrated,
+	 * validated, repaired). The session becomes dirty, so autosave writes it; Undo returns to the document before.
+	 */
+	replaceDocument(doc: ProjectDocument, label: string): TransactionResult {
+		const before = this.store.getState();
+		const fail = (code: string, message: string): TransactionResult => ({
+			ok: false,
+			revision: before.revision,
+			errors: [{ commandIndex: -1, code, message }],
+		});
+		if (this.closed) return fail('E_NO_SESSION', 'Session closed');
+		if (before.readOnly) return READ_ONLY_RESULT(before.revision);
+		if (this.gestureState) return fail('E_QUEUED', 'A gesture is in progress');
+		if (doc.projectId !== this.projectId)
+			return fail('E_INVALID_PARAM', 'The document belongs to another project');
+		if (doc === before.document) return fail('E_INVALID_PARAM', 'Nothing to replace');
+		const revision = before.revision + 1;
+		const selection = filterSelection(before.selection, doc);
+		const origin: Origin = 'user';
+		// Any entity may differ: agents holding an older revision must not fast-forward over it (AGT-010).
+		for (const d of [before.document, doc])
+			for (const id of entityIds(d)) this.entityRevisions.set(id, revision);
+		this.history.push(
+			{
+				label,
+				origin,
+				time: this.clock(),
+				revisionBefore: before.revision,
+				revisionAfter: revision,
+				before: before.document,
+				after: doc,
+				selectionBefore: before.selection,
+				selectionAfter: selection,
+				created: [],
+				changed: [],
+				deleted: [],
+			},
+			this.clock(),
+			0,
+		);
+		this.store.setState({
+			document: doc,
+			revision,
+			selection,
+			views: this.syncViews(doc, before.views),
+			history: this.history.view(),
+			dirty: true,
+		});
+		this.transport.setMaxFrame(Number.POSITIVE_INFINITY);
+		this.emit('doc.changed', {
+			revision,
+			label,
+			origin,
+			created: [],
+			changed: [],
+			deleted: [],
+			isUndo: false,
+			isRedo: false,
+		});
+		if (selection !== before.selection) this.emit('selection.changed', { selection });
+		this.verifyWhenIdle();
+		return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [] };
 	}
 
 	// ------------------------------------------------------------ gestures (S01:SES-006)
@@ -503,7 +614,7 @@ export class EditorSession {
 		domain: SelectionDomain,
 		ids: readonly string[],
 		mode: SelectMode = 'replace',
-		opts: { linked?: boolean; primary?: string | null } = {},
+		opts: { linked?: boolean; primary?: string | null; groups?: boolean } = {},
 	): void {
 		const s = this.store.getState();
 		const sel = s.selection;
@@ -511,7 +622,7 @@ export class EditorSession {
 		switch (domain) {
 			case 'timeline': {
 				const linked = opts.linked ?? s.toggles.linkedSelection;
-				const expanded = expandClipSelection(this.getDrawn(), ids, linked);
+				const expanded = expandClipSelection(this.getDrawn(), ids, linked, opts.groups ?? true);
 				const clips = combine(sel.timeline.clips, expanded, mode);
 				const primary =
 					opts.primary !== undefined
@@ -608,10 +719,20 @@ export class EditorSession {
 		this.store.setState({ toggles: { ...this.store.getState().toggles, ...patch } });
 	}
 	setMediaRuntime(mediaId: string, patch: Partial<MediaRuntime>): void {
-		const media = this.store.getState().media;
-		this.store.setState({
-			media: { ...media, [mediaId]: { ...(media[mediaId] ?? defaultMediaRuntime()), ...patch } },
-		});
+		this.setMediaRuntimes([[mediaId, patch]]);
+	}
+	/**
+	 * Applies several runtime patches in one store update (ui-perf: opening a project resolves every medium; one update
+	 * per medium re-ran every subscriber per medium). Patches apply in order, like successive `setMediaRuntime` calls.
+	 */
+	setMediaRuntimes(patches: Iterable<readonly [string, Partial<MediaRuntime>]>): void {
+		const media = { ...this.store.getState().media };
+		let any = false;
+		for (const [id, patch] of patches) {
+			media[id] = { ...(media[id] ?? defaultMediaRuntime()), ...patch };
+			any = true;
+		}
+		if (any) this.store.setState({ media });
 	}
 	/** The persisted view record (S01:SES-004). */
 	viewRecord(): ProjectViewState {
@@ -643,6 +764,16 @@ export class EditorSession {
 		this.emit('closed', {});
 		this.listeners.clear();
 	}
+}
+
+/** Ids of the document's items, media, sequences and everything a sequence holds (replaceDocument). */
+function entityIds(doc: ProjectDocument): string[] {
+	const ids = [...Object.keys(doc.items), ...Object.keys(doc.media), ...Object.keys(doc.sequences)];
+	for (const seq of Object.values(doc.sequences)) {
+		ids.push(...Object.keys(seq.clips), ...Object.keys(seq.transitions ?? {}));
+		for (const t of [...seq.videoTracks, ...seq.audioTracks]) ids.push(t.id);
+	}
+	return ids;
 }
 
 function isClipIn(doc: ProjectDocument, clipId: string): boolean {

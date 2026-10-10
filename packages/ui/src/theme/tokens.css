@@ -324,6 +324,25 @@
 	--pr-graph-x: #f0524f;
 	--pr-graph-y: #3fcf5a;
 	--pr-graph-handle: var(--pr-accent);
+	/* Wave expressions: the post-expression curve (AE draws it over the keyframed one). */
+	--pr-graph-post: #ff6b5a;
+}
+
+/* Wave expressions: expression values (AE shows them red), the code field and its syntax colours. */
+:root {
+	--pr-expr-value: #ff5f4d;
+	--pr-expr-bg: #1b1b1b;
+	--pr-expr-border: #3c3c3c;
+	--pr-expr-text: #d8d8d8;
+	--pr-expr-keyword: #c792ea;
+	--pr-expr-string: #c3e88d;
+	--pr-expr-number: #f78c6c;
+	--pr-expr-comment: #7f848e;
+	--pr-expr-function: #82aaff;
+	--pr-expr-property: #ffcb6b;
+	--pr-expr-error-bg: color-mix(in srgb, var(--pr-warning) 22%, transparent);
+	--pr-expr-cursor: #f0f0f0;
+	--pr-expr-selection: rgba(80, 140, 255, 0.35);
 }
 
 /* wp-m2-color: Lumetri Color panel (sliders, curves, wheels) and Lumetri Scopes (S06 §6–§7). */
@@ -364,6 +383,15 @@
 	--pr-scope-blue: #5a8cff;
 	--pr-scope-skin: #e3a36f;
 	--pr-scope-target: rgba(255, 255, 255, 0.6);
+	/* color-grade: hue/saturation curve backgrounds (x = hue from red, luma, saturation), hue slider, scope traces. */
+	--pr-curve-hue: linear-gradient(90deg, #ff3b3b, #ffff3b 16.67%, #3bff3b 33.33%, #3bffff 50%, #3b3bff 66.67%, #ff3bff 83.33%, #ff3b3b);
+	--pr-curve-luma: linear-gradient(90deg, #000000, #ffffff);
+	--pr-curve-sat: linear-gradient(90deg, #8f8f8f, #ff3b3b);
+	--pr-curve-hue-fade: linear-gradient(180deg, rgba(18, 18, 18, 0.15), rgba(18, 18, 18, 0.75));
+	--pr-slider-hue: linear-gradient(90deg, #ff3b3b, #ffff3b 16.67%, #3bff3b 33.33%, #3bffff 50%, #3b3bff 66.67%, #ff3bff 83.33%, #ff3b3b);
+	--pr-slider-luma: linear-gradient(90deg, #000000, #ffffff);
+	--pr-scope-chroma: #d8a6ff;
+	--pr-scope-ire: rgba(255, 255, 255, 0.1);
 }
 
 /* wp-m2-transitions: transitions drawn on the timeline (S10:TUI-001…006, TUI-020…022). */

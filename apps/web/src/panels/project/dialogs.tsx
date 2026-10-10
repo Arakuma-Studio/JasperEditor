@@ -1,8 +1,10 @@
 // Project panel dialogs: New Sequence (name + preset, S05:PRJ-003) and the in-use delete confirmation
 // (S01:PRJ-006). Rendered by <ProjectDialogHost/> (mounted by ProjectLifecycle).
+
 import { useSession } from '@jasper/session/react';
 import { Button } from '@jasper/ui';
 import { useState, useSyncExternalStore } from 'react';
+import { labelDefault } from '../../gaps/app-prefs.ts';
 import { notices } from '../../home/notices.tsx';
 import { Dialog } from '../../import/ImportPromptHost.tsx';
 
@@ -63,7 +65,15 @@ function NewSequenceDialog({ binId }: { binId: string | null }) {
 		const r = session.apply({
 			label: 'New Sequence',
 			origin: 'user',
-			commands: [{ type: 'sequence.create', name: name.trim() || 'Sequence', preset, binId }],
+			commands: [
+				{
+					type: 'sequence.create',
+					name: name.trim() || 'Sequence',
+					preset,
+					binId,
+					...(labelDefault('sequence') ? { label: labelDefault('sequence') } : {}),
+				},
+			],
 		});
 		if (!r.ok) {
 			notices.push({ kind: 'error', message: 'Could not create the sequence', detail: r.errors[0]?.message });

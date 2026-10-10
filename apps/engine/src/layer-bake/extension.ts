@@ -1,16 +1,7 @@
-// The `layer-bake` native extension (M2, S11:LBK-001…025, ARCHITECTURE D-31, §19.6, §20.5): every DOM layer
-// (all text clips — option A —, shapes, anime templates) stays on the native path. wave1c (D-35): so do media layers
-// with browser-only effects (GPU shader effects, SVG/CSS effects: the whole layer is baked) and GPU transitions
-// (the span — sides A + B and the stage — is baked; the builder draws the sides only outside it). `prepare` bakes each claimed
-// layer through Remotion into a cached straight-alpha master (or one PNG for static layers) as child jobs of the
-// export/still — side by side within the export's Remotion page budget (`remotion/page-pool.ts`, S11:LBK-022) —;
-// `override` hands it to the builder as a `sequence` override (`still`, `rect`, `colorRuns`).
-// Colour effects of DOM layers (FIX-002) are applied by ffmpeg to the bake (native), or baked into a graded master
-// (PNG frame sequence) that the composition plays on the Remotion path (`prepareForRemotion` + `adaptRemotionDoc`).
-import { availableParallelism } from 'node:os';
 import type { RenderSnapshot, RenderTransition, RenderVisualClip } from '@jasper/project';
 import type { LayerOverride, NativeExtension, NativePrepareContext } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
+import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { MAX_RENDERS_IN_FLIGHT, type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
 import {
@@ -76,7 +67,7 @@ function entryOf(
 export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 	return {
 		id: 'layer-bake',
-		kinds: new Set(['text', 'shape']),
+		kinds: new Set(['text', 'shape', 'captions']),
 		claimsLayer: (c) => needsBake(c),
 		bakes: (c) => (needsBake(c) ? 'remotion' : null),
 		bakesTransition: () => (svc.unavailableReason() ? null : 'remotion'),
@@ -98,7 +89,12 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			// On the Remotion path only DOM layers with colour effects need graded masters (LBK-010).
 			const clips = planned.snapshot.videoTracks
 				.flatMap((t) => t.clips)
-				.filter((c) => (remotion ? isDomLayer(c) && hasColorEffects(c) : needsBake(c)));
+				.filter((c) =>
+					remotion
+						? // three-d: a 3D layer runs its colour effects in its own capture chain (no graded master).
+							isDomLayer(c) && hasColorEffects(c) && !c.threeD
+						: needsBake(c),
+				);
 			// wave1c: GPU transition spans drawn in the export range (native composite only).
 			const spans = remotion
 				? []
@@ -118,7 +114,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			const env = await svc.environment();
 			const single = planned.range.end - planned.range.start === 1 ? planned.range.start : null;
 			// The export's Remotion page budget (S11:LBK-022): its Remotion concurrency, shared by the bakes in flight.
-			const budget = Math.max(1, ctx.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2)));
+			const budget = Math.max(1, ctx.concurrency ?? renderParallelism());
 			const par = svc.parallelism;
 			const maxInFlight = Math.max(1, par.maxInFlight ?? Math.min(budget, MAX_RENDERS_IN_FLIGHT));
 			// Plans first (keys, documents, grades: cheap, in clip order), then the renders side by side.

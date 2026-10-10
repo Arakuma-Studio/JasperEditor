@@ -20,6 +20,8 @@ import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
 import {
 	contentTimeAt,
+	interpretMediaHandle,
+	type MediaAsset,
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderSnapshot,
@@ -32,8 +34,10 @@ import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
+import { importsArtifactsOf, withImportsUrls } from '../imports/extension.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
+import type { MediaRecord } from '../media/registry.ts';
 import { REMOTION_VERSION, type SharedRenderBrowser } from '../remotion/service.ts';
 import { Ffmpeg, sec } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
@@ -41,6 +45,7 @@ import { binaryNames } from '../tools/lgpl.ts';
 import type { CoreServices } from '../tools/services.ts';
 import {
 	type BakeEnvironment,
+	expressionKeyPart,
 	FileHashCache,
 	KEY_RE,
 	type KeyFont,
@@ -440,6 +445,43 @@ export class LayerBakeService {
 		};
 	}
 
+	/**
+	 * parity (roto): the clip with signed absolute URLs of its object-matte sets (the headless browser loads them).
+	 * Key material keeps the unsigned paths.
+	 */
+	private signedRotos(c: RenderVisualClip): RenderVisualClip {
+		let out = c;
+		if (c.rotos) {
+			const rotos: NonNullable<RenderVisualClip['rotos']> = {};
+			for (const [id, m] of Object.entries(c.rotos))
+				rotos[id] = {
+					...m,
+					url: m.url?.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), m.url) : m.url,
+				};
+			out = { ...out, rotos };
+		}
+		// Nested sequences draw their own clips (and object mattes) inside the bake.
+		if ('nest' in c.source) {
+			const n = c.source.nest;
+			out = {
+				...out,
+				source: {
+					nest: {
+						...n,
+						snapshot: {
+							...n.snapshot,
+							videoTracks: n.snapshot.videoTracks.map((t) => ({
+								...t,
+								clips: t.clips.map((x) => this.signedRotos(x)),
+							})),
+						},
+					},
+				},
+			};
+		}
+		return out;
+	}
+
 	/** Media handle with a signed engine URL (what the headless browser loads). */
 	private signedHandle(planned: Pick<PlannedExport, 'document' | 'media'>, id: string): MediaHandle | null {
 		const local = planned.media[id];
@@ -447,6 +489,17 @@ export class LayerBakeService {
 		const key = asset ? mediaKeyOf(asset) : null;
 		if (!local || !asset || !key) return null;
 		const r = local.record;
+		// imports: interpreted size / pixels / time, Lottie and vector loaders, display pictures and masters prepared by
+		// the `imports` extension for this export.
+		const sign = (p: string) => this.core.signer.signUrl(this.core.origin(), p);
+		return withImportsUrls(
+			interpretMediaHandle(asset, this.rawSignedHandle(key, asset, r)),
+			importsArtifactsOf(planned)?.get(id),
+			sign,
+		);
+	}
+
+	private rawSignedHandle(key: string, asset: MediaAsset, r: MediaRecord): MediaHandle {
 		return {
 			url: this.core.signer.signUrl(this.core.origin(), `/media/${encodeURIComponent(key)}`),
 			proxyUrl: null,
@@ -463,11 +516,17 @@ export class LayerBakeService {
 	private keyMedia(planned: Pick<PlannedExport, 'document' | 'media'>, ids: Iterable<string>): KeyMedia[] {
 		return [...ids].sort().map((mediaId) => {
 			const local = planned.media[mediaId];
+			const asset = planned.document.media[mediaId];
+			const interp =
+				asset?.interpretation || asset?.vector
+					? JSON.stringify({ i: asset.interpretation ?? null, p: asset.vector?.page ?? null })
+					: null;
 			return {
 				mediaId,
-				fingerprint: local?.record.fingerprint ?? planned.document.media[mediaId]?.fingerprint ?? null,
+				fingerprint: local?.record.fingerprint ?? asset?.fingerprint ?? null,
 				size: local?.record.sizeBytes ?? null,
 				mtime: local ? Math.round(local.record.mtimeMs) : null,
+				...(interp ? { interp } : {}),
 			};
 		});
 	}
@@ -551,10 +610,15 @@ export class LayerBakeService {
 			still: variant.recipe !== 'master',
 			rect,
 			...(clip.kind === 'motion-graphic' ? { renderVersion: templateRenderVersion(clip) } : {}),
+			...(() => {
+				const e = expressionKeyPart(clip, snap.expressions);
+				// The clip's sequence position matters too (`time` is sequence time).
+				return e ? { expressions: `${e}:${clip.start}` } : {};
+			})(),
 			graded: false,
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>
-			bakeDoc(snap, c, { variant, rect: r, media, fonts: signedFonts });
+			bakeDoc(snap, this.signedRotos(c), { variant, rect: r, media, fonts: signedFonts });
 		return {
 			clipId: clip.clipId,
 			clipName: clip.name,
@@ -642,7 +706,7 @@ export class LayerBakeService {
 			settings: { ...seq, backgroundColor: [0, 0, 0, 0] },
 			range: { start, end: start + frames },
 			durationFrames: frames,
-			videoTracks: [{ trackId, clips: sides, transitions: [shifted] }],
+			videoTracks: [{ trackId, clips: sides.map((c) => this.signedRotos(c)), transitions: [shifted] }],
 			audioClips: [],
 			media,
 			fonts: signedFonts,
@@ -1089,6 +1153,7 @@ export class LayerBakeService {
 					ffmpeg: ff,
 					...(concurrency ? { concurrency } : {}),
 					...(o.browser ? { browser: o.browser } : {}),
+					log: ctx.log,
 					onSpawn: ctx.trackChild,
 					onProgress: (p) =>
 						ctx.progress(p.progress * weight * 0.9, {

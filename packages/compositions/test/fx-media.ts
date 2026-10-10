@@ -47,7 +47,11 @@ export async function startFxMedia(prefix: string): Promise<FxMedia> {
 	const server = createServer((req, res) => {
 		const name = decodeURIComponent((req.url ?? '/').split('?')[0]!.slice(1));
 		const mem = pages.get(name);
-		if (mem) return void res.writeHead(200, { 'Content-Type': mem.type }).end(mem.body);
+		// UTF-8 always: bundles carry non-ASCII literals (XML name regexes), which Latin-1 decoding breaks.
+		if (mem) {
+			const memType = /charset=/i.test(mem.type) ? mem.type : `${mem.type}; charset=utf-8`;
+			return void res.writeHead(200, { 'Content-Type': memType }).end(mem.body);
+		}
 		const file = join(dir, name);
 		if (!file.startsWith(dir) || !existsSync(file)) return void res.writeHead(404).end();
 		const size = statSync(file).size;
@@ -123,9 +127,13 @@ export function fxAsset(
 }
 
 /** A 640×360 30 fps render snapshot from commands (the test effects are known to the command registry). */
-export function fxSnapshot(commands: Command[]) {
+export function fxSnapshot(
+	commands: Command[] | ((doc: ReturnType<typeof createEmptyProject>) => Command[]),
+) {
 	const ids = createCounterIdSource(1);
 	const project = createEmptyProject({ ids, name: 'fx', preset: 'hd-720p-30' });
+	// wp masks: commands may depend on the empty project (track ids for Track Matte Key params).
+	const list = typeof commands === 'function' ? commands(project) : commands;
 	const ctx = {
 		ids,
 		now: () => '2026-10-05T10:00:00.000Z',
@@ -138,13 +146,14 @@ export function fxSnapshot(commands: Command[]) {
 		{
 			label: 'fx',
 			origin: 'user',
+			sequenceId: seqId,
 			commands: [
 				{
 					type: 'sequence.updateSettings',
 					sequenceId: seqId,
 					settings: { width: FX_W, height: FX_H },
 				} as Command,
-				...commands,
+				...list,
 			],
 		},
 		ctx,

@@ -465,7 +465,9 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 			const o = pass.output ?? `pass${i + 2}`;
 			if (!NAME_RE.test(o)) at(`pass ${i}: output "${o}" must be letters and digits`);
 			if (RESERVED_OUTPUTS.has(o)) at(`pass ${i}: output "${o}" is reserved by the framework`);
-			if (outputs.has(o)) at(`pass ${i}: output "${o}" is used twice`);
+			// Ping-pong outputs (`update`, planned like effects) rewrite an earlier pass's output on purpose.
+			if (pass.update && !outputs.has(o)) at(`pass ${i}: update writes "${o}", which no earlier pass wrote`);
+			if (!pass.update && outputs.has(o)) at(`pass ${i}: output "${o}" is used twice (ping-pong: update)`);
 			if (RESERVED.has(`u_${o}`) || names.has(o)) at(`pass ${i}: output "${o}" collides with a uniform`);
 			outputs.add(o);
 		}

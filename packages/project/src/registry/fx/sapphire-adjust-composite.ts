@@ -21,7 +21,8 @@ import { defineShaderEffect, SAPPHIRE_BINS } from './define.ts';
 import { GLSL_BLEND } from './glsl/blend.ts';
 import { GLSL_COMPOSITE } from './glsl/composite.ts';
 import { GLSL_HASH } from './glsl/hash.ts';
-import { fxParam } from './params.ts';
+import { GLSL_LUT } from './glsl/lut.ts';
+import { fxParam, lutParam } from './params.ts';
 import { gaussianBlurPasses } from './passes.ts';
 import {
 	bool,
@@ -93,6 +94,8 @@ type AdjustInit = {
 	/** Passes before the pointwise pass and the texture it reads as input (default `u_source`). */
 	pre?: (p: EffectParams, ctx: FxPlanContext) => { passes: ShaderPass[]; input: string };
 	timeInvariant?: boolean;
+	/** color-mgmt: see `GpuEffect.ocioConversion`. */
+	ocioConversion?: (p: EffectParams) => { param: string; from: string; to: string } | null;
 };
 
 function adjustEffect(init: AdjustInit): EffectSpec {
@@ -108,6 +111,7 @@ function adjustEffect(init: AdjustInit): EffectSpec {
 		gpu: {
 			...(init.timeInvariant ? { timeInvariant: true } : {}),
 			...(init.uniforms ? { uniforms: init.uniforms } : {}),
+			...(init.ocioConversion ? { ocioConversion: init.ocioConversion } : {}),
 			passes: (p, ctx) => {
 				const pre = init.pre?.(p, ctx) ?? { passes: [], input: 'u_source' };
 				const mask = withMask ? maskPasses(p, ctx) : [];
@@ -430,9 +434,10 @@ export const S_OCIO_TRANSFORM = adjustEffect({
 	id: 'jasper.s.ocio-transform',
 	label: 'S_OCIOTransform',
 	description:
-		'Converts between colour spaces (sRGB, Rec.709, Rec.1886, Rec.2020, linear, ACEScg, ACEScct, ACES2065-1, ARRI ' +
-		'LogC3, Sony S-Log3, Panasonic V-Log) with the published curves and matrices. Built-in spaces only: custom ' +
-		'OpenColorIO configs, looks and display/view tone mapping are not supported.',
+		'Converts between colour spaces: the built-in ones (sRGB, Rec.709, Rec.1886, Rec.2020, linear, ACEScg, ACEScct, ' +
+		'ACES2065-1, ARRI LogC3, Sony S-Log3, Panasonic V-Log, exact per-pixel maths) or any two spaces of a custom ' +
+		'OpenColorIO config (Config: Custom, an imported .ocio, From/To Space names; drawn through a 33³ LUT of the ' +
+		'conversion, inputs 0..1). Transforms a config uses that cannot be applied (ACES output transforms) are refused.',
 	keywords: [
 		'ocio',
 		'opencolorio',
@@ -450,18 +455,34 @@ export const S_OCIO_TRANSFORM = adjustEffect({
 		fxParam.choice('from', 'From', OCIO_VALUES, OCIO_LABELS, 'logc3'),
 		fxParam.choice('to', 'To', OCIO_VALUES, OCIO_LABELS, 'rec709'),
 		fxParam.toggle('switchToAndFrom', 'Switch To And From', false),
+		// color-mgmt: a custom OCIO config.
+		fxParam.choice('config', 'Config', ['builtin', 'custom'], ['Built-in', 'Custom (.ocio)'], 'builtin'),
+		{ ...lutParam('configFile', 'Config File'), mediaKinds: ['color-config'] },
+		{ name: 'fromSpace', label: 'From Space', type: 'string', default: '', animatable: false },
+		{ name: 'toSpace', label: 'To Space', type: 'string', default: '', animatable: false },
 	],
-	include: [GLSL_SAC_OCIO],
+	include: [GLSL_SAC_OCIO, GLSL_LUT],
 	uniforms: (p) => {
 		const t = ocioTransformOf(p);
 		return {
 			u_ocioMatrix: { mat3: toColumnMajor(t.matrix) },
 			u_ocioFrom: { int: OCIO_CURVES.indexOf(t.from.curve) },
 			u_ocioTo: { int: OCIO_CURVES.indexOf(t.to.curve) },
+			u_ocioCustom: { int: str(p, 'config', 'builtin') === 'custom' ? 1 : 0 },
 		};
 	},
+	ocioConversion: (p) =>
+		str(p, 'config', 'builtin') === 'custom'
+			? {
+					param: 'configFile',
+					from: bool(p, 'switchToAndFrom') ? str(p, 'toSpace', '') : str(p, 'fromSpace', ''),
+					to: bool(p, 'switchToAndFrom') ? str(p, 'fromSpace', '') : str(p, 'toSpace', ''),
+				}
+			: null,
 	glsl: /* glsl */ `
 vec4 sac_apply(vec4 c) {
+  // Custom config: the conversion's LUT (an unbound config never reaches here: renders refuse it).
+  if (u_ocioCustom == 1) return vec4(fx_lut3d(u_configFile, u_configFile_size, c.rgb), c.a);
   vec3 lin = u_ocioMatrix * sac_ocioDecode3(u_ocioFrom, c.rgb);
   return vec4(sac_ocioEncode3(u_ocioTo, lin), c.a);
 }`,

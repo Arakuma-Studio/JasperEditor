@@ -26,6 +26,12 @@ const SEEK_HZ = 30;
 const PLAY_WATCHDOG_MS = 600;
 /** Consecutive kicks without any progress in between; progress restores the budget. */
 const PLAY_WATCHDOG_RETRIES = 3;
+/**
+ * A Player that renders slowly (heavy layers on a loaded machine: one frame every 300–700 ms) is not
+ * stalled: the window also grows to four times the recent frame interval (of this play and the ones before), up to this bound
+ * (measured: the 3-layer `pnpm perf` scenario at ≈ 4 fps was kicked once with the fixed 600 ms window).
+ */
+const PLAY_WATCHDOG_MAX_ADAPTIVE_MS = 2500;
 
 function isNativeRate(rate: number): boolean {
 	return rate >= NATIVE_MIN_RATE && rate <= NATIVE_MAX_RATE;
@@ -63,9 +69,30 @@ type DriverOptions = {
 	setPlayerRate(rate: number): void;
 	/** Buffering state for the dropped-frame/buffering indicator. */
 	onBuffering?(waiting: boolean): void;
+	/**
+	 * edit-ux (Premiere's Dropped Frame Indicator): frames skipped during native playback since playback started (a
+	 * `frameupdate` that jumps past the next frame counts the frames in between).
+	 */
+	onDroppedFrames?(count: number): void;
 };
 
 type DriverMode = 'idle' | 'native' | 'stepping';
+
+/** previews (perf instrumentation): playback counters of a driver (MCP perf_stats, scripts/performance.mjs). */
+export type PlaybackStats = {
+	/** Native plays started since the driver was created. */
+	plays: number;
+	/** Frames reported by the Player while playing natively, and frames it skipped (dropped). */
+	framesShown: number;
+	framesDropped: number;
+	/** Stalls the watchdog had to restart (the Player sat on a frame while the store played). */
+	stallsRecovered: number;
+	/** Time spent buffering (`waiting` → `resume`) while playing, ms. */
+	bufferingMs: number;
+	/** The last finished (or the current) native play. */
+	lastPlay: { frames: number; dropped: number; seconds: number; fps: number; rate: number } | null;
+	playing: boolean;
+};
 
 export class PlaybackDriver implements PlayerController {
 	private player: PlayerLike | null = null;
@@ -78,9 +105,19 @@ export class PlaybackDriver implements PlayerController {
 	private stepOrigin = { t: 0, frame: 0 };
 	private lastSeekAt = Number.NEGATIVE_INFINITY;
 	private frameEvents = 0;
+	/** Frame-update arrival of this play: last time and a moving average of the interval (ms). */
+	private lastFrameAt = -1;
+	private frameInterval = 0;
+	/** `frameEvents` when the current native play started: equal = its first frame is still pending. */
+	private playStartEvents = -1;
+	private dropped = 0;
 	private buffering = false;
 	private watchdog: ReturnType<typeof setTimeout> | null = null;
 	private readonly unsubscribe: () => void;
+	private counters = { plays: 0, framesShown: 0, framesDropped: 0, stallsRecovered: 0, bufferingMs: 0 };
+	private current: { at: number; frames: number; dropped: number; rate: number } | null = null;
+	private lastPlay: PlaybackStats['lastPlay'] = null;
+	private bufferingSince: number | null = null;
 
 	constructor(private readonly opts: DriverOptions) {
 		this.unsubscribe = opts.transport.subscribe((s, prev) => this.onTransport(s, prev));
@@ -116,10 +153,50 @@ export class PlaybackDriver implements PlayerController {
 
 	play(): void {
 		this.rate = this.opts.transport.getState().rate || 1;
+		this.resetDroppedFrames();
 		this.start();
 	}
 
+	/** Dropped frames counted since playback started (or the last reset). */
+	get droppedFrames(): number {
+		return this.dropped;
+	}
+
+	/** Playback counters (perf instrumentation). */
+	get stats(): PlaybackStats {
+		const live = this.current ? this.playSummary(this.current) : null;
+		return { ...this.counters, lastPlay: live ?? this.lastPlay, playing: this.current !== null };
+	}
+
+	private playSummary(c: {
+		at: number;
+		frames: number;
+		dropped: number;
+		rate: number;
+	}): NonNullable<PlaybackStats['lastPlay']> {
+		const seconds = Math.max(1e-3, (performance.now() - c.at) / 1000);
+		return {
+			frames: c.frames,
+			dropped: c.dropped,
+			seconds: Math.round(seconds * 100) / 100,
+			fps: Math.round((c.frames / seconds) * 10) / 10,
+			rate: c.rate,
+		};
+	}
+
+	private endPlay(): void {
+		if (!this.current) return;
+		this.lastPlay = this.playSummary(this.current);
+		this.current = null;
+	}
+
+	resetDroppedFrames(): void {
+		this.dropped = 0;
+		this.opts.onDroppedFrames?.(0);
+	}
+
 	pause(): void {
+		this.endPlay();
 		this.stopAt = null;
 		this.returnTo = null;
 		this.clearWatchdog();
@@ -161,6 +238,15 @@ export class PlaybackDriver implements PlayerController {
 			const s = this.opts.transport.getState();
 			if (p.getCurrentFrame() !== s.frame) p.seekTo(s.frame);
 			if (!p.isPlaying()) p.play();
+			if (!this.current) {
+				this.counters.plays++;
+				this.lastFrameAt = Date.now(); // the first interval is the time to the first frame
+				// The frame interval of earlier plays is kept: zeroed, every play's first frame got the fixed 600 ms window,
+				// and on a machine that renders a frame every 300 ms+ a slow first frame after a seek was "recovered" as a
+				// stall (verify workstream, e2e/previews "seek-and-play cycles never stall").
+				this.current = { at: performance.now(), frames: 0, dropped: 0, rate: this.rate };
+				this.playStartEvents = this.frameEvents;
+			}
 			this.armWatchdog(PLAY_WATCHDOG_RETRIES);
 			return;
 		}
@@ -188,13 +274,23 @@ export class PlaybackDriver implements PlayerController {
 		if (retries <= 0 || typeof setTimeout === 'undefined') return;
 		const seen = this.frameEvents;
 		const framesPerSec = Math.max(1e-3, this.opts.getFps() * Math.abs(this.rate));
-		const window = Math.max(PLAY_WATCHDOG_MS, 3000 / framesPerSec);
+		const window = Math.max(
+			PLAY_WATCHDOG_MS,
+			3000 / framesPerSec,
+			// The first frame of a play (seek, decode, the first draw) costs more than the steady interval: twice the
+			// allowance (verify workstream: a 1.2 s first frame at a 300 ms interval was kicked as a stall).
+			Math.min(
+				PLAY_WATCHDOG_MAX_ADAPTIVE_MS,
+				(this.frameEvents === this.playStartEvents ? 8 : 4) * this.frameInterval,
+			),
+		);
 		this.watchdog = setTimeout(() => {
 			this.watchdog = null;
 			const p = this.player;
 			if (!p || this.mode !== 'native' || !this.opts.transport.getState().playing) return;
 			if (this.frameEvents !== seen) return this.armWatchdog(PLAY_WATCHDOG_RETRIES); // progressing
 			if (this.buffering) return this.armWatchdog(retries); // legitimately buffering: keep watching
+			this.counters.stallsRecovered++;
 			p.pause();
 			p.seekTo(this.opts.transport.getState().frame);
 			p.play();
@@ -262,6 +358,12 @@ export class PlaybackDriver implements PlayerController {
 	private readonly onFrame: Listener = (e) => {
 		this.frameEvents++;
 		if (this.mode !== 'native') return;
+		const now = Date.now();
+		if (this.lastFrameAt >= 0) {
+			const d = now - this.lastFrameAt;
+			this.frameInterval = this.frameInterval > 0 ? this.frameInterval * 0.7 + d * 0.3 : d;
+		}
+		this.lastFrameAt = now;
 		const frame = (e.detail as { frame: number }).frame;
 		const t = this.opts.transport;
 		if (this.stopAt !== null && frame >= this.stopAt - 1) {
@@ -277,6 +379,15 @@ export class PlaybackDriver implements PlayerController {
 			this.player?.seekTo(range.loopStart);
 			return;
 		}
+		// Dropped frames (native forward playback): a jump past the next frame skipped the frames in between.
+		if (this.rate > 0 && this.lastReported >= 0 && frame > this.lastReported + 1 && !this.buffering) {
+			this.dropped += frame - this.lastReported - 1;
+			this.counters.framesDropped += frame - this.lastReported - 1;
+			if (this.current) this.current.dropped += frame - this.lastReported - 1;
+			this.opts.onDroppedFrames?.(this.dropped);
+		}
+		this.counters.framesShown++;
+		if (this.current) this.current.frames++;
 		this.lastReported = frame;
 		t.reportFrame(frame);
 	};
@@ -304,10 +415,13 @@ export class PlaybackDriver implements PlayerController {
 	};
 
 	private readonly onWaiting: Listener = () => {
+		if (!this.buffering && this.mode === 'native') this.bufferingSince = performance.now();
 		this.buffering = true;
 		this.opts.onBuffering?.(true);
 	};
 	private readonly onResume: Listener = () => {
+		if (this.bufferingSince !== null) this.counters.bufferingMs += performance.now() - this.bufferingSince;
+		this.bufferingSince = null;
 		this.buffering = false;
 		this.opts.onBuffering?.(false);
 	};

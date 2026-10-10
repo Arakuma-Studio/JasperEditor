@@ -2,6 +2,7 @@
 // host and the forced-cursor layer. UI prefs are applied to <html> here (DT-003).
 import { DialogHost, ForcedCursorLayer, ToastHost, TooltipHost } from '@jasper/ui';
 import { type ReactNode, useEffect } from 'react';
+import { useLanguageEpoch } from '../i18n/react.ts';
 import { applyPrefs, useUiPrefs } from './prefs.ts';
 
 export function GlobalHosts({
@@ -13,11 +14,13 @@ export function GlobalHosts({
 }) {
 	const prefs = useUiPrefs();
 	useEffect(() => applyPrefs(prefs), [prefs]);
+	// polish: toasts on screen are drawn again in the new language (the toast store keeps them).
+	const epoch = useLanguageEpoch();
 	return (
 		<TooltipHost enabled={prefs.tooltips}>
 			{children}
 			<DialogHost />
-			<ToastHost runCommand={runCommand} />
+			<ToastHost key={epoch} runCommand={runCommand} />
 			<ForcedCursorLayer />
 		</TooltipHost>
 	);

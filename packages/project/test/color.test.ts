@@ -1,6 +1,7 @@
 // S06 §9.1: Lumetri reference maths (CG-020…023), PCHIP curves, the M1 colour ops and colour-run fusion.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { budgetMs } from '../../../scripts/perf/budget.ts';
 import {
 	applyLut,
 	BLACK_WHITE_OP,
@@ -42,8 +43,12 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 		expect(spec?.category).toBe('Color Correction');
 		expect(spec?.appliesTo).toBe('video');
 		expect(spec?.version).toBe(1);
-		expect(LUMETRI_PARAMS.map((p) => p.name)).toEqual([
+		// The S06:CG-002 contract comes first; color-grade appends its params (test/lumetri-grade.test.ts).
+		// The S06:CG-002 contract (with color-mgmt's HDR White / HDR Specular) comes first; color-grade appends its
+		// params (test/lumetri-grade.test.ts).
+		expect(LUMETRI_PARAMS.slice(0, 25).map((p) => p.name)).toEqual([
 			'inputLut',
+			'hdrWhite', // color-mgmt
 			'temperature',
 			'tint',
 			'exposure',
@@ -52,6 +57,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 			'shadows',
 			'whites',
 			'blacks',
+			'hdrSpecular', // color-mgmt
 			'saturation',
 			'look',
 			'lookIntensity',
@@ -449,6 +455,6 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		console.info(
 			`[S06 §9.9] 33³ Lumetri bake (full grade): best CPU ${best.toFixed(2)} ms, wall ${Math.min(...wall).toFixed(2)} ms (budget 15 ms)`,
 		);
-		expect(best).toBeLessThan(30);
+		expect(best).toBeLessThan(budgetMs(30));
 	});
 });

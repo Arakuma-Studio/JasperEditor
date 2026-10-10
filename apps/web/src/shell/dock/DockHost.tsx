@@ -4,7 +4,7 @@
 // context titles, the ≡ panel menu on the active tab, × on hover, middle-click close, overflow list,
 // the empty workspace shows DK-043; a maximized group shows a Restore button (DK-041).
 import type { SessionState } from '@jasper/session';
-import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
+import { FreezeStoreUpdates, useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import {
 	ContextMenu,
 	cx,
@@ -34,15 +34,16 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { isLoadable, type Loadable, useLoaded } from '../../panels/lazy.ts';
 import { sourceMonitorState } from '../../panels/source/source-state.ts';
-import type { PanelDefinition, PanelKind, PanelTitleContext } from '../../panels/types.ts';
+import type { PanelDefinition, PanelKind, PanelProps, PanelTitleContext } from '../../panels/types.ts';
 import { useCommandCtx, useShellRuntime } from '../context.tsx';
 import { PANEL_INSTANCE_ATTR, PANEL_KIND_ATTR } from '../focus.ts';
 import { activeSequenceName } from '../header/TitleBar.tsx';
 import { type MenuEnv, resolveMenu, type ShellMenuItem } from '../menus/resolve.ts';
 import { useUiPrefs } from '../prefs.ts';
 import { PANEL_COMPONENT, PANEL_TAB } from '../workspaces/layout.ts';
-import type { DockController } from './controller.ts';
+import { type DockController, labelFloatingGroup } from './controller.ts';
 
 type DockCtx = {
 	controller: DockController;
@@ -159,7 +160,9 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 	}, [props.api]);
 	useEffect(() => {
 		if (props.api.title !== title) props.api.setTitle(title);
-	}, [props.api, title]);
+		const panel = props.containerApi.getPanel(props.api.id);
+		if (panel) labelFloatingGroup(panel, title);
+	}, [props.api, props.containerApi, title]);
 
 	const onAux = (e: MouseEvent) => {
 		if (e.button === 1) {
@@ -188,33 +191,37 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 					<DropdownMenu
 						items={menu}
 						trigger={
-							<button
-								type="button"
-								aria-label={`${title} panel menu`}
+							// gaps (UI-6, axe nested-interactive): a role=tab may not contain controls, so the menu and close
+							// glyphs are pointer shortcuts hidden from assistive technology; the tab's context menu
+							// (Shift+F10 / the Menu key) has the same items and Close Panel (Ctrl+W) closes it by keyboard.
+							<span
+								aria-hidden="true"
 								data-testid={`panel-menu-${kind}`}
 								onPointerDown={(e) => e.stopPropagation()}
-								className="inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
+								className="inline-flex size-4 shrink-0 cursor-default items-center justify-center rounded-[2px] text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
 							>
 								<Icon id="panel.menu" size={14} />
-							</button>
+							</span>
 						}
 					/>
 				) : null}
-				<button
-					type="button"
-					aria-label={`Close ${title}`}
+				{/* Pointer shortcut (aria-hidden); keyboard users close panels with Close Panel (see above). */}
+				<span
+					aria-hidden="true"
+					title={`Close ${title}`}
+					data-testid={`panel-close-${kind}`}
 					onPointerDown={(e) => e.stopPropagation()}
 					onClick={(e) => {
 						e.stopPropagation();
 						controller.close(props.api.id);
 					}}
 					className={cx(
-						'inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon opacity-0 group-hover/tab:opacity-100 hover:bg-pr-hover focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100',
+						'inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon opacity-0 group-hover/tab:opacity-100 hover:bg-pr-hover [@media(pointer:coarse)]:opacity-100',
 						narrow ? 'hidden' : '',
 					)}
 				>
 					<Icon id="app.close" size={12} />
-				</button>
+				</span>
 			</div>
 		</ContextMenu>
 	);
@@ -245,9 +252,23 @@ function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<st
 		>
 			{Component ? (
 				<PanelErrorBoundary name={title}>
-					{/* Panel bodies are code-split (panels/lazy.ts): a skeleton until the chunk loads. */}
+					{/* Panel bodies are code-split (panels/lazy.ts): a skeleton until the chunk loads. The Suspense
+					    boundary only serves components that are not loadable through state (none of ours). */}
 					<Suspense fallback={<PanelLoading />}>
-						<Component instanceId={props.api.id} visible={visible} params={props.params} />
+						{/* ui-perf: a panel in a background tab stops following edits and gestures until it is shown again
+						    (its DOM is detached; keep-alive panels keep playing and following). */}
+						<FreezeStoreUpdates frozen={!visible && !def?.keepAlive}>
+							{isLoadable(Component) ? (
+								<LoadedPanel
+									source={Component}
+									instanceId={props.api.id}
+									visible={visible}
+									params={props.params}
+								/>
+							) : (
+								<Component instanceId={props.api.id} visible={visible} params={props.params} />
+							)}
+						</FreezeStoreUpdates>
 					</Suspense>
 				</PanelErrorBoundary>
 			) : (
@@ -255,6 +276,20 @@ function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<st
 			)}
 		</div>
 	);
+}
+
+/**
+ * A code-split panel mounted through state when its module has loaded (panels/lazy.ts: a Suspense retry can be
+ * starved by frequent updates). A failed download reaches the panel's error boundary; Reload Panel mounts this
+ * again, which asks for the module again.
+ */
+function LoadedPanel(props: PanelProps & { source: Loadable<PanelProps> }) {
+	const { source, ...panel } = props;
+	const state = useLoaded(source);
+	if (state.status === 'failed')
+		throw state.error instanceof Error ? state.error : new Error(String(state.error));
+	if (state.status === 'loading') return <PanelLoading />;
+	return <state.Component {...panel} />;
 }
 
 function PanelLoading() {

@@ -158,16 +158,40 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 				reasons: ['item.delete'],
 				commandCount: 1,
 				expiresAt: 'x',
+				answerKey: 'key_for_this_window',
 			},
 		});
 		expect(bridge.store.getState().approvals).toMatchObject([{ approvalId: 'apr_1', source: 'engine' }]);
+		// Security review AGT-2: the answer key stays inside the bridge. It is not in the store the shell renders,
+		// nor reachable through `window.jasper`.
+		expect(JSON.stringify(bridge.store.getState())).not.toContain('key_for_this_window');
+		expect(JSON.stringify(bridge.api())).not.toContain('key_for_this_window');
 		expect(bridge.resolveApproval('apr_1', 'denied')).toBe(true);
 		expect(ws.sent.at(-1)).toEqual({
 			type: 'event',
 			event: 'agent.approval.resolve',
-			payload: { approvalId: 'apr_1', decision: 'denied' },
+			payload: { approvalId: 'apr_1', decision: 'denied', answerKey: 'key_for_this_window' },
 		});
 		expect(bridge.store.getState().approvals).toEqual([]);
+		// The key is spent with the card.
+		expect(bridge.resolveApproval('apr_1', 'approved')).toBe(false);
+
+		// A request this window was given no key for cannot be answered from here: it is not shown.
+		ws.server({
+			type: 'event',
+			event: 'agent.approval.requested',
+			payload: {
+				approvalId: 'apr_2',
+				projectId: session.projectId,
+				label: 'Delete',
+				agent: 'cli',
+				reasons: ['item.delete'],
+				commandCount: 1,
+				expiresAt: 'x',
+			},
+		});
+		expect(bridge.store.getState().approvals).toEqual([]);
+		expect(bridge.resolveApproval('apr_2', 'approved')).toBe(false);
 
 		ws.close();
 		expect(bridge.store.getState().relay).toBe('disconnected');

@@ -1,8 +1,8 @@
 // Shortcut labels (S05:MN-004, KB-004, KB-013): platform-rendered (`Ctrl+K` vs `⌘K`), web fallbacks
 // shown instead of browser-reserved chords, key names from the keyboard layout map when available.
 import {
-	DEFAULT_KEYMAP,
 	effectiveKey,
+	getActiveKeymap,
 	type KeyBinding,
 	type Platform,
 	type Runtime,
@@ -99,7 +99,7 @@ export function shortcutFor(
 	commandId: string,
 	opts: { platform: Platform; runtime: Runtime; keymap?: readonly KeyBinding[] },
 ): string | null {
-	const keymap = opts.keymap ?? DEFAULT_KEYMAP;
+	const keymap = opts.keymap ?? getActiveKeymap();
 	const ids = [commandId, KEYMAP_ALIASES[commandId]].filter(Boolean) as string[];
 	for (const id of ids) {
 		for (const b of keymap) {

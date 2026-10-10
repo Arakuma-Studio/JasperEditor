@@ -46,6 +46,26 @@ export const MEDIA_EXTENSIONS = [
 	'tiff',
 	'bmp',
 	'svg',
+	// wp captions: caption files (imported onto caption tracks)
+	'srt',
+	'vtt',
+	'scc',
+	'mcc',
+	'stl',
+	'ttml',
+	'dfxp',
+	// wp interchange: timeline documents (FCP7 XML as .xml)
+	'xml',
+	'fcpxml',
+	'otio',
+	'edl',
+	'aaf',
+	'omf',
+	'ale',
+	// three-d: 3D models (Advanced 3D model layers)
+	'glb',
+	'gltf',
+	'obj',
 ] as const;
 
 /** `revealInFolder` accepts only absolute paths without NUL bytes. */
@@ -68,20 +88,37 @@ export function isWindowAction(a: unknown): a is WindowAction {
 type McpLaunchInfo = { entry: string | null; command: string; env: Record<string, string> };
 
 /**
- * Packaged builds have no `node`: the app binary runs the bundle as Node (ELECTRON_RUN_AS_NODE=1).
- * From a checkout (dev / packaged-like) plain `node` is used. `entry` is null when the bundle is missing.
+ * From a checkout (dev / packaged-like) plain `node` runs the bundle. A packaged build has no `node` on its own:
+ *  - when it ships a Node runtime (`<resources>/node/node`, `bundledNode`), that runs it, like any other program;
+ *  - otherwise the app binary runs the bundle as Node (ELECTRON_RUN_AS_NODE=1), which is what keeps the `runAsNode`
+ *    fuse enabled (docs/security-review.md §8, RUN-1: the engine's worker programs need the same).
+ * `entry` is null when the bundle is missing.
  */
 export function mcpLaunchInfo(opts: {
 	packaged: boolean;
 	entry: string;
 	exists: boolean;
 	execPath: string;
+	/** Path of the Node runtime shipped with the app, when there is one. */
+	bundledNode?: string | null;
 }): McpLaunchInfo {
-	return {
-		entry: opts.exists ? opts.entry : null,
-		command: opts.packaged ? opts.execPath : 'node',
-		env: opts.packaged ? { ELECTRON_RUN_AS_NODE: '1' } : {},
-	};
+	const entry = opts.exists ? opts.entry : null;
+	if (!opts.packaged) return { entry, command: 'node', env: {} };
+	if (opts.bundledNode) return { entry, command: opts.bundledNode, env: {} };
+	return { entry, command: opts.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } };
+}
+
+/**
+ * The cookies the window needs for the engine it started (ARCH §4.2; security review AGT-2): the session token and
+ * the editor key, under per-port names (cookies are shared by every port of 127.0.0.1; `portCookieName` in
+ * @jasper/api — the engine accepts these names). Both are set HttpOnly and SameSite=Strict by the caller.
+ */
+export function sessionCookies(
+	port: string | number,
+	token: string,
+	editorKey: string,
+): Record<string, string> {
+	return { [`jasper_session_${port}`]: token, [`jasper_editor_${port}`]: editorKey };
 }
 
 // ---------------------------------------------------------------- clipboard (wp-clipboard, S01:CLB-002/009)
@@ -164,4 +201,135 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 		if (out.length >= CLIPBOARD_MAX_FILES) break;
 	}
 	return out;
+}
+
+/**
+ * Security review ELE-2: file types Edit Original may hand to the OS opener — the same allowlist as the engine's
+ * (`OPENABLE_EXTENSIONS` in @jasper/config; test/security.test.ts keeps the two equal). It used to be a list of known
+ * program types, which the OS opener outruns (`.hta`, `.pif`, `.cpl`, `.reg`, `.scpt`, `.workflow`, `.inetloc`, `.py`,
+ * and on macOS any extensionless Unix executable, which opens in Terminal).
+ */
+export const OPENABLE_EXTENSIONS: readonly string[] = [
+	// video
+	'mp4',
+	'mov',
+	'm4v',
+	'mkv',
+	'webm',
+	'avi',
+	'mxf',
+	'mts',
+	'm2ts',
+	'ts',
+	'mpg',
+	'mpeg',
+	'wmv',
+	'flv',
+	'3gp',
+	'ogv',
+	// audio
+	'mp3',
+	'wav',
+	'aac',
+	'm4a',
+	'flac',
+	'ogg',
+	'opus',
+	'aif',
+	'aiff',
+	'wma',
+	'ac3',
+	'caf',
+	// pictures
+	'png',
+	'jpg',
+	'jpeg',
+	'webp',
+	'gif',
+	'tif',
+	'tiff',
+	'bmp',
+	'avif',
+	'heic',
+	'heif',
+	'tga',
+	'exr',
+	'dpx',
+	'psd',
+	'psb',
+	// vector pictures and documents
+	'svg',
+	'pdf',
+	'ai',
+	'eps',
+	// captions
+	'srt',
+	'vtt',
+	'scc',
+	'mcc',
+	'stl',
+	'ttml',
+	'dfxp',
+	// timeline documents
+	'xml',
+	'fcpxml',
+	'otio',
+	'edl',
+	'aaf',
+	'omf',
+	'ale',
+	// models, animations, colour
+	'glb',
+	'gltf',
+	'obj',
+	'json',
+	'lottie',
+	'cube',
+	'3dl',
+	'ocio',
+];
+
+/**
+ * gaps (Edit Original): a path the renderer may ask the OS to open in its default application — absolute, sane,
+ * and of a media or document type (never a program, a launcher, or a file without an extension).
+ */
+export function isOpenablePath(p: unknown): p is string {
+	if (!isRevealablePath(p)) return false;
+	const m = /\.([A-Za-z0-9]+)$/.exec(p);
+	return !!m && OPENABLE_EXTENSIONS.includes(m[1]!.toLowerCase());
+}
+
+/** A CSS-pixel rectangle from the renderer (validated before it reaches capturePage). */
+export function isCaptureRect(v: unknown): v is { x: number; y: number; width: number; height: number } {
+	if (!v || typeof v !== 'object') return false;
+	const r = v as Record<string, unknown>;
+	return (
+		['x', 'y', 'width', 'height'].every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number)) &&
+		(r.x as number) >= 0 &&
+		(r.y as number) >= 0 &&
+		(r.width as number) >= 1 &&
+		(r.height as number) >= 1 &&
+		(r.width as number) <= 16384 &&
+		(r.height as number) <= 16384
+	);
+}
+
+/**
+ * audio-mix: which permission requests the app grants. Voice-over recording needs the microphone (`media` with
+ * audio only) and Preferences ▸ Audio lists the inputs (`mediaKeySystem` is never needed); only frames on the app
+ * origin may ask. Everything else (camera, geolocation, notifications, MIDI, HID…) is denied.
+ */
+export function isPermissionAllowed(
+	permission: string,
+	requestingUrl: string,
+	appOrigin: string | null,
+	mediaTypes: readonly string[] = [],
+): boolean {
+	if (!appOrigin || !isSameOrigin(requestingUrl, appOrigin)) return false;
+	if (permission === 'media') return mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
+	return (
+		permission === 'clipboard-read' ||
+		permission === 'clipboard-sanitized-write' ||
+		permission === 'fullscreen'
+	);
 }

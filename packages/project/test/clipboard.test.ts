@@ -19,6 +19,7 @@ import {
 	EMPTY_PROBE,
 	encodeClipboardHtml,
 	flicksPerFrame,
+	type LegacyShapeClip,
 	type MediaAsset,
 	type MgTemplateInfo,
 	parseClipboardPayload,
@@ -559,7 +560,8 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 			},
 		]);
 		const B = h.seq.clips[b] as Extract<Clip, { kind: 'solid' }>;
-		expect(B.transform.scale.keyframes.map((k) => (k.time - B.sourceIn) / F30)).toEqual([0, 58]);
+		// keyframes-blend: first frame → first frame, last frame → last frame (offsets span duration − 1 frames).
+		expect(B.transform.scale.keyframes.map((k) => (k.time - B.sourceIn) / F30)).toEqual([0, 59]);
 	});
 
 	it('pastes text animators, text style and shape style (M2) and refuses attributes that apply to nothing', () => {
@@ -591,7 +593,7 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 		expect(P.textAnimation?.out?.preset).toBe('fade');
 		expect(P.content.style.sizePx).toBe(140);
 		expect(P.content.text).toBe('plain');
-		const Q = h.seq.clips[r.refs.$q!] as Extract<Clip, { kind: 'shape' }>;
+		const Q = h.seq.clips[r.refs.$q!] as LegacyShapeClip;
 		expect(Q.shape.fill?.value).toEqual([1, 0, 0, 1]);
 		expect(Q.shape.stroke?.width.value).toBe(6);
 		expect(Q.shape.size.value).toEqual([50, 50]);
@@ -698,7 +700,7 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 
 	it('refuses a selected property of another value kind, and pastes shape size keys (M2)', () => {
 		const { h, shape, text } = richProject();
-		const keys = (h.seq.clips[shape] as Extract<Clip, { kind: 'shape' }>).shape.size.keyframes;
+		const keys = (h.seq.clips[shape] as LegacyShapeClip).shape.size.keyframes;
 		const p = roundTrip(
 			buildKeyframesPayload(
 				h.doc,
@@ -722,7 +724,7 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 			{ type: 'clip.addShape', at: 300, duration: 40, track: 'V3', shape: { type: 'ellipse' }, ref: '$e' },
 		]);
 		h.ok([{ type: 'keyframe.paste', payload: p, clipId: r.refs.$e!, at: { sequenceFrame: 310 } }]);
-		const E = h.seq.clips[r.refs.$e!] as Extract<Clip, { kind: 'shape' }>;
+		const E = h.seq.clips[r.refs.$e!] as LegacyShapeClip;
 		expect(E.shape.size.keyframes.map((k) => [Math.round(k.time / F30), k.value])).toEqual([
 			[10, [200, 100]],
 			[30, [400, 100]],
@@ -763,6 +765,31 @@ describe('project.pasteItems (CLB-007)', () => {
 		expect(Object.values(copy.links)[0]!.members.every((m) => copy.clips[m])).toBe(true);
 		expect(h.doc.items[res.itemIds[0]!]).toMatchObject({ kind: 'sequence', name: seqItem.name });
 		expect(h.doc.rootItems).toContain(res.itemIds[0]);
+		ok(h);
+	});
+
+	it('pastes a multi-camera source with its cameras on the copied tracks', () => {
+		const h = new Harness();
+		const items = [10, 12].map((seconds, i) => {
+			const r = h.ok([{ type: 'media.register', asset: videoAsset({ seconds }), name: `Cam ${i + 1}` }]);
+			return (r.results[0] as { itemId: string }).itemId;
+		});
+		const mc = h.ok([{ type: 'multicam.create', itemIds: items, method: 'in' }]).results[0] as {
+			sequenceId: string;
+			itemId: string;
+		};
+		const p = roundTrip(buildItemsPayload(h.doc, [mc.itemId]));
+		const r = h.ok([{ type: 'project.pasteItems', payload: p }]);
+		const copy = h.doc.sequences[(r.results[0] as { sequenceIds: string[] }).sequenceIds[0]!]!;
+		const orig = h.doc.sequences[mc.sequenceId]!;
+		const at = (s: typeof copy) =>
+			s.multicam!.angles.map((a) => [
+				a.id,
+				s.videoTracks.findIndex((t) => t.id === a.videoTrackId),
+				a.audioTrackIds.map((id) => s.audioTracks.findIndex((t) => t.id === id)),
+			]);
+		expect(at(copy)).toEqual(at(orig));
+		expect(copy.videoTracks[0]!.id).not.toBe(orig.videoTracks[0]!.id);
 		ok(h);
 	});
 

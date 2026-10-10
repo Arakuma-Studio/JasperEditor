@@ -142,3 +142,80 @@ export function parseTimecodeEntry(input: string, rate: Rational, ctx: TimecodeE
 	if (frames === null) return null;
 	return Math.max(0, frames - (ctx.startFrames ?? 0));
 }
+
+// ---------------------------------------------------------------- gaps: Project Settings ▸ display formats
+
+/** Project Settings ▸ General ▸ Video Display Format (see `VIDEO_DISPLAY_FORMATS` in the schema). */
+export type VideoDisplayFormat = 'timecode' | 'frames' | 'feet35' | 'feet16';
+/** Frames per foot of film: 35 mm (4-perf) has 16, 16 mm has 40. */
+export const FRAMES_PER_FOOT = { feet35: 16, feet16: 40 } as const;
+
+export type DisplayOptions = TimecodeOptions & { display?: VideoDisplayFormat };
+
+/**
+ * A frame (or a duration) in the project's video display format, as Premiere shows it: timecode, a frame count, or
+ * feet + frames of 35 mm / 16 mm film (`0012+05`). The start timecode offset applies to every format.
+ */
+export function formatTimeDisplay(frame: number, rate: Rational, opts: DisplayOptions = {}): string {
+	const display = opts.display ?? 'timecode';
+	if (display === 'timecode') return formatTimecode(frame, rate, opts);
+	const total = Math.trunc(frame + (opts.startFrames ?? 0));
+	const neg = total < 0;
+	const f = Math.abs(total);
+	if (display === 'frames') return `${neg ? '-' : ''}${f}`;
+	const per = FRAMES_PER_FOOT[display];
+	const feet = Math.floor(f / per);
+	return `${neg ? '-' : ''}${String(feet).padStart(4, '0')}+${String(f % per).padStart(2, '0')}`;
+}
+
+/**
+ * Parses a time typed in the display format. Frames: `120` (absolute), feet + frames: `12+05`; timecode entries
+ * (`:` / `;` separated) and the relative / `#` forms of `parseTimecodeEntry` work in every format.
+ */
+export function parseTimeDisplayEntry(
+	input: string,
+	rate: Rational,
+	ctx: TimecodeEntryContext & { display?: VideoDisplayFormat },
+): number | null {
+	const display = ctx.display ?? 'timecode';
+	const s = input.trim();
+	if (display === 'timecode' || /[:;]/.test(s) || s.startsWith('#')) return parseTimecodeEntry(s, rate, ctx);
+	const start = ctx.startFrames ?? 0;
+	if (display === 'frames') {
+		if (/^[+-]\d+$/.test(s)) return Math.max(0, ctx.current + Number(s));
+		if (!/^\d{1,9}$/.test(s)) return null;
+		return Math.max(0, Number(s) - start);
+	}
+	const per = FRAMES_PER_FOOT[display];
+	const m = /^([+-])?(\d{1,7})(?:\+(\d{1,3}))?$/.exec(s);
+	if (!m) return null;
+	const frames = Number(m[2]) * per + Number(m[3] ?? 0);
+	if (m[1]) return Math.max(0, ctx.current + (m[1] === '-' ? -frames : frames));
+	return Math.max(0, frames - start);
+}
+
+/** Project Settings ▸ General ▸ Audio Display Format. */
+export type AudioDisplayFormat = 'samples' | 'milliseconds';
+
+/** A sequence frame in audio time units: `HH:MM:SS:samples` or `HH:MM:SS:mmm` (Premiere's Show Audio Time Units). */
+export function formatAudioTime(
+	frame: number,
+	rate: Rational,
+	sampleRate: number,
+	format: AudioDisplayFormat,
+	startFrames = 0,
+): string {
+	const fps = rate.num / Math.max(1, rate.den);
+	const seconds = Math.max(0, (frame + startFrames) / (fps > 0 ? fps : 30));
+	const whole = Math.floor(seconds + 1e-9);
+	const frac = seconds - whole;
+	const hh = Math.floor(whole / 3600);
+	const mm = Math.floor(whole / 60) % 60;
+	const ss = whole % 60;
+	const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 48000;
+	const sub =
+		format === 'samples'
+			? String(Math.min(sr - 1, Math.round(frac * sr))).padStart(String(sr).length - 1, '0')
+			: String(Math.min(999, Math.round(frac * 1000))).padStart(3, '0');
+	return `${pad(hh)}:${pad(mm)}:${pad(ss)}:${sub}`;
+}

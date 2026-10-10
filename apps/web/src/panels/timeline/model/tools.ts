@@ -26,6 +26,8 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	ripple: { id: 'ripple', label: 'Ripple Edit Tool', key: 'B', icon: 'tool.ripple' },
 	rolling: { id: 'rolling', label: 'Rolling Edit Tool', key: 'N', icon: 'tool.rolling' },
 	rateStretch: { id: 'rateStretch', label: 'Rate Stretch Tool', key: 'R', icon: 'tool.rateStretch' },
+	// audio-fx: Premiere's Remix tool has no default key.
+	remix: { id: 'remix', label: 'Remix Tool', key: '', icon: 'tool.remix' },
 	razor: { id: 'razor', label: 'Razor Tool', key: 'C', icon: 'tool.razor' },
 	slip: { id: 'slip', label: 'Slip Tool', key: 'Y', icon: 'tool.slip' },
 	slide: { id: 'slide', label: 'Slide Tool', key: 'U', icon: 'tool.slide' },
@@ -33,21 +35,27 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	// M2 (S11:SHP-006, wp-m2-shapes): no default keys (S05:TOOL-002 lists none), commands in commands/shapes.ts.
 	rectangle: { id: 'rectangle', label: 'Rectangle Tool', key: '', icon: 'tool.rectangle' },
 	ellipse: { id: 'ellipse', label: 'Ellipse Tool', key: '', icon: 'tool.ellipse' },
+	// wp shapes: no default keys (Premiere has no Polygon / Star tools; After Effects' Q would clash with Ripple Trim).
+	polygon: { id: 'polygon', label: 'Polygon Tool', key: '', icon: 'tool.polygon' },
+	star: { id: 'star', label: 'Star Tool', key: '', icon: 'tool.star' },
 	hand: { id: 'hand', label: 'Hand Tool', key: 'H', icon: 'tool.hand' },
 	zoom: { id: 'zoom', label: 'Zoom Tool', key: 'Z', icon: 'tool.zoom' },
 	type: { id: 'type', label: 'Type Tool', key: 'T', icon: 'tool.type' },
+	// three-d: After Effects' Unified Camera Tool (C there is Premiere's Razor: no default key).
+	camera: { id: 'camera', label: 'Camera Tool', key: '', icon: 'tool.camera' },
 };
 
 /** S05:TOOL-002 groups (flyouts); the first member is the default face. */
 export const TOOL_GROUPS: readonly (readonly ToolId[])[] = [
 	['selection'],
 	['trackSelectForward', 'trackSelectBackward'],
-	['ripple', 'rolling', 'rateStretch'],
+	['ripple', 'rolling', 'rateStretch', 'remix'],
 	['razor'],
 	['slip', 'slide'],
-	['pen', 'rectangle', 'ellipse'],
+	['pen', 'rectangle', 'ellipse', 'polygon', 'star'],
 	['hand', 'zoom'],
 	['type'],
+	['camera'],
 ];
 
 export type Mods = { shift: boolean; ctrl: boolean; alt: boolean };
@@ -58,6 +66,7 @@ export type GestureKind =
 	| 'ripple'
 	| 'roll'
 	| 'stretch'
+	| 'remix'
 	| 'slip'
 	| 'slide'
 	| 'razor'
@@ -88,6 +97,10 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 		// The shape tools draw in the Program monitor; in the timeline they act like the Selection tool (wp-m2-shapes).
 		case 'rectangle':
 		case 'ellipse':
+		case 'polygon':
+		case 'star':
+		// three-d: the Camera tool acts in the Program monitor; in the timeline it selects like the Selection tool.
+		case 'camera':
 			if (edge) return mods.ctrl ? 'ripple' : 'trim';
 			if (onClip) return 'move';
 			if (hit.kind === 'gap') return 'gap';
@@ -108,6 +121,10 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 			const caps = kindCapabilities(hit.clip.kind);
 			return caps?.supportsSpeed && isBoundedContent(hit.clip) ? 'stretch' : 'trim';
 		}
+		case 'remix':
+			// audio-fx: the end of an audio (music) clip remixes it; anything else only selects.
+			if (onClip && hit.zone === 'out' && hit.clip.kind === 'audio') return 'remix';
+			return onClip ? 'select' : 'marquee';
 		case 'razor':
 			return onClip ? 'razor' : 'none';
 		case 'slip':
@@ -142,6 +159,7 @@ export function cursorFor(tool: ToolId, hit: Hit, mods: Mods): string {
 		case 'trim':
 		case 'ripple':
 		case 'stretch':
+		case 'remix':
 			return hit.kind === 'clip' && hit.zone === 'in' ? 'w-resize' : 'e-resize';
 		case 'roll':
 			return 'col-resize';

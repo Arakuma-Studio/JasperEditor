@@ -608,6 +608,8 @@ export class CacheService {
 								fingerprints: new Set([...saved.fingerprints, ...live.fingerprints]),
 								mgRenderKeys: new Set([...saved.mgRenderKeys, ...live.mgRenderKeys]),
 								bundleHashes: new Set([...saved.bundleHashes, ...live.bundleHashes]),
+								rotoKeys: new Set([...(saved.rotoKeys ?? []), ...(live.rotoKeys ?? [])]),
+								previewHashes: new Set([...(saved.previewHashes ?? []), ...(live.previewHashes ?? [])]),
 							}
 						: live,
 				);

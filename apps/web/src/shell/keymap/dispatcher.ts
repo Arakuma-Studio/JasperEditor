@@ -11,7 +11,7 @@
 import { type ClipboardData, readClipboardEvent } from '../../clipboard/system.ts';
 import {
 	chordFromEvent,
-	DEFAULT_KEYMAP,
+	getActiveKeymap,
 	type KeyBinding,
 	type Platform,
 	type Runtime,
@@ -50,7 +50,7 @@ export function resolveKey(
 	const candidates = resolveBindings(chord, scopeChain(focus), {
 		platform: opts.platform,
 		runtime: opts.runtime,
-		keymap: opts.keymap ?? DEFAULT_KEYMAP,
+		keymap: opts.keymap ?? getActiveKeymap(),
 	});
 	for (const binding of candidates) {
 		const command = getCommand(binding.command);
@@ -119,6 +119,17 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 	const held = new Map<string, UiCommand>();
 	let pending: ((e: KeyboardEvent) => void) | null = null;
 	let altTap = false;
+	// Pointers held down right now. Esc during a pointer drag belongs to the drag (S03:XF-053, S02:TL-903): the
+	// gesture's own listener cancels it. If the keymap ran `gesture.cancel` first, it would also deselect, and the
+	// re-render that follows could swap out the gesture's listener in the middle of the dispatch, so the drag
+	// survived the Escape (e2e/shapes.spec.ts, "Escape cancels").
+	const pressed = new Set<number>();
+	const onPointerDown = (e: PointerEvent) => pressed.add(e.pointerId);
+	const onPointerUp = (e: PointerEvent) => pressed.delete(e.pointerId);
+	const onPointerMove = (e: PointerEvent) => {
+		// A release outside the window can go unseen; the next move without buttons tells.
+		if (e.buttons === 0) pressed.delete(e.pointerId);
+	};
 
 	const clearPending = () => {
 		if (pending) win.removeEventListener('keydown', pending);
@@ -147,6 +158,7 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 		}
 		altTap = false;
 		if (e.isComposing || env.isSuspended?.()) return;
+		if (e.code === 'Escape' && pressed.size > 0) return;
 		const kind = classifyTarget(e.target);
 		if (kind === 'overlay') return;
 		if (e.code === 'F10' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && env.focusMenubar) {
@@ -189,6 +201,7 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 
 	const onBlur = () => {
 		altTap = false;
+		pressed.clear();
 		for (const [code, command] of held) {
 			held.delete(code);
 			command.onKeyUp?.(env.getCtx());
@@ -198,11 +211,19 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 	win.addEventListener('keydown', onKeyDown, true);
 	win.addEventListener('keyup', onKeyUp, true);
 	win.addEventListener('blur', onBlur);
+	win.addEventListener('pointerdown', onPointerDown, true);
+	win.addEventListener('pointerup', onPointerUp, true);
+	win.addEventListener('pointercancel', onPointerUp, true);
+	win.addEventListener('pointermove', onPointerMove, true);
 	return () => {
 		clearPending();
 		win.removeEventListener('keydown', onKeyDown, true);
 		win.removeEventListener('keyup', onKeyUp, true);
 		win.removeEventListener('blur', onBlur);
+		win.removeEventListener('pointerdown', onPointerDown, true);
+		win.removeEventListener('pointerup', onPointerUp, true);
+		win.removeEventListener('pointercancel', onPointerUp, true);
+		win.removeEventListener('pointermove', onPointerMove, true);
 	};
 }
 

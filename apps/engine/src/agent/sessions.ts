@@ -18,7 +18,7 @@ export interface AgentSocket {
 
 const OPEN = 1;
 
-type RequestKind = 'tx' | 'query' | 'schema';
+type RequestKind = 'tx' | 'query' | 'schema' | 'ui';
 
 type RelayOutcome = { result: unknown; error?: { code: string; message: string } };
 
@@ -40,6 +40,17 @@ type Pending = {
 
 export type AgentConnection = {
 	readonly socket: AgentSocket;
+	/**
+	 * Security review AGT-2: the connection was opened by the editor window (its upgrade request carried the editor
+	 * key). Only such connections are shown approval cards and may answer them; a connection opened with the token
+	 * alone (an agent, jasper-mcp, the CLI, a script) can relay nothing but its own events.
+	 */
+	readonly editor: boolean;
+	/**
+	 * approvalId → the answer key this connection was given with the card. An answer must present it, so only the
+	 * connection that displayed a card can answer it. Never sent anywhere else, never logged.
+	 */
+	readonly approvalKeys: Map<string, string>;
 	projectId: string | null;
 	sessionId: string | null;
 	leaseId: string | null;
@@ -52,6 +63,8 @@ type SessionRegistryOptions = {
 	engineVersion: string;
 	/** A session forwarded an event (doc.changed, selection.changed, agent.approval.resolve…). */
 	onEvent(conn: AgentConnection, event: string, payload: unknown): void;
+	/** A session announced itself (first hello, or again after its lease or project changed). */
+	onHello?(conn: AgentConnection): void;
 	/** Heartbeat interval (protocol pings); connections silent for 3 intervals are dropped. */
 	heartbeatMs?: number;
 	now?(): number;
@@ -93,11 +106,13 @@ export class SessionRegistry {
 		this.heartbeat?.unref();
 	}
 
-	/** Registers a new socket; messages are handled until it closes. */
-	attach(socket: AgentSocket): AgentConnection {
+	/** Registers a new socket; messages are handled until it closes. `editor`: see AgentConnection. */
+	attach(socket: AgentSocket, opts: { editor?: boolean } = {}): AgentConnection {
 		const t = this.now();
 		const conn: AgentConnection = {
 			socket,
+			editor: opts.editor === true,
+			approvalKeys: new Map(),
 			projectId: null,
 			sessionId: null,
 			leaseId: null,
@@ -144,7 +159,8 @@ export class SessionRegistry {
 				conn.sessionId = msg.sessionId;
 				conn.leaseId = msg.leaseId;
 				conn.helloAt = this.now();
-				this.send(conn, { type: 'welcome', engineVersion: this.opts.engineVersion });
+				this.send(conn, { type: 'welcome', engineVersion: this.opts.engineVersion, editor: conn.editor });
+				this.opts.onHello?.(conn);
 				return;
 			case 'response': {
 				const p = conn.pending.get(msg.id);
@@ -167,6 +183,7 @@ export class SessionRegistry {
 
 	private drop(conn: AgentConnection, why: string): void {
 		if (!this.conns.delete(conn)) return;
+		conn.approvalKeys.clear();
 		for (const [id, p] of conn.pending) {
 			clearTimeout(p.timer);
 			p.reject(new RelayError('E_NO_SESSION', `The editor session disconnected (${why})`));
@@ -192,9 +209,48 @@ export class SessionRegistry {
 		return best;
 	}
 
+	/**
+	 * The window that answers live-UI automation (mcp-cli): for a project, its lease holder or else its most
+	 * recent window (read-only windows can be looked at and clicked too); without a project, the most recently
+	 * announced window of any project.
+	 */
+	uiTarget(projectId?: string): AgentConnection | null {
+		if (projectId) {
+			const h = this.holder(projectId);
+			if (h) return h;
+		}
+		let best: AgentConnection | null = null;
+		for (const c of this.conns) {
+			if (!c.projectId || c.socket.readyState !== OPEN) continue;
+			if (projectId && c.projectId !== projectId) continue;
+			if (!best || c.helloAt > best.helloAt) best = c;
+		}
+		return best;
+	}
+
 	/** Every connected session of a project (for events such as approval requests). */
 	connectionsFor(projectId: string): AgentConnection[] {
 		return [...this.conns].filter((c) => c.projectId === projectId && c.socket.readyState === OPEN);
+	}
+
+	/**
+	 * The editor windows that can show an approval card: those of a project, or (no project: a request that is not
+	 * about one project, such as deleting a preset from the user's library) every editor window that has a project
+	 * open.
+	 */
+	editors(projectId?: string | null): AgentConnection[] {
+		return [...this.conns].filter(
+			(c) =>
+				c.editor &&
+				c.projectId !== null &&
+				c.socket.readyState === OPEN &&
+				(projectId == null || c.projectId === projectId),
+		);
+	}
+
+	/** Sends an engine event to one connection. */
+	sendTo(conn: AgentConnection, event: string, payload: unknown): boolean {
+		return this.conns.has(conn) && this.send(conn, { type: 'event', event, payload });
 	}
 
 	/** Sends a request and waits for the matching response (rejects on timeout or disconnect). */

@@ -17,6 +17,7 @@ import { MediaRegistry } from '../media/registry.ts';
 import { MediaService } from '../media/service.ts';
 import { prerenderKey } from '../mg-bundles/service.ts';
 import { LeaseManager } from '../projects/leases.ts';
+import { RecoveryJournal } from '../projects/recovery.ts';
 import { ProjectStoreFs } from '../projects/store.ts';
 import { RemotionService } from '../remotion/service.ts';
 import { UploadService } from '../uploads/service.ts';
@@ -39,6 +40,8 @@ export type CoreServices = {
 	uploads: UploadService;
 	leases: LeaseManager;
 	projects: ProjectStoreFs;
+	/** Per-session crash-recovery journals (S01:PER-021, AC-18, D-39). */
+	recovery: RecoveryJournal;
 	fonts: FontCatalogService;
 	remotion: RemotionService;
 	exports: ExportService;
@@ -124,6 +127,14 @@ export async function createCoreServices(
 	const uploads = new UploadService({ dir: join(paths.mediaDir, '.uploads'), media });
 	const leases = new LeaseManager();
 	const projects = new ProjectStoreFs({ paths, leases, appVersion: config.version });
+	const recovery = new RecoveryJournal({
+		paths,
+		leases,
+		saved: async (projectId) => {
+			const g = await projects.get(projectId).catch(() => null);
+			return g ? { revision: g.revision, document: g.envelope.document } : null;
+		},
+	});
 	const fonts = new FontCatalogService(env);
 	const remotion = new RemotionService({
 		bundleCacheDir: paths.remotionBundleDir,
@@ -199,6 +210,7 @@ export async function createCoreServices(
 		uploads,
 		leases,
 		projects,
+		recovery,
 		fonts,
 		remotion,
 		exports: exportsSvc,

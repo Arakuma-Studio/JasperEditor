@@ -201,6 +201,9 @@ test('Rectangle / Ellipse tools: drag box, Shift = square, Alt = from the centre
 	await expect(page.getByTestId('shape-tool-preview')).toHaveCount(0);
 	await page.mouse.up();
 	expect(await shapes()).toHaveLength(5);
+	// Esc belonged to the drag: the keymap's Escape (deselect, TL-903) did not run as well (wp fixups).
+	const kept = await query<{ selection: { timeline?: { clips?: string[] } } }>(page, 'selection.get');
+	expect(kept.selection.timeline?.clips).toEqual([ids.alt]);
 	await page.locator('[data-testid="tools-panel"] [data-tool="selection"]').click();
 	expect((await appliedLabels(page)).slice(labels0)).toEqual([
 		'New Rectangle',

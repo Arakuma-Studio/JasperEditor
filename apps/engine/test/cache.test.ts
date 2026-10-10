@@ -918,6 +918,7 @@ describe('engine logs and the job journal do not grow forever (CA-020)', () => {
 	});
 });
 
-beforeAll(() => ensureFixtures());
+// A clean checkout generates (or waits for) every fixture here: minutes, not the default 10 s hook timeout.
+beforeAll(() => ensureFixtures(), 900_000);
 
 afterEach(() => vi.useRealTimers());

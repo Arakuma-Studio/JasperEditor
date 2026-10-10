@@ -17,6 +17,8 @@ export type ShellMenuItem =
 			/** Overrides for parameterized entries (workspace list, panel list). */
 			checked?: boolean;
 			shortcut?: string | null;
+			/** gaps: shown only in these runtimes (File ▸ Exit is desktop-only); absent = everywhere. */
+			runtimes?: readonly Runtime[];
 	  }
 	| { type: 'submenu'; label: string; items: ShellMenuItem[] }
 	| { type: 'separator' }
@@ -136,6 +138,7 @@ export function resolveMenu(items: readonly ShellMenuItem[], env: MenuEnv, path 
 				break;
 			}
 			default: {
+				if (item.runtimes && !item.runtimes.includes(env.runtime)) break;
 				const st = commandState(item.command, env, item.label);
 				const disabled = !!env.disabledReason || !st.enabled;
 				out.push({

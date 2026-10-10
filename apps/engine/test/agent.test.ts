@@ -367,26 +367,34 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 
 		const denied = postTx(app, projectId, tx([{ type: 'track.remove', trackIds: ['V3'] }]));
 		const ask = await box.until((m) => m.type === 'event' && m.event === 'agent.approval.requested');
-		const approval = ask.payload as { approvalId: string; reasons: string[]; summary: string };
+		const approval = ask.payload as {
+			approvalId: string;
+			reasons: string[];
+			summary: string;
+			answerKey: string;
+		};
 		expect(approval.reasons[0]).toMatch(/track.remove/);
-		expect(events.some((e) => e.type === 'agent.approval.requested')).toBe(true);
+		// The engine event agents can read on /events names the request but never carries the answer key (AGT-2).
+		const published = events.find((e) => e.type === 'agent.approval.requested');
+		expect(published).toBeTruthy();
+		expect(JSON.stringify(published)).not.toContain(approval.answerKey);
 		ws.send(
 			JSON.stringify({
 				type: 'event',
 				event: 'agent.approval.resolve',
-				payload: { approvalId: approval.approvalId, decision: 'denied' },
+				payload: { approvalId: approval.approvalId, decision: 'denied', answerKey: approval.answerKey },
 			}),
 		);
 		expect((await denied).result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
 
 		const approved = postTx(app, projectId, tx([{ type: 'track.remove', trackIds: ['V3'] }]));
 		const ask2 = await box.until((m) => m.type === 'event' && m.event === 'agent.approval.requested');
-		const id2 = (ask2.payload as { approvalId: string }).approvalId;
+		const card2 = ask2.payload as { approvalId: string; answerKey: string };
 		ws.send(
 			JSON.stringify({
 				type: 'event',
 				event: 'agent.approval.resolve',
-				payload: { approvalId: id2, decision: 'approved' },
+				payload: { approvalId: card2.approvalId, decision: 'approved', answerKey: card2.answerKey },
 			}),
 		);
 		const req = await box.until((m) => m.type === 'request');
@@ -471,7 +479,8 @@ class MemoryStore implements AgentProjectStore {
 	}
 }
 
-function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number } = {}) {
+/** A service with one connected editor window (`editor: false`: a connection that only holds the engine token). */
+function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number; editor?: boolean } = {}) {
 	const store = new MemoryStore();
 	const doc = createEmptyProject({ ids: createCounterIdSource(9), name: 'Svc', preset: 'hd-1080p-30' });
 	store.envelopes.set(
@@ -483,11 +492,12 @@ function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number
 		store: () => store,
 		registries: defaultRegistries(),
 		heartbeatMs: 0,
-		...opts,
+		...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
+		...(opts.relayTimeoutMs !== undefined ? { relayTimeoutMs: opts.relayTimeoutMs } : {}),
 	});
 	services.push(service);
 	const socket = new FakeSocket();
-	service.handleSocket(socket);
+	service.handleSocket(socket, { editor: opts.editor ?? true });
 	socket.client({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' });
 	return { service, store, socket, projectId: doc.projectId };
 }
@@ -509,14 +519,14 @@ describe('AgentService timeouts', () => {
 	it('ignores approval answers from connections that never said hello', async () => {
 		const { service, socket, projectId } = makeService({ approvalTimeoutMs: 80 });
 		const stranger = new FakeSocket();
-		service.handleSocket(stranger);
+		service.handleSocket(stranger, { editor: true });
 		const p = service.transact(projectId, tx([{ type: 'item.delete', itemIds: ['itm_X'] }]));
 		const ask = await socket.nextSent((m) => m.type === 'event' && m.event === 'agent.approval.requested');
-		const approvalId = (ask.payload as { approvalId: string }).approvalId;
+		const { approvalId, answerKey } = ask.payload as { approvalId: string; answerKey: string };
 		stranger.client({
 			type: 'event',
 			event: 'agent.approval.resolve',
-			payload: { approvalId, decision: 'approved' },
+			payload: { approvalId, decision: 'approved', answerKey },
 		});
 		expect((await p).result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_TIMEOUT' }] });
 	});
@@ -549,5 +559,47 @@ describe('AgentService timeouts', () => {
 			tx(Array.from({ length: 5001 }, () => ({ type: 'marker.add', frame: 0 }))),
 		);
 		expect(big.result).toMatchObject({ ok: false, errors: [{ code: 'E_LIMIT' }] });
+	});
+});
+
+describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
+	it('409 without an editor window; relays to the window and answers with which window replied', async () => {
+		const { app, projectId } = await makeEngine();
+		const post = (payload: unknown) =>
+			app.inject({ method: 'POST', url: '/api/agent/ui', headers: H, payload: payload as never });
+		const none = await post({ action: 'state' });
+		expect(none.statusCode).toBe(409);
+		expect(none.json()).toMatchObject({ code: 'NO_SESSION' });
+		expect((await post({ action: 'nope' })).statusCode).toBe(400);
+
+		const { ws, box } = await connectSession(app, projectId);
+		// Without a projectId the most recent window answers.
+		const pending = post({ action: 'elements', args: { panel: 'timeline' } });
+		const req = await box.until((m) => m.type === 'request');
+		expect(req).toMatchObject({ kind: 'ui', payload: { action: 'elements', args: { panel: 'timeline' } } });
+		ws.send(JSON.stringify({ type: 'response', id: req.id, result: { count: 0, elements: [] } }));
+		const ok = await pending;
+		expect(ok.statusCode).toBe(200);
+		expect(ok.json()).toEqual({
+			result: { count: 0, elements: [] },
+			window: { projectId, sessionId: 'ses_test' },
+		});
+		// The window's errors keep their code.
+		const bad = post({ projectId, action: 'click', args: { id: 'nope' } });
+		const breq = await box.until((m) => m.type === 'request');
+		ws.send(
+			JSON.stringify({
+				type: 'response',
+				id: breq.id,
+				result: null,
+				error: { code: 'E_NOT_FOUND', message: 'No element "nope"' },
+			}),
+		);
+		const b = await bad;
+		expect(b.statusCode).toBe(404);
+		expect(b.json()).toMatchObject({ message: 'No element "nope"', detail: { code: 'E_NOT_FOUND' } });
+		// Another project has no window.
+		expect((await post({ projectId: 'prj_other', action: 'state' })).statusCode).toBe(409);
+		ws.close();
 	});
 });

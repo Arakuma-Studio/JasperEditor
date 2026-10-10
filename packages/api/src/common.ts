@@ -4,6 +4,26 @@ import { z } from 'zod';
 export const API_VERSION = 1;
 export const API_HEADER = 'x-jasper-api';
 export const AUTH_COOKIE = 'jasper_session';
+/**
+ * The editor key cookie (security review AGT-2). HttpOnly: page scripts never see it, the browser sends it with
+ * the editor's requests and its `/agent` WebSocket, and nothing that authenticates with the token alone (jasper-mcp,
+ * the CLI, a script that read runtime.json) has it. Requests without it are an agent's.
+ */
+export const EDITOR_COOKIE = 'jasper_editor';
+/**
+ * Cookies are shared by every port of a host, so two engines on one machine (dev and E2E, two worktrees) would
+ * overwrite each other's: browsers get `<name>_<engine port>`. The engine accepts both names.
+ */
+export function portCookieName(name: string, port: number): string {
+	return `${name}_${port}`;
+}
+/**
+ * Set by the editor on requests it makes while an agent's live-UI input is being handled (`ui_click` on a Delete
+ * button…): the engine then treats the request as the agent's, so it needs the user's approval like the MCP tool.
+ */
+export const AGENT_INPUT_HEADER = 'x-jasper-agent-input';
+/** How an agent's client names itself to the engine (URI-encoded); shown on approval cards. Untrusted. */
+export const AGENT_NAME_HEADER = 'x-jasper-agent';
 
 /** Stable engine error codes (S04:ENG-022 plus the codes used by ARCHITECTURE §9–§11). */
 export const ENGINE_ERROR_CODES = [

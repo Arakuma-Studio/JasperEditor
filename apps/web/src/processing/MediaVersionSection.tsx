@@ -99,7 +99,9 @@ export function MediaVersionSection({ session, clips }: ClipSectionProps) {
 				{what
 					? [what, frames, sizeOf(currentAsset), `of ${originalName}`].filter(Boolean).join(' · ')
 					: versions.length > 1
-						? `${others.length} ${kind} version${others.length > 1 ? 's' : ''} available`
+						? others.length > 1
+							? `${others.length} ${kind} versions available`
+							: `1 ${kind} version available`
 						: 'No processed versions yet'}
 			</p>
 			{live ? (

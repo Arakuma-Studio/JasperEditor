@@ -2,6 +2,7 @@
 // ../transition-sapphire-swish-other-gl.test.ts): plans a stage frame of a registered transition exactly as
 // TransitionStage does (planGpuTransition + runShaderPlan on the fx GPU host) over named test pictures and returns
 // the pixels at the requested points.
+import '../gl-poison.ts';
 import { planGpuTransition, TRANSITION_SPECS, type TransitionSides, type TrSide } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 

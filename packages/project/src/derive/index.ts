@@ -1,4 +1,6 @@
 // Derived data (S01:SES-010): computed from the document, memoized by reference, never stored.
+import { isDraft } from 'immer';
+import { keyDiff } from '../commands/draft-read.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame, type Rational } from '../time.ts';
@@ -9,12 +11,22 @@ export const clipEnd = (c: { start: number; duration: number }) => c.start + c.d
 
 const indexCache = new WeakMap<object, Map<string, Clip[]>>();
 
-/** Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). */
+/**
+ * Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). Never memoized for an Immer
+ * draft: a transaction mutates its draft `clips` record in place (same proxy identity), so a cached index would go
+ * stale between the commands of one transaction (a clip added by one command was invisible to the next).
+ */
 function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
 ): Map<string, Clip[]> {
-	const cached = indexCache.get(seq.clips);
-	if (cached) return cached;
+	const draft = isDraft(seq.clips);
+	const cached = draft ? undefined : indexCache.get(seq.clips);
+	if (cached) {
+		remember(seq, cached);
+		return cached;
+	}
+	const derived = draft ? null : derivedIndex(seq);
+	if (derived) return derived;
 	const byTrack = new Map<string, Clip[]>();
 	for (const t of allTracks(seq)) byTrack.set(t.id, []);
 	for (const c of Object.values(seq.clips)) {
@@ -25,8 +37,78 @@ function sequenceIndex(
 		}
 		list.push(c);
 	}
-	for (const list of byTrack.values()) list.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+	for (const list of byTrack.values()) list.sort(byStart);
+	if (!draft) {
+		indexCache.set(seq.clips, byTrack);
+		remember(seq, byTrack);
+	}
+	return byTrack;
+}
+
+const byStart = (a: Clip, b: Clip) => a.start - b.start || a.id.localeCompare(b.id);
+
+/** The last index built per sequence id (perf-core): the next version of the sequence derives from it. */
+const lastIndex = new Map<string, { clips: object; tracks: string; idx: Map<string, Clip[]> }>();
+const trackKey = (seq: Pick<Sequence, 'videoTracks' | 'audioTracks' | 'captionTracks'>) =>
+	allTracks(seq)
+		.map((t) => t.id)
+		.join(',');
+function remember(
+	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
+	idx: Map<string, Clip[]>,
+) {
+	const id = (seq as { id?: unknown }).id;
+	if (typeof id !== 'string' || lastIndex.get(id)?.clips === seq.clips) return;
+	if (lastIndex.size > 256 && !lastIndex.has(id)) lastIndex.clear(); // bounded: one entry per open sequence
+	lastIndex.set(id, { clips: seq.clips, tracks: trackKey(seq), idx });
+}
+
+/**
+ * The index of a new version of a sequence from its previous version's (S01:SES-010/011, ARCHITECTURE §13: "indexes
+ * rebuilt only for tracks in `changed`"): the clips that changed (by identity) leave and re-enter their tracks' lists;
+ * other tracks share the previous lists. Null when there is no previous version, the tracks changed, or most clips
+ * did (a full build is as fast).
+ */
+function derivedIndex(
+	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
+): Map<string, Clip[]> | null {
+	const id = (seq as { id?: unknown }).id;
+	const prev = typeof id === 'string' ? lastIndex.get(id) : undefined;
+	if (!prev || prev.tracks !== trackKey(seq)) return null;
+	const before = prev.clips as Record<string, Clip>;
+	const d = keyDiff(before, seq.clips);
+	if (d.changed.length + d.deleted.length > Math.max(32, Object.keys(seq.clips).length / 2)) return null;
+	const gone = new Set<Clip>();
+	const tracks = new Set<string>();
+	for (const k of [...d.changed, ...d.deleted]) {
+		const old = before[k];
+		if (old) {
+			gone.add(old);
+			tracks.add(old.trackId);
+		}
+		const now = seq.clips[k];
+		if (now) tracks.add(now.trackId);
+	}
+	const byTrack = new Map(prev.idx);
+	for (const t of tracks) {
+		// The kept clips stay sorted; the arrivals are sorted and merged in (O(track), no full sort).
+		const kept = (prev.idx.get(t) ?? []).filter((c) => !gone.has(c));
+		const added: Clip[] = [];
+		for (const k of d.changed) if (seq.clips[k]!.trackId === t) added.push(seq.clips[k]!);
+		added.sort(byStart);
+		const list: Clip[] = [];
+		let i = 0;
+		let j = 0;
+		while (i < kept.length || j < added.length)
+			list.push(
+				j >= added.length || (i < kept.length && byStart(kept[i]!, added[j]!) <= 0)
+					? kept[i++]!
+					: added[j++]!,
+			);
+		byTrack.set(t, list);
+	}
 	indexCache.set(seq.clips, byTrack);
+	remember(seq, byTrack);
 	return byTrack;
 }
 
@@ -111,13 +193,14 @@ export function resolveTrackRef(seq: Sequence, ref: string): string | null {
 
 const durationCache = new WeakMap<object, number>();
 
-/** Sequence duration = max clip end, or 0 (S01:TIME-007). */
+/** Sequence duration = max clip end, or 0 (S01:TIME-007). Not memoized for Immer drafts (see `sequenceIndex`). */
 export function sequenceDuration(seq: Pick<Sequence, 'clips'>): number {
-	const cached = durationCache.get(seq.clips);
+	const draft = isDraft(seq.clips);
+	const cached = draft ? undefined : durationCache.get(seq.clips);
 	if (cached !== undefined) return cached;
 	let end = 0;
 	for (const c of Object.values(seq.clips)) end = Math.max(end, clipEnd(c));
-	durationCache.set(seq.clips, end);
+	if (!draft) durationCache.set(seq.clips, end);
 	return end;
 }
 
@@ -181,7 +264,7 @@ export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
  * keyframe evaluation accepts fractional times.
  */
 export function contentTimeAt(
-	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
+	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn'> & { speed: { rate: number; reverse: boolean } },
 	frame: number,
 	rate: Rational,
 ): number {
@@ -201,15 +284,64 @@ export function sourceOut(clip: Pick<Clip, 'duration' | 'speed' | 'sourceIn'>, r
 	return clip.sourceIn + contentSpan(clip, rate);
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 /**
- * Through edit (S02:TL-021): `b` continues `a`'s content. Content times are whole flicks while a frame
- * at non-unit speed spans a fractional number of flicks, so repeated splits can leave the two sides a
- * few flicks apart; anything under half a source frame counts as continuous.
+ * Whether two clips show the same source (the identity a through edit continues): the same media stream, synthetic
+ * source, nested sequence, transcript or composition; for generators drawn from inline data (text, shapes, motion
+ * graphics) the same data. Unknown kinds never match.
+ */
+export function sameSource(a: Clip, b: Clip): boolean {
+	if (a.kind !== b.kind) return false;
+	const x = a as Record<string, unknown>;
+	const y = b as Record<string, unknown>;
+	switch (a.kind) {
+		case 'video':
+			return x.mediaId === y.mediaId && x.videoStreamIndex === y.videoStreamIndex;
+		case 'audio':
+			return x.mediaId === y.mediaId && same(x.channels, y.channels);
+		case 'still':
+		case 'animated-image':
+			return x.mediaId === y.mediaId;
+		case 'solid':
+		case 'adjustment':
+		case 'synthetic-audio':
+			return x.syntheticId === y.syntheticId;
+		case 'nest-video':
+		case 'nest-audio':
+			return x.sequenceId === y.sequenceId;
+		case 'captions':
+			return x.transcriptId === y.transcriptId;
+		case 'composition':
+			return same(x.composition, y.composition) && same(x.props, y.props) && same(x.canvas, y.canvas);
+		case 'motion-graphic':
+			return (
+				same(x.template, y.template) &&
+				same(x.params, y.params) &&
+				same(x.paramKeyframes, y.paramKeyframes) &&
+				same(x.canvas, y.canvas)
+			);
+		case 'text':
+			return same(x.content, y.content) && same(x.box, y.box);
+		case 'shape':
+			return same(x.shape, y.shape);
+		default:
+			return false;
+	}
+}
+
+/**
+ * Through edit (S02:TL-021): `b` starts where `a` ends on the same track, shows the same source at the same speed and
+ * direction (and the same frame hold), and continues `a`'s content. Content times are whole flicks while a frame at
+ * non-unit speed spans a fractional number of flicks, so anything under half a source frame counts as continuous.
  */
 export function isThroughEdit(a: Clip, b: Clip, rate: Rational): boolean {
-	if (a.trackId !== b.trackId || clipEnd(a) !== b.start || a.kind !== b.kind) return false;
+	if (a.trackId !== b.trackId || clipEnd(a) !== b.start) return false;
 	if (a.speed.rate !== b.speed.rate || a.speed.reverse !== b.speed.reverse) return false;
-	if ((a as { mediaId?: string }).mediaId !== (b as { mediaId?: string }).mediaId) return false;
+	if (!sameSource(a, b)) return false;
+	const ha = (a as { frameHold?: unknown }).frameHold;
+	const hb = (b as { frameHold?: unknown }).frameHold;
+	if (ha || hb) return same(ha ?? null, hb ?? null);
 	const tolerance = (flicksPerFrame(rate) * a.speed.rate) / 2;
 	if (a.speed.reverse) return Math.abs(a.sourceIn - sourceOut(b, rate)) < tolerance;
 	return Math.abs(b.sourceIn - sourceOut(a, rate)) < tolerance;

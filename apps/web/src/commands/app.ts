@@ -3,6 +3,8 @@
 // (apps/web/src/shell/context.tsx). Keymap ids from keymap-defaults.ts that differ from the canonical ids
 // (app.save, app.commandPalette, panel.open.*, workspace.switch.N…) are registered as hidden aliases.
 import { z } from 'zod';
+import { assignLazy, defineLazyLabel, type LazyLabel } from '../i18n/lazy.ts';
+import { t } from '../i18n/runtime.ts';
 import { PANEL_KINDS, type PanelKind } from '../panels/types.ts';
 import { saveNow } from '../runtime/save.ts';
 import type { ShellController } from '../shell/context.tsx';
@@ -12,32 +14,32 @@ import { prefsStore } from '../shell/prefs.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const hasShell = (ctx: CommandCtx) => !!ctx.services.get('shell');
-const NO_SHELL = 'Open a project to use the editor workspace';
+const noShell = (): string => t('Open a project to use the editor workspace');
 
-/** A shell-driven command: enabled only while the editor shell is mounted. */
+/**
+ * A shell-driven command: enabled only while the editor shell is mounted. The label is the English source (or a
+ * function building it) and is translated when read; `extra` keeps its lazy labels (no spread).
+ */
 function sc(
 	id: string,
-	label: string,
+	label: LazyLabel,
 	run: (shell: ShellController, ctx: CommandCtx, args?: unknown) => void | Promise<void>,
 	extra: Partial<UiCommand> = {},
 ): UiCommand {
-	return {
-		id,
-		label,
-		scope: 'global',
-		...extra,
-		when: (ctx) => hasShell(ctx) && (extra.when ? extra.when(ctx) : true),
-		disabledReason: (ctx) => (hasShell(ctx) ? extra.disabledReason?.(ctx) : NO_SHELL),
-		run: (ctx, args) => {
+	const cmd = assignLazy({ id, scope: 'global' } as UiCommand, extra, {
+		when: (ctx: CommandCtx) => hasShell(ctx) && (extra.when ? extra.when(ctx) : true),
+		disabledReason: (ctx: CommandCtx) => (hasShell(ctx) ? extra.disabledReason?.(ctx) : noShell()),
+		run: (ctx: CommandCtx, args?: unknown) => {
 			const shell = ctx.services.get('shell');
 			if (shell) return run(shell, ctx, args);
 		},
-	};
+	});
+	return defineLazyLabel(cmd, 'label', label);
 }
 
 /** Hidden alias for a keymap id (keeps menus/palette on the canonical id). */
 function alias(id: string, target: UiCommand, extra: Partial<UiCommand> = {}): UiCommand {
-	return { ...target, ...extra, id, hidden: true };
+	return assignLazy({} as UiCommand, target, extra, { id, hidden: true });
 }
 
 const PANEL_LABELS: Record<PanelKind, string> = {
@@ -57,6 +59,12 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	jobs: 'Jobs',
 	lumetri: 'Lumetri Color',
 	scopes: 'Lumetri Scopes',
+	audioTrackMixer: 'Audio Track Mixer',
+	audioClipMixer: 'Audio Clip Mixer',
+	text: 'Text',
+	essentialSound: 'Essential Sound',
+	essentialGraphics: 'Essential Graphics',
+	mediaBrowser: 'Media Browser',
 };
 
 // ------------------------------------------------------------------ save
@@ -104,10 +112,15 @@ const save: UiCommand = {
 // ------------------------------------------------------------------ panels
 
 const focusPanels: UiCommand[] = PANEL_KINDS.map((kind) =>
-	sc(`panel.focus.${kind}`, `Open ${PANEL_LABELS[kind]} Panel`, (shell) => shell.focusPanel(kind), {
-		checked: (ctx) => !!ctx.services.get('shell')?.isPanelOpen(kind),
-		agentExposed: true,
-	}),
+	sc(
+		`panel.focus.${kind}`,
+		() => `Open ${PANEL_LABELS[kind]} Panel`,
+		(shell) => shell.focusPanel(kind),
+		{
+			checked: (ctx) => !!ctx.services.get('shell')?.isPanelOpen(kind),
+			agentExposed: true,
+		},
+	),
 );
 const byId = new Map(focusPanels.map((c) => [c.id, c]));
 // `panel.open.<kind>` for every kind: the keymap binds some, and other packages call e.g. `panel.open.jobs`
@@ -134,11 +147,11 @@ const maximizePointer = sc(
 );
 const closePanel = sc('panel.close', 'Close Panel', (shell) => shell.closePanel(), {
 	when: (ctx) => hasShell(ctx) && !!focusStore.getState().instanceId,
-	disabledReason: (ctx) => (hasShell(ctx) ? 'No panel has focus' : NO_SHELL),
+	disabledReason: (ctx) => (hasShell(ctx) ? 'No panel has focus' : noShell()),
 });
 const floatPanel = sc('panel.float', 'Undock Panel', (shell) => shell.floatPanel(), {
 	when: (ctx) => hasShell(ctx) && !!focusStore.getState().instanceId,
-	disabledReason: (ctx) => (hasShell(ctx) ? 'No panel has focus' : NO_SHELL),
+	disabledReason: (ctx) => (hasShell(ctx) ? 'No panel has focus' : noShell()),
 });
 
 // ------------------------------------------------------------------ workspaces

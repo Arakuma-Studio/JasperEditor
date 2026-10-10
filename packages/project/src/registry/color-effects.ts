@@ -4,8 +4,21 @@
 // the native export applies it with `lut3d`, so the three renderers agree to the LUT's precision.
 // This module imports only types from `effects.ts` (which imports the values from here), so there is no
 // evaluation-order cycle.
+import { gamutToXyzD65 } from '../color/cms/gamut.ts';
+import { apply3InPlace, inv3 } from '../color/cms/matrix.ts';
+import { colorSpace } from '../color/cms/spaces.ts';
+import {
+	DEFAULT_HDR_WHITE_NITS,
+	defaultWorkingSettings,
+	gradeSpace,
+	inputTransformFn,
+	outputTransformFn,
+} from '../color/cms/transform.ts';
+import { NEUTRAL_HUE_CURVE } from '../color/hue-curves.ts';
+import { CREATIVE_LOOKS } from '../color/looks.ts';
 import { lumetriFn } from '../color/lumetri.ts';
-import type { ColorFn, ColorOp, EffectParams, EffectSpec, ParamSpec } from './effects.ts';
+import { applyLut, type Rgb } from '../color/lut.ts';
+import type { ColorFn, ColorOp, ColorOpContext, EffectParams, EffectSpec, ParamSpec } from './effects.ts';
 
 const num = (p: EffectParams, k: string, d = 0) =>
 	typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d;
@@ -183,20 +196,99 @@ const curveParam = (name: string, label: string): ParamSpec => ({
 	ui: { control: 'curve' },
 });
 
-const wheelParam = (name: string, label: string): ParamSpec => ({
+const wheelParam = (name: string, label: string, group = 'wheels'): ParamSpec => ({
 	name,
 	label,
 	type: 'vec2',
 	default: [0, 0],
 	range: { min: -1, max: 1, step: 0.001 },
 	animatable: true,
-	group: 'wheels',
+	group,
 	ui: { control: 'wheel' },
+});
+
+const toggle = (name: string, label: string, group: string, def: boolean): ParamSpec => ({
+	name,
+	label,
+	type: 'boolean',
+	default: def,
+	animatable: false,
+	group,
+	ui: { control: 'toggle' },
+});
+/** The checkbox in a Lumetri section header (on by default). */
+const sectionToggle = (name: string, label: string, group: string): ParamSpec =>
+	toggle(name, label, group, true);
+
+const percentParam = (name: string, label: string, group: string): ParamSpec => ({
+	name,
+	label,
+	type: 'number',
+	default: 0,
+	range: { min: 0, max: 100, step: 0.1 },
+	animatable: true,
+	group,
+	ui: { control: 'slider' },
+});
+
+const saturationParam = (name: string, label: string, group: string): ParamSpec => ({
+	name,
+	label,
+	type: 'number',
+	default: 100,
+	range: { min: 0, max: 200, step: 0.1 },
+	unit: '%',
+	animatable: true,
+	group,
+	ui: { control: 'slider' },
+});
+
+const rangeParam = (
+	name: string,
+	label: string,
+	group: string,
+	def: number,
+	min: number,
+	max: number,
+	unit?: '%' | 'deg',
+): ParamSpec => ({
+	name,
+	label,
+	type: 'number',
+	default: def,
+	range: { min, max, step: 0.1 },
+	...(unit ? { unit } : {}),
+	animatable: true,
+	group,
+	ui: { control: unit === 'deg' && name === 'secHueCenter' ? 'angle' : 'slider' },
+});
+
+/** A hue/saturation curve (`hue-curves.ts`): y = 0.5 is neutral; flat by default. */
+const hueCurveParam = (name: string, label: string): ParamSpec => ({
+	name,
+	label,
+	type: 'curve',
+	default: { curve: NEUTRAL_HUE_CURVE.map((p) => [...p]) },
+	animatable: false,
+	group: 'curves',
+	ui: { control: 'curve' },
 });
 
 /** Param names of the Lumetri effect, in editor order (S06:CG-002 is the contract). */
 export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	lutParam('inputLut', 'Input LUT', 'basic'),
+	// color-mgmt: HDR White (Basic Correction): in an HDR working space the sliders and curves span 0 … HDR White.
+	{
+		name: 'hdrWhite',
+		label: 'HDR White',
+		type: 'number',
+		default: DEFAULT_HDR_WHITE_NITS,
+		range: { min: 100, max: 10000, step: 1 },
+		unit: 'nits',
+		animatable: true,
+		group: 'basic',
+		ui: { control: 'slider', scale: 'log' },
+	},
 	bipolar('temperature', 'Temperature', 'basic'),
 	bipolar('tint', 'Tint', 'basic'),
 	{
@@ -214,6 +306,8 @@ export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	bipolar('shadows', 'Shadows', 'basic'),
 	bipolar('whites', 'Whites', 'basic'),
 	bipolar('blacks', 'Blacks', 'basic'),
+	// color-mgmt: HDR Specular: brightness of the highlights above HDR White (HDR working spaces).
+	bipolar('hdrSpecular', 'HDR Specular', 'basic'),
 	{
 		name: 'saturation',
 		label: 'Saturation',
@@ -248,6 +342,112 @@ export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	bipolar('shadowsLevel', 'Shadows Level', 'wheels'),
 	bipolar('midtonesLevel', 'Midtones Level', 'wheels'),
 	bipolar('highlightsLevel', 'Highlights Level', 'wheels'),
+	// ---- color-grade: Lumetri completion (additive; every default is the identity). Order inside each group is
+	// the Lumetri panel's order; `LUMETRI_GROUPS` lists the sections.
+	sectionToggle('basicOn', 'Basic Correction', 'basic'),
+	sectionToggle('creativeOn', 'Creative', 'creative'),
+	{
+		name: 'creativeLook',
+		label: 'Built-in Look',
+		type: 'enum',
+		default: 'none',
+		options: CREATIVE_LOOKS.map((l) => l.id),
+		optionLabels: CREATIVE_LOOKS.map((l) => l.label),
+		animatable: false,
+		group: 'creative',
+		ui: { control: 'select' },
+	},
+	percentParam('fadedFilm', 'Faded Film', 'creative'),
+	bipolar('sharpen', 'Sharpen', 'creative'),
+	saturationParam('creativeSaturation', 'Saturation', 'creative'),
+	wheelParam('shadowTint', 'Shadow Tint', 'creative'),
+	wheelParam('highlightTint', 'Highlight Tint', 'creative'),
+	bipolar('tintBalance', 'Tint Balance', 'creative'),
+	sectionToggle('curvesOn', 'Curves', 'curves'),
+	hueCurveParam('hueVsSat', 'Hue vs Sat'),
+	hueCurveParam('hueVsHue', 'Hue vs Hue'),
+	hueCurveParam('hueVsLuma', 'Hue vs Luma'),
+	hueCurveParam('lumaVsSat', 'Luma vs Sat'),
+	hueCurveParam('satVsSat', 'Sat vs Sat'),
+	sectionToggle('wheelsOn', 'Color Wheels & Match', 'wheels'),
+	// HSL Secondary: Key (H, S, L ranges with soft edges), Refine (Denoise, Blur), Correction.
+	sectionToggle('secondaryOn', 'HSL Secondary', 'secondary'),
+	toggle('secHueOn', 'Hue Key', 'secondary', true),
+	rangeParam('secHueCenter', 'Hue Center', 'secondary', 0, 0, 360, 'deg'),
+	rangeParam('secHueRange', 'Hue Range', 'secondary', 180, 0, 180, 'deg'),
+	rangeParam('secHueSoft', 'Hue Softness', 'secondary', 0, 0, 180, 'deg'),
+	toggle('secSatOn', 'Saturation Key', 'secondary', true),
+	rangeParam('secSatLow', 'Saturation Low', 'secondary', 0, 0, 100, '%'),
+	rangeParam('secSatHigh', 'Saturation High', 'secondary', 100, 0, 100, '%'),
+	rangeParam('secSatSoft', 'Saturation Softness', 'secondary', 0, 0, 100, '%'),
+	toggle('secLumaOn', 'Lightness Key', 'secondary', true),
+	rangeParam('secLumaLow', 'Lightness Low', 'secondary', 0, 0, 100, '%'),
+	rangeParam('secLumaHigh', 'Lightness High', 'secondary', 100, 0, 100, '%'),
+	rangeParam('secLumaSoft', 'Lightness Softness', 'secondary', 0, 0, 100, '%'),
+	toggle('secShowMask', 'Show Mask', 'secondary', false),
+	{
+		name: 'secMaskStyle',
+		label: 'Mask Style',
+		type: 'enum',
+		default: 'colorGray',
+		options: ['colorGray', 'colorBlack', 'whiteBlack'],
+		optionLabels: ['Color/Gray', 'Color/Black', 'White/Black'],
+		animatable: false,
+		group: 'secondary',
+		ui: { control: 'select' },
+	},
+	toggle('secInvert', 'Invert Mask', 'secondary', false),
+	percentParam('secDenoise', 'Denoise', 'secondary'),
+	percentParam('secBlur', 'Blur', 'secondary'),
+	{
+		name: 'secWheelMode',
+		label: 'Correction Wheels',
+		type: 'enum',
+		default: 'one',
+		options: ['one', 'three'],
+		optionLabels: ['1-way', '3-way'],
+		animatable: false,
+		group: 'secondary',
+		ui: { control: 'select' },
+	},
+	wheelParam('secWheel', 'Correction', 'secondary'),
+	bipolar('secWheelLevel', 'Correction Level', 'secondary'),
+	wheelParam('secShadowsWheel', 'Shadows', 'secondary'),
+	bipolar('secShadowsLevel', 'Shadows Level', 'secondary'),
+	wheelParam('secMidtonesWheel', 'Midtones', 'secondary'),
+	bipolar('secMidtonesLevel', 'Midtones Level', 'secondary'),
+	wheelParam('secHighlightsWheel', 'Highlights', 'secondary'),
+	bipolar('secHighlightsLevel', 'Highlights Level', 'secondary'),
+	bipolar('secTemperature', 'Temperature', 'secondary'),
+	bipolar('secTint', 'Tint', 'secondary'),
+	bipolar('secContrast', 'Contrast', 'secondary'),
+	bipolar('secSharpen', 'Sharpen', 'secondary'),
+	saturationParam('secSaturation', 'Saturation', 'secondary'),
+	// Vignette.
+	sectionToggle('vignetteOn', 'Vignette', 'vignette'),
+	{
+		name: 'vignetteAmount',
+		label: 'Amount',
+		type: 'number',
+		default: 0,
+		range: { min: -5, max: 5, step: 0.01 },
+		animatable: true,
+		group: 'vignette',
+		ui: { control: 'slider', bipolar: true },
+	},
+	rangeParam('vignetteMidpoint', 'Midpoint', 'vignette', 50, 0, 100),
+	bipolar('vignetteRoundness', 'Roundness', 'vignette'),
+	rangeParam('vignetteFeather', 'Feather', 'vignette', 50, 0, 100),
+];
+
+/** Sections of the Lumetri editor in Premiere's order (group id, title, section switch param). */
+export const LUMETRI_GROUPS: readonly { group: string; title: string; toggle: string }[] = [
+	{ group: 'basic', title: 'Basic Correction', toggle: 'basicOn' },
+	{ group: 'creative', title: 'Creative', toggle: 'creativeOn' },
+	{ group: 'curves', title: 'Curves', toggle: 'curvesOn' },
+	{ group: 'wheels', title: 'Color Wheels & Match', toggle: 'wheelsOn' },
+	{ group: 'secondary', title: 'HSL Secondary', toggle: 'secondaryOn' },
+	{ group: 'vignette', title: 'Vignette', toggle: 'vignetteOn' },
 ];
 
 /** Params the Lumetri editor draws itself (Effect Controls hides their generic rows, S06:CGU-002). */
@@ -259,6 +459,18 @@ export const LUMETRI_EDITOR_PARAMS: readonly string[] = [
 	'shadowsWheel',
 	'midtonesWheel',
 	'highlightsWheel',
+	// color-grade
+	'hueVsSat',
+	'hueVsHue',
+	'hueVsLuma',
+	'lumaVsSat',
+	'satVsSat',
+	'shadowTint',
+	'highlightTint',
+	'secWheel',
+	'secShadowsWheel',
+	'secMidtonesWheel',
+	'secHighlightsWheel',
 ];
 
 export const LUMETRI_EFFECT: EffectSpec = {
@@ -269,15 +481,174 @@ export const LUMETRI_EFFECT: EffectSpec = {
 	appliesTo: 'video',
 	description:
 		'Colour grade: input LUT, white balance, exposure, contrast, highlights/shadows, whites/blacks, saturation, ' +
-		'creative look LUT with intensity, vibrance, RGB curves and lift/gamma/gain wheels (one baked LUT, native export).',
-	keywords: ['grade', 'color', 'colour', 'lut', 'curves', 'wheels', 'white balance', 'exposure', 'look'],
+		'creative look (LUT or built-in) with intensity, faded film, sharpen, vibrance, saturation, shadow/highlight tint, ' +
+		'RGB and hue/saturation curves, lift/gamma/gain wheels, HSL Secondary (key, refine, correction) and vignette. ' +
+		'Pointwise steps bake into one LUT (native export); vignette, sharpen and HSL Secondary run as a GPU stage.',
+	keywords: [
+		'grade',
+		'color',
+		'colour',
+		'lut',
+		'curves',
+		'wheels',
+		'white balance',
+		'exposure',
+		'look',
+		'vignette',
+		'hsl secondary',
+		'hue curves',
+		'match',
+	],
 	params: [...LUMETRI_PARAMS],
 	// The colour stage (WebGL LUT) realizes it; there is no CSS approximation.
 	preview: {},
 	native: null,
-	color: { build: lumetriFn },
+	color: { build: lumetriHdrFn },
 	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
 };
+
+/**
+ * color-mgmt: Lumetri in the working space. SDR working spaces grade the working signal directly (the M2 maths). In
+ * an HDR working space (Rec. 2100 PQ / HLG) the maths run on the grading signal normalised to HDR White
+ * (`gradeSpace`, FilmCraft grade.rs): 1 = HDR White, highlights above it (speculars) are graded like their colour at
+ * HDR White (scaled into the unit range and back, so they keep their hue and ratio) and then scaled by HDR Specular
+ * (1 + (q − 1)·(1 + specular/100)), instead of clipping.
+ */
+export function lumetriHdrFn(p: EffectParams, ctx: ColorOpContext): ColorFn | null {
+	const base = lumetriFn(p, ctx);
+	const w = ctx.working;
+	if (!w) return base;
+	const white =
+		typeof p.hdrWhite === 'number' && Number.isFinite(p.hdrWhite) ? p.hdrWhite : DEFAULT_HDR_WHITE_NITS;
+	const gs = gradeSpace(w.space, white);
+	if (!gs) return base;
+	const specular =
+		typeof p.hdrSpecular === 'number' && Number.isFinite(p.hdrSpecular) ? p.hdrSpecular / 100 : 0;
+	if (!base && Math.abs(specular) < 1e-9) return null;
+	const k = Math.max(0, 1 + Math.max(-1, Math.min(1, specular)));
+	return (c) => {
+		gs.toGrade(c);
+		const m = Math.max(1, c[0], c[1], c[2]);
+		if (base) {
+			if (m > 1) {
+				c[0] /= m;
+				c[1] /= m;
+				c[2] /= m;
+				base(c);
+				c[0] *= m;
+				c[1] *= m;
+				c[2] *= m;
+			} else base(c);
+		}
+		if (k !== 1) for (let i = 0; i < 3; i++) if (c[i]! > 1) c[i] = 1 + (c[i]! - 1) * k;
+		gs.fromGrade(c);
+	};
+}
+
+// ---------------------------------------------------------------- jasper.color-input (color-mgmt, internal)
+
+export const COLOR_INPUT_EFFECT_ID = 'jasper.color-input';
+
+/**
+ * The colour input transform of a source (render-only, added by the snapshot): source signal → the working space's
+ * signal (Interpret Footage ▸ Colour, the clip override, or graphics in a non-Rec.709 working space). Fused with the
+ * colour runs after it, so preview and native export bake it into the same LUT.
+ */
+export function colorInputFn(p: EffectParams, ctx: ColorOpContext): ColorFn | null {
+	const working = ctx.working ?? {
+		...defaultWorkingSettings('rec709'),
+		linearize: false,
+		blendLinear: false,
+	};
+	const str = (k: string) => (typeof p[k] === 'string' ? (p[k] as string) : '');
+	const mediaOf = (k: string) => {
+		const v = p[k] as { mediaId?: unknown } | null | undefined;
+		return v && typeof v === 'object' && typeof v.mediaId === 'string' && v.mediaId ? v.mediaId : null;
+	};
+	const range = str('range') === 'pc' ? 'pc' : 'tv';
+	const tm = str('toneMap');
+	const toneMap = tm === 'on' ? true : tm === 'off' ? false : undefined;
+	const peak = typeof p.peakNits === 'number' && p.peakNits > 0 ? p.peakNits : null;
+	const lutId = mediaOf('inputLut');
+	const lut = lutId ? ctx.lut(lutId) : null;
+	const ocioId = mediaOf('ocioConfig');
+	let pre: ((c: Rgb) => void) | null = null;
+	let space = str('space') || 'rec709';
+	if (ocioId) {
+		const cfg = ctx.colorConfig?.(ocioId) ?? null;
+		if (!cfg) return null; // offline / unreadable: the planner blocks exports, the preview shows a chip
+		try {
+			const ic = cfg.interchange(str('ocioSpace'));
+			if (ic.space === 'aces2065') {
+				pre = ic.fn;
+				space = 'aces2065';
+			} else {
+				// display-referred CIE XYZ (OCIO: 1 = 100 cd/m², SDR white) → BT.709 linear → BT.1886 Rec. 709
+				const m = inv3(gamutToXyzD65('bt709'));
+				pre = (c) => {
+					ic.fn(c);
+					apply3InPlace(m, c);
+					for (let k = 0; k < 3; k++) c[k] = Math.max(0, c[k]!) ** (1 / 2.4);
+				};
+				space = 'rec709';
+			}
+		} catch {
+			return null;
+		}
+	}
+	if (!colorSpace(space)) return null;
+	const xf = inputTransformFn(
+		{ space, range, peakNits: peak, ...(toneMap !== undefined ? { toneMap } : {}) },
+		working,
+	);
+	if (!lut && !pre && !xf) return null;
+	return (c) => {
+		if (lut) applyLut(lut, c);
+		if (pre) pre(c);
+		if (xf) xf(c);
+	};
+}
+
+const strParam = (name: string, label: string, def = ''): ParamSpec => ({
+	name,
+	label,
+	type: 'string',
+	default: def,
+	animatable: false,
+});
+
+export const COLOR_INPUT_EFFECT: EffectSpec = {
+	id: COLOR_INPUT_EFFECT_ID,
+	version: 1,
+	label: 'Colour Input Transform',
+	category: 'Color Correction',
+	appliesTo: 'video',
+	description: 'Source colour space → working space (added by colour management; not an effect you apply).',
+	internal: true,
+	params: [
+		strParam('space', 'Source Space', 'rec709'),
+		strParam('range', 'Range', 'tv'),
+		strParam('toneMap', 'Tone Map', 'auto'),
+		{ name: 'peakNits', label: 'Peak', type: 'number', default: 0, animatable: false },
+		lutParam('inputLut', 'Input LUT', 'basic'),
+		{ ...lutParam('ocioConfig', 'OCIO Config', 'basic'), mediaKinds: ['color-config'] },
+		strParam('ocioSpace', 'OCIO Space'),
+	],
+	preview: {},
+	native: null,
+	color: { build: colorInputFn },
+	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
+};
+
+/** color-mgmt: the working → output conversion as a colour op (exports in another space than the working one). */
+export function colorOutputFn(outSpace: string, ctx: ColorOpContext): ColorFn | null {
+	const working = ctx.working ?? {
+		...defaultWorkingSettings('rec709'),
+		linearize: false,
+		blendLinear: false,
+	};
+	return outputTransformFn(working, outSpace);
+}
 
 /** The colour effects added by M2 (registered by default through `M2_EFFECTS`). */
 export const COLOR_EFFECTS: readonly EffectSpec[] = [LUMETRI_EFFECT];

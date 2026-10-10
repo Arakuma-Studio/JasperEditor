@@ -33,6 +33,16 @@ function groupElement(p: IDockviewPanel): HTMLElement | null {
 		: ((el.querySelector('.dv-groupview') as HTMLElement | null) ?? el);
 }
 
+/**
+ * polish: dockview names a floating group (`role="dialog"`) after its panel's title once, when the group is created;
+ * keep that name on the title the tab shows (another UI language, a context title).
+ */
+export function labelFloatingGroup(p: IDockviewPanel, title: string): void {
+	if (p.group?.activePanel && p.group.activePanel.id !== p.id) return;
+	const floating = p.group?.element?.closest?.('.dv-resize-container');
+	if (floating && floating.getAttribute('aria-label') !== title) floating.setAttribute('aria-label', title);
+}
+
 /** Groups (by panel kind) of a layout definition, used to find a closed panel's home group. */
 function homeGroups(node: LayoutNode): PanelKind[][] {
 	if ('group' in node) return [node.group];
@@ -135,6 +145,7 @@ export class DockController {
 			// Re-fit to the real size: stored layouts may come from another window size (DK-013).
 			const { width, height } = this.size();
 			if (width && height) api.layout(width, height, true);
+			this.syncTitles();
 		} finally {
 			this.applying--;
 		}
@@ -189,6 +200,26 @@ export class DockController {
 		return !!this.panelOf(kind);
 	}
 
+	/**
+	 * polish: stored layouts carry the panel titles of the moment they were saved (another UI language, an older
+	 * name). Titles come from the panel definitions; visible tabs then add their context ("Program: Sequence 01").
+	 */
+	private syncTitles(): void {
+		for (const p of this.api?.panels ?? []) {
+			const kind = kindOf(p);
+			const def = kind ? this.panels.get(kind) : undefined;
+			if (!def) continue;
+			let title: string;
+			try {
+				title = def.title({ params: p.params as Record<string, unknown> | undefined });
+			} catch {
+				continue;
+			}
+			if (title && p.title !== title) p.api.setTitle(title);
+			if (title) labelFloatingGroup(p, title);
+		}
+	}
+
 	/** Opens a closed panel in its home group, else as a floating group near the center (DK-050). */
 	open(kind: PanelKind): IDockviewPanel | undefined {
 		const api = this.api;
@@ -211,6 +242,10 @@ export class DockController {
 		const peers = homeGroups(this.definitionFor(this.workspaceId).layout).find((g) => g.includes(kind)) ?? [];
 		const peer = peers.map((k) => this.panelOf(k)).find(Boolean);
 		if (peer) return api.addPanel({ ...base, position: { referencePanel: peer.id, direction: 'within' } });
+		// polish: a panel the workspace has no place for docks next to its preferred neighbour when that one is open.
+		const neighbour = def.dockWith ? this.panelOf(def.dockWith) : undefined;
+		if (neighbour)
+			return api.addPanel({ ...base, position: { referencePanel: neighbour.id, direction: 'within' } });
 		if (api.panels.length === 0) return api.addPanel(base);
 		const { width, height } = this.size();
 		const w = Math.min(560, Math.max(def.minSize.w, 360));

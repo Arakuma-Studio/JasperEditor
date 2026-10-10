@@ -8,14 +8,20 @@
 import type { RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
-	formatTimecode,
 	type ProjectDocument,
 	parseSourceSidecar,
 	type SourceSidecarInfo,
 	sidecarCandidates,
 	type TransactionResult,
+	type TxInput,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { runIngest } from '../gaps/media-jobs.ts';
+import { formatTimecode } from '../gaps/time-display.ts';
+import { acquireImageSequences, expandImports } from '../imports/import-flow.ts';
+import { showImportReports } from '../interchange/dialogs.tsx';
+import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';
+import { importTimelineFiles } from '../interchange/import.ts';
 import {
 	type DragPayload,
 	type ImportProgress,
@@ -24,6 +30,7 @@ import {
 	type ImportTarget,
 	PROJECT_ITEMS_MIME,
 	type ProjectItemsDragPayload,
+	readHostPathsDrag,
 } from '../state/services.ts';
 import {
 	buildMediaAsset,
@@ -33,6 +40,7 @@ import {
 	mismatchPatch,
 	type SequenceSettingsPatch,
 } from './assets.ts';
+import { importCaptionFiles, isCaptionFileName, isCaptionXml } from './captions.ts';
 import { type ClientJobStore, clientJobs } from './client-jobs.ts';
 import { baseName, type DesktopBridge, getDesktopBridge } from './desktop.ts';
 import { type ImportFailure, type ImportPrompts, importPrompts } from './prompts.ts';
@@ -156,6 +164,77 @@ export class EngineImportService implements ImportService {
 		const failed: ImportFailure[] = [];
 		const acquired: Acquired[] = [];
 		const projectId = this.session.projectId;
+		// wp interchange: timeline documents (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) are read by the engine and
+		// added as sequences and media items in one transaction; the report names what was not carried.
+		{
+			const all = input.files ?? [];
+			const docs: File[] = [];
+			const rest: File[] = [];
+			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)
+			for (const f of all) {
+				const doc = isTimelineFileName(f.name) || (/\.xml$/i.test(f.name) && (await isTimelineXmlFile(f)));
+				(doc ? docs : rest).push(f);
+			}
+			const docPaths = (input.paths ?? []).filter((p) => isTimelineFileName(p) || /\.xml$/i.test(p));
+			if ((docs.length || docPaths.length) && !this.session.getState().readOnly) {
+				const binId = target.kind === 'bin' ? (target.binId ?? null) : null;
+				const r = await importTimelineFiles(
+					this.session,
+					this.engine,
+					{ files: docs, paths: docPaths },
+					binId,
+				);
+				failed.push(...r.failed);
+				if (r.reports.length) showImportReports(this.session, this.engine, r.reports);
+				input = { ...input, files: rest, paths: (input.paths ?? []).filter((p) => !docPaths.includes(p)) };
+				if (!rest.length && !input.paths?.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: r.reports.length });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+			}
+		}
+		// wp captions: caption files go onto caption tracks of the open sequence, not into the media pipeline.
+		{
+			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)
+			const all = input.files ?? [];
+			const capFiles: File[] = [];
+			const rest: File[] = [];
+			for (const f of all) {
+				const xml = /\.xml$/i.test(f.name) && (await isCaptionXml(f));
+				(isCaptionFileName(f.name) || xml ? capFiles : rest).push(f);
+			}
+			const capPaths = (input.paths ?? []).filter(isCaptionFileName);
+			if ((capFiles.length || capPaths.length) && !this.session.getState().readOnly) {
+				const r = await importCaptionFiles(this.session, this.engine, { files: capFiles, paths: capPaths });
+				failed.push(...r.failed);
+				input = { ...input, files: rest, paths: (input.paths ?? []).filter((p) => !isCaptionFileName(p)) };
+				if (!rest.length && !input.paths?.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: r.trackIds.length });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+			}
+		}
+		// imports workstream: numbered stills → image sequences (one clip each), when the user says so.
+		const sequences: Acquired[] = [];
+		if (
+			!this.session.getState().readOnly &&
+			((input.files?.length ?? 0) > 1 || (input.paths?.length ?? 0) > 0)
+		) {
+			const r = await acquireImageSequences(
+				{ engine: this.engine, session: this.session, prompts: this.prompts },
+				{ files: input.files ?? [], paths: input.paths ?? [] },
+			);
+			failed.push(...r.failed);
+			sequences.push(...r.acquired.map((a) => ({ ...a, hint: null })));
+			input = { ...input, files: r.files, paths: r.paths };
+			if (!r.files.length && !r.paths.length) {
+				if (!sequences.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: 0 });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+				return this.commit(sequences, target, failed);
+			}
+		}
 		if (this.session.getState().readOnly) {
 			// Nothing can be committed: do not upload bytes for nothing.
 			const names = [...(input.files ?? []).map((f) => f.name), ...(input.paths ?? []).map(baseName)];
@@ -282,6 +361,7 @@ export class EngineImportService implements ImportService {
 			}
 		}
 
+		acquired.push(...sequences);
 		if (!acquired.length) {
 			if (failed.length) this.prompts.failures({ failed, committed: 0 });
 			return { mediaIds: [], clipIds: [], failed, registered: [] };
@@ -290,10 +370,36 @@ export class EngineImportService implements ImportService {
 	}
 
 	private async commit(
-		acquired: Acquired[],
+		acquiredIn: Acquired[],
 		target: ImportTarget,
 		failed: ImportFailure[],
 	): Promise<ImportResult> {
+		// imports workstream: PDF pages and layered documents (their prompts), before the one transaction.
+		const expanded = await expandImports(
+			{ engine: this.engine, session: this.session, prompts: this.prompts },
+			acquiredIn,
+			target.kind === 'bin' ? (target.binId ?? null) : null,
+		);
+		failed.push(...expanded.failed);
+		const acquired: Acquired[] = expanded.acquired.map((a) => ({
+			...a,
+			hint: (a as Acquired).hint ?? null,
+		}));
+		if (!acquired.length && expanded.commands.length) {
+			const r = this.session.apply({
+				label: 'Import layers',
+				origin: 'user',
+				commands: expanded.commands,
+			});
+			if (!r.ok)
+				failed.push({
+					name: 'layers',
+					code: r.errors[0]?.code ?? 'E_REJECTED',
+					message: r.errors[0]?.message ?? 'Rejected',
+				});
+			if (failed.length) this.prompts.failures({ failed, committed: r.ok ? 1 : 0 });
+			return { mediaIds: [], clipIds: [], failed, registered: acquiredIn.map((a) => a.reg) };
+		}
 		const doc = this.session.getCommitted();
 		const now = new Date().toISOString();
 		const prepared: PreparedMedia[] = acquired.map((a) => ({
@@ -304,7 +410,7 @@ export class EngineImportService implements ImportService {
 				now,
 				path: a.path,
 			}),
-			existingMediaId: findExistingMedia(doc, a.reg.fingerprint),
+			existingMediaId: findExistingMedia(doc, a.reg.fingerprint, a.reg.vector?.page ?? 1),
 			...(a.hint ? { sourceHint: a.hint } : {}),
 		}));
 
@@ -336,6 +442,11 @@ export class EngineImportService implements ImportService {
 		});
 		const mediaIds: string[] = [];
 		const clipIds: string[] = [];
+		// imports workstream: the layers of layered documents join the same transaction (one undo step).
+		if (expanded.commands.length) {
+			if (built.tx) built.tx = { ...built.tx, commands: [...built.tx.commands, ...expanded.commands] };
+			else built.tx = { label: 'Import layers', origin: 'user', commands: expanded.commands } as TxInput;
+		}
 		if (built.tx) {
 			const result = this.session.apply(built.tx);
 			if (!result.ok) {
@@ -351,10 +462,13 @@ export class EngineImportService implements ImportService {
 			}
 			collectIds(result, built.registerIndex, built.placeIndex, mediaIds, clipIds);
 		}
+		// gaps (PRJ-8): Project Settings ▸ Ingest Settings act on the media this import added.
+		const added = [...mediaIds];
 		prepared.forEach((p, i) => {
 			if (built.registerIndex[i] === null && p.existingMediaId) mediaIds.push(p.existingMediaId);
 		});
 		this.selectImported(mediaIds, clipIds);
+		if (added.length) void runIngest(this.engine, this.session, added);
 		if (failed.length) this.prompts.failures({ failed, committed: prepared.length });
 		return { mediaIds: [...new Set(mediaIds)], clipIds, failed, registered: acquired.map((a) => a.reg) };
 	}
@@ -491,6 +605,9 @@ export function readDataTransfer(dt: DataTransfer): DragPayload | null {
 			// fall through to files
 		}
 	}
+	// polish: files dragged out of the Media Browser are paths on the engine host (registered in place).
+	const hostPaths = readHostPathsDrag(dt);
+	if (hostPaths) return { type: 'os-files', files: [], paths: hostPaths };
 	const files = Array.from(dt.files ?? []);
 	if (files.length) return { type: 'os-files', files };
 	return null;

@@ -293,6 +293,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.both[0]).toBeGreaterThan(200);
 		});
 
+		it('Morph Cut interpolates a jump cut through optical flow (textured shot)', async () => {
+			const r = await call<{ morph: number; dissolve: number }>('morphTexture');
+			expect(r.morph).toBeLessThan(0.5 * r.dissolve);
+			expect(r.morph, JSON.stringify(r)).toBeLessThan(25);
+			if (process.env.PREMIERE_TIMINGS === '1') console.log('morph vs dissolve', r);
+		});
+
 		it.runIf(process.env.PREMIERE_TIMINGS === '1')('reports run times', async () => {
 			console.log(await call<Record<string, number>>('timings'));
 		});

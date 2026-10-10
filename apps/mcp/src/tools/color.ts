@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path';
 import {
 	type Animatable,
 	type Clip,
+	CREATIVE_LOOKS,
 	clipContentTime,
 	defaultEffectRegistry,
 	type EffectInstance,
@@ -24,9 +25,10 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	findClip,
 	frameOf,
 	loadDoc,
@@ -42,11 +44,14 @@ import { ProjectIdArg } from './projects.ts';
 
 // ---------------------------------------------------------------- the grade_clip shape ↔ Lumetri params
 
-type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels';
+type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels' | 'secondary' | 'vignette' | 'sections';
 
 /** grade_clip / get_grade field → `jasper.lumetri` param name (S06:CG-002 is the contract). */
 const GRADE_FIELDS: readonly { section: GradeSection; key: string; param: string }[] = [
 	{ section: 'basic', key: 'inputLut', param: 'inputLut' },
+	// color-mgmt: HDR White (nits) / HDR Specular — they act in Rec. 2100 PQ / HLG sequences only.
+	{ section: 'basic', key: 'hdrWhite', param: 'hdrWhite' },
+	{ section: 'basic', key: 'hdrSpecular', param: 'hdrSpecular' },
 	{ section: 'basic', key: 'temperature', param: 'temperature' },
 	{ section: 'basic', key: 'tint', param: 'tint' },
 	{ section: 'basic', key: 'exposure', param: 'exposure' },
@@ -69,7 +74,63 @@ const GRADE_FIELDS: readonly { section: GradeSection; key: string; param: string
 	{ section: 'wheels', key: 'shadowsLevel', param: 'shadowsLevel' },
 	{ section: 'wheels', key: 'midtonesLevel', param: 'midtonesLevel' },
 	{ section: 'wheels', key: 'highlightsLevel', param: 'highlightsLevel' },
+	// color-grade: the Lumetri completion.
+	{ section: 'creative', key: 'builtInLook', param: 'creativeLook' },
+	{ section: 'creative', key: 'fadedFilm', param: 'fadedFilm' },
+	{ section: 'creative', key: 'sharpen', param: 'sharpen' },
+	{ section: 'creative', key: 'saturation', param: 'creativeSaturation' },
+	{ section: 'creative', key: 'shadowTint', param: 'shadowTint' },
+	{ section: 'creative', key: 'highlightTint', param: 'highlightTint' },
+	{ section: 'creative', key: 'tintBalance', param: 'tintBalance' },
+	{ section: 'curves', key: 'hueVsSat', param: 'hueVsSat' },
+	{ section: 'curves', key: 'hueVsHue', param: 'hueVsHue' },
+	{ section: 'curves', key: 'hueVsLuma', param: 'hueVsLuma' },
+	{ section: 'curves', key: 'lumaVsSat', param: 'lumaVsSat' },
+	{ section: 'curves', key: 'satVsSat', param: 'satVsSat' },
+	{ section: 'secondary', key: 'hueKey', param: 'secHueOn' },
+	{ section: 'secondary', key: 'hueCenter', param: 'secHueCenter' },
+	{ section: 'secondary', key: 'hueRange', param: 'secHueRange' },
+	{ section: 'secondary', key: 'hueSoftness', param: 'secHueSoft' },
+	{ section: 'secondary', key: 'saturationKey', param: 'secSatOn' },
+	{ section: 'secondary', key: 'saturationLow', param: 'secSatLow' },
+	{ section: 'secondary', key: 'saturationHigh', param: 'secSatHigh' },
+	{ section: 'secondary', key: 'saturationSoftness', param: 'secSatSoft' },
+	{ section: 'secondary', key: 'lightnessKey', param: 'secLumaOn' },
+	{ section: 'secondary', key: 'lightnessLow', param: 'secLumaLow' },
+	{ section: 'secondary', key: 'lightnessHigh', param: 'secLumaHigh' },
+	{ section: 'secondary', key: 'lightnessSoftness', param: 'secLumaSoft' },
+	{ section: 'secondary', key: 'showMask', param: 'secShowMask' },
+	{ section: 'secondary', key: 'maskStyle', param: 'secMaskStyle' },
+	{ section: 'secondary', key: 'invertMask', param: 'secInvert' },
+	{ section: 'secondary', key: 'denoise', param: 'secDenoise' },
+	{ section: 'secondary', key: 'blur', param: 'secBlur' },
+	{ section: 'secondary', key: 'wheelMode', param: 'secWheelMode' },
+	{ section: 'secondary', key: 'wheel', param: 'secWheel' },
+	{ section: 'secondary', key: 'wheelLevel', param: 'secWheelLevel' },
+	{ section: 'secondary', key: 'shadowsWheel', param: 'secShadowsWheel' },
+	{ section: 'secondary', key: 'shadowsLevel', param: 'secShadowsLevel' },
+	{ section: 'secondary', key: 'midtonesWheel', param: 'secMidtonesWheel' },
+	{ section: 'secondary', key: 'midtonesLevel', param: 'secMidtonesLevel' },
+	{ section: 'secondary', key: 'highlightsWheel', param: 'secHighlightsWheel' },
+	{ section: 'secondary', key: 'highlightsLevel', param: 'secHighlightsLevel' },
+	{ section: 'secondary', key: 'temperature', param: 'secTemperature' },
+	{ section: 'secondary', key: 'tint', param: 'secTint' },
+	{ section: 'secondary', key: 'contrast', param: 'secContrast' },
+	{ section: 'secondary', key: 'sharpen', param: 'secSharpen' },
+	{ section: 'secondary', key: 'saturation', param: 'secSaturation' },
+	{ section: 'vignette', key: 'amount', param: 'vignetteAmount' },
+	{ section: 'vignette', key: 'midpoint', param: 'vignetteMidpoint' },
+	{ section: 'vignette', key: 'roundness', param: 'vignetteRoundness' },
+	{ section: 'vignette', key: 'feather', param: 'vignetteFeather' },
+	{ section: 'sections', key: 'basic', param: 'basicOn' },
+	{ section: 'sections', key: 'creative', param: 'creativeOn' },
+	{ section: 'sections', key: 'curves', param: 'curvesOn' },
+	{ section: 'sections', key: 'wheels', param: 'wheelsOn' },
+	{ section: 'sections', key: 'secondary', param: 'secondaryOn' },
+	{ section: 'sections', key: 'vignette', param: 'vignetteOn' },
 ];
+
+const HUE_CURVES = new Set(['hueVsSat', 'hueVsHue', 'hueVsLuma', 'lumaVsSat', 'satVsSat']);
 
 function lumetriParam(name: string): ParamSpec {
 	const p = LUMETRI_PARAMS.find((x) => x.name === name);
@@ -109,6 +170,59 @@ const FIELD_HELP: Record<string, string> = {
 	shadowsLevel: 'lift level (darker/brighter shadows)',
 	midtonesLevel: 'gamma level (darker/brighter midtones)',
 	highlightsLevel: 'gain level (darker/brighter highlights)',
+	creativeLook: `a built-in procedural look (${CREATIVE_LOOKS.map((l) => l.id).join(', ')}), mixed with intensity; a look LUT takes precedence`,
+	fadedFilm: 'lifts the blacks and compresses the range (0 = off)',
+	sharpen: 'detail sharpening (negative softens); runs on the GPU stage',
+	creativeSaturation: 'Creative saturation around luma',
+	shadowTint: 'colour pushed into the shadows ([x, y] wheel)',
+	highlightTint: 'colour pushed into the highlights ([x, y] wheel)',
+	tintBalance: 'moves the shadow/highlight pivot (+ more shadows)',
+	hueVsSat: 'saturation by hue (x = hue 0…1 from red, periodic; y 0.5 = unchanged, 1 = ×2, 0 = grey)',
+	hueVsHue: 'hue shift by hue (y 0.5 = none, 0/1 = ∓180°)',
+	hueVsLuma: 'brightness by hue (y 0.5 = none, ±0.25 at 0/1)',
+	lumaVsSat: 'saturation by luma (x = luma; y 0.5 = unchanged)',
+	satVsSat: 'saturation by saturation (x = input chroma; y 0.5 = unchanged)',
+	secHueOn: 'HSL Secondary key on hue',
+	secHueCenter: 'centre hue of the key (degrees, 0 red, 120 green, 240 blue)',
+	secHueRange: 'half-width of the selected hues (180 = all)',
+	secHueSoft: 'soft edge beyond the hue range (degrees)',
+	secSatOn: 'key on saturation',
+	secSatLow: 'lowest selected saturation',
+	secSatHigh: 'highest selected saturation',
+	secSatSoft: 'soft edge of the saturation range',
+	secLumaOn: 'key on lightness',
+	secLumaLow: 'lowest selected lightness',
+	secLumaHigh: 'highest selected lightness',
+	secLumaSoft: 'soft edge of the lightness range',
+	secShowMask: 'shows the key instead of the picture',
+	secMaskStyle: 'Show Mask style: colorGray, colorBlack or whiteBlack',
+	secInvert: 'inverts the key',
+	secDenoise: 'Refine: removes speckle from the key',
+	secBlur: 'Refine: softens the key edges',
+	secWheelMode: 'one (1-way offset wheel) or three (shadows/midtones/highlights)',
+	secWheel: '1-way correction colour ([x, y] wheel)',
+	secWheelLevel: '1-way correction brightness',
+	secShadowsWheel: '3-way correction lift colour',
+	secShadowsLevel: '3-way lift level',
+	secMidtonesWheel: '3-way correction gamma colour',
+	secMidtonesLevel: '3-way gamma level',
+	secHighlightsWheel: '3-way correction gain colour',
+	secHighlightsLevel: '3-way gain level',
+	secTemperature: 'temperature inside the key',
+	secTint: 'tint inside the key',
+	secContrast: 'contrast inside the key',
+	secSharpen: 'sharpen inside the key',
+	secSaturation: 'saturation inside the key',
+	vignetteAmount: 'negative darkens, positive lightens the edges',
+	vignetteMidpoint: 'how far from the centre the vignette starts',
+	vignetteRoundness: '0 follows the frame, +100 circle, −100 rounded rectangle',
+	vignetteFeather: 'softness of the transition',
+	basicOn: 'Basic Correction section on/off',
+	creativeOn: 'Creative section on/off',
+	curvesOn: 'Curves section on/off',
+	wheelsOn: 'Color Wheels section on/off',
+	secondaryOn: 'HSL Secondary section on/off',
+	vignetteOn: 'Vignette section on/off',
 };
 
 const CurvePointsArg = z
@@ -134,7 +248,21 @@ function fieldSchema(param: string): z.ZodType {
 				.nullable()
 				.describe(`${p.label}: ${help}LUT mediaId from import_lut (or its Project item name); null = none`)
 				.optional();
+		case 'boolean':
+			return z
+				.boolean()
+				.describe(`${p.label}: ${help}default ${fmt(p.default)}`)
+				.optional();
+		case 'enum':
+			return z
+				.enum(p.options as [string, ...string[]])
+				.describe(`${p.label}: ${help}one of ${(p.options ?? []).join(', ')}; default ${fmt(p.default)}`)
+				.optional();
 		case 'curve':
+			if (HUE_CURVES.has(param))
+				return CurvePointsArg.describe(
+					`${p.label}: ${help}[[x, y], …] in 0…1, 2–${MAX_CURVE_POINTS} points, neutral [[0,0.5],[1,0.5]]; null = reset to neutral`,
+				).optional();
 			return CurvePointsArg.describe(
 				`${p.label}: ${help}[[x, y], …] control points in 0…1 (input → output), 2–${MAX_CURVE_POINTS} points, identity [[0,0],[1,1]]; monotone cubic through the points, flat outside the first/last; values are clamped to 0…1 and sorted; null = reset to identity`,
 			).optional();
@@ -164,6 +292,15 @@ const GradeClipInput = {
 	creative: sectionSchema('creative', 'Creative: look LUT + intensity, vibrance (steps 8–9)'),
 	curves: sectionSchema('curves', 'RGB curves (step 10)'),
 	wheels: sectionSchema('wheels', 'Colour wheels lift/gamma/gain with their levels (step 11)'),
+	secondary: sectionSchema(
+		'secondary',
+		'HSL Secondary: key (hue/saturation/lightness ranges with soft edges, invert, show mask), refine (denoise, blur) and correction inside the key (1-way or 3-way wheels, temperature, tint, contrast, sharpen, saturation); GPU stage after the LUT',
+	),
+	vignette: sectionSchema('vignette', 'Vignette (amount −5…5, midpoint, roundness, feather); GPU stage'),
+	sections: sectionSchema(
+		'sections',
+		'Section switches (true = on): basic, creative, curves, wheels, secondary, vignette',
+	),
 	instance: z
 		.enum(['first', 'new'])
 		.optional()
@@ -225,6 +362,16 @@ function normalizeGrade(args: Partial<Record<GradeSection, Record<string, unknow
 				params[f.param] = { curve: pts };
 				break;
 			}
+			case 'boolean':
+				if (typeof raw !== 'boolean')
+					throw new ToolError('E_INVALID_PARAM', `${field} must be true or false`);
+				params[f.param] = raw;
+				break;
+			case 'enum':
+				if (typeof raw !== 'string' || !(p.options ?? []).includes(raw))
+					throw new ToolError('E_INVALID_PARAM', `${field} must be one of ${(p.options ?? []).join(', ')}`);
+				params[f.param] = raw;
+				break;
 			case 'vec2': {
 				const [x, y] = raw as [number, number];
 				const m = Math.hypot(x, y);
@@ -294,7 +441,7 @@ function gradeEligible(clip: Clip): boolean {
 	return !!caps?.visual && !!caps.supportsEffects;
 }
 
-function requireEligible(clip: Clip): void {
+export function requireEligible(clip: Clip): void {
 	if (!gradeEligible(clip))
 		throw new ToolError(
 			'E_INVALID_PARAM',
@@ -369,10 +516,15 @@ function lutView(doc: ProjectDocument, param: string, value: unknown): LutView |
 
 /** Evaluated Lumetri params in the grade_clip shape (LUTs as mediaId or null, curves as point arrays). */
 function lumetriGradeView(values: Record<string, unknown>): Record<GradeSection, Record<string, unknown>> {
-	const out = { basic: {}, creative: {}, curves: {}, wheels: {} } as Record<
-		GradeSection,
-		Record<string, unknown>
-	>;
+	const out = {
+		basic: {},
+		creative: {},
+		curves: {},
+		wheels: {},
+		secondary: {},
+		vignette: {},
+		sections: {},
+	} as Record<GradeSection, Record<string, unknown>>;
 	for (const f of GRADE_FIELDS) {
 		const v = values[f.param];
 		const p = lumetriParam(f.param);
@@ -466,7 +618,7 @@ function planCopyGrade(
 // ---------------------------------------------------------------- guide
 
 const ORDER =
-	'Order of operations inside one Lumetri Color instance: 1 input LUT, 2 white balance (temperature/tint, linear light), 3 exposure, 4 contrast, 5 highlights/shadows, 6 whites/blacks, 7 saturation, 8 look LUT × intensity, 9 vibrance, 10 curves (master, then R/G/B), 11 wheels (lift/gamma/gain), 12 clamp. Several colour effects on a clip run top to bottom.';
+	'Order of operations inside one Lumetri Color instance: 1 input LUT, 2 white balance (temperature/tint, linear light), 3 exposure, 4 contrast, 5 highlights/shadows, 6 whites/blacks, 7 saturation, 8 look (LUT or built-in) × intensity, 9 vibrance, faded film, creative saturation, shadow/highlight tint, 10 curves (master, then R/G/B, then hue/saturation curves), 11 wheels (lift/gamma/gain), 12 clamp — all baked into one LUT; then on the GPU: sharpen, 13 HSL Secondary, 14 vignette. Several colour effects on a clip run top to bottom.';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const COLOR_GUIDE = `Colour grading (Lumetri Color):
@@ -474,6 +626,9 @@ export const COLOR_GUIDE = `Colour grading (Lumetri Color):
 - ${ORDER}
 - LUTs: import_lut with a .cube path → mediaId; use it as basic.inputLut (technical/log conversion) or creative.look (creative look). null removes it.
 - get_grade reads a clip's colour effects (evaluated at the playhead or a time); copy_grade matches other clips to it.
+- Selective colour: grade_clip secondary {hueCenter, hueRange, hueSoftness, …} keys a colour range and corrects only it (showMask: true to check the key). curves.hueVsSat / hueVsHue / hueVsLuma change one hue band ([[x, y]] with y 0.5 neutral). vignette {amount: −1.5} darkens the edges.
+- color_match {clipId, reference: {at}} grades a clip to look like a reference frame (writes its wheels, levels and saturation); auto_tone sets its Basic tone sliders. scopes_read measures a frame as numbers (levels %, clipping, vectorscope hue/saturation) — check a grade without looking.
+- Built-in looks: list_looks; grade_clip creative.builtInLook = an id (no LUT file needed).
 - Always check the result with render_frame at a time inside the clip (and compare with an ungraded frame if unsure).`;
 
 // ---------------------------------------------------------------- tools
@@ -483,14 +638,18 @@ function checkFile(path: string): void {
 		throw new ToolError(
 			'NOT_ABSOLUTE',
 			`Not an absolute path: ${path}`,
-			'Pass the absolute path of the .cube file.',
+			'Pass the absolute path of the file.',
 		);
 	if (!existsSync(path) || !statSync(path).isFile())
 		throw new ToolError('FILE_NOT_FOUND', `No such file on this machine: ${path}`, 'Check the path.');
 }
 
 /** The editor playhead when an editor has the project open and shows this clip's sequence, else null. */
-async function livePlayhead(ctx: ToolContext, projectId: string, seqId: string): Promise<number | null> {
+export async function livePlayhead(
+	ctx: ToolContext,
+	projectId: string,
+	seqId: string,
+): Promise<number | null> {
 	try {
 		const q = await ctx.engine((c) => c.agentQuery({ projectId, query: 'playhead.get', args: {} }));
 		const r = q.result as { sequenceId?: string | null; frame?: number } | undefined;
@@ -508,15 +667,17 @@ export function registerColorTools(ctx: ToolContext): void {
 		{
 			title: 'Import LUT',
 			description:
-				'Imports a colour lookup table (.cube file: 3D or 1D, Adobe/Resolve dialect) into a project by absolute path. Returns its mediaId, lattice size and title; use the mediaId as grade_clip basic.inputLut or creative.look. An invalid file fails with the parser message including the line number. LUTs cannot be placed on the timeline.',
+				'Imports a colour lookup table into a project by absolute path: .cube (3D, 1D, or Resolve 1D shaper + 3D), Autodesk .3dl, Sony Imageworks .spi1d / .spi3d or cineSpace .csp. Returns its mediaId, lattice size and title; use the mediaId as grade_clip basic.inputLut or creative.look. An invalid file fails with the parser message including the line number. LUTs cannot be placed on the timeline.',
 			input: {
 				projectId: ProjectIdArg,
 				path: z
 					.string()
 					.min(1)
-					.describe('Absolute path of the .cube file, e.g. "/home/me/luts/teal-orange.cube"'),
+					.describe(
+						'Absolute path of the LUT file, e.g. "/home/me/luts/teal-orange.cube" (.cube, .3dl, .spi1d, .spi3d, .csp)',
+					),
 			},
-			annotations: { ...EDIT, idempotentHint: false },
+			annotations: EDIT,
 		},
 		async ({ projectId, path }, extra) => {
 			checkFile(path);
@@ -527,8 +688,8 @@ export function registerColorTools(ctx: ToolContext): void {
 					err.code,
 					err.message,
 					err.code === 'INVALID_LUT'
-						? 'The file is not a valid .cube LUT; fix the reported line or export the LUT again (.cube, LUT_3D_SIZE ≤ 256).'
-						: 'Check that the file is a readable .cube LUT.',
+						? 'The file is not a valid LUT; fix the reported line or export the LUT again (.cube with LUT_3D_SIZE ≤ 256, .3dl, .spi1d, .spi3d, .csp).'
+						: 'Check that the file is a readable LUT (.cube, .3dl, .spi1d, .spi3d, .csp).',
 					{ path },
 				);
 			const item = reg.items[0];
@@ -537,7 +698,7 @@ export function registerColorTools(ctx: ToolContext): void {
 				throw new ToolError(
 					'NOT_A_LUT',
 					`${path} is a ${item.kind} file, not a LUT`,
-					'Use import_media for video, audio and images; import_lut takes .cube files.',
+					'Use import_media for video, audio and images, import_ocio_config for .ocio configs; import_lut takes LUT files.',
 				);
 			const res = await transact(
 				ctx,
@@ -578,7 +739,7 @@ export function registerColorTools(ctx: ToolContext): void {
 			title: 'Grade clip',
 			description: `Colour-grades a clip with a Lumetri Color effect (jasper.lumetri) in ONE transaction (one "Agent: Grade clip" History entry). Edits the clip's first Lumetri instance, adding one when it has none (instance "new" always adds another). Only the params you pass change; the rest keep their values. Ranges (default): basic: ${params('basic')}; creative: ${params('creative')}; curves: ${params('curves')} as [[x,y],…] in 0…1; wheels: ${params('wheels')} with wheels as [x,y] in the unit disc. Out-of-range values are clamped and reported. LUT fields take a mediaId from import_lut (or null for none). ${ORDER} Params that already have keyframes get a keyframe at \`at\` (or the editor playhead on the clip) instead of a new static value; without either the call is rejected. Returns the effect instance id and the applied values; check the result with render_frame.`,
 			input: GradeClipInput,
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (args, extra) => {
 			const { params: pending, clamped } = normalizeGrade(args);
@@ -594,7 +755,7 @@ export function registerColorTools(ctx: ToolContext): void {
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					'Nothing to change',
-					'Pass at least one of basic, creative, curves or wheels (get_grade shows the current grade).',
+					'Pass at least one of basic, creative, curves, wheels, secondary, vignette or sections (get_grade shows the current grade).',
 				);
 			const commands: unknown[] = [];
 			const keyframed: string[] = [];
@@ -751,7 +912,7 @@ export function registerColorTools(ctx: ToolContext): void {
 				fromClipId: z.string().min(1).describe('Clip whose grade is copied'),
 				toClipIds: z.array(z.string().min(1)).min(1).max(500).describe('Clips that receive the grade'),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, fromClipId, toClipIds }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);

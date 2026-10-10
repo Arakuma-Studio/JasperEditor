@@ -46,10 +46,10 @@ const FADE: TextAnimationSpec = {
 };
 
 describe('schema v4 (ARCHITECTURE §20.1, D-32)', () => {
-	it('saved v4 fixture (animated text, anime template, rect + ellipse) loads without repairs (v4 → v5)', () => {
+	it('saved v4 fixture (animated text, anime template, rect + ellipse) loads without repairs (v4 → v6)', () => {
 		const r = loadProject(fixtureV4(), { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v4→v5']);
+		expect(r.migration.steps).toEqual(['v4→v5', 'v5→v6']);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		const clips = clipsOf(r.document);

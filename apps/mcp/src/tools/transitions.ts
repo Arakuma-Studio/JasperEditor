@@ -17,9 +17,9 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
-	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -424,7 +424,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 						"Param values {name: value} (list_transition_types lists each type's params; a type change resets them first)",
 					),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, transitionId, duration, alignment, effectId, params }, extra) => {
 			if (duration === undefined && alignment === undefined && effectId === undefined && !params)
@@ -471,7 +471,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.max(1000)
 					.describe('Transition ids ("trn_…") from list_transitions or get_timeline'),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, transitionIds }, extra) => {
 			const n = transitionIds.length;
@@ -527,7 +527,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 				),
 				sequenceId: SequenceIdArg,
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (
 			{ projectId, clipIds, edges, media, videoType, audioType, durationFrames, alignment, sequenceId },
@@ -613,7 +613,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Default still image length in seconds (kept in 1/30 s)'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, videoDurationFrames, audioDurationFrames, stillDurationSeconds }, extra) => {
 			if (

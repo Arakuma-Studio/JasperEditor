@@ -21,6 +21,8 @@ export type TimelinePrefs = {
 	wheelHorizontal: boolean | null;
 	/** TL-455 "Snap playhead in timeline when snap is enabled". */
 	snapPlayhead: boolean;
+	/** gaps (Premiere's Show Audio Time Units): ruler and playhead in the project's audio display format. */
+	showAudioTimeUnits?: boolean;
 };
 
 export const HEADER_MIN = 140;

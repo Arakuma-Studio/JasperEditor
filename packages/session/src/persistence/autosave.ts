@@ -6,10 +6,17 @@
 // - a 409 conflict pauses autosave until the user chooses Overwrite (or reloads) (S01:PER-025);
 // - read-only sessions and sessions whose lease was lost never save;
 // - the view record is saved with a 1 s debounce (S01:SES-004).
+import { jsonWarmUnits } from '@jasper/project';
 import type { EditorSession } from '../session.ts';
 import type { ProjectStore } from './types.ts';
 
 export type AutosaveOptions = {
+	/**
+	 * gaps (Preferences ▸ Auto Save), read at every scheduling: `enabled` false = the timer never saves (Save / Ctrl+S
+	 * and closing the project still do; the crash-recovery journal keeps unsaved edits); `maxIntervalMs` = the longest
+	 * an unsaved change waits during continuous editing (default 10 s).
+	 */
+	policy?(): { enabled: boolean; maxIntervalMs?: number };
 	onConflict?(serverRevision: number): void;
 	onError?(e: unknown): void;
 	onSaved?(revision: number): void;
@@ -27,6 +34,8 @@ export type AutosaveStatus = {
 	paused: AutosavePause;
 	/** Number of successful saves (diagnostics/tests). */
 	saves: number;
+	/** Server revision the next save is based on (If-Match); the crash-recovery journal records it. */
+	serverRevision: number;
 };
 
 export type Autosaver = {
@@ -39,6 +48,8 @@ export type Autosaver = {
 	subscribe(listener: (s: AutosaveStatus) => void): () => void;
 	/** Conflict resolution "Overwrite": saves over the server revision reported by the 409. */
 	overwrite(): Promise<void>;
+	/** gaps: whether the timer saves automatically (Preferences ▸ Auto Save). */
+	readonly automatic: boolean;
 };
 
 export function createAutosaver(
@@ -47,7 +58,7 @@ export function createAutosaver(
 	opts: AutosaveOptions = {},
 ): Autosaver {
 	const idleMs = 1500;
-	const maxIntervalMs = 10_000;
+	const defaultMaxIntervalMs = 10_000;
 	const viewMs = 1000;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let viewTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +75,7 @@ export function createAutosaver(
 		error: null,
 		paused: null,
 		saves: 0,
+		serverRevision: savedBase,
 	};
 	const listeners = new Set<(s: AutosaveStatus) => void>();
 	const setStatus = (patch: Partial<AutosaveStatus>) => {
@@ -91,6 +103,9 @@ export function createAutosaver(
 	};
 	const schedule = () => {
 		if (disposed || syncPause() || !unsaved()) return;
+		const policy = opts.policy?.();
+		if (policy && !policy.enabled) return;
+		const maxIntervalMs = Math.max(idleMs, policy?.maxIntervalMs ?? defaultMaxIntervalMs);
 		firstDirtyAt ??= Date.now();
 		cancelTimer();
 		const wait = Math.max(0, Math.min(idleMs, firstDirtyAt + maxIntervalMs - Date.now()));
@@ -123,6 +138,7 @@ export function createAutosaver(
 						lastSavedAt: Date.now(),
 						error: null,
 						saves: status.saves + 1,
+						serverRevision: r.revision,
 					});
 					opts.onSaved?.(revision);
 				} else {
@@ -144,13 +160,50 @@ export function createAutosaver(
 				timer = globalThis.setTimeout(() => {
 					timer = null;
 					void save();
-				}, maxIntervalMs);
+				}, defaultMaxIntervalMs);
 			}
 		})();
 		return inFlight;
 	}
 
-	const offDoc = session.on('doc.changed', schedule);
+	// ui-perf: while the browser is idle after an edit, serialise the parts of the document the cache does not hold yet
+	// (`jsonWarmUnits`), a few milliseconds at a time, so the save joins cached text instead of serialising 8 MB at
+	// once (the first save after opening a large project). Browsers only.
+	let warm: { cancel(): void } | null = null;
+	const warmUp = () => {
+		const g = globalThis as {
+			requestIdleCallback?: (cb: (d: { timeRemaining(): number }) => void, o?: { timeout: number }) => number;
+			cancelIdleCallback?: (h: number) => void;
+		};
+		if (!g.requestIdleCallback || !g.cancelIdleCallback) return;
+		warm?.cancel();
+		const units = jsonWarmUnits(session.getCommitted());
+		let handle = 0;
+		let done = false;
+		const step = (d: { timeRemaining(): number }) => {
+			if (done || disposed) return;
+			while (d.timeRemaining() > 2) {
+				const u = units.next();
+				if (u.done) {
+					done = true;
+					return;
+				}
+				u.value();
+			}
+			handle = g.requestIdleCallback!(step);
+		};
+		handle = g.requestIdleCallback(step);
+		warm = {
+			cancel() {
+				done = true;
+				g.cancelIdleCallback!(handle);
+			},
+		};
+	};
+	const offDoc = session.on('doc.changed', () => {
+		schedule();
+		warmUp();
+	});
 	const offGesture = session.on('gesture.changed', ({ active }) => {
 		if (!active) schedule();
 	});
@@ -177,6 +230,7 @@ export function createAutosaver(
 		},
 		dispose() {
 			disposed = true;
+			warm?.cancel();
 			offDoc();
 			offGesture();
 			offStore();
@@ -190,6 +244,9 @@ export function createAutosaver(
 		get lastSavedRevision() {
 			return status.lastSavedRevision;
 		},
+		get automatic() {
+			return opts.policy?.().enabled ?? true;
+		},
 		getStatus: () => status,
 		subscribe(listener) {
 			listeners.add(listener);
@@ -198,7 +255,7 @@ export function createAutosaver(
 		async overwrite() {
 			if (!status.conflict) return;
 			if (status.conflict.serverRevision >= 0) savedBase = status.conflict.serverRevision;
-			setStatus({ conflict: null });
+			setStatus({ conflict: null, serverRevision: savedBase });
 			syncPause();
 			await save();
 		},

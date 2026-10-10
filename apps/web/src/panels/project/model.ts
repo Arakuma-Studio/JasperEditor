@@ -5,7 +5,6 @@
 import {
 	FLICKS_PER_SECOND,
 	flicksToFrames,
-	formatTimecode,
 	type MediaAsset,
 	mediaUsage,
 	type ProjectDocument,
@@ -14,6 +13,7 @@ import {
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
 import { lutSizeText } from '../../color/model.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { audioStreams, displayBox, formatRate, videoStream } from '../../import/assets.ts';
 
 export type ProjectFilter =
@@ -55,6 +55,9 @@ export type ProjectRow = {
 		| 'font'
 		| 'lut'
 		| 'mg-bundle'
+		| 'color-config'
+		// three-d: 3D models
+		| 'model'
 		| 'search-bin';
 	mediaId: string | null;
 	frameRate: string;
@@ -231,6 +234,10 @@ function rowFor(
 				...describeMedia(asset),
 				// LUT items (S06:LUT-002): size and title in the info column / tile badge.
 				...(asset.kind === 'lut' ? { videoInfo: lutInfoText(asset) } : {}),
+				// color-mgmt: OCIO configs show their colour space count.
+				...(asset.kind === 'color-config' && asset.colorConfig
+					? { videoInfo: `OCIO · ${asset.colorConfig.spaces.length} colour spaces` }
+					: {}),
 				usage: usage[asset.id]?.clips ?? 0,
 				proxy: derivativeText(rt),
 				status: statusOf(rt),

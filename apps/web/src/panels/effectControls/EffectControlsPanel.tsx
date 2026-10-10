@@ -9,7 +9,6 @@
 // and have a context menu with Save Preset… (presets.ts), Reset and Remove; presets dropped here apply to the shown
 // clips.
 import type { Command } from '@jasper/project';
-import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	useSessionOrNull,
@@ -17,7 +16,7 @@ import {
 	useStoreSelector,
 	useTransportFrame,
 } from '@jasper/session/react';
-import { cx, TimecodeText } from '@jasper/ui';
+import { cx, PointMenu, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
@@ -32,7 +31,11 @@ import {
 	useState,
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
+import { MaskList } from '../../masks/MaskList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { LiquifyToolsRow, PuppetList } from '../../simwarp/PuppetList.tsx';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	applyMessage,
 	applyTextAnimation,
@@ -42,6 +45,8 @@ import {
 } from '../../text-animation/actions.ts';
 import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
+import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
+import { TimeRemapSection } from '../../time/TimeRemapSection.tsx';
 import { openSimplify } from '../../tracking/simplify-actions.ts';
 import {
 	applyEffectToClips,
@@ -63,7 +68,7 @@ import { useInspectorOps } from '../properties/lib/ops.ts';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
-import { GRAPH_HEIGHT, PropertyGraphs } from './GraphEditor.tsx';
+import { GRAPH_HEIGHT, type GraphView, PropertyGraphs } from './GraphEditor.tsx';
 import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
@@ -76,6 +81,7 @@ import {
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
 import { presetSelection } from './presets.ts';
+import { RoveAcrossTimeItem } from './RovingMenu.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
@@ -136,6 +142,11 @@ type KeyDrag = {
 	active: boolean;
 };
 
+type KeyPointerDown = (
+	e: ReactPointerEvent<HTMLElement>,
+	info: { clipId: string; keyframeId: string; frame: number },
+) => void;
+
 function EffectControlsBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const data = useInspectorData();
 	const frame = useTransportFrame(50).frame;
@@ -147,6 +158,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 	/** Twirled-open graph rows (`clipId:rowId` → graph height in px, S03:KF-022). */
 	const [graphs, setGraphs] = usePersisted<Record<string, number>>(`jasper.ec.${instanceId}.graphs`, {});
+	// keyframes-blend: manual vertical ranges of open graphs (absent = auto-fit).
+	const [graphViews, setGraphViews] = usePersisted<Record<string, GraphView>>(
+		`jasper.ec.${instanceId}.graphViews`,
+		{},
+	);
 	const [filter, setFilter] = useState<RowFilter>('all');
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
@@ -160,6 +176,9 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 	const keySel = useSessionState((s) => s.selection.keyframes);
+	// wp masks: mask tracking / auto-trace need the engine; read-only sessions edit nothing.
+	const engine = useEngineOrNull()?.client ?? null;
+	const readOnly = useSessionState((s) => s.readOnly);
 	const shell = useShellRuntimeOrNull();
 	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
 	const transportStore = useMemo(
@@ -205,6 +224,22 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		};
 	}, [menu]);
 
+	// ui-perf: stable handlers for the memoised key lanes (they call the latest closures, set further down).
+	const laneHandlersRef = useRef<{
+		onKeyPointerDown: KeyPointerDown;
+		openKeyMenu: (e: ReactMouseEvent, clipId: string, id: string) => void;
+		onLanePointerDown: (e: ReactPointerEvent<Element>) => void;
+	} | null>(null);
+	const laneHandlers = useMemo(
+		() => ({
+			onKeyPointerDown: (...a: Parameters<KeyPointerDown>) => laneHandlersRef.current?.onKeyPointerDown(...a),
+			openKeyMenu: (e: ReactMouseEvent, clipId: string, id: string) =>
+				laneHandlersRef.current?.openKeyMenu(e, clipId, id),
+			onLanePointerDown: (e: ReactPointerEvent<Element>) => laneHandlersRef.current?.onLanePointerDown(e),
+			seek: (f: number) => session.transport.seek(f),
+		}),
+		[session],
+	);
 	if (!sel || !seq) return <Empty text="Open a sequence to edit effects." />;
 	// S10:TUI-040: a selected transition (no clip) shows its Transition section.
 	if (!primary && selectedTransitions > 0)
@@ -476,7 +511,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		}
 		const target = clips.find((c) => {
 			const spec = registries.effects.get(payload.effectId);
-			return spec && (spec.appliesTo === 'audio') === (c.kind === 'audio' || c.kind === 'nest-audio');
+			return (
+				spec &&
+				(spec.appliesTo === 'audio') ===
+					(c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio')
+			);
 		});
 		const r = target
 			? applyEffectToClips(session, payload.effectId, [target.id], slot === 'end' ? undefined : slot)
@@ -510,6 +549,22 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 				},
 			},
 			{ kind: 'separator' },
+			// Wave expressions: rename the instance (AE renames effects so expressions read effect("Speed")).
+			...(s.fx && !s.intrinsic && !s.missing
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Rename…',
+							run: () => {
+								const name = typeof window !== 'undefined' ? window.prompt('Effect name', s.title) : null;
+								if (name === null) return;
+								ops.apply('Rename Effect', [
+									{ type: 'effect.rename', effectInstanceId: s.fx!.id, name: name.trim() || null } as Command,
+								]);
+							},
+						},
+					]
+				: []),
 			{
 				kind: 'item',
 				label: `Reset ${s.title}`,
@@ -539,11 +594,85 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		if ((e.key === 'Delete' || e.key === 'Backspace') && deleteSelection()) e.preventDefault();
 	};
 
+	laneHandlersRef.current = { onKeyPointerDown, openKeyMenu, onLanePointerDown };
 	const lane = (children: ReactNode) =>
 		showTimeline ? (
 			<div className="flex min-w-0 flex-1 self-stretch border-l border-pr-border-subtle">{children}</div>
 		) : null;
 	const left = { width: showTimeline ? `${leftPct}%` : '100%' };
+
+	/** One property row with its key lane (and Value/Velocity graphs when twirled open). */
+	const renderRow = (r: Row, editor?: ReactNode) => {
+		const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
+		const hasGraph = graphKindOf(r.spec) !== null;
+		const graphHeight = hasGraph ? graphs[graphKey] : undefined;
+		return (
+			<div key={r.id}>
+				<div className="flex items-stretch">
+					<div style={left} className="min-w-0 shrink-0">
+						<PropertyRow
+							row={r}
+							ctx={ctx}
+							editor={editor}
+							indent
+							twirl={
+								hasGraph
+									? {
+											open: graphHeight !== undefined,
+											onToggle: () => {
+												const next = { ...graphs };
+												if (graphHeight !== undefined) delete next[graphKey];
+												else next[graphKey] = GRAPH_HEIGHT.initial;
+												setGraphs(next);
+											},
+										}
+									: undefined
+							}
+						/>
+					</div>
+					{lane(
+						<KeyLane
+							row={r}
+							seq={seq}
+							range={range}
+							selected={selectedKeys}
+							onKeyPointerDown={laneHandlers.onKeyPointerDown}
+							onKeyDoubleClick={laneHandlers.seek}
+							onKeyContextMenu={laneHandlers.openKeyMenu}
+							onLanePointerDown={laneHandlers.onLanePointerDown}
+						/>,
+					)}
+				</div>
+				{graphHeight !== undefined ? (
+					<PropertyGraphs
+						row={r}
+						seq={seq}
+						doc={data.doc}
+						range={range}
+						height={graphHeight}
+						onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
+						view={graphViews[graphKey]}
+						onView={(v) => {
+							const next = { ...graphViews };
+							if (v.value || v.velocity) next[graphKey] = v;
+							else delete next[graphKey];
+							setGraphViews(next);
+						}}
+						leftStyle={left}
+						showTimeline={showTimeline}
+						ops={ops}
+						selected={selectedKeys}
+						keySel={keySel}
+						selectKeys={selectKeys}
+						onKeyContextMenu={openKeyMenu}
+						onBackgroundPointerDown={onLanePointerDown}
+						snapCandidates={snapCandidates}
+						setTip={setDragTip}
+					/>
+				) : null}
+			</div>
+		);
+	};
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard shortcuts (Delete) and drops
@@ -644,6 +773,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											{/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
 											<div
 												style={left}
+												data-testid="fx-header-select"
 												className="flex min-w-0 shrink-0 items-center gap-1 pr-1 pl-1"
 												onClick={(ev) => {
 													const add = ev.ctrlKey || ev.metaKey || ev.shiftKey;
@@ -710,6 +840,30 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												>
 													{s.title}
 												</span>
+												{s.threeDSwitch ? (
+													<label
+														className="flex cursor-pointer items-center gap-1 text-pr-small text-pr-muted"
+														title="3D Layer (After Effects' 3D switch): Z position, orientation, X/Y rotation, materials, cameras and lights"
+													>
+														<input
+															type="checkbox"
+															checked={s.threeDSwitch.enabled}
+															disabled={readOnly}
+															data-testid={`ec-3d-switch-${s.threeDSwitch.clipId}`}
+															onClick={(ev) => ev.stopPropagation()}
+															onChange={(ev) =>
+																ops.apply('3D Layer', [
+																	{
+																		type: 'clip.set3d',
+																		clipIds: [s.threeDSwitch!.clipId],
+																		enabled: ev.currentTarget.checked,
+																	} as Command,
+																])
+															}
+														/>
+														3D Layer
+													</label>
+												) : null}
 												{s.effect?.expensive ? (
 													<span className="text-pr-small text-pr-muted" title="Expensive in preview">
 														●
@@ -736,6 +890,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 											{lane(<SummaryLane rows={s.rows} seq={seq} range={range} />)}
 										</div>
+										{open && s.id.endsWith(':timeRemap') ? (
+											<div style={left} data-testid="ec-time-remap">
+												<TimeRemapSection session={session} clipId={s.clip.id} frame={frame} />
+											</div>
+										) : null}
 										{open && s.id.endsWith(':textAnimation') ? (
 											<div style={left} data-testid="ec-text-animation">
 												<TextAnimationSection session={session} clipIds={[s.clip.id]} host="effectControls" />
@@ -754,70 +913,49 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												/>
 											</div>
 										) : null}
-										{open
-											? rows.map((r) => {
-													const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
-													const hasGraph = graphKindOf(r.spec) !== null;
-													const graphHeight = hasGraph ? graphs[graphKey] : undefined;
-													return (
-														<div key={r.id}>
-															<div className="flex items-stretch">
-																<div style={left} className="min-w-0 shrink-0">
-																	<PropertyRow
-																		row={r}
-																		ctx={ctx}
-																		indent
-																		twirl={
-																			hasGraph
-																				? {
-																						open: graphHeight !== undefined,
-																						onToggle: () => {
-																							const next = { ...graphs };
-																							if (graphHeight !== undefined) delete next[graphKey];
-																							else next[graphKey] = GRAPH_HEIGHT.initial;
-																							setGraphs(next);
-																						},
-																					}
-																				: undefined
-																		}
-																	/>
-																</div>
-																{lane(
-																	<KeyLane
-																		row={r}
-																		seq={seq}
-																		range={range}
-																		selected={selectedKeys}
-																		onKeyPointerDown={onKeyPointerDown}
-																		onKeyDoubleClick={(f) => session.transport.seek(f)}
-																		onKeyContextMenu={openKeyMenu}
-																		onLanePointerDown={onLanePointerDown}
-																	/>,
-																)}
-															</div>
-															{graphHeight !== undefined ? (
-																<PropertyGraphs
-																	row={r}
-																	seq={seq}
-																	range={range}
-																	height={graphHeight}
-																	onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
-																	leftStyle={left}
-																	showTimeline={showTimeline}
-																	ops={ops}
-																	selected={selectedKeys}
-																	keySel={keySel}
-																	selectKeys={selectKeys}
-																	onKeyContextMenu={openKeyMenu}
-																	onBackgroundPointerDown={onLanePointerDown}
-																	snapCandidates={snapCandidates}
-																	setTip={setDragTip}
-																/>
-															) : null}
-														</div>
-													);
-												})
-											: null}
+										{open ? rows.map((r) => renderRow(r)) : null}
+										{open && s.textAnimators ? (
+											<TextAnimatorList
+												session={session}
+												model={s.textAnimators}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
+												frame={frame}
+											/>
+										) : null}
+										{open && s.fx?.effectId === 'jasper.liquify' ? (
+											<LiquifyToolsRow readOnly={readOnly} layout={{ left, lane }} />
+										) : null}
+										{open && s.puppet ? (
+											<PuppetList
+												session={session}
+												model={s.puppet}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
+											/>
+										) : null}
+										{open && s.masks ? (
+											<MaskList
+												session={session}
+												engine={engine}
+												list={s.masks}
+												clip={s.clip}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
+											/>
+										) : null}
 									</div>
 								);
 							})}
@@ -832,6 +970,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							<div
 								ref={lineRef}
 								className="absolute inset-y-0 w-px bg-pr-playhead"
+								// ui-perf: its own compositor layer, so a moving playhead does not repaint the key lanes below it.
+								style={{ willChange: 'transform' }}
 								data-testid="ec-playhead"
 							/>
 							<Splitter
@@ -885,10 +1025,10 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 				/>
 			) : null}
 			{menu ? (
-				<div
-					role="menu"
-					className="fixed z-[var(--pr-z-popover)] min-w-[160px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
-					style={{ left: menu.x, top: menu.y }}
+				<PointMenu
+					x={menu.x}
+					y={menu.y}
+					className="min-w-[160px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
 					onPointerDown={(e) => e.stopPropagation()}
 					data-testid="ec-kf-menu"
 				>
@@ -911,6 +1051,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					))}
 					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
 					<SpatialInterpolationSubmenu
+						groups={groups}
+						ids={menu.ids}
+						onApply={(label, commands) => {
+							ops.apply(label, commands);
+							setMenu(null);
+						}}
+					/>
+					{/* keyframes-blend: Rove Across Time (After Effects). */}
+					<RoveAcrossTimeItem
 						groups={groups}
 						ids={menu.ids}
 						onApply={(label, commands) => {
@@ -964,7 +1113,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					>
 						Delete
 					</button>
-				</div>
+				</PointMenu>
 			) : null}
 		</div>
 	);

@@ -2,8 +2,13 @@
 // layer matrices. Static clips resolve to the same `props` object on every frame.
 
 import { contentTimeAt } from '../derive/index.ts';
-import { evaluate } from '../keyframes.ts';
+import type { WarpAnalysisData } from '../gaps/warp/analysis.ts';
+import { evaluate, isAnimated } from '../keyframes.ts';
+import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
+import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
+import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
+import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
 import {
 	applyMat3,
 	boxToQuad,
@@ -32,6 +37,12 @@ export type ResolvedEffect = {
 	effectVersion: number;
 	enabled: boolean;
 	params: Record<string, ParamValue>;
+	/** wp masks: the effect applies inside these masks (absent = no masks: everywhere). */
+	masks?: ResolvedMask[];
+	/** sim-warp: the Puppet effect's meshes and pins at the frame. */
+	puppet?: ResolvedPuppet;
+	/** gaps (FX-6): the Warp Stabilizer's stored analysis (not time-dependent). */
+	warpAnalysis?: WarpAnalysisData;
 };
 
 /** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
@@ -66,6 +77,8 @@ export type ResolvedLayerProps = {
 	transform: LayerTransformValues | null;
 	opacity: number;
 	effects: ResolvedEffect[];
+	/** wp masks: evaluated Opacity masks (empty = none). */
+	masks: ResolvedMask[];
 	matrix: Mat2D;
 	/**
 	 * M2: the full projective layer map (Motion · corner pin) when the layer has a corner pin, else null (the
@@ -90,20 +103,52 @@ export type ResolvedLayer = {
 
 function isStaticClip(c: RenderVisualClip): boolean {
 	const t = c.transform;
-	if (c.opacity.keyframes.length) return false;
+	// Keyframes or an active expression (a function of time) make a property animated.
+	if (isAnimated(c.opacity)) return false;
 	if (
 		t &&
-		(t.position.keyframes.length ||
-			t.anchor.keyframes.length ||
-			t.scale.keyframes.length ||
-			t.scaleWidth.keyframes.length ||
-			t.rotation.keyframes.length)
+		(isAnimated(t.position) ||
+			isAnimated(t.anchor) ||
+			isAnimated(t.scale) ||
+			isAnimated(t.scaleWidth) ||
+			isAnimated(t.rotation))
 	)
 		return false;
-	return c.effects.every((fx) => Object.values(fx.params).every((p) => p.keyframes.length === 0));
+	if (masksAnimated(c.masks) || c.effects.some((fx) => masksAnimated(fx.masks))) return false;
+	if (c.effects.some((fx) => fx.puppet?.pins.some((pin) => PUPPET_PIN_PROPS.some((k) => isAnimated(pin[k])))))
+		return false; // sim-warp: animated Puppet pins
+	return c.effects.every((fx) => Object.values(fx.params).every((p) => !isAnimated(p)));
 }
 
-export { contentTimeAt as clipContentTime };
+type TimedClip = Parameters<typeof contentTimeAt>[0] & {
+	frameHold?: { flicks: number; holdFilters?: boolean } | null;
+};
+
+/**
+ * Content time (flicks) at which a render clip's properties — Motion, Opacity, effect params — are evaluated at
+ * sequence frame `frame` (S01:CLP-004). A frame hold with Hold Filters (edit-structure) evaluates them at the held
+ * time; otherwise they keep animating through the hold (Premiere).
+ */
+export function clipContentTime(
+	clip: TimedClip,
+	frame: number,
+	rate: Parameters<typeof contentTimeAt>[2],
+): number {
+	const hold = clip.frameHold;
+	if (hold?.holdFilters) return hold.flicks;
+	return contentTimeAt(clip, frame, rate);
+}
+
+/** Content time of the picture a clip shows at `frame`: the held time under a frame hold (edit-structure). */
+export function clipPictureTime(
+	clip: TimedClip,
+	frame: number,
+	rate: Parameters<typeof contentTimeAt>[2],
+): number {
+	const hold = clip.frameHold;
+	if (hold) return hold.flicks;
+	return contentTimeAt(clip, frame, rate);
+}
 
 /** Evaluated props of a clip at content time `t` (no caching). */
 export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayerProps {
@@ -126,6 +171,9 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 		effectVersion: fx.effectVersion,
 		enabled: fx.enabled,
 		params: Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t)])),
+		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
+		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
+		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
 	}));
 	const cropFx = effects.find((e) => e.effectId === 'jasper.crop' && e.enabled);
 	const crop: Crop | null = cropFx
@@ -153,6 +201,7 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 		transform,
 		opacity: Math.min(100, Math.max(0, evaluate(c.opacity, t))),
 		effects,
+		masks: c.masks?.length ? resolveMasks(c.masks, t) : NO_MASKS,
 		matrix,
 		projective,
 		box: c.intrinsicBox,
@@ -169,6 +218,8 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 export function layerMapOf(props: Pick<ResolvedLayerProps, 'projective' | 'matrix'>): Mat3 {
 	return props.projective ?? mat3FromMat2D(props.matrix);
 }
+
+const NO_MASKS: ResolvedMask[] = [];
 
 const staticCache = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
 
@@ -199,14 +250,27 @@ function clipCovering(clips: readonly RenderVisualClip[], frame: number): Render
 	return undefined;
 }
 
-/** Visible layers at a sequence frame, bottom (V1) → top (S01:RND-005). */
-export function resolveSceneAt(snapshot: RenderSnapshot, frame: number): ResolvedLayer[] {
+/**
+ * Visible layers at a sequence frame, bottom (V1) → top (S01:RND-005). three-d: a 3D layer's props carry its
+ * projective map through the active camera (or `opts.camera`, a Program monitor 3D view), so overlays, picking and
+ * masks follow it on screen.
+ */
+export function resolveSceneAt(
+	snapshot: RenderSnapshot,
+	frame: number,
+	opts: { camera?: CameraState } = {},
+): ResolvedLayer[] {
 	const out: ResolvedLayer[] = [];
+	let cam: CameraState | null = opts.camera ?? null;
 	snapshot.videoTracks.forEach((track, trackIndex) => {
 		const c = clipCovering(track.clips, frame);
 		if (!c) return;
-		const t = contentTimeAt(c, frame, snapshot.settings.fps);
-		const props = resolveCachedLayerProps(c, t);
+		const t = clipContentTime(c, frame, snapshot.settings.fps);
+		let props = resolveCachedLayerProps(c, t);
+		if (c.threeD && c.kind !== 'adjustment') {
+			cam ??= activeCameraAt(snapshot, frame);
+			props = project3dProps(c, props, t, cam, snapshot.settings);
+		}
 		out.push({ clip: c, trackIndex, localFrame: frame - c.start, contentTime: t, props });
 	});
 	return out;

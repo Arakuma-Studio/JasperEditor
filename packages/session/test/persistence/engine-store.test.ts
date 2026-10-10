@@ -118,6 +118,72 @@ describe('leases (S01:PER-040)', () => {
 		await a.close();
 	});
 
+	/** A tab's sessionStorage (survives a reload of the tab, not shared with other tabs). */
+	function tabStorage(): Storage {
+		const m = new Map<string, string>();
+		return {
+			get length() {
+				return m.size;
+			},
+			clear: () => m.clear(),
+			getItem: (k) => m.get(k) ?? null,
+			key: (i) => [...m.keys()][i] ?? null,
+			removeItem: (k) => void m.delete(k),
+			setItem: (k, v) => void m.set(k, String(v)),
+		};
+	}
+
+	it('a reload does not open the project read-only while the old page’s keepalive release is in flight', async () => {
+		// Regression (verify workstream, e2e/effect-presets): the old page's keepalive DELETE raced the new page's
+		// acquire; when the acquire won, the user's own project opened read-only ("open in another session").
+		const { engine, projectId } = setup();
+		const page = new EventTarget();
+		vi.stubGlobal('window', page);
+		vi.stubGlobal('sessionStorage', tabStorage());
+		// The keepalive DELETE reaches the engine 1 s late (browser busy unloading, engine under load).
+		const late = (url: string, init: RequestInit = {}) =>
+			init.method === 'DELETE'
+				? new Promise<Response>((resolve) => setTimeout(() => resolve(engine.fetch(url, init)), 1000))
+				: engine.fetch(url, init);
+		vi.stubGlobal('fetch', late);
+		const a = await EditorSession.open({
+			store: new EngineProjectStore(engine.client()),
+			projectId,
+			ctx: ctx(),
+			sessionId: 'a',
+		});
+		expect(a.getState().lease.status).toBe('held');
+		page.dispatchEvent(new Event('pagehide')); // reload: the old page goes away
+		const pending = EditorSession.open({
+			store: new EngineProjectStore(engine.client()),
+			projectId,
+			ctx: ctx(),
+			sessionId: 'a2',
+		});
+		await vi.advanceTimersByTimeAsync(3000);
+		const a2 = await pending;
+		expect(a2.getState().readOnly).toBe(false);
+		expect(a2.getState().lease.status).toBe('held');
+		expect(engine.leases.get(projectId)?.sessionId).toBe('a2');
+		await a2.close();
+	});
+
+	it('a duplicated tab (copied sessionStorage) still opens read-only while the original holds the lease', async () => {
+		const { engine, projectId, open } = setup();
+		const storage = tabStorage();
+		vi.stubGlobal('sessionStorage', storage);
+		const a = await open('a');
+		// The duplicate gets a copy of the tab's storage; `a` stays open and keeps heartbeating.
+		const b = await open('b');
+		expect(b.getState().readOnly).toBe(true);
+		expect(b.getState().lease).toMatchObject({ status: 'read-only', holder: 'a' });
+		await a.close();
+		await b.close();
+		// A confirmed release forgets the session: nothing left to wait for after a reload.
+		expect(JSON.parse(storage.getItem('jasper:tab-lease-sessions') ?? '[]')).not.toContain('a');
+		expect(engine.leases.has(projectId)).toBe(false);
+	});
+
 	it('heartbeats every lease.heartbeatMs and re-acquires transparently after an engine restart', async () => {
 		const { engine, open, projectId } = setup();
 		const a = await open('a');

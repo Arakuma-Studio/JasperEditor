@@ -93,10 +93,14 @@ async function gradedWithText(app: FastifyInstance, headers: Record<string, stri
 			ref: '$t',
 		},
 	]);
-	// M2 (wp-m2-layer-bake): text alone is baked natively now (S11:LBK-001); a blend mode keeps it a Remotion-only
-	// layer (S04:RP-005), so this sequence still renders through the compositions' colour stage.
+	// M2 (wp-m2-layer-bake): text alone is baked natively now (S11:LBK-001); keyframes-blend: blend modes are native
+	// too, except inside a nested sequence — a nested text with a blend mode keeps this sequence on the Remotion path
+	// (S04:RP-005), so it still renders through the compositions' colour stage.
 	const text = d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'text')!;
-	d.tx([{ type: 'clip.update', clipIds: [text], patch: { blendMode: 'screen' } }]);
+	d.tx([
+		{ type: 'clip.update', clipIds: [text], patch: { blendMode: 'screen' } },
+		{ type: 'clip.nest', clipIds: [text] },
+	]);
 	return d;
 }
 
@@ -125,6 +129,8 @@ describe.runIf(process.env.REMOTION_E2E === '1')('Remotion path renders graded (
 		const engine = await startEngine({
 			appdir: tempAppdir(),
 			port: Number(process.env.JASPER_E2E_PORT ?? 0),
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

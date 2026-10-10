@@ -2,6 +2,7 @@
 // drives the real fx GPU host with planned transition stages (planGpuTransition + runShaderPlan, exactly what
 // TransitionStage does) and reports pixels. Compiles the whole transition GLSL library and runs EVERY registered GPU
 // transition (wave-3 families get this check for free) two-sided, one-sided and reversed.
+import '../gl-poison.ts';
 import {
 	defineShaderTransition,
 	GLSL_LIBRARY,
@@ -14,6 +15,7 @@ import {
 	type TransitionSpec,
 	type TrSide,
 } from '@jasper/project';
+import { meanGrid } from '@jasper/testkit/image';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { TEST_TRANSITIONS } from '../transition-examples.ts';
 
@@ -108,6 +110,42 @@ function run(
 	return out;
 }
 
+/** Side A of the golden fingerprints: a warm horizontal ramp with a white disc and a dark bar. */
+const cardA = () =>
+	canvas(W, H, (ctx) => {
+		const g = ctx.createLinearGradient(0, 0, W, 0);
+		g.addColorStop(0, '#b21f1f');
+		g.addColorStop(1, '#fdbb2d');
+		ctx.fillStyle = g;
+		ctx.fillRect(0, 0, W, H);
+		ctx.fillStyle = '#fff';
+		ctx.beginPath();
+		ctx.arc(W * 0.3, H * 0.5, H * 0.3, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.fillStyle = '#111';
+		ctx.fillRect(W * 0.7, 0, W * 0.08, H);
+	});
+/** Side B: a cool vertical ramp with a checkerboard. */
+const cardB = () =>
+	canvas(W, H, (ctx) => {
+		const g = ctx.createLinearGradient(0, 0, 0, H);
+		g.addColorStop(0, '#1a2a6c');
+		g.addColorStop(1, '#22c1c3');
+		ctx.fillStyle = g;
+		ctx.fillRect(0, 0, W, H);
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+		for (let y = 0; y < H; y += 6) for (let x = (y / 6) % 2 ? 6 : 0; x < W; x += 12) ctx.fillRect(x, y, 6, 6);
+	});
+const fingerprintOf = (c: HTMLCanvasElement) =>
+	meanGrid(
+		{
+			width: c.width,
+			height: c.height,
+			data: new Uint8Array(c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.buffer),
+		},
+		4,
+	);
+
 const spec = (id: string) => TRANSITION_SPECS.find((s) => s.id === id)!;
 
 /**
@@ -188,6 +226,30 @@ void main() {
 			}
 		}
 		return { count: specs.length, errors };
+	},
+
+	/**
+	 * Golden fingerprints (FilmCraft's transition fingerprints): every GPU transition of a family at its defaults,
+	 * two-sided over the golden cards, at p = 0.25 / 0.5 / 0.75 (frames 5 / 10 / 15 of 20) → 4×4 mean RGB, compared
+	 * with goldens/transition-fingerprints.json (±4 levels) by transition-gl.test.ts.
+	 */
+	fingerprints(family?: string) {
+		const out: Record<string, number[]> = {};
+		for (const s of specsOf(family))
+			for (const [p, frame] of [
+				['0.25', 5],
+				['0.5', 10],
+				['0.75', 15],
+			] as const) {
+				try {
+					out[`${s.id}@${p}`] = fingerprintOf(
+						run(s, defaults(s), { frame, duration: 20, out: full(cardA()), in: full(cardB()) }),
+					);
+				} catch {
+					// reported by `catalogue`
+				}
+			}
+		return out;
 	},
 
 	/** Ends of a two-sided transition: start ≈ A, end ≈ B (Start 0 % / End 100 % around the linear ramp). */

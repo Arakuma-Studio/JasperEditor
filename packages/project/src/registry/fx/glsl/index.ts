@@ -6,7 +6,8 @@
 //                 fx_cellular, fx_cellId
 //   fx/color      fx_luma, fx_saturate, fx_srgbToLinear/fx_linearToSrgb, fx_rgb2hsv/fx_hsv2rgb,
 //                 fx_rgb2hsl/fx_hsl2rgb, fx_hueShift, fx_brightnessContrast, fx_tint
-//   fx/blend      fx_blendRgb(mode, …), fx_blend(mode, base, top, opacity), fx_over, fx_addLight, FX_BLEND_*
+//   fx/blend      fx_blendRgb(mode, …), fx_blend(mode, base, top, opacity), fx_over, fx_addLight, FX_BLEND_*,
+//                 fx_layerBlend(mode, dst, src, noise), fx_layerBlendRgb, fx_blendNoise, FX_LAYER_* (clip blend modes)
 //   fx/sample     fx_sampleEdge(t, uv, mode), fx_sampleTransparent, fx_sampleLayer, fx_mirrorUv, FX_EDGE_*
 //   fx/uv         fx_rot, fx_rotateAround, fx_scaleAround, fx_toPolar/fx_fromPolar, fx_deg, fx_dir, FX_PI/FX_TAU
 //   fx/blur       fx_gaussian1d, fx_box1d, fx_blur9, fx_zoomBlur, fx_gaussianWeight
@@ -14,6 +15,7 @@
 //   fx/mb         fx_mbTapCount, fx_mbJitter, fx_mbTapAt, fx_mbJitterFor, fx_mbDyn, fx_mbShutter (adaptive motion blur)
 //   fx/mb-poses   fx_mbTaps, fx_mbOn, fx_mbTap, fx_mbPose, fx_mbPlanJitter (planned shutters, needs mbUniforms;
 //                 not in GLSL_LIBRARY because it reads the planner's uniforms)
+//   fx/data       fx_texel(t, i), fx_texelGrid(t, w, h, g) (sim-warp data textures, `{texels}` uniforms)
 //   fx/composite  fx_finish, fx_mixOriginal, fx_matteView, fx_lumaMatte, fx_colorDistanceMatte, fx_applyMatte,
 //                 fx_setAlpha
 // Always available without an include (the prelude): fx_canvasPx, fx_layerPx, fx_layerNorm, fx_uvOfCanvasPx,
@@ -22,16 +24,18 @@ import { GLSL_BLEND } from './blend.ts';
 import { GLSL_BLUR } from './blur.ts';
 import { GLSL_COLOR } from './color.ts';
 import { GLSL_COMPOSITE } from './composite.ts';
+import { GLSL_DATA } from './data.ts';
 import { GLSL_HASH } from './hash.ts';
 import { GLSL_LUT } from './lut.ts';
 import { GLSL_MB } from './motion-blur.ts';
 import { GLSL_NOISE } from './noise.ts';
 import { GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
-export { FX_BLEND_MODE_LABELS, FX_BLEND_MODES, GLSL_BLEND } from './blend.ts';
+export { FX_BLEND_MODE_LABELS, FX_BLEND_MODES, FX_BLEND_TO_LAYER, GLSL_BLEND } from './blend.ts';
 export { FX_BLUR_MAX_TAPS, GLSL_BLUR } from './blur.ts';
 export { GLSL_COLOR } from './color.ts';
 export { GLSL_COMPOSITE } from './composite.ts';
+export { GLSL_DATA } from './data.ts';
 export { GLSL_HASH } from './hash.ts';
 export { GLSL_LUT } from './lut.ts';
 export {
@@ -57,4 +61,5 @@ export const GLSL_LIBRARY = [
 	GLSL_COMPOSITE,
 	GLSL_LUT,
 	GLSL_MB,
+	GLSL_DATA,
 ] as const;

@@ -2,12 +2,13 @@
 // zoom and resolution dropdowns, settings menu, duration display, mini ruler with In/Out, transport bar.
 // Per-frame values (timecode text, ruler playhead) are written to the DOM from TransportStore
 // subscriptions, never through React state (S02:TL-155, S05:PERF-004).
-import { formatTimecode, parseTimecodeEntry, type Rational } from '@jasper/project';
+import type { Rational } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Tooltip, tooltipText } from '@jasper/ui';
 import { Check, Settings } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import type { Size } from './viewport.ts';
 
 export function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {

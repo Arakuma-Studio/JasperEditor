@@ -3,6 +3,7 @@
 import {
 	audioFadeGain,
 	type BlendMode,
+	blendModeInfo,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	evaluate,
@@ -19,25 +20,14 @@ import type { RenderOptions } from './types.ts';
 export const CROP_EFFECT_ID = 'jasper.crop';
 
 /**
- * CSS `mix-blend-mode` for an S01 blend mode (S03 §16 tier A). `add` has no CSS keyword of the same
- * name; `plus-lighter` is the additive compositing operator in Chromium.
+ * CSS `mix-blend-mode` of a clip blend mode (keyframes-blend): the W3C modes, whose Chrome implementation equals the
+ * formulas of `blend-modes.ts` (measured bit-exact on opaque pixels, ≤ 1 code value with partial alpha); undefined
+ * for Normal and for the modes the GL compositor draws (`isCssBlend` false: Dissolve, Linear Burn, Darker / Lighter
+ * Color, Linear Dodge (Add), Vivid / Linear / Pin Light, Hard Mix, Subtract, Divide, the utility modes — CSS has no
+ * exact equivalent; `plus-lighter` differs from Add in alpha).
  */
 export function blendModeCss(mode: BlendMode | string): CSSProperties['mixBlendMode'] | undefined {
-	switch (mode) {
-		case 'normal':
-			return undefined;
-		case 'add':
-			return 'plus-lighter';
-		case 'multiply':
-		case 'screen':
-		case 'overlay':
-		case 'darken':
-		case 'lighten':
-		case 'difference':
-			return mode;
-		default:
-			return undefined;
-	}
+	return (blendModeInfo(mode)?.css ?? undefined) as CSSProperties['mixBlendMode'] | undefined;
 }
 
 /** One wrapper element of the effect chain, innermost (applied first) → outermost. */
@@ -99,7 +89,8 @@ const MAX_PREVIEW_GAIN = 16;
 /**
  * Linear gain of an audio clip at clip-local frame `f` (S01:FX-010 subset, S03:KND-011/020):
  * `gainDb + volumeDb(t) + track volumeDb(T) + master volumeDb(T)`. Mute/solo are already resolved in
- * the snapshot (muted tracks are absent). Pan is not previewed in M1.
+ * the snapshot (muted tracks are absent). With the audio-mix preview graph (`includeBus` false) only the clip's own
+ * gain, volume and fades are applied here; the graph does pan, the track fader, buses and the Mix.
  */
 export function audioGainAt(
 	clip: Pick<
@@ -109,6 +100,8 @@ export function audioGainAt(
 	f: number,
 	fps: Rational,
 	master?: { volumeDb: RenderAudioClip['volumeDb'] },
+	/** audio-mix: false when the preview mix graph applies the track fader and the Mix (default true). */
+	includeBus = true,
 ): number {
 	const F = flicksPerFrame(fps);
 	const i = Math.max(0, Math.min(clip.duration - 1, f));
@@ -120,8 +113,7 @@ export function audioGainAt(
 	const db =
 		clip.gainDb +
 		evaluate(clip.volumeDb, content) +
-		evaluate(clip.track.volumeDb, seqT) +
-		(master ? evaluate(master.volumeDb, seqT) : 0);
+		(includeBus ? evaluate(clip.track.volumeDb, seqT) + (master ? evaluate(master.volumeDb, seqT) : 0) : 0);
 	// Audio fades at the clip's edges (one-sided audio transitions, S01:TRN-004).
 	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db)) * audioFadeGain(clip.fades, clip.start + i);
 }

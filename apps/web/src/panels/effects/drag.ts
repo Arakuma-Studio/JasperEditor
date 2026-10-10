@@ -115,6 +115,7 @@ export function effectTree(
 	const q = filter.query.trim().toLowerCase();
 	const groups = new Map<string, Map<string, ReturnType<EffectRegistry['list']>>>();
 	for (const e of registry.list()) {
+		if (e.internal) continue; // color-mgmt: render-only effects
 		const hay = [e.label, e.id, e.category, e.bin ?? '', ...(e.keywords ?? [])].join(' ').toLowerCase();
 		if (q && !hay.includes(q)) continue;
 		if (filter.realtime && e.capabilities.preview === 'none') continue;

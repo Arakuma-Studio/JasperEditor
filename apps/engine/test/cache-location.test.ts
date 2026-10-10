@@ -76,7 +76,8 @@ async function check(app: TestApp, path: string | null): Promise<CacheLocationCh
 	return r.json();
 }
 
-beforeAll(() => ensureFixtures());
+// A clean checkout generates (or waits for) every fixture here: minutes, not the default 10 s hook timeout.
+beforeAll(() => ensureFixtures(), 900_000);
 afterAll(closeApps);
 
 describe('cache location (S04:CA-021)', () => {

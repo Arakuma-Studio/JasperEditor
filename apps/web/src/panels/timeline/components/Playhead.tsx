@@ -1,8 +1,9 @@
 // Playhead line and timecode readout (S02:TL-155, TL-205, TL-830/831). Both subscribe to the
 // TransportStore and write to the DOM directly: a pure playhead move never re-renders React.
-import { formatTimecode, parseTimecodeEntry, type Rational } from '@jasper/project';
+import type { Rational } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { formatTimecode, parseTimecodeEntry } from '../../../gaps/time-display.ts';
 import { frameToX, type Viewport } from '../model/viewport.ts';
 
 /** Playhead: head in the ruler plus a 1 px line through both regions. */
@@ -46,7 +47,7 @@ export function PlayheadLine(props: {
 		<div
 			ref={ref}
 			className="pointer-events-none absolute top-0 bottom-0 left-0"
-			style={{ zIndex: 20, width: 1 }}
+			style={{ zIndex: 20, width: 1, willChange: 'transform' }}
 			data-testid="timeline-playhead"
 		>
 			<div
@@ -58,6 +59,7 @@ export function PlayheadLine(props: {
 				className="pointer-events-auto absolute top-0 -left-[10px] h-[24px] w-[20px] cursor-ew-resize"
 				onPointerDown={props.onHeadPointerDown}
 				data-playhead-head
+				data-testid="timeline-playhead-head"
 			>
 				<div
 					className="absolute top-[12px] left-[4px] h-[12px] w-[12px]"

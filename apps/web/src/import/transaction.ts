@@ -1,6 +1,7 @@
 // Builds the ONE "Import N files" transaction of S01:LIFE-010 step 6: `media.register` for every file that
 // is committed (+ `clip.place` when the drop target is the timeline or the Program monitor), preceded by
 // `sequence.updateSettings` when the user accepted the clip-mismatch prompt (S01:SEQ-005, S04:IN-008).
+
 import {
 	type Command,
 	flicksPerFrame,
@@ -10,6 +11,7 @@ import {
 	sourceRangeFromSidecar,
 	type TxInput,
 } from '@jasper/project';
+import { labelDefault, labelKindOfMedia } from '../gaps/app-prefs.ts';
 import type { ImportTarget } from '../state/services.ts';
 import { placementFrames, type SequenceSettingsPatch } from './assets.ts';
 
@@ -31,9 +33,19 @@ export type PreparedMedia = {
 export type DuplicateChoice = 'use-existing' | 'import-again';
 
 /** Media already in the project with the same fingerprint (ignores `pending:` fingerprints). */
-export function findExistingMedia(doc: Pick<ProjectDocument, 'media'>, fingerprint: string): string | null {
+export function findExistingMedia(
+	doc: Pick<ProjectDocument, 'media'>,
+	fingerprint: string,
+	/** imports: the PDF page (pages of one file are different media). */
+	page = 1,
+): string | null {
 	for (const m of Object.values(doc.media)) {
-		if (m.fingerprint === fingerprint && !m.fingerprint.startsWith('pending:')) return m.id;
+		if (
+			m.fingerprint === fingerprint &&
+			!m.fingerprint.startsWith('pending:') &&
+			(m.vector?.page ?? 1) === page
+		)
+			return m.id;
 	}
 	return null;
 }
@@ -93,17 +105,20 @@ export function buildImportTransaction(input: {
 			source = p.existingMediaId;
 		} else {
 			registerIndex.push(commands.length);
+			// gaps (Preferences ▸ Labels ▸ Label Defaults)
+			const label = labelDefault(labelKindOfMedia(p.asset as never));
 			commands.push({
 				type: 'media.register',
 				asset: p.asset,
 				binId,
 				name: p.name,
+				...(label ? { label } : {}),
 				ref: `$m${i}`,
 				itemRef: `$i${i}`,
 			} as Command);
 			source = `$m${i}`;
 		}
-		const placeable = p.asset.kind !== 'font' && p.asset.kind !== 'lut';
+		const placeable = p.asset.kind !== 'font' && p.asset.kind !== 'lut' && p.asset.kind !== 'color-config';
 		if (!seq || !rate || !placeable) {
 			placeIndex.push(null);
 			return;
@@ -204,7 +219,7 @@ export function buildPlaceItemsTransaction(input: {
 		let frames = 0;
 		if (item.kind === 'media') {
 			const asset = doc.media[item.mediaId];
-			if (!asset || asset.kind === 'font' || asset.kind === 'lut') continue;
+			if (!asset || asset.kind === 'font' || asset.kind === 'lut' || asset.kind === 'color-config') continue;
 			const marks = item.marks;
 			if (asset.kind === 'video' || asset.kind === 'audio') {
 				const F = flicksPerFrame(rate);

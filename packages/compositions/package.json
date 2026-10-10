@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./remotion-entry": "./src/remotion-entry.ts",
     "./mg-host": "./src/mg-host/protocol.ts",
-    "./render-host": "./src/render-host.ts"
+    "./render-host": "./src/render-host.ts",
+    "./audio-worklet": "./src/audio/worklet.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -15,11 +16,17 @@
     "still:smoke": "tsx scripts/still-smoke.ts"
   },
   "dependencies": {
+    "@jasper/audio-dsp": "workspace:*",
+    "@jasper/audio-fx": "workspace:*",
+    "@jasper/expressions": "workspace:*",
     "@jasper/mg-templates": "workspace:*",
     "@jasper/motion": "workspace:*",
     "@jasper/project": "workspace:*",
     "@remotion/media": "4.0.499",
     "@remotion/shapes": "4.0.499",
+    "lottie-web": "5.13.0",
+    "mediabunny": "1.50.8",
+    "pdfjs-dist": "4.10.38",
     "remotion": "4.0.499"
   },
   "peerDependencies": {
@@ -27,6 +34,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@jasper/testkit": "workspace:*",
     "@remotion/bundler": "4.0.499",
     "@remotion/player": "4.0.499",
     "@remotion/renderer": "4.0.499",

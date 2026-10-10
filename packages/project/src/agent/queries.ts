@@ -1,6 +1,7 @@
 // Agent queries (S01 §21.2, S02:TL-951, ARCHITECTURE §11 Stage 1): read-only JSON views of a document,
 // shared by the in-page bridge (with session state) and the engine's headless path (document only).
 // Frames are integers and are always accompanied by timecode strings for LLM readability (TL-951).
+
 import { z } from 'zod';
 import type { TransactionResult } from '../commands/types.ts';
 import {
@@ -14,6 +15,7 @@ import {
 import { checkInvariants } from '../invariants.ts';
 import { evaluate } from '../keyframes.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
+import type { MgTemplateRegistry } from '../registry/mg.ts';
 import { clipContentTime, resolveSceneAt } from '../render/scene.ts';
 import { buildRenderSnapshot, type MediaHandle } from '../render/snapshot.ts';
 import type { Animatable } from '../schema/common.ts';
@@ -22,7 +24,9 @@ import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, TextAnimator } from '../schema/sequence.ts';
 import { flicksToSeconds, fpsOf, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
+import { shapeItemsSummary } from '../vector/summary.ts';
 import { AddressError, pickSequence, resolveFrameInput } from './addressing.ts';
+import { clipPropertiesQuery, PropertyQueryError, paramGetQuery } from './properties-query.ts';
 
 export class AgentQueryError extends Error {
 	constructor(
@@ -72,6 +76,27 @@ export const AGENT_QUERY_ARGS = {
 		frame: TimeArg,
 		width: z.number().int().positive().max(1280).optional(),
 	}),
+	'clip.properties': z.object({
+		clipId: z.string().min(1),
+		frame: TimeArg.optional().describe(
+			'Sequence time to read at: frames, {frames}, {seconds} or timecode (default: the playhead when it is on the clip, else the clip start)',
+		),
+		keys: z
+			.array(z.string())
+			.optional()
+			.describe('Only these property keys or key prefixes (e.g. ["transform", "opacity", "effects.fx_…"])'),
+	}),
+	'param.get': z.object({
+		target: z
+			.array(z.string().min(1))
+			.min(2)
+			.describe(
+				'A param.set target: ["clip", clipId, ...key], ["effect", effectInstanceId, param], ["transition", transitionId, param] or ["track", trackId, "volumeDb"|"pan"]',
+			),
+		frame: TimeArg.optional().describe(
+			'Sequence time to read at (default: as clip.properties; 0 for sequence-level params)',
+		),
+	}),
 } as const;
 export type AgentQuery = keyof typeof AGENT_QUERY_ARGS;
 export const AGENT_QUERY_NAMES = Object.keys(AGENT_QUERY_ARGS) as AgentQuery[];
@@ -92,6 +117,9 @@ export const AGENT_QUERY_DESCRIPTIONS: Record<AgentQuery, string> = {
 		"The editor user's preferences that change what edits do, e.g. the default transitions and their alignment (needs an open session).",
 	validate: 'The invariant report of the document, or the dry-run result of a transaction.',
 	'frame.capture': 'A PNG still of the Program output at a frame (engine /api/stills; max 1280 px).',
+	'clip.properties':
+		'Every property of a clip (Motion, opacity, audio, text, shape, template/composition params, effect params) at a time: `value` = the keyframed value (as Effect Controls shows it), `evaluated` = what the renderer draws, keyframes in sequence frames, the param.set `target`, and `rendered: false` with `why` when the frame does not draw it.',
+	'param.get': 'One parameter by its param.set target, with `value`, `evaluated` and keyframes at a time.',
 };
 
 /** Queries that need an editor session (no headless answer). */
@@ -119,6 +147,8 @@ export type AgentQueryEnv = {
 	doc: ProjectDocument;
 	revision: number;
 	effects?: EffectRegistry;
+	/** Motion-graphic templates (their `params.*` properties in clip.properties). */
+	mgTemplates?: MgTemplateRegistry;
 	/** Dry-runs a transaction against `doc` (the `validate` query). */
 	dryRun?(tx: Record<string, unknown>): TransactionResult;
 	session?: {
@@ -183,6 +213,8 @@ function clipSource(clip: Clip): Record<string, unknown> {
 	if (clip.kind === 'motion-graphic') return { template: c.template, params: c.params };
 	if (clip.kind === 'shape') {
 		const s = clip.shape;
+		// wp shapes: vector shapes list their item tree (ids, types, names, animated fields).
+		if (s.type === 'vector') return { shape: { type: 'vector', contents: shapeItemsSummary(s.contents) } };
 		return {
 			shape: {
 				type: s.type,
@@ -550,12 +582,82 @@ export function runAgentQuery(env: AgentQueryEnv, name: string, rawArgs: unknown
 			return { preferences: needSession(env, 'preferences.get').preferences?.() ?? {} };
 		case 'validate':
 			return validateQuery(env, args);
+		case 'clip.properties':
+			return clipProperties(env, args);
+		case 'param.get':
+			return paramGet(env, args);
 		case 'frame.capture':
 			throw new AgentQueryError(
 				'E_NOT_IMPLEMENTED',
 				'frame.capture is answered by the engine stills service',
 			);
 	}
+}
+
+function propertyEnv(env: AgentQueryEnv) {
+	return {
+		doc: env.doc,
+		effects: env.effects,
+		mgTemplates: env.mgTemplates,
+		activeSequenceId: env.session?.activeSequenceId ?? null,
+		...(env.session ? { playhead: () => env.session!.playhead() } : {}),
+	};
+}
+
+function propertyErrors<T>(fn: () => T): T {
+	try {
+		return wrap(fn);
+	} catch (e) {
+		if (e instanceof PropertyQueryError) throw new AgentQueryError(e.code, e.message);
+		throw e;
+	}
+}
+
+/** The sequence that holds an id (clip, effect instance, transition or track), for time arguments. */
+function sequenceHolding(doc: ProjectDocument, id: string): Sequence | undefined {
+	for (const seq of Object.values(doc.sequences)) {
+		if (seq.clips[id] || seq.transitions[id]) return seq;
+		if (
+			[...seq.videoTracks, ...seq.audioTracks].some(
+				(t) => t.id === id || (t.effects ?? []).some((e) => e.id === id),
+			)
+		)
+			return seq;
+		if (seq.master.effects.some((e) => e.id === id)) return seq;
+		if (
+			Object.values(seq.clips).some((c) =>
+				((c as { effects?: { id: string }[] }).effects ?? []).some((e) => e.id === id),
+			)
+		)
+			return seq;
+	}
+	return undefined;
+}
+
+function clipProperties(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)['clip.properties']>) {
+	return propertyErrors(() => {
+		const seq = sequenceHolding(env.doc, args.clipId);
+		if (!seq)
+			throw new AgentQueryError(
+				'E_NOT_FOUND',
+				`Clip not found: ${args.clipId}. get_timeline lists clip ids.`,
+			);
+		const frame = args.frame === undefined ? undefined : resolveFrameInput(seq, args.frame);
+		return clipPropertiesQuery(propertyEnv(env), { clipId: args.clipId, frame, keys: args.keys });
+	});
+}
+
+function paramGet(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)['param.get']>) {
+	return propertyErrors(() => {
+		const id = args.target[1]!;
+		const seq =
+			sequenceHolding(env.doc, id) ??
+			Object.values(env.doc.sequences).find((s) =>
+				[...s.videoTracks, ...s.audioTracks].some((t) => trackLabel(s, t.id) === id),
+			);
+		const frame = args.frame === undefined || !seq ? undefined : resolveFrameInput(seq, args.frame);
+		return paramGetQuery(propertyEnv(env), { target: args.target, frame });
+	});
 }
 
 /** Resolves `frame.capture` arguments to a sequence and frame (the caller renders the still). */

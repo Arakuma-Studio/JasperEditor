@@ -8,9 +8,10 @@ import type {
 	MediaStatus,
 	TypedEvent,
 } from '@jasper/api';
-import { TERMINAL_JOB_STATES } from '@jasper/api';
+import { MEDIA_STATUS_BATCH_MAX, TERMINAL_JOB_STATES } from '@jasper/api';
+import { lottieThumbnail, pdfThumbnail } from '@jasper/compositions';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import type { MediaAsset } from '@jasper/project';
+import { browserPictureNeed, type MediaAsset, mediaLoaderPath } from '@jasper/project';
 import type { DerivativeStatus, EditorSession, MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from './assets.ts';
 
@@ -61,10 +62,35 @@ export function createMediaRuntimeSync(
 	/** mediaKey → media ids (several assets may share a key after "import again" in other projects). */
 	let byKey = new Map<string, string[]>();
 	let byFingerprint = new Map<string, string[]>();
-	const known = new Set<string>();
+	/** media id → the engine key it was resolved with (a relink to another file resolves again). */
+	const known = new Map<string, string | null>();
 	/** mediaKey → last reported status of each proxy tier. */
 	const proxyTiers = new Map<string, ProxyTiers>();
 	let disposed = false;
+	// ui-perf: the patches of a sweep over every medium (opening a project resolves them all) reach the session as one
+	// store update; an update per medium re-ran every subscriber once per medium. Outside a sweep they apply at once.
+	let pending: [string, Partial<MediaRuntime>][] | null = null;
+	const setRuntime = (id: string, patch: Partial<MediaRuntime>) => {
+		if (pending) pending.push([id, patch]);
+		else session.setMediaRuntime(id, patch);
+	};
+	const sweep = (fn: () => void) => {
+		if (pending) return fn();
+		pending = [];
+		try {
+			fn();
+		} finally {
+			const batch = pending;
+			pending = null;
+			if (!disposed) session.setMediaRuntimes(batch);
+		}
+	};
+	/** The runtime of a medium including the patches of the current sweep. */
+	const runtimeOf = (id: string): Partial<MediaRuntime> | undefined => {
+		let r: Partial<MediaRuntime> | undefined = session.getState().media[id];
+		for (const [pid, patch] of pending ?? []) if (pid === id) r = { ...r, ...patch };
+		return r;
+	};
 
 	const reindex = () => {
 		const media = session.getCommitted().media;
@@ -80,7 +106,7 @@ export function createMediaRuntimeSync(
 
 	const patchKey = (key: string, patch: Partial<MediaRuntime>) => {
 		if (disposed) return;
-		for (const id of byKey.get(key) ?? []) session.setMediaRuntime(id, patch);
+		for (const id of byKey.get(key) ?? []) setRuntime(id, patch);
 	};
 
 	const applyDerivative = (key: string, kind: DerivativeKind, status: DerivativeStatus, url?: string) => {
@@ -134,29 +160,192 @@ export function createMediaRuntimeSync(
 		}
 	};
 
+	const resolveFailed = (key: string, e: unknown) => {
+		if (e instanceof EngineError && (e.code === 'ASSET_NOT_FOUND' || e.code === 'NOT_FOUND'))
+			patchKey(key, { availability: 'offline' });
+		else if (e instanceof EngineError && e.code === 'NETWORK')
+			patchKey(key, { availability: 'needs-engine' });
+		// Older/stub engines: assume the original is served and wait for events.
+		else patchKey(key, { availability: 'online' });
+	};
 	const resolve = (key: string) => {
 		patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });
 		engine
 			.mediaStatus(key)
 			.then((s) => applyStatus(s))
-			.catch((e) => {
-				if (e instanceof EngineError && (e.code === 'ASSET_NOT_FOUND' || e.code === 'NOT_FOUND'))
-					patchKey(key, { availability: 'offline' });
-				else if (e instanceof EngineError && e.code === 'NETWORK')
-					patchKey(key, { availability: 'needs-engine' });
-				// Older/stub engines: assume the original is served and wait for events.
-				else patchKey(key, { availability: 'online' });
-			});
+			.catch((e) => resolveFailed(key, e));
+	};
+	/**
+	 * polish: resolves many media with one request per batch and applies each answer as one store update. Opening a
+	 * 2 000-item project used to send 2 000 status requests and update the store (and every subscriber) once per
+	 * answer. An engine without the batch route (older build) is asked per medium, as before.
+	 */
+	let batchRoute = true;
+	const resolveMany = (keys: readonly string[]) => {
+		if (keys.length === 0) return;
+		if (keys.length === 1 || !batchRoute) {
+			for (const key of keys) resolve(key);
+			return;
+		}
+		for (const key of keys) patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });
+		for (let i = 0; i < keys.length; i += MEDIA_STATUS_BATCH_MAX) {
+			const chunk = keys.slice(i, i + MEDIA_STATUS_BATCH_MAX);
+			engine
+				.mediaStatusBatch(chunk)
+				.then((r) =>
+					sweep(() => {
+						for (const st of r.statuses) applyStatus(st);
+						for (const key of r.unknown) patchKey(key, { availability: 'offline' });
+					}),
+				)
+				.catch((e) => {
+					// The engine is unreachable: every medium of the batch needs it.
+					if (e instanceof EngineError && e.code === 'NETWORK') {
+						sweep(() => {
+							for (const key of chunk) resolveFailed(key, e);
+						});
+						return;
+					}
+					// Anything else (an engine without the batch route, a refused body): ask per medium, as before.
+					batchRoute = false;
+					sweep(() => {
+						for (const key of chunk) resolve(key);
+					});
+				});
+		}
 	};
 
-	const syncNew = () => {
-		const media = reindex();
-		for (const m of Object.values(media) as MediaAsset[]) {
-			if (known.has(m.id)) continue;
-			known.add(m.id);
+	const syncNew = () =>
+		sweep(() => {
+			const media = reindex();
+			const toResolve = new Set<string>();
+			for (const m of Object.values(media) as MediaAsset[]) {
+				const key = mediaKeyOf(m);
+				if (known.has(m.id) && known.get(m.id) === key) continue;
+				known.set(m.id, key);
+				if (key) toResolve.add(key);
+				// wp interchange: an imported placeholder has no file yet (Link Media links it).
+				else if (m.fingerprint.startsWith('pending:interchange:'))
+					setRuntime(m.id, { availability: 'offline' });
+				else setRuntime(m.id, { availability: 'needs-engine' });
+			}
+			resolveMany([...toResolve]);
+		});
+
+	// ---- imports: interpreted pictures (display PNG of stills a browser cannot show / with a pixel interpretation,
+	// interpreted proxy of videos with one). Keyed per asset: two assets of one file may be interpreted differently.
+	const variantKeyOf = (m: MediaAsset): string | null => {
+		const need = browserPictureNeed(m);
+		return need.picture ? `${need.picture}:${need.variant}` : null;
+	};
+	const requested = new Map<string, string>();
+	const timers = new Set<ReturnType<typeof setTimeout>>();
+	const isReady = (id: string, vk: string) => {
+		const v = runtimeOf(id)?.variant;
+		return v?.key === vk && v.state === 'ready';
+	};
+	/**
+	 * Asks the engine for an interpreted picture; until it is ready the request is repeated (idempotent on the engine)
+	 * with a growing delay, so a `media.variant.ready` event that raced the answer or was missed cannot leave the
+	 * picture pending. A ready state is never downgraded by a late answer.
+	 */
+	const askVariant = (
+		id: string,
+		key: string,
+		vk: string,
+		kind: 'display' | 'proxy',
+		variant: string,
+		attempt: number,
+	) => {
+		engine
+			.requestMediaVariant(key, { kind, variant })
+			.then((st) => {
+				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
+				setRuntime(id, {
+					variant: {
+						key: vk,
+						state: st.state,
+						...(st.url ? { url: st.url } : {}),
+						...(st.error ? { error: st.error } : {}),
+					},
+					...(st.state === 'ready' && st.url && kind === 'display' ? { posterUrl: st.url } : {}),
+				});
+				if ((st.state === 'queued' || st.state === 'running') && attempt < 60) {
+					const t = setTimeout(
+						() => {
+							timers.delete(t);
+							if (!disposed && requested.get(id) === vk && !isReady(id, vk))
+								askVariant(id, key, vk, kind, variant, attempt + 1);
+						},
+						Math.min(15_000, 1000 * 1.5 ** attempt),
+					);
+					timers.add(t);
+				}
+			})
+			.catch((e: unknown) => {
+				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
+				setRuntime(id, {
+					variant: { key: vk, state: 'failed', error: e instanceof Error ? e.message : String(e) },
+				});
+			});
+	};
+	const syncVariants = (ids?: readonly string[]) => sweep(() => syncVariantsNow(ids));
+	const syncVariantsNow = (ids?: readonly string[]) => {
+		if (disposed) return;
+		const media = session.getCommitted().media as Record<string, MediaAsset>;
+		for (const m of ids
+			? ids.map((id) => media[id]).filter((x): x is MediaAsset => !!x)
+			: Object.values(media)) {
 			const key = mediaKeyOf(m);
-			if (key) resolve(key);
-			else session.setMediaRuntime(m.id, { availability: 'needs-engine' });
+			const vk = variantKeyOf(m);
+			if (!key || !vk) {
+				if (requested.has(m.id)) {
+					requested.delete(m.id);
+					setRuntime(m.id, { variant: undefined });
+				}
+				continue;
+			}
+			if (requested.get(m.id) === vk) continue;
+			requested.set(m.id, vk);
+			const [kind, variant] = [vk.slice(0, vk.indexOf(':')), vk.slice(vk.indexOf(':') + 1)] as [
+				'display' | 'proxy',
+				string,
+			];
+			setRuntime(m.id, { variant: { key: vk, state: 'queued' } });
+			askVariant(m.id, key, vk, kind, variant, 0);
+		}
+	};
+	const onVariantReady = (p: { mediaKey: string; kind: string; variant: string; url: string }) => {
+		const vk = `${p.kind}:${p.variant}`;
+		for (const id of byKey.get(p.mediaKey) ?? [])
+			if (requested.get(id) === vk)
+				setRuntime(id, {
+					variant: { key: vk, state: 'ready', url: p.url },
+					// A still's display picture is its poster too (the engine's ffmpeg poster may not read the format).
+					...(p.kind === 'display' ? { posterUrl: p.url } : {}),
+				});
+	};
+	// imports: posters of media the engine does not decode — SVG is its own poster, PDF pages and Lottie animations are
+	// drawn in the page (pdf.js, the Lottie player).
+	const posters = new Map<string, string>();
+	const syncPosters = () => {
+		if (disposed) return;
+		const media = session.getCommitted().media as Record<string, MediaAsset>;
+		const base = engine.mediaUrl('k').replace(/\/media\/.*$/, '');
+		for (const m of Object.values(media)) {
+			const path = mediaLoaderPath(m);
+			if (!path) continue;
+			const key = `${path}|${m.vector?.page ?? ''}`;
+			if (posters.get(m.id) === key) continue;
+			posters.set(m.id, key);
+			const url = `${base}${path}`;
+			const done = (posterUrl: string) => {
+				if (!disposed && posters.get(m.id) === key) setRuntime(m.id, { posterUrl });
+			};
+			if (m.vector?.format === 'svg') done(url);
+			else if (m.vector?.format === 'pdf')
+				void pdfThumbnail(url, m.vector.page ?? 1).then(done, () => undefined);
+			else if (m.lottie) void lottieThumbnail(url).then(done, () => undefined);
 		}
 	};
 
@@ -178,6 +367,9 @@ export function createMediaRuntimeSync(
 		switch (e.type) {
 			case 'derivative.ready':
 				applyDerivative(e.payload.mediaKey, e.payload.kind, { state: 'ready', progress: 1 }, e.payload.url);
+				break;
+			case 'media.variant.ready':
+				onVariantReady(e.payload);
 				break;
 			case 'media.updated':
 				applyStatus({
@@ -214,16 +406,26 @@ export function createMediaRuntimeSync(
 	};
 
 	syncNew();
+	syncVariants();
+	syncPosters();
 	const offDoc = session.on('doc.changed', (ev) => {
 		if (ev.created.some((id) => id.startsWith('med_')) || ev.deleted.some((id) => id.startsWith('med_')))
 			syncNew();
 		else if (ev.isUndo || ev.isRedo) syncNew();
+		// imports: Interpret Footage changed a media (or it was just added): its interpreted picture.
+		const touched = [...ev.created, ...ev.changed].filter((id) => id.startsWith('med_'));
+		if (touched.length || ev.isUndo || ev.isRedo) {
+			syncVariants(ev.isUndo || ev.isRedo ? undefined : touched);
+			syncPosters();
+		}
 	});
 	const offEvents = subscribe ? subscribe(onEvent) : () => undefined;
 
 	return {
 		dispose() {
 			disposed = true;
+			for (const t of timers) clearTimeout(t);
+			timers.clear();
 			offDoc();
 			offEvents();
 		},

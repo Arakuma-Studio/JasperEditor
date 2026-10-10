@@ -4,9 +4,11 @@
 // entry, S03:PRP-023) whose transient document previews live in the Program Monitor (S03:ARC-005).
 import {
 	type Animatable,
+	bindExpressions,
 	type Command,
 	type Ease,
-	formatTimecode,
+	locateExpressionTarget,
+	type ProjectDocument,
 	propertyEvaluateOptions,
 	type Sequence,
 } from '@jasper/project';
@@ -15,32 +17,43 @@ import {
 	type MouseEvent as ReactMouseEvent,
 	type PointerEvent as ReactPointerEvent,
 	type RefObject,
+	useEffect,
 	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from 'react';
+import { useExpressionsFor } from '../../expressions/engine.ts';
+import { rowExpressionOf } from '../../expressions/row.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import type { Row } from '../properties/lib/model.ts';
 import type { InspectorOps } from '../properties/lib/ops.ts';
 import {
 	componentsOf,
 	easeFromValueDrag,
+	easeFromVec2ValueDrag,
 	easeFromVelocityDrag,
 	fitRange,
 	formatGraphValue,
 	graphKindOf,
 	type Pt,
+	panRange,
 	planEaseEdit,
 	roundToStep,
+	samplePostValueCurves,
+	samplePostVelocityCurve,
 	sampleValueCurves,
 	sampleVelocityCurve,
 	timeMapOf,
 	type ValueHandle,
+	type Vec2ValueHandle,
 	type VelocityHandle,
 	valueHandles,
+	vec2ValueHandles,
 	velocityHandles,
 	type YRange,
 	yScale,
+	zoomRange,
 } from './graph.ts';
 import { type Range, snapDelta } from './lib.ts';
 
@@ -54,6 +67,9 @@ const DIM_COLORS = ['var(--pr-graph-x)', 'var(--pr-graph-y)'];
 const DIM_NAMES = ['x', 'y'];
 
 type KeySelection = { clipOrTrackId: string; keyframeIds: string[] } | null;
+
+/** Manual vertical ranges of a row's two graphs (absent = auto-fit). */
+export type GraphView = { value?: YRange; velocity?: YRange };
 
 type GraphHost = {
 	ops: InspectorOps;
@@ -98,11 +114,19 @@ export function PropertyGraphs(
 	props: {
 		row: Row;
 		seq: Sequence;
+		/** Wave expressions: the drawn document (the post-expression curve of a row with an active expression). */
+		doc?: ProjectDocument;
 		range: Range;
 		height: number;
 		onResize(height: number): void;
 		leftStyle: CSSProperties;
 		showTimeline: boolean;
+		/**
+		 * keyframes-blend: each graph's own vertical range (Ctrl/Cmd + wheel zooms about the pointer, Shift + wheel pans,
+		 * Auto-fit returns to the fitted range); absent = auto-fit. Persisted per panel instance by the host.
+		 */
+		view?: GraphView;
+		onView?(view: GraphView): void;
 	} & GraphHost,
 ) {
 	const { row, seq, range, height, ops } = props;
@@ -133,19 +157,42 @@ export function PropertyGraphs(
 		() => sampleVelocityCurve(anim, map, range, width, opts),
 		[anim, map, range, width, opts],
 	);
+	// Wave expressions: the post-expression graph (keys and handles stay on the keyframed curve, as in AE).
+	const exprReady = useExpressionsFor(props.doc ?? null);
+	const bound = useMemo(() => {
+		if (!props.doc || !exprReady) return null;
+		const rx = rowExpressionOf(props.doc, b, seq.id);
+		if (!rx?.expression?.enabled || !rx.expression.text.trim()) return null;
+		const loc = locateExpressionTarget(bindExpressions(props.doc), rx.ref);
+		return loc?.kind === 'anim' ? (loc.target as Animatable<unknown>) : null;
+	}, [props.doc, exprReady, b, seq.id]);
+	const postCurves = useMemo(
+		() => (bound ? samplePostValueCurves(bound, map, range, width, opts) : null),
+		[bound, map, range, width, opts],
+	);
+	const postVelocity = useMemo(
+		() => (bound ? samplePostVelocityCurve(bound, map, range, width, opts) : null),
+		[bound, map, range, width, opts],
+	);
 	const vHandles = useMemo(() => kfs.map((_, i) => velocityHandles(anim, i, map)), [anim, kfs, map]);
 
 	const valueBox = Math.max(30, Math.round((height - 1) * 0.55));
 	const velocityBox = Math.max(24, height - valueBox - 1);
 	const vr =
 		frozen?.value ??
+		props.view?.value ??
 		fitRange(
-			valueCurves.flatMap((c) => c.filter((p) => p.x >= range.start && p.x <= range.end).map((p) => p.y)),
+			[...valueCurves, ...(postCurves ?? [])].flatMap((c) =>
+				c.filter((p) => p.x >= range.start && p.x <= range.end).map((p) => p.y),
+			),
 		);
 	const velR =
 		frozen?.velocity ??
+		props.view?.velocity ??
 		fitRange(
-			velocityCurve.filter((p) => p.x >= range.start && p.x <= range.end).map((p) => p.y),
+			[...velocityCurve, ...(postVelocity ?? [])]
+				.filter((p) => p.x >= range.start && p.x <= range.end)
+				.map((p) => p.y),
 			{ includeZero: true },
 		);
 	const vy = yScale(vr, valueBox);
@@ -282,6 +329,73 @@ export function PropertyGraphs(
 		);
 	};
 
+	const onVec2HandleDown = (e: ReactPointerEvent, h: Vec2ValueHandle) => {
+		const tip0 = toPx(h.tipX);
+		const unitSpeed = vHandles[h.key]?.find((v) => v.side === h.side)?.unit ?? 0;
+		easeDrag(e, h.key, h.side, unitSpeed, (dx, dy) =>
+			easeFromVec2ValueDrag(anim, h, fromPx(tip0 + dx), h.tipY - dy * vy.perPx, map),
+		);
+	};
+
+	// keyframes-blend: independent vertical zoom / pan per graph (non-passive wheel listeners so the panel does not
+	// scroll while zooming).
+	const valueSvg = useRef<SVGSVGElement>(null);
+	const velocitySvg = useRef<SVGSVGElement>(null);
+	const viewRef = useRef({ vr, velR, valueBox, velocityBox, view: props.view, onView: props.onView });
+	viewRef.current = { vr, velR, valueBox, velocityBox, view: props.view, onView: props.onView };
+	useEffect(() => {
+		const attach = (el: SVGSVGElement | null, which: 'value' | 'velocity') => {
+			if (!el) return () => {};
+			const onWheel = (ev: WheelEvent) => {
+				const zoom = ev.ctrlKey || ev.metaKey;
+				if (!zoom && !ev.shiftKey) return;
+				const st = viewRef.current;
+				if (!st.onView) return;
+				ev.preventDefault();
+				const r = which === 'value' ? st.vr : st.velR;
+				const h = which === 'value' ? st.valueBox : st.velocityBox;
+				const rect = el.getBoundingClientRect();
+				const y = rect.height > 0 ? ev.clientY - rect.top : h / 2;
+				const at = r.max - (y / Math.max(1, h)) * (r.max - r.min);
+				const amount = ev.deltaY || ev.deltaX;
+				const next = zoom
+					? zoomRange(r, at, 1.1 ** Math.sign(amount))
+					: panRange(r, (Math.sign(amount) * (r.max - r.min)) / 10);
+				st.onView({ ...st.view, [which]: next });
+			};
+			el.addEventListener('wheel', onWheel, { passive: false });
+			return () => el.removeEventListener('wheel', onWheel);
+		};
+		const a = attach(valueSvg.current, 'value');
+		const b = attach(velocitySvg.current, 'velocity');
+		return () => {
+			a();
+			b();
+		};
+	}, []);
+	const fitButton = (which: 'value' | 'velocity') => {
+		const auto = !props.view?.[which];
+		return (
+			<button
+				type="button"
+				className="absolute top-1/2 left-1 -translate-y-1/2 rounded-pr-control px-[3px] text-[9px] leading-[11px] text-pr-muted hover:bg-pr-field aria-pressed:text-pr-text"
+				aria-pressed={auto}
+				title={
+					auto ? 'Auto-fit (Ctrl/Cmd + wheel to zoom, Shift + wheel to pan)' : 'Auto-fit the vertical range'
+				}
+				data-testid={`graph-fit-${which}-${row.id}`}
+				onClick={() => {
+					if (!props.onView) return;
+					const next = { ...props.view };
+					delete next[which];
+					props.onView(next);
+				}}
+			>
+				Fit
+			</button>
+		);
+	};
+
 	const onResizeDown = (e: ReactPointerEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
@@ -342,9 +456,19 @@ export function PropertyGraphs(
 				)
 			: [];
 
-	const labels = (r: YRange, h: number, suffix: string, testid: string) => (
+	const vec2HandleList: Vec2ValueHandle[] =
+		kind === 'vec2'
+			? selectedIdx.flatMap((i) =>
+					kfs[i]!.interpolation === 'bezier' || kfs[i]!.interpolation === 'continuous-bezier'
+						? vec2ValueHandles(anim, i, map)
+						: [],
+				)
+			: [];
+
+	const labels = (r: YRange, h: number, suffix: string, testid: string, which: 'value' | 'velocity') => (
 		<div className="relative" style={{ height: h }} data-testid={testid}>
 			<span className="absolute top-[1px] right-2">{`${formatGraphValue(r.max, precision)}${suffix}`}</span>
+			{h >= 30 ? fitButton(which) : null}
 			<span className="absolute right-2 bottom-[1px]">{`${formatGraphValue(r.min, precision)}${suffix}`}</span>
 		</div>
 	);
@@ -360,9 +484,9 @@ export function PropertyGraphs(
 				style={props.leftStyle}
 				className="pr-tabular flex shrink-0 flex-col text-[10px] leading-[12px] text-pr-muted select-none"
 			>
-				{labels(vr, valueBox, unit, `graph-value-labels-${row.id}`)}
+				{labels(vr, valueBox, unit, `graph-value-labels-${row.id}`, 'value')}
 				<div className="h-px bg-pr-border-subtle" />
-				{labels(velR, velocityBox, `${unit}/s`, `graph-velocity-labels-${row.id}`)}
+				{labels(velR, velocityBox, `${unit}/s`, `graph-velocity-labels-${row.id}`, 'velocity')}
 			</div>
 			{props.showTimeline ? (
 				<div
@@ -371,6 +495,7 @@ export function PropertyGraphs(
 					data-lane
 				>
 					<svg
+						ref={valueSvg}
 						width="100%"
 						height={valueBox}
 						className="block shrink-0 overflow-hidden"
@@ -392,6 +517,20 @@ export function PropertyGraphs(
 								data-testid={`graph-value-curve-${row.id}-${d}`}
 							/>
 						))}
+						{postCurves?.map((c, d) => (
+							<path
+								// biome-ignore lint/suspicious/noArrayIndexKey: one curve per value component
+								key={`post-${d}`}
+								d={pathOf(c, toPx, vy.toPx)}
+								fill="none"
+								stroke="var(--pr-graph-post)"
+								strokeWidth={1.25}
+								strokeDasharray={kind === 'vec2' && d === 1 ? '4 2' : undefined}
+								data-testid={`graph-post-curve-${row.id}-${d}`}
+							>
+								<title>Post-expression value</title>
+							</path>
+						))}
 						{valueHandleList.map((h) => {
 							const k = kfs[h.key]!;
 							const kx = toPx(map.toX(k.time));
@@ -405,6 +544,25 @@ export function PropertyGraphs(
 										className="cursor-pointer"
 										data-testid={`graph-value-handle-${k.id}-${h.side}`}
 										onPointerDown={(e) => onValueHandleDown(e, h)}
+									>
+										{handleTip(tx, ty)}
+									</g>
+								</g>
+							);
+						})}
+						{vec2HandleList.map((h) => {
+							const k = kfs[h.key]!;
+							const kx = toPx(map.toX(k.time));
+							const ky = vy.toPx(h.keyY);
+							const tx = toPx(h.tipX);
+							const ty = vy.toPx(h.tipY);
+							return (
+								<g key={`${k.id}:${h.side}:${h.dim}`}>
+									<line x1={kx} y1={ky} x2={tx} y2={ty} stroke={DIM_COLORS[h.dim]} strokeWidth={1} />
+									<g
+										className="cursor-pointer"
+										data-testid={`graph-value-handle-${k.id}-${h.side}-${h.dim}`}
+										onPointerDown={(e) => onVec2HandleDown(e, h)}
 									>
 										{handleTip(tx, ty)}
 									</g>
@@ -433,6 +591,7 @@ export function PropertyGraphs(
 					</svg>
 					<div className="h-px shrink-0 bg-pr-border-subtle" />
 					<svg
+						ref={velocitySvg}
 						width="100%"
 						height={velocityBox}
 						className="block shrink-0 overflow-hidden"
@@ -458,6 +617,17 @@ export function PropertyGraphs(
 							strokeWidth={1.25}
 							data-testid={`graph-velocity-curve-${row.id}`}
 						/>
+						{postVelocity ? (
+							<path
+								d={pathOf(postVelocity, toPx, vely.toPx)}
+								fill="none"
+								stroke="var(--pr-graph-post)"
+								strokeWidth={1.25}
+								data-testid={`graph-post-velocity-${row.id}`}
+							>
+								<title>Post-expression velocity</title>
+							</path>
+						) : null}
 						{vHandles.map((hs, i) => {
 							const k = kfs[i]!;
 							const kx = toPx(map.toX(k.time));

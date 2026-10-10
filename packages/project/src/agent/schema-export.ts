@@ -1,5 +1,6 @@
 // Self-description for agents (S01:AGT-002): JSON Schemas of every command and the transaction
 // envelope, the effect registry, motion-graphic templates, presets and error codes (z.toJSONSchema).
+
 import { z } from 'zod';
 import { TransactionSchema } from '../commands/apply.ts';
 import { COMMAND_CATALOG, type CommandOwner } from '../commands/catalog.ts';
@@ -10,6 +11,8 @@ import { PROPERTY_SPECS } from '../registry/properties.ts';
 import { KNOWN_CLIP_KINDS } from '../schema/sequence.ts';
 import { LATEST_TEXT_ANIMATION_SPECS, TEXT_ANIMATION_SPECS } from '../text-animations.ts';
 import { TRANSITION_SPECS } from '../transitions.ts';
+import { SHAPE_PRESETS } from '../vector/presets.ts';
+import { shapeItemFieldCatalog } from '../vector/properties.ts';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -102,6 +105,15 @@ export type AgentSchema = {
 	}[];
 	errorCodes: readonly string[];
 	warningCodes: readonly string[];
+	/**
+	 * wp shapes: vector shape items — the fields of each item type (property key `shape.items.<itemId>.<field>` for
+	 * param.set / keyframes / expressions) and the shape presets (`clip.addShape {type: 'vector', preset}`).
+	 */
+	shapeItems?: {
+		keyPattern: string;
+		types: ReturnType<typeof shapeItemFieldCatalog>;
+		presets: { id: string; label: string; category: string; description: string }[];
+	};
 };
 
 export function toJsonSchema(schema: z.ZodType): JsonSchema {
@@ -126,18 +138,22 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 		protocol: TX_PROTOCOL,
 		transaction: toJsonSchema(TransactionSchema),
 		commands,
-		effects: registries.effects.list().map((e) => ({
-			id: e.id,
-			version: e.version,
-			label: e.label,
-			category: e.category,
-			appliesTo: e.appliesTo,
-			params: e.params,
-			capabilities: e.capabilities,
-			...(e.bin ? { bin: e.bin } : {}),
-			...(e.description ? { description: e.description } : {}),
-			...(e.gpu ? { gpu: true } : {}),
-		})),
+		// color-mgmt: internal (render-only) effects are not offered.
+		effects: registries.effects
+			.list()
+			.filter((e) => !e.internal)
+			.map((e) => ({
+				id: e.id,
+				version: e.version,
+				label: e.label,
+				category: e.category,
+				appliesTo: e.appliesTo,
+				params: e.params,
+				capabilities: e.capabilities,
+				...(e.bin ? { bin: e.bin } : {}),
+				...(e.description ? { description: e.description } : {}),
+				...(e.gpu ? { gpu: true } : {}),
+			})),
 		transitions: TRANSITION_SPECS.map((t) => ({
 			id: t.id,
 			version: t.version,
@@ -191,5 +207,15 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 		})),
 		errorCodes: ERROR_CODES,
 		warningCodes: WARNING_CODES,
+		shapeItems: {
+			keyPattern: 'shape.items.<itemId>.<field>',
+			types: shapeItemFieldCatalog(),
+			presets: SHAPE_PRESETS.map((p) => ({
+				id: p.id,
+				label: p.label,
+				category: p.category,
+				description: p.description,
+			})),
+		},
 	};
 }

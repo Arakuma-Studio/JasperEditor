@@ -16,6 +16,7 @@
 //
 // Env: PACKAGED_CHECK_PORT (default 48530), JASPER_BROWSER_EXECUTABLE (default: system Chrome if present).
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
 	chmodSync,
 	cpSync,
@@ -107,6 +108,13 @@ for (const n of ['ffmpeg', 'ffprobe']) {
 		chmodSync(join(poison, n), 0o755);
 	}
 }
+// Every engine has a token and tells the editor from an agent by the editor key (docs/security-review.md DEV-1,
+// AGT-2). This check plays the desktop shell for the engines it starts.
+const TOKEN = randomBytes(24).toString('base64url');
+const EDITOR_KEY = randomBytes(24).toString('base64url');
+const AUTH_ENV = { JASPER_LOCAL_TOKEN: TOKEN, JASPER_EDITOR_KEY: EDITOR_KEY };
+const AUTH_HEADERS = { authorization: `Bearer ${TOKEN}`, cookie: `jasper_editor=${EDITOR_KEY}` };
+
 const cleanPath = [poison, process.env.PATH ?? ''].join(delimiter);
 const browser =
 	process.env.JASPER_BROWSER_EXECUTABLE ??
@@ -123,6 +131,7 @@ child = spawn(
 			JASPER_WEB_DIR: join(resources, 'web'),
 			JASPER_RESOURCES_DIR: resources,
 			JASPER_HW_ENCODERS: '0',
+			...AUTH_ENV,
 			...(browser ? { JASPER_BROWSER_EXECUTABLE: browser } : {}),
 		},
 		stdio: ['ignore', 'inherit', 'inherit'],
@@ -142,7 +151,7 @@ expect(up, 'the packaged engine did not start');
 async function call(method, path, body) {
 	const res = await fetch(`${url}${path}`, {
 		method,
-		headers: body ? { 'content-type': 'application/json' } : {},
+		headers: { ...AUTH_HEADERS, ...(body ? { 'content-type': 'application/json' } : {}) },
 		body: body ? JSON.stringify(body) : undefined,
 	});
 	const json = await res.json();
@@ -226,7 +235,7 @@ expect(
 		result.remotionOutput === 'intermediate',
 	`export result ${JSON.stringify(result)}`,
 );
-const download = await fetch(new URL(result.downloadUrl, url));
+const download = await fetch(new URL(result.downloadUrl, url), { headers: AUTH_HEADERS });
 expect(download.ok, `download ${result.downloadUrl} → ${download.status}`);
 const output = join(work, 'output.mp4');
 writeFileSync(output, Buffer.from(await download.arrayBuffer()));

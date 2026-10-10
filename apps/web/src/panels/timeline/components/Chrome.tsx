@@ -1,15 +1,32 @@
 // Timeline chrome: sequence tabs (S05:TLC-001), header toolbar (TLC-002/003), zoom scroll bar
 // (TL-112, TLC-030), context menu and gesture tooltip.
+import type { ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
-import { IconButton, labelColor, Z } from '@jasper/ui';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { cx, IconButton, labelColor, PointMenu, placeBeside, useMenuFit, Z } from '@jasper/ui';
+import { memo, useEffect, useRef, useState } from 'react';
+import { trackHeightDisplayMenu } from '../../../gaps/track-height-menu.ts';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
 import type { ContextMenuItem, Tooltip } from '../state/ui-store.ts';
 
 // ---------------------------------------------------------------- sequence tabs
+
+/** Sequence id → the first item naming it, per `items` record (ui-perf: the tab selector runs on every update). */
+const bySequence = new WeakMap<object, Map<string, ProjectItem>>();
+function itemsBySequence(items: Record<string, ProjectItem>): Map<string, ProjectItem> {
+	let m = bySequence.get(items);
+	if (!m) {
+		m = new Map();
+		for (const it of Object.values(items)) {
+			const id = (it as { sequenceId?: string }).sequenceId;
+			if (id !== undefined && !m.has(id)) m.set(id, it);
+		}
+		bySequence.set(items, m);
+	}
+	return m;
+}
 
 export function SequenceTabs(props: {
 	session: EditorSession;
@@ -24,9 +41,7 @@ export function SequenceTabs(props: {
 	const names = useSessionState(
 		(s) =>
 			tabs.map((id) => {
-				const item = Object.values(s.document.items).find(
-					(i) => (i as { sequenceId?: string }).sequenceId === id,
-				);
+				const item = itemsBySequence(s.document.items).get(id);
 				return { id, name: item?.name ?? 'Sequence', label: item?.label ?? 'forest' };
 			}),
 		(a, b) => JSON.stringify(a) === JSON.stringify(b),
@@ -66,7 +81,8 @@ export function SequenceTabs(props: {
 
 // ---------------------------------------------------------------- header toolbar
 
-export function Toolbar(props: {
+/** ui-perf: memoised (its tooltip buttons do not re-render on every gesture frame of the timeline). */
+export const Toolbar = memo(function Toolbar(props: {
 	session: EditorSession;
 	prefs: TimelinePrefs;
 	openMenu(x: number, y: number, items: ContextMenuItem[]): void;
@@ -114,6 +130,11 @@ export function Toolbar(props: {
 			})),
 		},
 		check('Snap Playhead When Snap Is On', 'snapPlayhead', p.snapPlayhead),
+		// gaps: Premiere's Show Audio Time Units (Project Settings ▸ Audio Display Format).
+		check('Show Audio Time Units', 'showAudioTimeUnits', !!p.showAudioTimeUnits),
+		// gaps (TL-10): Expand / Minimize All Tracks and the track height presets.
+		{ kind: 'separator' },
+		...trackHeightDisplayMenu(props.session),
 		...(props.extraMenu?.length ? [{ kind: 'separator' as const }, ...props.extraMenu] : []),
 	];
 	return (
@@ -144,7 +165,7 @@ export function Toolbar(props: {
 			/>
 		</div>
 	);
-}
+});
 
 // ---------------------------------------------------------------- zoom scroll bar
 
@@ -194,14 +215,17 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 				className="absolute top-[3px] h-[8px] rounded-pr-pill bg-pr-hover"
 				style={{ left: x0, width: Math.max(12, x1 - x0) }}
 				onPointerDown={(e) => onDown(e, 'pan')}
+				data-testid="timeline-zoombar-thumb"
 			>
 				<div
 					className="absolute top-[-1px] left-[-1px] size-[10px] cursor-ew-resize rounded-full border border-pr-border-strong bg-pr-panel"
 					onPointerDown={(e) => onDown(e, 'left')}
+					data-testid="timeline-zoombar-start"
 				/>
 				<div
 					className="absolute top-[-1px] right-[-1px] size-[10px] cursor-ew-resize rounded-full border border-pr-border-strong bg-pr-panel"
 					onPointerDown={(e) => onDown(e, 'right')}
+					data-testid="timeline-zoombar-end"
 				/>
 			</div>
 		</div>
@@ -217,20 +241,7 @@ export function ContextMenu(props: {
 	onClose(): void;
 	testId?: string;
 }) {
-	const ref = useRef<HTMLDivElement>(null);
-	const [pos, setPos] = useState({ x: props.x, y: props.y });
-	// Keep the menu inside the window (flip up/left when it would overflow).
-	useLayoutEffect(() => {
-		const el = ref.current;
-		if (!el || typeof window === 'undefined') return;
-		const r = el.getBoundingClientRect();
-		const x =
-			r.width && props.x + r.width > window.innerWidth
-				? Math.max(0, window.innerWidth - r.width - 4)
-				: props.x;
-		const y = r.height && props.y + r.height > window.innerHeight ? Math.max(0, props.y - r.height) : props.y;
-		setPos({ x, y });
-	}, [props.x, props.y]);
+	const ref = useRef<HTMLDivElement | null>(null);
 	useEffect(() => {
 		const down = (e: PointerEvent) => {
 			if (ref.current && !ref.current.contains(e.target as Node)) props.onClose();
@@ -248,20 +259,24 @@ export function ContextMenu(props: {
 			window.removeEventListener('keydown', key, true);
 		};
 	}, [props.onClose]);
+	// PointMenu: in a portal (`fixed` inside the docked panel was relative to the panel, workstream `time`), and kept
+	// inside the window: flipped left / up, or pinned to the edge and scrolling when taller than the window (wp fixups).
 	return (
-		<div
-			ref={ref}
-			role="menu"
-			className="fixed min-w-[200px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-overlay"
-			style={{ left: pos.x, top: pos.y, zIndex: Z.popover }}
+		<PointMenu
+			x={props.x}
+			y={props.y}
+			menuRef={ref}
+			className="min-w-[200px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-overlay"
 			data-testid={props.testId ?? 'timeline-context-menu'}
 		>
 			<MenuItems items={props.items} onClose={props.onClose} />
-		</div>
+		</PointMenu>
 	);
 }
 
 function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
+	// One open submenu per level, opened on hover (CSS group-hover would open every nested level at once).
+	const [openSub, setOpenSub] = useState<string | null>(null);
 	return (
 		<>
 			{props.items.map((it, i) => {
@@ -270,20 +285,19 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 					return <div key={`sep-${i}`} className="my-1 h-px bg-pr-border" />;
 				if (it.kind === 'submenu')
 					return (
-						<div key={it.label} className="group relative">
-							<div className="flex h-[22px] items-center px-3 hover:bg-pr-hover">
-								<span className="flex-1">{it.label}</span>
-								<span className="text-pr-muted">▸</span>
-							</div>
-							<div className="absolute top-0 left-full hidden min-w-[180px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay group-hover:block">
-								<MenuItems items={it.items} onClose={props.onClose} />
-							</div>
-						</div>
+						<SubmenuRow
+							key={it.label}
+							item={it}
+							open={openSub === it.label}
+							onOpen={() => setOpenSub(it.label)}
+							onClose={props.onClose}
+						/>
 					);
 				return (
 					<button
 						key={it.label}
 						type="button"
+						onMouseEnter={() => setOpenSub(null)}
 						role="menuitem"
 						disabled={it.disabled}
 						className="flex h-[22px] w-full items-center gap-2 px-3 text-left hover:bg-pr-hover disabled:text-pr-dim"
@@ -299,6 +313,53 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 				);
 			})}
 		</>
+	);
+}
+
+function SubmenuRow(props: {
+	item: Extract<ContextMenuItem, { kind: 'submenu' }>;
+	open: boolean;
+	onOpen(): void;
+	onClose(): void;
+}) {
+	const rowRef = useRef<HTMLDivElement>(null);
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: hover opens the submenu (pointer menus)
+		<div ref={rowRef} className="relative" onMouseEnter={props.onOpen}>
+			<div className={cx('flex h-[22px] items-center px-3 hover:bg-pr-hover', props.open && 'bg-pr-hover')}>
+				<span className="flex-1">{props.item.label}</span>
+				<span className="text-pr-muted">▸</span>
+			</div>
+			{props.open ? <Submenu row={rowRef} items={props.item.items} onClose={props.onClose} /> : null}
+		</div>
+	);
+}
+
+/** A submenu panel: `fixed` beside its row, flipped left / slid up / scrolling to stay inside the window. */
+function Submenu(props: {
+	row: React.RefObject<HTMLDivElement | null>;
+	items: ContextMenuItem[];
+	onClose(): void;
+}) {
+	const { ref, fit } = useMenuFit<HTMLDivElement>((size, viewport) => {
+		const r = props.row.current?.getBoundingClientRect();
+		return placeBeside(r ?? { left: 0, top: 0, right: 0, bottom: 0 }, size, viewport);
+	});
+	const r0 = props.row.current?.getBoundingClientRect();
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			className="fixed min-w-[180px] overflow-y-auto rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay"
+			style={{
+				left: fit?.left ?? r0?.right ?? 0,
+				top: fit?.top ?? r0?.top ?? 0,
+				maxHeight: fit?.maxHeight,
+				zIndex: Z.popover,
+			}}
+		>
+			<MenuItems items={props.items} onClose={props.onClose} />
+		</div>
 	);
 }
 

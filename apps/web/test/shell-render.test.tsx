@@ -52,7 +52,10 @@ function mountEditor() {
 
 registerAllCommands();
 
-describe('editor shell (rendered)', () => {
+// Each test mounts the whole editor (every panel of every workstream) in happy-dom and re-lays it out: seconds on a
+// busy runner, more than vitest's default 5 s test timeout (verify workstream: 8.4 s on a loaded CI run). The
+// assertions themselves wait on conditions.
+describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 	afterEach(() => cleanup());
 	beforeEach(() => {
 		toasts.dismissAll();

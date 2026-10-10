@@ -102,6 +102,24 @@ describe('selectVideoEncoder (D-13)', () => {
 		expect(a.video).toEqual(expect.arrayContaining(['-c:v', 'libopenh264', '-rc_mode', 'bitrate']));
 	});
 
+	it('smart-rendering pieces: no B-frames for every H.264 encoder (they are joined as one raw stream)', () => {
+		// Regression (verify workstream): libx264 pieces (CI's apt ffmpeg) lost 2 frames at the join with copied GOPs.
+		for (const encoder of [
+			'libx264',
+			'h264_nvenc',
+			'h264_qsv',
+			'h264_videotoolbox',
+			'h264_vaapi',
+			'h264_amf',
+		]) {
+			const a = videoEncodeArgs({ encoder }, { ...P, noBFrames: true });
+			expect(a.video.join(' '), encoder).toContain('-bf 0');
+			expect(videoEncodeArgs({ encoder }, P).video).not.toContain('-bf');
+		}
+		for (const encoder of ['libopenh264', 'prores_ks', 'libvpx-vp9'])
+			expect(videoEncodeArgs({ encoder }, { ...P, noBFrames: true }).video, encoder).not.toContain('-bf');
+	});
+
 	it('hardware-only: the first usable encoder in preference order wins (test encodes decide)', () => {
 		expect(selectVideoEncoder(inv(HW_ONLY), { purpose: 'export' })).toBeNull();
 		const some = inv(HW_ONLY, { usable: ['h264_vaapi', 'h264_nvenc'] });

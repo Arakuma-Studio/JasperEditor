@@ -15,6 +15,8 @@ export type WarpTask = {
 };
 
 const WORKER_SOURCE = `
+// Functions are inlined by their source text: under tsx (dev engine) esbuild's keepNames wraps them in __name().
+var __name = (f) => f;
 const { parentPort, workerData } = require('node:worker_threads');
 const warpFrame = ${warpFrame.toString()};
 const slots = workerData.slots.map((s) => ({
@@ -35,6 +37,8 @@ export class WarpPool {
 	private readonly queue: { task: WarpTask; done: (e?: Error) => void }[] = [];
 	private readonly pending = new Map<Worker, (e?: Error) => void>();
 	private closed = false;
+	/** The first worker failure: the pool is broken from then on (a dead worker is never handed another frame). */
+	private failed: Error | null = null;
 
 	constructor(
 		readonly size: { sw: number; sh: number; dw: number; dh: number; format: WarpOutputFormat },
@@ -67,6 +71,7 @@ export class WarpPool {
 	/** Runs one task on the next free worker; resolves when its destination frame is complete. */
 	run(task: WarpTask): Promise<void> {
 		if (this.closed) return Promise.reject(new Error('warp pool closed'));
+		if (this.failed) return Promise.reject(this.failed);
 		return new Promise((resolve, reject) => {
 			this.queue.push({ task, done: (e) => (e ? reject(e) : resolve()) });
 			this.pump();
@@ -92,6 +97,11 @@ export class WarpPool {
 		const done = this.pending.get(w);
 		this.pending.delete(w);
 		if (e) {
+			// A worker that died while idle (e.g. its source failed to evaluate) must not stay in the idle list: the
+			// next frame posted to it would never be answered and the export would hang "running" forever.
+			this.failed ??= e;
+			const k = this.idle.indexOf(w);
+			if (k >= 0) this.idle.splice(k, 1);
 			// A broken worker fails its task and everything still queued.
 			for (const q of this.queue.splice(0)) q.done(e);
 			done?.(e);

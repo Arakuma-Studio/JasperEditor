@@ -3,19 +3,33 @@
 // moving effects and transitions run through the GPU host on a thin bright line, and the intensity profile across the
 // smear is checked — continuous (no gaps, no periodic peaks: low max/min ratio for constant-speed moves, no notches
 // for shakes), deterministic (same pixels on re-render, in any frame order), reduced taps at a preview scale, and
-// IDENTICAL output with motion blur off or without motion (checksums recorded from the pre-wave-5 code in
-// fx-motion-blur/baseline.json; MB_BASELINE_WRITE=1 re-records them). MB_REPORT=<file> writes the smear metrics and
+// IDENTICAL output with motion blur off or without motion (golden frames in goldens/motion-blur/, blessed from the
+// pre-wave-5 output — their pixel checksums equalled the former fx-motion-blur/baseline.json pins; JASPER_BLESS=1
+// re-blesses, docs/testing.md). MB_REPORT=<file> writes the smear metrics and
 // timings (MB_PERF=1 adds 1080p timings). FX_GL=0 skips it.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expectGolden, type Tolerance } from '@jasper/testkit/golden';
+import type { Rgba8 } from '@jasper/testkit/image';
+import { decodePng } from '@jasper/testkit/png';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { EffectArgs, Out, TransitionArgs } from './fx-motion-blur/entry.ts';
 import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const BASELINE = join(here, 'fx-motion-blur', 'baseline.json');
+/** Golden frames of the static cases (motion blur off or nothing moves). */
+const GOLDENS = join(here, 'goldens', 'motion-blur');
+/**
+ * Tight: a static case must not change at all; this only absorbs SwiftShader / ANGLE rounding between Chrome
+ * versions (a smear or a shifted grid moves hundreds of pixels by far more).
+ */
+const MB_TOLERANCE: Tolerance = { minPsnr: 45, maxAbs: 16, p99: 2 };
+const pngOf = (dataUrl: string | undefined): Rgba8 => {
+	if (!dataUrl) throw new Error('no PNG returned');
+	return decodePng(Buffer.from(dataUrl.split(',')[1]!, 'base64'));
+};
 const W = 320;
 const H = 180;
 
@@ -245,16 +259,22 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			if (process.env.MB_REPORT) writeFileSync(process.env.MB_REPORT, JSON.stringify(report, null, 2));
 		});
 
-		it('motion blur off or no motion: identical to the pre-wave-5 output', async () => {
-			const got: Record<string, number> = {};
-			for (const [name, a] of STATIC_EFFECTS) got[name] = (await effect({ id: '', ...a })).checksum;
-			for (const [name, a] of STATIC_TRANSITIONS) got[name] = (await transition(a)).checksum;
-			if (process.env.MB_BASELINE_WRITE === '1') {
-				writeFileSync(BASELINE, `${JSON.stringify(got, null, '\t')}\n`);
-				return;
+		it('motion blur off or no motion: identical to the pre-wave-5 output (golden frames)', async () => {
+			const frames: Record<string, Rgba8> = {};
+			for (const [name, a] of STATIC_EFFECTS)
+				frames[name] = pngOf((await effect({ id: '', ...a, png: true })).png);
+			for (const [name, a] of STATIC_TRANSITIONS)
+				frames[name] = pngOf((await transition({ ...a, png: true })).png);
+			const failures: string[] = [];
+			for (const [name, img] of Object.entries(frames)) {
+				try {
+					// The perspective warps' padded canvases compress poorly (≈ 55–110 KB): a documented exception to the 50 KB cap.
+					expectGolden(join(GOLDENS, `${name}.png`), img, MB_TOLERANCE, { maxBytes: 128 * 1024 });
+				} catch (e) {
+					failures.push((e as Error).message);
+				}
 			}
-			const want = JSON.parse(readFileSync(BASELINE, 'utf8')) as Record<string, number>;
-			for (const k of Object.keys(got)) expect(got[k], k).toBe(want[k]);
+			expect(failures).toEqual([]);
 		});
 
 		it('fast moves smear continuously: no gaps or periodic peaks across the smear', async () => {

@@ -1,17 +1,12 @@
 // Info panel body (S05:INF-001): selection details (type, name, In/Out, duration, speed, engine) and the
 // active sequence (playhead, duration, tracks). 11 px key–value rows; updates at most every 100 ms
 // during playback (no per-frame React renders, PERF-004).
-import {
-	type Clip,
-	formatTimecode,
-	kindCapabilities,
-	type Sequence,
-	sequenceDuration,
-} from '@jasper/project';
+import { type Clip, kindCapabilities, type Sequence, sequenceDuration } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import { EmptyState } from '@jasper/ui';
 import type { ReactNode } from 'react';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import type { PanelProps } from '../types.ts';
 
 type Row = [string, ReactNode];

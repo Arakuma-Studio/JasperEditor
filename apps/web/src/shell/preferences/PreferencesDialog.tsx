@@ -8,6 +8,7 @@ import { SessionProvider } from '@jasper/session/react';
 import { cx, Dialog, type HostedDialogProps, registerDialog } from '@jasper/ui';
 import { useState } from 'react';
 import { useRegistry } from '../../extensions/react.ts';
+import { useLanguageEpoch } from '../../i18n/react.ts';
 import { GeneralPreferencesPage } from './GeneralPage.tsx';
 import { preferencesPages, registerPreferencesPage } from './registry.ts';
 
@@ -18,6 +19,9 @@ export function PreferencesDialog(
 ) {
 	const pages = useRegistry(preferencesPages);
 	const [selected, setSelected] = useState<string | undefined>(props.page);
+	// polish: a language change (Appearance ▸ Language) re-renders the dialog and remounts the page, so every string
+	// is looked up again while the dialog stays open on the same page.
+	const epoch = useLanguageEpoch();
 	const current = pages.find((p) => p.id === selected) ?? pages[0];
 	return (
 		<Dialog
@@ -50,7 +54,7 @@ export function PreferencesDialog(
 				</nav>
 				<div className="min-w-0 flex-1 overflow-auto p-4" data-testid="preferences-page">
 					{current ? (
-						<SessionProvider session={props.session ?? null}>
+						<SessionProvider key={epoch} session={props.session ?? null}>
 							<current.component />
 						</SessionProvider>
 					) : (

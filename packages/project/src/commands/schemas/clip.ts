@@ -16,6 +16,8 @@ import {
 	TextBoxSchema,
 	TextStyleSchema,
 } from '../../schema/sequence.ts';
+import { ShapeItemInputSchema } from '../../vector/input.ts';
+import { CaptionRulesSchema } from './captions.ts';
 import {
 	ContentTimeInputSchema,
 	cmd,
@@ -57,6 +59,10 @@ const TextContentInput = z.strictObject({
 			}),
 		)
 		.optional(),
+	/** text-animators workstream: per-paragraph overrides (`index` = paragraph number, 0-based). */
+	paragraphs: z
+		.array(z.strictObject({ index: z.number().int().min(0), style: TextStyleSchema.partial() }))
+		.optional(),
 });
 
 // ---------------------------------------------------------------- text animators (M2, S11:TXA-006)
@@ -97,7 +103,12 @@ export type TextAnimationPatch = z.infer<typeof TextAnimationPatchSchema>;
 const vec2 = z.tuple([z.number(), z.number()]);
 /** clip.addShape geometry (static values; keyframes through the keyframe commands). */
 export const ShapeInputSchema = z.strictObject({
+	/** rect / ellipse: the parametric shapes below; vector (wp shapes): `contents` or a `preset`. */
 	type: ShapeTypeSchema,
+	/** Vector shapes: the items (groups, paths, paints, operators) in the relaxed input form. */
+	contents: z.array(ShapeItemInputSchema).max(10000).optional(),
+	/** Vector shapes: a shape preset id (SHAPE_PRESETS) instead of contents. */
+	preset: z.string().optional(),
 	/** Layer pixels; default 400×400. */
 	size: z.tuple([z.number().min(0), z.number().min(0)]).optional(),
 	/** Default white; `null` = no fill. */
@@ -165,6 +176,12 @@ export const ClipPlaceCmd = cmd('clip.place', {
 	createTracks: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
+	/**
+	 * edit-structure: a sequence source is placed as a nested sequence (`true`, the default: nest-video + nest-audio
+	 * clips, Premiere's "Insert and overwrite sequences as nests") or as copies of its clips (`false`, "individual
+	 * clips"). Ignored for other sources.
+	 */
+	nest: z.boolean().optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const ClipAddTextCmd = cmd('clip.addText', {
@@ -211,6 +228,12 @@ export const ClipAddCaptionsCmd = cmd('clip.addCaptions', {
 	alignToClipId: IdRefSchema.optional(),
 	range: z.strictObject({ from: TimeInputSchema, to: TimeInputSchema }).optional(),
 	style: CaptionStyleSchema.partial().optional(),
+	/**
+	 * wp captions: one caption clip per caption block (default), or one clip paging through the blocks (`false`).
+	 * Blocks follow `rules` (Create Captions defaults: 42 characters × 2 lines, 1–7 s).
+	 */
+	split: z.boolean().optional(),
+	rules: CaptionRulesSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const ClipAddAdjustmentCmd = cmd('clip.addAdjustment', {
@@ -218,6 +241,8 @@ export const ClipAddAdjustmentCmd = cmd('clip.addAdjustment', {
 	at: TimeInputSchema,
 	duration: TimeInputSchema,
 	track: TrackRefSchema,
+	/** edit-structure: clip name (default "Adjustment Layer"). */
+	name: z.string().min(1).optional(),
 	ref: RefDeclSchema.optional(),
 });
 
@@ -239,6 +264,8 @@ export const ClipMoveCmd = cmd('clip.move', {
 	createTracks: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
+	/** edit-structure (S01:CLP-012): members of the clips' clip groups move with them (default true). */
+	groups: z.boolean().optional(),
 });
 export const ClipTrimCmd = cmd('clip.trim', {
 	clipId: IdRefSchema,
@@ -247,12 +274,22 @@ export const ClipTrimCmd = cmd('clip.trim', {
 	mode: z.enum(['regular', 'ripple', 'roll']).optional(),
 	/** Trim link partners whose same edge coincides (S01:CLP-010). Default true. */
 	linked: z.boolean().optional(),
+	/**
+	 * edit-structure (Premiere groups): trimming the outer edge of a clip group (the first In / the last Out) trims
+	 * every member at that edge (default true); inner edges trim the clip alone.
+	 */
+	group: z.boolean().optional(),
 	/** Ripple only: stop at the largest shift sync-locked tracks allow (gesture behaviour, S02:TL-543). */
 	clampToSyncLock: z.boolean().optional(),
 	rippleMarkers: z.boolean().optional(),
 });
 export const ClipSlipCmd = cmd('clip.slip', { clipIds: IdListSchema, deltaFrames: z.number().int() });
-export const ClipSlideCmd = cmd('clip.slide', { clipId: IdRefSchema, deltaFrames: z.number().int() });
+export const ClipSlideCmd = cmd('clip.slide', {
+	clipId: IdRefSchema,
+	deltaFrames: z.number().int(),
+	/** edit-ux: linked partners that start with the clip slide too (default true; Alt-drag = false). */
+	linked: z.boolean().optional(),
+});
 export const ClipSplitCmd = cmd('clip.split', {
 	sequenceId: IdRefSchema.optional(),
 	at: TimeInputSchema,
@@ -262,9 +299,15 @@ export const ClipSplitCmd = cmd('clip.split', {
 	/** Split link partners too (default true; Alt = false). */
 	linked: z.boolean().optional(),
 });
-export const ClipLiftCmd = cmd('clip.lift', { clipIds: IdListSchema });
+export const ClipLiftCmd = cmd('clip.lift', {
+	clipIds: IdListSchema,
+	/** edit-structure (S01:CLP-012): grouped clips are deleted together (default true). */
+	groups: z.boolean().optional(),
+});
 export const ClipExtractCmd = cmd('clip.extract', {
 	clipIds: IdListSchema,
+	/** edit-structure (S01:CLP-012): grouped clips are deleted together (default true). */
+	groups: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
 });
@@ -303,6 +346,7 @@ export const ClipPatchSchema = z.strictObject({
 			text: z.string().optional(),
 			style: TextStyleSchema.partial().optional(),
 			runs: TextContentInput.shape.runs,
+			paragraphs: TextContentInput.shape.paragraphs,
 		})
 		.optional(),
 	box: TextBoxSchema.partial().optional(),
@@ -368,7 +412,9 @@ export const ClipGroupCmd = cmd('clip.group', { clipIds: IdListSchema, ref: RefD
 export const ClipUngroupCmd = cmd('clip.ungroup', { clipIds: IdListSchema });
 export const ClipNestCmd = cmd('clip.nest', {
 	clipIds: IdListSchema,
-	name: z.string().min(1),
+	/** Name of the new sequence (default "Nested Sequence NN"). */
+	name: z.string().min(1).optional(),
+	/** Binds the new sequence id. */
 	ref: RefDeclSchema.optional(),
 });
 

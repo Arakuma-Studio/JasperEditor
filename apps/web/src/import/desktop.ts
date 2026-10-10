@@ -33,8 +33,18 @@ const IMPORT_ACCEPT = [
 	'.aac',
 	'.m4a',
 	'.flac',
-	// M2: LUTs register as kind 'lut' (wp-m2-color adds the engine prober).
+	// M2: LUTs register as kind 'lut' (wp-m2-color adds the engine prober; color-mgmt: .3dl, .spi1d, .spi3d, .csp).
 	'.cube',
+	'.3dl',
+	'.spi1d',
+	'.spi3d',
+	'.csp',
+	// color-mgmt: custom OpenColorIO configs (registered as their bundle with the LUT files they reference).
+	'.ocio',
+	// three-d: 3D models register as kind 'model' (the engine's model prober).
+	'.glb',
+	'.gltf',
+	'.obj',
 	'.ogg',
 	'.opus',
 	'.png',
@@ -48,8 +58,41 @@ const IMPORT_ACCEPT = [
 	'.tif',
 	'.tiff',
 	'.svg',
-	// M3 (S07:PRC-019): a source-range sidecar picked together with a rendered video.
+	// imports workstream: vector, layered, Lottie and the still formats of the LGPL build.
+	'.svgz',
+	'.pdf',
+	'.ai',
+	'.psd',
+	'.psb',
+	'.lottie',
+	'.exr',
+	'.dpx',
+	'.tga',
+	'.jxl',
+	'.heif',
+	'.hdr',
+	'.qoi',
+	'.sgi',
+	'.pcx',
+	'.jp2',
+	// M3 (S07:PRC-019): a source-range sidecar picked together with a rendered video (or a Lottie animation).
 	'.json',
+	// wp captions: caption files import onto caption tracks.
+	'.srt',
+	'.vtt',
+	'.scc',
+	'.mcc',
+	'.stl',
+	'.ttml',
+	'.dfxp',
+	'.xml',
+	// wp interchange: timeline documents.
+	'.fcpxml',
+	'.otio',
+	'.edl',
+	'.aaf',
+	'.omf',
+	'.ale',
 ].join(',');
 
 /** Opens the browser file picker (web) and resolves with the chosen files (empty when cancelled). */

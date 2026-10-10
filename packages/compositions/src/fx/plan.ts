@@ -11,6 +11,7 @@
 // - effects after the chain stay CSS/SVG stages, in order.
 // Layers without an enabled, known shader effect are not planned here (null): they keep the M1/M2 paths unchanged.
 import {
+	activeMasks,
 	addPadding,
 	CORNER_PIN_EFFECT_ID,
 	type EffectParams,
@@ -22,7 +23,9 @@ import {
 	type FxPlanContext,
 	gpuIsTimeDependent,
 	gpuPadding,
+	lumetriSpatialInstanceId,
 	type ResolvedEffect,
+	type ResolvedMask,
 	ZERO_PADDING,
 } from '@jasper/project';
 import { chainGpuStandIn } from './builtins.ts';
@@ -31,13 +34,25 @@ const CROP = 'jasper.crop';
 const FLIP_H = 'jasper.flip-horizontal';
 const FLIP_V = 'jasper.flip-vertical';
 
+/**
+ * wp masks: the effect of a step applies inside these masks only (mix(original, effected, coverage)).
+ * color-grade: `maskJoin` = this masked step and the next one (same masks) form ONE masked unit — a Lumetri
+ * instance's LUT step and its spatial GPU stage mix with the input once, so feathered masks stay exact.
+ */
+type StepMasks = { masks?: ResolvedMask[]; maskJoin?: boolean };
+
 export type FxStep =
-	| { kind: 'gpu'; fx: ResolvedEffect; spec: EffectSpec; padding: FxPadding }
-	| { kind: 'lut'; effects: ResolvedEffect[] }
-	| { kind: 'css'; fx: ResolvedEffect; filter: string }
+	| ({ kind: 'gpu'; fx: ResolvedEffect; spec: EffectSpec; padding: FxPadding } & StepMasks)
+	| ({ kind: 'lut'; effects: ResolvedEffect[] } & StepMasks)
+	| ({ kind: 'css'; fx: ResolvedEffect; filter: string } & StepMasks)
 	/** Insets as fractions of the layer box (left, top, right, bottom), like the CSS `inset()` clip. */
-	| { kind: 'crop'; fx: ResolvedEffect; insets: [number, number, number, number] }
-	| { kind: 'flip'; fx: ResolvedEffect; horizontal: boolean };
+	| ({ kind: 'crop'; fx: ResolvedEffect; insets: [number, number, number, number] } & StepMasks)
+	| ({ kind: 'flip'; fx: ResolvedEffect; horizontal: boolean } & StepMasks)
+	/** wp masks: the layer's Opacity masks (picture × coverage), after every effect. */
+	| { kind: 'mask'; masks: ResolvedMask[] };
+
+/** wp masks: the bypass entry standing for a layer's masks (Opacity or effect masks). */
+export const MASKS_BYPASS_ID = 'jasper.masks';
 
 export type FxBypass = {
 	fxId: string;
@@ -81,7 +96,29 @@ export type PlanLayerFxOptions = {
 	 * effect that can run on a canvas does; SVG-filter effects are `reordered` and not part of the capture).
 	 */
 	capture?: boolean;
+	/**
+	 * wp masks: the layer's Opacity masks (evaluated). With an active Opacity mask or an enabled effect with an
+	 * active mask, the layer takes the chain (like `capture`): the chain covers the whole stack, masked effects mix
+	 * with their input by coverage, and a final `mask` step multiplies the picture by the Opacity masks.
+	 */
+	masks?: readonly ResolvedMask[];
 };
+
+/** wp masks: the active masks of an effect (empty when none). */
+export function effectMasks(fx: Pick<ResolvedEffect, 'masks'>): ResolvedMask[] {
+	return fx.masks?.length ? activeMasks(fx.masks) : [];
+}
+
+/** wp masks: the layer has an active Opacity mask or an enabled effect with an active mask. */
+export function layerHasMasks(
+	effects: readonly Pick<ResolvedEffect, 'masks' | 'enabled'>[],
+	masks: readonly ResolvedMask[] | undefined,
+): boolean {
+	return (
+		(masks?.length ? activeMasks(masks).length > 0 : false) ||
+		effects.some((fx) => fx.enabled && effectMasks(fx).length > 0)
+	);
+}
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -98,11 +135,17 @@ export function planLayerFx(
 		...effects.filter((e) => e.effectId === CROP),
 		...effects.filter((e) => e.effectId !== CROP),
 	].filter((fx) => fx.enabled && !!specOf(fx));
-	if (!opts.capture && !ordered.some((fx) => !!specOf(fx)!.gpu)) return null;
+	const opacityMasks = opts.masks?.length ? activeMasks(opts.masks) : [];
+	const masked = opacityMasks.length > 0 || ordered.some((fx) => effectMasks(fx).length > 0);
+	const whole = !!opts.capture || masked;
+	if (!whole && !ordered.some((fx) => !!specOf(fx)!.gpu)) return null;
 	const bypassed: FxBypass[] = [];
 	if (opts.gpu !== 'ok') {
 		for (const fx of ordered)
 			if (specOf(fx)!.gpu) bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'gpu-unavailable' });
+		// wp masks: masks run on the GPU too (the preview falls back to a CPU mask image for Opacity masks).
+		if (masked)
+			bypassed.push({ fxId: MASKS_BYPASS_ID, effectId: MASKS_BYPASS_ID, reason: 'gpu-unavailable' });
 		return {
 			active: false,
 			steps: [],
@@ -115,7 +158,7 @@ export function planLayerFx(
 	}
 	const runnable = ordered.filter((fx) => {
 		const spec = specOf(fx)!;
-		if (spec.color && opts.colorBypass) return false;
+		if ((spec.color || spec.gradeBypass) && opts.colorBypass) return false;
 		if (spec.gpu && opts.failed?.(fx.effectId)) {
 			bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'shader-failed' });
 			return false;
@@ -127,7 +170,7 @@ export function planLayerFx(
 		const spec = specOf(fx)!;
 		if (spec.gpu || spec.color) last = i;
 	});
-	if (opts.capture) last = runnable.length - 1;
+	if (whole) last = runnable.length - 1;
 	else if (last < 0 || !runnable.slice(0, last + 1).some((fx) => specOf(fx)!.gpu))
 		// Every shader effect failed: plain M1/M2 drawing (the colour stage handles any grade).
 		return {
@@ -151,9 +194,11 @@ export function planLayerFx(
 			return;
 		}
 		// Built-ins whose preview would be an SVG filter run as GPU stand-ins, in stack order.
+		const fm = effectMasks(fx);
+		const withMasks = <T extends object>(step: T): T => (fm.length ? { ...step, masks: fm } : step);
 		const gpuSpec = spec.gpu
 			? spec
-			: (i < last || opts.capture) && !opts.failed?.(fx.effectId)
+			: (i < last || whole) && !opts.failed?.(fx.effectId)
 				? chainGpuStandIn(spec, fx.params as EffectParams)
 				: null;
 		if (gpuSpec) {
@@ -162,37 +207,49 @@ export function planLayerFx(
 				...opts.ctx,
 				...(paramsAt ? { paramsAt } : {}),
 				...(opts.clip ? { clip: opts.clip } : {}),
+				...(fx.puppet || fx.warpAnalysis
+					? {
+							structures: {
+								...(fx.puppet ? { puppet: fx.puppet } : {}),
+								...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
+							},
+						}
+					: {}),
 			});
 			padding = addPadding(padding, pad);
 			timeDependent ||= gpuIsTimeDependent(gpuSpec, fx.params, opts.mediaKind);
-			steps.push({ kind: 'gpu', fx, spec: gpuSpec, padding: pad });
+			steps.push(withMasks({ kind: 'gpu', fx, spec: gpuSpec, padding: pad }));
 			return;
 		}
 		if (spec.color) {
+			// A masked colour effect is its own run (its masks mix that run alone with its input).
 			const prev = steps[steps.length - 1];
 			const prevFx = runnable[i - 1];
-			if (prev?.kind === 'lut' && prevFx && specOf(prevFx)!.color) prev.effects.push(fx);
-			else steps.push({ kind: 'lut', effects: [fx] });
+			if (prev?.kind === 'lut' && !prev.masks && fm.length === 0 && prevFx && specOf(prevFx)!.color)
+				prev.effects.push(fx);
+			else steps.push(withMasks({ kind: 'lut', effects: [fx] }));
 			return;
 		}
 		if (fx.effectId === CORNER_PIN_EFFECT_ID) return; // the layer matrix (projective), after every effect
 		if (fx.effectId === CROP) {
 			const p = fx.params;
-			steps.push({
-				kind: 'crop',
-				fx,
-				insets: [num(p.left) / 100, num(p.top) / 100, num(p.right) / 100, num(p.bottom) / 100],
-			});
+			steps.push(
+				withMasks({
+					kind: 'crop',
+					fx,
+					insets: [num(p.left) / 100, num(p.top) / 100, num(p.right) / 100, num(p.bottom) / 100],
+				}),
+			);
 			return;
 		}
 		if (fx.effectId === FLIP_H || fx.effectId === FLIP_V) {
-			steps.push({ kind: 'flip', fx, horizontal: fx.effectId === FLIP_H });
+			steps.push(withMasks({ kind: 'flip', fx, horizontal: fx.effectId === FLIP_H }));
 			return;
 		}
 		const css = spec.preview.css?.(fx.params as never);
 		if (css && Object.keys(css).length === 0) return; // identity
 		if (css && Object.keys(css).length === 1 && typeof css.filter === 'string') {
-			steps.push({ kind: 'css', fx, filter: css.filter });
+			steps.push(withMasks({ kind: 'css', fx, filter: css.filter }));
 			return;
 		}
 		cssEffects.push(fx);
@@ -201,6 +258,20 @@ export function planLayerFx(
 	// CSS stages keep stack order (reordered ones first: they were before the post-chain effects).
 	const order = new Map(effects.map((fx, i) => [fx.id, i]));
 	cssEffects.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+	// color-grade: a masked Lumetri LUT step followed by its spatial stage is masked as one unit.
+	for (let i = 0; i + 1 < steps.length; i++) {
+		const a = steps[i]!;
+		const b = steps[i + 1]!;
+		if (
+			a.kind === 'lut' &&
+			a.masks?.length &&
+			b.kind === 'gpu' &&
+			b.masks?.length &&
+			b.fx.id === lumetriSpatialInstanceId(a.effects[a.effects.length - 1]!.id)
+		)
+			a.maskJoin = true;
+	}
+	if (opacityMasks.length) steps.push({ kind: 'mask', masks: opacityMasks });
 	return { active: true, steps, cssEffects, reordered, bypassed, padding, timeDependent };
 }
 

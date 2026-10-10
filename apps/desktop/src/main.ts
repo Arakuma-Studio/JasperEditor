@@ -21,6 +21,7 @@ import {
 	Menu,
 	session,
 	shell,
+	systemPreferences,
 } from 'electron';
 import { type EngineProcess, startEngineProcess } from './engine-process.ts';
 import {
@@ -28,14 +29,18 @@ import {
 	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
+	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isOpenablePath,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
 	MEDIA_EXTENSIONS,
 	mcpLaunchInfo,
 	parseClipboardFileList,
+	sessionCookies,
 } from './security.ts';
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist-electron
@@ -134,10 +139,15 @@ function createWindow(url: string): BrowserWindow {
 	return win;
 }
 
-/** IPC is answered only for frames on the app origin (not for any other frame that might get loaded). */
+/**
+ * IPC is answered only for the window's own document: the top frame, on the app origin. A subframe is never the
+ * app — a motion-graphics bundle's page is a sandboxed frame whose URL is on the engine's origin although its
+ * origin is opaque (security review MG-1); the preload does not run there, and this does not rely on that.
+ */
 function fromApp(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
-	const url = e.senderFrame?.url;
-	return !!url && !!appOrigin && isSameOrigin(url, appOrigin);
+	const frame = e.senderFrame;
+	const url = frame?.url;
+	return !!frame && frame.parent === null && !!url && !!appOrigin && isSameOrigin(url, appOrigin);
 }
 
 function registerIpc(): void {
@@ -159,12 +169,34 @@ function registerIpc(): void {
 	ipcMain.handle('jasper:mcp-info', (e) => {
 		if (!fromApp(e)) return null;
 		const { mcpEntry } = resources();
+		// A Node runtime shipped in the resources runs jasper-mcp (and the engine's workers) instead of the app
+		// binary as Node; without one the binary does (which is why the runAsNode fuse stays on, RUN-1).
+		const node =
+			mode === 'packaged'
+				? join(process.resourcesPath, 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+				: null;
 		return mcpLaunchInfo({
 			packaged: mode === 'packaged',
 			entry: mcpEntry,
 			exists: existsSync(mcpEntry),
 			execPath: process.execPath,
+			bundledNode: node && existsSync(node) ? node : null,
 		});
+	});
+	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
+	ipcMain.handle('jasper:capture-page', async (e, rect: unknown, maxWidth: unknown) => {
+		if (!fromApp(e) || !isCaptureRect(rect)) return null;
+		const image = await e.sender.capturePage({
+			x: Math.round(rect.x),
+			y: Math.round(rect.y),
+			width: Math.round(rect.width),
+			height: Math.round(rect.height),
+		});
+		const size = image.getSize();
+		const limit = typeof maxWidth === 'number' && maxWidth >= 64 ? Math.min(4096, maxWidth) : 1600;
+		const out = size.width > limit ? image.resize({ width: limit, quality: 'best' }) : image;
+		const s = out.getSize();
+		return { png: out.toPNG().toString('base64'), width: s.width, height: s.height };
 	});
 	// wp-clipboard (S01:CLB-002): the JasperEditor payload as the custom application/x-jasper-clipboard format,
 	// written atomically with its text/html and text/plain forms; reads return only that format's JSON.
@@ -228,6 +260,16 @@ function registerIpc(): void {
 	ipcMain.on('jasper:reveal', (e, p: unknown) => {
 		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);
 	});
+	// gaps (Edit Original): open a media file in the OS default application.
+	ipcMain.handle('jasper:open-path', async (e, p: unknown) => {
+		if (!fromApp(e) || !isOpenablePath(p)) return 'This file cannot be opened from JasperEditor';
+		if (!existsSync(p)) return 'The file does not exist';
+		return shell.openPath(p);
+	});
+	// gaps (File ▸ Exit): the renderer asked about unsaved changes first.
+	ipcMain.on('jasper:quit', (e) => {
+		if (fromApp(e)) app.quit();
+	});
 	ipcMain.on('jasper:window', (e, action: unknown) => {
 		const win = BrowserWindow.fromWebContents(e.sender);
 		if (!win || !fromApp(e) || !isWindowAction(action)) return;
@@ -250,24 +292,64 @@ async function startPackagedLike(): Promise<string> {
 	if (!existsSync(join(webDir, 'index.html')))
 		throw new Error(`web build missing: ${webDir} (run pnpm build)`);
 	const token = randomBytes(32).toString('base64url');
+	// Security review AGT-2: the editor key. The engine's runtime file tells local tools (jasper-mcp) the token; the
+	// key is known to the engine and to this window only, which is how the engine tells the user from an agent.
+	const editorKey = randomBytes(32).toString('base64url');
 	const dir = appdir();
 	mkdirSync(dir, { recursive: true });
-	engine = await startEngineProcess({ entry: engineEntry, appdir: dir, webDir, token, resourcesDir });
-	log(`engine ready on ${engine.origin} (appdir ${dir})`);
-	// HttpOnly SameSite=Strict session cookie so media elements and fetches carry the token (ARCH §4.2).
-	await session.defaultSession.cookies.set({
-		url: engine.origin,
-		name: 'jasper_session',
-		value: token,
-		httpOnly: true,
-		sameSite: 'strict',
-		secure: false,
+	engine = await startEngineProcess({
+		entry: engineEntry,
+		appdir: dir,
+		webDir,
+		token,
+		editorKey,
+		resourcesDir,
 	});
+	log(`engine ready on ${engine.origin} (appdir ${dir})`);
+	// HttpOnly SameSite=Strict cookies: media elements, fetches and the /agent WebSocket carry them, page scripts
+	// (and anything a page loads) cannot read them (ARCH §4.2).
+	for (const [name, value] of Object.entries(sessionCookies(new URL(engine.origin).port, token, editorKey)))
+		await session.defaultSession.cookies.set({
+			url: engine.origin,
+			name,
+			value,
+			httpOnly: true,
+			sameSite: 'strict',
+			secure: false,
+		});
 	return `${engine.origin}/`;
+}
+
+/**
+ * audio-mix: media permissions for voice-over recording. Microphone requests from the app origin are granted (on
+ * macOS after the system prompt, `askForMediaAccess`); every other permission request and origin is denied.
+ */
+function registerPermissions(): void {
+	const ses = session.defaultSession;
+	ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+		const url = (details as { requestingUrl?: string }).requestingUrl ?? wc.getURL();
+		const types = ((details as { mediaTypes?: string[] }).mediaTypes ?? []) as string[];
+		if (!isPermissionAllowed(permission, url, appOrigin, types)) return callback(false);
+		if (permission === 'media' && process.platform === 'darwin') {
+			systemPreferences
+				.askForMediaAccess('microphone')
+				.then(callback)
+				.catch(() => callback(false));
+			return;
+		}
+		callback(true);
+	});
+	ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+		const types = (details as { mediaType?: string }).mediaType
+			? [(details as { mediaType: string }).mediaType]
+			: ['audio'];
+		return isPermissionAllowed(permission, requestingOrigin, appOrigin, permission === 'media' ? types : []);
+	});
 }
 
 async function boot(): Promise<void> {
 	registerIpc();
+	registerPermissions();
 	if (process.platform !== 'darwin') Menu.setApplicationMenu(null); // Row A renders the in-app menubar (S05:EL-002)
 	let url: string;
 	if (mode === 'dev') {

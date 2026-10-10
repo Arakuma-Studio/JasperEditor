@@ -1,6 +1,13 @@
 import { z } from 'zod';
+import { WORKING_SPACE_CHOICES } from '../../color/model.ts';
+import { AudioChannelFormatSchema, SequenceSampleRateSchema } from '../../schema/audio.ts';
 import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
-import { CaptionStyleSchema, MarkerTypeSchema, TrackKindSchema } from '../../schema/sequence.ts';
+import {
+	CaptionStandardSchema,
+	CaptionStyleSchema,
+	MarkerTypeSchema,
+	TrackKindSchema,
+} from '../../schema/sequence.ts';
 import {
 	ContentTimeInputSchema,
 	cmd,
@@ -17,10 +24,39 @@ const SettingsPatch = z.strictObject({
 	dropFrame: z.boolean().optional(),
 	startTimecodeFrames: z.number().int().min(0).optional(),
 	backgroundColor: RGBASchema.optional(),
+	/** audio-mix: sequence audio sample rate. */
+	audioSampleRate: SequenceSampleRateSchema.optional(),
+	/** audio-mix: channel format of the Mix. */
+	masterLayout: AudioChannelFormatSchema.optional(),
+	/**
+	 * color-mgmt: Working Color Space — rec709, srgb, rec2020, p3d65, displayp3, rec2100-pq, rec2100-hlg, or a linear
+	 * variant (`rec709-linear`…) which also turns on Linearize Working Space.
+	 */
+	workingColorSpace: z.enum(WORKING_SPACE_CHOICES).optional(),
+	/**
+	 * gaps (Sequence Settings ▸ Pixel Aspect Ratio): null or 1:1 = square pixels. With another ratio `width` becomes the
+	 * display width of `storageWidth` (the delivered frame width; default the current one) at that ratio.
+	 */
+	pixelAspectRatio: RationalSchema.nullable().optional(),
+	storageWidth: z.number().int().min(16).max(8192).optional(),
+	/** gaps (Sequence Settings ▸ Fields): progressive, upper or lower field first. */
+	fieldOrder: z.enum(['progressive', 'upper', 'lower']).optional(),
+	/** color-mgmt: Sequence Settings ▸ Colour; each field null = back to the default. */
+	color: z
+		.strictObject({
+			linearize: z.boolean().nullable().optional(),
+			blendLinear: z.boolean().nullable().optional(),
+			autoToneMap: z.boolean().nullable().optional(),
+			sdrWhiteNits: z.number().min(80).max(400).nullable().optional(),
+			hdrPeakNits: z.number().min(203).max(10000).nullable().optional(),
+		})
+		.optional(),
 });
 
 export const SequenceCreateCmd = cmd('sequence.create', {
 	name: z.string().min(1),
+	/** gaps (Preferences ▸ Labels ▸ Label Defaults): the sequence item's label (default forest). */
+	label: LabelColorSchema.optional(),
 	preset: z.string().optional(),
 	settings: SettingsPatch.optional(),
 	fromMediaId: IdRefSchema.optional(),
@@ -62,11 +98,13 @@ const markerFields = {
 	comment: z.string().optional(),
 	url: z.string().optional(),
 };
-/** Sequence scope (`frame`) or clip scope (`clipId` + `flicks`) (S01:SEQ-008, CMD-014). */
+/** Sequence scope (`frame`), clip scope (`clipId` + `flicks`) (S01:SEQ-008, CMD-014) or source clip scope (`itemId`). */
 export const MarkerAddCmd = cmd('marker.add', {
 	sequenceId: IdRefSchema.optional(),
 	frame: TimeInputSchema.optional(),
 	clipId: IdRefSchema.optional(),
+	/** wp-multicam: a source clip marker on a media project item (Source monitor), at `flicks` of its media. */
+	itemId: IdRefSchema.optional(),
 	flicks: ContentTimeInputSchema.optional(),
 	...markerFields,
 	ref: RefDeclSchema.optional(),
@@ -87,6 +125,11 @@ export const TrackAddCmd = cmd('track.add', {
 	index: z.number().int().min(0).optional(),
 	count: z.number().int().min(1).max(99).optional(),
 	name: z.string().nullable().optional(),
+	/** wp captions (caption tracks): language and standard. */
+	language: z.string().optional(),
+	captionStandard: CaptionStandardSchema.optional(),
+	/** gaps (Add Tracks… ▸ Track Type): channel format of new audio tracks (default stereo). */
+	channelFormat: AudioChannelFormatSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TrackRemoveCmd = cmd('track.remove', {
@@ -107,9 +150,12 @@ export const TrackUpdateCmd = cmd('track.update', {
 		/** A number sets the static value (stopwatch off); an Animatable replaces the property. */
 		volumeDb: z.union([z.number(), AnimNumberSchema]).optional(),
 		pan: z.union([z.number(), AnimNumberSchema]).optional(),
-		channelFormat: z.enum(['mono', 'stereo']).optional(),
+		channelFormat: AudioChannelFormatSchema.optional(),
 		visible: z.boolean().optional(),
 		styleDefaults: CaptionStyleSchema.optional(),
+		// wp captions
+		language: z.string().optional(),
+		captionStandard: CaptionStandardSchema.optional(),
 	}),
 });
 

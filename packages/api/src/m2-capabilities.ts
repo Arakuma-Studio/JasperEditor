@@ -70,12 +70,52 @@ export const M2FeaturesSchema = z.object({
 		})
 		.optional(),
 	/** wp-m2-layer-bake (S11:LBK-030): native export of DOM layers (text, shapes, anime templates). */
+	/** wp speech: local speech-to-text (Whisper on ONNX Runtime). */
+	speech: z
+		.object({
+			status: z.enum(['ready', 'unavailable']),
+			reason: z.string().optional(),
+			runtime: z.literal('onnxruntime'),
+			modelsInstalled: z.number().int().min(0),
+			defaultModel: z.string(),
+		})
+		.optional(),
 	layerBake: z
 		.object({
 			state: z.enum(['ready', 'unavailable']),
 			reason: z.string().optional(),
 			/** Size of `<appdir>/cache/layers`. */
 			cacheBytes: z.number().int().min(0),
+		})
+		.optional(),
+	/** parity (roto): Roto Brush / face tracking (`POST /api/roto/segment`). */
+	roto: z
+		.object({
+			status: z.enum(['ready', 'unavailable']),
+			reason: z.string().optional(),
+			/** Segmentation model installed (SAM 2.1); without it the classic graph-cut engine runs. */
+			segmentationModel: z.boolean(),
+			/** Face models installed (face tracking needs them). */
+			faceModel: z.boolean(),
+		})
+		.optional(),
+	/** wp-multicam: `POST /api/sync/audio` (Synchronize / Merge Clips / multi-camera by audio). */
+	audioSync: z
+		.object({
+			state: z.enum(['ready', 'unavailable']),
+			/** Two-pass GCC-PHAT (8 kHz coarse, 48 kHz refinement). */
+			method: z.string(),
+			/** Longest stretch of each recording analysed (seconds). */
+			maxSeconds: z.number(),
+		})
+		.optional(),
+	/** wp interchange: timeline import/export formats, pre-renders and AAF / OMF audio essence (ffmpeg). */
+	interchange: z
+		.object({
+			state: z.enum(['ready', 'unavailable']),
+			formats: z.array(z.string()),
+			prerender: z.enum(['ready', 'unavailable']),
+			audioEssence: z.enum(['ready', 'unavailable']),
 		})
 		.optional(),
 });

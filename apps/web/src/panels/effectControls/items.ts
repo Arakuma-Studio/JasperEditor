@@ -3,15 +3,30 @@
 // applied effects in stack order. Unknown effects show as "Missing effect: <id>" (S01:FX-022).
 import {
 	type Clip,
+	CORNER_PIN_EFFECT_ID,
 	CROP_EFFECT,
 	type EffectInstance,
 	type EffectRegistry,
 	type EffectSpec,
+	MASK_PROPS,
+	type Mask,
 	type MgTemplateRegistry,
+	maskPropertySpec,
 	type ProjectDocument,
+	type PuppetMesh,
+	type PuppetPin,
 	paramsPropertySpecs,
 	propertyDefault,
+	puppetPinPropertySpec,
+	puppetPinPropsOf,
+	resolvePropertyAt,
 	type Sequence,
+	selectorFields,
+	shapeItemSpecs,
+	type TextAnimatorGroup,
+	type TextSelector,
+	textAnimatorPropertySpecs,
+	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
 import {
@@ -40,7 +55,208 @@ export type FxSection = {
 	/** Index of `fx` in the clip's effect stack. */
 	stackIndex?: number;
 	missing?: boolean;
+	/** wp masks: the section's masks (Opacity masks, or the effect's own masks) and their property rows. */
+	masks?: MaskList;
+	/** text-animators: the Text section's animators, selectors, Path Options and More Options. */
+	textAnimators?: TextAnimatorListModel;
+	/** three-d: the Motion section carries the 3D Layer switch of the clip. */
+	threeDSwitch?: { clipId: string; enabled: boolean };
+	/** sim-warp: a Puppet effect's meshes and pins (their property rows). */
+	puppet?: PuppetListModel;
 };
+
+/** sim-warp: what a Puppet section shows below its params. */
+export type PuppetListModel = {
+	clipId: string;
+	fxId: string;
+	meshes: PuppetMesh[];
+	pins: { pin: PuppetPin; rows: Row[] }[];
+};
+
+function puppetList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	fx: EffectInstance,
+	frame: number,
+): PuppetListModel {
+	const pup = fx.puppet ?? { meshes: [], pins: [] };
+	return {
+		clipId: clip.id,
+		fxId: fx.id,
+		meshes: pup.meshes as PuppetMesh[],
+		pins: pup.pins.map((pin) => ({
+			pin: pin as PuppetPin,
+			rows: puppetPinPropsOf(pin.kind)
+				.map((prop) => {
+					const spec = puppetPinPropertySpec(pin.id, prop);
+					return makeRow(spec.key, [
+						{
+							clip,
+							spec,
+							path: ['puppetPin', pin.id, prop],
+							resolved: resolvePropertyAt({ doc, seq, clip }, spec, frame),
+						},
+					]);
+				})
+				.filter((r): r is Row => r !== null),
+		})),
+	};
+}
+
+/** text-animators: one selector block. */
+export type SelectorBlock = { selector: TextSelector; rows: Row[]; advanced: Row[] };
+/** text-animators: one animator block (property rows, selector blocks). */
+export type AnimatorBlock = { animator: TextAnimatorGroup; rows: Row[]; selectors: SelectorBlock[] };
+/** text-animators: what the Text section shows below Source Text. */
+export type TextAnimatorListModel = {
+	clipId: string;
+	/** Source Text hold keys (AE Source Text stopwatch). */
+	sourceText: Row | null;
+	perCharacter3d: boolean;
+	hasLegacyAnimation: boolean;
+	path: { maskId: string | null; masks: { id: string; name: string }[]; rows: Row[] };
+	more: Row[];
+	animators: AnimatorBlock[];
+};
+
+function textAnimatorList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	frame: number,
+): TextAnimatorListModel {
+	const bind = (key: string) => makeRow(key, [bindProperty(doc, seq, clip, key, frame)]);
+	const ok = (r: Row | null): r is Row => r !== null;
+	const c = clip as Clip & {
+		animators?: TextAnimatorGroup[];
+		pathOptions?: { maskId: string };
+		perCharacter3d?: boolean;
+		masks?: Mask[];
+		textAnimation?: { in?: unknown; out?: unknown };
+	};
+	const specs = textAnimatorPropertySpecs(c as never);
+	return {
+		clipId: clip.id,
+		sourceText: bind('text.sourceText'),
+		perCharacter3d: !!c.perCharacter3d,
+		hasLegacyAnimation: !!(c.textAnimation?.in || c.textAnimation?.out),
+		path: {
+			maskId: c.pathOptions?.maskId ?? null,
+			masks: (c.masks ?? []).map((m) => ({ id: m.id, name: m.name })),
+			rows: specs
+				.filter((sp) => sp.key.startsWith('textPath.'))
+				.map((sp) => bind(sp.key))
+				.filter(ok),
+		},
+		more: specs
+			.filter((sp) => sp.key.startsWith('textMore.'))
+			.map((sp) => bind(sp.key))
+			.filter(ok),
+		animators: (c.animators ?? []).map((a) => {
+			const prefix = `textAnimators.${a.id}.`;
+			return {
+				animator: a,
+				rows: specs
+					.filter((sp) => sp.key.startsWith(`${prefix}properties.`))
+					.map((sp) => bind(sp.key))
+					.filter(ok),
+				selectors: a.selectors.map((sel) => {
+					const fields = selectorFields(sel.kind);
+					const rowOf = (key: string) => bind(`${prefix}selectors.${sel.id}.${key}`);
+					return {
+						selector: sel,
+						rows: fields
+							.filter((f) => !f.advanced)
+							.map((f) => rowOf(f.key))
+							.filter(ok),
+						advanced: fields
+							.filter((f) => f.advanced)
+							.map((f) => rowOf(f.key))
+							.filter(ok),
+					};
+				}),
+			};
+		}),
+	};
+}
+
+/** wp masks: a section's mask tools and masks (Premiere: under Opacity and every video effect). */
+export type MaskList = {
+	owner: { clipId: string; effectId: string | null };
+	blocks: { mask: Mask; rows: Row[] }[];
+};
+
+function maskList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	masks: readonly Mask[] | undefined,
+	effectId: string | null,
+	frame: number,
+): MaskList {
+	return {
+		owner: { clipId: clip.id, effectId },
+		blocks: (masks ?? []).map((mask) => ({
+			mask,
+			rows: MASK_PROPS.map((prop) => {
+				const spec = maskPropertySpec(mask.id, prop);
+				return makeRow(spec.key, [
+					{
+						clip,
+						spec,
+						path: ['mask', mask.id, prop],
+						resolved: resolvePropertyAt({ doc, seq, clip }, spec, frame),
+					},
+				]);
+			}).filter((r): r is Row => r !== null),
+		})),
+	};
+}
+
+const MATERIAL_KEYS = [
+	'threeD.material.castsShadows',
+	'threeD.material.lightTransmission',
+	'threeD.material.acceptsShadows',
+	'threeD.material.acceptsLights',
+	'threeD.material.ambient',
+	'threeD.material.diffuse',
+	'threeD.material.specularIntensity',
+	'threeD.material.specularShininess',
+	'threeD.material.metal',
+	'threeD.material.reflectionIntensity',
+	'threeD.material.reflectionSharpness',
+];
+const CAMERA_OPTION_KEYS = [
+	'camera.zoom',
+	'camera.depthOfField',
+	'camera.focusDistance',
+	'camera.aperture',
+	'camera.blurLevel',
+	'camera.irisShape',
+	'camera.irisRotation',
+	'camera.irisRoundness',
+	'camera.irisAspectRatio',
+	'camera.irisDiffractionFringe',
+	'camera.highlightGain',
+	'camera.highlightThreshold',
+	'camera.highlightSaturation',
+];
+const LIGHT_OPTION_KEYS = [
+	'light.type',
+	'light.intensity',
+	'light.color',
+	'light.coneAngle',
+	'light.coneFeather',
+	'light.falloff',
+	'light.radius',
+	'light.falloffDistance',
+	'light.castsShadows',
+	'light.shadowDarkness',
+	'light.shadowDiffusion',
+	'light.environmentRotation',
+	'light.environmentBackground',
+];
 
 type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
 
@@ -73,30 +289,139 @@ export function buildGroups(
 		const sections: FxSection[] = [];
 		const effects = (clip as { effects?: EffectInstance[] }).effects ?? [];
 		const pinned = isVisualClip(clip) ? cropEffectOf(clip) : null;
+		// three-d: cameras and lights (After Effects' Transform / Camera Options / Light Options groups).
+		if (clip.kind === 'camera' || clip.kind === 'light') {
+			const k = clip.kind;
+			sections.push({
+				id: `${clip.id}:${k}:transform`,
+				title: 'Transform',
+				clip,
+				intrinsic: true,
+				rows: rows(
+					k === 'camera'
+						? [
+								'camera.type',
+								'camera.pointOfInterest',
+								'camera.position',
+								'camera.orientation',
+								'camera.rotationX',
+								'camera.rotationY',
+								'camera.rotationZ',
+							]
+						: [
+								'light.autoOrient',
+								'light.pointOfInterest',
+								'light.position',
+								'light.orientation',
+								'light.rotationX',
+								'light.rotationY',
+								'light.rotationZ',
+							],
+				),
+			});
+			sections.push({
+				id: `${clip.id}:${k}:options`,
+				title: k === 'camera' ? 'Camera Options' : 'Light Options',
+				clip,
+				intrinsic: true,
+				rows: rows(
+					(k === 'camera' ? CAMERA_OPTION_KEYS : LIGHT_OPTION_KEYS).filter((key) => {
+						// Depth of field rows show with Depth of Field on (AE greys them; they are noise otherwise).
+						if (k === 'camera' && key !== 'camera.zoom' && key !== 'camera.depthOfField')
+							return (clip as { camera?: { depthOfField?: boolean } }).camera?.depthOfField === true;
+						return true;
+					}),
+				),
+			});
+		}
 		if (isVisualClip(clip)) {
 			const nonUniform =
 				(clip as { transform?: { uniformScale: boolean } }).transform?.uniformScale === false;
+			const td = (clip as { threeD?: { enabled: boolean; geometry?: unknown } }).threeD;
+			const is3d = !!td?.enabled && clip.kind !== 'captions';
 			sections.push({
 				id: `${clip.id}:motion`,
 				title: 'Motion',
 				clip,
 				intrinsic: true,
-				rows: rows([
-					'transform.position',
-					'transform.scale',
-					...(nonUniform ? ['transform.scaleWidth'] : []),
-					'transform.uniformScale',
-					'transform.rotation',
-					'transform.anchor',
-				]),
+				rows: rows(
+					is3d
+						? [
+								'transform.position',
+								'threeD.positionZ',
+								'transform.scale',
+								...(nonUniform ? ['transform.scaleWidth'] : []),
+								'threeD.scaleZ',
+								'transform.uniformScale',
+								'threeD.orientation',
+								'threeD.rotationX',
+								'threeD.rotationY',
+								'transform.rotation',
+								'transform.anchor',
+								'threeD.anchorZ',
+								'threeD.autoOrient',
+							]
+						: [
+								'transform.position',
+								'transform.scale',
+								...(nonUniform ? ['transform.scaleWidth'] : []),
+								'transform.uniformScale',
+								'transform.rotation',
+								'transform.anchor',
+							],
+				),
+				...(clip.kind !== 'captions' ? { threeDSwitch: { clipId: clip.id, enabled: is3d } } : {}),
 			});
+			if (is3d) {
+				sections.push({
+					id: `${clip.id}:material`,
+					title: 'Material Options',
+					clip,
+					intrinsic: true,
+					rows: rows(MATERIAL_KEYS),
+				});
+				if (td?.geometry && seq.threeD?.renderer === 'advanced')
+					sections.push({
+						id: `${clip.id}:geometry`,
+						title: 'Geometry Options',
+						clip,
+						intrinsic: true,
+						rows: rows([
+							'threeD.geometry.bevelStyle',
+							'threeD.geometry.bevelDepth',
+							'threeD.geometry.holeBevelDepth',
+							'threeD.geometry.extrusionDepth',
+						]),
+					});
+			}
 			sections.push({
 				id: `${clip.id}:opacity`,
 				title: 'Opacity',
 				clip,
 				intrinsic: true,
 				rows: rows(['opacity', 'blendMode']),
+				masks: maskList(doc, seq, clip, (clip as { masks?: Mask[] }).masks, null, frame),
 			});
+			// Workstream `time`: Premiere's intrinsic Time Remapping (body drawn by TimeRemapSection).
+			if (clip.kind === 'video' || clip.kind === 'nest-video')
+				sections.push({
+					id: `${clip.id}:timeRemap`,
+					title: 'Time Remapping',
+					clip,
+					intrinsic: true,
+					rows: [],
+				});
+			// Wave expressions: Source Text, where an expression can drive the text (AE's Text ▸ Source Text).
+			if (clip.kind === 'text')
+				sections.push({
+					id: `${clip.id}:sourceText`,
+					title: 'Text',
+					clip,
+					intrinsic: true,
+					rows: rows(['text.content']),
+					// text-animators: Source Text keys, Path Options, More Options, animators (AE's Text group).
+					textAnimators: textAnimatorList(doc, seq, clip, frame),
+				});
 			// M2 (wp-m2-text-anim, S11:TXA-022): the Text Animation section (body drawn by TextAnimationSection).
 			if (clip.kind === 'text')
 				sections.push({
@@ -117,8 +442,9 @@ export function buildGroups(
 				rows: CROP_EFFECT.params
 					.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
 					.filter((r): r is Row => r !== null),
+				...(pinned ? { masks: maskList(doc, seq, clip, pinned.masks, pinned.id, frame) } : {}),
 			});
-			if (clip.kind === 'shape')
+			if (clip.kind === 'shape' && clip.shape.type !== 'vector')
 				sections.push({
 					id: `${clip.id}:shape`,
 					title: 'Shape',
@@ -126,6 +452,21 @@ export function buildGroups(
 					intrinsic: true,
 					rows: rows(shapePropertyKeys(clip)),
 				});
+			// wp shapes: a vector shape's contents, one section per item (AE's Contents twirl-downs), in list order.
+			if (clip.kind === 'shape' && clip.shape.type === 'vector') {
+				const names = new Map<string, string>();
+				walkItems(clip.shape.contents, (it, parent) => {
+					const title = parent ? `${names.get(parent.id)} › ${it.name}` : it.name;
+					names.set(it.id, title);
+					sections.push({
+						id: `${clip.id}:shape:${it.id}`,
+						title: `Contents › ${title}${it.enabled === false ? ' (off)' : ''}`,
+						clip,
+						intrinsic: true,
+						rows: rows(shapeItemSpecs(clip, it.id).map((sp) => sp.key)),
+					});
+				});
+			}
 			const tpl = templateOf(clip, registries.mgTemplates);
 			if (tpl) {
 				sections.push({
@@ -164,7 +505,8 @@ export function buildGroups(
 			}
 			sections.push({
 				id: `${clip.id}:fx:${fx.id}`,
-				title: effect.label,
+				// Wave expressions: a renamed instance shows its own name (expressions find it by that name).
+				title: fx.name ?? effect.label,
 				clip,
 				intrinsic: false,
 				fx,
@@ -175,6 +517,11 @@ export function buildGroups(
 						makeRow(`effects.${fx.id}.${p.name}`, [bindEffectParam(doc, seq, clip, fx, effect, p, frame)]),
 					)
 					.filter((r): r is Row => r !== null),
+				...(fx.effectId === 'jasper.puppet' ? { puppet: puppetList(doc, seq, clip, fx, frame) } : {}),
+				// wp masks: every video effect but the corner pin (the layer geometry) has masks.
+				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID && !effect.passthrough
+					? { masks: maskList(doc, seq, clip, fx.masks, fx.id, frame) }
+					: {}),
 			});
 		});
 		const medium = isAudioClip(clip) ? 'audio' : 'video';
@@ -189,7 +536,8 @@ export type RowFilter = 'all' | 'animated' | 'modified';
 export function rowVisible(doc: ProjectDocument, seq: Sequence, row: Row, filter: RowFilter): boolean {
 	if (filter === 'all') return true;
 	const b = row.bindings[0]!;
-	if (b.resolved.animated) return true;
+	// Keyframed, or driven by an expression (wave expressions).
+	if (b.resolved.animated || (b.resolved.anim as { expression?: unknown } | null)?.expression) return true;
 	if (filter === 'animated') return false;
 	if (b.spec.defaultValue === undefined) return false;
 	const d = propertyDefault({ doc, seq, clip: b.clip }, b.spec);

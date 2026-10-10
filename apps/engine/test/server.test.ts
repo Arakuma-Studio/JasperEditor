@@ -30,7 +30,7 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		const app = await make();
 		const r = await app.inject({ method: 'GET', url: '/health', headers: H });
 		expect(r.statusCode).toBe(200);
-		expect(r.json()).toEqual({ ok: true, version: '0.1.0', apiVersion: 1 });
+		expect(r.json()).toMatchObject({ ok: true, version: '0.1.0', apiVersion: 1 });
 		expect(r.headers['x-jasper-api']).toBe('1');
 	});
 

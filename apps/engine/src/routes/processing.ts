@@ -9,7 +9,7 @@
 // ONNX Runtime, OpenCV.js and the bundled model weights (Help ▸ About ▸ Licenses).
 import { ProcessingSettingsSchema, ProcessRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
-import type { AgentService } from '../agent/service.ts';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { processingLicenses } from '../processing/licenses.ts';
 import { ProcessingService } from '../processing/service.ts';
@@ -47,7 +47,8 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 	app.post<ModelParams>(
 		'/api/processing/models/:modelId/install',
 		guarded<ModelParams>(async (req) => {
-			if (!svc.models.entry(req.params.modelId))
+			// wp speech: the catalogue's speech models install through the same job
+			if (!svc.models.entry(req.params.modelId) && !svc.speechModels.entry(req.params.modelId))
 				throw new HttpError(404, 'MODEL_UNKNOWN', `Unknown model ${req.params.modelId}`);
 			return svc.submitInstall(req.params.modelId);
 		}),
@@ -63,36 +64,20 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 		'/api/settings/processing',
 		guarded<PutQuery>(async (req) => {
 			const body = parseOr400(ProcessingSettingsSchema, req.body ?? {});
-			// Agents (MCP set_processing_settings) change where media is sent: the user approves in the editor
-			// window that has `approvalProjectId` open (S07:PRA-001), like destructive transactions.
-			const approvalProjectId = req.query.approvalProjectId;
-			if (approvalProjectId) {
-				const agent = app.jasper.services.agent as AgentService | undefined;
-				if (!agent?.isLive(approvalProjectId))
-					throw new HttpError(
-						409,
-						'E_NO_SESSION',
-						"Changing the processing settings needs the user's approval: open the project in the editor first",
-					);
-				const r = body.remote;
-				const { decision } = agent.approvals.request({
-					projectId: approvalProjectId,
-					label: 'Change processing settings',
-					agent: (req.query.agent ?? 'agent').slice(0, 64),
-					reasons: ['changes where media is sent for processing (remote executor)'],
-					commandCount: 0,
-					summary: r
-						? `remote executor: ${r.user}@${r.host}:${r.port} ${r.remoteDir} (${r.enabled ? 'enabled' : 'disabled'})`
-						: 'remove the remote executor',
-				});
-				const d = await decision;
-				if (d !== 'approved')
-					throw new HttpError(
-						403,
-						d === 'timeout' ? 'E_APPROVAL_TIMEOUT' : 'E_APPROVAL_DENIED',
-						d === 'timeout' ? 'The user did not answer the approval request' : 'The user denied the change',
-					);
-			}
+			// Changing where media is sent (the remote executor) is the user's decision (S07:PRA-001): the editor's
+			// Preferences dialog saves directly, an agent — MCP `set_processing_settings` or any other client without
+			// the editor key (security review AGT-3) — is asked about in the editor, in the window that has
+			// `approvalProjectId` open when given.
+			const r = body.remote;
+			await requireUserApproval(app, req, {
+				label: 'Change processing settings',
+				summary: r
+					? `remote executor: ${r.user}@${r.host}:${r.port} ${r.remoteDir} (${r.enabled ? 'enabled' : 'disabled'})`
+					: 'remove the remote executor',
+				reasons: ['changes where media is sent for processing (remote executor)'],
+				projectId: req.query.approvalProjectId ?? null,
+				noEditor: 'E_NO_SESSION',
+			});
 			try {
 				const saved = await svc.settings.put(body);
 				core.capabilities.changed();

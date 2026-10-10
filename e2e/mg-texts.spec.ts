@@ -34,13 +34,12 @@ test.afterAll(async () => {
 
 /** Text of an element of the LowerThird's live host page in the Program monitor. */
 async function hostText(testId: string): Promise<string | null> {
+	// Security review MG-1: the host page is a sandboxed frame; it is read from inside (the editor cannot reach in).
 	return page
-		.locator('[data-testid="program-monitor"] iframe[data-mg-host]')
-		.evaluate(
-			(f, id) =>
-				(f as HTMLIFrameElement).contentDocument?.querySelector(`[data-testid="${id}"]`)?.textContent ?? null,
-			testId,
-		)
+		.frameLocator('[data-testid="program-monitor"] iframe[data-mg-host]')
+		.locator(`[data-testid="${testId}"]`)
+		.first()
+		.textContent({ timeout: 2000 })
 		.catch(() => null);
 }
 
@@ -174,4 +173,12 @@ test('double-click a text in the Program monitor edits it in place in the bundle
 	await expect(page.getByTestId('text-quote')).toHaveValue(
 		'Imagination is the Discovering Faculty,\n*pre-eminently.*',
 	);
+	// DOCS_SCREENSHOTS=1: the applied on-canvas edit for docs/wp-notes/wp-m3-mgtext.md (fixture project and
+	// generated media only; sidecar docs/screenshots/m3-mgtext/fixture-applied.jpg.attribution).
+	if (process.env.DOCS_SCREENSHOTS === '1')
+		await page.screenshot({
+			path: join(ROOT, 'docs', 'screenshots', 'm3-mgtext', 'fixture-applied.jpg'),
+			type: 'jpeg',
+			quality: 85,
+		});
 });

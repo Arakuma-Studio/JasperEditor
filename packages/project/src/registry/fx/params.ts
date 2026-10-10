@@ -22,6 +22,16 @@ const merge = (p: ParamSpec, extra?: Extra): ParamSpec => ({
 });
 
 export const fxParam = {
+	/**
+	 * parity (roto): the roto object of the clip an effect reads (a string param holding its id, '' = none;
+	 * `ui.control: 'roto-object'` → a picker of the clip's objects). Bind it with `GpuEffect.mattes`.
+	 */
+	object(name: string, label: string, extra?: Extra) {
+		return merge(
+			{ name, label, type: 'string', default: '', animatable: false, ui: { control: 'roto-object' } },
+			extra,
+		);
+	},
 	/** A plain number (`u_<name>` float). */
 	number(
 		name: string,

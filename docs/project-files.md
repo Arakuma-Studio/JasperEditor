@@ -1,0 +1,185 @@
+# Project files
+
+JasperEditor projects are `.jasper` files: UTF-8 JSON with an explicit schema version (S01 §18). The model,
+its zod schema, the migrations and the load pipeline are in `packages/project`; the engine stores the files
+(`apps/engine/src/projects/`); the editor saves through `@jasper/session` (`packages/session/src/persistence/`).
+Decisions: ARCHITECTURE D-08 (engine-backed store), D-29/D-32/D-33 (schema v3–v5), D-39 (versions, backups,
+crash recovery).
+
+## Format
+
+```json
+{
+  "format": "jasper-project",
+  "schemaVersion": 5,
+  "savedAt": "2026-10-07T10:12:00.000Z",
+  "savedBy": { "app": "JasperEditor", "version": "0.1.0", "platform": "web" },
+  "revision": 412,
+  "document": { "schemaVersion": 5, "projectId": "prj_…", "name": "…", "settings": {…}, "rootItems": […],
+                "items": {…}, "media": {…}, "synthetics": {…}, "transcripts": {…}, "fonts": {…},
+                "sequences": {…}, "extensions": {…} }
+}
+```
+
+- `document.schemaVersion` is the version of the document; the envelope repeats it. This build writes
+  `CURRENT_SCHEMA_VERSION` (`packages/project/src/schema/document.ts`) and reads every version from 1 up to it.
+  A bare document without an envelope, or without `schemaVersion`, is read as v1.
+- `revision` counts saves. The engine refuses a save whose `If-Match` is not the stored revision
+  (409 `REVISION_CONFLICT`, S01:PER-025): two writers never overwrite each other silently.
+- Media is referenced, never embedded: an `engine-store` locator (`mediaKey`) and, on desktop, a `path`.
+
+### Where the engine keeps them
+
+```
+<appdir>/projects/<projectId>/
+  project.jasper                         the project (atomic writes)
+  project.jasper-view                    view state: open tabs, zoom, playhead (not undoable, not shared)
+  project (schema v4 backup).jasper      kept before the first save over a v4 file (see Migrations)
+  versions/<ISO stamp>.jasper            saved versions (every 5 minutes of saving, newest 20)
+  versions/<ISO stamp>-restore.jasper    the state a restore replaced
+  recovery/<sessionId>/                  crash-recovery journal of an editing session (see Crash recovery)
+```
+
+## Schema history
+
+| Version | Since | Change | Migration |
+|---|---|---|---|
+| 1 | M1 | the M1 document | — |
+| 2 | M1 polish | audio clips take the Audio label by default (S05:DT-021) | `v1→v2`: the audio half of a linked A/V clip still carrying the v1 Movie label (violet) becomes caribbean; user-chosen labels are kept |
+| 3 | M2 (D-29) | LUT and Remotion-bundle media, process recipes, trackers, curve parameters | `v2→v3`: version bump only, so M1 builds open M2 files read-only |
+| 4 | M2 (D-32) | text animators, anime.js template renderer, shape clips | `v3→v4`: version bump only |
+| 5 | M3 (D-33) | `MediaAsset.sourceRange` (which source frames a processed or rendered version holds) | `v4→v5`: processed versions made from the whole source get the explicit full-source range |
+| 6 | parity program (D-36…D-48) | masks and track mattes, nests and adjustment layers, groups, captions and transcripts, time remapping, vector shapes, text animators, expressions, 3D layers / cameras / lights, multicam, roto mattes, audio effects / buses / Essential Sound, working colour spaces, interpreted footage, and the other optional fields the parity workstreams added | `v5→v6`: version bump only, so v5 builds open v6 files read-only instead of dropping the new fields on save |
+
+Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
+forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:
+
+- there is one fixture per version, 1 … `CURRENT_SCHEMA_VERSION`, and one contiguous migration step per version;
+- each fixture loads, migrates to the current version and passes the invariants **without repairs**;
+- each shipped step makes exactly its documented changes to the fixture of its version (`STEP_CHANGES`), so
+  editing a shipped migration fails the test;
+- newer files open read-only and are never migrated down.
+
+The older `fixtures/v<N>/basic.jasper` files are richer documents used by feature tests.
+
+## Migrations
+
+Older files are upgraded on load, in memory: `loadProject` = envelope → `migrate` (the chain of `MIGRATIONS`,
+one pure step per version) → zod validation → invariants → conservative repair (S01:PER-004). The file on disk
+is unchanged until the project is saved.
+
+Rules:
+
+1. **Never edit a migration that has shipped.** A file written by any released build must keep loading to the
+   same result. Fix a bad step with a new step.
+2. **Bump the schema whenever an older build would drop or misread new data.** Fields added as optional with a
+   read-time default (zod `.optional()`/`.default()`, MIG-005) need no migration, as long as an older build that
+   loads the file and saves it back keeps them. When it would not (a new clip or media kind, a new required
+   shape, a field an older build's strict schema strips), bump `CURRENT_SCHEMA_VERSION` with a step (a no-op
+   step is fine): older builds then open the file read-only ("Created with a newer JasperEditor", MIG-003)
+   instead of failing or silently dropping the new data on their next save.
+3. To bump: add the step to `MIGRATIONS` in `packages/project/src/migrations.ts`, bump
+   `CURRENT_SCHEMA_VERSION`, add `fixtures/schema-v<N+1>.jasper` (with its `.attribution` sidecar and an
+   `ATTRIBUTION.md` row) showing the new shape, add the step's expected changes to `STEP_CHANGES`, and add a
+   row to the table above.
+4. **Parallel work never bumps.** Workstreams add optional fields with read-time defaults and update
+   `repairDocument`; one integrator bumps the schema once after they merge (CLAUDE.md).
+
+### The first save over an older file keeps a backup
+
+When an editor saves a project whose file was written with an older schema, the engine first copies the file
+to `project (schema vN backup).jasper` next to it (S01:MIG-004). It is made once and never overwritten, so an
+older JasperEditor can still open that work: File ▸ Project Versions… lists it as an *older-format backup*, and
+**Open as Copy** makes a separate project of it (it cannot be restored over the project, which would downgrade
+it). Agents: `list_project_versions`, `restore_project_version {mode: "copy"}`.
+
+## Saving
+
+- **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp
+  file in the same directory, fsynced, renamed over the target, and the directory fsynced
+  (`apps/engine/src/tools/fs.ts` `atomicWriteFile`). A crash or `kill -9` leaves the old or the new file,
+  never a torn one.
+- **Autosave** (S01:PER-020): the editor saves the committed document 1.5 s after the last edit and at least
+  every 10 s while edits keep coming, never in the middle of a drag. Ctrl+S saves now. A 409 pauses autosave
+  until the user chooses Reload or Overwrite.
+- **Single writer** (S01:PER-040): opening a project takes a lease (30 s, heartbeat every 10 s). A second editor
+  opens read-only and can **Take over editing**. Closing or reloading the tab releases the lease with a
+  keepalive request on `pagehide`; if that never arrives (a crash) the lease expires after 30 s. A reload does not
+  depend on that request: the tab remembers the session that held the lease (`sessionStorage`) and takes its own
+  lease over at once when the new page finds it still held, after checking that no live page of the origin holds
+  it (a duplicated tab copies the memory). Other tabs and agents wait for the expiry or use Take over
+  (`packages/session/src/persistence/tab-leases.ts`, `docs/wp-notes/polish.md` §1).
+
+## Versions
+
+The engine keeps the previous file as a version when the newest version is more than 5 minutes old (so one
+per 5 minutes of editing), and the newest 20. File ▸ **Project Versions…** lists them with the time, the kind
+and the revision:
+
+- **Restore** writes the version over the project. The state it replaces is kept first as a version of its own
+  (*Before a restore*), so a restore can always be undone by restoring that one. The editor saves what is on
+  screen, restores, and reopens the project. From outside the editor, a restore in place is refused while an
+  editor holds the project (409 `LEASE_HELD`).
+- **Open as Copy** makes a new project from the version (S01:PER-001 `restoreVersion`) and opens it.
+
+Routes: `GET /api/projects/:pid/versions`, `GET …/versions/:versionId`,
+`POST …/versions/:versionId/restore {mode: "replace" | "copy", name?, leaseId?}`.
+
+## Save As, Save a Copy, Revert
+
+| Command | Menu (shortcut) | Does |
+|---|---|---|
+| `app.saveAs` | File ▸ Save As… (Ctrl+Shift+S) | asks for a name, writes the current document to a new project and continues there; the original keeps its last saved state |
+| `app.saveCopy` | File ▸ Save a Copy… (Ctrl+Alt+S) | the same, but you keep editing the original |
+| `file.revert` | File ▸ Revert | discards the changes autosave has not written yet and reloads the last saved state (asks first; cannot be undone). Enabled only while there are unsaved changes: with autosave that is a short window, so to go further back use Project Versions |
+| `file.projectVersions` | File ▸ Project Versions… | the versions dialog above |
+| `file.recoverUnsaved` | File ▸ Recover Unsaved Changes… | the recovery dialog below, for journals left when you chose Not Now |
+
+Agents use the MCP tool `save_project_copy` (the live document of an open editor, unsaved edits included).
+
+## Crash recovery
+
+Autosave makes the file current within 1.5–10 s, but a crash in that window, or while autosave is paused
+(a conflict, a lost lease, an engine error), would lose edits. Each editing session therefore keeps a
+**recovery journal** (S01:PER-021, AC-18):
+
+- While the session has unsaved changes, it sends its committed document to the engine about **1 s after the
+  last edit**, and at most every **5 s** while edits keep coming
+  (`PUT /api/projects/:pid/recovery/:sessionId`, `packages/session/src/persistence/recovery.ts`). The engine
+  writes `recovery/<sessionId>/snapshot.jasper` (the envelope), `session.json` (project name, base revision,
+  the labels of the unsaved History steps, times) and `lock` (`{pid, instance}` of the engine) atomically.
+- **The journal is held under a lock while its session can still write it**: the engine process that wrote it
+  is alive and, for this engine, the session still holds the project's lease. Only the lease holder can write
+  or clear its own journal; a held journal is never offered, read or deleted by anyone else, and journals of
+  another live engine process on the same appdir are never touched.
+- When autosave catches up (nothing unsaved), the journal is deleted. A clean close deletes it too; if the
+  last save failed, the journal stays so the changes are offered next time.
+- After an **unclean exit** (the tab or browser crashed, the desktop app or the engine was killed, power
+  loss) the lease runs out or the restarted engine no longer knows it, so the journal is no longer held. The
+  next time the project opens, if the journal differs from the saved project, the editor asks:
+  *"JasperEditor closed before 'X' was saved. Recover the unsaved changes from <time>?"* with the number and
+  names of the changes and **Recover**, **Not Now** and **Discard**. A journal equal to the saved project
+  (autosave caught up before the crash) is stale and removed silently.
+- **Recover** applies the snapshot as one undoable step, *Recover Unsaved Changes*: Edit ▸ Undo goes back to
+  the saved state. The recovered state is journalled by the new session and saved before the old journal is
+  deleted. If the project was saved again after the crash (by another session), the dialog says so; recovering
+  replaces that state, and Undo takes it back.
+- **Not Now** keeps the journal for File ▸ Recover Unsaved Changes…; **Discard** deletes it.
+- Agents see journals with `list_unsaved_changes`; recovering is the user's decision, in the editor.
+
+Cost: the journal is the same compact JSON as a save, written by the engine off the UI thread (one PUT of the
+document per ≥ 1 s of editing).
+
+Routes: `GET /api/projects/:pid/recovery` (candidates), `GET …/recovery/:sessionId` (a candidate's envelope),
+`PUT …/recovery/:sessionId {leaseId, baseRevision, revision, changes, changeCount?, envelope}`,
+`DELETE …/recovery/:sessionId[?leaseId=]`.
+
+Tests: `apps/engine/test/recovery-versions.test.ts` (routes, lock semantics across engine restarts and other
+processes, schema backup, restore), `packages/session/test/persistence/recovery.test.ts` (timing, clearing,
+recovery as an undoable step, Revert), `apps/web/test/project-files.test.tsx` (actions and dialogs).
+
+## Newer files
+
+A file whose `schemaVersion` is newer than this build supports opens **read-only** with the banner "Created with
+a newer JasperEditor — the project is open read-only and will not be changed" (MIG-003). It is never migrated
+down, and the engine stores a newer document verbatim. Update JasperEditor to edit it.

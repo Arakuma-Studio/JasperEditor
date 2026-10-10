@@ -49,6 +49,8 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		engine = await startEngine({
 			appdir: tempAppdir(),
 			port: PORT ? PORT + 2 : 0,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: false,
 			env: {
 				PATH: process.env.PATH,
@@ -185,7 +187,9 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		stillDoc.tx([
 			{ type: 'clip.addText', at: 0, duration: 24, track: 'V1', content: { text: 'LGPL still' }, ref: '$t' },
 		]);
+		// keyframes-blend: blend modes are native except inside nested sequences — this keeps the still on Remotion.
 		stillDoc.tx([{ type: 'clip.update', clipIds: stillDoc.clipIds(), patch: { blendMode: 'screen' } }]);
+		stillDoc.tx([{ type: 'clip.nest', clipIds: stillDoc.clipIds() }]);
 		const r = await engine.app.inject({
 			method: 'POST',
 			url: '/api/stills',

@@ -11,6 +11,7 @@ import {
 	rmSync,
 	statSync,
 	symlinkSync,
+	utimesSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,7 +31,7 @@ import {
 	overridesWithEdits,
 	textLayerValue,
 } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hashBundleDir } from '../src/mg-bundles/hash.ts';
 import { masterRequests } from '../src/mg-bundles/native-ext.ts';
 import {
@@ -447,13 +448,19 @@ describe('mg-bundles routes (no browser)', () => {
 				})
 			).statusCode,
 		).toBe(404);
-		const host = await app.inject({
+		// The live host page lives under the bundle's capability path (security review MG-1; the sandbox, its policy
+		// and the capability are tested in security-hardening.test.ts): the address the editor knows redirects there.
+		const redirect = await app.inject({
 			method: 'GET',
 			url: `${base}/index.html?jasper-host=1`,
 			headers: JSON_H,
 		});
+		expect(redirect.statusCode).toBe(302);
+		expect(redirect.headers['cache-control']).toBe('no-store');
+		const host = await app.inject({ method: 'GET', url: String(redirect.headers.location), headers: JSON_H });
 		expect(host.statusCode).toBe(200);
 		expect(host.headers['cache-control']).toBe('no-store');
+		expect(host.body).toContain('__jasperMgHost');
 		// Media status works for bundles (availability = the index file).
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: JSON_H })).json().status,
@@ -495,6 +502,45 @@ describe('mg-bundles routes (no browser)', () => {
 			await app.inject({ method: 'GET', url: `/api/mg-bundles/prerender/${key}`, headers: JSON_H })
 		).json();
 		expect(hit).toMatchObject({ renderKey: key, masterUrl: `/mg/${key}/master.mov`, durationFrames: 1 });
+	});
+
+	it('a master looked up while a cleaning pass works from an older scan survives it (stale GC snapshot)', async () => {
+		const app = await makeApp();
+		const svc = mgBundleService(app)!;
+		const cache = coreServices(app).cache;
+		await cache.start();
+		// A master unused for 30 days: past the mg-renders age limit (14 days) by its metadata and its mtimes.
+		const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+		const key = 'd'.repeat(40);
+		const dir = join(svc.mgDir, key);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, 'master.mov'), 'x');
+		writeFileSync(
+			join(dir, 'meta.json'),
+			JSON.stringify({
+				kind: 'composition',
+				renderKey: key,
+				bundleHash: 'x',
+				files: ['master.mov'],
+				createdAt: old.toISOString(),
+				lastUsedAt: old.toISOString(),
+			}),
+		);
+		for (const f of ['master.mov', 'meta.json', '']) utimesSync(join(dir, f), old, old);
+		const file = join(dir, 'master.mov');
+		// The pass scans first (old metadata), then the native export looks the master up, then the pass decides.
+		const scan = cache.scan.bind(cache);
+		const scanned = vi.spyOn(cache, 'scan').mockImplementationOnce(async (force) => {
+			const snapshot = await scan(force);
+			expect(svc.masterPath(key)).toBe(file);
+			return snapshot;
+		});
+		try {
+			await cache.clean('auto', ['mg-renders']);
+			expect(existsSync(file)).toBe(true);
+		} finally {
+			scanned.mockRestore();
+		}
 	});
 
 	it('reports features.mgBundles; validates imports; refuses unknown bundles and non-rebuildable ones', async () => {

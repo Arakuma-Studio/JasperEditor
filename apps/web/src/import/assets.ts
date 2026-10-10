@@ -3,6 +3,7 @@
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	flicksPerFrame,
+	importedDescriptors,
 	type MediaAsset,
 	type MediaLocator,
 	nearestAllowedRate,
@@ -45,6 +46,9 @@ export function buildMediaAsset(
 		importedAt: opts.now,
 		// M2: LUT header (S06:LUT-001).
 		...(reg.lut ? { lut: JSON.parse(JSON.stringify(reg.lut)) } : {}),
+		...(reg.colorConfig ? { colorConfig: JSON.parse(JSON.stringify(reg.colorConfig)) } : {}),
+		// imports: vector / Lottie / layered / image-sequence descriptors.
+		...importedDescriptors(reg),
 	};
 }
 

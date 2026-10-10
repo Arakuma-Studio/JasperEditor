@@ -242,7 +242,7 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 			});
 			writeFileSync(
 				join(dir, 'index.html'),
-				'<!doctype html><html><body style="margin:0;background:#000"><div id="root"></div><script src="player.js"></script></body></html>',
+				'<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#000"><div id="root"></div><script src="player.js"></script></body></html>',
 			);
 			const { chromium } = await import('@playwright/test');
 			const b = await chromium.launch({ executablePath: CHROME, headless: true });

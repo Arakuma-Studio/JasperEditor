@@ -1,11 +1,16 @@
 // Media registration, uploads, derivatives and their JSON headers (ARCHITECTURE §9.2/§9.4, D-09, D-10,
 // S04:IN-005, TH-002, WF-001).
 import {
+	ColorConfigInfoSchema,
+	ImageSequenceInfoSchema,
+	LayeredInfoSchema,
+	LottieInfoSchema,
 	LutInfoSchema,
 	MediaKindSchema,
 	MediaLocatorSchema,
 	MediaProbeSchema,
 	MgBundleInfoSchema,
+	VectorInfoSchema,
 } from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
@@ -27,6 +32,16 @@ export const RegisteredMediaSchema = z.object({
 	lut: LutInfoSchema.optional(),
 	/** kind `mg-bundle` (M2, S08): compositions, copied into `MediaAsset.mgBundle`. */
 	mgBundle: MgBundleInfoSchema.optional(),
+	/** color-mgmt: kind `color-config` (a custom OCIO config bundle): header, copied into `MediaAsset.colorConfig`. */
+	colorConfig: ColorConfigInfoSchema.optional(),
+	/** imports: SVG / PDF / Illustrator vector still, copied into `MediaAsset.vector`. */
+	vector: VectorInfoSchema.optional(),
+	/** imports: Lottie animation, copied into `MediaAsset.lottie`. */
+	lottie: LottieInfoSchema.optional(),
+	/** imports: layered document (PSD), copied into `MediaAsset.layered`. */
+	layered: LayeredInfoSchema.optional(),
+	/** imports: the numbered stills this file was conformed from, copied into `MediaAsset.imageSequence`. */
+	imageSequence: ImageSequenceInfoSchema.optional(),
 	/**
 	 * M3 (S07:PRC-019): a source-range sidecar found next to a file registered by path (`<name>.json` or
 	 * `<stem>.json`, see `parseSourceSidecar`). Clients turn it into `MediaAsset.sourceRange`
@@ -95,6 +110,22 @@ export const MediaStatusSchema = z.object({
 });
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 
+/**
+ * `POST /api/media/status` (polish): the status of many media in one request — opening a project resolves every
+ * medium, and one request per medium made a 2 000-item project take seconds to open.
+ */
+export const MEDIA_STATUS_BATCH_MAX = 1000;
+export const MediaStatusBatchRequestSchema = z.object({
+	mediaKeys: z.array(z.string().min(1).max(256)).min(1).max(MEDIA_STATUS_BATCH_MAX),
+});
+export type MediaStatusBatchRequest = z.infer<typeof MediaStatusBatchRequestSchema>;
+export const MediaStatusBatchResponseSchema = z.object({
+	statuses: z.array(MediaStatusSchema),
+	/** Keys the engine has no record of (the media is offline for this engine). */
+	unknown: z.array(z.string()),
+});
+export type MediaStatusBatchResponse = z.infer<typeof MediaStatusBatchResponseSchema>;
+
 export const DerivativesRequestSchema = z.object({ kinds: z.array(DerivativeKindSchema).min(1) });
 export type DerivativesRequest = z.infer<typeof DerivativesRequestSchema>;
 
@@ -137,7 +168,7 @@ export const UploadCreateRequestSchema = z.object({
 	 * M2 (wp-m2-mg, additive): `mg-bundle` = a zip of a built Remotion bundle, completed by
 	 * `POST /api/mg-bundles/import {uploadId}` instead of `…/complete`. Default `media`.
 	 */
-	purpose: z.enum(['media', 'mg-bundle']).optional(),
+	purpose: z.enum(['media', 'mg-bundle', 'sequence-frame']).optional(),
 });
 export type UploadCreateRequest = z.infer<typeof UploadCreateRequestSchema>;
 export const UploadCreateResponseSchema = z.object({

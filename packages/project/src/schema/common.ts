@@ -33,6 +33,10 @@ export type RGBA = [number, number, number, number];
 export const Vec2Schema = z.tuple([z.number(), z.number()]);
 export type Vec2 = [number, number];
 
+/** Wave expressions: 3D Point Control values (`[x, y, z]`). */
+export const Vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
+export type Vec3 = [number, number, number];
+
 export const LABEL_COLORS = [
 	'violet',
 	'iris',
@@ -58,7 +62,12 @@ export const INTERPOLATIONS = ['linear', 'bezier', 'auto-bezier', 'continuous-be
 export const InterpolationSchema = z.enum(INTERPOLATIONS);
 export type Interpolation = DeepStrip<z.infer<typeof InterpolationSchema>>;
 
-export const EaseSchema = z.looseObject({ influence: z.number().gt(0).max(1), slope: z.number().min(0) });
+/**
+ * A temporal ease: influence (0, 1] of the segment and the speed as a slope normalised by the segment's average speed
+ * (1 = linear). keyframes-blend: the slope is any finite number — negative = the value first moves away from the
+ * next key (anticipation), steep = it passes it (overshoot), as Premiere's graph handles allow.
+ */
+export const EaseSchema = z.looseObject({ influence: z.number().gt(0).max(1), slope: z.number() });
 export type Ease = DeepStrip<z.infer<typeof EaseSchema>>;
 
 /**
@@ -78,12 +87,26 @@ export type SpatialInterpolation = DeepStrip<z.infer<typeof SpatialInterpolation
  * `a.v, a.v + a.outTangent, b.v + b.inTangent, b.v`. Absent = `linear` (documents written before spatial
  * interpolation existed evaluate exactly as before; S01:MIG-005, additive).
  */
+/**
+ * keyframes-blend: the Auto Bezier rule of a key. `proportional` (keys made Auto Bezier from now on) = After Effects':
+ * the handles lie along (next − prev) and each is ⅓ of its own neighbouring chord, so a key between a short and a long
+ * segment has a short and a long handle (and no overshoot into the short one); the first and last keys have none.
+ * Absent / `uniform` = the Catmull-Rom rule documents were written with, `±(next − prev) / 6` (kept so existing
+ * projects draw the same paths; re-applying Auto Bezier upgrades a key).
+ */
+export const AUTO_TANGENT_RULES = ['uniform', 'proportional'] as const;
 export const SpatialSchema = z.looseObject({
 	mode: SpatialInterpolationSchema,
 	inTangent: Vec2Schema,
 	outTangent: Vec2Schema,
+	auto: z.enum(AUTO_TANGENT_RULES).optional(),
 });
-export type Spatial = { mode: SpatialInterpolation; inTangent: Vec2; outTangent: Vec2 };
+export type Spatial = {
+	mode: SpatialInterpolation;
+	inTangent: Vec2;
+	outTangent: Vec2;
+	auto?: (typeof AUTO_TANGENT_RULES)[number];
+};
 
 export type Keyframe<T> = {
 	id: string;
@@ -94,8 +117,22 @@ export type Keyframe<T> = {
 	easeOut: Ease;
 	/** vec2 point properties only (S03:KF-030); absent = linear spatial. */
 	spatial?: Spatial;
+	/**
+	 * keyframes-blend: After Effects' Rove Across Time — the key has no time of its own: the run of roving keys between
+	 * two fixed keys moves as one segment (the fixed keys' eases shape it) and the roving keys' times follow from where
+	 * the motion passes them (`retimeRoving`). Never on the first or last key or on hold keys. Absent = false.
+	 */
+	roving?: boolean;
 };
-export type Animatable<T> = { value: T; keyframes: Keyframe<T>[] };
+/**
+ * An After Effects-style expression on an animatable property (wave expressions, docs/wp-notes/expressions.md):
+ * JavaScript evaluated per frame by `@jasper/expressions` with `value` = the keyframed value. `enabled: false`
+ * keeps the text but renders the keyframed value (AE's "Enable Expression" switch). Absent = no expression.
+ */
+export const ExpressionSchema = z.looseObject({ text: z.string(), enabled: z.boolean() });
+export type Expression = { text: string; enabled: boolean };
+
+export type Animatable<T> = { value: T; keyframes: Keyframe<T>[]; expression?: Expression };
 
 export function keyframeSchema<T extends z.ZodType>(value: T) {
 	return z.looseObject({
@@ -106,12 +143,18 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 		easeIn: EaseSchema,
 		easeOut: EaseSchema,
 		spatial: SpatialSchema.optional(),
+		roving: z.boolean().optional(),
 	});
 }
 
 /** `Animatable<T> = {value, keyframes}` (S01:KF-001). */
 export function animatable<T extends z.ZodType>(value: T) {
-	return z.looseObject({ value, keyframes: z.array(keyframeSchema(value)) });
+	return z.looseObject({
+		value,
+		keyframes: z.array(keyframeSchema(value)),
+		/** Optional (wave expressions; additive, no schema bump). */
+		expression: ExpressionSchema.optional(),
+	});
 }
 
 export const AnimNumberSchema = animatable(z.number());
@@ -126,15 +169,35 @@ export const AnimRGBASchema = animatable(RGBASchema);
 export const CurveValueSchema = z.looseObject({ curve: z.array(Vec2Schema).min(2) });
 export type CurveValue = { curve: Vec2[] };
 
+/** Most numbers of a mesh param value (sim-warp: Mesh Warp / Liquify distortion meshes). */
+export const MESH_VALUE_MAX = 400_000;
+/** sim-warp: a distortion mesh value (`mesh` params): finite numbers, layout defined by the effect. */
+export const MeshValueSchema = z.array(z.number()).max(MESH_VALUE_MAX);
+export type MeshValue = number[];
+
 /** Effect/transition parameter values (S01:FX-020; `curve` added in M2, ARCHITECTURE §19.2). */
 export const ParamValueSchema = z.union([
 	z.number(),
 	z.boolean(),
 	z.string(),
 	Vec2Schema,
+	// Wave expressions (additive): 3D Point Control.
+	Vec3Schema,
 	RGBASchema,
 	z.looseObject({ mediaId: z.string() }),
 	CurveValueSchema,
+	// sim-warp: a keyframable distortion mesh (Mesh Warp, Liquify): a flat list of numbers whose layout the effect
+	// defines; keys interpolate number by number (lists of different lengths hold).
+	MeshValueSchema,
 ]);
-export type ParamValue = number | boolean | string | Vec2 | RGBA | { mediaId: string } | CurveValue;
+export type ParamValue =
+	| number
+	| boolean
+	| string
+	| Vec2
+	| Vec3
+	| RGBA
+	| { mediaId: string }
+	| CurveValue
+	| MeshValue;
 export const AnimParamSchema = animatable(ParamValueSchema);

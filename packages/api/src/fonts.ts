@@ -14,6 +14,8 @@ export const FontFamilySchema = z.object({
 	weights: z.array(z.number().int()),
 	styles: z.array(z.enum(['normal', 'italic'])),
 	files: z.array(FontFileSchema),
+	/** text-animators: variation axes of a variable family (tag → user-unit range), for Variable Font Axes. */
+	axes: z.record(z.string(), z.object({ min: z.number(), max: z.number(), default: z.number() })).optional(),
 });
 export type FontFamily = z.infer<typeof FontFamilySchema>;
 export const FontCatalogSchema = z.object({ fonts: z.array(FontFamilySchema) });

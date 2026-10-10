@@ -1,14 +1,28 @@
 // The clip area of both regions (S02:TL-150 layers): track backgrounds, virtualized clip bodies,
 // gesture overlays. Pointer input is forwarded to the TimelineController by the panel.
 import type { EngineClient } from '@jasper/engine-client';
-import { clipsInRange, findTrack, type MediaAsset, outOfSyncOffsets, type Sequence } from '@jasper/project';
-import type { GapRef, MediaRuntime } from '@jasper/session';
+import {
+	clipsInRange,
+	findTrack,
+	type MediaAsset,
+	outOfSyncOffsets,
+	type Sequence,
+	throughEdits,
+} from '@jasper/project';
+import type { ActiveTool, EditorSession, GapRef, MediaRuntime } from '@jasper/session';
 import { useMemo } from 'react';
+import { LANE_MIN_TRACK_PX, laneKeyFor } from '../model/keyframe-lane.ts';
 import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
 import { type TransitionIndex, transitionsInRange } from '../model/transitions.ts';
-import { frameToX, type Viewport } from '../model/viewport.ts';
+import { frameToX, snapPx, type Viewport } from '../model/viewport.ts';
 import type { EditPointSel, TimelineUiState } from '../state/ui-store.ts';
 import { type ClipDisplay, ClipView } from './ClipView.tsx';
+import { dpr } from './canvas.tsx';
+import { KeyframeLane } from './KeyframeLane.tsx';
+
+/** Lanes start under the clip name strip. */
+const LANE_TOP_PX = 15;
+
 import { TransitionGhostView, TransitionView, transitionViewProps } from './TransitionView.tsx';
 
 type TrackAreaProps = {
@@ -38,7 +52,56 @@ type TrackAreaProps = {
 	/** S10: per-track transition index of the drawn sequence and the selected transition ids. */
 	transitions?: TransitionIndex;
 	selectedTransitions?: ReadonlySet<string>;
+	/** edit-structure: mark through edits (Sequence ▸ Show Through Edits). */
+	showThroughEdits?: boolean;
+	/** edit-ux: keyframe lanes and rubber bands (drawn on expanded tracks). */
+	lanes?: {
+		session: EditorSession;
+		tool: ActiveTool;
+		display: Record<string, string>;
+		selectedKeys: ReadonlySet<string>;
+		mac: boolean;
+	};
 };
+
+/**
+ * edit-structure: Premiere's through-edit marks — a small bow tie (two triangles meeting at the cut) at the top of a
+ * cut whose two sides continue the same source (`throughEdits`).
+ */
+function ThroughEditMarks({ seq, layout, v }: { seq: Sequence; layout: TrackAreaLayout; v: Viewport }) {
+	const edits = useMemo(() => throughEdits(seq), [seq]);
+	if (edits.length === 0) return null;
+	return (
+		<>
+			{edits.map((e) => {
+				const row = rowOf(layout, e.trackId);
+				if (!row) return null;
+				const x = frameToX(v, e.frame);
+				if (x < -8 || x > v.width + 8) return null;
+				const s = Math.max(4, Math.min(7, row.height / 6));
+				return (
+					<svg
+						key={`${e.leftId}:${e.rightId}`}
+						className="pointer-events-none absolute"
+						style={{ left: x - s, top: row.y + 2, width: 2 * s, height: s }}
+						viewBox={`0 0 ${2 * s} ${s}`}
+						data-through-edit={e.frame}
+						aria-label="Through edit"
+					>
+						<polygon points={`0,0 ${s},${s / 2} 0,${s}`} fill="var(--pr-text-strong)" />
+						<polygon points={`${2 * s},0 ${s},${s / 2} ${2 * s},${s}`} fill="var(--pr-text-strong)" />
+					</svg>
+				);
+			})}
+		</>
+	);
+}
+
+/** The viewport with its scroll offset snapped to device pixels. */
+function snappedScroll(v: Viewport): Viewport {
+	const px = snapPx(v.scrollFrame * v.pxPerFrame, dpr());
+	return px === v.scrollFrame * v.pxPerFrame ? v : { ...v, scrollFrame: px / v.pxPerFrame };
+}
 
 function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<string, number> }) {
 	const { seq, viewport: v, region } = props;
@@ -48,6 +111,9 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 	const visible = v.width / v.pxPerFrame;
 	const f0 = Math.floor(v.scrollFrame - visible * 0.5);
 	const f1 = Math.ceil(v.scrollFrame + visible * 1.5);
+	// ui-perf: clips sit in content px on a layer moved by the scroll offset (snapped to device pixels, so every edge
+	// lands where it did when each clip was positioned in viewport px); a scroll moves the layer, not the clips.
+	const scrollPx = snapPx(v.scrollFrame * v.pxPerFrame, dpr());
 	return (
 		<div
 			className="absolute right-0 left-0 overflow-hidden"
@@ -97,37 +163,67 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 									data-gap-selected
 								/>
 							))}
-						{clips.map((c) => {
-							const x = frameToX(v, c.start);
-							const mediaId = (c as { mediaId?: string }).mediaId;
-							const asset = mediaId ? props.media[mediaId] : undefined;
-							const rt = mediaId ? props.runtime[mediaId] : undefined;
-							return (
-								<ClipView
-									key={c.id}
-									clip={c}
-									x={x}
-									w={c.duration * v.pxPerFrame}
-									height={row.height}
-									viewportWidth={v.width}
-									scrollFrame={v.scrollFrame}
-									pxPerFrame={v.pxPerFrame}
-									rate={seq.settings.frameRate}
-									selected={props.selected.has(c.id)}
-									trackLocked={track.locked}
-									trackDimmed={dimmed}
-									linked={!!c.linkId}
-									syncOffset={props.offsets[c.id] ?? null}
-									offline={!!mediaId && (!asset || rt?.availability === 'offline')}
-									flash={props.overlays.flash.includes(c.id)}
-									asset={asset}
-									runtime={rt}
-									engine={props.engine}
-									display={props.display}
-									mediaVersion={props.mediaVersion}
-								/>
-							);
-						})}
+						<div
+							className="absolute top-0 left-0"
+							style={{ transform: `translateX(${-scrollPx}px)` }}
+							data-clip-layer
+						>
+							{clips.map((c) => {
+								const mediaId = (c as { mediaId?: string }).mediaId;
+								const asset = mediaId ? props.media[mediaId] : undefined;
+								const rt = mediaId ? props.runtime[mediaId] : undefined;
+								return (
+									<ClipView
+										key={c.id}
+										clip={c}
+										x={c.start * v.pxPerFrame}
+										w={c.duration * v.pxPerFrame}
+										height={row.height}
+										viewportWidth={v.width}
+										scrollPx={scrollPx}
+										scrollFrame={v.scrollFrame}
+										pxPerFrame={v.pxPerFrame}
+										rate={seq.settings.frameRate}
+										selected={props.selected.has(c.id)}
+										trackLocked={track.locked}
+										trackDimmed={dimmed}
+										linked={!!c.linkId}
+										syncOffset={props.offsets[c.id] ?? null}
+										offline={!!mediaId && (!asset || rt?.availability === 'offline')}
+										flash={props.overlays.flash.includes(c.id)}
+										asset={asset}
+										runtime={rt}
+										engine={props.engine}
+										display={props.display}
+										mediaVersion={props.mediaVersion}
+									/>
+								);
+							})}
+						</div>
+						{props.lanes && row.height >= LANE_MIN_TRACK_PX
+							? clips.map((c) => {
+									const key = laneKeyFor(props.lanes!.display, c);
+									if (!key) return null;
+									return (
+										<KeyframeLane
+											key={`lane:${c.id}`}
+											session={props.lanes!.session}
+											seq={seq}
+											clip={c}
+											laneKey={key}
+											x={frameToX(v, c.start)}
+											top={LANE_TOP_PX}
+											height={row.height - LANE_TOP_PX - 2}
+											pxPerFrame={v.pxPerFrame}
+											viewportWidth={v.width}
+											tool={props.lanes!.tool}
+											locked={track.locked}
+											selectedKeys={props.lanes!.selectedKeys}
+											mac={props.lanes!.mac}
+										/>
+									);
+								})
+							: null}
 						{trans.map((g) => (
 							<TransitionView
 								key={g.t.id}
@@ -149,35 +245,51 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 }
 
 function EditPointMarks(props: { points: readonly EditPointSel[]; layout: TrackAreaLayout; v: Viewport }) {
+	// Premiere: Trim edit points are red brackets on one side, Ripple yellow, Roll red on both sides of the cut.
+	const mark = (e: EditPointSel, side: 'in' | 'out', color: string, key: string) => {
+		const row = rowOf(props.layout, e.trackId);
+		if (!row) return null;
+		const x = frameToX(props.v, e.frame);
+		return (
+			<div
+				key={key}
+				className="pointer-events-none absolute"
+				style={{
+					left: side === 'out' ? x - 6 : x,
+					top: row.y + 1,
+					width: 6,
+					height: row.height - 2,
+					borderTop: `2px solid ${color}`,
+					borderBottom: `2px solid ${color}`,
+					[side === 'out' ? 'borderRight' : 'borderLeft']: `2px solid ${color}`,
+				}}
+				data-edit-point={e.frame}
+				data-edit-type={e.type}
+			/>
+		);
+	};
 	return (
 		<>
-			{props.points.map((e) => {
-				const row = rowOf(props.layout, e.trackId);
-				if (!row) return null;
-				const x = frameToX(props.v, e.frame);
-				const color = e.type === 'ripple' ? 'var(--pr-trim-ripple)' : 'var(--pr-trim-regular)';
-				return (
-					<div
-						key={`${e.trackId}:${e.frame}:${e.side}`}
-						className="pointer-events-none absolute"
-						style={{
-							left: e.side === 'out' ? x - 6 : x,
-							top: row.y + 1,
-							width: 6,
-							height: row.height - 2,
-							borderTop: `2px solid ${color}`,
-							borderBottom: `2px solid ${color}`,
-							[e.side === 'out' ? 'borderRight' : 'borderLeft']: `2px solid ${color}`,
-						}}
-						data-edit-point={e.frame}
-					/>
-				);
+			{props.points.flatMap((e) => {
+				const key = `${e.trackId}:${e.frame}:${e.side}`;
+				if (e.type === 'roll')
+					return [
+						mark(e, 'out', 'var(--pr-trim-regular)', `${key}:o`),
+						mark(e, 'in', 'var(--pr-trim-regular)', `${key}:i`),
+					];
+				return [
+					mark(e, e.side, e.type === 'ripple' ? 'var(--pr-trim-ripple)' : 'var(--pr-trim-regular)', key),
+				];
 			})}
 		</>
 	);
 }
 
-export function TrackArea(props: TrackAreaProps) {
+export function TrackArea(raw: TrackAreaProps) {
+	// ui-perf: the track area draws at a scroll offset snapped to device pixels (the clips' layer moves by it, Region),
+	// so every element of it is placed against the same offset as before the layer existed.
+	const viewport = useMemo(() => snappedScroll(raw.viewport), [raw.viewport]);
+	const props = { ...raw, viewport };
 	const { layout, viewport: v, seq, overlays } = props;
 	const offsets = useMemo(() => outOfSyncOffsets(seq), [seq]);
 	const inX = seq.inPoint !== null ? frameToX(v, seq.inPoint) : null;
@@ -209,6 +321,7 @@ export function TrackArea(props: TrackAreaProps) {
 				/>
 			) : null}
 			<EditPointMarks points={overlays.editPoints} layout={layout} v={v} />
+			{props.showThroughEdits ? <ThroughEditMarks seq={seq} layout={layout} v={v} /> : null}
 			{overlays.limit && limitRow ? (
 				<div
 					className="pointer-events-none absolute w-[3px]"

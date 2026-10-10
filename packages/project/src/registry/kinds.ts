@@ -1,4 +1,5 @@
 // Clip kind capabilities (S01 §10.1 kind table, S02:TL-022, S03:KND-001 idea, ARCHITECTURE §10.4).
+import { mediaDurationFlicks } from '../interpret/model.ts';
 import type { LabelColor } from '../schema/common.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import { type Clip, isKnownClipKind, type KnownClipKind, type TrackKind } from '../schema/sequence.ts';
@@ -185,6 +186,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		defaultLabel: 'magenta',
 		priority: 'P0',
 	},
+	// edit-structure: the nested sequence is drawn recursively by the compositions (preview, Remotion path) and
+	// pre-rendered natively (the `nest` export extension: an intermediate per nest clip, native/hybrid/Remotion).
 	'nest-video': {
 		kind: 'nest-video',
 		trackKind: 'video',
@@ -196,9 +199,9 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		hasOpacity: true,
 		supportsEffects: true,
 		supportsSpeed: true,
-		engines: { preview: 'remotion', export: 'remotion' },
+		engines: { preview: 'remotion', export: 'native' },
 		badge: null,
-		m1: false,
+		m1: true,
 		defaultLabel: 'forest',
 		priority: 'P1',
 	},
@@ -215,10 +218,11 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		supportsSpeed: true,
 		engines: { preview: 'native', export: 'native' },
 		badge: null,
-		m1: false,
+		m1: true,
 		defaultLabel: 'forest',
 		priority: 'P1',
 	},
+	// edit-structure: the layer's effects run on the composite of the tracks below (KND-012).
 	adjustment: {
 		kind: 'adjustment',
 		trackKind: 'video',
@@ -230,9 +234,9 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		hasOpacity: true,
 		supportsEffects: true,
 		supportsSpeed: false,
-		engines: { preview: 'remotion', export: 'remotion' },
+		engines: { preview: 'remotion', export: 'native' },
 		badge: null,
-		m1: false,
+		m1: true,
 		defaultLabel: 'tan',
 		priority: 'P1',
 	},
@@ -255,6 +259,78 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		defaultLabel: 'magenta',
 		priority: 'P0',
 	},
+	// edit-structure: the sound of a synthetic source (Bars and Tone, Universal Counting Leader), generated.
+	'synthetic-audio': {
+		kind: 'synthetic-audio',
+		trackKind: 'audio',
+		source: 'synthetic',
+		bounded: 'no',
+		visual: false,
+		audio: true,
+		hasTransform: false,
+		hasOpacity: false,
+		supportsEffects: true,
+		supportsSpeed: false,
+		engines: { preview: 'native', export: 'native' },
+		badge: null,
+		m1: true,
+		defaultLabel: 'caribbean',
+		priority: 'P1',
+	},
+	// three-d: a camera / a light draws nothing itself; it changes how the sequence's 3D layers are drawn (by the
+	// compositions' 3D renderer: Remotion on export, the planner routes every 3D run there).
+	camera: {
+		kind: 'camera',
+		trackKind: 'video',
+		source: 'inline',
+		bounded: 'no',
+		visual: false,
+		audio: false,
+		hasTransform: false,
+		hasOpacity: false,
+		supportsEffects: false,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: null,
+		m1: true,
+		// After Effects labels cameras and lights pink.
+		defaultLabel: 'rose',
+		priority: 'P1',
+	},
+	light: {
+		kind: 'light',
+		trackKind: 'video',
+		source: 'inline',
+		bounded: 'no',
+		visual: false,
+		audio: false,
+		hasTransform: false,
+		hasOpacity: false,
+		supportsEffects: false,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: null,
+		m1: true,
+		defaultLabel: 'rose',
+		priority: 'P1',
+	},
+	model: {
+		kind: 'model',
+		trackKind: 'video',
+		source: 'media',
+		bounded: 'no',
+		visual: true,
+		audio: false,
+		hasTransform: true,
+		hasOpacity: true,
+		supportsEffects: false,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: null,
+		m1: true,
+		defaultLabel: 'rose',
+		priority: 'P1',
+	},
 };
 
 export function kindCapabilities(kind: string): KindCapabilities | null {
@@ -276,6 +352,11 @@ export function clipEngines(clip: { kind: string; template?: { renderer?: string
 	return { ...caps.engines, badge: caps.badge };
 }
 
+/** Clip kinds that live on audio tracks (audio, nest-audio, synthetic-audio). */
+export function isAudioKind(kind: string): boolean {
+	return kindCapabilities(kind)?.trackKind === 'audio';
+}
+
 /** Track kind a clip kind belongs on (S01:TRK-003). Unknown kinds return null (any track). */
 export function trackKindFor(kind: string): TrackKind | null {
 	return kindCapabilities(kind)?.trackKind ?? null;
@@ -287,22 +368,54 @@ export function hasTransform(clip: Clip): clip is Extract<Clip, { transform: unk
 
 /**
  * Content length (flicks) that bounds a clip's content time (S01:CLP-005), or null when unknown/unbounded:
- * the probed media duration for media clips, the composition duration for composition clips (S08:MGC-004).
+ * the probed media duration for media clips, the composition duration for composition clips (S08:MGC-004), the
+ * nested sequence's duration for nest clips (KND-011: its In/Out are ignored; needs `doc.sequences`).
  */
 export function contentDurationFlicks(
-	doc: { media: Record<string, MediaAsset | undefined> } | { media: Readonly<Record<string, MediaAsset>> },
-	clip: Clip | { kind: string; mediaId?: string; composition?: { id: string; mediaId?: string } },
+	doc:
+		| {
+				media: Record<string, MediaAsset | undefined>;
+				sequences?: Record<string, NestedSequenceLike | undefined>;
+		  }
+		| {
+				media: Readonly<Record<string, MediaAsset>>;
+				sequences?: Readonly<Record<string, NestedSequenceLike>>;
+		  },
+	clip:
+		| Clip
+		| { kind: string; mediaId?: string; sequenceId?: string; composition?: { id: string; mediaId?: string } },
 ): number | null {
 	const media = doc.media as Record<string, MediaAsset | undefined>;
-	const c = clip as { kind: string; mediaId?: string; composition?: { id: string; mediaId?: string } };
+	const c = clip as {
+		kind: string;
+		mediaId?: string;
+		sequenceId?: string;
+		composition?: { id: string; mediaId?: string };
+	};
 	if (c.kind === 'composition') {
 		const asset = c.composition?.mediaId ? media[c.composition.mediaId] : undefined;
 		const info = asset?.mgBundle?.compositions.find((x) => x.id === c.composition!.id);
 		return info ? Math.round((info.durationInFrames * FLICKS_PER_SECOND) / info.fps) : null;
 	}
+	if ((c.kind === 'nest-video' || c.kind === 'nest-audio') && c.sequenceId) {
+		const seq = (doc.sequences as Record<string, NestedSequenceLike | undefined> | undefined)?.[c.sequenceId];
+		if (!seq) return null;
+		let end = 0;
+		for (const x of Object.values(seq.clips)) end = Math.max(end, x.start + x.duration);
+		const r = seq.settings.frameRate;
+		return Math.round((end * FLICKS_PER_SECOND * r.den) / r.num);
+	}
 	if (!c.mediaId) return null;
-	return media[c.mediaId]?.probe.durationFlicks ?? null;
+	// imports: the interpreted duration (assumed frame rate, loop count).
+	const asset = media[c.mediaId];
+	return asset ? mediaDurationFlicks(asset) : null;
 }
+
+/** What `contentDurationFlicks` reads of a nested sequence. */
+type NestedSequenceLike = {
+	settings: { frameRate: { num: number; den: number } };
+	clips: Record<string, { start: number; duration: number }>;
+};
 
 /** Content-time bounded clips (S01:CLP-005). */
 export function isBoundedContent(clip: Clip): boolean {

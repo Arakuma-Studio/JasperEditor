@@ -1,12 +1,15 @@
 // Per-command handler context and argument resolution (temp refs, track labels, time forms).
+
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../derive/index.ts';
 import { type IdPrefix, isValidId } from '../ids.ts';
+import { interpretedFrameRate } from '../interpret/model.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { flicksPerFrame, nominalFps, type Rational, secondsToFlicks, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
+import { peek, peekKeys } from './handlers/util.ts';
 import { findTrackIn, resolveTrackIn } from './placement.ts';
 import type { ContentTimeInput, ParamAt, TimeInput } from './schemas/common.ts';
 import { type CommandContext, CommandError, type ErrorCode, type Issue, type Origin } from './types.ts';
@@ -73,11 +76,38 @@ export class HandlerContext {
 	}
 
 	clip(doc: DDoc, clipId: string): { seq: DSeq; clip: DClip } {
-		for (const seq of Object.values(doc.sequences)) {
-			const clip = seq.clips[clipId];
-			if (clip) return { seq, clip };
+		const sid = this.sequenceOfClip(doc, clipId);
+		if (sid === null) return this.fail('E_NOT_FOUND', `Clip not found: ${clipId}`);
+		const seq = doc.sequences[sid]!;
+		return { seq, clip: seq.clips[clipId]! };
+	}
+
+	private clipLookups = 0;
+	private clipIndex: Map<string, string> | null = null;
+
+	/**
+	 * The id of the sequence holding clip `clipId` (read with `peek`, nothing drafted), or null. perf-core: after a
+	 * few lookups in one transaction (a 300-clip edit across 200 sequences) an index of the document's clips answers
+	 * them; a hit is confirmed on the current document, a miss (a clip added since) falls back to the scan.
+	 */
+	sequenceOfClip(doc: DDoc, clipId: string): string | null {
+		const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+		const has = (sid: string) => {
+			const s = peek<Sequence>(sequences, sid);
+			return !!s && !!peek(peek<Record<string, Clip>>(s, 'clips')!, clipId);
+		};
+		if (++this.clipLookups > 8) {
+			if (!this.clipIndex) {
+				this.clipIndex = new Map();
+				for (const sid of peekKeys(sequences))
+					for (const cid of peekKeys(peek<Record<string, Clip>>(peek<Sequence>(sequences, sid)!, 'clips')!))
+						this.clipIndex.set(cid, sid);
+			}
+			const sid = this.clipIndex.get(clipId);
+			if (sid !== undefined && has(sid)) return sid;
 		}
-		return this.fail('E_NOT_FOUND', `Clip not found: ${clipId}`);
+		for (const sid of peekKeys(sequences)) if (has(sid)) return sid;
+		return null;
 	}
 
 	/** Clips of one sequence; all ids must exist and share a sequence. */
@@ -135,7 +165,9 @@ export class HandlerContext {
 		if ('flicks' in input) return input.flicks;
 		if ('seconds' in input) return secondsToFlicks(input.seconds);
 		const vs = asset?.probe.streams.find((s) => s.type === 'video');
-		const rate = vs && vs.type === 'video' ? vs.frameRate : fallbackRate;
+		// imports: media frames count at the interpreted (assumed) frame rate.
+		const rate =
+			vs && vs.type === 'video' && asset ? (interpretedFrameRate(asset) ?? vs.frameRate) : fallbackRate;
 		return Math.round(input.sourceFrames * flicksPerFrame({ num: nominalFps(rate), den: 1 }));
 	}
 
@@ -171,8 +203,11 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 	if (doc.projectId === id || doc.items[id] || doc.media[id] || doc.synthetics[id] || doc.transcripts[id])
 		return true;
 	if (doc.fonts[id] || doc.sequences[id]) return true;
-	for (const seq of Object.values(doc.sequences)) {
-		if (seq.clips[id] || seq.transitions[id] || seq.links[id] || seq.groups[id]) return true;
+	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
+	for (const sid of peekKeys(sequences)) {
+		const seq = peek<Sequence>(sequences, sid)!;
+		for (const k of ['clips', 'transitions', 'links', 'groups'] as const)
+			if (peek(peek<Record<string, unknown>>(seq, k)!, id)) return true;
 	}
 	return false;
 }
@@ -180,7 +215,8 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 // ---------------------------------------------------------------- temp refs and $selection
 
 const REF_RE = /^\$[A-Za-z_][\w.-]*$/;
-const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks)$/;
+// imports: `matteTrack` (Track Matte Key's track param) takes a temp ref of a track added in the same transaction.
+const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks|matteTrack)$/;
 // `payload` (clipboard commands) is data from another document, `preset` (effect.applyPreset) library data: their
 // ids are never refs or selections.
 const DECL_KEYS = new Set(['ref', 'itemRef', 'type', 'payload', 'preset']);
@@ -200,7 +236,15 @@ export function substituteRefs<T>(
 			return selection.primaryClip;
 		}
 		const id = refs.get(s);
-		if (!id) throw new CommandError('E_NOT_FOUND', `Unknown temp ref ${s}`);
+		if (!id) {
+			const known = [...refs.keys()];
+			throw new CommandError(
+				'E_NOT_FOUND',
+				`Unknown temp ref ${s}: ${
+					known.length ? `the refs declared so far are ${known.join(', ')}` : 'no ref has been declared yet'
+				}. Declare it with \`ref: "${s}"\` on an earlier command of the same transaction (refs do not carry over between transactions; use the created id instead).`,
+			);
+		}
 		return id;
 	};
 	const walk = (v: unknown, idContext: boolean): unknown => {

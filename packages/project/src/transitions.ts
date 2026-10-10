@@ -7,6 +7,8 @@
 // (opacity ramps / mattes / audio gain, native ffmpeg export) + the GPU transition catalogue
 // (`registry/transitions/*`, `FX_TRANSITIONS`). A GPU transition resolves to a `RenderTransition` of its track (the
 // frame-space shader stage of the compositions) instead of ramps; both clips get the handles the span needs.
+
+import type { RenderAudioFade } from './audio-fade.ts';
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
 import type { ParamSpec } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
@@ -16,11 +18,14 @@ import type { Animatable, ParamValue, RGBA } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Transition } from './schema/sequence.ts';
 import { FRAME_EPS, flicksPerFrame, type Rational } from './time.ts';
+import { remapRoom } from './time-remap/bounds.ts';
+import { isRemapped } from './time-remap/model.ts';
 
 export const CROSS_DISSOLVE = 'jasper.cross-dissolve';
 export const DIP_TO_BLACK = 'jasper.dip-to-black';
 export const CONSTANT_GAIN = 'jasper.constant-gain';
 export const CONSTANT_POWER = 'jasper.constant-power';
+export const EXPONENTIAL_FADE = 'jasper.exponential-fade';
 
 /**
  * A transition type (the transition registry, S01:TRN-001 `effectId`). Built-ins render as opacity ramps, mattes
@@ -108,6 +113,20 @@ export const BUILTIN_TRANSITION_SPECS: readonly TransitionSpec[] = [
 		params: [],
 		capabilities: BUILTIN,
 	},
+	{
+		// audio-fx: Premiere's third audio transition (helpx "Audio effects and transitions": the outgoing clip fades
+		// out and the incoming one in over smooth logarithmic curves).
+		id: EXPONENTIAL_FADE,
+		version: 1,
+		label: 'Exponential Fade',
+		appliesTo: 'audio',
+		description:
+			'Audio crossfade on exponential (dB-linear) curves: the outgoing clip drops quickly, the incoming one rises late; at a single clip edge an exponential fade.',
+		bin: 'Crossfade',
+		keywords: ['fade', 'log', 'logarithmic'],
+		params: [],
+		capabilities: BUILTIN,
+	},
 ];
 
 /** Transitions this build renders (unknown ids in a document are preserved and not rendered, S01:FX-022). */
@@ -153,14 +172,21 @@ const STATIC_KINDS = new Set(['still', 'solid', 'text']);
  * the file holds; other generators cannot show content before content time 0.
  */
 export function clipHandles(
-	doc: Pick<ProjectDocument, 'media'>,
+	doc: Pick<ProjectDocument, 'media'> & Partial<Pick<ProjectDocument, 'sequences'>>,
 	seq: Pick<Sequence, 'settings'>,
 	c: Clip,
 ): { head: number; tail: number } {
-	if (STATIC_KINDS.has(c.kind)) return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
+	// edit-structure: a held clip shows one frame whatever the content time.
+	if (STATIC_KINDS.has(c.kind) || c.frameHold)
+		return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
 	const dur = contentDurationFlicks(doc, c);
+	// Time-remapped clips (workstream `time`): handles whose remapped media times are inside the media.
+	if (isRemapped(c)) {
+		const room = remapRoom(c, seq.settings.frameRate as Rational, dur);
+		return { head: Math.min(room.head, Math.floor(c.sourceIn / step + EPS)), tail: room.tail };
+	}
 	const before = Math.max(0, Math.floor(c.sourceIn / step + EPS));
 	const after =
 		isBoundedContent(c) && dur !== null
@@ -242,6 +268,13 @@ export type ClipTransitionRender = {
 	/** Frames of content drawn after the clip's end (outgoing side). */
 	tailHandle: number;
 	fades: RenderFade[];
+	/**
+	 * edit-structure (freeze-frame handles, `Transition.freezeHandles`): handle frames the media does not have. The
+	 * first `freezeHead` frames of the head handle show the earliest available frame (the one at sequence frame
+	 * `start − headHandle + freezeHead`), the last `freezeTail` frames of the tail handle the latest one.
+	 */
+	freezeHead?: number;
+	freezeTail?: number;
 };
 
 /** Opacity factor (0…1) of a set of ramps at a sequence frame. */
@@ -312,7 +345,7 @@ export type ResolvedTransitions = {
  * instead of showing missing frames.
  */
 export function resolveVideoTransitions(
-	doc: Pick<ProjectDocument, 'media' | 'synthetics'>,
+	doc: Pick<ProjectDocument, 'media' | 'synthetics'> & Partial<Pick<ProjectDocument, 'sequences'>>,
 	seq: Sequence,
 ): ResolvedTransitions {
 	const clips = new Map<string, ClipTransitionRender>();
@@ -356,6 +389,11 @@ export function resolveVideoTransitions(
 		mattes.set(t.trackId, list);
 	};
 	const videoTracks = new Set(seq.videoTracks.map((t) => t.id));
+	const frozenHandles: {
+		a: ClipTransitionRender;
+		b: ClipTransitionRender;
+		avail: { head: number; tail: number };
+	}[] = [];
 	for (const t of Object.values(seq.transitions)) {
 		if (!videoTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
@@ -370,17 +408,29 @@ export function resolveVideoTransitions(
 		const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 		if ((!out && !inc) || (t.outgoingClipId && !out) || (t.incomingClipId && !inc)) continue;
 		if ((out && !out.enabled) || (inc && !inc.enabled)) continue;
+		// three-d: a 3D layer is drawn by the 3D renderer (its picture is a plane in the scene); transitions, which
+		// mix pictures in the frame, do not apply to it (the commands refuse them; documents that have one say so).
+		if (isLayer3D(out) || isLayer3D(inc)) {
+			skipped.push({
+				transitionId: t.id,
+				reason: 'transitions do not apply to 3D layers (animate Opacity or the 3D transform instead)',
+			});
+			continue;
+		}
 		const dip = t.effectId === DIP_TO_BLACK;
 		const gpu = !!spec.gpu;
 		if (out && inc) {
 			if (clipEnd(out) !== inc.start) continue; // not adjacent (INV-010); cleanup removes these
 			const cut = inc.start;
+			const avail = { tail: clipHandles(doc, seq, out).tail, head: clipHandles(doc, seq, inc).head };
+			// Freeze-frame handles: the clips' lengths are the only limit; missing media repeats the edge frames.
+			const freeze = t.freezeHandles === true;
 			const d = fitTransitionDuration({
 				effectId: t.effectId,
 				wanted: t.duration,
 				alignment: t.alignment,
-				outgoing: { duration: out.duration, tail: clipHandles(doc, seq, out).tail },
-				incoming: { duration: inc.duration, head: clipHandles(doc, seq, inc).head },
+				outgoing: { duration: out.duration, tail: freeze ? Number.POSITIVE_INFINITY : avail.tail },
+				incoming: { duration: inc.duration, head: freeze ? Number.POSITIVE_INFINITY : avail.head },
 			});
 			if (d <= 0) {
 				skipped.push({ transitionId: t.id, reason: 'no media handles for the transition' });
@@ -389,6 +439,10 @@ export function resolveVideoTransitions(
 			const { start, end } = transitionSpan(cut, d, t.alignment);
 			const a = entry(out.id);
 			const b = entry(inc.id);
+			if (freeze) {
+				// Recorded after the handles are set below (see the end of this branch).
+				frozenHandles.push({ a, b, avail });
+			}
 			if (gpu) {
 				// Both clips are drawn over the whole span (handles); the shader stage composites them.
 				a.tailHandle = Math.max(a.tailHandle, end - cut);
@@ -432,18 +486,18 @@ export function resolveVideoTransitions(
 			if (dip) matte(t, end - d, d);
 		}
 	}
+	// Freeze-frame handles: the part of each handle beyond the media (max over the clip's transitions).
+	for (const { a, b, avail } of frozenHandles) {
+		if (a.tailHandle > avail.tail) a.freezeTail = Math.max(a.freezeTail ?? 0, a.tailHandle - avail.tail);
+		if (b.headHandle > avail.head) b.freezeHead = Math.max(b.freezeHead ?? 0, b.headHandle - avail.head);
+	}
 	for (const list of stages.values()) list.sort((x, y) => x.start - y.start || x.id.localeCompare(y.id));
 	return { clips, mattes, stages, skipped };
 }
 
 /** Gain ramp of an audio clip edge: `in` at the head, `out` at the tail (S01:TRN-004). */
-export type RenderAudioFade = {
-	type: 'in' | 'out';
-	/** Sequence frame where the ramp begins. */
-	start: number;
-	frames: number;
-	curve: 'linear' | 'equal-power';
-};
+// audio-fx: the fade type and its gain live in `audio-fade.ts` (light module shared with the AudioWorklet chain).
+export type { RenderAudioFade } from './audio-fade.ts';
 
 /** What the audio transitions of a sequence mean for one audio clip (S01:TRN-004, S10:TUI-052). */
 export type AudioClipTransitionRender = {
@@ -489,7 +543,12 @@ export function resolveAudioTransitions(
 		if (!audioTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
 		if (spec?.appliesTo !== 'audio') continue;
-		const curve = t.effectId === CONSTANT_POWER ? 'equal-power' : 'linear';
+		const curve =
+			t.effectId === CONSTANT_POWER
+				? 'equal-power'
+				: t.effectId === EXPONENTIAL_FADE
+					? 'exponential'
+					: 'linear';
 		const o = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 		const i = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 		if (o && i) {
@@ -537,17 +596,7 @@ export function resolveAudioFades(
 	return out;
 }
 
-/** Gain factor (0…1) of audio fades at a (fractional) sequence frame. */
-export function audioFadeGain(fades: readonly RenderAudioFade[] | undefined, frame: number): number {
-	if (!fades || fades.length === 0) return 1;
-	let k = 1;
-	for (const f of fades) {
-		const p = Math.min(1, Math.max(0, (frame - f.start) / f.frames));
-		const x = f.type === 'in' ? p : 1 - p;
-		k *= f.curve === 'equal-power' ? Math.sin((x * Math.PI) / 2) : x;
-	}
-	return k;
-}
+export { audioFadeGain, fadeCurve } from './audio-fade.ts';
 
 /** Clips that meet at frame `at` on a track: the one ending there and the one starting there. */
 export function clipsAtEditPoint(
@@ -562,4 +611,10 @@ export function clipsAtEditPoint(
 		if (c.start === at) incoming = c;
 	}
 	return { outgoing, incoming };
+}
+
+/** three-d: a clip whose 3D Layer switch is on (drawn by the 3D renderer). */
+export function isLayer3D(c: unknown): boolean {
+	const t = (c as { threeD?: { enabled?: unknown }; kind?: unknown } | undefined | null)?.threeD;
+	return !!t && t.enabled === true && (c as { kind?: unknown }).kind !== 'adjustment';
 }

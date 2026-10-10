@@ -12,9 +12,17 @@ import {
 	gradeClipboard,
 	pasteGradeTo,
 } from '../color/actions.ts';
+import { faceDetectionPref, runApplyMatch, runAutoTone } from '../color/grade/actions.ts';
+import { EyedropperOverlay } from '../color/grade/EyedropperOverlay.tsx';
 import { LumetriEffectEditor } from '../color/LumetriEffectEditor.tsx';
-import { colorEffectsOf, gradeEligible } from '../color/model.ts';
-import { clipMenuExtensions, effectEditors, projectItemMenuExtensions } from '../extensions/index.ts';
+import { colorEffectsOf, firstLumetri, gradeEligible } from '../color/model.ts';
+import {
+	clipMenuExtensions,
+	effectEditors,
+	programOverlays,
+	projectItemMenuExtensions,
+} from '../extensions/index.ts';
+import { monitorExtras } from '../panels/program/monitor-view.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 // ---------------------------------------------------------------- helpers
@@ -94,6 +102,14 @@ projectItemMenuExtensions.register({
 	},
 });
 
+// color-grade: the Lumetri eyedroppers' Program monitor overlay (renders nothing until a picker is armed).
+programOverlays.register({
+	id: 'color.eyedropper',
+	active: (session) => !!session.getState().activeSequenceId,
+	component: EyedropperOverlay,
+	order: 90,
+});
+
 // ---------------------------------------------------------------- commands
 
 export const colorCommands: UiCommand[] = [
@@ -141,6 +157,61 @@ export const colorCommands: UiCommand[] = [
 			const mediaId = (args as { mediaId?: string } | undefined)?.mediaId;
 			if (!session || !mediaId) return;
 			applyLookToClips(session, mediaId, pasteTargets(session, session.getState().selection.timeline.clips));
+		},
+	},
+	{
+		id: 'color.autoTone',
+		label: 'Lumetri Auto Tone',
+		description:
+			"Sets the selected clip's Lumetri tone sliders (Exposure, Contrast, Highlights, Shadows, Whites, Blacks) from its picture.",
+		scope: 'global',
+		capability: 'engine',
+		when: (ctx) => writable(ctx) && gradeEligible(primaryClip(ctx.session!)),
+		disabledReason: () => 'Select a video, still or graphic clip',
+		async run(ctx) {
+			const session = ctx.session;
+			const clip = session ? primaryClip(session) : null;
+			if (!session || !clip) return;
+			try {
+				const err = await runAutoTone(session, ctx.engine, clip, firstLumetri(clip));
+				if (err) ctx.ui.toast({ kind: 'error', message: err });
+			} catch (e) {
+				ctx.ui.toast({ kind: 'error', message: `Auto Tone failed: ${(e as Error).message}` });
+			}
+		},
+	},
+	{
+		id: 'color.applyMatch',
+		label: 'Lumetri Apply Match',
+		description:
+			'Grades the selected clip to match the Comparison View reference frame (colour wheels, levels and saturation of its Lumetri Color).',
+		scope: 'global',
+		capability: 'engine',
+		when: (ctx) =>
+			writable(ctx) &&
+			gradeEligible(primaryClip(ctx.session!)) &&
+			!!monitorExtras.getState().comparison.enabled &&
+			!!monitorExtras.getState().comparison.reference,
+		disabledReason: () => 'Open the Comparison View, choose a reference frame and select the clip to match',
+		async run(ctx) {
+			const session = ctx.session;
+			const clip = session ? primaryClip(session) : null;
+			const ref = monitorExtras.getState().comparison.reference;
+			if (!session || !clip || !ref) return;
+			try {
+				const r = await runApplyMatch(
+					session,
+					ctx.engine,
+					clip,
+					firstLumetri(clip),
+					{ sequenceId: ref.sequenceId, frame: ref.frame },
+					faceDetectionPref(),
+				);
+				if (r.error) ctx.ui.toast({ kind: 'error', message: r.error });
+				else if (r.note) ctx.ui.toast({ kind: 'info', message: r.note });
+			} catch (e) {
+				ctx.ui.toast({ kind: 'error', message: `Apply Match failed: ${(e as Error).message}` });
+			}
 		},
 	},
 	{

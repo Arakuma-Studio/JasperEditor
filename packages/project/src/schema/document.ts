@@ -12,7 +12,7 @@ import {
 	type Transcript,
 	TranscriptSchema,
 } from './media.ts';
-import { type Sequence, SequenceSchema } from './sequence.ts';
+import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } from './sequence.ts';
 
 /** v3 (M2): additive fields only — media kind `mg-bundle`, `lut`/`mgBundle` headers, `process` recipes, trackers,
  * `trackedBy`, curve params (ARCHITECTURE §19.1). Older builds open v3 files read-only (S01:MIG-003).
@@ -21,11 +21,24 @@ import { type Sequence, SequenceSchema } from './sequence.ts';
  * v5 (M3): additive — `MediaAsset.sourceRange` (S07:PRC-015…019: the source frames a processed version or a
  * rendered file holds). The v4 → v5 migration records the whole-source range on existing processed versions;
  * later M3 additions may share v5 (older builds open v5 files read-only). */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
+const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({
-	in: z.looseObject({ flicks: nonNegInt() }).nullable(),
-	out: z.looseObject({ flicks: nonNegInt() }).nullable(),
+	in: markSchema.nullable(),
+	out: markSchema.nullable(),
+	/**
+	 * edit-ux (Premiere Mark Split): separate video/audio In/Out marks for split edits (J/L cuts from the source).
+	 * Absent / null fields fall back to `in`/`out`.
+	 */
+	split: z
+		.looseObject({
+			videoIn: markSchema.nullable().optional(),
+			videoOut: markSchema.nullable().optional(),
+			audioIn: markSchema.nullable().optional(),
+			audioOut: markSchema.nullable().optional(),
+		})
+		.optional(),
 });
 export type SourceMarks = DeepStrip<z.infer<typeof SourceMarksSchema>>;
 
@@ -44,6 +57,24 @@ export const MediaItemSchema = z.looseObject({
 	label: LabelColorSchema,
 	marks: SourceMarksSchema,
 	poster: z.looseObject({ flicks: nonNegInt() }).optional(),
+	/** wp-multicam: source clip markers (media time), set in the Source monitor; sync points of Merge Clips and
+	 * Create Multi-Camera Source Sequence by "Clip Marker". */
+	markers: z.array(ClipMarkerSchema).optional(),
+	/**
+	 * gaps (Clip ▸ Modify ▸ Audio Channels on a Project item): the audio clips a placement of this item creates — one
+	 * entry per clip (its stream, channel map and muted channels). Absent = the default (one stereo clip).
+	 */
+	audioChannels: z
+		.looseObject({
+			clips: z.array(
+				z.looseObject({
+					streamIndex: nonNegInt(),
+					map: z.array(nonNegInt()),
+					mute: z.array(nonNegInt()).optional(),
+				}),
+			),
+		})
+		.optional(),
 });
 export const SequenceItemSchema = z.looseObject({
 	id: z.string(),
@@ -60,6 +91,23 @@ export const SyntheticItemSchema = z.looseObject({
 	label: LabelColorSchema,
 	marks: SourceMarksSchema,
 });
+/**
+ * edit-ux (Premiere Make Subclip): a named range of a media item's content, usable in the Source monitor and on
+ * timelines. `range` is in content flicks `[in, out)`. With `restrictTrims` ("Restrict Trims to Subclip
+ * Boundaries") clips placed from it cannot be trimmed past the range (they carry `subclipId`).
+ */
+export const SubclipItemSchema = z.looseObject({
+	id: z.string(),
+	kind: z.literal('subclip'),
+	name: z.string(),
+	label: LabelColorSchema,
+	mediaId: z.string(),
+	/** The media item it was made from (null when that item was deleted). */
+	parentItemId: z.string().nullable(),
+	range: z.looseObject({ in: nonNegInt(), out: nonNegInt() }),
+	restrictTrims: z.boolean(),
+	marks: SourceMarksSchema,
+});
 export const SearchBinItemSchema = z.looseObject({
 	id: z.string(),
 	kind: z.literal('search-bin'),
@@ -73,11 +121,13 @@ export const ProjectItemSchema = z.discriminatedUnion('kind', [
 	SequenceItemSchema,
 	SyntheticItemSchema,
 	SearchBinItemSchema,
+	SubclipItemSchema,
 ]);
 export type BinItem = DeepStrip<z.infer<typeof BinItemSchema>>;
 export type MediaItem = DeepStrip<z.infer<typeof MediaItemSchema>>;
 export type SequenceItem = DeepStrip<z.infer<typeof SequenceItemSchema>>;
 export type SyntheticItem = DeepStrip<z.infer<typeof SyntheticItemSchema>>;
+export type SubclipItem = DeepStrip<z.infer<typeof SubclipItemSchema>>;
 export type ProjectItem = DeepStrip<z.infer<typeof ProjectItemSchema>>;
 
 export const ProxyPolicySchema = z.looseObject({
@@ -91,6 +141,41 @@ export const DEFAULT_SCALING_MODES = ['none', 'fit-if-larger', 'fit', 'fill'] as
 export const DefaultScalingSchema = z.enum(DEFAULT_SCALING_MODES);
 export type DefaultScaling = DeepStrip<z.infer<typeof DefaultScalingSchema>>;
 
+// ---------------------------------------------------------------- gaps: Project Settings (docs/wp-notes/gaps.md §PRJ-4)
+
+/** Project Settings ▸ General ▸ Video Display Format (how times are shown and typed). */
+export const VIDEO_DISPLAY_FORMATS = ['timecode', 'frames', 'feet35', 'feet16'] as const;
+/** Project Settings ▸ General ▸ Audio Display Format (audio time units in the timeline ruler and Info). */
+export const AUDIO_DISPLAY_FORMATS = ['samples', 'milliseconds'] as const;
+export const ProjectDisplaySchema = z.looseObject({
+	video: z.enum(VIDEO_DISPLAY_FORMATS).optional(),
+	audio: z.enum(AUDIO_DISPLAY_FORMATS).optional(),
+});
+export type ProjectDisplay = DeepStrip<z.infer<typeof ProjectDisplaySchema>>;
+
+/**
+ * Project Settings ▸ Scratch Disks, as they map onto the engine: where files the project creates go. `media` =
+ * Captured and Generated Media (proxies, exported frames, Project Manager copies, ingest copies and transcodes);
+ * null / absent = the default (proxies and ingest next to the source media, frames in the engine's exports folder).
+ * Previews, the media cache and auto-save versions live in the engine's folders (shown, moved from Media Cache).
+ */
+export const ProjectScratchSchema = z.looseObject({
+	media: z.string().max(4096).nullable().optional(),
+});
+export type ProjectScratch = DeepStrip<z.infer<typeof ProjectScratchSchema>>;
+
+/** Project Settings ▸ Ingest Settings (Premiere: Copy, Transcode, Create Proxies, Copy and Create Proxies). */
+export const INGEST_ACTIONS = ['copy', 'transcode', 'proxies', 'copyAndProxies'] as const;
+export const ProjectIngestSchema = z.looseObject({
+	enabled: z.boolean(),
+	action: z.enum(INGEST_ACTIONS),
+	/** Proxy preset (`proxies` / `copyAndProxies`) or transcode preset (`transcode`); absent = the default. */
+	preset: z.string().max(64).optional(),
+	/** Folder for copies, transcodes and proxies; null = the scratch media folder, else next to the source. */
+	destination: z.string().max(4096).nullable().optional(),
+});
+export type ProjectIngest = DeepStrip<z.infer<typeof ProjectIngestSchema>>;
+
 export const ProjectSettingsSchema = z.looseObject({
 	defaultSequencePreset: z.string(),
 	mediaPolicy: z.looseObject({ copyOnImport: z.boolean() }),
@@ -100,6 +185,14 @@ export const ProjectSettingsSchema = z.looseObject({
 	/** M3 (S10:TUI-032): default audio transition length; absent = `defaultTransitionFrames`. */
 	defaultAudioTransitionFrames: z.number().int().min(1).optional(),
 	defaultScaling: DefaultScalingSchema,
+	/** wp captions: caption style presets saved in the project (Premiere "Track Style"). */
+	captionStylePresets: z
+		.array(z.looseObject({ id: z.string(), name: z.string(), style: CaptionStyleSchema.partial() }))
+		.optional(),
+	// ---- gaps (optional; read with `projectSettingsOf`)
+	display: ProjectDisplaySchema.optional(),
+	scratch: ProjectScratchSchema.optional(),
+	ingest: ProjectIngestSchema.optional(),
 });
 export type ProjectSettings = DeepStrip<z.infer<typeof ProjectSettingsSchema>>;
 

@@ -1,10 +1,23 @@
 // Media assets, locators, derivations, synthetic sources, transcripts and fonts (S01 §6).
 import { z } from 'zod';
+import { ColorInterpretationSchema } from '../color/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
 /** `mg-bundle` (M2, ARCHITECTURE §19.3): an imported Remotion bundle whose compositions become clips. */
-export const MEDIA_KINDS = ['video', 'audio', 'image', 'animated-image', 'font', 'lut', 'mg-bundle'] as const;
+/** color-mgmt: `color-config` = a custom OpenColorIO configuration (`.ocio`), bundled with the files it references. */
+// three-d: 'model' = a glTF (.glb / .gltf) or OBJ 3D model (Advanced 3D model layers).
+export const MEDIA_KINDS = [
+	'video',
+	'audio',
+	'image',
+	'animated-image',
+	'font',
+	'lut',
+	'mg-bundle',
+	'color-config',
+	'model',
+] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
 export type MediaKind = DeepStrip<z.infer<typeof MediaKindSchema>>;
 
@@ -25,6 +38,23 @@ export const VideoStreamSchema = z.looseObject({
 		range: z.enum(['tv', 'pc']),
 	}),
 	browserDecodable: z.boolean().nullable(),
+	/**
+	 * color-mgmt: HDR static metadata of the stream (SMPTE ST 2086 mastering display luminance, CTA-861.3 MaxCLL /
+	 * MaxFALL, cd/m²) from `mdcv`/`clli` or Matroska MasteringMetadata. Absent = none signalled.
+	 */
+	hdr: z
+		.looseObject({
+			masteringMaxNits: z.number().optional(),
+			masteringMinNits: z.number().optional(),
+			maxCll: z.number().optional(),
+			maxFall: z.number().optional(),
+		})
+		.optional(),
+	/**
+	 * imports (additive): the file's field order as ffprobe reports it (`tt`/`tb` = top field first, `bb`/`bt` =
+	 * bottom field first). Absent = progressive / unknown.
+	 */
+	fieldOrder: z.enum(['progressive', 'tt', 'bb', 'tb', 'bt', 'unknown']).optional(),
 });
 export const AudioStreamSchema = z.looseObject({
 	index: nonNegInt(),
@@ -198,14 +228,35 @@ export type SourceRange = DeepStrip<z.infer<typeof SourceRangeSchema>>;
 
 /** Parsed header of a LUT asset (M2, S06:CG-050). The table itself stays in the file (`/media/<key>`). */
 export const LutInfoSchema = z.looseObject({
-	format: z.literal('cube'),
+	/** color-mgmt: `.3dl`, `.spi1d`, `.spi3d`, `.csp` besides `.cube`. */
+	format: z.enum(['cube', '3dl', 'spi1d', 'spi3d', 'csp']),
 	dimensions: z.union([z.literal(1), z.literal(3)]),
 	size: z.number().int().min(2).max(256),
 	title: z.string().nullable(),
 	domainMin: z.tuple([z.number(), z.number(), z.number()]),
 	domainMax: z.tuple([z.number(), z.number(), z.number()]),
+	/** color-mgmt: entries of the 1D shaper applied before the cube (Resolve 1D + 3D `.cube`, `.csp`, non-uniform `.3dl`). */
+	shaperSize: z.number().int().min(2).max(65536).optional(),
 });
 export type LutInfo = DeepStrip<z.infer<typeof LutInfoSchema>>;
+
+/** color-mgmt: header of a custom OCIO config asset (the bundle itself stays in the file, `/media/<key>`). */
+export const ColorConfigInfoSchema = z.looseObject({
+	format: z.literal('ocio'),
+	name: z.string(),
+	/** `ocio_profile_version`. */
+	version: z.number(),
+	spaces: z.array(
+		z.looseObject({ name: z.string(), family: z.string(), reference: z.enum(['scene', 'display']) }),
+	),
+	roles: z.array(z.tuple([z.string(), z.string()])),
+	displays: z.array(z.looseObject({ name: z.string(), views: z.array(z.string()) })),
+	/** Transforms this build cannot apply (spaces using them are refused). */
+	unsupported: z.array(z.string()),
+	/** FileTransform sources that were not found when the config was imported. */
+	missing: z.array(z.string()),
+});
+export type ColorConfigInfo = DeepStrip<z.infer<typeof ColorConfigInfoSchema>>;
 
 /**
  * A text layer a composition declares (M3, wp-m3-mgtext, S08:MGC-036): manifest `texts.<prop.path>` or the
@@ -279,6 +330,140 @@ export const MgBundleInfoSchema = z.looseObject({
 });
 export type MgBundleInfo = DeepStrip<z.infer<typeof MgBundleInfoSchema>>;
 
+// ---------------------------------------------------------------- imports workstream (docs/wp-notes/imports.md)
+
+/**
+ * Interpret Footage (Premiere's Modify ▸ Interpret Footage, After Effects' Interpret Footage): how the file is read.
+ * Every section is optional; absent = the file's own value. A section added later (colour management) is just another
+ * optional field. Helpers in `interpret/model.ts` give the interpreted values.
+ */
+export const MediaInterpretationSchema = z.looseObject({
+	/** Frame Rate ▸ Assume this frame rate (video, animated images, Lottie, image sequences). */
+	frameRate: RationalSchema.optional(),
+	/** Pixel Aspect Ratio ▸ Conform to. */
+	pixelAspect: RationalSchema.optional(),
+	/** Field Order ▸ Conform to: interlaced pictures are deinterlaced into progressive frames on every path. */
+	fieldOrder: z.enum(['progressive', 'upper', 'lower']).optional(),
+	/**
+	 * Alpha Channel: `straight` (unmatted), `premultiplied` (matted with `matte`, default black), `ignore` (opaque);
+	 * `invert` inverts the alpha (after the mode).
+	 */
+	alpha: z
+		.looseObject({
+			mode: z.enum(['straight', 'premultiplied', 'ignore']),
+			matte: RGBASchema.optional(),
+			invert: z.boolean().optional(),
+		})
+		.optional(),
+	/** After Effects' Loop: the media plays this many times (1 = once). */
+	loop: z.number().int().min(1).max(1000).optional(),
+	/**
+	 * color-mgmt: Colour — the colour space override, OCIO space, range, tone mapping, PQ peak and input LUT
+	 * (`ColorInterpretationSchema`, read with `effectiveColorInterpretation`).
+	 */
+	color: ColorInterpretationSchema.optional(),
+});
+export type MediaInterpretation = DeepStrip<z.infer<typeof MediaInterpretationSchema>>;
+
+/**
+ * A vector still (SVG, PDF, PDF-compatible Illustrator): drawn at whatever scale it is shown at (preview and every
+ * export path render the vector, never a fixed bitmap). `width`/`height` = its size at 100 % in pixels (CSS px for
+ * SVG, PDF points at 72 dpi), `page` = the 1-based PDF page this asset shows.
+ */
+export const VectorInfoSchema = z.looseObject({
+	format: z.enum(['svg', 'pdf']),
+	width: z.number().positive(),
+	height: z.number().positive(),
+	page: z.number().int().min(1).optional(),
+	pageCount: z.number().int().min(1).optional(),
+	/** The file type the user imported (`ai` for Illustrator files read as PDF). */
+	source: z.enum(['svg', 'pdf', 'ai']).optional(),
+});
+export type VectorInfo = DeepStrip<z.infer<typeof VectorInfoSchema>>;
+
+/** A Lottie animation (`.json` / `.lottie`): drawn frame-exactly by the Lottie player on every path. */
+export const LottieInfoSchema = z.looseObject({
+	/** Lottie `fr`. */
+	fps: z.number().positive(),
+	/** Lottie `ip` / `op` (frames). */
+	inFrame: z.number(),
+	outFrame: z.number(),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+	/** Lottie `v` (Bodymovin version). */
+	version: z.string().optional(),
+	name: z.string().optional(),
+	layers: z.number().int().min(0).optional(),
+	/** Imported from a dotLottie archive (the animation id inside it). */
+	dotLottie: z.looseObject({ animationId: z.string(), animations: z.number().int().min(1) }).optional(),
+	/** What the player may draw differently from After Effects (expressions, missing fonts…). */
+	warnings: z.array(z.string()).optional(),
+});
+export type LottieInfo = DeepStrip<z.infer<typeof LottieInfoSchema>>;
+
+/**
+ * Numbered stills imported as one clip (Premiere's Image Sequence). The engine conforms them into a lossless
+ * intermediate (the asset's file); this records where they came from. `missing` = numbers absent inside the range
+ * (their place holds the previous frame).
+ */
+export const ImageSequenceInfoSchema = z.looseObject({
+	/** Display pattern, e.g. `shot_####.exr`. */
+	pattern: z.string(),
+	directory: z.string().nullable(),
+	first: z.number().int().min(0),
+	last: z.number().int().min(0),
+	/** Frames in the clip (last − first + 1). */
+	frames: z.number().int().min(1),
+	missing: z.array(z.number().int().min(0)).max(100_000),
+	/** Codec of the stills (`png`, `exr`, `dpx`…). */
+	format: z.string(),
+	/** Rate the sequence was imported at (Interpret Footage can assume another). */
+	frameRate: RationalSchema,
+});
+export type ImageSequenceInfo = DeepStrip<z.infer<typeof ImageSequenceInfoSchema>>;
+
+/** A layered document (Photoshop `.psd` / `.psb`); the asset itself is the flattened picture. */
+export const LayeredInfoSchema = z.looseObject({
+	format: z.enum(['psd', 'psb']),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+	layerCount: z.number().int().min(0),
+	colorMode: z.string().optional(),
+	bitDepth: z.number().int().positive().optional(),
+});
+export type LayeredInfo = DeepStrip<z.infer<typeof LayeredInfoSchema>>;
+
+/** One layer of a layered document imported on its own (the asset is the layer's picture). */
+export const LayerSourceSchema = z.looseObject({
+	/** The document's file name. */
+	document: z.string(),
+	/** Layer name and path of group names (outermost first). */
+	name: z.string(),
+	groups: z.array(z.string()).optional(),
+	/** The layer's index in the document (bottom = 0). */
+	index: z.number().int().min(0),
+});
+export type LayerSource = DeepStrip<z.infer<typeof LayerSourceSchema>>;
+
+/**
+ * gaps (Clip ▸ Proxy, docs/wp-notes/gaps.md §PRJ-8): a proxy file attached to a video asset. The monitors play it
+ * while Toggle Proxies is on; exports never use it unless asked (`draftUseProxies`). It has the original's duration
+ * (± 1 frame) and frame rate; its frame size may be smaller (it is scaled to the original's box everywhere).
+ */
+export const AttachedProxySchema = z.looseObject({
+	fingerprint: z.string(),
+	originalName: z.string(),
+	sizeBytes: nonNegInt(),
+	container: z.string(),
+	probe: MediaProbeSchema,
+	locators: z.array(MediaLocatorSchema).min(1),
+	/** The Create Proxies preset that made it (absent for attached files). */
+	preset: z.string().optional(),
+	origin: z.enum(['created', 'attached', 'ingest']),
+	attachedAt: z.string(),
+});
+export type AttachedProxy = DeepStrip<z.infer<typeof AttachedProxySchema>>;
+
 export const MediaAssetSchema = z.looseObject({
 	id: z.string(),
 	kind: MediaKindSchema,
@@ -296,6 +481,24 @@ export const MediaAssetSchema = z.looseObject({
 	mgBundle: MgBundleInfoSchema.optional(),
 	/** M3 (S07:PRC-015, schema v5): the source frames this file holds (processed versions, sidecars). */
 	sourceRange: SourceRangeSchema.optional(),
+	/** color-mgmt: kind `color-config` (a custom OCIO config). */
+	colorConfig: ColorConfigInfoSchema.optional(),
+	// ---- imports workstream (all optional, no version bump)
+	/** Interpret Footage. */
+	interpretation: MediaInterpretationSchema.optional(),
+	/** SVG / PDF / Illustrator vector still. */
+	vector: VectorInfoSchema.optional(),
+	/** Lottie animation. */
+	lottie: LottieInfoSchema.optional(),
+	/** Image sequence the file was conformed from. */
+	imageSequence: ImageSequenceInfoSchema.optional(),
+	/** Layered document (PSD) imported flattened. */
+	layered: LayeredInfoSchema.optional(),
+	/** One layer of a layered document. */
+	layerSource: LayerSourceSchema.optional(),
+	// ---- end imports
+	/** gaps (PRJ-8): the attached proxy. */
+	proxy: AttachedProxySchema.optional(),
 });
 export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 
@@ -331,6 +534,19 @@ export const TranscriptSchema = z.looseObject({
 	origin: z.enum(['whisper-local', 'cloud-asr', 'subtitle-file', 'manual']),
 	words: z.array(TranscriptWordSchema),
 	speakers: z.record(z.string(), z.looseObject({ name: z.string() })),
+	/** wp speech (optional): the speech model that produced the words, e.g. `whisper-base`. */
+	model: z.string().optional(),
+	/** wp speech (optional): `translate` = English text of speech in `sourceLanguage`. */
+	task: z.enum(['transcribe', 'translate']).optional(),
+	/** wp speech (optional): the spoken language when `task` is `translate` (`language` is then `en`). */
+	sourceLanguage: z.string().optional(),
+	/** wp speech (optional): when the words were recognised (ISO 8601). */
+	createdAt: z.string().optional(),
+	/**
+	 * wp speech (optional): the media time ranges (flicks, sorted, disjoint) that were transcribed, when not the
+	 * whole media — a transcript made from a sequence's mix covers only the parts the sequence plays.
+	 */
+	coverage: z.array(z.tuple([nonNegInt(), nonNegInt()])).optional(),
 });
 export type Transcript = DeepStrip<z.infer<typeof TranscriptSchema>>;
 

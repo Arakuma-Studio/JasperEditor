@@ -7,7 +7,6 @@ import {
 	type Clip,
 	type Command,
 	type EffectInstance,
-	formatTimecode,
 	isKnownClipKind,
 	kindCapabilities,
 	paramsPropertySpecs,
@@ -18,6 +17,7 @@ import { cx, TimecodeText } from '@jasper/ui';
 import { type ReactNode, useEffect, useState } from 'react';
 import { clipSections } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
+import { formatTimecode } from '../../gaps/time-display.ts';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
@@ -45,7 +45,15 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 	const effects = session.ctx.registries.effects;
 	const visual = clips.filter(isVisualClip);
 	const audio = clips.filter(isAudioClip);
-	const other = clips.filter((c) => !isVisualClip(c) && !isAudioClip(c));
+	// three-d: cameras and lights have their own sections.
+	const cameras = clips.filter((c) => c.kind === 'camera');
+	const lights = clips.filter((c) => c.kind === 'light');
+	const other = clips.filter(
+		(c) => !isVisualClip(c) && !isAudioClip(c) && c.kind !== 'camera' && c.kind !== 'light',
+	);
+	const all3d =
+		visual.length > 0 &&
+		visual.every((c) => (c as { threeD?: { enabled?: boolean } }).threeD?.enabled === true);
 	const rowFor = (key: string, list: Clip[]): Row | null =>
 		makeRow(
 			key,
@@ -90,19 +98,58 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 							visual,
 						).map((r) => render(r))}
 					</Section>
-					<Section id="properties.crop" title="Crop" defaultOpen={false}>
-						{CROP_PARAMS.map((p) =>
-							render(
-								makeRow(
-									`crop.${p}`,
-									visual.map((c) => bindCrop(doc, seq, c, p, frame)),
+					{/* wp captions: captions have no effects (no Crop) and no blend mode */}
+					{visual.some((c) => c.kind === 'captions') ? null : (
+						<Section id="properties.crop" title="Crop" defaultOpen={false}>
+							{CROP_PARAMS.map((p) =>
+								render(
+									makeRow(
+										`crop.${p}`,
+										visual.map((c) => bindCrop(doc, seq, c, p, frame)),
+									),
 								),
-							),
-						)}
-					</Section>
-					<Section id="properties.blend" title="Blend Mode">
-						{rows(['blendMode'], visual).map((r) => render(r))}
-					</Section>
+							)}
+						</Section>
+					)}
+					{visual.some((c) => c.kind === 'captions') ? null : (
+						<Section id="properties.blend" title="Blend Mode">
+							{rows(['blendMode'], visual).map((r) => render(r))}
+						</Section>
+					)}
+					{all3d ? (
+						<Section id="properties.threeD" title="3D Layer">
+							{rows(
+								[
+									'threeD.positionZ',
+									'threeD.scaleZ',
+									'threeD.orientation',
+									'threeD.rotationX',
+									'threeD.rotationY',
+									'threeD.anchorZ',
+									'threeD.autoOrient',
+								],
+								visual,
+							).map((r) => render(r))}
+						</Section>
+					) : null}
+					{all3d ? (
+						<Section id="properties.material" title="Material Options" defaultOpen={false}>
+							{rows(
+								[
+									'threeD.material.castsShadows',
+									'threeD.material.lightTransmission',
+									'threeD.material.acceptsShadows',
+									'threeD.material.acceptsLights',
+									'threeD.material.ambient',
+									'threeD.material.diffuse',
+									'threeD.material.specularIntensity',
+									'threeD.material.specularShininess',
+									'threeD.material.metal',
+								],
+								visual,
+							).map((r) => render(r))}
+						</Section>
+					) : null}
 					<SpeedSection clips={visual} seq={seq} />
 					{allKind('text') ? (
 						<TextSections session={session} visual={visual} ctx={ctx} rows={rows} render={render} />
@@ -129,6 +176,47 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 						<d.component session={session} clips={clips} frame={frame} sequenceId={seq.id} />
 					</Section>
 				))}
+			{cameras.length ? (
+				<Section id="properties.camera" title="Camera">
+					{rows(
+						[
+							'camera.type',
+							'camera.pointOfInterest',
+							'camera.position',
+							'camera.orientation',
+							'camera.zoom',
+							'camera.depthOfField',
+							'camera.focusDistance',
+							'camera.aperture',
+							'camera.blurLevel',
+							'camera.irisShape',
+						],
+						cameras,
+					).map((r) => render(r))}
+				</Section>
+			) : null}
+			{lights.length ? (
+				<Section id="properties.light" title="Light">
+					{rows(
+						[
+							'light.type',
+							'light.position',
+							'light.pointOfInterest',
+							'light.intensity',
+							'light.color',
+							'light.coneAngle',
+							'light.coneFeather',
+							'light.falloff',
+							'light.radius',
+							'light.falloffDistance',
+							'light.castsShadows',
+							'light.shadowDarkness',
+							'light.shadowDiffusion',
+						],
+						lights,
+					).map((r) => render(r))}
+				</Section>
+			) : null}
 			{audio.length ? (
 				<Section id="properties.audio" title="Audio">
 					{rows(['gainDb', 'volumeDb', 'pan'], audio).map((r) => render(r))}
@@ -208,10 +296,8 @@ function useFontOptions(session: EditorSession, docFonts: Record<string, { id: s
 	const known = new Set(inDoc.map((f) => f.family));
 	const options: FontOption[] = [
 		...inDoc.map((f) => ({ id: f.id, label: f.family })),
-		// TODO(WP-2D): selecting a catalog family needs a font-registration command (see wp-notes).
-		...catalog
-			.filter((f) => !known.has(f))
-			.map((f) => ({ id: `catalog:${f}`, label: `${f} (not in project)`, disabled: true })),
+		// text-animators: a bundled family not in the project yet is registered when picked (font.add).
+		...catalog.filter((f) => !known.has(f)).map((f) => ({ id: `catalog:${f}`, label: f })),
 	];
 	return options;
 }
@@ -244,6 +330,21 @@ function TextSections(props: {
 		visual,
 	);
 	const setRow = (row: Row, v: unknown) => {
+		// text-animators: picking a catalog family registers it and sets it on the selected clips in one step.
+		if (row.spec.key === 'text.fontId' && typeof v === 'string' && v.startsWith('catalog:')) {
+			ctx.ops.apply('Font', [
+				{ type: 'font.add', family: v.slice(8), ref: '$font' } as Command,
+				...row.bindings.map(
+					(b) =>
+						({
+							type: 'clip.update',
+							clipIds: [b.clip.id],
+							patch: { content: { style: { fontId: '$font' } } },
+						}) as Command,
+				),
+			]);
+			return;
+		}
 		const plan = planSet(row, ctx.frame, () => v);
 		ctx.ops.apply(row.label, plan.commands as Command[]);
 	};
@@ -294,6 +395,50 @@ function TextSections(props: {
 						'text.boxWidth',
 						'text.boxHeight',
 						'text.autoSize',
+					],
+					visual,
+				).map((r) => render(r))}
+			</Section>
+			{/* text-animators: AE's Character panel (kerning, baseline shift, tsume, faux styles, caps, scripts,
+			    ligatures and OpenType features, variable font axes). */}
+			<Section id="properties.textCharacter" title="Character" defaultOpen={false}>
+				{rows(
+					[
+						'text.kerning',
+						'text.kerningAmount',
+						'text.baselineShiftPx',
+						'text.tsume',
+						'text.fauxBold',
+						'text.fauxItalic',
+						'text.smallCaps',
+						'text.script',
+						'text.ligatures',
+						'text.discretionaryLigatures',
+						'text.contextualAlternates',
+						'text.stylisticAlternates',
+						'text.swash',
+						'text.titling',
+						'text.ordinals',
+						'text.fractions',
+						'text.allSmallCaps',
+						'text.figureStyle',
+						'text.figureWidth',
+						'text.stylisticSets',
+						'text.fontVariations',
+					],
+					visual,
+				).map((r) => render(r))}
+			</Section>
+			{/* text-animators: AE's Paragraph panel (justification, indents, paragraph spacing). */}
+			<Section id="properties.textParagraph" title="Paragraph" defaultOpen={false}>
+				{rows(
+					[
+						'text.justifyLast',
+						'text.indentLeftPx',
+						'text.indentRightPx',
+						'text.indentFirstLinePx',
+						'text.spaceBeforePx',
+						'text.spaceAfterPx',
 					],
 					visual,
 				).map((r) => render(r))}

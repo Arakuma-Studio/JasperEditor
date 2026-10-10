@@ -9,11 +9,15 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TRANSITION_FAMILIES } from '@jasper/project';
+import { expectFingerprints } from '@jasper/testkit/golden';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** Golden transition fingerprints: `<id>@<p>` → 4×4 mean RGB (FilmCraft's goldens.txt, ±4 levels). */
+const TR_FINGERPRINTS = join(here, 'goldens', 'transition-fingerprints.json');
 
 type Px = [number, number, number, number];
 const near = (a: Px, b: Px, tol = 4) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
@@ -54,6 +58,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.errors).toEqual([]);
 			expect(r.count).toBeGreaterThanOrEqual(2);
 			expect(endsOk(await call('ends'))).toEqual([]);
+			expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints'), 4);
 		});
 
 		// One test per transition family (as fx-gl.test.ts does for effects): SwiftShader compiles slowly, so the whole
@@ -67,6 +72,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				expect(r.errors).toEqual([]);
 				expect(r.count).toBeGreaterThan(0);
 				expect(endsOk(await call('ends', family))).toEqual([]);
+				expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints', family), 4);
 			});
 
 		it('places the side pictures through their matrices and opacity', async () => {

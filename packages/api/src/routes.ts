@@ -11,7 +11,11 @@ import {
 	AgentSchemaResponseSchema,
 	AgentTxRequestSchema,
 	AgentTxResponseSchema,
+	AgentUiRequestSchema,
+	AgentUiResponseSchema,
 } from './agent.ts';
+import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
+import { RemixPlanRequestSchema, RemixPlanResultSchema } from './audio-fx.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -21,7 +25,9 @@ import {
 	CacheSettingsSchema,
 	CacheUsageSchema,
 } from './cache.ts';
+import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
+import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
@@ -39,19 +45,74 @@ import {
 	StillRequestSchema,
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
+import {
+	EngineGapsInfoSchema,
+	EngineGapsSettingsSchema,
+	MediaJobRequestSchema,
+	MediaLocationSchema,
+	MediaOpenRequestSchema,
+	MediaOpenResponseSchema,
+	ProjectManagerEstimateSchema,
+	ProjectManagerRequestSchema,
+	ReframeRequestSchema,
+	ScratchCheckRequestSchema,
+	ScratchCheckSchema,
+	ScratchInfoSchema,
+	WarpAnalysisRequestSchema,
+} from './gaps.ts';
+import {
+	AutoToneRequestSchema,
+	AutoToneResponseSchema,
+	ColorMatchRequestSchema,
+	ColorMatchResponseSchema,
+	GradingScopesRequestSchema,
+	GradingScopesResponseSchema,
+} from './grading.ts';
+import {
+	ImageSequenceDetectRequestSchema,
+	ImageSequenceDetectResponseSchema,
+	ImageSequenceRequestSchema,
+	LayeredExtractRequestSchema,
+	LottieExportRequestSchema,
+	LottieExportResultSchema,
+	MediaVariantRequestSchema,
+	MediaVariantStatusSchema,
+	VectorPagesResponseSchema,
+} from './imports.ts';
+import {
+	AssetRelinkRequestSchema,
+	AssetRelinkResponseSchema,
+	InterchangeExportRequestSchema,
+	InterchangeImportRequestSchema,
+	InterchangeImportResponseSchema,
+	InterchangePrerenderPlanRequestSchema,
+	InterchangePrerenderPlanResponseSchema,
+	RelinkScanRequestSchema,
+} from './interchange.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
+import { MaskTraceRequestSchema, MaskTraceResponseSchema } from './masks.ts';
 import {
 	DerivativesRequestSchema,
 	MediaDiscardResponseSchema,
 	MediaRegisterRequestSchema,
 	MediaRegisterResponseSchema,
+	MediaStatusBatchRequestSchema,
+	MediaStatusBatchResponseSchema,
 	MediaStatusSchema,
 	RegisteredMediaSchema,
 	UploadAppendResponseSchema,
 	UploadCreateRequestSchema,
 	UploadCreateResponseSchema,
 } from './media.ts';
+import {
+	BrowseInfoSchema,
+	BrowseListQuerySchema,
+	BrowseListSchema,
+	BrowsePathQuerySchema,
+	BrowseRootsSchema,
+	BrowseThumbnailQuerySchema,
+} from './media-browser.ts';
 import { MgRenderRequestSchema, MgTemplatesResponseSchema } from './mg.ts';
 import {
 	MgBundleImportRequestSchema,
@@ -62,6 +123,14 @@ import {
 	MgTextMeasureRequestSchema,
 	MgTextMeasureResultSchema,
 } from './mg-bundles.ts';
+import {
+	PreviewDeleteRequestSchema,
+	PreviewDeleteResultSchema,
+	PreviewRenderNothingSchema,
+	PreviewRenderRequestSchema,
+	PreviewStatusRequestSchema,
+	PreviewStatusSchema,
+} from './previews.ts';
 import {
 	ProcessingModelsResponseSchema,
 	ProcessingSettingsSchema,
@@ -79,8 +148,30 @@ import {
 	ProjectListResponseSchema,
 	ProjectPutResponseSchema,
 	ProjectViewSchema,
+	RecoveryGetResponseSchema,
+	RecoveryListResponseSchema,
+	RecoveryPutRequestSchema,
+	RecoveryPutResponseSchema,
+	VersionGetResponseSchema,
 	VersionListResponseSchema,
+	VersionRestoreRequestSchema,
+	VersionRestoreResponseSchema,
 } from './projects.ts';
+import {
+	RotoSegmentRequestSchema,
+	RotoStoreInfoSchema,
+	RotoTraceRequestSchema,
+	RotoTraceResponseSchema,
+	VisionModelsResponseSchema,
+} from './roto.ts';
+import { SceneDetectRequestSchema } from './scenes.ts';
+import {
+	SpeechModelDeleteResponseSchema,
+	SpeechModelsResponseSchema,
+	TranscribeMediaRequestSchema,
+	TranscribeSequenceRequestSchema,
+} from './speech.ts';
+import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -89,15 +180,48 @@ export type RouteOwner =
 	| 'WP-2G'
 	| 'WP-2H'
 	| 'wp-mcp'
+	| 'mcp-cli'
+	// render previews, perf stats (docs/wp-notes/previews.md)
+	| 'previews'
 	| 'wp-m2-color'
 	| 'wp-m2-process'
 	| 'wp-m2-mg'
 	| 'wp-m2-track'
 	// M2 animation (ARCHITECTURE §20, S11 §10)
 	| 'wp-m2-layer-bake'
+	// wp masks
+	| 'wp-masks'
 	// M3
 	| 'wp-m3-cachegc'
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Synchronize / Merge Clips / multi-camera
+	| 'wp-multicam'
+	// parity program: versions and crash recovery (D-39)
+	| 'process'
+	// parity program: audio buses, loudness
+	| 'audio-mix'
+	// parity program: audio effects, Essential Sound, remix
+	| 'audio-fx'
+	// parity program: captions and transcripts
+	| 'wp-captions'
+	// parity program: local speech-to-text (Whisper), VAD, diarization
+	| 'speech'
+	// parity program: timeline interchange and Link Media
+	| 'wp-interchange'
+	// parity program: time remapping, retime, Scene Edit Detection
+	| 'wp-time'
+	// parity program: roto / object mattes, face tracking
+	| 'roto'
+	// parity program: 3D layers, cameras, lights, 3D Camera Tracker
+	| 'three-d'
+	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
+	| 'imports'
+	// parity program: Lumetri completion, Colour Match, scopes
+	| 'color-grade'
+	// parity program: Edit Original, scratch disks, proxies, Project Manager, Export Frame, analyses (gaps)
+	| 'gaps'
+	// parity program: Media Browser, Engine ▸ Connect / Status (polish)
+	| 'polish';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -177,6 +301,45 @@ export const ROUTES = {
 		response: VersionListResponseSchema,
 		owner: 'WP-2F',
 	},
+	projectVersionGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/versions/:versionId',
+		response: VersionGetResponseSchema,
+		owner: 'process',
+	},
+	projectVersionRestore: {
+		method: 'POST',
+		path: '/api/projects/:projectId/versions/:versionId/restore',
+		body: VersionRestoreRequestSchema,
+		response: VersionRestoreResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryList: {
+		method: 'GET',
+		path: '/api/projects/:projectId/recovery',
+		response: RecoveryListResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		response: RecoveryGetResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryPut: {
+		method: 'PUT',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		body: RecoveryPutRequestSchema,
+		response: RecoveryPutResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryDelete: {
+		method: 'DELETE',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		query: z.object({ leaseId: z.string().optional() }),
+		response: OkSchema,
+		owner: 'process',
+	},
 	projectDelete: {
 		method: 'DELETE',
 		path: '/api/projects/:projectId',
@@ -237,6 +400,14 @@ export const ROUTES = {
 		path: '/api/media/:mediaKey',
 		response: MediaStatusSchema,
 		owner: 'WP-2F',
+	},
+	/** polish: the status of many media in one request (project open). */
+	mediaStatusBatch: {
+		method: 'POST',
+		path: '/api/media/status',
+		body: MediaStatusBatchRequestSchema,
+		response: MediaStatusBatchResponseSchema,
+		owner: 'polish',
 	},
 	/** M3 (wp-m3-inpoint, S07:PRC-018): discard an uncommitted upload (Replace Footage cancelled). */
 	mediaDiscard: {
@@ -311,12 +482,58 @@ export const ROUTES = {
 		owner: 'WP-2F',
 	},
 	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary', owner: 'WP-2F' },
+	/** wp captions: a sidecar caption file of a finished export (`result.captions.sidecars[].name`). */
+	renderCaptionFile: {
+		method: 'GET',
+		path: '/renders/:jobId/captions/:name',
+		response: 'binary',
+		owner: 'wp-captions',
+	},
 	stills: {
 		method: 'POST',
 		path: '/api/stills',
 		body: StillRequestSchema,
 		response: EngineJobSchema,
 		owner: 'WP-2F',
+	},
+	/** previews: which segment hashes have render preview files. */
+	previewStatus: {
+		method: 'POST',
+		path: '/api/previews/status',
+		body: PreviewStatusRequestSchema,
+		response: PreviewStatusSchema,
+		owner: 'previews',
+	},
+	/** previews: Render Effects In to Out / Render In to Out / Render Selection / Render Audio (job `preview`). */
+	previewRender: {
+		method: 'POST',
+		path: '/api/previews/render',
+		body: PreviewRenderRequestSchema,
+		query: z.object({ wait: z.literal('1').optional() }),
+		response: z.union([EngineJobSchema, PreviewRenderNothingSchema]),
+		owner: 'previews',
+	},
+	/** previews: Delete Render Files (all) / Delete Render Files In to Out (hashes). */
+	previewDelete: {
+		method: 'POST',
+		path: '/api/previews/delete',
+		body: PreviewDeleteRequestSchema,
+		response: PreviewDeleteResultSchema,
+		owner: 'previews',
+	},
+	/** previews: engine performance counters (process, event loop, host load, jobs, render throughput, previews). */
+	perfStats: {
+		method: 'GET',
+		path: '/api/perf',
+		response: z.record(z.string(), z.unknown()),
+		owner: 'previews',
+	},
+	/** previews: a preview file (`<hash>.mp4|webm|wav`), byte ranges, immutable. */
+	previewFile: {
+		method: 'GET',
+		path: '/renders/previews/:format/:name',
+		response: 'binary',
+		owner: 'previews',
 	},
 
 	fontsList: { method: 'GET', path: '/api/fonts', response: FontCatalogSchema, owner: 'WP-2F' },
@@ -370,6 +587,14 @@ export const ROUTES = {
 		path: '/api/agent/mcp-info',
 		response: AgentMcpInfoSchema,
 		owner: 'wp-mcp',
+	},
+	/** Live-UI automation of an open editor window (mcp-cli): elements, input, screenshots, coordinate mapping. */
+	agentUi: {
+		method: 'POST',
+		path: '/api/agent/ui',
+		body: AgentUiRequestSchema,
+		response: AgentUiResponseSchema,
+		owner: 'mcp-cli',
 	},
 	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */
 	mcp: { method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' },
@@ -471,12 +696,87 @@ export const ROUTES = {
 	},
 	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */
 	mgBundleFiles: { method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' },
+	/** wp masks: auto-trace a media frame into mask paths. */
+	masksTrace: {
+		method: 'POST',
+		path: '/api/masks/trace',
+		body: MaskTraceRequestSchema,
+		response: MaskTraceResponseSchema,
+		owner: 'wp-masks',
+	},
 	trackingTrack: {
 		method: 'POST',
 		path: '/api/tracking/track',
 		body: TrackRequestSchema,
 		response: EngineJobSchema,
 		owner: 'wp-m2-track',
+	},
+	/** Workstream `time`: Scene Edit Detection of a media range (job kind `scene-detect`, `?wait=1` = finished job). */
+	scenesDetect: {
+		method: 'POST',
+		path: '/api/scenes/detect',
+		body: SceneDetectRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'wp-time',
+	},
+	// ---- imports workstream (docs/wp-notes/imports.md)
+	/** Interpreted picture of a media (display PNG / proxy / master of a pixel variant); queues its job. */
+	mediaVariant: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/variants',
+		body: MediaVariantRequestSchema,
+		response: MediaVariantStatusSchema,
+		owner: 'imports',
+	},
+	/** Numbered stills → one clip (job `image-sequence`; `?wait=1` = the finished job, result RegisteredMedia). */
+	importsImageSequence: {
+		method: 'POST',
+		path: '/api/imports/image-sequence',
+		body: ImageSequenceRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'imports',
+	},
+	/** The sequence a frame on the engine host belongs to (local mode). */
+	importsImageSequenceDetect: {
+		method: 'POST',
+		path: '/api/imports/image-sequence/detect',
+		body: ImageSequenceDetectRequestSchema,
+		response: ImageSequenceDetectResponseSchema,
+		owner: 'imports',
+	},
+	/** Every layer of a PSD extracted and registered (job `layers`; result LayeredExtractResult). */
+	importsLayers: {
+		method: 'POST',
+		path: '/api/imports/layers',
+		body: LayeredExtractRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'imports',
+	},
+	/** Pages of a PDF / Illustrator media. */
+	importsVectorPages: {
+		method: 'GET',
+		path: '/api/imports/vector/:mediaKey',
+		response: VectorPagesResponseSchema,
+		owner: 'imports',
+	},
+	/** A sequence as a Lottie document (`.json` / `.lottie`) with the warnings of what Lottie cannot carry. */
+	importsLottieExport: {
+		method: 'POST',
+		path: '/api/imports/lottie/export',
+		body: LottieExportRequestSchema,
+		response: LottieExportResultSchema,
+		owner: 'imports',
+	},
+	/** wp-multicam: offsets of recordings of one event by their audio (two-pass GCC-PHAT). */
+	syncAudio: {
+		method: 'POST',
+		path: '/api/sync/audio',
+		body: SyncAudioRequestSchema,
+		response: SyncAudioResponseSchema,
+		owner: 'wp-multicam',
 	},
 	// ---- M2 animation (ARCHITECTURE §20.5)
 	/** Graded VP9-alpha preview of one DOM layer (S11:LBK-010). */
@@ -496,6 +796,127 @@ export const ROUTES = {
 		path: '/mg/layers/:key/:file',
 		response: 'binary',
 		owner: 'wp-m2-layer-bake',
+	},
+	// ---- audio-mix: loudness / peak / activity analysis and loudness-normalised media versions
+	audioAnalyze: {
+		method: 'POST',
+		path: '/api/audio/analyze',
+		body: AudioAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'audio-mix',
+	},
+	mediaLoudnessNormalize: {
+		method: 'POST',
+		path: '/api/media/:key/loudness-normalize',
+		body: LoudnessNormalizeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'audio-mix',
+	},
+	// ---- audio-fx: music remix planning (beat tracking + similarity)
+	audioRemixPlan: {
+		method: 'POST',
+		path: '/api/audio/remix-plan',
+		body: RemixPlanRequestSchema,
+		response: RemixPlanResultSchema,
+		owner: 'audio-fx',
+	},
+	// ---- speech: Whisper models (processing-model catalogue `speech`) and transcription jobs
+	speechModels: {
+		method: 'GET',
+		path: '/api/speech/models',
+		response: SpeechModelsResponseSchema,
+		owner: 'speech',
+	},
+	/** Downloads and verifies a speech model: the processing catalogue's `model-download` job. */
+	speechModelInstall: {
+		method: 'POST',
+		path: '/api/speech/models/:modelId/install',
+		response: EngineJobSchema,
+		owner: 'speech',
+	},
+	speechModelDelete: {
+		method: 'DELETE',
+		path: '/api/speech/models/:modelId',
+		response: SpeechModelDeleteResponseSchema,
+		owner: 'speech',
+	},
+	/** A `transcription` job for one audio stream of a media (result: `TranscriptionResult`, media time). */
+	mediaTranscribe: {
+		method: 'POST',
+		path: '/api/media/:key/transcribe',
+		body: TranscribeMediaRequestSchema,
+		response: EngineJobSchema,
+		owner: 'speech',
+	},
+	/** A `transcription` job for the mixed audio of a sequence (result in sequence time). */
+	speechTranscribeSequence: {
+		method: 'POST',
+		path: '/api/speech/transcribe-sequence',
+		body: TranscribeSequenceRequestSchema,
+		response: EngineJobSchema,
+		owner: 'speech',
+	},
+	// ---- roto: Roto Brush / face tracking models (processing catalogue `vision`), jobs and matte sets
+	rotoModels: {
+		method: 'GET',
+		path: '/api/roto/models',
+		response: VisionModelsResponseSchema,
+		owner: 'roto',
+	},
+	/** Downloads and verifies a segmentation / face model: the processing catalogue's `model-download` job. */
+	rotoModelInstall: {
+		method: 'POST',
+		path: '/api/roto/models/:modelId/install',
+		response: EngineJobSchema,
+		owner: 'roto',
+	},
+	rotoModelDelete: {
+		method: 'DELETE',
+		path: '/api/roto/models/:modelId',
+		response: z.object({ modelId: z.string(), freedBytes: z.number() }),
+		owner: 'roto',
+	},
+	/** A `roto` job: segmentation + propagation of a roto object, or face tracking (result: `RotoSegmentResult`). */
+	rotoSegment: {
+		method: 'POST',
+		path: '/api/roto/segment',
+		body: RotoSegmentRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'roto',
+	},
+	rotoSet: {
+		method: 'GET',
+		path: '/api/roto/sets/:key',
+		response: RotoStoreInfoSchema,
+		owner: 'roto',
+	},
+	/** Auto-traces frames of a matte set into normalised mask paths (Convert to Masks). */
+	rotoTrace: {
+		method: 'POST',
+		path: '/api/roto/trace',
+		body: RotoTraceRequestSchema,
+		response: RotoTraceResponseSchema,
+		owner: 'roto',
+	},
+	/** Frame `n` of a matte set (8-bit grey PNG); signable for renders. */
+	rotoMatteFrame: {
+		method: 'GET',
+		path: '/mg/roto/:key',
+		response: 'binary',
+		owner: 'roto',
+	},
+	// ---- three-d: 3D Camera Tracker
+	/** A `camtrack` job: feature tracking + camera solve of a span of a video (result: `CamTrackResult`). */
+	camtrackSolve: {
+		method: 'POST',
+		path: '/api/camtrack/solve',
+		body: CamTrackSolveRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'three-d',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
@@ -593,6 +1014,196 @@ export const ROUTES = {
 		response: EffectPresetImportResponseSchema,
 		owner: 'wp-m3-presets',
 	},
+	// ---- wp interchange (docs/wp-notes/interchange.md)
+	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */
+	interchangeImport: {
+		method: 'POST',
+		path: '/api/interchange/import',
+		body: InterchangeImportRequestSchema,
+		response: InterchangeImportResponseSchema,
+		owner: 'wp-interchange',
+	},
+	/** The clips an export would pre-render (ProRes 4444 with alpha) for a format and mode. */
+	interchangePrerenderPlan: {
+		method: 'POST',
+		path: '/api/interchange/prerender-plan',
+		body: InterchangePrerenderPlanRequestSchema,
+		response: InterchangePrerenderPlanResponseSchema,
+		owner: 'wp-interchange',
+	},
+	/** Exports a sequence as a timeline document (job `interchange-export`, result `InterchangeExportResult`). */
+	interchangeExport: {
+		method: 'POST',
+		path: '/api/interchange/export',
+		body: InterchangeExportRequestSchema,
+		response: EngineJobSchema,
+		owner: 'wp-interchange',
+	},
+	/** A file of a finished interchange export (`result.files[].name`). */
+	interchangeOutput: {
+		method: 'GET',
+		path: '/renders/:jobId/interchange/:name',
+		response: 'binary',
+		owner: 'wp-interchange',
+	},
+	/** S04:AS-011: registers a replacement file and compares it with the asset (fingerprint, duration, …). */
+	assetRelink: {
+		method: 'POST',
+		path: '/api/assets/:assetId/relink',
+		body: AssetRelinkRequestSchema,
+		response: AssetRelinkResponseSchema,
+		owner: 'wp-interchange',
+	},
+	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`, result `RelinkScanResult`). */
+	relinkScan: {
+		method: 'POST',
+		path: '/api/projects/:projectId/relink-scan',
+		body: RelinkScanRequestSchema,
+		response: EngineJobSchema,
+		owner: 'wp-interchange',
+	},
+	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
+	captionFileRead: {
+		method: 'POST',
+		path: '/api/captions/read',
+		body: CaptionFileReadRequestSchema,
+		response: CaptionFileReadResponseSchema,
+		owner: 'wp-captions',
+	},
+	// ---- color-grade: scopes as numbers, Colour Match, Auto tone (each renders its frames with the still renderer)
+	gradingScopes: {
+		method: 'POST',
+		path: '/api/grading/scopes',
+		body: GradingScopesRequestSchema,
+		response: GradingScopesResponseSchema,
+		owner: 'color-grade',
+	},
+	gradingMatch: {
+		method: 'POST',
+		path: '/api/grading/match',
+		body: ColorMatchRequestSchema,
+		response: ColorMatchResponseSchema,
+		owner: 'color-grade',
+	},
+	gradingAutoTone: {
+		method: 'POST',
+		path: '/api/grading/auto-tone',
+		body: AutoToneRequestSchema,
+		response: AutoToneResponseSchema,
+		owner: 'color-grade',
+	},
+	// ---- polish: Media Browser (local engines only)
+	browseRoots: { method: 'GET', path: '/api/browse/roots', response: BrowseRootsSchema, owner: 'polish' },
+	browseList: {
+		method: 'GET',
+		path: '/api/browse/list',
+		query: BrowseListQuerySchema,
+		response: BrowseListSchema,
+		owner: 'polish',
+	},
+	browseInfo: {
+		method: 'GET',
+		path: '/api/browse/info',
+		query: BrowsePathQuerySchema,
+		response: BrowseInfoSchema,
+		owner: 'polish',
+	},
+	browseThumbnail: {
+		method: 'GET',
+		path: '/api/browse/thumbnail',
+		query: BrowseThumbnailQuerySchema,
+		response: 'binary',
+		owner: 'polish',
+	},
+	browseFile: {
+		method: 'GET',
+		path: '/api/browse/file',
+		query: BrowsePathQuerySchema,
+		response: 'binary',
+		headers: ['range'],
+		owner: 'polish',
+	},
+	// ---- gaps: Edit Original (UI-5)
+	mediaLocation: {
+		method: 'GET',
+		path: '/api/media/:mediaKey/location',
+		response: MediaLocationSchema,
+		owner: 'gaps',
+	},
+	mediaOpen: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/open',
+		body: MediaOpenRequestSchema,
+		response: MediaOpenResponseSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Project Settings ▸ Scratch Disks (PRJ-4)
+	projectScratch: {
+		method: 'GET',
+		path: '/api/projects/:projectId/scratch',
+		response: ScratchInfoSchema,
+		owner: 'gaps',
+	},
+	scratchCheck: {
+		method: 'POST',
+		path: '/api/scratch/check',
+		body: ScratchCheckRequestSchema,
+		response: ScratchCheckSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Preferences ▸ Auto Save / Memory (UI-4)
+	gapsSettingsGet: {
+		method: 'GET',
+		path: '/api/settings/gaps',
+		response: EngineGapsInfoSchema,
+		owner: 'gaps',
+	},
+	gapsSettingsPut: {
+		method: 'PUT',
+		path: '/api/settings/gaps',
+		body: EngineGapsSettingsSchema.partial(),
+		response: EngineGapsInfoSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: File ▸ Project Manager (PRJ-6)
+	projectManagerPlan: {
+		method: 'POST',
+		path: '/api/project-manager/plan',
+		body: ProjectManagerRequestSchema,
+		response: ProjectManagerEstimateSchema,
+		owner: 'gaps',
+	},
+	projectManagerStart: {
+		method: 'POST',
+		path: '/api/project-manager',
+		body: ProjectManagerRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Create Proxies, ingest copies / transcodes (PRJ-8)
+	mediaJobs: {
+		method: 'POST',
+		path: '/api/media-jobs',
+		body: MediaJobRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Warp Stabilizer background analysis (FX-6)
+	warpAnalysis: {
+		method: 'POST',
+		path: '/api/warp-analysis',
+		body: WarpAnalysisRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
+	// ---- gaps: Auto Reframe subject analysis (AI-2)
+	reframeAnalysis: {
+		method: 'POST',
+		path: '/api/reframe',
+		body: ReframeRequestSchema,
+		response: EngineJobSchema,
+		owner: 'gaps',
+	},
 } as const satisfies Record<string, RouteDef>;
 
 export type RouteName = keyof typeof ROUTES;
@@ -608,6 +1219,7 @@ export const ENGINE_PATH_PREFIXES = [
 	'/fonts',
 	'/health',
 	'/mcp',
+	'/pair',
 ] as const;
 
 export function isEnginePath(pathname: string): boolean {

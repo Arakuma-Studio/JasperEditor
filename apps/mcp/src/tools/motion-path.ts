@@ -16,19 +16,20 @@ import {
 	type Vec2,
 } from '@jasper/project';
 import { z } from 'zod';
-import { defineTool, EDIT, findClip, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import { defineTool, EDIT_IDEMPOTENT, findClip, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const MOTION_PATH_GUIDE = `Motion paths (curved position animation):
-- Position (and Anchor Point, Corner Pin corners) keys have a spatial interpolation besides the temporal one: linear (straight segments), bezier (independent in/out tangents), auto-bezier (smooth tangents from the neighbours, (next − prev) / 6) or continuous-bezier (user tangents kept opposite). New position keys are auto-bezier spatial with linear temporal, so three or more keys make a smooth curve travelled at constant speed; temporal eases change the speed along the curve, not its shape.
+- Position (and Anchor Point, Corner Pin corners) keys have a spatial interpolation besides the temporal one: linear (straight segments), bezier (independent in/out tangents), auto-bezier (smooth tangents from the neighbours: along next − prev, each handle ⅓ of its neighbouring segment, as in After Effects; keys made before keyframes-blend keep (next − prev) / 6 until Auto Bezier is re-applied) or continuous-bezier (user tangents kept opposite). New position keys are auto-bezier spatial with linear temporal, so three or more keys make a smooth curve travelled at constant speed; temporal eases change the speed along the curve, not its shape.
 - get_motion_path {clipId} shows the keys (frame, value, modes, effective tangents) and sampled points; set_spatial_interpolation {clipId | keyframeIds, mode} changes the mode (linear = straight lines).
 - Tangents are offsets from the key in sequence pixels: apply_commands keyframe.setTangents {keyframeId, inTangent?, outTangent?, breakContinuity?} (a non-bezier key becomes continuous-bezier and the other side turns opposite unless breakContinuity). keyframe.add / keyframe.update also take spatial {mode, inTangent?, outTangent?}.`;
 
-function positionOf(clip: Clip): Animatable<Vec2> {
-	const p = (clip as { transform?: { position?: Animatable<Vec2> } }).transform?.position;
+function positionOf(clip: Clip, property: 'position' | 'anchor' = 'position'): Animatable<Vec2> {
+	const t = (clip as { transform?: { position?: Animatable<Vec2>; anchor?: Animatable<Vec2> } }).transform;
+	const p = property === 'anchor' ? t?.anchor : t?.position;
 	if (!p)
 		throw new ToolError(
 			'E_INVALID_PARAM',
@@ -48,18 +49,24 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 		{
 			title: 'Get motion path',
 			description:
-				"A clip's position animation as a motion path: every position key (id, sequence frame, timecode, value, temporal and spatial interpolation, effective in/out tangents in sequence pixels) and the evaluated position sampled across the clip (at most `samples` points, evenly spaced in time; spacing encodes speed), plus the path length. Values are exactly what the preview and export draw.",
+				"A clip's position (or, with property: 'anchor', Anchor Point) animation as a motion path: every position key (id, sequence frame, timecode, value, temporal and spatial interpolation, effective in/out tangents in sequence pixels) and the evaluated position sampled across the clip (at most `samples` points, evenly spaced in time; spacing encodes speed), plus the path length. Values are exactly what the preview and export draw.",
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
 				samples: z.number().int().min(2).max(1000).optional().describe('Sampled points (default 60)'),
+				property: z
+					.enum(['position', 'anchor'])
+					.optional()
+					.describe(
+						'position (default; sequence px) or anchor (the Anchor Point path; values and tangents in layer px)',
+					),
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, clipId, samples }) => {
+		async ({ projectId, clipId, samples, property }) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const { seq, clip } = findClip(doc, clipId);
-			const anim = positionOf(clip);
+			const anim = positionOf(clip, property ?? 'position');
 			const rate = seq.settings.frameRate;
 			const kfs = anim.keyframes as readonly Keyframe<unknown>[];
 			const keys = anim.keyframes.map((k, i) => {
@@ -111,7 +118,7 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 				clipId: z.string().min(1).optional().describe('Every position key of this clip'),
 				keyframeIds: z.array(z.string().min(1)).min(1).optional().describe('These keys'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, mode, clipId, keyframeIds }, extra) => {
 			if (!!clipId === !!keyframeIds)

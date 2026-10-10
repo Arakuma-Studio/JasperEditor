@@ -202,6 +202,15 @@ test('insert the lower-third@1 motion graphic from the Motion Templates panel (d
 });
 
 test('motion graphic + footage exports with Auto → native (fframes master)', async ({ request }) => {
+	// jasper-mg is an optional native tool (`pnpm mg:build`, needs cargo; `pnpm e2e` builds it when cargo is
+	// installed). Without it the engine plans this export through Remotion (e2e:mg-fallback checks that path).
+	const caps = (await (await request.get('/api/capabilities')).json()) as {
+		render: { fframes: string; fframesReason?: string };
+	};
+	test.skip(
+		caps.render.fframes !== 'ready',
+		`the fframes renderer is unavailable: ${caps.render.fframesReason ?? 'jasper-mg is not built'} — run \`pnpm mg:build\` (needs cargo)`,
+	);
 	const frames = await sequenceFrames();
 	const out = await exportViaUi(page, request, {
 		engine: 'auto',

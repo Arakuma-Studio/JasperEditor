@@ -2,11 +2,17 @@
 // reports readiness to a forking parent (Electron utilityProcess or child_process.fork).
 import { ENV, readFlag, resolveAppdir, resolvePort } from '@jasper/config';
 import { startEngine } from './index.ts';
+import { insideElectron } from './tools/node-runtime.ts';
 import { coreServices } from './tools/services.ts';
 
 type ParentPort = { postMessage(msg: unknown): void };
 
 async function main(): Promise<void> {
+	// Inside the desktop app (an Electron utility process) `process.execPath` is the application binary. The
+	// engine's worker programs (speech, roto, camera tracking, jasper-proc, the bundle schema runner) are started
+	// with it unless a Node runtime is shipped (tools/node-runtime.ts), and it runs a script only as "run as Node":
+	// without this their processes start as a second application instance and the jobs fail.
+	if (insideElectron()) process.env.ELECTRON_RUN_AS_NODE = '1';
 	const argv = process.argv.slice(2);
 	const appdir = resolveAppdir({ argv, env: process.env, defaultDir: process.env[ENV.APPDIR] });
 	const port = resolvePort({ argv, env: process.env });
@@ -17,7 +23,15 @@ async function main(): Promise<void> {
 		);
 	}
 	const engine = await startEngine({ appdir, port, host, logger: false });
+	// The secrets are in the engine's memory now. Child processes (FFmpeg, Remotion and the bundle code it runs,
+	// workers) inherit the environment: they get neither (security review AGT-2).
+	delete process.env[ENV.EDITOR_KEY];
+	delete process.env[ENV.LOCAL_TOKEN];
 	console.log(`[engine] JasperEditor engine listening on ${engine.url} (appdir ${appdir})`);
+	// Printed for a person at a terminal only: a parent that pipes our output (jasper-mcp --start-engine, a test
+	// harness) is not the editor and must not learn the editor key.
+	if (engine.pairingUrl && process.stdout.isTTY)
+		console.log(`[engine] open the editor in a browser with ${engine.pairingUrl}`);
 	// D-13: say which FFmpeg is in use, and warn loudly when Remotion is not on the LGPL build.
 	const caps = await coreServices(engine.app).capabilities.get();
 	console.log(

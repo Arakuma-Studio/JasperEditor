@@ -3,10 +3,10 @@
 // resize handles) and tests. The geometry is centred in the layer box (`shapeIntrinsicBox`).
 import { evaluate } from '../keyframes.ts';
 import type { RGBA, Vec2 } from '../schema/common.ts';
-import type { ShapeData, ShapeStroke } from '../schema/sequence.ts';
+import type { LegacyShapeData, ShapeStroke } from '../schema/sequence.ts';
 
 export type ShapeGeometry = {
-	type: ShapeData['type'];
+	type: LegacyShapeData['type'];
 	/** Width and height (≥ 0). */
 	size: Vec2;
 	/** Top-left of the geometry inside the layer box. */
@@ -23,7 +23,7 @@ const UNIT = { min: 0, max: 1 };
 
 /** Evaluates a shape at content time `t` (flicks) inside a layer box of `box` pixels. */
 export function evaluateShape(
-	shape: ShapeData,
+	shape: LegacyShapeData,
 	t: number,
 	box: { width: number; height: number },
 ): ShapeGeometry {

@@ -2,8 +2,18 @@
 // solo, name) go through `track.update` transactions (undoable); targeting and heights are view state.
 import { type Sequence, type Track, trackList } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
-import { IconButton } from '@jasper/ui';
-import { useRef, useState } from 'react';
+import { useStoreSelector } from '@jasper/session/react';
+import { IconButton, openDialog } from '@jasper/ui';
+import { memo, useRef, useState } from 'react';
+import {
+	ADD_TRACKS_DIALOG,
+	DELETE_TRACKS_DIALOG,
+	registerTrackDialogs,
+} from '../../../gaps/TrackDialogs.tsx';
+import { trackHeightSubmenu } from '../../../gaps/track-height-menu.ts';
+import { useShellRuntimeOrNull } from '../../../shell/context.tsx';
+import { patchedLabelOn, setPatch, sourceLabel, sourceTracksOf } from '../../source/patching.ts';
+import { sourceMonitorState } from '../../source/source-state.ts';
 import {
 	DEFAULT_AUDIO_PX,
 	DEFAULT_VIDEO_PX,
@@ -120,9 +130,11 @@ function headerMenu(
 	index: number,
 	startRename: () => void,
 ): ContextMenuItem[] {
-	const clipCount = Object.values(p.seq.clips).filter((c) => c.trackId === track.id).length;
+	// ui-perf: header rows do not re-render for clip-only changes (HeaderRow), so the clips come from the session.
+	const clips = Object.values((p.session.getDrawn().sequences[p.seq.id] ?? p.seq).clips);
+	const clipCount = clips.filter((c) => c.trackId === track.id).length;
 	const list = trackList(p.seq, kind);
-	const empty = list.filter((t) => !Object.values(p.seq.clips).some((c) => c.trackId === t.id));
+	const empty = list.filter((t) => !clips.some((c) => c.trackId === t.id));
 	return [
 		{
 			kind: 'item',
@@ -153,11 +165,68 @@ function headerMenu(
 				]),
 		},
 		{ kind: 'separator' },
+		// edit-ux (Premiere track "Show Keyframes"): clip keyframe lanes on this track, drawn when it is expanded.
+		{
+			kind: 'item',
+			label: 'Show Clip Keyframes',
+			checked: p.view.keyframeDisplay[track.id] !== 'none',
+			run: () => {
+				const d = { ...p.view.keyframeDisplay };
+				if (d[track.id] === 'none') delete d[track.id];
+				else d[track.id] = 'none';
+				p.session.setView(p.seq.id, { keyframeDisplay: d });
+			},
+		},
+		// gaps (TL-10): one track's height, and Premiere's Add Tracks… / Delete Tracks… dialogs.
+		trackHeightSubmenu(p.session, p.seq, track.id, kind),
+		{ kind: 'separator' },
 		{ kind: 'item', label: 'Rename', run: startRename },
+		{ kind: 'separator' },
+		{
+			kind: 'item',
+			label: 'Add Tracks…',
+			run: () => {
+				registerTrackDialogs();
+				void openDialog(ADD_TRACKS_DIALOG, { session: p.session, sequenceId: p.seq.id });
+			},
+		},
+		{
+			kind: 'item',
+			label: 'Delete Tracks…',
+			run: () => {
+				registerTrackDialogs();
+				void openDialog(DELETE_TRACKS_DIALOG, { session: p.session, sequenceId: p.seq.id });
+			},
+		},
 	];
 }
 
-function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
+type HeaderProps = TrackHeadersProps & { row: TrackRow; track: Track };
+
+/**
+ * ui-perf: a header row draws its track, its layout row and the view's targeting, source patching and keyframe
+ * display; the clips of the sequence never reach it (the context menu reads them from the session). So a clip drag,
+ * a trim, a scroll or a zoom does not re-render the headers and their tooltip buttons.
+ */
+function headerPropsEqual(a: HeaderProps, b: HeaderProps): boolean {
+	for (const k of Object.keys(a) as (keyof HeaderProps)[]) {
+		if (k === 'seq' || k === 'view') continue;
+		if (a[k] !== b[k]) return false;
+	}
+	// The view parts a header uses (a scroll or zoom replaces the view record but not these).
+	return (
+		a.seq.id === b.seq.id &&
+		a.seq.videoTracks === b.seq.videoTracks &&
+		a.seq.audioTracks === b.seq.audioTracks &&
+		a.view.targeting === b.view.targeting &&
+		a.view.sourcePatching === b.view.sourcePatching &&
+		a.view.keyframeDisplay === b.view.keyframeDisplay
+	);
+}
+
+const HeaderRow = memo(Header, headerPropsEqual);
+
+function Header(props: HeaderProps) {
 	const { row, track } = props;
 	const kind: Kind = row.kind;
 	const [editing, setEditing] = useState<string | null>(null);
@@ -165,6 +234,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 	const targeted = (kind === 'video' ? props.view.targeting.video : props.view.targeting.audio).includes(
 		track.id,
 	);
+	const runtime = useShellRuntimeOrNull();
 	const anySolo = props.seq.audioTracks.some((t) => t.solo);
 	const silencedBySolo = kind === 'audio' && anySolo && !track.solo;
 	const label = labelOf(kind, row.index);
@@ -226,6 +296,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				props.controller.setTrackHeight(track.id, row.height * wheelZoomFactor(e.deltaY));
 			}}
 		>
+			<SourcePatchCell {...props} kind={kind} track={track} label={label} />
 			<IconButton
 				icon={track.locked ? 'track.lock' : 'track.unlock'}
 				label={track.locked ? 'Unlock track' : 'Lock track'}
@@ -287,6 +358,13 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 					>
 						S
 					</button>
+					{/* audio-mix: Voice-over Record (records into this track at the playhead; again to stop) */}
+					<IconButton
+						icon="track.voiceOver"
+						label="Voice-over record"
+						onClick={() => void runtime?.run('audio.voiceoverRecord', { trackId: track.id })}
+						data-control="voiceover"
+					/>
 				</>
 			)}
 			{editing !== null ? (
@@ -313,6 +391,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 						startRename();
 					}}
 					title={name}
+					data-testid="track-name"
 				>
 					{name}
 				</span>
@@ -322,6 +401,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				style={kind === 'video' ? { top: -2 } : { bottom: -2 }}
 				onPointerDown={(e) => resize(e, kind === 'video' ? -1 : 1)}
 				data-resize-handle
+				data-testid="track-height-handle"
 			/>
 		</div>
 	);
@@ -354,7 +434,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 					<div className="absolute right-0 left-0" style={{ top: -region.top, height: layout.height }}>
 						{visibleRows(region).map((row) => {
 							const track = trackList(seq, row.kind)[row.index];
-							return track ? <Header key={track.id} {...props} row={row} track={track} /> : null;
+							return track ? <HeaderRow key={track.id} {...props} row={row} track={track} /> : null;
 						})}
 						{region.kind === 'audio' && layout.masterY !== null ? (
 							<div
@@ -374,6 +454,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 			<div
 				className="absolute right-0 left-0"
 				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)', cursor: 'row-resize' }}
+				data-testid="timeline-region-divider"
 				onPointerDown={(e) => {
 					const el = e.currentTarget;
 					el.setPointerCapture?.(e.pointerId);
@@ -392,5 +473,66 @@ export function TrackHeaders(props: TrackHeadersProps) {
 				data-divider-handle
 			/>
 		</div>
+	);
+}
+
+/**
+ * edit-ux: the source patching column (Premiere "Source patching and track targeting"): while a clip is open in the
+ * Source monitor, each source track (V1, A1…) shows on the sequence track it is patched to. Click it to switch that
+ * source track off/on (off = left out of Insert/Overwrite); click an empty cell to patch the first source track of
+ * that kind there; drag a source indicator onto another track to repatch it.
+ */
+function SourcePatchCell(props: TrackHeadersProps & { kind: Kind; track: Track; label: string }) {
+	const { seq, view, session, kind, track } = props;
+	const itemId = useStoreSelector(sourceMonitorState, (s) => s.itemId);
+	const doc = session.getCommitted();
+	const item = itemId ? (doc.items[itemId] ?? null) : null;
+	const counts = sourceTracksOf(doc, item, session.getState().toggles.insertSequencesAsNests !== false);
+	const n = kind === 'video' ? counts.video : counts.audio;
+	if (!item || n === 0) return <span className="w-[22px] shrink-0" aria-hidden />;
+	const here = patchedLabelOn(seq, view, counts, track.id);
+	const first = sourceLabel(kind, 0);
+	const onClick = () => {
+		if (track.locked) return;
+		if (here) setPatch(session, seq.id, here.label, here.on ? null : track.id);
+		else setPatch(session, seq.id, first, track.id);
+	};
+	return (
+		<button
+			type="button"
+			className={`h-[20px] w-[22px] shrink-0 rounded-pr-pill text-[10px] leading-[20px] ${
+				here?.on
+					? 'bg-pr-accent-fill text-pr-on-accent'
+					: here
+						? 'text-pr-dim outline outline-1 -outline-offset-1 outline-[var(--pr-border-strong)]'
+						: 'text-pr-dim hover:bg-pr-hover'
+			}`}
+			title={
+				here
+					? `Source ${here.label} ${here.on ? 'patched here (click to switch off)' : 'off (click to switch on)'}`
+					: `Patch source ${first} to ${props.label}`
+			}
+			aria-label={here ? `Source ${here.label} patch` : `Patch source ${first} to ${props.label}`}
+			aria-pressed={here ? here.on : undefined}
+			disabled={track.locked}
+			draggable={!!here}
+			onDragStart={(e) => {
+				if (here) e.dataTransfer.setData('application/x-jasper-source-patch', here.label);
+			}}
+			onDragOver={(e) => {
+				if (e.dataTransfer.types.includes('application/x-jasper-source-patch')) e.preventDefault();
+			}}
+			onDrop={(e) => {
+				const l = e.dataTransfer.getData('application/x-jasper-source-patch');
+				if (!l || track.locked || (l[0] === 'V') !== (kind === 'video')) return;
+				e.preventDefault();
+				setPatch(session, seq.id, l, track.id);
+			}}
+			onClick={onClick}
+			data-testid={`source-patch-${props.label}`}
+			data-control="source-patch"
+		>
+			{here?.label ?? ''}
+		</button>
 	);
 }

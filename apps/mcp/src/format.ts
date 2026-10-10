@@ -4,8 +4,10 @@ import {
 	type Animatable,
 	allTracks,
 	type Clip,
+	clipMediaRange,
 	flicksToSeconds,
 	fpsOf,
+	isRemapped,
 	linkedPartners,
 	type MediaAsset,
 	type ProjectDocument,
@@ -13,6 +15,7 @@ import {
 	type ShapeData,
 	sequenceDuration,
 	sequenceTimecode,
+	shapeItemsText,
 	sourceOut,
 	TEXT_ANIMATION_SIDES,
 	type Transition,
@@ -52,6 +55,11 @@ function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip): string
 	const c = clip as Clip & Record<string, unknown>;
 	const r = seq.settings.frameRate;
 	if (typeof c.mediaId === 'string') {
+		// Time Remapping: the media the visible frames show (first to last frame), not sourceIn + duration × speed.
+		if (isRemapped(clip)) {
+			const m = clipMediaRange(clip, r);
+			return `${mediaName(doc, c.mediaId)} [${c.mediaId}] ${round3(flicksToSeconds(m.min))}–${round3(flicksToSeconds(m.max))} s (time remapped)`;
+		}
 		const a = round3(flicksToSeconds(clip.sourceIn));
 		const b = round3(flicksToSeconds(sourceOut(clip, r)));
 		return `${mediaName(doc, c.mediaId)} [${c.mediaId}] ${a}–${b} s${clip.speed.rate !== 1 ? ` @${clip.speed.rate}x` : ''}`;
@@ -96,8 +104,12 @@ function keyedText<T>(a: Animatable<T>, text: (v: T) => string): string {
 	return (vals.length > 4 ? [vals[0], '…', vals[vals.length - 1]] : vals).join('→');
 }
 
-/** "rect 100×100→200×200 fill #ffffff stroke 4px #000000 inside radius 12 (animated: size)". */
+/**
+ * "rect 100×100→200×200 fill #ffffff stroke 4px #000000 inside radius 12 (animated: size)"; vector shapes:
+ * "vector: Group 1 {Rectangle Path 1, Fill 1}, Trim Paths 1 (animated: end)" (item names; ids via get_shape).
+ */
 function shapeText(s: ShapeData): string {
+	if (s.type === 'vector') return `vector: ${shapeItemsText(s.contents) || '(empty)'}`;
 	const parts = [`${s.type} ${keyedText(s.size, (v) => `${round3(v[0])}×${round3(v[1])}`)}`];
 	parts.push(s.fill ? `fill ${keyedText(s.fill, hexOf)}` : 'no fill');
 	if (s.stroke)

@@ -32,6 +32,16 @@ const bridge = {
 			return '';
 		}
 	},
+	/** mcp-cli (live-UI automation): a PNG (base64) of the window or a CSS-px rect of it, at most maxWidth wide. */
+	capturePage: (
+		rect: { x: number; y: number; width: number; height: number },
+		maxWidth: number,
+	): Promise<{ png: string; width: number; height: number }> =>
+		ipcRenderer.invoke('jasper:capture-page', rect, maxWidth),
+	/** gaps (Edit Original): opens a file in its default application ('' = ok, else the error). */
+	openPath: (path: string): Promise<string> => ipcRenderer.invoke('jasper:open-path', path),
+	/** gaps (File ▸ Exit): quits the app after the renderer handled unsaved changes. */
+	quit: (): void => ipcRenderer.send('jasper:quit'),
 	onMenuCommand: (cb: (commandId: string) => void): (() => void) => {
 		const listener = (_e: unknown, id: string) => cb(id);
 		ipcRenderer.on('jasper:menu-command', listener);

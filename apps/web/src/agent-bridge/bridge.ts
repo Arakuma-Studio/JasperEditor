@@ -21,11 +21,13 @@ import {
 	summarizeTransaction,
 	type TransactionResult,
 	type TxInput,
+	unknownCommandKeyIssues,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
 import { AgentRelayClient, type RelayState } from './relay-client.ts';
+import { runUiAction, UiAutomationError } from './ui-automation.ts';
 
 const APPROVAL_TIMEOUT_MS = 60_000;
 const PLAYHEAD_EVENT_INTERVAL_MS = 100; // ≤ 10 Hz (S01:AGT-004)
@@ -104,6 +106,11 @@ export class AgentBridge {
 		string,
 		{ resolve(d: 'approved' | 'denied' | 'timeout'): void; timer: ReturnType<typeof setTimeout> }
 	>();
+	/**
+	 * approvalId → the answer key the engine sent this window with the card (security review AGT-2). Kept out of
+	 * the store and out of `window.jasper`: only `resolveApproval` reads it.
+	 */
+	private readonly answerKeys = new Map<string, string>();
 	private readonly disposers: (() => void)[] = [];
 	private schemaCache: Record<string, unknown> | null = null;
 	private disposed = false;
@@ -148,6 +155,7 @@ export class AgentBridge {
 			a.resolve('denied');
 			this.localApprovals.delete(id);
 		}
+		this.answerKeys.clear();
 		this.listeners.clear();
 	}
 
@@ -244,6 +252,7 @@ export class AgentBridge {
 			doc: s.getCommitted(),
 			revision: st.revision,
 			effects: s.ctx.registries.effects,
+			mgTemplates: s.ctx.registries.mgTemplates,
 			dryRun: (tx: Record<string, unknown>) => this.dryRun(tx),
 			session: {
 				activeSequenceId: st.activeSequenceId,
@@ -260,7 +269,14 @@ export class AgentBridge {
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
 				// M3 (S10:TUI-034): the user's default transitions, so agents apply the same ones as Ctrl+D.
-				preferences: () => ({ transitions: transitionPreferences() }),
+				// edit-structure: how the editor places sequences (nests or individual clips) and shows through edits.
+				preferences: () => ({
+					transitions: transitionPreferences(),
+					timeline: {
+						insertSequencesAsNests: s.getState().toggles.insertSequencesAsNests !== false,
+						showThroughEdits: s.getState().toggles.showThroughEdits !== false,
+					},
+				}),
 			},
 		};
 	}
@@ -329,6 +345,9 @@ export class AgentBridge {
 		const revision = this.session.revision;
 		const limit = checkAgentTxLimits(tx);
 		if (limit) return this.record(tx, via, { ok: false, revision, errors: [limit] });
+		// Unknown keys anywhere in a command are errors, never silently stripped (mcp-cli §1).
+		const unknownKeys = unknownCommandKeyIssues(tx.commands);
+		if (unknownKeys.length) return this.record(tx, via, { ok: false, revision, errors: unknownKeys });
 
 		const pseudo = historyPseudoCommand(tx);
 		if (pseudo) return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));
@@ -472,6 +491,7 @@ export class AgentBridge {
 	}
 
 	private removeApproval(approvalId: string, decision: string): void {
+		this.answerKeys.delete(approvalId);
 		const approvals = this.store.getState().approvals.filter((x) => x.approvalId !== approvalId);
 		if (approvals.length === this.store.getState().approvals.length) return;
 		this.store.setState({ approvals });
@@ -482,8 +502,10 @@ export class AgentBridge {
 	resolveApproval(approvalId: string, decision: 'approved' | 'denied'): boolean {
 		if (this.settleLocal(approvalId, decision)) return true;
 		const a = this.store.getState().approvals.find((x) => x.approvalId === approvalId);
-		if (a?.source !== 'engine') return false;
-		const sent = this.relay?.sendEvent('agent.approval.resolve', { approvalId, decision }) ?? false;
+		const answerKey = this.answerKeys.get(approvalId);
+		if (a?.source !== 'engine' || !answerKey) return false;
+		const sent =
+			this.relay?.sendEvent('agent.approval.resolve', { approvalId, decision, answerKey }) ?? false;
 		if (sent) this.removeApproval(approvalId, decision);
 		return sent;
 	}
@@ -492,9 +514,13 @@ export class AgentBridge {
 
 	private onEngineEvent(event: string, payload: unknown): void {
 		if (event === 'agent.approval.requested') {
-			const a = payload as Approval;
-			if (a?.approvalId && a.projectId === this.session.projectId)
+			// The engine sends cards only to the editor window, each with the key that window answers with. A request
+			// without one cannot be answered from here and is not shown.
+			const { answerKey, ...a } = (payload ?? {}) as Approval & { answerKey?: unknown };
+			if (a.approvalId && a.projectId === this.session.projectId && typeof answerKey === 'string') {
+				this.answerKeys.set(a.approvalId, answerKey);
 				this.addApproval({ ...a, source: 'engine' });
+			}
 		} else if (event === 'agent.approval.resolved') {
 			const p = payload as { approvalId?: string; decision?: string };
 			if (p?.approvalId) this.removeApproval(p.approvalId, p.decision ?? 'resolved');
@@ -502,11 +528,16 @@ export class AgentBridge {
 	}
 
 	private async onRelayRequest(
-		kind: 'tx' | 'query' | 'schema',
+		kind: 'tx' | 'query' | 'schema' | 'ui',
 		payload: unknown,
 	): Promise<{ result?: unknown; error?: { code: string; message: string } }> {
 		try {
 			if (kind === 'schema') return { result: this.schema() };
+			// mcp-cli: live-UI automation of this window (ui-automation.ts).
+			if (kind === 'ui') {
+				const p = (payload ?? {}) as { action?: string; args?: Record<string, unknown> };
+				return { result: await runUiAction(String(p.action), p.args ?? {}) };
+			}
 			if (kind === 'query') {
 				const p = (payload ?? {}) as { query?: string; args?: Record<string, unknown> };
 				const result = await this.query(String(p.query), p.args ?? {});
@@ -516,7 +547,8 @@ export class AgentBridge {
 			const result = await this.transact(p.transaction ?? {}, { via: 'relay', approved: !!p.approved });
 			return { result };
 		} catch (e) {
-			if (e instanceof AgentQueryError) return { error: { code: e.code, message: e.message } };
+			if (e instanceof AgentQueryError || e instanceof UiAutomationError)
+				return { error: { code: e.code, message: e.message } };
 			return { error: { code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) } };
 		}
 	}

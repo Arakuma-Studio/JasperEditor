@@ -5,7 +5,18 @@
 // ffmpeg arguments, and a missing or different stamp regenerates the file. Outputs are gitignored.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+	writeSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -125,6 +136,21 @@ const fixtures = [
 		],
 	},
 	{
+		// frame-code.mp4 with an AAC track: AAC's encoder priming gives the audio a negative first timestamp that the
+		// MP4 edit list hides (ffmpeg's start_time stays 0) — what most camera and phone files have (retime decoder).
+		name: 'frame-code-aac.mp4',
+		steps: (out) => [
+			[
+				...shapedTone(440, 3, '1'),
+				...frameCode('0x204080'),
+				...h264,
+				...bt709,
+				...aac,
+				...['-shortest', '-movflags', '+faststart', '-f', 'mp4', out],
+			],
+		],
+	},
+	{
 		// ProRes 4444 with alpha: what Remotion/After Effects write for overlays; browsers cannot decode it.
 		name: 'overlay-alpha.mov',
 		steps: (out) => [
@@ -192,6 +218,46 @@ if (existsSync(pluginDir)) {
 	}
 }
 
+// One generator at a time (verify workstream): several test files spawn this script at once on a clean checkout
+// (CI), and concurrent runs made every fixture twice, replaced files other tests were reading, and failed renaming a
+// directory fixture onto the other run's copy (ENOTEMPTY). The lock holds the owner's pid; a dead owner's lock is
+// taken over. Whoever waited then finds the fixtures current and skips them.
+const lockFile = join(outDir, '.make-fixtures.lock');
+const alive = (pid) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (e) {
+		return e?.code === 'EPERM';
+	}
+};
+for (let waited = 0; ; ) {
+	try {
+		const fd = openSync(lockFile, 'wx');
+		writeSync(fd, String(process.pid));
+		closeSync(fd);
+		break;
+	} catch (e) {
+		if (e?.code !== 'EEXIST') throw e;
+		const owner = Number(readFileSync(lockFile, 'utf8').trim());
+		if (!(owner > 0) || !alive(owner)) {
+			rmSync(lockFile, { force: true });
+			continue;
+		}
+		if (waited === 0) console.log(`wait   fixtures are being made by process ${owner}`);
+		await new Promise((r) => setTimeout(r, 250));
+		waited += 250;
+	}
+}
+const unlock = () => {
+	try {
+		if (readFileSync(lockFile, 'utf8').trim() === String(process.pid)) rmSync(lockFile, { force: true });
+	} catch {
+		// already gone
+	}
+};
+process.on('exit', unlock);
+
 let failed = false;
 for (const fx of fixtures) {
 	const target = join(outDir, fx.name);
@@ -227,6 +293,8 @@ for (const fx of fixtures) {
 	}
 	rmSync(`${partial}.tmp.mp4`, { force: true });
 	if (ok) {
+		// A directory fixture (an image sequence) cannot be renamed over its previous version.
+		rmSync(target, { recursive: true, force: true });
 		renameSync(partial, target);
 		writeFileSync(stampFile, recipe);
 		console.log(`made   ${fx.name}`);

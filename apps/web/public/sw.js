@@ -6,12 +6,24 @@ const SHELL_CACHE = `jasper-shell-${VERSION}`;
 const ASSETS_CACHE = `jasper-assets-${VERSION}`;
 const ASSETS_MAX_ENTRIES = 80;
 
-const BYPASS_PREFIXES = ['/api', '/events', '/agent', '/mcp', '/ws', '/health', '/media', '/mg', '/renders'];
+const BYPASS_PREFIXES = [
+	'/api',
+	'/events',
+	'/agent',
+	'/mcp',
+	'/ws',
+	'/health',
+	'/media',
+	'/mg',
+	'/renders',
+	'/pair',
+];
 const CACHE_FIRST_PREFIXES = ['/assets/', '/fonts/'];
 const PRECACHE_URLS = [
 	'/',
 	'/index.html',
 	'/theme-boot.js',
+	'/editor-boot.js',
 	'/manifest.webmanifest',
 	'/icons/icon-192.png',
 	'/icons/icon-512.png',

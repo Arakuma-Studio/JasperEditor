@@ -6,9 +6,17 @@ import type { Approval } from '@jasper/api';
 
 export type ApprovalDecision = 'approved' | 'denied' | 'timeout';
 
-type ApprovalRequest = Omit<Approval, 'approvalId' | 'expiresAt'>;
+/** `projectId: null` = not about one project (a preset of the user's library, the cache): any editor window may answer. */
+export type ApprovalRequest = Omit<Approval, 'approvalId' | 'expiresAt' | 'projectId'> & {
+	projectId: string | null;
+};
 
-type Entry = { approval: Approval; resolve(d: ApprovalDecision): void; timer: ReturnType<typeof setTimeout> };
+type Entry = {
+	approval: Approval;
+	projectId: string | null;
+	resolve(d: ApprovalDecision): void;
+	timer: ReturnType<typeof setTimeout>;
+};
 
 type ApprovalGateOptions = {
 	timeoutMs?: number;
@@ -33,23 +41,34 @@ export class ApprovalGate {
 	request(req: ApprovalRequest): { approval: Approval; decision: Promise<ApprovalDecision> } {
 		const approval: Approval = {
 			...req,
+			projectId: req.projectId ?? '',
 			approvalId: `apr_${randomUUID()}`,
 			expiresAt: new Date(this.now() + this.timeoutMs).toISOString(),
 		};
 		const decision = new Promise<ApprovalDecision>((resolve) => {
 			const timer = setTimeout(() => this.settle(approval.approvalId, 'timeout'), this.timeoutMs);
 			timer.unref();
-			this.entries.set(approval.approvalId, { approval, resolve, timer });
+			this.entries.set(approval.approvalId, { approval, projectId: req.projectId, resolve, timer });
 		});
 		this.opts.onRequested?.(approval);
 		return { approval, decision };
 	}
 
-	/** Resolves a pending approval (from the editor's approval card). Returns false if unknown or already settled. */
+	/**
+	 * Resolves a pending approval (from the editor's approval card). Returns false if unknown or already settled.
+	 * `projectId`: the project of the window that answers; an approval about another project is not its to answer.
+	 * Who may call this at all is the caller's business (AgentService: the editor connection that holds the card's
+	 * answer key, security review AGT-2).
+	 */
 	resolve(approvalId: string, decision: 'approved' | 'denied', projectId?: string): boolean {
 		const e = this.entries.get(approvalId);
-		if (!e || (projectId !== undefined && e.approval.projectId !== projectId)) return false;
+		if (!e || (projectId !== undefined && e.projectId !== null && e.projectId !== projectId)) return false;
 		return this.settle(approvalId, decision);
+	}
+
+	/** The project a pending approval is about (null: none), or undefined when it is not pending. */
+	scopeOf(approvalId: string): string | null | undefined {
+		return this.entries.get(approvalId)?.projectId;
 	}
 
 	private settle(approvalId: string, decision: ApprovalDecision): boolean {
@@ -62,10 +81,11 @@ export class ApprovalGate {
 		return true;
 	}
 
+	/** Pending approvals; with `projectId`, those a window of that project shows (its own and the project-less ones). */
 	pending(projectId?: string): Approval[] {
 		return [...this.entries.values()]
-			.map((e) => e.approval)
-			.filter((a) => projectId === undefined || a.projectId === projectId);
+			.filter((e) => projectId === undefined || e.projectId === null || e.projectId === projectId)
+			.map((e) => e.approval);
 	}
 
 	/** Denies everything still pending (engine shutdown). */

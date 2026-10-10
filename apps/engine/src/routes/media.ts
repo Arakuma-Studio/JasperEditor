@@ -4,8 +4,12 @@ import {
 	DerivativesRequestSchema,
 	MediaRegisterRequestSchema,
 	type MediaRegisterResponse,
+	type MediaStatus,
+	MediaStatusBatchRequestSchema,
+	type MediaStatusBatchResponse,
 } from '@jasper/api';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { isLoopbackHost } from '../context.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { MediaRecord } from '../media/registry.ts';
@@ -14,6 +18,9 @@ import { fail, guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 type K = { Params: { mediaKey: string } };
+
+/** Statuses read at once for one batch request (each is a few `stat` calls). */
+const STATUS_BATCH_CONCURRENCY = 16;
 
 export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
@@ -72,11 +79,44 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		}),
 	);
 
+	// polish: many statuses in one request (a project with thousands of media opens with one round trip per batch
+	// instead of one per medium). Unknown keys are listed, not an error: the media is offline for this engine.
+	app.post(
+		'/api/media/status',
+		guarded(async (req) => {
+			const { mediaKeys } = parseOr400(MediaStatusBatchRequestSchema, req.body);
+			const keys = [...new Set(mediaKeys)];
+			const statuses: MediaStatus[] = [];
+			const unknown: string[] = [];
+			let next = 0;
+			const worker = async () => {
+				for (let i = next++; i < keys.length; i = next++) {
+					const key = keys[i]!;
+					const s = MEDIA_KEY_RE.test(key) ? await media.status(key).catch(() => null) : null;
+					if (s) statuses.push(s);
+					else unknown.push(key);
+				}
+			};
+			await Promise.all(Array.from({ length: Math.min(STATUS_BATCH_CONCURRENCY, keys.length) }, worker));
+			const out: MediaStatusBatchResponse = { statuses, unknown };
+			return out;
+		}),
+	);
+
 	// M3 (S07:PRC-018): discard an uncommitted upload (Replace Footage cancelled / failed).
 	app.delete<K>(
 		'/api/media/:mediaKey',
 		guarded<K>(async (req) => {
-			record(req.params.mediaKey);
+			const r = record(req.params.mediaKey);
+			// Security review AGT-3: only engine-managed copies that no *saved* project references are deleted, but an
+			// upload the user has just imported into an unsaved project is exactly that, and its bytes exist nowhere
+			// else. An agent needs the user's approval.
+			if (r.storage.type === 'managed' && !r.derivedFrom)
+				await requireUserApproval(app, req, {
+					label: 'Discard an uploaded media file',
+					summary: `delete the engine's copy of "${r.originalName}"`,
+					reasons: ['the file was uploaded to the engine and may exist nowhere else'],
+				});
 			return media.discard(req.params.mediaKey, {
 				projectsDir: core.config.paths.projectsDir,
 				// M3 (wp-m3-cachegc): derivatives go through the cache registry (crash-safe, pin-aware).

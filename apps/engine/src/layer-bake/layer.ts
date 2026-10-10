@@ -6,16 +6,24 @@ import {
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	evaluateVectorShape,
 	gpuIsTimeDependent,
+	hasActiveExpression,
+	hasEffectMasks,
 	layerMapOf,
+	maskExportRoute,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
+	type ShapeItem,
 	type Transform,
+	textAnimatorsTimeVarying,
+	vectorShapeBounds,
+	vectorShapeIsTimeDependent,
 } from '@jasper/project';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
-const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic']);
+const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic', 'captions']);
 
 /**
  * S11:LBK-001: a DOM layer — every text clip, every shape and motion-graphic clips rendered by Remotion
@@ -24,6 +32,8 @@ const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic
  * change here.
  */
 export function isDomLayer(c: Pick<RenderVisualClip, 'kind' | 'engine'>): boolean {
+	// imports: Lottie animations and vector stills (SVG, PDF) are drawn by the composition (snapshot engine `remotion`).
+	if ((c.kind === 'still' || c.kind === 'animated-image') && c.engine === 'remotion') return true;
 	return DOM_KINDS.has(c.kind) && c.engine === 'remotion';
 }
 
@@ -60,10 +70,15 @@ export function hasBrowserEffect(
  * master overlaid natively, so a GPU effect no longer sends the whole export to Remotion.
  */
 export function needsBake(
-	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects'>,
+	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects' | 'masks'>,
 	registry?: EffectRegistry,
 ): boolean {
-	return isDomLayer(c) || (MEDIA_BAKE_KINDS.has(c.kind) && hasBrowserEffect(c, registry));
+	// three-d: a 3D layer is never baked alone (the planner routes 3D runs to the Remotion path).
+	if ((c as { threeD?: unknown }).threeD) return false;
+	return (
+		isDomLayer(c) ||
+		(MEDIA_BAKE_KINDS.has(c.kind) && (hasBrowserEffect(c, registry) || maskExportRoute(c) === 'bake'))
+	);
 }
 
 /** True when the effect has a colour op (D-21): applied natively to DOM layers (S11:LBK-010). */
@@ -74,9 +89,13 @@ export function isColorEffect(
 	return !!registry.get(fx.effectId, fx.effectVersion)?.color;
 }
 
-/** The clip has enabled colour-op effects (FIX-002: they are applied by ffmpeg, not baked by Remotion). */
+/**
+ * The clip has enabled colour-op effects that ffmpeg applies (FIX-002: not baked by Remotion). wp masks: a clip with
+ * effect masks keeps its whole stack in the bake (a masked colour effect mixes with its input, and ffmpeg could
+ * only apply runs to the finished layer), so its colour effects are rendered by the composition.
+ */
 export function hasColorEffects(c: Pick<RenderVisualClip, 'effects'>, registry?: EffectRegistry): boolean {
-	return c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
+	return !hasEffectMasks(c) && c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
 }
 
 /**
@@ -97,12 +116,16 @@ export function effectRunsOrderWarning(
 	return null;
 }
 
-/** True when any Animatable inside `v` has keyframes (deep: Motion, opacity, effects, shape props, params…). */
+/**
+ * True when any Animatable inside `v` has keyframes or an active expression (deep: Motion, opacity, effects, shape
+ * props, params, a Source Text expression…): an expression is a function of time.
+ */
 function hasKeyframesDeep(v: unknown): boolean {
 	if (!v || typeof v !== 'object') return false;
 	if (Array.isArray(v)) return v.some(hasKeyframesDeep);
 	const o = v as Record<string, unknown>;
 	if (Array.isArray(o.keyframes) && o.keyframes.length > 0 && 'value' in o) return true;
+	if (hasActiveExpression(o as { expression?: { text: string; enabled: boolean } })) return true;
 	for (const x of Object.values(o)) if (hasKeyframesDeep(x)) return true;
 	return false;
 }
@@ -118,25 +141,41 @@ function hasKeyframesDeep(v: unknown): boolean {
  * (colour effects removed when ffmpeg applies them, LBK-010).
  */
 export function isStaticLayer(
-	c: Pick<RenderVisualClip, 'kind' | 'source' | 'transform' | 'opacity' | 'effects'>,
+	c: Pick<RenderVisualClip, 'kind' | 'source' | 'transform' | 'opacity' | 'effects' | 'masks'>,
 	registry: EffectRegistry = defaultEffectRegistry,
 ): boolean {
 	if (c.kind === 'motion-graphic') return false;
+	// wp captions: a caption is one picture unless it pages or highlights the active word.
+	if (c.kind === 'captions') {
+		const cap = (c.source as { captions?: { pages: unknown[]; style: { highlight?: { mode?: string } } } })
+			.captions;
+		if (cap?.pages.length !== 1 || (cap.style.highlight?.mode ?? 'none') !== 'none') return false;
+	}
 	// Moving pictures (wave1c media bakes) are never one frame.
 	if (c.kind === 'video' || c.kind === 'animated-image') return false;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	if (src.animation && (src.animation.in || src.animation.out)) return false;
+	// text-animators: Wiggly / Expression selectors vary with time without keyframes.
+	if (c.kind === 'text' && textAnimatorsTimeVarying(c.source as never)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
+	// wp masks: keyframed Opacity or effect masks.
+	if (hasKeyframesDeep(c.masks) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.masks)))
+		return false;
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		if (!spec) return false;
 		if (hasKeyframesDeep(fx.params)) return false;
+		// sim-warp: keyframed Puppet pins.
+		if (hasKeyframesDeep((fx as { puppet?: unknown }).puppet)) return false;
 		// Wave 1 (fx framework): a GPU shader effect that draws differently every frame (noise, flicker, time hooks,
 		// a media param bound to a video — conservative here: any bound media param that accepts videos).
 		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));
 		if (gpuIsTimeDependent(spec, held)) return false;
 	}
+	// wp shapes: a vector shape with a self-animating Wiggle Paths (or keys / expressions in its contents).
+	const shape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	if (shape?.type === 'vector' && vectorShapeIsTimeDependent(shape.contents ?? [])) return false;
 	return !hasKeyframesDeep(c.source);
 }
 
@@ -174,7 +213,9 @@ export function bakeClip(
 	},
 ): RenderVisualClip {
 	const span = drawnSpan(c);
-	const effects = c.effects.filter((fx) => fx.enabled && !(o.stripColor && isColorEffect(fx, o.registry)));
+	// wp masks: with effect masks nothing is stripped (see `hasColorEffects`).
+	const strip = o.stripColor && !hasEffectMasks(c);
+	const effects = c.effects.filter((fx) => fx.enabled && !(strip && isColorEffect(fx, o.registry)));
 	const { headHandle, tailHandle, fades, ...rest } = c;
 	let out: RenderVisualClip;
 	if (o.variant.recipe === 'still') out = { ...rest, effects, start: 0, duration: 1 };
@@ -187,8 +228,14 @@ export function bakeClip(
 			...(tailHandle ? { tailHandle } : {}),
 			...(fades?.length ? { fades: fades.map((f) => ({ ...f, start: f.start - span.start })) } : {}),
 		};
-	if (o.shift && (o.shift.x || o.shift.y) && out.transform)
+	if (o.shift && (o.shift.x || o.shift.y) && out.transform) {
 		out = { ...out, transform: shifted(out.transform, o.shift) };
+		// Wave expressions: a Position expression's result is shifted by the binding (bindSnapshotExpressions).
+		if (hasActiveExpression(out.transform!.position)) {
+			const prev = c.expressionPositionShift ?? [0, 0];
+			out = { ...out, expressionPositionShift: [prev[0] - o.shift.x, prev[1] - o.shift.y] };
+		}
+	}
 	return out;
 }
 
@@ -219,7 +266,7 @@ export function variantFrames(c: RenderVisualClip, v: BakeVariant): number {
  * handles the consumer resolved (signed URLs for Remotion; URLs never enter the render key).
  */
 export function bakeDoc(
-	snapshot: Pick<RenderSnapshot, 'sequenceId' | 'settings'>,
+	snapshot: Pick<RenderSnapshot, 'sequenceId' | 'settings' | 'expressions'>,
 	clip: RenderVisualClip,
 	o: {
 		variant: BakeVariant;
@@ -246,6 +293,8 @@ export function bakeDoc(
 		fonts: o.fonts,
 		master: { volumeDb: { value: 0, keyframes: [] } },
 		warnings: [],
+		// Wave expressions: the renderer binds the clip's expressions against the whole project.
+		...(snapshot.expressions ? { expressions: snapshot.expressions } : {}),
 	};
 }
 
@@ -298,6 +347,23 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 		};
 	};
 	const used = new Set<F>();
+	const cap = (clip.source as { captions?: { style: { fontId: string; weight: number; italic: boolean } } })
+		.captions;
+	if (cap) {
+		// wp captions: the style's face and the bold / italic faces markup uses
+		const st = cap.style;
+		for (const [w, it] of [
+			[st.weight, st.italic],
+			[Math.max(st.weight, 700), st.italic],
+			[st.weight, true],
+		] as const) {
+			const f = fonts.find((x) => x.fontId === st.fontId && x.weight === w && (x.style === 'italic') === it);
+			if (f) used.add(f);
+		}
+		const f = faceFor(fonts, st.fontId, st.weight, st.italic);
+		if (f) used.add(f);
+		return fonts.filter((x) => used.has(x));
+	}
 	if (src.text) {
 		const base = src.text.style ?? {};
 		for (const st of [base, ...(src.text.runs ?? []).map((r) => ({ ...base, ...r.style }))]) {
@@ -343,6 +409,19 @@ export function contentBleed(
 			px = Math.max(px, (s.widthPx ?? 0) * (s.position === 'outside' ? 2 : 1));
 		if (st.shadow) px += (st.shadow.distancePx ?? 0) + 3 * (st.shadow.blurPx ?? 0);
 		if (st.background) px += st.background.paddingPx ?? 0;
+	}
+	// wp shapes: a vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
+	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
+	const vshape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	if (vshape?.type === 'vector') {
+		const contents = vshape.contents ?? [];
+		if (vectorShapeIsTimeDependent(contents)) return null;
+		const b = vectorShapeBounds(evaluateVectorShape(contents, 0));
+		if (b) {
+			const W = c.intrinsicBox.width / 2;
+			const H = c.intrinsicBox.height / 2;
+			px = Math.max(px, Math.ceil(Math.max(0, -W - b.x0, b.x1 - W, -H - b.y0, b.y1 - H)) + 2);
+		}
 	}
 	const maxDim = Math.max(c.intrinsicBox.width, c.intrinsicBox.height);
 	for (const side of [src.animation?.in, src.animation?.out]) {

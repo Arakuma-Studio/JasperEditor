@@ -17,8 +17,10 @@ import {
 	useAgentBridgeState,
 } from '../agent-bridge/index.ts';
 
-/** "claude-code wants to run 1 command: track.remove" */
-function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary'>): string {
+/** "claude-code wants to run 1 command: track.remove", or for an operation "claude-code wants to delete the preset …" */
+function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary' | 'kind'>): string {
+	if (a.kind === 'operation' || a.commandCount === 0)
+		return a.summary ? `${a.agent} wants to ${a.summary}` : `${a.agent} asks for your approval`;
 	const n = a.commandCount;
 	return `${a.agent} wants to run ${n} command${n === 1 ? '' : 's'}${a.summary ? `: ${a.summary}` : ''}`;
 }
@@ -41,9 +43,20 @@ function Countdown({ until }: { until: string }) {
 	);
 }
 
-function ApprovalCard({ approval: a, bridge }: { approval: PendingApproval; bridge: AgentBridge }) {
+export function ApprovalCard({ approval: a, bridge }: { approval: PendingApproval; bridge: AgentBridge }) {
 	const [open, setOpen] = useState(false);
-	const decide = (decision: 'approved' | 'denied') => {
+	const decide = (decision: 'approved' | 'denied', e: { nativeEvent: Event }) => {
+		// Security review AGT-1: only the user approves. Agents' live-UI input is synthetic (untrusted), so an agent
+		// cannot click Approve on its own request; it may still deny (that only refuses).
+		if (decision === 'approved' && !e.nativeEvent.isTrusted) {
+			toast({
+				kind: 'warning',
+				title: 'Only you can approve an agent request',
+				detail: 'The click did not come from your mouse or keyboard.',
+				dedupeKey: `agent-approval-untrusted:${a.approvalId}`,
+			});
+			return;
+		}
 		if (!bridge.resolveApproval(a.approvalId, decision))
 			toast({
 				kind: 'warning',
@@ -97,10 +110,18 @@ function ApprovalCard({ approval: a, bridge }: { approval: PendingApproval; brid
 						</button>
 					) : null}
 					<span className="ml-auto flex gap-2">
-						<Button variant="secondary" onClick={() => decide('denied')} data-testid="agent-approval-deny">
+						<Button
+							variant="secondary"
+							onClick={(e) => decide('denied', e)}
+							data-testid="agent-approval-deny"
+						>
 							Deny
 						</Button>
-						<Button variant="primary" onClick={() => decide('approved')} data-testid="agent-approval-approve">
+						<Button
+							variant="primary"
+							onClick={(e) => decide('approved', e)}
+							data-testid="agent-approval-approve"
+						>
 							Approve
 						</Button>
 					</span>

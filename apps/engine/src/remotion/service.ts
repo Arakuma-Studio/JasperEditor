@@ -7,13 +7,13 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
 import { ENV } from '@jasper/config';
 import { defaultEffectRegistry } from '@jasper/project';
 import { animejsVersion } from '../anime/index.ts';
+import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
@@ -95,9 +95,20 @@ type AlphaMasterInput = {
 	browser?: SharedRenderBrowser;
 	onSpawn?(child: ChildProcess): void;
 	onProgress?(p: { renderedFrames: number; totalFrames: number; progress: number }): void;
+	/** Job log (the single-page retry after a timeout is noted there). */
+	log?(line: string): void;
 };
 
 type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
+
+/**
+ * `JASPER_REMOTION_BROWSER_LOG=1` (diagnostics): the render page's console on the engine's stderr (stills and
+ * renders), e.g. to see why a composition draws nothing.
+ */
+function browserLogOption(): { onBrowserLog?: (log: { type: string; text: string }) => void } {
+	if (process.env.JASPER_REMOTION_BROWSER_LOG !== '1') return {};
+	return { onBrowserLog: (log) => process.stderr.write(`[remotion browser ${log.type}] ${log.text}\n`) };
+}
 
 /** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
@@ -119,6 +130,8 @@ type RemotionRenderInput = {
 	output: string;
 	signal: AbortSignal;
 	concurrency?: number;
+	/** Job log (the single-page retry after a timeout is noted there). */
+	log?(line: string): void;
 	onProgress?(p: { progress: number; renderedFrames: number; encodedFrames: number; stage: string }): void;
 	crf?: number;
 	x264Preset?: 'veryfast' | 'medium' | 'slow';
@@ -131,6 +144,8 @@ type RemotionRenderInput = {
 	/** Direct VP9/Opus WebM (LGPL components); see export-plan.ts. */
 	vp9?: { crf: number; colorSpace: 'bt709' | null; ffmpegOverride?: RemotionFfmpegOverride };
 	audioBitrateKbps?: number;
+	/** audio-mix: render the picture only (exports mux the offline mixer's audio). */
+	muted?: boolean;
 };
 
 type RemotionFfmpegOverride = (info: { type: 'pre-stitcher' | 'stitcher'; args: string[] }) => string[];
@@ -738,58 +753,67 @@ export class RemotionService {
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
-		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		const concurrency = input.concurrency ?? renderParallelism();
 		let instance: RenderBrowser | null = null;
 		try {
 			instance = await this.renderBrowser(r, browser, concurrency);
 			await this.recordUsage('media', 'export');
-			await r.renderMedia({
-				serveUrl,
-				composition,
-				inputProps: input.inputProps,
-				...(input.intermediate
-					? { codec: 'prores' as const, proResProfile: 'hq' as const, audioCodec: 'pcm-16' as const }
-					: input.vp9
-						? {
-								codec: 'vp9' as const,
-								audioCodec: 'opus' as const,
-								pixelFormat: 'yuv420p' as const,
-								crf: input.vp9.crf,
-								...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
-								...(input.vp9.ffmpegOverride ? { ffmpegOverride: input.vp9.ffmpegOverride } : {}),
-								...(input.audioBitrateKbps ? { audioBitrate: `${input.audioBitrateKbps}k` } : {}),
-							}
-						: {
-								codec: 'h264' as const,
-								audioCodec: 'aac' as const,
-								pixelFormat: 'yuv420p' as const,
-								crf: input.crf ?? 18,
-								x264Preset: input.x264Preset ?? 'medium',
+			await withSinglePageRetry(concurrency, input.signal, input.log, (pages) =>
+				r
+					.renderMedia({
+						serveUrl,
+						composition,
+						inputProps: input.inputProps,
+						...(input.intermediate
+							? {
+									codec: 'prores' as const,
+									proResProfile: 'hq' as const,
+									...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
+								}
+							: input.vp9
+								? {
+										codec: 'vp9' as const,
+										...(input.muted ? {} : { audioCodec: 'opus' as const }),
+										pixelFormat: 'yuv420p' as const,
+										crf: input.vp9.crf,
+										...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
+										...(input.vp9.ffmpegOverride ? { ffmpegOverride: input.vp9.ffmpegOverride } : {}),
+										...(input.audioBitrateKbps ? { audioBitrate: `${input.audioBitrateKbps}k` } : {}),
+									}
+								: {
+										codec: 'h264' as const,
+										...(input.muted ? {} : { audioCodec: 'aac' as const }),
+										pixelFormat: 'yuv420p' as const,
+										crf: input.crf ?? 18,
+										x264Preset: input.x264Preset ?? 'medium',
+									}),
+						...this.binariesOption(),
+						outputLocation: input.output,
+						...(input.muted ? { muted: true } : {}),
+						concurrency: pages,
+						cancelSignal,
+						timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+						licenseKey: this.licenseKey,
+						logLevel: 'error',
+						overwrite: true,
+						...(input.scale ? { scale: input.scale } : {}),
+						...browser,
+						...(instance ? { puppeteerInstance: instance } : {}),
+						onProgress: (p) =>
+							input.onProgress?.({
+								progress: p.progress,
+								renderedFrames: p.renderedFrames,
+								encodedFrames: p.encodedFrames,
+								stage:
+									p.stitchStage === 'muxing'
+										? 'Muxing'
+										: p.renderedFrames < composition.durationInFrames
+											? 'Rendering frames'
+											: 'Encoding',
 							}),
-				...this.binariesOption(),
-				outputLocation: input.output,
-				concurrency,
-				cancelSignal,
-				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
-				licenseKey: this.licenseKey,
-				logLevel: 'error',
-				overwrite: true,
-				...(input.scale ? { scale: input.scale } : {}),
-				...browser,
-				...(instance ? { puppeteerInstance: instance } : {}),
-				onProgress: (p) =>
-					input.onProgress?.({
-						progress: p.progress,
-						renderedFrames: p.renderedFrames,
-						encodedFrames: p.encodedFrames,
-						stage:
-							p.stitchStage === 'muxing'
-								? 'Muxing'
-								: p.renderedFrames < composition.durationInFrames
-									? 'Rendering frames'
-									: 'Encoding',
-					}),
-			});
+					})
+					.then(() => undefined),
+			);
 			return { frames: composition.durationInFrames };
 		} catch (e) {
 			throw mapRenderError(e, input.signal);
@@ -816,31 +840,39 @@ export class RemotionService {
 		const total = composition.durationInFrames;
 		const raw = join(input.scratchDir, `alpha-${process.pid}-${Date.now().toString(36)}-raw.mov`);
 		const tagged = `${raw.slice(0, -'-raw.mov'.length)}.mov`;
-		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		const concurrency = input.concurrency ?? renderParallelism();
 		// Own browser (closed below) unless the caller shares one.
 		let instance: RenderBrowser | null = null;
 		try {
 			if (!input.browser) instance = await this.renderBrowser(r, browser, concurrency);
 			const puppeteer = input.browser?.instance ?? instance;
 			await this.recordUsage('media', 'layer-bake');
-			await r.renderMedia({
-				serveUrl,
-				composition,
-				inputProps: input.inputProps,
-				...ALPHA_MASTER_OPTIONS,
-				...this.binariesOption(),
-				outputLocation: raw,
-				concurrency,
-				cancelSignal,
-				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
-				licenseKey: this.licenseKey,
-				logLevel: 'error',
-				overwrite: true,
-				...browser,
-				...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
-				onProgress: (p) =>
-					input.onProgress?.({ renderedFrames: p.renderedFrames, totalFrames: total, progress: p.progress }),
-			});
+			await withSinglePageRetry(concurrency, input.signal, input.log, (pages) =>
+				r
+					.renderMedia({
+						serveUrl,
+						composition,
+						inputProps: input.inputProps,
+						...ALPHA_MASTER_OPTIONS,
+						...this.binariesOption(),
+						outputLocation: raw,
+						concurrency: pages,
+						cancelSignal,
+						timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+						licenseKey: this.licenseKey,
+						logLevel: 'error',
+						overwrite: true,
+						...browser,
+						...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
+						onProgress: (p) =>
+							input.onProgress?.({
+								renderedFrames: p.renderedFrames,
+								totalFrames: total,
+								progress: p.progress,
+							}),
+					})
+					.then(() => undefined),
+			);
 		} catch (e) {
 			throw mapRenderError(e, input.signal);
 		} finally {
@@ -900,6 +932,7 @@ export class RemotionService {
 				licenseKey: this.licenseKey,
 				logLevel: 'error',
 				overwrite: true,
+				...browserLogOption(),
 				...this.binariesOption(),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,
@@ -930,6 +963,34 @@ function docHasColorEffects(doc: unknown): boolean {
 	return false;
 }
 
+/**
+ * Runs a multi-page render; when it times out (RENDER_TIMEOUT: a page's first frame, a frame extraction or a
+ * delayRender beyond DELAY_RENDER_TIMEOUT_MS) it is rendered once more on a single page before failing. N pages that
+ * mount a heavy composition at the same time (software GL, a loaded machine) each take about N times as long as one
+ * page alone: the verify workstream's cross-feature project took 25 s per still on one page and timed out on six
+ * (exports, previews and short ranges failed while the same frames rendered on one page). A real hang still fails —
+ * one attempt later — with the same typed error.
+ */
+export async function withSinglePageRetry(
+	concurrency: number,
+	signal: AbortSignal,
+	log: ((line: string) => void) | undefined,
+	render: (concurrency: number) => Promise<void>,
+): Promise<void> {
+	try {
+		await render(concurrency);
+	} catch (e) {
+		const mapped = mapRenderError(e, signal);
+		if (concurrency <= 1 || signal.aborted || (mapped as JobError).code !== 'RENDER_TIMEOUT') throw mapped;
+		log?.(`remotion: ${mapped.message.slice(0, 300)} — rendering again on one page (was ${concurrency})`);
+		try {
+			await render(1);
+		} catch (e2) {
+			throw mapRenderError(e2, signal);
+		}
+	}
+}
+
 function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	if (signal.aborted) return new JobError('JOB_CANCELLED', 'Cancelled');
 	if (e instanceof JobError) return e;
@@ -937,7 +998,8 @@ function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	// The compositions' colour stage cancels the render with this code when WebGL2 is missing (S06:CG-042).
 	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);
 	// Wave 1 (fx framework): a GPU effect whose shader does not compile, or that a layer kind cannot run.
-	const fx = /\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED)\b/.exec(msg)?.[1];
+	// color-mgmt: a scope drawn through HTML-in-Canvas inside another one (the browser cannot nest them).
+	const fx = /\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED|CANVAS_NESTED)\b/.exec(msg)?.[1];
 	if (fx) return new JobError(fx, msg.slice(0, 1500), false);
 	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
 	if (/delayRender|timeout|timed out/i.test(msg)) {

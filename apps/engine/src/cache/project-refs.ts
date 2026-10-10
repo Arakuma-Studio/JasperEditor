@@ -5,10 +5,12 @@
 // graphics bakes) are referenced through the ref sets that exports record (`CacheService.commitHolderRefs`).
 import type { MgPrerenderRequest } from '@jasper/api';
 import {
+	audioPreviewSegments,
 	buildRenderSnapshot,
 	compositionClipRenderRange,
 	compositionSequenceFrames,
 	type ProjectDocument,
+	previewSegments,
 	type Rational,
 	type RenderVisualClip,
 } from '@jasper/project';
@@ -21,6 +23,10 @@ export type ProjectCacheRefs = {
 	mgRenderKeys: Set<string>;
 	/** Bundle hashes (Motion Templates posters `mg/posters/<hash>/`). */
 	bundleHashes: Set<string>;
+	/** parity (roto): matte set keys of the document's roto objects (`cache/roto/sets/<key>/`). */
+	rotoKeys?: Set<string>;
+	/** previews: content hashes of every sequence's current video and audio segments (`cache/previews/<fmt>/<hash>.*`). */
+	previewHashes?: Set<string>;
 };
 
 /** The render-key function of the mg-bundles service (`prerenderKey`). */
@@ -44,9 +50,31 @@ export function projectCacheRefs(
 	renderKey: RenderKeyFn,
 	fframesKey: ClipRenderKeyFn | null = null,
 ): ProjectCacheRefs {
-	const out: ProjectCacheRefs = { fingerprints: new Set(), mgRenderKeys: new Set(), bundleHashes: new Set() };
+	const out: ProjectCacheRefs = {
+		fingerprints: new Set(),
+		mgRenderKeys: new Set(),
+		bundleHashes: new Set(),
+		rotoKeys: new Set(),
+		previewHashes: new Set(),
+	};
 	const d = doc as Partial<ProjectDocument> | null;
 	if (!d || typeof d !== 'object') return out;
+	// previews: the segments of every sequence as the document stands (undone states age out with the kind's limit).
+	for (const seqId of Object.keys(d.sequences ?? {})) {
+		try {
+			for (const s of previewSegments(d as ProjectDocument, seqId)) out.previewHashes!.add(s.hash);
+			for (const s of audioPreviewSegments(d as ProjectDocument, seqId)) out.previewHashes!.add(s.hash);
+		} catch {
+			// an invalid or older document: no preview references
+		}
+	}
+	// parity (roto): computed mattes of roto objects (also undo states would need the engine; the saved ones count).
+	for (const seq of Object.values(d.sequences ?? {}))
+		for (const clip of Object.values((seq as { clips?: Record<string, unknown> }).clips ?? {})) {
+			const rotos = (clip as { rotos?: { result?: { key?: unknown } | null }[] }).rotos;
+			for (const r of Array.isArray(rotos) ? rotos : [])
+				if (typeof r?.result?.key === 'string') out.rotoKeys!.add(r.result.key);
+		}
 	for (const asset of Object.values(d.media ?? {})) {
 		const a = asset as { fingerprint?: unknown; mgBundle?: { bundleHash?: unknown } } | null;
 		if (typeof a?.fingerprint === 'string') {

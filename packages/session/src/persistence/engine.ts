@@ -3,22 +3,28 @@
 //   `{ok: false, conflict: true, revision}` result (S01:PER-025) instead of an exception.
 // - leases (S01:PER-040): acquire / heartbeat / release, with transparent re-acquisition when the engine
 //   forgot the lease (restart, expiry while the laptop slept) and "take over" support.
-// - duplicate / export / import are composed client-side from the M1 routes; restoring a version needs a
-//   route that M1 does not have (see docs/wp-notes/WP-2E.md).
-import type { Lease, ProjectSummary, VersionInfo } from '@jasper/api';
-import { type EngineClient, EngineError } from '@jasper/engine-client';
+// - duplicate / export / import are composed client-side from the M1 routes;
+// - saved versions (read, restore in place or as a copy) and the crash-recovery journal use the routes of the
+//   process workstream (ARCHITECTURE D-39, docs/project-files.md).
+import type { Lease, ProjectSummary, RecoveryInfo, RecoveryPutRequest, VersionInfo } from '@jasper/api';
+import { type EngineClient, EngineError, JsonText } from '@jasper/engine-client';
 import {
 	createRandomIdSource,
 	loadProject,
 	type MgTemplateRegistry,
 	makeEnvelope,
 	type ProjectDocument,
+	stringifyJson,
 } from '@jasper/project';
+import { pageTabLeases, type TabLeaseRegistry } from './tab-leases.ts';
 import {
 	LeaseHeldError,
 	type OpenedProject,
 	type ProjectStore,
 	type ProjectViewState,
+	type RecoveredSnapshot,
+	type RecoveryStore,
+	type RecoveryWrite,
 	type SaveResult,
 } from './types.ts';
 
@@ -28,6 +34,11 @@ export type EngineProjectStoreOptions = {
 	/** `savedBy.platform` written into envelopes (`web` | `desktop` | `pwa`). */
 	platform?: string;
 	appVersion?: string;
+	/**
+	 * This tab's lease memory, so a reloaded page reclaims its previous page's lease at once (default: the
+	 * page's `sessionStorage` + BroadcastChannel registry; none outside a browser).
+	 */
+	tabLeases?: TabLeaseRegistry;
 };
 
 type LeaseRecord = {
@@ -37,8 +48,6 @@ type LeaseRecord = {
 	aliases: Set<string>;
 };
 
-/** Session ids holding (or releasing) leases from this page; see acquireLease. */
-const TAB_SESSIONS = new Set<string>();
 const LOCAL_RELEASE_RETRIES = 20;
 const LOCAL_RELEASE_WAIT_MS = 150;
 
@@ -50,7 +59,7 @@ function randomSessionId(): string {
 	return c?.randomUUID ? c.randomUUID() : `ses_${Math.random().toString(36).slice(2, 14)}`;
 }
 
-export class EngineProjectStore implements ProjectStore {
+export class EngineProjectStore implements ProjectStore, RecoveryStore {
 	private readonly ids = createRandomIdSource();
 	private readonly mgTemplates: MgTemplateRegistry | undefined;
 	private readonly platform: string;
@@ -58,6 +67,7 @@ export class EngineProjectStore implements ProjectStore {
 	private readonly leases = new Map<string, LeaseRecord>();
 	private readonly unloadTarget: EventTarget | null;
 	private readonly keepaliveFetch: typeof fetch | undefined;
+	private readonly tabLeases: TabLeaseRegistry;
 	/** The `pagehide` listener is attached only while this store holds leases (no leak per store instance). */
 	private unloadAttached = false;
 	private readonly onPageHide = () => {
@@ -73,6 +83,7 @@ export class EngineProjectStore implements ProjectStore {
 		this.appVersion = opts.appVersion;
 		this.unloadTarget = (globalThis as { window?: EventTarget }).window ?? null;
 		this.keepaliveFetch = globalThis.fetch as typeof fetch | undefined;
+		this.tabLeases = opts.tabLeases ?? pageTabLeases();
 	}
 
 	/** Attaches the pagehide release while leases are held and detaches it when the last one goes. */
@@ -126,7 +137,9 @@ export class EngineProjectStore implements ProjectStore {
 		meta: { revision: number; baseRevision: number },
 	): Promise<SaveResult> {
 		try {
-			const r = await this.engine.putProject(projectId, this.envelope(doc, meta.revision), meta.baseRevision);
+			// ui-perf: incremental serialisation (only the objects an edit replaced are serialised again; same JSON).
+			const body = new JsonText(stringifyJson(this.envelope(doc, meta.revision)));
+			const r = await this.engine.putProject(projectId, body, meta.baseRevision);
 			return { ok: true, revision: r.revision };
 		} catch (e) {
 			if (isCode(e, 'REVISION_CONFLICT')) {
@@ -146,12 +159,57 @@ export class EngineProjectStore implements ProjectStore {
 		return [...versions].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 	}
 
+	/** S01:PER-001: restores a saved version as a new project copy; returns its id. */
 	async restoreVersion(projectId: string, versionId: string): Promise<string> {
-		// TODO(WP-2F/M2): needs `GET /api/projects/:pid/versions/:versionId` (not in the M1 route table).
-		throw new EngineError(
-			'NOT_IMPLEMENTED',
-			`Restoring version ${versionId} of ${projectId} needs an engine route that arrives after M1`,
-		);
+		return (await this.engine.restoreVersion(projectId, versionId, { mode: 'copy' })).projectId;
+	}
+
+	/** Writes a saved version over the project (the engine keeps the replaced state as a version). */
+	async revertToVersion(projectId: string, versionId: string, leaseId?: string): Promise<number> {
+		const r = await this.engine.restoreVersion(projectId, versionId, {
+			mode: 'replace',
+			...(leaseId ? { leaseId } : {}),
+		});
+		return r.revision;
+	}
+
+	async saveDocumentAs(doc: ProjectDocument, name: string): Promise<string> {
+		return this.createFrom(doc, name);
+	}
+
+	// ------------------------------------------------------------ crash recovery (S01:PER-021, AC-18)
+
+	async writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void> {
+		// ui-perf: the journal shares the autosave's incremental serialisation (the same document objects).
+		const req = {
+			leaseId: w.leaseId,
+			baseRevision: w.baseRevision,
+			revision: w.revision,
+			changes: w.changes,
+			changeCount: w.changeCount,
+			envelope: this.envelope(w.document, w.revision),
+		} satisfies RecoveryPutRequest;
+		await this.engine.putRecovery(projectId, sessionId, new JsonText(stringifyJson(req)));
+	}
+
+	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {
+		return (await this.engine.listRecovery(projectId)).candidates;
+	}
+
+	async readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot> {
+		const r = await this.engine.getRecovery(projectId, sessionId);
+		const loaded = loadProject(r.envelope, { ids: this.ids, mgTemplates: this.mgTemplates });
+		if (loaded.readOnly)
+			throw new EngineError('VALIDATION_FAILED', 'The unsaved changes were made by a newer JasperEditor');
+		return { info: r.candidate, document: loaded.document, repairs: loaded.repairs };
+	}
+
+	async discardRecovery(projectId: string, sessionId: string, leaseId?: string): Promise<void> {
+		try {
+			await this.engine.deleteRecovery(projectId, sessionId, leaseId);
+		} catch (e) {
+			if (!isCode(e, 'NOT_FOUND', 'PROJECT_NOT_FOUND')) throw e;
+		}
 	}
 
 	async duplicate(projectId: string, name: string): Promise<string> {
@@ -220,9 +278,10 @@ export class EngineProjectStore implements ProjectStore {
 		)
 			return held.lease;
 		let lease: Lease | null = null;
+		let takeOver = !!opts.takeOver;
 		for (let attempt = 0; lease === null; attempt++) {
 			try {
-				lease = opts.takeOver
+				lease = takeOver
 					? await this.engine.call('leaseAcquire', {
 							params: { projectId },
 							body: { sessionId, takeOver: true },
@@ -234,14 +293,21 @@ export class EngineProjectStore implements ProjectStore {
 				const holder = d.holderSessionId ?? 'unknown';
 				// A session of this same page is closing (route change, React StrictMode double mount):
 				// its release is in flight, so wait for it instead of opening read-only.
-				if (!opts.takeOver && TAB_SESSIONS.has(holder) && attempt < LOCAL_RELEASE_RETRIES) {
+				const local = this.tabLeases.isPageSession(holder);
+				if (!takeOver && local && attempt < LOCAL_RELEASE_RETRIES) {
 					await new Promise((resolve) => setTimeout(resolve, LOCAL_RELEASE_WAIT_MS));
+					continue;
+				}
+				// The previous page of this tab (a reload, a full navigation) still holds it because its pagehide
+				// release lost the race or was dropped: reclaim it now instead of opening read-only for 30 s.
+				if (!takeOver && !local && (await this.tabLeases.isLeftover(projectId, holder))) {
+					takeOver = true;
 					continue;
 				}
 				throw new LeaseHeldError(projectId, holder, d.expiresAt ?? null);
 			}
 		}
-		TAB_SESSIONS.add(sessionId);
+		this.tabLeases.remember(projectId, sessionId);
 		const aliases = new Set(
 			held && held.sessionId === sessionId ? [...held.aliases, held.lease.leaseId] : [],
 		);
@@ -271,6 +337,7 @@ export class EngineProjectStore implements ProjectStore {
 				} catch (e2) {
 					if (e2 instanceof LeaseHeldError) {
 						this.leases.delete(projectId);
+						this.tabLeases.forget(projectId, rec.sessionId);
 						this.syncUnloadListener();
 					}
 					throw e2;
@@ -278,6 +345,7 @@ export class EngineProjectStore implements ProjectStore {
 			}
 			if (isCode(e, 'LEASE_HELD')) {
 				this.leases.delete(projectId);
+				if (rec) this.tabLeases.forget(projectId, rec.sessionId);
 				this.syncUnloadListener();
 				const d = (e.detail ?? {}) as { holderSessionId?: string; expiresAt?: string };
 				throw new LeaseHeldError(projectId, d.holderSessionId ?? 'unknown', d.expiresAt ?? null);
@@ -303,8 +371,9 @@ export class EngineProjectStore implements ProjectStore {
 			} catch {
 				// unload: nothing else to do
 			}
-			TAB_SESSIONS.delete(rec.sessionId);
 		}
+		// Keep remembering them: if this keepalive release loses the race, the tab's next page reclaims them.
+		this.tabLeases.unload();
 		this.leases.clear();
 		this.syncUnloadListener();
 	}
@@ -322,7 +391,7 @@ export class EngineProjectStore implements ProjectStore {
 		} catch (e) {
 			if (!isCode(e, 'LEASE_NOT_FOUND', 'NOT_FOUND', 'NETWORK')) throw e;
 		} finally {
-			if (rec) TAB_SESSIONS.delete(rec.sessionId);
+			if (rec) this.tabLeases.forget(projectId, rec.sessionId);
 		}
 	}
 }

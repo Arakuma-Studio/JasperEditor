@@ -3,12 +3,15 @@
 // proxy when proxies are on and ready, S04:PX-004) → structural sharing with the previous doc.
 import { type RenderDoc, type RenderOptions, stabilizeRenderDoc } from '@jasper/compositions';
 import {
+	browserPictureNeed,
 	buildRenderSnapshot,
 	type FontRef,
 	type MediaAsset,
 	type MediaHandle,
 	mediaDecodeHints,
+	mediaLoaderPath,
 	type ProjectDocument,
+	proxyKeyOf,
 	sequenceDuration,
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
@@ -30,7 +33,14 @@ const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
 export function resolveMediaHandle(
 	asset: MediaAsset,
 	runtime: MediaRuntime | undefined,
-	opts: { mediaUrl?: MediaUrlFn; proxyTier?: ProxyTier } = {},
+	opts: {
+		mediaUrl?: MediaUrlFn;
+		proxyTier?: ProxyTier;
+		/** gaps (Toggle Proxies): play the attached proxy (`asset.proxy`) when there is one. */
+		attachedProxies?: boolean;
+		/** The playback resolution asks for the engine's proxies (default: whatever is ready). */
+		autoProxies?: boolean;
+	} = {},
 ): MediaHandle | null {
 	if (runtime && (runtime.availability === 'offline' || runtime.availability === 'error')) return null;
 	const mediaUrl = opts.mediaUrl ?? defaultMediaUrl;
@@ -40,17 +50,37 @@ export function resolveMediaHandle(
 		runtime?.playbackUrl ?? (key ? mediaUrl(key) : urlLoc && urlLoc.type === 'url' ? urlLoc.url : null);
 	if (!url) return null;
 	const proxyReady = runtime?.proxy.state === 'ready';
-	const proxyUrl = proxyReady
+	const autoProxyUrl = proxyReady
 		? (runtime?.proxyUrl ?? (key ? mediaUrl(key, { proxy: opts.proxyTier ?? '720' }) : null))
 		: null;
+	// gaps (PRJ-8): Toggle Proxies plays the attached proxy; media without one keep the engine proxy only when the
+	// playback resolution asks for it or the browser cannot decode the original.
+	const attachedKey = opts.attachedProxies ? proxyKeyOf(asset) : null;
+	const proxyUrl = attachedKey
+		? mediaUrl(attachedKey)
+		: opts.attachedProxies &&
+				opts.autoProxies === false &&
+				mediaDecodeHints(asset.probe).browserDecodable !== false
+			? null
+			: autoProxyUrl;
 	const vs = asset.probe.streams.find((s) => s.type === 'video');
 	const rotation = asset.probe.rotationDegrees;
 	const swap = rotation === 90 || rotation === 270;
 	const w = vs?.type === 'video' ? vs.width : null;
 	const h = vs?.type === 'video' ? vs.height : null;
+	// imports: Lottie / vector documents, and the engine's interpreted picture (display / interpreted proxy) when the
+	// asset needs one (the snapshot marks it `browserDecodable: false`, so the original is never shown).
+	const need = browserPictureNeed(asset);
+	const loader = mediaLoaderPath(asset);
+	const variantKey = need.picture ? `${need.picture}:${need.variant}` : null;
+	const variantUrl =
+		variantKey && runtime?.variant?.key === variantKey && runtime.variant.state === 'ready'
+			? (runtime.variant.url ?? null)
+			: null;
 	return {
+		...(loader && key ? { loaderUrl: `${mediaUrl(key).replace(/\/media\/.*$/, '')}${loader}` } : {}),
 		url,
-		proxyUrl,
+		proxyUrl: variantKey ? variantUrl : proxyUrl,
 		kind: asset.kind,
 		width: swap ? h : w,
 		height: swap ? w : h,
@@ -91,6 +121,10 @@ type RenderDocInput = {
 	media: Record<string, MediaRuntime>;
 	proxyTier?: ProxyTier;
 	mediaUrl?: MediaUrlFn;
+	/** gaps (Toggle Proxies): play attached proxies. */
+	attachedProxies?: boolean;
+	/** The playback resolution's engine proxies are on (`toggles.useProxies`). */
+	autoProxies?: boolean;
 	/** Engine font catalog (null while unavailable: text falls back to the default sans). */
 	fontCatalog?: FontCatalogLike | null;
 };
@@ -104,6 +138,7 @@ export function buildProgramDoc(input: RenderDocInput, prev: RenderDoc | null): 
 			resolveMediaHandle(asset, input.media[asset.id], {
 				mediaUrl: input.mediaUrl,
 				proxyTier: input.proxyTier,
+				...(input.attachedProxies ? { attachedProxies: true, autoProxies: !!input.autoProxies } : {}),
 			}),
 		resolveFont: (font, weight, italic) =>
 			fontUrlFromCatalog(input.fontCatalog ?? null, font, weight, italic),

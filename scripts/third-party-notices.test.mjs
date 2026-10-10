@@ -1,11 +1,19 @@
 // scripts/third-party-notices.mjs (S11:FIX-010): the closure, the rendered file and `--check`.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { collectNotices, packagesInSourcemaps } from './third-party-notices.mjs';
+import {
+	collectNotices,
+	collectPorted,
+	PORTED_END,
+	PORTED_START,
+	packagesInSourcemaps,
+	portedLicenseTexts,
+	renderNotices,
+} from './third-party-notices.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -137,5 +145,124 @@ describe('collectNotices over a miniature workspace', () => {
 		expect(() => collectNotices(root, ['apps/web'], [{ name: 'missing', from: 'apps/web' }])).toThrow(
 			/cannot resolve missing \(shipped build output\) from apps\/web/,
 		);
+	});
+});
+
+describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
+	const RECORD = [
+		'# Blur kernels',
+		'',
+		'- **Upstream:** https://github.com/storytold/effectcraft (commit abc)',
+		'- **Licence:** MIT OR Apache-2.0',
+		'- **Copyright:** Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors',
+		'',
+		'| Upstream path | Our path | What |',
+		'|---|---|---|',
+		'| `crates/a.rs` | `packages/b.ts` | box blur |',
+	].join('\n');
+	function tree(records) {
+		const root = mkdtempSync(join(tmpdir(), 'jasper-ported-'));
+		mkdirSync(join(root, 'licenses', 'ported'), { recursive: true });
+		mkdirSync(join(root, 'licenses', 'texts'), { recursive: true });
+		writeFileSync(
+			join(root, 'licenses', 'texts', 'MIT.txt'),
+			'MIT License\n\nCopyright (c) <year> <copyright holders>\n',
+		);
+		writeFileSync(join(root, 'licenses', 'texts', 'Apache-2.0.txt'), 'Apache License\nVersion 2.0\n');
+		writeFileSync(join(root, 'licenses', 'ported', 'README.md'), '# How to write a record\n');
+		for (const [name, text] of Object.entries(records))
+			writeFileSync(join(root, 'licenses', 'ported', name), text);
+		return root;
+	}
+
+	it('reads every record except the README, and renders them with the licence texts', () => {
+		const root = tree({ 'blur.md': RECORD });
+		const records = collectPorted(root);
+		expect(records.map((r) => [r.file, r.title, r.upstream, r.license, r.licenseIds, r.copyright])).toEqual([
+			[
+				'licenses/ported/blur.md',
+				'Blur kernels',
+				'https://github.com/storytold/effectcraft',
+				'MIT OR Apache-2.0',
+				['MIT', 'Apache-2.0'],
+				'Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors',
+			],
+		]);
+		const text = renderNotices([], records, portedLicenseTexts(root, records));
+		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
+		expect(section).toContain(
+			'| Blur kernels | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 |',
+		);
+		expect(section).toContain('| `crates/a.rs` | `packages/b.ts` | box blur |');
+		expect(section).toContain('## Licence text: MIT');
+		expect(section).toContain('## Licence text: Apache-2.0');
+		expect(text).not.toContain('How to write a record');
+	});
+
+	it('accepts the plain forms other records use', () => {
+		const root = tree({
+			'x.md':
+				'# X\n\nUpstream repo: https://github.com/storytold/filmcraft\nLicense: MIT\n\nCopyright (c) 2026 ArtCraft Team and the FilmCraft contributors\n',
+		});
+		const [r] = collectPorted(root);
+		expect([r.upstream, r.license, r.copyright]).toEqual([
+			'https://github.com/storytold/filmcraft',
+			'MIT',
+			'Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors',
+		]);
+	});
+
+	it('reads a licence line with extra words and emphasis', () => {
+		const root = tree({
+			'm.md':
+				'# M\n\nLicence of the ported code: **MIT OR Apache-2.0** (we use it under MIT).\n\n## EffectCraft — https://github.com/storytold/effectcraft\n\nCopyright (c) 2026 ArtCraft Team and the EffectCraft contributors\n',
+		});
+		const [r] = collectPorted(root);
+		expect([r.license, r.upstream]).toEqual([
+			'MIT OR Apache-2.0',
+			'https://github.com/storytold/effectcraft',
+		]);
+	});
+
+	it('refuses an incomplete record or a licence without its text, naming the file and the fix', () => {
+		expect(() => collectPorted(tree({ 'bad.md': '# Bad\n\nsome notes\n' }))).toThrow(
+			/licenses\/ported\/bad\.md: missing an upstream URL.*a licence.*a copyright line/,
+		);
+		expect(() =>
+			collectPorted(tree({ 'bsd.md': RECORD.replace('MIT OR Apache-2.0', 'BSD-3-Clause') })),
+		).toThrow(/add licenses\/texts\/BSD-3-Clause\.txt/);
+	});
+
+	it('names each copyright line once, with the records it covers (wp fixups)', () => {
+		const ec = 'Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors';
+		const fc = 'Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors';
+		const root = tree({
+			'a.md': RECORD.replace('# Blur kernels', '# A'),
+			'b.md': RECORD.replace('# Blur kernels', '# B').replace(ec, `${fc}; ${ec}.`),
+			'c.md': RECORD.replace('# Blur kernels', '# C').replace(ec, `${ec}; ${fc}`),
+		});
+		const records = collectPorted(root);
+		expect(records.map((r) => r.copyrights)).toEqual([[ec], [fc, ec], [ec, fc]]);
+		const text = renderNotices([], records, portedLicenseTexts(root, records));
+		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
+		// Per-record attribution in the table, by number; each holder spelled out once in the list.
+		expect(section).toContain('| A | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [1] |');
+		expect(section).toContain(
+			'| B | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [2] [1] |',
+		);
+		expect(section).toContain(`1. ${ec}: \`a\`, \`b\`, \`c\``);
+		expect(section).toContain(`2. ${fc}: \`b\`, \`c\``);
+		// Each licence text lists each holder once.
+		const applies = section.slice(section.indexOf('## Licence text: MIT'));
+		expect(applies.split(ec).length - 1).toBe(1);
+		expect(applies.split(fc).length - 1).toBe(1);
+		// The table and holder list name each line exactly once outside the record bodies.
+		const summary = section.slice(0, section.indexOf('## A'));
+		expect(summary.split(ec).length - 1).toBe(1);
+	});
+
+	it('the checked-in notices contain every record of the repository', () => {
+		const file = readFileSync(join(repo, 'THIRD_PARTY_NOTICES.md'), 'utf8');
+		for (const r of collectPorted(repo)) expect(file).toContain(`Record: \`${r.file}\``);
 	});
 });

@@ -120,7 +120,8 @@ const ItemsSectionSchema = z.looseObject({
 	rootItems: z.array(z.string()).min(1),
 });
 
-const ClipboardPayloadSchema = z
+/** The payload schema (also validates interchange fragments, commands/handlers/interchange.ts). */
+export const ClipboardPayloadSchema = z
 	.looseObject({
 		format: z.literal(CLIPBOARD_FORMAT),
 		version: z.literal(CLIPBOARD_VERSION),

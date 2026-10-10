@@ -1,6 +1,6 @@
 // Paste Attributes / Remove Attributes options (S01:CLB-005, S03:FX-011/012): the checkbox rows the dialog
-// shows, derived from the copied clip (or effects) and the target clips. Time Remapping and Channel Volume are
-// P2 and not modelled, so they have no row (no stubs).
+// shows, derived from the copied clip (or effects) and the target clips. Time Remapping (workstream `time`) pastes the
+// copied clip's speed keyframes; Channel Volume is P2 and not modelled, so it has no row (no stubs).
 import {
 	type Clip,
 	type ClipboardPayload,
@@ -22,7 +22,7 @@ export type AttributeOption = {
 	reason?: string;
 };
 
-const isAudio = (k: string) => k === 'audio' || k === 'nest-audio';
+const isAudio = (k: string) => k === 'audio' || k === 'nest-audio' || k === 'synthetic-audio';
 
 function effectLabel(
 	registry: EffectRegistry,
@@ -35,7 +35,7 @@ function effectLabel(
 
 type Source = {
 	kind: string;
-	has: { motion: boolean; opacity: boolean; volume: boolean; panner: boolean };
+	has: { motion: boolean; opacity: boolean; volume: boolean; panner: boolean; timeRemap: boolean };
 	effects: EffectInstance[];
 	textIn: boolean;
 	textOut: boolean;
@@ -49,7 +49,13 @@ function sourcesOf(p: ClipboardPayload): Source[] {
 		return [
 			{
 				kind: p.effects.source.clipKind,
-				has: { motion: !!i.transform, opacity: !!i.opacity, volume: !!i.volumeDb, panner: !!i.pan },
+				has: {
+					motion: !!i.transform,
+					opacity: !!i.opacity,
+					volume: !!i.volumeDb,
+					panner: !!i.pan,
+					timeRemap: false,
+				},
 				effects: p.effects.effects,
 				textIn: false,
 				textOut: false,
@@ -67,7 +73,13 @@ function sourcesOf(p: ClipboardPayload): Source[] {
 			const ta = r.textAnimation as { in?: unknown; out?: unknown } | undefined;
 			return {
 				kind: c.kind,
-				has: { motion: !!r.transform, opacity: !!r.opacity, volume: !!r.volumeDb, panner: !!r.pan },
+				has: {
+					motion: !!r.transform,
+					opacity: !!r.opacity,
+					volume: !!r.volumeDb,
+					panner: !!r.pan,
+					timeRemap: !!(r.timeRemap as { enabled?: boolean } | undefined)?.enabled,
+				},
 				effects: (r.effects as EffectInstance[] | undefined) ?? [],
 				textIn: !!ta?.in,
 				textOut: !!ta?.out,
@@ -106,6 +118,14 @@ export function pasteAttributeOptions(
 			'video',
 			takes((c) => !!c.opacity),
 			visual,
+		);
+	if (any((s) => s.has.timeRemap))
+		row(
+			'timeRemapping',
+			'Time Remapping',
+			'video',
+			takes((c) => (c.kind === 'video' || c.kind === 'nest-video') && !c.speed.reverse),
+			'Select video or nested sequence clips (not reversed)',
 		);
 	const audio = 'The selected clips have no audio';
 	if (any((s) => s.has.volume))
@@ -188,6 +208,8 @@ export function removeAttributeOptions(
 	if (t.some((c) => !!kindCapabilities(c.kind)?.hasTransform && !!c.transform))
 		row('motion', 'Motion', 'video');
 	if (t.some((c) => !!c.opacity)) row('opacity', 'Opacity', 'video');
+	if (t.some((c) => !!(c.timeRemap as { enabled?: boolean } | undefined)?.enabled))
+		row('timeRemapping', 'Time Remapping', 'video');
 	if (t.some((c) => !!c.volumeDb)) row('volume', 'Volume', 'audio');
 	if (t.some((c) => !!c.pan)) row('panner', 'Panner', 'audio');
 	const seen = new Set<string>();
@@ -221,6 +243,7 @@ export function toRemoveAttributes(keys: readonly string[]) {
 	return {
 		...(set.has('motion') ? { motion: true } : {}),
 		...(set.has('opacity') ? { opacity: true } : {}),
+		...(set.has('timeRemapping') ? { timeRemapping: true } : {}),
 		...(set.has('volume') ? { volume: true } : {}),
 		...(set.has('panner') ? { panner: true } : {}),
 		...(fx.length ? { effects: fx } : {}),

@@ -58,13 +58,31 @@ These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-n
 - **Not run on real hardware:** hardware H.264 export has not run on a GPU host (only the argument sets are
   unit-tested). OpenH264 now runs for real: with `vendor/ffmpeg-lgpl` present every H.264 export and proxy in
   the unit tests and in `pnpm e2e` is encoded by libopenh264.
-- **Remotion Player stall (4.0.499):** the root cause is unknown. The playback watchdog works around it
-  (E2E is stable).
-- **Editing lock:** the lock is not released on `pagehide`, so a reload leaves the project read-only until
-  "Take over editing".
+- **Remotion Player stall (4.0.499):** root cause found and fixed by workstream `previews` (2026-10-08): Chrome
+  leaves `AudioContext.resume()` pending when `suspend()` follows before it settled, and the Player waits for the
+  audio clock forever; `installSerialAudioContext` serialises them (docs/wp-notes/previews.md §5). The watchdog
+  stays as a counted safety net (`stallsRecovered`, 0 in the measured runs).
+- **Editing lock (corrected 2026-10-07):** an earlier version of this list said the lock is not released on
+  `pagehide`. That was wrong: `EngineProjectStore` (`packages/session/src/persistence/engine.ts`) sends a
+  keepalive `DELETE …/lease/:id` for every held lease on `pagehide`, with the bearer token in token-only auth
+  mode since e8b4d14 (test: "keepalive lease release carries the bearer token…" in
+  `packages/session/test/persistence/engine-store.test.ts`), so a reload reopens the project editable. If the
+  browser drops the request (a crash, a killed process), the lease expires after 30 s, and the unsaved changes
+  are offered for recovery on the next open (ARCHITECTURE D-39). Observed once in about six automated runs
+  (`e2e/project-files.spec.ts` development, 7 October): a full navigation to Home within a second or two of opening
+  a project left its lease held until it expired. **Resolved by workstream `polish` (2026-10-10):** the cause is that
+  the keepalive request is best effort and can lose the race against the new page's acquire; a tab now remembers the
+  session that held each lease (`sessionStorage`) and takes its own lease over at once, after checking that no live
+  page of the origin still holds it (`packages/session/src/persistence/tab-leases.ts`, docs/wp-notes/polish.md §1;
+  `e2e/project-files.spec.ts` drops every release and reloads).
 - **Unregistered commands at the M1 checkpoint:** clipboard, transitions, captions, preferences, and
-  other M2 menu commands were pending. The old wiring inventory test was removed during test cleanup;
-  current command behavior is checked through feature tests and browser workflows.
+  other M2 menu commands were pending. **Resolved:** the parity workstreams registered them (the last five menu
+  entries and five dead default shortcuts by `polish`), and `apps/web/test/polish-menu-wiring.test.ts` — the wiring
+  inventory test, back — fails when a menubar entry, a panel menu entry or a default key binding has no command.
+- **`pnpm mg:build` (item 9):** it stopped building when every asset got an `.attribution` sidecar (fframes'
+  `include_media_dir!` refuses non-media files); fixed by `polish` (the media is staged without the sidecars), and
+  `pnpm e2e` builds `jasper-mg` when cargo is installed. Re-run 2026-10-10: `e2e/smoke.spec.ts` 11 / 11, the native
+  motion-graphic export included.
 
 ## WP-3I acceptance run (evidence)
 
@@ -101,17 +119,18 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
 
 ## Follow-ups for M2 (by owner package and spec ID)
 
-- **WP-2C / compositions (S03:ARC-010, PGM-003): Player stall.** Find the root cause of the Remotion Player
-  4.0.499 not starting after seeks with `@remotion/media`. The playback watchdog (`PLAY_WATCHDOG_MS`) is a
-  workaround.
+- **WP-2C / compositions (S03:ARC-010, PGM-003): Player stall.** Done (workstream `previews`): root cause
+  (AudioContext resume/suspend race) fixed in `packages/compositions/src/audio/serial-audio-context.ts`; the watchdog
+  (`PLAY_WATCHDOG_MS`) remains as a counted safety net.
 - **WP-2G / session (S01:LIFE-045): automatic renders.** Request preview/master renders automatically,
   500 ms after MG param, duration or canvas changes. Today the Program badge only tracks renders started
   with `mg.rerender`.
 - **WP-2B (S02:TL-150): filmstrips.** Filmstrips are hidden at the default video track height; consider a
   default height ≥ 40 px or a thumbnail strip for small tracks.
-- **WP-2A / WP-2E (S05 §12.2): remaining commands at this checkpoint.** Register menubar/keymap ids for
+- ~~**WP-2A / WP-2E (S05 §12.2): remaining commands at this checkpoint.** Register menubar/keymap ids for
   clipboard (S01 §20), transitions, captions, shapes, Save As /
-  Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.
+  Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.~~
+  Done by the parity workstreams; every menu entry and default key binding has a command (see above).
 - **WP-2F (D-13): hardware H.264.** Run an export on a GPU host. The WP-3L encoder selector
   (`apps/engine/src/tools/encoders.ts`) picks hardware encoders first, but only their argument sets are
   unit-tested here (no GPU on the dev host). OpenH264 on the LGPL build is covered since wp-lgpl.

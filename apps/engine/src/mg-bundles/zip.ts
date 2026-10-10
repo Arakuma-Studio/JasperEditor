@@ -1,9 +1,12 @@
 // Minimal zip reader for bundle uploads (S08:MGC-010, web path): stored and deflated entries, zip64 sizes and
 // offsets, no encryption. Entries are extracted under `dest` only (no absolute paths, no `..`, no symlinks).
 // Node's zlib does the inflate; no dependency.
-import { mkdir, open, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, open, rm } from 'node:fs/promises';
 import { dirname, join, normalize, sep } from 'node:path';
-import { inflateRawSync } from 'node:zlib';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { createInflateRaw } from 'node:zlib';
 
 export class ZipError extends Error {
 	constructor(message: string) {
@@ -23,7 +26,16 @@ const LOC = 0x04034b50;
 /** Limits against zip bombs (a built bundle is a few MB plus its public/ folder). */
 const ZIP_LIMITS = { maxEntries: 50_000, maxTotalBytes: 8 * 1024 ** 3 };
 
-async function readAt(fh: Awaited<ReturnType<typeof open>>, pos: number, len: number): Promise<Buffer> {
+type Handle = Awaited<ReturnType<typeof open>> & { size?: number };
+
+/**
+ * `len` bytes at `pos`. Offsets and lengths come from the archive: anything outside the file is a broken archive
+ * (golden-fuzz: an out-of-range length reached `fh.read` and aborted the whole process in a native assertion).
+ */
+async function readAt(fh: Handle, pos: number, len: number): Promise<Buffer> {
+	const size = fh.size ?? Number.POSITIVE_INFINITY;
+	if (!Number.isSafeInteger(pos) || !Number.isSafeInteger(len) || pos < 0 || len < 0 || pos + len > size)
+		throw new ZipError('Broken zip (an offset or size points outside the file)');
 	const buf = Buffer.alloc(len);
 	let off = 0;
 	while (off < len) {
@@ -34,7 +46,8 @@ async function readAt(fh: Awaited<ReturnType<typeof open>>, pos: number, len: nu
 	return buf.subarray(0, off);
 }
 
-async function readEntries(fh: Awaited<ReturnType<typeof open>>, size: number): Promise<Entry[]> {
+async function readEntries(fh: Handle, size: number): Promise<Entry[]> {
+	fh.size = size;
 	const tailLen = Math.min(size, 65_557);
 	const tail = await readAt(fh, size - tailLen, tailLen);
 	let e = -1;
@@ -77,11 +90,19 @@ async function readEntries(fh: Awaited<ReturnType<typeof open>>, size: number): 
 		// zip64 extra field: the 0xffffffff fields in order (size, compressed size, offset).
 		let x = p + 46 + nameLen;
 		const xEnd = x + extraLen;
+		if (xEnd + commentLen > cd.length) throw new ZipError('Broken central directory');
+		if (name.includes('\0')) throw new ZipError('Invalid entry name (NUL character)');
 		while (x + 4 <= xEnd) {
 			const id = cd.readUInt16LE(x);
 			const len = cd.readUInt16LE(x + 2);
+			if (x + 4 + len > xEnd) throw new ZipError(`Broken extra field: ${name}`);
 			if (id === 0x0001) {
 				let q = x + 4;
+				const need =
+					(usize === 0xffffffff ? 8 : 0) +
+					(compSize === 0xffffffff ? 8 : 0) +
+					(offset === 0xffffffff ? 8 : 0);
+				if (need > len) throw new ZipError(`Broken zip64 extra field: ${name}`);
 				if (usize === 0xffffffff) {
 					usize = Number(cd.readBigUInt64LE(q));
 					q += 8;
@@ -112,11 +133,41 @@ function safeEntryPath(dest: string, name: string): string | null {
 	return out === dest || out.startsWith(dest.endsWith(sep) ? dest : dest + sep) ? out : null;
 }
 
+/**
+ * Writes one entry to `target`, streaming (security review ZIP-1: an entry used to be inflated wholly in memory up to
+ * its declared size, so a small archive could ask for gigabytes). The output is cut at the declared size; a different
+ * size or corrupt data removes the file and throws.
+ */
+async function writeEntry(zipFile: string, e: Entry, dataStart: number, target: string): Promise<void> {
+	let written = 0;
+	const limit = new Transform({
+		transform(chunk: Buffer, _enc, cb) {
+			written += chunk.length;
+			if (written > e.size) return cb(new ZipError(`Size mismatch: ${e.name}`));
+			cb(null, chunk);
+		},
+	});
+	const source =
+		e.compSize > 0
+			? createReadStream(zipFile, { start: dataStart, end: dataStart + e.compSize - 1 })
+			: Readable.from([]);
+	try {
+		if (e.method === 0) await pipeline(source, limit, createWriteStream(target));
+		else await pipeline(source, createInflateRaw(), limit, createWriteStream(target));
+		if (written !== e.size) throw new ZipError(`Size mismatch: ${e.name}`);
+	} catch (err) {
+		await rm(target, { force: true }).catch(() => undefined);
+		if (err instanceof ZipError) throw err;
+		throw new ZipError(`Corrupt compressed data: ${e.name} (${(err as Error).message})`);
+	}
+}
+
 /** Extracts every file entry of `zipFile` into `dest`; returns the number of files written. */
 export async function extractZip(zipFile: string, dest: string): Promise<number> {
 	const fh = await open(zipFile, 'r');
 	try {
 		const { size } = await fh.stat();
+		(fh as Handle).size = size;
 		const entries = await readEntries(fh, size);
 		let total = 0;
 		let files = 0;
@@ -136,14 +187,16 @@ export async function extractZip(zipFile: string, dest: string): Promise<number>
 			const head = await readAt(fh, e.offset, 30);
 			if (head.readUInt32LE(0) !== LOC) throw new ZipError(`Broken local header: ${e.name}`);
 			const dataStart = e.offset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28);
-			const raw = await readAt(fh, dataStart, e.compSize);
-			let data: Buffer;
-			if (e.method === 0) data = raw;
-			else if (e.method === 8) data = inflateRawSync(raw, { maxOutputLength: Math.max(1, e.size) });
-			else throw new ZipError(`Unsupported compression method ${e.method}: ${e.name}`);
-			if (data.length !== e.size) throw new ZipError(`Size mismatch: ${e.name}`);
+			if (
+				!Number.isSafeInteger(dataStart) ||
+				!Number.isSafeInteger(e.compSize) ||
+				dataStart + e.compSize > size
+			)
+				throw new ZipError('Broken zip (an offset or size points outside the file)');
+			if (e.method !== 0 && e.method !== 8)
+				throw new ZipError(`Unsupported compression method ${e.method}: ${e.name}`);
 			await mkdir(dirname(target), { recursive: true });
-			await writeFile(target, data);
+			await writeEntry(zipFile, e, dataStart, target);
 			files++;
 		}
 		return files;

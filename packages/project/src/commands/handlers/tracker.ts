@@ -9,6 +9,7 @@ import { isConvexQuad, type Quad } from '../../render/homography.ts';
 import { CORNER_PIN_EFFECT_ID, CORNER_PIN_PARAMS } from '../../render/scene.ts';
 import type { Animatable, Keyframe, Vec2 } from '../../schema/common.ts';
 import type {
+	Clip,
 	ClipTracker,
 	EffectInstance,
 	TrackerSamples,
@@ -16,6 +17,7 @@ import type {
 	VideoClip,
 } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
+import { isRemapped } from '../../time-remap/model.ts';
 import { computeTrackingApply, type TransformKey, trackLayerOf } from '../../tracking/apply.ts';
 import {
 	mergeSamples,
@@ -111,6 +113,13 @@ export const trackerHandlers: HandlerMap = {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'video')
 			h.fail('E_INVALID_PARAM', `Trackers go on video clips, not ${clip.kind} clips`, { path: [clip.id] });
+		// Workstream `time`: tracker samples live in content time, which a time remap no longer maps to the picture.
+		if (isRemapped(clip as Clip))
+			h.fail(
+				'E_INVALID_PARAM',
+				`Clip ${clip.id} is time-remapped: track it before remapping (Remove Time Remapping, track, then remap)`,
+				{ path: [clip.id] },
+			);
 		assertClipUnlocked(seq, clip, h);
 		const box = intrinsicBoxOf({ doc, seq, clip });
 		const time = h.clipContentTime(seq, clip, cmd.at);
