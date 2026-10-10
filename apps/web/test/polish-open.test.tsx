@@ -4,7 +4,15 @@ import { DERIVATIVE_KINDS, MEDIA_STATUS_BATCH_MAX } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BOOT_FAILURE_TEXT, editorBootScript, editorChunks } from '../editor-boot.ts';
+import {
+	BOOT_FAILURE_TEXT,
+	BOOT_MAX_RELOADS,
+	BOOT_RETRIES,
+	BOOT_RETRY_KEY,
+	BOOT_SLOW_MS,
+	editorBootScript,
+	editorChunks,
+} from '../editor-boot.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import { fetchWithEarly } from '../src/state/engine.tsx';
@@ -223,6 +231,11 @@ describe('editor boot script (preload + early project fetch)', () => {
 
 	it('says so when the bundle cannot be downloaded, instead of a blank page', () => {
 		document.body.innerHTML = '<div id="root"></div>';
+		// The automatic reloads are used up (their own test below): the next failure shows the message.
+		window.sessionStorage.setItem(
+			BOOT_RETRY_KEY,
+			JSON.stringify({ fast: BOOT_RETRIES, total: BOOT_MAX_RELOADS }),
+		);
 		const root = document.getElementById('root')!;
 		const listeners: EventListener[] = [];
 		const add = window.addEventListener.bind(window);
@@ -273,7 +286,88 @@ describe('editor boot script (preload + early project fetch)', () => {
 		} finally {
 			for (const fn of listeners) window.removeEventListener('error', fn, true);
 			window.localStorage.removeItem('jasper:gaps-prefs');
+			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
 			document.body.innerHTML = '';
+		}
+	});
+
+	it('reloads by itself first: fast failures have a small budget, slow cut-off loads a larger one, a boot resets it', async () => {
+		// Regression (verify workstream): a cold desktop dev start had every module request aborted by Chromium's
+		// net::ERR_NETWORK_CHANGED (Docker interfaces coming and going on the host), and the page showed "could not
+		// load" for good; a reload loads it, and each reload is faster than the one before.
+		vi.useFakeTimers();
+		const reload = vi.fn();
+		const realLocation = window.location;
+		Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, reload } });
+		const listeners: EventListener[] = [];
+		const add = window.addEventListener.bind(window);
+		const stored = () => JSON.parse(window.sessionStorage.getItem(BOOT_RETRY_KEY) ?? 'null');
+		/** A fresh page: the boot script runs; then, `at` ms after the navigation, every module fails. */
+		const page = async (at: number | null) => {
+			for (const fn of listeners.splice(0)) window.removeEventListener('error', fn, true);
+			document.body.innerHTML = '<div id="root"></div>';
+			reload.mockClear();
+			const spy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+				type: string,
+				fn: EventListener,
+				opts?: boolean,
+			) => {
+				if (type === 'error') listeners.push(fn);
+				add(type, fn, opts);
+			}) as typeof window.addEventListener);
+			try {
+				new Function(editorBootScript([]))();
+			} finally {
+				spy.mockRestore();
+			}
+			const root = document.getElementById('root')!;
+			if (at === null) return { root, reloaded: false, message: false };
+			const now = vi.spyOn(performance, 'now').mockReturnValue(at);
+			try {
+				for (let i = 0; i < 3; i++) {
+					const entry = document.createElement('script');
+					entry.type = 'module';
+					document.body.appendChild(entry);
+					entry.dispatchEvent(new Event('error'));
+				}
+			} finally {
+				now.mockRestore();
+			}
+			const message = root.querySelector('[data-testid="app-load-error"]') !== null;
+			await vi.advanceTimersByTimeAsync(2000);
+			return { root, reloaded: reload.mock.calls.length > 0, message };
+		};
+		try {
+			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
+			// quick failures (the server is down): BOOT_RETRIES reloads, one per page however many modules fail
+			for (let i = 1; i <= BOOT_RETRIES; i++) {
+				expect(await page(100)).toMatchObject({ reloaded: true, message: false });
+				expect(reload).toHaveBeenCalledTimes(1);
+				expect(stored()).toEqual({ fast: i, total: i });
+			}
+			expect(await page(100)).toMatchObject({ reloaded: false, message: true });
+			// a slow load cut off midway was making progress: it is reloaded although the quick budget is spent
+			expect(await page(BOOT_SLOW_MS + 1)).toMatchObject({ reloaded: true, message: false });
+			expect(stored()).toEqual({ fast: BOOT_RETRIES, total: BOOT_RETRIES + 1 });
+			// ... up to BOOT_MAX_RELOADS in all
+			for (let i = BOOT_RETRIES + 2; i <= BOOT_MAX_RELOADS; i++)
+				expect(await page(BOOT_SLOW_MS * 2)).toMatchObject({ reloaded: true, message: false });
+			expect(stored()).toEqual({ fast: BOOT_RETRIES, total: BOOT_MAX_RELOADS });
+			expect(await page(BOOT_SLOW_MS * 2)).toMatchObject({ reloaded: false, message: true });
+			// a page that boots (the app renders) clears the count; a broken stored value counts as none
+			const { root } = await page(null);
+			root.appendChild(document.createElement('main'));
+			await vi.advanceTimersByTimeAsync(0);
+			expect(stored()).toBeNull();
+			window.sessionStorage.setItem(BOOT_RETRY_KEY, '{"fast":"x","total":-4}');
+			expect(await page(100)).toMatchObject({ reloaded: true, message: false });
+			expect(stored()).toEqual({ fast: 1, total: 1 });
+		} finally {
+			for (const fn of listeners) window.removeEventListener('error', fn, true);
+			Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
+			document.body.innerHTML = '';
+			vi.useRealTimers();
 		}
 	});
 

@@ -10,10 +10,26 @@
  *
  * On every URL it also watches the entry module: when the bundle or one of its static imports cannot be downloaded
  * (the network changed while the page loaded, the server restarted), nothing runs and nothing reports it; the page
- * stayed blank. The script then shows a message with a Reload button. (A lazy chunk that fails is reported by the app
+ * stayed blank. The script first reloads the page by itself, with a short backoff: the common cause is transient —
+ * Chromium aborts every request in flight, loopback included, when it sees the host's IP addresses change
+ * (`net::ERR_NETWORK_CHANGED`; on Linux any interface counts, so a Docker container starting or stopping is enough),
+ * and a slow first load (a cold dev server transforming hundreds of modules, a loaded machine, the desktop shell
+ * starting) is in flight long enough to be hit (verify workstream: the desktop dev smoke stalled on a cold Vite).
+ * A load that failed quickly (the server is down or broken) is retried BOOT_RETRIES times; one that failed after
+ * BOOT_SLOW_MS was making progress and was cut off, and only counts towards BOOT_MAX_RELOADS per tab, since every
+ * reload is faster than the one before (the server's transforms and the browser cache are warm). Only when the
+ * reloads fail too does it show a message with a Reload button. (A lazy chunk that fails is reported by the app
  * itself: "Could not load the editor".)
  */
 export const EDITOR_BOOT = 'editor-boot.js';
+/** Automatic reloads of a page whose bundle failed to load quickly, before the message is shown (per tab). */
+export const BOOT_RETRIES = 3;
+/** A load that failed later than this after the navigation was cut off while making progress (a slow first load). */
+export const BOOT_SLOW_MS = 8000;
+/** Automatic reloads per tab in all, slow ones included. */
+export const BOOT_MAX_RELOADS = 8;
+/** sessionStorage: `{ fast, total }`, the reloads so far; cleared once the app renders. */
+export const BOOT_RETRY_KEY = 'jasper:boot-retries';
 
 /** The texts of the start-up failure message; the bundle and its catalogue are what failed to load. */
 export const BOOT_FAILURE_TEXT: Record<string, { message: string; reload: string }> = {
@@ -29,13 +45,52 @@ export function editorBootScript(chunks: readonly string[]): string {
 // and starts fetching the project.
 (() => {
 	const texts = ${JSON.stringify(BOOT_FAILURE_TEXT)};
+	const KEY = ${JSON.stringify(BOOT_RETRY_KEY)};
+	const store = (n) => {
+		try {
+			if (n) sessionStorage.setItem(KEY, JSON.stringify(n));
+			else sessionStorage.removeItem(KEY);
+		} catch {}
+	};
+	const count = (v) => (Number.isSafeInteger(v) && v > 0 ? v : 0);
+	let tries = { fast: 0, total: 0 };
+	try {
+		const saved = JSON.parse(sessionStorage.getItem(KEY) || '{}') || {};
+		tries = { fast: count(saved.fast), total: count(saved.total) };
+	} catch {}
+	let retrying = false;
+	// The app rendered: a later failure starts with a full set of retries again.
+	const watch = () => {
+		const root = document.getElementById('root');
+		if (!root || typeof MutationObserver === 'undefined') return;
+		new MutationObserver((_m, observer) => {
+			if (root.childElementCount > 0 && !root.querySelector('[data-testid="app-load-error"]')) {
+				store(null);
+				observer.disconnect();
+			}
+		}).observe(root, { childList: true });
+	};
+	if (tries.total) {
+		if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch, { once: true });
+		else watch();
+	}
 	window.addEventListener(
 		'error',
 		(event) => {
 			const el = event.target;
 			if (!el || el.tagName !== 'SCRIPT' || el.type !== 'module') return;
 			const root = document.getElementById('root');
-			if (!root || root.childElementCount > 0) return;
+			if (!root || root.childElementCount > 0 || retrying) return;
+			const slow = typeof performance !== 'undefined' && performance.now() >= ${BOOT_SLOW_MS};
+			const fast = tries.fast + (slow ? 0 : 1);
+			if (fast <= ${BOOT_RETRIES} && tries.total < ${BOOT_MAX_RELOADS}) {
+				// Every module of the page fails at once: one reload.
+				retrying = true;
+				const total = tries.total + 1;
+				store({ fast, total });
+				setTimeout(() => location.reload(), Math.min(300 * total, 2000));
+				return;
+			}
 			let lang = 'en';
 			try {
 				lang = String(JSON.parse(localStorage.getItem('jasper:gaps-prefs') || '{}').appearance.language).slice(0, 2);
@@ -50,7 +105,10 @@ export function editorBootScript(chunks: readonly string[]): string {
 			const reload = document.createElement('button');
 			reload.type = 'button';
 			reload.textContent = text.reload;
-			reload.addEventListener('click', () => location.reload());
+			reload.addEventListener('click', () => {
+				store(null);
+				location.reload();
+			});
 			box.append(message, reload);
 			root.appendChild(box);
 			reload.focus();

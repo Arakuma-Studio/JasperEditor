@@ -54,6 +54,48 @@ async function waitFor(url, ms) {
 	fail(`${url} did not come up within ${ms} ms`);
 }
 
+/**
+ * Loads the app's static module graph once from Node, as a first browser visit to `pnpm dev` would, so the window
+ * opens on a warm dev server. A cold Vite transforms several hundred modules on demand, and on a loaded machine the
+ * window's first load then takes long enough for Chromium to abort it (net::ERR_NETWORK_CHANGED whenever the host's
+ * addresses change, e.g. a Docker container starting; Node's fetch is not affected). The page reloads itself when
+ * that happens (apps/web/editor-boot.ts) and that is tested in apps/web; this keeps the smoke about the desktop shell.
+ */
+async function warmViteGraph(origin, ms) {
+	const t0 = Date.now();
+	const seen = new Set();
+	const queue = ['/', '/src/main.tsx'];
+	const importRe = /(?:\bimport\s*(?:[^'"()]*?\bfrom\s*)?|\bexport\s*[^'"()]*?\bfrom\s*)["'](\/[^"']+)["']/g;
+	let failures = 0;
+	const one = async (path) => {
+		try {
+			const response = await fetch(origin + path, { signal: AbortSignal.timeout(60_000) });
+			const text = await response.text();
+			if (!response.ok) return;
+			if (path === '/') {
+				for (const m of text.matchAll(/<script[^>]+src="(\/[^"]+)"/g)) queue.push(m[1]);
+				return;
+			}
+			for (const m of text.matchAll(importRe)) if (!m[1].startsWith('//')) queue.push(m[1]);
+		} catch {
+			failures++;
+		}
+	};
+	while (queue.length && Date.now() - t0 < ms) {
+		const batch = [];
+		while (queue.length && batch.length < 8) {
+			const next = queue.shift();
+			if (seen.has(next)) continue;
+			seen.add(next);
+			batch.push(one(next));
+		}
+		await Promise.all(batch);
+	}
+	console.log(
+		`[desktop-smoke] warmed the dev server: ${seen.size} modules in ${Math.round((Date.now() - t0) / 1000)} s${failures ? ` (${failures} failed)` : ''}`,
+	);
+}
+
 async function freePort() {
 	return new Promise((resolve, reject) => {
 		const server = createServer();
@@ -107,6 +149,7 @@ if (mode === 'dev') {
 		),
 	);
 	await waitFor(`http://127.0.0.1:${webPort}/health`, 60_000); // Vite up and proxying to the engine
+	await warmViteGraph(`http://127.0.0.1:${webPort}`, 300_000);
 	env.JASPER_DESKTOP_DEV_URL = `http://127.0.0.1:${webPort}`;
 } else {
 	for (const f of ['apps/engine/dist/engine.mjs', 'apps/web/dist/index.html'])
@@ -208,6 +251,15 @@ try {
 			.catch(() => {});
 		throw new Error(`Desktop home did not render; diagnostics in ${failureFile}: ${error}`);
 	}
+	// The Home screen settles once the project list has loaded (an empty-state guide or the list): the screenshot
+	// size check below needs that, not the "Loading projects…" placeholder a starved machine can still show.
+	await expect(
+		page
+			.locator('[data-testid="home-empty"], [data-testid="project-list"], [data-testid="projects-error"]')
+			.first(),
+	).toBeVisible({
+		timeout: mode === 'dev' ? 120_000 : 30_000,
+	});
 	await page.screenshot({ path: shot });
 	// Security review DEV-1 / AGT-2 in the desktop shell: the window is signed in to its engine and is the editor
 	// (the engine's /agent relay says so), through cookies the page cannot read; the engine itself answers nothing
