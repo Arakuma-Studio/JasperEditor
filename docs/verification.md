@@ -368,7 +368,11 @@ shows the message with its Reload button, never a blank page.
 - The hybrid vs Remotion comparison of the cross-feature variant is SSIM 0.988 overall, worst frame 0.979, just under
   the 0.98 the repo's parity tests use for simpler scenes; the residual is anti-aliasing at edges, a 1 px column inside
   a feathered mask and H.264 loss (difference image looked at), not a feature difference.
-- The reload lease race (§4) is fixed for a release in flight; when the old page's keepalive release never arrives
-  (seen once in 9 runs before the bounded wait ends) the editor still opens read-only until the lease expires (30 s).
+- The reload lease race (§4): verify's bounded wait left a window (the old page's release never arriving) that
+  polish's reclaim of the tab's own leases closes; `effect-presets` "survives a reload" passes on the merged head.
+- The desktop dev-mode stall (§11) comes from the host: Chromium aborts loads whenever an interface appears or goes.
+  The page now reloads itself (8 at most), and the smoke warms Vite first. A cold, very slow load with constant
+  interface churn can still run out of reloads; it then shows the message and its Reload button, never a blank page.
+  No supported Electron or Chromium setting to ignore such interfaces was found, so none is used.
 - Remotion renders of heavy compositions on a loaded software-GL host now retry once on a single page (§8 #5); on a
   real GPU machine the first attempt should succeed, but this was not measured here (no GPU).
