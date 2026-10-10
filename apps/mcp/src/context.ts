@@ -39,14 +39,17 @@ export type ToolContext = {
 };
 
 export function makeContext(server: McpServer, link: EngineConnection, agentName?: string): ToolContext {
+	const name = () => {
+		if (agentName) return agentName;
+		const client = server.server.getClientVersion()?.name;
+		return client ? client.slice(0, 64) : 'mcp-agent';
+	};
+	// The engine shows this name on the approval card of a destructive operation (security review AGT-3).
+	link.agentName = name;
 	return {
 		server,
 		link,
-		agentName: () => {
-			if (agentName) return agentName;
-			const client = server.server.getClientVersion()?.name;
-			return client ? client.slice(0, 64) : 'mcp-agent';
-		},
+		agentName: name,
 		engine: (fn) => withEngine(link, fn),
 	};
 }

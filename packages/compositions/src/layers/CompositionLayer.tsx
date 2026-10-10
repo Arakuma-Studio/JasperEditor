@@ -2,8 +2,9 @@
 // Renders (isPreview false, engine): the pre-rendered ProRes 4444 master through <OffthreadVideo transparent>
 // (`prerender.masterUrl`, a signed URL the engine puts in the snapshot). Preview (Player), in order of
 // preference: the cached VP9-alpha preview of the clip's current props (played like a media layer: exact
-// timing, cheap), else the live frame host — the bundle's own Remotion page in an <iframe>, driven frame by
-// frame through the renderer-page protocol (mg-host/protocol.ts). Effects, Motion, opacity and blend apply
+// timing, cheap), else the live frame host — the bundle's own Remotion page in a sandboxed <iframe> (opaque
+// origin, security review MG-1), driven frame by frame through the renderer-page protocol by the page's host agent
+// (mg-host/agent.ts) over a MessagePort (mg-host/remote.ts). Effects, Motion, opacity and blend apply
 // through LayerBox like for any layer; colour effects need pixels, so they wait for the preview WebM
 // ("Grade pending", MGC-025).
 // fx framework (wave 1): GPU shader effects run on the master (renders) and on the preview WebM (`FxPicture`, fed by
@@ -22,7 +23,8 @@ import { OffthreadVideo, Sequence } from 'remotion';
 import { FxPicture } from '../fx/FxPicture.tsx';
 import { FxVideoSources } from '../fx/sources.tsx';
 import { useLayerFx } from '../fx/stage.ts';
-import { bundleServeUrl, type HostWindow, hostPageUrl, MgFrameHostDriver } from '../mg-host/protocol.ts';
+import { bundleServeUrl, hostPageUrl, MG_HOST_SANDBOX } from '../mg-host/protocol.ts';
+import { connectMgHost, type MgHostRemote } from '../mg-host/remote.ts';
 import { type CompositionPreviewRuntime, useCompositionPreviewRuntime } from '../mg-host/runtime.ts';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
@@ -186,7 +188,7 @@ function LiveHost({
 	const { clip, fps, contentTime } = layer;
 	const info = src.info!;
 	const iframeRef = useRef<HTMLIFrameElement | null>(null);
-	const driverRef = useRef<MgFrameHostDriver | null>(null);
+	const driverRef = useRef<MgHostRemote | null>(null);
 	const want = useRef<{ frame: number; key: string; hidden: boolean } | null>(null);
 	const busy = useRef(false);
 	const [host, setHost] = useState<HostState>({ state: 'loading' });
@@ -271,12 +273,28 @@ function LiveHost({
 		pump.current();
 	}, [frame, configKey, hidden]);
 
+	// Security review MG-1: the page is sandboxed (opaque origin). It is driven through its host agent over a
+	// MessagePort, connected anew on every load of the page.
 	const onLoad = () => {
-		const win = iframeRef.current?.contentWindow as unknown as HostWindow | null;
-		if (!win) return;
-		driverRef.current = new MgFrameHostDriver(win);
-		pump.current();
+		const f = iframeRef.current;
+		if (!f) return;
+		driverRef.current = null;
+		connectMgHost(f).then(
+			(remote) => {
+				if (iframeRef.current !== f) return remote.dispose();
+				driverRef.current = remote;
+				pump.current();
+			},
+			(e) => live.current.report({ state: 'error', message: e instanceof Error ? e.message : String(e) }),
+		);
 	};
+	useEffect(
+		() => () => {
+			driverRef.current?.dispose();
+			driverRef.current = null;
+		},
+		[],
+	);
 
 	if (!allowed) return hidden ? null : <IdleCard layer={layer} />;
 	return (
@@ -285,6 +303,8 @@ function LiveHost({
 				ref={iframeRef}
 				title={`Composition ${src.compositionId}`}
 				src={hostPageUrl(bundleUrl)}
+				sandbox={MG_HOST_SANDBOX}
+				referrerPolicy="no-referrer"
 				onLoad={onLoad}
 				data-mg-host={src.compositionId}
 				data-mg-host-clip={clip.clipId}

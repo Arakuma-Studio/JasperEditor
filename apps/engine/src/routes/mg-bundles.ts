@@ -5,7 +5,10 @@
 //   GET  /api/mg-bundles/prerender/:renderKey   → MgPrerenderResult when cached (404 otherwise)
 //   GET  /api/mg-bundles/:key/poster/:compositionId → PNG at the composition's thumbnailFrame
 //   POST /api/mg-bundles/scaffold               (P1) {dir, name} → RegisteredMedia (template project, watched)
-//   GET  /mg/bundles/:key/*                     the bundle's files; `index.html?jasper-host=1` = live frame host page
+//   GET  /mg/bundles/:key/*                     the bundle's files as inert data; `index.html?jasper-host=1`
+//                                               redirects to the sandboxed live frame host page
+//   GET  /mg/sandbox/:cap/:key/*                the bundle's page and files for its sandboxed iframe (capability
+//                                               path, Content-Security-Policy; security review MG-1)
 // Also registers the `mg` native extension, the `mg-bundle` / `mg-prerender` job runners and `features.mgBundles`.
 import { readFile } from 'node:fs/promises';
 import { join, normalize, sep } from 'node:path';
@@ -18,7 +21,7 @@ import {
 } from '@jasper/api';
 import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host';
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteGenericInterface } from 'fastify';
-import { isLoopbackHost } from '../context.ts';
+import { allowedHosts, isLoopbackHost, MG_SANDBOX_PREFIX, mgSandboxScope } from '../context.ts';
 import { mgNativeExtension } from '../mg-bundles/native-ext.ts';
 import { MgBundleError } from '../mg-bundles/project.ts';
 import { scaffoldProject } from '../mg-bundles/scaffold.ts';
@@ -159,35 +162,128 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 		}),
 	);
 
-	// The bundle's files (MGC-012). Content-addressed → immutable; the host page is generated (no-store).
-	app.get<{ Params: { key: string; '*': string }; Querystring: Record<string, string | undefined> }>(
+	// ---------------------------------------------------------------- the bundle's files (MGC-012)
+	//
+	// Security review MG-1. A bundle is somebody's code; its page must not run with the editor's origin (the engine
+	// API with the user's session, the editor's DOM, `window.jasper`, the desktop bridge). So:
+	//  - `/mg/sandbox/<capability>/<key>/…` is where a bundle's page and everything it loads lives. The capability
+	//    in the path authorises reading that bundle's files without a cookie (server.ts), because the page is a
+	//    sandboxed iframe with an opaque origin. Every response carries a Content-Security-Policy that sandboxes the
+	//    document again (also when somebody opens the URL in a tab), limits what it may load to its own files,
+	//    `data:`, `blob:` and `https:`, and lets only the editor frame it.
+	//  - `/mg/bundles/<key>/…` (authenticated like every engine route) is the address the editor knows. The host
+	//    page (`index.html?jasper-host=1`) redirects to the capability path; every other file is served as inert
+	//    data (`Content-Security-Policy: sandbox`, no scripts), like any other user content.
+	type FileRoute = {
+		Params: { key: string; '*': string };
+		Querystring: Record<string, string | undefined>;
+	};
+	const bundleFile = (key: string, rest: string): { dir: string; rel: string; file: string } => {
+		const dir = svc.bundleDir(key);
+		if (!dir) throw new HttpError(404, 'NOT_FOUND', 'Unknown bundle');
+		let rel: string;
+		try {
+			rel = decodeURIComponent(rest || 'index.html');
+		} catch {
+			throw new HttpError(404, 'NOT_FOUND', 'Not found');
+		}
+		const file = normalize(join(dir, rel));
+		if (rel.includes('\0') || (file !== dir && !file.startsWith(dir + sep)))
+			throw new HttpError(404, 'NOT_FOUND', 'Not found');
+		return { dir, rel, file };
+	};
+	const bundleTypes = (file: string) => ({
+		...(file.endsWith('.html') ? { contentType: 'text/html; charset=utf-8' } : {}),
+		...(file.endsWith('.js') ? { contentType: 'text/javascript; charset=utf-8' } : {}),
+		...(file.endsWith('.map') ? { contentType: 'application/json' } : {}),
+		...(file.endsWith('.css') ? { contentType: 'text/css; charset=utf-8' } : {}),
+		...(file.endsWith('.ico') ? { contentType: 'image/x-icon' } : {}),
+	});
+
+	app.get<FileRoute>(
 		'/mg/bundles/:key/*',
-		mgGuarded<{ Params: { key: string; '*': string }; Querystring: Record<string, string | undefined> }>(
-			async (req, reply) => {
-				const dir = svc.bundleDir(req.params.key);
-				if (!dir) throw new HttpError(404, 'NOT_FOUND', 'Unknown bundle');
-				const rel = decodeURIComponent(req.params['*'] || 'index.html');
-				const file = normalize(join(dir, rel));
-				if (file !== dir && !file.startsWith(dir + sep)) throw new HttpError(404, 'NOT_FOUND', 'Not found');
-				if ((rel === 'index.html' || rel === '') && req.query[MG_HOST_QUERY] === '1') {
-					const html = await readFile(join(dir, 'index.html'), 'utf8');
-					return reply
-						.code(200)
-						.header('cache-control', 'no-store')
-						.type('text/html; charset=utf-8')
-						.send(injectHostBootstrap(html));
-				}
-				return serveFile(req, reply, file, {
-					cache: 'immutable',
-					// The bundle's pages and scripts run in the editor's live frame host (MGC-021): trusted code.
-					allowScripts: true,
-					...(file.endsWith('.html') ? { contentType: 'text/html; charset=utf-8' } : {}),
-					...(file.endsWith('.js') ? { contentType: 'text/javascript; charset=utf-8' } : {}),
-					...(file.endsWith('.map') ? { contentType: 'application/json' } : {}),
-					...(file.endsWith('.css') ? { contentType: 'text/css; charset=utf-8' } : {}),
-					...(file.endsWith('.ico') ? { contentType: 'image/x-icon' } : {}),
-				});
-			},
-		),
+		mgGuarded<FileRoute>(async (req, reply) => {
+			const { rel, file } = bundleFile(req.params.key, req.params['*']);
+			if ((rel === 'index.html' || rel === '') && req.query[MG_HOST_QUERY] === '1') {
+				const cap = core.signer.capability(mgSandboxScope(req.params.key));
+				return reply
+					.code(302)
+					.header('cache-control', 'no-store')
+					.header('referrer-policy', 'no-referrer')
+					.header(
+						'location',
+						`${MG_SANDBOX_PREFIX}${cap}/${encodeURIComponent(req.params.key)}/index.html?${MG_HOST_QUERY}=1`,
+					)
+					.send();
+			}
+			return serveFile(req, reply, file, { cache: 'immutable', ...bundleTypes(file) });
+		}),
 	);
+
+	type SandboxRoute = {
+		Params: { cap: string; key: string; '*': string };
+		Querystring: Record<string, string | undefined>;
+	};
+	app.get<SandboxRoute>(
+		`${MG_SANDBOX_PREFIX}:cap/:key/*`,
+		mgGuarded<SandboxRoute>(async (req, reply) => {
+			// The capability was verified by the auth hook (server.ts); checked again here so the route is safe by itself.
+			if (!core.signer.verifyCapability(mgSandboxScope(req.params.key), req.params.cap))
+				throw new HttpError(403, 'FORBIDDEN', 'Invalid bundle capability');
+			const { dir, rel, file } = bundleFile(req.params.key, req.params['*']);
+			const scheme = req.protocol === 'https' ? 'https' : 'http';
+			const host = String(req.headers.host ?? '').toLowerCase();
+			const csp = mgHostCsp({
+				base: `${scheme}://${host}${MG_SANDBOX_PREFIX}${req.params.cap}/${encodeURIComponent(req.params.key)}/`,
+				ancestors: [...allowedHosts(core.config)].map((h) => `${scheme}://${h}`),
+			});
+			const headers = { 'content-security-policy': csp, 'referrer-policy': 'no-referrer' };
+			if ((rel === 'index.html' || rel === '') && req.query[MG_HOST_QUERY] === '1') {
+				const html = await readFile(join(dir, 'index.html'), 'utf8');
+				return reply
+					.code(200)
+					.headers({ ...headers, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
+					.type('text/html; charset=utf-8')
+					.send(injectHostBootstrap(html));
+			}
+			return serveFile(req, reply, file, {
+				cache: 'immutable',
+				// Scripts run here, inside the sandbox the policy below imposes on any document of this path.
+				allowScripts: true,
+				extraHeaders: headers,
+				...bundleTypes(file),
+			});
+		}),
+	);
+}
+
+/**
+ * The Content-Security-Policy of a bundle's files (security review MG-1).
+ *  - `sandbox allow-scripts`: the document gets an opaque origin wherever it is loaded (the editor's iframe has
+ *    the same sandbox attribute; a tab opened on the URL is sandboxed by this header). No cookies, storage,
+ *    same-origin access, forms, popups, top navigation or downloads.
+ *  - sources: the bundle's own files (`base`, path-scoped: not the rest of the engine), inline and eval'd script
+ *    and inline style (Remotion's index.html and many libraries need them; the sandbox is the boundary, not the
+ *    script policy), `data:` / `blob:`, and `https:` for what compositions fetch (web fonts, remote media, data).
+ *    Plain `http:` is not allowed: no other loopback port, no device on the local network.
+ *  - `frame-ancestors`: only the editor may embed the page.
+ */
+export function mgHostCsp(opts: { base: string; ancestors: string[] }): string {
+	const own = opts.base;
+	return [
+		'sandbox allow-scripts',
+		`default-src ${own} data: blob:`,
+		`script-src ${own} 'unsafe-inline' 'unsafe-eval' blob: data:`,
+		`style-src ${own} 'unsafe-inline' https:`,
+		`font-src ${own} data: blob: https:`,
+		`img-src ${own} data: blob: https:`,
+		`media-src ${own} data: blob: https:`,
+		`connect-src ${own} data: blob: https:`,
+		`worker-src ${own} blob:`,
+		"frame-src 'none'",
+		"object-src 'none'",
+		"form-action 'none'",
+		`base-uri ${own}`,
+		`frame-ancestors ${opts.ancestors.join(' ') || "'none'"}`,
+	].join('; ');
 }

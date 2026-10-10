@@ -106,6 +106,11 @@ export class AgentBridge {
 		string,
 		{ resolve(d: 'approved' | 'denied' | 'timeout'): void; timer: ReturnType<typeof setTimeout> }
 	>();
+	/**
+	 * approvalId → the answer key the engine sent this window with the card (security review AGT-2). Kept out of
+	 * the store and out of `window.jasper`: only `resolveApproval` reads it.
+	 */
+	private readonly answerKeys = new Map<string, string>();
 	private readonly disposers: (() => void)[] = [];
 	private schemaCache: Record<string, unknown> | null = null;
 	private disposed = false;
@@ -150,6 +155,7 @@ export class AgentBridge {
 			a.resolve('denied');
 			this.localApprovals.delete(id);
 		}
+		this.answerKeys.clear();
 		this.listeners.clear();
 	}
 
@@ -485,6 +491,7 @@ export class AgentBridge {
 	}
 
 	private removeApproval(approvalId: string, decision: string): void {
+		this.answerKeys.delete(approvalId);
 		const approvals = this.store.getState().approvals.filter((x) => x.approvalId !== approvalId);
 		if (approvals.length === this.store.getState().approvals.length) return;
 		this.store.setState({ approvals });
@@ -495,8 +502,10 @@ export class AgentBridge {
 	resolveApproval(approvalId: string, decision: 'approved' | 'denied'): boolean {
 		if (this.settleLocal(approvalId, decision)) return true;
 		const a = this.store.getState().approvals.find((x) => x.approvalId === approvalId);
-		if (a?.source !== 'engine') return false;
-		const sent = this.relay?.sendEvent('agent.approval.resolve', { approvalId, decision }) ?? false;
+		const answerKey = this.answerKeys.get(approvalId);
+		if (a?.source !== 'engine' || !answerKey) return false;
+		const sent =
+			this.relay?.sendEvent('agent.approval.resolve', { approvalId, decision, answerKey }) ?? false;
 		if (sent) this.removeApproval(approvalId, decision);
 		return sent;
 	}
@@ -505,9 +514,13 @@ export class AgentBridge {
 
 	private onEngineEvent(event: string, payload: unknown): void {
 		if (event === 'agent.approval.requested') {
-			const a = payload as Approval;
-			if (a?.approvalId && a.projectId === this.session.projectId)
+			// The engine sends cards only to the editor window, each with the key that window answers with. A request
+			// without one cannot be answered from here and is not shown.
+			const { answerKey, ...a } = (payload ?? {}) as Approval & { answerKey?: unknown };
+			if (a.approvalId && a.projectId === this.session.projectId && typeof answerKey === 'string') {
+				this.answerKeys.set(a.approvalId, answerKey);
 				this.addApproval({ ...a, source: 'engine' });
+			}
 		} else if (event === 'agent.approval.resolved') {
 			const p = payload as { approvalId?: string; decision?: string };
 			if (p?.approvalId) this.removeApproval(p.approvalId, p.decision ?? 'resolved');

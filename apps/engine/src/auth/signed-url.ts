@@ -31,6 +31,22 @@ export class UrlSigner {
 		return `${origin}${path}${sep}${this.signQuery(bare, ttlSec)}`;
 	}
 
+	/**
+	 * A capability for a path prefix (security review MG-1): unlike a signed URL it is part of the path, so every
+	 * relative URL of a document served under `<prefix>/<capability>/…` carries it. Used for the files of a
+	 * motion-graphics bundle, whose sandboxed page has an opaque origin and sends no cookie. Lives as long as the
+	 * engine process (the secret is per launch); it grants reading that scope's files and nothing else.
+	 */
+	capability(scope: string): string {
+		return createHmac('sha256', this.secret).update(`capability\n${scope}`).digest('base64url');
+	}
+
+	verifyCapability(scope: string, capability: string): boolean {
+		const expected = Buffer.from(this.capability(scope));
+		const given = Buffer.from(capability);
+		return expected.length === given.length && timingSafeEqual(expected, given);
+	}
+
 	/** Verifies a request URL (path + query). The path must be signable, the signature valid and fresh. */
 	verify(url: string, nowMs = Date.now()): boolean {
 		const q = url.indexOf('?');

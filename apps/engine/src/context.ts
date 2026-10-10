@@ -32,6 +32,18 @@ export type EngineContext = {
 	services: Record<string, unknown>;
 };
 
+/** The `Host` values (and so the origins) the engine answers to: its own loopback names, plus the dev web server's. */
+export function allowedHosts(config: EngineConfig): Set<string> {
+	const hosts = new Set<string>([`127.0.0.1:${config.port}`, `localhost:${config.port}`]);
+	for (const h of config.extraHosts) hosts.add(h);
+	return hosts;
+}
+
+/** Path prefix of the capability-addressed bundle files (security review MG-1; routes/mg-bundles.ts serves them). */
+export const MG_SANDBOX_PREFIX = '/mg/sandbox/';
+/** What a bundle's capability is made for (`UrlSigner.capability`). */
+export const mgSandboxScope = (bundleKey: string): string => `mg-bundle:${bundleKey}`;
+
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 export function isLoopbackHost(host: string): boolean {

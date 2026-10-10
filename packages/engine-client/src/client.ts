@@ -60,6 +60,12 @@ export type EngineClientOptions = {
 	fetch?: typeof fetch;
 	/** Bearer token (Electron packaged mode uses the cookie instead). */
 	token?: string;
+	/**
+	 * Extra headers for every request, read per request: jasper-mcp names its agent (`x-jasper-agent`, shown on
+	 * approval cards), the editor marks requests made while an agent's live-UI input is handled
+	 * (`x-jasper-agent-input`, security review AGT-3).
+	 */
+	requestHeaders?: () => Record<string, string>;
 };
 
 /**
@@ -76,6 +82,12 @@ type CallOptions = {
 	body?: unknown;
 	headers?: Record<string, string>;
 	signal?: AbortSignal;
+	/**
+	 * The client makes this request by itself, not because of the input being handled (autosave, the recovery
+	 * journal, lease upkeep): `requestHeaders` are left out, so the editor never attributes its own housekeeping to
+	 * an agent whose live-UI input happens to be in flight.
+	 */
+	automatic?: boolean;
 };
 
 export type MediaVariant =
@@ -93,6 +105,7 @@ export class EngineClient {
 	readonly baseUrl: string;
 	private readonly fetchImpl: typeof fetch;
 	private readonly token?: string;
+	private readonly requestHeaders?: () => Record<string, string>;
 
 	constructor(opts: EngineClientOptions = {}) {
 		this.baseUrl = (opts.baseUrl ?? '').replace(/\/$/, '');
@@ -100,6 +113,7 @@ export class EngineClient {
 		if (!f) throw new Error('No fetch implementation available');
 		this.fetchImpl = (input, init) => f(input, init);
 		this.token = opts.token;
+		this.requestHeaders = opts.requestHeaders;
 	}
 
 	url(path: string, query?: CallOptions['query']): string {
@@ -114,10 +128,14 @@ export class EngineClient {
 
 	/**
 	 * Headers that authenticate a request made outside `call()` (e.g. keepalive requests during `pagehide`):
-	 * `Authorization: Bearer <token>` in token mode, nothing when the session cookie is used.
+	 * `Authorization: Bearer <token>` in token mode, nothing when the session cookie is used; plus the client's
+	 * `requestHeaders`.
 	 */
 	authorizationHeaders(): Record<string, string> {
-		return this.token ? { authorization: `Bearer ${this.token}` } : {};
+		return {
+			...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+			...(this.requestHeaders?.() ?? {}),
+		};
 	}
 
 	/** Low-level typed call by route name. */
@@ -127,7 +145,11 @@ export class EngineClient {
 		const binary = 'body' in route && route.body === 'binary';
 		const headers: Record<string, string> = {
 			accept: 'application/json',
-			...this.authorizationHeaders(),
+			...(opts.automatic
+				? this.token
+					? { authorization: `Bearer ${this.token}` }
+					: {}
+				: this.authorizationHeaders()),
 			...(opts.headers ?? {}),
 		};
 		let body: BodyInit | undefined;
@@ -219,10 +241,12 @@ export class EngineClient {
 			params: { projectId },
 			body: envelope,
 			headers: { 'if-match': String(baseRevision) },
+			// A save writes the session's own document; what an agent may put into it was decided when it was edited.
+			automatic: true,
 		});
 	}
 	putView(projectId: string, view: ProjectViewJson) {
-		return this.call('projectPutView', { params: { projectId }, body: view });
+		return this.call('projectPutView', { params: { projectId }, body: view, automatic: true });
 	}
 	listVersions(projectId: string) {
 		return this.call('projectVersions', { params: { projectId } });
@@ -244,13 +268,16 @@ export class EngineClient {
 	}
 	/** Journals this session's unsaved document (needs the session's lease). */
 	putRecovery(projectId: string, sessionId: string, req: RecoveryPutRequest | JsonText) {
-		return this.call('projectRecoveryPut', { params: { projectId, sessionId }, body: req });
+		return this.call('projectRecoveryPut', { params: { projectId, sessionId }, body: req, automatic: true });
 	}
 	/** Deletes a journal: the session's own (pass its `leaseId`) or a candidate nobody holds. */
 	deleteRecovery(projectId: string, sessionId: string, leaseId?: string) {
 		return this.call('projectRecoveryDelete', {
 			params: { projectId, sessionId },
 			...(leaseId ? { query: { leaseId } } : {}),
+			// With its lease, a session clears its own journal after a save (housekeeping); without one, somebody is
+			// discarding another session's unsaved changes, which is a decision.
+			automatic: !!leaseId,
 		});
 	}
 	deleteProject(projectId: string) {
@@ -260,10 +287,10 @@ export class EngineClient {
 		return this.call('leaseAcquire', { params: { projectId }, body: { sessionId } });
 	}
 	heartbeatLease(projectId: string, leaseId: string) {
-		return this.call('leaseHeartbeat', { params: { projectId, leaseId } });
+		return this.call('leaseHeartbeat', { params: { projectId, leaseId }, automatic: true });
 	}
 	releaseLease(projectId: string, leaseId: string) {
-		return this.call('leaseRelease', { params: { projectId, leaseId } });
+		return this.call('leaseRelease', { params: { projectId, leaseId }, automatic: true });
 	}
 	/** wp captions: a caption / transcript file by path (local engines). */
 	readCaptionFile(req: CaptionFileReadRequest) {

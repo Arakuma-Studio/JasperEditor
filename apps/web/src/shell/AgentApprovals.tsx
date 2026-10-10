@@ -17,8 +17,10 @@ import {
 	useAgentBridgeState,
 } from '../agent-bridge/index.ts';
 
-/** "claude-code wants to run 1 command: track.remove" */
-function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary'>): string {
+/** "claude-code wants to run 1 command: track.remove", or for an operation "claude-code wants to delete the preset …" */
+function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary' | 'kind'>): string {
+	if (a.kind === 'operation' || a.commandCount === 0)
+		return a.summary ? `${a.agent} wants to ${a.summary}` : `${a.agent} asks for your approval`;
 	const n = a.commandCount;
 	return `${a.agent} wants to run ${n} command${n === 1 ? '' : 's'}${a.summary ? `: ${a.summary}` : ''}`;
 }

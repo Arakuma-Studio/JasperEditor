@@ -2,7 +2,6 @@
 // with track headers, virtualized clips, overlays, playhead and zoom bar. All timeline state is scoped
 // to this instance (TL-006); document edits go through the TimelineController (gestures) or UI commands.
 
-import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	defaultTransitionFrames,
@@ -33,7 +32,7 @@ import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts'
 import { labelName } from '../../gaps/app-prefs.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { useRenderBar } from '../../previews/hooks.ts';
-import { useEngineOrNull } from '../../state/engine.tsx';
+import { createEditorEngineClient, useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import {
 	applyMessage,
@@ -608,7 +607,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const run = useCallback(
 		(id: string, args?: unknown) => {
 			const ctx = createCommandContext({
-				engine: engine ?? new EngineClient({ baseUrl: '' }),
+				engine: engine ?? createEditorEngineClient(),
 				session,
 				services: env.services,
 				focus: { panel: 'timeline', instanceId: props.instanceId },

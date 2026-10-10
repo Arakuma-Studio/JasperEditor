@@ -9,7 +9,6 @@
 // ONNX Runtime, OpenCV.js and the bundled model weights (Help ▸ About ▸ Licenses).
 import { ProcessingSettingsSchema, ProcessRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
-import type { AgentService } from '../agent/service.ts';
 import { requireUserApproval } from '../agent/user-approval.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { processingLicenses } from '../processing/licenses.ts';

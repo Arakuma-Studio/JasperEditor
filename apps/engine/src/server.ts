@@ -18,7 +18,13 @@ import {
 import { loadExpressionEngine } from '@jasper/expressions';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createCoreAgentStore } from './agent/core-store.ts';
-import type { EngineConfig, EngineContext } from './context.ts';
+import {
+	allowedHosts,
+	type EngineConfig,
+	type EngineContext,
+	MG_SANDBOX_PREFIX,
+	mgSandboxScope,
+} from './context.ts';
 import { registerRoutes } from './routes/index.ts';
 import { systemErrorReply } from './tools/reply.ts';
 import { createCoreServices } from './tools/services.ts';
@@ -73,12 +79,6 @@ const PAIRED_PAGE =
 	'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>JasperEditor</title><a href="/">Open JasperEditor</a>';
 const UNPAIRED_PAGE =
 	'<!doctype html><meta charset="utf-8"><title>JasperEditor</title><body style="font:14px system-ui;margin:3rem;max-width:40rem"><h1 style="font-size:18px">This browser is not signed in to the JasperEditor engine</h1><p>Open the link the engine printed when it started (<code>…/pair?key=…</code>), or use the JasperEditor desktop app. The link changes every time the engine starts.</p>';
-
-function allowedHosts(config: EngineConfig): Set<string> {
-	const hosts = new Set<string>([`127.0.0.1:${config.port}`, `localhost:${config.port}`]);
-	for (const h of config.extraHosts) hosts.add(h);
-	return hosts;
-}
 
 function isAllowedOrigin(origin: string, config: EngineConfig): boolean {
 	try {
@@ -169,6 +169,31 @@ export async function createServer(
 					.header('access-control-max-age', '600')
 					.send();
 			}
+			return;
+		}
+		// Security review MG-1: the files of a motion-graphics bundle are requested by its sandboxed host page, whose
+		// origin is opaque (`Origin: null`, no cookies). They are served under a capability path instead:
+		// `/mg/sandbox/<capability>/<bundle key>/…`, read-only, readable from any origin (the capability is the
+		// authorisation; the bytes are the bundle's own).
+		if (req.url.startsWith(MG_SANDBOX_PREFIX)) {
+			const [capability = '', key = ''] = req.url.slice(MG_SANDBOX_PREFIX.length).split('?')[0]!.split('/');
+			let bundleKey = '';
+			try {
+				bundleKey = decodeURIComponent(key);
+			} catch {
+				bundleKey = '';
+			}
+			if (!readOnly || !bundleKey || !core.signer.verifyCapability(mgSandboxScope(bundleKey), capability))
+				return sendError(reply, 403, 'FORBIDDEN', 'Invalid bundle capability');
+			reply.header('access-control-allow-origin', '*');
+			reply.header('cross-origin-resource-policy', 'cross-origin');
+			if (req.method === 'OPTIONS')
+				return reply
+					.code(204)
+					.header('access-control-allow-methods', 'GET, HEAD, OPTIONS')
+					.header('access-control-allow-headers', 'range, if-range, if-none-match')
+					.header('access-control-max-age', '600')
+					.send();
 			return;
 		}
 		// Same-origin only (S04:SC-001): browsers send Origin on cross-origin requests, including

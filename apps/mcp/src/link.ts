@@ -1,6 +1,7 @@
 // The MCP server's connection to the engine: discovered lazily on the first tool call (so the server
 // starts and lists its tools even when the editor is closed), re-discovered after network failures, and
 // optionally backed by an engine this process started (`--start-engine`).
+import { AGENT_NAME_HEADER } from '@jasper/api';
 import { platformDefaultAppdir } from '@jasper/config';
 import { EngineClient, EngineError } from '@jasper/engine-client';
 import {
@@ -89,6 +90,18 @@ type LinkOptions = DiscoveryOptions & {
 	requestTimeoutMs?: number;
 };
 
+/**
+ * Names the agent on every engine request (`x-jasper-agent`), so the approval card the engine shows for a
+ * destructive operation says who is asking (security review AGT-3). URI-encoded: header values are Latin-1.
+ */
+function agentHeaders(name: (() => string) | undefined): (() => Record<string, string>) | undefined {
+	if (!name) return undefined;
+	return (): Record<string, string> => {
+		const n = name().slice(0, 64);
+		return n ? { [AGENT_NAME_HEADER]: encodeURIComponent(n) } : {};
+	};
+}
+
 export interface EngineConnection {
 	/** A client for the current engine (discovers / starts one if needed). */
 	client(): Promise<EngineClient>;
@@ -97,18 +110,22 @@ export interface EngineConnection {
 	/** Forget the current engine (next call re-discovers). */
 	invalidate(): void;
 	close(): Promise<void>;
+	/** The name shown on approval cards for this connection's requests (set by the server once it knows its client). */
+	agentName?: () => string;
 }
 
 /** A fixed engine (the engine's own `/mcp` endpoint talks to itself). */
 export class FixedEngineLink implements EngineConnection {
 	private readonly c: EngineClient;
 	readonly target: EngineTarget;
+	agentName?: () => string;
 	constructor(url: string, token: string | null) {
 		this.target = { url, token, source: 'explicit' };
 		this.c = new EngineClient({
 			baseUrl: url,
 			token: token ?? undefined,
 			fetch: guardedFetch(),
+			requestHeaders: agentHeaders(() => this.agentName?.() ?? ''),
 		});
 	}
 	async client(): Promise<EngineClient> {
@@ -123,6 +140,7 @@ export class EngineLink implements EngineConnection {
 	private pending: Promise<{ target: EngineTarget; client: EngineClient }> | null = null;
 	private started: StartedEngine | null = null;
 	private readonly log: (line: string) => void;
+	agentName?: () => string;
 
 	constructor(private readonly opts: LinkOptions = {}) {
 		this.log = opts.log ?? ((l) => process.stderr.write(`[jasper-mcp] ${l}\n`));
@@ -192,6 +210,7 @@ export class EngineLink implements EngineConnection {
 				baseUrl: target.url,
 				token: target.token ?? undefined,
 				fetch: guardedFetch(this.opts.fetch, this.opts.requestTimeoutMs),
+				requestHeaders: agentHeaders(() => this.agentName?.() ?? ''),
 			}),
 		};
 	}
@@ -205,17 +224,21 @@ export class EngineLink implements EngineConnection {
 
 /**
  * Runs `fn` with the engine client; a network failure (engine restarted on another port, desktop app
- * reopened) re-discovers once before giving up.
+ * reopened) or a rejected token (the engine restarted on the same port: every start has a new token, dev engines
+ * included) re-discovers once before giving up. A 401 means the request was not processed, so re-sending is safe.
  */
 export async function withEngine<T>(link: EngineConnection, fn: (c: EngineClient) => Promise<T>): Promise<T> {
 	const c = await link.client();
 	try {
 		return await fn(c);
 	} catch (e) {
-		if (!(e instanceof EngineError) || e.code !== 'NETWORK') throw e;
+		if (!(e instanceof EngineError) || (e.code !== 'NETWORK' && e.code !== 'UNAUTHORIZED')) throw e;
+		const before = link.target?.token ?? null;
 		link.invalidate();
 		const c2 = await link.client();
 		if (c2 === c) throw e;
+		// Same engine, same token: asking again would be refused again.
+		if (e.code === 'UNAUTHORIZED' && (link.target?.token ?? null) === before) throw e;
 		return fn(c2);
 	}
 }
