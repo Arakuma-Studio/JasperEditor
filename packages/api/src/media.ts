@@ -109,6 +109,22 @@ export const MediaStatusSchema = z.object({
 });
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 
+/**
+ * `POST /api/media/status` (polish): the status of many media in one request — opening a project resolves every
+ * medium, and one request per medium made a 2 000-item project take seconds to open.
+ */
+export const MEDIA_STATUS_BATCH_MAX = 1000;
+export const MediaStatusBatchRequestSchema = z.object({
+	mediaKeys: z.array(z.string().min(1).max(256)).min(1).max(MEDIA_STATUS_BATCH_MAX),
+});
+export type MediaStatusBatchRequest = z.infer<typeof MediaStatusBatchRequestSchema>;
+export const MediaStatusBatchResponseSchema = z.object({
+	statuses: z.array(MediaStatusSchema),
+	/** Keys the engine has no record of (the media is offline for this engine). */
+	unknown: z.array(z.string()),
+});
+export type MediaStatusBatchResponse = z.infer<typeof MediaStatusBatchResponseSchema>;
+
 export const DerivativesRequestSchema = z.object({ kinds: z.array(DerivativeKindSchema).min(1) });
 export type DerivativesRequest = z.infer<typeof DerivativesRequestSchema>;
 

@@ -10,7 +10,13 @@ const definition: PanelDefinition = {
 	instance: 'single',
 	minSize: { w: 200, h: 160 },
 	keymapScope: 'effects',
-	menu: [{ type: 'command', command: 'inspector.applyEffect', label: 'Apply to Selected Clips' }],
+	menu: [
+		{ type: 'command', command: 'inspector.applyEffect', label: 'Apply to Selected Clips' },
+		{ type: 'separator' },
+		// polish (Premiere's Effects panel menu)
+		{ type: 'command', command: 'effects.newCustomBin', label: 'New Custom Bin' },
+		{ type: 'command', command: 'effects.deleteCustomItem', label: 'Delete Custom Item' },
+	],
 	touch: 'sheet',
 	agentDescription: 'Catalog of video/audio effects and transitions to apply to clips.',
 	component: lazyPanel(() => import('./EffectsPanel.tsx'), 'EffectsPanel'),

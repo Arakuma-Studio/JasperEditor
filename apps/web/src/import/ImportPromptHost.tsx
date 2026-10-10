@@ -66,8 +66,9 @@ function PromptView({ p, queue }: { p: PendingPrompt; queue: PromptQueue }) {
 				}
 			>
 				<p className="mb-2 text-pr-muted">
-					{p.names.length === 1 ? 'This file is' : `These ${p.names.length} files are`} already in the project
-					(same content fingerprint):
+					{p.names.length === 1
+						? 'This file is already in the project (same content fingerprint):'
+						: `These ${p.names.length} files are already in the project (same content fingerprint):`}
 				</p>
 				<ul className="mb-2 list-disc pl-5">
 					{p.names.slice(0, 8).map((n) => (
@@ -133,8 +134,9 @@ function PromptView({ p, queue }: { p: PendingPrompt; queue: PromptQueue }) {
 			}
 		>
 			<p className="mb-2 text-pr-muted">
-				{p.committed} {p.committed === 1 ? 'file was' : 'files were'} imported. These files could not be
-				imported:
+				{p.committed === 1
+					? '1 file was imported. These files could not be imported:'
+					: `${p.committed} files were imported. These files could not be imported:`}
 			</p>
 			<ul className="flex flex-col gap-1">
 				{p.failed.map((f) => (

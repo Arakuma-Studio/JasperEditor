@@ -179,7 +179,9 @@ export function InterchangeReportDialog(props: HostedDialogProps<InterchangeRepo
 				{missing.length ? (
 					<div className="flex flex-col gap-1" data-testid="interchange-report-missing">
 						<span className="text-pr-warning">
-							{missing.length} media file{missing.length === 1 ? ' is' : 's are'} offline:
+							{missing.length === 1
+								? '1 media file is offline:'
+								: `${missing.length} media files are offline:`}
 						</span>
 						<ul className="flex flex-col gap-0.5 text-pr-small">
 							{missing.map((m) => (

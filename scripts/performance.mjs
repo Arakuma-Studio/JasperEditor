@@ -357,7 +357,8 @@ async function editorSection() {
 
 // ------------------------------------------------------------------ editor UI at scale (ui-perf)
 // scripts/perf/ui-run.ts: scripted gestures on generated 1 000 / 5 000-clip sequences, Effect Controls with many
-// keyframes and a 2 000-item Project panel; main-thread work per frame from a Chrome trace (docs/performance.md §5).
+// keyframes and a 2 000-item Project panel; main-thread work per frame from a Chrome trace (docs/performance.md §5);
+// opening the 2 000-item project (`--ui open`, docs/performance.md §6).
 async function uiSection() {
 	const only = (arg('ui', '') ?? '').split(',').filter(Boolean);
 	const out = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/perf/ui-run.ts', ...only], {
@@ -374,9 +375,15 @@ async function uiSection() {
 		throw new Error(`scripts/perf/ui-run.ts failed (${out.status})`);
 	}
 	for (const r of results)
-		console.log(
-			`  ${r.scenario}: ${r.frames} frames in ${r.wallMs} ms (${r.fps} fps), work per frame p50 ${r.p50} / p95 ${r.p95} / mean ${r.mean} ms, busy ${Math.round(r.busy * 100)} %${r.dragWallMs ? `, drag ${r.dragWallMs} ms wall` : ''}${r.openMs ? `, opened in ${r.openMs} ms` : ''}`,
-		);
+		if (typeof r.openMediaMs === 'number')
+			// polish: project open (scripts/perf/open-phases.ts)
+			console.log(
+				`  ${r.scenario}: interactive in ${r.openMs} ms, media resolved in ${r.openMediaMs} ms (best ${r.openBestMs} ms), ${r.statusRequests} media status request(s), longest task ${r.max} ms, main thread ${JSON.stringify(r.work)}`,
+			);
+		else
+			console.log(
+				`  ${r.scenario}: ${r.frames} frames in ${r.wallMs} ms (${r.fps} fps), work per frame p50 ${r.p50} / p95 ${r.p95} / mean ${r.mean} ms, busy ${Math.round(r.busy * 100)} %${r.dragWallMs ? `, drag ${r.dragWallMs} ms wall` : ''}${r.openMs ? `, opened in ${r.openMs} ms` : ''}`,
+			);
 	report.sections.ui = results;
 	for (const b of budgets) {
 		const r = results.find((x) => x.scenario === b.scenario);

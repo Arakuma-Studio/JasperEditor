@@ -12,6 +12,7 @@ import info from './info/index.ts';
 import jobs from './jobs/index.ts';
 import lumetri from './lumetri/index.ts';
 import markers from './markers/index.ts';
+import mediaBrowser from './mediaBrowser/index.ts';
 import motionTemplates from './motionTemplates/index.ts';
 import program from './program/index.ts';
 import project from './project/index.ts';
@@ -45,6 +46,7 @@ const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	text,
 	essentialSound,
 	essentialGraphics,
+	mediaBrowser,
 ];
 
 export function listPanels(): readonly PanelDefinition[] {

@@ -15,7 +15,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx } from '@jasper/ui';
-import { type DragEvent, type MouseEvent, type ReactNode, useMemo } from 'react';
+import { type DragEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useRef } from 'react';
 import { CaretGlyph } from '../../properties/controls/glyphs.tsx';
 import type { ContextMenuItem } from '../../timeline/state/ui-store.ts';
 import { isEffectDrag, readEffectDragPayload, writePresetDragPayload } from '../drag.ts';
@@ -30,6 +30,7 @@ import {
 	renamePreset,
 } from './actions.ts';
 import { applyPresetToClips, clipsAcceptingPreset, isPresetRef, PRESET_REF_PREFIX } from './apply.ts';
+import { BIN_REF_PREFIX, registerCustomBins } from './custom-bins.ts';
 import { type PresetLibraryState, updatePreset } from './store.ts';
 
 type Filter = { query: string; realtime: boolean; native: boolean };
@@ -138,7 +139,6 @@ export function PresetsBin(props: PresetsBinProps) {
 	const registry = session.ctx.registries.effects;
 	const tree = useMemo(() => presetTree(lib, registry, filter), [lib, registry, filter]);
 	const searching = !!filter.query.trim() || filter.realtime || filter.native;
-	if (searching && tree.matches === 0) return null;
 	const engineReady = lib.status === 'ready';
 	const status = (p: Promise<unknown>, ok?: string) =>
 		p.then(
@@ -148,6 +148,57 @@ export function PresetsBin(props: PresetsBinProps) {
 			},
 			(e: unknown) => props.onStatus(`Preset library: ${(e as Error).message}`),
 		);
+	// polish: Effects ▸ New Custom Bin (Ctrl+/) and Delete Custom Item (Backspace) act on the bin / preset last
+	// picked in this panel (the keymap's `effects.*` commands, commands/polish.ts).
+	const handleState = useRef({ focused: props.focused, lib, engineReady, status });
+	handleState.current = { focused: props.focused, lib, engineReady, status };
+	useEffect(
+		() =>
+			registerCustomBins({
+				newBin() {
+					const st = handleState.current;
+					if (!st.engineReady) return false;
+					const parent = st.focused?.startsWith(BIN_REF_PREFIX)
+						? st.focused.slice(BIN_REF_PREFIX.length)
+						: null;
+					void st.status(
+						newPresetBin(st.lib.folders.some((f) => f.id === parent) ? parent : null),
+						'Bin created.',
+					);
+					return true;
+				},
+				focusedCustomItem() {
+					const st = handleState.current;
+					if (!st.engineReady || !st.focused) return null;
+					if (st.focused.startsWith(BIN_REF_PREFIX)) {
+						const f = st.lib.folders.find((x) => x.id === st.focused!.slice(BIN_REF_PREFIX.length));
+						return f ? { kind: 'bin', name: f.name } : null;
+					}
+					if (st.focused.startsWith(PRESET_REF_PREFIX)) {
+						const p = st.lib.presets.find((x) => x.id === st.focused!.slice(PRESET_REF_PREFIX.length));
+						return p && !p.builtIn ? { kind: 'preset', name: p.name } : null;
+					}
+					return null;
+				},
+				deleteFocused() {
+					const st = handleState.current;
+					if (!st.engineReady || !st.focused) return false;
+					if (st.focused.startsWith(BIN_REF_PREFIX)) {
+						const f = st.lib.folders.find((x) => x.id === st.focused!.slice(BIN_REF_PREFIX.length));
+						if (!f) return false;
+						void st.status(confirmDeleteBin(f));
+						return true;
+					}
+					const p = st.lib.presets.find((x) => x.id === st.focused!.slice(PRESET_REF_PREFIX.length));
+					if (!p || p.builtIn) return false;
+					void st.status(confirmDeletePreset(p));
+					return true;
+				},
+			}),
+		[],
+	);
+
+	if (searching && tree.matches === 0) return null;
 
 	const apply = (p: EffectPreset) => {
 		const targets = clipsAcceptingPreset(session, p, selectedClips);
@@ -256,10 +307,20 @@ export function PresetsBin(props: PresetsBinProps) {
 						label={n.name}
 						open={open}
 						depth={depth}
-						onToggle={() => props.onToggle(n.id)}
+						onToggle={() => {
+							props.onToggle(n.id);
+							// a bin of the user's is also picked (New Custom Bin goes inside it, Delete Custom Item deletes it)
+							if (n.folder) props.onFocus(`${BIN_REF_PREFIX}${n.folder.id}`);
+						}}
+						selected={!!n.folder && props.focused === `${BIN_REF_PREFIX}${n.folder.id}`}
 						title={n.builtIn ? 'Built-in presets (read-only)' : undefined}
 						onContextMenu={
-							n.folder ? (e) => props.onMenu(e.clientX, e.clientY, folderMenu(n.folder!)) : undefined
+							n.folder
+								? (e) => {
+										props.onFocus(`${BIN_REF_PREFIX}${n.folder!.id}`);
+										props.onMenu(e.clientX, e.clientY, folderMenu(n.folder!));
+									}
+								: undefined
 						}
 						{...(n.folder ? moveDrop(n.folder.id) : {})}
 					/>
@@ -299,7 +360,8 @@ export function PresetsBin(props: PresetsBinProps) {
 				onDoubleClick={() => apply(p)}
 				onKeyDown={(ev) => {
 					if (ev.key === 'Enter') apply(p);
-					else if ((ev.key === 'Delete' || ev.key === 'Backspace') && !p.builtIn && engineReady) {
+					// Backspace is the keymap's `effects.deleteCustomItem` (it deletes the picked preset or bin).
+					else if (ev.key === 'Delete' && !p.builtIn && engineReady) {
 						ev.preventDefault();
 						void status(confirmDeletePreset(p));
 					}
@@ -353,6 +415,7 @@ function FolderRow(props: {
 	open: boolean;
 	depth: number;
 	onToggle(): void;
+	selected?: boolean;
 	title?: string;
 	onContextMenu?(e: MouseEvent): void;
 	onDragOver?(e: DragEvent): void;
@@ -363,6 +426,7 @@ function FolderRow(props: {
 			type="button"
 			role="treeitem"
 			aria-expanded={props.open}
+			aria-selected={props.selected || undefined}
 			onClick={props.onToggle}
 			title={props.title}
 			onContextMenu={(e) => {
@@ -372,7 +436,10 @@ function FolderRow(props: {
 			}}
 			onDragOver={props.onDragOver}
 			onDrop={props.onDrop}
-			className="flex h-[var(--pr-row-h)] w-full items-center gap-1 pr-2 text-left text-pr-ui text-pr-text hover:bg-pr-hover"
+			className={cx(
+				'flex h-[var(--pr-row-h)] w-full items-center gap-1 pr-2 text-left text-pr-ui text-pr-text',
+				props.selected ? 'bg-pr-selected' : 'hover:bg-pr-hover',
+			)}
 			style={{ paddingLeft: 4 + props.depth * 16 }}
 		>
 			<span className="text-pr-icon">

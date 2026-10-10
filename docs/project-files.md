@@ -103,7 +103,11 @@ it). Agents: `list_project_versions`, `restore_project_version {mode: "copy"}`.
   until the user chooses Reload or Overwrite.
 - **Single writer** (S01:PER-040): opening a project takes a lease (30 s, heartbeat every 10 s). A second editor
   opens read-only and can **Take over editing**. Closing or reloading the tab releases the lease with a
-  keepalive request on `pagehide`; if that never arrives (a crash) the lease expires after 30 s.
+  keepalive request on `pagehide`; if that never arrives (a crash) the lease expires after 30 s. A reload does not
+  depend on that request: the tab remembers the session that held the lease (`sessionStorage`) and takes its own
+  lease over at once when the new page finds it still held, after checking that no live page of the origin holds
+  it (a duplicated tab copies the memory). Other tabs and agents wait for the expiry or use Take over
+  (`packages/session/src/persistence/tab-leases.ts`, `docs/wp-notes/polish.md` §1).
 
 ## Versions
 

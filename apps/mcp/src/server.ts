@@ -29,6 +29,7 @@ import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyf
 import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
 import { MULTICAM_GUIDE, registerMulticamTools } from './tools/multicam.ts';
+import { POLISH_GUIDE, registerPolishTools } from './tools/polish.ts';
 import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PREVIEWS_GUIDE, registerPreviewTools } from './tools/previews.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
@@ -110,6 +111,7 @@ const FULL_GUIDE = [
 	UI_GUIDE,
 	EXPRESSIONS_GUIDE,
 	GAPS_GUIDE,
+	POLISH_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -169,6 +171,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerUiTools(ctx);
 	registerExpressionTools(ctx);
 	registerGapsTools(ctx);
+	registerPolishTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };

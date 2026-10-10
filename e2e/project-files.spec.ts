@@ -82,6 +82,51 @@ test('unsaved changes of a dead session are offered on open and recovered as one
 	await expect.poll(() => markerCount(page, projectId)).toBe(0);
 });
 
+test('a reloaded tab reclaims its own lease even when the pagehide release is lost; other tabs stay locked out', async ({
+	page,
+	context,
+}) => {
+	await enableAgentBridge(page);
+	const projectId = await createProject(page, 'Lease E2E');
+	// Drop every lease release, as when the keepalive request loses the race or the browser drops it: before
+	// polish the reloaded page opened read-only until the old lease expired (30 s).
+	const dropRelease = (route: import('@playwright/test').Route) =>
+		route.request().method() === 'DELETE' ? route.abort() : route.continue();
+	await page.route('**/api/projects/*/lease/*', dropRelease);
+	const holder = async () =>
+		(
+			(await (
+				await page.request.post(`/api/projects/${projectId}/lease`, { data: { sessionId: 'probe' } })
+			).json()) as {
+				detail?: { holderSessionId?: string };
+			}
+		).detail?.holderSessionId ?? null;
+	const first = await holder();
+	expect(first).not.toBeNull();
+
+	await page.reload();
+	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
+	await expect.poll(holder).not.toBe(first);
+
+	// A full navigation to Home right after opening, then back: still editable at once.
+	await page.goto('/');
+	await expect(page.getByTestId('home')).toBeVisible();
+	await page.goto(`/project/${projectId}`);
+	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
+	expect((await transact(page, [{ type: 'marker.add', frame: 3, name: 'still editable' }])).ok).toBe(true);
+
+	// Another tab never reclaims this tab's lease.
+	const other = await context.newPage();
+	await other.goto(`/project/${projectId}`);
+	await expect(other.getByTestId('editor-shell')).toBeVisible();
+	await expect(other.getByTestId('banner-read-only')).toBeVisible();
+	await expect(other.getByRole('button', { name: 'Take over editing' })).toBeVisible();
+	await other.close();
+	await page.unroute('**/api/projects/*/lease/*', dropRelease);
+});
+
 test('reload keeps the project editable; versions restore in place; Save As opens the new project', async ({
 	page,
 }) => {
@@ -90,7 +135,8 @@ test('reload keeps the project editable; versions restore in place; Save As open
 	expect((await transact(page, [{ type: 'marker.add', frame: 5, name: 'A' }])).ok).toBe(true);
 	await expect.poll(() => markerCount(page, projectId)).toBe(1);
 
-	// pagehide releases the lease: a reload is not read-only (docs/M1-STATUS.md corrected).
+	// A reload is never read-only: pagehide releases the lease, and if that release is lost the reloaded tab
+	// reclaims it (see the test above).
 	await page.reload();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);

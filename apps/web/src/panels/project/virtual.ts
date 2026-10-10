@@ -35,8 +35,8 @@ export function useRowWindow(opts: {
 }): RowWindow {
 	const { scroll, list, rows, enabled, measure } = opts;
 	const on = enabled && rows >= 1;
-	// The very first render of a large bin is already windowed. (It used to render every row once and trim them in
-	// the effect below: opening a 2 000-item project mounted — and painted — all 2 000 rows before the first window.)
+	// polish: a large bin never renders every row, not even on its first render (the effect below only runs after it:
+	// opening a 2 000-item project used to build, style and lay out 2 000 rows once, ≈ 1 s).
 	const [win, setWin] = useState<RowWindow>(() =>
 		on
 			? { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 }
@@ -108,6 +108,6 @@ export function useRowWindow(opts: {
 	}, [on, reveal, win.rowH, scroll, list]);
 
 	if (!on) return { on: false, start: 0, end: rows, rowH: 0 };
-	// A bin that grew past the threshold since the last effect: windowed from this render on, too.
+	// Windowing was just turned on (the bin grew past the threshold): the first rows until the effect has measured.
 	return win.on ? win : { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 };
 }

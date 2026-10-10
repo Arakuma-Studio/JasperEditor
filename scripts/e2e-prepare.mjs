@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // `pnpm e2e` pre-step: the E2E server runs the built engine and web app, including a current Remotion bundle;
-// the agent spec runs the built jasper-mcp server. Build them unless E2E_SKIP_BUILD=1, make sure fixtures exist
-// and are current, and that the LGPL FFmpeg + Remotion binaries directory is there (ARCHITECTURE D-13).
+// the agent spec runs the built jasper-mcp server. Build them unless E2E_SKIP_BUILD=1 (jasper-mg too, when cargo is
+// installed), make sure fixtures exist and are current, and that the LGPL FFmpeg + Remotion binaries directory is
+// there (ARCHITECTURE D-13).
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,6 +30,11 @@ if (process.env.E2E_SKIP_LGPL !== '1') {
 		);
 }
 if (process.env.E2E_SKIP_BUILD !== '1') {
+	// jasper-mg (native/mg, the fframes renderer of motion-graphic clips) is an optional native tool: built here when
+	// cargo is installed (incremental, a no-op when it is current); without cargo `mg:build` prints why it skipped
+	// and exits 0, the engine reports `render.fframes = "unavailable"`, and the smoke spec's native motion-graphic
+	// export skips with that reason. E2E_SKIP_MG=1 leaves the binary as it is.
+	if (process.env.E2E_SKIP_MG !== '1') run('node', ['scripts/mg-build.mjs']);
 	run('pnpm', ['--filter', '@jasper/engine', 'build']);
 	run('pnpm', ['--filter', '@jasper/engine', 'build:remotion']);
 	run('pnpm', ['--filter', '@jasper/web', 'build']);

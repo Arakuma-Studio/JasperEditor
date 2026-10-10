@@ -20,6 +20,7 @@ export * from './layer-bake.ts';
 export * from './m2-capabilities.ts';
 export * from './masks.ts';
 export * from './media.ts';
+export * from './media-browser.ts';
 export * from './mg.ts';
 export * from './mg-bundles.ts';
 export * from './previews.ts';
