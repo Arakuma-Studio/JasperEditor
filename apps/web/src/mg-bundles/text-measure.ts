@@ -6,11 +6,10 @@
 import {
 	type BundleFontSource,
 	bundleServeUrl,
-	type HostWindow,
+	connectMgHost,
 	hostPageUrl,
-	locateTexts,
-	MgFrameHostDriver,
-	textProbeOf,
+	MG_HOST_SANDBOX,
+	type MgHostRemote,
 } from '@jasper/compositions';
 import type { MgTextMeasurement } from '@jasper/project';
 
@@ -36,7 +35,7 @@ const CACHE_SIZE = 64;
 export class MgTextMeasurer {
 	private iframe: HTMLIFrameElement | null = null;
 	private bundleKey: string | null = null;
-	private driver: MgFrameHostDriver | null = null;
+	private driver: MgHostRemote | null = null;
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly cache = new Map<string, TextMeasureResult>();
 
@@ -53,6 +52,7 @@ export class MgTextMeasurer {
 	}
 
 	dispose(): void {
+		this.driver?.dispose();
 		this.iframe?.remove();
 		this.iframe = null;
 		this.driver = null;
@@ -62,8 +62,7 @@ export class MgTextMeasurer {
 	private async run(req: TextMeasureRequest, key: string): Promise<TextMeasureResult> {
 		const hit = this.cache.get(key);
 		if (hit) return hit;
-		const win = await this.page(req);
-		const driver = this.driver!;
+		const driver = await this.page(req);
 		await driver.configure({
 			compositionId: req.compositionId,
 			props: req.props,
@@ -76,23 +75,30 @@ export class MgTextMeasurer {
 		});
 		await driver.seek(req.compositionId, req.frame);
 		const result: TextMeasureResult = {
-			measurements: locateTexts(win, req.items, { width: req.width, height: req.height }),
-			fonts: textProbeOf(win)?.fonts() ?? [],
+			measurements: await driver.locateTexts(req.items, { width: req.width, height: req.height }),
+			fonts: await driver.fonts(),
 		};
 		this.cache.set(key, result);
 		if (this.cache.size > CACHE_SIZE) this.cache.delete(this.cache.keys().next().value!);
 		return result;
 	}
 
-	/** The host page of the request's bundle, sized to the composition canvas (layout depends on it). */
-	private async page(req: TextMeasureRequest): Promise<HostWindow> {
+	/**
+	 * The host page of the request's bundle, sized to the composition canvas (layout depends on it): a sandboxed
+	 * iframe like the Program monitor's live host (security review MG-1), reached through its host agent.
+	 */
+	private async page(req: TextMeasureRequest): Promise<MgHostRemote> {
 		if (!this.iframe?.isConnected) {
 			const f = document.createElement('iframe');
 			f.setAttribute('aria-hidden', 'true');
 			f.tabIndex = -1;
+			f.setAttribute('sandbox', MG_HOST_SANDBOX);
+			f.referrerPolicy = 'no-referrer';
 			f.title = 'Composition text measuring';
 			f.dataset.mgTextMeasure = '';
-			// Off screen but laid out and painted (hidden/display:none pages may be throttled).
+			// Invisible but inside the viewport. The page is a sandboxed frame with an opaque origin (MG-1), and Chrome
+			// stops the rendering lifecycle (requestAnimationFrame, which Remotion's render-ready handshake needs) of
+			// cross-origin frames that are display:none or outside the viewport: it must not be moved off screen.
 			Object.assign(f.style, {
 				position: 'fixed',
 				left: '0px',
@@ -102,7 +108,6 @@ export class MgTextMeasurer {
 				pointerEvents: 'none',
 				zIndex: '-1',
 				colorScheme: 'light',
-				transform: 'translate(-200vw, 0)',
 			});
 			document.body.appendChild(f);
 			this.iframe = f;
@@ -120,10 +125,12 @@ export class MgTextMeasurer {
 				};
 				f.src = hostPageUrl(this.bundleUrl(req.bundleKey));
 			});
+			this.driver?.dispose();
+			this.driver = null;
+			this.driver = await connectMgHost(f);
 			this.bundleKey = req.bundleKey;
-			this.driver = new MgFrameHostDriver(f.contentWindow as unknown as HostWindow);
 		}
-		return f.contentWindow as unknown as HostWindow;
+		return this.driver;
 	}
 }
 

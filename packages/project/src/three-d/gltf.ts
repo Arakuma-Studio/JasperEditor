@@ -69,7 +69,7 @@ export function parseModel(bytes: Uint8Array, format: ModelFormat): ParsedModel 
 		// glTF JSON is walked without a schema: a structurally wrong document (a number where an array belongs, an
 		// index past an array, an out-of-range typed-array view) surfaces as TypeError / RangeError — it is a
 		// malformed file, reported as such (golden-fuzz).
-		if (e instanceof TypeError || e instanceof RangeError)
+		if (e instanceof TypeError || e instanceof RangeError || e instanceof URIError)
 			throw new ModelParseError(`The model file is malformed (${e.message})`);
 		throw e;
 	}
@@ -124,6 +124,14 @@ function utf8Encode(s: string): Uint8Array {
 
 type Json = Record<string, any>;
 
+/**
+ * Numbers one model may expand to: accessor components read, vertices and indices written (security review PAR-2).
+ * A glTF document says how many elements an accessor has and how often a mesh is used; neither is bounded by the
+ * size of the file (an accessor without a buffer view is all zeros, a stride of 0 reads one element again and
+ * again, a thousand nodes can show the same mesh). 64 million values is a model of several million triangles.
+ */
+export const MAX_MODEL_VALUES = 64_000_000;
+
 function base64(s: string): Uint8Array {
 	const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 	const clean = s.replace(/[^A-Za-z0-9+/]/g, '');
@@ -148,7 +156,12 @@ function dataUri(uri: string): { mime: string; bytes: Uint8Array } {
 		throw new ModelParseError(
 			`The glTF file references an external file (${uri.slice(0, 60)}): export the model as .glb (everything in one file)`,
 		);
-	const bytes = m[2] ? base64(m[3]!) : utf8Encode(decodeURIComponent(m[3]!));
+	let bytes: Uint8Array;
+	try {
+		bytes = m[2] ? base64(m[3]!) : utf8Encode(decodeURIComponent(m[3]!));
+	} catch {
+		throw new ModelParseError('A data: URI of the glTF file is malformed');
+	}
 	return { mime: m[1] || 'application/octet-stream', bytes };
 }
 
@@ -210,21 +223,41 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			stride: v.byteStride as number | undefined,
 		};
 	};
+	let budget = MAX_MODEL_VALUES;
+	/** Counts `n` values against the model's allowance, before anything of that size is allocated. */
+	const spend = (n: number) => {
+		budget -= n;
+		if (!(n >= 0) || !(budget >= 0))
+			throw new ModelParseError(
+				`The model is too large (more than ${MAX_MODEL_VALUES / 1e6} million vertex and index values)`,
+			);
+	};
 	const COMPONENTS: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+	const KNOWN_COMPONENT_TYPES = new Set([5120, 5121, 5122, 5123, 5125, 5126]);
 	const readAccessor = (i: number): { data: Float64Array; n: number; count: number } => {
 		const a = json.accessors?.[i];
 		if (!a) throw new ModelParseError(`Missing accessor ${i}`);
 		const n = COMPONENTS[a.type as string];
 		if (!n) throw new ModelParseError(`Unsupported accessor type ${a.type}`);
 		const count = a.count as number;
-		const out = new Float64Array(count * n);
-		if (a.bufferView === undefined) return { data: out, n, count };
+		// The count comes from the document: it sizes the arrays below, so it is checked (and paid for) first.
+		if (!Number.isInteger(count) || count < 0)
+			throw new ModelParseError(`Accessor ${i} has an invalid count`);
+		spend(count * n);
+		if (a.bufferView === undefined) return { data: new Float64Array(count * n), n, count };
 		const { bytes: vb, stride } = view(a.bufferView);
 		const dv = new DataView(vb.buffer, vb.byteOffset, vb.byteLength);
 		const ct = a.componentType as number;
+		if (!KNOWN_COMPONENT_TYPES.has(ct)) throw new ModelParseError(`Unsupported component type ${ct}`);
 		const size = ct === 5126 || ct === 5125 ? 4 : ct === 5122 || ct === 5123 ? 2 : 1;
 		const step = stride ?? size * n;
 		const base = a.byteOffset ?? 0;
+		if (!Number.isInteger(step) || step < 0 || !Number.isInteger(base) || base < 0)
+			throw new ModelParseError(`Accessor ${i} has an invalid offset or stride`);
+		// The whole extent, before the array is allocated.
+		if (count > 0 && base + (count - 1) * step + n * size > vb.byteLength)
+			throw new ModelParseError(`Accessor ${i} reads past its buffer`);
+		const out = new Float64Array(count * n);
 		const norm = !!a.normalized;
 		for (let k = 0; k < count; k++)
 			for (let c = 0; c < n; c++) {
@@ -261,15 +294,20 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			}
 		return { data: out, n, count };
 	};
+	// One copy per image, however many materials use it (a document can name one image from every material).
+	const images = new Map<unknown, ModelMaterial['texture']>();
 	const image = (texIndex: number | undefined): ModelMaterial['texture'] => {
 		if (texIndex === undefined) return null;
 		const src = json.textures?.[texIndex]?.source;
 		const img = src !== undefined ? json.images?.[src] : undefined;
 		if (!img) return null;
+		if (images.has(src)) return images.get(src) ?? null;
+		let out: ModelMaterial['texture'] = null;
 		if (img.bufferView !== undefined)
-			return { mime: img.mimeType ?? 'image/png', bytes: view(img.bufferView).bytes.slice() };
-		if (img.uri) return dataUri(String(img.uri));
-		return null;
+			out = { mime: String(img.mimeType ?? 'image/png'), bytes: view(img.bufferView).bytes.slice() };
+		else if (img.uri) out = dataUri(String(img.uri));
+		images.set(src, out);
+		return out;
 	};
 	const materials: ModelMaterial[] = (json.materials ?? []).map((m: Json) => {
 		const pbr = m.pbrMetallicRoughness ?? {};
@@ -285,10 +323,16 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		};
 	});
 	const out: ModelPrimitive[] = [];
+	// glTF 2.0 §3.5.2: the node hierarchy is a set of strict trees, no node has more than one parent. A document in
+	// which nodes share children is a graph that the depth limit alone would let be walked children^64 times.
+	const visited = new Set<number>();
 	const visit = (nodeIndex: number, parent: number[], depth: number) => {
 		if (depth > 64) throw new ModelParseError('The node tree is too deep (cycle?)');
 		const node = json.nodes?.[nodeIndex];
 		if (!node) return;
+		if (visited.has(nodeIndex))
+			throw new ModelParseError('A node is used twice (the glTF node hierarchy must be a tree)');
+		visited.add(nodeIndex);
 		const local = nodeMatrix(node);
 		const world = mul4(parent, local);
 		if (node.mesh !== undefined) {
@@ -315,7 +359,10 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			for (let i = 0; i + 2 < idx.length; i++)
 				tris.push(...(i % 2 ? [idx[i + 1]!, idx[i]!, idx[i + 2]!] : [idx[i]!, idx[i + 1]!, idx[i + 2]!]));
 		else for (let i = 1; i + 1 < idx.length; i++) tris.push(idx[0]!, idx[i]!, idx[i + 1]!);
-		if (tris.some((t) => t >= count)) throw new ModelParseError('A primitive index is out of range');
+		if (tris.some((t) => !(t >= 0 && t < count) || !Number.isInteger(t)))
+			throw new ModelParseError('A primitive index is out of range');
+		// The primitive's output: its vertices (or, shaded flat, one vertex per index) and its indices.
+		spend(count * 3 + tris.length * (p.attributes.NORMAL !== undefined ? 1 : 4));
 		const positions = new Float32Array(count * 3);
 		for (let k = 0; k < count; k++) {
 			const v = apply4(world, pos.data[k * 3]!, pos.data[k * 3 + 1]!, pos.data[k * 3 + 2]!);

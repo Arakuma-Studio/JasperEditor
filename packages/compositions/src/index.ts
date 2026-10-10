@@ -23,6 +23,7 @@ export * from './fx/index.ts';
 export * from './layers/index.ts';
 export * from './metadata.ts';
 export * from './mg-host/protocol.ts';
+export * from './mg-host/remote.ts';
 export * from './mg-host/runtime.ts';
 export * from './pipeline.ts';
 // previews: render preview playback in the Program monitor.

@@ -57,8 +57,15 @@ Look at the result of UI work; a passing unit test is not a screenshot.
     pnpm --filter @jasper/web exec vite --host 127.0.0.1 --port $((BASE+2)) --strictPort   # web
   ```
   `pnpm dev` does the same on 47900/5173. `pnpm fixtures` makes the test media in `fixtures/media/`.
+  The engine always has a token ([docs/security-review.md](docs/security-review.md) §8): the Vite dev server finds
+  it by itself (the engine's `/health` names its runtime file) and makes the page the editor, so the URL above
+  just works. Talking to the engine's own port needs `Authorization: Bearer <token>` (`jq -r .token
+  <appdir>/engine/runtime.json`).
 - **Built stack** (what the E2E suite uses): `pnpm build`, then `E2E_PORT=<port> node e2e/serve.mjs`
-  serves the built engine and web app on one port with a throwaway appdir.
+  serves the built engine and web app on one port with a throwaway appdir. Playwright specs are signed in by
+  `playwright.config.ts`; started by hand in a terminal, the engine prints a `…/pair?key=…` link to open once in
+  the browser (or set `JASPER_LOCAL_TOKEN` and `JASPER_EDITOR_KEY` yourself and send them as the
+  `jasper_session` / `jasper_editor` cookies).
 - **Screenshots and clicks:** a Playwright spec of your own (`E2E_PORT=<port> E2E_SKIP_BUILD=1
   pnpm exec playwright test e2e/<yours>.spec.ts`) or a browser automation tool pointed at the web URL.
   In dev builds and Electron (or with `localStorage['jasper:agent-bridge'] = '1'`) the agent bridge exposes
@@ -69,8 +76,9 @@ Look at the result of UI work; a passing unit test is not a screenshot.
   `start_export` + `wait_for_job`, and `describe_commands` for the whole command catalogue. It uses a
   running engine on the `.stage` appdir if there is one (`pnpm dev`), else it starts a headless one
   (needs `pnpm --filter @jasper/engine build` once). The tools are listed in `README.md`.
-- **Plain HTTP:** `GET /api/agent/schema`, `POST /api/agent/query`, `POST /api/agent/tx` on the engine
-  (README "HTTP API underneath").
+- **Plain HTTP:** `GET /api/agent/schema`, `POST /api/agent/query`, `POST /api/agent/tx` on the engine, with the
+  token (README "HTTP API underneath"). Without the editor key you are an agent: destructive commands and
+  operations wait for the user's answer in an editor window.
 - Check exports by extracting frames (`ffmpeg -ss <t> -i out.mp4 -frames:v 1 f.png`) and looking at them.
 
 ## Parallel agents

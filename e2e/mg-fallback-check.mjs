@@ -5,6 +5,7 @@
 //
 //   node e2e/mg-fallback-check.mjs      # after `pnpm build && pnpm mg:build`
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -19,6 +20,13 @@ process.on('exit', () => {
 	for (const d of temps) rmSync(d, { recursive: true, force: true });
 });
 
+// Every engine has a token and tells the editor from an agent by the editor key (docs/security-review.md DEV-1,
+// AGT-2). This check plays the desktop shell for the engines it starts.
+const TOKEN = randomBytes(24).toString('base64url');
+const EDITOR_KEY = randomBytes(24).toString('base64url');
+const AUTH_ENV = { JASPER_LOCAL_TOKEN: TOKEN, JASPER_EDITOR_KEY: EDITOR_KEY };
+const AUTH_HEADERS = { authorization: `Bearer ${TOKEN}`, cookie: `jasper_editor=${EDITOR_KEY}` };
+
 function fail(msg) {
 	console.error(`[mg-fallback] FAIL: ${msg}`);
 	process.exit(1);
@@ -28,7 +36,7 @@ async function engine(port, extraEnv) {
 	const appdir = mkdtempSync(join(tmpdir(), 'jasper-mgcheck-'));
 	temps.push(appdir);
 	const child = spawn(process.execPath, [join(root, 'apps/engine/dist/engine.mjs'), '--port', String(port)], {
-		env: { ...process.env, JASPER_APPDIR: appdir, ...extraEnv },
+		env: { ...process.env, JASPER_APPDIR: appdir, ...AUTH_ENV, ...extraEnv },
 		stdio: ['ignore', 'ignore', 'inherit'],
 	});
 	children.push(child);
@@ -47,7 +55,7 @@ async function engine(port, extraEnv) {
 async function call(url, method, path, body) {
 	const res = await fetch(`${url}${path}`, {
 		method,
-		headers: body ? { 'content-type': 'application/json' } : {},
+		headers: { ...AUTH_HEADERS, ...(body ? { 'content-type': 'application/json' } : {}) },
 		body: body ? JSON.stringify(body) : undefined,
 	});
 	const json = await res.json();

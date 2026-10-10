@@ -9,6 +9,7 @@
 // Also registers the `roto` job runner, its cache adapter and the `features.roto` capability block.
 import { RotoSegmentRequestSchema, RotoTraceRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import { RotoService } from '../roto/service.ts';
 import { serveFile } from '../tools/http.ts';
@@ -64,6 +65,12 @@ export default async function rotoRoutes(app: FastifyInstance): Promise<void> {
 					'MODEL_BUSY',
 					'The model is in use or being downloaded; wait or cancel the job',
 				);
+			// Security review AGT-3: a model can be downloaded again, but that is gigabytes and needs the network.
+			await requireUserApproval(app, req, {
+				label: 'Remove a downloaded model',
+				summary: `remove the downloaded model ${req.params.modelId} from this computer`,
+				reasons: ['features that use the model stop working until it is downloaded again'],
+			});
 			const r = await svc.models.remove(req.params.modelId);
 			core.capabilities.changed();
 			return { modelId: req.params.modelId, ...r };

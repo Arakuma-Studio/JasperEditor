@@ -1,5 +1,6 @@
 // EngineProvider (ARCHITECTURE §7.5): EngineClient + health + capabilities + the /events stream.
 import {
+	AGENT_INPUT_HEADER,
 	type EngineCapabilities,
 	type EngineJob,
 	type EventEnvelope,
@@ -17,6 +18,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { agentInputActive } from '../agent-bridge/agent-input.ts';
 import type { Capability } from '../commands/types.ts';
 
 export type EngineStatus = 'connecting' | 'connected' | 'disconnected';
@@ -66,11 +68,22 @@ export function fetchWithEarly(real: typeof fetch = (input, init) => fetch(input
 	};
 }
 
+/**
+ * The editor's engine client (same origin). Security review AGT-3: what the editor asks of the engine while it
+ * handles an agent's live-UI input (a `ui_click` on Delete in the Effects panel, Preferences ▸ Media Cache ▸
+ * Clean…) is the agent's request; it is marked as such, and the engine asks the user about destructive ones like
+ * it does for the MCP tools.
+ */
+export function createEditorEngineClient(): EngineClient {
+	return new EngineClient({
+		baseUrl: '',
+		fetch: fetchWithEarly(),
+		requestHeaders: (): Record<string, string> => (agentInputActive() ? { [AGENT_INPUT_HEADER]: '1' } : {}),
+	});
+}
+
 export function EngineProvider(props: { children?: ReactNode; client?: EngineClient }) {
-	const client = useMemo(
-		() => props.client ?? new EngineClient({ baseUrl: '', fetch: fetchWithEarly() }),
-		[props.client],
-	);
+	const client = useMemo(() => props.client ?? createEditorEngineClient(), [props.client]);
 	const [status, setStatus] = useState<EngineStatus>('connecting');
 	const [version, setVersion] = useState<string | null>(null);
 	const [capabilities, setCapabilities] = useState<EngineCapabilities | null>(null);

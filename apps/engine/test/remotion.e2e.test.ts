@@ -15,6 +15,8 @@ describe.runIf(enabled)('Remotion render (REMOTION_E2E=1)', () => {
 		const engine: RunningEngine = await startEngine({
 			appdir: tempAppdir(),
 			port: PORT,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

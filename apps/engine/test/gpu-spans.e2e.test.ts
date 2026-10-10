@@ -90,6 +90,8 @@ describe.runIf(enabled || bench)(
 			engine = await startEngine({
 				appdir: tempAppdir('jasper-gpu-spans-'),
 				port: PORT,
+				// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+				insecure: true,
 				dev: true,
 				env: {
 					PATH: process.env.PATH,

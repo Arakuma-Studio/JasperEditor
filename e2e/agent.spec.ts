@@ -233,10 +233,9 @@ test('Help ▸ Connect an AI Agent… shows configuration with the real path of 
 	await expect(page.getByTestId('agent-snippet-codex-toml')).toContainText('[mcp_servers.jasper]');
 	await expect(page.getByTestId('agent-snippet-codex-toml')).toContainText(MCP_BUNDLE);
 	await expect(page.getByTestId('agent-snippet-cursor-json')).toContainText('"mcpServers"');
-	// This engine has no token, so its Streamable HTTP endpoint is offered too.
-	await expect(page.getByTestId('agent-snippet-claude-http')).toContainText(
-		`http://127.0.0.1:${serverInfo().port}/mcp`,
-	);
+	// Every engine has a token (security review DEV-1) and the dialog never shows it, so the Streamable HTTP
+	// endpoint, which would need it in a header, is not offered: the stdio server reads it from the runtime file.
+	await expect(page.getByTestId('agent-snippet-claude-http')).toHaveCount(0);
 	await expect(page.getByTestId('connect-agent-missing')).toHaveCount(0);
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeHidden();

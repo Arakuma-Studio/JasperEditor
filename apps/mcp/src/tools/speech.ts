@@ -249,7 +249,8 @@ export function registerSpeechTools(ctx: ToolContext): void {
 		'remove_speech_model',
 		{
 			title: 'Remove speech model',
-			description: 'Deletes a downloaded speech model from the engine (transcripts already made are kept).',
+			description:
+				"Deletes a downloaded speech model from the engine (transcripts already made are kept). Needs the user's approval in an open JasperEditor window.",
 			input: { modelId: z.string().min(1) },
 			annotations: DESTRUCTIVE,
 		},

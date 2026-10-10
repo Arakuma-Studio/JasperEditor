@@ -25,6 +25,7 @@ import {
 } from '@jasper/api';
 import { isOpenableFile } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { isLoopbackHost } from '../context.ts';
 import { MediaJobService } from '../gaps/media-jobs.ts';
 import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
@@ -64,44 +65,71 @@ export async function describeFolder(path: string, expose: boolean): Promise<Scr
 	return { path: expose ? path : null, exists, writable: exists ? writable : false, freeBytes: free };
 }
 
-/** The host command that reveals / opens a path (overridable with `JASPER_OPEN_COMMAND` for tests and kiosks). */
+/** How the opener is spawned (`launch`). */
+export type OpenerCommand = {
+	cmd: string;
+	args: string[];
+	env?: Record<string, string>;
+	/**
+	 * Windows: `args` are already the exact command-line text (child_process `windowsVerbatimArguments`). Node would
+	 * otherwise quote each argument for programs that parse with the C runtime rules; explorer.exe does not.
+	 */
+	verbatim?: boolean;
+};
+
+/** The fixed PowerShell command of "open" on Windows. No part of it comes from the file. */
+export const WINDOWS_OPEN_COMMAND = 'Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH';
+
+/**
+ * The host command that reveals / opens a path (overridable with `JASPER_OPEN_COMMAND` for tests and kiosks).
+ *
+ * Windows (security review ENG-5; the quoting is covered by test/windows-opener.test.ts, which also runs the open
+ * command through a real PowerShell when one is installed):
+ *  - open: never through `cmd.exe /c start`, which parses the path as a command line (a file named
+ *    `a&calc.exe&.mp4` ran calc.exe). The command line is a constant; the path travels in the environment and
+ *    PowerShell reads it as a value (`$env:` expands to one argument, never re-parsed) for `-LiteralPath` (no
+ *    wildcards: `[`, `]`, `*`, `?` are file name characters).
+ *  - reveal: `explorer.exe /select,"<path>"`, written verbatim. explorer.exe splits its command line at commas and
+ *    honours double quotes; quoting the whole argument (what Node does by itself) leaves a comma in a path as a
+ *    separator and selects the wrong item. `"` cannot be part of a Windows file name: a path with one is not
+ *    revealed at all (the folder is opened instead, via the same quoting, when it has none).
+ */
 export function openerFor(
 	action: 'reveal' | 'open',
 	path: string,
 	platform: NodeJS.Platform = process.platform,
 	override?: string,
-): { cmd: string; args: string[]; env?: Record<string, string> } {
+): OpenerCommand {
 	if (override) return { cmd: override, args: [action, path] };
 	if (platform === 'darwin') return { cmd: 'open', args: action === 'reveal' ? ['-R', path] : [path] };
-	if (platform === 'win32')
+	if (platform === 'win32') {
+		if (path.includes('"') || path.includes('\0') || /[\r\n]/.test(path))
+			throw new HttpError(400, 'NOT_MEDIA', 'This file name cannot be handed to Windows');
 		return action === 'reveal'
-			? { cmd: 'explorer.exe', args: [`/select,${path}`] }
-			: // Security review ENG-5: never through `cmd.exe /c start`, which parses the path as a command line (a
-				// file named `a&calc.exe&.mp4` ran calc.exe). The path travels in the environment; the command is fixed.
-				{
+			? { cmd: 'explorer.exe', args: [`/select,"${path}"`], verbatim: true }
+			: {
 					cmd: 'powershell.exe',
-					args: [
-						'-NoProfile',
-						'-NonInteractive',
-						'-Command',
-						'Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH',
-					],
+					args: ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_OPEN_COMMAND],
 					env: { JASPER_OPEN_PATH: path },
 				};
+	}
 	// Linux / BSD: freedesktop. xdg-open cannot select a file, so reveal opens its folder.
 	return { cmd: 'xdg-open', args: [action === 'reveal' ? dirname(path) : path] };
 }
 
 /** Spawns the opener detached; resolves when it started (ENOENT → a typed error). */
-function launch(cmd: string, args: string[], env?: Record<string, string>): Promise<void> {
+function launch(o: OpenerCommand): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let child: ReturnType<typeof spawn>;
 		try {
-			child = spawn(cmd, args, {
+			child = spawn(o.cmd, o.args, {
 				detached: true,
 				stdio: 'ignore',
 				windowsHide: true,
-				...(env ? { env: { ...process.env, ...env } } : {}),
+				// Never a shell, on any platform.
+				shell: false,
+				...(o.verbatim ? { windowsVerbatimArguments: true } : {}),
+				...(o.env ? { env: { ...process.env, ...o.env } } : {}),
 			});
 		} catch (e) {
 			reject(e);
@@ -178,7 +206,15 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		'/api/settings/gaps',
 		guarded(async (req) => {
 			const patch = parseOr400(EngineGapsSettingsSchema.partial(), req.body ?? {});
-			const next = { ...(await readSettings()), ...patch };
+			const current = await readSettings();
+			// Security review AGT-3: keeping fewer versions prunes the older ones on the next save of every project.
+			if (patch.keepVersions !== undefined && patch.keepVersions < current.keepVersions)
+				await requireUserApproval(app, req, {
+					label: 'Keep fewer project versions',
+					summary: `keep ${patch.keepVersions} saved version${patch.keepVersions === 1 ? '' : 's'} per project instead of ${current.keepVersions}`,
+					reasons: ['older saved versions of every project are deleted the next time it is saved'],
+				});
+			const next = { ...current, ...patch };
 			await atomicWriteJson(settingsFile, next);
 			apply(next);
 			return info();
@@ -312,9 +348,10 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 					'NOT_MEDIA',
 					'Only media and document files are opened in their application; reveal this one in the file browser instead',
 				);
-			const { cmd, args, env } = openerFor(action, path, process.platform, process.env.JASPER_OPEN_COMMAND);
+			const opener = openerFor(action, path, process.platform, process.env.JASPER_OPEN_COMMAND);
+			const { cmd } = opener;
 			try {
-				await launch(cmd, args, env);
+				await launch(opener);
 			} catch (e) {
 				const code = (e as NodeJS.ErrnoException).code;
 				throw new HttpError(

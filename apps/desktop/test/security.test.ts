@@ -15,6 +15,7 @@ import {
 	isWindowAction,
 	mcpLaunchInfo,
 	parseClipboardFileList,
+	sessionCookies,
 } from '../src/security.ts';
 
 describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
@@ -120,6 +121,37 @@ describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
 		// Not built: the dialog falls back to the engine's answer or a placeholder.
 		expect(mcpLaunchInfo({ packaged: false, entry: '/x', exists: false, execPath: '/e' }).entry).toBeNull();
 	});
+
+	// Security review RUN-1: a packaged build that ships a Node runtime never runs its own binary as Node.
+	it('a packaged app with a bundled Node runtime launches jasper-mcp with it, without ELECTRON_RUN_AS_NODE', () => {
+		expect(
+			mcpLaunchInfo({
+				packaged: true,
+				entry: '/opt/JasperEditor/resources/mcp/jasper-mcp.mjs',
+				exists: true,
+				execPath: '/opt/JasperEditor/jasper-editor',
+				bundledNode: '/opt/JasperEditor/resources/node/node',
+			}),
+		).toEqual({
+			entry: '/opt/JasperEditor/resources/mcp/jasper-mcp.mjs',
+			command: '/opt/JasperEditor/resources/node/node',
+			env: {},
+		});
+		// A checkout never uses it.
+		expect(
+			mcpLaunchInfo({ packaged: false, entry: '/x', exists: true, execPath: '/e', bundledNode: '/n' })
+				.command,
+		).toBe('node');
+	});
+
+	// Security review AGT-2: the window's cookies for the engine it started, under per-port names.
+	it('names the session and editor cookies by the engine port and keeps the two secrets apart', () => {
+		expect(sessionCookies(48123, 'tok', 'key')).toEqual({
+			jasper_session_48123: 'tok',
+			jasper_editor_48123: 'key',
+		});
+		expect(sessionCookies('48123', 'tok', 'key')).toEqual(sessionCookies(48123, 'tok', 'key'));
+	});
 });
 
 describe('desktop package config (R-OMS §8.5)', () => {
@@ -144,7 +176,10 @@ describe('desktop package config (R-OMS §8.5)', () => {
 
 	// Security review ELE-1: packaged builds ignore NODE_OPTIONS and --inspect (which would let any process run code
 	// as the signed app, with its microphone permission), verify the asar, load only from it and encrypt cookies.
-	// Run-as-node stays on: Help ▸ Connect an AI Agent launches the bundled jasper-mcp that way (mcpLaunchInfo).
+	// Run-as-node stays on (security review RUN-1): the engine's worker programs (speech, roto, camera tracking,
+	// jasper-proc, the bundle schema runner) and the bundled jasper-mcp are Node programs, and a packaged build has no
+	// Node but its own binary. It can be switched off when the package ships a Node runtime in `resources/node`
+	// (apps/engine/src/tools/node-runtime.ts and mcpLaunchInfo use it when it is there).
 	it('flips the Electron fuses', () => {
 		expect(pkg.build.asar).toBe(true);
 		expect(pkg.build.electronFuses).toEqual({

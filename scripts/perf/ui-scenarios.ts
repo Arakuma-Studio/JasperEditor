@@ -8,7 +8,48 @@
 // its frame that long). Reported: frames, p50 / p95 / mean / max work per frame, busy fraction, wall time, and the
 // frame rate (frames / wall). An in-page requestAnimationFrame loop keeps frames coming while a scenario runs (the
 // idle page would otherwise not produce any), so "frames" counts what the page managed to produce.
+import { randomBytes } from 'node:crypto';
 import type { CDPSession, Page } from '@playwright/test';
+
+// ------------------------------------------------------------------ the engine's credentials
+//
+// Every engine has a token, and tells the editor window from an agent by the editor key (security review DEV-1 /
+// AGT-2). A harness that starts an engine plays the desktop shell: it makes both, hands them to the engine
+// (`harnessEngineEnv`) and to its browser pages (`harnessCookies`, added by `openProject`) and requests
+// (`harnessHeaders`). The secrets travel in E2E_TOKEN / E2E_EDITOR_KEY, which playwright.config.ts sets for the
+// E2E suite; export them to measure against a stack that is already running (BASE_URL).
+
+/** The harness's token and editor key (made once per process tree). */
+export function harnessSecrets(env: NodeJS.ProcessEnv = process.env): { token: string; editorKey: string } {
+	env.E2E_TOKEN ??= randomBytes(24).toString('base64url');
+	env.E2E_EDITOR_KEY ??= randomBytes(24).toString('base64url');
+	return { token: env.E2E_TOKEN, editorKey: env.E2E_EDITOR_KEY };
+}
+
+/** Environment for an engine this harness starts. */
+export function harnessEngineEnv(): Record<string, string> {
+	const { token, editorKey } = harnessSecrets();
+	return { JASPER_LOCAL_TOKEN: token, JASPER_EDITOR_KEY: editorKey };
+}
+
+/** Headers that make a request from Node the editor's. */
+export function harnessHeaders(): Record<string, string> {
+	const { token, editorKey } = harnessSecrets();
+	return { authorization: `Bearer ${token}`, cookie: `jasper_editor=${editorKey}` };
+}
+
+/** Cookies that make a browser page on `base` the editor. */
+export function harnessCookies(base: string) {
+	const { token, editorKey } = harnessSecrets();
+	const one = (name: string, value: string) => ({
+		name,
+		value,
+		url: base,
+		httpOnly: true,
+		sameSite: 'Strict' as const,
+	});
+	return [one('jasper_session', token), one('jasper_editor', editorKey)];
+}
 
 export type FrameStats = {
 	/** Frames begun on the main thread in the window. */
@@ -185,7 +226,12 @@ export async function uploadProject(base: string, envelope: Envelope): Promise<s
 		try {
 			r = await fetch(`${base}${path}`, {
 				...init,
-				headers: { 'content-type': 'application/json', 'x-jasper-api': '1', ...(init.headers ?? {}) },
+				headers: {
+					'content-type': 'application/json',
+					'x-jasper-api': '1',
+					...harnessHeaders(),
+					...(init.headers ?? {}),
+				},
 			});
 		} catch (e) {
 			// A busy engine may drop a large upload: retry a few times.
@@ -221,6 +267,7 @@ export async function openProject(page: Page, base: string, projectId: string): 
 	await page.addInitScript(() => window.localStorage.setItem('jasper:agent-bridge', '1'));
 	// tsx (esbuild keepNames) wraps named functions of the evaluated callbacks in `__name(…)`.
 	await page.addInitScript({ content: 'globalThis.__name = globalThis.__name || ((f) => f);' });
+	await page.context().addCookies(harnessCookies(base));
 	const t0 = Date.now();
 	await page.goto(`${base}/project/${encodeURIComponent(projectId)}`);
 	await page.getByTestId('timeline-track-area').waitFor({ timeout: 120_000 });

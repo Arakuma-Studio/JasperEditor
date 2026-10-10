@@ -11,6 +11,7 @@ import {
 } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { CacheLocationError } from '../cache/service.ts';
 import { isLoopbackHost } from '../context.ts';
 import type { MgService } from '../mg/index.ts';
@@ -54,6 +55,15 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 		'/api/cache/clean',
 		guarded(async (req) => {
 			const body = parseOr400(CacheCleanRequestSchema, req.body ?? {});
+			// Security review AGT-3. `auto` and `unused` remove only what no saved or open project references, which is
+			// what the engine's own automatic pass does: not gated. `all` also removes what saved projects use (previews,
+			// proxies, prerenders that take minutes to hours to make again): an agent needs the user's approval.
+			if (body.mode === 'all')
+				await requireUserApproval(app, req, {
+					label: 'Clean the media cache',
+					summary: `delete every cache file that is not in use right now${body.kinds ? ` (${body.kinds.join(', ')})` : ''}, including files your saved projects reference`,
+					reasons: ['previews, proxies and renders are made again when needed, which can take a long time'],
+				});
 			return cache.clean(body.mode, body.kinds);
 		}),
 	);
@@ -79,6 +89,20 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 		guarded(async (req, reply) => {
 			local();
 			const body = parseOr400(CacheMoveRequestSchema, req.body ?? {});
+			// Security review AGT-3: writes to a folder of the caller's choice and (`fresh` without `keepOld`) deletes
+			// the whole current cache.
+			await requireUserApproval(app, req, {
+				label: 'Change the media cache location',
+				summary:
+					body.mode === 'fresh'
+						? `start an empty media cache in ${body.path ?? 'the default location'} and ${body.keepOld ? 'keep' : 'delete'} the current cache files`
+						: `move the media cache to ${body.path ?? 'the default location'}`,
+				reasons: [
+					body.mode === 'fresh' && !body.keepOld
+						? 'deletes every file of the current cache'
+						: 'changes where the engine writes cache files',
+				],
+			});
 			try {
 				return reply.code(202).send(await cache.startMove(body));
 			} catch (e) {
@@ -96,6 +120,15 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 
 	app.put(
 		'/api/cache/settings',
-		guarded(async (req) => cache.putSettings(parseOr400(CacheSettingsSchema, req.body ?? {}))),
+		guarded(async (req) => {
+			const body = parseOr400(CacheSettingsSchema, req.body ?? {});
+			// Security review AGT-3: the budgets and the age limit decide what the automatic cleaning deletes.
+			await requireUserApproval(app, req, {
+				label: 'Change the media cache settings',
+				summary: 'change the size budgets, the age limit or the automatic cleaning of the media cache',
+				reasons: ['a smaller budget or age limit makes the automatic cleaning delete cache files'],
+			});
+			return cache.putSettings(body);
+		}),
 	);
 }

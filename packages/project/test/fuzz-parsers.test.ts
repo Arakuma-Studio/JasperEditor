@@ -63,6 +63,7 @@ import {
 	TRANSCRIPT_JSON,
 	threeDlSeeds,
 } from './fuzz-seeds.ts';
+import { hostileModelSeeds, triangleDocument } from './three-d-hostile.ts';
 
 const caption = captionSeeds();
 const text = (k: string) => caption[k]!.filter((x): x is string => typeof x === 'string');
@@ -145,7 +146,20 @@ describeFuzz('@jasper/project vector, Lottie, models, image sequences', [
 	textTarget('SVG path data', SVG_PATHS, parseSvgPath, SvgPathError),
 	textTarget('Lottie JSON text', [JSON.stringify(LOTTIE)], parseLottie, LottieParseError),
 	jsonTarget('Lottie document', [LOTTIE], parseLottie, LottieParseError),
-	bytesTarget('glTF (JSON)', [modelSeeds().gltf], (b) => parseModel(b, 'gltf'), ModelParseError),
+	// Security review PAR-2: mutation also starts from the document shapes that made the reader allocate or walk
+	// without bound, and a JSON-aware target mutates the counts, offsets, strides and indices themselves.
+	bytesTarget(
+		'glTF (JSON)',
+		[modelSeeds().gltf, ...hostileModelSeeds()],
+		(b) => parseModel(b, 'gltf'),
+		ModelParseError,
+	),
+	jsonTarget(
+		'glTF document (fields)',
+		[triangleDocument(), ...hostileModelSeeds().map((b) => JSON.parse(new TextDecoder().decode(b)))],
+		(doc) => parseModel(new TextEncoder().encode(JSON.stringify(doc)), 'gltf'),
+		ModelParseError,
+	),
 	bytesTarget('glTF binary (GLB)', [modelSeeds().glb], (b) => parseModel(b, 'glb'), ModelParseError),
 	bytesTarget('OBJ', [modelSeeds().obj], (b) => parseModel(b, 'obj'), ModelParseError),
 	textTarget('image-sequence grouping (one name per line)', [IMAGE_SEQUENCE_NAMES.join('\n')], (t) =>

@@ -240,6 +240,8 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 		const engine: RunningEngine = await startEngine({
 			appdir: tempAppdir(),
 			port: 0,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

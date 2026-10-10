@@ -113,7 +113,9 @@ export default async function agentRoutes(app: FastifyInstance): Promise<void> {
 		return out;
 	});
 
-	app.get('/agent', { websocket: true }, (socket) => {
-		service.handleSocket(socket);
+	// The upgrade request went through the auth hook like any other: `jasperEditor` says whether it carried the
+	// editor key (the editor window) or only the token (anything else).
+	app.get('/agent', { websocket: true }, (socket, req) => {
+		service.handleSocket(socket, { editor: req.jasperEditor });
 	});
 }

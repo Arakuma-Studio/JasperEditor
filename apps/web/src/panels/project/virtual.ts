@@ -8,7 +8,7 @@ import { type RefObject, useEffect, useState } from 'react';
 /** Bins with fewer items render every row (identical DOM to before windowing). */
 export const VIRTUALIZE_MIN_ROWS = 200;
 /** Rows rendered before the first measurement. */
-const INITIAL_ROWS = 80;
+export const INITIAL_ROWS = 80;
 
 export type RowWindow = {
 	/** Whether windowing is on (the views render spacers). */

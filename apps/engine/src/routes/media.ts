@@ -9,6 +9,7 @@ import {
 	type MediaStatusBatchResponse,
 } from '@jasper/api';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { isLoopbackHost } from '../context.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { MediaRecord } from '../media/registry.ts';
@@ -106,7 +107,16 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 	app.delete<K>(
 		'/api/media/:mediaKey',
 		guarded<K>(async (req) => {
-			record(req.params.mediaKey);
+			const r = record(req.params.mediaKey);
+			// Security review AGT-3: only engine-managed copies that no *saved* project references are deleted, but an
+			// upload the user has just imported into an unsaved project is exactly that, and its bytes exist nowhere
+			// else. An agent needs the user's approval.
+			if (r.storage.type === 'managed' && !r.derivedFrom)
+				await requireUserApproval(app, req, {
+					label: 'Discard an uploaded media file',
+					summary: `delete the engine's copy of "${r.originalName}"`,
+					reasons: ['the file was uploaded to the engine and may exist nowhere else'],
+				});
 			return media.discard(req.params.mediaKey, {
 				projectsDir: core.config.paths.projectsDir,
 				cacheDir: core.config.paths.cacheDir,

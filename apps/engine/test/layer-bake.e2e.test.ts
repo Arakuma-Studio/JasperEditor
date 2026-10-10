@@ -111,6 +111,8 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		engine = await startEngine({
 			appdir: tempAppdir('jasper-lb-e2e-'),
 			port: PORT,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

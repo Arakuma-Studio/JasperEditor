@@ -2,13 +2,13 @@
 //   1. explicit `--engine-url` / `--token`, else JASPER_ENGINE_URL / JASPER_ENGINE_TOKEN
 //   2. `<appdir>/engine/runtime.json` written by a running engine, for `--appdir`, JASPER_APPDIR, the
 //      platform default appdir and the desktop app's appdir (`<Electron userData>/jasper`)
-//   3. the default dev engine on http://127.0.0.1:47900
+//   3. the default dev engine on http://127.0.0.1:47900 (its token: from the runtime file its /health names)
 // and, with `--start-engine`, forks a headless engine (random port, per-launch token) when none answers.
 // Everything here logs to stderr only: stdout belongs to the MCP stdio transport.
 import { type ChildProcess, fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	appdirPaths,
@@ -43,7 +43,7 @@ export type DiscoveryOptions = {
 	log?(line: string): void;
 };
 
-type HealthResult = { ok: true; version: string } | { ok: false; reason: string };
+type HealthResult = { ok: true; version: string; runtimeFile: string | null } | { ok: false; reason: string };
 
 /** GET /health with a short timeout (the route is public even in token mode). */
 async function probeHealth(
@@ -56,9 +56,13 @@ async function probeHealth(
 	try {
 		const res = await f(`${url.replace(/\/$/, '')}/health`, { signal: ctrl.signal });
 		if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
-		const body = (await res.json()) as { ok?: unknown; version?: unknown };
+		const body = (await res.json()) as { ok?: unknown; version?: unknown; runtimeFile?: unknown };
 		if (body?.ok !== true) return { ok: false, reason: 'not a JasperEditor engine' };
-		return { ok: true, version: typeof body.version === 'string' ? body.version : 'unknown' };
+		return {
+			ok: true,
+			version: typeof body.version === 'string' ? body.version : 'unknown',
+			runtimeFile: typeof body.runtimeFile === 'string' ? body.runtimeFile : null,
+		};
 	} catch (e) {
 		return { ok: false, reason: (e as Error).name === 'AbortError' ? 'timeout' : (e as Error).message };
 	} finally {
@@ -87,13 +91,38 @@ function candidateAppdirs(opts: Pick<DiscoveryOptions, 'appdir' | 'env'> = {}): 
 	return out;
 }
 
-function readRuntimeFile(appdir: string): EngineRuntimeInfo | null {
-	const file = appdirPaths(appdir).runtimeFile;
+function readRuntime(file: string): EngineRuntimeInfo | null {
 	try {
 		return parseEngineRuntime(JSON.parse(readFileSync(file, 'utf8')));
 	} catch {
 		return null;
 	}
+}
+
+function readRuntimeFile(appdir: string): EngineRuntimeInfo | null {
+	return readRuntime(appdirPaths(appdir).runtimeFile);
+}
+
+/**
+ * The token of an engine found by its address (an explicit URL without a token, or the default dev port). Every
+ * engine has one (docs/security-review.md DEV-1) and says in its public `/health` where its runtime file is; the
+ * file is readable by the engine's user only, so reading it is the authorisation. Null when the file is not ours
+ * to read or describes another engine.
+ */
+function tokenFromRuntimeFile(
+	url: string,
+	runtimeFile: string | null,
+): { token: string; file: string } | null {
+	if (!runtimeFile || !isAbsolute(runtimeFile)) return null;
+	const info = readRuntime(runtimeFile);
+	if (!info?.token) return null;
+	let port = '';
+	try {
+		port = new URL(url).port;
+	} catch {
+		return null;
+	}
+	return String(info.port) === port && pidAlive(info.pid) ? { token: info.token, file: runtimeFile } : null;
 }
 
 /** Finds a reachable engine, or null (the reasons are passed to `log`). */
@@ -107,11 +136,13 @@ export async function discoverEngine(opts: DiscoveryOptions = {}): Promise<Engin
 	if (url) {
 		const h = await probe(url);
 		if (!h.ok) log(`engine at ${url} (explicit) is not answering: ${h.reason}`);
+		const found = !token && h.ok ? tokenFromRuntimeFile(url, h.runtimeFile) : null;
 		// Explicit targets are used even when down: the error then names the configured URL.
 		return {
 			url: url.replace(/\/$/, ''),
-			token: token || null,
+			token: token || found?.token || null,
 			source: 'explicit',
+			...(found ? { detail: found.file } : {}),
 			...(h.ok ? { version: h.version } : {}),
 		};
 	}
@@ -139,7 +170,16 @@ export async function discoverEngine(opts: DiscoveryOptions = {}): Promise<Engin
 
 	const def = `http://${DEFAULT_ENGINE_HOST}:${DEFAULT_ENGINE_PORT}`;
 	const h = await probe(def);
-	if (h.ok) return { url: def, token: token || null, source: 'default-port', version: h.version };
+	if (h.ok) {
+		const found = token ? null : tokenFromRuntimeFile(def, h.runtimeFile);
+		return {
+			url: def,
+			token: token || found?.token || null,
+			source: 'default-port',
+			...(found ? { detail: found.file } : {}),
+			version: h.version,
+		};
+	}
 	log(`no engine on the default port ${DEFAULT_ENGINE_PORT}: ${h.reason}`);
 	return null;
 }

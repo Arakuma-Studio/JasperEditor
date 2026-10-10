@@ -213,14 +213,32 @@ export function sniffBento(b: Uint8Array): boolean {
 }
 
 const MAX_SEGMENTS = 1 << 20;
+/** A global name ("OMFI:CPNT:Length") is a few dozen bytes. */
+const MAX_NAME_BYTES = 1024;
+/** Entries of an object's reference list that are considered (an object has at most 65 535 references per list). */
+const MAX_REFERENCES = 1 << 20;
 
 /** A parsed Bento container. */
 export class BentoContainer {
 	readonly objects = new Map<number, Prop[]>();
 	private readonly names = new Map<number, string>();
 	private readonly byName = new Map<string, number>();
+	private readonly refs = new Map<number, Map<number, number>>();
+	/**
+	 * Work the reader may still do (security review PAR-2). A Bento file is a graph: values may overlap, an object
+	 * may reference itself, and every lookup scans a list. Each scan, copy and decode is charged; the allowance
+	 * grows with the table of contents, so a real file never comes near it and a hostile one is refused after a
+	 * bounded amount of work instead of running for hours or allocating gigabytes.
+	 */
+	private work = 0;
 
 	private constructor(private readonly data: Uint8Array) {}
+
+	/** Charges `n` units of work; throws when the file asks for more than its size can justify. */
+	charge(n: number): void {
+		this.work -= n;
+		if (this.work < 0) throw new BentoError('the file is too complex to read (damaged?)');
+	}
 
 	static open(data: Uint8Array): BentoContainer {
 		if (!sniffBento(data)) throw new BentoError('no Bento label at the end of the file');
@@ -232,6 +250,7 @@ export class BentoContainer {
 		const toc = data.subarray(tocAt, tocAt + tocLen);
 		const tv = new DataView(toc.buffer, toc.byteOffset, toc.byteLength);
 		const c = new BentoContainer(data);
+		c.work = tocLen * 64 + 2_000_000;
 		let obj = 0;
 		let prop = 0;
 		let i = 0;
@@ -306,7 +325,8 @@ export class BentoContainer {
 			const p = props.find((x) => x.prop === GLOBAL_PROP_NAME || x.prop === GLOBAL_TYPE_NAME);
 			if (!p) continue;
 			const v = c.tryValue(p);
-			if (!v) continue;
+			// Every object could name the whole file as its "name": names are short, anything else is not one.
+			if (!v || v.length > MAX_NAME_BYTES) continue;
 			let s = '';
 			for (const b of v) s += String.fromCharCode(b);
 			s = s.replace(/\0+$/, '');
@@ -331,6 +351,10 @@ export class BentoContainer {
 				total += s.len;
 			}
 		}
+		// Segments of one value do not overlap: together they cannot be larger than the file. (A table of contents
+		// can name the same megabytes a million times; the sum would be allocated.)
+		if (total > this.data.length) return null;
+		this.charge(total + p.segs.length);
 		const out = new Uint8Array(total);
 		let at = 0;
 		for (const s of p.segs) {
@@ -353,18 +377,33 @@ export class BentoContainer {
 	get(obj: number, name: string): Uint8Array | null {
 		const pid = this.byName.get(name);
 		if (pid === undefined) return null;
-		const p = this.objects.get(obj)?.find((x) => x.prop === pid);
+		const props = this.objects.get(obj);
+		if (!props) return null;
+		this.charge(1 + props.length);
+		const p = props.find((x) => x.prop === pid);
 		return p ? this.tryValue(p) : null;
 	}
 
 	/** Resolve an object reference key of `obj` through its reference list. */
 	resolve(obj: number, key: number): number {
-		const p = this.objects.get(obj)?.find((x) => x.prop === OBJ_REFERENCES);
-		const v = p ? this.tryValue(p) : null;
-		if (v) {
-			const dv = new DataView(v.buffer, v.byteOffset, v.byteLength);
-			for (let i = 0; i + 8 <= v.length; i += 8) if (dv.getUint32(i) === key) return dv.getUint32(i + 4);
+		this.charge(1);
+		let map = this.refs.get(obj);
+		if (!map) {
+			// Built once per object (the first key wins, as in a scan from the start).
+			map = new Map();
+			const p = this.objects.get(obj)?.find((x) => x.prop === OBJ_REFERENCES);
+			const v = p ? this.tryValue(p) : null;
+			if (v) {
+				const n = Math.min(Math.floor(v.length / 8), MAX_REFERENCES);
+				this.charge(n);
+				const dv = new DataView(v.buffer, v.byteOffset, v.byteLength);
+				for (let i = 0; i < n; i++) {
+					const k = dv.getUint32(i * 8);
+					if (!map.has(k)) map.set(k, dv.getUint32(i * 8 + 4));
+				}
+			}
+			this.refs.set(obj, map);
 		}
-		return key;
+		return map.get(key) ?? key;
 	}
 }

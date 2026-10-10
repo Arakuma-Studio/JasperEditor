@@ -340,6 +340,8 @@ export function writeStore(root: Obj, version: CfbVersion): Uint8Array {
 
 const MAX_DEPTH = 200;
 const MAX_OBJECTS = 2_000_000;
+/** Properties of one object (AAF classes have a few dozen; lookups scan the list). */
+const MAX_PROPERTIES = 4096;
 
 export class StoreError extends Error {}
 
@@ -369,6 +371,10 @@ export function readStore(bytes: Uint8Array): Obj {
 		// no referenced properties: weak references resolve by key only
 	}
 	let objects = 0;
+	// Security review PAR-2: an object is a storage owned by exactly one strong reference. A collection index that
+	// names the same child storage again and again (and that child's index doing the same, 200 levels deep) would
+	// otherwise be read count^depth times.
+	const visited = new Uint8Array(cf.entries.length);
 	const child = (parent: number, name: string): number => {
 		const c = cf.child(parent, name);
 		if (c === null) throw new StoreError(`missing storage or stream "${name}"`);
@@ -381,11 +387,14 @@ export function readStore(bytes: Uint8Array): Obj {
 		const e = cf.entries[entry];
 		if (!e || (e.kind !== 'root' && e.kind !== 'storage'))
 			throw new StoreError(`"${e?.name ?? entry}" is not a storage`);
+		if (visited[entry]) throw new StoreError(`the object "${e.name}" is referenced twice`);
+		visited[entry] = 1;
 		const o = new Obj(e.clsid);
 		const props = stream(entry, 'properties');
 		if (props.length < 4) throw new StoreError('short properties stream');
 		if (props[0] !== LE) throw new StoreError('big-endian AAF files are not supported');
 		const n = rd16(props, 2) ?? 0;
+		if (n > MAX_PROPERTIES) throw new StoreError('an object has too many properties');
 		let at = 4 + n * 6;
 		if (at > props.length) throw new StoreError('truncated property index');
 		for (let i = 0; i < n; i++) {
@@ -447,7 +456,9 @@ export function readStore(bytes: Uint8Array): Obj {
 					const size = idx[8];
 					if (count === null || tg === null || keyPid === null || size === undefined)
 						throw new StoreError('short weak collection index');
-					if (9 + count * size > idx.length) throw new StoreError('short weak collection index');
+					// A key size of 0 would let `count` (up to 2³² − 1) pass the length check and build that many keys.
+					if (size === 0 ? count !== 0 : 9 + count * size > idx.length)
+						throw new StoreError('short weak collection index');
 					const keys: Uint8Array[] = [];
 					for (let k = 0; k < count; k++) keys.push(idx.slice(9 + k * size, 9 + (k + 1) * size));
 					value = { t: 'weakVec', path: paths[tg] ?? [], keyPid, keys };

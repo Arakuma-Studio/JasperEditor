@@ -5,7 +5,7 @@
 // mapped through the layer's Motion (and corner pin) like the layer itself. Enter (Ctrl+Enter for multi-line
 // texts) or a click elsewhere applies the text as one History step ("Edit Text"), Esc cancels. Invalid values
 // (schema) are refused with the reason; soft limits show as warnings while typing.
-import { locateTexts, textProbeOf } from '@jasper/compositions';
+import { type MgHostRemote, mgHostOf } from '@jasper/compositions';
 import {
 	applyMat3,
 	applyMatrix,
@@ -67,7 +67,6 @@ type Target = {
 	original: string;
 	m: MgTextMeasurement;
 	fontFamily: string;
-	win: Window;
 };
 
 type Phase =
@@ -193,7 +192,7 @@ function CanvasTextEditor({
 		rt?.setTextEditing(clipId);
 		if (transport.getState().playing) transport.pause();
 		let cancelled = false;
-		let hiddenIn: Window | null = null;
+		let hiddenIn: MgHostRemote | null = null;
 		void (async () => {
 			const st = session.getState();
 			const seq = st.document.sequences[st.activeSequenceId ?? ''];
@@ -217,7 +216,9 @@ function CanvasTextEditor({
 				transport.seek(Math.max(clip.start, Math.min(clip.start + clip.duration - 1, target)));
 			}
 			const until = Date.now() + HOST_WAIT_MS;
-			let win: Window | null = null;
+			// Security review MG-1: the host page is a sandboxed iframe; its text probe is reached through the page's
+			// host agent (the remote the Composition layer connected), never through the iframe's window.
+			let host: MgHostRemote | null = null;
 			for (;;) {
 				if (cancelled) return;
 				const { layer: l } = live.current;
@@ -228,13 +229,9 @@ function CanvasTextEditor({
 					l && total
 						? Math.max(0, Math.min(total - 1, compositionFrameAt(l.contentTime, doc.settings.fps)))
 						: -1;
-				if (
-					f?.contentWindow &&
-					f.dataset.mgHostState === 'ready' &&
-					Number(f.dataset.mgHostFrame) === expected &&
-					textProbeOf(f.contentWindow)
-				) {
-					win = f.contentWindow;
+				const remote = mgHostOf(f);
+				if (f && remote && f.dataset.mgHostState === 'ready' && Number(f.dataset.mgHostFrame) === expected) {
+					host = remote;
 					break;
 				}
 				if (Date.now() > until) {
@@ -255,11 +252,11 @@ function CanvasTextEditor({
 				setPhase({ kind: 'message', text: 'This composition exposes no texts.', at: edit.point });
 				return;
 			}
-			const ms = locateTexts(
-				win,
+			const ms = await host.locateTexts(
 				layers.map((t) => ({ id: t.path.join('.'), text: textLayerValue(s.props, t) })),
 				{ width: s.canvas.width, height: s.canvas.height },
 			);
+			if (cancelled) return;
 			let m: MgTextMeasurement | null = null;
 			if (edit.path) m = ms.find((x) => x.id === edit.path!.join('.') && x.found) ?? null;
 			else if (edit.point) {
@@ -284,14 +281,14 @@ function CanvasTextEditor({
 			}
 			const tl = layers.find((t) => t.path.join('.') === m!.id)!;
 			// The bundle's fonts, so the editor draws with the composition's typeface.
-			const probe = textProbeOf(win)!;
-			const aliases = await registerBundleFonts(s.bundle?.key ?? '', probe.fonts()).catch(
+			const aliases = await registerBundleFonts(s.bundle?.key ?? '', await host.fonts()).catch(
 				() => new Map<string, string>(),
 			);
 			if (cancelled) return;
 			const value = textLayerValue(s.props, tl);
-			probe.hide(value);
-			hiddenIn = win;
+			hiddenIn = host;
+			await host.hideText(value);
+			if (cancelled) return;
 			setPhase({
 				kind: 'editing',
 				target: {
@@ -299,13 +296,12 @@ function CanvasTextEditor({
 					original: value,
 					m,
 					fontFamily: aliasFontFamily(m.style?.fontFamily ?? 'sans-serif', aliases),
-					win,
 				},
 			});
 		})().catch((e) => setPhase({ kind: 'message', text: String(e?.message ?? e), at: edit.point }));
 		return () => {
 			cancelled = true;
-			if (hiddenIn) textProbeOf(hiddenIn)?.restore();
+			if (hiddenIn) void hiddenIn.restoreTexts();
 			currentMgRuntime()?.setTextEditing(null);
 		};
 	}, []);

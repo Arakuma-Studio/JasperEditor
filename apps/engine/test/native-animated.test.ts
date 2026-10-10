@@ -874,6 +874,8 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		engine = await startEngine({
 			appdir: tempAppdir('jasper-anim-e2e-'),
 			port: PORT,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,
@@ -1044,6 +1046,8 @@ describe.runIf(BENCH)('export speed of keyframed Motion (NATIVE_ANIM_BENCH=1)', 
 		engine = await startEngine({
 			appdir: tempAppdir('jasper-anim-bench-'),
 			port: PORT,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

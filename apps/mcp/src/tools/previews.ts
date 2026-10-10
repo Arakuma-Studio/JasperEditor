@@ -206,7 +206,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		{
 			title: 'Delete render files',
 			description:
-				'Delete Render Files: removes render preview files — scope "all" (every preview file of every project), or "range" (the video and audio segments of this sequence overlapping the range, default In/Out). Their segments turn yellow/red again; nothing in the project changes.',
+				'Delete Render Files: removes render preview files — scope "all" (every preview file of every project), or "range" (the video and audio segments of this sequence overlapping the range, default In/Out). Their segments turn yellow/red again; nothing in the project changes. Scope "all" needs the user\'s approval in an open JasperEditor window.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,

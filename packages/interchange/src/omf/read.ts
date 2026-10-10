@@ -71,6 +71,8 @@ class R {
 	string(o: number, p: string): string | null {
 		const v = this.c.get(o, p);
 		if (!v) return null;
+		// Decoding is linear in the value, and any value may be the whole file: it is charged (PAR-2).
+		this.c.charge(v.length);
 		return decodeUtf8Lossy(v).replace(/\0+$/, '');
 	}
 	uid(o: number, p: string): Uint8Array | null {
@@ -88,6 +90,7 @@ class R {
 		const dv = this.dv(v);
 		const n = dv.getUint16(0);
 		const out: number[] = [];
+		this.c.charge(n);
 		for (let i = 0; i < n && 2 + i * 4 + 4 <= v.length; i++)
 			out.push(this.c.resolve(o, dv.getUint32(2 + i * 4)));
 		return out;
@@ -100,8 +103,14 @@ class R {
 		return Math.max(0, this.i32(o, 'OMFI:CPNT:Length') ?? 0);
 	}
 
+	private readonly collected = new Set<number>();
+
 	collectRefs(o: number, out: Set<string>, depth: number) {
 		if (depth > 64) return;
+		// Objects form a graph (references are object ids): each is collected once. Without this an object that
+		// lists itself twice among its components is walked 2⁶⁴ times.
+		if (this.collected.has(o)) return;
+		this.collected.add(o);
 		if (this.class(o) === 'SCLP') {
 			const id = this.uid(o, 'OMFI:SCLP:SourceID');
 			if (id) out.add(hex(id));
@@ -165,6 +174,9 @@ class R {
 	}
 
 	segment(seg: number, rate: Rat, depth: number): CItem[] {
+		// A segment that contains itself is walked along every path down to MAX_DEPTH: the walk is charged, so a
+		// file that needs more work than its size justifies is refused (bento.ts `charge`).
+		this.c.charge(8);
 		const len = unitsToFlicks(this.len(seg), rate[0], rate[1]);
 		if (depth > MAX_DEPTH) return [{ type: 'filler', len }];
 		switch (this.class(seg)) {
@@ -258,6 +270,7 @@ class R {
 
 	firstClip(seg: number, depth = 0): number | null {
 		if (depth > MAX_DEPTH) return null;
+		this.c.charge(4);
 		const cls = this.class(seg);
 		if (cls === 'SCLP') return seg;
 		if (cls !== 'SEQU') return null;

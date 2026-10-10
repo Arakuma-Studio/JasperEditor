@@ -22,7 +22,7 @@ test.beforeAll(async ({ browser }) => {
 		build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
 	};
 	const out = await esbuild.build({
-		entryPoints: [join(ROOT, 'packages/compositions/src/mg-host/protocol.ts')],
+		entryPoints: [join(ROOT, 'packages/compositions/src/mg-host/remote.ts')],
 		bundle: true,
 		format: 'iife',
 		globalName: 'MgHost',
@@ -50,79 +50,121 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 
 	const probe = await browser.newPage(); // own context: the shared page's context refuses newPage()
 	await probe.goto('/health');
+	// Security review MG-1: the host page is a sandboxed iframe (opaque origin). The editor drives it through the
+	// page's host agent over a MessagePort (`connectMgHost`), exactly as the Composition layer does.
 	await probe.setContent(
-		'<html><body style="margin:0;background:rgb(255,0,0)"><iframe id="h" style="border:0;width:1920px;height:1080px;color-scheme:light"></iframe></body></html>',
+		'<html><body style="margin:0;background:rgb(255,0,0)"><iframe id="h" sandbox="allow-scripts" style="border:0;width:1920px;height:1080px;color-scheme:light"></iframe></body></html>',
 	);
 	await probe.addScriptTag({ content: protocolScript });
 	const r = await probe.evaluate(async (key) => {
-		type Host = {
-			MgFrameHostDriver: new (
-				w: unknown,
-			) => {
-				configure(
-					c: unknown,
-				): Promise<{ width: number; height: number; fps: number; durationInFrames: number }>;
-				seek(id: string, f: number): Promise<void>;
-			};
-			checkHostProtocol(w: unknown): {
-				ok: boolean;
-				missing: string[];
-				remotionVersion: string;
-				siteVersion: string;
-			};
-			hostPageUrl(base: string): string;
-			bundleServeUrl(key: string): string;
+		type Remote = {
+			check(): Promise<{ ok: boolean; missing: string[]; remotionVersion: string; siteVersion: string }>;
+			configure(
+				c: unknown,
+			): Promise<{ width: number; height: number; fps: number; durationInFrames: number }>;
+			seek(id: string, f: number): Promise<void>;
 		};
-		const M = (window as unknown as { MgHost: Host }).MgHost;
+		const M = (window as unknown as { MgHost: { connectMgHost(f: HTMLIFrameElement): Promise<Remote> } })
+			.MgHost;
 		const f = document.getElementById('h') as HTMLIFrameElement;
 		await new Promise((res) => {
 			f.onload = res;
-			f.src = M.hostPageUrl(M.bundleServeUrl(key));
+			f.src = `/mg/bundles/${encodeURIComponent(key)}/index.html?jasper-host=1`;
 		});
-		const w = f.contentWindow as unknown as Record<string, unknown>;
-		const d = new M.MgFrameHostDriver(w);
+		const d = await M.connectMgHost(f);
 		const meta = await d.configure({
 			compositionId: 'Title',
 			props: { title: 'Contract', accent: '#00ff00', delay: 0 },
 			override: { fps: 30, width: 1280, height: 720 },
 		});
 		await d.seek('Title', 45);
-		const doc = f.contentDocument!;
-		const text = doc.querySelector('[data-testid="title-text"]')?.textContent;
-		const panel = doc.querySelector('[data-testid="title-panel"]') as HTMLElement | null;
-		const opacity = panel ? Number(getComputedStyle(panel).opacity) : -1;
-		await d.seek('Title', 0);
-		const opacityAt0 = panel ? Number(getComputedStyle(panel).opacity) : -1;
-		return {
-			check: M.checkHostProtocol(w),
-			meta,
-			ready: w.remotion_renderReady,
-			text,
-			opacity,
-			opacityAt0,
-			bodyBg: getComputedStyle(doc.body).backgroundColor,
-		};
+		(window as unknown as { __host: Remote }).__host = d;
+		// The page is out of the editor's reach: neither its document nor its globals are readable from here.
+		let reachable = true;
+		try {
+			reachable = !!f.contentDocument || 'remotion_setFrame' in (f.contentWindow as object);
+		} catch {
+			reachable = false;
+		}
+		return { check: await d.check(), meta, reachable };
 	}, reg.mediaKey);
-	// If any of these fail after a Remotion upgrade, packages/compositions/src/mg-host/protocol.ts must follow.
+	// What the page drew, read inside the frame (Playwright attaches to it; the editor cannot).
+	const host = probe.frames().find((x) => x.url().includes('/mg/sandbox/'))!;
+	expect(host, 'the host page lives under its capability path').toBeTruthy();
+	const drawn = () =>
+		host.evaluate(() => {
+			const panel = document.querySelector('[data-testid="title-panel"]') as HTMLElement | null;
+			const w = window as unknown as { remotion_renderReady?: boolean; parent: Window };
+			let parentReachable = true;
+			try {
+				parentReachable = !!w.parent.document;
+			} catch {
+				parentReachable = false;
+			}
+			// What the page finds where storage and cookies would be: stand-ins of its own document (the bootstrap
+			// installs them because the real ones throw in an opaque origin, and Remotion reads them at start-up).
+			// biome-ignore lint/suspicious/noDocumentCookie: the point is what a plain cookie write does in the sandbox
+			document.cookie = 'stolen=1';
+			const cookies = document.cookie;
+			window.localStorage.setItem('jasper-mg-probe', 'from-the-bundle');
+			const storage = window.localStorage.getItem('jasper-mg-probe');
+			return {
+				ready: w.remotion_renderReady,
+				text: document.querySelector('[data-testid="title-text"]')?.textContent,
+				opacity: panel ? Number(getComputedStyle(panel).opacity) : -1,
+				bodyBg: getComputedStyle(document.body).backgroundColor,
+				origin: window.origin,
+				parentReachable,
+				cookies,
+				storage,
+			};
+		});
+	const at45 = await drawn();
+	await probe.evaluate(() =>
+		(window as unknown as { __host: { seek(id: string, f: number): Promise<void> } }).__host.seek('Title', 0),
+	);
+	const at0 = await drawn();
+	// If any of these fail after a Remotion upgrade, packages/compositions/src/mg-host/agent.ts must follow.
 	expect(r.check).toEqual({ ok: true, missing: [], remotionVersion: '4.0.499', siteVersion: '11' });
 	expect(r.meta).toMatchObject({ width: 1280, height: 720, fps: 30, durationInFrames: 90 });
-	expect(r.ready).toBe(true);
-	expect(r.text).toBe('Contract');
-	expect(r.opacity).toBeCloseTo(1, 5); // frame 45: the panel has entered
-	expect(r.opacityAt0).toBe(0); // frame 0: not yet
-	expect(r.bodyBg).toBe('rgba(0, 0, 0, 0)'); // transparent page
-	writeFileSync('test-results/e2e-mg-host-protocol.json', JSON.stringify(r, null, 2));
+	expect(at45.ready).toBe(true);
+	expect(at45.text).toBe('Contract');
+	expect(at45.opacity).toBeCloseTo(1, 5); // frame 45: the panel has entered
+	expect(at0.opacity).toBe(0); // frame 0: not yet
+	expect(at45.bodyBg).toBe('rgba(0, 0, 0, 0)'); // transparent page
+	// MG-1: an opaque origin on both sides of the frame boundary — no editor DOM, no cookies, no storage.
+	expect(r.reachable).toBe(false);
+	expect(at45.origin).toBe('null');
+	expect(at45.parentReachable).toBe(false);
+	// Its "storage" works for the page and reaches nothing: not the editor's localStorage, not a cookie jar.
+	expect(at45.cookies).toBe('');
+	expect(at45.storage).toBe('from-the-bundle');
+	expect(await probe.evaluate(() => window.localStorage.getItem('jasper-mg-probe'))).toBeNull();
+	expect((await probe.context().cookies()).some((c) => c.name === 'stolen')).toBe(false);
+	// The bundle's own code cannot use the engine's API: no session from an opaque origin, and the origin is refused.
+	const api = await host.evaluate(async (origin) => {
+		const out: Record<string, number | string> = {};
+		for (const path of ['/api/projects', '/api/agent/schema', '/health'])
+			try {
+				out[path] = (await fetch(`${origin}${path}`, { credentials: 'include' })).status;
+			} catch (e) {
+				out[path] = `blocked: ${(e as Error).name}`;
+			}
+		return out;
+	}, new URL(probe.url()).origin);
+	for (const [path, status] of Object.entries(api))
+		expect([path, String(status)]).toEqual([path, 'blocked: TypeError']);
+	writeFileSync('test-results/e2e-mg-host-protocol.json', JSON.stringify({ ...r, at45, at0, api }, null, 2));
 	await probe.close();
 });
 
+/** Text the live host page of the Program monitor shows (read inside the sandboxed frame). */
 async function hostText(p: Page): Promise<string | null> {
 	return p
-		.locator('[data-testid="program-monitor"] iframe[data-mg-host]')
-		.evaluate(
-			(f) =>
-				(f as HTMLIFrameElement).contentDocument?.querySelector('[data-testid="title-text"]')?.textContent ??
-				null,
-		)
+		.frameLocator('[data-testid="program-monitor"] iframe[data-mg-host]')
+		.locator('[data-testid="title-text"]')
+		.first()
+		.textContent({ timeout: 2000 })
 		.catch(() => null);
 }
 
@@ -175,48 +217,41 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	// wp-m3-mgtext: `title` is a text layer (ui control "text"): its editor is in Properties ▸ Composition ▸ Text.
 	const field = page.getByTestId('text-title');
 	await field.fill('Edited in Properties');
-	const latencyMark = 'e2e:mg-title-enter';
-	const latencyMeasure = 'e2e:mg-title-visible';
-	await field.evaluate(
-		(input, { mark, measure }) => {
-			performance.clearMarks(mark);
-			performance.clearMeasures(measure);
-			input.addEventListener(
-				'keydown',
-				(event) => {
-					if (!(event instanceof KeyboardEvent) || event.key !== 'Enter') return;
-					performance.mark(mark);
-					const check = () => {
-						const iframe = document.querySelector<HTMLIFrameElement>(
-							'[data-testid="program-monitor"] iframe[data-mg-host]',
-						);
-						const title = iframe?.contentDocument?.querySelector('[data-testid="title-text"]')?.textContent;
-						if (title === 'Edited in Properties') performance.measure(measure, mark);
-						else if (performance.now() - performance.getEntriesByName(mark, 'mark')[0]!.startTime < 5_000)
-							requestAnimationFrame(check);
-					};
-					requestAnimationFrame(check);
-				},
-				{ capture: true, once: true },
-			);
-		},
-		{ mark: latencyMark, measure: latencyMeasure },
-	);
+	// The moment the new title is on screen is observed inside the host page (the editor cannot see into the
+	// sandboxed frame); both sides stamp wall-clock times (performance.timeOrigin + now).
+	const hostFrame = page.frames().find((x) => x.url().includes('/mg/sandbox/'))!;
+	expect(hostFrame, 'the live host is a sandboxed frame under its capability path').toBeTruthy();
+	await hostFrame.evaluate(() => {
+		const w = window as unknown as { __seenAt?: number };
+		w.__seenAt = undefined;
+		const check = () => {
+			if (document.querySelector('[data-testid="title-text"]')?.textContent === 'Edited in Properties')
+				w.__seenAt = performance.timeOrigin + performance.now();
+			else requestAnimationFrame(check);
+		};
+		requestAnimationFrame(check);
+	});
+	await field.evaluate((input) => {
+		input.addEventListener(
+			'keydown',
+			(event) => {
+				if (event instanceof KeyboardEvent && event.key === 'Enter')
+					(window as unknown as { __enterAt?: number }).__enterAt =
+						performance.timeOrigin + performance.now();
+			},
+			{ capture: true, once: true },
+		);
+	});
 	await field.press('Enter');
 	await expect
-		.poll(
-			() =>
-				page.evaluate(
-					(name) => performance.getEntriesByName(name, 'measure')[0]?.duration ?? null,
-					latencyMeasure,
-				),
-			{ timeout: 5_000, intervals: [20] },
-		)
+		.poll(() => hostFrame.evaluate(() => (window as unknown as { __seenAt?: number }).__seenAt ?? null), {
+			timeout: 5_000,
+			intervals: [20],
+		})
 		.not.toBeNull();
-	const elapsed = await page.evaluate(
-		(name) => performance.getEntriesByName(name, 'measure')[0]!.duration,
-		latencyMeasure,
-	);
+	const elapsed =
+		(await hostFrame.evaluate(() => (window as unknown as { __seenAt: number }).__seenAt)) -
+		(await page.evaluate(() => (window as unknown as { __enterAt: number }).__enterAt));
 	test.info().annotations.push({ type: 'live-title-latency', description: `${elapsed.toFixed(1)} ms` });
 	expect(elapsed).toBeLessThan(500);
 	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');

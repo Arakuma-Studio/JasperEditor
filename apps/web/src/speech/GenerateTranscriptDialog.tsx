@@ -108,6 +108,14 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 	}, [models, opts, defaultModel]);
 	const doc = session.getCommitted();
 	const seq = target.kind === 'sequence' ? doc.sequences[target.sequenceId] : undefined;
+	// A hundred entries: one array for the life of the dialog, so the list is not rebuilt whenever an option changes.
+	const languageOptions = useMemo(
+		() => [
+			{ value: 'auto', label: 'Detect automatically' },
+			...WHISPER_LANGUAGES.map(([value, label]) => ({ value, label })),
+		],
+		[],
+	);
 	const media = useMemo(
 		() =>
 			target.kind === 'media'
@@ -265,10 +273,7 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 								disabled={!model?.multilingual}
 								value={model?.multilingual ? opts.language : 'en'}
 								onValueChange={(language) => set({ language })}
-								options={[
-									{ value: 'auto', label: 'Detect automatically' },
-									...WHISPER_LANGUAGES.map(([value, label]) => ({ value, label })),
-								]}
+								options={languageOptions}
 							/>
 							{!model?.multilingual ? (
 								<span className="text-pr-small text-pr-muted">English-only model</span>

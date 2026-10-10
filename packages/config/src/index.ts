@@ -14,6 +14,14 @@ export const ENV = {
 	HOST: 'JASPER_HOST',
 	DEV: 'JASPER_DEV',
 	LOCAL_TOKEN: 'JASPER_LOCAL_TOKEN',
+	/**
+	 * The editor key (security review AGT-2): what proves a request or a `/agent` connection comes from the editor
+	 * window and not from an agent, the MCP server or the CLI, which only ever hold the token. The desktop shell
+	 * and the E2E harness pass it to the engine they start; an engine started without it makes its own.
+	 */
+	EDITOR_KEY: 'JASPER_EDITOR_KEY',
+	/** `1` = listen without a token (any local process is the user). Loud warning; never set by the application. */
+	INSECURE_DEV: 'JASPER_INSECURE_DEV',
 	WEB_DIR: 'JASPER_WEB_DIR',
 	FFMPEG: 'JASPER_FFMPEG',
 	FFPROBE: 'JASPER_FFPROBE',
@@ -124,6 +132,11 @@ export function appdirPaths(appdir: string) {
 		engineConfig: join(engineDir, 'engine.json'),
 		/** Written by a running engine (0600): origin, port, pid and token for local tools (jasper-mcp). */
 		runtimeFile: join(engineDir, 'runtime.json'),
+		/**
+		 * Dev engines only (`JASPER_DEV=1`, 0600): the editor key the Vite dev server hands to the browser as an
+		 * HttpOnly cookie. Never written by a packaged or headless engine, never read by jasper-mcp.
+		 */
+		devEditorKeyFile: join(engineDir, 'editor-key.dev'),
 		mediaIndex: join(engineDir, 'media-index.json'),
 		jobsJournal: join(engineDir, 'jobs.jsonl'),
 		logsDir: join(engineDir, 'logs'),

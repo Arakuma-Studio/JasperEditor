@@ -129,6 +129,8 @@ describe.runIf(process.env.REMOTION_E2E === '1')('Remotion path renders graded (
 		const engine = await startEngine({
 			appdir: tempAppdir(),
 			port: Number(process.env.JASPER_E2E_PORT ?? 0),
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: true,
 			env: {
 				PATH: process.env.PATH,

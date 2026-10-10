@@ -40,6 +40,7 @@ import {
 	MEDIA_EXTENSIONS,
 	mcpLaunchInfo,
 	parseClipboardFileList,
+	sessionCookies,
 } from './security.ts';
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist-electron
@@ -138,10 +139,15 @@ function createWindow(url: string): BrowserWindow {
 	return win;
 }
 
-/** IPC is answered only for frames on the app origin (not for any other frame that might get loaded). */
+/**
+ * IPC is answered only for the window's own document: the top frame, on the app origin. A subframe is never the
+ * app — a motion-graphics bundle's page is a sandboxed frame whose URL is on the engine's origin although its
+ * origin is opaque (security review MG-1); the preload does not run there, and this does not rely on that.
+ */
 function fromApp(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
-	const url = e.senderFrame?.url;
-	return !!url && !!appOrigin && isSameOrigin(url, appOrigin);
+	const frame = e.senderFrame;
+	const url = frame?.url;
+	return !!frame && frame.parent === null && !!url && !!appOrigin && isSameOrigin(url, appOrigin);
 }
 
 function registerIpc(): void {
@@ -163,11 +169,18 @@ function registerIpc(): void {
 	ipcMain.handle('jasper:mcp-info', (e) => {
 		if (!fromApp(e)) return null;
 		const { mcpEntry } = resources();
+		// A Node runtime shipped in the resources runs jasper-mcp (and the engine's workers) instead of the app
+		// binary as Node; without one the binary does (which is why the runAsNode fuse stays on, RUN-1).
+		const node =
+			mode === 'packaged'
+				? join(process.resourcesPath, 'node', process.platform === 'win32' ? 'node.exe' : 'node')
+				: null;
 		return mcpLaunchInfo({
 			packaged: mode === 'packaged',
 			entry: mcpEntry,
 			exists: existsSync(mcpEntry),
 			execPath: process.execPath,
+			bundledNode: node && existsSync(node) ? node : null,
 		});
 	});
 	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
@@ -279,19 +292,31 @@ async function startPackagedLike(): Promise<string> {
 	if (!existsSync(join(webDir, 'index.html')))
 		throw new Error(`web build missing: ${webDir} (run pnpm build)`);
 	const token = randomBytes(32).toString('base64url');
+	// Security review AGT-2: the editor key. The engine's runtime file tells local tools (jasper-mcp) the token; the
+	// key is known to the engine and to this window only, which is how the engine tells the user from an agent.
+	const editorKey = randomBytes(32).toString('base64url');
 	const dir = appdir();
 	mkdirSync(dir, { recursive: true });
-	engine = await startEngineProcess({ entry: engineEntry, appdir: dir, webDir, token, resourcesDir });
-	log(`engine ready on ${engine.origin} (appdir ${dir})`);
-	// HttpOnly SameSite=Strict session cookie so media elements and fetches carry the token (ARCH §4.2).
-	await session.defaultSession.cookies.set({
-		url: engine.origin,
-		name: 'jasper_session',
-		value: token,
-		httpOnly: true,
-		sameSite: 'strict',
-		secure: false,
+	engine = await startEngineProcess({
+		entry: engineEntry,
+		appdir: dir,
+		webDir,
+		token,
+		editorKey,
+		resourcesDir,
 	});
+	log(`engine ready on ${engine.origin} (appdir ${dir})`);
+	// HttpOnly SameSite=Strict cookies: media elements, fetches and the /agent WebSocket carry them, page scripts
+	// (and anything a page loads) cannot read them (ARCH §4.2).
+	for (const [name, value] of Object.entries(sessionCookies(new URL(engine.origin).port, token, editorKey)))
+		await session.defaultSession.cookies.set({
+			url: engine.origin,
+			name,
+			value,
+			httpOnly: true,
+			sameSite: 'strict',
+			secure: false,
+		});
 	return `${engine.origin}/`;
 }
 

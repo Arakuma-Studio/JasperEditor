@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { nodeExecPath } from '../tools/node-runtime.ts';
 
 const PROC_ENV = 'JASPER_PROC';
 const PROC_BUNDLE = 'jasper-proc.mjs';
@@ -34,7 +35,7 @@ export function procCommand(env: Record<string, string | undefined> = process.en
 	const src = procSourceEntry();
 	if (src && !explicit) return tsxCommand(src);
 	const bundle = procBundle(env);
-	if (bundle) return { command: process.execPath, args: [bundle] };
+	if (bundle) return { command: nodeExecPath(env), args: [bundle] };
 	if (src) return tsxCommand(src);
 	throw new Error('jasper-proc is not available (no bundle and no source)');
 }
@@ -47,5 +48,5 @@ function tsxCommand(entry: string): ProcCommand {
 	} catch {
 		loader = 'tsx/esm';
 	}
-	return { command: process.execPath, args: ['--import', loader, entry] };
+	return { command: nodeExecPath(), args: ['--import', loader, entry] };
 }

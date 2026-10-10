@@ -53,7 +53,7 @@ export function registerVersionTools(ctx: ToolContext): void {
 		{
 			title: 'Restore a saved version',
 			description:
-				'mode "copy" (default): a new project holding the saved version (name optional), the original untouched. mode "replace": the version becomes the project\'s current state and the state it replaces is kept as a version (undo by restoring that one); refused while the project is open in an editor window.',
+				'mode "copy" (default): a new project holding the saved version (name optional), the original untouched. mode "replace": the version becomes the project\'s current state and the state it replaces is kept as a version (undo by restoring that one); refused while the project is open in an editor window, and it needs the user\'s approval in an open JasperEditor window.',
 			input: {
 				projectId: ProjectIdArg,
 				versionId: VersionIdArg,

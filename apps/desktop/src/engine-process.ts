@@ -1,5 +1,6 @@
 // Forks the bundled engine in an Electron utilityProcess (ARCHITECTURE D-17, §12; R-OMS §8.5): ESM bundle
-// apps/engine/dist/engine.mjs with `--port 0`, per-launch JASPER_LOCAL_TOKEN, JASPER_WEB_DIR and
+// apps/engine/dist/engine.mjs with `--port 0`, per-launch JASPER_LOCAL_TOKEN and JASPER_EDITOR_KEY (the engine
+// removes both from its environment once read, so its child processes do not inherit them), JASPER_WEB_DIR and
 // JASPER_APPDIR. Resolves once the engine posts {type:'ready', port} on its parentPort.
 import { utilityProcess } from 'electron';
 
@@ -10,6 +11,12 @@ type StartEngineOptions = {
 	appdir: string;
 	webDir: string;
 	token: string;
+	/**
+	 * The editor key (security review AGT-2): what tells the engine that a request or an `/agent` connection comes
+	 * from this window and not from an agent holding the token. It goes to the engine's environment and to the
+	 * window's cookie jar, never to a file.
+	 */
+	editorKey: string;
 	/**
 	 * Packaged builds: `process.resourcesPath`. The engine finds its LGPL FFmpeg + Remotion binaries
 	 * directory in `<resourcesDir>/ffmpeg-lgpl` (ARCHITECTURE D-13).
@@ -24,6 +31,9 @@ export function startEngineProcess(opts: StartEngineOptions): Promise<EngineProc
 		env: {
 			...process.env,
 			JASPER_LOCAL_TOKEN: opts.token,
+			JASPER_EDITOR_KEY: opts.editorKey,
+			// A packaged app never runs an unauthenticated engine, whatever the user's shell exports.
+			JASPER_INSECURE_DEV: '',
 			JASPER_WEB_DIR: opts.webDir,
 			JASPER_APPDIR: opts.appdir,
 			JASPER_DEV: '',

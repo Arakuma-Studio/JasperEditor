@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { runUiScenarios, type UiScenarioResult } from './ui-run.ts';
+import { harnessEngineEnv } from './ui-scenarios.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const args = process.argv.slice(2);
@@ -34,7 +35,11 @@ async function serve(webDir: string, port: number): Promise<{ base: string; stop
 	const child: ChildProcess = spawn(
 		process.execPath,
 		[join(root, 'apps/engine/dist/engine.mjs'), '--port', String(port), '--appdir', appdir],
-		{ cwd: root, env: { ...process.env, JASPER_APPDIR: appdir, JASPER_WEB_DIR: webDir }, stdio: 'ignore' },
+		{
+			cwd: root,
+			env: { ...process.env, JASPER_APPDIR: appdir, JASPER_WEB_DIR: webDir, ...harnessEngineEnv() },
+			stdio: 'ignore',
+		},
 	);
 	const base = `http://127.0.0.1:${port}`;
 	for (let i = 0; i < 120; i++) {

@@ -196,7 +196,7 @@ export function DropdownMenu({
 					sideOffset={2}
 					collisionPadding={8}
 				>
-					{renderItems(RDropdown, typeof items === 'function' ? items() : items)}
+					<LazyItems kit={RDropdown} items={items} />
 				</RDropdown.Content>
 			</RDropdown.Portal>
 		</RDropdown.Root>
@@ -220,7 +220,7 @@ export function ContextMenu({ children, items, onOpenChange, disabled }: Context
 			</RContext.Trigger>
 			<RContext.Portal>
 				<RContext.Content className={MENU_CONTENT} collisionPadding={8}>
-					{renderItems(RContext, typeof items === 'function' ? items() : items)}
+					<LazyItems kit={RContext} items={items} />
 				</RContext.Content>
 			</RContext.Portal>
 		</RContext.Root>
@@ -268,6 +268,21 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 			))}
 		</RMenubar.Root>
 	);
+}
+
+/**
+ * The items of a dropdown or context menu. A component of its own, so that they are resolved and built when the menu
+ * opens (Radix mounts the content then), not on every render of whatever carries the menu: every panel with a
+ * context menu used to resolve its whole menu — command states included — each time it rendered.
+ */
+function LazyItems({
+	kit,
+	items,
+}: {
+	kit: Kit;
+	items: readonly ResolvedMenuItem[] | (() => readonly ResolvedMenuItem[]);
+}) {
+	return <>{renderItems(kit, typeof items === 'function' ? items() : items)}</>;
 }
 
 function MenuBarItems({ menu }: { menu: MenuBarMenu }) {

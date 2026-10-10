@@ -19,6 +19,7 @@ import {
 	dragScenario,
 	effectControlsScenario,
 	frameStats,
+	harnessEngineEnv,
 	openProject,
 	scrollContainerScenario,
 	scrubScenario,
@@ -54,7 +55,7 @@ async function startServer(): Promise<{ base: string; child: ChildProcess | null
 	const port = process.env.PERF_PORT ?? '49465';
 	const child = spawn(process.execPath, [join(root, 'e2e/serve.mjs')], {
 		cwd: root,
-		env: { ...process.env, E2E_PORT: port },
+		env: { ...process.env, E2E_PORT: port, ...harnessEngineEnv() },
 		stdio: 'ignore',
 	});
 	const base = `http://127.0.0.1:${port}`;

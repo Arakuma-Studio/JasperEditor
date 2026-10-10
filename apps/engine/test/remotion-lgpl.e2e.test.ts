@@ -49,6 +49,8 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		engine = await startEngine({
 			appdir: tempAppdir(),
 			port: PORT ? PORT + 2 : 0,
+			// These tests drive the engine itself, not its authentication (server.test.ts, security-hardening.test.ts).
+			insecure: true,
 			dev: false,
 			env: {
 				PATH: process.env.PATH,

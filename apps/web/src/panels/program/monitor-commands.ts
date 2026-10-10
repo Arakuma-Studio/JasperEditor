@@ -1,7 +1,7 @@
 // Command plumbing for monitor buttons and a keyboard fallback when no global keymap dispatcher
 // handled the event (the WP-2A dispatcher runs in the capture phase and calls preventDefault on the
 // events it handles, so this bubble-phase handler only acts on unhandled keys).
-import { EngineClient } from '@jasper/engine-client';
+import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { useMemo } from 'react';
 import {
@@ -15,6 +15,7 @@ import {
 	scopeChain,
 } from '../../commands/index.ts';
 import type { CommandCtx } from '../../commands/types.ts';
+import { createEditorEngineClient } from '../../state/engine.tsx';
 import { PanelServices } from '../../state/panel-services.ts';
 import type { PanelKind } from '../types.ts';
 
@@ -29,7 +30,7 @@ export function monitorPanelServices(): PanelServices {
 	return services;
 }
 
-const fallbackEngine = new EngineClient({ baseUrl: '' });
+const fallbackEngine = createEditorEngineClient();
 
 export function useMonitorCommandCtx(opts: {
 	session: EditorSession;

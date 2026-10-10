@@ -7,6 +7,7 @@
 // Also registers the `features.speech` capability block.
 import { TranscribeMediaRequestSchema, TranscribeSequenceRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { JobError } from '../jobs/types.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { ProcessingService } from '../processing/service.ts';
@@ -81,6 +82,12 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 				.some((j) => j.kind === 'model-download' && j.dedupeKey === `model:${req.params.modelId}`);
 			if (active)
 				throw new HttpError(409, 'SPEECH_MODEL_BUSY', 'The model is being downloaded; cancel the job first');
+			// Security review AGT-3: see the roto models.
+			await requireUserApproval(app, req, {
+				label: 'Remove a downloaded model',
+				summary: `remove the downloaded speech model ${req.params.modelId} from this computer`,
+				reasons: ['transcription with this model stops working until it is downloaded again'],
+			});
 			const r = await svc.models.remove(req.params.modelId);
 			core.capabilities.changed();
 			return { modelId: req.params.modelId, ...r };
