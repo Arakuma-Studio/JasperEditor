@@ -5,9 +5,10 @@ CI workflow and a cross-feature smoke run together on the integrated branch, wit
 Each section gives the command, the result and the fixes. Machine: 12 cores, 47 GB, shared with other agents (load
 noted where it matters).
 
-Branch `feat/verify`, starting at `integrate/parity` 4870ea54; merged again at ea17f67d (perf-core), 85a90e3d (ui-perf)
-and 065af535 (gaps). Sections 1–8 were run on the way (each says on which tree where it matters); **§9 is the gate on
-the final merged head.**
+Branch `feat/verify`, starting at `integrate/parity` 4870ea54; merged again at ea17f67d (perf-core), 85a90e3d (ui-perf),
+065af535 (gaps), c67a6dfb (review), ee9cb4e2 (polish) and 8bcf5df5 (hardening). Sections 1–8 were run on the way (each
+says on which tree where it matters); §9 is the gate after review, **§10 the full re-run on the final merged head**
+(polish and hardening), §11 the desktop dev-mode stall.
 
 ## 1. Static gates
 
@@ -103,7 +104,8 @@ Failures and fixes:
 **`pnpm mg:build` broken on `integrate/parity` (since the asset-sidecar commit).** `fframes::include_media_dir!`
 panics on any file it cannot decode, and `native/mg/crates/jasper-mg-templates/media/` now holds
 `Inter_24pt-*.ttf.attribution` sidecars (AGENTS.md §3). **Fix:** a `build.rs` stages the media files of `media/`
-(without sidecars) into a gitignored `.media/` that the macro embeds; the assets and their sidecars stay together.
+(without sidecars) into a gitignored `.media/` that the macro embeds; the assets and their sidecars stay together. *Superseded at
+the polish merge:* polish's equivalent `build.rs` (staging into `target/mg-media`, nothing in the source tree) was kept.
 
 ## 4. Playwright (all specs)
 
@@ -126,6 +128,8 @@ spec is rerun as a whole file: its tests share one page).
   session of the same page); a duplicated tab whose original still holds the lease still opens read-only. Two tests in
   `packages/session/test/persistence/engine-store.test.ts` (the reload case fails without the fix). One later run still
   failed with the old page's release not arriving within 3.5 s; 8 further runs passed.
+  *Superseded at the polish merge:* polish fixed the same race independently (a tab's own leases are recorded and
+  reclaimed at once, `tabLeases`); its version was kept and verify's two regression tests pass against it.
 - **`color-mgmt` "Blend using 1.0 gamma".** The spec expected the pre-compositor behaviour (display stage steps aside,
   chip, raw 129.9). The compositor workstream keeps the display transform running (`compositor-player.e2e` asserts no
   chip). Spec updated to that contract with the value computed by the TS colour science:
@@ -258,7 +262,8 @@ Two more findings on the merged head, fixed:
   load ≈ 25: the 2 s wall clock stopped the heap-filling loop (≈ 2.3 s) before the memory limit, and the quarantine
   only took expressions that ran past **twice** the limit, so the hostile expression ran again every frame. Now an
   expression that fails after blocking for the limit or longer is quarantined too (`runtime.ts`; note added to
-  `docs/security-review.md` EXPR-2); the test accepts whichever guard fires.
+  `docs/security-review.md` EXPR-2); the test accepts whichever guard fires. *Superseded at the hardening merge:* hardening quarantines an
+  expression that hits any resource limit (EXPR-2); its runtime and test were kept.
 - `apps/web/test/shell-render.test.tsx` timed out (default 5 s) on the loaded CI run: it mounts the whole editor;
   suite timeout 60 s (its assertions wait on conditions).
 
@@ -271,6 +276,44 @@ Two more findings on the merged head, fixed:
 
 On the previous head (065af535, before review) the clean-clone CI passed in full (lint, typecheck,
 `pnpm test` 464 files / 4,450 tests, build) and the full Playwright suite passed 223/223.
+
+## 11. Desktop dev-mode smoke stalled on a cold Vite
+
+hardening saw `node e2e/desktop-smoke.mjs dev` fail twice before passing on the third try. It did not reproduce at
+normal load. It reproduces at will with the whole run pinned to one CPU next to three busy loops
+(`taskset -c 3`, i.e. a quarter of a core) and a cold Vite (`apps/web/node_modules/.vite` removed).
+
+**What the window showed.** polish's start-up message "JasperEditor could not load. Check your connection and
+reload." The window had requested a few hundred of the ≈ 1,200 modules of a cold dev load. Every request in flight
+had failed at once with **`net::ERR_NETWORK_CHANGED`**, so the entry module failed and nothing ever ran.
+
+**Root cause.** Chromium aborts every request in flight, loopback included, when its address tracker reports that the
+host's IP addresses changed. A Chromium net log (`--log-net-log`) of a failing run shows `NETWORK_IP_ADDRESSES_CHANGED`
+→ `NETWORK_CHANGED` 10, 77 and 87 s after the window opened. The source is the host, not the app: `ip monitor
+address` sees Docker `veth*` interfaces come and go, often several per minute, as other agents' containers start and
+stop. Chromium on Linux counts every interface.
+
+A warm load takes a few seconds and is rarely hit. A cold dev load is Vite transforming each module on demand, and on a
+loaded machine it takes 1–2 minutes, so it is almost always hit. The page then showed the failure message for good: it
+cannot know the failure was transient.
+
+| Fix | Where |
+|---|---|
+| **The page reloads itself before giving up.** A load that failed **quickly** (the server is down or broken) is retried 3 times (backoff 0.3–0.9 s) before the message. A load that failed after **8 s** was making progress and was cut off; it counts only toward a cap of **8 reloads** per tab, and each reload is faster than the last (transforms and browser cache warm). The count (`sessionStorage`) is cleared once the app renders, and by the message's Reload button. The same applies to the built app and the PWA (a network change during a slow first load). | `apps/web/editor-boot.ts`; unit test in `apps/web/test/polish-open.test.tsx` (quick and slow budgets, the cap, reset on boot, a broken stored value); `e2e/polish.spec.ts` now also asserts the automatic reloads before the message |
+| **Vite warms the app graph at start** (`server.warmup.clientFiles`: `index.html`, `src/main.tsx`), so the first page asks for transforms that are done or under way, not queued behind it. | `apps/web/vite.config.ts` |
+| **The smoke warms the dev server from Node** before opening the window. It loads the static module graph as a first browser visit would; Node's `fetch` is not subject to Chromium's network-change aborts. It also waits for Home to settle (the project list, the empty state or an error) before the screenshot: a starved run had passed the "home visible" check on the "Loading projects…" placeholder. | `e2e/desktop-smoke.mjs` (`warmViteGraph`) |
+
+Measured, `DESKTOP_SMOKE_PORT=49600`:
+
+| Condition | Before | Boot retry only (3, fixed count) | Boot retry (quick 3 / slow 8) | All three fixes |
+|---|---|---|---|---|
+| normal load, warm Vite | pass, 1 load, 5–13 s | — | — | pass, 1 load, 5–9 s (warm-up 5–6 s, 1,183 modules) |
+| ¼ core, cold Vite | fail: "could not load" | 2 of 3 pass (2–3 loads, ≈ 120 s); 1 fails after its retries | fail after 6 loads (every load cut off) | **3 of 3 pass, 1 load each** (warm-up 64–66 s) |
+
+The app-level reloads are what users get (a network change during a slow first load no longer leaves a dead page). The
+warm-up keeps the smoke testing the desktop shell rather than the race with the host's interfaces. Under extreme
+starvation and constant interface churn, a cold load without the warm-up can still run out of its 8 reloads and then
+shows the message with its Reload button, never a blank page.
 
 ## Not done or caveated
 
