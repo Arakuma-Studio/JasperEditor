@@ -151,11 +151,6 @@ async function main() {
 	// Tee the decoded input frames into the lossless input copy.
 	const tee = {
 		...step,
-		name: step.name,
-		analyse: step.analyse?.bind(step),
-		open: step.open.bind(step),
-		end: step.end.bind(step),
-		close: step.close?.bind(step),
 		push: async (f: Parameters<typeof step.push>[0]) => {
 			await inW.write(new Uint8Array(f.data.buffer, f.data.byteOffset, f.data.byteLength));
 			return step.push(f);

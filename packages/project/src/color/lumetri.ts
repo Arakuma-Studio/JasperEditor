@@ -16,50 +16,6 @@ const LUMA_B = 0.0722;
 /** BT.1886 simplification used for the linear-light steps: `L = v^2.4`. */
 const DISPLAY_GAMMA = 2.4;
 
-export type LumetriParams = {
-	inputLut: string | null;
-	temperature: number;
-	tint: number;
-	exposure: number;
-	contrast: number;
-	highlights: number;
-	shadows: number;
-	whites: number;
-	blacks: number;
-	saturation: number;
-	look: string | null;
-	lookIntensity: number;
-	vibrance: number;
-	curveMaster: number[][] | null;
-	curveRed: number[][] | null;
-	curveGreen: number[][] | null;
-	curveBlue: number[][] | null;
-	shadowsWheel: [number, number];
-	midtonesWheel: [number, number];
-	highlightsWheel: [number, number];
-	shadowsLevel: number;
-	midtonesLevel: number;
-	highlightsLevel: number;
-	// color-grade (Lumetri completion; additive: every default is the identity, so older grades are bit-exact).
-	/** Section switches (Premiere's checkbox in each Lumetri section header). */
-	basicOn: boolean;
-	creativeOn: boolean;
-	curvesOn: boolean;
-	wheelsOn: boolean;
-	/** Built-in procedural look (`looks.ts`), used when no look LUT is set. */
-	creativeLook: string;
-	fadedFilm: number;
-	creativeSaturation: number;
-	shadowTint: [number, number];
-	highlightTint: [number, number];
-	tintBalance: number;
-	hueVsSat: number[][] | null;
-	hueVsHue: number[][] | null;
-	hueVsLuma: number[][] | null;
-	lumaVsSat: number[][] | null;
-	satVsSat: number[][] | null;
-};
-
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
 
 function num(p: EffectParams, k: string, def: number, lo: number, hi: number): number {
@@ -87,7 +43,7 @@ function vec(p: EffectParams, k: string): [number, number] {
 }
 
 /** Reads (and clamps to the S06:CG-002 ranges) the Lumetri params; missing values take their defaults. */
-export function readLumetriParams(p: EffectParams): LumetriParams {
+function readLumetriParams(p: EffectParams) {
 	return {
 		inputLut: mediaRef(p, 'inputLut'),
 		temperature: num(p, 'temperature', 0, -100, 100),
@@ -163,6 +119,8 @@ function smoothstep(a: number, b: number, x: number): number {
 }
 
 const isZeroVec = (v: readonly [number, number]) => v[0] === 0 && v[1] === 0;
+
+type LumetriParams = ReturnType<typeof readLumetriParams>;
 
 /** Section switches off (color-grade): the section's params act as their defaults. */
 function disableOffSections(p: LumetriParams): void {

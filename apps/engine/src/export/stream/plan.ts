@@ -30,7 +30,15 @@ import {
 	type ResolvedMask,
 	resolveLayerProps,
 } from '@jasper/project';
-import { FIT_TOLERANCE, fitPieces, frameIndex, pieceValue, piecewiseExpr, roundC } from '../keyframed.ts';
+import {
+	CROP_EDGES,
+	FIT_TOLERANCE,
+	fitPieces,
+	frameIndex,
+	pieceValue,
+	piecewiseExpr,
+	roundC,
+} from '../keyframed.ts';
 
 /** A layer drawn by the warp kernel and streamed to the composite. */
 export type StreamLayerPlan = {
@@ -69,7 +77,6 @@ export type StreamFrame = {
 };
 
 const CROP = 'jasper.crop';
-const CROP_EDGES = ['left', 'top', 'right', 'bottom'] as const;
 
 /** The crop as fractions of the box at content time `t` (`[l, t, r, b]`), or null without an enabled crop. */
 function cropAt(c: RenderVisualClip, t: number): [number, number, number, number] | null {

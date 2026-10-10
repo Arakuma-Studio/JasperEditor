@@ -58,7 +58,7 @@ declare module '../state/panel-services.ts' {
 }
 
 /** Maps the command-contract toast onto the design-system toast API (S05:TS-002). */
-export function adaptToast(r: ToastRequest, run: (id: string, args?: unknown) => void): number {
+function adaptToast(r: ToastRequest, run: (id: string, args?: unknown) => void): number {
 	return uiToast({
 		kind: r.kind,
 		title: r.message,

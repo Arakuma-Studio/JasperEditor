@@ -13,11 +13,10 @@ import {
 	colorRunKey,
 	curveFn,
 	defaultEffectRegistry,
-	defaultParams,
 	effectBadges,
+	effectiveParams,
 	effectRuns,
 	HUE_SATURATION_OP,
-	identityLut,
 	LUMETRI_EFFECT,
 	LUMETRI_EFFECT_ID,
 	LUMETRI_PARAMS,
@@ -86,7 +85,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 
 describe('Lumetri maths (S06 §3)', () => {
 	it('CG-021: defaults are the identity (null function; bit-exact on lattice points)', () => {
-		expect(lumetriFn(defaultParams(LUMETRI_EFFECT), NO_LUTS)).toBeNull();
+		expect(lumetriFn(effectiveParams(LUMETRI_EFFECT, {}), NO_LUTS)).toBeNull();
 		expect(lumetriFn({}, NO_LUTS)).toBeNull();
 		// An offline LUT is skipped (CG-004).
 		expect(lumetriFn({ look: { mediaId: 'med_missing' }, inputLut: { mediaId: '' } }, NO_LUTS)).toBeNull();
@@ -398,7 +397,7 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 	});
 
 	it('a 33³ bake of a full grade takes < 15 ms (S06:CG-043; reported, fails above 2×)', () => {
-		const look: Lut = identityLut(33);
+		const look: Lut = bakeLut(33, () => {});
 		const ctx: ColorOpContext = { lut: () => look };
 		const params = {
 			inputLut: { mediaId: 'x' },

@@ -9,7 +9,7 @@ import type { buildGroups } from './items.ts';
 
 type EcGroup = ReturnType<typeof buildGroups>[number];
 
-export const SPATIAL_MENU: { mode: SpatialInterpolation; label: string }[] = [
+const SPATIAL_MENU: { mode: SpatialInterpolation; label: string }[] = [
 	{ mode: 'linear', label: 'Linear' },
 	{ mode: 'bezier', label: 'Bezier' },
 	{ mode: 'auto-bezier', label: 'Auto Bezier' },
@@ -17,7 +17,7 @@ export const SPATIAL_MENU: { mode: SpatialInterpolation; label: string }[] = [
 ];
 
 /** The keys among `ids` that belong to point properties, with their current spatial modes. */
-export function spatialKeys(
+function spatialKeys(
 	groups: readonly EcGroup[],
 	ids: readonly string[],
 ): { ids: string[]; modes: Set<SpatialInterpolation> } {
@@ -36,10 +36,6 @@ export function spatialKeys(
 						}
 				}
 	return { ids: out, modes };
-}
-
-export function spatialCommand(keyframeIds: string[], mode: SpatialInterpolation): Command {
-	return { type: 'keyframe.setSpatialInterpolation', keyframeIds, mode } as Command;
 }
 
 const ITEM =
@@ -87,7 +83,9 @@ export function SpatialInterpolationSubmenu(props: {
 							className={cx(ITEM, 'flex items-center gap-2')}
 							data-spatial={m.mode}
 							onClick={() =>
-								props.onApply(`Spatial Interpolation: ${m.label}`, [spatialCommand(ids, m.mode)])
+								props.onApply(`Spatial Interpolation: ${m.label}`, [
+									{ type: 'keyframe.setSpatialInterpolation', keyframeIds: ids, mode: m.mode } as Command,
+								])
 							}
 						>
 							<span className="inline-block w-3" aria-hidden>

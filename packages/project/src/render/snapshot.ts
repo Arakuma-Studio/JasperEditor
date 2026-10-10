@@ -715,6 +715,13 @@ export function buildRenderSnapshot(
 		// imports: interpreted size, pixel / time interpretation, vector and Lottie descriptors.
 		media[id] = asset ? interpretMediaHandle(asset, opts.resolveMedia(asset)) : null;
 	};
+	const useParamMedia = (params: EffectInstance['params']) => {
+		for (const p of Object.values(params))
+			for (const v of [p.value, ...p.keyframes.map((k) => k.value)]) {
+				const id = (v as { mediaId?: unknown } | null)?.mediaId;
+				if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
+			}
+	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
 	let itemNames: Map<string, string> | null = null;
@@ -831,6 +838,7 @@ export function buildRenderSnapshot(
 			}
 			if (!caps.visual) continue;
 			const r = c as Record<string, unknown>;
+			const effects = (r.effects as EffectInstance[] | undefined) ?? [];
 			const threeD = isLayer3D(c) ? (r.threeD as Layer3D) : undefined;
 			if (threeD) {
 				has3dLayer = true;
@@ -1005,19 +1013,7 @@ export function buildRenderSnapshot(
 			// color-mgmt: the source's colour input transform (media interpretation, graphics, nested working space).
 			const colorFx = colorEffectOf(c, doc, colorInfo);
 			// M2 (S06:LUT-003): LUT assets referenced by effect params (`{mediaId}`) get media handles too.
-			for (const fx of [
-				...(colorFx ? [colorFx] : []),
-				...((r.effects as EffectInstance[] | undefined) ?? []),
-			]) {
-				if (!fx.enabled) continue;
-				for (const p of Object.values(fx.params)) {
-					const refs = [p.value, ...p.keyframes.map((k) => k.value)];
-					for (const v of refs) {
-						const id = (v as { mediaId?: unknown } | null)?.mediaId;
-						if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
-					}
-				}
-			}
+			for (const fx of colorFx ? [colorFx, ...effects] : effects) if (fx.enabled) useParamMedia(fx.params);
 			clips.push({
 				clipId: c.id,
 				kind: c.kind,
@@ -1031,9 +1027,7 @@ export function buildRenderSnapshot(
 				transform: (r.transform as Transform | undefined) ?? null,
 				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
-				effects: colorFx
-					? [colorFx, ...visibleEffects(r.effects as EffectInstance[] | undefined)]
-					: visibleEffects(r.effects as EffectInstance[] | undefined),
+				effects: colorFx ? [colorFx, ...visibleEffects(effects)] : visibleEffects(effects),
 				intrinsicBox: box,
 				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
 				// edit-structure: a nest renders with the engines its nested layers need. three-d: a 3D layer is drawn by
@@ -1049,9 +1043,7 @@ export function buildRenderSnapshot(
 				...(c.frameHold && c.kind !== 'adjustment' ? { frameHold: c.frameHold } : {}),
 				bounded: isBoundedContent(c),
 				...transitionFields(transitions.clips.get(c.id)),
-				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
-					? { sourceInfo: sourceInfoOf(source.mediaId) }
-					: {}),
+				...('mediaId' in source && effects.length > 0 ? { sourceInfo: sourceInfoOf(source.mediaId) } : {}),
 				...retimeFields(c, doc, seq.settings.frameRate as Rational),
 				...rotosOf(r.rotos as ClipRoto[] | undefined, opts),
 				...(threeD ? { threeD } : {}),
@@ -1118,12 +1110,7 @@ export function buildRenderSnapshot(
 			return tracks.out || tracks.in ? { ...st, tracks } : st;
 		});
 		// Image params of GPU transitions (Gradient Wipe's custom gradient…) get media handles like effect params.
-		for (const st of stages)
-			for (const p of Object.values(st.params))
-				for (const v of [p.value, ...p.keyframes.map((k) => k.value)]) {
-					const id = (v as { mediaId?: unknown } | null)?.mediaId;
-					if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
-				}
+		for (const st of stages) useParamMedia(st.params);
 		(matteOnly ? hiddenMattes : videoTracks).push({
 			trackId: t.id,
 			clips,

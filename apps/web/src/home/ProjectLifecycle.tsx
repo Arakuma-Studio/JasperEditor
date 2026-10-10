@@ -25,6 +25,7 @@ import { SessionProvider, useSession, useStoreSelector } from '@jasper/session/r
 import { Button, openDialog, Z } from '@jasper/ui';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router';
+import { useAgentBridge } from '../agent-bridge/index.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
 import { useLanguageEpoch } from '../i18n/react.ts';
@@ -94,6 +95,7 @@ function LifecycleBody(props: {
 	children?: ReactNode;
 }) {
 	const { session } = props;
+	useAgentBridge(session);
 	const engine = useEngine();
 	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();

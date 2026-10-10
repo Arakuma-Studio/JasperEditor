@@ -60,7 +60,7 @@ export function reframePath(n = 90) {
 	return { xs, ys };
 }
 
-export async function fixtures({ ffmpeg, base, h264 }) {
+export function fixtures({ ffmpeg, base, h264 }) {
 	const run = (args) => {
 		const r = spawnSync(ffmpeg, [...base, ...args], { encoding: 'utf8' });
 		if (r.error || r.status !== 0)
@@ -80,7 +80,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 		{
 			name: 'reframe.mp4',
 			recipe: `reframe-v1:${h264.join(' ')}:${reframe.xs.join(',')}:${reframe.ys.join(',')}`,
-			make: async (out) => {
+			make: (out) => {
 				const still = `${out}.still.png`;
 				const subject = `${out}.subject.png`;
 				try {
@@ -119,7 +119,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 		{
 			name: 'shaky.mp4',
 			recipe: `shaky-v2:${h264.join(' ')}:${walk.xs.join(',')}:${walk.ys.join(',')}`,
-			make: async (out) => {
+			make: (out) => {
 				const still = `${out}.still.png`;
 				try {
 					run(['-f', 'lavfi', '-i', chart(1968, 1128), '-frames:v', '1', still]);
@@ -136,7 +136,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 		{
 			name: 'judder.mp4',
 			recipe: `judder-v1:${h264.join(' ')}`,
-			make: async (out) => {
+			make: (out) => {
 				const still = `${out}.still.png`;
 				try {
 					run(['-f', 'lavfi', '-i', texture(2400, 360), '-frames:v', '1', still]);
@@ -171,7 +171,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 		{
 			name: 'blocky.mp4',
 			recipe: 'blocky-v2',
-			make: async (out) => {
+			make: (out) => {
 				const still = `${out}.still.png`;
 				try {
 					run(['-f', 'lavfi', '-i', chart(1344, 720), '-frames:v', '1', still]);

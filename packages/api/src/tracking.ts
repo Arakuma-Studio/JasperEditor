@@ -1,5 +1,6 @@
 // Tracking contracts (M2, S09, ARCHITECTURE §19.5). Owner: wp-m2-track.
 import { z } from 'zod';
+import { RationalSchema } from './common.ts';
 
 const Vec2 = z.tuple([z.number(), z.number()]);
 
@@ -62,7 +63,7 @@ export type TrackRequest = z.infer<typeof TrackRequestSchema>;
 export const TrackResultSchema = z.object({
 	startFrame: z.number().int().min(0),
 	/** Media frame rate the frames refer to. */
-	fps: z.object({ num: z.number().int().positive(), den: z.number().int().positive() }),
+	fps: RationalSchema,
 	/**
 	 * Values per frame: point 2, planar 8, mask 9 (wp masks: the row-major homography from the reference frame's
 	 * media px to the frame's media px; the client maps the mask path through it).

@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { nearestTile, type SpriteIndexLike } from '../src/panels/timeline/model/filmstrip.ts';
+import { nearestTile } from '../src/panels/timeline/model/filmstrip.ts';
 import { findSnap, type SnapTarget } from '../src/panels/timeline/model/snapping.ts';
 import {
 	boundaryFrameAt,
@@ -80,7 +80,7 @@ describe('snapping (A.3)', () => {
 });
 
 describe('filmstrip from the sprite contract (TH-003, TL-328, AC-7d)', () => {
-	const index: SpriteIndexLike = {
+	const index = {
 		tileWidth: 160,
 		tileHeight: 90,
 		columns: 10,

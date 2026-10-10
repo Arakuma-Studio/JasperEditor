@@ -9,12 +9,7 @@ export const clipEnd = (c: { start: number; duration: number }) => c.start + c.d
 
 // ---------------------------------------------------------------- per-track index
 
-export type TrackIndex = {
-	/** Clips on each track sorted by start. Tracks with no clips map to an empty array. */
-	byTrack: Map<string, Clip[]>;
-};
-
-const indexCache = new WeakMap<object, TrackIndex>();
+const indexCache = new WeakMap<object, Map<string, Clip[]>>();
 
 /**
  * Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). Never memoized for an Immer
@@ -23,7 +18,7 @@ const indexCache = new WeakMap<object, TrackIndex>();
  */
 function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
-): TrackIndex {
+): Map<string, Clip[]> {
 	const draft = isDraft(seq.clips);
 	const cached = draft ? undefined : indexCache.get(seq.clips);
 	if (cached) {
@@ -43,25 +38,24 @@ function sequenceIndex(
 		list.push(c);
 	}
 	for (const list of byTrack.values()) list.sort(byStart);
-	const idx = { byTrack };
 	if (!draft) {
-		indexCache.set(seq.clips, idx);
-		remember(seq, idx);
+		indexCache.set(seq.clips, byTrack);
+		remember(seq, byTrack);
 	}
-	return idx;
+	return byTrack;
 }
 
 const byStart = (a: Clip, b: Clip) => a.start - b.start || a.id.localeCompare(b.id);
 
 /** The last index built per sequence id (perf-core): the next version of the sequence derives from it. */
-const lastIndex = new Map<string, { clips: object; tracks: string; idx: TrackIndex }>();
+const lastIndex = new Map<string, { clips: object; tracks: string; idx: Map<string, Clip[]> }>();
 const trackKey = (seq: Pick<Sequence, 'videoTracks' | 'audioTracks' | 'captionTracks'>) =>
 	allTracks(seq)
 		.map((t) => t.id)
 		.join(',');
 function remember(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
-	idx: TrackIndex,
+	idx: Map<string, Clip[]>,
 ) {
 	const id = (seq as { id?: unknown }).id;
 	if (typeof id !== 'string' || lastIndex.get(id)?.clips === seq.clips) return;
@@ -77,7 +71,7 @@ function remember(
  */
 function derivedIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
-): TrackIndex | null {
+): Map<string, Clip[]> | null {
 	const id = (seq as { id?: unknown }).id;
 	const prev = typeof id === 'string' ? lastIndex.get(id) : undefined;
 	if (!prev || prev.tracks !== trackKey(seq)) return null;
@@ -95,10 +89,10 @@ function derivedIndex(
 		const now = seq.clips[k];
 		if (now) tracks.add(now.trackId);
 	}
-	const byTrack = new Map(prev.idx.byTrack);
+	const byTrack = new Map(prev.idx);
 	for (const t of tracks) {
 		// The kept clips stay sorted; the arrivals are sorted and merged in (O(track), no full sort).
-		const kept = (prev.idx.byTrack.get(t) ?? []).filter((c) => !gone.has(c));
+		const kept = (prev.idx.get(t) ?? []).filter((c) => !gone.has(c));
 		const added: Clip[] = [];
 		for (const k of d.changed) if (seq.clips[k]!.trackId === t) added.push(seq.clips[k]!);
 		added.sort(byStart);
@@ -113,14 +107,13 @@ function derivedIndex(
 			);
 		byTrack.set(t, list);
 	}
-	const idx = { byTrack };
-	indexCache.set(seq.clips, idx);
-	remember(seq, idx);
-	return idx;
+	indexCache.set(seq.clips, byTrack);
+	remember(seq, byTrack);
+	return byTrack;
 }
 
 export function clipsOnTrack(seq: Sequence, trackId: string): Clip[] {
-	return sequenceIndex(seq).byTrack.get(trackId) ?? [];
+	return sequenceIndex(seq).get(trackId) ?? [];
 }
 
 /** First index whose clip ends after `frame` (clips on a track never overlap, so ends are sorted). */

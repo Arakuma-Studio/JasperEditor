@@ -1,7 +1,7 @@
 // S04:IN-013: while an upload (or another client-side job) runs, closing the tab triggers the browser's
 // "leave page?" confirmation. Engine-side jobs keep running on the server and need no guard.
 
-export type UnloadGuard = { begin(): () => void; readonly active: number };
+export type UnloadGuard = { begin(): () => void };
 
 export function createUnloadGuard(
 	target: {
@@ -23,9 +23,6 @@ export function createUnloadGuard(
 				done = true;
 				if (--active === 0) target?.removeEventListener('beforeunload', onBeforeUnload);
 			};
-		},
-		get active() {
-			return active;
 		},
 	};
 }

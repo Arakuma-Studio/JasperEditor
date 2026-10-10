@@ -59,7 +59,7 @@ export function findTracker(doc: ProjectDocument, trackerId: string): TrackerLoc
 /** Nominal frame rate of a media asset's video stream (null for media without video). */
 export function mediaFrameRate(asset: Pick<MediaAsset, 'probe'> | undefined | null): Rational | null {
 	const vs = asset?.probe.streams.find((s) => s.type === 'video');
-	return vs && vs.type === 'video' ? { num: vs.frameRate.num, den: vs.frameRate.den } : null;
+	return vs ? { num: vs.frameRate.num, den: vs.frameRate.den } : null;
 }
 
 /** Source frames `[first, end)` the clip shows (its content span), clamped to the media when its length is known. */

@@ -1,6 +1,6 @@
 // Tone curves (M2, S06:CG-020 step 10): a monotone cubic Hermite spline (Fritsch–Carlson / PCHIP) through
 // the control points, flat-extrapolated outside the first and last point. Pure; `curveFn` precomputes the
-// segment coefficients so evaluation inside a LUT bake allocates nothing.
+// slopes so evaluation inside a LUT bake allocates nothing.
 import type { Vec2 } from '../schema/common.ts';
 
 /** Most control points a curve may carry (S06:CGU-001). */
@@ -122,7 +122,7 @@ export function curveFn(
 	};
 }
 
-/** Samples a curve at `n` evenly spaced inputs (UI drawing, tests). */
+/** Samples a curve at `n` evenly spaced inputs for UI drawing. */
 export function sampleCurve(points: readonly (readonly number[])[] | null | undefined, n = 256): number[] {
 	const f = curveFn(points) ?? ((x: number) => x);
 	const out: number[] = [];

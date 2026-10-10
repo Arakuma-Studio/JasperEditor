@@ -26,7 +26,6 @@ export {
 	type FxCanvasLayout,
 	type FxStep,
 	fxCanvasLayout,
-	hasGpuEffects,
 	type LayerFxPlan,
 	planLayerFx,
 } from './plan.ts';

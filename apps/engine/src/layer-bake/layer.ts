@@ -37,8 +37,8 @@ export function isDomLayer(c: Pick<RenderVisualClip, 'kind' | 'engine'>): boolea
 	return DOM_KINDS.has(c.kind) && c.engine === 'remotion';
 }
 
-/** Effects the native builder draws itself (crop, flips) or hands to the warp stage (corner pin). */
-const BUILDER_EFFECTS: ReadonlySet<string> = new Set([
+/** Native geometric effects: they commute with colour ops and need no extra crop bleed. */
+const GEOMETRIC_EFFECTS: ReadonlySet<string> = new Set([
 	'jasper.crop',
 	'jasper.flip-horizontal',
 	'jasper.flip-vertical',
@@ -58,7 +58,7 @@ export function hasBrowserEffect(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): boolean {
 	return c.effects.some((fx) => {
-		if (!fx.enabled || BUILDER_EFFECTS.has(fx.effectId)) return false;
+		if (!fx.enabled || GEOMETRIC_EFFECTS.has(fx.effectId)) return false;
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		return !!spec && spec.appliesTo === 'video' && !spec.color;
 	});
@@ -97,14 +97,6 @@ export function isColorEffect(
 export function hasColorEffects(c: Pick<RenderVisualClip, 'effects'>, registry?: EffectRegistry): boolean {
 	return !hasEffectMasks(c) && c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
 }
-
-/** Geometric effects: they commute with pointwise colour ops (crop, flips, corner pin). */
-const GEOMETRIC_EFFECTS: ReadonlySet<string> = new Set([
-	'jasper.crop',
-	'jasper.flip-horizontal',
-	'jasper.flip-vertical',
-	'jasper.corner-pin',
-]);
 
 /**
  * LBK-010 applies a DOM layer's colour runs to the finished layer (after all its other effects). That equals the
@@ -390,14 +382,6 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 const RECT_MAX_AREA_SHARE = 0.85;
 /** Bleed around the layer's per-frame bounds, as a share of the sequence height (S11:LBK-005). */
 const RECT_BLEED_SHARE = 0.1;
-/** Effects whose drawing stays inside the layer box (or are applied by ffmpeg): no extra bleed. */
-const BOX_BOUND_EFFECTS: ReadonlySet<string> = new Set([
-	'jasper.crop',
-	'jasper.flip-horizontal',
-	'jasper.flip-vertical',
-	'jasper.corner-pin',
-]);
-
 /**
  * Extra margin (layer px) around the layer box for what may draw outside it: text stroke, shadow and background
  * padding, text-animator travel (`distance`, `blur`, `scale` params), blur effects. Null = unknown (do not crop).
@@ -447,7 +431,7 @@ export function contentBleed(
 		px += num('distance') + 3 * num('blur') + Math.max(0, num('scale') - 1) * maxDim;
 	}
 	for (const fx of c.effects) {
-		if (!fx.enabled || BOX_BOUND_EFFECTS.has(fx.effectId) || isColorEffect(fx, registry)) continue;
+		if (!fx.enabled || GEOMETRIC_EFFECTS.has(fx.effectId) || isColorEffect(fx, registry)) continue;
 		if (fx.effectId === 'jasper.gaussian-blur') {
 			let r = 0;
 			for (const a of [fx.params.radius?.value, ...(fx.params.radius?.keyframes ?? []).map((k) => k.value)])

@@ -93,8 +93,6 @@ class Resolver {
 	readonly createdMedia: string[] = [];
 	readonly reusedMedia: string[] = [];
 	private readonly same: boolean;
-	/** Payload media used only as a derivation source or a font file: added without a project item. */
-	private readonly indirect = new Set<string>();
 	/** Payload media by id (first wins, as `find`): a lookup per media was a linear scan. */
 	private readonly payloadMedia = new Map<string, MediaAsset>();
 	/**
@@ -111,11 +109,7 @@ class Resolver {
 		private readonly opts: { binId: string | null; noItemFor?: ReadonlySet<string> } = { binId: null },
 	) {
 		this.same = p.sourceProjectId === doc.projectId;
-		for (const m of p.media) {
-			if (m.derivation) this.indirect.add(m.derivation.fromMediaId);
-			if (!this.payloadMedia.has(m.id)) this.payloadMedia.set(m.id, m);
-		}
-		for (const f of p.fonts) if (f.source.type === 'asset') this.indirect.add(f.source.mediaId);
+		for (const m of p.media) if (!this.payloadMedia.has(m.id)) this.payloadMedia.set(m.id, m);
 	}
 
 	private missing(what: string, id: string): never {
@@ -152,8 +146,7 @@ class Resolver {
 			derivation: m.derivation && from ? { ...clone(m.derivation), fromMediaId: from } : null,
 		} as Draft<MediaAsset>;
 		this.createdMedia.push(newId);
-		const wantsItem = direct || !this.indirect.has(id);
-		if (wantsItem && !this.opts.noItemFor?.has(id)) {
+		if (direct && !this.opts.noItemFor?.has(id)) {
 			const itemId = this.h.ids.next('itm');
 			const meta = this.p.mediaItems?.[id];
 			this.doc.items[itemId] = {
@@ -508,7 +501,6 @@ function pasteClips(doc: DDoc, cmd: CommandOf<'clip.paste'>, h: HandlerContext):
 
 /** One clip's worth of copyable attributes. */
 type AttributeSource = {
-	clipId: string | null;
 	kind: string;
 	timing: ClipTiming;
 	rate: Rational;
@@ -527,7 +519,6 @@ function attributeSources(p: ClipboardPayload): AttributeSource[] {
 		const e = p.effects;
 		return [
 			{
-				clipId: null,
 				kind: e.source.clipKind,
 				timing: e.source.timing,
 				rate: e.source.frameRate,
@@ -544,7 +535,6 @@ function attributeSources(p: ClipboardPayload): AttributeSource[] {
 	return clips.map((c) => {
 		const r = c as Record<string, unknown>;
 		return {
-			clipId: c.id,
 			kind: c.kind,
 			timing: timingOf(c),
 			rate: sec.frameRate,
@@ -573,8 +563,7 @@ function applyAttributes(
 	const { seq, clips: targets } = h.clipsOf(doc, clipIds);
 	const resolver = new Resolver(doc, p, h);
 	const rate = seq.settings.frameRate as Rational;
-	const first = <K extends keyof AttributeSource>(pick: (s: AttributeSource) => unknown) =>
-		sources.find((s) => pick(s) !== undefined) as (AttributeSource & Record<K, unknown>) | undefined;
+	const first = (pick: (s: AttributeSource) => unknown) => sources.find((s) => pick(s) !== undefined);
 	const wantedFx =
 		attrs.effects === undefined
 			? []
@@ -594,10 +583,9 @@ function applyAttributes(
 		const caps = kindCapabilities(t.kind);
 		const to = { timing: timingOf(t), rate };
 		const done: string[] = [];
-		const from = (s: AttributeSource) => ({ timing: s.timing, rate: s.rate });
 		const retimed = <T>(v: T, s: AttributeSource): T => {
 			const copy = clone(v);
-			retimeAll(copy, from(s), to, h, !!opts.scale);
+			retimeAll(copy, s, to, h, !!opts.scale);
 			return copy;
 		};
 		const motion = first((s) => s.intrinsic.transform);
@@ -640,7 +628,7 @@ function applyAttributes(
 				const copy = clone(fx);
 				resolver.remapEffectMedia([copy]);
 				for (const a of Object.values(copy.params))
-					a.keyframes = retimeKeys(a.keyframes, from(src), to, h, !!opts.scale);
+					a.keyframes = retimeKeys(a.keyframes, src, to, h, !!opts.scale);
 				const instance: EffectInstance = spec
 					? {
 							id: h.ids.next('fx'),

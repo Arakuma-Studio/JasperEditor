@@ -1,25 +1,12 @@
-// The colour native extension (S06:CG-050…055, ARCHITECTURE §19.6 / D-21): every effect with a colour op is
-// realized on the native path. Consecutive colour effects of a layer (a colour run) are baked with the SAME
-// TypeScript maths as the preview into one 3D LUT, written content-addressed to `<appdir>/cache/luts/`, and
-// applied with `lut3d=file=…:interp=tetrahedral` on the layer's RGBA frames, on the first effect of the run.
+// Consecutive colour effects are baked with the preview's TypeScript maths into one content-addressed 3D LUT.
+// The first effect of each run applies it with `lut3d=file=…:interp=tetrahedral` to the layer's RGBA frames.
 //
-// Precision (deviation from the `format=rgba64le,…,format=rgba` text of S06:CG-051, measured on the chart
-// fixture with FFmpeg 6.1 and 7.1): the layer is already 8-bit RGBA at this point, so 16-bit processing gains
-// nothing, while swscale's packed 8↔16-bit conversions are not exact (`v<<8` in, `round(v/256)` out) and cost
-// up to ±2 code values (25 % of pixels off by one). `lut3d` on 8-bit data maps inputs exactly (v/255) and
-// stores `trunc(out·255)`; the baked table is therefore written with a +0.5/255 offset (`EXPORT_ROUNDING_BIAS`)
-// so the store rounds to nearest. Result: 99.999 % of chart pixels equal the TypeScript reference
-// (`applyLut` of the unbiased table, rounded), max 1.
-// Keyframed grades: the evaluated run is sampled per output frame (`sampleRuns`), one LUT per distinct state,
-// each `lut3d` enabled on its frame window (at most 240 per layer; above that the params are quantised).
+// Keep the already-8-bit input in 8-bit format: swscale's packed 8↔16-bit conversions introduce rounding error.
+// `lut3d` stores `trunc(out·255)`, so EXPORT_ROUNDING_BIAS makes it round to nearest instead.
+// Keyframed grades use one LUT per distinct state, enabled on its frame window; large runs are quantised.
 //
-// LUT files (M3, wp-m3-cachegc, S06:CG-056): named by the sha256 of their `.cube` text, so states that bake to the
-// same table — a grade keyframed back to an earlier value, hold segments, params that clamp to the same result, the
-// same look on several clips or exports — share one file; nothing is written when the file exists. A process-wide
-// memo (state key → file) skips the bake itself for states seen before. The text is byte-identical to before (same
-// lattice, same 6-decimal values), so the export output does not change. Files are pinned for the export
-// (`ctx.pin`) before they are reused or written: the cache GC never removes a LUT an export is about to read.
-
+// A state memo avoids rebaking between exports; identical tables share a file named by the SHA-256 of its text.
+// Files are pinned before reuse or writing so cache GC cannot remove them while an export needs them.
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -249,7 +236,7 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 				...(working ? { working } : {}),
 				colorConfig: (id: string) => configs.get(id) ?? null,
 			};
-			const bakes = new Map<string, Promise<string | null>>();
+			const bakes = new Map<string, string | null>();
 
 			for (const c of clips) {
 				if (!c.effects.some((fx) => fx.enabled && registry.get(fx.effectId, fx.effectVersion)?.color))
@@ -306,24 +293,21 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 					}
 					const windows: LutWindow[] = [];
 					for (const s of states) {
-						let p = bakes.get(s.value.key);
-						if (!p) {
+						let file = bakes.get(s.value.key);
+						if (file === undefined) {
 							const state = s.value;
-							p = (async () => {
-								const known = memo.get(state.key);
-								if (known && (await pin(known))) {
-									out.reused++;
-									return known;
-								}
+							const known = memo.get(state.key);
+							if (known && (await pin(known))) {
+								out.reused++;
+								file = known;
+							} else {
 								const lut = bakeColorRun(state.effects, registry, colorCtx, size);
-								if (!lut) return null;
-								const file = await writeLut(cubeText(lut), pin, out);
-								remember(state.key, file);
-								return file;
-							})();
-							bakes.set(state.key, p);
+								file = lut ? await writeLut(cubeText(lut), pin, out) : null;
+								if (file) remember(state.key, file);
+							}
+							bakes.set(state.key, file);
 						}
-						windows.push({ start: s.start, end: s.end, file: await p });
+						windows.push({ start: s.start, end: s.end, file });
 					}
 					perRun.set(first, windows);
 				}
@@ -331,10 +315,7 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 			}
 			out.baked = bakes.size;
 			const files = new Set<string>();
-			for (const p of bakes.values()) {
-				const f = await p;
-				if (f) files.add(f);
-			}
+			for (const file of bakes.values()) if (file) files.add(file);
 			out.files = files.size;
 			if (out.baked > 1)
 				ctx.log(

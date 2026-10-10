@@ -133,8 +133,8 @@ function encoderArgs(
 	];
 }
 
-/** Renders the warped layer into `job.output`. Resolves with the number of frames decoded from the source. */
-export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<{ decoded: number }> {
+/** Renders the warped layer into `job.output`. */
+export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<void> {
 	const total = job.frames.length;
 	if (total === 0) throw new WarpRenderError('TOOL_FAILED', 'warp: no frames to render');
 	const frameBytes = job.sw * job.sh * 4;
@@ -149,7 +149,6 @@ export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<{
 		children.push(c);
 		job.onSpawn?.(c);
 	};
-	let decoded = 0;
 	try {
 		await new Promise<void>((resolve, reject) => {
 			let failed = false;
@@ -247,7 +246,6 @@ export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<{
 					curOff += n;
 					pos += n;
 					if (curOff === frameBytes) {
-						decoded++;
 						const s = cur;
 						cur = null;
 						dispatch(s, false);
@@ -328,7 +326,6 @@ export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<{
 			children.filter((c) => c.exitCode === null && c.signalCode === null).map((c) => terminateTree(c, 500)),
 		);
 		await rename(tmp, job.output);
-		return { decoded };
 	} catch (e) {
 		await Promise.all(children.map((c) => terminateTree(c, 500)));
 		await rm(tmp, { force: true }).catch(() => {});

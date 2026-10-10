@@ -228,7 +228,7 @@ function makeBrokenNumber() {
 	].join('\n');
 }
 
-export async function fixtures() {
+export function fixtures() {
 	const text = (name, make) => ({ name, recipe: `${name}:v1`, make: (out) => writeFileSync(out, make()) });
 	return [
 		{ name: 'chart.png', recipe: 'chart.png:v1', make: (out) => writeFileSync(out, makeChart()) },

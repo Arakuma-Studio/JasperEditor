@@ -1,8 +1,8 @@
 // Transition family "premiere-transitions" (transition framework, wave 3): Premiere's standard video transitions —
 // 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom bins (TRANSITION_BINS). Ids `jasper.<kebab>`. The built-in
 // Cross Dissolve and Dip to Black (native ffmpeg path) live in ../../transitions.ts and are not duplicated here.
-// Owner: the wave-3 agent of this family; this file plus its private helpers in ./premiere/ (one module per bin)
-// and its tests. Entries are built with `defineShaderTransition` (./define.ts). Authoring guide: docs/wp-notes/fx-transition-framework.md. The transition
+// Private helpers live in ./premiere/ (one module per bin). Entries are built with `defineShaderTransition`
+// (./define.ts). Authoring guide: docs/wp-notes/fx-transition-framework.md. The transition
 // catalogue test checks every entry (validateGpuTransition) and the GL test compiles and runs each one.
 // Import rule (no cycles): values only from ./define.ts, ./glsl.ts, ./shader.ts and ../fx/*; types from
 // ../../transitions.ts and ../effects.ts (`import type`).

@@ -122,14 +122,6 @@ export function layerHasMasks(
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-/** True when the stack has an enabled effect with a GPU realization (the layer takes the fx path). */
-export function hasGpuEffects(
-	effects: readonly Pick<ResolvedEffect, 'enabled' | 'effectId' | 'effectVersion'>[],
-	registry: EffectRegistry,
-): boolean {
-	return effects.some((fx) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.gpu);
-}
-
 export function planLayerFx(
 	effects: readonly ResolvedEffect[],
 	opts: PlanLayerFxOptions,

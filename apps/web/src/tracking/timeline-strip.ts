@@ -126,14 +126,14 @@ function minConfidence(index: ConfidenceIndex, lo: number, hi: number): number {
 // ------------------------------------------------------------------ classes
 
 /** Strip colour class: good ≥ 0.8, fair ≥ 0.5, poor > 0, lost = 0 (TRU-002 tones plus "lost"). */
-export type ConfidenceClass = 'good' | 'fair' | 'poor' | 'lost';
+type ConfidenceClass = 'good' | 'fair' | 'poor' | 'lost';
 
 export function confidenceClass(c: number): ConfidenceClass {
 	return c <= 0 ? 'lost' : c < 0.5 ? 'poor' : c < 0.8 ? 'fair' : 'good';
 }
 
 /** Tooltip class of a frame: Lost (0), Low (< 0.5), OK. */
-export function confidenceLabel(c: number): 'Lost' | 'Low' | 'OK' {
+function confidenceLabel(c: number): 'Lost' | 'Low' | 'OK' {
 	return c <= 0 ? 'Lost' : c < 0.5 ? 'Low' : 'OK';
 }
 
@@ -142,7 +142,7 @@ export function confidenceLabel(c: number): 'Lost' | 'Low' | 'OK' {
 /** A drawn piece of a strip in clip-area px, with the worst confidence it covers. */
 export type StripRun = { x0: number; x1: number; confidence: number; cls: ConfidenceClass };
 
-export type StripInput = {
+type StripInput = {
 	clip: ClipTiming;
 	seqRate: Rational;
 	samples: TrackerSamples | null;
@@ -258,7 +258,7 @@ type SamplesStats = ReturnType<typeof samplesSummary> & { low: number };
 const statsCache = new WeakMap<TrackerSamples, SamplesStats>();
 
 /** `samplesSummary` plus the number of low (0 < c < 0.5) samples, cached per samples object. */
-export function samplesStats(samples: TrackerSamples): SamplesStats {
+function samplesStats(samples: TrackerSamples): SamplesStats {
 	const hit = statsCache.get(samples);
 	if (hit) return hit;
 	let low = 0;

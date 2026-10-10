@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { PreviewRenderResult, PreviewStatus } from '@jasper/api';
 import { audioPreviewSegments, flicksPerFrame, type ProjectDocument, previewSegments } from '@jasper/project';
 import { probeFrames as oracleProbeFrames } from '@jasper/testkit/oracle';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { entryOfPath, scanAppdir } from '../src/cache/layout.ts';
 import { previewFormatKey } from '../src/previews/service.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -345,6 +345,8 @@ describe('Export ▸ Use Previews', () => {
 			[0, 40],
 			[40, 60],
 		]);
+		// The export holds the preview files it reads (cache entries) for the job, like every other cached input.
+		const acquired = vi.spyOn(coreServices(app).cache, 'acquireForJob');
 		const start = await app.inject({
 			method: 'POST',
 			url: '/api/exports',
@@ -354,6 +356,10 @@ describe('Export ▸ Use Previews', () => {
 		expect(start.statusCode, start.body).toBe(202);
 		const done = await coreServices(app).queue.wait(start.json().id);
 		expect(done.error).toBeUndefined();
+		expect(
+			acquired.mock.calls.some(([job, path]) => job === start.json().id && path.includes(segs[0]!.hash)),
+		).toBe(true);
+		acquired.mockRestore();
 		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
 		const count = Number(
 			spawnSync('ffprobe', [

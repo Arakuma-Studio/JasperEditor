@@ -415,6 +415,6 @@ export function durationLabel(
 	markIn: number | null,
 	markOut: number | null,
 ): string {
-	const d = markIn !== null || markOut !== null ? (markOut ?? total) - (markIn ?? 0) : total;
+	const d = (markOut ?? total) - (markIn ?? 0);
 	return formatTimecode(Math.max(0, d), format.rate, { dropFrame: format.dropFrame });
 }

@@ -109,7 +109,6 @@ function matchesEtag(header: string | undefined, etag: string): boolean {
 		.some((t) => t === '*' || t === etag);
 }
 
-/** Streams a file (or part of it) honoring HEAD/Range/conditional headers. 404 when missing. */
 /**
  * M3 (wp-m3-cachegc): observers of served files. The cache registry records the access (LRU) and holds the entry
  * while the response streams; the returned function is called when the response is closed.
@@ -122,6 +121,7 @@ export function addServeHook(hook: ServeHook): () => void {
 	return () => serveHooks.delete(hook);
 }
 
+/** Streams a file (or part of it) honoring HEAD/Range/conditional headers. 404 when missing. */
 export async function serveFile(
 	req: FastifyRequest,
 	reply: FastifyReply,

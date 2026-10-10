@@ -7,6 +7,7 @@ import {
 	clipBox,
 	createProject,
 	enableAgentBridge,
+	pointerDrag,
 	query,
 	timelineArea,
 	transact,
@@ -48,13 +49,7 @@ async function drag(selector: string, dx: number, dy: number): Promise<void> {
 	const b = (await page.locator(selector).boundingBox())!;
 	const x = b.x + b.width / 2;
 	const y = b.y + b.height / 2;
-	await page.mouse.move(x, y);
-	await page.mouse.down();
-	for (let i = 1; i <= 8; i++) {
-		await page.mouse.move(x + (dx * i) / 8, y + (dy * i) / 8);
-		await page.waitForTimeout(16);
-	}
-	await page.mouse.up();
+	await pointerDrag(page, { x, y }, { x: x + dx, y: y + dy }, { steps: 8 });
 }
 
 test('Value and Velocity graph drags edit keys (one undo entry each)', async () => {

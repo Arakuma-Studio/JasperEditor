@@ -1,25 +1,18 @@
-// edit UI commands — owned by WP-2A: undo/redo with history step names in their labels (S05:MN-011,
-// S01 §17). Clipboard/selection commands (edit.cut, edit.copy…) belong to the panels that own the
-// selection (timeline.*, project.*) and stay inert here until registered; edit.clear dispatches to the
-// focused panel's delete command.
+// Undo/redo with history step names (S05:MN-011, S01 §17), and Clear for the focused panel.
 import type { EditorSession } from '@jasper/session';
 import type { PanelKind } from '../panels/types.ts';
 import { getCommand, isCommandEnabled, runCommand } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
-function historyOf(session: EditorSession | null) {
-	return session?.getState().history ?? null;
-}
-
 /** Label of the step that Undo would revert, or null. */
 function undoLabel(session: EditorSession | null): string | null {
-	const h = historyOf(session);
+	const h = session?.getState().history;
 	return h?.canUndo ? (h.entries[h.index - 1]?.label ?? null) : null;
 }
 
 /** Label of the step that Redo would re-apply, or null. */
 function redoLabel(session: EditorSession | null): string | null {
-	const h = historyOf(session);
+	const h = session?.getState().history;
 	return h?.canRedo ? (h.entries[h.index]?.label ?? null) : null;
 }
 
@@ -68,7 +61,7 @@ export const editCommands: UiCommand[] = [
 			const l = undoLabel(ctx.session);
 			return l ? `Undo ${l}` : 'Undo';
 		},
-		when: (ctx) => !blocked(ctx) && !!historyOf(ctx.session)?.canUndo,
+		when: (ctx) => !blocked(ctx) && !!ctx.session?.getState().history.canUndo,
 		disabledReason: (ctx) => blocked(ctx) ?? 'Nothing to undo',
 		run: (ctx) => {
 			const r = ctx.session?.undo();
@@ -85,7 +78,7 @@ export const editCommands: UiCommand[] = [
 			const l = redoLabel(ctx.session);
 			return l ? `Redo ${l}` : 'Redo';
 		},
-		when: (ctx) => !blocked(ctx) && !!historyOf(ctx.session)?.canRedo,
+		when: (ctx) => !blocked(ctx) && !!ctx.session?.getState().history.canRedo,
 		disabledReason: (ctx) => blocked(ctx) ?? 'Nothing to redo',
 		run: (ctx) => {
 			const r = ctx.session?.redo();

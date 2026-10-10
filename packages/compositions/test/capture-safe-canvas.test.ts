@@ -4,18 +4,11 @@
 // scope in the Program monitor. `installCaptureSafeCanvases` makes such canvases ordinary ones. In a real Chrome with
 // HTML-in-Canvas: the browser behaviour without the shim (documented, so a browser fix shows up here) and the fix.
 // Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
-import { existsSync } from 'node:fs';
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installCaptureSafeCanvases } from '../src/fx/capture-safe-canvas.ts';
+import { CHROME } from './gl-browser.ts';
 
-const CHROME = [
-	process.env.JASPER_BROWSER_EXECUTABLE,
-	'/usr/bin/google-chrome',
-	'/usr/bin/google-chrome-stable',
-	'/usr/bin/chromium',
-	'/usr/bin/chromium-browser',
-].find((p): p is string => !!p && existsSync(p));
 const run = !!CHROME && process.env.FX_GL !== '0';
 
 const PAGE = `<!doctype html><html><body style="margin:0">

@@ -29,7 +29,7 @@ function getAt(obj: unknown, path: readonly string[]): unknown {
 	return cur;
 }
 
-export type References = {
+type References = {
 	media: Set<string>;
 	synthetics: Set<string>;
 	transcripts: Set<string>;
@@ -38,7 +38,7 @@ export type References = {
 	sequences: Set<string>;
 };
 
-export const emptyReferences = (): References => ({
+const emptyReferences = (): References => ({
 	media: new Set(),
 	synthetics: new Set(),
 	transcripts: new Set(),
@@ -47,7 +47,7 @@ export const emptyReferences = (): References => ({
 });
 
 /** `{mediaId}` param values (LUTs, image refs; `''` = None) of an effect stack, keyframes included. */
-export function effectMediaIds(effects: readonly EffectInstance[] | undefined): string[] {
+function effectMediaIds(effects: readonly EffectInstance[] | undefined): string[] {
 	const out: string[] = [];
 	const visit = (v: unknown) => {
 		const m = (v as { mediaId?: unknown } | null)?.mediaId;
@@ -75,7 +75,7 @@ function styleFonts(r: Record<string, unknown>): string[] {
 }
 
 /** Records the entities one clip references. */
-export function collectClipReferences(clip: Clip, refs: References): void {
+function collectClipReferences(clip: Clip, refs: References): void {
 	const r = clip as Record<string, unknown>;
 	if (typeof r.mediaId === 'string') refs.media.add(r.mediaId);
 	const comp = r.composition as { mediaId?: unknown } | undefined;
@@ -100,7 +100,7 @@ function collectSequenceReferences(seq: Sequence, refs: References): void {
  * The entities to ship for `refs`: media closed over derivation sources and font files (sources first, so a paste
  * can add them in order), and the referenced synthetics, transcripts and fonts that exist in `doc`.
  */
-export function packReferences(
+function packReferences(
 	doc: ProjectDocument,
 	refs: References,
 ): Pick<ClipboardPayload, 'media' | 'synthetics' | 'transcripts' | 'fonts' | 'mediaItems'> {
@@ -123,16 +123,14 @@ export function packReferences(
 	}
 	const media: MediaAsset[] = [];
 	const done = new Set<string>();
-	const add = (id: string, stack: Set<string>) => {
+	const add = (id: string) => {
 		const m = doc.media[id];
-		if (!m || done.has(id) || stack.has(id)) return;
-		stack.add(id);
-		if (m.derivation) add(m.derivation.fromMediaId, stack);
-		stack.delete(id);
+		if (!m || done.has(id)) return;
 		done.add(id);
+		if (m.derivation) add(m.derivation.fromMediaId);
 		media.push(clone(m));
 	};
-	for (const id of refs.media) add(id, new Set());
+	for (const id of refs.media) add(id);
 	const mediaItems: NonNullable<ClipboardPayload['mediaItems']> = {};
 	for (const it of Object.values(doc.items))
 		if (it.kind === 'media' && done.has(it.mediaId) && !mediaItems[it.mediaId])
@@ -261,7 +259,7 @@ export function buildEffectsPayload(
 	opts: { effectIds?: readonly string[]; intrinsic?: boolean; now?: string } = {},
 ): ClipboardPayload {
 	const { seq, clip } = findClip(doc, clipId);
-	const all = ((clip as { effects?: EffectInstance[] }).effects ?? []) as EffectInstance[];
+	const all = (clip as { effects?: EffectInstance[] }).effects ?? [];
 	const effects = (opts.effectIds ? all.filter((fx) => opts.effectIds!.includes(fx.id)) : all).map(clone);
 	const refs = emptyReferences();
 	for (const m of effectMediaIds(effects)) refs.media.add(m);

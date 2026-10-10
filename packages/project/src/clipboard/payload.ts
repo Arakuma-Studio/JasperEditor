@@ -45,11 +45,11 @@ export const CLIPBOARD_FORMAT = 'jasper-clipboard';
 export const CLIPBOARD_VERSION = 1;
 /** CLB-009: payloads larger than this (UTF-8 bytes of the JSON) are refused. */
 export const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
-export const CLIPBOARD_KINDS = ['clips', 'effects', 'keyframes', 'project-items'] as const;
+const CLIPBOARD_KINDS = ['clips', 'effects', 'keyframes', 'project-items'] as const;
 export type ClipboardKind = (typeof CLIPBOARD_KINDS)[number];
 
 /** The source clip's timing: keyframes are clip content time, so pastes re-time them from this. */
-export const ClipTimingSchema = z.looseObject({
+const ClipTimingSchema = z.looseObject({
 	start: nonNegInt(),
 	duration: z.number().int().min(1),
 	sourceIn: nonNegInt(),
@@ -87,7 +87,7 @@ const EffectsSectionSchema = z.looseObject({
 });
 
 /** Where a copied keyframe track lives on its clip: a property key, or a param of an applied effect. */
-export const KeyframeAddressSchema = z.union([
+const KeyframeAddressSchema = z.union([
 	z.looseObject({ property: z.string().min(1) }),
 	z.looseObject({ effectId: z.string().min(1), occurrence: nonNegInt(), param: z.string().min(1) }),
 ]);
@@ -120,6 +120,7 @@ const ItemsSectionSchema = z.looseObject({
 	rootItems: z.array(z.string()).min(1),
 });
 
+/** The payload schema (also validates interchange fragments, commands/handlers/interchange.ts). */
 export const ClipboardPayloadSchema = z
 	.looseObject({
 		format: z.literal(CLIPBOARD_FORMAT),
@@ -146,7 +147,7 @@ export const ClipboardPayloadSchema = z
 		if (!section) ctx.addIssue({ code: 'custom', message: `A "${p.kind}" payload needs its section` });
 	});
 
-export type ClipsSection = {
+type ClipsSection = {
 	clips: Clip[];
 	transitions: Transition[];
 	originFrame: number;
@@ -162,20 +163,20 @@ export type IntrinsicAttributes = {
 	volumeDb?: Animatable<number>;
 	pan?: Animatable<number>;
 };
-export type EffectsSection = {
+type EffectsSection = {
 	effects: EffectInstance[];
 	intrinsic?: IntrinsicAttributes;
 	source: { clipKind: string; timing: ClipTiming; frameRate: RationalT };
 };
 export type KeyframeTrack = { address: KeyframeAddress; paramType: string; keyframes: Keyframe<unknown>[] };
-export type KeyframesSection = {
+type KeyframesSection = {
 	paramType: string;
 	keyframes: Keyframe<unknown>[];
 	originFlicks: number;
 	tracks: KeyframeTrack[];
 	speed: { rate: number; reverse: boolean };
 };
-export type ItemsSection = { items: ProjectItem[]; sequences: Sequence[]; rootItems: string[] };
+type ItemsSection = { items: ProjectItem[]; sequences: Sequence[]; rootItems: string[] };
 
 export type ClipboardPayload = {
 	format: typeof CLIPBOARD_FORMAT;
@@ -195,7 +196,7 @@ export type ClipboardPayload = {
 	mediaItems?: Record<string, { name: string; label: LabelColor }>;
 };
 
-export type ParseResult =
+type ParseResult =
 	| { ok: true; payload: ClipboardPayload }
 	| { ok: false; code: 'E_SCHEMA' | 'E_LIMIT'; message: string };
 

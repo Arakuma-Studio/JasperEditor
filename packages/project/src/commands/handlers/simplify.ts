@@ -16,7 +16,7 @@ import type { HandlerMap } from './util.ts';
 type DAnim = Draft<Animatable<unknown>>;
 
 /** A parameter to simplify: where it lives and (optionally) which of its keys may go. */
-export type SimplifyLocation = { loc: AnimLocation; selected?: Set<string> };
+type SimplifyLocation = { loc: AnimLocation; selected?: Set<string> };
 
 const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 

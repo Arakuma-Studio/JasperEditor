@@ -18,22 +18,12 @@ export type UiPrefs = {
 
 const UI_PREFS_KEY = 'jasper:ui-prefs';
 
-const DEFAULT_PREFS: UiPrefs = {
-	theme: 'darkest',
-	contrast: 'normal',
-	density: 'normal',
-	labels: 'default',
-	tooltips: true,
-	layoutMode: null,
-	showWorkspaceTabs: true,
-};
-
 function pick<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
 	return allowed.includes(v as T) ? (v as T) : fallback;
 }
 
 /** Tolerant parse: unknown keys and bad values fall back to defaults. */
-export function parsePrefs(raw: unknown): UiPrefs {
+function parsePrefs(raw: unknown): UiPrefs {
 	const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 	return {
 		theme: pick(o.theme, ['darkest', 'dark'], 'darkest'),
@@ -49,19 +39,11 @@ export function parsePrefs(raw: unknown): UiPrefs {
 	};
 }
 
-function storage(): Storage | null {
-	try {
-		return typeof localStorage === 'undefined' ? null : localStorage;
-	} catch {
-		return null;
-	}
-}
-
 function load(): UiPrefs {
 	try {
-		return parsePrefs(JSON.parse(storage()?.getItem(UI_PREFS_KEY) ?? '{}'));
+		return parsePrefs(JSON.parse(localStorage.getItem(UI_PREFS_KEY) ?? '{}'));
 	} catch {
-		return { ...DEFAULT_PREFS };
+		return parsePrefs(null);
 	}
 }
 
@@ -85,7 +67,7 @@ export const prefsStore = {
 	set(patch: Partial<UiPrefs>): void {
 		state = { ...state, ...patch };
 		try {
-			storage()?.setItem(UI_PREFS_KEY, JSON.stringify(state));
+			localStorage.setItem(UI_PREFS_KEY, JSON.stringify(state));
 		} catch {
 			/* quota / private mode: keep in memory */
 		}

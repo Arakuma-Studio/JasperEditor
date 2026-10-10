@@ -43,11 +43,7 @@ export const titleCardParams = z.strictObject({
 });
 export type TitleCardParams = z.output<typeof titleCardParams>;
 
-export function renderTitleCard(
-	p: TitleCardParams,
-	ft: FrameTime,
-	out: { width: number; height: number },
-): string {
+function renderTitleCard(p: TitleCardParams, ft: FrameTime, out: { width: number; height: number }): string {
 	const fit = fitCanvas(out.width, out.height);
 	const t = ft.t;
 	const fadeIn = framesToSeconds(ft, p.fadeInFrames);

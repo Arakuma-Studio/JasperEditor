@@ -4,18 +4,11 @@
 // resume — so a seek's suspend right after a play froze playback. `installSerialAudioContext` serialises the context's
 // state changes and lets the clock move before such a suspend. In a real Chrome: the browser behaviour without the
 // shim (documented: a browser fix shows up here) and the fix. Runs when a Chrome is found; FX_GL=0 skips it.
-import { existsSync } from 'node:fs';
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installSerialAudioContext } from '../src/audio/serial-audio-context.ts';
+import { CHROME } from './gl-browser.ts';
 
-const CHROME = [
-	process.env.JASPER_BROWSER_EXECUTABLE,
-	'/usr/bin/google-chrome',
-	'/usr/bin/google-chrome-stable',
-	'/usr/bin/chromium',
-	'/usr/bin/chromium-browser',
-].find((p): p is string => !!p && existsSync(p));
 const run = !!CHROME && process.env.FX_GL !== '0';
 
 /** Resume then suspend 0–2 ms later, a few times: whether the resumes settle and the clock moved after them. */

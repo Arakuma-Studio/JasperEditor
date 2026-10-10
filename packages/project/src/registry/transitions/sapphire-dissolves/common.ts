@@ -199,9 +199,6 @@ export const GLSL_SD: GlslChunk = {
 	source: /* glsl */ `
 // Sapphire's size unit: half the frame width, in px.
 float sd_unit() { return 0.5 * u_compSize.x; }
-// Frame px ↔ Sapphire centred coordinates (x −1..1 over the width, y up, half widths).
-vec2 sd_sapphOfPx(vec2 px) { vec2 d = (px - 0.5 * u_compSize) / sd_unit(); return vec2(d.x, -d.y); }
-vec2 sd_pxOfSapph(vec2 s) { return 0.5 * u_compSize + vec2(s.x, -s.y) * sd_unit(); }
 // Wrap one coordinate: 0 No (unchanged: outside stays outside), 1 Tile, 2 Reflect.
 float sd_wrap1(float x, int m) {
   if (m == 1) return fract(x);

@@ -245,7 +245,6 @@ vec2 sw_f(vec2 uv) { return (uv - 0.5) * vec2(tr_aspect(), 1.0); }
 vec2 sw_uv(vec2 f) { return f / vec2(tr_aspect(), 1.0) + 0.5; }
 // Sapphire units (1 = half the frame width) → frame units.
 vec2 sw_sapph(vec2 s) { return s * 0.5 * tr_aspect(); }
-float sw_sapph1(float s) { return s * 0.5 * tr_aspect(); }
 mat2 sw_rot(float deg) { float a = radians(deg); float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 // Taps for an on-screen blur extent (px): ≤ 1.5 px apart, at most maxN.
 int sw_taps(float extentPx, int maxN) { return int(clamp(ceil(extentPx / 1.5), 1.0, float(maxN))); }

@@ -4,9 +4,9 @@
 // solves the camera that filmed them (and the lens: focal length, optionally radial distortion), with the 3D points of
 // the tracked features. The result is committed to the clip's `cameraTracker` with `cameraTracker.setResult`.
 import { z } from 'zod';
+import { RationalSchema } from './common.ts';
 
 const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
-const Rational = z.object({ num: z.number().int().positive(), den: z.number().int().positive() });
 
 /** 3D Camera Tracker ▸ Shot Type / Solve Method. */
 export const CAMTRACK_SHOT_TYPES = ['fixed', 'variable', 'specify'] as const;
@@ -59,7 +59,7 @@ export const CamTrackResultSchema = z.object({
 	trackerId: z.string().optional(),
 	mediaKey: z.string(),
 	span: z.tuple([z.number().int().min(0), z.number().int().min(0)]),
-	rate: Rational,
+	rate: RationalSchema,
 	/** Display size of the media (pixels the solve is in). */
 	size: z.tuple([z.number().int().positive(), z.number().int().positive()]),
 	shot: z.enum(CAMTRACK_SHOT_TYPES),

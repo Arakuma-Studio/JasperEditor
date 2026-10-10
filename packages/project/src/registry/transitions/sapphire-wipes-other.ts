@@ -1,7 +1,7 @@
 // Transition family "sapphire-wipes-other" (transition framework, wave 3): the Sapphire-style wipes (S_Wipe*).
 // Ids `jasper.s.<kebab>`; bin TRANSITION_BINS.sapphire, sub-bin SAPPHIRE_TRANSITION_SUBBINS.wipes. (The swish /
 // other Sapphire transitions live in their own family file.)
-// Owner: the wave-3 agent of this family; entries are built with `sapphireWipe` (./sapphire-wipes/common.ts, on top
+// Entries are built with `sapphireWipe` (./sapphire-wipes/common.ts, on top
 // of `defineShaderTransition`), the family-private helpers live in ./sapphire-wipes/. Authoring guide:
 // docs/wp-notes/fx-transition-framework.md.
 // Import rule (no cycles): values only from ./define.ts, ./glsl.ts, ./shader.ts, ../fx/* and the family-private

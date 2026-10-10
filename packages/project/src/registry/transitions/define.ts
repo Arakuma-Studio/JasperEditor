@@ -36,19 +36,6 @@ export const SAPPHIRE_TRANSITION_SUBBINS = {
 	other: 'Other',
 } as const;
 
-/** Names of the standard params (their uniforms: `u_startPercent`, `u_endPercent`, `u_reverse`, …). */
-export const STANDARD_TRANSITION_PARAMS = [
-	'startPercent',
-	'endPercent',
-	'useCompletion',
-	'completion',
-	'reverse',
-	'borderWidth',
-	'borderColor',
-	'antiAliasing',
-	'center',
-] as const;
-
 /** Builders of Premiere's standard transition options (also usable one by one). */
 export const trParam = {
 	/** Start (%): the progress the transition starts at (Premiere's A slider). Hold-only. */

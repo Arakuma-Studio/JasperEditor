@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Doubles per LocalMotion exported by glue.c: v.x, v.y, f.x, f.y, f.size, contrast, match. */
-export const LM_STRIDE = 7;
+const LM_STRIDE = 7;
 
 /**
  * Where vidstab.wasm is: `JASPER_VIDSTAB_WASM` → next to the running module (`dist/vidstab.wasm` beside the
@@ -34,7 +34,6 @@ type Exports = {
 	vsx_log_ptr(): number;
 	vsx_log_len(): number;
 	vsx_log_clear(): void;
-	vsx_set_log_level(level: number): void;
 	vsx_malloc(n: number): number;
 	vsx_free(p: number): void;
 	vsx_version(): number;
@@ -49,7 +48,6 @@ type Exports = {
 		minContrast: number,
 	): number;
 	vsx_detect_luma(): number;
-	vsx_detect_restart(): void;
 	vsx_detect_frame(): number;
 	vsx_detect_motions(): number;
 	vsx_path_free(): void;
@@ -84,11 +82,8 @@ type Exports = {
 	): void;
 };
 
-/** WASI preview1 stubs: no files, no environment, stderr collected. Everything else fails with ENOSYS. */
-function wasiStubs(
-	memory: () => WebAssembly.Memory,
-	onStderr: (text: string) => void,
-): WebAssembly.ModuleImports {
+/** WASI preview1 stubs: no files or environment. vid.stab diagnostics use `takeLog`. */
+function wasiStubs(memory: () => WebAssembly.Memory): WebAssembly.ModuleImports {
 	const ENOSYS = 52;
 	const EBADF = 8;
 	return {
@@ -103,18 +98,13 @@ function wasiStubs(
 			new DataView(memory().buffer).setBigUint64(outPtr, process.hrtime.bigint(), true);
 			return 0;
 		},
-		fd_write: (fd: number, iovs: number, iovsLen: number, nwrittenPtr: number) => {
+		fd_write: (_fd: number, iovs: number, iovsLen: number, nwrittenPtr: number) => {
 			const v = new DataView(memory().buffer);
 			let n = 0;
-			let text = '';
 			for (let i = 0; i < iovsLen; i++) {
-				const ptr = v.getUint32(iovs + i * 8, true);
-				const len = v.getUint32(iovs + i * 8 + 4, true);
-				if (fd === 2) text += Buffer.from(memory().buffer, ptr, len).toString('utf8');
-				n += len;
+				n += v.getUint32(iovs + i * 8 + 4, true);
 			}
 			v.setUint32(nwrittenPtr, n, true);
-			if (text) onStderr(text);
 			return 0;
 		},
 		fd_prestat_get: () => EBADF,
@@ -181,27 +171,18 @@ export type VsTransform = { x: number; y: number; alpha: number; zoom: number };
 
 /** One instance of the module (its own memory). Not thread-safe; one per worker. */
 export class VidstabWasm {
-	private constructor(
-		private readonly ex: Exports,
-		readonly stderr: string[],
-	) {}
+	private constructor(private readonly ex: Exports) {}
 
 	static async create(module?: WebAssembly.Module): Promise<VidstabWasm> {
 		const mod = module ?? (await loadVidstabModule());
-		const stderr: string[] = [];
 		let mem: WebAssembly.Memory | null = null;
 		const instance = await WebAssembly.instantiate(mod, {
-			wasi_snapshot_preview1: wasiStubs(
-				() => mem as WebAssembly.Memory,
-				(t) => {
-					if (stderr.length < 100) stderr.push(t);
-				},
-			),
+			wasi_snapshot_preview1: wasiStubs(() => mem as WebAssembly.Memory),
 		});
 		const ex = instance.exports as unknown as Exports;
 		mem = ex.memory;
 		ex._initialize();
-		return new VidstabWasm(ex, stderr);
+		return new VidstabWasm(ex);
 	}
 
 	private get mem(): ArrayBuffer {
@@ -220,10 +201,6 @@ export class VidstabWasm {
 
 	simd(): string {
 		return this.cstr(this.ex.vsx_simd());
-	}
-
-	setLogLevel(level: number): void {
-		this.ex.vsx_set_log_level(level);
 	}
 
 	/** vid.stab log lines since the last call. */
@@ -249,10 +226,6 @@ export class VidstabWasm {
 		return new Uint8Array(this.mem, ptr, length);
 	}
 
-	u16(ptr: number, length: number): Uint16Array {
-		return new Uint16Array(this.mem, ptr, length);
-	}
-
 	// --- detection -----------------------------------------------------------------------------------------
 
 	detectInit(
@@ -273,10 +246,6 @@ export class VidstabWasm {
 		return n === 0
 			? new Float64Array(0)
 			: new Float64Array(this.mem, this.ex.vsx_detect_motions(), n * LM_STRIDE).slice();
-	}
-
-	detectRestart(): void {
-		this.ex.vsx_detect_restart();
 	}
 
 	detectFree(): void {

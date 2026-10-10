@@ -41,7 +41,7 @@ export type ClipMgStatus = { host: HostStatus | null; preview: RenderStatus; mas
 
 const NONE: RenderStatus = { state: 'none' };
 
-export type EngineLink = {
+type EngineLink = {
 	client: EngineClient;
 	subscribe(listener: (e: TypedEvent | null) => void): () => void;
 };

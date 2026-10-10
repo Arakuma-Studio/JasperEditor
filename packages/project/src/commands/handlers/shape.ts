@@ -37,7 +37,7 @@ import { getShapePreset } from '../../vector/presets.ts';
 import { bezToBezierPaths } from '../../vector/values.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn } from '../placement.ts';
-import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
+import type { ShapePatch } from '../schemas/clip.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
 import { applyTransformPatch, commonFields, frameBox, newGeneratorClip, visualFields } from './clip-core.ts';
 import { applyPathEditOp, applyPathTopologyOp, mapAllPaths, PATH_TOPOLOGY_OPS, writePathAt } from './mask.ts';
@@ -261,7 +261,14 @@ export function ensureShapeStorage(clip: DClip, spec: PropertySpec, create: bool
 
 // ---------------------------------------------------------------- clip.update {shape}
 
-function patchShape(s: DShape, p: ShapePatch, h: HandlerContext): void {
+/** Merges a clip.update shape patch into the current shape; the type is fixed (vector shapes refuse it). */
+export function applyShapePatch(shape: Draft<ShapeData>, p: ShapePatch, h: HandlerContext): void {
+	if (shape.type === 'vector')
+		h.fail(
+			'E_INVALID_PARAM',
+			'This is a vector shape: edit its items with shape.updateItem / shape.addItems (or param.set on shape.items.<id>.<field>)',
+		);
+	const s = shape as DShape;
 	if (p.size !== undefined)
 		s.size = animOf<Vec2>(p.size as never, Array.isArray(p.size), checkSize, 'size', h);
 	if (p.cornerRadius !== undefined) {
@@ -288,25 +295,6 @@ function patchShape(s: DShape, p: ShapePatch, h: HandlerContext): void {
 		if (position !== undefined) st.position = position;
 		s.stroke = st;
 	}
-}
-
-/** clip.update `{shape}` (merged into the current shape; the type is fixed). Returns true when it handled it. */
-export function applyShapePatch(
-	_doc: DDoc,
-	_seq: DSeq,
-	clip: DClip,
-	p: Pick<ClipPatch, 'shape'>,
-	h: HandlerContext,
-): boolean {
-	if (p.shape === undefined) return false;
-	const shape = (clip as Draft<ShapeClip>).shape;
-	if (shape.type === 'vector')
-		h.fail(
-			'E_INVALID_PARAM',
-			'This is a vector shape: edit its items with shape.updateItem / shape.addItems (or param.set on shape.items.<id>.<field>)',
-		);
-	patchShape(shape as DShape, p.shape, h);
-	return true;
 }
 
 // ---------------------------------------------------------------- vector shapes (wp shapes)

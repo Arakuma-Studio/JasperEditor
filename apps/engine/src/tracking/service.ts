@@ -165,15 +165,13 @@ export class TrackingService {
 		});
 	}
 
-	readonly runner = (ctx: JobContext): Promise<TrackResult> => this.run(ctx);
-
 	shutdown(): void {
 		for (const w of this.workers) w.terminate();
 		this.workers.clear();
 		shutdownWorkers();
 	}
 
-	private async run(ctx: JobContext): Promise<TrackResult> {
+	readonly runner = async (ctx: JobContext): Promise<TrackResult> => {
 		const input = ctx.input as TrackJobInput;
 		const r = input.request;
 		const planar = r.kind === 'planar';
@@ -394,7 +392,7 @@ export class TrackingService {
 			...(r.trackerId ? { trackerId: r.trackerId } : {}),
 			...(secs > 0 && done > 1 ? { framesPerSec: Math.round(((done - 1) / secs) * 10) / 10 } : {}),
 		};
-	}
+	};
 }
 
 /**

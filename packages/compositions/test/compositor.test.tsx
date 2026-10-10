@@ -67,10 +67,6 @@ vi.mock('../src/three-d/gl.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../src/three-d/gl.ts')>()),
 	renderClassicGL: () => {},
 }));
-vi.mock('../src/fx/transition.tsx', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../src/fx/transition.tsx')>()),
-	htmlInCanvasAvailable: () => true,
-}));
 
 function fake2d(canvas: HTMLCanvasElement) {
 	const noop = () => {};

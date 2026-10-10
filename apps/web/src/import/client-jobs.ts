@@ -62,10 +62,6 @@ export class ClientJobStore {
 		this.update(id, { state: 'cancelling' });
 		c();
 	}
-	canCancel(id: string): boolean {
-		return this.cancelers.has(id);
-	}
-
 	remove(id: string): void {
 		this.jobs = this.jobs.filter((j) => j.id !== id);
 		this.cancelers.delete(id);
@@ -80,6 +76,6 @@ export class ClientJobStore {
 /** The app-wide client job store. */
 export const clientJobs = new ClientJobStore();
 
-export function useClientJobs(store: ClientJobStore = clientJobs): ClientJob[] {
-	return useSyncExternalStore(store.subscribe, store.getAll, store.getAll);
+export function useClientJobs(): ClientJob[] {
+	return useSyncExternalStore(clientJobs.subscribe, clientJobs.getAll, clientJobs.getAll);
 }

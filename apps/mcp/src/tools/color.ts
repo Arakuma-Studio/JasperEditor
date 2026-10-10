@@ -21,7 +21,6 @@ import {
 	type ProjectDocument,
 	type Rational,
 	retimeKeyframes,
-	type Sequence,
 	sequenceTimecode,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -30,6 +29,7 @@ import {
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	findClip,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -433,14 +433,6 @@ function resolveLutRefs(doc: ProjectDocument, params: Record<string, unknown>): 
 // ---------------------------------------------------------------- document helpers
 
 const effectsOf = (clip: Clip): EffectInstance[] => (clip as { effects?: EffectInstance[] }).effects ?? [];
-
-export function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
-	for (const seq of Object.values(doc.sequences)) {
-		const clip = seq.clips[clipId];
-		if (clip) return { seq, clip };
-	}
-	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
-}
 
 /** Visual clips that take effects can carry a grade (the same rule as the Lumetri panel). */
 function gradeEligible(clip: Clip): boolean {

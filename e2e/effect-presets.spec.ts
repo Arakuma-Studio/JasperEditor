@@ -83,6 +83,10 @@ test('Save Preset… from Effect Controls stores a preset that survives a reload
 
 	await page.reload();
 	await expect(page.getByTestId('timeline-track-area')).toBeVisible();
+	// Reload can leave the old page's lease alive until expiry; resume editing through the UI.
+	const takeOver = page.getByRole('button', { name: 'Take over editing', exact: true });
+	if (await takeOver.isVisible()) await takeOver.click();
+	await expect(page.getByTestId('banner-read-only')).toBeHidden();
 	const b = (await clipsOnV1())[1]!;
 	await clipElement(page, b.id).click();
 	await tab('Effects').click();

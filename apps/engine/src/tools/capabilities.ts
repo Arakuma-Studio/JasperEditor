@@ -13,7 +13,7 @@ import { freeDiskBytes } from './fs.ts';
 type DeepPartial<T> = {
 	[K in keyof T]?: T[K] extends object ? (T[K] extends unknown[] ? T[K] : DeepPartial<T[K]>) : T[K];
 };
-export type CapabilityPatch = DeepPartial<EngineCapabilities>;
+type CapabilityPatch = DeepPartial<EngineCapabilities>;
 /** Returns a patch merged over the base capabilities (or mutates nothing and returns void). */
 export type CapabilityProvider = (
 	base: EngineCapabilities,
@@ -52,9 +52,8 @@ export class CapabilityService {
 			config: EngineConfig;
 			selfCheck: SelfCheck;
 			/** D-13 resolution result of the engine's ffmpeg. */
-			ffmpegSource?: FfmpegSource;
-			/** Encoder inventory and selection (D-13); absent = derived from the self-check only. */
-			encoders?: EncoderService;
+			ffmpegSource: FfmpegSource;
+			encoders: EncoderService;
 			remotion: RemotionService;
 			fonts: FontCatalogService;
 			broadcaster: Broadcaster;
@@ -80,7 +79,7 @@ export class CapabilityService {
 	private base(): EngineCapabilities {
 		const sc = this.deps.selfCheck;
 		const { config } = this.deps;
-		const encoding = this.deps.encoders?.capabilities();
+		const encoding = this.deps.encoders.capabilities();
 		return {
 			engine: {
 				version: config.version,
@@ -94,12 +93,12 @@ export class CapabilityService {
 				ffprobeVersion: sc.ffprobeVersion,
 				encoders: sc.encoders,
 				filters: sc.filters,
-				...(encoding ? { encoding } : {}),
-				...(this.deps.ffmpegSource ? { ffmpegSource: this.deps.ffmpegSource } : {}),
+				encoding,
+				ffmpegSource: this.deps.ffmpegSource,
 			},
 			render: {
 				// The self-check found the filters + AAC; the selector must also find a usable video encoder.
-				native: sc.nativeRender && (encoding ? encoding.export !== null : true),
+				native: sc.nativeRender && encoding.export !== null,
 				remotionLocal: this.deps.remotion.state(),
 				remotionBinaries: remotionBinaries(this.deps.remotion),
 				fframes: 'unavailable',

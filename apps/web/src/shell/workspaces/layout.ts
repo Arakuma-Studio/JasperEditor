@@ -45,7 +45,7 @@ export function panelState(
 }
 
 /** Distributes `total` pixels over sizes: px first, fractions of `total`, `fill` takes the rest. */
-export function distribute(sizes: readonly LayoutSize[], total: number): number[] {
+function distribute(sizes: readonly LayoutSize[], total: number): number[] {
 	const out = sizes.map((s) =>
 		typeof s === 'object' ? s.px : typeof s === 'number' ? Math.round(s * total) : 0,
 	);

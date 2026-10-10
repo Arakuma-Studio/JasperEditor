@@ -1,5 +1,7 @@
 // Agent transaction guard rails (S01:AGT-011, ARCHITECTURE §11): limits, normalization, the approval
 // classification shared by the in-page bridge and the engine relay, and history pseudo-commands (UND-008).
+
+import { utf8Length } from '../clipboard/payload.ts';
 import { DEFAULT_MAX_COMMANDS } from '../commands/apply.ts';
 import { APPROVAL_COMMANDS } from '../commands/catalog.ts';
 import { type Issue, TX_PROTOCOL } from '../commands/types.ts';
@@ -60,7 +62,7 @@ export function checkAgentTxLimits(tx: AgentTxInput, byteLength?: number): Issue
 			code: 'E_LIMIT',
 			message: `A transaction may hold at most ${AGENT_TX_LIMITS.maxCommands} commands (got ${n})`,
 		};
-	const bytes = byteLength ?? jsonByteLength(tx);
+	const bytes = byteLength ?? utf8Length(JSON.stringify(tx) ?? '');
 	if (bytes > AGENT_TX_LIMITS.maxBytes)
 		return {
 			commandIndex: -1,
@@ -68,22 +70,6 @@ export function checkAgentTxLimits(tx: AgentTxInput, byteLength?: number): Issue
 			message: `A transaction may be at most ${AGENT_TX_LIMITS.maxBytes} bytes (got ${bytes})`,
 		};
 	return null;
-}
-
-function jsonByteLength(v: unknown): number {
-	const s = JSON.stringify(v) ?? '';
-	// UTF-8 length without TextEncoder allocations for ASCII-heavy payloads.
-	let n = 0;
-	for (let i = 0; i < s.length; i++) {
-		const c = s.charCodeAt(i);
-		if (c < 0x80) n += 1;
-		else if (c < 0x800) n += 2;
-		else if (c >= 0xd800 && c <= 0xdbff) {
-			n += 4;
-			i++;
-		} else n += 3;
-	}
-	return n;
 }
 
 /** The agent origin of a transaction; non-agent origins are replaced (agents never act as the user). */

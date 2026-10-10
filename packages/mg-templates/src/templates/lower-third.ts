@@ -47,7 +47,7 @@ export const lowerThirdParams = z.strictObject({
 });
 export type LowerThirdParams = z.output<typeof lowerThirdParams>;
 
-export function lowerThirdPanelWidth(p: LowerThirdParams): number {
+function lowerThirdPanelWidth(p: LowerThirdParams): number {
 	const text = Math.max(
 		estimateTextWidth(p.name, NAME_SIZE, 700),
 		estimateTextWidth(p.title, TITLE_SIZE, 400),
@@ -55,7 +55,7 @@ export function lowerThirdPanelWidth(p: LowerThirdParams): number {
 	return Math.max(text + TEXT_X + 48, 320);
 }
 
-export function renderLowerThird(
+function renderLowerThird(
 	p: LowerThirdParams,
 	ft: FrameTime,
 	out: { width: number; height: number },

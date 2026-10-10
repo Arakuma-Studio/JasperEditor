@@ -10,7 +10,7 @@ import {
 	CREATIVE_LOOKS,
 	DEFAULT_SECONDARY_KEY,
 	defaultEffectRegistry,
-	defaultParams,
+	effectiveParams,
 	expandLumetriSpatial,
 	hslToRgb,
 	hueCurveEyedropper,
@@ -70,8 +70,8 @@ describe('Lumetri completion params', () => {
 		]);
 		for (const g of LUMETRI_GROUPS) expect(names).toContain(g.toggle);
 		// The defaults change nothing (bit-exact old grades).
-		expect(lumetriFn(defaultParams(LUMETRI_EFFECT), NO_LUTS)).toBeNull();
-		expect(lumetriSpatialActive(lumetriSpatialSettings(defaultParams(LUMETRI_EFFECT)))).toBe(false);
+		expect(lumetriFn(effectiveParams(LUMETRI_EFFECT, {}), NO_LUTS)).toBeNull();
+		expect(lumetriSpatialActive(lumetriSpatialSettings(effectiveParams(LUMETRI_EFFECT, {})))).toBe(false);
 	});
 
 	it('the internal spatial stage is registered but never listed', () => {

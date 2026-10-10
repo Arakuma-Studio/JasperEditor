@@ -13,6 +13,7 @@ import {
 	VectorInfoSchema,
 } from '@jasper/project';
 import { z } from 'zod';
+import { RationalSchema } from './common.ts';
 
 /** Engine-issued media key (`mk_…`), referenced from documents through `engine-store` locators. */
 export const MediaKeySchema = z.string().regex(/^mk_[A-Za-z0-9]{8,}$/, 'engine media key');
@@ -52,7 +53,7 @@ export const RegisteredMediaSchema = z.object({
 			sourceName: z.string().nullable(),
 			firstFrame: z.number().int().min(0),
 			frames: z.number().int().min(1).nullable(),
-			frameRate: z.object({ num: z.number().int().positive(), den: z.number().int().positive() }).nullable(),
+			frameRate: RationalSchema.nullable(),
 			handles: z.tuple([z.number().int().min(0), z.number().int().min(0)]).nullable(),
 		})
 		.optional(),

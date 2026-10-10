@@ -19,7 +19,7 @@ import {
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 /** S_Glow-style: threshold → blur (half resolution) → screen the coloured glow over the source. */
-export const TEST_GLOW: EffectSpec = defineShaderEffect({
+const TEST_GLOW: EffectSpec = defineShaderEffect({
 	id: 'test.s.glow',
 	label: 'S_Glow (test)',
 	category: 'Stylize',
@@ -67,7 +67,7 @@ void main() {
 });
 
 /** A two-colour linear gradient generator over the layer box (blended over the source). */
-export const TEST_GRADIENT: EffectSpec = defineShaderEffect({
+const TEST_GRADIENT: EffectSpec = defineShaderEffect({
 	id: 'test.s.gradient',
 	label: 'S_Gradient (test)',
 	category: 'Generate',
@@ -100,7 +100,7 @@ void main() {
 });
 
 /** Drop shadow: the alpha offset along a direction, blurred, tinted, under the source; padded so it never clips. */
-export const TEST_DROP_SHADOW: EffectSpec = defineShaderEffect({
+const TEST_DROP_SHADOW: EffectSpec = defineShaderEffect({
 	id: 'test.drop-shadow',
 	label: 'Drop Shadow (test)',
 	category: 'Stylize',
@@ -144,7 +144,7 @@ void main() {
 });
 
 /** Trails: the source over N earlier frames with a decay (time samples). */
-export const TEST_TRAILS: EffectSpec = defineShaderEffect({
+const TEST_TRAILS: EffectSpec = defineShaderEffect({
 	id: 'test.s.trails',
 	label: 'S_Trails (test)',
 	category: 'Time',
@@ -177,7 +177,7 @@ void main() {
 });
 
 /** Jitter frames: a deterministic random source frame within ±amount (time remap). */
-export const TEST_JITTER: EffectSpec = defineShaderEffect({
+const TEST_JITTER: EffectSpec = defineShaderEffect({
 	id: 'test.s.jitter-frames',
 	label: 'S_JitterFrames (test)',
 	category: 'Time',
@@ -194,7 +194,7 @@ export const TEST_JITTER: EffectSpec = defineShaderEffect({
 });
 
 /** Freeze frame: the source frame `at` (clip-local) for the whole clip (time remap). */
-export const TEST_FREEZE: EffectSpec = defineShaderEffect({
+const TEST_FREEZE: EffectSpec = defineShaderEffect({
 	id: 'test.s.freeze-frame',
 	label: 'S_FreezeFrame (test)',
 	category: 'Time',
@@ -207,7 +207,7 @@ export const TEST_FREEZE: EffectSpec = defineShaderEffect({
 });
 
 /** Shows only the source `offset` frames earlier (a time sample): proves samples are decoded for their own frame. */
-export const TEST_ECHO: EffectSpec = defineShaderEffect({
+const TEST_ECHO: EffectSpec = defineShaderEffect({
 	id: 'test.s.echo-only',
 	label: 'S_Echo (test, sample only)',
 	category: 'Time',

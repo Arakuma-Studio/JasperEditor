@@ -103,11 +103,6 @@ const RECIPE_LABELS: Partial<Record<NativeRecipe['op'], string>> = {
 	range: 'Range',
 };
 
-/** `frames 1100–1209` (inclusive) for a source range `[startFrame, endFrame)`. */
-function frameRangeLabel(range: { startFrame: number; endFrame: number }): string {
-	return `frames ${range.startFrame}–${range.endFrame - 1}`;
-}
-
 /**
  * `<original name> [<step labels joined with ' · '>]`, e.g. `crudo [Stabilized · Upscaled 2×]`; a version of a
  * source range adds it: `crudo [Denoised · frames 1100–1209]` (S07:PRC-015).
@@ -119,7 +114,7 @@ export function processedItemName(
 ): string {
 	const labels =
 		recipe.op === 'process' ? recipe.steps.map(processStepLabel) : [RECIPE_LABELS[recipe.op] ?? recipe.op];
-	if (range) labels.push(frameRangeLabel(range));
+	if (range) labels.push(`frames ${range.startFrame}–${range.endFrame - 1}`);
 	return `${originalName} [${labels.join(' · ')}]`;
 }
 

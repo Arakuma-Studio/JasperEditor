@@ -16,6 +16,7 @@ import {
 	ffprobe,
 	focusTimeline,
 	importFiles,
+	pointerDrag,
 	query,
 	ROOT,
 	regionLuma,
@@ -178,14 +179,9 @@ test('dragging its right edge lengthens the transition', async () => {
 	const rect = page.locator(`[data-testid="timeline-track-area"] [data-transition-id="${t.id}"]`);
 	const r = (await rect.boundingBox())!;
 	const pxPerFrame = r.width / t.duration;
+	const x = r.x + r.width - 1;
 	const y = r.y + r.height / 2;
-	await page.mouse.move(r.x + r.width - 1, y);
-	await page.mouse.down();
-	for (let i = 1; i <= 10; i++) {
-		await page.mouse.move(r.x + r.width - 1 + (i * 5 * pxPerFrame) / 10, y);
-		await page.waitForTimeout(16);
-	}
-	await page.mouse.up();
+	await pointerDrag(page, { x, y }, { x: x + 5 * pxPerFrame, y }, { steps: 10 });
 	await expect.poll(async () => (await videoTransitionAtCut())?.duration).toBeGreaterThan(t.duration);
 	expect((await appliedLabels(page)).at(-1)).toBe('Transition Duration');
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transitions-edge.png') });

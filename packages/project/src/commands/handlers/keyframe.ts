@@ -159,7 +159,7 @@ export function allAnimatables(doc: DDoc): AnimLocation[] {
 	return out;
 }
 
-export type Located = AnimLocation & { key: DKey };
+type Located = AnimLocation & { key: DKey };
 
 /** Finds keyframes by id; fails with E_NOT_FOUND for any missing id. */
 export function locate(doc: DDoc, ids: readonly string[], h: HandlerContext): Located[] {

@@ -123,24 +123,16 @@ type RansacOptions = {
 	seed?: number;
 };
 
-type RansacResult = { sim: Similarity; inliers: number; mask: Uint8Array };
+type RansacResult = { sim: Similarity; inliers: number };
 
-function countInliers(
-	s: Similarity,
-	src: ArrayLike<number>,
-	dst: ArrayLike<number>,
-	t2: number,
-	mask: Uint8Array,
-) {
+function countInliers(s: Similarity, src: ArrayLike<number>, dst: ArrayLike<number>, t2: number) {
 	let k = 0;
-	for (let i = 0; i < mask.length; i++) {
+	for (let i = 0; i < Math.floor(src.length / 2); i++) {
 		const x = src[2 * i];
 		const y = src[2 * i + 1];
 		const ex = s.a * x - s.b * y + s.tx - dst[2 * i];
 		const ey = s.b * x + s.a * y + s.ty - dst[2 * i + 1];
-		const ok = ex * ex + ey * ey <= t2;
-		mask[i] = ok ? 1 : 0;
-		if (ok) k++;
+		if (ex * ex + ey * ey <= t2) k++;
 	}
 	return k;
 }
@@ -162,7 +154,6 @@ export function ransacSimilarity(
 	const conf = opts.confidence ?? 0.99;
 	let iters = opts.maxIters ?? 2000;
 	const rand = rng(opts.seed ?? 0x5eed);
-	const mask = new Uint8Array(n);
 	let best: Similarity | null = null;
 	let bestCount = -1;
 	const pair = new Float64Array(4);
@@ -182,7 +173,7 @@ export function ransacSimilarity(
 		pairDst[3] = dst[2 * j + 1];
 		const s = fitSimilarity(pair, pairDst);
 		if (!s) continue;
-		const k = countInliers(s, src, dst, t2, mask);
+		const k = countInliers(s, src, dst, t2);
 		if (k > bestCount) {
 			bestCount = k;
 			best = s;
@@ -199,6 +190,7 @@ export function ransacSimilarity(
 	// hypothesis that won (measured on crudo.mp4: vertical frame-to-frame noise 0.100 → 0.038 px rms; the
 	// result no longer depends on which hypothesis RANSAC happened to draw).
 	let sim = best;
+	const mask = new Uint8Array(n);
 	const res = new Float64Array(n);
 	const residuals = (s: Similarity) => {
 		for (let i = 0; i < n; i++) {
@@ -225,11 +217,8 @@ export function ransacSimilarity(
 	}
 	residuals(sim);
 	let count = 0;
-	for (let i = 0; i < n; i++) {
-		mask[i] = res[i] <= t ? 1 : 0;
-		count += mask[i];
-	}
-	return { sim, inliers: count, mask };
+	for (let i = 0; i < n; i++) if (res[i] <= t) count++;
+	return { sim, inliers: count };
 }
 
 // ------------------------------------------------------------------ path smoothing
@@ -237,7 +226,7 @@ export function ransacSimilarity(
 /** Gaussian smoothing (sigma in samples, kernel radius ⌊3σ⌋, edge values held), as smoothstab.py `gauss`. */
 function gaussSmooth(a: ArrayLike<number>, sigma: number): Float64Array {
 	const n = a.length;
-	const out = Float64Array.from(a as ArrayLike<number>);
+	const out = Float64Array.from(a);
 	if (!(sigma > 0) || n === 0) return out;
 	const r = Math.floor(3 * sigma);
 	const k = new Float64Array(2 * r + 1);

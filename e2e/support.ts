@@ -86,8 +86,7 @@ export async function playheadFrame(page: Page): Promise<number> {
 export async function sequenceSummary(page: Page): Promise<{
 	sequenceId: string;
 	settings: { width: number; height: number; frameRate: { num: number; den: number } };
-	duration: number;
-	durationFrames?: number;
+	duration: { frames: number; timecode: string; seconds: number };
 	markers: { name?: string; frame?: number; start?: number }[];
 	tracks?: { id: string; label: string; kind: string; clipCount: number }[];
 }> {

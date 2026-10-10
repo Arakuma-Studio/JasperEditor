@@ -116,7 +116,7 @@ const MODIFIER_CODES = /^(Control|Shift|Alt|Meta|OS)(Left|Right)?$/;
 
 /** Installs the dispatcher on a window; returns the uninstaller. */
 export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () => void {
-	const held = new Map<string, { command: UiCommand; ctx: CommandCtx }>();
+	const held = new Map<string, UiCommand>();
 	let pending: ((e: KeyboardEvent) => void) | null = null;
 	let altTap = false;
 	// Pointers held down right now. Esc during a pointer drag belongs to the drag (S03:XF-053, S02:TL-903): the
@@ -146,7 +146,7 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 		}
 		e.preventDefault();
 		if (e.repeat && !(binding.repeat || command.repeat)) return; // toggles ignore auto-repeat (KB-006)
-		if (!e.repeat && (binding.keyup || command.onKeyUp)) held.set(e.code, { command, ctx });
+		if (!e.repeat && (binding.keyup || command.onKeyUp)) held.set(e.code, command);
 		env.run(command, ctx, binding.args);
 	};
 
@@ -193,18 +193,18 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 			return;
 		}
 		altTap = false;
-		const h = held.get(e.code);
-		if (!h) return;
+		const command = held.get(e.code);
+		if (!command) return;
 		held.delete(e.code);
-		h.command.onKeyUp?.(env.getCtx());
+		command.onKeyUp?.(env.getCtx());
 	};
 
 	const onBlur = () => {
 		altTap = false;
 		pressed.clear();
-		for (const [code, h] of held) {
+		for (const [code, command] of held) {
 			held.delete(code);
-			h.command.onKeyUp?.(env.getCtx());
+			command.onKeyUp?.(env.getCtx());
 		}
 	};
 

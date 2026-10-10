@@ -28,8 +28,6 @@ export type ToastRequest = {
 	durationMs?: number;
 };
 
-type DialogKind = string;
-
 export interface CommandCtx {
 	session: EditorSession | null;
 	transport: TransportStore;
@@ -37,7 +35,7 @@ export interface CommandCtx {
 	services: PanelServices;
 	engine: EngineClient;
 	capabilities: ReadonlySet<Capability>;
-	ui: { toast(r: ToastRequest): void; openDialog(kind: DialogKind, props?: Record<string, unknown>): void };
+	ui: { toast(r: ToastRequest): void; openDialog(kind: string, props?: Record<string, unknown>): void };
 }
 
 export interface UiCommand {

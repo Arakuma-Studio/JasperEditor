@@ -96,10 +96,6 @@ const shuttleKeyUp =
 
 const hasSequence = (ctx: CommandCtx) => isSource(ctx) || !!(ctx.session && activeSequence(ctx.session));
 
-function monitorKind(ctx: CommandCtx): 'program' | 'source' {
-	return ctx.focus.panel === 'source' ? 'source' : 'program';
-}
-
 function nudge(dx: number, dy: number) {
 	return (ctx: CommandCtx) => {
 		if (!ctx.session) return;
@@ -280,7 +276,11 @@ export const transportCommands: UiCommand[] = [
 		id: 'monitor.fit',
 		label: 'Fit',
 		scope: 'program',
-		run: (ctx) => monitorStores[monitorKind(ctx)].setState({ zoom: 'fit', pan: [0, 0] }),
+		run: (ctx) =>
+			monitorStores[ctx.focus.panel === 'source' ? 'source' : 'program'].setState({
+				zoom: 'fit',
+				pan: [0, 0],
+			}),
 	},
 	{
 		id: 'monitor.toggleLoop',

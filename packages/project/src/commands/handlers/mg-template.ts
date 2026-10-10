@@ -8,7 +8,7 @@ import type { MgTemplateInfo } from '../../registry/mg.ts';
 import { paramsPropertySpecs } from '../../registry/properties.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
 import type { Clip } from '../../schema/sequence.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
@@ -125,22 +125,21 @@ function templateSupportsCanvas(
 	return info.canvases.some((c) => Math.abs(ar - Math.log(c.width / c.height)) < ASPECT_EPS);
 }
 
-/** clip.update `{template: {version}}` (S11:ATP-009). Returns true when it handled the patch. */
+/** clip.update `{template: {version}}` (S11:ATP-009). */
 export function applyTemplatePatch(
-	_doc: DDoc,
 	seq: DSeq,
 	clip: DClip,
 	p: Pick<ClipPatch, 'template' | 'canvas'>,
 	h: HandlerContext,
-): boolean {
-	if (p.template === undefined) return false;
+): void {
+	if (p.template === undefined) return;
 	if (clip.kind !== 'motion-graphic')
-		return h.fail('E_INVALID_PARAM', `template does not apply to ${clip.kind} clips`);
+		h.fail('E_INVALID_PARAM', `template does not apply to ${clip.kind} clips`);
 	const mg = clip as DMgClip;
 	const id = mg.template.id;
 	const from = mg.template.version;
 	const to = p.template.version;
-	if (to === from) return true;
+	if (to === from) return;
 	if (to < from)
 		h.fail('E_INVALID_PARAM', `Template ${id} cannot go back from version ${from} to ${to}`, {
 			path: ['template', 'version'],
@@ -185,7 +184,7 @@ export function applyTemplatePatch(
 		const { kept, dropped } = keptParamKeyframes(
 			info,
 			params,
-			JSON.parse(JSON.stringify(mg.paramKeyframes)) as Record<string, Keyframe<unknown>[]>,
+			mg.paramKeyframes as Record<string, Keyframe<unknown>[]>,
 		);
 		if (Object.keys(kept).length > 0) mg.paramKeyframes = kept as never;
 		else delete mg.paramKeyframes;
@@ -196,5 +195,4 @@ export function applyTemplatePatch(
 				['paramKeyframes'],
 			);
 	}
-	return true;
 }

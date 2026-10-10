@@ -621,8 +621,8 @@ void main() {
 }
 ```
 
-Pose packing rules: interpolate quantities that vary smoothly (positions, angles in radians — unwrap with
-`unwrapAngles` if they come from atan2 —, log or plain zoom, matrix entries normalised to a fixed scale: S_WarpCornerPin
+Pose packing rules: interpolate quantities that vary smoothly (positions, angles in radians — unwrap
+across ±π if they come from atan2 —, log or plain zoom, matrix entries normalised to a fixed scale: S_WarpCornerPin
 divides each inverse homography by its w at the quad centre; S_Shake packs (dx, dy, cos θ / zoom, sin θ / zoom) so a
 tap needs no trigonometry). Keep `stride` fixed (the uniform's length must not
 change). Pick tracked points whose screen motion bounds what the user sees: forward-mapped box corners + centre;

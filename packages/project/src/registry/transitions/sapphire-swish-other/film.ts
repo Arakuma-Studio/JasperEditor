@@ -2,7 +2,6 @@
 // sprocket edges and film dirt) and S_FilmRoll (the film slips in the gate: the clips roll vertically with a frame
 // line between them, shake, flicker, dirt). The film look reuses the Sapphire film/grain family's GLSL (grain,
 // dust, hairs, scratches, stains, element combine) by import, so the transitions match S_FilmBurn / S_FilmDamage.
-import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_UV } from '../../fx/glsl/sample.ts';
 import { fxParam } from '../../fx/params.ts';
@@ -529,5 +528,3 @@ void main() {
 		],
 	},
 });
-
-export const FILM_TRANSITIONS: readonly TransitionSpec[] = [S_FILM_BURN_TRANSITION, S_FILM_ROLL];

@@ -3,20 +3,14 @@
 // the frame whose timestamp is at or before it — forwards, backwards (GOP cache), random order, and on variable-frame-
 // rate media by the real timestamps. Runs when a Chrome is found; RETIME_GL=0 skips it.
 import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { bundleGlEntry, CHROME } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MEDIA = join(here, '../../../fixtures/media');
-const CHROME = [
-	process.env.JASPER_BROWSER_EXECUTABLE,
-	'/usr/bin/google-chrome',
-	'/usr/bin/google-chrome-stable',
-	'/usr/bin/chromium',
-].find((p): p is string => !!p && existsSync(p));
 const have =
 	existsSync(join(MEDIA, 'frame-code.mp4')) &&
 	existsSync(join(MEDIA, 'frame-code-aac.mp4')) &&
@@ -36,20 +30,7 @@ describe.runIf(!!CHROME && have && process.env.RETIME_GL !== '0')(
 			) as Promise<T>;
 
 		beforeAll(async () => {
-			const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-			const esbuild = req('esbuild') as {
-				build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-			};
-			const out = await esbuild.build({
-				entryPoints: [join(here, 'retime-frames', 'entry.ts')],
-				bundle: true,
-				write: false,
-				format: 'iife',
-				platform: 'browser',
-				target: 'es2022',
-				define: { 'process.env.NODE_ENV': '"production"' },
-				logLevel: 'silent',
-			});
+			const script = await bundleGlEntry(join(here, 'retime-frames', 'entry.ts'));
 			browser = await chromium.launch({
 				executablePath: CHROME,
 				args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
@@ -91,7 +72,7 @@ describe.runIf(!!CHROME && have && process.env.RETIME_GL !== '0')(
 					});
 			});
 			await page.goto('https://media.test/index.html');
-			await page.addScriptTag({ content: out.outputFiles[0]!.text });
+			await page.addScriptTag({ content: script });
 		}, 120_000);
 
 		afterAll(async () => {

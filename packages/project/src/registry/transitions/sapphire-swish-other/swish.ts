@@ -1,7 +1,6 @@
 // The motion transitions of the family: S_SwishPan, S_Swish3D (Sapphire's Wipe Transitions), S_WhipLash and
 // S_MochaWhip (Other). All of them motion-blur along the actual path of the move (shutter taps in progress space,
 // see common.ts), so blur follows speed curves, overshoots and rotations.
-import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams } from '../../effects.ts';
 import { fxParam } from '../../fx/params.ts';
 import { defineShaderTransition, SAPPHIRE_TRANSITION_SUBBINS, TRANSITION_BINS } from '../define.ts';
@@ -513,10 +512,3 @@ void main() {
 		],
 	},
 });
-
-export const SWISH_TRANSITIONS: readonly TransitionSpec[] = [
-	S_SWISH_PAN,
-	S_SWISH_3D,
-	S_WHIP_LASH,
-	S_MOCHA_WHIP,
-];

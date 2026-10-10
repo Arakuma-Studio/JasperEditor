@@ -135,7 +135,6 @@ function Empty({ text }: { text: string }) {
 }
 
 type KeyDrag = {
-	ids: string[];
 	x0: number;
 	laneWidth: number;
 	grabbedFrame: number;
@@ -192,7 +191,6 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const loop = useStoreSelector(transportStore, (s) => s.loop);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const lineRef = useRef<HTMLDivElement>(null);
-	const keyDrag = useRef<KeyDrag | null>(null);
 	const splitStart = useRef(0);
 
 	const sel = data.selection;
@@ -360,14 +358,12 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		selectKeys(info.clipId, ids);
 		const lane = (e.currentTarget as HTMLElement).closest('[data-lane]') as HTMLElement | null;
 		const drag: KeyDrag = {
-			ids,
 			x0: e.clientX,
 			laneWidth: lane?.getBoundingClientRect().width || 300,
 			grabbedFrame: info.frame,
 			delta: 0,
 			active: false,
 		};
-		keyDrag.current = drag;
 		const candidates = snapCandidates(info.clipId, new Set(ids));
 		const framesPerPx = (range.end - range.start) / drag.laneWidth;
 		const move = (ev: PointerEvent) => {
@@ -389,7 +385,6 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 			window.removeEventListener('pointerup', up);
 			window.removeEventListener('keydown', key, true);
 			if (drag.active) ops.scrub.end(drag.delta === 0);
-			keyDrag.current = null;
 			setDragTip(null);
 		};
 		const key = (ev: KeyboardEvent) => {

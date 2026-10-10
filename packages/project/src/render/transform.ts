@@ -43,6 +43,7 @@ export function applyMatrix(m: Mat2D, p: Vec2): Vec2 {
 	return [m.a * p[0] + m.c * p[1] + m.e, m.b * p[0] + m.d * p[1] + m.f];
 }
 
+/** `m · n` (apply `n`, then `m`): composes nested layer transforms (multicam flattening, multicam/resolve.ts). */
 export function multiplyMatrix(m: Mat2D, n: Mat2D): Mat2D {
 	return {
 		a: m.a * n.a + m.c * n.b,

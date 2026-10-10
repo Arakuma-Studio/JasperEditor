@@ -1,5 +1,5 @@
 // Remotion bundle contracts (M2, S08 §3/§5/§8): zip safety, cache identity, version pin, props schemas,
-// routes, uploads and GC. MG_E2E=1 also checks import, real masters, alpha, native export and rebuild.
+// routes and uploads. MG_E2E=1 also checks import, real masters, alpha, native export and rebuild.
 import { spawnSync } from 'node:child_process';
 import {
 	cpSync,
@@ -11,6 +11,7 @@ import {
 	rmSync,
 	statSync,
 	symlinkSync,
+	utimesSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,11 +31,11 @@ import {
 	overridesWithEdits,
 	textLayerValue,
 } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hashBundleDir } from '../src/mg-bundles/hash.ts';
 import { masterRequests } from '../src/mg-bundles/native-ext.ts';
 import {
-	bundleVersions,
+	checkBundleVersion,
 	checkRemotionVersion,
 	MgBundleError,
 	readProjectPackage,
@@ -224,7 +225,22 @@ describe('bundle identity and versions (S08:MGC-001/010)', () => {
 		expect((await hashBundleDir(b)).hash).toBe(ha.hash);
 		writeFileSync(join(b, 'public', 'a.txt'), 'changed');
 		expect((await hashBundleDir(b)).hash).not.toBe(ha.hash);
-		expect(await bundleVersions(a)).toMatchObject({ remotion: '4.0.499' });
+	});
+
+	it('accepts pinned bundles and rejects mismatched or missing versions', async () => {
+		const dir = fakeBundle(tempAppdir('jasper-bundle-version-'));
+		await expect(checkBundleVersion(dir)).resolves.toBe(MG_REMOTION_VERSION);
+		fakeBundle(dir, '4.0.498');
+		await expect(checkBundleVersion(dir)).rejects.toMatchObject({
+			code: 'MG_REMOTION_VERSION',
+			status: 422,
+			detail: { found: '4.0.498', required: MG_REMOTION_VERSION },
+		});
+		writeFileSync(join(dir, 'index.html'), '<html></html>');
+		await expect(checkBundleVersion(dir)).rejects.toMatchObject({
+			code: 'MG_REMOTION_VERSION',
+			detail: { found: null, required: MG_REMOTION_VERSION },
+		});
 	});
 
 	it('refuses projects that do not pin remotion 4.0.499 (MG_REMOTION_VERSION with a hint)', async () => {
@@ -237,17 +253,17 @@ describe('bundle identity and versions (S08:MGC-001/010)', () => {
 		expect(err.code).toBe('MG_REMOTION_VERSION');
 		expect(err.detail).toMatchObject({ found: '4.0.498', required: '4.0.499' });
 		pkg({ remotion: '^4.0.499' });
-		expect((await checkRemotionVersion(dir, await readProjectPackage(dir)).catch((e) => e)).code).toBe(
-			'MG_REMOTION_VERSION',
-		);
+		await expect(checkRemotionVersion(dir, await readProjectPackage(dir))).rejects.toMatchObject({
+			code: 'MG_REMOTION_VERSION',
+		});
 		pkg({ remotion: '4.0.499' });
-		expect((await checkRemotionVersion(dir, await readProjectPackage(dir)).catch((e) => e)).code).toBe(
-			'MG_NOT_INSTALLED',
-		);
+		await expect(checkRemotionVersion(dir, await readProjectPackage(dir))).rejects.toMatchObject({
+			code: 'MG_NOT_INSTALLED',
+		});
 		pkg({ react: '19.0.0' });
-		expect((await checkRemotionVersion(dir, await readProjectPackage(dir)).catch((e) => e)).code).toBe(
-			'MG_NOT_A_BUNDLE',
-		);
+		await expect(checkRemotionVersion(dir, await readProjectPackage(dir))).rejects.toMatchObject({
+			code: 'MG_NOT_A_BUNDLE',
+		});
 		// The fixture project is pinned and installed.
 		await expect(
 			checkRemotionVersion(FIXTURE_PROJECT, await readProjectPackage(FIXTURE_PROJECT)),
@@ -265,11 +281,12 @@ describe('new composition project (S08:MGC-015)', () => {
 			remotion: '4.0.499',
 			'@remotion/cli': '4.0.499',
 		});
-		const again = await scaffoldProject(parent, 'my-graphics', { install: false }).catch((e) => e);
-		expect(again).toMatchObject({ status: 409 });
-		expect((await scaffoldProject('relative/dir', 'x', { install: false }).catch((e) => e)).code).toBe(
-			'BAD_REQUEST',
-		);
+		await expect(scaffoldProject(parent, 'my-graphics', { install: false })).rejects.toMatchObject({
+			status: 409,
+		});
+		await expect(scaffoldProject('relative/dir', 'x', { install: false })).rejects.toMatchObject({
+			code: 'BAD_REQUEST',
+		});
 	});
 });
 
@@ -395,7 +412,7 @@ describe('live host page and render keys (S08:MGC-021/031)', () => {
 });
 
 describe('mg-bundles routes (no browser)', () => {
-	it('serves bundle files (Range, traversal-safe) and the live host page; caches and GC', async () => {
+	it('serves bundle files (Range, traversal-safe), the live host page and cached pre-renders', async () => {
 		const app = await makeApp();
 		const svc = mgBundleService(app)!;
 		expect(svc).toBeTruthy();
@@ -448,7 +465,7 @@ describe('mg-bundles routes (no browser)', () => {
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: JSON_H })).json().status,
 		).toMatch(/online|processing/);
-		// Pre-render cache lookups and GC of composition renders only.
+		// Pre-render cache lookups.
 		const key = 'c'.repeat(40);
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/mg-bundles/prerender/${key}`, headers: JSON_H }))
@@ -485,17 +502,45 @@ describe('mg-bundles routes (no browser)', () => {
 			await app.inject({ method: 'GET', url: `/api/mg-bundles/prerender/${key}`, headers: JSON_H })
 		).json();
 		expect(hit).toMatchObject({ renderKey: key, masterUrl: `/mg/${key}/master.mov`, durationFrames: 1 });
-		const fframes = join(svc.mgDir, 'd'.repeat(40));
-		mkdirSync(fframes);
-		writeFileSync(join(fframes, 'meta.json'), JSON.stringify({ key: 'd', verified: true }));
-		expect(await svc.gc()).toBe(0);
-		const metaFile = join(dir, 'meta.json');
-		const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
-		meta.lastUsedAt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-		writeFileSync(metaFile, JSON.stringify(meta));
-		expect(await svc.gc()).toBe(1);
-		expect(existsSync(dir)).toBe(false);
-		expect(existsSync(fframes)).toBe(true);
+	});
+
+	it('a master looked up while a cleaning pass works from an older scan survives it (stale GC snapshot)', async () => {
+		const app = await makeApp();
+		const svc = mgBundleService(app)!;
+		const cache = coreServices(app).cache;
+		await cache.start();
+		// A master unused for 30 days: past the mg-renders age limit (14 days) by its metadata and its mtimes.
+		const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+		const key = 'd'.repeat(40);
+		const dir = join(svc.mgDir, key);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, 'master.mov'), 'x');
+		writeFileSync(
+			join(dir, 'meta.json'),
+			JSON.stringify({
+				kind: 'composition',
+				renderKey: key,
+				bundleHash: 'x',
+				files: ['master.mov'],
+				createdAt: old.toISOString(),
+				lastUsedAt: old.toISOString(),
+			}),
+		);
+		for (const f of ['master.mov', 'meta.json', '']) utimesSync(join(dir, f), old, old);
+		const file = join(dir, 'master.mov');
+		// The pass scans first (old metadata), then the native export looks the master up, then the pass decides.
+		const scan = cache.scan.bind(cache);
+		const scanned = vi.spyOn(cache, 'scan').mockImplementationOnce(async (force) => {
+			const snapshot = await scan(force);
+			expect(svc.masterPath(key)).toBe(file);
+			return snapshot;
+		});
+		try {
+			await cache.clean('auto', ['mg-renders']);
+			expect(existsSync(file)).toBe(true);
+		} finally {
+			scanned.mockRestore();
+		}
 	});
 
 	it('reports features.mgBundles; validates imports; refuses unknown bundles and non-rebuildable ones', async () => {

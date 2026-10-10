@@ -15,12 +15,9 @@ import {
 	CORNER_PIN_EFFECT_ID,
 	CubeParseError,
 	defaultEffectRegistry,
-	identityLut,
 	invertMat3,
-	isAffineMat3,
 	isConvexQuad,
 	loadProject,
-	lutMaxDelta,
 	mat3FromMat2D,
 	mat3ToCss,
 	multiplyMat3,
@@ -118,10 +115,12 @@ describe('LUTs (S06:CG-050…056)', () => {
 		expect(back.dimensions).toBe(3);
 		expect(back.size).toBe(5);
 		expect(back.title).toBe('Warm');
-		expect(lutMaxDelta(lut, back)).toBeLessThan(1e-6);
+		expect(back.data.length).toBe(lut.data.length);
+		for (let i = 0; i < lut.data.length; i++)
+			expect(Math.abs(lut.data[i]! - back.data[i]!)).toBeLessThan(1e-6);
 	});
 	it('the identity LUT is exact at lattice points and between them (tetrahedral)', () => {
-		const id = identityLut(17);
+		const id = bakeLut(17, () => {});
 		for (const p of [
 			[0, 0, 0],
 			[1, 1, 1],
@@ -184,12 +183,15 @@ describe('homographies and corner pin (S09:TRK-050)', () => {
 		const back = applyMat3(inv, applyMat3(b, [333, 444]));
 		expect(back[0]).toBeCloseTo(333, 6);
 		expect(back[1]).toBeCloseTo(444, 6);
-		const qq = quadToQuad(q, q)!;
-		expect(isAffineMat3(multiplyMat3(qq, [1, 0, 0, 0, 1, 0, 0, 0, 1]), 1e-9)).toBe(true);
+		const same = applyMat3(quadToQuad(q, q)!, [333, 444]);
+		expect(same[0]).toBeCloseTo(333, 9);
+		expect(same[1]).toBeCloseTo(444, 9);
+		const affine = mat3FromMat2D({ a: 2, b: 0, c: 0, d: 2, e: 5, f: 6 });
+		const transformed = applyMat3(multiplyMat3(affine, m), [1, 1]);
+		expect(transformed[0]).toBeCloseTo(1705, 9);
+		expect(transformed[1]).toBeCloseTo(1206, 9);
 	});
-	it('detects affine maps, convex quads and writes CSS matrix3d', () => {
-		expect(isAffineMat3(mat3FromMat2D({ a: 2, b: 0, c: 0, d: 2, e: 5, f: 6 }))).toBe(true);
-		expect(isAffineMat3(unitSquareToQuad(q)!)).toBe(false);
+	it('detects convex quads and writes CSS matrix3d', () => {
 		expect(isConvexQuad(q)).toBe(true);
 		expect(isConvexQuad([q[0], q[2], q[1], q[3]])).toBe(false);
 		expect(mat3ToCss([1, 0, 5, 0, 1, 6, 0, 0, 1])).toBe(

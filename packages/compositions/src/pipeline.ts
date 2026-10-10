@@ -84,7 +84,7 @@ export function dbToGain(db: number): number {
 }
 
 /** Remotion throws for volumes ≥ 100 (it assumes a percent mistake); stay well below. */
-export const MAX_PREVIEW_GAIN = 16;
+const MAX_PREVIEW_GAIN = 16;
 
 /**
  * Linear gain of an audio clip at clip-local frame `f` (S01:FX-010 subset, S03:KND-011/020):
@@ -124,7 +124,7 @@ export function audioGainAt(
  * @remotion/media 4.0.499 `getTimeInSeconds`). So it is the clip's `sourceIn` expressed in
  * sequence frames. Fractional values are allowed.
  */
-export function trimBeforeFrames(sourceInFlicks: number, fps: Rational | number): number {
+function trimBeforeFrames(sourceInFlicks: number, fps: Rational | number): number {
 	const f = typeof fps === 'number' ? fps : fps.num / fps.den;
 	return (sourceInFlicks / FLICKS_PER_SECOND) * f;
 }

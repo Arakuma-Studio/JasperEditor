@@ -34,15 +34,10 @@ function repaintFromScratch(el: HTMLElement): void {
 	else style.removeProperty('display');
 }
 
-/** Whether a frame is repainted from scratch: every rendered frame; in the Player only while paused. */
-function wantsFullRepaint(env: { rendering: boolean; playing: boolean }): boolean {
-	return env.rendering || !env.playing;
-}
-
 /**
  * Repaints `target` from scratch whenever the frame (or a value of `deps`, e.g. the document edited while paused)
- * changes, when `wantsFullRepaint` says so. Render it as the last child of the composition root: React runs layout
- * effects in tree order, so the layers have measured, built and seeked their DOM for this frame by then. On mount
+ * changes: every rendered frame, and in the Player only while paused. Render it as the last child of the composition
+ * root: React runs layout effects in tree order, so the layers have measured, built and seeked their DOM by then. On mount
  * nothing is needed (a new subtree's first paint is from scratch; the root's ref is attached after this effect).
  */
 export function FrameRepaint({
@@ -54,7 +49,7 @@ export function FrameRepaint({
 }): null {
 	const frame = useCurrentFrame();
 	const [playing] = Internals.Timeline.usePlayingState();
-	const enabled = wantsFullRepaint({ rendering: useRemotionEnvironment().isRendering, playing });
+	const enabled = useRemotionEnvironment().isRendering || !playing;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the frame and `deps` are the triggers
 	useLayoutEffect(() => {
 		const el = target.current;

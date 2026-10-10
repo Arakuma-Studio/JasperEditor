@@ -27,7 +27,7 @@ type LibraryFile = {
 	invalid?: unknown[];
 };
 
-export type PresetPatch = {
+type PresetPatch = {
 	name?: string;
 	description?: string;
 	type?: EffectPresetType;

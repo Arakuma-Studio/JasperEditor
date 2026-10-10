@@ -22,8 +22,6 @@ const DEFAULT_OPTIONS: TrackerOptions = {
 const POINT_OPTIONS: TrackerOptions = { quality: 'balanced', surroundings: false, refineEdges: false };
 
 type LiveProgress = {
-	/** Source frame of the plate media. */
-	frame: number;
 	data: number[];
 	confidence: number;
 	done: number;
@@ -35,8 +33,6 @@ export type RunningTrack = {
 	jobId: string | null;
 	mode: TrackMode;
 	plan: TrackPlan;
-	mediaKey: string;
-	startedAt: number;
 	progress: LiveProgress | null;
 	/** Last tracked centres (media px), oldest first, ≤ 30. */
 	trail: Vec2[];
@@ -56,16 +52,14 @@ type TrackingState = {
 	liveVersion: Record<string, number>;
 };
 
-const initial = (): TrackingState => ({
+export const trackingStore = createStore<TrackingState>(() => ({
 	activeTrackerId: null,
 	options: {},
 	running: {},
 	errors: {},
 	cornerPinTool: false,
 	liveVersion: {},
-});
-
-export const trackingStore = createStore<TrackingState>(() => initial());
+}));
 
 export function useTracking<T>(selector: (s: TrackingState) => T): T {
 	return useSyncExternalStore(

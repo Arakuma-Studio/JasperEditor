@@ -70,7 +70,7 @@ export function openProcessForMedia(session: EditorSession, mediaId: string): bo
 	return true;
 }
 
-export type SwitchResult =
+type SwitchResult =
 	| { ok: true; changed: number; trimmed: number }
 	| { ok: false; code: string; message: string };
 
@@ -79,7 +79,7 @@ export type SwitchResult =
  * showing the same source frames (S07:PRC-016). `fit` decides what happens with clips the version does not
  * cover (S07:PRC-017; default `refuse`).
  */
-export function switchMediaVersion(
+function switchMediaVersion(
 	session: EditorSession,
 	clipIds: readonly string[],
 	mediaId: string,

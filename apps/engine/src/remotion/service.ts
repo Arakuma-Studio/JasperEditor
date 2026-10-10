@@ -606,12 +606,10 @@ export class RemotionService {
 		}
 		const errors: string[] = [];
 		for (const gl of candidates) {
-			let browser: Awaited<ReturnType<RendererModule['openBrowser']>> | null = null;
+			let browser: RenderBrowser | null = null;
 			try {
-				const b = this.browserOptions();
 				browser = await r.openBrowser('chrome', {
-					...(b.browserExecutable ? { browserExecutable: b.browserExecutable } : {}),
-					chromeMode: b.chromeMode,
+					...this.browserOptions(),
 					chromiumOptions: { gl },
 					logLevel: 'error',
 				});

@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
 
 /** [label, effect id, params, frame] — the family's contact sheet. */
-export const PSDG_SHOWCASE: [string, string, Record<string, unknown>, number?][] = [
+const PSDG_SHOWCASE: [string, string, Record<string, unknown>, number?][] = [
 	[
 		'Lens Distortion',
 		'jasper.lens-distortion',

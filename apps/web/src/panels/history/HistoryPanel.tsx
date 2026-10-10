@@ -10,7 +10,7 @@ import { CaretGlyph, EditGlyph, FxGlyph, SparkleGlyph } from '../properties/cont
 import { useNotices } from '../properties/controls/Notices.tsx';
 import type { PanelProps } from '../types.ts';
 
-export function relativeTime(then: number, now: number): string {
+function relativeTime(then: number, now: number): string {
 	const s = Math.max(0, Math.round((now - then) / 1000));
 	if (s < 5) return 'just now';
 	if (s < 60) return `${s} s ago`;

@@ -1047,7 +1047,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					bands: [],
 					missing: [],
 					refused: false,
-					replace: true,
 				},
 				[`Replace with ${transitionSpec(effectId ?? '')?.label ?? 'transition'}`],
 				p.x,

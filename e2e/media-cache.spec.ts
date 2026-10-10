@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, ROOT, serverInfo } from './support.ts';
+import { createProject, enableAgentBridge, importFiles, query, ROOT, serverInfo } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -50,15 +50,11 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 	// The open project's media cache files (waveform peaks, poster, filmstrip, keyframe index) live under
 	// `cache/<fingerprint>/`. The engine is shared by every spec: other (closed) projects' files are in the usage too,
 	// and Clean All may legitimately remove them — so this spec measures its own project's files.
-	const fp = await page.evaluate(() => {
-		const doc = (window as unknown as { jasper: { query(n: string): Promise<unknown> } }).jasper;
-		return doc.query('doc.get').then((d) => {
-			const m = Object.values(
-				(d as { media: Record<string, { originalName: string; fingerprint: string }> }).media,
-			);
-			return m.find((x) => x.originalName === 'clip-a.mp4')!.fingerprint;
-		});
-	});
+	const doc = await query<{ media: Record<string, { originalName: string; fingerprint: string }> }>(
+		page,
+		'doc.get',
+	);
+	const fp = Object.values(doc.media).find((m) => m.originalName === 'clip-a.mp4')!.fingerprint;
 	const own = join(serverInfo().appdir, 'cache', fp.replace(/^q1:/, ''));
 	const ownFiles = () => (existsSync(own) ? listTree(own) : []);
 	await expect

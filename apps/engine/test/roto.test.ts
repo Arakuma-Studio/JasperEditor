@@ -270,7 +270,7 @@ describe('roto jobs (classic engine)', () => {
 	it('saved projects reference their roto sets (cache)', () => {
 		const refs = projectCacheRefs(
 			{ media: {}, sequences: { s: { clips: { c: { rotos: [{ result: { key: first.key } }] } } } } },
-			null,
+			() => '',
 		);
 		expect([...(refs.rotoKeys ?? [])]).toEqual([first.key]);
 	});

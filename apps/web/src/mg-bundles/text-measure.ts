@@ -13,7 +13,7 @@ import {
 } from '@jasper/compositions';
 import type { MgTextMeasurement } from '@jasper/project';
 
-export type TextMeasureRequest = {
+type TextMeasureRequest = {
 	bundleKey: string;
 	compositionId: string;
 	/** Effective props. */
@@ -28,20 +28,18 @@ export type TextMeasureRequest = {
 	items: { id: string; text: string }[];
 };
 
-export type TextMeasureResult = { measurements: MgTextMeasurement[]; fonts: BundleFontSource[] };
+type TextMeasureResult = { measurements: MgTextMeasurement[]; fonts: BundleFontSource[] };
 
 const CACHE_SIZE = 64;
 
-export class MgTextMeasurer {
+class MgTextMeasurer {
 	private iframe: HTMLIFrameElement | null = null;
 	private bundleKey: string | null = null;
 	private driver: MgHostRemote | null = null;
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly cache = new Map<string, TextMeasureResult>();
 
-	constructor(private readonly bundleUrl: (key: string) => string = bundleServeUrl) {}
-
-	/** Measures the texts of `req` (cached); never rejects for page errors — texts are then "not found". */
+	/** Measures the texts of `req`, reusing cached results for identical requests. */
 	measure(req: TextMeasureRequest): Promise<TextMeasureResult> {
 		const key = JSON.stringify(req);
 		const hit = this.cache.get(key);
@@ -49,14 +47,6 @@ export class MgTextMeasurer {
 		const run = this.chain.then(() => this.run(req, key));
 		this.chain = run.catch(() => undefined);
 		return run;
-	}
-
-	dispose(): void {
-		this.driver?.dispose();
-		this.iframe?.remove();
-		this.iframe = null;
-		this.driver = null;
-		this.bundleKey = null;
 	}
 
 	private async run(req: TextMeasureRequest, key: string): Promise<TextMeasureResult> {
@@ -123,7 +113,7 @@ export class MgTextMeasurer {
 					clearTimeout(timer);
 					resolve();
 				};
-				f.src = hostPageUrl(this.bundleUrl(req.bundleKey));
+				f.src = hostPageUrl(bundleServeUrl(req.bundleKey));
 			});
 			this.driver?.dispose();
 			this.driver = null;

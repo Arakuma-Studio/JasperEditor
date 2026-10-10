@@ -24,6 +24,7 @@ import {
 } from '@jasper/project';
 import { JobError } from '../../jobs/types.ts';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
+import { layerAnimated } from '../keyframed.ts';
 import { layerSourceChain, SWS_FLAGS } from '../native.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
@@ -36,7 +37,7 @@ import type { PlannedExport } from '../planner.ts';
 import { destRect } from './kernel.ts';
 import { decoderArgs, renderWarpLayer, type WarpFrameSpec, WarpRenderError } from './render.ts';
 
-export const WARP_EXTENSION_ID = 'warp';
+const WARP_EXTENSION_ID = 'warp';
 /** Bumped whenever the intermediate's pixels would change for the same inputs (kernel, encoder settings). */
 const WARP_VERSION = 1;
 
@@ -57,24 +58,6 @@ export type WarpDeps = {
 	log?(msg: string): void;
 };
 
-function motionAnimated(c: RenderVisualClip): boolean {
-	const t = c.transform;
-	return (
-		!!t &&
-		(isAnimated(t.position) ||
-			isAnimated(t.anchor) ||
-			isAnimated(t.scale) ||
-			isAnimated(t.scaleWidth) ||
-			isAnimated(t.rotation))
-	);
-}
-
-/**
- * Kinds whose keyframed Motion / opacity the warp stage renders. The builder animates Motion and Opacity of the
- * kinds it places itself (S03:ENG-032, `keyframed.ts`); animated images are not native there, so they keep the warp.
- */
-const WARP_MOTION_KINDS: ReadonlySet<string> = new Set(['animated-image']);
-
 /** Layers the warp stage renders: an enabled corner pin; keyframed Motion or opacity of an animated image. */
 function warpClaims(c: RenderVisualClip): boolean {
 	if (!WARP_KINDS.has(c.kind) || !c.transform) return false;
@@ -82,7 +65,7 @@ function warpClaims(c: RenderVisualClip): boolean {
 	if (maskExportRoute(c) !== 'none') return false;
 	return (
 		c.effects.some((fx) => fx.enabled && fx.effectId === CORNER_PIN_EFFECT_ID) ||
-		(WARP_MOTION_KINDS.has(c.kind) && (motionAnimated(c) || isAnimated(c.opacity)))
+		(c.kind === 'animated-image' && layerAnimated(c))
 	);
 }
 
@@ -153,12 +136,11 @@ async function fileFingerprint(path: string): Promise<string> {
 export function createWarpExtension(deps: WarpDeps): NativeExtension {
 	const effects = deps.effects ?? defaultEffectRegistry;
 	const threads = Math.max(1, deps.threads ?? availableParallelism());
-	const others = () => deps.getExtensions().filter((e) => e.id !== WARP_EXTENSION_ID);
 
 	function blockers(c: RenderVisualClip): string[] {
 		const out: string[] = [];
 		const label = `${c.kind} clip "${c.name}"`;
-		const exts = others();
+		const exts = deps.getExtensions().filter((e) => e.id !== WARP_EXTENSION_ID);
 		for (const fx of c.effects) {
 			if (!fx.enabled || fx.effectId === CORNER_PIN_EFFECT_ID) continue;
 			// Built-in effects render in the source chain, keyframed crop edges included (`layerSourceChain`).

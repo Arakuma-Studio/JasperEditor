@@ -46,8 +46,6 @@ const CAPABILITY_REASONS: Record<Capability, string> = {
 	desktop: 'Available in the desktop app only.',
 };
 
-export const NOT_AVAILABLE_REASON = 'Not available yet in this build';
-
 function humanize(id: string): string {
 	const last = id.split('.').pop() ?? id;
 	const words = last.replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -75,7 +73,7 @@ export function commandState(
 		return {
 			label: fallbackLabel ?? humanize(id),
 			enabled: false,
-			reason: NOT_AVAILABLE_REASON,
+			reason: 'Not available yet in this build',
 			shortcut,
 			registered: false,
 		};

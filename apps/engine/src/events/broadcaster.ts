@@ -2,8 +2,8 @@
 // so reconnecting clients resume with `?since=<id>`, and projectId filtering.
 import type { EngineEventType, EventEnvelope, EventPayload } from '@jasper/api';
 
-export type EventListener = (e: EventEnvelope) => void;
-export type EventFilter = { projectId?: string };
+type EventListener = (e: EventEnvelope) => void;
+type EventFilter = { projectId?: string };
 
 const DEFAULT_RING_SIZE = 2000;
 

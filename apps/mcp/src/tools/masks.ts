@@ -28,6 +28,7 @@ import {
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	findClip,
 	frameOf,
 	isTerminal,
 	loadDoc,
@@ -58,14 +59,6 @@ const UnitsArg = z
 	.enum(['normalized', 'px'])
 	.optional()
 	.describe('Units of points / paths: "normalized" (0..1 of the clip box, default) or "px" (layer pixels)');
-
-function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
-	for (const seq of Object.values(doc.sequences)) {
-		const clip = seq.clips[clipId];
-		if (clip) return { seq, clip };
-	}
-	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
-}
 
 function boxOf(doc: ProjectDocument, seq: Sequence, clip: Clip) {
 	return intrinsicBoxOf({ clip, doc, seq });

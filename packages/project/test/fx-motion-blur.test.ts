@@ -22,7 +22,6 @@ import {
 	planMotionBlur,
 	poseTrackLengths,
 	toUniform,
-	unwrapAngles,
 } from '../src/index.ts';
 import { perspectiveHit, perspectiveProject } from '../src/registry/fx/sapphire-distort-warp.ts';
 
@@ -214,10 +213,6 @@ describe('time warp and helpers', () => {
 		]);
 		expect(r.segments).toEqual([5, 0]);
 		expect(r.total).toBe(5);
-	});
-	it('unwraps angles across ±180°', () => {
-		expect(unwrapAngles([170, -175, -160], 360)).toEqual([170, 185, 200]);
-		expect(unwrapAngles([0.1, -0.1])).toEqual([0.1, -0.1]);
 	});
 	it('GLSL chunks: tap loop bound is opaque, jitter is integer-hashed and frame-independent', () => {
 		expect(GLSL_MB.source).toContain('int fx_mbDyn(int n)');

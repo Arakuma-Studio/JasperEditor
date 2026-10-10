@@ -21,8 +21,7 @@
 #   Linux: ffmpeg/ffprobe get a placeholder RPATH that the assembly step rewrites to $ORIGIN;
 #   macOS: install names @rpath/…, rpath @loader_path.
 #
-# Environment: JOBS (parallel jobs), SKIP_SVTAV1=1 (no AV1 encoder), SKIP_VIDSTAB=1 (no vid.stab: the
-# engine then stabilises with deshake).
+# Environment: JOBS (parallel jobs), SKIP_SVTAV1=1 (no AV1 encoder), SKIP_VIDSTAB=1 (no FFmpeg vid.stab filters).
 set -euo pipefail
 
 WORK="${1:?usage: build-lgpl-from-source.sh <workdir> <prefix>}"

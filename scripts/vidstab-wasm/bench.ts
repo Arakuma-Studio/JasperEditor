@@ -117,7 +117,6 @@ function ctxFor(
 
 type WasmRun = {
 	detect: number;
-	path: number;
 	warp: number;
 	total: number;
 	zoom: number;
@@ -183,11 +182,10 @@ async function runWasm(
 	await s.close?.();
 	await writer?.close();
 	const total = (performance.now() - t0) / 1000;
-	const timing = info.timing as { detectSeconds: number; pathSeconds: number };
+	const timing = info.timing as { detectSeconds: number };
 	const warp = info.warp as { msPerFrame: number } | undefined;
 	return {
 		detect: timing.detectSeconds / p.frames,
-		path: timing.pathSeconds,
 		warp: (warp?.msPerFrame ?? 0) / 1000,
 		total: total / p.frames,
 		zoom: info.zoomPercent as number,
@@ -275,7 +273,7 @@ function median(a: Float32Array): number {
 	return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
 }
 
-async function jitter(file: string): Promise<{ rms: number; motion: number }> {
+async function jitter(file: string): Promise<number> {
 	const t0 = performance.now();
 	const { cv } = await loadCv();
 	console.log(`  jitter ${file}: OpenCV ready after ${((performance.now() - t0) / 1000).toFixed(1)} s`);
@@ -330,8 +328,7 @@ async function jitter(file: string): Promise<{ rms: number; motion: number }> {
 		}
 		sum += (p[i][0] - sx / k) ** 2 + (p[i][1] - sy / k) ** 2;
 	}
-	const motion = d.reduce((a, [x, y]) => a + Math.abs(x) + Math.abs(y), 0) / d.length;
-	return { rms: Math.sqrt(sum / p.length), motion };
+	return Math.sqrt(sum / p.length);
 }
 
 function png(video: string, frame: number, out: string): void {
@@ -404,7 +401,7 @@ if (ONLY !== 'speed') {
 			await jitter(lOut),
 		];
 		log(
-			`| ${name} | ${jr.rms.toFixed(2)} | ${jw.rms.toFixed(2)} (${w.zoom.toFixed(2)}) | ${jref.rms.toFixed(2)} (${r.zoom}) | ${jl.rms.toFixed(2)} (${l.zoom.toFixed(2)}) |`,
+			`| ${name} | ${jr.toFixed(2)} | ${jw.toFixed(2)} (${w.zoom.toFixed(2)}) | ${jref.toFixed(2)} (${r.zoom}) | ${jl.toFixed(2)} (${l.zoom.toFixed(2)}) |`,
 		);
 		for (const f of [0, 45, 89]) {
 			png(wOut, f, join(OUT, `${tag}-wasm-${f}.png`));

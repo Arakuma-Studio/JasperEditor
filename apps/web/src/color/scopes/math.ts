@@ -134,7 +134,7 @@ export function skinToneDirection(): { cb: number; cr: number } {
  * Density → RGBA trace pixels with a log response (`gain` scales the brightness). Transparent where empty so
  * the panel's background and graticule show through.
  */
-export function renderDensity(
+function renderDensity(
 	counts: Uint32Array,
 	width: number,
 	height: number,

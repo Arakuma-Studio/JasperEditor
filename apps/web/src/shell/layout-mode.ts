@@ -4,7 +4,7 @@ import { hasCoarsePointer } from '../runtime/platform.ts';
 
 export type LayoutMode = 'desktop' | 'compact' | 'tablet' | 'phone';
 
-export function computeLayoutMode(input: {
+function computeLayoutMode(input: {
 	width: number;
 	height: number;
 	coarse: boolean;

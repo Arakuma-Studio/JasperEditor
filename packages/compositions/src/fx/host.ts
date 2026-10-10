@@ -201,11 +201,6 @@ export function fxHost(): FxHost | null {
 	return host;
 }
 
-/** Test hook: forget the page host (a new one is created on next use). */
-export function resetFxHostForTests(next?: FxHost | null): void {
-	host = next;
-}
-
 function program(h: FxHost, effectId: string, pass: FxPassPlan): Program {
 	const cacheKey = pass.vertex ? `${pass.source}\n//--vertex--\n${pass.vertex.source}` : pass.source;
 	const hit = h.programs.get(cacheKey);

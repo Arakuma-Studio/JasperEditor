@@ -9,7 +9,7 @@
 import type { Rational } from '@jasper/project';
 
 /** Longest default the fields accept (a typo guard: 3000 instead of 30). */
-export const MAX_DEFAULT_SECONDS = 60;
+const MAX_DEFAULT_SECONDS = 60;
 /** Unit of `defaultStillDurationFrames` (S01:KND-004). */
 const STILL_BASE_FPS = 30;
 
@@ -25,7 +25,7 @@ export function formatFps(r: Rational): string {
 }
 
 /** Seconds with 2–3 decimals: 1 → "1.00", 1.001 → "1.001", 0.5 → "0.50". */
-export function formatSeconds(s: number): string {
+function formatSeconds(s: number): string {
 	const three = s.toFixed(3);
 	return three.endsWith('0') ? s.toFixed(2) : three;
 }
@@ -82,7 +82,7 @@ export function transitionEquivalent(frames: number, unit: DurationUnit, rate: R
 // ---------------------------------------------------------------- stills (1/30 s units)
 
 /** The still length placed in a sequence of `rate` (same rounding as clip.place, S01:KND-004). */
-export function stillFramesAt(stored: number, rate: Rational): number {
+function stillFramesAt(stored: number, rate: Rational): number {
 	return Math.max(1, Math.round((stored * rate.num) / (rate.den * STILL_BASE_FPS)));
 }
 

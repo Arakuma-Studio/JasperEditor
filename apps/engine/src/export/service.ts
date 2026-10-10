@@ -698,10 +698,12 @@ export class ExportService {
 		let path: 'native' | 'hybrid' | 'remotion' = 'native';
 		const total = Math.max(1, planned.range.end - planned.range.start);
 		let done = 0;
+		// Preview files are cache entries: held for the job (and waited for when a cleaning pass is removing them).
+		const present = this.pinFor(ctx) ?? exists;
 		for (const [i, r] of runs.entries()) {
 			const n = r.end - r.start;
 			if (r.kind === 'preview') {
-				if (!(await exists(r.file)))
+				if (!(await present(r.file)))
 					throw new JobError('PREVIEW_MISSING', 'A render preview was deleted during the export', true);
 				files.push(r.file);
 			} else {

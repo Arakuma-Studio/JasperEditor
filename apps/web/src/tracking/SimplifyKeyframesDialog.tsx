@@ -47,7 +47,7 @@ function rememberTolerance(v: number): void {
 }
 
 /** The `keyframes.simplify` command for a selection. */
-export function simplifyCommand(selection: SimplifySelection, tolerance: number, details = false): Command {
+function simplifyCommand(selection: SimplifySelection, tolerance: number, details = false): Command {
 	return {
 		type: 'keyframes.simplify',
 		tolerance,

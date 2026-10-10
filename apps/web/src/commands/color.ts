@@ -27,16 +27,16 @@ import type { CommandCtx, UiCommand } from './types.ts';
 
 // ---------------------------------------------------------------- helpers
 
-function activeClips(session: EditorSession): { primary: Clip | null; selected: Clip[] } {
+function primaryClip(session: EditorSession): Clip | null {
 	const s = session.getState();
 	const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
-	if (!seq) return { primary: null, selected: [] };
+	if (!seq) return null;
 	const selected = s.selection.timeline.clips.map((id) => seq.clips[id]).filter((c): c is Clip => !!c);
-	const primary =
+	return (
 		(s.selection.timeline.primaryClip ? seq.clips[s.selection.timeline.primaryClip] : undefined) ??
 		selected[selected.length - 1] ??
-		null;
-	return { primary, selected };
+		null
+	);
 }
 
 const writable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
@@ -118,11 +118,11 @@ export const colorCommands: UiCommand[] = [
 		label: 'Copy Grade',
 		description: 'Copies every colour effect (Lumetri Color, Brightness & Contrast…) of the selected clip.',
 		scope: 'global',
-		when: (ctx) => !!ctx.session && hasColor(ctx.session, activeClips(ctx.session).primary),
+		when: (ctx) => !!ctx.session && hasColor(ctx.session, primaryClip(ctx.session)),
 		disabledReason: () => 'Select a clip with colour effects',
 		run(ctx) {
 			const session = ctx.session;
-			const clip = session ? activeClips(session).primary : null;
+			const clip = session ? primaryClip(session) : null;
 			if (session && clip && copyGradeFrom(session, clip))
 				ctx.ui.toast({ kind: 'info', message: `Grade copied from ${clip.name || 'clip'}`, durationMs: 1500 });
 		},
@@ -166,11 +166,11 @@ export const colorCommands: UiCommand[] = [
 			"Sets the selected clip's Lumetri tone sliders (Exposure, Contrast, Highlights, Shadows, Whites, Blacks) from its picture.",
 		scope: 'global',
 		capability: 'engine',
-		when: (ctx) => writable(ctx) && gradeEligible(activeClips(ctx.session!).primary),
+		when: (ctx) => writable(ctx) && gradeEligible(primaryClip(ctx.session!)),
 		disabledReason: () => 'Select a video, still or graphic clip',
 		async run(ctx) {
 			const session = ctx.session;
-			const clip = session ? activeClips(session).primary : null;
+			const clip = session ? primaryClip(session) : null;
 			if (!session || !clip) return;
 			try {
 				const err = await runAutoTone(session, ctx.engine, clip, firstLumetri(clip));
@@ -189,13 +189,13 @@ export const colorCommands: UiCommand[] = [
 		capability: 'engine',
 		when: (ctx) =>
 			writable(ctx) &&
-			gradeEligible(activeClips(ctx.session!).primary) &&
+			gradeEligible(primaryClip(ctx.session!)) &&
 			!!monitorExtras.getState().comparison.enabled &&
 			!!monitorExtras.getState().comparison.reference,
 		disabledReason: () => 'Open the Comparison View, choose a reference frame and select the clip to match',
 		async run(ctx) {
 			const session = ctx.session;
-			const clip = session ? activeClips(session).primary : null;
+			const clip = session ? primaryClip(session) : null;
 			const ref = monitorExtras.getState().comparison.reference;
 			if (!session || !clip || !ref) return;
 			try {
@@ -219,13 +219,13 @@ export const colorCommands: UiCommand[] = [
 		label: 'Toggle Grade Before/After',
 		description: 'Shows the selected clip without its colour effects in the Program monitor (preview only).',
 		scope: 'global',
-		when: (ctx) => !!ctx.session && gradeEligible(activeClips(ctx.session).primary),
+		when: (ctx) => !!ctx.session && gradeEligible(primaryClip(ctx.session)),
 		checked: (ctx) => {
-			const clip = ctx.session ? activeClips(ctx.session).primary : null;
+			const clip = ctx.session ? primaryClip(ctx.session) : null;
 			return !!clip && colorBypass.isBypassed(clip.id);
 		},
 		run(ctx) {
-			const clip = ctx.session ? activeClips(ctx.session).primary : null;
+			const clip = ctx.session ? primaryClip(ctx.session) : null;
 			if (clip) colorBypass.toggle(clip.id);
 		},
 	},

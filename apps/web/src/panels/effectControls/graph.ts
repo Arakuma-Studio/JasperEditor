@@ -26,13 +26,13 @@ import type { Range } from './lib.ts';
 type Kf = Keyframe<unknown>;
 type Anim = Animatable<unknown>;
 export type Side = 'in' | 'out';
-export type GraphKind = 'number' | 'vec2';
+type GraphKind = 'number' | 'vec2';
 /** One sampled point: x = sequence frame, y = value (or velocity). */
 export type Pt = { x: number; y: number };
 
 const LINEAR: Ease = EASE_PRESETS.linear;
-export const MIN_INFLUENCE = 0.01;
-export const MAX_INFLUENCE = 1;
+const MIN_INFLUENCE = 0.01;
+const MAX_INFLUENCE = 1;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** Properties with graphs: continuously animatable numbers and vec2 (S03:EC-005 "twirl if it has graphs"). */
@@ -51,7 +51,7 @@ export function componentsOf(v: unknown): number[] {
 // ---------------------------------------------------------------- time mapping
 
 /** Content time (flicks) ↔ sequence frame of one clip (mirrors `exactFrameOf`, S01:KF-002). */
-export type TimeMap = {
+type TimeMap = {
 	toX(time: number): number;
 	toTime(x: number): number;
 	/** Flicks of content time per sequence frame along +x (negative on reversed clips). */
@@ -175,7 +175,7 @@ export function sampleVelocityCurve(
 // ---------------------------------------------------------------- handles
 
 /** The segment a side of key `i` shapes: `[a, b]` indices, or null at the ends / on holds. */
-export function segmentOf(kfs: readonly Kf[], i: number, side: Side): [number, number] | null {
+function segmentOf(kfs: readonly Kf[], i: number, side: Side): [number, number] | null {
 	const [a, b] = side === 'out' ? [i, i + 1] : [i - 1, i];
 	if (a < 0 || b >= kfs.length) return null;
 	if (kfs[a]!.interpolation === 'hold') return null;
@@ -256,13 +256,7 @@ export function velocityHandles(anim: Anim, i: number, map: TimeMap): VelocityHa
 }
 
 /** Influence from a handle tip x (fraction of the segment from the key), clamped to 0.01..1 (KF-022). */
-export function influenceAt(
-	kfs: readonly Kf[],
-	i: number,
-	other: number,
-	tipX: number,
-	map: TimeMap,
-): number {
+function influenceAt(kfs: readonly Kf[], i: number, other: number, tipX: number, map: TimeMap): number {
 	const k = kfs[i]!;
 	const span = kfs[other]!.time - k.time;
 	if (span === 0) return MIN_INFLUENCE;

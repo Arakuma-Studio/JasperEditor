@@ -12,8 +12,6 @@ export const GLSL_PSDG_GENERATE: GlslChunk = {
 vec2 gen_layerSize() { return u_box.zw / u_pxScale; }
 // Half a canvas pixel in layer pixels (antialiasing half-width).
 float gen_aa() { return 0.5 / u_pxScale; }
-// A point param (normalised to the layer box) in layer pixels.
-vec2 gen_pointPx(vec2 n) { return n * gen_layerSize(); }
 // Coverage 1 below 'edge', 0 above, with a linear transition of half-width max(feather / 2, AA) centred on 'edge'.
 float gen_below(float x, float edge, float feather) {
   float h = max(feather * 0.5, gen_aa());

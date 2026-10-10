@@ -203,5 +203,3 @@ void main() {
 
 export const S_HYPER_PULL = hyperSpec('pull');
 export const S_HYPER_PUSH = hyperSpec('push');
-
-export const HYPER_TRANSITIONS: readonly TransitionSpec[] = [S_HYPER_PULL, S_HYPER_PUSH];

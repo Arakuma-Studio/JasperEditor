@@ -149,7 +149,7 @@ export function revealFrame(v: Viewport, frame: number): number | null {
 }
 
 /** TL-117 auto-scroll speed (px per animation frame) for a pointer `depth` px into the edge band. */
-export function autoScrollSpeed(depth: number, band = 40, maxSpeed = 30): number {
+function autoScrollSpeed(depth: number, band: number, maxSpeed: number): number {
 	const t = Math.min(1, Math.max(0, depth / band));
 	return maxSpeed * t * t;
 }

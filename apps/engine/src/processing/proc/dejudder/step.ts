@@ -17,7 +17,7 @@ import type { DecodeSpec, FrameStep, RgbFrame, StepContext } from '../types.ts';
 import { ANALYSIS_MAX_WIDTH, analyseCadence, type CadenceResult } from './cadence.ts';
 import { CvPool, type FlowParams } from './pool.ts';
 
-export type DejudderStepSpec = Extract<ProcessStep, { op: 'dejudder' }>;
+type DejudderStepSpec = Extract<ProcessStep, { op: 'dejudder' }>;
 
 /** PST-012 thresholds for `auto`. */
 const DEJUDDER_THRESHOLDS = {
@@ -149,7 +149,7 @@ export function greyCellMeans(grey: Uint8Array, w: number, h: number): Float64Ar
 	return sum;
 }
 
-export type DejudderStepOptions = {
+type DejudderStepOptions = {
 	/** Absolute index of the first input frame (phase reference when a sub-range is processed). Default 0. */
 	firstFrameIndex?: number;
 	/** Worker script (default `resolveWorkerUrl()`). */
@@ -162,7 +162,7 @@ export type DejudderStepOptions = {
 	inFlightPerWorker?: number;
 };
 
-export type DejudderStats = {
+type DejudderStats = {
 	copied: number;
 	interpolated: number;
 	cutGuard: number;
@@ -175,9 +175,9 @@ export type DejudderStats = {
  * Context frames outside the processed input (PST-013): `-1` = the source frame just before the first input
  * frame, `frames` = the one just after the last; null when the source has none.
  */
-export type RangeContextFetcher = (relativeIndex: number) => Promise<RgbFrame | null>;
+type RangeContextFetcher = (relativeIndex: number) => Promise<RgbFrame | null>;
 
-export type DejudderFrameStep = FrameStep & {
+type DejudderFrameStep = FrameStep & {
 	readonly cadence: CadenceResult | null;
 	readonly stats: DejudderStats;
 	/** Called by the runner before `open` when a range of a source is processed (PST-013). */
@@ -335,9 +335,6 @@ export function createDejudderStep(
 				signal: c.signal,
 				onProgress: (f) => c.analysisProgress(f),
 			});
-			// Keep the measurement out of the sidecar; only the summary is reported.
-			const { measurement: _m, ...summary } = cadence as CadenceResult & { measurement?: unknown };
-			cadence = summary;
 			c.info('analysisSeconds', (performance.now() - t0) / 1000);
 			decide(c);
 			if (!decision!.apply) await closePool();

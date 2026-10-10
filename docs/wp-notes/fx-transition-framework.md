@@ -11,7 +11,7 @@ MCP — every one of them picks your entries up automatically. Read the shader-e
 | What | Where |
 |---|---|
 | Your family file (one `readonly TransitionSpec[]`) | `packages/project/src/registry/transitions/<family>.ts` (§12) |
-| `defineShaderTransition`, `TRANSITION_BINS`, `SAPPHIRE_TRANSITION_SUBBINS`, `trParam`, `STANDARD_TRANSITION_PARAMS` | `registry/transitions/define.ts` |
+| `defineShaderTransition`, `TRANSITION_BINS`, `SAPPHIRE_TRANSITION_SUBBINS`, `trParam` | `registry/transitions/define.ts` |
 | Types (`GpuTransition`, `TrFrameContext`, `TrPlanContext`), progress, planning, `validateGpuTransition` | `registry/transitions/shader.ts` |
 | Transition GLSL library (`GLSL_TRANSITION`, `GLSL_TR_EASE`, `GLSL_TR_WIPE`, `GLSL_TR_BLOCKS`, `GLSL_TR_3D`) | `registry/transitions/glsl.ts` |
 | Param builders (`fxParam.*`), pass builders, the fx GLSL library | `registry/fx/params.ts`, `registry/fx/passes.ts`, `registry/fx/glsl/*` |
@@ -455,7 +455,6 @@ draws the effects' crosshair for every point param of its type (`vec2` with `ui.
 WhipLash centres, MochaWhip's mask / cut-out centres…), `apps/web/src/fx/TransitionPointOverlay.tsx`. Transition
 points are frame-normalised (no layer map). A drag is one gesture writing `param.set` on `["transition", id, name]`;
 an animated param gets a key at the playhead clamped into the span, as the section's rows do.
-
 
 ## 14. sim-warp additions (draw passes, data, structures)
 

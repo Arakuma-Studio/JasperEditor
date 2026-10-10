@@ -2,7 +2,7 @@
 // helpers return IDENTICAL values (bit-exact float equality) to these, over a grid of positions and seeds.
 import type { GlslChunk } from '@jasper/project';
 
-export const REF_HASH: GlslChunk = {
+const REF_HASH: GlslChunk = {
 	name: 'ref/hash',
 	source: /* glsl */ `
 uint ref_pcg(uint v) {

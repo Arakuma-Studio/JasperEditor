@@ -4,7 +4,7 @@
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '@jasper/project';
 
 type SpriteTile = { sheet: number; index: number; timeSec: number };
-export type SpriteIndexLike = { tileWidth: number; tileHeight: number; columns: number; tiles: SpriteTile[] };
+type SpriteIndexLike = { tileWidth: number; tileHeight: number; columns: number; tiles: SpriteTile[] };
 
 /** TH-003: the tile at or before `timeSec` (tiles sorted by time), or the first tile. */
 export function nearestTile(index: SpriteIndexLike, timeSec: number): SpriteTile | null {

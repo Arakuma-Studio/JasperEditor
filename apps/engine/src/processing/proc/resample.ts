@@ -2,7 +2,7 @@
 // bicubic (Catmull-Rom-like, a = -0.5) and Lanczos-3, antialiased when downscaling (kernel support scaled by
 // the reduction factor, like ffmpeg's swscale / PIL). Pure and deterministic.
 
-export type Kernel = 'bicubic' | 'lanczos';
+type Kernel = 'bicubic' | 'lanczos';
 
 function bicubic(x: number): number {
 	const a = -0.5;

@@ -62,7 +62,6 @@ import {
 	type MotionPath,
 	type MotionPathDrag,
 	motionPathDragCommands,
-	type PathHit,
 	startMotionPathDrag,
 } from './motion-path.ts';
 import {
@@ -616,7 +615,9 @@ export function TransformOverlay({
 	 * Motion-path target under a screen point (unlocked clip; not the anchor crosshair's spot): the Position path first,
 	 * then the Anchor Point path (keyframes-blend).
 	 */
-	const pathHitAt = (screen: Vec2): { path: MotionPath; hit: PathHit } | null => {
+	const pathHitAt = (
+		screen: Vec2,
+	): { path: MotionPath; hit: NonNullable<ReturnType<typeof hitMotionPath>> } | null => {
 		for (const mp of [live.current.motionPath, live.current.anchorPath]) {
 			if (!mp || locked.has(mp.trackId)) continue;
 			const hit = hitMotionPath(mp, live.current.view, screen);

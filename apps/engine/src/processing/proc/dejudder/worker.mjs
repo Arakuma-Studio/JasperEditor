@@ -46,13 +46,9 @@ function percentile(values, p) {
 	return values[lo] + (values[hi] - values[lo]) * (pos - lo);
 }
 
-function median(values) {
-	return percentile(values, 50);
-}
-
 /**
- * Per-pair motion (PST-011): Farnebäck flow between two grey proxies, 75th percentile of the magnitude,
- * plus the median displacement (diagnostics). Parameters as the reference analyser (cadence.py).
+ * Per-pair motion (PST-011): Farnebäck flow between two grey proxies, 75th percentile of the magnitude.
+ * Parameters as the reference analyser (cadence.py).
  */
 function motion(msg) {
 	const { width: w, height: h, a, b } = msg;
@@ -66,16 +62,12 @@ function motion(msg) {
 		const f = flow.data32F;
 		const n = w * h;
 		const mag = new Float32Array(n);
-		const dx = new Float32Array(n);
-		const dy = new Float32Array(n);
 		for (let i = 0; i < n; i++) {
 			const x = f[2 * i];
 			const y = f[2 * i + 1];
-			dx[i] = x;
-			dy[i] = y;
 			mag[i] = Math.hypot(x, y);
 		}
-		return { p75: percentile(mag, 75), dx: median(dx), dy: median(dy) };
+		return { p75: percentile(mag, 75) };
 	} finally {
 		ma.delete();
 		mb.delete();
@@ -202,7 +194,7 @@ function track(msg) {
 		mb.data.set(b);
 		cv.goodFeaturesToTrack(ma, p0, p.maxCorners, p.quality, p.minDistance, none, 3, false, 0.04);
 		const n = p0.rows;
-		if (n === 0) return { p0: new Float32Array(0), p1: new Float32Array(0), corners: 0 };
+		if (n === 0) return { p0: new Float32Array(0), p1: new Float32Array(0) };
 		const crit = new cv.TermCriteria(cv.TermCriteria_COUNT + cv.TermCriteria_EPS, 30, 0.01);
 		cv.calcOpticalFlowPyrLK(ma, mb, p0, p1, st, err, new cv.Size(p.winSize, p.winSize), p.maxLevel, crit);
 		const s = st.data;
@@ -220,7 +212,7 @@ function track(msg) {
 			o1[j + 1] = f1[2 * i + 1];
 			j += 2;
 		}
-		return { p0: o0, p1: o1, corners: n };
+		return { p0: o0, p1: o1 };
 	} finally {
 		for (const m of [ma, mb, p0, p1, st, err, none]) m.delete();
 	}

@@ -3,7 +3,7 @@
 import { decodeFrames, RawWriter, spawnFfmpeg, u16 } from '../ffio.ts';
 import type { DecodeSpec, FrameStep, RgbFrame, StepContext } from '../types.ts';
 
-export type RecordingContext = StepContext & { notes: string[]; facts: Record<string, unknown> };
+type RecordingContext = StepContext & { notes: string[]; facts: Record<string, unknown> };
 
 export function makeStepContext(spec: DecodeSpec, init: Partial<StepContext> = {}): RecordingContext {
 	const notes: string[] = [];

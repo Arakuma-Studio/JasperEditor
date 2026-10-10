@@ -34,7 +34,7 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? 
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
 /** `30`, `"30/1"`, `"30000/1001"`, `29.97` → a rational; null for anything else. */
-export function parseRate(v: unknown): Rational | null {
+function parseRate(v: unknown): Rational | null {
 	if (typeof v === 'number' && v > 0 && Number.isFinite(v)) {
 		if (Number.isInteger(v)) return { num: v, den: 1 };
 		for (const den of [1001, 100, 1000]) {

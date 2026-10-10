@@ -12,7 +12,7 @@ import { type DesktopMcpInfo, getDesktopBridge } from '../runtime/platform.ts';
 export const CONNECT_AGENT_DIALOG = 'shell.connectAgent';
 
 /** Shown when the bundle path is unknown (web build served by a remote or older engine). */
-export const MCP_ENTRY_PLACEHOLDER = '/absolute/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs';
+const MCP_ENTRY_PLACEHOLDER = '/absolute/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs';
 
 export type McpLaunch = {
 	/** Absolute path of jasper-mcp.mjs (or the placeholder). */

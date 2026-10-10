@@ -18,6 +18,7 @@ import { z } from 'zod';
 import {
 	defineTool,
 	EDIT,
+	findClip,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -26,7 +27,7 @@ import {
 	transact,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { findClip, livePlayhead, requireEligible } from './color.ts';
+import { livePlayhead, requireEligible } from './color.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 

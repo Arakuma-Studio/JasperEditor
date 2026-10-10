@@ -1,7 +1,5 @@
-// anime.js on the engine (M2, S11 §3/§6, ARCHITECTURE §20.5). Owner: wp-m2-anime-core.
-// The engine never imports `@jasper/motion` (S11:ANM-022): anime.js ships inside the compositions bundle. This
-// module only describes it — the About ▸ Licenses entry (MIT, text read from the installed package in dev, from
-// the copy next to the bundled engine otherwise) and the `features.anime` capability block.
+// anime.js lives in the compositions bundle. The engine reports its capabilities and licence without importing
+// @jasper/motion; packaged builds read the committed licence copy next to the bundled engine.
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -53,11 +51,10 @@ export function animejsVersion(dir = animejsPackageDir()): string {
 }
 
 /**
- * About ▸ Licenses entry (S11 acceptance 8). `installed` is the anime.js package directory (dev/workspace runs);
+ * About ▸ Licenses entry. `dir` is the anime.js package directory (dev/workspace runs);
  * packaged engines cannot resolve it (anime.js lives in the Remotion bundle) and read the committed copy.
  */
-export function animeLicense(installed: string | null = animejsPackageDir()): LicenseComponent {
-	const dir = installed;
+export function animeLicense(dir: string | null = animejsPackageDir()): LicenseComponent {
 	const text =
 		(dir && readFirst([join(dir, 'LICENSE.md'), join(dir, 'LICENSE')])) ??
 		// Committed copy (src/anime/third-party), copied next to the bundled engine by scripts/build.mjs.

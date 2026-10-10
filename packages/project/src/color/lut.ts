@@ -209,11 +209,6 @@ export function serializeCube(lut: Lut): string {
 	return `${out.join('\n')}\n`;
 }
 
-/** The identity 3D LUT of a size (unit domain). */
-export function identityLut(size: number): Lut {
-	return bakeLut(size, () => {});
-}
-
 /**
  * Bakes a colour function into a 3D LUT over the unit cube (red fastest). `fn` transforms `c` in place;
  * it receives the lattice point `[r, g, b]` (0..1).
@@ -347,12 +342,4 @@ export function applyLutMix(lut: Lut, c: Rgb, amount: number): void {
 	c[0] = r + (c[0] - r) * amount;
 	c[1] = g + (c[1] - g) * amount;
 	c[2] = b + (c[2] - b) * amount;
-}
-
-/** Largest per-channel absolute difference between two LUTs of the same shape (tests, parity checks). */
-export function lutMaxDelta(a: Lut, b: Lut): number {
-	if (a.size !== b.size || a.dimensions !== b.dimensions) return Number.POSITIVE_INFINITY;
-	let m = 0;
-	for (let i = 0; i < a.data.length; i++) m = Math.max(m, Math.abs(a.data[i]! - b.data[i]!));
-	return m;
 }

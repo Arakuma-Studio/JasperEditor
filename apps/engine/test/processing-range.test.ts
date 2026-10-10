@@ -130,7 +130,6 @@ afterAll(async () => {
 });
 
 let codedMedia: RegisteredMedia;
-const coded = () => codedMedia;
 
 describe('ranged processing (S07:PRC-015)', () => {
 	let coded: RegisteredMedia;
@@ -284,7 +283,7 @@ describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelle
 		expect(existsSync(join(app.appdir, 'media', used.mediaKey))).toBe(true);
 		const res = await app.inject({
 			method: 'POST',
-			url: `/api/media/${coded().mediaKey}/process`,
+			url: `/api/media/${codedMedia.mediaKey}/process`,
 			headers: JSON_H,
 			payload: {
 				steps: [{ op: 'deblock', filter: 'weak' }],

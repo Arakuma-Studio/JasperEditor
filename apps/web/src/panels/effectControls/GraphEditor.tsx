@@ -71,7 +71,7 @@ type KeySelection = { clipOrTrackId: string; keyframeIds: string[] } | null;
 /** Manual vertical ranges of a row's two graphs (absent = auto-fit). */
 export type GraphView = { value?: YRange; velocity?: YRange };
 
-export type GraphHost = {
+type GraphHost = {
 	ops: InspectorOps;
 	selected: ReadonlySet<string>;
 	keySel: KeySelection;

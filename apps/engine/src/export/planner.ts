@@ -271,7 +271,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 
 	// ---- media resolution (engine-store keys only: never trust path locators from a client, S04:SC-003)
 	const media: Record<string, LocalMedia> = {};
-	const offline: string[] = [];
 	// gaps (PRJ-8): exports use the full-resolution media; `draftUseProxies` (asked for explicitly) decodes attached
 	// proxies instead, scaled to the original's frame size (the layout keeps the original's dimensions).
 	const draftProxies: string[] = [];
@@ -295,7 +294,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				if (pk) proxiesOffline.push(asset.id);
 				media[asset.id] = { path, record, pixel: pixelInterpretation(asset) };
 			}
-		} else offline.push(asset.id);
+		}
 	}
 	const fontFallbacks = new Set<string>();
 	// wp captions: caption settings name existing tracks; burn-in is a snapshot option.

@@ -185,25 +185,17 @@ export async function isBuiltBundle(dir: string): Promise<boolean> {
 	}
 }
 
-/** `window.remotion_version` and `window.siteVersion` written into a bundle's index.html. */
-export async function bundleVersions(dir: string): Promise<{ remotion: string | null; site: string | null }> {
-	const html = await readFile(join(dir, 'index.html'), 'utf8').catch(() => '');
-	return {
-		remotion: /window\.remotion_version\s*=\s*['"]([^'"]+)['"]/.exec(html)?.[1] ?? null,
-		site: /window\.siteVersion\s*=\s*['"]([^'"]+)['"]/.exec(html)?.[1] ?? null,
-	};
-}
-
 /** MG_REMOTION_VERSION unless a built bundle was made by Remotion 4.0.499. */
 export async function checkBundleVersion(dir: string): Promise<string> {
-	const v = await bundleVersions(dir);
-	if (v.remotion !== MG_REMOTION_VERSION)
+	const html = await readFile(join(dir, 'index.html'), 'utf8').catch(() => '');
+	const version = /window\.remotion_version\s*=\s*['"]([^'"]+)['"]/.exec(html)?.[1] ?? null;
+	if (version !== MG_REMOTION_VERSION)
 		throw new MgBundleError(
 			'MG_REMOTION_VERSION',
-			`The bundle was built with remotion ${v.remotion ?? 'unknown'}; JasperEditor needs ${MG_REMOTION_VERSION}`,
+			`The bundle was built with remotion ${version ?? 'unknown'}; JasperEditor needs ${MG_REMOTION_VERSION}`,
 			422,
-			{ found: v.remotion, required: MG_REMOTION_VERSION },
-			versionHint(v.remotion ?? 'unknown'),
+			{ found: version, required: MG_REMOTION_VERSION },
+			versionHint(version ?? 'unknown'),
 		);
-	return v.remotion;
+	return version;
 }

@@ -26,12 +26,10 @@ import {
 	lightsAt,
 	mat4Apply,
 	mediaFrameAt,
-	type ProjectDocument,
 	planeHomography,
 	type Rational,
 	RENDERERS_3D,
 	runs3d,
-	type Sequence,
 	SHADOW_MODES,
 	stackAt,
 	trackPointsAt,
@@ -42,6 +40,7 @@ import {
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	findClip,
 	isTerminal,
 	jobBody,
 	loadDoc,
@@ -75,14 +74,6 @@ const FrameArg = z
 	.optional()
 	.describe('Sequence frame for animated properties (a key is written there when the property has keys)');
 const atOf = (frame?: number) => (frame === undefined ? {} : { at: { sequenceFrame: frame } });
-
-function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Sequence['clips'][string] } {
-	for (const seq of Object.values(doc.sequences)) {
-		const clip = seq.clips[clipId];
-		if (clip) return { seq, clip };
-	}
-	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
-}
 
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const rv = (v: readonly number[]) => v.map(r3);

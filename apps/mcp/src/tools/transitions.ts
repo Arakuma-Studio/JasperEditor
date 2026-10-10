@@ -63,7 +63,7 @@ export function transitionEffectId(type: string): string {
 }
 
 /** list_transition_types entry (pure). */
-export function transitionTypeSummary(s: TransitionSpec) {
+function transitionTypeSummary(s: TransitionSpec) {
 	return {
 		effectId: s.id,
 		type: shortType(s.id),

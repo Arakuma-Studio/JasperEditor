@@ -6,14 +6,8 @@ import { createReadStream, statSync } from 'node:fs';
 import { MgRenderRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { JobError } from '../jobs/types.ts';
-import {
-	createMgService,
-	MG_SERVICE_KEY,
-	MgRenderError,
-	mgCapabilityProvider,
-	mgMasterHook,
-} from '../mg/index.ts';
-import { sendError } from '../server.ts';
+import { createMgService, MgRenderError } from '../mg/index.ts';
+import { fail } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -29,14 +23,21 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 		tools: core.ffmpeg.bins,
 		emit: (type, job) => core.broadcaster.publish(type, job, job.projectId),
 	});
-	app.jasper.services[MG_SERVICE_KEY] = service;
+	app.jasper.services.mg = service;
 	// Graceful shutdown (S04:ENG-004): kill jasper-mg/ffmpeg children and remove their temp dirs.
 	app.addHook('onClose', async () => {
 		await service.shutdown();
 	});
 	await service.refresh();
-	core.registerCapabilityProvider(mgCapabilityProvider(service));
-	core.registerMgMasterProvider(mgMasterHook(service));
+	core.registerCapabilityProvider(() => ({ render: service.capability() }));
+	core.registerMgMasterProvider((req) =>
+		service.mgMasterProvider(req.clip, {
+			fps: req.fps,
+			projectId: req.projectId,
+			parentId: req.parentId,
+			signal: req.signal,
+		}),
+	);
 	// mg-render jobs run on the MG service's scheduler; list/get/cancel/retry them through /api/jobs.
 	core.queue.registerExternalSource({
 		owns: (id) => id.startsWith('job_mg_'),
@@ -57,7 +58,7 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 	app.post('/api/motion-graphics/render', async (req, reply) => {
 		const parsed = MgRenderRequestSchema.safeParse(req.body);
 		if (!parsed.success)
-			return sendError(
+			return fail(
 				reply,
 				400,
 				'VALIDATION_FAILED',
@@ -68,11 +69,11 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 		try {
 			service.refuseAnime(parsed.data.spec);
 		} catch (e) {
-			if (e instanceof MgRenderError) return sendError(reply, 400, 'ANIME_TEMPLATE', e.message);
+			if (e instanceof MgRenderError) return fail(reply, 400, 'ANIME_TEMPLATE', e.message);
 			throw e;
 		}
 		if (service.capability().fframes !== 'ready')
-			return sendError(
+			return fail(
 				reply,
 				503,
 				'MG_UNAVAILABLE',
@@ -91,7 +92,7 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 						: e.code === 'INVALID_SPEC'
 							? 'INVALID_SPEC'
 							: 'MG_UNAVAILABLE';
-				return sendError(reply, code === 'MG_UNAVAILABLE' ? 503 : 400, code, e.message);
+				return fail(reply, code === 'MG_UNAVAILABLE' ? 503 : 400, code, e.message);
 			}
 			throw e;
 		}
@@ -100,7 +101,7 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 	app.get('/mg/:key/:file', async (req, reply) => {
 		const { key, file } = req.params as { key: string; file: string };
 		const path = service.fileFor(key, file);
-		if (!path) return sendError(reply, 404, 'NOT_FOUND', `No motion-graphics file ${key}/${file}`);
+		if (!path) return fail(reply, 404, 'NOT_FOUND', `No motion-graphics file ${key}/${file}`);
 		const size = statSync(path).size;
 		reply
 			.header('accept-ranges', 'bytes')

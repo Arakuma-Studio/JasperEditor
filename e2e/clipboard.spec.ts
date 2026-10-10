@@ -203,7 +203,7 @@ test('cross-project paste in another tab through the system clipboard (media res
 	await importFiles(page, ['clip-a.mp4']);
 	const media = await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list');
 	const mediaId = media.media.find((m) => m.originalName === 'clip-a.mp4')!.mediaId;
-	const tail = (await query<{ duration: { frames: number } }>(page, 'sequence.summary')).duration.frames;
+	const tail = (await sequenceSummary(page)).duration.frames;
 	const refs = await transact(page, 'Place', [
 		{
 			type: 'clip.place',

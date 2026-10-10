@@ -89,11 +89,6 @@ export function boxToQuad(w: number, h: number, q: Quad): Mat3 | null {
 	);
 }
 
-/** True when the matrix has no perspective part (it is an affine map). */
-export function isAffineMat3(m: Mat3, eps = 1e-12): boolean {
-	return Math.abs(m[6]) < eps && Math.abs(m[7]) < eps && Math.abs(m[8] - 1) < eps;
-}
-
 /** A convex, non-self-intersecting quad (what a corner pin can realize without folding). */
 export function isConvexQuad(q: Quad): boolean {
 	let sign = 0;

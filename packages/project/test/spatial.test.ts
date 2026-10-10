@@ -17,7 +17,6 @@ import {
 	contentTimeAt,
 	effectiveTangents,
 	evaluate,
-	hasCurvedSpatialPath,
 	type Keyframe,
 	type LegacyShapeClip,
 	loadProject,
@@ -71,7 +70,6 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 				const [k0, k1, f0] = f < 30 ? [A, B, 0] : [B, C, 30];
 				expect(at(a, f)).toEqual(lerp(k0, k1, (f - f0) / 30));
 			}
-			expect(hasCurvedSpatialPath(a)).toBe(false);
 		}
 	});
 
@@ -91,7 +89,6 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(at(a, 30)).toEqual(B);
 		expect(at(a, 60)).toEqual(C);
 		expect(spatialSegment(kfs, 0)).toEqual([A, [50, 50], [200, 300], B]);
-		expect(hasCurvedSpatialPath(a)).toBe(true);
 		// Golden (independent 10⁶-step arc-length integration): segment length 432.959, arc midpoint
 		// (132.913, 170.778) — reached at half the segment's time with Linear temporal.
 		expect(arcLengthTable(spatialSegment(kfs, 0)!)[64]).toBeCloseTo(432.959, 1);

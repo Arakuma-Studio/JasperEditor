@@ -1,8 +1,8 @@
 // Inserting motion templates (S05:MGT-002, S01:KND-009): default duration from the template, default
 // params, at the playhead on the targeted video track, through the `clip.addMotionGraphic` command.
 // Also the drag payload other panels (Timeline, Program) accept for template drops.
-import { type AnyMgTemplate, mgRegistry } from '@jasper/mg-templates';
-import type { Command, ProjectDocument, Sequence } from '@jasper/project';
+import { mgRegistry } from '@jasper/mg-templates';
+import type { Command, Sequence } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import { type CompositionRef, insertComposition } from '../../mg-bundles/insert.ts';
 
@@ -38,12 +38,6 @@ export function readMgTemplateDrag(dt: Pick<DataTransfer, 'getData'>): MgTemplat
 	}
 }
 
-/** Default clip length in frames at the sequence rate. */
-function defaultDurationFrames(def: Pick<AnyMgTemplate, 'defaultDurationSeconds'>, seq: Sequence): number {
-	const { num, den } = seq.settings.frameRate;
-	return Math.max(1, Math.round((def.defaultDurationSeconds * num) / den));
-}
-
 /**
  * Track for a new graphic: the topmost targeted, unlocked video track; else the topmost unlocked
  * video track; else `V1` (the command creates it).
@@ -54,36 +48,6 @@ function targetVideoTrack(seq: Sequence, view: Pick<SequenceViewState, 'targetin
 	for (let i = tracks.length - 1; i >= 0; i--) if (targeted.has(tracks[i]!.id)) return tracks[i]!.id;
 	const top = tracks.at(-1);
 	return top ? top.id : 'V1';
-}
-
-type InsertPlan = { command: Command; label: string };
-
-/** Builds the `clip.addMotionGraphic` command for a template at `at` (frames). */
-function planMotionTemplateInsert(
-	doc: ProjectDocument,
-	sequenceId: string,
-	template: MgTemplateRef,
-	opts: {
-		at: number;
-		view: Pick<SequenceViewState, 'targeting'> | null;
-		trackId?: string;
-		duration?: number;
-	},
-): InsertPlan {
-	const seq = doc.sequences[sequenceId];
-	if (!seq) throw new Error(`Sequence ${sequenceId} not found`);
-	const def = mgRegistry.getDefinition(template.id, template.version);
-	if (!def) throw new Error(`Unknown motion template ${template.id}@${template.version}`);
-	const command = {
-		type: 'clip.addMotionGraphic',
-		sequenceId,
-		at: Math.max(0, Math.round(opts.at)),
-		duration: opts.duration ?? defaultDurationFrames(def, seq),
-		track: opts.trackId ?? targetVideoTrack(seq, opts.view),
-		template: { id: def.id, version: def.version },
-		params: { ...def.defaults },
-	} as Command;
-	return { command, label: `Add ${def.name}` };
 }
 
 /**
@@ -101,12 +65,27 @@ export function insertMotionTemplate(
 	const sequenceId = state.activeSequenceId;
 	if (!sequenceId) throw new Error('Open a sequence first');
 	const at = opts.at ?? session.transport.getState().frame;
-	const plan = planMotionTemplateInsert(session.getCommitted(), sequenceId, template, {
-		at,
-		view: state.views[sequenceId] ?? null,
-		trackId: opts.trackId,
+	const seq = session.getCommitted().sequences[sequenceId];
+	if (!seq) throw new Error(`Sequence ${sequenceId} not found`);
+	const def = mgRegistry.getDefinition(template.id, template.version);
+	if (!def) throw new Error(`Unknown motion template ${template.id}@${template.version}`);
+	const { num, den } = seq.settings.frameRate;
+	const result = session.apply({
+		label: `Add ${def.name}`,
+		origin: 'user',
+		sequenceId,
+		commands: [
+			{
+				type: 'clip.addMotionGraphic',
+				sequenceId,
+				at: Math.max(0, Math.round(at)),
+				duration: Math.max(1, Math.round((def.defaultDurationSeconds * num) / den)),
+				track: opts.trackId ?? targetVideoTrack(seq, state.views[sequenceId] ?? null),
+				template: { id: def.id, version: def.version },
+				params: { ...def.defaults },
+			} as Command,
+		],
 	});
-	const result = session.apply({ label: plan.label, origin: 'user', sequenceId, commands: [plan.command] });
 	if (!result.ok) throw new Error(result.errors.map((e) => e.message).join('; ') || 'Insert failed');
 	const clipId = (result.results[0] as { clipId?: string } | undefined)?.clipId ?? result.created[0];
 	if (!clipId) throw new Error('Insert produced no clip');

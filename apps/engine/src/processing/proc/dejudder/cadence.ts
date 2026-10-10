@@ -34,7 +34,7 @@ export type CadenceResult = {
 	triples: number;
 };
 
-export type CadenceOptions = {
+type CadenceOptions = {
 	/** Absolute index of the first frame of the analysed input (default 0). */
 	firstFrameIndex?: number;
 	/** Width of the grey proxy the motion values were measured on (default 424). */
@@ -64,7 +64,7 @@ function localMean(motion: readonly number[]): number[] {
 function relativeSteps(
 	motion: readonly number[],
 	opts: CadenceOptions = {},
-): { rel: number[]; valid: boolean[]; local: number[] } {
+): { rel: number[]; valid: boolean[] } {
 	const threshold = MOVING_PX_AT_424 * ((opts.proxyWidth ?? ANALYSIS_MAX_WIDTH) / ANALYSIS_MAX_WIDTH);
 	const local = localMean(motion);
 	const rel = motion.map((m, i) => m / Math.max(local[i], 1e-6));
@@ -73,7 +73,7 @@ function relativeSteps(
 		valid[0] = false;
 		valid[valid.length - 1] = false;
 	}
-	return { rel, valid, local };
+	return { rel, valid };
 }
 
 /**
@@ -124,14 +124,10 @@ export function analyseMotion(motion: readonly number[], opts: CadenceOptions = 
 	};
 }
 
-export type CadenceEvenness = {
+type CadenceEvenness = {
 	/** Coefficient of variation (population std / mean) of the relative steps of the moving pairs; 0 = even. */
 	cv: number;
-	/** Coefficient of variation of the raw per-pair motion of the moving pairs (sensitive to speed changes). */
-	rawCv: number;
-	/** Phase-folded relative steps (median per `frameIndex mod 3`). */
-	byPhase: [number, number, number];
-	/** min/max of `byPhase` (1 = perfectly even; ~0.5 for an uncorrected 2:2:1 cadence). */
+	/** min/max of the phase-folded relative steps (1 = even; ~0.5 for an uncorrected 2:2:1 cadence). */
 	minOverMax: number;
 };
 
@@ -147,8 +143,6 @@ export function cadenceEvenness(motion: readonly number[], opts: CadenceOptions 
 	const phases = r.relStepByPhase.filter((b) => !Number.isNaN(b));
 	return {
 		cv: cv(rel.filter((_, i) => valid[i])),
-		rawCv: cv(motion.filter((_, i) => valid[i])),
-		byPhase: r.relStepByPhase,
 		minOverMax: phases.length ? Math.min(...phases) / Math.max(...phases) : Number.NaN,
 	};
 }
@@ -164,15 +158,10 @@ function analysisSize(
 	return { w, h };
 }
 
-export type MotionMeasurement = {
+type MotionMeasurement = {
 	/** Per pair (frame i → i+1) 75th percentile of the flow magnitude, px on the proxy. */
 	motion: number[];
-	/** Median horizontal / vertical displacement per pair (diagnostics). */
-	dx: number[];
-	dy: number[];
 	proxyWidth: number;
-	proxyHeight: number;
-	frames: number;
 };
 
 /**
@@ -184,15 +173,13 @@ export async function measureMotion(
 	opts: { maxWidth?: number; signal?: AbortSignal; onProgress?: (fraction: number) => void } = {},
 ): Promise<MotionMeasurement> {
 	const { w, h } = analysisSize(spec.width, spec.height, opts.maxWidth);
-	const jobs: Promise<{ p75: number; dx: number; dy: number }>[] = [];
+	const jobs: Promise<{ p75: number }>[] = [];
 	const window = Math.max(2, pool.size * 2);
 	let prev: Uint8Array | null = null;
-	let frames = 0;
 	let done = 0;
 	const pairsTotal = Math.max(1, spec.frames - 1);
 	for await (const buf of decodeFrames(spec, { pixFmt: 'gray', width: w, height: h, signal: opts.signal })) {
 		const cur = new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
-		frames++;
 		if (prev) {
 			const job = pool.motion(w, h, prev, cur);
 			job.then(
@@ -208,11 +195,7 @@ export async function measureMotion(
 	const results = await Promise.all(jobs);
 	return {
 		motion: results.map((r) => r.p75),
-		dx: results.map((r) => r.dx),
-		dy: results.map((r) => r.dy),
 		proxyWidth: w,
-		proxyHeight: h,
-		frames,
 	};
 }
 
@@ -225,11 +208,10 @@ export async function analyseCadence(
 		signal?: AbortSignal;
 		onProgress?: (fraction: number) => void;
 	} = {},
-): Promise<CadenceResult & { measurement: MotionMeasurement }> {
+): Promise<CadenceResult> {
 	const measurement = await measureMotion(spec, pool, opts);
-	const result = analyseMotion(measurement.motion, {
+	return analyseMotion(measurement.motion, {
 		firstFrameIndex: opts.firstFrameIndex,
 		proxyWidth: measurement.proxyWidth,
 	});
-	return { ...result, measurement };
 }

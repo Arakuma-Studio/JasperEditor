@@ -80,6 +80,7 @@ import {
 	useCompositeTap,
 } from './fx/composite.tsx';
 import { type CompositeTrackInput, type LinearBlendCurve, trackHasGlBlend } from './fx/composite-plan.ts';
+import { canUseHtmlInCanvas } from './fx/FxPicture.tsx';
 import {
 	FlatCompositor,
 	FlatDisplayContext,
@@ -100,7 +101,6 @@ import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import {
-	htmlInCanvasAvailable,
 	TransitionHub,
 	type TransitionSideEntry,
 	TransitionSidesContext,
@@ -500,7 +500,7 @@ export function VideoTracks({
 		[offset, premount],
 	);
 	const gpu = useFxStatus();
-	const htmlInCanvas = htmlInCanvasAvailable();
+	const htmlInCanvas = canUseHtmlInCanvas();
 	// One hub per transition id for the life of the composition (the sides' taps and the stage meet there).
 	const hubs = useRef(new Map<string, TransitionHub>());
 	const hubOf = (id: string) => {

@@ -60,7 +60,7 @@ export function resolveBinaries(
 	return { ffmpeg, ffprobe, source };
 }
 
-export type FfmpegProgress = {
+type FfmpegProgress = {
 	/** Output time in microseconds. */
 	outTimeUs: number;
 	frame: number | null;

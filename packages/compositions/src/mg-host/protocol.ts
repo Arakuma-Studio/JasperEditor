@@ -25,7 +25,13 @@ import { MG_HOST_QUERY, MG_HOST_TIMEOUT_MS } from './constants.ts';
 import { TEXT_PROBE_SCRIPT } from './text-probe.ts';
 
 export { HOST_AGENT_SCRIPT, MG_HOST_CONNECT, MG_HOST_PORT_PROTOCOL } from './agent.ts';
-export * from './constants.ts';
+export {
+	MG_HOST_QUERY,
+	MG_HOST_REMOTION_VERSION,
+	MG_HOST_SANDBOX,
+	MG_HOST_SITE_VERSION,
+	MG_HOST_TIMEOUT_MS,
+} from './constants.ts';
 
 /** URL of the host page of a bundle served at `bundleBase` (`/mg/bundles/<key>/`). */
 export function hostPageUrl(bundleBase: string): string {
@@ -105,7 +111,7 @@ export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: strin
 }
 
 /** CSS injected with the bootstrap: transparent page, no margins or scrollbars. */
-export const HOST_PAGE_CSS =
+const HOST_PAGE_CSS =
 	// `color-scheme: light` on both sides (here and on the <iframe>): a scheme mismatch makes Chrome paint an
 	// opaque backdrop behind the frame.
 	'html,body{margin:0!important;padding:0!important;background:transparent!important;overflow:hidden!important;color-scheme:light}' +

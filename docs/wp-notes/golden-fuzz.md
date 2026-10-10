@@ -16,7 +16,7 @@ design, decisions, verified behaviour and limits.
 | `png.ts`, `image.ts` | PNG codec on node:zlib (all colour types and depths, Adam7, CRC, bounded inflate; `PngError`); RGBA8 helpers, `meanGrid`, `fnv1a`, stats. `image.ts` is DOM- and Node-free, so GL test entries bundle it |
 | `fuzz.ts` | `Rng` (xorshift128 seeded by splitmix32), byte / text / JSON-structure mutators, `bytesTarget` / `textTarget` / `jsonTarget`, `describeFuzz`, `runFuzzTarget(Sync)`, `assertFuzzSync`; failing inputs saved to `test-results/fuzz-failures/`; `FUZZ=1`, `FUZZ_SEED` |
 | `oracle.ts` | ffmpeg / ffprobe discovery (`JASPER_FFMPEG` / `JASPER_FFPROBE`, PATH, known dirs), `JASPER_REQUIRE_ORACLES=1`, `requireTool` / `oraclesAvailable` / `skipOracle`, EBU R128 (`measureLoudness`, `parseEbur128`), PSNR / SSIM (`compareVideos`), packet / frame tables (`probePackets`, `probeFrames`, `compareTables`), `decodeFrames`, `ffmpeg` |
-| `browser.ts` | Chrome discovery, SwiftShader flags, esbuild bundling, `openGlPage` |
+| `browser.ts` | Chrome discovery, SwiftShader flags, esbuild bundling (the compositions GL suites open pages through `packages/compositions/test/gl-browser.ts`) |
 
 **GL tests.** The fx host poisons pooled intermediate targets under test (`globalThis.__JASPER_FX_POISON__`, set
 by `test/gl-poison.ts`, imported first by all 22 GL entries): NaN in float targets, magenta in 8-bit ones

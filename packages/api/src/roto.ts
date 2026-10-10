@@ -1,8 +1,8 @@
 // Roto / object mattes and face tracking (parity workstream `roto`). Owner: roto.
 import { z } from 'zod';
+import { RationalSchema } from './common.ts';
 
 const Vec2 = z.tuple([z.number(), z.number()]);
-const Rational = z.object({ num: z.number().int().positive(), den: z.number().int().positive() });
 
 /** A roto stroke as stored in the document (media px, media frame). */
 export const RotoStrokeWireSchema = z.object({
@@ -42,7 +42,7 @@ export const RotoSegmentRequestSchema = z.object({
 	inputs: z.string(),
 	roto: z.object({
 		kind: z.enum(['brush', 'faces']),
-		rate: Rational,
+		rate: RationalSchema,
 		base: z.number().int().min(0).nullable(),
 		span: z.tuple([z.number().int().min(0), z.number().int().min(0)]),
 		strokes: z.array(RotoStrokeWireSchema).max(5000),

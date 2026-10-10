@@ -60,13 +60,3 @@ export function missingTemplatesDetail(missing: readonly MissingTemplate[]) {
 		hint: 'Install a JasperEditor build that ships these templates, or delete or replace the clips.',
 	};
 }
-
-/**
- * Native blocker of an anime template clip that no native extension claims (the layer-bake extension bakes them,
- * S11:LBK-001): without it the planner falls back to the Remotion path, which draws the template directly.
- */
-export function animeTemplateBlocker(c: RenderVisualClip, claimed: boolean): string | null {
-	if (claimed || c.kind !== 'motion-graphic' || !isAnimeTemplateClip(c)) return null;
-	const mg = mgOf(c)!;
-	return `anime template "${c.name}" (${mg.template.id}@${mg.template.version}) is drawn by Remotion; the native path needs the graphics bake (layer-bake)`;
-}

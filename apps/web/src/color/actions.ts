@@ -8,26 +8,6 @@ import type { EngineImportService } from '../import/service.ts';
 import { getImportService } from '../state/services.ts';
 import { type CopiedColorEffect, copyGrade, planApplyLook, planPasteGrade } from './model.ts';
 
-// ---------------------------------------------------------------- tiny external store
-
-function createStore<T>(initial: T) {
-	let state = initial;
-	const listeners = new Set<() => void>();
-	return {
-		get: () => state,
-		set(next: T) {
-			state = next;
-			for (const l of [...listeners]) l();
-		},
-		subscribe(l: () => void) {
-			listeners.add(l);
-			return () => {
-				listeners.delete(l);
-			};
-		},
-	};
-}
-
 // ---------------------------------------------------------------- grade clipboard (CGU-004)
 
 let clipboard: { effects: CopiedColorEffect[] } | null = null;
@@ -127,18 +107,25 @@ export async function browseForLut(session: EditorSession): Promise<string | nul
 
 // ---------------------------------------------------------------- before/after (CGU-005)
 
-const bypass = createStore<readonly string[]>([]);
+let bypassed: readonly string[] = [];
+const bypassListeners = new Set<() => void>();
+const subscribeBypass = (listener: () => void) => {
+	bypassListeners.add(listener);
+	return () => {
+		bypassListeners.delete(listener);
+	};
+};
 
 /** Clip ids whose colour effects the Program monitor bypasses (preview only). */
 export const colorBypass = {
-	get: bypass.get,
-	isBypassed: (clipId: string) => bypass.get().includes(clipId),
+	get: () => bypassed,
+	isBypassed: (clipId: string) => bypassed.includes(clipId),
 	toggle(clipId: string) {
-		const cur = bypass.get();
-		bypass.set(cur.includes(clipId) ? cur.filter((c) => c !== clipId) : [...cur, clipId]);
+		bypassed = bypassed.includes(clipId) ? bypassed.filter((id) => id !== clipId) : [...bypassed, clipId];
+		for (const listener of [...bypassListeners]) listener();
 	},
 };
 
 export function useColorBypass(): readonly string[] {
-	return useSyncExternalStore(bypass.subscribe, bypass.get, bypass.get);
+	return useSyncExternalStore(subscribeBypass, colorBypass.get, colorBypass.get);
 }

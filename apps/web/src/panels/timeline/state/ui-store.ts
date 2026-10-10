@@ -28,8 +28,6 @@ export type TransitionGhost = {
 	missing: FrameSpan[];
 	/** Nothing fits: the drop is refused. */
 	refused: boolean;
-	/** Drawn on an existing transition that the drop replaces (TUI-023). */
-	replace?: boolean;
 };
 
 export type ContextMenuItem =

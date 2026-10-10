@@ -3,8 +3,6 @@ import { z } from 'zod';
 import {
 	type Animatable,
 	BRIGHTNESS_CONTRAST_EFFECT,
-	buildNativeFilterChain,
-	buildPreviewChain,
 	buildRenderSnapshot,
 	type Clip,
 	CROP_EFFECT,
@@ -12,6 +10,7 @@ import {
 	clipContentTimeAtFrame,
 	clipPropertiesJsonSchema,
 	contentTimeAt,
+	createEffectRegistry,
 	createStaticMgRegistry,
 	defaultEffectRegistry,
 	defaultRegistries,
@@ -20,7 +19,6 @@ import {
 	type EffectSpec,
 	effectPropertySpecs,
 	evaluate,
-	extendEffectRegistry,
 	getPropertySpec,
 	type ProjectDocument,
 	paramsPropertySpecs,
@@ -254,7 +252,7 @@ describe('effect.add / remove / reorder / setEnabled (S01:FX-020…023)', () => 
 			native: null,
 			capabilities: { preview: 'webaudio', export: ['remotion'] },
 		};
-		const effects = extendEffectRegistry(defaultEffectRegistry, [gain]);
+		const effects = createEffectRegistry([...defaultEffectRegistry.list(), gain]);
 		const h = new Harness({ ctx: { registries: { ...defaultRegistries(), effects } } });
 		const r = h.ok([
 			{ type: 'effect.add', target: { trackId: 'A1' }, effectId: 'test.gain', params: { db: -6 }, ref: '$t' },
@@ -279,7 +277,7 @@ describe('effect.add / remove / reorder / setEnabled (S01:FX-020…023)', () => 
 		expect(vid.ok).toBe(false);
 	});
 
-	it('FX-022: unknown effects are preserved, bypassed, reorderable, removable and not editable', () => {
+	it('FX-022: unknown effects are preserved, reorderable, removable and not editable', () => {
 		const { h, id } = withSolid();
 		h.ok([{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.crop' }]);
 		const future = {
@@ -299,12 +297,6 @@ describe('effect.add / remove / reorder / setEnabled (S01:FX-020…023)', () => 
 		expect(kept).toEqual({ ...future, enabled: false });
 		const edit = h.tx([{ type: 'param.set', target: ['effect', future.id, 'glow'], value: 1 }]);
 		expect(!edit.ok && edit.errors[0]!.code).toBe('E_UNKNOWN_EFFECT');
-		// Renderers skip it: preview and native chains report it as skipped.
-		const effects = clipOf(h, id).effects.map((e) => ({ ...e, enabled: true }));
-		expect(buildPreviewChain(effects, defaultEffectRegistry, 'u').skipped).toEqual([future.id]);
-		expect(
-			buildNativeFilterChain(effects, defaultEffectRegistry, { width: 100, height: 100, fps: 30 }).skipped,
-		).toEqual([future.id]);
 		h.ok([{ type: 'effect.remove', effectInstanceId: future.id }]);
 		expect(clipOf(h, id).effects.map((e) => e.effectId)).toEqual(['jasper.crop']);
 	});
@@ -651,31 +643,6 @@ describe('effect registry (S03 §15.4, FX-040)', () => {
 				expect(Number(m[1]) * x + Number(m[2])).toBeCloseTo(want, 3);
 			}
 		}
-	});
-
-	it('builds native chains in stack order and omits disabled and colour effects', () => {
-		const fx = (id: string, effectId: string, params: Record<string, unknown>, enabled = true) => ({
-			id,
-			effectId,
-			effectVersion: 1,
-			enabled,
-			params,
-		});
-		const stack = [
-			fx('a', 'jasper.crop', { left: 10 }),
-			fx('b', 'jasper.hue-saturation', { hue: 90, saturation: 0 }),
-			fx('c', 'jasper.black-white', { amount: 50 }),
-			fx('d', 'jasper.brightness-contrast', { brightness: 10, contrast: 0 }),
-			fx('e', 'jasper.gaussian-blur', { radius: 2 }),
-			fx('f', 'jasper.gaussian-blur', { radius: 3 }, false),
-			fx('g', 'jasper.flip-vertical', {}),
-		];
-		const native = buildNativeFilterChain(stack, defaultEffectRegistry, ctx);
-		// Colour effects are fused into a LUT by the engine's colour extension: not in this chain, not blockers.
-		expect(native.filter).toBe(
-			'crop=1728:1080:192:0,pad=1920:1080:192:0:color=black@0,gblur=sigma=2:sigmaV=2,vflip',
-		);
-		expect(native.blockers).toEqual([]);
 	});
 });
 

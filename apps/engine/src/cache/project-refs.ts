@@ -47,7 +47,7 @@ export type ClipRenderKeyFn = (clip: RenderVisualClip, fps: Rational) => string 
  */
 export function projectCacheRefs(
 	doc: unknown,
-	renderKey: RenderKeyFn | null,
+	renderKey: RenderKeyFn,
 	fframesKey: ClipRenderKeyFn | null = null,
 ): ProjectCacheRefs {
 	const out: ProjectCacheRefs = {
@@ -86,7 +86,7 @@ export function projectCacheRefs(
 		}
 		if (typeof a?.mgBundle?.bundleHash === 'string') out.bundleHashes.add(a.mgBundle.bundleHash);
 	}
-	if ((out.bundleHashes.size === 0 || !renderKey) && !fframesKey) return out;
+	if (out.bundleHashes.size === 0 && !fframesKey) return out;
 	for (const seqId of Object.keys(d.sequences ?? {})) {
 		try {
 			const snap = buildRenderSnapshot(d as ProjectDocument, seqId, {
@@ -102,7 +102,7 @@ export function projectCacheRefs(
 					continue;
 				}
 				const src = 'composition' in clip.source ? clip.source.composition : null;
-				if (!renderKey || !src?.info || !src.bundle?.hash) continue;
+				if (!src?.info || !src.bundle?.hash) continue;
 				const total = compositionSequenceFrames(src.info, fps);
 				const base = {
 					compositionId: src.compositionId,
