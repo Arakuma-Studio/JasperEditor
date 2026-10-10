@@ -318,3 +318,31 @@ drop was found.
   by construction only: no Windows host.
 - Not re-audited line by line: the 375 shader sources, the Rust motion-graphics renderer, the audio DSP, the AAF /
   OMF binary readers and the glTF reader (their owners' fuzz suites cover them), and third-party packages.
+
+## 8. Added after the review (workstream `polish`)
+
+The last workstream added engine surface after this review; it follows the rules above and was written against
+them, but it was reviewed by its author, not by this review.
+
+- **Media Browser** (`GET /api/browse/roots | list | info | thumbnail | file`, `apps/engine/src/routes/browse.ts`):
+  a browser of the engine host's file system for the editor. Local mode only; absolute, normalised paths; listings
+  show folders and files by name, size and date. Bytes are served for video, audio and picture extensions only,
+  checked on the name asked for and on the file it resolves to (a media-named symlink to another file is refused),
+  with the `nosniff` and `CSP: sandbox` headers of every served user file. Because a path can be guessed where a
+  media key cannot, a request a browser marks as `Sec-Fetch-Site: cross-site` or `same-site` is refused on these
+  routes: without that, a page could embed (not read) the user's pictures and videos through a token-less dev
+  engine. FFmpeg reads the files with `-protocol_whitelist file,crypto,data`. Tests: `apps/engine/test/browse.test.ts`.
+  The MCP tool `browse_media_files` lists folders and importable media only (never every file), read-only.
+  *Residual:* an agent confined to the MCP tools can now learn the names of folders and media files anywhere the
+  engine's user can read (it could already probe single paths through `import_media`); an authenticated local
+  client can list any folder (residual risk 3).
+- **`POST /api/media/status`**: the per-medium status route for up to 1 000 keys; keys are matched against the
+  media key pattern, unknown ones are listed.
+- **Engine ▸ Connect to Engine…** can open the editor served by another engine address in the window. The address
+  must be http(s) without credentials; an agent's live-UI input cannot trigger the navigation (AGT-1's
+  `agentInputActive`); the desktop app does not offer it.
+- **`/editor-boot.js`** starts `GET /api/projects/<id>` for the id in the page URL before the bundle loads
+  (same origin, same credentials); the id is URL-encoded and reaches the engine through the validated route.
+- **Editing leases**: a reloaded tab takes over the lease its previous page held (`takeOver`, which any
+  authenticated client could already send); nothing changed on the engine.
+
