@@ -210,28 +210,6 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 				for (const m of x as { id: string }[]) m.id = h.ids.next('mrk');
 			// wp masks: Opacity and effect masks get fresh ids (their keyframes are visited below).
 			if (k === 'masks' && Array.isArray(x)) for (const m of x as { id: string }[]) m.id = h.ids.next('msk');
-			// text-animators: animators and their selectors are document-unique too (INV-001; verify workstream:
-			// splitting or pasting an animated title was refused with "Duplicate id tan_…").
-			if (k === 'animators' && Array.isArray(x))
-				for (const a of x as { id?: unknown; selectors?: { id?: unknown }[] }[]) {
-					if (typeof a?.id === 'string') a.id = h.ids.next('tan');
-					for (const s of Array.isArray(a?.selectors) ? a.selectors : [])
-						if (typeof s?.id === 'string') s.id = h.ids.next('tsl');
-				}
-			// sim-warp: Puppet meshes and pins (each pin follows its mesh to the new id).
-			if (k === 'puppet' && x && typeof x === 'object') {
-				const p = x as { meshes?: { id: string }[]; pins?: { id: string; meshId: string }[] };
-				const meshIds = new Map<string, string>();
-				for (const m of Array.isArray(p.meshes) ? p.meshes : []) {
-					const id = h.ids.next('pms');
-					meshIds.set(m.id, id);
-					m.id = id;
-				}
-				for (const pin of Array.isArray(p.pins) ? p.pins : []) {
-					pin.id = h.ids.next('ppn');
-					pin.meshId = meshIds.get(pin.meshId) ?? pin.meshId;
-				}
-			}
 			// wp-m2-anime-templates (S11:ATP-006): template param keyframes are plain lists per param name.
 			if (k === 'paramKeyframes' && x && typeof x === 'object')
 				for (const list of Object.values(x as Record<string, { id: string }[]>))
