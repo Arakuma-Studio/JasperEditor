@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { BOOT_RETRIES } from '../apps/web/editor-boot.ts';
 import { budgetMs, budgetReport } from '../scripts/perf/budget.ts';
 import { measureOpen } from '../scripts/perf/open-phases.ts';
 import { cachedFixture } from '../scripts/perf/ui-run.ts';
@@ -427,9 +428,14 @@ test('a bundle that cannot be downloaded says so and reloads, instead of a blank
 	const p = await context.newPage();
 	try {
 		await p.route('**/assets/vendor-react-*.js', (route) => route.abort('internetdisconnected'));
+		let loads = 0;
+		p.on('load', () => loads++);
 		await p.goto(`http://127.0.0.1:${serverInfo().port}/`);
 		const failed = p.getByTestId('app-load-error');
-		await expect(failed).toBeVisible();
+		// The page first reloads itself (a transient abort is the common cause; apps/web/editor-boot.ts): at least
+		// BOOT_RETRIES (3) times, more when the machine is slow enough for the failures to count as cut-off loads.
+		await expect(failed).toBeVisible({ timeout: 60_000 });
+		expect(loads).toBeGreaterThanOrEqual(1 + BOOT_RETRIES);
 		await expect(failed).toContainText('JasperEditor could not load');
 		await shot(p, 'app-load-error');
 		await p.unroute('**/assets/vendor-react-*.js');
