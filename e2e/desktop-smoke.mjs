@@ -209,6 +209,41 @@ try {
 		throw new Error(`Desktop home did not render; diagnostics in ${failureFile}: ${error}`);
 	}
 	await page.screenshot({ path: shot });
+	// Security review DEV-1 / AGT-2 in the desktop shell: the window is signed in to its engine and is the editor
+	// (the engine's /agent relay says so), through cookies the page cannot read; the engine itself answers nothing
+	// without its token.
+	const authReport = await page.evaluate(async () => {
+		const projects = (await fetch('/api/projects')).status;
+		const editor = await new Promise((resolve) => {
+			const ws = new WebSocket(`${location.origin.replace(/^http/, 'ws')}/agent`);
+			const timer = setTimeout(() => resolve('timeout'), 10_000);
+			ws.onerror = () => resolve('error');
+			ws.onopen = () =>
+				ws.send(
+					JSON.stringify({ type: 'hello', projectId: 'prj_smoke', sessionId: 'ses_smoke', leaseId: null }),
+				);
+			ws.onmessage = (ev) => {
+				const m = JSON.parse(String(ev.data));
+				if (m.type !== 'welcome') return;
+				clearTimeout(timer);
+				ws.close();
+				resolve(m.editor);
+			};
+		});
+		return { projects, editor, cookieVisibleToScripts: /jasper_(session|editor)/.test(document.cookie) };
+	});
+	const engineOrigin = mode === 'dev' ? `http://127.0.0.1:${base}` : new URL(loaded[1]).origin;
+	const withoutToken = (await fetch(`${engineOrigin}/api/projects`)).status;
+	writeFileSync(
+		join(root, 'test-results', `desktop-${mode}-auth.json`),
+		JSON.stringify({ ...authReport, withoutToken }, null, 2),
+	);
+	expect({ ...authReport, withoutToken }).toEqual({
+		projects: 200,
+		editor: true,
+		cookieVisibleToScripts: false,
+		withoutToken: 401,
+	});
 	const allowed = await page.evaluate(() => window.jasperDesktop?.mcpInfo());
 	const payload = {
 		json: '{"format":"jasper-clipboard","version":1,"items":[]}',
