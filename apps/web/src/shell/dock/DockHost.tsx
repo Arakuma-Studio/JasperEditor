@@ -34,8 +34,9 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { isLoadable, type Loadable, useLoaded } from '../../panels/lazy.ts';
 import { sourceMonitorState } from '../../panels/source/source-state.ts';
-import type { PanelDefinition, PanelKind, PanelTitleContext } from '../../panels/types.ts';
+import type { PanelDefinition, PanelKind, PanelProps, PanelTitleContext } from '../../panels/types.ts';
 import { useCommandCtx, useShellRuntime } from '../context.tsx';
 import { PANEL_INSTANCE_ATTR, PANEL_KIND_ATTR } from '../focus.ts';
 import { activeSequenceName } from '../header/TitleBar.tsx';
@@ -251,12 +252,22 @@ function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<st
 		>
 			{Component ? (
 				<PanelErrorBoundary name={title}>
-					{/* Panel bodies are code-split (panels/lazy.ts): a skeleton until the chunk loads. */}
+					{/* Panel bodies are code-split (panels/lazy.ts): a skeleton until the chunk loads. The Suspense
+					    boundary only serves components that are not loadable through state (none of ours). */}
 					<Suspense fallback={<PanelLoading />}>
 						{/* ui-perf: a panel in a background tab stops following edits and gestures until it is shown again
 						    (its DOM is detached; keep-alive panels keep playing and following). */}
 						<FreezeStoreUpdates frozen={!visible && !def?.keepAlive}>
-							<Component instanceId={props.api.id} visible={visible} params={props.params} />
+							{isLoadable(Component) ? (
+								<LoadedPanel
+									source={Component}
+									instanceId={props.api.id}
+									visible={visible}
+									params={props.params}
+								/>
+							) : (
+								<Component instanceId={props.api.id} visible={visible} params={props.params} />
+							)}
 						</FreezeStoreUpdates>
 					</Suspense>
 				</PanelErrorBoundary>
@@ -265,6 +276,20 @@ function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<st
 			)}
 		</div>
 	);
+}
+
+/**
+ * A code-split panel mounted through state when its module has loaded (panels/lazy.ts: a Suspense retry can be
+ * starved by frequent updates). A failed download reaches the panel's error boundary; Reload Panel mounts this
+ * again, which asks for the module again.
+ */
+function LoadedPanel(props: PanelProps & { source: Loadable<PanelProps> }) {
+	const { source, ...panel } = props;
+	const state = useLoaded(source);
+	if (state.status === 'failed')
+		throw state.error instanceof Error ? state.error : new Error(String(state.error));
+	if (state.status === 'loading') return <PanelLoading />;
+	return <state.Component {...panel} />;
 }
 
 function PanelLoading() {

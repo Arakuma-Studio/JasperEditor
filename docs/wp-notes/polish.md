@@ -199,14 +199,39 @@ touching disk; online media cost a few `stat` calls each, 16 at a time).
 Verified: `cargo test -p jasper-mg-templates`, `apps/engine/test/mg.test.ts` (the six real-render tests ran instead
 of skipping), `e2e/smoke.spec.ts` 11 / 11 with the native motion-graphic export.
 
-## 7. Documents
+## 7. Panels that never appeared (found while running the gate)
+
+One run of the e2e suite on a busy host failed in a way no test had described: after New Project, the Project
+panel and the Program monitor stayed skeletons for three minutes, and the console held 21 976 "Blocked attempt to
+create a WebMediaPlayer" errors. Every chunk had loaded.
+
+**Root cause.** Panel bodies were `React.lazy` components under `<Suspense>`. When a lazy component's module
+arrives, React renders it in a *retry lane*: time-sliced, restarted from scratch whenever any other update arrives
+on the root, and — unlike transitions — never expired. When updates arrive more often than the panel takes to
+render (engine events of running jobs, on a machine slow enough that the Program monitor needs longer than the gap
+between them), the retry never commits. Each abandoned attempt of the Program monitor had already created the
+Player's eight `<audio>` elements; a thousand of them later Chrome refused new media players.
+`apps/web/test/polish-panel-loading.test.tsx` shows it in isolation: a 180 ms render under a Suspense boundary never
+appears while a sibling updates every 4 ms.
+
+**Fix** (`apps/web/src/panels/lazy.ts`, `shell/dock/DockHost.tsx`, `App.tsx`). Code-split panels and the editor
+shell are mounted through state: `loadable()` shares one download (retried after a failure), `useLoaded()` sets
+state when it resolves, and a state update renders in a blocking lane that cannot be starved. A failed download
+still reaches the panel's error boundary (Reload Panel asks again) or, for the shell, the "Could not load the
+editor" screen. The same test mounts the same panel through `useLoaded` under the same ticker and finds it on
+screen.
+
+The source of the frequent updates in that run was not identified (the trace was gone when the cause was
+understood); the fix does not depend on it.
+
+## 8. Documents
 
 `docs/gaps.md`, `docs/parity.md`, `docs/M1-STATUS.md` and the README were brought to the final state: no workstream
 is "in flight", the five disabled menu entries are gone, the counts are recounted (323 MCP tools from a live
 `listTools`, 291 menubar entries all registered, 256 document commands, 22 panels, 525 test files, 54 Playwright
 specs), the README opens with what the product does.
 
-## 8. Tests added
+## 9. Tests added
 
 | File | What |
 |---|---|
@@ -220,10 +245,11 @@ specs), the README opens with what the product does.
 | `apps/web/test/polish-keybindings.test.tsx` | Get Properties, poster frames, custom bins |
 | `apps/web/test/polish-i18n.test.tsx` | lazy strings, composite names, the observer, the epoch |
 | `apps/web/test/polish-open.test.tsx` | batch resolution, fallback, the boot script, the chunk list, the early fetch |
+| `apps/web/test/polish-panel-loading.test.tsx` | §7: the starved Suspense retry, the state-mounted panel, `loadable` |
 | `e2e/polish.spec.ts` | menus and dialogs, Media Browser import, Edit Parameters, the live language switch both ways, the 2 000-item open |
 | `e2e/project-files.spec.ts` (one test added), `e2e/gaps.spec.ts`, `e2e/smoke.spec.ts` | §1, §6 |
 
-## 9. Comparison with the references
+## 10. Comparison with the references
 
 The reference repositories (EffectCraft, FilmCraft) are editors in Rust with egui; nothing in this scope has a
 counterpart to port. Where they have the feature: FilmCraft's media browser draws every row of a folder in a scroll
@@ -231,7 +257,7 @@ area and imports by path; here the listing is capped and filtered by what can be
 thumbnails — equal in function, better at scale. Neither has single-writer leases across windows, a web build, UI
 languages, or an engine to report on.
 
-## 10. Not done, and caveats
+## 11. Not done, and caveats
 
 - The 2 s open target is not demonstrated on this host (§5).
 - The Media Browser previews what the browser can play; other files show the engine's thumbnail and say so. There

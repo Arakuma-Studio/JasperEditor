@@ -38,7 +38,14 @@ for (const p of PROPERTY_SPECS as readonly { label?: string; optionLabels?: read
 }
 // polish: the built-in presets (effect, caption, sequence, proxy, EQ, reverb, shape, text animator, Essential
 // Sound): their names, bins / categories and descriptions.
-type Named = { name?: string; label?: string; category?: string; group?: string; folder?: string; description?: string };
+type Named = {
+	name?: string;
+	label?: string;
+	category?: string;
+	group?: string;
+	folder?: string;
+	description?: string;
+};
 const presetFamilies = project as unknown as Record<string, unknown>;
 for (const family of [
 	'BUILTIN_EFFECT_PRESETS',
