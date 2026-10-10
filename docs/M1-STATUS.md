@@ -70,10 +70,19 @@ These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-n
   browser drops the request (a crash, a killed process), the lease expires after 30 s, and the unsaved changes
   are offered for recovery on the next open (ARCHITECTURE D-39). Observed once in about six automated runs
   (`e2e/project-files.spec.ts` development, 7 October): a full navigation to Home within a second or two of opening
-  a project left its lease held until it expired; the cause was not found (the keepalive request is best-effort).
+  a project left its lease held until it expired. **Resolved by workstream `polish` (2026-10-10):** the cause is that
+  the keepalive request is best effort and can lose the race against the new page's acquire; a tab now remembers the
+  session that held each lease (`sessionStorage`) and takes its own lease over at once, after checking that no live
+  page of the origin still holds it (`packages/session/src/persistence/tab-leases.ts`, docs/wp-notes/polish.md §1;
+  `e2e/project-files.spec.ts` drops every release and reloads).
 - **Unregistered commands at the M1 checkpoint:** clipboard, transitions, captions, preferences, and
-  other M2 menu commands were pending. The old wiring inventory test was removed during test cleanup;
-  current command behavior is checked through feature tests and browser workflows.
+  other M2 menu commands were pending. **Resolved:** the parity workstreams registered them (the last five menu
+  entries and five dead default shortcuts by `polish`), and `apps/web/test/polish-menu-wiring.test.ts` — the wiring
+  inventory test, back — fails when a menubar entry, a panel menu entry or a default key binding has no command.
+- **`pnpm mg:build` (item 9):** it stopped building when every asset got an `.attribution` sidecar (fframes'
+  `include_media_dir!` refuses non-media files); fixed by `polish` (the media is staged without the sidecars), and
+  `pnpm e2e` builds `jasper-mg` when cargo is installed. Re-run 2026-10-10: `e2e/smoke.spec.ts` 11 / 11, the native
+  motion-graphic export included.
 
 ## WP-3I acceptance run (evidence)
 
@@ -118,9 +127,10 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
   with `mg.rerender`.
 - **WP-2B (S02:TL-150): filmstrips.** Filmstrips are hidden at the default video track height; consider a
   default height ≥ 40 px or a thumbnail strip for small tracks.
-- **WP-2A / WP-2E (S05 §12.2): remaining commands at this checkpoint.** Register menubar/keymap ids for
+- ~~**WP-2A / WP-2E (S05 §12.2): remaining commands at this checkpoint.** Register menubar/keymap ids for
   clipboard (S01 §20), transitions, captions, shapes, Save As /
-  Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.
+  Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.~~
+  Done by the parity workstreams; every menu entry and default key binding has a command (see above).
 - **WP-2F (D-13): hardware H.264.** Run an export on a GPU host. The WP-3L encoder selector
   (`apps/engine/src/tools/encoders.ts`) picks hardware encoders first, but only their argument sets are
   unit-tested here (no GPU on the dev host). OpenH264 on the LGPL build is covered since wp-lgpl.
