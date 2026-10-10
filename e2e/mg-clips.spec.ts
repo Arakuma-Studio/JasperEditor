@@ -103,6 +103,7 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 			}
 			// What the page finds where storage and cookies would be: stand-ins of its own document (the bootstrap
 			// installs them because the real ones throw in an opaque origin, and Remotion reads them at start-up).
+			// biome-ignore lint/suspicious/noDocumentCookie: the point is what a plain cookie write does in the sandbox
 			document.cookie = 'stolen=1';
 			const cookies = document.cookie;
 			window.localStorage.setItem('jasper-mg-probe', 'from-the-bundle');
