@@ -7,9 +7,9 @@
 //
 // - `CompoundFile.open` parses a file held in memory; every chain is bounds- and cycle-checked, so damaged files
 //   give a `CfbError`, never an exception of another kind or an endless loop. A hostile file cannot make the reader
-//   allocate more than a small multiple of its own size either (security review PAR-2): a chain never visits a
-//   sector twice and never has more sectors than the file, and the bytes handed out by `read` are counted against
-//   a budget, so directory entries that all claim the same sectors cannot be read into gigabytes.
+//   allocate more than a small multiple of its own size either (security review PAR-2): a chain never has more
+//   sectors than the file, and the bytes handed out by `read` are counted against a budget, so directory entries
+//   (or AAF properties) that all name the same stream cannot be read into gigabytes.
 // - `CfbWriter` builds a tree of storages and streams and lays it out in one pass: stream sectors, mini stream,
 //   mini FAT, directory, FAT and DIFAT.
 //
@@ -177,14 +177,12 @@ export class CompoundFile {
 		let len = 0;
 		let s = start;
 		let steps = 0;
-		// A chain visits a sector at most once, so it has at most as many sectors as the file. (The FAT's length is
-		// no bound: a header can declare every sector a FAT sector, and a two-sector cycle would then be followed
-		// for a quarter of the file's size in steps, each adding a whole sector to the result.)
-		const seen = new Uint8Array(this.sectorCount + 1);
+		// A chain that revisits a sector never ends, so it is caught by its length: no chain has more sectors than
+		// the file (nor more than the FAT has entries). Nothing is copied until the chain has ended.
+		const maxSteps = Math.min(Math.max(this.fat.length, 1), this.sectorCount + 1);
 		while (s !== ENDOFCHAIN) {
 			if (s > MAXREGSECT) throw invalid(`bad sector 0x${s.toString(16)} in a chain`);
-			if (++steps > this.sectorCount || s >= seen.length || seen[s]) throw invalid('sector chain loops');
-			seen[s] = 1;
+			if (++steps > maxSteps) throw invalid('sector chain loops');
 			const b = this.sector(s);
 			parts.push(b);
 			len += b.length;

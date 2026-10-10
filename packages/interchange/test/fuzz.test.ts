@@ -7,6 +7,7 @@ import type { TransactionResult } from '@jasper/project';
 import { bytesTarget, describeFuzz } from '@jasper/testkit/fuzz';
 import { exportTimeline, FORMAT_INFO, type Format, importTimeline } from '../src/index.ts';
 import { InterchangeError } from '../src/report.ts';
+import { hostileSeeds } from './support/hostile.ts';
 import { addCaptions, Harness, richProject } from './support/rich.ts';
 
 function seeds(): Uint8Array[] {
@@ -17,6 +18,9 @@ function seeds(): Uint8Array[] {
 		if (!FORMAT_INFO[f]?.write) continue;
 		for (const file of exportTimeline(h.doc, h.seqId, f).files) out.push(file.bytes);
 	}
+	// Security review PAR-2: mutation also starts from the container shapes that made the AAF and OMF readers loop
+	// or allocate without bound (repeated children, empty-key sets, overlapping segments, self-containing objects).
+	out.push(...hostileSeeds());
 	return out;
 }
 

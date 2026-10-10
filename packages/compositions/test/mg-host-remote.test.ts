@@ -21,7 +21,7 @@ import {
 	sanitizeMetadata,
 } from '../src/mg-host/remote.ts';
 
-type PageWindow = Window & Record<string, unknown>;
+type PageWindow = Record<string, unknown>;
 const W = window as unknown as PageWindow;
 const REMOTION_GLOBALS = [
 	'remotion_setBundleMode',
