@@ -151,12 +151,19 @@ export const AGENT_WS_CLIENT_EVENTS = {
 export const AgentApprovalResolveSchema = z.object({
 	approvalId: z.string(),
 	decision: z.enum(['approved', 'denied']),
+	/** The `answerKey` the engine sent this connection with the card (security review AGT-2). */
+	answerKey: z.string().min(1).max(256),
 });
 /** Engine → editor. */
 export const AgentWsServerMessageSchema = z.discriminatedUnion('type', [
 	AgentWsRequestSchema,
 	AgentWsPingSchema,
-	z.object({ type: z.literal('welcome'), engineVersion: z.string() }),
+	z.object({
+		type: z.literal('welcome'),
+		engineVersion: z.string(),
+		/** The engine recognised this connection as the editor window (it may show and answer approval cards). */
+		editor: z.boolean().optional(),
+	}),
 	/** Engine-side events for the session (e.g. `agent.approval.requested` / `.resolved`). */
 	AgentWsEventSchema,
 ]);
@@ -176,8 +183,20 @@ export const ApprovalSchema = z.object({
 	summary: z.string().optional(),
 	/** The commands awaiting approval (for the approval card's detail view). */
 	commands: z.array(z.unknown()).optional(),
+	/**
+	 * `operation`: a request that is not a transaction (delete a preset, clean the cache, restore a version…);
+	 * `summary` then says what it does and `commandCount` is 0.
+	 */
+	kind: z.enum(['transaction', 'operation']).optional(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;
+/**
+ * The card as the engine sends it to one editor connection over WS /agent: the approval plus the key that
+ * connection must present to answer it. The key is per connection and per approval; it is not part of the
+ * `agent.approval.requested` engine event on `/events`, which agents can read.
+ */
+export const ApprovalCardSchema = ApprovalSchema.extend({ answerKey: z.string() });
+export type ApprovalCard = z.infer<typeof ApprovalCardSchema>;
 
 /**
  * `POST /api/agent/open-project` (jasper-mcp `open_project_in_editor`): asks every connected editor window

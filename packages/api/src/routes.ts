@@ -1168,6 +1168,7 @@ export const ENGINE_PATH_PREFIXES = [
 	'/fonts',
 	'/health',
 	'/mcp',
+	'/pair',
 ] as const;
 
 export function isEnginePath(pathname: string): boolean {

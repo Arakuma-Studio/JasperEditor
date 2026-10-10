@@ -25,6 +25,7 @@ import {
 } from '@jasper/api';
 import { isOpenableFile } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { isLoopbackHost } from '../context.ts';
 import { MediaJobService } from '../gaps/media-jobs.ts';
 import { PROJECT_MEDIA_DIR } from '../gaps/paths.ts';
@@ -178,7 +179,15 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		'/api/settings/gaps',
 		guarded(async (req) => {
 			const patch = parseOr400(EngineGapsSettingsSchema.partial(), req.body ?? {});
-			const next = { ...(await readSettings()), ...patch };
+			const current = await readSettings();
+			// Security review AGT-3: keeping fewer versions prunes the older ones on the next save of every project.
+			if (patch.keepVersions !== undefined && patch.keepVersions < current.keepVersions)
+				await requireUserApproval(app, req, {
+					label: 'Keep fewer project versions',
+					summary: `keep ${patch.keepVersions} saved version${patch.keepVersions === 1 ? '' : 's'} per project instead of ${current.keepVersions}`,
+					reasons: ['older saved versions of every project are deleted the next time it is saved'],
+				});
+			const next = { ...current, ...patch };
 			await atomicWriteJson(settingsFile, next);
 			apply(next);
 			return info();

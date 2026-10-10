@@ -10,6 +10,7 @@ import {
 	PreviewStatusRequestSchema,
 } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { requireUserApproval } from '../agent/user-approval.ts';
 import { JobError } from '../jobs/types.ts';
 import { PerfMonitor } from '../perf/stats.ts';
 import { PreviewService } from '../previews/service.ts';
@@ -72,7 +73,19 @@ export default async function previewsRoutes(app: FastifyInstance): Promise<void
 
 	app.post(
 		'/api/previews/delete',
-		guarded(async (req) => previews.delete(parseOr400(PreviewDeleteRequestSchema, req.body))),
+		guarded(async (req) => {
+			const body = parseOr400(PreviewDeleteRequestSchema, req.body);
+			// Security review AGT-3. Deleting named segments (a range of one sequence: Sequence ▸ Delete Render Files)
+			// is not gated: nothing in a project changes and Render In to Out makes them again. `all` deletes the render
+			// files of every project on this engine: an agent needs the user's approval.
+			if ('all' in body)
+				await requireUserApproval(app, req, {
+					label: 'Delete all render files',
+					summary: 'delete the render preview files of every project',
+					reasons: ['every rendered segment of every sequence has to be rendered again'],
+				});
+			return previews.delete(body);
+		}),
 	);
 
 	app.get<{ Params: { format: string; name: string } }>(

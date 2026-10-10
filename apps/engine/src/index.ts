@@ -1,4 +1,5 @@
 // startEngine (ARCHITECTURE §9.1): builds the config, prepares the appdir, listens on 127.0.0.1.
+import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
@@ -22,7 +23,16 @@ type StartEngineOptions = {
 	port: number;
 	host?: string;
 	dev?: boolean;
+	/** Default: `JASPER_LOCAL_TOKEN`, else a new random token (an engine that listens is never unauthenticated). */
 	token?: string | null;
+	/** Default: `JASPER_EDITOR_KEY`, else the dev key file (dev engines), else a new random key. */
+	editorKey?: string | null;
+	/**
+	 * Listen without a token and without editor attestation: every local process is the user. For tests that
+	 * exercise an engine over real sockets; `JASPER_INSECURE_DEV=1` does the same from the environment, with a
+	 * warning. Ignored when a token is given.
+	 */
+	insecure?: boolean;
 	webDir?: string | null;
 	logger?: boolean;
 	env?: Record<string, string | undefined>;
@@ -33,8 +43,44 @@ export type RunningEngine = {
 	port: number;
 	host: string;
 	url: string;
+	/** The Bearer token (null only for an insecure engine). */
+	token: string | null;
+	/**
+	 * `<url>/pair?key=…` when this engine serves the web app and made its own editor key: opening it in a browser
+	 * makes that browser the editor (it receives the HttpOnly session and editor cookies). null when whoever
+	 * started the engine already holds the key (desktop shell, E2E harness, Vite dev server) or nothing is served.
+	 */
+	pairingUrl: string | null;
 	stop(): Promise<void>;
 };
+
+const newSecret = (): string => randomBytes(32).toString('base64url');
+const SECRET_RE = /^[A-Za-z0-9_-]{32,256}$/;
+
+/**
+ * Dev engines (`JASPER_DEV=1`) keep their editor key in `<appdir>/engine/editor-key.dev` (0600) and reuse it, so
+ * the Vite dev server can hand it to the browser and a `tsx watch` restart does not sign the editor out. A dev
+ * checkout is not a security boundary against a process that can read the user's files (it can edit the sources
+ * too); packaged and headless engines never write the key anywhere.
+ */
+function devEditorKey(file: string): string {
+	try {
+		const cur = readFileSync(file, 'utf8').trim();
+		if (SECRET_RE.test(cur)) return cur;
+	} catch {
+		// first start
+	}
+	const key = newSecret();
+	try {
+		const tmp = `${file}.${process.pid}.tmp`;
+		writeFileSync(tmp, `${key}\n`, { mode: 0o600 });
+		chmodSync(tmp, 0o600);
+		renameSync(tmp, file);
+	} catch (e) {
+		console.warn(`[engine] could not write ${file}: ${(e as Error).message}`);
+	}
+	return key;
+}
 
 export function prepareAppdir(appdir: string): void {
 	const p = appdirPaths(appdir);
@@ -67,7 +113,8 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 		appdir: opts.appdir,
 		paths: appdirPaths(opts.appdir),
 		dev,
-		token: opts.token ?? env[ENV.LOCAL_TOKEN] ?? null,
+		token: opts.token ?? (env[ENV.LOCAL_TOKEN] || null),
+		editorKey: opts.editorKey ?? (env[ENV.EDITOR_KEY] || null),
 		host: opts.host ?? DEFAULT_ENGINE_HOST,
 		port: opts.port,
 		// @fastify/static only accepts an absolute root; `JASPER_WEB_DIR=apps/web/dist` is relative to the cwd.
@@ -90,6 +137,20 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 		);
 	}
 	prepareAppdir(opts.appdir);
+	// Security review DEV-1: an engine that listens always has a token. There is no unauthenticated mode short of
+	// asking for one by name.
+	const env = opts.env ?? process.env;
+	let ownEditorKey = false;
+	if (!config.token) {
+		if (opts.insecure || isTruthyEnv(env[ENV.INSECURE_DEV])) {
+			config.editorKey = null;
+			if (!opts.insecure) console.warn(INSECURE_WARNING);
+		} else config.token = newSecret();
+	}
+	if (config.token && !config.editorKey) {
+		config.editorKey = config.dev ? devEditorKey(config.paths.devEditorKeyFile) : newSecret();
+		ownEditorKey = !config.dev;
+	}
 	const app = await createServer(config, { logger: opts.logger, env: opts.env });
 	await app.listen({ host: config.host, port: opts.port });
 	const addr = app.server.address();
@@ -102,6 +163,11 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 		port,
 		host: config.host,
 		url,
+		token: config.token,
+		pairingUrl:
+			ownEditorKey && config.webDir && config.editorKey
+				? `${url}/pair?key=${encodeURIComponent(config.editorKey)}`
+				: null,
 		stop: async () => {
 			removeRuntimeFile(runtimeFile);
 			await app.close();
@@ -109,10 +175,22 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 	};
 }
 
+const INSECURE_WARNING = [
+	'',
+	'  ******************************************************************************',
+	`  *  ${ENV.INSECURE_DEV} is set: THIS ENGINE HAS NO TOKEN.`,
+	'  *  Every process on this machine, of every user, can read and write your files',
+	'  *  through it, and agents can approve their own destructive requests.',
+	'  *  Unset it unless you are debugging the authentication itself.',
+	'  ******************************************************************************',
+	'',
+].join('\n');
+
 /**
  * `<appdir>/engine/runtime.json` (0600): lets local tools on the same machine (jasper-mcp, scripts) find
  * this engine's port and token (docs/wp-notes/wp-mcp.md). The appdir is the user's own data directory, so
- * the file is as private as the projects next to it. Failures are logged, never fatal.
+ * the file is as private as the projects next to it. Failures are logged, never fatal. The editor key is never
+ * written here: what reads this file is an agent, not the editor (security review AGT-2).
  */
 function writeRuntimeFile(config: EngineConfig, url: string): string | null {
 	const file = config.paths.runtimeFile;

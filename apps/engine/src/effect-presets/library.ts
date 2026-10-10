@@ -215,18 +215,36 @@ export class EffectPresetLibrary {
 	}
 
 	/** Deletes a bin with its sub-bins and every preset inside them. */
+	/** The bin and every bin below it. */
+	private static subtree(folders: readonly EffectPresetFolder[], id: string): Set<string> {
+		const gone = new Set([id]);
+		for (let grew = true; grew; ) {
+			grew = false;
+			for (const f of folders)
+				if (f.parentId && gone.has(f.parentId) && !gone.has(f.id)) {
+					gone.add(f.id);
+					grew = true;
+				}
+		}
+		return gone;
+	}
+
+	/** What deleting a bin takes with it: presets and bins inside it (for the approval card, security review AGT-3). */
+	contentsOf(
+		lib: { folders: readonly EffectPresetFolder[]; presets: readonly EffectPreset[] },
+		id: string,
+	): { presets: number; folders: number } {
+		const gone = EffectPresetLibrary.subtree(lib.folders, id);
+		return {
+			presets: lib.presets.filter((p) => p.folderId && gone.has(p.folderId)).length,
+			folders: gone.size - 1,
+		};
+	}
+
 	removeFolder(id: string): Promise<{ removedPresets: string[]; removedFolders: string[] }> {
 		return this.mutate((s) => {
 			if (!s.folders.some((x) => x.id === id)) throw notFound('Preset bin', id);
-			const gone = new Set([id]);
-			for (let grew = true; grew; ) {
-				grew = false;
-				for (const f of s.folders)
-					if (f.parentId && gone.has(f.parentId) && !gone.has(f.id)) {
-						gone.add(f.id);
-						grew = true;
-					}
-			}
+			const gone = EffectPresetLibrary.subtree(s.folders, id);
 			const removedPresets = s.presets.filter((p) => p.folderId && gone.has(p.folderId)).map((p) => p.id);
 			s.folders = s.folders.filter((f) => !gone.has(f.id));
 			s.presets = s.presets.filter((p) => !removedPresets.includes(p.id));

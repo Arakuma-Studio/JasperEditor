@@ -2,11 +2,15 @@
 // agents. Requests for a project whose editor session is connected to WS /agent are relayed to it
 // (30 s timeout); otherwise the engine answers headlessly with @jasper/project (S01:AGT-020).
 // Destructive transactions go through the approval gate (S01:AGT-011).
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
+	AgentApprovalResolveSchema,
 	type AgentQueryRequest,
 	type AgentTxResponse,
 	type AgentUiRequest,
 	type AgentUiResponse,
+	type Approval,
+	type ApprovalCard,
 	ENGINE_ERROR_CODES,
 	TransactionResultSchema,
 } from '@jasper/api';
@@ -38,7 +42,7 @@ import {
 	unknownCommandKeyIssues,
 } from '@jasper/project';
 import { KeyedMutex } from '../tools/mutex.ts';
-import { type ApprovalDecision, ApprovalGate } from './approvals.ts';
+import { type ApprovalDecision, ApprovalGate, type ApprovalRequest } from './approvals.ts';
 import { RevisionTracker } from './revisions.ts';
 import { type AgentConnection, type AgentSocket, RelayError, SessionRegistry } from './sessions.ts';
 import type { AgentProjectStore } from './store.ts';
@@ -105,6 +109,15 @@ function queryError(code: string, message: string): AgentApiError {
 
 const RELAYED_SESSION_EVENTS = new Set(['doc.changed', 'selection.changed', 'playhead.changed']);
 
+/** The user's answer, or `no-editor`: no editor window that could show the card is connected. */
+export type UserApprovalOutcome = ApprovalDecision | 'no-editor';
+
+function sameSecret(a: string, b: string): boolean {
+	const x = Buffer.from(a);
+	const y = Buffer.from(b);
+	return x.length === y.length && timingSafeEqual(x, y);
+}
+
 export class AgentService {
 	readonly sessions: SessionRegistry;
 	readonly approvals: ApprovalGate;
@@ -123,19 +136,81 @@ export class AgentService {
 			engineVersion: opts.engineVersion,
 			heartbeatMs: opts.heartbeatMs,
 			onEvent: (conn, event, payload) => this.onSessionEvent(conn, event, payload),
+			onHello: (conn) => this.onSessionHello(conn),
 		});
 		this.approvals = new ApprovalGate({
 			timeoutMs: opts.approvalTimeoutMs,
-			onRequested: (a) => {
-				this.publish('agent.approval.requested', a, a.projectId);
-				this.sessions.sendEvent(a.projectId, 'agent.approval.requested', a);
-			},
 			onResolved: (a, decision) => {
 				const payload = { approvalId: a.approvalId, decision };
-				this.publish('agent.approval.resolved', payload, a.projectId);
-				this.sessions.sendEvent(a.projectId, 'agent.approval.resolved', payload);
+				this.publish('agent.approval.resolved', payload, a.projectId || undefined);
+				// Exactly the windows that showed the card take it down.
+				for (const c of this.cardHolders.get(a.approvalId) ?? []) {
+					c.approvalKeys.delete(a.approvalId);
+					this.sessions.sendTo(c, 'agent.approval.resolved', payload);
+				}
+				this.cardHolders.delete(a.approvalId);
 			},
 		});
+	}
+
+	// ------------------------------------------------------------ approvals (S01:AGT-011, security review AGT-2)
+
+	/** approvalId → the editor connections showing its card. */
+	private readonly cardHolders = new Map<string, Set<AgentConnection>>();
+
+	/**
+	 * Shows one editor connection the card of a pending approval, with an answer key made for that connection and
+	 * that approval. The key travels only on this WebSocket: it is in no engine event, no HTTP response and no log,
+	 * so nothing but the window that displays the card can answer it.
+	 */
+	private showCard(conn: AgentConnection, approval: Approval): void {
+		if (!conn.editor || !conn.projectId || conn.approvalKeys.has(approval.approvalId)) return;
+		const answerKey = randomBytes(24).toString('base64url');
+		conn.approvalKeys.set(approval.approvalId, answerKey);
+		let holders = this.cardHolders.get(approval.approvalId);
+		if (!holders) {
+			holders = new Set();
+			this.cardHolders.set(approval.approvalId, holders);
+		}
+		holders.add(conn);
+		// The window filters cards by its own project; a project-less approval is shown under the window's.
+		const card: ApprovalCard = { ...approval, projectId: conn.projectId, answerKey };
+		if (!this.sessions.sendTo(conn, 'agent.approval.requested', card)) {
+			conn.approvalKeys.delete(approval.approvalId);
+			holders.delete(conn);
+		}
+	}
+
+	/**
+	 * Asks the user: a card in every editor window of the project (or of any project when the request is not about
+	 * one). Resolves with the decision, `timeout`, or `no-editor` at once when no editor window is connected — an
+	 * agent, jasper-mcp or the CLI holding the engine token is not one and is never asked.
+	 */
+	askUser(req: ApprovalRequest): Promise<UserApprovalOutcome> {
+		const targets = this.sessions.editors(req.projectId);
+		if (targets.length === 0) return Promise.resolve('no-editor');
+		const { approval, decision } = this.approvals.request(req);
+		this.publish('agent.approval.requested', approval, req.projectId ?? undefined);
+		for (const c of targets) this.showCard(c, approval);
+		return decision;
+	}
+
+	/** True when an editor window that can show an approval card is connected (for a project, or at all). */
+	hasEditor(projectId?: string | null): boolean {
+		return this.sessions.editors(projectId).length > 0;
+	}
+
+	/** An editor window (re)announced itself: it shows what is pending for it, and forgets other projects' cards. */
+	private onSessionHello(conn: AgentConnection): void {
+		if (!conn.editor || !conn.projectId) return;
+		for (const approvalId of [...conn.approvalKeys.keys()]) {
+			const scope = this.approvals.scopeOf(approvalId);
+			if (scope === null || scope === conn.projectId) continue;
+			conn.approvalKeys.delete(approvalId);
+			this.cardHolders.get(approvalId)?.delete(conn);
+			this.sessions.sendTo(conn, 'agent.approval.resolved', { approvalId, decision: 'moved' });
+		}
+		for (const a of this.approvals.pending(conn.projectId)) this.showCard(conn, a);
 	}
 
 	private publish(type: string, payload: unknown, projectId?: string): void {
@@ -146,14 +221,22 @@ export class AgentService {
 		}
 	}
 
-	/** WS /agent entry point. */
-	handleSocket(socket: AgentSocket): AgentConnection {
-		return this.sessions.attach(socket);
+	/**
+	 * WS /agent entry point. `editor`: the upgrade request carried the editor key (routes/agent.ts), so this is the
+	 * editor window and not something else that holds the token.
+	 */
+	handleSocket(socket: AgentSocket, opts: { editor?: boolean } = {}): AgentConnection {
+		const conn = this.sessions.attach(socket, opts);
+		socket.on('close', () => {
+			for (const holders of this.cardHolders.values()) holders.delete(conn);
+		});
+		return conn;
 	}
 
 	close(): void {
 		this.approvals.close();
 		this.sessions.close();
+		this.cardHolders.clear();
 	}
 
 	// ------------------------------------------------------------ schema (S01:AGT-002)
@@ -354,7 +437,9 @@ export class AgentService {
 						decision === 'timeout' ? 'E_APPROVAL_TIMEOUT' : 'E_APPROVAL_DENIED',
 						decision === 'timeout'
 							? `The user did not answer the approval request within ${this.approvals.timeoutMs / 1000} s`
-							: 'The user denied the transaction',
+							: decision === 'no-editor'
+								? `Needs the user's approval (${reasons.join('; ')}) but no editor window that can show the request has the project open`
+								: 'The user denied the transaction',
 					),
 					appliedBy: 'session',
 				};
@@ -398,8 +483,8 @@ export class AgentService {
 		projectId: string,
 		tx: ReturnType<typeof normalizeAgentTransaction>,
 		reasons: string[],
-	): Promise<ApprovalDecision> {
-		const { decision } = this.approvals.request({
+	): Promise<UserApprovalOutcome> {
+		return this.askUser({
 			projectId,
 			label: tx.label,
 			agent: tx.origin.agent,
@@ -407,8 +492,8 @@ export class AgentService {
 			commandCount: tx.commands.length,
 			summary: summarizeTransaction(tx),
 			commands: tx.commands.slice(0, 50),
+			kind: 'transaction',
 		});
-		return decision;
 	}
 
 	/** True when the store reports no live lease (or cannot tell and no session is connected). */
@@ -495,14 +580,14 @@ export class AgentService {
 
 	private onSessionEvent(conn: AgentConnection, event: string, payload: unknown): void {
 		if (event === 'agent.approval.resolve') {
-			const p = payload as { approvalId?: unknown; decision?: unknown };
-			// Only a session that announced a project may answer, and only for that project's approvals.
-			if (
-				conn.projectId &&
-				typeof p?.approvalId === 'string' &&
-				(p.decision === 'approved' || p.decision === 'denied')
-			)
-				this.approvals.resolve(p.approvalId, p.decision, conn.projectId);
+			// Security review AGT-2: an answer counts only from the editor connection that was shown the card, proven by
+			// the answer key that connection alone received. Approve and deny alike: a connection that merely holds the
+			// engine token (an agent, jasper-mcp, the CLI) can do neither.
+			const p = AgentApprovalResolveSchema.safeParse(payload);
+			if (!p.success || !conn.editor || !conn.projectId) return;
+			const key = conn.approvalKeys.get(p.data.approvalId);
+			if (!key || !sameSecret(key, p.data.answerKey)) return;
+			this.approvals.resolve(p.data.approvalId, p.data.decision, conn.projectId);
 			return;
 		}
 		if (!conn.projectId || !RELAYED_SESSION_EVENTS.has(event)) return;

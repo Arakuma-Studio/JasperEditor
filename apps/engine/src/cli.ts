@@ -17,7 +17,15 @@ async function main(): Promise<void> {
 		);
 	}
 	const engine = await startEngine({ appdir, port, host, logger: false });
+	// The secrets are in the engine's memory now. Child processes (FFmpeg, Remotion and the bundle code it runs,
+	// workers) inherit the environment: they get neither (security review AGT-2).
+	delete process.env[ENV.EDITOR_KEY];
+	delete process.env[ENV.LOCAL_TOKEN];
 	console.log(`[engine] JasperEditor engine listening on ${engine.url} (appdir ${appdir})`);
+	// Printed for a person at a terminal only: a parent that pipes our output (jasper-mcp --start-engine, a test
+	// harness) is not the editor and must not learn the editor key.
+	if (engine.pairingUrl && process.stdout.isTTY)
+		console.log(`[engine] open the editor in a browser with ${engine.pairingUrl}`);
 	// D-13: say which FFmpeg is in use, and warn loudly when Remotion is not on the LGPL build.
 	const caps = await coreServices(engine.app).capabilities.get();
 	console.log(

@@ -5,7 +5,16 @@ import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
-import { API_HEADER, API_VERSION, AUTH_COOKIE, errorBody, isEnginePath } from '@jasper/api';
+import {
+	AGENT_INPUT_HEADER,
+	API_HEADER,
+	API_VERSION,
+	AUTH_COOKIE,
+	EDITOR_COOKIE,
+	errorBody,
+	isEnginePath,
+	portCookieName,
+} from '@jasper/api';
 import { loadExpressionEngine } from '@jasper/expressions';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createCoreAgentStore } from './agent/core-store.ts';
@@ -31,6 +40,39 @@ function readCookie(header: string | undefined, name: string): string | null {
 	}
 	return null;
 }
+
+/** A secret presented as a cookie, under its plain or its per-port name (`portCookieName`). */
+function cookieMatches(header: string | undefined, name: string, port: number, secret: string): boolean {
+	for (const n of [portCookieName(name, port), name]) {
+		let v: string | null = null;
+		try {
+			v = readCookie(header, n);
+		} catch {
+			v = null; // malformed percent-encoding
+		}
+		if (v && safeEqual(v, secret)) return true;
+	}
+	return false;
+}
+
+/**
+ * Security review AGT-2: is this request the editor window's (the user's) or an agent's? The editor proves itself
+ * with the editor key, which jasper-mcp, the CLI and everything else that reads runtime.json never have; a request
+ * the editor makes on behalf of an agent's live-UI input says so and counts as the agent's.
+ */
+export function isEditorRequest(
+	headers: { cookie?: string | undefined; [name: string]: string | string[] | undefined },
+	config: EngineConfig,
+): boolean {
+	if (headers[AGENT_INPUT_HEADER] !== undefined) return false;
+	if (!config.editorKey) return true;
+	return cookieMatches(headers.cookie, EDITOR_COOKIE, config.port, config.editorKey);
+}
+
+const PAIRED_PAGE =
+	'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>JasperEditor</title><a href="/">Open JasperEditor</a>';
+const UNPAIRED_PAGE =
+	'<!doctype html><meta charset="utf-8"><title>JasperEditor</title><body style="font:14px system-ui;margin:3rem;max-width:40rem"><h1 style="font-size:18px">This browser is not signed in to the JasperEditor engine</h1><p>Open the link the engine printed when it started (<code>…/pair?key=…</code>), or use the JasperEditor desktop app. The link changes every time the engine starts.</p>';
 
 function allowedHosts(config: EngineConfig): Set<string> {
 	const hosts = new Set<string>([`127.0.0.1:${config.port}`, `localhost:${config.port}`]);
@@ -72,6 +114,7 @@ export async function createServer(
 	const app = Fastify({ logger: opts.logger ?? false, bodyLimit: JSON_BODY_LIMIT, trustProxy: false });
 	const ctx: EngineContext = { config, services: {} };
 	app.decorate('jasper', ctx);
+	app.decorateRequest('jasperEditor', false);
 
 	// Core services (WP-2F): jobs, events, media, projects, exports… Other packages reach them through
 	// `coreServices(app)` (see docs/wp-notes/WP-2F.md).
@@ -134,13 +177,26 @@ export async function createServer(
 		if (origin !== undefined && !isAllowedOrigin(origin, config)) {
 			return sendError(reply, 403, 'FORBIDDEN_ORIGIN', `Origin "${origin}" is not allowed`);
 		}
+		req.jasperEditor = isEditorRequest(req.headers, config);
 		if (!config.token) return;
 		const path = req.url.split('?')[0]!;
-		if (path === '/health') return;
+		// /pair authenticates with the editor key in its query (below).
+		if (path === '/health' || path === '/pair') return;
 		const auth = req.headers.authorization;
 		const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-		const cookie = readCookie(req.headers.cookie, AUTH_COOKIE);
-		if ((bearer && safeEqual(bearer, config.token)) || (cookie && safeEqual(cookie, config.token))) return;
+		if (
+			(bearer && safeEqual(bearer, config.token)) ||
+			cookieMatches(req.headers.cookie, AUTH_COOKIE, config.port, config.token)
+		)
+			return;
+		// A browser that opens the engine's address without having been paired gets an explanation, not JSON.
+		if (
+			req.method === 'GET' &&
+			!isEnginePath(path) &&
+			req.headers['sec-fetch-dest'] === 'document' &&
+			(req.headers.accept ?? '').includes('text/html')
+		)
+			return reply.code(401).header('cache-control', 'no-store').type('text/html').send(UNPAIRED_PAGE);
 		return sendError(reply, 401, 'UNAUTHORIZED', 'Missing or invalid engine token');
 	});
 
@@ -175,7 +231,36 @@ export async function createServer(
 		},
 	);
 
-	app.get('/health', async () => ({ ok: true as const, version: config.version, apiVersion: API_VERSION }));
+	// Public. `runtimeFile` is where local tools find the token (jasper-mcp, the Vite dev server): the path is not a
+	// secret, the file is readable by the engine's user only.
+	app.get('/health', async () => ({
+		ok: true as const,
+		version: config.version,
+		apiVersion: API_VERSION,
+		runtimeFile: config.paths.runtimeFile,
+	}));
+
+	// Browser pairing (security review DEV-1 / AGT-2): an engine that serves the web app and was not started by
+	// something that already holds the editor key (the desktop shell sets the cookies itself) prints
+	// `<origin>/pair?key=<editor key>` on its terminal. Opening it makes that browser the editor: it gets the session
+	// token and the editor key as HttpOnly, SameSite=Strict cookies, which page scripts and agents cannot read.
+	app.get('/pair', async (req, reply) => {
+		const key = (req.query as { key?: unknown } | undefined)?.key;
+		if (!config.token || !config.editorKey || typeof key !== 'string' || !safeEqual(key, config.editorKey))
+			return sendError(reply, 401, 'UNAUTHORIZED', 'Invalid pairing key');
+		const cookie = (name: string, value: string) =>
+			`${portCookieName(name, config.port)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict`;
+		return (
+			reply
+				.header('set-cookie', [cookie(AUTH_COOKIE, config.token), cookie(EDITOR_COOKIE, config.editorKey)])
+				.header('cache-control', 'no-store')
+				.header('referrer-policy', 'no-referrer')
+				// Not a redirect: a navigation that started on another site would not carry SameSite=Strict cookies to
+				// the redirect target; the page navigates by itself.
+				.type('text/html')
+				.send(PAIRED_PAGE)
+		);
+	});
 
 	await registerRoutes(app);
 
