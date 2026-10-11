@@ -87,7 +87,9 @@ fuzz reproducer-write errors, and browser bundling with a global name. No golden
 `pnpm --filter @jasper/testkit typecheck` passed before the final E2E integration edits. The E2E typecheck
 was deliberately terminated at the integrator's request to reduce contention on the shared host; the
 integration gate must run it after the web-shell contract and project-command input type land.
-Biome checks cover the changed tooling, testkit and E2E files; `git diff --check` is clean.
+Biome checked 91 changed-scope tooling, testkit and E2E files without findings; `git diff --check` is clean.
+`pnpm exec playwright test --list` collected 234 tests in 54 files. This checks collection, not live browser
+behavior.
 
 The final lockfile is regenerated centrally because other audit workstreams also change workspace
 manifests. Full verification, live browser E2E behavior, fixture-media regeneration and macOS/Windows
