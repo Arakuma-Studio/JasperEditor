@@ -240,11 +240,7 @@ describe('caption MCP tools', () => {
 			(await call('caption_track', { action: 'update', track: 'C2', visible: false, active: true })).isError,
 		).toBe(false);
 		list = (await call('list_captions', {})).read(CaptionListSchema);
-		expect(
-			list
-				.read(CaptionListSchema)
-				.tracks.map((x: { active: boolean; visible: boolean }) => [x.active, x.visible]),
-		).toEqual([
+		expect(list.tracks.map((x) => [x.active, x.visible])).toEqual([
 			[false, true],
 			[true, false],
 		]);
