@@ -1,11 +1,11 @@
-import { type Clip, type Keyframe, SolidClipSchema } from '@jasper/project';
+import { type Clip, ClipSchema, type Keyframe, SolidClipSchema } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApplyTrackingDialog } from '../src/tracking/ApplyTrackingDialog.tsx';
 import { addTracker, commitTrackResult } from '../src/tracking/actions.ts';
 import { SimplifyKeyframesDialog } from '../src/tracking/SimplifyKeyframesDialog.tsx';
-import { clipHasDenseKeys } from '../src/tracking/simplify-actions.ts';
+import { clipHasDenseKeys, openSimplifyClips } from '../src/tracking/simplify-actions.ts';
 import { trackingStore } from '../src/tracking/store.ts';
 import { labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
@@ -158,6 +158,37 @@ describe('entry points', () => {
 				rotation: { value: 0, keyframes: keys.slice(0, 2) },
 				future: { value: 0, keyframes: keys.slice(2) },
 			},
+		});
+		expect(clipHasDenseKeys(clip)).toBe(true);
+	});
+
+	it.each([
+		{ effects: {} },
+		{ effects: [null] },
+		{ effects: [{}] },
+		{ effects: [{ params: null }] },
+		{ paramKeyframes: { future: null } },
+		{ paramKeyframes: { future: 'future' } },
+	])('ignores preserved unsupported animation data %j when simplifying unknown clips', (extension) => {
+		const { session, target } = trackingSession();
+		const clip = ClipSchema.parse({
+			...seqOf(session).clips[target],
+			kind: 'future-clip',
+			...extension,
+		});
+		expect(clip).toMatchObject(extension);
+		expect(openSimplifyClips(session, [clip])).toBeNull();
+	});
+
+	it.each([
+		{ effects: [{ params: { future: { value: 0, keyframes: keys } } }] },
+		{ paramKeyframes: { future: keys } },
+	])('counts preserved supported animation data %j on unknown clips', (extension) => {
+		const { session, target } = trackingSession();
+		const clip = ClipSchema.parse({
+			...seqOf(session).clips[target],
+			kind: 'future-clip',
+			...extension,
 		});
 		expect(clipHasDenseKeys(clip)).toBe(true);
 	});

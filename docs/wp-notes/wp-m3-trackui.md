@@ -116,6 +116,9 @@ The 2026-10-11 audit restored guarded keyframe counting: loose schemas preserve 
 which may be null or contain non-array `keyframes`. Valid animation extensions still contribute to the count.
 Measured: four schema-validated regression cases failed before the fix; all 9 tests passed with
 `cd apps/web && pnpm exec vitest run test/tracking-simplify.test.tsx --maxWorkers=1` afterward.
+A follow-up found the same entry point also trusted preserved effect lists and template-keyframe values on
+unknown clip kinds. Narrow array/null guards now ignore unsupported values while retaining valid animation
+extensions. Measured: six added cases failed before this follow-up; the same focused command passed all 17 afterward.
 
 Screenshots: `docs/screenshots/wp-m3-trackui/` — the timeline glyphs (02), a link click revealing Tracking (03), the
 dialog at 0.1 / 0.5 px (04, 05), Effect Controls after simplifying (06), the keyframe menu (07, 08) and a strip

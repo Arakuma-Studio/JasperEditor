@@ -24,11 +24,12 @@ function clipKeyframeCount(clip: Clip): number {
 	};
 	if ('transform' in clip) for (const animation of Object.values(clip.transform ?? {})) add(animation);
 	if ('opacity' in clip) add(clip.opacity);
-	if ('effects' in clip)
-		for (const effect of clip.effects ?? [])
-			for (const animation of Object.values(effect.params)) add(animation);
+	if ('effects' in clip && Array.isArray(clip.effects))
+		for (const effect of clip.effects)
+			for (const animation of Object.values(effect?.params ?? {})) add(animation);
 	if ('paramKeyframes' in clip)
-		for (const keys of Object.values(clip.paramKeyframes ?? {})) count += keys.length;
+		for (const keys of Object.values(clip.paramKeyframes ?? {}))
+			if (Array.isArray(keys)) count += keys.length;
 	return count;
 }
 
