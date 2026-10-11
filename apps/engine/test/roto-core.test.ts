@@ -1,5 +1,4 @@
-// Roto core algorithms (ported from EffectCraft): Boykov–Kolmogorov max-flow against brute force, exact distance
-// transforms, the guided filter on a linear blend, GrabCut segmentation and flow propagation of a moving disk.
+// Roto algorithms ported from EffectCraft; independent brute-force and analytic oracles check numerical behavior.
 import { describe, expect, it } from 'vitest';
 import { gmmCost, gmmFit } from '../src/roto/core/gmm.ts';
 import { boxMean, closedForm, distance, guidedFilter, signedDistance } from '../src/roto/core/matting.ts';
@@ -25,7 +24,6 @@ function xorshift(seed: number) {
 	};
 }
 
-/** Brute-force min cut over all labelings of a small graph. */
 function brute(n: number, t: [number, number][], e: [number, number, number, number][]): number {
 	let best = Number.POSITIVE_INFINITY;
 	for (let m = 0; m < 1 << n; m++) {
@@ -274,7 +272,6 @@ describe('segmentation and propagation', () => {
 				n++;
 			}
 		expect(err / n).toBeLessThan(errBin / n);
-		// Interior and far background stay exact.
 		expect(a[40 * 100 + 40]).toBe(1);
 		expect(a[5 * 100 + 5]).toBe(0);
 	});

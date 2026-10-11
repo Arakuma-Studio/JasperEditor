@@ -1,4 +1,3 @@
-// Export planner and native export (ARCHITECTURE §9.5, S04 §11–§12, QA-005).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -117,7 +116,6 @@ describe('planner (S04:RP-001/008/010)', () => {
 		});
 		expect(plan.planId).toMatch(/^pln_/);
 		expect(plan.estimate.seconds).toBeGreaterThan(0);
-		// Deterministic (S04:RP-011).
 		const again = await app.inject({
 			method: 'POST',
 			url: '/api/exports/plan',
@@ -199,13 +197,11 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		const isBlue = (p: number[]) => p[2]! > 200 && p[1]! < 80 && p[0]! < 80;
 		const isGreen = (p: number[]) => p[1]! > 150 && p[0]! < 80 && p[2]! < 80;
 		expect(isBlue(pixel(file, 10, 480, 200))).toBe(true);
-		expect(isGreen(pixel(file, 90, 480, 200))).toBe(true); // the solid ended at frame 60
-		// The later still must also be visible above the video.
+		expect(isGreen(pixel(file, 90, 480, 200))).toBe(true);
 		const stillRed = pixel(file, 90, 930, 700);
 		expect(stillRed[0]).toBeGreaterThan(200);
 		expect(stillRed[1]).toBeLessThan(60);
 
-		// Download with Range (S04:MS-002).
 		const size = readFileSync(file).length;
 		expect(result.byteSize).toBe(size);
 		const dl = await app.inject({
@@ -265,7 +261,7 @@ describe('frame accuracy of the native path', () => {
 			matchSequence: 'keep',
 		});
 		// Frame 10 is 0.333333… s and frame 40 is 1.333333… s: written as decimal seconds they are a hair
-		// before the frame boundary, which used to show the clip one frame early.
+		// before the frame boundary, so decimal-seconds rounding must not move the clip start.
 		d.tx([place(0, 0, 10), place(10, 20, 50), place(40, 5, 25)]);
 		const start = await app.inject({
 			method: 'POST',
@@ -479,7 +475,6 @@ describe('transitions on the native path (S01 §13)', () => {
 		expect(near(bit5(20), 255 * (5 / 11))).toBe(true);
 		expect(near(bit5(24), 255 * (1 / 11))).toBe(true);
 		expect(near(bit5(25), 0)).toBe(true);
-		// The cut itself stays frame accurate outside the span.
 		expect(frameCode(file, 14)).toBe(46);
 		expect(frameCode(file, 25)).toBe(13);
 	}, 120_000);
@@ -584,7 +579,7 @@ describe('overlays with an alpha channel on the native path', () => {
 		expect(done.error).toBeUndefined();
 		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
 		const p = pixel(file, 5, 960, 540);
-		expect(Math.abs(p[0] - 127) < 16 && Math.abs(p[1] - 128) < 16).toBe(true); // 50 % green over red
+		expect(Math.abs(p[0] - 127) < 16 && Math.abs(p[1] - 128) < 16).toBe(true);
 	}, 120_000);
 
 	it('refuses the native path when the build has no libvpx decoder for an alpha WebM', async () => {
@@ -628,12 +623,10 @@ describe('overlays with an alpha channel on the native path', () => {
 		const near = (p: number[], want: number[], tol: number) =>
 			p.every((v, i) => Math.abs(v - want[i]!) <= tol) || `${p} is not within ${tol} of ${want}`;
 		for (const frame of [10, 45]) {
-			// Fully transparent area: the red solid below shows through unchanged.
 			expect(near(pixel(file, frame, 1700, 900), [255, 0, 0], 12)).toBe(true);
 			// 50 % green over red: (R, G) ≈ (127, 128). A premultiplied/straight mix-up would give ≈ (191, 64)
 			// or clip, a dropped alpha channel would give black.
 			expect(near(pixel(file, frame, 960, 540), [127, 128, 0], 14)).toBe(true);
-			// Opaque white box.
 			expect(near(pixel(file, frame, 200, 200), [255, 255, 255], 8)).toBe(true);
 		}
 	}, 120_000);

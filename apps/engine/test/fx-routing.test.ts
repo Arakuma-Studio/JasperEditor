@@ -1,8 +1,5 @@
-// Engine routing of GPU shader effects (wave-1 fx framework): shader effects block the native path (the planner
-// sends the clip to Remotion, where the compositions run the shaders; the M1 builder only renders crop/flips and the
-// extensions' effects, so even an `EffectSpec.native` mapping is not used there yet), time-dependent shader effects
-// make a DOM layer non-static for bakes (no still PNG), and shader effects keep the clip id in the bake key (their
-// `u_seed` hashes it).
+// A native effect mapping alone does not prove rendering: GPU shaders require a composition stage.
+// Time-dependent shaders cannot use still bakes; seeded shaders require the clip id in the bake key.
 import {
 	createEffectRegistry,
 	defaultEffectRegistry,

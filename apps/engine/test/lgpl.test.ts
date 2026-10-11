@@ -1,6 +1,3 @@
-// LGPL mode (ARCHITECTURE D-13): with JASPER_FFMPEG_LGPL_ONLY=1 the selector ignores GPL encoders even
-// though the system build has libx264. A real native export and a real proxy must still succeed with an
-// LGPL-compatible encoder (hardware / OpenH264 when present, else AV1 or VP9).
 import { spawnSync } from 'node:child_process';
 import { RenderPlanSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

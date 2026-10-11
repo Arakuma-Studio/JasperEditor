@@ -1,4 +1,3 @@
-// Filesystem project store (S01:PER-002/016/020/025/040, ARCHITECTURE §9.2).
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
@@ -85,17 +84,14 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		const ok = await save(3, '0', 'Renamed');
 		expect(ok.statusCode).toBe(200);
 		expect(ok.json()).toEqual({ revision: 3 });
-		// Another writer still based on revision 0 → conflict with the stored revision.
 		const conflict = await save(1, '0', 'Stale');
 		expect(conflict.statusCode).toBe(409);
 		expect(conflict.json()).toMatchObject({ code: 'REVISION_CONFLICT', detail: { revision: 3 } });
-		// Stored revision never goes backwards: base 3 with a lower client revision gets 4.
 		expect((await save(2, '3', 'Again')).json()).toEqual({ revision: 4 });
 		expect((await save(9, undefined, 'x')).statusCode).toBe(428);
 		const doc = (await app.inject({ method: 'GET', url: `/api/projects/${id}`, headers: H })).json();
 		expect(doc.revision).toBe(4);
 		expect(doc.envelope.document.name).toBe('Again');
-		// Invalid documents are rejected (S04:SC-020) and a document for another project too.
 		const invalid = await app.inject({
 			method: 'PUT',
 			url: `/api/projects/${id}`,
@@ -114,7 +110,6 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 			},
 		});
 		expect(foreign.statusCode).toBe(400);
-		// No temp files left behind by the atomic writes.
 		const dir = appdirPaths(app.appdir).projectDir(id);
 		expect(readdirSync(dir).filter((n) => n.includes('.tmp'))).toEqual([]);
 	});
@@ -177,9 +172,9 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		const save = async () => {
 			rev = (await store.save(id, { ...envelope, revision: rev + 1 }, rev)).revision;
 		};
-		await save(); // first save keeps the original as a version
+		await save();
 		now += 60_000;
-		await save(); // within 5 minutes: no new version
+		await save();
 		now += 5 * 60_000;
 		await save();
 		const versions = await store.versions(id);
@@ -215,7 +210,7 @@ describe('leases (S01:PER-040)', () => {
 			detail: { holderSessionId: 'sess-a' },
 			retryable: true,
 		});
-		expect((await acquire('sess-a')).json().leaseId).toBe(lease.leaseId); // same session: refresh
+		expect((await acquire('sess-a')).json().leaseId).toBe(lease.leaseId);
 		const hb = await app.inject({
 			method: 'POST',
 			url: `/api/projects/${id}/lease/${lease.leaseId}/heartbeat`,
@@ -276,7 +271,6 @@ describe('leases (S01:PER-040)', () => {
 		});
 		expect(oldHb.statusCode).toBe(404);
 		expect(oldHb.json()).toMatchObject({ code: 'LEASE_NOT_FOUND' });
-		// takeOver by the holder itself is a plain renewal.
 		expect((await acquire('sess-b', true)).json().leaseId).toBe(b.json().leaseId);
 	});
 });

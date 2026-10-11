@@ -1,6 +1,4 @@
-// 3D Camera Tracker jobs end to end (three-d) with real ffmpeg, OpenCV.js and the jasper-camtrack child process on the
-// ray-cast plate of `scripts/fixtures/camtrack.mjs` (a dolly with an exactly known camera): the solved focal length and
-// path against the truth, the tracks cache (re-solve with deleted points), cancellation and refusals.
+// scripts/fixtures/camtrack.mjs ray-casts a dolly with an exactly known camera for comparison.
 import { readFileSync } from 'node:fs';
 import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

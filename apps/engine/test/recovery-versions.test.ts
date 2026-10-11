@@ -1,5 +1,3 @@
-// Crash-recovery journal (S01:PER-021, AC-18), saved versions (read / restore) and the schema backup kept by the
-// first save over a migrated project (S01:MIG-004). ARCHITECTURE D-39, docs/project-files.md.
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
@@ -87,7 +85,7 @@ describe('schema backup on the first save over a migrated project (S01:MIG-004)'
 		const backup = join(s.paths.projectDir(id), schemaBackupName(4));
 		expect(readFileSync(backup, 'utf8')).toBe(before);
 		s.tick(10 * 60_000);
-		await save(env.revision + 1); // later saves never touch the backup
+		await save(env.revision + 1);
 		expect(readFileSync(backup, 'utf8')).toBe(before);
 
 		const versions = await s.store.versions(id);
@@ -220,12 +218,10 @@ describe('crash-recovery journal over HTTP (S01:PER-021, AC-18)', () => {
 		};
 
 		expect((await put(body)).json()).toMatchObject({ ok: true });
-		// someone else's lease id, or a session that does not hold the lease, cannot write
 		expect((await put({ ...body, leaseId: 'lse_nope' })).statusCode).toBe(404);
 		expect((await put(body, 'ses_b')).statusCode).toBe(409);
 		expect((await put(body, 'bad%21id')).statusCode).toBe(400);
 
-		// held: not offered, not readable, not deletable by others
 		expect((await get(`/api/projects/${id}/recovery`)).json().candidates).toEqual([]);
 		expect((await get(`/api/projects/${id}/recovery/ses_a`)).statusCode).toBe(409);
 		expect(
@@ -275,7 +271,6 @@ describe('crash-recovery journal over HTTP (S01:PER-021, AC-18)', () => {
 		expect(own.json()).toEqual({ ok: true });
 		expect(existsSync(join(app.appdir, 'projects', id, 'recovery', 'ses_c'))).toBe(false);
 
-		// the autosave caught up before the crash: nothing to offer, and the journal goes away
 		await put(envelope);
 		await app.inject({ method: 'DELETE', url: `/api/projects/${id}/lease/${l.leaseId}`, headers: H });
 		expect((await get(`/api/projects/${id}/recovery`)).json().candidates).toEqual([]);
@@ -353,7 +348,6 @@ describe('session journal and versions through EngineProjectStore (real routes)'
 		expect(await st.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		expect((await st.open(projectId)).revision).toBe(1);
 
-		// restore the first version in place from the open editor, then reopen it
 		const versions = await st.listVersions(projectId);
 		expect(versions[0]).toMatchObject({ kind: 'auto', revision: 0 });
 		await p2.flush();
@@ -361,7 +355,6 @@ describe('session journal and versions through EngineProjectStore (real routes)'
 		expect(rev).toBe(2);
 		const s3 = await reopenSession(s2);
 		expect(Object.keys(Object.values(s3.getCommitted().sequences)[0]!.clips)).toEqual([]);
-		// and as a copy (S01:PER-001 restoreVersion)
 		const copyId = await st.restoreVersion(projectId, versions[0]!.versionId);
 		expect((await st.list()).some((p) => p.projectId === copyId)).toBe(true);
 		await s3.close();

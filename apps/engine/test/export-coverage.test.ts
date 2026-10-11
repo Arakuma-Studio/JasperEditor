@@ -1,13 +1,4 @@
-// Security review EXP-1 (AGENTS.md §4: export never silently drops or approximates a feature). Enumerates the
-// registries — every video effect, every transition, every audio effect, the clip kinds and clip features — and
-// checks, with the engine's real native extensions, that each is
-//  - rendered by the native path by a stage that implements it (built-in effects, colour ops fused into a LUT, a
-//    claiming extension), or
-//  - baked by an extension (graphics groups, rendered by the compositions), or
-//  - refused for the native path by a blocker that names the clip (the export then goes through Remotion), and
-//  - in the last two cases, actually drawn by the compositions (a GPU shader, a colour op, a CSS/SVG preview or a
-//    dedicated stage), since a feature the compositions do not draw would be dropped on that path too;
-// and that every audio effect has an export processor (the planner refuses the others by name on every path).
+// A native blocker is only safe when the alternate composition stage actually renders the feature (AGENTS.md §4).
 import {
 	CORNER_PIN_EFFECT_ID,
 	defaultEffectRegistry,
@@ -60,7 +51,6 @@ async function snapshotOf(d: DocBuilder) {
 	return planned;
 }
 
-/** The compositions draw this effect (shader, colour op, CSS/SVG, or a dedicated stage). */
 function drawnByCompositions(spec: EffectSpec): boolean {
 	return (
 		!!spec.gpu ||
@@ -179,7 +169,6 @@ describe('EXP-1: every video effect is rendered, baked or named by a blocker', (
 		expect(silent, silent.join('\n')).toEqual([]);
 		expect(undrawn, undrawn.join('\n')).toEqual([]);
 		expect((routes.blocked ?? 0) + (routes.baked ?? 0) + (routes.native ?? 0)).toBe(clipOf.size);
-		// Every effect was classified one way or the other.
 		expect(clipOf.size + refusedByName.size + refused.length).toBe(videoEffects.length);
 	}, 300_000);
 });

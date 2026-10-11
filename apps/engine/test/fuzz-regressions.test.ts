@@ -1,4 +1,3 @@
-// Regressions for the bugs the engine fuzzing found (golden-fuzz).
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

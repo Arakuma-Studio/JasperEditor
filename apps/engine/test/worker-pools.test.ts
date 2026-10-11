@@ -15,7 +15,6 @@ import { ExportWorkerPool, framePoolSize } from '../src/export/worker-pool.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** Settles `p` or fails after `ms` (a hang is the bug). */
 async function settles<T>(
 	p: Promise<T>,
 	ms = 5000,

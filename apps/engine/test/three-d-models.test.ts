@@ -1,5 +1,3 @@
-// three-d: 3D model files register as media of kind `model` through the engine's model prober (.glb / .gltf / .obj);
-// unreadable files fail the import with the parser's reason.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

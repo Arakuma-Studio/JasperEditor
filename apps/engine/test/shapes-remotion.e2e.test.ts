@@ -1,9 +1,4 @@
-// Shapes rendered for real (S11:SHP-004, wp-m2-shapes, REMOTION_E2E=1): a still of a 720p frame with a filled
-// rectangle with an inside stroke, a circle with an outside stroke and no fill, a centre-stroked rectangle and a
-// filled ellipse is compared with an analytic reference (4×4 supersampled coverage of the exact geometry):
-// edge positions, visible stroke widths (inside / center / outside all equal `width`) and colours.
-// Before wp-m2-layer-bake the still renders on the Remotion path; with the layer bake it renders natively with
-// the shapes baked by Remotion — the pixels must match the same reference either way.
+// Analytic geometry with 4×4 supersampled coverage is the oracle for both native bakes and Remotion.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -67,7 +62,6 @@ function reference(): Uint8Array {
 	return out;
 }
 
-/** Length of the run of pixels matching `pred` along a row or column starting at (x, y). */
 function run(
 	img: Uint8Array,
 	x: number,
@@ -156,7 +150,6 @@ describe.runIf(enabled)('shape stills against the analytic reference (REMOTION_E
 			const done = await coreServices(engine.app).queue.wait(job.id);
 			expect(done.error).toBeUndefined();
 			expect(done.state).toBe('succeeded');
-			// Remotion path today; native with baked layers once wp-m2-layer-bake is merged (LBK-025).
 			expect(['remotion', 'native', 'hybrid']).toContain((done.result as { renderPath: string }).renderPath);
 			const png = await fetch(`${engine.url}${(done.result as { url: string }).url}`);
 			expect(png.status).toBe(200);
@@ -177,19 +170,17 @@ describe.runIf(enabled)('shape stills against the analytic reference (REMOTION_E
 			expect(run(img, 900, 92, 0, 1, near(GREEN))).toBeGreaterThanOrEqual(6);
 			expect(run(img, 191, 560, 1, 0, near(WHITE))).toBeGreaterThanOrEqual(18); // centre: 20 px across x = 200
 			expect(run(img, 191, 560, 1, 0, near(WHITE))).toBeLessThanOrEqual(20);
-			// Interiors and outsides.
 			const px = (x: number, y: number): RGB => {
 				const i = (y * W + x) * 3;
 				return [img[i]!, img[i + 1]!, img[i + 2]!];
 			};
 			expect(near(RED, 3)(px(320, 200))).toBe(true);
-			expect(near(BLACK, 3)(px(900, 250))).toBe(true); // circle without fill
-			expect(near(BLACK, 3)(px(300, 560))).toBe(true); // centre-stroked rect without fill
+			expect(near(BLACK, 3)(px(900, 250))).toBe(true);
+			expect(near(BLACK, 3)(px(300, 560))).toBe(true);
 			expect(near(YELLOW, 3)(px(900, 560))).toBe(true);
 			expect(near(BLACK, 3)(px(1045, 495))).toBe(true); // ellipse box corner, outside the ellipse
 			expect(near(WHITE, 3)(px(192, 502))).toBe(true); // square (miter) outer corner of the centre stroke
 
-			// Whole frame against the analytic reference: AA differences only on edge pixels.
 			const ref = reference();
 			let worst = 0;
 			let off = 0;

@@ -1,5 +1,3 @@
-// audio-mix (engine): every export path takes the offline mixer's audio — pan, submixes, sends, 5.1, sample
-// rates and two-pass loudness normalisation — and the analysis / loudness-normalise jobs.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -69,7 +67,6 @@ async function exportOf(d: DocBuilder, audio: Record<string, unknown> = {}) {
 	};
 }
 
-/** Planar float samples of a file's audio. */
 function planar(file: string, channels: number): Float32Array[] {
 	const r = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-vn', '-f', 'f32le', '-'], {
 		maxBuffer: 256 << 20,
@@ -112,7 +109,7 @@ describe('export audio = the offline mixer (audio-mix)', () => {
 		]);
 		expect(probe.stdout.toString().trim()).toBe('44100,2');
 		const [l, r] = planar(a.file, 2);
-		expect(db(rms(l!)) - db(rms(r!))).toBeGreaterThan(40); // right is silent
+		expect(db(rms(l!)) - db(rms(r!))).toBeGreaterThan(40);
 		// A1 muted, sent pre-fader at −6 dB to S1 (−6 dB): both sides at −12 dB of the tone, centred.
 		const s = d.tx([{ type: 'mixer.addSubmix', ref: '$s' }]);
 		void s;

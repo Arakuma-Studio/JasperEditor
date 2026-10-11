@@ -1,7 +1,4 @@
-// wp-m2-anime-templates (S11:ANA-003, ANA-005) without a real engine: an in-memory MCP client talks to the
-// server whose engine is a fake (catalogue, documents applied with @jasper/project, stills, capabilities).
-// Covers list_motion_templates (renderer and params), preview validation and failures,
-// set_motion_graphic_params (static and keyframed values), and render-failure hints.
+// The fake engine supplies catalogue, stills and capabilities; document transactions use @jasper/project.
 import type { EngineJob, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
@@ -20,8 +17,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-
-// ---------------------------------------------------------------- fixtures
 
 const titleParams = z.strictObject({
 	title: z.string().max(120).default('Title Reveal'),
@@ -81,7 +76,6 @@ const registries = defaultRegistries(
 	createStaticMgRegistry([infoOf(ANIME, titleParams), infoOf(FFRAMES, lowerParams)]),
 );
 
-/** A 1080p30 project with an anime clip (frames 30–180) and an fframes clip (0–150). */
 function projectDoc() {
 	const ids = createCounterIdSource(7);
 	const doc = createEmptyProject({ ids, name: 'Templates', preset: 'hd-1080p-30' });
@@ -123,7 +117,6 @@ function projectDoc() {
 	};
 }
 
-/** A fake engine: documents live in memory and transactions are applied with @jasper/project. */
 function fakeEngine(over: Partial<Record<keyof EngineClient, unknown>> = {}) {
 	const state = projectDoc();
 	let doc = state.doc;
@@ -229,8 +222,6 @@ const errOf = (r: CallToolResult) => {
 	return bodyOf<{ error: { code: string; message: string; hint?: string; details?: unknown } }>(r).error;
 };
 
-// ---------------------------------------------------------------- list_motion_templates
-
 describe('list_motion_templates (S11:ANA-003)', () => {
 	it('reports renderer, native and a compact params summary with keyframable flags', async () => {
 		const engine = fakeEngine();
@@ -258,8 +249,6 @@ describe('list_motion_templates (S11:ANA-003)', () => {
 		expect(ff.params.find((p) => p.name === 'size')?.keyframable).toBe(false);
 	});
 });
-
-// ---------------------------------------------------------------- render_motion_graphic_preview
 
 describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () => {
 	it('rejects invalid parameter values and names with E_INVALID_PARAM', async () => {
@@ -296,8 +285,6 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 		expect(e.hint).toContain('JASPER_BROWSER_EXECUTABLE');
 	});
 });
-
-// ---------------------------------------------------------------- set_motion_graphic_params
 
 describe('set_motion_graphic_params (S11:ANA-003)', () => {
 	it('sets static params and preserves template defaults', async () => {
@@ -337,7 +324,6 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 		});
 		expect(r.isError, textOf(r)).toBeFalsy();
 		expect(bodyOf(r)).toMatchObject({ keyframed: ['titleSize', 'titleColor'], atFrame: 30 });
-		// A later value remains a keyframe, while the static title is updated.
 		const r2 = await call('set_motion_graphic_params', {
 			projectId,
 			clipId: id,
@@ -351,7 +337,6 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 		expect(clip.params.title).toBe('Big');
 		expect(clip.paramKeyframes?.titleSize?.map((k) => k.value)).toEqual([60, 200]);
 		expect(clip.paramKeyframes?.titleColor?.[0]?.value).toEqual([1, 0, 0, 1]);
-		// Animated params need a time.
 		const noAt = errOf(
 			await call('set_motion_graphic_params', { projectId, clipId: id, params: { titleSize: 90 } }),
 		);
@@ -381,7 +366,6 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 		const ff = await fails({ clipId: s.fframes, params: { size: 50 }, at: 10, keyframe: true });
 		expect(ff.code).toBe('E_INVALID_PARAM');
 		expect(engine.doc()).toEqual(before);
-		// fframes params are set statically.
 		const ok = await call('set_motion_graphic_params', {
 			projectId,
 			clipId: s.fframes,
@@ -392,15 +376,12 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- render-failure hints (ANA-005)
-
 describe('render failures carry actionable hints (S11:ANA-005)', () => {
 	it('render_frame: TEMPLATE_NOT_INSTALLED and a missing browser', async () => {
 		let failure = new EngineError('TEMPLATE_NOT_INSTALLED', 'Motion-graphic template x@9 is not installed', {
 			status: 502,
 		});
-		// mcp-cli: render_frame submits the still job itself (so a cancelled request can cancel it); the engine
-		// refuses the still request the way frame.capture used to.
+		// render_frame submits its own still job so cancellation can stop the engine work.
 		const engine = fakeEngine({
 			requestStill: async () => {
 				throw failure;
@@ -417,7 +398,6 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const b = errOf(await call('render_frame', { projectId, at: 0 }));
 		expect(b.code).toBe('RENDER_FAILED');
 		expect(b.hint).toContain('JASPER_BROWSER_EXECUTABLE');
-		// A still job that fails while rendering gets the same hint.
 		const failing = fakeEngine();
 		failing.setStill({
 			state: 'failed',

@@ -1,5 +1,3 @@
-// S07:PST-005: real runner output and sidecar contracts for background tracking,
-// smoothing, capped zoom, optional warp backends and independent shots.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -118,7 +116,6 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 		expect(info.zoomPercent).toBeGreaterThan(100);
 		expect(info.zoomPercent).toBeLessThanOrEqual(115);
 		expect(info.speed.smoothedMaxPxPerFrame1080).toBeLessThan(info.speed.rawMaxPxPerFrame1080 / 2.5);
-		// independent measurement on the output: the peak frame-to-frame motion drops, no frame jerks back
 		const before = columnShifts(fixture('reframe.mp4'));
 		const after = columnShifts(output);
 		const peak = (a: number[]) => Math.max(...a.map(Math.abs));
@@ -170,7 +167,6 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 			);
 			const avg = Number(/PSNR .*average:([\d.]+|inf)/.exec(psnr.stderr)?.[1]);
 			expect(avg).toBeGreaterThan(38);
-			// and the stabilisation itself is as good with either
 			const peak = (a: number[]) => Math.max(...a.map(Math.abs));
 			expect(peak(columnShifts(c.output))).toBeLessThanOrEqual(peak(columnShifts(w.output)) + 1);
 		} finally {

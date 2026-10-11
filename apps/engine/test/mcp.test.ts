@@ -1,5 +1,3 @@
-// MCP Streamable HTTP at /mcp (docs/wp-notes/wp-mcp.md): the jasper-mcp tools served by the engine,
-// behind the engine token.
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

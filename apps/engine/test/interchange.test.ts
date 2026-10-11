@@ -1,6 +1,3 @@
-// wp interchange end to end through the engine: export jobs (FCP7, AAF with embedded and separate audio, OMF with
-// AIFF files, per-track EDLs), import by path and by bytes (media registered, embedded audio written, missing media
-// as offline placeholders), Link Media (relink and folder search).
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
@@ -226,7 +223,6 @@ describe('interchange through the engine', () => {
 			m.fingerprint.startsWith('pending:interchange:'),
 		);
 		expect(offline.length).toBe(3);
-		// one by one
 		const one = offline.find((m) => m.originalName === 'clip-a.mp4')!;
 		const r = await app.inject({
 			method: 'POST',
@@ -242,7 +238,6 @@ describe('interchange through the engine', () => {
 		const rl = r.json() as AssetRelinkResponse;
 		expect(rl.match).toBe('placeholder');
 		expect(rl.needsConfirm).toBe(false);
-		// a different file needs confirmation and names what differs
 		const wrong = await app.inject({
 			method: 'POST',
 			url: `/api/assets/${one.id}/relink`,
@@ -252,7 +247,6 @@ describe('interchange through the engine', () => {
 		const w = wrong.json() as AssetRelinkResponse;
 		expect(w.needsConfirm).toBe(true);
 		expect(w.diff.map((d) => d.field)).toContain('kind');
-		// by folder: name + duration
 		const scan = await app.inject({
 			method: 'POST',
 			url: '/api/projects/prj_0000000000000001/relink-scan',
@@ -275,7 +269,6 @@ describe('interchange through the engine', () => {
 			'clip-b.mp4',
 			'tone.wav',
 		]);
-		// apply as the Link Media dialog does
 		target.tx(
 			res.found.map((f) => {
 				const reg = f.media as {

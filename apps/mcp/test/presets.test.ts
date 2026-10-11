@@ -1,6 +1,3 @@
-// Effect preset tools (S03:FX-030, AGT-002 presets.apply, AGT-020) through the MCP protocol against an in-memory
-// engine: list (built-ins + user library, search), get, save from a clip and from JSON, apply by id and inline (one
-// transaction for N clips, key times per type), delete (built-ins refused).
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -20,7 +17,6 @@ import { createJasperMcpServer } from '../src/server.ts';
 
 const F30 = flicksPerFrame({ num: 30, den: 1 });
 
-/** A project with two solids (30 and 90 frames, the first with a keyframed blur) and an in-memory library. */
 function fakeEngine() {
 	const ids = createCounterIdSource(7);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Presets', preset: 'hd-1080p-30' });

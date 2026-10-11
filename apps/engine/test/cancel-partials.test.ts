@@ -1,6 +1,5 @@
-// mcp-cli §2: cancelling a job deletes what it wrote. The export's copy to the user's destination is the
-// one output outside the appdir: its name is claimed exclusively, registered as a partial before any byte is
-// written, and the copy stops when the job is cancelled.
+// The export destination is the only output outside the appdir: its name is claimed exclusively,
+// registered as a partial before any byte is written, and copying stops on cancellation.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -73,7 +72,6 @@ describe('cancelled export copy (job queue)', () => {
 				signal: ctx.signal,
 				claimed: (p) => {
 					ctx.addPartial(p);
-					// The user cancels right as the copy starts.
 					q.cancel(jobId);
 				},
 			});

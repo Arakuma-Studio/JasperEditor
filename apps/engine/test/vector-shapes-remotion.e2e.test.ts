@@ -1,13 +1,4 @@
-// Vector shapes rendered for real (wp shapes, REMOTION_E2E=1). One 720p scene exercises both renderers of the shape
-// layer and the operators:
-// - V1 an inside-stroked rectangle (the converted form of a rectangle clip), V2 Merge Paths ▸ Subtract (a ring),
-//   V3 a Repeater with an opacity ramp, V4 a linear gradient fill, V5 a Linear Burn paint (the canvas compositor
-//   through the shared blend kernel), V6 a dashed, tapered stroke and Trim Paths, V7 a radial gradient with a
-//   highlight; V8 Wiggle Paths moves over time;
-// - golden probes: colours at points away from edges computed from the model (formulas, not a capture);
-// - parity: the still (the composition as the Program monitor draws it) against an exported MP4 (layer bake +
-//   native composite) of the same frame, every pixel, within H.264's tolerance; and two frames of the wiggling
-//   shape differ in both (the bake is not a frozen still).
+// Probe colours derive from the model formulas; still/export parity tolerates only H.264 encoding differences.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -208,11 +199,9 @@ function probes(img: Uint8Array, tol: number) {
 			near(px(img, x, y), want, tol),
 			`${what} at ${x},${y}: ${px(img, x, y).join(',')} vs ${want.join(',')}`,
 		).toBe(true);
-	// V1: red interior, 10 px blue inside stroke.
 	check(320, 200, [255, 0, 0], 'rect fill');
 	check(125, 200, [0, 0, 255], 'inside stroke');
 	check(115, 200, [0, 0, 0], 'nothing outside the outline');
-	// V2: a ring between r = 75 and r = 150.
 	check(900, 250, [0, 0, 0], 'subtracted hole');
 	check(900 + 110, 250, [255, 255, 0], 'ring');
 	// V3: four squares with opacity 100, 75, 50, 25 % (white over black).
@@ -326,7 +315,6 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 			const file = (await coreServices(engine.app).exports.outputFile(start.json().id))!;
 			const e5 = rgbOf(file, 5);
 			probes(e5, 10);
-			// Every pixel: export vs still (chroma subsampling and quantisation only).
 			let sum = 0;
 			let worst = 0;
 			let big = 0;
@@ -373,7 +361,6 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 			expect(flat).toBeGreaterThan(W * H * 0.6);
 			expect(flatOff).toBeLessThanOrEqual(50);
 			expect(flatWorst).toBeLessThanOrEqual(40);
-			// Wiggle Paths animates: frames 5 and 20 differ around V8 in both the still and the export.
 			const s20 = await still(20);
 			const e20 = rgbOf(file, 20);
 			const region = (img: Uint8Array) => {

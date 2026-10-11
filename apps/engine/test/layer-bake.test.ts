@@ -1,5 +1,3 @@
-// Layer-bake planning, cache retention and HTTP contracts (S11 §6). Rendered output is checked by the
-// opt-in layer-bake E2E tests.
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RenderPlanSchema } from '@jasper/api';
@@ -44,7 +42,6 @@ const v4seq = Object.values(v4.sequences)[0]!;
 const ANIME_CLIP = v4seq.clips.clp_VEYXW57CH91ZEK52 as unknown as Record<string, unknown>;
 const SHAPE_CLIP = v4seq.clips.clp_3ZN7BJXAHGY9J4G2 as unknown as Record<string, unknown>;
 
-/** Adds a clip copied from the v4 fixture (shape / anime template: their commands land with other packages). */
 function inject(
 	d: DocBuilder,
 	clip: Record<string, unknown>,
@@ -99,7 +96,6 @@ const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({
 	...extra,
 });
 
-/** A small, centred title (its box fits a crop rect). */
 function smallTitle(d: DocBuilder, text: string, o: { at: number; track: string; duration?: number }) {
 	return d.tx([
 		{
@@ -124,13 +120,11 @@ describe('DOM layers and static detection (LBK-001, LBK-004)', () => {
 		expect(isStaticLayer(clipOf(s, t))).toBe(true);
 		expect(isStaticLayer(clipOf(s, 'clp_SHAPE00000000001'))).toBe(true);
 		expect(isStaticLayer(clipOf(s, 'clp_ANIME00000000001'))).toBe(false);
-		// Keyframes on Motion, opacity or an effect param make it a master.
 		d.tx([
 			{ type: 'param.setAnimated', target: ['clip', t, 'opacity'], animated: true, at: { sequenceFrame: 0 } },
 		]);
 		s = snapOf(d);
 		expect(isStaticLayer(clipOf(s, t))).toBe(false);
-		// Text animators (even with presets the catalogue does not know yet).
 		const textClip = clipOf(s, t);
 		const withAnim = {
 			...textClip,
@@ -141,7 +135,6 @@ describe('DOM layers and static detection (LBK-001, LBK-004)', () => {
 			},
 		} as unknown as RenderVisualClip;
 		expect(isStaticLayer(withAnim)).toBe(false);
-		// Keyframed shape props (deep scan of the source).
 		const shape = clipOf(s, 'clp_SHAPE00000000001');
 		const kf = { id: 'k', time: 0, value: [10, 10], interpolation: 'linear', easeIn: {}, easeOut: {} };
 		const keyed = {
@@ -224,19 +217,16 @@ describe('render keys (LBK-020)', () => {
 		const t = smallTitle(d, 'Title', { at: 10, track: 'V1' });
 		const k0 = await keyOfClip(d, t);
 		expect(k0).toMatch(/^[0-9a-f]{40}$/);
-		// Moving the static title in time and trimming it hit the cache.
 		d.tx([{ type: 'clip.move', clipIds: [t], deltaFrames: 25 }]);
 		expect(await keyOfClip(d, t)).toBe(k0);
 		d.tx([{ type: 'clip.trim', clipId: t, edge: 'out', deltaFrames: -10 }]);
 		expect(await keyOfClip(d, t)).toBe(k0);
-		// Content and font.
 		d.tx([{ type: 'clip.update', clipIds: [t], patch: { content: { text: 'Other' } } }]);
 		const k1 = await keyOfClip(d, t);
 		expect(k1).not.toBe(k0);
 		d.tx([{ type: 'clip.update', clipIds: [t], patch: { content: { style: { weight: 700 } } } }]);
 		const k2 = await keyOfClip(d, t);
 		expect(k2).not.toBe(k1);
-		// Environment.
 		for (const change of [
 			{ bundleId: 'b2' },
 			{ animejs: '4.5.1' },
@@ -251,7 +241,6 @@ describe('render keys (LBK-020)', () => {
 		const d = new DocBuilder('hd-720p-30');
 		const a = smallTitle(d, 'Twin', { at: 0, track: 'V1' });
 		const b = smallTitle(d, 'Twin', { at: 0, track: 'V2' });
-		// Same content, style, box and Motion: one bake for both.
 		expect(await keyOfClip(d, a)).toBe(await keyOfClip(d, b));
 		// With a text animator (random unit order uses hash32(clipId), S11:ANM-007) the keys differ; the animator's
 		// params and compressed window lengths are part of the key too.
@@ -335,7 +324,6 @@ describe('planner (LBK-002, LBK-024)', () => {
 		expect(groups.flatMap((g) => g.itemIds).sort()).toEqual(
 			['clp_ANIME00000000001', 'clp_SHAPE00000000001', t].sort(),
 		);
-		// Forcing native keeps the hybrid composite.
 		const forced = await app.inject({
 			method: 'POST',
 			url: '/api/exports/plan',
@@ -446,7 +434,6 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		expect(existsSync(join(svc.dir, old))).toBe(false);
 		expect(existsSync(join(svc.dir, orphan))).toBe(false);
 		expect(existsSync(join(svc.dir, fresh, 'still.png'))).toBe(true);
-		// Lookups mark entries as used; the files route serves them.
 		expect(await svc.lookup(fresh)).toMatchObject({ still: true, path: join(svc.dir, fresh, 'still.png') });
 		const r = await app.inject({
 			method: 'GET',
@@ -475,7 +462,6 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		release();
 		await coreServices(app).cache.clean('auto', ['layers']);
 		expect(existsSync(join(svc.dir, held))).toBe(false);
-		// `lookup` has written `lastUsedAt` when it returns.
 		const used = 'e'.repeat(40);
 		cacheStill(used, longAgo());
 		expect(await svc.lookup(used)).not.toBeNull();
@@ -516,7 +502,6 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		expect(r1.body).toBe('frame 1');
 		expect((await get('')).body).toBe('frame 0');
 		for (const bad of ['?n=2', '?n=-1', '?n=1.5', '?n=x']) expect((await get(bad)).statusCode).toBe(404);
-		// A frame number can be appended to the entry's signed URL.
 		const signed = coreServices(app).signer.signUrl('', `/mg/layers/${key}/graded.png`);
 		expect((await get(`${signed.slice(signed.indexOf('?'))}&n=1`)).body).toBe('frame 1');
 	});

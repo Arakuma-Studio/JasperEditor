@@ -1,6 +1,3 @@
-// Encoder selection (ARCHITECTURE D-13) with mocked encoder lists: LGPL-only build, OpenH264-only,
-// hardware-only, full GPL build; argument mapping per encoder; parsing; hardware test encodes against a
-// fake ffmpeg.
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,7 +70,6 @@ describe('selectVideoEncoder (D-13)', () => {
 		expect(exp.message).toBeTruthy();
 		const proxy = selectVideoEncoder(i, { purpose: 'proxy' })!;
 		expect(proxy).toMatchObject({ codec: 'vp9', encoder: 'libvpx-vp9', container: 'mp4' });
-		// Listed but unusable hardware encoders never count.
 		expect(usableByCodec(i).h264).toEqual([]);
 	});
 
@@ -89,7 +85,6 @@ describe('selectVideoEncoder (D-13)', () => {
 			container: 'mp4',
 			audioEncoder: 'aac',
 		});
-		// Proxies always stay MP4.
 		expect(selectVideoEncoder(inv(vp9Only), { purpose: 'proxy' })).toMatchObject({ container: 'mp4' });
 	});
 
@@ -103,7 +98,6 @@ describe('selectVideoEncoder (D-13)', () => {
 	});
 
 	it('smart-rendering pieces: no B-frames for every H.264 encoder (they are joined as one raw stream)', () => {
-		// Regression (verify workstream): libx264 pieces (CI's apt ffmpeg) lost 2 frames at the join with copied GOPs.
 		for (const encoder of [
 			'libx264',
 			'h264_nvenc',
@@ -132,7 +126,6 @@ describe('selectVideoEncoder (D-13)', () => {
 		});
 		const all = inv(HW_ONLY, { usable: ['h264_videotoolbox', 'h264_nvenc', 'h264_amf', 'h264_vaapi'] });
 		expect(selectVideoEncoder(all, { purpose: 'proxy' })?.encoder).toBe('h264_videotoolbox');
-		// Hardware beats OpenH264 and libx264.
 		const mixed = inv([...FULL_GPL], { usable: ['h264_qsv'], license: 'gpl' });
 		expect(selectVideoEncoder(mixed, { purpose: 'export' })?.encoder).toBe('h264_qsv');
 	});
@@ -170,11 +163,9 @@ describe('selectVideoEncoder (D-13)', () => {
 		const c = selectVideoEncoder(lgpl, { purpose: 'export', encoder: 'libx264' })!;
 		expect(c.encoder).toBe('libopenh264');
 		expect(c.message).toBeTruthy();
-		// Unusable hardware encoder requested → best available instead.
 		expect(selectVideoEncoder(inv(LGPL_LIST), { purpose: 'export', encoder: 'h264_nvenc' })?.encoder).toBe(
 			'libsvtav1',
 		);
-		// A preferred codec other than H.264.
 		expect(selectVideoEncoder(gpl, { purpose: 'export', codec: 'av1' })?.encoder).toBe('libsvtav1');
 	});
 

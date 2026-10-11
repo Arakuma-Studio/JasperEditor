@@ -104,7 +104,6 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect((await app.inject({ method: 'GET', url: '/assets/app.js', headers: H })).body).toContain(
 			'console.log',
 		);
-		// A rebuild while the engine runs adds new hashed files: they are served without a restart.
 		writeFileSync(join(web, 'assets', 'app-new.js'), 'console.log(2)');
 		const fresh = await app.inject({ method: 'GET', url: '/assets/app-new.js', headers: H });
 		expect(fresh.statusCode).toBe(200);

@@ -1,5 +1,3 @@
-// Workstream gaps (EX-3): File ▸ Export ▸ Frame — still formats (PNG, JPEG, TIFF, DPX, OpenEXR, BMP, Targa), the
-// destination folder (never overwriting) and the linear-light EXR oracle.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';

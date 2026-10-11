@@ -1,5 +1,3 @@
-// S11:ANM-016: the scaffolded Remotion project must compile, and its bundled anime.js timeline must produce
-// the same frames regardless of seek order.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';

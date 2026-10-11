@@ -1,6 +1,3 @@
-// wp captions MCP tools through the protocol against an in-memory engine: caption import/export round trip (files
-// on disk), list/add/edit/split/merge/delete/style/track, transcript import, inspect, search, select, extract, lift,
-// insert into another sequence, fillers and pauses (dry run and edit), speakers, captions from the transcript.
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -225,7 +222,6 @@ describe('caption MCP tools', () => {
 		);
 		expect(list.body.tracks[0].style.placement).toBe('top');
 		expect(list.body.tracks[0].captions[0].styleOverrides.fill).toEqual([1, 1, 0, 1]);
-		// export: inline text and files (no overwrite)
 		const vtt = await call('export_captions', { track: 'C1', format: 'vtt' });
 		expect(vtt.body.content).toContain('00:00:01.000 --> 00:00:02.520\nHello there');
 		const out = join(dir, 'out.scc');
@@ -236,7 +232,6 @@ describe('caption MCP tools', () => {
 		expect(readFileSync(out, 'utf8').startsWith('Scenarist_SCC V1.0')).toBe(true);
 		const stl = await call('export_captions', { track: 'C1', format: 'stl' });
 		expect(typeof stl.body.contentBase64).toBe('string');
-		// bad input gives a tool error, not a crash
 		expect((await call('import_captions', { content: 'not captions at all' })).isError).toBe(true);
 		expect((await call('import_captions', { path: 'relative.srt' })).isError).toBe(true);
 		expect((await call('export_captions', { track: 'C9' })).isError).toBe(true);

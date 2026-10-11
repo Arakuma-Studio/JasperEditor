@@ -1,5 +1,3 @@
-// jasper-mcp units without an engine: discovery, request safety, error mapping,
-// and the public CLI version.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,7 +13,6 @@ import { EngineLink, EngineRequestAborted, withEngine } from '../src/link.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** A fetch that answers /health for the given origins. */
 function fakeFetch(healthy: string[]): typeof fetch {
 	return (async (input: string | URL) => {
 		const url = String(input);
@@ -75,7 +72,7 @@ describe('engine discovery', () => {
 			const stale = mkdtempSync(join(tmpdir(), 'jasper-mcp-stale-'));
 			const down = mkdtempSync(join(tmpdir(), 'jasper-mcp-down-'));
 			const data = mkdtempSync(join(tmpdir(), 'jasper-mcp-data-'));
-			const live = join(data, 'jasper'); // the platform appdir on Linux: $XDG_DATA_HOME/jasper
+			const live = join(data, 'jasper');
 			writeRuntime(stale, { url: 'http://127.0.0.1:3', port: 3, pid: 2 ** 30, token: 'x' });
 			writeRuntime(down, { url: 'http://127.0.0.1:4', port: 4, pid: process.pid, token: 'y' });
 			writeRuntime(live, { url: 'http://127.0.0.1:5', port: 5, pid: process.pid, token: 'secret' });
@@ -87,7 +84,6 @@ describe('engine discovery', () => {
 			});
 			expect(t).toMatchObject({ url: 'http://127.0.0.1:5', token: 'secret', source: 'runtime-file' });
 			expect(t?.detail).toBe(join(live, 'engine', 'runtime.json'));
-			// An explicit token wins over the runtime file's.
 			const t2 = await discoverEngine({
 				token: 'mine',
 				env,

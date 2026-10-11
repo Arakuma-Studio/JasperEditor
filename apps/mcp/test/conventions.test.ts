@@ -1,6 +1,3 @@
-// MCP conventions (docs/wp-notes/mcp-cli.md §1–2): titles and full annotations on every tool, strict
-// arguments (unknown keys rejected at every level, for every tool however it is registered), throttled
-// progress, and cancellation that cancels the engine job. No engine needed: a fake engine link.
 import type { EngineJob } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -278,7 +275,6 @@ describe('progress and cancellation', () => {
 		await new Promise((r) => setTimeout(r, 400));
 		ac.abort('user stopped it');
 		await expect(call).rejects.toThrow();
-		// The server sees notifications/cancelled, cancels the engine job and waits for it to be terminal.
 		await expect.poll(() => engine.cancelled, { timeout: 5000 }).toEqual(['job_2']);
 		expect(progress.length).toBeGreaterThan(0);
 	});

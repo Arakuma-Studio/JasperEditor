@@ -1,6 +1,4 @@
-// S09:TRK-012 / wp-m2-track acceptance: prefer the selected screen edge and
-// preserve an invisible side. Fixture pixels and expected edges are independent
-// of the tracker's line/intersection helpers.
+// Fixture pixels and expected edges are independent of the tracker's line/intersection helpers.
 import { describe, expect, it } from 'vitest';
 import { chooseEdgeModes, refineQuadEdges } from '../src/tracking/geometry.ts';
 

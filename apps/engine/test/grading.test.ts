@@ -1,6 +1,3 @@
-// color-grade: the grading analysis routes — `POST /api/grading/scopes` (Lumetri Scopes as numbers of a rendered
-// frame, whole Program or one clip alone), `/api/grading/match` (Colour Match into Lumetri params, Face Detection
-// falling back to the skin-tone test without the face model) and `/api/grading/auto-tone`. Native stills (ffmpeg).
 import { BRIGHTNESS_CONTRAST_EFFECT, LUMETRI_EFFECT_ID, readScopes, signalFromRgba8 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -21,7 +18,6 @@ beforeAll(async () => {
 }, 180_000);
 afterAll(closeApps);
 
-/** Two chart clips: A (0–29, optionally darkened, with a neutral Lumetri) and B (30–59, warm Lumetri grade). */
 async function twoClips(opts: { darkenA?: boolean } = {}) {
 	const chart = await register(app, fixture('chart.png'));
 	const d = new DocBuilder();
@@ -88,7 +84,6 @@ describe('POST /api/grading/scopes', () => {
 		expect(j.histogram.r).toHaveLength(256);
 		expect(j.vectorscopeYuv.peaks).toHaveLength(3);
 		expect(j.vectorscopeHls.samples).toBeGreaterThan(0);
-		// The same maths on a synthetic frame gives the same structure (shared code).
 		const local = readScopes(signalFromRgba8(new Uint8Array(4 * 4 * 4).fill(255), 4, 4));
 		expect(Object.keys(j)).toEqual(expect.arrayContaining(Object.keys(local)));
 	});

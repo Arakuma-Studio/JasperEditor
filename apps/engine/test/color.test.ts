@@ -1,6 +1,3 @@
-// Colour grading on the engine (S06 §9 tests 2, 3, 5; CG-050…055, LUT-001): `.cube` assets, the colour native
-// extension (baked lut3d runs, per-frame windows for keyframed grades), native still parity with the TypeScript
-// reference on the test chart, and the GPL-filter scan of the generated filter text.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,7 +40,6 @@ const FFMPEG = (() => {
 	return process.env.JASPER_FFMPEG || (spawnSync(vendor, ['-version']).status === 0 ? vendor : 'ffmpeg');
 })();
 
-/** Decodes an image/video frame to packed RGB (8-bit). */
 function rgbOf(file: string, frame = 0): { data: Buffer; width: number; height: number } {
 	const probe = spawnSync(FFMPEG.replace(/ffmpeg$/, 'ffprobe'), [
 		...['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0'],
@@ -90,7 +86,6 @@ function diffStats(a: Buffer, b: Buffer) {
 	return { max, p995, mean: sum / n, exact: hist[0]! / n, within1: (hist[0]! + hist[1]!) / n };
 }
 
-/** `applyLut` of a baked LUT on decoded RGB (the TS reference of S06 §9.3). */
 function reference(src: Buffer, lut: Lut): Buffer {
 	const out = Buffer.alloc(src.length);
 	const c: Rgb = [0, 0, 0];
@@ -106,7 +101,6 @@ function reference(src: Buffer, lut: Lut): Buffer {
 	return out;
 }
 
-/** A representative grade (S06 §9.3): basic correction, look LUT at 80 %, curves and wheels. */
 const GRADE = (look: string) => ({
 	temperature: -30,
 	tint: 6,
@@ -180,7 +174,6 @@ describe('LUT assets (S06:LUT-001, §9 test 2)', () => {
 			domainMin: [0, 0, 0],
 			domainMax: [1, 1, 1],
 		});
-		// Served like any media file (the client parses it once per session, LUT-003).
 		const f = await app.inject({ method: 'GET', url: `/media/${m.mediaKey}`, headers: H });
 		expect(f.statusCode).toBe(200);
 		expect(f.body).toBe(readFileSync(fixture('look-33.cube'), 'utf8'));
@@ -308,7 +301,6 @@ describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
 	it('keyframed export frames match the start and end grades', async () => {
 		const keys = { exposure: [-0.5, 0.8], temperature: [-40, 40] };
 		const { d } = await chartDoc((l) => ({ ...GRADE(l), exposure: 0, temperature: 0 }), keys);
-		// Export, then compare frames 0 / 29 with native stills of the static start / end grades.
 		const start = await app.inject({
 			method: 'POST',
 			url: '/api/exports',
@@ -360,7 +352,6 @@ describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
 		);
 		expect(st.p995).toBeLessThanOrEqual(2);
 		expect(st.max).toBeLessThanOrEqual(4);
-		// The grade actually changed the picture.
 		expect(diffStats(got, src).mean).toBeGreaterThan(5);
 	}, 120_000);
 });

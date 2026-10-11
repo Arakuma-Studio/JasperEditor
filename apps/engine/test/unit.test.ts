@@ -1,4 +1,3 @@
-// Fingerprint vectors, signed URLs, event replay, peak reduction and media probe contracts.
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -54,8 +53,8 @@ describe('signed URLs (S04:MS-003)', () => {
 		expect(s.verify(path.replace('mk_1', 'mk_2'))).toBe(false);
 		expect(s.verify(path.replace(/sig=[^&]+/, 'sig=AAAA'))).toBe(false);
 		expect(new UrlSigner('other').verify(path)).toBe(false);
-		expect(s.verify(path, Date.now() + 7 * 3600 * 1000)).toBe(false); // expired
-		expect(s.verify(`/api/projects?${s.signQuery('/api/projects')}`)).toBe(false); // not signable
+		expect(s.verify(path, Date.now() + 7 * 3600 * 1000)).toBe(false);
+		expect(s.verify(`/api/projects?${s.signQuery('/api/projects')}`)).toBe(false);
 	});
 });
 

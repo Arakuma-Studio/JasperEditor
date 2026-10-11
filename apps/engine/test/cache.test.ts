@@ -1,7 +1,3 @@
-// Media cache registry and GC (M3, S04 §7.5 CA-010…CA-019, wp-m3-cachegc): layout and scan, usage per kind,
-// reference-aware cleaning (saved / open projects, pins of running jobs, the grace window), age limits and LRU
-// budgets, orphan sweep and crash-safe removal, refs that survive a restart, the HTTP routes.
-
 import { spawnSync } from 'node:child_process';
 import {
 	chmodSync,
@@ -50,7 +46,6 @@ const DAY = 24 * 3600 * 1000;
 const FP = 'a'.repeat(64);
 const FP2 = 'b'.repeat(64);
 
-/** Writes a file (and its parents) and sets its times `ageMs` in the past. */
 function put(path: string, bytes = 1000, ageMs = 30 * DAY): string {
 	mkdirSync(join(path, '..'), { recursive: true });
 	writeFileSync(path, Buffer.alloc(bytes, 1));
@@ -65,7 +60,6 @@ function age(path: string, ageMs: number): void {
 	utimesSync(path, t, t);
 }
 
-/** A synthetic cache: one entry of every kind (old), plus temporary files. */
 function seed(appdir: string) {
 	const p = (...s: string[]) => join(appdir, ...s);
 	return {
@@ -88,7 +82,6 @@ function seed(appdir: string) {
 	};
 }
 
-/** Saves a document as a project of the engine's store (what the editor's autosave does). */
 function saveProject(appdir: string, d: DocBuilder): string {
 	const pid = d.doc.projectId;
 	mkdirSync(join(appdir, 'projects', pid), { recursive: true });
@@ -155,7 +148,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		const pid = saveProject(app.appdir, d);
 		const u = await usage();
 		const kind = (k: string) => u.kinds.find((x) => x.kind === k)!;
-		// The project's media → its derivatives (fingerprint FP) are referenced; FP2's are not.
 		expect(kind('media-cache')).toMatchObject({
 			entries: 3,
 			bytes: 4000,
@@ -171,7 +163,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		expect(u.maxTotalBytes).toBeGreaterThan(0);
 		expect(u.location).toBe(app.appdir);
 		expect(u.other.map((o) => o.id)).toContain('media');
-		// The newest Remotion bundle is the current one: in use.
 		expect(kind('bundles').inUseBytes).toBe(1000);
 		await clean('all');
 		rmProject(app.appdir, pid);
@@ -184,12 +175,12 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		cache.pin('job:job_running0000000001', s.warp);
 		cache.touch(s.lut);
 		const r = await clean('unused');
-		expect(existsSync(s.poster) && existsSync(s.spriteSheet) && existsSync(s.proxy)).toBe(true); // referenced
+		expect(existsSync(s.poster) && existsSync(s.spriteSheet) && existsSync(s.proxy)).toBe(true);
 		expect(existsSync(s.otherPoster)).toBe(false);
-		expect(existsSync(s.warp)).toBe(true); // pinned
-		expect(existsSync(s.lut)).toBe(true); // recent
+		expect(existsSync(s.warp)).toBe(true);
+		expect(existsSync(s.lut)).toBe(true);
 		for (const f of [s.layer, s.mg, s.poster2, s.exportOut, s.stillOut]) expect(existsSync(f)).toBe(false);
-		expect(existsSync(s.bundleOld)).toBe(true); // the only (= current) bundle
+		expect(existsSync(s.bundleOld)).toBe(true);
 		expect(existsSync(s.partial)).toBe(false);
 		expect(existsSync(s.trash)).toBe(false);
 		expect(existsSync(s.freshPartial)).toBe(true); // a write may still be running
@@ -197,7 +188,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		expect(r.keptReferenced).toBe(3);
 		expect(r.removedEntries).toBe(6);
 		expect(r.byKind['mg-renders']).toEqual({ entries: 1, bytes: 4000 });
-		// Nothing left over from the removals (trash is deleted at once).
 		expect(readdirSync(join(app.appdir, 'cache', 'warp')).filter((n) => n.startsWith('.trash'))).toEqual([]);
 		cache.release('job:job_running0000000001');
 		rmProject(app.appdir, pid);
@@ -210,7 +200,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		await clean('all');
 		expect(existsSync(s.poster)).toBe(false);
 		expect(existsSync(s.proxy)).toBe(false);
-		// An open project (live lease) keeps what it needs.
 		const s2 = fresh();
 		const lease = coreServices(app).leases.acquire(saved, 'sess-open');
 		const r = await clean('all');
@@ -233,7 +222,7 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		// and has not autosaved yet: the saved document has no media, the live one has.
 		const d = new DocBuilder('hd-1080p-30', 61);
 		const pid = saveProject(app.appdir, d);
-		const live = docWithMedia(61); // same seed → same projectId, plus the media
+		const live = docWithMedia(61);
 		expect(live.doc.projectId).toBe(pid);
 		const s = fresh();
 		const offOpen = cache.addOpenProbe((p) => p === pid);
@@ -241,7 +230,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		await clean('all');
 		expect(existsSync(s.poster) && existsSync(s.proxy) && existsSync(s.spriteSheet)).toBe(true);
 		expect(existsSync(s.otherPoster)).toBe(false);
-		// Without the live document only the saved one counts: the files go.
 		offLive();
 		const s2 = fresh();
 		await clean('all');
@@ -252,7 +240,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 
 	it('automatic passes: per-kind age limits, then LRU eviction under kind and total budgets; referenced entries stay (CA-003, CA-015)', async () => {
 		const p = (...x: string[]) => join(app.appdir, ...x);
-		// Ages: exports 7 d, stills 1 d, LUTs 30 d (global default).
 		const exp8 = put(p('renders', 'job_00000000000000a1', 'output.mp4'), 100, 8 * DAY);
 		const exp6 = put(p('renders', 'job_00000000000000a2', 'output.mp4'), 100, 6 * DAY);
 		const still2 = put(p('renders', 'job_00000000000000a3', 'output.png'), 100, 2 * DAY);
@@ -265,7 +252,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 			true,
 		]);
 		expect(r.removedEntries).toBe(2);
-		// Settings change the limits at once (S04:ENG-012).
 		const put1 = await app.inject({
 			method: 'PUT',
 			url: '/api/cache/settings',
@@ -281,7 +267,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		r = await clean('auto');
 		expect(existsSync(lut20)).toBe(false);
 		expect(existsSync(exp6)).toBe(true);
-		// Budgets: warp ≤ 2500 bytes (LRU), then the total.
 		const w = (n: string, ageDays: number) =>
 			put(p('cache', 'warp', `${n.repeat(40)}.mov`), 1000, ageDays * DAY);
 		const w1 = w('3', 3);
@@ -319,7 +304,7 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		const u = await usage();
 		expect(u.maxTotalBytes).toBe(1000);
 		expect(u.automaticBudget).toBe(false);
-		expect(u.totalBytes).toBeGreaterThan(1000); // referenced bytes are kept over budget
+		expect(u.totalBytes).toBeGreaterThan(1000);
 		rmProject(app.appdir, pid);
 		await app.inject({
 			method: 'PUT',
@@ -383,7 +368,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 			const [r, present] = await Promise.all([clean('all', ['luts']), late]);
 			if (present) {
 				expect(existsSync(f)).toBe(true);
-				// Pinned: a second pass keeps it.
 				await clean('all', ['luts']);
 				expect(existsSync(f)).toBe(true);
 			} else expect(existsSync(f)).toBe(false);
@@ -427,7 +411,6 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 	});
 });
 
-/** What `DELETE /api/projects/:pid` does. */
 function rmProject(appdir: string, pid: string): void {
 	rmSync(join(appdir, 'projects', pid), { recursive: true, force: true });
 }
@@ -452,7 +435,6 @@ describe('project refs survive a restart (CA-012)', () => {
 		expect(existsSync(lut)).toBe(true);
 		expect(existsSync(unused)).toBe(false);
 		expect(r.keptReferenced).toBe(1);
-		// The project is deleted: its ref set goes with it, and so does the LUT.
 		rmProject(appdir, pid);
 		r = await cache.clean('unused');
 		expect(existsSync(lut)).toBe(false);
@@ -476,7 +458,6 @@ const exportSettings = (seqId: string) => ({
 	engine: 'native',
 });
 
-/** Decoded RGB of one frame (system or vendor ffmpeg on PATH). */
 function frameRgb(file: string, n: number): Buffer {
 	const r = spawnSync(
 		'ffmpeg',
@@ -532,8 +513,7 @@ describe('exports hold and record their cache entries (CA-016, S06:CG-056)', () 
 				params: { exposure: 0, temperature: -20, saturation: 130 },
 				ref: '$g',
 			},
-			// A (slight) corner pin: the warp stage renders this layer (keyframed Motion alone is animated by the
-			// builder itself since wave1 native-animated-export, without a cache entry).
+			// Corner Pin forces a cached warp layer; keyframed Motion alone is animated directly by the builder.
 			{
 				type: 'effect.add',
 				target: { clipId: clip },
@@ -604,7 +584,7 @@ describe('exports hold and record their cache entries (CA-016, S06:CG-056)', () 
 		}
 
 		// Saved project → kept by "Clean Unused"; not open → removed by "Clean All", regenerated by the next export.
-		await new Promise((r) => setTimeout(r, 20)); // the job's pins are released after it ends
+		await new Promise((r) => setTimeout(r, 20));
 		await cache.clean('unused');
 		expect(readdirSync(lutDir).filter((f) => f.endsWith('.cube'))).toHaveLength(1);
 		expect(readdirSync(warpDir).filter((f) => f.endsWith('.mov'))).toHaveLength(1);
@@ -642,12 +622,10 @@ describe('removed artifacts come back on demand (S04:CA-004)', () => {
 			expect(await f()).toBe(true);
 		};
 		await until(ready);
-		// Past the grace window, nothing references it: Clean All removes the derivatives.
 		vi.useFakeTimers({ toFake: ['Date'] });
 		vi.setSystemTime(Date.now() + 10 * 60 * 1000);
 		const r = await cache.clean('all', ['media-cache']);
 		expect(r.removedEntries).toBeGreaterThanOrEqual(4);
-		// The next status request (what an editor does when it opens the project) queues them again.
 		const s = await status();
 		expect(['queued', 'running', 'ready']).toContain(s.derivatives.poster!.state);
 		await until(ready);
@@ -673,7 +651,6 @@ describe('discarding a media removes its cache through the registry (wp-m3-inpoi
 			});
 			const reg = (r.json() as { items: { mediaKey: string; fingerprint: string }[] }).items[0]!;
 			const dir = join(app.appdir, 'cache', reg.fingerprint.replace(/^q1:/, ''));
-			// Derivatives made (poster, keyframes, peaks, sprite).
 			for (let i = 0; i < 600; i++) {
 				const s = (
 					await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: H })
@@ -697,7 +674,7 @@ describe('discarding a media removes its cache through the registry (wp-m3-inpoi
 		const r1 = await del(a.reg.mediaKey);
 		expect(r1.json()).toEqual({ deleted: true, reason: 'deleted' });
 		expect(Date.now() - t0).toBeGreaterThanOrEqual(900);
-		expect(existsSync(a.dir)).toBe(false); // entries and the fingerprint folder; no trash left
+		expect(existsSync(a.dir)).toBe(false);
 		expect(readdirSync(join(app.appdir, 'cache')).filter((n) => n.startsWith('.trash'))).toEqual([]);
 
 		// 2. Pinned for good (a long export): the media goes, the pinned derivative stays (reported) and is not
@@ -845,7 +822,6 @@ describe('fframes motion-graphic renders are referenced by saved projects (CA-01
 		const snap = buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null });
 		const clip = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clipId)!;
 		const key = mg.clipRenderKey(clip, snap.settings.fps)!;
-		// A render of it (old) and an unrelated one: Clean Unused keeps the project's.
 		const dir = join(app.appdir, 'mg', key);
 		put(join(dir, 'master.mov'));
 		put(join(dir, 'meta.json'));
@@ -855,7 +831,6 @@ describe('fframes motion-graphic renders are referenced by saved projects (CA-01
 		await cache.clean('unused');
 		expect(existsSync(join(dir, 'master.mov'))).toBe(true);
 		expect(existsSync(other)).toBe(false);
-		// Other params → another key: the saved project no longer references the old render.
 		mgTx([{ type: 'clip.update', clipId, patch: { params: { name: 'Someone else' } } }]);
 		saveProject(app.appdir, d);
 		await cache.clean('unused');
@@ -886,11 +861,11 @@ describe('engine logs and the job journal do not grow forever (CA-020)', () => {
 		writeFileSync(join(logs, USAGE_LOG), `${lines.join('\n')}\n`);
 		const r = await maintainLogs(paths, { maxAgeDays: 30, maxBytes: 4000 }, now);
 		expect(existsSync(old) || existsSync(job)).toBe(false);
-		expect(existsSync(recent)).toBe(false); // oldest beyond the 4000-byte limit
+		expect(existsSync(recent)).toBe(false);
 		expect(existsSync(recent2)).toBe(true);
 		expect(r.removedFiles).toBe(3);
 		const kept = readFileSync(join(logs, USAGE_LOG), 'utf8').trim().split('\n');
-		expect(kept).toHaveLength(4500); // the 500-day-old half went
+		expect(kept).toHaveLength(4500);
 		const u = await logsUsage(paths);
 		expect(u.files).toBe(2);
 	});

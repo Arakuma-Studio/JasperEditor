@@ -1,5 +1,4 @@
-// imports workstream MCP tools through the protocol against an in-memory engine: Interpret Footage, image sequences,
-// PSD layers (individual / sequence / merged), PDF pages and Lottie export (engine calls stubbed).
+// Engine import calls are stubbed; document edits use the real command system.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -315,7 +314,6 @@ describe('imports MCP tools', () => {
 		expect(eff.loop).toBe(2);
 		// 10 s at 29.97 assumed 23.976 → 12.5 s, twice.
 		expect(eff.durationSeconds).toBeCloseTo(25, 2);
-		// null resets one field, the others stay.
 		await call('interpret_footage', { mediaIds: [engine.videoId], frameRate: null });
 		expect(engine.doc().media[engine.videoId]!.interpretation?.frameRate).toBeUndefined();
 		expect(engine.doc().media[engine.videoId]!.interpretation?.loop).toBe(2);

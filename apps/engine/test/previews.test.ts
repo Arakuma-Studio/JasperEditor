@@ -1,6 +1,3 @@
-// Workstream `previews` (docs/wp-notes/previews.md): render previews through the engine — segment files named by
-// content hash, frame-exact I-frame-only H.264, atomic writes, status for the render bar, skip when nothing changed,
-// ripple keeps them valid, Render Audio, Delete Render Files, cancellation, offline media, the cache registry.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -152,7 +149,6 @@ describe('render previews', () => {
 		expect(after.video.sort()).toEqual(segs.map((s) => s.hash).sort());
 		expect(after.videoUrl).toMatch(/^\/renders\/previews\/[0-9a-f]{16}\/\{hash\}\.mp4$/);
 
-		// served with byte ranges
 		const url = after.videoUrl.replace('{hash}', segs[0]!.hash);
 		const ranged = await app.inject({ method: 'GET', url, headers: { ...JSON_H, range: 'bytes=0-99' } });
 		expect(ranged.statusCode).toBe(206);
@@ -162,17 +158,14 @@ describe('render previews', () => {
 				.statusCode,
 		).toBe(404);
 
-		// nothing changed: nothing to render
 		const again = await render(d, 'all');
 		expect(again.statusCode).toBe(200);
 		expect(again.json()).toEqual({ job: null, existing: 2 });
 
-		// a ripple keeps the hashes: every preview stays valid
 		const ids = d.clipIds();
 		d.tx([{ type: 'clip.move', clipIds: ids, deltaFrames: 25 }]);
 		const moved = previewSegments(d.doc, d.seqId);
 		expect((await status(moved.map((s) => s.hash))).video).toHaveLength(2);
-		// no partial files are left behind
 		expect(readdirSync(dirOf()).some((f) => f.includes('.part.'))).toBe(false);
 	}, 300_000);
 
@@ -201,7 +194,6 @@ describe('render previews', () => {
 			result: PreviewRenderResult;
 		};
 		expect(sel.result.rendered.map((x) => x.hash)).toEqual([segs[0]!.hash]);
-		// In/Out limits the range
 		await app.inject({
 			method: 'POST',
 			url: '/api/previews/delete',
@@ -307,7 +299,6 @@ describe('Export ▸ Use Previews', () => {
 			payload: { all: true },
 		});
 		const segs = previewSegments(d.doc, d.seqId);
-		// render only the first segment
 		const r = await render(d, 'all', { range: { start: 0, end: 40 } });
 		expect((r.json() as { result: PreviewRenderResult }).result.rendered.map((x) => x.hash)).toEqual([
 			segs[0]!.hash,
@@ -344,7 +335,6 @@ describe('Export ▸ Use Previews', () => {
 			[0, 40],
 			[40, 60],
 		]);
-		// The export holds the preview files it reads (cache entries) for the job, like every other cached input.
 		const acquired = vi.spyOn(coreServices(app).cache, 'acquireForJob');
 		const start = await app.inject({
 			method: 'POST',
@@ -378,7 +368,6 @@ describe('Export ▸ Use Previews', () => {
 		);
 		expect(count).toBe(60);
 		for (const n of [0, 20, 39]) expect(frameCode(file, n)).toBe(n);
-		// without previews of a different format nothing is used, and the plan says why
 		const halfDoc = structuredClone(d.doc) as ProjectDocument;
 		(halfDoc.sequences[d.seqId] as { previews?: unknown }).previews = {
 			format: 'h264-iframe',

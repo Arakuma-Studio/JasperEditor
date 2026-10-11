@@ -1,6 +1,3 @@
-// wp speech MCP tools through the protocol against an in-memory engine: list / install models, transcribe a media
-// (wait + commit, one undo step), a sequence's clip media (skipping transcribed media), a sequence mix (words mapped
-// to the clip media), wait: false + jobIds commit, refusals, and get_transcript for a media and a sequence.
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,

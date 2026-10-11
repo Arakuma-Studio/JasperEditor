@@ -1,6 +1,4 @@
-// Workstream gaps (AI-2): Auto Reframe on reframe.mp4 (scripts/fixtures/process.mjs: a textured subject crossing an
-// 848×480 shot by 7 px a frame while the camera makes one jerky reframe) — the saliency analysis follows the subject
-// (no face model in tests), and `sequence.autoReframe` makes a 9:16 copy whose Position keyframes keep it in frame.
+// reframe.mp4 has a textured subject moving 7 px/frame through one jerky camera reframe; tests use no face model.
 import type { ReframeResult } from '@jasper/api';
 import { contentTimeAt, evaluate, smoothSubjectPath } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -51,7 +49,6 @@ describe('Auto Reframe', () => {
 		const p90 = errs[Math.floor(errs.length * 0.9)]!;
 		expect(median, `median x error ${(median * 848).toFixed(0)} px`).toBeLessThan(0.06);
 		expect(p90).toBeLessThan(0.15);
-		// The smoothed path is monotone like the subject (Default tracking).
 		const sm = smoothSubjectPath(res.points, res.frameDuration, 'default');
 		expect(sm[80]![0]).toBeGreaterThan(sm[20]![0] + 0.3);
 	}, 300_000);
@@ -99,7 +96,6 @@ describe('Auto Reframe', () => {
 			];
 			const sx = pos[0] + (truth(n)[0] * 848 - c.transform.anchor.value[0]) * s;
 			if (sx > 0.1 * 608 && sx < 0.9 * 608) inside++;
-			// The picture covers the frame.
 			expect(pos[0] - c.transform.anchor.value[0] * s).toBeLessThanOrEqual(0.5);
 			expect(pos[0] + (848 - c.transform.anchor.value[0]) * s).toBeGreaterThanOrEqual(607.5);
 		}

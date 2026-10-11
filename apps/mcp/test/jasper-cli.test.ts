@@ -1,5 +1,3 @@
-// The `jasper` one-shot CLI (docs/wp-notes/mcp-cli.md §5): argument parsing, exit codes, JSON-lines output,
-// and every command against a real token-protected engine (discovered through its runtime file).
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

@@ -1,8 +1,4 @@
-// A static DOM layer (a shape, a text) in a GL-composited blend mode, exported through Remotion over many frames.
-// Regression (verify workstream): the blend scope's layer tap was keyed by the clip alone, so a layer whose picture
-// does not change delivered it only on the first frame each Remotion page rendered; the scope's delayRender then
-// timed out on the page's next frame ("Blend modes at frame 6"). Stills (one frame) never showed it. Checked against
-// `blendPixel` (the native kernel's formulas) on early and late frames. REMOTION_E2E=1.
+// A static layer must deliver its picture on every frame a Remotion page renders; one-frame stills cannot catch starvation.
 import { spawnSync } from 'node:child_process';
 import { blendPixel, type Rgba } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

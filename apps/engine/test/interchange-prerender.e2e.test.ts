@@ -1,5 +1,3 @@
-// wp interchange: pre-renders through the Remotion path (ProRes 4444 with alpha, one movie per clip) referenced by the
-// exported document. Gated by REMOTION_E2E=1 like the other Remotion suites (bundles, starts a headless browser).
 import { spawnSync } from 'node:child_process';
 import type { InterchangeExportResult, RegisteredMedia } from '@jasper/api';
 import { describe, expect, it } from 'vitest';

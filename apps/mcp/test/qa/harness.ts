@@ -1,7 +1,4 @@
-// MCP scenario QA (docs/wp-notes/mcp-cli.md §6; modelled on EffectCraft's crates/automation/tests/qa): an
-// editor's seat — a real engine, and jasper-mcp spoken to over real MCP JSON-RPC on stdio exactly as Claude
-// Code would — plus pixel helpers to assert on what was rendered (centroid, coverage, luma, mean difference),
-// never on command success alone.
+// Scenario harness modelled on EffectCraft's crates/automation/tests/qa; rendered pixels provide independent evidence.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,7 +40,6 @@ export class Qa {
 		return join(this.dir, rel);
 	}
 
-	/** Boots a real engine and connects an MCP client to jasper-mcp over stdio (JSON-RPC). */
 	async start(): Promise<void> {
 		if (!existsSync(join(FIXTURES, 'clip-a.mp4'))) {
 			const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], {
@@ -128,7 +124,6 @@ export class Qa {
 		return this.client.callTool({ name, arguments: args }, undefined, { timeout: 600_000, ...opts });
 	}
 
-	/** A GET on the engine with its token (from the runtime file), for checks outside MCP. */
 	async engineJson<T>(path: string): Promise<T> {
 		const rt = JSON.parse(readFileSync(join(this.appdir, 'engine', 'runtime.json'), 'utf8')) as {
 			url: string;
@@ -140,7 +135,6 @@ export class Qa {
 		return (await r.json()) as T;
 	}
 
-	/** A tool that must succeed; its JSON body. */
 	async tool<T = Record<string, unknown>>(name: string, args: Record<string, unknown> = {}): Promise<T> {
 		const r = await this.tryTool(name, args);
 		if (r.isError)
@@ -150,7 +144,6 @@ export class Qa {
 		return JSON.parse(text(r)) as T;
 	}
 
-	/** A tool that must fail; its error body. */
 	async toolError(
 		name: string,
 		args: Record<string, unknown> = {},
@@ -160,7 +153,6 @@ export class Qa {
 		return (JSON.parse(text(r)) as { error: { code: string; message: string; hint?: string } }).error;
 	}
 
-	/** One transaction through apply_commands. */
 	async tx<T = { refs?: Record<string, string>; created: string[] }>(
 		label: string,
 		commands: unknown[],
@@ -168,7 +160,6 @@ export class Qa {
 		return this.tool<T>('apply_commands', { projectId: this.projectId, label, commands });
 	}
 
-	/** A new project in this engine (becomes `projectId`). */
 	async project(name: string, preset = 'hd-720p-30'): Promise<string> {
 		this.projectName = name;
 		this.projectId = (await this.tool<{ projectId: string }>('create_project', { name, preset })).projectId;
@@ -190,7 +181,6 @@ export class Qa {
 		return out;
 	}
 
-	/** `render_frame` at full sequence width, decoded. */
 	async frame(at: unknown, width = 640): Promise<Img> {
 		const r = await this.tryTool('render_frame', { projectId: this.projectId, at, width });
 		if (r.isError) throw new Error(`render_frame: ${text(r)}`);
@@ -219,7 +209,6 @@ export class Qa {
 		return JSON.parse((r.contents[0] as { text: string }).text) as ProjectDocument;
 	}
 
-	/** Clips of the first sequence with their track labels, by start. */
 	async clips(): Promise<
 		{ id: string; kind: string; track: string; start: number; end: number; name: string }[]
 	> {
@@ -241,8 +230,6 @@ export class Qa {
 export const text = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text?: string } | undefined)?.text ?? '';
 
-// ---------------------------------------------------------------- pixels
-
 export function px(img: Img, x: number, y: number): Px {
 	const i = (Math.round(y) * img.width + Math.round(x)) * 4;
 	return [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, img.data[i + 3]!];
@@ -250,7 +237,6 @@ export function px(img: Img, x: number, y: number): Px {
 
 export const luma = (p: Px | readonly number[]) => 0.2126 * p[0]! + 0.7152 * p[1]! + 0.0722 * p[2]!;
 
-/** Fraction of pixels matching `f` (optionally inside a rectangle). */
 export function coverage(
 	img: Img,
 	f: (p: Px) => boolean,
@@ -262,7 +248,6 @@ export function coverage(
 	return n / Math.max(1, r.w * r.h);
 }
 
-/** Centroid of the pixels matching `f`, or null. */
 export function centroid(img: Img, f: (p: Px) => boolean): { x: number; y: number } | null {
 	let sx = 0;
 	let sy = 0;
@@ -277,7 +262,6 @@ export function centroid(img: Img, f: (p: Px) => boolean): { x: number; y: numbe
 	return n ? { x: sx / n, y: sy / n } : null;
 }
 
-/** Mean luma of an image (or a rectangle of it). */
 export function meanLuma(img: Img, rect?: { x: number; y: number; w: number; h: number }): number {
 	const r = rect ?? { x: 0, y: 0, w: img.width, h: img.height };
 	let s = 0;
@@ -298,7 +282,6 @@ export function meanDiff(a: Img, b: Img): number {
 	return s / ((a.data.length / 4) * 3);
 }
 
-/** Mean colour of an image. */
 export function meanColor(img: Img): [number, number, number] {
 	const s = [0, 0, 0];
 	for (let i = 0; i < img.data.length; i += 4) for (let c = 0; c < 3; c++) s[c]! += img.data[i + c]!;
@@ -306,7 +289,6 @@ export function meanColor(img: Img): [number, number, number] {
 	return [s[0]! / n, s[1]! / n, s[2]! / n];
 }
 
-/** A frame of a video file (ffmpeg), scaled to `width`, decoded. */
 export function videoFrame(file: string, seconds: number, width: number, dir: string): Img {
 	const out = join(dir, `vf-${Math.round(seconds * 1000)}-${Math.random().toString(36).slice(2)}.png`);
 	const r = spawnSync('ffmpeg', [

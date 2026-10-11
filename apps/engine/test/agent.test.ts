@@ -1,5 +1,3 @@
-// Agent API stage 1 (WP-2H, ARCHITECTURE §11): relay round trip with a fake WS session, headless apply
-// and save, approvals (deny / timeout / headless), stale revision rejection vs fast-forward (S01 AC-11).
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -77,7 +75,6 @@ async function postTx(app: FastifyInstance, projectId: string, transaction: unkn
 	return r.json() as { result: TransactionResult; appliedBy: 'session' | 'headless' };
 }
 
-/** Collects messages a ws client receives. */
 function inbox(ws: WebSocket) {
 	const queue: Record<string, unknown>[] = [];
 	const waiters: ((m: Record<string, unknown>) => void)[] = [];
@@ -171,7 +168,6 @@ describe('GET /api/agent/mcp-info (Help ▸ Connect an AI Agent…)', () => {
 	it('finds the bundle in a checkout and in packaged resources; JASPER_MCP_ENTRY overrides', () => {
 		const root = mkdtempSync(join(tmpdir(), 'jasper-mcp-entry-'));
 		try {
-			// checkout: apps/engine/dist + apps/mcp/dist/jasper-mcp.mjs
 			mkdirSync(join(root, 'apps/engine/dist'), { recursive: true });
 			mkdirSync(join(root, 'apps/engine/src/agent'), { recursive: true });
 			expect(findMcpEntry({}, join(root, 'apps/engine/dist'))).toBeNull();
@@ -180,7 +176,6 @@ describe('GET /api/agent/mcp-info (Help ▸ Connect an AI Agent…)', () => {
 			writeFileSync(bundle, '');
 			expect(findMcpEntry({}, join(root, 'apps/engine/dist'))).toBe(bundle);
 			expect(findMcpEntry({}, join(root, 'apps/engine/src/agent'))).toBe(bundle);
-			// packaged: resources/engine + resources/mcp/jasper-mcp.mjs
 			mkdirSync(join(root, 'resources/engine'), { recursive: true });
 			mkdirSync(join(root, 'resources/mcp'), { recursive: true });
 			const packaged = join(root, 'resources/mcp/jasper-mcp.mjs');
@@ -430,8 +425,6 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- service-level (timeouts)
-
 class FakeSocket extends EventEmitter implements AgentSocket {
 	readyState = 1;
 	sent: Record<string, unknown>[] = [];
@@ -571,7 +564,6 @@ describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
 		expect((await post({ action: 'nope' })).statusCode).toBe(400);
 
 		const { ws, box } = await connectSession(app, projectId);
-		// Without a projectId the most recent window answers.
 		const pending = post({ action: 'elements', args: { panel: 'timeline' } });
 		const req = await box.until((m) => m.type === 'request');
 		expect(req).toMatchObject({ kind: 'ui', payload: { action: 'elements', args: { panel: 'timeline' } } });
@@ -582,7 +574,6 @@ describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
 			result: { count: 0, elements: [] },
 			window: { projectId, sessionId: 'ses_test' },
 		});
-		// The window's errors keep their code.
 		const bad = post({ projectId, action: 'click', args: { id: 'nope' } });
 		const breq = await box.until((m) => m.type === 'request');
 		ws.send(
@@ -596,7 +587,6 @@ describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
 		const b = await bad;
 		expect(b.statusCode).toBe(404);
 		expect(b.json()).toMatchObject({ message: 'No element "nope"', detail: { code: 'E_NOT_FOUND' } });
-		// Another project has no window.
 		expect((await post({ projectId: 'prj_other', action: 'state' })).statusCode).toBe(409);
 		ws.close();
 	});

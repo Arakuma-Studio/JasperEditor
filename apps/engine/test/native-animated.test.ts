@@ -1,9 +1,3 @@
-// Keyframed Motion, Opacity, crop edges and audio levels on the native path (S03:ENG-032, S04:RN-020, wave1
-// native-animated-export): the piecewise fit, the planner (these clips plan `native` and the warp stage leaves them
-// to the builder), exported frames against the evaluated geometry (every keyframe kind: linear, eased, hold) and
-// keyframed volume against the per-frame gain. Real ffmpeg (the engine's build). With REMOTION_E2E=1 the same
-// fixture is also rendered by Remotion and compared frame by frame (S03:FX-040 / ENG-033: SSIM ≥ 0.98); with
-// NATIVE_ANIM_BENCH=1 a 10 s 1080p fixture is timed on the native and the Remotion path.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -42,8 +36,6 @@ function report(line: string): void {
 	console.info(line);
 	appendFileSync(join(tmpdir(), 'native-animated.txt'), `${new Date().toISOString()} ${line}\n`);
 }
-
-// ---- fixture: a 640×360 card (white 40 px frame around a 7×4 grid of saturated cells) on a dark plate
 
 const CELL_COLORS: [number, number, number][] = [
 	[230, 30, 30],
@@ -102,7 +94,6 @@ function makeCard(): string {
 	return out;
 }
 
-/** The keyframes of the fixture (sequence frames): linear, eased (Bezier), hold, non-uniform scale. */
 function animateCard(d: DocBuilder, clip: string): void {
 	const at = (f: number) => ({ sequenceFrame: f });
 	const t = (p: string) => ['clip', clip, 'transform', p];
@@ -140,7 +131,6 @@ function animateCard(d: DocBuilder, clip: string): void {
 	]);
 }
 
-/** Plate: a dark solid (V1) and the animated card (V2), 48 frames of a 1080p30 sequence. */
 async function cardDoc(
 	app: TestApp | RunningEngine['app'],
 	hostH: Record<string, string> = {},
@@ -196,7 +186,6 @@ const h264Settings = (seqId: string, engine: 'auto' | 'native' | 'remotion' = 'a
 
 type Img = { rgb: Buffer; w: number; h: number };
 
-/** Every frame of a file as RGB. */
 function decodeAll(file: string): Img[] {
 	const r = spawnSync(
 		'ffmpeg',
@@ -333,7 +322,6 @@ function ssim(a: string, b: string, frame: number): number {
 	return Number(m[1]);
 }
 
-/** Share of RGB samples within `tol` code values. */
 function within(a: Img, b: Img, tol: number): number {
 	let n = 0;
 	for (let i = 0; i < a.rgb.length; i++) if (Math.abs(a.rgb[i]! - b.rgb[i]!) <= tol) n++;
@@ -356,8 +344,6 @@ const GPL_FILTERS = [
 	'pullup',
 ];
 
-// ---- the piecewise fit (no ffmpeg)
-
 describe('per-frame samples → piecewise-linear expressions (S03:ENG-032)', () => {
 	it('stays within tolerance, keeps holds exact and grows with the curve, not the clip length', () => {
 		const n = 3000;
@@ -367,7 +353,6 @@ describe('per-frame samples → piecewise-linear expressions (S03:ENG-032)', () 
 		});
 		const pieces = fitPieces(eased, 0.1);
 		for (let k = 0; k < n; k++) expect(Math.abs(pieceValue(pieces, k) - eased[k]!)).toBeLessThanOrEqual(0.1);
-		// The step is exact on both sides of the jump.
 		expect(pieceValue(pieces, 1499)).toBeCloseTo(eased[1499]!, 9);
 		expect(pieceValue(pieces, 1500)).toBeCloseTo(eased[1500]!, 9);
 		// A 1000 px ease over 10 s (curvature ≤ 0.067 px/frame²) needs pieces of ~3 frames at 0.1 px.
@@ -387,8 +372,6 @@ describe('per-frame samples → piecewise-linear expressions (S03:ENG-032)', () 
 		expect(maxDepth).toBeLessThan(4 * Math.ceil(Math.log2(pieces.length + 1)) + 6);
 	});
 });
-
-// ---- engine (real ffmpeg)
 
 let app: TestApp;
 beforeAll(async () => {
@@ -440,7 +423,6 @@ describe('planner: keyframed layers and levels are native', () => {
 		const p = await plan(d, h264Settings(d.seqId));
 		expect(p).toMatchObject({ path: 'native', blockers: [] });
 
-		// The generic checks alone (no extension) accept the layer; the warp stage does not claim it.
 		const planned = await coreServices(app).exports.plan({
 			envelope: d.envelope(),
 			sequenceId: d.seqId,
@@ -449,7 +431,6 @@ describe('planner: keyframed layers and levels are native', () => {
 		const c = planned.snapshot.videoTracks.flatMap((t) => t.clips).find((x) => x.clipId === clip)!;
 		const caps = { native: true, remotionLocal: 'ready', fframes: 'ready', mgMasters: true } as const;
 		expect(nativeBlockers(c, caps, [])).toEqual([]);
-		// The same keyframes on an fframes motion graphic (never claimed by the warp stage): native too.
 		const mg = {
 			...c,
 			kind: 'motion-graphic',
@@ -461,7 +442,6 @@ describe('planner: keyframed layers and levels are native', () => {
 			.find((e) => e.id === 'warp')!;
 		expect(warp.claimsLayer!(c)).toBe(false);
 
-		// A keyframed blur is now baked (D-35); audio pan stays blocked.
 		const b = await cardDoc(app);
 		const blur = b.d.tx([
 			{
@@ -486,7 +466,6 @@ describe('planner: keyframed layers and levels are native', () => {
 				value: 9,
 			},
 		]);
-		// D-35: a layer with an effect only the composition draws (here the blur) is baked whole by the layer bake.
 		const pb = await plan(b.d, h264Settings(b.d.seqId));
 		expect(pb).toMatchObject({ path: 'hybrid', blockers: [] });
 
@@ -512,7 +491,6 @@ describe('planner: keyframed layers and levels are native', () => {
 			{ type: 'keyframe.add', target: ['clip', audioClip, 'pan'], at: { sequenceFrame: 0 }, value: -50 },
 			{ type: 'keyframe.add', target: ['clip', audioClip, 'pan'], at: { sequenceFrame: 30 }, value: 50 },
 		]);
-		// audio-mix: pan (and every bus feature) is rendered by the offline mixer on every path.
 		expect(await plan(a, h264Settings(a.seqId))).toMatchObject({ path: 'native', blockers: [] });
 	}, 120_000);
 });
@@ -536,7 +514,6 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		});
 		for (const name of GPL_FILTERS)
 			expect(g.filter, name).not.toMatch(new RegExp(`(^|[\\[\\],;\\s])${name}(=|[,;\\[\\s]|$)`, 'm'));
-		// Keyframed Motion: the layer is drawn sub-pixel and streamed on a pipe (stream/plan.ts).
 		expect(g.streams).toHaveLength(1);
 		expect(g.args.join(' ')).toContain('pipe:3');
 		for (const name of GPL_FILTERS)
@@ -548,7 +525,6 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		const { done, out } = await runExport(d, settings);
 		expect(done.result).toMatchObject({ renderPath: 'native', frames: 48 });
 		report(`[anim] 48-frame card export (native, ProRes 4444): ${Date.now() - started} ms`);
-		// Every frame: the linear start, the eased segment (18 → 34), the hold (34 → 44) and the jump after it.
 		const frames = decodeAll(out);
 		expect(frames).toHaveLength(48);
 		let worst = 0;
@@ -618,7 +594,6 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 	}, 300_000);
 });
 
-/** Frames of a region of a file as RGB (`w×h` each). */
 function decodeRegion(file: string, x: number, y: number, w: number, h: number): Img[] {
 	const r = spawnSync(
 		'ffmpeg',
@@ -772,8 +747,8 @@ describe('sub-pixel motion (no whole-pixel stepping)', () => {
 			`[subpixel] 0.05 px/frame pan, 300 frames: x RMS ${rms.toFixed(4)} px, worst step error ${worstStep.toFixed(4)} px, smallest step ${minStep.toFixed(4)} px, worst y error ${worstY.toFixed(4)} px`,
 		);
 		expect(rms).toBeLessThanOrEqual(0.05);
-		expect(minStep).toBeGreaterThan(0); // monotonic
-		expect(worstStep).toBeLessThan(0.05); // no whole-pixel (or half-pixel) jumps
+		expect(minStep).toBeGreaterThan(0);
+		expect(worstStep).toBeLessThan(0.05);
 		expect(worstY).toBeLessThanOrEqual(0.05);
 	}, 600_000);
 });
@@ -861,8 +836,6 @@ describe('native export of keyframed audio levels (S01:FX-010)', () => {
 		report(`[anim] keyframed volume: worst per-frame gain error ${worst.toFixed(3)} dB`);
 	}, 300_000);
 });
-
-// ---- parity with the Remotion render (S03:FX-040 AC-FX-1, ENG-033)
 
 describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (REMOTION_E2E=1)', () => {
 	let engine: RunningEngine;
@@ -1008,7 +981,7 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		report(`[anim parity] keyframed card, 48 frames: ${animated.line}`);
 		for (const [f, v] of animated.ssim.entries()) expect(v, `frame ${f}`).toBeGreaterThanOrEqual(0.98);
 
-		// Reference: the same layer without keyframes (the values of frame 26) through the M1 static native path.
+		// Compare with the static native path using the evaluated values at frame 26.
 		const props = resolveSceneAt(
 			(
 				await coreServices(engine.app).exports.plan({
@@ -1034,8 +1007,6 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		expect(Math.min(...animated.ssim)).toBeGreaterThanOrEqual(Math.min(...fixed.ssim) - 0.005);
 	}, 1_800_000);
 });
-
-// ---- speed (NATIVE_ANIM_BENCH=1): 10 s 1080p plate + keyframed picture-in-picture
 
 describe.runIf(BENCH)('export speed of keyframed Motion (NATIVE_ANIM_BENCH=1)', () => {
 	let engine: RunningEngine;
@@ -1088,7 +1059,6 @@ describe.runIf(BENCH)('export speed of keyframed Motion (NATIVE_ANIM_BENCH=1)', 
 		return { path: plan.path, ms: Date.now() - started, result: done.result };
 	}
 
-	/** Fixture A: a 1080p plate and a keyframed 1080p picture-in-picture (eased position, scale, rotation, fade in). */
 	async function pipDoc() {
 		const d = new DocBuilder();
 		const plate = d.addMedia(await register(engine.app, fixture('clip-a.mp4'), hostH()));
@@ -1128,7 +1098,6 @@ describe.runIf(BENCH)('export speed of keyframed Motion (NATIVE_ANIM_BENCH=1)', 
 		return d;
 	}
 
-	/** Fixture B: a 1080p plate and three keyframed 640×360 cards flying in (motion-graphics style overlays). */
 	async function cardsDoc() {
 		const d = new DocBuilder();
 		const plate = d.addMedia(await register(engine.app, fixture('clip-a.mp4'), hostH()));
@@ -1143,7 +1112,7 @@ describe.runIf(BENCH)('export speed of keyframed Motion (NATIVE_ANIM_BENCH=1)', 
 			const clip = d.tx([
 				{ type: 'clip.place', source: { mediaId: card }, at: 0, tracks: { video: track }, ref: '$c' },
 			]).refs.$c!;
-			d.tx([{ type: 'clip.trim', clipId: clip, edge: 'out', deltaFrames: 150 }]); // stills: 150 frames by default
+			d.tx([{ type: 'clip.trim', clipId: clip, edge: 'out', deltaFrames: 150 }]);
 			const t = (p: string) => ['clip', clip, 'transform', p];
 			d.tx([
 				{ type: 'keyframe.add', target: t('position'), at: at(0), value: [-300, 200 + 300 * i] },
@@ -1176,7 +1145,6 @@ describe.runIf(BENCH)('export speed of keyframed Motion (NATIVE_ANIM_BENCH=1)', 
 			const d = await make();
 			const settings = { ...h264Settings(d.seqId), range: { type: 'custom', startFrame: 0, endFrame: 300 } };
 			const native = await timed(d, settings);
-			// A second export of the same document (caches warm: the warp stage reuses its intermediates).
 			const again = await timed(d, settings);
 			report(
 				`[anim bench] ${name}: ${native.path} path, 300 frames 1080p30 h264: ${native.ms} ms, re-export ${again.ms} ms (${JSON.stringify(native.result)})`,

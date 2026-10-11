@@ -1,12 +1,4 @@
-// Remotion with OUR LGPL FFmpeg (ARCHITECTURE D-13, docs/wp-notes/wp-lgpl.md). Gated like the other
-// Remotion end-to-end test (REMOTION_E2E=1) and needs the LGPL binaries directory from `pnpm ffmpeg:lgpl`
-// (or JASPER_REMOTION_BIN_DIR). The engine runs in strict (non-dev, packaged-like) mode, where Remotion
-// is only allowed with an LGPL directory:
-//   - capabilities report the directory and its LGPL license; its ffmpeg -buildconf has no --enable-gpl;
-//   - an H.264 export renders a ProRes intermediate through Remotion (video clip + audio + text, so the
-//     compositor's frame extraction runs on the LGPL libav*) and is encoded by OpenH264;
-//   - a VP9 export is written by Remotion directly (libvpx-vp9 + libopus WebM);
-//   - a still renders.
+// Strict-mode rendering requires the LGPL binaries from pnpm ffmpeg:lgpl or JASPER_REMOTION_BIN_DIR.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -186,7 +178,7 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		stillDoc.tx([
 			{ type: 'clip.addText', at: 0, duration: 24, track: 'V1', content: { text: 'LGPL still' }, ref: '$t' },
 		]);
-		// keyframes-blend: blend modes are native except inside nested sequences — this keeps the still on Remotion.
+		// Blend modes render natively except inside nested sequences, keeping this still on the Remotion path.
 		stillDoc.tx([{ type: 'clip.update', clipIds: stillDoc.clipIds(), patch: { blendMode: 'screen' } }]);
 		stillDoc.tx([{ type: 'clip.nest', clipIds: stillDoc.clipIds() }]);
 		const r = await engine.app.inject({

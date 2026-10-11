@@ -1,5 +1,4 @@
-// Workstream `previews`: the MCP tools get_render_bar_state, render_previews, delete_render_files and perf_stats over a
-// fake engine (the hashes come from @jasper/project, the engine answers which have files).
+// Hashes come from @jasper/project; the fake engine only decides which hashes have files.
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -128,7 +127,6 @@ describe('render previews MCP tools', () => {
 			segs.map((s) => s.startFrame),
 		);
 		for (const s of json.segments) expect(['green', 'yellow', 'red', 'none']).toContain(s.state);
-		// a range limits the rows
 		const r = await call('get_render_bar_state', { projectId: doc.projectId, range: { from: 0, to: 10 } });
 		expect(r.json.segments).toHaveLength(1);
 		const tools = (await client.listTools()).tools;

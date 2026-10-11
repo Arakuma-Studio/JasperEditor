@@ -1,5 +1,3 @@
-// color-grade: the Lumetri completion and the grading analysis tools through the public MCP tools and a real
-// engine: grade_clip's new sections, list_looks, scopes_read, color_match, auto_tone (one Agent change each).
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,8 +16,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
 const FIXTURES = join(ROOT, 'fixtures', 'media');
 
-// ---------------------------------------------------------------- integration (real engine)
-
 const PORT = Number(process.env.MCP_GRADING_TEST_PORT ?? 49443);
 const URL_BASE = `http://127.0.0.1:${PORT}`;
 
@@ -34,7 +30,6 @@ function ensureFixtures(): void {
 	if (r.status !== 0) throw new Error('fixture generation failed');
 }
 
-/** RGB24 pixels of a PNG (decoded by ffmpeg). */
 function pngPixels(png: Buffer): Buffer {
 	const r = spawnSync(
 		'ffmpeg',

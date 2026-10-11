@@ -1,7 +1,4 @@
-// GPU transitions and GPU-effect layers in the planner and the native builder (wave1c, ARCHITECTURE D-35): they plan
-// `hybrid` (only their spans / layers are rendered by Remotion), the builder draws the sides of a baked transition only
-// outside its span and overlays the span master in the track's place. No browser needed (the bakes themselves are
-// covered by gpu-spans.e2e.test.ts).
+// The builder draws transition sides outside the baked span and overlays the span master in their track.
 import { defaultEffectRegistry } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
@@ -62,7 +59,6 @@ async function plan(d: DocBuilder): Promise<Plan> {
 	return r.json() as Plan;
 }
 
-/** Two solids on V1 (A 0–30, B 30–60) with a GPU transition at the cut (span 20–40, centred). */
 function solidsWithPush(): { d: DocBuilder; a: string; b: string; t: string } {
 	const d = new DocBuilder();
 	const a = d.tx([
@@ -146,7 +142,6 @@ describe('layer-bake: what is baked', () => {
 		expect(hasBrowserEffect({ effects: [{ ...fx('jasper.bevel-edges'), enabled: false }] } as never)).toBe(
 			false,
 		);
-		// A baked video is a master (moving picture), never one PNG.
 		expect(
 			isStaticLayer({
 				kind: 'video',
@@ -235,12 +230,10 @@ describe('span bakes: the cache key covers the transition inputs (wave-4 transit
 		const track = planned.snapshot.videoTracks[0]!;
 		const t = track.transitions![0]!;
 		const span = await svc.planSpan(planned, track.trackId, t, { env: ENV });
-		// The span's render document carries the image's handle; the key its fingerprint.
 		expect(span.doc.media[img]).toBeTruthy();
 		expect(span.material.media.map((m) => m.mediaId)).toContain(img);
 		const again = await svc.planSpan(planned, track.trackId, t, { env: ENV });
 		expect(again.key).toBe(span.key);
-		// Same media id, other content (a re-linked / replaced file): another key.
 		const local = planned.media[img];
 		if (local) local.record = { ...local.record, fingerprint: 'q1:other' } as never;
 		planned.document.media[img] = { ...planned.document.media[img]!, fingerprint: 'q1:other' };

@@ -1,7 +1,3 @@
-// edit-structure on the native export path (docs/wp-notes/edit-structure.md): nested sequences drawn in the same
-// filtergraph (frame mapping incl. speed, Motion of the nest clip, nested audio), adjustment layers (effects on the
-// composite with opacity and crop), frame holds, freeze-frame transition handles, Bars and Tone (picture and the
-// −20 dBFS tone) and the counting leader — checked frame by frame on the exported files (real ffmpeg).
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -79,7 +75,6 @@ function frameCode(file: string, frame: number): number {
 	return code;
 }
 
-/** Peak level (dBFS) of the audio of `file` between `from` and `to` seconds. */
 function maxVolume(file: string, from = 0, to = 100): number {
 	const r = spawnSync('ffmpeg', [
 		...['-v', 'info', '-ss', String(from), '-to', String(to), '-i', file],
@@ -162,7 +157,6 @@ describe('adjustment layers (native)', () => {
 			{ type: 'param.set', target: ['clip', '$a', 'opacity'], value: 50 },
 		]);
 		const file = await exportDoc(d);
-		// Before the adjustment: orange everywhere.
 		expect(near(pixel(file, 5, 1500, 540)[2], 0, 12)).toBe(true);
 		// Left half (cropped away): still orange; right half: halfway to grey.
 		const left = pixel(file, 20, 400, 540);
@@ -264,10 +258,10 @@ describe('synthetic sources (native)', () => {
 		]);
 		const file = await exportDoc(d);
 		const at = (x: number, y: number) => pixel(file, 10, x, y);
-		expect(at(100, 100).every((v) => near(v, 102, 6))).toBe(true); // 40 % grey
-		expect(at(300, 100).every((v) => near(v, 191, 6))).toBe(true); // 75 % white
-		expect(at(1850, 100).every((v) => near(v, 102, 6))).toBe(true); // right side panel
-		expect(near(at(1550, 100)[2], 191, 6) && at(1550, 100)[0] < 12).toBe(true); // 75 % blue bar
+		expect(at(100, 100).every((v) => near(v, 102, 6))).toBe(true);
+		expect(at(300, 100).every((v) => near(v, 191, 6))).toBe(true);
+		expect(at(1850, 100).every((v) => near(v, 102, 6))).toBe(true);
+		expect(near(at(1550, 100)[2], 191, 6) && at(1550, 100)[0] < 12).toBe(true);
 		expect(near(maxVolume(file, 0.1, 0.9), -20, 0.6)).toBe(true);
 		// Leader at content 2.5 s (frame 30 + 75): the swept quadrant shows the wipe colour, the rest the background.
 		const swept = pixel(file, 105, 1700, 150);

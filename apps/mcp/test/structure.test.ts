@@ -1,6 +1,3 @@
-// edit-structure MCP tools through the protocol against an in-memory engine: nest / list / unnest, place_sequence,
-// adjustment layers with effects, groups, synthetics, through edits, gaps, subsequences, frame holds, duplicate and
-// the approval-gated delete_sequence / remove_unused_media.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

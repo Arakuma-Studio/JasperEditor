@@ -1,7 +1,4 @@
-// MCP tools for composition clips (S08:MGA-001/002, §8 test 7). With MG_E2E=1 the flow runs headless
-// against a real engine on MCP_MG_TEST_PORT (default 48145):
-// import_mg_bundle → list_compositions → add_composition → set_composition_props → render_frame (the edited
-// title changes the frame) → prerender_composition, plus the actionable errors.
+// MG_E2E=1 enables the real engine flow on MCP_MG_TEST_PORT (default 48145).
 import { type ChildProcess, spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -87,7 +84,6 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 			['Title', 'bundle'],
 		]);
 		expect(imp.compositions.find((c) => c.id === 'Title')!.props.delay!.type).toBe('integer');
-		// Importing again reuses the asset.
 		const { body: again } = await ok<{ mediaId: string }>('import_mg_bundle', {
 			projectId,
 			path: FIXTURE_PROJECT,
@@ -138,7 +134,6 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		expect(pre.job).toMatchObject({ kind: 'mg-prerender', state: 'succeeded' });
 		expect(pre.job.result?.masterUrl).toMatch(/master\.mov$/);
 
-		// Hybrid text layers (S08:MGA-003): list the texts of a LowerThird, edit a text and its style in one step.
 		const { body: lt } = await ok<{ clips: { id: string }[]; revision: number }>('add_composition', {
 			projectId,
 			mediaId: imp.mediaId,
@@ -180,11 +175,10 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 			],
 		});
 		expect(edited.texts[0]).toMatchObject({ path: 'name.text', value: 'Grace Hopper, Rear Admiral' });
-		expect(edited.texts[0]!.warnings.map((w) => w.code)).toContain('MG_TEXT_LONG'); // designed for 24
+		expect(edited.texts[0]!.warnings.map((w) => w.code)).toContain('MG_TEXT_LONG');
 		const ltAfter = await call('render_frame', { projectId, at: 60, width: 480 });
 		const img = (r: CallToolResult) => (r.content.find((c) => c.type === 'image') as { data: string }).data;
 		expect(img(ltAfter)).not.toBe(img(ltBefore));
-		// Text and style landed in ONE transaction (one revision, one undo step in an open editor).
 		expect(edited.revision).toBe(lt.revision + 1);
 		const { body: now } = await ok<{
 			texts: { value: string; overridden: boolean; style: Record<string, { value: unknown }> }[];
@@ -219,7 +213,6 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		});
 		expect(quick.layout).toMatch(/not measured/);
 
-		// MG_REMOTION_VERSION carries the pin hint (S08:MGA-002).
 		const old = mkdtempSync(join(tmpdir(), 'jasper-mcp-old-'));
 		cpSync(join(FIXTURE_PROJECT, 'src'), join(old, 'src'), { recursive: true });
 		writeFileSync(join(old, 'package.json'), JSON.stringify({ dependencies: { remotion: '4.0.300' } }));

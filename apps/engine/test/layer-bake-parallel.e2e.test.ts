@@ -1,5 +1,3 @@
-// Parallel bakes end to end (S11:LBK-022, REMOTION_E2E=1): an eight-layer export runs bakes concurrently and
-// yields the same decoded composite as a sequential export. Cancelling the export settles its child jobs.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { loadavg, tmpdir } from 'node:os';
@@ -146,7 +144,6 @@ function layeredDoc(tag = ''): DocBuilder {
 	return d;
 }
 
-/** Every frame of a video (or the PNG) as raw RGBA. */
 function pixels(file: string): Buffer {
 	const r = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-pix_fmt', 'rgba', '-f', 'rawvideo', 'pipe:1'], {
 		maxBuffer: 1 << 30,
@@ -262,7 +259,6 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 		clearCache();
 		const par = await exportWith(d, PARALLEL);
 		expect(par.bakes).toHaveLength(8);
-		// Bakes overlapped (at least two in flight at some point).
 		const spans = par.bakes.map((k) => [t(k.startedAt), t(k.finishedAt)] as const);
 		const overlap = Math.max(...spans.map(([s]) => spans.filter(([a, b]) => a <= s && s < b).length));
 		expect(overlap).toBeGreaterThanOrEqual(2);

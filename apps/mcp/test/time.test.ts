@@ -1,5 +1,4 @@
-// Workstream `time` MCP tools through the protocol against an in-memory engine: time remapping (segments, keyframes,
-// ramps, freeze, reverse), time interpolation and Scene Edit Detection (engine job stubbed).
+// Scene detection jobs are stubbed; document changes use the real command system.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -181,7 +180,6 @@ describe('time MCP tools', () => {
 		r = await call('set_time_remap', { clipIds: [v], enabled: false });
 		expect(r.isError).toBe(false);
 		expect((await call('get_time_remap', { clipId: v })).body.timeRemapping).toBe(false);
-		// Strict inputs: unknown keys are refused.
 		expect((await call('set_segment_speed', { clipId: v, at: 20, speed: 50 })).isError).toBe(true);
 	});
 

@@ -1,4 +1,3 @@
-// The rendered native export must play both audio handles through the selected crossfade law.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -107,7 +106,6 @@ function windowLevels(file: string): number[] {
 	);
 }
 
-/** Mono float samples of the export's audio. */
 function pcm(file: string): Float32Array {
 	const r = spawnSync(
 		'ffmpeg',
@@ -144,7 +142,7 @@ describe('audio crossfades on the native path (S10:TUI-052)', () => {
 		const inner = levels.slice(5, 145);
 		const sorted = [...inner].sort((x, y) => x - y);
 		const ref = sorted[sorted.length >> 1]!;
-		expect(ref).toBeGreaterThan(-40); // not silent
+		expect(ref).toBeGreaterThan(-40);
 		const worst = inner.reduce((m, l) => Math.max(m, Math.abs(l - ref)), 0);
 		expect(worst).toBeLessThan(0.5);
 

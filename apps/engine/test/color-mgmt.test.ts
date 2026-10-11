@@ -1,6 +1,3 @@
-// color-mgmt on the engine: interpreted sources (native still = TS reference), HDR working spaces, export colour
-// spaces (tags, 10-bit, HDR metadata boxes / OBUs), tone-mapped Rec. 709 outputs, display-rendition stills, HDR probe
-// metadata and the new LUT formats.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,8 +32,7 @@ import {
 
 let app: TestApp;
 const tmp = mkdtempSync(join(tmpdir(), 'jasper-cm-'));
-// The LGPL build when it is there (pnpm ffmpeg:lgpl), else JASPER_FFMPEG / PATH like the engine (a clean CI checkout
-// has no vendor directory: the hard-coded vendor path made every probe here a null stdout).
+// A clean CI checkout has no vendor directory; resolve FFmpeg the same way as the engine.
 const VENDOR = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 const FFMPEG = existsSync(join(VENDOR, 'ffmpeg')) ? join(VENDOR, 'ffmpeg') : (ffmpegPath() ?? 'ffmpeg');
 const FFPROBE = existsSync(join(VENDOR, 'ffprobe')) ? join(VENDOR, 'ffprobe') : (ffprobePath() ?? 'ffprobe');

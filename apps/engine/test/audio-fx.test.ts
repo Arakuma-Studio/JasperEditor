@@ -1,6 +1,3 @@
-// audio-fx (engine): audio effects export natively through the offline mixer (no AUDIO_EFFECT_UNSUPPORTED, no
-// Remotion fallback) with exact DSP results; reversed audio and pan too; remix plans on generated beat tracks
-// commit as `clip.remix`; Essential Sound Auto-Match reaches its loudness target.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -31,7 +28,7 @@ beforeAll(async () => {
 		join(dir, 'tone.wav'),
 	]);
 	if (r.status !== 0) throw new Error(`tone generation failed: ${r.stderr}`);
-	const music = testMusic(48000, 120, 24, 7); // 48 s
+	const music = testMusic(48000, 120, 24, 7);
 	writeFileSync(join(dir, 'music.wav'), encodeWav(music.audio, 48000, 'f32'));
 }, 120_000);
 afterAll(closeApps);
@@ -178,7 +175,7 @@ describe('audio-fx native export', () => {
 		expect(rev.result.renderPath).toBe('native');
 		const [rl, rr] = planar(rev.file);
 		expect(amp(rl, 24000, 96000)).toBeGreaterThan(0.1);
-		expect(amp(rr, 24000, 96000)).toBeLessThan(1e-3); // hard left
+		expect(amp(rr, 24000, 96000)).toBeLessThan(1e-3);
 	});
 
 	it('the Remotion path carries the same mixer audio (effects too)', async () => {
@@ -197,7 +194,6 @@ describe('audio-fx native export', () => {
 			settings: settings(d.seqId, 'mov', 'remotion') as never,
 		});
 		expect(planned.plan.path).toBe('remotion');
-		// Every path renders the offline mixer's audio (audio-mix): the plan does not refuse the effect.
 		expect(planned.plan.blockers.some((b) => /audio effect/i.test(b.reason))).toBe(false);
 	});
 });
@@ -232,7 +228,6 @@ describe('remix plan route + clip.remix', () => {
 		const { file } = await exportOf(d);
 		const [l] = planar(file);
 		expect(Math.abs(l.length / 48000 - 30)).toBeLessThan(0.05);
-		// Silence / noise is refused with a typed error.
 		const bad = await app.inject({
 			method: 'POST',
 			url: '/api/audio/remix-plan',

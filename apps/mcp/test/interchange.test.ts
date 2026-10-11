@@ -1,6 +1,3 @@
-// Timeline interchange MCP tools through the protocol against an in-memory engine (the engine routes are tested in
-// apps/engine/test/interchange.test.ts): import_timeline applies the fragment in one transaction, export_timeline maps
-// its options and follows the job, link_media relinks found files and holds back the ones that differ.
 import type { EngineJob, InterchangeExportRequest, RelinkScanResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -259,11 +256,8 @@ describe('interchange MCP tools', () => {
 			{ message: 'a wipe was imported as a cross dissolve', count: 2, instead: 'Cross Dissolve' },
 		]);
 		expect(r.body.report.notes).toBe(1);
-		// the import landed in a bin of its own
 		expect(Object.values(engine.doc().items).some((i) => i.kind === 'bin' && i.name === 'Cut 1')).toBe(true);
-		// exactly one source
 		expect((await call('import_timeline', { path: '/x.edl', content: 'x' })).isError).toBe(true);
-		// relative paths are refused
 		expect((await call('import_timeline', { path: 'x.edl' })).isError).toBe(true);
 	});
 
@@ -294,7 +288,6 @@ describe('interchange MCP tools', () => {
 		]);
 		expect(r.body.prerendered).toEqual([{ clipId: 'clp_1', clipName: 'Title', reason: 'text clip' }]);
 		expect(r.body.report.notCarried[0].message).toBe('the markers are not carried');
-		// strict arguments
 		expect(
 			(await call('export_timeline', { format: 'aaf', audio: { mode: 'embed', nope: 1 } })).isError,
 		).toBe(true);

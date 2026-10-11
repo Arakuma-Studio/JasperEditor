@@ -1,8 +1,4 @@
-// Tools' optional `sequenceId` defaults to the project's first sequence (every tool documents it) also when the
-// project has several sequences — a nest or a multi-camera source sequence is enough. Regression (verify workstream):
-// the command system refuses sequence-scoped commands without a sequenceId in such projects, and the tools forwarded
-// none, so add_text, add_marker, record_multicam_cuts… failed in any project with a nest. The fake engine here applies
-// transactions exactly as sent (no injected sequenceId), like the real one.
+// The fake engine applies transactions exactly as sent, without injecting sequenceId, matching the real engine.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -118,7 +114,6 @@ describe('default sequence of MCP tools in a project with several sequences', ()
 		});
 		expect(r.isError).toBe(true);
 		expect(engine.sent).toHaveLength(1);
-		// Without one: refused for the sequence, retried on the first, refused for the track — that error is returned.
 		const r2 = await call('add_text', { text: 'x', at: 0, duration: 30, track: 'A1' });
 		expect(r2.isError).toBe(true);
 		expect(r2.text).not.toMatch(/several sequences/);

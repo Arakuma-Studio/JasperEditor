@@ -1,5 +1,3 @@
-// Which executable runs the engine's worker programs (security review RUN-1, tools/node-runtime.ts): Node itself in
-// a checkout, a Node runtime shipped in the resources when there is one, an explicit JASPER_NODE first.
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -59,7 +57,6 @@ describe('Node runtime of the engine workers (RUN-1)', () => {
 		] as const) {
 			const b = bundle(file);
 			expect([file, command({ ...env, [variable]: b })]).toEqual([file, { command: shipped, args: [b] }]);
-			// Without a shipped runtime: this process.
 			expect(command({ [variable]: b }).command).toBe(process.execPath);
 		}
 	});

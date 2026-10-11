@@ -1,8 +1,4 @@
-// jasper-mcp roto tools end to end (parity workstream `roto`): a real engine (token mode, temp appdir, port
-// MCP_ROTO_TEST_PORT = 48563) and an MCP client over stdio, on the synthetic plate of scripts/fixtures/roto.mjs (an
-// ellipse with known geometry). create_roto (points, classic engine) + propagate, get_roto, render_frame (Object
-// Matte cut-out and overlay view, Remotion), a native/hybrid export (layer bake) checked frame by frame against the
-// ellipse, convert_roto_to_masks, export refusal before propagation, blur_faces without the face model.
+// scripts/fixtures/roto.mjs supplies an ellipse with known per-frame geometry for rendered matte checks.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -176,7 +172,6 @@ describe('roto tools', () => {
 			],
 		});
 		const clipId = placed.refs.$plate!;
-		// Nothing computed yet: exports refuse (never an unmatted object).
 		const created = await ok<{ rotoId: string; effectInstanceId: string; span: number[] }>('create_roto', {
 			projectId,
 			clipId,
@@ -211,7 +206,6 @@ describe('roto tools', () => {
 			expect(iouOf(decodeRgb(png), truth.frames[at]!)).toBeGreaterThan(0.93);
 		}
 
-		// Overlay view: the background stays visible, tinted.
 		await ok('apply_object_matte', { projectId, rotoId: created.rotoId, params: { view: 'overlay' } });
 		const ov = await call('render_frame', { projectId, at: 25, width: 640 });
 		const ovImg = decodeRgb(
@@ -249,16 +243,15 @@ describe('roto tools', () => {
 			const i = (y * mkImg.w + x) * 3;
 			return mkImg.rgb[i]! + mkImg.rgb[i + 1]! + mkImg.rgb[i + 2]!;
 		};
-		expect(px(40, 40)).toBeLessThan(30); // inside the mask: cut out
-		expect(px(600, 40)).toBeGreaterThan(60); // outside the mask: the plate's background
-		expect(px(305, 200)).toBeGreaterThan(150); // the object stays
+		expect(px(40, 40)).toBeLessThan(30);
+		expect(px(600, 40)).toBeGreaterThan(60);
+		expect(px(305, 200)).toBeGreaterThan(150);
 		await ok('apply_commands', {
 			projectId,
 			label: 'Remove effect mask',
 			commands: [{ type: 'mask.remove', maskIds: [masked.refs.$m] }],
 		});
 
-		// Native / hybrid export (the layer is baked through Remotion with the matte).
 		const output = join(appdir, 'exports', 'roto.mp4');
 		const job = await ok<{ jobId: string }>('start_export', {
 			projectId,
@@ -292,7 +285,6 @@ describe('roto tools', () => {
 			expect(iouOf({ w: 640, h: 360, rgb: small.stdout }, truth.frames[f]!)).toBeGreaterThan(0.93);
 		}
 
-		// Convert to masks: one Bézier Opacity mask around the object.
 		const masks = await ok<{ masks: number }>('convert_roto_to_masks', {
 			projectId,
 			rotoId: created.rotoId,
@@ -307,7 +299,6 @@ describe('roto tools', () => {
 		expect(clip.masks?.length).toBe(1);
 		expect(clip.masks![0]!.path.value.vertices.length).toBeGreaterThan(4);
 
-		// Faces need their model.
 		const faces = await call('blur_faces', { projectId, clipId });
 		expect(faces.isError).toBe(true);
 		expect(textOf(faces)).toContain('FACE_MODEL_NOT_INSTALLED');

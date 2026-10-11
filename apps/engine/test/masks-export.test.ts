@@ -1,6 +1,4 @@
-// wp masks: export routing (never a silent drop) and the native kernel's Opacity masks against the coverage
-// definition (the preview's GL rasteriser computes the same numbers, packages/compositions/test/masks-gl.test.ts).
-// Real ffmpeg (the engine's build), ProRes 4444.
+// Compare native masks with the coverage definition also used by the preview GL rasteriser (masks-gl.test.ts).
 import { spawnSync } from 'node:child_process';
 import {
 	ellipsePath,
@@ -44,7 +42,6 @@ const settings = (seqId: string, frames: number) => ({
 	},
 });
 
-/** A dark plate (V1) and a white solid (V2) with masks; returns the builder and the solid's id. */
 function fixture(frames: number) {
 	const d = new DocBuilder();
 	d.tx([
@@ -118,7 +115,6 @@ describe('mask export routing', () => {
 			settings: settings(d.seqId, 10) as never,
 		});
 		expect(maskExportRoute(planned.snapshot.videoTracks[1]!.clips[0]!)).toBe('bake');
-		// Either the layer bake renders the layer (hybrid) or the export takes the Remotion path with a blocker.
 		if (planned.plan.path === 'native') throw new Error('a masked effect must not export natively');
 		if (planned.plan.path === 'remotion')
 			expect(planned.plan.blockers.some((b) => b.itemId === s)).toBe(true);

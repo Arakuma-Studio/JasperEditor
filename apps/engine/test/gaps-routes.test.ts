@@ -1,4 +1,3 @@
-// Workstream gaps: engine routes (Edit Original location / open).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openerFor } from '../src/routes/gaps.ts';
 import { closeApps, ensureFixtures, fixture, H, JSON_H, makeApp, register } from './helpers.ts';
@@ -17,7 +16,7 @@ describe('Edit Original routes', () => {
 			args: ['/select,"C:\\m\\a.mov"'],
 			verbatim: true,
 		});
-		// Security review ENG-5: Windows "open" passes the path in the environment, never on a cmd.exe command line.
+		// Windows open passes the path in the environment, never on a cmd.exe command line.
 		expect(openerFor('open', 'C:\\m\\a.mov', 'win32')).toMatchObject({
 			cmd: 'powershell.exe',
 			env: { JASPER_OPEN_PATH: 'C:\\m\\a.mov' },
@@ -104,7 +103,6 @@ describe('Preferences ▸ Auto Save / Memory (engine side)', () => {
 			payload: { keepVersions: 0 },
 		});
 		expect(bad.statusCode).toBe(400);
-		// A new engine on the same appdir reads the saved settings.
 		const again = await makeApp({ appdir: app.appdir });
 		const g2 = await again.inject({ method: 'GET', url: '/api/settings/gaps', headers: H });
 		expect(g2.json()).toMatchObject({ versionIntervalMinutes: 15, keepVersions: 3, optimizeFor: 'memory' });

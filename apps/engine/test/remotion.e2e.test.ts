@@ -1,4 +1,3 @@
-// Remotion path end to end (S04:RR-001…006): bundles @jasper/compositions, renders with a headless browser.
 // Gated by REMOTION_E2E=1 because it may download a browser and takes ~30 s.
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
@@ -37,8 +36,7 @@ describe.runIf(enabled)('Remotion render (REMOTION_E2E=1)', () => {
 					ref: '$t',
 				},
 			]).refs.$t!;
-			// M2 (S11:LBK-001, wp-m2-layer-bake): plain text is baked natively (`hybrid`); keyframes-blend: a blend mode
-			// inside a nested sequence keeps this sequence on the Remotion path, which is what this suite exercises.
+			// A nested blend mode forces Remotion; plain text alone can use a native layer bake.
 			d.tx([
 				{ type: 'clip.update', clipIds: [t], patch: { blendMode: 'screen' } },
 				{ type: 'clip.nest', clipIds: [t] },

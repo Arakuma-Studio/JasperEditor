@@ -1,7 +1,3 @@
-// Movable media cache location (M3, S04:CA-021, wp-m3-cachegc): validation, moves on the same disk (rename) and to
-// another disk (copy with progress), a fresh start keeping the old files, moving back to the data folder, the engine
-// keeps working through the links (an export after the move), the setting survives a restart, an interrupted switch is
-// completed at the next start, an unavailable location falls back to a fresh cache, and the HTTP / local-mode rules.
 import {
 	existsSync,
 	lstatSync,
@@ -116,14 +112,13 @@ describe('cache location (S04:CA-021)', () => {
 			expect(readlinkSync(join(appdir, d))).toBe(join(root, d));
 		for (const f of files) {
 			expect(existsSync(join(root, f))).toBe(true);
-			expect(existsSync(join(appdir, f))).toBe(true); // through the link
+			expect(existsSync(join(appdir, f))).toBe(true);
 		}
 		const settings = JSON.parse(readFileSync(join(appdir, 'engine', 'cache.json'), 'utf8'));
 		expect(settings.location).toBe(dest);
 		const u = (await app.inject({ method: 'GET', url: '/api/cache', headers: H })).json();
 		expect(u).toMatchObject({ location: root, locationIsDefault: false });
 		expect(u.kinds.find((k: { kind: string }) => k.kind === 'luts').entries).toBe(1);
-		// A PUT of the settings keeps the location.
 		await app.inject({
 			method: 'PUT',
 			url: '/api/cache/settings',
@@ -134,7 +129,6 @@ describe('cache location (S04:CA-021)', () => {
 			(await app.inject({ method: 'GET', url: '/api/cache/settings', headers: H })).json().location,
 		).toBe(dest);
 
-		// An export writes through the links into the new location.
 		const m = await register(app, fixture('clip-b.mp4'));
 		const d = new DocBuilder('hd-720p-30', 81);
 		const mid = d.addMedia(m);
@@ -176,13 +170,11 @@ describe('cache location (S04:CA-021)', () => {
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
 		expect(existsSync(join(root, 'renders', done.id, 'output.mp4'))).toBe(true);
 
-		// Restart: the links and the setting stay.
 		await app.close();
 		app = await makeApp({ appdir });
 		expect(readlinkSync(join(appdir, 'cache'))).toBe(join(root, 'cache'));
 		expect(existsSync(join(appdir, files[0]!))).toBe(true);
 
-		// Back to the data folder.
 		const back = await move(app, { path: null, mode: 'move' });
 		expect(back.state, JSON.stringify(back.error)).toBe('succeeded');
 		for (const dir of ['cache', 'mg', 'renders', 'tmp']) {
@@ -208,7 +200,6 @@ describe('cache location (S04:CA-021)', () => {
 			expect(readFileSync(join(root, f))).toEqual(Buffer.alloc(4096, 7));
 			expect(existsSync(join(appdir, f))).toBe(true);
 		}
-		// Nothing of the old cache is left in the data folder (only the links), no partial copies at the target.
 		expect(readdirSync(appdir).filter((n) => n.startsWith('.cache-old'))).toEqual([]);
 		expect(readdirSync(root).filter((n) => n.includes('.partial-'))).toEqual([]);
 		expect(job.result).toMatchObject({ movedBytes: 4 * 4096 });
@@ -221,11 +212,10 @@ describe('cache location (S04:CA-021)', () => {
 		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
 		const job = await move(app, { path: dest, mode: 'fresh', keepOld: true });
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		expect(existsSync(join(appdir, files[0]!))).toBe(false); // the new cache is empty
+		expect(existsSync(join(appdir, files[0]!))).toBe(false);
 		const kept = readdirSync(appdir).find((n) => n.startsWith('Old Media Cache'))!;
 		expect(kept).toBeTruthy();
 		expect(existsSync(join(appdir, kept, files[0]!))).toBe(true);
-		// Fresh again (back home), not kept: the custom location's files go.
 		writeFileSync(join(appdir, 'cache', 'x.cube'), 'x');
 		const back = await move(app, { path: null, mode: 'fresh' });
 		expect(back.state).toBe('succeeded');
@@ -248,7 +238,7 @@ describe('cache location (S04:CA-021)', () => {
 		const root = join(dest, 'JasperEditor Media Cache');
 		for (const d of ['cache', 'mg', 'renders', 'tmp'])
 			expect(lstatSync(join(appdir, d)).isSymbolicLink()).toBe(true);
-		for (const f of files) expect(existsSync(join(root, f))).toBe(true); // same disk: the data moved
+		for (const f of files) expect(existsSync(join(root, f))).toBe(true);
 		// The location disappears (drive unplugged): a fresh cache in the data folder, with a warning.
 		// (a folder below a plain file cannot be created, like a folder on an unplugged drive)
 		const plain = join(dest, 'plain-file');
