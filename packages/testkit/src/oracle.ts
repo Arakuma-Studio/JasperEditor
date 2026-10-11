@@ -31,7 +31,13 @@ const KNOWN_DIRS = [
 export type OracleTool = 'ffmpeg' | 'ffprobe';
 
 const envVar = (name: string) => `JASPER_${name.toUpperCase()}`;
-const isFile = (p: string) => statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
+const isFile = (p: string) => {
+	try {
+		return statSync(p).isFile();
+	} catch {
+		return false;
+	}
+};
 
 /** Finds `name` given an explicit override, a PATH-style list and extra directories (pure function of its inputs). */
 export function findToolIn(

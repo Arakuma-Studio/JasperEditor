@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -40,6 +40,17 @@ describe('tool discovery', () => {
 		expect(findToolIn('ffprobe', undefined, [a, b].join(':'), [], 'linux')).toBe(join(a, 'ffprobe'));
 		expect(findToolIn('ffprobe', undefined, '', [b], 'linux')).toBe(join(b, 'ffprobe.exe'));
 		expect(findToolIn('nothing-here', undefined, '', [a], 'linux')).toBeNull();
+	});
+
+	it.skipIf(process.platform === 'win32')('skips cyclic symlinks before a usable PATH candidate', () => {
+		const cyclic = join(dir, 'cyclic');
+		const usable = join(dir, 'usable');
+		mkdirSync(cyclic);
+		mkdirSync(usable);
+		symlinkSync('ffmpeg', join(cyclic, 'ffmpeg'));
+		const executable = join(usable, 'ffmpeg');
+		writeFileSync(executable, '');
+		expect(findToolIn('ffmpeg', undefined, [cyclic, usable].join(':'), [], 'linux')).toBe(executable);
 	});
 
 	it('JASPER_REQUIRE_ORACLES=1 turns a skip into a failure', () => {
