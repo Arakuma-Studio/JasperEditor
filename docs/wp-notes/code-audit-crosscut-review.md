@@ -314,3 +314,28 @@ including embedded shader and worker code. The native change removes only the ob
 "Required in M1" sentence from the raw-output option's generated CLI help; the remaining Rust bytes are
 unchanged. Whitespace validation is also run. No tests, typechecks, or dependency-graph scans were
 started by this pass while integration verification was running.
+
+## Assertion and embedded-code regression review
+
+A final source review compared baseline `12049d8e` with immutable integration snapshot `090431b1`,
+concentrating on semantic damage during assertion and comment cleanup. A lightweight TypeScript AST
+comparison parsed **1,123 modified production/script files** without starting a compiler, test suite,
+or dependency-graph scan. It found no new parser diagnostics and only two new bitwise expressions:
+
+- `Scene3DOverlay.tsx` contained `props.doc | null` after an assertion was removed. Integration
+  typechecking had already identified this error; the web feature owner owns the correction and
+  regression test. The expression coerces the render document to a number and must not ship.
+- `audio-dsp/src/fft.ts` uses `(i >>> b) & 1` in its consolidated bit-reversal implementation. This
+  preserves the original algorithm and is intentional.
+
+The review also read 501 candidate diff regions containing removed assertions or prose using
+"as", including their replacement expressions. It found no second leftover union/intersection
+operator or other high-confidence accidental expression change. Template text changed in 49 files.
+The six shader-template changes affect comments only; the repaired Premiere common shader now has
+the same interpolation chunks as the baseline. Other template changes are explicit error messages,
+shared-worker protocol changes, intrinsic hardening, or code moved into shared helpers. Their
+surrounding implementations were checked rather than treating every textual change as a regression.
+
+This review adds evidence for the specific failure classes encountered during integration. It does
+not replace the owners' behavior tests, shader compilation, and final integrated typechecking. No
+production code was changed by this pass.
