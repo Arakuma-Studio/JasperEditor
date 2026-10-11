@@ -1,3 +1,4 @@
+import type { Vec2 } from '@jasper/project';
 // On-canvas transform math (S03 §9, XF-001…037; S03 §3.2 M(q) = P + R·S·(q − A)). Pure functions in
 // sequence space; the overlay converts pointer positions with viewport.ts. The layer matrix and quad
 // come from @jasper/project so handles match the rendered layers exactly (AC-XF-1).
@@ -9,7 +10,7 @@ import {
 	scaleFactors,
 } from '@jasper/project';
 
-export type Vec2 = [number, number];
+export type { Vec2 } from '@jasper/project';
 export type Quad = [Vec2, Vec2, Vec2, Vec2];
 
 export const MIN_SCALE = 0.1;
@@ -52,8 +53,6 @@ export function hitTest(
 	}
 	return null;
 }
-
-// ------------------------------------------------------------------ handles
 
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 export const HANDLE_IDS: readonly HandleId[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -101,8 +100,6 @@ export function handlePoint(rect: Rect, h: HandleId): Vec2 {
 	}
 }
 
-// ------------------------------------------------------------------ rotation helpers
-
 export function rotate(v: Vec2, deg: number): Vec2 {
 	const t = (deg * Math.PI) / 180;
 	const c = Math.cos(t);
@@ -112,8 +109,6 @@ export function rotate(v: Vec2, deg: number): Vec2 {
 
 const sub = (a: Vec2, b: Vec2): Vec2 => [a[0] - b[0], a[1] - b[1]];
 const add = (a: Vec2, b: Vec2): Vec2 => [a[0] + b[0], a[1] + b[1]];
-
-// ------------------------------------------------------------------ scale (XF-030/031/032)
 
 type ScaleInput = {
 	values: LayerTransformValues;
@@ -188,8 +183,6 @@ export function scaleFromHandle(i: ScaleInput): ScaleResult {
 	return { scale, scaleWidth, uniformScale: next.uniformScale, position };
 }
 
-// ------------------------------------------------------------------ rotate (XF-035)
-
 /** Smallest signed difference b − a in degrees, in (−180, 180]. */
 export function angleDelta(a: number, b: number): number {
 	let d = (b - a) % 360;
@@ -231,8 +224,6 @@ export class RotationTracker {
 	}
 }
 
-// ------------------------------------------------------------------ anchor (XF-037)
-
 /**
  * Moves the anchor by a sequence-space delta without moving the image:
  * A' = A0 + S⁻¹R(−θ)Δp, P' = P0 + Δp. With `anchorOnly` (Alt) only A changes and the image slides.
@@ -258,8 +249,6 @@ export function anchorSnapPoints(rect: Rect): Vec2[] {
 		[rect.x + rect.width / 2, rect.y + rect.height / 2],
 	];
 }
-
-// ------------------------------------------------------------------ group (XF-011/033/036)
 
 export function unionBounds(rects: readonly Rect[]): Rect | null {
 	if (rects.length === 0) return null;
@@ -306,8 +295,6 @@ export function rotateAboutPoint(
 ): Partial<LayerTransformValues> {
 	return { position: add(g, rotate(sub(v.position, g), deltaDeg)), rotation: v.rotation + deltaDeg };
 }
-
-// ------------------------------------------------------------------ screen geometry for the overlay
 
 /** Distance from a point to the nearest corner of a quad, and whether it lies outside the quad. */
 export function rotationZoneHit(quadScreen: Quad, p: Vec2): boolean {

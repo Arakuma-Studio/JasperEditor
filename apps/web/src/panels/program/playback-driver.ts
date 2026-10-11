@@ -144,8 +144,6 @@ export class PlaybackDriver implements PlayerController {
 		this.unsubscribe();
 	}
 
-	// ------------------------------------------------------------ PlayerController
-
 	seekTo(frame: number): void {
 		this.lastReported = frame;
 		this.player?.seekTo(frame);
@@ -222,8 +220,6 @@ export class PlaybackDriver implements PlayerController {
 		this.stopAt = Math.max(from + 1, toExclusive);
 		this.returnTo = opts.returnTo ?? null;
 	}
-
-	// ------------------------------------------------------------ internals
 
 	private start(): void {
 		const p = this.player;

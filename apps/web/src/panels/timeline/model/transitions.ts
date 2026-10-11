@@ -1,3 +1,4 @@
+import type { CommandOf } from '@jasper/project';
 // Timeline transitions (S10 §2–§4): a per-track sorted index of the drawn transitions with their spans,
 // px geometry and hit-testing (TUI-001…004, TUI-010), the pure edge/body drag → `transition.update`
 // mapping (TUI-012/013) and drop resolution with handle availability (TUI-021/022). DOM-free.
@@ -70,13 +71,13 @@ export function transitionGeom(seq: Sequence, media: MediaRecord, t: Transition)
 	if (!outgoing && !incoming) return null;
 	if ((t.outgoingClipId && !outgoing) || (t.incomingClipId && !incoming)) return null;
 	if (outgoing && incoming && endOf(outgoing) !== incoming.start) return null;
-	const doc = { media } as never;
+	const doc = { media };
 	const tail = outgoing ? clipHandles(doc, seq, outgoing).tail : 0;
 	const head = incoming ? clipHandles(doc, seq, incoming).head : 0;
 	const spec = transitionSpec(t.effectId);
 	const oneSided = outgoing && incoming ? null : incoming ? 'in' : 'out';
 	const cut = incoming ? incoming.start : endOf(outgoing!);
-	// edit-structure: freeze-frame handles repeat edge frames, so only the clips' lengths limit the span.
+	// freeze-frame handles repeat edge frames, so only the clips' lengths limit the span.
 	const free = t.freezeHandles === true;
 	const inf = Number.POSITIVE_INFINITY;
 	const duration = fitTransitionDuration({
@@ -182,8 +183,6 @@ export function transitionsInRange(
 	return out;
 }
 
-// ---------------------------------------------------------------- px geometry and hit-testing
-
 /** Minimum hit width so 1–2 px transitions at low zoom stay selectable (S10 §8 test 1). */
 const MIN_HIT_PX = 3;
 /** TUI-010: edge zones at both ends of the transition rect. */
@@ -268,8 +267,6 @@ export function hitTransition(
 	return best;
 }
 
-// ---------------------------------------------------------------- gestures (TUI-012/013)
-
 type EdgeDragResult = { duration: number; alignment: Alignment };
 
 /**
@@ -333,8 +330,6 @@ function spanOf(
 	if (oneSided === 'out') return { start: cut - duration, end: cut };
 	return transitionSpan(cut, duration, alignment);
 }
-
-// ---------------------------------------------------------------- drop resolution (TUI-021…024)
 
 /** ±px band around an edit point where the drop targets the cut itself. */
 const DROP_BAND_PX = 12;
@@ -500,7 +495,7 @@ export function resolveTransitionDrop(input: {
 	}
 	const oneSided: 'in' | 'out' | null = outgoing && incoming ? null : incoming ? 'in' : 'out';
 	if (oneSided) alignment = oneSided === 'in' ? 'start-at-cut' : 'end-at-cut';
-	const doc = { media: input.media } as never;
+	const doc = { media: input.media };
 	const handles = {
 		tail: outgoing ? clipHandles(doc, seq, outgoing).tail : 0,
 		head: incoming ? clipHandles(doc, seq, incoming).head : 0,
@@ -529,7 +524,10 @@ export function resolveTransitionDrop(input: {
 }
 
 /** The document command of a drop (one history entry "Add Transition" / "Replace Transition"). */
-export function dropCommand(target: DropTarget, effectId: string): Record<string, unknown> {
+export function dropCommand(
+	target: DropTarget,
+	effectId: string,
+): CommandOf<'transition.update'> | CommandOf<'transition.add'> {
 	if (target.kind === 'replace')
 		return { type: 'transition.update', transitionId: target.transition.id, effectId };
 	if (target.oneSided)
@@ -549,8 +547,6 @@ export function dropCommand(target: DropTarget, effectId: string): Record<string
 		duration: target.feedback.wantedDuration,
 	};
 }
-
-// ---------------------------------------------------------------- Ctrl+D at the playhead (TUI-030)
 
 /**
  * The edit point nearest `frame` on a track (within `[f0, f1]`), as a clip + edge usable by

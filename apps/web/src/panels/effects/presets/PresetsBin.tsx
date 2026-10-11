@@ -147,7 +147,7 @@ export function PresetsBin(props: PresetsBinProps) {
 			},
 			(e: unknown) => props.onStatus(`Preset library: ${(e as Error).message}`),
 		);
-	// polish: Effects ▸ New Custom Bin (Ctrl+/) and Delete Custom Item (Backspace) act on the bin / preset last
+	// Effects ▸ New Custom Bin (Ctrl+/) and Delete Custom Item (Backspace) act on the bin / preset last
 	// picked in this panel (the keymap's `effects.*` commands, commands/polish.ts).
 	const handleState = useRef({ focused: props.focused, lib, engineReady, status });
 	handleState.current = { focused: props.focused, lib, engineReady, status };

@@ -1,5 +1,3 @@
-// Project panel (S05:PRJ-001…010) — WP-2E.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

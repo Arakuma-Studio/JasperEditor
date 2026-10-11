@@ -1,4 +1,5 @@
-// wp captions: Text panel ▸ Captions — the captions of the active caption track (Premiere's caption list): editable
+import type { Command } from '@jasper/project';
+// Text panel ▸ Captions — the captions of the active caption track (Premiere's caption list): editable
 // in/out timecodes and text (committed on blur / Ctrl+Enter), search and replace, jump to a caption, add / split /
 // merge / delete, import and export in every supported format, and the track style strip (preset, font size,
 // colours, background box, outline, alignment, position). Every change is one undoable document transaction.
@@ -56,8 +57,8 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 	const rate = seq.settings.frameRate;
 	const tcOpts = { dropFrame: seq.settings.dropFrame, startFrames: seq.settings.startTimecodeFrames };
 
-	const apply = (label: string, commands: unknown[]) => {
-		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands: commands as never[] });
+	const apply = (label: string, commands: Command[]) => {
+		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
 		if (!r.ok) toast({ kind: 'warning', title: `${label}: not possible`, detail: r.errors[0]?.message });
 		return r;
 	};
@@ -134,13 +135,16 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 		const re = new RegExp(escapeRe(query.trim()), 'gi');
 		const commands = rows
 			.filter((r) => r.text.toLowerCase().includes(q))
-			.map((r) => ({ type: 'caption.setText', clipId: r.clip.id, text: r.text.replace(re, replacement) }));
+			.map<Command>((r) => ({
+				type: 'caption.setText',
+				clipId: r.clip.id,
+				text: r.text.replace(re, replacement),
+			}));
 		if (commands.length) apply('Replace in Captions', commands);
 	};
 
 	return (
 		<div className="flex h-full min-h-0 flex-col" data-testid="text-captions">
-			{/* track + actions */}
 			<div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-pr-border-subtle px-2 py-1">
 				<Select
 					label="Caption track"
@@ -258,7 +262,6 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 					Export
 				</Button>
 			</div>
-			{/* search / replace */}
 			<div className="flex shrink-0 items-center gap-1 border-b border-pr-border-subtle px-2 py-1">
 				<SearchField
 					value={query}
@@ -288,7 +291,6 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 					{q ? `${shown.length}/${rows.length}` : rows.length}
 				</span>
 			</div>
-			{/* style strip (track style) */}
 			<div
 				className="flex shrink-0 flex-wrap items-center gap-1 border-b border-pr-border-subtle px-2 py-1 text-pr-small text-pr-muted"
 				data-testid="text.captions.style"
@@ -420,7 +422,6 @@ export function CaptionsTab({ session, seq, reveal }: Props) {
 					]}
 				/>
 			</div>
-			{/* list */}
 			<div ref={listRef} className="min-h-0 flex-1 overflow-auto" data-testid="text.captions.list">
 				{shown.length === 0 ? (
 					<EmptyState icon="panel.text" message={q ? 'No caption matches' : 'No captions on this track'} />

@@ -1,3 +1,4 @@
+import type { CommandOf } from '@jasper/project';
 // Value / Velocity graph math for Effect Controls (S03:KF-022, S05:ECP-006). Pure helpers: curves are
 // *sampled* from the shared `evaluate()` (S01:KF-009; never re-implemented here, so the graphs follow
 // any change to the evaluator such as spatial vec2 paths), velocity is its numeric derivative, and
@@ -48,8 +49,6 @@ export function componentsOf(v: unknown): number[] {
 	return [];
 }
 
-// ---------------------------------------------------------------- time mapping
-
 /** Content time (flicks) ↔ sequence frame of one clip (mirrors `exactFrameOf`, S01:KF-002). */
 type TimeMap = {
 	toX(time: number): number;
@@ -76,8 +75,6 @@ export function timeMapOf(
 		fps: rate.num / rate.den,
 	};
 }
-
-// ---------------------------------------------------------------- sampling
 
 /** Samples per segment: about one every 2 px, at least 4, at most 400 (0 when off-screen). */
 function samplesFor(xa: number, xb: number, range: Range, width: number): number {
@@ -171,8 +168,6 @@ export function sampleVelocityCurve(
 	const pts = out.map((p) => ({ x: map.toX(p.t), y: p.y }));
 	return map.flicksPerX < 0 ? pts.reverse() : pts;
 }
-
-// ---------------------------------------------------------------- handles
 
 /** The segment a side of key `i` shapes: `[a, b]` indices, or null at the ends / on holds. */
 function segmentOf(kfs: readonly Kf[], i: number, side: Side): [number, number] | null {
@@ -324,8 +319,6 @@ export function easeFromValueDrag(
 	return { influence, slope: Number.isFinite(slope) ? slope : h.ease.slope };
 }
 
-// ---------------------------------------------------------------- vec2 value-graph handles (keyframes-blend)
-
 /** Rate of change (component `d` per flick) at key `i` on one side, one-sided, from `evaluate()`. */
 function componentRate(anim: Anim, i: number, other: number, d: number): number {
 	const k = anim.keyframes[i]!;
@@ -409,8 +402,6 @@ export function easeFromVec2ValueDrag(
 	return { influence, slope: Number.isFinite(slope) ? slope : h.ease.slope };
 }
 
-// ---------------------------------------------------------------- vertical zoom (keyframes-blend)
-
 /** Zooms a range about value `at` by `factor` (> 1 = zoom out). */
 export function zoomRange(r: YRange, at: number, factor: number): YRange {
 	const f = Math.min(1e6, Math.max(1e-6, factor));
@@ -459,7 +450,7 @@ export function planEaseEdit(
 		} as Command);
 	}
 	const e = { influence: ease.influence, slope: ease.slope };
-	const update: Record<string, unknown> = { type: 'keyframe.update', keyframeId: k.id, interpolation };
+	const update: CommandOf<'keyframe.update'> = { type: 'keyframe.update', keyframeId: k.id, interpolation };
 	update[side === 'in' ? 'easeIn' : 'easeOut'] = e;
 	if (!linked && interpolation === 'bezier' && k.interpolation !== 'bezier') {
 		// Freeze the other side at the shape it had (stored eases of Linear keys are not meaningful).
@@ -470,8 +461,6 @@ export function planEaseEdit(
 	cmds.push(update as Command);
 	return cmds;
 }
-
-// ---------------------------------------------------------------- vertical range
 
 export type YRange = { min: number; max: number };
 
@@ -522,8 +511,6 @@ export function roundToStep(v: number, step = 1): number {
 	const digits = Math.max(0, Math.ceil(-Math.log10(q)));
 	return Number((Math.round(v / q) * q).toFixed(digits));
 }
-
-// ---------------------------------------------------------------- post-expression curves (wave expressions)
 
 /**
  * Post-expression value curves (AE's "Show Post-Expression Graph"): an expression is any function of time, so the

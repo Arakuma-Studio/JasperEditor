@@ -1,3 +1,4 @@
+import type { Command } from '@jasper/project';
 // TimelineController: pointer → tool → gesture → document commands (S02 §2, §8–§12).
 // One instance per Timeline panel. Everything that changes the document goes through
 // `session.beginGesture` (preview on the base document, one history entry on commit, nothing on
@@ -89,7 +90,7 @@ interface ControllerEnv {
 	ui: TimelineUiStore;
 	geometry(): Geometry;
 	toast?(kind: 'info' | 'warning' | 'error', message: string): void;
-	/** audio-fx: the Remix tool's release — remix a music clip to `targetFrames` (async, engine plan). */
+	/** the Remix tool's release — remix a music clip to `targetFrames` (async, engine plan). */
 	remix?(clipId: string, targetFrames: number): void;
 	/** Platform flags for wheel mapping (TL-111). */
 	platform?: { mac: boolean; wheelHorizontal?: boolean | null };
@@ -118,7 +119,7 @@ type MoveDrag = DragBase & {
 type EdgeDrag = DragBase & {
 	kind: 'trim' | 'ripple' | 'roll' | 'stretch' | 'remix';
 	gesture: Gesture | null;
-	/** audio-fx: the Remix tool's target duration (frames) while dragging. */
+	/** the Remix tool's target duration (frames) while dragging. */
 	remixTarget?: number;
 	clip: Clip;
 	edge: 'in' | 'out';
@@ -163,8 +164,6 @@ export class TimelineController {
 	private drag: Drag | null = null;
 
 	constructor(readonly env: ControllerEnv) {}
-
-	// ------------------------------------------------------------ accessors
 
 	private get session() {
 		return this.env.session;
@@ -215,8 +214,6 @@ export class TimelineController {
 		return findTrack(seq, trackId)?.track.locked ?? false;
 	}
 
-	// ------------------------------------------------------------ hover (cursor, razor line)
-
 	hover(p: PointerInfo): void {
 		if (this.drag) return;
 		const seq = this.seq();
@@ -248,8 +245,6 @@ export class TimelineController {
 				);
 		return snapEdge(f, targets, v.pxPerFrame, true).frame;
 	}
-
-	// ------------------------------------------------------------ pointer down
 
 	pointerDown(p: PointerInfo): boolean {
 		if (this.drag) this.cancel();
@@ -320,7 +315,7 @@ export class TimelineController {
 		// edit-structure (Premiere): Alt-click selects one clip of a group.
 		const groups = !p.alt;
 		this.session.selectGaps([]);
-		// edit-ux: a clip click ends a keyframe (lane) selection.
+		// a clip click ends a keyframe (lane) selection.
 		if (this.session.getState().selection.keyframes) this.session.selectKeyframes(null);
 		// S10:TUI-002: selecting a clip clears the transition selection unless Shift.
 		if (!p.shift) this.session.select('transitions', [], 'replace');
@@ -560,8 +555,6 @@ export class TimelineController {
 		if (r && !r.ok) this.env.toast?.('warning', r.errors[0]?.message ?? 'Edit refused');
 	}
 
-	// ------------------------------------------------------------ pointer move
-
 	pointerMove(p: PointerInfo): void {
 		const d = this.drag;
 		if (!d) {
@@ -641,7 +634,7 @@ export class TimelineController {
 			d.mode = mode;
 		}
 		const cmd = moveCommand(base, d.moving, delta, d.grabbedKind, offset, mode);
-		const r = d.gesture.update([cmd as never]);
+		const r = d.gesture.update([cmd]);
 		const rate = base.settings.frameRate;
 		const lines = [signed(delta, rate, base.settings.dropFrame)];
 		if (offset !== 0) {
@@ -661,17 +654,17 @@ export class TimelineController {
 		});
 	}
 
-	private edgeCommands(d: EdgeDrag, seq: Sequence, delta: number): Record<string, unknown>[] {
+	private edgeCommands(d: EdgeDrag, seq: Sequence, delta: number): Command[] {
 		if (d.kind === 'stretch') return this.stretchCommands(d, seq, delta);
 		const mode = d.kind === 'ripple' ? 'ripple' : d.kind === 'roll' ? 'roll' : 'regular';
-		const one = (c: Clip) => ({
+		const one = (c: Clip): Command => ({
 			type: 'clip.trim',
 			clipId: c.id,
 			edge: d.edge,
 			deltaFrames: delta,
 			mode,
 			linked: d.linked,
-			// edit-structure: the selection already holds the group (Alt picks one clip): no second expansion.
+			// the selection already holds the group (Alt picks one clip): no second expansion.
 			group: false,
 			...(mode === 'ripple' ? { clampToSyncLock: true } : {}),
 		});
@@ -679,7 +672,7 @@ export class TimelineController {
 	}
 
 	/** Rate stretch (TL-615/616): duration changes, source range stays; speed within [0.1, 20]. */
-	private stretchCommands(d: EdgeDrag, seq: Sequence, delta: number): Record<string, unknown>[] {
+	private stretchCommands(d: EdgeDrag, seq: Sequence, delta: number): Command[] {
 		const c = d.clip;
 		const members = [c, ...d.partners];
 		const ids = members.map((m) => m.id);
@@ -707,8 +700,8 @@ export class TimelineController {
 		}
 		if (dd === 0) return [];
 		const dur = c.duration - dd;
-		const move = { type: 'clip.move', clipIds: ids, deltaFrames: dd };
-		const speed = { type: 'clip.setSpeed', clipIds: ids, duration: dur, ripple: false };
+		const move: Command = { type: 'clip.move', clipIds: ids, deltaFrames: dd };
+		const speed: Command = { type: 'clip.setSpeed', clipIds: ids, duration: dur, ripple: false };
 		return dd < 0 ? [move, speed] : [speed, move];
 	}
 
@@ -770,14 +763,14 @@ export class TimelineController {
 							: 'Trim';
 			d.gesture = this.session.beginGesture(label);
 		}
-		let r = d.gesture.update(this.edgeCommands(d, base, delta) as never[]);
+		let r = d.gesture.update(this.edgeCommands(d, base, delta));
 		if (r.ok && d.kind !== 'stretch' && r.results.length > 1) {
 			// TL-536: lockstep — the most restrictive clamp wins for every trimmed clip.
 			const actual = r.results.map((x) => (x as { deltaFrames?: number })?.deltaFrames ?? delta);
 			const common = actual.reduce((a, b) => (Math.abs(b) < Math.abs(a) ? b : a), delta);
 			if (actual.some((a) => a !== common)) {
 				delta = common;
-				r = d.gesture.update(this.edgeCommands(d, base, delta) as never[]);
+				r = d.gesture.update(this.edgeCommands(d, base, delta));
 			}
 		}
 		const drawn = this.seq();
@@ -825,7 +818,7 @@ export class TimelineController {
 			d.kind === 'slip'
 				? { type: 'clip.slip', clipIds: d.ids, deltaFrames: delta }
 				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta, linked: d.ids.length > 1 };
-		const r = d.gesture.update([cmd as never]);
+		const r = d.gesture.update([cmd]);
 		const rate = base.settings.frameRate;
 		const actual = r.ok ? ((r.results[0] as { deltaFrames?: number })?.deltaFrames ?? delta) : 0;
 		const drawn = this.seq();
@@ -873,7 +866,7 @@ export class TimelineController {
 		if (!d.gesture) d.gesture = this.session.beginGesture('Transition Duration');
 		const r = d.gesture.update([
 			{ type: 'transition.update', transitionId: g.t.id, duration: want.duration, alignment: want.alignment },
-		] as never[]);
+		]);
 		const res = r.ok
 			? (r.results[0] as { duration: number; alignment: TransitionGeom['t']['alignment'] })
 			: null;
@@ -923,7 +916,7 @@ export class TimelineController {
 		if (!d.gesture) d.gesture = this.session.beginGesture('Transition Alignment');
 		const r = d.gesture.update([
 			{ type: 'transition.update', transitionId: g.t.id, alignment, duration: g.t.duration },
-		] as never[]);
+		]);
 		const res = r.ok ? (r.results[0] as { duration: number }) : null;
 		d.unchanged = alignment === g.t.alignment && (!res || res.duration === g.t.duration);
 		const label =
@@ -965,8 +958,6 @@ export class TimelineController {
 		if (d.region === 'video') this.setView({ scrollYVideo: Math.max(0, d.scrollY0 + dy) });
 		else this.setView({ scrollYAudio: Math.max(0, d.scrollY0 - dy) });
 	}
-
-	// ------------------------------------------------------------ pointer up / cancel
 
 	pointerUp(p: PointerInfo): void {
 		const d = this.drag;
@@ -1087,8 +1078,6 @@ export class TimelineController {
 		this.setScroll(viewport.scrollFrame + step / viewport.pxPerFrame, true);
 		this.pointerMove(d.last);
 	}
-
-	// ------------------------------------------------------------ viewport operations
 
 	private fps(): number {
 		const seq = this.committedSeq();
@@ -1220,15 +1209,11 @@ export class TimelineController {
 		}
 	}
 
-	// ------------------------------------------------------------ track heights (view state, TL-261…263)
-
 	setTrackHeight(trackId: string, h: number): void {
 		const view = this.view();
 		if (!view) return;
 		this.setView({ trackHeights: { ...view.trackHeights, [trackId]: clampHeight(h) } });
 	}
-
-	// ------------------------------------------------------------ helpers used by the ruler
 
 	/** Seek from the ruler (TL-203): floor rule; Shift (or the preference) snaps to targets (TL-455). */
 	scrubTo(x: number, snap: boolean): number {

@@ -1,4 +1,4 @@
-// edit-ux: the Trim Monitor (Premiere "Trim Monitor", helpx.adobe.com "Trimming clips"): while trim mode is on and
+// the Trim Monitor (Premiere "Trim Monitor", helpx.adobe.com "Trimming clips"): while trim mode is on and
 // edit points are selected, the Program monitor shows the outgoing clip's last frame (left) and the incoming clip's
 // first frame (right), each with its track, timecode and shift counter (how far its edge moved since the edit point
 // was selected), and the trim buttons −5 / −1 / Apply Default Transitions / +1 / +5 (Large Trim Offset = 5).
@@ -123,7 +123,7 @@ export function TrimMonitor(props: { session: EditorSession; sequenceId: string;
 		const d = drag.current;
 		if (!d) return;
 		const frames = Math.round((e.clientX - d.x0) / TRIM_MONITOR_PX_PER_FRAME);
-		d.gesture.update(frames === 0 ? [] : [trimCommand(d.points, frames, true) as never]);
+		d.gesture.update(frames === 0 ? [] : [trimCommand(d.points, frames, true)]);
 	};
 	const onPointerUp = () => {
 		const d = drag.current;

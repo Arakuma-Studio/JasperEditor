@@ -198,7 +198,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 		return gradeEligible(clip) ? clip.id : null;
 	});
 	const revision = useSessionState((s) => (s.transient ? -s.revision - 1 : s.revision));
-	// color-mgmt: the working space; HDR sequences show the levels in cd/m² (PQ / HLG signal positions).
+	// the working space; HDR sequences show the levels in cd/m² (PQ / HLG signal positions).
 	const working = useSessionState((s) => {
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 		return sequenceColorInfo(seq?.settings).space;
@@ -543,10 +543,8 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 	);
 }
 
-// ---------------------------------------------------------------- drawing (tokens only)
-
 const PAD = 30;
-/** color-mgmt: cd/m² graticule of HDR waveforms. */
+/** cd/m² graticule of HDR waveforms. */
 const NITS_LINES = [0.1, 1, 10, 100, 203, 1000, 4000, 10000];
 
 function bitmap(img: ScopeImage): HTMLCanvasElement | null {
@@ -644,7 +642,7 @@ function drawLevels(
 	}
 	g.fillStyle = c.label;
 	if (st.scale === 'hdr') {
-		// color-mgmt: cd/m² lines at their PQ / HLG signal positions (BT.2408 reference white 203 labelled).
+		// cd/m² lines at their PQ / HLG signal positions (BT.2408 reference white 203 labelled).
 		for (const n of NITS_LINES) {
 			if (working === 'rec2100-hlg' && n > 1000) continue;
 			const y = Math.round(yOf(workingSignalOfNits(working as 'rec2100-pq', n))) + 0.5;

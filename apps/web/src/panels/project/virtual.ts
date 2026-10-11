@@ -35,7 +35,7 @@ export function useRowWindow(opts: {
 }): RowWindow {
 	const { scroll, list, rows, enabled, measure } = opts;
 	const on = enabled && rows >= 1;
-	// polish: a large bin never renders every row, not even on its first render (the effect below only runs after it:
+	// a large bin never renders every row, not even on its first render (the effect below only runs after it:
 	// opening a 2 000-item project used to build, style and lay out 2 000 rows once, ≈ 1 s).
 	const [win, setWin] = useState<RowWindow>(() =>
 		on

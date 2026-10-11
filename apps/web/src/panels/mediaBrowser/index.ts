@@ -1,7 +1,7 @@
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 
-// polish: Premiere's Media Browser (Shift+8): browse the engine host's disks, preview, import in place.
+// Premiere's Media Browser (Shift+8): browse the engine host's disks, preview, import in place.
 const mediaBrowser: PanelDefinition = {
 	kind: 'mediaBrowser',
 	title: () => 'Media Browser',

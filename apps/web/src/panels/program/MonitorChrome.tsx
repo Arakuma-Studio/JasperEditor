@@ -184,7 +184,7 @@ export function SettingsMenu({ items, testId }: { items: SettingsItem[]; testId?
 				<div
 					role="menu"
 					className="absolute right-0 bottom-[26px] min-w-[220px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-floating"
-					style={{ zIndex: 'var(--pr-z-popover)' as never }}
+					style={{ zIndex: 'var(--pr-z-popover)' }}
 				>
 					{items.map((it, i) =>
 						it.type === 'separator' ? (

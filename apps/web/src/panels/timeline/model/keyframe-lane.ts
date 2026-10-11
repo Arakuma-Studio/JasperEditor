@@ -1,4 +1,5 @@
-// edit-ux: keyframe lanes and rubber bands on timeline clips (Premiere: Show Video/Audio Keyframes, the clip's
+import type { Command } from '@jasper/project';
+// keyframe lanes and rubber bands on timeline clips (Premiere: Show Video/Audio Keyframes, the clip's
 // keyframe menu "Opacity ▸ Opacity", "Volume ▸ Level", any effect parameter; helpx "Adjust volume levels" and
 // "Working with keyframes in the Timeline"). Pure model: which property a clip shows, value ↔ lane y mapping, the
 // band sampled across the clip, keyframe positions, fade lengths, and the document commands of each gesture.
@@ -123,9 +124,8 @@ export function laneSpec(clip: Clip, key: string, registries: Registries): Prope
 	if (key.startsWith('masks.')) {
 		const [, maskId, prop] = key.split('.');
 		const has = ((clip as { masks?: Mask[] }).masks ?? []).some((m) => m.id === maskId);
-		return has && (MASK_PROPS as readonly string[]).includes(prop!)
-			? maskPropertySpec(maskId!, prop as never)
-			: null;
+		const property = MASK_PROPS.find((key) => key === prop);
+		return has && property ? maskPropertySpec(maskId!, property) : null;
 	}
 	const template =
 		clip.kind === 'motion-graphic' && registries.mgTemplates
@@ -134,15 +134,13 @@ export function laneSpec(clip: Clip, key: string, registries: Registries): Prope
 					(clip as { template: { id: string; version: number } }).template.version,
 				)
 			: undefined;
-	const s = resolvePropertySpec(key, template, undefined, clip as never);
+	const s = resolvePropertySpec(key, template, undefined, clip);
 	return s?.appliesTo(clip) && s.animatable !== 'no' ? s : null;
 }
 
 export function lanePath(clip: Clip, key: string): ParamPath {
 	return propertyKeyToParamPath({ clipId: clip.id }, key);
 }
-
-// ---------------------------------------------------------------- value ↔ y
 
 /** Whether a lane draws a band (numbers) or only keyframe marks (vectors, colours, paths…). */
 export const hasBand = (s: Pick<PropertySpec, 'kind'>) => s.kind === 'number';
@@ -219,8 +217,6 @@ export function formatLaneValue(s: Pick<PropertySpec, 'key' | 'unit' | 'label'>,
 	const n = Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
 	return `${s.label}: ${n.replace('-', '−')}${s.unit ? ` ${s.unit}` : ''}`;
 }
-
-// ---------------------------------------------------------------- band and keys
 
 export type LaneKey = {
 	id: string;
@@ -360,8 +356,6 @@ export function segmentAt(m: Pick<LaneModel, 'keys'>, x: number): [number, numbe
 	return [a, b];
 }
 
-// ---------------------------------------------------------------- fades (fade handles)
-
 /** The lane's "silent / transparent" value a fade starts or ends at. */
 export function fadeFloor(s: Pick<PropertySpec, 'key' | 'range'>): number {
 	if (isVolume(s)) return VOLUME_BAND_MIN_DB;
@@ -400,7 +394,7 @@ export function fadeCommands(
 	clip: Pick<Clip, 'start' | 'duration'>,
 	side: 'in' | 'out',
 	frames: number,
-): unknown[] {
+): Command[] {
 	const end = clip.start + clip.duration;
 	const cur = fadeLengths(m, clip)[side];
 	const edgeFrame = side === 'in' ? clip.start : end - 1;
@@ -418,7 +412,7 @@ export function fadeCommands(
 		const v = m.valueAt(farOld);
 		return typeof v === 'number' && v !== fadeFloor(m.spec) ? v : typeof m.value === 'number' ? m.value : 0;
 	})();
-	const cmds: unknown[] = [];
+	const cmds: Command[] = [];
 	if (gone.length) cmds.push({ type: 'keyframe.remove', keyframeIds: gone.map((k) => k.id) });
 	if (n > 0) {
 		const farFrame = side === 'in' ? clip.start + n : end - 1 - n;

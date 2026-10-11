@@ -10,9 +10,8 @@ import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { useEffect, useState } from 'react';
 import { LevelMeter, MeterScale } from '../../audio/components/LevelMeter.tsx';
 import { useGraphVersion, useMeterReading, useMixGraph } from '../../audio/runtime.ts';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
-
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 /** LUFS / dB text: one decimal, "—" for silence. */
 export function loudnessText(v: number | null | undefined): string {
@@ -21,7 +20,7 @@ export function loudnessText(v: number | null | undefined): string {
 
 export function AudioMetersPanel({ visible }: PanelProps) {
 	const session = useSessionOrNull();
-	const layout = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) => {
+	const layout = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => {
 		const seq = s?.activeSequenceId
 			? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
 			: undefined;

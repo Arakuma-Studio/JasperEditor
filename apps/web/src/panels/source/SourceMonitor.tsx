@@ -82,7 +82,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const monitor = useStoreSelector(monitorStores.source, (s) => s);
 	const item = sourceItem(doc, src.itemId);
 	const asset = sourceAsset(doc, item);
-	// wp-multicam: source clip markers of a media item (sync points of Merge Clips / multi-camera).
+	// source clip markers of a media item (sync points of Merge Clips / multi-camera).
 	const itemMarkerList = (item as { markers?: { id: string; flicks: number; color: string }[] } | null)
 		?.markers;
 	const handle = useMemo(
@@ -92,7 +92,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				: null,
 		[asset, media, attachedProxies, autoProxies],
 	);
-	// edit-structure: sequences and synthetic sources are drawn by the sequence composition.
+	// sequences and synthetic sources are drawn by the sequence composition.
 	const activeSettings = useStoreSelector(session.store, (s) => {
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 		return seq?.settings ?? Object.values(s.document.sequences)[0]?.settings;
@@ -159,11 +159,11 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 			(itemMarkerList ?? []).map((m) => ({
 				id: m.id,
 				frame: flicksToSourceFrames(m.flicks, fps),
-				color: `var(--pr-marker-${markerVar(m.color as never)})`,
+				color: `var(--pr-marker-${markerVar(m.color)})`,
 			})),
 		[itemMarkerList, fps],
 	);
-	// edit-ux: a subclip without marks shows its own range as In/Out.
+	// a subclip without marks shows its own range as In/Out.
 	const sub = item?.kind === 'subclip' ? item : null;
 	const markIn = seqItem
 		? seqItem.inPoint
@@ -248,7 +248,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 		transport.seek(Math.max(0, Math.min(duration - 1, f)));
 	};
 	const frameNow = () => transport.getState().frame;
-	// edit-ux: through the commands (three/four-point editing, Fit Clip dialog, toasts).
+	// through the commands (three/four-point editing, Fit Clip dialog, toasts).
 	const _edit = (mode: 'insert' | 'overwrite') =>
 		void runCommand(
 			mode === 'insert' ? 'timeline.insertFromSource' : 'timeline.overwriteFromSource',
@@ -449,7 +449,6 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				onSeek={seek}
 				testId="source-ruler"
 			/>
-			{/* edit-ux: data-driven transport row with the Button Editor. */}
 			<TransportBar
 				monitor="source"
 				ctx={barCtx}

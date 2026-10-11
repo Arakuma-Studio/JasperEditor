@@ -1,4 +1,4 @@
-// edit-ux: rulers and guides on the Program monitor (Premiere View ▸ Show Rulers / Show Guides / Lock Guides, helpx
+// rulers and guides on the Program monitor (Premiere View ▸ Show Rulers / Show Guides / Lock Guides, helpx
 // "Guides and rulers in the Program Monitor"): rulers in frame pixels along the top and left; drag out of the top
 // ruler for a horizontal guide, out of the left one for a vertical guide; drag a guide to move it (unless guides are
 // locked) and drop it outside the picture to remove it. Guides snap transform moves when Snap in Program Monitor is

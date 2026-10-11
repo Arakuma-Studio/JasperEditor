@@ -26,7 +26,7 @@ type TransitionViewProps = {
 	capEnd: boolean;
 	broken: boolean;
 	dip: boolean;
-	/** edit-structure: freeze-frame handles (repeated frames) — Premiere's warning stripe. */
+	/** freeze-frame handles (repeated frames) — Premiere's warning stripe. */
 	freeze: boolean;
 };
 

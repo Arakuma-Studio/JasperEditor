@@ -1,5 +1,3 @@
-// Source monitor panel (S03 §7, S05:PGM-010) — WP-2C.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

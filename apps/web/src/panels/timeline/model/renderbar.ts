@@ -19,7 +19,7 @@ export type RenderSegment = {
 	title: string;
 };
 
-/** ui-perf: per committed document (the render bar and the Program monitor both ask after every commit). */
+/** per committed document (the render bar and the Program monitor both ask after every commit). */
 const segmentCache = new WeakMap<ProjectDocument, Map<string, RenderPreviewSegment[]>>();
 
 /** The segments of a sequence if they are computed already for this document (else null). */

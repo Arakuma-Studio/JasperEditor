@@ -62,7 +62,7 @@ export function applyPresetToClips(
 		commands: [
 			{
 				type: 'effect.applyPreset',
-				preset: preset as unknown as Record<string, unknown>,
+				preset: preset,
 				clipIds: targets,
 				...(index !== undefined ? { index } : {}),
 			} as Command,

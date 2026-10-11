@@ -1,12 +1,5 @@
-// Code-split panel bodies (ARCHITECTURE §13 "Startup": dynamic import per panel component, S05:PERF-001).
-// The dock shows a skeleton until a panel's code has loaded, so the shell paints before panel code does.
-//
-// polish: a panel is mounted through state once its module has loaded (`useLoaded`), not through React.lazy +
-// <Suspense>. A Suspense retry renders in a lane React never lets expire and restarts whenever any other update
-// arrives; with updates arriving faster than the panel renders (job progress events while the machine is busy), the
-// panel never appeared — the skeleton stayed for minutes and every abandoned attempt of the Program monitor left
-// eight <audio> elements behind (Chrome then refused new media players). A state update renders in a blocking lane
-// and cannot be starved. The lazy component is kept for callers that render one inside their own <Suspense>.
+// Use a state update to mount loaded panels: frequent job events can starve Suspense retries
+// and repeatedly allocate media players. Callers with their own Suspense boundary can use the lazy component.
 import { type ComponentType, type LazyExoticComponent, lazy, useEffect, useState } from 'react';
 import type { PanelProps } from './types.ts';
 

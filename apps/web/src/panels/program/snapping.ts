@@ -29,7 +29,7 @@ export function buildSnapTargets(opts: {
 	height: number;
 	safeMargins?: { action: number; title: number } | null;
 	layers?: readonly Rect[];
-	/** edit-ux: guides (frame px) — vertical guides snap x, horizontal guides snap y. */
+	/** guides (frame px) — vertical guides snap x, horizontal guides snap y. */
 	guides?: readonly { orientation: 'horizontal' | 'vertical'; position: number }[];
 }): SnapTargets {
 	const { width: W, height: H } = opts;

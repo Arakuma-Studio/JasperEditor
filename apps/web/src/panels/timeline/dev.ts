@@ -70,7 +70,7 @@ export function insertSampleClips(session: EditorSession, sequenceId: string): v
 			},
 			{ type: 'clip.addSolid', at: 60, duration: 150, track: 'V2', color: [0.2, 0.4, 0.8, 1] },
 			{ type: 'clip.addText', at: 120, duration: 120, track: 'V3', content: { text: 'Title' } },
-		] as never[],
+		],
 	});
 	if (!r.ok) console.warn('[timeline dev] sample clips failed', r.errors);
 }

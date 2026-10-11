@@ -4,6 +4,7 @@
 import { mgRegistry } from '@jasper/mg-templates';
 import type { Command, Sequence } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
+import { z } from 'zod';
 import { type CompositionRef, insertComposition } from '../../mg-bundles/insert.ts';
 
 /** DataTransfer type of a template drag from the Motion Templates panel. */
@@ -14,7 +15,15 @@ export const MG_TEMPLATE_MIME = 'application/x-jasper-mg-template';
  * composition id. Drops onto the Timeline / Program monitor insert it through `clip.addComposition`.
  */
 export type MgTemplateRef = { id: string; version: number; composition?: CompositionRef };
-type MgTemplateDragPayload = { type: 'jasper/mg-template'; template: MgTemplateRef };
+const MgTemplateDragSchema = z.object({
+	type: z.literal('jasper/mg-template'),
+	template: z.object({
+		id: z.string().min(1),
+		version: z.number().int().positive(),
+		composition: z.object({ mediaId: z.string().min(1), compositionId: z.string().min(1) }).optional(),
+	}),
+});
+type MgTemplateDragPayload = z.infer<typeof MgTemplateDragSchema>;
 
 export function writeMgTemplateDrag(dt: DataTransfer, template: MgTemplateRef): void {
 	const payload: MgTemplateDragPayload = { type: 'jasper/mg-template', template };
@@ -31,8 +40,8 @@ export function readMgTemplateDrag(dt: Pick<DataTransfer, 'getData'>): MgTemplat
 	try {
 		const raw = dt.getData(MG_TEMPLATE_MIME);
 		if (!raw) return null;
-		const p = JSON.parse(raw) as MgTemplateDragPayload;
-		return p?.type === 'jasper/mg-template' && typeof p.template?.id === 'string' ? p : null;
+		const parsed = MgTemplateDragSchema.safeParse(JSON.parse(raw));
+		return parsed.success ? parsed.data : null;
 	} catch {
 		return null;
 	}

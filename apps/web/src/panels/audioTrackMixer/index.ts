@@ -1,4 +1,3 @@
-// Audio Track Mixer panel (audio-mix, Premiere Shift+6): track / submix / Mix strips, automation, sends, inserts.
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

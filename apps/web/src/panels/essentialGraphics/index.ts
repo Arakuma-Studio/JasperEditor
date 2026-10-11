@@ -1,5 +1,3 @@
-// Essential Graphics panel (workstream gaps, GR-4/GR-5; Premiere Window ▸ Essential Graphics): Browse templates,
-// Edit a graphic's layers, alignment, Responsive Design and Roll / Crawl.
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

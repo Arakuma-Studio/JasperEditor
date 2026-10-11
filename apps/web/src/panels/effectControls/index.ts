@@ -1,5 +1,3 @@
-// Effect Controls panel (WP-2D): stopwatch/keyframes, mini-timeline and the effect stack (S03 §13, S05:ECP).
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

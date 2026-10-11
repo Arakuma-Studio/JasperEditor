@@ -9,6 +9,7 @@
 // ["transition", id, name]), one history entry per edit and one per scrub.
 import {
 	type Command,
+	type CommandOf,
 	evaluate,
 	flicksPerFrame,
 	formatTimecode,
@@ -75,8 +76,8 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 			a.bin.localeCompare(b.bin) ||
 			a.label.localeCompare(b.label),
 	);
-	const update = (label: string, patch: Record<string, unknown>) =>
-		ops.apply(label, [{ type: 'transition.update', transitionId: t.id, ...patch } as Command]);
+	const update = (label: string, patch: Omit<CommandOf<'transition.update'>, 'type' | 'transitionId'>) =>
+		ops.apply(label, [{ type: 'transition.update', transitionId: t.id, ...patch }]);
 	const n = geom.duration || t.duration;
 	return (
 		<section
@@ -346,8 +347,6 @@ function Bar(props: {
 	);
 }
 
-// ---------------------------------------------------------------- params (transition framework)
-
 const asNumber = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 /** Param rows of a transition: values at the playhead (keys are relative to the span's first frame). */
@@ -375,10 +374,10 @@ function TransitionParams(props: {
 	const target = (name: string) => ['transition', t.id, name];
 	const paramValue = (p: ParamSpec): ParamValue => {
 		const a = t.params[p.name];
-		return a ? (evaluate(a as never, local * F) as ParamValue) : p.default;
+		return a ? evaluate(a, local * F) : p.default;
 	};
 	const animated = (p: ParamSpec) => (t.params[p.name]?.keyframes.length ?? 0) > 0;
-	const set = (p: ParamSpec, value: unknown): Command =>
+	const set = (p: ParamSpec, value: ParamValue): Command =>
 		({
 			type: 'param.set',
 			target: target(p.name),
@@ -386,7 +385,7 @@ function TransitionParams(props: {
 			...(animated(p) ? { at: atNow() } : {}),
 		}) as Command;
 	const completion = spec.params.find((x) => x.name === 'completion');
-	const commit = (p: ParamSpec, value: unknown) => {
+	const commit = (p: ParamSpec, value: ParamValue) => {
 		// Turning Custom Completion on with an unanimated Transition Completion seeds the curve with the linear timing
 		// at the span's ends (0 % on the first frame, 100 % on the last) so the user starts from a ramp to shape.
 		if (p.name === 'useCompletion' && value === true && completion && !animated(completion)) {
@@ -461,12 +460,12 @@ function ParamEditor(props: {
 	value: ParamValue;
 	label: string;
 	ops: InspectorOps;
-	onCommit(v: unknown): void;
-	toCommand(v: unknown): Command;
+	onCommit(v: ParamValue): void;
+	toCommand(v: ParamValue): Command;
 }) {
 	const { p, value, ops } = props;
-	const base = useRef<unknown>(null);
-	const scrubbable = (get: () => number, put: (n: number) => unknown, testId: string, axis = '') => (
+	const base = useRef(0);
+	const scrubbable = (get: () => number, put: (n: number) => ParamValue, testId: string, axis = '') => (
 		<ScrubbyNumber
 			key={testId}
 			value={get()}
@@ -498,13 +497,13 @@ function ParamEditor(props: {
 				<>
 					{scrubbable(
 						() => v[0]!,
-						(n) => [n, v[1]],
+						(n) => [n, v[1]!],
 						`transition-param-${p.name}-x`,
 						' X',
 					)}
 					{scrubbable(
 						() => v[1]!,
-						(n) => [v[0], n],
+						(n) => [v[0]!, n],
 						`transition-param-${p.name}-y`,
 						' Y',
 					)}

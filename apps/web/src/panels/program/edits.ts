@@ -1,3 +1,4 @@
+import type { Vec2 } from '@jasper/project';
 // Document edits issued by the monitors: transform writes (S03:PRP-020 through `param.set` with the
 // playhead as `at`, so animated properties get a keyframe), nudges (XF-023) and text creation (XF-060).
 import {
@@ -11,7 +12,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 
-export type Vec2 = [number, number];
+export type { Vec2 } from '@jasper/project';
 
 export function activeSequence(session: EditorSession): Sequence | null {
 	const s = session.getState();
@@ -23,7 +24,7 @@ export function activeSequence(session: EditorSession): Sequence | null {
 type VisualWithTransform = Clip & { transform: Transform; trackId: string };
 
 export function hasTransform(c: Clip | undefined): c is VisualWithTransform {
-	return !!c && typeof (c as { transform?: unknown }).transform === 'object' && c.kind !== 'captions';
+	return !!c && 'transform' in c && c.kind !== 'captions';
 }
 
 /** Motion values of a clip evaluated at a sequence frame (content time, S01:KF-002). */

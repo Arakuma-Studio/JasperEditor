@@ -1,5 +1,3 @@
-// Motion Templates panel (S05 §16.14, MGT-001/002). Owner: WP-2G.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

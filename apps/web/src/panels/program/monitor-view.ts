@@ -1,4 +1,4 @@
-// edit-ux: monitor view options beyond monitor-store (Premiere's Program monitor wrench/View menu): rulers, guides
+// monitor view options beyond monitor-store (Premiere's Program monitor wrench/View menu): rulers, guides
 // and guide templates, the comparison view, the dropped-frame indicator and the button editor's transport layout.
 // UI state only: never in the document, never undoable; persisted in localStorage (tolerant parse) like
 // monitor-store. Guides are kept per sequence (Premiere keeps guides with the sequence); templates are global.
@@ -170,8 +170,6 @@ export function newGuideId(): string {
 	return `g${Date.now().toString(36)}${guideCounter.toString(36)}`;
 }
 
-// ---------------------------------------------------------------- guides
-
 export function guidesOf(sequenceId: string | null): Guide[] {
 	return sequenceId ? (monitorExtras.getState().guides[sequenceId] ?? []) : [];
 }
@@ -247,8 +245,6 @@ export function applyGuideTemplate(sequenceId: string, name: string, width: numb
 	monitorExtras.setState({ showGuides: true });
 	return true;
 }
-
-// ---------------------------------------------------------------- comparison view (generic: color-grade reuses it)
 
 export function setComparison(patch: Partial<MonitorExtrasState['comparison']>): void {
 	monitorExtras.setState((s) => ({ comparison: { ...s.comparison, ...patch } }));

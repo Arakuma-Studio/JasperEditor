@@ -43,7 +43,7 @@ export const sourceMonitorState = createStore<SourceMonitorState>(() => ({
 	markOut: null,
 }));
 
-// edit-structure: sequences and synthetic sources open in the Source monitor too (Premiere); edit-ux: subclips.
+// sequences and synthetic sources open in the Source monitor too (Premiere); edit-ux: subclips.
 type SourceItem = Extract<ProjectItem, { kind: 'media' | 'synthetic' | 'sequence' | 'subclip' }>;
 
 export function sourceItem(doc: ProjectDocument, itemId: string | null): SourceItem | null {
@@ -55,7 +55,7 @@ export function sourceItem(doc: ProjectDocument, itemId: string | null): SourceI
 }
 
 /**
- * edit-structure: the picture/sound of a synthetic source as a render doc — a scratch project with one sequence of
+ * the picture/sound of a synthetic source as a render doc — a scratch project with one sequence of
  * `settings` holding the source placed for `frames` frames (so the Source monitor draws exactly what the timeline
  * draws). Null for adjustment layers (no picture of their own).
  */
@@ -146,7 +146,7 @@ export function setSourceMarks(
 		if (marks.in !== undefined) outF = null;
 		else inF = null;
 	}
-	// edit-structure: a sequence's Source marks are its own In/Out (Premiere).
+	// a sequence's Source marks are its own In/Out (Premiere).
 	if (it?.kind === 'sequence')
 		return session.apply({
 			label,

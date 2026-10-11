@@ -1,7 +1,7 @@
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 
-/** wp captions: Premiere's Text panel — Transcript (text-based editing) and Captions tabs. */
+/** Premiere's Text panel — Transcript (text-based editing) and Captions tabs. */
 const text: PanelDefinition = {
 	kind: 'text',
 	title: () => 'Text',

@@ -1,4 +1,3 @@
-// Audio Clip Mixer panel (audio-mix, Premiere Shift+9): the clip under the playhead per audio track.
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

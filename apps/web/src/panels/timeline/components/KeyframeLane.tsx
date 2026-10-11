@@ -1,11 +1,11 @@
-// edit-ux: a clip's keyframe lane and rubber band on the timeline (Premiere): the chosen property's value drawn as a
+// a clip's keyframe lane and rubber band on the timeline (Premiere): the chosen property's value drawn as a
 // line across the clip with its keyframes. Selection tool: drag the line up/down (static value, or the two keys of
 // the segment), Ctrl/Cmd-click it to add a keyframe, drag a keyframe (time and value), click/Shift-click to select
 // keyframes (Delete removes them). Pen tool: click the line to add a keyframe, drag on the lane to marquee-select
 // keyframes. Fade handles at the top corners of Opacity / Level lanes drag a fade in or out. Every drag is one
 // History entry (a session gesture), Esc-free: releasing commits, a drag that ends where it started records
 // nothing. Roving keys keep their derived times (only their value moves); an expression is flagged with "=".
-import type { Clip, Sequence } from '@jasper/project';
+import type { Clip, Command, Sequence } from '@jasper/project';
 import type { ActiveTool, EditorSession, Gesture } from '@jasper/session';
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef, useState } from 'react';
 import {
@@ -100,9 +100,7 @@ export function KeyframeLane(p: Props) {
 			label: 'Add Keyframe',
 			origin: 'user',
 			sequenceId: seq.id,
-			commands: [
-				{ type: 'keyframe.add', target: model.path, at: { sequenceFrame: frameAt(x) }, value } as never,
-			],
+			commands: [{ type: 'keyframe.add', target: model.path, at: { sequenceFrame: frameAt(x) }, value }],
 		});
 		if (r.ok) {
 			const id = (r.results[0] as { keyframeId?: string } | undefined)?.keyframeId;
@@ -110,7 +108,7 @@ export function KeyframeLane(p: Props) {
 		}
 	};
 
-	const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+	const onDown = (e: ReactPointerEvent<Element>) => {
 		if (e.button !== 0 || p.locked || !active) return;
 		const pt = local(e);
 		const ctrl = p.mac ? e.metaKey : e.ctrlKey;
@@ -196,7 +194,7 @@ export function KeyframeLane(p: Props) {
 						? 'Move Keyframes'
 						: 'Adjust Keyframes',
 			);
-		const cmds: unknown[] = [];
+		const cmds: Command[] = [];
 		let text = '';
 		if (d.kind === 'band') {
 			const [a, b] = d.segment!;
@@ -233,7 +231,7 @@ export function KeyframeLane(p: Props) {
 			cmds.push(...fadeCommands(m, clip, d.side!, frames));
 			text = `${d.side === 'in' ? 'Fade In' : 'Fade Out'}: ${Math.max(0, Math.round(frames))} f`;
 		}
-		const r = d.g.update(cmds as never[]);
+		const r = d.g.update(cmds);
 		setReadout(
 			r.ok ? { x: pt.x, y: pt.y, text } : { x: pt.x, y: pt.y, text: r.errors[0]?.message ?? 'Not allowed' },
 		);
@@ -289,7 +287,7 @@ export function KeyframeLane(p: Props) {
 							stroke="transparent"
 							strokeWidth={9}
 							style={{ pointerEvents: active && !p.locked ? 'stroke' : 'none', cursor: 'ns-resize' }}
-							onPointerDown={onDown as never}
+							onPointerDown={onDown}
 							data-testid={`lane-band-${clip.id}`}
 						/>
 					</>
@@ -300,7 +298,7 @@ export function KeyframeLane(p: Props) {
 					const fill = sel ? 'var(--pr-accent)' : 'var(--pr-text-strong)';
 					const common = {
 						style: { pointerEvents: active && !p.locked ? 'all' : 'none', cursor: 'move' } as const,
-						onPointerDown: onDown as never,
+						onPointerDown: onDown,
 						'data-keyframe-id': k.id,
 						'data-kf-id': k.id,
 					};
@@ -331,7 +329,7 @@ export function KeyframeLane(p: Props) {
 									fill="var(--pr-text-strong)"
 									stroke="var(--pr-bg-app)"
 									style={{ pointerEvents: active && !p.locked ? 'all' : 'none', cursor: 'ew-resize' }}
-									onPointerDown={onDown as never}
+									onPointerDown={onDown}
 									data-testid={`lane-fade-${side}-${clip.id}`}
 								>
 									<title>{side === 'in' ? 'Fade In' : 'Fade Out'}</title>

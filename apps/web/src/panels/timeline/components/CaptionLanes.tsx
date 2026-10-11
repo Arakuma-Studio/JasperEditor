@@ -1,4 +1,5 @@
-// wp captions: caption tracks in the Timeline — their own area above the video tracks (as in Premiere), one lane per
+import type { Command, CommandOf } from '@jasper/project';
+// caption tracks in the Timeline — their own area above the video tracks (as in Premiere), one lane per
 // caption track (C1 at the bottom, next to the video tracks). Headers: label, name, language, eye (shown / burned
 // in), lock, sync lock, active track. Caption blocks show their text; click selects (Shift adds), drag moves, an
 // edge drag trims (live through a session gesture, one undo step), double-click opens Text ▸ Captions. Document
@@ -59,12 +60,12 @@ export function CaptionLanes(p: Props) {
 	const rate = seq.settings.frameRate;
 	const doc = session.getState().transient ?? session.getState().document;
 
-	const apply = (label: string, commands: unknown[]) => {
-		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands: commands as never[] });
+	const apply = (label: string, commands: Command[]) => {
+		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
 		if (!r.ok) p.toast('warning', r.errors[0]?.message ?? `${label} failed`);
 		return r;
 	};
-	const flag = (t: Track, patch: Record<string, unknown>, label: string) =>
+	const flag = (t: Track, patch: CommandOf<'track.update'>['patch'], label: string) =>
 		apply(label, [{ type: 'track.update', trackId: t.id, patch }]);
 
 	const onBlockDown = (e: ReactPointerEvent<HTMLDivElement>, c: CaptionsClip, track: Track) => {
@@ -210,7 +211,6 @@ export function CaptionLanes(p: Props) {
 							style={{ height: CAPTION_LANE_PX }}
 							data-testid={`timeline.captionTrack.${label}`}
 						>
-							{/* header */}
 							{/* biome-ignore lint/a11y/noStaticElementInteractions: header context menu (track commands are also in the Sequence menu) */}
 							<div
 								className={`flex shrink-0 items-center gap-[2px] border-r border-b border-pr-border px-1 ${isActive ? 'bg-pr-selected' : 'bg-pr-panel'}`}
@@ -263,7 +263,6 @@ export function CaptionLanes(p: Props) {
 									{t.language ? ` · ${t.language}` : ''}
 								</span>
 							</div>
-							{/* lane */}
 							<div className="relative min-w-0 flex-1 overflow-hidden border-b border-pr-border bg-pr-panel-alt">
 								{clips.map((c) => {
 									const x0 = frameToX(p.viewport, c.start);

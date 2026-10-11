@@ -45,7 +45,7 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 	const effects = session.ctx.registries.effects;
 	const visual = clips.filter(isVisualClip);
 	const audio = clips.filter(isAudioClip);
-	// three-d: cameras and lights have their own sections.
+	// cameras and lights have their own sections.
 	const cameras = clips.filter((c) => c.kind === 'camera');
 	const lights = clips.filter((c) => c.kind === 'light');
 	const other = clips.filter(
@@ -270,9 +270,7 @@ function SpeedSection({ clips, seq }: { clips: Clip[]; seq: Sequence }) {
 	return (
 		<Section id="properties.speed" title="Speed & Duration" defaultOpen={false}>
 			<SpeedRows clips={media} seq={seq} />
-			<p className="px-2 text-pr-small text-pr-dim">
-				Change speed with the Rate Stretch tool (read-only here in M1).
-			</p>
+			<p className="px-2 text-pr-small text-pr-dim">Change speed with the Rate Stretch tool.</p>
 		</Section>
 	);
 }
@@ -296,7 +294,7 @@ function useFontOptions(session: EditorSession, docFonts: Record<string, { id: s
 	const known = new Set(inDoc.map((f) => f.family));
 	const options: FontOption[] = [
 		...inDoc.map((f) => ({ id: f.id, label: f.family })),
-		// text-animators: a bundled family not in the project yet is registered when picked (font.add).
+		// a bundled family not in the project yet is registered when picked (font.add).
 		...catalog.filter((f) => !known.has(f)).map((f) => ({ id: `catalog:${f}`, label: f })),
 	];
 	return options;
@@ -330,7 +328,7 @@ function TextSections(props: {
 		visual,
 	);
 	const setRow = (row: Row, v: unknown) => {
-		// text-animators: picking a catalog family registers it and sets it on the selected clips in one step.
+		// picking a catalog family registers it and sets it on the selected clips in one step.
 		if (row.spec.key === 'text.fontId' && typeof v === 'string' && v.startsWith('catalog:')) {
 			ctx.ops.apply('Font', [
 				{ type: 'font.add', family: v.slice(8), ref: '$font' } as Command,

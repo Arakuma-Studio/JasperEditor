@@ -11,8 +11,6 @@ import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
 import type { ContextMenuItem, Tooltip } from '../state/ui-store.ts';
 
-// ---------------------------------------------------------------- sequence tabs
-
 /** Sequence id → the first item naming it, per `items` record (ui-perf: the tab selector runs on every update). */
 const bySequence = new WeakMap<object, Map<string, ProjectItem>>();
 function itemsBySequence(items: Record<string, ProjectItem>): Map<string, ProjectItem> {
@@ -68,7 +66,7 @@ export function SequenceTabs(props: {
 					</button>
 					<span
 						className="inline-block size-[8px] rounded-[2px]"
-						style={{ background: labelColor(t.label as never) }}
+						style={{ background: labelColor(t.label) }}
 					/>
 					<button type="button" onClick={() => props.session.openSequence(t.id)}>
 						{t.name}
@@ -79,9 +77,7 @@ export function SequenceTabs(props: {
 	);
 }
 
-// ---------------------------------------------------------------- header toolbar
-
-/** ui-perf: memoised (its tooltip buttons do not re-render on every gesture frame of the timeline). */
+/** memoised (its tooltip buttons do not re-render on every gesture frame of the timeline). */
 export const Toolbar = memo(function Toolbar(props: {
 	session: EditorSession;
 	prefs: TimelinePrefs;
@@ -167,8 +163,6 @@ export const Toolbar = memo(function Toolbar(props: {
 	);
 });
 
-// ---------------------------------------------------------------- zoom scroll bar
-
 export function ZoomBar(props: { viewport: Viewport; extent: number; controller: TimelineController }) {
 	const { viewport: v, extent } = props;
 	const total = Math.max(extent, v.scrollFrame + v.width / v.pxPerFrame, 1);
@@ -231,8 +225,6 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- context menu
 
 export function ContextMenu(props: {
 	x: number;
@@ -362,8 +354,6 @@ function Submenu(props: {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- tooltip
 
 export function GestureTooltip(props: { tooltip: Tooltip | null; width: number }) {
 	const t = props.tooltip;

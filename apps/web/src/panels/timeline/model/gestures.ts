@@ -1,11 +1,10 @@
+import type { CommandOf } from '@jasper/project';
 // Pure gesture → command mapping (S02 §8, §10–§12). The controller feeds pointer state in; these
 // functions compute deltas (rounding, snapping, clamping), selections and document commands.
 import { type Clip, clipAt, clipsInRange, findTrack, type Sequence, trackList } from '@jasper/project';
 import type { TrackAreaLayout } from './layout.ts';
 import { findSnap, type SnapResult, type SnapTarget, thresholdFrames } from './snapping.ts';
 import { deltaFramesFromPx, type Viewport, xToFrameExact } from './viewport.ts';
-
-// ---------------------------------------------------------------- move (TL-480…491)
 
 type MoveDeltaInput = {
 	dxPx: number;
@@ -91,9 +90,9 @@ export function moveCommand(
 	kind: TrackKindKey,
 	trackOffset: number,
 	mode: MoveMode,
-): Record<string, unknown> {
+): CommandOf<'clip.move'> | CommandOf<'clip.duplicate'> {
 	if (mode === 'duplicate') {
-		const cmd: Record<string, unknown> = {
+		const cmd: CommandOf<'clip.duplicate'> = {
 			type: 'clip.duplicate',
 			clipIds: [...movingIds],
 			deltaFrames: delta,
@@ -112,7 +111,7 @@ export function moveCommand(
 		deltaTracks: { [kind]: trackOffset },
 		mode,
 		createTracks: true,
-		// edit-structure: the selection already holds whole groups (Alt-click picks one member).
+		// the selection already holds whole groups (Alt-click picks one member).
 		groups: false,
 	};
 }
@@ -122,8 +121,6 @@ export function moveLabel(mode: MoveMode, count: number): string {
 	if (mode === 'duplicate') return 'Duplicate';
 	return count === 1 ? 'Move Clip' : `Move ${count} Clips`;
 }
-
-// ---------------------------------------------------------------- selection (TL-401…406)
 
 export type MarqueeRect = { x0: number; y0: number; x1: number; y1: number };
 
@@ -197,8 +194,6 @@ export function unlockedTrackIds(
 			.map((t) => t.id),
 	);
 }
-
-// ---------------------------------------------------------------- trim monitor payloads (TL-538, TL-626, TL-631)
 
 export type TrimPreview =
 	| {

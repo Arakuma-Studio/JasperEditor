@@ -1,4 +1,4 @@
-// edit-ux: the Program monitor's Comparison View (Premiere: Program monitor ▸ Comparison View; helpx "Comparison
+// the Program monitor's Comparison View (Premiere: Program monitor ▸ Comparison View; helpx "Comparison
 // view"): a reference frame next to the current frame — Side by Side, Vertical Split or Horizontal Split (drag the
 // divider), Swap Sides — where the reference comes from another time of this sequence or from another sequence,
 // stepped by edit points or set to the playhead.

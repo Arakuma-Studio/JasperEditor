@@ -3,7 +3,7 @@
 // composition draws the anchor point. Position values live in the layer's parent space, which is sequence space
 // here (the layer map is M(q) = P + R·S·(q − A), so M(A) = P whatever the layer's anchor, scale and rotation);
 // the same `toScreen` / `toSequence` mapping as the transform gizmo handles monitor zoom and pan.
-// keyframes-blend: Anchor Point paths too (values in layer space, drawn through the layer map at the playhead, as After
+// Anchor Point paths too (values in layer space, drawn through the layer map at the playhead, as After
 // Effects shows an anchor path over its layer), snapping and multi-key drags, Pen-tool vertex conversion.
 import {
 	applyMatrix,

@@ -122,7 +122,7 @@ export function PropertyGraphs(
 		leftStyle: CSSProperties;
 		showTimeline: boolean;
 		/**
-		 * keyframes-blend: each graph's own vertical range (Ctrl/Cmd + wheel zooms about the pointer, Shift + wheel pans,
+		 * each graph's own vertical range (Ctrl/Cmd + wheel zooms about the pointer, Shift + wheel pans,
 		 * Auto-fit returns to the fitted range); absent = auto-fit. Persisted per panel instance by the host.
 		 */
 		view?: GraphView;
@@ -201,7 +201,6 @@ export function PropertyGraphs(
 	const unit =
 		row.spec.unit === 'deg' ? '°' : row.spec.unit === '%' ? '%' : row.spec.unit ? ` ${row.spec.unit}` : '';
 
-	// ------------------------------------------------------------ gestures
 	const startDrag = (e: ReactPointerEvent, drag: Drag) => {
 		const x0 = e.clientX;
 		const y0 = e.clientY;
@@ -337,7 +336,7 @@ export function PropertyGraphs(
 		);
 	};
 
-	// keyframes-blend: independent vertical zoom / pan per graph (non-passive wheel listeners so the panel does not
+	// independent vertical zoom / pan per graph (non-passive wheel listeners so the panel does not
 	// scroll while zooming).
 	const valueSvg = useRef<SVGSVGElement>(null);
 	const velocitySvg = useRef<SVGSVGElement>(null);
@@ -413,7 +412,6 @@ export function PropertyGraphs(
 		window.addEventListener('pointerup', up);
 	};
 
-	// ------------------------------------------------------------ drawing
 	const selectedIdx = kfs.flatMap((k, i) => (props.selected.has(k.id) ? [i] : []));
 	const keyLabel = (i: number) =>
 		`${row.label} key at ${formatTimecode(Math.round(map.toX(kfs[i]!.time)), seq.settings.frameRate, { dropFrame: seq.settings.dropFrame })}`;

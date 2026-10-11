@@ -107,7 +107,7 @@ export function applyTransitionToClips(
 				// M3 (TUI-033): the user's default alignment, as Ctrl+D.
 				alignment: transitionDefaults().getState().alignment,
 			},
-		] as never[],
+		],
 	});
 	if (!r.ok) return { ok: false, message: r.errors[0]?.message ?? `Could not apply ${spec.label}.` };
 	return { ok: true, count: (r.results[0] as { transitionIds: string[] }).transitionIds.length };

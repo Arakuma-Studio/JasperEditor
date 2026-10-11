@@ -1,4 +1,4 @@
-// edit-ux: source patching (Premiere "Source patching and track targeting", helpx.adobe.com). Insert and Overwrite
+// source patching (Premiere "Source patching and track targeting", helpx.adobe.com). Insert and Overwrite
 // from the Source monitor place each source track (V1, A1, A2…) on the sequence track it is patched to; a source
 // track patched off is left out. Track targeting (the track name toggles) is separate: it drives paste, Match Frame,
 // Add Edit and edit-point navigation, not source edits.

@@ -5,15 +5,14 @@ import { EmptyState, labelColor, SearchField } from '@jasper/ui';
 import { useState } from 'react';
 import { formatTimecode } from '../../gaps/time-display.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
-
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 export function MarkersPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
 	const runtime = useShellRuntimeOrNull();
 	const [query, setQuery] = useState('');
-	const seq = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
+	const seq = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) =>
 		s?.activeSequenceId ? ((s.document.sequences[s.activeSequenceId] as Sequence | undefined) ?? null) : null,
 	);
 	if (!session) return <EmptyState icon="panel.markers" message="Open a project to see its markers" />;

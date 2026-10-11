@@ -124,7 +124,6 @@ export function PropertyRow(props: {
 		apply(plan.commands, plan.skipped);
 	};
 
-	// ---- scrubs: one gesture from pointer-down to pointer-up
 	const scrubStart = () => {
 		scrubRow.current = row;
 		ctx.ops.scrub.start(label);
@@ -239,7 +238,7 @@ export function PropertyRow(props: {
 				);
 			case 'curve':
 				return <CurveField row={row} ctx={writeCtx} data-testid={`prop-${row.id}`} />;
-			// wp masks: Track Matte Key's Matte = a video track of the sequence ('' = None).
+			// Track Matte Key's Matte = a video track of the sequence ('' = None).
 			case 'track': {
 				const tracks = ctx.seq.videoTracks;
 				return (
@@ -304,7 +303,7 @@ export function PropertyRow(props: {
 					/>
 				);
 			}
-			// sim-warp: a distortion mesh (Mesh Warp, Liquify) is edited on the Program monitor; the row shows whether it
+			// a distortion mesh (Mesh Warp, Liquify) is edited on the Program monitor; the row shows whether it
 			// distorts and resets it (an empty mesh = no distortion).
 			case 'mesh': {
 				const arr = Array.isArray(value) ? (value as number[]) : [];
@@ -328,9 +327,9 @@ export function PropertyRow(props: {
 					</span>
 				);
 			}
-			// wp masks: Mask Path has no value editor (edited on the monitor): its vertex count.
+			// Mask Path has no value editor (edited on the monitor): its vertex count.
 			case 'json':
-				// wp shapes: gradients (editor) and shape paths (vertex count, Closed).
+				// gradients (editor) and shape paths (vertex count, Closed).
 				if (spec.group === 'shape') return <ShapeJsonValue row={row} ctx={ctx} value={value} mixed={mixed} />;
 				if (spec.group === 'mask') {
 					const p = value as { vertices?: unknown[]; closed?: boolean } | null;

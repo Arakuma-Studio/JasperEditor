@@ -1,4 +1,3 @@
-// Panel registry contract (ARCHITECTURE §7.2, S05 §16.0). Frozen after wave 1 except additive changes.
 import type { IconId } from '@jasper/ui';
 import type { ComponentType } from 'react';
 import type { Capability } from '../commands/types.ts';
@@ -20,16 +19,11 @@ export const PANEL_KINDS = [
 	'jobs',
 	'lumetri',
 	'scopes',
-	// audio-mix
 	'audioTrackMixer',
 	'audioClipMixer',
-	// wp captions: Text panel (Captions and Transcript tabs)
 	'text',
-	// audio-fx
 	'essentialSound',
-	// gaps (GR-4/5)
 	'essentialGraphics',
-	// polish: Media Browser
 	'mediaBrowser',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
@@ -67,7 +61,7 @@ export interface PanelDefinition {
 	touch: 'tab' | 'sheet' | 'hidden';
 	requires?: Capability[];
 	/**
-	 * polish: where the panel opens when the workspace layout has no place for it — as a tab next to this panel
+	 * Where the panel opens when the workspace layout has no place for it — as a tab next to this panel
 	 * (Premiere docks the Media Browser with the Project panel); without it the panel floats.
 	 */
 	dockWith?: PanelKind;

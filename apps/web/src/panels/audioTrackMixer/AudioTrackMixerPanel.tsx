@@ -1,13 +1,15 @@
+import type { Command, CommandOf } from '@jasper/project';
 // Audio Track Mixer (audio-mix; Premiere Window ▸ Audio Track Mixer, Shift+6): one channel strip per audio track,
 // per submix and the Mix, left to right. Each strip (top → bottom): input format / input map, effect slots (pre- and
 // post-fader inserts), sends (target, level, pre/post), the pan knob (or the 5.1 panner pad when the strip feeds a
 // 5.1 bus), M / S / R, the automation mode, fader + meter, output assignment and the name. Moving a control is heard
 // at once; with playback running it is recorded per the automation mode (`audio/automation.ts`).
 import {
+	AUDIO_CHANNEL_FORMATS,
 	AUTOMATION_MODES,
-	type AutomationMode,
 	type EffectSpec,
 	flicksPerFrame,
+	INPUT_MAPS,
 	listStrips,
 	pans51,
 	type Rational,
@@ -22,17 +24,9 @@ import { type MixerController, mixerControllerFor } from '../../audio/automation
 import { dbText, Fader, Knob, Panner51 } from '../../audio/components/controls.tsx';
 import { LevelMeter } from '../../audio/components/LevelMeter.tsx';
 import { useMeterReading, useMixGraph } from '../../audio/runtime.ts';
+import { MODE_LABELS } from '../mixer-labels.ts';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
-
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
-
-export const MODE_LABELS: Record<AutomationMode, string> = {
-	off: 'Off',
-	read: 'Read',
-	latch: 'Latch',
-	touch: 'Touch',
-	write: 'Write',
-};
 
 function useController(session: EditorSession | null): MixerController | null {
 	const c = session ? mixerControllerFor(session) : null;
@@ -55,8 +49,8 @@ type StripProps = {
 	audioEffects: EffectSpec[];
 };
 
-function apply(session: EditorSession, label: string, commands: unknown[]) {
-	session.apply({ label, origin: 'user', commands: commands as never });
+function apply(session: EditorSession, label: string, commands: Command[]) {
+	session.apply({ label, origin: 'user', commands });
 }
 
 function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps) {
@@ -73,7 +67,7 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 	const center = ctl.displayValue(strip.id, 'pan51.center', t);
 	const lfe = ctl.displayValue(strip.id, 'pan51.lfe', t);
 	const mute = ctl.displayValue(strip.id, 'mute', t) >= 0.5;
-	const update = (patch: Record<string, unknown>, label = 'Audio Track Mixer') =>
+	const update = (patch: CommandOf<'mixer.updateStrip'>['patch'], label = 'Audio Track Mixer') =>
 		apply(session, label, [{ type: 'mixer.updateStrip', sequenceId: seq.id, stripId: ref, patch }]);
 	const idx = strips.indexOf(strip);
 	const outputs = strips.filter((s) => s.kind === 'submix' && strips.indexOf(s) > idx);
@@ -162,7 +156,10 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 				<Select
 					label={`${strip.label} channel format`}
 					value={strip.format}
-					onValueChange={(v) => update({ channelFormat: v }, 'Channel Format')}
+					onValueChange={(value) => {
+						const channelFormat = AUDIO_CHANNEL_FORMATS.find((format) => format === value);
+						if (channelFormat) update({ channelFormat }, 'Channel Format');
+					}}
 					options={[
 						{ value: 'mono', label: 'Mono' },
 						{ value: 'stereo', label: 'Stereo' },
@@ -174,7 +171,10 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 				<Select
 					label={`${strip.label} input map`}
 					value={strip.inputMap}
-					onValueChange={(v) => update({ inputMap: v }, 'Input Map')}
+					onValueChange={(value) => {
+						const inputMap = INPUT_MAPS.find((map) => map === value);
+						if (inputMap) update({ inputMap }, 'Input Map');
+					}}
 					options={[
 						{ value: 'stereo', label: 'L/R' },
 						{ value: 'left', label: 'Left' },
@@ -297,7 +297,6 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 				</div>
 			) : null}
 			<div className="flex-1" />
-			{/* pan / 5.1 panner */}
 			{!master ? (
 				surround ? (
 					<div className="flex flex-col gap-0.5">
@@ -390,7 +389,10 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 			<Select
 				label={`${strip.label} automation mode`}
 				value={strip.automation}
-				onValueChange={(v) => update({ automation: v }, 'Automation Mode')}
+				onValueChange={(value) => {
+					const automation = AUTOMATION_MODES.find((mode) => mode === value);
+					if (automation) update({ automation }, 'Automation Mode');
+				}}
 				options={AUTOMATION_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] }))}
 			/>
 			<div className="flex h-[160px] shrink-0 justify-center gap-1.5">
@@ -442,7 +444,7 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 
 export function AudioTrackMixerPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
-	const seq = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
+	const seq = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) =>
 		s?.activeSequenceId ? ((s.document.sequences[s.activeSequenceId] as Sequence | undefined) ?? null) : null,
 	);
 	if (!session) return <EmptyState icon="panel.audioTrackMixer" message="Open a project to mix its audio" />;

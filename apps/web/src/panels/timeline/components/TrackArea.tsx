@@ -52,9 +52,9 @@ type TrackAreaProps = {
 	/** S10: per-track transition index of the drawn sequence and the selected transition ids. */
 	transitions?: TransitionIndex;
 	selectedTransitions?: ReadonlySet<string>;
-	/** edit-structure: mark through edits (Sequence ▸ Show Through Edits). */
+	/** mark through edits (Sequence ▸ Show Through Edits). */
 	showThroughEdits?: boolean;
-	/** edit-ux: keyframe lanes and rubber bands (drawn on expanded tracks). */
+	/** keyframe lanes and rubber bands (drawn on expanded tracks). */
 	lanes?: {
 		session: EditorSession;
 		tool: ActiveTool;
@@ -65,7 +65,7 @@ type TrackAreaProps = {
 };
 
 /**
- * edit-structure: Premiere's through-edit marks — a small bow tie (two triangles meeting at the cut) at the top of a
+ * Premiere's through-edit marks — a small bow tie (two triangles meeting at the cut) at the top of a
  * cut whose two sides continue the same source (`throughEdits`).
  */
 function ThroughEditMarks({ seq, layout, v }: { seq: Sequence; layout: TrackAreaLayout; v: Viewport }) {
@@ -111,7 +111,7 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 	const visible = v.width / v.pxPerFrame;
 	const f0 = Math.floor(v.scrollFrame - visible * 0.5);
 	const f1 = Math.ceil(v.scrollFrame + visible * 1.5);
-	// ui-perf: clips sit in content px on a layer moved by the scroll offset (snapped to device pixels, so every edge
+	// clips sit in content px on a layer moved by the scroll offset (snapped to device pixels, so every edge
 	// lands where it did when each clip was positioned in viewport px); a scroll moves the layer, not the clips.
 	const scrollPx = snapPx(v.scrollFrame * v.pxPerFrame, dpr());
 	return (
@@ -286,7 +286,7 @@ function EditPointMarks(props: { points: readonly EditPointSel[]; layout: TrackA
 }
 
 export function TrackArea(raw: TrackAreaProps) {
-	// ui-perf: the track area draws at a scroll offset snapped to device pixels (the clips' layer moves by it, Region),
+	// the track area draws at a scroll offset snapped to device pixels (the clips' layer moves by it, Region),
 	// so every element of it is placed against the same offset as before the layer existed.
 	const viewport = useMemo(() => snappedScroll(raw.viewport), [raw.viewport]);
 	const props = { ...raw, viewport };
