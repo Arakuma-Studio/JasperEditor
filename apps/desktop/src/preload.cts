@@ -42,11 +42,6 @@ const bridge = {
 	openPath: (path: string): Promise<string> => ipcRenderer.invoke('jasper:open-path', path),
 	/** gaps (File ▸ Exit): quits the app after the renderer handled unsaved changes. */
 	quit: (): void => ipcRenderer.send('jasper:quit'),
-	onMenuCommand: (cb: (commandId: string) => void): (() => void) => {
-		const listener = (_e: unknown, id: string) => cb(id);
-		ipcRenderer.on('jasper:menu-command', listener);
-		return () => ipcRenderer.removeListener('jasper:menu-command', listener);
-	},
 };
 
 contextBridge.exposeInMainWorld('jasperDesktop', bridge);

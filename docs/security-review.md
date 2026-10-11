@@ -109,7 +109,7 @@ desktop bridge `openPath`. Two defects:
   picture/script polyglot registers as media; the desktop bridge opened any absolute path the renderer named.
 
 Fix: one allowlist of media, picture, document, caption, timeline, model and LUT extensions
-(`OPENABLE_EXTENSIONS` in `@jasper/config`, mirrored in `apps/desktop/src/security.ts`, a test keeps them equal);
+(`OPENABLE_EXTENSIONS` in `@jasper/config`, used by the engine and desktop through `isOpenableFile`);
 everything else is revealed in the file browser instead. The Windows opener is
 `powershell -Command "Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH"` with the path in the environment.
 

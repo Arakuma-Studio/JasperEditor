@@ -16,7 +16,7 @@ pub mod title_card;
 use fframes::{AudioMap, Color, Duration, FFramesContext, Frame, Svgr, Video};
 use jasper_mg_core::{Fit, MgSpec, SpecError, canvas_labels, fit_canvas, spec_error};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 pub use lower_third::LowerThirdParams;
 pub use title_card::TitleCardParams;
@@ -80,11 +80,6 @@ pub fn catalog() -> Vec<TemplateInfo> {
             canvases: canvas_labels(),
         },
     ]
-}
-
-/// `{"templates": [...]}` as printed by `jasper-mg schema`.
-pub fn schema_json() -> Value {
-    json!({ "templates": catalog() })
 }
 
 impl TemplateParams {

@@ -13,6 +13,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@jasper/config": "workspace:*"
+  },
   "devDependencies": {
     "electron": "^44.0.0",
     "esbuild": "^0.25.0"

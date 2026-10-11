@@ -2,7 +2,7 @@
 //! native renderer and the TS twin (browser, Node tests) compute identical layouts. Tuned for Inter.
 
 /// Approximate advance of one character in em.
-pub fn char_em(c: char) -> f64 {
+fn char_em(c: char) -> f64 {
     match c {
         ' ' => 0.28,
         'i' | 'l' | 'j' | '.' | ',' | ':' | ';' | '\'' | '!' | '|' | 'I' => 0.3,

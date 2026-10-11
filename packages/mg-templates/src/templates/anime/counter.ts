@@ -6,7 +6,7 @@ import { CANVASES } from '../../core.ts';
 import type { MgAnimeTemplateDefinition } from '../../types.ts';
 import { easeParam, rgbaParam } from './common.ts';
 
-export const COUNTER_LIMIT = 1e12;
+const COUNTER_LIMIT = 1e12;
 
 export const counterParams = z.strictObject({
 	from: z.number().min(-COUNTER_LIMIT).max(COUNTER_LIMIT).default(0),

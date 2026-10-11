@@ -9,6 +9,7 @@ import {
 	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isOpenablePath,
 	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
@@ -229,8 +230,7 @@ describe('isPermissionAllowed (audio-mix: voice-over microphone)', () => {
 });
 
 describe('Edit Original (gaps, UI-5)', () => {
-	it('opens media paths but never programs or launchers', async () => {
-		const { isOpenablePath } = await import('../src/security.ts');
+	it('opens media paths but never programs or launchers', () => {
 		expect(isOpenablePath('/media/clip.mov')).toBe(true);
 		expect(isOpenablePath('C:\\media\\clip.MP4')).toBe(true);
 		// Security review ELE-2: a file without an extension is not opened (macOS runs an extensionless Unix
@@ -254,14 +254,5 @@ describe('Edit Original (gaps, UI-5)', () => {
 			null,
 		])
 			expect(isOpenablePath(bad)).toBe(false);
-	});
-
-	it('uses the same allowlist as the engine (@jasper/config)', async () => {
-		const { OPENABLE_EXTENSIONS } = await import('../src/security.ts');
-		const config = await import('../../../packages/config/src/index.ts');
-		expect([...OPENABLE_EXTENSIONS]).toEqual([...config.OPENABLE_EXTENSIONS]);
-		expect(config.isOpenableFile('/m/a.MOV')).toBe(true);
-		expect(config.isOpenableFile('/m/a')).toBe(false);
-		expect(config.isOpenableFile('/m/a.hta')).toBe(false);
 	});
 });

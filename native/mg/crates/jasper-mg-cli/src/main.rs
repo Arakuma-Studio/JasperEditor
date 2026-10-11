@@ -15,7 +15,7 @@
 use clap::{Parser, Subcommand};
 use fframes::{Color, CpuFrameRenderer, FrameRenderer, Previewer, RenderOptions, Video};
 use jasper_mg_core::MgSpec;
-use jasper_mg_templates::{AnyTemplate, MgMedia, Prepared, RENDERER_VERSION, catalog, schema_json};
+use jasper_mg_templates::{AnyTemplate, MgMedia, Prepared, RENDERER_VERSION, catalog};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -312,7 +312,7 @@ fn run(cli: Cli) -> CliResult {
             "missing command (schema | render | frame | svg); see --help".into(),
         )),
         Some(Command::Schema) => {
-            println!("{}", schema_json());
+            println!("{}", json!({ "templates": catalog() }));
             Ok(())
         }
         Some(Command::Render {
