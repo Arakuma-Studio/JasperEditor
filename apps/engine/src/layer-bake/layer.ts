@@ -15,7 +15,6 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
-	type ShapeItem,
 	type Transform,
 	textAnimatorsTimeVarying,
 	vectorShapeBounds,
@@ -70,11 +69,11 @@ export function hasBrowserEffect(
  * master overlaid natively, so a GPU effect no longer sends the whole export to Remotion.
  */
 export function needsBake(
-	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects' | 'masks'>,
+	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects' | 'masks' | 'threeD'>,
 	registry?: EffectRegistry,
 ): boolean {
-	// three-d: a 3D layer is never baked alone (the planner routes 3D runs to the Remotion path).
-	if ((c as { threeD?: unknown }).threeD) return false;
+	// A 3D layer is never baked alone (the planner routes 3D runs to the Remotion path).
+	if (c.threeD) return false;
 	return (
 		isDomLayer(c) ||
 		(MEDIA_BAKE_KINDS.has(c.kind) && (hasBrowserEffect(c, registry) || maskExportRoute(c) === 'bake'))
@@ -145,20 +144,18 @@ export function isStaticLayer(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): boolean {
 	if (c.kind === 'motion-graphic') return false;
-	// wp captions: a caption is one picture unless it pages or highlights the active word.
+	// A caption is one picture unless it pages or highlights the active word.
 	if (c.kind === 'captions') {
-		const cap = (c.source as { captions?: { pages: unknown[]; style: { highlight?: { mode?: string } } } })
-			.captions;
+		const cap = 'captions' in c.source ? c.source.captions : undefined;
 		if (cap?.pages.length !== 1 || (cap.style.highlight?.mode ?? 'none') !== 'none') return false;
 	}
-	// Moving pictures (wave1c media bakes) are never one frame.
+	// Moving pictures are never one frame.
 	if (c.kind === 'video' || c.kind === 'animated-image') return false;
-	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
-	if (src.animation && (src.animation.in || src.animation.out)) return false;
-	// text-animators: Wiggly / Expression selectors vary with time without keyframes.
-	if (c.kind === 'text' && textAnimatorsTimeVarying(c.source as never)) return false;
+	const animation = 'animation' in c.source ? c.source.animation : undefined;
+	if (animation?.in || animation?.out) return false;
+	// Wiggly / Expression selectors vary with time without keyframes.
+	if ('text' in c.source && textAnimatorsTimeVarying(c.source)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
-	// wp masks: keyframed Opacity or effect masks.
 	if (hasKeyframesDeep(c.masks) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.masks)))
 		return false;
 	for (const fx of c.effects) {
@@ -166,15 +163,14 @@ export function isStaticLayer(
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		if (!spec) return false;
 		if (hasKeyframesDeep(fx.params)) return false;
-		// sim-warp: keyframed Puppet pins.
-		if (hasKeyframesDeep((fx as { puppet?: unknown }).puppet)) return false;
-		// Wave 1 (fx framework): a GPU shader effect that draws differently every frame (noise, flicker, time hooks,
+		if (hasKeyframesDeep(fx.puppet)) return false;
+		// A GPU shader effect that draws differently every frame (noise, flicker, time hooks,
 		// a media param bound to a video — conservative here: any bound media param that accepts videos).
 		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));
 		if (gpuIsTimeDependent(spec, held)) return false;
 	}
-	// wp shapes: a vector shape with a self-animating Wiggle Paths (or keys / expressions in its contents).
-	const shape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	// A vector shape with a self-animating Wiggle Paths (or keys / expressions in its contents).
+	const shape = 'shape' in c.source ? c.source.shape : undefined;
 	if (shape?.type === 'vector' && vectorShapeIsTimeDependent(shape.contents ?? [])) return false;
 	return !hasKeyframesDeep(c.source);
 }
@@ -393,26 +389,17 @@ export function contentBleed(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): number | null {
 	let px = 0;
-	const src = c.source as {
-		text?: {
-			style?: {
-				strokes?: { widthPx?: number; position?: string }[];
-				shadow?: { distancePx?: number; blurPx?: number } | null;
-				background?: { paddingPx?: number } | null;
-			};
-		};
-		animation?: { in?: { params?: Record<string, unknown> }; out?: { params?: Record<string, unknown> } };
-	};
-	const st = src.text?.style;
+	const src = 'text' in c.source ? c.source : undefined;
+	const st = src?.text.style;
 	if (st) {
 		for (const s of st.strokes ?? [])
 			px = Math.max(px, (s.widthPx ?? 0) * (s.position === 'outside' ? 2 : 1));
 		if (st.shadow) px += (st.shadow.distancePx ?? 0) + 3 * (st.shadow.blurPx ?? 0);
 		if (st.background) px += st.background.paddingPx ?? 0;
 	}
-	// wp shapes: a vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
+	// A vector shape draws around its (frame-sized) box centre and may paint outside the box; a static one
 	// bleeds by how far its painted bounds leave the box, an animated one is not cropped (bounds change per frame).
-	const vshape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	const vshape = 'shape' in c.source ? c.source.shape : undefined;
 	if (vshape?.type === 'vector') {
 		const contents = vshape.contents ?? [];
 		if (vectorShapeIsTimeDependent(contents)) return null;
@@ -424,10 +411,9 @@ export function contentBleed(
 		}
 	}
 	const maxDim = Math.max(c.intrinsicBox.width, c.intrinsicBox.height);
-	for (const side of [src.animation?.in, src.animation?.out]) {
+	for (const side of [src?.animation?.in, src?.animation?.out]) {
 		const p = side?.params ?? {};
-		const num = (k: string) =>
-			typeof p[k] === 'number' && Number.isFinite(p[k]) ? Math.abs(p[k] as number) : 0;
+		const num = (k: string) => (typeof p[k] === 'number' && Number.isFinite(p[k]) ? Math.abs(p[k]) : 0);
 		px += num('distance') + 3 * num('blur') + Math.max(0, num('scale') - 1) * maxDim;
 	}
 	for (const fx of c.effects) {

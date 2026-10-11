@@ -5,13 +5,14 @@
 // the authenticated engine routes) with the host bootstrap injected, so the page's text probe renders the
 // composition through the renderer-page protocol at each frame and locates the texts.
 import { randomBytes } from 'node:crypto';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:http';
+import { open, realpath, stat } from 'node:fs/promises';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
-import type { MgTextMeasureRequest, MgTextMeasureResult } from '@jasper/api';
+import { pipeline } from 'node:stream/promises';
+import { type MgTextMeasureRequest, type MgTextMeasureResult, MgTextMeasureResultSchema } from '@jasper/api';
 import { injectHostBootstrap } from '@jasper/compositions/mg-host';
+import type { ChromiumOptions } from '@remotion/renderer';
 
 const CONTENT_TYPES: Record<string, string> = {
 	'.html': 'text/html; charset=utf-8',
@@ -41,8 +42,8 @@ const CONTENT_TYPES: Record<string, string> = {
 /** A loopback static server for one bundle directory, under `/<random>/`; `index.html` gets the host bootstrap. */
 export async function serveBundleForMeasuring(dir: string): Promise<{ url: string; close(): Promise<void> }> {
 	const prefix = `/${randomBytes(16).toString('hex')}/`;
-	const root = normalize(dir);
-	const server: Server = createServer((req, res) => {
+	const root = await realpath(dir);
+	const serve = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 		const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
 		if (!path.startsWith(prefix)) {
 			res.writeHead(404).end();
@@ -50,23 +51,52 @@ export async function serveBundleForMeasuring(dir: string): Promise<{ url: strin
 		}
 		const rel = path.slice(prefix.length) || 'index.html';
 		const file = normalize(join(root, rel));
-		if (!(file === root || file.startsWith(root + sep)) || !existsSync(file) || !statSync(file).isFile()) {
+		if (!file.startsWith(root + sep) || !(await stat(file)).isFile()) {
 			res.writeHead(404).end();
 			return;
 		}
-		if (rel === 'index.html') {
-			void readFile(file, 'utf8').then(
-				(html) =>
-					res.writeHead(200, { 'content-type': CONTENT_TYPES['.html']! }).end(injectHostBootstrap(html)),
-				() => res.writeHead(500).end(),
-			);
-			return;
+		const handle = await open(file, 'r');
+		try {
+			const info = await handle.stat();
+			if (!info.isFile()) {
+				res.writeHead(404).end();
+				return;
+			}
+			if (rel === 'index.html') {
+				const html = await handle.readFile('utf8');
+				res.writeHead(200, { 'content-type': CONTENT_TYPES['.html']! }).end(injectHostBootstrap(html));
+				return;
+			}
+			res.writeHead(200, {
+				'content-type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
+				'content-length': info.size,
+			});
+			await pipeline(handle.createReadStream({ autoClose: false }), res);
+		} finally {
+			await handle.close();
 		}
-		res.writeHead(200, {
-			'content-type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
-			'content-length': statSync(file).size,
+	};
+	const server = createServer((req, res) => {
+		void serve(req, res).catch((error: unknown) => {
+			if (res.headersSent || res.destroyed) {
+				res.destroy();
+				return;
+			}
+			const missing =
+				error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
+			const malformed = error instanceof URIError;
+			res.writeHead(malformed ? 400 : missing ? 404 : 500, { 'content-type': 'application/json' }).end(
+				JSON.stringify({
+					code: malformed ? 'E_INVALID' : missing ? 'E_NOT_FOUND' : 'E_IO',
+					message: malformed
+						? 'Invalid bundle URL encoding'
+						: missing
+							? 'Bundle file not found'
+							: 'Could not read bundle file',
+					retryable: false,
+				}),
+			);
 		});
-		createReadStream(file).pipe(res);
 	});
 	await new Promise<void>((resolve, reject) => {
 		server.once('error', reject);
@@ -88,7 +118,7 @@ type RendererModule = typeof import('@remotion/renderer');
 type MeasureBrowserOptions = {
 	browserExecutable?: string;
 	chromeMode: 'headless-shell' | 'chrome-for-testing';
-	chromiumOptions?: Record<string, unknown>;
+	chromiumOptions?: ChromiumOptions;
 };
 
 /** Measures the texts of `req` in a fresh page of the engine's headless browser (closed afterwards). */
@@ -106,7 +136,7 @@ export async function measureBundleTexts(
 		instance = await r.openBrowser('chrome', {
 			...(browser.browserExecutable ? { browserExecutable: browser.browserExecutable } : {}),
 			chromeMode: browser.chromeMode,
-			...(browser.chromiumOptions ? { chromiumOptions: browser.chromiumOptions as never } : {}),
+			...(browser.chromiumOptions ? { chromiumOptions: browser.chromiumOptions } : {}),
 			logLevel: 'error',
 		});
 		const page = await instance.newPage({
@@ -119,17 +149,20 @@ export async function measureBundleTexts(
 		});
 		await page.setViewport({ width: req.width, height: req.height, deviceScaleFactor: 1 });
 		await page.goto({ url: served.url, timeout });
-		const result = (await page.evaluate(
-			(cfg: unknown) => {
-				const w = window as unknown as {
-					__jasperTexts?: { measure(c: unknown): Promise<unknown> };
+		const result = await page.evaluate(
+			(serialized: string) => {
+				const cfg: MgTextMeasureRequest & { timeoutMs: number } = JSON.parse(serialized);
+				const w = window as Window & {
+					__jasperTexts?: {
+						measure(c: MgTextMeasureRequest & { timeoutMs: number }): Promise<MgTextMeasureResult>;
+					};
 				};
 				if (!w.__jasperTexts) throw new Error('The text probe is not installed in the bundle page');
 				return w.__jasperTexts.measure(cfg);
 			},
-			{ ...req, timeoutMs: timeout } as never,
-		)) as MgTextMeasureResult;
-		return result;
+			JSON.stringify({ ...req, timeoutMs: timeout }),
+		);
+		return MgTextMeasureResultSchema.parse(result);
 	} finally {
 		await instance?.close({ silent: true }).catch(() => undefined);
 		await served.close();

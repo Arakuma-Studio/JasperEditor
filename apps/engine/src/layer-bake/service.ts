@@ -268,8 +268,6 @@ export class LayerBakeService {
 		return this.core.exports.nativeExtensions.all();
 	}
 
-	// ------------------------------------------------------------------ capability (LBK-030, LBK-024)
-
 	/** Why bakes cannot run here (null = they can). `needs-browser-download` counts as ready. */
 	unavailableReason(): string | null {
 		const r = this.core.remotion;
@@ -311,8 +309,6 @@ export class LayerBakeService {
 		});
 		return this.bytesPending;
 	}
-
-	// ------------------------------------------------------------------ lifecycle
 
 	registerRunners(): void {
 		this.core.queue.registerRunner('layer-bake', (ctx) => this.run(ctx));
@@ -369,8 +365,6 @@ export class LayerBakeService {
 			.finally(release);
 	}
 
-	// ------------------------------------------------------------------ cache
-
 	private entryDir(key: string): string {
 		return join(this.dir, key);
 	}
@@ -426,8 +420,6 @@ export class LayerBakeService {
 			lastUsedAt: this.now().toISOString(),
 		}).catch(() => undefined);
 	}
-
-	// ------------------------------------------------------------------ planning (LBK-003/004/005/020)
 
 	/** Render environment (part of every key). Probes the render browser's GL once (it may launch Chrome). */
 	async environment(): Promise<BakeEnvironment> {
@@ -829,8 +821,6 @@ export class LayerBakeService {
 		};
 	}
 
-	// ------------------------------------------------------------------ jobs (LBK-022)
-
 	/**
 	 * Returns the bake of `plan`, rendering it in a child job of `parentId` when not cached. When another caller (another
 	 * export, or another clip of this one) is rendering the same key right now, joins that render instead (and renders
@@ -998,8 +988,6 @@ export class LayerBakeService {
 		}
 	}
 
-	// ------------------------------------------------------------------ shared render browsers (LBK-022)
-
 	/**
 	 * Opens a shared render browser session for the bakes of `group` (the export/still job id): the browser is
 	 * launched when the first bake of the group needs it and closed by the returned release (once every holder
@@ -1051,8 +1039,6 @@ export class LayerBakeService {
 			stage: 'Queued',
 		});
 	}
-
-	// ------------------------------------------------------------------ runner
 
 	/** ffmpeg of the LGPL binaries directory when there is one (D-13), else the engine's. */
 	private ffmpeg(): Ffmpeg {

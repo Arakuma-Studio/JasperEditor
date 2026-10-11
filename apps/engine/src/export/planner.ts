@@ -478,7 +478,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			`Audio effects without an export processor: ${[...new Set(unrenderable.map((u) => u.effectId))].join(', ')}`,
 			{ effects: unrenderable },
 		);
-	const audioOut = audioOutputOf(seq, settings, deps.selectEncoder ? null : null);
+	const audioOut = audioOutputOf(seq, settings);
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -809,7 +809,6 @@ export function audioOutputOf(
 		master: { loudness?: { enabled: boolean; targetLufs: number; truePeakDb: number } };
 	},
 	settings: Pick<ExportSettings, 'audio'>,
-	_encoder: unknown,
 ): { channels: 1 | 2 | 6; sampleRate: number; normalize: { targetLufs: number; truePeakDb: number } | null } {
 	const a = settings.audio;
 	const master = seq.settings.masterLayout === '5.1' ? 6 : seq.settings.masterLayout === 'mono' ? 1 : 2;

@@ -1,9 +1,7 @@
-// Engine-side text measuring (wp-m3-mgtext, S08:MGC-037): the private loopback server the engine's own headless
-// browser opens a bundle through — the host bootstrap (with the text probe) injected into index.html, files
-// under a random path prefix only, no traversal. The browser part runs in mg-bundles.test.ts (MG_E2E=1).
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import fc from 'fast-check';
 import { afterAll, describe, expect, it } from 'vitest';
 import { serveBundleForMeasuring } from '../src/mg-bundles/text-measure.ts';
 
@@ -30,8 +28,32 @@ describe('bundle server for text measuring', () => {
 			expect((await fetch(`${base}public/fonts/a.woff2`)).headers.get('content-type')).toBe('font/woff2');
 			expect((await fetch(`${base}..%2Fsecret.txt`)).status).toBe(404);
 			expect((await fetch(new URL('/bundle.js', s.url))).status).toBe(404);
+			expect((await fetch(`${base}missing.js`)).status).toBe(404);
+			expect((await fetch(`${base}public`)).status).toBe(404);
 		} finally {
 			await s.close();
+		}
+	});
+	it('rejects malformed URL encodings and continues serving requests', async () => {
+		writeFileSync(join(dir, 'index.html'), '<html></html>');
+		const server = await serveBundleForMeasuring(dir);
+		try {
+			const base = server.url.replace(/index\.html$/, '');
+			await fc.assert(
+				fc.asyncProperty(
+					fc.constantFrom('%', '%GG', '%FF', '%C0%AF', '%E0%A4'),
+					fc.string(),
+					async (invalid, suffix) => {
+						const result = await fetch(`${base}${invalid}/${encodeURIComponent(suffix)}`);
+						expect(result.status).toBe(400);
+						expect(await result.json()).toMatchObject({ code: 'E_INVALID', retryable: false });
+					},
+				),
+				{ numRuns: 25 },
+			);
+			expect((await fetch(server.url)).status).toBe(200);
+		} finally {
+			await server.close();
 		}
 	});
 });

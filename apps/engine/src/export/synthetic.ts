@@ -204,6 +204,6 @@ function generatedWav(path: string, seconds: number, bytes: number): LocalMedia 
 			display: null,
 			hasAudio: true,
 			registeredAt: new Date(0).toISOString(),
-		} as unknown as LocalMedia['record'],
+		},
 	};
 }

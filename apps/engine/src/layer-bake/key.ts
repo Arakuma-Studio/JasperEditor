@@ -11,6 +11,7 @@ import {
 	type EffectRegistry,
 	hasActiveExpression,
 	type RenderSnapshot,
+	type RenderTransition,
 	type RenderVisualClip,
 	textAnimatorsSeeded,
 } from '@jasper/project';
@@ -42,14 +43,14 @@ export type KeyMedia = {
 /** Layers seeded by their clip id (S11:ANM-007 `hash32(clipId, …)`, fx `u_seed`): their clip id stays in the key. */
 function seedBearing(c: RenderVisualClip, registry: EffectRegistry): boolean {
 	if (c.kind === 'motion-graphic') return true;
-	// Wave 1 (fx framework): GPU shader effects seed their randomness with the clip id (`u_seed`, fxSeed).
+	// GPU shader effects seed their randomness with the clip id (`u_seed`, fxSeed).
 	if (c.effects.some((fx) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.gpu)) return true;
-	// Wave expressions: random()/wiggle() are seeded by the clip id.
+	// random()/wiggle() are seeded by the clip id.
 	if (clipHasExpressions(c)) return true;
-	// text-animators: Randomize Order, Wiggly and Expression selectors are seeded by the clip id.
-	if (c.kind === 'text' && textAnimatorsSeeded(c.source as never)) return true;
-	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
-	return !!src.animation && !!(src.animation.in || src.animation.out);
+	// Randomize Order, Wiggly and Expression selectors are seeded by the clip id.
+	if ('text' in c.source && textAnimatorsSeeded(c.source)) return true;
+	const animation = 'animation' in c.source ? c.source.animation : undefined;
+	return !!(animation?.in || animation?.out);
 }
 
 /** True when any Animatable of the clip (or its Source Text) has an active expression. */
@@ -89,7 +90,7 @@ export function expressionKeyPart(c: RenderVisualClip, world: RenderSnapshot['ex
 export function normalisedClip(
 	c: RenderVisualClip,
 	registry: EffectRegistry = defaultEffectRegistry,
-): Record<string, unknown> {
+): Omit<RenderVisualClip, 'name' | 'trackId'> {
 	const { clipId, name: _name, trackId: _track, ...rest } = c;
 	return { ...rest, clipId: seedBearing(c, registry) ? clipId : 'clip' };
 }
@@ -98,7 +99,13 @@ export type KeyMaterial = {
 	v: number;
 	recipe: BakeVariant['recipe'];
 	frame?: number;
-	clip: Record<string, unknown>;
+	clip: (
+		| ReturnType<typeof normalisedClip>
+		| { span: { transition: RenderTransition; sides: Omit<RenderVisualClip, 'name'>[] } }
+	) &
+		Partial<
+			Pick<RenderVisualClip, 'duration' | 'headHandle' | 'tailHandle' | 'fades' | 'sourceIn' | 'speed'>
+		> & { gradeStart?: number };
 	/** Frames of the render (span length; 1 for stills). */
 	span: number;
 	width: number;
@@ -121,12 +128,19 @@ export type KeyMaterial = {
 	/** Wave expressions: hash of the expression world when the clip has expressions (see `expressionKeyPart`). */
 	expressions?: string;
 	/** Graded entries (Remotion path, preview): the colour effects and LUT identities; false = ungraded bake. */
-	graded: false | { v: number; source: string; effects: unknown; luts: KeyMedia[] };
+	graded:
+		| false
+		| {
+				v: number;
+				source: string;
+				effects: Omit<RenderVisualClip['effects'][number], 'id'>[];
+				luts: KeyMedia[];
+		  };
 };
 
 /** `renderVersion` of the anime template a clip draws (null: not an anime template or not installed). */
 export function templateRenderVersion(c: RenderVisualClip): number | null {
-	const mg = (c.source as { mg?: { template: { id: string; version: number }; renderer?: string } }).mg;
+	const mg = 'mg' in c.source ? c.source.mg : undefined;
 	if (mg?.renderer !== 'anime') return null;
 	const def = mgRegistry.getDefinition(mg.template.id, mg.template.version);
 	return def && isAnimeTemplate(def) ? def.renderVersion : null;

@@ -1,14 +1,5 @@
-// Native export extensions (M2, ARCHITECTURE §19.6): the one plug-in point through which the M2 work packages
-// keep their features on the fast native (ffmpeg) path without editing the planner or the filtergraph builder.
-//
-//   colour   (wp-m2-color)  effectFilter: fused colour runs → `lut3d=file=<baked>.cube` (+ per-frame windows)
-//   mg       (wp-m2-mg)     kinds 'composition' (+ 'text' hybrid): prepare = Remotion pre-render → override 'layer'/'sequence'
-//   track    (wp-m2-track)  claimsLayer: corner pin / animated Motion → prepare = warp stage → override 'sequence'
-//   layer-bake (wp-m2-layer-bake) claimsLayer: DOM layers (text, shapes, anime templates) → prepare = Remotion
-//            alpha masters / stills → override 'sequence' (+ still, rect, colorRuns)
-//
-// Extensions are registered at engine start by their route plugin (`core.registerNativeExtension(ext)`),
-// like the M1 motion-graphic master provider. Order of registration = order of consultation.
+// Extensions are consulted in registration order. Each extension owns its prepared state; the registry
+// treats that state as opaque so adding a renderer does not couple the planner to its implementation.
 import type {
 	EffectSpec,
 	Rational,
