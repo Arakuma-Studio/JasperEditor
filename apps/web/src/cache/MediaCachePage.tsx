@@ -224,7 +224,7 @@ type DesktopFolderBridge = { pickFolder?(opts?: { title?: string }): Promise<str
 
 function desktopFolderPicker(): DesktopFolderBridge['pickFolder'] | null {
 	const b = (globalThis as { jasperDesktop?: DesktopFolderBridge }).jasperDesktop;
-	return typeof b?.pickFolder === 'function' ? b.pickFolder.bind(b) : null;
+	return b ? b.pickFolder.bind(b) : null;
 }
 
 /**
