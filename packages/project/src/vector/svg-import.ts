@@ -557,7 +557,7 @@ type Ctx = {
 };
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
-const roundedPoint = (p: Vec2): Vec2 => [r3(p[0]), r3(p[1])];
+const roundedPoint = (p: Readonly<Vec2>): Vec2 => [r3(p[0]), r3(p[1])];
 const roundedColor = (c: RGBA): RGBA => [r3(c[0]), r3(c[1]), r3(c[2]), r3(c[3])];
 
 function ownStyle(node: XNode, ctx: Ctx): Style {
