@@ -14,7 +14,8 @@ and the package's existing tests.
 | Layer dependencies | CPU pixel loading imported the `FxPicture` React component, which depended on stage types that in turn imported pixel loading. This was a source-level cycle with a type-only edge, not an observed runtime initialization failure. | Image fetching and cache ownership live in `fx/images.ts`. Components and pixel loading depend on this module. Public exports remain available through the package barrel. |
 | Lottie integration | Layers and thumbnails repeated permissive player interfaces and dynamic import adapters. Fetched JSON was asserted to be a record without using the project's existing validator. Thumbnail timeout and missing SVG both looked like success; cleanup could skip destroying the player on failure. | Shared lazy loading uses the installed package's `LottiePlayer` and `AnimationItem` types. Sources use `parseLottie` and `LottieDoc`; embedded images use `lottieImageAssets`. Thumbnail timeout/missing output reject with `LOTTIE_RENDER_FAILED`, and the player/host/listeners are released. Failed document reads remain retryable. |
 | PDF integration | Hand-written page/document types erased viewport and render-parameter checks; a cast to `never` hid the imported library shape. | Use `PDFDocumentProxy` and the actual `pdfjs-dist` module type. Load the worker for its existing registration side effect instead of assigning its namespace through an untyped global. |
-| Internal types | Effect, media, typography, animation, and worklet code repeatedly discarded types already present in project/DOM/library declarations. | Use the existing resolved-effect fields, media handles, text animator/path types, `Animatable<number>`, `GlslChunk`, shape blend type, and meter reading contract. Media parameter lookup uses the shared `mediaParamId` reader from the registry audit. Remove redundant `never` casts. The sandbox port exposes only the message data it consumes, typed as untrusted. |
+| Internal types | Effect, media, typography, animation, and worklet code repeatedly discarded types already present in project/DOM/library declarations. | Use the existing resolved-effect fields, media handles, text animator/path types, `Animatable<number>`, `GlslChunk`, shape blend type, and meter reading contract. Media parameter lookup uses the shared `mediaParamId` reader from the registry audit. Remove redundant `never` casts. The sandbox port retains the native `MessageEvent` callback contract, with its payload typed as untrusted; test ports emit actual message events. |
+| Shader boundaries | Classic 3D selected the layer-blending portion of a shared shader by searching for a section comment. Removing that comment exposed effect-only uniforms to the 3D compiler. | Export a self-contained `GLSL_LAYER_BLEND` chunk. The effect blend chunk depends on it, and Classic 3D includes it directly without parsing comments. |
 | Dead and historical code | An unused matrix multiplication helper and unused image-cache failure field remained. Section dividers and workstream labels added reading cost; browser workaround comments recounted investigations. | Delete the unused code and obvious section labels. Keep concise comments about browser limitations, sequencing, coordinate spaces, cache invariants, and deterministic capture. |
 | Error handling and compatibility | Most catches protect genuine browser, media, network, shader, or sandbox boundaries. Several superficially empty catches maintain independent request queues or release resources without hiding the caller's rejected promise. Capability fallbacks are part of the supported preview contract. | Keep these boundaries and documented capability behavior. Remove the thumbnail's false-success fallback rather than allowing failed renders to produce a blank success artifact. |
 
@@ -48,12 +49,40 @@ unvalidated concrete types would conceal uncertainty instead of removing it.
 The image loader's caching, cross-origin settings, retry behavior and render holds are preserved.
 Required WebGL/HTML-in-Canvas capability handling, missing-font handling, signed media URL handling,
 sandbox isolation, and audio resume/suspend ordering are preserved. Export cancellation remains explicit
-when a rendering capability is unavailable. GPU shader text, effect ordering, timeline timing, and
-project persistence/schema are unchanged.
+when a rendering capability is unavailable. GLSL formulas and constants, effect ordering, timeline timing,
+and project persistence/schema are preserved. The integration fixes below correct two shader-generation
+regressions introduced during the audit.
 
 The source-dimension helper now handles every native `CanvasImageSource` variant in one place, including
 SVG animated dimensions. The Lottie source loader rejects malformed JSON using the same limits and
 error code as project import. Its thumbnail path no longer reports an empty or incomplete SVG as success.
+
+## Integration corrections
+
+The full rendering suite exposed two audit regressions:
+
+- Classic 3D's `blendSource()` depended on the literal `// ---- effect blends` separator in
+  `GLSL_BLEND`. Removing the apparent section comment made all seven rendering cases compile the
+  effect helpers too, producing undeclared `v_uv`, `u_canvasSize`, and `u_seed` errors. Commit
+  `207f41c2` (integrated as `54c35224`) replaces this source-text dependency with explicit shader chunks.
+  The original chunk had no dependencies; the new layer chunk is self-contained. A measured comparison
+  confirmed that concatenating the new layer and effect source segments exactly reproduces all 11,420
+  characters of the previous blend source. No formula, constant, tolerance, assertion, or golden changed.
+- The initial 971-program software-GL sweep also found malformed Premiere edge-wipe shaders: two
+  interpolation expressions in `defineEdgeWipe` had lost their braces during a scalar-reader edit.
+  Commit `6ede1994` restores the expressions. The registry's two-case regression checks generated
+  distance bodies and border expressions with borders enabled and disabled; both cases failed before
+  the repair. See [the registry assessment](code-audit-project-registry.md) for its broader diff review.
+
+A separate callback-variance correction uses `MessageEvent<unknown>` for `MgHostPort.onmessage`,
+matching native `MessagePort` callbacks while keeping hostile reply data untrusted. Positive effect,
+media, animation, and shader fixtures now use the existing project types instead of fabricated
+`never`/`unknown` shapes.
+
+The comment-only followup covered composition, motion-template, and motion tests. Across all 151
+TypeScript/TSX files, the comment-free TypeScript printer output and all 1,331 raw template chunks were
+identical before and after; compiler/linter/environment directives were preserved and syntax diagnostics
+remained empty. This proof applies to that comment-only commit, before subsequent behavioral/type fixes.
 
 ## Validation
 
@@ -73,6 +102,17 @@ error code as project import. Its thumbnail path no longer reports an empty or i
   reports zero multi-file strongly connected components. The component/pixel/stage cycle is removed. Package layering remains subject to the repository's integration gate.
 - The initial package typecheck was stopped at the integrator's request to relieve shared CPU contention.
   Final serialized typechecking belongs to the integration gate; a cancelled run is not a passing check.
+- Classic 3D regression: the unchanged `three-d-gl.test.ts -t flat --maxWorkers=1 --reporter=verbose`
+  failed with the missing effect uniforms before `207f41c2`. After the fix, all 8 tests in the full file
+  passed in 95.01 seconds: WebGL availability, flat, intersecting, orbit, orthographic, lit, Dissolve,
+  and depth-of-field scenes. The existing CPU/GPU pixel comparisons provide the regression coverage.
+- The registry reviewer verified the Premiere interpolation repair: `transition-edge-wipe.test.ts`
+  and `transition-premiere.test.ts` passed all 14 tests across 2 files. The filtered Iris software-GL
+  compile gate passed 1 test (24.36 seconds of testing; 106.08 seconds total).
+- Biome and `git diff --check` passed for the shader fix and the comment/type followups. No additional
+  package typecheck was run by this reviewer; integration owns the final check.
+- The complete 971-program software-GL compile sweep still requires an integration rerun after these
+  fixes. The filtered Iris result and the 8-case Classic 3D result do not establish a passing full sweep.
 - No new visual assets, dependencies, migrations or altered golden images are part of this change.
 
 Focused commands:
@@ -80,4 +120,7 @@ Focused commands:
 ```sh
 pnpm exec vitest run packages/compositions/test/lottie-assets.test.ts packages/compositions/test/imports-layers.test.tsx packages/compositions/test/mg-host-remote.test.ts packages/compositions/test/compositor.test.tsx packages/compositions/test/fx-plan.test.ts packages/compositions/test/fx-layers.test.tsx packages/compositions/test/audio-fx-preview.test.ts packages/compositions/test/color.test.tsx packages/compositions/test/color-mgmt.test.tsx packages/compositions/test/compositions.test.tsx --maxWorkers=1
 pnpm exec vitest run packages/compositions/test/audio-fx-preview.test.ts packages/compositions/test/capture-safe-canvas.test.ts packages/compositions/test/serial-audio-context.test.ts --maxWorkers=1 --testTimeout=120000 --hookTimeout=120000
+pnpm exec vitest run packages/compositions/test/three-d-gl.test.ts --maxWorkers=1 --reporter=verbose
+pnpm exec vitest run packages/project/test/transition-edge-wipe.test.ts packages/project/test/transition-premiere.test.ts --maxWorkers=1
+FX_COMPILE_FILTER=jasper.iris FX_COMPILE_WORKERS=1 pnpm exec vitest run packages/compositions/test/fx-compile-budget.test.ts --maxWorkers=1
 ```
