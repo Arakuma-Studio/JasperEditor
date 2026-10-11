@@ -89,9 +89,11 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 
 		const s2 = await open('s2');
 		const p2 = attachPersistence(s2, noLifecycle);
-		const [c] = await store.listRecovery(projectId);
+		const {
+			candidates: [c],
+		} = await store.listRecovery(projectId);
 		expect(c).toMatchObject({ sessionId: 's1', changes: ['Add Solid', 'Add Solid'], baseRevision: 0 });
-		expect(await store.listRecovery(projectId)).toHaveLength(1); // own (empty) session is not a candidate
+		expect((await store.listRecovery(projectId)).candidates).toHaveLength(1); // own (empty) session is not a candidate
 
 		const snap = await store.readRecovery(projectId, 's1');
 		const before = s2.getCommitted();
@@ -104,7 +106,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		await p2.journal!.flush();
 		expect(clipCount(store.journalOf(projectId, 's2')!.document)).toBe(2);
 		await store.discardRecovery(projectId, 's1');
-		expect(await store.listRecovery(projectId)).toEqual([]);
+		expect(await store.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		s2.undo();
 		expect(s2.getCommitted()).toBe(before);
 		await p2.dispose();
@@ -120,7 +122,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		await p.dispose(); // the save on close fails: the journal keeps the change
 		await s.close();
 		expect(store.journalOf(projectId, 's1')?.changes).toEqual(['Add Solid']);
-		expect((await store.listRecovery(projectId)).map((c) => c.sessionId)).toEqual(['s1']);
+		expect((await store.listRecovery(projectId)).candidates.map((c) => c.sessionId)).toEqual(['s1']);
 		await store.discardRecovery(projectId, 's1');
 
 		const s2 = await open('s2');

@@ -1,10 +1,10 @@
-import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
+import type { Lease, ProjectSummary, RecoveryInfo, RecoveryListResponse, VersionInfo } from '@jasper/api';
 import type { Issue, ProjectDocument, RepairEntry } from '@jasper/project';
 import type { ProjectViewState } from '../view.ts';
 
 export type { ProjectViewState } from '../view.ts';
 
-export type { Lease, ProjectSummary, RecoveryInfo, VersionInfo };
+export type { Lease, ProjectSummary, RecoveryInfo, RecoveryListResponse, VersionInfo };
 
 export type OpenedProject = {
 	document: ProjectDocument;
@@ -41,7 +41,7 @@ export type RecoveredSnapshot = { info: RecoveryInfo; document: ProjectDocument;
 export interface RecoveryStore {
 	writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void>;
 	/** Journals no live session holds any more, newest first. */
-	listRecovery(projectId: string): Promise<RecoveryInfo[]>;
+	listRecovery(projectId: string): Promise<RecoveryListResponse>;
 	readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot>;
 	/** Deletes a journal: the session's own (with its `leaseId`) or a candidate nobody holds. */
 	discardRecovery(projectId: string, sessionId: string, leaseId?: string): Promise<void>;

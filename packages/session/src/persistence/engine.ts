@@ -9,7 +9,7 @@ import {
 	type Lease,
 	LeaseHeldDetailSchema,
 	type ProjectSummary,
-	type RecoveryInfo,
+	type RecoveryListResponse,
 	type RecoveryPutRequest,
 	RevisionConflictDetailSchema,
 	type VersionInfo,
@@ -196,8 +196,8 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		await this.engine.putRecovery(projectId, sessionId, new JsonText(stringifyJson(req)));
 	}
 
-	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {
-		return (await this.engine.listRecovery(projectId)).candidates;
+	async listRecovery(projectId: string): Promise<RecoveryListResponse> {
+		return this.engine.listRecovery(projectId);
 	}
 
 	async readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot> {

@@ -73,5 +73,13 @@ Biome passed for both packages. Focused tests are pending in this commit; the in
 restarted after linking the newly declared Zod dependency into its local dependency tree.
 
 Focused verification command: `pnpm exec vitest run packages/session/test packages/ui/test --maxWorkers=1`.
+The root-project focused run was stopped while propagating the integration recovery-warning contract.
 Package typechecks and the final full gate are run serially by integration because parallel TypeScript workers
 exhaust the shared host. No visual layout changes are intended; failure messages are covered by DOM assertions.
+
+## Recovery-list integration
+
+`RecoveryStore.listRecovery` now returns the shared API `RecoveryListResponse` rather than discarding everything
+except its candidate array. Engine warnings about unreadable individual journals survive the session adapter;
+the in-memory store returns the same shape with no warnings. The web audit displays these warnings alongside
+healthy recovery candidates. Engine recovery retains the damaged bytes for a later repair.

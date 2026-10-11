@@ -1,7 +1,7 @@
 // In-memory ProjectStore (tests, headless tools). Same semantics as the engine store: envelopes,
 // revisions with If-Match style conflicts, versions, single-writer leases and crash-recovery journals (a journal
 // is held while its session holds the lease; `expireLease` simulates a crashed editor).
-import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
+import type { Lease, ProjectSummary, RecoveryInfo, RecoveryListResponse, VersionInfo } from '@jasper/api';
 import {
 	createEmptyProject,
 	createRandomIdSource,
@@ -176,7 +176,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 			document: structuredClone(w.document),
 		});
 	}
-	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {
+	async listRecovery(projectId: string): Promise<RecoveryListResponse> {
 		const e = this.entry(projectId);
 		const saved = JSON.stringify(e.envelope.document);
 		const out: RecoveryInfo[] = [];
@@ -188,7 +188,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 			}
 			out.push({ ...j.info, projectRevision: e.envelope.revision });
 		}
-		return out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+		return { candidates: out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1)), warnings: [] };
 	}
 	async readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot> {
 		const e = this.entry(projectId);
