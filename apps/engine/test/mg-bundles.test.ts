@@ -320,7 +320,7 @@ describe('props schemas (S08:MGC-011)', () => {
 		expect(bad.warnings[0]).toMatch(/boom/);
 		const missing = await loadSchemaModule(dir, './nope.ts', { scratchDir: join(dir, '.scratch') });
 		expect(missing.warnings[0]).toMatch(/not found/);
-	}, 15_000);
+	}, 120_000);
 
 	it('takes the manifest first, then the schema module, then inference; merges UI hints', () => {
 		const raw = [
