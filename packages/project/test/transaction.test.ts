@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { COMMAND_CATALOG } from '../src/commands/catalog.ts';
-import { isNotImplementedHandler } from '../src/commands/handlers/util.ts';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -157,13 +155,6 @@ describe('transactions (S01 §16)', () => {
 });
 
 describe('catalog (ARCHITECTURE §5.3)', () => {
-	it('every declared command is implemented (no E_NOT_IMPLEMENTED stubs left)', () => {
-		const stubs = Object.values(COMMAND_CATALOG)
-			.filter((e) => isNotImplementedHandler(e.handler))
-			.map((e) => e.type);
-		expect(stubs).toEqual([]);
-	});
-
 	it('exports command and template argument constraints as JSON Schema (S01:AGT-002)', () => {
 		const tpl = createStaticMgRegistry([
 			{

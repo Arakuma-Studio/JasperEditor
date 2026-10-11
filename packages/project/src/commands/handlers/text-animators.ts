@@ -11,7 +11,6 @@ import type { TextAnimatorGroup, TextPathOptions, TextSelector } from '../../sch
 import { resolveTextAnimationWindows } from '../../text-animations.ts';
 import {
 	ANIMATOR_MENU_IDS,
-	AXIS_TAG,
 	addAnimatorProperties,
 	newTextAnimator,
 	newTextSelector,
@@ -494,6 +493,3 @@ export const textAnimatorHandlers: HandlerMap = {
 		return {};
 	},
 };
-
-/** Valid axis tags (also used by the MCP tool). */
-export const isAxisTag = (t: string) => AXIS_TAG.test(t);

@@ -14,7 +14,7 @@ import type {
 	TimeRemap,
 	VideoClip,
 } from '../../schema/sequence.ts';
-import { contentSpanFlicks, FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
+import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import { remapFitDuration, remapFramesInMedia } from '../../time-remap/bounds.ts';
 import { clipMediaTimeFn, REMAPPABLE_KINDS, type TimedClip } from '../../time-remap/model.ts';
 import {
@@ -557,8 +557,3 @@ export const timeHandlers: HandlerMap = {
 	'clip.setTimeInterpolation': setTimeInterpolationHandler,
 	'clip.applySceneEdits': applySceneEditsHandler,
 };
-
-/** Content span (flicks) a clip covers — exported for tests of the frame-hold math. */
-export function clipContentSpan(seq: DSeq, c: DClip): number {
-	return contentSpanFlicks(c.duration, rateOf(seq), c.speed.rate);
-}

@@ -14,7 +14,7 @@ import { orphanedSynthetics } from '../tx-delta.ts';
 import { replaceMediaFile, type SourceFit } from './process.ts';
 import { type HandlerMap, idList, memoPlain, peek, peekKeys } from './util.ts';
 
-function detachItem(doc: DDoc, itemId: string): void {
+export function detachItem(doc: DDoc, itemId: string): void {
 	const ri = doc.rootItems.indexOf(itemId);
 	if (ri >= 0) doc.rootItems.splice(ri, 1);
 	for (const it of Object.values(doc.items)) {

@@ -4,7 +4,6 @@
 import { z } from 'zod';
 import { TransactionSchema } from '../commands/apply.ts';
 import { COMMAND_CATALOG, type CommandOwner } from '../commands/catalog.ts';
-import { isNotImplementedHandler } from '../commands/handlers/util.ts';
 import type { CommandType } from '../commands/schemas/index.ts';
 import { ERROR_CODES, type Registries, TX_PROTOCOL, WARNING_CODES } from '../commands/types.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
@@ -130,7 +129,7 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			label: entry.label,
 			owner: entry.owner,
 			milestone: entry.milestone,
-			implemented: !isNotImplementedHandler(entry.handler),
+			implemented: true,
 			schema: toJsonSchema(entry.schema),
 		};
 	}

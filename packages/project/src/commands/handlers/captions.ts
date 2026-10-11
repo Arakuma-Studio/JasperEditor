@@ -38,7 +38,7 @@ import {
 } from '../../captions/sequence-transcript.ts';
 import { normalizeWords, replaceWordRange, spreadTokens, tokenizeText } from '../../captions/words.ts';
 import { buildClipsPayload } from '../../clipboard/build.ts';
-import { anim, createFontRef, createTrack, DEFAULT_FONT_FAMILY, defaultTransform } from '../../factories.ts';
+import { anim, createTrack, defaultTransform } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Transcript, TranscriptWord } from '../../schema/media.ts';
 import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../../schema/sequence.ts';
@@ -58,7 +58,7 @@ import {
 	trackClips,
 } from '../placement.ts';
 import type { CaptionRulesInput, CommandOf, TimeInput } from '../schemas/index.ts';
-import { commonFields } from './clip-core.ts';
+import { commonFields, ensureDefaultFont } from './clip-core.ts';
 import { clipEditHandlers } from './clip-edit.ts';
 import { clipboardHandlers } from './clipboard.ts';
 import { type HandlerMap, idList } from './util.ts';
@@ -69,14 +69,6 @@ type DCaption = Draft<CaptionsClip>;
 const plain = <T>(v: T): T => JSON.parse(JSON.stringify(isDraft(v) ? current(v as Draft<T>) : v)) as T;
 
 // ---------------------------------------------------------------- helpers
-
-function ensureDefaultFont(doc: DDoc, h: HandlerContext): string {
-	const existing = Object.values(doc.fonts).find((f) => f.family === DEFAULT_FONT_FAMILY);
-	if (existing) return existing.id;
-	const font = createFontRef(h.ids);
-	doc.fonts[font.id] = font;
-	return font.id;
-}
 
 function setActive(seq: DSeq, id: string | null): void {
 	(seq as { activeCaptionTrackId?: string | null }).activeCaptionTrackId = id;

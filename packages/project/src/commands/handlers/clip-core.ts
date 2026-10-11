@@ -548,7 +548,7 @@ export function newGeneratorClip(
 	return { seq, track, at, duration, id };
 }
 
-function ensureDefaultFont(doc: DDoc, h: HandlerContext): string {
+export function ensureDefaultFont(doc: DDoc, h: HandlerContext): string {
 	const existing = Object.values(doc.fonts).find((f) => f.family === DEFAULT_FONT_FAMILY);
 	if (existing) return existing.id;
 	const font = createFontRef(h.ids);

@@ -4,14 +4,7 @@
 // expansion are layer pixels. Every mask property is also a ParamPath target (`["mask", id, prop]`, param.ts).
 import type { Draft } from 'immer';
 import { evaluate } from '../../keyframes.ts';
-import {
-	defaultMaskPath,
-	MASK_PATH_RANGE,
-	MASK_PROP_LABELS,
-	type MaskProp,
-	newMask,
-	nextMaskName,
-} from '../../masks/model.ts';
+import { defaultMaskPath, MASK_PATH_RANGE, newMask, nextMaskName } from '../../masks/model.ts';
 import {
 	appendVertexTo,
 	type BezierPath,
@@ -520,8 +513,3 @@ export const maskHandlers: HandlerMap = {
 		return { maskId: loc.mask.id, keys: keys.length };
 	},
 };
-
-/** Display label of a mask property (Effect Controls, agent schema). */
-export function maskPropLabel(prop: MaskProp): string {
-	return MASK_PROP_LABELS[prop];
-}

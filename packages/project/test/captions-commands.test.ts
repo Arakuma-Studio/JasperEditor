@@ -20,7 +20,7 @@ import {
 } from '../src/index.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import fixture from './fixtures/interview.transcript.json' with { type: 'json' };
-import { Harness, videoAsset } from './helpers.ts';
+import { Harness } from './helpers.ts';
 
 const s = (x: number) => Math.round(x * FLICKS_PER_SECOND);
 
@@ -621,8 +621,6 @@ describe('invariants and repair', () => {
 		expect(new Set(ids).size).toBe(2);
 	});
 });
-
-it('videoAsset helper exists', () => expect(videoAsset()).toBeTruthy());
 
 describe('fuzz: random caption edits keep the document valid', () => {
 	it('add / split / merge / delete / move / trim / extract / text / import', async () => {

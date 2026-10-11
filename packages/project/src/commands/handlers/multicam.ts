@@ -73,7 +73,7 @@ import {
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { placeSource } from './clip-core.ts';
-import { assertBin, insertItem } from './project.ts';
+import { assertBin, detachItem, insertItem } from './project.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
@@ -412,16 +412,6 @@ function processedBin(doc: DDoc, h: HandlerContext): string {
 	return id;
 }
 
-function detach(doc: DDoc, itemId: string): void {
-	const ri = doc.rootItems.indexOf(itemId);
-	if (ri >= 0) doc.rootItems.splice(ri, 1);
-	for (const it of Object.values(doc.items)) {
-		if (it.kind !== 'bin') continue;
-		const i = it.children.indexOf(itemId);
-		if (i >= 0) it.children.splice(i, 1);
-	}
-}
-
 function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: HandlerContext) {
 	assertBin(doc, cmd.binId, h);
 	const fallback = (
@@ -511,7 +501,7 @@ function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: Handler
 	if (cmd.moveToProcessedBin) {
 		const bin = processedBin(doc, h);
 		for (const s of all) {
-			detach(doc, s.key);
+			detachItem(doc, s.key);
 			insertItem(doc, s.key, bin);
 		}
 	}
