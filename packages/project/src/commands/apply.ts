@@ -10,7 +10,7 @@ import { diffDocuments } from './diff.ts';
 import { markNormalized } from './draft-read.ts';
 import { collectOrphans } from './handlers/project.ts';
 import { compressionWarnings } from './handlers/text-animation.ts';
-import type { Command } from './schemas/index.ts';
+import type { Command, CommandInput } from './schemas/index.ts';
 import {
 	type CommandContext,
 	CommandError,
@@ -50,8 +50,10 @@ export type Transaction = {
 	commands: Command[];
 };
 
-/** Transaction without `protocol` (filled in by callers such as EditorSession.apply). */
-export type TxInput = Omit<Transaction, 'protocol'> & { protocol?: typeof TX_PROTOCOL };
+export type TxInput = Omit<Transaction, 'protocol' | 'commands'> & {
+	protocol?: typeof TX_PROTOCOL;
+	commands: CommandInput[];
+};
 
 const zodPath = (p: readonly PropertyKey[]) => p.map((x) => String(x));
 
