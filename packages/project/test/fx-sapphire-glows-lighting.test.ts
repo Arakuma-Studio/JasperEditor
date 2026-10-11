@@ -1,6 +1,3 @@
-// Sapphire Glows + Lighting family (fx catalogue, wave 2): the TypeScript side — catalogue entries (Sapphire names,
-// bins, params), the glow cascade planning, level weights, ray/flare/track helpers, padding and uniform hooks. The
-// pixels are checked in packages/compositions/test/fx-sapphire-glows-lighting-gl.test.ts (real WebGL2).
 import { describe, expect, it } from 'vitest';
 import type { EffectParams, EffectSpec } from '../src/index.ts';
 import {
@@ -221,7 +218,6 @@ describe('family helpers', () => {
 			leak.gpu!.uniforms!(defaults(leak), { ...fctx, frame, duration: 101 }) as Record<string, unknown>;
 		expect(u(50).u_tMid).toBe(0);
 		expect(u(80).u_tMid).toBe(1);
-		// Pure: same input, same output.
 		expect(u(80)).toEqual(u(80));
 	});
 

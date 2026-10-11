@@ -1,6 +1,3 @@
-// Spatial interpolation of vec2 point keys (S03:KF-021, KF-030, KF-031; wave1 spatial-motion-path): golden
-// evaluation, the commands, load of documents written before the field existed, and the S03 §12.5 copy rules
-// (split, duplicate, keyframe paste, paste attributes) keeping the tangents.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -123,10 +120,9 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(m[1]).toBeCloseTo(b[1], 6);
 		// Quarter circle of radius 100: arc length ≈ 157.08.
 		expect(arcLengthTable(seg)[64]).toBeCloseTo(157.08, 0);
-		expect(arcLengthTable(seg)).toBe(arcLengthTable([...seg] as BezierSegment)); // cached by content
+		expect(arcLengthTable(seg)).toBe(arcLengthTable([...seg] as BezierSegment));
 		expect(pathPointAt(seg, 0)).toEqual([0, 0]);
 		expect(pathPointAt(seg, 1)).toEqual([100, 100]);
-		// Overshoot continues along the end tangent.
 		const over = pathPointAt(seg, 1.1);
 		expect(over[1]).toBeCloseTo(100, 6);
 		expect(over[0]).toBeCloseTo(100 + 15.708, 1);
@@ -145,7 +141,6 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		// Symmetric ease on a symmetric arc: half the time = half the arc.
 		const mid = at(a, 15);
 		expect(mid[0]).toBeCloseTo(300, 6);
-		// Easy ease starts slower than the constant speed would.
 		expect(dist(at(a, 0), at(a, 1))).toBeLessThan(total / 30 / 2);
 	});
 
@@ -154,7 +149,6 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(spatialSegment(kfs, 0)).toEqual([A, A, [500, 200], C]);
 		const p = evaluate(anim(kfs), 15 * F);
 		expect(p[1]).toBeGreaterThan(50);
-		// Hold temporal steps whatever the path.
 		const held = anim([key(0, A, 'auto-bezier', { interpolation: 'hold' }), key(30, B), key(60, C)]);
 		expect(at(held, 20)).toEqual(A);
 	});
@@ -172,8 +166,6 @@ describe('spatial evaluation (S03:KF-030, KF-031)', () => {
 		expect(autoSlope(straight, 1, 'out')).toBeCloseTo(600 / 90 / (Math.hypot(300, 300) / 60), 9);
 	});
 });
-
-// ---------------------------------------------------------------- commands
 
 type VClip = Extract<Clip, { kind: 'solid' }>;
 
@@ -209,7 +201,7 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 			['linear', 'auto-bezier'],
 		]);
 		// Stored auto tangents are refreshed (a cache; evaluation derives them).
-		// keyframes-blend: After Effects' rule — along next − prev, each handle ⅓ of its chord (300√2 / 3).
+		// After Effects' rule — along next − prev, each handle ⅓ of its chord (300√2 / 3).
 		expect(keys[1]!.spatial).toMatchObject({ inTangent: [-H, 0], outTangent: [H, 0], auto: 'proportional' });
 		h.ok([
 			{ type: 'keyframe.add', target: ['clip', id, 'transform', 'anchor'], at: { sequenceFrame: 0 } },
@@ -218,7 +210,6 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 		const c = clipOf(h, id);
 		expect(c.transform.anchor.keyframes[0]!.spatial?.mode).toBe('auto-bezier');
 		expect(c.transform.scale.keyframes[0]!.spatial).toBeUndefined();
-		// Spatial data on a non-point property is refused.
 		expect(
 			h.tx([
 				{
@@ -277,7 +268,7 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 		expect(s.mode).toBe('continuous-bezier');
 		expect(s.outTangent).toEqual([0, 200]);
 		expect(s.inTangent[0]).toBeCloseTo(0, 9);
-		expect(s.inTangent[1]).toBeCloseTo(-H, 9); // length kept
+		expect(s.inTangent[1]).toBeCloseTo(-H, 9);
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: mid, inTangent: [-30, 0], breakContinuity: true }]);
 		s = posKeys(h, id)[1]!.spatial!;
 		expect(s).toEqual({ mode: 'bezier', inTangent: [-30, 0], outTangent: [0, 200] });
@@ -318,7 +309,7 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 		expect(k.map((x) => x.spatial?.mode)).toEqual(['linear', 'bezier']);
 		expect(k[1]!.spatial).toMatchObject({ inTangent: [0, 50], outTangent: [0, -50] });
 		h.ok([{ type: 'keyframe.update', keyframeId: k[0]!.id, spatial: { mode: 'auto-bezier' } }]);
-		// keyframes-blend: After Effects' rule — the first key has no handles.
+		// After Effects' rule — the first key has no handles.
 		expect(posKeys(h, id)[0]!.spatial).toEqual({
 			mode: 'auto-bezier',
 			inTangent: [0, 0],
@@ -353,8 +344,6 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- load, split, duplicate, paste
-
 describe('documents and copies (S01:MIG-005, S03 §12.5)', () => {
 	it('a document written before spatial interpolation loads unchanged and evaluates as before', () => {
 		const raw = JSON.parse(readFileSync(join(__dirname, 'fixtures/v5/basic.jasper'), 'utf8'));
@@ -373,7 +362,6 @@ describe('documents and copies (S01:MIG-005, S03 §12.5)', () => {
 			expect(evaluate(c.transform.position, f * F)).toEqual(
 				f < 30 ? lerp([0, 0], [300, 300], f / 30) : lerp([300, 300], [600, 0], (f - 30) / 30),
 			);
-		// Spatial data round-trips through load; a broken one is an invariant issue.
 		c.transform.position.keyframes[1]!.spatial = { mode: 'bezier', inTangent: [1, 2], outTangent: [3, 4] };
 		const again = loadProject(JSON.parse(JSON.stringify(loaded.document)));
 		expect(

@@ -1,4 +1,3 @@
-// Time Remapping model (workstream `time`): curve evaluation, ramps, edits, bounds and frame selection.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -77,17 +76,14 @@ describe('remap curve', () => {
 	it('speed transitions keep both keyframe anchors and are C1', () => {
 		const r = remap([key(30 * F, 30 * F, { ramp: 6 * F }), key(60 * F, 75 * F, { ramp: 4 * F, ease: 0 })]);
 		const ev = remapEvaluator(r);
-		// Ends of the first transition lie on the polyline.
 		expect(ev(24 * F).m).toBeCloseTo(24 * F, 1);
 		expect(ev(36 * F).m).toBeCloseTo(30 * F + 6 * F * 1.5, 1);
-		// Continuity of m and slope at every transition edge.
 		for (const c of [24 * F, 36 * F, 56 * F, 64 * F]) {
 			const a = ev(c - 1);
 			const b = ev(c + 1);
 			expect(Math.abs(a.m - b.m)).toBeLessThan(5);
 			expect(Math.abs(a.slope - b.slope)).toBeLessThan(1e-3);
 		}
-		// The slope integrates to the media time (numerical check through the transition).
 		let m = ev(20 * F).m;
 		const step = F / 64;
 		for (let c = 20 * F; c < 70 * F; c += step) m += ((ev(c).slope + ev(c + step).slope) / 2) * step;
@@ -178,7 +174,6 @@ describe('edits', () => {
 		// The clip's out point (content 90 F, media 90 F) moves 30 frames later and keeps its picture.
 		expect(e.shift(90 * F)).toBeCloseTo(120 * F, 3);
 		expect(remapSourceAt(e.remap, e.shift(90 * F))).toBeCloseTo(90 * F, 3);
-		// Before the segment nothing moves.
 		expect(e.shift(10 * F)).toBe(10 * F);
 	});
 
@@ -234,7 +229,6 @@ describe('edits', () => {
 			[50, 30],
 		]);
 		expect(rev.shift(90 * F)).toBe(110 * F);
-		// Never before media 0.
 		const early = insertReverse(base, 5 * F, 30 * F, 1, newId);
 		expect(early.remap.keyframes[1]!.source).toBe(0);
 	});

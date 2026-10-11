@@ -1,4 +1,4 @@
-// edit-ux: J/L-cut (split edit) correctness of ripple trims, ripple delete and speed changes. Ported from
+// Split-edit tests ported from
 // FilmCraft crates/engine/src/{split_edit_ripple_trim_tests.rs, ripple_delete_tests.rs} and
 // crates/edit/src/tests.rs (ripple_trim_group_*, ripple_delete_closes_the_time_free_on_every_track,
 // speed_on_a_linked_group_ripples_once). MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft

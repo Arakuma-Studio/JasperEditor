@@ -1,4 +1,3 @@
-// Regressions for the bugs the parser fuzzing found (golden-fuzz). Each case is the minimal form of a failing input.
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,

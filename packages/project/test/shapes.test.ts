@@ -1,5 +1,3 @@
-// Shapes (S11:SHP-001…003, wp-m2-shapes): clip.addShape defaults and validation, clip.update {shape} merge,
-// param.set / keyframe targets on `shape.*`, the anchor re-centring rule, invariants, snapshot and agent schema.
 import { describe, expect, it } from 'vitest';
 import {
 	applyMatrix,
@@ -87,7 +85,6 @@ describe('clip.addShape (S11:SHP-003)', () => {
 		expect(shapeIntrinsicBox(c.shape)).toEqual({ width: 312, height: 112 });
 		expect(c.transform.anchor.value).toEqual([156, 56]);
 		expect(c.transform.position.value).toEqual([100, 200]);
-		// Stroke position defaults to center.
 		const d = addShape(h, { type: 'ellipse', stroke: { color: [0, 0, 0, 1], width: 2 } }, { at: 60 });
 		expect(d.shape.stroke?.position).toBe('center');
 	});
@@ -243,13 +240,11 @@ describe('shape.* properties (param.set, keyframes, S11:SHP-003)', () => {
 		expect(evaluate(s.fill!, 15 * F)).toEqual([0.5, 0.5, 0.5, 1]);
 		expect(evaluate(s.cornerRadius, 15 * F)).toBe(25);
 		expect(evaluate(s.stroke!.width, 15 * F)).toBe(6);
-		// keyframe.update / keyframe.remove find the keys by id (clipAnimatables covers shape.*).
 		const kid = s.size.keyframes[1]!.id;
 		h.ok([{ type: 'keyframe.update', keyframeId: kid, value: [400, 400] }]);
 		expect(shapeOf(h, id).shape.size.keyframes[1]!.value).toEqual([400, 400]);
 		h.ok([{ type: 'keyframe.remove', keyframeIds: [kid] }]);
 		expect(shapeOf(h, id).shape.size.keyframes).toHaveLength(1);
-		// Razor: both halves keep the keys (content time), the right one starts mid-animation.
 		h.ok([{ type: 'clip.split', at: 15, scope: 'all-unlocked' }]);
 		const parts = h.clips('V1') as LegacyShapeClip[];
 		expect(parts).toHaveLength(2);
@@ -397,7 +392,7 @@ describe('evaluateShape / shapeContainsPoint (render/shape.ts)', () => {
 
 describe('review fixes (wp-m2-shapes)', () => {
 	const at = (frame: number) => ({ sequenceFrame: frame });
-	/** A 100×100 rectangle with size keys 100 (frame 0) → 500 (frame 30), like the review repro. */
+	/** A 100×100 rectangle with size keys 100 (frame 0) → 500 (frame 30). */
 	function growing(h: Harness): { id: string; k0: string } {
 		const { id } = addShape(h, { type: 'rect', size: [100, 100] });
 		h.ok([{ type: 'param.setAnimated', target: ['clip', id, 'shape', 'size'], animated: true, at: at(0) }]);
@@ -482,7 +477,6 @@ describe('review fixes (wp-m2-shapes)', () => {
 		expect(shapeOf(h, id).shape.size).toEqual({ value: [150, 150], keyframes: [] });
 		expect(shapeOf(h, id).transform.anchor.value).toEqual([75, 75]);
 		close(0);
-		// Back on: one key with the current value, the box does not move.
 		h.ok([{ type: 'param.setAnimated', target: size, animated: true, at: at(0) }]);
 		expect(shapeOf(h, id).transform.anchor.value).toEqual([75, 75]);
 		close(0);
@@ -505,7 +499,6 @@ describe('review fixes (wp-m2-shapes)', () => {
 		);
 		expect(shapeOf(h, id).shape.fill).toBeNull();
 		expect(shapeOf(h, id).shape.stroke).toBeNull();
-		// keyframe.add with a value creates the stroke (default colour / position) and keys the width.
 		expect(
 			code({ type: 'keyframe.add', target: ['clip', id, 'shape', 'stroke', 'width'], at: at(0), value: 6 }),
 		).toBe('ok');

@@ -1,7 +1,3 @@
-// The Premiere transition family (registry/transitions/premiere-transitions.ts + premiere/*): the catalogue (every
-// Premiere standard transition in its bin, Premiere 26's modern ones, unique labels for label lookups), Premiere's
-// options and defaults, the pure TS maths of the `gpu.uniforms` / `passes` functions and planning. Pixels are checked
-// in packages/compositions/test/transition-premiere-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	planGpuTransition,
@@ -156,7 +152,6 @@ describe('Premiere transition catalogue', () => {
 	it('has every classic Premiere video transition in its Premiere bin', () => {
 		for (const [bin, labels] of Object.entries(CLASSIC))
 			for (const l of labels) expect(byLabel(l).bin, l).toBe(bin);
-		// Cross Dissolve / Dip to Black stay the native built-ins.
 		expect(PREMIERE_TRANSITIONS.some((t) => t.label === 'Cross Dissolve' || t.label === 'Dip to Black')).toBe(
 			false,
 		);
@@ -264,7 +259,6 @@ describe('Premiere transition uniforms (pure TS maths)', () => {
 		expect(uniforms('Slide', { direction: 'northEastToSouthWest' }).u_dir).toEqual([-1, 1]);
 		expect(uniforms('Barn Doors', { direction: 'vertical' }).u_dir).toEqual([0, 1]);
 		expect(uniforms('Split', { direction: 'vertical' }).u_axes).toEqual([0, 1]);
-		// Unknown values fall back to the first option.
 		expect(uniforms('Wipe', { direction: 'nonsense' }).u_dir).toEqual([1, 0]);
 	});
 
@@ -306,7 +300,6 @@ describe('Premiere transition planning', () => {
 		expect(transitionPasses(blur.gpu!, defaults(blur, { blur: 160 }) as never, plan)).toEqual(passes);
 		const morph = byLabel('Morph Cut');
 		const mp = transitionPasses(morph.gpu!, defaults(morph) as never, plan);
-		// gaps: the time workstream's pyramid flow (luma pyramid, coarse-to-fine vectors ping-ponged, the flow field).
 		const outs = mp.map((p) => p.output);
 		expect(outs.slice(0, 4)).toEqual(['mcL0', 'mcL1', 'mcL2', 'mcL3']);
 		expect(outs.slice(-2)).toEqual(['mcFlow', undefined]);

@@ -109,7 +109,6 @@ describe('hostile glTF documents', () => {
 		chain.nodes = Array.from({ length: 60 }, (_, i) => (i === 59 ? { mesh: 0 } : { children: [i + 1] }));
 		expect(attempt(enc(chain)).error).toBeUndefined();
 		expect(attempt(sharedChildren(2, 3)).error).toBeInstanceOf(ModelParseError);
-		// The same root listed twice in the scene is the same mistake.
 		const twice = triangleDocument();
 		twice.scenes[0].nodes = [0, 0];
 		expect((attempt(enc(twice)).error as Error).message).toMatch(/used twice/);

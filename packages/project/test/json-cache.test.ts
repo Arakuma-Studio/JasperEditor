@@ -1,5 +1,3 @@
-// ui-perf: `stringifyJson` (incremental autosave serialisation) is exactly `JSON.stringify`, also after edits of frozen
-// documents, and never serves stale text for objects that can still change.
 import fc from 'fast-check';
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';

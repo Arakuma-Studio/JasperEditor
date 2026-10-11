@@ -1,8 +1,3 @@
-// S07:PRC-015…019 (M3, wp-m3-inpoint): source ranges of media versions. A clip switching between renderings of
-// the same source that cover different source ranges keeps showing exactly the same source frames: property
-// tests over random ranges, rates, speeds and directions; refusal / trim / skip when a range does not cover the
-// clip; handles; ranged processing (media.derive range); sidecar-declared ranges (media.setSourceRange);
-// Replace Footage with "keep source timing" (media.relink); the v4 → v5 migration.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -159,8 +154,6 @@ const marker = (h: Harness, flicks: number) => ({
 	author: 'user' as const,
 });
 
-// ---------------------------------------------------------------- media.derive with a range
-
 describe('ranged processed versions (S07:PRC-015)', () => {
 	it("records the processed range as the version's sourceRange and names the item after it", () => {
 		const { h, mediaId } = setup();
@@ -226,10 +219,8 @@ describe('ranged processed versions (S07:PRC-015)', () => {
 		expect(shownRootFrames(h, videoId)).toEqual(before);
 		// 12 frames of pre-handle, 1232 − 1220 = 12 frames of post-handle in the processed file.
 		expect(clipHandles(h.doc, h.seq, c)).toEqual({ head: 12, tail: 12 });
-		// Linked audio keeps the original (PRC-007).
 		expect(h.seq.clips[audioId]!.sourceIn).toBe(1100 * F30);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// Back to the original: exactly where it was.
 		h.ok([{ type: 'clip.replaceSource', clipId: videoId, mediaId }]);
 		expect(vclip(h, videoId).sourceIn).toBe(1100 * F30);
 		expect(clipHandles(h.doc, h.seq, vclip(h, videoId))).toEqual({ head: 1100, tail: 1800 - 1220 });
@@ -258,8 +249,6 @@ describe('ranged processed versions (S07:PRC-015)', () => {
 		}
 	});
 });
-
-// ---------------------------------------------------------------- property tests
 
 describe('remap property (S07:PRC-016): random ranges, rates, speeds and directions', () => {
 	const rates: Rational[] = [
@@ -417,8 +406,6 @@ describe('shiftClipContentTime', () => {
 	});
 });
 
-// ---------------------------------------------------------------- not covered
-
 describe('clips a version does not cover (S07:PRC-017)', () => {
 	function uncovered() {
 		const s = setup();
@@ -514,8 +501,6 @@ describe('clips a version does not cover (S07:PRC-017)', () => {
 		expect(r.warnings.map((w) => w.code)).toContain('W_TRANSITION_SHORTENED');
 	});
 });
-
-// ---------------------------------------------------------------- sidecars and declared ranges
 
 const T02_SIDECAR = {
 	id: 'T02',
@@ -614,8 +599,6 @@ describe('source-range sidecars (S07:PRC-019)', () => {
 		expect(originalMediaId(h.doc, o)).toBe(o);
 	});
 });
-
-// ---------------------------------------------------------------- Replace Footage
 
 function replacement(frames: number, opts: { name?: string; tc?: string | null } = {}) {
 	const a = videoAsset({ width: 1920, height: 1080, fps: R30, seconds: 1 });
@@ -718,7 +701,6 @@ describe('Replace Footage with "keep source timing" (S07:PRC-018)', () => {
 			out: { flicks: 76 * F30 },
 		});
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// And back to the raw file: the source again.
 		const raw = replacement(1800, { name: 'crudo.mp4' });
 		const back = h.ok([relinkCmd(mediaId, raw, { sourceRange: null, keepSourceTiming: true })]);
 		expect(back.results[0]).toMatchObject({ shiftFrames: 174, basis: 'current-is-range' });
@@ -803,8 +785,6 @@ describe('Replace Footage with "keep source timing" (S07:PRC-018)', () => {
 		expect(vclip(h, videoId).sourceIn).toBe(30 * F30);
 	});
 });
-
-// ---------------------------------------------------------------- migration
 
 describe('schema v5 migration (S07:PRC-015)', () => {
 	it('the v5 fixture (a ranged processed version in use, a sidecar-linked render) loads without repairs', () => {

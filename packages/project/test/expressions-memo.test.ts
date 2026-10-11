@@ -1,5 +1,3 @@
-// ui-perf: the memoised expression lookups (per clip / per sequence flags, owner index, owner-scoped location) give
-// exactly what a scan of the whole document gives, through random chains of edits.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

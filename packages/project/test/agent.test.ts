@@ -1,4 +1,3 @@
-// Agent helpers shared by the bridge and the engine (WP-2H): queries, semantic addressing, guard rails.
 import { describe, expect, it } from 'vitest';
 import {
 	AgentQueryError,
@@ -72,7 +71,6 @@ describe('agent queries (S01 §21.2, S02:TL-951)', () => {
 			id: h.seqId,
 		});
 		expect(() => runAgentQuery(env, 'doc.get', { path: ['nope'] })).toThrow(AgentQueryError);
-		// Only own properties are addressable (no prototype walk such as ["constructor"]).
 		expect(() => runAgentQuery(env, 'doc.get', { path: ['constructor'] })).toThrow(AgentQueryError);
 		expect(runAgentQuery(env, 'doc.get', { path: ['sequences', h.seqId], fields: ['toString'] })).toEqual({});
 		expect(runAgentQuery(env, 'doc.revision')).toEqual({ revision: h.revision });

@@ -1,4 +1,3 @@
-// Time Remapping / Time Interpolation / frame hold / Scene Edit Detection commands (workstream `time`).
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,

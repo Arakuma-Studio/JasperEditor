@@ -1,4 +1,3 @@
-// S06 §9.1: Lumetri reference maths (CG-020…023), PCHIP curves, the M1 colour ops and colour-run fusion.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
@@ -44,12 +43,9 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 		expect(spec?.category).toBe('Color Correction');
 		expect(spec?.appliesTo).toBe('video');
 		expect(spec?.version).toBe(1);
-		// The S06:CG-002 contract comes first; color-grade appends its params (test/lumetri-grade.test.ts).
-		// The S06:CG-002 contract (with color-mgmt's HDR White / HDR Specular) comes first; color-grade appends its
-		// params (test/lumetri-grade.test.ts).
 		expect(LUMETRI_PARAMS.slice(0, 25).map((p) => p.name)).toEqual([
 			'inputLut',
-			'hdrWhite', // color-mgmt
+			'hdrWhite',
 			'temperature',
 			'tint',
 			'exposure',
@@ -58,7 +54,7 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 			'shadows',
 			'whites',
 			'blacks',
-			'hdrSpecular', // color-mgmt
+			'hdrSpecular',
 			'saturation',
 			'look',
 			'lookIntensity',
@@ -88,7 +84,6 @@ describe('Lumetri maths (S06 §3)', () => {
 	it('CG-021: defaults are the identity (null function; bit-exact on lattice points)', () => {
 		expect(lumetriFn(effectiveParams(LUMETRI_EFFECT, {}), NO_LUTS)).toBeNull();
 		expect(lumetriFn({}, NO_LUTS)).toBeNull();
-		// An offline LUT is skipped (CG-004).
 		expect(lumetriFn({ look: { mediaId: 'med_missing' }, inputLut: { mediaId: '' } }, NO_LUTS)).toBeNull();
 		const lut = bakeColorRun(
 			[{ id: 'a', effectId: LUMETRI_EFFECT_ID, effectVersion: 1, enabled: true, params: {} }],

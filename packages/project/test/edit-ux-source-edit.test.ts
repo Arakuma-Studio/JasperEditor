@@ -1,5 +1,3 @@
-// edit-ux: three- and four-point editing (`clip.sourceEdit`), split edits, source patching, sequences as sources,
-// subclips and multi-edit-point trims (`clip.trimEdits`).
 import { describe, expect, it } from 'vitest';
 import { type Clip, checkInvariants, flicksPerFrame, RATES } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -240,7 +238,6 @@ describe('sequences as sources', () => {
 		expect([nv.start, nv.duration, nv.sourceIn]).toEqual([5, 60, 10 * F]);
 		expect(nv.linkId).toBe(na.linkId);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// A sequence cannot go into itself, or into a sequence it contains.
 		const self = h.tx([{ type: 'clip.sourceEdit', sequenceId: main, source: { sequenceId: main } }]);
 		expect(self.ok).toBe(false);
 		const loop = h.tx([{ type: 'clip.sourceEdit', sequenceId: src, source: { sequenceId: main } }]);
@@ -285,27 +282,22 @@ describe('subclips', () => {
 		const e = edit(h, { source: { projectItemId: sub }, playhead: 0 });
 		const [v] = clipsOf(h, e.clipIds) as [Clip];
 		expect([v.duration, v.sourceIn, v.subclipId]).toEqual([60, 60 * F, sub]);
-		// Restricted: the clip cannot extend past the subclip's range.
 		const t = h.ok([{ type: 'clip.trim', clipId: v.id, edge: 'out', deltaFrames: 30 }]);
 		expect((t.results[0] as { deltaFrames: number }).deltaFrames).toBe(0);
 		h.ok([{ type: 'item.updateSubclip', itemId: sub, restrictTrims: false }]);
 		const t2 = h.ok([{ type: 'clip.trim', clipId: v.id, edge: 'out', deltaFrames: 30 }]);
 		expect((t2.results[0] as { deltaFrames: number }).deltaFrames).toBe(30);
-		// A narrower range that would cut the clip is refused while trims are restricted.
 		h.ok([{ type: 'item.updateSubclip', itemId: sub, restrictTrims: true, out: fl(150) }]);
 		const bad = h.tx([{ type: 'item.updateSubclip', itemId: sub, out: fl(100) }]);
 		expect(bad.ok).toBe(false);
-		// Subclip of a subclip keeps the media and the original parent.
 		const r2 = h.ok([{ type: 'item.makeSubclip', itemId: sub, in: fl(70), out: fl(80) }]);
 		const sub2 = (r2.results[0] as { itemId: string }).itemId;
 		expect(h.doc.items[sub2]).toMatchObject({ parentItemId: itemId, name: 'Take 2.Subclip' });
 		const outside = h.tx([{ type: 'item.makeSubclip', itemId: sub, in: fl(10), out: fl(80) }]);
 		expect(outside.ok).toBe(false);
-		// Deleting the subclip keeps the clip (its media item remains) and drops the reference.
 		h.ok([{ type: 'item.delete', itemIds: [sub] }]);
 		expect(h.seq.clips[v.id]?.subclipId).toBeUndefined();
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// Deleting the media item keeps the remaining subclip's media.
 		h.ok([{ type: 'item.delete', itemIds: [itemId], force: true }]);
 		expect(h.doc.items[sub2]).toMatchObject({ parentItemId: null });
 		expect(checkInvariants(h.doc)).toEqual([]);

@@ -1,4 +1,3 @@
-// polish: item.setPoster — Set / Clear Poster Frame of a media item (Project panel thumbnails).
 import { describe, expect, it } from 'vitest';
 import { checkInvariants, flicksPerFrame, type MediaItem, RATES } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -30,7 +29,6 @@ describe('item.setPoster', () => {
 		expect(poster(h, itemId)).toEqual({ flicks: 7 * F });
 		h.ok([{ type: 'item.setPoster', itemId, time: null }]);
 		expect(poster(h, itemId)).toBeUndefined();
-		// clearing again is not an error
 		h.ok([{ type: 'item.setPoster', itemId, time: null }]);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
@@ -43,7 +41,6 @@ describe('item.setPoster', () => {
 		expect(r.ok).toBe(true);
 		const after = h.doc;
 		expect((after.items[itemId] as MediaItem).poster).toEqual({ flicks: 90 * F });
-		// the transaction replaced the item and left the previous document untouched (undo restores it)
 		expect((before.items[itemId] as MediaItem).poster).toBeUndefined();
 		expect(after.items[itemId]).not.toBe(before.items[itemId]);
 	});

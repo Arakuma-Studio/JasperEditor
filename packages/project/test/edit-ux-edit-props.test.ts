@@ -1,7 +1,5 @@
-// edit-ux: property tests ported from FilmCraft crates/edit/src/tests.rs (`never_overlaps`,
-// `insert_then_extract_is_identity`; MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft
-// contributors), run against Jasper's command handlers through transactions, plus the J/L-cut ops (sound-only trims
-// with Linked Selection off, ripple trims and ripple deletes of split-edit clips, speed groups).
+// Tests ported from FilmCraft crates/edit/src/tests.rs (`never_overlaps`, `insert_then_extract_is_identity`).
+// MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

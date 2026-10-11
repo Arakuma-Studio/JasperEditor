@@ -1,7 +1,4 @@
-// Security review DATA-2: shortening a nested sequence that is placed elsewhere (lifting or trimming its last clip,
-// deleting media used inside it) used to be refused with E_INVARIANT (INV-005 "exceeds its nested sequence"), so
-// such edits were impossible. As in Premiere, the nest clip keeps its length and shows nothing past the content;
-// its handles still stop at the content's end.
+// A nest may outlive its content after inner edits; its empty tail must not become trim handles.
 import { describe, expect, it } from 'vitest';
 import { applyTransaction, buildRenderSnapshot, checkInvariants, loadProject } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -39,13 +36,11 @@ describe('DATA-2: edits that shorten a placed nested sequence', () => {
 		expect(checkInvariants(document)).toEqual([]);
 		const after = Object.values(document.sequences[h.seqId]!.clips).find((c) => c.id === outer.id)!;
 		expect(after.duration).toBe(outer.duration);
-		// The overhang renders nothing (and does not throw).
 		const snap = buildRenderSnapshot(document, h.seqId, {
 			resolveMedia: () => null,
 			resolveFont: () => null,
 		});
 		expect(snap).toBeTruthy();
-		// It reloads without repairs.
 		const loaded = loadProject(JSON.parse(JSON.stringify(document)));
 		expect(loaded.repairs).toEqual([]);
 		expect(loaded.issues).toEqual([]);

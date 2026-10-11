@@ -1,4 +1,3 @@
-// Workstream gaps (AU-7): Modify ▸ Audio Channels — matrix ⇄ routing, commands, placements from routed items.
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
@@ -81,7 +80,6 @@ describe('audio channels', () => {
 			channels: { map: number[] };
 		}[];
 		expect(audio.map((c) => c.channels.map).sort()).toEqual([[0], [1], [2, 3]]);
-		// Placing the media itself also follows its item's routing.
 		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 300 }]);
 		expect(Object.values(h.seq.clips).filter((c) => c.kind === 'audio')).toHaveLength(6);
 		expect(checkInvariants(h.doc)).toEqual([]);

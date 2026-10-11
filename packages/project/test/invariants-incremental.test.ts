@@ -1,9 +1,4 @@
-// perf-core: the incremental invariant check equals the full one (docs/wp-notes/perf-core.md §2).
-//
-// Property: from a valid document, any next document — produced by a real command or by corrupting what a
-// command could touch (and some things it cannot) — gets exactly `checkInvariants(next)` from
-// `checkTransactionInvariants(base, next)` in `incremental` and in `verify` mode, over chains of valid steps (so
-// the layered id index is exercised past its flattening depth). The common edits must take the incremental path.
+// Chains exceed the layered id index’s flattening depth and must exercise the incremental path.
 import fc from 'fast-check';
 import { type Draft, produce } from 'immer';
 import { describe, expect, it } from 'vitest';
@@ -67,7 +62,6 @@ const clipsOf = (doc: ProjectDocument) =>
 	Object.values(doc.sequences).flatMap((s) => Object.values(s.clips).map((c) => ({ s, c })));
 const at = <T>(list: readonly T[], i: number): T | undefined => list[i % Math.max(1, list.length)];
 
-/** Every id the document claims (for collisions). */
 const idsOf = (doc: ProjectDocument) => [...runInvariants(doc, opts).seen].sort();
 
 type Corruption = (d: Draft<ProjectDocument>, p: Pick, doc: ProjectDocument) => void;
@@ -432,7 +426,7 @@ describe('incremental invariants (perf-core)', () => {
 			expect(r.result.ok, JSON.stringify(!r.result.ok && r.result.errors)).toBe(true);
 			doc = r.document;
 		};
-		apply([{ type: 'marker.add', frame: 5, name: 'warm-up' }]); // verifies the start document (full check)
+		apply([{ type: 'marker.add', frame: 5, name: 'warm-up' }]);
 		invariantStats(true);
 		const seq = () => doc.sequences[h.seqId] as Sequence;
 		const solid = () => Object.values(seq().clips).find((c) => c.kind === 'solid')!.id;

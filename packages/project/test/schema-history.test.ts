@@ -1,7 +1,5 @@
-// Schema history (S01:MIG-001…005, docs/project-files.md): one hand-made fixture per schema version
-// (`fixtures/schema-v<N>.jasper`) that must load forever, and every shipped migration step pinned to the exact
-// changes it makes. Adding a schema version means adding its fixture and its step expectation here; a test that
-// starts failing because a shipped migration changed means the migration was edited — write a new step instead.
+// Fixtures pin every shipped migration’s output. Add a new step and fixture for schema changes;
+// never change a shipped migration to satisfy these expectations (docs/project-files.md).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -36,7 +34,7 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v1 → v2: the audio half of a linked A/V clip with the v1 default (Movie, violet) takes the Audio label;
 	// the user-chosen "rose" label of the other audio clip and every video clip are kept.
 	'1→2': () => ({ 'sequences.seq_000000000000SEQ1.clips.clp_00000000000AC001.label': 'caribbean' }),
-	// v2 → v3 and v3 → v4: version bumps only (M2 additions; older builds open the files read-only).
+	// v2 → v3 and v3 → v4: version bumps only; older builds open the files read-only.
 	'2→3': () => ({}),
 	'3→4': () => ({}),
 	// v4 → v5: a processed version made from the whole source gets the explicit source range it holds.
@@ -50,7 +48,7 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 			origin: 'process',
 		},
 	}),
-	// v5 → v6: version bump only (parity-program additions; v5 builds open the files read-only).
+	// v5 → v6: version bump only; v5 builds open the files read-only.
 	'5→6': () => ({}),
 };
 

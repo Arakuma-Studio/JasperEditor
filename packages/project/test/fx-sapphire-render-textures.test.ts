@@ -1,7 +1,3 @@
-// Sapphire Render family (fx catalogue, wave 2): lightning, gradients/grid/shape and the other render generators.
-// Pure TypeScript behaviour: catalogue entries, Combine mapping, spline sampling, time/seed hooks (Jitter Frames,
-// Wiggle, laser flight, muzzle-flash timing), astronomy (Julian day, lunar phase, sky orientation) and padding.
-// Pixel behaviour runs in real WebGL2: packages/compositions/test/fx-sapphire-render-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
@@ -145,7 +141,6 @@ describe('spline sampling', () => {
 		expect(u[(SPLINE_N - 1) * 3]).toBeCloseTo(200, 6);
 		expect(u[(SPLINE_N - 1) * 3 + 1]).toBeCloseTo(0, 6);
 		for (let i = 1; i < SPLINE_N; i++) expect(u[i * 3 + 2]!).toBeGreaterThan(u[(i - 1) * 3 + 2]!);
-		// passes through the control point
 		let best = Infinity;
 		for (let i = 0; i < SPLINE_N; i++) best = Math.min(best, Math.hypot(u[i * 3]! - 100, u[i * 3 + 1]! - 50));
 		expect(best).toBeLessThan(8);
@@ -234,7 +229,6 @@ describe('astronomy', () => {
 			const f = m.slice(6, 9);
 			// the north celestial pole sits at altitude = latitude due north (below the horizon south of the equator)
 			expect(f[2]).toBeCloseTo(1, 6);
-			// the matrix is a rotation
 			const cols = [m.slice(0, 3), m.slice(3, 6), f];
 			for (const c of cols) expect(Math.hypot(c[0]!, c[1]!, c[2]!)).toBeCloseTo(1, 9);
 		}

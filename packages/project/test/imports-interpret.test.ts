@@ -1,5 +1,3 @@
-// imports workstream: Interpret Footage model (time map, display size, pixel variants, ffmpeg filters),
-// the `media.interpret` command (set / reset / trim / refusals / undo), invariants + repair, and the render snapshot.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -58,10 +56,8 @@ describe('interpretation model', () => {
 		expect(mediaDurationFlicks(a)).toBe(Math.round((10 * S) / 0.8));
 		const looped = asset({ interpretation: { frameRate: { num: 24, den: 1 }, loop: 3 } }, { seconds: 10 });
 		expect(mediaDurationFlicks(looped)).toBe(3 * Math.round((10 * S) / 0.8));
-		// Stills have no frame rate or loop.
 		const still = asset({ interpretation: { loop: 3 } }, { kind: 'image' });
 		expect(mediaDurationFlicks(still)).toBeNull();
-		// Uninterpreted media read exactly as before.
 		expect(mediaTimeMap(asset({}, { seconds: 4 }))).toBeNull();
 	});
 
@@ -240,7 +236,6 @@ describe('media.interpret', () => {
 		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: null } }]);
 		expect(h.doc.media[m]!.interpretation).toBeUndefined();
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// Undo = the session restores the previous document; redo re-applies the same command to it.
 		h.doc = before;
 		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { loop: 2 } }]);
 		expect(mediaDurationFlicks(h.doc.media[m]!)).toBe(20 * S);
@@ -256,7 +251,6 @@ describe('media.interpret', () => {
 		expect(h.seq.clips[v]!.duration).toBe(150);
 		expect((r.results[0] as { trimmedClipIds: string[] }).trimmedClipIds).toEqual([v]);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// A slower rate leaves the clip as it is (it may now be extended).
 		h.ok([{ type: 'media.interpret', mediaIds: [m], interpretation: { frameRate: { num: 15, den: 1 } } }]);
 		expect(h.seq.clips[v]!.duration).toBe(150);
 		expect(h.tx([{ type: 'clip.trim', clipId: v, edge: 'out', deltaFrames: 450 }]).ok).toBe(true);
@@ -276,7 +270,6 @@ describe('media.interpret', () => {
 		expect(bad({ loop: 2 }, 'med_missing').ok).toBe(false);
 		expect(bad({ bogus: 1 }).ok).toBe(false);
 		expect(bad({ alpha: { mode: 'ignore' } }).ok).toBe(true);
-		// A clip whose In point would be past the new end is refused (not silently moved).
 		const p = placed(10, 10);
 		p.h.ok([{ type: 'clip.trim', clipId: p.v, edge: 'in', deltaFrames: 200 }]);
 		const r = p.h.tx([

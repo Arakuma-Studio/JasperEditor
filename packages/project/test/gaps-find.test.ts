@@ -1,4 +1,3 @@
-// Edit ▸ Find… (workstream gaps, UI-5): project item and timeline searches.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -69,7 +68,6 @@ describe('find', () => {
 		expect(
 			findProjectItems(h.doc, { criteria: [{ field: 'name', operator: 'contains', value: '' }] }),
 		).toEqual([]);
-		// Match Case.
 		expect(
 			findProjectItems(h.doc, {
 				matchCase: true,
@@ -96,7 +94,6 @@ describe('find', () => {
 		expect(first?.frame).toBe(60);
 		const second = nextFindHit(hits, 0, findHitKey(first!));
 		expect(second?.frame).toBe(120);
-		// wraps
 		const last = hits.at(-1)!;
 		expect(nextFindHit(hits, 0, findHitKey(last))).toEqual(hits[0]);
 		expect(

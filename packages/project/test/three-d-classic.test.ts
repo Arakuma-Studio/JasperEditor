@@ -1,7 +1,4 @@
-// three-d: the Classic 3D CPU reference renderer (the oracle of the GL renderer) — golden behaviour: default camera
-// = the 2D placement, per-pixel depth sort of intersecting planes, stack order of coplanar planes, blend modes in
-// depth order, lights (Lambert, spot cone, specular), ray-cast shadows (incl. coloured through Light Transmission),
-// Accepts Shadows Only, and the bokeh depth of field (EffectCraft bokeh tests).
+// Depth-of-field cases use EffectCraft's bokeh tests.
 import { describe, expect, it } from 'vitest';
 import {
 	anim,

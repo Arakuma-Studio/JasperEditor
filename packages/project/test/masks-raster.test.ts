@@ -1,4 +1,3 @@
-// wp masks: the coverage definition and the tiled CPU rasteriser (the GL shader's algorithm).
 import { describe, expect, it } from 'vitest';
 import {
 	type BezierPath,
@@ -80,7 +79,6 @@ describe('mask coverage', () => {
 		r = raster([rm(sq, { mode: 'intersect' })], 30, 30).cov;
 		expect(r[15 * 30 + 15]).toBe(1);
 		expect(r[2]).toBe(0);
-		// none is ignored; open paths are ignored.
 		expect(prepareMasks([rm(sq, { mode: 'none' })], ident, 1)).toHaveLength(0);
 		expect(prepareMasks([rm({ ...sq, closed: false })], ident, 1)).toHaveLength(0);
 	});
@@ -146,7 +144,6 @@ describe('mask coverage', () => {
 		expect(at(100, 152)).toBeLessThan(0.02);
 		expect(at(100, 140)).toBeGreaterThan(0.4);
 		expect(at(100, 140)).toBeLessThan(0.6);
-		// The tiled rasteriser agrees with the definition here too.
 		for (const [x, y] of [
 			[100, 45],
 			[154, 100],

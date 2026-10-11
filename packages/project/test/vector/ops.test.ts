@@ -1,4 +1,4 @@
-// Path operators (wp shapes): ported from EffectCraft's crates/path/src/ops/tests.rs (MIT OR Apache-2.0).
+// Tests ported from EffectCraft's crates/path/src/ops/tests.rs (MIT OR Apache-2.0).
 import { describe, expect, it } from 'vitest';
 import { filledArea } from '../../src/vector/boolean.ts';
 import {
@@ -356,10 +356,8 @@ const inclusionExclusion = (a: BezPath, b: BezPath) => {
 };
 
 describe('merge at tangencies', () => {
-	// fast-check counterexample of the property below (seed 1, run 460): the circle's bottom vertex (0, 2) lies on
-	// the square's top edge. Both pairs of edges at that vertex leave along ±x, and atan2 read the leftward pair as
-	// +π and -π, so PathBool.js ordered them backwards, traced one face for the whole arrangement and threw; every
-	// merge mode came out empty. Fixed in patches/path-bool@1.0.4.patch.
+	// The circle's bottom vertex (0, 2) lies on the square's top edge. Coincident leftward edges have atan2
+	// angles +π and −π; PathBool must treat them as one direction (patches/path-bool@1.0.4.patch).
 	it('a circle resting on a square edge', () => {
 		const c = circle(0, -19, 21);
 		const s = sq(-1, 2, 10);
@@ -410,8 +408,6 @@ describe('merge (property)', () => {
 		);
 		const mk = (v: { k: 'sq' | 'c'; x: number; y: number; s: number }): BezPath =>
 			v.k === 'sq' ? sq(v.x, v.y, v.s) : circle(v.x, v.y, v.s / 2);
-		// A fixed seed keeps the suite deterministic. The property was swept over 90 000 random pairs (seeds 1–3)
-		// and 15 744 constructed tangencies with no failure after the PathBool.js fix (docs/wp-notes/fixups.md).
 		fc.assert(
 			fc.property(shape, shape, (a0, b0) => inclusionExclusion(mk(a0), mk(b0))),
 			{ numRuns: 150, seed: 0x5eed },

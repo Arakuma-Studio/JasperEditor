@@ -1,6 +1,3 @@
-// Sapphire Distort family (fx catalogue, wave 2): the entries follow Sapphire's parameter sets and the framework's
-// rules, and the TypeScript maths behind them (projective transforms, shake curves, fades, pass plans, padding) is
-// right. Pixel behaviour in real WebGL: packages/compositions/test/fx-sapphire-distort-warp-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
@@ -216,7 +213,6 @@ describe('Sapphire Distort catalogue', () => {
 			expect(byLabel(l).expensive).toBe(true);
 		for (const l of ['S_WarpFishEye', 'S_WarpTransform', 'S_WarpPerspective', 'S_StretchFrameEdges'])
 			expect(byLabel(l).gpu?.timeInvariant).toBe(true);
-		// Animated by time (speeds) or by a (possibly video) media input: redrawn every frame.
 		for (const l of ['S_Shake', 'S_WarpPuddle', 'S_WarpBubble', 'S_WarpVortex', 'S_Distort', 'S_WarpDrops'])
 			expect(byLabel(l).gpu?.timeInvariant).toBeFalsy();
 	});
@@ -286,7 +282,6 @@ describe('projective maths', () => {
 		expect(at(pins.tr).map((v) => Math.round(v * 1e6) / 1e6)).toEqual([1, 0]);
 		expect(at(pins.br).map((v) => Math.round(v * 1e6) / 1e6)).toEqual([1, 1]);
 		expect(at(pins.bl).map((v) => Math.round(v * 1e6) / 1e6)).toEqual([0, 1]);
-		// A degenerate quad (all corners on one point) has no inverse.
 		expect(
 			cornerPinInverse({ tl: [0.5, 0.5], tr: [0.5, 0.5], br: [0.5, 0.5], bl: [0.5, 0.5] }, aspect),
 		).toBeNull();
@@ -327,7 +322,6 @@ describe('projective maths', () => {
 		expect(p1.left).toBe(0);
 		const spec = byLabel('S_WarpTransform');
 		expect(gpuPadding(spec, defaults(spec, { scale: [1.5, 1.5] }), ctx).left).toBeGreaterThan(400);
-		// Behind the camera → no finite bounds.
 		expect(
 			transformedBounds(
 				warpTransformForward({ ...T0, scale: [3, 3], swivel: 60, perspectiveAmount: 0.25 }),
@@ -411,9 +405,7 @@ describe('S_Shake model', () => {
 		expect(mb.u_mbPlan.ivec4[2]).toBe(3); // 3 channels per key pose
 		expect(mb.u_mbKeys.vec4s).toHaveLength(FX_MB_KEYS * 3 * 4);
 		expect(mb.u_mbKeys.vec4s[4]).not.toBe(mb.u_mbKeys.vec4s[12 * (FX_MB_KEYS - 1) + 4]);
-		// The pose of the frame is unchanged by the blur; the key arrays keep their size without blur.
 		expect(mb.u_shakeNow).toEqual(u.u_shakeNow);
-		// Faster shakes take more taps; the preview scale takes proportionally fewer.
 		const fast = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 4 }), ctx).u_mbPlan.ivec4[0];
 		const slow = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0.5 }), ctx).u_mbPlan.ivec4[0];
 		expect(fast).toBeGreaterThan(slow);

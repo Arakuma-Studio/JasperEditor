@@ -1,5 +1,3 @@
-// color-mgmt: sequence working spaces, Interpret Footage ▸ Colour, clip overrides, the snapshot's colour input
-// transforms, Lumetri HDR White / Specular, invariants and repairs.
 import { describe, expect, it } from 'vitest';
 import {
 	applyLut,
@@ -65,7 +63,6 @@ function hdrAsset(transfer: string): ReturnType<typeof videoAsset> {
 	return a;
 }
 
-/** Runs the layer's colour runs (the snapshot's effects, evaluated statically) on one colour. */
 function grade(
 	snapClip: Pick<RenderVisualClip, 'effects'>,
 	ctx: Parameters<typeof bakeColorRun>[2],

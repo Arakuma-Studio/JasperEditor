@@ -15,7 +15,6 @@ import {
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
-/** A graphic nest with one text layer in the harness's sequence (returns ids). */
 function makeGraphic(h: Harness) {
 	const r = h.ok([
 		{
@@ -89,7 +88,6 @@ describe('essential graphics', () => {
 		expect(alignOffsets(rects, 'left', frame).map((o) => o[0])).toEqual([-10, -300, -150]);
 		expect(alignOffsets(rects, 'center', frame)[0]).toEqual([960 - 60, 0]);
 		const d = alignOffsets(rects, 'distributeHorizontal', null);
-		// Equal gaps between consecutive layers after the move.
 		const xs = rects
 			.map((r, i) => ({ l: r.x + d[i]![0], r: r.x + r.width + d[i]![0] }))
 			.sort((a, b) => a.l - b.l);

@@ -1,5 +1,4 @@
-// Warp Stabilizer (gaps FX-6): the stabilisation maths (ported tests of effectcraft stabilize.rs / subspace.rs), the
-// stored analysis, the command and the invariant.
+// Stabilization tests ported from EffectCraft stabilize.rs and subspace.rs.
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
@@ -261,7 +260,6 @@ describe('warp stabilizer maths', () => {
 		const o = planOutputOf(spl, 10, [150, 80])!;
 		const back = planSourceOf(spl, 10, o)!;
 		expect(Math.abs(back[0] - 150)).toBeLessThan(1e-3);
-		// Trajectory smoothing returns pairs for every frame with enough tracks.
 		const sm = smoothTrajectories(tracks, n, 5, 9);
 		expect(sm.every((pr) => pr.length >= 100)).toBe(true);
 	});
@@ -295,7 +293,6 @@ describe('stored analysis, command and invariant', () => {
 			8, -8, 15, -15, 23, -23, 30, -30,
 		]);
 		expect(warpSynthesisOffsets({ framing: 'stabilizeOnly' }, 30)).toEqual([]);
-		// Plans are cached per analysis and settings.
 		const s = warpSettingsOf({}, 30);
 		expect(warpPlanFor(a, s)).toBe(warpPlanFor(a, s));
 	});
@@ -318,7 +315,6 @@ describe('stored analysis, command and invariant', () => {
 		expect(fxOf().warpAnalysis?.key).toBe('test-10');
 		expect(checkInvariants(h.doc)).toEqual([]);
 		const analysed = h.doc;
-		// Malformed data and other effects are refused.
 		expect(
 			h.tx([
 				{
@@ -335,10 +331,8 @@ describe('stored analysis, command and invariant', () => {
 		).toBe(false);
 		h.ok([{ type: 'effect.setWarpAnalysis', effectInstanceId: fxId, analysis: null }]);
 		expect(fxOf().warpAnalysis).toBeUndefined();
-		// Undo = the previous document.
 		h.doc = before;
 		expect(fxOf().warpAnalysis).toBeUndefined();
-		// A broken stored analysis is reported and repaired.
 		const broken = structuredClone(analysed);
 		const bfx = fxList(Object.values(broken.sequences)[0]!.clips[clip.id]).find((e) => e.id === fxId)! as {
 			warpAnalysis?: { frames: number[] };

@@ -1,6 +1,3 @@
-// Scene Edit Detection accuracy (workstream `time`): synthetic footage with known hard cuts plus the false-positive
-// guards — cross dissolves, one- and two-frame flashes, fast camera pans and a slow lighting change. Reports precision
-// and recall (exact frame) and compares with filmcraft's grid/histogram difference on the same frames.
 import { describe, expect, it } from 'vitest';
 import {
 	cutAccuracy,
@@ -86,7 +83,6 @@ function mix(a: FlowImage, b: FlowImage, w: number): FlowImage {
 
 const white = (): FlowImage => ({ width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(255) });
 
-/** The test reel: frames and the true cut frames. */
 function reel(): { frames: FlowImage[]; cuts: number[] } {
 	const frames: FlowImage[] = [];
 	const cuts: number[] = [];
@@ -188,12 +184,10 @@ describe('scene edit detection', () => {
 		const acc = cutAccuracy(found, cuts);
 		expect(found).toEqual(cuts);
 		expect(acc).toMatchObject({ precision: 1, recall: 1 });
-		// effectcraft cuts.rs = the same scores without the flash test.
 		const ec = detectSceneCuts(scores, { sensitivity: 50, minShotFrames: 3 });
 		const ecAcc = cutAccuracy(ec, cuts);
 		const fc = filmcraftCuts(filmcraftScores(frames));
 		const fcAcc = cutAccuracy(fc, cuts);
-		// Reported in docs/wp-notes/time.md: ours P = R = 1; filmcraft's difference on the same reel below.
 		if (process.env.SCENE_REPORT)
 			console.info(
 				JSON.stringify({
@@ -224,9 +218,8 @@ describe('scene edit detection', () => {
 	});
 
 	it('a dissolve onto a flat colour at a histogram bin edge does not end in a cut (soft bins)', () => {
-		// Regression (verify workstream): scenes.mp4 dissolves a binary cellular automaton onto a flat gradient; one
-		// random instance had green at 59–73, across the 64 bin edge, and the hard-binned histogram scored the last
-		// dissolve step 0.6 → a false cut at the end of the dissolve.
+		// Green levels 59–73 straddle the histogram's 64-bin edge; hard bins can mistake the last dissolve
+		// step for a cut even though the image changes smoothly.
 		const flat: [number, number, number] = [67, 59, 253];
 		const texture = (x: number, y: number) => (noise(x * 3, y * 3, 5) > 0.5 ? 235 : 20);
 		const frame = (w: number, shift: number): FlowImage => {
@@ -267,7 +260,6 @@ describe('scene edit detection', () => {
 		};
 		// 2 levels across the 64 edge: a hard bin would move everything (distance 1).
 		expect(h(flat(67, 63, 253), flat(67, 65, 253))).toBeLessThan(0.05);
-		// Far apart colours are still fully distinct.
 		expect(h(flat(10, 10, 10), flat(245, 245, 245))).toBeGreaterThan(0.99);
 	});
 

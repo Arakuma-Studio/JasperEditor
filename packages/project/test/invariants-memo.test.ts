@@ -1,6 +1,3 @@
-// The per-sequence invariant memo (golden-fuzz scale work) returns exactly what an uncached check returns: on
-// documents edited by random command sequences (sharing untouched sequences between versions), on corrupted copies
-// (duplicate ids across sequences, missing media, broken clips) and after repairs.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -61,7 +58,7 @@ describe('per-sequence invariant memo', () => {
 
 	it('equals the uncached check on corrupted documents (duplicate ids across sequences, dangling media)', () => {
 		const h = project();
-		checkInvariants(h.doc, { effects }); // memoize every sequence
+		checkInvariants(h.doc, { effects });
 		const [s1, s2] = Object.keys(h.doc.sequences);
 		// Every table shared with the memoized document (a memo hit for the first sequence); one of its clips copied
 		// into the second sequence: the replayed id collides and the check falls back to the uncached walk.

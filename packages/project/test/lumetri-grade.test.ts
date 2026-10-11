@@ -1,5 +1,3 @@
-// color-grade: the Lumetri completion — creative adjustments, built-in looks, hue/saturation curves, section
-// switches (pointwise, baked into the colour run) and the spatial stage's maths and snapshot expansion.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
@@ -62,9 +60,7 @@ describe('Lumetri completion params', () => {
 		expect(names).toContain('vignetteAmount');
 		expect(names).toContain('secHueCenter');
 		expect(new Set(names).size).toBe(names.length);
-		// Every spatial param exists on the Lumetri spec.
 		for (const n of LUMETRI_SPATIAL_PARAMS) expect(names).toContain(n);
-		// Section switches and groups.
 		expect(LUMETRI_GROUPS.map((g) => g.group)).toEqual([
 			'basic',
 			'creative',
@@ -74,7 +70,6 @@ describe('Lumetri completion params', () => {
 			'vignette',
 		]);
 		for (const g of LUMETRI_GROUPS) expect(names).toContain(g.toggle);
-		// The defaults change nothing (bit-exact old grades).
 		expect(lumetriFn(effectiveParams(LUMETRI_EFFECT, {}), NO_LUTS)).toBeNull();
 		expect(lumetriSpatialActive(lumetriSpatialSettings(effectiveParams(LUMETRI_EFFECT, {})))).toBe(false);
 	});
@@ -148,7 +143,6 @@ describe('Creative adjustments (pointwise)', () => {
 			domainMax: [1, 1, 1] as Rgb,
 			data: new Float32Array(24),
 		};
-		// An all-black LUT.
 		const ctx: ColorOpContext = { lut: () => lut };
 		const out = run({ look: { mediaId: 'm' }, creativeLook: 'arctic' }, [0.5, 0.5, 0.5], ctx);
 		expect(out).toEqual([0, 0, 0]);
@@ -184,7 +178,6 @@ describe('Hue / saturation curves', () => {
 		expect(f(0)).toBeCloseTo(0.3, 6);
 		expect(Math.abs(f(0.9999) - f(0))).toBeLessThan(0.01);
 		expect(Math.abs(f(-0.25) - f(0.75))).toBeLessThan(1e-9);
-		// Non-periodic: flat outside.
 		const g = offsetCurveFn(
 			[
 				[0.2, 0.7],
@@ -277,7 +270,6 @@ describe('Hue / saturation curves', () => {
 		);
 		expect(r.points.map((p) => p[0])).toEqual([0, 0.4167, 0.5, 0.5833]);
 		expect(r.points[r.index]).toEqual([0.5, 0.5]);
-		// Around red the anchors wrap.
 		const w = hueCurveEyedropper(null, 0.01);
 		expect(w.points.some((p) => p[0] > 0.9)).toBe(true);
 		const l = linearCurveEyedropper(

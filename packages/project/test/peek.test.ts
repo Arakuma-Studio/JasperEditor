@@ -1,5 +1,3 @@
-// Proxy-free reads inside transactions (golden-fuzz scale work): `peek` sees changes made earlier in the same
-// transaction, never creates drafts for untouched records, and ignores inherited properties.
 import { isDraft, produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { peek, peekKeys } from '../src/commands/handlers/util.ts';

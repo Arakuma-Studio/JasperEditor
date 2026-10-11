@@ -1,4 +1,3 @@
-// color-mgmt: LUT formats (.cube 1D / 3D / shaper + 3D, .3dl, .spi1d, .spi3d, .csp) and tetrahedral interpolation.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

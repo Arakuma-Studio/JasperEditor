@@ -1,7 +1,3 @@
-// Family "sapphire-textures-clouds" (Sapphire Render ▸ procedural textures + fractal clouds): the 21 entries, their
-// Sapphire parameter vocabulary and defaults, the shared tail (Bg Brightness, Combine, Output Opacity, Show, Mix with
-// Orig), seeds, time dependence and the TS-side pass maths (sharpen sigma, glow pyramid, planned passes). Pixels are
-// checked in WebGL by packages/compositions/test/fx-sapphire-textures-clouds-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	type EffectParams,
@@ -248,7 +244,6 @@ describe('sapphire-textures-clouds family', () => {
 		]);
 		const weave = plan('S_TextureWeave');
 		expect(weave.passes.map((p) => p.output)).toEqual(['tex', 'softH', 'soft', null]);
-		// The sharpen blur follows Sharpen Width and Frequency.
 		const sigma = (pl: ReturnType<typeof plan>) =>
 			pl.passes[1]!.uniforms.find((u) => u.name === 'u_blurSigma')!.value[0];
 		expect(sigma(weave)).toBeCloseTo(5.4);

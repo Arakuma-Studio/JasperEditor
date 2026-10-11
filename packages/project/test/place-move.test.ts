@@ -49,7 +49,6 @@ describe('clip.place (S01 AC-02…04, S02 TL-493)', () => {
 			},
 		]);
 		expect(h.seq.clips[range.created[0]!]!.duration).toBe(58);
-		// …and the trim limit lets the out edge reach that frame again.
 		const c = range.created[0]!;
 		h.ok([{ type: 'clip.trim', clipId: c, edge: 'out', deltaFrames: -10 }]);
 		h.ok([{ type: 'clip.trim', clipId: c, edge: 'out', deltaFrames: 10 }]);

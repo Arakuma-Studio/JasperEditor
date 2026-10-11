@@ -81,7 +81,6 @@ export function manyInstances(instances = 20_000, vertices = 30_000): Uint8Array
 	return enc(d);
 }
 
-/** `materials` materials that all use one image of `imageBytes` bytes. */
 export function sharedImage(materials = 4000, imageBytes = 1 << 20): Uint8Array {
 	const d = triangleDocument();
 	const bin = new Uint8Array(44 + imageBytes);
@@ -100,14 +99,12 @@ export function sharedImage(materials = 4000, imageBytes = 1 << 20): Uint8Array 
 	return enc(d);
 }
 
-/** A data: URI whose percent-encoding is broken. */
 export function brokenDataUri(): Uint8Array {
 	const d = triangleDocument();
 	d.buffers[0] = { byteLength: 3, uri: 'data:application/octet-stream,%E0%A4%A' };
 	return enc(d);
 }
 
-/** Indices read from a float accessor: negative, fractional, not a number. */
 export function badIndices(values: number[] = [0, -1, 1.5]): Uint8Array {
 	const d = triangleDocument();
 	const bin = new Uint8Array(36 + 12);
@@ -132,7 +129,6 @@ export const HOSTILE_MODELS: Record<string, () => Uint8Array> = {
 	'negative and fractional indices': () => badIndices(),
 };
 
-/** Small versions of the same shapes: seeds for the mutation fuzzers (fuzz-parsers.test.ts). */
 export function hostileModelSeeds(): Uint8Array[] {
 	return [
 		accessorOfZeros(1000),

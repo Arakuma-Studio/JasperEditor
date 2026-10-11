@@ -1,7 +1,3 @@
-// Family "sapphire-paint-kaleido-edges" (fx catalogue, wave 2): the Sapphire names, ids and bins, Sapphire's
-// parameter names/defaults where they matter, the unit maths of the TS hooks (blur sigmas, stroke cells, padding,
-// pass plans) and which effects redraw over time. Pixels are checked in packages/compositions/test/
-// fx-sapphire-paint-kaleido-edges-gl.test.ts (real WebGL2).
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
@@ -113,7 +109,6 @@ describe('sapphire-paint-kaleido-edges family', () => {
 			'Hairy Paint',
 			'Pointalize',
 		]);
-		// Centres are on-canvas points.
 		for (const l of ['S_Kaleido:Squares', 'S_KaleidoPolar', 'S_KaleidoRadial'])
 			expect(byLabel(l).params.find((p) => p.name === 'center')?.ui?.control).toBe('point');
 	});
@@ -197,13 +192,11 @@ describe('sapphire-paint-kaleido-edges family', () => {
 		const dynamic = FAMILY.filter((s) => gpuIsTimeDependent(s)).map((s) => s.label);
 		expect(dynamic.sort()).toEqual(
 			[
-				// Jitter Frames / Animate Speed / Rotate Inside Speed:
 				'S_AutoPaint',
 				'S_Sketch',
 				'S_CartoonPaint',
 				'S_Crosshatch',
 				'S_KaleidoRadial',
-				// A video Bumps input changes over time:
 				'S_Emboss',
 				'S_EmbossShiny',
 				'S_EmbossDistort',

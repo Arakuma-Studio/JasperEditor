@@ -1,7 +1,4 @@
-// Roving keyframes (keyframes-blend; After Effects' Rove Across Time): a run of roving keys between two fixed keys is
-// one segment — constant speed with linear ends (EffectCraft `roving_keys_get_constant_speed_times`), the fixed keys'
-// eases shaping the whole run otherwise (better than EffectCraft, which spaces the keys for constant speed only) —
-// and the stored times follow the motion. Commands: keyframe.setRoving, moves turn roving off, invariants / repair.
+// Constant-speed roving follows EffectCraft `roving_keys_get_constant_speed_times`.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -78,7 +75,6 @@ describe('roving evaluation', () => {
 		const a: Animatable<number> = { value: 0, keyframes: kfs };
 		const single: Animatable<number> = { value: 0, keyframes: [kfs[0]!, kfs[3]!] };
 		for (let t = 0; t <= 2; t += 0.05) expect(evaluate(a, t * SEC)).toBeCloseTo(evaluate(single, t * SEC), 6);
-		// The roving keys sit where the eased motion passes their values.
 		expect(evaluate(a, kfs[1]!.time)).toBeCloseTo(40, 4);
 		expect(evaluate(a, kfs[2]!.time)).toBeCloseTo(60, 4);
 		// The run is symmetric: 50 at the middle of the span.
@@ -120,7 +116,6 @@ describe('roving evaluation', () => {
 						const tol = 1e-6 * (1 + Math.abs(key.value)) + 5e-3; // whole-flick rounding of the times
 						expect(Math.abs(evaluate(a, key.time) - key.value)).toBeLessThan(tol);
 					}
-					// No jumps: neighbouring samples stay close.
 					let prev = evaluate(a, 0);
 					for (let t = 0; t <= (kfs.length - 1) * SEC; t += SEC / 50) {
 						const v = evaluate(a, t);
@@ -161,7 +156,6 @@ describe('roving commands', () => {
 		const F = SEC / 30;
 		expect(keys()[1]!.time / F).toBeCloseTo(45, 3);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// Editing a fixed key re-times the roving one.
 		h.ok([{ type: 'keyframe.update', keyframeId: c!.id, value: [600, 0] }]);
 		expect(keys()[1]!.time / F).toBeCloseTo(30, 3);
 		const cl = clip();

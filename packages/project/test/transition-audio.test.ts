@@ -1,5 +1,3 @@
-// Two-sided audio crossfades (S10:TUI-052): transition.add / applyDefault on audio edit points, their
-// resolution into handles + gain ramps, the snapshot fields and the gain law of the two curves.
 import { describe, expect, it } from 'vitest';
 import {
 	audioFadeGain,
@@ -130,7 +128,7 @@ describe('transition.add on an audio edit point (S10:TUI-052)', () => {
 			expect(centred.warnings.map((w) => w.code)).toEqual(['W_TRANSITION_SHORTENED']);
 		}
 		expect(add('end-at-cut').ok).toBe(true); // only needs B's head
-		expect(transitions(h)).toHaveLength(1); // the new one replaced the centred one
+		expect(transitions(h)).toHaveLength(1);
 		const noTail = twoAudioClips(200, 30);
 		const refused = noTail.h.tx([
 			{

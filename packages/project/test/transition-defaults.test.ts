@@ -1,4 +1,3 @@
-// M3 transition defaults (S10:TUI-032…033): per-medium project durations and alignment.
 import { describe, expect, it } from 'vitest';
 import { checkInvariants, defaultTransitionFrames, type Transition } from '../src/index.ts';
 import { Harness } from './helpers.ts';

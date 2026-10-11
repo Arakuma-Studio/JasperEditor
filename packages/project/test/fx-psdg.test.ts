@@ -1,6 +1,3 @@
-// Premiere Pro standard effects of the fx catalogue (family "premiere-stylize-distort-generate", wave 2): the entries,
-// their Premiere-facing params, and the pure TypeScript maths (time hooks, timecode text, strobe timing, paddings,
-// text encoding). Pixel behaviour: packages/compositions/test/fx-psdg-*-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import { defaultEffectRegistry, type EffectSpec, FX_FAMILIES, validateGpuEffect } from '../src/index.ts';
 import { PSDG_BLEND_MODES } from '../src/registry/fx/premiere-stylize-distort-generate/common.ts';

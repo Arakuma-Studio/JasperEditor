@@ -1,6 +1,4 @@
-// three-d: the 3D Camera Tracker in the model — cameraTracker.* commands with refusals, staleness, the solve → world
-// map (the created camera sees each track point where the footage shows it), targets and ground planes, invariants
-// and repair. The solve here is synthetic (exact cameras), so every check is exact up to rounding.
+// Synthetic cameras make solve-to-world projection checks exact up to rounding.
 import { describe, expect, it } from 'vitest';
 import {
 	activeCameraAt,
@@ -184,9 +182,7 @@ describe('cameraTracker commands', () => {
 				expect(Math.abs(seen[1] - uv[1])).toBeLessThan(0.05);
 			}
 		}
-		// The first frame's camera is After Effects' default camera.
 		expect(camClip.camera.transform.position.keyframes[0]!.value).toEqual([960, 540, -1500]);
-		// Replacing rewrites the same camera.
 		const again = h.ok([{ type: 'cameraTracker.create', clipId, replaceCamera: true }]).results[0] as {
 			cameraClipId: string;
 		};
@@ -227,7 +223,6 @@ describe('cameraTracker commands', () => {
 		const len = (a: Vec3) => Math.hypot(...a);
 		expect(Math.abs(dot(n, d1)) / (len(n) * len(d1))).toBeLessThan(1e-3);
 		expect(Math.abs(dot(n, d2)) / (len(n) * len(d2))).toBeLessThan(1e-3);
-		// The text sits on a free track above the footage, the camera above it.
 		const tracks = h.seq.videoTracks.map((t) => t.id);
 		expect(tracks.indexOf(layer.trackId)).toBeGreaterThan(0);
 		expect(tracks.indexOf(h.seq.clips[r.cameraClipId]!.trackId)).toBeGreaterThan(

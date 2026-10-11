@@ -1,4 +1,3 @@
-// Transitions and fades (S01 §13): handlers, handle math and their resolution for rendering.
 import { describe, expect, it } from 'vitest';
 import {
 	audioFadeGain,
@@ -89,7 +88,7 @@ describe('transition geometry (S01:TRN-003)', () => {
 				incoming: { duration: 100, head: 0 },
 			}),
 		).toBe(20);
-		expect(fit({ outgoing: null, incoming: { duration: 8, head: 0 } })).toBe(8); // a fade
+		expect(fit({ outgoing: null, incoming: { duration: 8, head: 0 } })).toBe(8);
 	});
 });
 
@@ -178,7 +177,7 @@ describe('transition.add / update / remove', () => {
 				handles: 'freeze',
 			},
 		]);
-		// edit-structure: freeze-frame handles keep the full length with repeated frames.
+		// Freeze-frame handles keep the full length with repeated frames.
 		expect(frozen.ok).toBe(true);
 		if (frozen.ok) {
 			expect(frozen.results[0]).toMatchObject({ duration: 30, freezeHandles: true });
@@ -266,7 +265,6 @@ describe('transition.add / update / remove', () => {
 			[audioClip, null],
 		]);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// Kind mismatch and unknown ids are refused.
 		const wrong = h.tx([
 			{ type: 'transition.add', clipId: audioClip, edge: 'in', effectId: 'jasper.cross-dissolve' },
 		]);
@@ -318,7 +316,6 @@ describe('transition.add / update / remove', () => {
 		const gone = h.tx([{ type: 'transition.remove', transitionIds: [id] }]);
 		expect(gone.ok === false && gone.errors[0]!.code).toBe('E_NOT_FOUND');
 
-		// Default transition: a cross dissolve of settings.defaultTransitionFrames at every edge of the clips.
 		const d = h.ok([{ type: 'transition.applyDefault', clipIds: [a, b], edges: 'both' }]);
 		expect((d.results[0] as { transitionIds: string[] }).transitionIds).toHaveLength(3); // head of A, the cut, tail of B
 		expect(transitions(h).map((t) => t.duration)).toEqual([30, 30, 30]);

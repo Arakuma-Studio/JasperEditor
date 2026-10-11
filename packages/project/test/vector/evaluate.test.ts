@@ -1,7 +1,3 @@
-// Shape-layer stacking semantics and the render plan (wp shapes): operators act on the paths above them (nested
-// groups too), paints paint the paths above them as modified below them, composite above, Merge Paths drops the
-// paints above it, Repeater copies and ramps opacity, group transforms / opacity / blend chains, primitives' vertex
-// order and direction, time dependence, bounds and hit-testing, and shape.editPath.
 import { describe, expect, it } from 'vitest';
 import {
 	buildShapeItems,
@@ -106,7 +102,6 @@ describe('stacking', () => {
 			{ type: 'fill', color: '#0000ff', composite: 'above' },
 		]);
 		const d = evaluateVectorShape(items, 0);
-		// Top first: the lifted blue fill, then the green stroke, then the red fill.
 		expect(d.map((x) => x.paint.type === 'solid' && x.paint.color.slice(0, 3))).toEqual([
 			[0, 0, 1],
 			[0, 1, 0],
@@ -142,7 +137,6 @@ describe('stacking', () => {
 		expect(d).toHaveLength(3);
 		// Below (default): the original on top, later copies under it.
 		expect(d.map((x) => Math.round(x.opacity * 100))).toEqual([100, 70, 40]);
-		// The Trim Paths below the repeater acts on each copy.
 		for (const x of d) expect(len(x.paths)).toBeCloseTo(20, 3);
 		const cx = d.map((x) => {
 			const b = shapeGeom.pathBounds(x.paths)!;
@@ -337,7 +331,6 @@ describe('shape.editPath', () => {
 				},
 			]).ok,
 		).toBe(false);
-		// Animated: an edit at another time adds a key, topology edits apply to every key.
 		h.ok([
 			{
 				type: 'param.setAnimated',

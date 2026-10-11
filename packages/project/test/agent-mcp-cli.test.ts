@@ -1,4 +1,3 @@
-// mcp-cli: strict command keys for agents, temp-ref hints, and property reads with `value` / `evaluated`.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {

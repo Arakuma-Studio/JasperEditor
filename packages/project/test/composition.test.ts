@@ -1,5 +1,3 @@
-// Composition clips (M2, S08 §2, §8 test 3): clip.addComposition, props overrides validated against the
-// composition's JSON Schema, props.* property specs, bounded content, the render snapshot, JSON Schema tools.
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
@@ -216,7 +214,6 @@ describe('props editing (S08:MGC-007, §8 test 3)', () => {
 		expect(errCode(empty)).toBe('E_INVALID_PARAM');
 		const unknown = h.tx([{ type: 'param.set', target: ['clip', id, 'props', 'extra'], value: 1 }]);
 		expect(errCode(unknown)).toBe('E_INVALID_PARAM');
-		// Numbers clamp to the schema range (like every property).
 		const clamped = h.ok([{ type: 'param.set', target: ['clip', id, 'props', 'delay'], value: 100 }]);
 		expect(clamped.warnings.map((w) => w.code)).toContain('W_VALUE_CLAMPED');
 		expect(clipOf(h, id).props).toEqual({ title: 'Edited', delay: 60 });
@@ -238,7 +235,6 @@ describe('props editing (S08:MGC-007, §8 test 3)', () => {
 		);
 		h.ok([{ type: 'clip.update', clipId: id, patch: { props: {} } }]);
 		expect(clipOf(h, id).props).toEqual({});
-		// props do not apply to other kinds; params do not apply to compositions.
 		expect(errCode(h.tx([{ type: 'clip.update', clipId: id, patch: { params: { a: 1 } } }]))).toBe(
 			'E_INVALID_PARAM',
 		);
@@ -310,7 +306,6 @@ describe('media.relink of a rebuilt bundle (S08:MGC-013)', () => {
 		const a = h.doc.media[mediaId]!;
 		expect(a.mgBundle?.bundleHash).toBe('b'.repeat(64));
 		expect(a.locators[0]).toEqual({ type: 'engine-store', engineId: 'local', key: `mk_${'b'.repeat(24)}` });
-		// Other kinds still need force to change their fingerprint.
 		const v = h.registerVideo();
 		const r = h.tx([
 			{

@@ -105,7 +105,6 @@ describe('transactions (S01 §16)', () => {
 		expect(clip.opacity.keyframes.map((k) => k.value)).toEqual([0, 100]);
 		expect(clip.layoutPending).toBe(true);
 		expect(h.seq.markers[0]!.author).toEqual({ agent: 'editor-assistant' });
-		// The blur half of AC-10 (effect.add, WP-2D) is covered in keyframe-effect.test.ts.
 	});
 
 	it('AC-11: stale expectedRevision is refused when it touches a changed clip, fast-forwards otherwise', () => {

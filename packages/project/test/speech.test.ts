@@ -1,5 +1,3 @@
-// wp speech: attaching recognised transcripts (`transcript.attach`), mix words distributed to clip media, coverage
-// invariants and repair.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -167,7 +165,6 @@ describe('words of a sequence mix → media transcripts', () => {
 		expect(ma.coverage).toEqual([[s(10), s(15)]]);
 		const clipB = H.clips('A1').find((c) => (c as { mediaId?: string }).mediaId === b)!;
 		expect(mb.coverage).toEqual([[0, Math.round(clipB.duration * (FLICKS_PER_SECOND / 25) * 2)]]);
-		// attached, they read back at the same sequence times
 		H.ok(
 			r.media.map((m) => ({
 				type: 'transcript.attach',

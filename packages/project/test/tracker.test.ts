@@ -1,6 +1,3 @@
-// Tracking model (S09 §2, §4, §8.1): tracker.* commands, sample lookup / smoothing / merging, and the apply
-// pipeline plate media px → plate Motion → sequence px → inverse target Motion, checked against the scene
-// resolver (what the preview and the warp stage draw).
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
@@ -125,7 +122,6 @@ describe('tracker commands (S09:TRK-001…005)', () => {
 		expect(trackers[1]!.reference.point).toEqual([400, 300]);
 		expect(trackers[1]!.reference.patch).toBeGreaterThan(0);
 		expect(b!.trackerId).not.toBe(a!.trackerId);
-		// Refusals: non-video clip, non-convex corners, wrong geometry kind.
 		for (const cmd of [
 			{ type: 'tracker.add', clipId: target, kind: 'planar', at: { frames: 0 } },
 			{
@@ -174,7 +170,6 @@ describe('tracker commands (S09:TRK-001…005)', () => {
 		expect(s1.data[10 * 8]).toBe(truthQuad(10)[0][0] + 1);
 		expect(s1.confidence[9]).toBe(0.9);
 		expect(s1.confidence[24]).toBe(0.5);
-		// Wrong stride / lengths are refused.
 		const bad = h.tx([
 			{
 				type: 'tracker.setSamples',
@@ -368,7 +363,6 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 				expect(Math.abs(layer.props.quad[k]![1] - want[k]![1])).toBeLessThan(1e-6);
 			}
 		}
-		// Re-apply is stable and replaces the keys inside the range only.
 		h.ok([
 			{
 				type: 'tracker.apply',
@@ -433,7 +427,6 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 		expect(t.transform.scale.keyframes[0]!.value).toBeCloseTo(50, 6);
 		expect(t.transform.scale.keyframes[20]!.value).toBeCloseTo(50 * 1.2, 4);
 		expect(t.transform.rotation.keyframes[20]!.value).toBeCloseTo(20, 4);
-		// Point trackers drive position only (with a warning).
 		const pr = h.ok([
 			{ type: 'tracker.add', clipId: plate, kind: 'point', at: { frames: 0 }, point: [960, 540] },
 		]);

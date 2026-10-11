@@ -1,5 +1,3 @@
-// Anime templates in the model (wp-m2-anime-templates): keyframable params (S11:ATP-006), the template upgrade
-// command (ATP-009, FIX-005), the renderer stamp invariant and repair (ATP-002) and the snapshot source.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -122,17 +120,14 @@ describe('keyframable params of anime templates (S11:ATP-006)', () => {
 	it('the stopwatch, param.set at frames and the keyframe commands work on params.<name>', () => {
 		const { h, a } = setup();
 		const target = ['clip', a, 'params', 'color'];
-		// a static edit leaves no keyframe list behind
 		h.ok([{ type: 'param.set', target, value: [1, 0, 0, 1] }]);
 		expect(mg(h, a).params.color).toEqual([1, 0, 0, 1]);
 		expect(mg(h, a).paramKeyframes).toBeUndefined();
-		// stopwatch on: one key at the current value
 		const on = h.ok([{ type: 'param.setAnimated', target, animated: true, at: { frames: 0 } }]);
 		const k0 = (on.results[0] as { keyframeId: string }).keyframeId;
 		expect(mg(h, a).paramKeyframes?.color).toEqual([
 			expect.objectContaining({ id: k0, time: 0, value: [1, 0, 0, 1], interpolation: 'linear' }),
 		]);
-		// animated: param.set at a frame upserts a key; values are clamped like the schema
 		const set = h.ok([{ type: 'param.set', target, value: [0, 0, 2, 1], at: { frames: 30 } }]);
 		expect(set.warnings.map((w) => w.code)).toContain('W_VALUE_CLAMPED');
 		expect(mg(h, a).paramKeyframes?.color?.map((k) => [k.time, k.value])).toEqual([
@@ -140,12 +135,10 @@ describe('keyframable params of anime templates (S11:ATP-006)', () => {
 			[30 * F, [0, 0, 1, 1]],
 		]);
 		expect(animatedTemplateParams(mg(h, a))).toEqual(['color']);
-		// resolution through the property registry evaluates the shared evaluator
 		const spec = resolvePropertySpec('params.color', info('reveal', 1, revealV1, 'anime'))!;
 		const mid = resolvePropertyAt({ doc: h.doc, seq: h.seq, clip: mg(h, a) }, spec, 15);
 		expect(mid.animated).toBe(true);
 		expect(mid.value).toEqual([0.5, 0, 0.5, 1]);
-		// keyframe.add / update / setInterpolation / move find the dynamic key
 		const add = h.ok([
 			{ type: 'keyframe.add', target: ['clip', a, 'params', 'size'], at: { frames: 10 }, value: 150 },
 		]);
@@ -159,15 +152,12 @@ describe('keyframable params of anime templates (S11:ATP-006)', () => {
 		expect(mg(h, a).paramKeyframes?.color?.[1]?.value).toEqual([0, 1, 0, 1]);
 		expect(mg(h, a).paramKeyframes?.color?.[0]?.interpolation).toBe('hold');
 		expect(mg(h, a).paramKeyframes?.size?.[0]?.time).toBe(15 * F);
-		// out-of-range keyframe values are clamped; invalid ones refused
 		expect(fail(h.tx([{ type: 'keyframe.update', keyframeId: ks, value: 'big' }]))?.code).toBe(
 			'E_INVALID_PARAM',
 		);
-		// removing the last key turns the stopwatch off and keeps its value
 		h.ok([{ type: 'keyframe.remove', keyframeIds: [ks] }]);
 		expect(mg(h, a).paramKeyframes?.size).toBeUndefined();
 		expect(mg(h, a).params.size).toBe(150);
-		// stopwatch off: the value at the playhead becomes static, the list disappears
 		h.ok([{ type: 'param.setAnimated', target, animated: false, at: { frames: 30 } }]);
 		expect(mg(h, a).paramKeyframes).toBeUndefined();
 		expect(mg(h, a).params.color).toEqual([0, 1, 0, 1]);
@@ -185,7 +175,6 @@ describe('keyframable params of anime templates (S11:ATP-006)', () => {
 			const r = h.tx([{ type: 'param.setAnimated', target: ['clip', clip, 'params', name], animated: true }]);
 			expect(fail(r)?.code, `${clip} ${name}`).toBe('E_INVALID_PARAM');
 		}
-		// static writes still validate against the template schema
 		expect(
 			fail(h.tx([{ type: 'param.set', target: ['clip', a, 'params', 'title'], value: 'x'.repeat(41) }]))
 				?.code,
@@ -210,7 +199,6 @@ describe('keyframable params of anime templates (S11:ATP-006)', () => {
 		expect(r.map((k) => k.time)).toEqual(left.map((k) => k.time));
 		expect(r.map((k) => k.id).some((id) => left.some((l) => l.id === id))).toBe(false);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// the right part shows the same evaluated value at the same sequence frame
 		const spec = resolvePropertySpec('params.size', info('reveal', 1, revealV1, 'anime'))!;
 		const l44 = resolvePropertyAt({ doc: h.doc, seq: h.seq, clip: mg(h, a) }, spec, 44).value as number;
 		const r46 = resolvePropertyAt({ doc: h.doc, seq: h.seq, clip: mg(h, right) }, spec, 46).value as number;
@@ -289,7 +277,6 @@ describe('template version upgrade (S11:ATP-009, FIX-005)', () => {
 		expect(Object.keys(mg(h, a).paramKeyframes ?? {})).toEqual(['color']);
 		expect(r.warnings).toEqual([expect.objectContaining({ code: 'W_KEYFRAMES_DROPPED' })]);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// one transaction = one undo step: the previous document is untouched
 		expect((before.sequences[h.seqId]!.clips[a] as Mg).template.version).toBe(1);
 	});
 	it('params in the same patch as an upgrade target the new version', () => {
@@ -377,7 +364,6 @@ describe('template upgrade checks the clip canvas against the new version (revie
 		const e = fail(upgrade(h, id));
 		expect(e?.code).toBe('E_INVALID_PARAM');
 		expect(mg(h, id).template.version).toBe(1);
-		// a canvas the new version draws, set in the same patch
 		h.ok([{ type: 'clip.update', clipId: id, patch: { template: { version: 2 }, canvas: wide } }]);
 		expect(mg(h, id)).toMatchObject({ template: { version: 2 }, canvas: wide });
 	});
@@ -448,7 +434,6 @@ describe('renderer stamp invariant (S11:ATP-002)', () => {
 			'restamp-renderer',
 		]);
 		expect(loaded.issues).toEqual([]);
-		// without the registry only the keyframe repair applies
 		const r2 = repairDocument(doc, { next: () => 'x' } as never);
 		expect(r2.report.map((r) => r.action)).toEqual(['drop-keyframes']);
 		expect(

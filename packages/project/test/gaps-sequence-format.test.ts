@@ -1,4 +1,3 @@
-// Workstream gaps (TL-11): Sequence Settings ▸ pixel aspect ratio, storage width, fields; New Sequence From Clip.
 import { describe, expect, it } from 'vitest';
 import { checkInvariants, displayWidthOf, repairDocument, sequenceFormatOf } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -22,7 +21,6 @@ describe('sequence delivery format', () => {
 		expect(sequenceFormatOf(h.seq.settings)).toMatchObject({ storageWidth: 1440, par: { num: 4, den: 3 } });
 		h.ok([{ type: 'sequence.updateSettings', settings: { fieldOrder: 'upper' } }]);
 		expect(sequenceFormatOf(h.seq.settings).fieldOrder).toBe('upper');
-		// A width that is not the display width is refused.
 		expect(
 			h.tx([
 				{

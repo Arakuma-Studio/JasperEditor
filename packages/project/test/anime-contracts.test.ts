@@ -1,5 +1,3 @@
-// M2 animation contracts (ARCHITECTURE §20.1, S11): schema v4 (text animators, anime renderer, shape clips),
-// text-animation windows, clip engines and the agent schema additions.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,7 +118,6 @@ describe('text animation windows (S11:TXA-002/004)', () => {
 		expect(compressAnimationWindows(41, 20, 20)).toEqual({ in: 20, out: 20, compressed: false });
 		expect(compressAnimationWindows(10, 30, 10)).toEqual({ in: 7, out: 2, compressed: true });
 		expect(compressAnimationWindows(10, 1, 100)).toEqual({ in: 1, out: 8, compressed: true });
-		// A single side may cover the whole clip.
 		expect(compressAnimationWindows(10, 0, 30)).toEqual({ in: 0, out: 10, compressed: true });
 		expect(compressAnimationWindows(10, 10, 0)).toEqual({ in: 10, out: 0, compressed: false });
 		for (let d = 3; d < 60; d++)

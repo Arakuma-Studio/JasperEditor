@@ -1,4 +1,3 @@
-// wp masks: mask.* commands, mask ParamPaths (param.set / keyframes), ids on copies, invariants and repair.
 import { describe, expect, it } from 'vitest';
 import {
 	type BezierPath,
@@ -69,7 +68,6 @@ describe('mask commands', () => {
 		expect((v[1]!.p[0] - 0.5) * 1920).toBeCloseTo((v[2]!.p[1] - 0.5) * 1080, 6);
 		expect(fxMasksOf(h, clipId)).toHaveLength(1);
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
-		// A pen mask without a path is refused; two owners at once too.
 		expect(h.tx([{ type: 'mask.add', clipId, shape: 'bezier' }]).ok).toBe(false);
 		expect(h.tx([{ type: 'mask.add', clipId, effectId: fxId, shape: 'ellipse' }]).ok).toBe(false);
 	});
@@ -134,7 +132,6 @@ describe('mask commands', () => {
 		expect(mk.path.keyframes).toHaveLength(2);
 		const mid = resolveMask(mk, 15 * F);
 		expect(mid.path.vertices[0]!.p[0]).toBeCloseTo(mk.path.keyframes[0]!.value.vertices[0]!.p[0] + 0.05, 9);
-		// keyframe.* commands find mask keys (they are animatables of the clip).
 		h.ok([
 			{ type: 'keyframe.setInterpolation', keyframeIds: [mk.path.keyframes[0]!.id], interpolation: 'hold' },
 		]);
@@ -142,7 +139,6 @@ describe('mask commands', () => {
 			mk.path.keyframes[0]!.value.vertices[0]!.p[0],
 			9,
 		);
-		// Invalid path values are refused.
 		expect(
 			h.tx([{ type: 'param.set', target: ['mask', id, 'path'], value: { closed: true, vertices: 'x' } }]).ok,
 		).toBe(false);
@@ -183,7 +179,6 @@ describe('mask commands', () => {
 		const mk = masksOf(h, clipId)[0]!;
 		expect(mk.path.keyframes.map((k) => k.value.vertices.length)).toEqual([4, 4]);
 		expect(pathLength(mk.path.keyframes[1]!.value)).toBeLessThan(pathLength(mk.path.keyframes[0]!.value));
-		// Removing to fewer than 3 vertices of a closed mask is refused.
 		expect(
 			h.tx([{ type: 'mask.editPath', maskId: id, ops: [{ op: 'removeVertices', vertices: [0, 1] }] }]).ok,
 		).toBe(false);
@@ -205,7 +200,6 @@ describe('mask commands', () => {
 		const before = sq.path.value.vertices.map((v) => v.p);
 		expect(after[0]![0]).toBeCloseTo(before[1]![0], 9);
 		expect(after[0]![1]).toBeCloseTo(before[1]![1], 9);
-		// Variable feather points.
 		h.ok([
 			{
 				type: 'mask.editPath',
@@ -308,7 +302,6 @@ describe('mask commands', () => {
 		expect(snap.videoTracks.map((t) => t.trackId)).not.toContain(v2);
 		expect(snap.matteTracks?.map((t) => t.trackId)).toEqual([v2]);
 		expect(snap.matteTracks![0]!.clips[0]!.clipId).toBe(matte);
-		// V2 reading V1 back would be a cycle; a clip reading its own track too.
 		expect(
 			h.tx([
 				{

@@ -1,6 +1,3 @@
-// Text animators in the model (S11:TXA-002…009, FIX-004, ANA-007): the catalogue, clip.addText / clip.update
-// `textAnimation`, razor, duplicate, trims and frame-rate changes, the `textAnimation` property group with
-// param.set, invariants/repair, the snapshot and the agent query.
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
@@ -60,7 +57,6 @@ describe('catalogue (S11:TXA-002/003)', () => {
 			expect(s.phases).toEqual(['in', 'out']);
 			expect(s.paramsSchema.safeParse({}).success).toBe(true);
 			expect(s.defaultDurationFrames).toBeGreaterThanOrEqual(1);
-			// strict schemas: unknown params are rejected
 			expect(s.paramsSchema.safeParse({ bogus: 1 }).success).toBe(false);
 		}
 		expect(latestTextAnimationSpec('fade')?.id).toBe('fade');
@@ -287,7 +283,6 @@ describe('typewriter versions (blinking caret = typewriter@2)', () => {
 			]),
 		);
 		expect(snap.warnings).toEqual([]);
-		// upgrading in place keeps the @1 params and adds the @2 defaults
 		expect(
 			h.tx([{ type: 'clip.update', clipId: v1, patch: { textAnimation: { out: { version: 2 } } } }]).ok,
 		).toBe(true);
@@ -402,7 +397,6 @@ describe('textAnimation properties and param.set (S11:TXA-007, FIX-004)', () => 
 			durationFrames: 7,
 			params: { bounce: 0.2, scale: 0 },
 		});
-		// range clamp with a warning, enums checked by the rule
 		const clamped = set('textAnimation.in.params.stagger', 4);
 		expect(clamped.ok && clamped.warnings[0]?.code).toBe('W_VALUE_CLAMPED');
 		expect(err(set('textAnimation.in.params.order', 'sideways'))?.code).toBe('E_INVALID_PARAM');
@@ -425,12 +419,10 @@ describe('textAnimation properties and param.set (S11:TXA-007, FIX-004)', () => 
 		expect(r.ok).toBe(true);
 		expect(textClip(h, id).content.style.sizePx).toBe(40);
 		expect(textClip(h, id).box).toMatchObject({ width: 17 * 20, height: 48 });
-		// a stroke can be created by param.set (it used to need an existing stroke)
 		expect(h.tx([{ type: 'param.set', target: ['clip', id, 'text', 'strokeWidth'], value: 3 }]).ok).toBe(
 			true,
 		);
 		expect(textClip(h, id).content.style.strokes[0]?.widthPx).toBe(3);
-		// static targets still refuse keyframes
 		const at = h.tx([
 			{ type: 'param.set', target: ['clip', id, 'text', 'sizePx'], value: 41, at: { sequenceFrame: 3 } },
 		]);

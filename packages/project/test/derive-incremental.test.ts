@@ -1,5 +1,3 @@
-// perf-core: a sequence's per-track index derived from its previous version's (only the tracks of changed clips are
-// rebuilt) equals a full build, over random chains of edits; untouched tracks share their lists.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { applyTransaction, clipsOnTrack, createRandomIdSource, type Sequence } from '../src/index.ts';
@@ -33,7 +31,7 @@ describe('incremental per-track index (perf-core)', () => {
 					let doc = h.doc;
 					for (const s of steps) {
 						const seq = doc.sequences[h.seqId]!;
-						for (const t of allTrackIds(seq)) clipsOnTrack(seq, t); // index the current version
+						for (const t of allTrackIds(seq)) clipsOnTrack(seq, t);
 						const clips = Object.keys(seq.clips).sort();
 						const c = clips[s.a % clips.length]!;
 						const cmd = [
@@ -53,7 +51,6 @@ describe('incremental per-track index (perf-core)', () => {
 						const full = fresh(next, n++);
 						for (const t of allTrackIds(next)) expect(clipsOnTrack(next, t)).toEqual(clipsOnTrack(full, t));
 						if (next.clips !== seq.clips) {
-							// tracks without a changed clip keep the previous list object
 							const touched = new Set(
 								[...Object.keys(next.clips), ...Object.keys(seq.clips)]
 									.filter((k) => next.clips[k] !== seq.clips[k])

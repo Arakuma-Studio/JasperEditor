@@ -1,5 +1,3 @@
-// three-d: scene math — the default camera shows the z = 0 plane at 100 % (a 3D layer at its defaults is exactly where
-// its 2D Motion puts it), camera / light evaluation, orientation slerp, lens relations, attenuation and 3D runs.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -153,7 +151,6 @@ describe('3D layer transform', () => {
 		td.scaleZ = anim(200);
 		td.positionZ = anim(10);
 		const world = layerWorldMatrix({ transform: transform(), threeD: td }, 0);
-		// The anchor point maps to the position.
 		const p = mat4Apply(world, [320, 180, 50]);
 		expect(p[0]).toBeCloseTo(W / 2, 9);
 		expect(p[1]).toBeCloseTo(H / 2, 9);
@@ -175,7 +172,6 @@ describe('3D layer transform', () => {
 		const o = { value: [0, 350, 0] as Vec3, keyframes: [k('a', 0, [0, 350, 0]), k('b', 100, [0, 10, 0])] };
 		const mid = orientationOfMat4(orientationMatrixAt(o, 50));
 		expect(Math.min(mid[1], 360 - mid[1])).toBeLessThan(1e-6);
-		// Endpoints are exact.
 		const end = orientationMatrixAt(o, 100);
 		const want = mat4Orientation([0, 10, 0]);
 		for (let i = 0; i < 16; i++) expect(end[i]!).toBeCloseTo(want[i]!, 9);
@@ -271,7 +267,6 @@ describe('lights and materials', () => {
 
 	it('a spot light is full inside the inner cone, off outside the outer cone', () => {
 		const l = lightStateOf(light('spot', { coneAngle: 90, coneFeather: 50 }), 0, FPS);
-		// Aimed at the frame centre.
 		expect(lightAttenuation(l, [W / 2, H / 2, 0])).toBeCloseTo(1, 9);
 		// Far off-axis (behind the light's direction) = 0.
 		const back: Vec3 = [l.pos[0] - l.dir[0] * 100, l.pos[1] - l.dir[1] * 100, l.pos[2] - l.dir[2] * 100];

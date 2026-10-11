@@ -1,5 +1,4 @@
-// Essential Sound (audio-fx): settings → ordinary keyframable clip effects, gain, Volume and pan (FilmCraft's
-// essential.rs design), presets, Clear Audio Type, Auto-Match, refusals; Remix and its revert.
+// Essential Sound settings follow FilmCraft's essential.rs design.
 import { describe, expect, it } from 'vitest';
 import {
 	AUDIO_TYPES,
@@ -123,7 +122,6 @@ describe('Essential Sound commands', () => {
 		]);
 		const ids = () => clip().effects.map((e) => e.essential ?? e.effectId);
 		expect(ids()).toEqual(['rumble', 'deess', 'reverb', 'jasper.audio.delay']);
-		// Keyframe a parameter of the DeEsser by hand, then change unrelated settings.
 		const deess = clip().effects.find((e) => e.essential === 'deess')!;
 		h.ok([
 			{ type: 'param.set', target: ['effect', deess.id, 'reduction'], value: 3, at: { frames: 10 } },
@@ -148,7 +146,6 @@ describe('Essential Sound commands', () => {
 		expect(clip().effects.find((e) => e.essential === 'deess')!.params.reduction!.keyframes.length).toBe(
 			kfBefore,
 		);
-		// Section off bypasses, slot off removes.
 		h.ok([
 			{
 				type: 'essentialSound.set',
@@ -158,7 +155,6 @@ describe('Essential Sound commands', () => {
 		]);
 		expect(clip().effects.find((e) => e.essential === 'rumble')!.enabled).toBe(false);
 		expect(clip().effects.some((e) => e.essential === 'reverb')).toBe(false);
-		// A changed parameter of a keyframed effect writes a keyframe at `at`.
 		h.ok([
 			{ type: 'essentialSound.set', clipIds: [id], values: { 'repair.deess.amount': 8 }, at: { frames: 30 } },
 		]);
@@ -166,7 +162,6 @@ describe('Essential Sound commands', () => {
 		expect(
 			red.keyframes.some((k) => k.time === 30 * F30 && Math.abs((k.value as number) - 19.2) < 1e-9),
 		).toBe(true);
-		// Clear Audio Type removes every essential effect, keeps the user's.
 		h.ok([{ type: 'essentialSound.clearType', clipIds: [id] }]);
 		expect(ids()).toEqual(['jasper.audio.delay']);
 		expect(clip().essential).toBeUndefined();
@@ -211,7 +206,7 @@ describe('Essential Sound commands', () => {
 		const user = { ...newEssentialSound('dialogue'), preset: 'Mine', mute: true };
 		h.ok([{ type: 'essentialSound.applyPreset', clipIds: [id], settings: user }]);
 		expect(clip().effects.map((e) => e.essential)).toEqual([]);
-		expect(readEssentialSound(clip().essential)!.mute).toBe(false); // kept the clip's own mute
+		expect(readEssentialSound(clip().essential)!.mute).toBe(false);
 		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { mute: true } }]);
 		expect(clip().effects.map((e) => e.effectId)).toEqual(['jasper.audio.mute']);
 		const bad = h.tx([{ type: 'essentialSound.applyPreset', clipIds: [id], preset: 'Nope' }]);
@@ -254,7 +249,6 @@ describe('Remix', () => {
 		]);
 		// Piece 2 starts 4.1 s into the output (frame 123 = 4.1 s exactly): source 10.1 s.
 		expect(list[1]!.sourceIn).toBe(Math.round(10.1 * 705_600_000));
-		// Every piece knows the remix; one group; crossfades at both joints.
 		const remix = (list[0] as { remix?: { id: string; count: number } }).remix!;
 		expect(remix.count).toBe(3);
 		expect(Object.keys(h.seq.groups)).toContain(remix.id);
@@ -262,7 +256,6 @@ describe('Remix', () => {
 		expect(ts.length).toBe(2);
 		expect(ts.every((t) => t.effectId === 'jasper.constant-power')).toBe(true);
 		expect((r.results[0] as { pieces: number }).pieces).toBe(3);
-		// Remix again (from the original) to another length, then revert.
 		h.ok([
 			{
 				type: 'clip.remix',
@@ -391,7 +384,6 @@ describe('audio effects through the clipboard and effect presets', () => {
 				.find((e) => e.effectId === 'jasper.audio.amplify')!
 				.params.leftGain!.keyframes.map((k) => k.value),
 		).toEqual([-6, 3]);
-		// B has no Essential Sound settings: the pasted DeHummer is an ordinary effect.
 		expect(pasted.every((e) => e.essential === undefined)).toBe(true);
 		expect(checkInvariants(h.doc)).toEqual([]);
 

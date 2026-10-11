@@ -1,7 +1,6 @@
-// Bezier ease precision (keyframes-blend): `bezierProgress` against an exact reference (BigInt fixed point, 2^-320
-// resolution, bisection to 2^-200 on the curve parameter), over random eases incl. 100 % / 100 % influences,
-// overlapping influences, negative and steep slopes; and live After Effects samples for overlapping influences
-// (effectcraft crates/keyframe/src/lib.rs `temporal_ease_matches_live_ae_with_overlapping_influences`, AE 26.3x87).
+// BigInt fixed-point reference: 2^-320 resolution, bisection to 2^-200 on the curve parameter.
+// Overlapping-influence samples: EffectCraft crates/keyframe/src/lib.rs
+// `temporal_ease_matches_live_ae_with_overlapping_influences`, AE 26.3x87.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { type Animatable, bezierProgress, type Ease, evaluate, type Keyframe } from '../src/index.ts';
@@ -97,8 +96,6 @@ describe('bezierProgress precision (keyframes-blend)', () => {
 		expect(worst).toBeLessThan(1e-12);
 	});
 });
-
-// ---------------------------------------------------------------- overlapping influences (After Effects)
 
 const SEC = 705_600_000;
 function scalar(from: number, to: number, out: Ease, inn: Ease): Animatable<number> {

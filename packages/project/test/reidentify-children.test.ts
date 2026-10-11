@@ -1,7 +1,3 @@
-// Copies of a clip (split, duplicate, paste, timeline import: `project.importTimeline` restores clips through the same
-// re-identification) give every document-unique entity inside it a fresh id.
-// Regression (verify workstream): text animators / selectors (`tan_`, `tsl_`) and Puppet meshes / pins (`pms_`, `ppn_`)
-// kept their ids, so Ctrl+K on an animated title or a clip with Puppet pins was refused with INV-001 "Duplicate id".
 import { describe, expect, it } from 'vitest';
 import { type Clip, checkInvariants } from '../src/index.ts';
 import { Harness } from './helpers.ts';

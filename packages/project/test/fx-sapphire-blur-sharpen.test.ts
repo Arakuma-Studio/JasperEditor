@@ -1,7 +1,3 @@
-// Sapphire Blur+Sharpen family (wave 2): catalogue entries, Sapphire parameter defaults, and the pure TypeScript
-// planning — Sapphire units, downscaling of large blurs/irises, tap counts, texture budget under stress params,
-// soft-border padding, depth-layer planning, kernel convolution planning, motion paths, FreeLens shake determinism
-// and the S_BlurMoCurves `paramsAt` hook. Pixels are checked in packages/compositions/test/fx-sapphire-blur-sharpen-gl.
 import { describe, expect, it } from 'vitest';
 import type { EffectParams, EffectSpec, FxFrameContext } from '../src/index.ts';
 import {
@@ -100,12 +96,9 @@ describe('Sapphire Blur+Sharpen catalogue', () => {
 		expect(p('jasper.s.free-lens', 'tiltX')).toMatchObject({ default: 12.5, range: { min: -45, max: 45 } });
 		expect(p('jasper.s.convolve', 'kernelCrop1').default).toEqual([-0.997, -0.747]);
 		expect(p('jasper.s.sharpen', 'scaleTinyDetails').default).toBe(3);
-		// Mix With Source is the framework's mixWithOriginal.
 		expect(p('jasper.s.blur', 'mixWithOriginal').label).toBe('Mix With Source');
-		// Depth effects take the Z buffer as a media param.
 		for (const id of ['jasper.s.z-defocus', 'jasper.s.z-blur', 'jasper.s.z-convolve'])
 			expect(p(id, 'zBuffer').type).toBe('media');
-		// Numeric, colour and point params are keyframable; popups and toggles hold.
 		for (const s of FAMILY)
 			for (const x of s.params) {
 				if (x.type === 'number' && x.name !== 'seed') expect(x.animatable, `${s.id}.${x.name}`).toBe(true);

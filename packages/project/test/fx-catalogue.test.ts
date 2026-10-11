@@ -1,6 +1,3 @@
-// The fx catalogue (wave 1 scaffolding, wave 2 entries): every family file is wired into the default registry and
-// the agent schema export, and every entry follows the framework's rules. Wave-2 families are checked by this test
-// as soon as they add entries (no per-family test plumbing needed; family tests add behaviour checks).
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
@@ -75,7 +72,6 @@ describe('fx catalogue', () => {
 			expect(e.gpu ?? false).toBe(!!s.gpu);
 			expect(effectIsGpu(s)).toBe(!!s.gpu);
 		}
-		// Existing effects keep their shape (no GPU flag).
 		expect(byId.get('jasper.crop')!.gpu).toBeUndefined();
 	});
 });

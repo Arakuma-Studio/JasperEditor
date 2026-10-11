@@ -40,7 +40,6 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		for (const c of Object.values(before.clips as Record<string, any>)) {
 			expect(after.clips[c.id]!.label).toBe(c.kind === 'audio' ? 'caribbean' : c.label);
 		}
-		// Everything except that label is untouched.
 		const strip = (d: any) => {
 			const copy = JSON.parse(JSON.stringify(d));
 			for (const s of Object.values(copy.sequences) as any[])
@@ -49,7 +48,6 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 			return copy;
 		};
 		expect(strip(m.document)).toEqual(strip(env.document));
-		// The v1 input is never mutated.
 		expect((Object.values(before.clips) as any[]).find((c) => c.kind === 'audio').label).toBe('violet');
 	});
 	it('v1 → v2 keeps labels the user chose on audio clips', () => {
@@ -123,13 +121,11 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 		const s2 = Object.values(saved.sequences)[0]!;
 		expect((s2.clips.clp_000000000000HOLO as unknown as { beam: unknown }).beam).toEqual({ power: 9000 });
 		expect((s2.clips[video.id] as unknown as { futureField: unknown }).futureField).toEqual({ nested: true });
-		// Bypassed in rendering, with a warning for the unknown clip kind.
 		const snap = buildRenderSnapshot(loaded.document, s2.id, {
 			resolveMedia: () => null,
 			resolveFont: () => null,
 		});
 		expect(snap.warnings.map((w) => w.clipId)).toContain('clp_000000000000HOLO');
-		// An unrelated edit keeps both untouched; the unknown clip still occupies its range.
 		const h = new Harness();
 		h.doc = loaded.document;
 		const r = h.tx([{ type: 'clip.addSolid', at: 500, duration: 10, track: 'V2', color: [1, 1, 1, 1] }], {
@@ -138,7 +134,6 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 		expect(r.ok).toBe(true);
 		const after = Object.values(h.doc.sequences)[0]!;
 		expect(after.clips.clp_000000000000HOLO).toEqual(s2.clips.clp_000000000000HOLO);
-		// It occupies its range: a clip placed over it overwrites (trims) it like any other clip.
 		h.ok([{ type: 'clip.addSolid', at: 420, duration: 30, track: 'V2', color: [1, 1, 1, 1] }]);
 		expect(Object.values(h.doc.sequences)[0]!.clips.clp_000000000000HOLO!.duration).toBe(20);
 		const fx = (

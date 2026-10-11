@@ -1,5 +1,3 @@
-// sim-warp: Liquify strokes, Mesh Warp vertices, Puppet meshes and pins as undoable commands; pin ParamPaths;
-// invariants and repair; the puppet solver and the Liquify brushes (pure).
 import { describe, expect, it } from 'vitest';
 import {
 	alphaOutline,
@@ -74,7 +72,6 @@ describe('Liquify', () => {
 		const g = liquifyGrid(640, 360);
 		expect(mesh.slice(0, 3)).toEqual([LIQUIFY_VERSION, g.nx, g.ny]);
 		expect(mesh.some((v, i) => i >= 3 && v !== 0)).toBe(true);
-		// Undo = the previous document is untouched.
 		expect(
 			before.sequences[h.seqId]!.clips as never as Record<
 				string,
@@ -82,7 +79,6 @@ describe('Liquify', () => {
 			>,
 		).toBeTruthy();
 		expect(JSON.stringify(before)).not.toEqual(JSON.stringify(h.doc));
-		// Animated: a stroke at frame 10 adds a key; the mesh interpolates between keys.
 		h.ok([
 			{
 				type: 'param.setAnimated',
@@ -103,7 +99,6 @@ describe('Liquify', () => {
 		expect(fx().params.distortionMesh!.keyframes).toHaveLength(2);
 		const mid = evaluate(fx().params.distortionMesh as never, 5 * F) as number[];
 		expect(mid.length).toBe(mesh.length);
-		// Reset; wrong effect refused.
 		h.ok([{ type: 'liquify.reset', effectInstanceId: fxId, at: { frames: 10 } }]);
 		expect(h.tx([{ type: 'meshWarp.reset', effectInstanceId: fxId }]).ok).toBe(false);
 		expect(h.tx([{ type: 'liquify.stroke', effectInstanceId: 'fx_nope', points: [[0, 0]] }]).ok).toBe(false);
@@ -169,7 +164,6 @@ describe('Liquify', () => {
 			frozen: () => true,
 		});
 		expect(frozen).toEqual(empty);
-		// Deterministic.
 		expect(
 			liquifyApplyStroke(empty, w, ht, {
 				tool: 'turbulence',
@@ -319,7 +313,6 @@ describe('Puppet', () => {
 		expect(pup.pins.map((p) => p.name)).toEqual(['Puppet Pin 1', 'Puppet Pin 2', 'Starch 1']);
 		h.ok([{ type: 'puppet.movePins', moves: [{ pinId: b!.pinId, position: [0.9, 0.3] }] }]);
 		expect(fx().puppet!.pins[1]!.position.value).toEqual([0.9, 0.3]);
-		// Pin properties are ordinary animatable properties.
 		h.ok([
 			{
 				type: 'param.setAnimated',
@@ -446,7 +439,6 @@ describe('Puppet', () => {
 			Math.hypot(s.deformed[ia]![0] - g.verts[ia]![0], s.deformed[ia]![1] - g.verts[ia]![1]),
 		).toBeLessThan(1e-6);
 		expect(s.deformed[ib]![1]).toBeLessThan(g.verts[ib]![1] - 20);
-		// Deterministic and stable.
 		expect(solvePuppet(moved, w, ht, 2)[0]!.deformed).toEqual(s.deformed);
 		expect(meshAt(pup, [0.5, 0.5], w, ht)).toBe('m');
 		expect(meshAt(pup, [1.5, 0.5], w, ht)).toBeNull();

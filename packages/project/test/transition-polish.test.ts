@@ -1,6 +1,3 @@
-// Wave-4 transition polish (docs/wp-notes/fx-transition-framework.md): the `expensive` flag, image (`media`) params
-// (Gradient Wipe / VR Gradient Wipe custom gradients), the sides' trackers (S_MochaWhip's Mocha mode), uniform
-// collision checks of both validators, and the Custom Completion timing curve.
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,

@@ -1,7 +1,4 @@
-// Regression (golden-fuzz): the per-track clip index and the sequence duration were memoized by the identity of the
-// `clips` record, which is the same Immer draft proxy for every command of one transaction — so clips added by
-// earlier commands could be missing from a later lookup (transition.add at a new clip's edge failed with "not an
-// edit point"). Found by the scale-project generator (bench/scale-project.ts).
+// Immer keeps the clips-record proxy across commands in a transaction; its identity cannot key a clip-index cache.
 import { describe, expect, it } from 'vitest';
 import { Harness } from './helpers.ts';
 

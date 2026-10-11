@@ -1,6 +1,4 @@
-// ARCHITECTURE §13 / docs/performance.md budgets of the pure model, enforced (workstream `previews`): resolveSceneAt
-// with 50 layers < 1 ms, the render bar (preview segments, hashes and costs) of a 1 000-clip sequence < 120 ms.
-// Best of several runs; budgets scale with the measured host load unless PERF=1 (scripts/perf/budget.ts).
+// Budgets scale with measured host load unless PERF=1 (scripts/perf/budget.ts; docs/performance.md).
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import {

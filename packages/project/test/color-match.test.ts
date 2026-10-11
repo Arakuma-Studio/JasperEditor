@@ -1,5 +1,4 @@
-// color-grade: Colour Match (FilmCraft color_match.rs port, solved into Lumetri wheels / levels / saturation) and
-// Auto tone. Synthetic frames with known grades, as FilmCraft's tests, plus face-box skin protection and Auto.
+// Colour Match cases follow FilmCraft color_match.rs with synthetic frames and known grades.
 import { describe, expect, it } from 'vitest';
 import {
 	autoTone,

@@ -1,6 +1,3 @@
-// three-d: the geometry of Advanced 3D extrusion — triangulation with holes (areas add up, random polygons), contour
-// tracing of pictures (a disc and a ring at sub-pixel accuracy), nesting, and extruded solids (closed: every edge
-// shared by two triangles; bevel profiles; normals pointing out).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

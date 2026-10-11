@@ -1,5 +1,3 @@
-// wp-multicam: Synchronize, Merge Clips, Create Multi-Camera Source Sequence, multi-camera clips (switching,
-// recording, enable, flatten, Edit Cameras), their render expansion and invariants.
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
@@ -173,7 +171,6 @@ describe('sync points', () => {
 		expect(p[0]!.start).toBe(16);
 		const exact = 0.51 * SEC;
 		expect(p[0]!.sourceIn).toBe(Math.round(16 * F30 - exact));
-		// the frame a shows at timeline frame 16 is the one that coincides with b's
 		const aTime = p[0]!.sourceIn;
 		const bTime = 16 * F30;
 		expect(Math.abs(bTime - (aTime + Math.round(0.51 * SEC)))).toBeLessThanOrEqual(1);
@@ -197,7 +194,6 @@ describe('Create Multi-Camera Source Sequence', () => {
 		expect(src.videoTracks).toHaveLength(3);
 		expect(src.audioTracks).toHaveLength(4);
 		expect(src.videoTracks.map((t) => t.name)).toEqual(['A Cam', 'B Cam', 'C Cam']);
-		// automatic preset = the reference camera's format
 		expect([src.settings.width, src.settings.height, src.settings.frameRate]).toEqual([
 			1920,
 			1080,
@@ -286,11 +282,9 @@ describe('multi-camera clips: placing and rendering', () => {
 		const src = h.doc.sequences[sequenceId]!;
 		const len = Math.max(...Object.values(src.clips).map((c) => c.start + c.duration));
 		expect(v.duration).toBe(len);
-		// bounded by the source sequence: extending past it fails
 		h.tx([{ type: 'clip.trim', clipId: video, edge: 'out', deltaFrames: 5, linked: false }]);
 		expect(h.seq.clips[video]!.duration).toBe(len);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// a sequence cannot be placed into itself
 		const self = h.tx([{ type: 'clip.place', source: { sequenceId }, at: 0, sequenceId }]);
 		expect(self.ok).toBe(false);
 	});
@@ -327,7 +321,6 @@ describe('multi-camera clips: placing and rendering', () => {
 			expect(shown.map((c) => (c.source as { mediaId: string }).mediaId)).toEqual([
 				(inner as { mediaId: string }).mediaId,
 			]);
-			// every outer frame shows the angle clip's media at the synced media time
 			for (const f of [inner.start, inner.start + 7, inner.start + inner.duration - 1]) {
 				const flat = flatLayers(s, f);
 				expect(flat).toHaveLength(1);
@@ -336,7 +329,6 @@ describe('multi-camera clips: placing and rendering', () => {
 				expect(flat[0]!.opacity).toBeCloseTo(50, 9);
 			}
 		}
-		// each angle has its own render content key (render caches never mix angles)
 		expect(keys.size).toBe(3);
 	});
 
@@ -375,14 +367,11 @@ describe('multi-camera clips: placing and rendering', () => {
 		expect(played()).toEqual(mc.angles.map((a) => mediaOfTrack(a.audioTrackIds[0]!)).sort());
 		h.ok([{ type: 'multicam.editAngles', sequenceId, audio: 'switch' }]);
 		expect(played()).toEqual([mediaOfTrack(mc.angles[2]!.audioTrackIds[0]!)]);
-		// audio stays fixed when switching video only
 		h.ok([{ type: 'multicam.switchAngle', clipIds: [video], angle: 2, audio: false }]);
 		expect(played()).toEqual([mediaOfTrack(mc.angles[2]!.audioTrackIds[0]!)]);
 		expect((h.seq.clips[audio] as { multicam: { angle: string } }).multicam.angle).toBe(mc.angles[2]!.id);
-		// …and follows with the default
 		h.ok([{ type: 'multicam.switchAngle', clipIds: [video], angle: 1 }]);
 		expect(played()).toEqual([mediaOfTrack(mc.angles[0]!.audioTrackIds[0]!)]);
-		// gain/volume of the outer and inner clips add up
 		h.ok([{ type: 'clip.update', clipId: audio, patch: { gainDb: -6 } }]);
 		const a0 = snap(h.doc, h.seqId).audioClips[0]!;
 		expect(nestGainDbAt(a0.nestGain, 10)).toBeCloseTo(-6, 9);
@@ -435,7 +424,6 @@ describe('switching angles', () => {
 			[60, len, mc.angles[1]!.id],
 		]);
 		expect(anglesOn(h, 'A1')).toEqual(anglesOn(h, 'V1'));
-		// switching the middle back heals both edits
 		h.ok([{ type: 'multicam.switchAngle', range: { from: 30, to: 60 }, angle: 2 }]);
 		expect(anglesOn(h, 'V1')).toEqual([[0, len, mc.angles[1]!.id]]);
 		expect(checkInvariants(h.doc)).toEqual([]);
@@ -467,9 +455,7 @@ describe('switching angles', () => {
 			[120, len, mc.angles[0]!.id],
 		]);
 		expect((r.results[0] as { editPoints: number }).editPoints).toBe(4);
-		// linked audio follows
 		expect(anglesOn(h, 'A1')).toEqual(anglesOn(h, 'V1'));
-		// video only
 		h.ok([{ type: 'multicam.record', cuts: [{ at: 0, angle: 3 }], to: 10, audio: false }]);
 		expect(anglesOn(h, 'V1')[0]).toEqual([0, 10, mc.angles[2]!.id]);
 		expect(anglesOn(h, 'A1')[0]).toEqual([0, 10, mc.angles[0]!.id]);
@@ -529,7 +515,6 @@ describe('switching angles', () => {
 		]);
 		const next = mcOf(h.doc, sequenceId);
 		expect(next.angles.map((a) => a.name)).toEqual(['Camera 3', 'Wide', 'Camera 2']);
-		// camera 2 is now "Wide" (camera 3 is hidden, so only two are shown)
 		h.ok([{ type: 'multicam.switchAngle', clipIds: [video], angle: 2 }]);
 		expect((h.seq.clips[video] as { multicam: { angle: string } }).multicam.angle).toBe(mc.angles[0]!.id);
 		expect(h.tx([{ type: 'multicam.switchAngle', clipIds: [video], angle: 3 }]).ok).toBe(false);
@@ -569,7 +554,6 @@ describe('Flatten', () => {
 		const audio = (s: RenderSnapshot) =>
 			s.audioClips.map((a) => [a.start, a.duration, a.sourceIn, a.mediaId]);
 		expect(audio(after)).toEqual(audio(before));
-		// flattened video and audio of one camera stay linked
 		for (const v of h.clips('V1')) {
 			const partner = h.clips('A1').find((a) => a.start === v.start);
 			expect(v.linkId).not.toBeNull();
@@ -693,7 +677,6 @@ describe('Synchronize (timeline clips)', () => {
 		expect(h.clips('V2')[0]!.start).toBe(70);
 		expect(h.clips('A2')[0]!.start).toBe(70);
 		expect((r.results[0] as { referenceClipId: string }).referenceClipId).toBe(va!.id);
-		// clip markers
 		h.ok([
 			{ type: 'marker.add', clipId: va!.id, flicks: { seconds: 5 }, name: 'clap' },
 			{ type: 'marker.add', clipId: vb!.id, flicks: { seconds: 1 }, name: 'clap' },
@@ -723,7 +706,6 @@ describe('Synchronize (timeline clips)', () => {
 		expect(h.clips('V2')[0]!.start).toBe(46);
 		expect(h.clips('V1')[0]!.start).toBe(46);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// a single source cannot be synchronized
 		expect(h.tx([{ type: 'clip.synchronize', clipIds: [va!.id], method: 'in' }]).ok).toBe(false);
 	});
 });
@@ -757,7 +739,6 @@ describe('Merge Clips', () => {
 		expect(mv.linkId).toBe(ma.linkId);
 		// slate at video 2 s and audio 5.5 s coincide: audio starts 3.5 s = 105 frames before the video
 		expect(mv.start - ma.start).toBe(105);
-		// placed into the edit: linked video + audio at the same relative sync
 		const p = h.ok([{ type: 'clip.place', source: { projectItemId: res.itemId }, at: 300 }]);
 		const ids = (p.results[0] as { clipIds: string[] }).clipIds;
 		const placed = ids.map((id) => h.seq.clips[id]!);
@@ -768,7 +749,6 @@ describe('Merge Clips', () => {
 		expect(pv.linkId).not.toBeNull();
 		expect(pv.linkId).toBe(pa.linkId);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// limits
 		expect(
 			h.tx([{ type: 'item.mergeClips', itemIds: [v.itemId, register(h).itemId], method: 'in' }]).ok,
 		).toBe(false);

@@ -1,6 +1,3 @@
-// Sapphire Time + Flicker family (fx catalogue, wave 2): the TypeScript side — time remaps, sample offsets, derived
-// uniforms and pass plans are pure, deterministic functions of params + frame (random seeks and parallel renders
-// agree), and follow Sapphire's documented behaviour.
 import { describe, expect, it } from 'vitest';
 import {
 	type EffectSpec,
@@ -149,7 +146,6 @@ describe('Sapphire Time + Flicker family', () => {
 					const u = s.gpu!.uniforms?.(p, fctx(f));
 					if (u) expect(s.gpu!.uniforms!(p, fctx(f))).toEqual(u);
 				}
-				// the pass plan is a function of the params only
 				const ctx = { width: 640, height: 360, pxScale: 1, fps: 30 };
 				expect(JSON.stringify(gpuPasses(s.gpu!, p, ctx))).toBe(JSON.stringify(gpuPasses(s.gpu!, p, ctx)));
 			}

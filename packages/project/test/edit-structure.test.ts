@@ -1,5 +1,3 @@
-// edit-structure: nests, adjustment layers, groups, sequence operations, synthetics, frame holds, through edits,
-// subsequences and freeze-frame transition handles (docs/wp-notes/edit-structure.md).
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
@@ -81,7 +79,6 @@ describe('clip.nest', () => {
 		const res = r.results[0] as { sequenceId: string; clipIds: string[] };
 		expect(r.refs.$n).toBe(res.sequenceId);
 		const nested = h.doc.sequences[res.sequenceId]!;
-		// Same ids, relative times, same track indices; effects and links travel with them.
 		expect(nested.clips[v1!]!.start).toBe(0);
 		expect(nested.clips[v2!]!.start).toBe(60);
 		expect(nested.clips[v2!]!.trackId).toBe(nested.videoTracks[1]!.id);
@@ -128,7 +125,6 @@ describe('clip.nest', () => {
 		const nid = (r.results[0] as { sequenceId: string }).sequenceId;
 		expect(Object.keys(h.doc.sequences[nid]!.transitions)).toHaveLength(1);
 		expect(Object.keys(h.seq.transitions)).toHaveLength(0);
-		// Placing the parent into the nested sequence would make a cycle.
 		const bad = h.tx([{ type: 'clip.place', sequenceId: nid, source: { sequenceId: h.seqId }, at: 0 }]);
 		expect(bad.ok).toBe(false);
 		if (!bad.ok) expect(bad.errors[0]!.code).toBe('E_CYCLE');
@@ -603,7 +599,6 @@ describe('frame holds', () => {
 			[30, 90],
 			[90, 150],
 		]);
-		// The linked audio (sync-locked) gets the same gap.
 		expect(h.spans('A1')).toEqual([
 			[0, 30],
 			[90, 150],
@@ -649,7 +644,6 @@ describe('through edits, gaps, subsequences', () => {
 		expect(isThroughEdit(parts[0]!, parts[1]!, { num: 30, den: 1 })).toBe(true);
 		h.ok([{ type: 'sequence.joinThroughEdits', clipIds: [parts[1]!.id] }]);
 		expect(h.clips('V1')).toHaveLength(1);
-		// The linked audio was split too: its through edit is still there until joined.
 		expect(h.clips('A1')).toHaveLength(2);
 		h.ok([{ type: 'sequence.joinThroughEdits' }]);
 		expect(h.clips('A1')).toHaveLength(1);
@@ -753,7 +747,6 @@ describe('invariants and repair', () => {
 		const [v] = placeAV(h, m, 0, 'V1', [0, 30]);
 		const nid = (h.ok([{ type: 'clip.nest', clipIds: [v] }]).results[0] as { sequenceId: string }).sequenceId;
 		const doc = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
-		// Forge a cycle: the nested sequence nests its parent.
 		const nested = doc.sequences[nid]!;
 		const nv = Object.values(doc.sequences[h.seqId]!.clips).find((c) => c.kind === 'nest-video')!;
 		nested.clips.clp_cycle = {

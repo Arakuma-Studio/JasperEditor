@@ -1,5 +1,3 @@
-// Expression commands (expression.set / clear / setEnabled, effect.rename), Expression Controls, snapshot
-// handling, invariants and repair. Evaluation itself is tested in packages/expressions.
 import { describe, expect, it } from 'vitest';
 import {
 	buildEffectPreset,
