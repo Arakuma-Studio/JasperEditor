@@ -80,7 +80,8 @@ claim about runtime-loaded third-party packages or every possible dynamic import
   traversal refusal, normal files, and continued serving after rejected requests.
 - Bundle-hash tests distinguish a permission failure from a dangling link and retain readable files.
 - `pnpm vitest run apps/engine/test/worker-pools.test.ts apps/engine/test/mg-text-measure.test.ts apps/engine/test/mg-bundle-hash.test.ts apps/engine/test/warp-unit.test.ts --maxWorkers=1`: 4 files, 15 tests passed before the subsequent worker-allocation guards.
-- The worker-allocation/startup regressions, pure layer/static checks, and audio-publication tests were still pending when the implementation commit was prepared; their results follow separately.
+- `pnpm vitest run apps/engine/test/worker-pools.test.ts apps/engine/test/layer-bake.test.ts --maxWorkers=1 -t 'DOM layers and static detection|native export worker|export worker scheduling'`: 2 files, 18 tests passed, 12 unrelated layer tests skipped by the name filter. This run includes the final worker-allocation/startup guards.
+- `pnpm vitest run apps/engine/test/audio-publish.test.ts --maxWorkers=1`: 3 tests passed. A baseline fault-injection reproduction of the original rename/copy branch confirmed that `ENOSPC` after a partial copy left the old destination containing incomplete audio; the new test preserves the old destination and the complete scratch source.
 - Biome passed for the changed source and regression files. `git diff --check`, `check-layers`, and `check-anime` passed.
 - The first wider layer-bake run was stopped when its planner setup launched full media-fixture generation; it is not counted as a pass. The targeted layer/static run excludes that setup.
 - The local engine typecheck was stopped at the integrator's request because simultaneous typechecks
