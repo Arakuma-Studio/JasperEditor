@@ -4,9 +4,9 @@ import type { EffectInstance } from '../../schema/sequence.ts';
 import type { DDoc } from '../context.ts';
 import type { ClipEffectLocation as FxLoc } from './util.ts';
 
-type PinLoc = FxLoc & { pin: Draft<PuppetPin>; index: number };
+export type PuppetPinLocation = FxLoc & { pin: Draft<PuppetPin>; index: number };
 
-export function locatePin(doc: DDoc, pinId: string): PinLoc | null {
+export function locatePin(doc: DDoc, pinId: string): PuppetPinLocation | null {
 	for (const seq of Object.values(doc.sequences))
 		for (const clip of Object.values(seq.clips))
 			for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? []) {

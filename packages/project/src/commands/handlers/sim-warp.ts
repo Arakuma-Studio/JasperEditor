@@ -26,7 +26,7 @@ import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { finish } from './keyframe.ts';
 import { locateEffect, newKeyframe, paramHandlers } from './param.ts';
-import { locatePin, PUPPET_PIN_RANGES } from './puppet-location.ts';
+import { locatePin, PUPPET_PIN_RANGES, type PuppetPinLocation } from './puppet-location.ts';
 import type { ClipEffectLocation as FxLoc, HandlerMap } from './util.ts';
 
 export const SIM_WARP_OWNER = 'sim-warp' as const;
@@ -94,7 +94,7 @@ function maskPolygon(
 	return pts.length >= 3 ? { pts, inverted: m.inverted } : null;
 }
 
-function mustPin(doc: DDoc, pinId: string, h: HandlerContext): PinLoc {
+function mustPin(doc: DDoc, pinId: string, h: HandlerContext): PuppetPinLocation {
 	const l = locatePin(doc, pinId);
 	if (!l) return h.fail('E_NOT_FOUND', `Puppet pin not found: ${pinId}`);
 	assertUnlocked(findTrackIn(l.seq, l.clip.trackId)!.track, h);

@@ -60,6 +60,27 @@ describe('essential graphics', () => {
 		expect(h.doc).toBe(before);
 	});
 
+	it('refuses layer pins on caption clips without changing the project', () => {
+		const h = new Harness();
+		h.ok([
+			{ type: 'graphic.update', sequenceId: h.seqId, graphic: { intro: 0, outro: 0 } },
+			{ type: 'caption.add', at: 0, duration: 30, text: 'Caption' },
+		]);
+		const caption = Object.values(h.seq.clips).find((clip) => clip.kind === 'captions')!;
+		const before = h.doc;
+		const result = h.tx([
+			{
+				type: 'graphic.setPins',
+				sequenceId: h.seqId,
+				clipId: caption.id,
+				target: 'frame',
+				edges: ['left'],
+			},
+		]);
+		expect(result).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
+		expect(h.doc).toBe(before);
+	});
+
 	it('align / distribute offsets', () => {
 		const rects = [
 			{ x: 10, y: 10, width: 100, height: 50 },

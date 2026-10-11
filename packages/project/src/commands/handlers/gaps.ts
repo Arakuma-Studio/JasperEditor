@@ -93,7 +93,7 @@ export const gapsHandlers = {
 					);
 		return r;
 	},
-	'graphic.align': (doc, cmd: CommandOf<'graphic.align'>, h) => {
+	'graphic.align': (doc, cmd: CommandOf<'graphic.align'>, h: HandlerContext) => {
 		const seq = doc.sequences[cmd.sequenceId];
 		if (!seq) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
 		const clips = cmd.clipIds.map((id) => {
@@ -106,7 +106,7 @@ export const gapsHandlers = {
 		const rects = clips.map((c) => {
 			const r = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq }), c.sourceIn);
 			if (!r) h.fail('E_INVALID_PARAM', `${c.id} has no Motion to align`);
-			return r!;
+			return r;
 		});
 		const to =
 			cmd.relativeTo === 'frame'
@@ -129,13 +129,15 @@ export const gapsHandlers = {
 		const c = seq.clips[cmd.clipId];
 		if (!c) return h.fail('E_NOT_FOUND', `Clip not found: ${cmd.clipId}`);
 		if (!cmd.edges.length) {
-			delete c.pins;
+			if ('pins' in c) delete c.pins;
 			return { pinned: false };
 		}
+		if (!('transform' in c) || c.kind === 'captions')
+			return h.fail('E_INVALID_PARAM', `${c.id} does not support layer pins`);
 		if (cmd.target === cmd.clipId) h.fail('E_INVALID_PARAM', 'A layer cannot be pinned to itself');
 		const tc = cmd.target === 'frame' ? null : seq.clips[cmd.target];
 		if (cmd.target !== 'frame' && !tc) h.fail('E_NOT_FOUND', `Layer not found: ${cmd.target}`);
-		if (tc && tc.pins?.target === cmd.clipId)
+		if (tc && 'pins' in tc && tc.pins?.target === cmd.clipId)
 			h.fail('E_INVALID_PARAM', 'Two layers cannot be pinned to each other');
 		const own = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq }), c.sourceIn);
 		const target = tc
@@ -279,7 +281,7 @@ export const gapsHandlers = {
 		asset.proxy = { ...cmd.proxy, attachedAt: cmd.proxy.attachedAt ?? h.ctx.now() };
 		return { mediaId: asset.id };
 	},
-	'clip.setAudioChannels': (doc, cmd: CommandOf<'clip.setAudioChannels'>, h) => {
+	'clip.setAudioChannels': (doc, cmd: CommandOf<'clip.setAudioChannels'>, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		if (cmd.channels.length !== cmd.clipIds.length)
 			h.fail('E_INVALID_PARAM', 'One routing per clip: clipIds and channels differ in length');
@@ -300,22 +302,21 @@ export const gapsHandlers = {
 			};
 		});
 	},
-	'item.setAudioChannels': (doc, cmd: CommandOf<'item.setAudioChannels'>, h) => {
+	'item.setAudioChannels': (doc, cmd: CommandOf<'item.setAudioChannels'>, h: HandlerContext) => {
 		for (const id of idList(cmd.itemIds)) {
 			const it = doc.items[id];
 			if (!it) h.fail('E_NOT_FOUND', `Item not found: ${id}`);
 			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', `${it.name} is not a media item`);
-			const r = it;
 			if (cmd.clips === null) {
-				delete r.audioChannels;
+				delete it.audioChannels;
 				continue;
 			}
-			const media = doc.media[r.mediaId];
+			const media = doc.media[it.mediaId];
 			cmd.clips.forEach((ch, i) => {
 				const why = channelsProblem(media, ch);
 				if (why) h.fail('E_INVALID_PARAM', `Clip ${i + 1}: ${why}`, { path: ['clips', String(i)] });
 			});
-			r.audioChannels = {
+			it.audioChannels = {
 				clips: cmd.clips.map((c) => ({
 					streamIndex: c.streamIndex,
 					map: [...c.map],

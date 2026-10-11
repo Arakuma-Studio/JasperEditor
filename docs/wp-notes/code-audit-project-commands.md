@@ -64,7 +64,9 @@ transaction error result. Every failure keeps the original project reference.
 Strongly typing graphic-template import exposed another unchecked edge: its payload was only a generic
 record before being cast to a validated clipboard payload. It now uses the existing clipboard parser
 and verifies the `project-items` payload kind before insertion. Invalid payloads report a schema error
-with the payload path instead of reaching an internal property-access error.
+with the payload path instead of reaching an internal property-access error. Layer pin commands now
+reject caption clips, whose schema has Motion but no persisted pin field, before mutating the project.
+Other clip variants are narrowed against their actual transform and pin fields.
 
 Unused `notImplemented`/WeakSet stub machinery is removed. The model audit updates schema export to
 report the implemented catalog directly. The public `E_NOT_IMPLEMENTED` error-code member is retained:
