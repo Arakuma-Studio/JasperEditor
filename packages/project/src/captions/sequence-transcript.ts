@@ -303,8 +303,6 @@ export function mergeRanges(r: ReadonlyArray<[number, number]>): Array<[number, 
 	return out;
 }
 
-// ---------------------------------------------------------------- captions from words
-
 /** Rules for Create Captions from a transcript (Premiere's dialog defaults). */
 export type CaptionRules = {
 	/** Maximum characters per line. */

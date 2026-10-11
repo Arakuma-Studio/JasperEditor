@@ -1,4 +1,4 @@
-// Text animator evaluation (workstream text-animators): the selection of every character by an animator's
+// Text animator evaluation: the selection of every character by an animator's
 // selectors and the per-character animation state (`CharXf`) summed over every animator, at one content time.
 // Pure; the text layer feeds it the laid-out characters and draws the result.
 //

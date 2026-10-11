@@ -267,7 +267,7 @@ function simplifyClosed(p: readonly PathPoint[], tol: number): PathPoint[] {
 	return simplifyIdx(p, tol).map((i) => p[i]!);
 }
 
-// ---------------------------------------------------------------- cubic fitting (Schneider 1990)
+// cubic fitting (Schneider 1990)
 
 type V = [number, number];
 const unit = (v: V): V | null => {

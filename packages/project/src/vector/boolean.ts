@@ -119,8 +119,6 @@ function eps(paths: BezPath[]): number {
 	return Math.max(1e-7, m * 1e-9);
 }
 
-// ---------------------------------------------------------------- tidy
-
 export type Tidy = {
 	precision: number;
 	/** Input vertices that must survive (only joints the sweep introduced are merged away). */
@@ -277,8 +275,6 @@ export function loopsToPath(loops: Cubic[][], t: Tidy): BezPath {
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- public API
 
 export type BoolOp = 'union' | 'difference' | 'intersection' | 'exclusion';
 

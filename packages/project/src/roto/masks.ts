@@ -1,9 +1,11 @@
-// Convert to Masks (parity workstream `roto`): the outlines of a roto object's computed matte (auto-traced by the
+// Convert to Masks: the outlines of a roto object's computed matte (auto-traced by the
 // engine with the masks workstream's `tracePaths`) become Opacity masks of its clip — one mask per outline at a frame
 // (holes subtract), or one animated mask following the object's main outline over its frames.
+import type { z } from 'zod';
+import type { MaskAddCmd, MaskSetPathKeysCmd } from '../commands/schemas/mask.ts';
 import type { BezierPath } from '../path/model.ts';
 import type { Rational } from '../time.ts';
-import { mediaFrameFlicks } from './index.ts';
+import { mediaFrameFlicks } from './model.ts';
 
 export type TracedMatteFrame = {
 	frame: number;
@@ -22,14 +24,14 @@ export function rotoMaskCommands(opts: {
 	mode: 'still' | 'animated';
 	name: string;
 	feather?: number;
-}): unknown[] {
+}): (z.input<typeof MaskAddCmd> | z.input<typeof MaskSetPathKeysCmd>)[] {
 	const { clipId, frames } = opts;
 	const first = frames[0];
 	if (!first) return [];
 	const base = {
-		type: 'mask.add',
+		type: 'mask.add' as const,
 		clipId,
-		shape: 'bezier',
+		shape: 'bezier' as const,
 		...(opts.feather !== undefined ? { feather: opts.feather } : {}),
 	};
 	if (opts.mode === 'still')
@@ -49,6 +51,6 @@ export function rotoMaskCommands(opts: {
 	const ref = '$rotoMask';
 	return [
 		{ ...base, path: keys[0]!.path, name: opts.name, mode: 'add', ref },
-		...(keys.length > 1 ? [{ type: 'mask.setPathKeys', maskId: ref, keys }] : []),
+		...(keys.length > 1 ? [{ type: 'mask.setPathKeys' as const, maskId: ref, keys }] : []),
 	];
 }

@@ -9,8 +9,6 @@ export type Matrix4 = number[];
 
 const RAD = Math.PI / 180;
 
-// ---------------------------------------------------------------- vectors
-
 export const v3 = (x: number, y: number, z: number): Vec3 => [x, y, z];
 export const add3 = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const sub3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -26,8 +24,6 @@ export function norm3(a: Vec3): Vec3 {
 	const l = len3(a);
 	return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0];
 }
-
-// ---------------------------------------------------------------- matrices
 
 export const MAT4_IDENTITY: Matrix4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -170,8 +166,6 @@ export function mat4FromAffine3(m: Mat3): Matrix4 {
 	return [m[0], m[1], 0, m[2], m[3], m[4], 0, m[5], 0, 0, 1, 0, 0, 0, 0, 1];
 }
 
-// ---------------------------------------------------------------- frames and orientation
-
 /** View matrix (world → camera: x right, y down, z forward) from an eye, a forward direction and a down hint. */
 export function basisView(eye: Vec3, forward: Vec3, downHint: Vec3): Matrix4 {
 	let f = norm3(forward);
@@ -207,8 +201,6 @@ export function norm360(a: number): number {
 	const r = ((a % 360) + 360) % 360;
 	return Math.abs(r - 360) < 1e-9 ? 0 : r;
 }
-
-// ---------------------------------------------------------------- quaternions (orientation interpolation)
 
 export type Quat = [number, number, number, number];
 

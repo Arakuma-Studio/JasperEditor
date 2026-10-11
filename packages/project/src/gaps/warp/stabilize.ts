@@ -1,4 +1,4 @@
-// Warp Stabilizer ▸ the stabilisation step (workstream gaps, docs/wp-notes/gaps.md §FX-6). Ported from effectcraft
+// Warp Stabilizer ▸ the stabilisation step (docs/wp-notes/gaps.md §FX-6). Ported from effectcraft
 // `crates/track/src/stabilize.rs` and `subspace.rs` (MIT OR Apache-2.0, licenses/ported/gaps.md), which follow:
 // - Matsushita et al., "Full-Frame Video Stabilization with Motion Inpainting" (PAMI 2006): Smooth Motion warps each
 //   frame to the Gaussian-weighted average of its neighbours' viewpoints; No Motion maps every frame onto one;
@@ -101,8 +101,6 @@ export function motionOf(f: FrameMotion, method: StabMethod): number[] {
 	}
 	return [...f.h.slice(0, 8), 1];
 }
-
-// ---------------------------------------------------------------- meshes
 
 export type WarpMeshOpts = { cols: number; rows: number; alpha: number; prior: number };
 
@@ -510,8 +508,6 @@ export function smoothTrajectories(
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- corrections and the plan
 
 function removeScale(b: H3, c: P2): number[] {
 	const p0 = hApply(b, c);

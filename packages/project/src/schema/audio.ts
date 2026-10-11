@@ -1,4 +1,4 @@
-// Audio buses (workstream audio-mix): Audio Track Mixer strips, sends, submixes, automation modes, channel formats,
+// Audio buses: Audio Track Mixer strips, sends, submixes, automation modes, channel formats,
 // sequence sample rates and loudness normalisation. Every field is optional with read-time defaults (see
 // `audio/strip.ts`), so documents written before the mixer existed read exactly as before.
 import { z } from 'zod';

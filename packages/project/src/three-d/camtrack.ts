@@ -58,8 +58,6 @@ export function cameraTrackerInputs(
 
 export const isSolveStale = (t: ClipCameraTracker) => !!t.solve && t.solve.inputs !== cameraTrackerInputs(t);
 
-// ---------------------------------------------------------------- rotations
-
 const mv = (m: M3, v: Vec3): Vec3 => [dot3(m[0], v), dot3(m[1], v), dot3(m[2], v)];
 const transpose = (m: M3): M3 => [
 	[m[0][0], m[1][0], m[2][0]],
@@ -92,8 +90,6 @@ export function rodrigues(w: Vec3): M3 {
 }
 
 const mat4Of = (m: M3): Matrix4 => [...m[0], 0, ...m[1], 0, ...m[2], 0, 0, 0, 0, 1];
-
-// ---------------------------------------------------------------- the solve
 
 /** The solved camera of a media frame (canonical space): world → camera rotation rows, centre, focal (media px). */
 export type SolvedCamera = { r: M3; c: Vec3; f: number; solved: boolean };
@@ -152,8 +148,6 @@ export function trackPointsAt(
 	return out;
 }
 
-// ---------------------------------------------------------------- canonical → world
-
 /** World = s · R · x + t (sequence px, z away from the viewer); `zoomScale` = sequence px per media px. */
 export type SolveMapping = { s: number; r: M3; t: Vec3; zoomScale: number };
 
@@ -209,8 +203,6 @@ export function worldCameraOf(m: SolveMapping, cam: SolvedCamera): WorldCamera {
 		orientation: orientationOfMat4(mat4Of(rotation)),
 	};
 }
-
-// ---------------------------------------------------------------- planes from track points
 
 /** Least-squares plane of points: centroid and unit normal (smallest covariance eigenvector), or null when < 3. */
 export function fitPlane(p: readonly Vec3[]): { c: Vec3; n: Vec3 } | null {
@@ -303,8 +295,6 @@ export function layerOrientationFor(n: Vec3, right: Vec3): Vec3 {
 
 /** World direction of a canonical direction (rotation only). */
 export const dirToWorld = (m: SolveMapping, d: Vec3): Vec3 => norm3(mv(m.r, d));
-
-// ---------------------------------------------------------------- engine requests
 
 /** Where a clip's 3D Camera Tracker is, or null. */
 export function findCameraTracker(

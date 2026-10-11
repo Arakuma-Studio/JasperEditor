@@ -1,4 +1,4 @@
-// Text on a path (workstream text-animators, AE Path Options): arc-length parameterisation of a Bezier path and
+// Text on a path (AE Path Options): arc-length parameterisation of a Bezier path and
 // character placement along it (Reverse Path, Perpendicular To Path, Force Alignment, First / Last Margin).
 //
 // Ported from EffectCraft `crates/text/src/path_text.rs` (MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and

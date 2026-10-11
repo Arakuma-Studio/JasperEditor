@@ -321,8 +321,6 @@ export function unproject(
 	return [u, v, z];
 }
 
-// ---------------------------------------------------------------- CPU reference
-
 /** A plane with its (DOF-blurred, padded) picture as premultiplied floats. */
 export type CpuPlane = ClassicPlane & { pixels: FloatImage };
 

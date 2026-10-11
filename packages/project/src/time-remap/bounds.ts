@@ -1,4 +1,4 @@
-// Media bounds of remapped clips (workstream `time`): every visible frame (and every handle frame a trim or a
+// Media bounds of remapped clips: every visible frame (and every handle frame a trim or a
 // transition may reveal) must show a media time inside the media, 0 ≤ m < duration. Linear clips keep the S01:CLP-005
 // rules of their callers; these helpers apply when `isRemapped(clip)`.
 import type { Rational } from '../time.ts';

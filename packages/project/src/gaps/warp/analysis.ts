@@ -1,4 +1,4 @@
-// Warp Stabilizer ▸ the analysis stored WITH the effect instance (workstream gaps, docs/wp-notes/gaps.md §FX-6), as
+// Warp Stabilizer ▸ the analysis stored WITH the effect instance (docs/wp-notes/gaps.md §FX-6), as
 // Premiere keeps it in the project: `EffectInstance.warpAnalysis`. The engine's `warp-analysis` job measures it
 // (apps/engine/src/gaps/warp-analysis.ts); `effect.setWarpAnalysis` stores it (undoable). Frames are indexed by MEDIA
 // time (frame 0 at `start` seconds into the media), so trimming the clip inside the analysed span needs no

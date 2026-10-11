@@ -1,4 +1,4 @@
-// The YAML subset OpenColorIO configuration files use (workstream color-mgmt), read from the published configuration
+// The YAML subset OpenColorIO configuration files use, read from the published configuration
 // format, not from OpenColorIO's source: block mappings and sequences, flow `{}` / `[]` collections (also spanning
 // lines), `!<Tag>` tags, quoted scalars, `|` / `>` block scalars and comments. Ported from EffectCraft
 // `crates/effects/src/ocio_config.rs` (MIT OR Apache-2.0, licenses/ported/color-mgmt.md). Hostile input: depth and

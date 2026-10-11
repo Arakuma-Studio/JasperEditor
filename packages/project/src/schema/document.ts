@@ -141,8 +141,6 @@ export const DEFAULT_SCALING_MODES = ['none', 'fit-if-larger', 'fit', 'fill'] as
 export const DefaultScalingSchema = z.enum(DEFAULT_SCALING_MODES);
 export type DefaultScaling = DeepStrip<z.infer<typeof DefaultScalingSchema>>;
 
-// ---------------------------------------------------------------- gaps: Project Settings (docs/wp-notes/gaps.md §PRJ-4)
-
 /** Project Settings ▸ General ▸ Video Display Format (how times are shown and typed). */
 export const VIDEO_DISPLAY_FORMATS = ['timecode', 'frames', 'feet35', 'feet16'] as const;
 /** Project Settings ▸ General ▸ Audio Display Format (audio time units in the timeline ruler and Info). */

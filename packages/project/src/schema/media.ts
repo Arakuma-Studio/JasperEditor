@@ -330,8 +330,6 @@ export const MgBundleInfoSchema = z.looseObject({
 });
 export type MgBundleInfo = DeepStrip<z.infer<typeof MgBundleInfoSchema>>;
 
-// ---------------------------------------------------------------- imports workstream (docs/wp-notes/imports.md)
-
 /**
  * Interpret Footage (Premiere's Modify ▸ Interpret Footage, After Effects' Interpret Footage): how the file is read.
  * Every section is optional; absent = the file's own value. A section added later (colour management) is just another
@@ -496,7 +494,6 @@ export const MediaAssetSchema = z.looseObject({
 	layered: LayeredInfoSchema.optional(),
 	/** One layer of a layered document. */
 	layerSource: LayerSourceSchema.optional(),
-	// ---- end imports
 	/** gaps (PRJ-8): the attached proxy. */
 	proxy: AttachedProxySchema.optional(),
 });

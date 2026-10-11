@@ -1,4 +1,4 @@
-// As-rigid-as-possible mesh deformation (sim-warp workstream), after Igarashi, Moscovich & Hughes, "As-Rigid-As-
+// As-rigid-as-possible mesh deformation (sim-warp), after Igarashi, Moscovich & Hughes, "As-Rigid-As-
 // Possible Shape Manipulation" (SIGGRAPH 2005): a similarity step (each triangle keeps its shape up to rotation and
 // uniform scale) then a scale-adjustment step (each triangle is fitted with a rigid copy of its rest shape and the
 // positions match the fitted edges), with optional refinement iterations. Triangle weights stiffen regions (Starch);

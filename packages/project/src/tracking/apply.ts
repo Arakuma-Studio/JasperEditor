@@ -6,8 +6,7 @@
 import { evaluate } from '../keyframes.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import { applyMat3, invertMat3, type Mat3, mat3FromMat2D, type Quad } from '../render/homography.ts';
-import { clipContentTime, layerMapOf, resolveLayerProps } from '../render/scene.ts';
-import type { RenderVisualClip } from '../render/snapshot.ts';
+import { clipContentTime, type LayerPropertySource, layerMapOf, resolveLayerProps } from '../render/scene.ts';
 import type { Animatable, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, ClipTracker, EffectInstance, Sequence, Speed, Transform } from '../schema/sequence.ts';
@@ -29,20 +28,15 @@ export type TrackLayer = {
 
 /** The apply-pipeline view of a document clip (its timing, Motion, opacity, effects and intrinsic box). */
 export function trackLayerOf(doc: ProjectDocument, seq: Sequence, clip: Clip): TrackLayer {
-	const c = clip as unknown as {
-		transform?: Transform;
-		opacity?: Animatable<number>;
-		effects?: EffectInstance[];
-	};
 	return {
 		start: clip.start,
 		duration: clip.duration,
 		sourceIn: clip.sourceIn,
 		speed: clip.speed,
-		transform: c.transform ?? null,
-		opacity: c.opacity ?? { value: 100, keyframes: [] },
-		effects: c.effects ?? [],
-		box: intrinsicBoxOf({ clip: clip as never, doc, seq: seq as never }),
+		transform: 'transform' in clip ? clip.transform : null,
+		opacity: 'opacity' in clip ? clip.opacity : { value: 100, keyframes: [] },
+		effects: 'effects' in clip ? clip.effects : [],
+		box: intrinsicBoxOf({ clip, doc, seq }),
 	};
 }
 
@@ -75,17 +69,13 @@ export type TrackingApplyResult =
 	| { mode: 'corner-pin'; keys: CornerPinKey[]; timeRange: [number, number]; warnings: string[] }
 	| { mode: 'transform'; keys: TransformKey[]; timeRange: [number, number]; warnings: string[] };
 
-function asLayer(l: TrackLayer, effects: readonly EffectInstance[]): RenderVisualClip {
+function asLayer(l: TrackLayer, effects: readonly EffectInstance[]): LayerPropertySource {
 	return {
-		start: l.start,
-		duration: l.duration,
-		sourceIn: l.sourceIn,
-		speed: l.speed,
 		transform: l.transform,
 		opacity: l.opacity,
-		effects: effects as EffectInstance[],
+		effects,
 		intrinsicBox: l.box,
-	} as RenderVisualClip;
+	};
 }
 
 /** Content time of a layer at a sequence frame, rounded to integer flicks. */

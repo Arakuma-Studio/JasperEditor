@@ -10,6 +10,7 @@
 // OBJ: v / vt / vn / f (polygons fanned, negative indices); one neutral material (materials of .mtl files are not
 // read: the file is served alone).
 import type { Vec3 } from '../schema/common.ts';
+import { type GltfNode, type GltfPrimitive, GltfSchema } from './gltf-schema.ts';
 
 export type ModelFormat = 'glb' | 'gltf' | 'obj';
 
@@ -66,9 +67,7 @@ export function parseModel(bytes: Uint8Array, format: ModelFormat): ParsedModel 
 	try {
 		primitives = format === 'obj' ? parseObj(utf8Decode(bytes)) : parseGltf(bytes, format);
 	} catch (e) {
-		// glTF JSON is walked without a schema: a structurally wrong document (a number where an array belongs, an
-		// index past an array, an out-of-range typed-array view) surfaces as TypeError / RangeError — it is a
-		// malformed file, reported as such (golden-fuzz).
+		// Binary views and URI decoding can throw platform errors for malformed file contents.
 		if (e instanceof TypeError || e instanceof RangeError || e instanceof URIError)
 			throw new ModelParseError(`The model file is malformed (${e.message})`);
 		throw e;
@@ -90,8 +89,6 @@ export function parseModel(bytes: Uint8Array, format: ModelFormat): ParsedModel 
 		throw new ModelParseError('The model has no vertices');
 	return { format, primitives, bounds: { min, max }, triangles };
 }
-
-// ---------------------------------------------------------------- glTF
 
 /** UTF-8 → string (the model is DOM- and Node-free: no TextDecoder). */
 function utf8Decode(b: Uint8Array): string {
@@ -121,8 +118,6 @@ function utf8Encode(s: string): Uint8Array {
 	}
 	return Uint8Array.from(out);
 }
-
-type Json = Record<string, any>;
 
 /**
  * Numbers one model may expand to: accessor components read, vertices and indices written (security review PAR-2).
@@ -166,7 +161,7 @@ function dataUri(uri: string): { mime: string; bytes: Uint8Array } {
 }
 
 function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
-	let json: Json;
+	let jsonText: string;
 	let bin: Uint8Array | null = null;
 	if (format === 'glb') {
 		const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -174,44 +169,47 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 			throw new ModelParseError('Not a binary glTF (.glb) file');
 		if (dv.getUint32(4, true) !== 2) throw new ModelParseError('Only glTF 2.0 is supported');
 		let off = 12;
-		let jsonText: string | null = null;
+		let jsonChunk: string | null = null;
 		while (off + 8 <= bytes.byteLength) {
 			const len = dv.getUint32(off, true);
 			const type = dv.getUint32(off + 4, true);
 			const chunk = bytes.subarray(off + 8, off + 8 + len);
-			if (type === 0x4e4f534a) jsonText = utf8Decode(chunk);
+			if (type === 0x4e4f534a) jsonChunk = utf8Decode(chunk);
 			else if (type === 0x004e4942) bin = chunk;
 			off += 8 + len;
 		}
-		if (!jsonText) throw new ModelParseError('The .glb file has no JSON chunk');
-		try {
-			json = JSON.parse(jsonText) as Json;
-		} catch {
-			throw new ModelParseError('The .glb JSON chunk is not valid JSON');
-		}
-	} else {
-		try {
-			json = JSON.parse(utf8Decode(bytes)) as Json;
-		} catch {
-			throw new ModelParseError('The .gltf file is not valid JSON');
-		}
+		if (!jsonChunk) throw new ModelParseError('The .glb file has no JSON chunk');
+		jsonText = jsonChunk;
+	} else jsonText = utf8Decode(bytes);
+	let raw: unknown;
+	try {
+		raw = JSON.parse(jsonText);
+	} catch {
+		throw new ModelParseError(
+			format === 'glb' ? 'The .glb JSON chunk is not valid JSON' : 'The .gltf file is not valid JSON',
+		);
 	}
-	if (!json || typeof json !== 'object' || Array.isArray(json))
-		throw new ModelParseError('The glTF JSON is not an object');
-	if (!String(json.asset?.version ?? '').startsWith('2'))
-		throw new ModelParseError('Only glTF 2.0 is supported');
+	const parsed = GltfSchema.safeParse(raw);
+	if (!parsed.success) {
+		const issue = parsed.error.issues[0]!;
+		throw new ModelParseError(
+			`The glTF file is malformed at ${issue.path.join('.') || 'root'}: ${issue.message}`,
+		);
+	}
+	const json = parsed.data;
+	if (!json.asset.version.startsWith('2')) throw new ModelParseError('Only glTF 2.0 is supported');
 	const required: string[] = json.extensionsRequired ?? [];
 	const unsupported = required.filter((e) => e !== 'KHR_materials_unlit' && e !== 'KHR_texture_transform');
 	if (unsupported.length)
 		throw new ModelParseError(
 			`The model needs glTF extensions that are not supported: ${unsupported.join(', ')}`,
 		);
-	const buffers: Uint8Array[] = (json.buffers ?? []).map((b: Json, i: number) => {
+	const buffers: Uint8Array[] = (json.buffers ?? []).map((b, i) => {
 		if (b.uri === undefined) {
 			if (i === 0 && bin) return bin;
 			throw new ModelParseError('A glTF buffer has no data');
 		}
-		return dataUri(String(b.uri)).bytes;
+		return dataUri(b.uri).bytes;
 	});
 	const view = (i: number) => {
 		const v = json.bufferViews?.[i];
@@ -220,7 +218,7 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		if (!b) throw new ModelParseError(`Missing buffer ${v.buffer}`);
 		return {
 			bytes: b.subarray(v.byteOffset ?? 0, (v.byteOffset ?? 0) + v.byteLength),
-			stride: v.byteStride as number | undefined,
+			stride: v.byteStride,
 		};
 	};
 	let budget = MAX_MODEL_VALUES;
@@ -237,24 +235,18 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 	const readAccessor = (i: number): { data: Float64Array; n: number; count: number } => {
 		const a = json.accessors?.[i];
 		if (!a) throw new ModelParseError(`Missing accessor ${i}`);
-		const n = COMPONENTS[a.type as string];
+		const n = COMPONENTS[a.type];
 		if (!n) throw new ModelParseError(`Unsupported accessor type ${a.type}`);
-		const count = a.count as number;
-		// The count comes from the document: it sizes the arrays below, so it is checked (and paid for) first.
-		if (!Number.isInteger(count) || count < 0)
-			throw new ModelParseError(`Accessor ${i} has an invalid count`);
+		const count = a.count;
 		spend(count * n);
 		if (a.bufferView === undefined) return { data: new Float64Array(count * n), n, count };
 		const { bytes: vb, stride } = view(a.bufferView);
 		const dv = new DataView(vb.buffer, vb.byteOffset, vb.byteLength);
-		const ct = a.componentType as number;
+		const ct = a.componentType;
 		if (!KNOWN_COMPONENT_TYPES.has(ct)) throw new ModelParseError(`Unsupported component type ${ct}`);
 		const size = ct === 5126 || ct === 5125 ? 4 : ct === 5122 || ct === 5123 ? 2 : 1;
 		const step = stride ?? size * n;
 		const base = a.byteOffset ?? 0;
-		if (!Number.isInteger(step) || step < 0 || !Number.isInteger(base) || base < 0)
-			throw new ModelParseError(`Accessor ${i} has an invalid offset or stride`);
-		// The whole extent, before the array is allocated.
 		if (count > 0 && base + (count - 1) * step + n * size > vb.byteLength)
 			throw new ModelParseError(`Accessor ${i} reads past its buffer`);
 		const out = new Float64Array(count * n);
@@ -262,7 +254,6 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		for (let k = 0; k < count; k++)
 			for (let c = 0; c < n; c++) {
 				const o = base + k * step + c * size;
-				if (o + size > vb.byteLength) throw new ModelParseError(`Accessor ${i} reads past its buffer`);
 				let v: number;
 				switch (ct) {
 					case 5126:
@@ -295,31 +286,32 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		return { data: out, n, count };
 	};
 	// One copy per image, however many materials use it (a document can name one image from every material).
-	const images = new Map<unknown, ModelMaterial['texture']>();
+	const images = new Map<number, ModelMaterial['texture']>();
 	const image = (texIndex: number | undefined): ModelMaterial['texture'] => {
 		if (texIndex === undefined) return null;
 		const src = json.textures?.[texIndex]?.source;
-		const img = src !== undefined ? json.images?.[src] : undefined;
+		if (src === undefined) return null;
+		const img = json.images?.[src];
 		if (!img) return null;
 		if (images.has(src)) return images.get(src) ?? null;
 		let out: ModelMaterial['texture'] = null;
 		if (img.bufferView !== undefined)
-			out = { mime: String(img.mimeType ?? 'image/png'), bytes: view(img.bufferView).bytes.slice() };
-		else if (img.uri) out = dataUri(String(img.uri));
+			out = { mime: img.mimeType ?? 'image/png', bytes: view(img.bufferView).bytes.slice() };
+		else if (img.uri) out = dataUri(img.uri);
 		images.set(src, out);
 		return out;
 	};
-	const materials: ModelMaterial[] = (json.materials ?? []).map((m: Json) => {
+	const materials: ModelMaterial[] = (json.materials ?? []).map((m) => {
 		const pbr = m.pbrMetallicRoughness ?? {};
 		return {
-			baseColor: (pbr.baseColorFactor ?? [1, 1, 1, 1]) as ModelMaterial['baseColor'],
+			baseColor: pbr.baseColorFactor ?? [1, 1, 1, 1],
 			texture: image(pbr.baseColorTexture?.index),
 			metallic: pbr.metallicFactor ?? 1,
 			roughness: pbr.roughnessFactor ?? 1,
-			emissive: (m.emissiveFactor ?? [0, 0, 0]) as ModelMaterial['emissive'],
+			emissive: m.emissiveFactor ?? [0, 0, 0],
 			alphaMode: m.alphaMode ?? 'OPAQUE',
 			alphaCutoff: m.alphaCutoff ?? 0.5,
-			doubleSided: !!m.doubleSided,
+			doubleSided: m.doubleSided ?? false,
 		};
 	});
 	const out: ModelPrimitive[] = [];
@@ -344,7 +336,7 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		}
 		for (const c of node.children ?? []) visit(c, world, depth + 1);
 	};
-	const primitive = (p: Json, world: number[]): ModelPrimitive | null => {
+	const primitive = (p: GltfPrimitive, world: number[]): ModelPrimitive | null => {
 		const mode = p.mode ?? 4;
 		if (mode !== 4 && mode !== 5 && mode !== 6) return null;
 		if (p.attributes?.POSITION === undefined) return null;
@@ -396,17 +388,16 @@ function parseGltf(bytes: Uint8Array, format: ModelFormat): ModelPrimitive[] {
 		return { positions, normals, uvs, indices: Uint32Array.from(tris), material };
 	};
 	const sceneIndex = json.scene ?? 0;
-	const roots: number[] =
-		json.scenes?.[sceneIndex]?.nodes ?? (json.nodes ?? []).map((_: unknown, i: number) => i);
+	const roots: number[] = json.scenes?.[sceneIndex]?.nodes ?? (json.nodes ?? []).map((_, i) => i);
 	const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 	for (const r of roots) visit(r, I, 0);
 	return out;
 }
 
 /** Row-major 4×4 of a glTF node. */
-function nodeMatrix(node: Json): number[] {
-	if (Array.isArray(node.matrix) && node.matrix.length === 16) {
-		const m = node.matrix as number[];
+function nodeMatrix(node: GltfNode): number[] {
+	if (node.matrix) {
+		const m = node.matrix;
 		// glTF stores column-major.
 		return [
 			m[0]!,
@@ -427,9 +418,9 @@ function nodeMatrix(node: Json): number[] {
 			m[15]!,
 		];
 	}
-	const [tx, ty, tz] = (node.translation ?? [0, 0, 0]) as number[];
-	const [x, y, z, w] = (node.rotation ?? [0, 0, 0, 1]) as number[];
-	const [sx, sy, sz] = (node.scale ?? [1, 1, 1]) as number[];
+	const [tx, ty, tz] = node.translation ?? [0, 0, 0];
+	const [x, y, z, w] = node.rotation ?? [0, 0, 0, 1];
+	const [sx, sy, sz] = node.scale ?? [1, 1, 1];
 	const r = [
 		1 - 2 * (y! * y! + z! * z!),
 		2 * (x! * y! - z! * w!),
@@ -482,7 +473,7 @@ function apply4(m: number[], x: number, y: number, z: number): Vec3 {
 
 /** Inverse transpose of the upper 3×3 (row-major), or the 3×3 itself when singular. */
 function normalMatrixOf(m: number[]): number[] {
-	const [a, b, c, , d, e, f, , g, h, i] = m as number[];
+	const [a, b, c, , d, e, f, , g, h, i] = m;
 	const A = e! * i! - f! * h!;
 	const B = -(d! * i! - f! * g!);
 	const C = d! * h! - e! * g!;
@@ -537,8 +528,6 @@ function flatShaded(
 	}
 	return { positions: pos, normals: nor, uvs: uv, indices: Uint32Array.from({ length: n }, (_, i) => i) };
 }
-
-// ---------------------------------------------------------------- OBJ
 
 function parseObj(text: string): ModelPrimitive[] {
 	const v: number[] = [];

@@ -79,8 +79,6 @@ export function nestedFrameOfContent(flicks: number, nestedRate: Rational): numb
 	return Math.floor(flicks / flicksPerFrame(nestedRate) + 1e-6);
 }
 
-// ---------------------------------------------------------------- content key (render caches, previews)
-
 /** FNV-1a 64-bit over a string, as 16 hex digits. Deterministic across runtimes. */
 export function fnv1a64(text: string): string {
 	let h1 = 0x811c9dc5 >>> 0;
@@ -180,8 +178,6 @@ export function nestContentKey(doc: ProjectDocument, seqId: string, depth = 0): 
 	};
 	return fnv1a64(canonicalJson(body));
 }
-
-// ---------------------------------------------------------------- frame-rate conform (render snapshot)
 
 /**
  * A copy of `seq` whose frame-based timing is expressed at `to` (clip starts/ends, transition durations, In/Out,

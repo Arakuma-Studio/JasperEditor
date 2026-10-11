@@ -6,8 +6,6 @@
 import { z } from 'zod';
 import { AnimNumberSchema, AnimRGBASchema, AnimVec2Schema, type DeepStrip } from './common.ts';
 
-// ---------------------------------------------------------------- selectors
-
 /** What a selector counts (AE "Based On"). */
 export const TEXT_SELECTOR_BASED_ON = ['characters', 'charactersExcludingSpaces', 'words', 'lines'] as const;
 export type TextSelectorBasedOn = (typeof TEXT_SELECTOR_BASED_ON)[number];
@@ -90,8 +88,6 @@ export const TextSelectorSchema = z.discriminatedUnion('kind', [
 ]);
 export type TextSelector = TextRangeSelector | TextWigglySelector | TextExpressionSelector;
 
-// ---------------------------------------------------------------- animator properties
-
 export const TEXT_TRACKING_TYPES = ['beforeAndAfter', 'before', 'after'] as const;
 export const TEXT_CHARACTER_RANGES = ['preserveCaseAndDigits', 'fullUnicode'] as const;
 export const TEXT_CHARACTER_ALIGNMENTS = ['left', 'center', 'right', 'adjustKerning'] as const;
@@ -148,8 +144,6 @@ export const TextAnimatorGroupSchema = z.looseObject({
 	selectors: z.array(TextSelectorSchema),
 });
 export type TextAnimatorGroup = DeepStrip<z.infer<typeof TextAnimatorGroupSchema>>;
-
-// ---------------------------------------------------------------- path options and more options
 
 /**
  * AE Path Options: the characters are placed along the path of one of the clip's masks (`clip.masks`, the shared

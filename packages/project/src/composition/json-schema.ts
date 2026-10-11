@@ -263,8 +263,6 @@ function visit(
 	}
 }
 
-// ---------------------------------------------------------------- colours and inference (S08:MGC-011 §3)
-
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FN_COLOR = /^(?:rgba?|hsla?)\(\s*[-\d.%\s,/]+\)$/i;
 

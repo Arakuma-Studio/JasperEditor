@@ -1,4 +1,4 @@
-// Export checks of object mattes (parity workstream `roto`): every path renders object mattes from the computed matte
+// Export checks of object mattes: every path renders object mattes from the computed matte
 // sets, so a frame that an exported clip shows inside a roto's span without a computed matte would silently come out
 // unmatted — the planner refuses such exports with a named reason instead (AGENTS.md §4). Stale mattes (strokes or
 // settings changed since the propagation) render as computed and are reported as warnings.
@@ -6,7 +6,7 @@
 import type { RenderSnapshot, RenderVisualClip } from '../render/snapshot.ts';
 import type { Rational } from '../time.ts';
 import { clipMediaTimeAt, type TimedClip } from '../time-remap/model.ts';
-import { mediaFrameAt, ROTO_OBJECT_PARAMS, rotoFrameState } from './index.ts';
+import { mediaFrameAt, ROTO_OBJECT_PARAMS, rotoFrameState } from './model.ts';
 
 export type RotoExportIssue = {
 	clipId: string;

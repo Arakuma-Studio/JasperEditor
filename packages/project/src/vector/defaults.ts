@@ -208,8 +208,6 @@ export function newShapeItem<T extends ShapeItemType>(type: T, o: NewItemOptions
 	return item as ShapeItemOf<T>;
 }
 
-// ---------------------------------------------------------------- tree helpers
-
 /** Depth-first walk (pre-order) with each item's parent group (null = top level) and index. */
 export function walkItems(
 	contents: readonly ShapeItem[],

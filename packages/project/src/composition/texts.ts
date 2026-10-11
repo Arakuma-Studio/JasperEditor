@@ -257,8 +257,6 @@ export function findTextLayer(
 	);
 }
 
-// ---------------------------------------------------------------- checks (S08:MGC-037)
-
 export type TextIssueCode =
 	| 'MG_TEXT_TOO_LONG'
 	| 'MG_TEXT_TOO_SHORT'
@@ -420,8 +418,6 @@ export function measuredTextIssues(
 		});
 	return out;
 }
-
-// ---------------------------------------------------------------- edits (S08:MGC-038)
 
 /** The colour of a text's accent spans: the declared CSS colour, or the value of the declared colour prop. */
 export function textAccentColor(

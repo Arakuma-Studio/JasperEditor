@@ -80,8 +80,6 @@ export function snapCaptionDocument(doc: CaptionDocument, rate: Rational): Capti
 	return normalizeCaptionDocument(doc);
 }
 
-// ------------------------------------------------------------------------------------------- text decoding
-
 const CP1252_HI = [
 	'€',
 	'\u0081',
@@ -249,8 +247,6 @@ export function encodeUtf8(s: string): Uint8Array {
 	return Uint8Array.from(out);
 }
 
-// ------------------------------------------------------------------------------------------- clock times
-
 const isDigits = (p: string, max: number) => p.length > 0 && p.length <= max && /^[0-9]+$/.test(p);
 
 /** Parse `[H…:]MM:SS[.,]fff` (the fraction may have 1–9 digits) into flicks; null when malformed. */
@@ -293,8 +289,6 @@ export function formatClock(t: number, sep: ',' | '.'): string {
 	const f = ms % 1000;
 	return `${p2(h)}:${p2(m)}:${p2(s)}${sep}${String(f).padStart(3, '0')}`;
 }
-
-// ------------------------------------------------------------------------------------------- markup
 
 const ENTITIES: Array<[string, string]> = [
 	['amp;', '&'],

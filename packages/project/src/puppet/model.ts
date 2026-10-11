@@ -1,4 +1,4 @@
-// The Puppet model (sim-warp workstream): resolution of the instance's meshes and pins at a time, mesh building
+// The Puppet model (sim-warp): resolution of the instance's meshes and pins at a time, mesh building
 // (cached by outline and options), the pin constraints of the solver (Position / Advanced / Bend / Starch / Overlap
 // pins, as After Effects' Puppet tools) and the deformed triangles the renderer draws back to front.
 // Ported in part from EffectCraft crates/effects/src/puppet/mod.rs (solve, starch_weights, depths; MIT OR

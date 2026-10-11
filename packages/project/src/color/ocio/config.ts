@@ -249,8 +249,6 @@ function xfFromYaml(y: Yaml, files: Record<string, string>, depth = 0): OcioXf {
 	return inverse ? { k: 'inverse', xf } : xf;
 }
 
-// ---------------------------------------------------------------- builtins
-
 const FIXED_STYLES = new Set(['ACES_GAMUTCOMP13', 'XYZ_TO_XYY', 'XYZ_TO_UVY', 'RGB_TO_HSV']);
 
 type Fn = (c: Rgb, inverse: boolean) => void;
@@ -409,8 +407,6 @@ function rgc(c: Rgb, lim: readonly number[], th: readonly number[], pwr: number)
 		c[k] = ach - (th[k]! + (s * x) / (1 + x ** pwr) ** (1 / pwr)) * Math.abs(ach);
 	}
 }
-
-// ---------------------------------------------------------------- applying transforms
 
 const logb = (v: number, base: number) => Math.log(Math.max(v, Number.MIN_VALUE)) / Math.log(base);
 
@@ -742,8 +738,6 @@ function collectUnsupported(xf: OcioXf | null, out: Set<string>): void {
 			break;
 	}
 }
-
-// ---------------------------------------------------------------- the config
 
 export type OcioSpace = {
 	name: string;

@@ -150,8 +150,15 @@ export function clipPictureTime(
 	return contentTimeAt(clip, frame, rate);
 }
 
+export type LayerPropertySource = Pick<
+	RenderVisualClip,
+	'transform' | 'opacity' | 'intrinsicBox' | 'masks'
+> & {
+	effects: Readonly<RenderVisualClip['effects']>;
+};
+
 /** Evaluated props of a clip at content time `t` (no caching). */
-export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayerProps {
+export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLayerProps {
 	const tr = c.transform;
 	const transform: LayerTransformValues | null = tr
 		? {

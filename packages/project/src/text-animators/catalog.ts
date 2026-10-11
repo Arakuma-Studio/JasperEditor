@@ -1,4 +1,4 @@
-// Text animator catalogue (workstream text-animators): the properties an animator can hold (AE "Animate ▸" /
+// Text animator catalogue: the properties an animator can hold (AE "Animate ▸" /
 // "Add ▸ Property" entries, their companions, defaults, ranges and units) and fresh animators / selectors with
 // After Effects' defaults. Pure data + factories shared by commands, the property registry, the UI and MCP.
 //
@@ -407,8 +407,6 @@ export function addAnimatorProperties(
 
 /** Variable font axis tag (4 printable ASCII characters, e.g. `wght`). */
 export const AXIS_TAG = /^[\x20-\x7e]{4}$/;
-
-// ---------------------------------------------------------------- selectors and animators
 
 export function newRangeSelector(id: string, name = 'Range Selector 1'): TextRangeSelector {
 	return {

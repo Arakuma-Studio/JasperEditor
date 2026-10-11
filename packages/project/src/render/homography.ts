@@ -1,23 +1,17 @@
 // Projective (3×3) layer math (M2, ARCHITECTURE §19.5, S09:TRK-050): corner pin and tracked screen
 // replacement. `Mat3` is row-major: [x', y', w'] = M·[x, y, 1], x = x'/w', y = y'/w'. The same matrices drive
 // the CSS `matrix3d` preview, the Program overlay handles and the engine's native warp stage.
+import { type Matrix3, multiplyMatrix3 as multiplyMat3 } from '../math/matrix3.ts';
 import type { Vec2 } from '../schema/common.ts';
 import type { Mat2D } from './transform.ts';
 
-export type Mat3 = [number, number, number, number, number, number, number, number, number];
+export type Mat3 = Matrix3;
+export { multiplyMat3 };
 /** Corners in the order TL, TR, BR, BL (the S03 layer-quad order). */
 export type Quad = [Vec2, Vec2, Vec2, Vec2];
 
 export function mat3FromMat2D(m: Mat2D): Mat3 {
 	return [m.a, m.c, m.e, m.b, m.d, m.f, 0, 0, 1];
-}
-
-export function multiplyMat3(a: Mat3, b: Mat3): Mat3 {
-	const o = new Array(9).fill(0) as Mat3;
-	for (let r = 0; r < 3; r++)
-		for (let c = 0; c < 3; c++)
-			o[3 * r + c] = a[3 * r]! * b[c]! + a[3 * r + 1]! * b[3 + c]! + a[3 * r + 2]! * b[6 + c]!;
-	return o;
 }
 
 export function invertMat3(m: Mat3): Mat3 | null {

@@ -127,8 +127,6 @@ export function ycbcrToRgb(y: number, cb: number, cr: number, m: ScopeMatrix): [
 	return [r, g, b];
 }
 
-// ---------------------------------------------------------------- signal
-
 /** A frame's R'G'B' samples (decimated), row-major, 3 floats per sample; NaN = no sample (transparent pixel). */
 export type ScopeSignal = { w: number; h: number; rgb: Float32Array };
 
@@ -219,8 +217,6 @@ export function signalFromFn(
 	return { w, h, rgb };
 }
 
-// ---------------------------------------------------------------- settings
-
 export type ScopeParams = {
 	matrix: ScopeMatrix;
 	/** Clamp Signal: values are clamped to 0..1 before they are plotted. */
@@ -236,8 +232,6 @@ export const DEFAULT_SCOPE_PARAMS: ScopeParams = { matrix: 'bt709', clamp: true,
 /** The plotted value range of waveform rows. */
 export const scopeRange = (p: Pick<ScopeParams, 'clamp'>): [number, number] =>
 	p.clamp ? [0, 1] : [-0.1, 1.1];
-
-// ---------------------------------------------------------------- grids
 
 /** A count grid: `data[row · cols + col]`, row 0 = the lowest level. */
 export type ScopeGrid = { name: string; cols: number; rows: number; data: Uint32Array };
@@ -359,8 +353,6 @@ export function parade(
 	return buildWaveform(s, p, type === 'rgb' ? 0 : type === 'rgbWhite' ? 3 : 4);
 }
 
-// ---------------------------------------------------------------- histogram
-
 /** 256-bin histograms of R', G', B' and Y'. */
 export type ScopeHistogram = {
 	r: Uint32Array;
@@ -413,8 +405,6 @@ export function histogram(s: ScopeSignal, p: ScopeParams = DEFAULT_SCOPE_PARAMS)
 	}
 	return h;
 }
-
-// ---------------------------------------------------------------- vectorscopes
 
 /** A vectorscope: `data[y · size + x]`, x = Cb (right = +), y = Cr (row 0 = top = +Cr). */
 export type ScopeVectorscope = {
@@ -624,8 +614,6 @@ export function skinToneLine(): [number, number] {
 	return [Math.cos(a), Math.sin(a)];
 }
 
-// ---------------------------------------------------------------- scale labels
-
 /** Graticule labels of the levels axis: `[value 0..1, label]`, bottom to top (`hi` > 1 adds super-white rows). */
 export function scaleLabels(scale: ScopeScale, lo = 0, hi = 1): [number, string][] {
 	const out: [number, string][] = [];
@@ -642,8 +630,6 @@ export function scaleLabels(scale: ScopeScale, lo = 0, hi = 1): [number, string]
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- paint (counts → pixels)
 
 /** Intensity 0..1 of a cell holding `count` samples (`reference` = a full cell, `gain` = Brightness). */
 export function scopeIntensity(count: number, reference: number, gain: number): number {
@@ -784,8 +770,6 @@ export function paintVectorscope(
 	}
 	return { width: n, height: n, image };
 }
-
-// ---------------------------------------------------------------- numeric summaries (agents)
 
 /** Minimum, maximum and mean of a set of levels (percent of full scale). */
 export type ScopeLevel = { min: number; max: number; mean: number };
@@ -938,8 +922,6 @@ export function peakBin(bins: ArrayLike<number>): number {
 	for (let i = 1; i < bins.length; i++) if (bins[i]! > bins[best]!) best = i;
 	return best;
 }
-
-// ---------------------------------------------------------------- scopes_read
 
 export type ScopesReadOptions = {
 	scopes?: readonly ScopeKind[];

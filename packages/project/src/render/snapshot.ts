@@ -194,7 +194,7 @@ export type RenderVisualSource =
 			box: TextBox;
 			animation?: RenderTextAnimation;
 			/**
-			 * text-animators workstream: AE-style animators, Path / More Options, per-character 3D and Source Text
+			 * AE-style animators, Path / More Options, per-character 3D and Source Text
 			 * keys, unevaluated (the layer evaluates them at the content time, like shapes). Absent = none.
 			 */
 			animators?: TextAnimatorGroup[];
@@ -892,7 +892,7 @@ export function buildRenderSnapshot(
 								message: `Text animation ${key} is not installed; the text is drawn without it`,
 							});
 					}
-					// text-animators workstream: animators and friends travel unevaluated.
+					// animators and friends travel unevaluated.
 					if (c.animators?.length) source.animators = c.animators as TextAnimatorGroup[];
 					if (c.pathOptions) source.pathOptions = c.pathOptions as TextPathOptions;
 					if (c.moreOptions) source.moreOptions = c.moreOptions as TextMoreOptions;
@@ -1192,7 +1192,6 @@ export function buildRenderSnapshot(
 		clips.sort((a, b) => a.start - b.start);
 		videoTracks.push({ trackId: t.id, clips, caption: true });
 	});
-	// ---- end wp captions
 
 	const audioClips: RenderAudioClip[] = [];
 	// A crossfade plays the clips' handles: a clip whose handle reaches into the range is included.
@@ -1308,8 +1307,6 @@ export function buildRenderSnapshot(
 			: {}),
 	};
 }
-
-// ---------------------------------------------------------------- edit-structure: nested audio
 
 const MIN_DB = -200;
 const gainToDb = (g: number) => (g > 0 ? Math.max(MIN_DB, 20 * Math.log10(g)) : MIN_DB);

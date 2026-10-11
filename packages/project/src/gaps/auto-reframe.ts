@@ -1,4 +1,4 @@
-// Sequence ▸ Auto Reframe Sequence (workstream gaps, docs/wp-notes/gaps.md §AI-2), as Premiere: a copy of the sequence
+// Sequence ▸ Auto Reframe Sequence (docs/wp-notes/gaps.md §AI-2), as Premiere: a copy of the sequence
 // at a new aspect ratio (Square 1:1, Vertical 4:5, Vertical 9:16, Horizontal 16:9 or custom) whose video clips fill the
 // new frame and follow their subject with Position keyframes. The subject of each clip comes from the engine's
 // `reframe` job (faces when the face model is installed, else a motion / contrast / skin saliency centroid, per media

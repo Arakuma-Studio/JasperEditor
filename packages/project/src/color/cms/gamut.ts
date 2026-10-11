@@ -1,4 +1,4 @@
-// RGB gamuts (workstream color-mgmt): primaries and white points as published, their RGB → XYZ matrices (SMPTE RP 177)
+// RGB gamuts: primaries and white points as published, their RGB → XYZ matrices (SMPTE RP 177)
 // and the linear-light conversion between any two (via CIE XYZ, Bradford-adapted when the whites differ, as in the ACES
 // and OCIO studio configurations).
 //

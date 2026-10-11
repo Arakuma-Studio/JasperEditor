@@ -399,8 +399,6 @@ export function patchShapeItem(item: ShapeItem, patch: Record<string, unknown>, 
 	return copy as ShapeItem;
 }
 
-// ---------------------------------------------------------------- validation
-
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 
 /**

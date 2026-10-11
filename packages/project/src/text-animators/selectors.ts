@@ -1,4 +1,4 @@
-// Text selector maths (workstream text-animators): how much each character / word / line is affected by an
+// Text selector maths: how much each character / word / line is affected by an
 // animator. Pure functions shared by the renderer, the commands and the tests.
 //
 // Ported from EffectCraft `crates/text/src/selectors.rs` (MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and
@@ -135,8 +135,6 @@ export function rangeValue(r: RangeParams, i: number, n: number): number {
 	}
 	return v * r.amount;
 }
-
-// ---------------------------------------------------------------- deterministic hashing (u64)
 
 /** SplitMix64 step (deterministic hashing for seeds and noise lattices). */
 export function splitmix(x: bigint): bigint {

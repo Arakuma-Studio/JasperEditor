@@ -155,7 +155,6 @@ function templateStampIssue(
 		? null
 		: `renderer "${have}" contradicts template ${c.template.id}@${c.template.version} ("${want}")`;
 }
-// ---- end wp-m2-anime-templates
 
 /**
  * The id-keyed tables of a loaded document as null-prototype objects (golden-fuzz): a reference such as
@@ -890,7 +889,7 @@ export function invariantCheckers(
 			if (bad)
 				issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
 		}
-		// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
+		// animators, selectors, Path / More Options, Source Text keys.
 		if (c.kind === 'text')
 			for (const i of textAnimatorIssues(r, cw, claim))
 				issues.push(inv('INV-012', `Clip ${c.id}: ${i.message}`, i.path));
@@ -934,7 +933,6 @@ export function invariantCheckers(
 				}
 			}
 		}
-		// ---- end wp-m2-anime-templates
 		if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
 			issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
 		if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
@@ -1578,8 +1576,6 @@ function repairMaskList(list: Mask[] | undefined): string[] {
 	return dropped;
 }
 
-// ---------------------------------------------------------------- repair (S01:PER-004)
-
 export type RepairEntry = { action: string; entity: string; detail: string };
 
 /**
@@ -1632,7 +1628,6 @@ export function repairDocument(
 			if (Object.keys(pk).length === 0) delete c.paramKeyframes;
 		}
 	}
-	// ---- end wp-m2-anime-templates
 
 	// ---- three-d: 3D blocks on kinds that cannot be 3D are dropped; missing environment media → studio light.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
@@ -1681,7 +1676,6 @@ export function repairDocument(
 		}
 		if (Object.keys(it).length === 0) delete (m as { interpretation?: unknown }).interpretation;
 	}
-	// ---- end imports
 
 	// ---- wp shapes: vector shape items — malformed items dropped, duplicate item ids renumbered.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
@@ -1715,8 +1709,7 @@ export function repairDocument(
 			});
 		}
 	}
-	// ---- end wp shapes
-	// text-animators workstream: malformed animator data is dropped, out-of-range values clamped.
+	// malformed animator data is dropped, out-of-range values clamped.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		for (const c of Object.values(seq.clips))
 			if (c.kind === 'text')
@@ -1819,7 +1812,6 @@ export function repairDocument(
 		for (const id of Object.keys(doc.transcripts))
 			if (!before.has(id)) note('split-caption-transcript', id, 'shared caption transcript copied per clip');
 	}
-	// ---- end wp captions
 
 	// Bin tree: drop missing references and duplicates, reattach orphans at the root.
 	const placed = new Set<string>();

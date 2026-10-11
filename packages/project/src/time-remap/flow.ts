@@ -1,4 +1,4 @@
-// Optical flow and motion-compensated frame interpolation (workstream `time`): Premiere's Time Interpolation ▸
+// Optical flow and motion-compensated frame interpolation: Premiere's Time Interpolation ▸
 // Optical Flow, the same algorithm on the CPU (this file: native export, scene detection, tests) and on the GPU
 // (flow-glsl.ts + compositions/src/retime/flow-gl.ts: preview and Remotion renders).
 //

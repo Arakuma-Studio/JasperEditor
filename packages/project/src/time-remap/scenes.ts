@@ -1,4 +1,4 @@
-// Scene Edit Detection (workstream `time`): where a clip's shots change (hard cuts). Port of effectcraft
+// Scene Edit Detection: where a clip's shots change (hard cuts). Port of effectcraft
 // `crates/raster/src/cuts.rs` (MIT OR Apache-2.0, licenses/ported/time.md) — the better of the two references, as its
 // motion-compensated term rejects camera pans that filmcraft's plain grid difference reports — extended with a
 // sensitivity (filmcraft's 0…100 control) and a flash test.

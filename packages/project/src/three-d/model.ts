@@ -107,8 +107,6 @@ export function fStopOf(focalMm: number, aperturePx: number, frameWidth: number)
 	return a > 0 ? focalMm / a : Number.POSITIVE_INFINITY;
 }
 
-// ---------------------------------------------------------------- materials
-
 /** After Effects' Material Options defaults. */
 export const MATERIAL_DEFAULTS = {
 	castsShadows: 'off',
@@ -163,8 +161,6 @@ export function newLayer3D(enabled = true, kind?: string): Layer3D {
 export function defaultGeometryOptions(): NonNullable<Layer3D['geometry']> {
 	return { bevelStyle: 'none', bevelDepth: anim(2), holeBevelDepth: anim(100), extrusionDepth: anim(0) };
 }
-
-// ---------------------------------------------------------------- cameras
 
 function rig(position: Vec3, poi: Vec3, autoOrient: RigTransform['autoOrient']): RigTransform {
 	return {
@@ -227,8 +223,6 @@ export function newCameraData(
 		highlightSaturation: anim(0),
 	};
 }
-
-// ---------------------------------------------------------------- lights
 
 /** Light types that have a Point of Interest / direction (AE: parallel and spot). */
 export const DIRECTIONAL_LIGHTS: ReadonlySet<LightType> = new Set(['parallel', 'spot']);

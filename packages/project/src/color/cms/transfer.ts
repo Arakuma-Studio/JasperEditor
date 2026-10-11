@@ -1,4 +1,4 @@
-// Transfer functions of display, HDR and ACES encodings (workstream color-mgmt). Each curve is a pair
+// Transfer functions of display, HDR and ACES encodings. Each curve is a pair
 // `decode(signal) → linear` / `encode(linear) → signal` of the published standard; the display curves extend to
 // negative values by mirroring (over-range float values survive a round trip). Camera log curves are in `log.ts`.
 //
@@ -30,7 +30,6 @@ export type CurveId =
 
 const spow = (x: number, g: number) => (x < 0 ? -((-x) ** g) : x ** g);
 
-// ---------------------------------------------------------------- sRGB
 export function srgbDecode(v: number): number {
 	const a = Math.abs(v);
 	const l = a <= 0.04045 ? a / 12.92 : ((a + 0.055) / 1.055) ** 2.4;
@@ -42,7 +41,7 @@ export function srgbEncode(x: number): number {
 	return x < 0 ? -v : v;
 }
 
-// ---------------------------------------------------------------- BT.709 / BT.2020 camera OETF
+// BT.709 / BT.2020 camera OETF
 const B709 = { alpha: 1.099, beta: 0.018 };
 const B2020 = { alpha: 1.09929682680944, beta: 0.018053968510807 };
 function oetfEncode(x: number, k: { alpha: number; beta: number }): number {
@@ -56,7 +55,7 @@ function oetfDecode(v: number, k: { alpha: number; beta: number }): number {
 	return v < 0 ? -l : l;
 }
 
-// ---------------------------------------------------------------- PQ (SMPTE ST 2084)
+// PQ (SMPTE ST 2084)
 export const PQ_M1 = 2610 / 16384;
 export const PQ_M2 = (2523 / 4096) * 128;
 export const PQ_C1 = 3424 / 4096;
@@ -75,7 +74,7 @@ export function pqEncode(y: number): number {
 export const pqFromNits = (nits: number) => pqEncode(nits / 10000);
 export const nitsFromPq = (e: number) => pqDecode(e) * 10000;
 
-// ---------------------------------------------------------------- HLG (ARIB STD-B67 / BT.2100)
+// HLG (ARIB STD-B67 / BT.2100)
 export const HLG_A = 0.17883277;
 export const HLG_B = 1 - 4 * HLG_A;
 export const HLG_C = 0.5 - HLG_A * Math.log(4 * HLG_A);
@@ -94,7 +93,6 @@ export function hlgSystemGamma(lw: number): number {
 	return 1.2 + 0.42 * Math.log10(Math.max(1, lw) / 1000);
 }
 
-// ---------------------------------------------------------------- ACEScct / ACEScc
 const CCT_A = 10.5402377416545;
 const CCT_B = 0.0729055341958355;
 const CCT_X_BRK = 0.0078125;
@@ -118,8 +116,6 @@ export function accDecode(y: number): number {
 	if (y < (Math.log2(ACES_HALF_MAX) + 9.72) / 17.52) return 2 ** (y * 17.52 - 9.72);
 	return ACES_HALF_MAX;
 }
-
-// ---------------------------------------------------------------- dispatch
 
 /** Signal → linear. PQ gives absolute / 10 000 cd/m², HLG scene light E, logs scene-linear reflectance. */
 export function curveDecode(curve: CurveId, v: number): number {

@@ -1,4 +1,4 @@
-// imports workstream: Interpret Footage, vector / Lottie / layered / image-sequence media (docs/wp-notes/imports.md).
+// Interpret Footage, vector / Lottie / layered / image-sequence media (docs/wp-notes/imports.md).
 
 export * from './layered.ts';
 export * from './model.ts';

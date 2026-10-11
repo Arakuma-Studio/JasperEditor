@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import type { BezierPath } from '../path/model.ts';
 import type { GradientValue } from '../vector/values.ts';
+import { type BlendMode, BlendModeSchema } from './blend.ts';
 import {
 	type Animatable,
 	AnimNumberSchema,
@@ -18,7 +19,6 @@ import {
 	type Vec2,
 } from './common.ts';
 import { BezierPathSchema } from './mask.ts';
-import { type BlendMode, BlendModeSchema } from './sequence.ts';
 
 /**
  * Blend modes of shape groups, fills and strokes: the full clip set (`BLEND_MODES`, keyframes-blend). Paints blend
@@ -290,8 +290,6 @@ export type ShapeItem =
 
 export type ShapeItemOf<T extends ShapeItemType> = Extract<ShapeItem, { type: T }>;
 
-// ---------------------------------------------------------------- zod
-
 export const GradientValueSchema = z.looseObject({
 	colors: z
 		.array(
@@ -316,8 +314,7 @@ const base = {
 	enabled: z.boolean().optional(),
 };
 const direction = z.enum(['normal', 'reversed']).optional();
-// Lazy: sequence.ts imports this module (the schema is only read when parsing).
-const blendMode = z.lazy(() => BlendModeSchema).optional();
+const blendMode = BlendModeSchema.optional();
 const composite = z.enum(['below', 'above']).optional();
 const fillRule = z.enum(['nonzero', 'evenodd']).optional();
 const lineCap = z.enum(['butt', 'round', 'square']).optional();

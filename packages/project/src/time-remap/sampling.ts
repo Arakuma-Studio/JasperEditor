@@ -1,4 +1,4 @@
-// Source frame selection (workstream `time`): which media frames make the picture at a media time — shared by the
+// Source frame selection: which media frames make the picture at a media time — shared by the
 // preview decoder (compositions/retime), the native retime producer (engine/export/retime) and scene detection, so
 // every path picks the same frames.
 //

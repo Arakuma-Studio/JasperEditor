@@ -42,8 +42,6 @@ export type SvgConversion = {
 
 export class SvgImportError extends Error {}
 
-// ---------------------------------------------------------------- XML
-
 type XNode = { name: string; attrs: Record<string, string>; children: XNode[]; text: string };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -164,8 +162,6 @@ function parseXml(src: string): XNode {
 	}
 	return root;
 }
-
-// ---------------------------------------------------------------- values
 
 const NAMED: Record<string, string> = {
 	aliceblue: 'f0f8ff',
@@ -471,8 +467,6 @@ export function matrixToGroupTransform(m: Mat): Record<string, unknown> | null {
 	};
 }
 
-// ---------------------------------------------------------------- styles
-
 type Style = Record<string, string>;
 const INHERITED = new Set([
 	'fill',
@@ -534,8 +528,6 @@ function matches(sel: string, node: XNode): boolean | null {
 	}
 	return true;
 }
-
-// ---------------------------------------------------------------- conversion
 
 type Ctx = {
 	ids: Map<string, XNode>;
@@ -1070,7 +1062,7 @@ export function looksLikeSvg(text: string): boolean {
 }
 
 /**
- * imports workstream: the document size of an SVG (px: `width`/`height` with units, else the viewBox size, else
+ * the document size of an SVG (px: `width`/`height` with units, else the viewBox size, else
  * 300×150 as CSS sizes a replaced element) and its viewBox — the same rule `svgToShapeContents` uses, so an SVG
  * imported as a picture and as a shape layer have the same size. Throws SvgImportError when it is not SVG.
  */

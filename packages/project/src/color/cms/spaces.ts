@@ -1,4 +1,4 @@
-// Colour spaces (workstream color-mgmt): the source spaces of Interpret Footage ▸ Colour, the sequence working spaces
+// Colour spaces: the source spaces of Interpret Footage ▸ Colour, the sequence working spaces
 // and the export output spaces, each = an RGB gamut + a transfer curve + how its signal relates to light ("kind"):
 //   'sdr'   display-referred SDR (decoded with the display EOTF; 1.0 = SDR white),
 //   'pq'    SMPTE ST 2084, absolute cd/m²,
@@ -224,8 +224,6 @@ export function spaceLogDomain(s: ColorSpaceDef): LogDomain | null {
 	return s.curve in LOG_CURVES ? LOG_CURVES[s.curve as LogCurveId].domain : null;
 }
 
-// ---------------------------------------------------------------- working and output spaces
-
 /** Sequence working colour spaces (Sequence Settings ▸ Colour). */
 export const WORKING_SPACE_IDS = [
 	'rec709',
@@ -249,8 +247,6 @@ export function isWorkingSpaceId(id: unknown): id is WorkingSpaceId {
 export function isHdrSpace(s: ColorSpaceDef): boolean {
 	return s.kind === 'pq' || s.kind === 'hlg';
 }
-
-// ---------------------------------------------------------------- auto detection
 
 export type StreamColorTags = {
 	primaries?: string | null;

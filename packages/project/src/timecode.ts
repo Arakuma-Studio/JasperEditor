@@ -143,8 +143,6 @@ export function parseTimecodeEntry(input: string, rate: Rational, ctx: TimecodeE
 	return Math.max(0, frames - (ctx.startFrames ?? 0));
 }
 
-// ---------------------------------------------------------------- gaps: Project Settings ▸ display formats
-
 /** Project Settings ▸ General ▸ Video Display Format (see `VIDEO_DISPLAY_FORMATS` in the schema). */
 export type VideoDisplayFormat = 'timecode' | 'frames' | 'feet35' | 'feet16';
 /** Frames per foot of film: 35 mm (4-perf) has 16, 16 mm has 40. */

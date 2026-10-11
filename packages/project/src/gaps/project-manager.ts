@@ -1,4 +1,4 @@
-// File ▸ Project Manager… (workstream gaps, docs/wp-notes/gaps.md §PRJ-6), the pure part: which sequences, items and
+// File ▸ Project Manager… (docs/wp-notes/gaps.md §PRJ-6), the pure part: which sequences, items and
 // media a trimmed copy of the project keeps, which part of each media its clips use, and the document of the copy
 // once the engine has copied or transcoded the files. Premiere's two modes:
 // - Collect Files and Copy to New Location: every used file is copied whole;

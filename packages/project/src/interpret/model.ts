@@ -1,4 +1,4 @@
-// Interpret Footage (workstream `imports`, docs/wp-notes/imports.md): how a media file is read — an assumed frame
+// Interpret Footage (docs/wp-notes/imports.md): how a media file is read — an assumed frame
 // rate, a conformed pixel aspect ratio, a field order (interlaced pictures are deinterlaced into the progressive
 // sequence), the alpha channel's meaning and a loop count — without touching the file. The asset's `probe` stays the
 // file's truth; everything that needs the interpreted value asks these helpers.

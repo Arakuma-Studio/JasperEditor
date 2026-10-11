@@ -431,8 +431,6 @@ export function essentialEffects(s: EssentialSound | null): EssentialEffect[] {
 	return out;
 }
 
-// ---------------------------------------------------------------- presets
-
 /** A named preset for one audio type: settings applied on top of the type's defaults. */
 export type EssentialPreset = { name: string; type: AudioType; settings: EssentialSound; builtin: boolean };
 

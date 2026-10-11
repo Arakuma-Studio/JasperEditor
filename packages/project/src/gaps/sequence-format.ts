@@ -1,4 +1,4 @@
-// Sequence Settings ▸ Pixel Aspect Ratio and Fields (workstream gaps, docs/wp-notes/gaps.md §TL-11).
+// Sequence Settings ▸ Pixel Aspect Ratio and Fields (docs/wp-notes/gaps.md §TL-11).
 //
 // A sequence with non-square pixels (DV, HDV, DVCPRO HD, anamorphic 2:1) is edited in DISPLAY pixels: the frame the
 // monitors, the layout and every renderer use is `width` = the storage width × the pixel aspect ratio (even), so

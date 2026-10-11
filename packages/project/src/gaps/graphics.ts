@@ -1,4 +1,4 @@
-// Essential Graphics (workstream gaps, docs/wp-notes/gaps.md §GR-4/GR-5). A GRAPHIC is a nested sequence flagged
+// Essential Graphics (docs/wp-notes/gaps.md §GR-4/GR-5). A GRAPHIC is a nested sequence flagged
 // `Sequence.graphic`: its tracks are the graphic's layers (text, shapes, clips; the top track is the top layer), the
 // nest clip on the timeline is the graphic clip. Everything a layer can do (fonts, animators, effects, keyframes)
 // therefore works and renders on every path the nest does. The graphic adds, applied when a render snapshot is built
@@ -352,8 +352,6 @@ export function applyGraphics(doc: ProjectDocument, boxOf: BoxOf): ProjectDocume
 	}
 	return { ...doc, sequences };
 }
-
-// ---------------------------------------------------------------- templates (.jgt)
 
 export const GRAPHIC_TEMPLATE_FORMAT = 'jasper-graphic-template';
 export const GRAPHIC_TEMPLATE_EXTENSION = '.jgt';

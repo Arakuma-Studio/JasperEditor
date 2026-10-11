@@ -8,7 +8,7 @@
 | Upstream path | Our path | What |
 |---|---|---|
 | `crates/color/src/log.rs` | `packages/project/src/color/cms/log.ts` | S-Log3, V-Log, Canon Log 2/3, LogC3, LogC4, Apple Log, D-Log encode/decode, signal domains, reference-point tests |
-| `crates/color/src/spaces.rs` | `packages/project/src/color/cms/gamut.ts`, `spaces.ts`, `matrix.ts` | gamut primaries, normalised primary matrix (RP 177), colour space catalogue, tag detection |
+| `crates/color/src/spaces.rs` | `packages/project/src/color/cms/gamut.ts`, `spaces.ts`, `matrix.ts`, `packages/project/src/math/matrix3.ts` | gamut primaries, normalised primary matrix (RP 177), colour space catalogue, tag detection |
 | `crates/color/src/transform.rs` | `packages/project/src/color/cms/transform.ts`, `hdr.ts` | input/output transforms, BT.2390 EETF tone mapping, desaturation into gamut, HLG OOTF |
 | `crates/color/src/grade.rs` | `packages/project/src/color/cms/transform.ts` (`gradeSpace`) | Lumetri grading signal normalised to HDR White (PQ / HLG) |
 | `crates/color/src/lib.rs` | `packages/project/src/color/cms/transfer.ts`, `hdr.ts` | PQ / HLG / sRGB functions, HDR static metadata peak |

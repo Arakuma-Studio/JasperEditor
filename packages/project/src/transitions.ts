@@ -182,7 +182,7 @@ export function clipHandles(
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
 	const dur = contentDurationFlicks(doc, c);
-	// Time-remapped clips (workstream `time`): handles whose remapped media times are inside the media.
+	// Time-remapped clips: handles whose remapped media times are inside the media.
 	if (isRemapped(c)) {
 		const room = remapRoom(c, seq.settings.frameRate as Rational, dur);
 		return { head: Math.min(room.head, Math.floor(c.sourceIn / step + EPS)), tail: room.tail };

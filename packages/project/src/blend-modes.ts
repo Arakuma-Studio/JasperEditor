@@ -234,8 +234,6 @@ export function isCssBlend(mode: string): boolean {
 	return mode === 'normal' || !!BY_ID.get(mode as BlendMode)?.css;
 }
 
-// ---------------------------------------------------------------- formulas (premultiplied RGBA, 0..1)
-
 /** Hard Mix threshold: 1 minus a quarter code value, so sums of 8-bit values that are exactly 1 count as 1 on the GPU. */
 export const HARD_MIX_THRESHOLD = 1 - 0.25 / 255;
 
@@ -498,8 +496,6 @@ export function storePremul8(p: Rgba): Rgba {
 		Math.round(c[3] * 255) / 255,
 	];
 }
-
-// ---------------------------------------------------------------- Dissolve noise (deterministic)
 
 /**
  * Dissolve's per-pixel random value in [0, 1) at integer pixel (x, y) of the sequence frame (EffectCraft

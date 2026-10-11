@@ -45,8 +45,6 @@ export function validGradientValue(v: unknown): v is GradientValue {
 	);
 }
 
-// ---------------------------------------------------------------- path value ⇄ compound path
-
 const zero = (v: readonly number[] | undefined) => !v || (v[0] === 0 && v[1] === 0);
 
 /** One subpath from a path value (straight segments where both handles are zero). */
@@ -100,8 +98,6 @@ export function bezToBezierPaths(p: BezPath): BezierPath[] {
 }
 
 export const emptyBezierPath = (): BezierPath => ({ closed: false, vertices: [] });
-
-// ---------------------------------------------------------------- gradients
 
 export const DEFAULT_GRADIENT: GradientValue = {
 	colors: [

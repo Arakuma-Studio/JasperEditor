@@ -1,4 +1,4 @@
-// Time remapping, time interpolation and source-frame selection (workstream `time`, docs/wp-notes/time.md).
+// Time remapping, time interpolation and source-frame selection (docs/wp-notes/time.md).
 export * from './bounds.ts';
 export * from './flow.ts';
 export * from './model.ts';

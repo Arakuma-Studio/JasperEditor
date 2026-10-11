@@ -1,4 +1,4 @@
-// imports workstream: Lottie documents (import validation, export from sequences).
+// Lottie documents (import validation, export from sequences).
 
 export * from './export.ts';
 export * from './parse.ts';

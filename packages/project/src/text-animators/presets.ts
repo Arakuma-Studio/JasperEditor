@@ -1,4 +1,4 @@
-// Text animator presets (workstream text-animators): a library of ready-made animators covering After Effects'
+// Text animator presets: a library of ready-made animators covering After Effects'
 // common text presets (Animate In / Animate Out / Multi-Line / Blurs / Tracking / Mechanical / 3D Text families)
 // and the re-expression of the shipped In/Out presets (`TEXT_ANIMATION_SPECS`) as animators. The definitions are
 // original (MIT; EffectCraft's eight `text_animators.json` presets are included in spirit: typewriter, fade up
@@ -754,8 +754,6 @@ export function getTextAnimatorPreset(id: string): TextAnimatorPreset | undefine
 	const k = id.trim().toLowerCase();
 	return TEXT_ANIMATOR_PRESETS.find((p) => p.id === k || p.name.toLowerCase() === k);
 }
-
-// ---------------------------------------------------------------- building animators from a preset
 
 export type PresetBuildContext = {
 	newId: (prefix: string) => string;

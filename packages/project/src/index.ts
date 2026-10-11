@@ -73,6 +73,7 @@ export * from './registry/fx/index.ts';
 export * from './registry/kinds.ts';
 export * from './registry/lumetri-spatial.ts';
 export * from './registry/mg.ts';
+export { mediaParamId } from './registry/param-values.ts';
 export * from './registry/properties.ts';
 export * from './registry/text-animator-properties.ts';
 export * from './registry/transitions/index.ts';

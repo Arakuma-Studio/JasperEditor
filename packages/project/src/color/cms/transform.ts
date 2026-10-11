@@ -1,4 +1,4 @@
-// Colour-managed conversions (workstream color-mgmt) between a source space, the sequence working space and an
+// Colour-managed conversions between a source space, the sequence working space and an
 // output (display or export) space. The composite holds the *working space's encoded signal* (what the preview DOM,
 // the GL stages and the native ffmpeg graph composite); these functions are pure RGB → RGB maps on encoded 0…1 values
 // that every renderer bakes into the same LUT (ARCHITECTURE D-21), so preview and exports agree.
@@ -297,8 +297,6 @@ export function outputTransformFn(
 	};
 }
 
-// ---------------------------------------------------------------- linear decode of the working signal
-
 /**
  * The working curve's decode/encode for linear blending ("Blend using 1.0 gamma") and linearised working spaces:
  * encoded signal ↔ linear light on a 0…1 scale (PQ: ÷ 10 000 cd/m²; HLG: scene light E).
@@ -310,8 +308,6 @@ export function workingLinearCurve(working: WorkingSpaceId): {
 	const w = spaceOrThrow(working);
 	return { decode: (v) => curveDecode(w.curve, v), encode: (x) => curveEncode(w.curve, x) };
 }
-
-// ---------------------------------------------------------------- the grading signal (Lumetri in HDR)
 
 /** Default HDR White / curve HDR Range (cd/m²). */
 export const DEFAULT_HDR_WHITE_NITS = 1000;
