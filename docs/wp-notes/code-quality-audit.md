@@ -54,6 +54,7 @@ host under substantial contention; elapsed times below are observations, not per
 | --- | --- |
 | `pnpm lint` | Passed: Biome checked 2,548 files; token, animation, package-layer/runtime-cycle, and asset checks passed. |
 | Workspace and E2E typechecks | All 18 package scripts passed across serialized integration batches and focused final package reruns. `pnpm e2e:typecheck` also passed. |
+| Complete test suite on the settled integration | Passed at `7574e5fa`: 518 test files passed and 49 skipped; 5,263 tests passed and 388 skipped; zero failures. Elapsed time was 2,483.43 seconds. |
 | `pnpm build` | Passed for web, desktop, engine, and MCP. The web build transformed 3,630 modules. |
 | `pnpm notices --check` | Passed: 150 packages and 31 ported-code records. |
 | `pnpm i18n:check` | Passed: 8,615 strings. |
@@ -66,6 +67,17 @@ host under substantial contention; elapsed times below are observations, not per
 | Project-store integration suite | All seven tests passed, including a real-engine check that malformed views produce a warning without altering project or view bytes. |
 | Desktop folder selection | All 20 focused main/preload/web tests passed; native dialogs were mocked. |
 | MCP typed response boundaries | All 21 focused tests passed. |
+
+The complete test suite ran with required oracle checks and bounded concurrency:
+
+```sh
+JASPER_REQUIRE_ORACLES=1 FX_COMPILE_WORKERS=1 \
+  pnpm test --maxWorkers=2 --testTimeout=60000 --hookTimeout=240000 --reporter=verbose
+```
+
+Skipped cases are excluded from the passing count. The full run included the 983-program shader sweep,
+native export, persistence, imports, upscale, and whole-repository dependency checks. No source changes
+were made during that run.
 
 The production/script syntax inventory decreased explicit `any` nodes from 21 to zero, `unknown`
 nodes from 2,955 to 2,320, and double assertions through `unknown` from 189 to 102. Its final sample
@@ -84,9 +96,10 @@ overlay regression caught and fixed an accidental value coercion during type cle
 
 Browser persistence checks used the built app and packaged LGPL FFmpeg on an isolated port. Their
 temporary harness allowed longer scheduling deadlines on this host without changing assertions.
-The export completion test and schema-conversion test received longer functional deadlines after
-unchanged assertions completed beyond their old deadlines. Performance budgets were not relaxed;
-the remix performance assertion passed on an isolated rerun with its existing budget.
+The export completion, schema-conversion, and whole-repository dependency tests received longer
+functional deadlines after unchanged assertions completed beyond their old deadlines. Performance
+budgets were not relaxed; the remix performance assertion passed with its existing budget in both an
+isolated rerun and the complete settled run.
 
 GitHub Actions could not start a job because the repository's Actions budget prevented further use.
 The [baseline run](https://github.com/JasperRaccoon/JasperEditor/actions/runs/38086564112) contains that
