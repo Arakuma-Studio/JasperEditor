@@ -51,6 +51,17 @@ describe('project file errors', () => {
 		expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe('{');
 	});
 
+	it('lists healthy projects alongside a corrupt project without changing either file', async () => {
+		const s = storeOn();
+		const healthy = await s.store.create({ name: 'Healthy', preset: 'hd-1080p-30' });
+		const corrupt = await s.store.create({ name: 'Damaged', preset: 'hd-1080p-30' });
+		const before = readFileSync(s.paths.projectFile(healthy), 'utf8');
+		writeFileSync(s.paths.projectFile(corrupt), '{');
+		expect((await s.store.list()).map((project) => project.projectId)).toEqual([healthy]);
+		expect(readFileSync(s.paths.projectFile(corrupt), 'utf8')).toBe('{');
+		expect(readFileSync(s.paths.projectFile(healthy), 'utf8')).toBe(before);
+	});
+
 	it('propagates project directory and file read errors', async () => {
 		const s = storeOn();
 		writeFileSync(s.paths.projectsDir, 'not a directory');
@@ -311,13 +322,15 @@ describe('session journal and versions through EngineProjectStore (real routes)'
 
 		const s2 = await EditorSession.open({ store: st, projectId, ctx, sessionId: 'ses_two' });
 		const p2 = attachPersistence(s2, { window: null, document: null });
-		const [c] = await st.listRecovery(projectId);
+		const {
+			candidates: [c],
+		} = await st.listRecovery(projectId);
 		expect(c).toMatchObject({ sessionId: 'ses_one', changes: ['Add Solid'], projectName: 'Journal' });
 		const snap = await st.readRecovery(projectId, 'ses_one');
 		expect(s2.replaceDocument(snap.document, 'Recover Unsaved Changes').ok).toBe(true);
 		await p2.flush();
 		await st.discardRecovery(projectId, 'ses_one');
-		expect(await st.listRecovery(projectId)).toEqual([]);
+		expect(await st.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		expect((await st.open(projectId)).revision).toBe(1);
 
 		// restore the first version in place from the open editor, then reopen it
@@ -364,16 +377,15 @@ describe('journal locks across engine processes', () => {
 		const before = readFileSync(snapshot, 'utf8');
 		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
 		unlinkSync(metadata);
-		await expect(restarted.list(id)).rejects.toMatchObject({
-			code: 'VALIDATION_FAILED',
-			status: 422,
-			detail: { projectId: id, sessionId: 'ses_x' },
+		expect(await restarted.list(id)).toMatchObject({
+			candidates: [],
+			warnings: [{ code: 'VALIDATION_FAILED', sessionId: 'ses_x' }],
 		});
 		expect(readFileSync(snapshot, 'utf8')).toBe(before);
 		await fc.assert(
 			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
 				writeFileSync(metadata, JSON.stringify({ malformed: invalid }));
-				await expect(restarted.list(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+				expect((await restarted.list(id)).warnings).toMatchObject([{ code: 'VALIDATION_FAILED' }]);
 				expect(readFileSync(snapshot, 'utf8')).toBe(before);
 			}),
 			{ numRuns: 20 },
@@ -386,6 +398,9 @@ describe('journal locks across engine processes', () => {
 		mkdirSync(incomplete);
 		writeFileSync(join(incomplete, 'snapshot.jasper'), '{');
 		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
+		const listed = await restarted.list(id);
+		expect(listed.candidates.map((candidate) => candidate.sessionId)).toEqual(['ses_x']);
+		expect(listed.warnings).toMatchObject([{ sessionId: 'ses_incomplete', code: 'VALIDATION_FAILED' }]);
 		const recovered = await restarted.read(id, 'ses_x');
 		expect(recovered.info.sessionId).toBe('ses_x');
 		expect(recovered.envelope.document).toMatchObject({ name: 'Unsaved' });
@@ -395,7 +410,7 @@ describe('journal locks across engine processes', () => {
 	it('an engine restart (new instance, no leases) offers the journal of the dead session', async () => {
 		const { s, id, saved } = await journalled();
 		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
-		expect((await restarted.list(id)).map((c) => c.sessionId)).toEqual(['ses_x']);
+		expect((await restarted.list(id)).candidates.map((c) => c.sessionId)).toEqual(['ses_x']);
 	});
 
 	it('a journal written by another live engine process is never touched', async () => {
@@ -404,8 +419,8 @@ describe('journal locks across engine processes', () => {
 		writeFileSync(lockFile, JSON.stringify({ pid: process.pid + 1, instance: 'eng_other' }));
 		const other = (alive: boolean) =>
 			new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved, processAlive: () => alive });
-		expect(await other(true).list(id)).toEqual([]);
+		expect(await other(true).list(id)).toEqual({ candidates: [], warnings: [] });
 		await expect(other(true).remove(id, 'ses_x')).rejects.toMatchObject({ code: 'LEASE_HELD' });
-		expect((await other(false).list(id)).map((c) => c.sessionId)).toEqual(['ses_x']);
+		expect((await other(false).list(id)).candidates.map((c) => c.sessionId)).toEqual(['ses_x']);
 	});
 });

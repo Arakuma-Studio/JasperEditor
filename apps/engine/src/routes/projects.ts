@@ -141,7 +141,7 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 		guarded<P>(async (req) => {
 			if ((await projects.revision(req.params.projectId)) === null)
 				throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
-			return { candidates: await recovery.list(req.params.projectId) };
+			return recovery.list(req.params.projectId);
 		}),
 	);
 

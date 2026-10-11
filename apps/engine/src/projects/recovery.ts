@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import {
 	type RecoveryInfo as RecoveryCandidate,
 	RecoveryInfoSchema,
+	type RecoveryListResponse,
 	type RecoveryPutRequest,
 } from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
@@ -172,30 +173,42 @@ export class RecoveryJournal {
 	}
 
 	/** Recovery candidates of a project, newest first (stale journals are removed on the way). */
-	async list(projectId: string): Promise<RecoveryCandidate[]> {
+	async list(projectId: string): Promise<RecoveryListResponse> {
 		let names: string[];
 		try {
 			names = await readdir(this.dir(projectId));
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { candidates: [], warnings: [] };
 			throw error;
 		}
 		const saved = await this.opts.saved(projectId);
-		if (!saved) return [];
+		if (!saved) return { candidates: [], warnings: [] };
 		const savedDoc = JSON.stringify(saved.document);
-		const out: RecoveryCandidate[] = [];
+		const candidates: RecoveryCandidate[] = [];
+		const warnings: RecoveryListResponse['warnings'] = [];
 		for (const sessionId of names) {
 			if (!SESSION_ID_RE.test(sessionId)) continue;
-			if (await this.held(projectId, sessionId)) continue;
-			const dir = this.dir(projectId, sessionId);
-			const { info, envelope } = await this.snapshot(projectId, sessionId);
-			if (JSON.stringify(envelope.document) === savedDoc) {
-				await rm(dir, { recursive: true, force: true });
-				continue;
+			try {
+				if (await this.held(projectId, sessionId)) continue;
+				const dir = this.dir(projectId, sessionId);
+				const { info, envelope } = await this.snapshot(projectId, sessionId);
+				if (JSON.stringify(envelope.document) === savedDoc) {
+					await rm(dir, { recursive: true, force: true });
+					continue;
+				}
+				candidates.push({ ...info, projectRevision: saved.revision });
+			} catch (error) {
+				warnings.push({
+					sessionId,
+					code: error instanceof ProjectError ? error.code : 'INTERNAL',
+					message:
+						error instanceof ProjectError
+							? error.message
+							: `Recovery journal ${sessionId} could not be inspected; remaining files have been preserved`,
+				});
 			}
-			out.push({ ...info, projectRevision: saved.revision });
 		}
-		return out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+		return { candidates: candidates.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1)), warnings };
 	}
 
 	private async snapshot(
