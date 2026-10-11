@@ -66,11 +66,9 @@ describe('resample (Kaiser windowed sinc)', () => {
 				const t = tone(y, f, to, edge, y.length - edge);
 				const errDb = 20 * Math.log10(t.amp / 0.5);
 				expect(Math.abs(errDb), `${from}→${to} @ ${f} Hz: ${errDb} dB`).toBeLessThan(0.01);
-				// time alignment: same phase at t = 0 (no group delay)
 				let dph = t.phase - 0.3;
 				dph = Math.atan2(Math.sin(dph), Math.cos(dph));
 				expect(Math.abs(dph), `${from}→${to} @ ${f} Hz phase`).toBeLessThan(1e-3);
-				// residual (everything that is not the tone) is tiny
 				const res = new Float32Array(y.length - 2 * edge);
 				for (let i = edge; i < y.length - edge; i++)
 					res[i - edge] = y[i] - 0.5 * Math.sin((2 * Math.PI * f * i) / to + 0.3);

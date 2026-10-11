@@ -15,7 +15,6 @@ import { videoAsset } from '../../project/test/helpers.ts';
 import { exportTimeline, type Format, importTimeline } from '../src/index.ts';
 import { Harness, withPath } from './support/rich.ts';
 
-/** Three cameras synced by In point, placed on V1/A1 and cut 0–30 cam 2, 30–60 cam 3, 60–end cam 2. */
 function multicamProject(audio: 'switch' | 'camera1' | 'all' = 'switch') {
 	const h = new Harness({ preset: 'hd-1080p-30' });
 	const cams = [
@@ -120,7 +119,6 @@ describe('multi-camera clips', () => {
 				.sort((a, b) => a.start - b.start)
 				.map((c) => angleNames(target.doc, c)),
 		).toEqual(cuts(h));
-		// one source sequence for all six clips
 		expect(new Set(mc.map((c) => (c as { sequenceId: string }).sequenceId)).size).toBe(1);
 	});
 
@@ -213,7 +211,6 @@ describe('multi-camera clips', () => {
 		expect(out.report.mentions('mixes every camera')).toBe(true);
 		expect(text).toContain('<enabled>FALSE</enabled>');
 		expect(shown(target.doc, seqId, 'video').length).toBe(3);
-		// disabled: a plain nest
 		const { h: h2 } = multicamProject();
 		const clips = (Object.values(h2.seq.clips) as Clip[]).map((c) => c.id);
 		h2.ok([{ type: 'multicam.setEnabled', clipIds: clips, enabled: false }]);

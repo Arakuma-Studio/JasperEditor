@@ -1,8 +1,3 @@
-// End-to-end robustness of timeline interchange (golden-fuzz; docs/testing.md §Fuzzing): ANY bytes, sniffed or read
-// as each format, either import or fail with `InterchangeError`; and every fragment that imports goes into a project
-// through the real `project.importTimeline` command without an internal error or an invariant violation (a clean
-// rejection with a command error code is allowed). Seeds: a rich project exported to every writable format. The
-// per-format corruption tests (aaf/omf/fcp7/… .test.ts) run on the same harness.
 import type { TransactionResult } from '@jasper/project';
 import { bytesTarget, describeFuzz } from '@jasper/testkit/fuzz';
 import { exportTimeline, FORMAT_INFO, type Format, importTimeline } from '../src/index.ts';

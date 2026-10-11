@@ -1,4 +1,3 @@
-// docs/expressions.md carries the generated language reference; the reference names functions the prelude defines.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';

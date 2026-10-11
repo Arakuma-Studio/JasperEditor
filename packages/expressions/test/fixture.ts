@@ -1,5 +1,3 @@
-// A small document for expression tests: 1080p30, a solid "Bg" on V1, a solid "A" on V2 with a Slider Control,
-// a text clip "Title" on V3, and helpers to run transactions.
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -49,7 +47,6 @@ export class Doc {
 	}
 }
 
-/** Fixture with refs $bg, $a, $title, $slider (Slider Control on A). */
 export function basicDoc(): Doc {
 	const d = new Doc();
 	d.tx([

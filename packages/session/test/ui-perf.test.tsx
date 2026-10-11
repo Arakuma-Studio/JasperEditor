@@ -91,7 +91,6 @@ describe('gesture frames (Program monitor throttle)', () => {
 		expect(frames.getState()).toBe(s.getCommitted());
 
 		const g = s.beginGesture('Move');
-		// Cheap views (1 ms): every frame is published, each from its own task.
 		t.setCost(1);
 		for (let i = 1; i <= 5; i++) {
 			g.update([{ type: 'clip.move', clipIds: [clipId], deltaFrames: i }]);
@@ -117,7 +116,6 @@ describe('gesture frames (Program monitor throttle)', () => {
 		t.advance(500);
 		expect(frames.getState()).toBe(s.getDrawn());
 
-		// Commit: published in the same notification as the session store, no timer left.
 		g.update([{ type: 'clip.move', clipIds: [clipId], deltaFrames: 30 }]);
 		g.commit();
 		expect(frames.getState()).toBe(s.getCommitted());
@@ -240,7 +238,6 @@ describe('autosave and the journal send the same JSON, serialised incrementally'
 			const sent = EnvelopeSchema.parse(JSON.parse(bodies[bodies.length - 1]!));
 			expect(sent.revision).toBe(i + 1);
 			expect(JSON.stringify(sent.document)).toBe(JSON.stringify(doc));
-			// Byte-identical to the plain serialisation of the same envelope.
 			const env = { ...sent, document: doc };
 			expect(bodies[bodies.length - 1]).toBe(JSON.stringify(env));
 		}

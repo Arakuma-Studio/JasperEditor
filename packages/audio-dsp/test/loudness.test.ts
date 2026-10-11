@@ -161,7 +161,6 @@ describe('LoudnessMeter (BS.1770-4 / EBU R128)', () => {
 		lfe.process([z, z, z, x, z, z]);
 		expect(Math.abs(surr.integrated() - front.integrated() - 10 * Math.log10(1.41))).toBeLessThan(0.01);
 		expect(lfe.integrated()).toBe(Number.NEGATIVE_INFINITY);
-		// explicit weights override the defaults
 		const custom = new LoudnessMeter(sr, 6, { weights: [1, 1, 1, 1, 1, 1] });
 		custom.process([z, z, z, x, z, z]);
 		expect(Math.abs(custom.integrated() - front.integrated())).toBeLessThan(1e-9);
@@ -220,7 +219,6 @@ describe('LoudnessMeter (BS.1770-4 / EBU R128)', () => {
 			limitedGainDb: 2,
 		});
 		expect(normalizeGainDb({ integratedLufs: -30, truePeakDbtp: -10 }, -23, -1).limitedGainDb).toBe(7);
-		// applying the gain lands on target
 		const sr = 48000;
 		const x = segments(1000, sr, [[10, -31.3]]);
 		const m = stereoMeasure(x, sr);

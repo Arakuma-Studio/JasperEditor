@@ -51,7 +51,6 @@ describe('expression realm isolation', () => {
 			value: 1,
 			error: null,
 		});
-		// Top-level let/const keep working (no var redeclaration).
 		expect(run('let q = 2; q = q * 3; q')).toEqual({ value: 6, error: null });
 	});
 

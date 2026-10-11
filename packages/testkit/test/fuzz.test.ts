@@ -19,7 +19,6 @@ import { decodePng, encodePng, PngError, rgba8 } from '../src/index.ts';
 
 class ParseError extends Error {}
 
-/** A tiny "key=number" parser that validates properly (typed errors only). */
 function goodParser(text: string): Record<string, number> {
 	const out: Record<string, number> = {};
 	for (const line of text.split('\n')) {
@@ -129,7 +128,6 @@ describe('fuzz kit', () => {
 	});
 });
 
-// The testkit's own parser is a fuzz target too.
 describeFuzz('@jasper/testkit', [
 	bytesTarget(
 		'PNG decoder',

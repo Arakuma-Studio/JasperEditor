@@ -38,14 +38,14 @@ describe('LevelMeter', () => {
 		// next period: quiet, clip flag and peak cleared; RMS window keeps running
 		m.process([new Float32Array(480), new Float32Array(480)]);
 		const r2 = m.take();
-		expect(r2).toBe(r); // reused object
+		expect(r2).toBe(r);
 		expect(r2.peak[0]).toBe(0);
 		expect(r2.clipped[1]).toBe(0);
 		expect(r2.rms[0]).toBeGreaterThan(0.3); // window still mostly full of the sine
 		m.process([new Float32Array(sr), new Float32Array(sr)]);
 		expect(m.take().rms[0]).toBeGreaterThan(0.3); // the window max since the last take still saw the sine
 		m.process([new Float32Array(10), new Float32Array(10)]);
-		expect(m.take().rms[0]).toBeLessThan(1e-6); // window now only holds silence
+		expect(m.take().rms[0]).toBeLessThan(1e-6);
 	});
 
 	it('RMS is the max of the running window, block-size independent, and drift-free', () => {
@@ -64,7 +64,6 @@ describe('LevelMeter', () => {
 		const rb = b.take();
 		expect(rb.peak[0]).toBe(ra.peak[0]);
 		expect(Math.abs(rb.rms[0] - ra.rms[0])).toBeLessThan(1e-6);
-		// exact RMS of the last window after many re-sums
 		let s = 0;
 		for (let i = x.length - 800; i < x.length; i++) s += x[i] * x[i];
 		a.process([new Float32Array(0)]);
@@ -97,7 +96,7 @@ describe('MeterBallistics', () => {
 		expect(o.displayDb).toBeCloseTo(-30, 9);
 		expect(o.holdDb).toBeCloseTo(-30, 9); // hold expired → rides with the bar
 		o = b.update(-60, 3000);
-		expect(o.displayDb).toBe(-60); // never below the input level
+		expect(o.displayDb).toBe(-60);
 		o = b.update(-3, 3010);
 		expect(o.displayDb).toBe(-3);
 		expect(o.holdDb).toBe(-3);

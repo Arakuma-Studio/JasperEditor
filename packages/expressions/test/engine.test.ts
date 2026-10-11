@@ -78,7 +78,6 @@ describe('globals and the object model', () => {
 
 describe('keyframes, loops and time', () => {
 	const d = basicDoc();
-	// Rotation keys on A: 0 at frame 30 (content 0 s), 90 at frame 60 (content 1 s).
 	d.tx([
 		{
 			type: 'keyframe.add',

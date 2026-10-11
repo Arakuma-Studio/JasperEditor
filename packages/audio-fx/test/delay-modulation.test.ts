@@ -1,5 +1,3 @@
-// Delay and modulation: impulse timing and feedback series, tempo sync, multitap taps, analog saturation bound,
-// LFO rates, phaser sweep range, flanger comb notches, determinism.
 import { describe, expect, it } from 'vitest';
 import { Phaser, tempoDelayMs } from '../src/effects/delay-modulation.ts';
 import { createProcessor } from '../src/registry.ts';

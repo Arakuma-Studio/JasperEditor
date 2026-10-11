@@ -101,7 +101,6 @@ describe('Bento containers and OMF', () => {
 		expect(r.error).toBeUndefined();
 		expect(r.ms).toBeLessThan(LIMIT_MS);
 		const c = r.value!;
-		// The value is unreadable (null), and nothing of that size was allocated on the way.
 		expect(c.tryValue(c.objects.get(100)![0]!)).toBeNull();
 		expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(64 * (1 << 20));
 		const imp = timed(() => importOmf(file, {}, new Report()));

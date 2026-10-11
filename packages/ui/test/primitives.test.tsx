@@ -352,7 +352,6 @@ describe('menus (S05:MN-002, SH-031)', () => {
 		}
 		const view = render(<Owner n={1} />);
 		for (let n = 2; n <= 20; n++) view.rerender(<Owner n={n} />);
-		// Twenty renders of a panel with two closed menus used to resolve both menus twenty times.
 		expect(items).not.toHaveBeenCalled();
 		fireEvent.pointerDown(screen.getByText('Open 20'), { button: 0, ctrlKey: false, pointerType: 'mouse' });
 		await screen.findByText('Resolved late');

@@ -1,4 +1,3 @@
-// Test helpers shared by the audio-fx suites.
 import { Prng } from '../src/core/util.ts';
 
 export const SR = 48000;
@@ -51,7 +50,6 @@ export function toneAmplitude(
 	return (2 * Math.sqrt(re * re + im * im)) / (end - start);
 }
 
-/** Processes whole buffers in one block. */
 export function run(
 	fx: { process(ch: readonly Float32Array[], s: number, e: number): void },
 	...ch: Float32Array[]

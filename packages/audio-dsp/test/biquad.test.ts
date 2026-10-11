@@ -112,7 +112,6 @@ describe('K-weighting', () => {
 		expect([r.b0, r.b1, r.b2]).toEqual([1, -2, 1]);
 		expect(Math.abs(r.a1 + 1.99004745483398)).toBeLessThan(1e-6);
 		expect(Math.abs(r.a2 - 0.99007225036621)).toBeLessThan(1e-6);
-		// FilmCraft checks the same table to 1e-8
 		expect(Math.abs(p.b0 - 1.53512485958697)).toBeLessThan(1e-8);
 		expect(Math.abs(r.a2 - 0.99007225036621)).toBeLessThan(1e-8);
 	});

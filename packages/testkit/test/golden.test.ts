@@ -166,7 +166,7 @@ describe('fingerprints and pins', () => {
 		process.env.JASPER_BLESS = '1';
 		expectFingerprints(file, { x: grid, y: grid });
 		delete process.env.JASPER_BLESS;
-		expect(readFileSync(file, 'utf8').split('\n')).toHaveLength(5); // one case per line
+		expect(readFileSync(file, 'utf8').split('\n')).toHaveLength(5);
 		expectFingerprints(file, { x: grid.map((v) => v + 3.9) });
 		expect(() => expectFingerprints(file, { x: grid.map((v, i) => (i === 7 ? v + 5 : v)) })).toThrow(
 			/cell 2 channel G off by 5/,

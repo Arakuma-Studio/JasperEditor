@@ -13,7 +13,6 @@ import {
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport, PERF_STRICT } from '../../../scripts/perf/budget.ts';
 
-/** The §13 budgets and the normal gate's headroom over them (× the load factor). */
 const COMMAND_BUDGET_MS = 4;
 const GESTURE_BUDGET_MS = 8;
 const HEADROOM = 1.5;

@@ -60,7 +60,6 @@ describe('OTIO', () => {
 		const j = JSON.parse(text);
 		expect(j.OTIO_SCHEMA).toBe('Timeline.1');
 		expect(j.global_start_time.rate).toBeCloseTo(23.976023976, 8);
-		// A clip written by another tool at "23.976" with 48 frames.
 		const foreign = {
 			OTIO_SCHEMA: 'Timeline.1',
 			name: 'Foreign',

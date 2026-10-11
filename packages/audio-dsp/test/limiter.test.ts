@@ -109,7 +109,6 @@ describe('TruePeakLimiter', () => {
 		const fullDrop = 1 - Math.min(...lin);
 		expect(fullDrop).toBeGreaterThan(0.7);
 		expect(maxStep).toBeLessThanOrEqual(fullDrop / 240 + 1e-9);
-		// a few release time constants later the gain is back near unity
 		expect(gains[24480 + lim.latency + 0.3 * sr]).toBeGreaterThan(-0.05);
 	});
 

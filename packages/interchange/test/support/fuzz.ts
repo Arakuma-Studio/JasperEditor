@@ -1,7 +1,3 @@
-// Corruption helpers: truncations, byte mutations and garbage must only ever raise `InterchangeError`.
-// Runs on the shared fuzz harness (@jasper/testkit, docs/testing.md §Fuzzing): every truncation point (`truncations`
-// evenly spaced cuts), seeded xorshift byte mutations, and fast-check arbitrary bytes (`runs` each, ×20
-// with FUZZ=1); failing inputs are saved under test-results/fuzz-failures/.
 import { assertFuzzSync, bytesTarget } from '@jasper/testkit/fuzz';
 import { InterchangeError } from '../../src/report.ts';
 

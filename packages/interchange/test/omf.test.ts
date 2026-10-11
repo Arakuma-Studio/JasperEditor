@@ -13,7 +13,6 @@ import { arbProject, BASIC } from './support/arbitraries.ts';
 import { expectOnlyInterchangeErrors } from './support/fuzz.ts';
 import { clip, key, link, marker, media, project, sequence, structure, transition } from './support/ir.ts';
 
-/** A1: two clips of one file with a constant power crossfade and +6 dB on the first; A2 music with volume keys; V1 picture. */
 function sample(rate: Rate, df = false) {
 	const p = project();
 	const a = media(p, '/media/A001.mov', true, true, rate);

@@ -1,5 +1,3 @@
-// Restoration: DeHummer notch depth, DeNoise (adaptive and learned print), DeEsser, DeReverb, click removal,
-// Enhance Speech, latency = measured delay, determinism.
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import { Biquad, designBiquad } from '../src/core/biquad.ts';
@@ -96,7 +94,6 @@ describe('DeNoise', () => {
 		d.setParam('noiseModel', 'print');
 		d.process([y], SR, n);
 		const lat = d.latency();
-		// Within 0.25 s of switching the noise is already well down.
 		expect(db(rms(y, SR + lat + 6000, SR + lat + 12000) / rms(x, SR + 6000, SR + 12000))).toBeLessThan(-12);
 	});
 });

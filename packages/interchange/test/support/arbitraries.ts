@@ -19,7 +19,6 @@ export type Features = {
 	rates: readonly { rate: Rate; dropFrame: boolean }[];
 	videoTracks: number;
 	audioTracks: number;
-	/** Clips per track (max). */
 	clips: number;
 	transform: boolean;
 	opacity: boolean;
@@ -38,7 +37,6 @@ export type Features = {
 	generators: boolean;
 	nested: boolean;
 	audioOnlyMedia: boolean;
-	/** Media start timecode. */
 	timecode: boolean;
 };
 
@@ -103,7 +101,6 @@ function key<T>(time: number, value: T, interpolation: Keyframe<T>['interpolatio
 	};
 }
 
-/** A random project with one top sequence (and, with `nested`, one nested sequence used by a clip). */
 export function arbProject(f: Features): fc.Arbitrary<IProject> {
 	return fc
 		.record({

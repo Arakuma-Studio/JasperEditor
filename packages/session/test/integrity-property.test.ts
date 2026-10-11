@@ -60,7 +60,6 @@ function asset(seconds: number, kind: 'video' | 'audio' = 'video'): Omit<MediaAs
 	} as Omit<MediaAsset, 'id'>;
 }
 
-/** The edited (first) sequence of each test session. */
 const MAIN = new WeakMap<EditorSession, string>();
 
 function newSession(): EditorSession {
@@ -81,7 +80,6 @@ function must(s: EditorSession, commands: unknown[]): unknown[] {
 	return r.results ?? [];
 }
 
-/** A project with every family present: two cameras in a multicam, a placed multicam clip, a camera, text, shape, captions. */
 function setup(): EditorSession {
 	const s = newSession();
 	const reg = (sec: number) =>
@@ -127,7 +125,6 @@ function clipsOf(doc: ProjectDocument, seqId: string) {
 const pick = <T>(list: readonly T[], i: number): T | undefined =>
 	list.length ? list[i % list.length] : undefined;
 
-/** Commands for one abstract step against the current document (null: nothing to do). */
 function concretize(
 	st: Step,
 	doc: ProjectDocument,
@@ -349,7 +346,6 @@ describe('DATA-1: integrity under random edits of the new command families', () 
 				expect(loaded.repairs).toEqual([]);
 				expect(loaded.issues).toEqual([]);
 				expect(JSON.parse(JSON.stringify(loaded.document))).toEqual(JSON.parse(JSON.stringify(final)));
-				// Undo every step → the exact initial document; redo them all → the exact final one (each document between).
 				for (let i = docs.length - 1; i >= 0; i--) {
 					expect(s.getCommitted()).toBe(docs[i]);
 					expect(s.undo().ok).toBe(true);

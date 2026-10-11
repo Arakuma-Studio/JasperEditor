@@ -190,7 +190,6 @@ describe('leases (S01:PER-040)', () => {
 		expect(b.getState().lease).toMatchObject({ status: 'read-only', holder: 'a' });
 		await a.close();
 		await b.close();
-		// A confirmed release forgets the session: nothing left to wait for after a reload.
 		expect(JSON.parse(storage.getItem('jasper:tab-lease-sessions') ?? '[]')).not.toContain('a');
 		expect(engine.leases.has(projectId)).toBe(false);
 	});
@@ -205,11 +204,9 @@ describe('leases (S01:PER-040)', () => {
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(engine.leases.get(projectId)?.sessionId).toBe('a');
 		expect(a.getState().lease.status).toBe('held');
-		// A network blip does not mark the lease lost.
 		engine.failures.push({ match: /heartbeat/, status: 0, network: true });
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(a.getState().lease.status).toBe('held');
-		// Subsequent heartbeats use the re-acquired lease id.
 		await vi.advanceTimersByTimeAsync(10_000);
 		const last = engine.requests.filter((r) => r.path.endsWith('/heartbeat')).at(-1)!;
 		expect(last.path).toContain(engine.leases.get(projectId)!.leaseId);
@@ -230,7 +227,6 @@ describe('leases (S01:PER-040)', () => {
 		expect(b2.getState().lease.status).toBe('held');
 		expect(engine.leases.get(projectId)?.sessionId).toBe('b2');
 
-		// A's next heartbeat finds its lease gone and cannot re-acquire it.
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(a.getState().lease.status).toBe('lost');
 		expect(pa.autosaver.getStatus().paused).toBe('lease-lost');
@@ -240,7 +236,6 @@ describe('leases (S01:PER-040)', () => {
 		await vi.advanceTimersByTimeAsync(5000);
 		expect(puts()).toBe(before);
 
-		// B2 edits and autosaves normally.
 		attachPersistence(b2, noLifecycle);
 		b2.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
 		await vi.advanceTimersByTimeAsync(1600);
@@ -311,7 +306,6 @@ describe('autosave through the engine (S01:PER-020, PER-025)', () => {
 		expect(puts()[0]!.headers['if-match']).toBe('0');
 		expect(s.getState().dirty).toBe(false);
 
-		// Another writer saved in between.
 		engine.projects.get(projectId)!.revision = 40;
 		s.apply({ label: 'Add', origin: 'user', commands: [solid(100)] });
 		await vi.advanceTimersByTimeAsync(1600);

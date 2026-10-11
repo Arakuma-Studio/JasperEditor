@@ -28,7 +28,6 @@ import {
 	transition,
 } from './support/ir.ts';
 
-/** V1: fade-in, cross dissolve, gap, dip-to-black fade-out; V2 one clip; A1/A2 linked audio, crossfade, gain, keys. */
 function sample(rate: Rate, df: boolean) {
 	const p = project();
 	const a = media(p, '/media/A001.mov', true, true, rate);
@@ -78,7 +77,6 @@ const rt = (p: IProject, s: string, opts = {}) => {
 
 const close = (a: number, b: number) => Math.abs(a - b) < 1e-3;
 
-/** A structure with times rounded to frames. */
 const framesOf = (st: ReturnType<typeof structure>) =>
 	st.map((t) => ({
 		clips: t.clips.map((c) => c.map((x) => (typeof x === 'number' ? Math.round(x) : x))),

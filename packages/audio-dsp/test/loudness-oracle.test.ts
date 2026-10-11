@@ -1,6 +1,3 @@
-// Oracle test, part 1: the reproducible EBU Tech 3341 / Tech 3342 cases, asserted against BOTH the published
-// expected values and ffmpeg's `ebur128` filter (see oracle.ts for the method and tolerances). Part 2 (synthetic
-// programmes at several sample rates and layouts) is loudness-oracle-signals.test.ts.
 import { afterAll, describe, expect, it } from 'vitest';
 import { dual, type Ffmpeg, findFfmpeg, Oracle } from './oracle.ts';
 import { segments } from './util.ts';

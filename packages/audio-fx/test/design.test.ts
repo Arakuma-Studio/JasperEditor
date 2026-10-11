@@ -111,7 +111,6 @@ describe('IIR design (analog prototypes → bilinear → SOS)', () => {
 				}
 				expect(max).toBeLessThan(1e-6);
 				expect(min, `n=${n} rp=${rp}`).toBeGreaterThan(-rp - 1e-3);
-				// Once the response first drops below −As it never rises above it again.
 				let below = false;
 				for (let i = 1; i < 2390; i++) {
 					const m = s.magnitudeDb(i * 10, SR);
@@ -121,7 +120,6 @@ describe('IIR design (analog prototypes → bilinear → SOS)', () => {
 				expect(below, `n=${n} rs=${rs}: stop band reached`).toBe(true);
 			}
 		}
-		// Sharper than Butterworth of the same order.
 		const e = design(spec('elliptic', 'lowPass', 4, 1000, 0), SR);
 		const b = design(spec('butterworth', 'lowPass', 4, 1000, 0), SR);
 		expect(e.magnitudeDb(1500, SR)).toBeLessThan(b.magnitudeDb(1500, SR) - 10);

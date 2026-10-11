@@ -34,7 +34,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 
 	it('journals about 1 s after an edit, and at most every 5 s while edits keep coming', async () => {
 		const { store, open, projectId } = await setup();
-		vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full')); // autosave keeps failing
+		vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full'));
 		const write = vi.spyOn(store, 'writeRecovery');
 		const s = await open('s1');
 		const p = attachPersistence(s, { ...noLifecycle, onError: () => undefined });
@@ -45,7 +45,6 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		expect(write).toHaveBeenCalledTimes(1);
 		expect(store.journalOf(projectId, 's1')?.changes).toEqual(['Add Solid']);
 
-		// continuous edits every 500 ms: still written within 5 s of the first unjournalled change
 		for (let i = 1; i <= 12; i++) {
 			s.apply({ label: `Add ${i}`, origin: 'user', commands: [solid(20 * i)] });
 			await vi.advanceTimersByTimeAsync(500);
@@ -62,9 +61,9 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		const s = await open('s1');
 		const p = attachPersistence(s, noLifecycle);
 		s.apply({ label: 'Add Solid', origin: 'user', commands: [solid(0)] });
-		await vi.advanceTimersByTimeAsync(1100); // journal written
+		await vi.advanceTimersByTimeAsync(1100);
 		expect(store.journalOf(projectId, 's1')).not.toBeNull();
-		await vi.advanceTimersByTimeAsync(600); // autosave at 1.5 s
+		await vi.advanceTimersByTimeAsync(600);
 		expect(s.getState().dirty).toBe(false);
 		expect(store.journalOf(projectId, 's1')).toBeNull();
 		expect(discard).toHaveBeenCalledTimes(1);

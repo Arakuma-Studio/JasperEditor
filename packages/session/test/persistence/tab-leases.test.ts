@@ -65,7 +65,6 @@ function setup() {
 	const engine = new FakeEngine();
 	const projectId = engine.seed('Film');
 	const hub = new Hub();
-	/** One page: a store with its own registry over the tab's storage and a fresh channel. */
 	const page = (storage: MemStorage) => {
 		const channel = hub.open();
 		const tabLeases = createTabLeaseRegistry({ storage, channel, probeMs: 30 });
@@ -77,7 +76,7 @@ function setup() {
 	return { engine, projectId, hub, page, open };
 }
 
-/** The page goes away and its keepalive DELETE never reaches the engine (the race this fixes). */
+/** The page goes away and its keepalive DELETE never reaches the engine. */
 async function unloadDroppingRelease(engine: FakeEngine) {
 	engine.failures.push({ match: /^DELETE .*\/lease\//, status: 0, network: true });
 	window.dispatchEvent(new Event('pagehide'));
@@ -95,10 +94,10 @@ describe('tab lease memory (S01:PER-040, polish)', () => {
 		const a = await open(p1.store, 'a');
 		expect(a.getState().lease.status).toBe('held');
 		await unloadDroppingRelease(engine);
-		expect(engine.leases.get(projectId)?.sessionId).toBe('a'); // still held by the dead page
+		expect(engine.leases.get(projectId)?.sessionId).toBe('a');
 		p1.channel.close();
 
-		const p2 = page(tab); // same tab, new page
+		const p2 = page(tab);
 		const t0 = Date.now();
 		const b = await open(p2.store, 'b');
 		expect(Date.now() - t0).toBeLessThan(2000);
@@ -175,7 +174,7 @@ describe('tab lease memory (S01:PER-040, polish)', () => {
 		const r: TabLeaseRegistry = createTabLeaseRegistry({ storage, channel: null });
 		expect(await r.isLeftover('p', 's')).toBe(false);
 		r.remember('p', 's');
-		expect(await r.isLeftover('p', 's')).toBe(false); // live in this page
+		expect(await r.isLeftover('p', 's')).toBe(false);
 		r.unload();
 		expect(await r.isLeftover('p', 's')).toBe(true); // remembered, no live claim, no channel to ask
 		storage.setItem('jasper:tab-leases', JSON.stringify(['array']));
