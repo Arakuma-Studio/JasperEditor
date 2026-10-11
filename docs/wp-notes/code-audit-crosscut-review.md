@@ -203,8 +203,9 @@ Do not delete comments or error handling by a repository-wide keyword replacemen
 "removed", "legacy", "placeholder", and "fallback" frequently describe current behavior rather than
 history. The inventory deliberately treated those matches as candidates for reading, not edits.
 
-The existing `scripts/check-layers.mjs` checks package-layer imports and declared exports. Its result
-is recorded below. This gate is not a file-level circular-dependency detector; the dependency audit
+The existing `scripts/check-layers.mjs` checks package-layer imports and declared exports. Running
+`node scripts/check-layers.mjs` on the baseline passed (`check-layers: ok`). This gate is not a
+file-level circular-dependency detector; the dependency audit
 must separately distinguish runtime imports, type-only edges, and genuine strongly connected
 components. Breaking a type-only cycle by moving unrelated types into a global utilities package
 would increase coupling rather than reduce it.
