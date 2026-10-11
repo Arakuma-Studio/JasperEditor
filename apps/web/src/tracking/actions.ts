@@ -4,6 +4,7 @@
 import {
 	type EngineJob,
 	type EventEnvelope,
+	TERMINAL_JOB_STATES,
 	TRACKING_PROGRESS_EVENT,
 	TrackProgressSchema,
 	type TrackResult,
@@ -33,6 +34,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
 import { mediaKeyOf } from '../import/assets.ts';
+import { errorText, pollActiveJob } from '../processing/engine-jobs.ts';
 import {
 	defaultQuadIn,
 	geometryCentre,
@@ -46,7 +48,6 @@ import { optionsOf, patchRunning, setActiveTracker, setError, trackingStore } fr
 /** The subset of the engine client the tracking actions use (tests pass a fake). */
 export type TrackingEngine = Pick<EngineClient, 'call' | 'getJob' | 'cancelJob'>;
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 const POLL_MS = 400;
 
 export const TRACK_MODE_LABEL: Record<TrackMode, string> = {
@@ -58,8 +59,6 @@ export const TRACK_MODE_LABEL: Record<TrackMode, string> = {
 	'step-forward': 'Step Forward',
 	'step-back': 'Step Back',
 };
-
-// ------------------------------------------------------------------ document helpers
 
 export function activeSeq(session: EditorSession): Sequence | null {
 	const s = session.getState();
@@ -125,8 +124,6 @@ function run(session: EditorSession, label: string, commands: Command[]) {
 	return r;
 }
 
-// ------------------------------------------------------------------ add / remove / update
-
 /**
  * Adds a tracker to `clipId` at the playhead (clamped into the clip). Planar trackers get a quad centred on the
  * part of the plate that is visible in the frame; point trackers its centre. Returns the new tracker id.
@@ -158,8 +155,6 @@ export function removeTracker(session: EditorSession, trackerId: string): void {
 	if (trackingStore.getState().activeTrackerId === trackerId) setActiveTracker(null);
 	setError(trackerId, null);
 }
-
-// ------------------------------------------------------------------ running a track
 
 /** Mode for a partial re-track: every mode but a full `both` merges over the re-tracked span when samples exist. */
 export async function startTrack(
@@ -223,28 +218,24 @@ export async function startTrack(
 		return null;
 	}
 	patchRunning(trackerId, { jobId: job.id });
-	if (TERMINAL.has(job.state)) await finishTrack(session, engine, trackerId, job);
+	if (TERMINAL_JOB_STATES.has(job.state)) await finishTrack(session, engine, trackerId, job);
 	else pollJob(session, engine, trackerId, job.id);
 	return job.id;
 }
 
-/** Polls the job until it ends (fallback when the event stream is not connected or not mounted). */
 function pollJob(session: EditorSession, engine: TrackingEngine, trackerId: string, jobId: string): void {
-	const tick = async () => {
-		const r = trackingStore.getState().running[trackerId];
-		if (!r || r.jobId !== jobId || r.finishing) return;
-		try {
-			const job = await engine.getJob(jobId);
-			if (TERMINAL.has(job.state)) {
-				await finishTrack(session, engine, trackerId, job);
-				return;
-			}
-		} catch {
-			// transient engine error: keep polling
-		}
-		setTimeout(tick, POLL_MS);
-	};
-	setTimeout(tick, POLL_MS);
+	void pollActiveJob(engine, jobId, {
+		intervalMs: POLL_MS,
+		isActive() {
+			const running = trackingStore.getState().running[trackerId];
+			return running?.jobId === jobId && !running.finishing;
+		},
+	})
+		.then((job) => job && finishTrack(session, engine, trackerId, job))
+		.catch((error) => {
+			patchRunning(trackerId, null);
+			setError(trackerId, errorText(error));
+		});
 }
 
 /** Feeds an engine event envelope to the tracking state (progress geometry, job end). */
@@ -284,7 +275,7 @@ export function handleEngineEvent(session: EditorSession, engine: TrackingEngine
 	}
 	if (raw.type === 'job.finished' || raw.type === 'job.updated') {
 		const job = raw.payload as EngineJob | undefined;
-		if (!job?.id || !TERMINAL.has(job.state)) return;
+		if (!job?.id || !TERMINAL_JOB_STATES.has(job.state)) return;
 		const running = trackingStore.getState().running;
 		const trackerId = Object.keys(running).find((id) => running[id]!.jobId === job.id);
 		if (trackerId) void finishTrack(session, engine, trackerId, job);
@@ -412,8 +403,6 @@ export async function stopTrack(engine: TrackingEngine, trackerId: string): Prom
 	patchRunning(trackerId, null);
 	if (r.jobId) await engine.cancelJob(r.jobId).catch(() => undefined);
 }
-
-// ------------------------------------------------------------------ apply / unlink
 
 export type ApplyMode = 'corner-pin' | 'position' | 'position-scale-rotation';
 

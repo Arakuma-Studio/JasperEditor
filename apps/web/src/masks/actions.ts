@@ -2,6 +2,7 @@
 // with progress and cancel → Mask Path keys in one History entry), auto-trace. Document edits go through the
 // session's command API; long work through the engine client.
 import type { EngineJob, MaskTraceResponse, TrackResult } from '@jasper/api';
+import { TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
@@ -19,11 +20,11 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
 import { mediaKeyOf } from '../import/assets.ts';
+import { errorText, pollActiveJob } from '../processing/engine-jobs.ts';
 import { type MaskOwner, maskUi } from './store.ts';
 
 export type MaskEngine = Pick<EngineClient, 'call' | 'getJob' | 'cancelJob'>;
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 const POLL_MS = 250;
 
 function apply(session: EditorSession, label: string, commands: Command[]) {
@@ -75,8 +76,6 @@ export function deleteMasks(session: EditorSession, maskIds: string[]): void {
 	const sel = maskUi.get().selected;
 	if (sel && maskIds.includes(sel.maskId)) maskUi.select(null);
 }
-
-// ---------------------------------------------------------------- tracking
 
 function setRun(maskId: string, patch: Partial<import('./store.ts').MaskTrackRun> | null) {
 	maskUi.set((s) => {
@@ -145,20 +144,25 @@ export async function trackMask(
 		return;
 	}
 	setRun(maskId, { jobId: job.id });
-	for (;;) {
-		if (TERMINAL.has(job.state)) break;
-		await new Promise((r) => setTimeout(r, POLL_MS));
-		if (!maskUi.get().tracking[maskId]) return; // stopped
+	if (!TERMINAL_JOB_STATES.has(job.state)) {
+		const jobId = job.id;
 		try {
-			job = await engine.getJob(job.id);
-			setRun(maskId, { progress: job.progress ?? null });
-		} catch {
-			// transient: keep polling
+			const finished = await pollActiveJob(engine, jobId, {
+				intervalMs: POLL_MS,
+				isActive: () => maskUi.get().tracking[maskId]?.jobId === jobId,
+				onUpdate: (update) => setRun(maskId, { progress: update.progress ?? null }),
+			});
+			if (!finished) return;
+			job = finished;
+		} catch (error) {
+			setRun(maskId, null);
+			toast({ kind: 'error', title: 'Mask tracking failed', detail: errorText(error) });
+			return;
 		}
 	}
 	setRun(maskId, null);
 	if (job.state !== 'succeeded') {
-		if (job.state === 'failed')
+		if (job.state !== 'cancelled')
 			toast({ kind: 'error', title: 'Mask tracking failed', detail: job.error?.message ?? 'unknown error' });
 		return;
 	}
@@ -185,8 +189,6 @@ export async function stopMaskTrack(engine: MaskEngine | null, maskId: string): 
 	setRun(maskId, null);
 	if (run?.jobId && engine) await engine.cancelJob(run.jobId).catch(() => undefined);
 }
-
-// ---------------------------------------------------------------- auto-trace
 
 export type TraceOptions = {
 	channel: 'alpha' | 'luma' | 'red' | 'green' | 'blue';

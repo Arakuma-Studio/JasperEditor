@@ -1,3 +1,4 @@
+import { z } from 'zod';
 // Multi-Camera view state (wp-multicam): editor state, not project data — persisted in localStorage like the other
 // monitor settings (Program monitor ▸ Settings ▸ Multi-Camera). The live recording pass is session-only.
 import { createStore, type StoreApi } from 'zustand/vanilla';
@@ -30,13 +31,25 @@ const DEFAULTS: MulticamViewState = {
 
 const KEY = 'jasper.multicam.view.v1';
 
+const MulticamViewSchema = z.object({
+	view: z.boolean().catch(DEFAULTS.view),
+	showPreview: z.boolean().catch(DEFAULTS.showPreview),
+	topDown: z.boolean().catch(DEFAULTS.topDown),
+	audioFollowsVideo: z.boolean().catch(DEFAULTS.audioFollowsVideo),
+	layout: z.union([z.literal('auto'), z.literal(2), z.literal(3), z.literal(4)]).catch('auto'),
+	showNames: z.boolean().catch(DEFAULTS.showNames),
+});
+
+export function parseMulticamView(value: unknown): MulticamViewState {
+	const parsed = MulticamViewSchema.safeParse(value);
+	return parsed.success ? { ...parsed.data, page: 0 } : { ...DEFAULTS };
+}
+
 function load(): MulticamViewState {
 	try {
 		const raw = globalThis.localStorage?.getItem(KEY);
 		if (!raw) return { ...DEFAULTS };
-		const v = JSON.parse(raw) as Partial<MulticamViewState>;
-		const layout = v.layout === 2 || v.layout === 3 || v.layout === 4 ? v.layout : 'auto';
-		return { ...DEFAULTS, ...v, layout, page: 0 };
+		return parseMulticamView(JSON.parse(raw));
 	} catch {
 		return { ...DEFAULTS };
 	}

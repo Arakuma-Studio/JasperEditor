@@ -9,7 +9,6 @@
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	type Clip,
-	type ClipContentTiming,
 	type Command,
 	coverageTolerance,
 	coveredClipFrames,
@@ -49,7 +48,7 @@ function clipsUsing(doc: ProjectDocument, mediaId: string) {
 	const out: { clip: Clip; seq: ProjectDocument['sequences'][string] }[] = [];
 	for (const seq of Object.values(doc.sequences))
 		for (const c of Object.values(seq.clips))
-			if ((c as { mediaId?: string }).mediaId === mediaId) out.push({ clip: c, seq });
+			if ('mediaId' in c && c.mediaId === mediaId) out.push({ clip: c, seq });
 	return out;
 }
 
@@ -76,7 +75,7 @@ export function planReplaceFootage(
 		const seqRate = seq.settings.frameRate;
 		const covered = isBoundedContent(clip)
 			? coveredClipFrames(
-					shiftedTiming(clip as unknown as ClipContentTiming, shift),
+					shiftedTiming(clip, shift),
 					seqRate,
 					reg.probe.durationFlicks,
 					coverageTolerance(seqRate, clip.speed.rate, rate),
@@ -113,5 +112,5 @@ export function replaceFootageCommand(
 		sourceRange: opts.sourceRange,
 		...(opts.keepSourceTiming ? { keepSourceTiming: true } : {}),
 		...(opts.trim ? { fit: 'trim' } : {}),
-	} as unknown as Command;
+	};
 }

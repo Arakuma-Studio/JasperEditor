@@ -28,6 +28,7 @@ import {
 } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { exportEnvelope } from '../export/settings.ts';
+import { useDialogClose } from '../extensions/dialog.ts';
 import { LOCAL_ENGINE_ID } from '../import/assets.ts';
 import { defaultPrerender, formatEntry, PRERENDER_LABELS } from './formats.ts';
 
@@ -44,20 +45,6 @@ export function registerInterchangeDialogs(): void {
 	registerDialog(LINK_MEDIA_DIALOG, LinkMediaDialog);
 }
 
-function useClose(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	const [done, setDone] = useState(false);
-	return {
-		open,
-		finish(result?: unknown) {
-			setOpen(false);
-			if (done) return;
-			setDone(true);
-			close(result);
-		},
-	};
-}
-
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex items-center gap-2">
@@ -69,8 +56,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 const errorText = (e: unknown) =>
 	e instanceof EngineError ? `${e.message} (${e.code})` : e instanceof Error ? e.message : String(e);
-
-// ---------------------------------------------------------------- report
 
 export type ReportFile = { name: string; url: string; role: string; path?: string };
 
@@ -136,7 +121,7 @@ export function ReportEntries({ entries }: { entries: InterchangeReportEntry[] }
 }
 
 export function InterchangeReportDialog(props: HostedDialogProps<InterchangeReportProps>) {
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const missing = props.missing ?? [];
 	return (
 		<Dialog
@@ -202,8 +187,6 @@ export function InterchangeReportDialog(props: HostedDialogProps<InterchangeRepo
 	);
 }
 
-// ---------------------------------------------------------------- export
-
 type ExportProps = {
 	session: EditorSession;
 	engine: EngineClient;
@@ -237,7 +220,7 @@ async function waitForJob(
 
 export function InterchangeExportDialog(props: HostedDialogProps<ExportProps>) {
 	const { session, engine, sequenceId, format } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const entry = formatEntry(format);
 	const seq = session.getCommitted().sequences[sequenceId] as Sequence;
 	const [name, setName] = useState(() => sequenceItemName(session, sequenceId));
@@ -630,8 +613,6 @@ export function InterchangeExportDialog(props: HostedDialogProps<ExportProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Link Media
-
 type LinkProps = { session: EditorSession; engine: EngineClient; mediaIds?: string[] };
 
 /** Media that is offline: an imported placeholder (no file yet) or a file the engine cannot find. */
@@ -675,7 +656,7 @@ type Candidate = {
 
 export function LinkMediaDialog(props: HostedDialogProps<LinkProps>) {
 	const { session, engine } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const assets = useMemo(() => {
 		const all = offlineMedia(session);
 		return props.mediaIds?.length ? all.filter((m) => props.mediaIds!.includes(m.id)) : all;

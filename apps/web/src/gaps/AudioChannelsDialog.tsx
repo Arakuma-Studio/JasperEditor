@@ -33,18 +33,12 @@ export function routingOf(
 	const doc = session.getCommitted();
 	if (t.kind === 'clips') {
 		const seq = doc.sequences[t.sequenceId] as Sequence | undefined;
-		const clips = t.clipIds.map((id) => seq?.clips[id]).filter((c) => c?.kind === 'audio') as unknown as {
-			mediaId: string;
-			channels: ClipChannels;
-		}[];
+		const clips = t.clipIds.map((id) => seq?.clips[id]).filter((c) => c?.kind === 'audio');
 		if (!clips.length || new Set(clips.map((c) => c.mediaId)).size !== 1) return null;
 		const asset = doc.media[clips[0]!.mediaId];
 		return asset ? { asset, clips: clips.map((c) => c.channels), fixedCount: true } : null;
 	}
-	const items = t.itemIds.map((id) => doc.items[id]).filter((i) => i?.kind === 'media') as {
-		mediaId: string;
-		audioChannels?: { clips: ClipChannels[] };
-	}[];
+	const items = t.itemIds.map((id) => doc.items[id]).filter((i) => i?.kind === 'media');
 	if (!items.length || new Set(items.map((i) => i.mediaId)).size !== 1) return null;
 	const asset = doc.media[items[0]!.mediaId];
 	if (!asset || !sourceChannels(asset).length) return null;

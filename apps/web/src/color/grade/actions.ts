@@ -139,8 +139,6 @@ export async function runApplyMatch(
 	return { error, ...(note ? { note } : {}) };
 }
 
-// ---------------------------------------------------------------- Face Detection preference
-
 const FACE_KEY = 'jasper.lumetri.faceDetection';
 
 export function faceDetectionPref(): boolean {

@@ -58,8 +58,6 @@ function NumberField(props: {
 	);
 }
 
-// ---------------------------------------------------------------- Appearance
-
 function AppearancePage() {
 	const ui = useUiPrefs();
 	const g = useGapsPrefs();
@@ -128,8 +126,6 @@ function AppearancePage() {
 	);
 }
 
-// ---------------------------------------------------------------- engine settings hook
-
 function useEngineGaps() {
 	const engine = useEngineOrNull()?.client ?? null;
 	const [info, setInfo] = useState<
@@ -161,8 +157,6 @@ function useEngineGaps() {
 	};
 	return { info, error, save, connected: !!engine };
 }
-
-// ---------------------------------------------------------------- Auto Save
 
 function AutoSavePage() {
 	const g = useGapsPrefs();
@@ -226,8 +220,6 @@ function AutoSavePage() {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Labels
 
 const DEFAULT_KINDS: { kind: LabelDefaultKind; label: string }[] = [
 	{ kind: 'bin', label: 'Bin' },
@@ -295,8 +287,6 @@ function LabelsPage() {
 	);
 }
 
-// ---------------------------------------------------------------- Memory
-
 function MemoryPage() {
 	const eng = useEngineGaps();
 	const heap = (performance as unknown as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } })
@@ -351,8 +341,6 @@ function MemoryPage() {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Playback / Trim
 
 function PlaybackPage() {
 	const g = useGapsPrefs();
@@ -413,8 +401,6 @@ function TrimPage() {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Audio Hardware
 
 function AudioHardwarePage() {
 	const g = useGapsPrefs();

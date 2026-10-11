@@ -1,3 +1,4 @@
+import type { Vec2 } from '@jasper/project';
 // Vector shape editing state and edits shared by Properties ▸ Shape Contents, Effect Controls and the Program monitor
 // tools (wp shapes): the selected item of the selected vector shape (its path is edited on the monitor), the selected
 // vertices, and the edits the tools issue (new vector clips, items added into a selected shape) — one transaction
@@ -17,7 +18,7 @@ import type { EditorSession } from '@jasper/session';
 import { useSyncExternalStore } from 'react';
 import { activeSequence, freeVideoTrack, transformAt } from '../panels/program/edits.ts';
 
-export type Vec2 = [number, number];
+export type { Vec2 } from '@jasper/project';
 
 export type VectorUiState = {
 	/** The item selected in the contents list (and edited on the monitor when it is a path). */

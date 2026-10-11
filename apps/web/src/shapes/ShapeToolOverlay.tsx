@@ -8,7 +8,6 @@
 // selected shape layer); else Rectangle / Ellipse add a rectangle / ellipse clip and Polygon / Star a new vector
 // shape. Clicks without a drag add nothing.
 import type { Vec2 } from '@jasper/project';
-import type { TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
@@ -46,8 +45,8 @@ export function ShapeToolOverlay(props: ProgramOverlayHostProps) {
 
 function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: DrawKind }) {
 	const { session, type } = props;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const view = props.view;
+	const transport = props.transport;
 	const svgRef = useRef<SVGSVGElement>(null);
 	const dragRef = useRef<Drag | null>(null);
 	const [box, setBox] = useState<DrawnBox | null>(null);

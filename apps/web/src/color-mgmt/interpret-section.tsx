@@ -4,7 +4,6 @@
 // single transaction.
 import {
 	type ColorInterpretation,
-	type ColorInterpretationPatch,
 	type Command,
 	isPictureMedia,
 	type MediaAsset,
@@ -16,7 +15,7 @@ import {
 	registerInterpretSection,
 } from '../imports/interpret-dialog.tsx';
 import { ColorInterpretationFields } from './dialogs.tsx';
-import { detectedSpaceLabel, isHdrWorking } from './model.ts';
+import { colorPatchOf, detectedSpaceLabel, isHdrWorking } from './model.ts';
 
 export const COLOR_SECTION_ID = 'color';
 
@@ -24,16 +23,6 @@ export const COLOR_SECTION_ID = 'color';
 function commonInterpretation(assets: readonly MediaAsset[]): ColorInterpretation {
 	const vals = assets.map((a) => JSON.stringify(a.interpretation?.color ?? {}));
 	return vals.every((v) => v === vals[0]) ? { ...(assets[0]?.interpretation?.color ?? {}) } : {};
-}
-
-const KEYS = ['space', 'ocio', 'range', 'toneMap', 'peakNits', 'inputLut'] as const;
-
-/** The patch from `from` to `to` (changed fields; null = back to automatic). */
-export function colorPatchOf(from: ColorInterpretation, to: ColorInterpretation): ColorInterpretationPatch {
-	const out: Record<string, unknown> = {};
-	for (const k of KEYS)
-		if (JSON.stringify(from[k] ?? null) !== JSON.stringify(to[k] ?? null)) out[k] = to[k] ?? null;
-	return out as ColorInterpretationPatch;
 }
 
 function sectionValue(assets: readonly MediaAsset[], draft: InterpretDraft): ColorInterpretation {

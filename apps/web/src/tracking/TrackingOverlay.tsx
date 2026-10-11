@@ -1,12 +1,3 @@
-// Program monitor overlays of the tracking package (S09:TRU-002/003), drawn above the transform overlay:
-//  - the active tracker of the selected plate clip at the current frame (quad or point + patch + search boxes)
-//    from its samples (or the reference before tracking), a confidence colour and the last 30 tracked centres;
-//    during a track job it follows the live `tracking.progress` geometry. Corners, edges and the body drag in
-//    ONE gesture that commits `tracker.update {at: playhead, corners}` (media px via the inverse plate map).
-//  - corner-pin handles on a selected clip whose `jasper.corner-pin` is focused in Effect Controls (or with the
-//    Corner Pin handles toggle on): ONE gesture writes the corner param at the playhead (keyframe when animated).
-// The SVG root ignores the pointer so the transform overlay underneath keeps working; only handles take it.
-import type { RenderDoc } from '@jasper/compositions';
 import {
 	type ClipTracker,
 	CORNER_PIN_EFFECT_ID,
@@ -153,9 +144,9 @@ export function useFocusedEffect(): string | null {
 /** Registered overlay: decides between the tracker and the corner-pin handles. */
 export function TrackingOverlay(props: ProgramOverlayHostProps) {
 	const session = props.session;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	useTrackingBridge(session);
 	const { frame, playing } = useOverlayFrame(transport);
 	const activeId = useTracking((s) => s.activeTrackerId);
@@ -217,8 +208,6 @@ export function TrackingOverlay(props: ProgramOverlayHostProps) {
 		</svg>
 	);
 }
-
-// ------------------------------------------------------------------ tracker
 
 type StartDrag = (e: ReactPointerEvent, spec: DragSpec) => void;
 
@@ -525,8 +514,6 @@ function centreOf(q: Quad): Vec2 {
 function topLeftOf(q: Quad): Vec2 {
 	return [Math.min(...q.map((p) => p[0])), Math.min(...q.map((p) => p[1]))];
 }
-
-// ------------------------------------------------------------------ corner pin handles
 
 function CornerPinLayer(props: {
 	layer: ResolvedLayer;

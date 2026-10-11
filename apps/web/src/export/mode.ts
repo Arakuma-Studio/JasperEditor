@@ -33,8 +33,6 @@ export function useExportMode(): ExportModeState {
 	return useSyncExternalStore(exportMode.subscribe, exportMode.get, exportMode.get);
 }
 
-// ------------------------------------------------------------ who renders <ExportMode/>
-
 let shellHosts = 0;
 const hostListeners = new Set<() => void>();
 const hostSubscribe = (l: () => void) => {
@@ -62,8 +60,6 @@ export function claimExportModeHost(): () => void {
 export function useExportModeHostedByShell(): boolean {
 	return useSyncExternalStore(hostSubscribe, hostSnapshot, hostSnapshot);
 }
-
-// ------------------------------------------------------------ export jobs started from this client
 
 const tracked = new Map<string, string>();
 

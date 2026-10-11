@@ -1,12 +1,4 @@
-// Program monitor overlay of the Roto Brush (parity workstream `roto`):
-//  - shows the active roto's computed matte at the playhead over its clip (tinted overlay, boundary or alpha view),
-//    placed through the clip's layer map (Motion; corner pins are drawn with their affine part);
-//  - with the Roto Brush tool on, a drag on the selected video / still clip paints a stroke (green: add), Alt-drag
-//    subtracts (red), Shift-drag draws a box, Ctrl/Cmd-drag left/right resizes the brush (After Effects); the
-//    stroke is committed in media pixels (one undoable step) and the frame is segmented on the engine at once
-//    (the whole span too with Auto-propagate);
-//  - the progress of a running roto job.
-import type { RenderDoc } from '@jasper/compositions';
+import type { Vec2 } from '@jasper/project';
 import {
 	applyMat3,
 	type Clip,
@@ -20,7 +12,6 @@ import {
 	rotoFrameUrl,
 	rotoStorePath,
 } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
@@ -39,7 +30,6 @@ import {
 import { ROTO_COLORS } from './roto.tokens.ts';
 import { rotoUi, useRoto } from './store.ts';
 
-type Vec2 = [number, number];
 const pts = (q: readonly Vec2[]) => q.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
 
 function layerOf(scene: readonly ResolvedLayer[], clipId: string): ResolvedLayer | null {
@@ -61,10 +51,10 @@ function affineOf(map: Mat3, view: View, w: number, h: number): string {
 
 /** The Roto Brush overlay (registered in roto/register.ts). */
 export function RotoOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	const engine = useEngineOrNull();
 	const { frame, playing } = useOverlayFrame(transport);
 	const tool = useRoto((s) => s.tool);

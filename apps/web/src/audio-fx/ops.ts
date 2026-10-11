@@ -61,7 +61,7 @@ export async function autoMatchLoudness(
 				measuredLufs: measured,
 				...(targetLufs !== undefined ? { targetLufs } : {}),
 			},
-		] as never,
+		],
 	});
 	fail(res, 'Auto-Match');
 	return measured;
@@ -131,13 +131,11 @@ export async function remixClip(
 				...(opts.segments !== undefined ? { segments: opts.segments } : {}),
 				...(opts.variations !== undefined ? { variations: opts.variations } : {}),
 			},
-		] as never,
+		],
 	});
 	fail(res, 'Remix');
 	return { pieces: plan.pieces.length, bpm: plan.bpm, lengthSeconds: plan.lengthSeconds };
 }
-
-// ---------------------------------------------------------------- user presets (this browser)
 
 const PRESET_KEY = 'jasper.essentialSound.userPresets';
 export type UserSoundPreset = { name: string; settings: EssentialSound };

@@ -26,8 +26,6 @@ import {
 } from '@jasper/project';
 import { type Binding, bindEffectParam, makeRow, type Row } from '../panels/properties/lib/model.ts';
 
-// ---------------------------------------------------------------- target clip and instance
-
 const effectsOf = (clip: Clip): EffectInstance[] => (clip as { effects?: EffectInstance[] }).effects ?? [];
 
 /** Visual clips that take effects (video, stills, solids, text…) can carry a grade. */
@@ -102,8 +100,6 @@ export function rowNumber(row: Row, fallback = 0): number {
 	const v = row.bindings[0]?.resolved.value;
 	return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
-
-// ---------------------------------------------------------------- tone curves (S06:CGU-001)
 
 export type CurvePoint = [number, number];
 
@@ -193,8 +189,6 @@ export function hitCurvePoint(pts: readonly CurvePoint[], x: number, y: number, 
 export const isIdentityPoints = (pts: readonly CurvePoint[]) =>
 	pts.length === 2 && pts[0]![0] === 0 && pts[0]![1] === 0 && pts[1]![0] === 1 && pts[1]![1] === 1;
 
-// ---------------------------------------------------------------- colour wheels (S06:CG-020 step 11)
-
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
 /** Wheel value (unit disc, y up) of a pointer offset from the wheel centre in px. */
@@ -221,8 +215,6 @@ export function wheelVec(v: unknown): [number, number] {
 	const y = Number(v[1]);
 	return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0];
 }
-
-// ---------------------------------------------------------------- LUT assets (S06:LUT-002/005)
 
 type LutItem = {
 	mediaId: string;
@@ -273,8 +265,6 @@ export function lutItems(doc: ProjectDocument): LutItem[] {
 
 export const mediaIdOf = (v: unknown): string =>
 	typeof (v as { mediaId?: unknown } | null)?.mediaId === 'string' ? (v as { mediaId: string }).mediaId : '';
-
-// ---------------------------------------------------------------- grade clipboard and LUT application
 
 /** One copied colour effect (S06:CGU-004). */
 export type CopiedColorEffect = {

@@ -97,7 +97,7 @@ function switchMediaVersion(
 			clipId: id,
 			mediaId,
 			...(fit !== 'refuse' ? { fit } : {}),
-		} as unknown as Command);
+		});
 	}
 	if (!commands.length) return { ok: true, changed: 0, trimmed: 0 };
 	const label =

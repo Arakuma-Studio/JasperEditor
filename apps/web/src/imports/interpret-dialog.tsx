@@ -72,8 +72,6 @@ export function interpretSections(): readonly InterpretSection[] {
 	return SECTIONS;
 }
 
-// ---------------------------------------------------------------- helpers
-
 /** The common value of `f` over the assets, or `null` when they differ. */
 function common<T>(assets: readonly MediaAsset[], f: (a: MediaAsset) => T): T | null {
 	const vals = assets.map((a) => JSON.stringify(f(a)));
@@ -144,8 +142,6 @@ function current<K extends keyof MediaInterpretation>(
 const setPatch =
 	(setDraft: InterpretSectionProps['setDraft']) => (key: keyof InterpretationPatch, value: unknown) =>
 		setDraft((d) => ({ ...d, patch: { ...d.patch, [key]: value } }));
-
-// ---------------------------------------------------------------- built-in sections
 
 function FrameRateSection({ assets, draft, setDraft }: InterpretSectionProps) {
 	const set = setPatch(setDraft);
@@ -395,8 +391,6 @@ registerInterpretSection({
 	applies: (a) => a.length > 0 && a.every((x) => isTimedMedia(x) && (x.probe.durationFlicks ?? 0) > 0),
 	component: LoopSection,
 });
-
-// ---------------------------------------------------------------- dialog
 
 export type InterpretFootageProps = { session: EditorSession; mediaIds: string[] };
 

@@ -1,17 +1,3 @@
-// Program monitor vertex editing and Pen tool for vector shapes (wp shapes; Premiere's Pen tool on graphics and After
-// Effects' pen behaviours):
-// - with a vector shape selected, its path items are outlined; the selected path item (Properties ▸ Shape Contents,
-//   or a click on an outline) shows its vertices and the handles of the selected / smooth vertices;
-// - drag a vertex (Shift-click adds to the selection; the selection moves together), drag a handle (the opposite one
-//   mirrors; Alt breaks it); Alt-click a vertex converts it smooth ↔ corner (Convert Vertex); Ctrl/Cmd-click deletes
-//   it; Delete / Backspace (overlay focused) deletes the selected vertices;
-// - Pen tool: click adds a vertex to the open path being drawn, drag pulls out its tangents, a click on the first
-//   vertex closes the path, Enter / Escape finish it. On a selected path the pen inserts a vertex on a segment
-//   (Add Vertex), deletes a vertex it clicks (Delete Vertex) and Alt-click converts (Convert Vertex). A pen click on
-//   empty space starts a new path: in the selected vector shape (a new group with the path, a stroke and a fill that
-//   is off), or in a new vector shape clip at the playhead.
-// Every drag is ONE session gesture writing the path at the playhead (a keyframe when Path is animated).
-import type { RenderDoc } from '@jasper/compositions';
 import {
 	applyMat3,
 	type Command,
@@ -23,7 +9,6 @@ import {
 	type ShapeAffine,
 	shapePathItemsAt,
 } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
 import {
@@ -76,10 +61,10 @@ export function itemSpace(layer: Pick<ResolvedLayer, 'props'>, m: ShapeAffine, v
 }
 
 export function VectorPathOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const tool = useStoreSelector(session.store, (s) => s.toggles.activeTool);
 	const selectedClips = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
@@ -110,8 +95,9 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 
 	const clipId = selectedClips.length === 1 ? selectedClips[0]! : null;
 	const layer = clipId ? scene.find((l) => l.clip.clipId === clipId) : undefined;
-	const src = layer?.clip.source as { shape?: { type: string; contents?: unknown } } | undefined;
-	const vector = layer && src?.shape?.type === 'vector' ? layer : undefined;
+	const source = layer?.clip.source;
+	const shape = source && 'shape' in source && source.shape.type === 'vector' ? source.shape : null;
+	const vector = shape ? layer : undefined;
 	if (!vector && !pen) return null;
 
 	const atSeq = { sequenceFrame: frame };
@@ -120,23 +106,19 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 		if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors[0]?.message ?? '' });
 		return r;
 	};
-	const edit = (cid: string, itemId: string, ops: unknown[]): Command[] => [
-		{ type: 'shape.editPath', clipId: cid, itemId, at: atSeq, ops } as Command,
-	];
+	const edit = (
+		cid: string,
+		itemId: string,
+		ops: Extract<Command, { type: 'shape.editPath' }>['ops'],
+	): Command[] => [{ type: 'shape.editPath', clipId: cid, itemId, at: atSeq, ops } as Command];
 
-	const paths = vector
-		? shapePathItemsAt(
-				(vector.clip.source as unknown as { shape: { contents: never } }).shape.contents,
-				vector.contentTime,
-			)
-		: [];
+	const paths = vector && shape ? shapePathItemsAt(shape.contents, vector.contentTime) : [];
 	const selId =
 		ui.selected && vector && ui.selected.clipId === vector.clip.clipId ? ui.selected.itemId : null;
 	const active = paths.find((p) => p.item.id === selId) ?? null;
 	const space = (m: ShapeAffine) => (vector ? itemSpace(vector, m, view) : null);
 	const selVerts = new Set(ui.vertices);
 
-	// ------------------------------------------------------------ pen on empty space
 	const startNewPath = (e: ReactPointerEvent<SVGRectElement>) => {
 		const s = at(e);
 		const seqPt = toSequence(view, s) as Pt;
@@ -255,7 +237,6 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 		startNewPath(e);
 	};
 
-	// ------------------------------------------------------------ vertex editing
 	const onVertexDown = (e: ReactPointerEvent, info: (typeof paths)[number], i: number) => {
 		if (e.button !== 0 || readOnly || !vector) return;
 		e.stopPropagation();

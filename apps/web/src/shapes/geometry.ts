@@ -141,8 +141,6 @@ export function resizeShapeBySize(i: SizeResizeInput): { size: Vec2; position?: 
 	return { size, position: [i.values.position[0] + s[0] - o[0], i.values.position[1] + s[1] - o[1]] };
 }
 
-// ---------------------------------------------------------------- vector shapes (wp shapes)
-
 const rectCache = new WeakMap<
 	object,
 	Map<number, { x: number; y: number; width: number; height: number } | null>

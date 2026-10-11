@@ -69,18 +69,17 @@ function sourcesOf(p: ClipboardPayload): Source[] {
 	return [...sec.clips]
 		.sort((a, b) => Number(b.id === sec.primaryClipId) - Number(a.id === sec.primaryClipId))
 		.map((c) => {
-			const r = c as Record<string, unknown>;
-			const ta = r.textAnimation as { in?: unknown; out?: unknown } | undefined;
+			const ta = 'textAnimation' in c ? c.textAnimation : undefined;
 			return {
 				kind: c.kind,
 				has: {
-					motion: !!r.transform,
-					opacity: !!r.opacity,
-					volume: !!r.volumeDb,
-					panner: !!r.pan,
-					timeRemap: !!(r.timeRemap as { enabled?: boolean } | undefined)?.enabled,
+					motion: 'transform' in c && !!c.transform,
+					opacity: 'opacity' in c && !!c.opacity,
+					volume: 'volumeDb' in c && !!c.volumeDb,
+					panner: 'pan' in c && !!c.pan,
+					timeRemap: 'timeRemap' in c && !!c.timeRemap?.enabled,
 				},
-				effects: (r.effects as EffectInstance[] | undefined) ?? [],
+				effects: 'effects' in c ? (c.effects ?? []) : [],
 				textIn: !!ta?.in,
 				textOut: !!ta?.out,
 				textStyle: c.kind === 'text',
@@ -97,8 +96,7 @@ export function pasteAttributeOptions(
 ): AttributeOption[] {
 	const sources = sourcesOf(p);
 	const any = (pick: (s: Source) => boolean) => sources.some(pick);
-	const takes = (test: (c: Clip & Record<string, unknown>) => boolean) =>
-		targets.some((c) => test(c as Clip & Record<string, unknown>));
+	const takes = (test: (clip: Clip) => boolean) => targets.some(test);
 	const out: AttributeOption[] = [];
 	const row = (key: string, label: string, group: AttributeGroup, ok: boolean, reason: string) =>
 		out.push({ key, label, group, available: ok, ...(ok ? {} : { reason }) });
@@ -108,7 +106,7 @@ export function pasteAttributeOptions(
 			'motion',
 			'Motion',
 			'video',
-			takes((c) => !!kindCapabilities(c.kind)?.hasTransform && !!c.transform),
+			takes((c) => !!kindCapabilities(c.kind)?.hasTransform && 'transform' in c && !!c.transform),
 			visual,
 		);
 	if (any((s) => s.has.opacity))
@@ -116,7 +114,7 @@ export function pasteAttributeOptions(
 			'opacity',
 			'Opacity',
 			'video',
-			takes((c) => !!c.opacity),
+			takes((c) => 'opacity' in c && !!c.opacity),
 			visual,
 		);
 	if (any((s) => s.has.timeRemap))
@@ -133,7 +131,7 @@ export function pasteAttributeOptions(
 			'volume',
 			'Volume',
 			'audio',
-			takes((c) => !!c.volumeDb),
+			takes((c) => 'volumeDb' in c && !!c.volumeDb),
 			audio,
 		);
 	if (any((s) => s.has.panner))
@@ -141,7 +139,7 @@ export function pasteAttributeOptions(
 			'panner',
 			'Panner',
 			'audio',
-			takes((c) => !!c.pan),
+			takes((c) => 'pan' in c && !!c.pan),
 			audio,
 		);
 	for (const s of sources)
@@ -201,26 +199,25 @@ export function removeAttributeOptions(
 	targets: readonly Clip[],
 	registry: EffectRegistry,
 ): AttributeOption[] {
-	const t = targets as (Clip & Record<string, unknown>)[];
+	const t = targets;
 	const out: AttributeOption[] = [];
 	const row = (key: string, label: string, group: AttributeGroup) =>
 		out.push({ key, label, group, available: true });
-	if (t.some((c) => !!kindCapabilities(c.kind)?.hasTransform && !!c.transform))
+	if (t.some((c) => !!kindCapabilities(c.kind)?.hasTransform && 'transform' in c && !!c.transform))
 		row('motion', 'Motion', 'video');
-	if (t.some((c) => !!c.opacity)) row('opacity', 'Opacity', 'video');
-	if (t.some((c) => !!(c.timeRemap as { enabled?: boolean } | undefined)?.enabled))
+	if (t.some((c) => 'opacity' in c && !!c.opacity)) row('opacity', 'Opacity', 'video');
+	if (t.some((c) => 'timeRemap' in c && !!c.timeRemap?.enabled))
 		row('timeRemapping', 'Time Remapping', 'video');
-	if (t.some((c) => !!c.volumeDb)) row('volume', 'Volume', 'audio');
-	if (t.some((c) => !!c.pan)) row('panner', 'Panner', 'audio');
+	if (t.some((c) => 'volumeDb' in c && !!c.volumeDb)) row('volume', 'Volume', 'audio');
+	if (t.some((c) => 'pan' in c && !!c.pan)) row('panner', 'Panner', 'audio');
 	const seen = new Set<string>();
 	for (const c of t)
-		for (const fx of (c.effects as EffectInstance[] | undefined) ?? []) {
+		for (const fx of 'effects' in c ? (c.effects ?? []) : []) {
 			if (seen.has(fx.effectId)) continue;
 			seen.add(fx.effectId);
 			row(`fx:${fx.effectId}`, effectLabel(registry, fx), 'effects');
 		}
-	const ta = (side: 'in' | 'out') =>
-		t.some((c) => !!(c.textAnimation as Record<string, unknown> | undefined)?.[side]);
+	const ta = (side: 'in' | 'out') => t.some((c) => 'textAnimation' in c && !!c.textAnimation?.[side]);
 	if (ta('in')) row('textAnimationIn', 'In Animation', 'text');
 	if (ta('out')) row('textAnimationOut', 'Out Animation', 'text');
 	return out;

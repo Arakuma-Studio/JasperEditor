@@ -27,6 +27,7 @@ import {
 	TextField,
 } from '@jasper/ui';
 import { useMemo, useState } from 'react';
+import { useDialogClose } from '../extensions/dialog.ts';
 
 export const SYNCHRONIZE_DIALOG = 'multicam.synchronize';
 export const MERGE_CLIPS_DIALOG = 'multicam.mergeClips';
@@ -41,20 +42,6 @@ export function registerMulticamDialogs(): void {
 	registerDialog(MERGE_CLIPS_DIALOG, MergeClipsDialog);
 	registerDialog(CREATE_MULTICAM_DIALOG, CreateMulticamDialog);
 	registerDialog(EDIT_CAMERAS_DIALOG, EditCamerasDialog);
-}
-
-function useClose(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	const [done, setDone] = useState(false);
-	return {
-		open,
-		finish(result?: unknown) {
-			setOpen(false);
-			if (done) return;
-			setDone(true);
-			close(result);
-		},
-	};
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -186,13 +173,11 @@ function useAudioStep() {
 	return { report, setReport, offsets, setOffsets, busy, setBusy };
 }
 
-// ---------------------------------------------------------------- Synchronize
-
 type SyncProps = { session: EditorSession; engine: EngineClient; sequenceId: string; clipIds: string[] };
 
 export function SynchronizeDialog(props: HostedDialogProps<SyncProps>) {
 	const { session, engine, sequenceId, clipIds } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const seq = session.getCommitted().sequences[sequenceId] as Sequence;
 	const [method, setMethod] = useState<SyncMethod>('in');
 	const [ignoreHours, setIgnoreHours] = useState(false);
@@ -316,8 +301,6 @@ export function SynchronizeDialog(props: HostedDialogProps<SyncProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Merge Clips
-
 type ItemsProps = { session: EditorSession; engine: EngineClient; itemIds: string[] };
 
 function itemNames(session: EditorSession, ids: string[]): Record<string, string> {
@@ -338,7 +321,7 @@ function itemMarkerNames(session: EditorSession, ids: string[]): string[] {
 
 export function MergeClipsDialog(props: HostedDialogProps<ItemsProps>) {
 	const { session, engine, itemIds } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const doc = session.getCommitted();
 	const video = itemIds.find((id) => {
 		const it = doc.items[id];
@@ -466,11 +449,9 @@ export function MergeClipsDialog(props: HostedDialogProps<ItemsProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Create Multi-Camera Source Sequence
-
 export function CreateMulticamDialog(props: HostedDialogProps<ItemsProps>) {
 	const { session, engine, itemIds } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const doc = session.getCommitted();
 	const firstName = doc.items[itemIds[0] ?? '']?.name ?? 'Clip';
 	const [nameMode, setNameMode] = useState<'clip' | 'custom'>('clip');
@@ -661,13 +642,11 @@ export function CreateMulticamDialog(props: HostedDialogProps<ItemsProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Edit Cameras
-
 type EditCamerasProps = { session: EditorSession; sequenceId: string };
 
 export function EditCamerasDialog(props: HostedDialogProps<EditCamerasProps>) {
 	const { session, sequenceId } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const mc = (session.getCommitted().sequences[sequenceId] as Sequence | undefined)?.multicam as
 		| MulticamSource
 		| undefined;

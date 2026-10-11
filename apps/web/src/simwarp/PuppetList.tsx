@@ -1,3 +1,4 @@
+import type { Command } from '@jasper/project';
 // The Puppet section's meshes and pins in Effect Controls (sim-warp): the Puppet Pin tool row (tool on/off and the
 // pin kind, After Effects' Position / Advanced / Bend / Starch / Overlap tools), then per mesh its Density / Expansion /
 // Triangles and per pin its header (name, kind, delete) and property rows — drawn by the panel's own row renderer so
@@ -63,8 +64,7 @@ export function PuppetList(props: {
 	const { session, model, layout } = props;
 	const tool = useSimWarpUi((s) => s.pinTool);
 	const selected = useSimWarpUi((s) => s.pins);
-	const apply = (label: string, commands: unknown[]) =>
-		session.apply({ label, origin: 'user', commands: commands as never });
+	const apply = (label: string, commands: Command[]) => session.apply({ label, origin: 'user', commands });
 	return (
 		<div data-testid={`puppet-${model.fxId}`}>
 			<div className="flex items-stretch">

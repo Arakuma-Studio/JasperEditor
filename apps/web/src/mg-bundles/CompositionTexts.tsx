@@ -41,7 +41,7 @@ import { CheckboxField, MiniButton, SelectField } from '../panels/properties/con
 import { ResetGlyph } from '../panels/properties/controls/glyphs.tsx';
 import { createScrub } from '../panels/properties/lib/ops.ts';
 import { bundleFontFamilies } from './bundle-fonts.ts';
-import { PropEditor } from './CompositionSection.tsx';
+import { PropEditor } from './PropEditor.tsx';
 import { onTextFieldFocusRequest, startCanvasTextEdit } from './text-edit.ts';
 import { textMeasurer } from './text-measure.ts';
 
@@ -414,8 +414,6 @@ function TextLayerEditor(props: {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- style props of a text
 
 const ROLE_LABEL: Record<TextStyleRole, string> = {
 	fontFamily: 'Font',

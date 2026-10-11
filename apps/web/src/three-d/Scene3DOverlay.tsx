@@ -25,12 +25,12 @@ import {
 	type View3D,
 	viewOfRig,
 } from '@jasper/project';
-import type { Gesture, TransportStore } from '@jasper/session';
+import type { Gesture } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
-import { toScreen, type View } from '../panels/program/viewport.ts';
+import { toScreen } from '../panels/program/viewport.ts';
 import { programCamera, resolveProgramScene } from './scene.ts';
 import { setViewCam, switchView, threeDViews, viewCamOf } from './view-store.ts';
 
@@ -47,7 +47,7 @@ export function has3d(doc: RenderDoc | null | undefined): boolean {
 }
 
 export function Scene3DOverlay(props: ProgramOverlayHostProps) {
-	const doc = props.doc as RenderDoc | null;
+	const doc = props.doc | null;
 	if (!has3d(doc)) return null;
 	return <Scene3DSurface {...props} doc={doc!} />;
 }
@@ -76,8 +76,8 @@ type Drag =
 
 function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 	const { session, doc } = props;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const tool = useStoreSelector(session.store, (s) => s.toggles.activeTool);
 	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);

@@ -10,6 +10,7 @@ import {
 	transcriptAttachPlan,
 	transcriptForMedia,
 } from '@jasper/project';
+import { z } from 'zod';
 
 /** OpenAI Whisper's languages (tokenizer.py `LANGUAGES`), by ISO 639-1 code (`yue` = Cantonese). */
 export const WHISPER_LANGUAGES: ReadonlyArray<[string, string]> = [
@@ -146,12 +147,28 @@ export function defaultOptions(model = 'whisper-base'): GenerateOptions {
 	};
 }
 
+export function parseGenerateOptions(value: unknown, defaultModel: string): GenerateOptions {
+	const base = defaultOptions(defaultModel);
+	const parsed = z
+		.object({
+			model: z.string().min(1).catch(base.model),
+			language: z.string().min(1).catch(base.language),
+			task: z.enum(['transcribe', 'translate']).catch(base.task),
+			speakerLabels: z.boolean().catch(base.speakerLabels),
+			speakerCount: z.number().int().min(0).max(32).catch(base.speakerCount),
+			analysis: z.enum(['media', 'mix']).catch(base.analysis),
+			inOutOnly: z.boolean().catch(base.inOutOnly),
+			replace: z.boolean().catch(base.replace),
+		})
+		.safeParse(value);
+	return parsed.success ? parsed.data : base;
+}
+
 export function loadOptions(defaultModel: string): GenerateOptions {
 	const base = defaultOptions(defaultModel);
 	try {
 		const raw = globalThis.localStorage?.getItem(KEY);
-		const v = raw ? (JSON.parse(raw) as Partial<GenerateOptions>) : null;
-		return v && typeof v === 'object' ? { ...base, ...v } : base;
+		return parseGenerateOptions(raw ? JSON.parse(raw) : null, defaultModel);
 	} catch {
 		return base;
 	}
@@ -187,17 +204,15 @@ export function sequenceName(doc: ProjectDocument, sequenceId: string): string {
 /** Whether a media can be transcribed (it has an audio stream). */
 export function hasAudio(m: MediaAsset | undefined): boolean {
 	if (!m) return false;
-	const probe = m.probe as { streams?: Array<{ type?: string }> } | undefined;
-	if (probe?.streams) return probe.streams.some((s) => s.type === 'audio');
-	return m.kind === 'audio' || m.kind === 'video';
+	return m.probe.streams.some((stream) => stream.type === 'audio');
 }
 
 /** The media a sequence's enabled audio clips play (in timeline order), and those with a transcript already. */
 export function sequenceMedia(doc: ProjectDocument, seq: Sequence): { all: string[]; transcribed: string[] } {
 	const clips = Object.values(seq.clips)
 		.filter((c) => c.kind === 'audio' && c.enabled)
-		.sort((a, b) => a.start - b.start) as Array<{ mediaId: string }>;
-	const all = [...new Set(clips.map((c) => c.mediaId))].filter((id) => hasAudio(doc.media[id] as MediaAsset));
+		.sort((a, b) => a.start - b.start);
+	const all = [...new Set(clips.map((c) => c.mediaId))].filter((id) => hasAudio(doc.media[id]));
 	return { all, transcribed: all.filter((id) => !!transcriptForMedia(doc, id)) };
 }
 
@@ -206,11 +221,11 @@ export function clipMedia(doc: ProjectDocument, clipIds: readonly string[]): str
 	const out: string[] = [];
 	for (const seq of Object.values(doc.sequences))
 		for (const id of clipIds) {
-			const c = seq.clips[id] as { kind: string; mediaId?: string } | undefined;
+			const c = seq.clips[id];
 			if (c && (c.kind === 'audio' || c.kind === 'video') && c.mediaId && !out.includes(c.mediaId))
 				out.push(c.mediaId);
 		}
-	return out.filter((id) => hasAudio(doc.media[id] as MediaAsset));
+	return out.filter((id) => hasAudio(doc.media[id]));
 }
 
 type Attach = { commands: Command[]; summary: string } | { error: string };
@@ -225,7 +240,7 @@ export function mediaAttach(
 	const plan = transcriptAttachPlan(doc, res, { mediaId, replace: mode === 'replace' });
 	if ('error' in plan) return plan;
 	return {
-		commands: plan.commands as unknown as Command[],
+		commands: plan.commands,
 		summary: `${res.words.length} words · ${languageName(res.language)}${res.task === 'translate' ? ' → English' : ''}${
 			Object.keys(res.speakers).length > 1 ? ` · ${Object.keys(res.speakers).length} speakers` : ''
 		}`,
@@ -242,7 +257,7 @@ export function mixAttach(doc: ProjectDocument, res: TranscriptionResult, replac
 	if ('error' in plan) return plan;
 	const words = plan.media.reduce((s, m) => s + m.words, 0);
 	return {
-		commands: plan.commands as unknown as Command[],
+		commands: plan.commands,
 		summary: `${words} words for ${plan.media.length} media · ${languageName(res.language)}${
 			plan.unassigned ? ` · ${plan.unassigned} words outside the audio clips were dropped` : ''
 		}`,

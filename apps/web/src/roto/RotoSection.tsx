@@ -200,7 +200,8 @@ function RotoDetails(props: {
 			: 'Not propagated';
 	const propagate = (dir: 'both' | 'forward' | 'backward') =>
 		client && void runRoto(session, client, roto.id, dir);
-	const set = (patch: Record<string, unknown>) => updateRoto(session, roto.id, { settings: patch });
+	const set = (patch: NonNullable<Parameters<typeof updateRoto>[2]['settings']>) =>
+		updateRoto(session, roto.id, { settings: patch });
 	const doc = useSessionState((st) => st.document);
 	const seq = findRoto(doc, roto.id) ? doc.sequences[findRoto(doc, roto.id)!.sequenceId] : null;
 	const targets = seq

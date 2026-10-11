@@ -2,7 +2,8 @@
 // the host panels (Effect Controls, Properties, Program monitor, Timeline, Project) render what is registered.
 import type { Clip, EffectInstance, EffectSpec, ProjectItem, Rational } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import type { ComponentType } from 'react';
+import type { ComponentProps, ComponentType } from 'react';
+import type { TransformOverlay } from '../panels/program/TransformOverlay.tsx';
 import { createRegistry } from './registry.ts';
 
 /** Menu entries contributed to context menus (same shape as the timeline's ContextMenuItem). */
@@ -10,8 +11,6 @@ export type MenuItemSpec =
 	| { kind: 'item'; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run(): void }
 	| { kind: 'separator' }
 	| { kind: 'submenu'; label: string; items: MenuItemSpec[] };
-
-// ---------------------------------------------------------------- Effect Controls: custom effect editors
 
 export type EffectEditorProps = {
 	session: EditorSession;
@@ -41,8 +40,6 @@ export const effectEditors = createRegistry<EffectEditorDef>();
 export const effectEditorFor = (effectId: string): EffectEditorDef | undefined =>
 	effectEditors.list().find((e) => e.effectId === effectId);
 
-// ---------------------------------------------------------------- Properties: clip sections
-
 export type ClipSectionProps = { session: EditorSession; clips: Clip[]; frame: number; sequenceId: string };
 /** A Properties-panel section for clips it applies to (composition props, tracking, processed media…). */
 export type ClipSectionDef = {
@@ -55,10 +52,11 @@ export type ClipSectionDef = {
 };
 export const clipSections = createRegistry<ClipSectionDef>();
 
-// ---------------------------------------------------------------- Program monitor overlays
-
 /** Props an overlay receives: the same as the transform overlay (view mapping, viewport, transport…). */
-export type ProgramOverlayHostProps = Record<string, unknown> & { session: EditorSession };
+export type ProgramOverlayHostProps = Omit<
+	ComponentProps<typeof TransformOverlay>,
+	'onPan' | 'onContextMenu'
+>;
 /** An SVG/DOM layer drawn over the Program monitor above the transform overlay (tracker, corner pin handles). */
 export type ProgramOverlayDef = {
 	id: string;
@@ -88,8 +86,6 @@ export type LayerDoubleClickHandler = {
 };
 export const layerDoubleClickHandlers = createRegistry<LayerDoubleClickHandler>();
 
-// ---------------------------------------------------------------- context menus
-
 type ClipMenuContext = { session: EditorSession; clip: Clip; selection: readonly string[] };
 export type ClipMenuExtension = {
 	id: string;
@@ -113,8 +109,6 @@ export type ProjectItemMenuExtension = {
 };
 /** Project panel item context menu additions. */
 export const projectItemMenuExtensions = createRegistry<ProjectItemMenuExtension>();
-
-// ---------------------------------------------------------------- Timeline: engine badge state (wp-m2-mg)
 
 /** What a clip's engine badge shows instead of the plain kind badge (e.g. `✓` = Remotion master cached). */
 export type ClipBadgeState = { text: string; title: string; tone?: 'ok' | 'busy' | 'warn' };
@@ -143,8 +137,6 @@ export function clipBadgeFor(clip: Clip): ClipBadgeState | null {
 	}
 	return null;
 }
-
-// ---------------------------------------------------------------- Timeline: clip decorations (wp-m3-trackui)
 
 /**
  * What a clip decoration receives: the clip and its placement as the timeline draws it. `x`/`w` are unrounded

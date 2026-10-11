@@ -33,11 +33,11 @@ export async function analyzeAudio(
 	engine: EngineClient,
 	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity'>,
 ): Promise<AudioAnalyzeResult> {
-	const body = {
+	const body: AudioAnalyzeRequest = {
 		...req,
 		envelope: envelopeOf(session),
 		projectId: session.getCommitted().projectId,
-	} as unknown as AudioAnalyzeRequest;
+	};
 	const job = await engine.analyzeAudio(body, true);
 	return resultOf<AudioAnalyzeResult>(job);
 }
@@ -67,7 +67,7 @@ export async function analyzeSequenceLoudness(
 					analyzedAt: new Date().toISOString(),
 				},
 			},
-		] as never,
+		],
 	});
 	return r;
 }
@@ -137,7 +137,7 @@ export async function normalizeMediaLoudness(
 				},
 				...(opts.replaceInClips?.length ? { replaceInClips: opts.replaceInClips } : {}),
 			},
-		] as never,
+		],
 	});
 	if (!res.ok) throw new Error(res.errors[0]?.message ?? 'The normalised version could not be added');
 	return r;
@@ -198,7 +198,7 @@ export async function autoDuck(
 				amountDb: req.amountDb ?? DUCK_DEFAULTS.amountDb,
 				fadeMs: req.fadeMs ?? DUCK_DEFAULTS.fadeMs,
 			},
-		] as never,
+		],
 	});
 	if (!res.ok) throw new Error(res.errors[0]?.message ?? 'Auto Duck failed');
 	return { regions, keyframes: (res.results[0] as { keyframes: Record<string, number> }).keyframes };

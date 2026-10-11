@@ -6,6 +6,7 @@
 // texts) or a click elsewhere applies the text as one History step ("Edit Text"), Esc cancels. Invalid values
 // (schema) are refused with the reason; soft limits show as warnings while typing.
 import { type MgHostRemote, mgHostOf } from '@jasper/compositions';
+import type { Vec2 } from '@jasper/project';
 import {
 	applyMat3,
 	applyMatrix,
@@ -42,7 +43,6 @@ import {
 	requestTextFieldFocus,
 } from './text-edit.ts';
 
-type Vec2 = [number, number];
 const HOST_WAIT_MS = 15_000;
 /** Pointer slack around a text's line boxes, composition px. */
 const HIT_SLACK = 12;
@@ -55,9 +55,9 @@ export function CanvasTextEditorHost(props: ProgramOverlayHostProps) {
 		<CanvasTextEditor
 			key={edit.seq}
 			edit={edit}
-			doc={props.doc as Parameters<typeof resolveSceneAt>[0]}
-			view={props.view as View}
-			transport={props.transport as TransportStore}
+			doc={props.doc}
+			view={props.view}
+			transport={props.transport}
 		/>
 	);
 }

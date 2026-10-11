@@ -5,10 +5,10 @@
 // - Liquify: with the brush on, a drag paints one stroke of the effect's Tool (`liquify.stroke`, live while dragging);
 // - Mesh Warp: the Bézier grid with its vertices and, for the selected vertex, its tangent handles (`meshWarp.setVertex`).
 import type { RenderDoc } from '@jasper/compositions';
+import type { Vec2 } from '@jasper/project';
 import {
 	alphaOutline,
 	applyMat3,
-	type Command,
 	layerMapOf,
 	MW_STRIDE,
 	meshWarpOf,
@@ -18,7 +18,6 @@ import {
 	resolveSceneAt,
 	solvePuppet,
 } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useMemo, useState } from 'react';
@@ -30,14 +29,11 @@ import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
 import { useFocusedEffect, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
 import { simWarpUi, useSimWarpUi } from './store.ts';
 
-type Vec2 = [number, number];
 const TONE = 'var(--pr-accent)';
 
 /** Layer px → screen px through the layer map. */
 const layerToScreen = (layer: ResolvedLayer, view: View, p: Vec2): Vec2 =>
 	toScreen(view, applyMat3(layerMapOf(layer.props), p) as Vec2);
-
-// ---------------------------------------------------------------- alpha outlines of images (first Puppet pin)
 
 const outlineCache = new Map<string, Promise<HTMLImageElement | null>>();
 function loadImage(url: string): Promise<HTMLImageElement | null> {
@@ -84,13 +80,11 @@ export async function imageAlphaOutline(
 	}
 }
 
-// ---------------------------------------------------------------- overlay
-
 export function SimWarpOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const focused = useFocusedEffect();
 	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
@@ -253,7 +247,7 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 															type: 'puppet.movePins',
 															moves: [{ pinId: pin.id, position: v }],
 															at: { sequenceFrame: frame },
-														} as unknown as Command,
+														},
 													]
 												: null;
 										},
@@ -306,7 +300,7 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 										effectInstanceId: fx.id,
 										points: pts.slice(),
 										at: { sequenceFrame: frame },
-									} as unknown as Command,
+									},
 								];
 							},
 						});
@@ -408,7 +402,7 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 													effectInstanceId: fx.id,
 													...onDrag(v),
 													at: { sequenceFrame: frame },
-												} as unknown as Command,
+												},
 											]
 										: null;
 								},

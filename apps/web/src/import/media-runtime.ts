@@ -165,8 +165,7 @@ export function createMediaRuntimeSync(
 			patchKey(key, { availability: 'offline' });
 		else if (e instanceof EngineError && e.code === 'NETWORK')
 			patchKey(key, { availability: 'needs-engine' });
-		// Older/stub engines: assume the original is served and wait for events.
-		else patchKey(key, { availability: 'online' });
+		else patchKey(key, { availability: 'error' });
 	};
 	const resolve = (key: string) => {
 		patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });

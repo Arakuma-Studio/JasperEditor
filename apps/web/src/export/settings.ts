@@ -123,8 +123,6 @@ export function buildExportSettings(
 	};
 }
 
-// ------------------------------------------------------------ captions (wp captions, S04:TR-061/062)
-
 export type CaptionExportChoice = {
 	/** Burn the visible caption tracks into the picture. */
 	burnIn: boolean;
@@ -232,8 +230,6 @@ export function outputDescription(seq: Sequence, frames: number, encoder?: Encod
 	return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${video} · ${audio} 48 kHz stereo · ${formatDuration(frames / fps)}`;
 }
 
-// ------------------------------------------------------------ encoders (ARCHITECTURE D-13)
-
 export const CODEC_LABELS: Record<VideoCodec, string> = {
 	h264: 'H.264',
 	vp9: 'VP9',
@@ -338,8 +334,6 @@ export type ExportAudioChoice = {
 	truePeakDb?: number;
 };
 
-// ------------------------------------------------------------ colour (color-mgmt)
-
 export type ExportColorChoice = {
 	/** `working` = the sequence's working space; else an output space id. */
 	colorSpace: 'working' | (typeof OUTPUT_SPACE_IDS)[number];
@@ -384,8 +378,6 @@ function sanitizeColorChoice(c: Partial<ExportColorChoice>): ExportColorChoice {
 		maxFall: n(c.maxFall),
 	};
 }
-
-// ------------------------------------------------------------ remembered choices (EX-014)
 
 type Remembered = {
 	/** color-mgmt */

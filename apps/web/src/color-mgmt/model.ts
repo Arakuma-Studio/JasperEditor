@@ -3,6 +3,7 @@
 import {
 	COLOR_SPACES,
 	type ColorInterpretation,
+	type ColorInterpretationPatch,
 	colorSpace,
 	type MediaAsset,
 	resolveInputSpace,
@@ -57,10 +58,22 @@ export function detectedSpaceLabel(asset: MediaAsset, working: string): string {
 }
 
 /** A short summary of a media's colour interpretation for the Project panel / dialogs. */
-export function interpretationSummary(asset: MediaAsset, seqSettings: unknown): string {
-	const info = sequenceColorInfo(seqSettings as never);
+export function interpretationSummary(
+	asset: MediaAsset,
+	seqSettings: Parameters<typeof sequenceColorInfo>[0],
+): string {
+	const info = sequenceColorInfo(seqSettings);
 	const c = asset.interpretation?.color;
 	if (c?.ocio) return `OCIO: ${c.ocio.space}`;
 	if (c?.space) return colorSpace(c.space)?.label ?? c.space;
 	return `Automatic (${detectedSpaceLabel(asset, info.space)})`;
+}
+
+export function colorPatchOf(from: ColorInterpretation, to: ColorInterpretation): ColorInterpretationPatch {
+	const keys = ['space', 'ocio', 'range', 'toneMap', 'peakNits', 'inputLut'] as const;
+	let patch: ColorInterpretationPatch = {};
+	for (const key of keys)
+		if (JSON.stringify(from[key] ?? null) !== JSON.stringify(to[key] ?? null))
+			patch = { ...patch, [key]: to[key] ?? null };
+	return patch;
 }

@@ -8,6 +8,7 @@
 //   proxy when it had none (projects edited from proxies only), else the full-resolution file is relinked.
 import type { RegisteredMedia } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
+import type { Command } from '@jasper/project';
 import { type MediaAsset, PROXY_PRESETS, proxyMismatch } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
@@ -50,8 +51,6 @@ export async function pickAndRegister(
 	if (!files[0]) return null;
 	return engine.uploadFile(files[0], { projectId });
 }
-
-// ---------------------------------------------------------------- Create Proxies
 
 function CreateProxiesDialog(props: HostedDialogProps<Base>) {
 	const all = assetsOf(props.session, props.mediaIds);
@@ -136,8 +135,6 @@ function CreateProxiesDialog(props: HostedDialogProps<Base>) {
 		</Dialog>
 	);
 }
-
-// ---------------------------------------------------------------- Attach Proxies
 
 type RowState = { status: string | null; mismatch: string | null; reg: RegisteredMedia | null; path: string };
 
@@ -236,13 +233,11 @@ function AttachProxiesDialog(props: HostedDialogProps<Base & { localEngine?: boo
 	);
 }
 
-// ---------------------------------------------------------------- Reconnect Full Resolution Media
-
 /** Commands that make `reg` the full-resolution file of `asset` (keeping or creating its proxy). */
 export function reconnectCommands(
 	asset: MediaAsset,
 	reg: RegisteredMedia,
-): { commands: unknown[] } | { error: string } {
+): { commands: Command[] } | { error: string } {
 	const why = proxyMismatch(
 		{ kind: reg.kind, probe: reg.probe, originalName: reg.originalName },
 		asset.proxy?.probe ?? asset.probe,
@@ -250,7 +245,7 @@ export function reconnectCommands(
 	if (why) return { error: why };
 	const sameBytes = reg.fingerprint === asset.fingerprint;
 	// The full-resolution file first (it changes the fingerprint), then the file the clip used becomes its proxy.
-	const commands: unknown[] = [
+	const commands: Command[] = [
 		{
 			type: 'media.relink',
 			mediaId: asset.id,

@@ -18,6 +18,31 @@ export async function followJob(
 	}
 }
 
+export async function pollActiveJob(
+	engine: Pick<EngineClient, 'getJob'>,
+	jobId: string,
+	opts: { isActive(): boolean; onUpdate?(job: EngineJob): void; intervalMs: number },
+): Promise<EngineJob | null> {
+	let networkFailures = 0;
+	while (opts.isActive()) {
+		await new Promise<void>((resolve) => setTimeout(resolve, opts.intervalMs));
+		if (!opts.isActive()) return null;
+		let job: EngineJob;
+		try {
+			job = await engine.getJob(jobId);
+		} catch (error) {
+			if (!opts.isActive()) return null;
+			if (error instanceof EngineError && error.code === 'NETWORK' && ++networkFailures < 3) continue;
+			throw error;
+		}
+		if (!opts.isActive()) return null;
+		networkFailures = 0;
+		opts.onUpdate?.(job);
+		if (TERMINAL_JOB_STATES.has(job.state)) return job;
+	}
+	return null;
+}
+
 /** `CODE: message` for engine errors, the message otherwise. */
 export function errorText(e: unknown): string {
 	if (e instanceof EngineError) return e.code === 'NETWORK' ? e.message : `${e.message} (${e.code})`;

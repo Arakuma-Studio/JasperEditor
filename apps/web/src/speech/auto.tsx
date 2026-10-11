@@ -7,21 +7,32 @@ import type { MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
 import { useEffect } from 'react';
+import { z } from 'zod';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { mediaKeyOf } from '../import/assets.ts';
+import { errorText } from '../processing/engine-jobs.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { transcribeMedia } from './jobs.ts';
 import { defaultOptions, hasAudio, requestOptions } from './model.ts';
 
-export type AutoTranscribe = { enabled: boolean; model: string; language: string };
+const AutoTranscribeSchema = z.object({
+	enabled: z.boolean().catch(false),
+	model: z.string().min(1).catch('whisper-base'),
+	language: z.string().min(1).catch('auto'),
+});
+export type AutoTranscribe = z.infer<typeof AutoTranscribeSchema>;
+
+export function parseAutoTranscribe(value: unknown): AutoTranscribe {
+	const parsed = AutoTranscribeSchema.safeParse(value);
+	return parsed.success ? parsed.data : AutoTranscribeSchema.parse({});
+}
 const KEY = 'jasper:speech-auto';
 
 export function loadAuto(): AutoTranscribe {
 	try {
-		const v = JSON.parse(globalThis.localStorage?.getItem(KEY) ?? 'null') as Partial<AutoTranscribe> | null;
-		return { enabled: false, model: 'whisper-base', language: 'auto', ...(v ?? {}) };
+		return parseAutoTranscribe(JSON.parse(globalThis.localStorage?.getItem(KEY) ?? 'null'));
 	} catch {
-		return { enabled: false, model: 'whisper-base', language: 'auto' };
+		return parseAutoTranscribe(null);
 	}
 }
 
@@ -69,7 +80,9 @@ export function AutoTranscribeHost({ session }: ProgramOverlayHostProps) {
 				}
 				const options = requestOptions({ ...defaultOptions(m.id), language: auto.language }, m.multilingual);
 				await transcribeMedia({ engine: client, session, mediaIds: ids, options, replace: false });
-			})().catch(() => undefined);
+			})().catch((error) =>
+				toast({ kind: 'error', title: 'Automatic transcription failed', detail: errorText(error) }),
+			);
 		});
 	}, [session, client]);
 	return null;

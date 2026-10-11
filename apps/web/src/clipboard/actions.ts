@@ -103,8 +103,6 @@ export function editBlocked(ctx: CommandCtx): string | undefined {
 	return undefined;
 }
 
-// ---------------------------------------------------------------- copy
-
 /** What Copy would copy in this panel, or why it cannot. */
 function copyPayload(ctx: CommandCtx, target: ClipboardTarget): ClipboardPayload | string {
 	const session = ctx.session;
@@ -216,8 +214,6 @@ export function cutSelection(ctx: CommandCtx, target: ClipboardTarget, args: Cli
 	else if (p.kind === 'keyframes') session.selectKeyframes(null);
 }
 
-// ---------------------------------------------------------------- paste
-
 async function sourceOf(args: ClipboardArgs): Promise<PasteSource> {
 	// CLB-010: a paste event without files may still have desktop file-manager files on the OS clipboard.
 	return pasteSourceOf(args.clipboard ? await withDesktopFiles(args.clipboard) : await readSystemClipboard());
@@ -307,7 +303,7 @@ export async function pasteInto(
 		const r = session.apply({
 			label: 'Paste',
 			origin: 'user',
-			commands: [{ type: 'project.pasteItems', payload: p, binId } as unknown as Command],
+			commands: [{ type: 'project.pasteItems', payload: p, binId }],
 			selectAfter: (res) => ({ project: (res.results[0] as { itemIds: string[] }).itemIds }),
 		});
 		report(ctx, 'Paste', r);
@@ -335,7 +331,7 @@ export async function pasteInto(
 					at: e.playhead,
 					mode,
 					tracks: { video: lowestTargeted(e, 'video'), audio: lowestTargeted(e, 'audio') },
-				} as unknown as Command,
+				},
 			],
 			selectAfter: (res) => ({ timeline: (res.results[0] as { clipIds: string[] }).clipIds }),
 		});
@@ -366,7 +362,7 @@ export async function pasteInto(
 					clipId: clip.id,
 					at: { sequenceFrame: e.playhead },
 					...(targetPath ? { target: targetPath } : {}),
-				} as unknown as Command,
+				},
 			],
 		});
 		report(ctx, 'Paste Keyframes', r);
@@ -387,12 +383,10 @@ export async function pasteInto(
 		label: 'Paste Effects',
 		origin: 'user',
 		sequenceId: e.seq.id,
-		commands: [{ type: 'effect.paste', payload: p, clipIds: targets.map((c) => c.id) } as unknown as Command],
+		commands: [{ type: 'effect.paste', payload: p, clipIds: targets.map((c) => c.id) }],
 	});
 	report(ctx, 'Paste Effects', r);
 }
-
-// ---------------------------------------------------------------- paste / remove attributes
 
 export async function pasteAttributes(ctx: CommandCtx, args: ClipboardArgs = {}): Promise<void> {
 	const blocked = editBlocked(ctx);
@@ -440,7 +434,7 @@ export async function pasteAttributes(ctx: CommandCtx, args: ClipboardArgs = {})
 				clipIds: targets.map((c) => c.id),
 				attributes: toPasteAttributes(res.keys),
 				scaleTimes: res.scaleTimes,
-			} as unknown as Command,
+			},
 		],
 	});
 	report(ctx, 'Paste Attributes', r);
@@ -474,13 +468,11 @@ export async function removeAttributes(ctx: CommandCtx): Promise<void> {
 				type: 'clip.removeAttributes',
 				clipIds: targets.map((c) => c.id),
 				attributes: toRemoveAttributes(res.keys),
-			} as unknown as Command,
+			},
 		],
 	});
 	report(ctx, 'Remove Attributes', r);
 }
-
-// ---------------------------------------------------------------- enabled state
 
 /** Why Copy is disabled in the target panel, else undefined. */
 export function copyBlocked(ctx: CommandCtx, target: ClipboardTarget | null): string | undefined {

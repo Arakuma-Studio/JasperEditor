@@ -1,9 +1,4 @@
-// Program monitor overlay of the 3D Camera Tracker (three-d): the solved track points of the selected video clip at
-// the playhead (After Effects' "3D Solved" display: X marks sized by distance, Track Point Size), click / Shift-click
-// to select them, the target of the selection (a disc in the plane of the points, Target Size) and a context menu
-// (right-click) with Create Text and Camera, Create Solid and Camera, Create Camera, Set Ground Plane and Origin and
-// Delete Selected Points. Points project through the solved camera into media px, then through the clip's Motion.
-import type { RenderDoc } from '@jasper/compositions';
+import type { Vec2 } from '@jasper/project';
 import {
 	applyMat3,
 	type Clip,
@@ -20,25 +15,22 @@ import {
 	trackPointsAt,
 	type Vec3,
 } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../../extensions/index.ts';
 import { useOverlayFrame } from '../../panels/program/TransformOverlay.tsx';
-import { toScreen, type View } from '../../panels/program/viewport.ts';
+import { toScreen } from '../../panels/program/viewport.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { resolveProgramScene } from '../scene.ts';
 import { createFromTracker, deletePoints, setCamTrackEngine, setGround } from './actions.ts';
 import { CAMTRACK_COLORS } from './camtrack.tokens.ts';
 import { camtrackUi, useCamTrack } from './store.ts';
 
-type Vec2 = [number, number];
-
 export function CamTrackOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	const engine = useEngineOrNull();
 	const { frame } = useOverlayFrame(transport);
 	const selectedClips = useStoreSelector(session.store, (s) => s.selection.timeline.clips);

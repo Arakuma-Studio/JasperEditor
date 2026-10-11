@@ -52,8 +52,6 @@ function Row(props: { label: string; children: React.ReactNode; id?: string }) {
 	);
 }
 
-// ------------------------------------------------------------------ Audio Gain
-
 type GainMode = 'set' | 'adjust' | 'normalizeMax' | 'normalizeAll';
 
 export type AudioGainProps = {
@@ -184,8 +182,6 @@ function AudioGainDialog(props: HostedDialogProps<AudioGainProps>) {
 	);
 }
 
-// ------------------------------------------------------------------ Auto Duck
-
 export type AutoDuckProps = {
 	session: EditorSession;
 	/** Default: the editor's engine. */
@@ -307,8 +303,6 @@ function AutoDuckDialog(props: HostedDialogProps<AutoDuckProps>) {
 		</Dialog>
 	);
 }
-
-// ------------------------------------------------------------------ Loudness Normalization (the Mix)
 
 export type LoudnessProps = { session: EditorSession; engine: EngineClient; sequenceId: string };
 
@@ -442,8 +436,6 @@ function LoudnessDialog(props: HostedDialogProps<LoudnessProps>) {
 		</Dialog>
 	);
 }
-
-// ------------------------------------------------------------------ Normalize Loudness (media version)
 
 export type NormalizeMediaProps = {
 	session: EditorSession;

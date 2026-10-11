@@ -1,3 +1,4 @@
+import type { Command } from '@jasper/project';
 // edit-structure dialogs (Premiere's): Nested Sequence Name, Frame Hold Options, Color Matte (Color Picker) and the
 // Universal Counting Leader Setup. Each applies one undoable transaction.
 import {
@@ -22,6 +23,7 @@ import {
 	TimecodeField,
 } from '@jasper/ui';
 import { useMemo, useState } from 'react';
+import { useDialogClose } from '../extensions/dialog.ts';
 
 export const NEST_DIALOG = 'structure.nest';
 export const FRAME_HOLD_DIALOG = 'structure.frameHoldOptions';
@@ -38,20 +40,6 @@ export function registerStructureDialogs(): void {
 	registerDialog(LEADER_DIALOG, CountingLeaderDialog);
 }
 
-function useClose(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	const [done, setDone] = useState(false);
-	return {
-		open,
-		finish(result?: unknown) {
-			setOpen(false);
-			if (done) return;
-			setDone(true);
-			close(result);
-		},
-	};
-}
-
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
 		<div className="flex items-center gap-2">
@@ -60,8 +48,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Nest
 
 function nextNestName(session: EditorSession): string {
 	const names = new Set(Object.values(session.getCommitted().items).map((i) => i.name));
@@ -75,7 +61,7 @@ type NestProps = { session: EditorSession; sequenceId: string; clipIds: string[]
 
 export function NestDialog(props: HostedDialogProps<NestProps>) {
 	const { session, sequenceId, clipIds } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const [name, setName] = useState(() => nextNestName(session));
 	const [error, setError] = useState<string | null>(null);
 	const apply = () => {
@@ -83,10 +69,10 @@ export function NestDialog(props: HostedDialogProps<NestProps>) {
 			label: 'Nest',
 			origin: 'user',
 			sequenceId,
-			commands: [{ type: 'clip.nest', clipIds, name: name.trim() || nextNestName(session) } as never],
-			selectAfter: ((res: { results: unknown[] }) => ({
+			commands: [{ type: 'clip.nest', clipIds, name: name.trim() || nextNestName(session) }],
+			selectAfter: (res) => ({
 				timeline: (res.results[0] as { clipIds: string[] }).clipIds,
-			})) as never,
+			}),
 		});
 		if (!r.ok) {
 			setError(r.errors[0]?.message ?? 'Nest failed');
@@ -122,8 +108,6 @@ export function NestDialog(props: HostedDialogProps<NestProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Frame Hold Options
-
 type HoldOn = 'source-time' | 'sequence-time' | 'in' | 'out' | 'playhead';
 const HOLD_ON: { value: HoldOn; label: string }[] = [
 	{ value: 'source-time', label: 'Source Timecode' },
@@ -137,7 +121,7 @@ type FrameHoldProps = { session: EditorSession; sequenceId: string; clipIds: str
 
 export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>) {
 	const { session, sequenceId, clipIds, playhead } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const seq = session.getCommitted().sequences[sequenceId];
 	const first = seq?.clips[clipIds[0] ?? ''];
 	const rate = (seq?.settings.frameRate ?? { num: 30, den: 1 }) as Rational;
@@ -151,7 +135,11 @@ export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>)
 	const [seqFrame, setSeqFrame] = useState(playhead);
 	const [error, setError] = useState<string | null>(null);
 	const apply = () => {
-		const cmd: Record<string, unknown> = { type: 'clip.frameHoldOptions', clipIds, enabled };
+		const cmd: Extract<Command, { type: 'clip.frameHoldOptions' }> = {
+			type: 'clip.frameHoldOptions',
+			clipIds,
+			enabled,
+		};
 		if (enabled) {
 			cmd.holdOn = holdOn;
 			cmd.holdFilters = holdFilters;
@@ -164,7 +152,7 @@ export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>)
 			label: 'Frame Hold Options',
 			origin: 'user',
 			sequenceId,
-			commands: [cmd as never],
+			commands: [cmd],
 		});
 		if (!r.ok) {
 			setError(r.errors[0]?.message ?? 'Frame Hold Options failed');
@@ -234,13 +222,11 @@ export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>)
 	);
 }
 
-// ---------------------------------------------------------------- Color Matte
-
 type ColorMatteProps = { session: EditorSession; syntheticId?: string; binId?: string | null };
 
 export function ColorMatteDialog(props: HostedDialogProps<ColorMatteProps>) {
 	const { session, syntheticId } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const existing = syntheticId ? session.getCommitted().synthetics[syntheticId] : undefined;
 	const [color, setColor] = useState<RGBA>(
 		existing?.kind === 'color-matte' ? ([...existing.color] as RGBA) : DEFAULT_MATTE_COLOR,
@@ -290,8 +276,6 @@ export function ColorMatteDialog(props: HostedDialogProps<ColorMatteProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Universal Counting Leader Setup
-
 type LeaderProps = { session: EditorSession; syntheticId?: string; binId?: string | null };
 
 const LEADER_COLORS: { key: keyof CountingLeaderStyle; label: string }[] = [
@@ -304,7 +288,7 @@ const LEADER_COLORS: { key: keyof CountingLeaderStyle; label: string }[] = [
 
 export function CountingLeaderDialog(props: HostedDialogProps<LeaderProps>) {
 	const { session, syntheticId } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const existing = syntheticId ? session.getCommitted().synthetics[syntheticId] : undefined;
 	const initial = useMemo(
 		() =>
