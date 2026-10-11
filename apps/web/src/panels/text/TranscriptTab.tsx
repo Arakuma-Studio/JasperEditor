@@ -691,11 +691,7 @@ function CaptionsTool(p: {
 	);
 }
 
-function ImportTranscript(p: {
-	media: Array<[string, string]>;
-	apply: ApplyFn;
-	onDone?(): void;
-}) {
+function ImportTranscript(p: { media: Array<[string, string]>; apply: ApplyFn; onDone?(): void }) {
 	const [mediaId, setMediaId] = useState(p.media[0]?.[0] ?? '');
 	const fileRef = useRef<HTMLInputElement>(null);
 	if (!p.media.length)

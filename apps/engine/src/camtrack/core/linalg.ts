@@ -131,11 +131,7 @@ export function slerpRot(a: M3, b: M3, t: number): M3 {
  * Thin SVD `A = U diag(s) Vᵀ` of an `m × n` row-major matrix (one-sided Jacobi). `U` is `max(m, n) × n`, `s` sorted
  * descending, `V` is `n × n` (columns are the right singular vectors).
  */
-function svd(
-	a: ArrayLike<number>,
-	m: number,
-	n: number,
-): { u: Float64Array; s: number[]; v: Float64Array } {
+function svd(a: ArrayLike<number>, m: number, n: number): { u: Float64Array; s: number[]; v: Float64Array } {
 	const rows = Math.max(m, n);
 	const u = new Float64Array(rows * n);
 	for (let i = 0; i < m * n; i++) u[i] = a[i]!;

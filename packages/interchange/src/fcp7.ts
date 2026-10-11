@@ -77,11 +77,11 @@ import {
 	elements,
 	num,
 	parseXml,
-	path as xmlPath,
 	pathText,
 	XmlError,
 	XmlWriter,
 	type XNode,
+	path as xmlPath,
 } from './xml.ts';
 
 const FORMAT = 'Final Cut Pro XML';
