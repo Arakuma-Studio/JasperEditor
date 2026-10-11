@@ -1,9 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
 import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
 import { defaultSequenceView, EngineProjectStore, type ProjectViewState } from '@jasper/session';
+import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
 import { ProjectStoreFs } from '../src/projects/store.ts';
@@ -190,6 +191,45 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		expect(reopened.revision).toBe(original.revision);
 		expect(readFileSync(paths.projectFile(id))).toEqual(projectBytes);
 		expect(readFileSync(paths.projectViewFile(id))).toEqual(viewBytes);
+	});
+
+	it('opens projects with invalid view versions from disk and reports the reset', async () => {
+		const store = projectStore();
+		const id = await store.create({ name: 'Invalid view version', preset: 'hd-1080p-30' });
+		const original = await store.open(id);
+		const paths = appdirPaths(app.appdir);
+		const projectBytes = readFileSync(paths.projectFile(id));
+		await expect(store.engine.putView(id, { version: 1.5 })).rejects.toMatchObject({
+			code: 'VALIDATION_FAILED',
+			status: 400,
+		});
+		await fc.assert(
+			fc.asyncProperty(
+				fc.oneof(
+					fc.integer({ min: -1000, max: 1000 }).map((version) => version + 0.5),
+					fc.string(),
+					fc.boolean(),
+					fc.constant(null),
+				),
+				async (version) => {
+					const text = JSON.stringify({ version, views: {}, tabs: { open: [] }, activeSequenceId: null });
+					writeFileSync(paths.projectViewFile(id), text);
+					const reopened = await store.open(id);
+					expect(reopened.view).toBeNull();
+					expect(reopened.issues).toEqual([
+						expect.objectContaining({
+							code: 'W_REPAIRED',
+							message: expect.stringContaining('Saved view settings'),
+						}),
+					]);
+					expect(reopened.document).toEqual(original.document);
+					expect(reopened.revision).toBe(original.revision);
+					expect(readFileSync(paths.projectFile(id))).toEqual(projectBytes);
+					expect(readFileSync(paths.projectViewFile(id), 'utf8')).toBe(text);
+				},
+			),
+			{ numRuns: 30, examples: [[1.5], ['1'], [null], [false]] },
+		);
 	});
 
 	it('keeps versions at most every 5 minutes of saving (S01:PER-020) and stores the view file', async () => {

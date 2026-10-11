@@ -33,7 +33,8 @@ export type ProjectViewJson = z.infer<typeof ProjectViewSchema>;
 
 export const ProjectGetResponseSchema = z.object({
 	envelope: EnvelopeSchema,
-	view: ProjectViewSchema.nullable(),
+	/** Saved views may be corrupt; the session validates and reports repairs without blocking the project. */
+	view: z.unknown(),
 	revision: z.number().int().min(0),
 });
 export type ProjectGetResponse = z.infer<typeof ProjectGetResponseSchema>;

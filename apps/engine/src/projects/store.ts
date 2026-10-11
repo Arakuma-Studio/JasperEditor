@@ -173,14 +173,12 @@ export class ProjectStoreFs {
 		return doc.projectId;
 	}
 
-	async get(
-		projectId: string,
-	): Promise<{ envelope: EnvelopeJson; view: Record<string, unknown> | null; revision: number }> {
+	async get(projectId: string): Promise<{ envelope: EnvelopeJson; view: unknown; revision: number }> {
 		const envelope = await this.readEnvelope(projectId);
-		const view = await readJsonOrNull<Record<string, unknown>>(this.opts.paths.projectViewFile(projectId));
+		const view = await readJsonOrNull<unknown>(this.opts.paths.projectViewFile(projectId));
 		return {
 			envelope,
-			view: view && typeof view === 'object' && typeof view.version === 'number' ? view : null,
+			view,
 			revision: envelope.revision,
 		};
 	}

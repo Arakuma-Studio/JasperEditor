@@ -281,16 +281,45 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 
 describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 	it('does not restore malformed journal records as runnable jobs', async () => {
+		const job: EngineJob = {
+			id: 'job_invalid',
+			kind: 'analysis',
+			title: 'Persisted job',
+			origin: { type: 'user' },
+			state: 'queued',
+			progress: null,
+			createdAt: new Date().toISOString(),
+			priority: 'user',
+			cpuSlots: 1,
+		};
+		const valid = { ...job, id: `${job.id}_healthy` };
 		await fc.assert(
-			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
-				const dir = tempAppdir('jasper-invalid-journal-');
-				const journal = join(dir, 'jobs.jsonl');
-				writeFileSync(journal, JSON.stringify({ job: { id: 'job_invalid', invalid }, input: null }));
-				const q = makeQueue({ journal });
-				q.start();
-				expect(q.list()).toEqual([]);
-			}),
-			{ numRuns: 20 },
+			fc.asyncProperty(
+				fc.oneof(
+					fc.integer({ max: -1 }).map((cpuSlots) => ({ job: { ...job, cpuSlots } })),
+					fc.integer({ min: 2 }).map((progress) => ({ job: { ...job, progress } })),
+					fc.string().map((kind) => ({ job: { ...job, kind: `invalid-${kind}` } })),
+					fc.string().map((state) => ({ job: { ...job, state: `invalid-${state}` } })),
+					fc.integer().map((agentRunId) => ({ job: { ...job, origin: { type: 'agent', agentRunId } } })),
+					fc.string().map((requeued) => ({ job, requeued })),
+				),
+				async (invalid) => {
+					const dir = tempAppdir('jasper-invalid-journal-');
+					const journal = join(dir, 'jobs.jsonl');
+					writeFileSync(journal, [JSON.stringify(invalid), JSON.stringify({ job: valid })].join('\n'));
+					const q = makeQueue({ journal });
+					const ran: string[] = [];
+					q.registerRunner('analysis', async (ctx) => {
+						ran.push(ctx.job.id);
+					});
+					q.start();
+					await q.wait(valid.id);
+					expect(q.list().map((restored) => restored.id)).toEqual([valid.id]);
+					expect(ran).toEqual([valid.id]);
+					await q.shutdown(1000);
+				},
+			),
+			{ numRuns: 30 },
 		);
 	});
 

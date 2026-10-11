@@ -34,15 +34,27 @@ describe('project file errors', () => {
 	it('reports corrupt envelopes without changing the file or treating the project as missing', async () => {
 		const s = storeOn();
 		const id = await s.store.create({ name: 'Preserved', preset: 'hd-1080p-30' });
+		const { envelope } = await s.store.get(id);
 		await fc.assert(
-			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
-				const text = JSON.stringify({ malformed: invalid });
-				writeFileSync(s.paths.projectFile(id), text);
-				await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
-				await expect(s.store.revision(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
-				expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe(text);
-			}),
-			{ numRuns: 20 },
+			fc.asyncProperty(
+				fc.oneof(
+					fc.integer({ max: -1 }).map((revision) => ({ revision })),
+					fc.integer({ min: -1000, max: 1000 }).map((version) => ({ schemaVersion: version + 0.5 })),
+					fc
+						.oneof(fc.string(), fc.constant(null), fc.array(fc.jsonValue(), { maxLength: 5 }))
+						.map((document) => ({ document })),
+					fc.integer().map((app) => ({ savedBy: { ...envelope.savedBy, app } })),
+					fc.string().map((format) => ({ format: `invalid-${format}` })),
+				),
+				async (invalid) => {
+					const text = JSON.stringify({ ...envelope, ...invalid });
+					writeFileSync(s.paths.projectFile(id), text);
+					await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
+					await expect(s.store.revision(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+					expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe(text);
+				},
+			),
+			{ numRuns: 30 },
 		);
 		writeFileSync(s.paths.projectFile(id), '{');
 		await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
@@ -388,6 +400,7 @@ describe('journal locks across engine processes', () => {
 		const metadata = join(dir, 'session.json');
 		const snapshot = join(dir, 'snapshot.jasper');
 		const before = readFileSync(snapshot, 'utf8');
+		const originalMetadata = JSON.parse(readFileSync(metadata, 'utf8'));
 		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
 		unlinkSync(metadata);
 		expect(await restarted.list(id)).toMatchObject({
@@ -396,13 +409,29 @@ describe('journal locks across engine processes', () => {
 		});
 		expect(readFileSync(snapshot, 'utf8')).toBe(before);
 		await fc.assert(
-			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
-				writeFileSync(metadata, JSON.stringify({ malformed: invalid }));
-				expect((await restarted.list(id)).warnings).toMatchObject([{ code: 'VALIDATION_FAILED' }]);
-				expect(readFileSync(snapshot, 'utf8')).toBe(before);
-			}),
-			{ numRuns: 20 },
+			fc.asyncProperty(
+				fc.oneof(
+					fc.string().map((revision) => ({ revision })),
+					fc.string().map((changes) => ({ changes })),
+					fc.integer({ max: -1 }).map((sizeBytes) => ({ sizeBytes })),
+					fc.integer({ max: -1 }).map((changeCount) => ({ changeCount })),
+					fc.integer().map((sessionId) => ({ sessionId })),
+				),
+				async (invalid) => {
+					const text = JSON.stringify({ ...originalMetadata, ...invalid });
+					writeFileSync(metadata, text);
+					expect(await restarted.list(id)).toMatchObject({
+						candidates: [],
+						warnings: [{ code: 'VALIDATION_FAILED', sessionId: 'ses_x' }],
+					});
+					expect(readFileSync(metadata, 'utf8')).toBe(text);
+					expect(readFileSync(snapshot, 'utf8')).toBe(before);
+				},
+			),
+			{ numRuns: 30 },
 		);
+		writeFileSync(metadata, JSON.stringify(originalMetadata));
+		expect((await restarted.list(id)).candidates.map((candidate) => candidate.sessionId)).toEqual(['ses_x']);
 	});
 
 	it('reads a valid journal when another session has incomplete metadata', async () => {
