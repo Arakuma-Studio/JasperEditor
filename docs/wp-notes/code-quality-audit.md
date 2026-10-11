@@ -16,7 +16,7 @@ boundaries. These defects need behavioral tests; removing syntax alone would not
 Untrusted input remains `unknown` until validated. Shipped project migrations, supported old project
 representations, capability checks, cancellation/cleanup boundaries, and alternate exact rendering
 paths remain necessary. Removing them would weaken the project's recovery and compatibility contracts.
-Explicit `any` in production source is now subject to a lint gate; runtime module cycles are checked
+Explicit `any` in source, tests, and scripts is now subject to a lint gate; runtime module cycles are checked
 separately from erased type imports.
 
 ## Area assessments

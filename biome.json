@@ -58,7 +58,7 @@
         "noParameterAssign": "off"
       },
       "suspicious": {
-        "noExplicitAny": "off",
+        "noExplicitAny": "error",
         "noAssignInExpressions": "off"
       },
       "complexity": {
@@ -70,16 +70,6 @@
     }
   },
   "overrides": [
-    {
-      "includes": ["apps/**/src/**", "packages/**/src/**"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noExplicitAny": "error"
-          }
-        }
-      }
-    },
     {
       "includes": ["packages/motion/src/**", "!packages/motion/src/runtime/**"],
       "linter": {
