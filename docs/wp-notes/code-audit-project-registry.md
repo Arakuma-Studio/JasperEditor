@@ -124,6 +124,9 @@ comment now describes the actual effect-versus-clip formula distinction without 
   The same glTF allocation-refusal timing assertion remained over budget (43,885 ms versus 20,000 ms); its
   error result was correct and the other previously timed-out test passed. The performance gate remains
   unresolved and no timing limit was changed.
+- After narrowing evaluated parameters, the existing colour/default-resolution checks passed:
+  `pnpm exec vitest run packages/project/test/color.test.ts packages/project/test/lumetri-grade.test.ts
+  --testNamePattern='defaults|registered' --maxWorkers=1` (2 files, 5 tests passed, 43 unrelated tests skipped).
 - Package typechecking was started, then stopped at the integrator's request because simultaneous project
   typechecks were exhausting shared-host resources. Final serialized typechecking is an integration gate.
 - `git diff --check` is run before commit.
