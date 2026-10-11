@@ -1,6 +1,6 @@
 import {
 	type Clip,
-	type Command,
+	type CommandInput,
 	type PropertySpec,
 	propertyKeyToParamPath,
 	type RGBA,
@@ -151,7 +151,7 @@ function NumberEditor(props: {
 			type: 'param.set',
 			target: propertyKeyToParamPath({ clipId: clip.id }, spec.key),
 			value: v,
-		}) as Command;
+		}) satisfies CommandInput;
 	return (
 		<ScrubbyNumber
 			value={value}

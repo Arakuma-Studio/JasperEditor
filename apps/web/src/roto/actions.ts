@@ -15,7 +15,7 @@ import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	type ClipRoto,
-	type Command,
+	type CommandInput,
 	contentTimeAt,
 	findRoto,
 	mediaFrameAt,
@@ -44,7 +44,7 @@ export function rotoEngine(): RotoEngine | null {
 
 const POLL_MS = 400;
 
-function apply(session: EditorSession, label: string, commands: Command[]) {
+function apply(session: EditorSession, label: string, commands: CommandInput[]) {
 	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) toast({ kind: 'error', title: `${label} failed`, detail: r.errors[0]?.message ?? '' });
 	return r;
@@ -292,7 +292,7 @@ export function removeRoto(session: EditorSession, rotoId: string): void {
 export function updateRoto(
 	session: EditorSession,
 	rotoId: string,
-	patch: Omit<Extract<Command, { type: 'roto.update' }>, 'type' | 'rotoId'>,
+	patch: Omit<Extract<CommandInput, { type: 'roto.update' }>, 'type' | 'rotoId'>,
 	label = 'Roto Settings',
 ): void {
 	apply(session, label, [{ type: 'roto.update', rotoId, ...patch }]);

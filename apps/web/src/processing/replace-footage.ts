@@ -9,7 +9,7 @@
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	type Clip,
-	type Command,
+	type CommandInput,
 	coverageTolerance,
 	coveredClipFrames,
 	frameShiftFlicks,
@@ -96,7 +96,7 @@ export function replaceFootageCommand(
 	mediaId: string,
 	reg: RegisteredMedia,
 	opts: { sourceRange: SourceRange | null; keepSourceTiming: boolean; trim: boolean; path?: string | null },
-): Command {
+): CommandInput {
 	const a = buildMediaAsset(reg, { id: mediaId, now: new Date(0).toISOString(), path: opts.path ?? null });
 	return {
 		type: 'media.relink',

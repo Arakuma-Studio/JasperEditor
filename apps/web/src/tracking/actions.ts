@@ -14,7 +14,7 @@ import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	type ClipTracker,
-	type Command,
+	type CommandInput,
 	findTracker,
 	layerTimeAt,
 	type ProjectDocument,
@@ -25,7 +25,6 @@ import {
 	samplesEnd,
 	samplesFromTrackResult,
 	sequenceFramesOfContent,
-	type TrackedBy,
 	type TrackMode,
 	trackedTargets,
 	trackLayerOf,
@@ -118,7 +117,7 @@ function fail(message: string, trackerId?: string): never {
 	throw new Error(message);
 }
 
-function run(session: EditorSession, label: string, commands: Command[]) {
+function run(session: EditorSession, label: string, commands: CommandInput[]) {
 	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) throw new Error(r.errors.map((e) => e.message).join('; '));
 	return r;
@@ -138,12 +137,12 @@ export function addTracker(session: EditorSession, clipId: string, kind: 'planar
 	const t = contentTimeAt(doc, seq, clip, frame);
 	const map = plateMapAt(layer, t);
 	const rect = visibleMediaRect(map, layer.box, { width: seq.settings.width, height: seq.settings.height });
-	const geometry =
-		kind === 'planar'
-			? { corners: defaultQuadIn(rect) }
-			: { point: [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)] };
+	const geometry: Pick<Extract<CommandInput, { type: 'tracker.add' }>, 'corners' | 'point'> = kind ===
+	'planar'
+		? { corners: defaultQuadIn(rect) }
+		: { point: [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)] };
 	const r = run(session, kind === 'planar' ? 'Add Planar Tracker' : 'Add Point Tracker', [
-		{ type: 'tracker.add', clipId, kind, at: { sequenceFrame: frame }, ...geometry } as Command,
+		{ type: 'tracker.add', clipId, kind, at: { sequenceFrame: frame }, ...geometry } satisfies CommandInput,
 	]);
 	const id = (r.results[0] as { trackerId: string }).trackerId;
 	setActiveTracker(id);
@@ -151,7 +150,9 @@ export function addTracker(session: EditorSession, clipId: string, kind: 'planar
 }
 
 export function removeTracker(session: EditorSession, trackerId: string): void {
-	run(session, 'Remove Tracker', [{ type: 'tracker.remove', trackerIds: [trackerId] } as Command]);
+	run(session, 'Remove Tracker', [
+		{ type: 'tracker.remove', trackerIds: [trackerId] } satisfies CommandInput,
+	]);
 	if (trackingStore.getState().activeTrackerId === trackerId) setActiveTracker(null);
 	setError(trackerId, null);
 }
@@ -349,8 +350,14 @@ export function commitTrackResult(
 	const loc = findTracker(doc, trackerId);
 	if (!loc) throw new Error('The tracker was removed while tracking');
 	const samples = samplesFromTrackResult(result, plan.step);
-	const commands: Command[] = [
-		{ type: 'tracker.setSamples', trackerId, samples, method: result.method, merge: plan.merge } as Command,
+	const commands: CommandInput[] = [
+		{
+			type: 'tracker.setSamples',
+			trackerId,
+			samples,
+			method: result.method,
+			merge: plan.merge,
+		} satisfies CommandInput,
 	];
 	const seq = doc.sequences[loc.sequenceId]!;
 	const frames = sequenceFramesOfContent(
@@ -374,7 +381,7 @@ export function commitTrackResult(
 				...(t.mode === 'transform' ? { components: animatedComponents(target) } : {}),
 				range: { start, end },
 				...simplifyOf(target),
-			} as Command);
+			} satisfies CommandInput);
 		}
 	}
 	run(session, 'Track', commands);
@@ -383,13 +390,13 @@ export function commitTrackResult(
 
 /** The remembered simplification of a tracked target (S09:TRK-023): re-applies simplify again with it. */
 function simplifyOf(target: Clip): { simplify?: { tolerance: number } } {
-	const tol = (target as { trackedBy?: TrackedBy }).trackedBy?.simplify?.tolerance;
+	const tol = 'trackedBy' in target ? target.trackedBy?.simplify?.tolerance : undefined;
 	return tol ? { simplify: { tolerance: tol } } : {};
 }
 
 /** Motion components a transform-mode target already follows (the animated ones; all three when none). */
 function animatedComponents(target: Clip): ('position' | 'scale' | 'rotation')[] {
-	const tr = (target as { transform?: Record<string, { keyframes?: unknown[] }> }).transform;
+	const tr = 'transform' in target ? target.transform : undefined;
 	const list = (['position', 'scale', 'rotation'] as const).filter(
 		(k) => (tr?.[k]?.keyframes?.length ?? 0) > 0,
 	);
@@ -411,7 +418,7 @@ function applyCommand(
 	targetClipId: string,
 	mode: ApplyMode,
 	simplifyTolerance?: number,
-): Command {
+): CommandInput {
 	const simplify = simplifyTolerance ? { simplify: { tolerance: simplifyTolerance } } : {};
 	return (
 		mode === 'corner-pin'
@@ -424,7 +431,7 @@ function applyCommand(
 					components: mode === 'position' ? ['position'] : ['position', 'scale', 'rotation'],
 					...simplify,
 				}
-	) as Command;
+	) satisfies CommandInput;
 }
 
 /**
@@ -457,11 +464,13 @@ export function reapplyTracking(session: EditorSession, targetClipId: string): v
 			mode: tb.mode,
 			...(tb.mode === 'transform' ? { components: animatedComponents(target) } : {}),
 			...simplifyOf(target),
-		} as Command,
+		} satisfies CommandInput,
 	]);
 }
 
 /** Drops the target's link to its tracker; its keyframes stay (the keyframes are the truth, TRK-005). */
 export function unlinkTracking(session: EditorSession, targetClipId: string): void {
-	run(session, 'Unlink Tracking', [{ type: 'tracker.unlink', clipIds: [targetClipId] } as Command]);
+	run(session, 'Unlink Tracking', [
+		{ type: 'tracker.unlink', clipIds: [targetClipId] } satisfies CommandInput,
+	]);
 }

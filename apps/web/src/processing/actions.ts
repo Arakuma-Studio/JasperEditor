@@ -1,6 +1,6 @@
 // Entry points of Process Clip… (timeline clip menu, Project item menu, Clip menu, palette, Media Version
 // section) and the version switch (`clip.replaceSource`, one undo entry).
-import { type Command, type MediaAsset, originalMediaId, type ProjectDocument } from '@jasper/project';
+import { type CommandInput, type MediaAsset, originalMediaId, type ProjectDocument } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { confirmDialog, openDialog } from '@jasper/ui';
 import { PROCESS_DIALOG, type ProcessDialogProps } from './ProcessDialog.tsx';
@@ -87,7 +87,7 @@ function switchMediaVersion(
 ): SwitchResult {
 	const doc = session.getCommitted();
 	const target = originalMediaId(doc, mediaId);
-	const commands: Command[] = [];
+	const commands: CommandInput[] = [];
 	for (const id of clipIds) {
 		const c = findClip(doc, id);
 		if (c?.kind !== 'video' || !c.mediaId || c.mediaId === mediaId) continue;

@@ -5,7 +5,7 @@
 // static warnings (length, lines) and layout warnings measured in the bundle's own page (off frame, cut off,
 // outside the safe area, wrapped lines; S08:MGC-037), plus "Edit on canvas" (S08:MGU-005).
 import {
-	type Command,
+	type CommandInput,
 	type CompositionClip,
 	type CompositionTextLayer,
 	checkCompositionText,
@@ -183,7 +183,11 @@ function TextLayerEditor(props: {
 	const label = `Edit Text «${layer.label}»`;
 	const testId = `text-${layer.path.join('.')}`;
 	const cmd = (v: string) =>
-		({ type: 'param.set', target: ['clip', clip.id, 'props', ...layer.path], value: v }) as Command;
+		({
+			type: 'param.set',
+			target: ['clip', clip.id, 'props', ...layer.path],
+			value: v,
+		}) satisfies CommandInput;
 
 	useEffect(() => {
 		if (!focused) setText(value);
@@ -339,7 +343,7 @@ function TextLayerEditor(props: {
 									type: 'clip.update',
 									clipId: clip.id,
 									patch: { props: unsetPropOverride(clip.props, layer.path) },
-								} as Command,
+								} satisfies CommandInput,
 							],
 						});
 						if (!r.ok) props.onMessage({ kind: 'error', text: r.errors.map((e) => e.message).join('; ') });
@@ -454,7 +458,11 @@ function StyleControls(props: {
 			label: `${layer.label} ${ROLE_LABEL[roleOf(layer, link)]}`,
 			origin: 'user',
 			commands: [
-				{ type: 'param.set', target: ['clip', clip.id, 'props', ...link.path], value: v } as Command,
+				{
+					type: 'param.set',
+					target: ['clip', clip.id, 'props', ...link.path],
+					value: v,
+				} satisfies CommandInput,
 			],
 		});
 		props.onMessage(r.ok ? null : { kind: 'error', text: r.errors.map((e) => e.message).join('; ') });

@@ -1,7 +1,7 @@
 // Value editors of the two structured shape properties (wp shapes), used by PropertyRow for `shape.items.*` json
 // rows in Properties and Effect Controls: Colors (the gradient editor, written at the playhead — a keyframe when
 // animated) and Path (its vertex count and Closed toggle; vertices are edited on the Program monitor).
-import { type Command, type GradientValue, isBezierPath, parseShapeItemKey } from '@jasper/project';
+import { type CommandInput, type GradientValue, isBezierPath, parseShapeItemKey } from '@jasper/project';
 import { CheckboxField } from '../panels/properties/controls/fields.tsx';
 import type { RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { editLabel, planSet, type Row } from '../panels/properties/lib/model.ts';
@@ -37,7 +37,7 @@ export function ShapeJsonValue({
 									clipId: b.clip.id,
 									itemId: parsed!.itemId,
 									ops: [{ op: 'setClosed', closed }],
-								} as Command,
+								} satisfies CommandInput,
 							])
 						}
 					>

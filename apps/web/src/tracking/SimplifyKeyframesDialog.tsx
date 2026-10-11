@@ -3,7 +3,7 @@
 // gesture — the Program monitor and Effect Controls show the simplified animation — with the key counts, the
 // measured deviation (max / mean, per group) and a deviation-over-time graph against the tolerance. Apply is one
 // History entry "Simplify Keyframes"; Cancel / Esc leaves the document untouched.
-import type { Command, SimplifyGroupReport, SimplifyReport } from '@jasper/project';
+import type { CommandInput, SimplifyGroupReport, SimplifyReport } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { cx, Dialog, type HostedDialogProps, ScrubbyNumber } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -47,13 +47,13 @@ function rememberTolerance(v: number): void {
 }
 
 /** The `keyframes.simplify` command for a selection. */
-function simplifyCommand(selection: SimplifySelection, tolerance: number, details = false): Command {
+function simplifyCommand(selection: SimplifySelection, tolerance: number, details = false): CommandInput {
 	return {
 		type: 'keyframes.simplify',
 		tolerance,
 		...selection,
 		...(details ? { details: true } : {}),
-	} as Command;
+	} satisfies CommandInput;
 }
 
 const fmt = (v: number) => (v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3));

@@ -15,7 +15,7 @@
 // Touch after Write" — Write strips change to Touch. Without playback a release commits the value once
 // (`mixer.setLane` / `clipMixer.set`: the static value, or a keyframe at the playhead when the lane is automated).
 import { activeMixGraph } from '@jasper/compositions';
-import type { Command } from '@jasper/project';
+import type { CommandInput } from '@jasper/project';
 import {
 	type AutomationMode,
 	evaluate,
@@ -250,7 +250,7 @@ export class MixerController {
 		const prefs = audioPrefs.get();
 		const tStop = this.now();
 		const automatch = Math.round(prefs.automatchSeconds * FLICKS_PER_SECOND);
-		const commands: Command[] = [];
+		const commands: CommandInput[] = [];
 		for (const g of pass.gestures) {
 			if (g.points.length === 0) continue;
 			const clip = isClipLane(g.lane);

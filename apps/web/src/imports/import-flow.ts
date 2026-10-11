@@ -13,7 +13,7 @@ import {
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
-	type Command,
+	type CommandInput,
 	groupImageSequences,
 	importedDescriptors,
 	type LayeredImportLayer,
@@ -185,10 +185,10 @@ export async function expandImports(
 	deps: { engine: EngineClient; session: EditorSession; prompts: ImportPrompts },
 	acquired: FlowAcquired[],
 	binId: string | null,
-): Promise<{ acquired: FlowAcquired[]; commands: Command[]; failed: ImportFailure[]; notes: string[] }> {
+): Promise<{ acquired: FlowAcquired[]; commands: CommandInput[]; failed: ImportFailure[]; notes: string[] }> {
 	const { engine, session, prompts } = deps;
 	const out: FlowAcquired[] = [];
-	const commands: Command[] = [];
+	const commands: CommandInput[] = [];
 	const failed: ImportFailure[] = [];
 	const notes: string[] = [];
 	let docIndex = 0;

@@ -1,4 +1,4 @@
-import type { Command } from '@jasper/project';
+import type { CommandInput } from '@jasper/project';
 // The speed rubber band on timeline clips (workstream `time`, docs/wp-notes/time.md), registered as a
 // `clipDecorations` overlay. Premiere's gestures (Premiere Pro CS6 reference, "Time remapping"):
 // - drag the band up / down: the segment under the pointer speeds up / slows down (Shift: 5 % steps); the clip gets
@@ -60,7 +60,7 @@ export function SpeedBandOverlay(p: ClipDecorationProps) {
 	const localY = (e: ReactPointerEvent) =>
 		e.clientY - (e.currentTarget as Element).closest('svg')!.getBoundingClientRect().top;
 
-	const apply = (label: string, commands: Command[]) => {
+	const apply = (label: string, commands: CommandInput[]) => {
 		if (!session) return;
 		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) setTip({ x: 0, y: a.top, text: r.errors[0]?.message ?? `${label} failed` });
@@ -131,7 +131,7 @@ export function SpeedBandOverlay(p: ClipDecorationProps) {
 		const dx = localX(e) - d.startX;
 		const frames = Math.round(Math.abs(dx) / p.pxPerFrame);
 		const keyFrame = Math.round(d.key.frame);
-		let cmd: Command | null = null;
+		let cmd: CommandInput | null = null;
 		let text = '';
 		if (d.mode === 'ramp') {
 			cmd = {

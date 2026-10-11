@@ -5,7 +5,7 @@ import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
-	type Command,
+	type CommandInput,
 	cameraTrackerInputs,
 	cameraTrackerSolveBody,
 	findCameraTracker,
@@ -30,7 +30,7 @@ export function camtrackEngine(): CamTrackEngine | null {
 
 const POLL_MS = 500;
 
-function apply(session: EditorSession, label: string, commands: Command[]) {
+function apply(session: EditorSession, label: string, commands: CommandInput[]) {
 	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) toast({ kind: 'error', title: `${label} failed`, detail: r.errors[0]?.message ?? '' });
 	return r;
@@ -142,7 +142,7 @@ export async function cancelAnalysis(engine: CamTrackEngine, clipId: string): Pr
 export function updateTracker(
 	session: EditorSession,
 	clipId: string,
-	patch: Omit<Extract<Command, { type: 'cameraTracker.settings' }>, 'type' | 'clipId'>,
+	patch: Omit<Extract<CommandInput, { type: 'cameraTracker.settings' }>, 'type' | 'clipId'>,
 ): boolean {
 	return apply(session, '3D Camera Tracker Settings', [{ type: 'cameraTracker.settings', clipId, ...patch }])
 		.ok;

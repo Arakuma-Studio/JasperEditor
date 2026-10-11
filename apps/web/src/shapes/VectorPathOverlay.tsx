@@ -1,6 +1,6 @@
 import {
 	applyMat3,
-	type Command,
+	type CommandInput,
 	invertMat3,
 	layerMapOf,
 	nearestOnPath,
@@ -101,7 +101,7 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 	if (!vector && !pen) return null;
 
 	const atSeq = { sequenceFrame: frame };
-	const apply = (label: string, commands: Command[]) => {
+	const apply = (label: string, commands: CommandInput[]) => {
 		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors[0]?.message ?? '' });
 		return r;
@@ -109,8 +109,10 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 	const edit = (
 		cid: string,
 		itemId: string,
-		ops: Extract<Command, { type: 'shape.editPath' }>['ops'],
-	): Command[] => [{ type: 'shape.editPath', clipId: cid, itemId, at: atSeq, ops } as Command];
+		ops: Extract<CommandInput, { type: 'shape.editPath' }>['ops'],
+	): CommandInput[] => [
+		{ type: 'shape.editPath', clipId: cid, itemId, at: atSeq, ops } satisfies CommandInput,
+	];
 
 	const paths = vector && shape ? shapePathItemsAt(shape.contents, vector.contentTime) : [];
 	const selId =
@@ -141,7 +143,12 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 			const q = sp?.fromScreen(s);
 			if (!q) return;
 			const r = apply('Pen', [
-				{ type: 'shape.addItems', clipId: vector.clip.clipId, items: items(q), index: 0 } as Command,
+				{
+					type: 'shape.addItems',
+					clipId: vector.clip.clipId,
+					items: items(q),
+					index: 0,
+				} satisfies CommandInput,
 			]);
 			if (!r.ok) return;
 			cid = vector.clip.clipId;

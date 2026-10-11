@@ -4,7 +4,7 @@
 // - Delete Tracks: per section a checkbox and a target: All Empty Tracks or one track (video, audio), All Unassigned
 //   Tracks or one submix. A track holding clips is deleted with its clips after a confirmation.
 // Both apply one undoable transaction (`track.add` / `track.remove` / `mixer.addSubmix` / `mixer.removeSubmix`).
-import type { AudioChannelFormat, Command, Sequence, Track } from '@jasper/project';
+import type { AudioChannelFormat, CommandInput, Sequence, Track } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	Checkbox,
@@ -54,8 +54,8 @@ export function addTracksCommands(
 		audio: { count: number; index: number; type: AudioChannelFormat };
 		submix: { count: number; index: number; type: AudioChannelFormat };
 	},
-): Command[] {
-	const cmds: Command[] = [];
+): CommandInput[] {
+	const cmds: CommandInput[] = [];
 	const clampCount = (n: number) => Math.max(0, Math.min(99, Math.floor(Number.isFinite(n) ? n : 0)));
 	const v = clampCount(opts.video.count);
 	const a = clampCount(opts.audio.count);
@@ -356,7 +356,7 @@ function DeleteTracksDialog(props: HostedDialogProps<DialogProps>) {
 					}))
 				)
 					return false;
-				const cmds: Command[] = [];
+				const cmds: CommandInput[] = [];
 				if (p.trackIds.length)
 					cmds.push({ type: 'track.remove', sequenceId: seq.id, trackIds: p.trackIds, force: p.clips > 0 });
 				for (const id of p.submixIds)

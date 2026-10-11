@@ -39,7 +39,8 @@ The highest-confidence findings and implementations are:
   `uploadChunks` implementation, including its validated offsets and bounded recovery. Bundle transactions use
   the project `CommandInput` contract so schema defaults remain optional at construction.
 - Colour interpretation dialogs duplicated patch generation. Both now use the typed `colorPatchOf` helper.
-- Internal command arrays now use the project's discriminated `Command` contract. Partial shape commands
+- Internal command builders now use the project's discriminated `CommandInput` contract, replacing assertions
+  against the parsed output type. Partial shape commands
   explicitly omit only the selected clip id. Known clip fields use discriminant/property narrowing instead
   of invented `Record<string, unknown>` interfaces. Overlay host props derive from the existing transform
   overlay contract, and coordinate tuples reuse project `Vec2`.
@@ -68,8 +69,9 @@ incorrect or that arbitrary future input can never reveal another bug.
   reset, interrupted jobs, stale responses, visible tracker failure, same-render duplicate dialog close,
   erroneous media availability, and invalid stored preference types. Preference parsers also have 100-run
   `fast-check` JSON properties.
-- Targeted tests are running with `--maxWorkers=1` for the audit regressions plus audio mixing, clipboard,
-  vector shapes, timing, colour management, tracking, speech, and track dialogs. Results will be recorded
-  after completion.
+- A fresh `--maxWorkers=1` run passes all 30 tests in `audit-web-features.test.tsx`, `color-scopes.test.ts`,
+  `color-grade.test.tsx`, and `audio-mix.test.ts`. The run took 297 seconds on the shared host; test execution
+  itself took 11 seconds. An earlier broad run was stopped after edits changed its loaded modules and is not
+  used as final verification evidence.
 - The integration owner will run the serialized full web typecheck and the repository verification gate;
   concurrent TypeScript processes were avoided because the shared host was heavily loaded.

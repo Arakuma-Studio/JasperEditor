@@ -1,4 +1,4 @@
-import type { BezierPath, Command, ResolvedLayer, ResolvedMask } from '@jasper/project';
+import type { BezierPath, CommandInput, ResolvedLayer, ResolvedMask } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useMemo } from 'react';
@@ -70,10 +70,11 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 	const penMask = ui.pen?.maskId ? masks.find((m) => m.id === ui.pen!.maskId) : undefined;
 	const active = penMask ?? sel;
 	const atSeq = { sequenceFrame: frame };
-	const edit = (maskId: string, ops: Extract<Command, { type: 'mask.editPath' }>['ops']): Command[] => [
-		{ type: 'mask.editPath', maskId, at: atSeq, ops } as Command,
-	];
-	const apply = (label: string, commands: Command[]) => {
+	const edit = (
+		maskId: string,
+		ops: Extract<CommandInput, { type: 'mask.editPath' }>['ops'],
+	): CommandInput[] => [{ type: 'mask.editPath', maskId, at: atSeq, ops } satisfies CommandInput];
+	const apply = (label: string, commands: CommandInput[]) => {
 		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors[0]?.message ?? '' });
 		return r;
@@ -95,7 +96,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 					shape: 'bezier',
 					path: { closed: false, vertices: [{ p: n, in: [0, 0], out: [0, 0] }] },
 					ref: '$pen',
-				} as Command,
+				} satisfies CommandInput,
 			]);
 			if (!r.ok) return;
 			maskId = r.refs.$pen!;
@@ -226,7 +227,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 					kind === 'feather'
 						? Math.max(0, Math.round(2 * (d - m.expansion) * 10) / 10)
 						: Math.round(d * 10) / 10;
-				return [{ type: 'param.set', target: ['mask', m.id, kind], value, at: atSeq } as Command];
+				return [{ type: 'param.set', target: ['mask', m.id, kind], value, at: atSeq } satisfies CommandInput];
 			},
 		});
 	};

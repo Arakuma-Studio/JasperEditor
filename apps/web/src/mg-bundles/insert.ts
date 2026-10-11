@@ -1,7 +1,7 @@
 // Placing compositions (M2, S08:MGU-002): drag from the Motion Templates panel's Remotion tab to the timeline
 // or Program monitor, or double-click to insert at the playhead on the targeted video track, through
 // `clip.addComposition` (default duration = the composition's length at the sequence rate).
-import type { Command, ProjectDocument } from '@jasper/project';
+import type { CommandInput, ProjectDocument } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 
 export type CompositionRef = { mediaId: string; compositionId: string };
@@ -30,7 +30,7 @@ function planCompositionInsert(
 		trackId?: string;
 		view: Pick<SequenceViewState, 'targeting'> | null;
 	},
-): { command: Command; label: string } {
+): { command: CommandInput; label: string } {
 	const asset = doc.media[ref.mediaId];
 	const info = asset?.mgBundle?.compositions.find((c) => c.id === ref.compositionId);
 	if (!asset || !info) throw new Error(`Composition ${ref.compositionId} is not in the project`);
@@ -41,7 +41,7 @@ function planCompositionInsert(
 			composition: { mediaId: ref.mediaId, id: ref.compositionId },
 			at: Math.max(0, Math.round(opts.at)),
 			track: opts.trackId ?? targetTrackFor(doc, sequenceId, opts.view),
-		} as Command,
+		} satisfies CommandInput,
 		label: `Add ${ref.compositionId}`,
 	};
 }

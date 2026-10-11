@@ -8,7 +8,7 @@
 //   proxy when it had none (projects edited from proxies only), else the full-resolution file is relinked.
 import type { RegisteredMedia } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import type { Command } from '@jasper/project';
+import type { CommandInput } from '@jasper/project';
 import { type MediaAsset, PROXY_PRESETS, proxyMismatch } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
@@ -237,7 +237,7 @@ function AttachProxiesDialog(props: HostedDialogProps<Base & { localEngine?: boo
 export function reconnectCommands(
 	asset: MediaAsset,
 	reg: RegisteredMedia,
-): { commands: Command[] } | { error: string } {
+): { commands: CommandInput[] } | { error: string } {
 	const why = proxyMismatch(
 		{ kind: reg.kind, probe: reg.probe, originalName: reg.originalName },
 		asset.proxy?.probe ?? asset.probe,
@@ -245,7 +245,7 @@ export function reconnectCommands(
 	if (why) return { error: why };
 	const sameBytes = reg.fingerprint === asset.fingerprint;
 	// The full-resolution file first (it changes the fingerprint), then the file the clip used becomes its proxy.
-	const commands: Command[] = [
+	const commands: CommandInput[] = [
 		{
 			type: 'media.relink',
 			mediaId: asset.id,

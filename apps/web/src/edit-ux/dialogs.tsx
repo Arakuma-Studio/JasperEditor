@@ -1,4 +1,4 @@
-import type { Command } from '@jasper/project';
+import type { CommandInput } from '@jasper/project';
 // edit-ux dialogs (Premiere's): Fit Clip (four-point edits), Clip Speed / Duration and Make / Edit Subclip. Each
 // applies one undoable transaction through the session.
 //
@@ -172,7 +172,7 @@ export function SpeedDurationDialog(props: HostedDialogProps<SpeedProps>) {
 			setSpeedText(String(Math.round((spanFrames / f) * 10000) / 100));
 	};
 	const apply = () => {
-		const cmd: Extract<Command, { type: 'clip.setSpeed' }> = { type: 'clip.setSpeed', clipIds, ripple };
+		const cmd: Extract<CommandInput, { type: 'clip.setSpeed' }> = { type: 'clip.setSpeed', clipIds, ripple };
 		const v = Number(speedText);
 		const speedChanged = speedText !== '' && (speed0 === null || v !== speed0);
 		if (speedChanged) {
@@ -293,7 +293,7 @@ export function SubclipDialog(props: HostedDialogProps<SubclipProps>) {
 			return false;
 		}
 		const range = { in: { sourceFrames: a }, out: { sourceFrames: b + 1 } };
-		const cmd: Command =
+		const cmd: CommandInput =
 			mode === 'make'
 				? {
 						type: 'item.makeSubclip',
@@ -303,7 +303,7 @@ export function SubclipDialog(props: HostedDialogProps<SubclipProps>) {
 						restrictTrims: restrict,
 					}
 				: { type: 'item.updateSubclip', itemId, ...range, restrictTrims: restrict };
-		const commands: Command[] = [cmd];
+		const commands: CommandInput[] = [cmd];
 		if (mode === 'edit' && name.trim() && name.trim() !== item?.name)
 			commands.push({ type: 'item.rename', itemIds: [itemId], name: name.trim() });
 		const r = session.apply({

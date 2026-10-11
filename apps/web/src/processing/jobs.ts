@@ -16,7 +16,7 @@ import {
 } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
-	type Command,
+	type CommandInput,
 	type MediaAsset,
 	originalMediaId,
 	type ProcessStep,
@@ -58,7 +58,7 @@ function deriveCommand(
 		result: ProcessResult;
 		replaceInClips: readonly string[];
 	},
-): { command: Extract<Command, { type: 'media.derive' }>; replaced: string[] } | { error: string } {
+): { command: Extract<CommandInput, { type: 'media.derive' }>; replaced: string[] } | { error: string } {
 	const { result } = input;
 	let fromMediaId = input.fromMediaId;
 	if (!doc.media[fromMediaId]) {
@@ -80,7 +80,7 @@ function deriveCommand(
 		}
 	}
 	const asset = buildMediaAsset(result.registered, { id: 'unused', now: new Date(0).toISOString() });
-	const command: Extract<Command, { type: 'media.derive' }> = {
+	const command: Extract<CommandInput, { type: 'media.derive' }> = {
 		type: 'media.derive',
 		fromMediaId,
 		recipe: { op: 'process', steps: input.steps },

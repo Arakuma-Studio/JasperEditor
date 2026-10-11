@@ -6,7 +6,7 @@ import { TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
-	type Command,
+	type CommandInput,
 	contentTimeAt,
 	findMask,
 	type MaskShape,
@@ -27,7 +27,7 @@ export type MaskEngine = Pick<EngineClient, 'call' | 'getJob' | 'cancelJob'>;
 
 const POLL_MS = 250;
 
-function apply(session: EditorSession, label: string, commands: Command[]) {
+function apply(session: EditorSession, label: string, commands: CommandInput[]) {
 	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors.map((e) => e.message).join('; ') });
 	return r;
@@ -51,7 +51,7 @@ export function createMask(
 			...(owner.effectId ? { effectId: owner.effectId } : { clipId: owner.clipId }),
 			shape,
 			ref: '$mask',
-		} as Command,
+		} satisfies CommandInput,
 	]);
 	if (!r.ok) return null;
 	const id = r.refs.$mask!;
@@ -71,7 +71,7 @@ export function stopPen(): void {
 export function deleteMasks(session: EditorSession, maskIds: string[]): void {
 	if (maskIds.length === 0) return;
 	apply(session, maskIds.length > 1 ? 'Delete Masks' : 'Delete Mask', [
-		{ type: 'mask.remove', maskIds } as Command,
+		{ type: 'mask.remove', maskIds } satisfies CommandInput,
 	]);
 	const sel = maskUi.get().selected;
 	if (sel && maskIds.includes(sel.maskId)) maskUi.select(null);
@@ -168,7 +168,9 @@ export async function trackMask(
 	}
 	const { keys, lostAt } = maskKeysFromTrack(plan, job.result as TrackResult);
 	if (keys.length > 0)
-		apply(session, label, [{ type: 'mask.setPathKeys', maskId, keys, clearSpan: true } as Command]);
+		apply(session, label, [
+			{ type: 'mask.setPathKeys', maskId, keys, clearSpan: true } satisfies CommandInput,
+		]);
 	if (lostAt !== null)
 		toast({
 			kind: 'warning',
@@ -267,7 +269,7 @@ export async function autoTrace(
 					mode: p.depth % 2 === 1 ? 'subtract' : 'add',
 					feather: opts.feather,
 					name: `Traced (${i + 1})`,
-				}) as Command,
+				}) satisfies CommandInput,
 		),
 	);
 	return traced.paths.length;

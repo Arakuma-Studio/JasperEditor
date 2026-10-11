@@ -4,7 +4,7 @@
 // a shared draft and contributes commands on OK, so another workstream adds a section (Colour) without touching this
 // file. The built-in sections all write one `media.interpret` patch (one undo step for the whole dialog).
 import {
-	type Command,
+	type CommandInput,
 	fileFieldOrder,
 	fileFrameRate,
 	filePixelAspect,
@@ -51,7 +51,7 @@ export type InterpretSection = {
 	applies(assets: readonly MediaAsset[]): boolean;
 	component(props: InterpretSectionProps): ReactNode;
 	/** Commands of this section on OK (the built-ins return none: they write `draft.patch`). */
-	commands?(assets: readonly MediaAsset[], draft: InterpretDraft): Command[];
+	commands?(assets: readonly MediaAsset[], draft: InterpretDraft): CommandInput[];
 };
 
 const SECTIONS: InterpretSection[] = [];
@@ -395,14 +395,14 @@ registerInterpretSection({
 export type InterpretFootageProps = { session: EditorSession; mediaIds: string[] };
 
 /** The commands OK applies: the built-in sections' `media.interpret` patch, then each section's own commands. */
-export function interpretCommands(assets: readonly MediaAsset[], draft: InterpretDraft): Command[] {
-	const out: Command[] = [];
+export function interpretCommands(assets: readonly MediaAsset[], draft: InterpretDraft): CommandInput[] {
+	const out: CommandInput[] = [];
 	if (Object.keys(draft.patch).length)
 		out.push({
 			type: 'media.interpret',
 			mediaIds: assets.map((a) => a.id),
 			interpretation: draft.patch,
-		} as Command);
+		} satisfies CommandInput);
 	for (const s of SECTIONS) if (s.applies(assets) && s.commands) out.push(...s.commands(assets, draft));
 	return out;
 }

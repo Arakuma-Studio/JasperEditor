@@ -2,7 +2,7 @@ import {
 	type ClipTracker,
 	CORNER_PIN_EFFECT_ID,
 	CORNER_PIN_PARAMS,
-	type Command,
+	type CommandInput,
 	findTracker,
 	layerMapOf,
 	type Mat3,
@@ -54,7 +54,7 @@ const pts = (q: readonly Vec2[]) => q.map((p) => `${p[0]},${p[1]}`).join(' ');
 export type DragSpec = {
 	label: string;
 	/** Commands for the pointer at `screen` (px relative to the overlay), or null to keep the last update. */
-	commandsAt(screen: Vec2): Command[] | null;
+	commandsAt(screen: Vec2): CommandInput[] | null;
 };
 
 /**
@@ -85,7 +85,7 @@ export function useGestureDrag(session: EditorSession, transport: TransportStore
 		];
 		const startScreen = at(e);
 		let moved = false;
-		let pending: Command[] | null = null;
+		let pending: CommandInput[] | null = null;
 		let raf: number | null = null;
 		const flush = () => {
 			if (raf !== null) cancelAnimationFrame(raf);
@@ -232,8 +232,15 @@ function TrackerLayer(props: {
 		mediaToScreen(map, view, p),
 	);
 	const editable = !job;
-	const update = (patch: Record<string, unknown>): Command[] => [
-		{ type: 'tracker.update', trackerId: tracker.id, at: { sequenceFrame: frame }, ...patch } as Command,
+	const update = (
+		patch: Omit<Extract<CommandInput, { type: 'tracker.update' }>, 'type' | 'trackerId' | 'at'>,
+	): CommandInput[] => [
+		{
+			type: 'tracker.update',
+			trackerId: tracker.id,
+			at: { sequenceFrame: frame },
+			...patch,
+		} satisfies CommandInput,
 	];
 	const label = `${tracker.name}${g.tracked ? ` · ${Math.round(g.confidence * 100)}%` : ''}`;
 	return (
@@ -576,7 +583,7 @@ function CornerPinLayer(props: {
 													target: ['effect', props.fxId, CORNER_PIN_PARAMS[i]!],
 													value: v,
 													at: { sequenceFrame: props.frame },
-												} as Command,
+												} satisfies CommandInput,
 											]
 										: null;
 								},

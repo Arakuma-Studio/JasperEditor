@@ -5,7 +5,7 @@ import type { Vec2 } from '@jasper/project';
 // (one undo step) each.
 import {
 	applyMatrix,
-	type Command,
+	type CommandInput,
 	DEFAULT_SHAPE_SECONDS,
 	invertMatrix,
 	layerMatrix,
@@ -114,7 +114,7 @@ export function addVectorClipAt(
 				shape: { type: 'vector', contents: items },
 				...(center ? { transform: { position: center } } : {}),
 				...(name ? { name } : {}),
-			} as Command,
+			} satisfies CommandInput,
 		],
 	});
 	if (!r.ok) return null;
@@ -144,7 +144,7 @@ export function addItemsToVector(
 				items,
 				...(opts.parentId ? { parentId: opts.parentId } : {}),
 				index: opts.index ?? 0,
-			} as Command,
+			} satisfies CommandInput,
 		],
 	});
 	if (!r.ok) return [];

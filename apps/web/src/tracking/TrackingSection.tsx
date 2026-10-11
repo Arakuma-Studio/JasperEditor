@@ -3,7 +3,7 @@
 // here, stop), quality and planar options, smoothing, "Apply to…", the clips it drives, and Remove.
 import {
 	type ClipTracker,
-	type Command,
+	type CommandInput,
 	mediaFrameRate,
 	type Rational,
 	samplesSummary,
@@ -252,7 +252,7 @@ function TrackerControls({
 		const r = session.apply({
 			label: 'Tracker Smoothing',
 			origin: 'user',
-			commands: [{ type: 'tracker.update', trackerId: tracker.id, smoothing: v } as Command],
+			commands: [{ type: 'tracker.update', trackerId: tracker.id, smoothing: v } satisfies CommandInput],
 		});
 		if (!r.ok) setError(tracker.id, r.errors.map((e) => e.message).join('; '));
 	};

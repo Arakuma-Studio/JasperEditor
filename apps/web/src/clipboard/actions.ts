@@ -10,7 +10,7 @@ import {
 	buildKeyframesPayload,
 	type Clip,
 	type ClipboardPayload,
-	type Command,
+	type CommandInput,
 	type ParamPath,
 	type Sequence,
 	type TransactionResult,
@@ -193,19 +193,21 @@ export function cutSelection(ctx: CommandCtx, target: ClipboardTarget, args: Cli
 		);
 		return;
 	}
-	let commands: Command[] = [];
+	let commands: CommandInput[] = [];
 	if (p.kind === 'clips')
-		commands = [{ type: 'clip.lift', clipIds: p.clips!.clips.map((c) => c.id), groups: false } as Command];
+		commands = [
+			{ type: 'clip.lift', clipIds: p.clips!.clips.map((c) => c.id), groups: false } satisfies CommandInput,
+		];
 	else if (p.kind === 'keyframes') {
 		commands = [
 			{
 				type: 'keyframe.remove',
 				keyframeIds: p.keyframes!.tracks.flatMap((t) => t.keyframes.map((k) => k.id)),
-			} as Command,
+			} satisfies CommandInput,
 		];
 	} else if (p.kind === 'effects')
 		commands = p.effects!.effects.map(
-			(fx) => ({ type: 'effect.remove', effectInstanceId: fx.id }) as Command,
+			(fx) => ({ type: 'effect.remove', effectInstanceId: fx.id }) satisfies CommandInput,
 		);
 	writeClipboard(p, { event: args.event });
 	if (!commands.length) return;

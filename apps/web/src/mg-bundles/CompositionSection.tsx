@@ -7,7 +7,7 @@
 // the generic form lists the remaining props.
 import {
 	type Clip,
-	type Command,
+	type CommandInput,
 	type CompositionClip,
 	compositionFpsMismatch,
 	compositionOfClip,
@@ -127,7 +127,7 @@ function OneComposition(props: {
 	const st = statusText(status);
 	const readOnly = useSessionState((s) => s.readOnly);
 
-	const apply = (label: string, commands: Command[]) => {
+	const apply = (label: string, commands: CommandInput[]) => {
 		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) setMessage({ kind: 'error', text: r.errors.map((e) => e.message).join('; ') });
 		else setMessage(null);
@@ -135,7 +135,11 @@ function OneComposition(props: {
 	};
 	const setProp = (spec: PropertySpec, value: unknown) =>
 		apply(spec.label, [
-			{ type: 'param.set', target: propertyKeyToParamPath({ clipId: clip.id }, spec.key), value } as Command,
+			{
+				type: 'param.set',
+				target: propertyKeyToParamPath({ clipId: clip.id }, spec.key),
+				value,
+			} satisfies CommandInput,
 		]);
 	const resetProp = (spec: PropertySpec) =>
 		apply(`Reset ${spec.label}`, [
@@ -143,7 +147,7 @@ function OneComposition(props: {
 				type: 'clip.update',
 				clipId: clip.id,
 				patch: { props: unsetPropOverride(clip.props, spec.storagePath.slice(1)) },
-			} as Command,
+			} satisfies CommandInput,
 		]);
 
 	if (!found)
@@ -245,7 +249,7 @@ function OneComposition(props: {
 								type: 'clip.update',
 								clipId: clip.id,
 								patch: { props: diffOverrides(found.info.defaultProps, v) },
-							} as Command,
+							} satisfies CommandInput,
 						]);
 						if (r.ok) setJsonOpen(false);
 					}}
@@ -268,7 +272,9 @@ function OneComposition(props: {
 					variant="secondary"
 					disabled={readOnly || Object.keys(clip.props).length === 0}
 					onClick={() =>
-						apply('Reset Props', [{ type: 'clip.update', clipId: clip.id, patch: { props: {} } } as Command])
+						apply('Reset Props', [
+							{ type: 'clip.update', clipId: clip.id, patch: { props: {} } } satisfies CommandInput,
+						])
 					}
 					data-testid="composition-reset"
 				>

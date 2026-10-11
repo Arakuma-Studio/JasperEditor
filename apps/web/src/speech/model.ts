@@ -2,7 +2,7 @@
 // finished `transcription` job commits (`transcript.attach`, one undo step "Generate Transcript").
 import type { TranscribeOptions, TranscriptionResult } from '@jasper/api';
 import {
-	type Command,
+	type CommandInput,
 	type MediaAsset,
 	mixFingerprint,
 	type ProjectDocument,
@@ -228,7 +228,7 @@ export function clipMedia(doc: ProjectDocument, clipIds: readonly string[]): str
 	return out.filter((id) => hasAudio(doc.media[id]));
 }
 
-type Attach = { commands: Command[]; summary: string } | { error: string };
+type Attach = { commands: CommandInput[]; summary: string } | { error: string };
 
 /** `transcript.attach` for a finished media job. */
 export function mediaAttach(

@@ -4,7 +4,7 @@
 // single transaction.
 import {
 	type ColorInterpretation,
-	type Command,
+	type CommandInput,
 	isPictureMedia,
 	type MediaAsset,
 	sequenceColorInfo,
@@ -67,7 +67,7 @@ registerInterpretSection({
 	order: 60,
 	applies: (a) => a.length > 0 && a.every((x) => isPictureMedia(x)),
 	component: ColorSection,
-	commands(assets, draft): Command[] {
+	commands(assets, draft): CommandInput[] {
 		const edited = draft.sections[COLOR_SECTION_ID] as ColorInterpretation | undefined;
 		if (!edited) return [];
 		const patch = colorPatchOf(commonInterpretation(assets), edited);
@@ -77,7 +77,7 @@ registerInterpretSection({
 				type: 'media.interpretColor',
 				mediaIds: assets.map((a) => a.id),
 				color: Object.keys(edited).length === 0 ? null : patch,
-			} as Command,
+			} satisfies CommandInput,
 		];
 	},
 });

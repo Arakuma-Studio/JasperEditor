@@ -1,4 +1,4 @@
-import type { Command } from '@jasper/project';
+import type { CommandInput } from '@jasper/project';
 // edit-structure dialogs (Premiere's): Nested Sequence Name, Frame Hold Options, Color Matte (Color Picker) and the
 // Universal Counting Leader Setup. Each applies one undoable transaction.
 import {
@@ -135,7 +135,7 @@ export function FrameHoldOptionsDialog(props: HostedDialogProps<FrameHoldProps>)
 	const [seqFrame, setSeqFrame] = useState(playhead);
 	const [error, setError] = useState<string | null>(null);
 	const apply = () => {
-		const cmd: Extract<Command, { type: 'clip.frameHoldOptions' }> = {
+		const cmd: Extract<CommandInput, { type: 'clip.frameHoldOptions' }> = {
 			type: 'clip.frameHoldOptions',
 			clipIds,
 			enabled,

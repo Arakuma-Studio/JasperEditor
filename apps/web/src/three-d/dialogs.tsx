@@ -7,7 +7,7 @@ import {
 	angleOfViewForZoom,
 	apertureMm,
 	CAMERA_PRESETS,
-	type Command,
+	type CommandInput,
 	DEFAULT_FILM_SIZE,
 	defaultAperture,
 	defaultCameraZoom,
@@ -152,7 +152,7 @@ export function CameraSettingsDialog(props: HostedDialogProps<CameraProps>) {
 			blurLevel: s.blur,
 			irisShape: s.iris,
 		};
-		const command: Command = existing
+		const command: CommandInput = existing
 			? {
 					type: 'camera.settings',
 					clipId: existing.id,
@@ -372,7 +372,7 @@ export function LightSettingsDialog(props: HostedDialogProps<LightProps>) {
 					}
 				: {}),
 		};
-		const command: Command = existing
+		const command: CommandInput = existing
 			? {
 					type: 'light.settings',
 					clipId: existing.id,
