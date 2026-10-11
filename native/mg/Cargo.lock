@@ -972,7 +972,6 @@ dependencies = [
  "fframes",
  "jasper-mg-core",
  "jasper-mg-templates",
- "serde",
  "serde_json",
 ]
 
