@@ -79,7 +79,7 @@ type DriverOptions = {
 type DriverMode = 'idle' | 'native' | 'stepping';
 
 /** previews (perf instrumentation): playback counters of a driver (MCP perf_stats, scripts/performance.mjs). */
-export type PlaybackStats = {
+type PlaybackStats = {
 	/** Native plays started since the driver was created. */
 	plays: number;
 	/** Frames reported by the Player while playing natively, and frames it skipped (dropped). */

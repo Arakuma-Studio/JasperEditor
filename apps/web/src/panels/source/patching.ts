@@ -9,8 +9,8 @@
 import { type ProjectDocument, type ProjectItem, type Sequence, syntheticSound } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 
-export type SourceTracks = { video: number; audio: number };
-export type ResolvedPatch = {
+type SourceTracks = { video: number; audio: number };
+type ResolvedPatch = {
 	/** Per source video track: destination track id (or a label for a track to create), null = off. */
 	video: (string | null)[];
 	audio: (string | null)[];

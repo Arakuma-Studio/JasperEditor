@@ -33,7 +33,7 @@ import { FrameView } from './FrameView.tsx';
 import { TransportButton } from './MonitorChrome.tsx';
 
 /** Pixels of drag per frame of trim in the Trim Monitor. */
-export const TRIM_MONITOR_PX_PER_FRAME = 4;
+const TRIM_MONITOR_PX_PER_FRAME = 4;
 
 const EMPTY: readonly EditPointSel[] = [];
 

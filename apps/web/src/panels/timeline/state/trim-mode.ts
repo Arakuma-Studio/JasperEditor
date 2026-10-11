@@ -23,21 +23,15 @@ import { gapsPrefs } from '../../../gaps/app-prefs.ts';
 import type { TimelineHandle } from '../env.tsx';
 import type { EditPointSel, TimelineUiStore } from './ui-store.ts';
 
-/** Premiere Preferences ▸ Trim ▸ Large Trim Offset (default 5 frames). */
-export const LARGE_TRIM_OFFSET = 5;
-/** Preferences ▸ Playback ▸ Preroll / Postroll (Premiere defaults 2 s / 2 s) for Play Around the Edit. */
-export const TRIM_PREROLL_SECONDS = 2;
-export const TRIM_POSTROLL_SECONDS = 2;
-/** gaps (Preferences ▸ Trim / Playback): the current values (the constants above are the defaults). */
 export const largeTrimOffset = (): number => gapsPrefs.get().trim.largeTrimOffset;
 export const prerollSeconds = (): number => gapsPrefs.get().playback.prerollSeconds;
 export const postrollSeconds = (): number => gapsPrefs.get().playback.postrollSeconds;
 const MAX_DYNAMIC_SPEED = 8;
 const SLOW_DYNAMIC_SPEED = 0.25;
 
-export type DynamicTrimInfo = { speed: number; offset: number; atLimit: boolean };
+type DynamicTrimInfo = { speed: number; offset: number; atLimit: boolean };
 
-export type TrimModeState = {
+type TrimModeState = {
 	/** Trim mode is on (the Program monitor shows the Trim Monitor while edit points are selected). */
 	active: boolean;
 	sequenceId: string | null;
@@ -63,7 +57,7 @@ export const trimMode = createStore<TrimModeState>(() => ({
 
 // ---------------------------------------------------------------- edit points ↔ ui-store
 
-export function toEditPoint(p: EditPointSel): EditPoint {
+function toEditPoint(p: EditPointSel): EditPoint {
 	return { clipId: p.clipId, edge: p.side, mode: p.type };
 }
 
@@ -146,7 +140,7 @@ function rollable(seq: Sequence, p: EditPointSel): boolean {
 }
 
 /** Adds an applied movement of the primary edit point to the counters (FilmCraft `add_shift`). */
-export function addShift(
+function addShift(
 	points: readonly EditPoint[],
 	applied: number,
 	base?: { outShift: number; inShift: number },

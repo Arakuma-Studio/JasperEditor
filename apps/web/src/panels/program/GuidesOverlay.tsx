@@ -8,7 +8,7 @@ import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react'
 import { addGuide, type Guide, guidesOf, monitorExtras, moveGuide, removeGuide } from './monitor-view.ts';
 import type { Size } from './viewport.ts';
 
-export const RULER_PX = 16;
+const RULER_PX = 16;
 
 type View = { x: number; y: number; scale: number };
 

@@ -8,10 +8,7 @@ import type { buildGroups } from './items.ts';
 type EcGroup = ReturnType<typeof buildGroups>[number];
 
 /** The keys among `ids` that could rove, and whether every one of them roves. */
-export function rovingKeys(
-	groups: readonly EcGroup[],
-	ids: readonly string[],
-): { ids: string[]; all: boolean } {
+function rovingKeys(groups: readonly EcGroup[], ids: readonly string[]): { ids: string[]; all: boolean } {
 	const want = new Set(ids);
 	const out: string[] = [];
 	let all = true;
@@ -33,10 +30,6 @@ export function rovingKeys(
 	return { ids: out, all: all && out.length > 0 };
 }
 
-export function rovingCommand(keyframeIds: string[], roving: boolean): Command {
-	return { type: 'keyframe.setRoving', keyframeIds, roving } as Command;
-}
-
 const ITEM =
 	'flex w-full items-center gap-2 px-3 py-[3px] text-left text-pr-ui text-pr-text hover:bg-pr-accent-fill hover:text-pr-on-accent';
 
@@ -55,7 +48,9 @@ export function RoveAcrossTimeItem(props: {
 				aria-checked={all}
 				className={ITEM}
 				data-testid="ec-kf-rove"
-				onClick={() => props.onApply('Rove Across Time', [rovingCommand(ids, !all)])}
+				onClick={() =>
+					props.onApply('Rove Across Time', [{ type: 'keyframe.setRoving', keyframeIds: ids, roving: !all }])
+				}
 			>
 				<span aria-hidden className="inline-block w-3">
 					{all ? '✓' : ''}

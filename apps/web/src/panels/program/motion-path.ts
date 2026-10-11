@@ -42,7 +42,7 @@ type MotionPathKey = {
 };
 
 /** Which point property the path animates. */
-export type MotionPathProperty = 'position' | 'anchor';
+type MotionPathProperty = 'position' | 'anchor';
 
 export type MotionPath = {
 	clipId: string;

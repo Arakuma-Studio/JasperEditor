@@ -17,15 +17,10 @@ import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react'
 import { deltaFramesFromPx, frameToX, type Viewport } from '../model/viewport.ts';
 import type { ContextMenuItem } from '../state/ui-store.ts';
 
-export const CAPTION_LANE_PX = 26;
+const CAPTION_LANE_PX = 26;
 /** At most this many lanes are visible; more scroll. */
 const MAX_VISIBLE = 4;
 const EDGE_PX = 6;
-
-export function captionAreaHeight(seq: Sequence): number {
-	const n = seq.captionTracks.length;
-	return n ? Math.min(n, MAX_VISIBLE) * CAPTION_LANE_PX + 2 : 0;
-}
 
 type Props = {
 	seq: Sequence;

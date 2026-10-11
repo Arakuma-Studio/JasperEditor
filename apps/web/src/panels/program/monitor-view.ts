@@ -11,13 +11,13 @@ export type Guide = {
 	orientation: 'horizontal' | 'vertical' /** Frame pixels. */;
 	position: number;
 };
-export type GuideTemplate = { name: string; guides: Omit<Guide, 'id'>[]; builtIn?: boolean };
+type GuideTemplate = { name: string; guides: Omit<Guide, 'id'>[]; builtIn?: boolean };
 
 export type ComparisonMode = 'side-by-side' | 'vertical' | 'horizontal';
 /** Where the reference frame comes from: a frame of a sequence (this one at another time, or another sequence). */
-export type ComparisonReference = { kind: 'sequence-frame'; sequenceId: string; frame: number };
+type ComparisonReference = { kind: 'sequence-frame'; sequenceId: string; frame: number };
 
-export type MonitorExtrasState = {
+type MonitorExtrasState = {
 	showRulers: boolean;
 	showGuides: boolean;
 	lockGuides: boolean;
@@ -41,7 +41,7 @@ export type MonitorExtrasState = {
 const KEY = 'jasper.monitor.extras.v1';
 
 /** Built-in guide templates (positions as fractions of the frame, resolved per sequence size). */
-export const BUILT_IN_TEMPLATES: {
+const BUILT_IN_TEMPLATES: {
 	name: string;
 	guides: { orientation: Guide['orientation']; fraction: number }[];
 }[] = [
@@ -165,7 +165,7 @@ monitorExtras.subscribe((s) => {
 });
 
 let guideCounter = 0;
-export function newGuideId(): string {
+function newGuideId(): string {
 	guideCounter++;
 	return `g${Date.now().toString(36)}${guideCounter.toString(36)}`;
 }

@@ -10,7 +10,7 @@ export const VIRTUALIZE_MIN_ROWS = 200;
 /** Rows rendered before the first measurement. */
 export const INITIAL_ROWS = 80;
 
-export type RowWindow = {
+type RowWindow = {
 	/** Whether windowing is on (the views render spacers). */
 	on: boolean;
 	/** Rendered grid rows `[start, end)`. */

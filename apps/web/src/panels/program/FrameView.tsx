@@ -14,7 +14,7 @@ import { Thumbnail } from '@remotion/player';
 import { type ComponentType, useMemo, useRef } from 'react';
 import { buildProgramDoc, playerDurationFrames } from './render-doc.ts';
 
-export type FrameViewProps = {
+type FrameViewProps = {
 	doc: ProjectDocument;
 	sequenceId: string;
 	frame: number;
@@ -25,11 +25,7 @@ export type FrameViewProps = {
 };
 
 /** The document with sequence `sequenceId` reduced to `clipIds` (no transitions between them). */
-export function isolateClips(
-	doc: ProjectDocument,
-	sequenceId: string,
-	clipIds: readonly string[],
-): ProjectDocument {
+function isolateClips(doc: ProjectDocument, sequenceId: string, clipIds: readonly string[]): ProjectDocument {
 	const seq = doc.sequences[sequenceId];
 	if (!seq) return doc;
 	const keep = new Set(clipIds);

@@ -11,7 +11,7 @@ import { mediaKeyOf } from '../../import/assets.ts';
 
 export const MEDIA_PROPERTIES_DIALOG = 'project.mediaProperties';
 
-export type MediaPropertiesProps = {
+type MediaPropertiesProps = {
 	session: EditorSession;
 	engine: EngineClient;
 	mediaIds: string[];
@@ -37,7 +37,7 @@ function clock(seconds: number): string {
 	return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${r.toFixed(3).padStart(6, '0')}`;
 }
 
-export type MediaFact = { label: string; value: string };
+type MediaFact = { label: string; value: string };
 
 /** The facts of one medium, in the order Premiere's Properties window lists them. */
 export function mediaFacts(asset: MediaAsset, path: string | null | undefined): MediaFact[] {

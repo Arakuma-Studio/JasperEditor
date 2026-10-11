@@ -33,7 +33,7 @@ import { monitorExtras } from './monitor-view.ts';
 
 type MonitorKind = 'program' | 'source';
 
-export type ButtonDef = {
+type ButtonDef = {
 	id: string;
 	label: string;
 	command: string;
@@ -48,7 +48,7 @@ const txt = (s: string) => <span className="font-pr text-[13px] leading-none">{s
 const BOTH: readonly MonitorKind[] = ['program', 'source'];
 
 /** Every button the editor offers. */
-export const BUTTONS: readonly ButtonDef[] = [
+const BUTTONS: readonly ButtonDef[] = [
 	{
 		id: 'addMarker',
 		label: 'Add Marker',

@@ -33,7 +33,7 @@ export function parseGuidePosition(text: string, size: number): number | null {
 	return px >= 0 && px <= size ? px : null;
 }
 
-export function AddGuideDialog(props: HostedDialogProps<FrameProps>) {
+function AddGuideDialog(props: HostedDialogProps<FrameProps>) {
 	const [open, setOpen] = useState(true);
 	const [orientation, setOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
 	const [pos, setPos] = useState('50%');
@@ -89,7 +89,7 @@ export function AddGuideDialog(props: HostedDialogProps<FrameProps>) {
 	);
 }
 
-export function GuideTemplatesDialog(props: HostedDialogProps<FrameProps & { save?: boolean }>) {
+function GuideTemplatesDialog(props: HostedDialogProps<FrameProps & { save?: boolean }>) {
 	const [open, setOpen] = useState(true);
 	useSyncExternalStore(monitorExtras.subscribe, monitorExtras.getState, monitorExtras.getState);
 	const templates = allTemplates(props.width, props.height);

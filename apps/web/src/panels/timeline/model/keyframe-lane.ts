@@ -39,9 +39,9 @@ export const LANE_MIN_TRACK_PX = 48;
 /** Rubber band top of the volume lane: +6 dB (Premiere's clip volume band maximum). */
 export const VOLUME_BAND_MAX_DB = 6;
 /** Rubber band bottom of the volume lane (−∞ in Premiere's readout). */
-export const VOLUME_BAND_MIN_DB = -96;
+const VOLUME_BAND_MIN_DB = -96;
 
-export type LaneOption = { key: string; label: string; group: string };
+type LaneOption = { key: string; label: string; group: string };
 
 const isVisual = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasOpacity;
 const isAudio = (c: Pick<Clip, 'kind'>) => {
@@ -50,7 +50,7 @@ const isAudio = (c: Pick<Clip, 'kind'>) => {
 };
 
 /** Default lane: Opacity on video clips, Level (volume) on audio clips (Premiere). */
-export function defaultLaneKey(c: Pick<Clip, 'kind'>): string | null {
+function defaultLaneKey(c: Pick<Clip, 'kind'>): string | null {
 	if (isAudio(c)) return 'volumeDb';
 	if (isVisual(c)) return 'opacity';
 	return null;
@@ -138,21 +138,21 @@ export function laneSpec(clip: Clip, key: string, registries: Registries): Prope
 	return s?.appliesTo(clip) && s.animatable !== 'no' ? s : null;
 }
 
-export function lanePath(clip: Clip, key: string): ParamPath {
+function lanePath(clip: Clip, key: string): ParamPath {
 	return propertyKeyToParamPath({ clipId: clip.id }, key);
 }
 
 // ---------------------------------------------------------------- value ↔ y
 
 /** Whether a lane draws a band (numbers) or only keyframe marks (vectors, colours, paths…). */
-export const hasBand = (s: Pick<PropertySpec, 'kind'>) => s.kind === 'number';
+const hasBand = (s: Pick<PropertySpec, 'kind'>) => s.kind === 'number';
 
 function isVolume(s: Pick<PropertySpec, 'key'>): boolean {
 	return s.key === 'volumeDb';
 }
 
 /** The value range a lane spans (soft range when given, else the hard range; volume −∞ … +6 dB). */
-export function laneRange(
+function laneRange(
 	s: Pick<PropertySpec, 'key' | 'range'>,
 	anim?: Animatable<unknown> | null,
 ): [number, number] {
@@ -222,7 +222,7 @@ export function formatLaneValue(s: Pick<PropertySpec, 'key' | 'unit' | 'label'>,
 
 // ---------------------------------------------------------------- band and keys
 
-export type LaneKey = {
+type LaneKey = {
 	id: string;
 	/** Clip-local x in px from the clip start. */
 	x: number;
@@ -363,7 +363,7 @@ export function segmentAt(m: Pick<LaneModel, 'keys'>, x: number): [number, numbe
 // ---------------------------------------------------------------- fades (fade handles)
 
 /** The lane's "silent / transparent" value a fade starts or ends at. */
-export function fadeFloor(s: Pick<PropertySpec, 'key' | 'range'>): number {
+function fadeFloor(s: Pick<PropertySpec, 'key' | 'range'>): number {
 	if (isVolume(s)) return VOLUME_BAND_MIN_DB;
 	return s.range?.min ?? 0;
 }

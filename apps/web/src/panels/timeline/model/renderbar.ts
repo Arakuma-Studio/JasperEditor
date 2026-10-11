@@ -9,7 +9,7 @@ import {
 	type RenderPreviewSegment,
 } from '@jasper/project';
 
-export type RenderBarState = 'green' | 'yellow' | 'red';
+type RenderBarState = 'green' | 'yellow' | 'red';
 
 export type RenderSegment = {
 	startFrame: number;
