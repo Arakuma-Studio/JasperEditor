@@ -25,7 +25,7 @@ const ColorMatchReportSchema = ColorMatchResponseSchema.pick({ params: true, ski
 	statisticsDistance: ColorMatchResponseSchema.pick({ before: true, after: true }),
 });
 const AutoToneReportSchema = z.object({
-	params: AutoToneResponseSchema.shape.params.omit({ saturation: true }),
+	params: AutoToneResponseSchema.shape.params.omit({ saturation: true }).strict(),
 	lumaQuantiles: AutoToneResponseSchema.pick({ before: true, after: true }),
 });
 
