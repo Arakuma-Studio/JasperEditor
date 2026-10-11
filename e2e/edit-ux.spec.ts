@@ -79,7 +79,6 @@ test('four-point Overwrite asks Fit Clip and fits the clip by speed', async () =
 });
 
 test('trim mode: Shift+T opens the Trim Monitor; Ctrl+→ and Ctrl+Shift+→ roll; L/K is one History entry', async () => {
-	const sq = await seqId();
 	const r = await transact(page, [
 		{
 			type: 'clip.place',
@@ -111,7 +110,6 @@ test('trim mode: Shift+T opens the Trim Monitor; Ctrl+→ and Ctrl+Shift+→ rol
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1']))[0]!.duration).toBe(36);
 	await page.keyboard.press('Escape');
-	void sq;
 });
 
 test('Match Frame opens the source at the matching frame', async () => {

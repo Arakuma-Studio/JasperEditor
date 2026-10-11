@@ -7,7 +7,7 @@
 //   items:<n>     <n> media items (offline footage and stills) in the project, ten bins, one empty sequence;
 //   scale         the golden-fuzz scale project (200 sequences, ~5 000 clips; packages/project/bench/scale-project.ts).
 // `pnpm exec tsx scripts/perf/ui-fixtures.ts <spec> <out.json>` writes the project envelope (what PUT /api/projects
-// takes); `uiFixture(spec)` returns it.
+// takes); `uiFixtureEnvelope(spec)` returns it.
 import { writeFileSync } from 'node:fs';
 import { buildScaleProject } from '../../packages/project/bench/scale-project.ts';
 import {
@@ -97,7 +97,7 @@ function mediaAsset(i: number, kind: 'video' | 'image') {
 }
 
 /** One sequence of `n` colour mattes (the perf-core layout). */
-export function timelineProject(n: number): ProjectDocument {
+function timelineProject(n: number): ProjectDocument {
 	const b = builder(`UI perf ${n} clips`);
 	b.tx([{ type: 'track.add', kind: 'video', count: 1 }], 'tracks');
 	const CHUNK = 500;
@@ -119,7 +119,7 @@ export function timelineProject(n: number): ProjectDocument {
 }
 
 /** A title with five effects whose animated parameters carry `n` keyframes each (Effect Controls at scale). */
-export function keyframesProject(n: number): ProjectDocument {
+function keyframesProject(n: number): ProjectDocument {
 	const b = builder(`UI perf ${n} keyframes`);
 	const duration = Math.max(300, n * 3);
 	b.tx(
@@ -187,7 +187,7 @@ export function keyframesProject(n: number): ProjectDocument {
 }
 
 /** `n` media items (offline footage and stills, so nothing is fetched), ten bins, one empty sequence. */
-export function itemsProject(n: number): ProjectDocument {
+function itemsProject(n: number): ProjectDocument {
 	const b = builder(`UI perf ${n} items`);
 	b.tx(
 		Array.from({ length: n }, (_, i) => ({
@@ -203,7 +203,7 @@ export function itemsProject(n: number): ProjectDocument {
 	return b.doc();
 }
 
-export function uiFixture(spec: string): ProjectDocument {
+function uiFixture(spec: string): ProjectDocument {
 	const [kind, arg] = spec.split(':');
 	const n = Number(arg);
 	switch (kind) {

@@ -301,7 +301,7 @@ function normalizeCopyright(line) {
  * The distinct copyright lines of the records, each once, with the records it covers (per-record attribution
  * without repeating the same line for every record ported from one project): `[{copyright, records}]`, sorted.
  */
-export function portedCopyrightHolders(records) {
+function portedCopyrightHolders(records) {
 	const by = new Map();
 	for (const r of records)
 		for (const c of r.copyrights ?? [r.copyright]) {

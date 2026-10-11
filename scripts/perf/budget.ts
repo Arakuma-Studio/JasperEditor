@@ -14,10 +14,10 @@
 export const PERF_STRICT = typeof process !== 'undefined' && process.env.PERF === '1';
 
 /** The reference time of `calibrationWork()` on the reference machine (ms). */
-export const CALIBRATION_REFERENCE_MS = 15;
+const CALIBRATION_REFERENCE_MS = 15;
 
 /** A fixed CPU workload (FNV-style hashing over 64 Ki words, 160 rounds): ≈ 15 ms on the reference machine. */
-export function calibrationWork(): number {
+function calibrationWork(): number {
 	const a = new Uint32Array(1 << 16);
 	let h = 2166136261;
 	for (let r = 0; r < 160; r++)

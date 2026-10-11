@@ -327,7 +327,7 @@ export function fileViolations(rel, text, ctx) {
 }
 
 /** package.json edge problems of one package. */
-export function manifestViolations(dir, layer, pkg) {
+function manifestViolations(dir, layer, pkg) {
 	const out = [];
 	const where = `${dir}/package.json`;
 	if (pkg.name !== layer.name)

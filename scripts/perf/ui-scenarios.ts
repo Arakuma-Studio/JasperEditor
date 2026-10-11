@@ -20,7 +20,7 @@ import type { CDPSession, Page } from '@playwright/test';
 // E2E suite; export them to measure against a stack that is already running (BASE_URL).
 
 /** The harness's token and editor key (made once per process tree). */
-export function harnessSecrets(env: NodeJS.ProcessEnv = process.env): { token: string; editorKey: string } {
+function harnessSecrets(env: NodeJS.ProcessEnv = process.env): { token: string; editorKey: string } {
 	env.E2E_TOKEN ??= randomBytes(24).toString('base64url');
 	env.E2E_EDITOR_KEY ??= randomBytes(24).toString('base64url');
 	return { token: env.E2E_TOKEN, editorKey: env.E2E_EDITOR_KEY };
@@ -187,10 +187,10 @@ export function frameStats(events: TraceEvent[], id: string): FrameStats {
 }
 
 /** A scenario's window: its id, plus hooks run right before and after it (the profiler starts and stops there). */
-export type Window = { id: string; before?(): Promise<void>; after?(): Promise<void> };
+type Window = { id: string; before?(): Promise<void>; after?(): Promise<void> };
 
 /** Runs `fn` between the scenario marks with an rAF loop keeping frames coming. */
-export async function marked<T>(page: Page, w: Window, fn: () => Promise<T>): Promise<T> {
+async function marked<T>(page: Page, w: Window, fn: () => Promise<T>): Promise<T> {
 	const id = w.id;
 	await w.before?.();
 	await page.evaluate((m) => {
@@ -330,7 +330,7 @@ async function trackId(page: Page, label: string): Promise<string> {
 	}, label);
 }
 
-export type DragResult = FrameStats & {
+type DragResult = FrameStats & {
 	clips: number;
 	dragWallMs: number;
 	committed: boolean;

@@ -63,7 +63,7 @@ const norm = (a) => {
 	return [a[0] / l, a[1] / l, a[2] / l];
 };
 
-export function cameraAt(k) {
+function cameraAt(k) {
 	const t = k / (N - 1);
 	const c = [-1.2 + 2.4 * t, -0.2 - 0.1 * t, -2 + 1.5 * t];
 	const target = [0.3 * t, 0.3, 8];

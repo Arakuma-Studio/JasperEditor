@@ -96,7 +96,6 @@ function mapFrame(cf: CpuProfile['nodes'][number]['callFrame']): Mapped {
 }
 
 function summarize(profile: CpuProfile) {
-	const byId = new Map(profile.nodes.map((n) => [n.id, n]));
 	const self = new Map<number, number>();
 	for (let i = 0; i < profile.samples.length; i++) {
 		const id = profile.samples[i]!;
@@ -124,7 +123,6 @@ function summarize(profile: CpuProfile) {
 			incl.set(k, (incl.get(k) ?? 0) + ms);
 		}
 	}
-	void byId;
 	const total = [...self.values()].reduce((a, b) => a + b, 0);
 	const idle = selfBy.get('(idle)') ?? 0;
 	const sorted = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, top);

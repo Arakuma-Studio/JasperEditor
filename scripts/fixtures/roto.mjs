@@ -21,7 +21,7 @@ function hash(x, y, s) {
 	return ((h ^ (h >>> 16)) & 1023) / 1023;
 }
 
-export function ellipseAt(f) {
+function ellipseAt(f) {
 	return { cx: 180 + 5 * f, cy: 170 + 1.5 * f, rx: 80, ry: 60, angle: 0.012 * f };
 }
 

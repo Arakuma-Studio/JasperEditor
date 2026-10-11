@@ -17,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const ASSET_EXTENSIONS = [
+const ASSET_EXTENSIONS = [
 	// images, icons, screenshots
 	'png',
 	'jpg',
@@ -78,19 +78,10 @@ export const ASSET_EXTENSIONS = [
 	'lottie',
 ];
 
-export const REQUIRED_KEYS = [
-	'asset',
-	'title',
-	'author',
-	'source',
-	'license',
-	'license-file',
-	'added',
-	'notes',
-];
+const REQUIRED_KEYS = ['asset', 'title', 'author', 'source', 'license', 'license-file', 'added', 'notes'];
 
 /** Licences an asset may carry (AGENTS.md §3.2): SPDX ids, plus the project's own licence for original work. */
-export const ALLOWED_LICENSES = [
+const ALLOWED_LICENSES = [
 	'LicenseRef-JasperEditor',
 	// works in the public domain (AGENTS.md §3.2 "public domain / CC0"); the sidecar's source and notes say why
 	'LicenseRef-PublicDomain',
@@ -114,8 +105,8 @@ export const ALLOWED_LICENSES = [
 	'LGPL-3.0-or-later',
 ];
 
-const EXT_RE = new RegExp(`\\.(?:${[...new Set(ASSET_EXTENSIONS)].join('|')})$`, 'i');
-export const isAsset = (path) => EXT_RE.test(path) && !path.endsWith('.attribution');
+const EXT_RE = new RegExp(`\\.(?:${ASSET_EXTENSIONS.join('|')})$`, 'i');
+export const isAsset = (path) => EXT_RE.test(path);
 
 /** `key: value` lines of a sidecar (continuation lines indented by whitespace join the previous value). */
 export function parseSidecar(text) {
@@ -241,7 +232,7 @@ export function findProblems(files, read) {
 }
 
 /** Tracked and new (not ignored) files of the repository at `root`. */
-export function repoFiles(root) {
+function repoFiles(root) {
 	const r = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
 		cwd: root,
 		encoding: 'utf8',

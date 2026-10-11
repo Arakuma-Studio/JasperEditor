@@ -63,7 +63,7 @@ export type UiScenarioResult = FrameStats & {
 };
 
 /** The documented UI budgets (docs/performance.md §1). `kind: 'max'` = value ≤ budget, `'min'` = value ≥ budget. */
-export const UI_BUDGETS: {
+const UI_BUDGETS: {
 	scenario: string;
 	metric: keyof UiScenarioResult;
 	budget: number;
@@ -201,28 +201,6 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 		await page.close();
 	}
 	return out;
-}
-
-/**
- * Budget verdicts for `results` at load factor `factor` (1 = exact). The browser runs in other processes, so pass the
- * squared host factor (scripts/perf/budget.ts `parallel`).
- */
-export function checkUiBudgets(results: UiScenarioResult[], factor: number) {
-	return UI_BUDGETS.flatMap((b) => {
-		const r = results.find((x) => x.scenario === b.scenario);
-		const v = r?.[b.metric];
-		if (typeof v !== 'number') return [];
-		const limit = b.kind === 'max' ? b.budget * factor : b.budget / factor;
-		return [
-			{
-				name: `${b.scenario}: ${b.what}`,
-				value: v,
-				budget: b.budget,
-				enforced: Math.round(limit * 10) / 10,
-				ok: b.kind === 'max' ? v <= limit : v >= limit,
-			},
-		];
-	});
 }
 
 if (process.argv[1] && /ui-run\.ts$/.test(process.argv[1])) {
