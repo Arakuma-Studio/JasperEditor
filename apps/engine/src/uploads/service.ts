@@ -47,6 +47,7 @@ export class UploadService {
 			/** `<appdir>/media/.uploads` */
 			dir: string;
 			media: MediaService;
+			onError?(error: unknown): void;
 		},
 	) {}
 
@@ -61,13 +62,16 @@ export class UploadService {
 	}
 
 	start(): void {
-		void this.sweep();
-		this.sweepTimer = setInterval(() => void this.sweep(), 3600_000);
+		if (this.sweepTimer) return;
+		const sweep = () => void this.sweep().catch((error: unknown) => this.deps.onError?.(error));
+		sweep();
+		this.sweepTimer = setInterval(sweep, 3600_000);
 		this.sweepTimer.unref();
 	}
 
 	stop(): void {
 		if (this.sweepTimer) clearInterval(this.sweepTimer);
+		this.sweepTimer = null;
 	}
 
 	async create(req: UploadCreateRequest): Promise<{ uploadId: string; chunkSize: number; offset: number }> {
@@ -109,8 +113,10 @@ export class UploadService {
 	private async currentOffset(uploadId: string): Promise<number> {
 		try {
 			return (await stat(this.dataFile(uploadId))).size;
-		} catch {
-			return 0;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+				throw new UploadError('UPLOAD_NOT_FOUND', 404, 'Upload data is missing; start a new upload');
+			throw error;
 		}
 	}
 
@@ -157,7 +163,7 @@ export class UploadService {
 				);
 			} catch (e) {
 				// Roll the file back to the last acknowledged offset so the client can resume cleanly.
-				await truncate(this.dataFile(uploadId), current).catch(() => undefined);
+				await truncate(this.dataFile(uploadId), current);
 				throw e;
 			}
 			s.touchedAt = new Date().toISOString();
@@ -241,8 +247,9 @@ export class UploadService {
 		let names: string[];
 		try {
 			names = await readdir(this.deps.dir);
-		} catch {
-			return 0;
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+			throw error;
 		}
 		for (const id of names) {
 			if (!UPLOAD_ID_RE.test(id)) continue;

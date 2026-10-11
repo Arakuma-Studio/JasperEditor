@@ -1,4 +1,3 @@
-// Project store and leases (ARCHITECTURE §9.2, S01:PER-001/025/040).
 import {
 	EnvelopeSchema,
 	LeaseRequestSchema,

@@ -1,13 +1,7 @@
-// Speech-to-text (wp speech):
-//   GET    /api/speech/models                    the catalogue's speech models with install state and licences
-//   POST   /api/speech/models/:modelId/install   → `model-download` job (the processing catalogue's installer)
-//   DELETE /api/speech/models/:modelId           removes a downloaded model
-//   POST   /api/media/:key/transcribe            → `transcription` job (`?wait=1` → the finished job)
-//   POST   /api/speech/transcribe-sequence       → `transcription` job over the sequence mix (`?wait=1`)
-// Also registers the `features.speech` capability block.
 import { TranscribeMediaRequestSchema, TranscribeSequenceRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { requireUserApproval } from '../agent/user-approval.ts';
+import { replyWithJob } from '../jobs/reply.ts';
 import { JobError } from '../jobs/types.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { ProcessingService } from '../processing/service.ts';
@@ -38,25 +32,6 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 	app.jasper.services.speech = svc;
 	svc.registerRunners();
 	core.registerCapabilityProvider(async () => ({ features: { speech: await svc.features() } }));
-
-	const finish = async (
-		job: { id: string },
-		wait: string | undefined,
-		reply: { code(n: number): { send(x: unknown): unknown } },
-	) => {
-		if (wait !== '1') return reply.code(202).send(job);
-		const done = await core.queue.wait(job.id);
-		if (done.state !== 'succeeded')
-			throw new HttpError(
-				422,
-				done.error?.code ?? 'TRANSCRIPTION_FAILED',
-				done.error?.message ?? done.state,
-				{
-					jobId: done.id,
-				},
-			);
-		return done;
-	};
 
 	app.get(
 		'/api/speech/models',
@@ -101,7 +76,7 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 				throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 			const body = parseOr400(TranscribeMediaRequestSchema, req.body ?? {});
 			const job = await svc.submitMedia(req.params.key, body).catch(httpOf);
-			return finish(job, req.query.wait, reply);
+			return replyWithJob(core.queue, job, req.query.wait, reply, 'TRANSCRIPTION_FAILED');
 		}),
 	);
 
@@ -110,7 +85,7 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 		guarded<Wait>(async (req, reply) => {
 			const body = parseOr400(TranscribeSequenceRequestSchema, req.body);
 			const job = await svc.submitSequence(body).catch(httpOf);
-			return finish(job, req.query.wait, reply);
+			return replyWithJob(core.queue, job, req.query.wait, reply, 'TRANSCRIPTION_FAILED');
 		}),
 	);
 }

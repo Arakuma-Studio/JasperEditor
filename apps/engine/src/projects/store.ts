@@ -6,7 +6,13 @@
 // (keeping the replaced state as a `before-restore` version) or as a new project (S01:PER-001 `restoreVersion`).
 import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ProjectSummary, VersionInfo, VersionKind } from '@jasper/api';
+import {
+	type EnvelopeJson,
+	EnvelopeSchema,
+	type ProjectSummary,
+	type VersionInfo,
+	type VersionKind,
+} from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
 import {
 	createEmptyProject,
@@ -15,7 +21,6 @@ import {
 	makeEnvelope,
 	migrate,
 	ProjectDocumentSchema,
-	type ProjectEnvelope,
 } from '@jasper/project';
 import { atomicCopyFile, atomicWriteFile, atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
@@ -47,8 +52,6 @@ export class ProjectError extends Error {
 		this.name = 'ProjectError';
 	}
 }
-
-type StoredEnvelope = Omit<ProjectEnvelope, 'document'> & { document: Record<string, unknown> };
 
 type ProjectStoreOptions = {
 	paths: AppdirPaths;
@@ -85,28 +88,58 @@ export class ProjectStoreFs {
 		if (!PROJECT_ID_RE.test(projectId)) throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
 	}
 
-	private async readEnvelope(projectId: string): Promise<StoredEnvelope> {
+	private async readEnvelope(projectId: string): Promise<EnvelopeJson> {
 		this.check(projectId);
-		const env = await readJsonOrNull<StoredEnvelope>(this.opts.paths.projectFile(projectId));
-		if (env?.format !== 'jasper-project' || typeof env.revision !== 'number') {
-			throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
+		let text: string;
+		try {
+			text = await readFile(this.opts.paths.projectFile(projectId), 'utf8');
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+				throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
+			throw error;
 		}
-		return env;
+		return this.parseEnvelope(text);
+	}
+
+	private parseEnvelope(text: string): EnvelopeJson {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(text);
+		} catch (error) {
+			if (!(error instanceof SyntaxError)) throw error;
+			throw new ProjectError(
+				'VALIDATION_FAILED',
+				422,
+				'The project file is not valid JSON; it has been preserved',
+			);
+		}
+		const parsed = EnvelopeSchema.safeParse(raw);
+		if (!parsed.success)
+			throw new ProjectError(
+				'VALIDATION_FAILED',
+				422,
+				'The project envelope is invalid; it has been preserved',
+				{
+					issues: parsed.error.issues.slice(0, 20),
+				},
+			);
+		return parsed.data;
 	}
 
 	async list(): Promise<ProjectSummary[]> {
 		let ids: string[];
 		try {
 			ids = await readdir(this.opts.paths.projectsDir);
-		} catch {
-			return [];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+			throw error;
 		}
 		const out: ProjectSummary[] = [];
 		for (const id of ids) {
 			if (!PROJECT_ID_RE.test(id)) continue;
 			try {
 				const text = await readFile(this.opts.paths.projectFile(id), 'utf8');
-				const env = JSON.parse(text) as StoredEnvelope;
+				const env = this.parseEnvelope(text);
 				out.push({
 					projectId: id,
 					name: typeof env.document?.name === 'string' ? env.document.name : id,
@@ -116,8 +149,9 @@ export class ProjectStoreFs {
 					sizeBytes: Buffer.byteLength(text),
 					revision: env.revision,
 				});
-			} catch {
-				// unreadable project folders are skipped (never deleted)
+			} catch (error) {
+				if (error instanceof ProjectError && error.code === 'VALIDATION_FAILED') continue;
+				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
 			}
 		}
 		return out.sort((a, b) => (a.modifiedAt < b.modifiedAt ? 1 : -1));
@@ -141,7 +175,7 @@ export class ProjectStoreFs {
 
 	async get(
 		projectId: string,
-	): Promise<{ envelope: StoredEnvelope; view: Record<string, unknown> | null; revision: number }> {
+	): Promise<{ envelope: EnvelopeJson; view: Record<string, unknown> | null; revision: number }> {
 		const envelope = await this.readEnvelope(projectId);
 		const view = await readJsonOrNull<Record<string, unknown>>(this.opts.paths.projectViewFile(projectId));
 		return {
@@ -155,8 +189,9 @@ export class ProjectStoreFs {
 	async revision(projectId: string): Promise<number | null> {
 		try {
 			return (await this.readEnvelope(projectId)).revision;
-		} catch {
-			return null;
+		} catch (error) {
+			if (error instanceof ProjectError && error.code === 'PROJECT_NOT_FOUND') return null;
+			throw error;
 		}
 	}
 
@@ -164,7 +199,7 @@ export class ProjectStoreFs {
 	 * Saves an envelope when `ifMatch` equals the stored revision (or is `'*'`). The stored revision is
 	 * `max(envelope.revision, current + 1)`; a mismatch throws 409 REVISION_CONFLICT with `{revision}`.
 	 */
-	save(projectId: string, envelope: StoredEnvelope, ifMatch: number | '*'): Promise<{ revision: number }> {
+	save(projectId: string, envelope: EnvelopeJson, ifMatch: number | '*'): Promise<{ revision: number }> {
 		this.check(projectId);
 		return this.mutex.run(projectId, async () => {
 			const current = await this.readEnvelope(projectId);
@@ -177,7 +212,7 @@ export class ProjectStoreFs {
 			const revision = Math.max(envelope.revision, current.revision + 1);
 			await this.keepSchemaBackup(projectId, current, envelope);
 			await this.maybeKeepVersion(projectId);
-			const next: StoredEnvelope = { ...envelope, revision, savedAt: this.now().toISOString() };
+			const next: EnvelopeJson = { ...envelope, revision, savedAt: this.now().toISOString() };
 			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
 			return { revision };
 		});
@@ -212,8 +247,8 @@ export class ProjectStoreFs {
 	 */
 	private async keepSchemaBackup(
 		projectId: string,
-		current: StoredEnvelope,
-		next: StoredEnvelope,
+		current: EnvelopeJson,
+		next: EnvelopeJson,
 	): Promise<void> {
 		const from = schemaVersionOf(current.document, current);
 		if (from >= schemaVersionOf(next.document, next)) return;
@@ -244,8 +279,9 @@ export class ProjectStoreFs {
 		let names: string[];
 		try {
 			names = await readdir(dir);
-		} catch {
-			return [];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+			throw error;
 		}
 		const out: { id: string; path: string; mtimeMs: number; size: number }[] = [];
 		for (const n of names) {
@@ -253,7 +289,10 @@ export class ProjectStoreFs {
 			const id = n.slice(0, -'.jasper'.length);
 			if (!VERSION_ID_RE.test(id)) continue;
 			const path = join(dir, n);
-			const s = await stat(path).catch(() => null);
+			const s = await stat(path).catch((error: NodeJS.ErrnoException) => {
+				if (error.code === 'ENOENT') return null;
+				throw error;
+			});
 			if (s) out.push({ id, path, mtimeMs: s.mtimeMs, size: s.size });
 		}
 		return out.sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -266,15 +305,19 @@ export class ProjectStoreFs {
 		let names: string[];
 		try {
 			names = await readdir(this.opts.paths.projectDir(projectId));
-		} catch {
-			return [];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+			throw error;
 		}
 		const out: { id: string; path: string; mtimeMs: number; size: number }[] = [];
 		for (const n of names) {
 			const m = SCHEMA_BACKUP_RE.exec(n);
 			if (!m) continue;
 			const path = join(this.opts.paths.projectDir(projectId), n);
-			const s = await stat(path).catch(() => null);
+			const s = await stat(path).catch((error: NodeJS.ErrnoException) => {
+				if (error.code === 'ENOENT') return null;
+				throw error;
+			});
 			if (s) out.push({ id: `schema-v${Number(m[1])}-backup`, path, mtimeMs: s.mtimeMs, size: s.size });
 		}
 		return out;
@@ -292,7 +335,7 @@ export class ProjectStoreFs {
 		return 'auto';
 	}
 
-	private static info(v: { id: string; size: number }, env: StoredEnvelope): VersionInfo {
+	private static info(v: { id: string; size: number }, env: EnvelopeJson): VersionInfo {
 		return {
 			versionId: v.id,
 			savedAt: env.savedAt,
@@ -312,7 +355,7 @@ export class ProjectStoreFs {
 			...(await this.listSchemaBackups(projectId)).sort((a, b) => (a.id < b.id ? 1 : -1)),
 		];
 		for (const v of files) {
-			const env = await readJsonOrNull<StoredEnvelope>(v.path);
+			const env = await readJsonOrNull<EnvelopeJson>(v.path);
 			if (env?.format !== 'jasper-project' || !env.document || typeof env.revision !== 'number') continue;
 			out.push(ProjectStoreFs.info(v, env));
 		}
@@ -323,10 +366,10 @@ export class ProjectStoreFs {
 	async version(
 		projectId: string,
 		versionId: string,
-	): Promise<{ version: VersionInfo; envelope: StoredEnvelope }> {
+	): Promise<{ version: VersionInfo; envelope: EnvelopeJson }> {
 		await this.readEnvelope(projectId);
 		const v = await this.versionFile(projectId, versionId);
-		const env = v ? await readJsonOrNull<StoredEnvelope>(v.path) : null;
+		const env = v ? await readJsonOrNull<EnvelopeJson>(v.path) : null;
 		if (!v || env?.format !== 'jasper-project' || !env.document || typeof env.revision !== 'number')
 			throw new ProjectError('NOT_FOUND', 404, `No saved version ${versionId}`);
 		return { version: ProjectStoreFs.info(v, env), envelope: env };
@@ -344,12 +387,12 @@ export class ProjectStoreFs {
 	): Promise<{ projectId: string; revision: number; keptAs: string | null }> {
 		const { envelope } = await this.version(projectId, versionId);
 		if (opts.mode === 'copy') {
-			const doc = JSON.parse(JSON.stringify(envelope.document)) as Record<string, unknown>;
+			const doc = structuredClone(envelope.document);
 			const newId = createRandomIdSource().next('prj');
 			const stamp = this.now().toISOString().slice(0, 16).replace('T', ' ');
 			doc.projectId = newId;
 			doc.name = opts.name ?? `${typeof doc.name === 'string' ? doc.name : 'Project'} (restored ${stamp})`;
-			const env: StoredEnvelope = {
+			const env: EnvelopeJson = {
 				...envelope,
 				revision: 0,
 				savedAt: this.now().toISOString(),
@@ -374,7 +417,7 @@ export class ProjectStoreFs {
 			const keptAs = `${this.now().toISOString().replace(/[:.]/g, '-')}-restore`;
 			await atomicCopyFile(this.opts.paths.projectFile(projectId), join(dir, `${keptAs}.jasper`));
 			const revision = current.revision + 1;
-			const next: StoredEnvelope = { ...envelope, revision, savedAt: this.now().toISOString() };
+			const next: EnvelopeJson = { ...envelope, revision, savedAt: this.now().toISOString() };
 			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
 			return { projectId, revision, keptAs };
 		});

@@ -1,6 +1,3 @@
-// Audio sync (wp-multicam; docs/wp-notes/multicam.md).
-//   POST /api/sync/audio   SyncAudioRequest → SyncAudioResponse (synchronous: decode + two-pass GCC-PHAT)
-// Registers the `features.audioSync` capability block.
 import { SyncAudioRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { MAX_ANALYSIS_SECONDS, SyncService } from '../sync/service.ts';

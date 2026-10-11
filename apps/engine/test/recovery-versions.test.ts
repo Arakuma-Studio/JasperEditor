@@ -1,11 +1,12 @@
 // Crash-recovery journal (S01:PER-021, AC-18), saved versions (read / restore) and the schema backup kept by the
 // first save over a migrated project (S01:MIG-004). ARCHITECTURE D-39, docs/project-files.md.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
 import { CURRENT_SCHEMA_VERSION, createRandomIdSource, defaultRegistries, migrate } from '@jasper/project';
 import { attachPersistence, EditorSession, EngineProjectStore, reopenSession } from '@jasper/session';
+import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
 import { RecoveryJournal } from '../src/projects/recovery.ts';
@@ -30,6 +31,34 @@ async function v4Project(s: ReturnType<typeof storeOn>) {
 	writeFileSync(s.paths.projectFile(id), JSON.stringify(env));
 	return { id, env };
 }
+
+describe('project file errors', () => {
+	it('reports corrupt envelopes without changing the file or treating the project as missing', async () => {
+		const s = storeOn();
+		const id = await s.store.create({ name: 'Preserved', preset: 'hd-1080p-30' });
+		await fc.assert(
+			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
+				const text = JSON.stringify({ malformed: invalid });
+				writeFileSync(s.paths.projectFile(id), text);
+				await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
+				await expect(s.store.revision(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+				expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe(text);
+			}),
+			{ numRuns: 20 },
+		);
+		writeFileSync(s.paths.projectFile(id), '{');
+		await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
+		expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe('{');
+	});
+
+	it('propagates project directory and file read errors', async () => {
+		const s = storeOn();
+		writeFileSync(s.paths.projectsDir, 'not a directory');
+		await expect(s.store.list()).rejects.toMatchObject({ code: 'ENOTDIR' });
+		await expect(s.store.get('prj_0000000000000001')).rejects.toMatchObject({ code: 'ENOTDIR' });
+		await expect(s.store.revision('prj_0000000000000001')).rejects.toMatchObject({ code: 'ENOTDIR' });
+	});
+});
 
 describe('schema backup on the first save over a migrated project (S01:MIG-004)', () => {
 	it('keeps project (schema vN backup).jasper once, lists it and restores it as a copy', async () => {
@@ -326,6 +355,30 @@ describe('journal locks across engine processes', () => {
 		});
 		return { s, id, saved };
 	}
+
+	it('preserves unsaved snapshots when journal metadata is missing or malformed', async () => {
+		const { s, id, saved } = await journalled();
+		const dir = join(s.paths.projectDir(id), 'recovery', 'ses_x');
+		const metadata = join(dir, 'session.json');
+		const snapshot = join(dir, 'snapshot.jasper');
+		const before = readFileSync(snapshot, 'utf8');
+		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
+		unlinkSync(metadata);
+		await expect(restarted.list(id)).rejects.toMatchObject({
+			code: 'VALIDATION_FAILED',
+			status: 422,
+			detail: { projectId: id, sessionId: 'ses_x' },
+		});
+		expect(readFileSync(snapshot, 'utf8')).toBe(before);
+		await fc.assert(
+			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
+				writeFileSync(metadata, JSON.stringify({ malformed: invalid }));
+				await expect(restarted.list(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+				expect(readFileSync(snapshot, 'utf8')).toBe(before);
+			}),
+			{ numRuns: 20 },
+		);
+	});
 
 	it('an engine restart (new instance, no leases) offers the journal of the dead session', async () => {
 		const { s, id, saved } = await journalled();

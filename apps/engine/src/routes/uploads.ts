@@ -1,4 +1,3 @@
-// Resumable chunked uploads (S04:IN-005, ARCHITECTURE §9.2).
 import type { Readable } from 'node:stream';
 import { UploadCreateRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';

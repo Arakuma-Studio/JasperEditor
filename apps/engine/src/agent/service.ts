@@ -2,7 +2,7 @@
 // agents. Requests for a project whose editor session is connected to WS /agent are relayed to it
 // (30 s timeout); otherwise the engine answers headlessly with @jasper/project (S01:AGT-020).
 // Destructive transactions go through the approval gate (S01:AGT-011).
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import {
 	AgentApprovalResolveSchema,
 	type AgentQueryRequest,
@@ -12,6 +12,7 @@ import {
 	type Approval,
 	type ApprovalCard,
 	ENGINE_ERROR_CODES,
+	type EnvelopeJson,
 	TransactionResultSchema,
 } from '@jasper/api';
 import {
@@ -41,6 +42,7 @@ import {
 	type TransactionResult,
 	unknownCommandKeyIssues,
 } from '@jasper/project';
+import { secretsEqual } from '../auth/secrets.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { type ApprovalDecision, ApprovalGate, type ApprovalRequest } from './approvals.ts';
 import { RevisionTracker } from './revisions.ts';
@@ -64,7 +66,7 @@ export class AgentApiError extends Error {
 
 export type StillCaptureRequest = {
 	projectId: string;
-	envelope: Record<string, unknown>;
+	envelope: EnvelopeJson;
 	sequenceId: string;
 	frame: number;
 	width: number;
@@ -112,12 +114,6 @@ const RELAYED_SESSION_EVENTS = new Set(['doc.changed', 'selection.changed', 'pla
 /** The user's answer, or `no-editor`: no editor window that could show the card is connected. */
 export type UserApprovalOutcome = ApprovalDecision | 'no-editor';
 
-function sameSecret(a: string, b: string): boolean {
-	const x = Buffer.from(a);
-	const y = Buffer.from(b);
-	return x.length === y.length && timingSafeEqual(x, y);
-}
-
 export class AgentService {
 	readonly sessions: SessionRegistry;
 	readonly approvals: ApprovalGate;
@@ -152,8 +148,6 @@ export class AgentService {
 			},
 		});
 	}
-
-	// ------------------------------------------------------------ approvals (S01:AGT-011, security review AGT-2)
 
 	/** approvalId → the editor connections showing its card. */
 	private readonly cardHolders = new Map<string, Set<AgentConnection>>();
@@ -239,8 +233,6 @@ export class AgentService {
 		this.cardHolders.clear();
 	}
 
-	// ------------------------------------------------------------ schema (S01:AGT-002)
-
 	schema(): Record<string, unknown> {
 		if (this.schemaCache) return this.schemaCache;
 		this.schemaCache = {
@@ -281,8 +273,6 @@ export class AgentService {
 		};
 		return this.schemaCache;
 	}
-
-	// ------------------------------------------------------------ queries
 
 	async query(
 		req: AgentQueryRequest,
@@ -375,7 +365,7 @@ export class AgentService {
 	private async loadDocument(projectId: string): Promise<{
 		doc: ProjectDocument;
 		revision: number;
-		envelope: Record<string, unknown>;
+		envelope: EnvelopeJson;
 		readOnly: boolean;
 	}> {
 		const stored = await this.opts.store().load(projectId);
@@ -384,7 +374,7 @@ export class AgentService {
 			const loaded = loadProject(stored.envelope, {
 				ids: this.ids,
 				effects: this.opts.registries.effects,
-				mgTemplates: this.opts.registries.mgTemplates, // wp-m2-anime-templates (S11:ATP-002)
+				mgTemplates: this.opts.registries.mgTemplates,
 			});
 			return {
 				doc: loaded.document,
@@ -400,8 +390,6 @@ export class AgentService {
 			);
 		}
 	}
-
-	// ------------------------------------------------------------ transactions
 
 	async transact(
 		projectId: string,
@@ -544,7 +532,7 @@ export class AgentService {
 					savedAt: this.now().toISOString(),
 					platform: 'engine-headless',
 					appVersion: this.opts.engineVersion,
-				}) as unknown as Record<string, unknown>;
+				});
 				const saved = await store.save(projectId, envelope, revision);
 				if (!saved.ok) continue; // someone saved in between: reload and re-apply
 				this.revisions.observe(projectId, result.revision, [
@@ -576,8 +564,6 @@ export class AgentService {
 		});
 	}
 
-	// ------------------------------------------------------------ session events
-
 	private onSessionEvent(conn: AgentConnection, event: string, payload: unknown): void {
 		if (event === 'agent.approval.resolve') {
 			// Security review AGT-2: an answer counts only from the editor connection that was shown the card, proven by
@@ -586,7 +572,7 @@ export class AgentService {
 			const p = AgentApprovalResolveSchema.safeParse(payload);
 			if (!p.success || !conn.editor || !conn.projectId) return;
 			const key = conn.approvalKeys.get(p.data.approvalId);
-			if (!key || !sameSecret(key, p.data.answerKey)) return;
+			if (!key || !secretsEqual(key, p.data.answerKey)) return;
 			this.approvals.resolve(p.data.approvalId, p.data.decision, conn.projectId);
 			return;
 		}
@@ -612,8 +598,6 @@ export class AgentService {
 	isLive(projectId: string): boolean {
 		return this.sessions.holder(projectId) !== null;
 	}
-
-	// ------------------------------------------------------------ live-UI automation (mcp-cli)
 
 	/**
 	 * Relays a UI automation request (elements, input, screenshot, coordinate mapping, UI commands) to an open

@@ -1,6 +1,6 @@
 // GET /events: NDJSON event stream (S04:ENG-023, §19.3). Replays buffered events after `?since=<id>`,
 // then streams live events filtered by `?projectId=`, with a heartbeat every 15 s.
-import { HEARTBEAT_INTERVAL_MS } from '@jasper/api';
+import { type EventEnvelope, HEARTBEAT_INTERVAL_MS } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { fail } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -32,12 +32,12 @@ export default async function eventsRoutes(app: FastifyInstance): Promise<void> 
 			'x-jasper-api': '1',
 		});
 		res.flushHeaders?.();
-		const write = (e: unknown) => {
+		const write = (e: EventEnvelope) => {
 			if (!res.writableEnded) res.write(`${JSON.stringify(e)}\n`);
 		};
 		// Subscribe first, then replay, so nothing published in between is lost (dedupe by id).
 		let lastSent = since ?? core.broadcaster.lastId;
-		const buffered: unknown[] = [];
+		const buffered: EventEnvelope[] = [];
 		let replaying = true;
 		const unsubscribe = core.broadcaster.subscribe((e) => {
 			if (replaying) buffered.push(e);
@@ -52,7 +52,7 @@ export default async function eventsRoutes(app: FastifyInstance): Promise<void> 
 				write(e);
 			}
 		}
-		for (const e of buffered as { id: number }[]) {
+		for (const e of buffered) {
 			if (e.id > lastSent) {
 				lastSent = e.id;
 				write(e);

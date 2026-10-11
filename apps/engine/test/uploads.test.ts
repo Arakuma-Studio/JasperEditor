@@ -1,5 +1,5 @@
 // Resumable chunked uploads (S04:IN-005, SC-005).
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { RegisteredMediaSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -137,6 +137,50 @@ describe('uploads (S04:IN-005)', () => {
 			(await app.inject({ method: 'DELETE', url: `/api/uploads/${created.uploadId}`, headers: H }))
 				.statusCode,
 		).toBe(404);
+	});
+
+	it('refuses to recreate missing upload data as an empty file', async () => {
+		const dir = join(tempAppdir('jasper-up-'), '.uploads');
+		const svc = new UploadService({ dir, media: coreServices(app).media });
+		const session = await svc.create({
+			projectId: 'prj_0000000000000001',
+			fileName: 'missing.mp4',
+			byteSize: 10,
+			mimeType: 'video/mp4',
+		});
+		unlinkSync(join(dir, session.uploadId, 'data.part'));
+		await expect(svc.complete(session.uploadId)).rejects.toMatchObject({
+			code: 'UPLOAD_NOT_FOUND',
+			message: expect.stringContaining('start a new upload'),
+		});
+	});
+
+	it('reports background sweep errors and starts only one sweep timer', async () => {
+		vi.useFakeTimers();
+		const error = new Error('Cannot remove expired upload');
+		const onError = vi.fn();
+		const svc = new UploadService({
+			dir: join(tempAppdir('jasper-up-'), '.uploads'),
+			media: coreServices(app).media,
+			onError,
+		});
+		const sweep = vi.spyOn(svc, 'sweep').mockRejectedValue(error);
+		try {
+			svc.start();
+			svc.start();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sweep).toHaveBeenCalledTimes(1);
+			expect(onError).toHaveBeenLastCalledWith(error);
+			await vi.advanceTimersByTimeAsync(3600_000);
+			expect(sweep).toHaveBeenCalledTimes(2);
+			svc.stop();
+			svc.start();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sweep).toHaveBeenCalledTimes(3);
+		} finally {
+			svc.stop();
+			vi.useRealTimers();
+		}
 	});
 
 	it('checks free disk space (DISK_FULL) and expires idle sessions after 24 h (S04:SC-005)', async () => {

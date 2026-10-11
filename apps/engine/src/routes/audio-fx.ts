@@ -1,5 +1,3 @@
-// Audio effects, Essential Sound, Remix (audio-fx):
-//   POST /api/audio/remix-plan   beat-tracked remix plan of a media range → RemixPlanResult (synchronous)
 import { RemixPlanRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { RemixPlanError, RemixPlanner } from '../audio/remix.ts';

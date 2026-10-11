@@ -1,15 +1,7 @@
-// Roto / object mattes and face tracking (parity workstream `roto`):
-//   GET    /api/roto/models                    segmentation and face models with install state and licences
-//   POST   /api/roto/models/:modelId/install   → `model-download` job (the processing catalogue's installer)
-//   DELETE /api/roto/models/:modelId           removes a downloaded model
-//   POST   /api/roto/segment                   RotoSegmentRequest → `roto` job (`?wait=1` → the finished job)
-//   POST   /api/roto/trace                     auto-traces matte frames into mask paths (Convert to Masks)
-//   GET    /api/roto/sets/:key                 what a matte set holds (RotoStoreInfo)
-//   GET    /mg/roto/:key?n=<frame>             frame n of a matte set (8-bit grey PNG; signable for headless renders)
-// Also registers the `roto` job runner, its cache adapter and the `features.roto` capability block.
 import { RotoSegmentRequestSchema, RotoTraceRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { requireUserApproval } from '../agent/user-approval.ts';
+import { replyWithJob } from '../jobs/reply.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import { RotoService } from '../roto/service.ts';
 import { serveFile } from '../tools/http.ts';
@@ -82,13 +74,7 @@ export default async function rotoRoutes(app: FastifyInstance): Promise<void> {
 		guarded<Wait>(async (req, reply) => {
 			const body = parseOr400(RotoSegmentRequestSchema, req.body);
 			const job = await svc.submit(body);
-			if (req.query.wait !== '1') return reply.code(202).send(job);
-			const done = await core.queue.wait(job.id);
-			if (done.state !== 'succeeded')
-				throw new HttpError(422, done.error?.code ?? 'ROTO_FAILED', done.error?.message ?? done.state, {
-					jobId: done.id,
-				});
-			return done;
+			return replyWithJob(core.queue, job, req.query.wait, reply, 'ROTO_FAILED');
 		}),
 	);
 

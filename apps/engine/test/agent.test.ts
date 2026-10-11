@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { EnvelopeJson } from '@jasper/api';
 import { AgentMcpInfoSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import {
@@ -462,17 +463,17 @@ class FakeSocket extends EventEmitter implements AgentSocket {
 }
 
 class MemoryStore implements AgentProjectStore {
-	envelopes = new Map<string, Record<string, unknown>>();
+	envelopes = new Map<string, EnvelopeJson>();
 	lease: { sessionId: string; leaseId: string; expiresAt: string } | null = null;
 	async load(id: string) {
 		const e = this.envelopes.get(id);
-		return e ? { envelope: e, revision: e.revision as number } : null;
+		return e ? { envelope: e, revision: e.revision } : null;
 	}
-	async save(id: string, envelope: Record<string, unknown>, base: number): Promise<SaveOutcome> {
+	async save(id: string, envelope: EnvelopeJson, base: number): Promise<SaveOutcome> {
 		const cur = this.envelopes.get(id);
-		if (cur && cur.revision !== base) return { ok: false, conflict: true, revision: cur.revision as number };
+		if (cur && cur.revision !== base) return { ok: false, conflict: true, revision: cur.revision };
 		this.envelopes.set(id, envelope);
-		return { ok: true, revision: envelope.revision as number };
+		return { ok: true, revision: envelope.revision };
 	}
 	leaseHolder() {
 		return this.lease;
@@ -483,10 +484,7 @@ class MemoryStore implements AgentProjectStore {
 function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number; editor?: boolean } = {}) {
 	const store = new MemoryStore();
 	const doc = createEmptyProject({ ids: createCounterIdSource(9), name: 'Svc', preset: 'hd-1080p-30' });
-	store.envelopes.set(
-		doc.projectId,
-		makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'test' }) as never,
-	);
+	store.envelopes.set(doc.projectId, makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'test' }));
 	const service = new AgentService({
 		engineVersion: 'test',
 		store: () => store,

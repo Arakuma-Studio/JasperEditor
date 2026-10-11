@@ -1,4 +1,3 @@
-// Media registration, status, derivative requests and byte serving (ARCHITECTURE §9.2, S04 §5, §8).
 import { join } from 'node:path';
 import {
 	DerivativesRequestSchema,
@@ -31,8 +30,6 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		if (!r) throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 		return r;
 	};
-
-	// ---------------------------------------------------------------- JSON API
 
 	app.post(
 		'/api/media/register',
@@ -133,8 +130,6 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 			return { jobs: derivatives.request(r, kinds, { priority: 'user', origin: { type: 'user' } }) };
 		}),
 	);
-
-	// ---------------------------------------------------------------- byte serving (S04:MS-001/002)
 
 	const serveArtifact = async (
 		req: FastifyRequest,

@@ -1,4 +1,3 @@
-// Registers one plugin per area (ARCHITECTURE §9.1).
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
@@ -49,48 +48,33 @@ const ROUTE_PLUGINS = [
 	mgRoutes,
 	agentRoutes,
 	mcpRoutes,
-	// M3 (wp-m3-cachegc): Media Cache routes over the core cache registry (after agent: its relay marks open projects).
+	// The agent relay supplies references to open projects for cache protection.
 	cacheRoutes,
-	// M3 (wp-m3-presets, S03:FX-030): the user effect preset library.
 	effectPresetRoutes,
-	// M2 (ARCHITECTURE §19.8): one plugin per work package.
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,
-	// imports workstream: Lottie / vector / PSD probers, interpreted pictures, image sequences, layers, Lottie export;
-	// its extension prepares the pictures browser-drawn layers need (before the layer bake's prepare reads them).
+	// Imports prepare pictures before layer baking consumes them.
 	importsRoutes,
-	// Workstream `time`: the retime extension's `layer` overrides are the sources of the warp / layer-bake stages.
+	// Retime sources feed layer baking and tracking in extension order.
 	timeRoutes,
-	// M2 animation (ARCHITECTURE §20.5): layer-bake's extension sits between mg-bundles and tracking (warp).
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
-	// wp-multicam: audio sync for Synchronize / Merge Clips / multi-camera.
 	syncRoutes,
-	// wp masks: auto-trace (mask tracking runs as `track` jobs of kind `mask`).
 	maskRoutes,
-	// audio-mix: audio analysis (loudness, peaks, ducking activity) and loudness-normalised media versions.
 	audioRoutes,
-	// audio-fx: music remix planning.
 	audioFxRoutes,
-	// wp captions: caption / transcript files by path.
 	captionRoutes,
-	// wp speech: Whisper transcription (after processing: the model catalogue and its installer).
+	// Speech and roto require the processing model catalogue.
 	speechRoutes,
-	// parity roto: Roto Brush / face tracking (after processing: the model catalogue and its installer).
 	rotoRoutes,
-	// three-d: the 3D Camera Tracker (`camtrack` jobs).
 	camtrackRoutes,
-	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
 	interchangeRoutes,
-	// color-grade: scopes as numbers, Colour Match, Auto tone (after roto: Face Detection uses its face model).
+	// Grading uses the roto face model.
 	gradingRoutes,
-	// previews: render previews (segments rendered through the export service) and perf stats.
 	previewsRoutes,
-	// gaps: Edit Original, scratch disks, proxies, Project Manager, Export Frame, Warp Stabilizer / Auto Reframe analysis.
 	gapsRoutes,
-	// polish: Media Browser (folder listing, info, thumbnails and preview bytes of files on this host).
 	browseRoutes,
 ] as const;
 

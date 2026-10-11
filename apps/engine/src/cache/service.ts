@@ -175,8 +175,6 @@ export class CacheService {
 		this.settingsStore = new CacheSettingsStore(join(o.paths.engineDir, 'cache.json'));
 	}
 
-	// ------------------------------------------------------------------ lifecycle
-
 	/** Loads the index, measures the automatic budget, starts the automatic passes (CA-015). */
 	start(): Promise<void> {
 		this.started ??= this.doStart();
@@ -274,8 +272,6 @@ export class CacheService {
 		if (journal && journal.size > JOURNAL_COMPACT_BYTES) prunedJobs = this.o.queue.prune();
 		return { ...r, prunedJobs };
 	}
-
-	// ------------------------------------------------------------------ location (CA-021)
 
 	/** The location setting (null = the data folder) and the physical folder holding the cache folders. */
 	async location(): Promise<{ location: string | null; root: string }> {
@@ -412,8 +408,6 @@ export class CacheService {
 		};
 	}
 
-	// ------------------------------------------------------------------ settings
-
 	settings(): Promise<CacheSettings> {
 		return this.settingsStore.get();
 	}
@@ -446,8 +440,6 @@ export class CacheService {
 	totalBudget(s: CacheSettings): number | null {
 		return s.maxTotalBytes ?? this.autoBudget ?? AUTO_BUDGET_CAP;
 	}
-
-	// ------------------------------------------------------------------ entries, access, pins
 
 	/** The cache entry of a path (file or directory inside an entry), or null. */
 	ref(path: string): EntryRef | null {
@@ -544,8 +536,6 @@ export class CacheService {
 		}
 	}
 
-	// ------------------------------------------------------------------ project references
-
 	/**
 	 * Replaces the ref set of a scope (`export:<projectId>:<sequenceId>`, `still:…`, `preview:…`): the entries a
 	 * saved project needs beyond what its document tells (CA-012). Persisted (they survive restarts).
@@ -628,8 +618,6 @@ export class CacheService {
 		return { refsOf, open, existing };
 	}
 
-	// ------------------------------------------------------------------ scanning, classification
-
 	/** A fresh (or recent) scan of the appdir. */
 	async scan(force = false): Promise<ScanResult> {
 		if (!force && this.lastScan && Date.now() - this.lastScan.scannedAt < SCAN_TTL_MS) return this.lastScan;
@@ -704,8 +692,6 @@ export class CacheService {
 		return newest?.id === e.id;
 	}
 
-	// ------------------------------------------------------------------ usage (CA-013)
-
 	async usage(): Promise<CacheUsage> {
 		const [scan, settings, info] = await Promise.all([this.scan(true), this.settings(), this.projectsInfo()]);
 		const classified = this.classify(scan.entries, info, this.activeJobs());
@@ -747,8 +733,6 @@ export class CacheService {
 			scannedAt: new Date(scan.scannedAt).toISOString(),
 		};
 	}
-
-	// ------------------------------------------------------------------ cleaning (CA-014…CA-018)
 
 	/**
 	 * One cleaning pass (serialised with other passes). `orphans` only sweeps temporary files. `kinds` limits what is

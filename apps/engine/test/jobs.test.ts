@@ -139,6 +139,20 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(() => q.retry(nr.id)).toThrow(/cannot be retried/);
 	});
 
+	it.each([null, undefined, 42, 'worker disconnected', { message: 42, code: false }, Object.create(null)])(
+		'finishes jobs whose runner rejects with %j',
+		async (reason: unknown) => {
+			const q = makeQueue({ slots: 1 });
+			q.registerRunner('analysis', async () => Promise.reject(reason));
+			q.start();
+			const job = q.submit({ kind: 'analysis', title: 'invalid failure', priority: 'user', cpuSlots: 1 });
+			const failed = await q.wait(job.id);
+			expect(failed.state).toBe('failed');
+			expect(failed.error).toMatchObject({ code: 'INTERNAL', message: expect.any(String) });
+			expect(q.usedSlots).toBe(0);
+		},
+	);
+
 	it('throttles job.updated to 4/s per job and always sends the final state (JB-040)', async () => {
 		const b = new Broadcaster();
 		const events: EventEnvelope[] = [];

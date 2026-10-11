@@ -1,6 +1,7 @@
 // Short-lived signed URLs (S04:MS-003, RR-003) for consumers that cannot send the session cookie: the
 // headless browser of local Remotion renders. A signature covers exactly one path and an expiry.
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import { secretsEqual } from './secrets.ts';
 
 const DEFAULT_SIGNED_URL_TTL_SEC = 6 * 60 * 60;
 
@@ -42,9 +43,7 @@ export class UrlSigner {
 	}
 
 	verifyCapability(scope: string, capability: string): boolean {
-		const expected = Buffer.from(this.capability(scope));
-		const given = Buffer.from(capability);
-		return expected.length === given.length && timingSafeEqual(expected, given);
+		return secretsEqual(this.capability(scope), capability);
 	}
 
 	/** Verifies a request URL (path + query). The path must be signable, the signature valid and fresh. */
@@ -57,8 +56,6 @@ export class UrlSigner {
 		const sig = params.get('sig');
 		const exp = Number(params.get('exp'));
 		if (!sig || !Number.isInteger(exp) || exp * 1000 < nowMs) return false;
-		const expected = Buffer.from(this.mac(path, exp));
-		const given = Buffer.from(sig);
-		return expected.length === given.length && timingSafeEqual(expected, given);
+		return secretsEqual(this.mac(path, exp), sig);
 	}
 }

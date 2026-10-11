@@ -1,4 +1,3 @@
-// Export planning, export jobs and render downloads (ARCHITECTURE §9.2, §9.5; S04 §10–§13).
 import { ExportPlanRequestSchema, ExportStartRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { serveFile } from '../tools/http.ts';

@@ -94,8 +94,6 @@ export class JobQueue {
 		this.now = opts.now ?? (() => new Date());
 	}
 
-	// ------------------------------------------------------------------ registration and lifecycle
-
 	registerRunner(kind: JobKind, runner: JobRunner): void {
 		this.runners.set(kind, runner);
 		if (this.started) this.pump();
@@ -187,8 +185,6 @@ export class JobQueue {
 		}
 		for (const e of this.entries.values()) if (e.emitTimer) clearTimeout(e.emitTimer);
 	}
-
-	// ------------------------------------------------------------------ public API
 
 	/** Submits a job, or returns the queued/running job with the same dedupe key (S04:JB-014). */
 	submit(spec: JobSubmit): EngineJob {
@@ -323,8 +319,6 @@ export class JobQueue {
 		return n;
 	}
 
-	// ------------------------------------------------------------------ scheduling
-
 	private pump(): void {
 		if (!this.started || this.stopping) return;
 		const queued = [...this.entries.values()]
@@ -398,15 +392,30 @@ export class JobQueue {
 						error: { code: 'INTERRUPTED', message: 'The engine was stopped', retryable: true },
 					});
 				} else {
-					const code = (err as { code?: string }).code ?? 'INTERNAL';
-					const message = (err as Error)?.message ?? String(err);
-					const explicit = (err as JobError).retryable;
+					const failure =
+						err !== null && typeof err === 'object'
+							? (err as { code?: unknown; message?: unknown; retryable?: unknown; detail?: unknown })
+							: null;
+					const code = typeof failure?.code === 'string' ? failure.code : 'INTERNAL';
+					const message =
+						typeof failure?.message === 'string'
+							? failure.message
+							: typeof err === 'string'
+								? err
+								: 'Job runner failed without an error message';
+					const explicit = failure?.retryable;
 					const retryable =
 						typeof explicit === 'boolean'
 							? explicit
 							: RETRYABLE_CODES.has(code) || !NON_RETRYABLE_CODES.has(code);
-					const stderr = (err as { detail?: { stderr?: string } }).detail?.stderr;
-					if (stderr) ctx.log(stderr);
+					const detail = failure?.detail;
+					if (
+						detail !== null &&
+						typeof detail === 'object' &&
+						'stderr' in detail &&
+						typeof detail.stderr === 'string'
+					)
+						ctx.log(detail.stderr);
 					ctx.log(`${code}: ${message}`);
 					const logRef = this.writeLog(e);
 					await this.cleanupAndFinish(e, 'failed', {
@@ -491,8 +500,6 @@ export class JobQueue {
 		for (const w of waiters) w(structuredClone(e.job));
 		this.pump();
 	}
-
-	// ------------------------------------------------------------------ journal (S04:JB-030)
 
 	private journal(e: Entry): void {
 		const path = this.opts.journalPath;
@@ -594,8 +601,6 @@ export class JobQueue {
 			return null;
 		}
 	}
-
-	// ------------------------------------------------------------------ helpers
 
 	private makeEntry(job: EngineJob, input: unknown, minSlots: number): Entry {
 		return {

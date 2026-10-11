@@ -1,7 +1,3 @@
-// color-grade: grading analysis routes (grading/service.ts):
-//   POST /api/grading/scopes     Lumetri Scopes of a rendered frame as numbers (`scopes_read`)
-//   POST /api/grading/match      Colour Match of a clip to a reference frame → Lumetri params
-//   POST /api/grading/auto-tone  Basic Correction ▸ Auto of a clip → Lumetri params
 import { AutoToneRequestSchema, ColorMatchRequestSchema, GradingScopesRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { GradingService } from '../grading/service.ts';

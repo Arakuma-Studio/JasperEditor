@@ -1,7 +1,3 @@
-// Motion graphics routes (ARCHITECTURE §9.2, S04 §15). Owner: WP-2G.
-//   GET  /api/motion-graphics/templates  catalog with JSON Schemas (native when jasper-mg is ready)
-//   POST /api/motion-graphics/render     {spec, quality} → EngineJob (mg-render); `?wait=1` answers when done
-//   GET  /mg/:key/:file                  cached master.mov / preview.webm / poster.png, with Range
 import { createReadStream, statSync } from 'node:fs';
 import { MgRenderRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';

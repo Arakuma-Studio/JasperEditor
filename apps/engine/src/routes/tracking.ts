@@ -1,7 +1,3 @@
-// Tracking (M2, S09, ARCHITECTURE §19.5). Owner: wp-m2-track.
-//   POST /api/tracking/track   TrackRequest → 202 EngineJob (kind `track`; result = TrackResult)
-// Registers the `track` job runner, the `features.tracking` capability block, and (below) the `warp` native
-// extension (corner pin / animated Motion).
 import { TrackRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { registerWarpStage } from '../export/warp/index.ts';
