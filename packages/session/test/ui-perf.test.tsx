@@ -48,7 +48,7 @@ function manualTimers() {
 				due.push({ at: now + ms, fn, id });
 				return id;
 			},
-			clearTimeout: (h: unknown) => {
+			clearTimeout: (h: ReturnType<typeof setTimeout> | number) => {
 				const i = due.findIndex((d) => d.id === h);
 				if (i >= 0) due.splice(i, 1);
 			},
@@ -202,8 +202,8 @@ describe('idle invariant verification', () => {
 			expect(isVerifiedDocument(opened, { effects: defaultRegistries().effects })).toBe(false);
 			expect(idle.length).toBe(1);
 			idle.shift()!();
-			const ctxEffects = (s.ctx as { registries: { effects: unknown } }).registries.effects;
-			expect(isVerifiedDocument(opened, { effects: ctxEffects as never })).toBe(true);
+			const ctxEffects = s.ctx.registries.effects;
+			expect(isVerifiedDocument(opened, { effects: ctxEffects })).toBe(true);
 			invariantStats(true);
 			expect(s.apply({ label: 'Add', origin: 'user', commands: [solid(0)] }).ok).toBe(true);
 			const st = invariantStats();
@@ -224,13 +224,13 @@ describe('idle invariant verification', () => {
 describe('autosave and the journal send the same JSON, serialised incrementally', () => {
 	it('PUTs exactly JSON.stringify(envelope) after edits', async () => {
 		const bodies: string[] = [];
-		const fetchImpl = (async (_url: string, init: RequestInit) => {
+		const fetchImpl: typeof fetch = async (_url, init = {}) => {
 			bodies.push(String(init.body));
 			return new Response(JSON.stringify({ revision: 2 }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' },
 			});
-		}) as unknown as typeof fetch;
+		};
 		const { EngineClient } = await import('@jasper/engine-client');
 		const store = new EngineProjectStore(new EngineClient({ baseUrl: 'http://x', fetch: fetchImpl }));
 		const s = await openSession();

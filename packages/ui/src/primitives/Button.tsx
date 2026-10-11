@@ -23,7 +23,6 @@ const VARIANTS: Record<ButtonVariant, string> = {
 	danger: 'bg-pr-danger text-pr-on-accent border border-transparent hover:opacity-90',
 };
 
-/** Text button: 24 px high, 4 px radius, 12 px text, token colors only (S05:CT-002). */
 export function Button({
 	variant = 'secondary',
 	pill,

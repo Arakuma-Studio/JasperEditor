@@ -1,24 +1,22 @@
-// Per-tab lease memory (S01:PER-040): lets a reloaded tab reclaim the lease its previous page held.
-//
-// A page that is reloaded (or fully navigated to Home and back) sends a keepalive `DELETE …/lease/:id` on
-// `pagehide`, but that request is best effort: when it loses the race against the new page's acquire, or is
-// dropped, the new page used to open read-only until the old lease expired (30 s). The tab now remembers, in
-// `sessionStorage` (which survives reloads of the same tab and is not shared with other tabs), which session
-// id held each project's lease. When the engine answers LEASE_HELD with one of those session ids, the holder
-// was an earlier page of this very tab, so the new page takes the lease over at once.
-//
-// Duplicated tabs copy `sessionStorage`, so a remembered id is not proof the holder is gone: before taking
-// over, the page asks every live page of the origin over a BroadcastChannel whether one still holds that
-// lease. A live holder answers and the new page opens read-only as before; other tabs, other browsers and
-// agents never match a remembered id, so they keep being locked out.
+// sessionStorage survives reloads but is copied by duplicated tabs. A remembered lease may be reclaimed
+// only after asking live pages over BroadcastChannel whether they still hold it. Page-unload releases
+// are best effort, so memory must survive until a clean release or confirmed takeover.
+import { z } from 'zod';
 
 const STORAGE_KEY = 'jasper:tab-leases';
 const CHANNEL = 'jasper:tab-leases';
 /** How long a probe waits for a live page to claim a lease (BroadcastChannel delivers in milliseconds). */
 export const TAB_LEASE_PROBE_MS = 250;
 
-type Probe = { kind: 'probe'; nonce: string; projectId: string; sessionId: string };
-type Claim = { kind: 'claim'; nonce: string };
+const ProbeSchema = z.object({
+	kind: z.literal('probe'),
+	nonce: z.string(),
+	projectId: z.string(),
+	sessionId: z.string(),
+});
+const ClaimSchema = z.object({ kind: z.literal('claim'), nonce: z.string() });
+type LeaseMessage = z.infer<typeof ProbeSchema> | z.infer<typeof ClaimSchema>;
+const LeaseMapSchema = z.record(z.string(), z.string());
 
 export type TabLeaseRegistry = {
 	/** Records that this tab holds the project's lease as `sessionId` (and claims it while the page lives). */
@@ -41,7 +39,7 @@ export type TabLeaseRegistry = {
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 type ChannelLike = {
-	postMessage(m: unknown): void;
+	postMessage(m: LeaseMessage): void;
 	/** Node's BroadcastChannel keeps the process alive unless unref'd (tests under happy-dom). */
 	unref?(): void;
 	addEventListener(type: 'message', l: (e: { data: unknown }) => void): void;
@@ -59,11 +57,8 @@ function readMap(storage: StorageLike | null): Record<string, string> {
 	if (!storage) return {};
 	try {
 		const raw = storage.getItem(STORAGE_KEY);
-		const v: unknown = raw ? JSON.parse(raw) : {};
-		if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-		const out: Record<string, string> = {};
-		for (const [k, s] of Object.entries(v as Record<string, unknown>)) if (typeof s === 'string') out[k] = s;
-		return out;
+		const parsed = LeaseMapSchema.safeParse(raw ? JSON.parse(raw) : {});
+		return parsed.success ? parsed.data : {};
 	} catch {
 		return {};
 	}
@@ -89,10 +84,10 @@ export function createTabLeaseRegistry(opts: BrowserTabLeaseOptions): TabLeaseRe
 	/** Session ids holding or releasing a lease from this page. */
 	const pageSessions = new Set<string>();
 	const onMessage = (e: { data: unknown }) => {
-		const m = e.data as Partial<Probe> | null;
-		if (m?.kind !== 'probe' || typeof m.projectId !== 'string') return;
-		if (live.get(m.projectId) === m.sessionId)
-			channel?.postMessage({ kind: 'claim', nonce: m.nonce } as Claim);
+		const parsed = ProbeSchema.safeParse(e.data);
+		if (!parsed.success) return;
+		const m = parsed.data;
+		if (live.get(m.projectId) === m.sessionId) channel?.postMessage({ kind: 'claim', nonce: m.nonce });
 	};
 	let listening = false;
 	const listen = (on: boolean) => {
@@ -138,12 +133,12 @@ export function createTabLeaseRegistry(opts: BrowserTabLeaseOptions): TabLeaseRe
 					resolve(v);
 				};
 				const onClaim = (e: { data: unknown }) => {
-					const m = e.data as Partial<Claim> | null;
-					if (m && m.kind === 'claim' && m.nonce === id) done(true);
+					const parsed = ClaimSchema.safeParse(e.data);
+					if (parsed.success && parsed.data.nonce === id) done(true);
 				};
 				const timer = setTimeout(() => done(false), probeMs);
 				channel.addEventListener('message', onClaim);
-				channel.postMessage({ kind: 'probe', nonce: id, projectId, sessionId: holderSessionId } as Probe);
+				channel.postMessage({ kind: 'probe', nonce: id, projectId, sessionId: holderSessionId });
 			});
 			// A duplicated tab inherited the id from a live tab: drop it so this tab stops asking.
 			if (claimed) {
@@ -169,7 +164,7 @@ export function pageTabLeases(): TabLeaseRegistry {
 	const g = globalThis as {
 		sessionStorage?: StorageLike;
 		BroadcastChannel?: new (name: string) => ChannelLike;
-		window?: unknown;
+		window?: Window;
 	};
 	let storage: StorageLike | undefined;
 	try {

@@ -155,7 +155,7 @@ function concretize(
 	const camera = clips.find((c) => c.kind === 'camera');
 	const text = clips.find((c) => c.kind === 'text');
 	const captions = clips.filter((c) => c.kind === 'captions');
-	const mcClips = clips.filter((c) => 'multicam' in c && (c as { multicam?: unknown }).multicam);
+	const mcClips = clips.filter((c) => 'multicam' in c && c.multicam);
 	const items = Object.values(doc.items).filter((i) => i.kind === 'media');
 	const one = (...commands: unknown[]) => ({ sequenceId: seqId, commands });
 	switch (st.k) {
@@ -291,7 +291,7 @@ function concretize(
 			});
 		}
 		case 27: {
-			const withProxy = Object.values(doc.media).filter((x) => (x as { proxy?: unknown }).proxy);
+			const withProxy = Object.values(doc.media).filter((x) => x.proxy);
 			return withProxy.length
 				? one({ type: 'media.detachProxy', mediaIds: [pick(withProxy, st.a)!.id] })
 				: null;

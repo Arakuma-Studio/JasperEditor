@@ -1,7 +1,9 @@
 // Color math for the swatch/picker (S05:CT-014). Colors are S01 RGBA tuples: straight sRGB floats 0..1.
 // These are document content colors (DT-002 exception), so building CSS color strings here is allowed.
 
-export type Rgba = [number, number, number, number];
+import type { RGBA } from '@jasper/project';
+
+export type Rgba = RGBA;
 export type Hsv = { h: number; s: number; v: number };
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, Number.isFinite(x) ? x : 0));

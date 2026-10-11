@@ -119,7 +119,7 @@ export class EditorSession {
 		this.devInvariants = opts.devInvariants ?? false;
 		this.history = new History(opts.historyCapacity);
 		const seqIds = Object.keys(opts.document.sequences);
-		const savedViews = (opts.view?.views ?? {}) as Record<string, Partial<SequenceViewState>>;
+		const savedViews = opts.view?.views ?? {};
 		const views: Record<string, SequenceViewState> = {};
 		for (const id of seqIds) views[id] = { ...defaultSequenceView(), ...(savedViews[id] ?? {}) };
 		const active =
@@ -149,17 +149,9 @@ export class EditorSession {
 	}
 
 	private verifyScheduled = false;
-	/**
-	 * ui-perf: checks an opened (or replaced) document's invariants when the browser is idle, so the first edit takes
-	 * the incremental check instead of the full one (25–40 ms on 5 000 clips) on the critical path. Browsers only
-	 * (`requestIdleCallback`); elsewhere the first edit checks the whole document as before.
-	 */
+	/** Warm invariant caches off the first edit's critical path, only when the browser supports idle work. */
 	private verifyWhenIdle(): void {
-		const ric = (
-			globalThis as {
-				requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => unknown;
-			}
-		).requestIdleCallback;
+		const ric = globalThis.requestIdleCallback;
 		if (typeof ric !== 'function' || this.verifyScheduled) return;
 		this.verifyScheduled = true;
 		ric(
@@ -230,8 +222,6 @@ export class EditorSession {
 		}
 	}
 
-	// ------------------------------------------------------------ reads
-
 	getState(): SessionState {
 		return this.store.getState();
 	}
@@ -255,8 +245,6 @@ export class EditorSession {
 		return this.entityRevisions;
 	}
 
-	// ------------------------------------------------------------ events
-
 	on<E extends SessionEventName>(event: E, cb: (payload: SessionEvents[E]) => void): Unsubscribe {
 		let set = this.listeners.get(event);
 		if (!set) {
@@ -269,8 +257,6 @@ export class EditorSession {
 	private emit<E extends SessionEventName>(event: E, payload: SessionEvents[E]): void {
 		for (const cb of [...(this.listeners.get(event) ?? [])]) (cb as (p: SessionEvents[E]) => void)(payload);
 	}
-
-	// ------------------------------------------------------------ writes
 
 	private commandContext(extra: Partial<CommandContext> = {}): CommandContext {
 		const s = this.store.getState();
@@ -478,8 +464,6 @@ export class EditorSession {
 		return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [] };
 	}
 
-	// ------------------------------------------------------------ gestures (S01:SES-006)
-
 	beginGesture(label: string): Gesture {
 		if (this.gestureState) throw new Error(`Gesture "${this.gestureState.label}" is already active`);
 		const s = this.store.getState();
@@ -547,8 +531,6 @@ export class EditorSession {
 		}
 	}
 
-	// ------------------------------------------------------------ undo / redo (S01 §17)
-
 	/** Undo; agents may only undo their own top entry (S01:UND-008). */
 	undo(opts: { agent?: string } = {}): { ok: boolean; code?: string; label?: string } {
 		if (this.gestureState || this.store.getState().readOnly) return { ok: false, code: 'E_BUSY' };
@@ -607,8 +589,6 @@ export class EditorSession {
 		this.emit('doc.changed', { revision, label, origin, ...diff, ...flags });
 		this.emit('selection.changed', { selection: sel });
 	}
-
-	// ------------------------------------------------------------ selection (S01 §15)
 
 	select(
 		domain: SelectionDomain,
@@ -691,8 +671,6 @@ export class EditorSession {
 		this.emit('selection.changed', { selection });
 	}
 
-	// ------------------------------------------------------------ view, tabs, toggles, media runtime
-
 	setView(sequenceId: string, patch: Partial<SequenceViewState>): void {
 		const views = this.store.getState().views;
 		this.store.setState({
@@ -721,20 +699,16 @@ export class EditorSession {
 	setMediaRuntime(mediaId: string, patch: Partial<MediaRuntime>): void {
 		this.setMediaRuntimes([[mediaId, patch]]);
 	}
-	/**
-	 * Applies several runtime patches in one store update (ui-perf: opening a project resolves every medium; one update
-	 * per medium re-ran every subscriber per medium). Patches apply in order, like successive `setMediaRuntime` calls.
-	 */
+	/** Batch ordered patches so resolving many assets notifies each subscriber once. */
 	setMediaRuntimes(patches: Iterable<readonly [string, Partial<MediaRuntime>]>): void {
 		const media = { ...this.store.getState().media };
-		let any = false;
+		let changed = false;
 		for (const [id, patch] of patches) {
 			media[id] = { ...(media[id] ?? defaultMediaRuntime()), ...patch };
-			any = true;
+			changed = true;
 		}
-		if (any) this.store.setState({ media });
+		if (changed) this.store.setState({ media });
 	}
-	/** The persisted view record (S01:SES-004). */
 	viewRecord(): ProjectViewState {
 		const s = this.store.getState();
 		return { version: 1, views: s.views, tabs: s.tabs, activeSequenceId: s.activeSequenceId };
@@ -742,8 +716,6 @@ export class EditorSession {
 	markSaved(revision: number): void {
 		if (this.store.getState().revision === revision) this.store.setState({ dirty: false });
 	}
-
-	// ------------------------------------------------------------ lifecycle
 
 	/** Cancels any gesture, releases the lease and notifies listeners. Autosave flushing is the caller's job. */
 	async close(): Promise<void> {
@@ -766,7 +738,6 @@ export class EditorSession {
 	}
 }
 
-/** Ids of the document's items, media, sequences and everything a sequence holds (replaceDocument). */
 function entityIds(doc: ProjectDocument): string[] {
 	const ids = [...Object.keys(doc.items), ...Object.keys(doc.media), ...Object.keys(doc.sequences)];
 	for (const seq of Object.values(doc.sequences)) {

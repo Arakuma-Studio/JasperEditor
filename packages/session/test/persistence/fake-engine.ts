@@ -1,9 +1,15 @@
 // A tiny in-memory emulation of the engine project/lease routes (ARCHITECTURE §9.2) behind a fake fetch,
 // so EngineProjectStore is tested through the real EngineClient (URL building, If-Match, error shapes).
+import {
+	type EnvelopeJson,
+	EnvelopeSchema,
+	LeaseRequestSchema,
+	ProjectCreateRequestSchema,
+} from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, makeEnvelope } from '@jasper/project';
 
-type Stored = { envelope: Record<string, unknown>; view: unknown; revision: number };
+type Stored = { envelope: EnvelopeJson; view: unknown; revision: number };
 type LeaseRec = { leaseId: string; sessionId: string; expiresAt: number };
 
 export type FakeRequest = {
@@ -39,13 +45,14 @@ export class FakeEngine {
 	}
 
 	client(): EngineClient {
-		return new EngineClient({ fetch: this.fetch as unknown as typeof fetch });
+		return new EngineClient({ fetch: this.fetch });
 	}
 
-	fetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
+	fetch: typeof fetch = async (input, init = {}) => {
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 		const method = (init.method ?? 'GET').toUpperCase();
 		const path = url.split('?')[0]!;
-		const headers = (init.headers ?? {}) as Record<string, string>;
+		const headers = Object.fromEntries(new Headers(init.headers).entries());
 		const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
 		this.requests.push({ method, path, headers, body, keepalive: init.keepalive });
 		const fi = this.failures.findIndex((f) => f.match.test(`${method} ${path}`));
@@ -67,10 +74,11 @@ export class FakeEngine {
 		return this.json({ code, message: code, retryable: false, ...(detail ? { detail } : {}) }, status);
 	}
 
-	private route(method: string, path: string, headers: Record<string, string>, body: any): Response {
+	private route(method: string, path: string, headers: Record<string, string>, body: unknown): Response {
 		let m: RegExpMatchArray | null;
 		if (method === 'POST' && path === '/api/projects') {
-			const doc = createEmptyProject({ ids: this.ids, name: body.name, preset: body.preset });
+			const request = ProjectCreateRequestSchema.parse(body);
+			const doc = createEmptyProject({ ids: this.ids, name: request.name, preset: request.preset });
 			this.projects.set(doc.projectId, {
 				envelope: makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'fake' }),
 				view: null,
@@ -86,8 +94,8 @@ export class FakeEngine {
 			if (method === 'PUT') {
 				const base = Number(headers['if-match']);
 				if (base !== p.revision) return this.err(409, 'REVISION_CONFLICT', { revision: p.revision });
-				p.envelope = body;
-				p.revision = Math.max(p.revision + 1, Number(body.revision) || 0);
+				p.envelope = EnvelopeSchema.parse(body);
+				p.revision = Math.max(p.revision + 1, p.envelope.revision);
 				return this.json({ revision: p.revision });
 			}
 		}
@@ -95,14 +103,15 @@ export class FakeEngine {
 		if ((m = path.match(/^\/api\/projects\/([^/]+)\/lease$/)) && method === 'POST') {
 			const id = decodeURIComponent(m[1]!);
 			const cur = this.leases.get(id);
-			if (cur && cur.sessionId !== body.sessionId && cur.expiresAt > this.nowMs && !body.takeOver)
+			const request = LeaseRequestSchema.parse(body);
+			if (cur && cur.sessionId !== request.sessionId && cur.expiresAt > this.nowMs && !request.takeOver)
 				return this.err(409, 'LEASE_HELD', {
 					holderSessionId: cur.sessionId,
 					expiresAt: new Date(cur.expiresAt).toISOString(),
 				});
 			const rec = {
 				leaseId: `lease_${++this.leaseSeq}`,
-				sessionId: body.sessionId,
+				sessionId: request.sessionId,
 				expiresAt: this.nowMs + 30_000,
 			};
 			this.leases.set(id, rec);

@@ -74,12 +74,8 @@ export function attachPersistence(
 			baseRevision: () => autosaver.getStatus().serverRevision,
 			onError: (e) => console.warn('[recovery] journal write failed', e),
 		});
-	const win =
-		opts.window === undefined ? (globalThis as unknown as { window?: LifecycleTarget }).window : opts.window;
-	const doc =
-		opts.document === undefined
-			? (globalThis as unknown as { document?: LifecycleTarget & { visibilityState?: string } }).document
-			: opts.document;
+	const win = opts.window === undefined ? globalThis.window : opts.window;
+	const doc = opts.document === undefined ? globalThis.document : opts.document;
 
 	const flushQuietly = () => {
 		// gaps (Auto Save off): leaving the page journals the unsaved edits instead of saving them.
@@ -95,7 +91,7 @@ export function attachPersistence(
 		if ((dirty && st.paused === null) || st.saving) {
 			flushQuietly();
 			e.preventDefault();
-			(e as unknown as { returnValue: string }).returnValue = '';
+			(e as BeforeUnloadEvent).returnValue = '';
 		}
 	};
 	win?.addEventListener('pagehide', flushQuietly);

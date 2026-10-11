@@ -1,17 +1,10 @@
-// ProjectStore interface (S01:PER-001).
 import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
 import type { Issue, ProjectDocument, RepairEntry } from '@jasper/project';
+import type { ProjectViewState } from '../view.ts';
+
+export type { ProjectViewState } from '../view.ts';
 
 export type { Lease, ProjectSummary, RecoveryInfo, VersionInfo };
-
-/** Persisted, non-undoable view record (S01:SES-004). */
-export type ProjectViewState = {
-	version: 1;
-	views: Record<string, unknown>;
-	tabs: { open: string[] };
-	activeSequenceId: string | null;
-	[k: string]: unknown;
-};
 
 export type OpenedProject = {
 	document: ProjectDocument;
@@ -42,7 +35,7 @@ export type RecoveryWrite = {
 export type RecoveredSnapshot = { info: RecoveryInfo; document: ProjectDocument; repairs: RepairEntry[] };
 
 /**
- * Crash-recovery journals and saved-version restores (process workstream, D-39). Optional: stores without them
+ * Crash-recovery journals and saved-version restores (D-39). Optional: stores without them
  * (tests, headless tools) simply don't journal.
  */
 export interface RecoveryStore {
@@ -78,7 +71,7 @@ export interface ProjectStore {
 	duplicate(projectId: string, name: string): Promise<string>;
 	delete(projectId: string): Promise<void>;
 	exportFile(projectId: string): Promise<Blob | { path: string }>;
-	importFile(file: Blob | { path: string }): Promise<string>;
+	importFile(file: Blob): Promise<string>;
 	/** `takeOver` revokes another session's lease ("Take over editing", S01:PER-040). */
 	acquireLease(projectId: string, sessionId?: string, opts?: { takeOver?: boolean }): Promise<Lease>;
 	/** Heartbeat / release (engine leases, S01:PER-040). Optional for stores without leases. */

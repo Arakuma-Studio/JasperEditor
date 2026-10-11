@@ -127,9 +127,6 @@ export function createRecoveryJournal(
 				};
 			} catch (e) {
 				report(e);
-				// An engine without journal routes (older build): stop journalling for this session.
-				if ((e as { code?: string })?.code === 'NOT_IMPLEMENTED') disposed = true;
-				inFlight = null;
 				// Back off: retry one interval later instead of hammering a failing engine.
 				firstPendingAt = null;
 				cancelTimer();
@@ -189,7 +186,6 @@ export function createRecoveryJournal(
 			offDoc();
 			offStore();
 			if (session.store.getState().dirty) {
-				// unsaved changes survive the close: make sure the journal has them
 				disposed = false;
 				await write();
 				disposed = true;

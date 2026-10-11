@@ -3,10 +3,17 @@
 //   `{ok: false, conflict: true, revision}` result (S01:PER-025) instead of an exception.
 // - leases (S01:PER-040): acquire / heartbeat / release, with transparent re-acquisition when the engine
 //   forgot the lease (restart, expiry while the laptop slept) and "take over" support.
-// - duplicate / export / import are composed client-side from the M1 routes;
 // - saved versions (read, restore in place or as a copy) and the crash-recovery journal use the routes of the
-//   process workstream (ARCHITECTURE D-39, docs/project-files.md).
-import type { Lease, ProjectSummary, RecoveryInfo, RecoveryPutRequest, VersionInfo } from '@jasper/api';
+//   engine (ARCHITECTURE D-39, docs/project-files.md).
+import {
+	type Lease,
+	LeaseHeldDetailSchema,
+	type ProjectSummary,
+	type RecoveryInfo,
+	type RecoveryPutRequest,
+	RevisionConflictDetailSchema,
+	type VersionInfo,
+} from '@jasper/api';
 import { type EngineClient, EngineError, JsonText } from '@jasper/engine-client';
 import {
 	createRandomIdSource,
@@ -16,6 +23,7 @@ import {
 	type ProjectDocument,
 	stringifyJson,
 } from '@jasper/project';
+import { readProjectView } from '../view.ts';
 import { pageTabLeases, type TabLeaseRegistry } from './tab-leases.ts';
 import {
 	LeaseHeldError,
@@ -86,7 +94,6 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		this.tabLeases = opts.tabLeases ?? pageTabLeases();
 	}
 
-	/** Attaches the pagehide release while leases are held and detaches it when the last one goes. */
 	private syncUnloadListener(): void {
 		const want = this.leases.size > 0;
 		if (want === this.unloadAttached || !this.unloadTarget) return;
@@ -104,8 +111,6 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		});
 	}
 
-	// ------------------------------------------------------------ projects
-
 	async list(): Promise<ProjectSummary[]> {
 		const { projects } = await this.engine.listProjects();
 		return [...projects].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
@@ -119,15 +124,16 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		const r = await this.engine.getProject(projectId);
 		const loaded = loadProject(r.envelope, { ids: this.ids, mgTemplates: this.mgTemplates });
 		const held = this.leases.get(projectId);
+		const view = readProjectView(r.view);
 		return {
 			document: loaded.document,
 			revision: r.revision,
-			view: (r.view as ProjectViewState | null) ?? null,
+			view: view.view,
 			lease: held?.lease ?? null,
 			// Newer schema → read-only (S01:MIG-003); callers may also ask for read-only explicitly.
 			readOnly: loaded.readOnly || !!opts.readOnly,
 			repairs: loaded.repairs,
-			issues: loaded.issues,
+			issues: [...loaded.issues, ...view.issues],
 		};
 	}
 
@@ -137,14 +143,14 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		meta: { revision: number; baseRevision: number },
 	): Promise<SaveResult> {
 		try {
-			// ui-perf: incremental serialisation (only the objects an edit replaced are serialised again; same JSON).
+			// Incremental serialisation (only the objects an edit replaced are serialised again; same JSON).
 			const body = new JsonText(stringifyJson(this.envelope(doc, meta.revision)));
 			const r = await this.engine.putProject(projectId, body, meta.baseRevision);
 			return { ok: true, revision: r.revision };
 		} catch (e) {
 			if (isCode(e, 'REVISION_CONFLICT')) {
-				const rev = (e.detail as { revision?: number } | undefined)?.revision;
-				return { ok: false, conflict: true, revision: typeof rev === 'number' ? rev : -1 };
+				const detail = RevisionConflictDetailSchema.safeParse(e.detail);
+				if (detail.success) return { ok: false, conflict: true, revision: detail.data.revision };
 			}
 			throw e;
 		}
@@ -177,10 +183,8 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		return this.createFrom(doc, name);
 	}
 
-	// ------------------------------------------------------------ crash recovery (S01:PER-021, AC-18)
-
 	async writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void> {
-		// ui-perf: the journal shares the autosave's incremental serialisation (the same document objects).
+		// The journal shares the autosave's incremental serialisation (the same document objects).
 		const req = {
 			leaseId: w.leaseId,
 			baseRevision: w.baseRevision,
@@ -231,12 +235,9 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 	}
 
 	/** PER-030: reads a `.jasper` file, migrates it and creates a new engine project from it. */
-	async importFile(file: Blob | { path: string }): Promise<string> {
+	async importFile(file: Blob): Promise<string> {
 		if (!(file instanceof Blob)) {
-			throw new EngineError(
-				'NOT_IMPLEMENTED',
-				'Importing a project by path needs the desktop file route (M2)',
-			);
+			throw new EngineError('BAD_REQUEST', 'Project imports require file contents');
 		}
 		let raw: unknown;
 		try {
@@ -253,14 +254,10 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 		const preset = doc.settings?.defaultSequencePreset ?? 'hd-1080p-30';
 		const projectId = await this.create({ name, preset });
 		const fresh = await this.engine.getProject(projectId);
-		const copy = JSON.parse(JSON.stringify(doc)) as ProjectDocument;
-		copy.projectId = projectId;
-		copy.name = name;
+		const copy: ProjectDocument = { ...doc, projectId, name };
 		await this.engine.putProject(projectId, this.envelope(copy, fresh.revision + 1), fresh.revision);
 		return projectId;
 	}
-
-	// ------------------------------------------------------------ leases (S01:PER-040)
 
 	async acquireLease(
 		projectId: string,
@@ -289,8 +286,10 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 					: await this.engine.acquireLease(projectId, sessionId);
 			} catch (e) {
 				if (!isCode(e, 'LEASE_HELD')) throw e;
-				const d = (e.detail ?? {}) as { holderSessionId?: string; expiresAt?: string };
-				const holder = d.holderSessionId ?? 'unknown';
+				const detail = LeaseHeldDetailSchema.safeParse(e.detail);
+				if (!detail.success) throw e;
+				const d = detail.data;
+				const holder = d.holderSessionId;
 				// A session of this same page is closing (route change, React StrictMode double mount):
 				// its release is in flight, so wait for it instead of opening read-only.
 				const local = this.tabLeases.isPageSession(holder);
@@ -304,7 +303,7 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 					takeOver = true;
 					continue;
 				}
-				throw new LeaseHeldError(projectId, holder, d.expiresAt ?? null);
+				throw new LeaseHeldError(projectId, holder, d.expiresAt);
 			}
 		}
 		this.tabLeases.remember(projectId, sessionId);
@@ -347,8 +346,9 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 				this.leases.delete(projectId);
 				if (rec) this.tabLeases.forget(projectId, rec.sessionId);
 				this.syncUnloadListener();
-				const d = (e.detail ?? {}) as { holderSessionId?: string; expiresAt?: string };
-				throw new LeaseHeldError(projectId, d.holderSessionId ?? 'unknown', d.expiresAt ?? null);
+				const detail = LeaseHeldDetailSchema.safeParse(e.detail);
+				if (!detail.success) throw e;
+				throw new LeaseHeldError(projectId, detail.data.holderSessionId, detail.data.expiresAt);
 			}
 			throw e;
 		}

@@ -1,10 +1,7 @@
-// Toast queue and notification log (S05 §13, TS-001…008), rendered by <ToastHost>.
-
 export type ToastKind = 'info' | 'success' | 'warning' | 'error' | 'progress' | 'agent';
 
 export type ToastAction = { label: string; commandId?: string; run?: () => void };
 
-/** The toast API (S05:TS-002), called by UI code and by the agent's UI tool. */
 export interface ToastRequest {
 	kind: ToastKind;
 	/** ≤ 60 chars, sentence case, no trailing period. */
@@ -45,7 +42,6 @@ export const MAX_VISIBLE = 3;
 export const MERGE_WINDOW_MS = 2000;
 export const LOG_CAPACITY = 200;
 
-/** Default durations (S05:TS-003). */
 export function defaultDuration(req: ToastRequest): number | null {
 	if (req.durationMs === 'sticky') return null;
 	if (typeof req.durationMs === 'number') return req.durationMs;
@@ -210,7 +206,6 @@ export class ToastStore {
 /** The window's toast store (one host per window, S05:TS-001). */
 export const toasts = new ToastStore();
 
-/** Shows a toast through the window store (S05:TS-002). */
 export function toast(req: ToastRequest): number {
 	return toasts.show(req);
 }

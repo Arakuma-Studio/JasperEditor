@@ -62,7 +62,7 @@ function measure<T>(
 	op: string,
 	what: string,
 	budget: number,
-	fn: (input: T) => unknown,
+	fn: (input: T) => void,
 	opts: { runs?: number; warm?: number; setup?: () => T } = {},
 ): void {
 	const runs = opts.runs ?? 9;
@@ -110,10 +110,10 @@ let effects = 0;
 let keyframes = 0;
 for (const s of Object.values(doc.sequences))
 	for (const c of Object.values(s.clips)) {
-		const fx = (c as { effects?: { params: Record<string, { keyframes?: unknown[] }> }[] }).effects ?? [];
+		const fx = 'effects' in c ? c.effects : [];
 		effects += fx.length;
 		for (const f of fx) for (const p of Object.values(f.params)) keyframes += p.keyframes?.length ?? 0;
-		keyframes += (c as { opacity?: { keyframes: unknown[] } }).opacity?.keyframes.length ?? 0;
+		keyframes += 'opacity' in c ? c.opacity.keyframes.length : 0;
 	}
 const envelope = () =>
 	makeEnvelope(doc, { revision: 1, savedAt: '2026-10-08T00:00:00.000Z', platform: 'bench' });

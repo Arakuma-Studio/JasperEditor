@@ -50,9 +50,7 @@ type Kit = Pick<
 	| 'Portal'
 >;
 
-// Height: Radix sets `--radix-popper-available-height` on the popper wrapper of every menu kind (dropdown, context,
-// menubar and their submenus); the kind-specific aliases exist only on their own kind, so the dropdown alias left
-// context menus and the menubar on the 80vh fallback and long ones ran off the window (wp fixups).
+// All menu kinds expose this Popper height variable; their kind-specific aliases are not interchangeable.
 export const MENU_CONTENT =
 	'z-[var(--pr-z-popover)] min-w-[200px] max-h-[var(--radix-popper-available-height,calc(100vh_-_16px))] overflow-y-auto ' +
 	'rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 font-pr text-pr-ui text-pr-text shadow-pr-overlay ' +

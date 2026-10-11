@@ -83,7 +83,7 @@ describe('PointMenu', () => {
 			for (const k of ['offsetWidth', 'scrollHeight'] as const) {
 				const d = sizes[k];
 				if (d) Object.defineProperty(HTMLElement.prototype, k, d);
-				else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+				else Reflect.deleteProperty(HTMLElement.prototype, k);
 			}
 		}
 	});

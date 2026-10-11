@@ -89,7 +89,6 @@ export function TimecodeField(props: TimecodeFieldProps) {
 	const commit = () => {
 		const parsed = parseTimecodeEntry(text, rate, { ...opts, current: current() });
 		if (parsed === null) {
-			// Keep the old value and flash the display red once.
 			setEditing(false);
 			setInvalid(true);
 			return;

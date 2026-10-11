@@ -104,7 +104,7 @@ describe('leases (S01:PER-040)', () => {
 	it('keepalive lease release carries the bearer token in token-only auth mode (WP-3I)', async () => {
 		const { engine, projectId } = setup();
 		const page = new EventTarget();
-		const client = new EngineClient({ fetch: engine.fetch as unknown as typeof fetch, token: 'tok123' });
+		const client = new EngineClient({ fetch: engine.fetch, token: 'tok123' });
 		vi.stubGlobal('window', page);
 		vi.stubGlobal('fetch', engine.fetch);
 		const s = new EngineProjectStore(client);

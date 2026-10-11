@@ -16,7 +16,6 @@ const SIZES = {
 };
 const TONES = { timecode: 'text-pr-timecode', primary: 'text-pr-text', muted: 'text-pr-muted' };
 
-/** Timecode display with tabular numerals so digits never jitter (S05:TY-004/005). */
 export function TimecodeText({
 	value,
 	tone = 'timecode',

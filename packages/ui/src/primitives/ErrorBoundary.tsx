@@ -11,13 +11,13 @@ export type PanelErrorBoundaryProps = {
 	onError?(error: unknown, info: ErrorInfo): void;
 };
 
-type State = { error: unknown; componentStack: string };
+type State = { error: Error | null; componentStack: string; copyError: string | null };
 
 export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State> {
-	state: State = { error: null, componentStack: '' };
+	state: State = { error: null, componentStack: '', copyError: null };
 
 	static getDerivedStateFromError(error: unknown): Partial<State> {
-		return { error: error ?? new Error('Unknown error') };
+		return { error: error instanceof Error ? error : new Error(String(error)) };
 	}
 
 	componentDidCatch(error: unknown, info: ErrorInfo) {
@@ -27,8 +27,18 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 
 	private details(): string {
 		const e = this.state.error;
-		const msg = e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ''}` : String(e);
+		const msg = e ? `${e.name}: ${e.message}\n${e.stack ?? ''}` : '';
 		return `Panel: ${this.props.name}\n${msg}\n${this.state.componentStack}`;
+	}
+
+	private async copyDetails(): Promise<void> {
+		try {
+			if (!navigator.clipboard) throw new Error('Clipboard access is unavailable');
+			await navigator.clipboard.writeText(this.details());
+			this.setState({ copyError: null });
+		} catch (error) {
+			this.setState({ copyError: error instanceof Error ? error.message : String(error) });
+		}
 	}
 
 	render() {
@@ -43,16 +53,18 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 					<Icon id="status.error" size={24} />
 				</span>
 				<p className="text-pr-ui text-pr-text">This panel crashed</p>
-				<p className="max-w-[320px] truncate text-pr-small text-pr-muted">
-					{this.state.error instanceof Error ? this.state.error.message : String(this.state.error)}
-				</p>
+				<p className="max-w-[320px] truncate text-pr-small text-pr-muted">{this.state.error.message}</p>
+				{this.state.copyError ? <p className="text-pr-small text-pr-danger">{this.state.copyError}</p> : null}
 				<div className="flex gap-2">
-					<Button variant="primary" onClick={() => this.setState({ error: null, componentStack: '' })}>
+					<Button
+						variant="primary"
+						onClick={() => this.setState({ error: null, componentStack: '', copyError: null })}
+					>
 						Reload Panel
 					</Button>
 					<Button
 						onClick={() => {
-							void navigator.clipboard?.writeText(this.details()).catch(() => {});
+							void this.copyDetails();
 						}}
 					>
 						Copy Details

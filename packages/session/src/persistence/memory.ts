@@ -82,7 +82,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 	}
 	async open(projectId: string, opts: { readOnly?: boolean } = {}): Promise<OpenedProject> {
 		const e = this.entry(projectId);
-		const loaded = loadProject(JSON.parse(JSON.stringify(e.envelope)), {
+		const loaded = loadProject(structuredClone(e.envelope), {
 			ids: this.ids,
 			mgTemplates: this.mgTemplates,
 		});
@@ -151,8 +151,6 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 		return revision;
 	}
 
-	// ------------------------------------------------------------ crash recovery (S01:PER-021)
-
 	private held(e: Entry, sessionId: string): boolean {
 		return !!e.lease && e.lease.sessionId === sessionId && Date.parse(e.lease.expiresAt) > Date.now();
 	}
@@ -175,7 +173,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 				changeCount: w.changeCount,
 				sizeBytes: JSON.stringify(w.document).length,
 			},
-			document: JSON.parse(JSON.stringify(w.document)),
+			document: structuredClone(w.document),
 		});
 	}
 	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {
@@ -196,7 +194,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 		const e = this.entry(projectId);
 		const j = e.journals.get(sessionId);
 		if (!j || this.held(e, sessionId)) throw new Error('No unsaved changes to recover for that session');
-		const loaded = loadProject(JSON.parse(JSON.stringify(j.document)), {
+		const loaded = loadProject(structuredClone(j.document), {
 			ids: this.ids,
 			mgTemplates: this.mgTemplates,
 		});
@@ -226,7 +224,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 		return this.copyAs(this.entry(projectId).envelope.document, name);
 	}
 	private copyAs(doc: ProjectDocument, name: string): string {
-		const copy = JSON.parse(JSON.stringify(doc)) as ProjectDocument;
+		const copy = structuredClone(doc);
 		copy.projectId = this.ids.next('prj');
 		copy.name = name;
 		this.put(copy);
@@ -238,7 +236,7 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 	async exportFile(projectId: string): Promise<Blob> {
 		return new Blob([JSON.stringify(this.entry(projectId).envelope)], { type: 'application/json' });
 	}
-	async importFile(file: Blob | { path: string }): Promise<string> {
+	async importFile(file: Blob): Promise<string> {
 		if (!(file instanceof Blob)) throw new Error('MemoryProjectStore imports Blobs only');
 		const loaded = loadProject(JSON.parse(await file.text()), {
 			ids: this.ids,

@@ -115,7 +115,7 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 		try {
 			e.currentTarget.setPointerCapture?.(e.pointerId);
 		} catch {
-			/* pointer capture unsupported (tests) */
+			// The browser can cancel the pointer before capture is requested.
 		}
 		const start = value ?? 0;
 		drag.current = {
@@ -145,8 +145,11 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 			d.release = forceCursor('ew-resize');
 			// Pointer lock removes the screen-edge limit and hides the cursor (CT-021) where available.
 			try {
-				const req = elRef.current?.requestPointerLock?.() as unknown;
-				if (req && typeof (req as Promise<void>).catch === 'function') (req as Promise<void>).catch(() => {});
+				const req = elRef.current?.requestPointerLock?.();
+				if (req)
+					void req.catch(() => {
+						d.locked = false;
+					});
 				d.locked = !!elRef.current?.requestPointerLock;
 			} catch {
 				d.locked = false;
