@@ -63,7 +63,10 @@ error code as project import. Its thumbnail path no longer reports an empty or i
   non-object JSON, successful thumbnail lifecycle, missing output, and stalled-renderer cleanup.
 - Initial focused run: 9 of 10 suites passed, 63 of 64 tests passed. The only failure was the existing
   all-audio-effects parity test exceeding the 5-second default timeout under host load (9.8 seconds);
-  rerun with a 120-second timeout is recorded below when complete. All six new Lottie tests passed.
+  the rerun with a 120-second timeout passed. All six new Lottie tests passed.
+- Follow-up run: 3 suites and 5 tests passed (`audio-fx-preview`, `capture-safe-canvas`, and
+  `serial-audio-context`). The latter two exercise the browser shims in real Chromium. Across the two
+  runs, all 67 distinct tests in 12 suites passed; one audio test required the larger timeout.
 - Adoption of the shared `mediaParamId` helper depends on the registry and project-model audit commits;
   the integrated barrel export and final rendering suites are verified by the integrator.
 - A measured relative-import graph scan of 101 source files and 339 edges, including type imports,
@@ -71,3 +74,10 @@ error code as project import. Its thumbnail path no longer reports an empty or i
 - The initial package typecheck was stopped at the integrator's request to relieve shared CPU contention.
   Final serialized typechecking belongs to the integration gate; a cancelled run is not a passing check.
 - No new visual assets, dependencies, migrations or altered golden images are part of this change.
+
+Focused commands:
+
+```sh
+pnpm exec vitest run packages/compositions/test/lottie-assets.test.ts packages/compositions/test/imports-layers.test.tsx packages/compositions/test/mg-host-remote.test.ts packages/compositions/test/compositor.test.tsx packages/compositions/test/fx-plan.test.ts packages/compositions/test/fx-layers.test.tsx packages/compositions/test/audio-fx-preview.test.ts packages/compositions/test/color.test.tsx packages/compositions/test/color-mgmt.test.tsx packages/compositions/test/compositions.test.tsx --maxWorkers=1
+pnpm exec vitest run packages/compositions/test/audio-fx-preview.test.ts packages/compositions/test/capture-safe-canvas.test.ts packages/compositions/test/serial-audio-context.test.ts --maxWorkers=1 --testTimeout=120000 --hookTimeout=120000
+```
