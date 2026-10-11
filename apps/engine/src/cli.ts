@@ -5,7 +5,7 @@ import { startEngine } from './index.ts';
 import { insideElectron } from './tools/node-runtime.ts';
 import { coreServices } from './tools/services.ts';
 
-type ParentPort = { postMessage(msg: unknown): void };
+type ParentPort = { postMessage(msg: { type: 'ready'; port: number }): void };
 
 async function main(): Promise<void> {
 	// Inside the desktop app (an Electron utility process) `process.execPath` is the application binary. The
@@ -40,8 +40,8 @@ async function main(): Promise<void> {
 	const remotion = caps.render.remotionBinaries;
 	if (remotion?.message) console.warn(`[engine] WARNING: ${remotion.message}`);
 	else if (remotion) console.log(`[engine] Remotion uses the LGPL FFmpeg directory (${remotion.source})`);
-	const ready = { type: 'ready', port: engine.port };
-	(process as unknown as { parentPort?: ParentPort }).parentPort?.postMessage(ready);
+	const ready = { type: 'ready', port: engine.port } as const;
+	(process as NodeJS.Process & { parentPort?: ParentPort }).parentPort?.postMessage(ready);
 	process.send?.(ready);
 
 	let stopping = false;
