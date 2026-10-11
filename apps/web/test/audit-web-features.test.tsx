@@ -77,6 +77,18 @@ describe('feature job polling', () => {
 		expect(getJob).toHaveBeenCalledTimes(6);
 	});
 
+	it('retries explicitly retryable server errors within the same budget', async () => {
+		vi.useFakeTimers();
+		const getJob = vi
+			.fn<EngineClient['getJob']>()
+			.mockRejectedValueOnce(new EngineError('INTERNAL', 'Busy', { retryable: true }))
+			.mockResolvedValueOnce(job('succeeded'));
+		const pending = pollActiveJob({ getJob }, 'job_audit', { isActive: () => true, intervalMs: 1 });
+		await vi.runAllTimersAsync();
+		expect((await pending)?.state).toBe('succeeded');
+		expect(getJob).toHaveBeenCalledTimes(2);
+	});
+
 	it('does not publish an obsolete job response', async () => {
 		vi.useFakeTimers();
 		let active = true;

@@ -21,8 +21,8 @@ The highest-confidence findings and implementations are:
   guard. A shared generic `useDialogClose` uses a ref so primary action and dialog-close notifications cannot
   invoke the hosted callback twice within one render.
 - Tracking, roto, camera tracking, and mask tracking silently retried every failed job lookup indefinitely.
-  `pollActiveJob` shares ownership checks, terminal-state detection, and a three-consecutive-network-failure
-  limit. Permanent failures become the feature's visible error state; expired or replaced jobs cannot publish
+  `pollActiveJob` shares ownership checks, terminal-state detection, and a three-consecutive-transient-failure
+  limit. Network errors and explicitly retryable server errors share this budget. Permanent failures become the feature's visible error state; expired or replaced jobs cannot publish
   results. Mask tracking also recognizes the API's `interrupted` terminal state.
 - Media resolution treated authentication, internal, and unexpected failures as successful availability.
   Those failures now set `availability: 'error'`; missing assets and disconnected engines retain their distinct

@@ -23,7 +23,7 @@ export async function pollActiveJob(
 	jobId: string,
 	opts: { isActive(): boolean; onUpdate?(job: EngineJob): void; intervalMs: number },
 ): Promise<EngineJob | null> {
-	let networkFailures = 0;
+	let transientFailures = 0;
 	while (opts.isActive()) {
 		await new Promise<void>((resolve) => setTimeout(resolve, opts.intervalMs));
 		if (!opts.isActive()) return null;
@@ -32,11 +32,16 @@ export async function pollActiveJob(
 			job = await engine.getJob(jobId);
 		} catch (error) {
 			if (!opts.isActive()) return null;
-			if (error instanceof EngineError && error.code === 'NETWORK' && ++networkFailures < 3) continue;
+			if (
+				error instanceof EngineError &&
+				(error.code === 'NETWORK' || error.retryable) &&
+				++transientFailures < 3
+			)
+				continue;
 			throw error;
 		}
 		if (!opts.isActive()) return null;
-		networkFailures = 0;
+		transientFailures = 0;
 		opts.onUpdate?.(job);
 		if (TERMINAL_JOB_STATES.has(job.state)) return job;
 	}
