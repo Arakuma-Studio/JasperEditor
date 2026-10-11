@@ -97,7 +97,10 @@ const api = {
 		await loadPhoto(photoUrl);
 		return true;
 	},
-	render(jobs: PreviewJob[], sheet: { columns: number; cell: [number, number]; title?: string } | null) {
+	render(
+		jobs: readonly PreviewJob[],
+		sheet: { columns: number; cell: [number, number]; title?: string } | null,
+	) {
 		const results: { name: string; png?: string; error?: string; size?: [number, number] }[] = [];
 		// Jobs and outputs accumulate over calls (the CLI renders one job per call, then asks for the sheet).
 		const outs = allOuts;

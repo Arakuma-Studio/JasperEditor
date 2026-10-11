@@ -133,6 +133,12 @@ remained empty. This proof applies to that comment-only commit, before subsequen
   all four used methods, preserving names, arguments, ordering and optional defaults. All 10 files
   parse without diagnostics and have zero explicit `any` AST nodes. Biome and whitespace checks pass;
   no GPU suite or package typecheck was repeated for this followup.
+- Final integration exposed a readonly mismatch between the preview CLI's Playwright argument tuple
+  and `preview-entry.ts`'s render parameter. The renderer only reads the caller's job array, so its
+  parameter now accepts `readonly PreviewJob[]`. Focused semantic checks of the two preview files
+  against their actual dependencies reproduced the original TS2345 diagnostic and then reported zero
+  diagnostics after the change. The renderer's emitted JavaScript is byte-identical; Biome and
+  whitespace checks pass. This followup ran no browser tests or full package typecheck.
 - No new visual assets, dependencies, migrations or altered golden images are part of this change.
 
 Validation commands:
