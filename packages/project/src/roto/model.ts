@@ -28,20 +28,7 @@ export const ROTO_OBJECT_PARAMS: Readonly<Record<string, readonly string[]>> = {
 export const ROTO_DEFAULT_MODEL = 'sam2.1-hiera-tiny';
 export const FACE_DEFAULT_MODEL = 'mediapipe-face-landmarker';
 
-export type ResolvedRotoSettings = {
-	engine: 'model' | 'classic';
-	model: string;
-	quality: 'standard' | 'best';
-	searchRadius: number;
-	motionThreshold: number;
-	motionDamping: number;
-	edgeMode: 'off' | 'guided' | 'closed-form';
-	edgeRadius: number;
-	edgeSmooth: number;
-	faceThreshold: number;
-	faceExpand: number;
-	faceShape: 'outline' | 'ellipse';
-};
+export type ResolvedRotoSettings = Required<RotoSettings>;
 
 /**
  * Defaults: After Effects' Roto Brush propagation defaults (Search Radius 15, Motion Threshold 10 %, Motion Damping
@@ -66,7 +53,7 @@ export const ROTO_DEFAULTS: ResolvedRotoSettings = {
 export function rotoSettingsOf(
 	r: Pick<ClipRoto, 'settings'> | { settings?: RotoSettings },
 ): ResolvedRotoSettings {
-	const s = r.settings ?? {};
+	const s: Partial<ResolvedRotoSettings> = r.settings ?? {};
 	const out = { ...ROTO_DEFAULTS };
 	const applySetting = <K extends keyof ResolvedRotoSettings>(key: K) => {
 		const value = s[key];

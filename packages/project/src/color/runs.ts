@@ -8,7 +8,9 @@ import { bakeLut, type Lut } from './lut.ts';
 /** Minimal effect shape (evaluated params): `ResolvedEffect` and the engine's evaluated instances fit. */
 export type ColorRunEffect = EffectLike;
 
-export type EffectRun<E extends ColorRunEffect = ColorRunEffect> =
+type EffectRunSource = Pick<EffectLike, 'id' | 'effectId' | 'effectVersion' | 'enabled'>;
+
+export type EffectRun<E extends EffectRunSource = ColorRunEffect> =
 	| { kind: 'color'; effects: E[] }
 	| { kind: 'other'; effect: E };
 
@@ -20,7 +22,7 @@ export const EXPORT_LUT_SIZE = 33;
  * Splits a layer's effect stack (stack order) into colour runs and other effects. Disabled effects are dropped;
  * unknown ids and audio effects are dropped (they are bypassed by every renderer, S01:FX-022).
  */
-export function effectRuns<E extends ColorRunEffect>(
+export function effectRuns<E extends EffectRunSource>(
 	effects: readonly E[],
 	registry: EffectRegistry,
 ): EffectRun<E>[] {

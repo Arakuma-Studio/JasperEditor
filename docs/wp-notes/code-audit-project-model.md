@@ -58,6 +58,10 @@ explicitly at the serialization boundary instead of using a blanket `any` docume
   their owning types. JSON Schema uses Zod's library schema type. `unknown[]` parameter lists and untyped
   capabilities/settings were unnecessary because their producers already had concrete definitions.
 - `rotoMaskCommands` returns the two relevant command input types instead of `unknown[]`.
+- Resolved roto settings derive from the persisted settings type with `Required`; the merge reads a mapped
+  partial of that same type so generic key assignments preserve each property's value type.
+- Colour-run partitioning requires only effect identity and enabled metadata; baking and cache keys still
+  require evaluated effect parameters. This keeps persisted animated values out of colour evaluation.
 - Vector property catalogues construct real shape items with the existing defaults. They no longer assert an
   incomplete sample object is a complete `ShapeItem`. Their advertised field types come from `PropertySpec`.
 - `resolveLayerProps` accepts the property-bearing portion of a visual clip. Tracking callers provide that
@@ -137,6 +141,12 @@ Result: **74 passed, 1 failed** across five files. The failure was the unchanged
 wall-clock allowance: mutation 201 took 3129 ms against a 2000 ms limit under shared-host contention. All new
 glTF regressions, hostile-model allocation/tree tests, binary/text model tests, and malformed-input regressions
 passed. The retained failing input is in ignored `test-results/fuzz-failures/`; it is not an asset to commit.
+
+The focused model regression command passed **197 tests across 15 files**:
+
+```sh
+pnpm vitest run packages/project/test/agent.test.ts packages/project/test/agent-mcp-cli.test.ts packages/project/test/vector/commands.test.ts packages/project/test/shapes.test.ts packages/project/test/schema-history.test.ts packages/project/test/three-d-scene.test.ts packages/project/test/roto.test.ts packages/project/test/tracker.test.ts packages/project/test/render.test.ts packages/project/test/color-mgmt-science.test.ts packages/project/test/color-mgmt-ocio.test.ts packages/project/test/imports-formats.test.ts packages/project/test/expressions.test.ts packages/project/test/expressions-memo.test.ts packages/project/test/time.test.ts --maxWorkers=1
+```
 
 Biome checked all 135 changed/new TypeScript files successfully; the subsequent index/media edits passed a
 further focused check. `git diff --check` passed. A package typecheck was started and then stopped at the integration agent's
