@@ -77,5 +77,8 @@ incorrect or that arbitrary future input can never reveal another bug.
   `color-grade.test.tsx`, and `audio-mix.test.ts`. The run took 297 seconds on the shared host; test execution
   itself took 11 seconds. An earlier broad run was stopped after edits changed its loaded modules and is not
   used as final verification evidence.
+- The final audit/import run passes all 25 tests in `audit-web-features.test.tsx` and `imports.test.tsx`
+  with `--maxWorkers=1`, including the malformed-result property. These two fresh runs cover 42 distinct tests
+  across five files.
 - The integration owner will run the serialized full web typecheck and the repository verification gate;
   concurrent TypeScript processes were avoided because the shared host was heavily loaded.
