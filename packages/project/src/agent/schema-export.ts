@@ -20,7 +20,7 @@ import { TRANSITION_SPECS, type TransitionSpec } from '../transitions.ts';
 import { SHAPE_PRESETS } from '../vector/presets.ts';
 import { shapeItemFieldCatalog } from '../vector/properties.ts';
 
-export type JsonSchema = ReturnType<typeof z.toJSONSchema>;
+export type JsonSchema = z.core.JSONSchema.BaseSchema;
 
 export type AgentSchema = {
 	protocol: typeof TX_PROTOCOL;

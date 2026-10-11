@@ -55,7 +55,7 @@ explicitly at the serialization boundary instead of using a blanket `any` docume
 
 - `Rational` references the schema-derived `RationalT`; this is a type-only dependency.
 - Agent schema metadata derives effect, transition, template, text-animation, preset, and property fields from
-  their owning types. JSON Schema uses Zod's actual return type. `unknown[]` parameter lists and untyped
+  their owning types. JSON Schema uses Zod's library schema type. `unknown[]` parameter lists and untyped
   capabilities/settings were unnecessary because their producers already had concrete definitions.
 - `rotoMaskCommands` returns the two relevant command input types instead of `unknown[]`.
 - Vector property catalogues construct real shape items with the existing defaults. They no longer assert an
