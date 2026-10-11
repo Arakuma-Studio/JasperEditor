@@ -13,8 +13,6 @@ export type Gmm = { comps: Gauss[] };
 /** Regularisation added to every covariance's diagonal (colour noise floor). */
 const REG = 2e-4;
 
-export const EMPTY_GMM: Gmm = { comps: [] };
-
 function det3(m: readonly number[]): number {
 	return (
 		m[0]! * (m[4]! * m[8]! - m[5]! * m[7]!) -
@@ -119,7 +117,7 @@ function compCost(g: Gauss, r: number, gr: number, b: number): number {
 }
 
 /** The most likely component of a colour. */
-export function gmmBest(g: Gmm, r: number, gr: number, b: number): number {
+function gmmBest(g: Gmm, r: number, gr: number, b: number): number {
 	let best = 0;
 	let bv = Number.POSITIVE_INFINITY;
 	for (let i = 0; i < g.comps.length; i++) {

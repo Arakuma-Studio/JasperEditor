@@ -131,7 +131,7 @@ export function slerpRot(a: M3, b: M3, t: number): M3 {
  * Thin SVD `A = U diag(s) Vᵀ` of an `m × n` row-major matrix (one-sided Jacobi). `U` is `max(m, n) × n`, `s` sorted
  * descending, `V` is `n × n` (columns are the right singular vectors).
  */
-export function svd(
+function svd(
 	a: ArrayLike<number>,
 	m: number,
 	n: number,
@@ -323,7 +323,6 @@ export function choleskySolve(a: Float64Array, n: number, b: Float64Array): bool
 
 /** A similarity `x ↦ s R x + t`. */
 export type Similarity = { s: number; r: M3; t: V3 };
-export const applySim = (m: Similarity, x: V3): V3 => add(scale(mv(m.r, x), m.s), m.t);
 
 /** The similarity minimising Σ |dst − (s R src + t)|² (Umeyama 1991). */
 export function umeyama(src: V3[], dst: V3[]): Similarity | null {
@@ -357,16 +356,4 @@ export function umeyama(src: V3[], dst: V3[]): Similarity | null {
 	const r = mm(ud, mt(v));
 	const s = (d[0] * sgn[0] + d[1] * sgn[1] + d[2] * sgn[2]) / variance;
 	return { s, r, t: sub(md, scale(mv(r, ms), s)) };
-}
-
-/** Euler angles (degrees) `[x, y, z]` with `m = Rz(z) Ry(y) Rx(x)` (After Effects' Orientation order). */
-export function eulerXyz(m: M3): V3 {
-	const sy = Math.min(1, Math.max(-1, -m[2][0]));
-	const y = Math.asin(sy);
-	const [x, z] =
-		Math.abs(sy) < 0.999999
-			? [Math.atan2(m[2][1], m[2][2]), Math.atan2(m[1][0], m[0][0])]
-			: [Math.atan2(-m[1][2], m[1][1]), 0];
-	const deg = 180 / Math.PI;
-	return [x * deg, y * deg, z * deg];
 }

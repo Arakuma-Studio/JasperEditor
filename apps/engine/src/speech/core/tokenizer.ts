@@ -109,12 +109,8 @@ export class WhisperTokenizer {
 		return this.languages.find(([c]) => c === code)?.[1] ?? null;
 	}
 
-	isTimestamp(id: number): boolean {
-		return id >= this.timestampBegin;
-	}
-
 	/** Bytes of a regular token (empty for special tokens). */
-	tokenBytes(id: number): Uint8Array {
+	private tokenBytes(id: number): Uint8Array {
 		if (this.specialById.has(id)) return EMPTY;
 		return this.bytes[id] ?? EMPTY;
 	}
@@ -187,7 +183,7 @@ export class WhisperTokenizer {
 const EMPTY = new Uint8Array(0);
 const ASCII_PUNCTUATION = new Set([...'!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~']);
 /** OpenAI: languages whose words are not separated by spaces. */
-export const NO_SPACE_LANGUAGES = new Set(['zh', 'ja', 'th', 'lo', 'my', 'yue']);
+const NO_SPACE_LANGUAGES = new Set(['zh', 'ja', 'th', 'lo', 'my', 'yue']);
 
 /** OpenAI defaults (`transcribe(prepend_punctuations=…, append_punctuations=…)`). */
 export const PREPEND_PUNCTUATIONS = '"\'“¿([{-';

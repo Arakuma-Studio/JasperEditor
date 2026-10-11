@@ -9,7 +9,7 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
 
 /** atempo chain for a constant speed (each instance limited to 0.5…100). */
-export function atempoChain(speed: number): string[] {
+function atempoChain(speed: number): string[] {
 	if (Math.abs(speed - 1) < 1e-9) return [];
 	const parts: number[] = [];
 	let s = speed;
@@ -38,7 +38,7 @@ export function resamplerArgs(soxr: boolean): string {
 }
 
 /** Output channel count of a clip: its channel map, else the stream's channels (1, 2 or 6; others → stereo). */
-export function clipChannels(
+function clipChannels(
 	clip: Pick<RenderAudioClip, 'channels'>,
 	stream: Pick<AudioStream, 'channels'>,
 ): number {
@@ -62,7 +62,7 @@ export function clipDecodeArgs(o: {
 }): { args: string[]; channels: number } {
 	const { clip, fps, sampleRate } = o;
 	const F = flicksPerFrame(fps);
-	const [s0] = [frameToSample(clip.start - (clip.headHandle ?? 0), fps, sampleRate)];
+	const s0 = frameToSample(clip.start - (clip.headHandle ?? 0), fps, sampleRate);
 	const startSample = s0 + o.offset;
 	// Local clip time (frames, fractional) of the first and one-past-last decoded sample.
 	const spf = (sampleRate * fps.den) / fps.num;

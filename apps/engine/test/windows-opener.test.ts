@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { openerFor, WINDOWS_OPEN_COMMAND } from '../src/routes/gaps.ts';
 import { tempAppdir } from './helpers.ts';
 
@@ -419,14 +419,10 @@ describe.skipIf(!PWSH || process.platform === 'win32')(
 	},
 );
 
-describe('pwsh availability', () => {
-	it('says whether the real-PowerShell tests ran', () => {
-		// Not an assertion about the host: a record in the test output, so a skipped block is never mistaken for a pass.
-		console.info(
-			PWSH && process.platform !== 'win32'
-				? `[windows-opener] ran the open command through ${PWSH}`
-				: '[windows-opener] no PowerShell found (pwsh on PATH or JASPER_PWSH): the real-run block was skipped',
-		);
-		expect(true).toBe(true);
-	});
+afterAll(() => {
+	console.info(
+		PWSH && process.platform !== 'win32'
+			? `[windows-opener] ran the open command through ${PWSH}`
+			: '[windows-opener] no PowerShell found (pwsh on PATH or JASPER_PWSH): the real-run block was skipped',
+	);
 });

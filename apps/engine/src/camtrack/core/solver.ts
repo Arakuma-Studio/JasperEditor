@@ -697,7 +697,7 @@ function undistortedTracks(t: CameraTracks, dist: Distortion): CameraTracks {
 	};
 }
 
-export type SolveProgress = (fraction: number, stage: string) => void;
+type SolveProgress = (fraction: number, stage: string) => void;
 
 /** Solves the camera of a tracked clip. Throws `SolveError` when it cannot. */
 export function solveCamera(
@@ -999,5 +999,4 @@ function finish(
 	};
 }
 
-export const _internal = { keyframes, Data };
 export type { Pose };

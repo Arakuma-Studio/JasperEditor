@@ -1,18 +1,10 @@
 // Small image helpers of the roto pipeline: 8-bit RGB → float, bilinear resampling of RGB images and planes (area
-// averaging when shrinking a lot), luma. Pixel centres at +0.5 everywhere.
+// averaging when shrinking a lot). Pixel centres at +0.5 everywhere.
 
 /** Straight RGB 0..1 floats from 8-bit `rgb24`. */
 export function rgbFloat(rgb8: Uint8Array): Float32Array {
 	const out = new Float32Array(rgb8.length);
 	for (let i = 0; i < rgb8.length; i++) out[i] = rgb8[i]! / 255;
-	return out;
-}
-
-/** 8-bit luma (Rec.709) of `rgb24`. */
-export function luma8(rgb8: Uint8Array, w: number, h: number): Uint8Array {
-	const out = new Uint8Array(w * h);
-	for (let i = 0; i < w * h; i++)
-		out[i] = Math.round(0.2126 * rgb8[i * 3]! + 0.7152 * rgb8[i * 3 + 1]! + 0.0722 * rgb8[i * 3 + 2]!);
 	return out;
 }
 

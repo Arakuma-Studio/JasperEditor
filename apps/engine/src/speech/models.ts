@@ -13,8 +13,9 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { SpeechModel } from '@jasper/api';
+import { sha256File } from '../tools/fs.ts';
 
-export type SpeechModelFile = { path: string; url: string; sha256: string; sizeBytes: number };
+type SpeechModelFile = { path: string; url: string; sha256: string; sizeBytes: number };
 export type SpeechCatalogEntry = {
 	id: string;
 	name: string;
@@ -142,7 +143,7 @@ export class SpeechModelStore {
 				fresh.files[f.path] = r;
 				continue;
 			}
-			const got = await sha256Of(p);
+			const got = await sha256File(p);
 			if (got !== f.sha256)
 				throw new SpeechModelError(
 					'SPEECH_MODEL_CORRUPT',
@@ -240,12 +241,6 @@ async function openSource(url: string, signal?: AbortSignal): Promise<Readable> 
 	if (!res.ok || !res.body)
 		throw new SpeechModelError('DOWNLOAD_FAILED', `Download failed (HTTP ${res.status})`);
 	return Readable.fromWeb(res.body as import('node:stream/web').ReadableStream);
-}
-
-export async function sha256Of(path: string): Promise<string> {
-	const h = createHash('sha256');
-	for await (const c of createReadStream(path)) h.update(c as Buffer);
-	return h.digest('hex');
 }
 
 /** Default models directory under an appdir. */

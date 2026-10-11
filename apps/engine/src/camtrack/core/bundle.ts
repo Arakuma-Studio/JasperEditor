@@ -38,16 +38,6 @@ export type BaOpts = {
 	distortion: boolean;
 };
 
-export const defaultBaOpts = (): BaOpts => ({
-	focal: { kind: 'fixed' },
-	fixPoints: false,
-	fixCenters: false,
-	fixed: [],
-	huber: 2,
-	maxIter: 30,
-	distortion: false,
-});
-
 const BEHIND = 1e6;
 const huberCost = (e2: number, k: number) => (e2 <= k * k ? e2 : 2 * k * Math.sqrt(e2) - k * k);
 
@@ -76,7 +66,7 @@ function priorCost(cams: BaCam[], o: BaOpts): number {
 }
 
 /** Total robust cost. */
-export function baCost(cams: BaCam[], pts: V3[], obs: BaObs[], o: BaOpts): number {
+function baCost(cams: BaCam[], pts: V3[], obs: BaObs[], o: BaOpts): number {
 	let c = 0;
 	for (const ob of obs) {
 		const r = residual(cams[ob.cam]!, pts[ob.pt]!, ob.uv);
@@ -118,7 +108,7 @@ function layout(ncam: number, o: BaOpts): Layout {
 	return { start, fidx, shared, dist, n, rotOnly: o.fixCenters };
 }
 
-export type BaReport = { initialCost: number; cost: number; iterations: number };
+type BaReport = { initialCost: number; cost: number; iterations: number };
 
 type PtSys = { v: M3; bp: V3; w: [number, V3][] };
 

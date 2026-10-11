@@ -24,7 +24,7 @@ import { type Gmm, gmmCost, gmmFit } from './gmm.ts';
 import { closedForm, distance, gauss, guidedFilter, sample, signedDistance } from './matting.ts';
 import { Graph, SOURCE } from './maxflow.ts';
 
-export type StrokeKind = 'fg' | 'bg' | 'refine' | 'refineErase';
+type StrokeKind = 'fg' | 'bg' | 'refine' | 'refineErase';
 
 /** A stroke: a polyline swept by a disc of `radius` (matte px). */
 export type Stroke = { kind: StrokeKind; radius: number; points: readonly (readonly [number, number])[] };
@@ -54,7 +54,7 @@ export const DEFAULT_SEG_OPTS: SegOpts = {
 export type FrameSeg = { w: number; h: number; matte: Uint8Array; refine: Uint8Array; fg: Gmm; bg: Gmm };
 
 /** What a frame is segmented with besides its strokes: the matte propagated from its neighbour (or a model's). */
-export type Prior = { soft: Float32Array; fg: Gmm; bg: Gmm; refine: Uint8Array; weight: number };
+type Prior = { soft: Float32Array; fg: Gmm; bg: Gmm; refine: Uint8Array; weight: number };
 
 /** A trained mask model (SAM): foreground probability (0..1, w·h) for a prompt, or null when it fails. */
 export type MaskModel = {
@@ -81,7 +81,7 @@ const HARD_BG = 2;
 const GAMMA = 50;
 const PRIOR = 1;
 /** A trained model's matte as a prior: it outweighs the colour models. */
-export const MODEL_PRIOR = 4;
+const MODEL_PRIOR = 4;
 /** Fixed-point scale of the energies. */
 const K = 16;
 const INF = 2 ** 40;
@@ -100,7 +100,7 @@ const NB: readonly (readonly [number, number, boolean])[] = [
 	[1, -1, false],
 ];
 
-export function emptySeg(w: number, h: number): FrameSeg {
+function emptySeg(w: number, h: number): FrameSeg {
 	return {
 		w,
 		h,
@@ -733,7 +733,7 @@ function pointsAlong(s: Stroke, max: number): [number, number][] {
 }
 
 /** A model prompt from the strokes (points along the foreground and background strokes) and the box. */
-export function strokePrompt(strokes: readonly Stroke[], box: Box | null): ModelPrompt {
+function strokePrompt(strokes: readonly Stroke[], box: Box | null): ModelPrompt {
 	const points: ModelPrompt['points'] = [];
 	for (const [kind, fg] of [
 		['fg', true],
@@ -747,7 +747,7 @@ export function strokePrompt(strokes: readonly Stroke[], box: Box | null): Model
 }
 
 /** Adds a prior matte to a prompt: its box (5 % larger), up to four points spread through its core, the matte. */
-export function addPriorPrompt(prompt: ModelPrompt, soft: Float32Array, w: number, h: number): boolean {
+function addPriorPrompt(prompt: ModelPrompt, soft: Float32Array, w: number, h: number): boolean {
 	const n = w * h;
 	const bin = new Uint8Array(n);
 	let x0 = Number.POSITIVE_INFINITY;
@@ -918,8 +918,6 @@ export type EdgeOpts = {
 	/** Smooth (0..100+): regularisation of the edge matting. */
 	smooth: number;
 };
-
-export const DEFAULT_EDGE_OPTS: EdgeOpts = { mode: 'guided', radius: 3, smooth: 1 };
 
 /**
  * The soft matte (0..1) of a segmentation: the binary matte, with edge matting (guided filter, + closed-form matting
