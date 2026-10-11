@@ -117,8 +117,16 @@ remained empty. This proof applies to that comment-only commit, before subsequen
   compile gate passed 1 test (24.36 seconds of testing; 106.08 seconds total).
 - Biome and `git diff --check` passed for the shader fix and the comment/type followups. No additional
   package typecheck was run by this reviewer; integration owns the final check.
-- The complete 971-program software-GL compile sweep still requires an integration rerun after these
-  fixes. The filtered Iris result and the 8-case Classic 3D result do not establish a passing full sweep.
+- The complete, unfiltered software-GL compile sweep passed with `FX_COMPILE_WORKERS=1` and the
+  existing budget configuration unchanged: 1 test passed, 1,675.81 seconds of testing and 1,830.52
+  seconds total. The current collector produces **983 unique programs**, covering 1,834 pass users,
+  including 20 programs with custom vertex shaders and 17 library stress cases. This count was measured
+  separately at integration revision `c27afbff` by extracting `collectPrograms`, `defaults`, and
+  `LIBRARY_STRESS` unchanged, resolving their current imports, and evaluating with an empty filter;
+  the count-only run imported no browser, test runner, or budget calibration. The earlier 971-program
+  count predates the Premiere interpolation repair. Successful-test stdout was hidden in the full
+  run, so per-program timing details are unavailable; the retained summary is
+  `/tmp/jasper-audit-shader-budget-final.log`.
 - The final GPU-helper cleanup touched 10 TypeScript files: 7 retain byte-identical emitted JavaScript;
   2 differ only in redundant expression parentheses after type erasure. The remaining file replaces
   dynamic browser dispatch with direct calls. A mocked bridge comparison verified six calls across
@@ -127,7 +135,7 @@ remained empty. This proof applies to that comment-only commit, before subsequen
   no GPU suite or package typecheck was repeated for this followup.
 - No new visual assets, dependencies, migrations or altered golden images are part of this change.
 
-Focused commands:
+Validation commands:
 
 ```sh
 pnpm exec vitest run packages/compositions/test/lottie-assets.test.ts packages/compositions/test/imports-layers.test.tsx packages/compositions/test/mg-host-remote.test.ts packages/compositions/test/compositor.test.tsx packages/compositions/test/fx-plan.test.ts packages/compositions/test/fx-layers.test.tsx packages/compositions/test/audio-fx-preview.test.ts packages/compositions/test/color.test.tsx packages/compositions/test/color-mgmt.test.tsx packages/compositions/test/compositions.test.tsx --maxWorkers=1
@@ -135,4 +143,5 @@ pnpm exec vitest run packages/compositions/test/audio-fx-preview.test.ts package
 pnpm exec vitest run packages/compositions/test/three-d-gl.test.ts --maxWorkers=1 --reporter=verbose
 pnpm exec vitest run packages/project/test/transition-edge-wipe.test.ts packages/project/test/transition-premiere.test.ts --maxWorkers=1
 FX_COMPILE_FILTER=jasper.iris FX_COMPILE_WORKERS=1 pnpm exec vitest run packages/compositions/test/fx-compile-budget.test.ts --maxWorkers=1
+FX_COMPILE_FILTER='' FX_COMPILE_WORKERS=1 pnpm exec vitest run packages/compositions/test/fx-compile-budget.test.ts --maxWorkers=1
 ```
