@@ -1,5 +1,4 @@
-// wp speech: `transcript.attach` — a recognised transcript becomes the transcript of a media (one per media; every
-// clip of the media reads it through the sequence transcript). See docs/wp-notes/speech.md.
+// A media asset has one attached transcript shared by all its clips.
 import { normalizeWords } from '../../captions/words.ts';
 import type { Transcript } from '../../schema/media.ts';
 import { mergeTranscriptWords } from '../../speech/index.ts';

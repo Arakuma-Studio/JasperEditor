@@ -319,7 +319,7 @@ export const projectHandlers = {
 		const fingerprintChanges = !!cmd.fingerprint && cmd.fingerprint !== asset.fingerprint;
 		// A rebuilt Remotion bundle is new content by definition (S08:MGC-013), and Replace Footage (S07:PRC-018)
 		// says so explicitly: no force needed.
-		// An offline placeholder of an imported timeline (wp interchange) has no content to compare: linking it to its
+		// An offline placeholder of an imported timeline has no content to compare: linking it to its
 		// file is the first time the fingerprint is known (the Link Media dialog compares name, size and duration).
 		const placeholder = asset.fingerprint.startsWith('pending:interchange:');
 		if (

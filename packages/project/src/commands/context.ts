@@ -60,8 +60,6 @@ export class HandlerContext {
 		return typeof o === 'object' ? { agent: o.agent } : 'user';
 	}
 
-	// ------------------------------------------------------------ lookups
-
 	sequence(doc: DDoc, sequenceId?: string): DSeq {
 		const id = sequenceId ?? this.tx.sequenceId;
 		if (id) {
@@ -129,8 +127,6 @@ export class HandlerContext {
 		if (!id) this.fail('E_NOT_FOUND', `Track not found: ${ref}`);
 		return findTrackIn(seq, id)!.track;
 	}
-
-	// ------------------------------------------------------------ time
 
 	/** Sequence time input → frame (S01:TIME-006). */
 	frame(seq: DSeq, input: TimeInput): number {

@@ -1,8 +1,5 @@
-// Motion-graphic templates in the command layer (M2, ARCHITECTURE §20.1). Owner: wp-m2-anime-templates.
-// - S11:ATP-009 (FIX-005): `clip.update {template: {version}}` upgrades a clip through the registry's upgrade path
-//   (params migrated and validated, renderer re-stamped, keyframes of params that no longer exist dropped).
-// - S11:ATP-006: the draft-side Animatable view of a keyframable anime template param (`params[name]` +
-//   `paramKeyframes[name]`), used by param.set / param.setAnimated (param.ts) and the keyframe handlers.
+// Template upgrades migrate and validate params, update the renderer, and drop keys for deleted params.
+// Animated template params split their static values and keys between params[name] and paramKeyframes[name].
 import type { Draft } from 'immer';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
 import { paramsPropertySpecs } from '../../registry/properties.ts';

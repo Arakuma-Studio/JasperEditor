@@ -198,7 +198,7 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 				for (const m of x as { id: string }[]) m.id = h.ids.next('mrk');
 			// Opacity and effect masks get fresh ids (their keyframes are visited below).
 			if (k === 'masks' && Array.isArray(x)) for (const m of x as { id: string }[]) m.id = h.ids.next('msk');
-			// wp-m2-anime-templates (S11:ATP-006): template param keyframes are plain lists per param name.
+			// Template parameter keyframes use lists per parameter rather than Animatable objects.
 			if (k === 'paramKeyframes' && x && typeof x === 'object')
 				for (const list of Object.values(x as Record<string, { id: string }[]>))
 					for (const kf of list) kf.id = h.ids.next('kf');

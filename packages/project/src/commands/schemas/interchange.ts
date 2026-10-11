@@ -1,6 +1,4 @@
-// Timeline interchange (wp interchange): applying an imported Final Cut Pro XML / FCPXML / OTIO / EDL / AAF / OMF /
-// ALE document. `@jasper/interchange` (or the engine's `POST /api/interchange/import`) turns the document into a
-// fragment; this command adds it to the project as one undoable transaction (S02:TL-959).
+// @jasper/interchange converts external timelines into fragments; import applies a fragment as one transaction.
 import { z } from 'zod';
 import { cmd, IdRefSchema } from './common.ts';
 

@@ -98,6 +98,19 @@ Before the fixes, the three added transaction/clipboard regression tests were ru
 boundary and catch behavior: all three failed, with the BigInt serialization exception, escaped getter
 exception, and hidden registry exception described above.
 
-The final targeted suite and Biome results are recorded after completion below. A package typecheck was
-started, then stopped at the integration agent's request to relieve shared-host contention. The final
-serialized integration typecheck remains the integration gate; this note does not claim it passed locally.
+The broad targeted command suite passed all 408 tests across 26 files, including the command fuzz tests
+(1217.12 seconds on the shared host). Reproduce with:
+
+```sh
+pnpm exec vitest run packages/project/test/{transaction,clipboard,gaps-graphics,gaps-audio-channels,gaps-proxies,gaps-warp-stabilizer,place-move,clip-edit,edit,edit-structure,multicam,shapes,vector/commands,masks-commands,keyframe-effect,sim-warp-commands,three-d-commands,captions-commands,audio-mix,essential,time-commands,source-range,normalizers-delta,draft-read,peek,fuzz}.test.ts --maxWorkers=1
+```
+
+After the integrated typecheck identified narrowing gaps in graphics/audio targets and a missing extracted
+Puppet pin location type, those were corrected without weakening assertions. A focused graphics/audio/
+puppet rerun also includes the new caption pin refusal regression; its result is recorded below.
+
+Biome checked all 86 command source files. The final comment pass was additionally compared after
+removing line comments and whitespace: all 56 affected files preserve the same executable lines.
+A package typecheck was started, then stopped at the integration agent's request to relieve shared-host
+contention. The final serialized integration typecheck remains the integration gate; this note does not
+claim it passed locally.

@@ -1,16 +1,3 @@
-// Synchronize, Merge Clips and multi-camera editing (wp-multicam; docs/wp-notes/multicam.md).
-//
-// | command                 | Premiere                                                                    |
-// |-------------------------|-----------------------------------------------------------------------------|
-// | clip.synchronize        | Clip ▸ Synchronize… (timeline clips: In/Out/timecode/clip marker/audio)      |
-// | item.mergeClips         | Clip ▸ Merge Clips… (one video + 1–16 audio clips → a merged clip item)      |
-// | multicam.create         | Clip ▸ Create Multi-Camera Source Sequence…                                  |
-// | multicam.switchAngle    | keys 1–9 while stopped, clip context menu ▸ Multi-Camera ▸ Camera N           |
-// | multicam.record         | a live switching pass (keys/clicks while playing; Ctrl+1–9 Cut to Camera)    |
-// | multicam.setEnabled     | Clip ▸ Multi-Camera ▸ Enable                                                 |
-// | multicam.flatten        | Clip ▸ Multi-Camera ▸ Flatten                                                |
-// | multicam.editAngles     | Multi-Camera view ▸ Edit Cameras…                                            |
-//
 // Placing a multi-camera source sequence (clip.place with its sequence) makes multi-camera clips; placing a merged
 // clip edits the clips it holds (see placeSequenceSource).
 import type { Draft } from 'immer';

@@ -1,6 +1,4 @@
-// three-d (docs/wp-notes/three-d.md): handlers of the 3D Layer switch, new cameras and lights, Camera / Light
-// Settings, the camera tools and the sequence 3D renderer. Property values go through param.set (stopwatch
-// semantics: animated properties get a key at `at`).
+// Individual property writes use param.set so animated properties receive a key at the requested time.
 import type { Draft } from 'immer';
 import { clipEnd } from '../../derive/index.ts';
 import { anim } from '../../factories.ts';

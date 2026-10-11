@@ -1,5 +1,4 @@
-// caption tracks and clips, caption editing, transcripts and text-based editing
-// (docs/wp-notes/captions.md). Caption clips own their words (`mediaId: null` transcripts, see captions/model.ts);
+// Caption clips own their words (`mediaId: null` transcripts, see captions/model.ts);
 // clip-level edits (move, trim, ripple delete, sync lock) are the ordinary clip commands.
 import type { Draft } from 'immer';
 import {

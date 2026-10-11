@@ -1,6 +1,4 @@
-// Clipboard commands (wp-clipboard, S01 §20 CLB-003…008, S03:FX-011/012, EC-023/032). Each takes a clipboard
-// payload (format "jasper-clipboard", version 1) as produced by the editor's Copy or the MCP copy tools; the
-// handler validates it with the payload schema (CLB-009) before anything is read from it.
+// Clipboard payloads are validated inside the handler before their contents are read.
 import { z } from 'zod';
 import {
 	cmd,

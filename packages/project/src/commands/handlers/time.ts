@@ -1,5 +1,4 @@
-// Time Remapping, Time Interpolation, frame holds and Scene Edit Detection results (workstream `time`,
-// docs/wp-notes/time.md). The curve math lives in time-remap/; these handlers apply it to clips: the out point moves
+// The curve math lives in time-remap/; command edits move the out point
 // with the content after an edit (Premiere: slowing a segment lengthens the clip, speeding it up shortens it), a
 // longer clip stops at the next clip unless `ripple` (Premiere: "it will not overwrite an adjacent clip … pushes
 // remaining frames into the tail"), and frames beyond the media are never shown.

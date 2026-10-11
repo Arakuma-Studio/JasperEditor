@@ -2,7 +2,7 @@ import type { SourceFit } from '../schemas/clip.ts';
 // Processed media (M2, S07:PRC-001…007) and source ranges (M3, S07:PRC-015…019): media.derive (register a
 // processed version of a media asset and optionally swap clips to it), clip.replaceSource (swap a clip between
 // versions of the same original), media.setSourceRange, and the "keep source timing" remap used by
-// media.relink (Replace Footage). Owner: wp-m2-process; source ranges: wp-m3-inpoint.
+// media.relink (Replace Footage).
 //
 // - A processed version is a MediaAsset whose `derivation` points at its source and whose `sourceRange` records
 //   the source frames it holds (the whole source, or a processed range with handles). It gets a project item

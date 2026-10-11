@@ -1,6 +1,3 @@
-// Text animators on text clips (M2, S11:TXA-004…006, ARCHITECTURE §20.1): `clip.addText {textAnimation}`, the
-// `textAnimation` patch of clip.update (also reached by `param.set` on the `textAnimation.*` properties), the
-// razor rule and the W_ANIMATION_COMPRESSED warning. Owner: wp-m2-text-anim.
 import type { Draft } from 'immer';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type { Clip, TextAnimation, TextAnimator } from '../../schema/sequence.ts';

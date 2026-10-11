@@ -1,6 +1,4 @@
-// three-d (docs/wp-notes/three-d.md): commands of 3D layers, cameras, lights and the sequence's 3D renderer. The
-// per-property values (Z Position, Orientation, Material Options, Point of Interest, Zoom, Intensity…) are written
-// with param.set / keyframe.* through the property registry (`threeD.*`, `camera.*`, `light.*`).
+// Individual 3D properties use param.set / keyframe.* through the threeD.*, camera.* and light.* registry keys.
 import { z } from 'zod';
 import { RGBASchema, Vec3Schema } from '../../schema/common.ts';
 import {

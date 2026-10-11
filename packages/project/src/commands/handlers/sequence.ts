@@ -1,5 +1,3 @@
-// sequence.*, marker.*, track.* (S01 §7, §8, SEQ-006/007/008).
-
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
 import { displayWidthOf, isSquarePar, sequenceFormatOf, validPar } from '../../gaps/sequence-format.ts';
@@ -339,7 +337,7 @@ export const sequenceHandlers = {
 			author: h.agentAuthor(),
 		} as const;
 		if (cmd.itemId) {
-			// wp-multicam: source clip markers live on the media item (media time).
+			// Source clip markers live on the media item (media time).
 			const it = doc.items[cmd.itemId];
 			if (!it) h.fail('E_NOT_FOUND', `Project item not found: ${cmd.itemId}`);
 			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', 'Source clip markers go on media items');
@@ -441,7 +439,6 @@ export const sequenceHandlers = {
 			h.fail('E_INVALID_PARAM', 'channelFormat applies to audio tracks only');
 		for (let i = 0; i < (cmd.count ?? 1); i++) {
 			const t = createTrack(h.ids, cmd.kind, cmd.name ?? null);
-			// wp captions
 			if (cmd.language !== undefined) t.language = cmd.language;
 			if (cmd.captionStandard !== undefined) t.captionStandard = cmd.captionStandard;
 			// gaps: Add Tracks… ▸ Track Type
@@ -476,7 +473,7 @@ export const sequenceHandlers = {
 		if (seq.videoTracks.length === 0 || seq.audioTracks.length === 0) {
 			h.fail('E_INVALID_PARAM', 'A sequence needs at least one video and one audio track');
 		}
-		// wp-multicam: angles of a multi-camera source lose the removed tracks; clips of a removed angle fall back.
+		// Angles of a multi-camera source lose the removed tracks; clips of a removed angle fall back.
 		if ((seq as Sequence).multicam) {
 			pruneMulticamAngles(seq as Sequence);
 			fixMulticamSelections(doc as ProjectDocument);
@@ -531,7 +528,6 @@ export const sequenceHandlers = {
 				h.fail('E_NOT_FOUND', `Font not found: ${p.styleDefaults.fontId}`);
 			track.styleDefaults = p.styleDefaults;
 		}
-		// wp captions
 		if (p.language !== undefined) {
 			only('caption', 'language');
 			track.language = p.language;

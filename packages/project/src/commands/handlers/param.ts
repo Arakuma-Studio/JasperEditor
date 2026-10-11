@@ -1,4 +1,3 @@
-// param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
 import { evaluate, isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
@@ -205,7 +204,7 @@ export function resolveTarget(
 				},
 			};
 		}
-		// wp-m2-shapes (S11:SHP-003): an explicit write to `shape.fill` / `shape.stroke.*` on a "None" fill/stroke
+		// An explicit write to `shape.fill` / `shape.stroke.*` on a "None" fill/stroke
 		// creates it first; any other command on it (stopwatch, keyframe.add without a value) is refused.
 		if (spec.group === 'shape' && !ensureShapeStorage(clip, spec, opts.create === true))
 			h.fail(
@@ -232,7 +231,6 @@ export function resolveTarget(
 				label: key,
 			};
 		if (spec.storagePath[0] === 'moreOptions' && clip.kind === 'text') ensureMoreOptions(clip);
-		// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates
 		if (spec.group === 'params' && spec.animatable !== 'no' && template) {
 			const anim = templateParamDraftAnim(
 				clip,
@@ -241,7 +239,6 @@ export function resolveTarget(
 			);
 			return { type: 'anim', anim, rule: ruleFromProperty(spec), time, label: key };
 		}
-		// ---- end wp-m2-anime-templates
 		if (spec.animatable !== 'no') {
 			const anim = getAt(clip, spec.storagePath) as Draft<Animatable<unknown>> | undefined;
 			if (!anim) return bad();
@@ -409,7 +406,7 @@ export function validateValue(
 		}
 		case 'vec2': {
 			if (!Array.isArray(v) || v.length !== 2 || !v.every(isNum)) return fail();
-			// Per-component range (wp-m2-shapes: `shape.size` ≥ 0); specs without min/max are unchanged.
+			// Apply bounds to each component; specs without bounds leave values unchanged.
 			const c = [clampN(v[0]), clampN(v[1])];
 			return { value: c, clamped: c[0] !== v[0] || c[1] !== v[1] };
 		}

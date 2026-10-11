@@ -154,7 +154,6 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 		};
 
 		const done: string[] = [];
-		// ---- Motion
 		const m = intrinsic.motion;
 		if (m && caps.hasTransform && 'transform' in c) {
 			const tr = c.transform as DRec;
@@ -190,14 +189,12 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			if (typeof m.uniformScale === 'boolean') tr.uniformScale = m.uniformScale;
 			done.push('motion');
 		}
-		// ---- Opacity (+ Blend Mode)
 		if ((intrinsic.opacity || intrinsic.blendMode) && 'opacity' in c) {
 			if (intrinsic.opacity)
 				c.opacity = toAnim(intrinsic.opacity, propertyRule('opacity'), 'Opacity') as never;
 			if (intrinsic.blendMode && 'blendMode' in c) c.blendMode = intrinsic.blendMode;
 			done.push('opacity');
 		}
-		// ---- Crop (the pinned crop: overwrite, else create at the top of the stack)
 		const effects = () =>
 			((c.effects as Draft<EffectInstance>[] | undefined) ??= [] as never) as Draft<EffectInstance>[];
 		if (intrinsic.crop && caps.visual && caps.supportsEffects) {
@@ -219,7 +216,6 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			}
 			done.push('crop');
 		}
-		// ---- Volume, Panner
 		if (intrinsic.volume && 'volumeDb' in c) {
 			c.volumeDb = toAnim(intrinsic.volume, propertyRule('volumeDb'), 'Volume Level') as never;
 			done.push('volume');
@@ -228,7 +224,6 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 			c.pan = toAnim(intrinsic.pan, propertyRule('pan'), 'Panner Balance') as never;
 			done.push('panner');
 		}
-		// ---- Applied effects (appended or at `index`, new instance ids)
 		const created: string[] = [];
 		if (preset.effects?.length && caps.supportsEffects) {
 			let at: number | null = null;

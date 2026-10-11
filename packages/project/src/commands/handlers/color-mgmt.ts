@@ -1,5 +1,3 @@
-// Colour management commands (workstream color-mgmt, docs/wp-notes/color-mgmt.md): the sequence colour settings of
-// `sequence.updateSettings` / `sequence.create`, Interpret Footage ▸ Colour on media and the clip colour override.
 import type { Draft } from 'immer';
 import { colorSpace } from '../../color/cms/spaces.ts';
 import {

@@ -1,6 +1,4 @@
-// three-d (docs/wp-notes/three-d.md): the 3D Camera Tracker's commands — apply it to a video clip, settings, commit a
-// solve from the engine, delete track points, set the ground plane and origin, create the camera (and a text or solid
-// layer on a target), remove it. The solve math is in three-d/camtrack.ts; the analysis is the engine's `camtrack` job.
+// The engine camtrack job computes solves; commands apply the results to the project.
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { EASE_PRESETS, evaluate } from '../../keyframes.ts';

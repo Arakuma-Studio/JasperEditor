@@ -1,7 +1,5 @@
-// Text animator commands (workstream text-animators): add / remove / update / duplicate animators, their
-// properties and selectors, apply animator presets, convert In/Out text animations, Path Options and
-// per-character 3D. Values and keyframes go through `param.set` / keyframe commands on the dynamic property keys
-// (registry/text-animator-properties.ts); `sourceTextDraftAnim` is the Animatable view of Source Text they use.
+// Values and keyframes use the dynamic property registry. Source Text exposes an Animatable view
+// through sourceTextDraftAnim so it follows the same parameter commands.
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { createFontRef } from '../../factories.ts';

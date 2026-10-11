@@ -1,6 +1,4 @@
-// wp speech: attaching recognised transcripts to media (docs/wp-notes/speech.md). The words come from a
-// `transcription` job (Whisper on the engine) or an agent; text-based editing, captions and corrections are the
-// captions workstream's `transcript.*` commands.
+// Recognition jobs attach transcripts here; text corrections and caption edits use transcript.* commands.
 import { z } from 'zod';
 import { cmd, IdRefSchema, RefDeclSchema } from './common.ts';
 

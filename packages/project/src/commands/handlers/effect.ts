@@ -1,5 +1,3 @@
-// Effect stack handlers (ARCHITECTURE §5.3, S01 §11.3 FX-020…023): effect.add (clip, track or master
-// target, optional index and params), effect.remove, effect.reorder, effect.setEnabled.
 // Unknown effects already in a document are preserved verbatim and may still be removed, reordered or
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';

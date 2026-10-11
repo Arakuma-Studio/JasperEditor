@@ -1,7 +1,4 @@
-// project.importTimeline (wp interchange): adds an imported timeline fragment — bins, media items (resolved files or
-// offline placeholders), synthetic sources and sequences — through the clipboard's project-items machinery, so ids
-// are new, media already in the project (same fingerprint) is reused and everything is one transaction.
-
+// Timeline imports reuse clipboard project-item insertion to remap ids and deduplicate media by fingerprint.
 import { z } from 'zod';
 import { type ClipboardPayload, ClipboardPayloadSchema } from '../../clipboard/payload.ts';
 import type { DDoc, HandlerContext } from '../context.ts';

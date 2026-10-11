@@ -1,6 +1,3 @@
-// Essential Sound and Remix handlers (audio-fx; docs/wp-notes/audio-fx.md). Essential Sound edits reconcile the
-// clip's essential effects, gain, Volume and pan with its settings (essential/reconcile.ts); Remix replaces a music
-// clip by its pieces (grouped clips, constant-power crossfades at the joints) or restores it.
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import {

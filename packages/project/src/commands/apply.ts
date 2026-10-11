@@ -1,6 +1,3 @@
-// applyTransaction: validates, resolves refs, runs handlers atomically with Immer, checks invariants,
-// applies the expectedRevision fast-forward rule and reports created/changed/deleted
-// (S01:CMD-004…006, AGT-010, AGT-011; ARCHITECTURE §5.3).
 import { produce } from 'immer';
 import { z } from 'zod';
 import { normalizeCaptionData } from '../captions/model.ts';
@@ -169,7 +166,7 @@ function applyTransactionUnchecked(
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);
 			});
-			// wp captions: a caption transcript belongs to one clip (splits, duplicates and pastes get copies).
+			// A caption transcript belongs to one clip (splits, duplicates and pastes get copies).
 			normalizeCaptionData(draft, () => ctx.ids.next('trs'));
 			// Sources whose last reference disappeared (e.g. a solid's color matte) are collected (INV-014).
 			collectOrphans(draft);
@@ -234,7 +231,7 @@ function applyTransactionUnchecked(
 		}
 	}
 
-	// M2 (wp-m2-text-anim, S11:TXA-004): text animators compressed by trims, razor, speed or rate changes.
+	// Trims, razor cuts, speed changes and rate changes can compress text animation intervals.
 	for (const w of compressionWarnings(doc, next, h.warnings)) h.warnings.push({ commandIndex: -1, ...w });
 
 	const unchanged = next === doc;

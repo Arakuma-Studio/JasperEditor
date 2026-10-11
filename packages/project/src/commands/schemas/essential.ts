@@ -1,5 +1,4 @@
-// Essential Sound and Remix commands (audio-fx; docs/wp-notes/audio-fx.md). Each edits ordinary clip data — effects,
-// gain, Volume, pan, clips and transitions — so playback, mixing and every export path need nothing special.
+// Essential Sound and Remix edit ordinary clip effects, gain, pan and transitions, so all render paths share them.
 import { z } from 'zod';
 import { AUDIO_TYPES } from '../../essential/model.ts';
 import { cmd, IdListSchema, IdRefSchema, TimeInputSchema } from './common.ts';

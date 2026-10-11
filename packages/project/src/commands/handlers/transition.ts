@@ -1,5 +1,3 @@
-// Transitions and fades (S01 §13): transition.add / update / remove / applyDefault.
-//
 // A transition sits on one track at one edit point (TRN-001). Two-sided video transitions (cross dissolve,
 // dip to black) join two adjacent clips and need handles (TRN-003); one-sided ones are fades at a clip's
 // head or tail (TRN-004). Audio tracks take one-sided fades and two-sided crossfades (constant gain /

@@ -1,4 +1,3 @@
-// Tracking commands (M2, ARCHITECTURE §19.5, S09:TRK-*). Handlers: handlers/tracker.ts (wp-m2-track).
 import { z } from 'zod';
 import { Vec2Schema } from '../../schema/common.ts';
 import { TrackerSamplesSchema } from '../../schema/sequence.ts';

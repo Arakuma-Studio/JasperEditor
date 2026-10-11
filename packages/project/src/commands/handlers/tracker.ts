@@ -1,4 +1,3 @@
-// Tracking commands (M2, S09:TRK-001…024): tracker.add / update / remove / setSamples / apply.
 // Trackers live on the plate (video) clip in media pixels and content time; `apply` bakes them into ordinary
 // keyframes of the target (a `jasper.corner-pin` effect or Motion), so manual correction = keyframe editing.
 import type { Draft } from 'immer';
@@ -333,7 +332,7 @@ export const trackerHandlers = {
 			...(effectInstanceId ? { effectInstanceId } : {}),
 			...(cmd.simplify ? { simplify: { tolerance: cmd.simplify.tolerance } } : {}),
 		};
-		// wp-m3-trackui (S09:TRK-023): optional simplification of the keys just baked (only those inside the range).
+		// Simplification must not change keys outside the newly baked range.
 		let simplified: SimplifyReport | undefined;
 		if (cmd.simplify) {
 			// Only the parameters this apply wrote (transform mode may drive a subset of Motion).

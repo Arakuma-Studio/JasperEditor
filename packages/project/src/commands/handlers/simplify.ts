@@ -1,6 +1,3 @@
-// keyframes.simplify (M3, S09:TRK-023, S01:KF-010): resolves the parameters to simplify (selected keys, whole
-// parameters or clips), plans with `animation/simplify-doc.ts` and writes the reduced keyframes in place (one
-// transaction = one History entry; a dry run previews the report). Shared with `tracker.apply {simplify}`.
 import type { Draft } from 'immer';
 import { planSimplify, type SimplifyReport, type SimplifyTarget } from '../../animation/simplify-doc.ts';
 import { resolvePropertySpec } from '../../registry/properties.ts';

@@ -1,4 +1,3 @@
-// The single registration point for document commands: type → schema, handler, label, owner.
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
@@ -52,48 +51,27 @@ export type CommandOwner =
 	| 'wp-m2-track'
 	| 'wp-m2-shapes'
 	| 'wp-m3-trackui'
-	// Clipboard (S01 §20)
 	| 'wp-clipboard'
-	// Effect presets (S03:FX-030)
 	| 'wp-m3-presets'
-	// Timeline interchange
 	| 'wp-interchange'
-	// Synchronize, Merge Clips, multi-camera (docs/wp-notes/multicam.md)
 	| 'wp-multicam'
-	// Nests, adjustment layers, groups, synthetics, frame holds, through edits (docs/wp-notes/edit-structure.md)
 	| 'edit-structure'
-	// Masks (S03 §17)
 	| 'wp-m3-masks'
 	| 'audio-mix'
-	// Roving keyframes, blend modes (docs/wp-notes/keyframes-blend.md)
 	| 'keyframes-blend'
-	// Captions, transcripts and text-based editing
 	| 'wp-captions'
-	// Local speech-to-text (Whisper), VAD, diarization
 	| 'speech'
-	// Expressions (docs/wp-notes/expressions.md)
 	| 'wp-m3-expressions'
-	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
 	| 'audio-fx'
-	// Time Remapping, Time Interpolation, Scene Edit Detection (docs/wp-notes/time.md)
 	| 'wp-time'
-	// parity: roto / object mattes
 	| 'parity-roto'
-	// Editorial UX: 3/4-point editing, trim mode, subclips
 	| 'edit-ux'
-	// AE text animators (parity program)
 	| 'text-animators'
-	// 3D layers, cameras, lights, 3D camera tracker (docs/wp-notes/three-d.md)
 	| 'three-d'
-	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
 	| 'sim-warp'
-	// Colour management, HDR, LUT formats (docs/wp-notes/color-mgmt.md)
 	| 'color-mgmt'
-	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
 	| 'imports'
-	// Render previews (docs/wp-notes/previews.md)
 	| 'previews'
-	// Project Settings, proxies, Sequence Settings, audio channels, Warp Stabilizer, graphics (docs/wp-notes/gaps.md)
 	| 'gaps';
 
 export type CatalogEntry = {
@@ -205,7 +183,6 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
-	// wp shapes
 	'shape.addItems': 'Add Shape Items',
 	'shape.updateItem': 'Edit Shape Item',
 	'shape.removeItems': 'Delete Shape Items',
@@ -239,7 +216,6 @@ const LABELS: Record<CommandType, string> = {
 	'multicam.setEnabled': 'Multi-Camera Enable',
 	'multicam.flatten': 'Flatten Multi-Camera',
 	'multicam.editAngles': 'Edit Cameras',
-	// audio-mix
 	'mixer.updateStrip': 'Audio Track Mixer',
 	'mixer.addSubmix': 'Add Submix Track',
 	'mixer.removeSubmix': 'Delete Submix Track',
@@ -274,7 +250,6 @@ const LABELS: Record<CommandType, string> = {
 	'mask.duplicate': 'Duplicate Mask',
 	'mask.editPath': 'Edit Mask Path',
 	'mask.setPathKeys': 'Track Mask',
-	// wp captions
 	'caption.addTrack': 'Add Caption Track',
 	'caption.setActiveTrack': 'Active Caption Track',
 	'caption.add': 'Add Caption',
@@ -299,13 +274,11 @@ const LABELS: Record<CommandType, string> = {
 	'transcript.removeFillers': 'Remove Filler Words',
 	'transcript.removePauses': 'Remove Pauses',
 	'transcript.createCaptions': 'Create Captions',
-	// wp speech
 	'transcript.attach': 'Generate Transcript',
 	'expression.set': 'Set Expression',
 	'expression.clear': 'Clear Expression',
 	'expression.setEnabled': 'Enable Expression',
 	'effect.rename': 'Rename Effect',
-	// audio-fx
 	'essentialSound.setType': 'Set Audio Type',
 	'essentialSound.clearType': 'Clear Audio Type',
 	'essentialSound.set': 'Essential Sound',
@@ -339,7 +312,6 @@ const LABELS: Record<CommandType, string> = {
 	'item.updateSubclip': 'Edit Subclip',
 	'media.interpretColor': 'Interpret Footage (Colour)',
 	'clip.setColorInterpretation': 'Clip Colour Space',
-	// three-d
 	'clip.set3d': '3D Layer',
 	'clip.addCamera': 'New Camera',
 	'clip.addLight': 'New Light',
@@ -357,9 +329,7 @@ const LABELS: Record<CommandType, string> = {
 	'cameraTracker.create': 'Create Camera',
 	'cameraTracker.remove': 'Remove 3D Camera Tracker',
 	'media.interpret': 'Interpret Footage',
-	// previews
 	'sequence.setPreviewSettings': 'Preview Settings',
-	// gaps
 	'media.attachProxy': 'Attach Proxies',
 	'media.detachProxy': 'Detach Proxies',
 	'clip.setAudioChannels': 'Audio Channels',
@@ -424,7 +394,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 		out[type] = {
 			type,
 			schema,
-			// wp-m2-shapes (S11:SHP-001): edits that can change a shape's layer box keep it centred on its anchor.
+			// Changing the layer box must preserve the shape's position relative to its anchor.
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,

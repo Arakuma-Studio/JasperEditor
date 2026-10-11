@@ -111,7 +111,7 @@ export function placeSource(
 	// edit-structure (S01:SEQ-010, KND-011): a sequence is placed as nest clips or as its individual clips.
 	const sequenceSource = o.source.sequenceId ?? (item?.kind === 'sequence' ? item.sequenceId : undefined);
 	if (sequenceSource) {
-		// wp-multicam: a multi-camera source always places as linked multi-camera clips (camera 1); a merged clip
+		// A multi-camera source always places as linked multi-camera clips (camera 1); a merged clip
 		// places as the clips it holds unless nesting is asked for explicitly.
 		const placedSrc = doc.sequences[sequenceSource] as Sequence | undefined;
 		const nest = placedSrc?.multicam ? true : placedSrc?.merged ? (o.nest ?? false) : o.nest;

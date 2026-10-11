@@ -1,6 +1,3 @@
-// edit-ux handlers: three- and four-point editing from a source (`clip.sourceEdit`), multi-edit-point trims
-// (`clip.trimEdits`) and subclips (`item.makeSubclip`, `item.updateSubclip`).
-//
 // Three-point rules (Premiere Pro, "Three-point and four-point editing", helpx.adobe.com):
 // - any three of source In, source Out, sequence In, sequence Out define the edit; the sequence In point wins
 //   over the playhead; with no sequence marks the edit goes at the playhead;

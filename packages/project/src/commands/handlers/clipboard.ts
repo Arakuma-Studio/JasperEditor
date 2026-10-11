@@ -660,7 +660,7 @@ function applyAttributes(
 		const shape = first((s) => s.shape);
 		const srcType = (shape?.shape as { type?: string } | undefined)?.type;
 		const tgtType = (c.shape as { type?: string } | undefined)?.type;
-		// wp shapes: vector → vector replaces the contents (fresh item ids, keys re-timed); rectangles / ellipses and
+		// Vector → vector replaces the contents (fresh item ids, keys re-timed); rectangles / ellipses and
 		// vector shapes do not exchange styles (different models).
 		if (attrs.shapeStyle && shape && t.kind === 'shape' && srcType === 'vector' && tgtType === 'vector') {
 			const contents = retimed((shape.shape as { contents: ShapeItem[] }).contents, shape);
@@ -897,7 +897,7 @@ function copySequence(
 	}
 	reidentifyClipChildren(seq.master as never, h);
 	resolver.remapEffectMedia(seq.master.effects);
-	// wp-multicam: a multi-camera source's angles name its tracks (angle ids stay: clips select them).
+	// A multi-camera source's angles name its tracks (angle ids stay: clips select them).
 	const mc = seq.multicam;
 	if (mc)
 		for (const a of mc.angles) {

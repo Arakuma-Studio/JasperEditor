@@ -1,6 +1,5 @@
-// edit-structure (docs/wp-notes/edit-structure.md): commands of nested sequences, frame holds, through edits and
-// subsequences that did not exist in the M1/M2 catalogue. Ported semantics from FilmCraft
-// `crates/engine/src/{clip_ops,sequence_tools,multicam}.rs` (MIT OR Apache-2.0).
+// Ported semantics from FilmCraft crates/engine/src/{clip_ops,sequence_tools,multicam}.rs
+// (MIT OR Apache-2.0; see licenses/ported/edit-structure.md).
 import { z } from 'zod';
 import {
 	ContentTimeInputSchema,

@@ -153,7 +153,6 @@ export const TrackUpdateCmd = cmd('track.update', {
 		channelFormat: AudioChannelFormatSchema.optional(),
 		visible: z.boolean().optional(),
 		styleDefaults: CaptionStyleSchema.optional(),
-		// wp captions
 		language: z.string().optional(),
 		captionStandard: CaptionStandardSchema.optional(),
 	}),
