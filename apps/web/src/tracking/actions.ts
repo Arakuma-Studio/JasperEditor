@@ -451,10 +451,8 @@ export function applyTracking(
 /** Re-applies the tracker that drives `targetClipId` with its recorded mode over the overlap. */
 export function reapplyTracking(session: EditorSession, targetClipId: string): void {
 	const seq = activeSeq(session);
-	const target = seq?.clips[targetClipId] as
-		| (Clip & { trackedBy?: { trackerId: string; mode: string } })
-		| undefined;
-	const tb = target?.trackedBy;
+	const target = seq?.clips[targetClipId];
+	const tb = target && 'trackedBy' in target ? target.trackedBy : undefined;
 	if (!target || !tb) throw new Error('This clip does not follow a tracker');
 	run(session, 'Apply Tracking', [
 		{

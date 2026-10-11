@@ -12,6 +12,7 @@ import {
 	type Sequence,
 	type ShapeClip,
 	type ShapeItem,
+	type ShapeItemInput,
 	type VectorShapeData,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -90,7 +91,7 @@ export function sequenceToContent(seq: Sequence, clip: ShapeClip, frame: number,
 export function addVectorClipAt(
 	session: EditorSession,
 	frame: number,
-	items: Record<string, unknown>[],
+	items: ShapeItemInput[],
 	label: string,
 	center?: Vec2,
 	name?: string,
@@ -127,7 +128,7 @@ export function addVectorClipAt(
 export function addItemsToVector(
 	session: EditorSession,
 	clipId: string,
-	items: Record<string, unknown>[],
+	items: ShapeItemInput[],
 	label: string,
 	opts: { parentId?: string | null; index?: number } = {},
 ): string[] {
@@ -153,11 +154,11 @@ export function addItemsToVector(
 
 /** A group holding one path item, a stroke and a fill (what a drawing tool adds into a selected shape). */
 export function drawnGroup(
-	path: Record<string, unknown>,
+	path: ShapeItemInput,
 	name: string,
 	opts: { stroke?: boolean; fill?: boolean } = {},
-) {
-	const contents: Record<string, unknown>[] = [path];
+): ShapeItemInput {
+	const contents: ShapeItemInput[] = [path];
 	if (opts.stroke) contents.push({ type: 'stroke', color: [1, 1, 1, 1], width: 4 });
 	if (opts.fill !== false) contents.push({ type: 'fill', color: [1, 1, 1, 1] });
 	return { type: 'group', name, contents };

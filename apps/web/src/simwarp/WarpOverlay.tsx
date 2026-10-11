@@ -5,7 +5,7 @@
 // - Liquify: with the brush on, a drag paints one stroke of the effect's Tool (`liquify.stroke`, live while dragging);
 // - Mesh Warp: the Bézier grid with its vertices and, for the selected vertex, its tangent handles (`meshWarp.setVertex`).
 import type { RenderDoc } from '@jasper/compositions';
-import type { Vec2 } from '@jasper/project';
+import type { CommandInput, Vec2 } from '@jasper/project';
 import {
 	alphaOutline,
 	applyMat3,
@@ -357,7 +357,9 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 		const handle = (
 			key: string,
 			n: Vec2,
-			onDrag: (v: Vec2) => Record<string, unknown>,
+			onDrag: (
+				v: Vec2,
+			) => Omit<Extract<CommandInput, { type: 'meshWarp.setVertex' }>, 'type' | 'effectInstanceId' | 'at'>,
 			size = 4,
 			round = false,
 		) => {

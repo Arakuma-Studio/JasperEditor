@@ -1,5 +1,6 @@
 import {
 	applyMat3,
+	type BezierPath,
 	type CommandInput,
 	invertMat3,
 	layerMapOf,
@@ -7,6 +8,7 @@ import {
 	pathToSvg,
 	type ResolvedLayer,
 	type ShapeAffine,
+	type ShapeItemInput,
 	shapePathItemsAt,
 } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
@@ -124,8 +126,8 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 	const startNewPath = (e: ReactPointerEvent<SVGRectElement>) => {
 		const s = at(e);
 		const seqPt = toSequence(view, s) as Pt;
-		const vertex = (p: Pt) => ({ closed: false, vertices: [{ p, in: [0, 0], out: [0, 0] }] });
-		const items = (p: Pt) => [
+		const vertex = (p: Pt): BezierPath => ({ closed: false, vertices: [{ p, in: [0, 0], out: [0, 0] }] });
+		const items = (p: Pt): ShapeItemInput[] => [
 			{
 				type: 'group',
 				name: 'Shape',

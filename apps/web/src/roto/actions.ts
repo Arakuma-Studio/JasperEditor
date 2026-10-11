@@ -263,7 +263,7 @@ export async function trackFaces(
 ): Promise<string | null> {
 	const r = apply(session, blur ? 'Blur Faces' : 'Track Faces', [
 		{ type: 'roto.add', clipId, kind: 'faces', ref: '$faces' },
-		...(blur ? [{ type: 'roto.apply', rotoId: '$faces', effect: 'blur' }] : []),
+		...(blur ? [{ type: 'roto.apply', rotoId: '$faces', effect: 'blur' } satisfies CommandInput] : []),
 	]);
 	if (!r.ok) return null;
 	const id = (r.results[0] as { rotoId: string }).rotoId;

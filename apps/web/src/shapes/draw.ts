@@ -1,7 +1,7 @@
 // Drawing-tool edits for vector shapes (wp shapes): Polygon / Star drags (centre → outer radius, the first point
 // turned towards the pointer; Shift keeps it upright), rectangles / ellipses drawn into a selected vector shape, and
 // the transactions they issue. Pure geometry + one transaction per drawing.
-import type { Vec2 } from '@jasper/project';
+import type { ShapeItemInput, Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { activeSequence } from '../panels/program/edits.ts';
 import type { DrawnBox } from './geometry.ts';
@@ -42,7 +42,12 @@ export function polystarPreview(type: 'polygon' | 'star', s: DrawnStar): Vec2[] 
 	return out;
 }
 
-function polystarItem(type: 'polygon' | 'star', radius: number, rotation: number, position: Vec2 = [0, 0]) {
+function polystarItem(
+	type: 'polygon' | 'star',
+	radius: number,
+	rotation: number,
+	position: Vec2 = [0, 0],
+): ShapeItemInput {
 	return {
 		type: 'polystar',
 		starType: type,

@@ -2,6 +2,7 @@
 // finished `transcription` job commits (`transcript.attach`, one undo step "Generate Transcript").
 import type { TranscribeOptions, TranscriptionResult } from '@jasper/api';
 import {
+	type AudioClip,
 	type CommandInput,
 	type MediaAsset,
 	mixFingerprint,
@@ -210,7 +211,7 @@ export function hasAudio(m: MediaAsset | undefined): boolean {
 /** The media a sequence's enabled audio clips play (in timeline order), and those with a transcript already. */
 export function sequenceMedia(doc: ProjectDocument, seq: Sequence): { all: string[]; transcribed: string[] } {
 	const clips = Object.values(seq.clips)
-		.filter((c) => c.kind === 'audio' && c.enabled)
+		.filter((c): c is AudioClip => c.kind === 'audio' && c.enabled)
 		.sort((a, b) => a.start - b.start);
 	const all = [...new Set(clips.map((c) => c.mediaId))].filter((id) => hasAudio(doc.media[id]));
 	return { all, transcribed: all.filter((id) => !!transcriptForMedia(doc, id)) };

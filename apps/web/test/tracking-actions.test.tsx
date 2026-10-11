@@ -2,6 +2,7 @@ import { buildRenderSnapshot, type ClipTracker, type Quad } from '@jasper/projec
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import {
 	addTracker,
 	applyTracking,
@@ -195,7 +196,7 @@ describe('tracking overlay', () => {
 					view={view}
 					viewport={{ width: 960, height: 540 }}
 					transport={session.transport}
-					monitor={{}}
+					monitor={monitorStores.program.getState()}
 				/>
 			</SessionProvider>,
 		);

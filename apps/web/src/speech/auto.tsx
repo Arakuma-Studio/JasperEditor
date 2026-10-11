@@ -55,7 +55,7 @@ export function autoTargets(session: EditorSession, created: readonly string[]):
 	});
 }
 
-export function AutoTranscribeHost({ session }: ProgramOverlayHostProps) {
+export function AutoTranscribeHost({ session }: Pick<ProgramOverlayHostProps, 'session'>) {
 	const engine = useEngineOrNull();
 	const client = engine?.status === 'connected' ? engine.client : null;
 	useEffect(() => {
