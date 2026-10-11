@@ -4,6 +4,7 @@
 // recovery journal (S01:PER-021, AC-18, D-39) runs next to autosave when the store supports it.
 import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
 import { EditorSession, type SessionContext } from '../session.ts';
+import { createSessionId } from '../session-id.ts';
 import type { SessionState } from '../types.ts';
 import { type AutosaveOptions, type Autosaver, createAutosaver } from './autosave.ts';
 import { createRecoveryJournal, type RecoveryJournalWriter } from './recovery.ts';
@@ -142,7 +143,7 @@ export async function takeOverSession(
 ): Promise<EditorSession> {
 	const store = old.projectStore;
 	if (!store) throw new Error('takeOverSession: the session has no ProjectStore');
-	const sessionId = opts.sessionId ?? `ses_${Math.random().toString(36).slice(2, 12)}`;
+	const sessionId = opts.sessionId ?? createSessionId();
 	await store.acquireLease(old.projectId, sessionId, { takeOver: true });
 	await old.close();
 	return EditorSession.open({

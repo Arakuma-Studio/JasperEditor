@@ -23,6 +23,7 @@ import {
 	type ProjectDocument,
 	stringifyJson,
 } from '@jasper/project';
+import { createSessionId } from '../session-id.ts';
 import { readProjectView } from '../view.ts';
 import { pageTabLeases, type TabLeaseRegistry } from './tab-leases.ts';
 import {
@@ -61,11 +62,6 @@ const LOCAL_RELEASE_WAIT_MS = 150;
 
 const isCode = (e: unknown, ...codes: string[]): e is EngineError =>
 	e instanceof EngineError && codes.includes(e.code);
-
-function randomSessionId(): string {
-	const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
-	return c?.randomUUID ? c.randomUUID() : `ses_${Math.random().toString(36).slice(2, 14)}`;
-}
 
 export class EngineProjectStore implements ProjectStore, RecoveryStore {
 	private readonly ids = createRandomIdSource();
@@ -261,7 +257,7 @@ export class EngineProjectStore implements ProjectStore, RecoveryStore {
 
 	async acquireLease(
 		projectId: string,
-		sessionId: string = randomSessionId(),
+		sessionId: string = createSessionId(),
 		opts: { takeOver?: boolean; refresh?: boolean } = {},
 	): Promise<Lease> {
 		const held = this.leases.get(projectId);

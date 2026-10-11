@@ -25,6 +25,10 @@ No assets or external source code were introduced.
 - **Cloning unnecessarily passed through untyped JSON.** The in-memory store now uses `structuredClone` for detached
   snapshots. Engine Save As uses an immutable shallow replacement of the project id/name because nested document
   data is unchanged and immediately serialized. No user document mutation is introduced.
+- **Session IDs had three inconsistent implementations.** Session creation, lease acquisition and takeover now
+  share a leaf helper that uses Web Crypto random bytes and retains the `ses_` prefix. Web Crypto is already
+  required by the project's entity ID source; the helper uses `getRandomValues`, which is available even where
+  the secure-context-only `randomUUID` method is unavailable.
 - **Error handling failed at actual UI boundaries.** A panel throwing `false`, `0`, or an empty string made its error
   boundary render the broken child again. Boundary state now contains `Error | null`, with arbitrary thrown values
   normalized at entry. Clipboard failures are shown in the panel; failed dialog primary actions remain open with
@@ -68,6 +72,9 @@ New regressions cover malformed persisted views, nonpositive/nonfinite zoom, ret
 JSON view records (200 property runs), falsy thrown panel values, clipboard failures, failed dialog actions and
 out-of-range numeric precision (200 property runs). Existing session suites exercise undo/redo, leases, autosave,
 crash recovery, gesture performance and integrity across random edits; existing UI suites cover primitives/menus.
+The recovery adapter also has a regression asserting that listing warnings survive alongside candidates.
+Direct executions of the baseline implementation confirmed `formatNumber(1.25, 101)` throws `RangeError` and
+that falsy thrown values cause the old panel boundary to render the failed child again.
 
 Biome passed for both packages. Focused tests are pending in this commit; the initial worktree run was
 restarted after linking the newly declared Zod dependency into its local dependency tree.

@@ -20,6 +20,7 @@ import { agentLabel, COALESCE_WINDOW_MS, History } from './history.ts';
 import type { ProjectStore, ProjectViewState } from './persistence/types.ts';
 import { LeaseHeldError } from './persistence/types.ts';
 import { combine, emptySelection, expandClipSelection, filterSelection } from './selection.ts';
+import { createSessionId } from './session-id.ts';
 import { TransportStore } from './transport.ts';
 import type {
 	MediaRuntime,
@@ -110,7 +111,7 @@ export class EditorSession {
 
 	constructor(opts: EditorSessionOptions) {
 		this.projectId = opts.projectId;
-		this.sessionId = opts.sessionId ?? `ses_${Math.random().toString(36).slice(2, 12)}`;
+		this.sessionId = opts.sessionId ?? createSessionId();
 		this.ctx = opts.ctx;
 		this.engine = opts.engine;
 		this.projectStore = opts.store;
