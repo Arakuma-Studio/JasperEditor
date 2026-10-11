@@ -4,13 +4,30 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AutoToneResponseSchema, ColorMatchResponseSchema, GradingScopesResponseSchema } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { FixedEngineLink } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 import { cleanEnv } from './helpers.ts';
+
+const ScopeSummarySchema = GradingScopesResponseSchema.required({
+	waveform: true,
+	histogram: true,
+	vectorscopeYuv: true,
+}).extend({ stats: GradingScopesResponseSchema.shape.stats.unwrap() });
+const HistogramSummarySchema = GradingScopesResponseSchema.required({ histogram: true });
+const ColorMatchReportSchema = ColorMatchResponseSchema.pick({ params: true, skin: true }).extend({
+	applied: z.boolean(),
+	statisticsDistance: ColorMatchResponseSchema.pick({ before: true, after: true }),
+});
+const AutoToneReportSchema = z.object({
+	params: AutoToneResponseSchema.shape.params.omit({ saturation: true }),
+	lumaQuantiles: AutoToneResponseSchema.pick({ before: true, after: true }),
+});
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -256,26 +273,29 @@ describe('grading tools against a real engine (color-grade)', () => {
 	});
 
 	it('scopes_read measures a frame as numbers (and one clip alone)', async () => {
-		const r = await ok<Record<string, any>>('scopes_read', { projectId, at: 30, columns: 4, peaks: 3 });
+		const r = ScopeSummarySchema.parse(await ok('scopes_read', { projectId, at: 30, columns: 4, peaks: 3 }));
 		expect(r.stats.samples).toBeGreaterThan(1000);
 		expect(r.waveform.traces.R).toHaveLength(4);
 		expect(r.vectorscopeYuv.peaks).toHaveLength(3);
 		expect(r.histogram.r).toBeUndefined();
-		const c = await ok<Record<string, any>>('scopes_read', {
-			projectId,
-			clipId: clipA,
-			scopes: ['histogram'],
-			bins: true,
-		});
+		const c = HistogramSummarySchema.parse(
+			await ok('scopes_read', {
+				projectId,
+				clipId: clipA,
+				scopes: ['histogram'],
+				bins: true,
+			}),
+		);
 		expect(c.clipId).toBe(clipA);
 		expect(c.histogram.r).toHaveLength(256);
 	});
 
 	it('color_match solves clip A towards a frame of clip B in one Apply Match change', async () => {
-		let res: Record<string, any> = {};
+		let body: Record<string, unknown> = {};
 		const changes = await docChangedDuring(token, projectId, async () => {
-			res = await ok('color_match', { projectId, clipId: clipA, at: 30, reference: { at: 330 } });
+			body = await ok('color_match', { projectId, clipId: clipA, at: 30, reference: { at: 330 } });
 		});
+		const res = ColorMatchReportSchema.parse(body);
 		expect(changes).toHaveLength(1);
 		expect(changes[0]!.payload.label).toMatch(/Apply Match/);
 		expect(res.applied).toBe(true);
@@ -287,14 +307,16 @@ describe('grading tools against a real engine (color-grade)', () => {
 			at: 30,
 		});
 		expect(g.effects[0]!.wheels).toMatchObject({ midtonesLevel: res.params.midtonesLevel });
-		const dry = await ok<Record<string, any>>('color_match', {
-			projectId,
-			clipId: clipA,
-			at: 30,
-			reference: { at: 330 },
-			faceDetection: false,
-			apply: false,
-		});
+		const dry = ColorMatchReportSchema.parse(
+			await ok('color_match', {
+				projectId,
+				clipId: clipA,
+				at: 30,
+				reference: { at: 330 },
+				faceDetection: false,
+				apply: false,
+			}),
+		);
 		expect(dry.applied).toBe(false);
 		expect(dry.skin).toBe('off');
 		expect(
@@ -303,10 +325,11 @@ describe('grading tools against a real engine (color-grade)', () => {
 	});
 
 	it('auto_tone writes the tone sliders (one change)', async () => {
-		let res: Record<string, any> = {};
+		let body: Record<string, unknown> = {};
 		const changes = await docChangedDuring(token, projectId, async () => {
-			res = await ok('auto_tone', { projectId, clipId: clipA, at: 30 });
+			body = await ok('auto_tone', { projectId, clipId: clipA, at: 30 });
 		});
+		const res = AutoToneReportSchema.parse(body);
 		expect(changes).toHaveLength(1);
 		expect(Object.keys(res.params).sort()).toEqual([
 			'blacks',

@@ -10,6 +10,7 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type MediaAsset,
+	MediaInterpretationSchema,
 	type ProjectDocument,
 	type Sequence,
 } from '@jasper/project';
@@ -17,8 +18,20 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
+import type { describeInterpretation } from '../src/tools/imports.ts';
+
+const InterpretationSchema = z.object({
+	file: z.object({ fieldOrder: MediaInterpretationSchema.shape.fieldOrder.unwrap(), fps: z.number() }),
+	effective: z.object({
+		pixelAspect: z.number(),
+		fps: z.number(),
+		loop: z.number(),
+		durationSeconds: z.number(),
+	}),
+}) satisfies z.ZodType<Pick<ReturnType<typeof describeInterpretation>, 'file' | 'effective'>>;
 
 const dir = mkdtempSync(join(tmpdir(), 'jasper-mcp-imports-'));
 const file = (name: string) => {
@@ -291,7 +304,7 @@ describe('imports MCP tools', () => {
 	it('interprets footage and reports file vs effective values', async () => {
 		const { engine, call } = await connect();
 		const before = await call('get_media_interpretation', { mediaIds: [engine.videoId] });
-		const m0 = (before.body.media as Record<string, any>[])[0]!;
+		const m0 = z.array(InterpretationSchema).parse(before.body.media)[0]!;
 		expect(m0.file.fieldOrder).toBe('upper');
 		expect(m0.file.fps).toBe(29.97);
 		expect(m0.effective.pixelAspect).toBeCloseTo(0.9091, 4);
@@ -309,7 +322,7 @@ describe('imports MCP tools', () => {
 			fieldOrder: 'progressive',
 			loop: 2,
 		});
-		const eff = (r.body.media as Record<string, any>[])[0]!.effective;
+		const eff = z.array(InterpretationSchema).parse(r.body.media)[0]!.effective;
 		expect(eff.fps).toBe(23.976);
 		expect(eff.loop).toBe(2);
 		// 10 s at 29.97 assumed 23.976 → 12.5 s, twice.
@@ -367,16 +380,12 @@ describe('imports MCP tools', () => {
 		const seq = engine.doc().sequences[r.body.sequenceId as string] as Sequence;
 		expect(seq.settings.width).toBe(400);
 		expect(seq.settings.frameRate).toEqual({ num: 25, den: 1 });
-		const clips = Object.values(seq.clips) as Record<string, any>[];
+		const clips = Object.values(seq.clips);
 		expect(clips).toHaveLength(4);
-		expect(clips.find((c) => c.blendMode === 'add')).toBeTruthy();
+		expect(clips.find((c) => 'blendMode' in c && c.blendMode === 'add')).toBeTruthy();
 		expect(clips.filter((c) => c.enabled === false)).toHaveLength(1);
 		expect(
-			clips.some((c) =>
-				(c.effects ?? []).some((e: { effectId?: string; type?: string }) =>
-					JSON.stringify(e).includes('track-matte'),
-				),
-			),
+			clips.some((c) => 'effects' in c && c.effects.some((e) => JSON.stringify(e).includes('track-matte'))),
 		).toBe(true);
 		expect((r.body.media as unknown[]).length).toBe(4);
 		expect(r.body.notes).toEqual(expect.arrayContaining([expect.stringContaining('Drop Shadow')]));

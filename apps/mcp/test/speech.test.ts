@@ -1,3 +1,8 @@
+import {
+	SpeechModelSchema,
+	TranscribeMediaRequestSchema,
+	TranscribeSequenceRequestSchema,
+} from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -7,13 +12,43 @@ import {
 	type MediaAsset,
 	mixFingerprint,
 	type ProjectDocument,
+	ProjectDocumentSchema,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
+import { readToolResponse } from './tool-response.ts';
+
+const ModelListSchema = z.object({ models: z.array(SpeechModelSchema.pick({ id: true })) });
+const SpeechJobsSchema = z.object({
+	jobs: z.array(
+		z.object({
+			jobId: z.string(),
+			mediaId: z.string().optional(),
+			language: z.string().optional(),
+			task: z.enum(['transcribe', 'translate']).optional(),
+			media: z.array(z.object({ mediaId: z.string(), words: z.number() })).optional(),
+			droppedWords: z.number().optional(),
+		}),
+	),
+});
+const TranscriptWordsSchema = z.object({
+	words: z.array(
+		z.object({
+			index: z.number(),
+			text: z.string(),
+			start: z.number(),
+			end: z.number(),
+			frame: z.number().optional(),
+		}),
+	),
+});
+type EngineCallOptions = NonNullable<Parameters<EngineClient['call']>[1]>;
+type EngineRoute = Parameters<EngineClient['call']>[0];
 
 const S = 705_600_000;
 
@@ -105,7 +140,7 @@ function fakeEngine() {
 	});
 	if (!placed.ok) throw new Error(JSON.stringify(placed.errors));
 	const jobs = new Map<string, Record<string, unknown>>();
-	const posts: Array<{ name: string; opts: Record<string, any> }> = [];
+	const posts: Array<{ name: EngineRoute; opts: EngineCallOptions }> = [];
 	let n = 0;
 	const newJob = (result: unknown, state = 'succeeded') => {
 		const id = `job_${++n}`;
@@ -148,7 +183,7 @@ function fakeEngine() {
 			appliedBy: 'headless',
 		}),
 		getJob: async (id: string) => jobs.get(id),
-		call: async (name: string, opts: Record<string, any> = {}) => {
+		call: async (name: EngineRoute, opts: EngineCallOptions = {}) => {
 			posts.push({ name, opts });
 			if (name === 'speechModels')
 				return {
@@ -171,26 +206,31 @@ function fakeEngine() {
 						},
 					],
 				};
-			if (name === 'speechModelInstall')
-				return { ...newJob({ modelId: opts.params.modelId }), kind: 'model-download' };
+			if (name === 'speechModelInstall') {
+				const { modelId } = z.object({ modelId: z.string() }).parse(opts.params);
+				return { ...newJob({ modelId }), kind: 'model-download' };
+			}
 			if (name === 'mediaTranscribe') {
-				if (opts.body.model === 'whisper-small') {
+				const body = TranscribeMediaRequestSchema.parse(opts.body);
+				const { key } = z.object({ key: z.string() }).parse(opts.params);
+				if (body.model === 'whisper-small') {
 					throw new EngineError(
 						'SPEECH_MODEL_NOT_INSTALLED',
 						'The speech model Whisper small is not downloaded',
 						{ status: 409 },
 					);
 				}
-				return newJob(mediaResult(opts.params.key));
+				return newJob(mediaResult(key));
 			}
 			if (name === 'speechTranscribeSequence') {
-				const sent = opts.body.envelope.document as ProjectDocument;
+				const body = TranscribeSequenceRequestSchema.parse(opts.body);
+				const sent = ProjectDocumentSchema.parse(body.envelope.document);
 				return newJob({
 					target: {
 						type: 'sequence',
-						sequenceId: opts.body.sequenceId,
+						sequenceId: body.sequenceId,
 						range: { startFrame: 0, endFrame: 500 },
-						mixHash: mixFingerprint(sent, opts.body.sequenceId),
+						mixHash: mixFingerprint(sent, body.sequenceId),
 					},
 					model: 'whisper-base',
 					language: 'en',
@@ -241,12 +281,7 @@ async function connect() {
 					? args
 					: { projectId: 'prj_test', ...args },
 		})) as CallToolResult;
-		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
-		let body: unknown = text;
-		try {
-			body = JSON.parse(text);
-		} catch {}
-		return { isError: !!r.isError, body: body as Record<string, any> };
+		return readToolResponse(r);
 	};
 	return { engine, call };
 }
@@ -255,7 +290,10 @@ describe('speech MCP tools', () => {
 	it('lists and installs models', async () => {
 		const { call } = await connect();
 		const list = await call('list_speech_models', {});
-		expect(list.body.models.map((m: { id: string }) => m.id)).toEqual(['whisper-base', 'whisper-small']);
+		expect(list.read(ModelListSchema).models.map((m: { id: string }) => m.id)).toEqual([
+			'whisper-base',
+			'whisper-small',
+		]);
 		const inst = await call('install_speech_model', { modelId: 'whisper-small' });
 		expect(inst.isError).toBe(false);
 		expect(inst.body.model).toMatchObject({ license: 'MIT', sizeBytes: 970_934_583 });
@@ -272,7 +310,7 @@ describe('speech MCP tools', () => {
 			speakerCount: 2,
 		});
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
-		expect(r.body.jobs[0]).toMatchObject({
+		expect(r.read(SpeechJobsSchema).jobs[0]!).toMatchObject({
 			language: 'de',
 			task: 'translate',
 			media: [{ mediaId: engine.a, words: 2 }],
@@ -295,9 +333,14 @@ describe('speech MCP tools', () => {
 		});
 		const got = await call('get_transcript', { mediaId: engine.a });
 		expect(got.body.text).toBe('Hello world.');
-		expect(got.body.words[0]).toMatchObject({ index: 0, text: 'Hello', start: 1, end: 1.5 });
+		expect(got.read(TranscriptWordsSchema).words[0]).toMatchObject({
+			index: 0,
+			text: 'Hello',
+			start: 1,
+			end: 1.5,
+		});
 		const seq = await call('get_transcript', { sequenceId: engine.seqId });
-		expect(seq.body.words.map((w: { text: string; frame: number }) => [w.text, w.frame])).toEqual([
+		expect(seq.read(TranscriptWordsSchema).words.map((w) => [w.text, w.frame])).toEqual([
 			['Hello', 25],
 			['world.', 40],
 		]);
@@ -308,9 +351,9 @@ describe('speech MCP tools', () => {
 		await call('transcribe', { mediaId: engine.a });
 		const r = await call('transcribe', { sequenceId: engine.seqId, wait: false });
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
-		expect(r.body.jobs).toHaveLength(1);
-		expect(r.body.jobs[0].mediaId).toBe(engine.b);
-		const c = await call('transcribe', { jobIds: [r.body.jobs[0].jobId] });
+		expect(r.read(SpeechJobsSchema).jobs).toHaveLength(1);
+		expect(r.read(SpeechJobsSchema).jobs[0]!.mediaId).toBe(engine.b);
+		const c = await call('transcribe', { jobIds: [r.read(SpeechJobsSchema).jobs[0]!.jobId] });
 		expect(c.isError, JSON.stringify(c.body)).toBe(false);
 		const seq = await call('get_transcript', { sequenceId: engine.seqId });
 		expect(seq.body.text).toBe('Hello world. Second');
@@ -323,7 +366,7 @@ describe('speech MCP tools', () => {
 		const { call, engine } = await connect();
 		const r = await call('transcribe', { sequenceId: engine.seqId, mode: 'mix' });
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
-		expect(r.body.jobs[0].droppedWords).toBe(1);
+		expect(r.read(SpeechJobsSchema).jobs[0]!.droppedWords).toBe(1);
 		const ta = Object.values(engine.doc().transcripts).find((t) => t.mediaId === engine.a)!;
 		const tb = Object.values(engine.doc().transcripts).find((t) => t.mediaId === engine.b)!;
 		expect(ta.words.map((w) => [w.text, w.start / S])).toEqual([['mixA', 2]]);

@@ -74,6 +74,17 @@ branch.
 
 ## Verification
 
+The final test-type review found twelve explicit `any` annotations across captions, grading,
+imports and speech tests. They hid unchecked nested tool responses and fake speech request bodies.
+The response reader now validates JSON objects and supports schema-checked projections before
+nested assertions. Caption styles, speech requests/models, grading reports and media interpretation
+fields reuse their existing schemas; the interpretation projection is checked against
+`describeInterpretation`'s return type. Imported clips retain the model's union and narrow properties
+by membership. The speech fake takes the real client's route/options types and validates each
+request body and sequence document. Existing rejected-input cases and assertions remain intact.
+Focused fake-engine and response-reader checks are pending integration of this follow-up; no full
+typecheck or real-engine grading rerun was started.
+
 - Biome and `git diff --check` passed for the edited source and tests.
 - The focused run covered unit/discovery, conventions, PNG, default-sequence, audio effects,
   templates, formatting and README tool coverage: 50 of 51 tests passed initially. Its only
