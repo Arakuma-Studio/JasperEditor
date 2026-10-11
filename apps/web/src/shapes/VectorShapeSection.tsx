@@ -18,7 +18,6 @@ import {
 	type ShapeItem,
 	type ShapeItemType,
 	shapeItemSpecs,
-	walkItems,
 } from '@jasper/project';
 import { useSessionState } from '@jasper/session/react';
 import { Icon } from '@jasper/ui';
@@ -475,11 +474,4 @@ function OptionButton({ label, onClick, testId }: { label: string; onClick(): vo
 			{label}
 		</button>
 	);
-}
-
-/** Every item id of a clip's contents (tests). */
-export function vectorItemIds(contents: readonly ShapeItem[]): string[] {
-	const out: string[] = [];
-	walkItems(contents, (it) => out.push(it.id));
-	return out;
 }

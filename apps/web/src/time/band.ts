@@ -5,7 +5,6 @@
 // (a linear scale would squeeze every slow motion into the bottom pixels); 0 % (freeze) on the bottom edge. Reverse
 // segments draw at their magnitude with "<" marks, freezes with "|" marks (Premiere's tick marks).
 import {
-	type Clip,
 	clipSpeedAt,
 	type Rational,
 	type RemapKeyView,
@@ -141,9 +140,4 @@ export function keyAt(keys: readonly BandKey[], x: number, tol = 5): BandKey | n
 /** Display text of a speed (Premiere's tooltip): "50.00%", "-100.00%", "0.00%". */
 export function speedLabel(speed: number): string {
 	return `${(Math.round(speed * 10000) / 100).toFixed(2)}%`;
-}
-
-/** Clips that can show the band. */
-export function bandEligible(c: Clip): boolean {
-	return c.kind === 'video' || c.kind === 'nest-video';
 }

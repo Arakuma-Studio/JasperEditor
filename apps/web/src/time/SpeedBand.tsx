@@ -9,7 +9,7 @@
 // - Ctrl+Alt (Cmd+Opt)-drag a keyframe: freeze frame for the dragged length;
 // - click a keyframe and press Delete: remove it.
 // Every drag is one session gesture (one undo step) that re-applies the document command while the pointer moves.
-import { type Clip, contentTimeAt, isRemapped, type Rational, type TimedClip } from '@jasper/project';
+import { type Clip, isRemapped, type Rational, type TimedClip } from '@jasper/project';
 import { useSessionOrNull } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef, useState } from 'react';
 import type { ClipDecorationProps } from '../extensions/index.ts';
@@ -315,8 +315,3 @@ export function SpeedBandOverlay(p: ClipDecorationProps) {
 
 /** y of the speed-control track (just below the name strip). */
 const BAND_TRACK_Y = 15;
-
-/** Content time (flicks) shown at a sequence frame of a clip (for keyframe navigation). */
-export function clipContentAt(c: TimedClip, frame: number, rate: Rational): number {
-	return contentTimeAt(c, frame, rate);
-}

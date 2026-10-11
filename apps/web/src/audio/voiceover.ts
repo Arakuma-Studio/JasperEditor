@@ -386,6 +386,3 @@ export function voiceoverFor(session: EditorSession, engine: EngineClient): Voic
 	}
 	return r;
 }
-export function existingVoiceover(session: EditorSession): VoiceoverRecorder | null {
-	return recorders.get(session) ?? null;
-}

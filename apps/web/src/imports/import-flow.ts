@@ -5,12 +5,7 @@
 // 2. multi-page PDF / Illustrator documents — the chosen pages become one item each;
 // 3. layered documents (PSD) — Merge All Layers (the flattened item), Merged Layers (one picture of the chosen
 //    layers), Individual Layers (a bin of layers) or Sequence (the layers stacked; `layeredImportCommands`).
-import {
-	type LayeredExtractResult,
-	type LayeredLayer,
-	type RegisteredMedia,
-	toLayeredImportLayers,
-} from '@jasper/api';
+import { type LayeredExtractResult, type RegisteredMedia, toLayeredImportLayers } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Command,
@@ -172,10 +167,6 @@ function layerAsset(reg: RegisteredMedia): LayeredImportLayer['asset'] {
 	};
 }
 
-export function toImportLayers(layers: readonly LayeredLayer[]): LayeredImportLayer[] {
-	return toLayeredImportLayers(layers, layerAsset);
-}
-
 /**
  * Steps 2 and 3, on the registered files: PDF pages (each chosen page another entry) and layered documents. Returns the
  * entries to register (a PSD imported as layers is replaced by its layers' commands) and the extra commands (bins,
@@ -244,7 +235,7 @@ export async function expandImports(
 					docName,
 					documentSize: { width: result.info.width, height: result.info.height },
 					frameRate: defaultSequenceRate(session),
-					layers: toImportLayers(result.layers),
+					layers: toLayeredImportLayers(result.layers, layerAsset),
 					selected: new Set(choice.selected),
 					mode: choice.mode,
 					binId,

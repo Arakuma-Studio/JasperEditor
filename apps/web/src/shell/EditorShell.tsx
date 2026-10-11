@@ -25,7 +25,6 @@ import { setMonitorPanelServices } from '../panels/program/monitor-commands.ts';
 import { listPanels } from '../panels/registry.ts';
 import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.tsx';
 import type { PanelDefinition, PanelKind } from '../panels/types.ts';
-import { getDesktopBridge } from '../runtime/platform.ts';
 import { ensureAutosaver, flushAutosaver } from '../runtime/save.ts';
 import { AgentApprovals } from './AgentApprovals.tsx';
 import { type ShellController, type ShellMode, ShellRuntimeProvider, useShellRuntime } from './context.tsx';
@@ -327,8 +326,6 @@ function ShellBody() {
 	);
 	// wp-clipboard (S01:CLB-002): copy/cut/paste events from the browser or app menu run the Edit commands.
 	useEffect(() => installClipboardEvents(window, (id, args) => void runtime.run(id, args)), [runtime]);
-	// Electron native menu clicks arrive as command ids (S05:MN-001, §21).
-	useEffect(() => getDesktopBridge()?.onMenuCommand((id) => void runtime.run(id)), [runtime]);
 
 	// Menu providers: workspace list and panel list (Window menu, DK-050).
 	const providers = useMemo<MenuEnv['providers']>(

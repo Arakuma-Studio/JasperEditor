@@ -70,9 +70,6 @@ export function getLanguage(): string {
 	return catalog ? language : 'en';
 }
 
-/** The language of the page when it loaded (kept for callers that compare against the start-up language). */
-export const currentLanguage = language;
-
 /** Subscribes to language changes (the shell remounts its views; see `useLanguageEpoch`). */
 export function subscribeLanguage(listener: () => void): () => void {
 	listeners.add(listener);
@@ -135,9 +132,6 @@ export function __set(target: object, key: string, value: unknown): void {
 
 /** For dynamic text (effect names, command labels from the model): translated when the catalogue has it. */
 export const t = __t;
-
-/** Number of catalogue entries (diagnostics, the Preferences page). */
-export const catalogSize = (): number => (catalog ? Object.keys(catalog).length : 0);
 
 // ---------------------------------------------------------------- names from the model
 

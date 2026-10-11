@@ -18,10 +18,6 @@ import type { EditorSession } from '@jasper/session';
 import { exportEnvelope } from '../export/settings.ts';
 import { mediaKeyOf } from '../import/assets.ts';
 
-function envelopeOf(session: EditorSession) {
-	return exportEnvelope(session.getCommitted(), session.revision);
-}
-
 function resultOf<T>(job: EngineJob): T {
 	if (job.state !== 'succeeded') throw new Error(job.error?.message ?? `The analysis ${job.state}`);
 	return job.result as T;
@@ -35,7 +31,7 @@ export async function analyzeAudio(
 ): Promise<AudioAnalyzeResult> {
 	const body = {
 		...req,
-		envelope: envelopeOf(session),
+		envelope: exportEnvelope(session.getCommitted(), session.revision),
 		projectId: session.getCommitted().projectId,
 	} as unknown as AudioAnalyzeRequest;
 	const job = await engine.analyzeAudio(body, true);

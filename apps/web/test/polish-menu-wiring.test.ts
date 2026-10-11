@@ -38,9 +38,10 @@ describe('menu wiring', () => {
 		for (const i of limited) expect(getCommand(i.command), i.command).toBeTruthy();
 	});
 
-	it('the Workspaces menu and every panel menu resolve to registered commands', () => {
+	it('the Workspaces menu, panel menus and panel openers resolve to registered commands', () => {
 		const entries = [
 			...commandEntries(WORKSPACES_MENU, 'Workspaces'),
+			...listPanels().map((p) => ({ id: `panel.open.${p.kind}`, where: `Window ▸ ${p.kind}` })),
 			...listPanels().flatMap((p) => commandEntries((p.menu ?? []) as AnyItem[], `panel ${p.kind}`)),
 		];
 		const missing = entries.filter((e) => !getCommand(e.id)).map((e) => `${e.where} [${e.id}]`);
@@ -50,17 +51,5 @@ describe('menu wiring', () => {
 	it('every default key binding resolves to a registered command', () => {
 		const missing = [...new Set(DEFAULT_KEYMAP.map((b) => b.command))].filter((id) => !getCommand(id));
 		expect(missing).toEqual([]);
-	});
-
-	it('the five entries that used to render disabled are registered', () => {
-		for (const id of [
-			'project.importFromMediaBrowser',
-			'engine.connect',
-			'engine.status',
-			'mg.editParameters',
-			'app.notices',
-			'panel.open.mediaBrowser',
-		])
-			expect(getCommand(id), id).toBeTruthy();
 	});
 });

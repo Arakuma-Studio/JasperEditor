@@ -9,7 +9,6 @@ export interface JasperDesktopBridge {
 	pickMedia(): Promise<string[]>;
 	revealInFolder(path: string): void;
 	windowControls: { minimize(): void; toggleMaximize(): void; close(): void };
-	onMenuCommand(cb: (commandId: string) => void): () => void;
 	/** Brings the window to the front (an agent asked to show a project). */
 	focusWindow?(): void;
 	/** Where the bundled `jasper-mcp` server lives and how to launch it (Help ▸ Connect an AI Agent…). */

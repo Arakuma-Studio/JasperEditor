@@ -7,7 +7,6 @@ import {
 	type MediaAsset,
 	resolveInputSpace,
 	type SequenceColorInfo,
-	sequenceColorInfo,
 	WORKING_SPACE_IDS,
 } from '@jasper/project';
 
@@ -54,13 +53,4 @@ export function detectedSpaceLabel(asset: MediaAsset, working: string): string {
 		colorSpace(working) ? (working as never) : 'rec709',
 	);
 	return r.space?.label ?? 'Rec. 709';
-}
-
-/** A short summary of a media's colour interpretation for the Project panel / dialogs. */
-export function interpretationSummary(asset: MediaAsset, seqSettings: unknown): string {
-	const info = sequenceColorInfo(seqSettings as never);
-	const c = asset.interpretation?.color;
-	if (c?.ocio) return `OCIO: ${c.ocio.space}`;
-	if (c?.space) return colorSpace(c.space)?.label ?? c.space;
-	return `Automatic (${detectedSpaceLabel(asset, info.space)})`;
 }

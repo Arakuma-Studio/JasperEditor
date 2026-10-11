@@ -21,7 +21,7 @@ import {
 } from '../multicam/dialogs.tsx';
 import { gridLayout, multicamClipAt } from '../multicam/logic.ts';
 import { pressCamera } from '../multicam/recorder.ts';
-import { multicamRecorderStore, multicamViewStore } from '../multicam/state.ts';
+import { multicamViewStore } from '../multicam/state.ts';
 import { getSourceTransport } from '../panels/program/transport-registry.ts';
 import { sourceMonitorState } from '../panels/source/source-state.ts';
 import { activeTimeline } from '../panels/timeline/env.tsx';
@@ -381,9 +381,4 @@ export function cameraMenuEntries(
 		camera: i + 1,
 		checked: current === i + 1,
 	}));
-}
-
-/** True while a live switching pass records (Program monitor border colour). */
-export function isRecordingMulticam(): boolean {
-	return multicamRecorderStore.getState().recording;
 }

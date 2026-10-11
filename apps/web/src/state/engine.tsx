@@ -58,11 +58,7 @@ export function fetchWithEarly(real: typeof fetch = (input, init) => fetch(input
 			(!init?.method || init.method.toUpperCase() === 'GET')
 		) {
 			w.__jasperEarly = undefined;
-			if (Date.now() - early.at <= EARLY_MAX_AGE_MS)
-				return early.response.then(
-					(r) => r,
-					() => real(input, init),
-				);
+			if (Date.now() - early.at <= EARLY_MAX_AGE_MS) return early.response.catch(() => real(input, init));
 		}
 		return real(input, init);
 	};
