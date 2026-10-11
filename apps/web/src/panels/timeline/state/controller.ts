@@ -814,7 +814,7 @@ export class TimelineController {
 			}
 		}
 		if (!d.gesture) d.gesture = this.session.beginGesture(d.kind === 'slip' ? 'Slip' : 'Slide');
-		const cmd =
+		const cmd: Command =
 			d.kind === 'slip'
 				? { type: 'clip.slip', clipIds: d.ids, deltaFrames: delta }
 				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta, linked: d.ids.length > 1 };
