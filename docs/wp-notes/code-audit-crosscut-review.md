@@ -216,3 +216,77 @@ The syntax inventory and caller research above are read-only measurements of the
 code or tests were changed in this crosscut branch. Findings were delegated to the owning audit branches
 to avoid conflicting edits. Integration must record their final implementation, tests, full verification,
 and any unresolved limitations; these counts alone do not establish that every code path is correct.
+
+## Independent review of integrated changes
+
+The integration review examined the production changes and regression tests in the area branches,
+with particular attention to behavior changed by consolidating helpers or narrowing types. It did
+not rerun the owners' test suites; their assessment notes and the integration verification record
+contain the execution results.
+
+- The shared export worker scheduler bounds worker/frame allocations, rejects queued and active
+  work when a worker fails, handles startup and message-posting failures, and terminates workers on
+  close. The extracted frame kernels remain self-contained when serialized into worker source.
+- OpenCV adapters use the installed package's declarations. The loader wraps the initialized module
+  rather than resolving its self-referential Emscripten thenable directly. The dejudder result union
+  preserves the relationship between each operation and its response.
+- Project reads validate the envelope and distinguish missing files from corruption and I/O errors.
+  Atomic writes continue to synchronize data and the containing directory; only the documented
+  unsupported directory-sync cases are suppressed.
+- Consequential web actions call `saveBeforeLeaving`, which checks the actual persistence outcome.
+  Failed, conflicted, or paused saves cannot authorize navigation, version replacement, or deletion
+  of the source recovery journal. Background save scheduling can still report errors through status.
+- Upload transport validates initial offsets, chunk sizes, acknowledgement progress, and bounded
+  offset reconciliation. Shared transport preserves aborts and retains both the operation and
+  cleanup errors when aborting an upload also fails.
+- Persisted speech, multicam, and view state now enters through runtime validation. The glTF schema
+  validates consumed structural fields while the parser retains its allocation limits. Dynamic
+  extension values and untrusted data remain `unknown` until their owning schema or guard checks them.
+
+The independent pass found and delegated four additional corrections:
+
+1. Reading a healthy recovery journal initially called `list`, allowing an unrelated incomplete
+   journal to block the read. The engine owner separated direct reads from listing and added a
+   regression with healthy and damaged sibling journals. Listing was then extended to return
+   per-session warnings alongside healthy candidates; damaged files remain intact. The API, session
+   adapter, and UI must carry these warnings together.
+2. The shared job poller initially retried only `NETWORK`. It now also honors the API's explicit
+   `retryable` flag, with the same three-consecutive-failure limit. A successful response resets the
+   limit; replacement/cancellation checks surround asynchronous requests. Permanent authorization
+   and missing-job failures terminate with a visible error.
+3. Saved-version readers still asserted `EnvelopeJson` after checking only a few fields. A JSON
+   object with a numeric `document` could reach restoration, and missing envelope metadata could be
+   persisted. The engine owner reused envelope validation before restoration and added a regression
+   asserting that both replacement and copy refuse malformed versions without changing either file.
+4. The MCP unavailable-operation hint claimed the command catalog contained `implemented: false`
+   entries after the unused stub registry had been removed. The MCP owner changed the hint to refer
+   to the current engine/editor capability and tool requirements.
+
+A comment review also caught an orphaned continuation left after deleting the first line of a
+historical Lumetri comment. The registry owner retained only the complete parameter-order invariant.
+This illustrates why comment cleanup requires reading the remaining prose as well as the diff.
+
+No additional high-confidence regression was found in the reviewed worker, persistence, transport,
+or validation changes. This is a scoped source review, not a claim that every possible input or
+platform behavior was executed. Compatibility readers, explicit unavailable capabilities, storage
+boundaries, and failure-isolating cleanup remain where they protect user work.
+
+### Integrated syntax inventory
+
+An immutable Git-object scan of integration commit `62c56d0a` applied the same syntax rules to
+**1,741 files**. Reading blobs from that commit avoids mixing revisions while other branches merge.
+
+| Candidate | Baseline | Integrated snapshot |
+| --- | ---: | ---: |
+| Explicit `any` type nodes | 21 | 0 |
+| `unknown` type nodes | 2,955 | 2,347 |
+| Double assertions through `unknown` | 189 | 102 |
+| Catch blocks with no statements | 123 | 111 |
+| Simple promise-catch candidates | 194 | 178 |
+| Type suppression lines | 0 | 0 |
+
+No file increased its empty-catch or double-assertion count. The new image-loading module's promise
+catch was extracted with the existing image decode behavior, rather than introducing a new swallowed
+operation failure. Remaining catches and `unknown` values are review candidates under the boundary
+criteria above, not evidence that removing them would be safe. The inventory excludes tests and
+does not count JavaScript embedded in string literals.
