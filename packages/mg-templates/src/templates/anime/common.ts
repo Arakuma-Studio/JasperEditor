@@ -1,7 +1,8 @@
 // Shared metadata helpers of the anime templates (S11 §5, ATP-001/003/004). Pure data: the React
 // implementations live in `@jasper/motion/templates` (this package never imports animejs).
 import { z } from 'zod';
-import type { Rgba } from '../../core.ts';
+
+export { rgbaParam } from '../../params.ts';
 
 /**
  * Frame rate the `introFrames` / `outroFrames` of anime templates are written at. The layer converts them to
@@ -25,14 +26,6 @@ export const ANIME_TEMPLATE_EASES = [
 	'outBounce',
 ] as const;
 export type AnimeTemplateEase = (typeof ANIME_TEMPLATE_EASES)[number];
-
-const channel = z.number().min(0).max(1);
-/** Straight sRGB RGBA 0..1 (the template param convention; keyframable on anime templates). */
-export const rgbaParam = (d: Rgba) =>
-	z
-		.array(channel)
-		.length(4)
-		.default(d as number[]);
 
 export const easeParam = (d: AnimeTemplateEase) => z.enum(ANIME_TEMPLATE_EASES).default(d);
 

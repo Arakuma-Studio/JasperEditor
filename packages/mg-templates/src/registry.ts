@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { type AnyMgTemplate, isAnimeTemplate } from './types.ts';
 
 export type MgRegistry = MgTemplateRegistry & {
-	/** S11:ATP-009 (FIX-005): always implemented here (see `upgradeParams`). */
 	upgrade(
 		id: string,
 		fromVersion: number,
@@ -21,14 +20,14 @@ export type MgCatalogEntryJson = {
 	version: number;
 	name: string;
 	category: string;
-	paramsSchema: Record<string, unknown>;
+	paramsSchema: ReturnType<typeof z.toJSONSchema>;
 	defaults: Record<string, unknown>;
 	introFrames: number;
 	outroFrames: number;
 	defaultDurationSeconds: number;
 	description?: string;
 	canvases: string[];
-	/** M2 (S11:ATP-008): present for anime templates only (absent = fframes, unchanged for jasper-mg parity). */
+	/** Absent means fframes, matching the native renderer catalog. */
 	renderer?: 'anime';
 };
 
@@ -45,7 +44,6 @@ function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
 		outroFrames: def.outroFrames,
 		canvasDefault: 'sequence',
 		canvases: def.canvases,
-		// M2 (S11:ATP-001/ANA-001): additive.
 		...(isAnimeTemplate(def) ? { renderer: 'anime' as const } : {}),
 		...(def.description ? { description: def.description } : {}),
 		defaultDurationSeconds: def.defaultDurationSeconds,
@@ -53,7 +51,7 @@ function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
 }
 
 /**
- * Template version upgrade (S11:ATP-009, FIX-005). Definitions carry `upgrades: [{fromVersion, migrate}]` (params
+ * Template version upgrade (S11:ATP-009). Definitions carry `upgrades: [{fromVersion, migrate}]` (params
  * of `id@fromVersion` → params of that definition's version). The steps form a graph over the installed versions
  * (edges only go up); a depth-first search tries the larger jumps first and backtracks: a step whose migration
  * throws or yields params the target's schema rejects (defaults filled in) is skipped, and the other steps from
@@ -88,7 +86,7 @@ export function upgradeParams(
 		if (version === goal) return here;
 		let best = here;
 		for (const step of stepsFrom(version)) {
-			let migrated: unknown;
+			let migrated: ReturnType<typeof step.migrate>;
 			try {
 				migrated = step.migrate({ ...current });
 			} catch {
@@ -96,7 +94,7 @@ export function upgradeParams(
 			}
 			const parsed = step.def.paramsSchema.safeParse(migrated);
 			if (!parsed.success) continue;
-			const found = search(step.def.version, parsed.data as Record<string, unknown>);
+			const found = search(step.def.version, parsed.data);
 			if (found && (!best || found.version > best.version)) best = found;
 			if (best && best.version === goal) break;
 		}
@@ -106,7 +104,6 @@ export function upgradeParams(
 	return result && result.version !== fromVersion ? result : null;
 }
 
-/** Implements @jasper/project's MgTemplateRegistry over TS template definitions. */
 export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 	const map = new Map<string, AnyMgTemplate>();
 	for (const d of defs) {
@@ -132,10 +129,7 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 				version: d.version,
 				name: d.name,
 				category: d.category,
-				paramsSchema: z.toJSONSchema(d.paramsSchema, { unrepresentable: 'any', io: 'input' }) as Record<
-					string,
-					unknown
-				>,
+				paramsSchema: z.toJSONSchema(d.paramsSchema, { unrepresentable: 'any', io: 'input' }),
 				defaults: d.defaults,
 				introFrames: d.introFrames,
 				outroFrames: d.outroFrames,

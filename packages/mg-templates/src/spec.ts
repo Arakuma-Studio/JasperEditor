@@ -1,12 +1,12 @@
 // Render specs and cache keys for motion-graphic clips (ARCHITECTURE §10.2, S01:KND-009, S04:MG-011).
 // Pure functions shared by the engine (render service, export planner) and the web app (render state).
-import type { RenderVisualClip } from '@jasper/project';
+import type { Rational, RenderVisualClip } from '@jasper/project';
 import type { MgRegistry } from './registry.ts';
 
 /** Same value as @jasper/project's FLICKS_PER_SECOND (kept local: this package imports project types only). */
 const FLICKS_PER_SECOND = 705_600_000;
 
-export type MgRational = { num: number; den: number };
+export type MgRational = Rational;
 
 /** Mirrors @jasper/api `MgRenderSpec` and the Rust `MgSpec`. */
 export type MgSpecInput = {
@@ -39,7 +39,7 @@ export function resolveSpecParams(spec: MgSpecInput, registry?: MgRegistry): MgS
 	const def = registry?.getDefinition(spec.template.id, spec.template.version);
 	if (!def) return spec;
 	const parsed = def.paramsSchema.safeParse(spec.params);
-	return parsed.success ? { ...spec, params: parsed.data as Record<string, unknown> } : spec;
+	return parsed.success ? { ...spec, params: parsed.data } : spec;
 }
 
 /**

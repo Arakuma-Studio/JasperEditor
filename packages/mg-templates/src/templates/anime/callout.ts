@@ -38,7 +38,6 @@ export const callout: MgAnimeTemplateDefinition<CalloutParams> = {
 	category: 'Callouts',
 	description: 'A target dot, a leader line drawn on and a label box (optionally travelling along the line).',
 	renderer: 'anime',
-	// 2: drawing clipped to the canvas (preview = hybrid export), ring hidden before the pulse.
 	renderVersion: 2,
 	posterAt: 2.5,
 	paramsSchema: calloutParams,

@@ -21,9 +21,12 @@
     "react": "^19.2.0"
   },
   "devDependencies": {
+    "@remotion/bundler": "4.0.499",
     "@remotion/player": "4.0.499",
+    "@remotion/renderer": "4.0.499",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "esbuild": "0.28.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "remotion": "4.0.499"

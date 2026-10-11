@@ -1,9 +1,6 @@
 // Small numeric helpers shared by every processor (ported from filmcraft `audio-dsp/src/lib.rs`).
 
-/** Decibels → linear amplitude. */
-export function dbToGain(db: number): number {
-	return 10 ** (db / 20);
-}
+export { dbToLin as dbToGain, flushDenormal as flush } from '@jasper/audio-dsp';
 
 /** Linear amplitude → decibels (−Infinity for 0). */
 export function gainToDb(g: number): number {
@@ -13,11 +10,6 @@ export function gainToDb(g: number): number {
 /** Linear → dB with a −200 dB floor. */
 export function linDb(x: number): number {
 	return 20 * Math.log10(Math.max(x, 1e-10));
-}
-
-/** Flush tiny values of recursive state to zero (keeps tails exactly silent; no subnormals). */
-export function flush(x: number): number {
-	return x > -1e-30 && x < 1e-30 ? 0 : x;
 }
 
 /** Flush for f32 delay-line storage. */

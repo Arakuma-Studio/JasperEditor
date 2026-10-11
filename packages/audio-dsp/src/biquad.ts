@@ -7,7 +7,6 @@
 /** Normalised biquad coefficients (`a0 == 1`): `H(z) = (b0 + b1 z⁻¹ + b2 z⁻²) / (1 + a1 z⁻¹ + a2 z⁻²)`. */
 export type BiquadCoeffs = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
-/** Filter shapes of {@link designBiquad}. */
 export type FilterType =
 	| 'peaking'
 	| 'lowShelf'
@@ -183,7 +182,6 @@ export class Biquad {
 		this.a2 = c.a2;
 	}
 
-	/** Clear the filter memory. */
 	reset(): void {
 		this.s1 = 0;
 		this.s2 = 0;

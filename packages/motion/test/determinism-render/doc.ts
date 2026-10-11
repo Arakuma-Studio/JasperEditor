@@ -1,5 +1,5 @@
 // The render-parity sequence (S11:ANM-014) as a RenderDoc: one text clip per installed text animator (in and
-// out, with its default params; a static title while the catalogue is empty), one clip per installed anime
+// out, with its default params), one clip per installed anime
 // template, and a shape with keyframed size — rendered through the real SequenceComposition. Animators and
 // templates join this fixture automatically when they are registered.
 import { isAnimeTemplate, mgRegistry } from '@jasper/mg-templates';
@@ -7,13 +7,13 @@ import {
 	anim,
 	applyTransaction,
 	buildRenderSnapshot,
+	type Command,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
 	defaultShape,
 	defaultTransform,
 	FLICKS_PER_SECOND,
-	type ProjectDocument,
 	type RenderSnapshot,
 	shapeIntrinsicBox,
 	TEXT_ANIMATION_SPECS,
@@ -31,10 +31,10 @@ export function parityDoc(): RenderSnapshot {
 	const ids = createCounterIdSource(1);
 	const base = createEmptyProject({ ids, name: 'Parity', preset: 'hd-720p-30' });
 	const ctx = { ids, now: () => 't', revision: 0, registries: defaultRegistries(mgRegistry) };
-	const specs = TEXT_ANIMATION_SPECS.length ? TEXT_ANIMATION_SPECS : [null];
+	const specs = TEXT_ANIMATION_SPECS;
 	const templates = mgRegistry.definitions().filter(isAnimeTemplate);
 	const tracks = specs.length + templates.length + 1;
-	const commands: Record<string, unknown>[] = [{ type: 'track.add', kind: 'video', count: tracks }];
+	const commands: Command[] = [{ type: 'track.add', kind: 'video', count: tracks }];
 	specs.forEach((spec, i) => {
 		const col = i % 3;
 		const row = Math.floor(i / 3);
@@ -43,7 +43,7 @@ export function parityDoc(): RenderSnapshot {
 			at: 0,
 			duration: PARITY_DOC_FRAMES,
 			track: `V${i + 1}`,
-			content: { text: spec ? `${spec.label} ✓ déjà` : 'Static title ✓ déjà', style: { sizePx: 44 } },
+			content: { text: `${spec.label} ✓ déjà`, style: { sizePx: 44 } },
 			transform: { position: [220 + col * 420, 90 + row * 110] },
 			ref: `$t${i}`,
 		});
@@ -56,13 +56,9 @@ export function parityDoc(): RenderSnapshot {
 			track: `V${specs.length + i + 1}`,
 			template: { id: t.id, version: t.version },
 		});
-	const { document, result } = applyTransaction(
-		base,
-		{ label: 'parity', origin: 'user', commands: commands as never },
-		ctx,
-	);
+	const { document, result } = applyTransaction(base, { label: 'parity', origin: 'user', commands }, ctx);
 	if (!result.ok) throw new Error(`parity doc: ${JSON.stringify(result.errors)}`);
-	const doc = JSON.parse(JSON.stringify(document)) as ProjectDocument;
+	const doc = structuredClone(document);
 	const seq = Object.values(doc.sequences)[0]!;
 	const ease = { influence: 1 / 3, slope: 0 };
 	const kf = <T>(id: string, frame: number, value: T) => ({
@@ -75,25 +71,19 @@ export function parityDoc(): RenderSnapshot {
 	});
 	const last = PARITY_DOC_FRAMES - 1;
 	specs.forEach((spec, i) => {
-		const clip = seq.clips[result.refs[`$t${i}`]!] as unknown as {
-			textAnimation?: unknown;
-			opacity: { keyframes: unknown[] };
-			transform: { rotation: { keyframes: unknown[] } };
-		};
-		// Motion keyframes (evaluated by @jasper/project): the titles move even while no animator is installed.
+		const clip = seq.clips[result.refs[`$t${i}`]!];
+		if (clip?.kind !== 'text') throw new Error('Parity text clip is missing');
 		clip.transform.rotation.keyframes = [
 			kf(`kf_000000000PARR${i}A`, 0, -6),
 			kf(`kf_000000000PARR${i}B`, last, 6),
 		];
 		clip.opacity.keyframes = [kf(`kf_000000000PARO${i}A`, 0, 40), kf(`kf_000000000PARO${i}B`, last, 100)];
-		if (!spec) return;
 		const side = (phase: 'in' | 'out', frames: number) =>
 			spec.phases.includes(phase)
 				? { preset: spec.id, version: spec.version, durationFrames: frames, params: { ...spec.defaults } }
 				: null;
 		clip.textAnimation = { in: side('in', 14), out: side('out', 10) };
 	});
-	// Shapes are added directly (clip.addShape belongs to wp-m2-shapes): a rounded rectangle whose size is keyframed.
 	const shape = defaultShape('rect', { size: [160, 160] });
 	shape.cornerRadius = anim(24);
 	shape.size = {
@@ -123,6 +113,6 @@ export function parityDoc(): RenderSnapshot {
 		kind: 'shape',
 		shape,
 		transform: defaultTransform(shapeIntrinsicBox(shape), frame, 'none'),
-	} as never;
+	};
 	return buildRenderSnapshot(doc, seq.id, { resolveMedia: () => null, resolveFont: () => null });
 }

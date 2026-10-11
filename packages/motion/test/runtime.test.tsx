@@ -105,10 +105,10 @@ function Values({
 describe('useAnimeValues (S11:ANM-004)', () => {
 	const frames = Array.from({ length: 31 }, (_, i) => i);
 	const fresh = (f: number) => {
-		let out: unknown;
+		let out: readonly Readonly<{ x: number; o: number }>[] = [];
 		const r = render(<Values ms={frameToMs(f, 30)} onValues={(v) => (out = v)} />);
 		r.unmount();
-		return out as readonly { x: number; o: number }[];
+		return out;
 	};
 	const expected = frames.map(fresh);
 	it('returns frozen copies of the seeked values', () => {

@@ -24,8 +24,6 @@ let ti = 0;
 export type Family = 'bessel' | 'butterworth' | 'chebyshev' | 'elliptic';
 export type Band = 'lowPass' | 'highPass' | 'bandPass' | 'bandStop';
 
-// --------------------------------------------------------------------------------------------- complex numbers
-
 /** Minimal immutable complex number (prototype design only: not on the per-redesign path). */
 export class C {
 	constructor(
@@ -165,8 +163,6 @@ class Zpk {
 	}
 }
 
-// ------------------------------------------------------------------------------------------------- sections
-
 /** A cascade of second-order sections, stored flat (`b0 b1 b2 a1 a2` per section). */
 export class Sections {
 	readonly c = new Float64Array(5 * MAX_SECTIONS);
@@ -206,8 +202,6 @@ export class Sections {
 		return 10 * Math.log10(num / den);
 	}
 }
-
-// ----------------------------------------------------------------------------------------------- prototypes
 
 function butterworth(n: number): Zpk {
 	const f = new Zpk();
@@ -299,8 +293,6 @@ function bessel(n: number): Zpk {
 	f.k = tr;
 	return f;
 }
-
-// ---- Jacobi elliptic functions via Landen transformations (normalised argument u·K).
 
 const LANDEN_STEPS = 10;
 
@@ -407,8 +399,6 @@ function elliptic(n: number, rp: number, rs: number): Zpk {
 	return f;
 }
 
-// ----------------------------------------------------------------------------- allocation-free complex scratch
-
 /** (ar + j ai) / (br + j bi) → (tr, ti). */
 function cdiv(ar: number, ai: number, br: number, bi: number): void {
 	const d = br * br + bi * bi;
@@ -435,8 +425,6 @@ function zpRatio(f: Zpk): number {
 	cdiv(nr, ni, tr, ti);
 	return tr;
 }
-
-// ------------------------------------------------------------------------------------------------ transforms
 
 function scaleRoots(r: Roots, s: number): void {
 	for (let i = 0; i < r.n; i++) {
@@ -538,8 +526,6 @@ function bilinear(f: Zpk, fs: number): void {
 	f.k *= tr;
 	for (let i = 0; i < degree; i++) f.z.push(-1, 0);
 }
-
-// --------------------------------------------------------------------------------------------- factorisation
 
 const REAL_EPS = 1e-7;
 
@@ -655,8 +641,6 @@ function intoSections(f: Zpk, out: Sections, s: Scratch): void {
 		out.c[2] = out.c[2]! * f.k;
 	}
 }
-
-// ------------------------------------------------------------------------------------------------------- API
 
 /** A normalised analog low-pass prototype (cache it: Bessel needs a root search). */
 export class Prototype {

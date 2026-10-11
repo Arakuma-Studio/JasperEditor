@@ -150,8 +150,6 @@ export class DynamicsRack extends EffectBase {
 	}
 }
 
-// ---------------------------------------------------------------- multiband compressor
-
 export const MB_BANDS = 4;
 const Q_BW = Math.SQRT1_2;
 /** Most channels the multiband compressor processes (extra ones pass through). */

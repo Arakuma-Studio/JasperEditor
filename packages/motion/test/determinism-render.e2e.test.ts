@@ -14,29 +14,27 @@
 // does with a full Chrome (packages/compositions/src/render-host.ts).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { bundle } from '@remotion/bundler';
+import type { HeadlessBrowser } from '@remotion/renderer';
+import * as r from '@remotion/renderer';
+import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderPagesInOwnWindows } from '../../compositions/src/render-host.ts';
 import { parityDoc, PARITY_SCENE as SCENE } from './determinism-render/doc.ts';
 import { reversedOrder, shuffledOrder } from './determinism-render/order.ts';
+import type { ParityProps } from './determinism-render/types.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = join(here, '..', '..', '..');
-// The Remotion tooling is a dev dependency of @jasper/compositions (motion stays free of it).
-const fromCompositions = createRequire(join(repo, 'packages', 'compositions', 'package.json'));
 const CHROME =
 	process.env.JASPER_BROWSER_EXECUTABLE ??
 	(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined);
 const N = SCENE.durationInFrames;
 
-// @remotion/renderer, @remotion/bundler and esbuild are loaded from @jasper/compositions at run time (untyped
-// here: @jasper/motion does not depend on them).
-type Renderer = any;
-type Composition = { props: Record<string, unknown> } & Record<string, unknown>;
+type Composition = Awaited<ReturnType<typeof r.selectComposition>>;
 
 const ffmpeg = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 /** Decodes an image or a video file / PNG buffer to raw RGBA frames. */
@@ -73,20 +71,18 @@ const mismatches = (got: (Buffer | undefined)[], want: Buffer[], map: (i: number
 	got.flatMap((b, i) => (b && want[map(i)] && b.equals(want[map(i)]!) ? [] : [map(i)]));
 
 describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { timeout: 1_200_000 }, () => {
-	const r = (enabled ? fromCompositions('@remotion/renderer') : null) as Renderer;
 	const browserOpts = CHROME ? { browserExecutable: CHROME, chromeMode: 'chrome-for-testing' as const } : {};
 	let serveUrl = '';
-	let browser: { close(o: { silent: boolean }): Promise<void> } | undefined;
+	let browser: HeadlessBrowser | undefined;
 	const work = enabled ? mkdtempSync(join(tmpdir(), 'jasper-anm014-')) : '';
 	const doc = parityDoc();
-	const PROPS: Record<string, Record<string, unknown>> = {
+	const PROPS: Record<string, ParityProps> = {
 		Sequence: { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } },
 	};
 	const stills: Record<string, Buffer[]> = {};
 
 	beforeAll(async () => {
 		console.log(`[ANM-014] Render parity artifacts: ${work}`);
-		const { bundle } = fromCompositions('@remotion/bundler');
 		serveUrl = await bundle({ entryPoint: join(here, 'determinism-render', 'entry.tsx') });
 		browser = await r.openBrowser('chrome', { ...browserOpts });
 		// A full Chrome (new headless mode) would open the concurrent pages as hidden tabs (render-host.ts).
@@ -145,7 +141,6 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 				writeFileSync(join(work, `${id}-still-${f}.png`), buffer!);
 			}
 			stills[id] = still;
-			// it animates: early, middle and late frames differ
 			expect(still[0]!.equals(still[Math.floor(N / 2)]!)).toBe(false);
 			expect(still[Math.floor(N / 2)]!.equals(still[N - 1]!)).toBe(false);
 			const c1 = await frames(id, 1);
@@ -162,7 +157,6 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 			}).toEqual({ c1: [], c4: [], reversed: [], shuffled: [] });
 		});
 
-	// Review fix 2: the callout is completely hidden before its intro begins.
 	it('callout paints no premature pulse at clip start', async () => {
 		const callout = doc.videoTracks
 			.flatMap((track) => track.clips)
@@ -229,9 +223,8 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 		let page: import('@playwright/test').Page;
 		let close: () => Promise<void> = async () => {};
 		beforeAll(async () => {
-			const esbuild = createRequire(fromCompositions.resolve('@remotion/bundler'))('esbuild');
 			const dir = mkdtempSync(join(tmpdir(), 'jasper-anm014-player-'));
-			await esbuild.build({
+			await build({
 				entryPoints: [join(here, 'determinism-render', 'player.tsx')],
 				bundle: true,
 				format: 'iife',
@@ -258,23 +251,16 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 		for (const id of ['Sequence'])
 			it(`${id}: the Player frame matches renderStill (≤ 3/255 on ≥ 99.5 % of the pixels)`, async () => {
 				expect(stills[id], 'renderStill frames (previous test)').toBeDefined();
-				const props =
-					id === 'Sequence'
-						? { doc, options: { isPreview: true, useProxies: false, transparentBackground: false } }
-						: {};
+				const props: ParityProps = {
+					doc,
+					options: { isPreview: true, useProxies: false, transparentBackground: false },
+				};
 				await page.reload();
-				await page.evaluate(
-					(p) => (window as never as { __parity: { mount(p: unknown): void } }).__parity.mount(p),
-					props,
-				);
+				await page.evaluate((p) => window.__parity.mount(p), props);
 				const report: Record<number, number> = {};
 				let control = 0;
 				for (const f of [0, 5, 11, 17, 24, 31, N - 1]) {
-					await page.evaluate(
-						(frame) =>
-							(window as never as { __parity: { seek(f: number): Promise<void> } }).__parity.seek(frame),
-						f,
-					);
+					await page.evaluate((frame) => window.__parity.seek(frame), f);
 					const shot = await page.screenshot({
 						clip: { x: 0, y: 0, width: SCENE.width, height: SCENE.height },
 					});
@@ -292,28 +278,20 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 					expect(fraction, `frame ${f}`).toBeLessThanOrEqual(0.005);
 			});
 
-		// Chrome repaints incrementally (partial raster): before FrameRepaint, ~30 % of these revisits of the Sequence
-		// (identical DOM) differed by up to 60/255 at the edges of what the frames in between had changed.
+		// Chrome's incremental rasterization can retain pixels from previously visited frames.
 		for (const id of ['Sequence'])
 			it(`${id}: a paused Player revisiting frames in any order shows byte-identical pixels`, async () => {
-				const props =
-					id === 'Sequence'
-						? { doc, options: { isPreview: true, useProxies: false, transparentBackground: false } }
-						: {};
+				const props: ParityProps = {
+					doc,
+					options: { isPreview: true, useProxies: false, transparentBackground: false },
+				};
 				await page.reload();
-				await page.evaluate(
-					(p) => (window as never as { __parity: { mount(p: unknown): void } }).__parity.mount(p),
-					props,
-				);
+				await page.evaluate((p) => window.__parity.mount(p), props);
 				const visits = [...Array.from({ length: N }, (_, i) => i), ...shuffledOrder(N), ...reversedOrder(N)];
 				const first = new Map<number, Buffer>();
 				const differing: string[] = [];
 				for (const [i, f] of visits.entries()) {
-					await page.evaluate(
-						(frame) =>
-							(window as never as { __parity: { seek(f: number): Promise<void> } }).__parity.seek(frame),
-						f,
-					);
+					await page.evaluate((frame) => window.__parity.seek(frame), f);
 					const shot = await page.screenshot({
 						clip: { x: 0, y: 0, width: SCENE.width, height: SCENE.height },
 					});
@@ -328,15 +306,14 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 
 		it('ANM-015: a 200-unit title computes its values in ≤ 2 ms per frame (median, first visits)', async () => {
 			const result = await page.evaluate(() => {
-				const p = (window as never as { __parity: { bench(u: number, f: number): unknown } }).__parity;
+				const p = window.__parity;
 				// warm-up (JIT), then the measured runs
 				p.bench(200, 60);
 				return p.bench(200, 300);
 			});
 			console.log('[ANM-015] value engine, ms per frame (200 units, 300 frames):', JSON.stringify(result));
 			writeFileSync(join(work, 'anm-015.json'), JSON.stringify(result, null, 2));
-			const cost = result as { values: { median: number } };
-			expect(cost.values.median).toBeLessThanOrEqual(2);
+			expect(result.values.median).toBeLessThanOrEqual(2);
 		});
 	});
 });

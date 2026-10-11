@@ -133,11 +133,7 @@ export function Callout(props: AnimeTemplateProps) {
 		motionPath: p.motionPath,
 	};
 	const key = `callout@1|${JSON.stringify(input)}`;
-	const [dot, ring, label] = useAnimeValues(
-		key,
-		() => buildCallout(input),
-		props.timeMs,
-	) as readonly Readonly<Values>[];
+	const [dot, ring, label] = useAnimeValues(key, () => buildCallout(input), props.timeMs);
 	const geo = calloutGeometry(p, { w: fit.designW, h: fit.designH });
 	const pathRef = useRef<SVGPathElement>(null);
 	// The geometry is part of the key: a new `d` rebuilds the drawable (keyframed targets rebuild per frame).

@@ -63,7 +63,7 @@ export {
 	planDucking,
 	sensitivityThresholdDb,
 } from './ducking.ts';
-export { fft, nextPow2 } from './fft.ts';
+export { Fft, fft, nextPow2 } from './fft.ts';
 export { K_PREFILTER_PROTOTYPE, K_RLB_PROTOTYPE, kPrefilter, kRlb, kWeightingPower } from './kweight.ts';
 export { limitBuffer, TruePeakLimiter, type TruePeakLimiterOptions } from './limiter.ts';
 export {

@@ -20,6 +20,7 @@ import {
 	spring,
 	svgOpen,
 } from '../core.ts';
+import { rgbaParam } from '../params.ts';
 import type { MgSvgTemplateDefinition } from '../types.ts';
 
 const PANEL_H = 150;
@@ -29,19 +30,12 @@ const NAME_SIZE = 60;
 const TITLE_SIZE = 34;
 const OUTRO_SECONDS = 0.5;
 
-const channel = z.number().min(0).max(1);
-const rgba = (d: Rgba) =>
-	z
-		.array(channel)
-		.length(4)
-		.default(d as number[]);
-
 export const lowerThirdParams = z.strictObject({
 	name: z.string().max(120).default('Alex Morgan'),
 	title: z.string().max(160).default('Producer, JasperEditor'),
-	accentColor: rgba([0.22, 0.53, 1, 1]),
-	textColor: rgba([1, 1, 1, 1]),
-	backgroundColor: rgba([0.04, 0.06, 0.12, 0.78]),
+	accentColor: rgbaParam([0.22, 0.53, 1, 1]),
+	textColor: rgbaParam([1, 1, 1, 1]),
+	backgroundColor: rgbaParam([0.04, 0.06, 0.12, 0.78]),
 	position: z.array(z.number().min(-4000).max(4000)).length(2).default([120, 800]),
 	holdUntilFrames: z.number().int().min(0).max(432000).default(0),
 });

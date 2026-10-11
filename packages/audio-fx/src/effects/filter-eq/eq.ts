@@ -64,8 +64,6 @@ function bankFactory(id: string, layout: BankLayout): [string, ProcessorFactory]
 	return [id, (sr, ch) => new BankEffect(id, sr, ch, layout)];
 }
 
-// ------------------------------------------------------------------------------------------- 8-band / 3-band
-
 const EQ8_NAMES = Array.from({ length: 8 }, (_, i) => {
 	const p = `b${i + 1}`;
 	return { on: `${p}On`, type: `${p}Type`, freq: `${p}Freq`, gain: `${p}Gain`, q: `${p}Q` };
@@ -92,8 +90,6 @@ const SIMPLE_3_BAND: BankLayout = {
 		bank.setBand(2, true, 'highShelf', pv.v('highFreq'), pv.v('high'), Math.SQRT1_2, snap);
 	},
 };
-
-// -------------------------------------------------------------------------------------------- graphic EQs
 
 /** ISO 266 nominal centre frequencies: octave, half-octave and third-octave bands. */
 export const GRAPHIC_EQ_FREQS: Readonly<Record<10 | 20 | 30, readonly number[]>> = {
@@ -125,8 +121,6 @@ function graphicEq(bands: 10 | 20 | 30): BankLayout {
 		},
 	};
 }
-
-// --------------------------------------------------------------------------------------- parametric equalizer
 
 /** The bands between the pass filters, in signal order: parameter prefix and filter type. */
 const PEQ_BANDS: readonly (readonly [string, BandKind])[] = [
@@ -202,8 +196,6 @@ const PARAMETRIC_EQUALIZER: BankLayout = {
 	},
 };
 
-// ---------------------------------------------------------------------------------------------- notch filter
-
 /** Q of the Notch Filter widths (Narrow, Very Narrow, Super Narrow). */
 export const NOTCH_Q = [8, 20, 50] as const;
 const NOTCH_NAMES = Array.from({ length: 6 }, (_, i) => ({
@@ -224,8 +216,6 @@ const NOTCH_FILTER: BankLayout = {
 		}
 	},
 };
-
-// ------------------------------------------------------------------------------------------- simple filters
 
 /** One always-on band; `[freq, q, gain]` from the parameters. */
 function single(kind: BandKind, read: (pv: ParamValues) => readonly [number, number, number]): BankLayout {

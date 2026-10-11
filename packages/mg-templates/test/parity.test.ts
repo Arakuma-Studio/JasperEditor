@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { MgCatalogEntryJson } from '../src/index.ts';
 import { FFRAMES_CATALOG, mgRegistry } from '../src/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -79,7 +80,7 @@ function expectSameMarkup(native: string, twin: string, label: string) {
 describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 	it('`jasper-mg schema` equals the TS catalog', () => {
 		const native = JSON.parse(execFileSync(binary, ['schema'], { encoding: 'utf8' })) as {
-			templates: Record<string, unknown>[];
+			templates: MgCatalogEntryJson[];
 		};
 		const ts = mgRegistry.catalogJson().filter((t) => t.renderer !== 'anime');
 		expect(native.templates.map((t) => `${t.id}@${t.version}`).sort()).toEqual(

@@ -18,25 +18,19 @@ import {
 	type Rgba,
 	svgOpen,
 } from '../core.ts';
+import { rgbaParam } from '../params.ts';
 import type { MgSvgTemplateDefinition } from '../types.ts';
 
 const TITLE_SIZE = 96;
 const SUBTITLE_SIZE = 44;
 const UNDERLINE_W = 160;
 
-const channel = z.number().min(0).max(1);
-const rgba = (d: Rgba) =>
-	z
-		.array(channel)
-		.length(4)
-		.default(d as number[]);
-
 export const titleCardParams = z.strictObject({
 	title: z.string().max(160).default('Your Title Here'),
 	subtitle: z.string().max(240).default('A JasperEditor production'),
-	background: rgba([0.02, 0.03, 0.06, 0.85]),
-	textColor: rgba([1, 1, 1, 1]),
-	accentColor: rgba([0.22, 0.53, 1, 1]),
+	background: rgbaParam([0.02, 0.03, 0.06, 0.85]),
+	textColor: rgbaParam([1, 1, 1, 1]),
+	accentColor: rgbaParam([0.22, 0.53, 1, 1]),
 	alignment: z.enum(['left', 'center', 'right']).default('center'),
 	fadeInFrames: z.number().int().min(0).max(600).default(15),
 	fadeOutFrames: z.number().int().min(0).max(600).default(15),

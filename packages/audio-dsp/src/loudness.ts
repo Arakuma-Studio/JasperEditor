@@ -102,7 +102,6 @@ class Histogram {
 	}
 }
 
-/** Options of {@link LoudnessMeter}. */
 export type LoudnessMeterOptions = {
 	/** Per-channel weights (missing entries are 1, extra ignored). Default {@link defaultChannelWeights}. */
 	weights?: number[];
@@ -158,7 +157,6 @@ export class LoudnessMeter {
 		for (let i = 0; i < this.channels; i++) this.weights[i] = weights[i] ?? 1;
 	}
 
-	/** Clear all measurements and filter state. */
 	reset(): void {
 		this.integratedHist.clear();
 		this.lraHist.clear();
@@ -377,7 +375,6 @@ export function measureLoudness(
 	return m.summary();
 }
 
-/** Result of {@link normalizeGainDb}. */
 export type NormalizeGain = {
 	/** Gain (dB) that moves the programme to the target loudness (0 for silent / unmeasurable input). */
 	gainDb: number;

@@ -1,7 +1,7 @@
 // Delay and modulation: impulse timing and feedback series, tempo sync, multitap taps, analog saturation bound,
 // LFO rates, phaser sweep range, flanger comb notches, determinism.
 import { describe, expect, it } from 'vitest';
-import { tempoDelayMs } from '../src/effects/delay-modulation.ts';
+import { Phaser, tempoDelayMs } from '../src/effects/delay-modulation.ts';
 import { createProcessor } from '../src/registry.ts';
 import { noise, peak, SR, sine, toneAmplitude } from './util.ts';
 
@@ -70,10 +70,7 @@ describe('delays', () => {
 
 describe('modulation', () => {
 	it('Phaser notches sweep between the upper frequency and 6·depth octaves below', () => {
-		const p = createProcessor('jasper.audio.phaser', SR, 1)! as unknown as {
-			sweepHz(p: number): number;
-			setParam(n: string, v: number): void;
-		};
+		const p = new Phaser(SR, 1);
 		p.setParam('upperFreq', 4000);
 		p.setParam('depth', 50);
 		expect(p.sweepHz(0)).toBeCloseTo(4000, 6);

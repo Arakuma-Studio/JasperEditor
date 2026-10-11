@@ -95,8 +95,6 @@ export function jumpScore(a: Analysis, i: number, j: number): number {
 	return n > 0 ? s / n : 0;
 }
 
-// ---------------------------------------------------------------- analysis
-
 function hann(n: number): Float64Array {
 	const w = new Float64Array(n);
 	for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / n);
@@ -354,8 +352,8 @@ export function analyzeMusic(channels: readonly Float32Array[], sampleRate: numb
 	for (const c of channels) for (let i = 0; i < c.length; i++) mono[i] = mono[i]! + c[i]! * k;
 	const { env, n, hop } = onsetEnvelope(mono, sampleRate);
 	// Steady sounds (a held tone, broadband noise) have a flux without onsets: mean ≳ standard deviation. Music's
-	// flux is sparse peaks (mean/sd ≈ 0.4 on the generated test music, 1.5 on a steady sine). Ours; the reference
-	// relied on the autocorrelation test alone, which a steady tone's frame-phase ripple can pass.
+	// flux is sparse peaks (mean/sd ≈ 0.4 on the generated test music, 1.5 on a steady sine). A steady tone's
+	// frame-phase ripple can pass the autocorrelation test alone.
 	let envMean = 0;
 	for (const v of env) envMean += v;
 	envMean /= Math.max(env.length, 1);
@@ -389,8 +387,6 @@ export function analyzeMusic(channels: readonly Float32Array[], sampleRate: numb
 	const periodS = period * hop;
 	return { sampleRate, len, beats, period: periodS, bpm: (60 * sampleRate) / periodS, sim };
 }
-
-// ---------------------------------------------------------------- planning
 
 /** Joints the Segments slider asks for. */
 export function jointsFor(segments: number): number {
@@ -475,8 +471,6 @@ export function planRemix(a: Analysis, target: number, params: RemixParams = DEF
 	pieces.push({ src, len: len - src });
 	return { pieces, xfade };
 }
-
-// ---------------------------------------------------------------- render
 
 /**
  * Renders output samples [out0, out0 + n) of `plan` (planar, `channels`). `read(src, len)` returns planar source

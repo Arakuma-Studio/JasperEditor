@@ -29,7 +29,7 @@ type Defaults = NonNullable<TimelineParams['defaults']>;
 function safeDefaults(defaults: Defaults): Defaults {
 	const safe: Defaults = { ...defaults };
 	for (const k of UNSAFE_DEFAULTS) delete safe[k];
-	const composition: unknown = safe.composition;
+	const composition = safe.composition;
 	if (composition === 'blend' || composition === BLEND) delete safe.composition;
 	return safe;
 }

@@ -4,15 +4,15 @@
 
 import { getTextAnimationSpec } from '@jasper/project';
 import { Player, type PlayerRef } from '@remotion/player';
-import { type ComponentType, createRef } from 'react';
+import { createRef } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
 import { frameToMs, hash32, useAnimeValues } from '../../src/runtime/index.ts';
 import { TEXT_ANIMATION_IMPLS } from '../../src/text/index.ts';
 import { PARITY_SCENE } from './doc.ts';
+import type { ParityProps, Stats } from './types.ts';
 
-type Stats = { median: number; p95: number; max: number; mean: number };
 const stats = (xs: number[]): Stats => {
 	const s = [...xs].sort((a, b) => a - b);
 	const at = (q: number) => s[Math.min(s.length - 1, Math.floor(q * s.length))]!;
@@ -55,12 +55,12 @@ function bench(units: number, frames: number): { values: Stats } {
 
 const player = createRef<PlayerRef>();
 
-function mount(inputProps: Record<string, unknown>) {
+function mount(inputProps: ParityProps) {
 	const root = document.getElementById('root')!;
 	createRoot(root).render(
 		<Player
 			ref={player}
-			component={SequenceComposition as ComponentType<Record<string, unknown>>}
+			component={SequenceComposition}
 			inputProps={inputProps}
 			durationInFrames={PARITY_SCENE.durationInFrames}
 			fps={PARITY_SCENE.fps}
@@ -85,4 +85,4 @@ async function seek(frame: number) {
 	await nextPaint();
 }
 
-(window as unknown as { __parity: unknown }).__parity = { mount, seek, bench };
+window.__parity = { mount, seek, bench };

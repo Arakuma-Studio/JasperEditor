@@ -21,12 +21,9 @@ function visitOrders(frames: number[]): number[][] {
 function paramVariants(spec: TextAnimationSpec | undefined): Record<string, unknown>[] {
 	if (!spec) return [{}];
 	const out: Record<string, unknown>[] = [{ ...spec.defaults }];
-	let props: Record<string, { enum?: unknown[] }> = {};
-	try {
-		props = (toJsonSchema(spec.paramsSchema as never) as { properties?: typeof props }).properties ?? {};
-	} catch {
-		props = {};
-	}
+	const props =
+		(toJsonSchema(spec.paramsSchema) as { properties?: Record<string, { enum?: string[] }> }).properties ??
+		{};
 	for (const [key, p] of Object.entries(props))
 		for (const v of p.enum ?? []) {
 			if (v === spec.defaults[key]) continue;

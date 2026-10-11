@@ -77,11 +77,7 @@ export function Counter(props: AnimeTemplateProps) {
 	const timing = { totalMs: props.totalMs, introMs: props.introMs, outroMs: props.outroMs };
 	const input: CounterBuildInput = { ...timing, countMs: counterCountMs(p, timing), ease: easeOf(p.ease) };
 	const buildKey = `counter@1|${JSON.stringify(input)}`;
-	const [num, label] = useAnimeValues(
-		buildKey,
-		() => buildCounter(input),
-		props.timeMs,
-	) as readonly Readonly<Values>[];
+	const [num, label] = useAnimeValues(buildKey, () => buildCounter(input), props.timeMs);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by buildKey (it holds countMs and ease)
 	const count = useMemo(() => buildCounterCount(input), [buildKey]);
 	const value = counterValue(p, counterProgressAt(count, props.timeMs));

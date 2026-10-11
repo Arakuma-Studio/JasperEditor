@@ -114,7 +114,8 @@ export function LowerThirdAnim(props: AnimeTemplateProps) {
 		() => buildLowerThirdAnim(input),
 		props.timeMs,
 	);
-	const [bar, panel] = values as [Readonly<Values>, Readonly<Values>];
+	const bar = values[0]!;
+	const panel = values[1]!;
 	const nameSize = p.nameSize;
 	const roleSize = nameSize * 0.55;
 	const padX = nameSize * 0.6;

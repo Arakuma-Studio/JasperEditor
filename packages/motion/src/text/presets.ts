@@ -21,7 +21,7 @@ import {
 } from './types.ts';
 
 type Order = (typeof TEXT_ANIMATION_ORDERS)[number];
-type Params = Record<string, unknown>;
+type Params = TextAnimationBuildContext['params'];
 
 /** Shortest unit tween as a fraction of the window (stagger 1 keeps every unit moving for this long). */
 const MIN_UNIT_FRACTION = 0.1;
