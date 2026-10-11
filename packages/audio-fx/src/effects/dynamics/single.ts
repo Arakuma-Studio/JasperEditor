@@ -2,10 +2,10 @@
 // `effects/dynamics.rs` Compressor / Gate and `multiband.rs` TubeCompressor). Detection is stereo-linked (the loudest
 // channel drives one common gain, so the image does not shift); gain computers work in dB.
 import { EffectBase } from '../../core/effect.ts';
-import { dbToGain } from '../../core/math.ts';
+import { dbToGain, linDb as linToDb } from '../../core/math.ts';
 import { Smoothed } from '../../core/smooth.ts';
 import { coef } from '../../core/util.ts';
-import { compressorCurve, expanderCurve, linToDb, smoothDb } from './curves.ts';
+import { compressorCurve, expanderCurve, smoothDb } from './curves.ts';
 
 export class Compressor extends EffectBase {
 	private threshold = 0;

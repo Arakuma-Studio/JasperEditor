@@ -103,7 +103,7 @@ describe('biquad (RBJ cookbook, TDF-II)', () => {
 describe('K-weighting', () => {
 	it('matches the BS.1770-4 coefficient table at 48 kHz (1e-6)', () => {
 		const p = kPrefilter(48000);
-		expect(Math.abs(p.b0 - 1.53512485958697)).toBeLessThan(1e-6);
+		expect(Math.abs(p.b0 - 1.53512485958697)).toBeLessThan(1e-8);
 		expect(Math.abs(p.b1 + 2.69169618940638)).toBeLessThan(1e-6);
 		expect(Math.abs(p.b2 - 1.19839281085285)).toBeLessThan(1e-6);
 		expect(Math.abs(p.a1 + 1.69065929318241)).toBeLessThan(1e-6);
@@ -111,9 +111,6 @@ describe('K-weighting', () => {
 		const r = kRlb(48000);
 		expect([r.b0, r.b1, r.b2]).toEqual([1, -2, 1]);
 		expect(Math.abs(r.a1 + 1.99004745483398)).toBeLessThan(1e-6);
-		expect(Math.abs(r.a2 - 0.99007225036621)).toBeLessThan(1e-6);
-		// FilmCraft checks the same table to 1e-8
-		expect(Math.abs(p.b0 - 1.53512485958697)).toBeLessThan(1e-8);
 		expect(Math.abs(r.a2 - 0.99007225036621)).toBeLessThan(1e-8);
 	});
 

@@ -97,11 +97,6 @@ export class EffectChain {
 		return l;
 	}
 
-	/** Number of enabled processors. */
-	size(): number {
-		return this.active.length;
-	}
-
 	reset(): void {
 		for (const s of this.slots) s.processor.reset();
 	}

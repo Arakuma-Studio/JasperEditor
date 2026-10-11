@@ -22,11 +22,6 @@ export class DelayLine {
 		this.w = 0;
 	}
 
-	/** Longest usable delay in samples. */
-	maxDelay(): number {
-		return this.buf.length - 3;
-	}
-
 	/** Sample written `d` samples ago (`d` ≥ 0; 0 = the sample written by the last `push`). */
 	read(d: number): number {
 		const len = this.buf.length;

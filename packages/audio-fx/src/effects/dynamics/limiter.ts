@@ -5,10 +5,9 @@
 // guarantees the sample peak.
 import { TruePeakLimiter } from '@jasper/audio-dsp';
 import { EffectBase } from '../../core/effect.ts';
-import { dbToGain } from '../../core/math.ts';
+import { dbToGain, linDb as linToDb } from '../../core/math.ts';
 import { Smoothed } from '../../core/smooth.ts';
 import { coef } from '../../core/util.ts';
-import { linToDb } from './curves.ts';
 
 /**
  * Sample-peak look-ahead limiter at a 0 dBFS ceiling (FilmCraft's algorithm without the true-peak detector): the

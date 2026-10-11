@@ -1,20 +1,17 @@
 // Second-order IIR sections: RBJ "Audio EQ Cookbook" designs (R. Bristow-Johnson), transposed direct form II.
 
-import {
-	BIQUAD_IDENTITY,
-	type BiquadCoeffs,
-	biquadMagnitude,
-	biquadMagnitudeDb,
-	type FilterType as DspFilterType,
-	designBiquad as dspDesignBiquad,
-} from '@jasper/audio-dsp';
+import type { BiquadCoeffs as Coeffs, FilterType } from '@jasper/audio-dsp';
 import { flush } from './math.ts';
 
-// The RBJ designs and magnitude responses are @jasper/audio-dsp's (one implementation, ported from the same
-// FilmCraft code); this module keeps a coefficient-free state section so banks share one `Coeffs` per band.
-export type FilterType = DspFilterType;
-export type Coeffs = BiquadCoeffs;
-export const IDENTITY: Readonly<Coeffs> = BIQUAD_IDENTITY;
+// Banks share coefficients per band; only the state section below is specific to audio-fx.
+export {
+	BIQUAD_IDENTITY as IDENTITY,
+	type BiquadCoeffs as Coeffs,
+	biquadMagnitude as magnitude,
+	biquadMagnitudeDb as magnitudeDb,
+	designBiquad,
+	type FilterType,
+} from '@jasper/audio-dsp';
 
 /** Order of the parametric EQs' band `type` choice. */
 export const FILTER_TYPES: readonly FilterType[] = [
@@ -26,27 +23,6 @@ export const FILTER_TYPES: readonly FilterType[] = [
 	'notch',
 	'bandPass',
 ];
-
-/** RBJ cookbook design (`freq` clamped to 1 Hz … 0.49·fs, `q` ≥ 1e-3, `gainDb` for peaking/shelves/cut). */
-export function designBiquad(
-	kind: FilterType,
-	sampleRate: number,
-	freq: number,
-	q: number,
-	gainDb: number,
-): Coeffs {
-	return dspDesignBiquad(kind, sampleRate, freq, q, gainDb);
-}
-
-/** |H(e^{jω})| at `freq` Hz. */
-export function magnitude(c: Coeffs, freq: number, sampleRate: number): number {
-	return biquadMagnitude(c, freq, sampleRate);
-}
-
-/** Magnitude in dB. */
-export function magnitudeDb(c: Coeffs, freq: number, sampleRate: number): number {
-	return biquadMagnitudeDb(c, freq, sampleRate);
-}
 
 /** One biquad section's state (TDF-II, f64). */
 export class Biquad {

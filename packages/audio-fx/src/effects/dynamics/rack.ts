@@ -3,10 +3,10 @@
 // so the bands sum to an all-pass). Ported from filmcraft `effects/multiband.rs`.
 import { Biquad, type Coeffs, designBiquad, IDENTITY } from '../../core/biquad.ts';
 import { EffectBase } from '../../core/effect.ts';
-import { dbToGain, flush32 } from '../../core/math.ts';
+import { dbToGain, flush32, linDb as linToDb } from '../../core/math.ts';
 import { Smoothed } from '../../core/smooth.ts';
 import { coef } from '../../core/util.ts';
-import { compressorCurve, expanderCurve, linToDb, smoothDb, softClip } from './curves.ts';
+import { compressorCurve, expanderCurve, smoothDb, softClip } from './curves.ts';
 
 /** Attenuation of a closed gate (dB). */
 const GATE_RANGE = 80;

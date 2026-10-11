@@ -29,22 +29,6 @@ function curveSorted(fs: Float64Array, gs: Float64Array, n: number, freq: number
 	return gs[n - 1]!;
 }
 
-/** Gain (dB) of the FFT Filter curve at `freq` for points `[freq, gainDb]` given in any order. */
-export function fftCurveDb(
-	points: readonly (readonly [number, number])[],
-	freq: number,
-	smooth: boolean,
-): number {
-	const sorted = [...points].sort((a, b) => a[0] - b[0]);
-	return curveSorted(
-		Float64Array.from(sorted, (p) => p[0]),
-		Float64Array.from(sorted, (p) => p[1]),
-		sorted.length,
-		freq,
-		smooth,
-	);
-}
-
 export class FftFilter extends EffectBase {
 	private readonly n: number;
 	private readonly hop: number;

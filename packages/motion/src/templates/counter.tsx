@@ -21,15 +21,15 @@ import type { AnimeTemplateProps } from './types.ts';
 /** `o` opacity, `y` rise (em). */
 type Values = { o: number; y: number };
 
-export type CounterBuildInput = TemplateTiming & { countMs: number; ease: string };
+type CounterBuildInput = TemplateTiming & { countMs: number; ease: string };
 
 /** Count length: `countSeconds`, at most up to the outro (and at least one frame's worth of ms). */
-export function counterCountMs(p: Pick<CounterParams, 'countSeconds'>, t: TemplateTiming): number {
+function counterCountMs(p: Pick<CounterParams, 'countSeconds'>, t: TemplateTiming): number {
 	return Math.max(1, Math.min(p.countSeconds * 1000, t.totalMs - t.outroMs));
 }
 
 /** Targets `[number, label]` (their fades; the count has its own timeline, `buildCounterCount`). */
-export function buildCounter(input: CounterBuildInput): {
+function buildCounter(input: CounterBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
@@ -42,7 +42,7 @@ export function buildCounter(input: CounterBuildInput): {
 }
 
 /** The count: progress `p` 0 → 1 from content 0 over `countMs`. */
-export function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
+function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	target: { p: number };
 } {
@@ -57,7 +57,7 @@ export function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ea
  * `useAnimeValues`). Values that round to 0 or 1 (the rest states and float noise around them) are exactly 0 / 1,
  * so the first and last counts show `from` and `to` exactly.
  */
-export function counterProgressAt(count: ReturnType<typeof buildCounterCount>, ms: number): number {
+function counterProgressAt(count: ReturnType<typeof buildCounterCount>, ms: number): number {
 	seekCanonical(count.timeline, ms);
 	const p = count.target.p;
 	const r = roundValue(p);
@@ -65,7 +65,7 @@ export function counterProgressAt(count: ReturnType<typeof buildCounterCount>, m
 }
 
 /** The shown number at progress `p` (exactly `from` / `to` at the ends). */
-export function counterValue(p: Pick<CounterParams, 'from' | 'to'>, progress: number): number {
+function counterValue(p: Pick<CounterParams, 'from' | 'to'>, progress: number): number {
 	if (progress === 0) return p.from;
 	if (progress === 1) return p.to;
 	return p.from + (p.to - p.from) * progress;

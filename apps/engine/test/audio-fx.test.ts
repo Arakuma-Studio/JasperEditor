@@ -6,8 +6,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { encodeWav, measureLoudness } from '@jasper/audio-dsp';
-import { testMusic } from '@jasper/audio-fx';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { testMusic } from '../../../packages/audio-fx/test/music.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
 

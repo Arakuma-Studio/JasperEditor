@@ -78,9 +78,8 @@ marker when the target clip has no Essential Sound settings (tested).
 
 `analyzeMusic` (streaming STFT, spectral-flux onset envelope, autocorrelation tempo 50–200 BPM with a prior at 120,
 dynamic-programming beat tracking, per-beat chroma + mel cepstra, beat self-similarity), `planRemix` (joints at beat
-boundaries where the context is most similar; intro and outro kept) and `renderRemix` (equal-power crossfades, used by
-tests). The engine route `POST /api/audio/remix-plan` decodes the clip's range to mono 22.05 kHz with ffmpeg and caches
-analyses (LRU 8) so the Remix tool can re-plan while dragging. The edit is `clip.remix`: the clip becomes grouped
+boundaries where the context is most similar; intro and outro kept). The engine route `POST /api/audio/remix-plan`
+decodes the clip's range to mono 22.05 kHz with ffmpeg and caches analyses (LRU 8) so the Remix tool can re-plan while dragging. The edit is `clip.remix`: the clip becomes grouped
 pieces with 1-frame constant-power crossfades; each piece's frame-rounding shift is carried into the next piece's
 `sourceIn` so jumps stay whole beats. A remixed clip is remixed again from its original; Revert Remix restores it.
 

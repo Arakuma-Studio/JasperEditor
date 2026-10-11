@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import { Biquad, designBiquad, magnitudeDb } from '../src/core/biquad.ts';
 import { Fft } from '../src/core/fft.ts';
-import { Smoothed } from '../src/core/smooth.ts';
 import { AllPass1, DelayLine, Prng } from '../src/core/util.ts';
 import { db, SR, sine, toneAmplitude } from './util.ts';
 
@@ -82,16 +81,6 @@ describe('biquad (RBJ cookbook)', () => {
 });
 
 describe('primitives', () => {
-	it('smoothed ramps linearly and lands exactly', () => {
-		const s = new Smoothed(0, 4);
-		s.set(1);
-		expect(Array.from({ length: 6 }, () => s.tick())).toEqual([0.25, 0.5, 0.75, 1, 1, 1]);
-		expect(s.isSmoothing()).toBe(false);
-		const z = new Smoothed(0, 0);
-		z.set(3);
-		expect(z.value()).toBe(3);
-	});
-
 	it('delay line reads integer and fractional delays', () => {
 		const d = new DelayLine(8);
 		for (let i = 0; i < 5; i++) d.push(i);

@@ -48,9 +48,6 @@ export class C {
 		const d = o.re * o.re + o.im * o.im;
 		return new C((this.re * o.re + this.im * o.im) / d, (this.im * o.re - this.re * o.im) / d);
 	}
-	neg(): C {
-		return new C(-this.re, -this.im);
-	}
 	scale(s: number): C {
 		return new C(this.re * s, this.im * s);
 	}
@@ -65,10 +62,6 @@ export class C {
 		const re = Math.sqrt(Math.max((r + this.re) * 0.5, 0));
 		const im = Math.sqrt(Math.max((r - this.re) * 0.5, 0));
 		return new C(re, this.im < 0 ? -im : im);
-	}
-	exp(): C {
-		const e = Math.exp(this.re);
-		return new C(e * Math.cos(this.im), e * Math.sin(this.im));
 	}
 	ln(): C {
 		return new C(Math.log(this.abs()), Math.atan2(this.im, this.re));

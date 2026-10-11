@@ -32,8 +32,3 @@ export function smoothDb(env: number, target: number, att: number, rel: number):
 	const e = c * env + (1 - c) * target;
 	return Math.abs(e) < 1e-7 ? 0 : e;
 }
-
-/** Linear → dB with a −200 dB floor. */
-export function linToDb(x: number): number {
-	return 20 * Math.log10(Math.max(x, 1e-10));
-}

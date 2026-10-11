@@ -25,13 +25,13 @@ type Pt = { x: number; y: number };
 type Values = { s: number; o: number; m: number };
 
 /** The pulse ring grows (and fades out) in this phase; it fades in from content 0 up to its start. */
-export const CALLOUT_PULSE_PHASE: Phase = { at: 0.08, dur: 0.45, ease: 'out' };
+const CALLOUT_PULSE_PHASE: Phase = { at: 0.08, dur: 0.45, ease: 'out' };
 
 /** The phase of the leader line draw-on (the label's motion path runs in the same window). */
-export const CALLOUT_LINE_PHASE: Phase = { at: 0.2, dur: 0.5, outEase: 'inOut' };
+const CALLOUT_LINE_PHASE: Phase = { at: 0.2, dur: 0.5, outEase: 'inOut' };
 
 /** The leader line from the target to the label anchor (design px). */
-export function calloutGeometry(
+function calloutGeometry(
 	p: Pick<CalloutParams, 'targetX' | 'targetY' | 'labelX' | 'labelY' | 'path'>,
 	size: { w: number; h: number },
 ) {
@@ -69,10 +69,10 @@ export function calloutGeometry(
 	return { a, b, d, length: total, pointAt };
 }
 
-export type CalloutBuildInput = TemplateTiming & { ease: string; motionPath: boolean };
+type CalloutBuildInput = TemplateTiming & { ease: string; motionPath: boolean };
 
 /** Value targets `[dot, ring, label]`. */
-export function buildCallout(input: CalloutBuildInput): {
+function buildCallout(input: CalloutBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
@@ -111,7 +111,7 @@ export function buildCallout(input: CalloutBuildInput): {
  * The leader line leaf: `createDrawable` on the ref-owned `<path>` (React renders it without children and never
  * sets the dash attributes anime.js writes), drawn on in the line phase and undrawn (from its start) in the outro.
  */
-export function buildCalloutLine(el: SVGPathElement, input: CalloutBuildInput) {
+function buildCalloutLine(el: SVGPathElement, input: CalloutBuildInput) {
 	const [line] = createDrawable(el);
 	if (!line) return null;
 	const tl = createPausedTimeline();

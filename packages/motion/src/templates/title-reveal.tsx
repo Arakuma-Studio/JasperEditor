@@ -26,7 +26,7 @@ import type { AnimeTemplateProps } from './types.ts';
 type Unit = { o: number; y: number };
 type Values = { o: number; y: number; d: number };
 
-export type TitleRevealBuildInput = TemplateTiming & {
+type TitleRevealBuildInput = TemplateTiming & {
 	units: number;
 	order: TitleRevealParams['order'];
 	stagger: number;
@@ -35,7 +35,7 @@ export type TitleRevealBuildInput = TemplateTiming & {
 };
 
 /** Units of the title: graphemes, or words for scripts that need shaping (S11:TXA-010 rule). */
-export function titleSegments(title: string): TextSegment[] {
+function titleSegments(title: string): TextSegment[] {
 	return segmentText(title, needsShaping(title) ? 'word' : 'char');
 }
 
@@ -43,7 +43,7 @@ export function titleSegments(title: string): TextSegment[] {
  * The timeline: targets `[...units, subtitle, underline]`. Units: `o` opacity, `y` rise in em of the title size;
  * subtitle: `o`, `y` (em of its size); underline: `d` drawn fraction.
  */
-export function buildTitleReveal(input: TitleRevealBuildInput): {
+function buildTitleReveal(input: TitleRevealBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {

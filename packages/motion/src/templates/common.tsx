@@ -78,9 +78,8 @@ export function easeOf(name: string): string {
  * from the clip seed (S11:ANM-007).
  */
 export function staggerRanks(n: number, order: 'forward' | 'center' | 'random', seed: number): number[] {
-	const idx = Array.from({ length: n }, (_, i) => i);
-	if (order !== 'center' && order !== 'random') return idx;
-	const perm = [...idx];
+	const perm = Array.from({ length: n }, (_, i) => i);
+	if (order !== 'center' && order !== 'random') return perm;
 	if (order === 'center') {
 		const mid = (n - 1) / 2;
 		perm.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);

@@ -1,5 +1,5 @@
 // Music remix on synthetic beat tracks (port of filmcraft `remix.rs` tests): tempo and beats, similarity, plans hit the
-// target at beat boundaries keeping intro and outro, determinism and parameters, refusals, equal-power render.
+// target at beat boundaries keeping intro and outro, determinism and parameters, refusals.
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import {
@@ -8,13 +8,11 @@ import {
 	jumpScore,
 	MIN_PIECE_BEATS,
 	planCuts,
-	planJoints,
 	planLength,
 	planRemix,
 	RemixError,
-	renderRemix,
-	testMusic,
 } from '../src/analysis/remix.ts';
+import { testMusic } from './music.ts';
 
 const SR = 22050;
 const music = (bpm: number, bars: number) => {
@@ -65,7 +63,7 @@ describe('remix analysis', () => {
 });
 
 describe('remix plans', () => {
-	const { audio, a } = music(120, 24); // 48 s
+	const { a } = music(120, 24); // 48 s
 
 	it('hits targets within a beat (half a beat at default settings), at beat boundaries, keeping intro and outro', () => {
 		const beat = Math.trunc(a.period);
@@ -99,53 +97,6 @@ describe('remix plans', () => {
 		expect(few.pieces.length).toBeLessThan(many.pieces.length);
 		expect(planRemix(a, a.len).pieces.length).toBe(1);
 		expect(() => planRemix(a, SR)).toThrow(RemixError);
-	});
-
-	it('renders equal-power crossfades, block-size independent, exact outside the fades', () => {
-		const p = planRemix(a, 30 * SR);
-		const read = (s: number, n: number) =>
-			audio.map((c) => Float32Array.from({ length: n }, (_, k) => c[Math.max(s + k, 0)] ?? 0));
-		const total = planLength(p);
-		const whole = renderRemix(p, 0, total, 2, read);
-		const cut = [new Float32Array(total), new Float32Array(total)];
-		let pos = 0;
-		let step = 1;
-		while (pos < total) {
-			const n = Math.min(step, total - pos);
-			const b = renderRemix(p, pos, n, 2, read);
-			cut[0]!.set(b[0]!, pos);
-			cut[1]!.set(b[1]!, pos);
-			pos += n;
-			step = ((step * 7) % 4093) + 1;
-		}
-		expect(Buffer.from(cut[0]!.buffer).equals(Buffer.from(whole[0]!.buffer))).toBe(true);
-		let d = 0;
-		for (const pc of p.pieces) {
-			for (let k = p.xfade; k < pc.len - p.xfade; k += 97)
-				expect(whole[0]![d + k]).toBe(audio[0]![pc.src + k]);
-			d += pc.len;
-		}
-		expect(planJoints(p).length).toBe(p.pieces.length - 1);
-		// equal-power: the outgoing side follows cos, the incoming sin, so gain² of both sides sums to 1
-		const q = {
-			pieces: [
-				{ src: 0, len: 100 },
-				{ src: 1000, len: 100 },
-			],
-			xfade: 20,
-		};
-		const first = (s: number, n: number) => [
-			Float32Array.from({ length: n }, (_, k) => (s + k < 500 ? 1 : 0)),
-		];
-		const second = (s: number, n: number) => [
-			Float32Array.from({ length: n }, (_, k) => (s + k >= 500 ? 1 : 0)),
-		];
-		const out = renderRemix(q, 90, 20, 1, first)[0]!;
-		const inn = renderRemix(q, 90, 20, 1, second)[0]!;
-		for (let i = 0; i < 20; i++) {
-			expect(out[i]).toBeCloseTo(Math.cos(((i + 0.5) / 20) * (Math.PI / 2)), 6);
-			expect(out[i]! ** 2 + inn[i]! ** 2).toBeCloseTo(1, 5);
-		}
 	});
 
 	it('analyses a 3-minute song quickly', () => {

@@ -24,14 +24,14 @@ import type { AnimeTemplateProps } from './types.ts';
 /** `s` bar scale, `w` panel reveal 0…1, `o`/`x` word opacity and offset (px, towards the bar). */
 type Values = { s: number; w: number; o: number; x: number };
 
-export type LowerThirdAnimBuildInput = TemplateTiming & {
+type LowerThirdAnimBuildInput = TemplateTiming & {
 	nameWords: number;
 	roleWords: number;
 	ease: string;
 };
 
 /** Targets `[bar, panel, ...nameWords, ...roleWords]`. */
-export function buildLowerThirdAnim(input: LowerThirdAnimBuildInput): {
+function buildLowerThirdAnim(input: LowerThirdAnimBuildInput): {
 	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {

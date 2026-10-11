@@ -28,10 +28,6 @@ export function processorIds(): string[] {
 	return [...FACTORIES.keys()];
 }
 
-export function hasProcessor(id: string): boolean {
-	return FACTORIES.has(id);
-}
-
 /** Instantiates the processor of an audio effect for `(sampleRate, channels)`; null for unknown ids. */
 export function createProcessor(id: string, sampleRate: number, channels = 2): AudioProcessor | null {
 	const f = FACTORIES.get(id);

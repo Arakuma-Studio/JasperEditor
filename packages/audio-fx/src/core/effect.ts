@@ -92,10 +92,6 @@ export class ParamValues {
 		});
 	}
 
-	has(name: string): boolean {
-		return this.index.has(name);
-	}
-
 	/** Sanitises and stores a value; false for unknown names. NaN and wrong types map to the default. */
 	set(name: string, v: ParamInput): boolean {
 		const i = this.index.get(name);
