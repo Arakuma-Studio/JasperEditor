@@ -172,3 +172,41 @@ fn frame_writes_a_png() {
     assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 1080);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn invalid_thread_environment_is_reported_as_a_spec_error() {
+    let out = Command::new(BIN)
+        .args([
+            "render",
+            "--spec",
+            &fixture("title-card.json"),
+            "--raw-rgba",
+        ])
+        .env("JASPER_MG_THREADS", "invalid")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(events(&stderr).last().unwrap()["code"], "INVALID_SPEC");
+}
+
+#[test]
+fn parallel_output_matches_sequential_frame_order() {
+    let spec = json!({
+        "template": {"id": "lower-third", "version": 1},
+        "params": {}, "width": 64, "height": 36,
+        "fps": {"num": 30, "den": 1}, "durationFrames": 50
+    });
+    let (single_code, single, single_err) = run_stdin(
+        &["render", "--spec", "-", "--raw-rgba", "--threads", "1"],
+        &spec,
+    );
+    let (parallel_code, parallel, parallel_err) = run_stdin(
+        &["render", "--spec", "-", "--raw-rgba", "--threads", "4"],
+        &spec,
+    );
+    assert_eq!(single_code, 0, "{single_err}");
+    assert_eq!(parallel_code, 0, "{parallel_err}");
+    assert_eq!(parallel, single);
+}

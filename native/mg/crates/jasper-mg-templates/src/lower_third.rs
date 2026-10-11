@@ -73,31 +73,13 @@ pub fn params_schema() -> Value {
     ])
 }
 
-fn check_color(name: &str, c: &Rgba) -> Result<(), SpecError> {
-    if c.iter().all(|v| v.is_finite() && (0.0..=1.0).contains(v)) {
-        Ok(())
-    } else {
-        Err(spec_error(format!(
-            "params.{name}: every channel must be within 0..=1"
-        )))
-    }
-}
-
 impl LowerThirdParams {
     pub fn validate(&self) -> Result<(), SpecError> {
-        if self.name.chars().count() > NAME_MAX as usize {
-            return Err(spec_error(format!(
-                "params.name: at most {NAME_MAX} characters"
-            )));
-        }
-        if self.title.chars().count() > TITLE_MAX as usize {
-            return Err(spec_error(format!(
-                "params.title: at most {TITLE_MAX} characters"
-            )));
-        }
-        check_color("accentColor", &self.accent_color)?;
-        check_color("textColor", &self.text_color)?;
-        check_color("backgroundColor", &self.background_color)?;
+        crate::validate_text("name", &self.name, NAME_MAX)?;
+        crate::validate_text("title", &self.title, TITLE_MAX)?;
+        crate::validate_rgba("accentColor", &self.accent_color)?;
+        crate::validate_rgba("textColor", &self.text_color)?;
+        crate::validate_rgba("backgroundColor", &self.background_color)?;
         if !self
             .position
             .iter()

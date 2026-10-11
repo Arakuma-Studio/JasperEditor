@@ -35,5 +35,8 @@ fn main() {
         fs::copy(&path, dest.join(name.as_ref())).expect("stage a media file");
         staged += 1;
     }
-    assert!(staged > 0, "crates/jasper-mg-templates/media holds no media file");
+    assert!(
+        staged > 0,
+        "crates/jasper-mg-templates/media holds no media file"
+    );
 }

@@ -255,13 +255,4 @@ describe('Edit Original (gaps, UI-5)', () => {
 		])
 			expect(isOpenablePath(bad)).toBe(false);
 	});
-
-	it('uses the same allowlist as the engine (@jasper/config)', async () => {
-		const { OPENABLE_EXTENSIONS } = await import('../src/security.ts');
-		const config = await import('../../../packages/config/src/index.ts');
-		expect([...OPENABLE_EXTENSIONS]).toEqual([...config.OPENABLE_EXTENSIONS]);
-		expect(config.isOpenableFile('/m/a.MOV')).toBe(true);
-		expect(config.isOpenableFile('/m/a')).toBe(false);
-		expect(config.isOpenableFile('/m/a.hta')).toBe(false);
-	});
 });

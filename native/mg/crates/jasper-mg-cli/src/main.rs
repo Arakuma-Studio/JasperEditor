@@ -17,7 +17,6 @@ use fframes::{Color, CpuFrameRenderer, FrameRenderer, Previewer, RenderOptions, 
 use jasper_mg_core::MgSpec;
 use jasper_mg_templates::{AnyTemplate, MgMedia, Prepared, RENDERER_VERSION, catalog, schema_json};
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -26,6 +25,7 @@ use std::sync::mpsc::sync_channel;
 use std::time::Instant;
 
 const FFRAMES_VERSION: &str = "1.0.3";
+const MAX_SPEC_BYTES: u64 = 1024 * 1024;
 
 #[derive(Parser)]
 #[command(
@@ -90,16 +90,32 @@ fn event(value: serde_json::Value) {
     let _ = err.flush();
 }
 
-fn read_spec(path: &str) -> CliResult<Prepared> {
+fn write_output(mut out: impl Write, value: impl std::fmt::Display) -> CliResult {
+    writeln!(out, "{value}").map_err(|e| CliError::Other(format!("stdout: {e}")))
+}
+
+fn read_spec_text(reader: impl Read) -> CliResult<String> {
     let mut text = String::new();
-    if path == "-" {
-        std::io::stdin()
-            .read_to_string(&mut text)
-            .map_err(|e| CliError::Other(format!("cannot read the spec from stdin: {e}")))?;
-    } else {
-        text = std::fs::read_to_string(path)
-            .map_err(|e| CliError::Spec(format!("cannot read spec {path}: {e}")))?;
+    reader
+        .take(MAX_SPEC_BYTES + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| CliError::Spec(format!("cannot read spec: {e}")))?;
+    if text.len() as u64 > MAX_SPEC_BYTES {
+        return Err(CliError::Spec(format!(
+            "spec exceeds {MAX_SPEC_BYTES} bytes"
+        )));
     }
+    Ok(text)
+}
+
+fn read_spec(path: &str) -> CliResult<Prepared> {
+    let text = if path == "-" {
+        read_spec_text(std::io::stdin().lock())?
+    } else {
+        let file = std::fs::File::open(path)
+            .map_err(|e| CliError::Spec(format!("cannot read spec {path}: {e}")))?;
+        read_spec_text(file)?
+    };
     let spec = MgSpec::parse(&text).map_err(|e| CliError::Spec(e.0))?;
     Prepared::new(spec).map_err(|e| CliError::Spec(e.0))
 }
@@ -136,23 +152,30 @@ fn options(media: &MgMedia) -> RenderOptions<'_, '_> {
     }
 }
 
-fn threads_for(requested: Option<usize>) -> usize {
-    requested
-        .or_else(|| {
-            std::env::var("JASPER_MG_THREADS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-        })
-        .unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4)
-        })
-        .clamp(1, 64)
+fn parse_threads(raw: &str) -> CliResult<usize> {
+    raw.parse::<usize>()
+        .ok()
+        .filter(|n| (1..=64).contains(n))
+        .ok_or_else(|| CliError::Spec("worker threads must be an integer within 1..=64".into()))
 }
 
-/// Renders all frames on `threads` workers (one Previewer + tiny-skia renderer each, round-robin
-/// frames) and writes them to stdout in order through a reorder buffer (R-FF Appendix pipe.rs).
+fn threads_for(requested: Option<usize>) -> CliResult<usize> {
+    if let Some(threads) = requested {
+        return parse_threads(&threads.to_string());
+    }
+    match std::env::var("JASPER_MG_THREADS") {
+        Ok(raw) => parse_threads(&raw),
+        Err(std::env::VarError::NotUnicode(_)) => Err(CliError::Spec(
+            "JASPER_MG_THREADS must contain an integer within 1..=64".into(),
+        )),
+        Err(std::env::VarError::NotPresent) => Ok(std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .min(64)),
+    }
+}
+
+/// Each worker has one rendezvous channel, so a slow frame cannot accumulate later frames in memory.
 fn render_raw<V: Video>(
     video: &V,
     prepared: &Prepared,
@@ -171,87 +194,85 @@ fn render_raw<V: Video>(
     );
 
     let abort = AtomicBool::new(false);
-    let (tx, rx) = sync_channel::<(usize, Result<Vec<u8>, String>)>(threads * 2);
-    let outcome: CliResult<usize> = std::thread::scope(|s| {
-        for worker in 0..threads {
-            let tx = tx.clone();
-            let (options, abort) = (&options, &abort);
-            s.spawn(move || {
-                let mut previewer = match Previewer::new(video, options) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        let _ = tx.send((worker, Err(format!("previewer: {e}"))));
-                        return;
-                    }
-                };
-                let mut renderer = CpuFrameRenderer::default();
-                let mut f = worker;
-                while f < total && !abort.load(Ordering::Relaxed) {
-                    let result = previewer
-                        .svg_tree(f)
-                        .and_then(|tree| renderer.render_tree(&tree, Color::TRANSPARENT, w, h))
-                        .map(|frame| frame.pixels)
-                        .map_err(|e| format!("frame {f}: {e}"));
-                    let failed = result.is_err();
-                    if tx.send((f, result)).is_err() || failed {
-                        break;
-                    }
-                    f += threads;
-                }
-            });
-        }
-        drop(tx);
+    let frames = std::thread::scope(|scope| {
+        let mut receivers = Vec::with_capacity(threads);
+        let mut workers = Vec::with_capacity(threads);
+        let outcome = (|| {
+            for worker in 0..threads {
+                let (tx, rx) = sync_channel::<Result<Vec<u8>, String>>(0);
+                receivers.push(rx);
+                let (options, abort) = (&options, &abort);
+                let handle = std::thread::Builder::new()
+                    .spawn_scoped(scope, move || {
+                        let mut previewer = match Previewer::new(video, options) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                let _ = tx.send(Err(format!("previewer: {e}")));
+                                return;
+                            }
+                        };
+                        let mut renderer = CpuFrameRenderer::default();
+                        let mut f = worker;
+                        while f < total && !abort.load(Ordering::Relaxed) {
+                            let result = previewer
+                                .svg_tree(f)
+                                .and_then(|tree| {
+                                    renderer.render_tree(&tree, Color::TRANSPARENT, w, h)
+                                })
+                                .map(|frame| frame.pixels)
+                                .map_err(|e| format!("frame {f}: {e}"));
+                            let failed = result.is_err();
+                            if tx.send(result).is_err() || failed {
+                                break;
+                            }
+                            f += threads;
+                        }
+                    })
+                    .map_err(|e| {
+                        CliError::Other(format!("cannot start render worker {worker}: {e}"))
+                    })?;
+                workers.push(handle);
+            }
 
-        let mut out = std::io::BufWriter::with_capacity(1 << 24, std::io::stdout().lock());
-        let mut pending: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
-        let mut next = 0usize;
-        let step = (total / 100).max(1);
-        let mut failure: Option<String> = None;
-        'recv: for (index, result) in rx.iter() {
-            match result {
-                Ok(pixels) if pixels.len() == frame_bytes => {
-                    pending.insert(index, pixels);
-                }
-                Ok(pixels) => {
-                    failure = Some(format!(
+            let mut out = std::io::BufWriter::with_capacity(1 << 24, std::io::stdout().lock());
+            let step = (total / 100).max(1);
+            for index in 0..total {
+                let pixels = receivers[index % threads]
+                    .recv()
+                    .map_err(|e| {
+                        CliError::Other(format!("render worker stopped before frame {index}: {e}"))
+                    })?
+                    .map_err(CliError::Other)?;
+                if pixels.len() != frame_bytes {
+                    return Err(CliError::Other(format!(
                         "frame {index}: {} bytes, expected {frame_bytes}",
                         pixels.len()
-                    ));
-                    break 'recv;
+                    )));
                 }
-                Err(e) => {
-                    failure = Some(e);
-                    break 'recv;
-                }
-            }
-            while let Some(pixels) = pending.remove(&next) {
-                if let Err(e) = out.write_all(&pixels) {
-                    failure = Some(format!("stdout: {e}"));
-                    break 'recv;
-                }
-                next += 1;
-                if next.is_multiple_of(step) || next == total {
-                    event(json!({"event": "progress", "done": next, "total": total,
+                out.write_all(&pixels)
+                    .map_err(|e| CliError::Other(format!("stdout: {e}")))?;
+                let done = index + 1;
+                if done.is_multiple_of(step) || done == total {
+                    event(json!({"event": "progress", "done": done, "total": total,
                                  "elapsed": started.elapsed().as_secs_f64()}));
                 }
             }
-        }
-        if failure.is_none()
-            && let Err(e) = out.flush()
-        {
-            failure = Some(format!("stdout: {e}"));
-        }
+            out.flush()
+                .map_err(|e| CliError::Other(format!("stdout: {e}")))?;
+            Ok(total)
+        })();
         abort.store(true, Ordering::Relaxed);
-        drop(rx); // unblocks workers waiting on a full channel so the scope can join
-        match failure {
-            Some(e) => Err(CliError::Other(e)),
-            None if next != total => Err(CliError::Other(format!(
-                "rendered {next} of {total} frames"
-            ))),
-            None => Ok(next),
+        drop(receivers);
+        let mut panicked = false;
+        for worker in workers {
+            panicked |= worker.join().is_err();
         }
-    });
-    let frames = outcome?;
+        if panicked {
+            Err(CliError::Other("render worker panicked".into()))
+        } else {
+            outcome
+        }
+    })?;
     event(json!({"event": "done", "frames": frames, "elapsed": started.elapsed().as_secs_f64()}));
     Ok(())
 }
@@ -300,21 +321,17 @@ fn run(cli: Cli) -> CliResult {
             .iter()
             .map(|t| format!("{}@{}", t.id, t.version))
             .collect();
-        println!(
-            "{}",
+        return write_output(
+            std::io::stdout().lock(),
             json!({"name": "jasper-mg", "version": env!("CARGO_PKG_VERSION"), "fframes": FFRAMES_VERSION,
-                   "renderer": RENDERER_VERSION, "templates": templates})
+                   "renderer": RENDERER_VERSION, "templates": templates}),
         );
-        return Ok(());
     }
     match cli.command {
         None => Err(CliError::Spec(
             "missing command (schema | render | frame | svg); see --help".into(),
         )),
-        Some(Command::Schema) => {
-            println!("{}", schema_json());
-            Ok(())
-        }
+        Some(Command::Schema) => write_output(std::io::stdout().lock(), schema_json()),
         Some(Command::Render {
             spec,
             raw_rgba,
@@ -326,8 +343,8 @@ fn run(cli: Cli) -> CliResult {
                 ));
             }
             let prepared = read_spec(&spec)?;
+            let threads = threads_for(threads)?;
             let media = media()?;
-            let threads = threads_for(threads);
             with_video!(&prepared, |video| render_raw(
                 &video, &prepared, &media, threads
             ))
@@ -343,8 +360,7 @@ fn run(cli: Cli) -> CliResult {
         Some(Command::Svg { spec, frame }) => {
             let prepared = read_spec(&spec)?;
             check_frame(&prepared, frame)?;
-            println!("{}", prepared.svg(frame));
-            Ok(())
+            write_output(std::io::stdout().lock(), prepared.svg(frame))
         }
     }
 }
@@ -360,5 +376,82 @@ fn main() -> ExitCode {
             event(json!({"event": "error", "code": "RENDER_FAILED", "message": message}));
             ExitCode::from(1)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug)]
+    struct PanickingVideo;
+
+    impl Video for PanickingVideo {
+        const FPS: usize = 30;
+        const WIDTH: usize = 64;
+        const HEIGHT: usize = 36;
+        const BACKGROUND_COLOR: Color = Color::TRANSPARENT;
+
+        fn duration(&self) -> fframes::Duration<'_> {
+            fframes::Duration::Frames(3)
+        }
+
+        fn audio(&self) -> fframes::AudioMap<'_> {
+            fframes::AudioMap::none()
+        }
+
+        fn render_frame<'a>(
+            &'a self,
+            _frame: fframes::Frame,
+            _ctx: &fframes::FFramesContext<'a, '_>,
+        ) -> fframes::Svgr<'a> {
+            panic!("failed render worker")
+        }
+    }
+
+    #[test]
+    fn worker_panics_are_reported_as_render_errors() {
+        let spec = MgSpec::parse(
+            r#"{
+            "template":{"id":"title-card","version":1}, "params":{},
+            "width":64,"height":36,"fps":{"num":30,"den":1},"durationFrames":3
+        }"#,
+        )
+        .unwrap();
+        let prepared = Prepared::new(spec).unwrap();
+        let media = MgMedia::new().unwrap();
+        assert!(matches!(
+            render_raw(&PanickingVideo, &prepared, &media, 3),
+            Err(CliError::Other(message)) if message.contains("panicked")
+        ));
+    }
+
+    #[test]
+    fn output_errors_return_render_failures() {
+        let mut full = &mut [0_u8; 1][..];
+        assert!(matches!(
+            write_output(&mut full, "output exceeds writer capacity"),
+            Err(CliError::Other(message)) if message.starts_with("stdout:")
+        ));
+    }
+
+    #[test]
+    fn spec_reads_are_bounded_even_for_endless_input() {
+        match read_spec_text(std::io::repeat(b' ')) {
+            Err(CliError::Spec(message)) => assert!(message.contains("exceeds")),
+            _ => panic!("oversized input must be refused"),
+        }
+    }
+
+    #[test]
+    fn invalid_thread_settings_are_refused() {
+        for raw in ["", "0", "65", "abc", "-1", "1.5"] {
+            assert!(
+                matches!(parse_threads(raw), Err(CliError::Spec(_))),
+                "{raw}"
+            );
+        }
+        assert!(matches!(parse_threads("1"), Ok(1)));
+        assert!(matches!(parse_threads("64"), Ok(64)));
     }
 }
