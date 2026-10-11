@@ -182,7 +182,7 @@ export async function createServer(
 		const auth = req.headers.authorization;
 		const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
 		if (
-			(bearer && safeEqual(bearer, config.token)) ||
+			(bearer && secretsEqual(bearer, config.token)) ||
 			cookieMatches(req.headers.cookie, AUTH_COOKIE, config.port, config.token)
 		)
 			return;
@@ -243,7 +243,7 @@ export async function createServer(
 	// token and the editor key as HttpOnly, SameSite=Strict cookies, which page scripts and agents cannot read.
 	app.get('/pair', async (req, reply) => {
 		const key = (req.query as { key?: unknown } | undefined)?.key;
-		if (!config.token || !config.editorKey || typeof key !== 'string' || !safeEqual(key, config.editorKey))
+		if (!config.token || !config.editorKey || typeof key !== 'string' || !secretsEqual(key, config.editorKey))
 			return fail(reply, 401, 'UNAUTHORIZED', 'Invalid pairing key');
 		const cookie = (name: string, value: string) =>
 			`${portCookieName(name, config.port)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict`;
