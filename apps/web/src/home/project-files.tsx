@@ -1,9 +1,4 @@
-// Project file actions of the open project (process workstream, ARCHITECTURE D-39, docs/project-files.md):
-// File ▸ Save As… / Save a Copy… / Revert / Project Versions… / Recover Unsaved Changes…, and the recovery
-// prompt shown when a project opens with unsaved changes from a session that ended uncleanly (S01:PER-021, AC-18).
-// <ProjectLifecycle> owns the session and registers the actions here; the UI commands (commands/project-files.ts)
-// and the dialogs call them.
-import type { RecoveryInfo, VersionInfo } from '@jasper/api';
+import type { RecoveryListResponse, VersionInfo } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { type EditorSession, hasRecovery, persistenceFor, reopenSession } from '@jasper/session';
 import { Button, confirmDialog, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
@@ -27,7 +22,7 @@ export type ProjectFileActions = {
 	restoreVersion(versionId: string): Promise<void>;
 	/** Opens a saved version as a new project. */
 	openVersionAsCopy(versionId: string): Promise<string>;
-	listRecovery(): Promise<RecoveryInfo[]>;
+	listRecovery(): Promise<RecoveryListResponse>;
 	/** Applies a journal's unsaved changes as one undoable step, then deletes that journal. */
 	recover(sessionId: string): Promise<void>;
 	discardRecovery(sessionId: string): Promise<void>;
@@ -61,7 +56,7 @@ const errorText = (e: unknown) =>
 
 /**
  * Builds the actions for a session. `replace` swaps the lifecycle's session (revert, restore), `open` navigates to
- * another project, `notify` reports to the user.
+ * another project.
  */
 export function createProjectFileActions(
 	session: EditorSession,
@@ -105,10 +100,9 @@ export function createProjectFileActions(
 			return id;
 		},
 		async listRecovery() {
-			if (!recovery) return [];
-			return (await recovery.listRecovery(session.projectId)).filter(
-				(c) => c.sessionId !== session.sessionId,
-			);
+			if (!recovery) return { candidates: [], warnings: [] };
+			const { candidates, warnings } = await recovery.listRecovery(session.projectId);
+			return { candidates: candidates.filter((c) => c.sessionId !== session.sessionId), warnings };
 		},
 		async recover(sessionId) {
 			const r = need();
@@ -276,21 +270,21 @@ function VersionsDialog(props: HostedDialogProps<{ actions: ProjectFileActions }
 }
 
 function RecoveryDialog(
-	props: HostedDialogProps<{ actions: ProjectFileActions; candidates: RecoveryInfo[]; atOpen: boolean }>,
+	props: HostedDialogProps<RecoveryListResponse & { actions: ProjectFileActions; atOpen: boolean }>,
 ) {
-	const { actions } = props;
+	const { actions, warnings } = props;
 	const [candidates, setCandidates] = useState(props.candidates);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 	const c = candidates[0];
-	if (!c) return null;
 	const act = async (fn: () => Promise<void>, recovered: boolean) => {
 		setBusy(true);
 		setError(null);
 		try {
 			await fn();
 			const rest = candidates.slice(1);
-			if (recovered || rest.length === 0) props.close(recovered ? 'recovered' : 'done');
+			if (recovered || (rest.length === 0 && warnings.length === 0))
+				props.close(recovered ? 'recovered' : 'done');
 			else setCandidates(rest);
 		} catch (e) {
 			setError(errorText(e));
@@ -298,54 +292,71 @@ function RecoveryDialog(
 			setBusy(false);
 		}
 	};
-	const later = c.projectRevision > c.baseRevision;
 	return (
 		<Dialog
 			open
 			onOpenChange={(o) => !o && props.close('later')}
 			title="Recover Unsaved Changes"
 			size="medium"
-			cancelLabel="Not Now"
+			cancelLabel={c ? 'Not Now' : 'Close'}
 			footerExtra={
-				<Button
-					variant="danger"
-					disabled={busy}
-					onClick={() => void act(() => actions.discardRecovery(c.sessionId), false)}
-					data-testid="recovery-discard"
-				>
-					Discard
-				</Button>
+				c ? (
+					<Button
+						variant="danger"
+						disabled={busy}
+						onClick={() => void act(() => actions.discardRecovery(c.sessionId), false)}
+						data-testid="recovery-discard"
+					>
+						Discard
+					</Button>
+				) : null
 			}
-			primaryLabel="Recover"
+			primaryLabel={c ? 'Recover' : undefined}
 			primaryDisabled={busy}
 			onPrimary={() => {
-				void act(() => actions.recover(c.sessionId), true);
+				if (c) void act(() => actions.recover(c.sessionId), true);
 				return false;
 			}}
 			data-testid="recovery-dialog"
 		>
 			<div className="flex flex-col gap-2">
-				<p className="text-pr-text">
-					{props.atOpen ? 'JasperEditor closed' : 'An editing session ended'} before “{c.projectName}” was
-					saved. Recover the unsaved changes from {when(c.savedAt)}?
-				</p>
-				<p className="text-pr-muted" data-testid="recovery-changes">
-					{c.changeCount} unsaved {c.changeCount === 1 ? 'change' : 'changes'}
-					{c.changes.length
-						? `: ${c.changes.slice(-8).join(', ')}${c.changes.length > 8 || c.changeCount > c.changes.length ? '…' : ''}`
-						: ''}
-				</p>
-				{later ? (
-					<p className="text-pr-warning" role="alert">
-						The project was saved again afterwards (revision {c.projectRevision}). Recovering replaces that
-						saved state with these changes; Undo takes it back.
-					</p>
+				{warnings.length > 0 ? (
+					<div className="text-pr-warning" role="alert" data-testid="recovery-warnings">
+						<p>Some recovery files could not be read. They have been kept so they can be repaired.</p>
+						<ul>
+							{warnings.map((warning) => (
+								<li key={warning.sessionId}>
+									{warning.sessionId}: {warning.message} ({warning.code})
+								</li>
+							))}
+						</ul>
+					</div>
 				) : null}
-				<p className="text-pr-small text-pr-muted">
-					Recover applies them as one step you can undo. Not Now keeps them: File ▸ Recover Unsaved Changes…
-					offers them again.
-					{candidates.length > 1 ? ` ${candidates.length - 1} more after this one.` : ''}
-				</p>
+				{c ? (
+					<>
+						<p className="text-pr-text">
+							{props.atOpen ? 'JasperEditor closed' : 'An editing session ended'} before “{c.projectName}” was
+							saved. Recover the unsaved changes from {when(c.savedAt)}?
+						</p>
+						<p className="text-pr-muted" data-testid="recovery-changes">
+							{c.changeCount} unsaved {c.changeCount === 1 ? 'change' : 'changes'}
+							{c.changes.length
+								? `: ${c.changes.slice(-8).join(', ')}${c.changes.length > 8 || c.changeCount > c.changes.length ? '…' : ''}`
+								: ''}
+						</p>
+						{c.projectRevision > c.baseRevision ? (
+							<p className="text-pr-warning" role="alert">
+								The project was saved again afterwards (revision {c.projectRevision}). Recovering replaces
+								that saved state with these changes; Undo takes it back.
+							</p>
+						) : null}
+						<p className="text-pr-small text-pr-muted">
+							Recover applies them as one step you can undo. Not Now keeps them: File ▸ Recover Unsaved
+							Changes… offers them again.
+							{candidates.length > 1 ? ` ${candidates.length - 1} more after this one.` : ''}
+						</p>
+					</>
+				) : null}
 				{error ? (
 					<p className="text-pr-danger" role="alert">
 						{error}

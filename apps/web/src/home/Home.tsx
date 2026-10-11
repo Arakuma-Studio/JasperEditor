@@ -1,6 +1,3 @@
-// Home screen (S05:HD-020, R-PUI §6): left rail (New Project, Open Project…, Refresh), recent projects
-// from the engine (poster, name, modified time), open / duplicate / export / delete, New Project dialog
-// (name + preset from @jasper/project presets) and a three-step empty state.
 import type { ProjectSummary } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { BUILTIN_PRESETS } from '@jasper/project';
@@ -131,7 +128,6 @@ export function Home() {
 	const connected = engine.status === 'connected';
 	return (
 		<div className="flex h-full bg-pr-app text-pr-text" data-testid="home">
-			{/* Left rail */}
 			<aside className="flex w-56 shrink-0 flex-col gap-2 border-r border-pr-border-subtle bg-pr-panel-alt p-4">
 				<div className="mb-4 flex items-center gap-2">
 					<span className="text-pr-accent">
@@ -164,7 +160,6 @@ export function Home() {
 				</p>
 			</aside>
 
-			{/* Recent projects */}
 			<main className="min-w-0 flex-1 overflow-auto bg-pr-panel p-6">
 				<h1 className="mb-4 text-[length:var(--pr-font-size-dialog-title)] font-semibold text-pr-strong">
 					Recent projects

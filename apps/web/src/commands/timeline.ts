@@ -696,7 +696,6 @@ export const timelineCommands: UiCommand[] = [
 			if (handle?.cancelGesture()) return;
 			stopPlayAround();
 			exitTrimMode();
-			// TL-903: otherwise Escape deselects.
 			ctx.session?.select('timeline', [], 'replace');
 			ctx.session?.selectGaps([]);
 			handle?.ui.setState({ editPoints: [], contextMenu: null });

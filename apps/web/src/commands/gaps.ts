@@ -46,7 +46,6 @@ import type { CommandCtx, UiCommand } from './types.ts';
 registerGapsPreferencePages();
 registerWarpStabilizerUi();
 
-// gaps: Project panel item context menu — New Sequence From Clip and the Proxy submenu (Premiere's).
 projectItemMenuExtensions.register({
 	id: 'gaps.items',
 	order: 6,

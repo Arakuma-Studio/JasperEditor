@@ -1,4 +1,3 @@
-// Window controls for the frameless Electron window (S05:HD-001, §21). Web/PWA render nothing.
 import { IconButton } from '@jasper/ui';
 import { getDesktopBridge } from './platform.ts';
 

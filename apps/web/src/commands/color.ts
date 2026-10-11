@@ -94,7 +94,6 @@ projectItemMenuExtensions.register({
 	},
 });
 
-// color-grade: the Lumetri eyedroppers' Program monitor overlay (renders nothing until a picker is armed).
 programOverlays.register({
 	id: 'color.eyedropper',
 	active: (session) => !!session.getState().activeSequenceId,

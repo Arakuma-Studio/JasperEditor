@@ -52,7 +52,6 @@ export const shapeCommands: UiCommand[] = [
 	newShape('graphics.newEllipse', 'ellipse'),
 	toolCommand('rectangle'),
 	toolCommand('ellipse'),
-	// wp shapes
 	toolCommand('polygon'),
 	toolCommand('star'),
 	{
@@ -98,7 +97,6 @@ clipSections.register({
 
 programOverlays.register({ id: 'shape-tools', active: () => true, component: ShapeToolOverlay, order: 90 });
 
-// wp shapes: Properties ▸ Shape Contents (vector shapes) and the monitor's vertex editing / Pen tool.
 clipSections.register({
 	id: 'vector-shape',
 	title: 'Shape Contents',

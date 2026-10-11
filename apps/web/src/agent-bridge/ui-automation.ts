@@ -112,7 +112,9 @@ export function registerUiLocator(
 	};
 }
 
-function locator<K extends LocatorEntry['kind']>(kind: K): Extract<LocatorEntry, { kind: K }>['impl'] {
+function locator(kind: 'timeline'): TimelineLocator;
+function locator(kind: 'program'): ProgramLocator;
+function locator(kind: LocatorEntry['kind']): TimelineLocator | ProgramLocator {
 	const all = [...locators.values()].filter((l) => l.kind === kind);
 	const visible = all.find((l) => {
 		const el = l.element();
@@ -124,7 +126,7 @@ function locator<K extends LocatorEntry['kind']>(kind: K): Extract<LocatorEntry,
 			'E_NOT_AVAILABLE',
 			`No ${kind === 'timeline' ? 'Timeline' : 'Program monitor'} panel is open: run ui_command {"id": "panel.focus.${kind}"} first`,
 		);
-	return pick.impl as never;
+	return pick.impl;
 }
 
 type Args = Record<string, unknown>;
@@ -844,7 +846,6 @@ async function dispatchUiAction(action: string, raw: unknown): Promise<unknown> 
 		case 'command':
 			return doCommand(a);
 		case 'perf':
-			// previews: playback, render bar and UI counters (MCP perf_stats)
 			return editorPerfStats(a as { sampleMs?: number });
 		default:
 			throw new UiAutomationError('E_INVALID_PARAM', `Unknown UI action "${action}"`);

@@ -1,9 +1,6 @@
-// Register the Program overlay that attaches the layer-bake runtime.
 import '../layer-bake/commands.ts';
-// Register the fx framework's on-canvas point handles (wave 1).
 import '../fx/register.ts';
 import '../simwarp/register.ts';
-// audio-fx: Effect Controls editors of the audio effects (EQ curves, dynamics, meters).
 import '../audio-fx/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
 import { appCommands } from './app.ts';
@@ -88,14 +85,10 @@ const COMMAND_MODULES: UiCommand[][] = [
 	timeCommands,
 	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)
 	editUxCommands,
-	// imports workstream: Interpret Footage, Lottie export, SVG as shape layer
 	importsCommands,
 	monitorViewCommands,
-	// three-d: cameras, lights, 3D views, renderer
 	threeDCommands,
-	// gaps: Find, Edit Original, Exit, Add/Delete Tracks, track height presets, settings dialogs, proxies…
 	gapsCommands,
-	// polish: Import from Media Browser, Engine ▸ Connect / Status, Edit Parameters, Third-Party Notices.
 	polishCommands,
 ];
 

@@ -1,13 +1,3 @@
-// M2 UI commands: Apply Default Transitions (Ctrl+D, Ctrl+Shift+D, Shift+D), transition editing. Owner: wp-m2-transitions (ARCHITECTURE §19.10).
-// This module is imported at start-up (commands/index.ts), so it is also where the package registers its UI
-// extensions (extensions/index.ts: effect editors, clip sections, Program overlays, menu entries).
-//
-// S10:TUI-030: the keymap ids already bound in keymap-defaults.ts; every invocation is one history entry
-// through `transition.applyDefault` with the M2 fields. TUI-015: Delete / Backspace with transitions selected
-// removes them (the Timeline's Clear / Ripple Delete are wrapped: with no transition selected they run as
-// before). TUI-046: the clip context menu gains "Apply Default Transitions".
-// M3 (wp-m3-transdefaults, TUI-031…033): Sequence ▸ Transition Defaults… opens Edit ▸ Preferences ▸ Timeline
-// (registered here): the user's default types and alignment, the project's default durations.
 import type { Clip, CommandOf, Sequence, TransactionResult } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { clipMenuExtensions } from '../extensions/index.ts';
@@ -208,7 +198,6 @@ export const transitionCommands: UiCommand[] = [
 		run: (ctx) => void applyDefaults(ctx, ['video', 'audio'], 'Apply Default Transitions', true),
 	},
 	{
-		// TUI-031 (P1): Sequence ▸ Transition Defaults… → Edit ▸ Preferences ▸ Timeline.
 		id: 'sequence.transitionDefaults',
 		label: 'Transition Defaults…',
 		description:
@@ -220,7 +209,6 @@ export const transitionCommands: UiCommand[] = [
 	...withTransitionClear('timeline.rippleDelete'),
 ];
 
-// TUI-046 (P1): "Apply Default Transitions" in the timeline clip context menu.
 clipMenuExtensions.register({
 	id: 'wp-m2-transitions.apply-default',
 	order: 50,

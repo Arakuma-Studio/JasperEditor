@@ -1,4 +1,3 @@
-// Import service and drag payload contracts (S01:LIFE-010/012, S02:TL-492).
 import type { RegisteredMedia } from '@jasper/api';
 
 /** In-app drag of Project panel items onto the timeline/monitors. */
@@ -10,7 +9,7 @@ export type DragPayload = ProjectItemsDragPayload | OsFilesDragPayload;
 /** MIME type used on DataTransfer for in-app item drags. */
 export const PROJECT_ITEMS_MIME = 'application/x-jasper-project-items';
 
-/** polish (Media Browser): files on the engine host dragged onto the Project panel or the Timeline. */
+/** Files on the engine host dragged onto the Project panel or Timeline. */
 export const HOST_PATHS_MIME = 'application/x-jasper-host-paths';
 
 /** Writes the Media Browser drag payload: absolute paths on the engine host (registered in place on drop). */
@@ -42,7 +41,7 @@ export type ImportTarget =
 			at: number;
 			trackId: string;
 			mode: 'overwrite' | 'insert';
-			/** wp-clipboard-2 (CLB-010): audio goes here when `trackId` is a video track (default: mirrored index). */
+			/** Audio destination when `trackId` is a video track; defaults to the mirrored index. */
 			audioTrackId?: string;
 	  }
 	| { kind: 'program'; sequenceId: string };
@@ -69,7 +68,7 @@ export interface ImportService {
 		input: {
 			files?: File[];
 			paths?: string[];
-			/** wp-clipboard-2 (CLB-010): project item names for `files` (same order; default the file name). */
+			/** Project item names for `files`, in the same order; defaults to the file name. */
 			names?: (string | undefined)[];
 		},
 		target: ImportTarget,

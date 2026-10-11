@@ -1,4 +1,4 @@
-// Lazy labels (workstream polish, live language switching): tables built once at module load (menus, commands) keep
+// Tables built once at module load (menus, commands) keep
 // the English source of a label and translate it when the label is read, so they follow a language change.
 import { __set, t } from './runtime.ts';
 

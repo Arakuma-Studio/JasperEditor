@@ -1,7 +1,3 @@
-// The in-page agent bridge (ARCHITECTURE §11 Stage 1, S01 §21): one per open EditorSession. It answers
-// queries, applies agent transactions through the session (one `Agent: <label>` undo entry each), asks
-// the user for approval of destructive transactions, keeps an activity feed (the shell toasts it), and relays
-// requests/events over WS /agent so external agents reach the open editor.
 import { type Approval, TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -250,8 +246,6 @@ export class AgentBridge {
 				},
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
-				// M3 (S10:TUI-034): the user's default transitions, so agents apply the same ones as Ctrl+D.
-				// edit-structure: how the editor places sequences (nests or individual clips) and shows through edits.
 				preferences: () => ({
 					transitions: transitionPreferences(),
 					timeline: {
@@ -279,7 +273,7 @@ export class AgentBridge {
 			platform: 'web',
 		});
 		let job = await this.engine.requestStill({
-			envelope: envelope as never,
+			envelope,
 			sequenceId: cap.sequenceId,
 			frame: cap.frame,
 			width: cap.width,
@@ -509,7 +503,6 @@ export class AgentBridge {
 	): Promise<{ result?: unknown; error?: { code: string; message: string } }> {
 		try {
 			if (kind === 'schema') return { result: this.schema() };
-			// mcp-cli: live-UI automation of this window (ui-automation.ts).
 			if (kind === 'ui') {
 				const p = (payload ?? {}) as { action?: string; args?: Record<string, unknown> };
 				return { result: await runUiAction(String(p.action), p.args ?? {}) };

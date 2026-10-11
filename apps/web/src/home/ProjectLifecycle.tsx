@@ -1,13 +1,3 @@
-// Everything an open project needs besides the shell (ARCHITECTURE §6, §7.5):
-// - autosave + page-lifecycle flush (S01:PER-020/022) through @jasper/session's attachPersistence;
-// - read-only / lease-lost / conflict / repaired banners with "Take over editing" (S01:PER-040, MIG-003);
-// - the ImportService registration (state/services.ts) and media runtime sync (S01:LIFE-050);
-// - OS file drops anywhere in the editor that no other target handled (S05:PRJ-007);
-// - export completion toasts with Download (S05:EX-013) and the Export mode overlay (S05:EX-001);
-// - hosts for import prompts, Project panel dialogs and notices;
-// - File ▸ Save As / Save a Copy / Revert / Project Versions / Recover Unsaved Changes, and the crash-recovery prompt
-//   when the project opens with unsaved changes of a session that ended uncleanly (project-files.tsx, D-39).
-// Rendered by App.tsx inside ProjectSessionHost, around the shell.
 import { TERMINAL_JOB_STATES } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
@@ -101,11 +91,9 @@ function LifecycleBody(props: {
 	const exportState = useExportMode();
 	const exportHostedByShell = useExportModeHostedByShell();
 
-	// Autosave + page lifecycle
 	useEffect(() => {
 		if (!session.projectStore) return;
 		const c = attachPersistence(session, {
-			// gaps: Preferences ▸ Auto Save.
 			policy: autoSavePolicy,
 			onError: (e) =>
 				notices.push({
@@ -120,7 +108,6 @@ function LifecycleBody(props: {
 		};
 	}, [session]);
 
-	// File actions (Save As, Revert, versions, recovery) and the crash-recovery prompt (S01:PER-021, AC-18).
 	const navigate = useNavigate();
 	const { onReplace } = props;
 	useEffect(() => {
@@ -133,18 +120,21 @@ function LifecycleBody(props: {
 		if (!session.getState().readOnly)
 			void actions
 				.listRecovery()
-				.then((candidates) => {
-					if (!live || candidates.length === 0) return;
-					return openDialog(PROJECT_FILE_DIALOGS.recovery, { actions, candidates, atOpen: true }).then(
-						(r) => {
-							if (r === 'recovered')
-								notices.push({
-									kind: 'success',
-									message: 'Unsaved changes recovered',
-									detail: 'Edit ▸ Undo takes them back.',
-								});
-						},
-					);
+				.then(({ candidates, warnings }) => {
+					if (!live || (candidates.length === 0 && warnings.length === 0)) return;
+					return openDialog(PROJECT_FILE_DIALOGS.recovery, {
+						actions,
+						candidates,
+						warnings,
+						atOpen: true,
+					}).then((r) => {
+						if (r === 'recovered')
+							notices.push({
+								kind: 'success',
+								message: 'Unsaved changes recovered',
+								detail: 'Edit ▸ Undo takes them back.',
+							});
+					});
 				})
 				.catch((e) =>
 					notices.push({
@@ -159,7 +149,6 @@ function LifecycleBody(props: {
 		};
 	}, [session, onReplace, navigate]);
 
-	// ImportService for timeline/program/project drops and File ▸ Import
 	useEffect(() => {
 		const service = new EngineImportService({ engine: engine.client, session });
 		return registerImportService(service);
@@ -174,7 +163,6 @@ function LifecycleBody(props: {
 		return () => sync.dispose();
 	}, [session, engine.client, engine.subscribe, engineConnected]);
 
-	// Export completion toasts (jobs started from Export mode / Quick Export)
 	useEffect(
 		() =>
 			engine.subscribe((e) => {

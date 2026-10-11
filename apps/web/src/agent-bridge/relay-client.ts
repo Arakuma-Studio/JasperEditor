@@ -53,11 +53,7 @@ export class AgentRelayClient {
 			s.onclose = null;
 			s.onmessage = null;
 			s.onerror = null;
-			try {
-				s.close(1000, 'session closed');
-			} catch {
-				// ignore
-			}
+			s.close(1000, 'session closed');
 		}
 		this.setState('off');
 	}

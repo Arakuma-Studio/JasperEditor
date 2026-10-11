@@ -1,5 +1,4 @@
-// UI-6 i18n runtime (workstream gaps, docs/wp-notes/gaps.md §UI-6; live switching and composite names: workstream
-// polish, docs/wp-notes/polish.md §4). The build wraps every UI string in `__t("…")` (apps/web/i18n/transform.mjs);
+// The build wraps every UI string in `__t("…")` (apps/web/i18n/transform.mjs);
 // `__t` returns the active language's translation (English = the source text) every time it runs.
 //
 // The language is Preferences ▸ Appearance ▸ Language. Its catalogue is loaded before any module that shows text is

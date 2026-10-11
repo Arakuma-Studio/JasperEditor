@@ -139,7 +139,6 @@ programOverlays.register({
 	order: 0,
 });
 
-// wp-m3-mgtext (S08:MGU-005): in-place text editing of composition clips in the Program monitor.
 programOverlays.register({
 	id: 'mg-text-editor',
 	active: () => true,

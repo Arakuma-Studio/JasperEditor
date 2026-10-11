@@ -44,3 +44,13 @@ Focused command, shell, persistence, agent security, internationalization and bu
 - `node scripts/i18n.mjs --check`: passes; Spanish covers all 8,614 extracted strings.
 - The first focused test run encountered host-load timeouts and was stopped before completion. A second run uses one worker and a 60-second test/hook timeout; assertions and Testing Library deadlines are unchanged. Results are recorded in the follow-up verification update.
 - The web typecheck was stopped at the integrator's request to reduce concurrent compiler load. The integrator runs the final serialized typecheck against all audit changes together.
+
+## Recovery listing follow-up
+
+The recovery store now returns healthy candidates together with individual journal warnings. The previous web adapter assumed an array and would fail before presenting any recovery options. Both automatic and manual recovery entry points now preserve the shared response, display warnings, and continue offering healthy candidates. A warnings-only response opens the dialog without recover/discard actions, so damaged files remain available for repair. Regression tests cover both mixed and warnings-only responses.
+
+The follow-up also removes the remaining internal `as never` assertions in agent capture and coordinate lookup. Coordinate lookup uses overloads for its two declared locator kinds. The WebSocket close call uses a valid constant code and a short constant reason, so its empty catch served no error-handling role. Additional historical ownership notes and redundant section comments were removed.
+
+- Follow-up Biome check: 72 files, no fixes needed.
+- Translation coverage check: Spanish covers all 8,615 extracted strings.
+- The second broad focused test run was stopped after 16 minutes without advancing beyond three files under severe host load. Its two Escape failures used the pre-fix import cache; `activeTimeline` is imported in the committed code. A six-file focused rerun covers recovery, command boundaries, UI automation, timeline commands, trim mode, and template upgrades. Final results follow separately.

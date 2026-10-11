@@ -24,7 +24,6 @@ import type { CommandCtx, UiCommand } from './types.ts';
 installAudioRuntime();
 registerAudioDialogs();
 
-// Context menus: timeline audio clips (Audio Gain, Auto Duck, Normalize Loudness) and Project media items.
 clipMenuExtensions.register({
 	id: 'audio-mix',
 	order: 40,

@@ -1,4 +1,3 @@
-// EngineProvider (ARCHITECTURE §7.5): EngineClient + health + capabilities + the /events stream.
 import {
 	AGENT_INPUT_HEADER,
 	type EngineCapabilities,
@@ -179,7 +178,6 @@ export function useCapabilities(): {
 		}
 		if (capabilities?.render.fframes === 'ready') flags.add('fframes');
 		if (capabilities?.render.remotionLocal === 'ready') flags.add('remotionServerRender');
-		// wp speech: local Whisper transcription
 		if (capabilities?.features?.speech?.status === 'ready') flags.add('transcription');
 		if (typeof window !== 'undefined' && window.jasperDesktop) flags.add('desktop');
 		return { capabilities, flags };
