@@ -97,7 +97,7 @@ test('imports Lottie, SVG, EXR and interlaced video; the Program monitor draws t
 			tracks: { video: 'V3' },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await expect.poll(async () => (await programPixels(page)).std, { timeout: 60_000 }).toBeGreaterThan(5);
 	// The EXR display picture and the SVG are <img>s, the Lottie player draws an <svg>.
 	await expect
@@ -218,7 +218,7 @@ test('File ▸ Export ▸ Lottie… exports the sequence and lists what was not 
 			content: { text: 'Lottie' },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	// The sequence selected in the Project panel is the one exported.
 	await page.getByTestId('project-row').filter({ hasText: 'Sequence 01' }).click();
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'File', exact: true }).click();

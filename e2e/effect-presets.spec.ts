@@ -58,7 +58,7 @@ test('a built-in preset applies by double-click with clips selected', async () =
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [1, 0, 0, 1] },
 		{ type: 'clip.addSolid', at: 120, duration: 150, track: 'V1', color: [0, 0, 1, 1] },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const [a] = await clipsOnV1();
 	await clipElement(page, a!.id).click();
 	await tab('Effects').click();

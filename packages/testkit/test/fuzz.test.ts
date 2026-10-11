@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	bytesTarget,
 	describeFuzz,
+	formatFailures,
 	isExpected,
 	jsonTarget,
 	mutateBytes,
@@ -89,6 +93,24 @@ describe('fuzz kit', () => {
 		expect(failures.length).toBeGreaterThan(0);
 		expect(failures[0]!.error).toMatch(/TypeError/);
 		expect(failures[0]!.file).toMatch(/fuzz-failures/);
+	});
+
+	it('reports an artifact write error without losing the parser failure', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'testkit-artifact-'));
+		const file = join(dir, 'file');
+		writeFileSync(file, 'not a directory');
+		vi.stubEnv('JASPER_TEST_RESULTS', file);
+		try {
+			const target = textTarget('unwritable artifact', ['invalid'], buggyParser);
+			const failures = await runFuzzTarget(target, { maxFailures: 1 });
+			expect(failures).toHaveLength(1);
+			expect(failures[0]?.error).toContain('TypeError');
+			expect(failures[0]?.artifactError).toMatch(/Could not save failing input:.*ENOTDIR/);
+			expect(formatFailures(target, failures)).toContain('Could not save failing input');
+		} finally {
+			vi.unstubAllEnvs();
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it('flags slow inputs', async () => {

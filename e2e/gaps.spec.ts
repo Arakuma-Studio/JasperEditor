@@ -1,11 +1,8 @@
-// Workstream gaps (docs/wp-notes/gaps.md) in the built app: the accessibility audit (axe-core, WCAG 2.1 A/AA: no
-// serious or critical violation in the main workspaces, in the default and the high-contrast theme), the Spanish UI,
-// the Warp Stabilizer's background analysis and banner, Essential Graphics (new graphic, layers, align, roll) and
-// Auto Reframe Sequence. Screenshots go to test-results/gaps/ for a look.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
+import type { ProjectDocument } from '../packages/project/src/index.ts';
 import {
 	createProject,
 	enableAgentBridge,
@@ -150,37 +147,18 @@ test('Warp Stabilizer: background analysis stored with the effect, banner while 
 	await query(page, 'playhead.set', { frame: 340 });
 	await expect(page.getByTestId('warp-banner')).toBeVisible({ timeout: 20_000 });
 	await shot(page, 'warp-banner');
-	// The analysis arrives in the document (one effect instance carries it).
 	await expect
 		.poll(
 			async () => {
-				const doc = await query<{
-					document?: {
-						sequences: Record<
-							string,
-							{
-								clips: Record<
-									string,
-									{ effects?: { effectId: string; warpAnalysis?: { frames: number[] } }[] }
-								>;
-							}
-						>;
-					};
-					sequences?: Record<
-						string,
-						{
-							clips: Record<
-								string,
-								{ effects?: { effectId: string; warpAnalysis?: { frames: number[] } }[] }
-							>;
-						}
-					>;
-				}>(page, 'doc.get').catch(() => null);
-				const seqs = doc?.document?.sequences ?? doc?.sequences ?? {};
+				const doc = await query<ProjectDocument>(page, 'doc.get');
+				const seqs = doc.sequences;
 				const clip = Object.values(seqs)
 					.map((q) => q.clips[clipId])
 					.find(Boolean);
-				const fx = clip?.effects?.find((e) => e.effectId === 'jasper.warp-stabilizer');
+				const fx =
+					clip && 'effects' in clip
+						? clip.effects.find((e) => e.effectId === 'jasper.warp-stabilizer')
+						: undefined;
 				return fx?.warpAnalysis?.frames?.length ?? 0;
 			},
 			{ timeout: 180_000 },
@@ -203,11 +181,8 @@ test('Essential Graphics: a new graphic, a second layer, align and roll', async 
 	await layers.first().click();
 	await page.getByTestId('eg-align-left').click();
 	await shot(page, 'essential-graphics');
-	const doc = await query<{
-		document?: { sequences: Record<string, { graphic?: unknown }> };
-		sequences?: Record<string, { graphic?: unknown }>;
-	}>(page, 'doc.get');
-	const seqs = Object.values(doc.document?.sequences ?? doc.sequences ?? {});
+	const doc = await query<ProjectDocument>(page, 'doc.get');
+	const seqs = Object.values(doc.sequences);
 	expect(seqs.filter((q) => q.graphic).length).toBeGreaterThanOrEqual(1);
 });
 
@@ -217,25 +192,19 @@ test('Auto Reframe Sequence makes a 9:16 copy that follows the subject', async (
 	const rf = media.find((m) => m.originalName === 'reframe.mp4')!.mediaId;
 	// After everything the earlier specs placed, on V1 (where the analysis looks first).
 	const sum = await query<{ sequenceId: string; duration: { frames: number } }>(page, 'sequence.summary');
-	const placed = await page.evaluate(
-		(tx) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact(
-				tx,
-			),
-		{
-			protocol: 'jasper.tx/1',
-			label: 'E2E setup',
-			sequenceId: sum.sequenceId,
-			commands: [
-				{
-					type: 'clip.place',
-					source: { mediaId: rf },
-					at: sum.duration.frames + 30,
-					tracks: { video: 'V1', audio: 'A1' },
-				},
-			],
-		},
-	);
+	const placed = await page.evaluate((tx) => window.jasper!.transact(tx), {
+		protocol: 'jasper.tx/1',
+		label: 'E2E setup',
+		sequenceId: sum.sequenceId,
+		commands: [
+			{
+				type: 'clip.place',
+				source: { mediaId: rf },
+				at: sum.duration.frames + 30,
+				tracks: { video: 'V1', audio: 'A1' },
+			},
+		],
+	});
 	expect(placed.ok, JSON.stringify(placed)).toBe(true);
 	await runCommand('sequence.autoReframe');
 	const dialog = page.getByTestId('auto-reframe-dialog');

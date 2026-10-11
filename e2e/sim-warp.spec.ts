@@ -67,11 +67,7 @@ test('Puppet: the Pin tool adds pins on the Program monitor and a drag moves one
 	const mediaId = media.media.find((m) => m.originalName === 'chart.png')!.mediaId;
 	const r = await page.evaluate(
 		(id) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean }> };
-				}
-			).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place chart',
 				commands: [
 					{ type: 'clip.place', source: { mediaId: id }, at: 0, tracks: { video: 'V1' }, ref: '$c' },

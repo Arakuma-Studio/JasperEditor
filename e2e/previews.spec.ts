@@ -4,7 +4,14 @@
 // Files clears it. Playback robustness: seek-and-play cycles never stall (the watchdog recovers nothing), and a
 // video under a GL blend mode is not captured black (HTML-in-Canvas + desynchronized canvases).
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, query, transact } from './support.ts';
+import {
+	createProject,
+	enableAgentBridge,
+	expectTransaction,
+	importFiles,
+	query,
+	transact,
+} from './support.ts';
 
 test.use({
 	launchOptions: {
@@ -38,16 +45,16 @@ test.afterAll(async () => {
 
 test('render bar, Render Effects In to Out, green bar and preview playback', async () => {
 	test.setTimeout(600_000);
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{
 			type: 'clip.place',
 			source: { mediaByName: 'clip-a.mp4' },
 			at: 0,
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 3 } },
 		},
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
-	clipId = r.created!.find((id) => id.startsWith('clp_'))!;
+	]);
+	expectTransaction(r);
+	clipId = r.created.find((id) => id.startsWith('clp_'))!;
 	// a 30 fps clip in the 29.97 sequence (conformed): yellow; an effect keeps it yellow or red
 	await expect.poll(bar).toEqual(['yellow']);
 	await transact(page, [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.gaussian-blur' }]);

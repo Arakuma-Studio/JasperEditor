@@ -1,14 +1,18 @@
 // Text animators (workstream text-animators) end to end in the built app: Effect Controls ▸ Text ▸ Animate ▸
 // (property, preset), Add ▸ Selector, the Path popup on a mask, Character settings in Properties, the Program
 // monitor drawing the animation, and the export matching renderStill of the same frame.
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { StillResultSchema } from '../packages/api/src/exports.ts';
+import type { TextClip } from '../packages/project/src/index.ts';
 import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	exportViaUi,
 	focusTimeline,
 	query,
@@ -20,13 +24,6 @@ import {
 test.describe.configure({ mode: 'serial' });
 
 const OUT_DIR = join(ROOT, 'test-results', 'e2e-text-animators');
-
-type Animator = {
-	id: string;
-	name: string;
-	properties: Record<string, unknown>;
-	selectors: { id: string; kind: string }[];
-};
 
 let page: Page;
 let seqId = '';
@@ -42,10 +39,8 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-const animators = async () =>
-	(await query<Animator[] | undefined>(page, 'doc.get', {
-		path: ['sequences', seqId, 'clips', textId, 'animators'],
-	}).catch(() => undefined)) ?? [];
+const textClip = () => query<TextClip>(page, 'doc.get', { path: ['sequences', seqId, 'clips', textId] });
+const animators = async () => (await textClip()).animators ?? [];
 
 async function seek(frame: number): Promise<void> {
 	await query(page, 'playhead.set', { frame });
@@ -105,7 +100,7 @@ test('Effect Controls ▸ Text ▸ Animate ▸ adds animators, selectors and pre
 			patch: { content: { text: 'Animate me', style: { sizePx: 160, weight: 700 } } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await focusTimeline(page);
 	await page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${textId}"]`).first().click();
 	await page.getByTestId('tab-effectControls').click();
@@ -154,8 +149,8 @@ test('Path popup puts the text on a mask; Character settings apply', async () =>
 	const r = await transact(page, [
 		{ type: 'mask.add', clipId: textId, shape: 'ellipse', mode: 'none', ref: '$m' },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
-	const maskId = (r as unknown as { refs: Record<string, string> }).refs.$m!;
+	expectTransaction(r);
+	const maskId = r.refs.$m!;
 	await page.getByTestId(`text-path-${textId}`).selectOption(maskId);
 	await expect
 		.poll(() =>
@@ -167,13 +162,7 @@ test('Path popup puts the text on a mask; Character settings apply', async () =>
 	await programMean();
 	await page.getByTestId('program-player-wrapper').screenshot({ path: join(OUT_DIR, 'program-path.png') });
 	await page.getByTestId(`text-path-${textId}`).selectOption('');
-	await expect
-		.poll(() =>
-			query(page, 'doc.get', { path: ['sequences', seqId, 'clips', textId, 'pathOptions'] }).catch(
-				() => undefined,
-			),
-		)
-		.toBeUndefined();
+	await expect.poll(async () => (await textClip()).pathOptions).toBeUndefined();
 });
 
 /** RGB24 pixels of one frame of a video (exact frame index) or an image, decoded by ffmpeg. */
@@ -232,7 +221,7 @@ test('export: a mid-animation frame matches renderStill (≤ 3/255 on 99 % of th
 	const done = await waitForJob(request, job.id);
 	expect(done.state, JSON.stringify(done.error ?? null)).toBe('succeeded');
 	const png = join(OUT_DIR, `still-${frame}.png`);
-	writeFileSync(png, Buffer.from(await (await request.get((done.result as { url: string }).url)).body()));
+	writeFileSync(png, Buffer.from(await (await request.get(StillResultSchema.parse(done.result).url)).body()));
 	const [w, h] = [1920, 1080];
 	const a = rgbFrame(out.file, frame, w, h);
 	const b = rgbFrame(png, null, w, h);

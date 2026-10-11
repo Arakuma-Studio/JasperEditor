@@ -1,4 +1,4 @@
-// Editor UI performance at scale (workstream ui-perf, docs/performance.md §5): `pnpm perf --sections ui` runs this file.
+// Editor UI performance at scale (docs/performance.md §5): `pnpm perf --sections ui` runs this file.
 // Each scenario opens a generated project in the built app (headless Chrome), runs a scripted gesture inside a Chrome
 // trace and reports the main-thread work per frame (p50 / p95 / mean), the frame rate and wall time
 // (scripts/perf/ui-scenarios.ts). Results are printed as one JSON line per scenario prefixed `UIPERF ` (the
@@ -104,14 +104,14 @@ async function traced(
 	page: Page,
 	name: string,
 	fixture: string,
-	fn: (t: { id: string }) => Promise<unknown>,
+	fn: (t: { id: string }) => Promise<Partial<UiScenarioResult>> | Promise<void>,
 ): Promise<UiScenarioResult> {
 	const tracer = new Tracer(page);
 	await tracer.start();
 	const id = name.replace(/[^a-z0-9]+/gi, '-');
-	const extra = (await fn({ id })) as Record<string, unknown> | undefined;
+	const extra = await fn({ id });
 	const stats = frameStats(await tracer.stop(), id);
-	return { scenario: name, fixture, ...stats, ...(extra && typeof extra === 'object' ? extra : {}) };
+	return { scenario: name, fixture, ...stats, ...(extra ?? {}) };
 }
 
 /** Runs every UI scenario; `only` filters by scenario name prefix. */

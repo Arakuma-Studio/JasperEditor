@@ -60,7 +60,6 @@ test('a 30-step drag of 11 clips on a 1 000-clip sequence keeps frames short', a
 	const floorMs = Date.now() - f0;
 	await blank.close();
 	// Wall-time budget: the documented 1.5 s with PERF=1; under load, the page may add at most 1 s (scaled) to the floor
-	// (before this workstream it added 2–7 s).
 	const wallBudget = PERF_STRICT ? 1500 : floorMs + budgetMs(1000, { parallel: true });
 	// Best of two fresh runs: host contention only ever makes a run slower.
 	let best: { mean: number; wall: number } | null = null;

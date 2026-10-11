@@ -6,10 +6,12 @@
 // Export path: with the layer-bake extension ready (`features.layerBake.state === 'ready'`, wp-m2-layer-bake) the
 // plan must be native/hybrid; without it (this package alone) Auto plans the Remotion path because the anime
 // template has a native blocker. The test records which one it checked as an annotation — it never skips.
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { ExportResultSchema, StillResultSchema } from '../packages/api/src/exports.ts';
 import { makeEnvelope, type ProjectDocument } from '../packages/project/src/index.ts';
 import {
 	appliedLabels,
@@ -178,7 +180,7 @@ test('Gaussian blur and corner pin visibly change the template in the Program', 
 	expect(pin).toBeDefined();
 	const result = await page.evaluate(
 		(id) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			window.jasper!.transact({
 				label: 'Corner pin',
 				commands: [{ type: 'param.set', target: ['effect', id, 'topLeft'], value: [0.12, 0.08] }],
 			}),
@@ -237,7 +239,7 @@ async function exportProRes(
 	expect(res.ok()).toBe(true);
 	const file = join(EXPORT_DIR, filename);
 	writeFileSync(file, await res.body());
-	return { file, renderPath: String(job.result?.renderPath ?? '') };
+	return { file, renderPath: ExportResultSchema.parse(job.result).renderPath ?? '' };
 }
 
 function redPixels(
@@ -279,7 +281,7 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	const stillJob = await waitForJob(request, (await still.json()).id, 300_000);
 	expect(stillJob.state, JSON.stringify(stillJob.error ?? null)).toBe('succeeded');
 	const png = join(EXPORT_DIR, `still-${frame}.png`);
-	writeFileSync(png, await (await request.get(String(stillJob.result?.url))).body());
+	writeFileSync(png, await (await request.get(StillResultSchema.parse(stillJob.result).url)).body());
 
 	const a = rgbFrame(out.file, ['-vf', `select=eq(n\\,${frame})`, '-frames:v', '1']);
 	const b = rgbFrame(png, []);
@@ -315,7 +317,7 @@ test('an out-of-canvas callout is clipped in the Program and exported frame', as
 	await createProject(page, 'E2E Callout Clipping');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	const tx = await page.evaluate(() =>
-		(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+		window.jasper!.transact({
 			label: 'Callout at canvas edge',
 			commands: [
 				{

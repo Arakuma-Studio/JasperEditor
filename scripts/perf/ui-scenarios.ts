@@ -1,4 +1,4 @@
-// Editor UI performance scenarios (workstream ui-perf, docs/performance.md §5): scripted gestures in the built app
+// Editor UI performance scenarios (docs/performance.md §5): scripted gestures in the built app
 // (headless Chrome), measured where they run. Shared by `pnpm perf --sections ui` (scripts/perf/ui-run.ts), the
 // Playwright spec e2e/ui-perf.spec.ts and the profiler (scripts/perf/ui-profile.ts).
 //
@@ -10,8 +10,9 @@
 // idle page would otherwise not produce any), so "frames" counts what the page managed to produce.
 import { randomBytes } from 'node:crypto';
 import type { CDPSession, Page } from '@playwright/test';
+import { ProjectCreateResponseSchema, ProjectGetResponseSchema } from '../../packages/api/src/projects.ts';
+import type { ProjectEnvelope } from '../../packages/project/src/index.ts';
 
-// ------------------------------------------------------------------ the engine's credentials
 //
 // Every engine has a token, and tells the editor window from an agent by the editor key (security review DEV-1 /
 // AGT-2). A harness that starts an engine plays the desktop shell: it makes both, hands them to the engine
@@ -215,13 +216,9 @@ export async function marked<T>(page: Page, w: Window, fn: () => Promise<T>): Pr
 	}
 }
 
-// ------------------------------------------------------------------ the app
-
-type Envelope = { document: { projectId: string; name: string } } & Record<string, unknown>;
-
 /** Creates a project on the engine from an envelope (PUT over a fresh project) and returns its id. */
-export async function uploadProject(base: string, envelope: Envelope): Promise<string> {
-	const call = async (path: string, init: RequestInit = {}, attempt = 0): Promise<any> => {
+export async function uploadProject(base: string, envelope: ProjectEnvelope): Promise<string> {
+	const call = async (path: string, init: RequestInit = {}, attempt = 0): Promise<Response> => {
 		let r: Response;
 		try {
 			r = await fetch(`${base}${path}`, {
@@ -239,16 +236,22 @@ export async function uploadProject(base: string, envelope: Envelope): Promise<s
 			await new Promise((res) => setTimeout(res, 2000));
 			return call(path, init, attempt + 1);
 		}
-		const text = await r.text();
-		if (!r.ok) throw new Error(`${init.method ?? 'GET'} ${path}: ${r.status} ${text.slice(0, 300)}`);
-		return text ? JSON.parse(text) : null;
+		if (!r.ok)
+			throw new Error(`${init.method ?? 'GET'} ${path}: ${r.status} ${(await r.text()).slice(0, 300)}`);
+		return r;
 	};
-	const created = await call('/api/projects', {
-		method: 'POST',
-		body: JSON.stringify({ name: envelope.document.name, preset: 'hd-1080p-30' }),
-	});
-	const projectId: string = created.projectId;
-	const fresh = await call(`/api/projects/${encodeURIComponent(projectId)}`);
+	const created = ProjectCreateResponseSchema.parse(
+		await (
+			await call('/api/projects', {
+				method: 'POST',
+				body: JSON.stringify({ name: envelope.document.name, preset: 'hd-1080p-30' }),
+			})
+		).json(),
+	);
+	const projectId = created.projectId;
+	const fresh = ProjectGetResponseSchema.parse(
+		await (await call(`/api/projects/${encodeURIComponent(projectId)}`)).json(),
+	);
 	const env = {
 		...envelope,
 		revision: fresh.revision + 1,

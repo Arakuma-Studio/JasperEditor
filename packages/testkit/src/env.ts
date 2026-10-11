@@ -1,4 +1,3 @@
-// Environment and repository paths shared by the test helpers.
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

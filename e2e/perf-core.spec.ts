@@ -45,11 +45,11 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 	const r = await transact(page, [
 		{ type: 'track.add', kind: 'video', count: 1 },
 		...Array.from({ length: 1000 }, (_, i) => ({
-			type: 'clip.addSolid',
+			type: 'clip.addSolid' as const,
 			at: Math.floor(i / 4) * 40,
 			duration: 30,
 			track: `V${(i % 4) + 1}`,
-			color: [((i % 7) + 1) / 8, 0.3, 0.6, 1],
+			color: [((i % 7) + 1) / 8, 0.3, 0.6, 1] as [number, number, number, number],
 		})),
 	]);
 	expect(r.ok).toBe(true);
@@ -57,15 +57,10 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 
 	// One edit in the page: apply and its invariant check, timed where it runs.
 	const ms = await page.evaluate(async () => {
-		const api = (
-			window as unknown as {
-				jasper: {
-					query(n: string, a: unknown): Promise<{ clips: { id: string }[] }>;
-					transact(tx: unknown): Promise<{ ok: boolean }>;
-				};
-			}
-		).jasper;
-		const list = (await api.query('sequence.clipsInRange', { from: 0, to: 100 })).clips;
+		const api = window.jasper!;
+		const { clips: list } = (await api.query('sequence.clipsInRange', { from: 0, to: 100 })) as {
+			clips: { id: string }[];
+		};
 		const times: number[] = [];
 		for (let i = 0; i < 10; i++) {
 			const t0 = performance.now();

@@ -100,11 +100,7 @@ test('Process Clip… on the clip range + handles swaps onto the range with iden
 	const seqId = Object.keys((await doc()).sequences)[0]!;
 	const placed = await page.evaluate(
 		([mediaId, sequenceId]) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; refs: Record<string, string> }> };
-				}
-			).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place frame-code',
 				commands: [
 					// 30 fps like the fixture, so timeline frame k shows source frame 20 + k.

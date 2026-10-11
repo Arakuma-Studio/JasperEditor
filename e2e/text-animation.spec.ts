@@ -1,9 +1,11 @@
 // S11 §11 test 2 / TXA-013: real UI animation selection, seek determinism, glyph/RTL regressions,
 // and exported animation matching a still frame. MCP helper contracts live in apps/mcp/test.
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { StillResultSchema } from '../packages/api/src/exports.ts';
 import {
 	appliedLabels,
 	clips,
@@ -122,7 +124,7 @@ test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Ou
 			patch: { content: { text: 'Hello brave world', style: { sizePx: 160, weight: 700 } } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await focusTimeline(page);
 	await page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${textId}"]`).first().click();
 	await page.getByTestId('tab-motionTemplates').click();
@@ -183,7 +185,7 @@ test('TXA-013: char units at the window boundary sit on the glyphs of the plain 
 			patch: { textAnimation: { in: { preset: 'fade', durationFrames: 10, params: { unit: 'char' } } } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const block = page.getByTestId('program-player-wrapper').locator('[data-text-block]');
 	// Last In frame: the overlay draws every character box (layout px = screen px / Player scale).
 	await seek(left.start + 9);
@@ -275,7 +277,7 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 	).json();
 	const done = await waitForJob(request, job.id);
 	expect(done.state, JSON.stringify(done.error ?? null)).toBe('succeeded');
-	const url = (done.result as { url: string }).url;
+	const url = StillResultSchema.parse(done.result).url;
 	const png = join(OUT_DIR, `still-${frame}.png`);
 	writeFileSync(png, Buffer.from(await (await request.get(url)).body()));
 	const [w, h] = [1920, 1080];
@@ -318,7 +320,7 @@ test('RTL typewriter keeps the caret and neutral punctuation on the visual left'
 			},
 		},
 	]);
-	expect(changed.ok, JSON.stringify(changed.errors)).toBe(true);
+	expect(changed.ok, JSON.stringify(changed)).toBe(true);
 	await seek(left.start + 10);
 	const block = page.getByTestId('program-player-wrapper').locator('[data-text-block]');
 	const sample = () =>

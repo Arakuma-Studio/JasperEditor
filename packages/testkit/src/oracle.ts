@@ -30,14 +30,8 @@ const KNOWN_DIRS = [
 
 export type OracleTool = 'ffmpeg' | 'ffprobe';
 
-const envVar = (name: OracleTool) => `JASPER_${name.toUpperCase()}`;
-const isFile = (p: string) => {
-	try {
-		return statSync(p).isFile();
-	} catch {
-		return false;
-	}
-};
+const envVar = (name: string) => `JASPER_${name.toUpperCase()}`;
+const isFile = (p: string) => statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
 
 /** Finds `name` given an explicit override, a PATH-style list and extra directories (pure function of its inputs). */
 export function findToolIn(
@@ -49,7 +43,7 @@ export function findToolIn(
 ): string | null {
 	if (explicit) {
 		if (isFile(explicit)) return explicit;
-		throw new Error(`${envVar(name as OracleTool)} is set but ${JSON.stringify(explicit)} is not a file`);
+		throw new Error(`${envVar(name)} is set but ${JSON.stringify(explicit)} is not a file`);
 	}
 	const names = platform === 'win32' ? [`${name}.exe`, name] : [name, `${name}.exe`];
 	const sep = platform === 'win32' ? ';' : delimiter;
@@ -130,8 +124,6 @@ function run(name: OracleTool, args: string[], maxBuffer = 1 << 28): { stdout: B
 	return { stdout: r.stdout, stderr };
 }
 
-// ------------------------------------------------------------------------------------------------ EBU R128 loudness
-
 /** One 100 ms measurement line of ffmpeg's `ebur128` filter. */
 export type LoudnessFrame = {
 	t: number;
@@ -200,8 +192,6 @@ export function measureLoudness(file: string, opts: { truePeak?: boolean; stream
 	return parseEbur128(stderr);
 }
 
-// ------------------------------------------------------------------------------------------------- PSNR and SSIM
-
 export type QualityMetrics = {
 	/** PSNR (dB) averaged over frames and planes (`average` of ffmpeg's psnr filter); Infinity when identical. */
 	psnr: number;
@@ -267,8 +257,6 @@ export function compareVideos(
 		rmSync(dir, { recursive: true, force: true });
 	}
 }
-
-// ----------------------------------------------------------------------------------------- ffprobe packet / frame
 
 export type ProbePacket = {
 	stream: number;
@@ -347,8 +335,6 @@ export function compareTables<T extends object>(
 				out.push(`#${i}.${String(f)}: ${String(got[i]![f])}, expected ${String(want[i]![f])}`);
 	return out;
 }
-
-// ---------------------------------------------------------------------------------------------- decoded frames
 
 /** Decodes video frames (or a still) to RGBA8 through ffmpeg, optionally scaled; `frames` limits the count. */
 export function decodeFrames(

@@ -68,7 +68,7 @@ test('Clip ▸ Nest… nests the selected clips; double-click opens the nested s
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 3 } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const [v] = await clips(page, ['V1']);
 	const box = await clipBox(page, v!.id);
 	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -133,14 +133,9 @@ test('New Item ▸ Bars and Tone and Adjustment Layer; the Program draws them', 
 			effectId: 'jasper.black-white',
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await expect(page.locator('[data-adjustment-scope]').first()).toBeAttached({ timeout: 30_000 });
-	await page.evaluate(() =>
-		(window as unknown as { jasper: { query(n: string, a: unknown): unknown } }).jasper.query(
-			'playhead.set',
-			{ frame: 95 },
-		),
-	);
+	await page.evaluate(() => window.jasper!.query('playhead.set', { frame: 95 }));
 	await expect(page.locator('canvas[data-generator]').first()).toBeAttached({ timeout: 30_000 });
 });
 
@@ -163,12 +158,9 @@ test('Group (Ctrl+G) and Add Frame Hold from the clip menu', async () => {
 		.toBe(true);
 	await page.keyboard.press('Control+Shift+KeyG');
 	await page.evaluate(() =>
-		(window as unknown as { jasper: { query(n: string, a: unknown): unknown } }).jasper.query(
-			'playhead.set',
-			{
-				frame: 30,
-			},
-		),
+		window.jasper!.query('playhead.set', {
+			frame: 30,
+		}),
 	);
 	await page.mouse.click(a.x + 10, a.y + a.height / 2);
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Clip', exact: true }).click();
@@ -216,7 +208,7 @@ test('an adjustment layer with a shader-only effect routes the export through Re
 			params: { radius: 8 },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const outDir = join(ROOT, 'test-results', 'e2e-edit-structure');
 	const { file } = await exportViaUi(page, request, {
 		engine: 'auto',

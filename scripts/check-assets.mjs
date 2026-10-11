@@ -256,7 +256,8 @@ export function checkRepo(root) {
 	const read = (p) => {
 		try {
 			return readFileSync(join(root, p), 'utf8');
-		} catch {
+		} catch (error) {
+			if (error.code !== 'ENOENT') throw error;
 			return null;
 		}
 	};

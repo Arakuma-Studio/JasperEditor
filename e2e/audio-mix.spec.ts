@@ -92,7 +92,7 @@ test('Audio Meters follow the preview mix', async () => {
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 3 } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const meters = page.getByTestId('audio-meters');
 	await expect(meters).toBeVisible();
 	await focusTimeline(page);

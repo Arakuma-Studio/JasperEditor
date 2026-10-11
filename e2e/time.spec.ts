@@ -134,7 +134,7 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const [v] = await clips(page, ['V1']);
 	coded = v!.id;
 	const before = (await clipDoc(coded)).duration;
@@ -167,7 +167,7 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 
 test('Time Interpolation menu and the Effect Controls Time Remapping section', async () => {
 	const r = await transact(page, [{ type: 'timeRemap.setSpeed', clipId: coded, at: 0, speedPercent: 50 }]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const c = await clipDoc(coded);
 	expect(c.timeRemap?.enabled).toBe(true);
 	expect(c.duration).toBeGreaterThan(110);
@@ -218,7 +218,7 @@ test('Scene Edit Detection… cuts at the four hard cuts in one undo step', asyn
 	const item = Object.values(d.items).find((i) => i.name.startsWith('scenes'))!;
 	const start = (await clipDoc(coded)).duration + 30;
 	const r = await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: start }]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const scenes = (await clips(page, ['V1'])).find((c) => c.start === start)!;
 	await page.keyboard.press('Backslash');
 	const box = await clipBox(page, scenes.id);

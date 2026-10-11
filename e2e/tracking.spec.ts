@@ -65,9 +65,7 @@ test('add a planar tracker and drag a corner on the Program monitor (one History
 	const idOf = (n: string) => media.media.find((m) => m.originalName === n)!.mediaId;
 	const r = await page.evaluate(
 		([plate, still]) =>
-			(
-				window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown }> } }
-			).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place plate and still',
 				commands: [
 					{
@@ -98,7 +96,7 @@ test('add a planar tracker and drag a corner on the Program monitor (one History
 	// The still covers the frame: shrink it into a corner so the plate stays visible while placing the tracker.
 	const s = await page.evaluate(
 		(id) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			window.jasper!.transact({
 				label: 'Shrink still',
 				commands: [
 					{ type: 'param.set', target: ['clip', id, 'transform', 'scale'], value: 25 },

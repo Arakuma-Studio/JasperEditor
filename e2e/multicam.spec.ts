@@ -65,12 +65,9 @@ function pixel(file: string, frame: number, x: number, y: number): [number, numb
 const setPlayhead = (frame: number) =>
 	page.evaluate(
 		(f) =>
-			(window as unknown as { jasper: { query(n: string, a: unknown): unknown } }).jasper.query(
-				'playhead.set',
-				{
-					frame: f,
-				},
-			),
+			window.jasper!.query('playhead.set', {
+				frame: f,
+			}),
 		frame,
 	);
 
@@ -102,7 +99,7 @@ test('Project panel ▸ Create Multi-Camera Source Sequence… builds the source
 	const r = await transact(page, [
 		{ type: 'clip.place', sequenceId: mainSeq, source: { sequenceId: sourceSeq }, at: 0 },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await expect.poll(async () => (await clips(page, ['V1']))[0]?.kind).toBe('nest-video');
 	await expect(page.locator('[data-testid="timeline-track-area"]')).toContainText('[MC1]');
 });

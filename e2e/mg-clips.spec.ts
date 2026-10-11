@@ -4,9 +4,9 @@
 // the Program monitor, a props edit in Properties visible within 500 ms, and the switch to the cached VP9-alpha
 // preview after the props stay unchanged for 2 s.
 import { writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { bundleForBrowser } from '../packages/testkit/src/browser.ts';
 import { appliedLabels, createProject, enableAgentBridge, query, ROOT } from './support.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
@@ -17,19 +17,11 @@ let page: Page;
 let protocolScript = '';
 
 test.beforeAll(async ({ browser }) => {
-	// The adapter under test, bundled for the browser (the same module the Composition layer uses).
-	const esbuild = createRequire(join(ROOT, 'apps/engine/package.json'))('esbuild') as {
-		build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-	};
-	const out = await esbuild.build({
-		entryPoints: [join(ROOT, 'packages/compositions/src/mg-host/remote.ts')],
-		bundle: true,
-		format: 'iife',
-		globalName: 'MgHost',
-		write: false,
-		logLevel: 'silent',
-	});
-	protocolScript = out.outputFiles[0]!.text;
+	protocolScript = await bundleForBrowser(
+		join(ROOT, 'packages/compositions/src/mg-host/remote.ts'),
+		{},
+		{ globalName: 'MgHost' },
+	);
 	page = await browser.newPage();
 	await enableAgentBridge(page);
 });
@@ -171,7 +163,6 @@ async function hostText(p: Page): Promise<string | null> {
 test('import a Remotion project, insert a composition, live preview, props edit, preview WebM', async () => {
 	test.setTimeout(900_000);
 	await createProject(page, 'E2E Composition Clips');
-	// File ▸ Import Remotion Project…
 	await page.getByRole('menuitem', { name: 'File' }).click();
 	await page.getByRole('menuitem', { name: /Import Remotion Project/ }).click();
 	const dialog = page.getByTestId('mg-import-dialog');
@@ -182,7 +173,6 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	await expect(dialog).toBeHidden({ timeout: 600_000 });
 	await expect(page.getByTestId('project-row').filter({ hasText: 'fixture-mg-project' })).toBeVisible();
 
-	// Motion Templates ▸ Remotion lists the compositions; double-click inserts at the playhead.
 	await page.getByText('Motion Templates', { exact: true }).first().click();
 	await page.getByRole('tab', { name: 'Remotion' }).click();
 	const card = page.locator('[data-testid="remotion-tab"] [data-composition="Title"]');
@@ -209,12 +199,9 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	expect(clip.end - clip.start).toBe(90);
 	await query(page, 'playhead.set', { frame: clip.start + 45 });
 
-	// The Program monitor shows the live host frame of the playhead.
 	await expect.poll(() => hostText(page), { timeout: 60_000 }).toBe('Hello Jasper');
 	await expect(page.getByTestId('composition-section')).toBeVisible();
 
-	// Editing the title in Properties updates the Program monitor within 500 ms (S08 §8 test 4).
-	// wp-m3-mgtext: `title` is a text layer (ui control "text"): its editor is in Properties ▸ Composition ▸ Text.
 	const field = page.getByTestId('text-title');
 	await field.fill('Edited in Properties');
 	// The moment the new title is on screen is observed inside the host page (the editor cannot see into the
@@ -263,7 +250,6 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 		'idle',
 	);
 
-	// The history includes the import, insert and title edit.
 	expect(await appliedLabels(page)).toEqual(
 		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Edit Text «Title»']),
 	);

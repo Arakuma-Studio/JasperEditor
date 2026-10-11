@@ -97,7 +97,7 @@ test.describe('Lumetri completion and scopes', () => {
 		const placed = await transact(page, [
 			{ type: 'clip.place', source: { mediaId: { mediaByName: 'clip-b.mp4' } }, at: startB, audio: false },
 		]);
-		expect(placed.ok, JSON.stringify(placed.errors)).toBe(true);
+		expect(placed.ok, JSON.stringify(placed)).toBe(true);
 		clipB = (await clips(page)).find((c) => c.kind === 'video' && c.id !== clipA)!.id;
 		// A warm, saturated reference grade on clip B.
 		const r = await transact(page, [

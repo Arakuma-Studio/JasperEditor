@@ -4,12 +4,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import type { CommandInput } from '../packages/project/src/index.ts';
 import {
 	appliedLabels,
 	clipBox,
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	FIXTURES,
 	focusTimeline,
 	importFiles,
@@ -45,20 +47,13 @@ let page: Page;
 let seqId = '';
 const ids = { text: '', shape: '', template: '', video: '' };
 
-async function transact(p: Page, label: string, commands: unknown[]): Promise<Record<string, string>> {
-	const r = await p.evaluate(
-		([l, c]) =>
-			(
-				window as unknown as {
-					jasper: {
-						transact(tx: unknown): Promise<{ ok: boolean; refs?: Record<string, string> }>;
-					};
-				}
-			).jasper.transact({ label: l, commands: c }),
-		[label, commands] as const,
-	);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-	return r.refs ?? {};
+async function transact(p: Page, label: string, commands: CommandInput[]): Promise<Record<string, string>> {
+	const r = await p.evaluate(([l, c]) => window.jasper!.transact({ label: l, commands: c }), [
+		label,
+		commands,
+	] as const);
+	expectTransaction(r);
+	return r.refs;
 }
 
 async function docClips(p: Page = page, seq = seqId): Promise<Record<string, DocClip>> {

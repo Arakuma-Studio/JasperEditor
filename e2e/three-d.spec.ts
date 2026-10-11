@@ -15,6 +15,7 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	exportViaUi,
 	importFiles,
 	query,
@@ -89,12 +90,12 @@ async function menu(top: string, ...path: (string | RegExp)[]) {
 }
 
 test('Clip ▸ 3D Layer and the Effect Controls 3D switch make two solids one 3D run', async () => {
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0.3, 0.35, 0.4, 1], ref: '$floor' },
 		{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V2', color: [0.95, 0.4, 0.1, 1], ref: '$card' },
 		{ type: 'param.set', target: ['clip', '$card', 'transform', 'scale'], value: 30 },
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
+	]);
+	expectTransaction(r);
 	const all = await clips(page);
 	floor = all.find((c) => c.track === 'V1')!.id;
 	card = all.find((c) => c.track === 'V2')!.id;

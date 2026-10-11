@@ -20,8 +20,6 @@ import fc from 'fast-check';
 import { describe, it } from 'vitest';
 import { envFlag, testResultsDir } from './env.ts';
 
-// ------------------------------------------------------------------------------------------------------ the RNG
-
 /** xorshift128 (Marsaglia) seeded through splitmix32: fast, deterministic, 32-bit outputs. */
 export class Rng {
 	private s: Uint32Array;
@@ -61,8 +59,6 @@ export class Rng {
 		return xs[this.below(xs.length)]!;
 	}
 }
-
-// -------------------------------------------------------------------------------------------------- mutations
 
 const EXTREME_U32 = [0, 1, 0xffffffff, 0x80000000, 0x7fffffff, 0xffff, 0x10000];
 
@@ -262,7 +258,7 @@ const INTERESTING_JSON: Json[] = [
 	[],
 	{},
 	[null],
-	{ __proto__: null } as unknown as Json,
+	{ __proto__: null },
 ];
 
 /** Every path to a node of a JSON value (bounded), root first. */
@@ -393,8 +389,6 @@ export function mutateJson(rng: Rng, input: unknown, others: readonly unknown[] 
 	return root;
 }
 
-// -------------------------------------------------------------------------------------------------- the targets
-
 export type FuzzKind = 'bytes' | 'text' | 'json';
 type InputOf<K extends FuzzKind> = K extends 'bytes' ? Uint8Array : K extends 'text' ? string : unknown;
 type ErrorClass = abstract new (...args: never[]) => Error;
@@ -461,11 +455,22 @@ export function fuzzSeed(): number {
 
 export const fuzzScale = () => (envFlag('FUZZ') ? 20 : 1);
 
-export type FuzzFailure = { phase: string; index: number; error: string; file?: string };
+export type FuzzFailure = {
+	phase: string;
+	index: number;
+	error: string;
+	file?: string;
+	artifactError?: string;
+};
 
 const slug = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-|-$/g, '');
 
-function saveInput(target: string, tag: string, input: unknown, kind: FuzzKind): string | undefined {
+function saveInput(
+	target: string,
+	tag: string,
+	input: unknown,
+	kind: FuzzKind,
+): Pick<FuzzFailure, 'file' | 'artifactError'> {
 	try {
 		const dir = testResultsDir('fuzz-failures');
 		mkdirSync(dir, { recursive: true });
@@ -481,9 +486,9 @@ function saveInput(target: string, tag: string, input: unknown, kind: FuzzKind):
 					? (input as string)
 					: (JSON.stringify(input) ?? 'undefined'),
 		);
-		return file;
-	} catch {
-		return undefined;
+		return { file };
+	} catch (error) {
+		return { artifactError: `Could not save failing input: ${describeError(error)}` };
 	}
 }
 
@@ -582,9 +587,9 @@ function* fuzzInputs<K extends FuzzKind>(
 					: null;
 		const input =
 			t.kind === 'bytes'
-				? mutateBytes(rng, base as Uint8Array, seeds as unknown as Uint8Array[])
+				? mutateBytes(rng, base as Uint8Array, seeds as readonly Uint8Array[])
 				: t.kind === 'text'
-					? mutateText(rng, base as string, seeds as unknown as string[])
+					? mutateText(rng, base as string, seeds as readonly string[])
 					: mutateJson(rng, base, seeds);
 		yield { phase: 'mutate', index: i, input: input as InputOf<K> };
 	}
@@ -611,7 +616,7 @@ export async function runFuzzTarget<K extends FuzzKind>(
 				phase,
 				index,
 				error,
-				file: saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
+				...saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
 			});
 	}
 	if (failures.length < maxFailures) {
@@ -628,7 +633,7 @@ export async function runFuzzTarget<K extends FuzzKind>(
 				phase: 'property',
 				index: result.numRuns,
 				error: `${(await exercise(t, input)) ?? 'flaky failure'} (fast-check seed ${seed}, path ${result.counterexamplePath})`,
-				file: saveInput(t.name, `${seed}-property`, input, t.kind),
+				...saveInput(t.name, `${seed}-property`, input, t.kind),
 			});
 		}
 	}
@@ -655,7 +660,7 @@ export function runFuzzTargetSync<K extends FuzzKind>(
 				phase,
 				index,
 				error,
-				file: saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
+				...saveInput(t.name, `${seed}-${phase}-${index}`, input, t.kind),
 			});
 	}
 	if (failures.length < maxFailures) {
@@ -669,7 +674,7 @@ export function runFuzzTargetSync<K extends FuzzKind>(
 				phase: 'property',
 				index: result.numRuns,
 				error: `${exerciseSync(t, input) ?? 'flaky failure'} (fast-check seed ${seed}, path ${result.counterexamplePath})`,
-				file: saveInput(t.name, `${seed}-property`, input, t.kind),
+				...saveInput(t.name, `${seed}-property`, input, t.kind),
 			});
 		}
 	}
@@ -692,7 +697,7 @@ export function formatFailures(t: FuzzTarget, failures: FuzzFailure[]): string {
 	return `${t.name}: ${failures.length} failing input(s) (FUZZ_SEED=${fuzzSeed()}):\n${failures
 		.map(
 			(f) =>
-				`  [${f.phase} #${f.index}]${f.file ? ` input: ${f.file}` : ''}\n    ${f.error.replace(/\n/g, '\n    ')}`,
+				`  [${f.phase} #${f.index}]${f.file ? ` input: ${f.file}` : ''}\n    ${[f.error, f.artifactError].filter(Boolean).join('\n').replace(/\n/g, '\n    ')}`,
 		)
 		.join('\n')}`;
 }

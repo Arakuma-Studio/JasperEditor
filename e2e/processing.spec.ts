@@ -53,7 +53,7 @@ test('Process Clip… (denoise) swaps the clip to the processed version in one u
 	originalId = Object.values(d0.media).find((m) => m.originalName === 'clip-b.mp4')!.id;
 	const placed = await page.evaluate(
 		(mediaId) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place clip-b',
 				commands: [{ type: 'clip.place', source: { mediaId }, at: 0 }],
 			}),

@@ -82,23 +82,23 @@ export type Tolerance = { minPsnr: number; maxAbs: number; p99: number };
 
 export const Tolerance = {
 	/** Bit-exact. */
-	EXACT: { minPsnr: Number.POSITIVE_INFINITY, maxAbs: 0, p99: 0 } as Tolerance,
+	EXACT: { minPsnr: Number.POSITIVE_INFINITY, maxAbs: 0, p99: 0 } satisfies Tolerance,
 	/**
 	 * CPU renders against CPU-made references (FilmCraft's default): absorbs float differences between platforms but
 	 * not real changes.
 	 */
-	RENDER: { minPsnr: 45, maxAbs: 12, p99: 2 } as Tolerance,
+	RENDER: { minPsnr: 45, maxAbs: 12, p99: 2 } satisfies Tolerance,
 	/**
 	 * WebGL2 (ANGLE/SwiftShader or a GPU) against references made in headless Chrome: shader float precision, texture
 	 * filtering and rasteriser differences between Chrome/ANGLE versions and GPUs. Real changes (a parameter, a missed
 	 * pass, a skipped pixel) move far more than this.
 	 */
-	GL: { minPsnr: 40, maxAbs: 24, p99: 3 } as Tolerance,
+	GL: { minPsnr: 40, maxAbs: 24, p99: 3 } satisfies Tolerance,
 	/**
 	 * Whole Chrome pages (Remotion stills: DOM compositing, CSS transforms, text rasterisation): antialiased edges and
 	 * glyph hinting move a few levels on edge pixels between Chrome versions.
 	 */
-	BROWSER: { minPsnr: 36, maxAbs: 64, p99: 6 } as Tolerance,
+	BROWSER: { minPsnr: 36, maxAbs: 64, p99: 6 } satisfies Tolerance,
 	accepts(t: Tolerance, d: Diff): boolean {
 		return d.psnr >= t.minPsnr && d.maxAbs <= t.maxAbs && d.p99 <= t.p99;
 	},
@@ -168,8 +168,6 @@ export type GoldenOptions = {
 	/** What renders the frame, for the sidecar notes (default: the test file that called `expectGolden`). */
 	generatedBy?: string;
 };
-
-// ------------------------------------------------------------------------------------- attribution (AGENTS.md §3)
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -245,15 +243,16 @@ export function checkGolden(golden: string, actual: Rgba8, tol: Tolerance, opts:
 	const name = opts.name ?? stem(golden);
 	const cap = opts.maxBytes ?? MAX_GOLDEN_BYTES;
 	if (blessing()) {
-		const size = encodePng(actual).length;
+		const bytes = encodePng(actual);
+		const size = bytes.length;
 		if (size > cap)
 			throw new GoldenMismatch(
 				`${rel(golden)}: ${size} bytes exceeds the ${cap}-byte golden limit; render a smaller or simpler scene`,
 			);
 		const before = existsSync(golden) ? readFileSync(golden) : undefined;
-		const bytes = encodePng(actual);
 		if (!before?.equals(bytes)) {
-			writePng(golden, actual);
+			mkdirSync(dirname(golden), { recursive: true });
+			writeFileSync(golden, bytes);
 			console.info(`blessed ${rel(golden)} (${size} bytes)`);
 		}
 		attributeGolden(golden, opts.title ?? name, opts.generatedBy ?? callerFile());
@@ -320,15 +319,13 @@ export function assertDistinctScenes(frames: Record<string, Rgba8>, opts: Distin
 		throw new GoldenMismatch(`scenes are blank or duplicated:\n  ${problems.join('\n  ')}`);
 }
 
-// ------------------------------------------------------------------------------------------- fingerprints and pins
-
 function readJsonRecord<T>(file: string): Record<string, T> {
 	if (!existsSync(file)) return {};
 	return JSON.parse(readFileSync(file, 'utf8')) as Record<string, T>;
 }
 
 /** One entry per line, keys sorted: reviewable diffs when re-blessed. */
-function writeJsonRecord(file: string, rec: Record<string, unknown>): void {
+function writeJsonRecord<T>(file: string, rec: Record<string, T>): void {
 	const keys = Object.keys(rec).sort();
 	const body = keys.map((k) => `  ${JSON.stringify(k)}: ${JSON.stringify(rec[k])}`).join(',\n');
 	mkdirSync(dirname(file), { recursive: true });

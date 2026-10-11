@@ -79,7 +79,7 @@ test('File ▸ Import puts an SRT on a caption track; the Timeline shows the cap
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 6 } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const srt = join(OUT, 'english.srt');
 	writeFileSync(
 		srt,
@@ -214,7 +214,7 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 		{ type: 'sequence.setInOut', in: null, out: null },
 		{ type: 'caption.setActiveTrack', trackId: seq.captionTracks[0]!.id },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyM');
 	await expect(page.getByTestId('export-mode')).toBeVisible();

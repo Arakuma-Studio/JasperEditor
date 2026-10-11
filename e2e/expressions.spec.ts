@@ -7,6 +7,7 @@ import {
 	clipBox,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	focusTimeline,
 	query,
 	timelineArea,
@@ -53,10 +54,11 @@ const previewRotation = () =>
 		});
 
 test('Alt-click adds an expression; typing drives the value, the preview and the graph', async () => {
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V1', color: [0.9, 0.3, 0.1, 1] },
-	])) as { ok: boolean; created?: string[] };
-	clipId = r.created!.find((id) => id.startsWith('clp_'))!;
+	]);
+	expectTransaction(r);
+	clipId = r.created.find((id) => id.startsWith('clp_'))!;
 	await transact(page, [{ type: 'param.set', target: ['clip', clipId, 'transform', 'scale'], value: 30 }]);
 	const b = await clipBox(page, clipId);
 	const area = (await timelineArea(page).boundingBox())!;
@@ -123,7 +125,7 @@ test('browser (editor page) and Node evaluate expressions bit-identically', asyn
 	// are read at full precision from the page (effect params of `sequence.at`) and recomputed in Node. (Layer
 	// bounds are not compared: they go through the host's Math.cos/sin in layerMatrix, which differ in the last ulp
 	// between Chrome's V8 and Node's — pre-existing render maths, not expressions.)
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 200, duration: 60, track: 'V2', color: [0.1, 0.6, 0.9, 1], ref: '$c' },
 		{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.gaussian-blur', ref: '$b' },
 		{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.brightness-contrast', ref: '$bc' },
@@ -152,8 +154,8 @@ test('browser (editor page) and Node evaluate expressions bit-identically', asyn
 			target: ['clip', '$c', 'transform', 'rotation'],
 			text: 'gaussRandom(0, 360) + Math.atan2(time, 1.3) * 57',
 		},
-	])) as { ok: boolean; refs: Record<string, string> };
-	expect(r.ok).toBe(true);
+	]);
+	expectTransaction(r);
 	const c = r.refs.$c!;
 	const { loadExpressionEngine } = await import('../packages/expressions/src/index.ts');
 	const project = await import('../packages/project/src/index.ts');

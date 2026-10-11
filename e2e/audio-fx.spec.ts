@@ -87,7 +87,7 @@ test('an audio effect from the Effects panel shows its EQ curve in Effect Contro
 		{ type: 'clip.place', source: { projectItemId: voice.id }, at: 0, tracks: { audio: 'A1' } },
 		{ type: 'clip.place', source: { projectItemId: music.id }, at: 0, tracks: { audio: 'A2' } },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	seqId = (await sequenceSummary(page)).sequenceId;
 	voiceId = (await clips(page, ['A1']))[0]!.id;
 	musicId = (await clips(page, ['A2']))[0]!.id;
@@ -142,7 +142,7 @@ test('Essential Sound ▸ Duration ▸ Remix makes the music 20 s on its beats',
 	const r = await transact(page, [
 		{ type: 'essentialSound.set', clipIds: [musicId], values: { 'duration.targetSeconds': 20 } },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await es.getByTestId('essential-duration-apply').click();
 	await expect
 		.poll(async () => (await audioClips()).filter((c) => c.remix).length, { timeout: 60_000 })

@@ -18,6 +18,7 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	FIXTURES,
 	importFiles,
 	query,
@@ -151,11 +152,7 @@ test('the forced WebGL Program canvas matches the independent CPU LUT reference 
 	const look = media.find((m) => m.kind === 'lut')!.mediaId;
 	const tx = await page.evaluate(
 		([c, grade]) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; refs: Record<string, string> }> };
-				}
-			).jasper.transact({
+			window.jasper!.transact({
 				label: 'Grade chart',
 				commands: [
 					{ type: 'clip.place', source: { mediaId: c }, at: 0, ref: '$c' },
@@ -164,7 +161,7 @@ test('the forced WebGL Program canvas matches the independent CPU LUT reference 
 			}),
 		[chart, PARITY_GRADE(look)] as const,
 	);
-	expect(tx.ok).toBe(true);
+	expectTransaction(tx);
 	const clipId = tx.refs.$c!;
 	// Light probe first (size only); the pixels travel as a lossless PNG data URL (8 MB of numbers through the
 	// protocol is very slow with tracing on).

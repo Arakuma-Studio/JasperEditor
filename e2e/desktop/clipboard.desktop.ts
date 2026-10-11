@@ -13,7 +13,16 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
-import { appliedLabels, clipBox, FIXTURES, focusTimeline, playheadFrame, query, ROOT } from '../support.ts';
+import {
+	appliedLabels,
+	clipBox,
+	expectTransaction,
+	FIXTURES,
+	focusTimeline,
+	playheadFrame,
+	query,
+	ROOT,
+} from '../support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -103,7 +112,7 @@ async function newProject(page: Page, name: string): Promise<void> {
 	await page.getByTestId('new-project-create').click();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('timeline-track-area')).toBeVisible();
-	await expect.poll(() => page.evaluate(() => !!(window as { jasper?: unknown }).jasper)).toBe(true);
+	await expect.poll(() => page.evaluate(() => !!window.jasper)).toBe(true);
 }
 
 type DocClip = { id: string; kind: string; start: number; mediaId?: string; content?: { text: string } };
@@ -192,11 +201,7 @@ test.afterAll(async () => {
 
 test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-002)', async () => {
 	const r = await A.page.evaluate(() =>
-		(
-			window as unknown as {
-				jasper: { transact(tx: unknown): Promise<{ ok: boolean; refs: Record<string, string> }> };
-			}
-		).jasper.transact({
+		window.jasper!.transact({
 			label: 'Setup',
 			commands: [
 				{
@@ -210,7 +215,7 @@ test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-
 			],
 		}),
 	);
-	expect(r.ok).toBe(true);
+	expectTransaction(r);
 	const id = r.refs.$t!;
 	await expect
 		.poll(async () => {

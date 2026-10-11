@@ -61,11 +61,7 @@ test('paint over the object with the Roto Brush: a roto, an Object Matte and the
 	const mediaId = media.media.find((m) => m.originalName === PLATE)!.mediaId;
 	const r = await page.evaluate(
 		(id) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; refs?: Record<string, string> }> };
-				}
-			).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place plate',
 				commands: [
 					{

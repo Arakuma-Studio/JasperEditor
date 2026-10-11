@@ -108,7 +108,7 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 			sourceRange: { in: { seconds: 1 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(a.ok, JSON.stringify(a.errors)).toBe(true);
+	expect(a.ok, JSON.stringify(a)).toBe(true);
 	cut = (await clips(page, ['V1']))[0]!.end;
 	const b = await transact(page, [
 		{
@@ -118,7 +118,7 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 			sourceRange: { in: { seconds: 2 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(b.ok, JSON.stringify(b.errors)).toBe(true);
+	expect(b.ok, JSON.stringify(b)).toBe(true);
 	expect((await clips(page, ['V1'])).map((c) => c.start)).toEqual([0, cut]);
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 90_000 });
 	// Hard cut: the last frame before it is red.

@@ -1,3 +1,4 @@
+import { expectTransaction } from './support.ts';
 // color-mgmt end to end in the built app: Properties ▸ Colour sets a Rec. 2100 PQ working space, whose Program
 // monitor preview goes through the display transform (graphics white = 203 cd/m², BT.2390 tone mapped to Rec. 709);
 // "Blend using 1.0 gamma" composites in linear light and the display transform keeps running (the compositor draws
@@ -64,11 +65,11 @@ async function settings(): Promise<{ workingColorSpace: string; color?: { blendL
 }
 
 test('Properties ▸ Colour: a PQ working space is previewed through the display transform', async () => {
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [0, 0, 0, 1] },
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V2', color: [1, 1, 1, 1] },
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
+	]);
+	expectTransaction(r);
 	white = (await clips(page)).find((c) => c.track === 'V2')!.id;
 	const select = page.getByTestId('seq-working-space');
 	await expect(select).toBeVisible();

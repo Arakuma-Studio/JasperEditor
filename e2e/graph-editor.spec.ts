@@ -7,6 +7,7 @@ import {
 	clipBox,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	pointerDrag,
 	query,
 	timelineArea,
@@ -53,11 +54,11 @@ async function drag(selector: string, dx: number, dy: number): Promise<void> {
 }
 
 test('Value and Velocity graph drags edit keys (one undo entry each)', async () => {
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0.2, 0.4, 0.9, 1] },
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
-	clipId = r.created!.find((id) => id.startsWith('clp_'))!;
+	]);
+	expectTransaction(r);
+	clipId = r.created.find((id) => id.startsWith('clp_'))!;
 	expect(
 		(
 			await transact(page, [

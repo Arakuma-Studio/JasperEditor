@@ -81,7 +81,8 @@ function walk(dir, files) {
 	let entries;
 	try {
 		entries = readdirSync(dir);
-	} catch {
+	} catch (error) {
+		if (error.code !== 'ENOENT') throw error;
 		return files;
 	}
 	for (const name of entries) {

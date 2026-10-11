@@ -60,7 +60,7 @@ test('File ▸ Export ▸ Final Cut Pro XML: options, job, report and download',
 		},
 		{ type: 'clip.addText', at: 10, duration: 30, track: 'V2', content: { text: 'Interchange' } },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await fileMenu(/^Final Cut Pro XML…/, /^Export$/);
 	const dialog = page.getByTestId('interchange-export-dialog');
 	await expect(dialog).toBeVisible();

@@ -71,7 +71,7 @@ test('Sequence ▸ Transition Defaults… opens Preferences ▸ Timeline', async
 			sourceRange: { in: { seconds: 1 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(a.ok, JSON.stringify(a.errors)).toBe(true);
+	expect(a.ok, JSON.stringify(a)).toBe(true);
 	cut = (await clips(page, ['V1']))[0]!.end;
 	const b = await transact(page, [
 		{
@@ -81,7 +81,7 @@ test('Sequence ▸ Transition Defaults… opens Preferences ▸ Timeline', async
 			sourceRange: { in: { seconds: 2 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(b.ok, JSON.stringify(b.errors)).toBe(true);
+	expect(b.ok, JSON.stringify(b)).toBe(true);
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 90_000 });
 	await menubar().getByRole('menuitem', { name: 'Sequence', exact: true }).click();
 	await page.getByRole('menuitem', { name: /^Transition Defaults…/ }).click();

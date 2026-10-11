@@ -73,7 +73,7 @@ test('import the speech fixture and place it', async () => {
 	});
 	const item = Object.values((await doc()).items).find((i) => i.kind === 'media')!;
 	const r = await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 });
 
 test('Text ▸ Transcript ▸ Generate Transcript… transcribes with Whisper and shows the words', async () => {
