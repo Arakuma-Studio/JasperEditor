@@ -9,17 +9,24 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	type EffectParams,
+	type FxEffectPlan,
+	type Lut,
 	type RenderSnapshot,
 } from '@jasper/project';
 import { Thumbnail } from '@remotion/player';
 import { render, waitFor } from '@testing-library/react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FxHost } from '../src/fx/host.ts';
 import { setFxEffectRegistry } from '../src/fx/registry.ts';
 import { fxStatus } from '../src/fx/status.ts';
 import { DEFAULT_RENDER_OPTIONS, SequenceComposition } from '../src/index.ts';
 import { testFxRegistry } from './fx-examples.ts';
 
-const gpu = vi.hoisted(() => ({ webgl: true, runs: [] as { kind: string; id: string; canvas?: unknown }[] }));
+const gpu = vi.hoisted(() => ({
+	webgl: true,
+	runs: [] as { kind: string; id: string; canvas?: FxEffectPlan['canvas'] }[],
+}));
 
 vi.mock('../src/color/gl.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../src/color/gl.ts')>()),
@@ -29,9 +36,9 @@ vi.mock('../src/color/gl.ts', async (importOriginal) => ({
 vi.mock('../src/fx/host.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../src/fx/host.ts')>()),
 	fxHost: () => ({}),
-	runShaderPlan: (_h: unknown, plan: { effectId: string; canvas: unknown }) =>
+	runShaderPlan: (_h: FxHost, plan: FxEffectPlan) =>
 		gpu.runs.push({ kind: 'gpu', id: plan.effectId, canvas: plan.canvas }),
-	runLutPass: (_h: unknown, _lut: unknown, key: string) => gpu.runs.push({ kind: 'lut', id: key }),
+	runLutPass: (_h: FxHost, _lut: Lut, key: string) => gpu.runs.push({ kind: 'lut', id: key }),
 }));
 
 /** happy-dom has no canvas rendering: a no-op 2D context so Remotion's chain and FxPicture can run. */
@@ -91,11 +98,15 @@ function makeDoc(commands: Command[]): RenderSnapshot {
 }
 
 const solid = (effects: Command[]): Command[] => [
-	{ type: 'clip.addSolid', at: 0, duration: 50, track: 'V1', color: [0, 0.5, 1, 1], ref: '$s' } as Command,
+	{ type: 'clip.addSolid', at: 0, duration: 50, track: 'V1', color: [0, 0.5, 1, 1], ref: '$s' },
 	...effects,
 ];
-const add = (effectId: string, params?: Record<string, unknown>) =>
-	({ type: 'effect.add', target: { clipId: '$s' }, effectId, ...(params ? { params } : {}) }) as Command;
+const add = (effectId: string, params?: EffectParams): Command => ({
+	type: 'effect.add',
+	target: { clipId: '$s' },
+	effectId,
+	...(params ? { params } : {}),
+});
 
 function renderFrame(doc: RenderSnapshot, frame = 3) {
 	return render(

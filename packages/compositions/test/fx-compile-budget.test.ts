@@ -13,10 +13,12 @@ import { existsSync, writeFileSync } from 'node:fs';
 import {
 	defaultEffectRegistry,
 	defineShaderEffect,
+	type EffectParams,
 	type EffectSpec,
 	fxParam,
 	fxSeed,
 	GLSL_LIBRARY,
+	type ParamSpec,
 	planGpuEffect,
 	planGpuTransition,
 	TRANSITION_SPECS,
@@ -47,8 +49,8 @@ const HARD_TIMEOUT = Math.max(BUDGET * 4, 60_000);
 /** `vertex`: the generated vertex shader of a draw pass (sim-warp), else the full-screen triangle. */
 type Program = { source: string; vertex?: string; users: string[] };
 
-const defaults = (params: readonly { name: string; default: unknown }[]) =>
-	Object.fromEntries(params.map((p) => [p.name, p.default])) as Record<string, never>;
+const defaults = (params: readonly ParamSpec[]): EffectParams =>
+	Object.fromEntries(params.map((param) => [param.name, param.default] as const));
 
 /** Every distinct pass source of the registered GPU effects and transitions (default params). */
 function collectPrograms(): Program[] {
@@ -165,7 +167,7 @@ const LIBRARY_STRESS: [string, string][] = [
 /** Page side: compiles, links and draws one program into a 4×4 target; returns the wall time in ms. */
 function compileInPage(prog: { source: string; vertex?: string }): number | string {
 	const { source, vertex } = prog;
-	const w = window as unknown as {
+	const w = window as Window & {
 		__gl?: WebGL2RenderingContext;
 		__vs?: WebGLShader;
 		__fbo?: WebGLFramebuffer;
