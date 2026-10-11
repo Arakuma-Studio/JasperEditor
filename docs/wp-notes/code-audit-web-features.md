@@ -35,6 +35,9 @@ The highest-confidence findings and implementations are:
   complete obsolete path. Only their own legacy test imported that math. The live panel already uses
   `createScopesComputer` and the shared project scope implementation. The unused path is removed; readback
   sizing tests remain, with live scope behavior covered by `color-grade.test.tsx` and project `scopes.test.ts`.
+- Image-sequence and layered-import jobs asserted arbitrary results as successful typed payloads. Their result
+  helper now validates the canonical API schemas and reports malformed payloads as `INVALID_RESPONSE` before
+  opening a layer picker or building commands. Job waiting reuses the existing shared helper.
 - Remotion bundle uploads duplicated chunking and offset recovery. They now call the shared engine client
   `uploadChunks` implementation, including its validated offsets and bounded recovery. Bundle transactions use
   the project `CommandInput` contract so schema defaults remain optional at construction.
@@ -68,7 +71,8 @@ incorrect or that arbitrary future input can never reveal another bug.
 - `audit-web-features.test.tsx` covers permanent lookup failures, bounded transient failures, retry-budget
   reset, interrupted jobs, stale responses, visible tracker failure, same-render duplicate dialog close,
   erroneous media availability, and invalid stored preference types. Preference parsers also have 100-run
-  `fast-check` JSON properties.
+  `fast-check` JSON properties. Layer-import results have a 25-run malformed-JSON regression ensuring invalid
+  layer data never reaches the picker or transaction builder.
 - A fresh `--maxWorkers=1` run passes all 30 tests in `audit-web-features.test.tsx`, `color-scopes.test.ts`,
   `color-grade.test.tsx`, and `audio-mix.test.ts`. The run took 297 seconds on the shared host; test execution
   itself took 11 seconds. An earlier broad run was stopped after edits changed its loaded modules and is not

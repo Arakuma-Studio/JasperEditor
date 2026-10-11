@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useDialogClose } from '../src/extensions/dialog.ts';
 import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
+import type { ImportPrompts } from '../src/import/prompts.ts';
+import { expandImports } from '../src/imports/import-flow.ts';
 import { parseMulticamView } from '../src/multicam/state.ts';
 import { pollActiveJob } from '../src/processing/engine-jobs.ts';
 import { loadAuto, parseAutoTranscribe } from '../src/speech/auto.tsx';
@@ -197,4 +199,54 @@ it.each([401, 500])('marks media status HTTP %s failures as errors', async (stat
 	} finally {
 		sync.dispose();
 	}
+});
+
+describe('import job result validation', () => {
+	it('refuses malformed layer results before opening the layer picker', async () => {
+		const { session } = await memorySession();
+		const reg = {
+			...registered('layers.psd', { kind: 'image' }),
+			layered: { format: 'psd' as const, width: 100, height: 80, layerCount: 2 },
+		};
+		const layered = vi.fn<NonNullable<ImportPrompts['layered']>>();
+		const prompts: ImportPrompts = {
+			duplicates: async () => 'use-existing',
+			clipMismatch: async () => 'keep',
+			failures: () => {},
+			layered,
+		};
+		await fc.assert(
+			fc.asyncProperty(
+				fc.jsonValue().filter((value) => !Array.isArray(value)),
+				async (layers) => {
+					const engine = new ScriptedEngine();
+					engine.on((request) =>
+						request.path === '/api/imports/layers'
+							? {
+									status: 202,
+									body: {
+										...job('succeeded'),
+										kind: 'layers',
+										result: { mediaKey: reg.mediaKey, info: reg.layered, layers, warnings: [] },
+									},
+								}
+							: undefined,
+					);
+					const imported = { reg, name: 'layers.psd', path: null };
+					const out = await expandImports({ engine: engine.client(), session, prompts }, [imported], null);
+					expect(out.failed).toEqual([
+						{
+							name: 'layers.psd',
+							code: 'INVALID_RESPONSE',
+							message: 'The engine returned an invalid layers result',
+						},
+					]);
+					expect(out.commands).toEqual([]);
+					expect(out.acquired).toEqual([imported]);
+					expect(layered).not.toHaveBeenCalled();
+				},
+			),
+			{ numRuns: 25 },
+		);
+	});
 });

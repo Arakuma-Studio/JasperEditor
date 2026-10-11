@@ -10,7 +10,7 @@ export async function followJob(
 	opts: { onUpdate?(job: EngineJob): void; signal?: AbortSignal; intervalMs?: number } = {},
 ): Promise<EngineJob> {
 	for (;;) {
-		const job = (await engine.getJob(jobId)) as EngineJob;
+		const job = await engine.getJob(jobId);
 		opts.onUpdate?.(job);
 		if (TERMINAL_JOB_STATES.has(job.state)) return job;
 		if (opts.signal?.aborted) return job;
