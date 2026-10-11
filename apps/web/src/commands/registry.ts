@@ -1,4 +1,3 @@
-// UI command registry (ARCHITECTURE §7.3, S05 §18): register, look up, evaluate and run commands.
 import { AGENT_UI_REFUSED_COMMANDS, agentInputActive } from '../agent-bridge/agent-input.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
@@ -75,20 +74,20 @@ export function onBeforeCommand(fn: (id: string, ctx: CommandCtx) => void): () =
 export async function runCommand(id: string, ctx: CommandCtx, args?: unknown): Promise<RunResult> {
 	const cmd = commands.get(id);
 	if (!cmd) return { ran: false, reason: 'unknown' };
-	for (const fn of [...beforeRun]) fn(id, ctx);
-	if (!isCommandEnabled(cmd, ctx)) return { ran: false, reason: 'disabled' };
-	// Security review AGT-1: irreversible commands (outside the undo history) are the user's alone.
-	if (AGENT_UI_REFUSED_COMMANDS.has(id) && agentInputActive()) {
-		const error = new Error(`${cmd.label} cannot be run by agent UI automation; ask the user to run it`);
-		ctx.ui.toast({ kind: 'warning', message: `${cmd.label}: refused for an agent`, detail: error.message });
-		return { ran: false, reason: 'error', error };
-	}
-	if (cmd.argsSchema) {
-		const parsed = cmd.argsSchema.safeParse(args);
-		if (!parsed.success) return { ran: false, reason: 'invalid-args', error: parsed.error };
-		args = parsed.data;
-	}
 	try {
+		for (const fn of [...beforeRun]) fn(id, ctx);
+		if (!isCommandEnabled(cmd, ctx)) return { ran: false, reason: 'disabled' };
+		// Irreversible commands outside undo history require a human action.
+		if (AGENT_UI_REFUSED_COMMANDS.has(id) && agentInputActive()) {
+			const error = new Error(`${cmd.label} cannot be run by agent UI automation; ask the user to run it`);
+			ctx.ui.toast({ kind: 'warning', message: `${cmd.label}: refused for an agent`, detail: error.message });
+			return { ran: false, reason: 'error', error };
+		}
+		if (cmd.argsSchema) {
+			const parsed = cmd.argsSchema.safeParse(args);
+			if (!parsed.success) return { ran: false, reason: 'invalid-args', error: parsed.error };
+			args = parsed.data;
+		}
 		await cmd.run(ctx, args);
 		return { ran: true };
 	} catch (error) {

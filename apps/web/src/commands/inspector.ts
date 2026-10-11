@@ -1,9 +1,3 @@
-// Inspector UI commands (WP-2D, ARCHITECTURE §7.3): apply/remove effects, stopwatch and keyframe
-// navigation for the focused property, reset, Effect Controls delete, and History stepping/clearing.
-// Ids bound in keymap-defaults.ts: effectControls.removeEffect (Backspace/Delete), effectControls.toggleLoop
-// (Ctrl+L), history.stepBackward/stepForward (←/→ in the History panel). The inspector.* ids are
-// unbound by default and reachable from panel menus and the command palette.
-
 import type { Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';

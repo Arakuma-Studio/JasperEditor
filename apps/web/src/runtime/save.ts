@@ -45,6 +45,13 @@ export async function saveNow(session: EditorSession): Promise<SaveOutcome> {
 	return saver.lastSavedRevision === before ? 'unchanged' : 'saved';
 }
 
+export async function saveBeforeLeaving(session: EditorSession): Promise<void> {
+	if (!session.getState().dirty) return;
+	const outcome = await saveNow(session);
+	if (outcome !== 'saved' && outcome !== 'unchanged')
+		throw new Error('The project has unsaved changes. Save it or save a copy before continuing.');
+}
+
 let skipUnloadFlush = false;
 /**
  * gaps (File ▸ Exit ▸ Don't Save): the window is closing on purpose without saving; the pagehide / beforeunload flush

@@ -1,6 +1,3 @@
-// M3 UI commands for the media cache (S04:CA-013/CA-014, wp-m3-cachegc): Edit ▸ Preferences ▸ Media Cache… opens the
-// Preferences dialog on the Media Cache page (usage per kind, Clean Unused, Clean All (not in use)…, automatic
-// cleaning). This module is imported at start-up (commands/index.ts), so it also registers the page.
 import { MediaCachePreferencesPage } from '../cache/MediaCachePage.tsx';
 import {
 	PREFERENCES_DIALOG,

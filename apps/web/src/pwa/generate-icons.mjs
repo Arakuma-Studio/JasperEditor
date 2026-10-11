@@ -21,8 +21,6 @@ const STRIP = [
 	[170, 128, 240],
 ];
 
-// ---------------------------------------------------------------- PNG encoder
-
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {
 	let c = n;
 	for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
@@ -59,8 +57,6 @@ export function encodePng(width, height, rgba) {
 		chunk('IEND', Buffer.alloc(0)),
 	]);
 }
-
-// ---------------------------------------------------------------- shapes (normalized coordinates)
 
 function inRoundRect(x, y, x0, y0, x1, y1, r) {
 	if (x < x0 || x > x1 || y < y0 || y > y1) return false;

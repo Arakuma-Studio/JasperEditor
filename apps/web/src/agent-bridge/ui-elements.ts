@@ -97,7 +97,10 @@ function entityId(el: Element): string | null {
 
 function reactProps(el: Element): Record<string, unknown> | null {
 	for (const k in el)
-		if (k.startsWith('__reactProps$')) return (el as unknown as Record<string, unknown>)[k] as never;
+		if (k.startsWith('__reactProps$')) {
+			const props: unknown = Reflect.get(el, k);
+			return props && typeof props === 'object' ? (props as Record<string, unknown>) : null;
+		}
 	return null;
 }
 

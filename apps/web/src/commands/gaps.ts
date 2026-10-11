@@ -1,6 +1,3 @@
-// Workstream `gaps` UI commands (docs/wp-notes/gaps.md): Edit ▸ Find…, Edit Original, File ▸ Exit, Clip ▸ Rename…,
-// Sequence ▸ Add Tracks… / Delete Tracks…, track height presets. Later sections of this module register the other
-// gaps dialogs (Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels…).
 import { linkedPartners, trackLabel } from '@jasper/project';
 import { z } from 'zod';
 import { projectItemMenuExtensions } from '../extensions/index.ts';
@@ -111,8 +108,6 @@ const hasSession = (ctx: CommandCtx) => !!ctx.session;
 const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
 const NO_SEQ = 'Open a sequence first';
 
-// ---------------------------------------------------------------- Edit ▸ Find…
-
 /** Where Find searches: the focused panel decides (Timeline / monitors → the sequence; otherwise the project). */
 export function findScopeFor(ctx: CommandCtx): FindScope {
 	const p = ctx.focus.panel;
@@ -151,8 +146,6 @@ const find: UiCommand = {
 	},
 };
 
-// ---------------------------------------------------------------- Edit Original
-
 /** The media of the selection: the primary Project panel item, else the first selected timeline clip. */
 export function selectedMediaId(ctx: CommandCtx): string | null {
 	const session = ctx.session;
@@ -167,10 +160,8 @@ export function selectedMediaId(ctx: CommandCtx): string | null {
 	const item = fromItem(st.selection.project.primary) ?? fromItem(st.selection.project.items[0]);
 	if (projectFirst && item) return item;
 	const e = envOf(ctx);
-	const clip = e
-		? selectedClips(e).find((c) => typeof (c as { mediaId?: unknown }).mediaId === 'string')
-		: undefined;
-	return (clip as { mediaId?: string } | undefined)?.mediaId ?? item;
+	const clip = e ? selectedClips(e).find((c) => 'mediaId' in c) : undefined;
+	return clip?.mediaId ?? item;
 }
 
 const editOriginal: UiCommand = {
@@ -222,8 +213,6 @@ const editOriginal: UiCommand = {
 	},
 };
 
-// ---------------------------------------------------------------- File ▸ Exit
-
 const quit: UiCommand = {
 	id: 'app.quit',
 	label: 'Exit',
@@ -253,8 +242,6 @@ const quit: UiCommand = {
 		desktop.quit();
 	},
 };
-
-// ---------------------------------------------------------------- Clip ▸ Rename…
 
 const renameClip: UiCommand = {
 	id: 'timeline.rename',
@@ -287,8 +274,6 @@ const renameClip: UiCommand = {
 	},
 };
 
-// ---------------------------------------------------------------- Sequence ▸ Add Tracks… / Delete Tracks…
-
 const trackDialog = (id: string, label: string, kind: string): UiCommand => ({
 	id,
 	label,
@@ -303,8 +288,6 @@ const trackDialog = (id: string, label: string, kind: string): UiCommand => ({
 		ctx.ui.openDialog(kind, { session: e.session, sequenceId: e.seq.id });
 	},
 });
-
-// ---------------------------------------------------------------- track heights
 
 function currentHeights(ctx: CommandCtx) {
 	const e = envOf(ctx);
@@ -423,8 +406,6 @@ export const gapsCommands: UiCommand[] = [
 	setTrackHeight,
 ];
 
-// ---------------------------------------------------------------- File ▸ Project Settings… (PRJ-4)
-
 const projectSettings: UiCommand = {
 	id: 'project.settings',
 	label: 'Project Settings…',
@@ -445,8 +426,6 @@ const projectSettings: UiCommand = {
 		});
 	},
 };
-
-// ---------------------------------------------------------------- Clip ▸ Proxy (PRJ-8)
 
 /** Media of the selection (Project panel items first, else the selected timeline clips), in order, unique. */
 export function selectedMediaIds(ctx: CommandCtx): string[] {
@@ -515,7 +494,7 @@ const detachProxies: UiCommand = {
 		const r = ctx.session.apply({
 			label: 'Detach Proxies',
 			origin: 'user',
-			commands: [{ type: 'media.detachProxy', mediaIds: ids }] as never[],
+			commands: [{ type: 'media.detachProxy', mediaIds: ids }],
 		});
 		if (!r.ok)
 			ctx.ui.toast({
@@ -550,8 +529,6 @@ const toggleProxies: UiCommand = {
 		});
 	},
 };
-
-// ---------------------------------------------------------------- File ▸ Export ▸ Frame (EX-3)
 
 /** The frame the focused monitor shows: the Source monitor's source, else the active sequence at the playhead. */
 export function frameSourceFor(ctx: CommandCtx): { source: FrameSource; baseName: string } | null {
@@ -594,8 +571,6 @@ const exportFrame: UiCommand = {
 		ctx.ui.openDialog(EXPORT_FRAME_DIALOG, { session: ctx.session, engine: ctx.engine, ...f });
 	},
 };
-
-// ---------------------------------------------------------------- Sequence ▸ Sequence Settings… (TL-11)
 
 const sequenceSettings: UiCommand = {
 	id: 'sequence.settings',
@@ -667,9 +642,7 @@ const newSequenceFromClip: UiCommand = {
 		const r = s.apply({
 			label: 'New Sequence From Clip',
 			origin: 'user',
-			commands: [
-				{ type: 'sequence.create', name: m.name, fromMediaId: m.mediaId, binId: m.binId },
-			] as never[],
+			commands: [{ type: 'sequence.create', name: m.name, fromMediaId: m.mediaId, binId: m.binId }],
 		});
 		if (!r.ok) {
 			ctx.ui.toast({
@@ -683,8 +656,6 @@ const newSequenceFromClip: UiCommand = {
 		if (out?.sequenceId) s.openSequence(out.sequenceId);
 	},
 };
-
-// ---------------------------------------------------------------- Clip ▸ Modify ▸ Audio Channels… (AU-7)
 
 /** What Audio Channels edits: the selected Project media items, else the selected timeline audio clips (+ linked). */
 export function audioChannelsTarget(ctx: CommandCtx): AudioChannelsTarget | null {
@@ -735,8 +706,6 @@ const audioChannels: UiCommand = {
 		ctx.ui.openDialog(AUDIO_CHANNELS_DIALOG, { session: ctx.session, target });
 	},
 };
-
-// ---------------------------------------------------------------- File ▸ Project Manager… (PRJ-6)
 
 const projectManager: UiCommand = {
 	id: 'file.projectManager',

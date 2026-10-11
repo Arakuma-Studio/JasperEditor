@@ -1,6 +1,3 @@
-// File ▸ Save As… / Save a Copy… / Revert / Project Versions… / Recover Unsaved Changes… (process workstream,
-// ARCHITECTURE D-39, docs/project-files.md). The actions live in home/project-files.tsx, registered by
-// <ProjectLifecycle> for the open session; these commands gate and confirm them.
 import { confirmDialog, openDialog } from '@jasper/ui';
 import { z } from 'zod';
 import { PROJECT_FILE_DIALOGS, projectFileActions, supportsVersions } from '../home/project-files.tsx';

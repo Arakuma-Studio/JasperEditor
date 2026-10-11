@@ -1,7 +1,4 @@
-// edit-structure UI commands (docs/wp-notes/edit-structure.md): Group / Ungroup, Nest… / Unnest, Reveal Nested
-// Sequence, Match Frame and Reverse Match Frame (through nests), frame holds, through edits, Go to Gap, Make
-// Subsequence, the nest/individual-clips placement toggle and Project panel ▸ New Item synthetics, Duplicate and
-// Remove Unused. Each edit is one document transaction (the commands of @jasper/project).
+import type { CommandOf, Sequence } from '@jasper/project';
 import {
 	type Clip,
 	clipAt,
@@ -12,19 +9,15 @@ import {
 	kindCapabilities,
 	matchFrame as matchFrameQuery,
 	type ProjectDocument,
-	type Rational,
 	resolveMatchFrame,
 	reverseMatchFrame as reverseMatchFrameQuery,
-	type Sequence,
 	SYNTHETIC_INFO,
 	type SyntheticKind,
-	type TransactionResult,
 	throughEdits,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { getSourceTransport } from '../panels/program/transport-registry.ts';
 import { openInSource, sourceMonitorState } from '../panels/source/source-state.ts';
-import { activeTimeline } from '../panels/timeline/env.tsx';
 import {
 	COLOR_MATTE_DIALOG,
 	FRAME_HOLD_DIALOG,
@@ -32,48 +25,17 @@ import {
 	NEST_DIALOG,
 	registerStructureDialogs,
 } from '../structure/dialogs.tsx';
+import {
+	applySequenceCommands as apply,
+	type ResolvedSequenceCommandContext as Env,
+	sequenceContext as envOf,
+	selectedSequenceClips as selected,
+} from './sequence-context.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
 registerStructureDialogs();
 
-type Env = { session: EditorSession; seq: Sequence; playhead: number };
-
-function envOf(ctx: CommandCtx): Env | null {
-	const session = ctx.session;
-	if (!session) return null;
-	const s = session.getState();
-	const seqId = activeTimeline(ctx.services)?.sequenceId() ?? s.activeSequenceId;
-	const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
-	if (!seq) return null;
-	return { session, seq, playhead: session.transport.getState().frame };
-}
-
 const editable = (ctx: CommandCtx) => !!envOf(ctx) && !ctx.session!.getState().readOnly;
-const selected = (e: Env): Clip[] =>
-	e.session
-		.getState()
-		.selection.timeline.clips.map((id) => e.seq.clips[id])
-		.filter((c): c is Clip => !!c);
-
-function apply(
-	ctx: CommandCtx,
-	e: Env,
-	label: string,
-	commands: unknown[],
-	selectAfter?: (r: Extract<TransactionResult, { ok: true }>) => { timeline: string[] },
-): TransactionResult {
-	const r = e.session.apply({
-		label,
-		origin: 'user',
-		sequenceId: e.seq.id,
-		commands: commands as never[],
-		...(selectAfter ? { selectAfter: selectAfter as never } : {}),
-	});
-	if (!r.ok)
-		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail: r.errors[0]?.message });
-	else if (r.warnings.length) ctx.ui.toast({ kind: 'info', message: r.warnings[0]!.message });
-	return r;
-}
 
 /** Targeted video tracks (top first), else every unlocked video track. */
 function videoTargets(e: Env): string[] {
@@ -102,10 +64,6 @@ function clipUnderPlayhead(e: Env, kinds?: (c: Clip) => boolean): Clip | null {
 /** Clips with a picture a frame hold can freeze (video-track kinds except adjustment layers). */
 const hasPicture = (c: Clip) => kindCapabilities(c.kind)?.trackKind === 'video' && c.kind !== 'adjustment';
 
-// ---------------------------------------------------------------- match frame through nests
-
-/** The media clip shown at `frame` of `seq` (topmost video first, then audio), descending into nests. */
-/** Match Frame through nests and multi-camera angles: the pure query lives in @jasper/project (edit-ux). */
 export { resolveMatchFrame };
 
 function matchFrame(ctx: CommandCtx, e: Env): void {
@@ -173,29 +131,27 @@ function reverseMatchFrame(ctx: CommandCtx, e: Env): void {
 		return;
 	}
 	e.session.transport.seek(found.frame);
-	activeTimeline(ctx.services)?.controller.reveal(found.frame);
+	e.handle?.controller.reveal(found.frame);
 }
 
 /** Reveal Nested Sequence (Ctrl+Shift+F) / double-click: opens the nested sequence at the frame shown. */
 export function revealNested(session: EditorSession, seq: Sequence, clip: Clip, frame: number): boolean {
 	if (!isNestClip(clip)) return false;
-	const nested = session.getCommitted().sequences[(clip as { sequenceId: string }).sequenceId];
+	const nested = session.getCommitted().sequences[clip.sequenceId];
 	if (!nested) return false;
 	const f = Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
-	const t = clipPictureTime(clip as never, f, seq.settings.frameRate as Rational);
-	const nf = Math.max(0, Math.floor(t / flicksPerFrame(nested.settings.frameRate as Rational) + 1e-6));
+	const t = clipPictureTime(clip, f, seq.settings.frameRate);
+	const nf = Math.max(0, Math.floor(t / flicksPerFrame(nested.settings.frameRate) + 1e-6));
 	session.openSequence(nested.id);
 	session.transport.seek(nf);
 	return true;
 }
 
-// ---------------------------------------------------------------- synthetics (Project panel ▸ New Item)
-
 /** Creates a synthetic source item in the current bin (Project panel), returns its item id. */
 export function createSynthetic(
 	ctx: CommandCtx,
 	kind: SyntheticKind,
-	params?: Record<string, unknown>,
+	params?: CommandOf<'synthetic.create'>['params'],
 	binId?: string | null,
 ): string | null {
 	const session = ctx.session;
@@ -209,7 +165,7 @@ export function createSynthetic(
 				kind,
 				...(params ? { params } : {}),
 				...(binId !== undefined ? { binId } : {}),
-			} as never,
+			},
 		],
 	});
 	if (!r.ok) {
@@ -241,8 +197,6 @@ const newItem = (id: string, kind: SyntheticKind, label: string, dialog?: string
 	},
 	agentExposed: true,
 });
-
-// ---------------------------------------------------------------- the list
 
 const E: CommandScope = 'editing';
 const T: CommandScope = 'timeline';
@@ -429,7 +383,7 @@ export const structureCommands: UiCommand[] = [
 				return;
 			}
 			e.session.transport.seek(f);
-			activeTimeline(ctx.services)?.controller.reveal(f);
+			e.handle?.controller.reveal(f);
 		}),
 	),
 	cmd(
@@ -510,7 +464,7 @@ export const structureCommands: UiCommand[] = [
 			const r = session.apply({
 				label: 'Duplicate',
 				origin: 'user',
-				commands: seqs.map((it) => ({ type: 'sequence.duplicate', sequenceId: it.sequenceId }) as never),
+				commands: seqs.map((it) => ({ type: 'sequence.duplicate', sequenceId: it.sequenceId })),
 			});
 			if (!r.ok) ctx.ui.toast({ kind: 'warning', message: 'Duplicate failed', detail: r.errors[0]?.message });
 			else
@@ -532,7 +486,7 @@ export const structureCommands: UiCommand[] = [
 			const r = session.apply({
 				label: 'Remove Unused',
 				origin: 'user',
-				commands: [{ type: 'media.removeUnused' } as never],
+				commands: [{ type: 'media.removeUnused' }],
 			});
 			if (!r.ok)
 				ctx.ui.toast({ kind: 'warning', message: 'Remove Unused failed', detail: r.errors[0]?.message });

@@ -1,9 +1,4 @@
-// edit-ux UI commands: keyboard trim mode (Trim Edit, Select Nearest Edit Point, Toggle Trim Type, Trim
-// Forward/Backward, Extend Edit, numeric trim entry, dynamic J/K/L trimming, Play Around the Edit), Match Frame,
-// Reverse Match Frame, Linked Selection, Speed/Duration, Make Subclip, source patching and track targeting.
-// Keys follow Premiere Pro's defaults (keymap-defaults.ts).
-
-import type { FitClip } from '@jasper/project';
+import type { Clip, Command, FitClip } from '@jasper/project';
 import { editPointFrame, type NearestKind, resolvePropertyAt, type Sequence } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -175,8 +170,6 @@ onBeforeCommand((id) => {
 	if (!KEEPS_LOOP.has(id) && trimMode.getState().playAround) stopPlayAround();
 });
 
-// ---------------------------------------------------------------- source edits (3/4-point, Fit Clip)
-
 /** Insert / Overwrite from the Source monitor; a four-point mismatch asks Fit Clip (or uses the remembered choice). */
 export function runSourceEdit(ctx: CommandCtx, mode: 'insert' | 'overwrite'): void {
 	const session = ctx.session;
@@ -200,8 +193,6 @@ export function runSourceEdit(ctx: CommandCtx, mode: 'insert' | 'overwrite'): vo
 	}
 	ctx.ui.toast({ kind: 'warning', message: r.message ?? `${label} failed` });
 }
-
-// ---------------------------------------------------------------- subclips
 
 type SubclipSource = { itemId: string; range: { in: number; out: number }; fps: number };
 
@@ -244,7 +235,6 @@ function subclipSource(ctx: CommandCtx): SubclipSource | null {
 }
 
 export const editUxCommands: UiCommand[] = [
-	// ---------------------------------------------------------------- trim mode
 	cmd(
 		'timeline.trimEdit',
 		'Trim Edit',
@@ -365,7 +355,7 @@ export const editUxCommands: UiCommand[] = [
 				label: 'Apply Default Transitions',
 				origin: 'user',
 				sequenceId: e.seq.id,
-				commands: commands as never[],
+				commands,
 			});
 			if (!r.ok)
 				ctx.ui.toast({
@@ -385,7 +375,7 @@ export const editUxCommands: UiCommand[] = [
 		},
 		{ when: inTrimMode },
 	),
-	// ---------------------------------------------------------------- source edits (override transport.ts ids)
+
 	{
 		id: 'timeline.insertFromSource',
 		label: 'Insert',
@@ -410,7 +400,7 @@ export const editUxCommands: UiCommand[] = [
 		when: () => rememberedFitChoice() !== null,
 		run: () => rememberFitChoiceReset(),
 	},
-	// ---------------------------------------------------------------- Mark Split (Premiere Markers ▸ Mark Split)
+
 	...(
 		[
 			['source.markSplitVideoIn', 'Mark Split Video In', 'videoIn'],
@@ -440,7 +430,7 @@ export const editUxCommands: UiCommand[] = [
 			if (ctx.session) setSplitMark(ctx.session, null);
 		},
 	},
-	// ---------------------------------------------------------------- clip commands
+
 	cmd(
 		'timeline.speedDuration',
 		'Speed/Duration…',
@@ -523,7 +513,7 @@ export const editUxCommands: UiCommand[] = [
 			ctx.ui.openDialog(KEYBOARD_SHORTCUTS_DIALOG, { platform: detectPlatform(), runtime: detectRuntime() });
 		},
 	},
-	// ---------------------------------------------------------------- keyboard parity (Premiere keyboard-only commands)
+
 	cmd('timeline.extendPreviousEditToPlayhead', 'Extend Previous Edit to Playhead', T, (ctx, e) =>
 		extendEditTo(ctx, e, -1),
 	),
@@ -635,7 +625,7 @@ function setSplitMark(
 				in: it.marks.in,
 				out: it.marks.out,
 				split: field ? { [field]: { flicks } } : null,
-			} as never,
+			},
 		],
 	});
 	if (!r.ok) console.info(`[source] ${r.errors[0]?.message}`);
@@ -644,11 +634,12 @@ function setSplitMark(
 /** Increase/Decrease Clip Volume (] / [, Shift = Many): the selected audio clips' Level, keyed at the playhead when animated. */
 function nudgeVolume(ctx: CommandCtx, e: Env, db: number): void {
 	const clips = selectedClips(e).filter(
-		(c) => (c.kind === 'audio' || c.kind === 'nest-audio') && !isLocked(e.seq, c.trackId),
+		(c): c is Extract<Clip, { kind: 'audio' | 'nest-audio' }> =>
+			(c.kind === 'audio' || c.kind === 'nest-audio') && !isLocked(e.seq, c.trackId),
 	);
 	if (!clips.length) return;
-	const commands = clips.map((c) => {
-		const v = (c as { volumeDb: { value: number; keyframes: unknown[] } }).volumeDb;
+	const commands = clips.map((c): Command => {
+		const v = c.volumeDb;
 		const animated = v.keyframes.length > 0;
 		const inside = e.playhead >= c.start && e.playhead < c.start + c.duration;
 		const at = animated ? (inside ? e.playhead : c.start) : undefined;
@@ -670,7 +661,7 @@ function nudgeVolume(ctx: CommandCtx, e: Env, db: number): void {
 		label: 'Audio Level',
 		origin: 'user',
 		sequenceId: e.seq.id,
-		commands: commands as never[],
+		commands,
 		coalesceKey: 'clip-volume',
 	});
 	if (!r.ok)
@@ -680,7 +671,7 @@ function nudgeVolume(ctx: CommandCtx, e: Env, db: number): void {
 /** Extend Previous/Next Edit to Playhead (Shift+Q / Shift+W): roll the nearest cut on each targeted track. */
 function extendEditTo(ctx: CommandCtx, e: Env, dir: -1 | 1): void {
 	const p = e.playhead;
-	const commands: unknown[] = [];
+	const commands: Command[] = [];
 	for (const trackId of targetedTracks(e)) {
 		const list = Object.values(e.seq.clips).filter((c) => c.trackId === trackId);
 		const edges = list.flatMap((c) => [
@@ -698,23 +689,17 @@ function extendEditTo(ctx: CommandCtx, e: Env, dir: -1 | 1): void {
 				o.id !== pick.clip.id && (pick.edge === 'out' ? o.start === pick.f : o.start + o.duration === pick.f),
 		);
 		commands.push({
-			clipId: pick.clip.id,
-			edge: pick.edge,
-			mode: pair ? 'roll' : 'regular',
-			delta: p - pick.f,
+			type: 'clip.trimEdits',
+			edits: [{ clipId: pick.clip.id, edge: pick.edge, mode: pair ? 'roll' : 'regular' }],
+			deltaFrames: p - pick.f,
 		});
 	}
 	if (!commands.length) return;
-	const tx = (commands as { clipId: string; edge: 'in' | 'out'; mode: string; delta: number }[]).map((c) => ({
-		type: 'clip.trimEdits',
-		edits: [{ clipId: c.clipId, edge: c.edge, mode: c.mode }],
-		deltaFrames: c.delta,
-	}));
 	const r = e.session.apply({
 		label: dir < 0 ? 'Extend Previous Edit to Playhead' : 'Extend Next Edit to Playhead',
 		origin: 'user',
 		sequenceId: e.seq.id,
-		commands: tx as never[],
+		commands,
 	});
 	if (!r.ok)
 		ctx.ui.toast({ kind: 'warning', message: 'Extend Edit: not possible', detail: r.errors[0]?.message });

@@ -39,8 +39,6 @@ export class UiAutomationError extends Error {
 	}
 }
 
-// ---------------------------------------------------------------- host (the shell runtime)
-
 /** What the shell gives the automation layer (EditorShell mounts it). */
 export type UiAutomationHost = {
 	getCtx(): CommandCtx;
@@ -61,8 +59,6 @@ export function setUiAutomationHost(h: UiAutomationHost): () => void {
 		if (host === h) host = null;
 	};
 }
-
-// ---------------------------------------------------------------- locators (panels register them)
 
 export type TimelineLocateArgs = {
 	frame?: number;
@@ -130,8 +126,6 @@ function locator<K extends LocatorEntry['kind']>(kind: K): Extract<LocatorEntry,
 		);
 	return pick.impl as never;
 }
-
-// ---------------------------------------------------------------- arguments
 
 type Args = Record<string, unknown>;
 const num = (v: unknown, name: string): number => {
@@ -295,8 +289,6 @@ const describe = (el: Element | null) => {
 			if (e === p) return { id, role: p.getAttribute('role') ?? p.tagName.toLowerCase() };
 	return { id: null, tag: el.tagName.toLowerCase(), name: accessibleName(el) };
 };
-
-// ---------------------------------------------------------------- actions
 
 function panelsState() {
 	const bodies = Array.from(document.querySelectorAll('[data-panel-body][data-panel-instance]'));
@@ -745,8 +737,6 @@ async function doCommand(a: Args) {
 	return { id, ran: true, state: { focusedPanel: h.getCtx().focus.panel, url: location.pathname } };
 }
 
-// ---------------------------------------------------------------- screenshots
-
 type ShotArgs = { panel?: string; id?: string; maxWidth?: number };
 
 async function screenshot(a: ShotArgs) {
@@ -781,6 +771,7 @@ async function screenshot(a: ShotArgs) {
 	const desktop = window.jasperDesktop?.capturePage;
 	if (desktop) {
 		const shot = await desktop(rect, maxWidth);
+		if (!shot) throw new UiAutomationError('E_NOT_AVAILABLE', 'The desktop app refused the screenshot');
 		return { ...shot, bounds: rect, via: 'electron' };
 	}
 	const { domToPng } = await import('modern-screenshot');

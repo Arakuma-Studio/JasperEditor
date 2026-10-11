@@ -319,8 +319,6 @@ export async function wheel(x: number, y: number, dx: number, dy: number, m: Mod
 	await nextFrame();
 }
 
-// ---------------------------------------------------------------- keyboard
-
 const NAMED: Record<string, { key: string; code: string }> = {
 	space: { key: ' ', code: 'Space' },
 	enter: { key: 'Enter', code: 'Enter' },

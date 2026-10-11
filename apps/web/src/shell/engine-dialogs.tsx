@@ -69,8 +69,7 @@ export function rememberEngine(origin: string): void {
 	}
 }
 
-const isDesktop = () =>
-	typeof window !== 'undefined' && !!(window as { jasperDesktop?: unknown }).jasperDesktop;
+const isDesktop = () => typeof window !== 'undefined' && !!window.jasperDesktop;
 
 function formatBytes(n: number | null | undefined): string {
 	if (n === null || n === undefined || !Number.isFinite(n)) return '—';
@@ -180,8 +179,6 @@ async function copyText(text: string): Promise<boolean> {
 		return false;
 	}
 }
-
-// ------------------------------------------------------------------ Engine Status
 
 function EngineStatusDialog(props: HostedDialogProps<{ engine?: EngineClient | null }>) {
 	const live = useEngineOrNull();
@@ -348,8 +345,6 @@ function EngineStatusDialog(props: HostedDialogProps<{ engine?: EngineClient | n
 	);
 }
 
-// ------------------------------------------------------------------ Connect to Engine
-
 function EngineConnectDialog(
 	props: HostedDialogProps<{
 		engine?: EngineClient | null;
@@ -411,9 +406,15 @@ function EngineConnectDialog(
 			setMessage(t('Nothing answers at {0}', target));
 			return false;
 		}
+		try {
+			await props.beforeLeave?.();
+		} catch (error) {
+			setState('failed');
+			setMessage(error instanceof Error ? error.message : String(error));
+			return false;
+		}
 		rememberEngine(target);
 		if (current) rememberEngine(current);
-		await props.beforeLeave?.().catch(() => undefined);
 		props.close();
 		window.location.assign(`${target}/`);
 		return false;
@@ -491,8 +492,6 @@ function EngineConnectDialog(
 		</Dialog>
 	);
 }
-
-// ------------------------------------------------------------------ Third-Party Notices
 
 function NoticesDialog(props: HostedDialogProps<Record<string, never>>) {
 	return (

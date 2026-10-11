@@ -1,6 +1,7 @@
 // Security review AGT-1: an agent's live-UI automation cannot do what the approval gate refuses through
 // apply_commands — destructive transactions, irreversible commands — and cannot approve its own requests.
 import { AGENT_INPUT_HEADER } from '@jasper/api';
+import { JsonText } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -74,7 +75,7 @@ describe('requests the editor makes while it handles agent input (security revie
 
 		// Autosave, the recovery journal and lease upkeep are the editor's own work, whatever input is in flight.
 		await runAgentInput(async () => {
-			await sent(client.putProject('prj_1', { revision: 2 }, 1));
+			await sent(client.putProject('prj_1', new JsonText('{"revision":2}'), 1));
 			expect(last()).toMatchObject({ url: '/api/projects/prj_1', marked: false });
 			await sent(client.putRecovery('prj_1', 'ses_1', {} as never));
 			expect(last().marked).toBe(false);

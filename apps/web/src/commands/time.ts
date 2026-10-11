@@ -1,63 +1,36 @@
-// Workstream `time` UI commands (docs/wp-notes/time.md): Show Clip Keyframes ▸ Time Remapping ▸ Speed, Remove Time
-// Remapping, Add / remove a speed keyframe at the playhead, Clip ▸ Video Options ▸ Time Interpolation (Frame
-// Sampling / Frame Blending / Optical Flow) and Scene Edit Detection…. Premiere has no default shortcuts for these
-// (Adobe's default keyboard shortcut list), so none are bound. Registers the speed band (clip decoration), the
-// Effect Controls section host, the clip context-menu entries and the Scene Edit Detection dialog.
 import {
 	activeRemap,
 	type Clip,
 	contentTimeAt,
 	isRemapped,
 	type Rational,
-	type Sequence,
-	type TimedClip,
 	type TimeInterpolation,
 	timeInterpolationOf,
 } from '@jasper/project';
-import type { EditorSession } from '@jasper/session';
 import { openDialog, registerDialog } from '@jasper/ui';
 import { clipDecorations, clipMenuExtensions, type MenuItemSpec } from '../extensions/index.ts';
-import { activeTimeline } from '../panels/timeline/env.tsx';
 import { SCENE_DETECT_DIALOG, SceneDetectDialog } from '../time/SceneDetectDialog.tsx';
 import { bandVisible, SpeedBandOverlay } from '../time/SpeedBand.tsx';
 import { isBandShown, setBandShown, subscribeBand } from '../time/store.ts';
+import {
+	applySequenceCommands as apply,
+	type SequenceCommandContext as Env,
+	sequenceContext as envOf,
+	selectedSequenceClips as selectedClips,
+} from './sequence-context.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
-type Env = { session: EditorSession; seq: Sequence; playhead: number };
-
-function envOf(ctx: CommandCtx): Env | null {
-	const session = ctx.session;
-	if (!session) return null;
-	const s = session.getState();
-	const seqId = activeTimeline(ctx.services)?.sequenceId() ?? s.activeSequenceId;
-	const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
-	if (!seq) return null;
-	return { session, seq, playhead: session.transport.getState().frame };
-}
-
-const remappable = (c: Clip) => c.kind === 'video' || c.kind === 'nest-video';
-const selectedClips = (e: Env): Clip[] =>
-	e.session
-		.getState()
-		.selection.timeline.clips.map((id) => e.seq.clips[id])
-		.filter((c): c is Clip => !!c);
+type RemappableClip = Extract<Clip, { kind: 'video' | 'nest-video' }>;
+const remappable = (c: Clip): c is RemappableClip => c.kind === 'video' || c.kind === 'nest-video';
 const editable = (ctx: CommandCtx) => {
 	const e = envOf(ctx);
 	return !!e && !e.session.getState().readOnly;
 };
 
 /** The selected remappable clip under the playhead, else the first selected remappable clip. */
-function targetClip(e: Env): Clip | null {
+function targetClip(e: Env): RemappableClip | null {
 	const sel = selectedClips(e).filter(remappable);
 	return sel.find((c) => c.start <= e.playhead && e.playhead < c.start + c.duration) ?? sel[0] ?? null;
-}
-
-function apply(ctx: CommandCtx, e: Env, label: string, commands: unknown[]): boolean {
-	const r = e.session.apply({ label, origin: 'user', sequenceId: e.seq.id, commands: commands as never[] });
-	if (!r.ok)
-		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail: r.errors[0]?.message });
-	else if (r.warnings.length) ctx.ui.toast({ kind: 'info', message: r.warnings[0]!.message });
-	return r.ok;
 }
 
 const E: CommandScope = 'editing';
@@ -129,7 +102,7 @@ export const timeCommands: UiCommand[] = [
 		'timeline.removeTimeRemapping',
 		'Remove Time Remapping',
 		(ctx, e) => {
-			const clips = selectedClips(e).filter((c) => remappable(c) && (c as { timeRemap?: unknown }).timeRemap);
+			const clips = selectedClips(e).filter((c) => remappable(c) && c.timeRemap);
 			if (!clips.length) return;
 			apply(ctx, e, 'Remove Time Remapping', [
 				{ type: 'timeRemap.enable', clipIds: clips.map((c) => c.id), enabled: false },
@@ -138,9 +111,7 @@ export const timeCommands: UiCommand[] = [
 		{
 			when: (ctx) => {
 				const e = envOf(ctx);
-				return (
-					editable(ctx) && !!e && selectedClips(e).some((c) => remappable(c) && !!activeRemap(c as TimedClip))
-				);
+				return editable(ctx) && !!e && selectedClips(e).some((c) => remappable(c) && !!activeRemap(c));
 			},
 		},
 	),
@@ -154,9 +125,7 @@ export const timeCommands: UiCommand[] = [
 				return;
 			}
 			setBandShown([c.id], true);
-			const at = (activeRemap(c as TimedClip)?.keyframes ?? []).find(
-				(k) => Math.abs(k.time - contentAt(e, c)) < 1000,
-			);
+			const at = (activeRemap(c)?.keyframes ?? []).find((k) => Math.abs(k.time - contentAt(e, c)) < 1000);
 			if (at)
 				apply(ctx, e, 'Delete Speed Keyframes', [
 					{ type: 'timeRemap.removeKeyframes', clipId: c.id, keyframeIds: [at.id] },
@@ -187,7 +156,7 @@ export const timeCommands: UiCommand[] = [
 				checked: (ctx) => {
 					const e = envOf(ctx);
 					const clips = e ? selectedClips(e).filter((c) => c.kind === 'video') : [];
-					return clips.length > 0 && clips.every((c) => timeInterpolationOf(c as TimedClip) === m.mode);
+					return clips.length > 0 && clips.every((c) => timeInterpolationOf(c) === m.mode);
 				},
 			},
 		),
@@ -203,8 +172,6 @@ export const timeCommands: UiCommand[] = [
 function contentAt(e: Env, c: Clip): number {
 	return contentTimeAt(c, e.playhead, e.seq.settings.frameRate as Rational);
 }
-
-// ---------------------------------------------------------------- registration
 
 registerDialog(SCENE_DETECT_DIALOG, SceneDetectDialog);
 
@@ -237,7 +204,7 @@ clipMenuExtensions.register({
 					void session.apply({
 						label: 'Remove Time Remapping',
 						origin: 'user',
-						commands: [{ type: 'timeRemap.enable', clipIds: ids, enabled: false } as never],
+						commands: [{ type: 'timeRemap.enable', clipIds: ids, enabled: false }],
 					}),
 			});
 		if (clip.kind === 'video') {
@@ -253,7 +220,7 @@ clipMenuExtensions.register({
 						void session.apply({
 							label: 'Time Interpolation',
 							origin: 'user',
-							commands: [{ type: 'clip.setTimeInterpolation', clipIds: ids, mode: m.mode } as never],
+							commands: [{ type: 'clip.setTimeInterpolation', clipIds: ids, mode: m.mode }],
 						}),
 				})),
 			});

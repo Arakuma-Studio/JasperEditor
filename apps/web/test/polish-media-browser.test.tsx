@@ -419,6 +419,28 @@ describe('engine dialogs', () => {
 		expect(bad.error).toMatch(/UNAVAILABLE|down/);
 	});
 
+	it('keeps the Connect dialog open when saving before navigation fails', async () => {
+		registerEngineDialogs();
+		const beforeLeave = vi.fn().mockRejectedValue(new Error('Save failed: disk full'));
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response()));
+		try {
+			render(<DialogHost />);
+			act(() => void openDialog(ENGINE_DIALOGS.connect, { engine: browseEngine().client(), beforeLeave }));
+			fireEvent.change(await screen.findByTestId('engine-connect-address'), {
+				target: { value: 'http://127.0.0.1:47903' },
+			});
+			fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+			await waitFor(() =>
+				expect(screen.getByTestId('engine-connect-result').textContent).toBe('Save failed: disk full'),
+			);
+			expect(beforeLeave).toHaveBeenCalledOnce();
+			expect(screen.getByTestId('engine-connect-dialog')).toBeTruthy();
+			expect(window.location.origin).not.toBe('http://127.0.0.1:47903');
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it('Engine Status shows the live engine facts; Connect reconnects to this engine', async () => {
 		registerEngineDialogs();
 		const engine = browseEngine();

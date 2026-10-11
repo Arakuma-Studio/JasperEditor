@@ -1,6 +1,3 @@
-// imports workstream UI commands (docs/wp-notes/imports.md): Clip ▸ Modify ▸ Interpret Footage… (also in the Project
-// panel and timeline clip context menus), File ▸ Export ▸ Lottie…, File ▸ Import SVG as Shape Layer… and the Project
-// panel's Create Shape Layer for SVG items. No default shortcuts: Premiere has none for these commands.
 import {
 	type Command,
 	type MediaAsset,
@@ -39,7 +36,8 @@ export function interpretTargets(session: EditorSession, panel: string | null): 
 	return [
 		...new Set(
 			st.selection.timeline.clips.flatMap((id) => {
-				const m = (seq.clips[id] as { mediaId?: unknown } | undefined)?.mediaId;
+				const clip = seq.clips[id];
+				const m = clip && 'mediaId' in clip ? clip.mediaId : undefined;
 				return typeof m === 'string' && doc.media[m] ? [m] : [];
 			}),
 		),
@@ -117,7 +115,7 @@ export function addSvgAsShape(ctx: CommandCtx, text: string, name: string): bool
 				shape: { type: 'vector', contents: conv.contents },
 			} as Command,
 		],
-		selectAfter: (res: { results: unknown[] }) => ({
+		selectAfter: (res) => ({
 			timeline: [(res.results[0] as { clipId: string }).clipId],
 		}),
 	});
@@ -306,7 +304,8 @@ clipMenuExtensions.register({
 		const mediaIds = [
 			...new Set(
 				ids.flatMap((id) => {
-					const m = (seq.clips[id] as { mediaId?: unknown } | undefined)?.mediaId;
+					const clip = seq.clips[id];
+					const m = clip && 'mediaId' in clip ? clip.mediaId : undefined;
 					return typeof m === 'string' && interpretable(doc.media[m] as MediaAsset | undefined) ? [m] : [];
 				}),
 			),

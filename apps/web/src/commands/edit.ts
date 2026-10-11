@@ -1,4 +1,3 @@
-// Undo/redo with history step names (S05:MN-011, S01 §17), and Clear for the focused panel.
 import type { EditorSession } from '@jasper/session';
 import type { PanelKind } from '../panels/types.ts';
 import { getCommand, isCommandEnabled, runCommand } from './registry.ts';

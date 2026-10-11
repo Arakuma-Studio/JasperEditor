@@ -1,15 +1,3 @@
-// M2 UI commands: Track Forward/Backward, Add Tracker, Apply Tracking, corner-pin overlay. Owner: wp-m2-track (ARCHITECTURE §19.10).
-// This module is imported at start-up (commands/index.ts), so it is also where the package registers its UI
-// extensions (extensions/index.ts: effect editors, clip sections, Program overlays, menu entries).
-//   tracking.addPlanar / addPoint          add a tracker to the selected video clip at the playhead
-//   tracking.track{Forward,Backward,Both}  run the active tracker (engine `track` job, one "Track" entry)
-//   tracking.step{Forward,Back}            track one frame
-//   tracking.trackFromHere[Backward]       re-track from the (corrected) geometry at the playhead
-//   tracking.stop                          cancel the running job
-//   tracking.apply                         "Apply Tracking…" dialog
-//   keyframes.simplify                     "Simplify Keyframes…" for selected keys / clips (wp-m3-trackui)
-//   tracking.toggleCornerPinHandles        corner-pin handles on the Program monitor
-//   tracking.removeTracker                 remove the active tracker
 import type { Clip, TrackMode } from '@jasper/project';
 import { openDialog } from '@jasper/ui';
 import {

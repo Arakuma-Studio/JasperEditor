@@ -1,7 +1,3 @@
-// app UI commands — owned by WP-2A: save, workspaces, panel focus/maximize/close, command palette,
-// themes, full screen, modes, Home. Commands drive the shell through the `shell` panel service
-// (apps/web/src/shell/context.tsx). Keymap ids from keymap-defaults.ts that differ from the canonical ids
-// (app.save, app.commandPalette, panel.open.*, workspace.switch.N…) are registered as hidden aliases.
 import { z } from 'zod';
 import { assignLazy, defineLazyLabel, type LazyLabel } from '../i18n/lazy.ts';
 import { t } from '../i18n/runtime.ts';
@@ -67,8 +63,6 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	mediaBrowser: 'Media Browser',
 };
 
-// ------------------------------------------------------------------ save
-
 const save: UiCommand = {
 	id: 'file.save',
 	label: 'Save',
@@ -108,8 +102,6 @@ const save: UiCommand = {
 		}
 	},
 };
-
-// ------------------------------------------------------------------ panels
 
 const focusPanels: UiCommand[] = PANEL_KINDS.map((kind) =>
 	sc(
@@ -154,8 +146,6 @@ const floatPanel = sc('panel.float', 'Undock Panel', (shell) => shell.floatPanel
 	disabledReason: (ctx) => (hasShell(ctx) ? 'No panel has focus' : noShell()),
 });
 
-// ------------------------------------------------------------------ workspaces
-
 const switchWorkspace = sc(
 	'workspace.switch',
 	'Switch Workspace',
@@ -177,8 +167,6 @@ const switchByNumber: UiCommand[] = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) =>
 	),
 );
 const resetWorkspace = sc('workspace.reset', 'Reset to Saved Layout', (shell) => shell.resetWorkspace());
-
-// ------------------------------------------------------------------ view
 
 const THEMES = ['darkest', 'dark'] as const;
 const theme: UiCommand = {
@@ -225,8 +213,6 @@ const modeCmd = (mode: 'import' | 'edit' | 'export', label: string) =>
 	sc(`mode.${mode}`, label, (shell) => shell.setMode(mode), {
 		checked: (ctx) => ctx.services.get('shell')?.getMode() === mode,
 	});
-
-// ------------------------------------------------------------------ the list
 
 const paletteOpen = sc('palette.open', 'Command Palette', (shell) => shell.openPalette(), {
 	icon: 'app.search',

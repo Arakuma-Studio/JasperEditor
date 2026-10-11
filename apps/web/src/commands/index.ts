@@ -1,5 +1,3 @@
-// UI commands (ARCHITECTURE §7.3): imports every domain module and registers them once.
-
 // Register the Program overlay that attaches the layer-bake runtime.
 import '../layer-bake/commands.ts';
 // Register the fx framework's on-canvas point handles (wave 1).

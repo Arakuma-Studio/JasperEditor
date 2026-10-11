@@ -82,7 +82,6 @@ export interface ImportService {
 	): Promise<{ clipIds: string[] }>;
 }
 
-// ---------------------------------------------------------------- registration (WP-2E, additive)
 // The editor registers the ImportService implementation while a project is open (apps/web/src/home/
 // ProjectLifecycle.tsx); timeline/monitor drop handlers look it up here and tolerate `null`.
 

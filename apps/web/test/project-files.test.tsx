@@ -11,6 +11,7 @@ import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProjectFileActions, PROJECT_FILE_DIALOGS } from '../src/home/project-files.tsx';
+import { saveBeforeLeaving } from '../src/runtime/save.ts';
 
 afterEach(() => {
 	closeAllDialogs();
@@ -68,6 +69,44 @@ describe('project file actions', () => {
 		expect(next).not.toBeNull();
 		expect(clips(next!.getCommitted())).toBe(0);
 		await next!.close();
+	});
+
+	it('keeps the current document when saving before a version restore fails', async () => {
+		const { store, open } = await setup();
+		const session = await open('restore');
+		const persistence = attachPersistence(session, { window: null, document: null });
+		session.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
+		await persistence.flush();
+		const [version] = await store.listVersions(session.projectId);
+		session.apply({ label: 'Add another', origin: 'user', commands: [solid(20)] });
+		const replace = vi.fn();
+		const revert = vi.spyOn(store, 'revertToVersion');
+		const flush = vi.spyOn(persistence.autosaver, 'flush').mockResolvedValue();
+		try {
+			const actions = createProjectFileActions(session, { replace, open: () => undefined });
+			await expect(actions.restoreVersion(version!.versionId)).rejects.toThrow('unsaved changes');
+			expect(revert).not.toHaveBeenCalled();
+			expect(replace).not.toHaveBeenCalled();
+			expect(clips(session.getCommitted())).toBe(2);
+		} finally {
+			flush.mockRestore();
+			await session.close();
+		}
+	});
+
+	it('refuses to leave when a flush resolves with unsaved changes', async () => {
+		const { open } = await setup();
+		const session = await open('paused');
+		const persistence = attachPersistence(session, { window: null, document: null });
+		session.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
+		const flush = vi.spyOn(persistence.autosaver, 'flush').mockResolvedValue();
+		try {
+			await expect(saveBeforeLeaving(session)).rejects.toThrow('unsaved changes');
+			expect(session.getState().dirty).toBe(true);
+		} finally {
+			flush.mockRestore();
+			await session.close();
+		}
 	});
 
 	it('restores a version in place (keeping the current state) or opens it as a copy', async () => {
@@ -129,6 +168,21 @@ describe('recovery dialog (S01:PER-021, AC-18)', () => {
 		s2.undo();
 		expect(clips(s2.getCommitted())).toBe(0);
 		await s2.close();
+	});
+
+	it('preserves the original recovery journal when the recovered document cannot be saved', async () => {
+		const { s2, a, store, projectId } = await crashed();
+		const save = vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full'));
+		try {
+			await expect(a.recover('dead')).rejects.toThrow('unsaved changes');
+			expect((await store.listRecovery(projectId)).some((candidate) => candidate.sessionId === 'dead')).toBe(
+				true,
+			);
+			expect(clips(s2.getCommitted())).toBe(1);
+		} finally {
+			save.mockRestore();
+			await s2.close();
+		}
 	});
 
 	it('Discard deletes the journal without touching the project', async () => {

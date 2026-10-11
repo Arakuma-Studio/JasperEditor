@@ -1,18 +1,4 @@
-// Workstream polish: the menu entries that were still unregistered (docs/wp-notes/polish.md).
-//   project.importFromMediaBrowser  File ▸ Import from Media Browser (Ctrl+Alt+I): imports the files selected in
-//                                   the Media Browser panel; with nothing selected it opens the panel
-//   mediaBrowser.up / .refresh / .toggleAllFiles   the Media Browser panel menu
-//   engine.connect / engine.status  File ▸ Engine ▸ Connect… / Engine Status
-//   mg.editParameters               Clip ▸ Motion Graphic ▸ Edit Parameters…: Properties ▸ Parameters of the selected
-//                                   motion-graphic clips (Premiere edits a template's parameters in Essential
-//                                   Graphics ▸ Edit / the Properties panel, not in a dialog)
-//   app.notices                     Help ▸ Third-Party Notices
-// and the key bindings that had no command behind them (Premiere's defaults):
-//   project.mediaProperties         File ▸ Get Properties for Selection… (Ctrl+Shift+H)
-//   project.setPosterFrame / .clearPosterFrame   Project panel, Icon View (Shift+P / Alt+Shift+P)
-//   effects.newCustomBin / .deleteCustomItem     Effects panel (Ctrl+/ / Backspace)
 import type { Clip } from '@jasper/project';
-import { persistenceFor } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
 import { getCustomBins } from '../panels/effects/presets/custom-bins.ts';
 import { getMediaBrowser } from '../panels/mediaBrowser/instances.ts';
@@ -27,6 +13,7 @@ import {
 	setPosterFromHover,
 } from '../panels/project/poster-frame.ts';
 import { revealSection } from '../panels/properties/controls/Section.tsx';
+import { saveBeforeLeaving } from '../runtime/save.ts';
 import { ENGINE_DIALOGS, registerEngineDialogs } from '../shell/engine-dialogs.tsx';
 import { selectedMediaIds } from './gaps.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -125,7 +112,7 @@ export const polishCommands: UiCommand[] = [
 			ctx.ui.openDialog(ENGINE_DIALOGS.connect, {
 				engine: ctx.engine,
 				beforeLeave: async () => {
-					if (session) await persistenceFor(session)?.flush();
+					if (session) await saveBeforeLeaving(session);
 				},
 			});
 		},
@@ -201,15 +188,12 @@ export const polishCommands: UiCommand[] = [
 		description: 'Shows the default thumbnail again for the hovered or selected items.',
 		icon: 'project.posterFrame',
 		scope: 'project',
-		when: (ctx) =>
-			editable(ctx) &&
-			!!ctx.session &&
-			(selectedPosterItems(ctx.session).length > 0 ||
-				!!(
-					posterHover() &&
-					(ctx.session.getState().document.items[posterHover()!.itemId] as { poster?: unknown } | undefined)
-						?.poster
-				)),
+		when: (ctx) => {
+			if (!editable(ctx) || !ctx.session) return false;
+			const hover = posterHover();
+			const item = hover ? ctx.session.getCommitted().items[hover.itemId] : undefined;
+			return selectedPosterItems(ctx.session).length > 0 || !!(item && 'poster' in item && item.poster);
+		},
 		disabledReason: () => 'Select an item that has a poster frame',
 		run: (ctx) => {
 			if (ctx.session) clearPosterFrames(ctx.session);

@@ -1,7 +1,3 @@
-// wp captions UI commands: Sequence ▸ Captions (Add New Caption Track, Add Caption at Playhead, Go to Next / Previous
-// Caption Segment, Split / Merge, Show / Hide All Caption Tracks), File ▸ Import Captions… / Export ▸ Captions, the
-// Text panel (Captions / Transcript). Premiere defaults: Ctrl+Alt+A / Opt+Cmd+A, Ctrl+Alt+C / Opt+Cmd+C,
-// Ctrl+Alt+Down / Up (keymap-defaults.ts). Each edit is one document transaction.
 import {
 	activeCaptionTrack,
 	CAPTION_FILE_FORMATS,
@@ -9,37 +5,27 @@ import {
 	type CaptionFileFormat,
 	captionClipsOf,
 	captionCuesForTrack,
-	type ProjectDocument,
-	type Sequence,
 	supportsDropFrame,
 	type TransactionResult,
 	writeCaptionFileBytes,
 } from '@jasper/project';
-import type { EditorSession } from '@jasper/session';
+import type { SessionTxInput } from '@jasper/session';
 import { importCaptionFiles } from '../import/captions.ts';
 // Registers the Properties ▸ Caption section.
 import '../panels/text/CaptionSection.tsx';
 import { downloadBytes, type TranscriptTool, textPanelRequests } from '../panels/text/state.ts';
-import { activeTimeline } from '../panels/timeline/env.tsx';
+import { type ResolvedSequenceCommandContext as Env, sequenceContext as envOf } from './sequence-context.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
-
-type Env = { session: EditorSession; seq: Sequence; playhead: number; doc: ProjectDocument };
-
-function envOf(ctx: CommandCtx): Env | null {
-	const session = ctx.session;
-	if (!session) return null;
-	const s = session.getState();
-	const seqId = activeTimeline(ctx.services)?.sequenceId() ?? s.activeSequenceId;
-	const doc = session.getCommitted();
-	const seq = seqId ? (doc.sequences[seqId] as Sequence | undefined) : undefined;
-	if (!seq) return null;
-	return { session, seq, doc, playhead: session.transport.getState().frame };
-}
 
 const editable = (ctx: CommandCtx) => !!envOf(ctx) && !ctx.session!.getState().readOnly;
 
-function apply(ctx: CommandCtx, e: Env, label: string, commands: unknown[]): TransactionResult {
-	const r = e.session.apply({ label, origin: 'user', sequenceId: e.seq.id, commands: commands as never[] });
+function apply(
+	ctx: CommandCtx,
+	e: Env,
+	label: string,
+	commands: SessionTxInput['commands'],
+): TransactionResult {
+	const r = e.session.apply({ label, origin: 'user', sequenceId: e.seq.id, commands });
 	if (!r.ok)
 		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail: r.errors[0]?.message });
 	return r;

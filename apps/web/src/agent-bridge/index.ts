@@ -27,7 +27,7 @@ const listeners = new Set<() => void>();
 function shouldExposeWindowApi(): boolean {
 	if (typeof window === 'undefined') return false;
 	if (import.meta.env?.DEV) return true;
-	if ((window as { jasperDesktop?: unknown }).jasperDesktop) return true;
+	if (window.jasperDesktop) return true;
 	try {
 		return window.localStorage?.getItem('jasper:agent-bridge') === '1';
 	} catch {

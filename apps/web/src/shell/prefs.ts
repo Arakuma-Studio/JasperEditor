@@ -19,7 +19,7 @@ export type UiPrefs = {
 const UI_PREFS_KEY = 'jasper:ui-prefs';
 
 function pick<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
-	return allowed.includes(v as T) ? (v as T) : fallback;
+	return allowed.find((candidate) => candidate === v) ?? fallback;
 }
 
 /** Tolerant parse: unknown keys and bad values fall back to defaults. */

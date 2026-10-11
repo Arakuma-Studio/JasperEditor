@@ -1,10 +1,3 @@
-// M2 UI commands for text animators (S11:TXA-024). Owner: wp-m2-text-anim (ARCHITECTURE §20.6).
-//   text.applyAnimation   {clipIds?, side, preset?, version?, durationFrames?, params?} — agent-exposed; without
-//                         a preset (Graphics ▸ Text Animation ▸ Apply In… / Apply Out…) it opens the picker
-//   text.removeAnimation  {clipIds?, side}
-// Default targets: the selected text clips. No default key bindings. This module is imported at start-up
-// (commands/index.ts), so it also registers the package's UI extensions: the Properties ▸ Text Animation
-// section, the clip context submenu and the picker dialog.
 import {
 	LATEST_TEXT_ANIMATION_SPECS,
 	latestTextAnimationSpec,
@@ -127,8 +120,6 @@ export const textAnimationCommands: UiCommand[] = [
 		},
 	},
 ];
-
-// ---------------------------------------------------------------- UI extensions (ARCHITECTURE §19.10)
 
 registerDialog(TEXT_ANIMATION_PICKER_DIALOG, TextAnimationPickerDialog);
 

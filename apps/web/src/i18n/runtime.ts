@@ -139,8 +139,6 @@ export const t = __t;
 /** Number of catalogue entries (diagnostics, the Preferences page). */
 export const catalogSize = (): number => (catalog ? Object.keys(catalog).length : 0);
 
-// ---------------------------------------------------------------- names from the model
-
 /**
  * Separators of labels built from several names: "Gaussian Blur: Radius", "Video Effects ▸ Blur & Sharpen",
  * "Cross Dissolve (Video Transitions)", "Lumetri Color · Basic Correction".

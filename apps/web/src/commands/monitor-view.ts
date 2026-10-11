@@ -1,6 +1,3 @@
-// edit-ux monitor view commands (Premiere View menu / Program monitor wrench): Show Rulers (Ctrl+R), Show Guides
-// (Ctrl+;), Lock Guides (Ctrl+Alt+Shift+R), Add Guide…, Clear Guides, Guide Templates, Comparison View, Safe
-// Margins, Show Dropped Frame Indicator and Toggle Full Screen (Ctrl+`).
 import type { Sequence } from '@jasper/project';
 import {
 	ADD_GUIDE_DIALOG,
@@ -27,10 +24,8 @@ const toggle = (
 	scope: 'program',
 	agentExposed: true,
 	checked: () => monitorExtras.getState()[key],
-	run: () => monitorExtras.setState((s) => ({ [key]: !s[key] }) as never),
+	run: () => monitorExtras.setState((s) => ({ [key]: !s[key] })),
 });
-
-// ---------------------------------------------------------------- full screen
 
 const fullscreenTargets = new Map<'program' | 'source', () => HTMLElement | null>();
 

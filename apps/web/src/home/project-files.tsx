@@ -8,6 +8,7 @@ import { EngineError } from '@jasper/engine-client';
 import { type EditorSession, hasRecovery, persistenceFor, reopenSession } from '@jasper/session';
 import { Button, confirmDialog, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useEffect, useId, useState } from 'react';
+import { saveBeforeLeaving } from '../runtime/save.ts';
 
 export const PROJECT_FILE_DIALOGS = {
 	saveAs: 'project.file.saveAs',
@@ -94,7 +95,7 @@ export function createProjectFileActions(
 		async restoreVersion(versionId) {
 			const r = need();
 			// what is on screen is saved first, so the state the restore replaces is kept as a version in full
-			await persistenceFor(session)?.flush();
+			await saveBeforeLeaving(session);
 			await r.revertToVersion(session.projectId, versionId, leaseId());
 			deps.replace(await reopenSession(session));
 		},
@@ -117,14 +118,12 @@ export function createProjectFileActions(
 			// the recovered state goes into this session's journal (and the project file) before the old one goes
 			const p = persistenceFor(session);
 			await p?.journal?.flush();
-			await p?.flush().catch(() => undefined);
+			await saveBeforeLeaving(session);
 			await r.discardRecovery(session.projectId, sessionId);
 		},
 		discardRecovery: (sessionId) => need().discardRecovery(session.projectId, sessionId),
 	};
 }
-
-// ------------------------------------------------------------------ dialogs
 
 const when = (iso: string) => {
 	const d = new Date(iso);

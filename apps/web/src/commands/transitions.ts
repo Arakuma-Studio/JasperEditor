@@ -8,7 +8,7 @@
 // before). TUI-046: the clip context menu gains "Apply Default Transitions".
 // M3 (wp-m3-transdefaults, TUI-031…033): Sequence ▸ Transition Defaults… opens Edit ▸ Preferences ▸ Timeline
 // (registered here): the user's default types and alignment, the project's default durations.
-import type { Clip, Sequence, TransactionResult } from '@jasper/project';
+import type { Clip, CommandOf, Sequence, TransactionResult } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { clipMenuExtensions } from '../extensions/index.ts';
 import { defaultTransitionFields } from '../panels/effects/transition-prefs.ts';
@@ -74,7 +74,7 @@ function defaultTransitionCommands(
 	e: Env,
 	media: readonly Medium[],
 	requireSelection: boolean,
-): Record<string, unknown>[] {
+): CommandOf<'transition.applyDefault'>[] {
 	const fields = defaultTransitionFields(media);
 	const clips = selectedClips(e, media);
 	if (clips.length)
@@ -112,7 +112,7 @@ function applyDefaults(
 		});
 		return null;
 	}
-	const r = e.session.apply({ label, origin: 'user', sequenceId: e.seq.id, commands: commands as never[] });
+	const r = e.session.apply({ label, origin: 'user', sequenceId: e.seq.id, commands });
 	if (!r.ok) {
 		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail: r.errors[0]?.message });
 		return r;
@@ -139,7 +139,7 @@ function clearSelectedTransitions(ctx: CommandCtx): boolean {
 		label: ids.length > 1 ? 'Clear Transitions' : 'Clear Transition',
 		origin: 'user',
 		sequenceId: e.seq.id,
-		commands: [{ type: 'transition.remove', transitionIds: ids }] as never[],
+		commands: [{ type: 'transition.remove', transitionIds: ids }],
 	});
 	if (r.ok) e.session.select('transitions', [], 'replace');
 	else ctx.ui.toast({ kind: 'warning', message: 'Clear: not possible', detail: r.errors[0]?.message });
@@ -237,7 +237,7 @@ clipMenuExtensions.register({
 						edges,
 						...defaultTransitionFields(['video', 'audio']),
 					},
-				] as never[],
+				],
 			});
 			if (!r.ok) console.warn('[transitions] Apply Default Transitions refused', r.errors);
 		};
