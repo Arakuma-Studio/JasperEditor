@@ -1,15 +1,15 @@
 import { EngineClient } from '@jasper/engine-client';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { createCommandContext } from '../src/commands/context.ts';
+import { monitorViewCommands, registerFullscreenTarget } from '../src/commands/monitor-view.ts';
 import {
-	createCommandContext,
 	getCommand,
 	isCommandEnabled,
+	onBeforeCommand,
 	registerCommands,
 	runCommand,
-} from '../src/commands/index.ts';
-import { monitorViewCommands, registerFullscreenTarget } from '../src/commands/monitor-view.ts';
-import { onBeforeCommand } from '../src/commands/registry.ts';
+} from '../src/commands/registry.ts';
 import { PanelServices } from '../src/state/panel-services.ts';
 
 const engine = new EngineClient({ fetch: async () => new Response('{}') });

@@ -154,19 +154,21 @@ const row = (name: string) =>
 	screen.getAllByTestId('media-browser-entry').find((el) => el.textContent?.includes(name)) as HTMLElement;
 
 async function mountBrowser(session: EditorSession | null, engine = browseEngine()) {
-	render(
-		<EngineProvider client={engine.client()}>
-			<MemoryRouter initialEntries={['/']}>
-				{session ? (
-					<SessionProvider session={session}>
+	await act(async () => {
+		render(
+			<EngineProvider client={engine.client()}>
+				<MemoryRouter initialEntries={['/']}>
+					{session ? (
+						<SessionProvider session={session}>
+							<MediaBrowserPanel instanceId="mb" visible />
+						</SessionProvider>
+					) : (
 						<MediaBrowserPanel instanceId="mb" visible />
-					</SessionProvider>
-				) : (
-					<MediaBrowserPanel instanceId="mb" visible />
-				)}
-			</MemoryRouter>
-		</EngineProvider>,
-	);
+					)}
+				</MemoryRouter>
+			</EngineProvider>,
+		);
+	});
 	await waitFor(() => expect(screen.getAllByTestId('media-browser-entry').length).toBe(3));
 	return engine;
 }
