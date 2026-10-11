@@ -51,3 +51,18 @@ The integrated typecheck identified `minMaxLoc` as an inaccurate declaration in 
 The remaining explicit `any` in `smoothpath.test.ts` erased the report returned by the in-process smooth-path step. Its finite fixture projection now matches the fields emitted by `smoothpath/step.ts`, reusing `SegmentPlan` for fallback details, used options, segment positions and camera statistics. The test helper accepts only `stabilize` steps with `method: 'smoothpath'`, so another processor cannot be passed to a helper expecting this report. Fallback remains nullable; its three property assertions use non-null assertions only after the existing `not.toBeNull()` expectation. The generic runner's metadata assertion now names this concrete report instead of admitting arbitrary keys and values.
 
 Against baseline `7105a89b`, TypeScript `transpileModule` with ES2022/ESNext produced byte-identical JavaScript (9,017 bytes; SHA-256 `a4a46b4026ed2e0b3c91fe7a74b2bad344a70687bdd328696715b1a461a09e1c`). An AST scan counted one explicit `any` before and zero after. Biome and `git diff --check` passed. No test execution or typecheck was repeated for this type-only change.
+
+## Integrated upscale timeout investigation
+
+The integrated processing-step suite reported 15 passes and one timeout: the 150-frame video `upscale` case exceeded its existing 600,000 ms limit. The separate tiled-gradient seam and mix-linearity test passed. At integration revision `2ae20363`, `upscale.ts`, `resample.ts`, `ffio.ts`, `tiny-onnx.ts` and the test model writer were unchanged from baseline `12049d8e`. The processing-step test's emitted JavaScript is identical to baseline when comments are excluded. The runner's behavioral cleanup concerns range-context dispatch; this whole-file upscale case has no range or context-frame capability.
+
+The unchanged upscale case passed in isolation using the already completed integration fixtures:
+
+```sh
+JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG=/usr/bin/ffmpeg JASPER_FFPROBE=/usr/bin/ffprobe \
+  pnpm exec vitest run apps/engine/test/processing-steps.test.ts -t 'upscale$' --maxWorkers=1
+```
+
+Result: one passed, 15 excluded by the name filter; 108.95 seconds in tests, 144.73 seconds total. The original 600-second budget and all assertions remained unchanged: frame packets/count, frame rate, ProRes codec, BT.709 color space, doubled width and bit-identical audio. The source fixture contains 150 video packets at 1280×720 and 25 fps. No fixture generation was required. The external log is `/tmp/jasper-audit-upscale-isolated.log`.
+
+The host had 12 logical CPUs, one-minute load 26.38 and CPU pressure `some avg10=49.46` when the rerun began; other integration tests and typechecks were still running. An active encoder produced a growing output throughout the rerun. The isolated success and unchanged relevant implementation support shared-host contention as the timeout explanation; no functional defect was reproduced, so no production or test-budget change was made. No broad suite or typecheck was repeated.
