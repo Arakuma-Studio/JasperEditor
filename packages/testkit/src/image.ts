@@ -13,22 +13,6 @@ export function rgba8(width: number, height: number, data?: ArrayLike<number> | 
 	return { width, height, data: px };
 }
 
-/** Packed RGB24 (e.g. `ffmpeg -pix_fmt rgb24`) → opaque RGBA8. */
-export function fromRgb24(width: number, height: number, rgb: Uint8Array): Rgba8 {
-	if (rgb.length !== width * height * 3)
-		throw new RangeError(
-			`RGB buffer has ${rgb.length} bytes, ${width}×${height} needs ${width * height * 3}`,
-		);
-	const out = rgba8(width, height);
-	for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
-		out.data[j] = rgb[i]!;
-		out.data[j + 1] = rgb[i + 1]!;
-		out.data[j + 2] = rgb[i + 2]!;
-		out.data[j + 3] = 255;
-	}
-	return out;
-}
-
 /** The RGBA of pixel (x, y). */
 export function pixel(img: Rgba8, x: number, y: number): [number, number, number, number] {
 	const i = (Math.floor(y) * img.width + Math.floor(x)) * 4;

@@ -1,5 +1,5 @@
-// Small layout primitives: Tabs, ScrollArea (S05:CT-060), EmptyState (S05:PC-031), progress
-// (S05:CT-070) and a keyboard-shortcut label.
+// Small layout primitives: Tabs, ScrollArea (S05:CT-060), EmptyState (S05:PC-031),
+// and a keyboard-shortcut label.
 import { ScrollArea as RScroll, Tabs as RTabs } from 'radix-ui';
 import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';
@@ -123,44 +123,6 @@ export function EmptyState({ icon, message, detail, action, className }: EmptySt
 					{action.label}
 				</Button>
 			) : null}
-		</div>
-	);
-}
-
-// ------------------------------------------------------------------ Progress
-
-/** 2 px (4 px in Jobs) linear progress; `null` = indeterminate (S05:CT-070). */
-export function LinearProgress({
-	value,
-	thick,
-	className,
-	label,
-}: {
-	value: number | null;
-	thick?: boolean;
-	className?: string;
-	label?: string;
-}) {
-	return (
-		<div
-			role="progressbar"
-			aria-label={label}
-			aria-valuemin={0}
-			aria-valuemax={100}
-			aria-valuenow={value === null ? undefined : Math.round(value * 100)}
-			className={cx(
-				'relative w-full overflow-hidden rounded-full bg-pr-border',
-				thick ? 'h-1' : 'h-0.5',
-				className,
-			)}
-		>
-			<span
-				className={cx(
-					'absolute inset-y-0 left-0 bg-pr-accent',
-					value === null && 'w-[30%] animate-pulse motion-reduce:animate-none',
-				)}
-				style={value === null ? undefined : { width: `${Math.max(0, Math.min(1, value)) * 100}%` }}
-			/>
 		</div>
 	);
 }

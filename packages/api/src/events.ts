@@ -87,9 +87,8 @@ export type TypedEvent = {
 /** Validates an envelope's payload for known types; unknown types (newer engines) pass through as null. */
 export function parseEvent(raw: unknown): TypedEvent | null {
 	const env = EventEnvelopeSchema.safeParse(raw);
-	if (!env.success) return null;
-	const schema = (EVENT_PAYLOADS as Record<string, z.ZodType>)[env.data.type];
-	if (!schema) return null;
+	if (!env.success || !Object.hasOwn(EVENT_PAYLOADS, env.data.type)) return null;
+	const schema = EVENT_PAYLOADS[env.data.type as EngineEventType];
 	const payload = schema.safeParse(env.data.payload);
 	if (!payload.success) return null;
 	return { ...env.data, payload: payload.data } as TypedEvent;

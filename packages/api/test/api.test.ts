@@ -1,5 +1,6 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { buildPath, isEnginePath, parseEvent, ROUTES } from '../src/index.ts';
+import { buildPath, EVENT_PAYLOADS, isEnginePath, parseEvent, ROUTES } from '../src/index.ts';
 
 describe('@jasper/api route table', () => {
 	it('builds paths and classifies engine prefixes', () => {
@@ -27,4 +28,17 @@ describe('@jasper/api schemas', () => {
 		expect(parseEvent({ id: 4, type: 'future.thing', createdAt: 'now', payload: {} })).toBeNull();
 		expect(parseEvent({ id: 'x' })).toBeNull();
 	});
+});
+
+it('ignores unknown event names, including inherited object properties', () => {
+	const unknownType = fc.oneof(
+		fc.constantFrom(...Object.getOwnPropertyNames(Object.prototype)),
+		fc.string().filter((name) => !Object.hasOwn(EVENT_PAYLOADS, name)),
+	);
+	fc.assert(
+		fc.property(unknownType, fc.jsonValue(), (type, payload) => {
+			expect(parseEvent({ id: 1, type, createdAt: 'now', payload })).toBeNull();
+		}),
+		{ seed: 0x5eed, numRuns: 100 },
+	);
 });

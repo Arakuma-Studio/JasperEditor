@@ -295,5 +295,5 @@ registerDialog(CONFIRM_KIND, ConfirmDialog);
 
 /** Confirmation dialog; resolves true when confirmed. */
 export async function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
-	return (await openDialog<boolean>(CONFIRM_KIND, opts as unknown as Record<string, unknown>)) === true;
+	return (await openDialog<boolean>(CONFIRM_KIND, opts)) === true;
 }

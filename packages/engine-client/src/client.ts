@@ -388,7 +388,7 @@ export class EngineClient {
 	}
 	/** audio-fx: a music remix plan for a clip's content range (synchronous). */
 	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
-		return this.call('audioRemixPlan', { body: req }) as Promise<RemixPlanResult>;
+		return this.call('audioRemixPlan', { body: req });
 	}
 	/** audio-mix: a loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
 	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {
@@ -473,7 +473,7 @@ export class EngineClient {
 	// ---- previews workstream (render previews, docs/wp-notes/previews.md)
 	/** Which segment hashes have render preview files (video / audio) in a preview format. */
 	previewStatus(req: PreviewStatusRequest): Promise<PreviewStatus> {
-		return this.call('previewStatus', { body: req as never });
+		return this.call('previewStatus', { body: req });
 	}
 	/** Sequence ▸ Render…: a `preview` job, or `{job: null}` when every segment is rendered already. */
 	renderPreviews(
@@ -481,9 +481,9 @@ export class EngineClient {
 		wait = false,
 	): Promise<EngineJob | { job: null; existing: number }> {
 		return this.call('previewRender', {
-			body: req as never,
+			body: req,
 			...(wait ? { query: { wait: '1' as const } } : {}),
-		}) as Promise<EngineJob | { job: null; existing: number }>;
+		});
 	}
 	/** Delete Render Files (`{all: true}`) / Delete Render Files In to Out (`{hashes}`). */
 	deletePreviews(req: PreviewDeleteRequest): Promise<PreviewDeleteResult> {

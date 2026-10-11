@@ -261,7 +261,7 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 					</RMenubar.Trigger>
 					<RMenubar.Portal>
 						<RMenubar.Content className={MENU_CONTENT} align="start" sideOffset={2} collisionPadding={8}>
-							<MenuBarItems menu={m} />
+							<LazyItems kit={RMenubar} items={() => m.items()} />
 						</RMenubar.Content>
 					</RMenubar.Portal>
 				</RMenubar.Menu>
@@ -271,7 +271,7 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 }
 
 /**
- * The items of a dropdown or context menu. A component of its own, so that they are resolved and built when the menu
+ * The items of a menu. A component of its own, so that they are resolved and built when the menu
  * opens (Radix mounts the content then), not on every render of whatever carries the menu: every panel with a
  * context menu used to resolve its whole menu — command states included — each time it rendered.
  */
@@ -283,8 +283,4 @@ function LazyItems({
 	items: readonly ResolvedMenuItem[] | (() => readonly ResolvedMenuItem[]);
 }) {
 	return <>{renderItems(kit, typeof items === 'function' ? items() : items)}</>;
-}
-
-function MenuBarItems({ menu }: { menu: MenuBarMenu }) {
-	return <>{renderItems(RMenubar, menu.items())}</>;
 }
