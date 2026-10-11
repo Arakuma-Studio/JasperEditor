@@ -56,7 +56,8 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 		'Sync-locked tracks block this ripple. Pass syncConflict: "cut" or unlock sync on those tracks.',
 	E_NOT_OWNER:
 		'Agents may only undo/redo their own history entries; the top entry was made by the user or another agent.',
-	E_NOT_IMPLEMENTED: 'This command is unavailable in this build; describe_commands shows implemented: false.',
+	E_NOT_IMPLEMENTED:
+		"This operation is unavailable in the current engine or editor session. Check engine_status and the requested tool's requirements.",
 	E_LIMIT: 'Too many commands or too large a payload (5 000 commands / 20 MB per transaction). Split it up.',
 };
 
