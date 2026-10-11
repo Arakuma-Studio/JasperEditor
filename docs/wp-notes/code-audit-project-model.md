@@ -152,6 +152,8 @@ timing allowance or production LUT change.
 
 The shared canonical serializer matched the previous roto serializer for **1000 generated JSON values**
 (fast-check seed 24301) and four explicit nested/scalar undefined cases.
+The existing colour cache-key regression passed (one test, 20 skipped). The complete animatable fixtures
+passed all three targeted snapshot-expansion tests (24 skipped).
 
 The focused model regression command passed **197 tests across 15 files**:
 
