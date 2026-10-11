@@ -134,6 +134,12 @@ comment now describes the actual effect-versus-clip formula distinction without 
 - After narrowing evaluated parameters, the existing colour/default-resolution checks passed:
   `pnpm exec vitest run packages/project/test/color.test.ts packages/project/test/lumetri-grade.test.ts
   --testNamePattern='defaults|registered' --maxWorkers=1` (2 files, 5 tests passed, 43 unrelated tests skipped).
+- `pnpm exec vitest run packages/project/test/transition-edge-wipe.test.ts
+  packages/project/test/transition-premiere.test.ts --maxWorkers=1`: 2 files and 14 tests pass after the
+  interpolation repair; the new 2-case regression file failed both cases before the repair.
+- `FX_COMPILE_FILTER=jasper.iris FX_COMPILE_WORKERS=1 pnpm exec vitest run
+  packages/compositions/test/fx-compile-budget.test.ts --maxWorkers=1`: the filtered software-GL compile
+  gate passes after the interpolation repair (1 test; 24.36 seconds of testing, 106.08 seconds total).
 - Package typechecking was started, then stopped at the integrator's request because simultaneous project
   typechecks were exhausting shared-host resources. Final serialized typechecking is an integration gate.
 - `git diff --check` is run before commit.
