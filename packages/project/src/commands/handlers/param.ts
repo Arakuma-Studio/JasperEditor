@@ -93,10 +93,10 @@ export function ruleFromParam(p: ParamSpec): ValueRule {
 }
 
 export function getAt(obj: unknown, path: readonly string[]) {
-	let cur = obj as Record<string, unknown> | undefined;
+	let cur: unknown = obj;
 	for (const k of path) {
 		if (!cur || typeof cur !== 'object') return undefined;
-		cur = cur[k] as Record<string, unknown> | undefined;
+		cur = (cur as Record<string, unknown>)[k];
 	}
 	return cur;
 }
