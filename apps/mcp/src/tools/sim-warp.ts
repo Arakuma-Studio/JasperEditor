@@ -17,13 +17,12 @@ import {
 	type Sequence,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, TIME_FORMATS, timeArg } from '../arguments.ts';
 import { DESTRUCTIVE, defineTool, EDIT, frameOf, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { decodePng } from '../png.ts';
-import { applyHelper, TIME_FORMATS, timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+import { applyHelper } from './editing.ts';
 
-/** Appended to the server instructions. */
 export const SIM_WARP_GUIDE = `Simulations and warps: Particle World, Particle Systems II, Particle Playground, Mercury, Shatter, Card Dance, Card Wipe, Pixel Polly, Ball Action, Scatterize, Hair, Foam, Wave World, Caustics, Rainfall, Snowfall, Bubbles, Drizzle and Star Burst (category Simulation), and Bezier Warp, Mesh Warp, Liquify, Puppet, Reshape, Smear, Displacement Map, Optics Compensation and Polar Coordinates (Distort) are effects: apply_commands effect.add {clipId, effectId: "jasper.particle-world"…} then param.set (describe_commands lists every param, choice and range). Simulations are deterministic: the same frame always renders the same picture (seek = play), Random Seed varies them; check with render_frame. Maps (Displacement Map, Shatter's custom map, Wave World's ground, Particle Playground's layer maps) take an image media id param. Puppet: add_puppet_pins places pins (the first pin on a clip makes a mesh from the clip's alpha outline or its box; Position pins move, Starch stiffens, Overlap brings a part in front, Advanced / Bend pins also scale and rotate); move_puppet_pins moves them at a time (a key when the pin is animated: set animated with record_puppet_pins or param.setAnimated ["puppetPin", pinId, "position"]); record_puppet_pins writes a motion (keys) for a pin; get_puppet lists meshes and pins with their values at a time. Pin properties are animatable properties ["puppetPin", pinId, prop] (param.set, keyframe.*, expressions as puppet.<pinId>.<prop>). Liquify: liquify_stroke paints one brush stroke of a tool (warp, turbulence, twirlClockwise, twirlCounterclockwise, pucker, bloat, shiftPixels, reflection, clone, reconstruction) on its Distortion Mesh (keyframable: a stroke at a time with the mesh animated writes a key). Mesh Warp: set_mesh_warp_vertex moves a vertex and its Bézier tangents of the Distortion Mesh (Rows × Columns params). Per-effect masks limit any of them.`;
 
 const EffectIdArg = z

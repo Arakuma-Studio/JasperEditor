@@ -14,6 +14,7 @@ import {
 	toJsonSchema,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	captureStill,
 	defineTool,
@@ -31,10 +32,9 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { clipSummary, pickSequence } from '../format.ts';
 import { composeGrid, decodePng, encodePng } from '../png.ts';
 import { propsSummary } from './compositions.ts';
-import { ProjectIdArg } from './projects.ts';
+
 import { failedJobError } from './templates.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const ANIMATION_GUIDE = `Text animation:
 - Text clips can have an In and an Out animator (list_text_animations: fade, slide-*, pop, blur, typewriter, tracking, mask-reveal, rotate-in, drop). Set them with add_text animateIn/animateOut or set_text_animation {clipId(s), in, out}; null removes a side, an object without preset only changes the current side's length or params.
 - In plays over the clip's first visible frames, Out over its last ones (Out is the mirrored In motion), whatever the clip's trims. Lengths default to the preset's (at the sequence rate); give durationFrames or durationSeconds. When In + Out do not fit the clip with one frame left at rest both are scaled to fit (warning W_ANIMATION_COMPRESSED): lengthen the clip or shorten them.

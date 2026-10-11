@@ -59,6 +59,9 @@ describe('argument parsing', () => {
 		expect(c.out.join('')).toContain('render-frame');
 		const d = io();
 		expect(await runCli(['--version'], d)).toBe(0);
+		const e = io();
+		expect(await runCli(['query', 'not-a-query'], e)).toBe(2);
+		expect(e.err.join('')).toContain('Unknown query not-a-query');
 	});
 });
 

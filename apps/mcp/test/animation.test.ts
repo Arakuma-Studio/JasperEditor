@@ -1,7 +1,9 @@
 // Frozen PNG protocol vectors, independently decoded to RGBA with FFmpeg.
 // The RGB/RGBA vectors have filters 0, 1, 2, 3, 4 in order and split IDAT chunks.
+import { crc32, deflateSync } from 'node:zlib';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { decodePng } from '../src/png.ts';
+import { composeGrid, decodePng, encodePng } from '../src/png.ts';
 
 const RGB = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAAAIAAAAFCAIAAADg0arLAAAACklEQVR4nGPgNgitmn+EW57b9AAAABpJREFU8SWfcX5+PtM9MGB2Cnm+fPlyFggPABedEsmvv92MAAAAAElFTkSuQmCC',
@@ -50,5 +52,58 @@ describe('PNG input for render_frames', () => {
 			'base64',
 		);
 		expect(() => decodePng(sixteen)).toThrow();
+	});
+});
+
+function pngChunk(type: string, body: Uint8Array): Buffer {
+	const out = Buffer.alloc(body.length + 12);
+	out.writeUInt32BE(body.length, 0);
+	out.write(type, 4);
+	out.set(body, 8);
+	out.writeUInt32BE(crc32(out.subarray(4, 8 + body.length)), 8 + body.length);
+	return out;
+}
+
+describe('PNG resource limits', () => {
+	it('rejects dimensions before allocating the raster', () => {
+		const oversized = Buffer.from(RGB);
+		oversized.writeUInt32BE(0xffffffff, 16);
+		expect(() => decodePng(oversized)).toThrow('pixel limit');
+	});
+
+	it('limits inflation to the declared raster size', () => {
+		const png = Buffer.concat([
+			RGB.subarray(0, 33),
+			pngChunk('IDAT', deflateSync(Buffer.alloc(4096))),
+			pngChunk('IEND', new Uint8Array()),
+		]);
+		expect(() => decodePng(png)).toThrow();
+	});
+
+	it('requires complete headers, chunks and an end marker', () => {
+		for (const length of [12, 30, RGB.length - 1, RGB.length - 12])
+			expect(() => decodePng(RGB.subarray(0, length))).toThrow('Truncated PNG');
+	});
+
+	it('rejects invalid raster and grid sizes before allocating', () => {
+		const image = { width: 1, height: 1, data: new Uint8Array(4) };
+		expect(() => encodePng({ ...image, width: 0xffffffff })).toThrow('pixel limit');
+		expect(() => encodePng({ ...image, data: new Uint8Array(3) })).toThrow('RGBA data length');
+		expect(() => composeGrid([image], Number.NaN)).toThrow('Grid columns');
+		expect(() => composeGrid([image], 1, 0xffffffff)).toThrow('pixel limit');
+	});
+
+	it('handles arbitrary bytes with a bounded result or an Error', () => {
+		fc.assert(
+			fc.property(fc.uint8Array({ maxLength: 512 }), (bytes) => {
+				try {
+					const decoded = decodePng(bytes);
+					expect(decoded.data.length).toBe(decoded.width * decoded.height * 4);
+				} catch (error) {
+					expect(error).toBeInstanceOf(Error);
+				}
+			}),
+			{ numRuns: 200 },
+		);
 	});
 });

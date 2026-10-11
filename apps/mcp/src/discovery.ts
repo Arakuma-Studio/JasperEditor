@@ -64,7 +64,10 @@ async function probeHealth(
 			runtimeFile: typeof body.runtimeFile === 'string' ? body.runtimeFile : null,
 		};
 	} catch (e) {
-		return { ok: false, reason: (e as Error).name === 'AbortError' ? 'timeout' : (e as Error).message };
+		return {
+			ok: false,
+			reason: e instanceof Error ? (e.name === 'AbortError' ? 'timeout' : e.message) : String(e),
+		};
 	} finally {
 		clearTimeout(timer);
 	}
@@ -184,8 +187,6 @@ export async function discoverEngine(opts: DiscoveryOptions = {}): Promise<Engin
 	return null;
 }
 
-// ---------------------------------------------------------------- auto-start (`--start-engine`)
-
 /**
  * The engine bundle next to this server: `apps/engine/dist/engine.mjs` in a checkout (from `apps/mcp/dist`
  * or `apps/mcp/src`), `resources/engine/engine.mjs` in a packaged desktop app (from `resources/mcp`).
@@ -259,6 +260,10 @@ export function startHeadlessEngine(opts: {
 				child,
 				stop,
 			});
+		});
+		child.once('error', (error) => {
+			clearTimeout(timer);
+			reject(error);
 		});
 		child.once('exit', (code) => {
 			clearTimeout(timer);

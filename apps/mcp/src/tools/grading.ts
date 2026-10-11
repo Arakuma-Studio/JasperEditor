@@ -1,20 +1,15 @@
-// color-grade: agent tools for grading analysis — scopes_read (Lumetri Scopes as numbers of a rendered frame),
-// color_match (grade a clip to look like a reference frame: solved into its Lumetri wheels, levels and saturation),
-// auto_tone (Basic Correction ▸ Auto) and list_looks (the built-in creative looks). The engine renders the frames
-// with its still renderer and runs the shared maths (POST /api/grading/*); applying a result is one undoable
-// transaction ("Agent: Apply Match" / "Agent: Auto Tone").
 import {
 	type Animatable,
 	type Clip,
 	CREATIVE_LOOKS,
 	type EffectInstance,
 	LUMETRI_EFFECT_ID,
-	makeEnvelope,
 	type ProjectDocument,
 	type Sequence,
 	sequenceTimecode,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -26,18 +21,14 @@ import {
 	type ToolContext,
 	transact,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { livePlayhead, requireEligible } from './color.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
 const SequenceIdArg = z
 	.string()
 	.optional()
 	.describe('Sequence id ("seq_…"); default: the clip\'s sequence, else the project\'s first sequence');
-
-const envelopeOf = (doc: ProjectDocument, revision: number | undefined) =>
-	makeEnvelope(doc, { revision: revision ?? 0, savedAt: new Date().toISOString(), platform: 'mcp' }) as never;
 
 const effectsOf = (clip: Clip): EffectInstance[] => (clip as { effects?: EffectInstance[] }).effects ?? [];
 
@@ -180,7 +171,7 @@ export function registerGradingTools(ctx: ToolContext): void {
 			else frame = (live ? await livePlayhead(ctx, args.projectId, seq.id) : null) ?? 0;
 			const r = await ctx.engine((c) =>
 				c.gradingScopes({
-					envelope: envelopeOf(doc, revision),
+					envelope: toolEnvelope(doc, revision),
 					sequenceId: seq.id,
 					frame,
 					...(args.clipId ? { clipId: args.clipId } : {}),
@@ -236,7 +227,7 @@ export function registerGradingTools(ctx: ToolContext): void {
 			const refFrame = frameOf(refSeq, args.reference.at);
 			const r = await ctx.engine((c) =>
 				c.gradingMatch({
-					envelope: envelopeOf(doc, revision),
+					envelope: toolEnvelope(doc, revision),
 					sequenceId: seq.id,
 					clipId: clip.id,
 					frame,
@@ -297,7 +288,7 @@ export function registerGradingTools(ctx: ToolContext): void {
 			const frame = await clipFrame(ctx, args.projectId, seq, clip, args.at, live);
 			const r = await ctx.engine((c) =>
 				c.gradingAutoTone({
-					envelope: envelopeOf(doc, revision),
+					envelope: toolEnvelope(doc, revision),
 					sequenceId: seq.id,
 					clipId: clip.id,
 					frame,

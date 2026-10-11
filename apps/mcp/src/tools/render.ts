@@ -1,7 +1,8 @@
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
-import { makeEnvelope, sequenceTimecode } from '@jasper/project';
+import { sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	captureStill,
@@ -17,6 +18,7 @@ import {
 	type ToolContext,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import {
 	buildExportSettings,
@@ -25,8 +27,7 @@ import {
 	findExportPreset,
 } from '../export-presets.ts';
 import { pickSequence, timelineTable } from '../format.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+
 import {
 	animeTemplatePreview,
 	failedJobError,
@@ -36,19 +37,7 @@ import {
 	templateSummary,
 } from './templates.ts';
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const JobIdArg = z.string().min(1).describe('Job id from start_export / render tools');
-
-function pickSeq(doc: Parameters<typeof pickSequence>[0], sequenceId?: string) {
-	try {
-		return pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
-}
 
 export function registerRenderTools(ctx: ToolContext): void {
 	defineTool(
@@ -68,7 +57,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, from, to }) => {
 			const { doc, revision, live } = await loadDoc(ctx, projectId);
-			const seq = pickSeq(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			return {
 				content: [
 					{
@@ -166,8 +155,6 @@ export function registerRenderTools(ctx: ToolContext): void {
 			return jsonResult(q.result);
 		},
 	);
-
-	// ------------------------------------------------------------ motion graphics
 
 	defineTool(
 		ctx,
@@ -285,8 +272,6 @@ export function registerRenderTools(ctx: ToolContext): void {
 			};
 		},
 	);
-
-	// ------------------------------------------------------------ export
 
 	defineTool(
 		ctx,
@@ -479,7 +464,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					'Pass a full path such as /tmp/cut.mp4.',
 				);
 			const { doc, revision } = await loadDoc(ctx, projectId);
-			const seq = pickSeq(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			let r: ExportSettings['range'] = { type: 'entire' };
 			if (range === 'in-out') {
 				if (seq.inPoint === null || seq.outPoint === null)
@@ -514,11 +499,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			if (usePreviews) settings.usePreviews = true;
 			if (smartRender !== undefined) settings.smartRender = smartRender;
 			if (draftUseProxies) settings.draftUseProxies = true;
-			const envelope = makeEnvelope(doc, {
-				revision: revision ?? 0,
-				savedAt: new Date().toISOString(),
-				platform: 'mcp',
-			}) as never;
+			const envelope = toolEnvelope(doc, revision);
 			// wp-m2-anime-templates (S11:ANA-005): plan/start failures and Remotion warnings carry actionable hints.
 			const plan = await ctx
 				.engine((c) => c.planExport({ envelope, sequenceId: seq.id, settings }))

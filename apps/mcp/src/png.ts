@@ -5,6 +5,17 @@ import { crc32, deflateSync, inflateSync } from 'node:zlib';
 /** An 8-bit RGBA raster, rows top to bottom. */
 type RgbaImage = { width: number; height: number; data: Uint8Array };
 
+// Contact sheets are at most 2048 px per side; leave room for larger source stills.
+const MAX_PIXELS = 16_777_216;
+
+function pixelCount(width: number, height: number): number {
+	if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1)
+		throw new Error('Image dimensions must be positive integers');
+	const pixels = width * height;
+	if (pixels > MAX_PIXELS) throw new Error(`Image exceeds the ${MAX_PIXELS}-pixel limit`);
+	return pixels;
+}
+
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Samples per pixel by colour type (greyscale, RGB, greyscale + alpha, RGBA; no palette). */
 const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 4: 2, 6: 4 };
@@ -24,26 +35,37 @@ export function decodePng(png: Uint8Array): RgbaImage {
 	let height = 0;
 	let channels = 0;
 	const idat: Buffer[] = [];
-	for (let o = 8; o + 8 <= buf.length; ) {
+	let ended = false;
+	for (let o = 8; o < buf.length; ) {
+		if (buf.length - o < 12) throw new Error('Truncated PNG chunk');
 		const len = buf.readUInt32BE(o);
+		if (len > buf.length - o - 12) throw new Error('Truncated PNG chunk');
 		const type = buf.toString('latin1', o + 4, o + 8);
+		if (o === 8 && type !== 'IHDR') throw new Error('PNG must start with IHDR');
 		const body = buf.subarray(o + 8, o + 8 + len);
 		if (type === 'IHDR') {
+			if (o !== 8 || len !== 13) throw new Error('Invalid PNG header');
 			width = body.readUInt32BE(0);
 			height = body.readUInt32BE(4);
+			pixelCount(width, height);
 			channels = CHANNELS[body[9]!] ?? 0;
-			if (body[8] !== 8 || !channels || body[12] !== 0)
+			if (body[8] !== 8 || !channels || body[10] !== 0 || body[11] !== 0 || body[12] !== 0)
 				throw new Error(
 					`Unsupported PNG (bit depth ${body[8]}, colour type ${body[9]}, interlace ${body[12]}): only 8-bit non-interlaced greyscale/RGB/RGBA`,
 				);
 		} else if (type === 'IDAT') idat.push(body);
-		else if (type === 'IEND') break;
+		else if (type === 'IEND') {
+			if (len !== 0) throw new Error('Invalid PNG end chunk');
+			ended = true;
+			break;
+		}
 		o += 12 + len;
 	}
-	if (!width || !height || !idat.length) throw new Error('Truncated PNG');
-	const raw = inflateSync(Buffer.concat(idat));
+	if (!ended || !width || !height || !idat.length) throw new Error('Truncated PNG');
 	const stride = width * channels;
-	if (raw.length < (stride + 1) * height) throw new Error('Truncated PNG data');
+	const expectedBytes = (stride + 1) * height;
+	const raw = inflateSync(Buffer.concat(idat), { maxOutputLength: expectedBytes });
+	if (raw.length !== expectedBytes) throw new Error('Invalid PNG data length');
 	const px = new Uint8Array(stride * height);
 	for (let y = 0; y < height; y++) {
 		const filter = raw[y * (stride + 1)]!;
@@ -63,7 +85,7 @@ export function decodePng(png: Uint8Array): RgbaImage {
 			px[row + x] = (raw[src + x]! + p) & 0xff;
 		}
 	}
-	const data = new Uint8Array(width * height * 4);
+	const data = new Uint8Array(pixelCount(width, height) * 4);
 	for (let i = 0, j = 0; i < data.length; i += 4, j += channels) {
 		const grey = channels < 3;
 		data[i] = px[j]!;
@@ -86,6 +108,7 @@ function chunk(type: string, body: Uint8Array): Buffer {
 /** Encodes an RGBA raster as an opaque 8-bit RGB PNG (alpha dropped; filter 0 on every row). */
 export function encodePng(img: RgbaImage): Buffer {
 	const { width, height, data } = img;
+	if (data.length !== pixelCount(width, height) * 4) throw new Error('Invalid RGBA data length');
 	const ihdr = Buffer.alloc(13);
 	ihdr.writeUInt32BE(width, 0);
 	ihdr.writeUInt32BE(height, 4);
@@ -119,13 +142,18 @@ export function composeGrid(
 	gap = 4,
 	background: readonly [number, number, number] = [32, 32, 32],
 ): RgbaImage & { cellWidth: number; cellHeight: number; rows: number } {
+	if (!Number.isSafeInteger(columns) || columns < 1 || !Number.isSafeInteger(gap) || gap < 0)
+		throw new Error('Grid columns must be positive and gap non-negative integers');
+	for (const img of images)
+		if (img.data.length !== pixelCount(img.width, img.height) * 4)
+			throw new Error('Invalid RGBA data length');
 	const cols = Math.max(1, Math.min(columns, images.length));
 	const rows = Math.max(1, Math.ceil(images.length / cols));
 	const cellWidth = Math.max(1, ...images.map((i) => i.width));
 	const cellHeight = Math.max(1, ...images.map((i) => i.height));
 	const width = cols * cellWidth + (cols + 1) * gap;
 	const height = rows * cellHeight + (rows + 1) * gap;
-	const data = new Uint8Array(width * height * 4);
+	const data = new Uint8Array(pixelCount(width, height) * 4);
 	for (let i = 0; i < data.length; i += 4) {
 		data[i] = background[0];
 		data[i + 1] = background[1];

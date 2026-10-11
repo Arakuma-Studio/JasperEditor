@@ -10,7 +10,6 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const CACHE_GUIDE = `Media cache: the engine keeps regenerable files (waveforms, posters, filmstrips, proxies, baked colour LUTs, warped layers, graphics bakes, motion-graphics renders, export outputs, rendered frames, build caches). get_cache_usage shows the size per kind split into in use (running jobs, open projects, just written), referenced by saved projects, and unused, plus the budgets (Preferences ▸ Media Cache). clean_cache mode "unused" removes what no project references (safe, like Premiere's Delete Unused); mode "all" also removes what saved projects reference but never what is in use — it is regenerated on demand (the next preview or export is slower). Prefer "unused"; use "all" only when the user asks to free disk space. set_cache_location moves the cache to another folder (or back to the default with path null; mode "fresh" starts empty there) — only when the user asks; it waits for running jobs. Logs and the job history are not cache: they are kept by age and size (usage reports them).`;
 
 const MB = 1024 * 1024;

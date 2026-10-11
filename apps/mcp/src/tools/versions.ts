@@ -3,13 +3,12 @@
 // it: File ▸ Project Versions…); restoring as a copy always works.
 import type { VersionInfo } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import { makeEnvelope } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import { DESTRUCTIVE, defineTool, EDIT, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const VERSIONS_GUIDE = `Project versions and recovery: the engine keeps a saved version of a project every 5 minutes of editing (newest 20), before every restore, and before the first save over a project written by an older JasperEditor (an "older-format backup"). list_project_versions shows them; restore_project_version mode "copy" opens one as a new project (safe), mode "replace" writes it over the project and keeps the current state as a version (refused while the project is open in an editor: ask the user to use File ▸ Project Versions… there). save_project_copy saves the current state (live from the open editor when there is one) as a new project, e.g. before a risky batch of edits. list_unsaved_changes reports crash-recovery journals: unsaved editor changes of sessions that ended before saving; the user recovers them in the editor (File ▸ Recover Unsaved Changes…), so tell them rather than acting yourself.`;
 
 const VersionIdArg = z.string().min(1).describe('versionId from list_project_versions');
@@ -107,15 +106,7 @@ export function registerVersionTools(ctx: ToolContext): void {
 				});
 				const fresh = await c.getProject(id);
 				const copy = { ...structuredClone(doc), projectId: id, name };
-				await c.putProject(
-					id,
-					makeEnvelope(copy, {
-						revision: fresh.revision + 1,
-						savedAt: new Date().toISOString(),
-						platform: 'mcp',
-					}),
-					fresh.revision,
-				);
+				await c.putProject(id, toolEnvelope(copy, fresh.revision + 1), fresh.revision);
 				return id;
 			});
 			return jsonResult({ projectId: copyId, name, from: projectId, fromLiveEditor: live });

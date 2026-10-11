@@ -33,6 +33,22 @@ function writeRuntime(appdir: string, info: Record<string, unknown>) {
 }
 
 describe('engine discovery', () => {
+	it.each([null, undefined, 'connection failed'])(
+		'reports a non-Error health rejection: %s',
+		async (reason) => {
+			const log: string[] = [];
+			const target = await discoverEngine({
+				url: 'http://127.0.0.1:1',
+				fetch: async () => {
+					throw reason;
+				},
+				log: (line) => log.push(line),
+			});
+			expect(target?.source).toBe('explicit');
+			expect(log[0]).toContain(String(reason));
+		},
+	);
+
 	it('prefers explicit URL/token (flags over env)', async () => {
 		const t = await discoverEngine({
 			url: 'http://127.0.0.1:1',

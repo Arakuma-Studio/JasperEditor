@@ -16,6 +16,7 @@ import {
 	transitionSpec,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, TIME_FORMATS } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -30,10 +31,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence, transitionPlacement } from '../format.ts';
-import { TIME_FORMATS } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const TRANSITION_GUIDE = `Transitions:
 - add_transition adds one at an edit point (track + at) or a fade at a clip edge (clipId + edge). apply_default_transitions puts the default transitions on every edge of the given clips in one step (the editor user's default types and alignment from Preferences ▸ Timeline when the editor is open, else cross-dissolve / constant-power, center; the project's default length per medium); pass media: ["video", "audio"] to include the linked audio.
 - set_transition_defaults changes the project's default lengths (video and audio transitions, stills); the default types and alignment are the user's preferences in the editor and can only be overridden per call.
@@ -96,10 +94,6 @@ function paramValues(t: Transition): Record<string, unknown> {
 	return out;
 }
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const AlignmentArg = z
 	.enum(['center', 'start-at-cut', 'end-at-cut'])
 	.describe(
@@ -379,12 +373,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, range }) => {
 			const { doc, revision, live } = await loadDoc(ctx, projectId);
-			let seq: Sequence;
-			try {
-				seq = pickSequence(doc, sequenceId);
-			} catch (e) {
-				throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-			}
+			const seq = pickSequence(doc, sequenceId);
 			const from = range?.from !== undefined ? frameOf(seq, range.from, TIME_FORMATS) : undefined;
 			const to = range?.to !== undefined ? frameOf(seq, range.to, TIME_FORMATS) : undefined;
 			return jsonResult({

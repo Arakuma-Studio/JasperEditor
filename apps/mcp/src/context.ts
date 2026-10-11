@@ -1,6 +1,3 @@
-// Shared plumbing for the tool modules: the engine connection, the calling agent's name, document
-// loading (live from the open editor when there is one), transactions with approval progress, and the
-// tool registration wrapper that turns failures into MCP tool errors.
 import type { AgentTxResponse, EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { loadExpressionEngine } from '@jasper/expressions';
@@ -9,22 +6,22 @@ import {
 	bindExpressions,
 	type Clip,
 	documentHasActiveExpressions,
-	makeEnvelope,
 	type ProjectDocument,
 	resolveCaptureArgs,
 	resolveFrameInput,
 	type Sequence,
-	type TransactionResult,
 } from '@jasper/project';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type {
 	CallToolResult,
+	ProgressNotification,
 	ServerNotification,
 	ServerRequest,
 	ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
+import { toolEnvelope } from './envelope.ts';
 import { cancelledResult, RequestCancelled, ToolError, TX_ERROR_HINTS, toErrorResult } from './errors.ts';
 import { type EngineConnection, withEngine } from './link.ts';
 import { strictInputSchema } from './strict.ts';
@@ -87,19 +84,19 @@ export function defineTool<S extends Shape>(
 		{
 			title: config.title,
 			description: config.description,
-			inputSchema: strictInputSchema(config.input) as never,
+			inputSchema: strictInputSchema(config.input),
 			annotations: { ...config.annotations },
 		},
-		(async (args: unknown, extra: Extra) => {
+		async (args, extra) => {
 			try {
-				return await run(args as z.infer<z.ZodObject<S>>, extra);
+				return await run(args, extra);
 			} catch (e) {
 				if (extra.signal.aborted) return cancelledResult();
 				return toErrorResult(e);
 			} finally {
 				disposeReporters(extra);
 			}
-		}) as never,
+		},
 	);
 }
 
@@ -124,8 +121,6 @@ export const DESTRUCTIVE: FullToolAnnotations = { ...EDIT, destructiveHint: true
 /** Deletes or overwrites a named target; calling it again changes nothing more. */
 export const DESTRUCTIVE_IDEMPOTENT: FullToolAnnotations = { ...DESTRUCTIVE, idempotentHint: true };
 
-// ---------------------------------------------------------------- documents
-
 export type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boolean };
 
 /** The current document: from the open editor when there is one (unsaved edits included), else stored. */
@@ -134,7 +129,7 @@ export async function loadDoc(ctx: ToolContext, projectId: string): Promise<Load
 	let doc = r.result as ProjectDocument;
 	if (!doc || typeof doc !== 'object' || !doc.sequences)
 		throw new ToolError('INTERNAL', 'The engine returned no document');
-	// Wave expressions: tools that evaluate properties report what renders (post-expression values).
+	// Property tools report post-expression values so their output matches the renderer.
 	if (documentHasActiveExpressions(doc)) {
 		await loadExpressionEngine();
 		doc = bindExpressions(doc);
@@ -163,8 +158,6 @@ export function frameOf(
 	}
 }
 
-// ---------------------------------------------------------------- progress
-
 /** At most one `notifications/progress` per request every this many ms (docs/wp-notes/mcp-cli.md §2). */
 export const PROGRESS_INTERVAL_MS = 100;
 
@@ -176,7 +169,7 @@ export type ProgressReporter = {
 	dispose(): void;
 };
 
-type ProgressParams = { progressToken: string | number; progress: number; total?: number; message?: string };
+type ProgressParams = ProgressNotification['params'];
 
 /** Per-request progress state, shared by every reporter of the request (nested waits included). */
 type ProgressChannel = {
@@ -256,8 +249,6 @@ export function disposeReporters(extra: Extra): void {
 	channels.delete(extra);
 }
 
-// ---------------------------------------------------------------- transactions
-
 export type TxInput = {
 	label: string;
 	commands: unknown[];
@@ -277,7 +268,7 @@ async function firstSequenceId(ctx: ToolContext, projectId: string): Promise<str
 }
 
 function refusedForSequence(res: AgentTxResponse): boolean {
-	const r = res.result as TransactionResult;
+	const r = res.result;
 	return !r.ok && r.errors.some((e) => SEQUENCE_REQUIRED.test(e.message));
 }
 
@@ -336,8 +327,8 @@ export async function transact(
 }
 
 /** Throws a ToolError for a rejected transaction (first error's code + hint, all errors as details). */
-export function requireOk(res: AgentTxResponse): Extract<TransactionResult, { ok: true }> {
-	const r = res.result as TransactionResult;
+export function requireOk(res: AgentTxResponse): Extract<AgentTxResponse['result'], { ok: true }> {
+	const r = res.result;
 	if (r.ok) return r;
 	const first = r.errors[0];
 	const code = first?.code ?? 'E_INTERNAL';
@@ -360,7 +351,11 @@ export function requireOk(res: AgentTxResponse): Extract<TransactionResult, { ok
 }
 
 /** The JSON body of an applied transaction. */
-export function txBody(res: AgentTxResponse, r: Extract<TransactionResult, { ok: true }>, dryRun = false) {
+export function txBody(
+	res: AgentTxResponse,
+	r: Extract<AgentTxResponse['result'], { ok: true }>,
+	dryRun = false,
+) {
 	return {
 		ok: true,
 		...(dryRun ? { dryRun: true } : {}),
@@ -375,8 +370,6 @@ export function txBody(res: AgentTxResponse, r: Extract<TransactionResult, { ok:
 		...(r.warnings.length ? { warnings: r.warnings.map((w) => ({ code: w.code, message: w.message })) } : {}),
 	};
 }
-
-// ---------------------------------------------------------------- jobs
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'interrupted']);
 export const isTerminal = (job: EngineJob) => TERMINAL.has(job.state);
@@ -492,8 +485,6 @@ export async function waitJob(
 	}
 }
 
-// ---------------------------------------------------------------- stills
-
 export type StillResult = {
 	jobId: string;
 	sequenceId: string;
@@ -537,11 +528,7 @@ export async function captureStill(
 			'Times are frames, {"seconds": x} or "HH:MM:SS:FF"; sequence ids come from get_project.',
 		);
 	}
-	const envelope = makeEnvelope(loaded.doc, {
-		revision: loaded.revision ?? 0,
-		savedAt: new Date().toISOString(),
-		platform: 'mcp',
-	}) as never;
+	const envelope = toolEnvelope(loaded.doc, loaded.revision);
 	const job = await ctx.engine((c) =>
 		c.requestStill({ envelope, sequenceId: cap.sequenceId, frame: cap.frame, width: cap.width }),
 	);

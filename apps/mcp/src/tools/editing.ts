@@ -5,11 +5,11 @@ import {
 	IdListSchema,
 	OPEN_OBJECT,
 	resolveFrameInput,
-	TimeInputSchema,
 	TrackRefSchema,
 	transitionSpec,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -26,20 +26,11 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
 import { AnimateArg, textAnimationOf } from './animation.ts';
-import { ProjectIdArg } from './projects.ts';
+
 import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
 
-/** How every time argument may be written (appended to each time argument's own description). */
-export const TIME_FORMATS =
-	'Sequence time as frames (integer), {"frames": n}, {"seconds": x} or timecode "HH:MM:SS:FF" (";" before FF for drop-frame)';
-/** A time argument whose description says what it is for and which formats it accepts. */
-export const timeArg = (what: string) => TimeInputSchema.describe(`${what}. ${TIME_FORMATS}`);
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
 
 const TIME_NOTES = [
@@ -223,8 +214,6 @@ export function registerEditingTools(ctx: ToolContext): void {
 				return jsonResult({ ...txBody(res, r), [name === 'undo' ? 'undone' : 'redone']: r.results[0] });
 			},
 		);
-
-	// ------------------------------------------------------------ timeline helpers
 
 	defineTool(
 		ctx,

@@ -12,8 +12,9 @@ import {
 	type RegisteredMedia,
 	type RelinkScanResult,
 } from '@jasper/api';
-import { type MediaAsset, makeEnvelope } from '@jasper/project';
+import type { MediaAsset } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	defineTool,
@@ -28,23 +29,19 @@ import {
 	txBody,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import { LOCAL_ENGINE_ID } from '../media.ts';
-import { ProjectIdArg } from './projects.ts';
+
 import { failedJobError } from './templates.ts';
 
-/** Appended to the server instructions. */
 export const INTERCHANGE_GUIDE = `Timeline interchange (other editors and audio post):
 - import_timeline reads Final Cut Pro 7 XML (Premiere/Resolve "Final Cut Pro XML", xmeml 4/5), FCPXML 1.9–1.11 (Final Cut Pro, Resolve), OpenTimelineIO (.otio), CMX 3600 EDL, AAF (Avid / Premiere / Resolve / Pro Tools), OMF 2.0 and Avid ALE into the project: sequences, bins, media items, transitions, Motion/Opacity/levels with keyframes, markers, multi-camera clips, captions (FCPXML/OTIO). The engine registers every file it finds; the rest come in as offline placeholders (list_offline_media, link_media). AAF/OMF embedded audio is written next to the project and linked. One undo step. The result lists what was not carried and what was used instead.
 - export_timeline writes a sequence in one of those formats (job; wait: true by default). Clips the format cannot represent (text, shapes, effects, masks, expressions, non-uniform Motion, blend modes the format lacks…) are pre-rendered to ProRes 4444 with alpha and referenced (prerender "unsupported", the default except for OTIO, which keeps everything in its JasperEditor metadata), or all video clips ("all"), or reported ("none"). AAF/OMF audio: link (default for AAF), embed (default for OMF) or separate WAV/AIFF files, handles, mono breakout. EDL: one video track (and up to four audio tracks) per list, perTrack for one list per video track. The result names every clip/effect that was not carried and what was written instead.
 - Multi-camera clips: FCP7 multiclips, FCPXML mc-clips, OTIO metadata; EDL/AAF/OMF/ALE get the active camera's clips.
 - Link Media: list_offline_media lists offline media (imported placeholders, missing files). link_media relinks one asset to a file (path) or searches a folder (folder) matching by name (always), size and duration, and by fingerprint for renamed copies. A file whose content, length, frame rate or kind differs is linked only with force: true (the result lists the differences).`;
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const FormatArg = z.enum(INTERCHANGE_FORMATS);
 const RateArg = z
 	.strictObject({ num: z.number().int().positive(), den: z.number().int().positive() })
@@ -262,11 +259,7 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 			} catch (e) {
 				throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
 			}
-			const envelope = makeEnvelope(doc, {
-				revision: revision ?? 0,
-				savedAt: new Date().toISOString(),
-				platform: 'mcp',
-			}) as never;
+			const envelope = toolEnvelope(doc, revision);
 			const job = await ctx.engine((c) =>
 				c.exportTimeline({
 					envelope,
@@ -398,7 +391,7 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 				hits.push({
 					mediaId: asset.id,
 					path: a.path,
-					media: r.media as unknown as RegisteredMedia,
+					media: r.media,
 					match: r.match,
 					diff: r.diff,
 					confirm: r.needsConfirm,
@@ -424,7 +417,7 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 					hits.push({
 						mediaId: f.assetId,
 						path: f.path,
-						media: f.media as unknown as RegisteredMedia,
+						media: f.media,
 						match: f.match,
 						diff: f.diff,
 						confirm: needsConfirm(f.match, f.diff),

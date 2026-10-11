@@ -1,6 +1,3 @@
-// imports workstream MCP tools (docs/wp-notes/imports.md): Interpret Footage, image sequences, layered documents
-// (PSD), PDF / Illustrator pages and Lottie export. Lottie, SVG, PDF and the still formats (EXR, TIFF, TGA, BMP, DPX,
-// HEIC, JPEG XL) import with import_media; svg_to_shape (shapes) converts an SVG into a vector shape layer.
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import type {
@@ -23,7 +20,6 @@ import {
 	type LayeredImportLayer,
 	layeredImportCommands,
 	type MediaAsset,
-	makeEnvelope,
 	mediaAlpha,
 	mediaDisplaySize,
 	mediaDurationFlicks,
@@ -35,6 +31,7 @@ import {
 	rationalFromFps,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -48,13 +45,11 @@ import {
 	txBody,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaSummary, pickSequence } from '../format.ts';
 import { mediaRegisterCommand } from '../media.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions. */
 export const IMPORTS_GUIDE = `Imports (Lottie, SVG, PDF/AI, PSD, image sequences, still formats) and Interpret Footage:
 - import_media takes Lottie (.json/.lottie: an animated clip drawn frame-exactly on every path), SVG/SVGZ and PDF/AI (vector stills, sharp at any scale; a PDF imports its first page — import_pdf_pages picks pages), PSD/PSB (flattened), EXR (half/float), TIFF (8/16-bit), TGA, BMP, DPX, HEIC/HEIF, JPEG XL, plus the usual video/audio/image files.
 - svg_to_shape turns SVG markup into an editable vector shape layer (Premiere's/After Effects' Create Shapes from Vector Layer).
@@ -417,7 +412,7 @@ export function registerImportsTools(ctx: ToolContext): void {
 			let commands: Command[];
 			let notes: string[] = [];
 			let warnings: string[] = [];
-			if (a.mode === 'merged-all') commands = [mediaRegisterCommand(reg, '$m0', '$i0') as unknown as Command];
+			if (a.mode === 'merged-all') commands = [mediaRegisterCommand(reg, '$m0', '$i0')];
 			else {
 				const job = await ctx.engine((c) =>
 					c.extractLayers(
@@ -438,14 +433,11 @@ export function registerImportsTools(ctx: ToolContext): void {
 						);
 					if (!result.merged)
 						throw new ToolError('E_IMPORT', 'The engine made no merged picture', 'Check the layer indexes.');
-					commands = [
-						mediaRegisterCommand(result.merged, '$m0', '$i0', `${name} (merged)`) as unknown as Command,
-					];
+					commands = [mediaRegisterCommand(result.merged, '$m0', '$i0', `${name} (merged)`)];
 				} else {
 					const layers: LayeredImportLayer[] = toLayeredImportLayers(
 						result.layers,
-						(m) =>
-							(mediaRegisterCommand(m, '', '') as { asset: unknown }).asset as LayeredImportLayer['asset'],
+						(m) => mediaRegisterCommand(m, '', '').asset,
 					);
 					const built = layeredImportCommands({
 						docName: name,
@@ -585,11 +577,7 @@ export function registerImportsTools(ctx: ToolContext): void {
 			const start = a.start !== undefined ? frameOf(seq, a.start) : undefined;
 			const end = a.end !== undefined ? frameOf(seq, a.end) : undefined;
 			const format = a.format ?? (/\.lottie$/i.test(a.outputPath) ? 'dotlottie' : 'json');
-			const envelope = makeEnvelope(doc, {
-				revision: revision ?? 0,
-				savedAt: new Date().toISOString(),
-				platform: 'mcp',
-			});
+			const envelope = toolEnvelope(doc, revision);
 			const result: LottieExportResult = await ctx.engine((c) =>
 				c.exportLottie({
 					envelope,

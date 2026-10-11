@@ -14,7 +14,6 @@ import {
 	type JsonSchemaNode,
 	type MediaAsset,
 	type MgCompositionInfo,
-	type MgTextMeasurement,
 	measuredTextIssues,
 	mergeProps,
 	overridesWithEdits,
@@ -28,6 +27,7 @@ import {
 	textLayerValue,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -45,9 +45,7 @@ import {
 import { jsonResult, ToolError } from '../errors.ts';
 import { clipSummary } from '../format.ts';
 import { LOCAL_ENGINE_ID } from '../media.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (composition clips):
 - import_mg_bundle {projectId, path} imports a Remotion project folder (remotion and every @remotion/* package pinned to exactly 4.0.499, dependencies installed; its own remotion.config.ts applies) or a built bundle folder. Each composition becomes placeable; watch: true rebuilds on save and the open editor relinks automatically.
 - list_compositions shows ids, size, fps, length and the props schema (from jasper.mg.json, the project's jasper-schemas.ts zod module, or inferred from defaultProps).
@@ -218,7 +216,7 @@ async function measureLayout(
 				},
 			}),
 		);
-		for (const m of r.measurements as unknown as MgTextMeasurement[]) {
+		for (const m of r.measurements) {
 			const l = layers.find((x) => x.path.join('.') === m.id);
 			if (!l) continue;
 			issues.set(m.id, measuredTextIssues(l, m, canvas));
@@ -251,7 +249,7 @@ function bundleSummary(m: MediaAsset) {
 		source: m.mgBundle?.source.type,
 		...(m.mgBundle?.source.path ? { path: m.mgBundle.source.path } : {}),
 		remotionVersion: m.mgBundle?.remotionVersion,
-		compositions: (m.mgBundle?.compositions ?? []).map((c) => compositionSummary(c as MgCompositionInfo)),
+		compositions: (m.mgBundle?.compositions ?? []).map((c) => compositionSummary(c)),
 	};
 }
 
@@ -308,7 +306,7 @@ async function commitImport(
 	const { doc } = await loadDoc(ctx, projectId);
 	const { command, existing } = importCommand(doc, reg);
 	let mediaId = existing;
-	let tx: Record<string, unknown> | null = null;
+	let tx: ReturnType<typeof txBody> | null = null;
 	if (command) {
 		const res = await transact(
 			ctx,

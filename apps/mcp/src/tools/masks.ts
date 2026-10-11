@@ -1,6 +1,3 @@
-// Masks and track mattes for agents (wp masks): list / add / edit / remove masks on a clip's Opacity or on one of its
-// effects, track a mask through the clip (engine `track` job of kind `mask`), auto-trace a frame into masks, and set
-// a Track Matte Key's matte track. Everything goes through the document commands (one History entry per call).
 import type { EngineJob, MaskTraceResponse, TrackRequest, TrackResult } from '@jasper/api';
 import {
 	type Animatable,
@@ -23,6 +20,7 @@ import {
 	type Sequence,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, TIME_FORMATS, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -40,10 +38,7 @@ import {
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { TIME_FORMATS, timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const MASKS_GUIDE = `Masks and track mattes (Premiere-style):
 - A visual clip has Opacity masks (cut the layer out) and every video effect can have its own masks (the effect applies inside them only). Shapes: ellipse, polygon (4-point by default) or bezier (pen: any vertices with tangent handles). Properties: Mask Path, Mask Feather (px, centred on the edge, default 10), Mask Opacity (%), Mask Expansion (px, grows/shrinks), Inverted, mode (none/add/subtract/intersect/lighten/darken/difference; masks combine top to bottom).
 - Paths are in layer coordinates normalised to the clip's box (0..1, [0,0] top-left); the mask tools also take units: "px" (layer pixels; list_masks reports the box size). Vertices: {p, in, out} with in/out tangent handles relative to p (zero = corner).

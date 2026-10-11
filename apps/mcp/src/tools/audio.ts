@@ -1,5 +1,3 @@
-// Audio buses tools (audio-mix): loudness measurement, the Audio Track Mixer (inspect / strip settings / submixes /
-// sends / automation), Audio Gain, auto-ducking and loudness normalisation (the Mix and media versions).
 import type {
 	AudioAnalyzeRequest,
 	AudioAnalyzeResult,
@@ -11,18 +9,18 @@ import {
 	DUCK_DEFAULTS,
 	laneValueAt,
 	listStrips,
-	makeEnvelope,
 	mixFingerprint,
-	type ProjectDocument,
 	pans51,
 	type Sequence,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	type Extra,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -32,28 +30,15 @@ import {
 	txBody,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import { LOCAL_ENGINE_ID } from '../media.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const AUDIO_GUIDE = `Audio buses (Audio Track Mixer, loudness): every audio track, submix ("S1"…) and the Mix ("Mix") is a mixer strip — fader (volumeDb, −96 = −∞ … +15), pan (−100 … 100: −3 dB constant-power pan for mono tracks, balance for stereo), 5.1 panner (lanes pan51.x/y/center/lfe when the strip feeds a 5.1 bus), mute, solo (routing-aware), record-arm, automation mode (off | read | latch | touch | write), up to 5 effect slots (track effects via apply_commands effect.add; mixer.setInsertPosition puts one after the fader) and up to 5 sends (pre/post-fader) to later submixes; output = the Mix or a later submix. get_mixer shows every strip with its current values; set_mixer_strip changes settings; add_submix / add_send build buses; write_automation writes a lane over a time range (sample-accurate keyframes, one undo step). Track / Mix channel formats are mono, stereo or 5.1 (set_mixer_strip channelFormat; the Mix: strip "Mix"), sequence audio is 44.1 / 48 / 96 kHz (apply_commands sequence.updateSettings {audioSampleRate}); exports fold a 5.1 Mix to stereo (ITU-R BS.775) or write discrete 5.1 (start_export audioChannels: 6).
 Loudness: measure_loudness gives ITU-R BS.1770-4 / EBU R128 integrated loudness (LUFS), loudness range (LU), true peak (dBTP), sample peak and max momentary / short-term for the sequence, an In/Out or frame range, soloed tracks, or single clips (levels "source" = without clip gain). set_loudness_normalization normalises the Mix to a target (−14 streaming, −16 podcast, −23 EBU R128, −24 ATSC) with a true-peak limit — heard in the preview and applied two-pass on export; analyze: true stores the measurement used by the preview. normalize_media_loudness makes a normalised WAV version of a media and can switch audio clips to it. set_audio_gain is Premiere's Audio Gain (set, adjust, normalizeMax, normalizeAll; the normalise modes measure peaks for you). auto_duck lowers music clips under dialogue (trigger tracks or clips) with Premiere's Sensitivity / Reduce By / Fades. Voice-over recording needs a microphone in the editor window (Sequence ▸ Record Voice-over); agents cannot record.`;
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const StripArg = z.string().min(1).describe('Strip: "A1"…, "S1"…, "Mix", a track id or a track name');
-
-function envelopeOf(doc: ProjectDocument, revision: number | undefined) {
-	return makeEnvelope(doc, {
-		revision: revision ?? 0,
-		savedAt: new Date().toISOString(),
-		platform: 'mcp',
-	}) as never;
-}
 
 function resultOf<T>(job: EngineJob): T {
 	if (job.state !== 'succeeded')
@@ -72,10 +57,7 @@ export async function analyze(
 ): Promise<AudioAnalyzeResult> {
 	const { doc, revision } = await loadDoc(ctx, projectId);
 	const job = await ctx.engine((c) =>
-		c.analyzeAudio(
-			{ ...req, projectId, envelope: envelopeOf(doc, revision) } as unknown as AudioAnalyzeRequest,
-			true,
-		),
+		c.analyzeAudio({ ...req, projectId, envelope: toolEnvelope(doc, revision) }, true),
 	);
 	return resultOf<AudioAnalyzeResult>(job);
 }
@@ -85,7 +67,7 @@ export async function apply(
 	projectId: string,
 	label: string,
 	commands: unknown[],
-	extra: never,
+	extra: Extra,
 	sequenceId?: string,
 ) {
 	const res = await transact(
@@ -307,7 +289,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 					commands.push({ type: 'mixer.setLane', sequenceId: seq.id, stripId: a.strip, lane, value: p51[k] });
 			if (!commands.length)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to change', 'Pass at least one setting.');
-			return jsonResult(await apply(ctx, a.projectId, 'Audio Track Mixer', commands, extra as never, seq.id));
+			return jsonResult(await apply(ctx, a.projectId, 'Audio Track Mixer', commands, extra, seq.id));
 		},
 	);
 
@@ -342,7 +324,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 							...(channelFormat ? { channelFormat } : {}),
 						},
 					],
-					extra as never,
+					extra,
 					seq.id,
 				),
 			);
@@ -386,7 +368,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 							...(preFader ? { preFader } : {}),
 						},
 					],
-					extra as never,
+					extra,
 					seq.id,
 				),
 			);
@@ -436,7 +418,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 							...(tolerance !== undefined ? { thinning: { tolerance } } : {}),
 						},
 					],
-					extra as never,
+					extra,
 					seq.id,
 				),
 			);
@@ -476,7 +458,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 				projectId,
 				'Audio Gain',
 				[{ type: 'audio.setGain', clipIds, mode, db, ...(peaks ? { peaks } : {}) }],
-				extra as never,
+				extra,
 				seq.id,
 			);
 			return jsonResult({ ...body, ...(peaks ? { measuredPeaksDb: peaks } : {}) });
@@ -545,7 +527,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 						fadeMs: a.fadeMs ?? DUCK_DEFAULTS.fadeMs,
 					},
 				],
-				extra as never,
+				extra,
 				seq.id,
 			);
 			return jsonResult({ ...body, triggerRegions: regions.length, thresholdDb: r.activity?.thresholdDb });
@@ -599,7 +581,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 						...(analysis ? { analysis } : {}),
 					},
 				],
-				extra as never,
+				extra,
 				seq.id,
 			);
 			return jsonResult({ ...body, ...(analysis ? { analysis } : {}) });
@@ -637,7 +619,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 			const job0 = await ctx.engine((c) =>
 				c.normalizeMediaLoudness(loc.key, { targetLufs, truePeakDb: truePeakDb ?? -1, projectId }),
 			);
-			const { job, timedOut } = await waitJob(ctx, job0.id, (timeoutSeconds ?? 600) * 1000, extra as never);
+			const { job, timedOut } = await waitJob(ctx, job0.id, (timeoutSeconds ?? 600) * 1000, extra);
 			if (timedOut)
 				throw new ToolError(
 					'E_TIMEOUT',
@@ -668,7 +650,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 						...(replaceInClips?.length ? { replaceInClips } : {}),
 					},
 				],
-				extra as never,
+				extra,
 			);
 			return jsonResult({ ...body, before: r.before, after: r.after, gainDb: r.gainDb });
 		},

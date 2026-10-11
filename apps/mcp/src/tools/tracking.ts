@@ -29,6 +29,7 @@ import {
 	type Vec2,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, TIME_FORMATS, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -45,10 +46,7 @@ import {
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { TIME_FORMATS, timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const TRACKING_GUIDE = [
 	'Tracking / screen replacement: put the plate (the footage with the screen or sign) on V1 and the replacement (image, video, composition) on a track above it.',
 	'add_tracker (kind "planar", corners = the screen corners TL, TR, BR, BL in the plate media pixels at a frame where they are visible; corners may lie outside the frame) → track (runs the engine tracker, stores the samples; use refineEdges for screens with a visible bezel) → apply_tracking (mode "corner-pin" pins the replacement onto the screen; "position" / "position-scale-rotation" make it follow).',

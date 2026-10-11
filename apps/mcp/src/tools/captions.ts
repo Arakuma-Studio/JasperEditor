@@ -1,8 +1,3 @@
-// wp captions MCP tools (docs/wp-notes/captions.md): caption tracks and captions (import/export in SRT, WebVTT,
-// SCC, MCC, EBU STL, TTML/IMSC1, DFXP; list, add, edit, split, merge, delete, style), transcripts and text-based
-// editing (import, inspect, search, select, extract, lift, insert into another sequence, remove fillers and pauses,
-// rename speakers, captions from the transcript). Every edit is one transaction of document commands (also
-// available through apply_commands); reads are computed from the document with the model's own functions.
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join } from 'node:path';
@@ -37,6 +32,7 @@ import {
 	writeCaptionFileBytes,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -53,10 +49,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const CAPTIONS_GUIDE = `Captions and transcripts:
 - Caption tracks ("C1", "C2"… one per language) sit above the video tracks; each caption is a clip on its track, so move_clip / trim_clip / delete_clips (ripple) and sync lock work on captions too. The eye (visible) burns a track into preview and export; the active track is the one new captions go to and that exports embed first.
 - import_captions reads SRT, WebVTT (cue ids, settings, voices, STYLE blocks), SCC (CEA-608 pop-on, roll-up, paint-on), MCC (CEA-608/708), EBU STL, TTML/IMSC1 and DFXP onto a new or existing caption track, snapped to frames. export_captions writes a track in any of those formats (output time; SCC/MCC at 29.97 drop-frame by default).
@@ -67,10 +60,6 @@ export const CAPTIONS_GUIDE = `Captions and transcripts:
 - captions_from_transcript lays the sequence transcript out as captions on a new track (Premiere defaults: 42 characters × 2 lines, 1–7 s, a new caption at a 1 s pause, a speaker change or sentence end once half full; frame-snapped, never overlapping).
 - start_export captions: {burnIn, embed (mov_text in MP4/MOV, WebVTT in WebM), sidecar: ["srt", "vtt", …], sidecarTracks}.`;
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const TrackArg = z.string().describe('Caption track: "C1", "C2"… or a track id');
 const FormatArg = z.enum(CAPTION_FILE_FORMATS);
 const ClipIdsArg = z
@@ -104,12 +93,7 @@ async function run(
 
 async function sequenceOf(ctx: ToolContext, projectId: string, sequenceId?: string) {
 	const { doc, revision } = await loadDoc(ctx, projectId);
-	let seq: Sequence;
-	try {
-		seq = pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
+	const seq = pickSequence(doc, sequenceId);
 	return { doc, seq, revision };
 }
 
@@ -638,8 +622,6 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			return run(ctx, a.projectId, 'Caption Track', commands, extra, a.sequenceId);
 		},
 	);
-
-	// ---------------------------------------------------------------- transcripts
 
 	defineTool(
 		ctx,

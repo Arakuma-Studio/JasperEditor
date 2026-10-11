@@ -16,6 +16,7 @@ import {
 	presetSummary,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -26,9 +27,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions. */
 export const PRESETS_GUIDE = `Effect presets (Effects ▸ Presets, Premiere's "Save Preset…"):
 - list_effect_presets shows the built-in presets (read-only: Blurs, Fades, Slides, Zooms, Picture-in-Picture) and the user's own (shared with the editor and every project), with what each holds and its type. get_effect_preset returns the full JSON.
 - apply_effect_preset {projectId, clipIds, presetId | preset} applies one to clips as one undo step: intrinsic properties (Motion, Opacity, Crop, Volume, Panner) are overwritten, effects are appended with new ids. Key times follow the type: "scale" stretches them to each clip's length, "anchor-in" keeps their distance from the clip's start, "anchor-out" from its end.
