@@ -1,7 +1,3 @@
-// Clipboard (wp-clipboard, S01 §20 CLB-001…009, ID-005; S03:FX-011/012, EC-023/032, KF table): payload build,
-// validation and encoding, and the paste commands: clip.paste (overwrite / insert, targeting, cross-project
-// resolution, frame-rate conversion, every M2 field), clip.pasteAttributes / clip.removeAttributes, effect.paste,
-// keyframe.paste and project.pasteItems.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -91,8 +87,6 @@ function richProject(seed = 1) {
 	return { h, v, a, text: r.refs.$t!, shape: r.refs.$s! };
 }
 
-// ---------------------------------------------------------------- payload (CLB-001, CLB-002, CLB-009)
-
 describe('clipboard payload (CLB-001/002/009)', () => {
 	it('round-trips through text/html with non-ASCII text, and rejects HTML without the marker', () => {
 		const { h, text } = richProject();
@@ -147,8 +141,6 @@ describe('clipboard payload (CLB-001/002/009)', () => {
 		expect(h.revision).toBe(rev);
 	});
 });
-
-// ---------------------------------------------------------------- clip.paste (CLB-003/004/008, ID-005)
 
 describe('clip.paste (CLB-003/004)', () => {
 	it('pastes at the playhead in overwrite mode with new ids, relative layout, links and transitions', () => {
@@ -372,8 +364,6 @@ describe('clip.paste (CLB-003/004)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- cross-project resolution (CLB-008)
-
 describe('reference resolution across projects (CLB-008)', () => {
 	it('reuses media with the same fingerprint, adds missing assets with new ids and a project item', () => {
 		const { h, v } = richProject();
@@ -504,8 +494,6 @@ describe('reference resolution across projects (CLB-008)', () => {
 		expect(checkInvariants(t.doc, { effects: defaultRegistries().effects })).toEqual([]);
 	});
 });
-
-// ---------------------------------------------------------------- attributes (CLB-005/006, FX-011/012)
 
 describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 	function twoClips() {
@@ -654,8 +642,6 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 	});
 });
 
-// ---------------------------------------------------------------- keyframe.paste (EC-023)
-
 describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 	it.each([
 		new Error('effect registry unavailable'),
@@ -790,8 +776,6 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 		ok(h);
 	});
 });
-
-// ---------------------------------------------------------------- project.pasteItems (CLB-007)
 
 describe('project.pasteItems (CLB-007)', () => {
 	function withBin() {

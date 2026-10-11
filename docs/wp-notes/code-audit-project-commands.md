@@ -106,8 +106,20 @@ pnpm exec vitest run packages/project/test/{transaction,clipboard,gaps-graphics,
 ```
 
 After the integrated typecheck identified narrowing gaps in graphics/audio targets and a missing extracted
-Puppet pin location type, those were corrected without weakening assertions. A focused graphics/audio/
-puppet rerun also includes the new caption pin refusal regression; its result is recorded below.
+Puppet pin location type, those were corrected without weakening assertions. The post-fix graphics/audio/puppet suite passed all 23 tests across three files (223.91 seconds),
+including the new caption pin refusal regression:
+
+```sh
+pnpm exec vitest run packages/project/test/{gaps-graphics,gaps-audio-channels,sim-warp-commands}.test.ts --maxWorkers=1
+```
+
+The final transaction/clipboard boundary regressions passed all five selected tests (37 unrelated tests
+skipped; 83.37 seconds). This rerun verifies both ordinary and typed internal registry failures, locked
+keyframe destinations, non-string command types and throwing transaction getters after the final edits:
+
+```sh
+pnpm exec vitest run packages/project/test/{transaction,clipboard}.test.ts -t 'rejects non-string command types|reports a throwing transaction getter|reports unexpected property resolver errors|reports a locked keyframe destination' --maxWorkers=1
+```
 
 Biome checked all 86 command source files. The final comment pass was additionally compared after
 removing line comments and whitespace: all 56 affected files preserve the same executable lines.

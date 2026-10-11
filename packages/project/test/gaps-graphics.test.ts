@@ -1,5 +1,3 @@
-// Essential Graphics (gaps GR-4/5): graphic sequences, layers, align / distribute, Responsive Design (position pins,
-// Intro / Outro time), Roll / Crawl and .jgt templates — commands with undo and refusals, and what renders.
 import { describe, expect, it } from 'vitest';
 import {
 	alignOffsets,
