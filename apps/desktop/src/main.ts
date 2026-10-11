@@ -236,9 +236,13 @@ function registerIpc(): void {
 			if (!(await clipboard.has(ELECTRON_CLIPBOARD_FORMAT))) return null;
 			for (const item of await clipboard.read()) {
 				if (!item.types.includes(ELECTRON_CLIPBOARD_FORMAT)) continue;
-				const blob = await item.getType(ELECTRON_CLIPBOARD_FORMAT);
-				const json = clipboardReadResult(await blob.text());
-				if (json) return json;
+				try {
+					const blob = await item.getType(ELECTRON_CLIPBOARD_FORMAT);
+					const json = clipboardReadResult(await blob.text());
+					if (json) return json;
+				} catch {
+					// An unreadable item must not hide valid entries that follow it.
+				}
 			}
 		} catch (err) {
 			log(`clipboard read failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -254,10 +258,14 @@ function registerIpc(): void {
 			for (const item of await clipboard.read()) {
 				for (const type of item.types) {
 					if (!CLIPBOARD_FILE_LIST_TYPE.test(type)) continue;
-					const blob = await item.getType(type);
-					if (!('text' in blob)) continue;
-					for (const p of parseClipboardFileList(await blob.text()))
-						if (!paths.includes(p) && existsSync(p)) paths.push(p);
+					try {
+						const blob = await item.getType(type);
+						if (!('text' in blob)) continue;
+						for (const p of parseClipboardFileList(await blob.text()))
+							if (!paths.includes(p) && existsSync(p)) paths.push(p);
+					} catch {
+						// Clipboard formats can fail independently; keep reading the remaining entries.
+					}
 				}
 			}
 		} catch (err) {

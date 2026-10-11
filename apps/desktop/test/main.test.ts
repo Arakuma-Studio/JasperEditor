@@ -1,4 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ELECTRON_CLIPBOARD_FORMAT } from '../src/security.ts';
 
 type PickerEvent = {
 	senderFrame: { url: string; parent: { url: string } | null } | null;
@@ -14,6 +16,9 @@ const electron = vi.hoisted(() => ({
 	showOpenDialog: vi.fn<() => Promise<{ canceled: boolean; filePaths: string[] }>>(),
 	fromWebContents: vi.fn<() => { id: number } | null>(() => null),
 	pickFolder: vi.fn<PickerHandler>(),
+	clipboardHandlers: new Map<string, (event: PickerEvent) => Promise<unknown>>(),
+	clipboardHas: vi.fn<() => Promise<boolean>>(),
+	clipboardRead: vi.fn<() => Promise<{ types: string[]; getType(): Promise<Blob> }[]>>(),
 }));
 
 vi.mock('electron', () => ({
@@ -35,11 +40,13 @@ vi.mock('electron', () => ({
 		isDestroyed = () => false;
 	},
 	ClipboardItem: class {},
-	clipboard: {},
+	clipboard: { has: electron.clipboardHas, read: electron.clipboardRead },
 	dialog: { showErrorBox: electron.showErrorBox, showOpenDialog: electron.showOpenDialog },
 	ipcMain: {
 		handle: (channel: string, handler: PickerHandler) => {
 			if (channel === 'jasper:pick-folder') electron.pickFolder.mockImplementation(handler);
+			if (channel === 'jasper:clipboard-read' || channel === 'jasper:clipboard-read-files')
+				electron.clipboardHandlers.set(channel, handler);
 		},
 		on: vi.fn(),
 	},
@@ -143,5 +150,53 @@ describe('desktop folder picker IPC', () => {
 	])('refuses callers outside the app document: %j', async (senderFrame) => {
 		await expect(electron.pickFolder({ ...event, senderFrame })).resolves.toBeNull();
 		expect(electron.showOpenDialog).not.toHaveBeenCalled();
+	});
+});
+
+describe('desktop clipboard read isolation', () => {
+	beforeEach(async () => {
+		vi.resetModules();
+		vi.clearAllMocks();
+		electron.clipboardHandlers.clear();
+		electron.clipboardHas.mockResolvedValue(true);
+		electron.loadURL.mockResolvedValue(undefined);
+		vi.stubEnv('JASPER_DESKTOP_MODE', 'dev');
+		vi.stubEnv('JASPER_DESKTOP_DEV_URL', 'http://127.0.0.1:5173');
+		await import('../src/main.ts');
+		await vi.waitFor(() => expect(electron.clipboardHandlers.size).toBe(2));
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
+	});
+
+	it.each([
+		['jasper:clipboard-read', 'getType'],
+		['jasper:clipboard-read', 'text'],
+		['jasper:clipboard-read-files', 'getType'],
+		['jasper:clipboard-read-files', 'text'],
+	])('%s keeps later valid entries when %s rejects', async (channel, failure) => {
+		const files = channel === 'jasper:clipboard-read-files';
+		const format = files ? 'text/uri-list' : ELECTRON_CLIPBOARD_FORMAT;
+		const file = new URL('../src/security.ts', import.meta.url);
+		const json = JSON.stringify({ format: 'jasper-clipboard', version: 1, kind: 'clips' });
+		const unreadable = new Blob();
+		const error = new Error('clipboard entry unavailable');
+		if (failure === 'text') vi.spyOn(unreadable, 'text').mockRejectedValue(error);
+		electron.clipboardRead.mockResolvedValueOnce([
+			{
+				types: [format],
+				getType: () => (failure === 'getType' ? Promise.reject(error) : Promise.resolve(unreadable)),
+			},
+			{ types: [format], getType: async () => new Blob([files ? file.href : json]) },
+		]);
+		const handler = electron.clipboardHandlers.get(channel)!;
+		await expect(
+			handler({
+				senderFrame: { url: 'http://127.0.0.1:5173/editor', parent: null },
+				sender: { id: 1 },
+			}),
+		).resolves.toEqual(files ? [fileURLToPath(file)] : json);
 	});
 });
