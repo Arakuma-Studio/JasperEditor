@@ -245,7 +245,7 @@ expressions    → project, quickjs-emscripten (WebAssembly), acorn   (no DOM, n
 interchange    → project                         (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE; pure: no DOM, no Node, no fs)
 api            → zod, project
 engine-client  → api                             (fetch + ReadableStream; runs in browser and Node 20)
-session        → project, api, engine-client, zustand; react only in src/react (the ./react subpath)
+session        → project, api, engine-client, zustand, zod; react only in src/react (the ./react subpath)
 ui             → react, radix-ui, lucide-react, @fontsource; project (labels, timecode helpers)
 motion         → animejs, remotion, project, mg-templates; react as peer   (only compositions imports it)
 compositions   → remotion, @remotion/*, project, mg-templates, motion, audio-dsp, audio-fx, expressions   (NO session, ui, engine-client, tailwind)
@@ -255,7 +255,7 @@ web            → api, audio-dsp, audio-fx, compositions, engine-client, expres
 engine         → project, api, audio-dsp, audio-fx, config, expressions, interchange, mg-templates, compositions (bundled via @remotion/bundler), mcp (serves /mcp,
                  D-18), fastify…; tests also use engine-client and session
 mcp            → api, config, engine-client, expressions, project
-desktop        → electron, config (paths only)
+desktop        → electron, config (paths only); api (type-only desktop bridge contracts)
 testkit        → node built-ins, vitest, fast-check, @playwright/test   (test-only: a devDependency of project, interchange, mcp,
                  expressions, compositions and engine tests; golden frames, fuzzing, oracles; golden-fuzz)
 ```
@@ -263,6 +263,11 @@ testkit        → node built-ins, vitest, fast-check, @playwright/test   (test-
 Everywhere: `packages/*` never import `apps/*`; relative imports never leave the package root (use the target's
 public `@jasper/*` export, which must be declared in package.json and listed in the target's `exports`); only
 `motion` imports anime.js. `// layers-allow: <reason>` on (or above) a line excuses that import.
+
+Desktop shares its preload bridge contract with the web app through `@jasper/api`. That edge allows only
+explicit type imports and exports; it must not add API runtime code to the Electron shell. The layer check
+enforces this distinction. Production module dependencies must be acyclic; the same check resolves literal
+imports with each package's TypeScript configuration and excludes imports erased by the compiler.
 
 Each TS package: `"type": "module"`, `"exports": {".": "./src/index.ts"}` (plus subpaths like `"./react"`), `"scripts": {"typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run"}`, `tsconfig.json` extending the base. Dependencies between workspace packages use `"workspace:*"`.
 

@@ -1,27 +1,12 @@
 #!/usr/bin/env node
-// Dependency layering lint (ARCHITECTURE §3.1, D-37). Run by `pnpm lint`. Model: EffectCraft's `cargo xtask layers`.
-//
-// `LAYERS` below is the architecture's dependency table: for every workspace package (`packages/*`, `apps/*`) the
-// workspace packages it may depend on, the ones only its tests may use, and the external modules it must never
-// import. The check enforces, for each package:
-//   1. package.json: every `@jasper/*` in dependencies / peerDependencies is an allowed edge, and every one in
-//      devDependencies is an allowed or test-only edge;
-//   2. source (`src/**`, tests and benches excluded): every bare `@jasper/<pkg>` import is an allowed edge, is
-//      declared in the importing package.json, and names a subpath the target exports (`exports`); relative imports
-//      never leave the package root (deep `../../packages/x/src/…` imports reach around the package's public API);
-//      `packages/*` never import `apps/*`; forbidden externals (React, Remotion, Node built-ins, anime.js…) are
-//      reported with the reason;
-//   3. every workspace package has a row here (a new package is an architecture decision: add its row).
-// `scripts/check-anime.mjs` owns the anime.js determinism rules; the anime.js / @jasper/motion edges are here too so
-// the graph is complete. Changing an edge is an architecture decision: update ARCHITECTURE §3.1 and its decision log.
-// A line may opt out with `layers-allow: <reason>` in a comment on that line or the line above (reason required).
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+// Allowed package edges are architecture decisions: update ARCHITECTURE §3.1 and its decision log.
+// A `layers-allow: <reason>` comment on or above an import exempts that edge, never a runtime cycle.
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseImports } from './check-anime.mjs';
+import { cycleViolations, dependencyGraph, moduleReferences } from './check-cycles.mjs';
 
-/** Forbidden external groups: `test(spec)` and the reason shown to the developer. */
 const NODE_BUILTINS = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
 const GROUPS = {
 	node: {
@@ -34,17 +19,17 @@ const GROUPS = {
 	},
 	uiLibs: {
 		test: (s) =>
-			/^(?:radix-ui|@radix-ui\/|lucide-react|dockview|dockview-react|dockview-core|react-router)(?:\/|$)/.test(
+			/^(?:@radix-ui\/|(?:radix-ui|lucide-react|dockview|dockview-react|dockview-core|react-router)(?:\/|$))/.test(
 				s,
 			),
 		why: 'UI libraries belong to apps/web and @jasper/ui',
 	},
 	tailwind: {
-		test: (s) => /^(?:tailwindcss|@tailwindcss\/)/.test(s),
+		test: (s) => /^(?:@tailwindcss\/|tailwindcss(?:\/|$))/.test(s),
 		why: 'compositions use inline styles only (D-14): the Remotion bundle has no Tailwind',
 	},
 	remotion: {
-		test: (s) => /^(?:remotion|@remotion\/)/.test(s),
+		test: (s) => /^(?:@remotion\/|remotion(?:\/|$))/.test(s),
 		why: 'Remotion belongs to compositions, motion, web (Player) and the engine (renderer/bundler)',
 	},
 	anime: {
@@ -53,7 +38,8 @@ const GROUPS = {
 	},
 	electron: { test: (s) => /^electron(?:\/|$)/.test(s), why: 'Electron belongs to apps/desktop only' },
 	server: {
-		test: (s) => /^(?:fastify|@fastify\/|ws|onnxruntime-node|@techstark\/opencv-js|esbuild)(?:\/|$)/.test(s),
+		test: (s) =>
+			/^(?:@fastify\/|(?:fastify|ws|onnxruntime-node|@techstark\/opencv-js|esbuild)(?:\/|$))/.test(s),
 		why: 'engine-only (server, native and build) modules',
 	},
 };
@@ -61,20 +47,17 @@ const BROWSER_LAYER = ['node', 'electron', 'server'];
 
 /**
  * The table (ARCHITECTURE §3.1). `deps`: workspace packages its source may import; `testDeps`: extra ones only tests
- * may use (devDependencies); `forbid`: keys of GROUPS; `nodeOnly`: source files that are Node scripts (Node
+ * may use (devDependencies); `typeDeps`: explicit type imports only; `forbid`: keys of GROUPS;
+ * `nodeOnly`: source files that are Node scripts (Node
  * built-ins allowed, with the reason); `reactOnlyUnder`: React only in this subdirectory of `src/`.
  */
 export const LAYERS = {
-	// audio-mix: pure DSP below the model (loudness, true peak, limiter, meters, pan laws, ducking analysis); it runs
-	// inside AudioWorklets, so it has no dependencies at all (docs/wp-notes/audio-mix.md).
 	'packages/audio-dsp': {
 		name: '@jasper/audio-dsp',
 		deps: [],
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'dependency-free DSP: no DOM, no Node, no zod',
 	},
-	// golden-fuzz: test-only helpers (golden frames, fuzzing, ffmpeg oracles, headless WebGL). Only ever a
-	// devDependency (`testDeps`) of the packages whose tests use it; never imported by source.
 	'packages/testkit': {
 		name: '@jasper/testkit',
 		deps: [],
@@ -88,9 +71,6 @@ export const LAYERS = {
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
 		note: 'the pure model: zod, immer and @jasper/audio-dsp only, no DOM, no Node, no UI, no Remotion, no engine',
 	},
-	// audio-fx: the audio effect DSP (docs/wp-notes/audio-fx.md). Above the model (it reads the effect catalogue,
-	// keyframes and the mixer's processor interface from the light `@jasper/project/audio` subpath) and audio-dsp
-	// (biquads, smoothing, true peak, pan laws); runs in AudioWorklets and in the engine's offline mixer.
 	'packages/audio-fx': {
 		name: '@jasper/audio-fx',
 		deps: ['@jasper/audio-dsp', '@jasper/project'],
@@ -222,15 +202,13 @@ export const LAYERS = {
 	'apps/desktop': {
 		name: '@jasper/desktop',
 		deps: ['@jasper/config'],
+		typeDeps: ['@jasper/api'],
 		forbid: ['react', 'uiLibs', 'tailwind', 'remotion', 'anime', 'server'],
 		note: 'the Electron shell only: it loads the SPA over HTTP and forks the engine bundle',
 	},
 };
 
 const APPS = new Set(Object.entries(LAYERS).flatMap(([dir, l]) => (dir.startsWith('apps/') ? [l.name] : [])));
-const EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/;
-/** A real module specifier (the shared parser also sees `import … from` inside strings and JSX text). */
-const SPEC_RE = /^(?:[./]|@?[\w.-]+(?:[/:]|$))[^\s'"`,;(){}<>]*$/;
 
 const allowedLine = (lines, i) => {
 	const at = (l) => /layers-allow:\s*\S/.test(l ?? '');
@@ -261,9 +239,9 @@ export function fileViolations(rel, text, ctx) {
 	const lines = text.split('\n');
 	const nodeOnly = layer.nodeOnly && Object.hasOwn(layer.nodeOnly, rel);
 	const inReactDir = layer.reactOnlyUnder && rel.startsWith(`${dir}/src/${layer.reactOnlyUnder}`);
-	for (const imp of parseImports(text)) {
+	for (const imp of moduleReferences(rel, text)) {
 		const { spec, line } = imp;
-		if (!SPEC_RE.test(spec) || allowedLine(lines, line - 1)) continue;
+		if (allowedLine(lines, line - 1)) continue;
 		const v = (rule, message) => out.push({ line, rule, spec, message });
 		if (spec.startsWith('.') || spec.startsWith('/')) {
 			const target = resolve('/', dirname(rel), spec).slice(1);
@@ -291,11 +269,12 @@ export function fileViolations(rel, text, ctx) {
 				v('package-imports-app', 'packages/* never import apps/*: move the shared code into a package');
 				continue;
 			}
-			if (!layer.deps.includes(pkg)) {
+			if (!layer.deps.includes(pkg) && !(imp.typeOnly && layer.typeDeps?.includes(pkg))) {
 				v('forbidden-edge', fix.edge(layer.name, pkg));
 				continue;
 			}
-			if (!ctx.declared.has(pkg)) v('undeclared-dependency', fix.declare(dir, pkg));
+			if (!ctx.declared.has(pkg) && !(imp.typeOnly && ctx.declaredTypes?.has(pkg)))
+				v('undeclared-dependency', fix.declare(dir, pkg));
 			const exp = ctx.exportsOf(pkg);
 			if (exp && !exp.includes(sub))
 				v(
@@ -326,7 +305,6 @@ export function fileViolations(rel, text, ctx) {
 	return out;
 }
 
-/** package.json edge problems of one package. */
 export function manifestViolations(dir, layer, pkg) {
 	const out = [];
 	const where = `${dir}/package.json`;
@@ -353,34 +331,12 @@ export function manifestViolations(dir, layer, pkg) {
 				});
 		}
 	};
-	check('dependencies', layer.deps);
-	check('peerDependencies', layer.deps);
-	check('optionalDependencies', layer.deps);
-	check('devDependencies', [...layer.deps, ...(layer.testDeps ?? [])]);
+	const productionDeps = [...layer.deps, ...(layer.typeDeps ?? [])];
+	check('dependencies', productionDeps);
+	check('peerDependencies', productionDeps);
+	check('optionalDependencies', productionDeps);
+	check('devDependencies', [...productionDeps, ...(layer.testDeps ?? [])]);
 	return out;
-}
-
-function walk(dir, files) {
-	let entries;
-	try {
-		entries = readdirSync(dir);
-	} catch {
-		return files;
-	}
-	for (const name of entries) {
-		if (name === 'node_modules' || name === 'dist' || name.startsWith('.')) continue;
-		const full = join(dir, name);
-		if (statSync(full).isDirectory()) {
-			if (name === 'test' || name === 'tests' || name === '__tests__' || name === 'bench') continue;
-			walk(full, files);
-		} else if (
-			EXTENSIONS.test(name) &&
-			!/\.(?:test|spec|bench)\.[cm]?[jt]sx?$/.test(name) &&
-			!name.endsWith('.d.ts')
-		)
-			files.push(full);
-	}
-	return files;
 }
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
@@ -398,17 +354,16 @@ function exportsOf(root, name) {
 	return null;
 }
 
-/** Every violation in the repository at `root`. */
 export function checkRepo(root, layers = LAYERS) {
+	root = resolve(root);
 	const problems = [];
+	const graph = dependencyGraph(root);
+	const sources = [...graph.keys()];
 	for (const top of ['packages', 'apps']) {
-		let names = [];
-		try {
-			names = readdirSync(join(root, top));
-		} catch {
-			continue;
-		}
+		if (!existsSync(join(root, top))) continue;
+		const names = readdirSync(join(root, top));
 		for (const n of names) {
+			if (n.startsWith('.') || n === 'node_modules') continue;
 			const dir = `${top}/${n}`;
 			const manifest = join(root, dir, 'package.json');
 			if (!existsSync(manifest)) continue;
@@ -431,15 +386,21 @@ export function checkRepo(root, layers = LAYERS) {
 					Object.keys(pkg[f] ?? {}),
 				),
 			);
-			for (const file of walk(join(root, dir, 'src'), [])) {
+			for (const file of sources.filter((file) => file.startsWith(`${join(root, dir)}${sep}`))) {
 				const rel = relative(root, file).split(sep).join('/');
-				const ctx = { dir, layer, declared, exportsOf: (name) => exportsOf(root, name) };
+				const ctx = {
+					dir,
+					layer,
+					declared,
+					declaredTypes: new Set(Object.keys(pkg.devDependencies ?? {})),
+					exportsOf: (name) => exportsOf(root, name),
+				};
 				for (const v of fileViolations(rel, readFileSync(file, 'utf8'), ctx))
 					problems.push({ file: rel, ...v });
 			}
 		}
 	}
-	return problems;
+	return [...problems, ...cycleViolations(root, graph)];
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
