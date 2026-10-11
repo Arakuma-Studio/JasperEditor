@@ -82,7 +82,7 @@ helper directly. The command audit changes the shape handler to consume the same
 remains supported because these shape representations occur in valid saved projects.
 
 `math/matrix3.ts` owns the row-major tuple and multiplication. Homography and colour-science modules preserve
-their public names through aliases; the registry audit uses the same helper for its two copies. Readonly
+their public names through aliases; three-dimensional projection consumes the same multiplication; the registry audit uses the same helper for its two copies. Readonly
 inputs remain accepted and the output is a concrete tuple without a double cast. Matrix inverses deliberately
 remain separate: their singularity tolerances and refusal/fallback contracts differ.
 

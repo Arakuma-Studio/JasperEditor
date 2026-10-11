@@ -11,6 +11,7 @@ import {
 	isHoldOnlyValue,
 	outgoingEase,
 } from '../keyframes.ts';
+import { multiplyMatrix3 } from '../math/matrix3.ts';
 import type { Mat3 } from '../render/homography.ts';
 import type {
 	RenderCameraClip,
@@ -669,14 +670,7 @@ export function project3dProps<
 				0,
 				1,
 			];
-			const mul = (a: Mat3, b: Mat3): Mat3 => {
-				const o = new Array(9).fill(0) as Mat3;
-				for (let r = 0; r < 3; r++)
-					for (let c = 0; c < 3; c++)
-						o[3 * r + c] = a[3 * r]! * b[c]! + a[3 * r + 1]! * b[3 + c]! + a[3 * r + 2]! * b[6 + c]!;
-				return o;
-			};
-			map = mul(h, mul(inv, props.projective));
+			map = multiplyMatrix3(h, multiplyMatrix3(inv, props.projective));
 		}
 	}
 	const crop = props.crop;
