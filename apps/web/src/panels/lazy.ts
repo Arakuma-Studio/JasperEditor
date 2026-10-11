@@ -42,7 +42,7 @@ export function loadable<P>(load: () => Promise<ComponentType<P>>): Loadable<P> 
 	};
 }
 
-export type LoadState<P> =
+type LoadState<P> =
 	| { status: 'loading' }
 	| { status: 'ready'; Component: ComponentType<P> }
 	| { status: 'failed'; error: unknown };
@@ -72,7 +72,7 @@ export function useLoaded<P>(source: Loadable<P>): LoadState<P> {
 	return state;
 }
 
-export type LazyPanel = LazyExoticComponent<ComponentType<PanelProps>> & Loadable<PanelProps>;
+type LazyPanel = LazyExoticComponent<ComponentType<PanelProps>> & Loadable<PanelProps>;
 
 /** Whether a panel component can be loaded explicitly (every `lazyPanel` can). */
 export function isLoadable(c: unknown): c is Loadable<PanelProps> {

@@ -129,7 +129,7 @@ function apply(session: EditorSession, label: string, commands: unknown[], seque
 }
 
 /** New graphic at the playhead: a text layer nested into a graphic sequence on the lowest free track above V1. */
-export function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 'ellipse'): boolean {
+function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 'ellipse'): boolean {
 	const s = session.getState();
 	const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 	if (!seq) return false;

@@ -4,7 +4,7 @@ import { DEFAULT_FILLERS } from '@jasper/project';
 
 type Listener = () => void;
 export type TranscriptTool = 'fillers' | 'pauses' | 'captions' | 'import';
-export type TextPanelRequest = {
+type TextPanelRequest = {
 	tab: 'transcript' | 'captions';
 	clipId?: string;
 	tool?: TranscriptTool;

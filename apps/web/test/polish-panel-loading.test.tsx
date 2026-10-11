@@ -3,7 +3,7 @@
 // faster than the panel renders, it never appeared (seen in the e2e suite on a busy host: the Project panel and the
 // Program monitor stayed skeletons for three minutes, and each abandoned attempt left eight <audio> elements).
 import { cleanup, render, screen } from '@testing-library/react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { isLoadable, lazyPanel, loadable, useLoaded } from '../src/panels/lazy.ts';
 import type { PanelProps } from '../src/panels/types.ts';
@@ -43,23 +43,6 @@ function Ticker() {
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe('panel loading under frequent updates', () => {
-	it('the cause: a Suspense retry is starved (React behaviour this code must not depend on)', async () => {
-		let resolve!: (m: { default: typeof Heavy }) => void;
-		const Lazy = lazy(() => new Promise<{ default: typeof Heavy }>((r) => (resolve = r)));
-		render(
-			<div>
-				<Ticker />
-				<Suspense fallback={<b data-testid="fallback" />}>
-					<Lazy />
-				</Suspense>
-			</div>,
-		);
-		resolve({ default: Heavy });
-		await wait(1200);
-		expect(screen.queryByTestId('content')).toBeNull();
-		expect(screen.queryByTestId('fallback')).not.toBeNull();
-	});
-
 	it('a panel loaded through state appears although updates keep arriving', async () => {
 		let resolve!: (c: typeof Heavy) => void;
 		const source = loadable<Partial<PanelProps>>(() => new Promise((r) => (resolve = r)));

@@ -4,7 +4,7 @@
 /** Reference of a user bin in the Effects panel's focus state (presets use `preset:<id>`). */
 export const BIN_REF_PREFIX = 'preset-bin:';
 
-export interface CustomBinsHandle {
+interface CustomBinsHandle {
 	/** Creates a bin (inside the picked bin, else at the top of Presets); false when the library is not available. */
 	newBin(): boolean;
 	/** The user preset or bin that is picked, if any. */

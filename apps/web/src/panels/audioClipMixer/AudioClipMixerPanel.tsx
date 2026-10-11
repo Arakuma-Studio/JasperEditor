@@ -38,7 +38,6 @@ function ClipMixer({ session, seq }: { session: EditorSession; seq: Sequence }) 
 	const transport = useTransportFrame(50);
 	const F = flicksPerFrame(seq.settings.frameRate as Rational);
 	const t = transport.playing ? ctl.now() : transport.frame * F;
-	const graph = useMixGraph();
 	const tracks = listStrips(seq).filter((s) => s.kind === 'track');
 	return (
 		<div className="flex h-full min-h-0 overflow-x-auto" data-testid="audio-clip-mixer">
@@ -54,7 +53,6 @@ function ClipMixer({ session, seq }: { session: EditorSession; seq: Sequence }) 
 					solo={s.solo}
 					stereo={s.format !== 'mono'}
 					t={t}
-					graphOn={!!graph}
 				/>
 			))}
 		</div>
@@ -71,7 +69,6 @@ function ClipStrip(props: {
 	solo: boolean;
 	stereo: boolean;
 	t: number;
-	graphOn: boolean;
 }) {
 	const { session, seq, trackId, t } = props;
 	const ctl = mixerControllerFor(session);

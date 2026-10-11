@@ -11,7 +11,6 @@ import {
 	EQ_PRESETS,
 	type EssentialSection,
 	type EssentialSound,
-	FLICKS_PER_SECOND,
 	REVERB_PRESETS,
 	readEssentialSound,
 	SECTION_LABELS,
@@ -550,6 +549,3 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 		</div>
 	);
 }
-
-/** Seconds of a flick count (UI). */
-export const secondsOf = (flicks: number) => flicks / FLICKS_PER_SECOND;

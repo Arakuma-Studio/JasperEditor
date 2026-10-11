@@ -99,7 +99,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				<div className="flex justify-center px-2 pb-2">
 					<GenerateTranscriptButton session={session} seq={seq} variant="primary" />
 				</div>
-				<ImportTranscript session={session} seq={seq} media={audioMedia} apply={apply} />
+				<ImportTranscript media={audioMedia} apply={apply} />
 			</div>
 		);
 
@@ -333,13 +333,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				<CaptionsTool words={words} seq={seq} apply={apply} range={range} onDone={() => setTool(null)} />
 			) : null}
 			{tool === 'import' ? (
-				<ImportTranscript
-					session={session}
-					seq={seq}
-					media={audioMedia}
-					apply={apply}
-					onDone={() => setTool(null)}
-				/>
+				<ImportTranscript media={audioMedia} apply={apply} onDone={() => setTool(null)} />
 			) : null}
 			{/* words */}
 			<div
@@ -698,8 +692,6 @@ function CaptionsTool(p: {
 }
 
 function ImportTranscript(p: {
-	session: EditorSession;
-	seq: Sequence;
 	media: Array<[string, string]>;
 	apply: ApplyFn;
 	onDone?(): void;

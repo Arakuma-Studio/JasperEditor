@@ -15,7 +15,7 @@ import type { PanelProps } from '../types.ts';
 const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 /** LUFS / dB text: one decimal, "—" for silence. */
-export function loudnessText(v: number | null | undefined): string {
+function loudnessText(v: number | null | undefined): string {
 	return v !== null && v !== undefined && Number.isFinite(v) && v > -70 ? v.toFixed(1) : '—';
 }
 

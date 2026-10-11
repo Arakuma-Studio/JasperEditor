@@ -47,7 +47,7 @@ const CAPTURE_WIDTH = 480;
 const SETTINGS_KEY = 'jasper.scopes.settings.v2';
 
 /** Layout presets (Premiere's Lumetri Scopes presets: one scope, pairs, the four-scope layouts). */
-export const SCOPE_LAYOUTS: readonly {
+const SCOPE_LAYOUTS: readonly {
 	id: string;
 	label: string;
 	slots: readonly ScopeKind[];

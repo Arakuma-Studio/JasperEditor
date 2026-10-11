@@ -1,6 +1,5 @@
-// Scrubby number ("hot text", S05:CT-020…025, S03:EC-010). Local to the inspector panels until the
-// WP-2A design-system ScrubbyNumber lands; the callback names match its contract
-// (`onScrubStart/onScrub/onScrubEnd`) so the swap is mechanical.
+// Inspector scrubby number (S05:CT-020…025, S03:EC-010): commits a value function so relative edits
+// apply independently to each value in a mixed selection.
 //
 // - drag horizontally: 1 step per px, Shift ×10, Ctrl/Cmd ×0.1; Esc during the drag reverts;
 // - click (< 3 px movement) enters edit mode; Enter/Tab commit, Esc cancels; `+10`, `-5`, `*2`, `/3`
@@ -11,7 +10,7 @@ import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } fr
 
 export type ValueFn = (base: number) => number;
 
-export type ScrubbyNumberProps = {
+type ScrubbyNumberProps = {
 	/** Displayed value; `null` shows the mixed `–` (S03:INS-004). */
 	value: number | null;
 	label: string;
