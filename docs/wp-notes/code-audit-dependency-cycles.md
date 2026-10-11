@@ -71,9 +71,14 @@ node scripts/check-cycles.mjs
 **Measured:** the focused run passed 23 tests across two files; the repository assertion was excluded because
 its baseline source still contains the eight reported cycles. Biome and `git diff --check` passed.
 
-The existing repository-pass test must run after the eight source fixes are integrated. Baseline execution of
-the new gate is expected to fail on those cycles; the focused fixture tests can be run independently with
-`-t '^(?!.*the repository passes)'`.
+**Measured after integration at `f77c55fc`:** `pnpm lint`, including the complete dependency graph check,
+passed. An isolated run of `scripts/check-layers.test.mjs` passed all 11 tests; its whole-repository case took
+52,069 ms. The same case in the full suite reached 65,107 ms and failed its 60,000 ms execution timeout.
+
+The repository case asserts only that `checkRepo(repo)` returns no violations; it has no performance assertion
+or documented runtime budget. Its bounded Vitest timeout is therefore 120,000 ms to accommodate whole-graph
+work during the full suite. The graph coverage and empty-violations assertion are unchanged. All other test
+timeouts are unchanged. The integration run is responsible for verifying the settled full suite.
 
 This is a static module graph. Computed specifiers and source code assembled into strings are not inferred.
 External packages are resolved to distinguish workspace edges but their implementation graphs are outside the
