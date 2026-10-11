@@ -13,8 +13,6 @@ import { bool, GLSL_PACG, num, popup, slider } from './common.ts';
 /** Downscale factor for a blur of `sigma` canvas px (keeps ≤ ~16 px of blur per full-res texel budget). */
 export const blurScale = (sigma: number) => (sigma > 48 ? 0.25 : sigma > 12 ? 0.5 : 1);
 
-// ---------------------------------------------------------------- Camera Blur
-
 /** Camera Blur's lens-disc radius in layer px for a Percent Blur (100 % ≈ 4 % of the layer's long side). */
 export function cameraBlurRadius(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>): number {
 	return (Math.max(0, num(p.percentBlur)) / 100) * 0.04 * Math.max(ctx.width, ctx.height);
@@ -68,8 +66,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Channel Blur
 
 /** Channel Blur's per-channel σ (layer px) for R, G, B, A. */
 export function channelBlurSigmas(p: EffectParams): [number, number, number, number] {
@@ -165,8 +161,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Compound Blur
-
 export const COMPOUND_BLUR = defineShaderEffect({
 	id: 'jasper.compound-blur',
 	label: 'Compound Blur',
@@ -207,8 +201,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Directional Blur
 
 /** Unit vector of a Premiere direction (0° = up/down axis, clockwise). */
 export function premiereDirection(deg: number): [number, number] {
@@ -259,8 +251,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Reduce Interlace Flicker
-
 export const REDUCE_INTERLACE_FLICKER = defineShaderEffect({
 	id: 'jasper.reduce-interlace-flicker',
 	label: 'Reduce Interlace Flicker',
@@ -281,8 +271,6 @@ void main() { fragColor = fx_gaussian1d(u_source, v_uv, vec2(0.0, 1.0), u_texel,
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Sharpen
 
 export const SHARPEN = defineShaderEffect({
 	id: 'jasper.sharpen',
@@ -308,8 +296,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Unsharp Mask
 
 export const UNSHARP_MASK = defineShaderEffect({
 	id: 'jasper.unsharp-mask',

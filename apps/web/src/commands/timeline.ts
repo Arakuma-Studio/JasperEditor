@@ -1,41 +1,35 @@
-// Timeline UI commands (owned by WP-2B). Ids follow S02:TL-903 and match keymap-defaults.ts. Each
-// command reads session context (playhead, targeting, selection) and emits one document transaction
-// (ARCHITECTURE §2.3 "two layers"). Transport keys (Space, JKL, ←/→, Home/End) belong to WP-2C.
 import {
 	type Clip,
+	type CommandOf,
 	clipAt,
 	type Sequence,
 	sequenceDuration,
 	type TransactionResult,
 	trackLabel,
 } from '@jasper/project';
-import type { ActiveTool, EditorSession, SequenceViewState, SessionTxInput } from '@jasper/session';
+import type { ActiveTool, SequenceViewState, SessionTxInput } from '@jasper/session';
 import { getSourceTransport } from '../panels/program/transport-registry.ts';
 import { setSourceMarks, sourceMonitorState } from '../panels/source/source-state.ts';
-import { activeTimeline, type TimelineHandle } from '../panels/timeline/env.tsx';
+import { activeTimeline } from '../panels/timeline/env.tsx';
 import { clipsAtPlayhead, unlockedTrackIds } from '../panels/timeline/model/gestures.ts';
 import { stepHeight, trackHeight } from '../panels/timeline/model/layout.ts';
 import { TOOLS } from '../panels/timeline/model/tools.ts';
 import { cancelDynamicTrim, exitTrimMode, stopPlayAround } from '../panels/timeline/state/trim-mode.ts';
+import {
+	type ResolvedSequenceCommandContext,
+	selectedSequenceClips as selectedClips,
+	sequenceContext,
+} from './sequence-context.ts';
+
+export { selectedSequenceClips as selectedClips } from './sequence-context.ts';
+
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
-export type Env = {
-	session: EditorSession;
-	seq: Sequence;
-	view: SequenceViewState;
-	playhead: number;
-	handle: TimelineHandle | null;
-};
+export type Env = ResolvedSequenceCommandContext & { view: SequenceViewState };
 
 export function envOf(ctx: CommandCtx): Env | null {
-	const session = ctx.session;
-	if (!session) return null;
-	const s = session.getState();
-	const handle = activeTimeline(ctx.services);
-	const seqId = handle?.sequenceId() ?? s.activeSequenceId;
-	const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
-	if (!seq) return null;
-	return { session, seq, view: s.views[seq.id]!, playhead: session.transport.getState().frame, handle };
+	const e = sequenceContext(ctx);
+	return e ? { ...e, view: e.session.getState().views[e.seq.id]! } : null;
 }
 
 const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
@@ -44,7 +38,7 @@ export function apply(
 	ctx: CommandCtx,
 	e: Env,
 	label: string,
-	commands: unknown[],
+	commands: SessionTxInput['commands'],
 	opts: { coalesceKey?: string; quiet?: boolean; selectAfter?: SessionTxInput['selectAfter'] } = {},
 ): TransactionResult | null {
 	if (commands.length === 0) return null;
@@ -52,7 +46,7 @@ export function apply(
 		label,
 		origin: 'user',
 		sequenceId: e.seq.id,
-		commands: commands as never[],
+		commands,
 		...(opts.coalesceKey ? { coalesceKey: opts.coalesceKey } : {}),
 		...(opts.selectAfter ? { selectAfter: opts.selectAfter } : {}),
 	});
@@ -70,12 +64,6 @@ export function apply(
 	}
 	return r;
 }
-
-export const selectedClips = (e: Env): Clip[] =>
-	e.session
-		.getState()
-		.selection.timeline.clips.map((id) => e.seq.clips[id])
-		.filter((c): c is Clip => !!c);
 
 /** Targeted track ids (both kinds), or every unlocked track when nothing is targeted (TL-251). */
 export function targetedTracks(e: Env): string[] {
@@ -107,8 +95,6 @@ export function seekReveal(e: Env, frame: number): void {
 	e.session.transport.seek(frame);
 	e.handle?.controller.reveal(frame);
 }
-
-// ---------------------------------------------------------------- Source monitor marks (S03:SRC-003)
 
 type SourceMarkAction = 'in' | 'out' | 'clearIn' | 'clearOut' | 'clearInOut' | 'goToIn' | 'goToOut';
 
@@ -196,8 +182,6 @@ const cmd = (
 	...extra,
 });
 
-// ---------------------------------------------------------------- tools (TL-590, S05:TOOL-003)
-
 const TOOL_IDS: ActiveTool[] = [
 	'selection',
 	'trackSelectForward',
@@ -249,8 +233,6 @@ const toolCommands: UiCommand[] = TOOL_IDS.map((tool) => ({
 			s.setToggles({ activeTool: spring.previous });
 	},
 }));
-
-// ---------------------------------------------------------------- edits (TL-680…704)
 
 function addEdit(ctx: CommandCtx, e: Env, all: boolean): void {
 	const at = e.playhead;
@@ -367,8 +349,6 @@ function slide(ctx: CommandCtx, e: Env, delta: number): void {
 	);
 }
 
-// ---------------------------------------------------------------- playhead trims (TL-549)
-
 function playheadTrim(ctx: CommandCtx, e: Env, side: 'prev' | 'next', ripple: boolean): void {
 	const p = e.playhead;
 	const clips = onePerLink(
@@ -380,22 +360,23 @@ function playheadTrim(ctx: CommandCtx, e: Env, side: 'prev' | 'next', ripple: bo
 		ctx.ui.toast({ kind: 'info', message: 'No clip under the playhead on the targeted tracks' });
 		return;
 	}
-	const commands = clips.map((c) =>
-		side === 'prev'
-			? {
-					type: 'clip.trim',
-					clipId: c.id,
-					edge: 'in',
-					deltaFrames: p - c.start,
-					mode: ripple ? 'ripple' : 'regular',
-				}
-			: {
-					type: 'clip.trim',
-					clipId: c.id,
-					edge: 'out',
-					deltaFrames: p - (c.start + c.duration),
-					mode: ripple ? 'ripple' : 'regular',
-				},
+	const commands = clips.map(
+		(c): CommandOf<'clip.trim'> =>
+			side === 'prev'
+				? {
+						type: 'clip.trim',
+						clipId: c.id,
+						edge: 'in',
+						deltaFrames: p - c.start,
+						mode: ripple ? 'ripple' : 'regular',
+					}
+				: {
+						type: 'clip.trim',
+						clipId: c.id,
+						edge: 'out',
+						deltaFrames: p - (c.start + c.duration),
+						mode: ripple ? 'ripple' : 'regular',
+					},
 	);
 	const label = ripple
 		? side === 'prev'
@@ -408,8 +389,6 @@ function playheadTrim(ctx: CommandCtx, e: Env, side: 'prev' | 'next', ripple: bo
 	// Q moves the playhead to the old clip start so it stays on the same content.
 	if (r?.ok && ripple && side === 'prev') seekReveal(e, Math.min(...clips.map((c) => c.start)));
 }
-
-// ---------------------------------------------------------------- in/out (TL-760…766)
 
 function setInOut(ctx: CommandCtx, e: Env, label: string, i: number | null, o: number | null): void {
 	apply(ctx, e, label, [{ type: 'sequence.setInOut', in: i, out: o }]);
@@ -439,7 +418,7 @@ function liftExtract(ctx: CommandCtx, e: Env, extract: boolean): void {
 	const targeted = [...e.view.targeting.video, ...e.view.targeting.audio].filter(
 		(id) => !isLocked(e.seq, id),
 	);
-	const range = {
+	const range: CommandOf<'range.extract'> | CommandOf<'range.lift'> = {
 		type: extract ? 'range.extract' : 'range.lift',
 		from: inPoint,
 		to: outPoint,
@@ -453,15 +432,11 @@ function liftExtract(ctx: CommandCtx, e: Env, extract: boolean): void {
 	if (r?.ok) seekReveal(e, inPoint); // TL-690: playhead goes to the old In
 }
 
-// ---------------------------------------------------------------- markers (TL-790…794)
-
 function markerNav(e: Env, dir: 1 | -1): void {
 	const frames = [...new Set(e.seq.markers.map((m) => m.frame))].sort((a, b) => a - b);
 	const f = dir > 0 ? frames.find((x) => x > e.playhead) : [...frames].reverse().find((x) => x < e.playhead);
 	if (f !== undefined) seekReveal(e, f);
 }
-
-// ---------------------------------------------------------------- track heights (TL-263)
 
 function setHeights(
 	e: Env,
@@ -475,8 +450,6 @@ function setHeights(
 			heights[t.id] = fn(trackHeight(e.view.trackHeights, t.id, k), k);
 	e.session.setView(e.seq.id, { trackHeights: heights });
 }
-
-// ---------------------------------------------------------------- the list
 
 const T: CommandScope = 'timeline';
 const E: CommandScope = 'editing';
@@ -723,7 +696,6 @@ export const timelineCommands: UiCommand[] = [
 			if (handle?.cancelGesture()) return;
 			stopPlayAround();
 			exitTrimMode();
-			// TL-903: otherwise Escape deselects.
 			ctx.session?.select('timeline', [], 'replace');
 			ctx.session?.selectGaps([]);
 			handle?.ui.setState({ editPoints: [], contextMenu: null });

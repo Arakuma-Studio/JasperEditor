@@ -194,8 +194,6 @@ export function spatialSegmentLength(kfs: readonly Keyframe<unknown>[], i: numbe
 	return isVec2Value(a) && isVec2Value(b) ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
 }
 
-// ---------------------------------------------------------------- editing (commands, S03:KF-021, OVL-020)
-
 /** Spatial input of the keyframe commands: tangents omitted = keep the key's current ones. */
 type SpatialInput = { mode: SpatialInterpolation; inTangent?: Vec2; outTangent?: Vec2 };
 

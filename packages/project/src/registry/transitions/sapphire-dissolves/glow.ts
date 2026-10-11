@@ -46,8 +46,6 @@ export function glowSigma(p: EffectParams, width: number, mix: number, widthName
 	];
 }
 
-// ---------------------------------------------------------------- S_DissolveGlow
-
 export const relSideParams = (side: 'From' | 'To', what = 'Width') =>
 	grp(`Rel ${side}`, [
 		slider(`rel${side}Brightness`, `Rel ${side} Brightness`, 1, { min: 0, softMax: 4 }),
@@ -126,8 +124,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveUltraGlow
 
 export const S_DISSOLVE_ULTRA_GLOW: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-ultra-glow',
@@ -298,8 +294,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveLightLeak
 
 export const LEAK_SCALE_MODES = ['no', 'sizeUpDown', 'sizeUp', 'sizeDown'] as const;
 export const LEAK_COMBINES = ['screen', 'add', 'leaksOnly'] as const;

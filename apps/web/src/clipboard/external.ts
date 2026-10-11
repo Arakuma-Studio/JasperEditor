@@ -6,10 +6,11 @@
 // targeted video track, centred (DM-004 default placement). Each paste that changes the document is one
 // transaction (the import's "Import N files", or "Paste Text"), so one undo step (CMD-001).
 import {
-	type Command,
+	type CommandInput,
 	looksLikeSvg,
 	parseSvgPath,
 	type Sequence,
+	type ShapeItemInput,
 	svgPathToShapeItems,
 	svgToShapeContents,
 } from '@jasper/project';
@@ -65,7 +66,7 @@ export function lowestTargetedTrack(
 }
 
 /** The `clip.addText` command for pasted text (5 s at the playhead, default centred transform). */
-function pastedTextCommand(seq: Sequence, track: string, at: number, text: string): Command {
+function pastedTextCommand(seq: Sequence, track: string, at: number, text: string): CommandInput {
 	const rate = seq.settings.frameRate;
 	const duration = Math.max(1, Math.round((PASTED_TEXT_SECONDS * rate.num) / rate.den));
 	return {
@@ -75,7 +76,7 @@ function pastedTextCommand(seq: Sequence, track: string, at: number, text: strin
 		duration,
 		track,
 		content: { text },
-	} as Command;
+	} satisfies CommandInput;
 }
 
 /** The bin non-placed imports go to: the selected bin in a focused Project panel, else its current bin. */
@@ -226,7 +227,7 @@ export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): 
 	const { session, seq } = env;
 	const svg = looksLikeSvg(text);
 	if (!seq || (!svg && !looksLikeSvgPathData(text))) return false;
-	let items: Record<string, unknown>[];
+	let items: ShapeItemInput[];
 	let warnings: string[] = [];
 	try {
 		if (svg) {
@@ -267,7 +268,7 @@ export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): 
 		sequenceId: seq.id,
 		commands: [
 			target
-				? ({ type: 'shape.addItems', clipId: target.id, items, index: 0 } as Command)
+				? ({ type: 'shape.addItems', clipId: target.id, items, index: 0 } satisfies CommandInput)
 				: ({
 						type: 'clip.addShape',
 						sequenceId: seq.id,
@@ -276,7 +277,7 @@ export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): 
 						track: track!.label,
 						name: 'Pasted SVG',
 						shape: { type: 'vector', contents: items },
-					} as Command),
+					} satisfies CommandInput),
 		],
 		...(target
 			? {}

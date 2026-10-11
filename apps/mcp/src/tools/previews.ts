@@ -1,14 +1,7 @@
-// Render previews and performance stats for agents (workstream `previews`, docs/wp-notes/previews.md):
-// get_render_bar_state, render_previews, delete_render_files, perf_stats.
 import type { EngineJob, PreviewSettings } from '@jasper/api';
-import {
-	audioPreviewSegments,
-	makeEnvelope,
-	previewSegments,
-	previewSettingsOf,
-	type Sequence,
-} from '@jasper/project';
+import { audioPreviewSegments, previewSegments, previewSettingsOf, type Sequence } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -18,21 +11,17 @@ import {
 	jobBody,
 	loadDoc,
 	READ_ONLY,
-	requireSequence,
 	type ToolContext,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { ProjectIdArg } from './projects.ts';
+import { pickSequence } from '../format.ts';
+
 import { failedJobError } from './templates.ts';
 
-/** Appended to the server instructions. */
 export const PREVIEWS_GUIDE = `Render previews (Premiere's Sequence ▸ Render…): the timeline is cut into segments at every clip, transition and edit boundary; each segment has a content hash of everything that changes its pixels (relative to its start, so ripples keep previews valid and undo turns them green again). get_render_bar_state shows each segment: green = a preview file exists (the Program monitor plays it), yellow = plays live in real time (≈ cost per frame), red = probably drops frames live, none = plays natively; with the reasons. render_previews mode "effects" (Render Effects In to Out: red and yellow segments), "all" (Render In to Out), "selection" (segments showing clipIds) or "audio" (Render Audio); range defaults to In/Out, else the whole sequence. Renders go through the export paths (the picture the export writes) and appear in the Jobs panel. delete_render_files removes preview files (all, or the segments of a range). Preview file format/size/quality: apply_commands sequence.setPreviewSettings {format: h264-iframe|h264|vp9, size: full|half, quality: standard|high}. start_export can reuse previews (settings.usePreviews in the HTTP API). perf_stats reports engine counters (CPU, memory, event-loop delay, host load, jobs, render throughput, preview files, invariant checks: incremental vs full and why) and, with an open editor, playback (frames shown/dropped, fps, stalls, buffering).`;
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const RangeArg = z
 	.object({
 		from: z.unknown().describe('Frame, {"seconds": x} or "HH:MM:SS:FF"'),
@@ -71,7 +60,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, range }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const settings = previewSettingsOf(seq) as PreviewSettings;
 			const segs = previewSegments(doc, seq.id);
 			const audio = audioPreviewSegments(doc, seq.id);
@@ -152,12 +141,8 @@ export function registerPreviewTools(ctx: ToolContext): void {
 					'Pass the clip ids to render.',
 				);
 			const { doc, revision } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
-			const envelope = makeEnvelope(doc, {
-				revision: revision ?? 0,
-				savedAt: new Date().toISOString(),
-				platform: 'mcp',
-			}) as never;
+			const seq = pickSequence(doc, sequenceId);
+			const envelope = toolEnvelope(doc, revision);
 			const r = await ctx.engine((c) =>
 				c.renderPreviews({
 					envelope,
@@ -210,7 +195,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		async ({ projectId, sequenceId, scope, range }) => {
 			if (scope === 'all') return jsonResult(await ctx.engine((c) => c.deletePreviews({ all: true })));
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const r = rangeOf(seq, range);
 			const hashes = [
 				...previewSegments(doc, seq.id).filter((s) => overlapsRange(s, r)),

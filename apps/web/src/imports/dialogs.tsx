@@ -1,13 +1,11 @@
-// imports workstream dialogs (docs/wp-notes/imports.md): the import prompts — Image Sequence (numbered stills as one
-// clip, frame rate), Import Layered File (Premiere's: Merge All Layers / Merged Layers / Individual Layers / Sequence
-// with the layer list), PDF / Illustrator pages — and File ▸ Export ▸ Lottie… (format, range, warnings, download).
 import type { LayeredExtractResult, LayeredLayer, LottieExportResult } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import type { LayeredImportMode, Rational } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
-import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { exportEnvelope } from '../export/settings.ts';
+import { useDialogClose } from '../extensions/dialog.ts';
 import { parseFps } from './interpret-dialog.tsx';
 
 export const IMAGE_SEQUENCE_DIALOG = 'imports.imageSequence';
@@ -18,21 +16,6 @@ export const LOTTIE_EXPORT_DIALOG = 'imports.lottieExport';
 const errorText = (e: unknown) =>
 	e instanceof EngineError ? `${e.message} (${e.code})` : e instanceof Error ? e.message : String(e);
 
-/** Open state and a one-shot close: the Dialog also reports its closing after the primary action ran. */
-function useFinish(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	const done = useRef(false);
-	return {
-		open,
-		finish(r?: unknown) {
-			if (done.current) return;
-			done.current = true;
-			setOpen(false);
-			close(r);
-		},
-	};
-}
-
 function Row({ label, children }: { label: string; children: ReactNode }) {
 	return (
 		<div className="flex items-center gap-2">
@@ -42,15 +25,13 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 	);
 }
 
-// ---------------------------------------------------------------- image sequence
-
 export type ImageSequenceGroupView = { label: string; frames: number; missing: number };
 export type ImageSequenceChoice = { asSequence: boolean; frameRate: Rational };
 
 export function ImageSequenceDialog(
 	props: HostedDialogProps<{ groups: ImageSequenceGroupView[]; defaultRate: Rational }>,
 ) {
-	const { open, finish } = useFinish(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const [asSequence, setAsSequence] = useState(true);
 	const [text, setText] = useState(String(+(props.defaultRate.num / props.defaultRate.den).toFixed(3)));
 	const rate = parseFps(text);
@@ -100,8 +81,6 @@ export function ImageSequenceDialog(
 		</Dialog>
 	);
 }
-
-// ---------------------------------------------------------------- layered documents
 
 export type LayeredChoice = { mode: LayeredImportMode; selected: number[] };
 
@@ -166,7 +145,7 @@ function allPictureLayers(layers: LayeredLayer[], out: LayeredLayer[] = []): Lay
 export function LayeredImportDialog(
 	props: HostedDialogProps<{ name: string; result: LayeredExtractResult }>,
 ) {
-	const { open, finish } = useFinish(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const [mode, setMode] = useState<LayeredImportMode>('sequence');
 	const pictures = useMemo(() => allPictureLayers(props.result.layers), [props.result]);
 	const [selected, setSelected] = useState(
@@ -251,12 +230,10 @@ export function LayeredImportDialog(
 	);
 }
 
-// ---------------------------------------------------------------- PDF pages
-
 export function PdfPagesDialog(
 	props: HostedDialogProps<{ name: string; pages: { page: number; width: number; height: number }[] }>,
 ) {
-	const { open, finish } = useFinish(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const [selected, setSelected] = useState(() => new Set([1]));
 	return (
 		<Dialog
@@ -303,8 +280,6 @@ export function PdfPagesDialog(
 	);
 }
 
-// ---------------------------------------------------------------- Lottie export
-
 export type LottieExportProps = { session: EditorSession; engine: EngineClient; sequenceId: string };
 
 function base64Blob(b64: string, type: string): Blob {
@@ -316,7 +291,7 @@ function base64Blob(b64: string, type: string): Blob {
 
 export function LottieExportDialog(props: HostedDialogProps<LottieExportProps>) {
 	const { session, engine, sequenceId } = props;
-	const { open, finish } = useFinish(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const seq = session.getCommitted().sequences[sequenceId];
 	const hasInOut =
 		seq?.inPoint !== null &&

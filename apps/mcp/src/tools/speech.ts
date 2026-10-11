@@ -1,12 +1,9 @@
-// wp speech MCP tools: local speech-to-text (Whisper on the engine) — models, transcribe (media, clips or a sequence:
-// its clip media or its mix) and get_transcript (a media's transcript, or a sequence's as heard through its clips).
 import type { EngineJob, SpeechModel, TranscriptionResult } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	FLICKS_PER_SECOND,
 	formatTimecode,
 	type MediaAsset,
-	makeEnvelope,
 	mixFingerprint,
 	type ProjectDocument,
 	sequenceWords,
@@ -16,6 +13,7 @@ import {
 	transcriptForMedia,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	defineTool,
@@ -24,15 +22,14 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
-	requireSequence,
 	type ToolContext,
 	transact,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { ProjectIdArg } from './projects.ts';
+import { pickSequence } from '../format.ts';
 
-/** Appended to the server instructions. */
 export const SPEECH_GUIDE = `Speech to text (local Whisper on the engine; nothing is uploaded): list_speech_models shows the models (tiny / base / small, multilingual or English-only ".en"; size, licence, installed); install_speech_model downloads one (pinned revision, SHA-256 verified; the licence is MIT — say so to the user). transcribe makes transcripts: mediaId / clipId (that media), or sequenceId with mode "media" (default: every clip media heard in the sequence without a transcript, or all with replace: true) or "mix" (the sequence's mixed audio, optionally inOutOnly; the words go back to the clips' media in media time, covering only what the sequence plays). Options: model (default whisper-base), language (ISO 639-1, default auto-detect), translate (English text of other languages), speakerLabels (+ speakerCount when known). Word times come from cross-attention alignment refined against the audio (pauses stay pauses), with a confidence per word. With wait (default true) it commits ONE undo step "Generate Transcript"; with wait: false it returns the jobs — follow them with wait_for_job, then call transcribe {projectId, jobIds} to commit. get_transcript reads a media's transcript (media time) or a sequence's (sequence time, as heard through its audio clips). Then use the transcript_* / captions tools for text-based editing and captions.`;
 
 const OptionsShape = {
@@ -318,13 +315,9 @@ export function registerSpeechTools(ctx: ToolContext): void {
 			if (args.mediaId) await submitMedia(args.mediaId);
 			else if (args.clipId) await submitMedia(clipMediaId(doc, args.clipId));
 			else {
-				const seq = requireSequence(doc, args.sequenceId);
+				const seq = pickSequence(doc, args.sequenceId);
 				if (args.mode === 'mix') {
-					const envelope = makeEnvelope(doc, {
-						revision: 0,
-						savedAt: new Date().toISOString(),
-						platform: 'mcp',
-					});
+					const envelope = toolEnvelope(doc, 0);
 					const job = (await speechCall(ctx, (c) =>
 						c.call('speechTranscribeSequence', {
 							body: {
@@ -447,7 +440,7 @@ export function registerSpeechTools(ctx: ToolContext): void {
 						.join(' '),
 				});
 			}
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const words = sequenceWords(doc, seq);
 			const F = FLICKS_PER_SECOND * (seq.settings.frameRate.den / seq.settings.frameRate.num);
 			return jsonResult({

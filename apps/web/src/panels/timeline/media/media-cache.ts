@@ -8,6 +8,7 @@ import type { MediaRuntime } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
 import { mediaKeyOf } from '../../../import/assets.ts';
 import { type ColumnRequest, reduceColumns } from '../model/waveform.ts';
+import type { PeaksWorkerRequest, PeaksWorkerResponse } from './peaks-protocol.ts';
 
 /** Bumped whenever any sprite/peaks resource finishes loading. */
 export const mediaCacheVersion = createStore<{ v: number }>(() => ({ v: 0 }));
@@ -44,8 +45,6 @@ async function fetchJson(url: string): Promise<unknown> {
 	if (!res.ok) throw new Error(`${res.status}`);
 	return res.json();
 }
-
-// ---------------------------------------------------------------- sprites
 
 const spriteIndexes = new Map<string, Entry<SpriteIndex>>();
 const images = new Map<string, Entry<HTMLImageElement>>();
@@ -87,8 +86,6 @@ export function sheetImage(url: string): HTMLImageElement | null {
 	);
 }
 
-// ---------------------------------------------------------------- peaks
-
 type PeaksData = { header: PeaksHeader; channels: Float32Array[]; key: string };
 const peaks = new Map<string, Entry<PeaksData>>();
 
@@ -123,8 +120,6 @@ export function peaksFor(
 	});
 }
 
-// ---------------------------------------------------------------- worker reduction
-
 type Pending = { resolve(v: Float32Array): void; peaks: Float32Array; req: ColumnRequest };
 let worker: Worker | null | undefined;
 const loaded = new Set<string>();
@@ -139,7 +134,7 @@ function getWorker(): Worker | null {
 			return worker;
 		}
 		worker = new Worker(new URL('./peaks.worker.ts', import.meta.url), { type: 'module' });
-		worker.onmessage = (e: MessageEvent<{ id: number; columns: Float32Array }>) => {
+		worker.onmessage = (e: MessageEvent<PeaksWorkerResponse>) => {
 			const p = pending.get(e.data.id);
 			pending.delete(e.data.id);
 			p?.resolve(e.data.columns);
@@ -165,12 +160,12 @@ export function reducePeaks(data: PeaksData, channel: number, req: ColumnRequest
 	if (!w) return Promise.resolve(reduceColumns(ch, req));
 	const key = `${data.key}:${channel}`;
 	if (!loaded.has(key)) {
-		w.postMessage({ type: 'load', key, peaks: ch.slice() });
+		w.postMessage({ type: 'load', key, peaks: ch.slice() } satisfies PeaksWorkerRequest);
 		loaded.add(key);
 	}
 	const id = nextId++;
 	return new Promise((resolve) => {
 		pending.set(id, { resolve, peaks: ch, req });
-		w.postMessage({ type: 'reduce', id, key, req });
+		w.postMessage({ type: 'reduce', id, key, req } satisfies PeaksWorkerRequest);
 	});
 }

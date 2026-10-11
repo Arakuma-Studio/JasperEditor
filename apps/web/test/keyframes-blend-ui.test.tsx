@@ -1,6 +1,3 @@
-// keyframes-blend in Effect Controls (happy-dom): Opacity ▸ Blend Mode lists every mode grouped like Premiere's menu
-// (Normal, Subtractive, Additive, Complex, Difference, HSL, then the utility modes) and sets it as one undo entry;
-// right-click a key ▸ Rove Across Time (checkable, also from the graph editor's keys), drawn as a dot in the lanes.
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
@@ -137,7 +134,7 @@ describe('graph editor (keyframes-blend)', () => {
 			wheel(screen.getByTestId('graph-value-opacity'), { deltaY: -100, ctrlKey: true });
 		});
 		expect(labels()).not.toBe(before);
-		expect(velocity()).toBe(velBefore); // independent
+		expect(velocity()).toBe(velBefore);
 		expect(screen.getByTestId('graph-fit-value-opacity').getAttribute('aria-pressed')).toBe('false');
 		const zoomed = labels();
 		cleanup();

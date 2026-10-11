@@ -1,6 +1,4 @@
-// MCP scenario QA (docs/wp-notes/mcp-cli.md §6): realistic edits made only through jasper-mcp over MCP
-// JSON-RPC against a real engine, asserting on rendered pixels and written files. Opt-in: `pnpm qa:mcp`
-// (MCP_QA=1) or with the other render suites (REMOTION_E2E=1); titles need the Remotion renderer (Chrome).
+// Opt-in through pnpm qa:mcp (MCP_QA=1) or REMOTION_E2E=1; title rendering requires Chrome.
 import { existsSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -36,7 +34,6 @@ describe.runIf(QA_ENABLED)('MCP scenario QA (real engine, MCP over stdio)', () =
 		await qa.stop();
 	}, 60_000);
 
-	/** A fresh 720p30 project with the solid-colour and test-pattern fixtures imported. */
 	async function fresh(name: string) {
 		await qa.project(name);
 		media = await qa.importMedia('xfade-red.mp4', 'xfade-blue.mp4', 'clip-a.mp4');
@@ -71,7 +68,6 @@ describe.runIf(QA_ENABLED)('MCP scenario QA (real engine, MCP over stdio)', () =
 			[90, 150],
 		]);
 		expect(coverage(await qa.frame(45), blue)).toBeGreaterThan(0.97);
-		// The test pattern goes on V2 over the red shot: V2 is drawn on top.
 		const pattern = (await v1()).find((c) => c.start === 90)!;
 		await qa.tool('move_clip', { projectId: qa.projectId, clipIds: [pattern.id], to: 0, deltaTracks: 1 });
 		const top = await qa.frame(15);
@@ -106,7 +102,6 @@ describe.runIf(QA_ENABLED)('MCP scenario QA (real engine, MCP over stdio)', () =
 			},
 		);
 		expect(JSON.stringify(g)).toMatch(/"saturation":0/);
-		// The property read reports the same value as keyed and as rendered.
 		const props = await qa.tool<{ properties: { key: string; value: unknown; evaluated: unknown }[] }>(
 			'get_clip_properties',
 			{ projectId: qa.projectId, clipId, at: 15 },
@@ -292,7 +287,6 @@ describe.runIf(QA_ENABLED)('MCP scenario QA (real engine, MCP over stdio)', () =
 		const file = [videoFrame(out, 0.5, 640, qa.dir), videoFrame(out, 1.5, 640, qa.dir)];
 		expect(meanDiff(timeline[0]!, file[0]!)).toBeLessThan(6);
 		expect(meanDiff(timeline[1]!, file[1]!)).toBeLessThan(8);
-		// Re-import into another project: the export is media like any other.
 		const first = qa.projectId;
 		await qa.project('QA re-import');
 		const m = await qa.importMedia(out);
@@ -328,7 +322,6 @@ describe.runIf(QA_ENABLED)('MCP scenario QA (real engine, MCP over stdio)', () =
 		);
 		await expect(call).rejects.toThrow();
 		expect(progress.length).toBeGreaterThan(0);
-		// The engine reports the export cancelled and its partial output is gone.
 		await expect
 			.poll(
 				async () =>

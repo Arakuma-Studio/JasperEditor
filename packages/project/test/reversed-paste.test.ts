@@ -1,6 +1,4 @@
-// Keys pasted / re-timed onto a clip running the other way (keyframes-blend): exact frames (the reversed mapping
-// spans the clip's first to last frame, like contentTimeAt — it used to land one frame off) and mirrored eases, so
-// the target shows at every sequence frame what the source shows at the same offset.
+// Reversed timing spans duration − 1 frames, including both endpoints.
 import { describe, expect, it } from 'vitest';
 import {
 	buildClipsPayload,

@@ -9,6 +9,7 @@
 // fringing samples the three channels at different radii; DefocusPrism weights each channel by its own ring. With
 // gamma > 1 and half-float intermediates the bright points keep their energy and bloom into clean iris shapes
 // (real bokeh), unlike a gaussian. Cost: n ≤ 400 taps on a ≤ 1/2^k texture, so 1080p previews stay interactive.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_NOISE } from '../glsl/noise.ts';
@@ -31,8 +32,6 @@ export const DEFOCUS_RADIUS_PER_UNIT = 0.5;
 const GATHER_TARGET = 10;
 const MAX_TAPS = 400;
 
-// ---------------------------------------------------------------- params
-
 /** Shape popup of RackDefocus/DefocusPrism/ZDefocus/RackDfComp: Circle, 3…12 sides. */
 export const IRIS_SHAPES = ['circle', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'] as const;
 export const irisShapeParam = (
@@ -48,7 +47,10 @@ export const irisShapeParam = (
 		def,
 	);
 /** Number of sides of a Shape popup value (0 = circle). */
-export const irisSides = (v: unknown, def: (typeof IRIS_SHAPES)[number] = 'circle'): number => {
+export const irisSides = (
+	v: ParamValue | undefined,
+	def: (typeof IRIS_SHAPES)[number] = 'circle',
+): number => {
 	const i = choiceIndex(v, IRIS_SHAPES, def);
 	return i === 0 ? 0 : i + 2;
 };
@@ -74,8 +76,6 @@ export const highlightParams = (gamma = 1, boost = 0, thresholdLabel = 'Hilight 
 ];
 export const defocusWidthParam = (def = 0.088, name = 'defocusWidth', label = 'Defocus Width') =>
 	sSize(name, label, def, 1);
-
-// ---------------------------------------------------------------- iris config
 
 /** Everything the gather needs about the iris (per instance, from params). */
 export type IrisConfig = {
@@ -178,8 +178,6 @@ export function irisUniforms(c: IrisConfig): Record<string, FxUniformValue> {
 		u_irisTexShift: [tex.shift[0], tex.shift[1]],
 	};
 }
-
-// ---------------------------------------------------------------- GLSL
 
 /**
  * `sapphire-blur-sharpen/iris`: the iris boundary, ring profile, noise and crops, `sbs_irisAt(s, px)` (per-channel
@@ -355,8 +353,6 @@ vec4 sbs_shapeView(float relY, float zoom) {
   return vec4(clamp(w, 0.0, 1.0), 1.0);
 }
 `;
-
-// ---------------------------------------------------------------- planning
 
 export type GatherSpec = {
 	/** Prepared (premultiplied, usually half-float) picture to defocus. */

@@ -1,4 +1,3 @@
-// ANM-013: every registered text animator must preserve public values under seek reordering.
 import { getTextAnimationSpec } from '@jasper/project';
 import { describe, it } from 'vitest';
 import { TEXT_ANIMATION_IMPLS } from '../src/text/index.ts';

@@ -1,5 +1,3 @@
-// perf-core: GET /api/perf reports how the engine's transactions checked invariants (mode, incremental and full
-// checks, why the full check had to decide).
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -58,7 +56,7 @@ describe('GET /api/perf invariants (perf-core)', () => {
 				invariants: { mode: string; incremental: number; full: number; fallbacks: Record<string, number> };
 			}
 		).invariants;
-		expect(inv.mode).toBe('verify'); // tests run in verify mode
+		expect(inv.mode).toBe('verify');
 		// Headless transactions (no editor open) load the project file each time: a freshly loaded document has not
 		// been checked under the transaction's registries, so the full check decides (and loading dominates anyway).
 		expect(inv.full).toBeGreaterThanOrEqual(3);

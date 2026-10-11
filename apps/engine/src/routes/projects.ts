@@ -1,4 +1,3 @@
-// Project store and leases (ARCHITECTURE §9.2, S01:PER-001/025/040).
 import {
 	EnvelopeSchema,
 	LeaseRequestSchema,
@@ -109,7 +108,6 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 		guarded<P>(async (req) => ({ versions: await projects.versions(req.params.projectId) })),
 	);
 
-	// Saved versions (process workstream, D-39): read one, restore it in place or as a new project.
 	app.get<PV>(
 		'/api/projects/:projectId/versions/:versionId',
 		guarded<PV>(async (req) => projects.version(req.params.projectId, req.params.versionId)),
@@ -142,7 +140,7 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 		guarded<P>(async (req) => {
 			if ((await projects.revision(req.params.projectId)) === null)
 				throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
-			return { candidates: await recovery.list(req.params.projectId) };
+			return recovery.list(req.params.projectId);
 		}),
 	);
 

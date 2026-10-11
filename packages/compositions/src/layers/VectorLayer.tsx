@@ -1,11 +1,12 @@
 /// <reference path="../imports-modules.d.ts" />
-// Vector stills (imports workstream, docs/wp-notes/imports.md): SVG files and PDF / Illustrator pages are drawn as
+// Vector stills (docs/wp-notes/imports.md): SVG files and PDF / Illustrator pages are drawn as
 // vectors at the scale they are shown at — SVG by the browser's SVG renderer (`<img>`: sandboxed, no scripts or
 // external resources), PDF pages by pdf.js into a canvas — never as a fixed bitmap. The picture is made at
 // `vectorRasterScale` × its size (the largest scale Motion gives the layer over the clip, rounded up to a power of
 // two) and shown at its size, so zooming in stays sharp. The same component draws the Program monitor, the Remotion
 // renders and the layer bakes of the native export.
 import type { Animatable, RenderVisualClip } from '@jasper/project';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useEffect, useRef, useState } from 'react';
 import { cancelRender, continueRender, delayRender, getRemotionEnvironment } from 'remotion';
 import type { LayerProps } from '../types.ts';
@@ -104,25 +105,18 @@ function SvgPicture({ layer }: { layer: LayerProps }) {
 	);
 }
 
-type PdfDoc = { getPage(n: number): Promise<PdfPage>; numPages: number };
-type PdfPage = {
-	getViewport(o: { scale: number }): { width: number; height: number };
-	render(o: Record<string, unknown>): { promise: Promise<void>; cancel(): void };
-};
-
-let pdfjs: Promise<{ getDocument(src: Record<string, unknown>): { promise: Promise<PdfDoc> } }> | null = null;
+let pdfjs: Promise<typeof import('pdfjs-dist')> | null = null;
 /** pdf.js, loaded on first use with its worker in-page (no worker URL to resolve in either bundler). */
 function pdfLib() {
 	pdfjs ??= (async () => {
-		const worker = await import('pdfjs-dist/build/pdf.worker.mjs');
-		(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = worker;
-		return (await import('pdfjs-dist')) as never;
+		await import('pdfjs-dist/build/pdf.worker.mjs');
+		return import('pdfjs-dist');
 	})();
 	return pdfjs;
 }
 
-const pdfDocs = new Map<string, Promise<PdfDoc>>();
-function pdfDocument(url: string): Promise<PdfDoc> {
+const pdfDocs = new Map<string, Promise<PDFDocumentProxy>>();
+function pdfDocument(url: string): Promise<PDFDocumentProxy> {
 	let p = pdfDocs.get(url);
 	if (!p) {
 		p = pdfLib().then(

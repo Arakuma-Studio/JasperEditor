@@ -9,7 +9,7 @@ export type TileDraw = (
 	tile: { x0: number; width: number; height: number },
 ) => void;
 
-// ui-perf: design tokens are defined on the root element only (packages/ui theme/tokens.css: `:root` and the
+// design tokens are defined on the root element only (packages/ui theme/tokens.css: `:root` and the
 // `data-pr-*` attributes `applyPrefs` sets on <html>), so their values are cached per name. Reading them through
 // `getComputedStyle` on every canvas redraw forced a style recalculation per tile while scrolling. The cache is
 // dropped when the root's attributes change (theme, contrast, density, label colours) or a style sheet is added or

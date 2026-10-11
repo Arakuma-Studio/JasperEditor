@@ -1,5 +1,3 @@
-// color-mgmt: the linear-light run planning (one blend scope for every track of a run) and the nested HTML-in-Canvas
-// guard (fx/canvas-scope.tsx). The Remotion renders are covered by apps/engine/test/color-mgmt-remotion.test.ts.
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CanvasScopeContext, nestedScopeMessage, ScopedHtmlInCanvas } from '../src/fx/canvas-scope.tsx';
@@ -90,7 +88,7 @@ describe('nested HTML-in-Canvas guard', () => {
 				</ScopedHtmlInCanvas>
 			</CanvasScopeContext.Provider>,
 		);
-		// Server rendering runs no effects: the content is there without the inner canvas, and no render error.
+		// Server rendering runs no effects, so the inner canvas is not mounted.
 		expect(html).toContain('data-canvas-scope-flattening');
 		expect(html).toContain('<span>content</span>');
 		expect(html).not.toContain('<canvas');

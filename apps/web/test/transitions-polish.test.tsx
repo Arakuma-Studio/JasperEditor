@@ -1,17 +1,17 @@
-// Wave-4 transition polish in the web app (component, happy-dom): the Transition section marks expensive transitions
-// like expensive effects, edits image params with the media picker, seeds the Custom Completion curve, and the
-// Program monitor shows draggable crosshairs for the point params of the selected transition.
-import type { Sequence } from '@jasper/project';
+import { buildRenderSnapshot, type Sequence } from '@jasper/project';
+import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
+import type { ProgramOverlayHostProps } from '../src/extensions/index.ts';
 import {
 	framePointToSequence,
 	sequenceToFramePoint,
 	TransitionPointOverlay,
 } from '../src/fx/TransitionPointOverlay.tsx';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
+import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { makeSession, videoAsset } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
@@ -105,6 +105,20 @@ describe('Transition section (wave 4)', () => {
 });
 
 describe('on-canvas point handles of the selected transition', () => {
+	const hostProps = (
+		session: EditorSession,
+		view: ProgramOverlayHostProps['view'],
+	): ProgramOverlayHostProps => ({
+		session,
+		view,
+		doc: buildRenderSnapshot(session.getDrawn(), session.getState().activeSequenceId!, {
+			resolveMedia: () => null,
+			resolveFont: () => null,
+		}),
+		transport: session.transport,
+		viewport: { width: 960, height: 540 },
+		monitor: monitorStores.program.getState(),
+	});
 	it('maps frame-normalised points to sequence px and back', () => {
 		const seq = { settings: { width: 1920, height: 1080 } } as Sequence;
 		expect(framePointToSequence(seq, [0.25, 0.5])).toEqual([480, 540]);
@@ -116,7 +130,7 @@ describe('on-canvas point handles of the selected transition', () => {
 		const view = { scale: 0.5, x: 10, y: 20 };
 		render(
 			<SessionProvider session={session}>
-				<TransitionPointOverlay session={session} view={view} transport={session.transport} />
+				<TransitionPointOverlay {...hostProps(session, view)} />
 			</SessionProvider>,
 		);
 		const g = screen.getByTestId('transition-point-center');
@@ -145,11 +159,7 @@ describe('on-canvas point handles of the selected transition', () => {
 		const { session } = scene('jasper.push');
 		render(
 			<SessionProvider session={session}>
-				<TransitionPointOverlay
-					session={session}
-					view={{ scale: 1, x: 0, y: 0 }}
-					transport={session.transport}
-				/>
+				<TransitionPointOverlay {...hostProps(session, { scale: 1, x: 0, y: 0 })} />
 			</SessionProvider>,
 		);
 		expect(screen.queryByTestId('transition-point-overlay')).toBeNull();

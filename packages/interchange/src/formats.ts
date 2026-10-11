@@ -60,7 +60,7 @@ const textOut =
 	(p, s, o, r) =>
 		encodeUtf8(f(p, s, o, r));
 
-export const FORMAT_INFO: Record<Format, FormatInfo | undefined> = {
+export const FORMAT_INFO: Record<Format, FormatInfo> = {
 	otio: {
 		id: 'otio',
 		name: 'OpenTimelineIO',
@@ -149,7 +149,7 @@ export function formatInfo(f: Format): FormatInfo {
 /** Format of a file extension (case-insensitive, with or without the dot); `.xml` → FCP7 XML. */
 export function formatFromExtension(ext: string): Format | null {
 	const e = ext.trim().replace(/^\./, '').toLowerCase();
-	for (const f of Object.values(FORMAT_INFO)) if (f?.extensions.includes(e)) return f.id;
+	for (const f of Object.values(FORMAT_INFO)) if (f.extensions.includes(e)) return f.id;
 	return null;
 }
 
@@ -161,13 +161,8 @@ export function detectFormat(bytes: Uint8Array, fileName?: string | null): Forma
 	const order: Format[] = ['aaf', 'omf', 'fcp7', 'fcpxml', 'otio', 'ale', 'edl'];
 	for (const f of order) {
 		const info = FORMAT_INFO[f];
-		if (!info) continue;
-		try {
-			if (info.sniff(bytes, head)) return f;
-		} catch {
-			// a sniffer never decides on garbage
-		}
+		if (info.sniff(bytes, head)) return f;
 	}
 	const byExt = ext ? formatFromExtension(ext) : null;
-	return byExt && FORMAT_INFO[byExt] ? byExt : null;
+	return byExt;
 }

@@ -33,6 +33,7 @@ import {
 	layerMapOf,
 	type MediaHandle,
 	mediaFrameAt,
+	mediaParamId,
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
@@ -67,7 +68,7 @@ import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
 
-/** wp masks: masks of a step (the effect applies inside them), in the chain canvas. */
+/** Step masks in chain-canvas coordinates. */
 type PreparedMasks = { masks?: FxMaskGeometry; maskJoin?: boolean };
 
 export type FxPreparedStep =
@@ -87,9 +88,8 @@ export type FxPreparedStep =
 	| ({ kind: 'css'; key: string; filter: string } & PreparedMasks)
 	| ({ kind: 'crop'; key: string; insets: [number, number, number, number] } & PreparedMasks)
 	| ({ kind: 'flip'; key: string; horizontal: boolean } & PreparedMasks)
-	/** wp masks: the layer's Opacity masks. */
 	| { kind: 'mask'; key: string; geometry: FxMaskGeometry }
-	/** wp masks: hand the finished picture to the layer's matte track hub (before a transition tap). */
+	/** Deliver to the matte hub before a transition tap. */
 	| { kind: 'matteTap'; key: string; tap: MatteTap; meta: MatteTapMeta; hide: boolean }
 	/** Transition framework: hand the picture to the GPU transition stage (always the last step). */
 	| {
@@ -114,7 +114,7 @@ export type FxPreparedStep =
 			seed: number;
 			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
 			insets: readonly [number, number, number, number] | null;
-			/** wp masks: the adjustment layer's active Opacity masks (it applies inside them). */
+			/** Active Opacity masks limit the adjustment layer's coverage. */
 			opacityMasks?: readonly ResolvedMask[];
 	  };
 
@@ -155,16 +155,16 @@ export type FxStage = {
 	key: string;
 	/** LUT assets of colour runs are still loading (the preview draws without them meanwhile). */
 	pending: boolean;
-	/** wp masks: video tracks whose composite Track Matte Keys of the stack read (media `track:<id>`). */
+	/** Video tracks read by Track Matte Keys (media track:<id>). */
 	trackMattes: string[];
-	/** wp masks: the sequence frame of the stage (track mattes are taken at the same sequence time). */
+	/** Track mattes must use the same sequence frame as the stage. */
 	seqFrame: number;
 };
 
 export type LayerFx =
-	/** No enabled shader effect: the layer draws the M1/M2 way. */
+	/** No enabled shader effect; use the ordinary layer renderer. */
 	| { mode: 'none' }
-	/** Shader effects present but not drawable here (preview only): M1/M2 drawing + a chip. */
+	/** Preview without unavailable shader effects, with a diagnostic chip. */
 	| { mode: 'bypass'; chip: string; bypassed: FxBypass[] }
 	| { mode: 'active'; stage: FxStage; cssEffects: ResolvedEffect[]; chip: string | null };
 
@@ -213,7 +213,7 @@ export function useLayerFx(
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
 	// keyframes-blend: a layer of the GL compositor's group captures its picture the same way as a transition side.
 	const tap: LayerTap | null = layer.transition?.tap ?? layer.composite?.tap ?? null;
-	// wp masks: a layer of a matte track runs the chain too (its picture goes to the matte hub).
+	// Matte-track layers also need the chain to deliver their picture to the matte hub.
 	const matte = layer.matte ?? null;
 	const capture = !!tap || !!matte || !!opts.chain;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
@@ -222,7 +222,7 @@ export function useLayerFx(
 	const failures = fxStatus.version();
 	const realFrame = layer.realFrame ?? layer.localFrame;
 	const contentTime = layer.contentTime;
-	// Media time of the picture shown (frame hold, then Time Remapping; workstream `time`): roto mattes follow it.
+	// Roto mattes follow picture time after frame hold and Time Remapping.
 	const pictureRemap = activeRemap(clip as Parameters<typeof activeRemap>[0]);
 	const pictureMediaTime = pictureRemap
 		? Math.max(0, remapSourceAt(pictureRemap, layer.pictureTime ?? contentTime))
@@ -254,7 +254,7 @@ export function useLayerFx(
 			const hit = cache.get(fxId);
 			if (hit !== undefined) return hit;
 			const inst = byId.get(fxId);
-			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}|${(inst as { warpAnalysis?: { key?: string } } | undefined)?.warpAnalysis?.key ?? ''}`;
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify(inst?.puppet ?? null))}|${inst?.warpAnalysis?.key ?? ''}`;
 			cache.set(fxId, k);
 			return k;
 		};
@@ -323,8 +323,8 @@ export function useLayerFx(
 				s.kind === 'gpu'
 					? s.spec.params
 							.filter((ps) => isLutMediaParam(ps))
-							.map((ps) => (s.fx.params[ps.name] as { mediaId?: unknown } | undefined)?.mediaId)
-							.filter((id): id is string => typeof id === 'string' && !!id)
+							.map((ps) => mediaParamId(s.fx.params[ps.name]))
+							.filter((id) => !!id)
 					: [],
 			) ?? [],
 		[plan],
@@ -336,8 +336,8 @@ export function useLayerFx(
 				plan?.steps.flatMap((s) =>
 					s.kind === 'gpu'
 						? (s.spec.gpu?.cpuPixels ?? [])
-								.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
-								.filter((id): id is string => typeof id === 'string' && !!id)
+								.map((name) => mediaParamId(s.fx.params[name]))
+								.filter((id) => !!id)
 								.map((id) => doc.media[id])
 								.filter((h) => h?.kind === 'image')
 								.map((h) => h!.url)
@@ -467,22 +467,18 @@ export function useLayerFx(
 						...(paramsAt ? { paramsAt } : {}),
 						instanceKey: instanceKeyOf(s.fx.id),
 						pixels: (param: string) => {
-							const id = (s.fx.params[param] as { mediaId?: unknown } | undefined)?.mediaId;
-							const h = typeof id === 'string' && id ? doc.media[id] : undefined;
+							const id = mediaParamId(s.fx.params[param]);
+							const h = id ? doc.media[id] : undefined;
 							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
 						},
 						structures: {
-							...((s.fx as { puppet?: unknown }).puppet
-								? { puppet: (s.fx as { puppet?: unknown }).puppet }
-								: {}),
-							...((s.fx as { warpAnalysis?: unknown }).warpAnalysis
-								? { warpAnalysis: (s.fx as { warpAnalysis?: unknown }).warpAnalysis }
-								: {}),
+							...(s.fx.puppet ? { puppet: s.fx.puppet } : {}),
+							...(s.fx.warpAnalysis ? { warpAnalysis: s.fx.warpAnalysis } : {}),
 							...(layerMasks.length ? { masks: layerMasks } : {}),
 						},
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
-					// wp masks: a Track Matte Key reading a track binds the track's composite as `u_matte`.
+					// Track Matte Keys bind the track composite as u_matte.
 					const matteTrack = s.fx.effectId === TRACK_MATTE_EFFECT_ID ? s.fx.params.matteTrack : undefined;
 					if (typeof matteTrack === 'string' && matteTrack) {
 						if (!trackMattes.includes(matteTrack)) trackMattes.push(matteTrack);

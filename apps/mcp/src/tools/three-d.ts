@@ -1,6 +1,3 @@
-// three-d for agents (docs/wp-notes/three-d.md): the 3D Layer switch, 3D transform and Material Options, cameras
-// (lens, depth of field, orbit / pan / dolly), lights, the sequence's 3D renderer, and a read-out of the evaluated
-// 3D scene at a frame (active camera, lights, every 3D layer's world placement and projected corners, the runs).
 import type { CamTrackResult, EngineJob } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
@@ -35,6 +32,7 @@ import {
 	trackPointsAt,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	defineTool,
@@ -53,9 +51,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const THREE_D_GUIDE = `3D layers, cameras and lights (After Effects' 3D in a Premiere timeline):
 - set_3d_layer {clipIds, enabled} is the 3D Layer switch of visual clips (not adjustment layers or captions). A 3D layer keeps its 2D Motion (X/Y Position, Anchor, Scale, Rotation = Z rotation) and adds Z Position, Anchor Z, Z Scale, Orientation [x, y, z] and X/Y Rotation (set_3d_transform), plus Material Options (set_material: Casts Shadows off/on/only, Accepts Shadows, Accepts Lights, Ambient, Diffuse, Specular Intensity / Shininess, Metal, Light Transmission). World space = sequence pixels, y down, z away from the viewer; at the default camera a 3D layer with every 3D value at 0 sits exactly where its 2D Motion puts it. 3D layers take no transitions (animate Opacity).
 - Consecutive 3D layers (bottom → top, no 2D layer between them: adjustment layers and transition spans are 2D) render together: per-pixel depth sorting with true intersections, lights (Blinn-Phong), ray-cast shadows, the camera's depth of field, each layer's blend mode applied in depth order. A 2D layer between them splits them into two runs.
@@ -574,7 +570,7 @@ export function registerThreeDTools(ctx: ToolContext): void {
 					...(args.lensDistortion !== undefined ? { lensDistortion: args.lensDistortion } : {}),
 					...(args.span ? { span: args.span } : {}),
 				};
-				const has = !!findCameraTracker(doc as never, clipId);
+				const has = !!findCameraTracker(doc, clipId);
 				if (!has || Object.keys(settings).length) {
 					const res = await transact(
 						ctx,
@@ -590,7 +586,7 @@ export function registerThreeDTools(ctx: ToolContext): void {
 				const fresh = (await loadDoc(ctx, projectId)).doc;
 				let body: ReturnType<typeof cameraTrackerSolveBody>;
 				try {
-					body = cameraTrackerSolveBody(fresh as never, clipId);
+					body = cameraTrackerSolveBody(fresh, clipId);
 				} catch (e) {
 					throw new ToolError('E_INVALID_PARAM', (e as Error).message);
 				}

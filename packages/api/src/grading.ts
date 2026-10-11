@@ -1,7 +1,4 @@
-// color-grade: engine analysis of graded frames — Lumetri Scopes as numbers (`scopes_read`), Colour Match into
-// Lumetri parameters and Auto tone. Each renders the frames it needs with the engine's still renderer (the export
-// paths, so what is measured is what exports), then runs the shared maths of @jasper/project (color/scopes.ts,
-// color/match.ts, color/auto-tone.ts).
+// Analysis measures frames rendered through the export paths, so measurements describe exported pixels.
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 

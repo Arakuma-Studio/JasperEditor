@@ -433,8 +433,6 @@ export function vertexPathsCross(a: BezierPath, b: BezierPath): number {
 	return c;
 }
 
-// ---------------------------------------------------------------- keyframe interpolation
-
 /**
  * Options Mask Path keyframes use: equal vertex counts interpolate vertex by vertex in a straight line (Premiere's
  * behaviour); different counts are corresponded first (arc-length vertex insertion, winding fix, shape-context

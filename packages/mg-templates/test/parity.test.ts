@@ -1,9 +1,9 @@
-// Shipped schemas and the native CLI share a parameter protocol; SVG twins also preserve geometry and timing.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { MgCatalogEntryJson } from '../src/index.ts';
 import { FFRAMES_CATALOG, mgRegistry } from '../src/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -27,9 +27,8 @@ if (!parityEnabled)
 describe('checked-in schemas', () => {
 	it('schemas/ matches the TS catalog (run `pnpm --filter @jasper/mg-templates schemas`)', () => {
 		const catalog = mgRegistry.catalogJson().filter((entry) => entry.renderer !== 'anime');
-		const files = Object.fromEntries(
-			catalog.map((entry) => [`${entry.id}@${entry.version}.json`, entry.paramsSchema]),
-		);
+		const files: Record<string, { templates: MgCatalogEntryJson[] } | MgCatalogEntryJson['paramsSchema']> =
+			Object.fromEntries(catalog.map((entry) => [`${entry.id}@${entry.version}.json`, entry.paramsSchema]));
 		files['catalog.json'] = { templates: catalog };
 		const onDisk = readdirSync(join(here, '..', 'schemas')).filter((f) => f.endsWith('.json'));
 		expect(onDisk.sort()).toEqual(Object.keys(files).sort());
@@ -79,7 +78,7 @@ function expectSameMarkup(native: string, twin: string, label: string) {
 describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 	it('`jasper-mg schema` equals the TS catalog', () => {
 		const native = JSON.parse(execFileSync(binary, ['schema'], { encoding: 'utf8' })) as {
-			templates: Record<string, unknown>[];
+			templates: MgCatalogEntryJson[];
 		};
 		const ts = mgRegistry.catalogJson().filter((t) => t.renderer !== 'anime');
 		expect(native.templates.map((t) => `${t.id}@${t.version}`).sort()).toEqual(

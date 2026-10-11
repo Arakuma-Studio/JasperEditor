@@ -1,6 +1,4 @@
-// Text probe of the live frame host (M3, wp-m3-mgtext, S08:MGC-037/039): matching a prop value in the page
-// (copy split into spans and rows, markup and case ignored), hiding/restoring it, bundle font sources. Layout
-// (boxes, lines, clipping) needs a real browser: e2e/mg-texts.spec.ts.
+// Layout boxes, line wrapping and clipping require a real browser (e2e/mg-texts.spec.ts).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { locateTexts, TEXT_PROBE_SCRIPT, textProbeOf } from '../src/mg-host/protocol.ts';
 

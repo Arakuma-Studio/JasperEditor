@@ -1,9 +1,3 @@
-// Clipboard UI commands (wp-clipboard, S01 §20, S02:TL-903, S05 Edit menu): Edit ▸ Cut / Copy / Paste /
-// Paste Insert / Paste Attributes… / Remove Attributes… act on the focused panel (Timeline and Program: clips;
-// Effect Controls: keyframes or effects; Project: items); the timeline-scoped ids carry the Timeline's own
-// bindings. Ctrl/Cmd+V lets the browser deliver its paste event (`nativeClipboard`), the only permission-free way
-// to read another tab's or project's copy; text fields keep their native clipboard (the dispatcher never takes
-// these chords from editable elements).
 import { registerDialog } from '@jasper/ui';
 import {
 	AttributesDialog,

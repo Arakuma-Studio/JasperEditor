@@ -1,10 +1,7 @@
-// Interpret Footage (imports workstream, docs/wp-notes/imports.md): Premiere's Modify ▸ Interpret Footage with After
-// Effects' loop and matte colour — Frame Rate, Pixel Aspect Ratio, Field Order, Alpha Channel and Loop. The dialog is
-// made of sections registered in `INTERPRET_SECTIONS` (`registerInterpretSection`): each section edits its own part of
-// a shared draft and contributes commands on OK, so another workstream adds a section (Colour) without touching this
-// file. The built-in sections all write one `media.interpret` patch (one undo step for the whole dialog).
+// Registered sections edit separate parts of one draft; their commands commit together so the whole
+// interpretation change is one undo step.
 import {
-	type Command,
+	type CommandInput,
 	fileFieldOrder,
 	fileFrameRate,
 	filePixelAspect,
@@ -51,7 +48,7 @@ export type InterpretSection = {
 	applies(assets: readonly MediaAsset[]): boolean;
 	component(props: InterpretSectionProps): ReactNode;
 	/** Commands of this section on OK (the built-ins return none: they write `draft.patch`). */
-	commands?(assets: readonly MediaAsset[], draft: InterpretDraft): Command[];
+	commands?(assets: readonly MediaAsset[], draft: InterpretDraft): CommandInput[];
 };
 
 const SECTIONS: InterpretSection[] = [];
@@ -71,8 +68,6 @@ export function registerInterpretSection(section: InterpretSection): () => void 
 export function interpretSections(): readonly InterpretSection[] {
 	return SECTIONS;
 }
-
-// ---------------------------------------------------------------- helpers
 
 /** The common value of `f` over the assets, or `null` when they differ. */
 function common<T>(assets: readonly MediaAsset[], f: (a: MediaAsset) => T): T | null {
@@ -144,8 +139,6 @@ function current<K extends keyof MediaInterpretation>(
 const setPatch =
 	(setDraft: InterpretSectionProps['setDraft']) => (key: keyof InterpretationPatch, value: unknown) =>
 		setDraft((d) => ({ ...d, patch: { ...d.patch, [key]: value } }));
-
-// ---------------------------------------------------------------- built-in sections
 
 function FrameRateSection({ assets, draft, setDraft }: InterpretSectionProps) {
 	const set = setPatch(setDraft);
@@ -396,19 +389,17 @@ registerInterpretSection({
 	component: LoopSection,
 });
 
-// ---------------------------------------------------------------- dialog
-
 export type InterpretFootageProps = { session: EditorSession; mediaIds: string[] };
 
 /** The commands OK applies: the built-in sections' `media.interpret` patch, then each section's own commands. */
-export function interpretCommands(assets: readonly MediaAsset[], draft: InterpretDraft): Command[] {
-	const out: Command[] = [];
+export function interpretCommands(assets: readonly MediaAsset[], draft: InterpretDraft): CommandInput[] {
+	const out: CommandInput[] = [];
 	if (Object.keys(draft.patch).length)
 		out.push({
 			type: 'media.interpret',
 			mediaIds: assets.map((a) => a.id),
 			interpretation: draft.patch,
-		} as Command);
+		} satisfies CommandInput);
 	for (const s of SECTIONS) if (s.applies(assets) && s.commands) out.push(...s.commands(assets, draft));
 	return out;
 }

@@ -1,4 +1,4 @@
-// Incremental JSON serialisation (workstream ui-perf, docs/performance.md §5): autosave and the crash-recovery journal
+// Incremental JSON serialisation (docs/performance.md §5): autosave and the crash-recovery journal
 // write the whole project (8 MB on the 200-sequence / 5 000-clip scale project, ≈ 100 ms of `JSON.stringify` on the
 // main thread). Documents are immutable and Immer freezes every document a transaction produces (untouched subtrees
 // included), so the JSON text of a frozen subtree never changes: `stringifyJson` keeps it per object and an autosave

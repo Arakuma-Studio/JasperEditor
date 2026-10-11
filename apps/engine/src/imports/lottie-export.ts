@@ -1,6 +1,4 @@
-// Lottie export on the engine (imports workstream): reads the pictures a sequence's still and Lottie clips need,
-// runs the pure exporter (`exportSequenceToLottie`, @jasper/project) and writes a `.json` or `.lottie` (dotLottie v1:
-// `manifest.json` + `animations/<id>.json`).
+// A dotLottie v1 archive contains manifest.json and animations/<id>.json.
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { LottieExportRequest, LottieExportResult } from '@jasper/api';

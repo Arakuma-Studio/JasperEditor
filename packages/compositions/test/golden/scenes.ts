@@ -1,9 +1,5 @@
-// The golden scene suite (golden-fuzz; docs/testing.md §Golden frames): small procedural projects — generated
-// pictures and a generated movie, the Inter font from the repository, no external media — covering the compositor,
-// blend modes, masks, adjustment layers, nests, colour (Lumetri, colour runs, working spaces, interpretation), GPU
-// effects of every family, text, text animators, shapes, 3D, time remapping, sim-warp effects, captions and an
-// in-composition transition. Each scene is one frame rendered by Remotion (test/golden-scenes.e2e.test.ts) and
-// compared with goldens/scenes/<name>.png.
+// Golden scenes use generated media and the repository's Inter font for reproducible frames.
+// golden-scenes.e2e.test.ts compares each scene with its PNG reference.
 import {
 	BLEND_MODES,
 	type BlendMode,
@@ -25,7 +21,6 @@ export type GoldenMedia = { card: string; tile: string; video: string };
 
 export type Scene = {
 	name: string;
-	/** What the scene covers (shown on failure). */
 	covers: string;
 	frame: number;
 	commands(
@@ -33,10 +28,7 @@ export type Scene = {
 	): Command[];
 	/** Render options other than the export's (e.g. the Program monitor's `isPreview` for the display transform). */
 	options?: { isPreview?: boolean };
-	/**
-	 * compositor: a reference computed without the composition's GPU path, checked before the golden is compared or
-	 * blessed (a golden must never be blessed from a wrong picture).
-	 */
+	/** An independent CPU reference prevents blessing a golden from an incorrect GPU picture. */
 	reference?: {
 		describe: string;
 		compute(r: ReferenceInputs): Rgba8 | Promise<Rgba8>;
@@ -52,8 +44,6 @@ export type ReferenceInputs = {
 	/** The same scene rendered with other options (a reference through another, already verified path). */
 	render(options: { isPreview?: boolean }): Promise<Rgba8>;
 };
-
-// ---------------------------------------------------------------- generated pictures
 
 const clamp8 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
 
@@ -123,8 +113,6 @@ export function goldenTile(): Rgba8 {
 	return img;
 }
 
-// ---------------------------------------------------------------- command helpers
-
 const cmd = (c: Record<string, unknown>) => c as unknown as Command;
 
 /** The card full-frame on V1 (a still: 5 s from frame 0), ref `$bg`. */
@@ -135,7 +123,6 @@ function background(m: Parameters<Scene['commands']>[0], track = 'V1', ref = '$b
 	];
 }
 
-/** The tile picture on `track` from frame `at`, ref `ref`. */
 function tile(m: Parameters<Scene['commands']>[0], track: string, ref: string, at = 0): Command[] {
 	return [
 		cmd({ type: 'media.register', ref: `${ref}m`, asset: m.asset('image', m.tile, GW, GH) }),
@@ -198,15 +185,12 @@ function glBlendScene(mode: string): Scene {
 const CSS_BLENDS = BLEND_MODES.filter((b) => b !== 'normal' && isCssBlend(b as BlendMode));
 const GL_BLENDS = BLEND_MODES.filter((b) => !isCssBlend(b as BlendMode));
 
-// ---------------------------------------------------------------- compositor: combined scopes
-
 const to01 = (img: Rgba8, i: number): Rgba => [
 	img.data[i]! / 255,
 	img.data[i + 1]! / 255,
 	img.data[i + 2]! / 255,
 	1,
 ];
-/** Premultiplied `c` at opacity `o`. */
 const at = (c: Rgba, o: number): Rgba => [c[0] * o, c[1] * o, c[2] * o, o];
 const inv = (c: Rgba): Rgba => [c[3] - c[0], c[3] - c[1], c[3] - c[2], c[3]];
 /** Stored in RGBA8 between layers, as the compositor and the native kernel do. */
@@ -412,8 +396,6 @@ const COMBINED: Scene[] = [
 		},
 	},
 ];
-
-// ---------------------------------------------------------------- the scenes
 
 export const SCENES: Scene[] = [
 	{
@@ -767,7 +749,6 @@ export const SCENES: Scene[] = [
 			...fx('$v', 'jasper.s.trails', '$fx'),
 		],
 	},
-	// GPU effects: one representative of every effect family, at visible settings, on the card.
 	...(
 		[
 			['fx-premiere-adjust', 'jasper.black-white', {}],
@@ -792,7 +773,6 @@ export const SCENES: Scene[] = [
 			commands: (m) => [...background(m), ...fx('$bg', id, '$fx', params as Record<string, unknown>)],
 		}),
 	),
-	// compositor: combinations whose canvas scopes used to nest (CANVAS_NESTED) and render through the flat
-	// compositor now, each checked against a computed reference before its golden (see `reference`).
+	// Mixed canvas scopes need flat compositing; verify each with an independent reference before its golden.
 	...COMBINED,
 ];

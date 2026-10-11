@@ -1,5 +1,3 @@
-// Anime template API contracts (S11:ATP-008/010): renderer classification, jasper-mg route refusal, and
-// missing-template errors on export and still paths.
 import { MgTemplatesResponseSchema } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
@@ -60,7 +58,6 @@ function build(): Built {
 	return { doc: document, seqId, anime: result.refs.$a!, fframes: result.refs.$f! };
 }
 
-/** The same document with the anime clip pointing at a template this build lacks. */
 function withMissing(b: Built, opts: { start?: number } = {}): ProjectDocument {
 	const doc = JSON.parse(JSON.stringify(b.doc)) as ProjectDocument;
 	const clip = doc.sequences[b.seqId]!.clips[b.anime] as {
@@ -87,7 +84,6 @@ const settings = (seqId: string, engine: 'auto' | 'native' | 'remotion' = 'auto'
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 23 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 		audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 		engine,

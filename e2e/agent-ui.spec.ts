@@ -1,6 +1,3 @@
-// mcp-cli §4: an MCP client operates the live editor window through the built jasper-mcp: ui_state,
-// ui_elements, ui_locate / ui_hit (timeline time ↔ x, track ↔ y; Program sequence px ↔ window), ui_drag of a
-// clip, ui_key, ui_set on a scrubby number, ui_click on a button, ui_commands / ui_command, ui_screenshot.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -104,7 +101,6 @@ test('ui_state and ui_elements describe the window with stable ids', async () =>
 		JSON.stringify(els.elements.map((e) => e.id).filter((i) => !i.includes('track-headers'))),
 	).toBeTruthy();
 	expect(els.elements.every((e) => e.panel === 'timeline')).toBe(true);
-	// Unknown keys are rejected with the accepted ones listed.
 	const bad = await call('ui_elements', { projectId, pannel: 'timeline' });
 	expect(bad.isError).toBe(true);
 	expect(JSON.parse(text(bad)).error.hint).toContain('"pannel" → "panel"');
@@ -240,7 +236,6 @@ test('a clip running off the visible timeline is aimed at its visible part; one 
 	const { area, visibleFrames } = loc.timeline.view;
 	expect(visibleFrames[1]).toBeLessThan(clip.start + clip.duration / 2);
 	expect(visibleFrames[0]).toBeLessThan(clip.start + clip.duration);
-	// The point is on screen, inside the timeline, and on the clip.
 	expect(loc.timeline.x).toBeGreaterThan(area.x);
 	expect(loc.timeline.x).toBeLessThan(area.x + area.width);
 	const hit = await tool<{ timeline: { clipId: string } }>('ui_hit', {
@@ -249,7 +244,6 @@ test('a clip running off the visible timeline is aimed at its visible part; one 
 		y: loc.timeline.y,
 	});
 	expect(hit.timeline.clipId).toBe(clip.id);
-	// The element target agrees: ui_locate {id} centres on the visible part, and ui_click selects the clip.
 	const el = await tool<{ center: { x: number }; bounds: { x: number; width: number } }>('ui_locate', {
 		projectId,
 		id: `timeline.clip.${clip.id}`,
@@ -258,7 +252,7 @@ test('a clip running off the visible timeline is aimed at its visible part; one 
 	expect(el.center.x).toBeLessThan(area.x + area.width);
 	await tool('ui_command', { projectId, id: 'gesture.cancel' }).catch(() => undefined);
 	await tool('ui_click', { projectId, id: `timeline.clip.${clip.id}` });
-	await expect.poll(async () => (await sel()).includes(clip.id)).toBe(true); // with its linked audio
+	await expect.poll(async () => (await sel()).includes(clip.id)).toBe(true);
 	// Scroll the clip away entirely (to a second clip far past it), then click it by id: it is scrolled back.
 	await tool('ui_command', { projectId, id: 'gesture.cancel' }).catch(() => undefined);
 	await expect.poll(sel).toEqual([]);
@@ -274,7 +268,7 @@ test('a clip running off the visible timeline is aimed at its visible part; one 
 	});
 	expect(away.timeline.view.visibleFrames[0]).toBeGreaterThan(clip.start + clip.duration);
 	const clicked = await tool<{ x: number }>('ui_click', { projectId, id: `timeline.clip.${clip.id}` });
-	await expect.poll(async () => (await sel()).includes(clip.id)).toBe(true); // with its linked audio
+	await expect.poll(async () => (await sel()).includes(clip.id)).toBe(true);
 	const back = await tool<Loc>('ui_locate', { projectId, timeline: { clipId: clip.id } });
 	expect(back.timeline.visible).toBe(true);
 	expect(clicked.x).toBeGreaterThan(area.x);

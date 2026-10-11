@@ -1,6 +1,4 @@
-// edit-ux: keyboard trim mode — Trim Edit / Select Nearest Edit Point, Toggle Trim Type, Trim Forward/Backward with
-// counters, numeric entry, Extend Edit, dynamic J/K/L trimming committed as ONE undo step (FilmCraft trim_tests
-// ported to our session gestures), Esc cancel, Play Around the Edit and Shift+D at edit points.
+// Dynamic J/K/L trimming tests are ported from FilmCraft trim_tests to session gestures.
 import { EngineClient } from '@jasper/engine-client';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -72,13 +70,11 @@ describe('trim mode commands', () => {
 		expect(ep).toHaveLength(1);
 		expect(ep[0]).toMatchObject({ frame: 100, type: 'roll', side: 'out' });
 		expect(trimMode.getState()).toMatchObject({ active: true, outShift: 0, inShift: 0 });
-		// The playhead parks on the edit.
 		expect(h.session.transport.getState().frame).toBe(100);
 		await h.run('timeline.toggleTrimType');
 		expect(h.ui.getState().editPoints[0]!.type).toBe('regular');
 		await h.run('timeline.toggleTrimType');
 		expect(h.ui.getState().editPoints[0]!.type).toBe('ripple');
-		// Shift+T again in trim mode cycles too (Premiere).
 		await h.run('timeline.trimEdit');
 		expect(h.ui.getState().editPoints[0]!.type).toBe('roll');
 	});
@@ -99,7 +95,6 @@ describe('trim mode commands', () => {
 		expect(h.history().length).toBe(entries + 1);
 		await h.run('timeline.trimByFrames', { frames: -10 });
 		expect(h.spans('V1')[0]).toEqual([0, 96]);
-		// Ripple In on the incoming clip: only the In counter moves.
 		await h.run('timeline.selectNearestEditRippleIn');
 		expect(trimMode.getState()).toMatchObject({ outShift: 0, inShift: 0 });
 		await h.run('timeline.trimForward');
@@ -157,12 +152,10 @@ describe('dynamic trimming (FilmCraft trim_tests on a session gesture)', () => {
 		expect(d).toBeInstanceOf(DynamicTrim);
 		c.set(0.5);
 		d.tick();
-		// Live: 15 frames in the drawn document, nothing committed, the playhead follows the edit.
 		expect(h.session.getDrawn().sequences[h.seqId]!.clips[h.clipsOn('V1')[0]!.id]!.duration).toBe(115);
 		expect(h.history().length).toBe(entries);
 		expect(h.session.transport.getState().frame).toBe(115);
 		expect(trimMode.getState()).toMatchObject({ outShift: 15, inShift: 15 });
-		// L again doubles the speed.
 		d.shuttle(1, false);
 		c.set(1);
 		d.tick();
@@ -191,10 +184,8 @@ describe('dynamic trimming (FilmCraft trim_tests on a session gesture)', () => {
 		const d = dynamicShuttle(h.session, h.handle, h.seqId, 30, -1, false, { clock: c.clock, raf: c.raf })!;
 		c.set(10);
 		d.tick();
-		// The outgoing clip can't get shorter than one frame.
 		expect(trimMode.getState().dynamic).toMatchObject({ atLimit: true, speed: 0, offset: -99 });
 		expect(h.session.getDrawn().sequences[h.seqId]!.clips[h.clipsOn('V1')[0]!.id]!.duration).toBe(1);
-		// Esc (gesture.cancel) restores the edit and the counters, nothing in History.
 		await h.run('gesture.cancel');
 		expect(activeDynamicTrim()).toBeNull();
 		expect(h.spans('V1')).toEqual([

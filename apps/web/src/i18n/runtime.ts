@@ -1,5 +1,4 @@
-// UI-6 i18n runtime (workstream gaps, docs/wp-notes/gaps.md §UI-6; live switching and composite names: workstream
-// polish, docs/wp-notes/polish.md §4). The build wraps every UI string in `__t("…")` (apps/web/i18n/transform.mjs);
+// The build wraps every UI string in `__t("…")` (apps/web/i18n/transform.mjs);
 // `__t` returns the active language's translation (English = the source text) every time it runs.
 //
 // The language is Preferences ▸ Appearance ▸ Language. Its catalogue is loaded before any module that shows text is
@@ -26,7 +25,7 @@ type Catalog = Record<string, string>;
 
 /** Catalogues by language family; English is the source and has none. */
 const LOADERS: Record<string, () => Promise<Catalog>> = {
-	es: async () => (await import('./es.json')).default as Catalog,
+	es: async () => (await import('./es.json')).default,
 };
 const loaded = new Map<string, Catalog | null>();
 
@@ -58,7 +57,7 @@ const listeners = new Set<() => void>();
 async function loadModelNames(): Promise<ReadonlySet<string>> {
 	if (modelNames) return modelNames;
 	try {
-		modelNames = new Set((await import('./model-strings.json')).default as string[]);
+		modelNames = new Set((await import('./model-strings.json')).default);
 	} catch {
 		modelNames = new Set();
 	}
@@ -132,8 +131,6 @@ export function __set(target: object, key: string, value: unknown): void {
 
 /** For dynamic text (effect names, command labels from the model): translated when the catalogue has it. */
 export const t = __t;
-
-// ---------------------------------------------------------------- names from the model
 
 /**
  * Separators of labels built from several names: "Gaussian Blur: Radius", "Video Effects ▸ Blur & Sharpen",

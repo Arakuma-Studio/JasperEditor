@@ -1,6 +1,3 @@
-// Synchronize, Merge Clips and multi-camera UI commands (wp-multicam; docs/wp-notes/multicam.md). Premiere names
-// and default shortcuts: keys 1–9 Select Camera 1–9, Ctrl+1–9 Cut to Camera 1–9, Shift+0 Toggle Multi-Camera View.
-// Every edit is one document transaction (or, while playing, one recording pass = one undo step).
 import {
 	type Clip,
 	cameraNumber,
@@ -8,7 +5,6 @@ import {
 	isMulticamClip,
 	type MulticamClip,
 	multicamSourceOf,
-	type Sequence,
 	shownAngles,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -24,29 +20,17 @@ import { pressCamera } from '../multicam/recorder.ts';
 import { multicamViewStore } from '../multicam/state.ts';
 import { getSourceTransport } from '../panels/program/transport-registry.ts';
 import { sourceMonitorState } from '../panels/source/source-state.ts';
-import { activeTimeline } from '../panels/timeline/env.tsx';
+import {
+	applySequenceCommands as apply,
+	type SequenceCommandContext as Env,
+	sequenceContext as envOf,
+	selectedSequenceClips as selectedClips,
+} from './sequence-context.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
 registerMulticamDialogs();
 
-type Env = { session: EditorSession; seq: Sequence; playhead: number };
-
-function envOf(ctx: CommandCtx): Env | null {
-	const session = ctx.session;
-	if (!session) return null;
-	const s = session.getState();
-	const seqId = activeTimeline(ctx.services)?.sequenceId() ?? s.activeSequenceId;
-	const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
-	if (!seq) return null;
-	return { session, seq, playhead: session.transport.getState().frame };
-}
-
 const writable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
-const selectedClips = (e: Env): Clip[] =>
-	e.session
-		.getState()
-		.selection.timeline.clips.map((id) => e.seq.clips[id])
-		.filter((c): c is Clip => !!c);
 const selectedMulticam = (e: Env): MulticamClip[] => selectedClips(e).filter(isMulticamClip);
 
 function projectItems(ctx: CommandCtx): string[] {
@@ -69,14 +53,6 @@ function mediaItems(ctx: CommandCtx): { id: string; video: boolean; audio: boole
 			},
 		];
 	});
-}
-
-function apply(ctx: CommandCtx, e: Env, label: string, commands: unknown[]): boolean {
-	const r = e.session.apply({ label, origin: 'user', sequenceId: e.seq.id, commands: commands as never[] });
-	if (!r.ok)
-		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail: r.errors[0]?.message });
-	else if (r.warnings.length) ctx.ui.toast({ kind: 'info', message: r.warnings[0]!.message });
-	return r.ok;
 }
 
 const toastOf = (ctx: CommandCtx) => (kind: 'info' | 'warning', message: string, detail?: string) =>
@@ -130,7 +106,7 @@ const viewToggle = (
 	id,
 	label,
 	scope: G,
-	run: () => multicamViewStore.setState((s) => ({ [key]: !s[key] }) as never),
+	run: () => multicamViewStore.setState((s) => ({ [key]: !s[key] })),
 	checked: () => multicamViewStore.getState()[key],
 	agentExposed: true,
 });
@@ -281,12 +257,13 @@ export const multicamCommands: UiCommand[] = [
 		(ctx, e, args) => {
 			const a = args as { camera?: number; angle?: string } | undefined;
 			const clips = targetClips(e);
-			if (!clips.length || (!a?.camera && !a?.angle)) return;
+			const angle = a?.angle ?? a?.camera;
+			if (!clips.length || angle === undefined) return;
 			apply(ctx, e, 'Switch Multi-Camera Angle', [
 				{
 					type: 'multicam.switchAngle',
 					clipIds: clips.map((c) => c.id),
-					angle: a.angle ?? a.camera,
+					angle,
 					audio: multicamViewStore.getState().audioFollowsVideo,
 				},
 			]);
@@ -346,8 +323,9 @@ export const multicamCommands: UiCommand[] = [
 			return writable(ctx) && !!it && ctx.session!.getCommitted().items[it]?.kind === 'media';
 		},
 		run: (ctx) => {
-			const session = ctx.session!;
+			const session = ctx.session;
 			const src = sourceMonitorState.getState();
+			if (!session || !src.itemId) return;
 			const f = getSourceTransport()?.getState().frame ?? 0;
 			const r = session.apply({
 				label: 'Add Marker',
@@ -357,7 +335,7 @@ export const multicamCommands: UiCommand[] = [
 						type: 'marker.add',
 						itemId: src.itemId,
 						flicks: { flicks: Math.round((f / src.fps) * FLICKS_PER_SECOND) },
-					} as never,
+					},
 				],
 			});
 			if (!r.ok)

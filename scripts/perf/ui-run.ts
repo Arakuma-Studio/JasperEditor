@@ -1,4 +1,4 @@
-// Editor UI performance at scale (workstream ui-perf, docs/performance.md §5): `pnpm perf --sections ui` runs this file.
+// Editor UI performance at scale (docs/performance.md §5): `pnpm perf --sections ui` runs this file.
 // Each scenario opens a generated project in the built app (headless Chrome), runs a scripted gesture inside a Chrome
 // trace and reports the main-thread work per frame (p50 / p95 / mean), the frame rate and wall time
 // (scripts/perf/ui-scenarios.ts). Results are printed as one JSON line per scenario prefixed `UIPERF ` (the
@@ -50,7 +50,7 @@ export type UiScenarioResult = FrameStats & {
 	scenario: string;
 	fixture: string;
 	openMs?: number;
-	/** polish: until every medium of the project has left "resolving" (ms from navigation start). */
+	/** Time until every medium leaves "resolving" (ms from navigation start). */
 	openMediaMs?: number;
 	openBestMs?: number;
 	/** Media status requests the open made (two batches for 2 000 media, not 2 000). */
@@ -104,17 +104,16 @@ async function traced(
 	page: Page,
 	name: string,
 	fixture: string,
-	fn: (t: { id: string }) => Promise<unknown>,
+	fn: (t: { id: string }) => Promise<Partial<UiScenarioResult>> | Promise<void>,
 ): Promise<UiScenarioResult> {
 	const tracer = new Tracer(page);
 	await tracer.start();
 	const id = name.replace(/[^a-z0-9]+/gi, '-');
-	const extra = (await fn({ id })) as Record<string, unknown> | undefined;
+	const extra = await fn({ id });
 	const stats = frameStats(await tracer.stop(), id);
-	return { scenario: name, fixture, ...stats, ...(extra && typeof extra === 'object' ? extra : {}) };
+	return { scenario: name, fixture, ...stats, ...(extra ?? {}) };
 }
 
-/** Runs every UI scenario; `only` filters by scenario name prefix. */
 export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiScenarioResult[]> {
 	const want = (name: string) => only.length === 0 || only.some((o) => name.startsWith(o));
 	const out: UiScenarioResult[] = [];
@@ -164,8 +163,7 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 		);
 		await page.close();
 	}
-	// polish (docs/performance.md §6): opening a 2 000-item project — to an interactive editor with every medium
-	// resolved. Three cold opens; the median counts (the phases of the best run are reported with it).
+	// Report the median cold open's phases and the best media-open time (docs/performance.md §6).
 	if (want('open')) {
 		const projectId = await uploadProject(ctx.base, await cachedFixture('items:2000'));
 		const runs = [];
@@ -193,9 +191,9 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 	if (want('project')) {
 		const { page, openMs } = await session(ctx, 'items:2000');
 		log({
-			...(await traced(page, 'project panel 2 000 items scroll', 'items:2000', (t) =>
-				scrollContainerScenario(page, t, '[data-testid="project-body"]').then(() => undefined),
-			)),
+			...(await traced(page, 'project panel 2 000 items scroll', 'items:2000', async (t) => {
+				await scrollContainerScenario(page, t, '[data-testid="project-body"]');
+			})),
 			openMs,
 		});
 		await page.close();

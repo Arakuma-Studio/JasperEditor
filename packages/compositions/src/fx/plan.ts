@@ -1,6 +1,4 @@
-// Stack planning of a layer with GPU shader effects (wave-1 fx framework; S03 §4.2 per-layer order, FX-002 order
-// preservation, RND-010). Pure (no React, no GL) and unit-tested. Which effects become steps of the layer's canvas
-// effect chain and which stay CSS/SVG wrapper stages (LayerBox):
+// Preserve stack order across the canvas effect chain and LayerBox's CSS/SVG wrappers:
 // - crop first (S03 §4.2 step 2, as `effectStages` does), then the stack in order;
 // - the chain covers the stack up to the LAST effect that needs pixels (a shader effect or a colour run); in it:
 //   shader effects → `gpu` steps, consecutive colour effects → one baked-LUT `lut` step (S06 runs), CSS-filter
@@ -9,7 +7,7 @@
 //   run as GPU stand-ins (fx/builtins.ts) in stack order; anything else there (other style fragments) cannot run on
 //   a canvas and is drawn after the chain as a CSS/SVG stage — listed in `reordered` (an order approximation);
 // - effects after the chain stay CSS/SVG stages, in order.
-// Layers without an enabled, known shader effect are not planned here (null): they keep the M1/M2 paths unchanged.
+// Layers without an enabled, known shader effect keep their regular layer renderers.
 import {
 	activeMasks,
 	addPadding,
@@ -35,8 +33,8 @@ const FLIP_H = 'jasper.flip-horizontal';
 const FLIP_V = 'jasper.flip-vertical';
 
 /**
- * wp masks: the effect of a step applies inside these masks only (mix(original, effected, coverage)).
- * color-grade: `maskJoin` = this masked step and the next one (same masks) form ONE masked unit — a Lumetri
+ * The effect applies inside these masks only (mix(original, effected, coverage)).
+ * `maskJoin` = this masked step and the next one (same masks) form ONE masked unit — a Lumetri
  * instance's LUT step and its spatial GPU stage mix with the input once, so feathered masks stay exact.
  */
 type StepMasks = { masks?: ResolvedMask[]; maskJoin?: boolean };
@@ -48,10 +46,10 @@ export type FxStep =
 	/** Insets as fractions of the layer box (left, top, right, bottom), like the CSS `inset()` clip. */
 	| ({ kind: 'crop'; fx: ResolvedEffect; insets: [number, number, number, number] } & StepMasks)
 	| ({ kind: 'flip'; fx: ResolvedEffect; horizontal: boolean } & StepMasks)
-	/** wp masks: the layer's Opacity masks (picture × coverage), after every effect. */
+	/** Layer Opacity masks multiply coverage after every effect. */
 	| { kind: 'mask'; masks: ResolvedMask[] };
 
-/** wp masks: the bypass entry standing for a layer's masks (Opacity or effect masks). */
+/** Bypass identifier for layer Opacity masks and effect masks. */
 export const MASKS_BYPASS_ID = 'jasper.masks';
 
 export type FxBypass = {
@@ -61,7 +59,7 @@ export type FxBypass = {
 };
 
 export type LayerFxPlan = {
-	/** False: the GPU cannot run (preview without WebGL2 / lost context): draw the M1/M2 way, effects bypassed. */
+	/** False renders the ordinary layer with shader effects bypassed when the preview GPU cannot run. */
 	active: boolean;
 	steps: FxStep[];
 	/** Effects for LayerBox's CSS/SVG stages (in stack order). */
@@ -97,14 +95,13 @@ export type PlanLayerFxOptions = {
 	 */
 	capture?: boolean;
 	/**
-	 * wp masks: the layer's Opacity masks (evaluated). With an active Opacity mask or an enabled effect with an
+	 * The layer's Opacity masks (evaluated). With an active Opacity mask or an enabled effect with an
 	 * active mask, the layer takes the chain (like `capture`): the chain covers the whole stack, masked effects mix
 	 * with their input by coverage, and a final `mask` step multiplies the picture by the Opacity masks.
 	 */
 	masks?: readonly ResolvedMask[];
 };
 
-/** wp masks: the active masks of an effect (empty when none). */
 export function effectMasks(fx: Pick<ResolvedEffect, 'masks'>): ResolvedMask[] {
 	return fx.masks?.length ? activeMasks(fx.masks) : [];
 }
@@ -132,7 +129,7 @@ export function planLayerFx(
 	if (opts.gpu !== 'ok') {
 		for (const fx of ordered)
 			if (specOf(fx)!.gpu) bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'gpu-unavailable' });
-		// wp masks: masks run on the GPU too (the preview falls back to a CPU mask image for Opacity masks).
+		// GPU mask processing is unavailable too; preview Opacity masks use a CPU mask image.
 		if (masked)
 			bypassed.push({ fxId: MASKS_BYPASS_ID, effectId: MASKS_BYPASS_ID, reason: 'gpu-unavailable' });
 		return {
@@ -161,7 +158,7 @@ export function planLayerFx(
 	});
 	if (whole) last = runnable.length - 1;
 	else if (last < 0 || !runnable.slice(0, last + 1).some((fx) => specOf(fx)!.gpu))
-		// Every shader effect failed: plain M1/M2 drawing (the colour stage handles any grade).
+		// Without a working shader effect, the ordinary layer renderer and colour stage handle the remaining effects.
 		return {
 			active: false,
 			steps: [],
@@ -235,7 +232,7 @@ export function planLayerFx(
 			steps.push(withMasks({ kind: 'flip', fx, horizontal: fx.effectId === FLIP_H }));
 			return;
 		}
-		const css = spec.preview.css?.(fx.params as never);
+		const css = spec.preview.css?.(fx.params);
 		if (css && Object.keys(css).length === 0) return; // identity
 		if (css && Object.keys(css).length === 1 && typeof css.filter === 'string') {
 			steps.push(withMasks({ kind: 'css', fx, filter: css.filter }));

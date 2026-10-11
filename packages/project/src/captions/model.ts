@@ -177,8 +177,6 @@ export function findCaptionPreset(
 	);
 }
 
-// ---------------------------------------------------------------- words and pages
-
 /** Whether a transcript belongs to the caption clips that show it (no media). */
 export function isCaptionTranscript(t: Pick<Transcript, 'mediaId'>): boolean {
 	return t.mediaId === null;
@@ -347,8 +345,6 @@ export function captionClipSpeaker(
 	return t && w ? speakerName(t, w.speaker) : null;
 }
 
-// ---------------------------------------------------------------- tracks and export cues
-
 /** Caption clips of a track, sorted by start. */
 export function captionClipsOf(seq: Sequence, trackId: string): CaptionsClip[] {
 	return Object.values(seq.clips)
@@ -441,8 +437,6 @@ export function captionCuesForTrack(
 	}
 	return out.sort((x, y) => x.start - y.start);
 }
-
-// ---------------------------------------------------------------- ownership
 
 /**
  * Caption transcripts belong to one clip. When an edit leaves several captions clips referencing the same caption

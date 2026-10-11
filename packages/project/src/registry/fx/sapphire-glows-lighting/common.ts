@@ -7,7 +7,7 @@
 // screen points ([0 0] = frame centre, y up, in frame widths) become fx `point` params normalised to the layer box
 // ([0,0] top-left, y down) with `sapphirePoint`, assuming a 16:9 frame for the defaults.
 
-import type { Vec2 } from '../../../schema/common.ts';
+import type { ParamValue, Vec2 } from '../../../schema/common.ts';
 import type { ParamSpec } from '../../effects.ts';
 import { GLSL_NOISE } from '../glsl/noise.ts';
 import { fxParam } from '../params.ts';
@@ -28,7 +28,7 @@ export function slider(
 	name: string,
 	label: string,
 	def: number,
-	range: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number } = {},
+	range: NonNullable<ParamSpec['range']> = {},
 	extra: { group?: string; animatable?: boolean } = {},
 ): ParamSpec {
 	return fxParam.number(
@@ -69,7 +69,11 @@ export const SGL_COMBINE: Record<string, number> = {
 };
 
 /** SGL_COMBINE index of a Combine popup value (`{int}` uniform `u_mode`). */
-export function combineMode(value: unknown, labels: readonly string[], def: string): { int: number } {
+export function combineMode(
+	value: ParamValue | undefined,
+	labels: readonly string[],
+	def: string,
+): { int: number } {
 	const values = labels.map((o) => o.toLowerCase().replace(/[^a-z0-9]+/g, ''));
 	const i = values.indexOf(String(value));
 	return { int: SGL_COMBINE[labels[i < 0 ? labels.indexOf(def) : i]!] ?? 2 };

@@ -8,7 +8,7 @@ import type { CommandOf } from '../schemas/index.ts';
 import { assertSpatialTarget, finish, locate, targetOf } from './keyframe.ts';
 import type { HandlerMap } from './util.ts';
 
-export const spatialHandlers: HandlerMap = {
+export const spatialHandlers = {
 	'keyframe.setSpatialInterpolation': (doc, cmd: CommandOf<'keyframe.setSpatialInterpolation'>, h) => {
 		const found = locate(doc, cmd.keyframeIds, h);
 		found.sort((a, b) => a.key.time - b.key.time);
@@ -34,4 +34,4 @@ export const spatialHandlers: HandlerMap = {
 		finish([loc!.anim]);
 		return { keyframeId: loc!.key.id, spatial: JSON.parse(JSON.stringify(loc!.key.spatial)) };
 	},
-};
+} satisfies HandlerMap;

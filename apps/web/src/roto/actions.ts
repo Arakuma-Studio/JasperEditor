@@ -1,7 +1,3 @@
-// Roto actions (parity workstream `roto`): Roto Brush strokes / boxes as undoable commands, `roto` engine jobs
-// (segment a frame, propagate, track faces) followed by polling and live `roto.progress` events and committed as one
-// "Propagate Roto" / "Track Faces" step, cancel, apply / freeze / remove, Blur Faces, face keyframes and Convert to
-// Masks (engine auto-trace → mask commands).
 import {
 	type EngineJob,
 	type EventEnvelope,
@@ -9,12 +5,13 @@ import {
 	RotoProgressSchema,
 	type RotoSegmentResult,
 	type RotoTraceResponse,
+	TERMINAL_JOB_STATES,
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	type ClipRoto,
-	type Command,
+	type CommandInput,
 	contentTimeAt,
 	findRoto,
 	mediaFrameAt,
@@ -26,6 +23,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
+import { errorText, pollActiveJob } from '../processing/engine-jobs.ts';
 import { rotoUi } from './store.ts';
 
 /** The subset of the engine client the roto actions use (tests pass a fake). */
@@ -40,11 +38,10 @@ export function rotoEngine(): RotoEngine | null {
 	return currentEngine;
 }
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'interrupted']);
 const POLL_MS = 400;
 
-function apply(session: EditorSession, label: string, commands: unknown[]) {
-	const r = session.apply({ label, origin: 'user', commands: commands as Command[] });
+function apply(session: EditorSession, label: string, commands: CommandInput[]) {
+	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) toast({ kind: 'error', title: `${label} failed`, detail: r.errors[0]?.message ?? '' });
 	return r;
 }
@@ -131,8 +128,6 @@ export function setBox(
 	return id;
 }
 
-// ------------------------------------------------------------------ jobs
-
 /** Starts a roto job (segment a frame / propagate / track faces) and commits its result when it ends. */
 export async function runRoto(
 	session: EditorSession,
@@ -190,29 +185,28 @@ export async function runRoto(
 		return null;
 	}
 	rotoUi.patchRunning(rotoId, { jobId: job.id });
-	if (TERMINAL.has(job.state)) await finish(session, rotoId, job);
+	if (TERMINAL_JOB_STATES.has(job.state)) await finish(session, rotoId, job);
 	else poll(session, engine, rotoId, job.id);
 	return job.id;
 }
 
 function poll(session: EditorSession, engine: RotoEngine, rotoId: string, jobId: string): void {
-	const tick = async () => {
-		const r = rotoUi.get().running[rotoId];
-		if (!r || r.jobId !== jobId || r.finishing) return;
-		try {
-			const job = await engine.getJob(jobId);
-			if (TERMINAL.has(job.state)) {
-				await finish(session, rotoId, job);
-				return;
-			}
-			if (job.progress !== null && r.total === 0)
+	void pollActiveJob(engine, jobId, {
+		intervalMs: POLL_MS,
+		isActive() {
+			const running = rotoUi.get().running[rotoId];
+			return running?.jobId === jobId && !running.finishing;
+		},
+		onUpdate(job) {
+			if (job.progress !== null && rotoUi.get().running[rotoId]?.total === 0)
 				rotoUi.patchRunning(rotoId, { done: Math.round(job.progress * 100), total: 100 });
-		} catch {
-			// transient engine error: keep polling
-		}
-		setTimeout(tick, POLL_MS);
-	};
-	setTimeout(tick, POLL_MS);
+		},
+	})
+		.then((job) => job && finish(session, rotoId, job))
+		.catch((error) => {
+			rotoUi.patchRunning(rotoId, null);
+			rotoUi.setError(rotoId, errorText(error));
+		});
 }
 
 async function finish(session: EditorSession, rotoId: string, job: EngineJob): Promise<void> {
@@ -260,8 +254,6 @@ export function handleRotoEvent(raw: EventEnvelope): void {
 	rotoUi.patchRunning(id, { done: p.data.done, total: p.data.total, frame: p.data.frame });
 }
 
-// ------------------------------------------------------------------ faces, masks, effects
-
 /** Track Faces (and Blur Faces): a faces roto over what the clip shows, then the face-tracking job. */
 export async function trackFaces(
 	session: EditorSession,
@@ -271,7 +263,7 @@ export async function trackFaces(
 ): Promise<string | null> {
 	const r = apply(session, blur ? 'Blur Faces' : 'Track Faces', [
 		{ type: 'roto.add', clipId, kind: 'faces', ref: '$faces' },
-		...(blur ? [{ type: 'roto.apply', rotoId: '$faces', effect: 'blur' }] : []),
+		...(blur ? [{ type: 'roto.apply', rotoId: '$faces', effect: 'blur' } satisfies CommandInput] : []),
 	]);
 	if (!r.ok) return null;
 	const id = (r.results[0] as { rotoId: string }).rotoId;
@@ -296,7 +288,7 @@ export function removeRoto(session: EditorSession, rotoId: string): void {
 export function updateRoto(
 	session: EditorSession,
 	rotoId: string,
-	patch: Record<string, unknown>,
+	patch: Omit<Extract<CommandInput, { type: 'roto.update' }>, 'type' | 'rotoId'>,
 	label = 'Roto Settings',
 ): void {
 	apply(session, label, [{ type: 'roto.update', rotoId, ...patch }]);

@@ -28,9 +28,9 @@ export function sniffOmf(bytes: Uint8Array): boolean {
 export function importOmf(bytes: Uint8Array, opts: ImportOptions, report: Report): IProject {
 	try {
 		const c: BentoContainer = BentoContainer.open(bytes);
-		return toProject(readOmf(c, report), opts, report, 'OMF');
+		return toProject(readOmf(c, report), opts, report);
 	} catch (e) {
-		// The reader charges its work against the container's allowance while it walks the objects (PAR-2).
+		// The reader charges its work against the container's allowance while it walks the objects.
 		if (e instanceof BentoError) throw parseError('OMF', e.message);
 		if (e instanceof RangeError) throw parseError('OMF', 'the file is damaged');
 		throw e;

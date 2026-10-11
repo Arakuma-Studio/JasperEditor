@@ -1,4 +1,3 @@
-// edit-ux: Match Frame / Reverse Match Frame queries and trim-mode edit point helpers.
 import { describe, expect, it } from 'vitest';
 import {
 	flicksPerFrame,
@@ -47,7 +46,6 @@ describe('match frame', () => {
 		expect(m.sourceTime).toBe(310 * F);
 		expect(m.clipId).toBe(h.clips('V1')[1]!.id);
 		expect([m.sourceIn, m.sourceOut]).toEqual([300 * F, 360 * F]);
-		// Only A1 targeted: the audio clip.
 		expect(matchFrame(h.doc, h.seqId, 70, { trackIds: [h.seq.audioTracks[0]!.id] })!.clipId).toBe(
 			h.clips('A1')[1]!.id,
 		);
@@ -71,7 +69,6 @@ describe('trim mode helpers', () => {
 		const { h } = twoClips();
 		const [a, b] = h.clips('V1');
 		const pts = nearestEditPoints(h.seq, 58, 'roll');
-		// One roll per track at the cut, stored on the outgoing clip's Out edge.
 		expect(pts).toHaveLength(2);
 		expect(pts[0]).toEqual({ clipId: a!.id, edge: 'out', mode: 'roll' });
 		expect(rollPair(h.seq, { clipId: b!.id, edge: 'in' })).toEqual([a!.id, b!.id]);

@@ -1,5 +1,3 @@
-// Effect Controls Value / Velocity graphs (S03:KF-022, S05:ECP-006): twirl, key and handle drags (one
-// undo entry each, transient preview while dragging), shared selection and the key context menu.
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
@@ -79,7 +77,6 @@ describe('Effect Controls graphs (S03:KF-022)', () => {
 	it('the twirl opens the Value and Velocity graphs with min/max labels; the state persists', () => {
 		const { open, session } = setup();
 		expect(screen.queryByTestId('graphs-opacity')).toBeNull();
-		// Numeric and vec2 rows have a twirl; others (Blend Mode) do not.
 		expect(screen.getByTestId('twirl-transform.position')).toBeTruthy();
 		expect(screen.queryByTestId('twirl-blendMode')).toBeNull();
 		open();
@@ -171,7 +168,7 @@ describe('Effect Controls graphs (S03:KF-022)', () => {
 		expect(k.interpolation).toBe('continuous-bezier');
 		expect(k.easeOut.slope).not.toBe(0);
 		// Linked: the same signed velocity on both sides — at this maximum the segments run in opposite directions
-		// (+60 / −60 over 20 frames), so the normalised slopes are opposite (a smooth zero crossing; keyframes-blend).
+		// (+60 / −60 over 20 frames), so the normalised slopes are opposite (a smooth zero crossing).
 		expect(k.easeIn.slope).toBeCloseTo(-k.easeOut.slope, 6);
 		const inBefore = k.easeIn.slope;
 		drag(screen.getByTestId(`graph-velocity-handle-${mid.id}-out`), 0, 10, { altKey: true });
@@ -189,14 +186,12 @@ describe('Effect Controls graphs (S03:KF-022)', () => {
 		open();
 		const [first, second] = keysOf();
 		click(screen.getByTestId(`graph-value-key-${first!.id}`));
-		// The lane glyph shows the same selection.
 		expect(document.querySelector(`button[data-kf-id="${first!.id}"]`)?.getAttribute('aria-pressed')).toBe(
 			'true',
 		);
 		drag(screen.getByTestId(`graph-value-handle-${first!.id}-out`), 0, -15);
 		expect(keysOf()[0]!.interpolation).toBe('bezier');
 		expect(keysOf()[0]!.easeOut.slope).toBeGreaterThan(1);
-		// Shift-click toggles the second key into the selection (no drag).
 		act(() => {
 			fireEvent.pointerDown(screen.getByTestId(`graph-value-key-${second!.id}`), {
 				button: 0,

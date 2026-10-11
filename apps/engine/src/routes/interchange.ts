@@ -1,11 +1,3 @@
-// wp interchange (docs/wp-notes/interchange.md): timeline import/export and Link Media (S04:AS-011).
-//   POST /api/interchange/import            InterchangeImportRequest → InterchangeImportResponse
-//   POST /api/interchange/prerender-plan    the clips an export would pre-render
-//   POST /api/interchange/export            → job `interchange-export` (result InterchangeExportResult)
-//   GET  /renders/:jobId/interchange/:name  a file of a finished interchange export
-//   POST /api/assets/:assetId/relink        registers a replacement file and compares it with the asset
-//   POST /api/projects/:projectId/relink-scan  → job `relink-scan` (result RelinkScanResult)
-// Registers the `features.interchange` capability block.
 import {
 	AssetRelinkRequestSchema,
 	INTERCHANGE_FORMATS,

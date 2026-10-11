@@ -158,7 +158,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 	/** Twirled-open graph rows (`clipId:rowId` → graph height in px, S03:KF-022). */
 	const [graphs, setGraphs] = usePersisted<Record<string, number>>(`jasper.ec.${instanceId}.graphs`, {});
-	// keyframes-blend: manual vertical ranges of open graphs (absent = auto-fit).
+	// manual vertical ranges of open graphs (absent = auto-fit).
 	const [graphViews, setGraphViews] = usePersisted<Record<string, GraphView>>(
 		`jasper.ec.${instanceId}.graphViews`,
 		{},
@@ -176,7 +176,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 	const keySel = useSessionState((s) => s.selection.keyframes);
-	// wp masks: mask tracking / auto-trace need the engine; read-only sessions edit nothing.
+	// mask tracking / auto-trace need the engine; read-only sessions edit nothing.
 	const engine = useEngineOrNull()?.client ?? null;
 	const readOnly = useSessionState((s) => s.readOnly);
 	const shell = useShellRuntimeOrNull();
@@ -224,7 +224,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		};
 	}, [menu]);
 
-	// ui-perf: stable handlers for the memoised key lanes (they call the latest closures, set further down).
+	// stable handlers for the memoised key lanes (they call the latest closures, set further down).
 	const laneHandlersRef = useRef<{
 		onKeyPointerDown: KeyPointerDown;
 		openKeyMenu: (e: ReactMouseEvent, clipId: string, id: string) => void;
@@ -270,7 +270,6 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		return id ? (data.doc.media[id]?.originalName ?? primary.name) : null;
 	})();
 
-	// ------------------------------------------------------------ keyframe selection & editing
 	const selectKeys = (clipId: string, ids: string[]) =>
 		session.selectKeyframes(ids.length ? { clipOrTrackId: clipId, keyframeIds: ids } : null);
 	const deleteSelection = () => {
@@ -437,7 +436,6 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		window.addEventListener('pointerup', up);
 	};
 
-	// ------------------------------------------------------------ effect stack operations
 	const onHeaderDragStart = (e: DragEvent, s: FxSection) => {
 		if (!s.fx || s.intrinsic) return;
 		e.dataTransfer.setData(JASPER_EFFECT_INSTANCE_MIME, s.fx.id);
@@ -970,7 +968,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							<div
 								ref={lineRef}
 								className="absolute inset-y-0 w-px bg-pr-playhead"
-								// ui-perf: its own compositor layer, so a moving playhead does not repaint the key lanes below it.
+								// its own compositor layer, so a moving playhead does not repaint the key lanes below it.
 								style={{ willChange: 'transform' }}
 								data-testid="ec-playhead"
 							/>

@@ -17,8 +17,6 @@ type ClipTiming = Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>;
 
 const EPS = 1e-6;
 
-// ------------------------------------------------------------------ content time ↔ clip frames
-
 /** Content time (flicks) shown at clip-relative frame `f` (same mapping as `contentTimeAt`, S01:CLP-004). */
 function contentTimeOfFrame(clip: ClipTiming, F: number, f: number): number {
 	const i = clip.speed.reverse ? clip.duration - 1 - f : f;
@@ -77,8 +75,6 @@ export function sampleRangeOfFrames(
 	return hi >= lo ? { lo, hi } : null;
 }
 
-// ------------------------------------------------------------------ worst-of-range confidence
-
 /** Min pyramid of a samples object's confidence: level k holds the min of 2^k consecutive samples. */
 type ConfidenceIndex = { n: number; levels: Float64Array[] };
 
@@ -123,8 +119,6 @@ function minConfidence(index: ConfidenceIndex, lo: number, hi: number): number {
 	return min;
 }
 
-// ------------------------------------------------------------------ classes
-
 /** Strip colour class: good ≥ 0.8, fair ≥ 0.5, poor > 0, lost = 0 (TRU-002 tones plus "lost"). */
 type ConfidenceClass = 'good' | 'fair' | 'poor' | 'lost';
 
@@ -136,8 +130,6 @@ export function confidenceClass(c: number): ConfidenceClass {
 function confidenceLabel(c: number): 'Lost' | 'Low' | 'OK' {
 	return c <= 0 ? 'Lost' : c < 0.5 ? 'Low' : 'OK';
 }
-
-// ------------------------------------------------------------------ strip runs
 
 /** A drawn piece of a strip in clip-area px, with the worst confidence it covers. */
 export type StripRun = { x0: number; x1: number; confidence: number; cls: ConfidenceClass };
@@ -251,8 +243,6 @@ export function frameUnderPointer(
 	}
 	return best;
 }
-
-// ------------------------------------------------------------------ tooltip texts
 
 type SamplesStats = ReturnType<typeof samplesSummary> & { low: number };
 const statsCache = new WeakMap<TrackerSamples, SamplesStats>();

@@ -1,4 +1,3 @@
-// wp masks: the shared Bézier path toolkit (model, smart interpolation, auto-trace).
 import { describe, expect, it } from 'vitest';
 import {
 	type BezierPath,
@@ -171,7 +170,6 @@ describe('smart path interpolation (port of effectcraft interp.rs)', () => {
 		const mid = evaluate(anim, 50);
 		expect(mid.vertices[0]!.p).toEqual([50, 10]);
 		expect(mid.vertices[2]!.p).toEqual([60, 20]);
-		// Different counts: an in-between with matched vertices (not a hold).
 		const e = ellipsePath([5, 5], [5, 5]);
 		const tri = polygonPath([
 			[0, 0],

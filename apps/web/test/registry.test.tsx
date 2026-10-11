@@ -1,16 +1,18 @@
 import { EngineClient } from '@jasper/engine-client';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { createCommandContext } from '../src/commands/context.ts';
+import { monitorViewCommands, registerFullscreenTarget } from '../src/commands/monitor-view.ts';
 import {
-	createCommandContext,
 	getCommand,
 	isCommandEnabled,
+	onBeforeCommand,
 	registerCommands,
 	runCommand,
-} from '../src/commands/index.ts';
+} from '../src/commands/registry.ts';
 import { PanelServices } from '../src/state/panel-services.ts';
 
-const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
+const engine = new EngineClient({ fetch: async () => new Response('{}') });
 
 describe('UI command registry (ARCHITECTURE §7.3)', () => {
 	it('registers, evaluates and runs commands with capability gating and args validation', async () => {
@@ -53,6 +55,79 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 		expect(toast).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
 		expect((await runCommand('nope', ctx)).reason).toBe('unknown');
 		off();
+	});
+	it('reports a refused fullscreen request through the command error boundary', async () => {
+		const error = new Error('Fullscreen denied by the browser');
+		const element = document.createElement('div');
+		Object.defineProperty(element, 'requestFullscreen', { value: vi.fn().mockRejectedValue(error) });
+		const unregister = registerCommands(monitorViewCommands);
+		const removeTarget = registerFullscreenTarget('program', () => element);
+		const toast = vi.fn();
+		try {
+			await expect(
+				runCommand('monitor.fullScreenVideo', createCommandContext({ engine, toast })),
+			).resolves.toEqual({ ran: false, reason: 'error', error });
+			expect(toast).toHaveBeenCalledWith({
+				kind: 'error',
+				message: 'Toggle Full Screen failed',
+				detail: error.message,
+			});
+		} finally {
+			removeTarget();
+			unregister();
+		}
+	});
+
+	it('reports a failing pre-command hook without running the command', async () => {
+		const run = vi.fn();
+		const toast = vi.fn();
+		const error = new Error('Cannot commit the active gesture');
+		const unregister = registerCommands([{ id: 'test.hook', label: 'Hook', scope: 'global', run }]);
+		const removeHook = onBeforeCommand(() => {
+			throw error;
+		});
+		try {
+			await expect(runCommand('test.hook', createCommandContext({ engine, toast }))).resolves.toEqual({
+				ran: false,
+				reason: 'error',
+				error,
+			});
+			expect(run).not.toHaveBeenCalled();
+			expect(toast).toHaveBeenCalledWith({ kind: 'error', message: 'Hook failed', detail: error.message });
+		} finally {
+			removeHook();
+			unregister();
+		}
+	});
+
+	it('reports a throwing argument transform without running the command', async () => {
+		const error = new Error('Invalid transformed input');
+		const run = vi.fn();
+		const toast = vi.fn();
+		const unregister = registerCommands([
+			{
+				id: 'test.transform',
+				label: 'Transform',
+				scope: 'global',
+				run,
+				argsSchema: z.string().transform(() => {
+					throw error;
+				}),
+			},
+		]);
+		try {
+			await expect(
+				runCommand('test.transform', createCommandContext({ engine, toast }), 'input'),
+			).resolves.toEqual({ ran: false, reason: 'error', error });
+			expect(run).not.toHaveBeenCalled();
+			expect(toast).toHaveBeenCalledWith({
+				kind: 'error',
+				message: 'Transform failed',
+				detail: error.message,
+			});
+		} finally {
+			unregister();
+		}
 	});
 });
 

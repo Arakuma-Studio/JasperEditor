@@ -1,5 +1,3 @@
-// History panel (WP-2D): labelled undo steps, agent sparkle, click to jump, Clear History (S05:HIS).
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

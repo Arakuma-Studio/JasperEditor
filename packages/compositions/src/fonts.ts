@@ -6,7 +6,7 @@
 // for one missing font; S03:TXT-005 wants a fallback to the default sans font instead. The format is
 // derived from the URL extension the same way `@remotion/fonts` does, when possible.
 //
-// M2 (S11:FIX-003): readiness is tracked per face (family / weight / style). Font-dependent layers (text, anime
+// Readiness is tracked per face (family / weight / style). Font-dependent layers (text, anime
 // templates) are not mounted until their faces have settled, so they never split, measure or build timelines
 // with a fallback font and the Player shows nothing rather than a fallback-font flash; renders and stills are
 // held by a `delayRender` handle created in a layout effect (never in a state initializer, which StrictMode and
@@ -147,7 +147,7 @@ function layerFontFaces(
 				),
 			);
 	} else if ('captions' in src) {
-		// wp captions: the style's face and the bold / italic faces markup may use
+		// Caption markup can select bold and italic faces beyond the base style.
 		const s = src.captions.style;
 		for (const [w, it] of [
 			[s.weight, s.italic],

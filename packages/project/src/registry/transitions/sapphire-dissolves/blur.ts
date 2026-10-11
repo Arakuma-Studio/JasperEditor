@@ -34,8 +34,6 @@ export function blurScale(maxPx: number, target = 16): number {
 	return clamp(s, 0.125, 1);
 }
 
-// ---------------------------------------------------------------- S_DissolveBlur
-
 export const BLUR_FILTERS = ['box', 'triangle', 'gauss'] as const;
 
 /** σ (frame px, x / y) of each side at timing t: A blurs in as it fades out, B sharpens as it fades in. */
@@ -94,8 +92,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveDefocus
 
 export const DEFOCUS_SHAPES = ['circle', '3', '4', '5', '6', '7', '8'] as const;
 const DEFOCUS_SHAPE_LABELS = [

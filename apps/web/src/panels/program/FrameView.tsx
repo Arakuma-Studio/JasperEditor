@@ -1,4 +1,4 @@
-// edit-ux: one frame of a sequence rendered with the Program monitor's pipeline (buildProgramDoc →
+// one frame of a sequence rendered with the Program monitor's pipeline (buildProgramDoc →
 // SequenceComposition in a Remotion <Thumbnail>): the Trim Monitor's outgoing/incoming frames and the comparison
 // view's reference frame. `onlyClipIds` renders just those clips (a Trim Monitor side shows its own clip, as in
 // Premiere); `options` lets callers bypass features (e.g. colour grading for a before/after reference).
@@ -11,7 +11,7 @@ import {
 import type { ProjectDocument } from '@jasper/project';
 import { useSessionState } from '@jasper/session/react';
 import { Thumbnail } from '@remotion/player';
-import { type ComponentType, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { buildProgramDoc, playerDurationFrames } from './render-doc.ts';
 
 type FrameViewProps = {
@@ -66,8 +66,8 @@ export function FrameView(props: FrameViewProps) {
 			data-frame={props.frame}
 		>
 			<Thumbnail
-				component={SequenceComposition as unknown as ComponentType<Record<string, unknown>>}
-				inputProps={{ doc: renderDoc, options } as Record<string, unknown>}
+				component={SequenceComposition}
+				inputProps={{ doc: renderDoc, options }}
 				durationInFrames={duration}
 				fps={fps}
 				compositionWidth={seq.settings.width}

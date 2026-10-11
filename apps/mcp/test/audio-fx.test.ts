@@ -1,5 +1,4 @@
-// audio-fx: the audio effect, Essential Sound and Remix MCP tools through the protocol against an in-memory engine
-// (documents applied with the real command system; loudness analysis and the remix plan answered by the fake).
+// The fake engine applies real commands but supplies loudness analysis and remix plans.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type AudioClip,
@@ -280,7 +279,7 @@ describe('Essential Sound and Remix MCP tools', () => {
 		voice = clipOf(engine.doc(), engine.voice);
 		expect(voice.gainDb).toBeCloseTo(8); // −31 → −23 LUFS
 		const music = clipOf(engine.doc(), engine.music);
-		expect(readEssentialSound(music.essential)?.type).toBe('dialogue'); // untyped clips become Dialogue
+		expect(readEssentialSound(music.essential)?.type).toBe('dialogue');
 		expect(music.gainDb).toBeCloseTo(-8);
 
 		await call('set_essential_sound', { projectId: 'prj_t', clipIds: [engine.music], audioType: 'music' });

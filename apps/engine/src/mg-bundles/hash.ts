@@ -26,8 +26,9 @@ async function listBundleFiles(
 			let s: Awaited<ReturnType<typeof stat>>;
 			try {
 				s = await stat(abs);
-			} catch {
-				continue; // dangling symlink
+			} catch (error) {
+				if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue;
+				throw error;
 			}
 			if (s.isDirectory()) await walk(abs);
 			else if (s.isFile()) out.push({ rel, abs, size: s.size });

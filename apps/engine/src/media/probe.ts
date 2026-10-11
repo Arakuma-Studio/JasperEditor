@@ -32,11 +32,8 @@ export type ProbeResult = {
 	hasAudio: boolean;
 	/** Display size after rotation (null without video). */
 	display: { width: number; height: number } | null;
-	/** kind `lut` (M2): the parsed header (stored on the media record, copied into RegisteredMedia). */
 	lut?: LutInfo;
-	/** color-mgmt: kind `color-config` (OCIO bundle) header. */
 	colorConfig?: ColorConfigInfo;
-	// imports workstream: descriptors stored on the record and copied into RegisteredMedia / the asset.
 	vector?: VectorInfo;
 	lottie?: LottieInfo;
 	layered?: LayeredInfo;
@@ -110,8 +107,6 @@ const IMAGE_CODECS = new Set([
 	'qoi',
 	'ppm',
 	'pgm',
-	// imports workstream: the still formats of the LGPL build (EXR half/float, DPX, TGA, Radiance HDR, JPEG XL,
-	// PSD's merged image, SGI, PCX, PAM/PBM, XBM/XPM, Sun raster, DDS, PHM/PFM).
 	'exr',
 	'dpx',
 	'targa',

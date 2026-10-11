@@ -6,6 +6,7 @@ import {
 	type MediaLocator,
 	mediaFrameCount,
 	mediaFrameRate,
+	type ProcessStep,
 	ProcessStepSchema,
 	type ProjectDocument,
 	processRangeForClips,
@@ -13,8 +14,10 @@ import {
 	rootFrameSpan,
 	type SourceRange,
 	sourceRangeFromSidecar,
+	type VideoClip,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -31,9 +34,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { LOCAL_ENGINE_ID, mediaRegisterCommand } from '../media.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const PROCESSING_GUIDE = `Clip processing (processed versions of media): process_clip runs restoration on the engine and makes a new media version — steps (in this order in the UI): deblock {filter: weak|strong}, denoise {method: atadenoise (fast, temporal) | fftdnoiz (medium) | nlmeans (slow, strongest), strength 0..1}, dejudder {mode: auto|force} (evens out 2-2-1 cadence of 50→30 fps footage without changing the frame count; auto skips footage without such a cadence; put it before stabilize), stabilize {method: auto|vidstab|deshake|smoothpath, smoothing frames (vid.stab: 15 = steady handheld, 8 = mild), borders: crop|keep} — vid.stab (default) removes handheld jitter and keeps intended moves; smoothpath turns one sudden reframe/jerk or a slow uneven drift into a single even move with ONE static zoom for the whole shot (tracks the background, ignores people moving through it): smoothing = Gaussian sigma in frames (30 is a good start), lockVertical / lockRotation make y / roll a straight line (static-position shots), maxZoom = zoom cap in percent (default 112; when the smoothing needs more the largest smoothing that fits is used and the job notes say so, with the zoom used and the raw vs smoothed peak camera speed), upscale {model (list_processing_models), scale 2|4, size?: {width, height}, mix?}. Every step keeps the frame count and rate, so the clip's timing never changes; the export reads the processed ProRes file (no render-time cost). Use replace: true to swap the clip to the result (framing is compensated automatically when the size changes); use_media_version switches clips between the original and any processed version. To process only what a clip uses, pass handles: N (the clip's frames plus N frames each side; much faster than the whole file) or an explicit range {startFrame, endFrame}: the version records the source range it holds, and swapping keeps the clip on exactly the same source frames (its in-point is remapped, timeline position and duration stay; trims and transitions see the version's real handles). A version that does not cover a clip is refused unless fit: "trim" | "skip". Renders made outside the editor (graded files with a source-range sidecar "first_src_frame") become versions of their source at import_media; replace_footage swaps a media's file keeping source timing; set_media_source_range declares a range by hand. Heavy jobs take minutes on a CPU: start with wait: false and poll with wait_for_job, then call process_clip again with the same arguments and wait: true to commit (the finished file is reused). A remote GPU executor can be configured in Preferences ▸ Processing (set_processing_settings needs the user's approval).`;
 
 const StepsArg = z
@@ -64,20 +65,12 @@ function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 type ClipRef = {
 	mediaId: string;
 	seqRate: Rational;
-	clip: { sourceIn: number; duration: number; speed: { rate: number; reverse: boolean }; mediaId: string };
+	clip: Pick<VideoClip, 'sourceIn' | 'duration' | 'speed' | 'mediaId'>;
 };
 
 function clipMedia(doc: ProjectDocument, clipId: string): ClipRef {
 	for (const seq of Object.values(doc.sequences)) {
-		const clip = seq.clips[clipId] as
-			| {
-					kind?: string;
-					mediaId?: string;
-					sourceIn: number;
-					duration: number;
-					speed: { rate: number; reverse: boolean };
-			  }
-			| undefined;
+		const clip = seq.clips[clipId];
 		if (!clip) continue;
 		if (clip.kind !== 'video' || !clip.mediaId)
 			throw new ToolError(
@@ -97,7 +90,7 @@ function clipMedia(doc: ProjectDocument, clipId: string): ClipRef {
 /** `media.derive` for a finished process job (the asset = the engine's RegisteredMedia of the output). */
 function mediaDeriveCommand(
 	fromMediaId: string,
-	steps: unknown[],
+	steps: ProcessStep[],
 	res: ProcessResult,
 	replaceInClips: string[] = [],
 	fit?: 'refuse' | 'trim' | 'skip',
@@ -313,7 +306,15 @@ export function registerProcessingTools(ctx: ToolContext): void {
 				| { mediaId?: string; clipIds?: string[]; skippedClipIds?: string[]; trimmedClipIds?: string[] }
 				| undefined;
 			const processedMediaId = ok.refs.$processed ?? derived?.mediaId;
-			const after = processedMediaId ? (await loadDoc(ctx, projectId).catch(() => null))?.doc : null;
+			let after: ProjectDocument | undefined;
+			let refreshError: string | undefined;
+			if (processedMediaId) {
+				try {
+					after = (await loadDoc(ctx, projectId)).doc;
+				} catch (error) {
+					refreshError = `Processing was applied, but the updated source range could not be read: ${error instanceof Error ? error.message : String(error)}. Read the project before retrying.`;
+				}
+			}
 			const span = processedMediaId && after ? rootFrameSpan(after, processedMediaId) : null;
 			return jsonResult({
 				jobId: done.id,
@@ -321,6 +322,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 				processedMediaId,
 				fromMediaId,
 				...(res.range ? { range: res.range } : {}),
+				...(refreshError ? { refreshError } : {}),
 				...(span ? { sourceFrames: { of: span.rootId, start: span.start, end: span.end } } : {}),
 				executor: res.executor,
 				notes: res.notes,

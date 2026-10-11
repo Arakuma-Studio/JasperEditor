@@ -1,7 +1,4 @@
-// Effect preset library contracts (S03:FX-030, AGT-020, S05:EFX-001). Owner: wp-m3-presets.
-// User presets live on the engine (`<appdir>/presets/effect-presets.json`), so they persist across projects and
-// sessions and the editor and agents (jasper-mcp) share one library. Built-in presets ship in @jasper/project
-// (`BUILTIN_EFFECT_PRESETS`) and are never stored or served here.
+// The engine stores user presets across projects. Built-in presets come from @jasper/project.
 import { EffectPresetFolderSchema, EffectPresetSchema, EffectPresetTypeSchema } from '@jasper/project';
 import { z } from 'zod';
 

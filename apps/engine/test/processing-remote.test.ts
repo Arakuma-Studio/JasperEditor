@@ -1,7 +1,5 @@
-// Remote execution over SSH (S07 §5, §8 test 7). Always runs against JASPER_SSH/JASPER_SCP shims that execute
-// locally in a temporary "remote" directory (protocol, resume, cancel, cleanup, errors). With
-// JASPER_TEST_SSH=user@host[:port] (e.g. a local sshd or a Docker container with this user's key) the same
-// flow also runs over real SSH. No GPU: CUDA is reported unavailable and ONNX runs on the CPU.
+// SSH/SCP shims execute in a local temporary remote directory; JASPER_TEST_SSH also exercises a real SSH host.
+// CUDA is unavailable in the fixture, so ONNX runs on the CPU.
 import {
 	chmodSync,
 	existsSync,
@@ -173,7 +171,6 @@ describe('remote executor (shims)', () => {
 			true,
 		);
 		await expectProcessedArtifact(res);
-		// A different recipe for the same source shares one cached source.
 		const r2 = await app.inject({
 			method: 'POST',
 			url: `/api/media/${m.mediaKey}/process`,
@@ -189,7 +186,6 @@ describe('remote executor (shims)', () => {
 	it('an interrupted upload retries to the exact source bytes without leaving a partial file', async () => {
 		const big = join(shimDir, 'big.bin');
 		writeFileSync(big, Buffer.alloc(24 * 1024 * 1024, 7));
-		// A slow rsync for the first attempt.
 		const slow = writeShim('rsync-slow', '#!/usr/bin/env bash\nexec rsync --bwlimit=4000 "$@"\n');
 		const settings = JSON.parse(readFileSync(join(app.appdir, 'engine', 'engine.json'), 'utf8')).processing
 			.remote;

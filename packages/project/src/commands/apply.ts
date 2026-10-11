@@ -1,6 +1,3 @@
-// applyTransaction: validates, resolves refs, runs handlers atomically with Immer, checks invariants,
-// applies the expectedRevision fast-forward rule and reports created/changed/deleted
-// (S01:CMD-004…006, AGT-010, AGT-011; ARCHITECTURE §5.3).
 import { produce } from 'immer';
 import { z } from 'zod';
 import { normalizeCaptionData } from '../captions/model.ts';
@@ -13,7 +10,7 @@ import { diffDocuments } from './diff.ts';
 import { markNormalized } from './draft-read.ts';
 import { collectOrphans } from './handlers/project.ts';
 import { compressionWarnings } from './handlers/text-animation.ts';
-import type { Command } from './schemas/index.ts';
+import type { Command, CommandInput } from './schemas/index.ts';
 import {
 	type CommandContext,
 	CommandError,
@@ -53,8 +50,10 @@ export type Transaction = {
 	commands: Command[];
 };
 
-/** Transaction without `protocol` (filled in by callers such as EditorSession.apply). */
-export type TxInput = Omit<Transaction, 'protocol'> & { protocol?: typeof TX_PROTOCOL };
+export type TxInput = Omit<Transaction, 'protocol' | 'commands'> & {
+	protocol?: typeof TX_PROTOCOL;
+	commands: CommandInput[];
+};
 
 const zodPath = (p: readonly PropertyKey[]) => p.map((x) => String(x));
 
@@ -72,7 +71,10 @@ function validateCommands(raw: readonly unknown[]): { commands: Command[]; error
 			errors.push({
 				commandIndex: i,
 				code: 'E_SCHEMA',
-				message: `Unknown command type ${JSON.stringify(type)}`,
+				message:
+					typeof type === 'string'
+						? `Unknown command type ${JSON.stringify(type)}`
+						: `Command type must be a string; got ${type === null ? 'null' : typeof type}`,
 				path: ['type'],
 			});
 			return;
@@ -109,11 +111,7 @@ function referencedIds(commands: readonly unknown[], extra: readonly string[] = 
 	return out;
 }
 
-/**
- * Applies a transaction atomically. Returns the input document reference when the transaction fails,
- * is a dry run, or changes nothing.
- */
-export function applyTransaction(
+function applyTransactionUnchecked(
 	doc: ProjectDocument,
 	txIn: unknown,
 	ctx: CommandContext,
@@ -170,7 +168,7 @@ export function applyTransaction(
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);
 			});
-			// wp captions: a caption transcript belongs to one clip (splits, duplicates and pastes get copies).
+			// A caption transcript belongs to one clip (splits, duplicates and pastes get copies).
 			normalizeCaptionData(draft, () => ctx.ids.next('trs'));
 			// Sources whose last reference disappeared (e.g. a solid's color matte) are collected (INV-014).
 			collectOrphans(draft);
@@ -235,7 +233,7 @@ export function applyTransaction(
 		}
 	}
 
-	// M2 (wp-m2-text-anim, S11:TXA-004): text animators compressed by trims, razor, speed or rate changes.
+	// Trims, razor cuts, speed changes and rate changes can compress text animation intervals.
 	for (const w of compressionWarnings(doc, next, h.warnings)) h.warnings.push({ commandIndex: -1, ...w });
 
 	const unchanged = next === doc;
@@ -253,4 +251,24 @@ export function applyTransaction(
 			results,
 		},
 	};
+}
+
+/**
+ * Applies a transaction atomically. Returns the input document reference when the transaction fails,
+ * is a dry run, or changes nothing.
+ */
+export function applyTransaction(
+	doc: ProjectDocument,
+	txIn: unknown,
+	ctx: CommandContext,
+): ReturnType<typeof applyTransactionUnchecked> {
+	try {
+		return applyTransactionUnchecked(doc, txIn, ctx);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Transaction validation failed';
+		return {
+			document: doc,
+			result: fail(ctx.revision, [{ commandIndex: -1, code: 'E_INTERNAL', message }]),
+		};
+	}
 }

@@ -1,10 +1,4 @@
-// Effect registry (S01:FX-020…024, S03 §15, ARCHITECTURE §5.4). App code, never document data.
-// M1 catalogue (WP-2D): crop, gaussian blur, brightness & contrast, hue/saturation, black & white,
-// horizontal and vertical flip. Each entry carries its canonical parameter math (S03:FX-040) and both
-// realizations: a browser preview (CSS style fragment or inline SVG filter) and an ffmpeg filter string
-// for the native export path. Unknown ids are preserved and bypassed by the renderers (S01:FX-022).
-// Wave 1 (fx framework): `gpu` = GLSL shader passes run on the GPU in the preview and the Remotion path, `bin` =
-// Effects-panel folder; the fx catalogue (`./fx/`, one file per effect family) is part of the default registry.
+// Unknown effect ids are preserved in project documents and bypassed by renderers.
 
 import type { Lut, Rgb } from '../color/lut.ts';
 import type { SequenceColorInfo } from '../color/model.ts';
@@ -27,7 +21,6 @@ import { FX_EFFECTS } from './fx/index.ts';
 import type { GpuEffect } from './fx/shader.ts';
 import { LUMETRI_SPATIAL_EFFECT } from './lumetri-spatial.ts';
 
-// The M1 colour maths moved next to the colour ops (S06:CG-026); re-exported for existing importers.
 export { blackWhiteAmount, brightnessContrastLinear, hueSaturationValues };
 
 export type EffectCategory =
@@ -301,8 +294,6 @@ export function effectIsGpu(spec: EffectSpec): boolean {
 	return spec.gpu !== undefined;
 }
 
-// ---------------------------------------------------------------- canonical parameter math (S03:FX-040)
-
 const num = (p: EffectParams, k: string, d = 0) =>
 	typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d;
 const str = (p: EffectParams, k: string, d: string) => (typeof p[k] === 'string' ? (p[k] as string) : d);
@@ -325,8 +316,6 @@ export function gaussianBlurSigmas(p: EffectParams): { x: number; y: number; rep
 		repeatEdge: bool(p, 'repeatEdge', false),
 	};
 }
-
-// ---------------------------------------------------------------- M1 catalogue
 
 const pct = (name: string, label: string, def = 0): ParamSpec => ({
 	name,
@@ -632,17 +621,11 @@ export const INTERNAL_EFFECTS: readonly EffectSpec[] = [LUMETRI_SPATIAL_EFFECT];
 export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([
 	...M1_EFFECTS,
 	...M2_EFFECTS,
-	// Wave 1/2 fx catalogue (registry/fx/*, one file per effect family).
 	...FX_EFFECTS,
-	// audio-fx: the audio effect catalogue (registry/audio/*; DSP in @jasper/audio-fx).
 	...AUDIO_EFFECTS,
-	// Wave expressions: Expression Controls (no visual output).
 	...EXPRESSION_CONTROL_EFFECTS,
-	// color-grade: Lumetri's spatial stage (internal).
 	...INTERNAL_EFFECTS,
 ]);
-
-// ---------------------------------------------------------------- realization helpers (shared by engines)
 
 export type EffectLike = {
 	id: string;
@@ -650,15 +633,18 @@ export type EffectLike = {
 	effectVersion: number;
 	enabled: boolean;
 	/** Parameter values already evaluated at the frame (or raw values for static params). */
-	params: Record<string, unknown>;
+	params: EffectParams;
 };
 
 /** Params with registry defaults filled in for missing or null values. */
-export function effectiveParams(spec: EffectSpec, params: Record<string, unknown>): EffectParams {
+export function effectiveParams(
+	spec: EffectSpec,
+	params: Readonly<Partial<Record<string, ParamValue | null>>>,
+): EffectParams {
 	const out: EffectParams = {};
 	for (const p of spec.params) {
 		const v = params[p.name];
-		out[p.name] = v === undefined || v === null ? p.default : (v as ParamValue);
+		out[p.name] = v ?? p.default;
 	}
 	return out;
 }

@@ -1,10 +1,9 @@
 // Inspector value editors besides the scrubby number (S03:EC-011…014, S05:CT-010…014).
 
+import type { RGBA } from '@jasper/project';
 import { cx } from '@jasper/ui';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { type ReactNode, useEffect, useState } from 'react';
-
-type RGBA = [number, number, number, number];
 
 const to255 = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 255);
 

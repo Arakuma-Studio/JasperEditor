@@ -1,6 +1,3 @@
-// Browser entry of the sapphire-textures-clouds GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-textures-clouds-gl.test.ts): runs the family's generators through the real GPU host
-// (src/fx/host.ts) at a given frame and seed, and reports pixel statistics / PNGs.
 import '../gl-poison.ts';
 import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
@@ -127,7 +124,6 @@ const px = (c: HTMLCanvasElement, x: number, y: number): Px =>
 
 const api = {
 	ids: () => SAPPHIRE_TEXTURES_CLOUDS_EFFECTS.map((s) => s.id),
-	/** Every family effect with default params at a small size, frames 0 and 45; errors by id. */
 	catalogue() {
 		const errors: string[] = [];
 		for (const s of SAPPHIRE_TEXTURES_CLOUDS_EFFECTS)

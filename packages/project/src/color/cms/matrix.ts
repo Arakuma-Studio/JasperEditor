@@ -1,24 +1,19 @@
-// 3×3 colour matrices (workstream color-mgmt): row-major `[m00 m01 m02 m10 … m22]`, applied as `M · [r g b]ᵀ`.
+// 3×3 colour matrices: row-major `[m00 m01 m02 m10 … m22]`, applied as `M · [r g b]ᵀ`.
 // The normalised primary matrix follows SMPTE RP 177-1993 §3.3 (RGB → XYZ from the xy chromaticities of the
 // primaries and the white point); chromatic adaptation is the linearised Bradford transform (Lam 1985, as used by
 // ICC v4 and the ACES/OCIO configurations). Ported from FilmCraft `crates/color/src/spaces.rs` and EffectCraft
-// `crates/color/src/space.rs` (MIT OR Apache-2.0, see licenses/ported/color-mgmt.md). Pure, f64.
+// `crates/color/src/space.rs` (MIT OR Apache-2.0; licenses/ported/color-mgmt-filmcraft.md and
+// licenses/ported/color-mgmt-effectcraft.md). Pure, f64.
 
-export type ColorMatrix = readonly [number, number, number, number, number, number, number, number, number];
+import { type Matrix3, multiplyMatrix3 as mul3 } from '../../math/matrix3.ts';
+
+export { mul3 };
+export type ColorMatrix = Readonly<Matrix3>;
 export type ColorVec = readonly [number, number, number];
 /** CIE 1931 xy chromaticity. */
 export type Xy = readonly [number, number];
 
 export const IDENTITY3: ColorMatrix = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-/** `a · b` (b is applied first). */
-export function mul3(a: ColorMatrix, b: ColorMatrix): ColorMatrix {
-	const o = new Array<number>(9);
-	for (let r = 0; r < 3; r++)
-		for (let c = 0; c < 3; c++)
-			o[3 * r + c] = a[3 * r]! * b[c]! + a[3 * r + 1]! * b[3 + c]! + a[3 * r + 2]! * b[6 + c]!;
-	return o as unknown as ColorMatrix;
-}
 
 export function det3(m: ColorMatrix): number {
 	const [a, b, c, d, e, f, g, h, i] = m;

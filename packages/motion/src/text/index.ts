@@ -1,6 +1,6 @@
 // @jasper/motion/text — text animator implementations (S11 §4.2, ARCHITECTURE §20.2), keyed `id@version` like
 // `TEXT_ANIMATION_SPECS` in @jasper/project, and the window maths the text
-// layer needs to seek them (S11:TXA-004). Owner: wp-m2-text-anim.
+// layer needs to seek them (S11:TXA-004).
 import type { ResolvedTextAnimator, TextAnimationSide } from '@jasper/project';
 import { frameToMs, needsShaping, type TextUnit } from '../runtime/index.ts';
 import { PRESET_IMPLS } from './presets.ts';
@@ -15,7 +15,6 @@ export {
 	type UnitValues,
 } from './types.ts';
 
-/** The shipped implementations (one per catalogue preset). */
 export const TEXT_ANIMATION_IMPLS: Readonly<Record<string, TextAnimationImpl>> = PRESET_IMPLS;
 
 /** The implementation of a resolved animator, or undefined (unknown presets render at rest, S11:TXA-008). */

@@ -1,7 +1,4 @@
-// Properties ▸ Composition ▸ Text (M3, wp-m3-mgtext, S08:MGU-006): the text editors of a composition clip — texts
-// in manifest order with their style props, live preview while typing (transient document, no History entry),
-// one "Edit Text" entry on apply, Esc reverts, schema errors are not applied, measured layout warnings and the
-// bundle's fonts in the font menu (the measuring page is faked here; e2e/mg-texts.spec.ts runs the real one).
+// The measuring page is faked here; e2e/mg-texts.spec.ts exercises the real page.
 import type { MgCompositionInfo } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
@@ -161,7 +158,6 @@ describe('Properties ▸ Composition ▸ Text (S08:MGU-006)', () => {
 		expect(labels(session)).toHaveLength(before + 1);
 		expect(props(session, clipId)).toMatchObject({ name: { text: 'Grace Hopper', fontSize: 84 } });
 
-		// Esc: back to the applied value, nothing new in History.
 		fireEvent.focus(field);
 		fireEvent.change(field, { target: { value: 'Something else' } });
 		await frames();

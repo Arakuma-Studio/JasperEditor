@@ -1,5 +1,3 @@
-// The fx family premiere-adjust-color-keying: catalogue shape (Premiere names, ids, categories, no duplicates of the
-// existing M1/M2 effects), framework validation, and the TypeScript maths behind uniforms, padding and passes.
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
@@ -186,7 +184,6 @@ describe('fx family premiere-adjust-color-keying: maths', () => {
 		const uk = byId('jasper.ultra-key');
 		const d = defaults(uk);
 		for (const [k, v] of Object.entries(ULTRA_KEY_PRESETS.default)) expect(d[k]).toBe(v);
-		// choke/soften add passes only when used
 		expect(gpuPasses(uk.gpu!, d, ctx).length).toBe(2);
 		expect(gpuPasses(uk.gpu!, { ...d, choke: 20, soften: 20 }, ctx).length).toBe(6);
 	});

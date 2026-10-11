@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Family "sapphire-paint-kaleido-edges" on the Remotion render path: the compositions bundle (production registry,
-// fx-render/entry.ts) renders stills of a decoded video frame with representative effects of each group through
-// @remotion/renderer in headless Chrome, as the engine's exports do. Checks the frame went through the shader
-// (changed, deterministic, upright where it should be). With FX_PKE_IMAGE=<png> FX_PKE_OUT=<dir> it also renders
-// every effect of the family on that picture (the visual review / contact sheet). Gated by REMOTION_E2E=1.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -112,7 +107,6 @@ describe.runIf(enabled)(
 				expect(meanDiff(a, plain), id).toBeGreaterThan(4);
 				expect(meanDiff(a, b), id).toBeLessThan(0.5);
 			}
-			// Kaleido Amount 0 is the identity on the render path too (orientation preserved).
 			const id0 = await still(
 				fxSnapshot([...fxCmd.video(media), fxCmd.effect('jasper.s.kaleido-squares', { kaleidoAmount: 0 })]),
 				10,

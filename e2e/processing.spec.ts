@@ -1,5 +1,3 @@
-// S07 processing: timeline action queues actual processing, replaces a clip in one undo step,
-// switches media versions, submits Smooth path keyboard choices and persists remote settings.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -53,7 +51,7 @@ test('Process Clip… (denoise) swaps the clip to the processed version in one u
 	originalId = Object.values(d0.media).find((m) => m.originalName === 'clip-b.mp4')!.id;
 	const placed = await page.evaluate(
 		(mediaId) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place clip-b',
 				commands: [{ type: 'clip.place', source: { mediaId }, at: 0 }],
 			}),
@@ -64,7 +62,6 @@ test('Process Clip… (denoise) swaps the clip to the processed version in one u
 	videoClip = Object.values(Object.values(d1.sequences)[0]!.clips).find((c) => c.kind === 'video')!.id;
 	await expect(clipElement(page, videoClip)).toBeVisible();
 
-	// Timeline clip context menu → Process Clip…
 	await clipElement(page, videoClip).click({ button: 'right', position: { x: 30, y: 20 } });
 	// The clip menu is long (labels) and may extend below the viewport; activate the entry directly.
 	await page.getByRole('menuitem', { name: 'Process Clip…' }).dispatchEvent('click');
@@ -74,7 +71,6 @@ test('Process Clip… (denoise) swaps the clip to the processed version in one u
 	await dialog.getByRole('button', { name: 'Start' }).click();
 	await expect(dialog).toBeHidden();
 
-	// The job runs in the engine; the client commits media.derive when it succeeds.
 	await expect
 		.poll(() => appliedLabels(page), { timeout: 240_000, intervals: [1000] })
 		.toContain('Process Clip');
@@ -85,19 +81,16 @@ test('Process Clip… (denoise) swaps the clip to the processed version in one u
 	const d2 = await doc();
 	expect(d2.media[processedId!]?.derivation?.recipe.op).toBe('process');
 
-	// Media Version section of the selected clip shows the processed version.
 	await clipElement(page, videoClip).click({ position: { x: 30, y: 20 } });
 	await expect(page.getByTestId('media-version-info')).toContainText('Denoised');
 	await page.screenshot({ path: 'test-results/e2e-processed-clip.png' });
 
-	// One Undo restores the original (and removes the processed version from the project).
 	await undo();
 	await expect.poll(clipMedia).toBe(originalId);
 	expect(Object.keys((await doc()).media)).toEqual([originalId]);
 });
 
 test('Media Version dropdown swaps and undoes', async () => {
-	// Redo brings the processed version back, then switch with the dropdown.
 	await page.keyboard.press('Control+Shift+KeyZ');
 	await expect.poll(clipMedia).not.toBe(originalId);
 	const processedId = await clipMedia();

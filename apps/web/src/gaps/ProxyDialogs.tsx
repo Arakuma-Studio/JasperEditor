@@ -1,13 +1,8 @@
-// Clip ▸ Proxy (workstream gaps, docs/wp-notes/gaps.md §PRJ-8): Create Proxies…, Attach Proxies… and Reconnect Full
-// Resolution Media…, as Premiere's dialogs.
-// - Create Proxies: preset and destination (next to the original media in a Proxies folder, the project's generated
-//   media folder, or a folder); a background job, attached when it finishes.
-// - Attach Proxies: per selected clip, choose a file (the desktop file dialog, an upload in a browser, or a path on a
-//   local engine); a file whose duration or frame rate differs is refused unless attached anyway.
-// - Reconnect Full Resolution Media: choose the full-resolution file of a clip; the file the clip used becomes its
-//   proxy when it had none (projects edited from proxies only), else the full-resolution file is relinked.
+// When reconnecting an original to a project edited from proxies alone, retain the previously linked file
+// as its proxy. Existing proxy associations remain unchanged.
 import type { RegisteredMedia } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
+import type { CommandInput } from '@jasper/project';
 import { type MediaAsset, PROXY_PRESETS, proxyMismatch } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
@@ -50,8 +45,6 @@ export async function pickAndRegister(
 	if (!files[0]) return null;
 	return engine.uploadFile(files[0], { projectId });
 }
-
-// ---------------------------------------------------------------- Create Proxies
 
 function CreateProxiesDialog(props: HostedDialogProps<Base>) {
 	const all = assetsOf(props.session, props.mediaIds);
@@ -136,8 +129,6 @@ function CreateProxiesDialog(props: HostedDialogProps<Base>) {
 		</Dialog>
 	);
 }
-
-// ---------------------------------------------------------------- Attach Proxies
 
 type RowState = { status: string | null; mismatch: string | null; reg: RegisteredMedia | null; path: string };
 
@@ -236,13 +227,11 @@ function AttachProxiesDialog(props: HostedDialogProps<Base & { localEngine?: boo
 	);
 }
 
-// ---------------------------------------------------------------- Reconnect Full Resolution Media
-
 /** Commands that make `reg` the full-resolution file of `asset` (keeping or creating its proxy). */
 export function reconnectCommands(
 	asset: MediaAsset,
 	reg: RegisteredMedia,
-): { commands: unknown[] } | { error: string } {
+): { commands: CommandInput[] } | { error: string } {
 	const why = proxyMismatch(
 		{ kind: reg.kind, probe: reg.probe, originalName: reg.originalName },
 		asset.proxy?.probe ?? asset.probe,
@@ -250,7 +239,7 @@ export function reconnectCommands(
 	if (why) return { error: why };
 	const sameBytes = reg.fingerprint === asset.fingerprint;
 	// The full-resolution file first (it changes the fingerprint), then the file the clip used becomes its proxy.
-	const commands: unknown[] = [
+	const commands: CommandInput[] = [
 		{
 			type: 'media.relink',
 			mediaId: asset.id,

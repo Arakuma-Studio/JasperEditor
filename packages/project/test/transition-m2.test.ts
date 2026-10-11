@@ -1,5 +1,3 @@
-// M2 transition model additions (S10 §6): transition.update {effectId} (TUI-050) and transition.applyDefault
-// {media, videoEffectId, audioEffectId, duration} (TUI-051).
 import { describe, expect, it } from 'vitest';
 import { checkInvariants, type Transition } from '../src/index.ts';
 import { Harness } from './helpers.ts';

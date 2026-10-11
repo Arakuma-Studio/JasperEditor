@@ -1,5 +1,4 @@
-// Smart rendering (workstream `previews`, ARCHITECTURE D-11 "copy" path, docs/wp-notes/previews.md): an export whose
-// codec matches its sources stream-copies the stretches that show a source untouched and re-encodes only around
+// An export whose codec matches its sources stream-copies untouched source stretches and re-encodes only around
 // edits, effects and transitions.
 //
 // - Copyable stretches come from `copyableRuns` (@jasper/project): one untouched video clip at the sequence's size

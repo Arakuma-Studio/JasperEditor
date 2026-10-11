@@ -1,7 +1,3 @@
-// audio-fx through the real UI of the built app (docs/wp-notes/audio-fx.md): an audio effect applied from the
-// Effects panel's Audio Effects bin with its EQ curve in Effect Controls, Essential Sound (Dialogue, Repair, Loudness
-// Auto-Match measured on the engine, Music ▸ Duration ▸ Remix), the Remix tool dragging a music clip's out edge, and
-// a native export with the effects, the remix and the matched loudness.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -87,7 +83,7 @@ test('an audio effect from the Effects panel shows its EQ curve in Effect Contro
 		{ type: 'clip.place', source: { projectItemId: voice.id }, at: 0, tracks: { audio: 'A1' } },
 		{ type: 'clip.place', source: { projectItemId: music.id }, at: 0, tracks: { audio: 'A2' } },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	seqId = (await sequenceSummary(page)).sequenceId;
 	voiceId = (await clips(page, ['A1']))[0]!.id;
 	musicId = (await clips(page, ['A2']))[0]!.id;
@@ -138,11 +134,10 @@ test('Essential Sound ▸ Duration ▸ Remix makes the music 20 s on its beats',
 	const es = page.getByTestId('essential-sound');
 	await es.getByTestId('essential-type-music').click();
 	await expect(es.getByTestId('essential-current-type')).toContainText('Music');
-	// The target (seconds) slider is set through its command, then the panel's Remix button plans on the engine.
 	const r = await transact(page, [
 		{ type: 'essentialSound.set', clipIds: [musicId], values: { 'duration.targetSeconds': 20 } },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await es.getByTestId('essential-duration-apply').click();
 	await expect
 		.poll(async () => (await audioClips()).filter((c) => c.remix).length, { timeout: 60_000 })

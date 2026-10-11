@@ -23,6 +23,7 @@ import {
 	transitionSpan,
 	transitionSpec,
 } from '@jasper/project';
+import { ToolError } from './errors.ts';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
@@ -36,11 +37,17 @@ function sequenceName(doc: ProjectDocument, seqId: string): string {
 export function pickSequence(doc: ProjectDocument, sequenceId?: string): Sequence {
 	if (sequenceId) {
 		const s = doc.sequences[sequenceId];
-		if (!s) throw new Error(`Sequence not found: ${sequenceId}`);
+		if (!s)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`Sequence not found: ${sequenceId}`,
+				'Call get_project for sequence ids.',
+			);
 		return s;
 	}
 	const all = Object.values(doc.sequences);
-	if (!all.length) throw new Error('The project has no sequence');
+	if (!all.length)
+		throw new ToolError('E_NOT_FOUND', 'The project has no sequence', 'Call get_project for sequence ids.');
 	return all[0]!;
 }
 

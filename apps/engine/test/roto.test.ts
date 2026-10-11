@@ -1,9 +1,5 @@
-// Roto jobs end to end (parity workstream `roto`) with real ffmpeg, OpenCV.js and the jasper-roto child process on
-// the synthetic plate of `scripts/fixtures/roto.mjs` (an ellipse with known geometry per frame): classic graph-cut
-// segmentation + Farnebäck propagation, frame reuse, the matte route, cancellation (no partial files), cache refs,
-// planner refusal of uncomputed mattes. With JASPER_ROTO_MODELS_DIR (a directory holding the SAM 2.1 files of the
-// catalogue), the model is installed through the real installer (file:// URLs, sha256 verified) and segmentation runs
-// with it.
+// scripts/fixtures/roto.mjs defines an ellipse with known per-frame geometry as segmentation ground truth.
+// JASPER_ROTO_MODELS_DIR supplies SAM 2.1 files for installation through verified file URLs.
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -97,7 +93,6 @@ async function segment(body: unknown, target: TestApp = app): Promise<EngineJob>
 	}, 600_000);
 }
 
-/** IoU of a set's frame against the ellipse. */
 async function iouOf(res: RotoSegmentResult, f: number, target: TestApp = app): Promise<number> {
 	const r = await target.inject({ method: 'GET', url: `/mg/roto/${res.key}?n=${f}`, headers: H });
 	expect(r.statusCode).toBe(200);
@@ -264,7 +259,7 @@ describe('roto jobs (classic engine)', () => {
 			for (const n of existsSync(join(root, sub)) ? readdirSync(join(root, sub)) : [])
 				expect(n).not.toMatch(/\.tmp$/);
 		const sets = readdirSync(join(root, 'sets'));
-		expect(sets).toHaveLength(3); // first, corrected, single frame
+		expect(sets).toHaveLength(3);
 	}, 300_000);
 
 	it('saved projects reference their roto sets (cache)', () => {

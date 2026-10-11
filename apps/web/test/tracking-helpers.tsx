@@ -1,4 +1,4 @@
-// Test helpers for the tracking UI (wp-m2-track): a session with a 1920×1080 30 fps plate on V1 and a solid on V2,
+// Tracking fixtures use a 1920×1080 30 fps plate on V1 and a solid on V2,
 // and a fake engine client that records `trackingTrack` calls and serves jobs.
 import type { EngineJob, TrackResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';

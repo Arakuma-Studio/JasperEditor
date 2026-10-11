@@ -1,4 +1,3 @@
-// NDJSON `/events` reader with heartbeat timeout and exponential reconnect (S04:ENG-023, ARCHITECTURE §9.2).
 import {
 	type EventEnvelope,
 	EventEnvelopeSchema,
@@ -9,12 +8,14 @@ import {
 
 export type EventStreamState = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
+export type EventStreamInfo = { attempt: number; delayMs?: number; error?: unknown };
+
 export type EventHandlers = {
 	/** Every well-formed envelope (known or unknown type). */
 	onEnvelope?(e: EventEnvelope): void;
 	/** Envelopes of known types with validated payloads. */
 	onEvent?(e: TypedEvent): void;
-	onStateChange?(state: EventStreamState, info: { attempt: number; delayMs?: number; error?: unknown }): void;
+	onStateChange?(state: EventStreamState, info: EventStreamInfo): void;
 };
 
 export type EventStream = {
@@ -40,7 +41,7 @@ export function openEventStream(
 	let watchdog: ReturnType<typeof setTimeout> | null = null;
 	let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-	const setState = (s: EventStreamState, info: { attempt: number; delayMs?: number; error?: unknown }) => {
+	const setState = (s: EventStreamState, info: EventStreamInfo) => {
 		state = s;
 		handlers.onStateChange?.(s, info);
 	};

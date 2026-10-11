@@ -1,7 +1,6 @@
-// @jasper/config — appdir layout, env names and ports shared by the engine and the desktop shell.
-// Node only (ARCHITECTURE §3.1, §4.3).
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { z } from 'zod';
 
 export const DEFAULT_ENGINE_PORT = 47900;
 export const DEV_WEB_PORT = 5173;
@@ -190,36 +189,34 @@ export function desktopAppdir(env: Env = process.env, platform: NodeJS.Platform 
 	return join(userData, 'jasper');
 }
 
-/** `<appdir>/engine/runtime.json`: how local tools reach a running engine (written on listen, removed on stop). */
-export type EngineRuntimeInfo = {
-	/** `http://127.0.0.1:<port>` */
-	url: string;
-	host: string;
-	port: number;
-	pid: number;
-	/** Bearer token when the engine runs in local token mode (Electron), else null. */
-	token: string | null;
-	version: string;
-	appdir: string;
-	startedAt: string;
-};
+const listeningPortSchema = z.number().int().min(1).max(65535);
+
+export const EngineReadyMessageSchema = z.object({
+	type: z.literal('ready'),
+	port: listeningPortSchema,
+});
+
+const engineRuntimeSchema = z.object({
+	url: z.url({ protocol: /^https?$/ }),
+	host: z.string().default(DEFAULT_ENGINE_HOST),
+	port: listeningPortSchema,
+	pid: z
+		.number()
+		.int()
+		.positive()
+		.max(2 ** 31 - 1),
+	token: z.string().nullable().default(null),
+	version: z.string().default('unknown'),
+	appdir: z.string().default(''),
+	startedAt: z.string().default(''),
+});
+
+export type EngineRuntimeInfo = z.infer<typeof engineRuntimeSchema>;
 
 /** Parses a runtime file's JSON (null when malformed). */
 export function parseEngineRuntime(raw: unknown): EngineRuntimeInfo | null {
-	if (!raw || typeof raw !== 'object') return null;
-	const r = raw as Partial<EngineRuntimeInfo>;
-	if (typeof r.url !== 'string' || typeof r.port !== 'number' || typeof r.pid !== 'number') return null;
-	if (r.token !== null && r.token !== undefined && typeof r.token !== 'string') return null;
-	return {
-		url: r.url,
-		host: typeof r.host === 'string' ? r.host : '127.0.0.1',
-		port: r.port,
-		pid: r.pid,
-		token: r.token ?? null,
-		version: typeof r.version === 'string' ? r.version : 'unknown',
-		appdir: typeof r.appdir === 'string' ? r.appdir : '',
-		startedAt: typeof r.startedAt === 'string' ? r.startedAt : '',
-	};
+	const result = engineRuntimeSchema.safeParse(raw);
+	return result.success ? result.data : null;
 }
 
 /**
@@ -231,7 +228,6 @@ export function parseEngineRuntime(raw: unknown): EngineRuntimeInfo | null {
  * renderer with a path. Everything else is shown in the file browser instead.
  */
 export const OPENABLE_EXTENSIONS: readonly string[] = [
-	// video
 	'mp4',
 	'mov',
 	'm4v',
@@ -248,7 +244,6 @@ export const OPENABLE_EXTENSIONS: readonly string[] = [
 	'flv',
 	'3gp',
 	'ogv',
-	// audio
 	'mp3',
 	'wav',
 	'aac',
@@ -261,7 +256,6 @@ export const OPENABLE_EXTENSIONS: readonly string[] = [
 	'wma',
 	'ac3',
 	'caf',
-	// pictures
 	'png',
 	'jpg',
 	'jpeg',
@@ -278,12 +272,10 @@ export const OPENABLE_EXTENSIONS: readonly string[] = [
 	'dpx',
 	'psd',
 	'psb',
-	// vector pictures and documents
 	'svg',
 	'pdf',
 	'ai',
 	'eps',
-	// captions
 	'srt',
 	'vtt',
 	'scc',
@@ -291,7 +283,6 @@ export const OPENABLE_EXTENSIONS: readonly string[] = [
 	'stl',
 	'ttml',
 	'dfxp',
-	// timeline documents
 	'xml',
 	'fcpxml',
 	'otio',
@@ -299,7 +290,6 @@ export const OPENABLE_EXTENSIONS: readonly string[] = [
 	'aaf',
 	'omf',
 	'ale',
-	// models, animations, colour
 	'glb',
 	'gltf',
 	'obj',

@@ -180,17 +180,16 @@ const isProxied = (url: string | undefined): boolean => {
 
 /** `configure` of a Vite proxy entry: authenticates what the dev server forwards to the engine. */
 export function authenticateProxy(auth: DevAuth) {
-	return (proxy: unknown): void => {
-		const p = proxy as ProxyEvents;
+	return (proxy: ProxyEvents): void => {
 		const add = (proxyReq: ProxyReq, req: IncomingMessage) => {
 			// A client that brings its own credentials (jasper-mcp pointed at the dev server) keeps them.
 			if (req.headers.authorization) return;
 			const token = auth.token();
 			if (token) proxyReq.setHeader('authorization', `Bearer ${token}`);
 		};
-		p.on('proxyReq', add);
-		p.on('proxyReqWs', add);
-		p.on('proxyRes', (proxyRes, req) => {
+		proxy.on('proxyReq', add);
+		proxy.on('proxyReqWs', add);
+		proxy.on('proxyRes', (proxyRes, req) => {
 			if (proxyRes.statusCode === 401) void auth.refresh();
 			// The editor polls /health until the engine is up. A page that was loaded before the engine started (so
 			// before there was a key to hand out) becomes the editor here, without a reload.

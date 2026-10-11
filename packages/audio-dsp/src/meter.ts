@@ -21,7 +21,6 @@ export function faderDbToGain(db: number): number {
 	return db <= -96 ? 0 : 10 ** (db / 20);
 }
 
-/** Options of {@link LevelMeter}. */
 export type LevelMeterOptions = {
 	/** RMS window length in milliseconds (default 300). */
 	rmsWindowMs?: number;
@@ -149,7 +148,6 @@ export class LevelMeter {
 		return r;
 	}
 
-	/** Clear all state (window, peaks, clip flags). */
 	reset(): void {
 		for (const ring of this.sq) ring.fill(0);
 		this.sums.fill(0);
@@ -161,7 +159,6 @@ export class LevelMeter {
 	}
 }
 
-/** Options of {@link MeterBallistics}. */
 export type MeterBallisticsOptions = {
 	/** Fall rate of the displayed level in dB per second (default 20). */
 	releaseDbPerSec?: number;

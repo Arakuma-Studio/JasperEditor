@@ -1,6 +1,3 @@
-// S10 §8 test 5 (wp-m2-transitions): transitions through the real UI of the built app — drag Cross Dissolve from
-// the Effects panel onto a cut (the Program shows the mix), Ctrl+Z, Ctrl+D at the playhead, drag the right edge
-// to lengthen it, change the type to Dip to Black in Effect Controls, and export natively.
 // The two clips are placed by the in-page agent API (setup only) so they have media handles around the cut.
 
 import { mkdirSync } from 'node:fs';
@@ -16,6 +13,7 @@ import {
 	ffprobe,
 	focusTimeline,
 	importFiles,
+	mediaIdForFile,
 	pointerDrag,
 	query,
 	ROOT,
@@ -103,25 +101,24 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	const a = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'xfade-red.mp4' } },
+			source: { mediaId: await mediaIdForFile(page, 'xfade-red.mp4') },
 			at: 0,
 			sourceRange: { in: { seconds: 1 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(a.ok, JSON.stringify(a.errors)).toBe(true);
+	expect(a.ok, JSON.stringify(a)).toBe(true);
 	cut = (await clips(page, ['V1']))[0]!.end;
 	const b = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'xfade-blue.mp4' } },
+			source: { mediaId: await mediaIdForFile(page, 'xfade-blue.mp4') },
 			at: cut,
 			sourceRange: { in: { seconds: 2 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(b.ok, JSON.stringify(b.errors)).toBe(true);
+	expect(b.ok, JSON.stringify(b)).toBe(true);
 	expect((await clips(page, ['V1'])).map((c) => c.start)).toEqual([0, cut]);
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 90_000 });
-	// Hard cut: the last frame before it is red.
 	await seek(cut - 1);
 	await expect.poll(async () => (await programRgb())[0], { timeout: 30_000 }).toBeGreaterThan(180);
 	expect((await programRgb())[2]).toBeLessThan(60);

@@ -1,4 +1,4 @@
-// The stepped particle engine of Particle World, Particle Systems II and Mercury (sim-warp workstream). Particles are
+// The stepped particle engine of Particle World, Particle Systems II and Mercury. Particles are
 // born from a producer ellipsoid at Birth Rate, move under the Animation's force field, gravity, resistance and the
 // floor, and die at their (randomised) Longevity. The engine steps at SIM_SPS from clip time 0 with the params AT
 // EACH STEP (keyframed birth rates, moving producers — whose motion the particles inherit by Inherit Velocity %), so

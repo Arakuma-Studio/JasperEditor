@@ -51,7 +51,6 @@ const opacityAt = (h: Harness, id: string, frame: number) => {
 	const c = clipOf(h, id);
 	return evaluate(c.opacity, contentTimeAt(c, frame, rateOf(h)), { clamp: { min: 0, max: 100 } });
 };
-/** Test-only direct edit of the committed document. */
 function patchDoc(h: Harness, fn: (doc: ProjectDocument) => void) {
 	const copy = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
 	fn(copy);
@@ -341,9 +340,8 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 			{ type: 'keyframe.add', target: ['clip', id, 'opacity'], at: { frames: 100 }, value: 100, ref: '$b' },
 		]);
 		const [a, b] = [r.refs.$a!, r.refs.$b!];
-		expect(opacityAt(h, id, 50)).toBeCloseTo(50, 9); // linear midpoint
+		expect(opacityAt(h, id, 50)).toBeCloseTo(50, 9);
 		const easy = { influence: 1 / 3, slope: 0 };
-		// Ease Out on the first key.
 		h.ok([{ type: 'keyframe.setInterpolation', keyframeIds: [a], interpolation: 'bezier', easeOut: easy }]);
 		// S01 KF-003: zero outgoing slope and linear incoming slope give p(1/2)=3/8.
 		expect(opacityAt(h, id, 50)).toBeCloseTo(37.5, 6);
@@ -691,7 +689,6 @@ describe('property registry (S03:PRP-001…003 adapted)', () => {
 		expect(by['params.align']).toMatchObject({ kind: 'enum', options: ['left', 'right'] });
 		expect(by['params.showBar']!.ui.control).toBe('toggle');
 		expect(by['params.size']!.defaultValue).toBe(48);
-		// The same specs drive param.set validation through the MgTemplateRegistry.
 		const h = new Harness({
 			ctx: { registries: defaultRegistries(createStaticMgRegistry([tpl])) },
 		});
@@ -730,7 +727,6 @@ describe('property registry (S03:PRP-001…003 adapted)', () => {
 		const rate = rateOf(h);
 		const t = clipContentTimeAtFrame(c, 25, rate).time;
 		expect(sequenceFrameOfContentTime(c, t, rate)).toBe(25);
-		// Text styling goes through clip.update so the layout is refreshed.
 		const text = h.ok([
 			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Hi' }, ref: '$t' },
 		]);

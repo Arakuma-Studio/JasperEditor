@@ -6,14 +6,21 @@ import { TransactionSchema } from '../commands/apply.ts';
 import { COMMAND_CATALOG, type CommandOwner } from '../commands/catalog.ts';
 import type { CommandType } from '../commands/schemas/index.ts';
 import { ERROR_CODES, type Registries, TX_PROTOCOL, WARNING_CODES } from '../commands/types.ts';
-import { PROPERTY_SPECS } from '../registry/properties.ts';
+import type { SequencePreset } from '../presets.ts';
+import type { EffectSpec } from '../registry/effects.ts';
+import type { MgTemplateInfo } from '../registry/mg.ts';
+import { PROPERTY_SPECS, type PropertySpec } from '../registry/properties.ts';
 import { KNOWN_CLIP_KINDS } from '../schema/sequence.ts';
-import { LATEST_TEXT_ANIMATION_SPECS, TEXT_ANIMATION_SPECS } from '../text-animations.ts';
-import { TRANSITION_SPECS } from '../transitions.ts';
+import {
+	LATEST_TEXT_ANIMATION_SPECS,
+	TEXT_ANIMATION_SPECS,
+	type TextAnimationSpec,
+} from '../text-animations.ts';
+import { TRANSITION_SPECS, type TransitionSpec } from '../transitions.ts';
 import { SHAPE_PRESETS } from '../vector/presets.ts';
 import { shapeItemFieldCatalog } from '../vector/properties.ts';
 
-export type JsonSchema = Record<string, unknown>;
+export type JsonSchema = z.core.JSONSchema.BaseSchema;
 
 export type AgentSchema = {
 	protocol: typeof TX_PROTOCOL;
@@ -28,80 +35,37 @@ export type AgentSchema = {
 			schema: JsonSchema;
 		}
 	>;
-	effects: {
-		id: string;
-		version: number;
-		label: string;
-		category: string;
-		appliesTo: string;
-		params: unknown[];
-		capabilities: unknown;
-		/** fx framework: Effects-panel bin, one-line description, GPU shader effect (Remotion path unless native). */
-		bin?: string;
-		description?: string;
-		gpu?: boolean;
-	}[];
-	/**
-	 * Wave-2 transition framework: every transition type (`transition.add {effectId, params}`): Effects-panel bin,
-	 * params (ParamSpecs; `param.set` target ["transition", id, name]), GPU shader stage (Remotion path) or built-in.
-	 */
-	transitions: {
-		id: string;
-		version: number;
-		label: string;
-		appliesTo: 'video' | 'audio';
-		bin: string;
-		subBin?: string;
-		description: string;
-		keywords?: readonly string[];
-		params: unknown[];
-		capabilities: unknown;
-		gpu?: boolean;
-		/** Heavy in the preview (`TransitionSpec.expensive`). */
-		expensive?: boolean;
-	}[];
-	mgTemplates: {
-		id: string;
-		version: number;
-		name: string;
-		category: string;
+	effects: (Pick<
+		EffectSpec,
+		'id' | 'version' | 'label' | 'category' | 'appliesTo' | 'params' | 'capabilities' | 'bin' | 'description'
+	> & { gpu?: boolean })[];
+	transitions: (Pick<
+		TransitionSpec,
+		| 'id'
+		| 'version'
+		| 'label'
+		| 'appliesTo'
+		| 'bin'
+		| 'subBin'
+		| 'description'
+		| 'keywords'
+		| 'params'
+		| 'capabilities'
+		| 'expensive'
+	> & { gpu?: boolean })[];
+	mgTemplates: (Omit<MgTemplateInfo, 'paramsSchema' | 'renderer' | 'canvasDefault' | 'canvases'> & {
 		paramsSchema: JsonSchema;
-		defaults: unknown;
-		introFrames: number;
-		outroFrames: number;
-		/** M2 (S11:ANA-001): `fframes` or `anime`. */
-		renderer: 'fframes' | 'anime';
-		description?: string;
-		defaultDurationSeconds?: number;
-	}[];
-	/** M2 (S11:ANA-001): text animator presets (in/out animators of text clips). */
-	textAnimations: {
-		id: string;
-		version: number;
-		label: string;
-		category: string;
-		phases: readonly ('in' | 'out')[];
+		renderer: NonNullable<MgTemplateInfo['renderer']>;
+	})[];
+	textAnimations: (Omit<TextAnimationSpec, 'paramsSchema'> & {
 		paramsSchema: JsonSchema;
-		defaults: unknown;
-		/** At 30 fps; scaled to the sequence rate on apply. */
-		defaultDurationFrames: number;
-		description: string;
-		/** The newest version of its preset (what new animations use); older versions only render saved documents. */
+		/** The newest version of its preset; older versions still render saved documents. */
 		latest: boolean;
-	}[];
-	presets: { id: string; name: string; settings: unknown }[];
-	properties: {
-		key: string;
-		label: string;
-		kind: string;
-		unit?: string;
-		range?: unknown;
-		animatable: string;
-		/** vec2 points (spatial-motion-path, S03:KF-021): the spatial interpolation of new keys. */
-		spatial?: string;
-		/** M2 (S11:ANA-001): clip kinds the property applies to. */
+	})[];
+	presets: Pick<SequencePreset, 'id' | 'name' | 'settings'>[];
+	properties: (Pick<PropertySpec, 'key' | 'label' | 'kind' | 'unit' | 'range' | 'animatable' | 'spatial'> & {
 		kinds: string[];
-	}[];
+	})[];
 	errorCodes: readonly string[];
 	warningCodes: readonly string[];
 	/**
@@ -116,7 +80,7 @@ export type AgentSchema = {
 };
 
 export function toJsonSchema(schema: z.ZodType): JsonSchema {
-	return z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' }) as JsonSchema;
+	return z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' });
 }
 
 export function exportAgentSchema(registries: Registries): AgentSchema {

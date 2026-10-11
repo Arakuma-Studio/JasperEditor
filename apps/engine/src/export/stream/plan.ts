@@ -175,7 +175,6 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	const kx = c.intrinsicBox.width / bw;
 	const ky = c.intrinsicBox.height / bh;
 
-	// ---- samples: layer map, mip levels, opacity
 	const maps: (Mat3 | null)[] = [];
 	const opac = new Float64Array(n);
 	const crops: ([number, number, number, number] | null)[] = [];
@@ -202,7 +201,7 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	const srcH = Math.max(...ph);
 	const levels = pw.some((v, k) => v !== bw || ph[k] !== bh);
 
-	// ---- decoder: source chain → mip size (per frame, piecewise constant) → fixed frame (top-left)
+	// Pad varying mip sizes to a fixed frame with the picture at the top-left.
 	const filters = [...chain.filters];
 	if (levels) {
 		const T = frameIndex(fps);
@@ -216,7 +215,7 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	}
 	const filter = `${chain.input}${filters.join(',')}`;
 
-	// ---- per frame: map from decoded px to sequence px, its bounds (real, clamped to the frame ± 2 px)
+	// Bounds are in sequence pixels, clamped to the frame with a 2 px sampling margin.
 	const fwd: (Mat3 | null)[] = [];
 	const x0 = new Float64Array(n);
 	const y0 = new Float64Array(n);
@@ -272,7 +271,7 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 		else [x0[k], y0[k], x1[k], y1[k]] = [x0[j]!, y0[j]!, x1[j]!, y1[j]!];
 	}
 
-	// ---- the frame's offset: round(fit(left − 2)), ≥ 1.4 px left of the drawing (bilinear fringe: 1 px)
+	// round(fit(left − 2)) stays at least 1.4 px left of the drawing, covering its 1 px bilinear fringe.
 	const offsets = (lo: Float64Array) => {
 		const v = lo.map((x) => x - 2);
 		for (let nudge = 0; ; nudge++) {
@@ -295,7 +294,7 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 		outH = Math.max(outH, Math.ceil(y1[k]! + 1) - oy.ints[k]!);
 	}
 
-	// ---- per-frame warp specs (output px → decoded px)
+	// Warp specs map output pixels to decoded pixels.
 	const frames: StreamFrame[] = [];
 	let lastMask: StreamFrame['mask'] = null;
 	const maskOf = (k: number): StreamFrame['mask'] => {

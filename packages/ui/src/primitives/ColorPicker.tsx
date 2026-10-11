@@ -1,11 +1,9 @@
-// Color swatch + picker popover (S05:CT-014): 24×16 swatch with a 1 px strong border; the popover has
-// an HSV square, hue strip, alpha strip, hex field, eyedropper where supported, recent colors and
-// project swatches. Live changes stream through `onChange(color, {final:false})`; releasing a drag or
-// committing a field calls it with `final:true` (callers commit one undo step there).
+// Callers commit one undo step when onChange receives final: true.
 import { Popover } from 'radix-ui';
 import { type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
+import { toast } from '../toast/toast-store.ts';
 import {
 	type Hsv,
 	hsvToCss,
@@ -47,7 +45,7 @@ function useDrag(onMove: (x: number, y: number) => void, onStart: () => void, on
 			try {
 				e.currentTarget.setPointerCapture?.(e.pointerId);
 			} catch {
-				/* unsupported */
+				// The browser can cancel the pointer before capture is requested.
 			}
 			onStart();
 			const r = e.currentTarget.getBoundingClientRect();
@@ -154,7 +152,7 @@ export function ColorPicker({ value, onChange, onChangeStart, alpha = true, swat
 
 	const eyeDropperCtor =
 		typeof window !== 'undefined'
-			? (window as unknown as { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper
+			? (window as Window & { EyeDropper?: new () => { open(): Promise<{ sRGBHex: string }> } }).EyeDropper
 			: undefined;
 
 	const solid = hsvToCss(hsv);
@@ -245,7 +243,14 @@ export function ColorPicker({ value, onChange, onChangeStart, alpha = true, swat
 									const c = parseHex(r.sRGBHex);
 									if (c) pick(c);
 								})
-								.catch(() => {});
+								.catch((error: unknown) => {
+									if (error instanceof DOMException && error.name === 'AbortError') return;
+									toast({
+										kind: 'error',
+										title: 'Could not pick a screen color',
+										detail: error instanceof Error ? error.message : String(error),
+									});
+								});
 						}}
 					>
 						<Icon id="app.eyedropper" size={14} />
@@ -307,7 +312,6 @@ export type ColorSwatchProps = ColorPickerProps & {
 	className?: string;
 };
 
-/** 24×16 swatch that opens the picker popover (S05:CT-014). */
 export function ColorSwatch({ label, disabled, className, ...picker }: ColorSwatchProps) {
 	const css = rgbaToCss(picker.value);
 	return (

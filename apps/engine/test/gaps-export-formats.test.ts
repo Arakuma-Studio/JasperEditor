@@ -1,5 +1,3 @@
-// Workstream gaps: HEVC exports through libkvazaar (EX-2) and the Sequence Settings delivery format — non-square
-// pixel aspect ratio and field order (TL-11) — on real exports (ffprobe).
 import { spawnSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
@@ -43,7 +41,6 @@ const settings = (d: DocBuilder, video: Record<string, unknown>, extra: Record<s
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 20 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 			...video,
 		},
 		audio: { codec: 'aac', sampleRate: 48000, channels: 2 },

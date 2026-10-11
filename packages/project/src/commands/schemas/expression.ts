@@ -1,5 +1,4 @@
-// Expressions (wave expressions, docs/wp-notes/expressions.md): set / clear / enable an After Effects-style
-// expression on any animatable property, and rename effect instances (expressions find effects by name).
+// Expressions resolve effect instances by name, so effect renaming is part of this command family.
 import { z } from 'zod';
 import { cmd, IdRefSchema, ParamPathSchema } from './common.ts';
 

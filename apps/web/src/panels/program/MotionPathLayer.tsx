@@ -10,7 +10,7 @@ type Props = { path: MotionPath; view: View; selected: ReadonlySet<string> };
 
 export const MotionPathLayer = memo(function MotionPathLayer({ path, view, selected }: Props) {
 	const d = dotsPathData(path, view);
-	// keyframes-blend: the Anchor Point path draws in the accent colour (its keys are layer-space values).
+	// the Anchor Point path draws in the accent colour (its keys are layer-space values).
 	const anchor = path.property === 'anchor';
 	return (
 		<g

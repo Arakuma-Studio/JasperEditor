@@ -1,12 +1,4 @@
 // @vitest-environment node
-// Golden frames of the composition (golden-fuzz; docs/testing.md §Golden frames): every scene of golden/scenes.ts —
-// compositor, blend modes, masks, adjustment layers, nests, colour, GPU effects of every family, text, text
-// animators, shapes, 3D, time remapping, sim-warp, captions, a transition — is rendered as one 256×144 still by
-// @remotion/renderer in headless Chrome (the engine's export and bake path) and compared with
-// goldens/scenes/<name>.png (Tolerance.BROWSER; JASPER_BLESS=1 re-blesses, failures write actual / expected / ×8
-// diff to test-results/golden-failures/). A guard checks that no scene is blank or a duplicate of another.
-// Media are generated here (pictures by the test, a movie by ffmpeg); text uses the repository's Inter font.
-// Gated by REMOTION_E2E=1 (bundling ≈ 15–40 s); needs ffmpeg and a Chrome.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,7 +47,6 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 		writeFileSync(join(media.dir, 'card.png'), encodePng(goldenCard()));
 		writeFileSync(join(media.dir, 'tile.png'), encodePng(goldenTile()));
 		copyFileSync(FONT, join(media.dir, 'inter.ttf'));
-		// A generated movie at the sequence size (frame numbers burned in by testsrc2), 2 s at 30 fps.
 		ffmpeg([
 			'-f',
 			'lavfi',
@@ -164,7 +155,7 @@ describe.runIf(enabled)('golden scenes rendered by Remotion (REMOTION_E2E=1)', {
 			const img = await still(doc, scene.frame, `golden-${scene.name}`, scene.options);
 			expect([img.width, img.height]).toEqual([GW, GH]);
 			frames[scene.name] = img;
-			// compositor: scenes with a computed reference are checked against it first (also when blessing).
+			// Check computed references even when blessing, to prevent accepting an incorrect golden.
 			if (scene.reference) {
 				const ref = await scene.reference.compute({
 					card: goldenCard(),

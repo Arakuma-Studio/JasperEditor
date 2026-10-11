@@ -1,8 +1,5 @@
 // @vitest-environment node
-// Screen Keyer, Refine Soft / Hard Matte, Key Cleaner and Advanced Spill Suppressor (parity: roto) in real WebGL2
-// (headless Chrome, SwiftShader). Ports EffectCraft's keylight.rs / matte.rs / keying.rs tests: the screen keys out,
-// the foreground stays, a 50 % mix keys half, spill is removed, clip / gain / views / inside and outside masks
-// behave, refinement softens and shifts edges, spill suppression removes the screen cast. FX_GL=0 skips it.
+// These pixel cases port EffectCraft's keylight.rs, matte.rs and keying.rs tests.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { near, PACG_GL, type PacgRequest, type PacgSession, type Px, startPacg } from './fx-pacg/harness.ts';
 

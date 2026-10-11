@@ -1,7 +1,5 @@
-// Workstream ui-perf in the built app: the editor UI at scale. Scripted gestures on generated projects (the same
-// scenarios as `pnpm perf --sections ui`, scripts/perf/ui-scenarios.ts), measured from a Chrome trace: main-thread
-// work per frame and the frame rate. Budgets (docs/performance.md §1) scale with the host's load like every timing
-// budget (scripts/perf/budget.ts; the browser is another process, so `parallel`); PERF=1 enforces them exactly.
+// Budgets scale with host load using the parallel factor because Chrome runs in another process.
+// PERF=1 enforces the documented budgets exactly (docs/performance.md §1).
 import { expect, type Page, test } from '@playwright/test';
 import { budgetMs, budgetReport, loadFactor, PERF_STRICT } from '../scripts/perf/budget.ts';
 import { cachedFixture } from '../scripts/perf/ui-run.ts';
@@ -60,7 +58,6 @@ test('a 30-step drag of 11 clips on a 1 000-clip sequence keeps frames short', a
 	const floorMs = Date.now() - f0;
 	await blank.close();
 	// Wall-time budget: the documented 1.5 s with PERF=1; under load, the page may add at most 1 s (scaled) to the floor
-	// (before this workstream it added 2–7 s).
 	const wallBudget = PERF_STRICT ? 1500 : floorMs + budgetMs(1000, { parallel: true });
 	// Best of two fresh runs: host contention only ever makes a run slower.
 	let best: { mean: number; wall: number } | null = null;
@@ -125,7 +122,6 @@ test('scrolling and zooming a 5 000-clip timeline stay above 50 fps', async ({ p
 		console.info(
 			`[ui-perf] ${name} 5 000 clips: ${r.fps} fps (floor ${fpsFloor(50).toFixed(1)} at this load), work per frame p50 ${r.p50} / p95 ${r.p95} / mean ${r.mean} ms`,
 		);
-	// Clips are drawn where the model puts them after scrolling (the clip layer moves, the clips do not).
 	const placement = await page.evaluate(() => {
 		const area = document.querySelector('[data-testid="timeline-clip-area"]')!.getBoundingClientRect();
 		const s = (
@@ -181,13 +177,11 @@ test('the Project panel with 2 000 items scrolls smoothly and renders only what 
 	console.info(
 		`[ui-perf] Project panel, 2 000 items (opened in ${openMs} ms): ${r.fps} fps (floor ${fpsFloor(50).toFixed(1)}), work per frame p50 ${r.p50} / p95 ${r.p95} / mean ${r.mean} ms, ${await page.getByTestId('project-row').count()} rows rendered`,
 	);
-	// The last item is reachable: scroll to the bottom and find it.
 	await page.getByTestId('project-body').evaluate((el) => {
 		el.scrollTop = el.scrollHeight;
 	});
 	await expect(page.getByTestId('project-row').filter({ hasText: 'still-1999.png' })).toBeVisible();
 	await page.screenshot({ path: 'test-results/ui-perf-project.png' });
-	// The icon view is windowed the same way.
 	await page.getByTestId('project-icon-view').click();
 	await expect(page.getByTestId('project-tile').first()).toBeVisible();
 	expect(await page.getByTestId('project-tile').count()).toBeLessThan(600);

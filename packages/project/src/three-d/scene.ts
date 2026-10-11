@@ -3,7 +3,15 @@
 // CPU renderers all use it). Ported from EffectCraft `render/three_d/{camera,light}.rs` (MIT OR Apache-2.0).
 
 import { contentTimeAt } from '../derive/index.ts';
-import { bezierProgress, evaluate, incomingEase, isHoldOnlyValue, outgoingEase } from '../keyframes.ts';
+import {
+	bezierProgress,
+	evaluate,
+	expressionBindingOf,
+	incomingEase,
+	isHoldOnlyValue,
+	outgoingEase,
+} from '../keyframes.ts';
+import { multiplyMatrix3 } from '../math/matrix3.ts';
 import type { Mat3 } from '../render/homography.ts';
 import type {
 	RenderCameraClip,
@@ -43,8 +51,6 @@ import {
 	sub3,
 } from './math.ts';
 import { defaultAperture, defaultCameraZoom, irisSides, MATERIAL_DEFAULTS, NEAR_PLANE } from './model.ts';
-
-// ---------------------------------------------------------------- cameras
 
 export type Iris = {
 	/** Polygon sides (0 = Fast Rectangle). */
@@ -141,7 +147,7 @@ const num = (a: Animatable<number> | undefined, t: number, fallback: number): nu
  */
 export function orientationMatrixAt(o: Animatable<Vec3>, t: number): Matrix4 {
 	const kfs = o.keyframes;
-	const bound = (o as unknown as Record<symbol, unknown>)[Symbol.for('jasper.expressionBinding')];
+	const bound = expressionBindingOf(o);
 	if (kfs.length < 2 || bound) return mat4Orientation(vec3Of(evaluate(o, t), [0, 0, 0]));
 	if (t <= kfs[0]!.time) return mat4Orientation(vec3Of(kfs[0]!.value, [0, 0, 0]));
 	const last = kfs[kfs.length - 1]!;
@@ -247,8 +253,6 @@ export function activeCameraAt(
 	const c = activeCameraClipAt(snap.scene3d, frame);
 	return c ? cameraStateOf(c, frame, fps, width) : defaultCamera(width, height);
 }
-
-// ---------------------------------------------------------------- lights
 
 export type LightState = {
 	clipId: string;
@@ -359,8 +363,6 @@ export function lightAttenuation(l: LightState, p: Vec3): number {
 	return k;
 }
 
-// ---------------------------------------------------------------- materials
-
 /** Evaluated Material Options (fractions). */
 export type MaterialState = {
 	castsShadows: 0 | 1 | 2;
@@ -402,8 +404,6 @@ export function materialAt(m: MaterialOptions | undefined, t: number): MaterialS
 export function shininessExponent(m: Pick<MaterialState, 'shininess'>): number {
 	return Math.max(1, 256 ** m.shininess);
 }
-
-// ---------------------------------------------------------------- 3D layers
 
 const PATH_DT = Math.round(0.005 * FLICKS_PER_SECOND);
 
@@ -486,8 +486,6 @@ export function planeHomography(cam: CameraState, w: number, h: number, world: M
 	if (!(Math.abs(det) > 1e-10 * col(0) * col(1) * col(2))) return null;
 	return m;
 }
-
-// ---------------------------------------------------------------- 3D runs
 
 /** One drawn item of a track at a frame, in drawing order (the inputs of `runs3dAt`). */
 export type StackItem = { key: string; trackIndex: number; is3d: boolean };
@@ -629,14 +627,7 @@ export function project3dProps<
 				0,
 				1,
 			];
-			const mul = (a: Mat3, b: Mat3): Mat3 => {
-				const o = new Array(9).fill(0) as Mat3;
-				for (let r = 0; r < 3; r++)
-					for (let c = 0; c < 3; c++)
-						o[3 * r + c] = a[3 * r]! * b[c]! + a[3 * r + 1]! * b[3 + c]! + a[3 * r + 2]! * b[6 + c]!;
-				return o;
-			};
-			map = mul(h, mul(inv, props.projective));
+			map = multiplyMatrix3(h, multiplyMatrix3(inv, props.projective));
 		}
 	}
 	const crop = props.crop;

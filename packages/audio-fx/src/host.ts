@@ -15,7 +15,6 @@ import { createProcessor } from './registry.ts';
 /** Samples between two evaluations of keyframed parameters. */
 export const CONTROL_BLOCK = 32;
 
-/** One effect instance as a mixer processor. */
 export class EffectSlot implements MixProcessor {
 	readonly chain: EffectChain;
 	private n = 0;
@@ -59,7 +58,7 @@ export function effectLatency(
 	if (!effect.enabled) return 0;
 	const p = createProcessor(effect.effectId, sampleRate, 2);
 	if (!p) return 0;
-	for (const [name, anim] of Object.entries(effect.params)) p.setParam(name, anim.value as number);
+	for (const [name, anim] of Object.entries(effect.params)) p.setParam(name, anim.value);
 	return p.latency();
 }
 

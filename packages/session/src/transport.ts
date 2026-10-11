@@ -3,7 +3,7 @@
 
 export type TransportState = { frame: number; playing: boolean; rate: number; loop: boolean };
 
-/** What the Program monitor's Player exposes (WP-2C attaches it). */
+/** Player methods that the transport can control. */
 export interface PlayerController {
 	seekTo(frame: number): void;
 	play(): void;

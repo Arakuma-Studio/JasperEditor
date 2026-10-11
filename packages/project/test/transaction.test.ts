@@ -19,6 +19,35 @@ const solid = (at: number, duration: number, track: string) => ({
 });
 
 describe('transactions (S01 §16)', () => {
+	it('rejects non-string command types without serializing untrusted values', () => {
+		const h = new Harness();
+		const before = h.doc;
+		const cyclic: { self?: object } = {};
+		cyclic.self = cyclic;
+		for (const type of [1n, cyclic, Symbol('command')]) {
+			expect(h.tx([{ type }])).toMatchObject({
+				ok: false,
+				errors: [{ code: 'E_SCHEMA', commandIndex: 0 }],
+			});
+			expect(h.doc).toBe(before);
+		}
+	});
+
+	it('reports a throwing transaction getter without losing the project', () => {
+		const h = new Harness();
+		const input = {
+			get label() {
+				throw new Error('unreadable transaction');
+			},
+		};
+		const outcome = applyTransaction(h.doc, input, h.ctx());
+		expect(outcome.document).toBe(h.doc);
+		expect(outcome.result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INTERNAL', commandIndex: -1, message: 'unreadable transaction' }],
+		});
+	});
+
 	it('AC-09: a failing third command applies nothing and reports commandIndex 2', () => {
 		const h = new Harness();
 		const before = h.doc;
@@ -76,7 +105,6 @@ describe('transactions (S01 §16)', () => {
 		expect(clip.opacity.keyframes.map((k) => k.value)).toEqual([0, 100]);
 		expect(clip.layoutPending).toBe(true);
 		expect(h.seq.markers[0]!.author).toEqual({ agent: 'editor-assistant' });
-		// The blur half of AC-10 (effect.add, WP-2D) is covered in keyframe-effect.test.ts.
 	});
 
 	it('AC-11: stale expectedRevision is refused when it touches a changed clip, fast-forwards otherwise', () => {

@@ -109,8 +109,6 @@ void main() {
 	},
 });
 
-// Dissolve ▸ Morph Cut: ./morph-cut.ts (the time workstream's optical flow).
-
 export const PREMIERE_DISSOLVES: readonly TransitionSpec[] = [
 	ADDITIVE_DISSOLVE,
 	DIP_TO_WHITE,

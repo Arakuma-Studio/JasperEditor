@@ -1,12 +1,10 @@
-// wp captions MCP tools through the protocol against an in-memory engine: caption import/export round trip (files
-// on disk), list/add/edit/split/merge/delete/style/track, transcript import, inspect, search, select, extract, lift,
-// insert into another sequence, fillers and pauses (dry run and edit), speakers, captions from the transcript.
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
+	CaptionStyleSchema,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
@@ -17,8 +15,38 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
+import { readToolResponse } from './tool-response.ts';
+
+const CaptionListSchema = z.object({
+	tracks: z.array(
+		z.object({
+			label: z.string(),
+			name: z.string(),
+			language: z.string().nullable(),
+			active: z.boolean(),
+			visible: z.boolean(),
+			style: CaptionStyleSchema,
+			captions: z.array(
+				z.object({
+					clipId: z.string(),
+					text: z.string(),
+					in: z.object({ timecode: z.string() }),
+					speaker: z.string().nullable(),
+					styleOverrides: CaptionStyleSchema.partial().optional(),
+				}),
+			),
+		}),
+	),
+});
+const TranscriptInspectSchema = z.object({
+	wordCount: z.number(),
+	words: z.array(z.object({ text: z.string() })),
+	paragraphs: z.array(z.object({ fromWord: z.number() })),
+});
+const FillerHitsSchema = z.object({ hits: z.array(z.object({ text: z.string() })) });
 
 const S = 705_600_000;
 const WORDS: Array<[string, number, number, string]> = [
@@ -140,12 +168,7 @@ async function connect() {
 			name,
 			arguments: { projectId: 'prj_test', ...args },
 		})) as CallToolResult;
-		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
-		let body: unknown = text;
-		try {
-			body = JSON.parse(text);
-		} catch {}
-		return { isError: !!r.isError, body: body as Record<string, any> };
+		return readToolResponse(r);
 	};
 	return { engine, call, client };
 }
@@ -177,9 +200,9 @@ describe('caption MCP tools', () => {
 		);
 		const imp = await call('import_captions', { path: srt, language: 'en' });
 		expect(imp.isError, JSON.stringify(imp.body)).toBe(false);
-		let list = await call('list_captions', {});
-		expect(list.body.tracks).toHaveLength(1);
-		const t = list.body.tracks[0];
+		let list = (await call('list_captions', {})).read(CaptionListSchema);
+		expect(list.tracks).toHaveLength(1);
+		const t = list.tracks[0]!;
 		expect([t.label, t.name, t.language, t.active, t.visible]).toEqual(['C1', 'english', 'en', true, true]);
 		expect(
 			t.captions.map((c: { text: string; in: { timecode: string } }) => [c.in.timecode, c.text]),
@@ -200,9 +223,9 @@ describe('caption MCP tools', () => {
 		).toBe(false);
 		expect((await call('add_caption', { text: 'Third', at: { seconds: 5 } })).isError).toBe(false);
 		expect((await call('split_captions', { at: { seconds: 6 } })).isError).toBe(false);
-		list = await call('list_captions', {});
-		expect(list.body.tracks[0].captions).toHaveLength(4);
-		const ids = list.body.tracks[0].captions.map((c: { clipId: string }) => c.clipId);
+		list = (await call('list_captions', {})).read(CaptionListSchema);
+		expect(list.tracks[0]!.captions).toHaveLength(4);
+		const ids = list.tracks[0]!.captions.map((c: { clipId: string }) => c.clipId);
 		expect((await call('merge_captions', { clipIds: [ids[2], ids[3]] })).isError).toBe(false);
 		expect((await call('delete_captions', { clipIds: [second], ripple: true })).isError).toBe(false);
 		expect(
@@ -216,16 +239,13 @@ describe('caption MCP tools', () => {
 		expect(
 			(await call('caption_track', { action: 'update', track: 'C2', visible: false, active: true })).isError,
 		).toBe(false);
-		list = await call('list_captions', {});
-		expect(list.body.tracks.map((x: { active: boolean; visible: boolean }) => [x.active, x.visible])).toEqual(
-			[
-				[false, true],
-				[true, false],
-			],
-		);
-		expect(list.body.tracks[0].style.placement).toBe('top');
-		expect(list.body.tracks[0].captions[0].styleOverrides.fill).toEqual([1, 1, 0, 1]);
-		// export: inline text and files (no overwrite)
+		list = (await call('list_captions', {})).read(CaptionListSchema);
+		expect(list.tracks.map((x) => [x.active, x.visible])).toEqual([
+			[false, true],
+			[true, false],
+		]);
+		expect(list.tracks[0]!.style.placement).toBe('top');
+		expect(list.tracks[0]!.captions[0]!.styleOverrides?.fill).toEqual([1, 1, 0, 1]);
 		const vtt = await call('export_captions', { track: 'C1', format: 'vtt' });
 		expect(vtt.body.content).toContain('00:00:01.000 --> 00:00:02.520\nHello there');
 		const out = join(dir, 'out.scc');
@@ -236,7 +256,6 @@ describe('caption MCP tools', () => {
 		expect(readFileSync(out, 'utf8').startsWith('Scenarist_SCC V1.0')).toBe(true);
 		const stl = await call('export_captions', { track: 'C1', format: 'stl' });
 		expect(typeof stl.body.contentBase64).toBe('string');
-		// bad input gives a tool error, not a crash
 		expect((await call('import_captions', { content: 'not captions at all' })).isError).toBe(true);
 		expect((await call('import_captions', { path: 'relative.srt' })).isError).toBe(true);
 		expect((await call('export_captions', { track: 'C9' })).isError).toBe(true);
@@ -247,7 +266,9 @@ describe('caption MCP tools', () => {
 		const ins = await call('transcript_inspect', {});
 		expect(ins.body.wordCount).toBe(20);
 		expect(ins.body.speakers).toEqual(['Host', 'Guest']);
-		expect(ins.body.paragraphs.map((p: { fromWord: number }) => p.fromWord)).toEqual([0, 4, 10]);
+		expect(ins.read(TranscriptInspectSchema).paragraphs.map((p: { fromWord: number }) => p.fromWord)).toEqual(
+			[0, 4, 10],
+		);
 		const found = await call('transcript_search', { query: 'you kn' });
 		expect(found.body.matches).toEqual([
 			expect.objectContaining({ fromWord: 18, toWord: 19, text: 'you know.' }),
@@ -256,7 +277,11 @@ describe('caption MCP tools', () => {
 		const seq = engine.doc().sequences[engine.seqId]!;
 		expect([seq.inPoint, seq.outPoint]).toEqual([12, 43]);
 		const dry = await call('remove_fillers', { dryRun: true, fillers: ['um', 'uh', 'you know', 'you'] });
-		expect(dry.body.hits.map((h: { text: string }) => h.text)).toEqual(['Um,', 'uh', 'you know.']);
+		expect(dry.read(FillerHitsSchema).hits.map((h: { text: string }) => h.text)).toEqual([
+			'Um,',
+			'uh',
+			'you know.',
+		]);
 		expect((await call('remove_fillers', {})).isError).toBe(false);
 		expect((await call('transcript_inspect', {})).body.wordCount).toBe(18);
 		const pauses = await call('remove_pauses', { dryRun: true, minSeconds: 1 });
@@ -265,24 +290,24 @@ describe('caption MCP tools', () => {
 		expect((await call('rename_speaker', { speaker: 'Guest', name: 'Ann' })).isError).toBe(false);
 		const cap = await call('captions_from_transcript', { preset: 'builtin:broadcast' });
 		expect(cap.isError, JSON.stringify(cap.body)).toBe(false);
-		const list = await call('list_captions', {});
+		const list = (await call('list_captions', {})).read(CaptionListSchema);
 		// the 2 s pause is now 0.2 s, so the host's words share a caption; the guest starts a new one
-		expect(list.body.tracks[0].captions.map((c: { text: string }) => c.text)).toEqual([
+		expect(list.tracks[0]!.captions.map((c: { text: string }) => c.text)).toEqual([
 			'Welcome to the show. today we talk about\nrivers.',
 			'Thanks for having me. I love rivers, you\nknow.',
 		]);
-		expect(list.body.tracks[0].captions[1].speaker).toBe('Ann');
-		expect(list.body.tracks[0].style.background.color).toEqual([0, 0, 0, 1]);
+		expect(list.tracks[0]!.captions[1]!.speaker).toBe('Ann');
+		expect(list.tracks[0]!.style.background?.color).toEqual([0, 0, 0, 1]);
 	});
 
 	it('extract, lift and insert a text selection', async () => {
 		const { call, engine } = await withTranscript();
 		expect((await call('transcript_lift', { fromWord: 0, toWord: 3 })).isError).toBe(false);
-		let w = (await call('transcript_inspect', {})).body;
+		let w = (await call('transcript_inspect', {})).read(TranscriptInspectSchema);
 		expect(w.wordCount).toBe(16);
 		expect((await call('transcript_extract', { query: 'Um' })).isError).toBe(false);
-		w = (await call('transcript_inspect', {})).body;
-		expect(w.words[0].text).toBe('today');
+		w = (await call('transcript_inspect', {})).read(TranscriptInspectSchema);
+		expect(w.words[0]!.text).toBe('today');
 		const created = await call('apply_commands', {
 			label: 'New sequence',
 			commands: [{ type: 'sequence.create', name: 'Selects', preset: 'hd-1080p-25' }],
@@ -296,7 +321,7 @@ describe('caption MCP tools', () => {
 		});
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
 		const inTarget = await call('transcript_inspect', { sequenceId: target });
-		expect(inTarget.body.words.map((x: { text: string }) => x.text)).toEqual([
+		expect(inTarget.read(TranscriptInspectSchema).words.map((x: { text: string }) => x.text)).toEqual([
 			'Thanks',
 			'for',
 			'having',

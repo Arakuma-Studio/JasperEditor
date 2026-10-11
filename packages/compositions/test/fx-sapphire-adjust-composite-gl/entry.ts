@@ -1,6 +1,3 @@
-// Browser entry of the sapphire-adjust-composite GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-adjust-composite-gl.test.ts): runs the family's effects on the real GPU host with small painted
-// layers and media textures and reports pixels (the same harness as fx-gl/entry.ts).
 import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
@@ -51,7 +48,6 @@ function picture(w: number, h: number, left: string, right = left): HTMLCanvasEl
 
 type Media = Record<string, HTMLCanvasElement>;
 
-/** Runs effect `id` with params over a layer of size w×h painted by `paint`; media by param name. */
 function run(
 	id: string,
 	over: Record<string, unknown>,
@@ -114,7 +110,6 @@ function run(
 	return { out, plan, at: (x: number, y: number) => px(out, x, y) };
 }
 
-/** Every pixel of an output (for determinism comparisons). */
 const allPixels = (c: HTMLCanvasElement) =>
 	Array.from(c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data);
 
@@ -127,7 +122,6 @@ const square =
 	};
 
 const api = {
-	/** Defaults are the identity for these effects (on a mid colour). */
 	identity() {
 		const ids = [
 			'jasper.s.gamma',

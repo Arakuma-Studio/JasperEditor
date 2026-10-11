@@ -1,4 +1,4 @@
-// Simulation ▸ Caustics (sim-warp workstream; After Effects' Caustics): the layer (or the Bottom image) seen through
+// Simulation ▸ Caustics (After Effects' Caustics): the layer (or the Bottom image) seen through
 // a water surface whose heights are the luminance of the Water Surface image (e.g. a Wave World height map), smoothed:
 // the surface refracts the bottom, focuses light into caustics, reflects a Sky image and is lit by a distant or point
 // light. Pure per-pixel passes (no state). Ported from EffectCraft crates/effects/src/sim2.rs (caustics_setup,

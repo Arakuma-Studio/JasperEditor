@@ -1,9 +1,8 @@
-// Agent API stage 1 (WP-2H, ARCHITECTURE §11): relay round trip with a fake WS session, headless apply
-// and save, approvals (deny / timeout / headless), stale revision rejection vs fast-forward (S01 AC-11).
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { EnvelopeJson } from '@jasper/api';
 import { AgentMcpInfoSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import {
@@ -76,7 +75,6 @@ async function postTx(app: FastifyInstance, projectId: string, transaction: unkn
 	return r.json() as { result: TransactionResult; appliedBy: 'session' | 'headless' };
 }
 
-/** Collects messages a ws client receives. */
 function inbox(ws: WebSocket) {
 	const queue: Record<string, unknown>[] = [];
 	const waiters: ((m: Record<string, unknown>) => void)[] = [];
@@ -170,7 +168,6 @@ describe('GET /api/agent/mcp-info (Help ▸ Connect an AI Agent…)', () => {
 	it('finds the bundle in a checkout and in packaged resources; JASPER_MCP_ENTRY overrides', () => {
 		const root = mkdtempSync(join(tmpdir(), 'jasper-mcp-entry-'));
 		try {
-			// checkout: apps/engine/dist + apps/mcp/dist/jasper-mcp.mjs
 			mkdirSync(join(root, 'apps/engine/dist'), { recursive: true });
 			mkdirSync(join(root, 'apps/engine/src/agent'), { recursive: true });
 			expect(findMcpEntry({}, join(root, 'apps/engine/dist'))).toBeNull();
@@ -179,7 +176,6 @@ describe('GET /api/agent/mcp-info (Help ▸ Connect an AI Agent…)', () => {
 			writeFileSync(bundle, '');
 			expect(findMcpEntry({}, join(root, 'apps/engine/dist'))).toBe(bundle);
 			expect(findMcpEntry({}, join(root, 'apps/engine/src/agent'))).toBe(bundle);
-			// packaged: resources/engine + resources/mcp/jasper-mcp.mjs
 			mkdirSync(join(root, 'resources/engine'), { recursive: true });
 			mkdirSync(join(root, 'resources/mcp'), { recursive: true });
 			const packaged = join(root, 'resources/mcp/jasper-mcp.mjs');
@@ -429,8 +425,6 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- service-level (timeouts)
-
 class FakeSocket extends EventEmitter implements AgentSocket {
 	readyState = 1;
 	sent: Record<string, unknown>[] = [];
@@ -462,17 +456,17 @@ class FakeSocket extends EventEmitter implements AgentSocket {
 }
 
 class MemoryStore implements AgentProjectStore {
-	envelopes = new Map<string, Record<string, unknown>>();
+	envelopes = new Map<string, EnvelopeJson>();
 	lease: { sessionId: string; leaseId: string; expiresAt: string } | null = null;
 	async load(id: string) {
 		const e = this.envelopes.get(id);
-		return e ? { envelope: e, revision: e.revision as number } : null;
+		return e ? { envelope: e, revision: e.revision } : null;
 	}
-	async save(id: string, envelope: Record<string, unknown>, base: number): Promise<SaveOutcome> {
+	async save(id: string, envelope: EnvelopeJson, base: number): Promise<SaveOutcome> {
 		const cur = this.envelopes.get(id);
-		if (cur && cur.revision !== base) return { ok: false, conflict: true, revision: cur.revision as number };
+		if (cur && cur.revision !== base) return { ok: false, conflict: true, revision: cur.revision };
 		this.envelopes.set(id, envelope);
-		return { ok: true, revision: envelope.revision as number };
+		return { ok: true, revision: envelope.revision };
 	}
 	leaseHolder() {
 		return this.lease;
@@ -483,10 +477,7 @@ class MemoryStore implements AgentProjectStore {
 function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number; editor?: boolean } = {}) {
 	const store = new MemoryStore();
 	const doc = createEmptyProject({ ids: createCounterIdSource(9), name: 'Svc', preset: 'hd-1080p-30' });
-	store.envelopes.set(
-		doc.projectId,
-		makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'test' }) as never,
-	);
+	store.envelopes.set(doc.projectId, makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'test' }));
 	const service = new AgentService({
 		engineVersion: 'test',
 		store: () => store,
@@ -573,7 +564,6 @@ describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
 		expect((await post({ action: 'nope' })).statusCode).toBe(400);
 
 		const { ws, box } = await connectSession(app, projectId);
-		// Without a projectId the most recent window answers.
 		const pending = post({ action: 'elements', args: { panel: 'timeline' } });
 		const req = await box.until((m) => m.type === 'request');
 		expect(req).toMatchObject({ kind: 'ui', payload: { action: 'elements', args: { panel: 'timeline' } } });
@@ -584,7 +574,6 @@ describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
 			result: { count: 0, elements: [] },
 			window: { projectId, sessionId: 'ses_test' },
 		});
-		// The window's errors keep their code.
 		const bad = post({ projectId, action: 'click', args: { id: 'nope' } });
 		const breq = await box.until((m) => m.type === 'request');
 		ws.send(
@@ -598,7 +587,6 @@ describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
 		const b = await bad;
 		expect(b.statusCode).toBe(404);
 		expect(b.json()).toMatchObject({ message: 'No element "nope"', detail: { code: 'E_NOT_FOUND' } });
-		// Another project has no window.
 		expect((await post({ projectId: 'prj_other', action: 'state' })).statusCode).toBe(409);
 		ws.close();
 	});

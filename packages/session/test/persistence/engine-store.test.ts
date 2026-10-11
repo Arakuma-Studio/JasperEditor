@@ -1,3 +1,4 @@
+import { EnvelopeSchema } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, defaultRegistries, type ProjectDocument } from '@jasper/project';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +40,18 @@ function setup() {
 }
 
 describe('EngineProjectStore (S01:PER-001 over the engine routes)', () => {
+	it('preserves recovery warnings alongside candidate listings', async () => {
+		const { engine, projectId } = setup();
+		const client = engine.client();
+		const result = {
+			candidates: [],
+			warnings: [{ sessionId: 'damaged', code: 'INVALID_JSON', message: 'Unreadable recovery journal' }],
+		};
+		vi.spyOn(client, 'listRecovery').mockResolvedValue(result);
+		const store = new EngineProjectStore(client);
+		expect(await store.listRecovery(projectId)).toEqual(result);
+	});
+
 	it('saves with If-Match: <baseRevision> and returns the new revision', async () => {
 		const { engine, store, projectId } = setup();
 		const s = store();
@@ -70,7 +83,7 @@ describe('EngineProjectStore (S01:PER-001 over the engine routes)', () => {
 		expect(copy.document.name).toBe('Film copy');
 		expect(copy.document.projectId).toBe(copyId);
 		const blob = await s.exportFile(projectId);
-		const env = JSON.parse(await blob.text());
+		const env = EnvelopeSchema.parse(JSON.parse(await blob.text()));
 		expect(env.format).toBe('jasper-project');
 		const importedId = await s.importFile(blob);
 		expect((await s.open(importedId)).document.name).toBe('Film');
@@ -104,7 +117,7 @@ describe('leases (S01:PER-040)', () => {
 	it('keepalive lease release carries the bearer token in token-only auth mode (WP-3I)', async () => {
 		const { engine, projectId } = setup();
 		const page = new EventTarget();
-		const client = new EngineClient({ fetch: engine.fetch as unknown as typeof fetch, token: 'tok123' });
+		const client = new EngineClient({ fetch: engine.fetch, token: 'tok123' });
 		vi.stubGlobal('window', page);
 		vi.stubGlobal('fetch', engine.fetch);
 		const s = new EngineProjectStore(client);
@@ -134,8 +147,6 @@ describe('leases (S01:PER-040)', () => {
 	}
 
 	it('a reload does not open the project read-only while the old page’s keepalive release is in flight', async () => {
-		// Regression (verify workstream, e2e/effect-presets): the old page's keepalive DELETE raced the new page's
-		// acquire; when the acquire won, the user's own project opened read-only ("open in another session").
 		const { engine, projectId } = setup();
 		const page = new EventTarget();
 		vi.stubGlobal('window', page);
@@ -179,7 +190,6 @@ describe('leases (S01:PER-040)', () => {
 		expect(b.getState().lease).toMatchObject({ status: 'read-only', holder: 'a' });
 		await a.close();
 		await b.close();
-		// A confirmed release forgets the session: nothing left to wait for after a reload.
 		expect(JSON.parse(storage.getItem('jasper:tab-lease-sessions') ?? '[]')).not.toContain('a');
 		expect(engine.leases.has(projectId)).toBe(false);
 	});
@@ -194,11 +204,9 @@ describe('leases (S01:PER-040)', () => {
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(engine.leases.get(projectId)?.sessionId).toBe('a');
 		expect(a.getState().lease.status).toBe('held');
-		// A network blip does not mark the lease lost.
 		engine.failures.push({ match: /heartbeat/, status: 0, network: true });
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(a.getState().lease.status).toBe('held');
-		// Subsequent heartbeats use the re-acquired lease id.
 		await vi.advanceTimersByTimeAsync(10_000);
 		const last = engine.requests.filter((r) => r.path.endsWith('/heartbeat')).at(-1)!;
 		expect(last.path).toContain(engine.leases.get(projectId)!.leaseId);
@@ -219,7 +227,6 @@ describe('leases (S01:PER-040)', () => {
 		expect(b2.getState().lease.status).toBe('held');
 		expect(engine.leases.get(projectId)?.sessionId).toBe('b2');
 
-		// A's next heartbeat finds its lease gone and cannot re-acquire it.
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(a.getState().lease.status).toBe('lost');
 		expect(pa.autosaver.getStatus().paused).toBe('lease-lost');
@@ -229,7 +236,6 @@ describe('leases (S01:PER-040)', () => {
 		await vi.advanceTimersByTimeAsync(5000);
 		expect(puts()).toBe(before);
 
-		// B2 edits and autosaves normally.
 		attachPersistence(b2, noLifecycle);
 		b2.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
 		await vi.advanceTimersByTimeAsync(1600);
@@ -300,7 +306,6 @@ describe('autosave through the engine (S01:PER-020, PER-025)', () => {
 		expect(puts()[0]!.headers['if-match']).toBe('0');
 		expect(s.getState().dirty).toBe(false);
 
-		// Another writer saved in between.
 		engine.projects.get(projectId)!.revision = 40;
 		s.apply({ label: 'Add', origin: 'user', commands: [solid(100)] });
 		await vi.advanceTimersByTimeAsync(1600);

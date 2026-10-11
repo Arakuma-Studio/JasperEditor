@@ -1,11 +1,9 @@
-// Workstream polish: the Media Browser for agents. `browse_media_files` lists a folder on the engine host (the
-// same listing as the Media Browser panel) so an agent can find footage before `import_media`; local engines only.
+// Browsing exposes engine-host paths and is restricted to local engines, like the Media Browser panel.
 import { BROWSE_PREVIEWABLE, BrowseCategorySchema, type BrowseEntry } from '@jasper/api';
 import { z } from 'zod';
 import { defineTool, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult } from '../errors.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const POLISH_GUIDE = `Finding media: browse_media_files lists a folder on the engine's computer (sub-folders and only the files JasperEditor imports, with size and kind: video, audio, image, graphics, captions, timeline, lut, model); without a path it answers the places to start from (Home, media folders, volumes). probe:true adds duration, frame size, frame rate and codecs for up to 20 audio / video / image files. Pass the paths you choose to import_media. It only works with a local engine (the same rule as import by path).`;
 
 const PROBE_MAX = 20;

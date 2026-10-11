@@ -1,10 +1,7 @@
-// Page pool (S11:LBK-022 parallel bakes): resource bounds, progress, failure and abort propagation.
-// Tasks are promises the test resolves manually.
 import { describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
 import { type PageGrant, type PagePoolProgress, runPagePool } from '../src/remotion/page-pool.ts';
 
-/** A task the test finishes by hand; records its grant and whether it saw an abort. */
 function manual(want: number, weight = want * 30) {
 	let resolve: (v: string) => void = () => {};
 	let reject: (e: unknown) => void = () => {};
@@ -129,7 +126,6 @@ describe('page budget', () => {
 		expect(err.code).toBe('JOB_CANCELLED');
 		expect(ts.filter((t) => t.aborted)).toHaveLength(2);
 		expect(ts[2]!.started).toBe(false);
-		// An aborted signal starts nothing; no tasks resolves at once.
 		await expect(runPagePool([manual(1)], { budget: 2, signal: ac.signal })).rejects.toMatchObject({
 			code: 'JOB_CANCELLED',
 		});

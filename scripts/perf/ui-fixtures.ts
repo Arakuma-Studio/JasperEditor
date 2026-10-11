@@ -1,4 +1,4 @@
-// Projects for the editor UI performance scenarios (workstream ui-perf, docs/performance.md §5), built through the
+// Projects for the editor UI performance scenarios (docs/performance.md §5), built through the
 // real command system so they are exactly what an editor or an agent produces:
 //   timeline:<n>  one sequence of <n> colour mattes on four video tracks (clip i at ⌊i/4⌋·40, 30 frames on V(i mod 4)+1,
 //                 the layout of e2e/perf-core.spec.ts), plus a fifth, empty video track;
@@ -12,7 +12,9 @@ import { writeFileSync } from 'node:fs';
 import { buildScaleProject } from '../../packages/project/bench/scale-project.ts';
 import {
 	applyTransaction,
+	type Command,
 	type CommandContext,
+	type CommandOf,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
@@ -32,13 +34,11 @@ function builder(name: string) {
 		revision,
 		registries: defaultRegistries(),
 	});
-	const tx = (commands: unknown[], label = 'fixture') => {
+	const tx = (commands: Command[], label = 'fixture') => {
 		const sequenceId = Object.keys(doc.sequences)[0];
 		const r = applyTransaction(
 			doc,
-			{ label, origin: 'user', ...(sequenceId ? { sequenceId } : {}), commands } as Parameters<
-				typeof applyTransaction
-			>[1],
+			{ label, origin: 'user', ...(sequenceId ? { sequenceId } : {}), commands },
 			ctx(),
 		);
 		if (!r.result.ok) throw new Error(`${label}: ${JSON.stringify(r.result.errors).slice(0, 600)}`);
@@ -49,7 +49,7 @@ function builder(name: string) {
 	return { tx, doc: () => doc };
 }
 
-function mediaAsset(i: number, kind: 'video' | 'image') {
+function mediaAsset(i: number, kind: 'video' | 'image'): CommandOf<'media.register'>['asset'] {
 	return {
 		kind,
 		fingerprint: `q1:${(i + 1).toString(16).padStart(64, '0')}`,
@@ -77,7 +77,7 @@ function mediaAsset(i: number, kind: 'video' | 'image') {
 					? [
 							{
 								index: 1,
-								type: 'audio',
+								type: 'audio' as const,
 								codec: 'aac',
 								sampleRate: 48000,
 								channels: 2,
@@ -96,7 +96,6 @@ function mediaAsset(i: number, kind: 'video' | 'image') {
 	};
 }
 
-/** One sequence of `n` colour mattes (the perf-core layout). */
 function timelineProject(n: number): ProjectDocument {
 	const b = builder(`UI perf ${n} clips`);
 	b.tx([{ type: 'track.add', kind: 'video', count: 1 }], 'tracks');
@@ -146,7 +145,7 @@ function keyframesProject(n: number): ProjectDocument {
 		[3, 'slider', 0, 10],
 		[4, 'slider', 5, 25],
 	];
-	const cmds: unknown[] = [];
+	const cmds: Command[] = [];
 	for (const [k, param, lo, hi] of params)
 		for (let i = 0; i < n; i++)
 			cmds.push({
@@ -163,7 +162,6 @@ function keyframesProject(n: number): ProjectDocument {
 				at: { frames: Math.round((i * (duration - 1)) / Math.max(1, n - 1)) },
 				value: t === 'opacity' ? (i % 2 ? 100 : 40) : t[1] === 'scale' ? 80 + (i % 5) * 10 : (i % 9) * 5,
 			});
-	// Animated first (a keyframe at frame 0 for each clip parameter), then every keyframe.
 	b.tx(
 		[
 			{ type: 'param.setAnimated', target: ['clip', clipId, 'opacity'], animated: true, at: { frames: 0 } },

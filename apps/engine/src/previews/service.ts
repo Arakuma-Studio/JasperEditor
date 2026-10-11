@@ -1,6 +1,3 @@
-// Render previews (workstream `previews`, docs/wp-notes/previews.md): Sequence ▸ Render Effects In to Out / Render In
-// to Out / Render Selection / Render Audio, Delete Render Files, and the files the render bar turns green for.
-//
 // A video preview is the export of one segment (`previewSegments`, @jasper/project) through the export service's own
 // paths (native, hybrid, Remotion — the picture the export would write), picture only, in the sequence's preview
 // format; an audio preview is the offline mix of one audio segment as a float WAV. Files are named by the segment's
@@ -365,7 +362,6 @@ export class PreviewService {
 					quality: { mode: 'crf', value: p.settings.quality === 'high' ? 12 : 17 },
 					bitrateKbps: Math.min(500_000, Math.max(100, kbps)),
 					encoderSpeed: 'fast',
-					colorTags: 'rec709',
 					keyframeInterval: p.settings.format === 'h264-iframe' ? 1 : 15,
 				},
 				engine: 'auto',

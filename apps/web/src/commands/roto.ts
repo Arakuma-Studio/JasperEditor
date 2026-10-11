@@ -1,13 +1,3 @@
-// parity roto UI commands: the Roto Brush tool, brush size, propagation, Track / Blur Faces, Convert to Masks,
-// Freeze and the Program monitor matte view. Also registers the roto UI extensions (roto/register.ts).
-//   roto.tool                 toggle the Roto Brush tool (Program monitor)
-//   roto.brushBigger/Smaller  brush size ([ / ] in the Program monitor while the tool is on)
-//   roto.propagate            propagate the active roto through its span
-//   roto.cancel               stop the running roto job
-//   roto.trackFaces / blurFaces   on the selected video / still clip
-//   roto.convertToMasks       the active roto's outline at the playhead → Opacity masks
-//   roto.freeze               freeze / unfreeze the active roto
-//   roto.cycleView            Alpha Overlay → Alpha Boundary → Alpha → Off
 import { type Clip, findRoto } from '@jasper/project';
 import { cancelRoto, convertToMasks, freezeRoto, runRoto, trackFaces } from '../roto/actions.ts';
 import { registerRotoUi } from '../roto/register.ts';

@@ -63,7 +63,7 @@ describe('remix analysis', () => {
 });
 
 describe('remix plans', () => {
-	const { a } = music(120, 24); // 48 s
+	const { a } = music(120, 24);
 
 	it('hits targets within a beat (half a beat at default settings), at beat boundaries, keeping intro and outro', () => {
 		const beat = Math.trunc(a.period);

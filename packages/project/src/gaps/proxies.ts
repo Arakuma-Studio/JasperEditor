@@ -1,4 +1,4 @@
-// Proxies (workstream gaps, docs/wp-notes/gaps.md §PRJ-8): Premiere's Clip ▸ Proxy ▸ Create Proxies / Attach Proxies /
+// Proxies (docs/wp-notes/gaps.md §PRJ-8): Premiere's Clip ▸ Proxy ▸ Create Proxies / Attach Proxies /
 // Reconnect Full Resolution Media, Toggle Proxies and ingest-time proxies. The proxy is a smaller, browser-decodable
 // file attached to a video asset (`MediaAsset.proxy`); monitors play it while Toggle Proxies is on, exports use the
 // original unless `draftUseProxies` asks for the proxies. A proxy must have the original's duration (± 1 frame) and

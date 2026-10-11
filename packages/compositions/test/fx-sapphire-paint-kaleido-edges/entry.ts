@@ -1,9 +1,7 @@
-// Browser entry of the "sapphire-paint-kaleido-edges" GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-paint-kaleido-edges-gl.test.ts): runs the family's registered effects through the real GPU host on
-// synthetic pictures (or a loaded image) and reports pixels / PNGs.
 import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
+	type EffectParams,
 	type EffectSpec,
 	fxBuiltinUniforms,
 	fxSeed,
@@ -86,8 +84,8 @@ const spec = (id: string): EffectSpec => {
 	return s;
 };
 
-const withDefaults = (s: EffectSpec, over: Record<string, unknown> = {}) => ({
-	...Object.fromEntries(s.params.map((p) => [p.name, p.default])),
+const withDefaults = (s: EffectSpec, over: EffectParams = {}): EffectParams => ({
+	...Object.fromEntries(s.params.map((p) => [p.name, p.default] as const)),
 	...over,
 });
 
@@ -100,23 +98,23 @@ export type RunOptions = {
 	clipId?: string;
 };
 
-function run(id: string, over: Record<string, unknown>, o: RunOptions = {}) {
+function run(id: string, over: EffectParams, o: RunOptions = {}) {
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
 	const s = spec(id);
 	const params = withDefaults(s, over);
 	const box = { width: o.width ?? 64, height: o.height ?? 48 };
-	const pad = s.gpu?.padding?.(params as never, { ...box, pxScale: 1, fps: 30 }) ?? 0;
+	const pad = s.gpu?.padding?.(params, { ...box, pxScale: 1, fps: 30 }) ?? 0;
 	const padding =
 		typeof pad === 'number'
 			? { left: pad, top: pad, right: pad, bottom: pad }
 			: { left: 0, top: 0, right: 0, bottom: 0, ...pad };
 	const layout = fxCanvasLayout(box, padding, 8192);
 	const frame = o.frame ?? 0;
-	const seed = fxSeed(o.clipId ?? 'clip1', 'fx1', params as never);
+	const seed = fxSeed(o.clipId ?? 'clip1', 'fx1', params);
 	const plan = planGpuEffect(
 		s,
-		{ id: 'fx1', params: params as never },
+		{ id: 'fx1', params: params },
 		{
 			width: box.width,
 			height: box.height,
@@ -178,7 +176,7 @@ const api = {
 	},
 
 	/** Pixels at layer-box-relative points (x, y in layer px). */
-	probe(id: string, over: Record<string, unknown>, o: RunOptions, points: [number, number][]) {
+	probe(id: string, over: EffectParams, o: RunOptions, points: [number, number][]) {
 		const { out, layout } = run(id, over, o);
 		const b = layout.box;
 		return {
@@ -189,7 +187,7 @@ const api = {
 	},
 
 	/** Mean absolute difference (0..255) between the output and the input over the layer box. */
-	diffFromInput(id: string, over: Record<string, unknown>, o: RunOptions) {
+	diffFromInput(id: string, over: EffectParams, o: RunOptions) {
 		const { out, input, layout } = run(id, over, o);
 		const b = layout.box;
 		const a = out.getContext('2d')!.getImageData(b.x, b.y, b.w, b.h).data;
@@ -199,8 +197,7 @@ const api = {
 		return d / a.length;
 	},
 
-	/** A hash of the whole output (determinism checks). */
-	signature(id: string, over: Record<string, unknown>, o: RunOptions) {
+	signature(id: string, over: EffectParams, o: RunOptions) {
 		const { out } = run(id, over, o);
 		const d = out.getContext('2d')!.getImageData(0, 0, out.width, out.height).data;
 		let h = 0x811c9dc5;
@@ -211,12 +208,17 @@ const api = {
 		return h >>> 0;
 	},
 
-	/** The output as a PNG data URL (visual checks). */
-	png(id: string, over: Record<string, unknown>, o: RunOptions) {
+	png(id: string, over: EffectParams, o: RunOptions) {
 		const t0 = performance.now();
 		const { out } = run(id, over, o);
 		return { url: out.toDataURL('image/png'), ms: performance.now() - t0 };
 	},
 };
 
-(window as unknown as { __pke: typeof api }).__pke = api;
+declare global {
+	interface Window {
+		__pke: typeof api;
+	}
+}
+
+window.__pke = api;

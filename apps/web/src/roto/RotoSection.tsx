@@ -1,8 +1,3 @@
-// Properties ▸ Roto (parity workstream `roto`): the roto objects of the selected video / still clip — the Roto Brush
-// tool (brush size, add / Refine Edge brush, Auto-propagate), the monitor view (overlay, boundary, alpha, off), and for
-// the active roto: status (computed frames, stale, model), Propagate (backward / both / forward) with progress and
-// cancel, span and segmentation settings, Apply Object Matte / Object Blur, Convert to Masks, Freeze, Remove; Track
-// Faces / Blur Faces and per-face "Keyframes to…".
 import { type Clip, type ClipRoto, findRoto, rotoIsStale, rotoSettingsOf } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
@@ -200,7 +195,8 @@ function RotoDetails(props: {
 			: 'Not propagated';
 	const propagate = (dir: 'both' | 'forward' | 'backward') =>
 		client && void runRoto(session, client, roto.id, dir);
-	const set = (patch: Record<string, unknown>) => updateRoto(session, roto.id, { settings: patch });
+	const set = (patch: NonNullable<Parameters<typeof updateRoto>[2]['settings']>) =>
+		updateRoto(session, roto.id, { settings: patch });
 	const doc = useSessionState((st) => st.document);
 	const seq = findRoto(doc, roto.id) ? doc.sequences[findRoto(doc, roto.id)!.sequenceId] : null;
 	const targets = seq

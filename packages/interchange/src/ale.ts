@@ -132,7 +132,7 @@ export function importAle(text: string, opts: ImportOptions, report: Report): IP
 			offline: !path,
 			...(Object.keys(extra).length ? { jasper: { ale: extra } } : {}),
 		};
-		b.media(`ale:${i}:${path ?? name}`, media as never, bin);
+		b.media(`ale:${i}:${path ?? name}`, media, bin);
 	});
 	if (!doc.rows.length) throw new InterchangeError('EMPTY', 'the ALE has no data rows');
 	return b.finish();

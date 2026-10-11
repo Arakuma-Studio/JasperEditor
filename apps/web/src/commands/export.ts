@@ -1,4 +1,3 @@
-// export UI commands — owned by WP-2E (S05:EX-001, EX-050; S04 §10.1). Ids match keymap-defaults.ts.
 import { EngineError } from '@jasper/engine-client';
 import { exportMode } from '../export/mode.ts';
 import { QuickExportError, startQuickExport } from '../export/quick.ts';

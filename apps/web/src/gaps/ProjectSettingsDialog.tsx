@@ -1,14 +1,5 @@
-// File ▸ Project Settings… (workstream gaps, docs/wp-notes/gaps.md §PRJ-4): Premiere's three tabs, limited to what
-// means something in our architecture.
-// - General: the renderers (the Program monitor's GPU, the export paths and encoders — information, as Premiere's
-//   Renderer line), Video Display Format and Audio Display Format. Premiere's Capture Format (DV / HDV tape capture)
-//   is omitted: there is no tape capture.
-// - Scratch Disks: Captured and Generated Media (proxies, exported frames, Project Manager, ingest) is a project
-//   setting ("Same as Project" = a folder in the project's engine folder, or a chosen folder); Video / Audio Previews,
-//   the Media Cache and Project Auto Save live in engine folders, shown with their free space (moved from Media Cache
-//   preferences; versions are kept per project).
-// - Ingest Settings: copy, transcode, create proxies, or copy and create proxies at import, with preset and folder.
-// OK commits one undoable `project.updateSettings` ("Project Settings").
+// Generated-media location belongs to the project. Preview, cache, and autosave locations are engine-owned;
+// the dialog displays them without persisting them as project settings.
 import type { ScratchInfo, ScratchLocation } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

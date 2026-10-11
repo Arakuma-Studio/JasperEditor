@@ -1,5 +1,4 @@
-// UI-6 i18n (workstream gaps, docs/wp-notes/gaps.md §UI-6): the source transform that externalises the UI strings of
-// the web app and the UI kit. English is the source language: every user-visible string literal is wrapped in
+// English is the source language: every user-visible string literal is wrapped in
 // `__t("…")` (template literals with substitutions become `__t("… {0} …", a)`), and `__t` looks the string up in the
 // active language's catalogue (identity for English). The same rules drive the extraction (`scripts/i18n.mjs`), so the
 // catalogue lists exactly what the app can ask for. Rules (positions that hold UI text):
@@ -13,7 +12,7 @@
 //   7. the literal of an explicit `t('…')` call (recorded only: `t` is the runtime lookup);
 // through `?:`, `||`, `??` and parentheses. Strings that look like identifiers, ids, CSS or paths are left alone.
 //
-// Live language switching (workstream polish): a string in a function body is looked up every time the function
+// A string in a function body is looked up every time the function
 // runs, so a re-render shows the new language. Strings at module scope would be looked up once, when the module
 // loads, so they are made lazy instead:
 //   - an object property (rules 3 and 4) becomes a getter, `get label() { return __t("…"); }`: the command tables,

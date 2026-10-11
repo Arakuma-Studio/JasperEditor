@@ -1,5 +1,3 @@
-// Media registration, probe, derivatives and byte serving with real ffmpeg on the fixtures
-// (S04 §5–§8, ARCHITECTURE §9.4).
 import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -117,7 +115,7 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 			return ['keyframes', 'poster', 'sprite', 'peaks'].every((k) => d[k].state === 'ready') ? s : null;
 		}, 60_000);
 		expect(status.status).toBe('online');
-		expect(status.derivatives['proxy-720'].state).toBe('none'); // browser playable → no mandatory proxy
+		expect(status.derivatives['proxy-720'].state).toBe('none');
 
 		const poster = await app.inject({ method: 'GET', url: status.derivatives.poster.url, headers: H });
 		expect(poster.statusCode).toBe(200);
@@ -214,7 +212,7 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 describe('proxies of sources with alpha', () => {
 	it('makes a VP9 WebM proxy that keeps the alpha channel of a ProRes 4444 overlay', async () => {
 		const m = await register(app, fixture('overlay-alpha.mov'));
-		expect(m.browserPlayable).toBe('no'); // ProRes: the preview needs the proxy
+		expect(m.browserPlayable).toBe('no');
 		expect(m.probe.hasAlpha).toBe(true);
 		const status = await until(async () => {
 			const s = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
@@ -358,7 +356,6 @@ describe('media serving (S04:MS-002)', () => {
 			.signer.signUrl('', '/media/mk_000000000000000000000000')
 			.replace('mk_000000000000000000000000', m.mediaKey);
 		expect((await secured.inject({ method: 'GET', url: other, headers: H })).statusCode).toBe(401);
-		// A signature only authorizes reads.
 		expect((await secured.inject({ method: 'POST', url: signed, headers: H })).statusCode).toBe(401);
 	});
 });

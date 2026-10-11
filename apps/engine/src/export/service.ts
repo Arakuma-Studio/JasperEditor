@@ -273,8 +273,6 @@ export class ExportService {
 		return planned;
 	}
 
-	// ------------------------------------------------------------------ smart rendering (workstream `previews`)
-
 	/**
 	 * Smart rendering: with the `auto` engine and an H.264 / ProRes export matching its sources, the plan copies the
 	 * whole closed GOPs of stretches that show a source untouched and renders the rest; otherwise `plan.smart.reasons`
@@ -633,8 +631,6 @@ export class ExportService {
 		return { planned, frames: count, path: 'copy', remotionOutput: undefined, warnings, audio };
 	}
 
-	// ------------------------------------------------------------------ Use Previews (workstream `previews`)
-
 	private previewSource: PreviewSource | null = null;
 	/** previews: where an export finds the render previews of a document (the preview service registers it). */
 	registerPreviewSource(fn: PreviewSource | null): void {
@@ -735,7 +731,6 @@ export class ExportService {
 								scaling: 'stretch',
 								quality: { mode: 'crf', value: 10 },
 								encoderSpeed: 'fast',
-								colorTags: 'rec709',
 							},
 						},
 					},
@@ -985,8 +980,6 @@ export class ExportService {
 		}
 	}
 
-	// ------------------------------------------------------------------ cache (M3, wp-m3-cachegc)
-
 	/** `NativePrepareContext.pin` of a job: holds the cache entry of `path` until the job ends. */
 	private pinFor(ctx: JobContext): ((path: string) => Promise<boolean>) | undefined {
 		const cache = this.cache;
@@ -1016,8 +1009,6 @@ export class ExportService {
 		if (!this.cache || !pid) return;
 		this.cache.commitHolderRefs(`job:${ctx.job.id}`, `${what}:${pid}:${planned.sequenceId}`, pid);
 	}
-
-	// ------------------------------------------------------------------ runners
 
 	private async loadRequest(ctx: JobContext): Promise<StoredRequest> {
 		const file = (ctx.input as { request?: string })?.request;

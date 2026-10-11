@@ -4,6 +4,7 @@
 // `evaluated` (what the renderer actually draws at that frame: the render snapshot's resolved layer, which
 // does not clamp Motion and skips bypassed effects, disabled clips and hidden tracks), plus the keyframes in
 // sequence frames and timecode.
+
 import { compositionOfClip } from '../composition/props.ts';
 import { findTrack, trackLabel } from '../derive/index.ts';
 import { expressionInfoAt } from '../expressions.ts';
@@ -19,14 +20,14 @@ import {
 	sequenceFrameOfContentTime,
 } from '../registry/properties.ts';
 import { clipContentTime, resolveSceneAt } from '../render/scene.ts';
-import { buildRenderSnapshot, type MediaHandle } from '../render/snapshot.ts';
+import { buildRenderSnapshot } from '../render/snapshot.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
-import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, EffectInstance, Sequence } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
 import { transitionSpec, transitionStartFrame } from '../transitions.ts';
+import { queryMediaHandle } from './media.ts';
 
 export type PropertyQueryEnv = {
 	doc: ProjectDocument;
@@ -58,18 +59,6 @@ const tc = (seq: Sequence, frame: number) =>
 		dropFrame: seq.settings.dropFrame,
 		startFrames: seq.settings.startTimecodeFrames,
 	});
-
-function stubMedia(asset: MediaAsset): MediaHandle {
-	const vs = asset.probe.streams.find((s) => s.type === 'video');
-	return {
-		url: '',
-		proxyUrl: null,
-		kind: asset.kind,
-		width: vs && vs.type === 'video' ? vs.width : null,
-		height: vs && vs.type === 'video' ? vs.height : null,
-		durationFlicks: asset.probe.durationFlicks,
-	} as MediaHandle;
-}
 
 function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
 	for (const seq of Object.values(doc.sequences)) {
@@ -117,7 +106,7 @@ const RENDERER_KEY = /^(transform\.|opacity$|volumeDb$|pan$|effects\.)/;
 function rendererView(doc: ProjectDocument, seq: Sequence, clip: Clip, frame: number): Resolved {
 	const snapshot = buildRenderSnapshot(doc, seq.id, {
 		range: { start: frame, end: frame + 1 },
-		resolveMedia: stubMedia,
+		resolveMedia: queryMediaHandle,
 		resolveFont: () => null,
 	});
 	const layer = resolveSceneAt(snapshot, frame).find((l) => l.clip.clipId === clip.id) ?? null;

@@ -1,4 +1,4 @@
-// Shared GLSL: blur kernels (wave-1 fx framework). Separable Gaussian and box blurs along one direction (run them as
+// Shared GLSL: blur kernels. Separable Gaussian and box blurs along one direction (run them as
 // two passes, see `gaussianBlurPasses` in fx/passes.ts), a small 9-tap blur, and a radial (zoom) blur. Sigmas and
 // radii are in pixels of the texture being read (multiply layer-pixel params by u_pxScale, and by the pass `scale`
 // on downscaled passes). Textures are premultiplied, so blurring them does not darken edges.

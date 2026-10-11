@@ -1,4 +1,3 @@
-// audio-mix: the Audio Track Mixer, Audio Clip Mixer and Audio Meters render against a real session and drive commands.
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession, MemoryProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -36,7 +35,6 @@ describe('audio panels', () => {
 		expect(r.getByTestId('mixer-strip-S1')).toBeTruthy();
 		const seq = Object.values(session.getCommitted().sequences)[0]!;
 		expect(seq.submixTracks?.length).toBe(1);
-		// M toggles the track mute (one undoable step)
 		await act(async () => {
 			fireEvent.click(r.getAllByTestId('mixer-mute')[0]!);
 		});
@@ -51,7 +49,6 @@ describe('audio panels', () => {
 				<AudioTrackMixerPanel instanceId="m" visible />
 			</SessionProvider>,
 		);
-		// Closed: no effect entries rendered anywhere (the Select it replaced rendered all of them per strip).
 		expect(document.querySelectorAll('[data-command-id^="mixer-fx-"]')).toHaveLength(0);
 		const trigger = r.getByTestId('mixer-add-effect-A1');
 		await act(async () => {
@@ -64,7 +61,6 @@ describe('audio panels', () => {
 		await act(async () => {
 			fireEvent.click(items[0]!);
 		});
-		// One undoable step, and the strip now lists the insert.
 		expect(JSON.stringify(Object.values(session.getCommitted().sequences)[0])).toContain(`"${audio[0]!.id}"`);
 		expect(r.getByTestId('mixer-strip-A1').textContent).toContain(audio[0]!.label);
 		r.unmount();

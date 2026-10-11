@@ -1,6 +1,3 @@
-// Layer bake contracts (M2, S11 §6, ARCHITECTURE §20.5). Owner: wp-m2-layer-bake.
-// DOM layers (text, shapes, anime templates) are exported natively through cached alpha masters; the preview of a
-// colour-graded DOM layer is a VP9-alpha WebM requested by the web runtime (S11:LBK-010, S08:MGC-023 pattern).
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 

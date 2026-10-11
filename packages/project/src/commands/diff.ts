@@ -1,4 +1,3 @@
-// Entity-level diff between two document versions, cheap thanks to structural sharing (Immer).
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import { keyDiff } from './draft-read.ts';

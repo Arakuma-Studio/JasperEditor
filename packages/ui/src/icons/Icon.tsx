@@ -8,7 +8,6 @@ export type IconProps = {
 	strokeWidth?: number;
 };
 
-/** Renders a registry icon; color comes from `currentColor` (S05:IC-003). */
 export function Icon({ id, size = 16, className, title, strokeWidth = 1.5 }: IconProps) {
 	const src = ICONS[id];
 	if (isCustomGlyph(src)) {

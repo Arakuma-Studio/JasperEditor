@@ -1,7 +1,3 @@
-// Browser entry of the blend GL test (bundled with esbuild, run in headless Chrome by ../blend-gl.test.ts): drives
-// the real fx GPU host with the compositor's plans (planComposite + runShaderPlan, exactly what CompositeStage does)
-// and reports pixels, so the test can compare them with `blendPixel` (the native export kernel's formulas).
-
 import '../gl-poison.ts';
 import { type CompositeItem, type CompositePicture, planComposite } from '../../src/fx/composite-plan.ts';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
@@ -47,7 +43,7 @@ function composite(arg: string): { out: number[]; stored: number[][] } {
 		W: number;
 		H: number;
 		layers: Layer[];
-		/** color-mgmt: Blend using 1.0 gamma (the working curve). */
+		/** A 1.0 working gamma blends in linear light. */
 		linear?: 'bt1886' | 'srgb' | 'pq' | 'hlg';
 	};
 	const h = fxHost();

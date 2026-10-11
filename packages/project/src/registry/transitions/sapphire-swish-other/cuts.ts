@@ -1,6 +1,7 @@
 // Cutting transitions of the family: S_FlutterCut (rapid cuts between the clips, optional colour and inverted
 // frames; the frame pattern is computed in TS, a pure function of the params and the span) and S_TVChannelChange
 // (bad reception into black/static and out of it on the other channel).
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams } from '../../effects.ts';
 import { GLSL_COLOR } from '../../fx/glsl/color.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
@@ -11,8 +12,6 @@ import { check, choice, GLSL_SW, num, rgbParam, sapphireSeed, sInt, sNum, str } 
 
 const BIN = TRANSITION_BINS.sapphire;
 const OTHER = SAPPHIRE_TRANSITION_SUBBINS.other;
-
-// ---------------------------------------------------------------- S_FlutterCut
 
 export type FlutterShow = 'from' | 'to' | 'color1' | 'color2';
 export type FlutterFrame = { show: FlutterShow; invert: boolean };
@@ -28,7 +27,7 @@ const INVERT_OPTIONS = ['none', 'from', 'to', 'both', 'custom'] as const;
  */
 export function flutterPattern(p: EffectParams, duration: number): FlutterFrame[] {
 	const d = Math.max(1, Math.floor(duration));
-	const int = (v: unknown, def: number, min: number) => Math.max(min, Math.round(num(v, def)));
+	const int = (v: ParamValue | undefined, def: number, min: number) => Math.max(min, Math.round(num(v, def)));
 	const len = (s: string, t: number) => {
 		const a = int(p[`${s}StartFrames`], 2, 1);
 		const b = int(p[`${s}EndFrames`], 2, 1);
@@ -149,8 +148,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_TVChannelChange
 
 /** The dead-time window [start, end] of S_TVChannelChange in progress. */
 export function deadWindow(p: EffectParams): [number, number] {

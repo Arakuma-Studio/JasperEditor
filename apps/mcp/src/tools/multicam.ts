@@ -22,6 +22,7 @@ import {
 	trackLabel,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -30,16 +31,13 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
-	requireSequence,
 	type ToolContext,
 	transact,
 	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+import { pickSequence } from '../format.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const MULTICAM_GUIDE = `Synchronize, Merge Clips, multi-camera:
 - Sync methods everywhere: "in" (In points / clip starts), "out" (Out points / clip ends), "timecode" (embedded start timecode; ignoreHours compares MM:SS:FF only), "marker" (first clip marker, or the first named marker), "audio" (waveforms: the engine cross-correlates the recordings, two-pass GCC-PHAT, sample-accurate). Audio results carry confidence (≥ 8 is a clear peak) and distinct (≥ 1.5: no competing match); unreliable matches are refused unless onUnreliable: "apply". measure_audio_sync only measures.
 - synchronize_clips moves timeline clips (with their linked clips) so their sync points line up with a reference clip (default: the one on the lowest video track; or referenceClipId / referenceTrack). offsetFrames shifts the others by a known delay.
@@ -195,7 +193,7 @@ export function registerMulticamTools(ctx: ToolContext): void {
 			let clips: AudioSyncClip[];
 			if (itemIds) clips = syncErrors(() => audioSyncClipsForItems(doc, itemIds));
 			else {
-				const seq = requireSequence(doc, sequenceId);
+				const seq = pickSequence(doc, sequenceId);
 				clips = syncErrors(() => audioSyncClipsForUnits(doc, seq, synchronizeUnits(seq, clipIds!, 'audio')));
 			}
 			const r = await measure(ctx, clips, {
@@ -226,7 +224,7 @@ export function registerMulticamTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
-			const seq = requireSequence(doc, a.sequenceId);
+			const seq = pickSequence(doc, a.sequenceId);
 			let audioOffsets: Record<string, number> | undefined;
 			let report: SyncReport[] | undefined;
 			if (a.method === 'audio') {
@@ -613,7 +611,7 @@ export function registerMulticamTools(ctx: ToolContext): void {
 			const sources = Object.values(doc.sequences)
 				.filter((s) => multicamSourceOf(s))
 				.map((s) => multicamSummary(doc, s.id, multicamSourceOf(s)!));
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const clips = Object.values(seq.clips)
 				.filter(isMulticamClip)
 				.sort((x, y) => x.start - y.start)

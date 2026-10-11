@@ -107,14 +107,12 @@ const g = (...paths: string[]): CustomGlyph => ({ kind: 'custom', paths });
 const FRAME = 'M6 3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6a3 3 0 013-3z';
 
 export const ICONS = {
-	// ------------------------------------------------------------ tools (S02:TL-590, S05:IC-004)
 	'tool.selection': MousePointer2,
 	'tool.trackSelectForward': g('M6 5v14', 'M10 12h10', 'M16 8l4 4-4 4'),
 	'tool.trackSelectBackward': g('M18 5v14', 'M14 12H4', 'M8 8l-4 4 4 4'),
 	'tool.ripple': g('M8 4v16', 'M8 4h6', 'M8 20h6', 'M16 9l3 3-3 3'),
 	'tool.rolling': g('M10 4v16', 'M14 4v16', 'M6 12h3', 'M15 12h3'),
 	'tool.rateStretch': g('M4 12h16', 'M7 9l-3 3 3 3', 'M17 9l3 3-3 3'),
-	/** audio-fx: Remix tool — a stretch arrow over a zig-zag cut (re-cut music). */
 	'tool.remix': g('M4 16l3-4 3 4 3-4 3 4', 'M4 7h16', 'M17 4l3 3-3 3'),
 	'tool.razor': Scissors,
 	'tool.slip': g('M4 6h16v12H4z', 'M9 12h6', 'M9 12l2-2', 'M15 12l-2 2'),
@@ -128,11 +126,9 @@ export const ICONS = {
 	'tool.zoom': ZoomIn,
 	'tool.zoomOut': ZoomOut,
 	'tool.type': Type,
-	// three-d: the Camera tool (a camera with an orbit arc).
 	'tool.camera': g('M3 9h11v8H3z', 'M14 12l5-3v8l-5-3', 'M5 6a8 4 0 0 1 12 0'),
 	'tool.verticalType': g('M5 5h8', 'M9 5v10', 'M18 4v16', 'M15.5 17.5L18 20l2.5-2.5'),
 
-	// ------------------------------------------------------------ transport and monitor buttons
 	'transport.play': Play,
 	'transport.pause': Pause,
 	'transport.stepBack': StepBack,
@@ -159,7 +155,6 @@ export const ICONS = {
 	'transport.dragVideo': Film,
 	'transport.dragAudio': AudioLines,
 
-	// ------------------------------------------------------------ timeline header
 	'timeline.snap': Magnet,
 	'timeline.link': Link,
 	'timeline.unlink': Unlink,
@@ -168,7 +163,6 @@ export const ICONS = {
 	'timeline.settings': Wrench,
 	'timeline.captionsTrack': Captions,
 
-	// ------------------------------------------------------------ track header (S05:IC-004)
 	'track.lock': Lock,
 	'track.unlock': LockOpen,
 	'track.output': Eye,
@@ -189,7 +183,6 @@ export const ICONS = {
 	'track.keyframeAdd': g('M12 6l6 6-6 6-6-6z'),
 	'track.keyframeNext': g('M16 8l4 4-4 4', 'M8 8l4 4-4 4-4-4z'),
 
-	// ------------------------------------------------------------ project panel
 	'project.listView': List,
 	'project.iconView': LayoutGrid,
 	'project.freeformView': g('M4 4h7v6H4z', 'M14 8h6v5h-6z', 'M6 14h7v6H6z'),
@@ -200,7 +193,6 @@ export const ICONS = {
 	'project.posterFrame': Image,
 	'project.hoverScrub': g('M4 6h16v12H4z', 'M4 15h16', 'M10 15v3'),
 
-	// ------------------------------------------------------------ engines (badges, S05:IC-004)
 	'engine.remotion': g(FRAME, 'M9.5 17V7h3.5a3 3 0 010 6H9.5', 'M12.5 13l3 4'),
 	'engine.fframes': g(FRAME, 'M9.5 17V7h5.5', 'M9.5 12h4.5'),
 	'engine.native': g(FRAME, 'M8.5 17V7l7 10V7'),
@@ -208,13 +200,10 @@ export const ICONS = {
 	'engine.remote': Server,
 	'engine.offline': WifiOff,
 
-	// ------------------------------------------------------------ agent (History entries, toasts, approval cards)
 	'agent.sparkle': Sparkles,
 
-	// ------------------------------------------------------------ effects (S05:IC-005)
 	'fx.badge': g('M9 18V8.5A2.5 2.5 0 0111.5 6H12', 'M7 11h4', 'M13 11l5 7', 'M18 11l-5 7'),
 
-	// ------------------------------------------------------------ panels (S05 §16)
 	'panel.project': Folder,
 	'panel.source': Film,
 	'panel.program': Clapperboard,
@@ -227,9 +216,7 @@ export const ICONS = {
 	'panel.audioMeters': AudioLines,
 	'panel.audioTrackMixer': SlidersVertical,
 	'panel.audioClipMixer': AudioWaveform,
-	// audio-fx
 	'panel.essentialSound': Speech,
-	// gaps (GR-4/5)
 	'panel.essentialGraphics': Shapes,
 	'panel.history': History,
 	'panel.info': Info,
@@ -237,16 +224,12 @@ export const ICONS = {
 	'panel.jobs': ListTodo,
 	'panel.lumetri': Palette,
 	'panel.scopes': Activity,
-	// wp captions: Text panel (Captions / Transcript)
 	'panel.text': Captions,
-	// polish: Media Browser
 	'panel.mediaBrowser': FolderSearch,
 
-	// ------------------------------------------------------------ media
 	'media.video': Film,
 	'media.image': Image,
 	'media.captions': Captions,
-	// polish (Media Browser): folders, volumes, audio, graphics / 3D models and other files
 	'media.folder': Folder,
 	'media.drive': HardDrive,
 	'media.audio': Music,
@@ -254,12 +237,9 @@ export const ICONS = {
 	'media.file': File,
 	'app.up': ArrowUp,
 	'app.engine': Server,
-	/** LUT asset (wp-m2-color): a lattice cube. */
 	'media.lut': g('M12 3l8 4.5v9L12 21l-8-4.5v-9z', 'M4 7.5l8 4.5 8-4.5', 'M12 12v9'),
-	/** Before/after split (wp-m2-color, S06:CGU-005). */
 	'color.compare': g(FRAME, 'M12 3v18', 'M15 8l3 4-3 4'),
 
-	// ------------------------------------------------------------ app chrome
 	'app.search': Search,
 	'app.close': X,
 	'app.menu': Menu,
@@ -294,9 +274,7 @@ export const ICONS = {
 	'status.warning': TriangleAlert,
 	'status.error': CircleX,
 	'status.alert': CircleAlert,
-	/** Three horizontal lines: the panel menu glyph drawn after the active tab title (S05:PC-004). */
 	'panel.menu': g('M4 6.5h16', 'M4 12h16', 'M4 17.5h16'),
-	/** Overflow chevrons for tab strips and workspace tabs (S05:PC-005). */
 	'panel.overflow': g('M6 7l5 5-5 5', 'M13 7l5 5-5 5'),
 } satisfies Record<string, IconSource>;
 

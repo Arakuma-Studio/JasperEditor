@@ -1,6 +1,5 @@
-// Auto Bezier spatial tangents (keyframes-blend): After Effects' proportional rule for keys made Auto Bezier now
-// (EffectCraft `auto_spatial`: along next − prev, each handle ⅓ of its neighbouring chord, none on the first / last
-// key), the Catmull-Rom rule kept bit-for-bit for keys written before (no `auto` marker).
+// EffectCraft `auto_spatial`: tangents follow next − prev, each handle is ⅓ of its neighbouring chord.
+// Keys without an `auto` marker retain the Catmull–Rom rule for saved-project compatibility.
 import { describe, expect, it } from 'vitest';
 import { autoTangents, evaluate, type Keyframe, type Spatial, type Vec2 } from '../src/index.ts';
 

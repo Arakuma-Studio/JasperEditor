@@ -1,3 +1,4 @@
+import type { Vec2 } from '@jasper/project';
 // On-canvas point handles of GPU transitions (wave-4 transition polish): while a transition is selected in the
 // Timeline (it is then what Effect Controls' Transition section shows), every point param of its type — `vec2` with
 // `ui.control: 'point'`: Center, Swish3D's / WhipLash's centres, MochaWhip's mask and cut-out centres… — is drawn as
@@ -17,16 +18,13 @@ import {
 	transitionSpec,
 	transitionStartFrame,
 } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
-import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
+import { toScreen, toSequence } from '../panels/program/viewport.ts';
 import { type DragSpec, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
 import { pointParams } from './PointOverlay.tsx';
-
-type Vec2 = [number, number];
 
 /** The selected transition (last selected) of the active sequence with its type, or null. */
 function selectedTransition(
@@ -55,9 +53,9 @@ export function sequenceToFramePoint(seq: Pick<Sequence, 'settings'>, s: Vec2): 
 }
 
 export function TransitionPointOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const doc = useStoreSelector(session.store, (s) => s.transient ?? s.document);
 	const seqId = useStoreSelector(session.store, (s) => s.activeSequenceId);

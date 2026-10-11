@@ -1,4 +1,3 @@
-// Agent API stage 1 (ARCHITECTURE §11, S01 §21): schema, queries, transactions and the /agent WS relay.
 import { TransactionSchema } from '@jasper/project';
 import { z } from 'zod';
 
@@ -27,7 +26,7 @@ export const AgentSchemaResponseSchema = z.looseObject({
 	protocol: z.literal('jasper.tx/1'),
 	commands: z.record(z.string(), z.unknown()),
 	errorCodes: z.array(z.string()),
-	/** M2 (S11:ANA-001): motion-graphic templates with their renderer. */
+	/** Motion-graphic templates with their renderer. */
 	mgTemplates: z
 		.array(
 			z.looseObject({
@@ -40,7 +39,7 @@ export const AgentSchemaResponseSchema = z.looseObject({
 			}),
 		)
 		.optional(),
-	/** M2 (S11:ANA-001): text animator presets for `clip.update {textAnimation}`. */
+	/** Text animator presets for `clip.update {textAnimation}`. */
 	textAnimations: z
 		.array(
 			z.looseObject({
@@ -109,8 +108,6 @@ export const AgentTxResponseSchema = z.object({
 	appliedBy: z.enum(['session', 'headless']),
 });
 export type AgentTxResponse = z.infer<typeof AgentTxResponseSchema>;
-
-// ---------------------------------------------------------------- WS /agent relay messages
 
 export const AgentWsHelloSchema = z.object({
 	type: z.literal('hello'),
@@ -229,8 +226,6 @@ export const AgentMcpInfoSchema = z.object({
 	tokenRequired: z.boolean(),
 });
 export type AgentMcpInfo = z.infer<typeof AgentMcpInfoSchema>;
-
-// ---------------------------------------------------------------- live-UI automation (mcp-cli)
 
 /**
  * What `POST /api/agent/ui` can ask an open editor window to do (docs/wp-notes/mcp-cli.md §4). Coordinates are

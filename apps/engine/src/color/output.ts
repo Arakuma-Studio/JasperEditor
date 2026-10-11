@@ -1,7 +1,5 @@
-// Export colour output (workstream color-mgmt): the colour space an export writes, its tags (ffmpeg names and the
-// ITU-T H.273 code points for bitstream filters), the YUV matrix, the bit depth and the HDR static metadata, plus the
-// working → output conversion baked into a LUT (the same `outputTransformFn` maths as the preview's display stage).
-// Every export path (native, hybrid, Remotion) ends with `outputFilters` before the encoder's pixel format.
+// Every export path applies outputFilters before the encoder's pixel format. The working-to-output LUT
+// uses the same outputTransformFn as the preview display stage.
 import { createHash } from 'node:crypto';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

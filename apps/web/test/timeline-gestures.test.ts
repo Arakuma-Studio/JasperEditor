@@ -1,5 +1,3 @@
-// Gesture → command mapping through the TimelineController against a real EditorSession
-// (S02 §8–§12; acceptance: one history entry per gesture, Esc cancels with none).
 import { describe, expect, it } from 'vitest';
 import { setupTimeline, solid, videoAsset } from './timeline-helpers.ts';
 
@@ -35,7 +33,7 @@ describe('move gestures (TL-480…491)', () => {
 		const before = t.history().length;
 		const doc = t.session.getCommitted();
 		t.drag(t.x(20), t.rowY('V1'), t.x(60), t.rowY('V1'), {}, false);
-		expect(t.session.getDrawn()).not.toEqual(doc); // preview visible during the drag
+		expect(t.session.getDrawn()).not.toEqual(doc);
 		expect(t.controller.cancel()).toBe(true);
 		expect(t.session.getDrawn()).toEqual(doc);
 		expect(t.history().length).toEqual(before);
@@ -156,7 +154,6 @@ describe('selection and marquee (TL-400…406, AC-8a…c)', () => {
 		t.drag(t.x(60), t.rowY('V2'), t.x(160), t.rowY('V1') + 5);
 		const sel = t.session.getState().selection.timeline.clips;
 		expect(sel).toEqual([t.clipsOn('V1')[0]!.id]);
-		// A click on the locked clip does not select it either.
 		t.controller.pointerDown(t.pt(t.x(110), t.rowY('V2')));
 		t.controller.pointerUp(t.pt(t.x(110), t.rowY('V2')));
 		expect(t.session.getState().selection.timeline.clips).not.toContain(t.clipsOn('V2')[0]!.id);

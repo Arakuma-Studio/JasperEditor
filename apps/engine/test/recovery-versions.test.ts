@@ -1,11 +1,10 @@
-// Crash-recovery journal (S01:PER-021, AC-18), saved versions (read / restore) and the schema backup kept by the
-// first save over a migrated project (S01:MIG-004). ARCHITECTURE D-39, docs/project-files.md.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
 import { CURRENT_SCHEMA_VERSION, createRandomIdSource, defaultRegistries, migrate } from '@jasper/project';
 import { attachPersistence, EditorSession, EngineProjectStore, reopenSession } from '@jasper/session';
+import fc from 'fast-check';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
 import { RecoveryJournal } from '../src/projects/recovery.ts';
@@ -31,6 +30,45 @@ async function v4Project(s: ReturnType<typeof storeOn>) {
 	return { id, env };
 }
 
+describe('project file errors', () => {
+	it('reports corrupt envelopes without changing the file or treating the project as missing', async () => {
+		const s = storeOn();
+		const id = await s.store.create({ name: 'Preserved', preset: 'hd-1080p-30' });
+		await fc.assert(
+			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
+				const text = JSON.stringify({ malformed: invalid });
+				writeFileSync(s.paths.projectFile(id), text);
+				await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
+				await expect(s.store.revision(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+				expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe(text);
+			}),
+			{ numRuns: 20 },
+		);
+		writeFileSync(s.paths.projectFile(id), '{');
+		await expect(s.store.get(id)).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
+		expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe('{');
+	});
+
+	it('lists healthy projects alongside a corrupt project without changing either file', async () => {
+		const s = storeOn();
+		const healthy = await s.store.create({ name: 'Healthy', preset: 'hd-1080p-30' });
+		const corrupt = await s.store.create({ name: 'Damaged', preset: 'hd-1080p-30' });
+		const before = readFileSync(s.paths.projectFile(healthy), 'utf8');
+		writeFileSync(s.paths.projectFile(corrupt), '{');
+		expect((await s.store.list()).map((project) => project.projectId)).toEqual([healthy]);
+		expect(readFileSync(s.paths.projectFile(corrupt), 'utf8')).toBe('{');
+		expect(readFileSync(s.paths.projectFile(healthy), 'utf8')).toBe(before);
+	});
+
+	it('propagates project directory and file read errors', async () => {
+		const s = storeOn();
+		writeFileSync(s.paths.projectsDir, 'not a directory');
+		await expect(s.store.list()).rejects.toMatchObject({ code: 'ENOTDIR' });
+		await expect(s.store.get('prj_0000000000000001')).rejects.toMatchObject({ code: 'ENOTDIR' });
+		await expect(s.store.revision('prj_0000000000000001')).rejects.toMatchObject({ code: 'ENOTDIR' });
+	});
+});
+
 describe('schema backup on the first save over a migrated project (S01:MIG-004)', () => {
 	it('keeps project (schema vN backup).jasper once, lists it and restores it as a copy', async () => {
 		const s = storeOn();
@@ -47,7 +85,7 @@ describe('schema backup on the first save over a migrated project (S01:MIG-004)'
 		const backup = join(s.paths.projectDir(id), schemaBackupName(4));
 		expect(readFileSync(backup, 'utf8')).toBe(before);
 		s.tick(10 * 60_000);
-		await save(env.revision + 1); // later saves never touch the backup
+		await save(env.revision + 1);
 		expect(readFileSync(backup, 'utf8')).toBe(before);
 
 		const versions = await s.store.versions(id);
@@ -102,6 +140,26 @@ describe('saved versions: read and restore (S01:PER-001/020)', () => {
 		const kept = await s.store.version(id, r.keptAs!);
 		expect(kept.version.kind).toBe('before-restore');
 		expect(kept.envelope.document.name).toBe('Second');
+	});
+
+	it('refuses malformed version envelopes without replacing or copying project data', async () => {
+		const s = storeOn();
+		const id = await s.store.create({ name: 'Preserved', preset: 'hd-1080p-30' });
+		const { envelope } = await s.store.get(id);
+		await s.store.save(id, { ...envelope, revision: 1 }, 0);
+		const [version] = await s.store.versions(id);
+		const file = join(s.paths.projectVersionsDir(id), `${version!.versionId}.jasper`);
+		const corrupt = JSON.stringify({ format: 'jasper-project', document: 1, revision: 0 });
+		writeFileSync(file, corrupt);
+		const before = readFileSync(s.paths.projectFile(id), 'utf8');
+		for (const mode of ['replace', 'copy'] as const)
+			await expect(s.store.restoreVersion(id, version!.versionId, { mode })).rejects.toMatchObject({
+				code: 'VALIDATION_FAILED',
+				status: 422,
+			});
+		expect(await s.store.versions(id)).toEqual([]);
+		expect(readFileSync(file, 'utf8')).toBe(corrupt);
+		expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe(before);
 	});
 
 	it('refuses unknown and path-like version ids', async () => {
@@ -160,12 +218,10 @@ describe('crash-recovery journal over HTTP (S01:PER-021, AC-18)', () => {
 		};
 
 		expect((await put(body)).json()).toMatchObject({ ok: true });
-		// someone else's lease id, or a session that does not hold the lease, cannot write
 		expect((await put({ ...body, leaseId: 'lse_nope' })).statusCode).toBe(404);
 		expect((await put(body, 'ses_b')).statusCode).toBe(409);
 		expect((await put(body, 'bad%21id')).statusCode).toBe(400);
 
-		// held: not offered, not readable, not deletable by others
 		expect((await get(`/api/projects/${id}/recovery`)).json().candidates).toEqual([]);
 		expect((await get(`/api/projects/${id}/recovery/ses_a`)).statusCode).toBe(409);
 		expect(
@@ -215,7 +271,6 @@ describe('crash-recovery journal over HTTP (S01:PER-021, AC-18)', () => {
 		expect(own.json()).toEqual({ ok: true });
 		expect(existsSync(join(app.appdir, 'projects', id, 'recovery', 'ses_c'))).toBe(false);
 
-		// the autosave caught up before the crash: nothing to offer, and the journal goes away
 		await put(envelope);
 		await app.inject({ method: 'DELETE', url: `/api/projects/${id}/lease/${l.leaseId}`, headers: H });
 		expect((await get(`/api/projects/${id}/recovery`)).json().candidates).toEqual([]);
@@ -282,16 +337,17 @@ describe('session journal and versions through EngineProjectStore (real routes)'
 
 		const s2 = await EditorSession.open({ store: st, projectId, ctx, sessionId: 'ses_two' });
 		const p2 = attachPersistence(s2, { window: null, document: null });
-		const [c] = await st.listRecovery(projectId);
+		const {
+			candidates: [c],
+		} = await st.listRecovery(projectId);
 		expect(c).toMatchObject({ sessionId: 'ses_one', changes: ['Add Solid'], projectName: 'Journal' });
 		const snap = await st.readRecovery(projectId, 'ses_one');
 		expect(s2.replaceDocument(snap.document, 'Recover Unsaved Changes').ok).toBe(true);
 		await p2.flush();
 		await st.discardRecovery(projectId, 'ses_one');
-		expect(await st.listRecovery(projectId)).toEqual([]);
+		expect(await st.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		expect((await st.open(projectId)).revision).toBe(1);
 
-		// restore the first version in place from the open editor, then reopen it
 		const versions = await st.listVersions(projectId);
 		expect(versions[0]).toMatchObject({ kind: 'auto', revision: 0 });
 		await p2.flush();
@@ -299,7 +355,6 @@ describe('session journal and versions through EngineProjectStore (real routes)'
 		expect(rev).toBe(2);
 		const s3 = await reopenSession(s2);
 		expect(Object.keys(Object.values(s3.getCommitted().sequences)[0]!.clips)).toEqual([]);
-		// and as a copy (S01:PER-001 restoreVersion)
 		const copyId = await st.restoreVersion(projectId, versions[0]!.versionId);
 		expect((await st.list()).some((p) => p.projectId === copyId)).toBe(true);
 		await s3.close();
@@ -327,10 +382,48 @@ describe('journal locks across engine processes', () => {
 		return { s, id, saved };
 	}
 
+	it('preserves unsaved snapshots when journal metadata is missing or malformed', async () => {
+		const { s, id, saved } = await journalled();
+		const dir = join(s.paths.projectDir(id), 'recovery', 'ses_x');
+		const metadata = join(dir, 'session.json');
+		const snapshot = join(dir, 'snapshot.jasper');
+		const before = readFileSync(snapshot, 'utf8');
+		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
+		unlinkSync(metadata);
+		expect(await restarted.list(id)).toMatchObject({
+			candidates: [],
+			warnings: [{ code: 'VALIDATION_FAILED', sessionId: 'ses_x' }],
+		});
+		expect(readFileSync(snapshot, 'utf8')).toBe(before);
+		await fc.assert(
+			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
+				writeFileSync(metadata, JSON.stringify({ malformed: invalid }));
+				expect((await restarted.list(id)).warnings).toMatchObject([{ code: 'VALIDATION_FAILED' }]);
+				expect(readFileSync(snapshot, 'utf8')).toBe(before);
+			}),
+			{ numRuns: 20 },
+		);
+	});
+
+	it('reads a valid journal when another session has incomplete metadata', async () => {
+		const { s, id, saved } = await journalled();
+		const incomplete = join(s.paths.projectDir(id), 'recovery', 'ses_incomplete');
+		mkdirSync(incomplete);
+		writeFileSync(join(incomplete, 'snapshot.jasper'), '{');
+		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
+		const listed = await restarted.list(id);
+		expect(listed.candidates.map((candidate) => candidate.sessionId)).toEqual(['ses_x']);
+		expect(listed.warnings).toMatchObject([{ sessionId: 'ses_incomplete', code: 'VALIDATION_FAILED' }]);
+		const recovered = await restarted.read(id, 'ses_x');
+		expect(recovered.info.sessionId).toBe('ses_x');
+		expect(recovered.envelope.document).toMatchObject({ name: 'Unsaved' });
+		expect(readFileSync(join(incomplete, 'snapshot.jasper'), 'utf8')).toBe('{');
+	});
+
 	it('an engine restart (new instance, no leases) offers the journal of the dead session', async () => {
 		const { s, id, saved } = await journalled();
 		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
-		expect((await restarted.list(id)).map((c) => c.sessionId)).toEqual(['ses_x']);
+		expect((await restarted.list(id)).candidates.map((c) => c.sessionId)).toEqual(['ses_x']);
 	});
 
 	it('a journal written by another live engine process is never touched', async () => {
@@ -339,8 +432,8 @@ describe('journal locks across engine processes', () => {
 		writeFileSync(lockFile, JSON.stringify({ pid: process.pid + 1, instance: 'eng_other' }));
 		const other = (alive: boolean) =>
 			new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved, processAlive: () => alive });
-		expect(await other(true).list(id)).toEqual([]);
+		expect(await other(true).list(id)).toEqual({ candidates: [], warnings: [] });
 		await expect(other(true).remove(id, 'ses_x')).rejects.toMatchObject({ code: 'LEASE_HELD' });
-		expect((await other(false).list(id)).map((c) => c.sessionId)).toEqual(['ses_x']);
+		expect((await other(false).list(id)).candidates.map((c) => c.sessionId)).toEqual(['ses_x']);
 	});
 });

@@ -1,10 +1,6 @@
 // @vitest-environment node
-// Workstream gaps (EX-3): the smart-rendered H.264 export (`avc3`: copied GOPs keep the source's SPS/PPS, encoded
-// ones carry the encoder's) must play in a browser `<video>` — the Program monitor's Player and the desktop app
-// (Electron) use Chrome's media stack. Plays the file in a real Google Chrome / Chromium with proprietary codecs:
-// no media error, every frame presented in order to the end, and seeks across the copy / encode joins show the
-// right frames (the fixture burns the frame number into each frame). Runs when such a browser is found
-// (JASPER_BROWSER_EXECUTABLE or the usual Google Chrome paths); H264_PLAYBACK=0 skips it.
+// avc3 copied GOPs retain source SPS/PPS while encoded GOPs carry the encoder's; Chrome must decode both across joins.
+// A browser with proprietary codecs is required; H264_PLAYBACK=0 disables the probe.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -32,7 +28,6 @@ const CHROME = [
 	'/opt/google/chrome/chrome',
 ].find((p): p is string => !!p && existsSync(p));
 const run = !!CHROME && process.env.H264_PLAYBACK !== '0';
-/** The desktop app's Electron binary (apps/desktop's dependency), when installed. */
 const ELECTRON = (() => {
 	try {
 		const p = createRequire(join(ROOT, 'apps', 'desktop', 'package.json'))('electron') as unknown;
@@ -58,7 +53,6 @@ const settings = (seqId: string) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine: 'auto',
@@ -172,7 +166,6 @@ describe.runIf(run)('smart-rendered H.264 (avc3) in Chrome', () => {
 		}
 	}, 300_000);
 
-	// The desktop app: Electron's own Chromium (with its proprietary codecs), headless (Ozone), the same probe.
 	it.runIf(!!ELECTRON)(
 		'plays in Electron with every frame code right',
 		() => {

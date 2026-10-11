@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Generate, part 1 (family "premiere-stylize-distort-generate", wave 2): 4-Color
+// Premiere Pro standard effects — Generate, part 1 (family "premiere-stylize-distort-generate"): 4-Color
 // Gradient, Cell Pattern, Checkerboard, Circle, Ellipse, Eyedropper Fill, Grid, Ramp. Generators draw inside the
 // layer box (layer px via `gen_*` of generate-glsl.ts) and combine with the layer through Premiere's Blending Mode
 // (None = the generated picture alone), Composite On Original or Blend With Original.
@@ -15,8 +15,6 @@ import {
 } from './common.ts';
 import { GLSL_PSDG_GENERATE } from './generate-glsl.ts';
 import { GLSL_PSDG_HASH } from './noise-glsl.ts';
-
-// ---------------------------------------------------------------- 4-Color Gradient
 
 export const FOUR_COLOR_GRADIENT = defineShaderEffect({
 	id: 'jasper.4-color-gradient',
@@ -76,8 +74,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Cell Pattern
 
 const CELL_TYPES = [
 	'bubbles',
@@ -223,8 +219,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Checkerboard
-
 const sizeFromParam = (def: string) =>
 	fxParam.choice(
 		'sizeFrom',
@@ -274,8 +268,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Circle
 
 export const CIRCLE = defineShaderEffect({
 	id: 'jasper.circle',
@@ -329,8 +321,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Ellipse
-
 export const ELLIPSE = defineShaderEffect({
 	id: 'jasper.ellipse',
 	label: 'Ellipse',
@@ -376,8 +366,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Eyedropper Fill
 
 export const EYEDROPPER_FILL = defineShaderEffect({
 	id: 'jasper.eyedropper-fill',
@@ -450,8 +438,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Grid
-
 export const GRID = defineShaderEffect({
 	id: 'jasper.grid',
 	label: 'Grid',
@@ -496,8 +482,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Ramp
 
 export const RAMP = defineShaderEffect({
 	id: 'jasper.ramp',

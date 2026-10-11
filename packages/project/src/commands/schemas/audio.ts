@@ -1,6 +1,4 @@
-// Audio buses commands (workstream audio-mix): Audio Track Mixer strips, submixes, sends, automation lanes and
-// automation passes, the Audio Clip Mixer, Audio Gain, auto-ducking and the Mix's loudness normalisation.
-// Strips are addressed by `stripId`: `A1`…, `S1`…, `Mix`, a track id or a track name.
+// Strips accept track ids, track names, A1… / S1… labels, or Mix.
 import { z } from 'zod';
 import {
 	AudioChannelFormatSchema,

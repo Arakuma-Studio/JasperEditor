@@ -1,5 +1,4 @@
-// wp masks: auto-trace (Layer ▸ Auto-trace in After Effects; Premiere has no auto-trace) — the outlines of a media
-// clip's picture at one source frame as mask paths.
+import { Vec2Schema } from '@jasper/project';
 import { z } from 'zod';
 
 export const MaskTraceRequestSchema = z.object({
@@ -25,19 +24,18 @@ export const MaskTraceRequestSchema = z.object({
 });
 export type MaskTraceRequest = z.infer<typeof MaskTraceRequestSchema>;
 
-const P = z.tuple([z.number(), z.number()]);
+export const TracedMaskPathSchema = z.object({
+	path: z.object({
+		closed: z.boolean(),
+		vertices: z.array(z.object({ p: Vec2Schema, in: Vec2Schema, out: Vec2Schema })),
+	}),
+	depth: z.number().int().min(0),
+	area: z.number(),
+});
+
 export const MaskTraceResponseSchema = z.object({
 	/** Paths in normalised layer coordinates (0..1 over the traced size); depth odd = a hole. */
-	paths: z.array(
-		z.object({
-			path: z.object({
-				closed: z.boolean(),
-				vertices: z.array(z.object({ p: P, in: P, out: P })),
-			}),
-			depth: z.number().int().min(0),
-			area: z.number(),
-		}),
-	),
+	paths: z.array(TracedMaskPathSchema),
 	/** Outlines found before `maxPaths` was applied. */
 	total: z.number().int().min(0),
 });

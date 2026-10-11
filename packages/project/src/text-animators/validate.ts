@@ -1,4 +1,4 @@
-// Invariants and repairs of text animator data (workstream text-animators), called from `invariants.ts`:
+// Invariants and repairs of text animator data, called from `invariants.ts`:
 // animators / selectors / Path Options / More Options parse, their ids are well-formed and unique (claimed by the
 // caller), values stay in their ranges, Source Text keys are hold keys of valid content at increasing times.
 import type { IdPrefix } from '../ids.ts';

@@ -1,4 +1,4 @@
-// Edit ▸ Find… (workstream `gaps`, docs/wp-notes/gaps.md §UI-5): Premiere's Find dialog over the Project panel (items)
+// Edit ▸ Find… (docs/wp-notes/gaps.md §UI-5): Premiere's Find dialog over the Project panel (items)
 // and a sequence (clips and markers). Two criteria rows (column, operator, text) combined with Match All / Any and
 // Match Case, as Premiere's Project panel Find; the timeline variant searches clip names, source names, text clip
 // content and marker names / comments. Pure: the web dialog, the Find Next stepping and the MCP `find` tool use it.

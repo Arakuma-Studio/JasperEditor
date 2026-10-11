@@ -1,7 +1,6 @@
 // Fastify factory (ARCHITECTURE §9.1): error handler with the S04:ENG-022 shape, x-jasper-api header,
 // auth + Host check (§4.2), /health, static SPA with a fallback that never shadows engine paths.
 
-import { timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
@@ -17,6 +16,7 @@ import {
 import { loadExpressionEngine } from '@jasper/expressions';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createCoreAgentStore } from './agent/core-store.ts';
+import { secretsEqual } from './auth/secrets.ts';
 import {
 	allowedHosts,
 	type EngineConfig,
@@ -29,12 +29,6 @@ import { fail, systemErrorReply } from './tools/reply.ts';
 import { createCoreServices } from './tools/services.ts';
 
 const JSON_BODY_LIMIT = 20 * 1024 * 1024;
-
-function safeEqual(a: string, b: string): boolean {
-	const x = Buffer.from(a);
-	const y = Buffer.from(b);
-	return x.length === y.length && timingSafeEqual(x, y);
-}
 
 function readCookie(header: string | undefined, name: string): string | null {
 	if (!header) return null;
@@ -55,7 +49,7 @@ function cookieMatches(header: string | undefined, name: string, port: number, s
 		} catch {
 			v = null; // malformed percent-encoding
 		}
-		if (v && safeEqual(v, secret)) return true;
+		if (v && secretsEqual(v, secret)) return true;
 	}
 	return false;
 }
@@ -94,16 +88,13 @@ export async function createServer(
 	config: EngineConfig,
 	opts: { logger?: boolean; env?: Record<string, string | undefined>; totalSlots?: number } = {},
 ): Promise<FastifyInstance> {
-	// Wave expressions: the QuickJS engine is loaded once per process before anything plans, renders or answers
-	// agents, so render snapshots, native export sampling and agent queries all see post-expression values.
+	// Snapshots, export sampling and queries must all see evaluated expressions.
 	await loadExpressionEngine();
 	const app = Fastify({ logger: opts.logger ?? false, bodyLimit: JSON_BODY_LIMIT, trustProxy: false });
 	const ctx: EngineContext = { config, services: {} };
 	app.decorate('jasper', ctx);
 	app.decorateRequest('jasperEditor', false);
 
-	// Core services (WP-2F): jobs, events, media, projects, exports… Other packages reach them through
-	// `coreServices(app)` (see docs/wp-notes/WP-2F.md).
 	const core = await createCoreServices(config, {
 		jsonBodyLimit: JSON_BODY_LIMIT,
 		env: opts.env,
@@ -113,15 +104,14 @@ export async function createServer(
 	Object.assign(ctx.services, {
 		core,
 		broadcaster: core.broadcaster,
-		// `events.publish(type, payload, projectId?)` is the name WP-2G/WP-2H publish through.
 		events: core.broadcaster,
-		// Headless agent writes (WP-2H) go through the same store, mutex and leases as editor saves.
+		// Headless agent writes go through the same store, mutex and leases as editor saves.
 		agentStore: createCoreAgentStore(core.projects, core.leases),
 	});
 	app.addHook('onReady', async () => core.start());
 	app.addHook('onClose', async () => core.stop());
 
-	// Raw bodies for chunked uploads (streamed to disk by WP-2F).
+	// Upload bodies are streamed to disk.
 	app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
 
 	app.addHook('onSend', async (_req, reply, payload) => {
@@ -192,7 +182,7 @@ export async function createServer(
 		const auth = req.headers.authorization;
 		const bearer = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
 		if (
-			(bearer && safeEqual(bearer, config.token)) ||
+			(bearer && secretsEqual(bearer, config.token)) ||
 			cookieMatches(req.headers.cookie, AUTH_COOKIE, config.port, config.token)
 		)
 			return;
@@ -253,7 +243,7 @@ export async function createServer(
 	// token and the editor key as HttpOnly, SameSite=Strict cookies, which page scripts and agents cannot read.
 	app.get('/pair', async (req, reply) => {
 		const key = (req.query as { key?: unknown } | undefined)?.key;
-		if (!config.token || !config.editorKey || typeof key !== 'string' || !safeEqual(key, config.editorKey))
+		if (!config.token || !config.editorKey || typeof key !== 'string' || !secretsEqual(key, config.editorKey))
 			return fail(reply, 401, 'UNAUTHORIZED', 'Invalid pairing key');
 		const cookie = (name: string, value: string) =>
 			`${portCookieName(name, config.port)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict`;

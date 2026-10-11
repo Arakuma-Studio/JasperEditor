@@ -10,12 +10,42 @@ export async function followJob(
 	opts: { onUpdate?(job: EngineJob): void; signal?: AbortSignal; intervalMs?: number } = {},
 ): Promise<EngineJob> {
 	for (;;) {
-		const job = (await engine.getJob(jobId)) as EngineJob;
+		const job = await engine.getJob(jobId);
 		opts.onUpdate?.(job);
 		if (TERMINAL_JOB_STATES.has(job.state)) return job;
 		if (opts.signal?.aborted) return job;
 		await new Promise((r) => setTimeout(r, opts.intervalMs ?? 1000));
 	}
+}
+
+export async function pollActiveJob(
+	engine: Pick<EngineClient, 'getJob'>,
+	jobId: string,
+	opts: { isActive(): boolean; onUpdate?(job: EngineJob): void; intervalMs: number },
+): Promise<EngineJob | null> {
+	let transientFailures = 0;
+	while (opts.isActive()) {
+		await new Promise<void>((resolve) => setTimeout(resolve, opts.intervalMs));
+		if (!opts.isActive()) return null;
+		let job: EngineJob;
+		try {
+			job = await engine.getJob(jobId);
+		} catch (error) {
+			if (!opts.isActive()) return null;
+			if (
+				error instanceof EngineError &&
+				(error.code === 'NETWORK' || error.retryable) &&
+				++transientFailures < 3
+			)
+				continue;
+			throw error;
+		}
+		if (!opts.isActive()) return null;
+		transientFailures = 0;
+		opts.onUpdate?.(job);
+		if (TERMINAL_JOB_STATES.has(job.state)) return job;
+	}
+	return null;
 }
 
 /** `CODE: message` for engine errors, the message otherwise. */

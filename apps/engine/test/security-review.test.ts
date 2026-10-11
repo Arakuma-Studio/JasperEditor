@@ -1,4 +1,3 @@
-// Regressions of the adversarial security review (docs/security-review.md). One `it` per confirmed finding.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer, type Server } from 'node:http';
@@ -244,7 +243,6 @@ describe('DATA-5: a Lottie file embeds only picture files next to it', () => {
 	it('a non-image "image" asset is left empty (with a warning), a real PNG is embedded', async () => {
 		const dir = tempAppdir('jasper-lottie-');
 		mkdirSync(join(dir, 'images'));
-		// 1×1 PNG.
 		const png = Buffer.from(
 			'89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201ffa5e1a2a30000000049454e44ae426082',
 			'hex',
@@ -287,8 +285,8 @@ describe('ENG-4: project ids in paths are validated', () => {
 			join(victim, 'session.json'),
 			'{"sessionId":"victim","projectId":"x","savedAt":"2026-01-01T00:00:00.000Z","baseRevision":0}',
 		);
-		// From <appdir>/projects up to the filesystem root, then down to the victim folder (a path parameter is at most
-		// 100 characters, which bounds the depth, not the bug).
+		// Traverse from <appdir>/projects through the filesystem root to the victim folder.
+		// The 100-character path-parameter limit bounds the victim path's depth.
 		const up = join(app.appdir, 'projects').split('/').filter(Boolean).length;
 		const id = `${'..%2F'.repeat(up)}${outside.replace(/^\/+/, '').replaceAll('/', '%2F')}`;
 		expect(id.length).toBeLessThanOrEqual(100);
@@ -358,7 +356,7 @@ describe('ENG-5: Edit Original never runs a program', () => {
 				const file = join(dir, name);
 				writeFileSync(file, Buffer.concat([png, Buffer.alloc(i + 1, 0x20)]));
 				const reg = await register(app, file).catch(() => null);
-				if (!reg) continue; // not registrable under that name: nothing to open
+				if (!reg) continue;
 				const r = await app.inject({
 					method: 'POST',
 					url: `/api/media/${reg.mediaKey}/open`,
@@ -376,7 +374,6 @@ describe('ENG-5: Edit Original never runs a program', () => {
 				});
 				expect(reveal.statusCode, name).toBe(200);
 			}
-			// The polyglots really register as media (so the refusal above is what protects).
 			expect(refused).toBeGreaterThanOrEqual(3);
 			const ok = join(dir, 'photo.svg');
 			writeFileSync(ok, svgText);
@@ -403,7 +400,6 @@ describe('DATA-6: project backups and versions are copied atomically', () => {
 		await atomicCopyFile(src, join(dir, 'versions', 'v1.jasper'));
 		expect(readFileSync(join(dir, 'versions', 'v1.jasper'), 'utf8')).toBe('{"format":"jasper-project"}');
 		expect(readdirSync(join(dir, 'versions'))).toEqual(['v1.jasper']);
-		// A failing copy (the source vanished) leaves nothing under the final name.
 		await expect(
 			atomicCopyFile(join(dir, 'gone.jasper'), join(dir, 'versions', 'v2.jasper')),
 		).rejects.toThrow();
@@ -454,7 +450,6 @@ describe('ENG-6: frame sizes no path can render are refused by name', () => {
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 23 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	};
 	const plan = (app: Awaited<ReturnType<typeof makeApp>>, d: DocBuilder, size: Partial<typeof video> = {}) =>
 		app.inject({
@@ -489,7 +484,6 @@ describe('ENG-6: frame sizes no path can render are refused by name', () => {
 		doc.sequences[hostile.seqId].settings.height = 2_000_000;
 		hostile.doc = doc;
 		expect((await plan(app, hostile)).statusCode).toBe(200);
-		// The requested output size had no bound at all.
 		const big = await plan(app, d, { width: 500_000, height: 500_000 });
 		expect(big.statusCode).toBe(400);
 		expect(big.json().message).toMatch(/The export has a frame size/);

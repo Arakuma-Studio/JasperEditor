@@ -1,5 +1,4 @@
-// File ▸ Export ▸ Frame (workstream gaps, docs/wp-notes/gaps.md §EX-3): the rendered PNG still converted to the
-// format the user chose. 8-bit RGB for JPEG / TIFF / BMP / Targa, 10-bit RGB DPX, and OpenEXR in linear light: the
+// Still outputs use 8-bit RGB for JPEG / TIFF / BMP / Targa, 10-bit RGB DPX, and OpenEXR in linear light: the
 // display-referred still is linearised with the working space's own EOTF (BT.1886 ≈ γ2.4 for Rec. 709, the sRGB
 // curve for sRGB, γ2.6 for DCI-P3, γ2.2) — the inverse of what the Program monitor displays — and written as half
 // floats with ZIP compression, BT.709 primaries.

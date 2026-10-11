@@ -1,6 +1,4 @@
-// perf-core: proxy-free draft reads (src/commands/draft-read.ts). The fast path must be active with the Immer we
-// ship (an Immer upgrade that changes its internal state shape fails here instead of silently slowing editing down),
-// reads must see the draft's current values, and reading must not draft anything.
+// Immer upgrades must preserve proxy-free reads without creating drafts for untouched records.
 
 import fc from 'fast-check';
 import { isDraft, produce } from 'immer';
@@ -103,16 +101,12 @@ describe('draft-read', () => {
 					for (const o of ops) {
 						const k = `k${o.k}`;
 						const c = d[k];
-						if (o.what === 0 && c)
-							c.n = o.v; // edit in place
-						else if (o.what === 1 && c)
-							c.deep.m = o.v; // edit deeper
+						if (o.what === 0 && c) c.n = o.v;
+						else if (o.what === 1 && c) c.deep.m = o.v;
 						else if (o.what === 2) delete d[k];
-						else if (o.what === 3)
-							d[k] = { n: o.v, deep: { m: 0 } }; // add or replace
-						else if (o.what === 4 && c)
-							void c.deep.m; // read only
-						else if (o.what === 5 && base[k]) d[k] = base[k]!; // back to its base value
+						else if (o.what === 3) d[k] = { n: o.v, deep: { m: 0 } };
+						else if (o.what === 4 && c) void c.deep.m;
+						else if (o.what === 5 && base[k]) d[k] = base[k]!;
 					}
 					const sort = (x: { changed: string[]; deleted: string[] }) => [
 						[...x.changed].sort(),

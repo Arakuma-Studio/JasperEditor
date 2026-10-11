@@ -1,9 +1,6 @@
 // Menu primitives (S05:MN-001/002/020/021/030): one data model renders the menubar, dropdowns and
 // context menus. The app resolves its command-id menu model into `ResolvedMenuItem`s (labels, shortcuts,
 // enabled/checked state from the command registry); this module only draws them.
-// Styling: menu bg, 1 px menu border, radius 6, 4 px padding, overlay shadow; 24 px items with a 20 px
-// check/icon column, right-aligned shortcut, submenu chevron; highlight = accent fill with white text;
-// disabled items are tertiary but stay hoverable so their reason tooltip shows (S05:SH-031).
 import { ContextMenu as RContext, DropdownMenu as RDropdown, Menubar as RMenubar } from 'radix-ui';
 import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';
@@ -50,9 +47,7 @@ type Kit = Pick<
 	| 'Portal'
 >;
 
-// Height: Radix sets `--radix-popper-available-height` on the popper wrapper of every menu kind (dropdown, context,
-// menubar and their submenus); the kind-specific aliases exist only on their own kind, so the dropdown alias left
-// context menus and the menubar on the 80vh fallback and long ones ran off the window (wp fixups).
+// All menu kinds expose this Popper height variable; their kind-specific aliases are not interchangeable.
 export const MENU_CONTENT =
 	'z-[var(--pr-z-popover)] min-w-[200px] max-h-[var(--radix-popper-available-height,calc(100vh_-_16px))] overflow-y-auto ' +
 	'rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 font-pr text-pr-ui text-pr-text shadow-pr-overlay ' +
@@ -271,9 +266,7 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 }
 
 /**
- * The items of a menu. A component of its own, so that they are resolved and built when the menu
- * opens (Radix mounts the content then), not on every render of whatever carries the menu: every panel with a
- * context menu used to resolve its whole menu — command states included — each time it rendered.
+ * Radix mounts this component only when the menu opens, avoiding command-state resolution on unrelated panel renders.
  */
 function LazyItems({
 	kit,

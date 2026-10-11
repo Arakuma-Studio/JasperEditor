@@ -1,16 +1,10 @@
-// Electron main (ARCHITECTURE §12, D-17; S05 §21; R-OMS §8.5). No second renderer app and no IPC byte
-// bridge: the window loads the same SPA over HTTP.
-//   dev             → loads JASPER_DESKTOP_DEV_URL (default http://127.0.0.1:5173; Vite proxies the dev engine)
-//   packaged-like   → forks apps/engine/dist/engine.mjs (utilityProcess, --port 0, per-launch token),
-//                     sets the HttpOnly SameSite=Strict jasper_session cookie, loads the engine origin,
-//                     which serves apps/web/dist (`pnpm build` first)
-//   packaged        → same as packaged-like with resources from process.resourcesPath (M3 installers)
 // The engine writes <appdir>/engine/runtime.json, which is how the bundled jasper-mcp server
 // (resources/mcp/jasper-mcp.mjs; Help ▸ Connect an AI Agent…) finds this app's engine and token.
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_ENGINE_HOST, DESKTOP_PRODUCT_NAME, DEV_WEB_PORT } from '@jasper/config';
 import {
 	app,
 	BrowserWindow,
@@ -43,8 +37,8 @@ import {
 	sessionCookies,
 } from './security.ts';
 
-const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist-electron
-const DEFAULT_DEV_URL = 'http://127.0.0.1:5173';
+const here = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_DEV_URL = `http://${DEFAULT_ENGINE_HOST}:${DEV_WEB_PORT}`;
 const BG = '#1d1d1d';
 const SYMBOLS = '#e3e3e3';
 const TITLE_BAR_HEIGHT = 28;
@@ -56,7 +50,7 @@ const mode: Mode = app.isPackaged
 		? 'packaged-like'
 		: 'dev';
 
-app.setName('JasperEditor');
+app.setName(DESKTOP_PRODUCT_NAME);
 // Hosts without a configured chrome-sandbox SUID helper (CI, containers) must launch with
 // ELECTRON_DISABLE_SANDBOX=1 (Chromium checks it before main runs); renderers keep contextIsolation +
 // sandbox: true webPreferences and the minimal preload.
@@ -94,7 +88,12 @@ function appdir(): string {
 }
 
 function openExternalSafe(url: string): void {
-	if (isExternalUrlAllowed(url)) void shell.openExternal(url);
+	if (isExternalUrlAllowed(url))
+		void shell
+			.openExternal(url)
+			.catch((error: unknown) =>
+				log(`could not open external link: ${error instanceof Error ? error.message : String(error)}`),
+			);
 }
 
 function createWindow(url: string): BrowserWindow {
@@ -135,7 +134,14 @@ function createWindow(url: string): BrowserWindow {
 	win.webContents.on('did-fail-load', (_e, code, desc, failedUrl) =>
 		log(`failed to load ${failedUrl}: ${code} ${desc}`),
 	);
-	void win.loadURL(url);
+	void win.loadURL(url).catch((error: unknown) => {
+		if (win.isDestroyed()) return;
+		dialog.showErrorBox(
+			'JasperEditor',
+			`Could not load the editor:\n${error instanceof Error ? error.message : String(error)}`,
+		);
+		win.show();
+	});
 	return win;
 }
 
@@ -165,7 +171,16 @@ function registerIpc(): void {
 		const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
 		return r.canceled ? [] : r.filePaths;
 	});
-	// Help ▸ Connect an AI Agent…: where the bundled jasper-mcp lives and how an MCP client launches it.
+	ipcMain.handle('jasper:pick-folder', async (e) => {
+		if (!fromApp(e)) return null;
+		const win = BrowserWindow.fromWebContents(e.sender);
+		const opts: Electron.OpenDialogOptions = {
+			title: 'Choose Folder',
+			properties: ['openDirectory'],
+		};
+		const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+		return result.canceled ? null : (result.filePaths[0] ?? null);
+	});
 	ipcMain.handle('jasper:mcp-info', (e) => {
 		if (!fromApp(e)) return null;
 		const { mcpEntry } = resources();
@@ -183,7 +198,7 @@ function registerIpc(): void {
 			bundledNode: node && existsSync(node) ? node : null,
 		});
 	});
-	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
+	// Capture compositor pixels so screenshots include WebGL output.
 	ipcMain.handle('jasper:capture-page', async (e, rect: unknown, maxWidth: unknown) => {
 		if (!fromApp(e) || !isCaptureRect(rect)) return null;
 		const image = await e.sender.capturePage({
@@ -198,8 +213,7 @@ function registerIpc(): void {
 		const s = out.getSize();
 		return { png: out.toPNG().toString('base64'), width: s.width, height: s.height };
 	});
-	// wp-clipboard (S01:CLB-002): the JasperEditor payload as the custom application/x-jasper-clipboard format,
-	// written atomically with its text/html and text/plain forms; reads return only that format's JSON.
+	// Write all clipboard representations atomically so another app cannot read mismatched formats.
 	ipcMain.handle('jasper:clipboard-write', async (e, data: unknown) => {
 		if (!fromApp(e) || !isClipboardWrite(data)) return false;
 		try {
@@ -221,20 +235,17 @@ function registerIpc(): void {
 		try {
 			if (!(await clipboard.has(ELECTRON_CLIPBOARD_FORMAT))) return null;
 			for (const item of await clipboard.read()) {
-				try {
-					const blob = (await item.getType(ELECTRON_CLIPBOARD_FORMAT)) as Blob;
-					const json = clipboardReadResult(await blob.text());
-					if (json) return json;
-				} catch {
-					// this entry does not carry the format
-				}
+				if (!item.types.includes(ELECTRON_CLIPBOARD_FORMAT)) continue;
+				const blob = await item.getType(ELECTRON_CLIPBOARD_FORMAT);
+				const json = clipboardReadResult(await blob.text());
+				if (json) return json;
 			}
 		} catch (err) {
 			log(`clipboard read failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 		return null;
 	});
-	// wp-clipboard-2 (S01:CLB-010): files copied in the OS file manager, as absolute paths that exist; the
+	// Files copied in the OS file manager, as absolute paths that exist; the
 	// renderer registers them in place (S04:IN-003). Edit ▸ Paste needs this: the web API exposes no files.
 	ipcMain.handle('jasper:clipboard-read-files', async (e) => {
 		if (!fromApp(e)) return [];
@@ -243,13 +254,10 @@ function registerIpc(): void {
 			for (const item of await clipboard.read()) {
 				for (const type of item.types) {
 					if (!CLIPBOARD_FILE_LIST_TYPE.test(type)) continue;
-					try {
-						const blob = (await item.getType(type)) as Blob;
-						for (const p of parseClipboardFileList(await blob.text()))
-							if (!paths.includes(p) && existsSync(p)) paths.push(p);
-					} catch {
-						// unreadable entry
-					}
+					const blob = await item.getType(type);
+					if (!('text' in blob)) continue;
+					for (const p of parseClipboardFileList(await blob.text()))
+						if (!paths.includes(p) && existsSync(p)) paths.push(p);
 				}
 			}
 		} catch (err) {
@@ -260,13 +268,12 @@ function registerIpc(): void {
 	ipcMain.on('jasper:reveal', (e, p: unknown) => {
 		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);
 	});
-	// gaps (Edit Original): open a media file in the OS default application.
 	ipcMain.handle('jasper:open-path', async (e, p: unknown) => {
 		if (!fromApp(e) || !isOpenablePath(p)) return 'This file cannot be opened from JasperEditor';
 		if (!existsSync(p)) return 'The file does not exist';
 		return shell.openPath(p);
 	});
-	// gaps (File ▸ Exit): the renderer asked about unsaved changes first.
+	// The renderer confirms unsaved changes before requesting a quit.
 	ipcMain.on('jasper:quit', (e) => {
 		if (fromApp(e)) app.quit();
 	});
@@ -275,7 +282,6 @@ function registerIpc(): void {
 		if (!win || !fromApp(e) || !isWindowAction(action)) return;
 		if (action === 'minimize') win.minimize();
 		else if (action === 'focus') {
-			// An agent asked the editor to show a project (jasper-mcp open_project_in_editor).
 			if (win.isMinimized()) win.restore();
 			win.show();
 			win.focus();
@@ -321,28 +327,31 @@ async function startPackagedLike(): Promise<string> {
 }
 
 /**
- * audio-mix: media permissions for voice-over recording. Microphone requests from the app origin are granted (on
+ * Media permissions for voice-over recording. Microphone requests from the app origin are granted (on
  * macOS after the system prompt, `askForMediaAccess`); every other permission request and origin is denied.
  */
 function registerPermissions(): void {
 	const ses = session.defaultSession;
 	ses.setPermissionRequestHandler((wc, permission, callback, details) => {
-		const url = (details as { requestingUrl?: string }).requestingUrl ?? wc.getURL();
-		const types = ((details as { mediaTypes?: string[] }).mediaTypes ?? []) as string[];
+		const url = details.requestingUrl || wc.getURL();
+		const types = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
 		if (!isPermissionAllowed(permission, url, appOrigin, types)) return callback(false);
 		if (permission === 'media' && process.platform === 'darwin') {
 			systemPreferences
 				.askForMediaAccess('microphone')
 				.then(callback)
-				.catch(() => callback(false));
+				.catch((error: unknown) => {
+					log(
+						`microphone permission request failed: ${error instanceof Error ? error.message : String(error)}`,
+					);
+					callback(false);
+				});
 			return;
 		}
 		callback(true);
 	});
 	ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
-		const types = (details as { mediaType?: string }).mediaType
-			? [(details as { mediaType: string }).mediaType]
-			: ['audio'];
+		const types = details.mediaType ? [details.mediaType] : ['audio'];
 		return isPermissionAllowed(permission, requestingOrigin, appOrigin, permission === 'media' ? types : []);
 	});
 }
@@ -356,14 +365,7 @@ async function boot(): Promise<void> {
 		url = process.env.JASPER_DESKTOP_DEV_URL ?? DEFAULT_DEV_URL;
 		log(`dev mode: loading ${url} (expects pnpm dev: Vite on 5173 + engine on 47900)`);
 	} else {
-		try {
-			url = await startPackagedLike();
-		} catch (e) {
-			log(`could not start the engine: ${(e as Error).message}`);
-			dialog.showErrorBox('JasperEditor', `Could not start the engine:\n${(e as Error).message}`);
-			app.exit(1);
-			return;
-		}
+		url = await startPackagedLike();
 	}
 	appOrigin = new URL(url).origin;
 	createWindow(url);
@@ -372,11 +374,10 @@ async function boot(): Promise<void> {
 	});
 }
 
-// fx framework (wave 1): Chrome's HTML-in-Canvas lets the Program monitor run GPU shader effects on DOM layers
+// Chrome's HTML-in-Canvas lets the Program monitor run GPU shader effects on DOM layers
 // (text, shapes, motion graphics) — Remotion's render browser always enables it; must be set before `ready`.
 app.commandLine.appendSwitch('enable-features', 'CanvasDrawElement');
 
-// One instance per user profile: a second launch focuses the first window.
 if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
@@ -387,7 +388,15 @@ if (!app.requestSingleInstanceLock()) {
 			win.focus();
 		}
 	});
-	app.whenReady().then(boot);
+	void app
+		.whenReady()
+		.then(boot)
+		.catch((error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			log(`could not start the editor: ${message}`);
+			dialog.showErrorBox('JasperEditor', `Could not start the editor:\n${message}`);
+			app.quit();
+		});
 }
 
 app.on('web-contents-created', (_e, contents) => {

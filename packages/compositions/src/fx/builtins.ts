@@ -1,7 +1,6 @@
-// GPU stand-ins of built-in effects whose preview is an SVG filter (fx framework follow-ups, S03:FX-002 order
-// preservation). Inside a layer's fx canvas chain an SVG filter cannot run in stack order (it is a CSS wrapper stage
+// Inside a layer's fx canvas chain an SVG filter cannot run in stack order (it is a CSS wrapper stage
 // drawn after the chain); these GPU realizations run in its place, so an SVG-filter effect placed BEFORE a shader
-// effect is drawn before it. Only used inside fx chains: layers without shader effects keep the M1/M2 SVG path.
+// effect is drawn before it. Layers without shader effects retain their SVG filters.
 // Gaussian Blur (one direction, or Repeat Edge Pixels): separable Gaussian with per-axis sigmas; without Repeat
 // Edge the blur spreads into the padding (feGaussianBlur's filter region), with it the picture stays in the layer
 // box and edge pixels are repeated (clamped sampling, Premiere's behaviour).
@@ -69,6 +68,6 @@ const STAND_INS: Readonly<Record<string, GpuEffect>> = { 'jasper.gaussian-blur':
 export function chainGpuStandIn(spec: EffectSpec, params: EffectParams): EffectSpec | null {
 	const gpu = STAND_INS[spec.id];
 	if (!gpu || spec.gpu) return null;
-	if (spec.preview.css?.(params as never) !== null) return null;
+	if (spec.preview.css?.(params) !== null) return null;
 	return { ...spec, gpu };
 }

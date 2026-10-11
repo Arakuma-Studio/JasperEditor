@@ -37,8 +37,8 @@ export function addInOut(
 	phase: Phase,
 	opts: { outro?: boolean } = {},
 ): void {
-	const introProps: Record<string, unknown> = {};
-	const outroProps: Record<string, unknown> = {};
+	const introProps: Record<string, [number, number]> = {};
+	const outroProps: Record<string, [number, number]> = {};
 	for (const [k, [from, to]] of Object.entries(values)) {
 		introProps[k] = [from, to];
 		outroProps[k] = [to, from];

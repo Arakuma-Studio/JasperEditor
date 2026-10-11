@@ -1,4 +1,4 @@
-// Reversed audio for the preview and Remotion renders (workstream `time`): Remotion's <Audio> cannot play backwards,
+// Reversed audio for the preview and Remotion renders: Remotion's <Audio> cannot play backwards,
 // so a reversed clip plays a WAV of its media range decoded in the page (mediabunny, the decoder @remotion/media uses)
 // and reversed sample by sample — the native export does the same with `areverse` (engine audio/decode.ts). The WAV
 // keeps the source's channels and rate; the clip's channel map, levels, effects and the mix apply as for any clip.
@@ -86,8 +86,6 @@ export function reversedAudioUrl(src: string, loSec: number, hiSec: number): Pro
 	p.catch(() => urls.delete(key));
 	return p;
 }
-
-// ---------------------------------------------------------------- imports: interpreted (time-mapped) audio
 
 /**
  * Blob URL of a WAV of interpreted media time [loFlicks, hiFlicks) of `src` (imports, Interpret Footage): the file

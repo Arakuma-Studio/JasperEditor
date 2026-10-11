@@ -7,6 +7,7 @@ import { useSessionOrNull, useStoreSelector, useTransportFrame } from '@jasper/s
 import { EmptyState } from '@jasper/ui';
 import type { ReactNode } from 'react';
 import { formatTimecode } from '../../gaps/time-display.ts';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
 
 type Row = [string, ReactNode];
@@ -27,8 +28,6 @@ function Rows({ title, rows }: { title: string; rows: Row[] }) {
 	);
 }
 
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
-
 function selectedClips(s: SessionState | null): { seq: Sequence; clips: Clip[] } | null {
 	if (!s?.activeSequenceId) return null;
 	const seq = s.document.sequences[s.activeSequenceId] as Sequence | undefined;
@@ -44,7 +43,7 @@ function Playhead({ seq }: { seq: Sequence }) {
 
 export function InfoPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
-	const state = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) => s);
+	const state = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) => s);
 	if (!session || !state) return <EmptyState icon="panel.info" message="Open a project to see details" />;
 	const sel = selectedClips(state);
 	const items = state.selection.project.items.map((id) => state.document.items[id]).filter(Boolean);

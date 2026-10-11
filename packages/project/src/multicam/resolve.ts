@@ -128,8 +128,6 @@ export function piecesOf(outer: Clip, rate: Rational, source: Sequence, trackId:
 	return out;
 }
 
-// ---------------------------------------------------------------- keyframe re-timing
-
 function isAnim(v: unknown): v is Animatable<unknown> {
 	return (
 		!!v && typeof v === 'object' && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes)
@@ -215,8 +213,6 @@ function sampled<T>(frames: [number, number], at: (f: number) => { time: number;
 	if (keys.length === 1) return { value: keys[0]!.value, keyframes: [] };
 	return { value: keys[0]!.value, keyframes: keys };
 }
-
-// ---------------------------------------------------------------- Motion composition
 
 type TValues = {
 	position: Vec2;
@@ -443,8 +439,6 @@ function sumAnims(
 	});
 }
 
-// ---------------------------------------------------------------- one virtual clip per piece
-
 const KNOWN_OUTER_FIELDS = new Set([
 	'id',
 	'kind',
@@ -624,8 +618,6 @@ export function pieceAudioClip(
 		effects,
 	} as unknown as Clip;
 }
-
-// ---------------------------------------------------------------- what an enabled multi-camera clip shows
 
 export type ResolvedMulticamClip = {
 	source: Sequence;

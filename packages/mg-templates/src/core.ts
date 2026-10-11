@@ -2,15 +2,14 @@
 // here has a Rust twin with the same name (snake_case there) and the same arithmetic, so the SVG the
 // Player shows and the SVG fframes rasterizes for export agree (ARCHITECTURE D-12, §10.2).
 // Change both sides together and keep `pnpm --filter @jasper/mg-templates test` + MG_PARITY green.
+import type { RGBA } from '@jasper/project';
 import type { MgCanvas } from './types.ts';
 
 /** Font stack of every template; the native binary embeds Inter (OFL). */
 export const FONT_FAMILY = "Inter, 'Inter 24pt', 'Source Sans 3', sans-serif";
 
 /** Straight sRGB RGBA, channels 0..1 (S01 `RGBA`). */
-export type Rgba = [number, number, number, number];
-
-// ------------------------------------------------------------------ anim.rs
+export type Rgba = RGBA;
 
 export function clamp01(x: number): number {
 	if (Number.isNaN(x)) return 0;
@@ -57,8 +56,6 @@ export function spring(t: number, stiffness: number, damping: number, mass: numb
 	return 1 - (r2 * Math.exp(r1 * t) - r1 * Math.exp(r2 * t)) / (r2 - r1);
 }
 
-// ------------------------------------------------------------------ canvas.rs
-
 /** Design canvases of every template (16:9, 9:16, 1:1). */
 export const CANVASES: readonly MgCanvas[] = [
 	{ width: 1920, height: 1080 },
@@ -100,8 +97,6 @@ export function fitCanvas(outW: number, outH: number): Fit {
 	};
 }
 
-// ------------------------------------------------------------------ spec.rs (FrameTime)
-
 export type FrameTime = { fps: number; t: number; total: number };
 
 /**
@@ -115,8 +110,6 @@ export function frameTime(frame: number, fps: number, durationFrames: number, so
 export function framesToSeconds(ft: FrameTime, frames: number): number {
 	return frames / ft.fps;
 }
-
-// ------------------------------------------------------------------ svg.rs
 
 /** At most 3 decimals, no trailing zeros, `0` for ±0 and non-finite values. */
 export function num(x: number): string {
@@ -169,8 +162,6 @@ export function svgOpen(fit: Fit): string {
 export function fitGroupOpen(fit: Fit): string {
 	return `<g transform="translate(${num(fit.offsetX)} ${num(fit.offsetY)}) scale(${num(fit.scale)})">`;
 }
-
-// ------------------------------------------------------------------ text.rs
 
 /** Approximate advance of one character in em (tuned for Inter). */
 function charEm(ch: string): number {

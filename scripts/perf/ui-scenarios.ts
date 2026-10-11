@@ -1,4 +1,4 @@
-// Editor UI performance scenarios (workstream ui-perf, docs/performance.md §5): scripted gestures in the built app
+// Editor UI performance scenarios (docs/performance.md §5): scripted gestures in the built app
 // (headless Chrome), measured where they run. Shared by `pnpm perf --sections ui` (scripts/perf/ui-run.ts), the
 // Playwright spec e2e/ui-perf.spec.ts and the profiler (scripts/perf/ui-profile.ts).
 //
@@ -10,11 +10,10 @@
 // idle page would otherwise not produce any), so "frames" counts what the page managed to produce.
 import { randomBytes } from 'node:crypto';
 import type { CDPSession, Page } from '@playwright/test';
+import { ProjectCreateResponseSchema, ProjectGetResponseSchema } from '../../packages/api/src/projects.ts';
+import type { ProjectEnvelope } from '../../packages/project/src/index.ts';
 
-// ------------------------------------------------------------------ the engine's credentials
-//
-// Every engine has a token, and tells the editor window from an agent by the editor key (security review DEV-1 /
-// AGT-2). A harness that starts an engine plays the desktop shell: it makes both, hands them to the engine
+// This harness supplies both the engine token and editor key, as the desktop shell does, to the engine
 // (`harnessEngineEnv`) and to its browser pages (`harnessCookies`, added by `openProject`) and requests
 // (`harnessHeaders`). The secrets travel in E2E_TOKEN / E2E_EDITOR_KEY, which playwright.config.ts sets for the
 // E2E suite; export them to measure against a stack that is already running (BASE_URL).
@@ -26,19 +25,16 @@ function harnessSecrets(env: NodeJS.ProcessEnv = process.env): { token: string; 
 	return { token: env.E2E_TOKEN, editorKey: env.E2E_EDITOR_KEY };
 }
 
-/** Environment for an engine this harness starts. */
 export function harnessEngineEnv(): Record<string, string> {
 	const { token, editorKey } = harnessSecrets();
 	return { JASPER_LOCAL_TOKEN: token, JASPER_EDITOR_KEY: editorKey };
 }
 
-/** Headers that make a request from Node the editor's. */
 export function harnessHeaders(): Record<string, string> {
 	const { token, editorKey } = harnessSecrets();
 	return { authorization: `Bearer ${token}`, cookie: `jasper_editor=${editorKey}` };
 }
 
-/** Cookies that make a browser page on `base` the editor. */
 export function harnessCookies(base: string) {
 	const { token, editorKey } = harnessSecrets();
 	const one = (name: string, value: string) => ({
@@ -215,13 +211,9 @@ async function marked<T>(page: Page, w: Window, fn: () => Promise<T>): Promise<T
 	}
 }
 
-// ------------------------------------------------------------------ the app
-
-type Envelope = { document: { projectId: string; name: string } } & Record<string, unknown>;
-
 /** Creates a project on the engine from an envelope (PUT over a fresh project) and returns its id. */
-export async function uploadProject(base: string, envelope: Envelope): Promise<string> {
-	const call = async (path: string, init: RequestInit = {}, attempt = 0): Promise<any> => {
+export async function uploadProject(base: string, envelope: ProjectEnvelope): Promise<string> {
+	const call = async (path: string, init: RequestInit = {}, attempt = 0): Promise<Response> => {
 		let r: Response;
 		try {
 			r = await fetch(`${base}${path}`, {
@@ -239,16 +231,22 @@ export async function uploadProject(base: string, envelope: Envelope): Promise<s
 			await new Promise((res) => setTimeout(res, 2000));
 			return call(path, init, attempt + 1);
 		}
-		const text = await r.text();
-		if (!r.ok) throw new Error(`${init.method ?? 'GET'} ${path}: ${r.status} ${text.slice(0, 300)}`);
-		return text ? JSON.parse(text) : null;
+		if (!r.ok)
+			throw new Error(`${init.method ?? 'GET'} ${path}: ${r.status} ${(await r.text()).slice(0, 300)}`);
+		return r;
 	};
-	const created = await call('/api/projects', {
-		method: 'POST',
-		body: JSON.stringify({ name: envelope.document.name, preset: 'hd-1080p-30' }),
-	});
-	const projectId: string = created.projectId;
-	const fresh = await call(`/api/projects/${encodeURIComponent(projectId)}`);
+	const created = ProjectCreateResponseSchema.parse(
+		await (
+			await call('/api/projects', {
+				method: 'POST',
+				body: JSON.stringify({ name: envelope.document.name, preset: 'hd-1080p-30' }),
+			})
+		).json(),
+	);
+	const projectId = created.projectId;
+	const fresh = ProjectGetResponseSchema.parse(
+		await (await call(`/api/projects/${encodeURIComponent(projectId)}`)).json(),
+	);
 	const env = {
 		...envelope,
 		revision: fresh.revision + 1,
@@ -278,7 +276,6 @@ export async function openProject(page: Page, base: string, projectId: string): 
 	return Date.now() - t0;
 }
 
-/** Waits for a quiet page: two frames, then `ms`. */
 export async function settle(page: Page, ms = 300): Promise<void> {
 	await page.evaluate(
 		(t) =>
@@ -486,7 +483,6 @@ export async function wheelScenario(
 	});
 }
 
-/** Drags the playhead across the ruler in `steps` moves (scrub). */
 export async function scrubScenario(page: Page, tracer: Window, steps = 40): Promise<void> {
 	const ruler = await box(page, '[data-testid="timeline-ruler"]');
 	const y = ruler.y + ruler.height / 2;
@@ -586,7 +582,6 @@ export async function effectControlsScenario(page: Page, tracer: Window, steps =
 	});
 }
 
-/** Starts a CPU profile (V8 sampling) of the page. */
 export async function startProfile(page: Page): Promise<CDPSession> {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('Profiler.enable');

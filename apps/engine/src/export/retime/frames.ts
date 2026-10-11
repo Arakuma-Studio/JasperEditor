@@ -1,5 +1,3 @@
-// Frame timestamps and frame-exact decoding for the native retime stage (workstream `time`).
-//
 // Timestamps: the presentation times of every video packet (ffprobe, no decode), relative to the file's start time —
 // the origin of `-ss` input seeking and of clip content times, so a variable-frame-rate phone clip is mapped by its
 // real timestamps (Premiere's VFR "Preserve Audio Sync") instead of being conformed. Cached per media fingerprint.

@@ -1,7 +1,5 @@
-// Motion-graphics composition clips (M2, S08:MGC-003…007): clip.addComposition places a composition of an
-// `mg-bundle` asset; its props are edited with clip.update `{props}` (whole override object) and param.set on
-// `["clip", id, "props", …path]` (property keys `props.<dotted.path>`), validated against the composition's
-// `propsSchema` when there is one (E_INVALID_PARAM). Owner: wp-m2-mg (ARCHITECTURE §19.8).
+// Composition props use clip.update for whole overrides and param.set for individual paths.
+// Both validate against the bundle's propsSchema when present.
 import type { Draft } from 'immer';
 import {
 	compositionOfClip,
@@ -108,7 +106,7 @@ export function applyCompositionPatch(
 	return true;
 }
 
-export const compositionHandlers: HandlerMap = {
+export const compositionHandlers = {
 	'clip.addComposition': (doc, cmd: CommandOf<'clip.addComposition'>, h: HandlerContext) => {
 		const info = requireComposition(doc, cmd.composition, h);
 		const overrides = cmd.props ?? {};
@@ -167,4 +165,4 @@ export const compositionHandlers: HandlerMap = {
 		h.defineRef(cmd.ref, id);
 		return { clipId: id, durationFrames: duration, compositionFrames: total };
 	},
-};
+} satisfies HandlerMap;

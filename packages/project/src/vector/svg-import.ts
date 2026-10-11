@@ -20,18 +20,40 @@
 //   the layer centre (content (0, 0) = the middle of the viewBox).
 // What After Effects shape layers cannot express (text, images, filters, masks, clip paths, patterns, markers,
 // non-uniform gradient transforms, pad-less spread methods…) is skipped or approximated and named in `warnings`.
+import type { BezierPath } from '../path/model.ts';
+import type { DeepStrip, RGBA, Vec2 } from '../schema/common.ts';
 import type { BezPath, Cubic, P } from './geom.ts';
 import { arcCubics, lineCubic, polyline } from './geom.ts';
+import type { ShapeItemInput } from './input.ts';
 import { parseSvgPath } from './svg-path.ts';
 import { bezToBezierPaths } from './values.ts';
 
-type Item = Record<string, unknown>;
+type GroupTransform = {
+	anchor?: Vec2;
+	position?: Vec2;
+	scale?: Vec2;
+	rotation?: number;
+	skew?: number;
+	opacity?: number;
+};
+type ItemFields = Omit<
+	DeepStrip<ShapeItemInput>,
+	'type' | 'path' | 'transform' | 'startPoint' | 'endPoint' | 'contents'
+>;
+type Item = ItemFields &
+	(
+		| { type: 'path'; path: BezierPath }
+		| { type: 'group'; contents: Item[]; transform?: GroupTransform }
+		| { type: 'gradientFill' | 'gradientStroke'; startPoint: Vec2; endPoint: Vec2 }
+		| { type: 'fill' | 'stroke' }
+	);
+
 type Mat = [number, number, number, number, number, number];
 const I: Mat = [1, 0, 0, 1, 0, 0];
 
 export type SvgConversion = {
 	/** Shape items (input form), centred on the layer centre. */
-	contents: Item[];
+	contents: ShapeItemInput[];
 	/** Document size in px (width/height attributes, else the viewBox size). */
 	width: number;
 	height: number;
@@ -42,12 +64,10 @@ export type SvgConversion = {
 
 export class SvgImportError extends Error {}
 
-// ---------------------------------------------------------------- XML
-
 type XNode = { name: string; attrs: Record<string, string>; children: XNode[]; text: string };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-/** A character reference's text; out-of-range or surrogate code points become U+FFFD (they used to throw RangeError). */
+/** Invalid Unicode scalar values become U+FFFD instead of reaching String.fromCodePoint. */
 function charRef(cp: number): string {
 	return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)
 		? String.fromCodePoint(cp)
@@ -164,8 +184,6 @@ function parseXml(src: string): XNode {
 	}
 	return root;
 }
-
-// ---------------------------------------------------------------- values
 
 const NAMED: Record<string, string> = {
 	aliceblue: 'f0f8ff',
@@ -318,8 +336,6 @@ const NAMED: Record<string, string> = {
 	yellowgreen: '9acd32',
 };
 
-type RGBA = [number, number, number, number];
-
 /** CSS colour → straight RGBA 0…1 (null for `none`, `transparent` gives alpha 0; unknown → null). */
 export function parseCssColor(v: string, current: RGBA = [0, 0, 0, 1]): RGBA | null {
 	const s = v.trim().toLowerCase();
@@ -436,13 +452,11 @@ export function parseTransform(s: string | undefined): Mat {
  * when the skew is outside After Effects' ±85° (the caller bakes the matrix into the geometry).
  */
 /** Inverse of `matrixToGroupTransform`: translate(position) · rotate · skew · scale as a matrix. */
-function groupTransformMatrix(tr: Record<string, unknown>): Mat {
-	const v2 = (x: unknown, d: number): [number, number] =>
-		Array.isArray(x) && typeof x[0] === 'number' && typeof x[1] === 'number' ? [x[0], x[1]] : [d, d];
-	const [e, f] = v2(tr.position, 0);
-	const [sxp, syp] = v2(tr.scale, 100);
-	const th = ((typeof tr.rotation === 'number' ? tr.rotation : 0) * Math.PI) / 180;
-	const k = -Math.tan(((typeof tr.skew === 'number' ? tr.skew : 0) * Math.PI) / 180);
+function groupTransformMatrix(tr: GroupTransform): Mat {
+	const [e, f] = tr.position ?? [0, 0];
+	const [sxp, syp] = tr.scale ?? [100, 100];
+	const th = ((tr.rotation ?? 0) * Math.PI) / 180;
+	const k = -Math.tan(((tr.skew ?? 0) * Math.PI) / 180);
 	const sx = sxp / 100;
 	const sy = syp / 100;
 	const cs = Math.cos(th);
@@ -450,7 +464,7 @@ function groupTransformMatrix(tr: Record<string, unknown>): Mat {
 	return [sx * cs, sx * sn, cs * k * sy - sn * sy, sn * k * sy + cs * sy, e, f];
 }
 
-export function matrixToGroupTransform(m: Mat): Record<string, unknown> | null {
+export function matrixToGroupTransform(m: Mat): GroupTransform | null {
 	const [a, b, c, d, e, f] = m;
 	const sx = Math.hypot(a, b);
 	if (sx < 1e-12) return null;
@@ -470,8 +484,6 @@ export function matrixToGroupTransform(m: Mat): Record<string, unknown> | null {
 		skew: r(skew),
 	};
 }
-
-// ---------------------------------------------------------------- styles
 
 type Style = Record<string, string>;
 const INHERITED = new Set([
@@ -535,8 +547,6 @@ function matches(sel: string, node: XNode): boolean | null {
 	return true;
 }
 
-// ---------------------------------------------------------------- conversion
-
 type Ctx = {
 	ids: Map<string, XNode>;
 	rules: Rule[];
@@ -547,6 +557,8 @@ type Ctx = {
 };
 
 const r3 = (x: number) => Math.round(x * 1000) / 1000;
+const roundedPoint = (p: Readonly<Vec2>): Vec2 => [r3(p[0]), r3(p[1])];
+const roundedColor = (c: RGBA): RGBA => [r3(c[0]), r3(c[1]), r3(c[2]), r3(c[3])];
 
 function ownStyle(node: XNode, ctx: Ctx): Style {
 	const s: Style = {};
@@ -572,7 +584,11 @@ const pathItems = (bez: BezPath): Item[] =>
 		type: 'path',
 		path: {
 			closed: path.closed,
-			vertices: path.vertices.map((v) => ({ p: v.p.map(r3), in: v.in.map(r3), out: v.out.map(r3) })),
+			vertices: path.vertices.map((v) => ({
+				p: roundedPoint(v.p),
+				in: roundedPoint(v.in),
+				out: roundedPoint(v.out),
+			})),
 		},
 	}));
 
@@ -740,7 +756,7 @@ function gradientItem(
 	const uniform =
 		Math.abs(Math.hypot(m[0], m[1]) - Math.hypot(m[2], m[3])) < 1e-6 * Math.max(1, Math.hypot(m[0], m[1])) &&
 		Math.abs(m[0] * m[2] + m[1] * m[3]) < 1e-9 * Math.max(1, m[0] * m[0] + m[1] * m[1]);
-	const base = {
+	const base: Pick<ShapeItemInput, 'colors' | 'opacity'> & { type: 'gradientFill' | 'gradientStroke' } = {
 		type: kind === 'fill' ? 'gradientFill' : 'gradientStroke',
 		colors: { colors, opacities },
 		opacity: r3(opacity * 100),
@@ -752,7 +768,7 @@ function gradientItem(
 			ctx.warnings.add(
 				'A linear gradient with a non-uniform transform keeps its end points (its angle may differ)',
 			);
-		return { ...base, gradientType: 'linear', startPoint: p1.map(r3), endPoint: p2.map(r3) };
+		return { ...base, gradientType: 'linear', startPoint: roundedPoint(p1), endPoint: roundedPoint(p2) };
 	}
 	const cx = len('cx', '50%', ctx.vw);
 	const cy = len('cy', '50%', ctx.vh);
@@ -773,8 +789,8 @@ function gradientItem(
 	return {
 		...base,
 		gradientType: 'radial',
-		startPoint: c.map(r3),
-		endPoint: e.map(r3),
+		startPoint: roundedPoint(c),
+		endPoint: roundedPoint(e),
 		highlightLength: r3(R > 0 ? Math.min(100, (fd / R) * 100) : 0),
 		highlightAngle: r3(fd > 1e-9 ? ((fang - axis) * 180) / Math.PI : 0),
 	};
@@ -795,11 +811,11 @@ function paintItems(style: Style, ctx: Ctx, bez: BezPath): Item[] {
 			const g = gradientItem(url[1]!, ctx, bez, k, o);
 			if (g) return g;
 			const fb = parseCssColor(url[2] || 'none', color);
-			return fb ? { type: k, color: fb.map(r3), opacity: r3(o * 100) } : null;
+			return fb ? { type: k, color: roundedColor(fb), opacity: r3(o * 100) } : null;
 		}
 		const c = parseCssColor(v, color);
 		if (v && !c && v !== 'none') ctx.warnings.add(`Unknown colour "${v}"`);
-		return c ? { type: k, color: c.map(r3), opacity: r3(o * 100) } : null;
+		return c ? { type: k, color: roundedColor(c), opacity: r3(o * 100) } : null;
 	};
 	const stroke = paint('stroke');
 	if (stroke) {
@@ -957,7 +973,7 @@ function convertNode(node: XNode, parent: Style, ctx: Ctx, extra: Mat = I): Item
 function bake(items: Item[], m: Mat): void {
 	for (const it of items) {
 		if (it.type === 'path') {
-			const p = it.path as { vertices: { p: P; in: P; out: P }[] };
+			const p = it.path;
 			for (const v of p.vertices) {
 				const q = ap(m, v.p);
 				const i = ap(m, [v.p[0] + v.in[0], v.p[1] + v.in[1]]);
@@ -967,18 +983,18 @@ function bake(items: Item[], m: Mat): void {
 				v.out = [r3(o[0] - q[0]), r3(o[1] - q[1])];
 			}
 		} else if (it.type === 'gradientFill' || it.type === 'gradientStroke') {
-			it.startPoint = ap(m, it.startPoint as P).map(r3);
-			it.endPoint = ap(m, it.endPoint as P).map(r3);
+			it.startPoint = roundedPoint(ap(m, it.startPoint));
+			it.endPoint = roundedPoint(ap(m, it.endPoint));
 		} else if (it.type === 'group') {
-			const tr = it.transform as Record<string, unknown> | undefined;
+			const tr = it.transform;
 			if (tr?.position || tr?.scale || tr?.rotation || tr?.skew) {
 				// The group's own transform T sits inside the outer matrix: its children get m·T baked in and the
 				// group keeps only its opacity. (Re-wrapping the group instead recursed forever: golden-fuzz.)
 				const inner = mul(m, groupTransformMatrix(tr));
 				if (tr.opacity !== undefined) it.transform = { opacity: tr.opacity };
 				else delete it.transform;
-				bake(it.contents as Item[], inner);
-			} else bake(it.contents as Item[], m);
+				bake(it.contents, inner);
+			} else bake(it.contents, m);
 		}
 	}
 }
@@ -1057,7 +1073,7 @@ export function svgPathToShapeItems(
 		fill?: string | [number, number, number, number] | null;
 		stroke?: { color: string | [number, number, number, number]; width: number } | null;
 	} = {},
-): Item[] {
+): ShapeItemInput[] {
 	const items: Item[] = pathItems(parseSvgPath(d));
 	if (paint.stroke) items.push({ type: 'stroke', color: paint.stroke.color, width: paint.stroke.width });
 	if (paint.fill !== null) items.push({ type: 'fill', color: paint.fill ?? [1, 1, 1, 1] });
@@ -1070,7 +1086,7 @@ export function looksLikeSvg(text: string): boolean {
 }
 
 /**
- * imports workstream: the document size of an SVG (px: `width`/`height` with units, else the viewBox size, else
+ * the document size of an SVG (px: `width`/`height` with units, else the viewBox size, else
  * 300×150 as CSS sizes a replaced element) and its viewBox — the same rule `svgToShapeContents` uses, so an SVG
  * imported as a picture and as a shape layer have the same size. Throws SvgImportError when it is not SVG.
  */

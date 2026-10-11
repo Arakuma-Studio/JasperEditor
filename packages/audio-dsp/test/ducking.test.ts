@@ -25,7 +25,6 @@ describe('ducking analysis', () => {
 		expect(e.length).toBe(200);
 		expect(e[10]).toBe(FLOOR_DB);
 		expect(Math.abs(e[150] + 20)).toBeLessThan(0.01);
-		// the window straddling the edge is in between
 		expect(e[100]).toBeLessThan(-20);
 		expect(e[100]).toBeGreaterThan(-30);
 		expect(envelopeDb([], sr, 0.01, 0.02).length).toBe(0);
@@ -46,10 +45,8 @@ describe('ducking analysis', () => {
 		expect(r.length).toBe(1);
 		expect(Math.abs(r[0][0] - 0.5)).toBeLessThan(1e-6);
 		expect(Math.abs(r[0][1] - 1.5)).toBeLessThan(1e-6);
-		// without bridging both remain, the blip still goes
 		r = activeRegions(env, hop, -40, 0, 0.1);
 		expect(r.length).toBe(2);
-		// a region running to the end is closed at the end
 		const env2 = new Float32Array(10).fill(-80);
 		env2.fill(0, 5);
 		expect(activeRegions(env2, 0.1, -40, 0, 0)).toEqual([[0.5, 1]]);
@@ -93,7 +90,6 @@ describe('ducking analysis', () => {
 				[6.5, -3],
 			]),
 		);
-		// separate regions (unsorted input)
 		const k = duckKeyframes(
 			[
 				[5, 6],
@@ -111,7 +107,6 @@ describe('ducking analysis', () => {
 	});
 
 	it('duck keyframes are clamped to the clip', () => {
-		// region starts before the clip: fully ducked at the start edge
 		expect(duckKeyframes([[-1, 2]], 0, 10, 0, 10, 0.5)).toEqual(
 			kf([
 				[0, -10],
@@ -119,11 +114,9 @@ describe('ducking analysis', () => {
 				[2.5, 0],
 			]),
 		);
-		// ramp partially before the clip: ramp value at the edge
 		let k = duckKeyframes([[0.25, 2]], 0, 10, 0, 10, 0.5);
 		expect(k[0]).toEqual({ t: 0, db: -5 });
 		expect(k[1]).toEqual({ t: 0.25, db: -10 });
-		// region runs past the end: ducked at the end edge
 		expect(duckKeyframes([[8, 12]], 0, 10, 0, 10, 0.5)).toEqual(
 			kf([
 				[7.5, 0],
@@ -131,15 +124,12 @@ describe('ducking analysis', () => {
 				[10, -10],
 			]),
 		);
-		// up-ramp cut by the end
 		k = duckKeyframes([[8, 9.75]], 0, 10, 0, 10, 0.5);
 		expect(k[k.length - 1]).toEqual({ t: 10, db: -5 });
-		// outside the clip: nothing; zero fade still strictly increasing
 		expect(duckKeyframes([[11, 12]], 0, 10, 0, 10, 0.5)).toEqual([]);
 		k = duckKeyframes([[2, 3]], 0, 10, 0, 10, 0);
 		expect(strictlyIncreasing(k)).toBe(true);
 		expect(k.length).toBe(4);
-		// the sign of reduceDb is ignored
 		expect(duckKeyframes([[2, 4]], 0, 10, 0, -15, 0.5)).toEqual(duckKeyframes([[2, 4]], 0, 10, 0, 15, 0.5));
 	});
 
@@ -173,7 +163,6 @@ describe('ducking analysis', () => {
 		expect(plan.keyframes[3].db).toBe(0);
 		expect(plan.keyframes[0].t).toBeCloseTo(a - 0.5, 9);
 		expect(plan.keyframes[3].t).toBeCloseTo(b + 0.5, 9);
-		// lower sensitivity (threshold −20 dBFS) no longer triggers on the −20 dBFS dialogue
 		expect(
 			planDucking({
 				trigger: [x],
@@ -184,7 +173,6 @@ describe('ducking analysis', () => {
 				fadeS: 0.5,
 			}).keyframes,
 		).toEqual([]);
-		// base level and short min-on keep the blip
 		const p2 = planDucking({
 			trigger: [x],
 			sampleRate: sr,

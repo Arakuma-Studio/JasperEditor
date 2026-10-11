@@ -1,17 +1,8 @@
-// Program monitor overlays of the tracking package (S09:TRU-002/003), drawn above the transform overlay:
-//  - the active tracker of the selected plate clip at the current frame (quad or point + patch + search boxes)
-//    from its samples (or the reference before tracking), a confidence colour and the last 30 tracked centres;
-//    during a track job it follows the live `tracking.progress` geometry. Corners, edges and the body drag in
-//    ONE gesture that commits `tracker.update {at: playhead, corners}` (media px via the inverse plate map).
-//  - corner-pin handles on a selected clip whose `jasper.corner-pin` is focused in Effect Controls (or with the
-//    Corner Pin handles toggle on): ONE gesture writes the corner param at the playhead (keyframe when animated).
-// The SVG root ignores the pointer so the transform overlay underneath keeps working; only handles take it.
-import type { RenderDoc } from '@jasper/compositions';
 import {
 	type ClipTracker,
 	CORNER_PIN_EFFECT_ID,
 	CORNER_PIN_PARAMS,
-	type Command,
+	type CommandInput,
 	findTracker,
 	layerMapOf,
 	type Mat3,
@@ -63,7 +54,7 @@ const pts = (q: readonly Vec2[]) => q.map((p) => `${p[0]},${p[1]}`).join(' ');
 export type DragSpec = {
 	label: string;
 	/** Commands for the pointer at `screen` (px relative to the overlay), or null to keep the last update. */
-	commandsAt(screen: Vec2): Command[] | null;
+	commandsAt(screen: Vec2): CommandInput[] | null;
 };
 
 /**
@@ -94,7 +85,7 @@ export function useGestureDrag(session: EditorSession, transport: TransportStore
 		];
 		const startScreen = at(e);
 		let moved = false;
-		let pending: Command[] | null = null;
+		let pending: CommandInput[] | null = null;
 		let raf: number | null = null;
 		const flush = () => {
 			if (raf !== null) cancelAnimationFrame(raf);
@@ -153,9 +144,9 @@ export function useFocusedEffect(): string | null {
 /** Registered overlay: decides between the tracker and the corner-pin handles. */
 export function TrackingOverlay(props: ProgramOverlayHostProps) {
 	const session = props.session;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	useTrackingBridge(session);
 	const { frame, playing } = useOverlayFrame(transport);
 	const activeId = useTracking((s) => s.activeTrackerId);
@@ -218,8 +209,6 @@ export function TrackingOverlay(props: ProgramOverlayHostProps) {
 	);
 }
 
-// ------------------------------------------------------------------ tracker
-
 type StartDrag = (e: ReactPointerEvent, spec: DragSpec) => void;
 
 function TrackerLayer(props: {
@@ -243,8 +232,15 @@ function TrackerLayer(props: {
 		mediaToScreen(map, view, p),
 	);
 	const editable = !job;
-	const update = (patch: Record<string, unknown>): Command[] => [
-		{ type: 'tracker.update', trackerId: tracker.id, at: { sequenceFrame: frame }, ...patch } as Command,
+	const update = (
+		patch: Omit<Extract<CommandInput, { type: 'tracker.update' }>, 'type' | 'trackerId' | 'at'>,
+	): CommandInput[] => [
+		{
+			type: 'tracker.update',
+			trackerId: tracker.id,
+			at: { sequenceFrame: frame },
+			...patch,
+		} satisfies CommandInput,
 	];
 	const label = `${tracker.name}${g.tracked ? ` · ${Math.round(g.confidence * 100)}%` : ''}`;
 	return (
@@ -526,8 +522,6 @@ function topLeftOf(q: Quad): Vec2 {
 	return [Math.min(...q.map((p) => p[0])), Math.min(...q.map((p) => p[1]))];
 }
 
-// ------------------------------------------------------------------ corner pin handles
-
 function CornerPinLayer(props: {
 	layer: ResolvedLayer;
 	fxId: string;
@@ -589,7 +583,7 @@ function CornerPinLayer(props: {
 													target: ['effect', props.fxId, CORNER_PIN_PARAMS[i]!],
 													value: v,
 													at: { sequenceFrame: props.frame },
-												} as Command,
+												} satisfies CommandInput,
 											]
 										: null;
 								},

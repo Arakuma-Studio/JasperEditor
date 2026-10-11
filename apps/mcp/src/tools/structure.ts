@@ -1,7 +1,3 @@
-// edit-structure MCP tools (docs/wp-notes/edit-structure.md): nested sequences, adjustment layers, clip groups,
-// sequence duplicate/delete, Remove Unused, synthetic sources (Bars and Tone, Black Video, Color Matte, Transparent
-// Video, Universal Counting Leader, Adjustment Layer), through edits, gaps, subsequences and frame holds. Each edit is
-// one transaction of document commands (also available through apply_commands).
 import {
 	isNestClip,
 	nestContentKey,
@@ -15,6 +11,7 @@ import {
 	trackLabel,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	applyCommands,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -23,14 +20,11 @@ import {
 	EDIT_IDEMPOTENT,
 	loadDoc,
 	READ_ONLY,
-	requireSequence,
 	type ToolContext,
 } from '../context.ts';
 import { jsonResult } from '../errors.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+import { pickSequence } from '../format.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const STRUCTURE_GUIDE = `Nests, adjustment layers, groups, synthetics, through edits, frame holds:
 - nest_clips turns clips into a nested sequence (Premiere Nest): the clips move into a new sequence (same settings, tracks, links, effects, keyframes, transitions between them) and are replaced by a nest-video clip (+ a linked nest-audio clip when audio moved). unnest_clips puts a nest clip's clips back (100 % speed, no Motion changes). place_sequence places any sequence into another as a nest (default) or as copies of its clips (nest: false); its In/Out choose the range. Nest clips trim, speed up, take effects, Motion and frame holds like any clip; cycles are refused (E_CYCLE). list_nests shows nest clips and which sequences use a sequence.
 - add_adjustment_layer adds an adjustment layer: its effects apply to everything on the tracks below (incl. the background) during its range, mixed back with its opacity and blend mode, limited to its crop. Add effects with effects: [{effectId, params}] or apply_commands effect.add.
@@ -40,16 +34,12 @@ export const STRUCTURE_GUIDE = `Nests, adjustment layers, groups, synthetics, th
 - list_through_edits / join_through_edits: cuts between pieces that continue the same source (left by split_at / Add Edit). find_gaps lists empty time in the sequence or on tracks. make_subsequence copies clips (or In–Out on tracks) into a new sequence.
 - add_frame_hold (Premiere Add Frame Hold: split at a time, the right part holds that frame), insert_frame_hold_segment (a held segment pushed in, 2 s by default), frame_hold_options (hold on in / out / sequence-time / source-time / playhead, holdFilters freezes effects and keyframes too; enabled: false removes it).`;
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
 const RgbaArg = z.tuple([z.number(), z.number(), z.number(), z.number()]).describe('RGBA, each 0..1');
 
 async function sequenceOf(ctx: ToolContext, projectId: string, sequenceId?: string) {
 	const { doc, revision, live } = await loadDoc(ctx, projectId);
-	const seq = requireSequence(doc, sequenceId);
+	const seq = pickSequence(doc, sequenceId);
 	return { doc, seq, revision, live };
 }
 

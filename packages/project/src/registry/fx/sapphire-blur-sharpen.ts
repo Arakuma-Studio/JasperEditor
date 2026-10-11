@@ -1,4 +1,4 @@
-// Effect family "sapphire-blur-sharpen" (fx catalogue, wave 2): Sapphire-style blurs, defocus/bokeh, motion blurs,
+// Effect family "sapphire-blur-sharpen": Sapphire-style blurs, defocus/bokeh, motion blurs,
 // convolution, edge-aware smoothing and sharpening. Entries are built with `defineShaderEffect`; ids start with
 // `jasper.s.`; Effects-panel bin: SAPPHIRE_BINS.blurSharpen. The implementations live in the family-private folder
 // `./sapphire-blur-sharpen/` (shared core: common.ts — units, edge modes, separable blurs, pass graph).

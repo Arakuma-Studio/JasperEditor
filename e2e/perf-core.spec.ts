@@ -1,7 +1,3 @@
-// Workstream `perf-core` in the built app: a 1 000-clip sequence stays interactive. Shift-clicking clips and dragging
-// them in the timeline moves them as one gesture (one history entry, overwrite edits on the way); single edits and
-// the drag take the incremental invariant path in production (`perf` UI action, MCP perf_stats), and an edit costs
-// milliseconds in the page.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -45,11 +41,11 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 	const r = await transact(page, [
 		{ type: 'track.add', kind: 'video', count: 1 },
 		...Array.from({ length: 1000 }, (_, i) => ({
-			type: 'clip.addSolid',
+			type: 'clip.addSolid' as const,
 			at: Math.floor(i / 4) * 40,
 			duration: 30,
 			track: `V${(i % 4) + 1}`,
-			color: [((i % 7) + 1) / 8, 0.3, 0.6, 1],
+			color: [((i % 7) + 1) / 8, 0.3, 0.6, 1] as [number, number, number, number],
 		})),
 	]);
 	expect(r.ok).toBe(true);
@@ -57,15 +53,10 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 
 	// One edit in the page: apply and its invariant check, timed where it runs.
 	const ms = await page.evaluate(async () => {
-		const api = (
-			window as unknown as {
-				jasper: {
-					query(n: string, a: unknown): Promise<{ clips: { id: string }[] }>;
-					transact(tx: unknown): Promise<{ ok: boolean }>;
-				};
-			}
-		).jasper;
-		const list = (await api.query('sequence.clipsInRange', { from: 0, to: 100 })).clips;
+		const api = window.jasper!;
+		const { clips: list } = (await api.query('sequence.clipsInRange', { from: 0, to: 100 })) as {
+			clips: { id: string }[];
+		};
 		const times: number[] = [];
 		for (let i = 0; i < 10; i++) {
 			const t0 = performance.now();
@@ -81,7 +72,6 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 	console.info(`[perf-core] one edit on 1 000 clips through the agent bridge: ${ms.toFixed(1)} ms`);
 	expect(ms).toBeLessThan(250);
 
-	// Zoom out (−) so more clips are on screen, then Shift+click the clips of V1 that are.
 	await focusTimeline(page);
 	await page.keyboard.press('Minus');
 	const v1 = (await clips(page)).filter((c) => c.track === 'V1');
@@ -116,7 +106,6 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 	expect(moved.every((c) => c.start > orig.get(c.id)!)).toBe(true);
 	await page.screenshot({ path: 'test-results/perf-core-drag.png' });
 
-	// Production builds check incrementally: the editor's perf readout says how.
 	const perf = await ui<{
 		invariants: { mode: string; incremental: number; full: number; fallbacks: object };
 	}>('perf', { sampleMs: 100 });

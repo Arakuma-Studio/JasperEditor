@@ -1,4 +1,3 @@
-// Workstream gaps (UI-4, Preferences ▸ Auto Save): the autosave policy.
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAutosaver, EditorSession, MemoryProjectStore } from '../../src/index.ts';

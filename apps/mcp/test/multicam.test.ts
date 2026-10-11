@@ -1,5 +1,4 @@
-// Synchronize / Merge Clips / multi-camera MCP tools through the protocol against an in-memory engine whose
-// `syncAudio` returns scripted offsets (the real analysis is tested in apps/engine/test/sync-audio.test.ts).
+// syncAudio returns scripted offsets; real analysis is covered in apps/engine/test/sync-audio.test.ts.
 import type { SyncAudioRequest, SyncAudioResponse } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -289,7 +288,6 @@ describe('multi-camera MCP tools', () => {
 		const after = engine.doc().sequences[engine.seqId]!;
 		const v2 = Object.values(after.clips).find((c) => c.kind === 'video' && c.id !== ids[0])!;
 		expect(v2.start).toBe(60);
-		// strict arguments
 		const strict = await call('synchronize_clips', { clipIds: ids, method: 'in', bogus: 1 });
 		expect(strict.isError).toBe(true);
 	});

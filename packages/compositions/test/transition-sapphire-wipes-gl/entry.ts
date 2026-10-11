@@ -1,7 +1,3 @@
-// Browser entry of the Sapphire wipes GL test (bundled with esbuild, run in headless Chrome by
-// ../transition-sapphire-wipes-gl.test.ts): runs S_Wipe* stages on the real fx GPU host (planGpuTransition +
-// runShaderPlan, as transition-gl/entry.ts) with A = solid red and B = solid blue, at an exact progress (Start = End),
-// and reports pixels / the share of the frame showing B.
 import '../gl-poison.ts';
 import {
 	planGpuTransition,
@@ -37,7 +33,6 @@ const spec = (label: string): TransitionSpec => {
 	return s;
 };
 
-/** The stage at exact progress p (Start = End = p) with params over the defaults. */
 function render(
 	label: string,
 	p: number,
@@ -86,7 +81,6 @@ function render(
 const data = (c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(0, 0, W, H).data;
 const pxOf = (c: HTMLCanvasElement, x: number, y: number): Px =>
 	Array.from(c.getContext('2d')!.getImageData(Math.floor(x), Math.floor(y), 1, 1).data) as Px;
-/** Share of the frame that is (mostly) B. */
 const shareB = (c: HTMLCanvasElement) => {
 	const d = data(c);
 	let n = 0;
@@ -102,20 +96,17 @@ const hash = (c: HTMLCanvasElement) => {
 
 const api = {
 	info: () => ({ webgl2: !!fxHost(), labels: WIPES.map((s) => s.label) }),
-	/** B share of every wipe at progress 0.2 / 0.5 / 0.8 (defaults). */
 	shares() {
 		const r: Record<string, number[]> = {};
 		for (const s of WIPES) r[s.label] = [0.2, 0.5, 0.8].map((p) => shareB(render(s.label, p)));
 		return r;
 	},
-	/** One pixel of a wipe at progress p. */
 	pixel(label: string, p: number, x: number, y: number, over: Record<string, unknown> = {}) {
 		return pxOf(render(label, p, over), x * W, y * H);
 	},
 	share(label: string, p: number, over: Record<string, unknown> = {}) {
 		return shareB(render(label, p, over));
 	},
-	/** Pixel hash (determinism / seed checks). */
 	hash(label: string, p: number, over: Record<string, unknown> = {}, frame = 4) {
 		return hash(render(label, p, over, { frame }));
 	},

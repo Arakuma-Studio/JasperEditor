@@ -25,12 +25,12 @@ import {
 	type View3D,
 	viewOfRig,
 } from '@jasper/project';
-import type { Gesture, TransportStore } from '@jasper/session';
+import type { Gesture } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
-import { toScreen, type View } from '../panels/program/viewport.ts';
+import { toScreen } from '../panels/program/viewport.ts';
 import { programCamera, resolveProgramScene } from './scene.ts';
 import { setViewCam, switchView, threeDViews, viewCamOf } from './view-store.ts';
 
@@ -42,14 +42,13 @@ const AXES: { axis: 0 | 1 | 2; color: string; label: string }[] = [
 const ARROW_PX = 64;
 
 /** Whether the sequence shown has anything 3D (the overlay draws nothing otherwise). */
-export function has3d(doc: RenderDoc | null | undefined): boolean {
+function has3d(doc: RenderDoc | null | undefined): boolean {
 	return !!doc && (!!doc.scene3d || doc.videoTracks.some((t) => t.clips.some((c) => c.threeD)));
 }
 
 export function Scene3DOverlay(props: ProgramOverlayHostProps) {
-	const doc = props.doc as RenderDoc | null;
-	if (!has3d(doc)) return null;
-	return <Scene3DSurface {...props} doc={doc!} />;
+	if (!has3d(props.doc)) return null;
+	return <Scene3DSurface {...props} />;
 }
 
 type Drag =
@@ -74,10 +73,10 @@ type Drag =
 			moved: boolean;
 	  };
 
-function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
+function Scene3DSurface(props: ProgramOverlayHostProps) {
 	const { session, doc } = props;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const tool = useStoreSelector(session.store, (s) => s.toggles.activeTool);
 	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
@@ -99,7 +98,6 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		return [e.clientX - r.left, e.clientY - r.top];
 	};
 
-	// ---- the selected 3D layer's gizmo
 	const scene = resolveProgramScene(doc, frame);
 	const sel =
 		selected.length === 1 ? scene.find((l) => l.clip.clipId === selected[0] && l.clip.threeD) : undefined;
@@ -148,7 +146,6 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		};
 	};
 
-	// ---- camera tool
 	const viewRig = (): Rig | null => {
 		if (current === 'activeCamera') {
 			if (!camClip) return null;
@@ -244,7 +241,7 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		const d = dragRef.current;
 		dragRef.current = null;
 		if (!d) return;
-		const g = d.kind === 'axis' ? d.g : d.g;
+		const g = d.g;
 		if (!g) return;
 		if (commit && d.moved) g.commit();
 		else g.cancel();
@@ -256,7 +253,6 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		setViewCam(doc.sequenceId, current, viewOfRig(r, v.down));
 	};
 
-	// ---- wireframes (views other than the active camera)
 	const wires: { key: string; d: string; color: string }[] = [];
 	if (current !== 'activeCamera') {
 		for (const c of doc.scene3d?.cameras ?? []) {

@@ -1,4 +1,4 @@
-// Transition family "sapphire-swish-other" (transition framework, wave 3): Sapphire-style motion and "other"
+// Transition family "sapphire-swish-other": Sapphire-style motion and "other"
 // transitions — S_SwishPan, S_Swish3D (sub-bin Wipes, where Sapphire lists them), S_CardFlip,
 // S_FilmBurnTransition, S_FilmRoll, S_FlutterCut, S_HyperPull, S_HyperPush, S_MochaWhip,
 // S_ParallaxStripsTransition, S_StripSlideTransition, S_TVChannelChange, S_WhipLash (sub-bin Other).

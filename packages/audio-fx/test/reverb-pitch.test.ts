@@ -1,5 +1,3 @@
-// Reverbs (RT60 by Schroeder backward integration, IR determinism, mix law, stability) and the pitch shifter
-// (frequency accuracy for several shifts, latency = measured delay, identity at 0).
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
 import { generateIr, IR_SPECS, irLength } from '../src/effects/reverb/convolution.ts';

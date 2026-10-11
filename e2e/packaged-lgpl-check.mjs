@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Packaged-app FFmpeg check (ARCHITECTURE D-13, wp-lgpl): proves that a packed desktop app renders through
+// Packaged-app FFmpeg check (ARCHITECTURE D-13): proves that a packed desktop app renders through
 // Remotion with ONLY the LGPL FFmpeg it ships.
 //
 //   node e2e/packaged-lgpl-check.mjs [appOutDir]     # default apps/desktop/release/<os>-unpacked
@@ -56,7 +56,6 @@ const expect = (cond, msg) => {
 if (!existsSync(appOutDir))
 	fail(`${appOutDir} does not exist (run \`pnpm --filter @jasper/desktop dist:dir\`)`);
 
-// 1. license guard
 const guard = checkPackagedApp(appOutDir);
 const violations = [
 	...guard.problems,
@@ -65,7 +64,6 @@ const violations = [
 expect(violations.length === 0, `license guard:\n  ${violations.join('\n  ')}`);
 log(`license guard: ${guard.results.length} FFmpeg artifacts, all LGPL`);
 
-// 2. isolated copy of the resources
 const packedResources = existsSync(join(appOutDir, 'resources'))
 	? join(appOutDir, 'resources')
 	: fail('resources directory not found (macOS .app bundles: pass <App>.app/Contents as appOutDir)');
@@ -76,7 +74,6 @@ cpSync(packedResources, resources, { recursive: true, verbatimSymlinks: true });
 const appdir = join(work, 'appdir');
 const lgpl = join(resources, 'ffmpeg-lgpl');
 
-// No @remotion/compositor-* (GPL FFmpeg) is reachable from the packaged engine.
 const req = createRequire(join(resources, 'engine', 'engine.mjs'));
 for (const pkg of [
 	'@remotion/compositor-linux-x64-gnu',
@@ -108,8 +105,7 @@ for (const n of ['ffmpeg', 'ffprobe']) {
 		chmodSync(join(poison, n), 0o755);
 	}
 }
-// Every engine has a token and tells the editor from an agent by the editor key (docs/security-review.md DEV-1,
-// AGT-2). This check plays the desktop shell for the engines it starts.
+// This harness supplies both the engine token and editor key, as the desktop shell does.
 const TOKEN = randomBytes(24).toString('base64url');
 const EDITOR_KEY = randomBytes(24).toString('base64url');
 const AUTH_ENV = { JASPER_LOCAL_TOKEN: TOKEN, JASPER_EDITOR_KEY: EDITOR_KEY };
@@ -159,7 +155,6 @@ async function call(method, path, body) {
 	return json;
 }
 
-// 3. capabilities
 const caps = await call('GET', '/api/capabilities');
 log(
 	`ffmpeg ${caps.media.ffmpegVersion} (${caps.media.ffmpegSource}, ${caps.media.encoding?.license}); Remotion binaries: ${JSON.stringify(caps.render.remotionBinaries)}`,
@@ -175,7 +170,6 @@ expect(
 );
 expect(caps.render.remotionLocal === 'ready', `render.remotionLocal is ${caps.render.remotionLocal}`);
 
-// 4. licenses
 const lic = (await call('GET', '/api/licenses')).components.find((c) => c.id === 'ffmpeg');
 expect(lic?.bundled === true, 'the FFmpeg license entry is not the bundled build');
 expect(/^LGPL-(2\.1|3\.0)-or-later$/.test(lic.license), `license ${lic.license}`);
@@ -183,7 +177,6 @@ expect(/GNU LESSER GENERAL PUBLIC LICENSE/.test(lic.texts[0]?.text ?? ''), 'no L
 expect(/^https:\/\//.test(lic.sourceUrl), 'no source link');
 log(`licenses: FFmpeg ${lic.version} ${lic.license}, source ${lic.sourceUrl}`);
 
-// 5. Remotion export (H.264 → ProRes intermediate → OpenH264)
 const { projectId } = await call('POST', '/api/projects', { name: 'Packaged check', preset: 'hd-720p-30' });
 const tx = await call('POST', '/api/agent/tx', {
 	projectId,
@@ -213,7 +206,6 @@ const request = {
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 23 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 	},
 };

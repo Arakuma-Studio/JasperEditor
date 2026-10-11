@@ -6,7 +6,7 @@
 //   on 4 interpolated levels (the depth map of the current lens pose);
 // - Light Leak: a row of soft polygonal elements from the Hotspot towards the Pivot (screened), linked to the tilt;
 // - Glow of the bright parts; Shake (Normal / Twitchy / Jumpy random lens motion, deterministic per Seed) with
-//   motion blur of the shake: the framework's adaptive shutter (wave 5) — the lens pose (shift, tilt keystone,
+//   motion blur of the shake: the framework's adaptive shutter — the lens pose (shift, tilt keystone,
 //   distortion) at exact sub-frame times over Mo Blur Length, ~1 tap per pixel of travel between them, so
 //   curved and rotating shakes blur along their real path; Vignette (shape, softness, colour, combine modes, blur).
 // Units: Sapphire screen units (U = half the layer width, y down) for Shift, offsets, Hotspot/Pivot, sizes and radii.
@@ -57,8 +57,6 @@ const VIG_COMBINE = [
 	'vignetteOnlyInv',
 ] as const;
 const LEVELS = 4;
-
-// ---------------------------------------------------------------- shake (pure TS, deterministic)
 
 function noise1(seed: number, t: number): number {
 	const i = Math.floor(t);
@@ -160,8 +158,6 @@ function amountBound(p: EffectParams, ctx: FxPlanContext): number {
 	return Math.max(maxAmount(p, ctx, bound), maxAmount(p, ctx, { ...bound, tiltX: -bound.tiltX })) + vb;
 }
 
-// ---------------------------------------------------------------- GLSL
-
 const GLSL_FREELENS = {
 	name: 'sapphire-blur-sharpen/freelens',
 	deps: [GLSL_SBS_COMMON, GLSL_HASH],
@@ -202,8 +198,6 @@ float fl_amount(vec2 q) {
 }
 `,
 };
-
-// ---------------------------------------------------------------- spec
 
 export const S_FREE_LENS = defineShaderEffect({
 	id: 'jasper.s.free-lens',

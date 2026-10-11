@@ -1,4 +1,4 @@
-// The flat compositor (workstream compositor; planning in flat-plan.ts). A stack whose canvas scopes would nest is drawn
+// The flat compositor (planning in flat-plan.ts). A stack whose canvas scopes would nest is drawn
 // without any scope: every layer hands its finished picture to the compositor's hub through the tap of the GL blend
 // compositor (`BlendTrackContext` with every drawn layer as an item), 3D run members to the 3D hub as always, and the
 // adjustment tracks and 3D runs publish the canvas effects they would run inside their scope (`FlatRegistry`). The
@@ -24,7 +24,7 @@ import {
 	useRef,
 	useSyncExternalStore,
 } from 'react';
-import type { EffectDefinitionAndStack, EffectDescriptor } from 'remotion';
+import type { EffectDescriptor } from 'remotion';
 import {
 	cancelRender,
 	continueRender,
@@ -33,6 +33,7 @@ import {
 	Internals,
 	useCurrentFrame,
 } from 'remotion';
+import { memoizeEffects } from '../effect-chain.ts';
 import type { LayerTap } from '../types.ts';
 import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import {
@@ -46,8 +47,6 @@ import { fxTap } from './effects.ts';
 import { type FxFeed, FxFeedContext } from './FxPicture.tsx';
 import { type FlatOp, type FlatTrackInput, flatLayerItems, flatOpsAt } from './flat-plan.ts';
 import type { FxLayout } from './stage.ts';
-
-// ---------------------------------------------------------------- registry of the frame's chains
 
 /** What an adjustment track or a 3D run publishes for a frame: the effects its scope would run on its capture. */
 export type FlatChain = {
@@ -141,8 +140,6 @@ export function makeFlatStack(
 	};
 }
 
-// ---------------------------------------------------------------- drawing
-
 type Chains = Map<string, ReturnType<typeof Internals.createEffectChainState>>;
 
 const canvasOf = (holder: { c: HTMLCanvasElement | null }, w: number, h: number): HTMLCanvasElement => {
@@ -152,10 +149,6 @@ const canvasOf = (holder: { c: HTMLCanvasElement | null }, w: number, h: number)
 	if (c.height !== h) c.height = h;
 	return c;
 };
-
-/** Descriptors in the form `runEffectChain` takes (as FxPicture does). */
-const memoized = (d: readonly EffectDescriptor[]) =>
-	d.map((e) => ({ ...e, memoized: true }) as EffectDefinitionAndStack<unknown>);
 
 const ctx2d = (c: HTMLCanvasElement) => {
 	const ctx = c.getContext('2d');
@@ -207,7 +200,7 @@ async function drawFlat(
 		await Internals.runEffectChain({
 			state: chainOf(W, H),
 			source: acc,
-			effects: memoized(effects),
+			effects: memoizeEffects(effects),
 			output: spare,
 			width: W,
 			height: H,
@@ -246,7 +239,7 @@ async function drawFlat(
 		await Internals.runEffectChain({
 			state: chainOf(L.width, L.height),
 			source: pad,
-			effects: memoized(chain.effects),
+			effects: memoizeEffects(chain.effects),
 			output: out,
 			width: L.width,
 			height: L.height,
@@ -271,8 +264,6 @@ async function drawFlat(
 	}
 	return acc;
 }
-
-// ---------------------------------------------------------------- compositor
 
 const FILL: CSSProperties = {
 	position: 'absolute',

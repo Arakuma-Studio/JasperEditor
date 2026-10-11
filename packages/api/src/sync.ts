@@ -1,5 +1,3 @@
-// Audio sync contracts (wp-multicam): `POST /api/sync/audio` measures how recordings of one event line up by their
-// waveforms (two-pass GCC-PHAT in the engine) for Synchronize, Merge Clips and Create Multi-Camera Source Sequence.
 import { z } from 'zod';
 
 /** One recording to analyse: a media file, its audio stream and the stretch of it to compare. */
@@ -42,7 +40,7 @@ export const SyncAudioResultSchema = z.object({
 	confidence: z.number().nullable(),
 	/** Peak over the next-highest peak more than 50 ms away (≥ 1.5: no competing match). Null for the reference. */
 	distinct: z.number().nullable(),
-	/** confidence ≥ 8 and distinct ≥ 1.5. */
+	/** Confidence ≥ 8 and distinct ≥ 1.5. */
 	reliable: z.boolean(),
 	/** One recording has inverted polarity. */
 	inverted: z.boolean(),

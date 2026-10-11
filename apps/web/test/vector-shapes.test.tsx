@@ -1,7 +1,3 @@
-// Vector shapes in the web app (wp shapes): Properties ▸ Shape Contents (add with After Effects' placement, presets,
-// group, move, rename, enable, delete, stroke options, gradient editor), the Polygon / Star tools and drawing into a
-// selected shape, the Pen tool (draw, close) and vertex editing on the monitor, Convert to Vector Shape, Effect
-// Controls ▸ Contents sections, SVG paste helpers and the monitor framing.
 import {
 	buildRenderSnapshot,
 	createCounterIdSource,
@@ -140,15 +136,12 @@ describe('Properties ▸ Shape Contents', () => {
 				.map((r) => r.getAttribute('data-item-type')),
 		).toEqual(['rect', 'fill']);
 		const [rect, fill] = clipOf(session, seqId, id).shape.contents;
-		// Select the rectangle, add an Ellipse Path: it lands right after it (above the fill).
 		fireEvent.click(screen.getByTestId(`vector-item-${rect!.id}`));
 		const before = session.getState().history.entries.length;
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'ellipse' } });
 		expect(session.getState().history.entries.length).toBe(before + 1);
 		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual(['rect', 'ellipse', 'fill']);
-		// The new item is selected; its properties show.
 		expect(screen.getByTestId('vector-item-properties')).toBeTruthy();
-		// Add Trim Paths: after the selected ellipse.
 		fireEvent.change(screen.getByTestId('vector-add'), { target: { value: 'trim' } });
 		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual([
 			'rect',
@@ -156,7 +149,6 @@ describe('Properties ▸ Shape Contents', () => {
 			'trim',
 			'fill',
 		]);
-		// Group the trim, then move it down.
 		fireEvent.click(screen.getByTestId('vector-group'));
 		expect(clipOf(session, seqId, id).shape.contents.map((i) => i.type)).toEqual([
 			'rect',
@@ -171,13 +163,11 @@ describe('Properties ▸ Shape Contents', () => {
 			'fill',
 			'group',
 		]);
-		// Eye and delete.
 		fireEvent.click(screen.getByTestId(`vector-eye-${fill!.id}`));
 		expect(findItem(clipOf(session, seqId, id).shape.contents, fill!.id)!.item.enabled).toBe(false);
 		fireEvent.click(screen.getByTestId(`vector-item-${fill!.id}`));
 		fireEvent.click(screen.getByTestId('vector-delete'));
 		expect(findItem(clipOf(session, seqId, id).shape.contents, fill!.id)).toBeNull();
-		// Rename by double-click.
 		fireEvent.doubleClick(
 			within(screen.getByTestId(`vector-item-${rect!.id}`)).getByText('Rectangle Path 1'),
 		);
@@ -325,7 +315,6 @@ describe('Program monitor', () => {
 		expect(star.outerRadius.value).toBe(100);
 		expect(session.getState().toggles.activeTool).toBe('selection');
 		cleanup();
-		// With the shape selected, a Rectangle drag adds a group into it.
 		session.select('timeline', [c!.id]);
 		session.setToggles({ activeTool: 'rectangle' });
 		render(<ShapeToolOverlay {...host(session, seqId)} />);
@@ -363,7 +352,6 @@ describe('Program monitor', () => {
 			[600 - 960, 200 - 540],
 			[600 - 960, 600 - 540],
 		]);
-		// Close on the first vertex (now drawn as a handle by the overlay).
 		fireEvent.pointerDown(screen.getByTestId('vector-vertex-0'), {
 			clientX: 100,
 			clientY: 100,

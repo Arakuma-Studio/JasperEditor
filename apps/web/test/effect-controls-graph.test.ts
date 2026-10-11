@@ -1,5 +1,3 @@
-// Value / Velocity graph math (S03:KF-022): sampling from the shared evaluator, handle ↔ ease
-// conversions, clamping, and the commands a handle edit produces.
 import {
 	type Animatable,
 	applyTransaction,
@@ -90,7 +88,6 @@ describe('value curve sampling', () => {
 		expect(curve!.length).toBeGreaterThan(50);
 		for (let i = 1; i < curve!.length; i++) expect(curve![i]!.x).toBeGreaterThanOrEqual(curve![i - 1]!.x);
 		for (const p of curve!) expect(p.y).toBeCloseTo(evaluate(a, map.toTime(p.x)) as number, 9);
-		// Flat before the first key / after the last one.
 		expect(curve![0]).toEqual({ x: 0, y: 0 });
 		expect(curve![curve!.length - 1]).toEqual({ x: 80, y: 100 });
 	});
@@ -181,7 +178,6 @@ describe('velocity handles ↔ eases', () => {
 	it('a segment leaving a Linear key reads as linear on the arriving side', () => {
 		expect(effectiveEase(a.keyframes, 1, 'in')).toEqual(LIN);
 		expect(velocityHandles(a, 1, map)[0]!.velocity).toBeCloseTo(90, 6);
-		// No handles on the outer sides or across holds.
 		expect(velocityHandles(a, 0, map).map((h) => h.side)).toEqual(['out']);
 		const h = anim([kf('a', 0, 0, 'hold'), kf('b', 30, 90)]);
 		expect(velocityHandles(h, 1, map)).toEqual([]);
@@ -195,7 +191,7 @@ describe('velocity handles ↔ eases', () => {
 		expect(faster).toEqual({ influence: expect.closeTo(0.5, 9), slope: expect.closeTo(3, 9) });
 		expect(easeFromVelocityDrag(a, hout!, map.toX(30 * F) + 100, 0, map).influence).toBe(1);
 		expect(easeFromVelocityDrag(a, hout!, map.toX(30 * F) - 5, 0, map).influence).toBe(0.01);
-		// keyframes-blend: through zero = the value first moves away (anticipation), as Premiere's handles allow.
+		// Passing through zero makes the value first move away (anticipation), as Premiere's handles allow.
 		expect(easeFromVelocityDrag(a, hout!, hout!.tipX, +50, map).slope).toBeCloseTo(50 / hout!.unit, 9);
 		const flat = anim([kf('a', 0, 5, 'bezier', LIN, { influence: 0.4, slope: 0.7 }), kf('b', 30, 5)]);
 		const [hf] = velocityHandles(flat, 0, map);
@@ -220,7 +216,7 @@ describe('value-graph Bezier handles', () => {
 			influence: expect.closeTo(0.5, 9),
 			slope: expect.closeTo(0.4, 9),
 		});
-		// keyframes-blend: below the key = anticipation (negative slope): −50 at 10 % of a 100-unit segment.
+		// Below the key = anticipation (negative slope): −50 at 10 % of a 100-unit segment.
 		const e = easeFromValueDrag(a, out!, map.toX(3 * F), -50, map);
 		expect(e).toEqual({ influence: expect.closeTo(0.1, 9), slope: expect.closeTo(-5, 9) });
 	});
@@ -256,12 +252,11 @@ describe('handle edits → commands (S01:KF-004)', () => {
 			interpolation: 'bezier',
 			easeOut: LIN,
 		});
-		// Linked: dragging the leaving side also moves the arriving one, so it is converted too.
 		expect(up(planEaseEdit(kfs, 1, 'out', ease, false))[0]).toMatchObject({
 			keyframeId: 'a',
 			interpolation: 'bezier',
 		});
-		expect(up(planEaseEdit(kfs, 1, 'out', ease, true))).toHaveLength(1); // broken: arriving side untouched
+		expect(up(planEaseEdit(kfs, 1, 'out', ease, true))).toHaveLength(1);
 		const hold = [kf('a', 0, 0, 'bezier'), kf('b', 30, 90, 'hold'), kf('c', 60, 200)];
 		expect(up(planEaseEdit(hold, 1, 'in', ease, false))).toEqual([
 			{ type: 'keyframe.update', keyframeId: 'b', interpolation: 'hold', easeIn: ease },
@@ -289,7 +284,6 @@ describe('handle edits → commands (S01:KF-004)', () => {
 		const cm = timeMapOf(seq().clips[clipId]!, RATE);
 		const [, hout] = velocityHandles(op(), 1, cm);
 		expect(hout!.velocity).toBeCloseTo(-60, 6);
-		// Drag the out handle of the middle (Linear) key to −120 / s at half influence.
 		const e = easeFromVelocityDrag(op(), hout!, cm.toX(op().keyframes[1]!.time) + 15, -120, cm);
 		tx(planEaseEdit(op().keyframes, 1, 'out', e, false));
 		expect(op().keyframes[1]!.interpolation).toBe('bezier');
@@ -298,7 +292,6 @@ describe('handle edits → commands (S01:KF-004)', () => {
 		expect(after!.ease.influence).toBeCloseTo(0.5, 9);
 		const curve = sampleVelocityCurve(op(), cm, { start: 0, end: 90 }, 900);
 		expect(curveVelocityAt(curve, 30, 'out')).toBeCloseTo(-120, 0);
-		// The arriving side kept its linear speed (90 / s).
 		expect(curveVelocityAt(curve, 30, 'in')).toBeCloseTo(90, 0);
 	});
 });
@@ -314,8 +307,6 @@ describe('vertical range', () => {
 		expect(roundToStep(7.25619)).toBe(7.26);
 	});
 });
-
-// ---------------------------------------------------------------- keyframes-blend
 
 describe('overshoot and anticipation through the handles (keyframes-blend)', () => {
 	it('a negative slope makes the value move away first; a steep one passes the next key', () => {
@@ -353,7 +344,6 @@ describe('vec2 value-graph handles (keyframes-blend)', () => {
 		const same = easeFromVec2ValueDrag(a, hx!, hx!.tipX, hx!.tipY, map);
 		expect(same.influence).toBeCloseTo(0.5, 9);
 		expect(same.slope).toBeCloseTo(0.4, 3);
-		// Dragging the Y handle down (Y decreases faster) speeds the shared ease up.
 		const faster = easeFromVec2ValueDrag(a, hy!, hy!.tipX, 100 - 1 * 50 * 0.5, map);
 		expect(faster.slope).toBeCloseTo(1, 3);
 	});

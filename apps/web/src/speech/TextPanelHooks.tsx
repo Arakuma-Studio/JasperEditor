@@ -1,5 +1,3 @@
-// wp speech in the captions workstream's Text panel ▸ Transcript: the "Generate Transcript…" button (Premiere's
-// Transcribe) and a status line for running transcriptions of this sequence's media.
 import type { Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button } from '@jasper/ui';

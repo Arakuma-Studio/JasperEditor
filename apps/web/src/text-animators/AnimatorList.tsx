@@ -1,9 +1,3 @@
-// Effect Controls ▸ Text: AE-style text animators (workstream text-animators). Under Source Text: the tool row
-// ("Animate ▸" menu with every animator property, animator presets and Enable Per-character 3D; Path: None / a mask;
-// the Per-character 3D switch), the Source Text hold keys, Path Options, More Options, then one twirl per animator
-// (name, enable, "Add ▸" menu: properties, Range / Wiggly / Expression selectors; duplicate; delete) with its
-// selectors (each a twirl with an Advanced twirl) and its properties. Property rows are ordinary inspector rows
-// drawn by the panel (stopwatches, keyframe lanes, graphs, expressions).
 import {
 	ANIMATOR_MENU,
 	animatorMenuProperties,

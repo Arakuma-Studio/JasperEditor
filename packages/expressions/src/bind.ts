@@ -7,6 +7,7 @@ import {
 	type AnimLocation,
 	buildExpressionWorldData,
 	documentHasActiveExpressions,
+	type EffectInstance,
 	type EvaluateOptions,
 	EXPRESSION_BINDING,
 	type ExpressionBinding,
@@ -14,11 +15,12 @@ import {
 	type ExpressionWorldData,
 	expressionBindingOf,
 	hasActiveExpression,
+	type Mask,
 	mapShapeItemAnimatables,
 	type ProjectDocument,
+	PUPPET_PIN_PROPS,
 	type RenderSnapshot,
 	type Sequence,
-	type ShapeItem,
 	sequenceAnimatables,
 } from '@jasper/project';
 import { isExpressionEngineLoaded } from './runtime.ts';
@@ -64,7 +66,7 @@ export function bindWorld(data: ExpressionWorldData): Bound {
 	for (const [seqId, seq] of Object.entries(data.sequences)) {
 		let s = seq;
 		for (const loc of sequenceAnimatables(seqId, seq)) {
-			// text-animators: Expression Selector amounts run per character (installTextSelectorExpressions).
+			// Expression Selector amounts run per character (installTextSelectorExpressions).
 			if (loc.kind === 'selector') continue;
 			if (!hasActiveExpression(loc.target as { expression?: { text: string; enabled: boolean } })) continue;
 			s = setIn(s, loc.at, withBinding(loc.target as object, binding(world, loc.ref)));
@@ -112,8 +114,6 @@ export function worldOfDocument(doc: ProjectDocument): World {
 	return world;
 }
 
-// ---------------------------------------------------------------- snapshots
-
 const snapCache = new WeakMap<RenderSnapshot, RenderSnapshot>();
 
 function boundAt(
@@ -131,7 +131,7 @@ function boundAt(
  * from a bound document) are kept. Identity without expressions or before the engine is loaded.
  */
 export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
-	const data = (snap as { expressions?: ExpressionWorldData | null }).expressions;
+	const data = snap.expressions;
 	if (!data || !isExpressionEngineLoaded()) return snap;
 	const hit = snapCache.get(snap);
 	if (hit) return hit;
@@ -152,13 +152,13 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 		const b = loc ? boundAt(seq, loc.at) : undefined;
 		return b ? (withBinding(anim as object, b) as T) : anim;
 	};
-	const bindMasks = <M extends { id: string }>(masks: M[] | undefined, owner: string): M[] | undefined => {
+	const bindMasks = (masks: Mask[] | undefined, owner: string): Mask[] | undefined => {
 		if (!masks) return masks;
 		let changed = false;
 		const out = masks.map((m) => {
 			let mm = m;
 			for (const k of ['feather', 'opacity', 'expansion'] as const) {
-				const a = (m as Record<string, unknown>)[k];
+				const a = m[k];
 				const b = bind(a, owner, `masks.${m.id}.${k}`);
 				if (b !== a) mm = { ...mm, [k]: b };
 			}
@@ -167,10 +167,7 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 		});
 		return changed ? out : masks;
 	};
-	const bindEffects = <T extends { id: string; params: Record<string, unknown>; masks?: { id: string }[] }>(
-		fxs: T[],
-		owner: string,
-	): T[] =>
+	const bindEffects = (fxs: EffectInstance[], owner: string): EffectInstance[] =>
 		fxs.map((fx) => {
 			let params = fx.params;
 			for (const [k, a] of Object.entries(fx.params)) {
@@ -178,14 +175,13 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 				if (b !== a) params = { ...params, [k]: b };
 			}
 			const masks = bindMasks(fx.masks, owner);
-			// sim-warp: Puppet pin properties.
-			const pup = (fx as { puppet?: { meshes: unknown[]; pins: Record<string, unknown>[] } }).puppet;
+			const pup = fx.puppet;
 			let puppet = pup;
 			if (pup) {
 				const pins = pup.pins.map((pin) => {
 					let pp = pin;
-					for (const k of ['position', 'scale', 'rotation', 'amount', 'extent', 'inFront'] as const) {
-						const b = bind(pin[k], owner, `puppet.${pin.id as string}.${k}`);
+					for (const k of PUPPET_PIN_PROPS) {
+						const b = bind(pin[k], owner, `puppet.${pin.id}.${k}`);
 						if (b !== pin[k]) pp = { ...pp, [k]: b };
 					}
 					return pp;
@@ -215,13 +211,13 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 						Array.isArray(v) ? [Number(v[0]) + shift[0], Number(v[1]) + shift[1]] : v;
 					tr = {
 						...tr,
-						position: withBinding(tr.position as object, {
+						position: withBinding(tr.position, {
 							evaluate: (t, opts) => add(pb.evaluate(t, opts)),
 							evaluateWithStatus: (t, opts) => {
 								const r = pb.evaluateWithStatus(t, opts);
 								return { value: add(r.value), error: r.error };
 							},
-						}) as never,
+						}),
 					};
 				}
 				if (tr !== c.transform) out = { ...out, transform: tr };
@@ -231,45 +227,42 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 			const effects = bindEffects(c.effects, o);
 			if (effects.some((e, i) => e !== c.effects[i])) out = { ...out, effects };
 			const masks = bindMasks(c.masks, o);
-			if (masks !== c.masks) out = { ...out, masks: masks as typeof c.masks };
-			const src = c.source as Record<string, unknown>;
-			// wp shapes: every number / point / colour property of a vector shape's items.
-			if (src.shape && (src.shape as { type?: string }).type === 'vector') {
-				const sh = src.shape as { contents: ShapeItem[] };
-				const contents = mapShapeItemAnimatables(sh.contents, (a, key) => bind(a, o, key) as object);
-				if (contents !== sh.contents)
-					out = { ...out, source: { ...src, shape: { ...sh, contents } } as never };
-			} else if (src.shape) {
-				const sh = src.shape as Record<string, unknown>;
-				let shape = sh;
-				for (const k of ['size', 'fill', 'cornerRadius'] as const) {
-					const b = bind(sh[k], o, `shape.${k}`);
-					if (b !== sh[k]) shape = { ...shape, [k]: b };
-				}
-				const stroke = sh.stroke as Record<string, unknown> | null;
-				if (stroke) {
-					let st = stroke;
-					for (const k of ['color', 'width'] as const) {
-						const b = bind(stroke[k], o, `shape.stroke.${k}`);
-						if (b !== stroke[k]) st = { ...st, [k]: b };
+			if (masks !== c.masks) out = { ...out, masks };
+			const src = c.source;
+			if ('shape' in src) {
+				const sh = src.shape;
+				if (sh.type === 'vector') {
+					const contents = mapShapeItemAnimatables(sh.contents, (a, key) => bind(a, o, key));
+					if (contents !== sh.contents) out = { ...out, source: { ...src, shape: { ...sh, contents } } };
+				} else {
+					let shape = sh;
+					for (const k of ['size', 'fill', 'cornerRadius'] as const) {
+						const b = bind(sh[k], o, `shape.${k}`);
+						if (b !== sh[k]) shape = { ...shape, [k]: b };
 					}
-					if (st !== stroke) shape = { ...shape, stroke: st };
+					const stroke = sh.stroke;
+					if (stroke) {
+						let st = stroke;
+						for (const k of ['color', 'width'] as const) {
+							const b = bind(stroke[k], o, `shape.stroke.${k}`);
+							if (b !== stroke[k]) st = { ...st, [k]: b };
+						}
+						if (st !== stroke) shape = { ...shape, stroke: st };
+					}
+					if (shape !== sh) out = { ...out, source: { ...src, shape } };
 				}
-				if (shape !== sh) out = { ...out, source: { ...src, shape } as never };
 			}
-			if (src.text) {
+			if ('text' in src) {
 				const b = bind(src.text, o, 'text.content');
-				if (b !== src.text) out = { ...out, source: { ...(out.source as object), text: b } as never };
-				// text-animators: animator properties, selector fields, Path / More Options (same layout as the clip).
-				let s2 = out.source as unknown as Record<string, unknown>;
+				let source = b === src.text ? src : { ...src, text: b };
 				for (const loc of textLocs.get(o) ?? []) {
 					const rel = loc.at.slice(2);
-					let cur: unknown = s2;
+					let cur: unknown = source;
 					for (const k of rel) cur = (cur as Record<string | number, unknown> | undefined)?.[k];
 					const bb = bind(cur, o, loc.ref.path);
-					if (bb !== cur) s2 = setIn(s2, rel, bb);
+					if (bb !== cur) source = setIn(source, rel, bb);
 				}
-				if (s2 !== out.source) out = { ...out, source: s2 as never };
+				if (source !== src) out = { ...out, source };
 			}
 			return out;
 		}),

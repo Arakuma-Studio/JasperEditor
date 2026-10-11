@@ -79,8 +79,6 @@ export function transitionEquivalent(frames: number, unit: DurationUnit, rate: R
 		: `= ${plural(frames, 'frame')} ${at}`;
 }
 
-// ---------------------------------------------------------------- stills (1/30 s units)
-
 /** The still length placed in a sequence of `rate` (same rounding as clip.place, S01:KND-004). */
 function stillFramesAt(stored: number, rate: Rational): number {
 	return Math.max(1, Math.round((stored * rate.num) / (rate.den * STILL_BASE_FPS)));

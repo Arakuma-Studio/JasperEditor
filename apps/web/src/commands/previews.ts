@@ -1,7 +1,3 @@
-// Render previews (workstream `previews`, docs/wp-notes/previews.md): Premiere's Sequence ▸ Render Effects In to Out
-// (Enter), Render In to Out, Render Selection, Render Audio, Delete Render Files, Delete Render Files In to Out and
-// the Video Previews settings. Renders run as engine `preview` jobs (Jobs panel ▸ Render previews); the render bar
-// turns green per segment as files land.
 import type { PreviewRenderMode } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { audioPreviewSegments, previewSegments, sequenceDuration } from '@jasper/project';
@@ -38,7 +34,7 @@ async function render(ctx: CommandCtx, mode: PreviewRenderMode): Promise<void> {
 	try {
 		const doc = e.session.getCommitted();
 		const r = await ctx.engine.renderPreviews({
-			envelope: exportEnvelope(doc, e.session.revision) as never,
+			envelope: exportEnvelope(doc, e.session.revision),
 			sequenceId: e.seq.id,
 			mode,
 			...(mode === 'selection' ? { clipIds } : { range: inOut(e) }),
@@ -106,7 +102,7 @@ const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
 
 export const previewCommands: UiCommand[] = [
 	{
-		// The id predates the previews workstream (keymap presets refer to it): Premiere's Enter.
+		// Keymap presets depend on this stable command id.
 		id: 'timeline.renderInToOut',
 		label: 'Render Effects In to Out',
 		description: 'Render previews of the red and yellow segments between In and Out',

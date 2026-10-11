@@ -6,17 +6,11 @@ import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { Button, Dialog, type HostedDialogProps, registerDialog, toast } from '@jasper/ui';
 import { useRef, useState } from 'react';
+import { getDesktopBridge } from '../runtime/platform.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { type BundleImportResult, bundleErrorText, importBundleFolder, importBundleZip } from './import.ts';
 
 export const MG_IMPORT_DIALOG = 'mg.importRemotionProject';
-
-type DesktopFolderBridge = { pickFolder?(opts?: { title?: string }): Promise<string | null> };
-
-function desktopFolderPicker(): DesktopFolderBridge['pickFolder'] | null {
-	const b = (globalThis as { jasperDesktop?: DesktopFolderBridge }).jasperDesktop;
-	return typeof b?.pickFolder === 'function' ? b.pickFolder.bind(b) : null;
-}
 
 function ImportRemotionDialog(
 	props: HostedDialogProps<{ session?: EditorSession | null; engine?: EngineClient | null; path?: string }>,
@@ -29,11 +23,11 @@ function ImportRemotionDialog(
 	const reason = engineState?.capabilities?.features?.mgBundles?.reason;
 	const [path, setPath] = useState(props.path ?? '');
 	const [watch, setWatch] = useState(true);
-	const [busy, setBusy] = useState<null | 'folder' | 'zip'>(null);
+	const [busy, setBusy] = useState<null | 'picker' | 'folder' | 'zip'>(null);
 	const [progress, setProgress] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const fileInput = useRef<HTMLInputElement | null>(null);
-	const picker = desktopFolderPicker();
+	const desktop = getDesktopBridge();
 
 	const done = (r: BundleImportResult) => {
 		const n = r.media.mgBundle?.compositions.length ?? 0;
@@ -43,6 +37,20 @@ function ImportRemotionDialog(
 			detail: `${r.media.mgBundle?.source.name ?? r.media.originalName}: ${n} composition${n === 1 ? '' : 's'} in Motion Templates ▸ Remotion`,
 		});
 		props.close(r);
+	};
+
+	const pickFolder = async () => {
+		if (!desktop) return;
+		setBusy('picker');
+		setError(null);
+		try {
+			const selected = await desktop.pickFolder();
+			if (selected !== null) setPath(selected);
+		} catch (e) {
+			setError(`Could not choose a folder: ${bundleErrorText(e)}`);
+		} finally {
+			setBusy(null);
+		}
 	};
 
 	const importFolder = async (): Promise<false> => {
@@ -113,17 +121,13 @@ function ImportRemotionDialog(
 								className="h-[var(--pr-control-h)] min-w-0 flex-1 rounded-pr-control border border-pr-border-strong bg-pr-field px-2 font-pr text-pr-ui text-pr-text focus:outline focus:outline-1 focus:outline-pr-focus"
 								placeholder="/path/to/remotion-project"
 								value={path}
+								disabled={busy !== null}
 								spellCheck={false}
 								onChange={(e) => setPath(e.target.value)}
 								data-testid="mg-import-path"
 							/>
-							{picker ? (
-								<Button
-									variant="secondary"
-									onClick={() =>
-										void picker({ title: 'Remotion project folder' }).then((p) => p && setPath(p))
-									}
-								>
+							{desktop ? (
+								<Button variant="secondary" disabled={busy !== null} onClick={() => void pickFolder()}>
 									Browse…
 								</Button>
 							) : null}

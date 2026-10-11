@@ -161,7 +161,7 @@ export const FLOW_INTERP_GLSL = /* glsl */ `
 vec4 fl_interp(vec2 uv, float t, float blur) {
   vec2 v = fl_flowUv(uv);
   if (blur <= 0.0) return mix(flowA(uv - t * v), flowB(uv + (1.0 - t) * v), t);
-  // Motion blur along the flow vector: 7 taps (wave 3) or ≤ 1 px apart for long vectors (adaptive, ≤ 64).
+  // Motion blur along the flow vector: 7 taps or ≤ 1 px apart for long vectors (adaptive, ≤ 64).
   float ext = blur * length(v * u_canvasSize);
   int n = max(7, fx_mbTapCount(ext, 64));
   float j = n > 7 ? fx_mbJitterFor(ext, n) : 0.0;

@@ -1,5 +1,4 @@
-// Roto / object matte commands (parity workstream `roto`): roto.add / update / addStrokes / removeStrokes / setBox /
-// setResult / freeze / remove / apply. Roto objects live on video and still clips in media frames and media pixels;
+// Roto objects live on video and still clips in media frames and media pixels;
 // the mattes are computed by the engine (`roto` job) and referenced by `result`; effects bind to a roto by id
 // (`object` param). Every change of what the mattes depend on makes the result stale (`rotoIsStale`) until the next
 // propagation; a frozen roto refuses such changes.
@@ -145,7 +144,7 @@ function boundEffects(doc: DDoc, ids: ReadonlySet<string>) {
 	return out;
 }
 
-export const rotoHandlers: HandlerMap = {
+export const rotoHandlers = {
 	'roto.add': (doc, cmd: CommandOf<'roto.add'>, h) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'video' && clip.kind !== 'still')
@@ -420,4 +419,4 @@ export const rotoHandlers: HandlerMap = {
 			);
 		return { trackerId: id, clipId: clip.id, frames: n, ...(applied ? { applied } : {}) };
 	},
-};
+} satisfies HandlerMap;

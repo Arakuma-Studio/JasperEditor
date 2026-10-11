@@ -1,4 +1,4 @@
-// INV-GRAPHIC (workstream gaps, §GR-4/5): graphic settings are readable; a layer's pins name the frame or another
+// INV-GRAPHIC (§GR-4/5): graphic settings are readable; a layer's pins name the frame or another
 // layer of the same sequence. Repair resets unreadable settings and drops dangling pins.
 import type { ProjectDocument } from '../schema/document.ts';
 import { GraphicSettingsSchema, LayerPinsSchema } from './graphics-schema.ts';

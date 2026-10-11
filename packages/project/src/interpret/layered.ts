@@ -1,8 +1,3 @@
-// Layered documents (Photoshop `.psd` / `.psb`) imported as layers (imports workstream, docs/wp-notes/imports.md):
-// Premiere's Import Layered File dialog — Merge All Layers (the flattened asset), Merged Layers (chosen layers merged
-// into one picture, made by the engine), Individual Layers (each chosen layer an item in a bin) and Sequence (the
-// layers stacked on tracks of a new sequence: positions, opacity × fill opacity, blend modes, visibility, groups and
-// clipping masks). Pure: builds the commands of one undoable transaction.
 import type { Command } from '../commands/schemas/index.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Rational } from '../time.ts';

@@ -71,7 +71,7 @@ class R {
 	string(o: number, p: string): string | null {
 		const v = this.c.get(o, p);
 		if (!v) return null;
-		// Decoding is linear in the value, and any value may be the whole file: it is charged (PAR-2).
+		// Decoding is linear in the value, and any value may be the whole file: it is charged.
 		this.c.charge(v.length);
 		return decodeUtf8Lossy(v).replace(/\0+$/, '');
 	}

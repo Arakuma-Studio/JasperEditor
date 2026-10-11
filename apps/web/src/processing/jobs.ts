@@ -16,7 +16,7 @@ import {
 } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
-	type Command,
+	type CommandInput,
 	type MediaAsset,
 	originalMediaId,
 	type ProcessStep,
@@ -46,8 +46,6 @@ type ProcessWatch = {
 
 type ProcessRange = { startFrame: number; endFrame: number };
 
-// ------------------------------------------------------------------ media.derive
-
 /**
  * The `media.derive` command for a finished process job, or an error message. Clips that were deleted, are not
  * video clips or no longer use a version of the same original are left out of `replaceInClips`.
@@ -60,7 +58,7 @@ function deriveCommand(
 		result: ProcessResult;
 		replaceInClips: readonly string[];
 	},
-): { command: Command; replaced: string[] } | { error: string } {
+): { command: Extract<CommandInput, { type: 'media.derive' }>; replaced: string[] } | { error: string } {
 	const { result } = input;
 	let fromMediaId = input.fromMediaId;
 	if (!doc.media[fromMediaId]) {
@@ -82,7 +80,7 @@ function deriveCommand(
 		}
 	}
 	const asset = buildMediaAsset(result.registered, { id: 'unused', now: new Date(0).toISOString() });
-	const command = {
+	const command: Extract<CommandInput, { type: 'media.derive' }> = {
 		type: 'media.derive',
 		fromMediaId,
 		recipe: { op: 'process', steps: input.steps },
@@ -98,7 +96,7 @@ function deriveCommand(
 		},
 		...(replaced.length ? { replaceInClips: replaced, fit: 'skip' } : {}),
 		...(result.range ? { range: result.range } : {}),
-	} as unknown as Command;
+	};
 	return { command, replaced };
 }
 
@@ -118,8 +116,8 @@ export function commitProcessed(
 	let replaced = built.replaced;
 	if (!r.ok && replaced.length) {
 		// A clip could not switch (locked track, shorter version…): still add the version to the project.
-		const { replaceInClips: _drop, ...rest } = built.command as unknown as Record<string, unknown>;
-		r = session.apply({ label: PROCESS_TX_LABEL, origin: 'user', commands: [rest as unknown as Command] });
+		const { replaceInClips: _drop, ...rest } = built.command;
+		r = session.apply({ label: PROCESS_TX_LABEL, origin: 'user', commands: [rest] });
 		replaced = [];
 	}
 	if (!r.ok)
@@ -136,8 +134,6 @@ export function commitProcessed(
 		...(value?.mediaId ? { mediaId: value.mediaId } : {}),
 	};
 }
-
-// ------------------------------------------------------------------ submit
 
 type StartInput = {
 	engine: EngineClient;
@@ -178,8 +174,6 @@ export async function startProcessing(input: StartInput): Promise<EngineJob> {
 	if (TERMINAL_JOB_STATES.has(job.state)) void processWatcher.tick();
 	return job;
 }
-
-// ------------------------------------------------------------------ watcher
 
 /** A user notice (toast) with up to two actions. */
 type Notice = {

@@ -1,4 +1,3 @@
-// Animation licences and capabilities, and bundle invalidation for workspace sources and dependencies.
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';

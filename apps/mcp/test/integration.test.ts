@@ -1,4 +1,3 @@
-// The stdio MCP client drives a token-protected engine through a real edit and export.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -316,8 +315,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 		expect(defaults.some((transition) => transition.type === 'cross-dissolve')).toBe(true);
 		await ok('remove_transitions', { projectId, transitionIds: defaults.map((transition) => transition.id) });
 
-		// M3 (S10:TUI-032…034): the project's per-medium lengths come from set_transition_defaults; headless
-		// (no editor) the built-in types apply and the alignment is a per-call argument.
+		// Headless transitions use project per-medium lengths and built-in types; alignment is a per-call argument.
 		const set = await ok<{ defaults: Record<string, number> }>('set_transition_defaults', {
 			projectId,
 			videoDurationFrames: 12,

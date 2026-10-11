@@ -1,17 +1,15 @@
-// Mask commands (wp masks, S03 §17): mask.add / remove / update / reorder / duplicate / editPath / setPathKeys.
 // Masks are Opacity masks of a visual clip (`clip.masks`) or masks of one of its video effect instances
 // (`effect.masks`, Premiere's per-effect masks). Paths are in layer-box-normalised coordinates; feather and
 // expansion are layer pixels. Every mask property is also a ParamPath target (`["mask", id, prop]`, param.ts).
 import type { Draft } from 'immer';
 import { evaluate } from '../../keyframes.ts';
-import { defaultMaskPath, MASK_PATH_RANGE, newMask, nextMaskName } from '../../masks/model.ts';
+import { defaultMaskPath, newMask, nextMaskName } from '../../masks/model.ts';
 import {
 	appendVertexTo,
 	type BezierPath,
 	clonePath,
 	convertVertices,
 	insertVertexAt,
-	isBezierPath,
 	type PathPoint,
 	pathCentroid,
 	removeVertices,
@@ -28,43 +26,13 @@ import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, MaskPathOp, ParamAt } from '../schemas/index.ts';
 import { finish } from './keyframe.ts';
+import { locateMask, type MaskLocation, validateMaskPath } from './mask-location.ts';
 import { locateEffect, newKeyframe } from './param.ts';
 import type { HandlerMap } from './util.ts';
+import { clone } from './util.ts';
 
 type DMask = Draft<Mask>;
 type DPathAnim = Draft<Animatable<BezierPath>>;
-
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-/** Most vertices a mask path may have (traced shapes stay far below). */
-export const MASK_MAX_VERTICES = 20_000;
-
-/** Where a mask lives. */
-export type MaskLocation = {
-	seq: DSeq;
-	clip: DClip;
-	/** Effect instance owning the mask, or null for an Opacity mask. */
-	fx: Draft<EffectInstance> | null;
-	list: DMask[];
-	index: number;
-	mask: DMask;
-};
-
-/** Finds a mask by id anywhere in the document (clip Opacity masks and clip effect masks). */
-export function locateMask(doc: DDoc, maskId: string): MaskLocation | null {
-	for (const seq of Object.values(doc.sequences)) {
-		for (const clip of Object.values(seq.clips)) {
-			const c = clip as { masks?: DMask[]; effects?: Draft<EffectInstance>[] };
-			const i = c.masks?.findIndex((m) => m.id === maskId) ?? -1;
-			if (c.masks && i >= 0) return { seq, clip, fx: null, list: c.masks, index: i, mask: c.masks[i]! };
-			for (const fx of c.effects ?? []) {
-				const list = fx.masks as DMask[] | undefined;
-				const j = list?.findIndex((m) => m.id === maskId) ?? -1;
-				if (list && j >= 0) return { seq, clip, fx, list, index: j, mask: list[j]! };
-			}
-		}
-	}
-	return null;
-}
 
 function mustLocate(doc: DDoc, maskId: string, h: HandlerContext): MaskLocation {
 	const loc = locateMask(doc, maskId);
@@ -102,28 +70,6 @@ function ownerList(
 	const fx = found.fx as Draft<EffectInstance> & { masks?: DMask[] };
 	fx.masks ??= [];
 	return { seq: found.seq, clip: found.clip, fx, list: fx.masks };
-}
-
-/** Validates a path value (finite, sane size and range); returns a clean copy. */
-export function validateMaskPath(v: unknown, h: HandlerContext, label = 'Mask Path'): BezierPath {
-	if (!isBezierPath(v)) return h.fail('E_INVALID_PARAM', `Invalid value for ${label}: not a path`);
-	if (v.vertices.length > MASK_MAX_VERTICES)
-		h.fail('E_LIMIT', `${label}: at most ${MASK_MAX_VERTICES} vertices (got ${v.vertices.length})`);
-	const inRange = (q: readonly number[]) =>
-		q.every((x) => x >= MASK_PATH_RANGE.min && x <= MASK_PATH_RANGE.max);
-	const handleOk = (q: readonly number[]) =>
-		q.every((x) => Math.abs(x) <= MASK_PATH_RANGE.max - MASK_PATH_RANGE.min);
-	for (const vx of v.vertices)
-		if (!inRange(vx.p) || !handleOk(vx.in) || !handleOk(vx.out))
-			h.fail('E_INVALID_PARAM', `${label}: coordinates out of range (normalised layer units)`);
-	const out = clonePath(v as BezierPath);
-	if (v.feather?.length) {
-		const segs = segmentCount(out);
-		for (const f of v.feather)
-			if (!(f.segment >= 0 && f.segment < segs) || ![f.t, f.radius, f.tension].every(Number.isFinite))
-				h.fail('E_INVALID_PARAM', `${label}: a feather point is not on a segment of the path`);
-	}
-	return out;
 }
 
 function timeOf(loc: { seq: DSeq; clip: DClip }, h: HandlerContext, at: ParamAt | undefined): number {
@@ -333,7 +279,7 @@ function applyTopologyOp(p: BezierPath, op: MaskPathOp, h: HandlerContext): Bezi
 	}
 }
 
-// wp shapes: the same path edits on vector shape path items (pixel units: box 1×1).
+// the same path edits on vector shape path items (pixel units: box 1×1).
 export {
 	applyShapeOp as applyPathEditOp,
 	applyTopologyOp as applyPathTopologyOp,
@@ -350,7 +296,7 @@ function copyMaskWithIds(m: Mask, h: HandlerContext): Mask {
 	return copy;
 }
 
-export const maskHandlers: HandlerMap = {
+export const maskHandlers = {
 	'mask.add': (doc, cmd: CommandOf<'mask.add'>, h) => {
 		const owner = ownerList(doc, cmd, h);
 		const box = boxOf(doc, owner.seq, owner.clip);
@@ -512,4 +458,4 @@ export const maskHandlers: HandlerMap = {
 		finish([anim as never]);
 		return { maskId: loc.mask.id, keys: keys.length };
 	},
-};
+} satisfies HandlerMap;

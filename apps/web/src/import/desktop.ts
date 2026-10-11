@@ -58,7 +58,6 @@ const IMPORT_ACCEPT = [
 	'.tif',
 	'.tiff',
 	'.svg',
-	// imports workstream: vector, layered, Lottie and the still formats of the LGPL build.
 	'.svgz',
 	'.pdf',
 	'.ai',

@@ -1,7 +1,3 @@
-// Effect presets (S03:FX-030, AGT-020): key time mapping per preset type (Scale / Anchor to In Point / Anchor to
-// Out Point), Save Preset (buildEffectPreset), effect.applyPreset (intrinsics overwrite, effects append with new
-// instance and key ids, N clips in one transaction), validation (format, versions, unknown effects kept and
-// flagged) and the built-in presets.
 import { describe, expect, it } from 'vitest';
 import {
 	BUILTIN_EFFECT_PRESETS,
@@ -54,7 +50,6 @@ describe('preset key time mapping (FX-030)', () => {
 		const off = 30 * F30;
 		const timing = { start: 0, duration: 100, sourceIn: 0, speed: { rate: 1, reverse: false } };
 		expect(contentTimeOfOffset(off, timing, { num: 25, den: 1 })).toBe(25 * F25);
-		// Off-grid offsets round to the nearest frame.
 		expect(contentTimeOfOffset(10.4 * F25, timing, { num: 25, den: 1 })).toBe(10 * F25);
 		// Anchor to Out from 30 fps to 25 fps: 1 s before the last frame.
 		const mapped = mapPresetOffset('anchor-out', 119 * F30, src30(150), {
@@ -80,7 +75,6 @@ describe('preset key time mapping (FX-030)', () => {
 		// Reverse: the first frame shows the end of the source range.
 		const rev = { start: 0, duration: 10, sourceIn: 0, speed: { rate: 1, reverse: true } };
 		expect(contentTimeOfOffset(0, rev, rate)).toBe(9 * F30);
-		// Never negative content time (clamped).
 		expect(contentTimeOfOffset(-5 * F30, { ...rev, speed: { rate: 1, reverse: false } }, rate)).toBe(0);
 	});
 });
@@ -172,7 +166,6 @@ describe('effect.applyPreset', () => {
 		expect(res.clipIds).toEqual([b, c]);
 		const A = h.seq.clips[a] as Solid;
 		const C = h.seq.clips[c] as Solid;
-		// Intrinsics overwritten.
 		expect(C.transform.rotation.value).toBe(45);
 		expect(C.blendMode).toBe('screen');
 		// Crop pinned at index 0, the existing Black & White kept, the blur appended with a new id.
@@ -186,7 +179,6 @@ describe('effect.applyPreset', () => {
 		expect(res.effectInstanceIds[c]).toEqual([C.effects[2]!.id]);
 		// Anchor to In on a 15-frame clip: blur keys at 0 and 29 stay at 0 and 29 (off-clip keys are kept).
 		expect(frames(C, C.effects[2]!.params.radius!)).toEqual([0, 29]);
-		// New key ids everywhere.
 		const ids = new Set([...A.opacity.keyframes, ...A.effects[1]!.params.radius!.keyframes].map((k) => k.id));
 		for (const k of [...C.opacity.keyframes, ...C.effects[2]!.params.radius!.keyframes])
 			expect(ids.has(k.id)).toBe(false);

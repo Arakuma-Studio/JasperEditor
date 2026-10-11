@@ -225,7 +225,7 @@ export class BentoContainer {
 	private readonly byName = new Map<string, number>();
 	private readonly refs = new Map<number, Map<number, number>>();
 	/**
-	 * Work the reader may still do (security review PAR-2). A Bento file is a graph: values may overlap, an object
+	 * Work the reader may still do. A Bento file is a graph: values may overlap, an object
 	 * may reference itself, and every lookup scans a list. Each scan, copy and decode is charged; the allowance
 	 * grows with the table of contents, so a real file never comes near it and a hostile one is refused after a
 	 * bounded amount of work instead of running for hours or allocating gigabytes.

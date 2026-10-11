@@ -1,4 +1,4 @@
-// Time maps (workstream `time`): a clip's Time Remapping as the (clip time → media time) points interchange formats
+// Time maps: a clip's Time Remapping as the (clip time → media time) points interchange formats
 // carry — FCPXML `timeMap`/`timept`, FCP7 Time Remap `graphdict` — and back. Constant-speed segments are linear
 // pieces; a speed transition is one `smooth` piece from its start to its end (both on the polyline). Reading a smooth
 // piece rebuilds the keyframe at the intersection of its neighbours' lines with a symmetric transition (exact for maps

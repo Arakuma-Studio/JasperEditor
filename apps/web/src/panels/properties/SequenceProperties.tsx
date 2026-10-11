@@ -3,10 +3,13 @@
 // "Keep layer sizes" / "Scale layers proportionally" (sequence.updateSettings `reposition`).
 import {
 	ALLOWED_SEQUENCE_RATES,
-	type Command,
+	type AudioChannelFormat,
+	type CommandOf,
 	type Rational,
 	rationalEquals,
+	SEQUENCE_SAMPLE_RATES,
 	type Sequence,
+	type SequenceSampleRate,
 	sequenceColorInfo,
 	sequenceDuration,
 } from '@jasper/project';
@@ -43,14 +46,18 @@ export function SequenceProperties(props: {
 	const { seq, ops, notices } = props;
 	const { width, height, frameRate } = seq.settings;
 	const hasClips = Object.keys(seq.clips).length > 0;
-	const update = (label: string, settings: Record<string, unknown>, reposition?: string) =>
+	const update = (
+		label: string,
+		settings: CommandOf<'sequence.updateSettings'>['settings'],
+		reposition?: CommandOf<'sequence.updateSettings'>['reposition'],
+	) =>
 		ops.apply(label, [
 			{
 				type: 'sequence.updateSettings',
 				sequenceId: seq.id,
 				settings,
 				...(reposition ? { reposition } : {}),
-			} as Command,
+			},
 		]);
 	const resize = (w: number, h: number) => {
 		const W = Math.max(16, Math.round(w / 2) * 2);
@@ -154,7 +161,7 @@ export function SequenceProperties(props: {
 										type: 'sequence.updateSettings',
 										sequenceId: seq.id,
 										settings: { backgroundColor: c },
-									} as Command,
+									},
 								],
 								{ coalesceKey: `seq-bg:${seq.id}` },
 							)
@@ -210,20 +217,20 @@ export function SequenceProperties(props: {
 			<Section id="properties.sequence.audio" title="Audio">
 				<div className={row}>
 					<span className={lab}>Sample Rate</span>
-					<SelectField
-						value={String(seq.settings.audioSampleRate)}
-						options={['44100', '48000', '96000']}
-						labels={['44100 Hz', '48000 Hz', '96000 Hz']}
+					<SelectField<SequenceSampleRate>
+						value={seq.settings.audioSampleRate}
+						options={SEQUENCE_SAMPLE_RATES}
+						labels={SEQUENCE_SAMPLE_RATES.map((rate) => `${rate} Hz`)}
 						label="Audio sample rate"
-						onChange={(v) => update('Sequence Audio Sample Rate', { audioSampleRate: Number(v) })}
+						onChange={(v) => update('Sequence Audio Sample Rate', { audioSampleRate: v })}
 						className="flex-1"
 						data-testid="seq-audio-rate"
 					/>
 				</div>
 				<div className={row}>
 					<span className={lab}>Mix</span>
-					<SelectField
-						value={String(seq.settings.masterLayout)}
+					<SelectField<AudioChannelFormat>
+						value={seq.settings.masterLayout}
 						options={['stereo', 'mono', '5.1']}
 						labels={['Stereo', 'Mono', '5.1']}
 						label="Mix channel format"

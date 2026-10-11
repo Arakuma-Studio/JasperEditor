@@ -1,6 +1,3 @@
-// Colour management UI commands and menu extensions (workstream color-mgmt): Sequence ▸ Sequence Settings… (its Colour
-// section), the Colour section of Interpret Footage (color-mgmt/interpret-section.tsx) and Clip Colour Space on
-// timeline clips (clip context menu). Every edit is one undoable transaction (dialogs in color-mgmt/dialogs.tsx).
 import type { MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { openDialog } from '@jasper/ui';

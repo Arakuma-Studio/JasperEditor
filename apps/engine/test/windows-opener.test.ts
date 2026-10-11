@@ -1,5 +1,4 @@
-// The Windows "Edit Original" opener (security review ENG-5), which the review could only test by construction:
-// what reaches powershell.exe and explorer.exe for adversarial file names, under the three parsers involved —
+// Windows open/reveal paths pass through three different parsers:
 //   - Node / libuv, which turns an argument array into one Windows command line (`quote_cmd_arg`);
 //   - the C runtime rules (CommandLineToArgvW), by which powershell.exe splits that line again;
 //   - explorer.exe's own parser (commas separate, double quotes group), fed a verbatim line;
@@ -13,8 +12,6 @@ import fc from 'fast-check';
 import { afterAll, describe, expect, it } from 'vitest';
 import { openerFor, WINDOWS_OPEN_COMMAND } from '../src/routes/gaps.ts';
 import { tempAppdir } from './helpers.ts';
-
-// ---------------------------------------------------------------- the parsers, as documented
 
 /**
  * libuv `quote_cmd_arg` (src/win/process.c), the rule Node applies to every argument of a non-verbatim spawn:
@@ -39,7 +36,6 @@ function libuvQuote(arg: string): string {
 	return `"${body}${'\\'.repeat(backslashes * 2)}"`;
 }
 
-/** The command line Node hands to CreateProcess for a spawn (program name included). */
 function windowsCommandLine(cmd: string, args: readonly string[], verbatim = false): string {
 	return [cmd, ...args].map((a) => (verbatim ? a : libuvQuote(a))).join(' ');
 }
@@ -112,11 +108,8 @@ function explorerParse(tail: string): string[] {
 	return items;
 }
 
-// ---------------------------------------------------------------- adversarial names
-
-/** File names (legal on Windows unless noted) that have broken openers: one per parser's metacharacters. */
+/** Adversarial file names, legal on Windows unless noted, cover each parser's metacharacters. */
 const HOSTILE_NAMES = [
-	// cmd.exe: command separators, redirection, escapes, variable expansion (also delayed), grouping
 	'a&calc.exe&.mp4',
 	'a && calc.exe && .mp4',
 	'a|calc.exe.mp4',
@@ -127,7 +120,6 @@ const HOSTILE_NAMES = [
 	'a (1) & (calc).mp4',
 	'a;calc.mp4',
 	'@calc.mp4',
-	// PowerShell: subexpressions, variables, backtick escapes, statement separators, quotes, splatting, stop-parsing
 	'$(calc).mp4',
 	'$env:COMSPEC.mp4',
 	// biome-ignore lint/suspicious/noTemplateCurlyInString: a PowerShell variable reference, as a file name
@@ -148,7 +140,6 @@ const HOSTILE_NAMES = [
 	'a[0-9].mp4',
 	'a`[x`].mp4',
 	'~.mp4',
-	// explorer.exe: commas, spaces, option look-alikes
 	'a,b.mp4',
 	'a, /select, c.mp4',
 	',.mp4',
@@ -158,7 +149,6 @@ const HOSTILE_NAMES = [
 	'a b  c.mp4',
 	' leading and trailing .mp4',
 	'trailing backslash dir\\a.mp4',
-	// Unicode, right-to-left override, emoji, combining marks
 	'vidéo ｆｕｌｌｗｉｄｔｈ.mp4',
 	'gpj.\u202e4pm.exe',
 	'🎬 clip.mp4',
@@ -184,8 +174,6 @@ const anyPath = fc
 	)
 	.map((parts) => `C:\\m\\${parts.join('').replace(/["\0\r\n]/g, '_')}.mp4`);
 
-// ---------------------------------------------------------------- open: powershell.exe
-
 describe('Windows open: powershell.exe receives a constant command line', () => {
 	const FIXED = ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', WINDOWS_OPEN_COMMAND];
 
@@ -204,7 +192,6 @@ describe('Windows open: powershell.exe receives a constant command line', () => 
 		expect(o.verbatim).toBeUndefined();
 		expect([o.cmd, ...o.args]).toEqual(FIXED);
 		expect(o.env).toEqual({ JASPER_OPEN_PATH: path });
-		// What Node builds and what powershell.exe's runtime splits it into: the same constant, for every path.
 		const line = windowsCommandLine(o.cmd, o.args);
 		expect(line).toBe(
 			'powershell.exe -NoProfile -NonInteractive -Command "Invoke-Item -LiteralPath $env:JASPER_OPEN_PATH"',
@@ -230,15 +217,12 @@ describe('Windows open: powershell.exe receives a constant command line', () => 
 	});
 });
 
-// ---------------------------------------------------------------- reveal: explorer.exe
-
 describe('Windows reveal: explorer.exe selects exactly the file', () => {
 	it.each(hostilePaths)('%s', (path) => {
 		const o = openerFor('reveal', path, 'win32');
 		expect(o).toEqual({ cmd: 'explorer.exe', args: [`/select,"${path}"`], verbatim: true });
 		const line = windowsCommandLine(o.cmd, o.args, true);
 		expect(line).toBe(`explorer.exe /select,"${path}"`);
-		// explorer's parser: one option and one object — the whole path, commas, spaces and all.
 		expect(explorerParse(line.slice('explorer.exe '.length))).toEqual(['/select', path.trim()]);
 	});
 
@@ -311,8 +295,6 @@ describe('the parser models used above', () => {
 	});
 });
 
-// ---------------------------------------------------------------- for real, through PowerShell
-
 function findPwsh(): string | null {
 	const explicit = process.env.JASPER_PWSH;
 	if (explicit) return existsSync(explicit) ? explicit : null;
@@ -326,7 +308,6 @@ const PWSH = findPwsh();
 describe.skipIf(!PWSH || process.platform === 'win32')(
 	'the open command run by a real PowerShell (pwsh): one literal argument, nothing executed',
 	() => {
-		/** A stand-in for the platform opener `Invoke-Item` runs: it records its arguments and does nothing else. */
 		function recorder(): { dir: string; bin: string; log: string } {
 			const dir = tempAppdir('jasper-pwsh-');
 			const bin = join(dir, 'bin');
@@ -390,9 +371,7 @@ describe.skipIf(!PWSH || process.platform === 'win32')(
 				},
 			});
 			expect(r.status, r.stderr).toBe(0);
-			// The opener got exactly one argument: the path, byte for byte.
 			expect(readFileSync(log, 'utf8').split('\0').slice(0, -1)).toEqual(['1', file]);
-			// Nothing the name spelled was run.
 			expect(readdirSync(dir).sort()).toEqual(['bin', 'media dir, with & comma', 'opened.log']);
 			expect(readdirSync(media)).toEqual([name]);
 		});

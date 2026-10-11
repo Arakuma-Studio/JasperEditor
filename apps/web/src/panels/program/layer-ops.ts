@@ -138,8 +138,6 @@ function round4(v: number): number {
 	return Math.round(v * 10_000) / 10_000;
 }
 
-// ---------------------------------------------------------------- Arrange ▸ (XF-050)
-
 export type ArrangeOp = 'front' | 'forward' | 'backward' | 'back';
 
 export const ARRANGE_LABELS: Record<ArrangeOp, string> = {
@@ -233,8 +231,6 @@ export function planArrange(seq: Sequence, clipIds: readonly string[], op: Arran
 		...(reason && moves.length < movers.length ? { reason } : {}),
 	};
 }
-
-// ---------------------------------------------------------------- Reveal in Project
 
 /** The project item a clip comes from (media, synthetic or nested sequence), or null. */
 export function projectItemOf(doc: ProjectDocument, clip: Clip): string | null {

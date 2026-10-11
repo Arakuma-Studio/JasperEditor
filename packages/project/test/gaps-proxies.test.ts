@@ -1,4 +1,3 @@
-// Workstream gaps (PRJ-8): attached proxies in the model.
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
@@ -57,7 +56,6 @@ describe('proxies', () => {
 		const r = h.ok([{ type: 'media.detachProxy', mediaIds: [m] }]);
 		expect((r.results[0] as { detached: string[] }).detached).toEqual([m]);
 		expect(h.doc.media[m]!.proxy).toBeUndefined();
-		// The original itself cannot be its own proxy.
 		const self = { ...proxyOf({ seconds: 10 }), fingerprint: h.doc.media[m]!.fingerprint };
 		expect(h.tx([{ type: 'media.attachProxy', mediaId: m, proxy: self }]).ok).toBe(false);
 	});

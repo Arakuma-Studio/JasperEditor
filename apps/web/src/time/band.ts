@@ -1,6 +1,3 @@
-// Speed rubber band geometry (workstream `time`): Premiere's "Show Clip Keyframes ▸ Time Remapping ▸ Speed" band
-// on a timeline clip. Pure functions of the clip and the timeline view, unit-tested in apps/web/test/time.test.ts.
-//
 // Height: log₂ of the speed, 100 % in the middle of the band, ×8 (800 %) at the top and ÷8 (12.5 %) at the bottom
 // (a linear scale would squeeze every slow motion into the bottom pixels); 0 % (freeze) on the bottom edge. Reverse
 // segments draw at their magnitude with "<" marks, freezes with "|" marks (Premiere's tick marks).

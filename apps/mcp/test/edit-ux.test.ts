@@ -1,5 +1,3 @@
-// edit-ux MCP tools through the protocol against an in-memory engine: source_edit (three/four-point, backtiming, Fit
-// Clip, split edits, patching), find/trim edit points, match / reverse match frame, subclips and split marks.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

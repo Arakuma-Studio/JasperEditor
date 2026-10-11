@@ -1,5 +1,3 @@
-// audio-mix: mixer model, commands, the mix plan (solo, routing) and the offline mixer (pan laws, buses, sends,
-// automation, 5.1, generators).
 import { describe, expect, it } from 'vitest';
 import {
 	buildAudioMix,
@@ -112,9 +110,9 @@ describe('mix plan', () => {
 		]);
 		const ids = listStrips(h.seq).map((s) => s.id);
 		const keep = soloAudible(listStrips(h.seq));
-		expect(keep.has(ids[0]!)).toBe(true); // A1 feeds S1
-		expect(keep.has(ids[1]!)).toBe(false); // A2 solo-muted
-		expect(keep.has(ids[2]!)).toBe(true); // A3 solo safe
+		expect(keep.has(ids[0]!)).toBe(true);
+		expect(keep.has(ids[1]!)).toBe(false);
+		expect(keep.has(ids[2]!)).toBe(true);
 		expect(keep.has('master')).toBe(true);
 		const mix = buildAudioMix(h.seq);
 		expect(mix.strips.find((s) => s.label === 'A2')!.silent).toBe(true);
@@ -169,7 +167,6 @@ describe('offline mixer', () => {
 		const [l] = await render(h, { [a]: [0.5, 0.5], [b]: [0.2, 0.2] });
 		const g = 10 ** (-6 / 20);
 		expect(close(l![50]!, (0.5 + 0.2) * g)).toBe(true);
-		// a post-fader send of a muted track is silent
 		const send = h.seq.audioTracks[1]!.mixer!.sends![0]!.id;
 		h.ok([{ type: 'mixer.updateSend', stripId: 'A2', sendId: send, patch: { preFader: false } }]);
 		const [l2] = await render(h, { [a]: [0.5, 0.5], [b]: [0.2, 0.2] });
@@ -225,7 +222,6 @@ describe('offline mixer', () => {
 		const m = await render(h, { [a]: [0.5, 0.5] }, 2, 0, '5.1');
 		expect(close(m[2]![10]!, 0.5 * 2 * K)).toBe(true);
 		expect(close(m[0]![10]!, 0)).toBe(true);
-		// moving the puck hard left (x = −100) puts it on L
 		h.ok([{ type: 'mixer.setLane', stripId: 'A1', lane: 'pan51.x', value: -100 }]);
 		const left = await render(h, { [a]: [0.5, 0.5] }, 2, 0, '5.1');
 		expect(close(left[0]![10]!, 0.5 * 2 * K, 1e-4)).toBe(true);
@@ -283,7 +279,6 @@ describe('offline mixer', () => {
 				startSample: 0,
 				length: 3200,
 			});
-			// the latency is compensated: from the first sample the output is the halved source
 			expect(close(out[0]![1]!, 0.25)).toBe(true);
 			expect(close(out[0]![3000]!, 0.25)).toBe(true);
 		} finally {
@@ -335,7 +330,6 @@ describe('mixer commands', () => {
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'A1', patch: { output: 'S1' } }]);
 		const before = h.doc;
 		h.ok([{ type: 'mixer.removeSubmix', stripId: 'S1' }]);
-		// A1 now feeds where S1 went (S2, now S1)
 		expect(h.seq.audioTracks[0]!.mixer!.output).toBe(h.seq.submixTracks![0]!.id);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		h.doc = before;
@@ -475,7 +469,6 @@ describe('mixer commands', () => {
 			},
 		]);
 		expect(buildAudioMix(h.seq).loudness).toEqual({ gainDb: 4, truePeakDb: -1 });
-		// the analysis does not change the fingerprint; an edit does
 		expect(mixFingerprint(h.doc, h.seqId)).toBe(hash);
 		h.ok([{ type: 'mixer.updateStrip', stripId: 'A1', patch: { volumeDb: -3 } }]);
 		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);

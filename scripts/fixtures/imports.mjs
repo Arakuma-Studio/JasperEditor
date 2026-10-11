@@ -1,5 +1,5 @@
-// imports workstream fixtures (docs/wp-notes/imports.md). Everything is generated here (original work, never
-// committed): still formats through ffmpeg (EXR half float, 16-bit TIFF, TGA with alpha, BMP, 10-bit DPX, JPEG XL),
+// Import fixtures are generated here as original work and never
+// committed: still formats through ffmpeg (EXR half float, 16-bit TIFF, TGA with alpha, BMP, 10-bit DPX, JPEG XL),
 // a HEIF still (an HEVC picture from libkvazaar in a HEIF container written below), a numbered PNG sequence with a gap,
 // interlaced (top field first) and anamorphic (PAR 10:11) video, a premultiplied-alpha PNG, an SVG, a two-page PDF and
 // the same document as `.ai`, a Lottie animation (`.json`) and its dotLottie (`.lottie`), and a layered Photoshop
@@ -30,7 +30,7 @@ const hasEncoder = (ff, name) =>
 		spawnSync(ff, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '',
 	);
 
-// ---------------------------------------------------------------- HEIF writer (ISO/IEC 23008-12, one image item)
+// HEIF boxes follow ISO/IEC 23008-12 with one image item.
 
 function box(type, ...parts) {
 	const body = Buffer.concat(parts.map((p) => (Buffer.isBuffer(p) ? p : Buffer.from(p))));
@@ -141,8 +141,6 @@ function writeHeif(hevc, width, height) {
 	const offset = ftyp.length + probe.length + 8;
 	return Buffer.concat([ftyp, metaFor(offset), box('mdat', data)]);
 }
-
-// ---------------------------------------------------------------- vector and Lottie sources (original work)
 
 const SVG = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 200 100">
@@ -413,8 +411,6 @@ function zip(files) {
 	end.writeUInt32LE(offset, 16);
 	return Buffer.concat([...locals, cd, end]);
 }
-
-// ---------------------------------------------------------------- PSD (ag-psd writer)
 
 /** RGBA pixels of a w×h layer filled by `f(x, y) → [r, g, b, a]` (0…255). */
 function pixels(w, h, f) {

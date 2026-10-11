@@ -31,13 +31,13 @@ export function itemDurationFrames(doc: ProjectDocument, item: ProjectItem, rate
 	if (item.kind === 'synthetic') {
 		const m = item.marks;
 		if (m.in && m.out) return Math.max(1, Math.round((m.out.flicks - m.in.flicks) / F));
-		// edit-structure: Bars and Tone 1 s, the counting leader 11 s, the others the still default.
+		// Bars and Tone 1 s, the counting leader 11 s, the others the still default.
 		const syn = doc.synthetics[item.syntheticId];
 		const secs = syn ? SYNTHETIC_INFO[syn.kind].defaultSeconds : null;
 		return secs === null ? still : Math.max(1, Math.round((secs * rate.num) / rate.den));
 	}
 	if (item.kind === 'sequence') {
-		// edit-structure: its In/Out (else all of it), in this sequence's frames.
+		// its In/Out (else all of it), in this sequence's frames.
 		const seq = doc.sequences[item.sequenceId];
 		if (!seq) return null;
 		const Fs = flicksPerFrame(seq.settings.frameRate);
@@ -50,7 +50,7 @@ export function itemDurationFrames(doc: ProjectDocument, item: ProjectItem, rate
 	return null;
 }
 
-/** edit-structure: whether a placed item brings a picture and / or sound (sequences, synthetics). */
+/** whether a placed item brings a picture and / or sound (sequences, synthetics). */
 export function itemAvKinds(doc: ProjectDocument, item: ProjectItem): { video: boolean; audio: boolean } {
 	if (item.kind === 'synthetic') {
 		const syn = doc.synthetics[item.syntheticId];

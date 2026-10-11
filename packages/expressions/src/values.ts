@@ -38,7 +38,7 @@ export function toExpressionValue(kind: PropKind, v: unknown, options?: readonly
 	}
 }
 
-export type Converted = { ok: true; value: unknown } | { ok: false; error: string };
+export type Converted<T = unknown> = { ok: true; value: T } | { ok: false; error: string };
 
 function nonFinite(x: unknown): boolean {
 	return !!x && typeof x === 'object' && '__nonFinite' in (x as object);
@@ -52,7 +52,7 @@ function num(x: unknown): number | null {
 
 const NOT_FINITE = 'Error: expression result is not a finite number';
 
-function vector(r: unknown, n: number, label: string): Converted {
+function vector(r: unknown, n: number, label: string): Converted<number[]> {
 	if (!Array.isArray(r)) {
 		if (nonFinite(r)) return { ok: false, error: NOT_FINITE };
 		return { ok: false, error: `Error: expression result must be of dimension ${label}, not 1` };
@@ -110,7 +110,7 @@ export function fromExpressionValue(
 			if (!rgb.ok) return rgb;
 			const a = r.length > 3 ? num(r[3]) : Array.isArray(current) ? (current[3] as number) : 1;
 			if (a === null) return { ok: false, error: NOT_FINITE };
-			return { ok: true, value: [...(rgb.value as number[]), a] };
+			return { ok: true, value: [...rgb.value, a] };
 		}
 		case 'boolean':
 			return { ok: true, value: truthy(r) };

@@ -1,6 +1,3 @@
-// The scale benchmark's project generator (bench/scale-project.ts) at a reduced size: built through the command
-// system, it satisfies every invariant, is deterministic, and survives a save → load round trip unchanged — so the
-// benchmark (packages/session/bench/scale.ts) cannot rot.
 import { describe, expect, it } from 'vitest';
 import { buildScaleProject, countClips } from '../bench/scale-project.ts';
 import {

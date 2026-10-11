@@ -1,5 +1,3 @@
-// S07:PRC-006: source swaps preserve framing across animated transforms, crops, trackers,
-// and anisotropic size changes such as 848×480 → 1920×1080.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,8 +16,6 @@ import {
 } from '../src/index.ts';
 
 type Clipish = { transform: Transform; trackers?: ClipTracker[]; effects: EffectInstance[] };
-
-// ---------------------------------------------------------------- arbitraries
 
 let kfSeq = 0;
 const kfId = () => `kf_${(++kfSeq).toString(32).toUpperCase().padStart(16, '0').slice(-16)}`;
@@ -140,8 +136,6 @@ const clipArb: fc.Arbitrary<Clipish> = fc.record({
 	effects: fc.option(cropArb, { nil: undefined }).map((c) => (c ? [c] : [])),
 });
 
-// ---------------------------------------------------------------- helpers
-
 const TOL = 1e-9;
 function renderClip(c: Clipish, box: PixelSize): RenderVisualClip {
 	return {
@@ -232,8 +226,6 @@ function expectSameFraming(a: Clipish, b: Clipish, oldSize: PixelSize, newSize: 
 	}
 	expect(worst, where).toBeLessThanOrEqual(TOL);
 }
-
-// ---------------------------------------------------------------- properties
 
 describe('rescaleClipForSource (S07:PRC-006)', () => {
 	it('keeps the rendered framing identical (matrix, cropped quad, tracker points) for any size change', () => {

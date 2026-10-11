@@ -1,5 +1,3 @@
-// Workstream gaps (AU-7): Modify ▸ Audio Channels routings rendered by the export mixer (real ffmpeg): a source
-// channel routed to both clip channels, a muted clip channel, and the decode arguments.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -124,7 +122,6 @@ describe('Audio Channels in the export mix', () => {
 						scaling: 'fit',
 						quality: { mode: 'crf', value: 30 },
 						encoderSpeed: 'fast',
-						colorTags: 'rec709',
 					},
 					audio: { codec: 'aac', sampleRate: 48000, channels: 2, normalize: null },
 					engine: 'native',

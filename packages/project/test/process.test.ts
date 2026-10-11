@@ -1,4 +1,3 @@
-// S07 §8 test 1 (model): media.derive and clip.replaceSource (PRC-001…007).
 import { describe, expect, it } from 'vitest';
 import {
 	type ClipTracker,
@@ -127,7 +126,6 @@ describe('media.derive (S07:PRC-001, PRC-004, PRC-005)', () => {
 		const shootBin = h.doc.items[shoot!]!;
 		expect(shootBin.kind === 'bin' && shootBin.children).toEqual([footage, res.binId]);
 
-		// The video clip switched; timing, links and the linked audio (PRC-007) did not.
 		const v = videoClip(h, videoId);
 		const vb = before.sequences[h.seqId]!.clips[videoId] as VideoClip;
 		expect(v.mediaId).toBe(m.id);
@@ -137,7 +135,6 @@ describe('media.derive (S07:PRC-001, PRC-004, PRC-005)', () => {
 		expect(h.seq.clips[audioId]!.linkId).toBe(v.linkId);
 
 		expect(checkInvariants(h.doc)).toEqual([]);
-		// One transaction = one history entry: the previous snapshot (undo) is untouched, the diff is complete.
 		expect(JSON.stringify(before)).toBe(beforeJson);
 		const diff = diffDocuments(before, h.doc);
 		expect(diff.created).toEqual(expect.arrayContaining([m.id, res.itemId, res.binId]));
@@ -193,7 +190,6 @@ describe('media.derive (S07:PRC-001, PRC-004, PRC-005)', () => {
 		const r3 = h.ok([{ type: 'media.derive', fromMediaId: mediaId, recipe: recipe(DENOISE), asset: again }]);
 		expect((r3.results[0] as { mediaId: string }).mediaId).toBe(first.mediaId);
 
-		// Another recipe reuses the "Processed" bin.
 		const r4 = h.ok([
 			{
 				type: 'media.derive',
@@ -406,7 +402,7 @@ describe('clip.replaceSource (S07:PRC-005…007)', () => {
 		expect(codeOf(h.tx([{ type: 'clip.replaceSource', clipId: 'clp_0000000000000000', mediaId: up }]))).toBe(
 			'E_NOT_FOUND',
 		);
-		// A version with a different frame count (e.g. a future range-processed file) cannot cover the clip.
+		// A version with a different frame count (e.g. a range-processed file) cannot cover the clip.
 		const short = h.ok([
 			{
 				type: 'media.derive',

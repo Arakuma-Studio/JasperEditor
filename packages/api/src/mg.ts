@@ -1,4 +1,3 @@
-// Motion-graphics rendering contract (ARCHITECTURE §10.2, S04 §15): `jasper-mg` spec and engine routes.
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
 
@@ -28,9 +27,9 @@ export const MgTemplateCatalogEntrySchema = z.object({
 	defaultDurationSeconds: z.number().positive().optional(),
 	description: z.string().optional(),
 	canvases: z.array(z.string()),
-	/** true = rendered by the `jasper-mg` binary; false = TS twin only (binary unavailable). */
+	/** True = rendered by the `jasper-mg` binary; false = TS twin only (binary unavailable). */
 	native: z.boolean().optional(),
-	/** M2 (S11:ATP-008): `anime` templates are drawn by `@jasper/motion` and baked by layer-bake; absent = fframes. */
+	/** `anime` templates are drawn by `@jasper/motion` and baked by layer-bake; absent = fframes. */
 	renderer: z.enum(['fframes', 'anime']).optional(),
 });
 export type MgTemplateCatalogEntry = z.infer<typeof MgTemplateCatalogEntrySchema>;

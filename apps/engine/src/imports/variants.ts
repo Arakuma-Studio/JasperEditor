@@ -1,4 +1,4 @@
-// Interpreted pictures (imports workstream): what the engine makes so that browsers (the Program monitor, Remotion
+// Interpreted pictures let browsers (the Program monitor, Remotion
 // renders, layer bakes) show exactly the pixels the native export decodes.
 // - `display`: a still as a full-size straight-alpha PNG (16-bit when deeper than 8 bits) — every still format a
 //   browser cannot decode (TIFF, EXR, DPX, TGA, HEIF, JPEG XL, PSD…) and every still with a pixel interpretation;
@@ -201,9 +201,7 @@ export class VariantService {
 		return p;
 	}
 
-	// ------------------------------------------------------------------ runner
-
-	private async run(ctx: JobContext): Promise<unknown> {
+	private async run(ctx: JobContext) {
 		const input = ctx.input as JobInput;
 		const r = this.deps.registry.get(input.mediaKey);
 		if (!r) throw new JobError('ASSET_NOT_FOUND', `Unknown media ${input.mediaKey}`, false);

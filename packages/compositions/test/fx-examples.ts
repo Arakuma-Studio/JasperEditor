@@ -1,6 +1,5 @@
-// Example GPU shader effects of the fx framework (wave 1) — test-only: they prove the framework (multi-pass glow with
-// a downscaled blur and padding, a generator, a padded drop shadow, a time effect with samples and one with a remap)
-// and are the worked examples of docs/wp-notes/fx-shader-framework.md. Not registered in the default registry.
+// Test-only effects mirror the worked examples in docs/wp-notes/fx-shader-framework.md.
+// Keep them outside the default registry.
 import {
 	createEffectRegistry,
 	defaultEffectRegistry,
@@ -229,5 +228,4 @@ export const TEST_FX: readonly EffectSpec[] = [
 	TEST_FREEZE,
 ];
 
-/** The default registry plus the test effects. */
 export const testFxRegistry = createEffectRegistry([...defaultEffectRegistry.list(), ...TEST_FX]);

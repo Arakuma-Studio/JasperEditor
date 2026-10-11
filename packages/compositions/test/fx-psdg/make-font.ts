@@ -1,9 +1,8 @@
-// Generates the bitmap font of the Video-bin text effects (Clip Name, Timecode, Simple Text):
-// packages/project/src/registry/fx/premiere-stylize-distort-generate/video-font.ts. Development aid (run once, the
-// output is committed): rasterises printable ASCII (32…126) with DejaVu Sans Mono Bold in headless Chrome at 4×,
-// box-downsamples to a 12×20 cell and thresholds it to 1 bit per pixel, 8 × 32-bit words per glyph (row-major,
-// 12 bits per row, bit 0 = left). DejaVu fonts: Bitstream Vera / DejaVu licence (free to use and modify).
-//   pnpm tsx packages/compositions/test/fx-psdg/make-font.ts
+// Generates packages/project/src/registry/fx/premiere-stylize-distort-generate/video-font.ts.
+// Printable ASCII (32…126) is rasterized with DejaVu Sans Mono Bold at 4×, box-downsampled
+// to 12×20 and thresholded: 8 × 32-bit words per glyph, row-major, 12 bits per row, bit 0 = left.
+// DejaVu fonts: Bitstream Vera / DejaVu licence (free to use and modify).
+// pnpm tsx packages/compositions/test/fx-psdg/make-font.ts
 import { existsSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

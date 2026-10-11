@@ -1,8 +1,3 @@
-// Texts inside composition clips (M3, wp-m3-mgtext, S08 §8 test 9 — UI part): Properties ▸ Composition ▸ Text
-// lists the fixture LowerThird's texts with their style props and the bundle's embedded font; typing previews in
-// the Program monitor before the edit is applied, Enter applies it as one History step and the layout warnings
-// come from the bundle's own page; a double-click on the quote in the Program monitor edits it in place in the
-// bundle font (the rendered text is hidden meanwhile), Ctrl+Enter applies, Esc cancels.
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
@@ -10,6 +5,7 @@ import {
 	clipElement,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	focusTimeline,
 	query,
 	ROOT,
@@ -34,7 +30,7 @@ test.afterAll(async () => {
 
 /** Text of an element of the LowerThird's live host page in the Program monitor. */
 async function hostText(testId: string): Promise<string | null> {
-	// Security review MG-1: the host page is a sandboxed frame; it is read from inside (the editor cannot reach in).
+	// The host page is sandboxed; read from inside the frame because the editor cannot reach in.
 	return page
 		.frameLocator('[data-testid="program-monitor"] iframe[data-mg-host]')
 		.locator(`[data-testid="${testId}"]`)
@@ -69,8 +65,7 @@ test('Properties text editors: live preview while typing, one History step, layo
 	expect(imported.status(), await imported.text()).toBe(200);
 	const reg = await imported.json();
 	const res = await page.evaluate(async (r) => {
-		const api = (window as unknown as { jasper: { transact(tx: unknown): Promise<Record<string, unknown>> } })
-			.jasper;
+		const api = window.jasper!;
 		return api.transact({
 			label: 'Import Remotion Project',
 			commands: [
@@ -99,8 +94,8 @@ test('Properties text editors: live preview while typing, one History step, layo
 			],
 		});
 	}, reg);
-	expect(res.ok, JSON.stringify(res)).toBe(true);
-	clipId = (res.refs as Record<string, string>).$lt!;
+	expectTransaction(res);
+	clipId = res.refs.$lt!;
 	await clipElement(page, clipId).click();
 	await query(page, 'playhead.set', { frame: 60 });
 
@@ -110,7 +105,6 @@ test('Properties text editors: live preview while typing, one History step, layo
 	await field.click();
 	await field.press('Control+a');
 	await field.pressSequentially('Augusta Ada King, Countess of Lovelace', { delay: 5 });
-	// Live while typing: the Program monitor shows it before anything is applied.
 	await expect
 		.poll(() => hostText('lt-name'), { timeout: 5_000 })
 		.toBe('Augusta Ada King, Countess of Lovelace');
@@ -130,7 +124,6 @@ test('Properties text editors: live preview while typing, one History step, layo
 	await field.press('Enter');
 	await expect(page.getByTestId('composition-message')).toContainText('Not applied');
 	expect(await props()).toMatchObject({ name: { text: 'Augusta Ada King, Countess of Lovelace' } });
-	// Undo restores the text (one step).
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(() => hostText('lt-name'), { timeout: 10_000 }).toBe('Ada Lovelace');
@@ -151,7 +144,6 @@ test('double-click a text in the Program monitor edits it in place in the bundle
 	expect(await input.evaluate((el) => document.fonts.check(`16px ${getComputedStyle(el).fontFamily}`))).toBe(
 		true,
 	);
-	// Esc cancels: nothing applied, the quote is back.
 	const before = (await appliedLabels(page)).length;
 	await input.press('Escape');
 	await expect(input).toBeHidden();

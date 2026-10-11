@@ -1,13 +1,3 @@
-// Layer commands of the Program monitor's right-click menu (S03:XF-050, wp-clipboard-2), also in Clip ▸ Transform,
-// Graphics ▸ Arrange and the Timeline clip menu (Reveal in Project, S02:TL-930). They act on the selected visual
-// clips (a right-click in the monitor selects the layer under the pointer first) and each emits one transaction:
-//   motion.reset / motion.resetCrop       Reset Motion / Reset Crop (`clip.removeAttributes`, as Remove Attributes)
-//   motion.fit / motion.fill / motion.native   Fit to Frame / Fill Frame / Set to Native (100%) (XF-051; through
-//                                         `param.set` at the playhead, so animated properties get a key, XF-024)
-//   motion.anchor {point}                 Anchor ▸ Center and the 9-point grid (XF-038, the image stays put)
-//   arrange.bringToFront / bringForward / sendBackward / sendToBack   Arrange ▸ (`clip.move` across video tracks)
-//   clip.revealInTimeline / clip.revealInProject   view only (no document change)
-// The Agent ▸ entry of XF-050 (AGT-040) is superseded by ARCHITECTURE D-18: there is no in-app agent.
 import type { Clip, Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
@@ -99,8 +89,6 @@ function layerCommand(
 	};
 }
 
-// ---------------------------------------------------------------- reset
-
 const hasCrop = (c: Clip) =>
 	((c as { effects?: { effectId: string }[] }).effects ?? []).some((fx) => fx.effectId === 'jasper.crop');
 
@@ -147,8 +135,6 @@ const resetCrop = layerCommand(
 	},
 );
 
-// ---------------------------------------------------------------- fit / fill / native (XF-051)
-
 function fitCommand(id: string, mode: FitMode, label: string, description: string): UiCommand {
 	return layerCommand(id, label, description, (ctx, e, clips) => {
 		const doc = e.session.getCommitted();
@@ -161,8 +147,6 @@ function fitCommand(id: string, mode: FitMode, label: string, description: strin
 		apply(ctx, e, label, commands);
 	});
 }
-
-// ---------------------------------------------------------------- anchor (XF-038)
 
 const AnchorArgs = z.object({
 	point: z.enum(ANCHOR_POINTS.map((p) => p.id) as [AnchorPoint, ...AnchorPoint[]]).default('center'),
@@ -186,8 +170,6 @@ const anchor = layerCommand(
 	},
 	{ argsSchema: AnchorArgs.optional() },
 );
-
-// ---------------------------------------------------------------- arrange
 
 function arrangeCommand(id: string, op: ArrangeOp): UiCommand {
 	const label = ARRANGE_LABELS[op];
@@ -240,8 +222,6 @@ function arrangeCommand(id: string, op: ArrangeOp): UiCommand {
 		},
 	);
 }
-
-// ---------------------------------------------------------------- reveal
 
 const ClipArgs = z.object({ clipId: z.string().optional() });
 

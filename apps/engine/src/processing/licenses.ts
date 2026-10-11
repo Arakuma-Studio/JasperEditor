@@ -92,7 +92,6 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			texts: text ? [{ title: 'Creative Commons Attribution 4.0 International', text }] : [],
 		});
 	}
-	// wp speech: Whisper weights of the speech models (MIT / Apache-2.0)
 	for (const m of await svc.speechModels.list()) {
 		out.push({
 			id: `model:${m.id}`,
@@ -105,7 +104,6 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			texts: [],
 		});
 	}
-	// parity (roto): segmentation and face model weights (Apache-2.0)
 	for (const m of await svc.visionModels.list()) {
 		out.push({
 			id: `model:${m.id}`,

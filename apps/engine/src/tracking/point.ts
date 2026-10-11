@@ -1,3 +1,5 @@
+import type { Mat } from '@techstark/opencv-js';
+import type { OpenCvApi } from '../tools/opencv.ts';
 // Point tracker `template@1` (S09:TRK-013). Runs inside the tracking worker with OpenCV.js.
 //
 // Normalised cross-correlation (`matchTemplate` TM_CCOEFF_NORMED) of the REFERENCE patch within the search window
@@ -22,9 +24,7 @@ export type PointConfig = {
 	minScore: number;
 };
 
-type CV = any;
-
-export function createPointTracker(cv: CV, cfg: PointConfig): FrameTracker {
+export function createPointTracker(cv: OpenCvApi, cfg: PointConfig): FrameTracker {
 	const W = cfg.width;
 	const H = cfg.height;
 	const patch = Math.max(5, cfg.patch | 1);
@@ -33,8 +33,8 @@ export function createPointTracker(cv: CV, cfg: PointConfig): FrameTracker {
 	const criteria = new cv.TermCriteria(cv.TermCriteria_COUNT + cv.TermCriteria_EPS, 30, 0.005);
 	const lkWin = new cv.Size(patch, patch);
 	const lkMargin = hp + 6;
-	let template: CV = null;
-	let refRoi: CV = null;
+	let template: Mat | null = null;
+	let refRoi: Mat | null = null;
 	let refRoiRect: { x: number; y: number; w: number; h: number } | null = null;
 	/** Reference point minus the template centre. */
 	let dx = 0;

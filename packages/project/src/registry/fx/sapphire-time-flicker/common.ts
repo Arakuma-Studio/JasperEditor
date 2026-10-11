@@ -1,4 +1,4 @@
-// Shared params and GLSL of the Sapphire Time + Flicker family (fx catalogue, wave 2): integer/frame params, the
+// Shared params and GLSL of the Sapphire Time + Flicker family: integer/frame params, the
 // Sapphire-style float Seed, the field-swap popup of the reversing effects and the "frame at a time offset" lookup
 // the sample-based effects share (time slices, time displacement).
 import type { ParamSpec } from '../../effects.ts';

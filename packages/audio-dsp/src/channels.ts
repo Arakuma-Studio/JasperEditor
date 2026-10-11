@@ -216,8 +216,6 @@ export function channelPeaks(input: Float32Array[]): number[] {
 	});
 }
 
-// ------------------------------------------------------------------------------------------ pan laws
-
 /**
  * Constant-power (−3 dB) pan of a mono source, `pan` −1 (left) … +1 (right): `[cos θ, sin θ]`,
  * `θ = (pan + 1)·π/4`; the centre is 0.7071 on both sides.
@@ -242,8 +240,6 @@ function snap(v: number): number {
 	if (Math.abs(v - 1) < 1e-12) return 1;
 	return v;
 }
-
-// ------------------------------------------------------------------------------------------ 5.1 panner
 
 /** The 5.1 panner of a track or send feeding a 5.1 bus. */
 export type Pan51 = {

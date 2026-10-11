@@ -1,4 +1,4 @@
-// Effect family "premiere-stylize-distort-generate" (fx catalogue, wave 2): Premiere Pro's standard Video Effects of
+// Effect family "premiere-stylize-distort-generate": Premiere Pro's standard Video Effects of
 // the Distort, Generate, Noise & Grain, Stylize, Time, Video and Transition bins, plus a standalone Vignette (the
 // Lumetri vignette) and a modern Glow. Ids `jasper.<kebab>`; Effects-panel folders = categories (no bin).
 // The entries live in one file per Premiere bin under ./premiere-stylize-distort-generate/ (family-private helpers

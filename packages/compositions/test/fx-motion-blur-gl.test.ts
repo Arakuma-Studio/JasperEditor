@@ -1,12 +1,4 @@
 // @vitest-environment node
-// Adaptive shutter motion blur (wave 5) in a real WebGL2 (headless Chrome, SwiftShader when there is no GPU): the
-// moving effects and transitions run through the GPU host on a thin bright line, and the intensity profile across the
-// smear is checked — continuous (no gaps, no periodic peaks: low max/min ratio for constant-speed moves, no notches
-// for shakes), deterministic (same pixels on re-render, in any frame order), reduced taps at a preview scale, and
-// IDENTICAL output with motion blur off or without motion (golden frames in goldens/motion-blur/, blessed from the
-// pre-wave-5 output — their pixel checksums equalled the former fx-motion-blur/baseline.json pins; JASPER_BLESS=1
-// re-blesses, docs/testing.md). MB_REPORT=<file> writes the smear metrics and
-// timings (MB_PERF=1 adds 1080p timings). FX_GL=0 skips it.
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,7 +50,7 @@ export function smearStats(profile: readonly number[]) {
 	return { length: last - first + 1, ratio, notches, holes, max };
 }
 
-/** Cases whose output must be identical to the pre-wave-5 code: motion blur off, or nothing moves. */
+/** Disabling motion blur, or holding motion constant, must preserve the reference pixels. */
 const STATIC_EFFECTS: [string, Partial<EffectArgs>][] = [
 	['shake-default', { id: 'jasper.s.shake', frame: 12, seed: 0.3 }],
 	['shake-default-grid', { id: 'jasper.s.shake', frame: 5, paint: 'grid' }],

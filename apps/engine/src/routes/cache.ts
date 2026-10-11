@@ -1,8 +1,3 @@
-// Media cache (M3, S04 §7.5 CA-013/CA-014/CA-019). Owner: wp-m3-cachegc.
-//   GET  /api/cache            → usage per kind (in use / referenced / unused), budgets, last cleaning
-//   POST /api/cache/clean      → {mode: auto | unused | all, kinds?} → the pass report (answers when done)
-//   GET/PUT /api/cache/settings → budgets, age limit, automatic cleaning (`<appdir>/engine/cache.json`)
-// The registry itself is a core service (`core.cache`, created with the queue and the project store).
 import {
 	CacheCleanRequestSchema,
 	CacheLocationRequestSchema,

@@ -1,9 +1,4 @@
 // @vitest-environment node
-// sapphire-textures-clouds in a real WebGL2 (headless Chrome, SwiftShader): the family's 21 generators compile and
-// run at several frames, draw a non-flat texture with default params, animate continuously (small frame-to-frame
-// change, larger over seconds), are deterministic and seeded, and honour the shared tail (Combine, Bg Brightness,
-// Output Opacity, Mix with Orig), plus one characteristic pixel per geometric texture. Runs when a Chrome is found
-// (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -116,10 +111,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect((await stats(id, { outputOpacity: 'allOpaque' }, { input: 'transparent' })).alpha).toBe(255);
 			const half = await pixel(id, {}, { input: 'half' }, 150, 45);
 			expect(half[3]).toBe(0);
-			// Mix with Orig 1 → the input.
 			const orig = await pixel(id, { mixWithOriginal: 1 }, { input: '#ff0000' }, 40, 40);
 			expect(orig).toEqual([255, 0, 0, 255]);
-			// Color0 = Color1 → a flat colour.
 			const red = await stats(id, { color0: [1, 0, 0, 1], color1: [1, 0, 0, 1] });
 			expect(red.std).toBeLessThan(0.5);
 			expect(red.rgb[0]).toBeGreaterThan(254);

@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Pixel behaviour of the sapphire-adjust-composite family in real WebGL2 (headless Chrome, SwiftShader when there is
-// no GPU): identity at defaults, one characteristic pixel per effect, alpha, the Mask block, media inputs, matte
-// shrink/grow per filter, edge noise determinism, EdgeFlash light and Z compositing. Same harness as fx-gl.test.ts
-// (FX_GL=0 skips it).
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

@@ -22,7 +22,7 @@ import { cssVar, designTokens } from '../timeline/components/canvas.tsx';
 import { glyphHalves, halfPath, pctOf, type Range, rulerTicks } from './lib.ts';
 
 /**
- * ui-perf: key glyphs are CSS background images (an SVG data URI per shape and colour), not inline SVG: every inline
+ * key glyphs are CSS background images (an SVG data URI per shape and colour), not inline SVG: every inline
  * <svg> is a transform node for the compositor, and a lane of hundreds of keys made each repaint (the playhead moves
  * every frame of a scrub) pay for all of them. Colours are the design tokens, resolved (and re-resolved when the theme
  * changes, `designTokens`).
@@ -54,7 +54,7 @@ function KeyGlyph(props: {
 	right: ReturnType<typeof glyphHalves>['right'];
 	selected?: boolean;
 	summary?: boolean;
-	/** keyframes-blend: a roving key (After Effects draws it as a small dot). */
+	/** a roving key (After Effects draws it as a small dot). */
 	roving?: boolean;
 }) {
 	const root = typeof document === 'undefined' ? null : document.documentElement;
@@ -103,7 +103,7 @@ type KeyLaneProps = {
 };
 
 /**
- * ui-perf: a lane re-renders only when what it draws changes (its keyframes, clip, range, selection); the playhead
+ * a lane re-renders only when what it draws changes (its keyframes, clip, range, selection); the playhead
  * moving (the rows are rebuilt with the values at the new frame) leaves it alone. Pass stable handlers.
  */
 function keyLaneEqual(a: KeyLaneProps, b: KeyLaneProps): boolean {
@@ -152,7 +152,7 @@ export const KeyLane = memo(function KeyLane(props: KeyLaneProps) {
 						data-kf-shape={roving ? 'roving' : `${h.left}/${h.right}`}
 						aria-label={`${roving ? 'Roving keyframe' : 'Keyframe'} ${props.row.label} at frame ${Math.round(frame)}`}
 						aria-pressed={selected}
-						// ui-perf: centred with calc() rather than a CSS translate: a transform per key made every repaint
+						// centred with calc() rather than a CSS translate: a transform per key made every repaint
 						// of a lane with hundreds of keys pay for as many compositor transform nodes (layerization).
 						className="absolute flex size-[13px] items-center justify-center"
 						style={{ left: `calc(${pct}% - 6.5px)`, top: 'calc(50% - 6.5px)' }}
@@ -173,7 +173,7 @@ export const KeyLane = memo(function KeyLane(props: KeyLaneProps) {
 
 /** Summary keys of a collapsed/expanded effect header: union of its rows' key frames (reference only). */
 type SummaryLaneProps = { rows: Row[]; seq: Sequence; range: Range };
-/** ui-perf: like KeyLane, the summary re-renders only when the rows' keyframes change. */
+/** like KeyLane, the summary re-renders only when the rows' keyframes change. */
 function summaryLaneEqual(a: SummaryLaneProps, b: SummaryLaneProps): boolean {
 	if (a.seq !== b.seq || a.range.start !== b.range.start || a.range.end !== b.range.end) return false;
 	if (a.rows.length !== b.rows.length) return false;

@@ -18,7 +18,7 @@ export function PointMenu({ x, y, className, style, menuRef, children, ...rest }
 	const setRef = (el: HTMLDivElement | null) => {
 		ref.current = el;
 		if (typeof menuRef === 'function') menuRef(el);
-		else if (menuRef) (menuRef as { current: HTMLDivElement | null }).current = el;
+		else if (menuRef) menuRef.current = el;
 	};
 	const menu = (
 		<div

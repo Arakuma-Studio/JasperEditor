@@ -1,6 +1,3 @@
-// imports workstream UI (docs/wp-notes/imports.md): the Interpret Footage dialog (sections, one undoable transaction,
-// extensible for later sections), the import prompts (image sequence, layered file, PDF pages), the import flow's
-// expansion of PDF pages and PSD layers, interpreted pictures in the media runtime, Lottie export, menus.
 import type { LayeredExtractResult, LottieExportResult, RegisteredMedia } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { MediaAsset } from '@jasper/project';
@@ -63,7 +60,7 @@ describe('Interpret Footage dialog', () => {
 			'fieldOrder',
 			'alpha',
 			'loop',
-			'color', // color-mgmt: its Colour section (order 60)
+			'color',
 		]);
 		fireEvent.click(screen.getByTestId('interpret-fr-assume'));
 		fireEvent.change(screen.getByTestId('interpret-fr-value'), { target: { value: '23.976' } });
@@ -90,8 +87,7 @@ describe('Interpret Footage dialog', () => {
 		const sections = [...screen.getByTestId('interpret-footage-dialog').querySelectorAll('section')].map(
 			(s) => s.getAttribute('data-section'),
 		);
-		expect(sections).toEqual(['pixelAspect', 'alpha', 'color']); // color-mgmt's Colour section applies to stills
-		// A later workstream (colour management) adds a section with its own commands.
+		expect(sections).toEqual(['pixelAspect', 'alpha', 'color']);
 		registerInterpretSection({
 			id: 'test-colour',
 			title: 'Colour',

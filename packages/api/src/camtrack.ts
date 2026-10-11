@@ -1,27 +1,25 @@
-// The 3D Camera Tracker (parity workstream `three-d`, docs/wp-notes/three-d.md). Owner: three-d.
-//
-// `POST /api/camtrack/solve` → EngineJob (kind `camtrack`): tracks features through a span of a video's frames and
-// solves the camera that filmed them (and the lens: focal length, optionally radial distortion), with the 3D points of
-// the tracked features. The result is committed to the clip's `cameraTracker` with `cameraTracker.setResult`.
+import {
+	CAMERA_TRACKER_METHODS,
+	CAMERA_TRACKER_SHOT_TYPES,
+	CameraSolvePointSchema,
+	CameraTrackerSettingsSchema,
+} from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
 
-const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
-
 /** 3D Camera Tracker ▸ Shot Type / Solve Method. */
-export const CAMTRACK_SHOT_TYPES = ['fixed', 'variable', 'specify'] as const;
-export const CAMTRACK_SOLVE_METHODS = ['auto', 'typical', 'flat', 'tripod'] as const;
+export const CAMTRACK_SHOT_TYPES = CAMERA_TRACKER_SHOT_TYPES;
+export const CAMTRACK_SOLVE_METHODS = CAMERA_TRACKER_METHODS;
 
-export const CamTrackSettingsWireSchema = z.object({
-	shot: z.enum(CAMTRACK_SHOT_TYPES),
-	/** Horizontal angle of view (degrees) for `specify`. */
-	hfov: z.number().min(1).max(170),
-	method: z.enum(CAMTRACK_SOLVE_METHODS),
-	/** Detailed Analysis: more features at a larger analysis size (slower). */
-	detailed: z.boolean(),
-	/** Solve radial lens distortion (k1, k2) with the camera. */
-	lensDistortion: z.boolean(),
-});
+export const CamTrackSettingsWireSchema = z.object(
+	CameraTrackerSettingsSchema.pick({
+		shot: true,
+		hfov: true,
+		method: true,
+		detailed: true,
+		lensDistortion: true,
+	}).required().shape,
+);
 export type CamTrackSettingsWire = z.infer<typeof CamTrackSettingsWireSchema>;
 
 export const CamTrackSolveRequestSchema = z.object({
@@ -39,13 +37,7 @@ export const CamTrackSolveRequestSchema = z.object({
 export type CamTrackSolveRequest = z.infer<typeof CamTrackSolveRequestSchema>;
 
 /** A solved 3D track point: canonical solve space, mean reprojection error (px), first / last media frame tracked. */
-export const CamTrackPointSchema = z.object({
-	id: z.number().int().min(0),
-	pos: Vec3,
-	error: z.number().min(0),
-	first: z.number().int().min(0),
-	last: z.number().int().min(0),
-});
+export const CamTrackPointSchema = z.object(CameraSolvePointSchema.shape);
 export type CamTrackPoint = z.infer<typeof CamTrackPointSchema>;
 
 /**

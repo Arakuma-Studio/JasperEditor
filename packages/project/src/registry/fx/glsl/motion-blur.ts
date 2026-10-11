@@ -1,4 +1,4 @@
-// Shared GLSL of the adaptive shutter motion blur (wave 5, docs/wp-notes/fx-shader-framework.md §19). Two chunks:
+// Shared GLSL of the adaptive shutter motion blur (docs/wp-notes/fx-shader-framework.md §19). Two chunks:
 //
 // - `GLSL_MB` (fx/mb): building blocks every moving effect or transition can use without any uniform of its own —
 //   the tap count of an on-screen smear (`fx_mbTapCount`: ≤ FX_MB_SPACING px apart, capped), the deterministic

@@ -1,3 +1,5 @@
+import type { Mat } from '@techstark/opencv-js';
+import type { OpenCvApi } from '../tools/opencv.ts';
 // Mask tracker `mask-klt@1` (wp masks; Premiere's Track Selected Mask; the approach of effectcraft
 // `crates/track/src/mask.rs`, MIT OR Apache-2.0, see licenses/ported/masks.md). Runs inside the tracking worker with
 // OpenCV.js. Frame to frame (forward or backward):
@@ -32,12 +34,10 @@ export type MaskConfig = {
 	threshold: number;
 };
 
-type CV = any;
-
-export function createMaskTracker(cv: CV, G: typeof Geometry, cfg: MaskConfig) {
+export function createMaskTracker(cv: OpenCvApi, G: typeof Geometry, cfg: MaskConfig) {
 	const W = cfg.width;
 	const H = cfg.height;
-	let prev: CV = null;
+	let prev: Mat | null = null;
 	let outline: number[] = cfg.polygon.slice();
 	let total: number[] = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 	const win = new cv.Size(cfg.winSize, cfg.winSize);
@@ -187,11 +187,11 @@ export function createMaskTracker(cv: CV, G: typeof Geometry, cfg: MaskConfig) {
 		const s = cv.matFromArray(n, 1, cv.CV_32FC2, src);
 		const d = cv.matFromArray(n, 1, cv.CV_32FC2, dst);
 		const mask = new cv.Mat();
-		let Hm: CV = null;
+		let Hm: Mat | null = null;
 		try {
 			Hm = cv.findHomography(s, d, cv.RANSAC, cfg.threshold, mask, 2000, 0.995);
 			if (!Hm || Hm.empty() || Hm.rows !== 3) return ransacSimilarity(src, dst, false);
-			const h = G.hNormalize(Array.from(Hm.data64F as Float64Array));
+			const h = G.hNormalize(Array.from(Hm.data64F));
 			if (!h.every(Number.isFinite)) return ransacSimilarity(src, dst, false);
 			let inl = 0;
 			for (let i = 0; i < n; i++) if (mask.data[i]) inl++;

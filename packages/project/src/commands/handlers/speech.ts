@@ -1,5 +1,4 @@
-// wp speech: `transcript.attach` — a recognised transcript becomes the transcript of a media (one per media; every
-// clip of the media reads it through the sequence transcript). See docs/wp-notes/speech.md.
+// A media asset has one attached transcript shared by all its clips.
 import { normalizeWords } from '../../captions/words.ts';
 import type { Transcript } from '../../schema/media.ts';
 import { mergeTranscriptWords } from '../../speech/index.ts';
@@ -7,7 +6,7 @@ import type { HandlerMap } from './util.ts';
 
 export const SPEECH_OWNER = 'speech';
 
-export const speechHandlers: HandlerMap = {
+export const speechHandlers = {
 	'transcript.attach': (doc, cmd, h) => {
 		if (!doc.media[cmd.mediaId]) return h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`);
 		for (const w of cmd.words)
@@ -89,4 +88,4 @@ export const speechHandlers: HandlerMap = {
 		h.defineRef(cmd.ref, id);
 		return { transcriptId: id, words: words.length, replaced: false };
 	},
-};
+} satisfies HandlerMap;

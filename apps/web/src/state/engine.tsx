@@ -1,4 +1,3 @@
-// EngineProvider (ARCHITECTURE §7.5): EngineClient + health + capabilities + the /events stream.
 import {
 	AGENT_INPUT_HEADER,
 	type EngineCapabilities,
@@ -125,7 +124,7 @@ export function EngineProvider(props: { children?: ReactNode; client?: EngineCli
 					for (const l of [...listeners.current]) l(null, raw);
 				},
 				onEvent: (e) => {
-					for (const l of [...listeners.current]) l(e, e as unknown as EventEnvelope);
+					for (const l of [...listeners.current]) l(e, e);
 				},
 				onStateChange: (s) => setEvents(s),
 			},
@@ -133,9 +132,6 @@ export function EngineProvider(props: { children?: ReactNode; client?: EngineCli
 		return () => stream.close();
 	}, [client, status]);
 
-	// polish: `subscribe` and `refresh` keep their identity. They used to be new functions whenever the status, the
-	// capabilities or the event stream changed, which re-ran every effect that depends on them (the media runtime sync
-	// resolved every medium of the project again each time).
 	const subscribe = useCallback<EngineState['subscribe']>((l) => {
 		listeners.current.add(l);
 		return () => listeners.current.delete(l);
@@ -178,11 +174,8 @@ export function useCapabilities(): {
 		}
 		if (capabilities?.render.fframes === 'ready') flags.add('fframes');
 		if (capabilities?.render.remotionLocal === 'ready') flags.add('remotionServerRender');
-		// wp speech: local Whisper transcription
-		if ((capabilities?.features as { speech?: { status?: string } } | undefined)?.speech?.status === 'ready')
-			flags.add('transcription');
-		if (typeof window !== 'undefined' && (window as { jasperDesktop?: unknown }).jasperDesktop)
-			flags.add('desktop');
+		if (capabilities?.features?.speech?.status === 'ready') flags.add('transcription');
+		if (typeof window !== 'undefined' && window.jasperDesktop) flags.add('desktop');
 		return { capabilities, flags };
 	}, [capabilities, status]);
 }

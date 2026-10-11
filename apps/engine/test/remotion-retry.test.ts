@@ -1,5 +1,4 @@
-// A multi-page Remotion render that times out is rendered once more on one page before failing (verify workstream:
-// six pages mounting a heavy composition on a loaded, software-GL machine timed out where one page renders it).
+// Heavy compositions on software GL may mount on one page when concurrent pages exhaust the timeout.
 import { describe, expect, it } from 'vitest';
 import { withSinglePageRetry } from '../src/remotion/service.ts';
 

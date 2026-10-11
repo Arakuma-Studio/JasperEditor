@@ -1,8 +1,3 @@
-// Sequence ▸ Auto Reframe Sequence… (workstream gaps, docs/wp-notes/gaps.md §AI-2), as Premiere's dialog: Sequence
-// Name, Target Aspect Ratio (Square 1:1, Vertical 4:5, Vertical 9:16, Horizontal 16:9, Custom) and Motion Tracking
-// (Slower Motion / Default / Faster Motion). OK analyses the subject of every video clip on the engine (job `reframe`,
-// one per media range, progress in the Jobs panel), then `sequence.autoReframe` makes the reframed copy (one undo
-// step) and opens it.
 import type { ReframeResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

@@ -1,4 +1,3 @@
-// Tracking commands (M2, S09:TRK-001…024): tracker.add / update / remove / setSamples / apply.
 // Trackers live on the plate (video) clip in media pixels and content time; `apply` bakes them into ordinary
 // keyframes of the target (a `jasper.corner-pin` effect or Motion), so manual correction = keyframe editing.
 import type { Draft } from 'immer';
@@ -108,12 +107,12 @@ function validateSamples(s: TrackerSamples, kind: ClipTracker['kind'], h: Handle
 	if (!s.data.every(Number.isFinite)) h.fail('E_INVALID_PARAM', 'samples.data must be finite numbers');
 }
 
-export const trackerHandlers: HandlerMap = {
+export const trackerHandlers = {
 	'tracker.add': (doc, cmd: CommandOf<'tracker.add'>, h) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'video')
 			h.fail('E_INVALID_PARAM', `Trackers go on video clips, not ${clip.kind} clips`, { path: [clip.id] });
-		// Workstream `time`: tracker samples live in content time, which a time remap no longer maps to the picture.
+		// Tracker samples live in content time, which a time remap no longer maps to the picture.
 		if (isRemapped(clip as Clip))
 			h.fail(
 				'E_INVALID_PARAM',
@@ -333,7 +332,7 @@ export const trackerHandlers: HandlerMap = {
 			...(effectInstanceId ? { effectInstanceId } : {}),
 			...(cmd.simplify ? { simplify: { tolerance: cmd.simplify.tolerance } } : {}),
 		};
-		// wp-m3-trackui (S09:TRK-023): optional simplification of the keys just baked (only those inside the range).
+		// Simplification must not change keys outside the newly baked range.
 		let simplified: SimplifyReport | undefined;
 		if (cmd.simplify) {
 			// Only the parameters this apply wrote (transform mode may drive a subset of Motion).
@@ -370,4 +369,4 @@ export const trackerHandlers: HandlerMap = {
 				: {}),
 		};
 	},
-};
+} satisfies HandlerMap;

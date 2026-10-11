@@ -1,8 +1,8 @@
-// Simulation ▸ Card Dance, Pixel Polly; Transition ▸ Card Wipe (sim-warp workstream; After Effects' Card Dance,
+// Simulation ▸ Card Dance, Pixel Polly; Transition ▸ Card Wipe (After Effects' Card Dance,
 // CC Pixel Polly and Card Wipe). Layer pieces in 3D through pieces.ts. Ported from EffectCraft
 // crates/effects/src/sim2.rs (card_dance_plan, pixel_polly_plan) and transition.rs (card_wipe_plan; MIT OR
 // Apache-2.0), see licenses/ported/sim-warp.md.
-import type { EffectSpec } from '../../effects.ts';
+import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
@@ -11,8 +11,6 @@ import { bool, choice, num } from './core.ts';
 import { cameraParams, intOf, lightingParams, materialParams, piecePasses, pieceUniforms } from './pieces.ts';
 
 const SIM = 'Simulation';
-
-// ---------------------------------------------------------------- Card Dance
 
 const CD_SOURCES = [
 	'None',
@@ -39,7 +37,7 @@ const CD_PROPS = [
 ] as const;
 
 /** Rows × columns of a card grid ("Columns Follows Rows" copies Rows). */
-const gridOf = (p: Record<string, unknown>, rowsDefault: number) => {
+const gridOf = (p: EffectParams, rowsDefault: number) => {
 	const rows = intOf(p.rows, rowsDefault, 1, 1000);
 	const follows = choice(p.rowsColumns, values(['Independent', 'Columns Follows Rows'])) === 1;
 	return { rows, cols: follows ? rows : intOf(p.columns, rowsDefault, 1, 1000) };
@@ -148,8 +146,6 @@ export const CARD_DANCE = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Card Wipe
 
 const FLIP_ORDERS = [
 	'Left to Right',
@@ -281,8 +277,6 @@ export const CARD_WIPE = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Pixel Polly
 
 const POLLY_OBJECTS = ['Polygon', 'Textured Polygon', 'Square', 'Textured Square'] as const;
 

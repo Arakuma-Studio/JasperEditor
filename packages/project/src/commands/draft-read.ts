@@ -1,9 +1,7 @@
-// Proxy-free reads of Immer drafts (workstream perf-core, docs/wp-notes/perf-core.md §3).
-//
 // Reading a draft through its proxy costs several traps per property, and reading a draftable child (a clip of
 // `seq.clips`) creates a child draft that Immer later has to finalize. Handlers that scan every clip of a sequence
 // (track scans in clearRange / insertShift, cleanupSequence, collectOrphans, clip lookups) therefore cost
-// O(clips × traps) per call — 100+ ms for a 50-clip move on 1 000 clips. `latest(x)` returns the object a draft
+// O(clips × traps) per call. `latest(x)` returns the object a draft
 // currently reads from (its copy once written, else its base) without creating anything, so scans read plain
 // objects and only the clips that are actually changed are drafted.
 //

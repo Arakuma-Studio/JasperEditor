@@ -28,8 +28,6 @@ import { GLSL_FILM } from './glsl.ts';
 
 const STYLIZE = SAPPHIRE_BINS.stylize;
 
-// ---------------------------------------------------------------- S_TVDamage
-
 /** Vertical-hold state per frame: whether the picture rolls and its roll offset (frame heights). */
 export function tvRoll(p: EffectParams, ctx: { frame: number; fps: number; seed: number }) {
 	const t = ctx.frame / Math.max(1, ctx.fps);
@@ -320,8 +318,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_VHSDamage
 
 const VHS_LUTS = ['none', 'vhs1', 'vhs2', 'vhs3', 'vhs4'] as const;
 const VHS_LUT_LABELS = ['None', 'VHS color 01', 'VHS color 02', 'VHS color 03', 'VHS color 04'];

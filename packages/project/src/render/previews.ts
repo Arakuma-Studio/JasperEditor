@@ -1,4 +1,4 @@
-// Render previews (workstream `previews`): render-bar segments, their content hashes and the playback cost estimate.
+// Render previews: render-bar segments, their content hashes and the playback cost estimate.
 //
 // # Segments
 // A sequence's picture is cut at every edge of everything drawn on a shown track: clips (and their transition
@@ -107,8 +107,6 @@ export type RenderAudioPreviewSegment = {
 	clipIds: string[];
 };
 
-// ---------------------------------------------------------------- hashing
-
 /**
  * A 128-bit non-cryptographic hash of a string as 32 hex digits: four 32-bit multiply-xorshift lanes with a final
  * avalanche (the `cyrb128` construction, public domain). Deterministic across runtimes (integer maths only).
@@ -141,8 +139,6 @@ export function hash128(text: string): string {
 export function isPreviewHash(s: string): boolean {
 	return /^[0-9a-f]{32}$/.test(s);
 }
-
-// ---------------------------------------------------------------- the snapshot the hashes are computed from
 
 /** The content identity of a media asset (what the preview hash sees instead of a URL). */
 export function previewMediaIdentity(asset: MediaAsset): string {
@@ -200,8 +196,6 @@ export function previewSnapshot(doc: ProjectDocument, sequenceId: string): Rende
 	bySeq.set(sequenceId, snap);
 	return snap;
 }
-
-// ---------------------------------------------------------------- segments
 
 type Span = { start: number; end: number };
 
@@ -297,8 +291,6 @@ function sweep(items: readonly Item[]) {
 		return active.filter((it) => overlaps(it.span, a, b)).sort((x, y) => x.order - y.order);
 	};
 }
-
-// ---------------------------------------------------------------- normalisation
 
 /** Kinds whose pixels never depend on their clip id (no seeded noise) when they have no effects and no Dissolve. */
 const ID_FREE_KINDS = new Set([
@@ -564,8 +556,6 @@ function hashItems(
 	return { hash: hash128(text), absolute: expressive };
 }
 
-// ---------------------------------------------------------------- cost model (≈)
-
 /** Decode cost of one 1080p frame by codec in the browser (ms, ≈; WebCodecs / `<video>` on a CPU-only box). */
 function decodeMs(codec: string): number {
 	const c = codec.toLowerCase();
@@ -755,8 +745,6 @@ function segmentCost(
 	return { costMs: Math.round(ms * 10) / 10, reasons, layers, stages, mattes };
 }
 
-// ---------------------------------------------------------------- public API
-
 export type PreviewSegmentOptions = { registry?: EffectRegistry; snapshot?: RenderSnapshot };
 
 const segmentMemo = new WeakMap<object, Map<string, RenderPreviewSegment[]>>();
@@ -836,8 +824,6 @@ export function previewSegmentAt<T extends { startFrame: number; frames: number 
 	return null;
 }
 
-// ---------------------------------------------------------------- smart rendering (stream copy)
-
 /** A stretch of the sequence that shows one source's frames untouched, frame for frame (smart rendering). */
 export type CopyableRun = {
 	/** Sequence frames [start, end). */
@@ -850,7 +836,7 @@ export type CopyableRun = {
 };
 
 /**
- * Where an export may stream-copy the source (workstream `previews`, smart rendering): stretches where exactly one
+ * Where an export may stream-copy the source (smart rendering): stretches where exactly one
  * layer is drawn — an untouched video clip (no effects, masks, Motion, opacity, blend, speed, holds, retiming,
  * transitions, interpretation) whose media has the sequence's frame size and rate — and nothing else (no other track,
  * caption, matte, camera). Adjacent segments of one clip join. Pure; `range` limits the result.
@@ -890,8 +876,6 @@ export function copyableRuns(
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- audio (Render Audio)
 
 const audioSpan = (c: RenderAudioClip): Span => ({
 	start: c.start - (c.headHandle ?? 0),

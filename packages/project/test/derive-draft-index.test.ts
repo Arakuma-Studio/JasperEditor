@@ -1,6 +1,4 @@
-// compositor (found by the flat compositor's property test): the per-track clip index is memoised by the `clips`
-// record; inside a transaction that record is one Immer draft whose identity survives every command, so a command
-// that read the index (transition.add) made later commands of the same transaction see stale clips.
+// Immer keeps the clips-record proxy across commands in a transaction; its identity cannot key a clip-index cache.
 import { describe, expect, it } from 'vitest';
 import {
 	applyTransaction,

@@ -1,8 +1,5 @@
-// Create Proxies, Attach Proxies and ingest from the client's side (workstream gaps, docs/wp-notes/gaps.md §PRJ-8):
-// submit `POST /api/media-jobs`, follow the engine job at module level (it completes while dialogs are closed) and,
-// when it succeeds, commit ONE transaction: `media.attachProxy` per proxy ("Create Proxies"), `media.relink` to the
-// copies ("Ingest: Copy") or the transcodes ("Ingest: Transcode", Replace Footage semantics). Failures and skipped
-// media surface as a toast. Progress is the Jobs panel's (engine jobs).
+// Follow jobs at module scope so closing a dialog does not interrupt them. Successful outputs are
+// attached or relinked in one transaction, keeping an ingest operation undoable as a unit.
 import type { MediaJobRequest, MediaJobResult, RegisteredMedia } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

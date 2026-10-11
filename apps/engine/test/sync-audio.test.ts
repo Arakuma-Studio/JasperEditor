@@ -1,5 +1,5 @@
-// POST /api/sync/audio end to end (wp-multicam): real ffmpeg decodes, two-pass GCC-PHAT in the engine. Recordings of
-// one synthetic "event" with known offsets: a WAV reference, a camera MP4 (AAC, starts 3.25 s into the event, quieter,
+// Synthetic recordings provide known offsets for real FFmpeg decoding and two-pass GCC-PHAT:
+// a WAV reference, a camera MP4 (AAC, starts 3.25 s into the event, quieter,
 // noisy), a recorder WAV that started 1.5 s before the reference with inverted polarity, an unrelated recording.
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -140,7 +140,6 @@ describe('POST /api/sync/audio', () => {
 		expect(by.recorder!.inverted).toBe(true);
 		expect(by.recorder!.reliable).toBe(true);
 		expect(by.recorder!.confidence!).toBeGreaterThan(8);
-		// unrelated material is flagged
 		expect(by.other!.reliable).toBe(false);
 	}, 120_000);
 

@@ -1,4 +1,4 @@
-// Workstream `time`: Time Remapping and Time Interpolation through the interchange formats — FCPXML `timeMap`
+// Time Remapping and Time Interpolation use FCPXML `timeMap`
 // (multi-point, smooth pieces, frameSampling), FCP7 Time Remap `graphdict`, OTIO metadata — and the formats that
 // cannot carry variable speed (reported, or pre-rendered).
 import {

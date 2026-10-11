@@ -22,7 +22,7 @@ const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100
  *    projective map `props.projective` written as `matrix3d`;
  * 4. opacity on the outer element;
  * 5. blend with `mix-blend-mode` against the layers below (the stack root is `isolation: isolate`).
- * fx framework (wave 1): media layers run GPU shader effects in their source component (`FxPicture`) and pass the
+ * fx framework: media layers run GPU shader effects in their source component (`FxPicture`) and pass the
  * remaining effects here; DOM layers (text, shapes, motion graphics) that leave `effects` unset get them here — the
  * content is drawn through `<HtmlInCanvas>` (`FxDomPicture`) when the browser has HTML-in-Canvas, else the shader
  * effects are bypassed with a chip (preview; renders always have it).

@@ -1,4 +1,3 @@
-// polish: browse_media_files (the Media Browser for agents).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -101,7 +100,6 @@ describe('browse_media_files', () => {
 		const limited = (await call({ path: '/m', limit: 2 })).json;
 		expect(limited.entries.length).toBe(2);
 		expect(limited.truncated).toBe(true);
-		// only importable media: the tool never asks for every file of a folder
 		expect(requests.some((r) => r.includes('all=1'))).toBe(false);
 		expect((await call({ path: '/m', includeAll: true })).r.isError).toBe(true);
 	});

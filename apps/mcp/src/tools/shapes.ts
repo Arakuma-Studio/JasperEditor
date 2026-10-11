@@ -15,6 +15,7 @@ import {
 	TrackRefSchema,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -26,10 +27,8 @@ import {
 	type ToolContext,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { applyHelper, hexToRgba, timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+import { applyHelper, hexToRgba } from './editing.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const SHAPES_GUIDE = `Shapes — rectangles / ellipses and vector shapes (After Effects-style shape layers):
 - add_shape adds a rectangle or ellipse (default 400×400 white, centred, 5 s). Size is in layer pixels; position is where its centre lands in the sequence (0,0 = top left). Strokes keep their visible width whatever the position: inside, center or outside. Change it with apply_commands clip.update {"shape": {fill, stroke, size, cornerRadius}} or param.set on ["clip", id, "shape", "size" | "fill" | "cornerRadius"] / ["clip", id, "shape", "stroke", "color" | "width" | "position"]; convert_shape_to_vector turns it into a vector shape without changing the picture.
 - Vector shapes (add_vector_shape, svg_to_shape, list_shape_presets) hold a tree of items, top of the list drawn on top: groups (contents + transform: anchor, position, scale %, skew, skewAxis, rotation, opacity), paths (rect {size, position, roundness}, ellipse {size, position}, polystar {starType star|polygon, points, position, rotation, innerRadius, outerRadius, innerRoundness, outerRoundness}, path {path: SVG path data or {closed, vertices: [{p, in, out}]}}, each with direction normal|reversed), paints (fill {color, opacity %, fillRule nonzero|evenodd, blendMode, composite below|above}, stroke {color, width, opacity, lineCap butt|round|square, lineJoin miter|round|bevel, miterLimit, dashes [dash, gap, …] (≤ 3 pairs) or {segments, offset}, taper {units percent|pixels, startLength, endLength, startWidth %, endWidth %, startEase %, endEase %}, wave {amount %, units pixels|cycles, wavelength, cycles, phase°}, position center|inside|outside}, gradientFill / gradientStroke {gradientType linear|radial, startPoint, endPoint, highlightLength %, highlightAngle°, colors {colors: [{position 0..1, color [r,g,b], midpoint?}], opacities: [{position, opacity 0..1, midpoint?}]}}) and path operators (trim {start %, end %, offset°, mode simultaneous|individual}, repeater {copies, offset, composite below|above, transform {anchor, position, scale, rotation, startOpacity, endOpacity}}, offsetPaths {amount, lineJoin, miterLimit, copies, copyOffset}, roundCorners {radius}, zigZag {size, ridges, points corner|smooth}, twist {angle, center}, wiggle {size, detail, points, speed (wiggles/s), correlation %, temporalPhase°, spatialPhase°, seed}, puckerBloat {amount −100..100}, mergePaths {mode merge|add|subtract|intersect|exclude}). Operators act on every path above them in their group (nested groups included), paints paint the paths above them as modified by the operators below them, Merge Paths drops the paints above it. Coordinates are layer pixels around the layer centre (the layer is frame-sized; its anchor is the centre).
@@ -116,8 +115,6 @@ export function registerShapeTools(ctx: ToolContext): void {
 			),
 	);
 }
-
-// ---------------------------------------------------------------- vector shapes (wp shapes)
 
 const ItemsArg = z
 	.array(ShapeItemInputSchema)

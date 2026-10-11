@@ -1,4 +1,4 @@
-// Retimed video pictures (workstream `time`): a video layer whose frames are chosen by media time instead of linear
+// Retimed video pictures: a video layer whose frames are chosen by media time instead of linear
 // playback — reverse, Time Remapping, Frame Blending / Optical Flow (speed changes, remaps, frame-rate conform) and
 // variable-frame-rate media. Each composition frame computes the media time it shows (the clip's picture time through
 // its remap), decodes the frame(s) around it (`FrameSource`, GOP-cached, so reverse playback is smooth) and composes

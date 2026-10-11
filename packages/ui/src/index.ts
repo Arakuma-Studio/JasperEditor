@@ -1,5 +1,3 @@
-// @jasper/ui — design tokens, Tailwind bridge, icons, cursors and the design-system primitives every
-// panel uses (ARCHITECTURE §7.4, S05 §8–§14). Token-only styling (S05:DT-002).
 export * from './cursors/ForcedCursor.tsx';
 export * from './cursors/index.ts';
 export * from './cx.ts';

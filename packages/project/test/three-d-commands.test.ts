@@ -1,6 +1,3 @@
-// three-d: commands of 3D layers, cameras and lights — the 3D Layer switch, New Camera / Light, Camera / Light
-// Settings, param.set on the 3D properties (keys, orientation, materials), the camera tools, the renderer setting,
-// refusals (kinds, transitions, locked tracks), invariants / repair and the render snapshot.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -53,7 +50,6 @@ describe('clip.set3d', () => {
 		const off = h.seq.clips[id] as typeof c;
 		expect(off.threeD?.enabled).toBe(false);
 		expect(off.threeD?.positionZ.value).toBe(250);
-		// A 2D clip draws without threeD in the snapshot.
 		expect(snap(h).videoTracks[0]!.clips[0]!.threeD).toBeUndefined();
 		h.ok([{ type: 'clip.set3d', clipIds: [id], enabled: true }]);
 		expect(snap(h).videoTracks[0]!.clips[0]!.threeD?.positionZ.value).toBe(250);
@@ -83,14 +79,12 @@ describe('clip.set3d', () => {
 		const refused = h.tx([{ type: 'clip.set3d', clipIds: [a], enabled: true }]);
 		expect(refused.ok).toBe(false);
 		expect(!refused.ok && refused.errors[0]!.message).toMatch(/transitions/);
-		// Remove the transition, make it 3D, then a new transition is refused.
 		h.ok([{ type: 'transition.remove', transitionIds: Object.keys(h.seq.transitions) }]);
 		h.ok([{ type: 'clip.set3d', clipIds: [a], enabled: true }]);
 		const t = h.tx([
 			{ type: 'transition.add', trackId: 'V1', at: 60, effectId: 'jasper.cross-dissolve', duration: 10 },
 		]);
 		expect(t.ok).toBe(false);
-		// applyDefault skips the 3D edges with a warning.
 		const d = h.ok([{ type: 'transition.applyDefault', clipIds: [a, b], edges: 'both' }]);
 		expect(d.warnings.some((w) => w.code === 'W_TRANSITION_3D')).toBe(true);
 		expect(
@@ -233,7 +227,6 @@ describe('cameras', () => {
 		expect(dist()).toBeCloseTo(d0, 6);
 		h.ok([{ type: 'camera.dolly', clipId: id, amount: 500 }]);
 		expect(dist()).toBeCloseTo(d0 - 500, 6);
-		// Keyed position: the tool writes a key at the time.
 		h.ok([
 			{
 				type: 'param.setAnimated',
@@ -266,14 +259,12 @@ describe('lights', () => {
 		]);
 		expect((h.seq.clips[a!] as LightClip).light.transform.autoOrient).toBe('off');
 		expect(snap(h).scene3d?.lights).toHaveLength(2);
-		// Environment media must exist and be a picture.
 		expect(h.tx([{ type: 'light.settings', clipId: a!, environmentMediaId: 'med_x' }]).ok).toBe(false);
 		const m = h.registerVideo({ kind: 'image' });
 		h.ok([{ type: 'light.settings', clipId: a!, lightType: 'environment', environmentMediaId: m }]);
 		expect((h.seq.clips[a!] as LightClip).light.environmentMediaId).toBe(m);
 		expect(snap(h).media[m]).toBeTruthy();
 		clean(h);
-		// Repair: a missing environment → studio light; threeD on an adjustment layer is dropped.
 		const broken = JSON.parse(JSON.stringify(h.doc));
 		const seq = Object.values(broken.sequences)[0] as { clips: Record<string, Record<string, unknown>> };
 		(seq.clips[a!]!.light as { environmentMediaId: string }).environmentMediaId = 'med_gone';

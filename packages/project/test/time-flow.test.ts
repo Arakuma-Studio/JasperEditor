@@ -1,4 +1,3 @@
-// Optical flow / frame interpolation (workstream `time`): CPU reference of Time Interpolation ▸ Optical Flow.
 import { describe, expect, it } from 'vitest';
 import {
 	analysisFactor,
@@ -146,7 +145,6 @@ describe('interpolation', () => {
 		const ours = band(interpolateFlow(a, b, 0.5, pair));
 		const ec = band(interpolateEffectcraft(a, b, 0.5, pair.ab, pair.k));
 		const mix = band(blendFrames(a, b, 0.5));
-		// Measured: ours 0.0042, effectcraft 0.0070, frame mix 0.0292 (mean abs error, 0…1).
 		expect(ours).toBeLessThan(ec * 0.8);
 		expect(ours).toBeLessThan(mix * 0.25);
 	});

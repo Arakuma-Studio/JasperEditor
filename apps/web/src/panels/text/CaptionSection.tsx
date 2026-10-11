@@ -1,4 +1,5 @@
-// wp captions: Properties panel ▸ Caption section for selected caption clips — text and speaker of one caption, and
+import type { Command } from '@jasper/project';
+// Properties panel ▸ Caption section for selected caption clips — text and speaker of one caption, and
 // its per-caption style overrides (size, colour, alignment, position; Reset clears them). Registered as a clip section.
 import {
 	type CaptionStyle,
@@ -23,8 +24,8 @@ function CaptionSection({ session, clips, sequenceId }: ClipSectionProps) {
 	const caps = clips.filter((c): c is CaptionsClip => c.kind === 'captions');
 	if (!seq || !caps.length) return null;
 	const one = caps.length === 1 ? caps[0]! : null;
-	const apply = (label: string, commands: unknown[]) => {
-		const r = session.apply({ label, origin: 'user', sequenceId, commands: commands as never[] });
+	const apply = (label: string, commands: Command[]) => {
+		const r = session.apply({ label, origin: 'user', sequenceId, commands });
 		if (!r.ok) toast({ kind: 'warning', title: `${label}: not possible`, detail: r.errors[0]?.message });
 	};
 	const track = seq.captionTracks.find((t) => t.id === caps[0]!.trackId);

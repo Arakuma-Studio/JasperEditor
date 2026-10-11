@@ -1,6 +1,3 @@
-// wp fixups: menus stay inside a 1600×1000 window. The Project panel's long context menu (with its inline Label
-// list open), the timeline clip context menu and its submenus flip / slide / scroll instead of running off the
-// bottom; every menubar menu and submenu fits, also in a short window.
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { createProject, enableAgentBridge, importFiles, query, transact } from './support.ts';
 
@@ -42,7 +39,6 @@ async function expectInside(menu: Locator, what: string): Promise<void> {
 test('Project panel context menu stays inside the window, also with the Label list open', async () => {
 	const row = page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' });
 	const box = (await row.boundingBox())!;
-	// Open it as low in the window as the row allows: the bottom of the row.
 	await row.click({ button: 'right', position: { x: Math.min(40, box.width / 2), y: box.height - 2 } });
 	const menu = page.locator('[role="menu"]').filter({ has: page.getByTestId('project-menu-cut') });
 	await expect(menu).toBeVisible();
@@ -50,7 +46,6 @@ test('Project panel context menu stays inside the window, also with the Label li
 	await menu.getByRole('menuitem', { name: 'Label ▸' }).click();
 	await expect(menu.getByRole('menuitem', { name: 'Indigo' })).toBeVisible();
 	await expectInside(menu, 'project menu with labels');
-	// Every entry is reachable: the last one scrolls into view inside the menu and can be clicked.
 	const last = menu.getByRole('menuitem').last();
 	await last.scrollIntoViewIfNeeded();
 	await expectInside(last, 'last project menu entry');
@@ -69,7 +64,6 @@ test('timeline clip context menu and its submenus stay inside the window', async
 	const menu = page.getByTestId('timeline-context-menu');
 	await expect(menu).toBeVisible();
 	await expectInside(menu, 'clip menu');
-	// Open every submenu in turn.
 	const subs = menu.locator(':scope > div.relative');
 	const n = await subs.count();
 	expect(n).toBeGreaterThan(0);

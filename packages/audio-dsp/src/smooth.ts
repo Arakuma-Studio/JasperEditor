@@ -43,7 +43,6 @@ export class Smoothed {
 		this.remaining = 0;
 	}
 
-	/** Set and jump. */
 	setImmediate(v: number): void {
 		this.targetValue = v;
 		this.snap();
@@ -64,12 +63,10 @@ export class Smoothed {
 		return this.current;
 	}
 
-	/** Target value. */
 	target(): number {
 		return this.targetValue;
 	}
 
-	/** Whether a ramp is in progress. */
 	isSmoothing(): boolean {
 		return this.remaining > 0;
 	}

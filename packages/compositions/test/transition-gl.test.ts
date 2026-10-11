@@ -1,11 +1,4 @@
 // @vitest-environment node
-// GPU transitions on the fx GPU host in a real WebGL2 (wave-2 transition framework): headless Chrome (Playwright,
-// SwiftShader when there is no GPU) runs the stage planning + host (test/transition-gl/entry.ts, bundled with
-// esbuild). Compiles the whole transition GLSL library and EVERY registered GPU transition (wave-3 families get this
-// check for free): two-sided, one-sided (in / out) and reversed; at progress 0 the stage shows A and at 1 B (the
-// contract every transition keeps); placement of scaled / moved / half-transparent sides; a transition that reads
-// both sides (S_DissolveLuma). Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0
-// skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TRANSITION_FAMILIES } from '@jasper/project';
@@ -21,7 +14,6 @@ const TR_FINGERPRINTS = join(here, 'goldens', 'transition-fingerprints.json');
 
 type Px = [number, number, number, number];
 const near = (a: Px, b: Px, tol = 4) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
-/** Frame height of the entry's stage (transition-gl/entry.ts). */
 const H_TEST = 36;
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
@@ -61,9 +53,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectFingerprints(TR_FINGERPRINTS, await call<Record<string, number[]>>('fingerprints'), 4);
 		});
 
-		// One test per transition family (as fx-gl.test.ts does for effects): SwiftShader compiles slowly, so the whole
-		// catalogue does not fit one timeout. Each runs every GPU transition of the family two-sided, one-sided (in /
-		// out) and reversed, then checks the contract: A at progress 0, B at progress 1.
+		// SwiftShader compiles slowly; split families so the catalogue fits the per-test timeout.
 		for (const family of TRANSITION_FAMILIES.map((f) => f.file))
 			it(`compiles and runs every GPU transition of ${family}; A at progress 0, B at 1`, {
 				timeout: 240_000,

@@ -11,6 +11,7 @@ import {
 	sourceRangeFromSidecar,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -24,11 +25,6 @@ import {
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaSummary, projectSummary } from '../format.ts';
 import { mediaRegisterCommand } from '../media.ts';
-
-export const ProjectIdArg = z
-	.string()
-	.min(1)
-	.describe('Project id ("prj_…") from list_projects or create_project');
 
 const PRESET_IDS = BUILTIN_PRESETS.map((p) => p.id) as [string, ...string[]];
 

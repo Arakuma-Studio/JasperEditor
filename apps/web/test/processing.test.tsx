@@ -1,6 +1,3 @@
-// Clip processing UI (S07 §6, PRU-001…004): the Process Clip dialog builds the ProcessRequest, a finished job
-// commits ONE `media.derive` transaction (with replaceInClips) labelled "Process Clip", the Media Version
-// section swaps with `clip.replaceSource`, and Preferences ▸ Processing saves settings and renders a probe.
 import type { EngineJob, ProcessResult } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -24,8 +21,6 @@ import { ProcessingPreferencesPage } from '../src/processing/PreferencesPage.tsx
 import { ProcessDialog } from '../src/processing/ProcessDialog.tsx';
 import { ReplaceFootageDialog } from '../src/processing/ReplaceFootageDialog.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
-
-// ------------------------------------------------------------------ fixtures
 
 const KEY = 'mk_source_1';
 const FP = `q1:${'ab'.repeat(32)}`;
@@ -232,8 +227,6 @@ afterEach(async () => {
 	vi.useRealTimers();
 });
 
-// ------------------------------------------------------------------ dialog
-
 describe('Process Clip dialog (PRU-001)', () => {
 	it('builds the ProcessRequest from the checked steps and queues the job with the projectId', async () => {
 		const { session, mediaId, videoClip } = makeSession();
@@ -255,7 +248,7 @@ describe('Process Clip dialog (PRU-001)', () => {
 		);
 		await waitFor(() => expect(calls.some((c) => c.url === '/api/processing/models')).toBe(true));
 		const start = screen.getByRole('button', { name: 'Start' });
-		expect((start as HTMLButtonElement).disabled).toBe(true); // no step yet
+		expect((start as HTMLButtonElement).disabled).toBe(true);
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Denoise' }));
 		fireEvent.click(within(screen.getByTestId('step-denoise')).getByRole('button', { name: 'Strong' }));
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Deblock' }));
@@ -387,8 +380,6 @@ describe('Process Clip dialog (PRU-001)', () => {
 	});
 });
 
-// ------------------------------------------------------------------ job → media.derive
-
 describe('finished process jobs (PRU-002)', () => {
 	it('commits media.derive with replaceInClips as ONE "Process Clip" entry; one undo restores the original', async () => {
 		const { session, mediaId, videoClip, audioClip } = makeSession();
@@ -417,7 +408,6 @@ describe('finished process jobs (PRU-002)', () => {
 			recipeHash: 'f'.repeat(64),
 		});
 		expect(processed.locators[0]).toEqual({ type: 'engine-store', engineId: 'local', key: 'mk_processed_1' });
-		// Linked audio keeps the original (PRC-007).
 		expect((seq.clips[audioClip] as Clip & { mediaId: string }).mediaId).toBe(mediaId);
 		expect(toasts.getState().log.at(-1)).toMatchObject({ kind: 'success' });
 
@@ -453,15 +443,12 @@ describe('finished process jobs (PRU-002)', () => {
 		expect(n.kind).toBe('error');
 		expect(n.detail).toContain('REMOTE_CONNECTION_LOST: Lost the connection to gpu');
 		expect(n.actions?.map((a) => a.label)).toEqual(['Retry', 'Run on This Computer']);
-		// Nothing was committed and no local job was started on its own.
 		expect(session.getState().history.entries.at(-1)?.label).toBe('setup');
 		expect(
 			calls.filter((c) => c.url.endsWith('/process')).map((c) => (c.body as { executor: string }).executor),
 		).toEqual(['remote']);
 	});
 });
-
-// ------------------------------------------------------------------ Media Version + badges
 
 describe('Media Version section and processed badges (PRU-003)', () => {
 	function withVersion() {
@@ -509,8 +496,6 @@ describe('Media Version section and processed badges (PRU-003)', () => {
 		expect(clip().mediaId).toBe(mediaId);
 	});
 });
-
-// ------------------------------------------------------------------ Preferences
 
 describe('Preferences ▸ Processing (PRU-004)', () => {
 	it('saves the remote settings, shows engine validation errors and renders a probe result', async () => {
@@ -586,8 +571,6 @@ describe('Preferences ▸ Processing (PRU-004)', () => {
 		expect(screen.getByTestId('probe-message').textContent).toContain('Connection refused');
 	});
 });
-
-// ------------------------------------------------------------------ M3 source ranges (wp-m3-inpoint)
 
 describe('source ranges in the UI (S07:PRU-005, PRC-015…018)', () => {
 	const F25 = 28_224_000;
@@ -840,16 +823,13 @@ describe('source ranges in the UI (S07:PRU-005, PRC-015…018)', () => {
 				fireEvent.click(screen.getByTestId('replace-choose'));
 			});
 			await waitFor(() => expect(screen.getByTestId('replace-new').textContent).toContain('a.mov'));
-			// Choosing another file discards the first.
 			await act(async () => {
 				fireEvent.click(screen.getByTestId('replace-choose'));
 			});
 			await waitFor(() => expect(screen.getByTestId('replace-new').textContent).toContain('b.mov'));
 			await waitFor(() => expect(deletes()).toEqual(['/api/media/mk_first0001']));
-			// Closing (Cancel / Escape / ×) discards the current pick.
 			view.unmount();
 			await waitFor(() => expect(deletes()).toEqual(['/api/media/mk_first0001', '/api/media/mk_second001']));
-			// A committed file is never discarded.
 			calls.length = 0;
 			let closed: unknown = 'open';
 			const v2 = render(

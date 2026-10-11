@@ -1,6 +1,3 @@
-// imports workstream: image-sequence grouping (examples + fuzz), Lottie parsing (validation + fuzz), Lottie export
-// (layer types, warnings, and an oracle: the exported Bézier eases reproduce our keyframe evaluation), and the
-// layered (PSD) import commands applied to a document.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,6 +15,7 @@ import {
 	parseFrameName,
 	parseLottie,
 	type Sequence,
+	type StillClip,
 	sequenceFrameFiles,
 	svgToShapeContents,
 } from '../src/index.ts';
@@ -91,7 +89,6 @@ describe('image sequences', () => {
 				const { sequences, singles } = groupImageSequences(names);
 				const used = sequences.reduce((n, s) => n + s.frames.length, 0);
 				const unique = new Set(names).size;
-				// Every distinct name ends up in exactly one place (duplicates collapse inside a sequence).
 				expect(used + new Set(singles).size).toBeLessThanOrEqual(unique + singles.length);
 				for (const s of sequences) {
 					expect(s.frames.length).toBeGreaterThanOrEqual(2);
@@ -174,7 +171,6 @@ describe('Lottie parsing', () => {
 				}
 			}),
 		);
-		// Mutated documents: random keys replaced deep inside the layers.
 		fc.assert(
 			fc.property(fc.jsonValue({ maxDepth: 4 }), fc.nat(5), (junk, i) => {
 				const d = structuredClone(LOTTIE) as Record<string, unknown>;
@@ -267,10 +263,8 @@ describe('Lottie export', () => {
 		expect(layers).toBeGreaterThanOrEqual(3);
 		expect(warnings.join(' ')).toMatch(/Audio/);
 		expect(warnings.some((w) => /video/i.test(w))).toBe(true);
-		// A range limits the comp.
 		const part = exportSequenceToLottie(h.doc, h.seqId, { range: { start: 10, end: 40 } }).json;
 		expect(part.op).toBe(30);
-		// The JSON round-trips through our own Lottie parser.
 		expect(() => parseLottie(JSON.stringify(json))).not.toThrow();
 	});
 
@@ -381,20 +375,19 @@ describe('layered (PSD) import commands', () => {
 				(c) =>
 					(c as { name?: string }).name === n ||
 					h.doc.media[(c as { mediaId?: string }).mediaId ?? '']?.originalName === `${n}.png`,
-			) as Record<string, any>;
+			) as StillClip;
 		const shadow = byName('Shadow');
 		expect(shadow.blendMode).toBe('multiply');
 		expect(shadow.opacity.value).toBeCloseTo(50, 6);
 		expect(shadow.transform.position.value).toEqual([60, 50]);
 		const clipped = byName('Clipped');
 		expect(JSON.stringify(clipped.effects)).toContain('track-matte');
-		const nest = Object.values(seq.clips).find((c) => c.kind === 'nest-video') as Record<string, any>;
+		const nest = Object.values(seq.clips).find((c) => c.kind === 'nest-video')!;
 		expect(nest.opacity.value).toBeCloseTo(80, 6);
 		const inner = h.doc.sequences[nest.sequenceId] as Sequence;
-		const innerClips = Object.values(inner.clips) as Record<string, any>[];
+		const innerClips = Object.values(inner.clips) as StillClip[];
 		expect(innerClips.map((c) => c.blendMode ?? 'normal').sort()).toEqual(['add', 'normal']);
 		expect(innerClips.filter((c) => c.enabled === false)).toHaveLength(1);
-		// Every layer is an item in the bin, with its source recorded.
 		const media = Object.values(h.doc.media).filter((m) => m.layerSource);
 		expect(media).toHaveLength(6);
 		expect(media.find((m) => m.layerSource!.name === 'Circle')!.layerSource!.groups).toEqual(['Badge']);

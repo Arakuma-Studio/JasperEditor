@@ -1,6 +1,4 @@
-// The worked examples of the transition authoring guide (docs/wp-notes/fx-transition-framework.md §2, §8), kept
-// compiling and running: transition-gl.test.ts runs them like the registered catalogue. Test-only (ids `test.*`):
-// the guide's text and these specs must stay identical.
+// Test-only specs must stay identical to docs/wp-notes/fx-transition-framework.md §2 and §8.
 import {
 	defineShaderTransition,
 	fxParam,
@@ -16,7 +14,6 @@ import {
 
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
-/** Guide §2: Wipe ▸ Clock Wipe (a single pass, the standard options, a derived uniform). */
 const TEST_CLOCK_WIPE = defineShaderTransition({
 	id: 'test.clock-wipe',
 	label: 'Clock Wipe',

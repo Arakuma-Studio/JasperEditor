@@ -51,8 +51,6 @@ export const isVisualClip = (c: Clip) => isKnownClipKind(c.kind) && !!kindCapabi
 export const isAudioClip = (c: Clip) =>
 	c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 
-// ---------------------------------------------------------------- bindings
-
 /** One clip's side of a property row. */
 export type Binding = {
 	clip: Clip;
@@ -162,8 +160,6 @@ export function makeRow(id: string, bindings: (Binding | null)[]): Row | null {
 	return { id, label: list[0]!.spec.label, spec: list[0]!.spec, bindings: list };
 }
 
-// ---------------------------------------------------------------- display state
-
 const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
 /** Shared value of a row: equal values display normally, differing ones as mixed (S03:INS-004). */
@@ -207,8 +203,6 @@ export function keyAtFrame(b: Binding, seq: Sequence, frame: number): string | n
 const insideClip = (clip: Clip, frame: number) => frame >= clip.start && frame < clip.start + clip.duration;
 const clampIntoClip = (clip: Clip, frame: number) =>
 	Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
-
-// ---------------------------------------------------------------- commands
 
 type EditPlan = {
 	commands: Command[];

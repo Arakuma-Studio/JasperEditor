@@ -39,8 +39,6 @@ export function endCanvasTextEdit(): void {
 	if (canvasTextEditStore.getState().edit) canvasTextEditStore.setState({ edit: null });
 }
 
-// ---------------------------------------------------------------- "edit this text in Properties"
-
 type FocusRequest = { clipId: string; path: string[] };
 const focusListeners = new Set<(r: FocusRequest) => void>();
 

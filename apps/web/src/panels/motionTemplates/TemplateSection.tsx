@@ -7,9 +7,9 @@
 import type { Clip, MgTemplateRegistry } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, toast } from '@jasper/ui';
-import { templateUpgradeFor, updateTemplates } from '../../commands/mg.ts';
 import type { ClipSectionProps } from '../../extensions/index.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { templateUpgradeFor, updateTemplates } from './upgrades.ts';
 
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 

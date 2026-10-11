@@ -1,5 +1,3 @@
-// Special effects: Distortion harmonics and DC, GuitarSuite, Mastering transparency/EQ/maximizer, Vocal Enhancer,
-// Loudness Meter (pass-through, equals @jasper/audio-dsp's meter), Mute ramp, Loudness Auto Gain convergence.
 import { LoudnessMeter } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import { dbToGain } from '../src/core/math.ts';
@@ -118,7 +116,6 @@ describe('special effects', () => {
 		const x = noise(8, SR * 10, dbToGain(-40) * Math.sqrt(3));
 		run(lim, x);
 		expect(lim.meters!()[0]!).toBeLessThanOrEqual(6 + 1e-9);
-		// Silence holds the gain.
 		const s = fx('auto-gain');
 		run(s, new Float32Array(SR * 5));
 		expect(s.meters!()[0]).toBe(0);

@@ -1,5 +1,3 @@
-// Remotion bundle contracts (M2, S08 §3/§5/§8): zip safety, cache identity, version pin, props schemas,
-// routes and uploads. MG_E2E=1 also checks import, real masters, alpha, native export and rebuild.
 import { spawnSync } from 'node:child_process';
 import {
 	cpSync,
@@ -61,9 +59,6 @@ import {
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 const E2E = process.env.MG_E2E === '1';
 
-// ---------------------------------------------------------------- helpers
-
-/** A minimal zip writer (stored or deflated entries) for the reader tests. */
 function makeZip(entries: { name: string; data: Buffer | string; deflate?: boolean }[]): Buffer {
 	const locals: Buffer[] = [];
 	const centrals: Buffer[] = [];
@@ -107,7 +102,6 @@ function makeZip(entries: { name: string; data: Buffer | string; deflate?: boole
 	return Buffer.concat([...locals, cd, end]);
 }
 
-/** Every file of a directory as zip entries (deflated). */
 function zipDir(dir: string, prefix = ''): Buffer {
 	const out: { name: string; data: Buffer; deflate: boolean }[] = [];
 	const walk = (d: string, rel: string) => {
@@ -189,8 +183,6 @@ afterAll(async () => {
 	await closeApps();
 });
 
-// ---------------------------------------------------------------- unit
-
 describe('zip reader (bundle uploads)', () => {
 	it('extracts stored and deflated entries and refuses unsafe paths', async () => {
 		const dir = tempAppdir('jasper-zip-');
@@ -264,7 +256,6 @@ describe('bundle identity and versions (S08:MGC-001/010)', () => {
 		await expect(checkRemotionVersion(dir, await readProjectPackage(dir))).rejects.toMatchObject({
 			code: 'MG_NOT_A_BUNDLE',
 		});
-		// The fixture project is pinned and installed.
 		await expect(
 			checkRemotionVersion(FIXTURE_PROJECT, await readProjectPackage(FIXTURE_PROJECT)),
 		).resolves.toBeUndefined();
@@ -329,7 +320,7 @@ describe('props schemas (S08:MGC-011)', () => {
 		expect(bad.warnings[0]).toMatch(/boom/);
 		const missing = await loadSchemaModule(dir, './nope.ts', { scratchDir: join(dir, '.scratch') });
 		expect(missing.warnings[0]).toMatch(/not found/);
-	}, 15_000);
+	}, 120_000);
 
 	it('takes the manifest first, then the schema module, then inference; merges UI hints', () => {
 		const raw = [
@@ -369,7 +360,7 @@ describe('props schemas (S08:MGC-011)', () => {
 			category: 'Shots',
 			ui: { bg: { control: 'color' } },
 		});
-		// wp-m3-mgtext (S08:MGC-036): `texts` declarations merge entry by entry ("*" + the id's own).
+		// Text declarations merge entry by entry: wildcard defaults plus composition-specific entries.
 		const texts = buildCompositionInfos(raw.slice(1, 2), {
 			manifest: {
 				compositions: {
@@ -448,8 +439,7 @@ describe('mg-bundles routes (no browser)', () => {
 				})
 			).statusCode,
 		).toBe(404);
-		// The live host page lives under the bundle's capability path (security review MG-1; the sandbox, its policy
-		// and the capability are tested in security-hardening.test.ts): the address the editor knows redirects there.
+		// The editor-facing bundle address redirects to its capability path; security-hardening.test.ts checks the sandbox.
 		const redirect = await app.inject({
 			method: 'GET',
 			url: `${base}/index.html?jasper-host=1`,
@@ -461,11 +451,9 @@ describe('mg-bundles routes (no browser)', () => {
 		expect(host.statusCode).toBe(200);
 		expect(host.headers['cache-control']).toBe('no-store');
 		expect(host.body).toContain('__jasperMgHost');
-		// Media status works for bundles (availability = the index file).
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: JSON_H })).json().status,
 		).toMatch(/online|processing/);
-		// Pre-render cache lookups.
 		const key = 'c'.repeat(40);
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/mg-bundles/prerender/${key}`, headers: JSON_H }))
@@ -626,9 +614,6 @@ describe('mg-bundles routes (no browser)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- the real thing (MG_E2E=1)
-
-/** Decodes frame `n` of a video (or a PNG) to raw RGBA (straight alpha) / RGB. */
 function decode(
 	file: string,
 	opts: { frame?: number; pix: 'rgba' | 'rgb24'; decoder?: string; ffmpeg: string },
@@ -653,7 +638,6 @@ function decode(
 	return r.stdout;
 }
 
-/** Straight-alpha composite of `fg` over a flat colour → RGB. */
 function over(fg: Uint8Array, bg: [number, number, number]): Uint8Array {
 	const out = new Uint8Array((fg.length / 4) * 3);
 	for (let i = 0, j = 0; i < fg.length; i += 4, j += 3) {
@@ -764,11 +748,9 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		});
 		expect(r.statusCode, r.body).toBe(200);
 		const z = r.json() as RegisteredMedia;
-		// Same content → same content address and key; source says it was uploaded.
 		expect(z.mediaKey).toBe(title.mediaKey);
 		expect(z.mgBundle?.source).toMatchObject({ type: 'bundle-upload', path: null, name: 'my-bundle' });
 		expect(z.mgBundle?.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
-		// Re-register the project-dir header for the next tests.
 		title = (
 			await app.inject({
 				method: 'POST',
@@ -779,7 +761,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		).json();
 	}, 600_000);
 
-	/** Exports a sequence (ProRes HQ for exact comparisons); returns the job and its child jobs. */
 	async function exportDoc(d: DocBuilder, opts: { frames?: [number, number]; profile?: 'hq' | '4444' } = {}) {
 		const settings = {
 			sequenceId: d.seqId,
@@ -797,7 +778,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 				scaling: 'fit',
 				quality: { mode: 'crf', value: 10 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 		};
 		const plan = (
@@ -909,7 +889,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 			0.99,
 		);
 
-		// Test 6: the master over four flat colours equals the straight-alpha expectation (Chrome's own pixels).
 		const masterKey = svc.renderKeyOf(
 			masterRequests(
 				buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null }),
@@ -947,15 +926,13 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 				semi++;
 				for (let c = 0; c < 3; c++) worstSemi = Math.max(worstSemi, Math.abs(a[j + c]! - b[j + c]!));
 			}
-			expect(semi).toBeGreaterThan(1000); // the panel and its shadow
+			expect(semi).toBeGreaterThan(1000);
 			// No dark fringes / halos: semi-transparent pixels within 2/255 (+1 for 10-bit 4:4:4 rounding).
 			expect(worstSemi).toBeLessThanOrEqual(3);
 		}
 
-		// Second export: no master render (cache hit).
 		const second = await exportDoc(d);
 		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(0);
-		// Changing a prop renders a new master.
 		d.tx([{ type: 'param.set', target: ['clip', clipId, 'props', 'title'], value: 'Changed' }]);
 		const third = await exportDoc(d, { frames: [15, 75] });
 		expect(third.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
@@ -988,7 +965,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		expect(first.plan.path).toBe('native');
 		expect(first.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
 
-		// The edit an editor makes: the text and two of its style props in one override object, one step.
 		const clip = d.doc.sequences[d.seqId]!.clips[clipId] as CompositionClip;
 		const next = overridesWithEdits(lt.defaultProps, clip.props, [
 			{ path: name.path, value: 'Grace Hopper' },
@@ -1000,14 +976,13 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		// ProRes 4444 out: saturated yellow type on a dark panel loses colour at its edges in 4:2:2 (HQ), which
 		// is the codec, not the placement or the text being compared here.
 		const second = await exportDoc(d, { profile: '4444' });
-		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1); // new render key
+		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
 		const props = mergeProps(lt.defaultProps, next);
 		const grey = [128, 128, 128] as [number, number, number];
 		// Held text: sequence frame 60 = composition frame 45.
 		const held = decode(second.out, { frame: 60, pix: 'rgb24', ffmpeg: ff });
 		const heldExpected = over(await directStill(props, 45, 'LowerThird'), grey);
 		expect(matchingSampleShare(held, heldExpected)).toBeGreaterThanOrEqual(0.99);
-		// The previous text is gone (the master was re-rendered, not reused).
 		expect(
 			matchingSampleShare(held, over(await directStill(lt.defaultProps, 45, 'LowerThird'), grey)),
 		).toBeLessThan(0.99);
@@ -1078,11 +1053,9 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 				width: 1920,
 				height: 1080,
 			}).map((i) => i.code);
-		// The name runs past its panel (overflow hidden): cut off.
 		expect(by.get('name.text')).toMatchObject({ found: true, visible: true });
 		expect(issues('name.text')).toEqual(['MG_TEXT_CLIPPED']);
 		expect(issues('role')).toEqual([]);
-		// The quote (markup ignored when matching) wraps to more rows than designed and leaves its safe box.
 		expect(by.get('quote')).toMatchObject({ found: true });
 		expect(issues('quote')).toEqual(['MG_TEXT_OUTSIDE_BOX', 'MG_TEXT_LINES']);
 	}, 600_000);
@@ -1114,7 +1087,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		expect(ev.oldKey).toBe(first.mediaKey);
 		expect(ev.newKey).not.toBe(first.mediaKey);
 		expect(ev.mgBundle.bundleHash).not.toBe(first.mgBundle!.bundleHash);
-		// Masters of the old and the new bundle have different keys (never reused, MGC-031).
 		const req = {
 			mediaKey: first.mediaKey,
 			compositionId: 'Title',

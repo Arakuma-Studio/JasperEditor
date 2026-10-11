@@ -1,6 +1,3 @@
-// Roto / object matte model (parity workstream `roto`): roto.* commands with refusals and undo (immutable
-// transactions), staleness, the snapshot's matte references and frame states, export issues, copies with new ids,
-// paste sanitising, source retargeting, invariants and repairs, face trackers.
 import { describe, expect, it } from 'vitest';
 import {
 	buildEffectsPayload,
@@ -81,7 +78,6 @@ describe('roto commands', () => {
 		const roto = clip().rotos![0]!;
 		expect(roto).toMatchObject({ kind: 'brush', mediaId: m, name: 'Roto 1', base: 40, result: null });
 		expect(roto.strokes[0]).toMatchObject({ kind: 'fg', frame: 40, radius: 12 });
-		// Undo = the previous immutable document.
 		expect((before.sequences[h.seqId]!.clips[clip().id] as RClip).rotos).toBeUndefined();
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});
@@ -124,13 +120,13 @@ describe('roto commands', () => {
 		);
 		h.ok([{ type: 'roto.add', clipId: clip().id, points: [{ x: 5, y: 5 }] }]);
 		const roto = clip().rotos![0]!;
-		bad([{ type: 'roto.freeze', rotoId: roto.id, frozen: true }], 'E_INVALID_PARAM'); // nothing computed
+		bad([{ type: 'roto.freeze', rotoId: roto.id, frozen: true }], 'E_INVALID_PARAM');
 		h.ok([{ type: 'roto.setResult', rotoId: roto.id, result: result(roto, 30, 89) }]);
 		h.ok([{ type: 'roto.freeze', rotoId: roto.id, frozen: true }]);
 		bad([{ type: 'roto.addStrokes', rotoId: roto.id, points: [{ x: 9, y: 9 }] }], 'E_INVALID_PARAM');
 		bad([{ type: 'roto.update', rotoId: roto.id, settings: { searchRadius: 30 } }], 'E_INVALID_PARAM');
 		bad([{ type: 'roto.setResult', rotoId: roto.id, result: null }], 'E_INVALID_PARAM');
-		h.ok([{ type: 'roto.update', rotoId: roto.id, name: 'Renamed' }]); // names are fine
+		h.ok([{ type: 'roto.update', rotoId: roto.id, name: 'Renamed' }]);
 		h.ok([{ type: 'roto.freeze', rotoId: roto.id, frozen: false }]);
 		h.ok([{ type: 'roto.addStrokes', rotoId: roto.id, points: [{ x: 9, y: 9 }] }]);
 	});
@@ -152,7 +148,6 @@ describe('roto commands', () => {
 		expect(rotoIsStale(clip().rotos![0]!)).toBe(true);
 		h.ok([{ type: 'roto.removeStrokes', rotoId: roto.id, at: { frames: 20 }, last: 1 }]);
 		expect(rotoIsStale(clip().rotos![0]!)).toBe(false);
-		// Settings are part of the inputs (defaults resolved).
 		h.ok([{ type: 'roto.update', rotoId: roto.id, settings: { searchRadius: 15 } }]);
 		expect(rotoIsStale(clip().rotos![0]!)).toBe(false); // 15 is the default
 		h.ok([{ type: 'roto.update', rotoId: roto.id, settings: { searchRadius: 25 } }]);
@@ -216,7 +211,6 @@ describe('roto commands', () => {
 		h.ok([{ type: 'roto.addStrokes', rotoId: roto.id, points: [{ x: 50, y: 50 }] }]);
 		const stale = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
 		expect(rotoExportIssues(stale)[0]).toMatchObject({ kind: 'stale' });
-		// A disabled effect does not matter.
 		h.ok([{ type: 'effect.setEnabled', effectInstanceId: clip().effects![0]!.id, enabled: false }]);
 		const off = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
 		expect(rotoExportIssues(off)).toEqual([]);

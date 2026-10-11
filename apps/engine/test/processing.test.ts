@@ -1,6 +1,3 @@
-// Clip processing on the engine (S07 §3, §8 tests 6, 8): routes, process jobs through jasper-proc,
-// content-addressed outputs, registerDerived, models, settings, licences, and a native export that reads the
-// processed ProRes file.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -221,7 +218,6 @@ describe('process jobs (local)', () => {
 		const jobs = (await app.inject({ method: 'GET', url: '/api/jobs', headers: H })).json()
 			.jobs as EngineJob[];
 		expect(jobs.some((j) => j.kind === 'proxy' && j.assetId === res.registered.mediaKey)).toBe(true);
-		// Same recipe again: content-addressed reuse.
 		const again = await app.inject({
 			method: 'POST',
 			url: `/api/media/${m.mediaKey}/process`,
@@ -237,7 +233,7 @@ describe('process jobs (local)', () => {
 		// processed file.
 		const copy = join(catalogDir, 'clip-b-copy.mp4');
 		copyFileSync(fixture('clip-b.mp4'), copy);
-		writeFileSync(copy, readFileSync(copy)); // fresh mtime
+		writeFileSync(copy, readFileSync(copy));
 		const m = await register(app, copy);
 		const steps = [{ op: 'denoise', method: 'atadenoise', strength: 0.2 }];
 		const r = await app.inject({
@@ -287,7 +283,6 @@ describe('process jobs (local)', () => {
 				scaling: 'fit',
 				quality: { mode: 'crf', value: 23 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 			audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 			engine: 'auto',

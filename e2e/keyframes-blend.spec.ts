@@ -1,7 +1,4 @@
-// keyframes-blend end to end in the built app: Opacity ▸ Blend Mode lists Premiere's groups and sets a GL-composited
-// mode (Linear Burn) whose Program monitor preview matches the formula; the native export draws the same colour;
-// right-click a key ▸ Rove Across Time re-times it. HTML-in-Canvas is enabled for this browser (as in Electron and in
-// Remotion renders) so the preview runs the GL compositor.
+// HTML-in-Canvas enables GPU compositing, as in Electron and Remotion.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -12,6 +9,7 @@ import {
 	clipBox,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	exportViaUi,
 	query,
 	timelineArea,
@@ -57,15 +55,15 @@ async function programColor(): Promise<[number, number, number]> {
 }
 
 test('Blend Mode menu: grouped, Linear Burn previewed by the GL compositor', async () => {
-	const base = (await transact(page, [
+	const base = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [0.8, 0.6, 0.4, 1] },
-	])) as { ok: boolean; created?: string[] };
-	expect(base.ok).toBe(true);
-	const r = (await transact(page, [
+	]);
+	expectTransaction(base);
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V2', color: [0.5, 0.5, 0.9, 1] },
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
-	top = r.created!.find((id) => id.startsWith('clp_'))!;
+	]);
+	expectTransaction(r);
+	top = r.created.find((id) => id.startsWith('clp_'))!;
 	const b = await clipBox(page, top);
 	const area = (await timelineArea(page).boundingBox())!;
 	await page.mouse.click(

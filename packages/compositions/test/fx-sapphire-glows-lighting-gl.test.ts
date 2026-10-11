@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Sapphire Glows + Lighting family in a real WebGL2 (headless Chrome, SwiftShader): every effect compiles and runs
-// with default params on two scenes (opaque night street, transparent logo), plus the characteristic pixel of each
-// effect, padding (light drawn outside the layer box), alpha, Show views, and seeded/time determinism.
-// FX_GL=0 skips it; needs a Chrome (JASPER_BROWSER_EXECUTABLE or the usual paths). Visual review: ./dump.ts.
 
 import { FX_FAMILIES } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
@@ -108,7 +104,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const o = await pixels('jasper.s.glow-orthicon', { threshold: 0.5 }, { scene: 'dot', depth: false }, [
 				[DOT[0], DOT[1]],
 			]);
-			expect(lum(o.out[0]!)).toBeGreaterThan(200); // the bright source itself is protected
+			expect(lum(o.out[0]!)).toBeGreaterThan(200);
 		});
 
 		it('S_Rays casts light away from Center; S_Streaks smears the brights', async () => {
@@ -156,7 +152,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			);
 			expect(r.out[0]![3]).toBeGreaterThan(150); // shadow (black, opaque) below-right of the orange dot
 			expect(lum(r.out[0]!)).toBeLessThan(20);
-			expect(r.out[1]).toEqual(r.src[1]); // the layer stays on top
+			expect(r.out[1]).toEqual(r.src[1]);
 		});
 
 		it('S_SpotLight lights the aim point and leaves the rest at the ambient level', async () => {

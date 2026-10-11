@@ -1,6 +1,3 @@
-// Expressions for agents (wave expressions, docs/wp-notes/expressions.md): set / clear / enable an After
-// Effects-style expression on any animatable property, test one without storing it, read evaluated values over time
-// (with `expressionError`), list presets and expression-capable properties, and add Expression Controls.
 import {
 	EXPRESSION_PRESETS,
 	evaluateExpressionText,
@@ -22,12 +19,11 @@ import {
 	sequenceTimecode,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import { defineTool, EDIT, frameOf, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (FULL_GUIDE). The language reference is the jasper://guide resource. */
 export const EXPRESSIONS_GUIDE = `Expressions (After Effects-style JavaScript on any animatable property):
 - set_expression {clipId, property, text} (property = a property key: "transform.position", "transform.rotation", "opacity", "effects.<fxId>.<param>", "masks.<maskId>.feather", "shape.size", "volumeDb", "text.content" for a text clip's Source Text; transitionId + param for transition params). The reply evaluates it at a few frames and gives value / expressionError. clear_expression and enable_expression {enabled} switch it off; test_expression tries a text without storing it.
 - get_property_values {clipId, property, from?, to?, step?} reads what renders (value), the keyframed value and expressionError per frame. A failing expression renders the keyframed value — always check expressionError.

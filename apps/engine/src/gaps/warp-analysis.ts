@@ -1,4 +1,3 @@
-// Warp Stabilizer ▸ the background analysis (workstream gaps, docs/wp-notes/gaps.md §FX-6): job `warp-analysis`.
 // ffmpeg decodes the clip's source frames to gray at the analysis size (≤ 480 px on the long side, 960 with Detailed
 // Analysis), one tracking worker runs the `warp` tracker over them in order (tracking/warp.ts: per-frame
 // translation / similarity / homography and feature trajectories) and the result is converted to media px, the

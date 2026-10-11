@@ -1,6 +1,3 @@
-// apply_default_transitions (S10:TUI-034) through the MCP protocol against an in-memory engine: the types and
-// alignment come from the call, else from the open editor's preferences (`preferences.get`), else the built-ins.
-// The real-engine workflow (headless, built-ins, set_transition_defaults lengths) is in integration.test.ts.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -18,7 +15,6 @@ import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
 let fp = 0;
-/** A probed 10 s 1080p30 video with stereo audio. */
 function videoAsset(): Omit<MediaAsset, 'id'> {
 	fp++;
 	return {
@@ -133,7 +129,6 @@ type Applied = {
 	transitions: { effectId: string; track: string; cut: number; alignment: string }[];
 };
 
-/** Calls apply_default_transitions on the outgoing clip's tail (the cut at 100), video and audio. */
 async function applyDefaults(editor: Record<string, unknown> | null, args: Record<string, unknown> = {}) {
 	const engine = fakeEngine(editor);
 	const { server } = createJasperMcpServer({ link: engine.link, agentName: 'transitions-test' });
@@ -198,7 +193,6 @@ describe('apply_default_transitions defaults (S10:TUI-034)', () => {
 			['A1', 'jasper.constant-power', 'center'],
 			['V1', 'jasper.cross-dissolve', 'center'],
 		];
-		// Wrong medium, unknown id, unknown alignment: ignored.
 		const invalid = await applyDefaults({ video: 'jasper.constant-power', audio: 'x', alignment: 'middle' });
 		expect(invalid.defaults.source).toBe('built-in');
 		expect(invalid.atCut).toEqual(builtIn);

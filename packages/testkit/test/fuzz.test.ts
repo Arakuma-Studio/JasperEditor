@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	bytesTarget,
 	describeFuzz,
+	formatFailures,
 	isExpected,
 	jsonTarget,
 	mutateBytes,
@@ -15,7 +19,6 @@ import { decodePng, encodePng, PngError, rgba8 } from '../src/index.ts';
 
 class ParseError extends Error {}
 
-/** A tiny "key=number" parser that validates properly (typed errors only). */
 function goodParser(text: string): Record<string, number> {
 	const out: Record<string, number> = {};
 	for (const line of text.split('\n')) {
@@ -91,6 +94,24 @@ describe('fuzz kit', () => {
 		expect(failures[0]!.file).toMatch(/fuzz-failures/);
 	});
 
+	it('reports an artifact write error without losing the parser failure', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'testkit-artifact-'));
+		const file = join(dir, 'file');
+		writeFileSync(file, 'not a directory');
+		vi.stubEnv('JASPER_TEST_RESULTS', file);
+		try {
+			const target = textTarget('unwritable artifact', ['invalid'], buggyParser);
+			const failures = await runFuzzTarget(target, { maxFailures: 1 });
+			expect(failures).toHaveLength(1);
+			expect(failures[0]?.error).toContain('TypeError');
+			expect(failures[0]?.artifactError).toMatch(/Could not save failing input:.*ENOTDIR/);
+			expect(formatFailures(target, failures)).toContain('Could not save failing input');
+		} finally {
+			vi.unstubAllEnvs();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it('flags slow inputs', async () => {
 		const slow = jsonTarget(
 			'slow',
@@ -107,7 +128,6 @@ describe('fuzz kit', () => {
 	});
 });
 
-// The testkit's own parser is a fuzz target too.
 describeFuzz('@jasper/testkit', [
 	bytesTarget(
 		'PNG decoder',

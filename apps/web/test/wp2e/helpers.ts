@@ -1,4 +1,3 @@
-// Test helpers for WP-2E: a scripted fake engine behind the real EngineClient and an in-memory session.
 import type { EngineJob, RegisteredMedia } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';

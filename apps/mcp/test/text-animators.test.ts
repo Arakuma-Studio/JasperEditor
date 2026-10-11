@@ -1,5 +1,3 @@
-// text-animators: the text animator MCP tools through the protocol against an in-memory engine (documents applied
-// with the real command system).
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

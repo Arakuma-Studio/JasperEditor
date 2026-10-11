@@ -58,8 +58,6 @@ function useDock(): DockCtx {
 	return d;
 }
 
-// ------------------------------------------------------------------ titles (PC-002)
-
 function useTitleContext(params: Record<string, unknown> | undefined): PanelTitleContext {
 	const session = useSessionOrNull();
 	const sequenceName = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
@@ -82,8 +80,6 @@ function panelTitle(def: PanelDefinition | undefined, ctx: PanelTitleContext, fa
 		return fallback;
 	}
 }
-
-// ------------------------------------------------------------------ panel menu (PC-010/011)
 
 function usePanelMenu(instanceId: string, def: PanelDefinition | undefined): () => ResolvedMenuItem[] {
 	const { controller } = useDock();
@@ -139,8 +135,6 @@ function usePanelMenu(instanceId: string, def: PanelDefinition | undefined): () 
 		return specific.length ? [...specific, { type: 'separator', id: `${instanceId}.s1` }, ...common] : common;
 	};
 }
-
-// ------------------------------------------------------------------ tab
 
 function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 	const { panels, controller } = useDock();
@@ -227,8 +221,6 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 	);
 }
 
-// ------------------------------------------------------------------ panel body
-
 function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<string, unknown>>) {
 	const { panels } = useDock();
 	const kind = props.params.kind;
@@ -301,8 +293,6 @@ function PanelLoading() {
 	);
 }
 
-// ------------------------------------------------------------------ header actions + watermark
-
 function HeaderActions(props: IDockviewHeaderActionsProps) {
 	const [maximized, setMaximized] = useState(() => props.api.isMaximized());
 	useEffect(() => {
@@ -365,8 +355,6 @@ function EmptyWorkspace(_props: IWatermarkPanelProps) {
 
 const COMPONENTS = { [PANEL_COMPONENT]: PanelContent };
 const TABS = { [PANEL_TAB]: PanelTab };
-
-// ------------------------------------------------------------------ host
 
 export type DockHostProps = {
 	controller: DockController;

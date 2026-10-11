@@ -1,19 +1,18 @@
-// wp captions: the Text panel (Premiere Window ▸ Text): Transcript and Captions tabs.
+// the Text panel (Premiere Window ▸ Text): Transcript and Captions tabs.
 import type { Sequence } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { EmptyState, Tabs } from '@jasper/ui';
 import { useEffect, useState } from 'react';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
 import { CaptionsTab } from './CaptionsTab.tsx';
 import { textPanelRequests } from './state.ts';
 import { TranscriptTab } from './TranscriptTab.tsx';
 
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
-
 export function TextPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
-	const seq = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
+	const seq = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) =>
 		s?.activeSequenceId
 			? (((s.transient ?? s.document).sequences[s.activeSequenceId] as Sequence | undefined) ?? null)
 			: null,

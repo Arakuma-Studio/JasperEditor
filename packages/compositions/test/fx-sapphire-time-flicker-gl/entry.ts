@@ -1,6 +1,3 @@
-// Browser entry of the Sapphire Time + Flicker GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-time-flicker-gl.test.ts): runs the family's effects through the real GPU host with hand-made
-// sources and time samples, and reports characteristic pixels.
 import '../gl-poison.ts';
 import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';

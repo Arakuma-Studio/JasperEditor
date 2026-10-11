@@ -1,7 +1,9 @@
 // Color math for the swatch/picker (S05:CT-014). Colors are S01 RGBA tuples: straight sRGB floats 0..1.
 // These are document content colors (DT-002 exception), so building CSS color strings here is allowed.
 
-export type Rgba = [number, number, number, number];
+import type { RGBA } from '@jasper/project';
+
+export type Rgba = RGBA;
 export type Hsv = { h: number; s: number; v: number };
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, Number.isFinite(x) ? x : 0));
@@ -57,7 +59,6 @@ export function parseHex(input: string): Rgba | null {
 	return [n(0), n(2), n(4), s.length === 8 ? n(6) : 1];
 }
 
-/** CSS color for a content color (swatches, picker surfaces). */
 export function rgbaToCss(c: Rgba): string {
 	const [r, g, b] = [c[0], c[1], c[2]].map((x) => Math.round(clamp01(x) * 255));
 	return `rgb(${r} ${g} ${b} / ${clamp01(c[3])})`; // tokens-allow: document content color

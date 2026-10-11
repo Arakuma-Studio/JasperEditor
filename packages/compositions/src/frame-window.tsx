@@ -1,4 +1,4 @@
-// Clip windowing (workstream ui-perf): a `<Sequence>` renders nothing outside `[from − premountFor, from +
+// A `<Sequence>` renders nothing outside `[from − premountFor, from +
 // durationInFrames)`, yet every one of them re-renders whenever the frame or the document changes (it reads the
 // timeline position). On a 1 000-clip sequence that is 1 000 Sequences per played frame and per gesture frame.
 // `FrameWindow` mounts only the items whose span lies within a page-aligned window around the current frame: the

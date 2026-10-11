@@ -98,8 +98,6 @@ export function TimelinePreferencesPage() {
 	);
 }
 
-// ---------------------------------------------------------------- user scope
-
 function UserTransitionDefaults() {
 	const prefs = useStoreSelector(transitionDefaults(), (s) => s);
 	const runtime = useShellRuntimeOrNull();
@@ -182,8 +180,6 @@ function UserTransitionDefaults() {
 		</PrefGroup>
 	);
 }
-
-// ---------------------------------------------------------------- project scope
 
 type Snapshot = {
 	settings: ProjectSettings;

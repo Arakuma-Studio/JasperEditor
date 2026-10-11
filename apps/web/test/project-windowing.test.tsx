@@ -1,4 +1,3 @@
-// ui-perf: the Project panel renders every row of a small bin (as before) and only a window of a large one.
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -67,12 +66,10 @@ describe('Project panel windowing (ui-perf)', () => {
 			);
 		}
 		const view = render(<Probe rows={5000} enabled />);
-		// Every render, the first included: never more than the initial window.
 		expect(seen.length).toBeGreaterThan(0);
 		expect(seen.every((w) => w.on && w.rows <= INITIAL_ROWS)).toBe(true);
 		expect(seen[0]).toEqual({ on: true, rows: INITIAL_ROWS });
 
-		// A small bin renders everything; when it grows past the threshold, the render that sees it is windowed.
 		seen.length = 0;
 		view.rerender(<Probe rows={50} enabled={false} />);
 		expect(seen.at(-1)).toEqual({ on: false, rows: 50 });

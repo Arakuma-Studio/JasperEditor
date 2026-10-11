@@ -1,4 +1,4 @@
-// edit-ux: the monitors' transport bar and Button Editor (Premiere: the "+" at the end of the Program/Source button
+// the monitors' transport bar and Button Editor (Premiere: the "+" at the end of the Program/Source button
 // row; helpx "Customize the Program/Source Monitor buttons"): buttons are commands; the editor shows every
 // available button — click one to add it at the end, drag buttons in the bar to reorder, × removes one, Reset Layout
 // restores Premiere's default row. Layouts persist per monitor (monitor-view.ts `buttons`).

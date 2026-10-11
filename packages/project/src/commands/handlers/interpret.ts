@@ -1,5 +1,4 @@
-// Interpret Footage (workstream `imports`, docs/wp-notes/imports.md): `media.interpret` sets the sections of an
-// asset's interpretation (absent = unchanged, null = the file's value). The media's length can change (assumed frame
+// Interpretation fields use absent for unchanged and null for the file's value. Media length can change (assumed frame
 // rate, loop count): clips that would show time past the new end are trimmed to it (Premiere keeps clip instances
 // and their In points; we never let a clip show frames that are not there), frame holds past the end move to the last
 // frame, and time-remapped clips that would leave the media are refused rather than silently altered.
@@ -80,7 +79,7 @@ function trimToMedia(
 	trimmed.push(c.id);
 }
 
-function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: HandlerContext): unknown {
+function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: HandlerContext) {
 	const ids = [...new Set(cmd.mediaIds)];
 	const patch = cmd.interpretation as InterpretationPatch;
 	const changed = new Map<string, number | null>();
@@ -118,6 +117,6 @@ function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: Handler
 	return { mediaIds: ids, trimmedClipIds };
 }
 
-export const interpretHandlers: HandlerMap = {
+export const interpretHandlers = {
 	'media.interpret': mediaInterpret,
-};
+} satisfies HandlerMap;

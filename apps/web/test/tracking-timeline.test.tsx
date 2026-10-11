@@ -1,8 +1,3 @@
-// Timeline tracker glyphs (S09:TRU-005): the strip mapping (content time → the plate's sequence frames with
-// sourceIn trims, speed and reverse; span clipping), worst-of-column aggregation (one lost frame among 1000 stays
-// visible at low zoom), and in the Timeline panel: the plate badge + strips, the target link glyph, clicking a
-// glyph selects the plate / activates the tracker / focuses Properties and reveals the Tracking section, the
-// press never reaches the timeline with the Selection tool, and seeking the transport re-renders nothing.
 import { FLICKS_PER_SECOND, type Quad, type TrackerSamples } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -104,12 +99,10 @@ describe('worst-of-column aggregation', () => {
 		expect(runs[0]!.x0).toBe(0);
 		expect(runs[runs.length - 1]!.x1).toBe(100);
 		expect(runs.map((r) => r.cls)).toEqual(['good', 'lost', 'good']);
-		// Hovering that column names the lost frame.
 		expect(frameUnderPointer({ clip, seqRate: R30, samples: s, clipX: 0, pxPerFrame: 0.1 }, 53.5)).toEqual({
 			frame: 537,
 			confidence: 0,
 		});
-		// Even at 0.01 px per frame (100 frames per column) the lost column stays.
 		const far = stripRuns({ clip, seqRate: R30, samples: s, clipX: 0, pxPerFrame: 0.01, x0: 0, x1: 10 });
 		expect(far.filter((r) => r.cls === 'lost')).toHaveLength(1);
 	});
@@ -126,8 +119,6 @@ describe('worst-of-column aggregation', () => {
 		]);
 	});
 });
-
-// ------------------------------------------------------------------ Timeline panel
 
 const REF: Quad = [
 	[700, 300],
@@ -188,7 +179,6 @@ describe('timeline glyphs (Timeline panel)', () => {
 			});
 			expect(r.ok).toBe(true);
 		});
-		// tracker.remove unlinks its targets: the glyph goes away.
 		expect(screen.queryByTestId('clip-tracked-link')).toBeNull();
 	});
 
@@ -204,7 +194,6 @@ describe('timeline glyphs (Timeline panel)', () => {
 		expect(sel.clips).toEqual([plate]);
 		expect(sel.primaryClip).toBe(plate);
 		expect(trackingStore.getState().activeTrackerId).toBe(trackerId);
-		// Again on the selected plate: cycles to the next tracker.
 		fireEvent.pointerDown(badge, { button: 0, pointerId: 1 });
 		fireEvent.click(badge, { detail: 1 });
 		expect(trackingStore.getState().activeTrackerId).toBe(second);
@@ -237,7 +226,6 @@ describe('timeline glyphs (Timeline panel)', () => {
 		act(() => session.setToggles({ activeTool: 'razor' } as never));
 		fireEvent.pointerDown(screen.getByTestId('clip-tracker-badge'), { button: 0 });
 		expect(outer).toHaveBeenCalledTimes(1);
-		// …and a pointer click with another tool does not activate the tracker.
 		fireEvent.click(screen.getByTestId('clip-tracker-badge'), { detail: 1 });
 		expect(trackingStore.getState().activeTrackerId).toBeNull();
 	});
@@ -255,7 +243,6 @@ describe('Properties section reveal', () => {
 		act(() => revealSection('properties.ext.test'));
 		expect(screen.getByTestId('section-body')).toBeTruthy();
 		unmount();
-		// Persisted open, and a reveal for a section not mounted yet is taken on mount.
 		revealSection('properties.ext.later');
 		render(
 			<Section id="properties.ext.later" title="Later" defaultOpen={false}>

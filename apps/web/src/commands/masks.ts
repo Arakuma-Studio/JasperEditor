@@ -1,6 +1,3 @@
-// UI commands for masks (wp masks): delete the selected mask / vertices (Delete / Backspace in the Program monitor),
-// leave the pen / deselect (Escape), Premiere's mask tracking commands for the selected mask (no default keys in
-// Premiere), and the Program monitor overlay registration. Loaded once by commands/index.ts.
 import type { Command } from '@jasper/project';
 import { programOverlays } from '../extensions/index.ts';
 import { deleteMasks, stopPen, trackMask } from '../masks/actions.ts';

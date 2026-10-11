@@ -1,5 +1,3 @@
-// Integration commands (WP-3I): ids that the menubar and the default keymap already reference but that no
-// wave-2 package registered, wired to the existing implementations (ARCHITECTURE §15 items 2 and 7).
 import { addTextAt } from '../panels/program/edits.ts';
 import { getCommand, runCommand } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';

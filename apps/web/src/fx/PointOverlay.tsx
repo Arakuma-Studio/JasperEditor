@@ -1,8 +1,4 @@
-// On-canvas point handles of GPU effects (wave-1 fx framework): for the one selected clip, every `vec2` param with
-// `ui.control: 'point'` (normalised to the layer box, e.g. a lens-flare centre) of the effect focused in Effect
-// Controls is drawn as a crosshair in the Program monitor through the layer map (Motion, corner pin); dragging it is
-// ONE gesture that writes the param at the playhead (a keyframe when the param is animated), like the corner pin.
-import type { RenderDoc } from '@jasper/compositions';
+import type { Vec2 } from '@jasper/project';
 import {
 	applyMat3,
 	type Command,
@@ -12,16 +8,13 @@ import {
 	type ResolvedLayer,
 	resolveSceneAt,
 } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { useMemo } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
-import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
+import { toScreen, toSequence } from '../panels/program/viewport.ts';
 import { type DragSpec, useFocusedEffect, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
-
-type Vec2 = [number, number];
 
 /** Point params of an effect spec (vec2 with `ui.control: 'point'`). */
 export function pointParams(params: readonly ParamSpec[]): ParamSpec[] {
@@ -45,10 +38,10 @@ export function sequenceToPoint(layer: Pick<ResolvedLayer, 'props'>, s: Vec2): V
 }
 
 export function FxPointOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const focused = useFocusedEffect();
 	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);

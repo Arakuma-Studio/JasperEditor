@@ -80,27 +80,11 @@ pub fn params_schema() -> Value {
 
 impl TitleCardParams {
     pub fn validate(&self) -> Result<(), SpecError> {
-        if self.title.chars().count() > TITLE_MAX as usize {
-            return Err(spec_error(format!(
-                "params.title: at most {TITLE_MAX} characters"
-            )));
-        }
-        if self.subtitle.chars().count() > SUBTITLE_MAX as usize {
-            return Err(spec_error(format!(
-                "params.subtitle: at most {SUBTITLE_MAX} characters"
-            )));
-        }
-        for (name, c) in [
-            ("background", &self.background),
-            ("textColor", &self.text_color),
-            ("accentColor", &self.accent_color),
-        ] {
-            if !c.iter().all(|v| v.is_finite() && (0.0..=1.0).contains(v)) {
-                return Err(spec_error(format!(
-                    "params.{name}: every channel must be within 0..=1"
-                )));
-            }
-        }
+        crate::validate_text("title", &self.title, TITLE_MAX)?;
+        crate::validate_text("subtitle", &self.subtitle, SUBTITLE_MAX)?;
+        crate::validate_rgba("background", &self.background)?;
+        crate::validate_rgba("textColor", &self.text_color)?;
+        crate::validate_rgba("accentColor", &self.accent_color)?;
         if i64::from(self.fade_in_frames) > FADE_MAX || i64::from(self.fade_out_frames) > FADE_MAX {
             return Err(spec_error(format!(
                 "params.fadeInFrames/fadeOutFrames: at most {FADE_MAX}"

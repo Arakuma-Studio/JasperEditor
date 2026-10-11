@@ -1,4 +1,4 @@
-// Image sequences on the engine (imports workstream): numbered stills become one video media. The frames are
+// Numbered stills become one video media. The frames are
 // conformed once into a lossless intermediate (FFV1 in Matroska, every frame a keyframe; 16-bit RGB(A) for deeper
 // sources, EXR / HDR through the sRGB transfer like stills) at the chosen frame rate; numbers missing inside the range
 // hold the previous frame. The intermediate is then ordinary media for every feature (proxies, filmstrips, retime,

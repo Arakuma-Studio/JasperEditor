@@ -15,7 +15,6 @@ import type {
 } from '@jasper/api';
 import {
 	AnalysisError,
-	type Animatable,
 	analysisLumetri,
 	autoTone,
 	type Clip,
@@ -151,9 +150,9 @@ export class GradingService {
 		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion) ?? LUMETRI_EFFECT;
 		const f = Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
 		const t = clipContentTime(clip as never, f, rate);
-		const raw: Record<string, unknown> = {};
+		const raw: EffectParams = {};
 		for (const p of spec.params) {
-			const a = fx.params[p.name] as Animatable<unknown> | undefined;
+			const a = fx.params[p.name];
 			raw[p.name] = a ? evaluate(a, t, { holdOnly: !p.animatable }) : p.default;
 		}
 		return effectiveParams(spec, raw);

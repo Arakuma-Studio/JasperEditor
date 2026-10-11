@@ -1,6 +1,3 @@
-// Shared fixtures of the shader-effect browser tests (fx-render / fx-player e2e): test media made with ffmpeg (a red
-// 200×200 PNG, a 2 s 640×360 testsrc2 video), a static HTTP server with Range + CORS (and optional in-memory pages),
-// and 640×360 render snapshots built from commands with the test effects registered.
 import { execFileSync } from 'node:child_process';
 import { createReadStream, existsSync, mkdtempSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -84,7 +81,6 @@ export async function startFxMedia(prefix: string): Promise<FxMedia> {
 	};
 }
 
-/** A probed image/video asset served by the fixture server. */
 export function fxAsset(
 	m: FxMedia,
 	kind: 'image' | 'video',
@@ -126,13 +122,12 @@ export function fxAsset(
 	} as Omit<MediaAsset, 'id'>;
 }
 
-/** A 640×360 30 fps render snapshot from commands (the test effects are known to the command registry). */
 export function fxSnapshot(
 	commands: Command[] | ((doc: ReturnType<typeof createEmptyProject>) => Command[]),
 ) {
 	const ids = createCounterIdSource(1);
 	const project = createEmptyProject({ ids, name: 'fx', preset: 'hd-720p-30' });
-	// wp masks: commands may depend on the empty project (track ids for Track Matte Key params).
+	// Track Matte Key commands may need track ids from the empty project.
 	const list = typeof commands === 'function' ? commands(project) : commands;
 	const ctx = {
 		ids,
@@ -180,7 +175,6 @@ export function fxSnapshot(
 	});
 }
 
-/** Command helpers. */
 export const fxCmd = {
 	video(m: FxMedia, seconds = 1): Command[] {
 		return [

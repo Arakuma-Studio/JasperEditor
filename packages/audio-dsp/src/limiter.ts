@@ -22,7 +22,6 @@
  */
 import { Interpolator, PolyphaseBank, TAPS_PER_PHASE, truePeakFactor } from './oversample.ts';
 
-/** Options of {@link TruePeakLimiter}. */
 export type TruePeakLimiterOptions = {
 	/** Ceiling in dBTP (e.g. −1). */
 	ceilingDb: number;
@@ -93,7 +92,6 @@ export class TruePeakLimiter {
 		return 20 * Math.log10(this.lastGain);
 	}
 
-	/** Clear all state (delay line, detector, envelope). */
 	reset(): void {
 		for (const d of this.delay) d.fill(0);
 		for (const ip of this.interp) ip.reset();

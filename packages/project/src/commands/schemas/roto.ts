@@ -1,4 +1,3 @@
-// Roto / object matte commands (parity workstream `roto`). Handlers: handlers/roto.ts.
 import { z } from 'zod';
 import { ParamValueSchema, Vec2Schema } from '../../schema/common.ts';
 import { RotoResultSchema, RotoSettingsSchema } from '../../schema/sequence.ts';

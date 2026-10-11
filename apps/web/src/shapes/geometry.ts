@@ -4,7 +4,7 @@
 // width. All values in sequence pixels unless noted.
 import {
 	applyMatrix,
-	type Command,
+	type CommandInput,
 	evaluateShape,
 	evaluateVectorShape,
 	invertMatrix,
@@ -49,14 +49,19 @@ export function hitsLayerGeometry(l: ResolvedLayer, p: Vec2): boolean {
 }
 
 /** `param.set shape.size` at the playhead (a keyframe when the size is animated, PRP-020). */
-export function shapeSizeCommand(clipId: string, size: Vec2, frame: number, sequenceId?: string): Command {
+export function shapeSizeCommand(
+	clipId: string,
+	size: Vec2,
+	frame: number,
+	sequenceId?: string,
+): CommandInput {
 	return {
 		type: 'param.set',
 		target: ['clip', clipId, 'shape', 'size'],
 		value: size,
 		at: { sequenceFrame: frame },
 		...(sequenceId ? { sequenceId } : {}),
-	} as Command;
+	} satisfies CommandInput;
 }
 
 export type DrawnBox = { center: Vec2; size: Vec2 };
@@ -140,8 +145,6 @@ export function resizeShapeBySize(i: SizeResizeInput): { size: Vec2; position?: 
 	const s = applyMatrix(M, shift);
 	return { size, position: [i.values.position[0] + s[0] - o[0], i.values.position[1] + s[1] - o[1]] };
 }
-
-// ---------------------------------------------------------------- vector shapes (wp shapes)
 
 const rectCache = new WeakMap<
 	object,

@@ -1,4 +1,4 @@
-// Engine HTTP contract basics (ARCHITECTURE §9.2, S04:ENG-022/024).
+import { RationalSchema as ProjectRationalSchema } from '@jasper/project';
 import { z } from 'zod';
 
 export const API_VERSION = 1;
@@ -84,11 +84,8 @@ export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
 	'LEASE_HELD',
 ]);
 
-export function errorBody(code: EngineErrorCode | string, message: string, detail?: unknown): ErrorShape {
+export function errorBody(code: string, message: string, detail?: unknown): ErrorShape {
 	return { code, message, ...(detail !== undefined ? { detail } : {}), retryable: RETRYABLE_CODES.has(code) };
 }
 
-export const RationalSchema = z.object({
-	num: z.number().int().positive(),
-	den: z.number().int().positive(),
-});
+export const RationalSchema = z.object(ProjectRationalSchema.shape);

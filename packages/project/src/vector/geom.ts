@@ -17,8 +17,6 @@ export type Affine = readonly [number, number, number, number, number, number];
 
 export const IDENTITY: Affine = [1, 0, 0, 1, 0, 0];
 
-// ---------------------------------------------------------------- vectors
-
 export const add = (a: P, b: P): [number, number] => [a[0] + b[0], a[1] + b[1]];
 export const sub = (a: P, b: P): [number, number] => [a[0] - b[0], a[1] - b[1]];
 export const mul = (a: P, k: number): [number, number] => [a[0] * k, a[1] * k];
@@ -40,8 +38,6 @@ export function unit(v: P): [number, number] | null {
 	const l = Math.hypot(v[0], v[1]);
 	return l > 1e-12 && Number.isFinite(l) ? [v[0] / l, v[1] / l] : null;
 }
-
-// ---------------------------------------------------------------- cubics
 
 export const lineCubic = (a: P, b: P): Cubic => [a, a, b, b];
 
@@ -327,8 +323,6 @@ export function cFlatten(c: Cubic, tol: number, out: [number, number][]): void {
 	for (let i = 1; i <= n; i++) out.push(cEval(c, i / n));
 }
 
-// ---------------------------------------------------------------- affine
-
 export function apply(m: Affine, p: P): [number, number] {
 	return [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
 }
@@ -381,8 +375,6 @@ export function transformPath(p: BezPath, m: Affine): BezPath {
 	if (m === IDENTITY) return p;
 	return p.map((sp) => ({ closed: sp.closed, segs: sp.segs.map((c) => cTransform(c, m)) }));
 }
-
-// ---------------------------------------------------------------- paths
 
 export function reversePath(p: BezPath): BezPath {
 	return p.map((sp) => ({ closed: sp.closed, segs: sp.segs.map(cReverse).reverse() }));
@@ -481,8 +473,6 @@ export function distanceTo(p: BezPath, pt: P): number {
 	for (const sp of p) for (const c of walkSegments(sp)) d2 = Math.min(d2, cNearest(c, pt).d2);
 	return Math.sqrt(d2);
 }
-
-// ---------------------------------------------------------------- SVG path data
 
 /** Number formatting for SVG path data (enough precision for sub-pixel accuracy, no exponent). */
 export function fmt(v: number): string {

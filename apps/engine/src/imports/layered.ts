@@ -1,4 +1,4 @@
-// Layer extraction of layered documents (imports workstream): job `layers` reads a registered PSD/PSB, writes every
+// The `layers` job reads a registered PSD/PSB, writes every
 // pixel layer as a PNG (masks applied) under `<media>/layers/<fingerprint>/` and registers each as media. The client
 // turns the tree into project items (individual layers, a sequence with the layers stacked, or merged layers).
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';

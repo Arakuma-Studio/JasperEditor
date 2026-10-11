@@ -1,6 +1,3 @@
-// Sapphire wipes (family sapphire-wipes-other): the catalogue entries (Sapphire names, ids, bin / sub-bin, Sapphire's
-// controls and defaults) and the pure TS maths (`wipeMargin` → `u_swMargin`). Pixels are checked in
-// packages/compositions/test/transition-sapphire-wipes-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	planGpuTransition,
@@ -95,7 +92,6 @@ describe('Sapphire wipes catalogue', () => {
 			expect([def(s, 'widthRed'), def(s, 'widthGreen'), def(s, 'widthBlue')]).toEqual([1, 1.2, 1.4]);
 			expect([def(s, 'noiseAmp'), def(s, 'noiseFreq'), def(s, 'noiseSpeed')]).toEqual([1, 16, 2]);
 			expect(def(s, 'borderGlow')).toBe(0);
-			// Start / End first, Reverse (= Sapphire's Transition Dir) after the own params.
 			expect(n.slice(0, 2)).toEqual(['startPercent', 'endPercent']);
 			expect(n).toContain('reverse');
 		}
@@ -133,7 +129,6 @@ describe('Sapphire wipes catalogue', () => {
 		expect(def(byLabel('S_WipePointalize'), 'edgeWidth')).toBe(2);
 		expect(def(byLabel('S_WipeBubble'), 'wrap')).toBe('reflect');
 		expect(def(byLabel('S_WipeDiffuse'), 'diffuseAmount')).toBe(0.4);
-		// Grad Add / Grad Angle on the pattern wipes; Seed on the random ones.
 		for (const l of [
 			'S_WipeBlobs',
 			'S_WipeCells',

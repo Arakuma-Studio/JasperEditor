@@ -11,6 +11,7 @@ import {
 	MixerStripSchema,
 	SequenceSampleRateSchema,
 } from './audio.ts';
+import { BlendModeSchema } from './blend.ts';
 import type { DeepStrip } from './common.ts';
 import {
 	AnimNumberSchema,
@@ -38,7 +39,7 @@ import {
 	Sequence3DSchema,
 } from './three-d.ts';
 
-// ---------------------------------------------------------------- effects
+export { BLEND_MODES, type BlendMode, BlendModeSchema } from './blend.ts';
 
 export const EffectInstanceSchema = z.looseObject({
 	id: z.string(),
@@ -70,9 +71,7 @@ export const EffectInstanceSchema = z.looseObject({
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
-// ---------------------------------------------------------------- text
-
-// text-animators workstream: typography value schemas.
+// typography value schemas.
 export const TEXT_SCRIPTS = ['normal', 'superscript', 'subscript'] as const;
 export const TEXT_JUSTIFY_LAST = ['left', 'center', 'right', 'justify'] as const;
 export const TEXT_FIGURE_STYLES = ['default', 'lining', 'oldStyle'] as const;
@@ -123,8 +122,8 @@ export const TextStyleSchema = z.looseObject({
 		})
 		.nullable(),
 	allCaps: z.boolean(),
-	// ---- text-animators workstream: typography (all optional; absent = the default noted, read-time defaults in
-	// `typography.ts`). Character settings apply per styled run; paragraph settings per paragraph (`paragraphs`).
+	// typography.ts supplies read-time defaults. Character settings apply per styled run;
+	// paragraph settings apply per entry in paragraphs.
 	/** `metrics` (font kerning, default), `optical` (from the outlines) or manual 1/1000 em before each character. */
 	kerning: TextKerningSchema.optional(),
 	/** Pixels, positive = up (default 0). */
@@ -148,7 +147,6 @@ export const TextStyleSchema = z.looseObject({
 	indentFirstLinePx: z.number().optional(),
 	spaceBeforePx: z.number().optional(),
 	spaceAfterPx: z.number().optional(),
-	// ---- end text-animators
 });
 export type TextStyle = DeepStrip<z.infer<typeof TextStyleSchema>>;
 
@@ -159,7 +157,7 @@ export const TextContentSchema = z.looseObject({
 		.array(z.looseObject({ from: nonNegInt(), to: nonNegInt(), style: TextStyleSchema.partial() }))
 		.optional(),
 	/**
-	 * text-animators workstream: per-paragraph overrides of the paragraph settings (`align`, `justifyLast`, indents,
+	 * per-paragraph overrides of the paragraph settings (`align`, `justifyLast`, indents,
 	 * spacing, `direction`) by paragraph index (paragraphs are separated by line breaks). Absent = base style.
 	 */
 	paragraphs: z.array(z.looseObject({ index: nonNegInt(), style: TextStyleSchema.partial() })).optional(),
@@ -201,7 +199,7 @@ export const CaptionStyleSchema = TextStyleSchema.extend({
 	maxSegmentMs: z.number().positive(),
 	minGapMs: z.number().min(0),
 	boxWidthPct: z.number().positive().max(100),
-	// ---- wp captions (all optional, defaults at read time: `resolveCaptionStyle`)
+	// resolveCaptionStyle supplies defaults for absent fields.
 	/** Vertical placement inside the title-safe area (default `bottom`). */
 	placement: z.enum(['bottom', 'middle', 'top']).optional(),
 	/** Extra distance from the title-safe edge, % of the frame height (0–45, default 0). */
@@ -210,7 +208,6 @@ export const CaptionStyleSchema = TextStyleSchema.extend({
 	linePct: z.number().min(0).max(100).nullable().optional(),
 	/** WebVTT `position:N%`: horizontal anchor of the caption block at N % of the frame width; null = centred. */
 	positionPct: z.number().min(0).max(100).nullable().optional(),
-	// ---- end wp captions
 });
 export type CaptionStyle = DeepStrip<z.infer<typeof CaptionStyleSchema>>;
 
@@ -218,8 +215,6 @@ export type CaptionStyle = DeepStrip<z.infer<typeof CaptionStyleSchema>>;
 export const CAPTION_STANDARDS = ['subtitle', 'cea-608', 'cea-708', 'teletext'] as const;
 export const CaptionStandardSchema = z.enum(CAPTION_STANDARDS);
 export type CaptionStandard = DeepStrip<z.infer<typeof CaptionStandardSchema>>;
-
-// ---------------------------------------------------------------- tracks
 
 export const TRACK_KINDS = ['video', 'audio', 'caption'] as const;
 export const TrackKindSchema = z.enum(TRACK_KINDS);
@@ -244,18 +239,14 @@ export const TrackSchema = z.looseObject({
 	captionFormat: z.literal('open').optional(),
 	visible: z.boolean().optional(),
 	styleDefaults: CaptionStyleSchema.optional(),
-	// ---- wp captions (caption tracks; optional)
 	/** BCP-47 language of the captions (`en`, `fr-CA`); written to embedded streams and sidecars. */
 	language: z.string().optional(),
 	/** Caption standard of the track (default `subtitle`). */
 	captionStandard: CaptionStandardSchema.optional(),
 	/** WebVTT STYLE / REGION / NOTE blocks kept from an imported file for round trips. */
 	vttBlocks: z.array(z.string()).optional(),
-	// ---- end wp captions
 });
 export type Track = DeepStrip<z.infer<typeof TrackSchema>>;
-
-// ---------------------------------------------------------------- markers
 
 export const MARKER_TYPES = ['comment', 'chapter', 'segmentation', 'web-link', 'agent-note'] as const;
 export const MarkerTypeSchema = z.enum(MARKER_TYPES);
@@ -279,52 +270,6 @@ export type Marker = DeepStrip<z.infer<typeof MarkerSchema>>;
 export const ClipMarkerSchema = z.looseObject({ ...markerBase, flicks: nonNegInt() });
 export type ClipMarker = DeepStrip<z.infer<typeof ClipMarkerSchema>>;
 
-// ---------------------------------------------------------------- clips
-
-/**
- * Clip blend modes (keyframes-blend): Premiere Pro's 27 in its menu order (Normal, Dissolve | Darken, Multiply, Color
- * Burn, Linear Burn, Darker Color | Lighten, Screen, Color Dodge, Linear Dodge (Add), Lighter Color | Overlay, Soft
- * Light, Hard Light, Vivid Light, Linear Light, Pin Light, Hard Mix | Difference, Exclusion, Subtract, Divide | Hue,
- * Saturation, Color, Luminosity), then After Effects' utility modes (Stencil / Silhouette Alpha / Luma, Alpha Add).
- * `add` is Linear Dodge (Add) (the id predates the full set). Formulas, groups and labels: `blend-modes.ts`.
- */
-export const BLEND_MODES = [
-	'normal',
-	'dissolve',
-	'darken',
-	'multiply',
-	'color-burn',
-	'linear-burn',
-	'darker-color',
-	'lighten',
-	'screen',
-	'color-dodge',
-	'add',
-	'lighter-color',
-	'overlay',
-	'soft-light',
-	'hard-light',
-	'vivid-light',
-	'linear-light',
-	'pin-light',
-	'hard-mix',
-	'difference',
-	'exclusion',
-	'subtract',
-	'divide',
-	'hue',
-	'saturation',
-	'color',
-	'luminosity',
-	'stencil-alpha',
-	'stencil-luma',
-	'silhouette-alpha',
-	'silhouette-luma',
-	'alpha-add',
-] as const;
-export const BlendModeSchema = z.enum(BLEND_MODES);
-export type BlendMode = DeepStrip<z.infer<typeof BlendModeSchema>>;
-
 export const TransformSchema = z.looseObject({
 	position: AnimVec2Schema,
 	anchor: AnimVec2Schema,
@@ -343,8 +288,6 @@ export const SpeedSchema = z.looseObject({
 	maintainPitch: z.boolean(),
 });
 export type Speed = DeepStrip<z.infer<typeof SpeedSchema>>;
-
-// ---------------------------------------------------------------- time remapping (workstream `time`)
 
 /**
  * One speed keyframe of a clip's Time Remapping (Premiere "Time Remapping ▸ Speed"): the point where the clip's
@@ -430,7 +373,6 @@ const commonShape = {
 	/** edit-ux: placed from this subclip project item; its range bounds trims when it restricts them. */
 	subclipId: z.string().optional(),
 };
-// ---------------------------------------------------------------- tracking (M2, ARCHITECTURE §19.5, S09)
 
 /**
  * Dense per-frame tracker output in the tracked clip's content time. Sample `i` is at content time
@@ -485,8 +427,6 @@ export const TrackedBySchema = z.looseObject({
 	simplify: z.looseObject({ tolerance: z.number().positive() }).optional(),
 });
 export type TrackedBy = DeepStrip<z.infer<typeof TrackedBySchema>>;
-
-// ---------------------------------------------------------------- roto / object mattes (parity: roto)
 
 /**
  * A Roto Brush stroke on one source frame: a polyline swept by a disc, in **media pixels** of the clip's source
@@ -623,9 +563,9 @@ export const VideoClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S09): trackers placed on this clip's picture. */
 	trackers: z.array(ClipTrackerSchema).optional(),
-	/** Workstream `time`: Time Remapping (speed keyframes). Optional; absent = constant speed. */
+	/** Absent means constant speed. */
 	timeRemap: TimeRemapSchema.optional(),
-	/** Workstream `time`: Time Interpolation (default `frame-sampling`). */
+	/** Defaults to frame-sampling. */
 	timeInterpolation: TimeInterpolationSchema.optional(),
 	/** parity (roto): segmented objects (Roto Brush, faces) of this clip's picture. */
 	rotos: z.array(ClipRotoSchema).optional(),
@@ -688,14 +628,12 @@ export const TextClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S11:TXA-001): in/out animators (schema v4). */
 	textAnimation: TextAnimationSchema.optional(),
-	// ---- text-animators workstream (all optional, no version bump): AE-style animators, Path Options, More Options,
-	// per-character 3D and Source Text keyframes (hold; `content` is the value when there are none).
+	// Source Text keys hold their values; content supplies the value when no keys exist.
 	animators: z.array(TextAnimatorGroupSchema).optional(),
 	pathOptions: TextPathOptionsSchema.optional(),
 	moreOptions: TextMoreOptionsSchema.optional(),
 	perCharacter3d: z.boolean().optional(),
 	sourceTextKeyframes: z.array(keyframeSchema(TextContentSchema)).optional(),
-	// ---- end text-animators
 });
 export const SolidClipSchema = z.looseObject({
 	...commonShape,
@@ -730,10 +668,9 @@ export const MotionGraphicClipSchema = z.looseObject({
 	 */
 	template: z.looseObject({ id: z.string(), version: int(), renderer: MgRendererSchema.optional() }),
 	params: z.record(z.string(), z.unknown()),
-	// ---- wp-m2-anime-templates (S11:ATP-006): keyframes of numeric/colour params of anime templates, per param
+	// Keyframes of numeric/colour params of anime templates, per param
 	// name, in content time (flicks). The static value stays in `params`; absent/empty = not animated.
 	paramKeyframes: z.record(z.string(), z.array(MgParamKeyframeSchema)).optional(),
-	// ---- end wp-m2-anime-templates
 	canvas: canvasSchema,
 	...visualShape,
 });
@@ -749,7 +686,6 @@ export const CompositionClipSchema = z.looseObject({
 	canvas: canvasSchema,
 	...visualShape,
 });
-// ---------------------------------------------------------------- multi-camera (wp-multicam)
 
 /**
  * wp-multicam: the angle a nest clip of a multi-camera source sequence shows (Clip ▸ Multi-Camera). `enabled`
@@ -769,9 +705,8 @@ export const NestVideoClipSchema = z.looseObject({
 	...visualShape,
 	/** wp-multicam: present = a multi-camera clip. */
 	multicam: MulticamSelectionSchema.optional(),
-	/** Workstream `time`: Time Remapping of the nested sequence's picture (multi-camera clips too). */
 	timeRemap: TimeRemapSchema.optional(),
-	/** Workstream `time`: Time Interpolation of the nested picture (default `frame-sampling`). */
+	/** Defaults to frame-sampling. */
 	timeInterpolation: TimeInterpolationSchema.optional(),
 });
 export const NestAudioClipSchema = z.looseObject({
@@ -808,8 +743,6 @@ export const SyntheticAudioClipSchema = z.looseObject({
 	effects: z.array(EffectInstanceSchema),
 });
 
-// ---------------------------------------------------------------- shapes (M2, S11:SHP-001, schema v4)
-
 /**
  * `rect` / `ellipse`: the parametric shapes of M2 (size, fill, stroke, corner radius). `vector` (wp shapes): an After
  * Effects-style shape layer whose `contents` hold groups, paths, paints and path operators (`schema/shapes.ts`).
@@ -840,8 +773,7 @@ export const LegacyShapeDataSchema = z.looseObject({
 	cornerRadius: AnimNumberSchema,
 });
 export type LegacyShapeData = DeepStrip<z.infer<typeof LegacyShapeDataSchema>>;
-// Lazy: schema/shapes.ts imports this module (BlendModeSchema); either may be evaluated first.
-export const ShapeDataSchema = z.union([LegacyShapeDataSchema, z.lazy(() => VectorShapeDataSchema)]);
+export const ShapeDataSchema = z.union([LegacyShapeDataSchema, VectorShapeDataSchema]);
 export type ShapeData = LegacyShapeData | VectorShapeData;
 export const isLegacyShape = (s: ShapeData): s is LegacyShapeData => s.type !== 'vector';
 export const ShapeClipSchema = z.looseObject({
@@ -850,8 +782,6 @@ export const ShapeClipSchema = z.looseObject({
 	shape: ShapeDataSchema,
 	...visualShape,
 });
-
-// ---------------------------------------------------------------- cameras and lights (three-d)
 
 /** three-d: a camera on a video track; the topmost enabled camera at a frame is the sequence's active camera. */
 export const CameraClipSchema = z.looseObject({
@@ -955,8 +885,6 @@ export type VisualClip =
 	| NestVideoClip
 	| ShapeClip;
 
-// ---------------------------------------------------------------- transitions, links, groups
-
 export const TransitionSchema = z.looseObject({
 	id: z.string(),
 	trackId: z.string(),
@@ -981,8 +909,6 @@ export type LinkGroup = DeepStrip<z.infer<typeof LinkGroupSchema>>;
 export const ClipGroupSchema = z.looseObject({ id: z.string(), members: z.array(z.string()) });
 export type ClipGroup = DeepStrip<z.infer<typeof ClipGroupSchema>>;
 
-// ---------------------------------------------------------------- sequence
-
 export const SequenceSettingsSchema = z.looseObject({
 	frameRate: RationalSchema,
 	width: z.number().int(),
@@ -1003,7 +929,7 @@ export const SequenceSettingsSchema = z.looseObject({
 	workingColorSpace: z.string(),
 	/** color-mgmt: Sequence Settings ▸ Colour (linearize, blend using 1.0 gamma, tone mapping, HDR white/peak). */
 	color: SequenceColorSchema.optional(),
-	// ---- gaps (Sequence Settings, docs/wp-notes/gaps.md §TL-11; read with `sequenceFormatOf`)
+	// sequenceFormatOf resolves absent format settings.
 	/** Pixel Aspect Ratio of the delivered files; absent / 1:1 = square pixels. `width` is then the display width. */
 	pixelAspectRatio: z.looseObject({ num: z.number(), den: z.number() }).nullable().optional(),
 	/** Frame width the delivered files carry (with a non-square pixel aspect ratio). */
@@ -1012,8 +938,6 @@ export const SequenceSettingsSchema = z.looseObject({
 	fieldOrder: z.string().nullable().optional(),
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
-
-// ---------------------------------------------------------------- multi-camera sources and merged clips (wp-multicam)
 
 /** Sync point of Synchronize, Merge Clips and Create Multi-Camera Source Sequence. */
 export const SYNC_METHODS = ['in', 'out', 'timecode', 'marker', 'audio'] as const;
@@ -1066,7 +990,6 @@ export const MergedClipSchema = z.looseObject({
 export type MergedClip = DeepStrip<z.infer<typeof MergedClipSchema>>;
 
 /**
- * previews workstream: Sequence Settings ▸ Video Previews (Premiere's Preview File Format / Codec / Width / Height).
  * `format`: `h264-iframe` = I-frame-only H.264 (every frame a keyframe: frame-exact, instant seeks; Premiere's default
  * "I-Frame Only MPEG"), `h264` = H.264 with a keyframe every 15 frames (≈ ⅓ smaller), `vp9` = VP9 in WebM. `size`:
  * full or half the sequence frame size (half renders and plays faster; exports never use half-size previews).

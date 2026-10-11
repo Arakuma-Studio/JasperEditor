@@ -1,5 +1,3 @@
-// About ▸ Licenses (ARCHITECTURE D-13): FFmpeg's license text and source link come from the engine's
-// GET /api/licenses; the capability warning about Remotion's bundled GPL FFmpeg is shown when present.
 import { EngineClient } from '@jasper/engine-client';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';

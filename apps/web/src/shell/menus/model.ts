@@ -1,9 +1,3 @@
-// Top-level menubar model (S05 §12.2). Only the structure lives here; every entry is a command id owned
-// by the relevant package (timeline.* WP-2B, transport/program WP-2C, inspector WP-2D, project/export
-// WP-2E, mg WP-2G). There is no Agent menu: external agents connect over MCP (Help ▸ Connect an AI
-// Agent…). Unregistered ids render disabled with a reason (SH-031); the label here is only the fallback
-// shown until the owner registers the command (MN-001).
-
 import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
 import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
 import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
@@ -41,19 +35,16 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sub('New', [
 				c('app.newProject', 'Project…'),
 				c('app.newSequence', 'Sequence…'),
-				// gaps (TL-11)
 				c('project.newSequenceFromClip', 'Sequence From Clip'),
 				c('project.newBin', 'Bin'),
 				c('graphics.newTextLayer', 'Text Layer'),
 				c('mg.insertTemplate', 'fframes Motion Graphic…'),
-				// edit-structure: Premiere's New Item synthetics.
 				c('project.newAdjustmentLayer', 'Adjustment Layer'),
 				c('project.newBarsAndTone', 'Bars and Tone'),
 				c('project.newBlackVideo', 'Black Video'),
 				c('project.newColorMatte', 'Color Matte…'),
 				c('project.newTransparentVideo', 'Transparent Video'),
 				c('project.newCountingLeader', 'Universal Counting Leader…'),
-				// three-d (After Effects: Layer ▸ New ▸ Camera / Light)
 				c('threeD.newCamera', 'Camera…'),
 				c('threeD.newLight', 'Light…'),
 			]),
@@ -68,29 +59,21 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('file.recoverUnsaved', 'Recover Unsaved Changes…'),
 			sep,
 			c('project.import', 'Import…'),
-			// M2 (wp-m2-mg, S08:MGU-001)
 			c('mg.importRemotionProject', 'Import Remotion Project…'),
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
-			// wp captions
 			c('captions.import', 'Import Captions…'),
-			// imports workstream: an SVG as an editable vector shape layer
 			c('project.importSvgAsShape', 'Import SVG as Shape Layer…'),
-			// wp interchange (S04:AS-011)
 			c('project.linkMedia', 'Link Media…'),
-			// polish (Premiere: File ▸ Get Properties for ▸ Selection)
 			c('project.mediaProperties', 'Get Properties for Selection…'),
 			sub('Export', [
 				c('export.media', 'Media…'),
 				c('export.queue', 'Add to Render Queue'),
 				c('export.frame', 'Frame…'),
 				c('export.quick', 'Quick Export'),
-				// imports workstream
 				c('export.lottie', 'Lottie…'),
-				// wp interchange: timeline documents (Premiere's File ▸ Export entries, plus FCPXML, OTIO and ALE)
 				sep,
 				...TIMELINE_FORMATS.map((f) => c('file.exportTimeline', f.label, { format: f.id })),
 				sep,
-				// wp captions: the active caption track as a file
 				sub('Captions', [
 					c('captions.export', 'SubRip (.srt)', { format: 'srt' }),
 					c('captions.export', 'WebVTT (.vtt)', { format: 'vtt' }),
@@ -103,7 +86,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			sep,
 			c('project.settings', 'Project Settings…'),
-			// gaps (PRJ-6)
 			c('file.projectManager', 'Project Manager…'),
 			sub('Engine', [c('engine.connect', 'Connect…'), c('engine.status', 'Engine Status')]),
 			sep,
@@ -137,10 +119,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('app.keyboardShortcuts', 'Keyboard Shortcuts…'),
 			sub('Preferences', [
 				c('app.preferences', 'General…'),
-				// wp-m3-transdefaults (S10:TUI-031): default transitions and durations.
 				c('app.preferences', 'Timeline…', { page: 'timeline' }),
 				c('cache.preferences', 'Media Cache…'),
-				// wp speech (Premiere: Preferences ▸ Transcription)
 				c('speech.preferences', 'Transcription…'),
 				sub('Appearance', [
 					c('view.theme.darkest', 'Darkest'),
@@ -157,22 +137,18 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		editOnly: true,
 		items: [
 			c('timeline.rename', 'Rename…'),
-			// edit-ux (Premiere: Clip ▸ Make Subclip… / Edit Subclip…)
 			c('project.makeSubclip', 'Make Subclip…'),
 			c('project.editSubclip', 'Edit Subclip…'),
 			c('timeline.speedDuration', 'Speed/Duration…'),
 			c('timeline.audioGain', 'Audio Gain…'),
-			// imports workstream (Premiere: Clip ▸ Modify ▸ Interpret Footage…); gaps: Modify ▸ Audio Channels…
 			sub('Modify', [
 				c('timeline.audioChannels', 'Audio Channels…'),
 				c('media.interpretFootage', 'Interpret Footage…'),
 			]),
-			// audio-mix
 			sub('Audio Options', [
 				c('audio.autoDuck', 'Auto Duck…'),
 				c('audio.normalizeMedia', 'Normalize Loudness…'),
 				c('audio.measureLoudness', 'Measure Loudness'),
-				// audio-fx
 				sep,
 				c('audio.remix', 'Remix…'),
 				c('audio.revertRemix', 'Revert Remix'),
@@ -186,7 +162,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.ungroup', 'Ungroup'),
 			c('clip.nest', 'Nest…'),
 			c('clip.unnest', 'Unnest'),
-			// wp-multicam (Premiere: Clip ▸ Synchronize…, Merge Clips…, Create Multi-Camera Source Sequence…, Multi-Camera ▸)
 			c('clip.synchronize', 'Synchronize…'),
 			c('clip.mergeClips', 'Merge Clips…'),
 			c('clip.createMulticam', 'Create Multi-Camera Source Sequence…'),
@@ -198,8 +173,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('multicam.audioFollowsVideo', 'Multi-Camera Audio Follows Video'),
 				c('multicam.selectionTopDown', 'Multi-Camera Selection Top Down'),
 			]),
-			// edit-structure (Premiere: Clip ▸ Video Options).
-			// three-d (After Effects: the 3D Layer switch, Camera / Light Settings)
 			c('threeD.toggleLayer', '3D Layer'),
 			c('threeD.cameraSettings', 'Camera Settings…'),
 			c('threeD.lightSettings', 'Light Settings…'),
@@ -208,20 +181,17 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('timeline.frameHoldOptions', 'Frame Hold Options…'),
 				c('timeline.addFrameHold', 'Add Frame Hold'),
 				c('timeline.insertFrameHoldSegment', 'Insert Frame Hold Segment'),
-				// Workstream `time` (Premiere: Clip ▸ Video Options ▸ Time Interpolation).
 				sub('Time Interpolation', [
 					c('timeline.timeInterpolation.frameSampling', 'Frame Sampling'),
 					c('timeline.timeInterpolation.frameBlending', 'Frame Blending'),
 					c('timeline.timeInterpolation.opticalFlow', 'Optical Flow'),
 				]),
 			]),
-			// Workstream `time`: Time Remapping (the speed band) and Scene Edit Detection.
 			sub('Show Clip Keyframes', [sub('Time Remapping', [c('timeline.showSpeedKeyframes', 'Speed')])]),
 			c('timeline.toggleSpeedKeyframe', 'Add / Remove Speed Keyframe'),
 			c('timeline.removeTimeRemapping', 'Remove Time Remapping'),
 			c('timeline.sceneEditDetection', 'Scene Edit Detection…'),
 			sep,
-			// wp-clipboard-2 (S03:XF-050/051/038): the Program monitor layer menu's transform entries.
 			sub('Transform', [
 				c('motion.reset', 'Reset Motion'),
 				c('motion.resetCrop', 'Reset Crop'),
@@ -232,13 +202,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				sep,
 				sub('Anchor', ANCHOR_MENU),
 			]),
-			// wp-m3-trackui (S09:TRK-023)
 			c('keyframes.simplify', 'Simplify Keyframes…'),
 			c('clip.revealInProject', 'Reveal in Project'),
 			c('clip.revealInTimeline', 'Reveal in Timeline'),
 			sep,
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
-			// gaps (PRJ-8): Premiere's Clip ▸ Proxy.
 			sub('Proxy', [
 				c('project.createProxies', 'Create Proxies…'),
 				c('project.attachProxies', 'Attach Proxies…'),
@@ -248,11 +216,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('media.toggleProxies', 'Toggle Proxies'),
 			]),
 			c('process.processClip', 'Process Clip…'),
-			// wp speech: the selected clips' media
 			c('transcript.generateForClips', 'Generate Transcript…'),
-			// wp-m3-inpoint (S07:PRC-018): Replace Footage… for the selected Project item / clip's media.
 			c('media.replaceFootage', 'Replace Footage…'),
-			// color-mgmt: the clip colour override (timeline clips; media use Interpret Footage ▸ Colour).
 			c('clip.colorSpace', 'Clip Colour Space…'),
 		],
 	},
@@ -262,7 +227,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		editOnly: true,
 		items: [
 			c('sequence.settings', 'Sequence Settings…'),
-			// previews (Premiere's Sequence menu): render previews and their files
 			c('timeline.renderInToOut', 'Render Effects In to Out'),
 			c('timeline.renderAllInToOut', 'Render In to Out'),
 			c('timeline.renderSelection', 'Render Selection'),
@@ -271,7 +235,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.deleteRenderFilesInToOut', 'Delete Render Files In to Out'),
 			c('sequence.previewSettings', 'Video Previews…'),
 			sep,
-			// gaps (AI-2)
 			c('sequence.autoReframe', 'Auto Reframe Sequence…'),
 			sep,
 			c('timeline.matchFrame', 'Match Frame'),
@@ -280,7 +243,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.addEdit', 'Add Edit'),
 			c('timeline.addEditAllTracks', 'Add Edit to All Tracks'),
 			c('timeline.extendEditToPlayhead', 'Extend Edit'),
-			// edit-ux trim mode (Premiere: Sequence ▸ Trim Edit, Select Nearest Edit Point ▸, Toggle Trim Type)
 			c('timeline.trimEdit', 'Trim Edit'),
 			sub('Select Nearest Edit Point', [
 				c('timeline.selectNearestEditRippleIn', 'As Ripple In'),
@@ -291,7 +253,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			c('timeline.toggleTrimType', 'Toggle Trim Type'),
 			c('timeline.playAroundEdit', 'Play Around the Edit'),
-			// wp-m3-transdefaults (S05 §12.2 Sequence menu, S10:TUI-030/031)
 			c('timeline.applyDefaultVideoTransition', 'Apply Video Transition'),
 			c('timeline.applyDefaultAudioTransition', 'Apply Audio Transition'),
 			c('timeline.applyDefaultTransitionsToSelection', 'Apply Default Transitions to Selection'),
@@ -308,11 +269,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			c('sequence.makeSubsequence', 'Make Subsequence'),
 			sep,
-			// audio-mix
 			c('sequence.loudness', 'Loudness Normalization…'),
 			c('audio.voiceoverRecord', 'Record Voice-over'),
 			c('audio.voiceoverSettings', 'Voice-Over Record Settings…'),
-			// wp captions (FilmCraft / Premiere Sequence ▸ Captions)
 			sub('Captions', [
 				c('timeline.addCaptionTrack', 'Add New Caption Track'),
 				c('timeline.addCaptionAtPlayhead', 'Add Caption at Playhead'),
@@ -326,7 +285,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('captions.hideAll', 'Hide All Caption Tracks'),
 				sep,
 				c('transcript.openPanel', 'Transcript'),
-				// wp speech
 				c('transcript.generate', 'Generate Transcript…'),
 				c('transcript.createCaptions', 'Create Captions from Transcript…'),
 				c('transcript.removeFillers', 'Remove Filler Words…'),
@@ -345,7 +303,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.addTracks', 'Add Tracks…'),
 			c('timeline.deleteTracks', 'Delete Tracks…'),
 			sep,
-			// three-d (After Effects: Composition Settings ▸ 3D Renderer, Draft 3D)
 			sub('3D Renderer', [
 				c('threeD.renderer.classic', 'Classic 3D'),
 				c('threeD.renderer.advanced', 'Advanced 3D'),
@@ -364,7 +321,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.markClip', 'Mark Clip'),
 			c('timeline.markSelection', 'Mark Selection'),
 			sep,
-			// edit-ux (Premiere: Markers ▸ Mark Split, Source monitor)
 			sub('Mark Split', [
 				c('source.markSplitVideoIn', 'Video In'),
 				c('source.markSplitVideoOut', 'Video Out'),
@@ -401,9 +357,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('threeD.newLight', 'Light…'),
 			]),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
-			// wp-clipboard-2 (S05 Graphics and Titles ▸ Arrange, S03:XF-050)
 			sub('Arrange', ARRANGE_MENU),
-			// M2 (wp-m2-text-anim, S11:TXA-024)
 			sub('Text Animation', [
 				c('text.applyAnimation', 'Apply In…', { side: 'in' }),
 				c('text.applyAnimation', 'Apply Out…', { side: 'out' }),
@@ -420,14 +374,12 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('program.lockGuides', 'Lock Guides'),
 			c('program.addGuide', 'Add Guide…'),
 			c('program.clearGuides', 'Clear Guides'),
-			// edit-ux (Premiere View ▸ Guide Templates)
 			sub('Guide Templates', [
 				c('program.saveGuidesAsTemplate', 'Save Guides as Template…'),
 				c('program.manageGuides', 'Manage Guides…'),
 			]),
 			c('program.snapInMonitor', 'Snap in Program Monitor'),
 			sep,
-			// three-d (After Effects: View ▸ Switch 3D View)
 			sub('Switch 3D View', [
 				c('threeD.view.activeCamera', 'Active Camera'),
 				c('threeD.view.default', 'Default'),
@@ -464,7 +416,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('view.layout.compact', 'Compact'),
 			]),
 			c('view.tooltips', 'Show Tooltips'),
-			// audio-mix (Premiere: Toggle Audio During Scrubbing, Shift+S)
 			c('transport.toggleAudioScrub', 'Audio Scrubbing'),
 			sep,
 			c('view.fullscreen', 'Full Screen'),

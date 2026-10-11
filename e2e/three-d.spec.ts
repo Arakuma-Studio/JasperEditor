@@ -1,9 +1,4 @@
-// three-d end to end in the built app (HTML-in-Canvas on, as in Electron and Remotion renders, so the Program
-// monitor runs the GPU 3D renderer): Clip ▸ 3D Layer and the Effect Controls 3D switch, File ▸ New ▸ Camera… and
-// Light… (Camera / Light Settings dialogs), the Program monitor drawing the run through the camera with the light,
-// the 3D view chip (Custom View 1), Sequence ▸ 3D Renderer ▸ Advanced 3D with extruded text, the export (Remotion
-// path, named in the plan) drawing the same, and the 3D Camera Tracker (Clip ▸ Track Camera on the synthetic dolly
-// plate → solved track points on the monitor → select three → Create Text and Camera).
+// HTML-in-Canvas enables the GPU 3D preview, as in Electron and Remotion.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +10,7 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	exportViaUi,
 	importFiles,
 	query,
@@ -89,12 +85,12 @@ async function menu(top: string, ...path: (string | RegExp)[]) {
 }
 
 test('Clip ▸ 3D Layer and the Effect Controls 3D switch make two solids one 3D run', async () => {
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0.3, 0.35, 0.4, 1], ref: '$floor' },
 		{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V2', color: [0.95, 0.4, 0.1, 1], ref: '$card' },
 		{ type: 'param.set', target: ['clip', '$card', 'transform', 'scale'], value: 30 },
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
+	]);
+	expectTransaction(r);
 	const all = await clips(page);
 	floor = all.find((c) => c.track === 'V1')!.id;
 	card = all.find((c) => c.track === 'V2')!.id;
@@ -147,7 +143,6 @@ test('File ▸ New ▸ Camera… and Light…: the Program monitor draws the run
 	await expect(ldlg).toBeVisible();
 	await ldlg.getByRole('button', { name: 'OK' }).click();
 	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('New Light');
-	// The camera moved the card off the centre and the light changed the shading: the centre differs.
 	await expect
 		.poll(
 			async () => {
@@ -230,7 +225,6 @@ test('the export renders the 3D scene on the Remotion path (named in the plan)',
 		...['-v', 'error', '-ss', '0.5', '-i', file, '-frames:v', '1'],
 		...['-vf', 'scale=64:36:flags=area,format=rgb24', '-f', 'rawvideo', '-'],
 	]);
-	// The card (orange, lit by the light) and the extruded text (grey) are drawn, as in the Program monitor.
 	let orange = 0;
 	let lit = 0;
 	for (let i = 0; i < raw.length; i += 3) {

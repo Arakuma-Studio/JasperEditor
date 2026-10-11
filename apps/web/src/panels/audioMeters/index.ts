@@ -1,5 +1,3 @@
-// Audio Meters panel (S05:MTR-001/002, audio-mix): live levels and the EBU R128 loudness readout of the Mix.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

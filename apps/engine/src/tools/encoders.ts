@@ -145,8 +145,6 @@ export const LEGACY_X264_CHOICE: EncoderChoice = {
 	gpl: true,
 };
 
-// ---------------------------------------------------------------- parsing
-
 /** Build license from `ffmpeg -version` / `-buildconf` output. */
 export function parseBuildLicense(versionOut: string): EncodingCapabilities['license'] {
 	const m = /configuration:(.*)/.exec(versionOut);
@@ -177,8 +175,6 @@ export function parseHwaccels(out: string): string[] {
 	}
 	return names;
 }
-
-// ---------------------------------------------------------------- selection
 
 /** Encoders the selector may use: GPL/nonfree ones removed in LGPL-only mode. */
 function effectiveEncoders(inv: Pick<EncoderInventory, 'encoders' | 'lgplOnly'>): string[] {
@@ -332,8 +328,6 @@ export function encodingCapabilities(inv: EncoderInventory): EncodingCapabilitie
 		...(message ? { message } : {}),
 	};
 }
-
-// ---------------------------------------------------------------- arguments
 
 type EncodeParams = {
 	/** x264-style CRF 0–51 (the export quality setting); mapped per encoder. */
@@ -663,8 +657,7 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		default:
 			video.push(...rate(1.2), '-g', String(gop));
 	}
-	// Generic codec option, understood by every H.264 encoder (OpenH264 never makes B-frames anyway). Pieces encoded with
-	// B-frames lost frames at the join with copied GOPs (verify workstream: libx264, as with CI's apt ffmpeg).
+	// B-frames can lose frames at joins with copied GOPs. OpenH264 never produces B-frames.
 	if (p.noBFrames && (enc === 'libx264' || HW_H264.some((h) => h.encoder === enc))) video.push('-bf', '0');
 	if (!filters.includes('hwupload')) video.push('-pix_fmt', pix);
 	if (p.threads && !HW_ALL.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));
@@ -685,8 +678,6 @@ export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2
 	if (audioEncoder === 'pcm_s16le' || audioEncoder === 'pcm_s24le') return ['-c:a', audioEncoder];
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
-
-// ---------------------------------------------------------------- hardware probing
 
 const hwCache = new Map<string, Promise<HwTestResult[]>>();
 
@@ -792,8 +783,6 @@ function hwProbingDisabled(env: Record<string, string | undefined>): boolean {
 	const v = env[HW_ENCODERS_ENV];
 	return !!v && /^(0|false|no|off)$/i.test(v.trim());
 }
-
-// ---------------------------------------------------------------- service
 
 /**
  * The engine's encoder inventory: built once at startup from the self-check (`-encoders`, `-hwaccels`,

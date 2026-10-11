@@ -8,7 +8,7 @@
 | Upstream path | Our path | What |
 |---|---|---|
 | `crates/audio-dsp/src/lib.rs` (`AudioEffect`, dB helpers) | `packages/audio-fx/src/core/effect.ts`, `packages/audio-fx/src/core/math.ts` | The processor contract (planar in-place blocks, latency, reset) and numeric helpers |
-| `crates/audio-dsp/src/fft.rs` | `packages/audio-fx/src/core/fft.ts` | Radix-2 complex FFT (f64 here) |
+| `crates/audio-dsp/src/fft.rs` | `packages/audio-dsp/src/fft.ts` | Radix-2 complex FFT (f64 here) |
 | `crates/audio-dsp/src/design.rs` | `packages/audio-fx/src/core/design.ts` | Bessel / Butterworth / Chebyshev I / elliptic prototypes → bilinear biquad cascades (Scientific Filter) |
 | `crates/audio-dsp/src/effects/util.rs` | `packages/audio-fx/src/core/util.ts` | Delay lines, LFOs, one-pole / DC-block / all-pass, envelope follower, PRNG |
 | `crates/audio-dsp/src/effects/stft.rs` | `packages/audio-fx/src/core/stft.ts` | Streaming √Hann STFT overlap-add |

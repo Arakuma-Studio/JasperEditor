@@ -1,4 +1,6 @@
-// Warp Stabilizer analysis tracker `warp-klt@1` (workstream gaps, docs/wp-notes/gaps.md §FX-6; the analysis of
+import type { Mat } from '@techstark/opencv-js';
+import type { OpenCvApi } from '../tools/opencv.ts';
+// Warp Stabilizer analysis tracker `warp-klt@1` (the analysis of
 // effectcraft `crates/track/src/stabilize.rs`, MIT OR Apache-2.0, licenses/ported/gaps.md). Runs inside the tracking
 // worker with OpenCV.js, frame to frame over the whole clip:
 // 1. Shi–Tomasi corners spread over the frame (minimum distance ∝ frame size); features keep their id while they are
@@ -27,12 +29,10 @@ export type WarpConfig = {
 	threshold: number;
 };
 
-type CV = any;
-
-export function createWarpTracker(cv: CV, G: typeof Geometry, cfg: WarpConfig) {
+export function createWarpTracker(cv: OpenCvApi, G: typeof Geometry, cfg: WarpConfig) {
 	const W = cfg.width;
 	const H = cfg.height;
-	let prev: CV = null;
+	let prev: Mat | null = null;
 	/** Active features: x, y interleaved, and their ids. */
 	let pts: number[] = [];
 	let ids: number[] = [];
@@ -137,11 +137,11 @@ export function createWarpTracker(cv: CV, G: typeof Geometry, cfg: WarpConfig) {
 		const s = cv.matFromArray(n, 1, cv.CV_32FC2, src);
 		const d = cv.matFromArray(n, 1, cv.CV_32FC2, dst);
 		const mask = new cv.Mat();
-		let Hm: CV = null;
+		let Hm: Mat | null = null;
 		try {
 			Hm = cv.findHomography(s, d, cv.RANSAC, cfg.threshold, mask, 2000, 0.995);
 			if (!Hm || Hm.empty() || Hm.rows !== 3) return null;
-			const h = G.hNormalize(Array.from(Hm.data64F as Float64Array));
+			const h = G.hNormalize(Array.from(Hm.data64F));
 			if (!h.every(Number.isFinite)) return null;
 			let inl = 0;
 			for (let i = 0; i < n; i++) if (mask.data[i]) inl++;
@@ -155,7 +155,7 @@ export function createWarpTracker(cv: CV, G: typeof Geometry, cfg: WarpConfig) {
 	}
 
 	/** Fresh corners of `img` away from the active features, up to the budget. */
-	function replenish(img: CV): void {
+	function replenish(img: Mat): void {
 		const want = cfg.maxFeatures - ids.length;
 		if (want < cfg.maxFeatures * 0.1) return;
 		const mask = new cv.Mat(H, W, cv.CV_8UC1, new cv.Scalar(255));

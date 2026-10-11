@@ -42,7 +42,7 @@ describe('channel layouts and conversion (ITU-R BS.775)', () => {
 		let m = conversionMatrix('5.1', 'stereo', 'frontRear');
 		expect(m[0]).toEqual([1, 0, k, 0, k, 0]);
 		expect(m[1]).toEqual([0, 1, k, 0, 0, k]);
-		expect(conversionMatrix('5.1', 'stereo')).toEqual(m); // default is frontRear
+		expect(conversionMatrix('5.1', 'stereo')).toEqual(m);
 		m = conversionMatrix('5.1', 'mono');
 		expect(m[0]).toEqual([k, k, 1, 0, 0.5, 0.5]);
 		expect(conversionMatrix('stereo', 'mono')[0]).toEqual([k, k]);
@@ -100,7 +100,7 @@ describe('channel layouts and conversion (ITU-R BS.775)', () => {
 		];
 		const l = new Float32Array([1, 2, 3, 4]);
 		const r = new Float32Array([5, 6, 7, 8]);
-		applyMatrix(swap, [l, r], [l, r], 1, 2, 0.5); // in place
+		applyMatrix(swap, [l, r], [l, r], 1, 2, 0.5);
 		expect(Array.from(l)).toEqual([1, 3, 3.5, 4]);
 		expect(Array.from(r)).toEqual([5, 1, 1.5, 8]);
 		const out = [new Float32Array(4).fill(1), new Float32Array(4).fill(1)];
@@ -147,7 +147,6 @@ describe('5.1 panner', () => {
 				}
 			}
 		}
-		// speaker positions
 		expect(close(pointGains51(0, 1, 1)[CH_C], 1)).toBe(true);
 		expect(close(pointGains51(-1, 1, 1)[CH_L], 1)).toBe(true);
 		expect(close(pointGains51(1, 1, 0.5)[CH_R], 1)).toBe(true);
@@ -167,7 +166,6 @@ describe('5.1 panner', () => {
 	});
 
 	it('panner matrices', () => {
-		// 5.1 through the default panner is the identity
 		const m = pan51Matrix('5.1', DEFAULT_PAN51);
 		m.forEach((row, o) => {
 			row.forEach((g, i) => {
@@ -175,7 +173,6 @@ describe('5.1 panner', () => {
 			});
 		});
 		expect(pan51Matrix('5.1')).toEqual(m);
-		// stereo at front centre: L → L, R → R
 		let s = pan51Matrix('stereo', { ...DEFAULT_PAN51, lfeGain: 0 });
 		expect(
 			close(s[CH_L][0], 1) && close(s[CH_R][1], 1) && Math.abs(s[CH_C][0]) < 1e-6 && s[CH_LFE][0] === 0,
@@ -185,7 +182,6 @@ describe('5.1 panner', () => {
 		expect(close(s[CH_C][0], 1) && close(s[CH_LFE][0], 0.5)).toBe(true);
 		s = pan51Matrix('stereo', { ...DEFAULT_PAN51, lfeGain: 0.5 });
 		expect(close(s[CH_LFE][0], 0.25) && close(s[CH_LFE][1], 0.25)).toBe(true);
-		// every source channel keeps unit power (LFE aside)
 		for (const l of LAYOUTS) {
 			const mm = pan51Matrix(l, { x: 0.37, y: -0.21, center: 0.6, lfeGain: 0 });
 			for (let i = 0; i < channelCount(l); i++) {

@@ -1,6 +1,3 @@
-// Browser-side harness of the simulation-warp family tests (bundled with esbuild, run in headless Chrome): runs one
-// GPU effect through the real fx host (src/fx/host.ts) on a painted layer and returns the output canvas — the
-// contract of test/fx-psdg/harness.ts plus what simulations need: paramsAt, CPU pixels of media params, structures.
 import {
 	defaultEffectRegistry,
 	type EffectParams,
@@ -144,7 +141,6 @@ export const solid =
 		ctx.fillRect(b.x, b.y, b.w, b.h);
 	};
 
-/** A colourful deterministic test picture (gradient + shapes). */
 export const picture: Paint = (ctx, b) => {
 	const g = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
 	g.addColorStop(0, 'rgb(220,40,30)');
@@ -158,7 +154,6 @@ export const picture: Paint = (ctx, b) => {
 	ctx.fillRect(b.x + b.w * 0.6, b.y + b.h * 0.55, b.w * 0.15, b.h * 0.25);
 };
 
-/** Max |difference| of two canvases' RGBA bytes. */
 export function maxDiff(a: HTMLCanvasElement, b: HTMLCanvasElement): number {
 	const da = a.getContext('2d')!.getImageData(0, 0, a.width, a.height).data;
 	const db = b.getContext('2d')!.getImageData(0, 0, b.width, b.height).data;
@@ -178,7 +173,6 @@ export function sumDiff(a: HTMLCanvasElement, b: HTMLCanvasElement): number {
 	return m;
 }
 
-/** Mean of the RGBA bytes of a canvas region. */
 export function mean(c: HTMLCanvasElement, x = 0, y = 0, w = c.width, h = c.height): Px {
 	const d = c.getContext('2d')!.getImageData(x, y, w, h).data;
 	const s = [0, 0, 0, 0];

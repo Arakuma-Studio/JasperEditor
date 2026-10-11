@@ -15,6 +15,7 @@ import {
 	type EffectRegistry,
 	effectRuns,
 	type MediaHandle,
+	mediaParamId,
 	PREVIEW_LUT_SIZE,
 	type ResolvedEffect,
 	type SequenceColorInfo,
@@ -93,7 +94,7 @@ function planColorStage(
 			return;
 		}
 		const spec = registry.get(fx.effectId, fx.effectVersion);
-		const css = spec?.preview.css?.(fx.params as never);
+		const css = spec?.preview.css?.(fx.params);
 		if (css && Object.keys(css).length === 0) return; // identity
 		if (css && Object.keys(css).length === 1 && typeof css.filter === 'string') {
 			steps.push({ kind: 'css', effect: fx, filter: css.filter });
@@ -116,13 +117,11 @@ export function referencedMedia(effects: readonly ResolvedEffect[]): string[] {
 	const out = new Set<string>();
 	for (const fx of effects)
 		for (const v of Object.values(fx.params)) {
-			const id = (v as { mediaId?: unknown } | null)?.mediaId;
-			if (typeof id === 'string' && id) out.add(id);
+			const id = mediaParamId(v);
+			if (id) out.add(id);
 		}
 	return [...out];
 }
-
-// ---------------------------------------------------------------- document context
 
 export type ColorDocValue = {
 	/** The document's media handles (LUT assets referenced by effect params, S06:LUT-003). */
@@ -137,20 +136,18 @@ export type ColorDocValue = {
 /** color-mgmt: the colour-op context of a document (working space, OCIO configs by media id). */
 export function colorOpsContext(doc: ColorDocValue): {
 	working?: SequenceColorInfo;
-	colorConfig: (mediaId: string) => ReturnType<typeof loadedColorConfig> & {};
+	colorConfig: (mediaId: string) => Exclude<ReturnType<typeof loadedColorConfig>, undefined>;
 } {
 	return {
 		...(doc.working ? { working: doc.working } : {}),
 		colorConfig: (id) => {
 			const u = doc.media[id]?.url;
-			return (u ? loadedColorConfig(u) : null) ?? (null as never);
+			return (u ? loadedColorConfig(u) : null) ?? null;
 		},
 	};
 }
 const EMPTY: ColorDocValue = { media: {}, bypass: new Set(), isPreview: true };
 export const ColorDocContext = createContext<ColorDocValue>(EMPTY);
-
-// ---------------------------------------------------------------- hook
 
 export type ColorStage = {
 	/** Canvas effect descriptors for `<Video effects>` / `<Img effects>` / `ColorCanvas` (empty = none). */

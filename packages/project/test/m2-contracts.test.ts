@@ -1,5 +1,3 @@
-// M2 shared contracts (ARCHITECTURE §19): LUTs, colour-run fusion, homographies / corner pin, the v3 schema
-// additions.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -223,7 +221,6 @@ describe('homographies and corner pin (S09:TRK-050)', () => {
 		expect(p.quad[0][1]).toBeCloseTo(108, 6);
 		expect(p.quad[2][0]).toBeCloseTo(1536, 6);
 		expect(p.quad[2][1]).toBeCloseTo(972, 6);
-		// Without a pin the map stays affine.
 		const h2 = new Harness();
 		h2.ok([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] }]);
 		const s2 = buildRenderSnapshot(h2.doc, h2.seqId, { resolveMedia: () => null, resolveFont: () => null });

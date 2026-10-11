@@ -1,4 +1,3 @@
-// The editor catalogue must resolve to a renderer for every offered preset (S11:TXA-002/003).
 import { TEXT_ANIMATION_SPECS } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { frameToMs, seekCanonical } from '../src/runtime/index.ts';
@@ -12,8 +11,7 @@ describe('text animation catalogue', () => {
 	});
 });
 
-// Versioned cursor behavior, wp-m2-text-anim.md: 15 units typed over 900ms;
-// the cursor stays lit on keystrokes and alternates every 250ms while idle.
+// Typing takes 900 ms for 15 units. Keystrokes keep the cursor lit; idle blinking alternates every 250 ms.
 it('typewriter@2 blinks while idle in either direction and honors caretBlink', () => {
 	const impl = textAnimationImpl({ preset: 'typewriter', version: 2 })!;
 	const params = { caret: true, caretBlink: true, blinkRate: 2, delay: 0, typing: 0.6 };

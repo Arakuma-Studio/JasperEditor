@@ -1,6 +1,3 @@
-// Program Monitor motion path (S03:OVL-020) and the Effect Controls Spatial Interpolation menu (S03:KF-021):
-// drawing under monitor zoom/pan, key square and tangent drags (one undo entry each, Alt breaks continuity),
-// key selection, locked tracks.
 import { buildRenderSnapshot, type Keyframe, type Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -17,7 +14,7 @@ const keysOf = (s: EditorSession, id: string) =>
 	(clipOf(s, id) as unknown as { transform: { position: { keyframes: Keyframe<Vec2>[] } } }).transform
 		.position.keyframes;
 
-/** A 90-frame solid with Auto Bezier position keys at frames 0, 30 and 60 (made like the monitor does). */
+/** A 90-frame solid with Auto Bezier position keys at frames 0, 30 and 60. */
 function setup() {
 	const session = makeSession();
 	const [id] = addSolids(session, [0], 90);
@@ -83,7 +80,6 @@ describe('Program Monitor motion path (S03:OVL-020)', () => {
 		const mid = squares[1] as SVGRectElement;
 		expect([Number(mid.getAttribute('x')), Number(mid.getAttribute('y'))]).toEqual([336.5, 246.5]);
 		expect(mid.getAttribute('width')).toBe('7');
-		// First key: out handle only; middle: both; last: in only.
 		expect(container.querySelectorAll('[data-tangent]')).toHaveLength(4);
 	});
 
@@ -131,7 +127,7 @@ describe('Program Monitor motion path (S03:OVL-020)', () => {
 		const { session, id } = setup();
 		const { svg, refresh } = overlay(session);
 		const before = session.getState().history.entries.length;
-		// Auto tangent of the middle key (keyframes-blend: After Effects' rule): along next − prev = (1, 0), each handle
+		// Auto tangent of the middle key (After Effects' rule): along next − prev = (1, 0), each handle
 		// ⅓ of its chord — out = |(540, −500)| / 3, in = |(560, 500)| / 3.
 		const LOUT = Math.hypot(540, 500) / 3;
 		const LIN = Math.hypot(560, 500) / 3;
@@ -142,12 +138,10 @@ describe('Program Monitor motion path (S03:OVL-020)', () => {
 		expect(s.outTangent[0]).toBeCloseTo(LOUT, 6);
 		expect(s.outTangent[1]).toBeCloseTo(100, 6);
 		const len = Math.hypot(...s.outTangent);
-		// The in tangent turned opposite and kept its length.
 		expect(s.inTangent[0] / LIN).toBeCloseTo(-s.outTangent[0] / len, 6);
 		expect(Math.hypot(...s.inTangent)).toBeCloseTo(LIN, 6);
 		expect(session.getState().history.entries.length).toBe(before + 1);
 		refresh();
-		// Alt-drag the in handle: Bezier, the out tangent stays.
 		const inH: Vec2 = [(960 + s.inTangent[0]) / 2, (800 + s.inTangent[1]) / 2];
 		const outBefore = [...s.outTangent];
 		act(() => drag(svg, inH, [inH[0] - 10, inH[1]], { altKey: true, id: 2 }));

@@ -1,39 +1,18 @@
-// Core clip handlers (ARCHITECTURE §5.3, WP-00): place, addText/addSolid/addMotionGraphic, move,
-// trim (regular + ripple), split, lift, extract, update. S01 §9–§10, S02 §10–§13, Appendix A.
-
 import type { Draft } from 'immer';
-import {
-	anim,
-	type Box,
-	createFontRef,
-	DEFAULT_FONT_FAMILY,
-	defaultSpeed,
-	defaultTextStyle,
-	defaultTransform,
-} from '../../factories.ts';
+import { anim, defaultTextStyle, defaultTransform } from '../../factories.ts';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
-import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
-import type {
-	Clip,
-	Sequence,
-	TextBox,
-	TextContent,
-	TextStyle,
-	Track,
-	Transform,
-} from '../../schema/sequence.ts';
+import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
-	assertKindFits,
 	assertUnlocked,
 	cleanupSequence,
 	clearRange,
@@ -44,7 +23,6 @@ import {
 	relinkSplits,
 	removeClip,
 	removeShift,
-	resolveOrCreateTrack,
 	resolveTrackIn,
 	type SplitRecord,
 	setClipRange,
@@ -55,95 +33,26 @@ import {
 	tracksOfKind,
 } from '../placement.ts';
 import { rippleDeleteSpans, rippleTrimGroup, tracksHolding, trimLimits } from '../ripple.ts';
-import type { ClipPatch, TransformPatch } from '../schemas/clip.ts';
+import type { ClipPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import {
+	applyTransformPatch,
+	commonFields,
+	ensureDefaultFont,
+	frameBox,
+	makeRoom,
+	newGeneratorClip,
+	prepareTrack,
+	visualFields,
+} from './clip-common.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';
-import { markMulticamClips } from './multicam.ts';
-import { applyShapePatch } from './shape.ts';
+import { markMulticamClips } from './multicam-placement.ts';
+import { applyShapePatch } from './shape-storage.ts';
 import { expandGroups, placeSequence } from './structure.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
-
-type DTrack = Draft<Track>;
-export const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });
-
-export function commonFields(
-	id: string,
-	trackId: string,
-	start: number,
-	duration: number,
-	sourceIn: number,
-	name: string,
-	label: LabelColor,
-) {
-	return {
-		id,
-		trackId,
-		start,
-		duration,
-		sourceIn,
-		speed: defaultSpeed(),
-		name,
-		label,
-		enabled: true,
-		linkId: null,
-		groupId: null,
-		markers: [],
-	};
-}
-
-export function visualFields(transform: Transform) {
-	return { transform, opacity: anim(100), blendMode: 'normal' as const, effects: [] };
-}
-
-export function applyTransformPatch(t: Transform, p: TransformPatch | undefined): Transform {
-	if (!p) return t;
-	const vec = (v: Vec2 | Animatable<Vec2>) =>
-		Array.isArray(v) ? anim<Vec2>([v[0], v[1]]) : (v as Animatable<Vec2>);
-	const num = (v: number | Animatable<number>) => (typeof v === 'number' ? anim(v) : v);
-	return {
-		...t,
-		...(p.position !== undefined ? { position: vec(p.position) } : {}),
-		...(p.anchor !== undefined ? { anchor: vec(p.anchor) } : {}),
-		...(p.scale !== undefined ? { scale: num(p.scale) } : {}),
-		...(p.scaleWidth !== undefined ? { scaleWidth: num(p.scaleWidth) } : {}),
-		...(p.rotation !== undefined ? { rotation: num(p.rotation) } : {}),
-		...(p.uniformScale !== undefined ? { uniformScale: p.uniformScale } : {}),
-		...(p.flipH !== undefined ? { flipH: p.flipH } : {}),
-		...(p.flipV !== undefined ? { flipV: p.flipV } : {}),
-	};
-}
-
-/** Overwrite `[at, at+n)` on the destination tracks, or insert-shift them plus sync-locked tracks. */
-export function makeRoom(
-	seq: DSeq,
-	h: HandlerContext,
-	dest: readonly DTrack[],
-	at: number,
-	n: number,
-	mode: 'overwrite' | 'insert',
-	rippleMarkers = true,
-): void {
-	let splits: SplitRecord[] = [];
-	if (mode === 'overwrite') {
-		for (const t of dest) splits.push(...clearRange(seq, t.id, at, at + n, h));
-	} else {
-		const edited = new Set(dest.map((t) => t.id));
-		const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-		splits = insertShift(seq, tracks, at, n, h);
-		if (rippleMarkers) shiftMarkers(seq, at, n);
-	}
-	relinkSplits(seq, splits, h);
-}
-
-function prepareTrack(seq: DSeq, ref: string, kind: string, h: HandlerContext, create: boolean): DTrack {
-	const t = resolveOrCreateTrack(seq, ref, h, create);
-	assertUnlocked(t, h);
-	assertKindFits(kind, t, h);
-	return t;
-}
 
 type PlaceOptions = {
 	source: { mediaId?: string; syntheticId?: string; sequenceId?: string; projectItemId?: string };
@@ -171,7 +80,7 @@ type PlaceOptions = {
 		video?: { in: number; offset: number; frames: number };
 		audio?: { in: number; offset: number; frames: number };
 	};
-	/** edit-structure: sequence sources as nests (default) or individual clips. */
+	/** sequence sources as nests (default) or individual clips. */
 	nest?: boolean;
 };
 
@@ -197,7 +106,7 @@ export function placeSource(
 	// edit-structure (S01:SEQ-010, KND-011): a sequence is placed as nest clips or as its individual clips.
 	const sequenceSource = o.source.sequenceId ?? (item?.kind === 'sequence' ? item.sequenceId : undefined);
 	if (sequenceSource) {
-		// wp-multicam: a multi-camera source always places as linked multi-camera clips (camera 1); a merged clip
+		// A multi-camera source always places as linked multi-camera clips (camera 1); a merged clip
 		// places as the clips it holds unless nesting is asked for explicitly.
 		const placedSrc = doc.sequences[sequenceSource] as Sequence | undefined;
 		const nest = placedSrc?.multicam ? true : placedSrc?.merged ? (o.nest ?? false) : o.nest;
@@ -223,7 +132,7 @@ export function placeSource(
 		item && (item.kind === 'media' || item.kind === 'synthetic' || item.kind === 'subclip')
 			? item.marks
 			: null;
-	// edit-ux: a subclip's range is its default source range (its own marks narrow it).
+	// a subclip's range is its default source range (its own marks narrow it).
 	const subclip = item?.kind === 'subclip' ? item : null;
 	const defaultIn = subclip ? subclip.range.in : 0;
 	if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
@@ -255,11 +164,11 @@ export function placeSource(
 		const name = item?.name ?? asset.originalName;
 		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
 		const box = mediaIntrinsicSize(asset) ?? frameBox(seq);
-		// imports: a Lottie animation is placed with its length (and plays once), like a video.
+		// a Lottie animation is placed with its length (and plays once), like a video.
 		const bounded = asset.kind === 'video' || asset.kind === 'audio' || !!asset.lottie;
 		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? defaultIn;
 		if (bounded) {
-			// imports: the interpreted duration (Interpret Footage ▸ assumed frame rate, loop count).
+			// the interpreted duration (Interpret Footage ▸ assumed frame rate, loop count).
 			const dur = mediaDurationFlicks(asset);
 			if (dur === null) h.fail('E_INVALID_PARAM', 'Media has no duration');
 			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? subclip?.range.out ?? dur;
@@ -358,8 +267,7 @@ export function placeSource(
 			// gaps (Modify ▸ Audio Channels on the Project item): the item's routing, unless a mapping was asked for.
 			const routed = ((item?.kind === 'media' ? item : undefined) ??
 				(Object.values(doc.items).find(
-					(x) =>
-						x.kind === 'media' && x.mediaId === asset.id && (x as { audioChannels?: unknown }).audioChannels,
+					(x) => x.kind === 'media' && x.mediaId === asset.id && x.audioChannels,
 				) as ProjectItem | undefined)) as
 				| { audioChannels?: { clips?: { streamIndex: number; map: number[]; mute?: number[] }[] } }
 				| undefined;
@@ -414,7 +322,7 @@ export function placeSource(
 	} else if (syntheticId) {
 		const syn = doc.synthetics[syntheticId] as SyntheticSource | undefined;
 		if (!syn) h.fail('E_NOT_FOUND', `Synthetic source not found: ${syntheticId}`);
-		// edit-structure: the item's marks, else the generator's own length (bars 1 s, leader 11 s) or the still default.
+		// the item's marks, else the generator's own length (bars 1 s, leader 11 s) or the still default.
 		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
 		const outF =
 			o.sourceRange?.out ?? marks?.out?.flicks ?? inF + syntheticDefaultFlicks(syn.kind, stillFrames * F);
@@ -449,7 +357,7 @@ export function placeSource(
 						...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
 					}),
 				});
-			// edit-structure: their sound, linked like a media file's audio (Premiere's synthetics with tone/blips).
+			// their sound, linked like a media file's audio (Premiere's synthetics with tone/blips).
 			if (info.hasAudio && o.audio !== false) {
 				const videoIndex = (() => {
 					const id = resolveTrackIn(seq, o.videoTrack ?? 'V1');
@@ -523,39 +431,6 @@ export function placeSource(
 	return { clipIds, linkId };
 }
 
-// ---------------------------------------------------------------- generators
-
-export function newGeneratorClip(
-	doc: DDoc,
-	cmd: {
-		sequenceId?: string;
-		at: CommandOf<'clip.addText'>['at'];
-		duration: CommandOf<'clip.addText'>['duration'];
-		track: string;
-		id?: string;
-	},
-	h: HandlerContext,
-	kind: 'text' | 'solid' | 'motion-graphic' | 'shape' | 'adjustment',
-): { seq: DSeq; track: DTrack; at: number; duration: number; id: string } {
-	const seq = h.sequence(doc, cmd.sequenceId);
-	const at = h.frame(seq, cmd.at);
-	const duration = h.durationFrames(seq, cmd.duration);
-	if (at < 0) h.fail('E_INVALID_PARAM', 'Clip start must be >= 0');
-	if (duration < 1) h.fail('E_INVALID_PARAM', 'Clip duration must be >= 1 frame');
-	const track = prepareTrack(seq, cmd.track, kind, h, true);
-	const id = h.newId(doc, 'clp', cmd.id);
-	makeRoom(seq, h, [track], at, duration, 'overwrite');
-	return { seq, track, at, duration, id };
-}
-
-export function ensureDefaultFont(doc: DDoc, h: HandlerContext): string {
-	const existing = Object.values(doc.fonts).find((f) => f.family === DEFAULT_FONT_FAMILY);
-	if (existing) return existing.id;
-	const font = createFontRef(h.ids);
-	doc.fonts[font.id] = font;
-	return font.id;
-}
-
 function estimateTextBox(content: TextContent, frameW: number): { width: number; height: number } {
 	const s = content.style;
 	const lines = content.text.split('\n');
@@ -602,9 +477,7 @@ function validateMgParams(
 	return parsed.data as Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------- trim
-
-function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext): unknown {
+function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) {
 	const mode = cmd.mode ?? 'regular';
 	if (mode === 'roll') return rollTrim(doc, cmd, h);
 	const { seq, clip } = h.clip(doc, cmd.clipId);
@@ -634,7 +507,7 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 			}
 	}
 	if (mode === 'ripple') {
-		// edit-ux: one group edit that keeps split edits in sync (ripple.ts).
+		// one group edit that keeps split edits in sync (ripple.ts).
 		const d = rippleTrimGroup(
 			doc,
 			seq,
@@ -665,9 +538,7 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 	return { deltaFrames: d };
 }
 
-// ---------------------------------------------------------------- handlers
-
-export const clipCoreHandlers: HandlerMap = {
+export const clipCoreHandlers = {
 	'clip.place': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const asset =
@@ -732,7 +603,7 @@ export const clipCoreHandlers: HandlerMap = {
 		const clip = seq.clips[id] as Draft<Extract<Clip, { kind: 'text' }>>;
 		layoutText(clip, h, seq.settings.width);
 		if (!cmd.transform?.anchor) clip.transform.anchor.value = [clip.box.width / 2, clip.box.height / 2];
-		// M2 (S11:TXA-006, wp-m2-text-anim).
+
 		applyInitialTextAnimation(seq, clip as DClip, cmd.textAnimation, h);
 		cleanupSequence(seq, h);
 		h.defineRef(cmd.ref, id);
@@ -763,7 +634,7 @@ export const clipCoreHandlers: HandlerMap = {
 		seq.clips[id] = {
 			...commonFields(id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
 			kind: 'motion-graphic',
-			// M2 (S11:ATP-002): anime templates are stamped; absent = fframes.
+			// anime templates are stamped; absent = fframes.
 			template: {
 				id: info.id,
 				version: info.version,
@@ -804,7 +675,7 @@ export const clipCoreHandlers: HandlerMap = {
 			return { clip: c, dest, start, end: start + c.duration };
 		});
 		if (mode === 'overwrite') {
-			// perf-core: one scan of the sequence for all destination tracks (the ranges and their order are unchanged).
+			// one scan of the sequence for all destination tracks (the ranges and their order are unchanged).
 			const hulls = new Map<string, { lo: number; hi: number }>();
 			for (const p of plan) {
 				const hull = hulls.get(p.dest.id);
@@ -892,7 +763,7 @@ export const clipCoreHandlers: HandlerMap = {
 		const seq = found.seq;
 		const clips = cmd.groups === false ? found.clips : expandGroups(seq, found.clips);
 		for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
-		// edit-ux: close the time the clips free on every track that loses one, once (split edits, ripple.ts).
+		// close the time the clips free on every track that loses one, once (split edits, ripple.ts).
 		const ids = new Set(clips.map((c) => c.id));
 		const spans = rippleDeleteSpans(seq, ids);
 		if (spans.length === 0)
@@ -923,90 +794,85 @@ export const clipCoreHandlers: HandlerMap = {
 			applyClipPatch(doc, seq, clip, cmd.patch, h);
 		}
 	},
-};
+} satisfies HandlerMap;
 
 /** Applies one clip.update patch to a clip (also used by param.set on `clip.update`-written text properties). */
 export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: HandlerContext): void {
-	const c = clip as Draft<Record<string, unknown>> & DClip;
 	const caps = kindCapabilities(clip.kind);
-	const need = (ok: boolean, field: string) => {
-		if (!ok) h.fail('E_INVALID_PARAM', `${field} does not apply to ${clip.kind} clips`);
-	};
+	function refuse(field: string): never {
+		return h.fail('E_INVALID_PARAM', `${field} does not apply to ${clip.kind} clips`);
+	}
 	if (p.name !== undefined) clip.name = p.name;
 	if (p.label !== undefined) clip.label = p.label;
 	if (p.enabled !== undefined) clip.enabled = p.enabled;
 	if (p.maintainPitch !== undefined) clip.speed.maintainPitch = p.maintainPitch;
 	if (p.content !== undefined || p.box !== undefined) {
-		need(clip.kind === 'text', p.content ? 'content' : 'box');
-		const t = clip as Draft<Extract<Clip, { kind: 'text' }>>;
-		if (p.content?.text !== undefined) t.content.text = p.content.text;
-		if (p.content?.style) Object.assign(t.content.style, p.content.style);
-		if (p.content?.runs !== undefined) t.content.runs = p.content.runs as never;
+		if (clip.kind !== 'text') refuse(p.content ? 'content' : 'box');
+		if (p.content?.text !== undefined) clip.content.text = p.content.text;
+		if (p.content?.style) Object.assign(clip.content.style, p.content.style);
+		if (p.content?.runs !== undefined) clip.content.runs = p.content.runs;
 		if (p.content?.paragraphs !== undefined) {
-			if (p.content.paragraphs.length) t.content.paragraphs = p.content.paragraphs as never;
-			else delete t.content.paragraphs;
+			if (p.content.paragraphs.length) clip.content.paragraphs = p.content.paragraphs;
+			else delete clip.content.paragraphs;
 		}
-		// text-animators workstream: with Source Text keyframes the keys draw the text (content is their base).
-		if (p.content && (t as { sourceTextKeyframes?: unknown[] }).sourceTextKeyframes?.length)
+		if (p.content && clip.sourceTextKeyframes?.length)
 			h.warn(
 				'W_SOURCE_TEXT_ANIMATED',
 				`${clip.id} has Source Text keyframes; they draw the text. Set text.sourceText at a time to change it there`,
 				['content'],
 			);
-		if (!doc.fonts[t.content.style.fontId])
-			h.fail('E_NOT_FOUND', `Font not found: ${t.content.style.fontId}`);
-		if (p.box) Object.assign(t.box, p.box);
-		layoutText(t, h, seq.settings.width);
+		if (!doc.fonts[clip.content.style.fontId])
+			h.fail('E_NOT_FOUND', `Font not found: ${clip.content.style.fontId}`);
+		if (p.box) Object.assign(clip.box, p.box);
+		layoutText(clip, h, seq.settings.width);
 	}
-	// M2 (S11:ATP-009): a template upgrade runs before `params`, so params in the same patch target the new version.
+	// Params in the same patch must target the upgraded template version.
 	applyTemplatePatch(seq, clip, p, h);
-	// M2 (S08:MGC-007): composition clips take `props` (whole override object) and `canvas`.
-	if (p.props !== undefined) need(clip.kind === 'composition', 'props');
+	if (p.props !== undefined && clip.kind !== 'composition') refuse('props');
 	if (!applyCompositionPatch(doc, clip, p, h) && (p.params !== undefined || p.canvas !== undefined)) {
-		need(clip.kind === 'motion-graphic', p.params ? 'params' : 'canvas');
-		const mg = clip as Draft<Extract<Clip, { kind: 'motion-graphic' }>>;
+		if (clip.kind !== 'motion-graphic') refuse(p.params ? 'params' : 'canvas');
 		if (p.params !== undefined) {
-			const info = h.registries.mgTemplates.get(mg.template.id, mg.template.version);
+			const info = h.registries.mgTemplates.get(clip.template.id, clip.template.version);
 			if (!info)
-				h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${mg.template.id}@${mg.template.version}`);
-			mg.params = validateMgParams(
-				info,
-				{ ...(mg.params as Record<string, unknown>), ...p.params },
-				h,
-			) as never;
+				h.fail(
+					'E_INVALID_PARAM',
+					`Unknown motion-graphic template ${clip.template.id}@${clip.template.version}`,
+				);
+			clip.params = validateMgParams(info, { ...clip.params, ...p.params }, h);
 		}
-		if (p.canvas !== undefined) mg.canvas = p.canvas as never;
+		if (p.canvas !== undefined) clip.canvas = p.canvas;
 	}
-	// M2 (S11, ARCHITECTURE §20.1): fields implemented by wp-m2-text-anim, wp-m2-shapes, wp-m2-anime-templates.
-	if (p.textAnimation !== undefined) need(clip.kind === 'text', 'textAnimation');
+	if (p.textAnimation !== undefined && clip.kind !== 'text') refuse('textAnimation');
 	applyTextAnimationPatch(seq, clip, p, h);
 	if (p.shape !== undefined) {
-		need(clip.kind === 'shape', 'shape');
-		applyShapePatch((clip as Draft<Extract<Clip, { kind: 'shape' }>>).shape, p.shape, h);
+		if (clip.kind !== 'shape') refuse('shape');
+		applyShapePatch(clip.shape, p.shape, h);
 	}
 	if (p.blendMode !== undefined) {
-		need(!!caps?.hasOpacity && clip.kind !== 'captions', 'blendMode');
-		c.blendMode = p.blendMode;
+		if (!caps?.hasOpacity || !('blendMode' in clip)) refuse('blendMode');
+		clip.blendMode = p.blendMode;
 	}
-	for (const f of ['uniformScale', 'flipH', 'flipV'] as const) {
-		if (p[f] === undefined) continue;
-		need(!!caps?.hasTransform, f);
-		(c.transform as Record<string, unknown>)[f] = p[f];
+	for (const field of ['uniformScale', 'flipH', 'flipV'] as const) {
+		const value = p[field];
+		if (value === undefined) continue;
+		if (!caps?.hasTransform || !('transform' in clip)) refuse(field);
+		clip.transform[field] = value;
 	}
 	if (p.gainDb !== undefined) {
-		need(clip.kind === 'audio' || clip.kind === 'nest-audio' || clip.kind === 'synthetic-audio', 'gainDb');
-		c.gainDb = p.gainDb;
+		if (clip.kind !== 'audio' && clip.kind !== 'nest-audio' && clip.kind !== 'synthetic-audio')
+			refuse('gainDb');
+		clip.gainDb = p.gainDb;
 	}
 	if (p.channels !== undefined) {
-		need(clip.kind === 'audio', 'channels');
-		c.channels = p.channels;
+		if (clip.kind !== 'audio') refuse('channels');
+		clip.channels = p.channels;
 	}
 	if (p.loop !== undefined) {
-		need(clip.kind === 'animated-image', 'loop');
-		c.loop = p.loop;
+		if (clip.kind !== 'animated-image') refuse('loop');
+		clip.loop = p.loop;
 	}
 	if (p.style !== undefined) {
-		need(clip.kind === 'captions', 'style');
-		c.style = { ...(c.style as object), ...p.style };
+		if (clip.kind !== 'captions') refuse('style');
+		clip.style = { ...clip.style, ...p.style };
 	}
 }

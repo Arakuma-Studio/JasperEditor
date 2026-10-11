@@ -1,13 +1,9 @@
-// Small layout primitives: Tabs, ScrollArea (S05:CT-060), EmptyState (S05:PC-031),
-// and a keyboard-shortcut label.
 import { ScrollArea as RScroll, Tabs as RTabs } from 'radix-ui';
 import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import type { IconId } from '../icons/registry.ts';
 import { Button } from './Button.tsx';
-
-// ------------------------------------------------------------------ Tabs
 
 export type TabItem = { value: string; label: ReactNode; disabled?: boolean; content: ReactNode };
 
@@ -21,7 +17,6 @@ export type TabsProps = {
 	keepMounted?: boolean;
 };
 
-/** Panel-style tabs: text tabs, active = strong text with a 2 px underline (S05:PC-001/003). */
 export function Tabs({ items, value, defaultValue, onValueChange, className, keepMounted }: TabsProps) {
 	return (
 		<RTabs.Root
@@ -56,9 +51,6 @@ export function Tabs({ items, value, defaultValue, onValueChange, className, kee
 	);
 }
 
-// ------------------------------------------------------------------ ScrollArea
-
-/** Scroll container with the 8 px token scrollbar (S05:CT-060); overlay-style (auto-hide) on touch. */
 export function ScrollArea({
 	children,
 	className,
@@ -85,8 +77,6 @@ export function ScrollArea({
 	);
 }
 
-// ------------------------------------------------------------------ EmptyState
-
 export type EmptyStateProps = {
 	icon?: IconId;
 	/** One-line message, e.g. "Select a clip to edit its effects". */
@@ -96,7 +86,6 @@ export type EmptyStateProps = {
 	className?: string;
 };
 
-/** Panel empty state: icon, one-line message, primary action (S05:PC-031). */
 export function EmptyState({ icon, message, detail, action, className }: EmptyStateProps) {
 	return (
 		<div
@@ -127,9 +116,6 @@ export function EmptyState({ icon, message, detail, action, className }: EmptySt
 	);
 }
 
-// ------------------------------------------------------------------ Kbd
-
-/** Shortcut label in secondary text (menus, palette, tooltips). */
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
 	return <kbd className={cx('font-pr text-pr-small text-pr-muted pr-tabular', className)}>{children}</kbd>;
 }

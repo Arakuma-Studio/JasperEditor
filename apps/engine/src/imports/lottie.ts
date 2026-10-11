@@ -1,4 +1,4 @@
-// Lottie import on the engine (imports workstream): `.json` Lottie documents and `.lottie` (dotLottie) archives
+// `.json` Lottie documents and `.lottie` (dotLottie) archives
 // register as `animated-image` media with a `lottie` header. The players (preview, Remotion renders, layer bakes)
 // load one normalised JSON (`/media/:key/lottie.json`): the chosen animation of a dotLottie with its images embedded
 // as data URIs, or a plain document whose external images (next to the file) are embedded the same way.

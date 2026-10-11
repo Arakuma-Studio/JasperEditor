@@ -8,7 +8,7 @@
 import { audioEffectSpec, type EffectSpec, type ParamSpec, type ParamValue } from '@jasper/project/audio';
 
 /** A parameter value as stored in documents (numbers, booleans, enum option ids) or a numeric index. */
-export type ParamInput = ParamValue | number;
+export type ParamInput = ParamValue;
 
 export interface AudioProcessor {
 	/** Registry id (`jasper.audio.*`). */
@@ -46,7 +46,7 @@ export function numericDefault(p: ParamSpec): number {
 	return toNumber(p, p.default, 0);
 }
 
-function toNumber(p: ParamSpec, v: unknown, fallback: number): number {
+function toNumber(p: ParamSpec, v: ParamInput, fallback: number): number {
 	switch (p.type) {
 		case 'boolean':
 			return typeof v === 'boolean'

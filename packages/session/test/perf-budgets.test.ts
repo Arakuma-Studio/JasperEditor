@@ -1,4 +1,4 @@
-// ARCHITECTURE §13 budgets (workstream `previews`, met by `perf-core`; docs/performance.md): a single command on a
+// ARCHITECTURE §13 budgets (docs/performance.md): a single command on a
 // 1 000-clip sequence, with the per-track reindex the timeline then does, < 4 ms; a 50-clip gesture update (with
 // the reindex) < 8 ms. Times are the best of several runs (median noise is the host's, not the code's). PERF=1
 // enforces the budgets exactly; the normal gate scales them by the host's measured load (scripts/perf/budget.ts)
@@ -13,7 +13,6 @@ import {
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport, PERF_STRICT } from '../../../scripts/perf/budget.ts';
 
-/** The §13 budgets and the normal gate's headroom over them (× the load factor). */
 const COMMAND_BUDGET_MS = 4;
 const GESTURE_BUDGET_MS = 8;
 const HEADROOM = 1.5;

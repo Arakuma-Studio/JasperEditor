@@ -24,7 +24,7 @@ export type KindCapabilities = {
 	engines: { preview: EngineId; export: EngineId };
 	/** Timeline engine badge (ARCHITECTURE §10.4): R = Remotion, F = fframes, null = native media. */
 	badge: 'R' | 'F' | null;
-	/** Implemented in M1 (others are preserved and drawn as unsupported until their milestone). */
+	/** False for kinds that are preserved but rendered as unsupported. */
 	m1: boolean;
 	defaultLabel: LabelColor;
 	priority: 'P0' | 'P1' | 'P2';

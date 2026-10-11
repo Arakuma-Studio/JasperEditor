@@ -3,10 +3,11 @@
 // track; edit = `camera.settings` / `light.settings` (keys at the playhead for animated values). One undoable
 // transaction each.
 import {
+	type Animatable,
 	angleOfViewForZoom,
 	apertureMm,
 	CAMERA_PRESETS,
-	type CameraClip,
+	type CommandInput,
 	DEFAULT_FILM_SIZE,
 	defaultAperture,
 	defaultCameraZoom,
@@ -19,7 +20,6 @@ import {
 	LIGHT_FALLOFFS,
 	LIGHT_TYPE_LABELS,
 	LIGHT_TYPES,
-	type LightClip,
 	type LightType,
 	type RGBA,
 	zoomForAngleOfView,
@@ -36,6 +36,7 @@ import {
 	TextField,
 } from '@jasper/ui';
 import { useMemo, useState } from 'react';
+import { useDialogClose } from '../extensions/dialog.ts';
 
 export const CAMERA_DIALOG = 'threeD.cameraSettings';
 export const LIGHT_DIALOG = 'threeD.lightSettings';
@@ -46,20 +47,6 @@ export function registerThreeDDialogs(): void {
 	registered = true;
 	registerDialog(CAMERA_DIALOG, CameraSettingsDialog);
 	registerDialog(LIGHT_DIALOG, LightSettingsDialog);
-}
-
-function useClose(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	const [done, setDone] = useState(false);
-	return {
-		open,
-		finish(result?: unknown) {
-			setOpen(false);
-			if (done) return;
-			setDone(true);
-			close(result);
-		},
-	};
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -104,8 +91,6 @@ export function NumberInput(props: {
 
 type Frame = { width: number; height: number };
 
-// ---------------------------------------------------------------- Camera Settings
-
 type CameraProps = {
 	session: EditorSession;
 	sequenceId: string;
@@ -116,11 +101,12 @@ type CameraProps = {
 
 export function CameraSettingsDialog(props: HostedDialogProps<CameraProps>) {
 	const { session, sequenceId, clipId, playhead } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const doc = session.getCommitted();
 	const seq = doc.sequences[sequenceId];
 	const frame: Frame = { width: seq?.settings.width ?? 1920, height: seq?.settings.height ?? 1080 };
-	const existing = clipId ? (seq?.clips[clipId] as CameraClip | undefined) : undefined;
+	const clip = clipId ? seq?.clips[clipId] : undefined;
+	const existing = clip?.kind === 'camera' ? clip : undefined;
 	const initial = useMemo(() => {
 		const c = existing?.camera;
 		const t = 0;
@@ -129,7 +115,7 @@ export function CameraSettingsDialog(props: HostedDialogProps<CameraProps>) {
 			name:
 				existing?.name ??
 				`Camera ${Object.values(seq?.clips ?? {}).filter((x) => x.kind === 'camera').length + 1}`,
-			type: (c?.transform.autoOrient ?? 'poi') === 'poi' ? 'two-node' : 'one-node',
+			type: (c?.transform.autoOrient ?? 'poi') === 'poi' ? ('two-node' as const) : ('one-node' as const),
 			zoom,
 			filmSize: c?.filmSize ?? DEFAULT_FILM_SIZE,
 			measure: c?.measureFilmSize ?? 'horizontal',
@@ -166,7 +152,7 @@ export function CameraSettingsDialog(props: HostedDialogProps<CameraProps>) {
 			blurLevel: s.blur,
 			irisShape: s.iris,
 		};
-		const command = existing
+		const command: CommandInput = existing
 			? {
 					type: 'camera.settings',
 					clipId: existing.id,
@@ -180,13 +166,13 @@ export function CameraSettingsDialog(props: HostedDialogProps<CameraProps>) {
 			label: existing ? 'Camera Settings' : 'New Camera',
 			origin: 'user',
 			sequenceId,
-			commands: [command as never],
+			commands: [command],
 			...(existing
 				? {}
 				: {
-						selectAfter: ((res: { results: unknown[] }) => ({
+						selectAfter: (res) => ({
 							timeline: [(res.results[0] as { clipId: string }).clipId],
-						})) as never,
+						}),
 					}),
 		});
 		if (!r.ok) {
@@ -338,18 +324,18 @@ export function CameraSettingsDialog(props: HostedDialogProps<CameraProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Light Settings
-
 type LightProps = { session: EditorSession; sequenceId: string; clipId?: string; playhead: number };
 
 export function LightSettingsDialog(props: HostedDialogProps<LightProps>) {
 	const { session, sequenceId, clipId, playhead } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const seq = session.getCommitted().sequences[sequenceId];
-	const existing = clipId ? (seq?.clips[clipId] as LightClip | undefined) : undefined;
+	const clip = clipId ? seq?.clips[clipId] : undefined;
+	const existing = clip?.kind === 'light' ? clip : undefined;
 	const [s, setS] = useState(() => {
 		const l = existing?.light;
-		const v = (a: { value: unknown } | undefined, d: number) => (a ? Number(evaluate(a as never, 0)) : d);
+		const v = (a: Animatable<number> | undefined, defaultValue: number) =>
+			a ? evaluate(a, 0) : defaultValue;
 		return {
 			name:
 				existing?.name ??
@@ -386,7 +372,7 @@ export function LightSettingsDialog(props: HostedDialogProps<LightProps>) {
 					}
 				: {}),
 		};
-		const command = existing
+		const command: CommandInput = existing
 			? {
 					type: 'light.settings',
 					clipId: existing.id,
@@ -400,7 +386,7 @@ export function LightSettingsDialog(props: HostedDialogProps<LightProps>) {
 			label: existing ? 'Light Settings' : 'New Light',
 			origin: 'user',
 			sequenceId,
-			commands: [command as never],
+			commands: [command],
 		});
 		if (!r.ok) {
 			setError(r.errors[0]?.message ?? 'Not possible');

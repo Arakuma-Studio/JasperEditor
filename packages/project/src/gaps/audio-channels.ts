@@ -1,4 +1,4 @@
-// Clip ▸ Modify ▸ Audio Channels (workstream gaps, docs/wp-notes/gaps.md §AU-7). Premiere's dialog: the Clip Channel
+// Clip ▸ Modify ▸ Audio Channels (docs/wp-notes/gaps.md §AU-7). Premiere's dialog: the Clip Channel
 // Format (Mono, Stereo, 5.1), the Number of Audio Clips and the matrix routing each media source channel to a channel
 // of one of the clips (or to none). In the model an audio clip reads one audio stream (`channels.streamIndex`) and its
 // output channel i plays source channel `channels.map[i]` of that stream, or silence when i is in `channels.mute`

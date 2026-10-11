@@ -1,6 +1,3 @@
-// Browser entry of the Sapphire Blur+Sharpen GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-blur-sharpen-gl.test.ts): runs the family's effects through the real GPU host on synthetic scenes
-// (or a supplied picture) and returns pixels / PNGs. Same host contract as test/fx-gl/entry.ts.
 import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
@@ -40,7 +37,6 @@ const defaults = (spec: EffectSpec, over: Record<string, unknown> = {}) => ({
 	...over,
 });
 
-/** Synthetic test scenes painted into the layer box. */
 const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = {
 	/** Night scene: dark gradient, bright coloured point lights, shapes, a white bar and a skin-tone face. */
 	night(ctx, b) {
@@ -92,7 +88,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 			ctx.fillRect(b.x + (b.w * i) / 12, b.y, Math.ceil(b.w / 12) + 1, b.h);
 		}
 	},
-	/** Uniform colour. */
 	flat(ctx, b) {
 		ctx.fillStyle = '#c84';
 		ctx.fillRect(b.x, b.y, b.w, b.h);
@@ -108,7 +103,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 			ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
 		}
 	},
-	/** Nothing (transparent). */
 	empty() {},
 	/** Opaque white square in the middle of a transparent layer (alpha behaviour). */
 	square(ctx, b) {
@@ -124,7 +118,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 	},
 };
 
-/** Synthetic media for media params. */
 const MEDIA: Record<string, (w: number, h: number) => HTMLCanvasElement> = {
 	/** Depth ramp: white (near) at the left → black (far) at the right. */
 	depthRamp: (w, h) =>
@@ -204,7 +197,6 @@ export type RunOptions = {
 	/** Media params: param name → MEDIA name or an image URL (`url:<data url>`). */
 	media?: Record<string, string>;
 	frame?: number;
-	/** Return a PNG data URL of the full canvas. */
 	png?: boolean;
 	/** Pixels to read (layer px, relative to the layer box). */
 	probes?: [number, number][];
@@ -301,7 +293,6 @@ async function run(o: RunOptions) {
 	};
 }
 
-/** Runs every family effect with default params on a small night scene (compile + run smoke). */
 async function smoke() {
 	const errors: string[] = [];
 	for (const spec of SAPPHIRE_BLUR_SHARPEN_EFFECTS) {

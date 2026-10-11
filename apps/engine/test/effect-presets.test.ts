@@ -1,6 +1,3 @@
-// The user effect preset library (S03:FX-030, AGT-020): `<appdir>/presets/effect-presets.json`, shared by projects,
-// sessions, editor windows and agents. CRUD, bins (nested, recursive delete, no cycles), import, validation, the
-// change event, persistence across engine restarts, and unknown effect ids / fields kept verbatim.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { appdirPaths } from '@jasper/config';
@@ -59,7 +56,6 @@ describe('effect preset library (FX-030)', () => {
 		});
 		expect(events).toEqual([{ revision: 1 }, { revision: 2 }, { revision: 3 }]);
 
-		// Persisted on disk (pretty JSON) and reloaded by a new engine on the same appdir.
 		const file = appdirPaths(appdir).effectPresetsFile;
 		expect(JSON.parse(readFileSync(file, 'utf8')).presets[0].name).toBe('Renamed');
 		await app.close();
@@ -94,7 +90,6 @@ describe('effect preset library (FX-030)', () => {
 		});
 		expect(builtin.statusCode).toBe(404);
 		expect(builtin.json().message).toMatch(/read-only/);
-		// Unknown effect ids are kept as they are.
 		const odd = (
 			await app.inject({
 				method: 'POST',
@@ -106,7 +101,6 @@ describe('effect preset library (FX-030)', () => {
 			})
 		).json();
 		expect(odd.effects).toEqual([{ effectId: 'acme.glow', params: { a: { value: 1 } } }]);
-		// Unknown bins are refused.
 		const noBin = await app.inject({
 			method: 'POST',
 			url: '/api/effect-presets',

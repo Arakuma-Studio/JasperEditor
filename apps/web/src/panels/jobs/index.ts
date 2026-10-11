@@ -1,5 +1,3 @@
-// Jobs panel (S05:JOB-001…005) — WP-2E.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

@@ -1,6 +1,3 @@
-// wp masks: mask tracking (`track` jobs of kind `mask`: Position / Position, Scale & Rotation / Perspective, forward
-// and backward, cancel) against a synthetic plate with known motion, the document round trip (planMaskTrack →
-// maskKeysFromTrack → mask.setPathKeys) and auto-trace (POST /api/masks/trace). Real ffmpeg + OpenCV.js.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -1,7 +1,3 @@
-// Browser entry of the Lumetri spatial stage GL test (bundled with esbuild, run in headless Chrome by
-// ../lumetri-spatial-gl.test.ts): runs `jasper.lumetri-spatial` through the real GPU host on synthetic scenes and
-// compares every pixel of the pointwise cases with the CPU reference (`lumetriSpatialPixel`). Same host contract as
-// test/fx-gl/entry.ts.
 import {
 	defaultEffectRegistry,
 	type EffectSpec,
@@ -51,7 +47,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 			ctx.fillRect(b.x + (b.w * i) / cols.length, b.y, Math.ceil(b.w / cols.length) + 1, b.h);
 		});
 	},
-	/** Uniform mid grey (vignette profiles). */
 	grey(ctx, b) {
 		ctx.fillStyle = '#a0a0a0';
 		ctx.fillRect(b.x, b.y, b.w, b.h);
@@ -77,7 +72,6 @@ const SCENES: Record<string, (ctx: CanvasRenderingContext2D, b: Box) => void> = 
 		ctx.fillStyle = '#c0c0c0';
 		ctx.fillRect(b.x, b.y, b.w / 2, b.h);
 	},
-	/** Half transparent layer (alpha stays). */
 	alpha(ctx, b) {
 		ctx.fillStyle = '#d02020';
 		ctx.fillRect(b.x, b.y, b.w / 2, b.h);
@@ -90,7 +84,6 @@ export type RunOptions = {
 	height: number;
 	scene: string;
 	probes?: [number, number][];
-	/** Compare every pixel with the CPU reference (pointwise settings only). */
 	reference?: boolean;
 	png?: boolean;
 };

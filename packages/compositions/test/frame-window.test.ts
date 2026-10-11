@@ -1,4 +1,3 @@
-// ui-perf: clip windowing never leaves out a clip whose Sequence draws or premounts at the current frame.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { FRAME_WINDOW_PAGE, framePage, inFrameWindow } from '../src/frame-window.tsx';

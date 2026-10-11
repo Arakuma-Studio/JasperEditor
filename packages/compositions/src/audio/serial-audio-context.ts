@@ -1,18 +1,6 @@
-// previews workstream (playback robustness): the root cause of the Remotion Player "stall after seeks" (M1-STATUS,
-// docs/research/remotion-4.0.499-notes.md) — measured in the editor and reduced to a page of its own:
-//
-// 1. Chrome leaves `AudioContext.resume()` pending forever when `suspend()` is called before the resume settled
-//    (headless Chrome 150, 0–2 ms apart: the resume promise never settles; the state reads 'running').
-// 2. The Player (4.0.499 `use-playback`) waits for the shared AudioContext to *actually* resume before it advances
-//    a frame: `waitUntilActuallyResumed` polls `getOutputTimestamp()` until the audio clock moved. A suspend that
-//    lands right after a resume (a seek's buffering, a pause/play toggle, mute changes re-running the playback
-//    effect) leaves the clock frozen, so that wait — and the Player — never continue: the store says playing, the
-//    frame stands still (2 of 20 seek-and-play cycles in the built editor on this host), until play() is issued again.
-//
-// The fix serialises each context's state changes: a `resume()` or `suspend()` waits for the previous one to settle,
-// and a suspend right after a resume first lets the clock advance (at most 250 ms), so every "actually resumed" wait
-// started by that resume ends. Installed once per page by the compositions; idempotent; a no-op without Web Audio.
-// Self-contained (no module state), so tests can run its source in a page.
+// Chrome can leave resume() pending when suspend() overlaps it. Remotion also waits for the audio clock
+// to advance after resume(), so suspend() must wait for that advance (bounded to 250 ms).
+// This function is self-contained so browser tests can evaluate its source.
 export function installSerialAudioContext(): void {
 	const AC = (globalThis as { AudioContext?: { prototype: AudioContext } }).AudioContext;
 	if (!AC) return;
@@ -21,7 +9,7 @@ export function installSerialAudioContext(): void {
 	const nativeResume = proto.resume;
 	const nativeSuspend = proto.suspend;
 	type Track = {
-		chain: Promise<unknown>;
+		chain: Promise<void>;
 		resumedAt: { contextTime: number; performanceTime: number } | null;
 	};
 	const tracks = new WeakMap<AudioContext, Track>();

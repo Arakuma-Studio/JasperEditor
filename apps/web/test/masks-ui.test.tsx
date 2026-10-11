@@ -1,5 +1,3 @@
-// wp masks: Effect Controls mask UI (tools, header controls, property rows with stopwatches) and the monitor
-// geometry helpers.
 import { type Mask, rectPath } from '@jasper/project';
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -42,14 +40,12 @@ describe('Effect Controls masks', { timeout: 60_000 }, () => {
 			['Mask (1)', 'ellipse'],
 			['Mask (2)', 'polygon'],
 		]);
-		// The new mask is selected for the monitor.
 		expect(maskUi.get().selected?.maskId).toBe(ms[1]!.id);
 		const m1 = ms[0]!.id;
 		act(() => {
 			fireEvent.change(screen.getByTestId(`mask-mode-${m1}`), { target: { value: 'subtract' } });
 		});
 		expect(masksOf(session, id)[0]!.mode).toBe('subtract');
-		// Feather row (ordinary property row): type a value.
 		const field = screen.getByTestId(`prop-masks.${m1}.feather`);
 		act(() => {
 			fireEvent.pointerDown(field, { clientX: 5, button: 0 });
@@ -61,7 +57,6 @@ describe('Effect Controls masks', { timeout: 60_000 }, () => {
 			fireEvent.keyDown(input, { key: 'Enter' });
 		});
 		expect(masksOf(session, id)[0]!.feather.value).toBe(33);
-		// Mask Path stopwatch: a key at the playhead; the row shows the vertex count.
 		act(() => {
 			fireEvent.click(screen.getByTestId(`stopwatch-masks.${m1}.path`));
 		});

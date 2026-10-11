@@ -1,5 +1,4 @@
-// Tracking jobs end to end (S09:TRK-010…014, §8.2–8.3) with real ffmpeg and OpenCV.js workers on the synthetic
-// plates of `scripts/fixtures/track.mjs` (known per-frame homography / point path).
+// scripts/fixtures/track.mjs defines known per-frame homographies and point paths for ground truth.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -238,7 +237,6 @@ describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
 		});
 		expect(result.data).toHaveLength(planar.frames * 8);
 		expect(result.confidence).toHaveLength(planar.frames);
-		// Every frame is different (the plane moves up to ~300 px from the reference).
 		expect(Math.abs(result.data[0]! - result.data[75 * 8]!)).toBeGreaterThan(50);
 		const errors = planarErrors(result, planar);
 		const occluded = new Set(planar.occluded);
@@ -262,7 +260,6 @@ describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
 		}
 		for (let f = 0; f < planar.frames; f++)
 			if (!result.lost.includes(f)) expect(result.confidence[f]!).toBeGreaterThan(0.3);
-		// Live progress: throttled events carrying the current frame's corners (media px).
 		const mine = events.filter((e) => e.jobId === job.id);
 		expect(mine.length).toBeGreaterThanOrEqual(2);
 		expect(mine.length).toBeLessThanOrEqual(planar.frames);

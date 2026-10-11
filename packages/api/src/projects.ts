@@ -1,4 +1,3 @@
-// Engine-backed project store (ARCHITECTURE §9.2, D-08, S01:PER-001/002/040).
 import { z } from 'zod';
 
 export const ProjectSummarySchema = z.object({
@@ -44,7 +43,7 @@ export const ProjectPutResponseSchema = z.object({ revision: z.number().int().mi
 export const RevisionConflictDetailSchema = z.object({ revision: z.number().int().min(0) });
 
 /**
- * Why a saved version exists (process workstream, D-39): `auto` every 5 minutes of saving (S01:PER-020),
+ * Saved version policy: `auto` every 5 minutes of saving (S01:PER-020),
  * `before-restore` the state replaced by a restore, `schema-backup` the file as it was before the first save
  * over a project migrated from an older schema (`project (schema vN backup).jasper`, S01:MIG-004).
  */
@@ -56,9 +55,9 @@ export const VersionInfoSchema = z.object({
 	savedAt: z.string(),
 	revision: z.number().int(),
 	sizeBytes: z.number().int(),
-	/** Additive (process): absent from older engines, which only kept `auto` versions. */
+	/** Absent means an automatic version. */
 	kind: VersionKindSchema.optional(),
-	/** Schema version of the stored document (additive). */
+	/** Schema version of the stored document. */
 	schemaVersion: z.number().int().optional(),
 });
 export type VersionInfo = z.infer<typeof VersionInfoSchema>;
@@ -104,7 +103,17 @@ export const RecoveryInfoSchema = z.object({
 	projectRevision: z.number().int(),
 });
 export type RecoveryInfo = z.infer<typeof RecoveryInfoSchema>;
-export const RecoveryListResponseSchema = z.object({ candidates: z.array(RecoveryInfoSchema) });
+export const RecoveryJournalWarningSchema = z.object({
+	sessionId: z.string(),
+	code: z.string(),
+	message: z.string(),
+});
+export type RecoveryJournalWarning = z.infer<typeof RecoveryJournalWarningSchema>;
+export const RecoveryListResponseSchema = z.object({
+	candidates: z.array(RecoveryInfoSchema),
+	warnings: z.array(RecoveryJournalWarningSchema).default([]),
+});
+export type RecoveryListResponse = z.infer<typeof RecoveryListResponseSchema>;
 export const RecoveryGetResponseSchema = z.object({
 	candidate: RecoveryInfoSchema,
 	envelope: EnvelopeSchema,
@@ -126,7 +135,7 @@ export const LeaseRequestSchema = z.object({
 	sessionId: z.string().min(1),
 	/**
 	 * "Take over editing" (S01:PER-040): the engine revokes the current holder's lease and grants a new one
-	 * to `sessionId`; the previous holder's next heartbeat fails and its editor turns read-only. Additive (WP-2E).
+	 * to `sessionId`; the previous holder's next heartbeat fails and its editor turns read-only.
 	 */
 	takeOver: z.boolean().optional(),
 });

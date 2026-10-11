@@ -1,7 +1,3 @@
-// "Simplify Keyframes…" UI (S09:TRK-023, TRU-006): the dialog previews live through a gesture (transient
-// document, no History entry) with counts / deviation / graph, applies as ONE entry "Simplify Keyframes", cancels
-// without a trace; the Apply Tracking dialog's "Simplify keyframes" option; the Tracking section and corner-pin
-// editor entry points; the timeline clip menu entry and the Clip menu command.
 import type { Clip } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -66,7 +62,6 @@ describe('Simplify Keyframes dialog', () => {
 			</SessionProvider>,
 		);
 		await wait();
-		// Live preview: the transient document already shows 2 keys per corner (a linear drift), nothing committed.
 		expect(session.getState().transient).not.toBeNull();
 		expect(pinKeys(session.getState().transient!.sequences[seqOf(session).id]!.clips[target]!)).toBe(2);
 		expect(pinKeys(seqOf(session).clips[target]!)).toBe(30);
@@ -82,7 +77,6 @@ describe('Simplify Keyframes dialog', () => {
 			(seqOf(session).clips[target] as { trackedBy?: { simplify?: { tolerance: number } } }).trackedBy
 				?.simplify,
 		).toEqual({ tolerance: 0.1 });
-		// Undo restores the dense keys in one step.
 		act(() => session.undo());
 		expect(pinKeys(seqOf(session).clips[target]!)).toBe(30);
 	});

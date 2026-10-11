@@ -1,4 +1,4 @@
-// Effect family "sapphire-stylize-other" (fx catalogue, wave 2): the Sapphire Stylize effects that are not paint,
+// Effect family "sapphire-stylize-other": the Sapphire Stylize effects that are not paint,
 // kaleido, edges or film-grain looks. Video Effects ▸ Sapphire Stylize ▸ S_<Name>, ids `jasper.s.<kebab>`.
 // The entries live in ./sapphire-stylize-other/ (family-private modules: shared units/mask/blur helpers in common.ts);
 // this file lists them in Effects-panel (alphabetical, as Sapphire) order.

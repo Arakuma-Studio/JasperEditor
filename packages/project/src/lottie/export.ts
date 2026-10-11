@@ -1,4 +1,4 @@
-// Sequence → Lottie document (imports workstream, docs/wp-notes/imports.md). Design ported from EffectCraft
+// Lottie export design ported from EffectCraft
 // `crates/lottie/src/{export,anim,shapes,text}.rs` (MIT OR Apache-2.0): every layer maps to its Lottie layer type,
 // keyframes keep their temporal ease (our influence / slope ease is exactly Lottie's normalised Bézier `o`/`i`) and
 // spatial tangents (`to`/`ti`), and everything Lottie cannot express is listed in `warnings` instead of being dropped
@@ -16,7 +16,7 @@
 //   layer in/out points, speed (`sr`), sequence markers.
 // Values Lottie cannot carry exactly (roving keys, expressions, eases our evaluator computes) are baked as one key per
 // frame (exact at every frame). Keyframes are in layer frames: content time / sequence frame duration.
-import { legacyToVectorItems } from '../commands/handlers/shape.ts';
+
 import { bindExpressions } from '../expressions.ts';
 import { evaluate, incomingEase, isHoldOnlyValue, outgoingEase, rovingRunAt } from '../keyframes.ts';
 import { effectiveTangents, isVec2Value } from '../keyframes-spatial.ts';
@@ -29,6 +29,7 @@ import type { Clip, Sequence, TextContent, TextStyle, Transform } from '../schem
 import type { ShapeItem, ShapeTransform } from '../schema/shapes.ts';
 import type { TextAnimatorGroup, TextRangeSelector } from '../schema/text-animators.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
+import { legacyToVectorItems } from '../vector/legacy.ts';
 import type { GradientValue } from '../vector/values.ts';
 import { gradientSvgStops } from '../vector/values.ts';
 
@@ -111,8 +112,6 @@ type Clock = {
 	/** Comp frame f → content time (flicks): used to bake. */
 	contentAt(f: number): number;
 };
-
-// ---------------------------------------------------------------- values
 
 const num = (v: unknown) => r6(Number(v));
 const vec2 = (v: unknown): number[] => {
@@ -218,8 +217,6 @@ function bake<T>(
 
 /** A static Lottie value. */
 const k0 = (v: unknown) => ({ a: 0, k: v });
-
-// ---------------------------------------------------------------- layers
 
 function blendCode(ctx: Ctx, mode: string | undefined, label: string): number {
 	const m = mode ?? 'normal';
@@ -369,8 +366,6 @@ function effects(ctx: Ctx, c: Clip, clock: Clock, label: string): Json[] {
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- shapes
 
 const PATH_DIR = (d: string | undefined) => (d === 'reversed' ? 3 : 1);
 const CAP: Record<string, number> = { butt: 1, round: 2, square: 3 };
@@ -646,8 +641,6 @@ function shapeItems(ctx: Ctx, items: readonly ShapeItem[], clock: Clock, label: 
 	return out;
 }
 
-// ---------------------------------------------------------------- text
-
 const JUSTIFY: Record<string, number> = { left: 0, right: 1, center: 2, justify: 3 };
 
 function fontName(family: string, weight: number, italic: boolean): string {
@@ -801,8 +794,6 @@ function textAnimators(
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- clips
 
 function clockOf(c: Clip, rate: Rational, rangeStart: number): Clock {
 	const F = flicksPerFrame(rate);

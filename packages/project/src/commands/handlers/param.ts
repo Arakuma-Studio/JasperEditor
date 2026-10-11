@@ -1,4 +1,3 @@
-// param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
 import { evaluate, isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
@@ -29,10 +28,10 @@ import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
-import { locateMask, validateMaskPath } from './mask.ts';
+import { locateMask, validateMaskPath } from './mask-location.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
-import { ensureShapeStorage } from './shape.ts';
-import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './sim-warp.ts';
+import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './puppet-location.ts';
+import { ensureShapeStorage } from './shape-storage.ts';
 import { ensureMoreOptions, parseSourceText, sourceTextDraftAnim } from './text-animators.ts';
 import { type HandlerMap, peek, peekKeys } from './util.ts';
 
@@ -55,7 +54,7 @@ type ValueRule = {
 	holdOnly: boolean;
 	/** vec2 point parameters: the spatial interpolation of new keys (S03:KF-021); absent = not a point. */
 	spatial?: SpatialInterpolation;
-	/** wp shapes: structural check of the value (vector shape paths and gradients). */
+	/** structural check of the value (vector shape paths and gradients). */
 	check?: (v: unknown) => boolean;
 	/** `json` values with a schema (text-animators: Source Text): returns the parsed value or throws a message. */
 	parse?: (v: unknown) => unknown;
@@ -92,11 +91,11 @@ export function ruleFromParam(p: ParamSpec): ValueRule {
 	};
 }
 
-export function getAt(obj: unknown, path: readonly string[]): unknown {
-	let cur = obj as Record<string, unknown> | undefined;
+export function getAt(obj: unknown, path: readonly string[]) {
+	let cur: unknown = obj;
 	for (const k of path) {
 		if (!cur || typeof cur !== 'object') return undefined;
-		cur = cur[k] as Record<string, unknown> | undefined;
+		cur = (cur as Record<string, unknown>)[k];
 	}
 	return cur;
 }
@@ -190,7 +189,7 @@ export function resolveTarget(
 			clip.kind === 'composition' ? (compositionOfClip(doc as never, clip as Clip)?.info ?? null) : undefined;
 		const spec = resolvePropertySpec(key, template, composition, clip as Clip);
 		if (!spec?.appliesTo(clip)) return bad();
-		// M2 (wp-m2-text-anim; S11:FIX-004, TXA-007): text properties written by clip.update (style and box fields,
+		// text properties written by clip.update (style and box fields,
 		// text animators) take the clip.update path, so layout re-runs and animator params are validated whole.
 		const write = spec.write;
 		if (clip.kind === 'text' && write?.via === 'clip.update') {
@@ -205,7 +204,7 @@ export function resolveTarget(
 				},
 			};
 		}
-		// wp-m2-shapes (S11:SHP-003): an explicit write to `shape.fill` / `shape.stroke.*` on a "None" fill/stroke
+		// An explicit write to `shape.fill` / `shape.stroke.*` on a "None" fill/stroke
 		// creates it first; any other command on it (stopwatch, keyframe.add without a value) is refused.
 		if (spec.group === 'shape' && !ensureShapeStorage(clip, spec, opts.create === true))
 			h.fail(
@@ -222,7 +221,7 @@ export function resolveTarget(
 			};
 		}
 		const time = (at: ParamAt | undefined) => h.clipContentTime(seq, clip, at);
-		// text-animators workstream: Source Text (hold keys over `content`) and More Options created on first write.
+		// Source Text (hold keys over `content`) and More Options created on first write.
 		if (spec.storagePath[0] === '$sourceText')
 			return {
 				type: 'anim',
@@ -232,7 +231,6 @@ export function resolveTarget(
 				label: key,
 			};
 		if (spec.storagePath[0] === 'moreOptions' && clip.kind === 'text') ensureMoreOptions(clip);
-		// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates
 		if (spec.group === 'params' && spec.animatable !== 'no' && template) {
 			const anim = templateParamDraftAnim(
 				clip,
@@ -241,7 +239,6 @@ export function resolveTarget(
 			);
 			return { type: 'anim', anim, rule: ruleFromProperty(spec), time, label: key };
 		}
-		// ---- end wp-m2-anime-templates
 		if (spec.animatable !== 'no') {
 			const anim = getAt(clip, spec.storagePath) as Draft<Animatable<unknown>> | undefined;
 			if (!anim) return bad();
@@ -291,7 +288,7 @@ export function resolveTarget(
 			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
 		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${found.fx.effectId}.${p.name}` };
 	}
-	// wp masks: `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).
+	// `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).
 	if (head === 'mask' && a && rest.length === 1) {
 		const prop = rest[0] as MaskProp;
 		if (!MASK_PROPS.includes(prop)) return bad();
@@ -314,7 +311,7 @@ export function resolveTarget(
 			label: `${loc.mask.name}.${MASK_PROP_LABELS[prop]}`,
 		};
 	}
-	// sim-warp: `["puppetPin", pinId, "position" | "scale" | "rotation" | "amount" | "extent" | "inFront"]` (content time of
+	// `["puppetPin", pinId, "position" | "scale" | "rotation" | "amount" | "extent" | "inFront"]` (content time of
 	// the owning clip; position layer-box-normalised).
 	if (head === 'puppetPin' && a && rest.length === 1) {
 		const prop = rest[0]!;
@@ -409,7 +406,7 @@ export function validateValue(
 		}
 		case 'vec2': {
 			if (!Array.isArray(v) || v.length !== 2 || !v.every(isNum)) return fail();
-			// Per-component range (wp-m2-shapes: `shape.size` ≥ 0); specs without min/max are unchanged.
+			// Apply bounds to each component; specs without bounds leave values unchanged.
 			const c = [clampN(v[0]), clampN(v[1])];
 			return { value: c, clamped: c[0] !== v[0] || c[1] !== v[1] };
 		}
@@ -457,7 +454,7 @@ export function validateValue(
 		case 'maskPath':
 			return { value: validateMaskPath(v, h, label), clamped: false };
 		case 'mesh':
-			// sim-warp: a distortion mesh — a list of finite numbers (layout checked by the effect when it renders).
+			// a distortion mesh — a list of finite numbers (layout checked by the effect when it renders).
 			if (!Array.isArray(v) || v.length > MESH_VALUE_MAX || !v.every(isNum)) return fail();
 			return { value: [...v], clamped: false };
 		case 'curve': {
@@ -511,7 +508,7 @@ function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>)
 	return id;
 }
 
-export const paramHandlers: HandlerMap = {
+export const paramHandlers = {
 	'param.set': (doc, cmd: CommandOf<'param.set'>, h: HandlerContext) => {
 		const target = resolveTarget(doc, cmd, h, { create: true });
 		const { value, clamped } = validateValue(cmd.value, target.rule, h, target.label);
@@ -553,4 +550,4 @@ export const paramHandlers: HandlerMap = {
 		anim.keyframes = [];
 		return { value: v };
 	},
-};
+} satisfies HandlerMap;

@@ -1,11 +1,6 @@
-// color-mgmt: the Colour section of Interpret Footage (the imports workstream's section registry, order 60 = after
-// Loop). It edits `draft.sections.color` (a full colour interpretation) and contributes one `media.interpretColor`
-// command on OK — the change between the selected items' common interpretation and the edited one — in the dialog's
-// single transaction.
 import {
 	type ColorInterpretation,
-	type ColorInterpretationPatch,
-	type Command,
+	type CommandInput,
 	isPictureMedia,
 	type MediaAsset,
 	sequenceColorInfo,
@@ -16,7 +11,7 @@ import {
 	registerInterpretSection,
 } from '../imports/interpret-dialog.tsx';
 import { ColorInterpretationFields } from './dialogs.tsx';
-import { detectedSpaceLabel, isHdrWorking } from './model.ts';
+import { colorPatchOf, detectedSpaceLabel, isHdrWorking } from './model.ts';
 
 export const COLOR_SECTION_ID = 'color';
 
@@ -24,16 +19,6 @@ export const COLOR_SECTION_ID = 'color';
 function commonInterpretation(assets: readonly MediaAsset[]): ColorInterpretation {
 	const vals = assets.map((a) => JSON.stringify(a.interpretation?.color ?? {}));
 	return vals.every((v) => v === vals[0]) ? { ...(assets[0]?.interpretation?.color ?? {}) } : {};
-}
-
-const KEYS = ['space', 'ocio', 'range', 'toneMap', 'peakNits', 'inputLut'] as const;
-
-/** The patch from `from` to `to` (changed fields; null = back to automatic). */
-export function colorPatchOf(from: ColorInterpretation, to: ColorInterpretation): ColorInterpretationPatch {
-	const out: Record<string, unknown> = {};
-	for (const k of KEYS)
-		if (JSON.stringify(from[k] ?? null) !== JSON.stringify(to[k] ?? null)) out[k] = to[k] ?? null;
-	return out as ColorInterpretationPatch;
 }
 
 function sectionValue(assets: readonly MediaAsset[], draft: InterpretDraft): ColorInterpretation {
@@ -78,7 +63,7 @@ registerInterpretSection({
 	order: 60,
 	applies: (a) => a.length > 0 && a.every((x) => isPictureMedia(x)),
 	component: ColorSection,
-	commands(assets, draft): Command[] {
+	commands(assets, draft): CommandInput[] {
 		const edited = draft.sections[COLOR_SECTION_ID] as ColorInterpretation | undefined;
 		if (!edited) return [];
 		const patch = colorPatchOf(commonInterpretation(assets), edited);
@@ -88,7 +73,7 @@ registerInterpretSection({
 				type: 'media.interpretColor',
 				mediaIds: assets.map((a) => a.id),
 				color: Object.keys(edited).length === 0 ? null : patch,
-			} as Command,
+			} satisfies CommandInput,
 		];
 	},
 });

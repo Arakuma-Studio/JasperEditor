@@ -34,8 +34,6 @@ const atmosphere = (freq: number, detail: number) => [
 	n('atmosphereSpeed', 'Atmosphere Speed', 1, undefined, undefined, { softMin: -5, softMax: 5, step: 0.01 }),
 ];
 
-// ---------------------------------------------------------------- S_Aurora
-
 const AURORA_COMBINE = lightCombine('Aurora');
 const AURORA_POINTS = {
 	start: [0.15, 0.144],
@@ -168,8 +166,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_LaserBeam
-
 const BEAM_COMBINE = lightCombine('Beam');
 const LASER_SHAPES = ['smooth', 'spear', 'forward', 'backward'] as const;
 
@@ -286,8 +282,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_MuzzleFlash
 
 const FLASH_COMBINE = lightCombine('MuzzleFlash');
 const GUNS = ['ak47', 'beretta', 'colt45', 'm16', 'gauge12'] as const;

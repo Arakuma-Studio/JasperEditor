@@ -1,6 +1,3 @@
-// Multi-camera clips on the native export path (wp-multicam): a multi-camera source synced by In points, placed as
-// multi-camera clips, switched over a range; the export shows each angle at its synced frame, the clip's opacity on
-// top, the angle's audio — and Flatten exports the same pictures. Checked on the exported files (real ffmpeg).
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import type { RegisteredMedia } from '@jasper/api';
@@ -54,7 +51,6 @@ const settings = (seqId: string) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine: 'native',

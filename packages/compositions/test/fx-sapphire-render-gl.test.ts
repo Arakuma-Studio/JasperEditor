@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire Render family (lightning, gradients/grid/shape, other render generators) in real WebGL2: headless Chrome
-// (SwiftShader without a GPU) runs the family's effects on the GPU host (fx-sapphire-render-gl/entry.ts). Checks a
-// characteristic pixel per effect, determinism (same seed/frame → same pixels; another seed or frame → different
-// lightning), animation over frames, padding, and alpha. `FX_DUMP=<dir>` additionally writes PNG stills of every
-// effect (on `FX_DUMP_IMAGE`, a photo, when set) for visual review. FX_GL=0 skips it.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,9 +61,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const base: RunOpts = { id: 'jasper.s.zap', width: W, height: H, paint: solid };
 			const a = await stats(base);
 			const b = await stats(base);
-			expect(a.hash).toBe(b.hash); // re-render → identical pixels
+			expect(a.hash).toBe(b.hash);
 			const c = await stats({ ...base, frame: 9 });
-			expect(c.hash).not.toBe(a.hash); // wiggles over time
+			expect(c.hash).not.toBe(a.hash);
 			const d = await stats({ ...base, params: { seed: 7 } });
 			expect(d.hash).not.toBe(a.hash);
 			// The bolt passes through Control Point 3 (0.7, 0.5) region: somewhere on that row it is near white.
@@ -111,7 +106,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const m = await pixels({ id: 'jasper.s.gradient-multi', width: W, height: H, paint: solid }, [
 				[2, H - 2],
 			]);
-			expect(m.px[0]![0]).toBeGreaterThan(m.px[0]![1] + 100); // red corner
+			expect(m.px[0]![0]).toBeGreaterThan(m.px[0]![1] + 100);
 			const s = await pixels({ id: 'jasper.s.shape', width: W, height: H, paint: solid }, [
 				[W / 2, H / 2],
 				[2, 2],
@@ -142,7 +137,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			);
 			expect(ga.px[0]![3]).toBe(255);
 			const z = await stats({ id: 'jasper.s.zap', width: 480, height: 270, paint: none });
-			expect(z.alpha).toBeGreaterThan(0.5); // some lightning alpha…
+			expect(z.alpha).toBeGreaterThan(0.5);
 			const z0 = await stats({
 				id: 'jasper.s.zap',
 				width: 480,
@@ -150,7 +145,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				paint: none,
 				params: { affectAlpha: 0 },
 			});
-			expect(z0.alpha).toBe(0); // …none with Affect Alpha 0
+			expect(z0.alpha).toBe(0);
 			const far = await pixels({ id: 'jasper.s.zap', width: 480, height: 270, paint: none }, [[5, 265]]);
 			expect(far.px[0]![3]).toBeLessThan(8);
 		});

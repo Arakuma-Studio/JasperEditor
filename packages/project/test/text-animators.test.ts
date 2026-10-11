@@ -1,6 +1,3 @@
-// Text animators in the model (workstream text-animators): commands, property keys through param.set and the
-// keyframe commands, presets, conversion of In/Out text animations, Path / More Options, per-character 3D, Source
-// Text keys, invariants / repair, snapshot and evaluation.
 import { describe, expect, it } from 'vitest';
 import {
 	ANIMATOR_MENU_IDS,

@@ -1,11 +1,11 @@
-// Pure helpers for ScrubbyNumber (S05:CT-021/022/025): drag step modifiers, clamping, rounding and the
-// relative math accepted in edit mode.
-
 export type NumericSpec = { min?: number; max?: number; step?: number; precision?: number };
+
+const decimalPrecision = (precision: number) =>
+	Number.isFinite(precision) ? Math.trunc(Math.max(0, Math.min(10, precision))) : 0;
 
 /** Rounds to `precision` decimals (0 = integers), avoiding binary noise. */
 export function roundTo(value: number, precision = 0): number {
-	const f = 10 ** Math.max(0, Math.min(10, precision));
+	const f = 10 ** decimalPrecision(precision);
 	return Math.round(value * f) / f;
 }
 
@@ -64,5 +64,6 @@ export function evaluateEntry(text: string, current: number): number | null {
 /** Display text for a value (mixed values show an en dash, S05:CT-024). */
 export function formatNumber(value: number | null, precision = 0): string {
 	if (value === null || !Number.isFinite(value)) return '–';
-	return roundTo(value, precision).toFixed(Math.max(0, precision));
+	const digits = decimalPrecision(precision);
+	return roundTo(value, digits).toFixed(digits);
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Electron smoke (WP-3I, ARCHITECTURE §15 item 11): launches the desktop shell headless under xvfb and checks
+// Electron smoke: launches the desktop shell headless under xvfb and checks
 // that the window loaded the app and rendered it. Connects to Electron over CDP for a screenshot.
 //
 //   node e2e/desktop-smoke.mjs dev            # starts a dev engine (tsx) + Vite, then `electron .` in dev mode
@@ -261,9 +261,7 @@ try {
 		timeout: mode === 'dev' ? 120_000 : 30_000,
 	});
 	await page.screenshot({ path: shot });
-	// Security review DEV-1 / AGT-2 in the desktop shell: the window is signed in to its engine and is the editor
-	// (the engine's /agent relay says so), through cookies the page cannot read; the engine itself answers nothing
-	// without its token.
+	// The editor authenticates through HttpOnly cookies; agent requests require the engine token.
 	const authReport = await page.evaluate(async () => {
 		const projects = (await fetch('/api/projects')).status;
 		const editor = await new Promise((resolve) => {

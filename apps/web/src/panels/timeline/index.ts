@@ -1,5 +1,3 @@
-// Timeline panel definition (ARCHITECTURE §7.2, S05 §16.7). Keeps the WP-00 contract fields.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

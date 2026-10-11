@@ -1,7 +1,3 @@
-// Browser entry of the transition GL test (bundled with esbuild, run in headless Chrome by ../transition-gl.test.ts):
-// drives the real fx GPU host with planned transition stages (planGpuTransition + runShaderPlan, exactly what
-// TransitionStage does) and reports pixels. Compiles the whole transition GLSL library and runs EVERY registered GPU
-// transition (wave-3 families get this check for free) two-sided, one-sided and reversed.
 import '../gl-poison.ts';
 import {
 	defineShaderTransition,
@@ -110,7 +106,6 @@ function run(
 	return out;
 }
 
-/** Side A of the golden fingerprints: a warm horizontal ramp with a white disc and a dark bar. */
 const cardA = () =>
 	canvas(W, H, (ctx) => {
 		const g = ctx.createLinearGradient(0, 0, W, 0);
@@ -125,7 +120,6 @@ const cardA = () =>
 		ctx.fillStyle = '#111';
 		ctx.fillRect(W * 0.7, 0, W * 0.08, H);
 	});
-/** Side B: a cool vertical ramp with a checkerboard. */
 const cardB = () =>
 	canvas(W, H, (ctx) => {
 		const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -265,7 +259,6 @@ void main() {
 		return out;
 	},
 
-	/** Placement: a 32×18 picture scaled ×2 (layer map) fills the frame; half opacity; a translated one. */
 	placement() {
 		const pic = canvas(32, 18, (ctx) => {
 			ctx.fillStyle = 'rgb(255, 0, 0)';
@@ -303,7 +296,6 @@ void main() {
 	},
 };
 
-/** Wave-4 framework features: image params, Push's border at the ends, side tracks, Custom Completion. */
 const polish = {
 	/** Gradient Wipe at p ≈ 0.5: built-in Left to Right vs a Custom Gradient (white left half, black right half). */
 	gradientImage() {

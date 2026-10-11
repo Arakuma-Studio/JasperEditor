@@ -1,5 +1,3 @@
-// WP-2B document handlers: roll, slip, slide, setSpeed, duplicate, link/unlink, fitToFrame,
-// range.lift/extract, gap.close. Table-driven cases (S02:TL-1050) plus property tests (TL-1051).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -56,12 +54,10 @@ function headed(h: Harness, at: number, dur: number, head: number, track = 'V1')
 
 const byId = (h: Harness, id: string) => h.seq.clips[id]! as Clip;
 
-// ---------------------------------------------------------------- roll
-
 describe('clip.trim mode roll (S02:TL-545)', () => {
 	type Case = {
 		name: string;
-		setup: (h: Harness) => string; // returns grabbed clip id
+		setup: (h: Harness) => string;
 		edge: 'in' | 'out';
 		delta: number;
 		expectSpans: [number, number][];
@@ -218,8 +214,6 @@ describe('clip.trim mode roll (S02:TL-545)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- slip
-
 describe('clip.slip (S02:TL-625, AC-12b)', () => {
 	it('AC-12b: a clip with 10 frames of head handle stops after 10 frames of rightward slip', () => {
 		const h = new Harness();
@@ -283,8 +277,6 @@ describe('clip.slip (S02:TL-625, AC-12b)', () => {
 		if (!r.ok) expect(r.errors[0]!.code).toBe('E_INVALID_PARAM');
 	});
 });
-
-// ---------------------------------------------------------------- slide
 
 describe('clip.slide (S02:TL-630, AC-12c)', () => {
 	it('AC-12c: sliding B between A and C by +12 lengthens A, shortens C, keeps B source and length', () => {
@@ -374,8 +366,6 @@ describe('clip.slide (S02:TL-630, AC-12c)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- speed
-
 describe('clip.setSpeed (S01:CLP-008, S02 AC-12d)', () => {
 	it('AC-12d: stretching a 100-frame clip to 200 frames yields speed 0.5 and the same source range', () => {
 		const h = new Harness();
@@ -447,8 +437,6 @@ describe('clip.setSpeed (S01:CLP-008, S02 AC-12d)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- duplicate
-
 describe('clip.duplicate (S01 clip.duplicate, S02:TL-683, S01:CLB-012)', () => {
 	it('copies to the first free space to the right with new ids and a mirrored link group', () => {
 		const h = new Harness();
@@ -497,8 +485,6 @@ describe('clip.duplicate (S01 clip.duplicate, S02:TL-683, S01:CLB-012)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- link / unlink
-
 describe('clip.link / clip.unlink (S01:CLP-010, S02:TL-704)', () => {
 	it('unlink dissolves the group; link re-creates one', () => {
 		const h = new Harness();
@@ -537,8 +523,6 @@ describe('clip.link / clip.unlink (S01:CLP-010, S02:TL-704)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- fit to frame
-
 describe('clip.fitToFrame (S01:FX-004)', () => {
 	it.each([
 		{ mode: 'fit', w: 3840, h: 2160, scale: 50 },
@@ -561,8 +545,6 @@ describe('clip.fitToFrame (S01:FX-004)', () => {
 		expect(r).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 });
-
-// ---------------------------------------------------------------- range lift / extract
 
 describe('range.lift / range.extract (S02:TL-690, AC-13d, AC-16b)', () => {
 	it('AC-13d: extract In=100 Out=199 removes exactly 100 frames from targeted and sync-locked tracks', () => {
@@ -644,8 +626,6 @@ describe('range.lift / range.extract (S02:TL-690, AC-13d, AC-16b)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- gap close
-
 describe('gap.close (S02:TL-741)', () => {
 	it('closes the gap and ripples sync-locked tracks that are empty in the gap range', () => {
 		const h = new Harness();
@@ -693,8 +673,6 @@ describe('gap.close (S02:TL-741)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- S02 acceptance at model level
-
 describe('S02 acceptance (model level)', () => {
 	it('AC-11d: Q (ripple-remove [clipStart, playhead)) removes the head and closes the gap', () => {
 		const h = new Harness();
@@ -722,8 +700,6 @@ describe('S02 acceptance (model level)', () => {
 		expect(h.spans('V2')).toEqual([[0, 400]]);
 	});
 });
-
-// ---------------------------------------------------------------- properties (S02:TL-1051)
 
 type Op =
 	| { k: 'roll'; clip: number; edge: boolean; delta: number; linked: boolean }
@@ -881,7 +857,6 @@ describe('invariants under random WP-2B commands (S02:TL-1051)', () => {
 							const issues = checkInvariants(document);
 							if (issues.length)
 								throw new Error(`invariants: ${JSON.stringify(issues)} after ${JSON.stringify(commands)}`);
-							// Dry runs succeed without changing the original document.
 							const dry = applyTransaction(
 								doc,
 								{ label: 'prop', origin: 'user', commands, dryRun: true },

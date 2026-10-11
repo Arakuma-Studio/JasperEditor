@@ -125,8 +125,6 @@ export function injectHostBootstrap(html: string, opts?: { timeoutMs?: number; l
 	return html.slice(0, m.index + m[0].length) + tag + html.slice(m.index + m[0].length);
 }
 
-// ---------------------------------------------------------------- the driver
-
 /** The metadata in effect for a mounted composition (after overrides). */
 export type CompositionMetadata = {
 	width: number;

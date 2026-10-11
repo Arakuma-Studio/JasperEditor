@@ -33,8 +33,6 @@ import { clearPosterHover, setPosterHover } from './poster-frame.ts';
 import { loadSpriteIndex, spriteTileAt, spriteTileStyle } from './sprites.ts';
 import { useRowWindow, VIRTUALIZE_MIN_ROWS } from './virtual.ts';
 
-// ------------------------------------------------------------ persisted per-instance view state (PN-002)
-
 type ViewState = {
 	view: ProjectViewMode;
 	tile: number;
@@ -87,8 +85,6 @@ const STATUS_TEXT: Record<string, string> = {
 	analyzing: 'Analyzing…',
 	'needs-engine': 'Needs engine',
 };
-
-// ------------------------------------------------------------ panel
 
 export function ProjectPanel(props: PanelProps) {
 	const session = useSession();
@@ -224,11 +220,9 @@ export function ProjectPanel(props: PanelProps) {
 		return () => cancelAnimationFrame(raf);
 	}, [revealId]);
 
-	// ---------------------------------------------------------------- drag and drop (S05:PRJ-007)
-
 	const onDragOver = (e: React.DragEvent, key: string) => {
 		const types = Array.from(e.dataTransfer.types);
-		// polish: files dragged out of the Media Browser (paths on the engine host) import like OS files.
+		// files dragged out of the Media Browser (paths on the engine host) import like OS files.
 		const external = types.includes('Files') || types.includes(HOST_PATHS_MIME);
 		if (readOnly || (!types.includes(PROJECT_ITEMS_MIME) && !external)) return;
 		e.preventDefault();
@@ -245,8 +239,6 @@ export function ProjectPanel(props: PanelProps) {
 		if (payload.type === 'jasper/project-items') moveItems(session, payload.itemIds, targetBin);
 		else void importInto(payload.files, payload.paths ?? null);
 	};
-
-	// ---------------------------------------------------------------- keyboard (panel-local)
 
 	const onKeyDown = (e: React.KeyboardEvent) => {
 		if (renaming || (e.target as HTMLElement).closest('input,select,textarea')) return;
@@ -367,8 +359,6 @@ export function ProjectPanel(props: PanelProps) {
 					))}
 				</select>
 			</div>
-
-			{/* Body */}
 			{/* gaps (UI-6): the scrolling list is keyboard-reachable (axe scrollable-region-focusable). */}
 			<section
 				ref={bodyRef}
@@ -584,8 +574,6 @@ export function ProjectPanel(props: PanelProps) {
 	);
 }
 
-// ------------------------------------------------------------ pieces
-
 function EmptyState(props: { filtered: boolean; readOnly: boolean; onImport(): void }) {
 	return (
 		<div
@@ -652,7 +640,8 @@ function ProgressRing({ value, size = 12 }: { value: number; size?: number }) {
 	);
 }
 
-type Handlers = (row: ProjectRow) => Record<string, unknown>;
+type RowHandlers = React.HTMLAttributes<HTMLElement>;
+type Handlers = (row: ProjectRow) => RowHandlers;
 
 function RenameField(props: { initial: string; onDone(name: string | null): void }) {
 	const [v, setV] = useState(props.initial);
@@ -738,7 +727,7 @@ function ListView(props: {
 	handlers: Handlers;
 }) {
 	const arrow = (k: SortKey) => (props.sort.key === k ? (props.sort.dir === 1 ? ' ↑' : ' ↓') : '');
-	// ui-perf: large bins render only the rows in view (virtual.ts).
+	// large bins render only the rows in view (virtual.ts).
 	const tbodyRef = useRef<HTMLTableSectionElement>(null);
 	const revealIndex = props.revealId ? props.rows.findIndex((r) => r.id === props.revealId) : -1;
 	const win = useRowWindow({
@@ -872,7 +861,7 @@ function IconView(props: {
 	onRename(id: string, name: string | null): void;
 	handlers: Handlers;
 }) {
-	// ui-perf: large bins render only the grid rows in view (virtual.ts); columns follow CSS `auto-fill`.
+	// large bins render only the grid rows in view (virtual.ts); columns follow CSS `auto-fill`.
 	const gridRef = useRef<HTMLDivElement>(null);
 	const [width, setWidth] = useState(0);
 	useLayoutEffect(() => {
@@ -943,7 +932,7 @@ function Tile(props: {
 	width: number;
 	hoverScrub: boolean;
 	onRename(name: string | null): void;
-	handlers: Record<string, unknown>;
+	handlers: RowHandlers;
 }) {
 	const { row } = props;
 	const engine = useEngine();
@@ -952,7 +941,7 @@ function Tile(props: {
 	const key = mediaKeyOf(asset);
 	const [posterFailed, setPosterFailed] = useState(false);
 	const [scrub, setScrub] = useState<React.CSSProperties | null>(null);
-	// polish: the item's own poster frame (Set Poster Frame), drawn from the sprite sheet like the hover scrub.
+	// the item's own poster frame (Set Poster Frame), drawn from the sprite sheet like the hover scrub.
 	const posterFlicks = useSessionState(
 		(s) => (s.document.items[row.id] as { poster?: { flicks: number } } | undefined)?.poster?.flicks ?? null,
 	);
@@ -1281,7 +1270,7 @@ function ContextMenu(props: {
 	);
 }
 
-/** wp interchange: a media item whose file is offline (an imported placeholder or a missing file). */
+/** a media item whose file is offline (an imported placeholder or a missing file). */
 function isOfflineItem(session: EditorSession, id: string): boolean {
 	const st = session.getState();
 	const item = st.document.items[id];
@@ -1292,7 +1281,7 @@ function isOfflineItem(session: EditorSession, id: string): boolean {
 	);
 }
 
-/** wp-multicam: audio/video media items among `ids`. */
+/** audio/video media items among `ids`. */
 function mediaCount(doc: ReturnType<EditorSession['getCommitted']>, ids: readonly string[]): number {
 	return ids.filter((id) => {
 		const it = doc.items[id];

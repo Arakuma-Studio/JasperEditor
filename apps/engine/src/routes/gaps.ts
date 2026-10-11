@@ -1,12 +1,3 @@
-// Workstream `gaps` (docs/wp-notes/gaps.md):
-//   GET  /api/media/:mediaKey/location   where the media file is on this host (Edit Original)
-//   POST /api/media/:mediaKey/open       reveal it in the file browser / open it in its default application
-//                                        (local engines only: a remote engine never launches programs for a browser)
-//   GET  /api/projects/:projectId/scratch the folders behind Project Settings ▸ Scratch Disks, with free space
-//   POST /api/scratch/check              whether a folder can take generated media
-//   POST /api/media-jobs                 Create Proxies / ingest copies and transcodes (job `proxy-create`)
-//   POST /api/warp-analysis              Warp Stabilizer background analysis (job `warp-analysis`)
-//   POST /api/reframe                    Auto Reframe subject analysis (job `reframe`)
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, mkdir, readFile, stat } from 'node:fs/promises';
@@ -161,7 +152,6 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		return { path: path ?? null, exists };
 	};
 
-	// ---- Preferences ▸ Auto Save / Memory (UI-4): engine-wide, persisted in <appdir>/engine/gaps-settings.json
 	const settingsFile = join(core.config.paths.engineDir, 'gaps-settings.json');
 	const readSettings = async (): Promise<EngineGapsSettings> => {
 		const p = core.projects.versionPolicy();
@@ -221,7 +211,6 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		}),
 	);
 
-	// ---- File ▸ Project Manager (PRJ-6)
 	const pm = new ProjectManagerService(core);
 	pm.registerRunner();
 	app.post(
@@ -235,7 +224,6 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		),
 	);
 
-	// ---- Create Proxies / ingest (PRJ-8)
 	const mediaJobs = new MediaJobService(core);
 	mediaJobs.registerRunner();
 	app.jasper.services.mediaJobs = mediaJobs;
@@ -247,7 +235,6 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		}),
 	);
 
-	// ---- Warp Stabilizer background analysis (FX-6)
 	const warp = new WarpAnalysisService(core);
 	warp.registerRunner();
 	app.post(
@@ -257,7 +244,6 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		),
 	);
 
-	// ---- Auto Reframe subject analysis (AI-2)
 	const reframe = new ReframeService(core, () => app.jasper.services.roto as RotoService | undefined);
 	reframe.registerRunner();
 	app.post(
@@ -267,7 +253,6 @@ export default async function gapsRoutes(app: FastifyInstance): Promise<void> {
 		),
 	);
 
-	// ---- Project Settings ▸ Scratch Disks
 	app.get<P>(
 		'/api/projects/:projectId/scratch',
 		guarded<P>(async (req) => {

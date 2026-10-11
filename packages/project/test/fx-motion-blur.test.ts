@@ -1,6 +1,3 @@
-// Adaptive shutter motion blur (wave 5): the pure planner behind every moving effect's blur — shutter windows, tap
-// counts from the travel of the tracked points (rotation and zoom included, scaled by the preview), key-pose packing,
-// the time warp, stable uniform shapes and determinism. Pixels: packages/compositions/test/fx-motion-blur-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	angleShutter,

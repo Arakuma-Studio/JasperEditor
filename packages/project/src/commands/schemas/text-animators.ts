@@ -1,7 +1,5 @@
-// Text animator commands (workstream text-animators; After Effects Animation ▸ Animate Text / Add Text Selector,
-// the "Animate:" and "Add:" menus, animator presets, Path Options, per-character 3D). Values of animator
-// properties and selector fields are set with `param.set` / keyframe commands on their property keys
-// (`["clip", clipId, "textAnimators", animatorId, "properties", "position"]`, …).
+// Animator property values and selector fields use param.set / keyframe commands with paths such as
+// ["clip", clipId, "textAnimators", animatorId, "properties", "position"].
 import { z } from 'zod';
 import { cmd, IdListSchema, IdRefSchema, ParamAtSchema, RefDeclSchema } from './common.ts';
 

@@ -6,7 +6,7 @@
 // - the Program monitor's display stage (outermost, preview only, color/DisplayStage.tsx) steps aside as soon as a
 //   scope registers inside it: the composite is then shown without display conversion (with a chip), and the inner
 //   scope runs;
-// - inside another scope, the owner of the enclosing scope is asked to draw without it (compositor workstream): a
+// - inside another scope, the owner of the enclosing scope is asked to draw without it: a
 //   `VideoTracks` switches to its flat compositor (fx/flat.tsx), a nest layer takes its nested sequence's picture as
 //   a canvas source. `VideoTracks` and `NestLayer` decide that statically (fx/flat-plan.ts) for every stack they can
 //   recognise, so this is a safety net; renders hold the frame until the owner redrew.

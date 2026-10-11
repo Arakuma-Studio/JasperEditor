@@ -22,7 +22,6 @@ const solid = (at: number, duration: number, track: string) => ({
 	color: [0, 1, 0, 1],
 });
 
-/** Test-only direct edit of the committed document (e.g. speed, which is a WP-2B command). */
 function patchDoc(h: Harness, fn: (doc: ProjectDocument) => void) {
 	const copy = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
 	fn(copy);
@@ -124,7 +123,6 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 			[95, 195],
 		]);
 		expect(h.spans('V2')).toEqual([[70, 95]]);
-		// Sync lock off on V2: the trim goes through and V2 is left alone.
 		h.ok([{ type: 'track.update', trackId: 'V2', patch: { syncLock: false } }]);
 		h.ok([{ type: 'clip.trim', clipId: a, edge: 'out', deltaFrames: -15, mode: 'ripple' }]);
 		expect(h.spans('V1')).toEqual([
@@ -266,13 +264,11 @@ describe('clip.split (S01:CLP-007, S02 AC-12a, AC-1a)', () => {
 						const target = h.clips('V1').find((c) => c.start < at && at < c.start + c.duration);
 						if (target) h.ok([{ type: 'clip.split', at, clipIds: [target.id] }]);
 					}
-					// Re-join through edits left to right.
 					const pieces = h.clips('V1');
 					for (let i = 1; i < pieces.length; i++) {
 						if (!isThroughEdit(pieces[i - 1]!, pieces[i]!, rate))
 							throw new Error(`not a through edit at ${pieces[i]!.start}`);
 					}
-					// Every piece still shows the content the original showed at that frame (no drift).
 					const F = flicksPerFrame(rate);
 					for (const p of pieces) {
 						const ideal = original.sourceIn + (p.start - original.start) * F * 0.37;

@@ -1,12 +1,3 @@
-// Clip processing (M2, S07, ARCHITECTURE §19.4). Owner: wp-m2-process.
-//   POST /api/media/:key/process                 → `process` job (PRC-010)
-//   GET  /api/processing/models                  → catalogue + install state (PST-031)
-//   POST /api/processing/models/:modelId/install → `model-download` job
-//   GET/PUT /api/settings/processing             → remote executor settings (PRM-001)
-//   POST /api/processing/remote/probe            → RemoteProbeResult (PRM-003)
-//   POST /api/processing/remote/setup            → `remote-setup` job (PRM-004)
-// Also registers the `features.processing` capability block and the licence entries of vid.stab (WASM),
-// ONNX Runtime, OpenCV.js and the bundled model weights (Help ▸ About ▸ Licenses).
 import { ProcessingSettingsSchema, ProcessRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { requireUserApproval } from '../agent/user-approval.ts';

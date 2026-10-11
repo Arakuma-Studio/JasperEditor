@@ -1,11 +1,6 @@
-// Media Browser (workstream polish, Premiere's Media Browser panel): browse the engine host's file system, preview
-// media and import it in place. Local engines only (like path registration, S04:SC-002).
-//   GET /api/browse/roots              Home, the usual media folders, volumes and the file-system root(s)
-//   GET /api/browse/list?path=         one folder: sub-folders and the files JasperEditor can import
-//   GET /api/browse/info?path=         size, date and (for audio / video / stills) the ffprobe summary
-//   GET /api/browse/thumbnail?path=    a JPEG thumbnail of a video frame or a still
-//   GET /api/browse/file?path=         the bytes (Range), for the preview player; media files only
+// Filesystem browsing is restricted to local engines.
 import { z } from 'zod';
+import { RegisteredMediaSchema } from './media.ts';
 
 /** What a file is, from its extension; null = not importable (hidden unless "All files" is on). */
 export const BrowseCategorySchema = z.enum([
@@ -154,7 +149,7 @@ export const BrowseInfoSchema = z.object({
 			sampleRate: z.number().nullable(),
 			channels: z.number().nullable(),
 			/** The browser can play / show the file directly (the preview player uses it). */
-			browserPlayable: z.enum(['yes', 'no', 'unknown']),
+			browserPlayable: RegisteredMediaSchema.shape.browserPlayable,
 		})
 		.nullable(),
 	error: z.string().optional(),

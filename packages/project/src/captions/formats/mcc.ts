@@ -45,8 +45,6 @@ const CC_COUNT = 20;
 /** cc_data triplets per frame left for CEA-708 (after the two CEA-608 fields). */
 const DTVCC_PAIRS = CC_COUNT - 2;
 
-// ------------------------------------------------------------------------------- hex with abbreviations
-
 const ABBREV: Array<[string, number[]]> = [
 	['P', [0xfb, 0x80, 0x80]],
 	['Q', [0xfc, 0x80, 0x80]],
@@ -114,8 +112,6 @@ export function mccExpand(s: string): number[] | null {
 	}
 	return hex !== null ? null : out;
 }
-
-// ------------------------------------------------------------------------------------------------ CDP
 
 /** One frame's caption data: a field-1 CEA-608 pair (no parity) and DTVCC pairs `[startOfPacket, b1, b2]`. */
 export type MccFrameData = { f1: [number, number] | null; dtvcc: Array<[boolean, number, number]> };
@@ -190,8 +186,6 @@ export function ccTriplets(b: number[]): Array<[number, number, number]> | null 
 	}
 	return out;
 }
-
-// ------------------------------------------------------------------------------- CEA-708 service data
 
 /** G2 characters we write / read (after EXT1). */
 const G2: Array<[number, string]> = [
@@ -464,8 +458,6 @@ class Dec708 {
 		}
 	}
 }
-
-// ------------------------------------------------------------------------------------------------ file
 
 /** Write `doc` as MCC with CEA-608 field 1 and/or CEA-708 service 1. */
 export function writeMcc(

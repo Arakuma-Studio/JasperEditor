@@ -1,5 +1,4 @@
-// Resumable chunked uploads (S04:IN-005, SC-005).
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { RegisteredMediaSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -60,7 +59,6 @@ describe('uploads (S04:IN-005)', () => {
 		expect(r1.statusCode).toBe(200);
 		expect(r1.json()).toEqual({ offset: c1.length });
 
-		// Wrong offset (a replayed chunk): 409 with the engine's offset (S04:IN-005, QA-011 tampering).
 		const wrong = await put(uploadId, 0, c1);
 		expect(wrong.statusCode).toBe(409);
 		expect(wrong.json()).toMatchObject({
@@ -73,13 +71,11 @@ describe('uploads (S04:IN-005)', () => {
 			detail: { expectedOffset: c1.length },
 		});
 
-		// Completing early fails with the size mismatch.
 		const early = await app.inject({ method: 'POST', url: `/api/uploads/${uploadId}/complete`, headers: H });
 		expect(early.statusCode).toBe(409);
 		expect(early.json().code).toBe('UPLOAD_SIZE_MISMATCH');
 
 		expect((await put(uploadId, c1.length, c2)).json()).toEqual({ offset: c1.length + c2.length });
-		// A chunk larger than the declared size is refused and the file rolled back.
 		const tooBig = await put(uploadId, c1.length + c2.length, Buffer.concat([c3, Buffer.alloc(10)]));
 		expect(tooBig.statusCode).toBe(400);
 		expect(tooBig.json().code).toBe('UPLOAD_SIZE_MISMATCH');
@@ -97,16 +93,13 @@ describe('uploads (S04:IN-005)', () => {
 		expect(media.locators).toEqual([expect.objectContaining({ type: 'engine-store', key: media.mediaKey })]);
 		const stored = join(app.appdir, 'media', media.mediaKey, 'clip-b.mp4');
 		expect(readFileSync(stored).equals(bytes)).toBe(true);
-		// Uploaded media enters the same derivative workflow as files registered by path (S04:IN-011).
 		const status = (
 			await app.inject({ method: 'GET', url: `/api/media/${media.mediaKey}`, headers: H })
 		).json();
 		for (const kind of ['keyframes', 'peaks', 'poster', 'sprite']) {
 			expect(status.derivatives[kind].state).not.toBe('none');
 		}
-		// The session is gone.
 		expect((await put(uploadId, bytes.length, Buffer.alloc(1))).statusCode).toBe(404);
-		// The upload is served like any media.
 		const served = await app.inject({
 			method: 'GET',
 			url: `/media/${media.mediaKey}`,
@@ -137,6 +130,50 @@ describe('uploads (S04:IN-005)', () => {
 			(await app.inject({ method: 'DELETE', url: `/api/uploads/${created.uploadId}`, headers: H }))
 				.statusCode,
 		).toBe(404);
+	});
+
+	it('refuses to recreate missing upload data as an empty file', async () => {
+		const dir = join(tempAppdir('jasper-up-'), '.uploads');
+		const svc = new UploadService({ dir, media: coreServices(app).media });
+		const session = await svc.create({
+			projectId: 'prj_0000000000000001',
+			fileName: 'missing.mp4',
+			byteSize: 10,
+			mimeType: 'video/mp4',
+		});
+		unlinkSync(join(dir, session.uploadId, 'data.part'));
+		await expect(svc.complete(session.uploadId)).rejects.toMatchObject({
+			code: 'UPLOAD_NOT_FOUND',
+			message: expect.stringContaining('start a new upload'),
+		});
+	});
+
+	it('reports background sweep errors and starts only one sweep timer', async () => {
+		vi.useFakeTimers();
+		const error = new Error('Cannot remove expired upload');
+		const onError = vi.fn();
+		const svc = new UploadService({
+			dir: join(tempAppdir('jasper-up-'), '.uploads'),
+			media: coreServices(app).media,
+			onError,
+		});
+		const sweep = vi.spyOn(svc, 'sweep').mockRejectedValue(error);
+		try {
+			svc.start();
+			svc.start();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sweep).toHaveBeenCalledTimes(1);
+			expect(onError).toHaveBeenLastCalledWith(error);
+			await vi.advanceTimersByTimeAsync(3600_000);
+			expect(sweep).toHaveBeenCalledTimes(2);
+			svc.stop();
+			svc.start();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sweep).toHaveBeenCalledTimes(3);
+		} finally {
+			svc.stop();
+			vi.useRealTimers();
+		}
 	});
 
 	it('checks free disk space (DISK_FULL) and expires idle sessions after 24 h (S04:SC-005)', async () => {

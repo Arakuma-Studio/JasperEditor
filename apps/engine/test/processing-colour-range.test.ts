@@ -1,8 +1,4 @@
-// Colour range of processed clips (S07:PRC-003, PRC-020): every stabilise method (vid.stab WASM, smooth path,
-// deshake crop/keep) and the denoise / deblock / de-judder combinations keep true black and white — measured on
-// real decoded output, with EVERY ffmpeg available here: the LGPL FFmpeg 7.1 and the system FFmpeg 6.1 (which
-// silently converts full → TV range in a `scale` without an explicit output range; the trailer pipeline had
-// that bug: blacks lifted to 16, whites capped at 235 → "13…237").
+// FFmpeg 6.1 can convert full to TV range during scale unless output range is explicit; exercise every available binary.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,7 +17,6 @@ function version(ffmpeg: string): string | null {
 	return /ffmpeg version (\S+)/.exec(r.stdout)?.[1] ?? null;
 }
 
-/** Every distinct ffmpeg on this host: the LGPL build and the system one (6.1 on Ubuntu 24.04). */
 const FFMPEGS = (() => {
 	const out: Array<{ name: string; ffmpeg: string; ffprobe: string }> = [];
 	if (existsSync(join(LGPL_DIR, 'ffmpeg')))

@@ -162,6 +162,46 @@ describe('TimecodeField (AC-TY-1)', () => {
 });
 
 describe('PanelErrorBoundary', () => {
+	it.each([false, 0, '', null, undefined])('contains a child that throws %s', (value) => {
+		const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+		function Broken(): never {
+			throw value;
+		}
+		try {
+			render(
+				<PanelErrorBoundary name="Broken">
+					<Broken />
+				</PanelErrorBoundary>,
+			);
+			expect(screen.getByTestId('panel-crashed')).toBeTruthy();
+		} finally {
+			errorLog.mockRestore();
+		}
+	});
+
+	it('reports clipboard failures without losing the panel error', async () => {
+		const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const write = vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('Clipboard denied'));
+		function Broken(): never {
+			throw new Error('Panel failed');
+		}
+		try {
+			render(
+				<PanelErrorBoundary name="Broken">
+					<Broken />
+				</PanelErrorBoundary>,
+			);
+			await act(async () => {
+				fireEvent.click(screen.getByText('Copy Details'));
+			});
+			expect(screen.getByText('Clipboard denied')).toBeTruthy();
+			expect(screen.getByText('Panel failed')).toBeTruthy();
+		} finally {
+			errorLog.mockRestore();
+			write.mockRestore();
+		}
+	});
+
 	it('reloads crashed children with fresh component state', () => {
 		const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
 		function Panel({ crash = false }: { crash?: boolean }) {
@@ -312,7 +352,6 @@ describe('menus (S05:MN-002, SH-031)', () => {
 		}
 		const view = render(<Owner n={1} />);
 		for (let n = 2; n <= 20; n++) view.rerender(<Owner n={n} />);
-		// Twenty renders of a panel with two closed menus used to resolve both menus twenty times.
 		expect(items).not.toHaveBeenCalled();
 		fireEvent.pointerDown(screen.getByText('Open 20'), { button: 0, ctrlKey: false, pointerType: 'mouse' });
 		await screen.findByText('Resolved late');
@@ -386,6 +425,26 @@ describe('tooltip and color input contracts', () => {
 });
 
 describe('Dialog Enter key (S05)', () => {
+	it('reports failed primary actions and keeps the dialog open', async () => {
+		const close = vi.fn();
+		render(
+			<Dialog
+				open
+				onOpenChange={close}
+				title="Save"
+				primaryLabel="Save"
+				onPrimary={async () => {
+					throw new Error('Disk full');
+				}}
+			/>,
+		);
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+		});
+		expect(screen.getByRole('alert').textContent).toBe('Disk full');
+		expect(close).not.toHaveBeenCalled();
+	});
+
 	it('Enter runs the primary action, but not when it picks an option of a Select inside the dialog', async () => {
 		const onPrimary = vi.fn(() => false);
 		function Host() {

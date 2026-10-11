@@ -1,4 +1,3 @@
-// Fields (S05:CT-010…013): text field, search field, dropdown select, checkbox, toggle switch.
 import { Checkbox as RCheckbox, Select as RSelect, Switch as RSwitch } from 'radix-ui';
 import { type ComponentProps, type KeyboardEvent, type ReactNode, useId, useMemo, useRef } from 'react';
 import { cx } from '../cx.ts';
@@ -12,7 +11,6 @@ const FIELD =
 
 export type TextFieldProps = ComponentProps<'input'> & { invalid?: boolean };
 
-/** `--pr-bg-field`, 22 px, no border until hover/focus (S05:CT-010). */
 export function TextField({ className, invalid, ...rest }: TextFieldProps) {
 	return (
 		<input
@@ -30,7 +28,6 @@ export type SearchFieldProps = Omit<ComponentProps<'input'>, 'value' | 'onChange
 	onValueChange(value: string): void;
 };
 
-/** Search field: deep field color, magnifier, clear ×, `Esc` clears then blurs (S05:CT-010). */
 export function SearchField({ value, onValueChange, className, onKeyDown, ...rest }: SearchFieldProps) {
 	const ref = useRef<HTMLInputElement>(null);
 	const keyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -91,7 +88,6 @@ export type SelectProps = {
 	id?: string;
 };
 
-/** Dropdown: field color, chevron right, menu-styled list; type-ahead, arrows, Enter/Space (S05:CT-011). */
 export function Select({
 	value,
 	onValueChange,
@@ -166,7 +162,6 @@ export type CheckboxProps = {
 	'aria-label'?: string;
 };
 
-/** 14 px gray checkbox (not blue, like Premiere); mixed shows a dash (S05:CT-012). */
 export function Checkbox({
 	checked,
 	onCheckedChange,
@@ -220,7 +215,6 @@ export type ToggleProps = {
 	'aria-label'?: string;
 };
 
-/** Toggle switch for preferences: 28×16, on = accent fill (S05:CT-013). */
 export function Toggle({ checked, onCheckedChange, label, disabled, ...aria }: ToggleProps) {
 	const swId = useId();
 	const sw = (

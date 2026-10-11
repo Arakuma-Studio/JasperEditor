@@ -1,5 +1,3 @@
-// color-mgmt: sequence working spaces, Interpret Footage ▸ Colour, clip overrides, the snapshot's colour input
-// transforms, Lumetri HDR White / Specular, invariants and repairs.
 import { describe, expect, it } from 'vitest';
 import {
 	applyLut,
@@ -10,11 +8,14 @@ import {
 	colorRunKey,
 	createCounterIdSource,
 	defaultEffectRegistry,
+	type EffectParams,
 	effectRuns,
 	logEncode,
 	type MediaAsset,
 	normalizedFromSignal,
+	type ParamValue,
 	pqFromNits,
+	type RenderVisualClip,
 	type Rgb,
 	repairDocument,
 	resolveInputSpace,
@@ -62,19 +63,14 @@ function hdrAsset(transfer: string): ReturnType<typeof videoAsset> {
 	return a;
 }
 
-/** Runs the layer's colour runs (the snapshot's effects, evaluated statically) on one colour. */
-function grade(snapClip: { effects: unknown[] }, ctx: Parameters<typeof bakeColorRun>[2], c: Rgb): Rgb {
-	const effects = (
-		snapClip.effects as {
-			id: string;
-			effectId: string;
-			effectVersion: number;
-			enabled: boolean;
-			params: Record<string, { value: unknown }>;
-		}[]
-	).map((fx) => ({
+function grade(
+	snapClip: Pick<RenderVisualClip, 'effects'>,
+	ctx: Parameters<typeof bakeColorRun>[2],
+	c: Rgb,
+): Rgb {
+	const effects = snapClip.effects.map((fx) => ({
 		...fx,
-		params: Object.fromEntries(Object.entries(fx.params).map(([k, v]) => [k, v.value])),
+		params: Object.fromEntries(Object.entries(fx.params).map<[string, ParamValue]>(([k, v]) => [k, v.value])),
 	}));
 	const out: Rgb = [...c];
 	for (const run of effectRuns(effects, defaultEffectRegistry)) {
@@ -256,11 +252,11 @@ describe('snapshot colour input transforms', () => {
 });
 
 describe('Lumetri in HDR', () => {
-	const lum = (params: Record<string, unknown>) => [
+	const lum = (params: EffectParams) => [
 		{ id: 'l', effectId: 'jasper.lumetri', effectVersion: 1, enabled: true, params },
 	];
 	const pq = sequenceColorInfo({ workingColorSpace: 'rec2100-pq' });
-	const run = (params: Record<string, unknown>, c: Rgb) => {
+	const run = (params: EffectParams, c: Rgb) => {
 		const lut = bakeColorRun(lum(params), defaultEffectRegistry, { lut: () => null, working: pq }, 33);
 		const o: Rgb = [...c];
 		if (lut) applyLut(lut, o);

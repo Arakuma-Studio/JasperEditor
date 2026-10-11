@@ -1,4 +1,4 @@
-// The Program monitor's display transform (workstream color-mgmt): the composite holds the working space's signal;
+// The composite holds the working space's signal;
 // a monitor shows it through `outputTransformFn(working, displaySpaceFor(working))` — Rec. 2020 / P3 working spaces
 // mapped into Rec. 709 primaries (keeping their curve, Premiere's default display handling) and HDR working spaces
 // tone mapped to Rec. 709 (BT.2390, 203 cd/m² = SDR white). Rec. 709 and sRGB working spaces are shown as they are,

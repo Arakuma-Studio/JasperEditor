@@ -1,5 +1,3 @@
-// In-page agent bridge contracts: origin enforcement, undo ownership, relay protocol, event throttling.
-
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	createCounterIdSource,
@@ -68,8 +66,6 @@ describe('history ownership (S01:UND-008)', () => {
 		expect(session.getState().history.index).toBe(1);
 	});
 });
-
-// ---------------------------------------------------------------- relay
 
 class FakeSocket {
 	readyState = 0;
@@ -162,8 +158,8 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 			},
 		});
 		expect(bridge.store.getState().approvals).toMatchObject([{ approvalId: 'apr_1', source: 'engine' }]);
-		// Security review AGT-2: the answer key stays inside the bridge. It is not in the store the shell renders,
-		// nor reachable through `window.jasper`.
+		// The answer key must stay private to the bridge, outside the rendered store
+		// and inaccessible through `window.jasper`.
 		expect(JSON.stringify(bridge.store.getState())).not.toContain('key_for_this_window');
 		expect(JSON.stringify(bridge.api())).not.toContain('key_for_this_window');
 		expect(bridge.resolveApproval('apr_1', 'denied')).toBe(true);
@@ -173,7 +169,6 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 			payload: { approvalId: 'apr_1', decision: 'denied', answerKey: 'key_for_this_window' },
 		});
 		expect(bridge.store.getState().approvals).toEqual([]);
-		// The key is spent with the card.
 		expect(bridge.resolveApproval('apr_1', 'approved')).toBe(false);
 
 		// A request this window was given no key for cannot be answered from here: it is not shown.

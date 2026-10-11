@@ -6,7 +6,14 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { dirname, join } from 'node:path';
-import { type EngineJob, type JobKind, RETRYABLE_CODES, TERMINAL_JOB_STATES } from '@jasper/api';
+import {
+	type EngineJob,
+	EngineJobSchema,
+	type JobKind,
+	RETRYABLE_CODES,
+	TERMINAL_JOB_STATES,
+} from '@jasper/api';
+import { z } from 'zod';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import { randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
@@ -60,7 +67,12 @@ type JobQueueOptions = {
 	onError?(e: unknown): void;
 };
 
-type JournalRecord = { job: EngineJob; input: unknown; requeued?: boolean };
+const JournalRecordSchema = z.object({
+	job: EngineJobSchema,
+	input: z.unknown().optional(),
+	requeued: z.boolean().optional(),
+});
+type JournalRecord = z.infer<typeof JournalRecordSchema>;
 
 type JobListFilter = { active?: boolean; projectId?: string; since?: string; kind?: JobKind };
 
@@ -93,8 +105,6 @@ export class JobQueue {
 		this.totalSlots = Math.max(1, opts.totalSlots ?? availableParallelism());
 		this.now = opts.now ?? (() => new Date());
 	}
-
-	// ------------------------------------------------------------------ registration and lifecycle
 
 	registerRunner(kind: JobKind, runner: JobRunner): void {
 		this.runners.set(kind, runner);
@@ -187,8 +197,6 @@ export class JobQueue {
 		}
 		for (const e of this.entries.values()) if (e.emitTimer) clearTimeout(e.emitTimer);
 	}
-
-	// ------------------------------------------------------------------ public API
 
 	/** Submits a job, or returns the queued/running job with the same dedupe key (S04:JB-014). */
 	submit(spec: JobSubmit): EngineJob {
@@ -323,8 +331,6 @@ export class JobQueue {
 		return n;
 	}
 
-	// ------------------------------------------------------------------ scheduling
-
 	private pump(): void {
 		if (!this.started || this.stopping) return;
 		const queued = [...this.entries.values()]
@@ -398,15 +404,30 @@ export class JobQueue {
 						error: { code: 'INTERRUPTED', message: 'The engine was stopped', retryable: true },
 					});
 				} else {
-					const code = (err as { code?: string }).code ?? 'INTERNAL';
-					const message = (err as Error)?.message ?? String(err);
-					const explicit = (err as JobError).retryable;
+					const failure =
+						err !== null && typeof err === 'object'
+							? (err as { code?: unknown; message?: unknown; retryable?: unknown; detail?: unknown })
+							: null;
+					const code = typeof failure?.code === 'string' ? failure.code : 'INTERNAL';
+					const message =
+						typeof failure?.message === 'string'
+							? failure.message
+							: typeof err === 'string'
+								? err
+								: 'Job runner failed without an error message';
+					const explicit = failure?.retryable;
 					const retryable =
 						typeof explicit === 'boolean'
 							? explicit
 							: RETRYABLE_CODES.has(code) || !NON_RETRYABLE_CODES.has(code);
-					const stderr = (err as { detail?: { stderr?: string } }).detail?.stderr;
-					if (stderr) ctx.log(stderr);
+					const detail = failure?.detail;
+					if (
+						detail !== null &&
+						typeof detail === 'object' &&
+						'stderr' in detail &&
+						typeof detail.stderr === 'string'
+					)
+						ctx.log(detail.stderr);
 					ctx.log(`${code}: ${message}`);
 					const logRef = this.writeLog(e);
 					await this.cleanupAndFinish(e, 'failed', {
@@ -492,8 +513,6 @@ export class JobQueue {
 		this.pump();
 	}
 
-	// ------------------------------------------------------------------ journal (S04:JB-030)
-
 	private journal(e: Entry): void {
 		const path = this.opts.journalPath;
 		if (!path) return;
@@ -522,11 +541,14 @@ export class JobQueue {
 		for (const line of text.split('\n')) {
 			if (!line.trim()) continue;
 			try {
-				const rec = JSON.parse(line) as JournalRecord;
-				if (rec?.job?.id) {
-					latest.delete(rec.job.id); // keep insertion order = last write order
-					latest.set(rec.job.id, rec);
+				const parsed = JournalRecordSchema.safeParse(JSON.parse(line));
+				if (!parsed.success) {
+					this.opts.onError?.(parsed.error);
+					continue;
 				}
+				const rec = parsed.data;
+				latest.delete(rec.job.id); // keep insertion order = last write order
+				latest.set(rec.job.id, rec);
 			} catch {
 				// torn last line after a crash: skip
 			}
@@ -594,8 +616,6 @@ export class JobQueue {
 			return null;
 		}
 	}
-
-	// ------------------------------------------------------------------ helpers
 
 	private makeEntry(job: EngineJob, input: unknown, minSlots: number): Entry {
 		return {

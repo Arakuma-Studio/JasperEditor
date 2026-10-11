@@ -1,9 +1,4 @@
 // @vitest-environment node
-// three-d: the Classic 3D GL renderer (WebGL2 in headless Chrome, SwiftShader) against the CPU reference of
-// @jasper/project on the same pictures: plane intersection and blend modes in depth order, a moved perspective camera,
-// an orthographic view, lights (spot cone + falloff, coloured point light, parallel) with ray-cast and coloured
-// shadows and specular, Dissolve, and the bokeh depth of field (prefix-sum span gather = the CPU progressive blur).
-// Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

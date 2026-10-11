@@ -1,7 +1,4 @@
 // @vitest-environment node
-// The dev server's authentication to the engine (security review DEV-1 / AGT-2, apps/web/dev-auth.ts): the token
-// comes from the runtime file the engine's /health names and is added to what the proxy forwards; page loads get
-// the dev editor key as an HttpOnly cookie.
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -128,7 +125,6 @@ describe('dev server authentication (DEV-1)', () => {
 		expect(load('/', { 'sec-fetch-dest': 'document', accept: 'text/html' })).toBe(cookie);
 		expect(load('/project/prj_1', { 'sec-fetch-dest': 'document' })).toBe(cookie);
 		expect(load('/', { accept: 'text/html,*/*' })).toBe(cookie);
-		// Not for scripts, images, frames, proxied engine paths or writes.
 		expect(load('/src/main.tsx', { 'sec-fetch-dest': 'script', accept: '*/*' })).toBeNull();
 		expect(
 			load('/mg/sandbox/cap/key/index.html', { 'sec-fetch-dest': 'iframe', accept: 'text/html' }),

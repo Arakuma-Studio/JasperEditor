@@ -1,10 +1,11 @@
-// Simulation ▸ Particle World, Particle Systems II, Mercury (sim-warp workstream; After Effects' CC Particle World,
+// Simulation ▸ Particle World, Particle Systems II, Mercury (After Effects' CC Particle World,
 // CC Particle Systems II and CC Mr. Mercury under neutral names). Stepped simulations (engine.ts) rendered by one
 // instanced draw pass (particle-render.ts). Particle World is 3D seen through its own Effect Camera (distance,
 // rotation, field of view) with depth cues, a floor and guides; Particle Systems II is the 2D system; Mercury turns
 // its particles into shaded liquid-metal metaballs.
 // Ported from EffectCraft crates/effects/src/sim.rs (pw_phys, particle_world_plan, ps2_phys, mercury_blobs,
 // mr_mercury; MIT OR Apache-2.0) and extended; see licenses/ported/sim-warp.md.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
@@ -59,7 +60,7 @@ const MAX_PARTICLES = 40000;
 const rad = (d: number) => (d * Math.PI) / 180;
 
 /** sp_combine mode of a Transfer Mode (Black Matte = the particles over black). */
-const transferPost = (v: unknown) => [0, 1, 2, 6][choice(v, values(TRANSFER))]!;
+const transferPost = (v: ParamValue | undefined) => [0, 1, 2, 6][choice(v, values(TRANSFER))]!;
 
 /** Opacity 0..1 at life fraction u. */
 export function opacityAt(map: number, u: number): number {
@@ -100,8 +101,6 @@ function colorAt(p: EffectParams, map: number, u: number, originT: number): numb
 	}
 	return lerp3(birth, death, u);
 }
-
-// ---------------------------------------------------------------- shared particle params
 
 function particleParams(d: { birthSize: number; deathSize: number; sizeMax: number }) {
 	const g = 'Particle';
@@ -155,8 +154,6 @@ function pack(items: Item[]): { texels: Float32Array; count: number } {
 	});
 	return { texels, count: items.length };
 }
-
-// ---------------------------------------------------------------- Particle World
 
 /** Particle World's physics at a step (params `q` of that step, `prev` of the step before: producer motion). */
 function pwPhys(q: EffectParams, prev: EffectParams, seed: number): Phys {
@@ -503,8 +500,6 @@ export const PARTICLE_WORLD = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- Particle Systems II
-
 function psPhys(q: EffectParams, prev: EffectParams, seed: number, lw: number, lh: number): Phys {
 	const unit = Math.max(1, lh);
 	const pos = (r: EffectParams): [number, number, number] => {
@@ -590,8 +585,6 @@ export const PARTICLE_SYSTEMS = defineShaderEffect({
 		passes: particlePasses,
 	},
 });
-
-// ---------------------------------------------------------------- Mercury
 
 const INFLUENCE_MAPS = ['Constant Blobs', 'Blob In', 'Blob Out', 'Blob In & Out'] as const;
 

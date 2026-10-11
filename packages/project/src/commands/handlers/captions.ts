@@ -1,7 +1,6 @@
-// wp captions: caption tracks and clips, caption editing, transcripts and text-based editing
-// (docs/wp-notes/captions.md). Caption clips own their words (`mediaId: null` transcripts, see captions/model.ts);
+// Caption clips own their words (`mediaId: null` transcripts, see captions/model.ts);
 // clip-level edits (move, trim, ripple delete, sync lock) are the ordinary clip commands.
-import { current, type Draft, isDraft } from 'immer';
+import type { Draft } from 'immer';
 import {
 	type CaptionDocument,
 	type CaptionFileFormat,
@@ -44,7 +43,7 @@ import type { Transcript, TranscriptWord } from '../../schema/media.ts';
 import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../../schema/sequence.ts';
 import { CaptionStyleSchema } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational, secondsToFlicks } from '../../time.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import {
 	assertUnlocked,
 	cleanupSequence,
@@ -58,17 +57,12 @@ import {
 	trackClips,
 } from '../placement.ts';
 import type { CaptionRulesInput, CommandOf, TimeInput } from '../schemas/index.ts';
-import { commonFields, ensureDefaultFont } from './clip-core.ts';
+import { commonFields, ensureDefaultFont } from './clip-common.ts';
 import { clipEditHandlers } from './clip-edit.ts';
 import { clipboardHandlers } from './clipboard.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { type HandlerMap, idList, clone as plain } from './util.ts';
 
-type DTrack = Draft<Track>;
 type DCaption = Draft<CaptionsClip>;
-
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(isDraft(v) ? current(v as Draft<T>) : v)) as T;
-
-// ---------------------------------------------------------------- helpers
 
 function setActive(seq: DSeq, id: string | null): void {
 	(seq as { activeCaptionTrackId?: string | null }).activeCaptionTrackId = id;
@@ -358,8 +352,6 @@ function readCaptions(
 	return r.doc;
 }
 
-// ---------------------------------------------------------------- transcript import (JSON)
-
 type JsonWord = {
 	text: string;
 	start: number;
@@ -481,8 +473,6 @@ export function parseTranscriptJson(
 	return { words, speakers, ...(language ? { language } : {}) };
 }
 
-// ---------------------------------------------------------------- handlers
-
 const KEEP_STYLE_KEYS = new Set(Object.keys(CaptionStyleSchema.shape));
 
 function validStylePatch(
@@ -554,7 +544,7 @@ function frameOrNull(seq: DSeq, t: TimeInput | undefined, h: HandlerContext): nu
 	return t === undefined ? null : h.frame(seq, t);
 }
 
-function addCaptions(doc: DDoc, cmd: CommandOf<'clip.addCaptions'>, h: HandlerContext): unknown {
+function addCaptions(doc: DDoc, cmd: CommandOf<'clip.addCaptions'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const tr = doc.transcripts[cmd.transcriptId];
 	if (!tr) h.fail('E_NOT_FOUND', `Transcript not found: ${cmd.transcriptId}`);
@@ -636,7 +626,7 @@ function createCaptionsFromTranscript(
 	doc: DDoc,
 	cmd: CommandOf<'transcript.createCaptions'>,
 	h: HandlerContext,
-): unknown {
+) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const all = seqWordsOf(doc, seq);
 	if (!all.length) h.fail('E_INVALID_PARAM', 'The sequence has no transcribed dialogue');
@@ -666,7 +656,7 @@ function createCaptionsFromTranscript(
 	return { trackId: track.id, clipIds, captions: clipIds.length };
 }
 
-function importCaptions(doc: DDoc, cmd: CommandOf<'caption.import'>, h: HandlerContext): unknown {
+function importCaptions(doc: DDoc, cmd: CommandOf<'caption.import'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const rate = seq.settings.frameRate;
 	const F = flicksPerFrame(rate);
@@ -734,7 +724,7 @@ function importCaptions(doc: DDoc, cmd: CommandOf<'caption.import'>, h: HandlerC
 	return { trackId: track.id, clipIds, format, cues: clipIds.length };
 }
 
-function addCaption(doc: DDoc, cmd: CommandOf<'caption.add'>, h: HandlerContext): unknown {
+function addCaption(doc: DDoc, cmd: CommandOf<'caption.add'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const track = targetCaptionTrack(doc, seq, cmd.track, h);
 	const at = cmd.at !== undefined ? h.frame(seq, cmd.at) : 0;
@@ -760,7 +750,7 @@ function addCaption(doc: DDoc, cmd: CommandOf<'caption.add'>, h: HandlerContext)
 	return { clipId: id, trackId: track.id, duration: dur };
 }
 
-function setText(doc: DDoc, cmd: CommandOf<'caption.setText'>, h: HandlerContext): unknown {
+function setText(doc: DDoc, cmd: CommandOf<'caption.setText'>, h: HandlerContext) {
 	const { seq, clip, track } = captionClip(doc, cmd.clipId, h);
 	assertUnlocked(track, h);
 	const t = doc.transcripts[clip.transcriptId];
@@ -799,7 +789,7 @@ function setText(doc: DDoc, cmd: CommandOf<'caption.setText'>, h: HandlerContext
 	};
 }
 
-function splitCaptions(doc: DDoc, cmd: CommandOf<'caption.split'>, h: HandlerContext): unknown {
+function splitCaptions(doc: DDoc, cmd: CommandOf<'caption.split'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const at = h.frame(seq, cmd.at);
 	const ids = idList(cmd.clipIds);
@@ -820,7 +810,7 @@ function splitCaptions(doc: DDoc, cmd: CommandOf<'caption.split'>, h: HandlerCon
 	return { clipIds: created };
 }
 
-function mergeCaptions(doc: DDoc, cmd: CommandOf<'caption.merge'>, h: HandlerContext): unknown {
+function mergeCaptions(doc: DDoc, cmd: CommandOf<'caption.merge'>, h: HandlerContext) {
 	const ids = idList(cmd.clipIds);
 	if (ids.length < 2) h.fail('E_INVALID_PARAM', 'Merge needs at least two captions');
 	const { seq } = captionClip(doc, ids[0]!, h);
@@ -893,7 +883,7 @@ function mergeCaptions(doc: DDoc, cmd: CommandOf<'caption.merge'>, h: HandlerCon
 	return { clipId: id };
 }
 
-function setTimes(doc: DDoc, cmd: CommandOf<'caption.setTimes'>, h: HandlerContext): unknown {
+function setTimes(doc: DDoc, cmd: CommandOf<'caption.setTimes'>, h: HandlerContext) {
 	const { seq, clip, track } = captionClip(doc, cmd.clipId, h);
 	assertUnlocked(track, h);
 	const s = frameOrNull(seq, cmd.start, h) ?? clip.start;
@@ -910,11 +900,9 @@ function setTimes(doc: DDoc, cmd: CommandOf<'caption.setTimes'>, h: HandlerConte
 	return { start: s, end: e };
 }
 
-// ---------------------------------------------------------------- handler map
-
 export const CAPTIONS_OWNER = 'wp-captions';
 
-export const captionHandlers: HandlerMap = {
+export const captionHandlers = {
 	'transcript.create': (doc, cmd, h) => {
 		if (cmd.mediaId !== null && !doc.media[cmd.mediaId])
 			h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`);
@@ -1305,4 +1293,4 @@ export const captionHandlers: HandlerMap = {
 		list.splice(i, 1);
 		return null;
 	},
-};
+} satisfies HandlerMap;

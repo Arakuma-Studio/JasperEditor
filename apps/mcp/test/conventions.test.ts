@@ -1,11 +1,8 @@
-// MCP conventions (docs/wp-notes/mcp-cli.md §1–2): titles and full annotations on every tool, strict
-// arguments (unknown keys rejected at every level, for every tool however it is registered), throttled
-// progress, and cancellation that cancels the engine job. No engine needed: a fake engine link.
 import type { EngineJob } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { type Extra, makeContext, progressReporter, waitJob } from '../src/context.ts';
 import { RequestCancelled } from '../src/errors.ts';
@@ -224,22 +221,27 @@ describe('progress and cancellation', () => {
 	}
 
 	it('throttles progress to one notification per 100 ms, increasing, latest value wins', async () => {
+		vi.useFakeTimers();
 		const { extra, sent } = fakeExtra('t1');
 		const report = progressReporter(extra);
-		for (let i = 1; i <= 50; i++) {
-			report(i, 100, `step ${i}`);
-			await new Promise((r) => setTimeout(r, 5));
+		try {
+			for (let i = 1; i <= 50; i++) {
+				report(i, 100, `step ${i}`);
+				await vi.advanceTimersByTimeAsync(5);
+			}
+			report(40, 100, 'going back is ignored');
+			report(100, 100, 'done');
+			const flushed = report.flush();
+			await vi.runAllTimersAsync();
+			await flushed;
+			expect(sent.map((s) => s.at - sent[0]!.at)).toEqual([0, 100, 200, 300]);
+			expect(sent.map((s) => s.progress)).toEqual([1, 20, 40, 100]);
+			expect(sent.at(-1)).toMatchObject({ progress: 100, message: 'done' });
+			expect(sent.some((s) => s.message === 'going back is ignored')).toBe(false);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
 		}
-		report(40, 100, 'going back is ignored');
-		report(100, 100, 'done');
-		await report.flush();
-		for (let i = 1; i < sent.length; i++) {
-			expect(sent[i]!.at - sent[i - 1]!.at).toBeGreaterThanOrEqual(95);
-			expect(sent[i]!.progress).toBeGreaterThan(sent[i - 1]!.progress);
-		}
-		expect(sent.length).toBeLessThanOrEqual(5);
-		expect(sent.at(-1)).toMatchObject({ progress: 100, message: 'done' });
-		expect(sent.some((s) => s.message === 'going back is ignored')).toBe(false);
 	});
 
 	it('sends nothing without a progress token', async () => {
@@ -273,7 +275,6 @@ describe('progress and cancellation', () => {
 		await new Promise((r) => setTimeout(r, 400));
 		ac.abort('user stopped it');
 		await expect(call).rejects.toThrow();
-		// The server sees notifications/cancelled, cancels the engine job and waits for it to be terminal.
 		await expect.poll(() => engine.cancelled, { timeout: 5000 }).toEqual(['job_2']);
 		expect(progress.length).toBeGreaterThan(0);
 	});

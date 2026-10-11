@@ -4,6 +4,7 @@
 import {
 	type EngineJob,
 	type EventEnvelope,
+	TERMINAL_JOB_STATES,
 	TRACKING_PROGRESS_EVENT,
 	TrackProgressSchema,
 	type TrackResult,
@@ -13,7 +14,7 @@ import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	type ClipTracker,
-	type Command,
+	type CommandInput,
 	findTracker,
 	layerTimeAt,
 	type ProjectDocument,
@@ -24,7 +25,6 @@ import {
 	samplesEnd,
 	samplesFromTrackResult,
 	sequenceFramesOfContent,
-	type TrackedBy,
 	type TrackMode,
 	trackedTargets,
 	trackLayerOf,
@@ -33,6 +33,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
 import { mediaKeyOf } from '../import/assets.ts';
+import { errorText, pollActiveJob } from '../processing/engine-jobs.ts';
 import {
 	defaultQuadIn,
 	geometryCentre,
@@ -46,7 +47,6 @@ import { optionsOf, patchRunning, setActiveTracker, setError, trackingStore } fr
 /** The subset of the engine client the tracking actions use (tests pass a fake). */
 export type TrackingEngine = Pick<EngineClient, 'call' | 'getJob' | 'cancelJob'>;
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 const POLL_MS = 400;
 
 export const TRACK_MODE_LABEL: Record<TrackMode, string> = {
@@ -58,8 +58,6 @@ export const TRACK_MODE_LABEL: Record<TrackMode, string> = {
 	'step-forward': 'Step Forward',
 	'step-back': 'Step Back',
 };
-
-// ------------------------------------------------------------------ document helpers
 
 export function activeSeq(session: EditorSession): Sequence | null {
 	const s = session.getState();
@@ -119,13 +117,11 @@ function fail(message: string, trackerId?: string): never {
 	throw new Error(message);
 }
 
-function run(session: EditorSession, label: string, commands: Command[]) {
+function run(session: EditorSession, label: string, commands: CommandInput[]) {
 	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) throw new Error(r.errors.map((e) => e.message).join('; '));
 	return r;
 }
-
-// ------------------------------------------------------------------ add / remove / update
 
 /**
  * Adds a tracker to `clipId` at the playhead (clamped into the clip). Planar trackers get a quad centred on the
@@ -141,12 +137,12 @@ export function addTracker(session: EditorSession, clipId: string, kind: 'planar
 	const t = contentTimeAt(doc, seq, clip, frame);
 	const map = plateMapAt(layer, t);
 	const rect = visibleMediaRect(map, layer.box, { width: seq.settings.width, height: seq.settings.height });
-	const geometry =
-		kind === 'planar'
-			? { corners: defaultQuadIn(rect) }
-			: { point: [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)] };
+	const geometry: Pick<Extract<CommandInput, { type: 'tracker.add' }>, 'corners' | 'point'> = kind ===
+	'planar'
+		? { corners: defaultQuadIn(rect) }
+		: { point: [Math.round(rect.x + rect.width / 2), Math.round(rect.y + rect.height / 2)] };
 	const r = run(session, kind === 'planar' ? 'Add Planar Tracker' : 'Add Point Tracker', [
-		{ type: 'tracker.add', clipId, kind, at: { sequenceFrame: frame }, ...geometry } as Command,
+		{ type: 'tracker.add', clipId, kind, at: { sequenceFrame: frame }, ...geometry } satisfies CommandInput,
 	]);
 	const id = (r.results[0] as { trackerId: string }).trackerId;
 	setActiveTracker(id);
@@ -154,12 +150,12 @@ export function addTracker(session: EditorSession, clipId: string, kind: 'planar
 }
 
 export function removeTracker(session: EditorSession, trackerId: string): void {
-	run(session, 'Remove Tracker', [{ type: 'tracker.remove', trackerIds: [trackerId] } as Command]);
+	run(session, 'Remove Tracker', [
+		{ type: 'tracker.remove', trackerIds: [trackerId] } satisfies CommandInput,
+	]);
 	if (trackingStore.getState().activeTrackerId === trackerId) setActiveTracker(null);
 	setError(trackerId, null);
 }
-
-// ------------------------------------------------------------------ running a track
 
 /** Mode for a partial re-track: every mode but a full `both` merges over the re-tracked span when samples exist. */
 export async function startTrack(
@@ -223,28 +219,24 @@ export async function startTrack(
 		return null;
 	}
 	patchRunning(trackerId, { jobId: job.id });
-	if (TERMINAL.has(job.state)) await finishTrack(session, engine, trackerId, job);
+	if (TERMINAL_JOB_STATES.has(job.state)) await finishTrack(session, engine, trackerId, job);
 	else pollJob(session, engine, trackerId, job.id);
 	return job.id;
 }
 
-/** Polls the job until it ends (fallback when the event stream is not connected or not mounted). */
 function pollJob(session: EditorSession, engine: TrackingEngine, trackerId: string, jobId: string): void {
-	const tick = async () => {
-		const r = trackingStore.getState().running[trackerId];
-		if (!r || r.jobId !== jobId || r.finishing) return;
-		try {
-			const job = await engine.getJob(jobId);
-			if (TERMINAL.has(job.state)) {
-				await finishTrack(session, engine, trackerId, job);
-				return;
-			}
-		} catch {
-			// transient engine error: keep polling
-		}
-		setTimeout(tick, POLL_MS);
-	};
-	setTimeout(tick, POLL_MS);
+	void pollActiveJob(engine, jobId, {
+		intervalMs: POLL_MS,
+		isActive() {
+			const running = trackingStore.getState().running[trackerId];
+			return running?.jobId === jobId && !running.finishing;
+		},
+	})
+		.then((job) => job && finishTrack(session, engine, trackerId, job))
+		.catch((error) => {
+			patchRunning(trackerId, null);
+			setError(trackerId, errorText(error));
+		});
 }
 
 /** Feeds an engine event envelope to the tracking state (progress geometry, job end). */
@@ -284,7 +276,7 @@ export function handleEngineEvent(session: EditorSession, engine: TrackingEngine
 	}
 	if (raw.type === 'job.finished' || raw.type === 'job.updated') {
 		const job = raw.payload as EngineJob | undefined;
-		if (!job?.id || !TERMINAL.has(job.state)) return;
+		if (!job?.id || !TERMINAL_JOB_STATES.has(job.state)) return;
 		const running = trackingStore.getState().running;
 		const trackerId = Object.keys(running).find((id) => running[id]!.jobId === job.id);
 		if (trackerId) void finishTrack(session, engine, trackerId, job);
@@ -358,8 +350,14 @@ export function commitTrackResult(
 	const loc = findTracker(doc, trackerId);
 	if (!loc) throw new Error('The tracker was removed while tracking');
 	const samples = samplesFromTrackResult(result, plan.step);
-	const commands: Command[] = [
-		{ type: 'tracker.setSamples', trackerId, samples, method: result.method, merge: plan.merge } as Command,
+	const commands: CommandInput[] = [
+		{
+			type: 'tracker.setSamples',
+			trackerId,
+			samples,
+			method: result.method,
+			merge: plan.merge,
+		} satisfies CommandInput,
 	];
 	const seq = doc.sequences[loc.sequenceId]!;
 	const frames = sequenceFramesOfContent(
@@ -383,7 +381,7 @@ export function commitTrackResult(
 				...(t.mode === 'transform' ? { components: animatedComponents(target) } : {}),
 				range: { start, end },
 				...simplifyOf(target),
-			} as Command);
+			} satisfies CommandInput);
 		}
 	}
 	run(session, 'Track', commands);
@@ -392,13 +390,13 @@ export function commitTrackResult(
 
 /** The remembered simplification of a tracked target (S09:TRK-023): re-applies simplify again with it. */
 function simplifyOf(target: Clip): { simplify?: { tolerance: number } } {
-	const tol = (target as { trackedBy?: TrackedBy }).trackedBy?.simplify?.tolerance;
+	const tol = 'trackedBy' in target ? target.trackedBy?.simplify?.tolerance : undefined;
 	return tol ? { simplify: { tolerance: tol } } : {};
 }
 
 /** Motion components a transform-mode target already follows (the animated ones; all three when none). */
 function animatedComponents(target: Clip): ('position' | 'scale' | 'rotation')[] {
-	const tr = (target as { transform?: Record<string, { keyframes?: unknown[] }> }).transform;
+	const tr = 'transform' in target ? target.transform : undefined;
 	const list = (['position', 'scale', 'rotation'] as const).filter(
 		(k) => (tr?.[k]?.keyframes?.length ?? 0) > 0,
 	);
@@ -413,8 +411,6 @@ export async function stopTrack(engine: TrackingEngine, trackerId: string): Prom
 	if (r.jobId) await engine.cancelJob(r.jobId).catch(() => undefined);
 }
 
-// ------------------------------------------------------------------ apply / unlink
-
 export type ApplyMode = 'corner-pin' | 'position' | 'position-scale-rotation';
 
 function applyCommand(
@@ -422,7 +418,7 @@ function applyCommand(
 	targetClipId: string,
 	mode: ApplyMode,
 	simplifyTolerance?: number,
-): Command {
+): CommandInput {
 	const simplify = simplifyTolerance ? { simplify: { tolerance: simplifyTolerance } } : {};
 	return (
 		mode === 'corner-pin'
@@ -435,7 +431,7 @@ function applyCommand(
 					components: mode === 'position' ? ['position'] : ['position', 'scale', 'rotation'],
 					...simplify,
 				}
-	) as Command;
+	) satisfies CommandInput;
 }
 
 /**
@@ -455,10 +451,8 @@ export function applyTracking(
 /** Re-applies the tracker that drives `targetClipId` with its recorded mode over the overlap. */
 export function reapplyTracking(session: EditorSession, targetClipId: string): void {
 	const seq = activeSeq(session);
-	const target = seq?.clips[targetClipId] as
-		| (Clip & { trackedBy?: { trackerId: string; mode: string } })
-		| undefined;
-	const tb = target?.trackedBy;
+	const target = seq?.clips[targetClipId];
+	const tb = target && 'trackedBy' in target ? target.trackedBy : undefined;
 	if (!target || !tb) throw new Error('This clip does not follow a tracker');
 	run(session, 'Apply Tracking', [
 		{
@@ -468,11 +462,13 @@ export function reapplyTracking(session: EditorSession, targetClipId: string): v
 			mode: tb.mode,
 			...(tb.mode === 'transform' ? { components: animatedComponents(target) } : {}),
 			...simplifyOf(target),
-		} as Command,
+		} satisfies CommandInput,
 	]);
 }
 
 /** Drops the target's link to its tracker; its keyframes stay (the keyframes are the truth, TRK-005). */
 export function unlinkTracking(session: EditorSession, targetClipId: string): void {
-	run(session, 'Unlink Tracking', [{ type: 'tracker.unlink', clipIds: [targetClipId] } as Command]);
+	run(session, 'Unlink Tracking', [
+		{ type: 'tracker.unlink', clipIds: [targetClipId] } satisfies CommandInput,
+	]);
 }

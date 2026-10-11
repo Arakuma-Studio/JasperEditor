@@ -104,7 +104,8 @@ export function resolveWorkerUrl(env: NodeJS.ProcessEnv = process.env, base: str
 }
 
 type Slot = { worker: Worker; busy: boolean };
-type Pending = { task: Task; resolve: (v: any) => void; reject: (e: Error) => void };
+type Result = Exclude<WorkerResponse, { type: 'ready' | 'error' }>;
+type Pending = { task: Task; resolve: (v: Result) => void; reject: (e: Error) => void };
 
 export class CvPool {
 	private readonly slots: Slot[] = [];
@@ -156,9 +157,7 @@ export class CvPool {
 				this.inflight.delete(msg.id);
 				slot.busy = false;
 				if (msg.type === 'error') job.reject(new Error(`dejudder worker: ${msg.message}`));
-				else if (msg.type === 'warp') job.resolve(msg.data);
-				else if (msg.type === 'motion') job.resolve({ p75: msg.p75 });
-				else if (msg.type === 'track') job.resolve({ p0: msg.p0, p1: msg.p1 });
+				else job.resolve(msg);
 				this.pump();
 			});
 			const fail = (err: Error) => {
@@ -194,44 +193,50 @@ export class CvPool {
 		}
 	}
 
-	private run<T>(task: Task): Promise<T> {
+	private run(task: Task): Promise<Result> {
 		if (this.failure) return Promise.reject(this.failure);
 		if (this.closed) return Promise.reject(new Error('dejudder pool is closed'));
-		return new Promise<T>((resolve, reject) => {
+		return new Promise<Result>((resolve, reject) => {
 			this.queue.push({ task, resolve, reject });
 			this.pump();
 		});
 	}
 
 	/** Per-pair motion of two grey proxies (PST-011). The buffers are copied. */
-	motion(width: number, height: number, a: Uint8Array, b: Uint8Array): Promise<MotionResult> {
-		return this.run({ type: 'motion', width, height, a, b });
+	async motion(width: number, height: number, a: Uint8Array, b: Uint8Array): Promise<MotionResult> {
+		const result = await this.run({ type: 'motion', width, height, a, b });
+		if (result.type !== 'motion') throw new Error(`Unexpected motion reply: ${result.type}`);
+		return { p75: result.p75 };
 	}
 
 	/** Corners of `a` tracked into `b` (PST-005). The buffers are copied. */
-	track(
+	async track(
 		width: number,
 		height: number,
 		a: Uint8Array,
 		b: Uint8Array,
 		params: TrackParams,
 	): Promise<TrackResult> {
-		return this.run({ type: 'track', width, height, a, b, params });
+		const result = await this.run({ type: 'track', width, height, a, b, params });
+		if (result.type !== 'track') throw new Error(`Unexpected track reply: ${result.type}`);
+		return { p0: result.p0, p1: result.p1 };
 	}
 
 	/** Affine warp of an rgb48 frame by a backward map, bicubic (smooth-path fallback warp). The buffer is copied. */
-	warpAffine(
+	async warpAffine(
 		width: number,
 		height: number,
 		data: Uint16Array,
 		m: number[],
 		border: 0 | 1,
 	): Promise<Uint16Array> {
-		return this.run({ type: 'warpAffine', width, height, data, m, border });
+		const result = await this.run({ type: 'warpAffine', width, height, data, m, border });
+		if (result.type !== 'warp') throw new Error(`Unexpected warp reply: ${result.type}`);
+		return result.data;
 	}
 
 	/** Backward warp of `near` by `t` of the near→far step (PST-013). The buffers are copied. */
-	warp(
+	async warp(
 		width: number,
 		height: number,
 		near: Uint16Array,
@@ -239,7 +244,9 @@ export class CvPool {
 		t: number,
 		flow: FlowParams,
 	): Promise<Uint16Array> {
-		return this.run({ type: 'warp', width, height, near, far, t, flow });
+		const result = await this.run({ type: 'warp', width, height, near, far, t, flow });
+		if (result.type !== 'warp') throw new Error(`Unexpected warp reply: ${result.type}`);
+		return result.data;
 	}
 
 	async close(): Promise<void> {

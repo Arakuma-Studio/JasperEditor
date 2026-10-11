@@ -1,9 +1,8 @@
-// Shared GLSL: blend modes and premultiplied compositing (wave-1 fx framework; full mode set: keyframes-blend).
+// Blend modes and premultiplied compositing.
 // - `fx_blendRgb(mode, base, top)` works on straight RGB 0..1; `fx_blend(mode, base, top, opacity)` composites
 //   premultiplied RGBA (top over base, the blend applied where both exist — the W3C compositing model). Mode numbers
 //   = indexes of FX_BLEND_MODES, so an enum param built with `blendModeParam()` maps straight onto `int u_<name>`.
-//   The first 16 keep their wave-1 formulas (existing effects draw unchanged); the modes appended by keyframes-blend
-//   use the clip blend formulas below.
+//   Effect blend formulas differ from clip blending for modes 0–15; higher modes use the clip formulas.
 // - `fx_layerBlend(mode, dst, src, noise)` is the clip blend of the layer compositor (mode = index in the schema's
 //   BLEND_MODES, `blendModeIndex`), ported from EffectCraft's `blend_pixel` (crates/gpu/src/shaders/common.wgsl,
 //   MIT OR Apache-2.0); bit-for-bit the formulas of `blendPixel` in `blend-modes.ts` (the native export kernel).
@@ -181,12 +180,12 @@ const fxConsts = FX_BLEND_MODES.map(
 ).join('\n');
 const appended = FX_APPENDED_LAYER.map((l, i) => `  if (mode == ${16 + i}) return ${l};`).join('\n');
 
-export const GLSL_BLEND: GlslChunk = {
-	name: 'fx/blend',
+export const GLSL_LAYER_BLEND: GlslChunk = {
+	name: 'fx/layer-blend',
 	source: /* glsl */ `
 ${fxConsts}
 ${layerConsts}
-// ---- clip blend formulas (EffectCraft blend_pixel; = blend-modes.ts blendPixel)
+
 float fx_bl_burn(float cb, float cs) { if (cb >= 1.0) return 1.0; if (cs <= 0.0) return 0.0; return 1.0 - min((1.0 - cb) / cs, 1.0); }
 float fx_bl_dodge(float cb, float cs) { if (cb <= 0.0) return 0.0; if (cs >= 1.0) return 1.0; return min(cb / (1.0 - cs), 1.0); }
 float fx_bl_hardLight(float cb, float cs) { if (cs <= 0.5) return cb * 2.0 * cs; float s = 2.0 * cs - 1.0; return cb + s - cb * s; }
@@ -293,7 +292,13 @@ int fx_blendLayerMode(int mode) {
 ${appended}
   return FX_LAYER_NORMAL;
 }
-// ---- effect blends (FX_BLEND_*)
+`,
+};
+
+export const GLSL_BLEND: GlslChunk = {
+	name: 'fx/blend',
+	deps: [GLSL_LAYER_BLEND],
+	source: /* glsl */ `
 vec3 fx_overlayRgb(vec3 b, vec3 t) { return mix(2.0 * b * t, 1.0 - 2.0 * (1.0 - b) * (1.0 - t), step(0.5, b)); }
 vec3 fx_softLightRgb(vec3 b, vec3 t) {
   vec3 d = mix(((16.0 * b - 12.0) * b + 4.0) * b, sqrt(b), step(0.25, b));

@@ -1,8 +1,3 @@
-// Edit ▸ Preferences ▸ Media Cache (M3, S04:CA-013/CA-014, wp-m3-cachegc): with a project open and media imported,
-// the page lists the cache per kind; Clean Unused and Clean All (not in use)… (after its confirmation) never remove
-// what the open project uses; the automatic-cleaning settings save through the engine (the size-limit dropdown
-// opens above the dialog).
-
 import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,13 +69,11 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 		.toBeGreaterThanOrEqual(3);
 	await page.screenshot({ path: join(ROOT, 'test-results', 'media-cache-page.png') });
 
-	// Clean Unused: the open project's files stay.
 	const before = ownFiles();
 	await prefs.getByTestId('cache-clean-unused').click();
 	await expect(prefs.getByTestId('cache-status')).toContainText('Clean Unused: removed');
 	expect(ownFiles()).toEqual(before);
 
-	// Clean All asks first; confirmed, it still keeps what the open project uses.
 	await prefs.getByTestId('cache-clean-all').click();
 	const confirm = page.getByTestId('confirm-dialog');
 	await expect(confirm).toBeVisible();
@@ -90,7 +83,6 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 	await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Clean All' }).click();
 	await expect(prefs.getByTestId('cache-status')).toContainText('Clean All: removed');
 	expect(ownFiles()).toEqual(before);
-	// Whatever is left of the media cache is in use (open project, recent files of other specs).
 	const after = kind(await usage(), 'media-cache');
 	expect(after.inUseBytes).toBe(after.bytes);
 });
@@ -98,7 +90,6 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 test('automatic cleaning settings: custom size limit and a per-kind limit are saved by the engine', async () => {
 	const prefs = page.getByTestId('preferences-dialog');
 	await prefs.getByRole('combobox', { name: 'Cache size limit' }).click();
-	// The dropdown opens above the dialog (not behind its scrim).
 	await page.getByRole('option', { name: 'Custom' }).click();
 	await prefs.getByTestId('cache-budget-gb').fill('50');
 	await prefs.getByTestId('cache-max-age').fill('21');
@@ -114,7 +105,6 @@ test('automatic cleaning settings: custom size limit and a per-kind limit are sa
 	});
 	await prefs.getByTestId('cache-save').scrollIntoViewIfNeeded();
 	await page.screenshot({ path: join(ROOT, 'test-results', 'media-cache-settings.png') });
-	// Exports never expire; logs keep 14 days.
 	await prefs.getByTestId('cache-kind-exports-days').fill('never');
 	await prefs.getByTestId('cache-logs-days').fill('14');
 	await prefs.getByTestId('cache-save').click();
@@ -140,10 +130,8 @@ test('Change… moves the cache to another folder and back (CA-021)', async () =
 	});
 	const target = join(dest, 'JasperEditor Media Cache');
 	await expect(prefs.getByTestId('cache-location')).toHaveText(target);
-	expect(readdirSync(join(target, 'cache')).length).toBeGreaterThan(0); // the imported media's cache moved along
-	// The editor keeps working: the media's poster is served through the new location.
+	expect(readdirSync(join(target, 'cache')).length).toBeGreaterThan(0);
 	await expect.poll(async () => kind(await usage(), 'media-cache').entries).toBeGreaterThanOrEqual(3);
-	// Back to the default location.
 	await prefs.getByTestId('cache-location-change').click();
 	await prefs.getByTestId('cache-location-default').click();
 	await expect(prefs.getByTestId('cache-location')).toHaveText(before.location, { timeout: 120_000 });

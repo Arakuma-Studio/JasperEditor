@@ -1,4 +1,3 @@
-// PathBool.js failing on one orientation of the input must not empty a Merge Paths result (wp fixups).
 import { describe, expect, it, vi } from 'vitest';
 
 const failures = vi.hoisted(() => ({ left: 0 }));

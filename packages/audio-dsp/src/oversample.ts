@@ -123,7 +123,6 @@ export class Interpolator {
 	/** Pushes left during which the window still holds a sample that could exceed the floor. */
 	private hot = 0;
 
-	/** Clear the history. */
 	reset(): void {
 		this.hist.fill(0);
 		this.pos = 0;
@@ -269,7 +268,6 @@ export class TruePeakDetector {
 		return this.peaks;
 	}
 
-	/** Clear peaks and interpolator history. */
 	reset(): void {
 		this.peaks.fill(0);
 		for (const ip of this.interp) ip.reset();

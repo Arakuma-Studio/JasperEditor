@@ -3,7 +3,7 @@
 // chip, background jobs with a badge, Quick Export (`export.quick`), command palette and full screen.
 // Every icon button has a `Name (Shortcut)` tooltip.
 
-import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
+import { useSessionOrNull } from '@jasper/session/react';
 import { ContextMenu, cx, DropdownMenu, Icon, IconButton, type ResolvedMenuItem } from '@jasper/ui';
 import { Popover } from 'radix-ui';
 import {
@@ -68,8 +68,6 @@ function CommandIconButton(props: {
 	);
 }
 
-// ------------------------------------------------------------------ mode tabs
-
 const MODES: { id: ShellMode; label: string }[] = [
 	{ id: 'import', label: 'Import' },
 	{ id: 'edit', label: 'Edit' },
@@ -100,8 +98,6 @@ function ModeTabs({ mode, onMode }: { mode: ShellMode; onMode(m: ShellMode): voi
 		</div>
 	);
 }
-
-// ------------------------------------------------------------------ workspace tabs
 
 function WorkspaceTabs(props: {
 	store: WorkspaceStore;
@@ -196,8 +192,6 @@ function WorkspaceTabs(props: {
 		</div>
 	);
 }
-
-// ------------------------------------------------------------------ engine chip (SH-030, HD-003)
 
 function EngineChip() {
 	const engine = useEngine();
@@ -329,16 +323,15 @@ function JobsButton({ projectId }: { projectId?: string }) {
 	);
 }
 
-type AnyStore = { getState(): unknown; subscribe(l: (s: unknown, p: unknown) => void): () => void };
-const NO_STORE: AnyStore = { getState: () => null, subscribe: () => () => {} };
+const NO_SUBSCRIPTION = () => () => {};
 
 /** Header save state (S05 header dirty/saving indicator): autosave status of the open session. */
 function SaveStatus() {
 	const session = useSessionOrNull();
 	const status = usePersistenceStatus(session);
-	const dirty = useStoreSelector(
-		(session?.store ?? NO_STORE) as AnyStore,
-		(s) => !!(s as { dirty?: boolean } | null)?.dirty,
+	const dirty = useSyncExternalStore(
+		session?.store.subscribe ?? NO_SUBSCRIPTION,
+		() => session?.getState().dirty ?? false,
 	);
 	if (!session) return null;
 	const [label, tone] = status.conflict
@@ -382,8 +375,6 @@ function SaveStatus() {
 		</span>
 	);
 }
-
-// ------------------------------------------------------------------ header
 
 export type HeaderBarProps = {
 	mode: ShellMode;

@@ -266,7 +266,10 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 							effectVersion: fx.effectVersion,
 							enabled: true,
 							params: Object.fromEntries(
-								Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t) as ParamValue]),
+								Object.entries(fx.params).map<[string, ParamValue]>(([name, value]) => [
+									name,
+									evaluate(value, t),
+								]),
 							),
 						}));
 						return { effects, key: colorRunKey(effects, lutKey, size, extra) };

@@ -1,4 +1,4 @@
-// INV-WARP (workstream gaps, docs/wp-notes/gaps.md §FX-6): a stored Warp Stabilizer analysis sits on a Warp Stabilizer
+// INV-WARP (docs/wp-notes/gaps.md §FX-6): a stored Warp Stabilizer analysis sits on a Warp Stabilizer
 // instance of a clip and is well formed. Repair drops unusable analyses (the effect re-analyses in the background).
 import type { ProjectDocument } from '../../schema/document.ts';
 import { registerGapsCheck } from '../settings.ts';

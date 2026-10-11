@@ -1,7 +1,3 @@
-// The complete default keymap (ARCHITECTURE §7.3): S02:TL-903 + R-PUI §16 + S05:KB-010, bound on
-// KeyboardEvent.code with Windows/Linux modifiers ("Ctrl" becomes Cmd on macOS unless `mac` overrides),
-// plus web/PWA fallbacks for browser-reserved combos (S05:KB-013). Command ids that are not
-// registered yet are simply inert. The dispatcher (WP-2A) resolves focused panel → editing → global.
 import type { CommandScope } from './types.ts';
 
 export type KeyBinding = {
@@ -41,7 +37,6 @@ const T: CommandScope = 'timeline';
 const G: CommandScope = 'global';
 
 export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
-	// ---------------------------------------------------------------- S02:TL-903 transport
 	b('transport.playStop', 'Space', E),
 	b('transport.shuttleReverse', 'KeyJ', E, { keyup: true }),
 	b('transport.shuttleStop', 'KeyK', E, { keyup: true }),
@@ -62,7 +57,6 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('transport.playAround', 'Shift+KeyK', E),
 	b('transport.toggleAudioScrub', 'Shift+KeyS', E),
 
-	// ---------------------------------------------------------------- S02:TL-903 marking and editing
 	b('timeline.markIn', 'KeyI', E),
 	b('timeline.markOut', 'KeyO', E),
 	b('timeline.markClip', 'KeyX', T),
@@ -191,7 +185,6 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('timeline.prevCaptionSegment', 'Ctrl+Alt+ArrowUp', T),
 	b('gesture.cancel', 'Escape', E),
 
-	// ---------------------------------------------------------------- tools (S02:TL-590, R-PUI §16.3)
 	b('tool.selection', 'KeyV', E, K),
 	b('tool.trackSelectForward', 'KeyA', E, K),
 	b('tool.trackSelectBackward', 'Shift+KeyA', E, K),
@@ -211,7 +204,6 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('threeD.view.custom1', 'F11', G, { web: 'Alt+F11' }),
 	b('threeD.view.activeCamera', 'F12', G, { web: 'Alt+F12' }),
 
-	// ---------------------------------------------------------------- global (R-PUI §16.1)
 	b('app.newProject', 'Ctrl+Alt+KeyN', G),
 	b('app.newSequence', 'Ctrl+KeyN', G, { web: 'Alt+KeyN' }),
 	b('app.openProject', 'Ctrl+KeyO', G),
@@ -254,7 +246,6 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('graphics.newRectangle', 'Ctrl+Alt+KeyR', G),
 	b('graphics.newEllipse', 'Ctrl+Alt+KeyE', G),
 
-	// ---------------------------------------------------------------- panels and workspaces (R-PUI §16.2, S05:KB-010)
 	b('panel.open.project', 'Shift+Digit1', G),
 	b('panel.open.source', 'Shift+Digit2', G),
 	b('panel.open.timeline', 'Shift+Digit3', G),
@@ -272,14 +263,12 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('app.cycleRegions', 'F6', G),
 	b('app.shortcutReference', 'Ctrl+Alt+Slash', G),
 
-	// ---------------------------------------------------------------- multi-camera (wp-multicam; Premiere defaults)
 	...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((n) => [
 		b(`multicam.selectCamera${n}`, `Digit${n}`, E),
 		b(`multicam.cutToCamera${n}`, `Ctrl+Digit${n}`, E),
 	]),
 	b('program.toggleMulticamView', 'Shift+Digit0', E),
 
-	// ---------------------------------------------------------------- panel-scoped (R-PUI §16.7)
 	b('monitor.fit', 'Ctrl+Digit0', 'program'),
 	// wp masks: the selected mask's vertices / the mask itself; Escape leaves the pen or deselects.
 	b('mask.deleteSelection', 'Delete', 'program'),
@@ -336,8 +325,6 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];
-
-// ---------------------------------------------------------------- active keymap (edit-ux: Keyboard Shortcuts editor)
 
 let activeKeymap: readonly KeyBinding[] = DEFAULT_KEYMAP;
 const keymapListeners = new Set<() => void>();

@@ -159,8 +159,6 @@ function setBindings(bindings: KeyBinding[]): void {
 	set({ ...prefs, custom: { ...prefs.custom, [name]: { base: cur?.base ?? 'premiere', bindings } } });
 }
 
-// ---------------------------------------------------------------- chords
-
 /** A chord captured on `platform` → the keymap's notation (`key` in Windows/Linux terms, `mac` when on macOS). */
 export function bindingKeys(captured: string, platform: Platform): { key: string; mac?: string } {
 	if (platform !== 'mac') return { key: normalizeChord(captured) };

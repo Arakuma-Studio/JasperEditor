@@ -1,4 +1,4 @@
-// Parameter builders of the fx framework (wave 1): concise `ParamSpec`s with the framework's conventions, and the
+// Parameter builders of the fx framework: concise `ParamSpec`s with the framework's conventions, and the
 // Sapphire-style common params ("Mix with Orig", "Show", "Seed"). Conventions (normative, see the authoring guide):
 // - point params are vec2 NORMALISED to the layer box ([0,0] top-left, [1,1] bottom-right; may leave it), with
 //   `ui.control: 'point'` (on-canvas handle in the Program monitor); shaders map them with `fx_uvOfLayerNorm`;
@@ -194,8 +194,6 @@ export function lutParam(name: string, label: string, extra?: Extra): ParamSpec 
 		extra,
 	);
 }
-
-// ---------------------------------------------------------------- Sapphire-style common params
 
 /** "Mix with Orig" 0..1 (`u_mixWithOriginal`; use `fx_finish` / `fx_mixOriginal`). */
 export function mixWithOriginalParam(def = 0): ParamSpec {

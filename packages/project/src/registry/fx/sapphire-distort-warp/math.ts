@@ -1,22 +1,17 @@
-// Pure TypeScript maths of the Sapphire Distort family (fx catalogue, wave 2): projective transforms (S_WarpTransform,
+// Pure TypeScript maths of the Sapphire Distort family: projective transforms (S_WarpTransform,
 // S_WarpCornerPin) and the deterministic shake curves of S_Shake. No DOM, no GL: unit-tested directly.
 //
 // Coordinates ("frame units", like Sapphire): origin at the centre of the layer box, x right, y DOWN, 1 = the layer
 // width (so y spans ±aspect/2 with aspect = height / width). Shaders convert with `dw_frame()` / `dw_tap()`.
+import { type Matrix3, multiplyMatrix3 as mat3Mul } from '../../../math/matrix3.ts';
 import { fxRandom } from '../shader.ts';
 
 /** Row-major 3×3 matrix. */
-export type Mat3 = readonly [number, number, number, number, number, number, number, number, number];
+export type Mat3 = Readonly<Matrix3>;
 
 export const MAT3_IDENTITY: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
-export function mat3Mul(a: Mat3, b: Mat3): Mat3 {
-	const r: number[] = [];
-	for (let i = 0; i < 3; i++)
-		for (let j = 0; j < 3; j++)
-			r.push(a[i * 3]! * b[j]! + a[i * 3 + 1]! * b[3 + j]! + a[i * 3 + 2]! * b[6 + j]!);
-	return r as unknown as Mat3;
-}
+export { mat3Mul };
 
 /** Inverse of a 3×3 matrix (null when singular). */
 export function mat3Invert(m: Mat3): Mat3 | null {
@@ -209,8 +204,6 @@ export function boundsPadding(
 		bottom: px(b.maxY - aspect / 2),
 	};
 }
-
-// ---------------------------------------------------------------- S_Shake
 
 /** Smooth deterministic 1-D noise, about −1..1 (Catmull-Rom through seeded random knots; C1 continuous). */
 export function shakeNoise(seed: number, stream: number, x: number): number {

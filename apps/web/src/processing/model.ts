@@ -92,8 +92,6 @@ export function processedTooltip(doc: MediaTable, mediaId: string): string | nul
 	return `Processed version${from ? ` of ${from.originalName}` : ''} — ${recipeLabel(steps)}`;
 }
 
-// ------------------------------------------------------------------ dialog state → steps
-
 export type DenoisePreset = 'light' | 'medium' | 'strong';
 export const DENOISE_PRESETS: Record<DenoisePreset, number> = { light: 0.25, medium: 0.5, strong: 0.8 };
 export type DenoiseMethod = 'atadenoise' | 'fftdnoiz' | 'nlmeans';
@@ -209,8 +207,6 @@ export function stepsFromForm(f: ProcessForm): ProcessStep[] {
 	}
 	return steps;
 }
-
-// ------------------------------------------------------------------ rough time estimate
 
 /** Seconds per frame at 1280×720 on one CPU machine (measured roughly on a laptop; only an estimate). */
 const SEC_PER_FRAME_720P: Record<string, number> = {

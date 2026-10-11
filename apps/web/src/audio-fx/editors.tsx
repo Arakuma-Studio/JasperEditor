@@ -99,8 +99,6 @@ function Grid({ range }: { range: number }) {
 	);
 }
 
-// ---------------------------------------------------------------- EQ / filter response with band handles
-
 export function EqCurveEditor(props: EffectEditorProps) {
 	const { values, proc, ops, set } = useEditorState(props);
 	const bands = useMemo(() => bandHandles(props.effect), [props.effect]);
@@ -198,8 +196,6 @@ export function EqCurveEditor(props: EffectEditorProps) {
 	);
 }
 
-// ---------------------------------------------------------------- graphic EQ slider bank
-
 export function GraphicEqEditor(props: EffectEditorProps) {
 	const { values, proc, ops, set } = useEditorState(props);
 	const bands = useMemo(() => graphicBands(props.effect), [props.effect]);
@@ -258,8 +254,6 @@ export function GraphicEqEditor(props: EffectEditorProps) {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- dynamics: transfer curves + gain reduction
 
 function GrMeter({ db, label }: { db: number; label: string }) {
 	const v = Math.min(Math.max(-db, 0), 30);
@@ -369,8 +363,6 @@ export function DynamicsEditor(props: EffectEditorProps) {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- loudness readouts
 
 const fmtLufs = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(1));
 

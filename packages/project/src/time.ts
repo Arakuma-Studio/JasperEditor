@@ -1,8 +1,10 @@
 // Time model (S01:TIME-001…007). Sequence time = integer frames; content time = integer flicks.
 
+import type { RationalT } from './schema/common.ts';
+
 export const FLICKS_PER_SECOND = 705_600_000;
 
-export type Rational = { num: number; den: number };
+export type Rational = RationalT;
 
 export const RATES = {
 	r23_976: { num: 24000, den: 1001 },

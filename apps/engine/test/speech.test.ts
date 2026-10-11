@@ -1,7 +1,3 @@
-// wp speech on the engine without a real model: the speech models of the processing catalogue (list, verified
-// multi-file install through the `model-download` job, checksum refusal, delete), transcription requests and their
-// refusals, a worker failure surfacing as a failed job, capabilities and licences. The real-model run is
-// speech-model.e2e.test.ts.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -146,7 +142,6 @@ describe('speech models (processing catalogue `speech`)', () => {
 			}
 		).models;
 		expect(models.find((m) => m.id === 'test-multi')).toMatchObject({ installed: true, missingBytes: 0 });
-		// the processing install route takes speech models too (one installer)
 		const again = await app.inject({
 			method: 'POST',
 			url: '/api/processing/models/test-small.en/install',

@@ -1,13 +1,5 @@
-// File ▸ Engine ▸ Connect… / Engine Status and Help ▸ Third-Party Notices (workstream polish).
-//
-// - Engine Status: what the engine is and can do, read live from `GET /health` and `GET /api/capabilities`
-//   (address, version, API, FFmpeg build and licence, encoders, render paths, feature blocks, limits, running
-//   jobs), with Reconnect and Copy Details for bug reports.
-// - Connect to Engine: the engine of this window is the one that serves it (the editor only talks to its own
-//   origin, ARCHITECTURE §4.2), so "connect" means two things: retry the connection to that engine (after it was
-//   restarted) and, on the web, open the editor served by another engine by its address. The desktop app starts
-//   its own engine and cannot leave it.
-// - Third-Party Notices: the licence screen of About, on its own.
+// The editor talks only to its own origin, so switching web engines opens the target engine's editor.
+// Desktop windows remain attached to their managed engine.
 import type { EngineCapabilities, Health } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { Button, Dialog, type HostedDialogProps, registerDialog, TextField, toast } from '@jasper/ui';
@@ -69,8 +61,7 @@ export function rememberEngine(origin: string): void {
 	}
 }
 
-const isDesktop = () =>
-	typeof window !== 'undefined' && !!(window as { jasperDesktop?: unknown }).jasperDesktop;
+const isDesktop = () => typeof window !== 'undefined' && !!window.jasperDesktop;
 
 function formatBytes(n: number | null | undefined): string {
 	if (n === null || n === undefined || !Number.isFinite(n)) return '—';
@@ -180,8 +171,6 @@ async function copyText(text: string): Promise<boolean> {
 		return false;
 	}
 }
-
-// ------------------------------------------------------------------ Engine Status
 
 function EngineStatusDialog(props: HostedDialogProps<{ engine?: EngineClient | null }>) {
 	const live = useEngineOrNull();
@@ -348,8 +337,6 @@ function EngineStatusDialog(props: HostedDialogProps<{ engine?: EngineClient | n
 	);
 }
 
-// ------------------------------------------------------------------ Connect to Engine
-
 function EngineConnectDialog(
 	props: HostedDialogProps<{
 		engine?: EngineClient | null;
@@ -411,9 +398,15 @@ function EngineConnectDialog(
 			setMessage(t('Nothing answers at {0}', target));
 			return false;
 		}
+		try {
+			await props.beforeLeave?.();
+		} catch (error) {
+			setState('failed');
+			setMessage(error instanceof Error ? error.message : String(error));
+			return false;
+		}
 		rememberEngine(target);
 		if (current) rememberEngine(current);
-		await props.beforeLeave?.().catch(() => undefined);
 		props.close();
 		window.location.assign(`${target}/`);
 		return false;
@@ -491,8 +484,6 @@ function EngineConnectDialog(
 		</Dialog>
 	);
 }
-
-// ------------------------------------------------------------------ Third-Party Notices
 
 function NoticesDialog(props: HostedDialogProps<Record<string, never>>) {
 	return (

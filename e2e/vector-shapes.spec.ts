@@ -1,7 +1,3 @@
-// Vector shapes end to end (wp shapes) in the built app: the Star tool draws a vector shape in the Program monitor;
-// Properties ▸ Shape Contents adds a gradient fill, a Trim Paths and a stroke and edits them (one undo step each);
-// the Pen tool draws and closes a path in the selected shape; vertices drag on the monitor; the Program draws the
-// result (screenshot attached); the export matches a still of the same document and shows the gradient.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -106,7 +102,6 @@ test('Shape Contents: add a gradient fill, a stroke and a Trim Paths; edit End; 
 	await expect
 		.poll(async () => (await items()).map((i) => i.type))
 		.toEqual(['polystar', 'gradientFill', 'stroke', 'trim', 'fill']);
-	// The Trim Paths is selected: type End = 60 %.
 	const trim = (await items()).find((i) => i.type === 'trim')!;
 	const end = page.getByTestId(`prop-shape.items.${trim.id}.end`);
 	await end.click();
@@ -116,7 +111,6 @@ test('Shape Contents: add a gradient fill, a stroke and a Trim Paths; edit End; 
 	await expect
 		.poll(async () => ((await items()).find((i) => i.id === trim.id)!.end as { value: number }).value)
 		.toBe(60);
-	// Disable the solid fill (the gradient shows), then undo / redo it.
 	const fill = (await items()).find((i) => i.type === 'fill')!;
 	await page.getByTestId(`vector-eye-${fill.id}`).click();
 	await expect.poll(async () => (await items()).find((i) => i.id === fill.id)!.enabled).toBe(false);
@@ -146,7 +140,6 @@ test('Pen tool draws and closes a path in the selected shape; a vertex drags on 
 			return p ? (p.path as { value: { closed: boolean; vertices: unknown[] } }).value : null;
 		})
 		.toMatchObject({ closed: true, vertices: [{}, {}, {}] });
-	// Selection tool: drag the third vertex 100 px down (sequence px).
 	await page.getByTestId('tools-panel').locator('[data-tool="selection"]').click();
 	const v = page.getByTestId('vector-vertex-2');
 	await expect(v).toBeVisible();
@@ -196,7 +189,6 @@ test('export matches a still of the same document', async ({ request }) => {
 	const mean = sum / image.length;
 	test.info().annotations.push({ type: 'export-vs-still', description: `mean |Δ| ${mean.toFixed(2)}/255` });
 	expect(mean).toBeLessThan(3);
-	// The star's gradient (white → black) is visible: its centre is bright.
 	const c = ((H / 2) * W + W / 2) * 3;
 	expect(video[c]!).toBeGreaterThan(150);
 });

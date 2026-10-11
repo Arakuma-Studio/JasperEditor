@@ -1,9 +1,6 @@
 // @vitest-environment node
-// previews (playback robustness): HTML-in-Canvas does not capture what a `desynchronized` 2D canvas draws after the
-// host's first paint (headless Chrome and the desktop app's Electron) — the black video under a 3D run / GL blend
-// scope in the Program monitor. `installCaptureSafeCanvases` makes such canvases ordinary ones. In a real Chrome with
-// HTML-in-Canvas: the browser behaviour without the shim (documented, so a browser fix shows up here) and the fix.
-// Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
+// HTML-in-Canvas misses draws from desynchronized 2D canvases after the host's first paint.
+// Test the unpatched browser too, so a browser fix makes the workaround's premise visible.
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installCaptureSafeCanvases } from '../src/fx/capture-safe-canvas.ts';
@@ -66,7 +63,6 @@ describe.runIf(run)('HTML-in-Canvas capture of video canvases', () => {
 		const page = await browser.newPage();
 		await page.setContent(PAGE);
 		const before = await page.evaluate(probe);
-		// The ordinary canvas is always captured.
 		expect(before[1]).toEqual([255, 0, 255, 255]);
 		// The browser behaviour the shim works around (if a Chrome update fixes it, this half may start to fail: the
 		// shim is then harmless and the expectation can go).

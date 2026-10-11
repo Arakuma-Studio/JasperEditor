@@ -1,7 +1,4 @@
-// The bundled jasper-mcp starts (wp fixups). A dynamic `import('@jasper/project')` next to the static imports made
-// esbuild lazy-wrap the package and zod, and the bundle died at load with "Class2 is not a constructor" before
-// answering `initialize` (e2e/agent-ui.spec.ts could not connect). This bundles src/cli.ts exactly like
-// scripts/build.mjs and talks to it over stdio.
+// Bundle src/cli.ts exactly as the release build does: mixing dynamic and static package imports can break initialization.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

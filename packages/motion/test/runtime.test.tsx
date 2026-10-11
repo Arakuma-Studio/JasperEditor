@@ -1,5 +1,3 @@
-// @jasper/motion runtime contract (ARCHITECTURE §20.2, S11 §2–§3): paused timelines, the canonical seek,
-// deterministic seeds, the value engine and DOM-leaf hooks, text segmentation and line grouping.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +22,6 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** Two sequential tweens of the same property with a gap (R-ANM §1 minimal repro). */
 function gapTimeline() {
 	const target = { x: 0, o: 1 };
 	const timeline = createPausedTimeline();
@@ -105,10 +102,10 @@ function Values({
 describe('useAnimeValues (S11:ANM-004)', () => {
 	const frames = Array.from({ length: 31 }, (_, i) => i);
 	const fresh = (f: number) => {
-		let out: unknown;
+		let out: readonly Readonly<{ x: number; o: number }>[] = [];
 		const r = render(<Values ms={frameToMs(f, 30)} onValues={(v) => (out = v)} />);
 		r.unmount();
-		return out as readonly { x: number; o: number }[];
+		return out;
 	};
 	const expected = frames.map(fresh);
 	it('returns frozen copies of the seeked values', () => {
@@ -209,7 +206,6 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 			seekCanonical(tl, ms);
 			expect(o.v, `${ms} ms`).toBe(v);
 		}
-		// the caller's object is untouched; other compositions are kept
 		expect(defaults.loop).toBe(true);
 	});
 

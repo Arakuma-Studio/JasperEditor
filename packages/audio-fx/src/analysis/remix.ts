@@ -85,8 +85,6 @@ export function jumpScore(a: Analysis, i: number, j: number): number {
 	return n > 0 ? s / n : 0;
 }
 
-// ---------------------------------------------------------------- analysis
-
 /** Calls `frame(t, mag)` for every STFT frame (frames start at t·hop; zero-padded past the end). */
 function stftFrames(
 	x: Float32Array,
@@ -338,8 +336,8 @@ export function analyzeMusic(channels: readonly Float32Array[], sampleRate: numb
 	for (const c of channels) for (let i = 0; i < c.length; i++) mono[i] = mono[i]! + c[i]! * k;
 	const { env, n, hop } = onsetEnvelope(mono, sampleRate);
 	// Steady sounds (a held tone, broadband noise) have a flux without onsets: mean ≳ standard deviation. Music's
-	// flux is sparse peaks (mean/sd ≈ 0.4 on the generated test music, 1.5 on a steady sine). Ours; the reference
-	// relied on the autocorrelation test alone, which a steady tone's frame-phase ripple can pass.
+	// flux is sparse peaks (mean/sd ≈ 0.4 on the generated test music, 1.5 on a steady sine). A steady tone's
+	// frame-phase ripple can pass the autocorrelation test alone.
 	let envMean = 0;
 	for (const v of env) envMean += v;
 	envMean /= Math.max(env.length, 1);
@@ -373,8 +371,6 @@ export function analyzeMusic(channels: readonly Float32Array[], sampleRate: numb
 	const periodS = period * hop;
 	return { sampleRate, len, beats, period: periodS, bpm: (60 * sampleRate) / periodS, sim };
 }
-
-// ---------------------------------------------------------------- planning
 
 /** Joints the Segments slider asks for. */
 export function jointsFor(segments: number): number {

@@ -1,4 +1,4 @@
-// Character placement of animated text (workstream text-animators): from the static layout of the characters
+// Character placement of animated text: from the static layout of the characters
 // (measured by the text layer) and their animation state (`charTransforms`) to where and how each character is
 // drawn — tracking and Line Anchor shifts, Line Spacing, Anchor Point Grouping pivots, Path Options and the
 // per-character matrix (anchor → scale → skew → X / Y / Z rotation → position). Pure.
@@ -67,8 +67,6 @@ export type PlaceOptions = {
 	/** Advance of the substituted character drawn in a glyph's slot, when substituted (alignment in the slot). */
 	substitutedAdvance?: readonly (number | null)[];
 };
-
-// ---------------------------------------------------------------- 4×4 matrices (row-major)
 
 export type Mat4 = number[];
 

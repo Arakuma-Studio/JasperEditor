@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Stylize, part 1 (family "premiere-stylize-distort-generate", wave 2): Alpha Glow,
+// Premiere Pro standard effects — Stylize, part 1 (family "premiere-stylize-distort-generate"): Alpha Glow,
 // Brush Strokes, Color Emboss, Emboss, Find Edges, Mosaic, Posterize.
 // Angles of these After Effects-derived controls are compass angles (0° = up, clockwise), as in Premiere: an Emboss
 // Direction of 45° lights the picture from the upper right. GLSL: `psdg_compass(deg)` (screen vector, y down).
@@ -19,8 +19,6 @@ export const GLSL_PSDG_COMPASS: GlslChunk = {
 vec2 psdg_compass(float deg) { float a = radians(deg); return vec2(sin(a), -cos(a)); }
 `,
 };
-
-// ---------------------------------------------------------------- Alpha Glow
 
 export const ALPHA_GLOW = defineShaderEffect({
 	id: 'jasper.alpha-glow',
@@ -75,8 +73,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Brush Strokes
 
 export const BRUSH_STROKES = defineShaderEffect({
 	id: 'jasper.brush-strokes',
@@ -169,8 +165,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Emboss / Color Emboss
-
 const embossParams = () => [
 	fxParam.angle('direction', 'Direction', 45),
 	fxParam.number('relief', 'Relief', 1, { min: 0, max: 10, step: 0.01 }),
@@ -218,8 +212,6 @@ export const EMBOSS = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- Find Edges
-
 export const FIND_EDGES = defineShaderEffect({
 	id: 'jasper.find-edges',
 	label: 'Find Edges',
@@ -252,8 +244,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Mosaic
 
 export const MOSAIC = defineShaderEffect({
 	id: 'jasper.mosaic',
@@ -289,8 +279,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Posterize
 
 export const POSTERIZE = defineShaderEffect({
 	id: 'jasper.posterize',

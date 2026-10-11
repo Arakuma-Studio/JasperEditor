@@ -5,7 +5,6 @@ import type { ZodType } from 'zod';
 
 export type MgCanvas = { width: number; height: number };
 
-/** Timing and markup options for `renderSvg` (all optional). */
 export type MgSvgOptions = {
 	/**
 	 * Clip duration in frames. Outros are anchored to the end of the clip, so pass the clip duration
@@ -30,7 +29,6 @@ export type MgTemplateUpgradeStep = {
 	migrate(params: Record<string, unknown>): Record<string, unknown>;
 };
 
-/** Fields shared by every template, whatever draws it. */
 export type MgTemplateBase<P extends Record<string, unknown> = Record<string, unknown>> = {
 	id: string;
 	version: number;
@@ -48,7 +46,7 @@ export type MgTemplateBase<P extends Record<string, unknown> = Record<string, un
 	defaultDurationSeconds: number;
 	/** Canvases the template is designed for (others are scaled). */
 	canvases: MgCanvas[];
-	/** M2 (S11:ATP-009): upgrade path from older versions of this template id to this version. */
+	/** Upgrade path from older versions of this template id to this version. */
 	upgrades?: readonly MgTemplateUpgradeStep[];
 };
 
@@ -65,7 +63,7 @@ export type MgSvgTemplateDefinition<P extends Record<string, unknown> = Record<s
 	};
 
 /**
- * M2 (S11:ATP-001): anime.js template — metadata only. The React implementation lives in
+ * Anime.js template — metadata only. The React implementation lives in
  * `@jasper/motion/templates` (`ANIME_TEMPLATE_IMPLS['id@version']`); this package never imports animejs.
  */
 export type MgAnimeTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =
@@ -81,16 +79,14 @@ export type MgTemplateDefinition<P extends Record<string, unknown> = Record<stri
 	| MgSvgTemplateDefinition<P>
 	| MgAnimeTemplateDefinition<P>;
 
-export type AnyMgTemplate = MgTemplateDefinition<any>;
-export type AnySvgMgTemplate = MgSvgTemplateDefinition<any>;
-export type AnyAnimeMgTemplate = MgAnimeTemplateDefinition<any>;
+export type AnyMgTemplate = MgTemplateDefinition;
+export type AnySvgMgTemplate = MgSvgTemplateDefinition;
+export type AnyAnimeMgTemplate = MgAnimeTemplateDefinition;
 
-/** True for templates drawn by anime.js (`renderer: 'anime'`). */
 export function isAnimeTemplate(def: AnyMgTemplate): def is AnyAnimeMgTemplate {
 	return def.renderer === 'anime';
 }
 
-/** True for fframes templates (SVG twin + `jasper-mg`). */
 export function isSvgTemplate(def: AnyMgTemplate): def is AnySvgMgTemplate {
 	return def.renderer !== 'anime';
 }

@@ -11,8 +11,6 @@ import {
 	type SyntheticSound,
 } from './synthetic.ts';
 
-// ---------------------------------------------------------------- bars
-
 const pct = (p: number) => Math.round((p / 100) * 255);
 type RGB = readonly [number, number, number];
 const GREY = (p: number): RGB => [pct(p), pct(p), pct(p)];
@@ -85,8 +83,6 @@ export function renderBars(w: number, h: number): Uint8ClampedArray {
 	fillRow(r3, h, (x) => row4.find((s) => x < s.to)!.v);
 	return px;
 }
-
-// ---------------------------------------------------------------- counting leader
 
 /** Leader timeline (content seconds): lead-in, the countdown 8 → 2 (one second each), then black to the end. */
 export const LEADER_LEAD_IN = 2;
@@ -411,8 +407,6 @@ function drawCueCircle(px: Uint8ClampedArray, w: number, h: number): void {
 			for (let c = 0; c < 3; c++) px[i + c] = Math.round(px[i + c]! + (255 - px[i + c]!) * k);
 		}
 }
-
-// ---------------------------------------------------------------- sound
 
 const dbToAmp = (db: number) => 10 ** (db / 20);
 

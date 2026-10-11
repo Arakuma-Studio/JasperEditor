@@ -1,4 +1,4 @@
-// LUT file formats besides `.cube` (workstream color-mgmt), all parsed into the one `Lut` representation (lut.ts):
+// LUT file formats besides `.cube`, all parsed into the one `Lut` representation (lut.ts):
 // - Autodesk `.3dl` (Lustre/Flame/Nuke): optional `3DMESH` / `Mesh <in> <out>` header, the input mesh line (e.g.
 //   `0 64 … 1023`; it sets the input bit depth and need not be uniform: a non-uniform mesh becomes a 1D shaper), then
 //   n³ integer rows with **blue changing fastest**; output depth from the `Mesh` header or the largest value.
@@ -99,8 +99,6 @@ const isUniform = (mesh: readonly number[]) => {
 	);
 };
 
-// ---------------------------------------------------------------- .3dl
-
 export function parse3dl(text: string): Lut {
 	let mesh: number[] | null = null;
 	let meshLine = 0;
@@ -182,8 +180,6 @@ export function write3dl(lut: Lut, title?: string | null): string {
 			}
 	return `${out.join('\n')}\n`;
 }
-
-// ---------------------------------------------------------------- .spi1d / .spi3d
 
 export function parseSpi1d(text: string): Lut {
 	let from: [number, number] = [0, 1];
@@ -280,8 +276,6 @@ export function parseSpi3d(text: string): Lut {
 	if (count !== n * n * n) throw new CubeParseError(`Expected ${n * n * n} rows, found ${count}`, 0);
 	return { dimensions: 3, size: n, title: null, domainMin: [0, 0, 0], domainMax: [1, 1, 1], data };
 }
-
-// ---------------------------------------------------------------- .csp
 
 export function parseCsp(text: string): Lut {
 	const ls = contentLines(text);
@@ -383,8 +377,6 @@ export function parseCsp(text: string): Lut {
 	}
 	return { dimensions: 3, size: n, title: null, domainMin: [0, 0, 0], domainMax: [1, 1, 1], data, shaper };
 }
-
-// ---------------------------------------------------------------- utilities
 
 /** A plain 3D LUT over the unit cube (shapers, 1D tables and custom domains baked); the LUT itself when it is one. */
 export function flattenLut(lut: Lut, size = 33): Lut {

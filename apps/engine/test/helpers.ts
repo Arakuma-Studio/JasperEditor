@@ -1,8 +1,5 @@
-// Shared helpers for engine tests: temp appdirs, fixture media (generated on demand with the repo script),
-// documents built through @jasper/project commands.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RegisteredMedia } from '@jasper/api';
@@ -18,14 +15,13 @@ import {
 import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import type { FastifyInstance } from 'fastify';
 import { createServer, engineConfig } from '../src/index.ts';
+import { tempAppdir } from './temp.ts';
+
+export { tempAppdir } from './temp.ts';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
-/**
- * ffmpeg / ffprobe for a test's own checks: the LGPL build in vendor/ when it is there (`pnpm ffmpeg:lgpl`), else the
- * oracle resolution (JASPER_FFMPEG / JASPER_FFPROBE, PATH). A clean CI checkout has no vendor directory: a hard-coded
- * vendor path made `spawnSync(...).stdout` null there (verify workstream).
- */
+/** A clean CI checkout has no vendor binaries; use the engine's oracle resolution when the LGPL build is absent. */
 const VENDOR_FFMPEG = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 export const TEST_FFMPEG = existsSync(join(VENDOR_FFMPEG, 'ffmpeg'))
 	? join(VENDOR_FFMPEG, 'ffmpeg')
@@ -36,7 +32,6 @@ export const TEST_FFPROBE = existsSync(join(VENDOR_FFMPEG, 'ffprobe'))
 export const H = { host: '127.0.0.1:47900' } as const;
 export const JSON_H = { ...H, 'content-type': 'application/json' } as const;
 
-/** Makes sure `pnpm fixtures` outputs exist (generates them with the repo script when missing). */
 export function ensureFixtures(): void {
 	const needed = [
 		'clip-a.mp4',
@@ -56,10 +51,6 @@ export function ensureFixtures(): void {
 
 export function fixture(name: string): string {
 	return join(FIXTURES, name);
-}
-
-export function tempAppdir(prefix = 'jasper-engine-'): string {
-	return mkdtempSync(join(tmpdir(), prefix));
 }
 
 export type TestApp = FastifyInstance & { appdir: string };
@@ -120,7 +111,6 @@ export async function register(
 	return body.items[0]!;
 }
 
-/** Polls until `fn` returns a truthy value (or throws after `timeoutMs`). */
 export async function until<T>(
 	fn: () => T | Promise<T>,
 	timeoutMs = 20_000,
@@ -135,7 +125,6 @@ export async function until<T>(
 	}
 }
 
-/** A small document builder over @jasper/project transactions. */
 export class DocBuilder {
 	doc: ProjectDocument;
 	readonly ids: IdSource;
@@ -168,7 +157,6 @@ export class DocBuilder {
 		this.revision = result.revision;
 		return { refs: result.refs, results: result.results };
 	}
-	/** media.register from an engine RegisteredMedia; returns the new mediaId. */
 	addMedia(m: RegisteredMedia): string {
 		const { mediaKey: _k, browserPlayable: _b, ...asset } = m;
 		const r = this.tx([{ type: 'media.register', asset: { ...asset, derivation: null } }]);

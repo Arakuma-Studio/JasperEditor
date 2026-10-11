@@ -2,10 +2,11 @@
 // with progress and cancel → Mask Path keys in one History entry), auto-trace. Document edits go through the
 // session's command API; long work through the engine client.
 import type { EngineJob, MaskTraceResponse, TrackResult } from '@jasper/api';
+import { TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
-	type Command,
+	type CommandInput,
 	contentTimeAt,
 	findMask,
 	type MaskShape,
@@ -19,14 +20,14 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
 import { mediaKeyOf } from '../import/assets.ts';
+import { errorText, pollActiveJob } from '../processing/engine-jobs.ts';
 import { type MaskOwner, maskUi } from './store.ts';
 
 export type MaskEngine = Pick<EngineClient, 'call' | 'getJob' | 'cancelJob'>;
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 const POLL_MS = 250;
 
-function apply(session: EditorSession, label: string, commands: Command[]) {
+function apply(session: EditorSession, label: string, commands: CommandInput[]) {
 	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors.map((e) => e.message).join('; ') });
 	return r;
@@ -50,7 +51,7 @@ export function createMask(
 			...(owner.effectId ? { effectId: owner.effectId } : { clipId: owner.clipId }),
 			shape,
 			ref: '$mask',
-		} as Command,
+		} satisfies CommandInput,
 	]);
 	if (!r.ok) return null;
 	const id = r.refs.$mask!;
@@ -70,13 +71,11 @@ export function stopPen(): void {
 export function deleteMasks(session: EditorSession, maskIds: string[]): void {
 	if (maskIds.length === 0) return;
 	apply(session, maskIds.length > 1 ? 'Delete Masks' : 'Delete Mask', [
-		{ type: 'mask.remove', maskIds } as Command,
+		{ type: 'mask.remove', maskIds } satisfies CommandInput,
 	]);
 	const sel = maskUi.get().selected;
 	if (sel && maskIds.includes(sel.maskId)) maskUi.select(null);
 }
-
-// ---------------------------------------------------------------- tracking
 
 function setRun(maskId: string, patch: Partial<import('./store.ts').MaskTrackRun> | null) {
 	maskUi.set((s) => {
@@ -145,26 +144,33 @@ export async function trackMask(
 		return;
 	}
 	setRun(maskId, { jobId: job.id });
-	for (;;) {
-		if (TERMINAL.has(job.state)) break;
-		await new Promise((r) => setTimeout(r, POLL_MS));
-		if (!maskUi.get().tracking[maskId]) return; // stopped
+	if (!TERMINAL_JOB_STATES.has(job.state)) {
+		const jobId = job.id;
 		try {
-			job = await engine.getJob(job.id);
-			setRun(maskId, { progress: job.progress ?? null });
-		} catch {
-			// transient: keep polling
+			const finished = await pollActiveJob(engine, jobId, {
+				intervalMs: POLL_MS,
+				isActive: () => maskUi.get().tracking[maskId]?.jobId === jobId,
+				onUpdate: (update) => setRun(maskId, { progress: update.progress ?? null }),
+			});
+			if (!finished) return;
+			job = finished;
+		} catch (error) {
+			setRun(maskId, null);
+			toast({ kind: 'error', title: 'Mask tracking failed', detail: errorText(error) });
+			return;
 		}
 	}
 	setRun(maskId, null);
 	if (job.state !== 'succeeded') {
-		if (job.state === 'failed')
+		if (job.state !== 'cancelled')
 			toast({ kind: 'error', title: 'Mask tracking failed', detail: job.error?.message ?? 'unknown error' });
 		return;
 	}
 	const { keys, lostAt } = maskKeysFromTrack(plan, job.result as TrackResult);
 	if (keys.length > 0)
-		apply(session, label, [{ type: 'mask.setPathKeys', maskId, keys, clearSpan: true } as Command]);
+		apply(session, label, [
+			{ type: 'mask.setPathKeys', maskId, keys, clearSpan: true } satisfies CommandInput,
+		]);
 	if (lostAt !== null)
 		toast({
 			kind: 'warning',
@@ -185,8 +191,6 @@ export async function stopMaskTrack(engine: MaskEngine | null, maskId: string): 
 	setRun(maskId, null);
 	if (run?.jobId && engine) await engine.cancelJob(run.jobId).catch(() => undefined);
 }
-
-// ---------------------------------------------------------------- auto-trace
 
 export type TraceOptions = {
 	channel: 'alpha' | 'luma' | 'red' | 'green' | 'blue';
@@ -265,7 +269,7 @@ export async function autoTrace(
 					mode: p.depth % 2 === 1 ? 'subtract' : 'add',
 					feather: opts.feather,
 					name: `Traced (${i + 1})`,
-				}) as Command,
+				}) satisfies CommandInput,
 		),
 	);
 	return traced.paths.length;

@@ -1,7 +1,3 @@
-// Editing acceptance (ARCHITECTURE §15 items 2–7): workspace chrome, Jobs analysis jobs, filmstrip/waveform,
-// Ctrl-drop insert with sync-lock ripple, transport keys and timecode entry, Ctrl+K, Delete / Shift+Delete,
-// B ripple trim, Ctrl-move insert, snapping, undo with selection restore, Graphics ▸ Text, Properties
-// scrub = one undo step, and moving/scaling the text on the Program overlay.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -97,7 +93,6 @@ test('Ctrl-drop inserts clip-b at 5 s and ripples the sync-locked tracks (one Hi
 	const v = await clips(page, ['V1']);
 	const au = await clips(page, ['A1']);
 	expect(v.map((c) => c.name)).toEqual(['clip-a.mp4', 'clip-b.mp4', 'clip-a.mp4']);
-	// A1 rippled with V1: the second half of clip-a's audio starts where its video starts.
 	expect(au.at(-1)!.start).toBe(v.at(-1)!.start);
 	expect(v[1]!.end).toBe(v[2]!.start);
 	expect((await appliedLabels(page)).length).toBe(before + 1);
@@ -117,7 +112,6 @@ test('transport: timecode entry, ←/→ steps, L/K/J shuttle', async () => {
 	await page.keyboard.press('ArrowRight');
 	await page.keyboard.press('ArrowLeft');
 	expect(await playheadFrame(page)).toBe(61);
-	// L plays forward, K stops, J plays reverse (JKL shuttle, S02:TL-872).
 	await page.keyboard.press('KeyL');
 	await expect
 		.poll(async () => (await query<{ playing: boolean; frame: number }>(page, 'playhead.get')).frame)
@@ -157,7 +151,7 @@ test('Delete lifts, Shift+Delete ripple-deletes; Ctrl+Z restores the clip and it
 	const before = (await appliedLabels(page)).length;
 	await page.keyboard.press('Delete');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(v.length - 1);
-	expect((await clips(page, ['V1']))[1]!.start).toBe(v[2]!.start); // gap left behind
+	expect((await clips(page, ['V1']))[1]!.start).toBe(v[2]!.start);
 	expect((await appliedLabels(page)).length).toBe(before + 1);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(v.length);
@@ -166,7 +160,7 @@ test('Delete lifts, Shift+Delete ripple-deletes; Ctrl+Z restores the clip and it
 	await page.keyboard.press('Shift+Delete');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(v.length - 1);
 	const after = await clips(page, ['V1']);
-	expect(after[1]!.start).toBe(target.start); // the next clip rippled into the gap
+	expect(after[1]!.start).toBe(target.start);
 	expect((await clips(page, ['A1'])).find((c) => c.start === target.start)).toBeTruthy();
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(v.length);
@@ -188,14 +182,13 @@ test('B (ripple edit tool) trims the tail and ripples later clips; Ctrl-move ins
 	);
 	await expect.poll(async () => (await clips(page, ['V1']))[0]!.duration).toBeLessThan(first.duration);
 	const trimmed = await clips(page, ['V1']);
-	expect(trimmed[1]!.start).toBe(trimmed[0]!.end); // rippled, no gap
+	expect(trimmed[1]!.start).toBe(trimmed[0]!.end);
 	expect(trimmed[1]!.start).toBeLessThan(next.start);
 	expect((await appliedLabels(page)).length).toBe(before + 1);
 	await page.keyboard.press('KeyV');
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1']))[0]!.duration).toBe(first.duration);
 
-	// Ctrl-drag (insert move) the last clip to the start: everything after the insert point shifts right.
 	const cur = await clips(page, ['V1']);
 	const last = cur.at(-1)!;
 	const lb = await clipBox(page, last.id);

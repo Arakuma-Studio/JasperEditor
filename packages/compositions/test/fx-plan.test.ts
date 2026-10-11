@@ -1,19 +1,21 @@
-// Stack planning of layers with GPU shader effects (wave-1 fx framework, src/fx/plan.ts): which effects run in the
-// canvas chain and in which order (S03 §4.2, FX-002, RND-010), what stays CSS/SVG, padding, bypass rules; plus the
-// canvas layout, the time hooks in the composition and the example effects' validity.
-import { type ResolvedEffect, validateGpuEffect } from '@jasper/project';
+import {
+	type EffectInstance,
+	type EffectParams,
+	type ResolvedEffect,
+	validateGpuEffect,
+} from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { fxCanvasLayout, planLayerFx } from '../src/fx/plan.ts';
 import { fxRemapFrame, hasTimeDependentFx } from '../src/fx/time.ts';
 import { TEST_FX, testFxRegistry } from './fx-examples.ts';
 
 let n = 0;
-const fx = (effectId: string, params: Record<string, unknown> = {}, enabled = true): ResolvedEffect => ({
+const fx = (effectId: string, params: EffectParams = {}, enabled = true): ResolvedEffect => ({
 	id: `fx${++n}`,
 	effectId,
 	effectVersion: 1,
 	enabled,
-	params: params as ResolvedEffect['params'],
+	params,
 });
 const opts = {
 	registry: testFxRegistry,
@@ -31,13 +33,13 @@ describe('planLayerFx', () => {
 
 	it('puts crop first, keeps stack order, fuses colour runs and leaves trailing effects to CSS', () => {
 		const crop = fx('jasper.crop', { left: 10, top: 0, right: 20, bottom: 0 });
-		const blur = fx('jasper.gaussian-blur', { radius: 2 }); // CSS filter → 2D step
+		const blur = fx('jasper.gaussian-blur', { radius: 2 });
 		const bc = fx('jasper.brightness-contrast', { brightness: 10 });
 		const hs = fx('jasper.hue-saturation', { hue: 30 });
 		const glow = fx('test.s.glow', { radius: 5 });
 		const flip = fx('jasper.flip-horizontal');
 		const shadow = fx('test.drop-shadow', { distance: 4, softness: 2 });
-		const after = fx('jasper.gaussian-blur', { radius: 2, dimensions: 'horizontal' }); // SVG, after the chain
+		const after = fx('jasper.gaussian-blur', { radius: 2, dimensions: 'horizontal' });
 		const p = planLayerFx([blur, bc, hs, glow, crop, flip, shadow, after], opts)!;
 		expect(p.active).toBe(true);
 		expect(kinds(p)).toEqual(['crop', 'css', 'lut', 'gpu', 'flip', 'gpu']);
@@ -70,7 +72,7 @@ describe('planLayerFx', () => {
 
 	it('keeps colour after the last shader effect in the chain (exact grade), CSS after the last colour run', () => {
 		const glow = fx('test.s.glow');
-		const css = fx('jasper.black-white', { amount: 0 }); // colour op
+		const css = fx('jasper.black-white', { amount: 0 });
 		const blur = fx('jasper.gaussian-blur', { radius: 1 });
 		const p = planLayerFx([glow, css, blur], opts)!;
 		expect(kinds(p)).toEqual(['gpu', 'lut']);
@@ -149,10 +151,16 @@ describe('time hooks in the composition', () => {
 	});
 
 	it('makes layers with time-dependent shader effects frame dependent', () => {
-		const e = (effectId: string) => ({ id: 'x', effectId, effectVersion: 1, enabled: true, params: {} });
-		expect(hasTimeDependentFx({ effects: [e('test.s.glow')] } as never, testFxRegistry)).toBe(true);
-		expect(hasTimeDependentFx({ effects: [e('test.s.gradient')] } as never, testFxRegistry)).toBe(false);
-		expect(hasTimeDependentFx({ effects: [e('jasper.crop')] } as never, testFxRegistry)).toBe(false);
+		const e = (effectId: string): EffectInstance => ({
+			id: 'x',
+			effectId,
+			effectVersion: 1,
+			enabled: true,
+			params: {},
+		});
+		expect(hasTimeDependentFx({ effects: [e('test.s.glow')] }, testFxRegistry)).toBe(true);
+		expect(hasTimeDependentFx({ effects: [e('test.s.gradient')] }, testFxRegistry)).toBe(false);
+		expect(hasTimeDependentFx({ effects: [e('jasper.crop')] }, testFxRegistry)).toBe(false);
 	});
 });
 

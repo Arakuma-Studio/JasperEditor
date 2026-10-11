@@ -1,3 +1,4 @@
+import type { CommandOf } from '@jasper/project';
 // Default transitions (S10:TUI-031/033, D-30): a per-user preference (web localStorage, like the timeline
 // prefs), never part of the project and never in History. One type per medium, the alignment of the two-sided
 // transitions that Ctrl+D / Ctrl+Shift+D / Shift+D / "Apply Default Transitions" create, and the unit each
@@ -119,7 +120,9 @@ export function setDefaultTransition(effectId: string): boolean {
 }
 
 /** The fields the default-transition commands add to `transition.applyDefault` (TUI-030/033). */
-export function defaultTransitionFields(media: readonly ('video' | 'audio')[]): Record<string, unknown> {
+export function defaultTransitionFields(
+	media: readonly ('video' | 'audio')[],
+): Pick<CommandOf<'transition.applyDefault'>, 'media' | 'videoEffectId' | 'audioEffectId' | 'alignment'> {
 	const p = transitionDefaults().getState();
 	return {
 		media: [...media],

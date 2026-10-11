@@ -12,7 +12,7 @@ import type { ProjectStore } from './types.ts';
 
 export type AutosaveOptions = {
 	/**
-	 * gaps (Preferences ▸ Auto Save), read at every scheduling: `enabled` false = the timer never saves (Save / Ctrl+S
+	 * Read at every scheduling: `enabled` false = the timer never saves (Save / Ctrl+S
 	 * and closing the project still do; the crash-recovery journal keeps unsaved edits); `maxIntervalMs` = the longest
 	 * an unsaved change waits during continuous editing (default 10 s).
 	 */
@@ -48,7 +48,7 @@ export type Autosaver = {
 	subscribe(listener: (s: AutosaveStatus) => void): () => void;
 	/** Conflict resolution "Overwrite": saves over the server revision reported by the 409. */
 	overwrite(): Promise<void>;
-	/** gaps: whether the timer saves automatically (Preferences ▸ Auto Save). */
+	/** Whether automatic saving is enabled; explicit saves remain available. */
 	readonly automatic: boolean;
 };
 
@@ -166,7 +166,7 @@ export function createAutosaver(
 		return inFlight;
 	}
 
-	// ui-perf: while the browser is idle after an edit, serialise the parts of the document the cache does not hold yet
+	// While the browser is idle after an edit, serialise the parts of the document the cache does not hold yet
 	// (`jsonWarmUnits`), a few milliseconds at a time, so the save joins cached text instead of serialising 8 MB at
 	// once (the first save after opening a large project). Browsers only.
 	let warm: { cancel(): void } | null = null;

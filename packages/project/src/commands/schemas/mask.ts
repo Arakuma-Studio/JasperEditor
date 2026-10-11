@@ -1,5 +1,3 @@
-// Mask commands (wp masks, S03 §17 MSK-001…004). Handlers: handlers/mask.ts.
-//
 // Masks live on a visual clip's Opacity (`clipId`) or on one of its video effect instances (`effectId`). Paths are
 // in layer-box-normalised coordinates (0..1 over the clip's intrinsic box); feather / expansion are layer pixels.
 // Mask properties are also ordinary animatable parameters: `param.set` / `param.setAnimated` / `keyframe.*` with

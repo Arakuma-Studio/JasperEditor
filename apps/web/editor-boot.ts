@@ -1,6 +1,6 @@
 // Build-time pieces of `/editor-boot.js` (used by vite.config.ts; kept apart so tests can import them).
 /**
- * polish (project open, docs/performance.md §6): `/editor-boot.js`, a small classic script that index.html loads
+ * `/editor-boot.js` is a small classic script that index.html loads
  * before the bundle (external, so a strict CSP `script-src 'self'` works). On an editor URL (`/project/<id>`) it
  *   - preloads the editor's chunks (the shell, the dock and every panel body), which the bundle would otherwise
  *     discover in three round trips after it has run: they download and compile while the main bundle does;
@@ -10,11 +10,11 @@
  *
  * On every URL it also watches the entry module: when the bundle or one of its static imports cannot be downloaded
  * (the network changed while the page loaded, the server restarted), nothing runs and nothing reports it; the page
- * stayed blank. The script first reloads the page by itself, with a short backoff: the common cause is transient —
+ * would stay blank. The script first reloads the page with a short backoff because the common cause is transient —
  * Chromium aborts every request in flight, loopback included, when it sees the host's IP addresses change
  * (`net::ERR_NETWORK_CHANGED`; on Linux any interface counts, so a Docker container starting or stopping is enough),
  * and a slow first load (a cold dev server transforming hundreds of modules, a loaded machine, the desktop shell
- * starting) is in flight long enough to be hit (verify workstream: the desktop dev smoke stalled on a cold Vite).
+ * starting) stays in flight long enough to be affected.
  * A load that failed quickly (the server is down or broken) is retried BOOT_RETRIES times; one that failed after
  * BOOT_SLOW_MS was making progress and was cut off, and only counts towards BOOT_MAX_RELOADS per tab, since every
  * reload is faster than the one before (the server's transforms and the browser cache are warm). Only when the

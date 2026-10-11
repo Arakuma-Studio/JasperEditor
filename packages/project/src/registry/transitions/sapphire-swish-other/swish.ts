@@ -23,8 +23,6 @@ import {
 
 const BIN = TRANSITION_BINS.sapphire;
 
-// ---------------------------------------------------------------- S_SwishPan
-
 /** S_SwishPan: one clip slides off, the other on, with a directional motion blur — a fast camera pan. */
 export const S_SWISH_PAN = defineShaderTransition({
 	id: 'jasper.s.swish-pan',
@@ -75,8 +73,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Swish3D
 
 /**
  * S_Swish3D: both clips perform a 3D move (Z distance, rotate, swivel, tilt, shift, scale) while dissolving — the
@@ -201,8 +197,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_WhipLash + S_MochaWhip
 
 /** RGB split / blur params of WhipLash (and MochaWhip's Cutout / Background sets, with a prefix). */
 function rgbSplitParams(prefix = '', labelPrefix = '') {

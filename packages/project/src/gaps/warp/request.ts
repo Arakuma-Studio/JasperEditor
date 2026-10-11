@@ -1,4 +1,4 @@
-// Warp Stabilizer ▸ which instances need a (new) analysis and over which media frames (workstream gaps, §FX-6): shared
+// Warp Stabilizer ▸ which instances need a (new) analysis and over which media frames (§FX-6): shared
 // by the editor's background analysis and the MCP `stabilize_clip` tool. An analysis is reused while it is for the
 // clip's media, with the same Detailed Analysis setting, and covers every frame the clip shows.
 

@@ -1,5 +1,3 @@
-// Colour grading through the public MCP tools and a real engine. The fixture PNG and
-// engine change stream provide independent evidence of the result.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,8 +16,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
 const FIXTURES = join(ROOT, 'fixtures', 'media');
 
-// ---------------------------------------------------------------- integration (real engine)
-
 const PORT = Number(process.env.MCP_COLOR_TEST_PORT ?? 48587);
 const URL_BASE = `http://127.0.0.1:${PORT}`;
 
@@ -34,7 +30,6 @@ function ensureFixtures(): void {
 	if (r.status !== 0) throw new Error('fixture generation failed');
 }
 
-/** RGB24 pixels of a PNG (decoded by ffmpeg). */
 function pngPixels(png: Buffer): Buffer {
 	const r = spawnSync(
 		'ffmpeg',
@@ -252,7 +247,6 @@ describe('colour tools against a real engine (S06 §9 test 8)', () => {
 		const after = await frameAt(projectId, 30, 'color-graded.png');
 		expect(meanAbsDiff(before, after)).toBeGreaterThan(8);
 
-		// A second call edits the same instance (one change again) and clamps out-of-range values.
 		const changes2 = await docChangedDuring(token, projectId, async () => {
 			res = await ok('grade_clip', { projectId, clipId: clipA, basic: { exposure: 12 } });
 		});
@@ -263,7 +257,6 @@ describe('colour tools against a real engine (S06 §9 test 8)', () => {
 		expect(
 			(await fails('grade_clip', { projectId, clipId: clipA, creative: { look: 'nope.cube' } })).code,
 		).toBe('E_NOT_FOUND');
-		// The public input contract rejects misspelled and malformed grade fields.
 		for (const bad of [
 			{ basic: { exposre: 1 } },
 			{ curves: { master: [[0, 0]] } },

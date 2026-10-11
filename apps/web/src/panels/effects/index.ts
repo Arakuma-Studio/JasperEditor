@@ -1,5 +1,3 @@
-// Effects panel (WP-2D): the effect catalogue; drag onto clips or double-click to apply (S05:EFX).
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

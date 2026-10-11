@@ -24,6 +24,7 @@ import {
 	sequenceTimecode,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -39,10 +40,6 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaRegisterCommand } from '../media.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
-
-// ---------------------------------------------------------------- the grade_clip shape ↔ Lumetri params
 
 type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels' | 'secondary' | 'vignette' | 'sections';
 
@@ -430,8 +427,6 @@ function resolveLutRefs(doc: ProjectDocument, params: Record<string, unknown>): 
 	return out;
 }
 
-// ---------------------------------------------------------------- document helpers
-
 const effectsOf = (clip: Clip): EffectInstance[] => (clip as { effects?: EffectInstance[] }).effects ?? [];
 
 /** Visual clips that take effects can carry a grade (the same rule as the Lumetri panel). */
@@ -538,8 +533,6 @@ function lumetriGradeView(values: Record<string, unknown>): Record<GradeSection,
 	return out;
 }
 
-// ---------------------------------------------------------------- copy_grade
-
 /**
  * copy_grade commands: every target's colour effects are removed and the source's colour effects (stack
  * order, bypass state, keyframes re-timed) are inserted where the target's first colour effect was (appended
@@ -615,12 +608,9 @@ function planCopyGrade(
 	return { commands, refs, removed };
 }
 
-// ---------------------------------------------------------------- guide
-
 const ORDER =
 	'Order of operations inside one Lumetri Color instance: 1 input LUT, 2 white balance (temperature/tint, linear light), 3 exposure, 4 contrast, 5 highlights/shadows, 6 whites/blacks, 7 saturation, 8 look (LUT or built-in) × intensity, 9 vibrance, faded film, creative saturation, shadow/highlight tint, 10 curves (master, then R/G/B, then hue/saturation curves), 11 wheels (lift/gamma/gain), 12 clamp — all baked into one LUT; then on the GPU: sharpen, 13 HSL Secondary, 14 vignette. Several colour effects on a clip run top to bottom.';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const COLOR_GUIDE = `Colour grading (Lumetri Color):
 - grade_clip sets any subset of the grade in one undoable step: basic (exposure in stops −5…5, saturation 0…200 %, the others −100…100), creative (look LUT + intensity 0…100 %, vibrance), curves ([[x,y],…] in 0…1) and wheels ([x,y] in the unit disc, levels −100…100). Unspecified params keep their values. Start with small moves (exposure ±0.5, contrast ±20, temperature ±15).
 - ${ORDER}
@@ -630,8 +620,6 @@ export const COLOR_GUIDE = `Colour grading (Lumetri Color):
 - color_match {clipId, reference: {at}} grades a clip to look like a reference frame (writes its wheels, levels and saturation); auto_tone sets its Basic tone sliders. scopes_read measures a frame as numbers (levels %, clipping, vectorscope hue/saturation) — check a grade without looking.
 - Built-in looks: list_looks; grade_clip creative.builtInLook = an id (no LUT file needed).
 - Always check the result with render_frame at a time inside the clip (and compare with an ungraded frame if unsure).`;
-
-// ---------------------------------------------------------------- tools
 
 function checkFile(path: string): void {
 	if (!isAbsolute(path))

@@ -1,7 +1,3 @@
-// Tracking UI acceptance (S09 §8 item 6, TRU-001…004): a plate on V1 and a still on V2; add a planar tracker in
-// Properties ▸ Tracking → drag a corner on the Program monitor (one History entry) → Track Forward (engine job,
-// live overlay) → Apply to… Corner Pin (one entry) → drag a corner-pin handle at a frame (keyframe updated, one
-// entry) → timeline glyphs (TRU-005) → Simplify… (TRK-023, one entry) → the undo chain restores each step.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -51,7 +47,6 @@ const pinOf = async () =>
 		(e) => e.effectId === 'jasper.corner-pin',
 	);
 
-/** Centre of an SVG element in page coordinates. */
 async function centreOf(selector: string): Promise<{ x: number; y: number }> {
 	const box = await page.locator(selector).first().boundingBox();
 	if (!box) throw new Error(`${selector} is not visible`);
@@ -65,9 +60,7 @@ test('add a planar tracker and drag a corner on the Program monitor (one History
 	const idOf = (n: string) => media.media.find((m) => m.originalName === n)!.mediaId;
 	const r = await page.evaluate(
 		([plate, still]) =>
-			(
-				window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown }> } }
-			).jasper.transact({
+			window.jasper!.transact({
 				label: 'Place plate and still',
 				commands: [
 					{
@@ -98,7 +91,7 @@ test('add a planar tracker and drag a corner on the Program monitor (one History
 	// The still covers the frame: shrink it into a corner so the plate stays visible while placing the tracker.
 	const s = await page.evaluate(
 		(id) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			window.jasper!.transact({
 				label: 'Shrink still',
 				commands: [
 					{ type: 'param.set', target: ['clip', id, 'transform', 'scale'], value: 25 },
@@ -130,7 +123,6 @@ test('Track Forward runs an engine job with a live overlay and commits one "Trac
 	const labels0 = (await appliedLabels(page)).length;
 	await page.getByTestId('track-forward').click();
 	const error = page.getByTestId('tracking-error');
-	// While the job runs the section shows its progress and the Program overlay stays on the tracker.
 	await expect(page.getByTestId('tracking-progress').or(error)).toBeVisible({ timeout: 30_000 });
 	if (await error.isVisible()) throw new Error(`tracking failed: ${await error.textContent()}`);
 	await expect(page.getByTestId('tracker-overlay')).toBeVisible();
@@ -193,7 +185,6 @@ test('timeline glyphs: tracker badge and confidence strip on the plate, link on 
 	).toBeVisible();
 	const link = page.locator(`[data-testid="clip-tracked-link"][data-clip-id="${stillId}"]`);
 	await expect(link).toHaveAttribute('aria-label', /Follows Planar Tracker 1/);
-	// Clicking the link selects the plate and reveals Properties ▸ Tracking with the tracker active.
 	await link.click();
 	await expect(page.getByTestId('tracking-section')).toBeVisible();
 	await expect(page.getByTestId('tracker-controls')).toBeVisible();
@@ -209,7 +200,6 @@ test('Simplify… reduces the tracked keys within the tolerance as one entry (S0
 	await page.getByTestId('simplify-preset-0.5').click();
 	await expect(page.getByTestId('simplify-deviation')).toContainText('tolerance 0.500');
 	await expect(page.getByTestId('simplify-graph')).toBeVisible();
-	// The preview is a gesture: nothing committed yet.
 	expect((await appliedLabels(page)).length).toBe(labels0);
 	await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
 	await expect(dialog).toBeHidden();

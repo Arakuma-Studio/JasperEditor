@@ -1,10 +1,4 @@
-// Sequence ▸ Add Tracks… / Delete Tracks… (workstream gaps, docs/wp-notes/gaps.md §TL-10), as Premiere's dialogs:
-// - Add Tracks: video / audio / audio submix sections, each "Add [n] track(s)", a Placement (Before First Track,
-//   After <Track n>, After Last Track) and, for audio and submixes, the Track Type (Mono, Stereo, 5.1).
-// - Delete Tracks: per section a checkbox and a target: All Empty Tracks or one track (video, audio), All Unassigned
-//   Tracks or one submix. A track holding clips is deleted with its clips after a confirmation.
-// Both apply one undoable transaction (`track.add` / `track.remove` / `mixer.addSubmix` / `mixer.removeSubmix`).
-import type { AudioChannelFormat, Sequence, Track } from '@jasper/project';
+import type { AudioChannelFormat, CommandInput, Sequence, Track } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	Checkbox,
@@ -54,8 +48,8 @@ export function addTracksCommands(
 		audio: { count: number; index: number; type: AudioChannelFormat };
 		submix: { count: number; index: number; type: AudioChannelFormat };
 	},
-): unknown[] {
-	const cmds: unknown[] = [];
+): CommandInput[] {
+	const cmds: CommandInput[] = [];
 	const clampCount = (n: number) => Math.max(0, Math.min(99, Math.floor(Number.isFinite(n) ? n : 0)));
 	const v = clampCount(opts.video.count);
 	const a = clampCount(opts.audio.count);
@@ -195,7 +189,7 @@ function AddTracksDialog(props: HostedDialogProps<DialogProps>) {
 					label: 'Add Tracks',
 					origin: 'user',
 					sequenceId: seq.id,
-					commands: cmds as never[],
+					commands: cmds,
 				});
 				if (!r.ok) {
 					setError(r.errors[0]?.message ?? 'The tracks could not be added.');
@@ -356,7 +350,7 @@ function DeleteTracksDialog(props: HostedDialogProps<DialogProps>) {
 					}))
 				)
 					return false;
-				const cmds: unknown[] = [];
+				const cmds: CommandInput[] = [];
 				if (p.trackIds.length)
 					cmds.push({ type: 'track.remove', sequenceId: seq.id, trackIds: p.trackIds, force: p.clips > 0 });
 				for (const id of p.submixIds)
@@ -365,7 +359,7 @@ function DeleteTracksDialog(props: HostedDialogProps<DialogProps>) {
 					label: 'Delete Tracks',
 					origin: 'user',
 					sequenceId: seq.id,
-					commands: cmds as never[],
+					commands: cmds,
 				});
 				if (!r.ok) {
 					setError(r.errors[0]?.message ?? 'The tracks could not be deleted.');

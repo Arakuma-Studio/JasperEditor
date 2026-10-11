@@ -1,11 +1,10 @@
-// Interpret Footage (workstream `imports`, docs/wp-notes/imports.md). Handlers: handlers/interpret.ts.
 import { z } from 'zod';
 import { RationalSchema, RGBASchema } from '../../schema/common.ts';
 import { cmd, IdRefSchema } from './common.ts';
 
 /**
  * A patch of the Interpret Footage sections: an absent field is left as it is, `null` goes back to the file's own
- * value. Sections a later workstream adds (colour management) are separate fields of the same object.
+ * value. Colour management has a separate interpretation field.
  */
 export const InterpretationPatchSchema = z.strictObject({
 	/** Frame Rate ▸ Assume this frame rate (fps as a rational, e.g. {num: 24000, den: 1001}); null = from file. */

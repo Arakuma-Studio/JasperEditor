@@ -1,25 +1,10 @@
-// Program monitor mask editing (wp masks; Premiere's on-monitor mask controls + After Effects' pen behaviours):
-// - the masks of the selected clip are outlined; click an outline to select that mask;
-// - the selected mask shows its vertices, the tangent handles of the selected / smooth vertices, the Mask Expansion
-//   guide (square handle) and the Mask Feather guide (circle handle), and a bounding box (corner squares scale about
-//   the centre, outside the corners rotates);
-// - drag a vertex (the selected vertices move together; Shift-click adds to the selection), a tangent handle (the
-//   opposite one mirrors; Alt breaks it), the inside of the mask (moves the whole path); Alt-click a vertex converts
-//   it between smooth and corner, Ctrl/Cmd-click deletes it; a click on the path inserts a vertex; Delete removes the
-//   selected vertices;
-// - the pen (Effect Controls ▸ free draw bezier) adds a vertex per click, a drag pulls out its tangents, clicking
-//   the first vertex closes the path.
-// Every drag is ONE session gesture writing the path at the playhead (a keyframe when Mask Path is animated).
-import type { RenderDoc } from '@jasper/compositions';
-import type { BezierPath, Command, ResolvedLayer, ResolvedMask } from '@jasper/project';
-import type { EditorSession, TransportStore } from '@jasper/session';
+import type { BezierPath, CommandInput, ResolvedLayer, ResolvedMask } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useMemo } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
-import type { View } from '../panels/program/viewport.ts';
 import { resolveProgramScene } from '../three-d/scene.ts';
 import { type DragSpec, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
 import {
@@ -55,10 +40,10 @@ const at = (e: { clientX: number; clientY: number; currentTarget: Element }): Pt
 };
 
 export function MaskOverlay(props: ProgramOverlayHostProps) {
-	const session = props.session as EditorSession;
-	const doc = props.doc as RenderDoc;
-	const view = props.view as View;
-	const transport = props.transport as TransportStore;
+	const session = props.session;
+	const doc = props.doc;
+	const view = props.view;
+	const transport = props.transport;
 	const { frame, playing } = useOverlayFrame(transport);
 	const selectedClips = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
 	const readOnly = useStoreSelector(session.store, (s) => s.readOnly);
@@ -85,16 +70,16 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 	const penMask = ui.pen?.maskId ? masks.find((m) => m.id === ui.pen!.maskId) : undefined;
 	const active = penMask ?? sel;
 	const atSeq = { sequenceFrame: frame };
-	const edit = (maskId: string, ops: unknown[]): Command[] => [
-		{ type: 'mask.editPath', maskId, at: atSeq, ops } as Command,
-	];
-	const apply = (label: string, commands: Command[]) => {
+	const edit = (
+		maskId: string,
+		ops: Extract<CommandInput, { type: 'mask.editPath' }>['ops'],
+	): CommandInput[] => [{ type: 'mask.editPath', maskId, at: atSeq, ops } satisfies CommandInput];
+	const apply = (label: string, commands: CommandInput[]) => {
 		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors[0]?.message ?? '' });
 		return r;
 	};
 
-	// ------------------------------------------------------------ pen
 	const onPenDown = (e: ReactPointerEvent<SVGRectElement>) => {
 		if (e.button !== 0 || readOnly || !ui.pen) return;
 		const s = at(e);
@@ -111,7 +96,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 					shape: 'bezier',
 					path: { closed: false, vertices: [{ p: n, in: [0, 0], out: [0, 0] }] },
 					ref: '$pen',
-				} as Command,
+				} satisfies CommandInput,
 			]);
 			if (!r.ok) return;
 			maskId = r.refs.$pen!;
@@ -141,7 +126,6 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 		});
 	};
 
-	// ------------------------------------------------------------ selected mask editing
 	const drawPath = (m: ResolvedMask) => screenPolyline(m.path, sp);
 	const selPts = active ? drawPath(active) : [];
 	const selectedVerts = new Set(ui.vertices);
@@ -243,7 +227,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 					kind === 'feather'
 						? Math.max(0, Math.round(2 * (d - m.expansion) * 10) / 10)
 						: Math.round(d * 10) / 10;
-				return [{ type: 'param.set', target: ['mask', m.id, kind], value, at: atSeq } as Command];
+				return [{ type: 'param.set', target: ['mask', m.id, kind], value, at: atSeq } satisfies CommandInput];
 			},
 		});
 	};

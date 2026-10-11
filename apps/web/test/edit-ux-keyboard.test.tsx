@@ -1,6 +1,3 @@
-// edit-ux: keyboard layouts (Premiere / Avid / Final Cut Pro 7 / Final Cut Pro), the shortcut store (assign with
-// conflict takeover, remove, clear, reset, undo, custom layouts, persistence, browser-reserved refusal), the active
-// keymap reaching resolution, contextual chords, spring-loaded tools and the Keyboard Shortcuts dialog.
 import { EngineClient } from '@jasper/engine-client';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -79,7 +76,7 @@ describe('keyboard layouts', () => {
 		const ids = new Set(listCommands().map((c) => c.id));
 		for (const l of LAYOUTS) {
 			const missing = [...new Set(layoutKeymap(l.id).map((b) => b.command))].filter((id) => !ids.has(id));
-			// Ids other workstreams register later in the app shell (panels, captions, project panel) are inert until then.
+			// Panel commands are unavailable until registered by the shell.
 			const allowed = missing.filter((id) => DEFAULT_KEYMAP.some((b) => b.command === id));
 			expect(missing, l.id).toEqual(allowed);
 		}
@@ -91,7 +88,6 @@ describe('keyboard layouts', () => {
 		expect(keyOf('timeline.insertFromSource')).toEqual(['F9']);
 		expect(keyOf('timeline.overwriteFromSource')).toEqual(['F10']);
 		expect(keyOf('timeline.trimBack')).toEqual(['BracketLeft']);
-		// Shuttle keys keep their keyup behaviour.
 		expect(km.find((b) => b.command === 'transport.shuttleForward')!.keyup).toBe(true);
 	});
 });

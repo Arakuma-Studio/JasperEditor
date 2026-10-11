@@ -1,5 +1,3 @@
-// Job queue contracts (S04 §17, ARCHITECTURE §9.3). Runners are registered per job kind; WP-2G registers
-// `mg-render`, WP-2F registers probe/derivatives/export/still.
 import type { ChildProcess } from 'node:child_process';
 import type { EngineJob, JobKind } from '@jasper/api';
 

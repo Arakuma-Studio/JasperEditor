@@ -20,7 +20,7 @@ export class XmlError extends Error {
 
 const MAX_DEPTH = 4096;
 
-function decodeEntities(s: string, at: () => number): string {
+function decodeEntities(s: string): string {
 	if (!s.includes('&')) return s;
 	return s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]*);?/g, (m, e: string) => {
 		if (e[0] === '#') {
@@ -44,7 +44,6 @@ function decodeEntities(s: string, at: () => number): string {
 				return ' ';
 			default:
 				// Unknown entity (HTML-ish producers): keep the text as is rather than failing the import.
-				void at;
 				return m;
 		}
 	});
@@ -92,10 +91,9 @@ export function parseXml(text: string): XNode {
 			const raw = s.slice(i, lt);
 			if (cur === docRoot) {
 				if (raw.trim()) fail('text outside the root element');
-			} else cur.children.push(decodeEntities(raw, () => i));
+			} else cur.children.push(decodeEntities(raw));
 			i = lt;
 		}
-		// i at '<'
 		if (s.startsWith('<!--', i)) {
 			const e = s.indexOf('-->', i + 4);
 			if (e < 0) fail('unterminated comment');
@@ -135,7 +133,6 @@ export function parseXml(text: string): XNode {
 			continue;
 		}
 		if (s.charCodeAt(i + 1) === 47) {
-			// </name>
 			i += 2;
 			const name = readName();
 			skipWs();
@@ -147,7 +144,6 @@ export function parseXml(text: string): XNode {
 			depth--;
 			continue;
 		}
-		// start tag
 		i++;
 		const name = readName();
 		const node: XNode = { name, attrs: {}, children: [], parent: cur };
@@ -165,7 +161,7 @@ export function parseXml(text: string): XNode {
 			if (q !== '"' && q !== "'") fail(`unquoted attribute ${an}`);
 			const e = s.indexOf(q, i + 1);
 			if (e < 0) fail(`unterminated attribute ${an}`);
-			node.attrs[an] = decodeEntities(s.slice(i + 1, e), () => i).replace(/[\t\n\r]/g, ' ');
+			node.attrs[an] = decodeEntities(s.slice(i + 1, e)).replace(/[\t\n\r]/g, ' ');
 			i = e + 1;
 		}
 		if (cur === docRoot) {
@@ -188,8 +184,6 @@ export function parseXml(text: string): XNode {
 	root!.parent = null;
 	return root!;
 }
-
-// ---------------------------------------------------------------- read helpers
 
 export function elements(n: XNode | null | undefined): XNode[] {
 	if (!n) return [];
@@ -276,8 +270,6 @@ export function descendants(n: XNode): XNode[] {
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- writer
 
 export function escapeXml(s: string, attr = false): string {
 	let out = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

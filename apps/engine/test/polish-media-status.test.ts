@@ -1,4 +1,3 @@
-// polish: POST /api/media/status answers many media in one request (project open).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeApps, ensureFixtures, fixture, H, JSON_H, makeApp, register } from './helpers.ts';
 

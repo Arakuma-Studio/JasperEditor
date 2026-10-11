@@ -264,7 +264,6 @@ describe('Parametric EQ (8 bands) and Simple 3-Band EQ (filmcraft eq.rs)', () =>
 		const spec = AUDIO_EFFECTS.find((s) => s.id === 'jasper.audio.parametric-eq-8-band')!;
 		expect(spec.params.find((p) => p.name === 'b3Type')!.options).toEqual(types.map((t) => t[0]));
 		for (const [type, rbj, gain] of types) {
-			// Only band 3 active.
 			const p: Record<string, ParamValue> = {};
 			for (let b = 1; b <= 8; b++) p[`b${b}On`] = b === 3;
 			Object.assign(p, { b3Type: type, b3Freq: 1500, b3Q: 1.4, b3Gain: gain });
@@ -349,7 +348,6 @@ describe('Graphic Equalizer', () => {
 			const want = resp(e, 1000);
 			expect(Math.abs(want - 12)).toBeLessThan(1);
 			expect(Math.abs(toneDb(e, 1000, 0.1) - want)).toBeLessThan(0.05);
-			// An octave+ away the boost has mostly gone.
 			expect(resp(e, 4000)).toBeLessThan(1);
 			const flat = fx(`graphic-equalizer-${n}`, { gain: -6 });
 			expect(Math.abs(toneDb(flat, 300, 0.1) + 6)).toBeLessThan(0.05);
@@ -557,7 +555,6 @@ describe('FFT Filter', () => {
 			p8Gain: -20,
 			interp: 'smooth',
 		});
-		// Curve shape: log-frequency smoothstep between the points, constant outside.
 		expect(Math.abs(resp(e, 20) - 6)).toBeLessThan(1e-9);
 		expect(Math.abs(resp(e, 20000) + 20)).toBeLessThan(1e-9);
 		expect(Math.abs(resp(e, Math.sqrt(600 * 1500)) - -9)).toBeLessThan(1e-9);
@@ -581,14 +578,12 @@ describe('FFT Filter', () => {
 		for (let i = 0; i < n; i++) if (Math.abs(l[i]!) > Math.abs(l[peak]!)) peak = i;
 		expect(peak).toBe(100 + lat);
 		expect(Math.abs(l[peak]! - 0.5)).toBeLessThan(1e-3);
-		// Neutral settings: delayed identity.
 		const x = noise(2, 20000, 0.25);
 		const y = x.slice();
 		fx('fft-filter').process([y], 0, y.length);
 		let worst = 0;
 		for (let i = lat; i < x.length; i++) worst = Math.max(worst, Math.abs(y[i]! - x[i - lat]!));
 		expect(worst).toBeLessThan(2e-4);
-		// Latency does not depend on the parameters.
 		expect(fx('fft-filter', { p3Gain: -40, interp: 'linear' }).latency()).toBe(lat);
 	});
 });

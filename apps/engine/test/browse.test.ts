@@ -1,4 +1,3 @@
-// Workstream polish: Media Browser routes (list / info / thumbnail / file), local engines only.
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -134,7 +133,6 @@ describe('Media Browser routes', () => {
 		expect(thumb.statusCode).toBe(200);
 		expect(thumb.headers['content-type']).toBe('image/jpeg');
 		expect(thumb.rawPayload.subarray(0, 2).toString('hex')).toBe('ffd8');
-		// cached: the second request serves the same file
 		const again = await app.inject({
 			method: 'GET',
 			url: `/api/browse/thumbnail?path=${q(fixture('clip-a.mp4'))}&width=96`,
@@ -226,7 +224,6 @@ describe('Media Browser routes', () => {
 		});
 		expect(info.json().media).toBeNull();
 		expect(info.body).not.toContain('PRIVATE KEY');
-		// a link to a real clip plays, with the headers of every served user file (security review ENG-1)
 		const ok = await app.inject({
 			method: 'GET',
 			url: `/api/browse/file?path=${q(join(dir, 'real.mp4'))}`,

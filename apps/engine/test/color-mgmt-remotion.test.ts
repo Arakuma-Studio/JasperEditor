@@ -1,9 +1,4 @@
-// color-mgmt on the Remotion path (REMOTION_E2E=1: bundles the compositions, headless Chrome): a Rec. 2100 PQ
-// sequence with Blend Using 1.0 Gamma (refused natively → Remotion) where a 50 % white solid over black blends in
-// linear light, graphics map white to the HDR graphics white, a text layer goes through the DOM colour chain, and the
-// still is the display rendition (BT.2390 tone mapped). Expected values from the TS colour science. The tracks of a
-// linear-light run share one blend scope; an adjustment layer between linear tracks (scopes that would nest) is drawn
-// by the flat compositor (compositor workstream).
+// Expected display values come from the TypeScript colour-science reference; adjustment layers split linear-light scopes.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -81,7 +76,6 @@ describe.runIf(process.env.REMOTION_E2E === '1')(
 			hostH = { host: `127.0.0.1:${engine.port}` };
 		}, 120_000);
 
-		/** A PQ sequence blending in linear light: black V1, 50 % white solid V2, then `upper` commands. */
 		const build = (upper: object[]) => {
 			const d = new DocBuilder();
 			d.tx([

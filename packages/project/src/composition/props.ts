@@ -147,8 +147,6 @@ export function formatSchemaIssues(issues: readonly SchemaIssue[], max = 4): str
 	return issues.length > max ? `${shown.join('; ')}; …` : shown.join('; ');
 }
 
-// ---------------------------------------------------------------- time (S08:MGC-004/005)
-
 /** The composition's own frame rate differs from the sequence rate (warning MG_FPS_MISMATCH, MGC-005). */
 export function compositionFpsMismatch(info: Pick<MgCompositionInfo, 'fps'>, seqRate: Rational): boolean {
 	return Math.abs(info.fps - fpsOf(seqRate)) > 1e-3;
@@ -193,8 +191,6 @@ export function compositionClipRenderRange(
 		layerStart: clip.start - head + (startFrame - first),
 	};
 }
-
-// ---------------------------------------------------------------- pre-render key (S08:MGC-031)
 
 type CompositionRenderKeyInput = {
 	bundleHash: string;

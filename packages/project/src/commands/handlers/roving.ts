@@ -8,7 +8,7 @@ import type { CommandOf } from '../schemas/index.ts';
 import { finish, locate, targetOf } from './keyframe.ts';
 import type { HandlerMap } from './util.ts';
 
-export const rovingHandlers: HandlerMap = {
+export const rovingHandlers = {
 	'keyframe.setRoving': (doc, cmd: CommandOf<'keyframe.setRoving'>, h) => {
 		const found = locate(doc, cmd.keyframeIds, h);
 		const touched = new Set<(typeof found)[number]['anim']>();
@@ -37,4 +37,4 @@ export const rovingHandlers: HandlerMap = {
 		finish(touched);
 		return { updated };
 	},
-};
+} satisfies HandlerMap;

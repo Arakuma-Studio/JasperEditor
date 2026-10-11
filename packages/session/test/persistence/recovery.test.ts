@@ -1,5 +1,3 @@
-// Crash-recovery journal (S01:PER-021, AC-18, ARCHITECTURE D-39): timing, clearing on save and clean close,
-// recovery into a new session as one undoable step, Revert discarding it.
 import {
 	createCounterIdSource,
 	createEmptyProject,
@@ -36,7 +34,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 
 	it('journals about 1 s after an edit, and at most every 5 s while edits keep coming', async () => {
 		const { store, open, projectId } = await setup();
-		vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full')); // autosave keeps failing
+		vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full'));
 		const write = vi.spyOn(store, 'writeRecovery');
 		const s = await open('s1');
 		const p = attachPersistence(s, { ...noLifecycle, onError: () => undefined });
@@ -47,7 +45,6 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		expect(write).toHaveBeenCalledTimes(1);
 		expect(store.journalOf(projectId, 's1')?.changes).toEqual(['Add Solid']);
 
-		// continuous edits every 500 ms: still written within 5 s of the first unjournalled change
 		for (let i = 1; i <= 12; i++) {
 			s.apply({ label: `Add ${i}`, origin: 'user', commands: [solid(20 * i)] });
 			await vi.advanceTimersByTimeAsync(500);
@@ -64,9 +61,9 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		const s = await open('s1');
 		const p = attachPersistence(s, noLifecycle);
 		s.apply({ label: 'Add Solid', origin: 'user', commands: [solid(0)] });
-		await vi.advanceTimersByTimeAsync(1100); // journal written
+		await vi.advanceTimersByTimeAsync(1100);
 		expect(store.journalOf(projectId, 's1')).not.toBeNull();
-		await vi.advanceTimersByTimeAsync(600); // autosave at 1.5 s
+		await vi.advanceTimersByTimeAsync(600);
 		expect(s.getState().dirty).toBe(false);
 		expect(store.journalOf(projectId, 's1')).toBeNull();
 		expect(discard).toHaveBeenCalledTimes(1);
@@ -89,9 +86,11 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 
 		const s2 = await open('s2');
 		const p2 = attachPersistence(s2, noLifecycle);
-		const [c] = await store.listRecovery(projectId);
+		const {
+			candidates: [c],
+		} = await store.listRecovery(projectId);
 		expect(c).toMatchObject({ sessionId: 's1', changes: ['Add Solid', 'Add Solid'], baseRevision: 0 });
-		expect(await store.listRecovery(projectId)).toHaveLength(1); // own (empty) session is not a candidate
+		expect((await store.listRecovery(projectId)).candidates).toHaveLength(1); // own (empty) session is not a candidate
 
 		const snap = await store.readRecovery(projectId, 's1');
 		const before = s2.getCommitted();
@@ -104,7 +103,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		await p2.journal!.flush();
 		expect(clipCount(store.journalOf(projectId, 's2')!.document)).toBe(2);
 		await store.discardRecovery(projectId, 's1');
-		expect(await store.listRecovery(projectId)).toEqual([]);
+		expect(await store.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		s2.undo();
 		expect(s2.getCommitted()).toBe(before);
 		await p2.dispose();
@@ -120,7 +119,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		await p.dispose(); // the save on close fails: the journal keeps the change
 		await s.close();
 		expect(store.journalOf(projectId, 's1')?.changes).toEqual(['Add Solid']);
-		expect((await store.listRecovery(projectId)).map((c) => c.sessionId)).toEqual(['s1']);
+		expect((await store.listRecovery(projectId)).candidates.map((c) => c.sessionId)).toEqual(['s1']);
 		await store.discardRecovery(projectId, 's1');
 
 		const s2 = await open('s2');

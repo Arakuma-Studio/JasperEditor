@@ -1,10 +1,3 @@
-// Layer bake end to end (S11 §11 test 4, REMOTION_E2E=1): a listening engine bakes text, shapes and anime-template
-// layers through headless Chrome. Footage + static title + keyframed title + shape + anime template plan `hybrid`;
-// the static layers bake one PNG; the output matches a full Remotion render; masters keep straight alpha over
-// R/G/B/W; re-exports hit the cache (also after moving a title in time); a text change bakes again; a Lumetri grade
-// on a title shows in the native export, the Remotion export and the graded preview, and a graded static title
-// fades through its transition once on all three; stills take the same path;
-// a failing bake makes an `auto` export fall back to Remotion; every bake is in the Remotion usage log.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -58,7 +51,6 @@ function report(line: string): void {
 	appendFileSync(join(tmpdir(), 'layer-bake-e2e.txt'), `${new Date().toISOString()} ${line}\n`);
 }
 
-/** Decodes frame `n` of a video (or a PNG) to raw pixels. */
 function decode(file: string, o: { frame?: number; pix: 'rgba' | 'rgb24'; decoder?: string }): Buffer {
 	const r = spawnSync(
 		'ffmpeg',
@@ -83,7 +75,6 @@ function decode(file: string, o: { frame?: number; pix: 'rgba' | 'rgb24'; decode
 	return r.stdout;
 }
 
-/** Share of samples within `tol`. */
 function within(a: Uint8Array, b: Uint8Array, tol: number): number {
 	expect(a.length).toBe(b.length);
 	let n = 0;
@@ -91,7 +82,6 @@ function within(a: Uint8Array, b: Uint8Array, tol: number): number {
 	return n / a.length;
 }
 
-/** Straight-alpha composite of RGBA over a flat colour → RGB. */
 function over(fg: Uint8Array, bg: [number, number, number]): Uint8Array {
 	const out = new Uint8Array((fg.length / 4) * 3);
 	for (let i = 0, j = 0; i < fg.length; i += 4, j += 3) {
@@ -155,7 +145,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 10 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 	});
 
@@ -196,7 +185,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		};
 	}
 
-	/** The test sequence: footage, a static title, a keyframed title, a shape and an anime template. */
 	async function mainDoc(): Promise<{ d: DocBuilder; ids: Record<string, string> }> {
 		const footage = await register(engine.app, fixture('clip-a.mp4'), hostH());
 		const d = new DocBuilder('hd-720p-30');
@@ -302,9 +290,8 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(usage.some((entry) => entry.kind === 'media')).toBe(true);
 		expect(usage.some((entry) => entry.kind === 'still')).toBe(true);
 
-		// Parity with a full Remotion render (S11 §11 test 4). Footage is decoded by Chrome there and by ffmpeg here,
-		// which differ on their own (testsrc2 H.264: up to 30 code values, independent of the bake): the comparison
-		// runs with the footage disabled over a grey background, everything else unchanged (no new bake).
+		// Chrome and ffmpeg footage decoders differ by up to 30 code values independently of the bake;
+		// compare with footage disabled over grey while keeping all baked content unchanged.
 		const footage = d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'video')!;
 		d.tx([
 			{ type: 'clip.update', clipIds: [footage], patch: { enabled: false } },
@@ -362,10 +349,9 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		const plan = await svc.planBake(planned, clip, { env: await svc.environment() });
 		const bake = (await svc.lookup(plan.key))!;
 		expect(bake.still).toBe(false);
-		// The document the master was rendered from (its crop rect, or the full frame after a crop fallback).
 		const doc = bake.rect ? plan.doc : (plan.fullDoc ?? plan.doc);
 		expect([doc.settings.width, doc.settings.height]).toEqual([bake.width, bake.height]);
-		const k = 20; // master frame (sequence frame 30)
+		const k = 20;
 		const out = join(tempAppdir('jasper-lb-still-'), 'still.png');
 		await coreServices(engine.app).remotion.renderStill({
 			inputProps: {
@@ -410,7 +396,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		const again = await exportDoc(d, 'auto');
 		expect(again.done.state).toBe('succeeded');
 		expect(again.bakes).toHaveLength(0);
-		// Move the keyframed title 5 frames later (its keyframes move with it).
 		d.tx([{ type: 'clip.move', clipIds: [ids.moving!], deltaFrames: 5 }]);
 		const moved = await exportDoc(d, 'auto');
 		expect(moved.done.state).toBe('succeeded');
@@ -431,7 +416,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(
 			within(decode(s.file, { pix: 'rgb24' }), decode(exp.out, { frame: 30, pix: 'rgb24' }), 3),
 		).toBeGreaterThanOrEqual(0.99);
-		// A new keyframed title (no master yet): the still bakes one frame of it.
 		const t = d.tx([
 			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Fresh' }, ref: '$f' },
 		]).refs.$f!;
@@ -470,7 +454,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		d.tx([
 			{ type: 'effect.add', target: { clipId: t }, effectId: LUMETRI_EFFECT_ID, params: { saturation: 0 } },
 		]);
-		// The glyph area: brightest pixels of the frame (the text), compared per channel.
 		// The glyphs: mean colour of the pixels brighter than the black background.
 		const textColour = (rgb: Uint8Array) => {
 			const sum = [0, 0, 0];
@@ -515,9 +498,7 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		// The three paths agree (the preview is VP9 at half size: a little looser).
 		expect(Math.abs(colours[0]![0]! - colours[1]![0]!)).toBeLessThanOrEqual(3);
 		expect(Math.abs(colours[0]![0]! - colours[2]![0]!)).toBeLessThanOrEqual(5);
-		// Native and Remotion agree on the whole frame.
 		expect(within(natRgb, remRgb, 3)).toBeGreaterThanOrEqual(0.99);
-		// The file route serves the preview.
 		const get = await engine.app.inject({ method: 'GET', url: pres.previewUrl, headers: hostH() });
 		expect(get.statusCode).toBe(200);
 		expect(get.headers['content-type']).toBe('video/webm');
@@ -553,7 +534,7 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		const mid = 15;
 		const full = 35;
 		const expected = 0.5;
-		const bg = (rgb: Uint8Array) => rgb[0]!; // top-left pixel: background
+		const bg = (rgb: Uint8Array) => rgb[0]!;
 		// The glyphs: pixels of the path's own full-opacity frame clearly darker than the background (grey glyphs ≈ 54).
 		const measure = (fullRgb: Uint8Array, midRgb: Uint8Array) => {
 			const b = bg(fullRgb);
@@ -617,7 +598,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		}
 		expect(Math.abs(m.native.glyph - m.remotion.glyph)).toBeLessThanOrEqual(3);
 		expect(Math.abs(m.native.ratio - m.remotion.ratio)).toBeLessThanOrEqual(0.03);
-		// Native and Remotion agree on the whole frame, mid-fade and at full opacity.
 		for (const f of [mid, full])
 			expect(within(out(nat.out, f), out(rem.out, f), 3), `frame ${f}`).toBeGreaterThanOrEqual(0.99);
 	}, 1_800_000);

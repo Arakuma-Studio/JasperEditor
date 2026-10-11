@@ -2,10 +2,9 @@
 // `value` next to the `evaluated` value the renderer draws at that time (agent queries clip.properties and
 // param.get; live editor state when the project is open).
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import { defineTool, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult } from '../errors.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
 export const INSPECT_GUIDE = `Reading properties: get_clip_properties {clipId, at?, keys?} lists every property of a clip — Motion, opacity, audio, text style, shape, template / composition params, and each effect's params — with value (the keyframed value at that time, as Effect Controls shows it), evaluated (what the renderer draws then; rendered: false + why when it draws nothing: outside the clip, bypassed effect, disabled clip, track output off), its keyframes in sequence frames + timecode, and the param.set target to change it. get_param {target, at?} reads one parameter by that target (clips, effects on tracks or the master, transitions, track volume/pan).`;
 

@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { appdirPaths, desktopAppdir, parseEngineRuntime, resolveAppdir, resolvePort } from '../src/index.ts';
 
@@ -52,5 +53,35 @@ describe('@jasper/config', () => {
 		});
 		expect(parseEngineRuntime({ url: 'x', port: 1 })).toBeNull();
 		expect(parseEngineRuntime({ url: 'x', port: 1, pid: 1, token: 5 })).toBeNull();
+	});
+});
+
+describe('engine runtime validation', () => {
+	const runtime = { url: 'http://127.0.0.1:47900', port: 47900, pid: 12, token: 'token' };
+
+	it('refuses malformed runtime ports, process ids and URLs', () => {
+		for (const port of [0, -1, 65536, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '47900'])
+			expect(parseEngineRuntime({ ...runtime, port })).toBeNull();
+		for (const pid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])
+			expect(parseEngineRuntime({ ...runtime, pid })).toBeNull();
+		for (const url of ['not a URL', 'file:///tmp/engine', 'javascript:alert(1)'])
+			expect(parseEngineRuntime({ ...runtime, url })).toBeNull();
+		expect(parseEngineRuntime({ ...runtime, host: 42 })).toBeNull();
+	});
+
+	it('accepts arbitrary JSON only when it satisfies the discovery contract', () => {
+		fc.assert(
+			fc.property(fc.jsonValue(), (value) => {
+				const result = parseEngineRuntime(value);
+				if (result) {
+					expect(Number.isInteger(result.port)).toBe(true);
+					expect(result.port).toBeGreaterThan(0);
+					expect(result.port).toBeLessThanOrEqual(65535);
+					expect(Number.isInteger(result.pid)).toBe(true);
+					expect(result.pid).toBeGreaterThan(0);
+					expect(new URL(result.url).protocol).toMatch(/^https?:$/);
+				}
+			}),
+		);
 	});
 });

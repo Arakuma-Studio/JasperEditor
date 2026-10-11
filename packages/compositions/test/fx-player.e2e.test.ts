@@ -1,10 +1,4 @@
 // @vitest-environment node
-// GPU shader effects in the Remotion Player (wave-1 fx framework, preview path): Players of SequenceComposition in
-// headless Chrome (bundled with esbuild from fx-player/entry.tsx) with the test effects: a video through the chain
-// (`<Video headless onVideoFrame>` feeding FxPicture), a still with a padded drop shadow, a paused param edit
-// (redraw), a freeze-frame remap, and a shape (DOM layer) through HTML-in-Canvas when Chrome has the feature — and a
-// visible chip when it has not. Gated by REMOTION_E2E=1 (browser + video decoding, ≈ 30–60 s).
-
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';

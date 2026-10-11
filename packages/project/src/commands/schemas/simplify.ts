@@ -1,4 +1,3 @@
-// Keyframe simplification command (M3, S09:TRK-023, S01:KF-010). Handler: handlers/simplify.ts (wp-m3-trackui).
 import { z } from 'zod';
 import { cmd, IdRefSchema, ParamPathSchema } from './common.ts';
 

@@ -14,7 +14,7 @@ import {
 	type ClassicPlane,
 	type ClassicSetup,
 	dofLevels,
-	GLSL_BLEND,
+	GLSL_LAYER_BLEND,
 	type Iris,
 	kernelSpans,
 	type LightState,
@@ -41,22 +41,6 @@ in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 `;
 
-function blendSource(): string {
-	const seen = new Set<string>();
-	const out: string[] = [];
-	const add = (c: { name: string; source: string; deps?: readonly { name: string; source: string }[] }) => {
-		if (seen.has(c.name)) return;
-		seen.add(c.name);
-		for (const d of c.deps ?? []) add(d);
-		out.push(c.source);
-	};
-	add(GLSL_BLEND as never);
-	// Only the clip blend formulas (the effect blends after them read effect uniforms).
-	const src = out.join('\n');
-	const cut = src.indexOf('// ---- effect blends');
-	return cut > 0 ? src.slice(0, cut) : src;
-}
-
 const COMPOSITE_FS = () => `#version 300 es
 precision highp float;
 precision highp int;
@@ -73,7 +57,7 @@ uniform vec3 u_eye;
 uniform vec3 u_fwd;
 uniform int u_ortho;
 out vec4 fragColor;
-${blendSource()}
+${GLSL_LAYER_BLEND.source}
 const int MAX_FRAGS = ${MAX_FRAGS};
 const float NEAR3 = 1.0;
 vec4 P(int i, int k) { return texelFetch(u_planes, ivec2(k, i), 0); }
@@ -308,8 +292,6 @@ void main() {
 }
 `;
 
-// ---------------------------------------------------------------- depth of field passes
-
 const DOF_INIT_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_atlas;
@@ -419,8 +401,6 @@ void main() {
 }
 `;
 
-// ---------------------------------------------------------------- GL plumbing
-
 type Programs = {
 	composite: WebGLProgram;
 	dofInit: WebGLProgram;
@@ -529,8 +509,6 @@ function dataTexture(
 	return t;
 }
 
-// ---------------------------------------------------------------- atlas
-
 export type AtlasSlot = { x: number; y: number; w: number; h: number };
 
 /** Shelf packing of rectangles (tallest first); null when it does not fit `max`×`max`. */
@@ -561,8 +539,6 @@ export function packAtlas(
 	const height = Math.max(1, y + shelf);
 	return height > max ? null : { slots, width, height };
 }
-
-// ---------------------------------------------------------------- the render
 
 export type ClassicGlInput = {
 	setup: ClassicSetup;

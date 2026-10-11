@@ -1,11 +1,6 @@
-// Row windowing for the Project panel (workstream ui-perf, docs/performance.md §5): with thousands of items the list
-// (a table row per item, nine columns) and the icon grid (a poster per item) made every render and every scrolled
-// frame pay for all of them (opening a 2 000-item project took seconds; scrolling ran at ≈ 30 fps, layerization
-// bound). From `VIRTUALIZE_MIN_ROWS` items on, only the rows in view (plus a screen of overscan) are rendered between
-// two spacers that keep the scroll height; smaller bins render every row as before.
 import { type RefObject, useEffect, useState } from 'react';
 
-/** Bins with fewer items render every row (identical DOM to before windowing). */
+/** Bins with fewer items render every row. */
 export const VIRTUALIZE_MIN_ROWS = 200;
 /** Rows rendered before the first measurement. */
 export const INITIAL_ROWS = 80;
@@ -35,8 +30,7 @@ export function useRowWindow(opts: {
 }): RowWindow {
 	const { scroll, list, rows, enabled, measure } = opts;
 	const on = enabled && rows >= 1;
-	// polish: a large bin never renders every row, not even on its first render (the effect below only runs after it:
-	// opening a 2 000-item project used to build, style and lay out 2 000 rows once, ≈ 1 s).
+	// Limit the initial render too: measurement runs only after its DOM has been laid out.
 	const [win, setWin] = useState<RowWindow>(() =>
 		on
 			? { on: true, start: 0, end: Math.min(rows, INITIAL_ROWS), rowH: 0 }

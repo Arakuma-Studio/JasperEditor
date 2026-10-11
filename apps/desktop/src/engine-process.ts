@@ -1,7 +1,4 @@
-// Forks the bundled engine in an Electron utilityProcess (ARCHITECTURE D-17, §12; R-OMS §8.5): ESM bundle
-// apps/engine/dist/engine.mjs with `--port 0`, per-launch JASPER_LOCAL_TOKEN and JASPER_EDITOR_KEY (the engine
-// removes both from its environment once read, so its child processes do not inherit them), JASPER_WEB_DIR and
-// JASPER_APPDIR. Resolves once the engine posts {type:'ready', port} on its parentPort.
+import { DEFAULT_ENGINE_HOST, EngineReadyMessageSchema } from '@jasper/config';
 import { utilityProcess } from 'electron';
 
 export type EngineProcess = { origin: string; stop(): Promise<void> };
@@ -53,27 +50,41 @@ export function startEngineProcess(opts: StartEngineOptions): Promise<EngineProc
 	let exited = false;
 	const exitedPromise = new Promise<void>((resolve) => child.once('exit', () => resolve()));
 	return new Promise<EngineProcess>((resolve, reject) => {
+		let ready = false;
 		const timer = setTimeout(() => {
+			child.removeListener('message', onMessage);
 			child.kill();
 			reject(new Error(`engine did not report ready within ${opts.readyTimeoutMs ?? 30_000} ms`));
 		}, opts.readyTimeoutMs ?? 30_000);
-		child.on('message', (m: unknown) => {
-			const msg = m as { type?: string; port?: number };
-			if (msg?.type !== 'ready' || typeof msg.port !== 'number') return;
+		function onMessage(message: unknown): void {
+			const result = EngineReadyMessageSchema.safeParse(message);
+			if (!result.success) return;
+			ready = true;
+			child.removeListener('message', onMessage);
 			clearTimeout(timer);
-			const origin = `http://127.0.0.1:${msg.port}`;
+			const origin = `http://${DEFAULT_ENGINE_HOST}:${result.data.port}`;
 			resolve({
 				origin,
 				stop: async () => {
 					if (exited) return;
 					child.kill();
-					await Promise.race([exitedPromise, new Promise((r) => setTimeout(r, 5000))]);
+					let timeout: ReturnType<typeof setTimeout> | undefined;
+					await Promise.race([
+						exitedPromise,
+						new Promise<void>((resolve) => {
+							timeout = setTimeout(resolve, 5000);
+						}),
+					]);
+					clearTimeout(timeout);
 				},
 			});
-		});
+		}
+		child.on('message', onMessage);
 		child.once('exit', (code) => {
 			exited = true;
 			clearTimeout(timer);
+			child.removeListener('message', onMessage);
+			if (ready) return;
 			reject(new Error(`engine exited with code ${code} before it was ready`));
 		});
 	});

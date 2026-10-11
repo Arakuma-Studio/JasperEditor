@@ -1,4 +1,4 @@
-// The `imports` native extension (imports workstream): makes sure every render that draws media in a browser (the
+// Every render that draws media in a browser (the
 // Remotion path, stills on it, layer bakes of the native/hybrid path) gets what the composition needs to show them
 // exactly like the native export decodes them:
 // - Lottie / vector media: the signed URL of their document (`loaderUrl`);

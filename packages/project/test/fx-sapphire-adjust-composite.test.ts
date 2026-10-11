@@ -1,6 +1,3 @@
-// The sapphire-adjust-composite family (fx catalogue, wave 2): Sapphire names/bins, the TS maths behind the shaders
-// (OCIO curves and matrices against published values, tone stops, matte distance inversion, Sapphire width units)
-// and the pass plans (mask / blur / shaping passes appear only when needed, texture budget with everything on).
 import { describe, expect, it } from 'vitest';
 import {
 	FX_MAX_TEXTURES,
@@ -120,7 +117,6 @@ describe('sapphire-adjust-composite catalogue', () => {
 			d.seed,
 		]).toEqual([0.8, 0.8, 0.088, 1, 0.0224, 100, 0.23]);
 		expect(S_LAYER.params.find((p) => p.name === 'effect')!.options).toHaveLength(24);
-		// Numbers and colours are keyframable, popups/checkboxes/media hold-only.
 		for (const s of SAPPHIRE_ADJUST_COMPOSITE_EFFECTS)
 			for (const p of s.params) {
 				if (
@@ -169,7 +165,6 @@ describe('S_OCIOTransform maths', () => {
 				expect(v).toBeCloseTo(i % 4 === 0 ? 1 : 0, 9);
 			});
 		}
-		// White stays white between every pair of spaces (all matrices preserve the adapted white).
 		for (const a of OCIO_SPACES)
 			for (const b of OCIO_SPACES) {
 				const w = ocioConvert(a, b, [1, 1, 1]);

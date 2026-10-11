@@ -1,5 +1,3 @@
-// Which executable runs the engine's worker programs (security review RUN-1, tools/node-runtime.ts): Node itself in
-// a checkout, a Node runtime shipped in the resources when there is one, an explicit JASPER_NODE first.
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,7 +6,7 @@ import { procCommand } from '../src/processing/proc-entry.ts';
 import { rotoCommand } from '../src/roto/entry.ts';
 import { speechCommand } from '../src/speech/entry.ts';
 import { bundledNode, insideElectron, nodeExecPath } from '../src/tools/node-runtime.ts';
-import { tempAppdir } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 function fakeNode(dir: string, name = 'node'): string {
 	mkdirSync(dir, { recursive: true });
@@ -59,8 +57,28 @@ describe('Node runtime of the engine workers (RUN-1)', () => {
 		] as const) {
 			const b = bundle(file);
 			expect([file, command({ ...env, [variable]: b })]).toEqual([file, { command: shipped, args: [b] }]);
-			// Without a shipped runtime: this process.
 			expect(command({ [variable]: b }).command).toBe(process.execPath);
+		}
+	});
+
+	it('uses the requested runtime for source workers and explicit TypeScript entries', () => {
+		const runtime = fakeNode(tempAppdir('jasper-node-'));
+		const explicitSource = join(tempAppdir('jasper-worker-'), 'custom-worker.ts');
+		writeFileSync(explicitSource, '');
+		for (const [command, variable] of [
+			[speechCommand, 'JASPER_SPEECH'],
+			[rotoCommand, 'JASPER_ROTO'],
+			[camtrackCommand, 'JASPER_CAMTRACK'],
+			[procCommand, 'JASPER_PROC'],
+		] as const) {
+			const source = command({ JASPER_NODE: runtime });
+			expect(source.command).toBe(runtime);
+			expect(source.args[0]).toBe('--import');
+			expect(source.args[1]).toMatch(/^file:/);
+			const explicit = command({ JASPER_NODE: runtime, [variable]: explicitSource });
+			expect(explicit.command).toBe(runtime);
+			expect(explicit.args[2]).toBe(explicitSource);
+			expect(() => command({ [variable]: `${explicitSource}.missing.mjs` })).toThrow('does not exist');
 		}
 	});
 

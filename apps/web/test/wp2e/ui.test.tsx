@@ -355,7 +355,7 @@ describe('Export mode (S05:EX-001…031, S04:EX-005)', () => {
 			fireEvent.click(screen.getByTestId('export-start'));
 		});
 		await waitFor(() => expect(started).toHaveLength(1));
-		// The plan was computed for revision 0; the document is at revision 2, so the engine re-plans (RP-011).
+		// The plan was computed for revision 0; the document is at revision 2, so the engine re-plans.
 		expect(started[0]).toMatchObject({ sequenceId: seqId });
 		expect(started[0]).not.toHaveProperty('planId');
 		expect(localStorage.getItem(`jasper.export.${session.projectId}.${seqId}`)).toContain('"engine":"auto"');

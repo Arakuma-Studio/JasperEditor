@@ -1,6 +1,3 @@
-// Motion paths for agents (S03:KF-021, KF-030, OVL-020; wave1 spatial-motion-path): read a clip's position path
-// (keys with their spatial interpolation and effective tangents, sampled points) and set the spatial
-// interpolation of position keys. Tangent edits go through apply_commands keyframe.setTangents.
 import {
 	type Animatable,
 	type Clip,
@@ -16,12 +13,11 @@ import {
 	type Vec2,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import { defineTool, EDIT_IDEMPOTENT, findClip, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const MOTION_PATH_GUIDE = `Motion paths (curved position animation):
 - Position (and Anchor Point, Corner Pin corners) keys have a spatial interpolation besides the temporal one: linear (straight segments), bezier (independent in/out tangents), auto-bezier (smooth tangents from the neighbours: along next − prev, each handle ⅓ of its neighbouring segment, as in After Effects; keys made before keyframes-blend keep (next − prev) / 6 until Auto Bezier is re-applied) or continuous-bezier (user tangents kept opposite). New position keys are auto-bezier spatial with linear temporal, so three or more keys make a smooth curve travelled at constant speed; temporal eases change the speed along the curve, not its shape.
 - get_motion_path {clipId} shows the keys (frame, value, modes, effective tangents) and sampled points; set_spatial_interpolation {clipId | keyframeIds, mode} changes the mode (linear = straight lines).

@@ -56,8 +56,6 @@ export function sccFrameOf(t: number): number {
 	return frameAt(snapNearest(t, SCC_RATE), SCC_RATE);
 }
 
-// ------------------------------------------------------------------------------------------------ decoder
-
 type Row = Array<string | null>;
 type Memory = Row[];
 const blankRow = (): Row => new Array<string | null>(COLS).fill(null);
@@ -292,8 +290,6 @@ export function parseScc(text: string): CaptionDocument {
 	}));
 	return doc;
 }
-
-// ------------------------------------------------------------------------------------------------ encoder
 
 /** Wrap plain text into rows of at most 32 columns (word wrap, hard-splitting long words); at most 15 rows. */
 export function wrapSccRows(text: string, cols = COLS): string[] {

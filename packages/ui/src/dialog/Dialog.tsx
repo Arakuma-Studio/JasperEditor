@@ -1,9 +1,5 @@
-// Dialogs (S05 §14, DG-001…007): Radix Dialog, centered, scrim backdrop, panel frame with menu border,
-// radius 6, overlay shadow; 40 px header with 16/600 title and ×; body padding 16; 48 px footer with
-// Cancel then the primary pill. Focus is trapped; Esc = Cancel; Enter = primary unless focus is in a
-// multi-line field or on another button; focus returns to the invoker on close.
 import { Dialog as RDialog } from 'radix-ui';
-import { type KeyboardEvent, type ReactNode, useSyncExternalStore } from 'react';
+import { type KeyboardEvent, type ReactNode, useState, useSyncExternalStore } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import { Button } from '../primitives/Button.tsx';
@@ -23,7 +19,8 @@ export type DialogProps = {
 	/** Primary action; omit for dialogs without a footer. */
 	primaryLabel?: string;
 	/** Return `false` (or resolve to it) to keep the dialog open. */
-	onPrimary?(): unknown;
+	// biome-ignore lint/suspicious/noConfusingVoidType: async actions may finish without returning a value.
+	onPrimary?(): boolean | void | Promise<boolean | void>;
 	primaryDisabled?: boolean;
 	/** Danger styling only for destructive, non-undoable actions (S05:DG-007). */
 	danger?: boolean;
@@ -58,10 +55,16 @@ export function Dialog(props: DialogProps) {
 		bare,
 	} = props;
 
+	const [error, setError] = useState<string | null>(null);
 	const runPrimary = async () => {
 		if (primaryDisabled || !onPrimary) return;
-		const r = await onPrimary();
-		if (r !== false) onOpenChange(false);
+		setError(null);
+		try {
+			const result = await onPrimary();
+			if (result !== false) onOpenChange(false);
+		} catch (error) {
+			setError(error instanceof Error ? error.message : String(error));
+		}
 	};
 
 	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -83,10 +86,7 @@ export function Dialog(props: DialogProps) {
 				<RDialog.Content
 					data-testid={props['data-testid'] ?? 'dialog'}
 					onKeyDown={onKeyDown}
-					// A modal dialog: assistive tech AND the app's keyboard dispatcher (which leaves `[role=dialog]
-					// [aria-modal=true]` alone) must treat it as one — without it, global shortcuts (Space = play,
-					// ↓ = next edit, Enter = render) ran on keys meant for the dialog's controls and swallowed them:
-					// a focused Select could not be opened with Enter / Space / ↓.
+					// The app keyboard dispatcher skips modal dialogs so their controls own keyboard input.
 					aria-modal="true"
 					onOpenAutoFocus={(e) => {
 						if (props.initialFocus !== 'primary') return;
@@ -134,6 +134,11 @@ export function Dialog(props: DialogProps) {
 					</RDialog.Description>
 					<div className={cx('min-h-0 flex-1 overflow-auto', bare ? '' : 'p-4')}>
 						<InDialogContext.Provider value>{children}</InDialogContext.Provider>
+						{error !== null ? (
+							<p role="alert" className="mt-2 text-pr-danger">
+								{error}
+							</p>
+						) : null}
 					</div>
 					{primaryLabel ? (
 						<div className="flex h-12 shrink-0 items-center gap-2 border-t border-pr-border-subtle px-4">
@@ -167,11 +172,9 @@ export function Dialog(props: DialogProps) {
 	);
 }
 
-// ------------------------------------------------------------------ dialog host (S05:SH-004)
-
 /** Props every hosted dialog receives: `close()` resolves the `openDialog` promise with `result`. */
 export type HostedDialogProps<P = Record<string, unknown>> = P & { close(result?: unknown): void };
-type Registered = (props: HostedDialogProps<any>) => ReactNode;
+type Registered = (props: HostedDialogProps) => ReactNode;
 
 const registry = new Map<string, Registered>();
 type Open = { id: number; kind: string; props: Record<string, unknown>; resolve(v: unknown): void };
@@ -227,7 +230,6 @@ function closeEntry(id: number, result?: unknown) {
 	emit();
 }
 
-/** Closes every hosted dialog (workspace switch, tests). */
 export function closeAllDialogs(): void {
 	for (const o of stack) o.resolve(undefined);
 	stack = [];
@@ -253,8 +255,6 @@ export function DialogHost() {
 		</>
 	);
 }
-
-// ------------------------------------------------------------------ confirmation (S05:DG-007)
 
 const CONFIRM_KIND = 'jasper.confirm';
 
@@ -293,7 +293,6 @@ function ConfirmDialog(props: HostedDialogProps<ConfirmOptions>) {
 }
 registerDialog(CONFIRM_KIND, ConfirmDialog);
 
-/** Confirmation dialog; resolves true when confirmed. */
 export async function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
 	return (await openDialog<boolean>(CONFIRM_KIND, opts)) === true;
 }

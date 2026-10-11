@@ -1,7 +1,3 @@
-// Colour grading on the Remotion path (S06:CG-042, §9 test 6): a graded clip in a sequence that also has a text
-// clip (forces Remotion) renders graded through the compositions' WebGL2 colour stage; an engine without WebGL2
-// fails such renders with WEBGL_UNAVAILABLE (never silently ungraded).
-// The browser part is gated by REMOTION_E2E=1 (bundles the compositions, launches headless Chrome).
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +6,7 @@ import {
 	applyLut,
 	bakeColorRun,
 	defaultEffectRegistry,
+	type EffectParams,
 	LUMETRI_EFFECT_ID,
 	parseCube,
 	type Rgb,
@@ -36,7 +33,7 @@ afterAll(async () => {
 	for (const s of stops) await s();
 });
 
-const GRADE = (look: string) => ({
+const GRADE = (look: string): EffectParams => ({
 	temperature: -30,
 	tint: 6,
 	exposure: 0.3,
@@ -83,7 +80,7 @@ async function gradedWithText(app: FastifyInstance, headers: Record<string, stri
 	]).refs.$c!;
 	d.tx([
 		{ type: 'effect.add', target: { clipId: clip }, effectId: LUMETRI_EFFECT_ID, params: GRADE(l) },
-		// A text clip forces the Remotion path (S06 §9 test 6); a blank text keeps the chart comparable everywhere.
+		// Blank text keeps the chart comparable while the nested blend mode forces the Remotion path.
 		{
 			type: 'clip.addText',
 			at: 0,
@@ -93,9 +90,7 @@ async function gradedWithText(app: FastifyInstance, headers: Record<string, stri
 			ref: '$t',
 		},
 	]);
-	// M2 (wp-m2-layer-bake): text alone is baked natively now (S11:LBK-001); keyframes-blend: blend modes are native
-	// too, except inside a nested sequence — a nested text with a blend mode keeps this sequence on the Remotion path
-	// (S04:RP-005), so it still renders through the compositions' colour stage.
+	// Nested text with a blend mode forces Remotion; standalone text and blend modes can render natively.
 	const text = d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'text')!;
 	d.tx([
 		{ type: 'clip.update', clipIds: [text], patch: { blendMode: 'screen' } },

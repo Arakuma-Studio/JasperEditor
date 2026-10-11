@@ -1,6 +1,3 @@
-// Audio analysis and loudness normalisation contracts (workstream audio-mix).
-//   POST /api/audio/analyze                 → EngineJob kind `analysis` (`?wait=1` → the finished job)
-//   POST /api/media/:key/loudness-normalize → EngineJob kind `process` (a normalised WAV version of the media)
 import { z } from 'zod';
 import { RegisteredMediaSchema } from './media.ts';
 import { EnvelopeSchema } from './projects.ts';

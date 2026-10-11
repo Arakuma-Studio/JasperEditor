@@ -1,4 +1,3 @@
-// Shared argument schemas for commands (S01:TIME-006, CMD-006, CMD-010, CMD-013, TRK-002).
 import { z } from 'zod';
 
 /** Temporary reference declared by a creating command (`"ref": "$title"`, S01:CMD-006). */

@@ -1,10 +1,4 @@
 // @vitest-environment node
-// Sapphire Blur+Sharpen on the Remotion render path: every effect of the family is rendered as a still on a picture
-// (with its media inputs — Z buffer, kernel, background, matte — registered as project media) through the
-// production compositions bundle (fx-render/entry.ts) in headless Chrome, exactly like an export. Each still must
-// differ from the unprocessed picture and keep its size; the depth-of-field still must stay sharp where the Z buffer
-// is in focus. Optional: SBS_SCENE=<png 640×360> renders a custom picture, SBS_SHEET=<png> writes a labelled contact
-// sheet of all stills (for review; render it over `pnpm fixtures` media before committing one, AGENTS.md §3). Gated by REMOTION_E2E=1; needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -17,7 +11,6 @@ import { FX_H, FX_W, type FxMedia, fxAsset, fxCmd, fxSnapshot, startFxMedia } fr
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
 
-/** Each effect with the settings that show its character (media inputs by name). */
 const CASES: {
 	id: string;
 	label: string;
@@ -248,7 +241,6 @@ describe.runIf(enabled)(
 				pngs.push([c.label, s.png]);
 			}
 			if (process.env.SBS_SHEET) {
-				// 5 × 5 labelled contact sheet of 256×144 tiles, palette-compressed PNG.
 				const cols = 5;
 				const rows = Math.ceil(pngs.length / cols);
 				const parts = pngs.map(

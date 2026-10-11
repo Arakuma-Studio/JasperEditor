@@ -1,5 +1,3 @@
-// Engine route contracts: method, path template, request schemas and response kind.
-// Shared by engine validation and typed calls in @jasper/engine-client.
 import { EffectPresetFolderSchema, EffectPresetSchema } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -175,53 +173,6 @@ import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
-export type RouteOwner =
-	| 'WP-2F'
-	| 'WP-2G'
-	| 'WP-2H'
-	| 'wp-mcp'
-	| 'mcp-cli'
-	// render previews, perf stats (docs/wp-notes/previews.md)
-	| 'previews'
-	| 'wp-m2-color'
-	| 'wp-m2-process'
-	| 'wp-m2-mg'
-	| 'wp-m2-track'
-	// M2 animation (ARCHITECTURE §20, S11 §10)
-	| 'wp-m2-layer-bake'
-	// wp masks
-	| 'wp-masks'
-	// M3
-	| 'wp-m3-cachegc'
-	| 'wp-m3-presets'
-	// Synchronize / Merge Clips / multi-camera
-	| 'wp-multicam'
-	// parity program: versions and crash recovery (D-39)
-	| 'process'
-	// parity program: audio buses, loudness
-	| 'audio-mix'
-	// parity program: audio effects, Essential Sound, remix
-	| 'audio-fx'
-	// parity program: captions and transcripts
-	| 'wp-captions'
-	// parity program: local speech-to-text (Whisper), VAD, diarization
-	| 'speech'
-	// parity program: timeline interchange and Link Media
-	| 'wp-interchange'
-	// parity program: time remapping, retime, Scene Edit Detection
-	| 'wp-time'
-	// parity program: roto / object mattes, face tracking
-	| 'roto'
-	// parity program: 3D layers, cameras, lights, 3D Camera Tracker
-	| 'three-d'
-	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
-	| 'imports'
-	// parity program: Lumetri completion, Colour Match, scopes
-	| 'color-grade'
-	// parity program: Edit Original, scratch disks, proxies, Project Manager, Export Frame, analyses (gaps)
-	| 'gaps'
-	// parity program: Media Browser, Engine ▸ Connect / Status (polish)
-	| 'polish';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -235,50 +186,43 @@ export type RouteDef = {
 	/** Request headers the route relies on. */
 	headers?: readonly string[];
 	public?: boolean;
-	owner: RouteOwner;
 };
 
 export const ROUTES = {
-	health: { method: 'GET', path: '/health', response: HealthSchema, public: true, owner: 'WP-2F' },
+	health: { method: 'GET', path: '/health', response: HealthSchema, public: true },
 	capabilities: {
 		method: 'GET',
 		path: '/api/capabilities',
 		response: EngineCapabilitiesSchema,
-		owner: 'WP-2F',
 	},
 	/** Third-party licenses for the About dialog (D-13: FFmpeg license text + source link). */
 	licenses: {
 		method: 'GET',
 		path: '/api/licenses',
 		response: LicensesResponseSchema,
-		owner: 'WP-2F',
 	},
 	events: {
 		method: 'GET',
 		path: '/events',
 		query: z.object({ since: z.string().optional(), projectId: z.string().optional() }),
 		response: 'ndjson',
-		owner: 'WP-2F',
 	},
 
 	projectsList: {
 		method: 'GET',
 		path: '/api/projects',
 		response: ProjectListResponseSchema,
-		owner: 'WP-2F',
 	},
 	projectsCreate: {
 		method: 'POST',
 		path: '/api/projects',
 		body: ProjectCreateRequestSchema,
 		response: ProjectCreateResponseSchema,
-		owner: 'WP-2F',
 	},
 	projectGet: {
 		method: 'GET',
 		path: '/api/projects/:projectId',
 		response: ProjectGetResponseSchema,
-		owner: 'WP-2F',
 	},
 	projectPut: {
 		method: 'PUT',
@@ -286,84 +230,71 @@ export const ROUTES = {
 		body: EnvelopeSchema,
 		headers: ['if-match'],
 		response: ProjectPutResponseSchema,
-		owner: 'WP-2F',
 	},
 	projectPutView: {
 		method: 'PUT',
 		path: '/api/projects/:projectId/view',
 		body: ProjectViewSchema,
 		response: OkSchema,
-		owner: 'WP-2F',
 	},
 	projectVersions: {
 		method: 'GET',
 		path: '/api/projects/:projectId/versions',
 		response: VersionListResponseSchema,
-		owner: 'WP-2F',
 	},
 	projectVersionGet: {
 		method: 'GET',
 		path: '/api/projects/:projectId/versions/:versionId',
 		response: VersionGetResponseSchema,
-		owner: 'process',
 	},
 	projectVersionRestore: {
 		method: 'POST',
 		path: '/api/projects/:projectId/versions/:versionId/restore',
 		body: VersionRestoreRequestSchema,
 		response: VersionRestoreResponseSchema,
-		owner: 'process',
 	},
 	projectRecoveryList: {
 		method: 'GET',
 		path: '/api/projects/:projectId/recovery',
 		response: RecoveryListResponseSchema,
-		owner: 'process',
 	},
 	projectRecoveryGet: {
 		method: 'GET',
 		path: '/api/projects/:projectId/recovery/:sessionId',
 		response: RecoveryGetResponseSchema,
-		owner: 'process',
 	},
 	projectRecoveryPut: {
 		method: 'PUT',
 		path: '/api/projects/:projectId/recovery/:sessionId',
 		body: RecoveryPutRequestSchema,
 		response: RecoveryPutResponseSchema,
-		owner: 'process',
 	},
 	projectRecoveryDelete: {
 		method: 'DELETE',
 		path: '/api/projects/:projectId/recovery/:sessionId',
 		query: z.object({ leaseId: z.string().optional() }),
 		response: OkSchema,
-		owner: 'process',
 	},
 	projectDelete: {
 		method: 'DELETE',
 		path: '/api/projects/:projectId',
 		response: OkSchema,
-		owner: 'WP-2F',
 	},
 	leaseAcquire: {
 		method: 'POST',
 		path: '/api/projects/:projectId/lease',
 		body: LeaseRequestSchema,
 		response: LeaseSchema,
-		owner: 'WP-2F',
 	},
 	leaseHeartbeat: {
 		method: 'POST',
 		path: '/api/projects/:projectId/lease/:leaseId/heartbeat',
 		response: LeaseSchema,
-		owner: 'WP-2F',
 	},
 	leaseRelease: {
 		method: 'DELETE',
 		path: '/api/projects/:projectId/lease/:leaseId',
 		response: OkSchema,
-		owner: 'WP-2F',
 	},
 
 	mediaRegister: {
@@ -371,14 +302,12 @@ export const ROUTES = {
 		path: '/api/media/register',
 		body: MediaRegisterRequestSchema,
 		response: MediaRegisterResponseSchema,
-		owner: 'WP-2F',
 	},
 	uploadCreate: {
 		method: 'POST',
 		path: '/api/uploads',
 		body: UploadCreateRequestSchema,
 		response: UploadCreateResponseSchema,
-		owner: 'WP-2F',
 	},
 	uploadAppend: {
 		method: 'PUT',
@@ -386,69 +315,59 @@ export const ROUTES = {
 		query: z.object({ offset: z.string().regex(/^\d+$/) }),
 		body: 'binary',
 		response: UploadAppendResponseSchema,
-		owner: 'WP-2F',
 	},
 	uploadComplete: {
 		method: 'POST',
 		path: '/api/uploads/:uploadId/complete',
 		response: RegisteredMediaSchema,
-		owner: 'WP-2F',
 	},
-	uploadAbort: { method: 'DELETE', path: '/api/uploads/:uploadId', response: OkSchema, owner: 'WP-2F' },
+	uploadAbort: { method: 'DELETE', path: '/api/uploads/:uploadId', response: OkSchema },
 	mediaStatus: {
 		method: 'GET',
 		path: '/api/media/:mediaKey',
 		response: MediaStatusSchema,
-		owner: 'WP-2F',
 	},
-	/** polish: the status of many media in one request (project open). */
+	/** The status of many media in one request (project open). */
 	mediaStatusBatch: {
 		method: 'POST',
 		path: '/api/media/status',
 		body: MediaStatusBatchRequestSchema,
 		response: MediaStatusBatchResponseSchema,
-		owner: 'polish',
 	},
-	/** M3 (wp-m3-inpoint, S07:PRC-018): discard an uncommitted upload (Replace Footage cancelled). */
+	/** Discard an uncommitted upload (Replace Footage cancelled). */
 	mediaDiscard: {
 		method: 'DELETE',
 		path: '/api/media/:mediaKey',
 		response: MediaDiscardResponseSchema,
-		owner: 'wp-m2-process',
 	},
 	mediaDerivatives: {
 		method: 'POST',
 		path: '/api/media/:mediaKey/derivatives',
 		body: DerivativesRequestSchema,
 		response: JobListResponseSchema,
-		owner: 'WP-2F',
 	},
-	mediaFile: { method: 'GET', path: '/media/:mediaKey', response: 'binary', owner: 'WP-2F' },
-	mediaProxy: { method: 'GET', path: '/media/:mediaKey/proxy/:tier', response: 'binary', owner: 'WP-2F' },
-	mediaPoster: { method: 'GET', path: '/media/:mediaKey/poster.jpg', response: 'binary', owner: 'WP-2F' },
+	mediaFile: { method: 'GET', path: '/media/:mediaKey', response: 'binary' },
+	mediaProxy: { method: 'GET', path: '/media/:mediaKey/proxy/:tier', response: 'binary' },
+	mediaPoster: { method: 'GET', path: '/media/:mediaKey/poster.jpg', response: 'binary' },
 	mediaSpriteIndex: {
 		method: 'GET',
 		path: '/media/:mediaKey/sprite.json',
 		response: 'binary',
-		owner: 'WP-2F',
 	},
 	mediaSpriteSheet: {
 		method: 'GET',
 		path: '/media/:mediaKey/sprite/:sheet',
 		response: 'binary',
-		owner: 'WP-2F',
 	},
 	mediaPeaksHeader: {
 		method: 'GET',
 		path: '/media/:mediaKey/peaks.json',
 		response: 'binary',
-		owner: 'WP-2F',
 	},
 	mediaPeaksStream: {
 		method: 'GET',
 		path: '/media/:mediaKey/peaks/:stream',
 		response: 'binary',
-		owner: 'WP-2F',
 	},
 
 	jobsList: {
@@ -456,137 +375,119 @@ export const ROUTES = {
 		path: '/api/jobs',
 		query: JobListQuerySchema,
 		response: JobListResponseSchema,
-		owner: 'WP-2F',
 	},
-	jobGet: { method: 'GET', path: '/api/jobs/:jobId', response: EngineJobSchema, owner: 'WP-2F' },
+	jobGet: { method: 'GET', path: '/api/jobs/:jobId', response: EngineJobSchema },
 	jobCancel: {
 		method: 'POST',
 		path: '/api/jobs/:jobId/cancel',
 		response: EngineJobSchema,
-		owner: 'WP-2F',
 	},
-	jobRetry: { method: 'POST', path: '/api/jobs/:jobId/retry', response: EngineJobSchema, owner: 'WP-2F' },
+	jobRetry: { method: 'POST', path: '/api/jobs/:jobId/retry', response: EngineJobSchema },
 
 	exportPlan: {
 		method: 'POST',
 		path: '/api/exports/plan',
 		body: ExportPlanRequestSchema,
 		response: RenderPlanSchema,
-		owner: 'WP-2F',
 	},
 	exportStart: {
 		method: 'POST',
 		path: '/api/exports',
 		body: ExportStartRequestSchema,
 		response: EngineJobSchema,
-		owner: 'WP-2F',
 	},
-	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary', owner: 'WP-2F' },
-	/** wp captions: a sidecar caption file of a finished export (`result.captions.sidecars[].name`). */
+	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary' },
+	/** A sidecar caption file of a finished export (`result.captions.sidecars[].name`). */
 	renderCaptionFile: {
 		method: 'GET',
 		path: '/renders/:jobId/captions/:name',
 		response: 'binary',
-		owner: 'wp-captions',
 	},
 	stills: {
 		method: 'POST',
 		path: '/api/stills',
 		body: StillRequestSchema,
 		response: EngineJobSchema,
-		owner: 'WP-2F',
 	},
-	/** previews: which segment hashes have render preview files. */
+	/** Which segment hashes have render preview files. */
 	previewStatus: {
 		method: 'POST',
 		path: '/api/previews/status',
 		body: PreviewStatusRequestSchema,
 		response: PreviewStatusSchema,
-		owner: 'previews',
 	},
-	/** previews: Render Effects In to Out / Render In to Out / Render Selection / Render Audio (job `preview`). */
+	/** Render Effects In to Out / Render In to Out / Render Selection / Render Audio (job `preview`). */
 	previewRender: {
 		method: 'POST',
 		path: '/api/previews/render',
 		body: PreviewRenderRequestSchema,
 		query: z.object({ wait: z.literal('1').optional() }),
 		response: z.union([EngineJobSchema, PreviewRenderNothingSchema]),
-		owner: 'previews',
 	},
-	/** previews: Delete Render Files (all) / Delete Render Files In to Out (hashes). */
+	/** Delete Render Files (all) / Delete Render Files In to Out (hashes). */
 	previewDelete: {
 		method: 'POST',
 		path: '/api/previews/delete',
 		body: PreviewDeleteRequestSchema,
 		response: PreviewDeleteResultSchema,
-		owner: 'previews',
 	},
-	/** previews: engine performance counters (process, event loop, host load, jobs, render throughput, previews). */
+	/** Engine performance counters (process, event loop, host load, jobs, render throughput, previews). */
 	perfStats: {
 		method: 'GET',
 		path: '/api/perf',
 		response: z.record(z.string(), z.unknown()),
-		owner: 'previews',
 	},
-	/** previews: a preview file (`<hash>.mp4|webm|wav`), byte ranges, immutable. */
+	/** A preview file (`<hash>.mp4|webm|wav`), byte ranges, immutable. */
 	previewFile: {
 		method: 'GET',
 		path: '/renders/previews/:format/:name',
 		response: 'binary',
-		owner: 'previews',
 	},
 
-	fontsList: { method: 'GET', path: '/api/fonts', response: FontCatalogSchema, owner: 'WP-2F' },
-	fontFile: { method: 'GET', path: '/fonts/*', response: 'binary', owner: 'WP-2F' },
+	fontsList: { method: 'GET', path: '/api/fonts', response: FontCatalogSchema },
+	fontFile: { method: 'GET', path: '/fonts/*', response: 'binary' },
 
 	mgTemplates: {
 		method: 'GET',
 		path: '/api/motion-graphics/templates',
 		response: MgTemplatesResponseSchema,
-		owner: 'WP-2G',
 	},
 	mgRender: {
 		method: 'POST',
 		path: '/api/motion-graphics/render',
 		body: MgRenderRequestSchema,
 		response: EngineJobSchema,
-		owner: 'WP-2G',
 	},
-	mgFile: { method: 'GET', path: '/mg/:key/:file', response: 'binary', owner: 'WP-2G' },
+	mgFile: { method: 'GET', path: '/mg/:key/:file', response: 'binary' },
 
 	agentSchema: {
 		method: 'GET',
 		path: '/api/agent/schema',
 		response: AgentSchemaResponseSchema,
-		owner: 'WP-2H',
 	},
 	agentQuery: {
 		method: 'POST',
 		path: '/api/agent/query',
 		body: AgentQueryRequestSchema,
 		response: AgentQueryResponseSchema,
-		owner: 'WP-2H',
 	},
 	agentTx: {
 		method: 'POST',
 		path: '/api/agent/tx',
 		body: AgentTxRequestSchema,
 		response: AgentTxResponseSchema,
-		owner: 'WP-2H',
 	},
-	agentWs: { method: 'GET', path: '/agent', response: 'websocket', owner: 'WP-2H' },
+	agentWs: { method: 'GET', path: '/agent', response: 'websocket' },
 	agentOpenProject: {
 		method: 'POST',
 		path: '/api/agent/open-project',
 		body: AgentOpenProjectRequestSchema,
 		response: AgentOpenProjectResponseSchema,
-		owner: 'wp-mcp',
 	},
 	agentMcpInfo: {
 		method: 'GET',
 		path: '/api/agent/mcp-info',
 		response: AgentMcpInfoSchema,
-		owner: 'wp-mcp',
 	},
 	/** Live-UI automation of an open editor window (mcp-cli): elements, input, screenshots, coordinate mapping. */
 	agentUi: {
@@ -594,76 +495,64 @@ export const ROUTES = {
 		path: '/api/agent/ui',
 		body: AgentUiRequestSchema,
 		response: AgentUiResponseSchema,
-		owner: 'mcp-cli',
 	},
 	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */
-	mcp: { method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' },
+	mcp: { method: 'POST', path: '/mcp', response: 'binary' },
 
-	// ---- M2 (ARCHITECTURE §19.7). Colour needs no routes of its own: LUTs are media (`.cube` → kind `lut`).
 	mediaProcess: {
 		method: 'POST',
 		path: '/api/media/:key/process',
 		body: ProcessRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-m2-process',
 	},
 	processingModels: {
 		method: 'GET',
 		path: '/api/processing/models',
 		response: ProcessingModelsResponseSchema,
-		owner: 'wp-m2-process',
 	},
 	processingModelInstall: {
 		method: 'POST',
 		path: '/api/processing/models/:modelId/install',
 		response: EngineJobSchema,
-		owner: 'wp-m2-process',
 	},
 	processingSettingsGet: {
 		method: 'GET',
 		path: '/api/settings/processing',
 		response: ProcessingSettingsSchema,
-		owner: 'wp-m2-process',
 	},
 	processingSettingsPut: {
 		method: 'PUT',
 		path: '/api/settings/processing',
 		body: ProcessingSettingsSchema,
 		response: ProcessingSettingsSchema,
-		owner: 'wp-m2-process',
 	},
 	processingRemoteProbe: {
 		method: 'POST',
 		path: '/api/processing/remote/probe',
 		response: RemoteProbeResultSchema,
-		owner: 'wp-m2-process',
 	},
 	processingRemoteSetup: {
 		method: 'POST',
 		path: '/api/processing/remote/setup',
 		response: EngineJobSchema,
-		owner: 'wp-m2-process',
 	},
 	mgBundleImport: {
 		method: 'POST',
 		path: '/api/mg-bundles/import',
 		body: MgBundleImportRequestSchema,
 		response: RegisteredMediaSchema,
-		owner: 'wp-m2-mg',
 	},
 	mgBundleRebuild: {
 		method: 'POST',
 		path: '/api/mg-bundles/:key/rebuild',
 		body: MgBundleRebuildRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-m2-mg',
 	},
 	/** PNG poster of one composition of a bundle at its `thumbnailFrame` (rendered once, cached). */
 	mgBundlePoster: {
 		method: 'GET',
 		path: '/api/mg-bundles/:key/poster/:compositionId',
 		response: 'binary',
-		owner: 'wp-m2-mg',
 	},
 	/** P1 (S08:MGC-015): new composition project from the template, imported with watch. */
 	mgBundleScaffold: {
@@ -671,63 +560,55 @@ export const ROUTES = {
 		path: '/api/mg-bundles/scaffold',
 		body: MgBundleScaffoldRequestSchema,
 		response: RegisteredMediaSchema,
-		owner: 'wp-m2-mg',
 	},
 	mgBundlePrerender: {
 		method: 'POST',
 		path: '/api/mg-bundles/prerender',
 		body: MgPrerenderRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-m2-mg',
 	},
 	mgBundlePrerenderGet: {
 		method: 'GET',
 		path: '/api/mg-bundles/prerender/:renderKey',
 		response: MgPrerenderResultSchema,
-		owner: 'wp-m2-mg',
 	},
-	/** wp-m3-mgtext (S08:MGC-037): text layout of a composition, measured in the engine's headless browser. */
+	/** Wp-m3-mgtext (S08:MGC-037): text layout of a composition, measured in the engine's headless browser. */
 	mgBundleMeasureTexts: {
 		method: 'POST',
 		path: '/api/mg-bundles/measure-texts',
 		body: MgTextMeasureRequestSchema,
 		response: MgTextMeasureResultSchema,
-		owner: 'wp-m2-mg',
 	},
 	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */
-	mgBundleFiles: { method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' },
-	/** wp masks: auto-trace a media frame into mask paths. */
+	mgBundleFiles: { method: 'GET', path: '/mg/bundles/:key/*', response: 'binary' },
+	/** Auto-trace a media frame into mask paths. */
 	masksTrace: {
 		method: 'POST',
 		path: '/api/masks/trace',
 		body: MaskTraceRequestSchema,
 		response: MaskTraceResponseSchema,
-		owner: 'wp-masks',
 	},
 	trackingTrack: {
 		method: 'POST',
 		path: '/api/tracking/track',
 		body: TrackRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-m2-track',
 	},
-	/** Workstream `time`: Scene Edit Detection of a media range (job kind `scene-detect`, `?wait=1` = finished job). */
+	/** Scene Edit Detection of a media range (job kind `scene-detect`, `?wait=1` = finished job). */
 	scenesDetect: {
 		method: 'POST',
 		path: '/api/scenes/detect',
 		body: SceneDetectRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'wp-time',
 	},
-	// ---- imports workstream (docs/wp-notes/imports.md)
+
 	/** Interpreted picture of a media (display PNG / proxy / master of a pixel variant); queues its job. */
 	mediaVariant: {
 		method: 'POST',
 		path: '/api/media/:mediaKey/variants',
 		body: MediaVariantRequestSchema,
 		response: MediaVariantStatusSchema,
-		owner: 'imports',
 	},
 	/** Numbered stills → one clip (job `image-sequence`; `?wait=1` = the finished job, result RegisteredMedia). */
 	importsImageSequence: {
@@ -736,7 +617,6 @@ export const ROUTES = {
 		body: ImageSequenceRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'imports',
 	},
 	/** The sequence a frame on the engine host belongs to (local mode). */
 	importsImageSequenceDetect: {
@@ -744,7 +624,6 @@ export const ROUTES = {
 		path: '/api/imports/image-sequence/detect',
 		body: ImageSequenceDetectRequestSchema,
 		response: ImageSequenceDetectResponseSchema,
-		owner: 'imports',
 	},
 	/** Every layer of a PSD extracted and registered (job `layers`; result LayeredExtractResult). */
 	importsLayers: {
@@ -753,14 +632,12 @@ export const ROUTES = {
 		body: LayeredExtractRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'imports',
 	},
 	/** Pages of a PDF / Illustrator media. */
 	importsVectorPages: {
 		method: 'GET',
 		path: '/api/imports/vector/:mediaKey',
 		response: VectorPagesResponseSchema,
-		owner: 'imports',
 	},
 	/** A sequence as a Lottie document (`.json` / `.lottie`) with the warnings of what Lottie cannot carry. */
 	importsLottieExport: {
@@ -768,24 +645,21 @@ export const ROUTES = {
 		path: '/api/imports/lottie/export',
 		body: LottieExportRequestSchema,
 		response: LottieExportResultSchema,
-		owner: 'imports',
 	},
-	/** wp-multicam: offsets of recordings of one event by their audio (two-pass GCC-PHAT). */
+	/** Offsets of recordings of one event by their audio (two-pass GCC-PHAT). */
 	syncAudio: {
 		method: 'POST',
 		path: '/api/sync/audio',
 		body: SyncAudioRequestSchema,
 		response: SyncAudioResponseSchema,
-		owner: 'wp-multicam',
 	},
-	// ---- M2 animation (ARCHITECTURE §20.5)
+
 	/** Graded VP9-alpha preview of one DOM layer (S11:LBK-010). */
 	layerBakePreview: {
 		method: 'POST',
 		path: '/api/layer-bake/preview',
 		body: LayerBakePreviewRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-m2-layer-bake',
 	},
 	/**
 	 * Cached bake files (`master.mov`, `still.png`, `preview.webm`; `graded.png?n=<frame>` = frame n of the graded PNG
@@ -795,16 +669,14 @@ export const ROUTES = {
 		method: 'GET',
 		path: '/mg/layers/:key/:file',
 		response: 'binary',
-		owner: 'wp-m2-layer-bake',
 	},
-	// ---- audio-mix: loudness / peak / activity analysis and loudness-normalised media versions
+
 	audioAnalyze: {
 		method: 'POST',
 		path: '/api/audio/analyze',
 		body: AudioAnalyzeRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'audio-mix',
 	},
 	mediaLoudnessNormalize: {
 		method: 'POST',
@@ -812,35 +684,30 @@ export const ROUTES = {
 		body: LoudnessNormalizeRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'audio-mix',
 	},
-	// ---- audio-fx: music remix planning (beat tracking + similarity)
+
 	audioRemixPlan: {
 		method: 'POST',
 		path: '/api/audio/remix-plan',
 		body: RemixPlanRequestSchema,
 		response: RemixPlanResultSchema,
-		owner: 'audio-fx',
 	},
-	// ---- speech: Whisper models (processing-model catalogue `speech`) and transcription jobs
+
 	speechModels: {
 		method: 'GET',
 		path: '/api/speech/models',
 		response: SpeechModelsResponseSchema,
-		owner: 'speech',
 	},
 	/** Downloads and verifies a speech model: the processing catalogue's `model-download` job. */
 	speechModelInstall: {
 		method: 'POST',
 		path: '/api/speech/models/:modelId/install',
 		response: EngineJobSchema,
-		owner: 'speech',
 	},
 	speechModelDelete: {
 		method: 'DELETE',
 		path: '/api/speech/models/:modelId',
 		response: SpeechModelDeleteResponseSchema,
-		owner: 'speech',
 	},
 	/** A `transcription` job for one audio stream of a media (result: `TranscriptionResult`, media time). */
 	mediaTranscribe: {
@@ -848,7 +715,6 @@ export const ROUTES = {
 		path: '/api/media/:key/transcribe',
 		body: TranscribeMediaRequestSchema,
 		response: EngineJobSchema,
-		owner: 'speech',
 	},
 	/** A `transcription` job for the mixed audio of a sequence (result in sequence time). */
 	speechTranscribeSequence: {
@@ -856,27 +722,23 @@ export const ROUTES = {
 		path: '/api/speech/transcribe-sequence',
 		body: TranscribeSequenceRequestSchema,
 		response: EngineJobSchema,
-		owner: 'speech',
 	},
-	// ---- roto: Roto Brush / face tracking models (processing catalogue `vision`), jobs and matte sets
+
 	rotoModels: {
 		method: 'GET',
 		path: '/api/roto/models',
 		response: VisionModelsResponseSchema,
-		owner: 'roto',
 	},
 	/** Downloads and verifies a segmentation / face model: the processing catalogue's `model-download` job. */
 	rotoModelInstall: {
 		method: 'POST',
 		path: '/api/roto/models/:modelId/install',
 		response: EngineJobSchema,
-		owner: 'roto',
 	},
 	rotoModelDelete: {
 		method: 'DELETE',
 		path: '/api/roto/models/:modelId',
 		response: z.object({ modelId: z.string(), freedBytes: z.number() }),
-		owner: 'roto',
 	},
 	/** A `roto` job: segmentation + propagation of a roto object, or face tracking (result: `RotoSegmentResult`). */
 	rotoSegment: {
@@ -885,13 +747,11 @@ export const ROUTES = {
 		body: RotoSegmentRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'roto',
 	},
 	rotoSet: {
 		method: 'GET',
 		path: '/api/roto/sets/:key',
 		response: RotoStoreInfoSchema,
-		owner: 'roto',
 	},
 	/** Auto-traces frames of a matte set into normalised mask paths (Convert to Masks). */
 	rotoTrace: {
@@ -899,16 +759,14 @@ export const ROUTES = {
 		path: '/api/roto/trace',
 		body: RotoTraceRequestSchema,
 		response: RotoTraceResponseSchema,
-		owner: 'roto',
 	},
 	/** Frame `n` of a matte set (8-bit grey PNG); signable for renders. */
 	rotoMatteFrame: {
 		method: 'GET',
 		path: '/mg/roto/:key',
 		response: 'binary',
-		owner: 'roto',
 	},
-	// ---- three-d: 3D Camera Tracker
+
 	/** A `camtrack` job: feature tracking + camera solve of a span of a video (result: `CamTrackResult`). */
 	camtrackSolve: {
 		method: 'POST',
@@ -916,24 +774,21 @@ export const ROUTES = {
 		body: CamTrackSolveRequestSchema,
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
-		owner: 'three-d',
 	},
-	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
+
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
-	cacheUsage: { method: 'GET', path: '/api/cache', response: CacheUsageSchema, owner: 'wp-m3-cachegc' },
+	cacheUsage: { method: 'GET', path: '/api/cache', response: CacheUsageSchema },
 	/** "Clean Unused" / "Clean All (not in use)" / one automatic pass; answers when the pass is done. */
 	cacheClean: {
 		method: 'POST',
 		path: '/api/cache/clean',
 		body: CacheCleanRequestSchema,
 		response: CacheGcReportSchema,
-		owner: 'wp-m3-cachegc',
 	},
 	cacheSettingsGet: {
 		method: 'GET',
 		path: '/api/cache/settings',
 		response: CacheSettingsSchema,
-		owner: 'wp-m3-cachegc',
 	},
 	/** Validates a cache folder: writable, free space for a move, same disk (S04:CA-021). Local mode only. */
 	cacheLocationCheck: {
@@ -941,7 +796,6 @@ export const ROUTES = {
 		path: '/api/cache/location/check',
 		body: CacheLocationRequestSchema,
 		response: CacheLocationCheckSchema,
-		owner: 'wp-m3-cachegc',
 	},
 	/** Moves the cache (or starts a fresh one) to a folder: a `cache-move` job. Local mode only. */
 	cacheLocationSet: {
@@ -949,21 +803,18 @@ export const ROUTES = {
 		path: '/api/cache/location',
 		body: CacheMoveRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-m3-cachegc',
 	},
 	cacheSettingsPut: {
 		method: 'PUT',
 		path: '/api/cache/settings',
 		body: CacheSettingsSchema,
 		response: CacheSettingsSchema,
-		owner: 'wp-m3-cachegc',
 	},
-	// ---- M3 effect presets (S03:FX-030, AGT-020): the user library (built-ins ship in @jasper/project)
+
 	effectPresetsList: {
 		method: 'GET',
 		path: '/api/effect-presets',
 		response: EffectPresetLibraryResponseSchema,
-		owner: 'wp-m3-presets',
 	},
 	/** Save Preset…: assigns the id and timestamps, answers the stored preset. */
 	effectPresetCreate: {
@@ -971,57 +822,49 @@ export const ROUTES = {
 		path: '/api/effect-presets',
 		body: EffectPresetCreateRequestSchema,
 		response: EffectPresetSchema,
-		owner: 'wp-m3-presets',
 	},
 	effectPresetUpdate: {
 		method: 'PUT',
 		path: '/api/effect-presets/:presetId',
 		body: EffectPresetUpdateRequestSchema,
 		response: EffectPresetSchema,
-		owner: 'wp-m3-presets',
 	},
 	effectPresetDelete: {
 		method: 'DELETE',
 		path: '/api/effect-presets/:presetId',
 		response: EffectPresetDeleteResponseSchema,
-		owner: 'wp-m3-presets',
 	},
 	effectPresetFolderCreate: {
 		method: 'POST',
 		path: '/api/effect-presets/folders',
 		body: EffectPresetFolderCreateRequestSchema,
 		response: EffectPresetFolderSchema,
-		owner: 'wp-m3-presets',
 	},
 	effectPresetFolderUpdate: {
 		method: 'PUT',
 		path: '/api/effect-presets/folders/:folderId',
 		body: EffectPresetFolderUpdateRequestSchema,
 		response: EffectPresetFolderSchema,
-		owner: 'wp-m3-presets',
 	},
 	/** Deletes a bin with everything inside it. */
 	effectPresetFolderDelete: {
 		method: 'DELETE',
 		path: '/api/effect-presets/folders/:folderId',
 		response: EffectPresetDeleteResponseSchema,
-		owner: 'wp-m3-presets',
 	},
 	effectPresetsImport: {
 		method: 'POST',
 		path: '/api/effect-presets/import',
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
-		owner: 'wp-m3-presets',
 	},
-	// ---- wp interchange (docs/wp-notes/interchange.md)
+
 	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */
 	interchangeImport: {
 		method: 'POST',
 		path: '/api/interchange/import',
 		body: InterchangeImportRequestSchema,
 		response: InterchangeImportResponseSchema,
-		owner: 'wp-interchange',
 	},
 	/** The clips an export would pre-render (ProRes 4444 with alpha) for a format and mode. */
 	interchangePrerenderPlan: {
@@ -1029,7 +872,6 @@ export const ROUTES = {
 		path: '/api/interchange/prerender-plan',
 		body: InterchangePrerenderPlanRequestSchema,
 		response: InterchangePrerenderPlanResponseSchema,
-		owner: 'wp-interchange',
 	},
 	/** Exports a sequence as a timeline document (job `interchange-export`, result `InterchangeExportResult`). */
 	interchangeExport: {
@@ -1037,14 +879,12 @@ export const ROUTES = {
 		path: '/api/interchange/export',
 		body: InterchangeExportRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-interchange',
 	},
 	/** A file of a finished interchange export (`result.files[].name`). */
 	interchangeOutput: {
 		method: 'GET',
 		path: '/renders/:jobId/interchange/:name',
 		response: 'binary',
-		owner: 'wp-interchange',
 	},
 	/** S04:AS-011: registers a replacement file and compares it with the asset (fingerprint, duration, …). */
 	assetRelink: {
@@ -1052,7 +892,6 @@ export const ROUTES = {
 		path: '/api/assets/:assetId/relink',
 		body: AssetRelinkRequestSchema,
 		response: AssetRelinkResponseSchema,
-		owner: 'wp-interchange',
 	},
 	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`, result `RelinkScanResult`). */
 	relinkScan: {
@@ -1060,7 +899,6 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/relink-scan',
 		body: RelinkScanRequestSchema,
 		response: EngineJobSchema,
-		owner: 'wp-interchange',
 	},
 	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
 	captionFileRead: {
@@ -1068,52 +906,45 @@ export const ROUTES = {
 		path: '/api/captions/read',
 		body: CaptionFileReadRequestSchema,
 		response: CaptionFileReadResponseSchema,
-		owner: 'wp-captions',
 	},
-	// ---- color-grade: scopes as numbers, Colour Match, Auto tone (each renders its frames with the still renderer)
+
 	gradingScopes: {
 		method: 'POST',
 		path: '/api/grading/scopes',
 		body: GradingScopesRequestSchema,
 		response: GradingScopesResponseSchema,
-		owner: 'color-grade',
 	},
 	gradingMatch: {
 		method: 'POST',
 		path: '/api/grading/match',
 		body: ColorMatchRequestSchema,
 		response: ColorMatchResponseSchema,
-		owner: 'color-grade',
 	},
 	gradingAutoTone: {
 		method: 'POST',
 		path: '/api/grading/auto-tone',
 		body: AutoToneRequestSchema,
 		response: AutoToneResponseSchema,
-		owner: 'color-grade',
 	},
-	// ---- polish: Media Browser (local engines only)
-	browseRoots: { method: 'GET', path: '/api/browse/roots', response: BrowseRootsSchema, owner: 'polish' },
+
+	browseRoots: { method: 'GET', path: '/api/browse/roots', response: BrowseRootsSchema },
 	browseList: {
 		method: 'GET',
 		path: '/api/browse/list',
 		query: BrowseListQuerySchema,
 		response: BrowseListSchema,
-		owner: 'polish',
 	},
 	browseInfo: {
 		method: 'GET',
 		path: '/api/browse/info',
 		query: BrowsePathQuerySchema,
 		response: BrowseInfoSchema,
-		owner: 'polish',
 	},
 	browseThumbnail: {
 		method: 'GET',
 		path: '/api/browse/thumbnail',
 		query: BrowseThumbnailQuerySchema,
 		response: 'binary',
-		owner: 'polish',
 	},
 	browseFile: {
 		method: 'GET',
@@ -1121,88 +952,76 @@ export const ROUTES = {
 		query: BrowsePathQuerySchema,
 		response: 'binary',
 		headers: ['range'],
-		owner: 'polish',
 	},
-	// ---- gaps: Edit Original (UI-5)
+
 	mediaLocation: {
 		method: 'GET',
 		path: '/api/media/:mediaKey/location',
 		response: MediaLocationSchema,
-		owner: 'gaps',
 	},
 	mediaOpen: {
 		method: 'POST',
 		path: '/api/media/:mediaKey/open',
 		body: MediaOpenRequestSchema,
 		response: MediaOpenResponseSchema,
-		owner: 'gaps',
 	},
-	// ---- gaps: Project Settings ▸ Scratch Disks (PRJ-4)
+
 	projectScratch: {
 		method: 'GET',
 		path: '/api/projects/:projectId/scratch',
 		response: ScratchInfoSchema,
-		owner: 'gaps',
 	},
 	scratchCheck: {
 		method: 'POST',
 		path: '/api/scratch/check',
 		body: ScratchCheckRequestSchema,
 		response: ScratchCheckSchema,
-		owner: 'gaps',
 	},
-	// ---- gaps: Preferences ▸ Auto Save / Memory (UI-4)
+
 	gapsSettingsGet: {
 		method: 'GET',
 		path: '/api/settings/gaps',
 		response: EngineGapsInfoSchema,
-		owner: 'gaps',
 	},
 	gapsSettingsPut: {
 		method: 'PUT',
 		path: '/api/settings/gaps',
 		body: EngineGapsSettingsSchema.partial(),
 		response: EngineGapsInfoSchema,
-		owner: 'gaps',
 	},
-	// ---- gaps: File ▸ Project Manager (PRJ-6)
+
 	projectManagerPlan: {
 		method: 'POST',
 		path: '/api/project-manager/plan',
 		body: ProjectManagerRequestSchema,
 		response: ProjectManagerEstimateSchema,
-		owner: 'gaps',
 	},
 	projectManagerStart: {
 		method: 'POST',
 		path: '/api/project-manager',
 		body: ProjectManagerRequestSchema,
 		response: EngineJobSchema,
-		owner: 'gaps',
 	},
-	// ---- gaps: Create Proxies, ingest copies / transcodes (PRJ-8)
+
 	mediaJobs: {
 		method: 'POST',
 		path: '/api/media-jobs',
 		body: MediaJobRequestSchema,
 		response: EngineJobSchema,
-		owner: 'gaps',
 	},
-	// ---- gaps: Warp Stabilizer background analysis (FX-6)
+
 	warpAnalysis: {
 		method: 'POST',
 		path: '/api/warp-analysis',
 		body: WarpAnalysisRequestSchema,
 		response: EngineJobSchema,
-		owner: 'gaps',
 	},
-	// ---- gaps: Auto Reframe subject analysis (AI-2)
+
 	reframeAnalysis: {
 		method: 'POST',
 		path: '/api/reframe',
 		body: ReframeRequestSchema,
 		response: EngineJobSchema,
-		owner: 'gaps',
 	},
 } as const satisfies Record<string, RouteDef>;
 

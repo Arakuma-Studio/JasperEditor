@@ -177,8 +177,6 @@ function rayUniforms(p: EffectParams, ctx: { width: number; height: number; prog
 	};
 }
 
-// ---------------------------------------------------------------- S_DissolveRays
-
 export const S_DISSOLVE_RAYS: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-rays',
 	expensive: true,
@@ -253,8 +251,6 @@ ${RAYS_FINAL}`,
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveEdgeRays
 
 /** Edge Thickness (Sapphire units) → sampling offset in frame px (1.0 = 5 % of the frame width). */
 export const edgeThicknessPx = (p: EffectParams, width: number) =>

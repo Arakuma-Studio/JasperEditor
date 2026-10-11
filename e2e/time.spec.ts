@@ -1,10 +1,3 @@
-// Workstream `time` through the real UI of the built app (docs/wp-notes/time.md):
-// - clip menu ▸ Show Clip Keyframes ▸ Time Remapping ▸ Speed shows the speed band; dragging it changes the speed
-//   (one undo step) and the clip's duration follows;
-// - clip menu ▸ Time Interpolation, the Effect Controls Time Remapping section;
-// - the Program monitor draws the remapped frame (frame-code.mp4 carries its frame number as 6 white boxes);
-// - a native export shows the same frames;
-// - clip menu ▸ Scene Edit Detection… cuts scenes.mp4 at its four hard cuts in one undo step.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -134,11 +127,11 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const [v] = await clips(page, ['V1']);
 	coded = v!.id;
 	const before = (await clipDoc(coded)).duration;
-	// Like Premiere, the speed band needs a tall track: Expand All Tracks.
+	// The speed band requires expanded tracks to expose its drag target.
 	await focusTimeline(page);
 	await page.keyboard.press('Shift+Equal');
 	const box = await clipBox(page, coded);
@@ -155,19 +148,18 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 	const lb = (await line.boundingBox())!;
 	const x = lb.x + lb.width / 2;
 	const y = lb.y + lb.height / 2;
-	// Down = slower (Premiere): the clip gets longer.
+	// Downward speed-band drags reduce speed and increase duration.
 	await pointerDrag(page, { x, y }, { x, y: y + 8 });
 	await expect.poll(async () => (await clipDoc(coded)).timeRemap?.enabled).toBe(true);
 	expect((await clipDoc(coded)).duration).toBeGreaterThan(before);
 	expect((await appliedLabels(page)).at(-1)).toBe('Change Speed');
-	// One undo step restores the clip.
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clipDoc(coded)).duration).toBe(before);
 });
 
 test('Time Interpolation menu and the Effect Controls Time Remapping section', async () => {
 	const r = await transact(page, [{ type: 'timeRemap.setSpeed', clipId: coded, at: 0, speedPercent: 50 }]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const c = await clipDoc(coded);
 	expect(c.timeRemap?.enabled).toBe(true);
 	expect(c.duration).toBeGreaterThan(110);
@@ -218,7 +210,7 @@ test('Scene Edit Detection… cuts at the four hard cuts in one undo step', asyn
 	const item = Object.values(d.items).find((i) => i.name.startsWith('scenes'))!;
 	const start = (await clipDoc(coded)).duration + 30;
 	const r = await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: start }]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const scenes = (await clips(page, ['V1'])).find((c) => c.start === start)!;
 	await page.keyboard.press('Backslash');
 	const box = await clipBox(page, scenes.id);

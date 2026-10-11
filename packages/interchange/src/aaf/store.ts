@@ -223,8 +223,6 @@ function concat(parts: Uint8Array[]): Uint8Array {
 	return out;
 }
 
-// ---------------------------------------------------------------- writing
-
 /** Serialises `root` (the Root object: MetaDictionary 0x0001, Header 0x0002) into a compound file. */
 export function writeStore(root: Obj, version: CfbVersion): Uint8Array {
 	const cfb = new CfbWriter(version);
@@ -336,8 +334,6 @@ export function writeStore(root: Obj, version: CfbVersion): Uint8Array {
 	return cfb.finish();
 }
 
-// ---------------------------------------------------------------- reading
-
 const MAX_DEPTH = 200;
 const MAX_OBJECTS = 2_000_000;
 /** Properties of one object (AAF classes have a few dozen; lookups scan the list). */
@@ -354,8 +350,9 @@ const rd32 = (b: Uint8Array, at: number): number | null =>
 export function readStore(bytes: Uint8Array): Obj {
 	const cf = CompoundFile.open(bytes);
 	const paths: number[][] = [];
-	try {
-		const rp = cf.readPath('referenced properties');
+	const references = cf.child(0, 'referenced properties');
+	if (references !== null) {
+		const rp = cf.read(references);
 		if (rp.length >= 7) {
 			const count = rd16(rp, 1)!;
 			let cur: number[] = [];
@@ -367,11 +364,9 @@ export function readStore(bytes: Uint8Array): Obj {
 				} else cur.push(pid);
 			}
 		}
-	} catch {
-		// no referenced properties: weak references resolve by key only
 	}
 	let objects = 0;
-	// Security review PAR-2: an object is a storage owned by exactly one strong reference. A collection index that
+	// An object is a storage owned by exactly one strong reference. A collection index that
 	// names the same child storage again and again (and that child's index doing the same, 200 levels deep) would
 	// otherwise be read count^depth times.
 	const visited = new Uint8Array(cf.entries.length);

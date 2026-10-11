@@ -1,6 +1,4 @@
-// Scene Edit Detection in the editor (workstream `time`): analyse the media range each selected video clip shows
-// (engine job `scene-detect`), then apply every result in one undo step "Scene Edit Detection" (`clip.applySceneEdits`
-// per clip: edits incl. linked audio, a bin of scene items, clip markers — Premiere's three options).
+// Commit all scene analyses together so cancellation leaves the project unchanged and one undo removes the edit.
 import type { SceneDetectResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

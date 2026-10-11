@@ -1,8 +1,3 @@
-// Media cache contracts (M3, S04 §7.5 CA-003/CA-010…CA-019, ARCHITECTURE §19.7). Owner: wp-m3-cachegc.
-// The engine keeps every regenerable file it writes (derivatives, proxies, baked LUTs, warped layers, layer bakes,
-// motion-graphics renders, export/still outputs, build caches) in one cache registry: usage per kind, reference-aware
-// cleaning ("Clean Unused", "Clean All (not in use)") and budgets (size per kind / total, age) — Premiere's
-// Preferences ▸ Media Cache.
 import { z } from 'zod';
 
 /** Cache kinds (one row each in Preferences ▸ Media Cache). */
@@ -11,7 +6,7 @@ export const CACHE_KINDS = [
 	'proxies',
 	'luts',
 	'warp',
-	// Workstream `time`: retimed layers (reverse, time remaps, frame blending / optical flow, VFR) and frame indexes.
+
 	'retime',
 	'layers',
 	'mg-renders',
@@ -19,9 +14,9 @@ export const CACHE_KINDS = [
 	'exports',
 	'stills',
 	'bundles',
-	// parity (roto): computed object mattes (Roto Brush, faces) and the reusable frame pool
+
 	'roto',
-	// previews: rendered preview files of sequence segments (Sequence ▸ Render…)
+
 	'previews',
 ] as const;
 export const CacheKindSchema = z.enum(CACHE_KINDS);
@@ -151,9 +146,9 @@ export type CacheGcReport = z.infer<typeof CacheGcReportSchema>;
 export const CacheUsageSchema = z.object({
 	/** Cache location (local mode only; null on a remote engine). */
 	location: z.string().nullable(),
-	/** M3 (CA-021): the cache is in the engine's data folder (no custom location). */
+	/** The cache is in the engine's data folder (no custom location). */
 	locationIsDefault: z.boolean().optional(),
-	/** M3 (CA-020): engine logs + job journal (not cache; retention in `settings.logs`). */
+	/** Engine logs + job journal (not cache; retention in `settings.logs`). */
 	logs: z
 		.object({
 			bytes: z.number().int().min(0),

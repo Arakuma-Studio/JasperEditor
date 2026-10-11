@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire Glows + Lighting on the Remotion render path: bundles the PRODUCTION entry (the family is in the default
-// registry), renders stills of every effect of the family on a still image (a generated test card: every effect must
-// change it) and of the main ones on a decoded video frame (ffmpeg testsrc2, 640×360), deterministically; plus a padded drop shadow on a still drawn outside its
-// box and a time-dependent effect (S_Flashbulbs) differing between frames. Stills are kept in the temp dir printed
-// at start (visual review). Gated by REMOTION_E2E=1 (bundling ≈ 30 s, each still ≈ 1–5 s); needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -92,7 +87,6 @@ describe.runIf(enabled)(
 			const i = (Math.round(y) * FX_W + Math.round(x)) * 3;
 			return [raw[i]!, raw[i + 1]!, raw[i + 2]!];
 		};
-		/** The test card as a full-frame-ish image clip. */
 		const card = (): Command[] => [
 			{
 				type: 'media.register',
@@ -107,7 +101,6 @@ describe.runIf(enabled)(
 				ref: '$c',
 			} as unknown as Command,
 		];
-		/** Largest channel difference over a sampled grid. */
 		const maxDiff = (a: Buffer, b: Buffer) => {
 			let d = 0;
 			for (let i = 0; i < a.length; i += 5) d = Math.max(d, Math.abs(a[i]! - b[i]!));

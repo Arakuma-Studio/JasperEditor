@@ -8,7 +8,7 @@
 // Dashes, Taper and Wave). Every action is one undo step.
 import {
 	type Clip,
-	type Command,
+	type CommandInput,
 	findItem,
 	OPERATOR_ITEM_TYPES,
 	PAINT_ITEM_TYPES,
@@ -29,6 +29,9 @@ import { PropertyRow, type RowContext } from '../panels/properties/controls/Prop
 import { bindProperty, makeRow, type Row } from '../panels/properties/lib/model.ts';
 import { useInspectorOps } from '../panels/properties/lib/ops.ts';
 import { isVectorClip, useVectorUi, vectorUi } from './vector.ts';
+
+type WithoutClipId<T> = T extends { clipId: string } ? Omit<T, 'clipId'> : never;
+type ShapeEdit = WithoutClipId<Extract<CommandInput, { type: `shape.${string}` }>>;
 
 const ROW = 'flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1 pl-2';
 const ADD_TYPES: readonly ShapeItemType[] = [
@@ -110,10 +113,10 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 		hint: notices.hint,
 		confirmStopwatchOff: notices.confirmStopwatchOff,
 	};
-	const run = (label: string, commands: Record<string, unknown>[]) =>
+	const run = (label: string, commands: ShapeEdit[]) =>
 		ops.apply(
 			label,
-			commands.map((c) => ({ clipId: clip.id, ...c }) as Command),
+			commands.map((c) => ({ clipId: clip.id, ...c })),
 		);
 	const select = (itemId: string | null) => vectorUi.select(itemId ? { clipId: clip.id, itemId } : null);
 
@@ -133,7 +136,7 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 						items: [{ type: 'group', name: preset.label, contents: preset.items() }],
 						...(at.parentId ? { parentId: at.parentId } : {}),
 						index: at.index,
-					} as Command,
+					} satisfies CommandInput,
 				],
 			});
 			const id = r.ok ? (r.results[0] as { itemIds: string[] }).itemIds[0] : undefined;
@@ -153,7 +156,7 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 					items: [type === 'path' ? { type, path: 'M-100 0 L100 0' } : { type }],
 					...(at.parentId ? { parentId: at.parentId } : {}),
 					index: at.index,
-				} as Command,
+				} satisfies CommandInput,
 			],
 		});
 		const id = r.ok ? (r.results[0] as { itemIds: string[] }).itemIds[0] : undefined;
@@ -229,7 +232,9 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 							label: 'Group Shapes',
 							origin: 'user',
 							sequenceId,
-							commands: [{ type: 'shape.groupItems', clipId: clip.id, itemIds: [sel.item.id] } as Command],
+							commands: [
+								{ type: 'shape.groupItems', clipId: clip.id, itemIds: [sel.item.id] } satisfies CommandInput,
+							],
 						});
 						// After Effects selects the new group.
 						if (r.ok) select((r.results[0] as { groupId: string }).groupId);
@@ -388,13 +393,13 @@ function ItemProperties({
 	clip: Clip;
 	item: ShapeItem;
 	ctx: RowContext;
-	run(label: string, commands: Record<string, unknown>[]): void;
+	run(label: string, commands: ShapeEdit[]): void;
 }) {
 	const rows = shapeItemSpecs(clip, item.id)
 		.map((s) => makeRow(s.key, [bindProperty(ctx.doc, ctx.seq, clip, s.key, ctx.frame)]))
 		.filter((r): r is Row => r !== null);
 	const stroke = item.type === 'stroke' || item.type === 'gradientStroke' ? item : null;
-	const toggle = (label: string, patch: Record<string, unknown>) =>
+	const toggle = (label: string, patch: Extract<CommandInput, { type: 'shape.updateItem' }>['patch']) =>
 		run(label, [{ type: 'shape.updateItem', itemId: item.id, patch }]);
 	return (
 		<div data-testid="vector-item-properties">

@@ -4,6 +4,7 @@
 // recovery journal (S01:PER-021, AC-18, D-39) runs next to autosave when the store supports it.
 import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
 import { EditorSession, type SessionContext } from '../session.ts';
+import { createSessionId } from '../session-id.ts';
 import type { SessionState } from '../types.ts';
 import { type AutosaveOptions, type Autosaver, createAutosaver } from './autosave.ts';
 import { createRecoveryJournal, type RecoveryJournalWriter } from './recovery.ts';
@@ -74,12 +75,8 @@ export function attachPersistence(
 			baseRevision: () => autosaver.getStatus().serverRevision,
 			onError: (e) => console.warn('[recovery] journal write failed', e),
 		});
-	const win =
-		opts.window === undefined ? (globalThis as unknown as { window?: LifecycleTarget }).window : opts.window;
-	const doc =
-		opts.document === undefined
-			? (globalThis as unknown as { document?: LifecycleTarget & { visibilityState?: string } }).document
-			: opts.document;
+	const win = opts.window === undefined ? globalThis.window : opts.window;
+	const doc = opts.document === undefined ? globalThis.document : opts.document;
 
 	const flushQuietly = () => {
 		// gaps (Auto Save off): leaving the page journals the unsaved edits instead of saving them.
@@ -95,7 +92,7 @@ export function attachPersistence(
 		if ((dirty && st.paused === null) || st.saving) {
 			flushQuietly();
 			e.preventDefault();
-			(e as unknown as { returnValue: string }).returnValue = '';
+			(e as BeforeUnloadEvent).returnValue = '';
 		}
 	};
 	win?.addEventListener('pagehide', flushQuietly);
@@ -146,7 +143,7 @@ export async function takeOverSession(
 ): Promise<EditorSession> {
 	const store = old.projectStore;
 	if (!store) throw new Error('takeOverSession: the session has no ProjectStore');
-	const sessionId = opts.sessionId ?? `ses_${Math.random().toString(36).slice(2, 12)}`;
+	const sessionId = opts.sessionId ?? createSessionId();
 	await store.acquireLease(old.projectId, sessionId, { takeOver: true });
 	await old.close();
 	return EditorSession.open({

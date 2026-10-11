@@ -18,7 +18,8 @@
   },
   "devDependencies": {
     "electron": "^44.0.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "@jasper/api": "workspace:*"
   },
   "description": "JasperEditor desktop shell (Electron): loads the SPA from the dev server or a forked engine.",
   "build": {

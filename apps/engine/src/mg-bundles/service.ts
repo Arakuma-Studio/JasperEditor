@@ -140,8 +140,6 @@ export class MgBundleService {
 		return this.o.core;
 	}
 
-	// ------------------------------------------------------------------ capability
-
 	/** `features.mgBundles` (ARCHITECTURE §19.7). */
 	capability(): { status: 'ready' | 'unavailable'; reason?: string; projectImport: boolean } {
 		const r = this.core.remotion;
@@ -210,8 +208,6 @@ export class MgBundleService {
 		return this.core.ffmpeg;
 	}
 
-	// ------------------------------------------------------------------ lifecycle
-
 	registerRunners(): void {
 		this.core.queue.registerRunner('mg-bundle', (ctx) => this.runBundleJob(ctx));
 		this.core.queue.registerRunner('mg-prerender', (ctx) => this.runPrerender(ctx));
@@ -229,8 +225,6 @@ export class MgBundleService {
 		this.watches.clear();
 	}
 
-	// ------------------------------------------------------------------ lookups
-
 	/** Registry record of a bundle key (kind mg-bundle), or null. */
 	record(key: string): MediaRecord | null {
 		if (!MEDIA_KEY_RE.test(key)) return null;
@@ -245,8 +239,6 @@ export class MgBundleService {
 		const dir = dirname(r.storage.path);
 		return existsSync(join(dir, 'index.html')) ? dir : null;
 	}
-
-	// ------------------------------------------------------------------ import
 
 	/** `POST /api/mg-bundles/import` with a path (local mode): waits for the `mg-bundle` job. */
 	async importPath(
@@ -585,8 +577,6 @@ export class MgBundleService {
 		}
 	}
 
-	// ------------------------------------------------------------------ rebuild and watch
-
 	private async rebuildJob(ctx: JobContext, key: string): Promise<unknown> {
 		const r = this.record(key);
 		if (!r) throw new MgBundleError('NOT_FOUND', `Unknown bundle ${key}`, 404);
@@ -681,8 +671,6 @@ export class MgBundleService {
 		}
 	}
 
-	// ------------------------------------------------------------------ pre-render (MGC-030/031)
-
 	/** The request's render key (null when the bundle is unknown). */
 	renderKeyOf(req: MgPrerenderRequest): string | null {
 		const r = this.record(req.mediaKey);
@@ -693,8 +681,6 @@ export class MgBundleService {
 	renderDirOf(renderKey: string): string {
 		return join(this.mgDir, renderKey);
 	}
-
-	// ------------------------------------------------------------------ text layout (wp-m3-mgtext, MGC-037)
 
 	private measureChain: Promise<unknown> = Promise.resolve();
 	private readonly measureCache = new Map<string, MgTextMeasureResult>();
@@ -1172,8 +1158,6 @@ export class MgBundleService {
 		);
 		return out;
 	}
-
-	// ------------------------------------------------------------------ posters (Motion Templates panel)
 
 	/** PNG of one composition at its `thumbnailFrame` (default props), rendered once and cached. */
 	poster(key: string, compositionId: string): Promise<string> {

@@ -1,7 +1,4 @@
-// GPU transitions and GPU-effect layers on the native path (wave1c, ARCHITECTURE D-35), end to end with a listening
-// engine and headless Chrome (REMOTION_E2E=1): an export with a GPU transition (keyframed params) and a layer with
-// stacked GPU effects plans `hybrid`, bakes only the span and the layer, and matches the composition frame by frame
-// (Remotion `renderStill` of the whole sequence: the renderer without codec noise); a re-export reuses the masters.
+// Full-sequence Remotion stills provide a reference without codec noise for hybrid span and layer bakes.
 // GPU_SPANS_BENCH=1 times a 60 s 1080p timeline: full Remotion export vs hybrid.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -40,7 +37,6 @@ function decode(file: string, o: { frame?: number } = {}): Buffer {
 	return r.stdout;
 }
 
-/** Share of samples within `tol` code values. */
 function within(a: Uint8Array, b: Uint8Array, tol: number): number {
 	expect(a.length).toBe(b.length);
 	let n = 0;
@@ -48,7 +44,6 @@ function within(a: Uint8Array, b: Uint8Array, tol: number): number {
 	return n / a.length;
 }
 
-/** A 1280×720 PNG card: a white frame around coloured bars (known colours, sharp edges). */
 function makeCard(): string {
 	const w = 1280;
 	const h = 720;
@@ -137,7 +132,6 @@ describe.runIf(enabled || bench)(
 				scaling: 'fit',
 				quality: { mode: 'crf', value: o.codec === 'prores' ? 10 : 18 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 		});
 
@@ -168,7 +162,6 @@ describe.runIf(enabled || bench)(
 			return { plan, done, out, ms: Date.now() - started, bakes: bakesOf(done.id) };
 		}
 
-		/** Remotion `renderStill` of the whole sequence at `frame` (signed media, as the Remotion path renders). */
 		async function referenceStill(
 			d: DocBuilder,
 			frame: number,
@@ -199,7 +192,7 @@ describe.runIf(enabled || bench)(
 				const d = new DocBuilder('hd-720p-30');
 				const cardId = d.addMedia(card);
 				const a = d.tx([{ type: 'clip.place', source: { mediaId: cardId }, at: 0, ref: '$a' }]).refs.$a!;
-				d.tx([{ type: 'clip.trim', clipId: a, edge: 'out', deltaFrames: -105, mode: 'regular' }]); // 150 → 45
+				d.tx([{ type: 'clip.trim', clipId: a, edge: 'out', deltaFrames: -105, mode: 'regular' }]);
 				d.tx([
 					{ type: 'clip.addSolid', at: 45, duration: 45, track: 'V1', color: [0.15, 0.25, 0.8, 1] },
 					{ type: 'track.add', kind: 'video', count: 1 },
@@ -229,7 +222,6 @@ describe.runIf(enabled || bench)(
 						value: 24,
 					},
 				]);
-				// V2: a small solid with two stacked GPU effects (one time-dependent: a new flicker every frame).
 				const fx = d.tx([
 					{ type: 'clip.addSolid', at: 10, duration: 70, track: 'V2', color: [0.9, 0.5, 0.1, 1], ref: '$s' },
 				]).refs.$s!;
@@ -244,7 +236,6 @@ describe.runIf(enabled || bench)(
 				expect(first.plan.path).toBe('hybrid');
 				expect(first.plan.blockers).toEqual([]);
 				expect(first.done.result).toMatchObject({ renderPath: 'hybrid', frames: 90 });
-				// One span bake (20 frames) and one layer bake (the GPU solid); nothing else through Remotion.
 				expect(first.bakes).toHaveLength(2);
 				const groups = first.plan.segments[0]!.graphicsGroups.flatMap((g) => g.itemIds);
 				expect(groups.sort()).toEqual([fx, tr].sort());
@@ -292,7 +283,6 @@ describe.runIf(enabled || bench)(
 					[5, 'jasper.cross-zoom'],
 				] as const)
 					d.tx([{ type: 'transition.add', trackId: 'V1', at: i * 255, effectId, duration: 20 }]);
-				// A GPU effect on one clip, and a 5 s lower third with two stacked GPU effects.
 				d.tx([{ type: 'effect.add', target: { clipId: ids[2]! }, effectId: 'jasper.color-emboss' }]);
 				const lt = d.tx([
 					{

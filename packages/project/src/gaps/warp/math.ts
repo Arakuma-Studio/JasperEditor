@@ -1,4 +1,4 @@
-// Warp Stabilizer maths (workstream gaps, docs/wp-notes/gaps.md §FX-6): 3×3 homographies, least-squares motion fits,
+// Warp Stabilizer maths (docs/wp-notes/gaps.md §FX-6): 3×3 homographies, least-squares motion fits,
 // small dense / banded solvers and a symmetric eigensolver. Ported from effectcraft `crates/track/src/{solve,fit}.rs`
 // and `camtrack/linalg.rs` (MIT OR Apache-2.0, see licenses/ported/gaps.md); the banded Cholesky and the warm-started
 // subspace iteration are ours (the JS budget of a live effect).

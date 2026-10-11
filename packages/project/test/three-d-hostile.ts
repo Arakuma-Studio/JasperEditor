@@ -1,6 +1,4 @@
-// Hostile glTF documents (security review PAR-2): each is a few hundred bytes to a megabyte of valid JSON that asked
-// the reader for gigabytes or for a walk without end. What each did to the reader before the fix is noted; the
-// measurements are in docs/security-review.md §8. Used by three-d-hostile.test.ts and as fuzz seeds.
+import type { GltfDocument } from '../src/three-d/gltf-schema.ts';
 
 const enc = (doc: unknown) => new TextEncoder().encode(JSON.stringify(doc));
 
@@ -13,7 +11,16 @@ function triangleBuffer(): string {
 	return `data:application/octet-stream;base64,${Buffer.from(bin).toString('base64')}`;
 }
 
-export function triangleDocument(): Record<string, any> {
+type TestModelDocument = GltfDocument & {
+	scenes: { nodes: number[] }[];
+	nodes: NonNullable<GltfDocument['nodes']>;
+	meshes: NonNullable<GltfDocument['meshes']>;
+	accessors: NonNullable<GltfDocument['accessors']>;
+	bufferViews: NonNullable<GltfDocument['bufferViews']>;
+	buffers: { byteLength: number; uri?: string }[];
+};
+
+export function triangleDocument(): TestModelDocument {
 	return {
 		asset: { version: '2.0' },
 		scene: 0,
@@ -32,7 +39,7 @@ export function triangleDocument(): Record<string, any> {
 	};
 }
 
-/** An accessor without a buffer view is all zeros (glTF §3.6.2.3): its count is all there is. Was: a 2.4 GB array. */
+/** An accessor without a buffer view is all zeros (glTF §3.6.2.3): its count is all there is. */
 export function accessorOfZeros(count = 100_000_000): Uint8Array {
 	const d = triangleDocument();
 	d.accessors[0] = { componentType: 5126, count, type: 'VEC3' };
@@ -40,7 +47,7 @@ export function accessorOfZeros(count = 100_000_000): Uint8Array {
 	return enc(d);
 }
 
-/** A stride of 0 reads the same element `count` times: the buffer check never fails. Was: a 2.4 GB array. */
+/** A stride of 0 reads the same element `count` times: the buffer check never fails. */
 export function strideZero(count = 100_000_000): Uint8Array {
 	const d = triangleDocument();
 	d.bufferViews[0].byteStride = 0;
@@ -49,7 +56,7 @@ export function strideZero(count = 100_000_000): Uint8Array {
 	return enc(d);
 }
 
-/** Nodes that share their children: `levels` nodes, each naming the next one `fanout` times. Was: fanout^levels visits. */
+/** Nodes that share their children: `levels` nodes, each naming the next one `fanout` times. */
 export function sharedChildren(fanout = 8, levels = 14): Uint8Array {
 	const d = triangleDocument();
 	d.nodes = Array.from({ length: levels }, (_, i) =>
@@ -70,11 +77,10 @@ export function manyInstances(instances = 20_000, vertices = 30_000): Uint8Array
 	d.accessors = [{ bufferView: 0, componentType: 5126, count: vertices, type: 'VEC3' }];
 	d.meshes[0].primitives[0] = { attributes: { POSITION: 0 } };
 	d.nodes = Array.from({ length: instances }, () => ({ mesh: 0 }));
-	d.scenes[0].nodes = d.nodes.map((_: unknown, i: number) => i);
+	d.scenes[0].nodes = d.nodes.map((_, i) => i);
 	return enc(d);
 }
 
-/** `materials` materials that all use one image of `imageBytes` bytes. Was: one copy of the image per material. */
 export function sharedImage(materials = 4000, imageBytes = 1 << 20): Uint8Array {
 	const d = triangleDocument();
 	const bin = new Uint8Array(44 + imageBytes);
@@ -93,14 +99,12 @@ export function sharedImage(materials = 4000, imageBytes = 1 << 20): Uint8Array 
 	return enc(d);
 }
 
-/** A data: URI whose percent-encoding is broken. Was: an uncaught URIError (an untyped engine error). */
 export function brokenDataUri(): Uint8Array {
 	const d = triangleDocument();
 	d.buffers[0] = { byteLength: 3, uri: 'data:application/octet-stream,%E0%A4%A' };
 	return enc(d);
 }
 
-/** Indices read from a float accessor: negative, fractional, not a number. Was: accepted (vertices read as undefined). */
 export function badIndices(values: number[] = [0, -1, 1.5]): Uint8Array {
 	const d = triangleDocument();
 	const bin = new Uint8Array(36 + 12);
@@ -125,7 +129,6 @@ export const HOSTILE_MODELS: Record<string, () => Uint8Array> = {
 	'negative and fractional indices': () => badIndices(),
 };
 
-/** Small versions of the same shapes: seeds for the mutation fuzzers (fuzz-parsers.test.ts). */
 export function hostileModelSeeds(): Uint8Array[] {
 	return [
 		accessorOfZeros(1000),

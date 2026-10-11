@@ -5,7 +5,7 @@
 import { FX_PIXELS_MAX, type FxPixels } from '@jasper/project';
 import { useEffect, useState } from 'react';
 import { continueRender, delayRender } from 'remotion';
-import { loadFxImage } from './FxPicture.tsx';
+import { loadFxImage } from './images.ts';
 
 const loaded = new Map<string, HTMLImageElement | null>();
 const pixels = new Map<string, FxPixels | null>();

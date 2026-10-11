@@ -78,7 +78,7 @@ type Sidecar = {
 		sha256: string;
 		bytes: number;
 	};
-	steps: Array<{ op: string; name: string; info: Record<string, unknown>; seconds: number }>;
+	steps: StageInfo[];
 	notes: string[];
 	models: Array<{ id: string; sha256: string }>;
 	device: 'cpu' | 'cuda';
@@ -441,7 +441,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 				while (chain.length && chain[chain.length - 1].kind === 'filter')
 					tailFilters.unshift(chain.pop() as Stage);
 
-			// 3. Analysis of the first frame stage.
 			const first = chain[0];
 			if (first && first.kind === 'frames' && first.step.analyse) {
 				const ta = performance.now();
@@ -449,22 +448,11 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 				infos[first.index].seconds += (performance.now() - ta) / 1000;
 				checkAbort();
 			}
-			// 3b. PST-013 (M3): a de-judder working directly on a source RANGE reads its edge neighbours from the
-			// source (the frame before / after the range, through the same fused head filters) instead of copying
-			// the edge frames. Used for the flow only, never emitted.
-			if (
-				spec.range &&
-				onSource &&
-				first?.kind === 'frames' &&
-				'setRangeContext' in first.step &&
-				typeof first.step.setRangeContext === 'function'
-			) {
+			// Range-edge flow uses neighboring source frames without adding them to the output.
+			if (spec.range && onSource && first?.kind === 'frames' && first.step.setRangeContext) {
 				const src = source;
-				(
-					first.step as unknown as { setRangeContext(f: (rel: number) => Promise<RgbFrame | null>): void }
-				).setRangeContext((rel) => rangeContextFrame(src, start + rel, rel));
+				first.step.setRangeContext((rel) => rangeContextFrame(src, start + rel, rel));
 			}
-			// 4. Open the stages (geometry propagates).
 			const runners: Array<{ stage: Stage; step: FrameStep; count: number }> = [];
 			let geom = { width: source.width, height: source.height };
 			for (const st of chain) {
@@ -473,7 +461,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 				runners.push({ stage: st, step, count: 0 });
 				geom = g;
 			}
-			// 5. The sink: encoder (last chain) or FFV1 intermediate.
 			let sinkArgs: string[];
 			let sinkPath: string;
 			if (last) {

@@ -12,9 +12,12 @@ import {
 	type ProjectDocument,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
+import type { MutationDocument, MutationEnvelope } from './project-mutation-fixtures.ts';
 
-const fixture = () => JSON.parse(readFileSync(join(__dirname, 'fixtures/v1/basic.jasper'), 'utf8'));
-const fixtureV2 = () => JSON.parse(readFileSync(join(__dirname, 'fixtures/v2/basic.jasper'), 'utf8'));
+const fixture = (): MutationEnvelope =>
+	JSON.parse(readFileSync(join(__dirname, 'fixtures/v1/basic.jasper'), 'utf8'));
+const fixtureV2 = (): MutationEnvelope =>
+	JSON.parse(readFileSync(join(__dirname, 'fixtures/v2/basic.jasper'), 'utf8'));
 
 describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () => {
 	it('the v1 fixture always loads without repairs', () => {
@@ -35,27 +38,25 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5', 'v5→v6'],
 		});
 		expect(m.document.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-		const before = Object.values(env.document.sequences)[0] as Record<string, any>;
+		const before = Object.values(env.document.sequences)[0]!;
 		const after = Object.values(m.document.sequences)[0]!;
-		for (const c of Object.values(before.clips as Record<string, any>)) {
+		for (const c of Object.values(before.clips)) {
 			expect(after.clips[c.id]!.label).toBe(c.kind === 'audio' ? 'caribbean' : c.label);
 		}
-		// Everything except that label is untouched.
-		const strip = (d: any) => {
-			const copy = JSON.parse(JSON.stringify(d));
-			for (const s of Object.values(copy.sequences) as any[])
-				for (const c of Object.values(s.clips) as any[]) if (c.kind === 'audio') c.label = 'x';
+		const strip = (d: MutationDocument) => {
+			const copy: MutationDocument = JSON.parse(JSON.stringify(d));
+			for (const s of Object.values(copy.sequences))
+				for (const c of Object.values(s.clips)) if (c.kind === 'audio') c.label = 'x';
 			copy.schemaVersion = 0;
 			return copy;
 		};
 		expect(strip(m.document)).toEqual(strip(env.document));
-		// The v1 input is never mutated.
-		expect((Object.values(before.clips) as any[]).find((c) => c.kind === 'audio').label).toBe('violet');
+		expect(Object.values(before.clips).find((c) => c.kind === 'audio')!.label).toBe('violet');
 	});
 	it('v1 → v2 keeps labels the user chose on audio clips', () => {
 		const env = fixture();
-		const seq = Object.values(env.document.sequences)[0] as Record<string, any>;
-		const audio = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'audio')!;
+		const seq = Object.values(env.document.sequences)[0]!;
+		const audio = Object.values(seq.clips).find((c) => c.kind === 'audio')!;
 		audio.label = 'rose';
 		const m = migrate(env);
 		expect(Object.values(m.document.sequences)[0]!.clips[audio.id]!.label).toBe('rose');
@@ -88,9 +89,9 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 	it('AC-24: unknown effect id and unknown clip kind load, are bypassed, and survive edits and saves', () => {
 		const env = fixture();
 		const doc = env.document;
-		const seq = Object.values(doc.sequences)[0] as Record<string, any>;
-		const video = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'video')!;
-		video.effects.push({
+		const seq = Object.values(doc.sequences)[0]!;
+		const video = Object.values(seq.clips).find((c) => c.kind === 'video')!;
+		video.effects!.push({
 			id: 'fx_000000000000FUTR',
 			effectId: 'jasper.hologram',
 			effectVersion: 3,
@@ -99,7 +100,7 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 			extra: 'kept',
 		});
 		video.futureField = { nested: true };
-		const v2 = seq.videoTracks[1].id;
+		const v2 = seq.videoTracks[1]!.id;
 		seq.clips.clp_000000000000HOLO = {
 			id: 'clp_000000000000HOLO',
 			kind: 'hologram',
@@ -123,13 +124,11 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 		const s2 = Object.values(saved.sequences)[0]!;
 		expect((s2.clips.clp_000000000000HOLO as unknown as { beam: unknown }).beam).toEqual({ power: 9000 });
 		expect((s2.clips[video.id] as unknown as { futureField: unknown }).futureField).toEqual({ nested: true });
-		// Bypassed in rendering, with a warning for the unknown clip kind.
 		const snap = buildRenderSnapshot(loaded.document, s2.id, {
 			resolveMedia: () => null,
 			resolveFont: () => null,
 		});
 		expect(snap.warnings.map((w) => w.clipId)).toContain('clp_000000000000HOLO');
-		// An unrelated edit keeps both untouched; the unknown clip still occupies its range.
 		const h = new Harness();
 		h.doc = loaded.document;
 		const r = h.tx([{ type: 'clip.addSolid', at: 500, duration: 10, track: 'V2', color: [1, 1, 1, 1] }], {
@@ -138,7 +137,6 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 		expect(r.ok).toBe(true);
 		const after = Object.values(h.doc.sequences)[0]!;
 		expect(after.clips.clp_000000000000HOLO).toEqual(s2.clips.clp_000000000000HOLO);
-		// It occupies its range: a clip placed over it overwrites (trims) it like any other clip.
 		h.ok([{ type: 'clip.addSolid', at: 420, duration: 30, track: 'V2', color: [1, 1, 1, 1] }]);
 		expect(Object.values(h.doc.sequences)[0]!.clips.clp_000000000000HOLO!.duration).toBe(20);
 		const fx = (
@@ -151,9 +149,9 @@ describe('unknown data is preserved (S01:DOC-005, AC-24)', () => {
 describe('repair (S01:PER-004, AC-20)', () => {
 	it('AC-20: overlapping clips open with a repair report; the later clip moves to a new track', () => {
 		const env = fixture();
-		const seq = Object.values(env.document.sequences)[0] as Record<string, any>;
-		const text = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'text')!;
-		const solid = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'solid')!;
+		const seq = Object.values(env.document.sequences)[0]!;
+		const text = Object.values(seq.clips).find((c) => c.kind === 'text')!;
+		const solid = Object.values(seq.clips).find((c) => c.kind === 'solid')!;
 		solid.trackId = text.trackId;
 		solid.start = text.start + 10; // overlaps the text clip
 		const r = loadProject(env, { ids: createCounterIdSource(3), effects: defaultEffectRegistry });
@@ -166,8 +164,8 @@ describe('repair (S01:PER-004, AC-20)', () => {
 	});
 	it('drops dangling references and dissolves broken link groups', () => {
 		const env = fixture();
-		const seq = Object.values(env.document.sequences)[0] as Record<string, any>;
-		const audio = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'audio')!;
+		const seq = Object.values(env.document.sequences)[0]!;
+		const audio = Object.values(seq.clips).find((c) => c.kind === 'audio')!;
 		delete seq.clips[audio.id];
 		env.document.rootItems.push('itm_000000000000GONE');
 		const r = loadProject(env, { ids: createCounterIdSource(3) });

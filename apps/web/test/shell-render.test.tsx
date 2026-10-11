@@ -52,9 +52,7 @@ function mountEditor() {
 
 registerAllCommands();
 
-// Each test mounts the whole editor (every panel of every workstream) in happy-dom and re-lays it out: seconds on a
-// busy runner, more than vitest's default 5 s test timeout (verify workstream: 8.4 s on a loaded CI run). The
-// assertions themselves wait on conditions.
+// Mounting and laying out the full editor can exceed Vitest's default timeout on a busy runner.
 describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 	afterEach(() => cleanup());
 	beforeEach(() => {
@@ -92,7 +90,6 @@ describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 		await waitFor(() => expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('assembly'));
 		fireEvent.click(screen.getByTestId('mode-export'));
 		expect(screen.getByTestId('mode-view-export')).toBeTruthy();
-		// The header tab and WP-2E's Export mode store stay in sync (one Export view, in the mode area).
 		await waitFor(() => expect(exportMode.get().open).toBe(true));
 		fireEvent.click(screen.getByTestId('mode-edit'));
 		await waitFor(() => expect(exportMode.get().open).toBe(false));

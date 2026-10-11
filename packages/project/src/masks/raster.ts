@@ -234,7 +234,7 @@ export function maskCoverageAt(masks: readonly PreparedMask[], x: number, y: num
 	return acc;
 }
 
-// ---------------------------------------------------------------- packing (GPU + CPU tiled rasterisers)
+// packing (GPU + CPU tiled rasterisers)
 
 /** Everything the tiled rasteriser needs, as RGBA32F texels. */
 export type MaskPack = {

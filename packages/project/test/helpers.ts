@@ -24,7 +24,6 @@ export function makeCtx(
 	};
 }
 
-/** A tiny harness that keeps a document, a revision counter and a seeded id source. */
 export class Harness {
 	doc: ProjectDocument;
 	revision = 0;
@@ -48,7 +47,6 @@ export class Harness {
 			this.ids,
 		);
 	}
-	/** Applies commands; returns the result. Commits on success. */
 	tx(
 		commands: unknown[],
 		opts: {

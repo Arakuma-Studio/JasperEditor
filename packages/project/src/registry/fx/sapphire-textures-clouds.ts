@@ -1,4 +1,4 @@
-// Effect family "sapphire-textures-clouds" (fx catalogue, wave 2): Sapphire Render ▸ procedural textures
+// Effect family "sapphire-textures-clouds": Sapphire Render ▸ procedural textures
 // (S_Texture*) and fractal clouds (S_Clouds*). Generators (`gpu.kind: 'generator'`): each draws its texture over the
 // layer box and combines it with the layer picture (the Sapphire "Background") through Bg Brightness + Combine
 // (Texture/Clouds Only, Mult, Add, Screen, Difference, Overlay), with Output Opacity (All Opaque / Copy From Input,
@@ -9,7 +9,9 @@
 // Conventions (sapphire-textures-clouds/glsl.ts): texture space is centred on the layer, 1 unit = layer height;
 // X & Y vectors are y-up like Sapphire's; centres are layer-normalised point params (on-canvas handles).
 // Authoring guide: docs/wp-notes/fx-shader-framework.md.
+
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
+import { numberParam as num } from '../param-values.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from './define.ts';
 import { GLSL_BLUR } from './glsl/blur.ts';
 import { fxParam } from './params.ts';
@@ -28,8 +30,6 @@ import {
 } from './sapphire-textures-clouds/params.ts';
 import { glowPasses, sharpenPasses, sharpenSigma } from './sapphire-textures-clouds/passes.ts';
 import type { FxPlanContext, GpuEffect, ShaderPass } from './shader.ts';
-
-const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 /** A one-pass generator whose `main` writes `fragColor = stc_finish(<texture rgb>)`. */
 const single = (frag: string, timeInvariant = false): GpuEffect => ({
@@ -52,8 +52,6 @@ function texture(init: {
 }): EffectSpec {
 	return defineShaderEffect({ ...init, category: 'Generate', bin: SAPPHIRE_BINS.render });
 }
-
-// ================================================================ fractal clouds
 
 /** Frequency, Frequency Rel X, Octaves, Seed (clouds head). */
 const cloudsHead = (freq: number, relX: number, octaves: number, seed: number) => [
@@ -263,8 +261,6 @@ void main() {
   fragColor = stc_finish(stc_ramp1(v));
 }`),
 });
-
-// ================================================================ procedural textures
 
 /** Frequency, Frequency Rel X (most textures). */
 const freqHead = (freq: number, relX: number, softMax = 40) => [

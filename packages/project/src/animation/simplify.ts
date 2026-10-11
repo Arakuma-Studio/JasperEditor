@@ -75,8 +75,6 @@ export type SimplifyResult = {
 	after: number[];
 };
 
-// ---------------------------------------------------------------- small helpers
-
 function dimOf(v: SimplifyValue): number {
 	return typeof v === 'number' ? 1 : v.length;
 }
@@ -119,8 +117,6 @@ function originalSegment(keys: readonly Key[], i: number): Exclude<Shape, { kind
 	if (a.interpolation === 'linear') return { kind: 'linear' };
 	return { kind: 'ease', out: { ...outgoingEase(keys, i) }, in: { ...incomingEase(keys, i + 1) } };
 }
-
-// ---------------------------------------------------------------- the solver
 
 type ChannelState = {
 	ch: SimplifyChannel;

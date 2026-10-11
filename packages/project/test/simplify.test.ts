@@ -1,6 +1,3 @@
-// Keyframe simplification solver (S09:TRK-023, S01:KF-010): property tests of the guarantee — the simplified
-// animation stays within the tolerance of the original at every sample, keys outside the span and the segments
-// leaving it are untouched, kept keys keep id/time/value — plus reduction and ease-fitting checks.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -156,7 +153,6 @@ describe('simplifyKeyframes', () => {
 						if (t <= keys[a]!.time || t >= keys[b]!.time)
 							expect(dist(evaluate(anim(out), t), orig[s]!)).toBeLessThan(1e-6);
 					}
-					// Keys outside the span are the same objects' data.
 					expect(out.slice(0, a)).toEqual(keys.slice(0, a));
 					expect(out.slice(out.length - (keys.length - 1 - b))).toEqual(keys.slice(b + 1));
 				},

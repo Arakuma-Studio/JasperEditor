@@ -1,5 +1,3 @@
-// Info panel (S05:INF-001, WP-2A): key–value readout of the selection and the active sequence.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

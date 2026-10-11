@@ -17,15 +17,15 @@ import { evaluate } from '../keyframes.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
 import type { MgTemplateRegistry } from '../registry/mg.ts';
 import { clipContentTime, resolveSceneAt } from '../render/scene.ts';
-import { buildRenderSnapshot, type MediaHandle } from '../render/snapshot.ts';
+import { buildRenderSnapshot } from '../render/snapshot.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
-import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, TextAnimator } from '../schema/sequence.ts';
 import { flicksToSeconds, fpsOf, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
 import { shapeItemsSummary } from '../vector/summary.ts';
 import { AddressError, pickSequence, resolveFrameInput } from './addressing.ts';
+import { queryMediaHandle } from './media.ts';
 import { clipPropertiesQuery, PropertyQueryError, paramGetQuery } from './properties-query.ts';
 
 export class AgentQueryError extends Error {
@@ -164,8 +164,6 @@ export type AgentQueryEnv = {
 	};
 };
 
-// ---------------------------------------------------------------- helpers
-
 export function sequenceTimecode(seq: Sequence, frame: number): string {
 	return formatTimecode(frame, seq.settings.frameRate as Rational, {
 		dropFrame: seq.settings.dropFrame,
@@ -276,22 +274,6 @@ function pick(v: unknown, fields: readonly string[]): unknown {
 	return Object.fromEntries(fields.filter((f) => Object.hasOwn(o, f)).map((f) => [f, o[f]]));
 }
 
-function stubMediaHandle(asset: MediaAsset): MediaHandle {
-	const vs = asset.probe.streams.find((s) => s.type === 'video');
-	return {
-		url: '',
-		proxyUrl: null,
-		kind: asset.kind,
-		width: vs && vs.type === 'video' ? vs.width : null,
-		height: vs && vs.type === 'video' ? vs.height : null,
-		durationFlicks: asset.probe.durationFlicks,
-		hasAudio: asset.probe.streams.some((s) => s.type === 'audio'),
-		rotation: asset.probe.rotationDegrees,
-	};
-}
-
-// ---------------------------------------------------------------- queries
-
 function docGet(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)['doc.get']>) {
 	let v: unknown = env.doc;
 	for (const seg of args.path ?? []) {
@@ -391,7 +373,7 @@ function sequenceAt(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)[
 		if (frame < 0) throw new AgentQueryError('E_INVALID_PARAM', 'frame must be ≥ 0');
 		const snapshot = buildRenderSnapshot(env.doc, seq.id, {
 			range: { start: frame, end: frame + 1 },
-			resolveMedia: stubMediaHandle,
+			resolveMedia: queryMediaHandle,
 			resolveFont: () => null,
 		});
 		const layers = resolveSceneAt(snapshot, frame).map((l) => {

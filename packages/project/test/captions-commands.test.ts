@@ -1,6 +1,5 @@
-// Caption and transcript commands: undoable edits through the command system (wp captions), including FilmCraft's
-// caption-edit tests (crates/edit/src/captions.rs) and the text-based edits on the interview transcript
-// (crates/edit/src/transcript/tests.rs) run end to end.
+// Includes FilmCraft caption-edit tests (crates/edit/src/captions.rs) and interview-transcript cases
+// (crates/edit/src/transcript/tests.rs).
 import { describe, expect, it } from 'vitest';
 import {
 	CAPTION_CONTENT_ORIGIN,
@@ -125,7 +124,6 @@ describe('split, merge, trim, move and ripple delete (FilmCraft caption edits)',
 			[60, 100, 'friend'],
 			[100, 150, 'world'],
 		]);
-		// each half owns its words
 		const [a, b] = captions(H);
 		expect(a!.transcriptId).not.toBe(b!.transcriptId);
 		ensureValid(H.doc);
@@ -234,7 +232,6 @@ describe('sync lock', () => {
 				mode: 'insert',
 			},
 		]);
-		// split at the insert point, the right part moved by 25 frames
 		expect(spans(H).map((x) => [x[0], x[1]])).toEqual([
 			[0, 50],
 			[75, 125],
@@ -245,7 +242,6 @@ describe('sync lock', () => {
 			[0, 50],
 			[50, 100],
 		]);
-		// an extract through a caption shortens it (one caption, all its words)
 		H.ok([{ type: 'range.extract', from: 60, to: 70 }]);
 		expect(spans(H)).toEqual([
 			[0, 50, 'over'],
@@ -374,7 +370,6 @@ describe('import and export', () => {
 			[1, 2.48, 'Hello\n<i>World</i>'],
 			[3, 4, 'Bye'],
 		]);
-		// export a range: times are output time
 		const part = captionCuesForTrack(H.doc, H.seq, H.seq.captionTracks[0]!.id, { start: 50, end: 90 });
 		expect(part.map((c) => [c.start / s(1), c.end / s(1)])).toEqual([
 			[0, 0.48],
@@ -447,7 +442,6 @@ describe('transcripts and text-based editing (FilmCraft transcript tests, end to
 		]);
 		expect(t2.words[0]!.start).toBe(s(1));
 		expect(t2.words[1]!.end).toBe(s(2));
-		// whisper segments with seconds
 		const whisper = JSON.stringify({
 			language: 'en',
 			segments: [{ words: [{ word: ' a', start: 0.5, end: 0.7, probability: 0.9 }] }],
@@ -552,7 +546,6 @@ describe('transcripts and text-based editing (FilmCraft transcript tests, end to
 		expect(cues[2]!.speaker).toBe('Speaker 2');
 		expect(H.seq.captionTracks[0]!.language).toBe('en');
 		ensureValid(H.doc);
-		// captions follow a later extract (sync lock)
 		H.ok([{ type: 'transcript.extract', fromWord: 0, toWord: 3 }]);
 		expect(spans(H)[0]![2]).toBe('Um, today we talk about rivers.');
 	});

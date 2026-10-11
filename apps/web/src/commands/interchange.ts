@@ -1,6 +1,3 @@
-// wp interchange UI commands: File ▸ Export ▸ <timeline format>… (options dialog → engine job → report) and Link
-// Media… (File menu and the Project panel context menu, S04:AS-011). Timeline files picked in File ▸ Import are
-// routed by the import service (`interchange/import.ts`).
 import { INTERCHANGE_FORMATS, type InterchangeFormat } from '@jasper/api';
 import { z } from 'zod';
 import {

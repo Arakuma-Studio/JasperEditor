@@ -1,4 +1,4 @@
-// Invariants and repair of Time Remapping data (workstream `time`), wired into invariants.ts:
+// Invariants and repair of Time Remapping data, wired into invariants.ts:
 // - INV-011: speed keyframes have finite times and sources, strictly increasing times;
 // - INV-012: only video clips carry a remap, never together with Reverse Speed; ramps ≥ 0, ease in 0…1, finite edge
 //   slopes, timeline speeds within ±20,000 %; Time Interpolation is a known mode;

@@ -1,6 +1,4 @@
-// wp captions: export of caption tracks — planner routing (burn-in = layer bake, `hybrid`), embedded caption
-// streams (mov_text in MP4/MOV, WebVTT in WebM) checked with ffprobe and read back by ffmpeg (oracle), sidecar
-// files, and the HTTP route serving them. Burned-in pixels are checked by the opt-in Remotion E2E and Playwright.
+// ffprobe and ffmpeg demuxing are independent oracles for embedded subtitle streams.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { RenderPlanSchema } from '@jasper/api';
@@ -29,14 +27,12 @@ const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 30 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine: 'auto',
 	...extra,
 });
 
-/** 4 s of blue with two caption tracks (English active, French hidden). */
 function captionedDoc(): DocBuilder {
 	const d = new DocBuilder('hd-720p-30');
 	d.tx([
@@ -130,7 +126,6 @@ describe('planning', () => {
 		expect(burned.blockers).toEqual([]);
 		expect(burned.path).toBe('hybrid');
 		const items = burned.segments.flatMap((s) => s.graphicsGroups.flatMap((g) => g.itemIds));
-		// only the visible track (C1) is burned in
 		expect(items).toHaveLength(2);
 		const plain = RenderPlanSchema.parse((await plan({ captions: { burnIn: false, embed: true } })).body);
 		expect(plain.path).toBe('native');

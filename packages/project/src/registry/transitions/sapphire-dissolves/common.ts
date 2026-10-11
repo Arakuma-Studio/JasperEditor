@@ -18,13 +18,14 @@
 // - blur widths (Blur Amount, Smooth Pattern, Threshold Blur…): 1.0 = a Gaussian σ of 3 % of the frame width
 //   (the convention of the Sapphire stylize family, `SAPPHIRE_BLUR_UNIT`);
 // - glow widths: 1.0 = a wide-component σ of 10 % of the frame width (`SAPPHIRE_GLOW_UNIT`).
-import type { RGBA } from '../../../schema/common.ts';
+import type { ParamValue, RGBA } from '../../../schema/common.ts';
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_COLOR } from '../../fx/glsl/color.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { fxParam } from '../../fx/params.ts';
 import type { FxUniformValue, GlslChunk, ShaderPass } from '../../fx/shader.ts';
+import { booleanParam as bool, clamp, numberParam as num } from '../../param-values.ts';
 import {
 	defineShaderTransition,
 	SAPPHIRE_TRANSITION_SUBBINS,
@@ -34,14 +35,14 @@ import {
 import { GLSL_TR_EASE } from '../glsl.ts';
 import type { TrFrameContext } from '../shader.ts';
 
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const bool = (v: unknown, d = false): boolean => (typeof v === 'boolean' ? v : d);
-export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
-export const rgb = (v: unknown, d: [number, number, number] = [1, 1, 1]): [number, number, number] =>
+export const rgb = (
+	v: ParamValue | undefined,
+	d: [number, number, number] = [1, 1, 1],
+): [number, number, number] =>
 	Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => typeof x === 'number' && Number.isFinite(x))
 		? [v[0] as number, v[1] as number, v[2] as number]
 		: d;
-export const vec2 = (v: unknown, d: [number, number]): [number, number] =>
+export const vec2 = (v: ParamValue | undefined, d: [number, number]): [number, number] =>
 	Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number'
 		? [Number.isFinite(v[0]) ? v[0] : d[0], Number.isFinite(v[1]) ? v[1] : d[1]]
 		: d;
@@ -52,7 +53,8 @@ export const SAPPHIRE_BLUR_UNIT = 0.03;
 export const SAPPHIRE_GLOW_UNIT = 0.1;
 
 /** Sapphire blur width → Gaussian σ in frame px. */
-export const blurPx = (v: unknown, width: number): number => Math.max(0, num(v)) * SAPPHIRE_BLUR_UNIT * width;
+export const blurPx = (v: ParamValue | undefined, width: number): number =>
+	Math.max(0, num(v)) * SAPPHIRE_BLUR_UNIT * width;
 
 /**
  * Sapphire centred coordinates → the framework's frame-normalised point: x −1..1 spans the width (centre 0), y is up
@@ -63,20 +65,17 @@ export function sapphirePoint(x: number, y: number, aspect = 16 / 9): [number, n
 	return [r(0.5 + x / 2), r(0.5 - (y * aspect) / 2)];
 }
 
-// ---------------------------------------------------------------- params
-
 /** A plain Sapphire slider (`number`, keyframable). */
 export function slider(
 	name: string,
 	label: string,
 	def: number,
-	range: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number } = {},
+	range: NonNullable<ParamSpec['range']> = {},
 	group?: string,
 ): ParamSpec {
 	return fxParam.number(name, label, def, { step: 0.01, ...range }, group ? { group } : undefined);
 }
 
-/** An integer slider. */
 export function intSlider(
 	name: string,
 	label: string,
@@ -147,8 +146,6 @@ export function timingParams(o: TimingOptions): ParamSpec[] {
 	return out.map((p) => ({ ...p, group: TIMING }));
 }
 
-// ---------------------------------------------------------------- timing maths (pure)
-
 /** Slow In / Slow Out: cubic Hermite from 0 to 1 with end slopes 1 − slowIn and 1 − slowOut (monotone). */
 export function slowCurve(p: number, slowIn: number, slowOut: number): number {
 	const t = clamp(p, 0, 1);
@@ -189,8 +186,6 @@ export function timingUniforms(p: EffectParams, ctx: Pick<TrFrameContext, 'progr
 	const d = dissolveTiming(p, ctx.progress);
 	return { u_sdT: d.t, u_sdEnv: d.env, u_sdMix: d.mix } satisfies Record<string, FxUniformValue>;
 }
-
-// ---------------------------------------------------------------- GLSL
 
 /** Sapphire coordinates, wrapped side taps, light compositing (`sd_*`). */
 export const GLSL_SD: GlslChunk = {
@@ -436,8 +431,6 @@ vec3 sd_glow(sampler2D nearT, sampler2D farT, float falloff) {
 `,
 };
 
-// ---------------------------------------------------------------- spec builder
-
 export type DissolveInit = Omit<ShaderTransitionInit, 'bin' | 'subBin'> & {
 	/** The timing params this dissolve has (false: none — the timing uniforms still follow the plain progress). */
 	timing: TimingOptions | false;
@@ -461,3 +454,5 @@ export function defineDissolve(init: DissolveInit): TransitionSpec {
 		},
 	});
 }
+
+export { bool, clamp, num };

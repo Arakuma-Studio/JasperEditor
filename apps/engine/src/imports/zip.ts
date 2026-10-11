@@ -1,4 +1,4 @@
-// Minimal ZIP reader for dotLottie archives (imports workstream). Implemented from the PKWARE APPNOTE (6.3.x):
+// Implemented from the PKWARE APPNOTE (6.3.x):
 // end of central directory record, central directory file headers, local file headers; stored (0) and deflated (8)
 // entries (inflated with node:zlib). ZIP64, encryption and spanned archives are refused. Every size is bounded: an
 // archive is hostile input (zip bombs, overlapping entries, truncated data).

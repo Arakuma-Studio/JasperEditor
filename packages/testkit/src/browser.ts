@@ -1,7 +1,5 @@
-// Headless Chrome for WebGL2 / page-level tests: find a Chrome, launch it on ANGLE/SwiftShader (deterministic
-// software GL without a GPU), and bundle a test entry with esbuild (packages/compositions/test/gl-browser.ts loads it).
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { build } from 'esbuild';
 
 /** Chrome used by the GL tests: `JASPER_BROWSER_EXECUTABLE`, else the usual system paths; null when none. */
 export function findChrome(): string | null {
@@ -24,19 +22,17 @@ export const SWIFTSHADER_ARGS = [
 	'--ignore-gpu-blocklist',
 ];
 
-type Esbuild = {
-	build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-};
-
-/** Bundles a browser entry (TypeScript/TSX) into one IIFE script with esbuild (the one that comes with tsx). */
-export async function bundleForBrowser(entry: string, define: Record<string, string> = {}): Promise<string> {
-	const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-	const esbuild = req('esbuild') as Esbuild;
-	const out = await esbuild.build({
+export async function bundleForBrowser(
+	entry: string,
+	define: Record<string, string> = {},
+	options: { globalName?: string } = {},
+): Promise<string> {
+	const out = await build({
 		entryPoints: [entry],
 		bundle: true,
 		write: false,
 		format: 'iife',
+		...options,
 		platform: 'browser',
 		target: 'es2022',
 		jsx: 'automatic',

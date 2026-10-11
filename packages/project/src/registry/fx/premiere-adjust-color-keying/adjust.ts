@@ -6,8 +6,6 @@ import { fxParam } from '../params.ts';
 import { AUTO_COLOR, AUTO_CONTRAST, AUTO_LEVELS } from './analysis.ts';
 import { GLSL_PACG, num, popup, slider } from './common.ts';
 
-// ---------------------------------------------------------------- Convolution Kernel
-
 const KERNEL = ['11', '12', '13', '21', '22', '23', '31', '32', '33'] as const;
 
 /** The kernel as a GLSL mat3 (column-major): m[col][row] = M<row+1><col+1>. */
@@ -61,8 +59,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Extract
-
 export const EXTRACT = defineShaderEffect({
 	id: 'jasper.extract',
 	label: 'Extract',
@@ -95,8 +91,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Levels
 
 const LEVEL_SETS = [
 	['', '(RGB)'],
@@ -176,8 +170,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Lighting Effects
 
 const LIGHT_TYPES: [string, string][] = [
 	['none', 'None'],
@@ -304,8 +296,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- ProcAmp
 
 /** ProcAmp: a broadcast processing amplifier (brightness, contrast, hue, saturation), with a split-screen preview. */
 export const PROC_AMP = defineShaderEffect({

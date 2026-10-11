@@ -1,7 +1,3 @@
-// Transition framework (wave 2) in the panels (component, happy-dom): the Effects panel lists the GPU transition
-// bins (Premiere bins, Sapphire Transitions ▸ sub-bins) with the GPU badge and the N / GPU filters; Effect Controls'
-// Transition section shows the params of a GPU transition and edits them (one history entry each, keyframes with
-// the stopwatch at the playhead inside the span).
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -75,7 +71,6 @@ describe('Effects panel GPU transition bins', () => {
 		expect(sapphire.groups.find((g) => g.group === 'Dissolves')!.transitions.map((t) => t.label)).toContain(
 			'S_DissolveLuma',
 		);
-		// Keywords are searchable.
 		const hits = transitionTree('circle').flatMap((b) => b.categories.flatMap((c) => c.transitions));
 		expect(hits.map((t) => t.id)).toContain('jasper.iris-round');
 	});

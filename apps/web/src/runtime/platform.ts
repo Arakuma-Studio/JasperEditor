@@ -1,54 +1,11 @@
 // Runtime and platform detection (ARCHITECTURE §7.5, S05:SH-002). The desktop preload exposes
 // `window.jasperDesktop` (apps/desktop/src/preload.cts); runtime differences go through this module,
 // never through `if (electron)` checks inside panels.
+
+import type { DesktopBridge as JasperDesktopBridge } from '@jasper/api';
 import type { Platform, Runtime } from '../commands/keymap-defaults.ts';
 
-/** Shape of the Electron preload bridge (mirrors apps/desktop/src/preload.cts). */
-export interface JasperDesktopBridge {
-	runtime: 'desktop';
-	pickMedia(): Promise<string[]>;
-	revealInFolder(path: string): void;
-	windowControls: { minimize(): void; toggleMaximize(): void; close(): void };
-	/** Brings the window to the front (an agent asked to show a project). */
-	focusWindow?(): void;
-	/** Where the bundled `jasper-mcp` server lives and how to launch it (Help ▸ Connect an AI Agent…). */
-	mcpInfo?(): Promise<DesktopMcpInfo>;
-	/** wp-clipboard (S01:CLB-002): the custom `application/x-jasper-clipboard` format next to HTML and text. */
-	clipboard?: DesktopClipboard;
-	/** wp-clipboard-2 (S01:CLB-010): the absolute path of a pasted/dropped File ('' when it is not a file). */
-	filePath?(file: File): string;
-	/**
-	 * mcp-cli (live-UI automation): a PNG of the window's content area, or of `rect` (CSS px), scaled down to at
-	 * most `maxWidth` px wide; `png` is base64.
-	 */
-	capturePage?(
-		rect: { x: number; y: number; width: number; height: number },
-		maxWidth: number,
-	): Promise<{ png: string; width: number; height: number }>;
-	/** gaps (Edit Original): opens a file in its default application; resolves with an error message or ''. */
-	openPath?(path: string): Promise<string>;
-	/** gaps (File ▸ Exit): quits the application (the renderer has already handled unsaved changes). */
-	quit?(): void;
-}
-
-/** The Electron clipboard as the preload exposes it (validated and size-capped in the main process). */
-type DesktopClipboard = {
-	write(data: { json: string; html: string; text: string }): Promise<boolean>;
-	/** The JSON of the custom format, or null when the clipboard has none. */
-	read(): Promise<string | null>;
-	/** CLB-010: absolute paths of the files copied in the OS file manager (empty when none). */
-	readFiles?(): Promise<string[]>;
-};
-
-/** How an MCP client starts the `jasper-mcp` stdio server that ships with the desktop app. */
-export type DesktopMcpInfo = {
-	/** Absolute path of jasper-mcp.mjs, or null when it was not built/bundled. */
-	entry: string | null;
-	/** Executable that runs it: `node`, or the app binary itself in packaged builds. */
-	command: string;
-	/** Extra environment for `command` (packaged builds: ELECTRON_RUN_AS_NODE=1). */
-	env: Record<string, string>;
-};
+export type { DesktopBridge as JasperDesktopBridge, DesktopMcpInfo } from '@jasper/api';
 
 declare global {
 	interface Window {
@@ -64,12 +21,8 @@ export function getDesktopBridge(): JasperDesktopBridge | null {
 export function detectRuntime(): Runtime {
 	if (typeof window === 'undefined') return 'web';
 	if (window.jasperDesktop) return 'desktop';
-	try {
-		if (window.matchMedia?.('(display-mode: standalone)').matches) return 'pwa';
-		if (window.matchMedia?.('(display-mode: window-controls-overlay)').matches) return 'pwa';
-	} catch {
-		/* matchMedia unavailable */
-	}
+	if (window.matchMedia?.('(display-mode: standalone)').matches) return 'pwa';
+	if (window.matchMedia?.('(display-mode: window-controls-overlay)').matches) return 'pwa';
 	return 'web';
 }
 
@@ -84,9 +37,5 @@ export function detectPlatform(): Platform {
 
 /** Coarse primary pointer (touch devices), used by the layout-mode switch. */
 export function hasCoarsePointer(): boolean {
-	try {
-		return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
-	} catch {
-		return false;
-	}
+	return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 }

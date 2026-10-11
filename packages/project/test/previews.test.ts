@@ -1,5 +1,3 @@
-// Workstream `previews`: render-bar segments, the content-hash invalidation contract and the cost model
-// (packages/project/src/render/previews.ts, docs/wp-notes/previews.md).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -81,7 +79,7 @@ describe('segments', () => {
 		let s = segs(h.doc, h.seqId);
 		expect(byStart(s, 0).need).toBe('none');
 		expect(byStart(s, 0).reasons).toEqual([]);
-		expect(byStart(s, 60).need).not.toBe('none'); // two layers
+		expect(byStart(s, 60).need).not.toBe('none');
 		h.ok([{ type: 'param.set', target: ['clip', a, 'transform', 'scale'], value: 50 }]);
 		s = segs(h.doc, h.seqId);
 		expect(byStart(s, 0).need).toBe('realtime');
@@ -120,7 +118,6 @@ describe('content hash: invalidation contract', () => {
 		const after = segs(h.doc, h.seqId);
 		expect(after.slice(0, 2).map((x) => x.hash)).toEqual(before.slice(0, 2).map((x) => x.hash));
 		expect(after[2]!.hash).not.toBe(before[2]!.hash);
-		// undo = the previous document value: the same hashes come back
 		expect(hashes(segs(structuredClone(d0), h.seqId))).toEqual(hashes(before));
 	});
 
@@ -200,7 +197,6 @@ describe('content hash: invalidation contract', () => {
 		const [v1] = place(h, m, 0, 'V1', [0, 60]);
 		const [v2] = place(h, m, 300, 'V1', [100, 160]);
 		h.ok([{ type: 'clip.nest', clipIds: [v1!, v2!], name: 'N', ref: '$n' }]);
-		// show only the first 60 nested frames
 		const nest = h.clips('V1')[0]!;
 		h.ok([{ type: 'clip.trim', clipId: nest.id, edge: 'out', deltaFrames: -(nest.duration - 60) }]);
 		const before = segs(h.doc, h.seqId);
@@ -221,7 +217,6 @@ describe('content hash: invalidation contract', () => {
 		const s0 = segs(h.doc, h.seqId);
 		expect(byStart(s0, 130).absolute).toBe(true);
 		expect(byStart(s0, 0).absolute).toBe(false);
-		// moving the expressive clip changes what `time` gives it
 		h.ok([{ type: 'clip.move', clipIds: [b], deltaFrames: 10 }]);
 		const s1 = segs(h.doc, h.seqId);
 		expect(byStart(s1, 140).hash).not.toBe(byStart(s0, 130).hash);

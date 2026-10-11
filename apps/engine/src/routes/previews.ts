@@ -1,9 +1,3 @@
-// Render previews (workstream `previews`, docs/wp-notes/previews.md):
-//   POST /api/previews/status   PreviewStatusRequest → PreviewStatus (which segment hashes have files)
-//   POST /api/previews/render   PreviewRenderRequest → 202 EngineJob kind `preview` (`?wait=1`: the finished job);
-//                               200 {job: null, existing} when every segment of the range is rendered already
-//   POST /api/previews/delete   PreviewDeleteRequest → {deleted, bytes} (Delete Render Files [In to Out])
-//   GET  /renders/previews/:format/:name   a preview file (byte ranges, immutable: names are content hashes)
 import {
 	PreviewDeleteRequestSchema,
 	PreviewRenderRequestSchema,

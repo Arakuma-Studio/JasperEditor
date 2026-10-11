@@ -41,8 +41,6 @@ export function analysisProcessor(
 	return p;
 }
 
-// ---------------------------------------------------------------- frequency axis
-
 export const F_MIN = 20;
 export const F_MAX = 20000;
 export const freqToX = (f: number, w: number) => (Math.log10(f / F_MIN) / Math.log10(F_MAX / F_MIN)) * w;

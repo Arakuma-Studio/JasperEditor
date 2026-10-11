@@ -1,6 +1,4 @@
 // @vitest-environment node
-// Vignette and Glow (premiere-stylize-distort-generate) in real WebGL2: identity at default, characteristic pixels,
-// alpha, glow padding. Headless Chrome via fx-psdg/gl-suite.ts; FX_GL=0 skips.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

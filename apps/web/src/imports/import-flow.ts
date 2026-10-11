@@ -1,14 +1,14 @@
-// imports workstream: the import steps of File ▸ Import / drops that are specific to the new formats
-// (docs/wp-notes/imports.md), called by the import service (`import/service.ts`):
-// 1. image sequences — numbered stills among the picked files (uploads) or paths (desktop; a single numbered still
-//    whose folder holds its siblings counts too) become one clip each when the user says so (frame rate prompt);
-// 2. multi-page PDF / Illustrator documents — the chosen pages become one item each;
-// 3. layered documents (PSD) — Merge All Layers (the flattened item), Merged Layers (one picture of the chosen
-//    layers), Individual Layers (a bin of layers) or Sequence (the layers stacked; `layeredImportCommands`).
-import { type LayeredExtractResult, type RegisteredMedia, toLayeredImportLayers } from '@jasper/api';
-import type { EngineClient } from '@jasper/engine-client';
 import {
-	type Command,
+	type EngineJob,
+	LayeredExtractResultSchema,
+	type RegisteredMedia,
+	RegisteredMediaSchema,
+	TERMINAL_JOB_STATES,
+	toLayeredImportLayers,
+} from '@jasper/api';
+import { type EngineClient, EngineError } from '@jasper/engine-client';
+import {
+	type CommandInput,
 	groupImageSequences,
 	importedDescriptors,
 	type LayeredImportLayer,
@@ -16,14 +16,16 @@ import {
 	type Rational,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import type { z } from 'zod';
 import { LOCAL_ENGINE_ID } from '../import/assets.ts';
 import { baseName } from '../import/desktop.ts';
 import type { ImportFailure, ImportPrompts } from '../import/prompts.ts';
+import { followJob } from '../processing/engine-jobs.ts';
 
 export type FlowAcquired = { reg: RegisteredMedia; name: string; path: string | null };
 
 const errorInfo = (e: unknown) => ({
-	code: (e as { code?: string })?.code ?? 'ERROR',
+	code: e instanceof EngineError ? e.code : 'ERROR',
 	message: e instanceof Error ? e.message : String(e),
 });
 
@@ -34,21 +36,19 @@ export function defaultSequenceRate(session: EditorSession): Rational {
 	return seq ? { num: seq.settings.frameRate.num, den: seq.settings.frameRate.den } : { num: 30, den: 1 };
 }
 
-async function finishedJobResult<T>(
-	engine: EngineClient,
-	job: { id: string; state: string; result?: unknown; error?: { message?: string; code?: string } | null },
-): Promise<T> {
-	let j = job;
-	while (!['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state)) {
-		await new Promise((r) => setTimeout(r, 300));
-		j = await engine.getJob(job.id);
-	}
-	if (j.state !== 'succeeded') {
-		const err = new Error(j.error?.message ?? `Job ${j.state}`) as Error & { code?: string };
-		err.code = j.error?.code ?? 'JOB_FAILED';
-		throw err;
-	}
-	return j.result as T;
+async function finishedJobResult<T>(engine: EngineClient, job: EngineJob, schema: z.ZodType<T>): Promise<T> {
+	const finished = TERMINAL_JOB_STATES.has(job.state)
+		? job
+		: await followJob(engine, job.id, { intervalMs: 300 });
+	if (finished.state !== 'succeeded')
+		throw new EngineError(
+			finished.error?.code ?? 'JOB_FAILED',
+			finished.error?.message ?? `Job ${finished.state}`,
+		);
+	const parsed = schema.safeParse(finished.result);
+	if (!parsed.success)
+		throw new EngineError('INVALID_RESPONSE', `The engine returned an invalid ${finished.kind} result`);
+	return parsed.data;
 }
 
 /**
@@ -111,7 +111,7 @@ export async function acquireImageSequences(
 			};
 			await Promise.all(Array.from({ length: Math.min(4, frames.length) }, worker));
 			const job = await engine.importImageSequence({ projectId, uploadIds, frameRate, name: g.label });
-			const reg = await finishedJobResult<RegisteredMedia>(engine, job);
+			const reg = await finishedJobResult(engine, job, RegisteredMediaSchema);
 			acquired.push({ reg, name: g.label, path: null });
 		} catch (e) {
 			failed.push({ name: g.label, ...errorInfo(e) });
@@ -124,7 +124,7 @@ export async function acquireImageSequences(
 		try {
 			const job = await engine.importImageSequence({ projectId, paths: mine, frameRate, name: g.label });
 			acquired.push({
-				reg: await finishedJobResult<RegisteredMedia>(engine, job),
+				reg: await finishedJobResult(engine, job, RegisteredMediaSchema),
 				name: g.label,
 				path: null,
 			});
@@ -142,7 +142,7 @@ export async function acquireImageSequences(
 				name: detected.label,
 			});
 			acquired.push({
-				reg: await finishedJobResult<RegisteredMedia>(engine, job),
+				reg: await finishedJobResult(engine, job, RegisteredMediaSchema),
 				name: detected.label,
 				path: null,
 			});
@@ -176,10 +176,10 @@ export async function expandImports(
 	deps: { engine: EngineClient; session: EditorSession; prompts: ImportPrompts },
 	acquired: FlowAcquired[],
 	binId: string | null,
-): Promise<{ acquired: FlowAcquired[]; commands: Command[]; failed: ImportFailure[]; notes: string[] }> {
+): Promise<{ acquired: FlowAcquired[]; commands: CommandInput[]; failed: ImportFailure[]; notes: string[] }> {
 	const { engine, session, prompts } = deps;
 	const out: FlowAcquired[] = [];
-	const commands: Command[] = [];
+	const commands: CommandInput[] = [];
 	const failed: ImportFailure[] = [];
 	const notes: string[] = [];
 	let docIndex = 0;
@@ -217,7 +217,7 @@ export async function expandImports(
 		if (a.reg.layered && prompts.layered) {
 			try {
 				const job = await engine.extractLayers(a.reg.mediaKey, session.projectId);
-				const result = await finishedJobResult<LayeredExtractResult>(engine, job);
+				const result = await finishedJobResult(engine, job, LayeredExtractResultSchema);
 				const choice = await prompts.layered({ name: a.name, result });
 				if (choice.mode === 'merged-all') {
 					out.push(a);
@@ -225,7 +225,7 @@ export async function expandImports(
 				}
 				if (choice.mode === 'merged') {
 					const mj = await engine.extractLayers(a.reg.mediaKey, session.projectId, false, choice.selected);
-					const merged = (await finishedJobResult<LayeredExtractResult>(engine, mj)).merged;
+					const merged = (await finishedJobResult(engine, mj, LayeredExtractResultSchema)).merged;
 					if (!merged) throw new Error('The engine made no merged picture');
 					out.push({ reg: merged, name: `${a.name} (merged)`, path: null });
 					continue;

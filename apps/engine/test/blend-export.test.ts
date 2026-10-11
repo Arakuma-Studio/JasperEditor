@@ -1,8 +1,4 @@
-// Clip blend modes on the native export path (keyframes-blend): every mode through the blend pipeline (an ffmpeg
-// process per blend layer → the blend kernel → the next process), checked pixel by pixel on real stills (PNG, no
-// chroma subsampling) against `blendPixel` — the formulas the preview's GL compositor runs (its GL test checks the
-// shader against the same function, so native = preview through one oracle). Plus: Dissolve's deterministic noise,
-// two stacked blend layers with a Normal layer between, the stencils, and the planner's routing.
+// PNG avoids chroma subsampling; native pixels and preview GL shaders share the blendPixel oracle.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,7 +32,6 @@ let app: TestApp;
 let baseMedia: Awaited<ReturnType<typeof register>>;
 let layerMedia: Awaited<ReturnType<typeof register>>;
 
-/** A 1920×1080 PNG with every channel sweeping (and crossing) the 8-bit range. */
 function pattern(file: string, r: string, g: string, b: string) {
 	const res = spawnSync('ffmpeg', [
 		...['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=black:s=${W}x${HH}:d=1`],
@@ -76,7 +71,6 @@ async function still(d: DocBuilder, frame = 0): Promise<{ rgb: Buffer; renderPat
 	return { rgb: raw.stdout, renderPath: (done.result as { renderPath: string }).renderPath };
 }
 
-/** V1 = base pattern, V2 = layer pattern (blend mode, opacity); both fill the frame. */
 function doc(mode: string, opacity = 100, layer = true): { d: DocBuilder; clip: string } {
 	const d = new DocBuilder();
 	const a = d.addMedia(baseMedia);
@@ -94,7 +88,7 @@ function doc(mode: string, opacity = 100, layer = true): { d: DocBuilder; clip: 
 	return { d, clip };
 }
 
-const STEP = 37; // sample every 37th pixel (≈ 56 000 pixels)
+const STEP = 37;
 
 describe('blend modes on the native export (real ffmpeg + blend kernel)', () => {
 	let base: Buffer;
@@ -201,7 +195,6 @@ describe('blend modes on the native export (real ffmpeg + blend kernel)', () => 
 					scaling: 'fit',
 					quality: { mode: 'crf', value: 18 },
 					encoderSpeed: 'fast',
-					colorTags: 'rec709',
 				},
 				audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 				engine: 'auto',

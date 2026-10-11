@@ -1,5 +1,3 @@
-// Program monitor panel (S03 §6, S05 §16.3) — WP-2C.
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

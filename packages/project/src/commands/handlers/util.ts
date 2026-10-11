@@ -1,9 +1,10 @@
-// Small helpers shared by handler files.
-
-import { isDraft } from 'immer';
-import type { DDoc, HandlerContext } from '../context.ts';
+import { current, type Draft, isDraft } from 'immer';
+import type { EffectInstance } from '../../schema/sequence.ts';
+import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { latest } from '../draft-read.ts';
 import type { CommandOf, CommandType } from '../schemas/index.ts';
+
+export type ClipEffectLocation = { seq: DSeq; clip: DClip; fx: Draft<EffectInstance> };
 
 export type Handler<T extends CommandType> = (doc: DDoc, cmd: CommandOf<T>, h: HandlerContext) => unknown;
 export type HandlerMap = { [T in CommandType]?: Handler<T> };
@@ -24,7 +25,7 @@ export function idList(v: readonly string[] | '$selection' | undefined): string[
  * read-only scans; access the found path normally to mutate.
  */
 export function peek<T>(obj: object, key: string | number): T | undefined {
-	// perf-core: the draft's current object read directly (draft-read.ts `latest`): the same value as the trap
+	// the draft's current object read directly (draft-read.ts `latest`): the same value as the trap
 	// reports, without a trap call per read.
 	const raw = latest(obj) as Record<string | number, unknown>;
 	return Object.hasOwn(raw, key) ? (raw[key] as T) : undefined;
@@ -46,4 +47,8 @@ export function memoPlain<T>(cache: WeakMap<object, T>, obj: object, compute: ()
 		cache.set(obj, v);
 	}
 	return v;
+}
+
+export function clone<T>(value: T): T {
+	return JSON.parse(JSON.stringify(isDraft(value) ? current(value as Draft<T>) : value)) as T;
 }

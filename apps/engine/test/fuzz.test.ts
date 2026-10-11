@@ -1,7 +1,3 @@
-// Robustness of the engine's file and child-process readers (golden-fuzz; docs/testing.md §Fuzzing): ZIP archives
-// (imports and motion-graphics bundles), dotLottie / Lottie JSON files, Photoshop documents, ffprobe JSON, bundle
-// manifests and package.json files, upload names, the runtime file and engine events. Every input either reads or
-// fails with the reader's typed error; extraction never writes outside its destination.
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -78,7 +74,6 @@ const BUNDLE_FILES = [
 	{ name: 'build/bundle.js', data: Buffer.from('console.log(1)') },
 ];
 
-/** Every file under `dir` stays inside it (no traversal, no symlink escape). */
 function assertInside(dir: string): void {
 	const root = realpathSync(dir);
 	const walk = (d: string) => {

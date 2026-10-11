@@ -11,28 +11,20 @@
 import { parentPort } from 'node:worker_threads';
 import cvModule from '@techstark/opencv-js';
 
-/** @type {any} */
+/** @type {import('../../../tools/opencv.ts').OpenCv} */
 let cv;
 
-/** Waits for the Emscripten runtime without resolving a promise with the (thenable) Module itself. */
+/** Emscripten's self-resolving thenable cannot be passed to a native promise's resolve. */
 function loadCv() {
-	return new Promise((resolve, reject) => {
-		try {
-			const m = /** @type {any} */ (cvModule);
-			if (m instanceof Promise) {
-				m.then((mod) => {
-					cv = mod;
-					resolve(undefined);
-				}, reject);
-				return;
-			}
-			m.then(() => {
-				cv = m;
-				resolve(undefined);
-			});
-		} catch (e) {
-			reject(e);
-		}
+	return new Promise((resolve) => {
+		const module = /** @type {import('../../../tools/opencv.ts').OpenCv} */ (cvModule);
+		const done = () => {
+			cv = module;
+			resolve(undefined);
+		};
+		if (module.then) module.then(done);
+		else if (module.Mat) done();
+		else module.onRuntimeInitialized = done;
 	});
 }
 

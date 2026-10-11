@@ -34,8 +34,6 @@ const blurRel = (name = 'blurRel', label = 'Blur Rel') =>
 const softPad = (on: boolean, sigmaUnits: number, ctx: { width: number }) =>
 	on ? 3 * sigmaUnits * BLUR_SIGMA_PER_UNIT * unitLayerPx(ctx) : 0;
 
-// ---------------------------------------------------------------- S_Blur
-
 const EFFECT_MODES = ['color', 'mono'] as const;
 
 export const S_BLUR = defineShaderEffect({
@@ -94,8 +92,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_BlurChannels
 
 export const S_BLUR_CHANNELS = defineShaderEffect({
 	id: 'jasper.s.blur-channels',
@@ -180,8 +176,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_BlurChroma
-
 export const S_BLUR_CHROMA = defineShaderEffect({
 	id: 'jasper.s.blur-chroma',
 	label: 'S_BlurChroma',
@@ -248,8 +242,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_SoftFocus
 
 export const S_SOFT_FOCUS = defineShaderEffect({
 	id: 'jasper.s.soft-focus',

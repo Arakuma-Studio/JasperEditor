@@ -1,5 +1,3 @@
-// Properties panel (WP-2D): the context-sensitive primary inspector (S03 §14, S05:PRP).
-
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

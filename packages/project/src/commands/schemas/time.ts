@@ -1,5 +1,4 @@
-// Time Remapping, Time Interpolation and Scene Edit Detection results (workstream `time`,
-// docs/wp-notes/time.md). Handlers: handlers/time.ts. Speeds are Premiere percentages (100 = normal speed).
+// Speeds are percentages: 100 means normal speed.
 import { z } from 'zod';
 import { TimeInterpolationSchema } from '../../schema/sequence.ts';
 import { cmd, IdListSchema, IdRefSchema, TimeInputSchema } from './common.ts';

@@ -24,9 +24,9 @@ const SettingsPatch = z.strictObject({
 	dropFrame: z.boolean().optional(),
 	startTimecodeFrames: z.number().int().min(0).optional(),
 	backgroundColor: RGBASchema.optional(),
-	/** audio-mix: sequence audio sample rate. */
+	/** sequence audio sample rate. */
 	audioSampleRate: SequenceSampleRateSchema.optional(),
-	/** audio-mix: channel format of the Mix. */
+	/** channel format of the Mix. */
 	masterLayout: AudioChannelFormatSchema.optional(),
 	/**
 	 * color-mgmt: Working Color Space — rec709, srgb, rec2020, p3d65, displayp3, rec2100-pq, rec2100-hlg, or a linear
@@ -153,7 +153,6 @@ export const TrackUpdateCmd = cmd('track.update', {
 		channelFormat: AudioChannelFormatSchema.optional(),
 		visible: z.boolean().optional(),
 		styleDefaults: CaptionStyleSchema.optional(),
-		// wp captions
 		language: z.string().optional(),
 		captionStandard: CaptionStandardSchema.optional(),
 	}),

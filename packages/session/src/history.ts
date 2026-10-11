@@ -1,4 +1,3 @@
-// Snapshot history (S01 §17, ARCHITECTURE §6): labeled, origin-aware, coalescing, linear.
 import type { Origin, ProjectDocument } from '@jasper/project';
 import type { HistoryEntryView, HistoryState, Selection } from './types.ts';
 

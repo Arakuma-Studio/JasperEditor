@@ -3,7 +3,7 @@
 // the targeted video track when it is free there, else the first free track or a new one (placed like text,
 // XF-060), and becomes the selection.
 import {
-	type Command,
+	type CommandInput,
 	DEFAULT_SHAPE_SECONDS,
 	type LegacyShapeType,
 	type ShapeType,
@@ -43,7 +43,7 @@ export function addShapeAt(
 				track,
 				shape: { type, ...(box ? { size: box.size } : {}) },
 				...(box ? { transform: { position: box.center } } : {}),
-			} as Command,
+			} satisfies CommandInput,
 		],
 	});
 	if (!r.ok) return null;

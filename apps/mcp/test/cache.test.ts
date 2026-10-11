@@ -1,4 +1,3 @@
-// S04:CA-019: the MCP protocol reports cache bytes in MB and exposes safe tool annotations.
 import type { CacheUsage } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';

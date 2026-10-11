@@ -1,3 +1,4 @@
+import type { CommandOf } from '@jasper/project';
 // Audio Clip Mixer (audio-mix; Premiere Window ▸ Audio Clip Mixer, Shift+9): one strip per audio track showing the
 // clip under the playhead — its Volume level (fader) and Panner balance (knob), with the track's M / S and meter.
 // Moves are heard at once; while paused a release writes the clip's value (a keyframe at the playhead when the clip
@@ -16,14 +17,13 @@ import {
 import { dbText, Fader, Knob } from '../../audio/components/controls.tsx';
 import { LevelMeter } from '../../audio/components/LevelMeter.tsx';
 import { useMeterReading, useMixGraph } from '../../audio/runtime.ts';
-import { MODE_LABELS } from '../audioTrackMixer/AudioTrackMixerPanel.tsx';
+import { MODE_LABELS } from '../mixer-labels.ts';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
-
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
 export function AudioClipMixerPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
-	const seq = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
+	const seq = useStoreSelector(session?.store ?? EMPTY_SESSION_STORE, (s: SessionState | null) =>
 		s?.activeSequenceId ? ((s.document.sequences[s.activeSequenceId] as Sequence | undefined) ?? null) : null,
 	);
 	if (!session) return <EmptyState icon="panel.audioClipMixer" message="Open a project to mix its clips" />;
@@ -83,11 +83,11 @@ function ClipStrip(props: {
 		? ctl.displayValue(trackId, CLIP_LANE_PAN, t)
 		: (clipLaneValue(seq, trackId, CLIP_LANE_PAN, t) ?? 0);
 	const mode = seq.audioTracks.find((x) => x.id === trackId)?.mixer?.clipAutomation ?? 'read';
-	const update = (patch: Record<string, unknown>, label: string) =>
+	const update = (patch: CommandOf<'mixer.updateStrip'>['patch'], label: string) =>
 		session.apply({
 			label,
 			origin: 'user',
-			commands: [{ type: 'mixer.updateStrip', sequenceId: seq.id, stripId: trackId, patch }] as never,
+			commands: [{ type: 'mixer.updateStrip', sequenceId: seq.id, stripId: trackId, patch }],
 		});
 	return (
 		<div
@@ -97,7 +97,10 @@ function ClipStrip(props: {
 			<Select
 				label={`${props.label} clip automation mode`}
 				value={mode}
-				onValueChange={(v) => update({ clipAutomation: v }, 'Clip Mixer Mode')}
+				onValueChange={(value) => {
+					const clipAutomation = AUTOMATION_MODES.find((mode) => mode === value);
+					if (clipAutomation) update({ clipAutomation }, 'Clip Mixer Mode');
+				}}
 				options={AUTOMATION_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] }))}
 			/>
 			<div className="flex-1" />

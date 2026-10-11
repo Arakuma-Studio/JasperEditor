@@ -1,4 +1,3 @@
-// SVG path data and SVG documents → vector shape contents (wp shapes).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

@@ -1,4 +1,4 @@
-// GPU transitions (wave-2 transition framework; authoring guide docs/wp-notes/fx-transition-framework.md). A GPU
+// GPU transitions (authoring guide docs/wp-notes/fx-transition-framework.md). A GPU
 // transition is ONE frame-space shader stage per transition that composites the two sides of an edit point: the
 // outgoing clip "A" and the incoming clip "B", each the fully drawn layer (effects, crop, Motion, corner pin,
 // opacity) placed in sequence space. The stage's first two passes are the framework's placement passes (they write
@@ -30,9 +30,9 @@ import {
 	uniformCollisions,
 	uniformDeclaration,
 } from '../fx/shader.ts';
+import { FORBIDDEN_GLSL_SYNTAX } from '../fx/validation.ts';
+import { numberParam as finite, mediaParamId } from '../param-values.ts';
 import { GLSL_TRANSITION } from './glsl.ts';
-
-// ---------------------------------------------------------------- types
 
 /** What pass planning knows: the stage canvas (the sequence frame) and the transition length. */
 export type TrPlanContext = {
@@ -132,8 +132,6 @@ export type TrStagePlan = {
 	builtins: FxUniform[];
 };
 
-// ---------------------------------------------------------------- constants
-
 /** Uniforms the transition framework declares in addition to the fx built-ins (normative list, see the guide). */
 export const TR_BUILTIN_UNIFORMS = {
 	u_from:
@@ -154,9 +152,6 @@ const RESERVED_OUTPUTS = new Set(['from', 'to', 'trFrom', 'trTo']);
 const NAME_RE = /^[A-Za-z][A-Za-z0-9]*$/;
 const UNIFORM_RE = /^u_[A-Za-z][A-Za-z0-9_]*$/;
 
-// ---------------------------------------------------------------- progress
-
-const finite = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 /**
@@ -205,8 +200,6 @@ export function transitionSeed(transitionId: string, params?: EffectParams): num
 	return hashString(`${transitionId}\u0000transition\u0000${s}`) / 4294967296;
 }
 
-// ---------------------------------------------------------------- placement
-
 /**
  * Sequence px → picture px of a side: the inverse of the layer map (layer px → sequence px, row-major, as
  * `layerMapOf`) followed by the fx canvas layout (the picture is the layer box grown by `padding` layer px, at
@@ -250,8 +243,6 @@ void main() {
 		},
 	};
 }
-
-// ---------------------------------------------------------------- planning
 
 /** The author passes of a transition. */
 export function transitionPasses(
@@ -380,26 +371,16 @@ export function transitionMediaTextures(
 ): { param: string; uniform: string; mediaId: string }[] {
 	return spec.params
 		.filter((ps) => ps.type === 'media')
-		.map((ps) => {
-			const v = params[ps.name] as { mediaId?: unknown } | undefined;
-			return {
-				param: ps.name,
-				uniform: `u_${ps.name}`,
-				mediaId: typeof v?.mediaId === 'string' ? v.mediaId : '',
-			};
-		});
+		.map((ps) => ({
+			param: ps.name,
+			uniform: `u_${ps.name}`,
+			mediaId: mediaParamId(params[ps.name]),
+		}));
 }
 
-// ---------------------------------------------------------------- validation
-
 const RESERVED = new Set([...Object.keys(FX_BUILTIN_UNIFORMS), ...Object.keys(TR_BUILTIN_UNIFORMS)]);
-const FORBIDDEN_GLSL: [RegExp, string][] = [
-	[/#version/, 'must not contain #version (the framework adds it)'],
-	[/\bprecision\s+(highp|mediump|lowp)\b/, 'must not declare precision (the prelude does)'],
-	[/\bgl_FragColor\b/, 'uses gl_FragColor (GLSL ES 1.00); write fragColor'],
-	[/\btexture2D\s*\(/, 'uses texture2D (GLSL ES 1.00); use texture()'],
-	[/\bvarying\b/, 'uses varying (GLSL ES 1.00)'],
-	[/\bout\s+vec4\s+fragColor\b/, 'declares fragColor (the prelude does)'],
+const FORBIDDEN_GLSL: readonly (readonly [RegExp, string])[] = [
+	...FORBIDDEN_GLSL_SYNTAX,
 	[/\buniform\s+sampler2D\s+u_(from|to)\b/, 'declares u_from/u_to (the framework does)'],
 ];
 
@@ -450,7 +431,7 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 	try {
 		passes = transitionPasses(gpu, defaults, ctx);
 	} catch (e) {
-		at(`passes(defaults) threw: ${(e as Error).message}`);
+		at(`passes(defaults) threw: ${e instanceof Error ? e.message : String(e)}`);
 	}
 	if (passes.length === 0) at('no passes');
 	const outputs = new Set<string>();
@@ -485,7 +466,7 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 		globals = Object.keys(gpu.uniforms?.(defaults, ctx) ?? {});
 		for (const k of globals) if (!UNIFORM_RE.test(k)) at(`uniform "${k}" must be named u_<name>`);
 	} catch (e) {
-		at(`uniforms threw with default params: ${(e as Error).message}`);
+		at(`uniforms threw with default params: ${e instanceof Error ? e.message : String(e)}`);
 	}
 	// Extra uniforms must not redeclare a built-in, a param uniform or a pass output (the framework's placement
 	// outputs `from` / `to` included: u_from / u_to are built-ins).

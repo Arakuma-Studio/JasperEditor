@@ -179,8 +179,6 @@ export function pans51(seq: Sequence, id: string): boolean {
 	return id !== MASTER_STRIP_ID && outputFormatOf(seq, id) === '5.1';
 }
 
-// ------------------------------------------------------------------ lanes
-
 export type LaneInfo = { min: number; max: number; hold: boolean; unit: 'dB' | '' | '%' };
 
 export function sendLane(sendId: string): string {
@@ -286,8 +284,6 @@ export function writeLanes(seq: Sequence, id: string): string[] {
 		? [LANE_VOLUME, LANE_PAN51_X, LANE_PAN51_Y, LANE_MUTE]
 		: [LANE_VOLUME, LANE_PAN, LANE_MUTE];
 }
-
-// ------------------------------------------------------------------ automation writing
 
 /**
  * Thins a recorded gesture `(t, value)` into keyframes: Ramer–Douglas–Peucker on the value axis (every dropped point

@@ -1,11 +1,23 @@
-// Shared helpers for the E2E specs (WP-3I). The in-page agent API (`window.jasper`, ARCHITECTURE §11) is
-// enabled with `localStorage['jasper:agent-bridge'] = '1'` and used for *assertions* (document state,
-// history); every edit in the smoke flow goes through the real UI (pointer, keyboard, menus, DnD).
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type APIRequestContext, expect, type Locator, type Page } from '@playwright/test';
+import type { JasperAgentApi } from '../apps/web/src/agent-bridge/types.ts';
+import { type ExportResult, ExportResultSchema } from '../packages/api/src/exports.ts';
+import {
+	type EngineJob,
+	EngineJobSchema,
+	JobListResponseSchema,
+	TERMINAL_JOB_STATES,
+} from '../packages/api/src/jobs.ts';
+import type { CommandInput, MediaAsset, Origin, TransactionResult } from '../packages/project/src/index.ts';
+
+declare global {
+	interface Window {
+		jasper?: JasperAgentApi;
+	}
+}
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
@@ -21,7 +33,7 @@ type ClipRow = {
 	linked: string[];
 };
 
-type HistoryEntry = { label: string; origin: unknown; applied: boolean };
+type HistoryEntry = { label: string; origin: Origin; applied: boolean };
 
 /** Engine info written by e2e/serve.mjs (port + temp appdir). */
 export function serverInfo(): { port: number; appdir: string } {
@@ -32,7 +44,6 @@ export async function enableAgentBridge(page: Page): Promise<void> {
 	await page.addInitScript(() => window.localStorage.setItem('jasper:agent-bridge', '1'));
 }
 
-/** Runs an agent query in the page (S01 §21.2). */
 export async function query<T = unknown>(
 	page: Page,
 	name: string,
@@ -40,8 +51,7 @@ export async function query<T = unknown>(
 ): Promise<T> {
 	return (await page.evaluate(
 		([n, a]) => {
-			const api = (window as unknown as { jasper?: { query(n: string, a: unknown): Promise<unknown> } })
-				.jasper;
+			const api = window.jasper;
 			if (!api) throw new Error('window.jasper is not installed');
 			return api.query(n, a);
 		},
@@ -49,19 +59,17 @@ export async function query<T = unknown>(
 	)) as T;
 }
 
-export async function transact(
-	page: Page,
-	commands: unknown[],
-): Promise<{ ok: boolean; errors?: unknown[] }> {
+export async function transact(page: Page, commands: CommandInput[]): Promise<TransactionResult> {
 	return page.evaluate(
-		(cmds) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown[] }> };
-				}
-			).jasper.transact({ protocol: 'jasper.tx/1', label: 'E2E setup', commands: cmds }),
+		(cmds) => window.jasper!.transact({ protocol: 'jasper.tx/1', label: 'E2E setup', commands: cmds }),
 		commands,
 	);
+}
+
+export function expectTransaction(
+	result: TransactionResult,
+): asserts result is Extract<TransactionResult, { ok: true }> {
+	expect(result.ok, JSON.stringify(result)).toBe(true);
 }
 
 export async function clips(page: Page, tracks?: string[]): Promise<ClipRow[]> {
@@ -102,7 +110,7 @@ export async function createProject(page: Page, name: string): Promise<string> {
 	await page.getByTestId('new-project-create').click();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('timeline-track-area')).toBeVisible();
-	await expect.poll(() => page.evaluate(() => !!(window as { jasper?: unknown }).jasper)).toBe(true);
+	await expect.poll(() => page.evaluate(() => !!window.jasper)).toBe(true);
 	const m = /\/project\/([^/?#]+)/.exec(page.url());
 	if (!m) throw new Error(`Unexpected editor URL ${page.url()}`);
 	return decodeURIComponent(m[1]!);
@@ -119,6 +127,13 @@ export async function importFiles(page: Page, names: string[]): Promise<void> {
 	}
 }
 
+export async function mediaIdForFile(page: Page, name: string): Promise<string> {
+	const media = await query<Record<string, MediaAsset>>(page, 'doc.get', { path: ['media'] });
+	const matches = Object.values(media).filter((asset) => asset.originalName === name);
+	expect(matches, `Expected one imported media asset named ${name}`).toHaveLength(1);
+	return matches[0]!.id;
+}
+
 export function timelineArea(page: Page): Locator {
 	return page.getByTestId('timeline-track-area');
 }
@@ -131,7 +146,6 @@ export function clipElement(page: Page, clipId: string): Locator {
 	return page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${clipId}"]`).first();
 }
 
-/** Box of a clip body in the timeline. */
 export async function clipBox(
 	page: Page,
 	clipId: string,
@@ -227,18 +241,17 @@ export function ffprobe(file: string): ProbeResult {
 	return JSON.parse(out) as ProbeResult;
 }
 
-/** Waits for an engine job to finish (GET /api/jobs/:id). */
 export async function waitForJob(
 	request: APIRequestContext,
 	jobId: string,
 	timeoutMs = 240_000,
-): Promise<{ state: string; result?: Record<string, unknown>; error?: unknown }> {
+): Promise<EngineJob> {
 	const t0 = Date.now();
 	for (;;) {
 		const res = await request.get(`/api/jobs/${jobId}`);
 		expect(res.ok()).toBe(true);
-		const job = await res.json();
-		if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.state)) return job;
+		const job = EngineJobSchema.parse(await res.json());
+		if (TERMINAL_JOB_STATES.has(job.state)) return job;
 		if (Date.now() - t0 > timeoutMs) throw new Error(`job ${jobId} still ${job.state} after ${timeoutMs} ms`);
 		await new Promise((r) => setTimeout(r, 500));
 	}
@@ -246,13 +259,9 @@ export async function waitForJob(
 
 type ExportOutcome = {
 	file: string;
-	job: { state: string; result?: Record<string, unknown>; stage?: string };
+	job: EngineJob & { result: ExportResult };
 };
 
-/**
- * Export mode (Ctrl+M) → engine choice → plan summary must mention `expectPath` → Export → wait for the job
- * → Download from the Jobs panel → saved file path.
- */
 export async function exportViaUi(
 	page: Page,
 	request: APIRequestContext,
@@ -275,7 +284,7 @@ export async function exportViaUi(
 	await expect(planPath).toContainText(opts.expectPath, { timeout: 30_000 });
 	if (opts.expectBlocker) await expect(page.getByTestId('plan-blockers')).toContainText(opts.expectBlocker);
 	const before = new Set(
-		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
+		JobListResponseSchema.parse(await (await request.get('/api/jobs')).json()).jobs.map((j) => j.id),
 	);
 	// A sticky notice from the previous export ("Export finished · Download") must not cover the footer.
 	await expect(page.getByTestId('export-start')).toBeEnabled();
@@ -284,14 +293,13 @@ export async function exportViaUi(
 	let jobId = '';
 	await expect
 		.poll(async () => {
-			const jobs = (await (await request.get('/api/jobs')).json()).jobs as { id: string; kind: string }[];
+			const { jobs } = JobListResponseSchema.parse(await (await request.get('/api/jobs')).json());
 			jobId = jobs.find((j) => j.kind === 'export' && !before.has(j.id))?.id ?? '';
 			return jobId;
 		})
 		.not.toBe('');
 	const job = await waitForJob(request, jobId, opts.jobTimeoutMs);
 	expect(job.state, JSON.stringify(job.error ?? null)).toBe('succeeded');
-	// Download through the Jobs panel (the export opened it).
 	const jobsPanel = page.getByTestId('jobs-panel');
 	await expect(jobsPanel).toBeVisible();
 	const row = jobsPanel.locator(`[data-testid="job-row"][data-job-id="${jobId}"]`);
@@ -301,7 +309,7 @@ export async function exportViaUi(
 	const d = await download;
 	const file = join(opts.outDir, opts.fileName);
 	await d.saveAs(file);
-	return { file, job };
+	return { file, job: { ...job, result: ExportResultSchema.parse(job.result) } };
 }
 
 /** Mean luma (0–255) of a region (fractions of the frame) of the frame at `timeSec`, decoded with ffmpeg. */

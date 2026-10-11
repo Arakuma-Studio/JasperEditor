@@ -1,4 +1,4 @@
-// Puppet (sim-warp workstream): After Effects' Puppet effect data on an effect instance (`EffectInstance.puppet`).
+// Puppet (sim-warp): After Effects' Puppet effect data on an effect instance (`EffectInstance.puppet`).
 // Meshes are outlines (layer-box-normalised polygons; none = the layer box) triangulated with Density / Expansion /
 // Triangles; pins sit on a mesh at a rest point and carry animatable properties — Position (Position and Advanced
 // pins), Scale and Rotation (Advanced and Bend pins), Amount and Extent (Starch), In Front and Extent (Overlap).

@@ -1,4 +1,4 @@
-// Colour management in the project model (workstream color-mgmt, docs/wp-notes/color-mgmt.md):
+// Colour management in the project model (docs/wp-notes/color-mgmt.md):
 // - the sequence working space (`settings.workingColorSpace`) and its colour settings (`settings.color`: linearize,
 //   blend using 1.0 gamma, auto tone map, HDR graphics white, HDR mastering peak);
 // - the colour interpretation of media (Interpret Footage ▸ Colour, `asset.interpretation.color`) and of single clips
@@ -20,8 +20,6 @@ import {
 	type WorkingSpaceId,
 } from './cms/spaces.ts';
 import type { WorkingColorSettings } from './cms/transform.ts';
-
-// ---------------------------------------------------------------- schemas
 
 /** Sequence Settings ▸ Colour beyond the working space. Absent fields take the defaults below. */
 export const SequenceColorSchema = z.looseObject({
@@ -69,8 +67,6 @@ export const ColorInterpretationPatchSchema = z.strictObject({
 	inputLut: z.string().nullable().optional(),
 });
 export type ColorInterpretationPatch = z.infer<typeof ColorInterpretationPatchSchema>;
-
-// ---------------------------------------------------------------- read helpers
 
 export type SequenceColorInfo = WorkingColorSettings & { linearize: boolean; blendLinear: boolean };
 
@@ -167,8 +163,6 @@ export function resolveInputSpace(
 		auto,
 	};
 }
-
-// ---------------------------------------------------------------- invariants and repairs
 
 /** The render-only colour input effect (`jasper.color-input`): snapshots add it, documents never hold it. */
 const INTERNAL_COLOR_INPUT = 'jasper.color-input';

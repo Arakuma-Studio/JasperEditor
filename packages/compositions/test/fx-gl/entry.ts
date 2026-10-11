@@ -1,6 +1,3 @@
-// Browser entry of the fx GL test (bundled with esbuild, run in headless Chrome by ../fx-gl.test.ts): drives the
-// real GPU host (src/fx/host.ts) with planned effects and reports pixels. No React, no Remotion chain — the host's
-// contract (passes, padding layout, orientation, premultiplied alpha, samples, media textures, LUT, errors).
 import '../gl-poison.ts';
 import {
 	bakeLut,
@@ -471,12 +468,10 @@ void main() {
 	},
 };
 
-/** The framework follow-ups in real WebGL2 (ping-pong, absolute sizes, mipmaps, ivec2, LUT textures, bindings…). */
 const followups = {
 	/**
-	 * The library hash/noise helpers return bit-identical values to their wave-1 sources (REF_NOISE): one bit per
-	 * function (r: hashes, g: 2D noises, b: 3D noises + fractal sums + cellular), over a grid of negative and positive
-	 * lattice positions, several scales and seeds. Returns the number of pixels where any function differs.
+	 * Each reference comparison occupies one bit: red for hashes, green for 2D noise, blue for 3D noise and sums.
+	 * Any differing pixel violates bit-exact equality across positions, scales and seeds.
 	 */
 	libraryIdentical() {
 		const spec = defineShaderEffect({
@@ -686,7 +681,7 @@ void main() {
 		const spec = chainGpuStandIn(builtin, params)!;
 		const { out, layout } = run(spec, params, { width: 21, height: 21 }, (ctx, b) => {
 			ctx.fillStyle = '#fff';
-			ctx.fillRect(b.x, b.y + 10, b.w, 1); // a horizontal line
+			ctx.fillRect(b.x, b.y + 10, b.w, 1);
 		});
 		const b = layout.box;
 		return {

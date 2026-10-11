@@ -14,6 +14,7 @@ import type {
 import { Button, Checkbox, confirmDialog, cx, Select, TextField } from '@jasper/ui';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { errorText, followJob, formatAgo, formatBytes } from '../processing/engine-jobs.ts';
+import { getDesktopBridge } from '../runtime/platform.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 
@@ -220,13 +221,6 @@ function reportText(r: CacheGcReport): string {
 	return parts.join(' · ');
 }
 
-type DesktopFolderBridge = { pickFolder?(opts?: { title?: string }): Promise<string | null> };
-
-function desktopFolderPicker(): DesktopFolderBridge['pickFolder'] | null {
-	const b = (globalThis as { jasperDesktop?: DesktopFolderBridge }).jasperDesktop;
-	return typeof b?.pickFolder === 'function' ? b.pickFolder.bind(b) : null;
-}
-
 /**
  * Change the cache location (S04:CA-021): a folder (typed, or picked on the desktop), checked by the engine (writable,
  * free space, same disk), then moved with the existing cache — or a fresh cache started there — as a `cache-move`
@@ -242,8 +236,25 @@ function LocationPanel(props: { usage: CacheUsage; onDone(): void; onClose(): vo
 	const [job, setJob] = useState<EngineJob | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
-	const pick = desktopFolderPicker();
+	const desktop = getDesktopBridge();
 	const target = (useDefault: boolean) => (useDefault ? null : path.trim());
+
+	const pickFolder = async () => {
+		if (!desktop) return;
+		setBusy(true);
+		setError(null);
+		try {
+			const selected = await desktop.pickFolder();
+			if (selected !== null) {
+				setPath(selected);
+				setCheck(null);
+			}
+		} catch (e) {
+			setError(`Could not choose a folder: ${errorText(e)}`);
+		} finally {
+			setBusy(false);
+		}
+	};
 
 	const runCheck = async (useDefault = false) => {
 		const p = target(useDefault);
@@ -304,18 +315,8 @@ function LocationPanel(props: { usage: CacheUsage; onDone(): void; onClose(): vo
 					}}
 					data-testid="cache-location-path"
 				/>
-				{pick ? (
-					<Button
-						disabled={busy}
-						onClick={() =>
-							void pick({ title: 'Media Cache Location' }).then((p) => {
-								if (p) {
-									setPath(p);
-									setCheck(null);
-								}
-							})
-						}
-					>
+				{desktop ? (
+					<Button disabled={busy} onClick={() => void pickFolder()}>
 						Browse…
 					</Button>
 				) : null}

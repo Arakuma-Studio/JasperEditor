@@ -1,7 +1,4 @@
 // @vitest-environment node
-// gaps FX-6: the Warp Stabilizer shader in real WebGL2 (headless Chrome, SwiftShader): with a known camera path, No
-// Motion holds every frame on the middle frame (the output is the input shifted by the path difference) for the
-// homography methods and for Subspace Warp's mesh; without an analysis the picture passes through. FX_GL=0 skips.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

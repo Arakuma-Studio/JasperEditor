@@ -1,6 +1,3 @@
-// sim-warp: the Puppet / Liquify / Mesh Warp MCP tools through the protocol against an in-memory engine (documents
-// applied with the real command system): pins placed, moved (static and keyed), recorded, read back and removed;
-// a Liquify stroke and reset; a Mesh Warp vertex; refusals (wrong effect, missing arguments, unknown keys).
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

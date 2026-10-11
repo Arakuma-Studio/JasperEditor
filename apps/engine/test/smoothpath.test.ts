@@ -1,5 +1,3 @@
-// S07:PST-005: real runner output and sidecar contracts for background tracking,
-// smoothing, capped zoom, optional warp backends and independent shots.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,8 +5,22 @@ import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runProc } from '../src/processing/proc/runner.ts';
+import type { SegmentPlan } from '../src/processing/proc/smoothpath/math.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
 import { fixture, ROOT } from './helpers.ts';
+
+type SmoothPathStep = Extract<ProcessStep, { op: 'stabilize' }> & { method: 'smoothpath' };
+type SmoothPathInfo = {
+	camera: Pick<SegmentPlan['stats'], 'travelPx'>;
+	fallback: SegmentPlan['fallback'];
+	zoomPercent: number;
+	speed: { rawMaxPxPerFrame1080: number; smoothedMaxPxPerFrame1080: number };
+	used: Pick<SegmentPlan, 'sigma' | 'lockVertical'>;
+	warp: { engine: 'wasm' | 'opencv' | null };
+	cuts: number[];
+	segments: (Pick<SegmentPlan, 'firstFrame'> &
+		Pick<SegmentPlan['stats'], 'frames' | 'travelPx'> & { zoomPercent: number })[];
+};
 
 const LGPL = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 const FFMPEG =
@@ -76,7 +88,7 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 	}, 600_000);
 	afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-	const run = async (name: string, step: ProcessStep, input = fixture('reframe.mp4')) => {
+	const run = async (name: string, step: SmoothPathStep, input = fixture('reframe.mp4')) => {
 		const output = join(dir, `${name}.mov`);
 		const scratch = join(dir, `scratch-${name}`);
 		mkdirSync(scratch, { recursive: true });
@@ -94,7 +106,7 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 			},
 			{ emit: () => {}, signal: new AbortController().signal, createStep: createStepImpl },
 		);
-		return { output, res, info: res.sidecarData.steps[0].info as Record<string, any> };
+		return { output, res, info: res.sidecarData.steps[0].info as SmoothPathInfo };
 	};
 
 	it('tracks the background (not the subject), evens out the reframe within the zoom cap', async () => {
@@ -118,7 +130,6 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 		expect(info.zoomPercent).toBeGreaterThan(100);
 		expect(info.zoomPercent).toBeLessThanOrEqual(115);
 		expect(info.speed.smoothedMaxPxPerFrame1080).toBeLessThan(info.speed.rawMaxPxPerFrame1080 / 2.5);
-		// independent measurement on the output: the peak frame-to-frame motion drops, no frame jerks back
 		const before = columnShifts(fixture('reframe.mp4'));
 		const after = columnShifts(output);
 		const peak = (a: number[]) => Math.max(...a.map(Math.abs));
@@ -139,14 +150,14 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 		expect(info.fallback).not.toBeNull();
 		expect(info.used.sigma).toBeLessThan(60);
 		expect(info.zoomPercent).toBeLessThanOrEqual(101);
-		expect(info.fallback.requestedSigma).toBe(60);
-		expect(info.fallback.neededZoom).toBeGreaterThan(1.01);
-		expect(info.fallback.locksReleased).toBe(true);
+		expect(info.fallback!.requestedSigma).toBe(60);
+		expect(info.fallback!.neededZoom).toBeGreaterThan(1.01);
+		expect(info.fallback!.locksReleased).toBe(true);
 		expect(info.used.lockVertical).toBe(false);
 	}, 600_000);
 
 	it('warps the same with the vid.stab WASM kernel and the OpenCV.js fallback', async () => {
-		const step: ProcessStep = {
+		const step: SmoothPathStep = {
 			op: 'stabilize',
 			method: 'smoothpath',
 			smoothing: 12,
@@ -170,7 +181,6 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 			);
 			const avg = Number(/PSNR .*average:([\d.]+|inf)/.exec(psnr.stderr)?.[1]);
 			expect(avg).toBeGreaterThan(38);
-			// and the stabilisation itself is as good with either
 			const peak = (a: number[]) => Math.max(...a.map(Math.abs));
 			expect(peak(columnShifts(c.output))).toBeLessThanOrEqual(peak(columnShifts(w.output)) + 1);
 		} finally {

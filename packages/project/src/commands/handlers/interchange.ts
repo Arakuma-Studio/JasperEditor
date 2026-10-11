@@ -1,14 +1,11 @@
-// project.importTimeline (wp interchange): adds an imported timeline fragment — bins, media items (resolved files or
-// offline placeholders), synthetic sources and sequences — through the clipboard's project-items machinery, so ids
-// are new, media already in the project (same fingerprint) is reused and everything is one transaction.
-
+// Timeline imports reuse clipboard project-item insertion to remap ids and deduplicate media by fingerprint.
 import { z } from 'zod';
 import { type ClipboardPayload, ClipboardPayloadSchema } from '../../clipboard/payload.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { captionHandlers } from './captions.ts';
 import { insertProjectItems } from './clipboard.ts';
-import { insertItem } from './project.ts';
+import { insertItem } from './project-items.ts';
 import type { HandlerMap } from './util.ts';
 
 export const INTERCHANGE_OWNER = 'wp-interchange';
@@ -30,7 +27,7 @@ const FragmentCaptionsSchema = z.looseObject({
 		.max(100_000),
 });
 
-function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: HandlerContext): unknown {
+function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: HandlerContext) {
 	const f = cmd.fragment as Record<string, unknown>;
 	const arr = (k: string) => (Array.isArray(f[k]) ? (f[k] as unknown[]) : []);
 	const rootItems = arr('rootItems');
@@ -71,7 +68,6 @@ function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: 
 		binId = createdBin;
 	}
 	const r = insertProjectItems(doc, parsed.data as unknown as ClipboardPayload, binId, undefined, h);
-	// Caption tracks (FCPXML captions, OTIO): through the Captions workstream's import (transcript + caption clips).
 	const captionTrackIds: string[] = [];
 	for (const raw of Array.isArray(f.captions) ? (f.captions as unknown[]) : []) {
 		const parsed = FragmentCaptionsSchema.safeParse(raw);
@@ -109,6 +105,6 @@ function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: 
 	return { ...r, binId: createdBin ?? cmd.binId ?? null, topSequenceIds, captionTrackIds };
 }
 
-export const interchangeHandlers: HandlerMap = {
+export const interchangeHandlers = {
 	'project.importTimeline': importTimeline,
-};
+} satisfies HandlerMap;

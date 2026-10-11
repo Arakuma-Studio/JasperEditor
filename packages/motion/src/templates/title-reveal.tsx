@@ -23,7 +23,6 @@ import {
 } from './common.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
-type Unit = { o: number; y: number };
 type Values = { o: number; y: number; d: number };
 
 type TitleRevealBuildInput = TemplateTiming & {
@@ -85,7 +84,7 @@ export function TitleReveal(props: AnimeTemplateProps) {
 		`title-reveal@1|${JSON.stringify(input)}`,
 		() => buildTitleReveal(input),
 		props.timeMs,
-	) as readonly Readonly<Values>[];
+	);
 	const subtitle = values[units]!;
 	const underline = values[units + 1]!;
 	const size = p.titleSize;
@@ -119,7 +118,7 @@ export function TitleReveal(props: AnimeTemplateProps) {
 				>
 					{keyedSegments(segments).map(({ seg, key }) => {
 						if (seg.space) return <span key={key}>{seg.text}</span>;
-						const v = values[seg.unitIndex] as Readonly<Unit>;
+						const v = values[seg.unitIndex]!;
 						return (
 							<span
 								key={key}

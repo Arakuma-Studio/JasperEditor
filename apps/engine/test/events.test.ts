@@ -1,4 +1,3 @@
-// GET /events over a real socket (S04:ENG-023), capabilities, fonts.
 import { EngineCapabilitiesSchema, FontCatalogSchema, LicensesResponseSchema, parseEvent } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
@@ -20,7 +19,6 @@ afterAll(async () => {
 	await closeApps();
 });
 
-/** Reads NDJSON lines from /events until `count` envelopes arrived. */
 async function readEvents(
 	url: string,
 	count: number,
@@ -78,7 +76,6 @@ describe('GET /events (NDJSON)', () => {
 		const ids = live.map((e) => e.id as number);
 		expect(ids).toEqual([...ids].sort((a, c) => a - c));
 
-		// Resume after the first live event: the buffered ones are replayed first.
 		const resumed = (await readEvents(`${engine.url}/events?since=${ids[0]}`, 4)).filter(
 			(e) => e.type !== 'engine.heartbeat',
 		);
@@ -95,8 +92,8 @@ describe('GET /events (NDJSON)', () => {
 
 describe('capabilities and fonts', () => {
 	it('reports ffmpeg, native render, Remotion state and provider patches (WP-2G hook)', async () => {
-		// The WP-2G route plugin registers its own fframes provider; pin it to "unavailable" so the
-		// baseline does not depend on whether `pnpm mg:build` was run on this machine.
+		// Pin the route plugin's fframes provider to unavailable so the baseline does not depend on
+		// whether pnpm mg:build was run on this machine.
 		vi.stubEnv('JASPER_MG', '/nonexistent/jasper-mg');
 		const app = await makeApp().finally(() => vi.unstubAllEnvs());
 		const caps = EngineCapabilitiesSchema.parse(
@@ -116,11 +113,9 @@ describe('capabilities and fonts', () => {
 			source: expect.stringMatching(/^(vendor|bundled)$/),
 		});
 		expect(caps.media.filters).toEqual(expect.arrayContaining(['overlay', 'amix', 'scale']));
-		// About dialog (D-13): the FFmpeg entry; bundled with its license text only for the LGPL directory.
 		const lic = LicensesResponseSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/licenses', headers: H })).json(),
 		);
-		// FFmpeg first; M2 packages append their runtimes/weights (S09:TRK-011 OpenCV.js; wp-m2-process: vid.stab, ONNX Runtime, …).
 		expect(lic.components.filter((c) => c.id === 'ffmpeg')).toHaveLength(1);
 		const opencv = lic.components.find((c) => c.id === 'opencv-js');
 		expect(opencv).toMatchObject({ id: 'opencv-js', license: 'Apache-2.0', bundled: true });

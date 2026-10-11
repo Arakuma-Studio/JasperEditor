@@ -1,3 +1,5 @@
+import type { Mat } from '@techstark/opencv-js';
+import type { OpenCvApi } from '../tools/opencv.ts';
 // Feature tracking of the 3D Camera Tracker (after EffectCraft `crates/track/src/camtrack/features.rs`, MIT OR
 // Apache-2.0; licenses/ported/three-d.md): Shi–Tomasi corners (OpenCV goodFeaturesToTrack) followed frame to frame
 // by pyramidal Lucas–Kanade with a forward–backward check; each step's matches are checked against a RANSAC
@@ -7,8 +9,6 @@
 import { type P2, Rng, sampson2 } from './core/geometry.ts';
 import { type M3, mm, mt, nullVector, svd3 } from './core/linalg.ts';
 import type { CameraTracks, Track2D } from './core/types.ts';
-
-type CV = any;
 
 export type FeatureConfig = {
 	/** Analysis size (pixels). */
@@ -139,12 +139,12 @@ export function epipolarInliers(x1: P2[], x2: P2[], thr: number, seed: number): 
 }
 
 /** Tracks features through grey frames (analysis size) fed in order. */
-export function createFeatureTracker(cv: CV, cfg: FeatureConfig) {
+export function createFeatureTracker(cv: OpenCvApi, cfg: FeatureConfig) {
 	const W = cfg.width;
 	const H = cfg.height;
 	const win = new cv.Size(cfg.winSize, cfg.winSize);
 	const crit = new cv.TermCriteria(cv.TermCriteria_COUNT + cv.TermCriteria_EPS, 30, 0.01);
-	let prev: CV = null;
+	let prev: Mat | null = null;
 	let pts: P2[] = [];
 	let ids: number[] = [];
 	let nextId = 0;
@@ -157,7 +157,7 @@ export function createFeatureTracker(cv: CV, cfg: FeatureConfig) {
 		(p[1] + 0.5) * cfg.factor - 0.5,
 	];
 
-	function detect(img: CV): void {
+	function detect(img: Mat): void {
 		const want = cfg.target - pts.length;
 		if (want < cfg.target * 0.1) return;
 		const mask = new cv.Mat(H, W, cv.CV_8UC1, new cv.Scalar(255));
@@ -187,7 +187,7 @@ export function createFeatureTracker(cv: CV, cfg: FeatureConfig) {
 		}
 	}
 
-	function follow(img: CV): void {
+	function follow(img: Mat): void {
 		if (!prev || pts.length === 0) {
 			pts = [];
 			ids = [];

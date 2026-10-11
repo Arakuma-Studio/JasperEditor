@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Vignette and Glow (family "premiere-stylize-distort-generate", wave 2).
+// Premiere Pro standard effects — Vignette and Glow (family "premiere-stylize-distort-generate").
 // Vignette = the Lumetri Color vignette as a standalone effect (same four controls, ranges and defaults); Glow = a
 // modern multi-scale bloom (threshold with a soft knee → three Gaussian scales at ½, ¼ and ⅛ resolution → tinted
 // light added over the layer), padded so the light spills past the layer edges.

@@ -1,4 +1,4 @@
-// HDR tone mapping and gamut mapping (workstream color-mgmt).
+// HDR tone mapping and gamut mapping.
 // - ITU-R BT.2390-10 §5.4.1 EETF: a Hermite knee in the PQ domain from a source display peak to a target peak (black
 //   levels 0), applied to max(R, G, B) as a ratio so hue and saturation are kept (ported from FilmCraft
 //   `crates/color/src/transform.rs`, MIT OR Apache-2.0).

@@ -1,5 +1,4 @@
-// Motion-graphics service and routes (WP-2G). The render tests need the jasper-mg binary
-// (`pnpm mg:build`) and ffmpeg/ffprobe; they skip with a message otherwise.
+// Render tests require jasper-mg (pnpm mg:build) and ffmpeg/ffprobe; they skip when unavailable.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -56,7 +55,6 @@ describe('jasper-mg resolution and capability', () => {
 		expect(body.renderer.status).toBe('unavailable');
 		expect(body.renderer.reason).toContain('JASPER_MG=/nonexistent');
 		expect(body.templates.some((t) => t.id === 'lower-third' && t.native === false)).toBe(true);
-		// Integration: the MG capability provider is registered with WP-2F's /api/capabilities.
 		const caps = await app.inject({ method: 'GET', url: '/api/capabilities', headers: H });
 		expect(caps.statusCode).toBe(200);
 		expect(caps.json().render).toMatchObject({ fframes: 'unavailable' });
@@ -96,8 +94,6 @@ describe('jasper-mg resolution and capability', () => {
 	});
 });
 
-// ------------------------------------------------------------------ real renders (gated)
-
 const resolution = resolveMgBinary({ env: {} });
 const hasFfmpeg =
 	spawnSync('ffmpeg', ['-version']).status === 0 && spawnSync('ffprobe', ['-version']).status === 0;
@@ -129,7 +125,7 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 	let appdir: string;
 	beforeAll(async () => {
 		({ app, appdir } = await makeServer({ JASPER_MG: undefined }));
-		apps.splice(apps.indexOf(app), 1); // keep the server for the whole block
+		apps.splice(apps.indexOf(app), 1);
 	});
 	afterAll(async () => {
 		await app?.close();
@@ -176,7 +172,6 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		expect(Math.abs(r! - 10) + Math.abs(g! - 15) + Math.abs(b! - 31)).toBeLessThan(12);
 		expect(pixelAt(join(dir, 'master.mov'), 60, 1500, 100)[3]).toBe(0);
 
-		// Range requests on the cached master
 		const ranged = await app.inject({
 			method: 'GET',
 			url: `/mg/${key}/master.mov`,
@@ -189,7 +184,6 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		expect(full.statusCode).toBe(200);
 		expect(full.headers['content-type']).toBe('video/webm');
 
-		// content-addressed cache: same spec (defaults spelled out) → immediate success, same key
 		const again = await app.inject({
 			method: 'POST',
 			url: '/api/motion-graphics/render',

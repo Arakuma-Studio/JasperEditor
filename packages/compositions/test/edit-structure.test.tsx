@@ -1,6 +1,3 @@
-// edit-structure: the composition draws nested sequences (recursively, at the nested frame), adjustment scopes
-// around the tracks below, generator pictures and frame holds (structure checks in happy-dom; pixels are checked by
-// edit-structure-render.e2e.test.ts in Chrome).
 import {
 	applyTransaction,
 	buildRenderSnapshot,

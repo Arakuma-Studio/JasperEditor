@@ -1,4 +1,4 @@
-// Where the time of opening a project goes (workstream polish, docs/performance.md §6): opens a generated project in
+// Where the time of opening a project goes (docs/performance.md §6): opens a generated project in
 // the built app (headless Chrome) inside a Chrome trace and reports the phases of the open and the renderer main
 // thread's work by kind.
 //

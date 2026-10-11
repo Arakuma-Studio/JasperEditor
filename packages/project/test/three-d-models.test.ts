@@ -1,5 +1,3 @@
-// three-d: 3D model layers — the glTF / OBJ parser (binary and embedded glTF, node transforms, materials, computed
-// normals, strips, refusals), placing a model media (always a 3D layer), the Classic 3D warning, invariants / repair.
 import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
@@ -74,7 +72,6 @@ describe('model files', () => {
 		const m = parseModel(glb(), 'glb');
 		expect(m.primitives.length).toBe(2);
 		expect(m.triangles).toBe(2);
-		// Node 0 translated by +10 in x.
 		expect(Array.from(m.primitives[0]!.positions)).toEqual([10, 0, 0, 11, 0, 0, 10, 1, 0]);
 		// Node 1: 90° about z and ×2: (1,0,0) → (0,2,0), (0,1,0) → (−2,0,0).
 		const p = Array.from(m.primitives[1]!.positions).map((v) => Math.round(v * 1e6) / 1e6 + 0);

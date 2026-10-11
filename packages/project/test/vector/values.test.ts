@@ -1,5 +1,3 @@
-// Gradient values (wp shapes): sampling with midpoints and opacity stops, SVG stop expansion, interpolation between
-// keys of different structure; path value ⇄ compound path round trips; varstroke width profiles and dashes.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

@@ -1,5 +1,3 @@
-// Node side of the Premiere Adjust/Color/Keying family GL tests: bundles ./entry.ts with esbuild, opens it in headless
-// Chrome (WebGL2 via SwiftShader) and exposes `pixels(request, points)`. Shared by the family's *-gl.test.ts files.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHROME, openGlPage } from '../gl-browser.ts';
@@ -7,7 +5,6 @@ import type { RunRequest } from './entry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** Whether the GL tests can run (a Chrome exists and FX_GL is not 0). */
 export const PACG_GL = !!CHROME && process.env.FX_GL !== '0';
 
 export type Px = [number, number, number, number];
@@ -18,7 +15,6 @@ export const near = (a: Px, b: Px, tol = 3) => a.every((v, i) => Math.abs(v - b[
 export type PacgSession = {
 	/** Runs `req` and returns the pixels at layer-px points (relative to the layer box) and the canvas size. */
 	pixels(req: PacgRequest, at: [number, number][]): Promise<{ canvas: [number, number]; pixels: Px[] }>;
-	/** One pixel. */
 	px(req: PacgRequest, x: number, y: number): Promise<Px>;
 	close(): Promise<void>;
 };

@@ -1,14 +1,19 @@
 // Colour-run fusion (M2, ARCHITECTURE §19.2): consecutive enabled colour effects of a layer (EffectSpec.color)
 // form a run that is baked into ONE 3D LUT. The preview (WebGL) and the native export (lut3d) both consume the
 // baked LUT, so they agree to the LUT's precision. Pure and shared by @jasper/compositions and the engine.
+import { canonicalJson } from '../canonical-json.ts';
 import type { ColorFn, ColorOpContext, EffectLike, EffectRegistry } from '../registry/effects.ts';
 import { effectiveParams } from '../registry/effects.ts';
 import { bakeLut, type Lut } from './lut.ts';
 
+export { canonicalJson };
+
 /** Minimal effect shape (evaluated params): `ResolvedEffect` and the engine's evaluated instances fit. */
 export type ColorRunEffect = EffectLike;
 
-export type EffectRun<E extends ColorRunEffect = ColorRunEffect> =
+type EffectRunSource = Pick<EffectLike, 'id' | 'effectId' | 'effectVersion' | 'enabled'>;
+
+export type EffectRun<E extends EffectRunSource = ColorRunEffect> =
 	| { kind: 'color'; effects: E[] }
 	| { kind: 'other'; effect: E };
 
@@ -20,7 +25,7 @@ export const EXPORT_LUT_SIZE = 33;
  * Splits a layer's effect stack (stack order) into colour runs and other effects. Disabled effects are dropped;
  * unknown ids and audio effects are dropped (they are bypassed by every renderer, S01:FX-022).
  */
-export function effectRuns<E extends ColorRunEffect>(
+export function effectRuns<E extends EffectRunSource>(
 	effects: readonly E[],
 	registry: EffectRegistry,
 ): EffectRun<E>[] {
@@ -72,18 +77,6 @@ export function bakeColorRun(
 		// Keep the table inside the displayable range: both renderers clamp at output anyway.
 		for (let k = 0; k < 3; k++) c[k] = c[k]! < 0 ? 0 : c[k]! > 1 ? 1 : c[k]!;
 	});
-}
-
-/** Canonical JSON (sorted keys) for cache keys. */
-export function canonicalJson(v: unknown): string {
-	if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
-	if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
-	const o = v as Record<string, unknown>;
-	return `{${Object.keys(o)
-		.filter((k) => o[k] !== undefined)
-		.sort()
-		.map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`)
-		.join(',')}}`;
 }
 
 /**

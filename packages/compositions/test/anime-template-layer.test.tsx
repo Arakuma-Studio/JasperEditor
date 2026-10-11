@@ -1,4 +1,3 @@
-// Public motion-graphic rendering contracts from S11:ATP-006 and ATP-010.
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	applyTransaction,

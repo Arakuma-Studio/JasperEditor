@@ -2,12 +2,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Plugin, type ProxyOptions } from 'vite';
 // Security review DEV-1: the dev server authenticates to the engine (token from its runtime file) and hands the
 // browser the dev editor key.
 import { authenticateProxy, createDevAuth, type DevAuth, editorCookieMiddleware } from './dev-auth.ts';
 // gaps (UI-6): UI strings through the active language's catalogue.
-import { type BundleChunk, EDITOR_BOOT, editorBootScript, editorChunks } from './editor-boot.ts';
+import { EDITOR_BOOT, editorBootScript, editorChunks } from './editor-boot.ts';
 import { jasperI18n } from './i18n/vite-plugin.mjs';
 
 const ENGINE = process.env.JASPER_ENGINE_URL ?? 'http://127.0.0.1:47900';
@@ -21,7 +21,7 @@ const auth = (): DevAuth => {
 	devAuth ??= createDevAuth(ENGINE, { log: (l) => console.warn(`[jasper dev] ${l}`) });
 	return devAuth;
 };
-const configure = (proxy: unknown) => authenticateProxy(auth())(proxy);
+const configure: NonNullable<ProxyOptions['configure']> = (proxy) => authenticateProxy(auth())(proxy);
 const http = { target: ENGINE, changeOrigin: false, configure };
 
 /** Page loads (and the proxied /health poll) give the browser the dev editor key as an HttpOnly cookie. */
@@ -69,7 +69,7 @@ function editorBoot(): Plugin {
 			this.emitFile({
 				type: 'asset',
 				fileName: EDITOR_BOOT,
-				source: editorBootScript(editorChunks(bundle as unknown as Record<string, BundleChunk>)),
+				source: editorBootScript(editorChunks(bundle)),
 			});
 		},
 	};
@@ -98,9 +98,7 @@ export default defineConfig({
 		host: '127.0.0.1',
 		port: 5173,
 		strictPort: true,
-		// Transform the app's static module graph when the server starts, not when the first page asks for it: a cold
-		// first load was ~hundreds of on-demand transforms long, and on a loaded machine long enough for Chromium to
-		// abort it on a host network change (net::ERR_NETWORK_CHANGED; editor-boot.ts reloads it, verify workstream).
+		// Warm the static graph so first-load requests spend less time exposed to host network changes.
 		warmup: { clientFiles: ['./index.html', './src/main.tsx'] },
 		proxy: {
 			'/api': http,

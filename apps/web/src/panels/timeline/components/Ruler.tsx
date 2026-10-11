@@ -50,10 +50,10 @@ export function Ruler(props: RulerProps) {
 		timelinePrefs().subscribe,
 		() => !!timelinePrefs().getState().showAudioTimeUnits,
 	);
-	// ui-perf: the ticks depend on the sequence end only (not on every clip), so a drag that keeps the end does not
+	// the ticks depend on the sequence end only (not on every clip), so a drag that keeps the end does not
 	// redraw them.
 	const sequenceEnd = useMemo(() => sequenceDuration({ clips: seq.clips }), [seq.clips]);
-	// ui-perf: the ticks are drawn in content coordinates (frame × px per frame) on tiles aligned to the tile size and
+	// the ticks are drawn in content coordinates (frame × px per frame) on tiles aligned to the tile size and
 	// moved by the scroll offset, so scrolling redraws only the tiles that come into view (zoom redraws them all).
 	const contentView = useMemo<Viewport>(
 		() => ({ scrollFrame: 0, pxPerFrame: v.pxPerFrame, width: v.width }),
@@ -91,7 +91,7 @@ export function Ruler(props: RulerProps) {
 
 	const setInOut = (g: Gesture, i: number | null, o: number | null) => {
 		if (i !== null && o !== null && o <= i) return;
-		g.update([{ type: 'sequence.setInOut', sequenceId: seq.id, in: i, out: o } as never]);
+		g.update([{ type: 'sequence.setInOut', sequenceId: seq.id, in: i, out: o }]);
 	};
 
 	const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -135,7 +135,7 @@ export function Ruler(props: RulerProps) {
 			if (df === 0 && !d.gesture) return;
 			d.gesture ??= session.beginGesture('Move Marker');
 			d.gesture.update([
-				{ type: 'marker.update', markerId: d.marker.id, frame: Math.max(0, d.marker.frame + df) } as never,
+				{ type: 'marker.update', markerId: d.marker.id, frame: Math.max(0, d.marker.frame + df) },
 			]);
 			return;
 		}

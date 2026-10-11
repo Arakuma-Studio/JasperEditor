@@ -1,4 +1,4 @@
-// wp speech: the pure Whisper front end and post-processing (ported FilmCraft tests plus our additions).
+// Whisper front-end and post-processing tests include cases ported from FilmCraft.
 import { describe, expect, it } from 'vitest';
 import {
 	addWordTimestamps,

@@ -1,5 +1,4 @@
-// S11:FIX-003 — font readiness: a text layer whose face is still loading is not mounted (it never splits,
-// measures or paints with the fallback font; the Player shows nothing).
+// Text must wait for its fonts before splitting or measuring, or fallback glyph metrics change its layout.
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -21,7 +20,6 @@ import {
 
 type Deferred = { resolve(): void; reject(e: Error): void; weight: string };
 
-/** A FontFace whose load() resolves only when the test says so. */
 let pending: Deferred[] = [];
 class DeferredFontFace {
 	weight: string;
@@ -58,7 +56,6 @@ afterEach(() => {
 
 let unique = 0;
 
-/** A one-text-clip document whose (only) face is `family` at `url`. */
 function textDoc(family: string): RenderDoc {
 	const ids = createCounterIdSource(1);
 	const base = createEmptyProject({ ids, name: 'F', preset: 'hd-1080p-30' });
@@ -125,7 +122,6 @@ describe('font-dependent layers wait for their faces (S11:FIX-003)', () => {
 		await act(async () => pending[0]!.resolve());
 		await waitFor(() => expect(r.container.textContent).toContain('Fonts first'));
 		r.unmount();
-		// same faces, new document identity: mounted in the very first render
 		const again = renderFrame({ ...doc, fonts: doc.fonts.map((f) => ({ ...f })) }, 6);
 		expect(again.container.textContent).toContain('Fonts first');
 		again.unmount();

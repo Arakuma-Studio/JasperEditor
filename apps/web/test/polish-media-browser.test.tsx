@@ -1,5 +1,3 @@
-// polish: the Media Browser panel, File ▸ Import from Media Browser, Engine ▸ Connect / Status, Edit Parameters and
-// Third-Party Notices.
 import type { BrowseEntry } from '@jasper/api';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -154,19 +152,21 @@ const row = (name: string) =>
 	screen.getAllByTestId('media-browser-entry').find((el) => el.textContent?.includes(name)) as HTMLElement;
 
 async function mountBrowser(session: EditorSession | null, engine = browseEngine()) {
-	render(
-		<EngineProvider client={engine.client()}>
-			<MemoryRouter initialEntries={['/']}>
-				{session ? (
-					<SessionProvider session={session}>
+	await act(async () => {
+		render(
+			<EngineProvider client={engine.client()}>
+				<MemoryRouter initialEntries={['/']}>
+					{session ? (
+						<SessionProvider session={session}>
+							<MediaBrowserPanel instanceId="mb" visible />
+						</SessionProvider>
+					) : (
 						<MediaBrowserPanel instanceId="mb" visible />
-					</SessionProvider>
-				) : (
-					<MediaBrowserPanel instanceId="mb" visible />
-				)}
-			</MemoryRouter>
-		</EngineProvider>,
-	);
+					)}
+				</MemoryRouter>
+			</EngineProvider>,
+		);
+	});
 	await waitFor(() => expect(screen.getAllByTestId('media-browser-entry').length).toBe(3));
 	return engine;
 }
@@ -234,7 +234,6 @@ describe('Media Browser panel', () => {
 		expect((screen.getByTestId('media-browser-path') as HTMLInputElement).value).toBe('/media/Footage');
 		fireEvent.click(screen.getByTestId('media-browser-up'));
 		await waitFor(() => expect(screen.getByText('tone.wav')).toBeTruthy());
-		// the last folder is remembered for the next time the panel opens
 		expect(JSON.parse(localStorage.getItem('jasper:media-browser') ?? '{}').path).toBe('/home/u');
 	});
 
@@ -261,7 +260,6 @@ describe('Media Browser panel', () => {
 				{ kind: 'bin', binId: null },
 			);
 
-			// File ▸ Import from Media Browser imports the same selection.
 			const ctx = createCommandContext({
 				engine: new ScriptedEngine().client(),
 				session,
@@ -272,7 +270,6 @@ describe('Media Browser panel', () => {
 			});
 			expect(importFiles).toHaveBeenCalledTimes(2);
 
-			// Double-click imports the file under the pointer.
 			await act(async () => {
 				fireEvent.doubleClick(row('tone.wav'));
 			});
@@ -419,6 +416,28 @@ describe('engine dialogs', () => {
 		expect(bad.error).toMatch(/UNAVAILABLE|down/);
 	});
 
+	it('keeps the Connect dialog open when saving before navigation fails', async () => {
+		registerEngineDialogs();
+		const beforeLeave = vi.fn().mockRejectedValue(new Error('Save failed: disk full'));
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response()));
+		try {
+			render(<DialogHost />);
+			act(() => void openDialog(ENGINE_DIALOGS.connect, { engine: browseEngine().client(), beforeLeave }));
+			fireEvent.change(await screen.findByTestId('engine-connect-address'), {
+				target: { value: 'http://127.0.0.1:47903' },
+			});
+			fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+			await waitFor(() =>
+				expect(screen.getByTestId('engine-connect-result').textContent).toBe('Save failed: disk full'),
+			);
+			expect(beforeLeave).toHaveBeenCalledOnce();
+			expect(screen.getByTestId('engine-connect-dialog')).toBeTruthy();
+			expect(window.location.origin).not.toBe('http://127.0.0.1:47903');
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it('Engine Status shows the live engine facts; Connect reconnects to this engine', async () => {
 		registerEngineDialogs();
 		const engine = browseEngine();
@@ -446,7 +465,6 @@ describe('engine dialogs', () => {
 		await waitFor(() =>
 			expect(screen.getByTestId('engine-connect-result').textContent).toBe('Connected to engine 0.1.0'),
 		);
-		// an agent's live-UI input may not send the window to another address
 		fireEvent.change(field, { target: { value: 'http://127.0.0.1:9' } });
 		await runAgentInput(async () => {
 			await act(async () => {

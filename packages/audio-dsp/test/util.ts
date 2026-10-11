@@ -60,7 +60,6 @@ export function toneAmplitude(x: Float32Array, freq: number, sr: number): number
 	return (2 * Math.sqrt(re * re + im * im)) / x.length;
 }
 
-/** Concatenate arrays. */
 export function concat(parts: Float32Array[]): Float32Array {
 	const out = new Float32Array(parts.reduce((s, p) => s + p.length, 0));
 	let o = 0;

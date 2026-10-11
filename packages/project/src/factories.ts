@@ -181,8 +181,6 @@ export function defaultTextStyle(fontId: string): TextStyle {
 	};
 }
 
-// ---------------------------------------------------------------- shapes (M2, S11:SHP-001/003)
-
 /** Default shape size in layer pixels (S11:SHP-003). */
 export const DEFAULT_SHAPE_SIZE: Vec2 = [400, 400];
 /** Default length of a new shape clip (S11:SHP-003). */

@@ -1,18 +1,16 @@
-// Remotion entry of the render-parity e2e (S11:ANM-014, REMOTION_E2E=1). Compositions:
-// - Sequence: the real SequenceComposition with the parity document (inputProps {doc, options});
-// - <name>Reversed / <name>Shuffled: output frame i shows frame order[i] through <Freeze>, so one renderer page
-//   visits the frames in that order (the history a reused page accumulates is what the canonical seek defeats).
+// Freeze maps output frames to a reordered scene frame sequence on one renderer page,
+// exposing state that persists between seeks.
 import type { ComponentType } from 'react';
 import { Composition, Freeze, registerRoot, useCurrentFrame } from 'remotion';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
-import { PARITY_SCENE } from './doc.ts';
+import { PARITY_SCENE, parityDoc } from './doc.ts';
 import { reversedOrder, shuffledOrder } from './order.ts';
+import type { ParityProps } from './types.ts';
 
-type AnyProps = Record<string, unknown>;
 const N = PARITY_SCENE.durationInFrames;
 
-function ordered(Inner: ComponentType<AnyProps>, order: readonly number[]): ComponentType<AnyProps> {
-	return function Ordered(props: AnyProps) {
+function ordered(Inner: ComponentType<ParityProps>, order: readonly number[]): ComponentType<ParityProps> {
+	return function Ordered(props: ParityProps) {
 		const frame = useCurrentFrame();
 		return (
 			<Freeze frame={order[frame] ?? frame}>
@@ -27,14 +25,9 @@ const ORDERS: [suffix: string, order: readonly number[] | null][] = [
 	['Reversed', reversedOrder(N)],
 	['Shuffled', shuffledOrder(N)],
 ];
-const COMPONENTS: [id: string, component: ComponentType<AnyProps>][] = [];
+const COMPONENTS: [id: string, component: ComponentType<ParityProps>][] = [];
 for (const [suffix, order] of ORDERS)
-	COMPONENTS.push([
-		`Sequence${suffix}`,
-		order
-			? ordered(SequenceComposition as ComponentType<AnyProps>, order)
-			: (SequenceComposition as ComponentType<AnyProps>),
-	]);
+	COMPONENTS.push([`Sequence${suffix}`, order ? ordered(SequenceComposition, order) : SequenceComposition]);
 
 function Root() {
 	return (
@@ -48,7 +41,10 @@ function Root() {
 					height={PARITY_SCENE.height}
 					fps={PARITY_SCENE.fps}
 					durationInFrames={N}
-					defaultProps={{}}
+					defaultProps={{
+						doc: parityDoc(),
+						options: { isPreview: false, useProxies: false, transparentBackground: false },
+					}}
 				/>
 			))}
 		</>

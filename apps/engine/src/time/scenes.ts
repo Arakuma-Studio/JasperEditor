@@ -1,4 +1,4 @@
-// Scene Edit Detection jobs (workstream `time`, docs/wp-notes/time.md): ffmpeg decodes the media frames of a range at
+// ffmpeg decodes the media frames of a range at
 // a small size (long side 192 px, raw RGBA), each frame is reduced to its signature (`sceneSignature` of
 // @jasper/project: colour histogram + motion thumbnail) and compared with the previous one; the cuts are the media
 // times of the frames that start a new shot (`detectSceneCuts`). Frame times come from the media's real timestamps

@@ -1,6 +1,3 @@
-// Browser entry of the mask GL test (bundled with esbuild, run in headless Chrome by ../masks-gl.test.ts): the GL
-// mask rasteriser (src/fx/mask.ts on the fx GPU host) against the CPU rasteriser, and the masked-effect /
-// Opacity-mask descriptors inside Remotion's effect chain (as FxPicture runs them).
 import '../gl-poison.ts';
 import { boxToCanvas, packMasks, prepareMasks, type ResolvedMask, rasterizeMaskPack } from '@jasper/project';
 import { Internals } from 'remotion';
@@ -62,7 +59,6 @@ const api = {
 		const j = JSON.parse(json) as Job;
 		const W = j.width;
 		const H = j.height;
-		// Left half red, right half blue (opaque).
 		const src = canvas(W, H);
 		const sctx = src.getContext('2d')!;
 		sctx.fillStyle = 'rgb(255,0,0)';

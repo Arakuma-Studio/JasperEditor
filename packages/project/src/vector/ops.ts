@@ -36,8 +36,6 @@ const ACC = 1e-3;
 /** Reverses every subpath (the Path Direction toggle). */
 export const reverse = (paths: BezPath[]): BezPath[] => paths.map(reversePath);
 
-// ---------------------------------------------------------------- Trim Paths
-
 /** A path measured for trimming: its walked segments (closing lines included) laid end to end. */
 class Measured {
 	segs: Cubic[];
@@ -131,8 +129,6 @@ export function trimIndividually(paths: BezPath[], start: number, end: number, o
 	});
 }
 
-// ---------------------------------------------------------------- Pucker & Bloat
-
 /**
  * Pucker & Bloat (`amount` −100…100 %). Positive (bloat) moves the vertices towards the path's centre (the mean of
  * its vertices) and pushes the handles away from it, so segments bulge outwards; negative (pucker) does the
@@ -163,8 +159,6 @@ export function puckerBloat(paths: BezPath[], amount: number): BezPath[] {
 		}));
 	});
 }
-
-// ---------------------------------------------------------------- Round Corners
 
 /**
  * Round Corners: every corner vertex (a tangent discontinuity) is replaced by a circular arc that starts and ends
@@ -222,8 +216,6 @@ function roundSub(sp: SubPath, r: number): SubPath {
 	return { segs: out, closed: sp.closed };
 }
 
-// ---------------------------------------------------------------- Offset Paths
-
 /**
  * Offset Paths: grows (positive `amount`) or shrinks every path with the given line join. `copies` copies are made,
  * copy i (0-based) offset by amount·(i + 1 + copyOffset), all returned in the same compound path.
@@ -243,8 +235,6 @@ export function offset(
 		return out;
 	});
 }
-
-// ---------------------------------------------------------------- Twist
 
 /**
  * Twist: rotates the paths about `center` by an angle growing linearly with the distance from the centre, from 0
@@ -292,8 +282,6 @@ export function twist(paths: BezPath[], angleDeg: number, center: P): BezPath[] 
 		}),
 	);
 }
-
-// ---------------------------------------------------------------- resampling (Zig Zag, Wiggle Paths)
 
 type Sample = { p: P; tan: P; lenPrev: number; lenNext: number };
 
@@ -463,8 +451,6 @@ export function wiggle(paths: BezPath[], w: WiggleParams, timeS: number): BezPat
 		}),
 	);
 }
-
-// ---------------------------------------------------------------- Merge Paths
 
 export type MergeMode = 'merge' | 'add' | 'subtract' | 'intersect' | 'exclude';
 

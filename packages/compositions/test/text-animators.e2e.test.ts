@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Text animators on the Remotion render path (workstream text-animators): bundles the production compositions,
-// renders stills of text clips built with the real commands (animators, presets, selectors, Path Options on a mask,
-// per-character 3D, typography) in headless Chrome and checks the pixels. The PNGs stay in the printed directory
-// for inspection. Gated by REMOTION_E2E=1 (bundling ≈ 10–30 s, each still ≈ 1–3 s); needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -54,7 +50,6 @@ function snapshotOf(m: FxMedia, build: (refs: { seq: string }) => Command[]) {
 	});
 }
 
-/** A centred text clip (point text) at 80 px, white. */
 const text = (s: string, extra: Record<string, unknown> = {}): Command[] => [
 	{
 		type: 'clip.addText',
@@ -112,7 +107,6 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 			maxBuffer: 1 << 26,
 		});
 	}
-	/** Sum of luma of a column band [x0, x1). */
 	const ink = (raw: Buffer, x0: number, x1: number, y0 = 0, y1 = H) => {
 		let s = 0;
 		for (let y = y0; y < y1; y++)
@@ -162,7 +156,6 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		expect(ink(start, 0, W)).toBeLessThan(5);
 		const pb = bbox(plain, white);
 		const eb = bbox(end, white);
-		// Same glyph extents as the browser's own text (≤ 1 px).
 		for (const k of ['x0', 'x1', 'y0', 'y1'] as const) expect(Math.abs(pb[k] - eb[k])).toBeLessThanOrEqual(1);
 		const mb = bbox(mid, white);
 		expect(mb.x0).toBeLessThanOrEqual(pb.x0 + 1);

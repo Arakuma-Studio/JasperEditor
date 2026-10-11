@@ -1,8 +1,4 @@
-// compositor: the stacks whose canvas scopes used to nest (CANVAS_NESTED on the Remotion path) exported through every
-// path the planner picks — Remotion (adjustment layers with GPU effects, 3D runs, linear light), native (blend modes
-// and an adjustment layer with a native colour effect between them), hybrid layer bakes (a text layer in such a
-// stack) — and the same documents forced through Remotion, against values computed with `blendPixel` (the native
-// kernel's formulas). REMOTION_E2E=1 (real engine, headless Chrome, LGPL ffmpeg).
+// Compare nested composition scopes against blendPixel and compare the chosen export path with forced Remotion.
 import { spawnSync } from 'node:child_process';
 import { blendPixel, type Rgba } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -27,7 +23,6 @@ const settings = (seqId: string, engine: 'auto' | 'native' | 'remotion') => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine,
@@ -194,7 +189,6 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		const hybrid = await exportDoc(d, 'auto');
 		expect(hybrid.path).toBe('hybrid');
 		const rem = await exportDoc(d, 'remotion');
-		// A corner (no text) against the formulas, and the frames against each other.
 		const want = over([
 			{ c: gray(over([{ c: base }, { c: mid, mode: 'linear-burn' }])) },
 			{ c: top, mode: 'color-dodge' },

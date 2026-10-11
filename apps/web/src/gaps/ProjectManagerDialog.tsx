@@ -1,7 +1,3 @@
-// File ▸ Project Manager… (workstream gaps, docs/wp-notes/gaps.md §PRJ-6), as Premiere's dialog: the sequences to
-// keep, Resulting Project (Collect Files and Copy to New Location / Consolidate and Transcode), Options (Exclude
-// Unused Clips, Include Handles, Include Preview Files, Include Proxies), Destination Path and Disk Space (Calculate).
-// OK runs the engine job; the Jobs panel shows its progress and a report dialog lists what was written.
 import type { ProjectManagerEstimate, ProjectManagerResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { makeEnvelope } from '@jasper/project';

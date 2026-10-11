@@ -35,12 +35,12 @@ export function openSavePreset(
 		subject,
 		...(defaultName ? { defaultName } : {}),
 	};
-	return openDialog<EffectPreset>(SAVE_PRESET_DIALOG, props as unknown as Record<string, unknown>);
+	return openDialog<EffectPreset>(SAVE_PRESET_DIALOG, props);
 }
 
 export function openPresetProperties(preset: EffectPreset): Promise<EffectPreset | undefined> {
 	const props: SavePresetDialogProps = { mode: 'edit', preset };
-	return openDialog<EffectPreset>(SAVE_PRESET_DIALOG, props as unknown as Record<string, unknown>);
+	return openDialog<EffectPreset>(SAVE_PRESET_DIALOG, props);
 }
 
 async function askName(props: PresetBinDialogProps): Promise<string | undefined> {

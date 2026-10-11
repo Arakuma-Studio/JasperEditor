@@ -1,6 +1,3 @@
-// Browser entry of the retime GL test (bundled by ../retime-gl.test.ts, run in headless Chrome): the GPU Optical Flow
-// and Frame Blending of src/retime/flow-gl.ts against the CPU reference of @jasper/project (time-remap/flow.ts) on
-// the same 8-bit frames.
 import {
 	analysisFactor,
 	analysisSize,
@@ -111,7 +108,6 @@ const api = {
 		const out = readCanvas(comp.flow(toCanvas(a), toCanvas(b), w, W, H, analysis, 'p'), W, H);
 		const pair = computeFlowPair(a, b, 255);
 		const cpu = interpolateFlow(a, b, w, pair, { data: new Uint8ClampedArray(W * H * 4) });
-		// Flow fields
 		const cols = Math.ceil(analysis.w / FLOW_BLOCK);
 		const rows = Math.ceil(analysis.h / FLOW_BLOCK);
 		const gv = comp.readFlow(cols, rows);
@@ -138,7 +134,6 @@ const api = {
 			vecSame: vecSame / (cols * rows),
 		};
 	},
-	/** GPU Frame Blending vs the CPU reference. */
 	blend(arg?: string) {
 		const { w = 0.3 } = arg ? JSON.parse(arg) : {};
 		const W = 64;

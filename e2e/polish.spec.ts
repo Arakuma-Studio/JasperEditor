@@ -1,7 +1,3 @@
-// Workstream polish in the built app (docs/wp-notes/polish.md): the menu entries that used to render disabled
-// (Engine ▸ Connect / Status, Third-Party Notices, Edit Parameters, Import from Media Browser), the Media Browser
-// panel (browse, preview, import in place) and the live language switch (no reload: the undo history survives, and no
-// string is left behind in the other language).
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -86,7 +82,6 @@ test('the menu entries that used to be disabled are wired', async () => {
 	await shot(page, 'engine-connect');
 	await connect.getByRole('button', { name: 'Close' }).first().click();
 
-	// File ▸ Get Properties for Selection… (Ctrl+Shift+H): what the selected medium is, with its path on the engine.
 	await page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' }).click();
 	await openMenu('file');
 	await page.getByRole('menuitem', { name: /^Get Properties for Selection/ }).click();
@@ -114,7 +109,6 @@ test('Media Browser: browse the fixtures folder, preview a clip, import it in pl
 	await runCommand('panel.focus.mediaBrowser');
 	const panel = page.getByTestId('media-browser');
 	await expect(panel).toBeVisible();
-	// docked next to the Project panel (narrow): the places are a dropdown
 	await expect(panel.getByRole('combobox', { name: 'Places' })).toBeVisible();
 	const path = page.getByTestId('media-browser-path');
 	await path.fill(FIXTURES);
@@ -122,7 +116,6 @@ test('Media Browser: browse the fixtures folder, preview a clip, import it in pl
 	const entry = (name: string) => page.getByTestId('media-browser-entry').filter({ hasText: name });
 	await expect(entry('clip-b.mp4')).toBeVisible();
 	await expect(entry('tone.wav')).toBeVisible();
-	// plate-planar.json is not media: hidden until "All files" is on
 	await expect(entry('plate-planar.json')).toHaveCount(0);
 
 	await entry('clip-b.mp4').click();
@@ -138,7 +131,6 @@ test('Media Browser: browse the fixtures folder, preview a clip, import it in pl
 		.toBe(1280);
 	await shot(page, 'media-browser-list');
 
-	// thumbnail view draws engine-made thumbnails
 	await panel.getByRole('button', { name: 'Thumbnail View' }).click();
 	const thumb = entry('clip-b.mp4').locator('img');
 	await expect
@@ -147,7 +139,6 @@ test('Media Browser: browse the fixtures folder, preview a clip, import it in pl
 	await shot(page, 'media-browser-thumbnails');
 	await panel.getByRole('button', { name: 'List View' }).click();
 
-	// File ▸ Import from Media Browser imports the selection (path registration: no upload)
 	await entry('clip-b.mp4').click();
 	await runCommand('project.importFromMediaBrowser');
 	await runCommand('panel.focus.project');
@@ -186,8 +177,6 @@ test('Clip ▸ Motion Graphic ▸ Edit Parameters shows the template parameters 
 	await expect(section).toContainText('Parameters');
 	await shot(page, 'edit-parameters');
 });
-
-// ---------------------------------------------------------------- live language switch
 
 const es = JSON.parse(readFileSync(join(ROOT, 'apps/web/src/i18n/es.json'), 'utf8')) as Record<
 	string,
@@ -287,7 +276,6 @@ async function switchLanguageLive(label: 'English' | 'Español') {
 	await dialog.getByRole('combobox', { name: /^(Language|Idioma)$/ }).click();
 	await page.getByRole('option', { name: label }).click();
 	await expect(page.locator('html')).toHaveAttribute('lang', label === 'Español' ? 'es' : 'en');
-	// the dialog stays open, on the same page
 	await expect(dialog).toBeVisible();
 	await expect(dialog.getByTestId('prefs-page-appearance')).toHaveAttribute('aria-current', 'page');
 	await page.keyboard.press('Escape');
@@ -334,7 +322,6 @@ test('the language switches live in both directions: nothing is reloaded, undo s
 		(window as unknown as { __polishNoReload?: boolean }).__polishNoReload = true;
 	});
 
-	// English → Spanish, live.
 	await switchLanguageLive('Español');
 	expect(
 		await page.evaluate(() => (window as unknown as { __polishNoReload?: boolean }).__polishNoReload),
@@ -345,7 +332,6 @@ test('the language switches live in both directions: nothing is reloaded, undo s
 	await runCommand('panel.focus.effectControls');
 	await expect(page.getByTestId('editor-shell')).toContainText('Desenfoque gaussiano');
 	await shot(page, 'spanish-live');
-	// undo still works on the history made before the switch
 	await runCommand('history.undo');
 	expect((await appliedLabels(page)).length).toBe(historyBefore.length - 1);
 	await runCommand('history.redo');
@@ -359,7 +345,6 @@ test('the language switches live in both directions: nothing is reloaded, undo s
 	const reloadEs = await tour(ENGLISH);
 	expect(leftBehind(liveEs, reloadEs), 'left in English after the live switch').toEqual([]);
 
-	// Spanish (the language the page loaded in) → English, live.
 	await switchLanguageLive('English');
 	await expect(page.locator('[data-menu-id="file"]')).toHaveText('File');
 	const liveEn = await tour(SPANISH);
@@ -376,8 +361,6 @@ test('the language switches live in both directions: nothing is reloaded, undo s
 	).toEqual([]);
 });
 
-// ---------------------------------------------------------------- large project open
-
 test('a 2 000-item project opens with two media status requests, a windowed bin and within the budget', async ({
 	browser,
 }) => {
@@ -390,7 +373,7 @@ test('a 2 000-item project opens with two media status requests, a windowed bin 
 	for (let i = 0; i < 3; i++)
 		runs.push(await measureOpen(browser, base, id, 'items:2000', { trace: i === 0 }));
 	const first = runs[0]!;
-	// One request per batch of 1 000 media, not one per medium (it was 2 000 requests and 2 000 store updates).
+	// Media resolution batches contain at most 1 000 items.
 	expect(first.requests['media status'] ?? 0).toBe(0);
 	expect(first.requests['media status (batch)']).toBe(2);
 	const median = [...runs].sort((a, b) => a.media - b.media)[1]!;
@@ -402,7 +385,6 @@ test('a 2 000-item project opens with two media status requests, a windowed bin 
 	);
 	expect(median.media).toBeLessThanOrEqual(budgetMs(2000, { parallel: true }));
 
-	// The bin is windowed from its first render: a screen of rows, never all 2 000.
 	const p = await browser.newPage({ viewport: { width: 1600, height: 960 } });
 	let most = 0;
 	await p.addInitScript(() => {

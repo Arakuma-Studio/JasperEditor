@@ -1,5 +1,3 @@
-// Wave expressions in Effect Controls: Alt-click the stopwatch, the expression row (editor, enable switch, errors),
-// post-expression values in red, undo, Expression Controls editors and the post-expression graph.
 import { loadExpressionEngine } from '@jasper/expressions';
 import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';

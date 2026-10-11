@@ -1,4 +1,3 @@
-// Shipped anime schema contracts, responsive timing, number formatting and version upgrades.
 import { paramsPropertySpecs } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';

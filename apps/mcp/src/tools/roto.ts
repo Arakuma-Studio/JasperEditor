@@ -1,5 +1,3 @@
-// parity roto MCP tools: Roto Brush object selection (points, a box or strokes) and propagation, object mattes,
-// Convert to Masks, freezing, face tracking, Blur Faces and face keyframes, and the segmentation / face models.
 import type { EngineJob, RotoSegmentResult, RotoTraceResponse, VisionModel } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
@@ -16,6 +14,7 @@ import {
 	type Sequence,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, TIME_FORMATS, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -34,10 +33,7 @@ import {
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { TIME_FORMATS, timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions. */
 export const ROTO_GUIDE = `Roto / object mattes (Roto Brush) and face tracking: create_roto selects an object on a video or still clip from points ({x, y, fg} in the clip's media pixels; fg false = exclude), a box [x0, y0, x1, y1] or brush strokes at a sequence time, segments that frame (SAM 2.1 when installed — list_roto_models / install_roto_model, Apache-2.0, ~155 MB — refined by graph cut, else colour graph cut alone) and, with propagate (default true), tracks it through its span (the source frames the clip shows; span to change) by optical flow + re-segmentation; then it adds an Object Matte effect that cuts the clip out (apply "matte", default), an Object Blur ("blur") or nothing ("none"). Check the result with render_frame (Object Matte view "overlay" or "boundary" shows the selection over the picture). Fix a frame with add_roto_strokes (points / strokes / box at that time: fg adds, bg removes) and propagate_roto again (frames before the correction are reused, so it is fast). get_roto reports the span, what is computed, whether it is stale and the area per frame. Exports refuse uncomputed frames (ROTO_NOT_COMPUTED) — propagate first. convert_roto_to_masks turns the matte outline into Opacity masks (still or animated). freeze_roto locks a finished roto. Faces: track_faces finds and tracks every face of a clip (MediaPipe Face Landmarker; install_roto_model "mediapipe-face-landmarker", Apache-2.0) into a faces roto; blur_faces does that and adds Object Blur (gaussian / mosaic / fill) in one step; face_to_keyframes makes a tracked face a planar tracker and bakes position / scale / rotation keyframes onto another clip (a graphic following the face). The matte effects' params (feather, contrast, shiftEdge, reduceChatter, useMotionBlur, decontaminate…, view: final | alpha | overlay | boundary | decontamination) are ordinary effect params (apply_object_matte params or set_effect_param). Keying: the Screen Keyer (Keylight-style), Refine Soft / Hard Matte, Key Cleaner and Advanced Spill Suppressor are effects (add_effect); the Screen Keyer's insideObject / outsideObject take roto ids as garbage / core mattes.`;
 
 const RotoIdArg = z

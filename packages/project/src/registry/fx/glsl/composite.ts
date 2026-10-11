@@ -1,4 +1,4 @@
-// Shared GLSL: finishing helpers for Sapphire-style effects (wave-1 fx framework): "Mix with Original", "Show"
+// Shared GLSL: finishing helpers for Sapphire-style effects: "Mix with Original", "Show"
 // (result / matte), mattes from luminance or colour distance (keying), and the alpha helpers. Pair them with the
 // TypeScript param helpers `mixWithOriginalParam()` / `showParam()` (fx/params.ts), whose uniforms are
 // `u_mixWithOriginal` (float 0..1) and `u_show` (int: 0 = result, 1 = matte, 2+ = effect-specific).

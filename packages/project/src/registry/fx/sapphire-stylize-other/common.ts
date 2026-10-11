@@ -1,4 +1,4 @@
-// Shared helpers of the "Sapphire other stylize" family (fx catalogue, wave 2): Sapphire's units and coordinates,
+// Shared helpers of the "Sapphire other stylize" family: Sapphire's units and coordinates,
 // the Mask input (Mask / Mask Use / Invert Mask), separable blurs with per-axis widths, and the GLSL the family's
 // effects share. Family-private: only `../sapphire-stylize-other.ts` and its sibling modules import this.
 //
@@ -9,15 +9,16 @@
 // - Sapphire sizes/distances/radii keep Sapphire's numbers: 1.0 = half the layer width (`sso_unit()` in GLSL).
 // - Sapphire blur widths keep Sapphire's numbers: 1.0 = a Gaussian sigma of 3 % of the layer width
 //   (`sapphireBlurPx`), so the documented defaults (0.088, 0.112…) give the documented look at any resolution.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
+import { clamp, numberParam as num } from '../../param-values.ts';
+
 import { GLSL_BLUR } from '../glsl/blur.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
 import { fxParam } from '../params.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
 
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
 /** A Sapphire frame position (x −1…1 across the width, y up) → a layer-normalised point (16:9 frame). */
@@ -26,7 +27,10 @@ export function sapphirePoint(x: number, y: number, aspect = 16 / 9): [number, n
 }
 
 /** A Sapphire blur width → Gaussian sigma in canvas px (1.0 = 3 % of the layer width; S_Blur's default 0.4 ≈ 23 px at 1920). */
-export function sapphireBlurPx(v: unknown, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>): number {
+export function sapphireBlurPx(
+	v: ParamValue | undefined,
+	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
+): number {
 	return Math.max(0, num(v)) * ctx.width * 0.03 * ctx.pxScale;
 }
 
@@ -35,7 +39,7 @@ export function sNum(
 	name: string,
 	label: string,
 	def: number,
-	r: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number } = {},
+	r: NonNullable<ParamSpec['range']> = {},
 ): ParamSpec {
 	return fxParam.number(name, label, def, { step: 0.001, ...r });
 }
@@ -44,8 +48,6 @@ export function sNum(
 export function sInt(name: string, label: string, def: number, min: number, max: number, softMax?: number) {
 	return fxParam.number(name, label, def, { min, max, step: 1, ...(softMax ? { softMax } : {}) });
 }
-
-// ---------------------------------------------------------------- Mask input
 
 /**
  * Sapphire's Mask input: a picture (image/video of the project, stretched over the layer box) restricting where
@@ -87,8 +89,6 @@ vec4 sso_finish(vec4 result, vec4 original, float matte) {
 }
 `,
 };
-
-// ---------------------------------------------------------------- shared GLSL
 
 /** Coordinates in canvas px relative to the layer box, Sapphire's unit, and the tone helpers of the family. */
 export const GLSL_SSO_COMMON: GlslChunk = {
@@ -143,8 +143,6 @@ export function psykoColorParams(freqColors: number): ParamSpec[] {
 	];
 }
 
-// ---------------------------------------------------------------- blurs
-
 /**
  * Two passes (horizontal, vertical) Gaussian-blurring the texture `input` (`'source'` or an output name) into
  * `output`, with separate sigmas per axis in CANVAS px. Large sigmas run at ½ or ¼ resolution (the sigma is
@@ -193,3 +191,5 @@ void main() {
 export function defaultsOf(params: readonly ParamSpec[]): EffectParams {
 	return Object.fromEntries(params.map((p) => [p.name, p.default])) as EffectParams;
 }
+
+export { clamp, num };

@@ -1,4 +1,4 @@
-// Effect family "sapphire-render-textures" (fx catalogue, wave 2): Sapphire Render generators — lightning (S_Zap,
+// Effect family "sapphire-render-textures": Sapphire Render generators — lightning (S_Zap,
 // S_UltraZap, S_ZapTo, S_ZapFrom), gradients/grid/shape and the other render effects (aurora, laser beam, moon, muzzle
 // flash, night sky, caustics, dust, sparkles). Entries live in ./sapphire-render-lightning/ (family-private helpers
 // and GLSL); ids start with `jasper.s.`; Effects-panel bin: SAPPHIRE_BINS.render.

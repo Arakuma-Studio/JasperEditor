@@ -1,7 +1,3 @@
-// Clipboard (wp-clipboard, S01 §20 CLB-001…009, ID-005; S03:FX-011/012, EC-023/032, KF table): payload build,
-// validation and encoding, and the paste commands: clip.paste (overwrite / insert, targeting, cross-project
-// resolution, frame-rate conversion, every M2 field), clip.pasteAttributes / clip.removeAttributes, effect.paste,
-// keyframe.paste and project.pasteItems.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -11,6 +7,7 @@ import {
 	buildKeyframesPayload,
 	type Clip,
 	type ClipboardPayload,
+	CommandError,
 	checkInvariants,
 	clipboardText,
 	createStaticMgRegistry,
@@ -90,8 +87,6 @@ function richProject(seed = 1) {
 	return { h, v, a, text: r.refs.$t!, shape: r.refs.$s! };
 }
 
-// ---------------------------------------------------------------- payload (CLB-001, CLB-002, CLB-009)
-
 describe('clipboard payload (CLB-001/002/009)', () => {
 	it('round-trips through text/html with non-ASCII text, and rejects HTML without the marker', () => {
 		const { h, text } = richProject();
@@ -147,8 +142,6 @@ describe('clipboard payload (CLB-001/002/009)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- clip.paste (CLB-003/004/008, ID-005)
-
 describe('clip.paste (CLB-003/004)', () => {
 	it('pastes at the playhead in overwrite mode with new ids, relative layout, links and transitions', () => {
 		const { h, v, text, shape } = richProject();
@@ -165,7 +158,6 @@ describe('clip.paste (CLB-003/004)', () => {
 		expect(res.start).toBe(200);
 		expect(res.end).toBe(270); // the text ends last, at 80 → 80 - 10 + 200
 		const pasted = res.clipIds.map((id) => h.seq.clips[id]!);
-		// ID-005: every pasted entity id (clips, effects, keyframes, links, transitions) is new.
 		const created = idsIn(pasted);
 		for (const id of created)
 			if (!id.startsWith('trk_') && !id.startsWith('med_') && !id.startsWith('fnt_'))
@@ -178,7 +170,7 @@ describe('clip.paste (CLB-003/004)', () => {
 			['video', 'V2', 200],
 			['audio', 'A1', 200],
 			['text', 'V3', 210],
-			['shape', 'V4', 220], // V4 did not exist: added (TRK-005)
+			['shape', 'V4', 220],
 		]);
 		const [pv, pa] = pasted as [Clip, Clip];
 		expect(pv.linkId).toBeTruthy();
@@ -212,7 +204,6 @@ describe('clip.paste (CLB-003/004)', () => {
 			[10, 30],
 			[30, 120],
 		]);
-		// Sync-locked V1 shifted with the insert (split at 10).
 		expect(h.spans('V1')).toEqual([
 			[0, 10],
 			[30, 60],
@@ -344,7 +335,6 @@ describe('clip.paste (CLB-003/004)', () => {
 		expect(newTarget.trackedBy.clipId).toBe(newPlate.id);
 		expect(newTarget.trackedBy.trackerId).toBe(newPlate.trackers[0]!.id);
 		expect(newTarget.effects.map((e) => e.id)).toContain(newTarget.trackedBy.effectInstanceId);
-		// Pasting only the target keeps it on the original plate (same sequence).
 		const only = roundTrip(buildClipsPayload(h.doc, h.seqId, [target]));
 		const res2 = h.ok([{ type: 'clip.paste', payload: only, at: 200 }]).results[0] as { clipIds: string[] };
 		expect((h.seq.clips[res2.clipIds[0]!] as typeof newTarget).trackedBy.clipId).toBe(plate);
@@ -371,14 +361,11 @@ describe('clip.paste (CLB-003/004)', () => {
 	});
 });
 
-// ---------------------------------------------------------------- cross-project resolution (CLB-008)
-
 describe('reference resolution across projects (CLB-008)', () => {
 	it('reuses media with the same fingerprint, adds missing assets with new ids and a project item', () => {
 		const { h, v } = richProject();
 		const p = roundTrip(buildClipsPayload(h.doc, h.seqId, [v]));
 		const src = p.media[0]!;
-		// Target 1 already has the file (same fingerprint, other id): reused, nothing added.
 		const t1 = new Harness({ seed: 21 });
 		const existing = t1.ok([{ type: 'media.register', asset: { ...src, id: undefined } }]).results[0] as {
 			mediaId: string;
@@ -393,7 +380,6 @@ describe('reference resolution across projects (CLB-008)', () => {
 		expect(r1.reusedMedia).toEqual([existing.mediaId]);
 		expect((t1.seq.clips[r1.clipIds[0]!] as { mediaId: string }).mediaId).toBe(existing.mediaId);
 		expect(Object.keys(t1.doc.items)).toHaveLength(items);
-		// Target 2 does not: the record is added under a new id (locators kept) with an item named like the source.
 		const t2 = new Harness({ seed: 22 });
 		const r2 = t2.ok([{ type: 'clip.paste', payload: p, at: 0 }]).results[0] as {
 			clipIds: string[];
@@ -416,14 +402,12 @@ describe('reference resolution across projects (CLB-008)', () => {
 			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'T' }, ref: '$t' },
 		]);
 		const p = roundTrip(buildClipsPayload(h.doc, h.seqId, [r.refs.$s!, r.refs.$t!]));
-		// Same project: the synthetic and the font are reused.
 		const same = h.ok([{ type: 'clip.paste', payload: p, at: 100 }]).results[0] as {
 			map: Record<string, string>;
 		};
 		expect((h.seq.clips[same.map[r.refs.$s!]!] as { syntheticId: string }).syntheticId).toBe(
 			(h.seq.clips[r.refs.$s!] as { syntheticId: string }).syntheticId,
 		);
-		// Another project: a new color matte; the default font already exists there, so it is reused.
 		const t = new Harness({ seed: 33 });
 		t.ok([{ type: 'clip.addText', at: 0, duration: 5, track: 'V3', content: { text: 'own' } }]);
 		const fonts = Object.keys(t.doc.fonts);
@@ -471,7 +455,6 @@ describe('reference resolution across projects (CLB-008)', () => {
 				params: { look: { mediaId: lut } },
 			},
 		]);
-		// A processed version of the video replaces its source in the clip (derivation chain).
 		const derived = videoAsset({ seconds: 10, audio: false });
 		h.ok([
 			{
@@ -495,7 +478,6 @@ describe('reference resolution across projects (CLB-008)', () => {
 		expect(t.doc.media[look.mediaId]?.kind).toBe('lut');
 		const used = t.doc.media[clip.mediaId]!;
 		expect(used.derivation?.fromMediaId && t.doc.media[used.derivation.fromMediaId]).toBeTruthy();
-		// The derivation source travels without its own item; the clip's media and the LUT get one.
 		const itemMedia = Object.values(t.doc.items)
 			.filter((i) => i.kind === 'media')
 			.map((i) => (i as { mediaId: string }).mediaId);
@@ -503,8 +485,6 @@ describe('reference resolution across projects (CLB-008)', () => {
 		expect(checkInvariants(t.doc, { effects: defaultRegistries().effects })).toEqual([]);
 	});
 });
-
-// ---------------------------------------------------------------- attributes (CLB-005/006, FX-011/012)
 
 describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 	function twoClips() {
@@ -560,7 +540,7 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 			},
 		]);
 		const B = h.seq.clips[b] as Extract<Clip, { kind: 'solid' }>;
-		// keyframes-blend: first frame → first frame, last frame → last frame (offsets span duration − 1 frames).
+		// First frame → first frame, last frame → last frame (offsets span duration − 1 frames).
 		expect(B.transform.scale.keyframes.map((k) => (k.time - B.sourceIn) / F30)).toEqual([0, 59]);
 	});
 
@@ -642,7 +622,6 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 			'jasper.gaussian-blur',
 		]);
 		expect(C.opacity.value).toBe(50);
-		// Video effects never land on audio clips.
 		const { h: h2, a: audio } = richProject(5);
 		const vfx = roundTrip(buildEffectsPayload(h.doc, a));
 		expect(h2.tx([{ type: 'effect.paste', payload: vfx, clipIds: [audio] }])).toMatchObject({
@@ -653,9 +632,64 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 	});
 });
 
-// ---------------------------------------------------------------- keyframe.paste (EC-023)
-
 describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
+	it.each([
+		new Error('effect registry unavailable'),
+		new CommandError('E_INTERNAL', 'effect registry unavailable'),
+	])('reports unexpected property resolver errors and keeps the project unchanged (%s)', (error) => {
+		const { h, v } = richProject();
+		const clip = h.seq.clips[v];
+		if (clip?.kind !== 'video') throw new Error('expected video');
+		const keys = clip.effects[0]!.params.radius!.keyframes;
+		const payload = roundTrip(
+			buildKeyframesPayload(
+				h.doc,
+				v,
+				keys.map((key) => key.id),
+			),
+		);
+		const before = h.doc;
+		const registries = defaultRegistries();
+		const result = h.tx([{ type: 'keyframe.paste', payload, clipId: v, at: { frames: 40 } }], {
+			ctx: {
+				registries: {
+					...registries,
+					effects: {
+						...registries.effects,
+						get() {
+							throw error;
+						},
+					},
+				},
+			},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INTERNAL', message: 'effect registry unavailable' }],
+		});
+		expect(h.doc).toBe(before);
+	});
+
+	it('reports a locked keyframe destination without disguising it as a missing property', () => {
+		const { h, v } = richProject();
+		const clip = h.seq.clips[v];
+		if (clip?.kind !== 'video') throw new Error('expected video');
+		const payload = roundTrip(
+			buildKeyframesPayload(
+				h.doc,
+				v,
+				clip.effects[0]!.params.radius!.keyframes.map((key) => key.id),
+			),
+		);
+		h.ok([{ type: 'track.update', trackId: clip.trackId, patch: { locked: true } }]);
+		const before = h.doc;
+		expect(h.tx([{ type: 'keyframe.paste', payload, clipId: v, at: { frames: 40 } }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_TRACK_LOCKED' }],
+		});
+		expect(h.doc).toBe(before);
+	});
+
 	it('pastes keys at the playhead keeping relative timing, onto the same property path', () => {
 		const { h, v, text } = richProject();
 		const keys = (h.seq.clips[v] as Extract<Clip, { kind: 'video' }>).effects[0]!.params.radius!.keyframes;
@@ -671,12 +705,10 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 			occurrence: 0,
 			param: 'radius',
 		});
-		// Same clip at the clip's frame 40: offsets 0 and 30 frames are kept.
 		const r = h.ok([{ type: 'keyframe.paste', payload: p, clipId: v, at: { frames: 40 } }]);
 		const after = (h.seq.clips[v] as Extract<Clip, { kind: 'video' }>).effects[0]!.params.radius!.keyframes;
 		expect(after.map((k) => Math.round((k.time - h.seq.clips[v]!.sourceIn) / F30))).toEqual([0, 30, 40, 70]);
 		expect((r.results[0] as { keyframeIds: string[] }).keyframeIds).toHaveLength(2);
-		// A clip without a blur effect has no matching path: refused, unless a selected property of the kind is given.
 		expect(h.tx([{ type: 'keyframe.paste', payload: p, clipId: text, at: { frames: 0 } }])).toMatchObject({
 			ok: false,
 			errors: [{ code: 'E_INVALID_PARAM' }],
@@ -732,8 +764,6 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 		ok(h);
 	});
 });
-
-// ---------------------------------------------------------------- project.pasteItems (CLB-007)
 
 describe('project.pasteItems (CLB-007)', () => {
 	function withBin() {
@@ -812,7 +842,6 @@ describe('project.pasteItems (CLB-007)', () => {
 	});
 });
 
-// Clipboard data is opaque to agent addressing and transaction reference substitution.
 describe('clipboard data isolation', () => {
 	it('payload data is never treated as addresses, temp refs or selections', () => {
 		const { h, text } = richProject();

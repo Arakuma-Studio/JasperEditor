@@ -1,4 +1,3 @@
-// Scene Edit Detection contracts (workstream `time`, docs/wp-notes/time.md).
 import { z } from 'zod';
 
 /**

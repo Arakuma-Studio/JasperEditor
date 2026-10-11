@@ -234,8 +234,6 @@ export function isCssBlend(mode: string): boolean {
 	return mode === 'normal' || !!BY_ID.get(mode as BlendMode)?.css;
 }
 
-// ---------------------------------------------------------------- formulas (premultiplied RGBA, 0..1)
-
 /** Rec. 709 luminance (Darker / Lighter Color, the luma stencils). */
 export function luminance709(r: number, g: number, b: number): number {
 	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -495,8 +493,6 @@ export function storePremul8(p: Rgba): Rgba {
 		Math.round(c[3] * 255) / 255,
 	];
 }
-
-// ---------------------------------------------------------------- Dissolve noise (deterministic)
 
 /**
  * Dissolve's per-pixel random value in [0, 1) at integer pixel (x, y) of the sequence frame (EffectCraft

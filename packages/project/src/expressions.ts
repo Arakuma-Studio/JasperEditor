@@ -370,8 +370,6 @@ export function documentHasAnyExpressions(doc: Pick<ProjectDocument, 'sequences'
 	return documentExpressionFlags(doc).any;
 }
 
-// ---------------------------------------------------------------- ParamPath ↔ ExpressionRef
-
 /** Command address (S01:CMD-010 ParamPath) of an expression location. */
 export function expressionRefToParamPath(ref: ExpressionRef): string[] {
 	if (ref.owner === 'master') return ['master', ref.seq, ref.path];
@@ -496,8 +494,6 @@ export function locateExpressionTarget(
 	return null;
 }
 
-// ---------------------------------------------------------------- Source Text
-
 /**
  * The text a text clip shows at content time `t`: its Source Text expression's result when the content is bound
  * (see `EXPRESSION_BINDING`), else the stored text.
@@ -510,8 +506,6 @@ export function sourceTextAt(content: TextContent, t: number): string {
 	}
 	return content.text;
 }
-
-// ---------------------------------------------------------------- engine injection
 
 /**
  * Serializable data an expression evaluator needs besides the snapshot: every sequence (layers of other sequences
@@ -540,13 +534,7 @@ export function buildExpressionWorldData(
 		if (it.kind === 'sequence' && !(it.sequenceId in names)) names[it.sequenceId] = it.name;
 	const boxes: Record<string, { width: number; height: number }> = {};
 	for (const seq of Object.values(doc.sequences))
-		for (const clip of Object.values(seq.clips)) {
-			try {
-				boxes[clip.id] = intrinsicBoxOf({ doc, seq, clip });
-			} catch {
-				boxes[clip.id] = { width: seq.settings.width, height: seq.settings.height };
-			}
-		}
+		for (const clip of Object.values(seq.clips)) boxes[clip.id] = intrinsicBoxOf({ doc, seq, clip });
 	const solids: Record<string, [number, number, number, number]> = {};
 	for (const [id, syn] of Object.entries(doc.synthetics ?? {})) {
 		const sy = syn as { kind: string; color?: [number, number, number, number] };
@@ -592,8 +580,6 @@ export function expressionWorldData(doc: ProjectDocument): ExpressionWorldData |
 	if (!documentHasActiveExpressions(doc)) return null;
 	return buildExpressionWorldData(doc);
 }
-
-// ---------------------------------------------------------------- invariants and repair
 
 const MAX_TEXT = 65_536;
 

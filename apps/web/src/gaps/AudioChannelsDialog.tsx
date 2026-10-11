@@ -1,8 +1,5 @@
-// Clip ▸ Modify ▸ Audio Channels… (workstream gaps, docs/wp-notes/gaps.md §AU-7), as Premiere's dialog: Clip Channel
-// Format, Number of Audio Clips (Project items; timeline clips keep their count) and the matrix of Media Source
-// Channels (rows) × clip channels (columns, grouped by clip): each source channel goes to at most one clip channel,
-// each clip channel takes at most one source channel (one without a source is silent). OK commits one undoable
-// `clip.setAudioChannels` (timeline clips) or `item.setAudioChannels` (Project items: future placements).
+// Each source channel maps to at most one clip channel, and each clip channel takes at most one source.
+// An unmapped clip channel is silent. Project-item edits affect future placements; timeline edits retain clip count.
 import {
 	CLIP_CHANNEL_FORMATS,
 	type ClipChannelFormat,
@@ -33,18 +30,12 @@ export function routingOf(
 	const doc = session.getCommitted();
 	if (t.kind === 'clips') {
 		const seq = doc.sequences[t.sequenceId] as Sequence | undefined;
-		const clips = t.clipIds.map((id) => seq?.clips[id]).filter((c) => c?.kind === 'audio') as unknown as {
-			mediaId: string;
-			channels: ClipChannels;
-		}[];
+		const clips = t.clipIds.map((id) => seq?.clips[id]).filter((c) => c?.kind === 'audio');
 		if (!clips.length || new Set(clips.map((c) => c.mediaId)).size !== 1) return null;
 		const asset = doc.media[clips[0]!.mediaId];
 		return asset ? { asset, clips: clips.map((c) => c.channels), fixedCount: true } : null;
 	}
-	const items = t.itemIds.map((id) => doc.items[id]).filter((i) => i?.kind === 'media') as {
-		mediaId: string;
-		audioChannels?: { clips: ClipChannels[] };
-	}[];
+	const items = t.itemIds.map((id) => doc.items[id]).filter((i) => i?.kind === 'media');
 	if (!items.length || new Set(items.map((i) => i.mediaId)).size !== 1) return null;
 	const asset = doc.media[items[0]!.mediaId];
 	if (!asset || !sourceChannels(asset).length) return null;

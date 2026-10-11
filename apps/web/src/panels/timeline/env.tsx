@@ -66,8 +66,6 @@ export function useTimelineEnv(): TimelineEnv {
 	return useContext(EnvContext) ?? defaultEnv;
 }
 
-// ---------------------------------------------------------------- instance registry
-
 const instances = new Map<string, { handle: TimelineHandle; at: number }>();
 let counter = 0;
 

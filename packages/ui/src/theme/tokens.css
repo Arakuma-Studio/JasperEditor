@@ -315,7 +315,6 @@
 	--pr-label-yellow-tint: #f5ed9f;
 }
 
-/* Effect Controls Value / Velocity graphs (S03:KF-022, S05:ECP-006). */
 :root {
 	--pr-graph-bg: var(--pr-bg-field);
 	--pr-graph-grid: rgba(255, 255, 255, 0.08);
@@ -324,11 +323,9 @@
 	--pr-graph-x: #f0524f;
 	--pr-graph-y: #3fcf5a;
 	--pr-graph-handle: var(--pr-accent);
-	/* Wave expressions: the post-expression curve (AE draws it over the keyframed one). */
 	--pr-graph-post: #ff6b5a;
 }
 
-/* Wave expressions: expression values (AE shows them red), the code field and its syntax colours. */
 :root {
 	--pr-expr-value: #ff5f4d;
 	--pr-expr-bg: #1b1b1b;
@@ -345,7 +342,6 @@
 	--pr-expr-selection: rgba(80, 140, 255, 0.35);
 }
 
-/* wp-m2-color: Lumetri Color panel (sliders, curves, wheels) and Lumetri Scopes (S06 §6–§7). */
 :root {
 	--pr-slider-track: #3a3a3a;
 	--pr-slider-fill: var(--pr-accent);
@@ -394,7 +390,6 @@
 	--pr-scope-ire: rgba(255, 255, 255, 0.1);
 }
 
-/* wp-m2-transitions: transitions drawn on the timeline (S10:TUI-001…006, TUI-020…022). */
 :root {
 	--pr-transition-fill: rgba(112, 112, 128, 0.72);
 	--pr-transition-border: rgba(236, 236, 242, 0.8);
@@ -414,7 +409,6 @@
 	--pr-transition-default-badge: var(--pr-accent);
 }
 
-/* M2 animation (S11:ATP-007, ARCHITECTURE §20.6): engine badge of anime templates ("anime · Remotion"). */
 :root {
 	--pr-engine-anime: #ff7ab8;
 }

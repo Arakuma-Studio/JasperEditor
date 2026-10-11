@@ -5,19 +5,6 @@
 //   node scripts/package.mjs [--dir] [--platform linux|win32|darwin] [--arch x64|arm64] [--skip-build]
 //                            [--stage-only]
 //
-//   1. LGPL FFmpeg + Remotion binaries directory for the target (`pnpm ffmpeg:lgpl --platform <key>`)
-//      → vendor/ffmpeg-lgpl/<platform>-<arch>, staged as vendor/ffmpeg-lgpl/.package/<os>-<arch> and
-//      shipped as <resources>/ffmpeg-lgpl.
-//   2. `pnpm build` and the prebuilt Remotion bundle + fonts (`build:remotion`); THIRD_PARTY_NOTICES.md must be
-//      current (`pnpm notices --check`) and present in the web build.
-//   3. apps/engine/dist-deploy: engine.mjs, remotion-bundle/, fonts/ and node_modules with the runtime
-//      closure of @remotion/renderer copied from this workspace (the locked versions) WITHOUT optional
-//      dependencies — so no @remotion/compositor-* package (they bundle a GPL FFmpeg) is ever staged.
-//   4. jasper-mg → native/bin/<os>-<arch> when it was built for this host (`pnpm mg:build`).
-//   5. License guard over everything staged (`scripts/ffmpeg/check-lgpl.mjs`), then electron-builder;
-//      its afterPack hook (scripts/after-pack.cjs) runs the guard again over the packed app and fails the
-//      build on any GPL/nonfree FFmpeg, an x264/x265/fdk-aac library, a compositor package or a missing
-//      LGPL directory.
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -50,7 +37,6 @@ if (!['linux', 'win32', 'darwin'].includes(platform)) fail(`unknown --platform $
 
 const os = { linux: 'linux', win32: 'win', darwin: 'mac' }[platform]; // electron-builder's ${os}
 
-// ------------------------------------------------------------------ 1. LGPL FFmpeg
 run('node', ['scripts/ffmpeg/fetch-or-build-lgpl.mjs', '--platform', key]);
 const lgplDir = join(root, 'vendor', 'ffmpeg-lgpl', key);
 // electron-builder's file macros know the target as ${os}-${arch} (its ${platform} is the HOST platform),
@@ -60,7 +46,6 @@ rmSync(lgplStage, { recursive: true, force: true });
 mkdirSync(dirname(lgplStage), { recursive: true });
 cpSync(lgplDir, lgplStage, { recursive: true, verbatimSymlinks: true });
 
-// ------------------------------------------------------------------ 2. builds
 if (!flag('skip-build')) {
 	run('pnpm', ['build']);
 	run('pnpm', ['--filter', '@jasper/engine', 'build:remotion']);
@@ -73,24 +58,18 @@ run('node', ['scripts/third-party-notices.mjs', '--check']);
 if (!existsSync(join(root, 'apps/web/dist/THIRD_PARTY_NOTICES.md')))
 	fail('apps/web/dist/THIRD_PARTY_NOTICES.md is missing (rebuild the web app)');
 
-// ------------------------------------------------------------------ 3. engine deploy directory
 const deploy = join(engine, 'dist-deploy');
 rmSync(deploy, { recursive: true, force: true });
 mkdirSync(deploy, { recursive: true });
 cpSync(join(engine, 'dist', 'engine.mjs'), join(deploy, 'engine.mjs'));
 cpSync(join(engine, 'dist', 'remotion-bundle'), join(deploy, 'remotion-bundle'), { recursive: true });
 cpSync(join(engine, 'dist', 'fonts'), join(deploy, 'fonts'), { recursive: true });
-// S11:FIX-010: a copy next to the engine too (<resources>/engine/THIRD_PARTY_NOTICES.md).
 cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(deploy, 'THIRD_PARTY_NOTICES.md'));
-// Clip processing (wp-m2-process): jasper-proc + its worker, the vid.stab WASM module, models, licence texts.
 for (const f of [
 	'jasper-proc.mjs',
 	'jasper-proc.package.json',
-	// wp speech: the speech-to-text worker (onnxruntime-node is staged below)
 	'jasper-speech.mjs',
-	// parity roto: the Roto Brush / face tracking worker (onnxruntime-node and OpenCV.js are staged below)
 	'jasper-roto.mjs',
-	// three-d: the 3D Camera Tracker worker (OpenCV.js is staged below)
 	'jasper-camtrack.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
@@ -176,7 +155,6 @@ writeFileSync(
 );
 log(`staged ${deploy} (${packages} runtime packages, no optional dependencies)`);
 
-// ------------------------------------------------------------------ 4. jasper-mg
 const mgExe = platform === 'win32' ? 'jasper-mg.exe' : 'jasper-mg';
 const mgBuilt = join(root, 'native', 'mg', 'target', 'release', mgExe);
 const binDir = join(root, 'native', 'bin', `${os}-${arch}`);
@@ -191,7 +169,6 @@ if (key === `${process.platform}-${process.arch}` && existsSync(mgBuilt)) {
 	);
 }
 
-// ------------------------------------------------------------------ 5. guard + electron-builder
 const guard = join(root, 'scripts', 'ffmpeg', 'check-lgpl.mjs');
 run('node', [guard, lgplStage]);
 run('node', [guard, '--allow-empty', deploy, binDir, join(root, 'apps', 'web', 'dist')]);

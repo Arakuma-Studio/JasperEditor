@@ -1,4 +1,4 @@
-// Time Remapping edits (workstream `time`): pure operations on a remap curve in content time, Premiere's rubber-band
+// Time Remapping edits: pure operations on a remap curve in content time, Premiere's rubber-band
 // gestures. Every edit keeps the media frames anchored by keyframes (a keyframe is a source frame) and reports how
 // content after the edit moved (`shift`), so the command can move the clip's out point with it — Premiere: "Speeding
 // up a segment of a clip makes the segment shorter, and slowing down a segment makes it longer" (Premiere Pro CS6

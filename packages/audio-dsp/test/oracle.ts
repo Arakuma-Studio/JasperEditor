@@ -1,4 +1,3 @@
-// Shared harness of the loudness oracle tests: LoudnessMeter vs ffmpeg's `ebur128` filter vs published values.
 // Ported from FilmCraft crates/audio-dsp/tests/loudness_oracle.rs and extended.
 //
 // Each signal is written as a 32-bit float WAV with our own `encodeWav` (WAVE_FORMAT_EXTENSIBLE, channel mask 0x3F
@@ -125,7 +124,6 @@ function parse(stdout: string, err: string): FfResult {
 
 type Ours = { m: number[]; s: number[]; meter: LoudnessMeter };
 
-/** Our meter fed in 100 ms blocks, with M and S after each block. */
 export function ours(ch: Float32Array[], sr: number): Ours {
 	const meter = new LoudnessMeter(sr, ch.length);
 	const block = Math.round(sr / 10);
@@ -140,7 +138,6 @@ export function ours(ch: Float32Array[], sr: number): Ours {
 	return { m, s, meter };
 }
 
-/** Published (or analytic) expectations. */
 export type Expect = {
 	i?: number;
 	m?: number;
@@ -173,7 +170,6 @@ export class Oracle {
 
 	constructor(readonly ff: Ffmpeg) {}
 
-	/** Measure `ch` with both meters and check all tolerances. */
 	async compare(name: string, input: Float32Array[], sr: number, exp?: Expect): Promise<Row> {
 		if (!this.tmp) this.tmp = mkdtempSync(join(tmpdir(), 'jasper-audio-dsp-oracle-'));
 		const ch = input.map((c) => fadeEdges(c, sr));
@@ -265,7 +261,6 @@ export class Oracle {
 		r.ff.sp = spRef.v;
 		near(r.ours.tp, tpRef.v, TOL_DB + tpRef.q, 'true peak');
 		near(r.ours.sp, spRef.v, TOL_DB + spRef.q, 'sample peak');
-		// the one-decimal stderr summary agrees with the per-frame metadata
 		if (r.ff.i > -70) expect(Math.abs(r.sum.i - r.ff.i), `${name}: summary I`).toBeLessThanOrEqual(0.051);
 		expect(Math.abs(r.sum.lra - r.ff.lra), `${name}: summary LRA`).toBeLessThanOrEqual(0.051);
 		expect(Math.abs(r.sum.tp - r.ff.tp), `${name}: summary TP`).toBeLessThanOrEqual(0.051 + tpRef.q);
@@ -298,7 +293,6 @@ export class Oracle {
 		return r;
 	}
 
-	/** Remove the temp dir and print the comparison table. */
 	finish(title: string): void {
 		if (this.tmp) rmSync(this.tmp, { recursive: true, force: true });
 		if (this.rows.length === 0) return;
@@ -324,7 +318,6 @@ export class Oracle {
 	}
 }
 
-/** Stereo pair of the same signal. */
 export const dual = (x: Float32Array): Float32Array[] => [x, x.slice()];
 
 /** Analytic integrated loudness of steady sines: Σ_c w_c·A_c²/2·|K(f)|² → LUFS. */

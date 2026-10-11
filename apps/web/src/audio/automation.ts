@@ -15,8 +15,8 @@
 // Touch after Write" — Write strips change to Touch. Without playback a release commits the value once
 // (`mixer.setLane` / `clipMixer.set`: the static value, or a keyframe at the playhead when the lane is automated).
 import { activeMixGraph } from '@jasper/compositions';
+import type { CommandInput } from '@jasper/project';
 import {
-	type Animatable,
 	type AutomationMode,
 	evaluate,
 	FLICKS_PER_SECOND,
@@ -112,20 +112,13 @@ export function clipLaneValue(seq: Sequence, trackId: string, lane: string, t: n
 		)
 			continue;
 		if (c.start * F > t || t >= (c.start + c.duration) * F) continue;
-		const clip = c as unknown as {
-			volumeDb: { value: number; keyframes: { time: number; value: number }[] };
-			pan: { value: number; keyframes: { time: number; value: number }[] };
-			sourceIn: number;
-			start: number;
-			duration: number;
-			speed: { rate: number; reverse: boolean };
-		};
+		const clip = c;
 		const local = t / F - clip.start;
 		const content = clip.speed.reverse
 			? clip.sourceIn + (clip.duration - local) * F * clip.speed.rate
 			: clip.sourceIn + local * F * clip.speed.rate;
 		const a = lane === CLIP_LANE_VOLUME ? clip.volumeDb : clip.pan;
-		return evaluate(a as Animatable<number>, content);
+		return evaluate(a, content);
 	}
 	return null;
 }
@@ -212,8 +205,6 @@ export class MixerController {
 		return this.held.has(`${strip}|${lane}`);
 	}
 
-	// -------------------------------------------------------------- pass
-
 	private startPass(): void {
 		const seq = this.seq();
 		if (!seq) return;
@@ -259,7 +250,7 @@ export class MixerController {
 		const prefs = audioPrefs.get();
 		const tStop = this.now();
 		const automatch = Math.round(prefs.automatchSeconds * FLICKS_PER_SECOND);
-		const commands: unknown[] = [];
+		const commands: CommandInput[] = [];
 		for (const g of pass.gestures) {
 			if (g.points.length === 0) continue;
 			const clip = isClipLane(g.lane);
@@ -315,14 +306,11 @@ export class MixerController {
 					});
 			}
 		}
-		if (commands.length)
-			this.session.apply({ label: 'Write Automation', origin: 'user', commands: commands as never });
+		if (commands.length) this.session.apply({ label: 'Write Automation', origin: 'user', commands });
 		graph?.clearOverrides();
 		this.held.clear();
 		this.emit();
 	}
-
-	// -------------------------------------------------------------- controls
 
 	private modeOf(seq: Sequence, strip: string, lane: string): AutomationMode {
 		if (isClipLane(lane)) return clipModeOf(seq, strip);

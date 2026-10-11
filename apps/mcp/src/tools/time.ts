@@ -1,6 +1,3 @@
-// Workstream `time` MCP tools (docs/wp-notes/time.md): Premiere's Time Remapping (speed keyframes, ramps, freeze and
-// reverse segments), Time Interpolation (Frame Sampling / Frame Blending / Optical Flow) and Scene Edit Detection.
-// Every edit is one transaction of document commands (also available through apply_commands).
 import type { EngineJob, SceneDetectResult } from '@jasper/api';
 import {
 	activeRemap,
@@ -16,6 +13,7 @@ import {
 	timeInterpolationOf,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	applyCommands,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -33,10 +31,7 @@ import {
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions. */
 export const TIME_GUIDE = `Time remapping, time interpolation, scene edit detection:
 - Speeds are Premiere percentages: 100 = normal, 50 = half speed (twice as long), 200 = double speed; time remap segments go up to 20,000 %. get_time_remap shows a clip's speed segments (forward / reverse / hold, frames, speed, media seconds) and speed keyframes.
 - Time Remapping (video and nested-sequence clips, multi-camera clips too): set_segment_speed changes the speed of the segment under a frame (it keeps its source frames, so the clip gets longer or shorter; without ripple it stops at the next clip and the rest goes into its tail, ripple moves the clips after it). add_speed_keyframe splits a segment at a frame; set_speed_transition ramps the speed change around a keyframe over N frames (ease 0 linear … 1 smooth); move_speed_keyframe moves one; add_freeze_segment holds a frame for a duration; add_reverse_segment plays backward for a duration then forward again (Premiere's palindrome reverse). remove_time_remap / set_time_remap enabled:false deletes every speed keyframe.

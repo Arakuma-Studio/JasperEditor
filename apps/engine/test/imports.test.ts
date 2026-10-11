@@ -1,7 +1,3 @@
-// imports workstream on the engine (docs/wp-notes/imports.md): the ZIP reader (round trip + fuzz), PSD blend-mode
-// mapping, decode filters, then against a real engine and real ffmpeg: probing every imported format, the Lottie /
-// vector sources, PDF pages, image-sequence conform with a gap, PSD layer extraction, display pictures of stills,
-// Lottie export, and Interpret Footage ▸ Alpha Channel through the native export (measured pixels).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -47,7 +43,6 @@ describe('zip reader', () => {
 			const e = listZip(buf);
 			expect(e[0]!.method).toBe(8);
 			expect(readZipEntry(buf, e[0]!).toString()).toBe('hello '.repeat(1000));
-			// Entries larger than the cap are refused (zip bombs).
 			expect(() => readZipEntry(buf, e[0]!, 100)).toThrow(ZipError);
 		}
 	});
@@ -240,7 +235,6 @@ describe('imports on the engine', () => {
 		expect(flat.some((l) => l.blendMode !== 'normal' && l.blendMode !== 'pass-through')).toBe(true);
 		expect(flat.some((l) => !l.visible)).toBe(true);
 		expect(flat.filter((l) => l.media).every((l) => l.media!.kind === 'image')).toBe(true);
-		// Merged Layers: a document-size picture of the chosen layers.
 		const pixel = flat.filter((l) => l.media).map((l) => l.index);
 		const m = await post('/api/imports/layers?wait=1', { mediaKey: psd.mediaKey, merge: pixel.slice(0, 2) });
 		const merged = (m.json().result as LayeredExtractResult).merged!;
@@ -265,7 +259,6 @@ describe('imports on the engine', () => {
 		const served = await get(`/media/${exr.mediaKey}/variant/display`);
 		expect(served.statusCode).toBe(200);
 		expect(served.headers['content-type']).toBe('image/png');
-		// A variant that is not canonical is refused.
 		expect((await get(`/media/${exr.mediaKey}/variant/display?v=bogus`)).statusCode).toBe(400);
 	}, 120_000);
 
@@ -330,7 +323,6 @@ describe('imports on the engine', () => {
 						scaling: 'fit',
 						quality: { mode: 'crf', value: 12 },
 						encoderSpeed: 'fast',
-						colorTags: 'rec709',
 					},
 					audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 					engine: 'native',

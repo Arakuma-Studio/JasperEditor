@@ -104,8 +104,7 @@ export function AudioLayer({
 	const generated = useGeneratedAudio(clip, { num, den });
 	const mediaUrl =
 		!generated && media && (media.hasAudio || media.kind === 'audio') ? mediaSrc(media, options) : null;
-	// Workstream `time`: a reversed clip plays its range reversed in the page (Remotion's <Audio> plays forwards only).
-	// imports: interpreted media (assumed frame rate, loop) plays a WAV of its interpreted range made in the page.
+	// Remotion's Audio plays forwards only; reversed and interpreted ranges use a WAV prepared in the page.
 	const mapped = !!clip.mediaTime;
 	const reversed = useReversedAudio(clip, clip.speed.reverse && !mapped ? mediaUrl : null, { num, den });
 	const mappedUrl = useMappedAudio(clip, mapped ? mediaUrl : null, { num, den });
@@ -130,8 +129,6 @@ export function AudioLayer({
 		audio
 	);
 }
-
-// ---------------------------------------------------------------- workstream `time`: reversed clips
 
 /**
  * The reversed WAV of a reversed clip's content (its handles included): WAV time 0 is the content shown at the first
@@ -168,8 +165,6 @@ function useReversedAudio(clip: RenderAudioClip, src: string | null, fps: Ration
 	}, [src, lo, hi, rendering]);
 	return src ? url : null;
 }
-
-// ---------------------------------------------------------------- imports: interpreted media
 
 /**
  * The WAV of a clip of interpreted media (Interpret Footage ▸ assumed frame rate / loop): its content range with the
@@ -213,8 +208,6 @@ function useMappedAudio(clip: RenderAudioClip, src: string | null, fps: Rational
 	return src ? url : null;
 }
 
-// ---------------------------------------------------------------- audio-fx: latency compensation
-
 type SharedAudio = NonNullable<React.ContextType<typeof Internals.SharedAudioContext>>;
 
 /** Total latency (samples at 48 kHz) of a clip's enabled effects. */
@@ -243,8 +236,6 @@ function compensate(shared: SharedAudio, shift: number): Partial<SharedAudio> {
 		},
 	};
 }
-
-// ---------------------------------------------------------------- edit-structure: synthetic sounds
 
 const SAMPLE_RATE = 48000;
 const generatedUrls = new Map<string, string>();

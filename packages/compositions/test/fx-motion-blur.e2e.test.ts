@@ -1,11 +1,4 @@
 // @vitest-environment node
-// Adaptive shutter motion blur (wave 5) on the Remotion render path: renders stills of the moving effects and
-// transitions whose blur was upgraded — S_Shake (Twitchy, high amplitude), S_WarpCornerPin with a fast keyframed
-// move, Transform with a 180° shutter (keyframed position + rotation), Travel Motion (a Film Impact-style slide) and
-// S_SwishPan — over a picture with a fine grid (ghost copies show as repeated grid lines), checks that the blur is
-// applied, deterministic across renders and independent of the frame order, and leaves the PNGs in MB_E2E_OUT (or the
-// printed temp dir) for a visual check / the before-after contact sheet in docs/screenshots/fx/motion-blur/.
-// Gated by REMOTION_E2E=1 (needs Chrome and ffmpeg).
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,7 +11,6 @@ import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './f
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
 
-/** A keyframe command on an effect added with `ref`. */
 const key = (ref: string, param: string, frames: number, value: unknown): Command =>
 	({ type: 'keyframe.add', target: ['effect', ref, param], at: { frames }, value }) as Command;
 

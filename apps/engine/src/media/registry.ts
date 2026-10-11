@@ -42,16 +42,13 @@ export type MediaRecord = {
 	hasAudio: boolean;
 	interlaced?: boolean;
 	registeredAt: string;
-	/** M2: kind `lut` header (wp-m2-color prober). */
 	lut?: LutInfo;
-	// imports workstream: vector / Lottie / layered / image-sequence descriptors (copied into RegisteredMedia).
 	vector?: VectorInfo;
 	lottie?: LottieInfo;
 	layered?: LayeredInfo;
 	imageSequence?: ImageSequenceInfo;
-	/** M2: kind `mg-bundle` header (wp-m2-mg; storage is the bundle directory). */
+	/** Bundle media are stored as directories. */
 	mgBundle?: MgBundleInfo;
-	/** color-mgmt: kind `color-config` header (OCIO bundle prober). */
 	colorConfig?: ColorConfigInfo;
 	/**
 	 * M2: an engine-produced processed version (wp-m2-process): source key and recipe hash; M3 (S07:PRC-015): the

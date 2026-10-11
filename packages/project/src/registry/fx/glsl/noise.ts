@@ -1,4 +1,4 @@
-// Shared GLSL: seeded procedural noise (wave-1 fx framework): value noise, gradient (Perlin-style) noise, simplex
+// Shared GLSL: seeded procedural noise: value noise, gradient (Perlin-style) noise, simplex
 // noise (2D, 3D), fractal sums (fbm, turbulence, ridged) and cellular (Worley) noise. Every function takes a `seed`
 // (pass `u_seed`, or `u_seed + k` for independent layers) and is built on the integer hashes of fx/hash, so the
 // patterns are deterministic. Output ranges: value/gradient/simplex ≈ −1..1 (fx_*01 variants 0..1).

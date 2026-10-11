@@ -1,12 +1,3 @@
-// M2 UI commands: Process Clip…, Use Original/Processed Version, Preferences ▸ Processing. Owner: wp-m2-process (ARCHITECTURE §19.10).
-// This module is imported at start-up (commands/index.ts), so it is also where the package registers its UI
-// extensions (extensions/index.ts: effect editors, clip sections, Program overlays, menu entries).
-//   process.processClip   Clip ▸ Process Clip… (selected timeline video clips, else the selected Project item)
-//   process.useOriginal   switch the selected clips back to their original media
-//   media.replaceFootage  Clip ▸ Replace Footage… (selected Project item, else the selected clip's media;
-//                         wp-m3-inpoint, S07:PRC-018)
-//   app.preferences       Edit ▸ Preferences (dialog shell with a page registry; args {page?})
-//   process.preferences   Preferences ▸ Processing
 import { type MediaAsset, originalMediaId } from '@jasper/project';
 import { z } from 'zod';
 import {

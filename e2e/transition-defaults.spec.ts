@@ -1,7 +1,3 @@
-// S10:TUI-031…035 (wp-m3-transdefaults) through the built app: Sequence ▸ Transition Defaults… opens
-// Preferences ▸ Timeline; the default video transition, alignment and the project's video duration are changed
-// there (the duration is one History step, the preferences none); Ctrl+D then applies exactly those; after a
-// reload the project duration (saved with the project) and the preferences (this computer) are still there.
 // The two clips are placed by the in-page agent API (setup only) so they have media handles around the cut.
 
 import { join } from 'node:path';
@@ -13,6 +9,7 @@ import {
 	enableAgentBridge,
 	focusTimeline,
 	importFiles,
+	mediaIdForFile,
 	query,
 	ROOT,
 	transact,
@@ -66,22 +63,22 @@ test('Sequence ▸ Transition Defaults… opens Preferences ▸ Timeline', async
 	const a = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'xfade-red.mp4' } },
+			source: { mediaId: await mediaIdForFile(page, 'xfade-red.mp4') },
 			at: 0,
 			sourceRange: { in: { seconds: 1 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(a.ok, JSON.stringify(a.errors)).toBe(true);
+	expect(a.ok, JSON.stringify(a)).toBe(true);
 	cut = (await clips(page, ['V1']))[0]!.end;
 	const b = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'xfade-blue.mp4' } },
+			source: { mediaId: await mediaIdForFile(page, 'xfade-blue.mp4') },
 			at: cut,
 			sourceRange: { in: { seconds: 2 }, out: { seconds: 5 } },
 		},
 	]);
-	expect(b.ok, JSON.stringify(b.errors)).toBe(true);
+	expect(b.ok, JSON.stringify(b)).toBe(true);
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 90_000 });
 	await menubar().getByRole('menuitem', { name: 'Sequence', exact: true }).click();
 	await page.getByRole('menuitem', { name: /^Transition Defaults…/ }).click();
@@ -119,7 +116,6 @@ test('change the default video transition, alignment and duration; only the dura
 	);
 	expect(settings).toMatchObject({ defaultTransitionFrames: 12, defaultAudioTransitionFrames: 15 });
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transition-defaults-changed.png') });
-	// Esc while a field is being edited reverts it and keeps the dialog open; the next Esc closes it.
 	await field.fill('99');
 	await field.press('Escape');
 	await expect(dialog()).toBeVisible();

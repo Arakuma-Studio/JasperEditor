@@ -1,6 +1,4 @@
-// M1 golden path (ARCHITECTURE §15 items 2–8 and 13), driven through the UI of the built app served by the
-// built engine. Steps share one page and run in order; a failing step skips the rest.
-
+// Each test continues the project left by the preceding test.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -46,7 +44,6 @@ test('Home → New Project opens the Editing workspace', async () => {
 test('import clip-a.mp4 through the file chooser → Project panel row with a poster', async () => {
 	await importFiles(page, ['clip-a.mp4']);
 	expect(await appliedLabels(page)).toContain('Import 1 file');
-	// Icon view shows the engine poster once the derivative job finished.
 	await page.getByTestId('project-icon-view').click();
 	const tile = page.getByTestId('project-tile').filter({ hasText: 'clip-a.mp4' });
 	await expect(tile).toBeVisible();
@@ -74,7 +71,6 @@ test('drag the item to the timeline → linked V1/A1 clips', async () => {
 	// 10 s at 29.97 fps = 300 frames (rounded from 299.7).
 	expect(Math.abs(v1!.duration - 300)).toBeLessThanOrEqual(1);
 	expect((await appliedLabels(page)).at(-1)).toMatch(/Place|Overwrite|Insert/);
-	// Header: autosave reaches "Saved"; the Jobs badge settles once the derivative jobs are done.
 	await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 20_000 });
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 60_000 });
 });
@@ -88,7 +84,6 @@ test('Space plays the Program monitor, Space stops it; the monitor shows the fra
 	await page.waitForTimeout(300);
 	const after = await playheadFrame(page);
 	expect(after - before).toBeGreaterThan(10);
-	// Seek to 3 s by clicking the ruler, then the Program output must contain the test pattern.
 	const ruler = (await page.getByTestId('timeline-ruler').boundingBox())!;
 	await page.mouse.click(ruler.x + ruler.width * 0.3, ruler.y + ruler.height / 2);
 	await expect.poll(async () => (await programPixels(page)).std, { timeout: 20_000 }).toBeGreaterThan(20);
@@ -97,7 +92,6 @@ test('Space plays the Program monitor, Space stops it; the monitor shows the fra
 test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async () => {
 	let [a1, v1] = await clips(page);
 	const labelsBefore = (await appliedLabels(page)).length;
-	// Move (overwrite) the video clip right by ~1 s.
 	const b = await clipBox(page, v1!.id);
 	const pxPerFrame = b.width / v1!.duration;
 	await pointerDrag(
@@ -107,12 +101,11 @@ test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async (
 	);
 	await expect.poll(async () => (await clips(page, ['V1']))[0]!.start).toBeGreaterThan(20);
 	[a1, v1] = await clips(page);
-	expect(a1!.start).toBe(v1!.start); // linked partner moved too
+	expect(a1!.start).toBe(v1!.start);
 	expect((await appliedLabels(page)).length).toBe(labelsBefore + 1);
 	const moved = v1!.start;
 	const movedEnd = v1!.end;
 
-	// Trim the head by dragging the left edge right by ~2 s (regular trim).
 	const b2 = await clipBox(page, v1!.id);
 	await pointerDrag(
 		page,
@@ -123,11 +116,10 @@ test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async (
 	expect((await appliedLabels(page)).length).toBe(labelsBefore + 2);
 	[a1, v1] = await clips(page);
 	expect(v1!.start).toBeGreaterThan(moved + 40);
-	expect(v1!.end).toBe(movedEnd); // head trim keeps the out point
+	expect(v1!.end).toBe(movedEnd);
 	const trimmedDuration = v1!.duration;
 	const trimmedStart = v1!.start;
 
-	// Razor tool (C) click at mid-clip → two clips on V1 (and A1, linked).
 	await focusTimeline(page);
 	await page.keyboard.press('KeyC');
 	const b3 = await clipBox(page, v1!.id);
@@ -137,7 +129,6 @@ test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async (
 	expect((await clips(page, ['A1'])).length).toBe(2);
 	expect((await appliedLabels(page)).length).toBe(labelsBefore + 3);
 
-	// Undo the razor, then redo it.
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(1);
@@ -242,8 +233,7 @@ test('Type tool click in the Program monitor adds a text clip', async () => {
 	expect((await appliedLabels(page)).at(-1)).toMatch(/Text/);
 });
 
-// M2 (S11:LBK-001, wp-m2-layer-bake): Auto bakes text (`hybrid`, e2e/layer-bake.spec.ts); the Remotion path is
-// exercised by forcing it.
+// Force Remotion here because automatic planning bakes text through the hybrid path.
 test('with the text clip, the forced Remotion export succeeds', async ({ request }) => {
 	test.setTimeout(1_200_000);
 	const frames = await sequenceFrames();
@@ -259,7 +249,6 @@ test('with the text clip, the forced Remotion export succeeds', async ({ request
 });
 
 test('Program monitor accepts effect drops (layer under the pointer) and motion-template drops', async () => {
-	// Park the playhead inside the footage so the Program shows the V1 layer.
 	const v1 = (await clips(page, ['V1'])).at(-1)!;
 	await focusTimeline(page);
 	const ruler = (await page.getByTestId('timeline-ruler').boundingBox())!;

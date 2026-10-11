@@ -1,8 +1,5 @@
-// Track height presets (workstream gaps, docs/wp-notes/gaps.md §TL-10): Premiere's Timeline Display Settings ▸
-// Save Preset… / Manage Presets… and the presets themselves. A preset remembers the height of every video and audio
-// track by position (V1, V2 … / A1, A2 …), like Premiere's; applying it to a sequence with more tracks leaves the extra
-// tracks at their height. Presets are a user preference (all projects), stored in localStorage; the heights of a
-// sequence itself stay in its view state (saved with the project's view file).
+// Presets address tracks by position, leaving extra tracks unchanged. Presets are global preferences;
+// a sequence's current heights belong to its saved view state.
 import { clampHeight } from '../panels/timeline/model/layout.ts';
 
 export type TrackHeightPreset = { id: string; name: string; video: number[]; audio: number[] };

@@ -1,7 +1,3 @@
-// Oracle test, part 2: synthetic programmes (sines across the band and levels, different L/R content, mono, 5.1 with
-// LFE and surround weighting, seeded white / pink noise, speech-like, gated and loudness-modulated programmes,
-// inter-sample peaks) at 32 / 44.1 / 48 / 96 kHz, LoudnessMeter vs ffmpeg's `ebur128` (and analytic values where
-// they exist). See oracle.ts for the method and tolerances.
 import { afterAll, describe, it } from 'vitest';
 import { dual, type Ffmpeg, findFfmpeg, Oracle, sineLufs } from './oracle.ts';
 import { concat, dbfs, pink, sine, speech, white } from './util.ts';

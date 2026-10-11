@@ -1,4 +1,4 @@
-// The shared GLSL library of the fx framework (wave 1). Each chunk is a `GlslChunk` listed in a pass's `include`;
+// The shared GLSL library of the fx framework. Each chunk is a `GlslChunk` listed in a pass's `include`;
 // dependencies are pulled in automatically, each chunk once. Function names start with `fx_`, constants with `FX_`.
 // Catalogue (every function is compiled by packages/compositions/test/fx-gl.test.ts in Chrome's WebGL2):
 //   fx/hash       fx_pcg, fx_hash1/2/3, fx_hash22/33, fx_random (integer, seeded, exact on every GPU)
@@ -31,7 +31,13 @@ import { GLSL_MB } from './motion-blur.ts';
 import { GLSL_NOISE } from './noise.ts';
 import { GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
-export { FX_BLEND_MODE_LABELS, FX_BLEND_MODES, FX_BLEND_TO_LAYER, GLSL_BLEND } from './blend.ts';
+export {
+	FX_BLEND_MODE_LABELS,
+	FX_BLEND_MODES,
+	FX_BLEND_TO_LAYER,
+	GLSL_BLEND,
+	GLSL_LAYER_BLEND,
+} from './blend.ts';
 export { FX_BLUR_MAX_TAPS, GLSL_BLUR } from './blur.ts';
 export { GLSL_COLOR } from './color.ts';
 export { GLSL_COMPOSITE } from './composite.ts';

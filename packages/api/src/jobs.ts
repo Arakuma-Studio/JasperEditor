@@ -1,4 +1,3 @@
-// Engine jobs (S04 §17.1, ARCHITECTURE §9.3).
 import { z } from 'zod';
 
 export const JOB_KINDS = [
@@ -18,30 +17,30 @@ export const JOB_KINDS = [
 	'browser-download',
 	'gc',
 	'relink-scan',
-	// wp interchange: timeline export (pre-renders, audio essence, the document)
+
 	'interchange-export',
-	// M2 (ARCHITECTURE §19.7)
+
 	'process',
 	'track',
 	'mg-bundle',
 	'mg-prerender',
 	'layer-bake',
 	'remote-setup',
-	// M3 (wp-m3-cachegc): moving the media cache to another folder (S04:CA-021)
+
 	'cache-move',
-	// Workstream `time`: Scene Edit Detection
+
 	'scene-detect',
-	// parity (roto): Roto Brush segmentation / propagation and face tracking
+
 	'roto',
-	// parity (three-d): 3D Camera Tracker (feature tracking + camera solve)
+
 	'camtrack',
-	// imports: interpreted variants, image sequences, layered documents
+
 	'interpret',
 	'image-sequence',
 	'layers',
-	// previews: Render Effects In to Out / Render In to Out / Render Selection / Render Audio
+
 	'preview',
-	// gaps: Create Proxies / ingest, Project Manager, Warp Stabilizer analysis, Auto Reframe analysis
+
 	'proxy-create',
 	'project-manager',
 	'warp-analysis',

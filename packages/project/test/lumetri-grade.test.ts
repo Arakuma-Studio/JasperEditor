@@ -1,15 +1,17 @@
-// color-grade: the Lumetri completion — creative adjustments, built-in looks, hue/saturation curves, section
-// switches (pointwise, baked into the colour run) and the spatial stage's maths and snapshot expansion.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
 import {
+	type Animatable,
 	addColorToKey,
 	bakeColorRun,
 	type ColorOpContext,
 	CREATIVE_LOOKS,
+	type CurveValue,
 	DEFAULT_SECONDARY_KEY,
 	defaultEffectRegistry,
+	EASE_PRESETS,
+	type EffectParams,
 	effectiveParams,
 	expandLumetriSpatial,
 	hslToRgb,
@@ -29,6 +31,7 @@ import {
 	lumetriSpatialSettings,
 	lumetriUsesSpatial,
 	offsetCurveFn,
+	type ParamValue,
 	type Rgb,
 	removeColorFromKey,
 	rgbToHsl,
@@ -40,8 +43,8 @@ import {
 } from '../src/index.ts';
 
 const NO_LUTS: ColorOpContext = { lut: () => null };
-const run = (params: Record<string, unknown>, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb => {
-	const fn = lumetriFn(params as never, ctx);
+const run = (params: EffectParams, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb => {
+	const fn = lumetriFn(params, ctx);
 	const out: Rgb = [c[0], c[1], c[2]];
 	fn?.(out);
 	return out;
@@ -57,9 +60,7 @@ describe('Lumetri completion params', () => {
 		expect(names).toContain('vignetteAmount');
 		expect(names).toContain('secHueCenter');
 		expect(new Set(names).size).toBe(names.length);
-		// Every spatial param exists on the Lumetri spec.
 		for (const n of LUMETRI_SPATIAL_PARAMS) expect(names).toContain(n);
-		// Section switches and groups.
 		expect(LUMETRI_GROUPS.map((g) => g.group)).toEqual([
 			'basic',
 			'creative',
@@ -69,7 +70,6 @@ describe('Lumetri completion params', () => {
 			'vignette',
 		]);
 		for (const g of LUMETRI_GROUPS) expect(names).toContain(g.toggle);
-		// The defaults change nothing (bit-exact old grades).
 		expect(lumetriFn(effectiveParams(LUMETRI_EFFECT, {}), NO_LUTS)).toBeNull();
 		expect(lumetriSpatialActive(lumetriSpatialSettings(effectiveParams(LUMETRI_EFFECT, {})))).toBe(false);
 	});
@@ -143,7 +143,6 @@ describe('Creative adjustments (pointwise)', () => {
 			domainMax: [1, 1, 1] as Rgb,
 			data: new Float32Array(24),
 		};
-		// An all-black LUT.
 		const ctx: ColorOpContext = { lut: () => lut };
 		const out = run({ look: { mediaId: 'm' }, creativeLook: 'arctic' }, [0.5, 0.5, 0.5], ctx);
 		expect(out).toEqual([0, 0, 0]);
@@ -179,7 +178,6 @@ describe('Hue / saturation curves', () => {
 		expect(f(0)).toBeCloseTo(0.3, 6);
 		expect(Math.abs(f(0.9999) - f(0))).toBeLessThan(0.01);
 		expect(Math.abs(f(-0.25) - f(0.75))).toBeLessThan(1e-9);
-		// Non-periodic: flat outside.
 		const g = offsetCurveFn(
 			[
 				[0.2, 0.7],
@@ -192,7 +190,7 @@ describe('Hue / saturation curves', () => {
 	});
 	it('Hue vs Sat desaturates only the chosen hue; greys are untouched', () => {
 		// Red (x = 0) to 0: no saturation for reds; blue (x = 2/3) stays.
-		const curve = {
+		const curve: CurveValue = {
 			curve: [
 				[0, 0],
 				[0.17, 0.5],
@@ -272,7 +270,6 @@ describe('Hue / saturation curves', () => {
 		);
 		expect(r.points.map((p) => p[0])).toEqual([0, 0.4167, 0.5, 0.5833]);
 		expect(r.points[r.index]).toEqual([0.5, 0.5]);
-		// Around red the anchors wrap.
 		const w = hueCurveEyedropper(null, 0.01);
 		expect(w.points.some((p) => p[0] > 0.9)).toBe(true);
 		const l = linearCurveEyedropper(
@@ -337,7 +334,7 @@ describe('grade maths helpers', () => {
 });
 
 describe('full grade: properties and bake budget', () => {
-	const fullGrade = {
+	const fullGrade: EffectParams = {
 		temperature: 20,
 		exposure: 0.3,
 		contrast: 15,
@@ -419,7 +416,7 @@ describe('full grade: properties and bake budget', () => {
 });
 
 describe('spatial stage maths', () => {
-	const s0 = (p: Record<string, unknown>) => lumetriSpatialSettings(p as never);
+	const s0 = (p: EffectParams) => lumetriSpatialSettings(p);
 	it('keys on hue, saturation and lightness with soft edges; greys leave a hue key', () => {
 		const s = s0({ secHueCenter: 0, secHueRange: 15, secHueSoft: 15, secTemperature: 50 });
 		expect(s.secondary).toBe(true);
@@ -475,16 +472,25 @@ describe('spatial stage maths', () => {
 });
 
 describe('render snapshot expansion', () => {
-	const A = (value: unknown, keyframes: { time: number; value: unknown }[] = []) => ({
+	const A = (
+		value: ParamValue,
+		keyframes: { time: number; value: ParamValue }[] = [],
+	): Animatable<ParamValue> => ({
 		value,
-		keyframes: keyframes.map((k, i) => ({ id: `k${i}`, interpolation: 'linear', ...k })),
+		keyframes: keyframes.map((k, i) => ({
+			id: `k${i}`,
+			interpolation: 'linear',
+			easeIn: EASE_PRESETS.linear,
+			easeOut: EASE_PRESETS.linear,
+			...k,
+		})),
 	});
-	const lum = (params: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+	const lum = (params: EffectParams, extra: { enabled?: boolean; masks?: { id: string }[] } = {}) => ({
 		id: 'fx1',
 		effectId: LUMETRI_EFFECT_ID,
 		effectVersion: 1,
 		enabled: true,
-		params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, A(v)])) as never,
+		params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, A(v)])),
 		...extra,
 	});
 	it('adds the spatial companion after a Lumetri instance that uses vignette, sharpen or the secondary', () => {
@@ -492,7 +498,7 @@ describe('render snapshot expansion', () => {
 		const list = expandLumetriSpatial([lum({ vignetteAmount: -2, exposure: 1 }, { masks })]);
 		expect(list.map((f) => f.effectId)).toEqual([LUMETRI_EFFECT_ID, LUMETRI_SPATIAL_EFFECT_ID]);
 		expect(list[1]!.id).toBe('fx1~spatial');
-		expect((list[1] as { masks?: unknown }).masks).toBe(masks);
+		expect(list[1]!.masks).toBe(masks);
 		expect(Object.keys(list[1]!.params)).toEqual(['vignetteAmount']);
 	});
 	it('nothing is added for pointwise grades, disabled instances or switched-off sections', () => {
@@ -522,15 +528,15 @@ describe('render snapshot expansion', () => {
 					{ time: 0, value: 0 },
 					{ time: 10, value: -3 },
 				]),
-			} as never,
+			},
 		};
 		expect(lumetriUsesSpatial(fx)).toBe(true);
 	});
 });
 
 describe('HSL Secondary eyedroppers', () => {
-	const s0 = (p: Record<string, unknown>) => lumetriSpatialSettings({ secSaturation: 0, ...p } as never);
-	const key = (k: SecondaryKey, rgb: [number, number, number]) => secondaryKey(s0(k as never), ...rgb);
+	const s0 = (p: EffectParams) => lumetriSpatialSettings({ secSaturation: 0, ...p });
+	const key = (k: SecondaryKey, rgb: [number, number, number]) => secondaryKey(s0(k), ...rgb);
 	const orange: [number, number, number] = [0.9, 0.5, 0.1];
 	const red: [number, number, number] = [0.85, 0.1, 0.1];
 	const blue: [number, number, number] = [0.1, 0.2, 0.9];

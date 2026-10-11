@@ -9,12 +9,13 @@
 //   index of the first sample (`currentFrame`), plus per-channel input peaks for the record meter.
 import { LevelMeter, LoudnessMeter, TruePeakLimiter } from '@jasper/audio-dsp';
 import { FX_PROCESSOR_NAME, FxSlotCore, type FxSlotMessage } from './fx-processor.ts';
+import type { MeterReading } from './graph.ts';
 
 declare const sampleRate: number;
-declare function registerProcessor(name: string, ctor: unknown): void;
+declare function registerProcessor(name: string, ctor: new (options: Options) => AudioWorkletProcessor): void;
 declare class AudioWorkletProcessor {
 	readonly port: MessagePort;
-	constructor(options?: unknown);
+	constructor(options?: Options);
 }
 
 type Options = {
@@ -64,7 +65,7 @@ class MeterProcessor extends AudioWorkletProcessor {
 		if (++this.blocks >= POST_EVERY) {
 			this.blocks = 0;
 			const r = this.level.take();
-			const msg: Record<string, unknown> = {
+			const msg: Omit<MeterReading, 'at'> = {
 				peak: Array.from(r.peak),
 				rms: Array.from(r.rms),
 				clipped: Array.from(r.clipped),

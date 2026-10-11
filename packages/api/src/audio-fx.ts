@@ -1,7 +1,3 @@
-// Music remix planning (workstream audio-fx):
-//   POST /api/audio/remix-plan → RemixPlanResult (synchronous; the analysis of a media range is cached)
-// The engine decodes the clip's content range, tracks the beats and plans pieces that retime the music to the target
-// (Essential Sound ▸ Duration ▸ Remix, the Remix tool); the client then commits `clip.remix` with the pieces.
 import { z } from 'zod';
 
 export const RemixPlanRequestSchema = z.strictObject({

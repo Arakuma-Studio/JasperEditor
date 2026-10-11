@@ -1,3 +1,4 @@
+import type { CommandInput } from '@jasper/project';
 // edit-ux dialogs (Premiere's): Fit Clip (four-point edits), Clip Speed / Duration and Make / Edit Subclip. Each
 // applies one undoable transaction through the session.
 //
@@ -10,6 +11,7 @@ import { type Clip, type FitClip, FLICKS_PER_SECOND, type Rational, type Sequenc
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useId, useMemo, useState } from 'react';
+import { useDialogClose } from '../extensions/dialog.ts';
 import { formatTimecode, parseTimecodeEntry } from '../gaps/time-display.ts';
 
 export const FIT_CLIP_DIALOG = 'editux.fitClip';
@@ -23,20 +25,6 @@ export function registerEditUxDialogs(): void {
 	registerDialog(FIT_CLIP_DIALOG, FitClipDialog);
 	registerDialog(SPEED_DURATION_DIALOG, SpeedDurationDialog);
 	registerDialog(SUBCLIP_DIALOG, SubclipDialog);
-}
-
-function useClose(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	const [done, setDone] = useState(false);
-	return {
-		open,
-		finish(result?: unknown) {
-			setOpen(false);
-			if (done) return;
-			setDone(true);
-			close(result);
-		},
-	};
 }
 
 function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
@@ -57,8 +45,6 @@ function ErrorLine({ error }: { error: string | null }) {
 		</p>
 	) : null;
 }
-
-// ---------------------------------------------------------------- Fit Clip
 
 const FIT_KEY = 'jasper:edit-ux:fit-clip';
 
@@ -94,7 +80,7 @@ export function rememberFitChoice(choice: FitClip | null): void {
 type FitProps = { message?: string; apply(fit: FitClip): { ok: boolean; message?: string } };
 
 export function FitClipDialog(props: HostedDialogProps<FitProps>) {
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const [choice, setChoice] = useState<FitClip>('change-speed');
 	const [always, setAlways] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -143,8 +129,6 @@ export function FitClipDialog(props: HostedDialogProps<FitProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Clip Speed / Duration
-
 type SpeedProps = { session: EditorSession; sequenceId: string; clipIds: string[] };
 
 /** Speed limits of Premiere's dialog (0.01 % … 10000 %, as `clip.setSpeed` accepts). */
@@ -153,7 +137,7 @@ export const SPEED_MAX_PERCENT = 10000;
 
 export function SpeedDurationDialog(props: HostedDialogProps<SpeedProps>) {
 	const { session, sequenceId, clipIds } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const seq = session.getCommitted().sequences[sequenceId] as Sequence | undefined;
 	const clips = useMemo(
 		() => (seq ? clipIds.map((id) => seq.clips[id]).filter((c): c is Clip => !!c) : []),
@@ -188,7 +172,7 @@ export function SpeedDurationDialog(props: HostedDialogProps<SpeedProps>) {
 			setSpeedText(String(Math.round((spanFrames / f) * 10000) / 100));
 	};
 	const apply = () => {
-		const cmd: Record<string, unknown> = { type: 'clip.setSpeed', clipIds, ripple };
+		const cmd: Extract<CommandInput, { type: 'clip.setSpeed' }> = { type: 'clip.setSpeed', clipIds, ripple };
 		const v = Number(speedText);
 		const speedChanged = speedText !== '' && (speed0 === null || v !== speed0);
 		if (speedChanged) {
@@ -216,7 +200,7 @@ export function SpeedDurationDialog(props: HostedDialogProps<SpeedProps>) {
 			label: 'Speed/Duration',
 			origin: 'user',
 			sequenceId,
-			commands: [cmd as never],
+			commands: [cmd],
 		});
 		if (!r.ok) {
 			setError(r.errors[0]?.message ?? 'Speed/Duration failed');
@@ -277,8 +261,6 @@ export function SpeedDurationDialog(props: HostedDialogProps<SpeedProps>) {
 	);
 }
 
-// ---------------------------------------------------------------- Make / Edit Subclip
-
 type SubclipProps = {
 	session: EditorSession;
 	/** Make: the media item (or subclip) and the range in content flicks; Edit: the subclip item. */
@@ -292,7 +274,7 @@ type SubclipProps = {
 
 export function SubclipDialog(props: HostedDialogProps<SubclipProps>) {
 	const { session, mode, itemId, fps } = props;
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const rate: Rational = { num: Math.round(fps * 1000), den: 1000 };
 	const toFrames = (fl: number) => Math.round((fl / FLICKS_PER_SECOND) * fps);
 	const item = session.getCommitted().items[itemId];
@@ -311,7 +293,7 @@ export function SubclipDialog(props: HostedDialogProps<SubclipProps>) {
 			return false;
 		}
 		const range = { in: { sourceFrames: a }, out: { sourceFrames: b + 1 } };
-		const cmd =
+		const cmd: CommandInput =
 			mode === 'make'
 				? {
 						type: 'item.makeSubclip',
@@ -321,13 +303,13 @@ export function SubclipDialog(props: HostedDialogProps<SubclipProps>) {
 						restrictTrims: restrict,
 					}
 				: { type: 'item.updateSubclip', itemId, ...range, restrictTrims: restrict };
-		const commands: unknown[] = [cmd];
+		const commands: CommandInput[] = [cmd];
 		if (mode === 'edit' && name.trim() && name.trim() !== item?.name)
 			commands.push({ type: 'item.rename', itemIds: [itemId], name: name.trim() });
 		const r = session.apply({
 			label: mode === 'make' ? 'Make Subclip' : 'Edit Subclip',
 			origin: 'user',
-			commands: commands as never[],
+			commands,
 			...(mode === 'make'
 				? { selectAfter: (res) => ({ project: [(res.results[0] as { itemId: string }).itemId] }) }
 				: {}),

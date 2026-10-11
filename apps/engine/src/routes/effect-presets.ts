@@ -1,14 +1,3 @@
-// Effect preset library (M3, S03:FX-030, AGT-020). Owner: wp-m3-presets.
-//   GET    /api/effect-presets                     → {revision, folders, presets} (user library; built-ins ship
-//                                                    in @jasper/project and are not served here)
-//   POST   /api/effect-presets                     → Save Preset… (id + timestamps assigned)
-//   PUT    /api/effect-presets/:presetId           → rename / move / type / description
-//   DELETE /api/effect-presets/:presetId
-//   POST   /api/effect-presets/folders             → new preset bin
-//   PUT    /api/effect-presets/folders/:folderId   → rename / move bin
-//   DELETE /api/effect-presets/folders/:folderId   → bin with everything inside
-//   POST   /api/effect-presets/import              → Import… of a .json file
-// Every change publishes `effectPresets.changed {revision}` so every editor window refreshes its Presets bin.
 import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetFolderCreateRequestSchema,

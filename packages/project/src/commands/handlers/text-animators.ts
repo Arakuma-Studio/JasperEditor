@@ -1,7 +1,5 @@
-// Text animator commands (workstream text-animators): add / remove / update / duplicate animators, their
-// properties and selectors, apply animator presets, convert In/Out text animations, Path Options and
-// per-character 3D. Values and keyframes go through `param.set` / keyframe commands on the dynamic property keys
-// (registry/text-animator-properties.ts); `sourceTextDraftAnim` is the Animatable view of Source Text they use.
+// Values and keyframes use the dynamic property registry. Source Text exposes an Animatable view
+// through sourceTextDraftAnim so it follows the same parameter commands.
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { createFontRef } from '../../factories.ts';
@@ -118,8 +116,6 @@ function reId(a: TextAnimatorGroup, h: HandlerContext): TextAnimatorGroup {
 	return copy;
 }
 
-// ---------------------------------------------------------------- presets
-
 /** Places a preset on a clip: start content time, flicks per preset second, snapping, loop end. */
 function presetContext(
 	seq: DSeq,
@@ -184,8 +180,6 @@ function applyPresetTo(
 	return groups;
 }
 
-// ---------------------------------------------------------------- Source Text view
-
 /** Parses a Source Text value (text content); throws with the first issue. */
 export function parseSourceText(v: unknown): TextContent {
 	const p = TextContentSchema.safeParse(v);
@@ -226,7 +220,7 @@ export function sourceTextDraftAnim(clip: DClip, h: HandlerContext | null): Draf
 		},
 	});
 	return {
-		get value(): unknown {
+		get value() {
 			return t.content;
 		},
 		set value(v: unknown) {
@@ -265,9 +259,7 @@ export function ensureMoreOptions(clip: DClip): void {
 	} as Draft<NonNullable<DText['moreOptions']>>;
 }
 
-// ---------------------------------------------------------------- handlers
-
-export const textAnimatorHandlers: HandlerMap = {
+export const textAnimatorHandlers = {
 	'font.add': (doc, cmd: CommandOf<'font.add'>, h) => {
 		const family = cmd.family.trim();
 		const existing = Object.values(doc.fonts).find((f) => f.family.toLowerCase() === family.toLowerCase());
@@ -492,4 +484,4 @@ export const textAnimatorHandlers: HandlerMap = {
 		}
 		return {};
 	},
-};
+} satisfies HandlerMap;

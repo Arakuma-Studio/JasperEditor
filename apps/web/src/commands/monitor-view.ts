@@ -1,6 +1,3 @@
-// edit-ux monitor view commands (Premiere View menu / Program monitor wrench): Show Rulers (Ctrl+R), Show Guides
-// (Ctrl+;), Lock Guides (Ctrl+Alt+Shift+R), Add Guide…, Clear Guides, Guide Templates, Comparison View, Safe
-// Margins, Show Dropped Frame Indicator and Toggle Full Screen (Ctrl+`).
 import type { Sequence } from '@jasper/project';
 import {
 	ADD_GUIDE_DIALOG,
@@ -14,7 +11,7 @@ import type { CommandCtx, UiCommand } from './types.ts';
 function activeSeq(ctx: CommandCtx): Sequence | null {
 	const s = ctx.session?.getState();
 	const id = s?.activeSequenceId;
-	return id ? ((s?.document.sequences[id] as Sequence | undefined) ?? null) : null;
+	return id ? (s?.document.sequences[id] ?? null) : null;
 }
 
 const toggle = (
@@ -27,10 +24,8 @@ const toggle = (
 	scope: 'program',
 	agentExposed: true,
 	checked: () => monitorExtras.getState()[key],
-	run: () => monitorExtras.setState((s) => ({ [key]: !s[key] }) as never),
+	run: () => monitorExtras.setState((s) => ({ [key]: !s[key] })),
 });
-
-// ---------------------------------------------------------------- full screen
 
 const fullscreenTargets = new Map<'program' | 'source', () => HTMLElement | null>();
 
@@ -45,15 +40,15 @@ export function registerFullscreenTarget(
 	};
 }
 
-export function toggleFullScreenVideo(kind: 'program' | 'source'): boolean {
+export async function toggleFullScreenVideo(kind: 'program' | 'source'): Promise<boolean> {
 	if (typeof document === 'undefined') return false;
 	if (document.fullscreenElement) {
-		void document.exitFullscreen?.();
+		await document.exitFullscreen?.();
 		return true;
 	}
 	const el = fullscreenTargets.get(kind)?.() ?? fullscreenTargets.get('program')?.();
 	if (!el?.requestFullscreen) return false;
-	void el.requestFullscreen().catch(() => undefined);
+	await el.requestFullscreen();
 	return true;
 }
 
@@ -142,8 +137,8 @@ export const monitorViewCommands: UiCommand[] = [
 		description: 'Show the focused monitor video full screen (Esc or Ctrl+` exits)',
 		scope: 'global',
 		agentExposed: true,
-		run: (ctx) => {
-			toggleFullScreenVideo(ctx.focus.panel === 'source' ? 'source' : 'program');
+		run: async (ctx) => {
+			await toggleFullScreenVideo(ctx.focus.panel === 'source' ? 'source' : 'program');
 		},
 	},
 ];

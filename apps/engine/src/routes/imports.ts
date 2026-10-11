@@ -1,15 +1,3 @@
-// imports workstream (docs/wp-notes/imports.md): Lottie / vector / PSD probers, interpreted pictures, image
-// sequences, layer extraction and Lottie export.
-//   POST /api/media/:key/variants        {kind, variant} → MediaVariantStatus (queues the `interpret` job)
-//   GET  /media/:key/variant/:kind?v=    the interpreted picture (display PNG, proxy, master)
-//   GET  /media/:key/lottie.json         the normalised Lottie document of a Lottie media (images embedded)
-//   GET  /media/:key/vector              the SVG text (SVGZ decompressed) / PDF bytes of a vector media
-//   GET  /api/imports/vector/:key        the pages of a PDF / Illustrator media
-//   POST /api/imports/image-sequence     ImageSequenceRequest → 202 job `image-sequence` (`?wait=1`: the finished job)
-//   POST /api/imports/image-sequence/detect {path} → the sequence the frame belongs to (local mode)
-//   POST /api/imports/layers             {mediaKey} → 202 job `layers` (`?wait=1`), result LayeredExtractResult
-//   POST /api/imports/lottie/export      LottieExportRequest → LottieExportResult
-// and the `imports` native extension (interpreted pictures for the Remotion render path).
 import { readFile } from 'node:fs/promises';
 import {
 	ImageSequenceDetectRequestSchema,
@@ -106,8 +94,6 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 		return reply.send(done);
 	};
 
-	// ---------------------------------------------------------------- interpreted pictures
-
 	app.post<K>(
 		'/api/media/:mediaKey/variants',
 		guarded<K>(async (req) => {
@@ -151,8 +137,6 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 			},
 		),
 	);
-
-	// ---------------------------------------------------------------- Lottie and vector sources
 
 	app.get<K>(
 		'/media/:mediaKey/lottie.json',
@@ -202,8 +186,6 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 		}),
 	);
 
-	// ---------------------------------------------------------------- image sequences
-
 	const localOnly = () => {
 		if (!core.config.dev && !isLoopbackHost(core.config.host))
 			throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Paths are only accepted in local mode');
@@ -230,8 +212,6 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 		}),
 	);
 
-	// ---------------------------------------------------------------- layered documents
-
 	app.post<Wait>(
 		'/api/imports/layers',
 		guarded<Wait>(async (req, reply) => {
@@ -242,8 +222,6 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 			return waitJob(reply, job.id, 'LAYERS_FAILED');
 		}),
 	);
-
-	// ---------------------------------------------------------------- Lottie export
 
 	app.post(
 		'/api/imports/lottie/export',

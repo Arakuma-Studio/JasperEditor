@@ -1,4 +1,4 @@
-// Vector stills on the engine (imports workstream): SVG, PDF and PDF-compatible Illustrator (`.ai`) files register as
+// SVG, PDF and PDF-compatible Illustrator (`.ai`) files register as
 // `image` media with a `vector` header (document size; PDF page count and the first page's size). The pictures are
 // drawn as vectors by the composition (SVG by the browser's SVG renderer, PDF pages by pdf.js) at the scale they are
 // shown at, in the preview, the Remotion renders and the layer bakes of the native export: the engine never

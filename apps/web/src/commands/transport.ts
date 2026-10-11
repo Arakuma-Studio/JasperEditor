@@ -1,11 +1,3 @@
-// transport UI commands — owned by WP-2C. Ids match keymap-defaults.ts (S02:TL-903, S05:PGM-008).
-//
-// Transport commands act on the Source monitor's local transport when the Source panel is focused,
-// else on the session's TransportStore (Program/Timeline). Rates beyond the Player's native range
-// are realized by the Program monitor's PlaybackDriver with seek-stepping (TL-873).
-// Also registered here: monitor-scoped commands (fit, loop, nudge, snap) and the Source hand-off
-// (source.open, Insert `,` / Overwrite `.`), because the monitors own those behaviors.
-
 import { nextEditPoint, prevEditPoint, sequenceDuration } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { z } from 'zod';
@@ -62,21 +54,23 @@ function seek(ctx: CommandCtx, frame: number) {
 	if (!isSource(ctx)) ctx.services.get('timelineViewport')?.scrollToFrame(target);
 }
 
-function editTargets(ctx: CommandCtx, any: boolean): string[] | undefined {
-	if (any || !ctx.session) return undefined;
+function editTargets(ctx: CommandCtx, allTracks: boolean): string[] | undefined {
+	if (allTracks || !ctx.session) return undefined;
 	const s = ctx.session.getState();
 	const view = s.activeSequenceId ? s.views[s.activeSequenceId] : undefined;
 	const ids = [...(view?.targeting.video ?? []), ...(view?.targeting.audio ?? [])];
 	return ids.length ? ids : undefined;
 }
 
-function goToEdit(ctx: CommandCtx, dir: 1 | -1, any: boolean) {
+function goToEdit(ctx: CommandCtx, dir: 1 | -1, allTracks: boolean) {
 	const seq = ctx.session ? activeSequence(ctx.session) : null;
 	if (!seq) return;
 	const t = activeTransport(ctx);
 	const f = t.getState().frame;
 	const next =
-		dir > 0 ? nextEditPoint(seq, f, editTargets(ctx, any)) : prevEditPoint(seq, f, editTargets(ctx, any));
+		dir > 0
+			? nextEditPoint(seq, f, editTargets(ctx, allTracks))
+			: prevEditPoint(seq, f, editTargets(ctx, allTracks));
 	if (next !== null) seek(ctx, next);
 }
 
@@ -104,7 +98,6 @@ function nudge(dx: number, dy: number) {
 }
 
 export const transportCommands: UiCommand[] = [
-	// ---------------------------------------------------------------- play / JKL (S02:TL-871/872, A.8)
 	{
 		id: 'transport.playStop',
 		label: 'Play/Stop',
@@ -156,7 +149,7 @@ export const transportCommands: UiCommand[] = [
 			shuttleFor(activeTransport(ctx)).slow(-1);
 		},
 	},
-	// ---------------------------------------------------------------- stepping and jumps (TL-876/879/880)
+
 	{
 		id: 'transport.stepBack',
 		label: 'Step Back 1 Frame',
@@ -271,7 +264,7 @@ export const transportCommands: UiCommand[] = [
 			if (driver) driver.playRange(from, to, { returnTo: at });
 		},
 	},
-	// ---------------------------------------------------------------- monitor scope (S05:PGM-008, R-PUI §16.7)
+
 	{
 		id: 'monitor.fit',
 		label: 'Fit',
@@ -349,7 +342,7 @@ export const transportCommands: UiCommand[] = [
 		repeat: true,
 		run: nudge(0, NUDGE_LARGE),
 	},
-	// ---------------------------------------------------------------- Source monitor hand-off (S03:SRC-001/004)
+
 	{
 		id: 'source.open',
 		label: 'Open in Source Monitor',

@@ -1,9 +1,3 @@
-// Shapes end to end (S11 §11 test 5, wp-m2-shapes): Graphics ▸ New Layer ▸ Rectangle / Ellipse are enabled and
-// insert shapes (FIX-007); the Rectangle / Ellipse tools draw the dragged box in the Program monitor (Shift =
-// square, Alt = from the centre, Escape cancels, one undo step each); Properties ▸ Shape edits fill, stroke and
-// corner radius; Effect Controls keyframes the size; undo/redo; the export matches
-// a `renderStill` frame of the same document.
-//
 // Export path: shapes are DOM layers. When the engine reports `features.layerBake.state === 'ready'`,
 // Auto plans the native path with baked layers (`native`/`hybrid`). If layer bake is unavailable,
 // the planner uses Remotion with a "requires graphics rendering" blocker. The spec checks either path.
@@ -48,7 +42,6 @@ const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 
 let page: Page;
 let seqId = '';
-/** Shapes created by the steps, by role. */
 const ids = { menuRect: '', menuEllipse: '', drawn: '', square: '', alt: '' };
 
 test.beforeAll(async ({ browser }) => {
@@ -132,7 +125,6 @@ test('Graphics ▸ New Layer ▸ Rectangle / Ellipse are enabled and insert shap
 	expect(ell.shape.type).toBe('ellipse');
 	expect(ell.trackId).not.toBe(rect.trackId); // V1 is taken over the clip's span: the next free track
 	expect((await appliedLabels(page)).slice(labels0)).toEqual(['New Rectangle', 'New Ellipse']);
-	// Timeline: the clip carries its name and the Remotion badge; the Program draws the SVG.
 	await expect(clipElement(page, ids.menuRect)).toContainText('Rectangle');
 	await expect(clipElement(page, ids.menuRect).locator('[data-engine-badge="R"]')).toBeVisible();
 	await expect(
@@ -140,7 +132,6 @@ test('Graphics ▸ New Layer ▸ Rectangle / Ellipse are enabled and insert shap
 			`[data-testid="program-player-wrapper"] [data-clip-id="${ids.menuEllipse}"] svg[data-shape="ellipse"]`,
 		),
 	).toBeAttached();
-	// Undo / redo.
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await shapes()).length).toBe(1);
@@ -159,7 +150,6 @@ test('Rectangle / Ellipse tools: drag box, Shift = square, Alt = from the centre
 	expect(drawn.shape.type).toBe('rect');
 	expect(near(w, 400, 6) && near(h, 200, 6), `${w}×${h}`).toBe(true);
 	expect(near(cx, 400, 4) && near(cy, 300, 4), `${cx},${cy}`).toBe(true);
-	// The tool returns to Selection with the new shape selected.
 	await expect(page.locator('[data-testid="tools-panel"] [data-tool="selection"]')).toHaveAttribute(
 		'aria-pressed',
 		'true',
@@ -189,7 +179,6 @@ test('Rectangle / Ellipse tools: drag box, Shift = square, Alt = from the centre
 	);
 	expect(near(alt.shape.size.value[0], 200, 8) && near(alt.shape.size.value[1], 100, 8)).toBe(true);
 
-	// Escape during a drag: nothing is added and the tool stays active.
 	await chooseShapeTool('ellipse');
 	const a = await toScreen([100, 900]);
 	const b = await toScreen([300, 1000]);
@@ -201,7 +190,6 @@ test('Rectangle / Ellipse tools: drag box, Shift = square, Alt = from the centre
 	await expect(page.getByTestId('shape-tool-preview')).toHaveCount(0);
 	await page.mouse.up();
 	expect(await shapes()).toHaveLength(5);
-	// Esc belonged to the drag: the keymap's Escape (deselect, TL-903) did not run as well (wp fixups).
 	const kept = await query<{ selection: { timeline?: { clips?: string[] } } }>(page, 'selection.get');
 	expect(kept.selection.timeline?.clips).toEqual([ids.alt]);
 	await page.locator('[data-testid="tools-panel"] [data-tool="selection"]').click();
@@ -242,7 +230,6 @@ test('Properties ▸ Shape edits fill, stroke and corner radius (one undo step e
 	await expect(stroke).toHaveAttribute('stroke-width', '24');
 	await expect(stroke).toHaveAttribute('clip-path', /^url\(#shape-/);
 
-	// Undo the radius, redo it.
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await shapeById(ids.drawn)).shape.cornerRadius.value).toBe(0);
@@ -299,7 +286,6 @@ test('export: native with baked layers when the layer bake is ready, else Remoti
 	if (baked) expect(['native', 'hybrid']).toContain(renderPath);
 	else expect(renderPath).toBe('remotion');
 
-	// Frame 30 (mid size animation) of the export vs a renderStill of the same document.
 	const frame = 30;
 	const still = await query<{ url: string }>(page, 'frame.capture', { frame });
 	const png = await request.get(still.url);
@@ -357,7 +343,6 @@ test('export: native with baked layers when the layer bake is ready, else Remoti
 	expect(lumaSum / n).toBeLessThan(2);
 	expect(far / n).toBeLessThan(0.005);
 	expect(colourSum / n).toBeLessThan(6);
-	// The red drawn rectangle is really there in the export (centre of its fill).
 	const ref = await shapeById(ids.drawn);
 	const [cx, cy] = ref.transform.position.value;
 	const i = (Math.round((cy / 1080) * H) * W + Math.round((cx / 1920) * W)) * 3;

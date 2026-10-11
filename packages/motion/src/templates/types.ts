@@ -1,3 +1,4 @@
+import type { MgCanvas } from '@jasper/mg-templates';
 // Props of an anime template implementation (S11:ATP-005, ARCHITECTURE §20.2).
 
 /** Times in ms of content time (S11:ATP-004). */
@@ -13,7 +14,7 @@ export type AnimeTemplateProps = {
 	outroMs: number;
 	fps: number;
 	/** Render size (the clip's canvas); design pixels are fitted with `fitCanvas`. */
-	canvas: { width: number; height: number };
+	canvas: MgCanvas;
 	/** `hash32(clipId, 'template')`. */
 	seed: number;
 	isPreview: boolean;

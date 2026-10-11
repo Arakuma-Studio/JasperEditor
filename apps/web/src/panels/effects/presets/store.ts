@@ -55,8 +55,8 @@ export function refreshPresets(): Promise<void> {
 			s.setState({
 				status: 'ready',
 				revision: lib.revision,
-				folders: lib.folders as EffectPresetFolder[],
-				presets: lib.presets as EffectPreset[],
+				folders: lib.folders,
+				presets: lib.presets,
 				error: null,
 			});
 		})
@@ -85,11 +85,10 @@ async function write<T>(fn: (c: EngineClient) => Promise<T>): Promise<T> {
 }
 
 export function savePreset(preset: EffectPreset, folderId?: string | null): Promise<EffectPreset> {
-	return write(
-		(c) =>
-			c.call('effectPresetCreate', {
-				body: { preset: preset as unknown as Record<string, unknown>, ...(folderId ? { folderId } : {}) },
-			}) as Promise<EffectPreset>,
+	return write((c) =>
+		c.call('effectPresetCreate', {
+			body: { preset: preset, ...(folderId ? { folderId } : {}) },
+		}),
 	);
 }
 
@@ -97,36 +96,30 @@ export function updatePreset(
 	id: string,
 	patch: { name?: string; description?: string; type?: EffectPresetType; folderId?: string | null },
 ): Promise<EffectPreset> {
-	return write(
-		(c) => c.call('effectPresetUpdate', { params: { presetId: id }, body: patch }) as Promise<EffectPreset>,
-	);
+	return write((c) => c.call('effectPresetUpdate', { params: { presetId: id }, body: patch }));
 }
 
-export function deletePreset(id: string): Promise<unknown> {
+export function deletePreset(id: string) {
 	return write((c) => c.call('effectPresetDelete', { params: { presetId: id } }));
 }
 
 export function createPresetBin(name: string, parentId?: string | null): Promise<EffectPresetFolder> {
-	return write(
-		(c) =>
-			c.call('effectPresetFolderCreate', {
-				body: { name, ...(parentId ? { parentId } : {}) },
-			}) as Promise<EffectPresetFolder>,
+	return write((c) =>
+		c.call('effectPresetFolderCreate', {
+			body: { name, ...(parentId ? { parentId } : {}) },
+		}),
 	);
 }
 
-export function renamePresetBin(id: string, name: string): Promise<unknown> {
+export function renamePresetBin(id: string, name: string) {
 	return write((c) => c.call('effectPresetFolderUpdate', { params: { folderId: id }, body: { name } }));
 }
 
-export function deletePresetBin(id: string): Promise<unknown> {
+export function deletePresetBin(id: string) {
 	return write((c) => c.call('effectPresetFolderDelete', { params: { folderId: id } }));
 }
 
-export function importPresetFile(
-	file: unknown,
-	folderId?: string | null,
-): Promise<{ presets: unknown[]; errors: { index: number; message: string }[] }> {
+export function importPresetFile(file: unknown, folderId?: string | null) {
 	return write((c) => c.call('effectPresetsImport', { body: { file, ...(folderId ? { folderId } : {}) } }));
 }
 

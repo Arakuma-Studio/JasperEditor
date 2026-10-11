@@ -1,4 +1,3 @@
-// Workstream gaps (PRJ-4): Project Settings ▸ display formats and the settings model.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

@@ -1,5 +1,5 @@
-// The wave-1 sources of fx/hash and fx/noise (renamed ref_*), verbatim: the GL test checks that the faster library
-// helpers return IDENTICAL values (bit-exact float equality) to these, over a grid of positions and seeds.
+// Fixed, independent hash/noise references (ref_*): library optimizations must preserve
+// bit-exact float results across the tested positions and seeds.
 import type { GlslChunk } from '@jasper/project';
 
 const REF_HASH: GlslChunk = {

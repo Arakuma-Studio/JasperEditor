@@ -196,8 +196,6 @@ const softPadding = (p: EffectParams, ctx: FxPlanContext, width: number, rel: nu
 			3 * num(p.gaussBlur) * GAUSS_SIGMA_PER_UNIT * unitLayerPx(ctx)
 		: 0;
 
-// ---------------------------------------------------------------- S_RackDefocus
-
 const MONO = ['color', 'mono'] as const;
 
 const RACK_PARAMS: ParamSpec[] = [
@@ -265,8 +263,6 @@ export const S_RACK_DEFOCUS = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- S_DefocusPrism
-
 export const S_DEFOCUS_PRISM = defineShaderEffect({
 	id: 'jasper.s.defocus-prism',
 	label: 'S_DefocusPrism',
@@ -327,8 +323,6 @@ export const S_DEFOCUS_PRISM = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_AdvancedDefocus
 
 const ADV_SHAPES = ['circle', 'polygon', 'custom'] as const;
 const ADV_SHOW = ['result', 'shapeActual', 'shapeZoomed'] as const;

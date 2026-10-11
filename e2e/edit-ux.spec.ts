@@ -1,7 +1,3 @@
-// edit-ux in the built app: three/four-point Overwrite from the Source monitor with the Fit Clip dialog, keyboard
-// trim mode with the Trim Monitor (Shift+T, Ctrl+→, Ctrl+Shift+→, dynamic L/K trimming = one History entry),
-// Match Frame, keyframe lanes (Ctrl-click a keyframe on the rubber band, fade handle), the Keyboard Shortcuts
-// editor, Program guides, and an export whose frames show the fit-to-fill speed and the fade.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -62,7 +58,6 @@ test('four-point Overwrite asks Fit Clip and fits the clip by speed', async () =
 		{ type: 'sequence.setInOut', in: 0, out: 30 },
 	]);
 	expect(r.ok, JSON.stringify(r)).toBe(true);
-	// Open clip-a in the Source monitor (double-click in the Project panel).
 	await page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' }).dblclick();
 	await expect(page.getByTestId('source-item')).toHaveValue(itemA);
 	await page.getByTestId('src-overwrite').click();
@@ -106,7 +101,6 @@ test('trim mode: Shift+T opens the Trim Monitor; Ctrl+→ and Ctrl+Shift+→ rol
 	expect((await appliedLabels(page)).length).toBe(before + 1);
 	const moved = (await clips(page, ['V1']))[0]!.duration;
 	expect(moved).toBeGreaterThan(36);
-	// Undo restores in one step.
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1']))[0]!.duration).toBe(36);
 	await page.keyboard.press('Escape');
@@ -176,7 +170,6 @@ test('export renders the fit-to-fill clip and the fade', async ({ request }) => 
 	});
 	const p = ffprobe(out.file);
 	expect(Number(p.format.duration)).toBeGreaterThan(1.5);
-	// The fade starts black and reaches the picture.
 	const first = regionLuma(out.file, 0.0, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
 	const later = regionLuma(out.file, 0.9, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
 	expect(first).toBeLessThan(later);

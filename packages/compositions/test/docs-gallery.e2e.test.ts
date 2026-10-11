@@ -1,12 +1,7 @@
 // @vitest-environment node
-// Documentation contact sheets (wp fixups): renders effect families and the Sapphire-style dissolves with
-// @remotion/renderer (the export path) over procedural pictures from scripts/docs/gallery-scenes.mjs — ffmpeg lavfi
-// sources only, no photographs — and writes labelled contact sheets into docs/screenshots (each sheet's
-// `.attribution` sidecar names this file). They replace sheets that were removed because they showed third-party
-// photographs (ATTRIBUTION.md). Every effect is rendered at its defaults on a 2 s clip panning over the picture
-// (frame 15) — or, when the defaults leave the picture unchanged, with `representative` settings; transitions at
-// progress 0.25 / 0.5 / 0.75. Asserts each still rendered at full size.
-// Gated by REMOTION_E2E=1 and DOCS_GALLERY=1; DOCS_GALLERY_ONLY=<sheet ids, comma-separated> limits the run.
+// Contact sheets use procedural ffmpeg pictures from scripts/docs/gallery-scenes.mjs;
+// each screenshot attribution sidecar names this generator. Default identity effects use
+// representative settings so the sheet shows their effect on the picture.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';

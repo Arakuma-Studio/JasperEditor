@@ -1,4 +1,4 @@
-// polish: the Effects panel's custom bins as the keymap sees them (`effects.newCustomBin` Ctrl+/,
+// the Effects panel's custom bins as the keymap sees them (`effects.newCustomBin` Ctrl+/,
 // `effects.deleteCustomItem` Backspace — Premiere's Effects panel commands). The Presets bin registers itself here.
 
 /** Reference of a user bin in the Effects panel's focus state (presets use `preset:<id>`). */

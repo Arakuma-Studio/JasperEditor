@@ -1,4 +1,4 @@
-// Essential Graphics data (workstream gaps, §GR-4/5): the schemas only (the sequence schema imports them).
+// Essential Graphics data (§GR-4/5): the schemas only (the sequence schema imports them).
 import { z } from 'zod';
 
 export const ROLL_MODES = ['roll', 'crawlLeft', 'crawlRight'] as const;

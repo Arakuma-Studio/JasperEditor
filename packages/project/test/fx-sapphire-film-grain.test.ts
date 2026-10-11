@@ -1,7 +1,3 @@
-// The Sapphire film / grain / damage family (registry/fx/sapphire-film-grain.ts): catalogue entries (Sapphire names,
-// ids, bins, Sapphire defaults), and the TypeScript maths of the family — grain-hold cadence, S_Grain presets, the
-// film-stock balance, JPEG quantiser steps, per-frame signals (flicker, shake, defocus, flash motion, blinks, roll),
-// grunge stamp occupancy and the time-sample hooks. Pixels are checked in packages/compositions (GL test).
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,

@@ -1,5 +1,3 @@
-// polish: live language switching (lazy module-scope strings, the language epoch) and labels built from the model's
-// names ("Gaussian Blur: Radius", "Bypass Gaussian Blur").
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { transformI18n } from '../i18n/transform.mjs';
@@ -116,7 +114,7 @@ const X = { cmd, MAP: TYPE_LABELS };`,
 
 describe('names from the model', () => {
 	it('translates exact names and labels built from them', () => {
-		expect(translateName('Gaussian Blur')).toBeNull(); // English: nothing to do
+		expect(translateName('Gaussian Blur')).toBeNull();
 		__setCatalogForTests('es', ES, NAMES);
 		expect(translateName('Gaussian Blur')).toBe('Desenfoque gaussiano');
 		expect(translateName('Gaussian Blur: Radius')).toBe('Desenfoque gaussiano: Radio');

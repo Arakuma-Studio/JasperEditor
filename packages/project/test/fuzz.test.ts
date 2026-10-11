@@ -1,6 +1,3 @@
-// S01 AC-25: invariants hold under random command fuzzing. Every committed document passes
-// INV-001…INV-015, every rejected transaction leaves the document reference unchanged, and handlers
-// never produce an invalid document (no E_INVARIANT / E_INTERNAL rejections).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

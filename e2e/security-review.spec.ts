@@ -1,8 +1,3 @@
-// Security review AGT-1 in the real app (docs/security-review.md): an agent on the MCP tools cannot approve its own
-// destructive request with the live-UI tools, cannot make the same edit through the UI, and cannot clear the undo
-// history; the user's own click still approves. Then the hardening follow-up (§8): destructive operations outside
-// transactions ask the user (AGT-3), nothing but the editor window can answer (AGT-2), the engine needs its token
-// (DEV-1).
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -57,13 +52,11 @@ test('an agent cannot approve its own request through the UI tools; the user can
 	});
 	const card = page.getByTestId('agent-approval-card');
 	await expect(card).toBeVisible({ timeout: 20_000 });
-	// The agent clicks Approve with the live-UI tool: the click arrives (the tool succeeds), nothing is approved.
 	const click = await call('ui_click', { projectId, id: 'agent-approval-approve' });
 	expect(click.isError, text(click)).toBeFalsy();
 	await page.waitForTimeout(500);
 	await expect(card).toBeVisible();
 	expect((await sequenceSummary(page)).tracks!.some((t) => t.id === a3.id)).toBe(true);
-	// The user's own click approves.
 	await card.getByRole('button', { name: 'Approve' }).click();
 	const ok = await pending;
 	expect(ok.isError, text(ok)).toBeFalsy();
@@ -71,26 +64,14 @@ test('an agent cannot approve its own request through the UI tools; the user can
 });
 
 test('an agent cannot clear the undo history through ui_command', async () => {
-	const before = await page.evaluate(() =>
-		(window as unknown as { jasper: { query(n: string, a: unknown): Promise<unknown> } }).jasper.query(
-			'history.list',
-			{},
-		),
-	);
+	const before = await page.evaluate(() => window.jasper!.query('history.list', {}));
 	const r = await call('ui_command', { projectId, id: 'history.clear', args: { confirmed: true } });
 	const body = text(r);
 	expect(r.isError || /"ran":\s*false/.test(body), body).toBeTruthy();
-	const after = await page.evaluate(() =>
-		(window as unknown as { jasper: { query(n: string, a: unknown): Promise<unknown> } }).jasper.query(
-			'history.list',
-			{},
-		),
-	);
+	const after = await page.evaluate(() => window.jasper!.query('history.list', {}));
 	expect(JSON.stringify(after)).toBe(JSON.stringify(before));
 	expect(JSON.stringify(after)).toContain('Remove A3');
 });
-
-// ---------------------------------------------------------------- hardening (docs/security-review.md §8)
 
 type Preset = { id: string; name: string };
 const userPresets = async (): Promise<Preset[]> => {
@@ -138,7 +119,6 @@ async function tokenHolderSocket(): Promise<{
 }
 
 test('AGT-3 / AGT-2: an agent deleting a preset asks the user, and only the editor window can answer', async () => {
-	// The agent may save a preset (not destructive)…
 	const builtin = JSON.parse(text(await call('get_effect_preset', { presetId: 'builtin.fade-in' }))) as {
 		preset?: Record<string, unknown>;
 	} & Record<string, unknown>;
@@ -150,7 +130,6 @@ test('AGT-3 / AGT-2: an agent deleting a preset asks the user, and only the edit
 	const preset = (await userPresets()).find((p) => p.name === 'E2E hardening')!;
 	expect(preset, 'the preset was saved').toBeTruthy();
 
-	// …deleting it waits for the user. (Before: deleted at once, no question.)
 	const pending = call('delete_effect_preset', { presetId: preset.id });
 	const card = page.getByTestId('agent-approval-card');
 	await expect(card).toBeVisible({ timeout: 20_000 });
@@ -161,14 +140,12 @@ test('AGT-3 / AGT-2: an agent deleting a preset asks the user, and only the edit
 	const approvalId = (await card.getAttribute('data-approval-id'))!;
 	await card.screenshot({ path: 'test-results/e2e-hardening-approval-card.png' });
 
-	// AGT-2: the agent attaches to the relay with the engine token (what any local client can read from the
-	// runtime file) and answers the request itself. (Before: this approved it.)
+	// The engine token is available to local clients; it must not authorize answering approvals.
 	const rogue = await tokenHolderSocket();
 	expect(rogue.welcome.editor).toBe(false);
 	rogue.send('agent.approval.resolve', { approvalId, decision: 'approved' });
 	rogue.send('agent.approval.resolve', { approvalId, decision: 'approved', answerKey: 'guess' });
 	rogue.send('agent.approval.resolve', { approvalId, decision: 'denied', answerKey: approvalId });
-	// AGT-1 still holds for the new cards: the live-UI click does not approve either.
 	const click = await call('ui_click', { projectId, id: 'agent-approval-approve' });
 	expect(click.isError, text(click)).toBeFalsy();
 	await page.waitForTimeout(700);
@@ -178,14 +155,12 @@ test('AGT-3 / AGT-2: an agent deleting a preset asks the user, and only the edit
 	expect((await userPresets()).some((p) => p.id === preset.id)).toBe(true);
 	rogue.close();
 
-	// The user denies: the tool fails with the approval error and the preset is still there.
 	await card.getByRole('button', { name: 'Deny' }).click();
 	const denied = await pending;
 	expect(denied.isError).toBeTruthy();
 	expect(text(denied)).toContain('E_APPROVAL_DENIED');
 	expect((await userPresets()).some((p) => p.id === preset.id)).toBe(true);
 
-	// The user approves: deleted.
 	const again = call('delete_effect_preset', { presetId: preset.id });
 	await expect(card).toBeVisible({ timeout: 20_000 });
 	await card.getByRole('button', { name: 'Approve' }).click();
@@ -199,7 +174,6 @@ test('DEV-1: the engine refuses requests without its token; the page is the edit
 	// Node's own fetch: no cookie, no token.
 	expect((await fetch(`http://127.0.0.1:${port}/api/projects`)).status).toBe(401);
 	expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200);
-	// The page works (it has been all along) and cannot read either secret.
 	expect(await page.evaluate(() => fetch('/api/projects').then((r) => r.status))).toBe(200);
 	expect(await page.evaluate(() => document.cookie)).not.toMatch(/jasper_(session|editor)/);
 	const cookies = await page.context().cookies();

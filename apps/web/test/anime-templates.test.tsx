@@ -1,5 +1,3 @@
-// Anime templates in the web app (wp-m2-anime-templates): fframes-only actions are hidden for anime templates
-// (S11:ATP-008), "Update template to vN" (ATP-009, one undo step), and the Properties ▸ Template section.
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type AnyMgTemplate,
@@ -122,7 +120,6 @@ describe('template upgrades (S11:ATP-009)', () => {
 		session.select('timeline', [], 'replace');
 		expect(await runCommand('mg.updateTemplate', ctx, { clipIds: [anime] })).toEqual({ ran: true });
 		expect(clipOf(session, seqId, anime).template.version).toBe(2);
-		// clipIds without an upgrade: the command fails with the reason
 		expect(await runCommand('mg.updateTemplate', ctx, { clipIds: [fframes] })).toMatchObject({
 			ran: false,
 			reason: 'error',
@@ -143,15 +140,12 @@ describe('Properties ▸ Template section', () => {
 					sequenceId={seqId}
 				/>,
 			);
-		// anime first: Re-render is still offered for the fframes clip; the anime clip's update too
 		const m = view([anime, fframes]);
 		expect(m.queryByTestId('mg-template-rerender')).not.toBeNull();
 		m.unmount();
-		// fframes first: no Re-render-only bias either way
 		const r = view([fframes, anime]);
 		expect(r.queryByTestId('mg-template-rerender')).not.toBeNull();
 		r.unmount();
-		// two anime clips of different templates: no Re-render
 		const add = session.apply({
 			label: 'add',
 			origin: 'user',

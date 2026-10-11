@@ -1,4 +1,3 @@
-// Synchronize, Merge Clips and multi-camera commands (wp-multicam).
 import { z } from 'zod';
 import { MulticamAudioModeSchema, SyncMethodSchema } from '../../schema/sequence.ts';
 import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';

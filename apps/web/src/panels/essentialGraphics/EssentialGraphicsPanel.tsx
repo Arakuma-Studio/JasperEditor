@@ -1,10 +1,4 @@
-// Essential Graphics panel (workstream gaps, docs/wp-notes/gaps.md §GR-4/GR-5; Premiere Window ▸ Essential Graphics).
-// Browse: My Templates (.jgt, kept in this browser) — Add at the playhead, Export, Delete, Import .jgt…; the motion-
-// graphics templates live in the Motion Templates panel (one click away). Edit: the graphic of the selected graphic clip
-// (or the open graphic sequence): its layers top first (visibility, rename, delete, select), New Layer (Text,
-// Rectangle, Ellipse), Align and Transform (align / distribute to the video frame or the selection), Responsive Design
-// – Position (pin edges to the frame or a layer), Responsive Design – Time (Intro / Outro), Roll / Crawl, Duration,
-// Export As Template. Without a graphic, New Layer makes one at the playhead (a text layer nested into a graphic).
+import type { Command, CommandOf } from '@jasper/project';
 import {
 	ALIGN_MODES,
 	type AlignMode,
@@ -30,9 +24,9 @@ import { Button, Checkbox, cx, EmptyState, Select, Tabs, TextField, toast } from
 import { type ReactNode, useMemo, useState, useSyncExternalStore } from 'react';
 import { runCommand } from '../../commands/registry.ts';
 import { useCommandCtx } from '../../shell/context.tsx';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
-
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
+import { type GraphicLibraryEntry, parseGraphicLibrary } from './library.ts';
 
 const ALIGN_LABELS: Record<AlignMode, string> = {
 	left: 'Align Left',
@@ -46,25 +40,18 @@ const ALIGN_LABELS: Record<AlignMode, string> = {
 };
 const EDGE_LABELS: Record<PinEdge, string> = { left: 'Left', top: 'Top', right: 'Right', bottom: 'Bottom' };
 
-// ---------------------------------------------------------------- My Templates (local library)
-
 const LIB_KEY = 'jasper:graphic-templates';
-type LibEntry = { id: string; template: GraphicTemplate; savedAt: string };
-let lib: LibEntry[] = readLib();
+let lib: GraphicLibraryEntry[] = readLib();
 const libListeners = new Set<() => void>();
-function readLib(): LibEntry[] {
+function readLib(): GraphicLibraryEntry[] {
 	try {
 		const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(LIB_KEY);
-		const arr = raw ? (JSON.parse(raw) as unknown[]) : [];
-		return arr.flatMap((e) => {
-			const t = GraphicTemplateSchema.safeParse((e as { template?: unknown }).template);
-			return t.success ? [{ ...(e as LibEntry), template: t.data }] : [];
-		});
+		return raw ? parseGraphicLibrary(JSON.parse(raw)) : [];
 	} catch {
 		return [];
 	}
 }
-function writeLib(next: LibEntry[]): void {
+function writeLib(next: GraphicLibraryEntry[]): void {
 	lib = next;
 	try {
 		localStorage.setItem(LIB_KEY, JSON.stringify(next));
@@ -95,8 +82,6 @@ function download(name: string, text: string): void {
 	setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// ---------------------------------------------------------------- what the panel edits
-
 type Target = { graphic: Sequence; nestClipId: string | null; itemId: string | null } | null;
 
 function targetOf(s: SessionState | null): Target {
@@ -105,24 +90,22 @@ function targetOf(s: SessionState | null): Target {
 	const seq = doc.sequences[s.activeSequenceId];
 	if (!seq) return null;
 	const itemOf = (id: string) =>
-		Object.values(doc.items).find(
-			(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === id,
-		)?.id ?? null;
+		Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === id)?.id ?? null;
 	for (const id of s.selection.timeline.clips) {
 		const c = seq.clips[id];
-		const g = c?.kind === 'nest-video' ? doc.sequences[(c as { sequenceId: string }).sequenceId] : undefined;
+		const g = c?.kind === 'nest-video' ? doc.sequences[c.sequenceId] : undefined;
 		if (g && isGraphic(g)) return { graphic: g, nestClipId: c!.id, itemId: itemOf(g.id) };
 	}
 	if (isGraphic(seq)) return { graphic: seq, nestClipId: null, itemId: itemOf(seq.id) };
 	return null;
 }
 
-function apply(session: EditorSession, label: string, commands: unknown[], sequenceId?: string): boolean {
+function apply(session: EditorSession, label: string, commands: Command[], sequenceId?: string): boolean {
 	const r = session.apply({
 		label,
 		origin: 'user',
 		...(sequenceId ? { sequenceId } : {}),
-		commands: commands as never,
+		commands,
 	});
 	if (!r.ok) toast({ kind: 'error', title: label, detail: r.errors.map((e) => e.message).join('; ') });
 	return r.ok;
@@ -149,7 +132,7 @@ function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 'ellips
 		duration: { frames: dur },
 		track: track ?? seq.videoTracks[seq.videoTracks.length - 1]!.id,
 	};
-	const first =
+	const first: Command =
 		kind === 'text'
 			? { type: 'clip.addText', ...place, content: { text: 'New Text' }, ref: '$l' }
 			: {
@@ -163,11 +146,11 @@ function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 'ellips
 		label: 'New Graphic',
 		origin: 'user',
 		commands: [
-			...(track ? [] : [{ type: 'track.add', kind: 'video' }]),
+			...(track ? [] : [{ type: 'track.add', kind: 'video' } satisfies Command]),
 			...(track ? [first] : [{ ...first, track: `V${seq.videoTracks.length + 1}` }]),
 			{ type: 'clip.nest', clipIds: ['$l'], name: 'Graphic', ref: '$g' },
 			{ type: 'graphic.update', sequenceId: '$g', graphic: { intro: 0, outro: 0 } },
-		] as never,
+		],
 		// The new nest clip becomes the selection, so the panel edits the new graphic right away.
 		selectAfter: (res) => ({
 			timeline: (res.results[nestAt] as { clipIds?: string[] } | undefined)?.clipIds ?? [],
@@ -177,8 +160,6 @@ function newGraphic(session: EditorSession, kind: 'text' | 'rectangle' | 'ellips
 		toast({ kind: 'error', title: 'New Graphic', detail: r.errors.map((e) => e.message).join('; ') });
 	return r.ok;
 }
-
-// ---------------------------------------------------------------- small controls
 
 function Section(props: { title: string; children: ReactNode; testId?: string }) {
 	return (
@@ -229,8 +210,6 @@ function FramesField(props: {
 	);
 }
 
-// ---------------------------------------------------------------- Edit tab
-
 function EditTab({ session, target }: { session: EditorSession; target: Target }) {
 	const [selected, setSelected] = useState<string[]>([]);
 	const doc = useStoreSelector(session.store, (s: SessionState) => s.document);
@@ -260,7 +239,7 @@ function EditTab({ session, target }: { session: EditorSession; target: Target }
 	const end = Math.max(1, ...Object.values(g.clips).map((c) => c.start + c.duration));
 	const one = sel.length === 1 ? g.clips[sel[0]!] : undefined;
 	const pins = (one as { pins?: LayerPins } | undefined)?.pins;
-	const update = (graphic: Record<string, unknown>, label = 'Essential Graphics') =>
+	const update = (graphic: CommandOf<'graphic.update'>['graphic'], label = 'Essential Graphics') =>
 		apply(session, label, [{ type: 'graphic.update', sequenceId: g.id, graphic }]);
 	const roll: GraphicRoll | null = set.roll ?? null;
 	const setRoll = (patch: Partial<GraphicRoll> | null) =>
@@ -593,7 +572,7 @@ function LayerRow(props: {
 					{clip.name || clip.kind}
 				</span>
 			)}
-			{(clip as { pins?: unknown }).pins ? (
+			{'pins' in clip && clip.pins ? (
 				<span className="text-pr-dim" title="Pinned (Responsive Design – Position)">
 					⌖
 				</span>
@@ -611,8 +590,6 @@ function LayerRow(props: {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Browse tab
 
 function BrowseTab({ session }: { session: EditorSession }) {
 	const entries = useLib();
@@ -712,7 +689,7 @@ function BrowseTab({ session }: { session: EditorSession }) {
 export function EssentialGraphicsPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
 	const target = useStoreSelector(
-		session?.store ?? NULL_STORE,
+		session?.store ?? EMPTY_SESSION_STORE,
 		(s: SessionState | null) => targetOf(s),
 		(a, b) => a?.graphic === b?.graphic && a?.nestClipId === b?.nestClipId && a?.itemId === b?.itemId,
 	);

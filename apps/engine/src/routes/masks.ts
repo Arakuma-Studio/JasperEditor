@@ -1,8 +1,3 @@
-// Masks (wp masks).
-//   POST /api/masks/trace   MaskTraceRequest → MaskTraceResponse: auto-trace of one media frame (alpha / luma /
-//                           channel) into mask paths — marching squares → Douglas–Peucker → cubic fit
-//                           (`tracePaths`, @jasper/project path/trace.ts). Mask tracking is a `track` job of kind
-//                           `mask` (routes/tracking.ts).
 import { MaskTraceRequestSchema, type MaskTraceResponse } from '@jasper/api';
 import { traceFieldOf, tracePaths } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';

@@ -89,7 +89,6 @@ function maxShift(a: Vec2[] | Quad, b: Vec2[] | Quad): number {
 	return m;
 }
 
-/** Applies a dense planar track to the target as a corner pin (tracker.add/setSamples/apply). */
 function bakeCornerPin(h: Harness, plate: string, target: string, quads: Quad[]) {
 	const data: number[] = [];
 	for (const q of quads) for (const p of q) data.push(p[0], p[1]);
@@ -102,7 +101,6 @@ function bakeCornerPin(h: Harness, plate: string, target: string, quads: Quad[])
 	return (r.results[0] as { trackerId: string }).trackerId;
 }
 
-/** Writes per-frame Motion keys (position, scale, rotation) as tracking would. */
 function bakeMotion(
 	h: Harness,
 	target: string,
@@ -217,7 +215,6 @@ describe('keyframes.simplify (document)', () => {
 		const pos = () =>
 			(h.seq.clips[target] as unknown as { transform: { position: Anim } }).transform.position;
 		const ids = pos().keyframes.map((k) => k.id);
-		// Dry run: report but no change.
 		const dry = h.tx(
 			[{ type: 'keyframes.simplify', keyframeIds: ids.slice(10, 40), tolerance: 0.2, details: true }],
 			{
@@ -240,7 +237,6 @@ describe('keyframes.simplify (document)', () => {
 		expect(kept.length).toBe(n - report.removed);
 		const after = drawn(h, target, n);
 		for (let f = 0; f < n; f++) expect(maxShift(after[f]!.quad, before[f]!.quad)).toBeLessThanOrEqual(0.2);
-		// One transaction: the previous document is intact (undo = restore it).
 		expect(
 			(docBefore.sequences[h.seqId]!.clips[target] as unknown as { transform: { position: Anim } }).transform
 				.position.keyframes.length,
@@ -298,7 +294,6 @@ describe('keyframes.simplify (document)', () => {
 		expect(res.simplified.maxError).toBeLessThanOrEqual(0.25);
 		const now = drawn(h, target, n);
 		for (let f = 0; f < n; f++) expect(maxShift(now[f]!.quad, ref[f]!.quad)).toBeLessThanOrEqual(0.25);
-		// trackedOnly on a clip with an extra keyframed opacity leaves the opacity alone.
 		h.ok([
 			{ type: 'param.setAnimated', target: ['clip', target, 'opacity'], animated: true, at: { frames: 0 } },
 			...Array.from({ length: 10 }, (_, f) => ({

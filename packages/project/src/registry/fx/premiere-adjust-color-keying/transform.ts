@@ -1,11 +1,12 @@
 // Premiere Pro "Transform" video effects (fx family premiere-adjust-color-keying): Edge Feather, Transform.
 // (Crop, Horizontal/Vertical Flip already exist.) Transform's "Use Composition's Shutter Angle" / "Shutter Angle":
-// real motion blur of the keyframed transform with the framework's adaptive shutter (wave 5, `planMotionBlur`): the
+// real motion blur of the keyframed transform with the framework's adaptive shutter (`planMotionBlur`): the
 // params at exact sub-frame times over the shutter interval (`ctx.paramsAt`, Shutter Angle / 360 frames centred on
 // the frame) give 32 key transforms, the shader takes ~1 tap per pixel of travel of the layer box corners (rotation
 // and scale included; up to 64, jittered beyond) between them. Sequences have no shutter angle of their own,
 // so with "Use Composition's Shutter Angle" on (the default, as in Premiere) the angle is 0: no blur, the exact
 // single-transform output.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_MB_POSES } from '../glsl/motion-blur.ts';
@@ -20,8 +21,6 @@ import {
 import { fxParam } from '../params.ts';
 import type { FxFrameContext } from '../shader.ts';
 import { bool, num, slider } from './common.ts';
-
-// ---------------------------------------------------------------- Edge Feather
 
 export const EDGE_FEATHER = defineShaderEffect({
 	id: 'jasper.edge-feather',
@@ -49,15 +48,13 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Transform
-
 /**
  * The Transform effect as an inverse affine map (layer px → source layer px): source = A · out + b, with
  * out = position + R(rotation) · Skew(skew, axis) · S(scale) · (src − anchor). Returns [a, b, c, d, tx, ty] with
  * source.x = a·x + c·y + tx, source.y = b·x + d·y + ty, or null when the scale is zero.
  */
 export function transformInverse(p: EffectParams, size: { width: number; height: number }): number[] | null {
-	const pt = (v: unknown): [number, number] =>
+	const pt = (v: ParamValue | undefined): [number, number] =>
 		Array.isArray(v) && v.length === 2 ? [num(v[0], 0.5), num(v[1], 0.5)] : [0.5, 0.5];
 	const [ax, ay] = pt(p.anchorPoint);
 	const [px, py] = pt(p.position);

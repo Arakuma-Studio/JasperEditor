@@ -1,15 +1,15 @@
-// Clipboard end to end (S01 §20, S03:XF-050): keyboard/menu copy and paste, selection/playhead updates,
-// Paste Insert, undo/redo, cross-project OS clipboard transfer, and external text/image/file paste.
 // Setup uses the in-page agent API; clipboard actions use the real UI.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import type { CommandInput } from '../packages/project/src/index.ts';
 import {
 	appliedLabels,
 	clipBox,
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	FIXTURES,
 	focusTimeline,
 	importFiles,
@@ -45,20 +45,13 @@ let page: Page;
 let seqId = '';
 const ids = { text: '', shape: '', template: '', video: '' };
 
-async function transact(p: Page, label: string, commands: unknown[]): Promise<Record<string, string>> {
-	const r = await p.evaluate(
-		([l, c]) =>
-			(
-				window as unknown as {
-					jasper: {
-						transact(tx: unknown): Promise<{ ok: boolean; refs?: Record<string, string> }>;
-					};
-				}
-			).jasper.transact({ label: l, commands: c }),
-		[label, commands] as const,
-	);
-	expect(r.ok, JSON.stringify(r)).toBe(true);
-	return r.refs ?? {};
+async function transact(p: Page, label: string, commands: CommandInput[]): Promise<Record<string, string>> {
+	const r = await p.evaluate(([l, c]) => window.jasper!.transact({ label: l, commands: c }), [
+		label,
+		commands,
+	] as const);
+	expectTransaction(r);
+	return r.refs;
 }
 
 async function docClips(p: Page = page, seq = seqId): Promise<Record<string, DocClip>> {
@@ -243,8 +236,6 @@ test('cross-project paste in another tab through the system clipboard (media res
 	await other.close();
 });
 
-// ---------------------------------------------------------------- wp-clipboard-2
-
 type Item = { id: string; kind: string; name: string; mediaId?: string };
 
 async function items(p: Page = page): Promise<Record<string, Item>> {
@@ -271,7 +262,6 @@ test('Program monitor layer menu: Fit to Frame, Anchor ▸, Arrange ▸, Reveal 
 		{ type: 'param.set', target: ['clip', ids.video, 'transform', 'position'], value: [700, 400] },
 	]);
 	await query(page, 'playhead.set', { frame: video.start + 10 });
-	// Fit to Frame: the layer is scaled to fit and centred (XF-051).
 	let menu = await programMenuAt(0.4, 0.4);
 	await menu.getByRole('menuitem', { name: /^Fit to Frame/ }).click();
 	await expect.poll(async () => (await docClips())[ids.video]!.transform!.scale.value).not.toBe(40);
@@ -279,7 +269,6 @@ test('Program monitor layer menu: Fit to Frame, Anchor ▸, Arrange ▸, Reveal 
 	const tr = async () => (await docClips())[ids.video]!.transform as unknown as T;
 	expect((await tr()).position.value).toEqual([960, 540]);
 	expect((await appliedLabels(page)).at(-1)).toBe('Fit to Frame');
-	// Anchor ▸ Top Left: the anchor moves to the layer's corner, the image stays where it is.
 	const before = await programPixels(page);
 	menu = await programMenuAt(0.3, 0.3);
 	await menu.getByText('Anchor', { exact: true }).hover();
@@ -288,7 +277,6 @@ test('Program monitor layer menu: Fit to Frame, Anchor ▸, Arrange ▸, Reveal 
 	expect((await appliedLabels(page)).at(-1)).toBe('Anchor to Top Left');
 	const after = await programPixels(page);
 	expect(Math.abs(after.mean - before.mean)).toBeLessThan(2);
-	// Arrange ▸ Bring Forward: above the text on V2 (V3 is free), the linked audio keeps its track.
 	await transact(page, 'Text above', [
 		{
 			type: 'clip.addText',
@@ -306,7 +294,6 @@ test('Program monitor layer menu: Fit to Frame, Anchor ▸, Arrange ▸, Reveal 
 	await expect.poll(async () => (await docClips())[ids.video]!.trackId).toBe(v3);
 	expect((await docClips())[audioId]!.trackId).toBe(audioTrack);
 	expect((await appliedLabels(page)).at(-1)).toBe('Bring Forward');
-	// Reveal in Project selects the clip's item in the Project panel.
 	menu = await programMenuAt(0.15, 0.15);
 	await menu.getByRole('menuitem', { name: /^Reveal in Project/ }).click();
 	const item = Object.values(await items()).find((i) => i.kind === 'media' && i.mediaId === video.mediaId)!;
@@ -320,7 +307,6 @@ test('Program monitor layer menu: Fit to Frame, Anchor ▸, Arrange ▸, Reveal 
 	await expect(
 		page.locator(`[data-testid="project-panel"] [data-item-id="${item.id}"]`).first(),
 	).toBeVisible();
-	// Reveal in Timeline brings the Timeline forward with the clip in view.
 	menu = await programMenuAt(0.15, 0.15);
 	await menu.getByRole('menuitem', { name: /^Reveal in Timeline/ }).click();
 	await expect(

@@ -251,7 +251,6 @@ describe('caption blocks', () => {
 		expect(t.length).toBeGreaterThanOrEqual(5);
 		// the first block is extended to 3 s (room before "Um,")
 		expect(t[0]!.end - t[0]!.start).toBe(s(3));
-		// every word is shown exactly once, in order
 		expect(
 			t.flatMap((x) => Array.from({ length: x.words[1] - x.words[0] }, (_, k) => x.words[0] + k)),
 		).toEqual(Array.from({ length: 20 }, (_, k) => k));

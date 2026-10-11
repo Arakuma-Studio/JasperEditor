@@ -1,10 +1,4 @@
-// M2 UI commands for shapes (S11:SHP-006, FIX-007): Graphics ▸ New Layer ▸ Rectangle / Ellipse
-// (`graphics.newRectangle` / `graphics.newEllipse`, default keys Ctrl+Alt+R / Ctrl+Alt+E from the keymap) insert a
-// default 400×400 shape at the playhead on the targeted video track; `tool.rectangle` / `tool.ellipse` select the
-// Program monitor shape tools (XF-061; no default keys, S05:TOOL-002). Owner: wp-m2-shapes. This module is imported
-// at start-up (commands/index.ts), so it also registers the package's UI extensions: Properties ▸ Shape, the
-// Program monitor shape-tool overlay and Edit ▸ Preferences ▸ Graphics ("Resize shapes by size", SHP-007).
-import type { Command, LegacyShapeType } from '@jasper/project';
+import type { CommandOf, LegacyShapeType } from '@jasper/project';
 import { clipSections, programOverlays } from '../extensions/index.ts';
 import { TOOLS } from '../panels/timeline/model/tools.ts';
 import { addShapeAt, SHAPE_LABELS } from '../shapes/insert.ts';
@@ -58,7 +52,6 @@ export const shapeCommands: UiCommand[] = [
 	newShape('graphics.newEllipse', 'ellipse'),
 	toolCommand('rectangle'),
 	toolCommand('ellipse'),
-	// wp shapes
 	toolCommand('polygon'),
 	toolCommand('star'),
 	{
@@ -76,7 +69,9 @@ export const shapeCommands: UiCommand[] = [
 			const r = ctx.session.apply({
 				label: 'Convert to Vector Shape',
 				origin: 'user',
-				commands: ids.map((clipId) => ({ type: 'shape.convertToVector', clipId }) as Command),
+				commands: ids.map(
+					(clipId): CommandOf<'shape.convertToVector'> => ({ type: 'shape.convertToVector', clipId }),
+				),
 			});
 			if (!r.ok) ctx.ui.toast({ kind: 'error', message: r.errors[0]?.message ?? 'Could not convert' });
 		},
@@ -104,7 +99,6 @@ clipSections.register({
 
 programOverlays.register({ id: 'shape-tools', active: () => true, component: ShapeToolOverlay, order: 90 });
 
-// wp shapes: Properties ▸ Shape Contents (vector shapes) and the monitor's vertex editing / Pen tool.
 clipSections.register({
 	id: 'vector-shape',
 	title: 'Shape Contents',

@@ -104,11 +104,9 @@ describe('Motion Templates panel', () => {
 		expect(clips).toHaveLength(1);
 		expect(clips[0]).toMatchObject({ start: 12, duration: 125, template: { id: 'lower-third', version: 1 } });
 		expect(session.store.getState().selection.timeline.clips).toEqual([clips[0]!.id]);
-		// search filters the grid
 		fireEvent.change(screen.getByLabelText('Search templates'), { target: { value: 'card' } });
 		expect(screen.getByRole('listitem', { name: 'Title Card (Titles)' })).toBeTruthy();
 		fireEvent.change(screen.getByLabelText('Search templates'), { target: { value: '' } });
-		// the engine filter has an `anime` value; inserting an anime template stamps its renderer
 		fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'anime' } });
 		fireEvent.keyDown(screen.getByRole('listitem', { name: 'Counter (Counters)' }), { key: 'Enter' });
 		const after = Object.values(Object.values(session.getCommitted().sequences)[0]!.clips).filter(

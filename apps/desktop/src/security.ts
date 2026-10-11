@@ -1,4 +1,9 @@
-// Window security helpers (ARCHITECTURE §12, R-OMS §8.5/§9): pure functions, unit-tested without Electron.
+import type {
+	DesktopCaptureRect,
+	DesktopClipboardWrite,
+	DesktopMcpInfo,
+	DesktopWindowAction,
+} from '@jasper/api';
 import { isOpenableFile } from '@jasper/config';
 
 /** Only web links and mail leave the app; file:, custom schemes and javascript: are dropped. */
@@ -47,7 +52,6 @@ export const MEDIA_EXTENSIONS = [
 	'tiff',
 	'bmp',
 	'svg',
-	// wp captions: caption files (imported onto caption tracks)
 	'srt',
 	'vtt',
 	'scc',
@@ -55,7 +59,6 @@ export const MEDIA_EXTENSIONS = [
 	'stl',
 	'ttml',
 	'dfxp',
-	// wp interchange: timeline documents (FCP7 XML as .xml)
 	'xml',
 	'fcpxml',
 	'otio',
@@ -63,7 +66,6 @@ export const MEDIA_EXTENSIONS = [
 	'aaf',
 	'omf',
 	'ale',
-	// three-d: 3D models (Advanced 3D model layers)
 	'glb',
 	'gltf',
 	'obj',
@@ -80,13 +82,9 @@ export function isRevealablePath(p: unknown): p is string {
 	);
 }
 
-type WindowAction = 'minimize' | 'toggleMaximize' | 'close' | 'focus';
-export function isWindowAction(a: unknown): a is WindowAction {
+export function isWindowAction(a: unknown): a is DesktopWindowAction {
 	return a === 'minimize' || a === 'toggleMaximize' || a === 'close' || a === 'focus';
 }
-
-/** How an MCP client launches the jasper-mcp stdio server that ships with the app. */
-type McpLaunchInfo = { entry: string | null; command: string; env: Record<string, string> };
 
 /**
  * From a checkout (dev / packaged-like) plain `node` runs the bundle. A packaged build has no `node` on its own:
@@ -102,7 +100,7 @@ export function mcpLaunchInfo(opts: {
 	execPath: string;
 	/** Path of the Node runtime shipped with the app, when there is one. */
 	bundledNode?: string | null;
-}): McpLaunchInfo {
+}): DesktopMcpInfo {
 	const entry = opts.exists ? opts.entry : null;
 	if (!opts.packaged) return { entry, command: 'node', env: {} };
 	if (opts.bundledNode) return { entry, command: opts.bundledNode, env: {} };
@@ -122,8 +120,6 @@ export function sessionCookies(
 	return { [`jasper_session_${port}`]: token, [`jasper_editor_${port}`]: editorKey };
 }
 
-// ---------------------------------------------------------------- clipboard (wp-clipboard, S01:CLB-002/009)
-
 /** The custom clipboard format next to `text/html` and `text/plain`. */
 export const CLIPBOARD_CUSTOM_FORMAT = 'application/x-jasper-clipboard';
 /** How Electron's clipboard addresses that raw OS format. */
@@ -131,28 +127,26 @@ export const ELECTRON_CLIPBOARD_FORMAT = `electron application/osclipboard;forma
 /** Same cap as the payload parser (S01:CLB-009). */
 const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
 
-type ClipboardWrite = { json: string; html: string; text: string };
-
 const utf8Bytes = (s: string) => new TextEncoder().encode(s).length;
 
 /**
  * `jasper:clipboard-write` arguments: three strings within the caps, the JSON a JasperEditor clipboard object
  * (the renderer is not trusted to put anything else on the OS clipboard under our format).
  */
-export function isClipboardWrite(v: unknown): v is ClipboardWrite {
-	if (!v || typeof v !== 'object') return false;
-	const { json, html, text } = v as Record<string, unknown>;
+export function isClipboardWrite(v: unknown): v is DesktopClipboardWrite {
+	if (!v || typeof v !== 'object' || !('json' in v) || !('html' in v) || !('text' in v)) return false;
+	const { json, html, text } = v;
 	if (typeof json !== 'string' || typeof html !== 'string' || typeof text !== 'string') return false;
 	if (html.length > 2 * CLIPBOARD_MAX_BYTES || text.length > CLIPBOARD_MAX_BYTES) return false;
-	if (utf8Bytes(json) > CLIPBOARD_MAX_BYTES) return false;
+	if (json.length > CLIPBOARD_MAX_BYTES || utf8Bytes(json) > CLIPBOARD_MAX_BYTES) return false;
 	return isJasperClipboardJson(json);
 }
 
 /** A JSON object with `format: "jasper-clipboard"` (the full schema check happens in the renderer on paste). */
 function isJasperClipboardJson(json: string): boolean {
 	try {
-		const o = JSON.parse(json) as { format?: unknown } | null;
-		return !!o && typeof o === 'object' && o.format === 'jasper-clipboard';
+		const o: unknown = JSON.parse(json);
+		return !!o && typeof o === 'object' && 'format' in o && o.format === 'jasper-clipboard';
 	} catch {
 		return false;
 	}
@@ -160,11 +154,10 @@ function isJasperClipboardJson(json: string): boolean {
 
 /** What `jasper:clipboard-read` hands back: the custom format's JSON when sane, else null. */
 export function clipboardReadResult(raw: unknown): string | null {
-	if (typeof raw !== 'string' || utf8Bytes(raw) > CLIPBOARD_MAX_BYTES) return null;
+	if (typeof raw !== 'string' || raw.length > CLIPBOARD_MAX_BYTES || utf8Bytes(raw) > CLIPBOARD_MAX_BYTES)
+		return null;
 	return isJasperClipboardJson(raw) ? raw : null;
 }
-
-// ---------------------------------------------------------------- external files (wp-clipboard-2, S01:CLB-010)
 
 /** Clipboard types that carry the files copied in a file manager (Electron exposes `text/uri-list`). */
 export const CLIPBOARD_FILE_LIST_TYPE =
@@ -205,7 +198,7 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 }
 
 /**
- * gaps (Edit Original): a path the renderer may ask the OS to open in its default application — absolute, sane,
+ * A path the renderer may ask the OS to open in its default application — absolute, sane,
  * and of a media or document type (never a program, a launcher, or a file without an extension).
  */
 export function isOpenablePath(p: unknown): p is string {
@@ -213,22 +206,32 @@ export function isOpenablePath(p: unknown): p is string {
 }
 
 /** A CSS-pixel rectangle from the renderer (validated before it reaches capturePage). */
-export function isCaptureRect(v: unknown): v is { x: number; y: number; width: number; height: number } {
+export function isCaptureRect(v: unknown): v is DesktopCaptureRect {
 	if (!v || typeof v !== 'object') return false;
-	const r = v as Record<string, unknown>;
 	return (
-		['x', 'y', 'width', 'height'].every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number)) &&
-		(r.x as number) >= 0 &&
-		(r.y as number) >= 0 &&
-		(r.width as number) >= 1 &&
-		(r.height as number) >= 1 &&
-		(r.width as number) <= 16384 &&
-		(r.height as number) <= 16384
+		'x' in v &&
+		typeof v.x === 'number' &&
+		Number.isFinite(v.x) &&
+		v.x >= 0 &&
+		'y' in v &&
+		typeof v.y === 'number' &&
+		Number.isFinite(v.y) &&
+		v.y >= 0 &&
+		'width' in v &&
+		typeof v.width === 'number' &&
+		Number.isFinite(v.width) &&
+		v.width >= 1 &&
+		v.width <= 16384 &&
+		'height' in v &&
+		typeof v.height === 'number' &&
+		Number.isFinite(v.height) &&
+		v.height >= 1 &&
+		v.height <= 16384
 	);
 }
 
 /**
- * audio-mix: which permission requests the app grants. Voice-over recording needs the microphone (`media` with
+ * Voice-over recording needs the microphone (`media` with
  * audio only) and Preferences ▸ Audio lists the inputs (`mediaKeySystem` is never needed); only frames on the app
  * origin may ask. Everything else (camera, geolocation, notifications, MIDI, HID…) is denied.
  */

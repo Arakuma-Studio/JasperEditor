@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire Render family on the Remotion render path (REMOTION_E2E=1): bundles the compositions (production root +
-// registry, via fx-render/entry.ts), renders stills of a video clip with S_Zap / S_UltraZap / S_Sparkles and a solid
-// with S_Gradient, and checks the pixels: lightning is drawn, re-rendering a frame is identical (deterministic),
-// another frame differs (animated), Zap Only is black away from the bolt. `FX_E2E_PHOTO=<jpg>` renders on that photo
-// instead of the test video; `FX_E2E_OUT=<dir>` keeps the stills (contact sheets). Needs Chrome + ffmpeg.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -52,7 +47,6 @@ describe.runIf(enabled)(
 			media?.close();
 		});
 
-		/** The clip under test: the photo (FX_E2E_PHOTO) as a still, else the 640×360 test video. */
 		const clip = (): Command[] =>
 			process.env.FX_E2E_PHOTO
 				? [
@@ -97,7 +91,6 @@ describe.runIf(enabled)(
 			for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i]! - b[i]!));
 			return d;
 		};
-		/** Count of near-white pixels (the bolt cores). */
 		const whites = (raw: Buffer) => {
 			let n = 0;
 			for (let i = 0; i < raw.length; i += 3)

@@ -1,5 +1,3 @@
-// color-mgmt: custom OCIO configs — YAML subset, spaces/roles/displays, every supported transform, interchange
-// roles, refusals of unsupported transforms, hostile input.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {

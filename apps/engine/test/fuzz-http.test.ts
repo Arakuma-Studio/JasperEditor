@@ -1,9 +1,4 @@
-// Every HTTP route of the engine under the never-crash harness (golden-fuzz; docs/testing.md §4): mutated JSON
-// bodies, odd path parameters (traversal, NUL, prototype names, huge strings) and odd query strings must be answered
-// with a typed error — a 4xx (or a typed 5xx such as 507 DISK_FULL) with a JSON `{code, message}` body — never the
-// generic 500 INTERNAL of an uncaught exception, and the engine keeps answering. The route list comes from the
-// server itself, so new routes are fuzzed automatically. Streaming endpoints (`/events`, `/agent`, `/mcp`) and the
-// web fallback are left out.
+// Discover routes from the server so new endpoints inherit fuzzing; streaming endpoints and web fallback are excluded.
 import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
 import { afterAll } from 'vitest';
 import { closeApps, JSON_H, makeApp, type TestApp } from './helpers.ts';
@@ -43,11 +38,9 @@ afterAll(async () => {
 	await closeApps();
 });
 
-/** `s` with every lone surrogate replaced by U+FFFD (String.prototype.toWellFormed). */
 const wellFormed = (s: string) =>
 	s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
 
-/** One request; throws when the engine answers with an untyped failure. */
 async function request(method: string, path: string, input: unknown): Promise<void> {
 	const a = await engine();
 	const { params, body, query } = (input && typeof input === 'object' ? input : {}) as {
@@ -59,8 +52,7 @@ async function request(method: string, path: string, input: unknown): Promise<vo
 	let i = 0;
 	const url =
 		path.replace(/:[A-Za-z]+(?:\|:[A-Za-z]+)?/g, () =>
-			// A lone UTF-16 surrogate (the mutator makes them) cannot be percent-encoded: encodeURIComponent threw a
-			// URIError here, in the harness, before any request (FUZZ=1, verify). A URL carries U+FFFD instead.
+			// encodeURIComponent rejects lone UTF-16 surrogates; URL encoding replaces them with U+FFFD.
 			encodeURIComponent(wellFormed(String(ps[i++] ?? 'x'))).slice(0, 2000),
 		) + (typeof query === 'string' ? `?${query.slice(0, 2000)}` : '');
 	const r = await a.inject({

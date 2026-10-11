@@ -40,7 +40,7 @@ type StoredClipboard = {
 /** Desktop: the absolute path of a pasted File (Electron `webUtils.getPathForFile`), else null. */
 function desktopPathOf(f: File): string | null {
 	try {
-		return getDesktopBridge()?.filePath?.(f) || null;
+		return getDesktopBridge()?.filePath(f) || null;
 	} catch {
 		return null;
 	}
@@ -217,7 +217,7 @@ export async function readSystemClipboard(): Promise<ClipboardData | null> {
 			// fall through to the web API
 		}
 		try {
-			paths = (await desktop.readFiles?.()) ?? [];
+			paths = await desktop.readFiles();
 		} catch {
 			paths = [];
 		}
@@ -253,7 +253,7 @@ export async function readSystemClipboard(): Promise<ClipboardData | null> {
  * (Chromium does not turn every platform's file list into File objects). JasperEditor content is left alone.
  */
 export async function withDesktopFiles(data: ClipboardData | null): Promise<ClipboardData | null> {
-	const readFiles = getDesktopBridge()?.clipboard?.readFiles;
+	const readFiles = getDesktopBridge()?.clipboard.readFiles;
 	if (!data || !readFiles || data.json || data.blobs?.length || data.paths?.length) return data;
 	if (data.html && decodeClipboardHtml(data.html)) return data;
 	let paths: string[] = [];

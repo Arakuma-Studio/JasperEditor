@@ -1,9 +1,5 @@
 // @vitest-environment node
-// The "sapphire-swish-other" transitions in a real WebGL2 (headless Chrome, SwiftShader): one characteristic pixel
-// check per transition (test pictures 64×36: solids, halves, stripes, checker), Reverse, one-sided edges, and the
-// determinism of the seeded ones (same seed → same pixels, other seed → different). Progress is pinned with
-// Start = End (%) where motion blur is not under test (no shutter: Start = End means no movement per frame).
-// Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
+// Start = End pins progress and eliminates per-frame movement, disabling shutter blur in geometry checks.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -15,7 +11,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 type Px = [number, number, number, number];
 const near = (a: Px, b: number[], tol = 6) => b.every((v, i) => Math.abs(v - a[i]!) <= tol);
-/** Start = End = p %: the stage at exactly progress p. */
 const at = (p: number, extra: Record<string, unknown> = {}) => ({
 	startPercent: p * 100,
 	endPercent: p * 100,
@@ -278,7 +273,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(near(black!, [0, 0, 0, 255])).toBe(true);
 			const f = await frame({ id: 'jasper.s.tv-channel-change', params: at(0.5), frame: 9, duration: 19 });
 			const lum = f.filter((_, i) => i % 4 === 0);
-			expect(Math.max(...lum)).toBeGreaterThan(100); // snow
+			expect(Math.max(...lum)).toBeGreaterThan(100);
 			expect(
 				diff(f, await frame({ id: 'jasper.s.tv-channel-change', params: at(0.5), frame: 9, duration: 19 })),
 			).toBe(0);
@@ -364,7 +359,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				...o,
 			});
 			expect(diff(plain, cut)).toBeGreaterThan(1000);
-			// Landed: the cut-out sits where it belongs in B, so the end is exactly B.
 			const end = await frame({
 				id: 'jasper.s.mocha-whip',
 				params: at(1, { cutoutMask: 'rectangle' }),

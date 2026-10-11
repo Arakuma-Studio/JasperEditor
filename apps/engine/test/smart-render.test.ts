@@ -1,6 +1,3 @@
-// Workstream `previews`: smart rendering (export path `copy`, ARCHITECTURE D-11) — GOP analysis, the copy/render
-// split, and real exports: frame-exact output (frame codes), copied frames decode bit-identically to the source
-// (framemd5), valid streams (ffprobe, a full decode without errors), and the plan's explanation when it cannot copy.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -124,7 +121,6 @@ const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine: 'auto',
@@ -175,7 +171,6 @@ describe('smart rendering exports (real ffmpeg)', () => {
 				sourceRange: { in: { sourceFrames: 10 }, out: { sourceFrames: 64 } },
 			},
 		]);
-		// opt-in for H.264: the plan says what it would copy
 		const off = await plan(d, settings(d.seqId));
 		expect(off.path).not.toBe('copy');
 		expect(off.smart?.reasons.join(' ')).toMatch(/opt-in.*34 of 54/);
@@ -208,12 +203,10 @@ describe('smart rendering exports (real ffmpeg)', () => {
 			probe.streams.some((s) => s.codec_type === 'audio'),
 			JSON.stringify(probe),
 		).toBe(true);
-		// a full decode reports nothing
 		expect(spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-f', 'null', '-']).stderr.toString().trim()).toBe(
 			'',
 		);
 		for (const n of [0, 1, 19, 20, 21, 40, 53]) expect(frameCode(file, n), `frame ${n}`).toBe(n + 10);
-		// the copied frames decode exactly as the source's
 		expect(frameHashes(file, 20, 54)).toEqual(frameHashes(fixture('frame-code.mp4'), 30, 64));
 	}, 300_000);
 

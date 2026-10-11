@@ -1,4 +1,4 @@
-// Colour management in render snapshots (workstream color-mgmt): every renderer (Program monitor, Remotion export,
+// Colour management in render snapshots: every renderer (Program monitor, Remotion export,
 // native export, layer bakes) sees a source's colour conversion as the first colour effect of its layer — the
 // internal `jasper.color-input` effect — so it fuses with the layer's colour runs into the one baked LUT (ARCHITECTURE
 // D-21) on every path. Graphics (text, shapes, solids, motion graphics, the sequence background) are SDR content

@@ -1,13 +1,10 @@
-// File ▸ Export ▸ Frame and the camera button of the Program / Source monitors (workstream gaps, docs/wp-notes/gaps.md
-// §EX-3), as Premiere's Export Frame dialog: Name, Format (PNG, JPEG, TIFF, DPX, OpenEXR, BMP, Targa), Path and
-// "Import into project". The frame is rendered by the engine's still path (the export's own renderer: native, layer
-// bake or Remotion), at full resolution — never from proxies. The Source monitor exports the source's frame at the
-// source playhead (a scratch sequence holding the source, like the Source monitor draws it).
+// Frames use the engine's full-resolution still renderer, never proxies. Source-monitor export uses
+// a scratch sequence at the source playhead so its framing matches the monitor.
 import { STILL_FORMAT_EXTENSIONS, STILL_FORMATS, type StillFormat } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
-	type Command,
+	type CommandInput,
 	createRandomIdSource,
 	defaultRegistries,
 	FLICKS_PER_SECOND,
@@ -67,7 +64,7 @@ export function frameRenderDoc(
 	if (it.kind === 'sequence')
 		return { doc, sequenceId: it.sequenceId, frame: Math.max(0, Math.round(src.frame)) };
 	const ids = createRandomIdSource();
-	const commands: Command[] = [];
+	const commands: CommandInput[] = [];
 	let frame = Math.max(0, Math.round(src.frame));
 	if (it.kind === 'media' || it.kind === 'subclip') {
 		const asset = doc.media[it.mediaId];
@@ -78,7 +75,7 @@ export function frameRenderDoc(
 			name: 'Export Frame',
 			fromMediaId: it.mediaId,
 			ref: '$seq',
-		} as Command);
+		} satisfies CommandInput);
 		// sequence.create from the media places it at 0 (New Sequence From Clip).
 		if (it.kind === 'subclip') {
 			const vs = asset.probe.streams.find((s) => s.type === 'video');
@@ -94,13 +91,13 @@ export function frameRenderDoc(
 			...(settings
 				? { settings: { width: settings.width, height: settings.height, frameRate: settings.frameRate } }
 				: {}),
-		} as Command);
+		} satisfies CommandInput);
 		commands.push({
 			type: 'clip.place',
 			sequenceId: '$seq',
 			source: { syntheticId: it.syntheticId },
 			at: 0,
-		} as Command);
+		} satisfies CommandInput);
 	} else return { error: 'This item has no picture' };
 	const { document, result } = applyTransaction(
 		doc,

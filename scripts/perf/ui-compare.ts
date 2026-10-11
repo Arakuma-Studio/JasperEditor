@@ -1,5 +1,4 @@
-// Before/after of the editor UI scenarios on the same machine at the same time (workstream ui-perf,
-// docs/performance.md §5): two web builds served by the built engine on two ports, the scenarios run alternately
+// Compare editor UI scenarios on the same host (docs/performance.md §5): two web builds served by the built engine on two ports, the scenarios run alternately
 // (A, B, A, B…) so both see the same host load; prints the median of each metric per build.
 //
 //   pnpm exec tsx scripts/perf/ui-compare.ts <webDirA> <webDirB> [--rounds 3] [--only drag,scroll]

@@ -1,24 +1,12 @@
-// Colour management dialogs (workstream color-mgmt):
-// - Sequence Settings ▸ Colour (Sequence ▸ Sequence Settings…): Working Color Space (Rec. 709, sRGB, Rec. 2020,
-//   P3-D65, Display P3, Rec. 2100 PQ / HLG, and the linear variants), Linearize Working Space, Blend Using 1.0 Gamma,
-//   Auto Tone Map Media, HDR Graphics White, HDR mastering peak. One undoable `sequence.updateSettings`.
-// - Interpret Footage ▸ Colour (media items) and Clip Colour Space (timeline clips): the source colour space
-//   (Automatic = the file's tags, a space from the list, or a space of an imported OCIO config), the file range used
-//   by log curves, Tone Mapping (sequence default / on / off), the PQ content peak and an input LUT.
-//   `media.interpretColor` / `clip.setColorInterpretation`. The section is a component (`ColorInterpretationFields`)
-//   so the imports workstream's Interpret Footage dialog can host it as its Colour section.
 // Sources: Adobe, "Color management in Premiere Pro" and "Interpret footage" (helpx.adobe.com); ITU-R BT.2408 for the
 // HDR graphics white choices.
-import {
-	type ColorInterpretation,
-	type ColorInterpretationPatch,
-	type MediaAsset,
-	sequenceColorInfo,
-} from '@jasper/project';
+import { type ColorInterpretation, type MediaAsset, sequenceColorInfo } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useDialogClose } from '../extensions/dialog.ts';
 import {
+	colorPatchOf,
 	detectedSpaceLabel,
 	isHdrWorking,
 	type Option,
@@ -37,21 +25,6 @@ export function registerColorMgmtDialogs(): void {
 	registered = true;
 	registerDialog(SEQUENCE_COLOR_DIALOG, SequenceColorDialog);
 	registerDialog(INTERPRET_COLOR_DIALOG, InterpretColorDialog);
-}
-
-function useClose(close: (r?: unknown) => void) {
-	const [open, setOpen] = useState(true);
-	// A ref: OK closes through `finish(result)` and the Dialog then reports its closing again (no second close).
-	const done = useRef(false);
-	return {
-		open,
-		finish(result?: unknown) {
-			setOpen(false);
-			if (done.current) return;
-			done.current = true;
-			close(result);
-		},
-	};
 }
 
 function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
@@ -73,15 +46,18 @@ function ErrorLine({ error }: { error: string | null }) {
 	) : null;
 }
 
-// ---------------------------------------------------------------- Sequence Settings ▸ Colour
-
 type SequenceColorProps = { session: EditorSession; sequenceId: string };
 
 export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>) {
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const seq = props.session.getCommitted().sequences[props.sequenceId];
 	const info = sequenceColorInfo(seq?.settings);
 	const [choice, setChoice] = useState(workingChoiceOf(info));
+	const workingOptions = workingSpaceOptions();
+	const selectWorkingChoice = (value: string) => {
+		const option = workingOptions.find((option) => option.value === value);
+		if (option) setChoice(option.value);
+	};
 	const [blend, setBlend] = useState(info.blendLinear && !info.linearize);
 	const [toneMap, setToneMap] = useState(info.autoToneMap);
 	const [white, setWhite] = useState(String(info.sdrWhiteNits));
@@ -146,8 +122,8 @@ export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>
 					<Select
 						id="cm-working"
 						value={choice}
-						onValueChange={setChoice}
-						options={workingSpaceOptions()}
+						onValueChange={selectWorkingChoice}
+						options={workingOptions}
 						label="Working Color Space"
 						className="flex-1"
 					/>
@@ -155,7 +131,7 @@ export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>
 				<Row label="">
 					<Checkbox
 						checked={linear}
-						onCheckedChange={(on) => setChoice(on ? `${space}-linear` : space)}
+						onCheckedChange={(on) => selectWorkingChoice(on ? `${space}-linear` : space)}
 						disabled={hdr}
 						label="Linearize Working Space"
 						id="cm-linearize"
@@ -215,8 +191,6 @@ export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>
 		</Dialog>
 	);
 }
-
-// ---------------------------------------------------------------- Interpret Footage ▸ Colour
 
 const AUTO = '@auto';
 const NONE = '@none';
@@ -338,19 +312,8 @@ type InterpretProps = {
 	target: { kind: 'media'; mediaIds: string[] } | { kind: 'clips'; sequenceId: string; clipIds: string[] };
 };
 
-function patchOf(from: ColorInterpretation, to: ColorInterpretation): ColorInterpretationPatch {
-	const keys = ['space', 'ocio', 'range', 'toneMap', 'peakNits', 'inputLut'] as const;
-	const out: Record<string, unknown> = {};
-	for (const k of keys) {
-		const a = JSON.stringify(from[k] ?? null);
-		const b = JSON.stringify(to[k] ?? null);
-		if (a !== b) out[k] = to[k] ?? null;
-	}
-	return out as ColorInterpretationPatch;
-}
-
 export function InterpretColorDialog(props: HostedDialogProps<InterpretProps>) {
-	const { open, finish } = useClose(props.close);
+	const { open, finish } = useDialogClose(props.close);
 	const doc = props.session.getCommitted();
 	const state = props.session.getState();
 	const seq = state.activeSequenceId ? doc.sequences[state.activeSequenceId] : undefined;
@@ -384,7 +347,7 @@ export function InterpretColorDialog(props: HostedDialogProps<InterpretProps>) {
 			spaces: (m as MediaAsset).colorConfig!.spaces.map((s) => s.name),
 		}));
 	const apply = () => {
-		const patch = patchOf(initial, value);
+		const patch = colorPatchOf(initial, value);
 		if (Object.keys(patch).length === 0) {
 			finish(true);
 			return true;

@@ -1,4 +1,4 @@
-// Shared GLSL: colour helpers (wave-1 fx framework). Inputs are straight (un-premultiplied) display-referred RGB in
+// Shared GLSL: colour helpers. Inputs are straight (un-premultiplied) display-referred RGB in
 // 0..1 unless noted — call `fx_unpremultiply` on texture reads first and `fx_premultiply` before writing fragColor.
 // Luma uses the Rec.709 weights, like the colour stage (S06).
 import type { GlslChunk } from '../shader.ts';

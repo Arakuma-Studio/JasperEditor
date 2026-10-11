@@ -1,6 +1,3 @@
-// File ▸ Save As… / Save a Copy… / Revert / Project Versions… / Recover Unsaved Changes… (process workstream,
-// ARCHITECTURE D-39, docs/project-files.md). The actions live in home/project-files.tsx, registered by
-// <ProjectLifecycle> for the open session; these commands gate and confirm them.
 import { confirmDialog, openDialog } from '@jasper/ui';
 import { z } from 'zod';
 import { PROJECT_FILE_DIALOGS, projectFileActions, supportsVersions } from '../home/project-files.tsx';
@@ -112,12 +109,12 @@ const recover: UiCommand = {
 		const actions = actionsFor(ctx);
 		if (!actions) return;
 		try {
-			const candidates = await actions.listRecovery();
-			if (candidates.length === 0) {
+			const { candidates, warnings } = await actions.listRecovery();
+			if (candidates.length === 0 && warnings.length === 0) {
 				ctx.ui.toast({ kind: 'info', message: 'There are no unsaved changes to recover' });
 				return;
 			}
-			await openDialog(PROJECT_FILE_DIALOGS.recovery, { actions, candidates, atOpen: false });
+			await openDialog(PROJECT_FILE_DIALOGS.recovery, { actions, candidates, warnings, atOpen: false });
 		} catch (e) {
 			failed(ctx, 'Could not look for unsaved changes', e);
 		}

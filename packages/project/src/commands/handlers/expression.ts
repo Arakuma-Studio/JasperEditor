@@ -1,5 +1,4 @@
-// expression.set / expression.clear / expression.setEnabled / effect.rename (wave expressions,
-// docs/wp-notes/expressions.md). Expressions are stored on the property's Animatable (`expression`) or, for a
+// Expressions are stored on the property's Animatable (`expression`) or, for a
 // text clip's Source Text, on its TextContent. The text is not compiled here (handlers are pure and the engine is
 // WebAssembly): syntax and runtime errors surface at evaluation as `expressionError` and the property renders its
 // keyframed value meanwhile, like After Effects.
@@ -73,7 +72,7 @@ function holder(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: Ha
 	return target.anim as unknown as Draft<Holder>;
 }
 
-export const expressionHandlers: HandlerMap = {
+export const expressionHandlers = {
 	'expression.set': (doc, cmd: CommandOf<'expression.set'>, h: HandlerContext) => {
 		const o = holder(doc, cmd, h);
 		if (cmd.text.trim() === '') {
@@ -108,4 +107,4 @@ export const expressionHandlers: HandlerMap = {
 		else delete loc.fx.name;
 		return { name: name || null };
 	},
-};
+} satisfies HandlerMap;

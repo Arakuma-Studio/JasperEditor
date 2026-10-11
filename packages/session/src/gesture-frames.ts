@@ -1,4 +1,4 @@
-// Gesture frames for costly views (workstream ui-perf, docs/performance.md §5). A gesture (timeline drag or trim,
+// A gesture (timeline drag or trim,
 // property scrub, transform drag) replaces the transient document once per pointer frame; the panel driving it must
 // follow every frame, but views that rebuild a lot from the whole document (the Program monitor's render snapshot
 // and Player, ARCHITECTURE §8) would spend the frame budget the gesture needs. `gestureFrames(store)` is the drawn
@@ -37,10 +37,12 @@ export type GestureFrames = {
 	dispose(): void;
 };
 
+type TimerHandle = ReturnType<typeof setTimeout> | number;
+
 type Timers = {
 	now(): number;
-	setTimeout(fn: () => void, ms: number): unknown;
-	clearTimeout(handle: unknown): void;
+	setTimeout(fn: () => void, ms: number): TimerHandle;
+	clearTimeout(handle: TimerHandle): void;
 	/** Runs after the renders a notification scheduled (React flushes store updates in a microtask). */
 	afterRender(fn: () => void): void;
 };
@@ -48,7 +50,7 @@ type Timers = {
 const defaultTimers: Timers = {
 	now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
 	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-	clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
+	clearTimeout: (h) => globalThis.clearTimeout(h),
 	afterRender: (fn) => queueMicrotask(fn),
 };
 
@@ -73,7 +75,7 @@ export function createGestureFrames(
 ): GestureFrames {
 	let shown = drawnOf(store.getState());
 	const listeners = new Set<() => void>();
-	let timer: unknown = null;
+	let timer: TimerHandle | null = null;
 	let lastPublish = Number.NEGATIVE_INFINITY;
 	const stats: GestureFrameStats = { published: 0, skipped: 0, costMs: 0, intervalMs: 0 };
 

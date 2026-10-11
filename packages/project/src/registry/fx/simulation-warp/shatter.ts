@@ -1,4 +1,4 @@
-// Simulation ▸ Shatter (sim-warp workstream; After Effects' Shatter): the layer breaks into pieces of a pattern
+// Simulation ▸ Shatter (After Effects' Shatter): the layer breaks into pieces of a pattern
 // (Bricks, Glass, Hexagons, Squares, Triangles, or a Custom Shatter Map whose colours group cells into pieces) where
 // up to two force spheres reach it, optionally limited by a gradient; broken pieces fly with gravity, viscosity,
 // mass variance and tumbling, extruded and textured (front, sides, back), through the camera and lights of pieces.ts.

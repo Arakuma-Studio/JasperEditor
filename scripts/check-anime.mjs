@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// anime.js determinism lint (S11:ANM-006/012, ARCHITECTURE §20.8, D-31). Run by `pnpm lint`. Owner: wp-m2-anime-core.
+// anime.js determinism lint (S11:ANM-006/012, ARCHITECTURE §20.8, D-31). Run by `pnpm lint`.
 //
 // 1. Dependency rules (S11:ANM-001/022/023, ARCHITECTURE §3.1), over `apps/*/src` and `packages/*/src`: only
 //    `packages/motion/src` imports `animejs`; only `packages/compositions/src` (and motion itself) imports
@@ -42,17 +42,14 @@ const RUNTIME_DIR = 'packages/motion/src/runtime/';
 const RUNTIME_INDEX = 'packages/motion/src/runtime/index.ts';
 const EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/;
 
-/** Files under motion/compositions source excused from the wall-clock rule, with the reason. */
 const EXEMPT = {
 	'packages/compositions/src/mg-host/protocol.ts':
 		'drives the Remotion bundle page of composition clips (wall-clock timeouts while waiting for the iframe); no anime.js',
 };
 
-/** Modules banned everywhere under motion/compositions source, and outside the runtime only. */
 const BANNED_MODULES =
 	/^animejs\/(?:waapi|events|draggable|layout|timer|animation|animatable|text|easings\/irregular|adapters)(?:\/|$)/;
 const RUNTIME_ONLY_MODULES = /^animejs\/(?:scope|engine)(?:\/|$)/;
-/** Imported names banned everywhere, and outside the runtime only (with the replacement). */
 const BANNED_NAMES = new Set([
 	'animate',
 	'createTimer',
@@ -170,7 +167,7 @@ const DYNAMIC_RE = /(?:\bimport|\brequire)\s*\(\s*(['"])([^'"]+)\1/g;
  * Imports of a file: `{spec, line, typeOnly, namespace, names: string[]}` for static imports and
  * re-exports (multi-line clauses included), dynamic `import()` and `require()`.
  */
-export function parseImports(text) {
+function parseImports(text) {
 	const code = blankTemplates(stripComments(text));
 	const lineAt = (index) => code.slice(0, index).split('\n').length;
 	const out = [];
@@ -259,7 +256,6 @@ function chainNames(code, dot) {
 	}
 }
 
-/** The anime.js call-pattern rules; `timelines` are identifiers bound to timelines in this file. */
 function animeApiRules(rel, timelines) {
 	const inRuntime = rel.startsWith(RUNTIME_DIR);
 	const onTimeline = (code, index) =>
@@ -286,7 +282,6 @@ function animeApiRules(rel, timelines) {
 		{ id: 'split-text', re: /\bsplitText\b|\btext\.split\b/g },
 		{ id: 'frame-rate', re: /\bframeRate\b/g },
 		{ id: 'blend', re: /\bcomposition\s*:\s*['"]blend['"]/g },
-		// `loop: …` and the shorthand `{ duration, loop }`
 		{ id: 'loop', re: /\bloop\s*:|(?<=[{,]\s*)loop(?=\s*[,}])/g },
 		{ id: 'timeline-set-call', re: /\.(?:set|call)\s*\(/g, when: onTimeline },
 		{ id: 'engine-write', re: /\bengine\.(?:[\w$]+\s*=(?!=)|update\s*\()/g },
@@ -449,7 +444,6 @@ function walk(dir, files) {
 	return files;
 }
 
-/** `src` directories of every workspace package and app. */
 function sourceDirs(root) {
 	const dirs = [];
 	for (const top of DEP_ROOTS) {

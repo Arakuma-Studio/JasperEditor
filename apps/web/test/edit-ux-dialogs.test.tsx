@@ -1,5 +1,3 @@
-// edit-ux: Speed/Duration, Fit Clip and Make/Edit Subclip dialogs; Insert/Overwrite with the Fit Clip flow and the
-// remembered choice; Mark Split from the Source monitor; Linked Selection.
 import { EngineClient } from '@jasper/engine-client';
 import { type Clip, FLICKS_PER_SECOND } from '@jasper/project';
 import { TransportStore } from '@jasper/session';
@@ -102,7 +100,6 @@ describe('Fit Clip', () => {
 		const v = h.clipsOn('V1')[0]!;
 		expect([v.start, v.duration, v.speed.rate]).toEqual([100, 30, 2]);
 		expect(rememberedFitChoice()).toBe('change-speed');
-		// Next time the remembered choice applies without asking.
 		h.apply([{ type: 'sequence.setInOut', in: 200, out: 230 }]);
 		await runCommand('timeline.overwriteFromSource', h.ctx());
 		expect(h.dialogs).toHaveLength(1);

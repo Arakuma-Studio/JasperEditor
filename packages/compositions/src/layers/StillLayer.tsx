@@ -4,7 +4,7 @@
 // M2 colour (S06:CG-041): with colour runs the still is drawn through the canvas effect chain of <Img effects>
 // (a canvas of the layer's intrinsic size; renders wait for it). Graded animated images show their first frame
 // (known gap: frame-accurate animated images are KND-040).
-// fx framework (wave 1): with GPU shader effects the still is drawn by `FxPicture` (fed with the decoded image).
+// fx framework: with GPU shader effects the still is drawn by `FxPicture` (fed with the decoded image).
 import { Img } from 'remotion';
 import { useColorStage } from '../color/chain.ts';
 import { FxPicture } from '../fx/FxPicture.tsx';

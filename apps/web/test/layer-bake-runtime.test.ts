@@ -1,6 +1,3 @@
-// Graded previews of DOM layers in the editor (S11:LBK-010, FIX-002): the runtime requests
-// `POST /api/layer-bake/preview` for text/shape/anime layers with colour effects once they stop changing, maps the
-// finished job's preview to the layer (also after moving it in time) and drops it when the layer changes.
 import type { EngineJob, TypedEvent } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -118,7 +115,6 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 				url: `/mg/layers/${'k'.repeat(40)}/preview.webm`,
 				rect: { x: 10, y: 20, w: 300, h: 100 },
 			});
-			// Moving the clip in time keeps its preview (no new request).
 			const move = session.apply({
 				label: 'move',
 				origin: 'user',
@@ -128,7 +124,6 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			await new Promise((r) => setTimeout(r, 200));
 			expect(rt.previewFor(clipOf(session, graded))).not.toBeNull();
 			expect(engine.calls).toHaveLength(1);
-			// Editing the text drops it and asks again.
 			const edit = session.apply({
 				label: 'edit',
 				origin: 'user',
@@ -163,7 +158,6 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			});
 			expect(edit.ok).toBe(true);
 			await vi.advanceTimersByTimeAsync(100);
-			// The stale request is dropped; the edited layer is requested once, 2 s after the rescan.
 			expect(engine.calls).toHaveLength(0);
 			await vi.advanceTimersByTimeAsync(2500);
 			expect(engine.calls).toHaveLength(1);

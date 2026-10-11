@@ -1,6 +1,3 @@
-// wp shapes: the vector shape MCP tools through the protocol against an in-memory engine (documents applied with the
-// real command system): presets, add / get / edit items (strict arguments, nested taper and transforms), path edits,
-// SVG → shape (dry run and apply), conversion of a rectangle.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -113,7 +110,6 @@ describe('vector shape MCP tools', () => {
 		const get = await call('get_shape', { projectId: 'prj_t', clipId: clip.id });
 		expect(get.r.isError, get.text).toBeFalsy();
 		expect((get.json.paths as { path: { vertices: unknown[] } }[])[0]!.path.vertices).toHaveLength(3);
-		// Strict arguments: an unknown nested key is refused with a suggestion.
 		const bad = await call('update_shape_item', {
 			projectId: 'prj_t',
 			clipId: clip.id,

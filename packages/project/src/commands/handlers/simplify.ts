@@ -1,6 +1,3 @@
-// keyframes.simplify (M3, S09:TRK-023, S01:KF-010): resolves the parameters to simplify (selected keys, whole
-// parameters or clips), plans with `animation/simplify-doc.ts` and writes the reduced keyframes in place (one
-// transaction = one History entry; a dry run previews the report). Shared with `tracker.apply {simplify}`.
 import type { Draft } from 'immer';
 import { planSimplify, type SimplifyReport, type SimplifyTarget } from '../../animation/simplify-doc.ts';
 import { resolvePropertySpec } from '../../registry/properties.ts';
@@ -12,13 +9,12 @@ import type { CommandOf } from '../schemas/index.ts';
 import { type AnimLocation, allAnimatables, clipAnimatables, finish, locate, targetOf } from './keyframe.ts';
 import { locateEffect } from './param.ts';
 import type { HandlerMap } from './util.ts';
+import { clone as plain } from './util.ts';
 
 type DAnim = Draft<Animatable<unknown>>;
 
 /** A parameter to simplify: where it lives and (optionally) which of its keys may go. */
 type SimplifyLocation = { loc: AnimLocation; selected?: Set<string> };
-
-const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 function pathKey(p: readonly string[]): string {
 	return p.join('\u0000');
@@ -157,7 +153,7 @@ export function simplifyLocations(
 	return { ...plan.report, skipped: [...skipped, ...plan.report.skipped] };
 }
 
-export const simplifyHandlers: HandlerMap = {
+export const simplifyHandlers = {
 	'keyframes.simplify': (doc, cmd: CommandOf<'keyframes.simplify'>, h: HandlerContext) => {
 		const locations = resolveLocations(doc, cmd, h);
 		if (!locations.length) h.fail('E_INVALID_PARAM', 'Nothing to simplify: no keyframed parameters selected');
@@ -173,4 +169,4 @@ export const simplifyHandlers: HandlerMap = {
 			h.warn('W_NOTHING_TO_SIMPLIFY', 'No parameter has three or more keyframes to simplify');
 		return report;
 	},
-};
+} satisfies HandlerMap;

@@ -1,4 +1,4 @@
-// Roto / object mattes on the engine (parity workstream `roto`): `roto` jobs run the `jasper-roto` child process
+// `roto` jobs run the `jasper-roto` child process
 // (Roto Brush segmentation + propagation, or face tracking; heavy work never runs in the engine process) on one media,
 // publish the computed frames as a matte set of the store (store.ts) and return the `RotoResult` the client commits
 // with `roto.setResult`. Live `roto.progress` events carry each finished frame. Models come from the processing

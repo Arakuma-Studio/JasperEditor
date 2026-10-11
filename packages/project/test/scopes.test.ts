@@ -1,5 +1,4 @@
-// color-grade: Lumetri Scopes maths (color/scopes.ts) on generated frames with known values — ported from FilmCraft
-// crates/scopes/src/tests.rs (MIT OR Apache-2.0) and extended (BT.2020, 10-bit labels, clipping, scopes_read).
+// Tests ported from FilmCraft crates/scopes/src/tests.rs (MIT OR Apache-2.0).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
@@ -386,8 +385,7 @@ describe('scopes maths (color-grade additions)', () => {
 			'[color-grade] scopes at 1080p (ms):',
 			JSON.stringify(times, (_, v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v)),
 		);
-		// 60 ms per scope at 1080p (docs/performance.md), scaled with the host's load unless PERF=1 (budget.ts): a busy
-		// shared host measured 63 ms here without any change to the code.
+		// PERF=1 enforces the 60 ms budget; ordinary runs account for shared-host load (docs/performance.md).
 		const limit = budgetMs(SCOPE_BUDGET_MS);
 		for (const [name, t] of Object.entries(times)) {
 			console.info(budgetReport(`scope ${name} at 1080p`, t, SCOPE_BUDGET_MS));

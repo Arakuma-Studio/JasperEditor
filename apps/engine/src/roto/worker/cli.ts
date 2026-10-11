@@ -9,17 +9,17 @@
 // result is written to `out.json` (`RotoJobOutput`). Exit codes: 0 done, 2 bad arguments, 3 failed (message on
 // stderr and as `{"type":"error","message":…}`), 130 cancelled (SIGTERM/SIGINT).
 import { readFileSync, writeFileSync } from 'node:fs';
+import type { RotoWorkerEvent } from '../../tools/worker-events.ts';
 import { detectFacesInImages, type FaceDetectSpec } from './faces.ts';
 import { CancelledError, type RotoJobSpec, runRotoJob } from './run.ts';
 
-// color-grade: `--faces` detects faces in still frames (Colour Match ▸ Face Detection, worker/faces.ts).
 const facesMode = process.argv[2] === '--faces';
 const [specPath, outPath] = process.argv.slice(facesMode ? 3 : 2);
 if (!specPath || !outPath) {
 	process.stderr.write('usage: jasper-roto [--faces] <spec.json> <out.json>\n');
 	process.exit(2);
 }
-const emit = (o: unknown) => process.stdout.write(`${JSON.stringify(o)}\n`);
+const emit = (o: RotoWorkerEvent) => process.stdout.write(`${JSON.stringify(o)}\n`);
 if (facesMode) {
 	try {
 		const spec = JSON.parse(readFileSync(specPath, 'utf8')) as FaceDetectSpec;

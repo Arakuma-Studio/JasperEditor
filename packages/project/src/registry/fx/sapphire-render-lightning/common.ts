@@ -6,21 +6,18 @@
 // glow widths…) in frame units where the frame is 2 units wide (x ∈ [−1, 1]); here one "Sapphire unit" is half the
 // layer width (`srt_unit()` canvas px in GLSL, `unitPx(ctx)` in TS). Sapphire's default point positions are
 // converted to layer-box coordinates for a 16:9 frame.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
+import { clamp, booleanParam as flag, numberParam as num } from '../../param-values.ts';
 import { GLSL_BLUR } from '../glsl/blur.ts';
 import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
 
-// ---------------------------------------------------------------- param readers
-
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const flag = (v: unknown, d = false): boolean => (typeof v === 'boolean' ? v : d);
-export const vec2v = (v: unknown, d: readonly [number, number]): [number, number] =>
+export const vec2v = (v: ParamValue | undefined, d: readonly [number, number]): [number, number] =>
 	Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number' && Number.isFinite(x))
 		? [v[0] as number, v[1] as number]
 		: [d[0], d[1]];
-export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 /** Canvas pixels per Sapphire unit (half the layer width). */
 export const unitPx = (ctx: Pick<FxPlanContext, 'width' | 'pxScale'>) => 0.5 * ctx.width * ctx.pxScale;
@@ -56,8 +53,6 @@ export const int = (name: string, label: string, def: number, min: number, max?:
 /** An RGB colour (Sapphire colours have no alpha; the alpha channel is ignored). */
 export const rgb = (name: string, label: string, c: readonly [number, number, number]) =>
 	fxParam.color(name, label, [c[0], c[1], c[2], 1]);
-
-// ---------------------------------------------------------------- Combine
 
 /** Generic combine operations (GLSL `SRT_*` constants). */
 export const SRT_OP = {
@@ -131,8 +126,6 @@ export const outputOpacityParam = () =>
 		'copyFromInput',
 	);
 
-// ---------------------------------------------------------------- GLSL: coordinates + combine
-
 export const GLSL_SRT_COMMON: GlslChunk = {
 	name: 'srt/common',
 	source: /* glsl */ `
@@ -199,8 +192,6 @@ vec4 srt_picture(int op, vec4 src, vec3 fg, float fgA, float bgBright, bool allO
 }
 `,
 };
-
-// ---------------------------------------------------------------- GLSL: per-channel blur
 
 export const GLSL_SRT_BLUR: GlslChunk = {
 	name: 'srt/blur',
@@ -335,8 +326,6 @@ export function blurXYPasses(opts: {
 	];
 }
 
-// ---------------------------------------------------------------- splines
-
 /** Samples of a spline uniform (`u_spline`: x, y in layer px and cumulative arc length, per sample). */
 export const SPLINE_N = 24;
 
@@ -455,8 +444,6 @@ export function splinePoints(
 	return pts;
 }
 
-// ---------------------------------------------------------------- misc GLSL
-
 /**
  * Lean seeded noise for this family: ONE PCG round per lattice point (the library's `fx_hash3` chains three, and
  * its 12-octave fbm loops) — SwiftShader (headless renders without a GPU) JIT-compiles inlined loop bodies, and the
@@ -531,3 +518,5 @@ float srt_atmosphere(vec2 sap, float amp, float freq, float detail, float speed,
 }
 `,
 };
+
+export { clamp, flag, num };

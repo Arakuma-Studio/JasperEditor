@@ -474,8 +474,6 @@ describe('TTML', () => {
 	});
 });
 
-// ------------------------------------------------------------------------------------------------ properties
-
 const word = fc.stringMatching(/^[A-Za-z0-9éñü,.!?'"()&%-]{1,10}$/);
 const line = fc.array(word, { minLength: 1, maxLength: 5 }).map((w) => w.join(' '));
 const text = fc.array(line, { minLength: 1, maxLength: 3 }).map((l) => l.join('\n'));

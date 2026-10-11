@@ -55,8 +55,6 @@ function simMat(tx: number, ty: number, angle: number, scale: number): Mat3 {
 	return [c, -s, tx, s, c, ty, 0, 0, 1];
 }
 
-// ------------------------------------------------------------------ similarity fit
-
 /**
  * Least-squares similarity mapping `src[i] → dst[i]` over the points selected by `use` (all when absent):
  * closed form on centred coordinates. Points are interleaved x,y. Null when fewer than 2 points or degenerate.
@@ -220,8 +218,6 @@ export function ransacSimilarity(
 	for (let i = 0; i < n; i++) if (res[i] <= t) count++;
 	return { sim, inliers: count };
 }
-
-// ------------------------------------------------------------------ path smoothing
 
 /** Gaussian smoothing (sigma in samples, kernel radius ⌊3σ⌋, edge values held), as smoothstab.py `gauss`. */
 function gaussSmooth(a: ArrayLike<number>, sigma: number): Float64Array {
@@ -394,8 +390,6 @@ function minimalZoom(
 	return { zoom: null, needed: free === null ? Number.POSITIVE_INFINITY : free * ZOOM_MARGIN };
 }
 
-// ------------------------------------------------------------------ plan
-
 type SmoothPathOptions = {
 	/** Gaussian sigma of the camera path, frames. */
 	sigma: number;
@@ -549,8 +543,6 @@ export function backwardToVsTransform(
 		zoom: (1 - z) * 100,
 	};
 }
-
-// ------------------------------------------------------------------ shots with cuts
 
 export type SegmentPlan = SmoothPathPlan & { firstFrame: number };
 

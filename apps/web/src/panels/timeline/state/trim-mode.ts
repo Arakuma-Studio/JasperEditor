@@ -1,4 +1,5 @@
-// edit-ux: keyboard trim mode (Premiere "Trim Mode" / "Trim Monitor", helpx.adobe.com "Trimming clips"):
+import type { CommandOf } from '@jasper/project';
+// keyboard trim mode (Premiere "Trim Mode" / "Trim Monitor", helpx.adobe.com "Trimming clips"):
 // selected edit points live in the Timeline's ui-store; this module holds the trim session shown by the Trim
 // Monitor (shift counters, dynamic J/K/L trimming, Play Around the Edit, numeric entry) and the operations the
 // trim commands run.
@@ -54,8 +55,6 @@ export const trimMode = createStore<TrimModeState>(() => ({
 	playAround: false,
 	numeric: null,
 }));
-
-// ---------------------------------------------------------------- edit points ↔ ui-store
 
 function toEditPoint(p: EditPointSel): EditPoint {
 	return { clipId: p.clipId, edge: p.side, mode: p.type };
@@ -154,7 +153,11 @@ function addShift(
 	});
 }
 
-export function trimCommand(points: readonly EditPoint[], delta: number, clamp = false) {
+export function trimCommand(
+	points: readonly EditPoint[],
+	delta: number,
+	clamp = false,
+): CommandOf<'clip.trimEdits'> {
 	return {
 		type: 'clip.trimEdits',
 		edits: points.map((p) => ({ clipId: p.clipId, edge: p.edge, mode: p.mode })),
@@ -193,7 +196,7 @@ export function trimSelected(
 		label: opts.label ?? labelFor(points, false),
 		origin: 'user',
 		sequenceId,
-		commands: [trimCommand(points, delta) as never],
+		commands: [trimCommand(points, delta)],
 		...(opts.coalesce ? { coalesceKey: 'trim-keys' } : {}),
 	});
 	if (!r.ok) return { error: r.errors[0]?.message ?? 'Trim refused' };
@@ -205,18 +208,17 @@ export function trimSelected(
 	return { applied };
 }
 
-// ---------------------------------------------------------------- dynamic trimming (J/K/L in trim mode)
-
 type Clock = () => number;
-type Raf = { request(cb: () => void): unknown; cancel(h: unknown): void };
+type FrameHandle = number | ReturnType<typeof setTimeout>;
+type Raf = { request(cb: () => void): FrameHandle; cancel(h: FrameHandle): void };
 
 const defaultRaf: Raf = {
 	request: (cb) =>
 		typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : setTimeout(cb, 16),
 	cancel: (h) =>
-		typeof cancelAnimationFrame === 'function'
-			? cancelAnimationFrame(h as number)
-			: clearTimeout(h as number),
+		typeof h === 'number' && typeof cancelAnimationFrame === 'function'
+			? cancelAnimationFrame(h)
+			: clearTimeout(h),
 };
 
 export class DynamicTrim {
@@ -228,7 +230,7 @@ export class DynamicTrim {
 	private anchorClock: number;
 	private anchorOffset = 0;
 	private atLimit = false;
-	private handle: unknown = null;
+	private handle: FrameHandle | null = null;
 	private done = false;
 
 	constructor(
@@ -299,10 +301,10 @@ export class DynamicTrim {
 			this.follow();
 			return 0;
 		}
-		const r = this.gesture.update([trimCommand(this.points, offset, true) as never]);
+		const r = this.gesture.update([trimCommand(this.points, offset, true)]);
 		if (!r.ok) {
 			// Refused outright: stay where we were.
-			if (this.offset !== 0) this.gesture.update([trimCommand(this.points, this.offset, true) as never]);
+			if (this.offset !== 0) this.gesture.update([trimCommand(this.points, this.offset, true)]);
 			else this.gesture.update([]);
 			return this.offset;
 		}
@@ -415,8 +417,6 @@ export function cancelDynamicTrim(): boolean {
 	dynamic.cancel();
 	return true;
 }
-
-// ---------------------------------------------------------------- Play Around the Edit (Space in trim mode)
 
 let playAroundOff: (() => void) | null = null;
 

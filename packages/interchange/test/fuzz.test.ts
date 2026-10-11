@@ -1,8 +1,3 @@
-// End-to-end robustness of timeline interchange (golden-fuzz; docs/testing.md §Fuzzing): ANY bytes, sniffed or read
-// as each format, either import or fail with `InterchangeError`; and every fragment that imports goes into a project
-// through the real `project.importTimeline` command without an internal error or an invariant violation (a clean
-// rejection with a command error code is allowed). Seeds: a rich project exported to every writable format. The
-// per-format corruption tests (aaf/omf/fcp7/… .test.ts) run on the same harness.
 import type { TransactionResult } from '@jasper/project';
 import { bytesTarget, describeFuzz } from '@jasper/testkit/fuzz';
 import { exportTimeline, FORMAT_INFO, type Format, importTimeline } from '../src/index.ts';
@@ -18,13 +13,11 @@ function seeds(): Uint8Array[] {
 		if (!FORMAT_INFO[f]?.write) continue;
 		for (const file of exportTimeline(h.doc, h.seqId, f).files) out.push(file.bytes);
 	}
-	// Security review PAR-2: mutation also starts from the container shapes that made the AAF and OMF readers loop
-	// or allocate without bound (repeated children, empty-key sets, overlapping segments, self-containing objects).
+	// Seed malformed container graphs as well as valid exports to exercise bounded traversal and allocation.
 	out.push(...hostileSeeds());
 	return out;
 }
 
-/** Import, then apply the fragment to a fresh project. */
 function importAndApply(bytes: Uint8Array, format: Format | null): void {
 	const imp = importTimeline(bytes, { format, now: '2026-10-07T00:00:00.000Z', rate: { num: 30, den: 1 } });
 	const target = new Harness({ preset: 'hd-1080p-30', seed: 999 });

@@ -3,7 +3,7 @@
 import type { BiquadCoeffs as Coeffs, FilterType } from '@jasper/audio-dsp';
 import { flush } from './math.ts';
 
-// Banks share coefficients per band; only the state section below is specific to audio-fx.
+// Banks share coefficients per band; each channel keeps only its filter state.
 export {
 	BIQUAD_IDENTITY as IDENTITY,
 	type BiquadCoeffs as Coeffs,

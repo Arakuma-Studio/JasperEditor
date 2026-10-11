@@ -1,4 +1,4 @@
-// Shared GLSL: integer hashes (wave-1 fx framework, docs/wp-notes/fx-shader-framework.md §GLSL library).
+// Shared GLSL: integer hashes (docs/wp-notes/fx-shader-framework.md §GLSL library).
 // Integer arithmetic (PCG-style) is exact on every GPU, so a seeded pattern is identical in the Player, in parallel
 // render pages and in software GL (SwiftShader) — no `sin()`-based float hashes (their precision varies by GPU).
 import type { GlslChunk } from '../shader.ts';

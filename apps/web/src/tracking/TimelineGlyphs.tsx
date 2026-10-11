@@ -74,8 +74,6 @@ function tcOptions(session: EditorSession | null, clipId: string): TimecodeOptio
 	return {};
 }
 
-// ------------------------------------------------------------------ activation
-
 /** Selects the plate, activates the tracker and reveals Properties ▸ Tracking. */
 function useRevealTracker(): (plateId: string, trackerId: string) => void {
 	const session = useSessionOrNull();
@@ -124,8 +122,6 @@ const BADGE_CLASS =
 function TipLines({ lines }: { lines: readonly string[] }) {
 	return <span className="whitespace-pre-line">{lines.join('\n')}</span>;
 }
-
-// ------------------------------------------------------------------ plate badge
 
 const PlateBadge = memo(function PlateBadge(props: { clip: Clip; rate: Rational; locked: boolean }) {
 	const { clip, rate, locked } = props;
@@ -177,8 +173,6 @@ export function TrackerBadge(p: ClipDecorationProps) {
 	return <PlateBadge clip={p.clip} rate={p.rate} locked={p.trackLocked} />;
 }
 
-// ------------------------------------------------------------------ target link badge
-
 function linkInfo(session: EditorSession | null, tb: TrackedBy) {
 	const loc = session ? findTracker(session.getCommitted(), tb.trackerId) : null;
 	return {
@@ -225,8 +219,6 @@ const LinkBadge = memo(function LinkBadge(props: { clip: Clip; locked: boolean }
 export function TrackedLinkBadge(p: ClipDecorationProps) {
 	return <LinkBadge clip={p.clip} locked={p.trackLocked} />;
 }
-
-// ------------------------------------------------------------------ confidence strips
 
 type StripTip = { x: number; y: number; text: string };
 

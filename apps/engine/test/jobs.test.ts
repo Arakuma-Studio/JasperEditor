@@ -1,9 +1,8 @@
-// Job queue (S04 §17): lanes, slots, dedupe, cancel within 5 s with no child left (QA-007), retry,
-// journal + restart recovery (QA-008), throttled job.updated events.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineJob, EventEnvelope } from '@jasper/api';
+import fc from 'fast-check';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Broadcaster } from '../src/events/broadcaster.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
@@ -105,7 +104,7 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(started[1]).toEqual({ title: 'export', slots: 3 });
 		q.submit({ kind: 'analysis', title: 'bg', priority: 'background', cpuSlots: 0 });
 		await new Promise((r) => setTimeout(r, 100));
-		expect(started.map((s) => s.title)).toEqual(['probe', 'export']); // background paused during export
+		expect(started.map((s) => s.title)).toEqual(['probe', 'export']);
 		gates[1]!();
 		await q.wait(exp.id);
 		await until(() => started.length === 3);
@@ -138,6 +137,20 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(nr.error?.retryable).toBe(false);
 		expect(() => q.retry(nr.id)).toThrow(/cannot be retried/);
 	});
+
+	it.each([null, undefined, 42, 'worker disconnected', { message: 42, code: false }, Object.create(null)])(
+		'finishes jobs whose runner rejects with %j',
+		async (reason: unknown) => {
+			const q = makeQueue({ slots: 1 });
+			q.registerRunner('analysis', async () => Promise.reject(reason));
+			q.start();
+			const job = q.submit({ kind: 'analysis', title: 'invalid failure', priority: 'user', cpuSlots: 1 });
+			const failed = await q.wait(job.id);
+			expect(failed.state).toBe('failed');
+			expect(failed.error).toMatchObject({ code: 'INTERNAL', message: expect.any(String) });
+			expect(q.usedSlots).toBe(0);
+		},
+	);
 
 	it('throttles job.updated to 4/s per job and always sends the final state (JB-040)', async () => {
 		const b = new Broadcaster();
@@ -267,6 +280,20 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 });
 
 describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
+	it('does not restore malformed journal records as runnable jobs', async () => {
+		await fc.assert(
+			fc.asyncProperty(fc.jsonValue(), async (invalid) => {
+				const dir = tempAppdir('jasper-invalid-journal-');
+				const journal = join(dir, 'jobs.jsonl');
+				writeFileSync(journal, JSON.stringify({ job: { id: 'job_invalid', invalid }, input: null }));
+				const q = makeQueue({ journal });
+				q.start();
+				expect(q.list()).toEqual([]);
+			}),
+			{ numRuns: 20 },
+		);
+	});
+
 	it('marks a running job interrupted after a crash, restores queued jobs and re-queues artifact jobs', async () => {
 		const dir = tempAppdir('jasper-journal-');
 		mkdirSync(dir, { recursive: true });
@@ -304,14 +331,11 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 		const recovered = second.get(exp.id)!;
 		expect(recovered.state).toBe('interrupted');
 		expect(recovered.error).toMatchObject({ code: 'INTERRUPTED', retryable: true });
-		// The queued proxy job is restored (same id) and runs.
 		expect((await second.wait(proxy.id)).state).toBe('succeeded');
 		expect(proxyInputs).toEqual([{ mediaKey: 'mk_1' }]);
-		// Interrupted exports are offered for retry.
 		const retry = second.retry(exp.id);
 		expect(retry.kind).toBe('export');
 
-		// A running artifact job interrupted by a crash is re-queued automatically on the next start.
 		const third = makeQueue({ journal: join(dir, 'b.jsonl'), slots: 1 });
 		third.registerRunner('proxy', hang);
 		third.start();
@@ -333,7 +357,6 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 		expect(fourth.get(p.id)?.state).toBe('interrupted');
 		await until(() => seen.length === 1);
 		expect(seen).toEqual([{ mediaKey: 'mk_2' }]);
-		// …and only once.
 		const fifth = makeQueue({ journal: join(dir, 'b.jsonl'), slots: 1 });
 		fifth.registerRunner('proxy', async () => {
 			seen.push('again');

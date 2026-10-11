@@ -1,4 +1,4 @@
-// Custom OCIO configs as media (workstream color-mgmt): importing a `.ocio` file makes a self-contained bundle — the
+// Importing a `.ocio` file makes a self-contained bundle — the
 // config text plus the text of every file its FileTransforms reference (found on the config's `search_path`, relative
 // to its folder) — written as `<name>.jocio` (JSON) and registered as a `color-config` asset. The preview (browser) and
 // every export path read the same bundle, so a config resolves identically everywhere, and the project keeps working

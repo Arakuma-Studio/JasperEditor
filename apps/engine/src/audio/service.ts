@@ -6,7 +6,7 @@
 //   stream (two-pass: measure, then gain + look-ahead true-peak limiter), written as a 24-bit WAV and registered as a
 //   derived media (the client commits `media.derive {recipe: {op: 'loudness-normalize'}}`).
 import { createHash } from 'node:crypto';
-import { mkdir, open, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
 	AudioAnalyzeRequest,
@@ -36,6 +36,7 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { hasSoxr, PcmStreamReader, resamplerArgs } from './decode.ts';
 import { layoutOf, type MixdownResult, renderMixdown } from './mixdown.ts';
+import { publishNormalizedAudio } from './publish.ts';
 
 export const LOUDNESS_RECIPE_VERSION = 1;
 
@@ -121,8 +122,6 @@ export class AudioService {
 				: this.runAnalysis(ctx),
 		);
 	}
-
-	// ------------------------------------------------------------------ analysis
 
 	/** Validates by planning (synchronous errors) and submits the job. */
 	async submitAnalysis(
@@ -307,8 +306,6 @@ export class AudioService {
 		});
 	}
 
-	// ------------------------------------------------------------------ loudness-normalize (media)
-
 	submitNormalize(mediaKey: string, req: LoudnessNormalizeRequest): EngineJob {
 		const record = this.core.registry.get(mediaKey);
 		if (!record) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
@@ -457,10 +454,7 @@ export class AudioService {
 			onSpawn: ctx.trackChild,
 		});
 		const final = join(outDir, name.replace(/[/\\:*?"<>|]/g, '_'));
-		await rename(finalTmp, final).catch(async () => {
-			const { copyFile } = await import('node:fs/promises');
-			await copyFile(finalTmp, final);
-		});
+		await publishNormalizedAudio(finalTmp, final);
 		await rm(tmp, { force: true });
 		await stat(final);
 		const registered = await this.core.media.registerDerived(final, {

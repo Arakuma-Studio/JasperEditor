@@ -1,5 +1,3 @@
-// three-d: toComp / fromComp / toWorld / fromWorld are 3D-aware — a 3D layer maps through its 3D transform and the
-// active camera (After Effects' layer-space transforms of 3D layers).
 import type { ExpressionRef } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpressionText, loadExpressionEngine, storedTimeAtFrame } from '../src/index.ts';

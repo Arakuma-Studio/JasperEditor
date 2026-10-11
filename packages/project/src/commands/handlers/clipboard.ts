@@ -9,7 +9,7 @@
 //   same family and source already in the target is reused instead of duplicated).
 // Resolution is lazy: only the entities the pasted content actually uses are added.
 
-import { current, type Draft, isDraft } from 'immer';
+import type { Draft } from 'immer';
 import { intrinsicOf } from '../../clipboard/build.ts';
 import {
 	type ClipboardKind,
@@ -59,20 +59,23 @@ import {
 	syncFollowerTracks,
 } from '../placement.ts';
 import type { CommandOf, PasteAttributes } from '../schemas/index.ts';
+import { CommandError } from '../types.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { buildParams } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
 import { PRUNE_EMPTY_KEYFRAMES } from './mg-template.ts';
 import { resolveTarget, validateValue } from './param.ts';
-import { assertBin, insertItem } from './project.ts';
+import { assertBin, insertItem } from './project-items.ts';
 import { pasteTimeRemap, removeTimeRemap } from './time.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { clone, type HandlerMap, idList } from './util.ts';
 
 export const CLIPBOARD_OWNER = 'wp-clipboard';
 
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(isDraft(v) ? current(v as Draft<T>) : v)) as T;
-
-function payloadOf(raw: unknown, h: HandlerContext, kinds: readonly ClipboardKind[]): ClipboardPayload {
+export function parseCommandClipboard(
+	raw: unknown,
+	h: HandlerContext,
+	kinds: readonly ClipboardKind[],
+): ClipboardPayload {
 	const r = parseClipboardPayload(raw);
 	if (!r.ok) return h.fail(r.code, r.message, { path: ['payload'] });
 	if (!kinds.includes(r.payload.kind))
@@ -81,8 +84,6 @@ function payloadOf(raw: unknown, h: HandlerContext, kinds: readonly ClipboardKin
 		});
 	return r.payload;
 }
-
-// ---------------------------------------------------------------- reference resolution (CLB-008)
 
 /** Maps the payload's entity ids to target ids, adding records on first use. */
 class Resolver {
@@ -96,9 +97,8 @@ class Resolver {
 	/** Payload media by id (first wins, as `find`): a lookup per media was a linear scan. */
 	private readonly payloadMedia = new Map<string, MediaAsset>();
 	/**
-	 * The first live project media per fingerprint, built on first use and extended with the media this paste
-	 * creates. Scanning `doc.media` (a draft) per pasted media made importing a 2,500-clip bin take ≈ 15–30 s
-	 * (verify workstream, interchange fuzzing).
+	 * Cache the first live media per fingerprint to avoid rescanning every draft for each pasted media.
+	 * New media join the index so later paste entries reuse them.
 	 */
 	private byFingerprint: Map<string, string> | null = null;
 
@@ -266,8 +266,6 @@ class Resolver {
 	}
 }
 
-// ---------------------------------------------------------------- re-timing (S03 KF table)
-
 /**
  * Content-time keys of `from` re-timed onto `to` keeping their offset from the clip's first frame in sequence
  * time (or stretched to the target's duration with `scale`), with new ids. Times are rounded, clamped to ≥ 0 and
@@ -335,8 +333,6 @@ const timingOf = (c: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>): C
 	speed: { rate: c.speed.rate, reverse: c.speed.reverse },
 });
 
-// ---------------------------------------------------------------- clip.paste (CLB-003/004)
-
 /** Sequence-frame converter between the source and target frame rates (identity when equal). */
 function frameConverter(from: Rational, to: Rational): (n: number) => number {
 	if (from.num * to.den === to.num * from.den) return (n) => n;
@@ -360,8 +356,8 @@ function baseIndex(seq: DSeq, ref: string, kind: TrackKind, h: HandlerContext): 
 	return found.index;
 }
 
-function pasteClips(doc: DDoc, cmd: CommandOf<'clip.paste'>, h: HandlerContext): unknown {
-	const p = payloadOf(cmd.payload, h, ['clips']);
+function pasteClips(doc: DDoc, cmd: CommandOf<'clip.paste'>, h: HandlerContext) {
+	const p = parseCommandClipboard(cmd.payload, h, ['clips']);
 	const sec = p.clips!;
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const at = h.frame(seq, cmd.at);
@@ -497,8 +493,6 @@ function pasteClips(doc: DDoc, cmd: CommandOf<'clip.paste'>, h: HandlerContext):
 	};
 }
 
-// ---------------------------------------------------------------- attributes (CLB-005/006, FX-011/012, EC-032)
-
 /** One clip's worth of copyable attributes. */
 type AttributeSource = {
 	kind: string;
@@ -509,7 +503,7 @@ type AttributeSource = {
 	textAnimation?: { in?: TextAnimator | null; out?: TextAnimator | null };
 	textStyle?: Record<string, unknown>;
 	shape?: Record<string, unknown>;
-	/** Workstream `time`: the copied clip itself when it is time-remapped (Paste Attributes ▸ Time Remapping). */
+	/** The copied clip supplies Time Remapping keys for Paste Attributes. */
 	remapped?: TimedClip;
 };
 
@@ -665,7 +659,7 @@ function applyAttributes(
 		const shape = first((s) => s.shape);
 		const srcType = (shape?.shape as { type?: string } | undefined)?.type;
 		const tgtType = (c.shape as { type?: string } | undefined)?.type;
-		// wp shapes: vector → vector replaces the contents (fresh item ids, keys re-timed); rectangles / ellipses and
+		// Vector → vector replaces the contents (fresh item ids, keys re-timed); rectangles / ellipses and
 		// vector shapes do not exchange styles (different models).
 		if (attrs.shapeStyle && shape && t.kind === 'shape' && srcType === 'vector' && tgtType === 'vector') {
 			const contents = retimed((shape.shape as { contents: ShapeItem[] }).contents, shape);
@@ -693,13 +687,13 @@ function applyAttributes(
 	return { clipIds: Object.keys(applied), applied };
 }
 
-function pasteAttributes(doc: DDoc, cmd: CommandOf<'clip.pasteAttributes'>, h: HandlerContext): unknown {
-	const p = payloadOf(cmd.payload, h, ['clips', 'effects']);
+function pasteAttributes(doc: DDoc, cmd: CommandOf<'clip.pasteAttributes'>, h: HandlerContext) {
+	const p = parseCommandClipboard(cmd.payload, h, ['clips', 'effects']);
 	return applyAttributes(doc, p, idList(cmd.clipIds), cmd.attributes, h, { scale: cmd.scaleTimes === true });
 }
 
-function pasteEffects(doc: DDoc, cmd: CommandOf<'effect.paste'>, h: HandlerContext): unknown {
-	const p = payloadOf(cmd.payload, h, ['effects', 'clips']);
+function pasteEffects(doc: DDoc, cmd: CommandOf<'effect.paste'>, h: HandlerContext) {
+	const p = parseCommandClipboard(cmd.payload, h, ['effects', 'clips']);
 	const intrinsic = p.kind === 'effects' ? (p.effects!.intrinsic ?? {}) : {};
 	return applyAttributes(
 		doc,
@@ -717,7 +711,7 @@ function pasteEffects(doc: DDoc, cmd: CommandOf<'effect.paste'>, h: HandlerConte
 	);
 }
 
-function removeAttributes(doc: DDoc, cmd: CommandOf<'clip.removeAttributes'>, h: HandlerContext): unknown {
+function removeAttributes(doc: DDoc, cmd: CommandOf<'clip.removeAttributes'>, h: HandlerContext) {
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const a = cmd.attributes;
 	const frame = { width: seq.settings.width, height: seq.settings.height };
@@ -769,8 +763,6 @@ function removeAttributes(doc: DDoc, cmd: CommandOf<'clip.removeAttributes'>, h:
 	return { clipIds: Object.keys(removed), removed };
 }
 
-// ---------------------------------------------------------------- keyframe.paste (EC-023)
-
 /** Parameter path of a copied keyframe track on a target clip, or null when the clip has no such parameter. */
 function pathOn(clip: Clip, address: KeyframeAddress): string[] | null {
 	if ('property' in address) return ['clip', clip.id, ...address.property.split('.')];
@@ -783,8 +775,8 @@ function pathOn(clip: Clip, address: KeyframeAddress): string[] | null {
 
 const normKind = (k: string) => (k === 'enum' ? 'string' : k);
 
-function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerContext): unknown {
-	const p = payloadOf(cmd.payload, h, ['keyframes']);
+function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerContext) {
+	const p = parseCommandClipboard(cmd.payload, h, ['keyframes']);
 	const sec = p.keyframes!;
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	const resolver = new Resolver(doc, p, h);
@@ -808,7 +800,12 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 			let t: ReturnType<typeof resolveTarget>;
 			try {
 				t = resolveTarget(doc, { target: cand, sequenceId: seq.id }, h, { create: true });
-			} catch {
+			} catch (error) {
+				if (
+					!(error instanceof CommandError) ||
+					!['E_NOT_FOUND', 'E_INVALID_PARAM', 'E_UNKNOWN_EFFECT'].includes(error.code)
+				)
+					throw error;
 				continue;
 			}
 			if (t.type !== 'anim' || normKind(t.rule.kind) !== normKind(track.paramType)) continue;
@@ -878,8 +875,6 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 	return { keyframeIds: pasted, paths };
 }
 
-// ---------------------------------------------------------------- project.pasteItems (CLB-007)
-
 /** A deep copy of a sequence under `newId`: every entity gets a new id, references inside it are remapped. */
 function copySequence(
 	src: Sequence,
@@ -901,7 +896,7 @@ function copySequence(
 	}
 	reidentifyClipChildren(seq.master as never, h);
 	resolver.remapEffectMedia(seq.master.effects);
-	// wp-multicam: a multi-camera source's angles name its tracks (angle ids stay: clips select them).
+	// A multi-camera source's angles name its tracks (angle ids stay: clips select them).
 	const mc = seq.multicam;
 	if (mc)
 		for (const a of mc.angles) {
@@ -973,8 +968,8 @@ function copySequence(
 	return seq;
 }
 
-function pasteItems(doc: DDoc, cmd: CommandOf<'project.pasteItems'>, h: HandlerContext): unknown {
-	const p = payloadOf(cmd.payload, h, ['project-items']);
+function pasteItems(doc: DDoc, cmd: CommandOf<'project.pasteItems'>, h: HandlerContext) {
+	const p = parseCommandClipboard(cmd.payload, h, ['project-items']);
 	return insertProjectItems(doc, p, cmd.binId, cmd.index, h);
 }
 
@@ -1079,11 +1074,11 @@ export function insertProjectItems(
 	};
 }
 
-export const clipboardHandlers: HandlerMap = {
+export const clipboardHandlers = {
 	'clip.paste': pasteClips,
 	'clip.pasteAttributes': pasteAttributes,
 	'clip.removeAttributes': removeAttributes,
 	'effect.paste': pasteEffects,
 	'keyframe.paste': pasteKeyframes,
 	'project.pasteItems': pasteItems,
-};
+} satisfies HandlerMap;

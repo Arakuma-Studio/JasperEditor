@@ -66,7 +66,6 @@ function vidstabRecordFor(file) {
 	}
 }
 
-/** Checks one artifact; returns { file, method, problems }. */
 function checkFile(file, name) {
 	const vidstab = vidstabRecordFor(file);
 	if (isRunnableExe(file, name)) {

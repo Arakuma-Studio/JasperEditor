@@ -10,26 +10,18 @@ import {
 	type SimplifySelection,
 } from './SimplifyKeyframesDialog.tsx';
 
-type Anim = { keyframes?: unknown[] };
-
-/** Number of keyframes of a clip's animated parameters (Motion, opacity, effect params, template params). */
 function clipKeyframeCount(clip: Clip): number {
-	let n = 0;
-	const add = (a: unknown) => {
-		const k = (a as Anim | undefined)?.keyframes;
-		if (Array.isArray(k)) n += k.length;
-	};
-	const c = clip as {
-		transform?: Record<string, unknown>;
-		opacity?: unknown;
-		effects?: { params: Record<string, unknown> }[];
-		paramKeyframes?: Record<string, unknown[]>;
-	};
-	for (const v of Object.values(c.transform ?? {})) add(v);
-	add(c.opacity);
-	for (const fx of c.effects ?? []) for (const a of Object.values(fx.params)) add(a);
-	for (const k of Object.values(c.paramKeyframes ?? {})) n += k.length;
-	return n;
+	let count = 0;
+	if ('transform' in clip)
+		for (const animation of Object.values(clip.transform))
+			if (typeof animation === 'object') count += animation.keyframes.length;
+	if ('opacity' in clip) count += clip.opacity.keyframes.length;
+	if ('effects' in clip)
+		for (const effect of clip.effects ?? [])
+			for (const animation of Object.values(effect.params)) count += animation.keyframes.length;
+	if ('paramKeyframes' in clip)
+		for (const keys of Object.values(clip.paramKeyframes ?? {})) count += keys.length;
+	return count;
 }
 
 /** True when some parameter of the clip has enough keys to simplify (3 or more). */

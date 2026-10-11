@@ -2,12 +2,11 @@
 // Effects' utility modes), set a clip's blend mode by id or label, and turn Rove Across Time on or off for keys.
 import { BLEND_MODE_GROUP_LABELS, BLEND_MODE_INFO, parseBlendMode } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import { defineTool, EDIT_IDEMPOTENT, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const KEYFRAMES_BLEND_GUIDE = `Blend modes and keyframe timing:
 - Every visual clip has a blend mode (Effect Controls ▸ Opacity ▸ Blend Mode): Premiere Pro's 27 — normal, dissolve | darken, multiply, color-burn, linear-burn, darker-color | lighten, screen, color-dodge, add (Linear Dodge), lighter-color | overlay, soft-light, hard-light, vivid-light, linear-light, pin-light, hard-mix | difference, exclusion, subtract, divide | hue, saturation, color, luminosity — plus After Effects' stencil-alpha, stencil-luma, silhouette-alpha, silhouette-luma (they mask everything below instead of drawing) and alpha-add. list_blend_modes describes them; set_blend_mode {clipIds, mode} accepts ids or menu labels ("Linear Dodge (Add)"). A layer blends with everything below it (lower tracks and the sequence background); Dissolve's grain is deterministic per clip and frame. Preview and every export path draw every mode identically (the native export blends in its own kernel; modes inside nested sequences export through Remotion).
 - Keyframe eases are After Effects' speed + influence: influences above 100 % in total are not normalised. Roving keys (set_roving {keyframeIds, roving}) have no time of their own: the run between two fixed keys moves at one smooth speed (the ends' eases shape the whole run) and the roving keys' times follow; the first and last keys never rove.`;

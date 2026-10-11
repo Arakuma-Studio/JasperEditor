@@ -1,4 +1,3 @@
-// Desktop window guards and helpers (ARCHITECTURE §12, R-OMS §8.5): pure functions, no Electron needed.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -119,11 +118,9 @@ describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
 				execPath: '/e',
 			}),
 		).toEqual({ entry: '/repo/apps/mcp/dist/jasper-mcp.mjs', command: 'node', env: {} });
-		// Not built: the dialog falls back to the engine's answer or a placeholder.
 		expect(mcpLaunchInfo({ packaged: false, entry: '/x', exists: false, execPath: '/e' }).entry).toBeNull();
 	});
 
-	// Security review RUN-1: a packaged build that ships a Node runtime never runs its own binary as Node.
 	it('a packaged app with a bundled Node runtime launches jasper-mcp with it, without ELECTRON_RUN_AS_NODE', () => {
 		expect(
 			mcpLaunchInfo({
@@ -138,14 +135,12 @@ describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
 			command: '/opt/JasperEditor/resources/node/node',
 			env: {},
 		});
-		// A checkout never uses it.
 		expect(
 			mcpLaunchInfo({ packaged: false, entry: '/x', exists: true, execPath: '/e', bundledNode: '/n' })
 				.command,
 		).toBe('node');
 	});
 
-	// Security review AGT-2: the window's cookies for the engine it started, under per-port names.
 	it('names the session and editor cookies by the engine port and keeps the two secrets apart', () => {
 		expect(sessionCookies(48123, 'tok', 'key')).toEqual({
 			jasper_session_48123: 'tok',
@@ -175,9 +170,9 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
 	});
 
-	// Security review ELE-1: packaged builds ignore NODE_OPTIONS and --inspect (which would let any process run code
-	// as the signed app, with its microphone permission), verify the asar, load only from it and encrypt cookies.
-	// Run-as-node stays on (security review RUN-1): the engine's worker programs (speech, roto, camera tracking,
+	// Packaged builds ignore NODE_OPTIONS and --inspect, which would let another process run code
+	// as the signed app with its microphone permission. They also verify the asar and encrypt cookies.
+	// Run-as-node stays on: the engine's worker programs (speech, roto, camera tracking,
 	// jasper-proc, the bundle schema runner) and the bundled jasper-mcp are Node programs, and a packaged build has no
 	// Node but its own binary. It can be switched off when the package ships a Node runtime in `resources/node`
 	// (apps/engine/src/tools/node-runtime.ts and mcpLaunchInfo use it when it is there).
@@ -233,8 +228,7 @@ describe('Edit Original (gaps, UI-5)', () => {
 	it('opens media paths but never programs or launchers', () => {
 		expect(isOpenablePath('/media/clip.mov')).toBe(true);
 		expect(isOpenablePath('C:\\media\\clip.MP4')).toBe(true);
-		// Security review ELE-2: a file without an extension is not opened (macOS runs an extensionless Unix
-		// executable in Terminal); the allowlist replaced the list of known program types.
+		// macOS opens extensionless Unix executables in Terminal, so the allowlist refuses extensionless files.
 		expect(isOpenablePath('/media/noext')).toBe(false);
 		for (const bad of [
 			'/media/photo.hta',

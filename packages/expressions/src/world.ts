@@ -177,8 +177,6 @@ export class World {
 		this.data = data;
 	}
 
-	// ------------------------------------------------------------ owners and layers
-
 	owner(seqId: string, owner: string): OwnerInfo | null {
 		const seq = this.data.sequences[seqId];
 		if (!seq) return null;
@@ -249,28 +247,21 @@ export class World {
 		return { toSeconds: (x) => x / FLICKS_PER_SECOND, toStored: (s) => s * FLICKS_PER_SECOND };
 	}
 
-	// ------------------------------------------------------------ property tree
-
 	private effectsOf(info: OwnerInfo): readonly EffectInstance[] {
-		if (info.kind === 'clip')
-			return ((info.clip as { effects?: EffectInstance[] }).effects ?? []) as EffectInstance[];
+		if (info.kind === 'clip') return 'effects' in info.clip ? info.clip.effects : [];
 		if (info.kind === 'track') return info.track.effects ?? [];
 		if (info.kind === 'master') return info.seq.master.effects;
 		return [];
 	}
 
 	/** Masks of a clip and of its effects (stack order), as AE lists a layer's masks. */
-	masksOf(info: OwnerInfo): { id: string; name: string; anims: Record<string, Animatable<unknown>> }[] {
+	masksOf(info: OwnerInfo): { id: string; name: string; anims: Record<string, Animatable<number>> }[] {
 		if (info.kind !== 'clip') return [];
-		type M = {
-			id: string;
-			name: string;
-			feather: Animatable<unknown>;
-			opacity: Animatable<unknown>;
-			expansion: Animatable<unknown>;
-		};
-		const c = info.clip as { masks?: M[]; effects?: { masks?: M[] }[] };
-		const all = [...(c.masks ?? []), ...(c.effects ?? []).flatMap((fx) => fx.masks ?? [])];
+		const c = info.clip;
+		const all = [
+			...('masks' in c ? (c.masks ?? []) : []),
+			...this.effectsOf(info).flatMap((fx) => fx.masks ?? []),
+		];
 		return all.map((m) => ({
 			id: m.id,
 			name: m.name,
@@ -295,7 +286,6 @@ export class World {
 			}
 			if (info.kind === 'clip') {
 				const c = info.clip as Record<string, unknown>;
-				const caps = kindCapabilities(info.clip.kind);
 				if (c.transform || c.opacity)
 					out.push({
 						path: 'transform',
@@ -334,7 +324,6 @@ export class World {
 						matchName: 'params',
 						aliases: ['parameters'],
 					});
-				void caps;
 				return out;
 			}
 			out.push({ path: 'audio', group: true, name: 'Audio', matchName: 'audio', aliases: ['Audio'] });
@@ -378,8 +367,8 @@ export class World {
 			const spec = fx ? defaultEffectRegistry.get(fx.effectId, fx.effectVersion) : undefined;
 			if (!fx) return [];
 			if (!spec) return Object.keys(fx.params).map((n) => leaf(`${group}.${n}`, n, n));
-			// sim-warp: a Puppet effect lists its pins (effect("Puppet")("Puppet Pin 1").position).
-			const pins = (fx as { puppet?: { pins: { id: string; name: string }[] } }).puppet?.pins ?? [];
+			// a Puppet effect lists its pins (effect("Puppet")("Puppet Pin 1").position).
+			const pins = fx.puppet?.pins ?? [];
 			return [
 				...spec.params.map((p) => leaf(`${group}.${p.name}`, p.label, p.name)),
 				...pins.map((pin) => ({
@@ -394,7 +383,7 @@ export class World {
 		if (group.startsWith('puppet.') && group.split('.').length === 2) {
 			return PUPPET_PIN_PROPS.map((k) => leaf(`${group}.${k}`, PUPPET_PIN_LABELS[k], k));
 		}
-		// wp shapes: a vector shape's contents (AE: content("Group 1").content("Rectangle Path 1").size,
+		// a vector shape's contents (AE: content("Group 1").content("Rectangle Path 1").size,
 		// content("Group 1").transform.position).
 		if (info.kind === 'clip' && (group === 'shape' || group.startsWith('shape.items.'))) {
 			const sh = (info.clip as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
@@ -437,7 +426,7 @@ export class World {
 		}
 		if (group === 'text' && info.kind === 'clip') {
 			const out = [leaf('text.content', 'Source Text', 'sourceText', 'text')];
-			// text-animators: text.animator("Animator 1").property.position, ….selector("Range Selector 1").start
+			// text.animator("Animator 1").property.position, ….selector("Range Selector 1").start
 			const animators = (info.clip as { animators?: TextAnimatorGroup[] }).animators ?? [];
 			if (animators.length)
 				out.push({
@@ -555,8 +544,6 @@ export class World {
 		return { node, index: i + 1, count: node.group ? this.children(info, node.path).length : 0 };
 	}
 
-	// ------------------------------------------------------------ properties
-
 	prop(ref: ExpressionRef): ResolvedProp | null {
 		const key = `${ref.seq}\u0000${ref.owner}\u0000${ref.path}`;
 		if (this.propCache.has(key)) return this.propCache.get(key)!;
@@ -579,7 +566,7 @@ export class World {
 			if (!fx) return null;
 			const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
 			const p = spec?.params.find((x) => x.name === name);
-			const stored = fx.params[name] as Animatable<unknown> | undefined;
+			const stored = fx.params[name];
 			if (!p && !stored) return null;
 			const ps = p && spec ? effectParamPropertySpec(fx.id, spec as EffectSpec, p) : null;
 			const anim = stored ?? { value: p!.default, keyframes: [] };
@@ -600,7 +587,7 @@ export class World {
 			const spec = transitionSpec(t.effectId);
 			const p = spec?.params.find((x) => x.name === ref.path);
 			if (!p) return null;
-			const anim = (t.params[p.name] as Animatable<unknown> | undefined) ?? {
+			const anim = t.params[p.name] ?? {
 				value: p.default,
 				keyframes: [],
 			};
@@ -622,8 +609,8 @@ export class World {
 			if (ref.path !== 'volumeDb' && ref.path !== 'pan') return null;
 			const anim =
 				info.kind === 'master'
-					? (info.seq.master.volumeDb as Animatable<unknown>)
-					: ((info.track[ref.path as 'volumeDb' | 'pan'] as Animatable<unknown> | undefined) ?? {
+					? info.seq.master.volumeDb
+					: (info.track[ref.path] ?? {
 							value: 0,
 							keyframes: [],
 						});
@@ -645,7 +632,7 @@ export class World {
 		if (ref.path === 'text.content') {
 			const content = clip.content as TextContent | undefined;
 			if (!content) return null;
-			// text-animators: Source Text hold keys give the keyframed (pre-expression) text.
+			// Source Text hold keys give the keyframed (pre-expression) text.
 			const keys = ((clip.sourceTextKeyframes as Keyframe<TextContent>[] | undefined) ?? []).map((k) => ({
 				...k,
 				value: k.value.text,
@@ -714,7 +701,7 @@ export class World {
 				propertyIndex: indexIn('params'),
 			};
 		}
-		// wp shapes: dynamic `shape.items.<id>.<field>` keys resolve against the clip; text-animators: dynamic
+		// dynamic `shape.items.<id>.<field>` keys resolve against the clip; dynamic
 		// animator / selector / path / more-options keys too.
 		const spec = ref.path.startsWith('shape.items.')
 			? resolvePropertySpec(ref.path, undefined, undefined, info.clip as never)
@@ -729,7 +716,7 @@ export class World {
 			ref.path,
 		);
 		const group = ref.path.startsWith('shape.items.')
-			? vectorLeafGroup(info.clip, ref.path)
+			? vectorLeafGroup(ref.path)
 			: ref.path.startsWith('transform.') || ref.path === 'opacity'
 				? 'transform'
 				: ref.path.startsWith('shape.')
@@ -749,8 +736,6 @@ export class World {
 			propertyIndex: indexIn(group),
 		};
 	}
-
-	// ------------------------------------------------------------ evaluation
 
 	/** Keyframed (pre-expression) value at stored time `t`. */
 	pre(p: ResolvedProp, t: number, opts?: EvaluateOptions): unknown {
@@ -999,7 +984,7 @@ export class World {
 	};
 
 	/**
-	 * `[layer → sequence, sequence → layer]` 3×3 row-major at sequence seconds `s`; three-d: for a 3D layer also
+	 * `[layer → sequence, sequence → layer]` 3×3 row-major at sequence seconds `s`; for a 3D layer also
 	 * `[…, world (4×4), world⁻¹ (4×4), view-projection (4×4, world → sequence px through the active camera)]`.
 	 */
 	xform(seqId: string, seq: Sequence, clip: Clip, s: number): number[][] {
@@ -1184,8 +1169,6 @@ function clampOut(v: unknown, o: EvaluateOptions): unknown {
 	return v;
 }
 
-// ---------------------------------------------------------------- wp shapes: vector shape contents
-
 type LeafFn = (path: string, name: string, ...aliases: string[]) => Node;
 
 /** Lower-camel alias of a display name ("Rectangle Path 1" → "rectanglePath1"). */
@@ -1224,7 +1207,12 @@ const SUBGROUP_NAMES: Record<string, string> = {
 	wave: 'Wave',
 };
 
-function vectorShapeChildren(clip: unknown, contents: ShapeItem[], group: string, leaf: LeafFn): Node[] {
+function vectorShapeChildren(
+	clip: Pick<Clip, 'kind'>,
+	contents: ShapeItem[],
+	group: string,
+	leaf: LeafFn,
+): Node[] {
 	const itemNode = (it: ShapeItem): Node => ({
 		path: `shape.items.${it.id}`,
 		group: true,
@@ -1242,7 +1230,7 @@ function vectorShapeChildren(clip: unknown, contents: ShapeItem[], group: string
 	const sub = rest.slice(1);
 	if (sub[0] === 'contents' && it.type === 'group') return it.contents.map(itemNode);
 	const prefix = `shape.items.${id}.`;
-	const specs = shapeItemSpecs(clip as never, id).filter((s) => s.animatable !== 'no' && s.kind !== 'json');
+	const specs = shapeItemSpecs(clip, id).filter((s) => s.animatable !== 'no' && s.kind !== 'json');
 	const out: Node[] = [];
 	const seen = new Set<string>();
 	for (const s of specs) {
@@ -1272,6 +1260,6 @@ function vectorShapeChildren(clip: unknown, contents: ShapeItem[], group: string
 }
 
 /** The group path a vector item leaf belongs to (its key without the last segment). */
-function vectorLeafGroup(_clip: unknown, path: string): string {
+function vectorLeafGroup(path: string): string {
 	return path.slice(0, path.lastIndexOf('.'));
 }

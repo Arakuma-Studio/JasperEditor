@@ -47,14 +47,14 @@ export function transitionSideTrack(
 	for (let i = 0; i < span.duration; i++) {
 		const t = Math.round(clipContentTime(layer, span.start + i, fps));
 		const g = trackerGeometryAt(tracker, t);
-		const M = layerMapOf(resolveLayerProps(layer as RenderVisualClip, t));
+		const M = layerMapOf(resolveLayerProps(layer, t));
 		const map = (p: readonly number[]): [number, number] => {
 			const q = applyMat3(M, [p[0]!, p[1]!]);
 			return [r3(q[0]), r3(q[1])];
 		};
-		const corners = g.corners ? (g.corners.map(map) as [number, number][]) : null;
+		const corners = g.corners ? (g.corners.map(map) as Quad) : null;
 		const point: [number, number] = corners
-			? (quadCentre(corners as unknown as Quad).map(r3) as [number, number])
+			? (quadCentre(corners).map(r3) as [number, number])
 			: map((g.point ?? [layer.intrinsicBox.width / 2, layer.intrinsicBox.height / 2]) as Vec2);
 		frames.push({ kind: tracker.kind, corners, point, confidence: r3(g.confidence), tracked: g.tracked });
 	}

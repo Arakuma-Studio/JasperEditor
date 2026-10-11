@@ -144,8 +144,6 @@ export class PlaybackDriver implements PlayerController {
 		this.unsubscribe();
 	}
 
-	// ------------------------------------------------------------ PlayerController
-
 	seekTo(frame: number): void {
 		this.lastReported = frame;
 		this.player?.seekTo(frame);
@@ -223,8 +221,6 @@ export class PlaybackDriver implements PlayerController {
 		this.returnTo = opts.returnTo ?? null;
 	}
 
-	// ------------------------------------------------------------ internals
-
 	private start(): void {
 		const p = this.player;
 		if (!p) return;
@@ -241,9 +237,7 @@ export class PlaybackDriver implements PlayerController {
 			if (!this.current) {
 				this.counters.plays++;
 				this.lastFrameAt = Date.now(); // the first interval is the time to the first frame
-				// The frame interval of earlier plays is kept: zeroed, every play's first frame got the fixed 600 ms window,
-				// and on a machine that renders a frame every 300 ms+ a slow first frame after a seek was "recovered" as a
-				// stall (verify workstream, e2e/previews "seek-and-play cycles never stall").
+				// Retain the measured interval across plays so slow rendering after a seek is not mistaken for a stall.
 				this.current = { at: performance.now(), frames: 0, dropped: 0, rate: this.rate };
 				this.playStartEvents = this.frameEvents;
 			}
@@ -277,8 +271,7 @@ export class PlaybackDriver implements PlayerController {
 		const window = Math.max(
 			PLAY_WATCHDOG_MS,
 			3000 / framesPerSec,
-			// The first frame of a play (seek, decode, the first draw) costs more than the steady interval: twice the
-			// allowance (verify workstream: a 1.2 s first frame at a 300 ms interval was kicked as a stall).
+			// Seeking, decoding, and first draw need twice the steady-frame allowance.
 			Math.min(
 				PLAY_WATCHDOG_MAX_ADAPTIVE_MS,
 				(this.frameEvents === this.playStartEvents ? 8 : 4) * this.frameInterval,

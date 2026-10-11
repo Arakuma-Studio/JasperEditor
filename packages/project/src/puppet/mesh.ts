@@ -1,4 +1,4 @@
-// Puppet meshes (sim-warp workstream): an outline → constrained triangulation with density control, and the outline
+// Puppet meshes (sim-warp): an outline → constrained triangulation with density control, and the outline
 // of an alpha region (threshold 50 %, grown or shrunk by Expansion with an exact Euclidean distance transform —
 // Felzenszwalb & Huttenlocher, "Distance Transforms of Sampled Functions" —, the 4-connected region under a seed with
 // holes filled, traced along pixel cracks and simplified with Douglas–Peucker). Interior points on a jittered

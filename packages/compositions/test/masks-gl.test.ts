@@ -1,7 +1,4 @@
 // @vitest-environment node
-// wp masks: the GL mask rasteriser in a real WebGL2 (headless Chrome, SwiftShader when there is no GPU) against the
-// CPU rasteriser (the native export kernel's) — exact parity of the coverage — and the Opacity-mask / masked-effect
-// descriptors inside Remotion's effect chain. FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type BezierPath, ellipsePath, polygonPath, type ResolvedMask, rectPath } from '@jasper/project';
@@ -120,7 +117,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					worst = Math.max(worst, Math.abs(r.gl[i]! - Math.round(r.cpu[i]! * 255)));
 				// 8-bit output of the same float maths: at most one code value apart.
 				expect(worst).toBeLessThanOrEqual(1);
-				// Not trivially empty.
 				expect(r.gl.some((v) => v > 150)).toBe(true);
 			});
 

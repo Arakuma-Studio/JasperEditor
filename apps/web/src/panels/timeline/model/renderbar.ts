@@ -1,5 +1,4 @@
-// Render bar (S02:TL-214, workstream `previews`): the timeline ruler's strip coloured per render-preview segment —
-// green = a preview file exists (plays from the file), yellow = plays live in real time (≈), red = probably drops
+// Green = a preview file exists (plays from the file), yellow = plays live in real time (≈), red = probably drops
 // frames live (≈, the cost model of `previewSegments`), nothing = plays natively. Segments, hashes and costs come from
 // `@jasper/project` (`previewSegments`); which hashes have files from the engine (previews/store.ts).
 import {
@@ -19,7 +18,7 @@ export type RenderSegment = {
 	title: string;
 };
 
-/** ui-perf: per committed document (the render bar and the Program monitor both ask after every commit). */
+/** per committed document (the render bar and the Program monitor both ask after every commit). */
 const segmentCache = new WeakMap<ProjectDocument, Map<string, RenderPreviewSegment[]>>();
 
 /** The segments of a sequence if they are computed already for this document (else null). */

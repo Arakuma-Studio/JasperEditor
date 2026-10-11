@@ -1,8 +1,4 @@
-// three-d UI commands (docs/wp-notes/three-d.md): New ▸ Camera… / Light… (File ▸ New, Graphics ▸ New Layer, Project
-// panel ▸ New Item), Clip ▸ 3D Layer, Camera Settings…, Light Settings…, View ▸ Switch 3D View ▸ … (After Effects'
-// F10 Front, F11 Custom View 1, F12 Active Camera), Switch to Last 3D View, Reset 3D View, Create Camera from 3D View,
-// Sequence ▸ 3D Renderer ▸ Classic 3D / Advanced 3D / Draft 3D. This module also registers the Program monitor's 3D
-// overlay (view chip, wireframes, axis gizmo, Camera tool).
+import type { Command } from '@jasper/project';
 import { type Clip, canBe3d, type Sequence, VIEW_3D_LABELS, VIEWS_3D, type View3D } from '@jasper/project';
 import { programOverlays } from '../extensions/index.ts';
 import { camtrackEngine, trackCamera } from '../three-d/camtrack/actions.ts';
@@ -31,13 +27,13 @@ const selectedClips = (ctx: CommandCtx): Clip[] => {
 		.filter((c): c is Clip => !!c);
 };
 const can3d = (c: Clip) => canBe3d(c.kind);
-const is3d = (c: Clip) => (c as { threeD?: { enabled?: boolean } }).threeD?.enabled === true;
+const is3d = (c: Clip) => 'threeD' in c && c.threeD?.enabled === true;
 const playhead = (ctx: CommandCtx) => ctx.session!.transport.getState().frame;
 
-function apply(ctx: CommandCtx, label: string, commands: unknown[]): void {
+function apply(ctx: CommandCtx, label: string, commands: Command[]): void {
 	const seq = seqOf(ctx);
 	if (!seq) return;
-	const r = ctx.session!.apply({ label, origin: 'user', sequenceId: seq.id, commands: commands as never[] });
+	const r = ctx.session!.apply({ label, origin: 'user', sequenceId: seq.id, commands });
 	if (!r.ok)
 		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail: r.errors[0]?.message });
 	else if (r.warnings.length) ctx.ui.toast({ kind: 'info', message: r.warnings[0]!.message });

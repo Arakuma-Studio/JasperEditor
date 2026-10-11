@@ -1,5 +1,3 @@
-// three-d: 3D edits through the session — each is one undoable step (3D Layer switch, a 3D property, New Camera /
-// Light, the 3D renderer, the camera tools); undo restores the exact earlier document and redo reapplies it.
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { EditorSession, MemoryProjectStore } from '../src/index.ts';

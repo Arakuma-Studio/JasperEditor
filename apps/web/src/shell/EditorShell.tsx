@@ -46,8 +46,6 @@ import { getWorkspaceStore } from './workspaces/instance.ts';
 import { sanitizeLayout } from './workspaces/layout.ts';
 import type { WorkspaceRecord } from './workspaces/store.ts';
 
-// ------------------------------------------------------------------ mode views (Import / Export)
-
 /** Export mode (WP-2E) rendered in the shell's mode area (S05:EX-001, HD-003). */
 function ShellExportView() {
 	const state = useExportMode();
@@ -70,8 +68,6 @@ function ImportMode() {
 		</div>
 	);
 }
-
-// ------------------------------------------------------------------ shell
 
 let warnedReset = false;
 
@@ -262,7 +258,8 @@ function ShellBody() {
 			},
 			exportWorkspace: () => {
 				const id = effectiveRef.current;
-				store.setCurrent(id, dock.currentLayout() ?? (store.get(id)?.current as never));
+				const layout = dock.currentLayout();
+				if (layout) store.setCurrent(id, layout);
 				const json = store.exportJson(id);
 				if (json)
 					download(`${(store.get(id)?.name ?? id).replace(/[^\w-]+/g, '_')}.jasper-workspace.json`, json);
@@ -477,10 +474,6 @@ export function EditorShell() {
 	);
 }
 
-/**
- * Integration: panels that shipped before the shell existed keep module-level fallbacks; point them at
- * the shell's PanelServices and toast/dialog hosts so every panel shares one registry (S05:SH-005).
- */
 function PanelEnvBridge({ children }: { children?: ReactNode }) {
 	const { services, getCtx } = useShellRuntime();
 	// Program/Source monitors publish `programPlayer` into this registry (WP-2C).
@@ -489,7 +482,7 @@ function PanelEnvBridge({ children }: { children?: ReactNode }) {
 		() => ({
 			services,
 			toast: (r) => getCtx().ui.toast(r),
-			openDialog: (kind, props) => getCtx().ui.openDialog(kind as never, props),
+			openDialog: (kind, props) => getCtx().ui.openDialog(kind, props),
 		}),
 		[services, getCtx],
 	);

@@ -185,8 +185,6 @@ export class WhisperModel {
 		return this.tok.languages.map(([c]) => c);
 	}
 
-	// ------------------------------------------------------------------ network calls
-
 	private async encode(window: Float32Array): Promise<Tensor> {
 		const x = new this.ort.Tensor('float32', window, [1, this.cfg.num_mel_bins, N_FRAMES]);
 		const out = await this.encoder.run({ input_features: x });
@@ -264,8 +262,6 @@ export class WhisperModel {
 				cache[`past_key_values.${l}.decoder.${kv}`] = out[`present.${l}.decoder.${kv}`] as Tensor;
 		return rowOf(out.logits as Tensor, 0);
 	}
-
-	// ------------------------------------------------------------------ decoding
 
 	/** Most likely language of a window, with its probability. */
 	async detectLanguage(xa: Tensor): Promise<{ language: string; probability: number }> {

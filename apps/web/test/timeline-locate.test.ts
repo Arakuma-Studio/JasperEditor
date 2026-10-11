@@ -1,4 +1,3 @@
-// Aiming at timeline clips for ui_click / ui_locate (wp fixups): the visible part, and scrolling into view.
 import { describe, expect, it } from 'vitest';
 import { computeLayout } from '../src/panels/timeline/model/layout.ts';
 import {

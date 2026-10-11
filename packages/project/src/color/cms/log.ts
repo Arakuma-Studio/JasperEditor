@@ -1,4 +1,4 @@
-// Camera log curves (workstream color-mgmt), each implemented from the manufacturer's published document. Every curve
+// Camera log curves, each implemented from the manufacturer's published document. Every curve
 // is `encode(x) → signal` / `decode(signal) → x` with x = scene-linear reflectance (18 % grey = 0.18) and the
 // signal in the curve's own normalisation ("domain"):
 //   'cv'  — 10-bit code value / 1023 (full scale): Sony, Panasonic, ARRI, DJI, RED, Blackmagic, Fujifilm, Nikon;
@@ -30,7 +30,6 @@ export type LogDomain = 'cv' | 'ire';
 
 type LogDef = { label: string; domain: LogDomain; encode(x: number): number; decode(y: number): number };
 
-// ---------------------------------------------------------------- Sony
 const SLOG3_TOE = 171.2102946929;
 function slog3Encode(x: number): number {
 	return x >= 0.01125
@@ -51,10 +50,9 @@ function slogCoreInv(y: number): number {
 	return y >= SLOG_TOE ? 10 ** ((y - 0.616596 - 0.03) / 0.432699) - 0.037584 : (y - SLOG_TOE) / 5;
 }
 
-// ---------------------------------------------------------------- Panasonic
 const VLOG = { b: 0.00873, c: 0.241514, d: 0.598206 };
 
-// ---------------------------------------------------------------- Canon (x = reflectance / 0.9, IRE)
+// Canon (x = reflectance / 0.9, IRE)
 function clogEncode(r: number): number {
 	const x = r / 0.9;
 	return x < 0
@@ -95,7 +93,6 @@ function clog3Decode(y: number): number {
 	return x * 0.9;
 }
 
-// ---------------------------------------------------------------- ARRI
 const LOGC3 = { cut: 0.010591, a: 5.555556, b: 0.052272, c: 0.24719, d: 0.385537, e: 5.367655, f: 0.092809 };
 const LC4_A = (2 ** 18 - 16) / 117.45;
 const LC4_B = (1023 - 95) / 1023;
@@ -103,7 +100,6 @@ const LC4_C = 95 / 1023;
 const LC4_S = (7 * Math.LN2 * 2 ** (7 - (14 * LC4_C) / LC4_B)) / (LC4_A * LC4_B);
 const LC4_T = (2 ** ((14 * -LC4_C) / LC4_B + 6) - 64) / LC4_A;
 
-// ---------------------------------------------------------------- Apple
 const APPLE = {
 	r0: -0.05641088,
 	rt: 0.01,
@@ -114,10 +110,9 @@ const APPLE = {
 };
 const APPLE_PT = APPLE.c * (APPLE.rt - APPLE.r0) ** 2;
 
-// ---------------------------------------------------------------- RED Log3G10 (v2)
+// RED Log3G10 (v2)
 const L3G10 = { a: 0.224282, b: 155.975327, c: 0.01, g: 15.1927 };
 
-// ---------------------------------------------------------------- Blackmagic
 const BMD5 = {
 	a: 0.08692876065491224,
 	b: 0.005494072432257808,
@@ -129,7 +124,6 @@ const BMD5 = {
 const BMD5_LOG_CUT = BMD5.d * BMD5.linCut + BMD5.e;
 const DI = { a: 0.0075, b: 7, c: 0.07329248, m: 10.44426855, linCut: 0.00262409, logCut: 0.02740668 };
 
-// ---------------------------------------------------------------- Fujifilm
 const FLOG = { a: 0.555556, b: 0.009468, c: 0.344676, d: 0.790453, e: 8.735631, f: 0.092864, cut1: 0.00089 };
 const FLOG2 = {
 	a: 5.555556,
@@ -148,14 +142,12 @@ function fDecode(k: typeof FLOG, y: number): number {
 	return y >= cut2 ? (10 ** ((y - k.d) / k.c) - k.b) / k.a : (y - k.f) / k.e;
 }
 
-// ---------------------------------------------------------------- Nikon
 const NLOG = { cut1: 0.328, a: 650 / 1023, b: 0.0075, c: 150 / 1023, d: 619 / 1023 };
 const NLOG_CUT2 = NLOG.a * Math.cbrt(NLOG.cut1 + NLOG.b);
 
-// ---------------------------------------------------------------- Kodak Cineon (DPX printing density)
+// Kodak Cineon (DPX printing density)
 const CINEON_BLACK = 10 ** (((95 - 685) * 0.002) / 0.6);
 
-// ---------------------------------------------------------------- DJI
 function dlogEncode(x: number): number {
 	return x <= 0.0078 ? 6.025 * x + 0.0929 : Math.log10(x * 0.9892 + 0.0108) * 0.256663 + 0.584555;
 }

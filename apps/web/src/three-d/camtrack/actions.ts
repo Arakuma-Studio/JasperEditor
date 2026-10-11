@@ -2,9 +2,10 @@
 // and committed as one "Solve Camera" step, cancel, Delete Track Points (then solve again, as After Effects does),
 // Set Ground Plane and Origin, Create Camera / Text / Solid and Camera, Remove.
 import type { CamTrackResult, EngineJob } from '@jasper/api';
+import { TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
-	type Command,
+	type CommandInput,
 	cameraTrackerInputs,
 	cameraTrackerSolveBody,
 	findCameraTracker,
@@ -12,6 +13,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
+import { errorText, pollActiveJob } from '../../processing/engine-jobs.ts';
 import { camtrackUi } from './store.ts';
 
 /** The subset of the engine client the tracker uses (tests pass a fake). */
@@ -26,17 +28,15 @@ export function camtrackEngine(): CamTrackEngine | null {
 	return currentEngine;
 }
 
-const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'interrupted']);
 const POLL_MS = 500;
 
-function apply(session: EditorSession, label: string, commands: unknown[]) {
-	const r = session.apply({ label, origin: 'user', commands: commands as Command[] });
+function apply(session: EditorSession, label: string, commands: CommandInput[]) {
+	const r = session.apply({ label, origin: 'user', commands });
 	if (!r.ok) toast({ kind: 'error', title: `${label} failed`, detail: r.errors[0]?.message ?? '' });
 	return r;
 }
 
-const trackerOf = (doc: ProjectDocument, clipId: string) =>
-	findCameraTracker(doc as never, clipId)?.tracker ?? null;
+const trackerOf = (doc: ProjectDocument, clipId: string) => findCameraTracker(doc, clipId)?.tracker ?? null;
 
 /** Animation ▸ Track Camera: applies the tracker to the clip (when it has none) and starts the analysis. */
 export async function trackCamera(
@@ -62,7 +62,7 @@ export async function analyze(
 	camtrackUi.setError(clipId, null);
 	let body: ReturnType<typeof cameraTrackerSolveBody>;
 	try {
-		body = cameraTrackerSolveBody(session.getState().document as never, clipId);
+		body = cameraTrackerSolveBody(session.getState().document, clipId);
 	} catch (e) {
 		camtrackUi.setError(clipId, (e as Error).message);
 		return null;
@@ -90,31 +90,27 @@ export async function analyze(
 		return null;
 	}
 	camtrackUi.patchRunning(clipId, { jobId: job.id });
-	if (TERMINAL.has(job.state)) finish(session, clipId, job);
+	if (TERMINAL_JOB_STATES.has(job.state)) finish(session, clipId, job);
 	else poll(session, engine, clipId, job.id);
 	return job.id;
 }
 
 function poll(session: EditorSession, engine: CamTrackEngine, clipId: string, jobId: string): void {
-	const tick = async () => {
-		const r = camtrackUi.get().running[clipId];
-		if (!r || r.jobId !== jobId) return;
-		try {
-			const job = await engine.getJob(jobId);
-			if (TERMINAL.has(job.state)) {
-				finish(session, clipId, job);
-				return;
-			}
+	void pollActiveJob(engine, jobId, {
+		intervalMs: POLL_MS,
+		isActive: () => camtrackUi.get().running[clipId]?.jobId === jobId,
+		onUpdate(job) {
 			camtrackUi.patchRunning(clipId, {
 				progress: job.progress ?? 0,
 				stage: job.stage ?? (job.state === 'queued' ? 'Queued' : 'Analyzing'),
 			});
-		} catch {
-			// transient engine error: keep polling
-		}
-		setTimeout(tick, POLL_MS);
-	};
-	setTimeout(tick, POLL_MS);
+		},
+	})
+		.then((job) => job && finish(session, clipId, job))
+		.catch((error) => {
+			camtrackUi.patchRunning(clipId, null);
+			camtrackUi.setError(clipId, errorText(error));
+		});
 }
 
 function finish(session: EditorSession, clipId: string, job: EngineJob): void {
@@ -146,7 +142,7 @@ export async function cancelAnalysis(engine: CamTrackEngine, clipId: string): Pr
 export function updateTracker(
 	session: EditorSession,
 	clipId: string,
-	patch: Record<string, unknown>,
+	patch: Omit<Extract<CommandInput, { type: 'cameraTracker.settings' }>, 'type' | 'clipId'>,
 ): boolean {
 	return apply(session, '3D Camera Tracker Settings', [{ type: 'cameraTracker.settings', clipId, ...patch }])
 		.ok;

@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Pixel behaviour of the fx family premiere-adjust-color-keying (Premiere Adjust, Blur & Sharpen, Channel, Color
-// Correction, Image Control, Keying, Perspective, Transform, Utility) in real WebGL2 (headless Chrome, SwiftShader):
-// identity at defaults where Premiere's defaults are an identity, one characteristic pixel per effect, padding for
-// shadows, alpha handling. Pixel coordinates are layer px (relative to the layer box). FX_GL=0 skips it.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { near, PACG_GL, type PacgRequest, type PacgSession, type Px, startPacg } from './fx-pacg/harness.ts';
 
@@ -68,8 +64,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 			await identity(id);
 	});
 
-	// ---------------------------------------------------------------- Adjust
-
 	it('Auto Levels / Auto Contrast / Auto Color stretch a low-contrast ramp to black and white', async () => {
 		const ramp = { kind: 'ramp', from: 'rgb(70, 60, 90)', to: 'rgb(190, 170, 210)' } as const;
 		const b = { width: 64, height: 8 };
@@ -95,7 +89,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 		expect(ac[2]).toBeGreaterThan(ac[1] + 30);
 		const color = await px('jasper.auto-color', {}, ramp, 0, 4, b);
 		expect(Math.max(color[0], color[1], color[2])).toBeLessThan(20);
-		// Blend With Original 100 % = the source.
 		const orig = await px('jasper.auto-levels', { blendWithOriginal: 100 }, ramp, 0, 4, b);
 		expect(near(orig, [70, 60, 90, 255], 4)).toBe(true);
 	});
@@ -130,8 +123,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 		expect(lit.pixels[0]![0]).toBeGreaterThan(lit.pixels[1]![0] + 80);
 		expect(grey(await px('jasper.proc-amp', { saturation: 0 }, ORANGE))).toBe(true);
 	});
-
-	// ---------------------------------------------------------------- Blur & Sharpen
 
 	it('blurs: camera, channel (alpha pads), compound (map), directional (one axis), interlace (vertical only)', async () => {
 		const split = { kind: 'split', left: '#000', right: '#fff' } as const;
@@ -182,8 +173,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 			(await px('jasper.unsharp-mask', { amount: 200, radius: 2, threshold: 60 }, split, 15, 8))[0],
 		).toBe(100);
 	});
-
-	// ---------------------------------------------------------------- Channel
 
 	it('Invert channels and Blend With Original', async () => {
 		expect(near(await px('jasper.invert', {}, ORANGE), [55, 155, 205, 255])).toBe(true);
@@ -265,8 +254,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 		expect(near(sc.pixels[0]!, [0, 0, 255, 255])).toBe(true);
 		expect(near(sc.pixels[1]!, [255, 0, 0, 255])).toBe(true);
 	});
-
-	// ---------------------------------------------------------------- Color Correction / Image Control
 
 	it('colour corrections change what they should', async () => {
 		const hue = await px(
@@ -359,8 +346,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 		);
 	});
 
-	// ---------------------------------------------------------------- Keying
-
 	it('Ultra Key removes the key colour, keeps other colours, and shows its matte', async () => {
 		const key = { keyColor: [0.2, 0.8, 0.3, 1] };
 		const green = solid('rgb(51, 204, 77)');
@@ -377,7 +362,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 		// spill: a greenish grey loses its green cast
 		const spill = await px('jasper.ultra-key', key, solid('rgb(150, 190, 150)'));
 		expect(spill[1] - spill[0]).toBeLessThan(25);
-		// choke/soften passes run
 		const clean = await px('jasper.ultra-key', { ...key, choke: 30, soften: 30, contrast: 50 }, ORANGE);
 		expect(clean[3]).toBe(255);
 	});
@@ -448,8 +432,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 			expect((await s.px({ id, params: {}, picture: ORANGE, box, media: black }, 8, 8))[3]).toBe(255);
 		}
 	});
-
-	// ---------------------------------------------------------------- Perspective / Transform / Utility
 
 	it('Drop Shadow and Radial Shadow draw into the padding', async () => {
 		const b = { width: 20, height: 20 };

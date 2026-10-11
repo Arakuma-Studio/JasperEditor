@@ -1,5 +1,3 @@
-// Workstream gaps (PRJ-6): File ▸ Project Manager — collect and consolidate, exclude unused, handles, previews, the
-// report and a copy that shows the same frames (frame codes) from its own media.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -174,7 +172,6 @@ describe('Project Manager', () => {
 		);
 		expect(frameCode(a)).toBe(42);
 		expect(frameCode(b)).toBe(42);
-		// The engine knows the new project.
 		const g = await app.inject({ method: 'GET', url: `/api/projects/${res.projectId}`, headers: H });
 		expect(g.statusCode).toBe(200);
 	}, 300_000);

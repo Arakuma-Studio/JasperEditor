@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Distort (family "premiere-stylize-distort-generate", wave 2): Lens Distortion,
+// Premiere Pro standard effects — Distort (family "premiere-stylize-distort-generate"): Lens Distortion,
 // Magnify, Mirror, Offset, Spherize, Turbulent Displace, Twirl, Wave Warp.
 // Every warp is an inverse mapping (output pixel → source position) sampled with `fx_sampleLayer` in layer-box
 // coordinates, so areas with no source are transparent (or filled, where Premiere fills them). Angles: Mirror's
@@ -32,8 +32,6 @@ vec2 warp_size() { return u_box.zw / u_pxScale; }
 vec4 warp_at(vec2 layerPx) { return fx_sampleLayer(u_source, layerPx / warp_size(), FX_EDGE_TRANSPARENT); }
 `,
 };
-
-// ---------------------------------------------------------------- Lens Distortion
 
 export const LENS_DISTORTION = defineShaderEffect({
 	id: 'jasper.lens-distortion',
@@ -109,8 +107,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Magnify
 
 export const MAGNIFY = defineShaderEffect({
 	id: 'jasper.magnify',
@@ -195,8 +191,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Mirror
-
 export const MIRROR = defineShaderEffect({
 	id: 'jasper.mirror',
 	label: 'Mirror',
@@ -229,8 +223,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Offset
-
 export const OFFSET = defineShaderEffect({
 	id: 'jasper.offset',
 	label: 'Offset',
@@ -255,8 +247,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Spherize
 
 export const SPHERIZE = defineShaderEffect({
 	id: 'jasper.spherize',
@@ -291,8 +281,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Turbulent Displace
 
 const TURB_TYPES = [
 	'turbulent',
@@ -427,8 +415,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Twirl
-
 export const TWIRL = defineShaderEffect({
 	id: 'jasper.twirl',
 	label: 'Twirl',
@@ -472,8 +458,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Wave Warp
 
 const WAVE_TYPES = [
 	'sine',

@@ -1,5 +1,4 @@
-// Export ▸ Use Previews (workstream `previews`, docs/wp-notes/previews.md): an export takes the frames of the
-// segments that have a valid render preview from the preview files and renders only the rest (through its normal
+// An export uses valid preview files and renders only the remaining segments (through its normal
 // path, to frame-exact ProRes intermediates), then encodes the concatenation once with the export's encoder and the
 // export mix. Like Premiere, the preview frames go through one more encode (generation loss of the preview codec:
 // I-frame-only H.264 at ≈ 0.6 bit/pixel is visually transparent; say "Use Previews" only when that is acceptable).

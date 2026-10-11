@@ -1,6 +1,3 @@
-// Shapes in the web app (wp-m2-shapes): Graphics ▸ New Layer ▸ Rectangle / Ellipse (S11:SHP-006, FIX-007), the
-// Program monitor shape tools (S03:XF-061: drag box, Shift, Alt, Escape, one undo step), Properties ▸ Shape and
-// Effect Controls ▸ Shape (SHP-005), "Resize shapes by size" handles (SHP-007) and geometry hit-testing (XF-001).
 import {
 	buildRenderSnapshot,
 	createCounterIdSource,
@@ -88,7 +85,6 @@ describe('Graphics ▸ New Layer ▸ Rectangle / Ellipse (FIX-007)', () => {
 		expect(r!.transform.position.value).toEqual([960, 540]);
 		expect(session.getState().selection.timeline.clips).toEqual([r!.id]);
 		expect(session.getState().history.entries.length).toBe(before + 1);
-		// The targeted V1 is busy now: the ellipse goes to the next free track.
 		ell.run(cmdCtx(session));
 		const e = shapes(session, seqId).find((c) => c.shape.type === 'ellipse')!;
 		expect(e.trackId).not.toBe(r!.trackId);

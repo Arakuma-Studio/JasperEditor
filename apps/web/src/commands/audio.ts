@@ -1,7 +1,3 @@
-// Audio UI commands (audio-mix): Audio Gain (G), Audio Scrubbing (Shift+S), Auto Duck, Measure Loudness, Loudness
-// Normalization of the Mix, Normalize Loudness of a media, Voice-over Record and its settings. This module is
-// imported at start-up (commands/index.ts): it also installs the preview mix runtime (AudioWorklet), the dialogs and
-// Preferences ▸ Audio.
 import type { Sequence } from '@jasper/project';
 import { openDialog, toast } from '@jasper/ui';
 import { z } from 'zod';
@@ -28,7 +24,6 @@ import type { CommandCtx, UiCommand } from './types.ts';
 installAudioRuntime();
 registerAudioDialogs();
 
-// Context menus: timeline audio clips (Audio Gain, Auto Duck, Normalize Loudness) and Project media items.
 clipMenuExtensions.register({
 	id: 'audio-mix',
 	order: 40,

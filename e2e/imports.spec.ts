@@ -1,7 +1,3 @@
-// imports workstream through the real UI of the built app (docs/wp-notes/imports.md): File ▸ Import of Lottie, SVG,
-// EXR and interlaced video (the Program monitor draws them), a two-page PDF (page prompt), a PSD (Import Layered File
-// ▸ Sequence), numbered stills (Image Sequence prompt), the Project panel's Modify ▸ Interpret Footage… (one undoable
-// step; every control of the dialog has a stable automation id), and File ▸ Export ▸ Lottie… with its report.
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -97,7 +93,7 @@ test('imports Lottie, SVG, EXR and interlaced video; the Program monitor draws t
 			tracks: { video: 'V3' },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await expect.poll(async () => (await programPixels(page)).std, { timeout: 60_000 }).toBeGreaterThan(5);
 	// The EXR display picture and the SVG are <img>s, the Lottie player draws an <svg>.
 	await expect
@@ -180,7 +176,6 @@ test('Modify ▸ Interpret Footage… applies in one undoable step; its controls
 	const dlg = page.getByTestId('interpret-footage-dialog');
 	await expect(dlg).toBeVisible();
 	await expect(dlg.getByTestId('interpret-field-order')).toContainText('Upper Field First');
-	// mcp-cli audit: every interactive element in the dialog has a stable automation id.
 	const { port } = serverInfo();
 	const res = await page.request.post(`http://127.0.0.1:${port}/api/agent/ui`, {
 		data: { projectId, action: 'elements', args: { limit: 2000 } },
@@ -218,8 +213,7 @@ test('File ▸ Export ▸ Lottie… exports the sequence and lists what was not 
 			content: { text: 'Lottie' },
 		},
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
-	// The sequence selected in the Project panel is the one exported.
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	await page.getByTestId('project-row').filter({ hasText: 'Sequence 01' }).click();
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'File', exact: true }).click();
 	await page.getByRole('menuitem', { name: /^Export$/ }).hover();

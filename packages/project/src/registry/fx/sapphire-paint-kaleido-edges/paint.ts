@@ -8,6 +8,7 @@
 // in the doubled-angle representation (Stroke Align = how far it is smoothed), with a slowly varying random
 // direction in flat areas. Each pixel looks at the strokes of the neighbouring cells and keeps the two on top
 // (seeded priorities) — painter's order without sorting.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
@@ -27,10 +28,11 @@ import {
 
 const bin = SAPPHIRE_BINS.stylize;
 
-// ---------------------------------------------------------------- shared maths (TS)
-
 /** Stroke cell size in canvas px for a Sapphire Frequency (strokes across the layer width). */
-export function strokeCellPx(frequency: unknown, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>): number {
+export function strokeCellPx(
+	frequency: ParamValue | undefined,
+	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
+): number {
 	return (ctx.width * ctx.pxScale) / Math.max(0.1, num(frequency, 50));
 }
 
@@ -38,7 +40,7 @@ export function strokeCellPx(frequency: unknown, ctx: Pick<FxPlanContext, 'width
  * Orientation-field passes: `orient` (doubled-angle gradient at the stroke scale, half resolution) and `orientS`
  * (smoothed by Stroke Align). Reads the output `smooth`.
  */
-export function orientPasses(cellPx: number, align: unknown): ShaderPass[] {
+export function orientPasses(cellPx: number, align: ParamValue | undefined): ShaderPass[] {
 	return [
 		{
 			output: 'orient',
@@ -168,8 +170,6 @@ vec4 pnt_sharpen(float amount, float r) {
 }
 `;
 
-// ---------------------------------------------------------------- common param groups
-
 const jitterParam = () =>
 	fxParam.number('jitterFrames', 'Jitter Frames', 0, { min: 0, softMax: 30, step: 1 }, { animatable: false });
 const strokeParams = (styleOpts: [string[], string[], string], freqMin: number): ParamSpec[] => [
@@ -200,8 +200,6 @@ const offsetDarksP = (range: { min?: number; max?: number } = {}) =>
 	sNum('offsetDarks', 'Offset Darks', 0, { softMin: -1, softMax: 1, step: 0.001, ...range });
 const tintLightsP = () => rgbParam('tintLights', 'Tint Lights', [1, 1, 1]);
 const tintDarksP = () => rgbParam('tintDarks', 'Tint Darks', [0, 0, 0]);
-
-// ---------------------------------------------------------------- S_AutoPaint
 
 export const S_AUTO_PAINT = defineShaderEffect({
 	id: 'jasper.s.auto-paint',
@@ -250,8 +248,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_Sketch
 
 export const S_SKETCH = defineShaderEffect({
 	id: 'jasper.s.sketch',
@@ -324,8 +320,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_Etching
-
 export const S_ETCHING = defineShaderEffect({
 	id: 'jasper.s.etching',
 	label: 'S_Etching',
@@ -394,8 +388,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Brush (Oil, Chalk)
 
 /** Brush shapes in Sapphire's popup order (`matchToStyle` = Round for Oil, Sponge for Chalk). */
 export const BRUSH_SHAPES = [
@@ -673,8 +665,6 @@ void main() {
 export const S_BRUSH_OIL = brushEffect('oil');
 export const S_BRUSH_CHALK = brushEffect('chalk');
 
-// ---------------------------------------------------------------- S_Crosshatch
-
 export const S_CROSSHATCH = defineShaderEffect({
 	id: 'jasper.s.crosshatch',
 	label: 'S_Crosshatch',
@@ -796,8 +786,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Cartoon, S_CartoonPaint
 
 /** Cartoon outline passes: `eblur` (Edge Width), `edges` (strength − threshold), `edgesWide` (for suppression). */
 function cartoonEdgePasses(p: EffectParams, ctx: FxPlanContext): ShaderPass[] {
@@ -930,8 +918,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_Posterize
 
 export const S_POSTERIZE = defineShaderEffect({
 	id: 'jasper.s.posterize',

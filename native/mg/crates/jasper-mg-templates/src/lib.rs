@@ -14,7 +14,7 @@ pub mod lower_third;
 pub mod title_card;
 
 use fframes::{AudioMap, Color, Duration, FFramesContext, Frame, Svgr, Video};
-use jasper_mg_core::{Fit, MgSpec, SpecError, canvas_labels, fit_canvas, spec_error};
+use jasper_mg_core::{Fit, MgSpec, Rgba, SpecError, canvas_labels, fit_canvas, spec_error};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -169,5 +169,28 @@ impl<const W: usize, const H: usize> Video for AnyTemplate<'_, W, H> {
 
     fn render_frame<'a>(&'a self, frame: Frame, _ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
         Svgr::from(self.prepared.svg(frame.index as u32))
+    }
+}
+
+fn validate_rgba(name: &str, color: &Rgba) -> Result<(), SpecError> {
+    if color
+        .iter()
+        .all(|v| v.is_finite() && (0.0..=1.0).contains(v))
+    {
+        Ok(())
+    } else {
+        Err(spec_error(format!(
+            "params.{name}: every channel must be within 0..=1"
+        )))
+    }
+}
+
+fn validate_text(name: &str, value: &str, max: u32) -> Result<(), SpecError> {
+    if value.chars().count() > max as usize {
+        Err(spec_error(format!(
+            "params.{name}: at most {max} characters"
+        )))
+    } else {
+        Ok(())
     }
 }

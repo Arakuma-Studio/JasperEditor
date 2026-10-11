@@ -71,8 +71,6 @@ export class ProcessingService {
 		q.registerRunner('remote-setup', (ctx) => this.runSetup(ctx));
 	}
 
-	// ------------------------------------------------------------------ capabilities
-
 	private get ffmpegPath(): string {
 		const f = this.core.ffmpeg.bins.ffmpeg;
 		if (!f) throw new JobError('BINARY_MISSING', 'ffmpeg was not found', false);
@@ -178,8 +176,6 @@ export class ProcessingService {
 		};
 	}
 
-	// ------------------------------------------------------------------ submit
-
 	/** PRM-007: `auto` → remote when enabled, probed OK and a step is in `useFor`; never silently local. */
 	async chooseExecutor(
 		req: ProcessRequest['executor'],
@@ -243,8 +239,6 @@ export class ProcessingService {
 			} satisfies ProcessJobInput,
 		});
 	}
-
-	// ------------------------------------------------------------------ process job
 
 	/** Content-addressed output location: `<appdir>/media/processed/<fingerprint>/<recipeHash>/<name>.mov`. */
 	outputPath(
@@ -402,8 +396,6 @@ export class ProcessingService {
 		return out;
 	}
 
-	// ------------------------------------------------------------------ remote
-
 	private async remote(): Promise<SshRemote> {
 		const s = await this.settings.get();
 		if (!s.remote)
@@ -444,7 +436,6 @@ export class ProcessingService {
 			);
 		}
 		await wrap('touch', () => remote.execOk(`touch ${shq(cached)}`, 'touch', { signal: ctx.signal }));
-		// 2. Models the job needs.
 		const models: ProcSpec['models'] = {};
 		for (const [id, m] of Object.entries(await this.modelSpecs(input.steps))) {
 			const rp = `${L.models}/${basename(m.path)}`;
@@ -455,7 +446,6 @@ export class ProcessingService {
 			}
 			models[id] = { path: rp, sha256: m.sha256, scale: m.scale };
 		}
-		// 3. Spec + run (setsid + pid file, PRM-005/006).
 		const jobDir = `${L.jobs}/${ctx.job.id}`;
 		const ffmpegRemote = probe?.ffmpegPath ?? 'ffmpeg';
 		const ffprobeRemote = ffmpegRemote.endsWith('/ffmpeg')
@@ -533,7 +523,6 @@ export class ProcessingService {
 				true,
 			);
 		}
-		// 4. Download + verify (sha256 from the sidecar, frame count).
 		ctx.progress(0.86, { stage: 'Remote · downloading result' });
 		await wrap('download', () =>
 			remote.download(`${jobDir}/out.mov.json`, `${output}.json`, { signal: ctx.signal }),
@@ -716,8 +705,6 @@ export class ProcessingService {
 		const { cpus: _c, ffmpegPath: _f, ...pub } = probe;
 		return pub;
 	}
-
-	// ------------------------------------------------------------------ models
 
 	submitInstall(modelId: string, origin: EngineJob['origin'] = { type: 'user' }): EngineJob {
 		const e =

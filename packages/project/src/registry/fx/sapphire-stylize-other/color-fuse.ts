@@ -56,7 +56,7 @@ const GLSL_COLOR_FUSE: GlslChunk = {
 	name: 'sapphire-stylize-other/color-fuse',
 	deps: [GLSL_SSO_COMMON, GLSL_BLEND, GLSL_LUT],
 	source: /* glsl */ `
-// ---- transfer curves (encoded 0..1 <-> scene/display linear)
+
 vec3 cf_decode(int s, vec3 v) {
   if (s == 0) return v;
   if (s == 1) return fx_srgbToLinear(v);
@@ -89,7 +89,6 @@ vec3 cf_fromSpace(int s, vec3 v) {
   return l;
 }
 
-// ---- built-in looks (display-referred 0..1 in, out)
 vec3 cf_curve(vec3 c, float k) { return mix(c, c * c * (3.0 - 2.0 * c), k); }
 vec3 cf_look(int id, vec3 c) {
   c = clamp(c, 0.0, 1.0);
@@ -133,7 +132,6 @@ vec3 cf_look(int id, vec3 c) {
   return c;
 }
 
-// ---- 2D LUT images: strip (N² × N, blue = tile index) or Hald CLUT (L³ × L³, N = L²)
 vec3 cf_lutImage(sampler2D t, vec2 size, vec3 c) {
   c = clamp(c, 0.0, 1.0);
   if (abs(size.x - size.y * size.y) < 0.5) {

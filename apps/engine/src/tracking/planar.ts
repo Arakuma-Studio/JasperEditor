@@ -1,3 +1,5 @@
+import type { Mat } from '@techstark/opencv-js';
+import type { OpenCvApi } from '../tools/opencv.ts';
 // Planar tracker `klt-homography@1` (S09:TRK-012). Runs inside the tracking worker with OpenCV.js.
 //
 // 1. Reference frame: Shi–Tomasi corners inside the reference quad (or in a ring 5–25 % outside it, or both).
@@ -48,9 +50,7 @@ export type FrameTracker = {
 	dispose(): void;
 };
 
-type CV = any;
-
-export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfig): FrameTracker {
+export function createPlanarTracker(cv: OpenCvApi, G: typeof Geometry, cfg: PlanarConfig): FrameTracker {
 	const W = cfg.width;
 	const H = cfg.height;
 	const frame = new cv.Mat(H, W, cv.CV_8UC1);
@@ -62,8 +62,8 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 	const EDGE_REF = { band: 6, n: 48, maxShift: 6, maxResidual: 1, minFraction: 0.35, minContrast: 2 };
 
 	type Anchor = {
-		img: CV;
-		ptsRoi: CV;
+		img: Mat;
+		ptsRoi: Mat;
 		/** Feature positions in the anchor frame (x, y interleaved). */
 		pts: Float64Array;
 		n: number;
@@ -89,7 +89,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 	let prevH: number[] | null = null;
 	let lostRun = 0;
 	let goodSeq = 0;
-	let eccMask: CV = null;
+	let eccMask: Mat | null = null;
 	let sinceAnchor = 0;
 
 	function freeAnchor(a: Anchor | null): void {
@@ -98,7 +98,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 		a.ptsRoi.delete();
 	}
 
-	function makeAnchor(src: CV, Hra: number[]): Anchor | null {
+	function makeAnchor(src: Mat, Hra: number[]): Anchor | null {
 		const quad = G.quadApply(Hra, refQuad);
 		const roi = G.featureRoi(quad, cfg.features, cfg.winSize + 8, W, H);
 		if (!roi) return null;
@@ -208,11 +208,11 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 		const srcM = cv.matFromArray(count, 1, cv.CV_32FC2, src);
 		const dstM = cv.matFromArray(count, 1, cv.CV_32FC2, dst);
 		const maskM = new cv.Mat();
-		let Hm: CV = null;
+		let Hm: Mat | null = null;
 		try {
 			Hm = cv.findHomography(srcM, dstM, cv.RANSAC, cfg.ransacThreshold, maskM, 2000, 0.995);
 			if (!Hm || Hm.empty() || Hm.rows !== 3) return fail(count);
-			const Haf = G.hNormalize(Array.from(Hm.data64F as Float64Array));
+			const Haf = G.hNormalize(Array.from(Hm.data64F));
 			if (!Haf.every(Number.isFinite)) return fail(count);
 			let inliers = 0;
 			let errSum = 0;
@@ -259,10 +259,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 		try {
 			const rho = cv.findTransformECC(a.img, frame, warpM, cv.MOTION_HOMOGRAPHY, eccCriteria, eccMask, 5);
 			if (!(rho > 0.5)) return null;
-			const He = G.hMul(
-				G.hNormalize(Array.from(warpM.data32F as Float32Array)),
-				G.hTranslate(-a.roi.x, -a.roi.y),
-			);
+			const He = G.hMul(G.hNormalize(Array.from(warpM.data32F)), G.hTranslate(-a.roi.x, -a.roi.y));
 			if (!He.every(Number.isFinite)) return null;
 			if (G.quadMaxDistance(G.quadApply(He, refQuad), quadF) > 3) return null;
 			return He;

@@ -1,15 +1,3 @@
-// Remotion bundles as clips (M2, S08, ARCHITECTURE §19.3). Owner: wp-m2-mg.
-//   POST /api/mg-bundles/import                 {path | uploadId, watch?, projectId?} → RegisteredMedia (mg-bundle)
-//   POST /api/mg-bundles/:key/rebuild           → EngineJob (mg-bundle)
-//   POST /api/mg-bundles/prerender              MgPrerenderRequest → EngineJob (mg-prerender); `?wait=1` → result
-//   GET  /api/mg-bundles/prerender/:renderKey   → MgPrerenderResult when cached (404 otherwise)
-//   GET  /api/mg-bundles/:key/poster/:compositionId → PNG at the composition's thumbnailFrame
-//   POST /api/mg-bundles/scaffold               (P1) {dir, name} → RegisteredMedia (template project, watched)
-//   GET  /mg/bundles/:key/*                     the bundle's files as inert data; `index.html?jasper-host=1`
-//                                               redirects to the sandboxed live frame host page
-//   GET  /mg/sandbox/:cap/:key/*                the bundle's page and files for its sandboxed iframe (capability
-//                                               path, Content-Security-Policy; security review MG-1)
-// Also registers the `mg` native extension, the `mg-bundle` / `mg-prerender` job runners and `features.mgBundles`.
 import { readFile } from 'node:fs/promises';
 import { join, normalize, sep } from 'node:path';
 import {
@@ -162,7 +150,6 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 		}),
 	);
 
-	// ---------------------------------------------------------------- the bundle's files (MGC-012)
 	//
 	// Security review MG-1. A bundle is somebody's code; its page must not run with the editor's origin (the engine
 	// API with the user's session, the editor's DOM, `window.jasper`, the desktop bridge). So:

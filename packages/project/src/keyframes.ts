@@ -274,8 +274,6 @@ export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: Eval
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
 }
 
-// ---------------------------------------------------------------- roving keyframes (keyframes-blend)
-
 /**
  * A run of roving keys: fixed key `a`, roving keys a+1 … b−1, fixed key `b`. `cum[j]` = distance travelled from key a
  * to key a + j (arc length along curved spatial segments, value distance otherwise), `cum[b − a]` = the total.
@@ -464,8 +462,6 @@ export function stopRoving(kfs: Keyframe<unknown>[], i: number): void {
 	k.easeIn = { influence: AUTO_INFLUENCE, slope: vin > 0 ? v / vin : 1 };
 	k.easeOut = { influence: AUTO_INFLUENCE, slope: vout > 0 ? v / vout : 1 };
 }
-
-// ---------------------------------------------------------------- reversed traversal (keyframes-blend)
 
 /**
  * The temporal fields key `i` of `kfs` (time order) needs when the keys are traversed backwards (pasted / re-timed

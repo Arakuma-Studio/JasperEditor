@@ -35,8 +35,6 @@ type PreviewThumbProps<P extends Record<string, unknown>> = {
 /** Delay before the hover preview starts. */
 const HOVER_PREVIEW_DELAY_MS = 200;
 
-// ---------------------------------------------------------------- the shared hover Player
-
 let activeId: string | null = null;
 const listeners = new Set<() => void>();
 const subscribe = (l: () => void) => {
@@ -49,11 +47,7 @@ function setActive(id: string | null): void {
 	for (const l of listeners) l();
 }
 function reducedMotion(): boolean {
-	try {
-		return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-	} catch {
-		return false;
-	}
+	return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 }
 
 export function PreviewThumb<P extends Record<string, unknown>>(props: PreviewThumbProps<P>) {
@@ -76,10 +70,9 @@ export function PreviewThumb<P extends Record<string, unknown>>(props: PreviewTh
 		},
 		[cancel, id],
 	);
-	const component = props.component as unknown as ComponentType<Record<string, unknown>>;
 	const common = {
-		component,
-		inputProps: props.inputProps as Record<string, unknown>,
+		component: props.component,
+		inputProps: props.inputProps,
 		durationInFrames: Math.max(1, Math.round(props.durationInFrames)),
 		fps: props.fps,
 		compositionWidth: props.width,

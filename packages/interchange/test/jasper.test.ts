@@ -1,4 +1,3 @@
-// JasperEditor document → format → JasperEditor document, through `project.importTimeline`.
 import { type CaptionsClip, captionClipText, checkInvariants, defaultRegistries } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
@@ -39,8 +38,6 @@ const KEEP_ALL = [
 
 describe('JasperEditor round trips', () => {
 	it('a 3,000-clip ALE bin imports in linear time (< 2 s)', () => {
-		// Regression (verify workstream, interchange fuzzing): every imported media scanned the payload and the project's
-		// media (a draft) for a match, so 2,500 logged clips took ≈ 15–30 s in project.importTimeline.
 		const rows = Array.from(
 			{ length: 3000 },
 			(_, i) => `Clip_${i}\tVA1A2\t01:00:00:00\t01:00:10:00\tR${i % 50}\t/Volumes/Shoot/Clip_${i}.mov`,
@@ -72,8 +69,6 @@ describe('JasperEditor round trips', () => {
 	});
 
 	it('OTIO re-imported into its own project: restored clips get fresh child ids (animated title, masks, effects)', () => {
-		// Regression (verify workstream): a text clip restored from metadata.jasper kept its animator / selector ids and
-		// importing the export back into the same project was refused (INV-001 "Duplicate id tan_…").
 		const { h } = richProject();
 		const t = h.ok([
 			{ type: 'clip.addText', at: 0, duration: 60, track: 'V3', content: { text: 'Title' }, ref: '$t' },
@@ -89,7 +84,7 @@ describe('JasperEditor round trips', () => {
 		expect(checkInvariants(h.doc, { effects: defaultRegistries().effects })).toEqual([]);
 		const seqId = (r.results[0] as { topSequenceIds: string[] }).topSequenceIds[0]!;
 		const titles = Object.values(h.doc.sequences[seqId]!.clips).filter(
-			(c) => c.kind === 'text' && (c as { animators?: unknown[] }).animators?.length,
+			(c) => c.kind === 'text' && c.animators?.length,
 		);
 		expect(titles).toHaveLength(1);
 	});
@@ -104,7 +99,6 @@ describe('JasperEditor round trips', () => {
 		const b = h.doc.sequences[h.seqId]!;
 		expect(a.markers.map(({ id: _, ...m }) => m)).toEqual(b.markers.map(({ id: _, ...m }) => m));
 		expect(a.settings).toEqual(b.settings);
-		// Captions come back as a caption track with the same text and timing.
 		const caps = (s: typeof a) =>
 			(Object.values(s.clips) as CaptionsClip[])
 				.filter((c) => c.kind === 'captions')
@@ -116,7 +110,6 @@ describe('JasperEditor round trips', () => {
 				.sort((x, y) => (x[0] as number) - (y[0] as number));
 		expect(caps(a)).toEqual(caps(b));
 		expect(caps(a).length).toBe(2);
-		// The import landed in its own bin, with the media as items.
 		const bin = target.doc.items[binId]!;
 		expect(bin.kind).toBe('bin');
 		// The text clip is named in the report (other applications see an offline clip).
@@ -194,7 +187,6 @@ describe('JasperEditor round trips', () => {
 				]);
 			expect(fix(got)).toEqual(fix(want));
 			if (format !== 'aaf') expect(got.transitions).toEqual(want.transitions);
-			// what the format leaves out is named
 			expect(out.warnings.some((w) => /text clip/.test(w.message))).toBe(true);
 			if (format === 'aaf') expect(out.warnings.some((w) => /speed|synthetic/.test(w.message))).toBe(true);
 		});

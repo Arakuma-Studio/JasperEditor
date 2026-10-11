@@ -1,4 +1,3 @@
-// Regressions for the bugs the parser fuzzing found (golden-fuzz). Each case is the minimal form of a failing input.
 import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
@@ -13,19 +12,20 @@ import {
 	svgToShapeContents,
 } from '../src/index.ts';
 import { modelSeeds, projectSeeds } from './fuzz-seeds.ts';
+import type { MutationDocument } from './project-mutation-fixtures.ts';
 
 const effects = defaultRegistries().effects;
 const load = (raw: unknown) => loadProject(raw, { ids: createCounterIdSource(1), effects });
 /** The v5 fixture's bare document (a fresh copy). */
 const v5 = () => {
-	const raw = projectSeeds()[4] as { document?: Record<string, unknown> } & Record<string, unknown>;
-	return (raw.document ?? raw) as Record<string, any>;
+	const raw = projectSeeds()[4] as { document?: MutationDocument };
+	return (raw.document ?? raw) as MutationDocument;
 };
 
 describe('fuzz regressions: project load / repair', () => {
 	it('a reference named like an Object.prototype member is a missing reference, not a crash', () => {
 		const d = v5();
-		const seq = Object.values(d.sequences)[0] as { clips: Record<string, { mediaId?: string }> };
+		const seq = Object.values(d.sequences)[0]!;
 		const clip = Object.values(seq.clips).find((c) => typeof c.mediaId === 'string')!;
 		clip.mediaId = '__proto__';
 		const r = load(d);
@@ -46,16 +46,12 @@ describe('fuzz regressions: project load / repair', () => {
 
 	it('record keys that disagree with ids, malformed and duplicate ids are repaired', () => {
 		const d = v5();
-		const seq = Object.values(d.sequences)[0] as {
-			clips: Record<string, { id: string }>;
-			videoTracks: { id: string }[];
-		};
+		const seq = Object.values(d.sequences)[0]!;
 		const [k0] = Object.keys(seq.clips);
 		seq.clips[k0!]!.id = 'clp_ZZZZZZZZZZZZZZZZ';
 		seq.videoTracks[0]!.id = 'not an id';
 		for (const c of Object.values(seq.clips))
-			if ((c as { trackId?: string }).trackId === 'trk_0000000000000V01')
-				(c as { trackId?: string }).trackId = 'not an id';
+			if (c.trackId === 'trk_0000000000000V01') c.trackId = 'not an id';
 		const r = load(d);
 		expect(r.issues).toEqual([]);
 		expect(r.repairs.filter((x) => x.action === 'fix-id').length).toBeGreaterThan(0);
@@ -64,11 +60,10 @@ describe('fuzz regressions: project load / repair', () => {
 
 	it('an id named like a document field ("media") is replaced only where ids live', () => {
 		const d = v5();
-		const seq = Object.values(d.sequences)[0] as Record<string, any>;
-		const old = seq.videoTracks[0].id as string;
-		seq.videoTracks[0].id = 'media';
-		for (const c of Object.values(seq.clips) as { trackId: string }[])
-			if (c.trackId === old) c.trackId = 'media';
+		const seq = Object.values(d.sequences)[0]!;
+		const old = seq.videoTracks[0]!.id;
+		seq.videoTracks[0]!.id = 'media';
+		for (const c of Object.values(seq.clips)) if (c.trackId === old) c.trackId = 'media';
 		const r = load(d);
 		expect(r.issues).toEqual([]);
 		expect(Object.keys(r.document.media).length).toBeGreaterThan(0);
@@ -79,12 +74,12 @@ describe('fuzz regressions: project load / repair', () => {
 
 	it('impossible settings, wrong track kinds, out-of-range opacity and clips past their media are repaired', () => {
 		const d = v5();
-		const seq = Object.values(d.sequences)[0] as Record<string, any>;
+		const seq = Object.values(d.sequences)[0]!;
 		seq.settings.width = 1_000_000;
-		seq.audioTracks[0].kind = 'video';
-		const clips = Object.values(seq.clips) as Record<string, any>[];
+		seq.audioTracks[0]!.kind = 'video';
+		const clips = Object.values(seq.clips);
 		const visual = clips.find((c) => c.opacity)!;
-		visual.opacity.value = 250;
+		visual.opacity!.value = 250;
 		const media = clips.find((c) => typeof c.mediaId === 'string' && c.kind === 'video')!;
 		media.duration = 10_000_000;
 		const r = load(d);

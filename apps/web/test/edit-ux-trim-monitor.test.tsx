@@ -1,5 +1,3 @@
-// edit-ux: the Trim Monitor component (outgoing/incoming frames, shift counters, trim buttons, numeric entry, drag to
-// roll) and the source patching column helpers.
 import { EngineClient } from '@jasper/engine-client';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';

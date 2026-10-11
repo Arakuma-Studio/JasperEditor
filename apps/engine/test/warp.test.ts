@@ -1,7 +1,3 @@
-// Warp stage (S09 §5 TRK-032…034, §8.4/§8.5, ARCHITECTURE D-28): corner pins and keyframed Motion on the native
-// path — planner, export with a cached intermediate, native still parity against the resolved quad, speed.
-// Real ffmpeg (the engine's build: the LGPL vendor directory when present, else PATH; JASPER_FFMPEG/FFPROBE
-// are forwarded, e.g. to run against another build).
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,7 +53,6 @@ const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine: 'auto',
@@ -71,7 +66,6 @@ const PIN = {
 	bottomLeft: [0.08, 0.78],
 };
 
-/** A 640×360 still: white 40 px frame around a 7×4 grid of saturated cells (known colours). */
 const CELL_COLORS: [number, number, number][] = [
 	[230, 30, 30],
 	[30, 200, 40],
@@ -124,7 +118,6 @@ function makeCard(): string {
 	return out;
 }
 
-/** Plate: a dark solid (V1) and the card (V2) on a 1080p30 sequence. */
 async function cardDoc(opts: { pin?: boolean; motion?: boolean; video?: boolean } = {}) {
 	const card = await register(app, makeCard());
 	const d = new DocBuilder();
@@ -199,7 +192,6 @@ async function still(
 	};
 }
 
-/** The resolved layer (quad + map) of the card at a frame, from the planned snapshot. */
 async function resolved(d: DocBuilder, clip: string, frame: number) {
 	const planned = await coreServices(app).exports.plan({
 		envelope: d.envelope(),
@@ -239,7 +231,7 @@ function measureCorners(img: { rgb: Buffer; w: number; h: number }, quad: readon
 			const py = a[1] + (b[1] - a[1]) * t;
 			if (horizontalScan) {
 				const y = Math.floor(py);
-				const dir = cx > px ? 1 : -1; // towards the inside
+				const dir = cx > px ? 1 : -1;
 				const x0 = Math.round(px) - 6 * dir;
 				const white = lum(img, Math.round(px) + 6 * dir, y);
 				const mid = (plate + white) / 2;
@@ -366,8 +358,7 @@ describe('planner with the warp stage (S09 §8.5)', () => {
 			{ type: 'keyframe.add', target: ['effect', fx.refs.$fx, 'left'], at: { sequenceFrame: 0 }, value: 0 },
 			{ type: 'keyframe.add', target: ['effect', fx.refs.$fx, 'left'], at: { sequenceFrame: 20 }, value: 30 },
 		]);
-		// wave1 native-animated-export: keyframed crop edges render in the source chain (per-frame mask), so the
-		// warp stage takes a corner-pinned layer with an animated crop too.
+		// Animated crop edges render in the source chain, so a corner-pinned layer can also use a per-frame crop mask.
 		p = await plan(k.d);
 		expect(p).toMatchObject({ path: 'native', blockers: [] });
 
@@ -379,8 +370,7 @@ describe('planner with the warp stage (S09 §8.5)', () => {
 			{ type: 'effect.add', target: { clipId: tr.refs.$t }, effectId: CORNER_PIN_EFFECT_ID, params: PIN },
 		]);
 		p = await plan(t);
-		// M2 (S11:LBK-001, wp-m2-layer-bake): text is claimed by the layer bake, corner pin included (the bake
-		// draws it with matrix3d), so it stays native (`hybrid`) and the warp stage leaves it alone.
+		// Layer bakes apply matrix3d to text, so the warp stage must not claim corner-pinned text.
 		expect(p.path).toBe('hybrid');
 		expect(p.blockers).toEqual([]);
 	});
@@ -422,7 +412,6 @@ describe('export through the warp stage (TRK-032, S09 §8.5)', () => {
 		expect(statSync(cached).size).toBe(size);
 		expect(statSync(cached).mtimeMs).toBe(old.getTime());
 
-		// The intermediate: ProRes 4444 with alpha, W×H, one frame per layer frame, BT.709.
 		const probe = spawnSync('ffprobe', [
 			...['-v', 'error', '-count_frames', '-show_entries'],
 			'stream=codec_name,profile,pix_fmt,width,height,nb_read_frames,color_space',

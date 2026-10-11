@@ -53,14 +53,14 @@ export type TextAnimationImpl = {
 	/** Pure: fresh targets (one per unit) and a paused timeline over them, `durationMs` long. */
 	build(ctx: TextAnimationBuildContext): { timeline: Timeline; targets: UnitValues[] };
 	/**
-	 * M2 (wp-m2-text-anim, additive): `reveal` drives a rise from behind a per-line mask (mask-reveal) instead of
+	 * `reveal` drives a rise from behind a per-line mask (mask-reveal) instead of
 	 * plain visibility (typewriter).
 	 */
 	lineMasks?: boolean;
-	/** M2 (wp-m2-text-anim, additive): draws a caret after the last shown unit when this returns true. */
+	/** Draws a caret after the last shown unit when this returns true. */
 	caret?(params: Record<string, unknown>): boolean;
 	/**
-	 * Additive (typewriter@2): whether the caret is lit at a frame of the window (blink). A pure function of the
+	 * Whether the caret is lit at a frame of the window (blink). A pure function of the
 	 * frame (S11:ANM-003), never the wall clock; absent = lit whenever `caret` is true.
 	 */
 	caretVisible?(ctx: TextCaretContext): boolean;

@@ -907,8 +907,6 @@ export async function propagateWith(
 	return { seg: segment(img, w, h, strokes, null, p, opts, refineRadius), usedModel: true };
 }
 
-// ---------------------------------------------------------------- edge refinement (Refine Edge)
-
 /** Edge matting of a frame (the engine half of the matte: image-dependent and expensive, so it is cached). */
 export type EdgeOpts = {
 	/** `off`: binary matte; `guided`: colour guided filter in the band; `closed-form`: + closed-form matting. */

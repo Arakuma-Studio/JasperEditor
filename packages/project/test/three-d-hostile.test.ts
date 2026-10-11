@@ -1,6 +1,3 @@
-// The glTF reader against hostile documents (security review PAR-2): counts, strides, node graphs and shared images
-// that the document, not the file's size, decides. Every one must be refused with ModelParseError before anything of
-// that size is allocated, and quickly.
 import { describe, expect, it } from 'vitest';
 import { MAX_MODEL_VALUES, ModelParseError, parseModel } from '../src/three-d/gltf.ts';
 import {
@@ -76,8 +73,8 @@ describe('hostile glTF documents', () => {
 	it('counts that are not counts are refused: negative, fractional, text, missing', () => {
 		for (const count of [-1, 1.5, '3', null, Number.MAX_SAFE_INTEGER, 2 ** 53]) {
 			const d = triangleDocument();
-			d.accessors[0].count = count;
-			expect(attempt(enc(d)).error, String(count)).toBeInstanceOf(ModelParseError);
+			const malformed = { ...d, accessors: [{ ...d.accessors[0], count }, ...d.accessors.slice(1)] };
+			expect(attempt(enc(malformed)).error, String(count)).toBeInstanceOf(ModelParseError);
 		}
 		for (const [key, value] of [
 			['byteOffset', -4],
@@ -96,7 +93,6 @@ describe('hostile glTF documents', () => {
 	it('an image used by thousands of materials is read once', () => {
 		const r = attempt(sharedImage(4000, 1 << 20));
 		expect(r.error).toBeUndefined();
-		// Before: 4000 copies of the megabyte (4 GiB). Now one, plus the decoded buffer.
 		expect(r.grownMiB).toBeLessThan(64);
 		const m = parseModel(sharedImage(3, 4096), 'gltf');
 		expect(m.primitives[0]!.material.texture?.bytes.length).toBe(4096);
@@ -113,7 +109,6 @@ describe('hostile glTF documents', () => {
 		chain.nodes = Array.from({ length: 60 }, (_, i) => (i === 59 ? { mesh: 0 } : { children: [i + 1] }));
 		expect(attempt(enc(chain)).error).toBeUndefined();
 		expect(attempt(sharedChildren(2, 3)).error).toBeInstanceOf(ModelParseError);
-		// The same root listed twice in the scene is the same mistake.
 		const twice = triangleDocument();
 		twice.scenes[0].nodes = [0, 0];
 		expect((attempt(enc(twice)).error as Error).message).toMatch(/used twice/);

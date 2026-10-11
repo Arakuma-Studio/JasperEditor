@@ -1,7 +1,4 @@
-// Tooltips (S05:TT-001…004): `--pr-tooltip-bg`, 12 px text, radius 4, max 280 px, 600 ms delay, 0 ms
-// when moving between tooltipped controls within 300 ms, hidden on press. Format `Name (Shortcut)`;
-// disabled controls add a second line with the reason (SH-031). Never shown on touch (Radix ignores
-// touch pointers). Without a <TooltipHost> (tests, isolated widgets) the native `title` is used.
+// Without a TooltipHost, isolated controls use native title tooltips.
 import { Tooltip as RTooltip } from 'radix-ui';
 import {
 	cloneElement,

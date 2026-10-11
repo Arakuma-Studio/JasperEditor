@@ -20,7 +20,7 @@ export type FxSlotReading = { type: 'meters'; values: number[] };
 export const FX_PROCESSOR_NAME = 'jasper-audio-fx';
 const METER_EVERY = 4800;
 
-type Port = { postMessage(m: unknown): void; onmessage: ((e: MessageEvent) => void) | null };
+type Port = { postMessage(message: FxSlotReading): void };
 
 /** Processor logic, independent of the worklet global scope (tests drive it directly). */
 export class FxSlotCore {

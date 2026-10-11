@@ -1,4 +1,3 @@
-// Tracking contracts (M2, S09, ARCHITECTURE §19.5). Owner: wp-m2-track.
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
 
@@ -8,13 +7,13 @@ const Vec2 = z.tuple([z.number(), z.number()]);
 export const TrackRequestSchema = z.object({
 	projectId: z.string().optional(),
 	mediaKey: z.string(),
-	/** wp masks: `mask` follows the pixels inside `reference.polygon` frame to frame (Premiere's mask tracking). */
+	/** `mask` follows the pixels inside `reference.polygon` frame to frame (Premiere's mask tracking). */
 	kind: z.enum(['point', 'planar', 'mask']),
 	/** Reference frame (source frame index) and geometry in media pixels. */
 	reference: z.object({
 		frame: z.number().int().min(0),
 		corners: z.array(Vec2).length(4).optional(),
-		/** wp masks (kind `mask`): the mask outline (flattened, closed) in media pixels at the reference frame. */
+		/** Wp masks (kind `mask`): the mask outline (flattened, closed) in media pixels at the reference frame. */
 		polygon: z.array(Vec2).min(3).max(20_000).optional(),
 		point: Vec2.optional(),
 		patch: z.number().int().positive().optional(),
@@ -26,11 +25,11 @@ export const TrackRequestSchema = z.object({
 	/** Tracker quality/speed trade-off. */
 	quality: z.enum(['fast', 'balanced', 'best']).default('balanced'),
 	/**
-	 * wp-m2-track (additive): the document tracker this job is for. Echoed in `tracking.progress` events so the
+	 * the document tracker this job is for. Echoed in `tracking.progress` events so the
 	 * Program overlay can draw the live track of the right tracker.
 	 */
 	trackerId: z.string().optional(),
-	/** wp-m2-track (additive): planar tracker options. */
+	/** Planar tracker options. */
 	options: z
 		.object({
 			/**
@@ -74,15 +73,15 @@ export const TrackResultSchema = z.object({
 	method: z.string(),
 	/** Frames where tracking was lost (confidence 0). */
 	lost: z.array(z.number().int()),
-	/** wp-m2-track (additive): echo of the request's tracker id. */
+	/** Echo of the request's tracker id. */
 	trackerId: z.string().optional(),
-	/** wp-m2-track (additive): frames tracked per second (TRK-014 budget). */
+	/** Frames tracked per second (TRK-014 budget). */
 	framesPerSec: z.number().optional(),
 });
 export type TrackResult = z.infer<typeof TrackResultSchema>;
 
 /**
- * wp-m2-track (additive): payload of the `tracking.progress` engine event (published on `GET /events` about 10 times
+ * payload of the `tracking.progress` engine event (published on `GET /events` about 10 times
  * per second while a track job runs; clients receive it as a raw envelope). `data` holds the current frame's
  * geometry in media pixels (planar: 8 numbers TL, TR, BR, BL; point: 2).
  */

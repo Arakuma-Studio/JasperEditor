@@ -51,7 +51,7 @@ export type ClipDisplay = {
 type ClipViewProps = {
 	clip: Clip;
 	/**
-	 * ui-perf: unrounded x of the clip start in content px (`start × px per frame`) and its width. The track's clip
+	 * unrounded x of the clip start in content px (`start × px per frame`) and its width. The track's clip
 	 * layer is moved by `scrollPx`, so a scroll changes no clip position (ClipView skips it when nothing it draws
 	 * depends on the scroll, `clipViewEqual`).
 	 */
@@ -97,7 +97,7 @@ function ClipViewImpl(p: ClipViewProps) {
 	const extBadge = useClipBadge(c);
 	const decorations = decorationsFor(useRegistry(clipDecorations), c);
 	const isAudio = caps ? !caps.visual && caps.audio : false;
-	// wp-multicam: Premiere labels multi-camera clips "[MC<camera>] name".
+	// Premiere labels multi-camera clips "[MC<camera>] name".
 	const session = useSessionOrNull();
 	const mcBadge =
 		session && isMulticamClip(c)
@@ -290,7 +290,7 @@ function ClipViewImpl(p: ClipViewProps) {
 		: null;
 	// M2 (S11:ATP-002): per clip, so anime templates show R.
 	const badge = clipEngines(c)?.badge ?? null;
-	const hasFx = ((c as { effects?: unknown[] }).effects?.length ?? 0) > 0;
+	const hasFx = ('effects' in c ? c.effects.length : 0) > 0;
 	const nameOffset = nameShift(p);
 	const body = p.offline
 		? 'var(--pr-offline-clip)'
@@ -475,7 +475,7 @@ function visibleTiles(p: Pick<ClipViewProps, 'x' | 'w' | 'scrollPx' | 'viewportW
 }
 
 /**
- * ui-perf: a scroll changes only `scrollPx` / `scrollFrame`; the clip re-renders for it only when something it draws
+ * a scroll changes only `scrollPx` / `scrollFrame`; the clip re-renders for it only when something it draws
  * depends on the scroll: the sticky name of a clip crossing the left edge, the canvas tiles in view, decorations
  * (they work in viewport px).
  */

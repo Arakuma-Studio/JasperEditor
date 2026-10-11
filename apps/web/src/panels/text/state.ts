@@ -1,4 +1,4 @@
-// wp captions: requests to the Text panel from commands (open a tab, reveal a caption) and the user's filler
+// requests to the Text panel from commands (open a tab, reveal a caption) and the user's filler
 // word list (configurable, kept in local storage).
 import { DEFAULT_FILLERS } from '@jasper/project';
 

@@ -1,4 +1,3 @@
-// Builds CommandCtx values. The shell (WP-2A) owns the live context; this is the shared factory.
 import type { EngineClient } from '@jasper/engine-client';
 import { type EditorSession, TransportStore } from '@jasper/session';
 import { PanelServices } from '../state/panel-services.ts';

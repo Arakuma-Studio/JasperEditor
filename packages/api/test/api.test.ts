@@ -30,15 +30,30 @@ describe('@jasper/api schemas', () => {
 	});
 });
 
-it('ignores unknown event names, including inherited object properties', () => {
-	const unknownType = fc.oneof(
-		fc.constantFrom(...Object.getOwnPropertyNames(Object.prototype)),
-		fc.string().filter((name) => !Object.hasOwn(EVENT_PAYLOADS, name)),
-	);
-	fc.assert(
-		fc.property(unknownType, fc.jsonValue(), (type, payload) => {
-			expect(parseEvent({ id: 1, type, createdAt: 'now', payload })).toBeNull();
-		}),
-		{ seed: 0x5eed, numRuns: 100 },
-	);
+describe('event payload validation', () => {
+	it('ignores unknown event names, including inherited object properties', () => {
+		const unknownType = fc.oneof(
+			fc.constantFrom(...Object.getOwnPropertyNames(Object.prototype)),
+			fc.string().filter((name) => !Object.hasOwn(EVENT_PAYLOADS, name)),
+		);
+		fc.assert(
+			fc.property(unknownType, fc.jsonValue(), (type, payload) => {
+				expect(parseEvent({ id: 1, type, createdAt: 'now', payload })).toBeNull();
+			}),
+			{ seed: 0x5eed, numRuns: 100 },
+		);
+	});
+
+	it('accepts arbitrary JSON without throwing', () => {
+		fc.assert(
+			fc.property(fc.jsonValue(), (value) => {
+				expect(() => parseEvent(value)).not.toThrow();
+			}),
+		);
+		fc.assert(
+			fc.property(fc.string(), fc.jsonValue(), (type, payload) => {
+				expect(() => parseEvent({ id: 1, type, createdAt: 'now', payload })).not.toThrow();
+			}),
+		);
+	});
 });

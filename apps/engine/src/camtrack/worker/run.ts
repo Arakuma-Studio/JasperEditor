@@ -2,8 +2,8 @@
 // reader), track features (features.ts, OpenCV.js), solve the camera (core/solver.ts). The feature tracks are cached
 // in `tracksCache` so a re-solve (deleted track points, other solve settings) skips the tracking.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { CancelledError, decodeFrames } from '../../roto/worker/frames.ts';
+import { loadOpenCv } from '../../tools/opencv.ts';
 import { solveCamera } from '../core/solver.ts';
 import {
 	type CameraSolve,
@@ -32,20 +32,6 @@ export type CamTrackJobSpec = {
 
 export type CamTrackJobOutput = { solve: CameraSolve; tracks: number };
 
-let cvModule: any = null;
-/** OpenCV.js, wrapped: the Emscripten module is a thenable, so returning it from an async function never settles. */
-async function loadCv(): Promise<{ cv: any }> {
-	if (cvModule) return { cv: cvModule };
-	const cv = createRequire(import.meta.url)('@techstark/opencv-js');
-	await new Promise<void>((resolve) => {
-		if (typeof cv.then === 'function') cv.then(() => resolve());
-		else if (cv.Mat) resolve();
-		else cv.onRuntimeInitialized = () => resolve();
-	});
-	cvModule = cv;
-	return { cv };
-}
-
 function readCache(path: string | undefined, spec: CamTrackJobSpec): CameraTracks | null {
 	if (!path || !existsSync(path)) return null;
 	try {
@@ -63,7 +49,7 @@ export async function trackFeatures(
 	spec: CamTrackJobSpec,
 	o: { signal?: AbortSignal; onProgress?: (fraction: number, stage: string) => void },
 ): Promise<CameraTracks> {
-	const { cv } = await loadCv();
+	const { cv } = await loadOpenCv();
 	const cfg = featureConfig(spec.display, spec.settings.detailed);
 	const tracker = createFeatureTracker(cv, cfg);
 	const total = spec.span[1] - spec.span[0] + 1;

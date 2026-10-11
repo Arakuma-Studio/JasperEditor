@@ -8,8 +8,7 @@ export function useRegistry<T extends { id: string; order?: number }>(reg: Regis
 	return useSyncExternalStore(reg.subscribe, reg.list, reg.list);
 }
 
-// ui-perf: one subscription to the providers for every clip view (each used to subscribe on its own, and a
-// provider's subscription may run a timer: hundreds of them on a long timeline, re-created on every scroll).
+// Share provider subscriptions across clip views because a provider may allocate a timer per subscription.
 const badgeListeners = new Set<() => void>();
 let badgeOff: (() => void) | null = null;
 const notifyBadges = () => {

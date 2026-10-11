@@ -191,7 +191,7 @@ export function JobsPanel(_props: PanelProps) {
 	);
 }
 
-/** wp captions: sidecar caption files listed in an export job's result. */
+/** sidecar caption files listed in an export job's result. */
 function sidecarsOf(j: AnyJob): { name: string }[] {
 	const r = (j as { result?: unknown }).result as { captions?: { sidecars?: unknown } } | undefined;
 	const list = r?.captions?.sidecars;
@@ -210,7 +210,7 @@ function JobRow(props: {
 	onRetry(): void;
 	onDismiss(): void;
 	downloadUrl: string | null;
-	/** wp captions: sidecar caption files of an export. */
+	/** sidecar caption files of an export. */
 	sidecars?: { label: string; url: string }[];
 }) {
 	const { job } = props;

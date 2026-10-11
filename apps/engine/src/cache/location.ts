@@ -227,8 +227,6 @@ export async function finishCleanup(appdir: string): Promise<void> {
 	}
 }
 
-// ------------------------------------------------------------------ validation
-
 async function nearestExisting(p: string): Promise<string> {
 	let cur = resolve(p);
 	for (;;) {
@@ -326,8 +324,6 @@ export async function checkLocation(
 		};
 	return { ...base, ok: true };
 }
-
-// ------------------------------------------------------------------ the move
 
 async function copyTree(
 	src: string,

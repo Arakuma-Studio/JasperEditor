@@ -1,5 +1,4 @@
-// color-mgmt MCP tools through the protocol against an in-memory engine: colour spaces, working space, Interpret
-// Footage ▸ Colour, clip overrides, import_ocio_config (engine registration stubbed).
+// OCIO registration is stubbed; document changes run through the real command system.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

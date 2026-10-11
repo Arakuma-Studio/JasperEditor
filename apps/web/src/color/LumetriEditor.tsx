@@ -314,7 +314,6 @@ export function LumetriEditor(props: LumetriEditorProps) {
 		}
 	};
 
-	// ---- HSL Secondary eyedroppers
 	const pickKey = (mode: 'set' | 'add' | 'remove') => {
 		const id = `secondary-${mode}`;
 		const label = mode === 'set' ? 'Set Color' : mode === 'add' ? 'Add Color' : 'Remove Color';

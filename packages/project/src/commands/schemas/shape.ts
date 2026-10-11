@@ -1,6 +1,5 @@
-// Vector shape commands (wp shapes): edit the item tree of a `vector` shape clip — groups, paths, paints and path
-// operators. Property values (and their keyframes) go through param.set / keyframe.* on
-// `["clip", clipId, "shape", "items", itemId, field…]`. Handlers: handlers/shape.ts.
+// Shape values and keyframes use param.set / keyframe.* on
+// ["clip", clipId, "shape", "items", itemId, field…].
 import { z } from 'zod';
 import { ShapeItemInputSchema, ShapeItemPatchSchema } from '../../vector/input.ts';
 import { cmd, IdRefSchema, ParamAtSchema, RefDeclSchema } from './common.ts';

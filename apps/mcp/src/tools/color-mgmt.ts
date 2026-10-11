@@ -1,6 +1,3 @@
-// Colour management MCP tools (workstream color-mgmt, docs/wp-notes/color-mgmt.md): the colour space catalogue, a
-// sequence's working space and colour settings, Interpret Footage ▸ Colour on media, clip colour overrides and custom
-// OCIO configs. Every edit is one transaction of document commands (also available through apply_commands).
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import {
@@ -15,6 +12,7 @@ import {
 	WORKING_SPACE_CHOICES,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	applyCommands,
 	defineTool,
@@ -28,9 +26,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaRegisterCommand } from '../media.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions. */
 export const COLOR_MGMT_GUIDE = `Colour management (working spaces, HDR, log footage, OCIO):
 - Every sequence has a working colour space (get_color_settings): rec709 (default), srgb, rec2020, p3d65, displayp3, rec2100-pq, rec2100-hlg, or a linear variant ("rec709-linear": Linearize Working Space). The composite holds that space's signal; the Program monitor shows it through a display transform (Rec. 2020/P3 → Rec. 709 primaries, HDR tone mapped with BT.2390) and exports write it (or another space: start_export settings.video.colorSpace, bitDepth 8/10/12, hdrMetadata {maxCll, maxFall, masteringDisplay}). set_working_color_space changes it with blendLinear (Blend Using 1.0 Gamma: linear-light compositing, rendered on the Remotion path), autoToneMap (HDR/log media into SDR), sdrWhiteNits (HDR graphics white, 203 = BT.2408) and hdrPeakNits (PQ mastering peak). Blend Using 1.0 Gamma composites every layer on the GPU; with adjustment layers, other blend modes or 3D layers between the blended tracks the whole stack is drawn by one flat GPU compositor (any combination renders).
 - Media are interpreted automatically from their stream tags (BT.709/601 → rec709, PQ → rec2100-pq, HLG → rec2100-hlg, BT.2020 → rec2020, P3 → p3d65). Camera log footage is usually tagged BT.709: set its space with interpret_footage_color (list_color_spaces: slog3-sgamut3cine, vlog-vgamut, logc3-awg3, logc4-awg4, clog3-cinemagamut, applelog, log3g10-rwg, bmdfilm5-bmdwg5, davinci-dwg, flog2-fgamut, nlog-bt2020, dlog-dgamut, acescct…). range (tv/pc) matters for log curves; toneMap and peakNits for HDR; inputLut applies a LUT item first (its output read as the space). set_clip_color_space overrides single clips.

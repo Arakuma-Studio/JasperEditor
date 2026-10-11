@@ -1,4 +1,3 @@
-// UI command contract (ARCHITECTURE §7.3, S05:KB-001). Frozen after wave 1 except additive changes.
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession, TransportStore } from '@jasper/session';
 import type { IconId } from '@jasper/ui';

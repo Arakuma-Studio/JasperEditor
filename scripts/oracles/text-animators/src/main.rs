@@ -1,4 +1,4 @@
-// Oracle generator for packages/project/test/fixtures/text-selectors-oracle.json (workstream text-animators).
+// Oracle generator for packages/project/test/fixtures/text-selectors-oracle.json.
 // Copy `crates/text/src/selectors.rs` and `crates/text/src/path_text.rs` from EffectCraft
 // (https://github.com/storytold/effectcraft, MIT OR Apache-2.0) into `src/`, then
 // `cargo run --release > ../../../packages/project/test/fixtures/text-selectors-oracle.json`.
@@ -67,7 +67,6 @@ fn main() {
             combines.push(json!({"mode": mode_names[mi], "initial": m.initial(), "acc": a, "v": v, "out": m.combine(a, v)}));
         }
     }
-    // path text
     let mut p = kurbo::BezPath::new();
     p.move_to((0.0, 0.0));
     p.line_to((100.0, 0.0));

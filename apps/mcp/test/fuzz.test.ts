@@ -1,9 +1,5 @@
-// Every MCP tool's arguments under the never-crash harness (golden-fuzz; docs/testing.md §4): mutated and arbitrary
-// arguments are answered with a tool result (`isError` with a message for anything it refuses) or the protocol's
-// typed InvalidParams error — never a transport failure, a result without content, or a hang. The tools run against
-// an in-memory engine whose document goes through the real command system; every other engine call fails with a
-// typed EngineError (the "engine said no" path). Tools are taken from `tools/list`, so new tools are fuzzed
-// automatically, with seeds generated from their input schemas.
+// Discover tools and schema-derived seeds via tools/list so new tools inherit fuzzing.
+// The fake engine applies real document commands and refuses all other requests with typed EngineError results.
 import { EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -79,7 +75,6 @@ type JsonSchema = {
 	enum?: unknown[];
 };
 
-/** A plausible value of a JSON schema (first enum value, a sample per type). */
 function sample(s: JsonSchema | undefined, depth = 0): unknown {
 	if (!s || depth > 4) return null;
 	if (s.enum?.length) return s.enum[0];
@@ -93,7 +88,6 @@ function sample(s: JsonSchema | undefined, depth = 0): unknown {
 	return null;
 }
 
-/** A tool call that has not answered after this long counts as a hang. */
 const CALL_TIMEOUT_MS = 10_000;
 
 async function call(name: string, args: unknown): Promise<void> {
@@ -108,7 +102,7 @@ async function call(name: string, args: unknown): Promise<void> {
 			throw new Error(
 				`${name}: no answer within ${CALL_TIMEOUT_MS} ms (args ${JSON.stringify(args)?.slice(0, 200)})`,
 			);
-		if (e instanceof McpError) return; // InvalidParams and friends: the protocol's typed refusal
+		if (e instanceof McpError) return;
 		throw e;
 	}
 }
@@ -127,7 +121,6 @@ describeFuzz(
 	600_000,
 );
 
-// The harness itself: tools answer (a refusal is still an answer), so the targets above exercise real handlers.
 it('the in-memory engine reaches the tool handlers', async () => {
 	const r = await client.callTool({ name: 'get_document', arguments: { projectId: 'prj_0000000000000001' } });
 	expect(Array.isArray(r.content) && r.content.length > 0).toBe(true);

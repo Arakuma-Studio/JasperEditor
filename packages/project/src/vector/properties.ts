@@ -5,9 +5,10 @@
 
 import { BLEND_MODE_LABELS } from '../blend-modes.ts';
 import type { PropertySpec } from '../registry/properties.ts';
-import type { Clip } from '../schema/sequence.ts';
+import type { Clip, ShapeData } from '../schema/sequence.ts';
 import { BLEND_MODES } from '../schema/sequence.ts';
-import type { ShapeItem, ShapeItemType } from '../schema/shapes.ts';
+import type { ShapeItem, ShapeItemType, VectorShapeData } from '../schema/shapes.ts';
+import { defaultDashes, defaultTaper, defaultWave, newShapeItem } from './defaults.ts';
 import { validGradientValue, validPathValue } from './values.ts';
 
 type F = {
@@ -399,8 +400,9 @@ function itemFields(it: ShapeItem): F[] {
 	return out;
 }
 
-const isVector = (c: Pick<Clip, 'kind'>) =>
-	c.kind === 'shape' && (c as { shape?: { type?: string } }).shape?.type === 'vector';
+const isVector = (
+	c: Pick<Clip, 'kind'> & { shape?: ShapeData },
+): c is Pick<Clip, 'kind'> & { shape: VectorShapeData } => c.kind === 'shape' && c.shape?.type === 'vector';
 
 export const SHAPE_ITEM_KEY_PREFIX = 'shape.items.';
 
@@ -453,7 +455,7 @@ function specsOfItem(it: ShapeItem, storage: string[]): ShapeItemPropertySpec[] 
 export function shapeItemPropertySpecs(clip: Pick<Clip, 'kind'>): ShapeItemPropertySpec[] {
 	if (!isVector(clip)) return [];
 	// Not cached: documents are edited through immer drafts, whose objects keep their identity while they change.
-	const contents = (clip as unknown as { shape: { contents: ShapeItem[] } }).shape.contents;
+	const contents = clip.shape.contents;
 	const out: ShapeItemPropertySpec[] = [];
 	const walk = (items: ShapeItem[], storage: string[]) => {
 		items.forEach((it, i) => {
@@ -512,6 +514,14 @@ export function shapeItemAnimatables(contents: readonly ShapeItem[]): {
  * it; the tree is copied along changed paths only.
  */
 export function mapShapeItemAnimatables(
+	contents: ShapeItem[],
+	f: (anim: object, key: string) => object,
+): ShapeItem[];
+export function mapShapeItemAnimatables(
+	contents: readonly ShapeItem[],
+	f: (anim: object, key: string) => object,
+): readonly ShapeItem[];
+export function mapShapeItemAnimatables(
 	contents: readonly ShapeItem[],
 	f: (anim: object, key: string) => object,
 ): readonly ShapeItem[] {
@@ -541,18 +551,21 @@ export function shapeItemFieldCatalog(): Record<
 	{
 		field: string;
 		label: string;
-		kind: string;
-		unit?: string;
-		range?: unknown;
-		animatable: string;
+		kind: PropertySpec['kind'];
+		unit?: PropertySpec['unit'];
+		range?: PropertySpec['range'];
+		animatable: PropertySpec['animatable'];
 		options?: readonly string[];
 	}[]
 > {
 	const out = {} as ReturnType<typeof shapeItemFieldCatalog>;
 	for (const type of Object.keys(ITEM_FIELDS) as ShapeItemType[]) {
-		const sample = { id: 'x', name: type, type } as unknown as ShapeItem;
-		if (type === 'stroke' || type === 'gradientStroke')
-			Object.assign(sample, { dashes: { segments: [{}] }, taper: {}, wave: {} });
+		const sample = newShapeItem(type, { id: 'x', name: type });
+		if (sample.type === 'stroke' || sample.type === 'gradientStroke') {
+			sample.dashes = defaultDashes();
+			sample.taper = defaultTaper();
+			sample.wave = defaultWave();
+		}
 		out[type] = itemFields(sample).map((d) => ({
 			field: d.f.join('.'),
 			label: d.label,

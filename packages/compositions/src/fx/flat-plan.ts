@@ -1,4 +1,4 @@
-// The flat compositor's planning (workstream compositor), pure. Chrome never paints an HTML-in-Canvas canvas that lies
+// The flat compositor's planning, pure. Chrome never paints an HTML-in-Canvas canvas that lies
 // inside another one (color-mgmt, fx/canvas-scope.tsx), and every canvas scope of the stack (GL blend modes, linear
 // light, adjustment layers drawn through the canvas chain, 3D runs, the Program monitor's display transform) captures
 // everything below it. A stack whose scopes would nest is therefore drawn FLAT instead: no scope captures anything;
@@ -9,6 +9,7 @@ import {
 	clipHasMasks,
 	defaultEffectRegistry,
 	isCssBlend,
+	type MediaHandle,
 	matteTrackIds,
 	type RenderSnapshot,
 	type RenderVisualClip,
@@ -92,14 +93,12 @@ export function flatLayerItems(ops: readonly FlatOp[]): CompositeItem[] {
 	return ops.flatMap((op) => (op.kind === 'layers' ? op.items : []));
 }
 
-// ---------------------------------------------------------------- when a stack must be flat
-
 type Clip = Pick<
 	RenderVisualClip,
 	'clipId' | 'kind' | 'source' | 'effects' | 'blendMode' | 'threeD' | 'masks'
 > &
 	Partial<Pick<RenderVisualClip, 'opacity'>>;
-type MediaLike = { lottie?: unknown; vector?: unknown } | null | undefined;
+type MediaLike = Pick<MediaHandle, 'lottie' | 'vector'> | null | undefined;
 
 /** Kinds `LayerBox` runs through the canvas chain for their colour effects (DOM pictures, see LayerBox). */
 const CHAIN_KINDS: ReadonlySet<string> = new Set([

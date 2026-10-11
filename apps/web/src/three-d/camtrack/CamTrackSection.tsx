@@ -82,7 +82,7 @@ function TrackerControls(props: {
 	const readOnly = useSessionState((s) => s.readOnly);
 	const doc = useSessionState((s) => s.document);
 	const s = cameraTrackerSettingsOf(tracker.settings);
-	const set = (patch: Record<string, unknown>) => updateTracker(session, clip.id, patch);
+	const set = (patch: Parameters<typeof updateTracker>[2]) => updateTracker(session, clip.id, patch);
 	const solve = tracker.solve;
 	const stale = isSolveStale(tracker);
 	const seq = Object.values(doc.sequences).find((q) => q.clips[clip.id]);

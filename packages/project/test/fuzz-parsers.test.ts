@@ -1,6 +1,4 @@
-// Robustness of every @jasper/project parser and loader (testkit fuzz harness, docs/testing.md §Fuzzing): any input
-// either parses or fails with the parser's typed error / result object — never an uncaught TypeError, RangeError or
-// a hang. `FUZZ=1` runs 20× more cases, `FUZZ_SEED=<n>` another seed. Register a new target with one line below.
+// FUZZ=1 runs 20× more cases; FUZZ_SEED=<n> selects a reproducible seed.
 import { bytesTarget, describeFuzz, jsonTarget, textTarget } from '@jasper/testkit/fuzz';
 import { parseTranscriptJson } from '../src/commands/handlers/captions.ts';
 import {
@@ -146,8 +144,7 @@ describeFuzz('@jasper/project vector, Lottie, models, image sequences', [
 	textTarget('SVG path data', SVG_PATHS, parseSvgPath, SvgPathError),
 	textTarget('Lottie JSON text', [JSON.stringify(LOTTIE)], parseLottie, LottieParseError),
 	jsonTarget('Lottie document', [LOTTIE], parseLottie, LottieParseError),
-	// Security review PAR-2: mutation also starts from the document shapes that made the reader allocate or walk
-	// without bound, and a JSON-aware target mutates the counts, offsets, strides and indices themselves.
+	// JSON-aware mutations target counts, offsets, strides and indices to exercise allocation and traversal limits.
 	bytesTarget(
 		'glTF (JSON)',
 		[modelSeeds().gltf, ...hostileModelSeeds()],

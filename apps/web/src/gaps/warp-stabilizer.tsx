@@ -1,11 +1,5 @@
-// Warp Stabilizer in the editor (workstream gaps, docs/wp-notes/gaps.md §FX-6), as Premiere:
-// - background analysis: as soon as a clip has an enabled Warp Stabilizer without a usable analysis (none, another
-//   media, Detailed Analysis changed, or the clip now shows frames outside the analysed span), the engine's
-//   `warp-analysis` job runs on the clip's media range (+ handles); its result is stored with the effect by
-//   `effect.setWarpAnalysis` (origin `system`: no undo step, like Premiere's analysis);
-// - Effect Controls: Analyze / Cancel and the status line ("Analyzing in background (step 1 of 2)", frames analysed,
-//   tracking confidence, auto-scale);
-// - the Program monitor banner over a clip whose stabiliser is not analysed yet (Advanced ▸ Hide Warning Banner).
+// Analysis is invalidated by media, Detailed Analysis, or visible-range changes. Store completed
+// analysis with origin system so background computation does not create an undo step.
 import type { WarpAnalysisResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -49,8 +43,6 @@ export type WarpStatus =
 	| { state: 'analyzing'; jobId: string | null; progress: number; signature: string }
 	| { state: 'failed'; error: string; signature: string };
 
-// ---------------------------------------------------------------- status store
-
 let statuses = new Map<string, WarpStatus>();
 const listeners = new Set<() => void>();
 const setStatus = (fxId: string, s: WarpStatus | null) => {
@@ -69,15 +61,11 @@ export const warpStatus = {
 const useWarpStatus = (fxId: string) =>
 	useSyncExternalStore(warpStatus.subscribe, () => statuses.get(fxId) ?? null);
 
-// ---------------------------------------------------------------- what needs an analysis
-
 const signatureOf = warpRequestSignature;
 const paramValue = (fx: FxInst, k: string): unknown => {
 	const a = fx.params[k] as { value?: unknown } | undefined;
 	return a && typeof a === 'object' && 'value' in a ? a.value : undefined;
 };
-
-// ---------------------------------------------------------------- the background runner
 
 /** Completed analyses by request signature (an undo that drops a stored analysis gets it back at once). */
 const results = new Map<string, WarpAnalysisResult>();
@@ -194,8 +182,6 @@ export async function cancelAnalysis(engine: EngineClient, fxId: string): Promis
 	if (cur.jobId) await engine.cancelJob(cur.jobId).catch(() => undefined);
 }
 
-// ---------------------------------------------------------------- Effect Controls
-
 function WarpStabilizerEditor(props: EffectEditorProps) {
 	const { session, fx } = props;
 	const engine = useEngineOrNull();
@@ -256,8 +242,6 @@ function WarpStabilizerEditor(props: EffectEditorProps) {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Program monitor banner
 
 function WarpBanner(props: ProgramOverlayHostProps) {
 	const session = props.session;

@@ -1,4 +1,3 @@
-// color-mgmt: colour science against published test vectors (ITU-R, SMPTE, Academy and camera vendors' documents).
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -399,7 +398,7 @@ describe('spaces and transforms', () => {
 		const dark = run(fn, [pqFromNits(10), pqFromNits(10), pqFromNits(10)]);
 		close(dark[0], (10 / 203) ** (1 / 2.4), 0.003);
 		const off = inputTransformFn({ space: 'rec2100-pq', toneMap: false }, defaultWorkingSettings('rec709'));
-		close(run(off, [pqFromNits(1000), 0, 0])[0], 1, 1e-12); // clipped
+		close(run(off, [pqFromNits(1000), 0, 0])[0], 1, 1e-12);
 	});
 	it('output transforms: HDR working → SDR display is tone mapped, SDR working → its display keeps the curve', () => {
 		expect(outputTransformFn(defaultWorkingSettings('rec709'), displaySpaceFor('rec709'))).toBeNull();

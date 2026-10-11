@@ -4,6 +4,7 @@
 // the native export applies it with `lut3d`, so the three renderers agree to the LUT's precision.
 // This module imports only types from `effects.ts` (which imports the values from here), so there is no
 // evaluation-order cycle.
+
 import { gamutToXyzD65 } from '../color/cms/gamut.ts';
 import { apply3InPlace, inv3 } from '../color/cms/matrix.ts';
 import { colorSpace } from '../color/cms/spaces.ts';
@@ -18,12 +19,10 @@ import { CREATIVE_LOOKS } from '../color/looks.ts';
 import { lumetriFn } from '../color/lumetri.ts';
 import { applyLut, type Rgb } from '../color/lut.ts';
 import type { ColorFn, ColorOp, ColorOpContext, EffectParams, EffectSpec, ParamSpec } from './effects.ts';
+import { clamp, mediaParamId } from './param-values.ts';
 
 const num = (p: EffectParams, k: string, d = 0) =>
 	typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d;
-const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
-
-// ---------------------------------------------------------------- M1 colour effect maths (S03:FX-040)
 
 /**
  * Brightness & Contrast (S03:FX-040). With `b, c ∈ [−100, 100]` every sRGB-encoded channel maps as
@@ -152,8 +151,6 @@ export const BLACK_WHITE_OP: ColorOp = {
 		};
 	},
 };
-
-// ---------------------------------------------------------------- jasper.lumetri@1 (S06:CG-001/002)
 
 export const LUMETRI_EFFECT_ID = 'jasper.lumetri';
 
@@ -341,8 +338,8 @@ export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	bipolar('shadowsLevel', 'Shadows Level', 'wheels'),
 	bipolar('midtonesLevel', 'Midtones Level', 'wheels'),
 	bipolar('highlightsLevel', 'Highlights Level', 'wheels'),
-	// ---- color-grade: Lumetri completion (additive; every default is the identity). Order inside each group is
-	// the Lumetri panel's order; `LUMETRI_GROUPS` lists the sections.
+
+	// Parameter order matches the Lumetri panel; LUMETRI_GROUPS defines its sections.
 	sectionToggle('basicOn', 'Basic Correction', 'basic'),
 	sectionToggle('creativeOn', 'Creative', 'creative'),
 	{
@@ -544,8 +541,6 @@ export function lumetriHdrFn(p: EffectParams, ctx: ColorOpContext): ColorFn | nu
 	};
 }
 
-// ---------------------------------------------------------------- jasper.color-input (color-mgmt, internal)
-
 export const COLOR_INPUT_EFFECT_ID = 'jasper.color-input';
 
 /**
@@ -560,10 +555,7 @@ export function colorInputFn(p: EffectParams, ctx: ColorOpContext): ColorFn | nu
 		blendLinear: false,
 	};
 	const str = (k: string) => (typeof p[k] === 'string' ? (p[k] as string) : '');
-	const mediaOf = (k: string) => {
-		const v = p[k] as { mediaId?: unknown } | null | undefined;
-		return v && typeof v === 'object' && typeof v.mediaId === 'string' && v.mediaId ? v.mediaId : null;
-	};
+	const mediaOf = (k: string) => mediaParamId(p[k]) || null;
 	const range = str('range') === 'pc' ? 'pc' : 'tv';
 	const tm = str('toneMap');
 	const toneMap = tm === 'on' ? true : tm === 'off' ? false : undefined;

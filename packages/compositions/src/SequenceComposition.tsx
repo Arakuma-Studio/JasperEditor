@@ -12,7 +12,7 @@
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
 // skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics, animated
 // text, keyframed shapes) are `isFrameDependent` and re-render every frame.
-// fx framework (wave 1): layers with time-dependent GPU shader effects are frame dependent too, and a time effect's
+// fx framework: layers with time-dependent GPU shader effects are frame dependent too, and a time effect's
 // source-frame remap (`gpu.time.remap`) is applied here: `<Freeze>` + remapped localFrame/contentTime, `realFrame`.
 // Transition framework (wave 2): a track's GPU transitions (`transitions`) are shader stages drawn above its clips
 // over their spans (fx/transition.tsx); the clips that are their sides get `transition` (progress, side and the tap
@@ -159,11 +159,6 @@ const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 	'captions',
 ]);
 
-/** Keyframed or driven by an active expression (wave expressions). */
-const hasKeyframes = (
-	v: { keyframes: unknown[]; expression?: { text: string; enabled: boolean } } | null | undefined,
-): boolean => isAnimated(v);
-
 /**
  * Layers whose output depends on the frame beyond `ResolvedLayerProps` (ARCHITECTURE §20.4): the
  * FRAME_DEPENDENT_KINDS, text clips with animators in their source (S11:TXA-009) and shapes whose geometry or
@@ -174,7 +169,6 @@ function isFrameDependent(
 	media?: RenderDoc['media'],
 ): boolean {
 	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
-	// Workstream `time`: a retimed video draws the frame of its media time (retime/RetimedVideo.tsx).
 	if (clip.retime) return true;
 	// A shader effect that changes over time (incl. a media param bound to a video that plays).
 	if (hasTimeDependentFx(clip, undefined, media ? (id) => media[id]?.kind : undefined)) return true;
@@ -193,11 +187,11 @@ function isFrameDependent(
 		// wp shapes: keyframes / expressions anywhere in the contents, or a self-animating Wiggle Paths.
 		if (s.type === 'vector') return vectorShapeIsTimeDependent(s.contents);
 		return (
-			hasKeyframes(s.size) ||
-			hasKeyframes(s.fill) ||
-			hasKeyframes(s.cornerRadius) ||
-			hasKeyframes(s.stroke?.color) ||
-			hasKeyframes(s.stroke?.width)
+			isAnimated(s.size) ||
+			isAnimated(s.fill) ||
+			isAnimated(s.cornerRadius) ||
+			isAnimated(s.stroke?.color) ||
+			isAnimated(s.stroke?.width)
 		);
 	}
 	return false;

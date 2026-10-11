@@ -1,6 +1,4 @@
-// Sequence ▸ Video Previews… (workstream `previews`): Premiere's Sequence Settings ▸ Video Previews — the preview
-// file format, the frame size and the quality. One undoable `sequence.setPreviewSettings`. Previews of the other
-// settings stay on disk (and become valid again when the settings are switched back).
+// Changing preview settings retains other cached formats so switching back can reuse them.
 import { PREVIEW_FORMATS, type PreviewFormat, previewSettingsOf } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Dialog, type HostedDialogProps, registerDialog, Select } from '@jasper/ui';

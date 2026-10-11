@@ -41,8 +41,6 @@ export function frameShiftFlicks(frames: number, rate: Rational): number {
 	return roundSym(frames * flicksPerFrame(rate));
 }
 
-// ------------------------------------------------------------------ chains
-
 export type RootPlacement = {
 	ok: true;
 	/** The original the media is a version of (itself for originals). */
@@ -149,13 +147,10 @@ export function rootFrameSpan(
 	return { rootId: p.rootId, start, end: start + frames, rate };
 }
 
-// ------------------------------------------------------------------ coverage
-
 export type ClipContentTiming = {
 	sourceIn: number;
 	duration: number;
 	speed: { rate: number; reverse: boolean };
-	/** Workstream `time`: a time-remapped clip shows media times through its remap. */
 	kind?: string;
 	timeRemap?: TimeRemap | null;
 	start?: number;
@@ -243,8 +238,6 @@ export function clipFileFrames(
 	};
 }
 
-// ------------------------------------------------------------------ content-time shift of a clip
-
 type AnimLike = { value: unknown; keyframes: { time: number }[] };
 const isAnimLike = (v: unknown): v is AnimLike =>
 	!!v && typeof v === 'object' && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes);
@@ -293,7 +286,7 @@ export function shiftClipContentTime(clip: ShiftableClip, shift: number): Conten
 	if (shift === 0) return report;
 	clip.sourceIn += shift;
 	shiftAnimatables(clip, shift);
-	// Workstream `time`: speed keyframes anchor content time and media time; both move with the file.
+	// Speed keyframes anchor content time and media time; both move with the file.
 	for (const k of clip.timeRemap?.keyframes ?? []) {
 		k.time += shift;
 		k.source += shift;
@@ -326,8 +319,6 @@ export function shiftClipContentTime(clip: ShiftableClip, shift: number): Conten
 	}
 	return report;
 }
-
-// ------------------------------------------------------------------ relink: source timing of two files
 
 export type SourceTimingBasis =
 	/** Both files declare a source range of the same source. */
@@ -448,8 +439,6 @@ export function sourceTimingShift(current: TimingFile, next: TimingFile): Source
 			'Neither file declares its source range (no sidecar) and they do not both carry a start timecode, so the source timing cannot be kept',
 	};
 }
-
-// ------------------------------------------------------------------ ranges to process
 
 /**
  * The frames of media `mediaId` to process for clips (S07:PRC-015 "clip range + handles"): the union of the

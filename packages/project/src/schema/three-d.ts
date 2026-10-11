@@ -1,14 +1,9 @@
-// three-d workstream (docs/wp-notes/three-d.md): After Effects-style 3D layers, cameras and lights.
-//
 // Coordinates are After Effects': world space is sequence space (x right, y down, in pixels) plus z pointing away
 // from the viewer (into the screen). A 3D layer's map is
 //   world = T(position, positionZ) · Orientation · Rz(rotation) · Ry(rotationY) · Rx(rotationX) · S(sx, sy, scaleZ)
 //           · T(−anchor, −anchorZ)
 // so a 3D layer with every 3D value at its default (z 0, no X/Y rotation, no orientation) seen through the default
 // camera is exactly where its 2D Motion puts it. Angles are degrees, clockwise on screen (as the 2D Rotation).
-//
-// Everything here is additive and optional on the existing schema (no version bump): `threeD` on visual clips,
-// the `camera` / `light` clip kinds (older builds keep them as unknown clips) and `threeD` on sequences.
 import { z } from 'zod';
 import {
 	AnimNumberSchema,
@@ -21,8 +16,6 @@ import {
 
 /** Animatable `[x, y, z]` (positions in pixels, orientations in degrees). */
 export const AnimVec3Schema = animatable(Vec3Schema);
-
-// ---------------------------------------------------------------- materials (Material Options)
 
 /** Casts Shadows / Accepts Shadows: Off, On, Only (AE's Material Options popups). */
 export const SHADOW_MODES = ['off', 'on', 'only'] as const;
@@ -47,15 +40,12 @@ export const MaterialOptionsSchema = z.looseObject({
 	specularShininess: AnimNumberSchema,
 	/** Highlight colour: 0 % = the light's, 100 % = the layer's. */
 	metal: AnimNumberSchema,
-	// ---- Advanced 3D (optional)
 	/** Mirror reflection of the environment, percent (Advanced 3D). Default 0. */
 	reflectionIntensity: AnimNumberSchema.optional(),
 	/** Reflection sharpness, percent (100 = mirror; lower = rougher). Default 100. */
 	reflectionSharpness: AnimNumberSchema.optional(),
 });
 export type MaterialOptions = DeepStrip<z.infer<typeof MaterialOptionsSchema>>;
-
-// ---------------------------------------------------------------- extrusion (Geometry Options, Advanced 3D)
 
 export const BEVEL_STYLES = ['none', 'angular', 'concave', 'convex'] as const;
 export const BevelStyleSchema = z.enum(BEVEL_STYLES);
@@ -72,8 +62,6 @@ export const GeometryOptionsSchema = z.looseObject({
 	extrusionDepth: AnimNumberSchema,
 });
 export type GeometryOptions = DeepStrip<z.infer<typeof GeometryOptionsSchema>>;
-
-// ---------------------------------------------------------------- 3D layers
 
 /** Auto-Orient of a 3D layer: off, along its motion path, towards the active camera. */
 export const LAYER_AUTO_ORIENT = ['off', 'path', 'camera'] as const;
@@ -102,8 +90,6 @@ export const Layer3DSchema = z.looseObject({
 });
 export type Layer3D = DeepStrip<z.infer<typeof Layer3DSchema>>;
 
-// ---------------------------------------------------------------- cameras and lights (their transform)
-
 /**
  * Transform of a camera or light ("rig"). `autoOrient: 'poi'` = a two-node camera / a light aimed at its Point of
  * Interest (the Orientation and X/Y/Z Rotation then turn it further); `off` = one-node.
@@ -119,8 +105,6 @@ export const RigTransformSchema = z.looseObject({
 	rotationZ: AnimNumberSchema,
 });
 export type RigTransform = DeepStrip<z.infer<typeof RigTransformSchema>>;
-
-// ---------------------------------------------------------------- cameras
 
 /** Iris Shape popup (AE Camera Options; "Fast Rectangle" is a box filter). */
 export const IRIS_SHAPES = [
@@ -164,8 +148,6 @@ export const CameraDataSchema = z.looseObject({
 });
 export type CameraData = DeepStrip<z.infer<typeof CameraDataSchema>>;
 
-// ---------------------------------------------------------------- lights
-
 export const LIGHT_TYPES = ['parallel', 'spot', 'point', 'ambient', 'environment'] as const;
 export const LightTypeSchema = z.enum(LIGHT_TYPES);
 export type LightType = DeepStrip<z.infer<typeof LightTypeSchema>>;
@@ -203,8 +185,6 @@ export const LightDataSchema = z.looseObject({
 });
 export type LightData = DeepStrip<z.infer<typeof LightDataSchema>>;
 
-// ---------------------------------------------------------------- sequences
-
 export const RENDERERS_3D = ['classic', 'advanced'] as const;
 export const Renderer3DSchema = z.enum(RENDERERS_3D);
 export type Renderer3D = DeepStrip<z.infer<typeof Renderer3DSchema>>;
@@ -220,8 +200,6 @@ export const Sequence3DSchema = z.looseObject({
 	supersampling: z.number().int().min(1).max(4).optional(),
 });
 export type Sequence3D = DeepStrip<z.infer<typeof Sequence3DSchema>>;
-
-// ---------------------------------------------------------------- 3D Camera Tracker
 
 export const CAMERA_TRACKER_SHOT_TYPES = ['fixed', 'variable', 'specify'] as const;
 export const CAMERA_TRACKER_METHODS = ['auto', 'typical', 'flat', 'tripod'] as const;

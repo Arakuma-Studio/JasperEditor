@@ -1,7 +1,3 @@
-// Security review DATA-7 (found by the session integrity property): a copy of a clip — the right part of a split,
-// a duplicate, a paste — must give every id-bearing child a fresh id. Text animators with their selectors and
-// Puppet meshes with their pins were missed, so razoring or duplicating such a clip was refused with E_INVARIANT
-// (INV-001 duplicate id).
 import { describe, expect, it } from 'vitest';
 import { checkInvariants } from '../src/index.ts';
 import { Harness } from './helpers.ts';

@@ -1,4 +1,3 @@
-// Selection helpers (S01 §15).
 import type { ProjectDocument } from '@jasper/project';
 import type { Selection, SelectMode } from './types.ts';
 

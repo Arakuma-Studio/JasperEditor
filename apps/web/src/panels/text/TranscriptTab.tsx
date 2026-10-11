@@ -1,4 +1,5 @@
-// wp captions: Text panel ▸ Transcript — the sequence transcript (words heard through the audio clips, derived on
+import type { Command } from '@jasper/project';
+// Text panel ▸ Transcript — the sequence transcript (words heard through the audio clips, derived on
 // every edit), with the word under the playhead highlighted, click-to-seek, search, word selection (click, Shift-click,
 // drag) → Mark In/Out, Extract, Lift, Insert into another sequence; Remove Fillers / Remove Pauses; speaker labels
 // (rename, filter); word corrections (`transcript.editText`) and caption breaks (`transcript.setBreak`); Create
@@ -51,8 +52,8 @@ export function TranscriptTab({ session, seq, request }: Props) {
 		if (requestSeq !== undefined && requestTool) setTool(requestTool);
 	}, [requestSeq, requestTool]);
 
-	const apply = (label: string, commands: unknown[]) => {
-		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands: commands as never[] });
+	const apply = (label: string, commands: Command[]) => {
+		const r = session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
 		if (!r.ok) toast({ kind: 'warning', title: `${label}: not possible`, detail: r.errors[0]?.message });
 		else if (r.warnings.length) toast({ kind: 'info', title: r.warnings[0]!.message });
 		return r;
@@ -156,7 +157,6 @@ export function TranscriptTab({ session, seq, request }: Props) {
 			onPointerUp={() => (dragging.current = null)}
 			onClick={() => setMenu(null)}
 		>
-			{/* search + speakers */}
 			<div className="flex shrink-0 items-center gap-1 border-b border-pr-border-subtle px-2 py-1">
 				<SearchField
 					value={query}
@@ -205,7 +205,6 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					]}
 				/>
 			</div>
-			{/* actions on the selection */}
 			<div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-pr-border-subtle px-2 py-1">
 				<Button
 					variant="quiet"
@@ -335,7 +334,6 @@ export function TranscriptTab({ session, seq, request }: Props) {
 			{tool === 'import' ? (
 				<ImportTranscript media={audioMedia} apply={apply} onDone={() => setTool(null)} />
 			) : null}
-			{/* words */}
 			<div
 				className="min-h-0 flex-1 overflow-auto px-2 py-1 font-pr text-pr-ui leading-[1.7]"
 				data-testid="text.transcript.words"
@@ -504,7 +502,7 @@ function WordMenu(p: {
 	);
 }
 
-type ApplyFn = (label: string, commands: unknown[]) => { ok: boolean };
+type ApplyFn = (label: string, commands: Command[]) => { ok: boolean };
 
 function FillersTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDone(): void }) {
 	const [list, setList] = useState(() => loadFillers().join(', '));

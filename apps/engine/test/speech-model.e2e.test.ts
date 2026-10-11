@@ -1,13 +1,5 @@
-// wp speech end to end with REAL Whisper models on a public-domain speech fixture (fixtures/speech/lj-composite.flac:
-// twelve LJ Speech sentences with measured onsets/offsets, 71.6 s = three Whisper windows).
-//
-// Runs when the models are in the speech model cache — `$JASPER_SPEECH_MODELS_DIR`, else `<repo>/target/speech-models`
-// (`<id>/` holding the catalogue files) — or with SPEECH_E2E=1, which downloads them there first through the
-// catalogue's verified installer (whisper-tiny.en 154 MB, whisper-tiny 154 MB). Otherwise it reports itself skipped.
-//
-// Through the engine's HTTP API: POST /api/media/:key/transcribe (`transcription` job → jasper-speech child process),
-// the sequence-mix job, cancellation; asserts the word error rate and word-timestamp accuracy against the ground truth
-// and that the transcript commits with `transcript.attach`.
+// Public-domain LJ Speech fixture: twelve sentences with measured onsets/offsets, 71.6 s (three Whisper windows).
+// Uses JASPER_SPEECH_MODELS_DIR or target/speech-models; SPEECH_E2E=1 downloads missing models via the verified installer.
 import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineJob, TranscriptionResult } from '@jasper/api';
@@ -120,7 +112,6 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		console.log(
 			`whisper-tiny.en: WER ${(wer * 100).toFixed(2)} %, boundary error mean ${(t.mean * 1000).toFixed(0)} ms max ${(t.max * 1000).toFixed(0)} ms, outside ${t.outside}; ${res.timings.transcribeMs} ms`,
 		);
-		// measured 2026-10-07: 1.9 % WER, 18 ms mean / 40 ms max (FilmCraft has no English-only model)
 		expect(wer).toBeLessThanOrEqual(0.04);
 		expect(t.mean).toBeLessThanOrEqual(0.06);
 		expect(t.max).toBeLessThanOrEqual(0.25);
@@ -129,13 +120,11 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		expect(Math.abs(res.duration - truth.durationSeconds * FLICKS_PER_SECOND)).toBeLessThan(
 			FLICKS_PER_SECOND / 1000,
 		);
-		// words sorted, non-overlapping, confident, inside the audio
 		for (let i = 1; i < res.words.length; i++)
 			expect(res.words[i]!.start).toBeGreaterThanOrEqual(res.words[i - 1]!.end);
 		expect(res.words.at(-1)!.end).toBeLessThanOrEqual(res.duration);
 		expect(res.words.filter((w) => w.confidence > 0.5).length / res.words.length).toBeGreaterThan(0.9);
 
-		// the client commits it: one media transcript, read back through a clip of the media
 		const d = new DocBuilder();
 		const mediaId = d.addMedia(m);
 		d.tx([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: 'A1' } }]);
@@ -170,7 +159,6 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		);
 		expect(res.language).toBe('en');
 		expect(res.languageProbability).toBeGreaterThan(0.8);
-		// measured: 5.8 % (FilmCraft whisper-tiny on the same file: 6.4 %); 18 ms mean (FilmCraft: 438 ms)
 		expect(wer).toBeLessThanOrEqual(0.1);
 		expect(t.mean).toBeLessThanOrEqual(0.06);
 		expect(t.outside).toBe(0);

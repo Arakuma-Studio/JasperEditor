@@ -1,12 +1,10 @@
-// Effect Controls Value / Velocity graphs end to end (S03:KF-022, S05:ECP-006, wave1/graph-editor): twirl
-// Opacity open, drag a key in the Value graph, then drag the key's out handle in the Velocity graph. Each
-// drag is one History entry and the Linear key becomes Bezier with a faster leaving speed.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
 	clipBox,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	pointerDrag,
 	query,
 	timelineArea,
@@ -53,11 +51,11 @@ async function drag(selector: string, dx: number, dy: number): Promise<void> {
 }
 
 test('Value and Velocity graph drags edit keys (one undo entry each)', async () => {
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0.2, 0.4, 0.9, 1] },
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
-	clipId = r.created!.find((id) => id.startsWith('clp_'))!;
+	]);
+	expectTransaction(r);
+	clipId = r.created.find((id) => id.startsWith('clp_'))!;
 	expect(
 		(
 			await transact(page, [
@@ -80,12 +78,10 @@ test('Value and Velocity graph drags edit keys (one undo entry each)', async () 
 	await ec.getByTestId('graphs-opacity').scrollIntoViewIfNeeded();
 
 	const [first] = await keys();
-	// Value graph: drag the first key up.
 	await drag(`[data-testid="graph-value-key-${first!.id}"]`, 0, -20);
 	await expect.poll(async () => (await keys())[0]!.value).toBeGreaterThan(5);
 	expect((await appliedLabels(page)).at(-1)).toBe('Edit Keyframe: Opacity');
 
-	// Velocity graph: the selected key shows its handles; dragging the out handle up speeds it up.
 	const handle = `[data-testid="graph-velocity-handle-${first!.id}-out"]`;
 	await expect(page.locator(handle)).toBeVisible();
 	await drag(handle, 0, -15);
@@ -93,7 +89,6 @@ test('Value and Velocity graph drags edit keys (one undo entry each)', async () 
 	expect((await keys())[0]!.easeOut.slope).toBeGreaterThan(1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Keyframe Velocity: Opacity');
 
-	// One undo restores the Linear key.
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await keys())[0]!.interpolation).toBe('linear');
 });

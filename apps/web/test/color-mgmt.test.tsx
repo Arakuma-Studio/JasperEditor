@@ -1,11 +1,10 @@
-// color-mgmt UI: the Colour section of Interpret Footage (after Loop, one transaction with the other sections), the
-// Sequence Settings ▸ Colour dialog, the Clip Colour Space command and menus, the export colour settings.
+import '../src/color-mgmt/interpret-section.tsx';
 import type { RegisteredMedia } from '@jasper/api';
 import { DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { SequenceColorDialog } from '../src/color-mgmt/dialogs.tsx';
-import { colorPatchOf } from '../src/color-mgmt/interpret-section.tsx';
+import { colorPatchOf } from '../src/color-mgmt/model.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { buildExportSettings, exportColorSpaceOptions, hdrOutput } from '../src/export/settings.ts';
@@ -50,7 +49,6 @@ describe('Interpret Footage ▸ Colour', () => {
 			dialog.querySelector('[data-section="color"] [data-testid="color-interpretation"]'),
 		).not.toBeNull();
 		expect(dialog.textContent).toMatch(/Automatic \(Rec\. 709\)/);
-		// The section's commands: one media.interpretColor patch next to the media.interpret patch.
 		const asset = session.getCommitted().media[id]!;
 		const cmds = interpretCommands([asset], {
 			patch: { loop: 2 },

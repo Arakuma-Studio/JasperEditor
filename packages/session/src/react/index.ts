@@ -1,4 +1,3 @@
-// React bindings for @jasper/session (ARCHITECTURE §6): useSyncExternalStore with selectors.
 import type { ProjectDocument } from '@jasper/project';
 import {
 	createContext,

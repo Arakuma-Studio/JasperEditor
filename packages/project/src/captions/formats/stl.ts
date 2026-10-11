@@ -46,8 +46,6 @@ export function sniffStl(bytes: Uint8Array): boolean {
 	return bytes.length >= GSI && rateOf(ascii(bytes, 3, 11)) !== null;
 }
 
-// ------------------------------------------------------------------------------------------- ISO/IEC 6937
-
 const SPECIALS: Array<[number, string]> = [
 	[0xa0, ' '],
 	[0xa1, '¡'],
@@ -242,8 +240,6 @@ function encodeText(text: string): number[] {
 	return out;
 }
 
-// ------------------------------------------------------------------------------------------- reader
-
 export function parseStl(bytes: Uint8Array): CaptionDocument {
 	if (!sniffStl(bytes)) throw new CaptionFormatError('not an EBU STL file');
 	const rate = rateOf(ascii(bytes, 3, 11))!;
@@ -303,8 +299,6 @@ export function parseStl(bytes: Uint8Array): CaptionDocument {
 		doc.warnings.push('trailing bytes after the last TTI block');
 	return doc;
 }
-
-// ------------------------------------------------------------------------------------------- writer
 
 function put(buf: Uint8Array, at: number, len: number, s: string): void {
 	for (let i = 0; i < len; i++) buf[at + i] = i < s.length ? s.charCodeAt(i) & 0x7f : 0x20;

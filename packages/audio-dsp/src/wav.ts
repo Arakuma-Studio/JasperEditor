@@ -2,7 +2,6 @@
  * RIFF/WAVE encoding and decoding on plain `Uint8Array` / `DataView` (no Node or DOM APIs).
  */
 
-/** Sample formats written by {@link encodeWav}. */
 export type WavFormat = 'f32' | 's16' | 's24';
 
 const WAVE_FORMAT_PCM = 1;
@@ -117,7 +116,6 @@ export function encodeWav(planar: Float32Array[], sampleRate: number, format: Wa
 	return bytes;
 }
 
-/** Decoded WAVE audio. */
 export type DecodedWav = {
 	sampleRate: number;
 	/** Planar samples, integers scaled to [−1, 1) (8-bit unsigned is re-centred). */

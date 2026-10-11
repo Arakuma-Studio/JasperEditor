@@ -1,6 +1,3 @@
-// fx framework follow-ups (registry/fx/shader.ts, passes.ts, params.ts + the effects upgraded with them): params at
-// other times, clip context, stack time composition, ping-pong / absolute-size / mipmapped passes, new uniform
-// types, LUT media params, unused declarations, time dependence of video media params, blur sigmas.
 import { describe, expect, it } from 'vitest';
 import {
 	type Animatable,
@@ -235,7 +232,6 @@ describe('pass planning follow-ups', () => {
 		const [h, v] = gaussianBlurPasses({ input: 'source', output: 'b', sigma: 4, sigmaY: 1 });
 		expect(h!.uniforms).toEqual({ u_blurDir: [1, 0], u_blurSigma: 4 });
 		expect(v!.uniforms).toEqual({ u_blurDir: [0, 1], u_blurSigma: 1 });
-		// Numeric sigmas keep the wave-1 program text (same compiled programs as before).
 		expect(h!.frag).toBe(gaussianBlurPasses({ input: 'source', output: 'b', sigma: 2 })[0]!.frag);
 		const [hu, vu] = gaussianBlurPasses({
 			input: 'source',
@@ -258,11 +254,11 @@ describe('params at other times', () => {
 	it('evaluates the keyframes at fractional clip-local frames with the shared evaluate()', () => {
 		const now = { x: 50, c: 'a' };
 		const at = fxParamsAtFn(inst, CLIP, 30, { frame: 5, params: now });
-		expect(at(5)).toBe(now); // the current frame is exactly the effect's params
+		expect(at(5)).toBe(now);
 		expect(at(2.5).x).toBeCloseTo(25, 6);
 		expect(at(-3).x).toBe(0);
 		expect(at(20).x).toBe(100);
-		expect(at(2.5)).toBe(at(2.5)); // cached
+		expect(at(2.5)).toBe(at(2.5));
 		expect(fxClipContentTime(CLIP, 3, 30)).toBeCloseTo(3 * F, 3);
 	});
 
@@ -341,7 +337,7 @@ describe('clip context: Clip Name and Timecode', () => {
 		expect(clipNameText({ ...defaults, display: 'projectItemName' }, { clip: clipInfo })).toBe('interview_a');
 		expect(clipNameText({ ...defaults, display: 'fileName' }, { clip: clipInfo })).toBe('A001_C003.mov');
 		expect(clipNameText({ ...defaults, display: 'custom', name: 'X' }, { clip: clipInfo })).toBe('X');
-		// Instances made before Display existed (no value) keep their Name; no clip context → Name.
+		// Instances without Display keep Name; missing clip context also uses Name.
 		expect(clipNameText({ name: 'Old' }, { clip: clipInfo })).toBe('Old');
 		expect(clipNameText(defaults, {})).toBe('Clip Name');
 	});
@@ -352,7 +348,7 @@ describe('clip context: Clip Name and Timecode', () => {
 		expect(timecodeText(p, { frame: 45, fps: 30, clip: clipInfo })).toBe('01:00:11:15');
 		expect(timecodeText(p, { frame: 0, fps: 30, clip: { ...clipInfo, speed: 2 } })).toBe('01:00:10:00');
 		expect(timecodeText(p, { frame: 15, fps: 30, clip: { ...clipInfo, speed: 2 } })).toBe('01:00:11:00');
-		expect(timecodeText(p, { frame: 45, fps: 30 })).toBe('00:00:01:15'); // no context: like Clip
+		expect(timecodeText(p, { frame: 45, fps: 30 })).toBe('00:00:01:15');
 		expect(fxSourceSeconds(clipInfo, 30, 30)).toBe(11);
 	});
 });
@@ -404,8 +400,8 @@ describe('motion blur from params at sub-frame times', () => {
 		const ctx = { ...box, fps: 30, frame: 15, paramsAt: (f: number) => ({ ...defaults, ...path(f) }) };
 		const st = writeOnStroke({ ...defaults, ...path(15) }, ctx);
 		expect(st.n).toBe(64); // frames 15 … 0, evenly (64 points max; Brush Spacing 0.001 s is finer)
-		expect(st.pos[0]).toBeCloseTo(50, 6); // newest first: the brush now
-		expect(st.pos[(st.n - 1) * 4]).toBeCloseTo(10, 6); // the stroke start
+		expect(st.pos[0]).toBeCloseTo(50, 6);
+		expect(st.pos[(st.n - 1) * 4]).toBeCloseTo(10, 6);
 		expect(st.connect).toBe(true);
 		expect(writeOnStroke(defaults, { ...ctx, paramsAt: () => defaults }).n).toBe(1); // still brush: one dab
 		const trail = writeOnStroke({ ...defaults, ...path(15), strokeLength: 0.1 }, ctx);

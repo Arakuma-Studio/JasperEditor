@@ -1,7 +1,3 @@
-// The in-page agent bridge (ARCHITECTURE §11 Stage 1, S01 §21): one per open EditorSession. It answers
-// queries, applies agent transactions through the session (one `Agent: <label>` undo entry each), asks
-// the user for approval of destructive transactions, keeps an activity feed (the shell toasts it), and relays
-// requests/events over WS /agent so external agents reach the open editor.
 import { type Approval, TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
@@ -27,6 +23,10 @@ import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
 import { AgentRelayClient, type RelayState } from './relay-client.ts';
+import type { AgentBridgeEvent, JasperAgentApi } from './types.ts';
+
+export type { AgentBridgeEvent, JasperAgentApi } from './types.ts';
+
 import { runUiAction, UiAutomationError } from './ui-automation.ts';
 
 const APPROVAL_TIMEOUT_MS = 60_000;
@@ -61,14 +61,6 @@ export type AgentBridgeState = {
 	relay: RelayState;
 };
 
-export type AgentBridgeEvent =
-	| 'doc.changed'
-	| 'selection.changed'
-	| 'playhead.changed'
-	| 'approval.requested'
-	| 'approval.resolved'
-	| 'activity';
-
 export type TransactOptions = {
 	/** Already approved (by the engine's gate or the user in the console). */
 	approved?: boolean;
@@ -76,16 +68,6 @@ export type TransactOptions = {
 	/** Agent name when the transaction's origin is not an agent. */
 	fallbackAgent?: string;
 };
-
-/** window.jasper (ARCHITECTURE §11): the in-page agent API. */
-export interface JasperAgentApi {
-	readonly version: 1;
-	readonly projectId: string;
-	schema(): Record<string, unknown>;
-	query(name: string, args?: Record<string, unknown>): Promise<unknown>;
-	transact(tx: AgentTxInput): Promise<TransactionResult>;
-	on(event: AgentBridgeEvent, cb: (payload: unknown) => void): () => void;
-}
 
 export type AgentBridgeOptions = {
 	/** Connect WS /agent (disabled in isolated tests). */
@@ -137,8 +119,6 @@ export class AgentBridge {
 				: null;
 		this.wireSessionEvents();
 	}
-
-	// ------------------------------------------------------------ lifecycle
 
 	start(): this {
 		this.relay?.start();
@@ -233,8 +213,6 @@ export class AgentBridge {
 		);
 	}
 
-	// ------------------------------------------------------------ schema and queries
-
 	schema(): Record<string, unknown> {
 		if (!this.schemaCache)
 			this.schemaCache = {
@@ -268,8 +246,6 @@ export class AgentBridge {
 				},
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
-				// M3 (S10:TUI-034): the user's default transitions, so agents apply the same ones as Ctrl+D.
-				// edit-structure: how the editor places sequences (nests or individual clips) and shows through edits.
 				preferences: () => ({
 					transitions: transitionPreferences(),
 					timeline: {
@@ -297,7 +273,7 @@ export class AgentBridge {
 			platform: 'web',
 		});
 		let job = await this.engine.requestStill({
-			envelope: envelope as never,
+			envelope,
 			sequenceId: cap.sequenceId,
 			frame: cap.frame,
 			width: cap.width,
@@ -332,8 +308,6 @@ export class AgentBridge {
 			},
 		).result;
 	}
-
-	// ------------------------------------------------------------ transactions
 
 	/**
 	 * Applies an agent transaction through the session (queued during a gesture, S01:SES-006). Destructive
@@ -447,8 +421,6 @@ export class AgentBridge {
 		);
 	}
 
-	// ------------------------------------------------------------ approvals (S01:AGT-011)
-
 	private requestLocalApproval(
 		tx: ReturnType<typeof normalizeAgentTransaction>,
 		reasons: string[],
@@ -510,8 +482,6 @@ export class AgentBridge {
 		return sent;
 	}
 
-	// ------------------------------------------------------------ relay
-
 	private onEngineEvent(event: string, payload: unknown): void {
 		if (event === 'agent.approval.requested') {
 			// The engine sends cards only to the editor window, each with the key that window answers with. A request
@@ -533,7 +503,6 @@ export class AgentBridge {
 	): Promise<{ result?: unknown; error?: { code: string; message: string } }> {
 		try {
 			if (kind === 'schema') return { result: this.schema() };
-			// mcp-cli: live-UI automation of this window (ui-automation.ts).
 			if (kind === 'ui') {
 				const p = (payload ?? {}) as { action?: string; args?: Record<string, unknown> };
 				return { result: await runUiAction(String(p.action), p.args ?? {}) };
@@ -552,8 +521,6 @@ export class AgentBridge {
 			return { error: { code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) } };
 		}
 	}
-
-	// ------------------------------------------------------------ window.jasper
 
 	/** The object installed as `window.jasper`. */
 	api(): JasperAgentApi {

@@ -108,7 +108,6 @@ describe('render snapshot and scene (ARCHITECTURE §5.5)', () => {
 		expect(at15[1]!.props.opacity).toBeCloseTo(50, 6);
 		const at45 = resolveSceneAt(snap, 45);
 		expect(at45[1]!.props.opacity).toBe(100);
-		// Solo A2 silences A1.
 		h.ok([{ type: 'track.update', trackId: 'A2', patch: { solo: true } }]);
 		const solo = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
 		expect(solo.audioClips).toHaveLength(0);

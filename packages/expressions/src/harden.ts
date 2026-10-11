@@ -3,12 +3,10 @@
 //
 // One realm serves every document a process evaluates (all projects of an engine, every project a tab opens), so
 // nothing an expression does may outlive its own evaluation: without this, `Math.sin = …`,
-// `Array.prototype.map = null` or `JSON.stringify = …` in one (hostile or buggy) project silently changed the
-// results of every later expression in every project, and preview could differ from export depending on what ran
-// first. The script
+// `Array.prototype.map = null` or `JSON.stringify = …` in one (hostile or buggy) project could change the
+// results of every later expression in every project, and make preview differ from export depending on evaluation order. The script
 //
-// 1. closes the last path to the real clock: `new Date(0).constructor` was the original `Date` (its `now()` and
-//    zero-argument construction read the wall clock);
+// 1. blocks the real clock through `new Date(0).constructor`, including `now()` and zero-argument construction;
 // 2. removes ways to detach the prelude's scratch buffers (`ArrayBuffer.prototype.transfer*`);
 // 3. "tames" a few inherited data properties that ordinary code overrides on its own objects (`toString`,
 //    `valueOf`, `constructor`, error `name`/`message`): they become accessors whose setter defines an own
@@ -41,7 +39,6 @@ export const HARDEN = `
     if (typeof ArrayBuffer === 'function' && getDesc(ArrayBuffer.prototype, k)) delete ArrayBuffer.prototype[k];
   });
 
-  // 3. Override-mistake taming.
   function tame(obj, key) {
     var d = getDesc(obj, key);
     if (!d || !('value' in d) || !d.configurable) return;
@@ -70,7 +67,6 @@ export const HARDEN = `
   });
   ['constructor', 'toString'].forEach(function (k) { tame(Function.prototype, k); });
 
-  // 4. Deep freeze.
   var seen = new Set();
   function isView(o) {
     return typeof ArrayBuffer === 'function' && ArrayBuffer.isView(o);
@@ -94,22 +90,22 @@ export const HARDEN = `
     deepFreeze(getProto(o));
   }
   // Intrinsics only reachable through syntax or instances.
-  var hidden = [];
-  function add(f) { try { var v = f(); if (v) hidden.push(v); } catch (e) {} }
-  add(function () { return getProto(function* () {}); });
-  add(function () { return getProto(function* () {}).prototype; });
-  add(function () { return getProto(async function () {}); });
-  add(function () { return getProto(async function* () {}); });
-  add(function () { return getProto(async function* () {}).prototype; });
-  add(function () { return getProto([][Symbol.iterator]()); });
-  add(function () { return getProto(getProto([][Symbol.iterator]())); });
-  add(function () { return getProto(new Map()[Symbol.iterator]()); });
-  add(function () { return getProto(new Set()[Symbol.iterator]()); });
-  add(function () { return getProto(''[Symbol.iterator]()); });
-  add(function () { return getProto('a'.matchAll(/a/g)); });
-  add(function () { return getProto(Int8Array); });
-  add(function () { return getDesc(Function.prototype, 'caller').get; });
-  add(function () { return getDesc(arguments, 'callee').get; });
+  var hidden = [
+    getProto(function* () {}),
+    getProto(function* () {}).prototype,
+    getProto(async function () {}),
+    getProto(async function* () {}),
+    getProto(async function* () {}).prototype,
+    getProto([][Symbol.iterator]()),
+    getProto(getProto([][Symbol.iterator]())),
+    getProto(new Map()[Symbol.iterator]()),
+    getProto(new Set()[Symbol.iterator]()),
+    getProto(''[Symbol.iterator]()),
+    getProto('a'.matchAll(/a/g)),
+    getProto(Int8Array),
+    getDesc(Function.prototype, 'caller')?.get,
+    getDesc(arguments, 'callee')?.get
+  ];
   for (var h = 0; h < hidden.length; h++) deepFreeze(hidden[h]);
   deepFreeze(G);
 

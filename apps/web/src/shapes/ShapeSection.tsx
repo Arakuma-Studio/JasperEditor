@@ -3,7 +3,7 @@
 // width, position) and Corner Radius (rectangles). Rows reuse the inspector's PropertyRow, so ◆ keyframes,
 // reset, scrubs as one gesture and multi-selection (mixed `–`, relative scrubs) work like every other property.
 // "None" toggles write `clip.update {shape: {fill | stroke}}`; values go through `param.set shape.*`.
-import type { Clip, Command, LegacyShapeClip } from '@jasper/project';
+import type { Clip, CommandInput, LegacyShapeClip } from '@jasper/project';
 import { useSessionState } from '@jasper/session/react';
 import { Icon } from '@jasper/ui';
 import { type ReactNode, useRef } from 'react';
@@ -57,10 +57,14 @@ export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionP
 		);
 		return r && r.bindings.length === list.length ? r : null;
 	};
-	const updateShapes = (label: string, list: LegacyShapeClip[], shape: Record<string, unknown>) =>
+	const updateShapes = (
+		label: string,
+		list: LegacyShapeClip[],
+		shape: NonNullable<Extract<CommandInput, { type: 'clip.update' }>['patch']['shape']>,
+	) =>
 		ops.apply(
 			label,
-			list.map((c) => ({ type: 'clip.update', clipId: c.id, patch: { shape } }) as Command),
+			list.map((c) => ({ type: 'clip.update', clipId: c.id, patch: { shape } }) satisfies CommandInput),
 		);
 	const types = [...new Set(shapes.map((c) => c.shape.type))];
 	const filled = shapes.filter((c) => c.shape.fill !== null);
@@ -146,7 +150,7 @@ export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionP
 					onClick={() =>
 						ops.apply(
 							'Convert to Vector Shape',
-							shapes.map((c) => ({ type: 'shape.convertToVector', clipId: c.id }) as Command),
+							shapes.map((c) => ({ type: 'shape.convertToVector', clipId: c.id }) satisfies CommandInput),
 						)
 					}
 					data-testid="shape-convert-vector"

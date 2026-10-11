@@ -1,5 +1,4 @@
-// wp masks: the mask MCP tools through the protocol against an in-memory engine (documents applied with the real
-// command system; trace / track answered by the fake engine).
+// The fake engine supplies trace/track results; document changes use the real command system.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

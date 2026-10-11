@@ -1,12 +1,7 @@
-// Text animators, Path Options and More Options of text clips (workstream text-animators; After Effects "Animate
-// Text"). Every field is optional on the clip (absent = no animators / no path / defaults), so documents written
-// before this workstream parse unchanged and no schema version bump is needed. Animatable values reuse the shared
-// `{value, keyframes}` storage (S01:KF-001) and are evaluated per frame at the clip's content time by the text
-// layer, like shapes (RND-001).
+// Absent fields mean no animators, no path, or the field default. Animatable values use the shared
+// {value, keyframes} storage and are evaluated at the clip's content time, like shapes.
 import { z } from 'zod';
 import { AnimNumberSchema, AnimRGBASchema, AnimVec2Schema, type DeepStrip } from './common.ts';
-
-// ---------------------------------------------------------------- selectors
 
 /** What a selector counts (AE "Based On"). */
 export const TEXT_SELECTOR_BASED_ON = ['characters', 'charactersExcludingSpaces', 'words', 'lines'] as const;
@@ -90,8 +85,6 @@ export const TextSelectorSchema = z.discriminatedUnion('kind', [
 ]);
 export type TextSelector = TextRangeSelector | TextWigglySelector | TextExpressionSelector;
 
-// ---------------------------------------------------------------- animator properties
-
 export const TEXT_TRACKING_TYPES = ['beforeAndAfter', 'before', 'after'] as const;
 export const TEXT_CHARACTER_RANGES = ['preserveCaseAndDigits', 'fullUnicode'] as const;
 export const TEXT_CHARACTER_ALIGNMENTS = ['left', 'center', 'right', 'adjustKerning'] as const;
@@ -148,8 +141,6 @@ export const TextAnimatorGroupSchema = z.looseObject({
 	selectors: z.array(TextSelectorSchema),
 });
 export type TextAnimatorGroup = DeepStrip<z.infer<typeof TextAnimatorGroupSchema>>;
-
-// ---------------------------------------------------------------- path options and more options
 
 /**
  * AE Path Options: the characters are placed along the path of one of the clip's masks (`clip.masks`, the shared

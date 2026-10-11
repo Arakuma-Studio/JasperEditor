@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Object Matte / Object Blur (parity: roto) in real WebGL2 (headless Chrome, SwiftShader): matte states (pass
-// through, cut out, transparent outside the span), invert, Shift Edge / Feather / Contrast against the matte edge,
-// Reduce Chatter towards the neighbouring frames, motion blur from the neighbours' centroids, decontamination, the
-// views, and Object Blur's methods / region. Pixel coordinates are layer px. FX_GL=0 skips it.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { near, PACG_GL, type PacgRequest, type PacgSession, type Px, startPacg } from './fx-pacg/harness.ts';
 

@@ -1,23 +1,25 @@
+import type { Vec2 } from '@jasper/project';
 // Vector shape editing state and edits shared by Properties ▸ Shape Contents, Effect Controls and the Program monitor
 // tools (wp shapes): the selected item of the selected vector shape (its path is edited on the monitor), the selected
 // vertices, and the edits the tools issue (new vector clips, items added into a selected shape) — one transaction
 // (one undo step) each.
 import {
 	applyMatrix,
-	type Command,
+	type CommandInput,
 	DEFAULT_SHAPE_SECONDS,
 	invertMatrix,
 	layerMatrix,
 	type Sequence,
 	type ShapeClip,
 	type ShapeItem,
+	type ShapeItemInput,
 	type VectorShapeData,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSyncExternalStore } from 'react';
 import { activeSequence, freeVideoTrack, transformAt } from '../panels/program/edits.ts';
 
-export type Vec2 = [number, number];
+export type { Vec2 } from '@jasper/project';
 
 export type VectorUiState = {
 	/** The item selected in the contents list (and edited on the monitor when it is a path). */
@@ -89,7 +91,7 @@ export function sequenceToContent(seq: Sequence, clip: ShapeClip, frame: number,
 export function addVectorClipAt(
 	session: EditorSession,
 	frame: number,
-	items: Record<string, unknown>[],
+	items: ShapeItemInput[],
 	label: string,
 	center?: Vec2,
 	name?: string,
@@ -113,7 +115,7 @@ export function addVectorClipAt(
 				shape: { type: 'vector', contents: items },
 				...(center ? { transform: { position: center } } : {}),
 				...(name ? { name } : {}),
-			} as Command,
+			} satisfies CommandInput,
 		],
 	});
 	if (!r.ok) return null;
@@ -126,7 +128,7 @@ export function addVectorClipAt(
 export function addItemsToVector(
 	session: EditorSession,
 	clipId: string,
-	items: Record<string, unknown>[],
+	items: ShapeItemInput[],
 	label: string,
 	opts: { parentId?: string | null; index?: number } = {},
 ): string[] {
@@ -143,7 +145,7 @@ export function addItemsToVector(
 				items,
 				...(opts.parentId ? { parentId: opts.parentId } : {}),
 				index: opts.index ?? 0,
-			} as Command,
+			} satisfies CommandInput,
 		],
 	});
 	if (!r.ok) return [];
@@ -152,11 +154,11 @@ export function addItemsToVector(
 
 /** A group holding one path item, a stroke and a fill (what a drawing tool adds into a selected shape). */
 export function drawnGroup(
-	path: Record<string, unknown>,
+	path: ShapeItemInput,
 	name: string,
 	opts: { stroke?: boolean; fill?: boolean } = {},
-) {
-	const contents: Record<string, unknown>[] = [path];
+): ShapeItemInput {
+	const contents: ShapeItemInput[] = [path];
 	if (opts.stroke) contents.push({ type: 'stroke', color: [1, 1, 1, 1], width: 4 });
 	if (opts.fill !== false) contents.push({ type: 'fill', color: [1, 1, 1, 1] });
 	return { type: 'group', name, contents };

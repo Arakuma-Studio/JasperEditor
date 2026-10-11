@@ -59,8 +59,7 @@ function subclipFromClip(session: EditorSession, seq: Sequence, clip: Clip): voi
 export function keyframeMenu(session: EditorSession, seq: Sequence, clip: Clip): MenuItemSpec {
 	const view = session.getState().views[seq.id];
 	const current = laneKeyFor(view?.keyframeDisplay, clip);
-	// Workstream `time`: Premiere's "Time Remapping ▸ Speed" entry shows the speed band (apps/web/src/time) instead
-	// of a property lane; like Premiere's menu it is one choice among the others.
+	// Speed uses its dedicated band, so it is mutually exclusive with an ordinary property lane.
 	const remappable = clip.kind === 'video' || clip.kind === 'nest-video';
 	const set = (key: string) => {
 		if (remappable) setBandShown([clip.id], false);

@@ -24,6 +24,7 @@ import {
 	selectorFields,
 	shapeItemSpecs,
 	type TextAnimatorGroup,
+	type TextClip,
 	type TextSelector,
 	textAnimatorPropertySpecs,
 	walkItems,
@@ -55,17 +56,17 @@ export type FxSection = {
 	/** Index of `fx` in the clip's effect stack. */
 	stackIndex?: number;
 	missing?: boolean;
-	/** wp masks: the section's masks (Opacity masks, or the effect's own masks) and their property rows. */
+	/** the section's masks (Opacity masks, or the effect's own masks) and their property rows. */
 	masks?: MaskList;
-	/** text-animators: the Text section's animators, selectors, Path Options and More Options. */
+	/** the Text section's animators, selectors, Path Options and More Options. */
 	textAnimators?: TextAnimatorListModel;
-	/** three-d: the Motion section carries the 3D Layer switch of the clip. */
+	/** the Motion section carries the 3D Layer switch of the clip. */
 	threeDSwitch?: { clipId: string; enabled: boolean };
-	/** sim-warp: a Puppet effect's meshes and pins (their property rows). */
+	/** a Puppet effect's meshes and pins (their property rows). */
 	puppet?: PuppetListModel;
 };
 
-/** sim-warp: what a Puppet section shows below its params. */
+/** what a Puppet section shows below its params. */
 export type PuppetListModel = {
 	clipId: string;
 	fxId: string;
@@ -104,11 +105,11 @@ function puppetList(
 	};
 }
 
-/** text-animators: one selector block. */
+/** one selector block. */
 export type SelectorBlock = { selector: TextSelector; rows: Row[]; advanced: Row[] };
-/** text-animators: one animator block (property rows, selector blocks). */
+/** one animator block (property rows, selector blocks). */
 export type AnimatorBlock = { animator: TextAnimatorGroup; rows: Row[]; selectors: SelectorBlock[] };
-/** text-animators: what the Text section shows below Source Text. */
+/** what the Text section shows below Source Text. */
 export type TextAnimatorListModel = {
 	clipId: string;
 	/** Source Text hold keys (AE Source Text stopwatch). */
@@ -123,19 +124,13 @@ export type TextAnimatorListModel = {
 function textAnimatorList(
 	doc: ProjectDocument,
 	seq: Sequence,
-	clip: Clip,
+	clip: TextClip,
 	frame: number,
 ): TextAnimatorListModel {
 	const bind = (key: string) => makeRow(key, [bindProperty(doc, seq, clip, key, frame)]);
 	const ok = (r: Row | null): r is Row => r !== null;
-	const c = clip as Clip & {
-		animators?: TextAnimatorGroup[];
-		pathOptions?: { maskId: string };
-		perCharacter3d?: boolean;
-		masks?: Mask[];
-		textAnimation?: { in?: unknown; out?: unknown };
-	};
-	const specs = textAnimatorPropertySpecs(c as never);
+	const c = clip;
+	const specs = textAnimatorPropertySpecs(c);
 	return {
 		clipId: clip.id,
 		sourceText: bind('text.sourceText'),
@@ -181,7 +176,7 @@ function textAnimatorList(
 	};
 }
 
-/** wp masks: a section's mask tools and masks (Premiere: under Opacity and every video effect). */
+/** a section's mask tools and masks (Premiere: under Opacity and every video effect). */
 export type MaskList = {
 	owner: { clipId: string; effectId: string | null };
 	blocks: { mask: Mask; rows: Row[] }[];
@@ -289,7 +284,7 @@ export function buildGroups(
 		const sections: FxSection[] = [];
 		const effects = (clip as { effects?: EffectInstance[] }).effects ?? [];
 		const pinned = isVisualClip(clip) ? cropEffectOf(clip) : null;
-		// three-d: cameras and lights (After Effects' Transform / Camera Options / Light Options groups).
+		// cameras and lights (After Effects' Transform / Camera Options / Light Options groups).
 		if (clip.kind === 'camera' || clip.kind === 'light') {
 			const k = clip.kind;
 			sections.push({
@@ -335,9 +330,8 @@ export function buildGroups(
 			});
 		}
 		if (isVisualClip(clip)) {
-			const nonUniform =
-				(clip as { transform?: { uniformScale: boolean } }).transform?.uniformScale === false;
-			const td = (clip as { threeD?: { enabled: boolean; geometry?: unknown } }).threeD;
+			const nonUniform = 'transform' in clip && clip.transform.uniformScale === false;
+			const td = 'threeD' in clip ? clip.threeD : undefined;
 			const is3d = !!td?.enabled && clip.kind !== 'captions';
 			sections.push({
 				id: `${clip.id}:motion`,
@@ -402,7 +396,6 @@ export function buildGroups(
 				rows: rows(['opacity', 'blendMode']),
 				masks: maskList(doc, seq, clip, (clip as { masks?: Mask[] }).masks, null, frame),
 			});
-			// Workstream `time`: Premiere's intrinsic Time Remapping (body drawn by TimeRemapSection).
 			if (clip.kind === 'video' || clip.kind === 'nest-video')
 				sections.push({
 					id: `${clip.id}:timeRemap`,
@@ -419,7 +412,7 @@ export function buildGroups(
 					clip,
 					intrinsic: true,
 					rows: rows(['text.content']),
-					// text-animators: Source Text keys, Path Options, More Options, animators (AE's Text group).
+					// Source Text keys, Path Options, More Options, animators (AE's Text group).
 					textAnimators: textAnimatorList(doc, seq, clip, frame),
 				});
 			// M2 (wp-m2-text-anim, S11:TXA-022): the Text Animation section (body drawn by TextAnimationSection).
@@ -452,7 +445,7 @@ export function buildGroups(
 					intrinsic: true,
 					rows: rows(shapePropertyKeys(clip)),
 				});
-			// wp shapes: a vector shape's contents, one section per item (AE's Contents twirl-downs), in list order.
+			// a vector shape's contents, one section per item (AE's Contents twirl-downs), in list order.
 			if (clip.kind === 'shape' && clip.shape.type === 'vector') {
 				const names = new Map<string, string>();
 				walkItems(clip.shape.contents, (it, parent) => {
@@ -518,7 +511,7 @@ export function buildGroups(
 					)
 					.filter((r): r is Row => r !== null),
 				...(fx.effectId === 'jasper.puppet' ? { puppet: puppetList(doc, seq, clip, fx, frame) } : {}),
-				// wp masks: every video effect but the corner pin (the layer geometry) has masks.
+				// every video effect but the corner pin (the layer geometry) has masks.
 				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID && !effect.passthrough
 					? { masks: maskList(doc, seq, clip, fx.masks, fx.id, frame) }
 					: {}),
@@ -537,7 +530,7 @@ export function rowVisible(doc: ProjectDocument, seq: Sequence, row: Row, filter
 	if (filter === 'all') return true;
 	const b = row.bindings[0]!;
 	// Keyframed, or driven by an expression (wave expressions).
-	if (b.resolved.animated || (b.resolved.anim as { expression?: unknown } | null)?.expression) return true;
+	if (b.resolved.animated || b.resolved.anim?.expression) return true;
 	if (filter === 'animated') return false;
 	if (b.spec.defaultValue === undefined) return false;
 	const d = propertyDefault({ doc, seq, clip: b.clip }, b.spec);

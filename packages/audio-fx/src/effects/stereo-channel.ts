@@ -395,8 +395,6 @@ export class MonoMaker extends EffectBase {
 	}
 }
 
-// ---------------------------------------------------------------- binauralizer
-
 const SPEED_OF_SOUND = 343;
 
 /** Head-shadow filter (one-pole/one-zero spherical-head model, Brown & Duda 1998). */
@@ -483,8 +481,6 @@ export class Binauralizer extends EffectBase {
 		}
 	}
 }
-
-// ---------------------------------------------------------------- ambisonics panner
 
 export class AmbisonicsPanner extends EffectBase {
 	/** out L ← in L, out L ← in R, out R ← in L, out R ← in R */

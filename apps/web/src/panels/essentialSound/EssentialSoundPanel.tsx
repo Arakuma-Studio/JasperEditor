@@ -1,3 +1,4 @@
+import type { Command } from '@jasper/project';
 // Essential Sound panel (audio-fx; Premiere Window ▸ Essential Sound). The selected audio clips get a type —
 // Dialogue, Music, SFX or Ambience — and simple controls per section; every control is an `essentialSound.*`
 // command that writes ORDINARY clip effects, gain, Volume and pan (visible and keyframable in Effect Controls).
@@ -21,6 +22,7 @@ import {
 import type { EditorSession, SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Button, Checkbox, EmptyState, Select, Slider, toast } from '@jasper/ui';
+import { EMPTY_SESSION_STORE } from '../session-store.ts';
 
 const notify = {
 	error: (title: string) => toast({ kind: 'error', title: title.slice(0, 120) }),
@@ -40,8 +42,6 @@ import { useEngineOrNull } from '../../state/engine.tsx';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
 
-const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
-
 type Selected = { seq: Sequence | null; clips: AudioClip[] };
 
 function selectedOf(s: SessionState | null): Selected {
@@ -57,7 +57,7 @@ function selectedOf(s: SessionState | null): Selected {
 export function EssentialSoundPanel(_props: PanelProps) {
 	const session = useSessionOrNull();
 	const sel = useStoreSelector(
-		session?.store ?? NULL_STORE,
+		session?.store ?? EMPTY_SESSION_STORE,
 		(s: SessionState | null) => selectedOf(s),
 		(a, b) =>
 			a.seq === b.seq && a.clips.length === b.clips.length && a.clips.every((c, i) => c === b.clips[i]),
@@ -79,8 +79,8 @@ function Body({ session, seq, clips }: { session: EditorSession; seq: Sequence; 
 	const settings = clips.map((c) => readEssentialSound(c.essential));
 	const types = new Set(settings.map((s) => s?.type ?? null));
 	const ids = clips.map((c) => c.id);
-	const apply = (label: string, commands: unknown[]) => {
-		const r = session.apply({ label, origin: 'user', commands: commands as never });
+	const apply = (label: string, commands: Command[]) => {
+		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) notify.error(r.errors[0]?.message ?? `${label} failed`);
 	};
 	if (types.size > 1)
@@ -122,7 +122,7 @@ type EditorProps = {
 	seq: Sequence;
 	clips: AudioClip[];
 	s: EssentialSound;
-	apply(label: string, commands: unknown[]): void;
+	apply(label: string, commands: Command[]): void;
 };
 
 function Editor({ session, seq, clips, s, apply }: EditorProps) {
@@ -133,9 +133,9 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 	const [closed, setClosed] = useState<Record<string, boolean>>({});
 	const [, bump] = useState(0);
 	const frame = session.transport.getState().frame;
-	const set = (values: Record<string, unknown>) =>
+	const set = (values: Record<string, boolean | number | string | string[]>) =>
 		apply('Essential Sound', [{ type: 'essentialSound.set', clipIds: ids, values, at: frame }]);
-	const scrubCmd = (values: Record<string, unknown>) => [
+	const scrubCmd = (values: Record<string, boolean | number | string | string[]>): Command[] => [
 		{ type: 'essentialSound.set', clipIds: ids, values, at: frame },
 	];
 	const builtins = builtinEssentialPresets().filter((p) => p.type === s.type);
@@ -170,7 +170,7 @@ function Editor({ session, seq, clips, s, apply }: EditorProps) {
 				disabled={opts.disabled}
 				onChangeStart={() => ops.scrub.start('Essential Sound')}
 				onChange={(v) => {
-					if (!ops.scrub.update(scrubCmd({ [key]: v }) as never)) set({ [key]: v });
+					if (!ops.scrub.update(scrubCmd({ [key]: v }))) set({ [key]: v });
 				}}
 				onCommit={() => ops.scrub.end(false)}
 			/>

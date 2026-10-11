@@ -1,7 +1,3 @@
-// Source ranges on the engine (M3, wp-m3-inpoint, S07:PRC-015…019): a processed range holds exactly the source
-// frames it says (frame-coded fixture), the result carries the range, the media registry records it, a clip
-// swapped onto the ranged version exports on the native path showing the same source frames as on the
-// original (and back), and a source-range sidecar next to a file registered by path is reported.
 import { spawnSync } from 'node:child_process';
 import {
 	copyFileSync,
@@ -90,7 +86,6 @@ const exportSettings = (seqId: string) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine: 'native',
@@ -229,7 +224,6 @@ describe('source-range sidecars (S07:PRC-019)', () => {
 			frameRate: null,
 			handles: [0, 8],
 		});
-		// No sidecar → no hint.
 		const plain = await register(app, fixture('clip-b.mp4'));
 		expect(plain.sourceHint).toBeUndefined();
 	}, 60_000);
@@ -241,7 +235,7 @@ describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelle
 	it('deletes only the managed copy and registry record when no project uses it', async () => {
 		const src = join(dir, 'discard-me.mp4');
 		copyFileSync(fixture('clip-b.mp4'), src);
-		writeFileSync(src, Buffer.concat([readFileSync(src), Buffer.from('discard')])); // unique bytes
+		writeFileSync(src, Buffer.concat([readFileSync(src), Buffer.from('discard')]));
 		const r = await app.inject({
 			method: 'POST',
 			url: '/api/media/register',
@@ -255,7 +249,7 @@ describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelle
 		expect(res.statusCode).toBe(200);
 		expect(res.json()).toEqual({ deleted: true, reason: 'deleted' });
 		expect(existsSync(managed)).toBe(false);
-		expect(existsSync(src)).toBe(true); // the user's file is untouched
+		expect(existsSync(src)).toBe(true);
 		expect(
 			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: H })).statusCode,
 		).toBe(404);

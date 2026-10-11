@@ -1,4 +1,4 @@
-// Simulation ▸ Foam (sim-warp workstream; After Effects' Foam): bubbles born in a producer rectangle grow to their
+// Simulation ▸ Foam (After Effects' Foam): bubbles born in a producer rectangle grow to their
 // size, drift with the wind, turbulence and a Flow Map (they run downhill on its luminance), repel and stick to each
 // other, wobble and pop at the end of their Strength-shortened lifespan, pushing their neighbours away at Pop
 // Velocity. Draft views show bubble outlines (and the flow map); Rendered draws a built-in bubble texture or the

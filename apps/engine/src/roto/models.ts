@@ -1,6 +1,5 @@
-// Vision models of the roto workstream: the Roto Brush segmentation model (SAM 2.1) and the face models (MediaPipe
-// Face Landmarker), the `vision` list of the processing-model catalogue (processing/models.json, or
-// JASPER_MODEL_CATALOG in tests). They are multi-file ONNX models pinned to a Hugging Face revision and verified by
+// Roto Brush and face models come from the processing catalogue's vision list. They are multi-file
+// ONNX models pinned to a Hugging Face revision and verified by
 // sha256 — the same install mechanics as the speech models (speech/models.ts `SpeechModelStore`, which this store
 // delegates to), into `<appdir>/models/vision/<id>/`, installed by the processing service's `model-download` job
 // after the user has seen the licence. A `NOTICE.txt` naming the authors, licence and source is written next to the
@@ -24,7 +23,7 @@ export class VisionModelStore {
 	) {
 		this.store = new SpeechModelStore(
 			modelsDir,
-			entries.map((e) => ({ multilingual: false, ...e }) as SpeechCatalogEntry),
+			entries.map((e) => ({ multilingual: false, ...e })),
 		);
 	}
 
@@ -38,7 +37,7 @@ export class VisionModelStore {
 	}
 
 	async installed(e: VisionCatalogEntry): Promise<boolean> {
-		return this.store.installed(e as unknown as SpeechCatalogEntry);
+		return this.store.installed(e);
 	}
 
 	async list(): Promise<VisionModel[]> {
@@ -58,7 +57,7 @@ export class VisionModelStore {
 					revision: e.revision,
 					sizeBytes,
 					installed,
-					missingBytes: installed ? 0 : await this.store.missingBytes(e as unknown as SpeechCatalogEntry),
+					missingBytes: installed ? 0 : await this.store.missingBytes(e),
 				};
 			}),
 		);

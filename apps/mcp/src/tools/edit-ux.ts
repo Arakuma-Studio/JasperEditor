@@ -1,8 +1,3 @@
-// edit-ux MCP tools (docs/wp-notes/edit-ux.md): Match Frame / Reverse Match Frame, three- and four-point editing
-// from a source (backtiming, Fit Clip choices, split edits, source patching, sequences as sources), trim edit points
-// (regular / ripple / roll, multi-track, split-edit safe) and subclips. Each edit is one transaction of document
-// commands (`clip.sourceEdit`, `clip.trimEdits`, `item.makeSubclip`, `item.updateSubclip`, `item.setMarks`), also
-// available through apply_commands.
 import {
 	FLICKS_PER_SECOND,
 	matchFrame,
@@ -15,6 +10,7 @@ import {
 	trimSides,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	applyCommands,
 	defineTool,
@@ -22,26 +18,19 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
-	requireSequence,
 	type ToolContext,
 	transact,
 	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+import { pickSequence } from '../format.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const EDIT_UX_GUIDE = `Three/four-point editing, trimming, match frame, subclips:
 - source_edit edits a source (media/subclip/synthetic/sequence item, media id or sequence id) into a sequence like Premiere's Insert (,) / Overwrite (.): any three of sourceIn/sourceOut/sequenceIn/sequenceOut define it (absent = the item's / sequence's marks; null = ignore a mark). The sequence In wins over \`at\` (the playhead); with only a sequence Out the edit is backtimed (ends there). Four points with different durations need fit: change-speed (fit to fill), ignore-source-in, ignore-source-out, ignore-sequence-in or ignore-sequence-out. split gives video and audio their own source ranges (J/L cuts); patch sends source V1/A1… to tracks or null (off). Sequences go in as one nest (default) or as clips.
 - find_edit_points lists the edit points nearest a time per track (Premiere Select Nearest Edit Point as Ripple In/Out, Roll, Trim In/Out); trim_edit_points moves them by frames as ONE edit: regular trims leave gaps, ripple trims shift later material (sync-locked tracks follow; a linked sound that leads its picture — a J cut — moves with it), rolls move the cut between two clips. The most restrictive limit (media handles, neighbours, sync locks) wins for every point; clampToSyncLock stops at the limit instead of refusing.
 - match_frame returns the source and source time shown at a sequence frame (through nests and multi-camera angles; subclips match to the subclip); reverse_match_frame finds the sequence frame that uses a source time.
 - make_subclip creates a subclip item (a named range of a media item; restrictTrims keeps clips placed from it inside the range); edit_subclip changes it; set_split_marks sets Mark Split video/audio In/Out on a media or subclip item (used by source_edit).`;
 
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const SourceTimeArg = z
 	.union([
 		z.object({ seconds: z.number().min(0) }),
@@ -90,7 +79,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, tracks, clipId }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const trackIds = (tracks ?? []).map((ref) => {
 				const t = [...seq.videoTracks, ...seq.audioTracks].find(
 					(x) => x.id === ref || trackLabel(seq, x.id)?.toUpperCase() === ref.toUpperCase(),
@@ -143,7 +132,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		async ({ projectId, sequenceId, itemId, mediaId, sourceTime, tracks }) => {
 			if (!itemId && !mediaId) throw new ToolError('E_INVALID_PARAM', 'Pass itemId or mediaId');
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const item = itemId ? doc.items[itemId] : undefined;
 			const mid = mediaId ?? (item && 'mediaId' in item ? (item as { mediaId: string }).mediaId : undefined);
 			const asset = mid ? doc.media[mid] : undefined;
@@ -277,7 +266,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, kind, tracks }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const trackIds = (tracks ?? [])
 				.map(
 					(ref) =>

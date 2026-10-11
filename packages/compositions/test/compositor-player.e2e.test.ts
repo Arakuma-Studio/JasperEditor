@@ -1,11 +1,6 @@
 // @vitest-environment node
-// compositor: the flat compositor in the Remotion Player (preview path) in headless Chrome with HTML-in-Canvas
-// (bundled from fx-player/entry.tsx): stacks whose scopes used to nest draw in the Program monitor — an adjustment
-// layer over a GL blend over video (decoded frames reach the compositor), a nest drawn as a canvas source, a 3D run
-// under an adjustment layer — and the HDR display transform keeps running while a scope draws inside it (it used to
-// step aside with a chip). Gated by REMOTION_E2E=1; COMPOSITOR_ELECTRON=1 (under xvfb-run) runs the same Players in the
-// desktop app's Electron.
-
+// Chrome cannot nest HTML-in-Canvas scopes; mixed adjustment, blend and 3D stacks must share a flat capture.
+// COMPOSITOR_ELECTRON=1 runs the same checks in desktop Electron under xvfb-run.
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';

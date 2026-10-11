@@ -1,6 +1,3 @@
-// Hybrid text layers of composition clips (M3, wp-m3-mgtext, S08:MGC-036…038): discovery from manifest
-// declarations, schema annotations, UI hints and inference; style links by convention; static and measured
-// checks; multi-value edits as one override object.
 import { describe, expect, it } from 'vitest';
 import {
 	accentRuns,
@@ -104,12 +101,9 @@ describe('text layer discovery (S08:MGC-036)', () => {
 			fontSize: 'props.roleSize',
 			color: 'props.roleColor',
 		});
-		// URLs and variant selectors are not copy…
 		expect(findTextLayer(layers, 'logoUrl')).toBeUndefined();
 		expect(findTextLayer(layers, 'theme')).toBeUndefined();
-		// …and font families are style, not copy.
 		expect(findTextLayer(layers, 'name.fontFamily')).toBeUndefined();
-		// The generic form skips every key the text editors own.
 		expect([...textLayerPropertyKeys(layers)].sort()).toEqual(
 			[
 				'props.name.align',
@@ -154,7 +148,6 @@ describe('text layer discovery (S08:MGC-036)', () => {
 		});
 		expect(quote.style.color?.key).toBe('props.accent');
 		expect(findTextLayer(layers, 'props.quote')).toBe(quote);
-		// By label too (case-insensitive): "name" is the Name text object.
 		expect(findTextLayer(layers, 'name')?.path).toEqual(['name', 'text']);
 	});
 

@@ -1,4 +1,3 @@
-// Regression cases from docs/wp-notes/wp-m2-anime-templates.md, Review fix 8.
 import { ANIME_CATALOG, animeTemplateTiming } from '@jasper/mg-templates';
 import { act, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';

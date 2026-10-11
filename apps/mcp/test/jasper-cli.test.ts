@@ -1,5 +1,3 @@
-// The `jasper` one-shot CLI (docs/wp-notes/mcp-cli.md §5): argument parsing, exit codes, JSON-lines output,
-// and every command against a real token-protected engine (discovered through its runtime file).
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,6 +57,9 @@ describe('argument parsing', () => {
 		expect(c.out.join('')).toContain('render-frame');
 		const d = io();
 		expect(await runCli(['--version'], d)).toBe(0);
+		const e = io();
+		expect(await runCli(['query', 'not-a-query'], e)).toBe(2);
+		expect(e.err.join('')).toContain('Unknown query not-a-query');
 	});
 });
 

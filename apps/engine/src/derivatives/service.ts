@@ -83,11 +83,7 @@ type ArtifactPaths = {
  */
 const ALPHA_PROXY_ENCODER = 'libvpx-vp9';
 
-function paramsFor(
-	kind: DerivativeKind,
-	proxyEncoder?: string | null,
-	alpha = false,
-): Record<string, unknown> {
+function paramsFor(kind: DerivativeKind, proxyEncoder?: string | null, alpha = false) {
 	// Proxies made by another encoder than libx264 get their own cache key (D-13); libx264 proxies keep the
 	// historical key so existing caches stay valid.
 	const enc = alpha
@@ -326,9 +322,7 @@ export class DerivativeService {
 		return this.request(r, autoKinds(r), { ...(projectId ? { projectId } : {}) });
 	}
 
-	// ------------------------------------------------------------------ runner
-
-	private async run(ctx: JobContext): Promise<unknown> {
+	private async run(ctx: JobContext) {
 		const input = ctx.input as DerivativeJobInput;
 		const r = this.deps.registry.get(input.mediaKey);
 		if (!r) throw new JobError('ASSET_NOT_FOUND', `Unknown media ${input.mediaKey}`, false);

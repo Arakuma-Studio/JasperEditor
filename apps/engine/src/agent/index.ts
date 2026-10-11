@@ -1,5 +1,4 @@
-// Agent API stage 1 (WP-2H): service wiring for the engine (ARCHITECTURE §9.1 `agent/`, §11).
-import { TERMINAL_JOB_STATES } from '@jasper/api';
+import { type EngineJob, TERMINAL_JOB_STATES } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import { defaultRegistries } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
@@ -21,8 +20,8 @@ async function waitForJob(
 	for (;;) {
 		const r = await app.inject({ method: 'GET', url: `/api/jobs/${encodeURIComponent(jobId)}`, headers });
 		if (r.statusCode >= 400) throw fromInject(r.statusCode, r.body);
-		const job = r.json() as { state: string; result?: unknown; error?: { code: string; message: string } };
-		if (TERMINAL_JOB_STATES.has(job.state as never)) {
+		const job = r.json<EngineJob>();
+		if (TERMINAL_JOB_STATES.has(job.state)) {
 			if (job.state !== 'succeeded')
 				throw new AgentApiError(
 					502,

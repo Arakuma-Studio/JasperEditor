@@ -326,7 +326,6 @@ export class OfflineMixer {
 		const p0 = this.pos;
 		const p1 = p0 + n;
 		for (const st of this.strips) for (const ch of st.input) ch.fill(0, 0, n);
-		// ---- clips → track inputs
 		for (const v of this.voices) {
 			if (v.s0 >= p1) break;
 			if (v.s1 <= p0) {
@@ -338,7 +337,6 @@ export class OfflineMixer {
 			}
 			await this.clipBlock(v, p0, n);
 		}
-		// ---- strips in order
 		if (this.o.tap === 'track-inputs') {
 			const m = this.master;
 			for (const st of this.strips) {

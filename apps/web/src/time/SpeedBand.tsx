@@ -1,14 +1,4 @@
-// The speed rubber band on timeline clips (workstream `time`, docs/wp-notes/time.md), registered as a
-// `clipDecorations` overlay. Premiere's gestures (Premiere Pro CS6 reference, "Time remapping"):
-// - drag the band up / down: the segment under the pointer speeds up / slows down (Shift: 5 % steps); the clip gets
-//   shorter / longer (it stops at the next clip, the rest goes into its tail);
-// - Ctrl/Cmd-click the band: add a speed keyframe;
-// - drag a keyframe: split it into a speed transition (its halves move apart symmetrically);
-// - Alt-drag a keyframe: move it (the speeds stay);
-// - Ctrl/Cmd-drag a keyframe: reverse (palindrome) for the dragged length;
-// - Ctrl+Alt (Cmd+Opt)-drag a keyframe: freeze frame for the dragged length;
-// - click a keyframe and press Delete: remove it.
-// Every drag is one session gesture (one undo step) that re-applies the document command while the pointer moves.
+import type { CommandInput } from '@jasper/project';
 import { type Clip, isRemapped, type Rational, type TimedClip } from '@jasper/project';
 import { useSessionOrNull } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef, useState } from 'react';
@@ -59,9 +49,9 @@ export function SpeedBandOverlay(p: ClipDecorationProps) {
 	const localY = (e: ReactPointerEvent) =>
 		e.clientY - (e.currentTarget as Element).closest('svg')!.getBoundingClientRect().top;
 
-	const apply = (label: string, commands: unknown[]) => {
+	const apply = (label: string, commands: CommandInput[]) => {
 		if (!session) return;
-		const r = session.apply({ label, origin: 'user', commands: commands as never[] });
+		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) setTip({ x: 0, y: a.top, text: r.errors[0]?.message ?? `${label} failed` });
 	};
 
@@ -130,7 +120,7 @@ export function SpeedBandOverlay(p: ClipDecorationProps) {
 		const dx = localX(e) - d.startX;
 		const frames = Math.round(Math.abs(dx) / p.pxPerFrame);
 		const keyFrame = Math.round(d.key.frame);
-		let cmd: unknown = null;
+		let cmd: CommandInput | null = null;
 		let text = '';
 		if (d.mode === 'ramp') {
 			cmd = {
@@ -160,7 +150,7 @@ export function SpeedBandOverlay(p: ClipDecorationProps) {
 			return;
 		}
 		if (d.mode === 'ramp' && (cmd as { frames: number }).frames < 0) (cmd as { frames: number }).frames = 0;
-		const r = g.update([cmd as never]);
+		const r = g.update([cmd]);
 		setTip({ x: d.key.x + dx, y: a.top, text: r.ok ? text : (r.errors[0]?.message ?? '') });
 	};
 

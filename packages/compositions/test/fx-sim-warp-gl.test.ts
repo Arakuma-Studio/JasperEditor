@@ -1,15 +1,12 @@
 // @vitest-environment node
-// The simulation-warp family in real WebGL2 (headless Chrome, SwiftShader without a GPU): every effect compiles and
-// runs at several frames, characteristic pixels per effect, determinism (same frame → same pixels), seed stability
-// (another seed → another pattern) and motion. FX_GL=0 skips.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openPsdgPage, type PsdgPage, psdgGlEnabled } from './fx-psdg/gl-suite.ts';
+import type { SimulationApi } from './fx-sim-warp/entry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-/** SIM_GALLERY=<dir> (and optionally SIM_GALLERY_IDS=a,b): writes a PNG per effect setting for a visual check. */
 const GALLERY = process.env.SIM_GALLERY;
 const GALLERY_CASES: {
 	name: string;
@@ -156,14 +153,14 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('weather: rain, snow, bubbles, drizzle, star burst', async () => {
-		const w = await page.call<Record<string, any>>('weather');
+		const w = await page.call<ReturnType<SimulationApi['weather']>>('weather');
 		expect(w.rainVisible).toBeGreaterThan(20);
 		expect(w.noRain).toBe(0);
 		expect(w.rainOnlyAlpha).toBeLessThan(80); // without the original: drops over transparency
 		expect(w.snowVisible).toBeGreaterThan(20);
 		expect(w.bubblesAlpha).toBeGreaterThan(1);
-		expect(w.noBubblesAlpha).toBe(0); // bubbles replace the layer
-		expect(w.bubbleY[1]).toBeLessThan(w.bubbleY[0]); // bubbles rise
+		expect(w.noBubblesAlpha).toBe(0);
+		expect(w.bubbleY[1]).toBeLessThan(w.bubbleY[0]);
 		expect(w.drizzle).toBeGreaterThan(1);
 		expect(w.noDrizzle).toBe(0);
 		expect(w.starAlpha).toBeGreaterThan(1);
@@ -172,7 +169,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('particles: types, seek = play, gravity, floor, guides, 2D direction, mercury', async () => {
-		const r = await page.call<Record<string, any>>('particles');
+		const r = await page.call<ReturnType<SimulationApi['particles']>>('particles');
 		expect(r.typeErrors).toEqual([]);
 		expect(r.seek).toBe(0); // frame 60 directly equals 30 → 45 → 60 (checkpoint resume)
 		expect(r.startAlpha).toBeLessThan(0.01); // nothing born at frame 0 (black matte only)
@@ -187,8 +184,8 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('cards: Card Dance, Card Wipe, Pixel Polly', async () => {
-		const r = await page.call<Record<string, any>>('cards');
-		expect(r.cdRest).toBeLessThanOrEqual(3); // flat cards reproduce the layer
+		const r = await page.call<ReturnType<SimulationApi['cards']>>('cards');
+		expect(r.cdRest).toBeLessThanOrEqual(3);
 		expect(r.cdRot).toBeGreaterThan(50);
 		expect(r.cdZ).toBeGreaterThan(50); // cards pulled towards the camera grow
 		expect(r.cwRest).toBeLessThanOrEqual(3);
@@ -201,9 +198,9 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('shatter: intact at rest for every pattern, breaks, render modes, wireframes', async () => {
-		const r = await page.call<Record<string, any>>('shatter');
+		const r = await page.call<ReturnType<SimulationApi['shatter']>>('shatter');
 		expect(r.rest).toBeLessThanOrEqual(3);
-		for (const d of r.patterns) expect(d).toBeLessThanOrEqual(8); // every pattern tiles the layer seamlessly
+		for (const d of r.patterns) expect(d).toBeLessThanOrEqual(8);
 		expect(r.moved).toBeGreaterThan(50);
 		expect(r.wireMax).toBeGreaterThan(1);
 		expect(r.wireHasGaps).toBe(1);
@@ -214,7 +211,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('pixel effects: Ball Action, Scatterize, Hair', async () => {
-		const r = await page.call<Record<string, any>>('pixelFx');
+		const r = await page.call<ReturnType<SimulationApi['pixelFx']>>('pixelFx');
 		expect(r.ballsAlpha).toBeGreaterThan(50);
 		expect(r.noBalls).toBe(0);
 		expect(r.scatter).toBeGreaterThan(10);
@@ -227,7 +224,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('surfaces: Foam, Wave World, Caustics', async () => {
-		const r = await page.call<Record<string, any>>('surfaces');
+		const r = await page.call<ReturnType<SimulationApi['surfaces']>>('surfaces');
 		expect(r.foamAlpha).toBeGreaterThan(0.5);
 		expect(r.foamSeek).toBe(0);
 		expect(r.foamRendered).toBeGreaterThan(1);
@@ -243,7 +240,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('Particle Playground: cannon seek, gravity, wall, repel, text, layer exploder', async () => {
-		const r = await page.call<Record<string, any>>('playground');
+		const r = await page.call<ReturnType<SimulationApi['playground']>>('playground');
 		expect(r.cannonAlpha).toBeGreaterThan(0.2);
 		expect(r.cannonSeek).toBe(0);
 		expect(r.cannonZero).toBe(0);
@@ -257,7 +254,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('distort: Displacement Map, Optics Compensation, Polar, Bezier Warp, Reshape, Smear', async () => {
-		const r = await page.call<Record<string, any>>('distort');
+		const r = await page.call<ReturnType<SimulationApi['distort']>>('distort');
 		for (const [k, v] of Object.entries(r.identities)) expect(v, k).toBeLessThanOrEqual(2);
 		expect(r.optics).toBeGreaterThan(20);
 		expect(r.polar).toBeGreaterThan(20);
@@ -271,7 +268,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('warps: Mesh Warp, Liquify, Puppet', async () => {
-		const r = await page.call<Record<string, any>>('warps');
+		const r = await page.call<ReturnType<SimulationApi['warps']>>('warps');
 		expect(r.mwRest).toBeLessThanOrEqual(3);
 		expect(r.mwEmpty).toBeLessThanOrEqual(3);
 		expect(r.mw).toBeGreaterThan(20);

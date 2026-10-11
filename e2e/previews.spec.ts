@@ -1,10 +1,13 @@
-// Workstream `previews` in the built app: the render bar colours a GPU-effect clip, Sequence ▸ Render Effects In to
-// Out (Enter) renders it (a `preview` job), the bar turns green and the Program monitor plays the preview file in
-// place of the live layers; a ripple keeps it green, an edit makes it red again, undo green again; Delete Render
-// Files clears it. Playback robustness: seek-and-play cycles never stall (the watchdog recovers nothing), and a
-// video under a GL blend mode is not captured black (HTML-in-Canvas + desynchronized canvases).
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, query, transact } from './support.ts';
+import {
+	createProject,
+	enableAgentBridge,
+	expectTransaction,
+	importFiles,
+	mediaIdForFile,
+	query,
+	transact,
+} from './support.ts';
 
 test.use({
 	launchOptions: {
@@ -38,32 +41,29 @@ test.afterAll(async () => {
 
 test('render bar, Render Effects In to Out, green bar and preview playback', async () => {
 	test.setTimeout(600_000);
-	const r = (await transact(page, [
+	const r = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaByName: 'clip-a.mp4' },
+			source: { mediaId: await mediaIdForFile(page, 'clip-a.mp4') },
 			at: 0,
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 3 } },
 		},
-	])) as { ok: boolean; created?: string[] };
-	expect(r.ok).toBe(true);
-	clipId = r.created!.find((id) => id.startsWith('clp_'))!;
+	]);
+	expectTransaction(r);
+	clipId = r.created.find((id) => id.startsWith('clp_'))!;
 	// a 30 fps clip in the 29.97 sequence (conformed): yellow; an effect keeps it yellow or red
 	await expect.poll(bar).toEqual(['yellow']);
 	await transact(page, [{ type: 'effect.add', target: { clipId }, effectId: 'jasper.gaussian-blur' }]);
 	await expect.poll(bar).not.toEqual([]);
 	expect((await bar()).every((s) => s === 'yellow' || s === 'red')).toBe(true);
-	// Sequence ▸ Render Effects In to Out
 	await page.getByRole('menuitem', { name: 'Sequence' }).click();
 	await page.getByRole('menuitem', { name: 'Render Effects In to Out' }).click();
 	await expect.poll(bar, { timeout: 480_000, intervals: [1000] }).toEqual(['green']);
-	// the Program monitor mounts the preview file over the covered frames
 	await expect(page.locator('[data-render-preview]').first()).toBeAttached({ timeout: 30_000 });
 	const src = await page.locator('[data-render-preview]').first().getAttribute('data-render-preview');
 	expect(src).toMatch(/^\/renders\/previews\/[0-9a-f]{16}\/[0-9a-f]{32}\.mp4$/);
 	await page.screenshot({ path: 'test-results/previews-green.png' });
 
-	// a ripple keeps it green; an edit invalidates; undo brings it back
 	await transact(page, [{ type: 'clip.move', clipIds: [clipId], deltaFrames: 30 }]);
 	await expect.poll(bar).toEqual(['green']);
 	await transact(page, [{ type: 'param.set', target: ['clip', clipId, 'opacity'], value: 60 }]);
@@ -71,7 +71,6 @@ test('render bar, Render Effects In to Out, green bar and preview playback', asy
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(bar).toEqual(['green']);
 
-	// perf stats of the window (MCP perf_stats reads the same)
 	const seq = await query<{ sequenceId: string }>(page, 'sequence.summary');
 	expect(seq.sequenceId).toBeTruthy();
 });

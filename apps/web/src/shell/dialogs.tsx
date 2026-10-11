@@ -33,8 +33,6 @@ export const DIALOGS = {
 	about: 'shell.about',
 } as const;
 
-// ------------------------------------------------------------------ Save as New Workspace
-
 function SaveWorkspaceAsDialog(props: HostedDialogProps<{ store: WorkspaceStore; initial?: string }>) {
 	const [name, setName] = useState(props.initial ?? '');
 	const fieldId = useId();
@@ -82,8 +80,6 @@ function SaveWorkspaceAsDialog(props: HostedDialogProps<{ store: WorkspaceStore;
 		</Dialog>
 	);
 }
-
-// ------------------------------------------------------------------ Edit Workspaces
 
 function EditWorkspacesDialog(
 	props: HostedDialogProps<{ store: WorkspaceStore; onRestoreFactory?(id: string): void }>,
@@ -201,8 +197,6 @@ function EditWorkspacesDialog(
 	);
 }
 
-// ------------------------------------------------------------------ Keyboard Shortcut Reference (KB-014)
-
 function ShortcutReferenceDialog(
 	props: HostedDialogProps<{ scope: CommandScope | null; platform: Platform; runtime: Runtime }>,
 ) {
@@ -254,8 +248,6 @@ function ShortcutReferenceDialog(
 		</Dialog>
 	);
 }
-
-// ------------------------------------------------------------------ About
 
 function AboutDialog(props: HostedDialogProps<{ engineVersion?: string | null }>) {
 	return (

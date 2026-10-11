@@ -69,7 +69,6 @@ export function ExpressionRow(props: {
 			{ type: 'expression.clear', target: rx.path, sequenceId: rx.ref.seq } as Command,
 		]);
 
-	// ---- pick-whip: drag the spiral onto another property row and release.
 	const onWhipDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
 		e.preventDefault();
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);

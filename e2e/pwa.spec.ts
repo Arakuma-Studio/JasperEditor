@@ -1,7 +1,3 @@
-// PWA checks on the production build served by the engine (ARCHITECTURE §12, §15 item 12, S05 §20):
-// the manifest is linked, valid and installable-shaped; every icon exists with its declared size; the
-// service worker registers, activates and controls the reloaded page.
-
 import { writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 

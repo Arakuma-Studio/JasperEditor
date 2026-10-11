@@ -264,8 +264,6 @@ export function parseClipboardPayload(input: unknown): ParseResult {
 	return { ok: true, payload: parsed.data as unknown as ClipboardPayload };
 }
 
-// ---------------------------------------------------------------- system clipboard encoding (CLB-002)
-
 const MARK = 'data-jasper-clipboard';
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 

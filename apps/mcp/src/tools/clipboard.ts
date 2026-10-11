@@ -1,5 +1,6 @@
 import { buildClipsPayload, buildItemsPayload, EditModeSchema, TrackRefSchema } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT,
@@ -11,10 +12,8 @@ import {
 	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { applyHelper, timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
+import { applyHelper } from './editing.ts';
 
-/** Appended to the server instructions. */
 export const CLIPBOARD_GUIDE = `Copy and paste (between sequences and projects):
 - copy_clips returns a clipboard payload for clips: their linked audio/video partners, the transitions between them, and the media, fonts, synthetics and transcripts they use come along. paste_clips pastes it at a time with the lowest copied video/audio track on the tracks you name (overwrite, or insert to ripple later clips); media resolve by fingerprint in the target project or are added to it. Every pasted entity gets a new id.
 - The same payload works in apply_commands: clip.pasteAttributes {payload, clipIds, attributes: {motion, opacity, volume, panner, effects: "all" | [payload effect ids], textAnimationIn, textAnimationOut, textStyle, shapeStyle}, scaleTimes} copies attributes onto other clips; effect.paste {payload, clipIds} appends the copied effects; clip.removeAttributes {clipIds, attributes: {motion, opacity, volume, panner, effects: [registry ids], textAnimationIn, textAnimationOut}} resets or removes them; keyframe.paste {payload, clipId, at} pastes copied keyframes.

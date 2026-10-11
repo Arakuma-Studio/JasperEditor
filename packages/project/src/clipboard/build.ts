@@ -166,8 +166,6 @@ function trackIndex(seq: Sequence, trackId: string): { kind: TrackKind; index: n
 	return null;
 }
 
-// ---------------------------------------------------------------- clips (CLB-001)
-
 /**
  * Copies clips of one sequence with their linked partners (unless `linked: false`), the transitions whose clips
  * are all copied (fades of a copied clip included), and the layout relative to the earliest clip and the lowest
@@ -227,8 +225,6 @@ export function buildClipsPayload(
 	};
 }
 
-// ---------------------------------------------------------------- effects (CLB-006, S03:EC-032)
-
 function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
 	for (const seq of Object.values(doc.sequences)) {
 		const clip = seq.clips[clipId];
@@ -282,8 +278,6 @@ export function buildEffectsPayload(
 		...packReferences(doc, refs),
 	};
 }
-
-// ---------------------------------------------------------------- keyframes (S03:EC-023)
 
 /** Value kind of a parameter value, as keyframe pastes compare it (`enum` and `string` are both `string`). */
 function valueKindOf(v: unknown): string {
@@ -363,8 +357,6 @@ export function buildKeyframesPayload(
 		...packReferences(doc, refs),
 	};
 }
-
-// ---------------------------------------------------------------- project items (CLB-007)
 
 /**
  * Copies project items: bins with all their descendants, the sequences of sequence items (and the sequences

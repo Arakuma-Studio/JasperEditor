@@ -1,5 +1,4 @@
-// Colour management (workstream color-mgmt, docs/wp-notes/color-mgmt.md). Handlers: handlers/color-mgmt.ts. The
-// working space and the sequence colour settings are part of `sequence.updateSettings` (`workingColorSpace`, `color`).
+// Working space and sequence colour settings belong to sequence.updateSettings.
 import { z } from 'zod';
 import { ColorInterpretationPatchSchema } from '../../color/model.ts';
 import { cmd, IdListSchema, IdRefSchema } from './common.ts';

@@ -1,8 +1,3 @@
-// Sapphire-style dissolves (registry/transitions/sapphire-dissolves.ts): the catalogue (every S_Dissolve* of
-// Sapphire's list, framework rules), the shared timing maths (Dissolve Speed, Slow In / Out, Shift Peak — the effect
-// envelope is 0 and the mix exactly 0 / 1 at both ends), and the TypeScript side of each dissolve (pass plans,
-// per-frame uniforms, S_DissolveLuma's v1 → v2 migration). Pixels in real WebGL:
-// packages/compositions/test/transition-sapphire-dissolves-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	type EffectParams,
@@ -236,7 +231,6 @@ describe('Sapphire dissolves: per-dissolve maths', () => {
 		});
 		expect(migrateLumaV1(2, { softness: 0.3 })).toEqual({ softness: 0.3 });
 		expect(defaults(s)).toMatchObject({ useLumaOf: 'difference', softness: 0.1, invertPattern: false });
-		// The pass layout of version 1 is kept (half-resolution pattern, then a blur).
 		const outputs = transitionPasses(s.gpu!, defaults(s), frameCtx(0.5)).map((p) => p.output);
 		expect(outputs.slice(0, 3)).toEqual(['luma', 'lumaBlurH', 'lumaBlur']);
 	});
@@ -275,8 +269,8 @@ describe('Sapphire dissolves: per-dissolve maths', () => {
 		});
 		const data = (u.u_leakData as { vec4s: number[] }).vec4s;
 		expect(data).toHaveLength(72);
-		expect(data[4]).toBe(2.4); // element 1 brightness
-		expect(data[24 + 4]).toBe(1); // element 2
+		expect(data[4]).toBe(2.4);
+		expect(data[24 + 4]).toBe(1);
 		expect(data[48 + 4]).toBe(0); // element 3 is off by default
 	});
 

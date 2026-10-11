@@ -1,5 +1,5 @@
 // Premiere 26 ▸ Video Transitions ▸ Slide — the modern entries (from Film Impact): 3D Roll, Film Roll, Roll and
-// Stretch. Motion blur (wave 5): taps along the real eased move over the shutter (`pm_shutter`: Motion Blur % × 1.5
+// Stretch. Motion blur: taps along the real eased move over the shutter (`pm_shutter`: Motion Blur % × 1.5
 // frames), as many as the on-screen travel needs (≤ 1 px apart, ≤ 64, jittered beyond). Part of the premiere-transitions family (Push, Split, Whip and the classic slides are in ./slide.ts and
 // ../premiere-transitions.ts). Shaders work in "motion axes" (pm_toAxes): x along the motion, B arriving from −x.
 import type { TransitionSpec } from '../../../transitions.ts';

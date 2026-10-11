@@ -1,5 +1,3 @@
-// GPU shader-effect specs (wave-1 fx framework, registry/fx/shader.ts): uniform mapping, pass planning (sizes, named
-// intermediates, declarations, includes), padding, seeds, time hooks, built-ins and spec validation.
 import { describe, expect, it } from 'vitest';
 import {
 	addPadding,

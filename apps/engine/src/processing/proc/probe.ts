@@ -10,7 +10,7 @@ type ProcProbe = {
 	frames: number;
 	pixFmt: string;
 	hasAlpha: boolean;
-	/** swscale `in_color_matrix` for decoding (unknown → bt709, as the trailer pipeline did). */
+	/** swscale `in_color_matrix` for decoding (unknown → bt709). */
 	matrix: 'bt709' | 'bt601' | 'bt2020' | 'fcc' | 'smpte240m';
 	range: 'tv' | 'pc';
 	audioStreams: number;

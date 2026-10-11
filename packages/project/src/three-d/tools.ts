@@ -49,8 +49,6 @@ export function dollyRig(r: Rig, amount: number, withPoi: boolean): Rig {
 	return { ...r, eye: add3(r.eye, scale3(fwd, Math.min(amount, dist - 1))) };
 }
 
-// ---------------------------------------------------------------- 3D views
-
 /** The Program monitor's 3D views (AE View ▸ Switch 3D View). */
 export const VIEWS_3D = [
 	'activeCamera',

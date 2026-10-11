@@ -336,9 +336,9 @@ export class TrackingService {
 			ctx.progress(0, { stage: 'Starting tracker' });
 			// Two CPU slots: both directions in parallel (one worker each), or one direction on two workers.
 			const slots = Math.max(1, ctx.slots);
-			let work: Promise<unknown>;
+			let work: Promise<void>;
 			if (fwd && bwd && slots >= 2)
-				work = Promise.all([forwardPass([takeWorker()]), backwardPass([takeWorker()])]);
+				work = Promise.all([forwardPass([takeWorker()]), backwardPass([takeWorker()])]).then(() => undefined);
 			else {
 				// The mask tracker works frame to frame (no reference anchors): one worker per pass.
 				const ws = Array.from({ length: mask ? 1 : Math.min(2, slots) }, () => takeWorker());

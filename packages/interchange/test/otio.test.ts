@@ -45,7 +45,6 @@ describe('OTIO', () => {
 				const text = exportOtio(p, p.top[0]!, {}, new Report());
 				const back = importOtio(text, {}, new Report());
 				expect(canonical(back)).toEqual(canonical(p));
-				// bins survive too
 				expect(back.root.map((e) => e.type)).toEqual(p.root.map((e) => e.type));
 			}),
 			{ numRuns: Number(process.env.FC_RUNS ?? 150) },
@@ -61,7 +60,6 @@ describe('OTIO', () => {
 		const j = JSON.parse(text);
 		expect(j.OTIO_SCHEMA).toBe('Timeline.1');
 		expect(j.global_start_time.rate).toBeCloseTo(23.976023976, 8);
-		// A clip written by another tool at "23.976" with 48 frames.
 		const foreign = {
 			OTIO_SCHEMA: 'Timeline.1',
 			name: 'Foreign',
@@ -202,7 +200,6 @@ describe('OTIO', () => {
 		expectOnlyInterchangeErrors((b) => importOtio(new TextDecoder().decode(b), {}, new Report()), seed, {
 			runs: 200,
 		});
-		// Hostile nesting.
 		let deep =
 			'{"OTIO_SCHEMA":"Timeline.1","tracks":{"OTIO_SCHEMA":"Stack.1","children":[{"OTIO_SCHEMA":"Track.1","children":[';
 		for (let i = 0; i < 200; i++)

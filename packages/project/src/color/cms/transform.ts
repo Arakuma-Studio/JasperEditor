@@ -1,4 +1,4 @@
-// Colour-managed conversions (workstream color-mgmt) between a source space, the sequence working space and an
+// Colour-managed conversions between a source space, the sequence working space and an
 // output (display or export) space. The composite holds the *working space's encoded signal* (what the preview DOM,
 // the GL stages and the native ffmpeg graph composite); these functions are pure RGB → RGB maps on encoded 0…1 values
 // that every renderer bakes into the same LUT (ARCHITECTURE D-21), so preview and exports agree.
@@ -296,8 +296,6 @@ export function outputTransformFn(
 		enc(c);
 	};
 }
-
-// ---------------------------------------------------------------- the grading signal (Lumetri in HDR)
 
 /** Default HDR White / curve HDR Range (cd/m²). */
 export const DEFAULT_HDR_WHITE_NITS = 1000;

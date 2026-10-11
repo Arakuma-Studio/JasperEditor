@@ -1,5 +1,4 @@
-// File ▸ Project Manager… on the engine (workstream gaps, docs/wp-notes/gaps.md §PRJ-6): one `project-manager` job
-// that writes a self-contained copy of a project into a folder — the media it uses (whole files, or for Consolidate
+// A `project-manager` job writes a self-contained project copy — its media (whole files, or for Consolidate
 // and Transcode only the used part plus handles, ProRes 422 HQ / browser-playable video or 24-bit WAV sound), their
 // proxies and render previews when asked — then the project itself, `<folder>/<name>.jasper`, pointing at the copies,
 // and registers it as a new engine project (it appears on Home). Files are written as `*.partial` and renamed; a

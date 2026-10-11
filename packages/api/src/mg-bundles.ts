@@ -1,6 +1,5 @@
-// Motion-graphics bundle contracts (M2, S08, ARCHITECTURE §19.3). Owner: wp-m2-mg.
-// Bundles are served under `/mg/bundles/:key/*`; pre-render masters reuse `/mg/:renderKey/:file`.
-import { MgBundleInfoSchema } from '@jasper/project';
+// Bundles use `/mg/bundles/:key/*`; pre-render masters reuse `/mg/:renderKey/:file`.
+import { MgBundleInfoSchema, MgTextMeasurementSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
 
@@ -57,9 +56,9 @@ export const MgPrerenderResultSchema = z.object({
 	masterUrl: z.string().nullable(),
 	/** VP9 alpha WebM for the preview (both qualities produce it). */
 	previewUrl: z.string(),
-	/** wp-m2-mg (additive): a PNG of the middle frame. */
+	/** A PNG of the middle frame. */
 	posterUrl: z.string().nullable().optional(),
-	/** wp-m2-mg (additive): the rendered range (composition frames at the requested fps). */
+	/** The rendered range (composition frames at the requested fps). */
 	startFrame: z.number().int().min(0).optional(),
 	durationFrames: z.number().int().positive().optional(),
 	width: z.number().int().positive().optional(),
@@ -68,7 +67,7 @@ export const MgPrerenderResultSchema = z.object({
 export type MgPrerenderResult = z.infer<typeof MgPrerenderResultSchema>;
 
 /**
- * `POST /api/mg-bundles/measure-texts` (wp-m3-mgtext, S08:MGC-037): the engine's own headless browser renders
+ * `POST /api/mg-bundles/measure-texts` (S08:MGC-037): the engine's own headless browser renders
  * the composition with `props` at each frame and its text probe locates the given texts there (layout warnings
  * for agents). `fps` is the render rate (the sequence rate), `durationInFrames` the composition length at it.
  */
@@ -94,7 +93,7 @@ export type MgTextMeasureRequest = z.infer<typeof MgTextMeasureRequestSchema>;
 
 /** Result: one `MgTextMeasurement` (@jasper/project) per item, and the font families the bundle registers. */
 export const MgTextMeasureResultSchema = z.object({
-	measurements: z.array(z.looseObject({ id: z.string(), found: z.boolean() })),
+	measurements: z.array(MgTextMeasurementSchema),
 	fonts: z.array(z.string()),
 });
 export type MgTextMeasureResult = z.infer<typeof MgTextMeasureResultSchema>;

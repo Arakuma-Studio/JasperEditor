@@ -70,8 +70,6 @@ const MAX_LIGHTS = 32;
 const LIGHT_TEXELS = 6;
 const MAX_TILES = 48;
 
-// ---------------------------------------------------------------- shaders
-
 const MESH_VS = `#version 300 es
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_normal;
@@ -414,8 +412,6 @@ void main() {
 }
 `;
 
-// ---------------------------------------------------------------- GL plumbing
-
 type Progs = {
 	shadow: WebGLProgram;
 	main: WebGLProgram;
@@ -559,8 +555,6 @@ function uploadPicture(gl: WebGL2RenderingContext, t: WebGLTexture, src: TexImag
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
-
-// ---------------------------------------------------------------- geometry
 
 const invert3 = (m: readonly number[]): number[] | null => {
 	const [a, b, c, d, e, f, g, h, i] = m as [
@@ -812,8 +806,6 @@ function irisTaps(sides: number, rotation: number, count: number): number[] {
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- the render
 
 /**
  * Renders a 3D run with Advanced 3D into `out` (the output size). Throws `WEBGL_UNAVAILABLE` on a lost context or a

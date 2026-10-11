@@ -1,4 +1,4 @@
-// Time Remapping (workstream `time`, docs/wp-notes/time.md): evaluation of a clip's remap curve.
+// Time Remapping (docs/wp-notes/time.md): evaluation of a clip's remap curve.
 //
 // A clip has two time axes:
 // - content time `c` (flicks): the keyframe axis. `contentTimeAt(clip, frame)` = sourceIn + i·F·rate (or reversed);
@@ -56,8 +56,6 @@ export function isRemapped(clip: Pick<TimedClip, 'timeRemap' | 'kind'>): boolean
 export function timeInterpolationOf(clip: Pick<TimedClip, 'timeInterpolation'>): TimeInterpolation {
 	return clip.timeInterpolation ?? 'frame-sampling';
 }
-
-// ---------------------------------------------------------------- curve evaluation
 
 const finite = (x: number | undefined, d: number): number => (x !== undefined && Number.isFinite(x) ? x : d);
 
@@ -174,8 +172,6 @@ export function remapEvaluator(
 	return (c) => evalRemap(remap, c, s);
 }
 
-// ---------------------------------------------------------------- clip-level mapping
-
 /**
  * Media time (flicks) shown at sequence frame `frame` (fractional frames allowed): the content time, through the
  * clip's time remap when it has one.
@@ -290,8 +286,6 @@ export function clipMediaRange(clip: TimedClip, rate: Rational): { min: number; 
 	return clipMediaExtent(clip, clip.start, clip.start + clip.duration - 1, rate);
 }
 
-// ---------------------------------------------------------------- what needs retiming
-
 /**
  * The clip's picture needs the retimed (frame-exact, media-time driven) pipeline rather than a linear decode:
  * reverse, a time remap, or Frame Blending / Optical Flow where frames fall between source frames (speed ≠ 100 %, a
@@ -311,8 +305,6 @@ export function needsRetime(
 	}
 	return false;
 }
-
-// ---------------------------------------------------------------- views for UI and agents
 
 export type RemapSegmentKind = 'forward' | 'reverse' | 'hold';
 

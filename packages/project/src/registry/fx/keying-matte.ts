@@ -1,4 +1,4 @@
-// Matte and keying tools (parity workstream `roto`), ported from EffectCraft `crates/effects/src/keylight.rs`,
+// Matte and keying tools, ported from EffectCraft `crates/effects/src/keylight.rs`,
 // `matte.rs` and `keying.rs` (MIT OR Apache-2.0, licenses/ported/roto.md) to GLSL:
 //
 // - Screen Keyer (`jasper.screen-keyer`): a full screen-colour keyer with the controls of After Effects' bundled
@@ -16,7 +16,9 @@
 // Reduce Chatter / Motion Blur of the Refine mattes read the neighbouring frames through the framework's time samples,
 // which are the clip's source pictures before any effect (fx-shader-framework §9): they act on the source's own alpha
 // (alpha-channel footage). Colours are display-referred straight RGB 0..1 (as the rest of the fx catalogue).
+import type { ParamValue } from '../../schema/common.ts';
 import type { EffectParams, EffectSpec } from '../effects.ts';
+import { booleanParam as bool, numberParam as num, stringParam as str } from '../param-values.ts';
 import { defineShaderEffect } from './define.ts';
 import { GLSL_BLUR } from './glsl/blur.ts';
 import { GLSL_COLOR } from './glsl/color.ts';
@@ -24,10 +26,7 @@ import { blurPasses, GLSL_OBJECT_MATTE, morphPasses } from './matte-ops.ts';
 import { fxParam } from './params.ts';
 import type { GlslChunk, ShaderPass } from './shader.ts';
 
-const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const bool = (v: unknown, d = false) => (typeof v === 'boolean' ? v : d);
-const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d);
-const col = (v: unknown, d: [number, number, number]): [number, number, number] =>
+const col = (v: ParamValue | undefined, d: [number, number, number]): [number, number, number] =>
 	Array.isArray(v) && v.length >= 3 ? [num(v[0]), num(v[1]), num(v[2])] : d;
 const luma709 = (c: readonly number[]) => 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
 
@@ -72,8 +71,6 @@ export function balanceTint(hueDeg: number, satPct: number): [number, number, nu
 	const l = luma709([r, g, b]);
 	return [(r - l) * s * 0.5, (g - l) * s * 0.5, (b - l) * s * 0.5];
 }
-
-// ---------------------------------------------------------------- Screen Keyer
 
 const KL_VIEWS = [
 	'source',
@@ -515,8 +512,6 @@ ${
 	},
 });
 
-// ---------------------------------------------------------------- Refine Soft / Hard Matte
-
 const G_MB = 'Motion Blur';
 const G_DECON = 'Decontamination';
 
@@ -802,8 +797,6 @@ ${
 export const REFINE_SOFT_MATTE = refineEffect(false);
 export const REFINE_HARD_MATTE = refineEffect(true);
 
-// ---------------------------------------------------------------- Key Cleaner
-
 export const KEY_CLEANER = defineShaderEffect({
 	id: 'jasper.key-cleaner',
 	label: 'Key Cleaner',
@@ -870,8 +863,6 @@ ${
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Advanced Spill Suppressor
 
 /** Grid of the Standard method's dominant-primary statistics. */
 const SPILL_GRID = 48;

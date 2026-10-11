@@ -1,5 +1,4 @@
-// Which clips show the speed rubber band (workstream `time`): Premiere's "Show Clip Keyframes ▸ Time Remapping ▸
-// Speed" is a per-clip display choice. Time-remapped clips always show it. UI state only (not in the document).
+// Speed-band visibility is UI state, separate from the document. Time-remapped clips always show it.
 import { useSyncExternalStore } from 'react';
 
 const shown = new Set<string>();

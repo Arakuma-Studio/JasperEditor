@@ -153,8 +153,6 @@ export function writeTtml(
 	return o;
 }
 
-// ------------------------------------------------------------------------------------------------ reader
-
 type Timing = { rate: Rational; subFrameRate: number; tickRate: number };
 
 function positiveInteger(s: string): number | null {

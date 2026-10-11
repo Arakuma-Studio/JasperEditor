@@ -1,6 +1,3 @@
-// The "sapphire-swish-other" transition family: catalogue entries (labels, ids, sub-bins, Sapphire params) and the
-// pure TS maths behind its `gpu.uniforms` / `passes` hooks (Slow In/Out, whip curves, shutters, FlutterCut's frame
-// pattern, TV dead time, film roll, card spin, strip timing, parallax growth, dust cells, shakes) — deterministic.
 import { describe, expect, it } from 'vitest';
 import {
 	SAPPHIRE_TRANSITION_SUBBINS,

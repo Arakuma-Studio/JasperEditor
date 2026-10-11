@@ -1,7 +1,3 @@
-// Edit ▸ Find… (Ctrl+F; workstream gaps, docs/wp-notes/gaps.md §UI-5). Premiere's Find dialog: two criteria rows
-// (column, operator, text), Match All / Any, Match Case. In the Project panel it searches project items and selects
-// the next match (Find) or every match (Find All), revealing it in its bin; in the Timeline it searches clips (clip
-// name, source name, text content) and markers, selects the next hit after the playhead and moves the playhead there.
 import {
 	FIND_OPERATOR_LABELS,
 	FIND_OPERATORS,

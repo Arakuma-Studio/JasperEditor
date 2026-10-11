@@ -1,7 +1,4 @@
-// Workstream `time` on the native export path (docs/wp-notes/time.md): reverse, Time Remapping (speed segments,
-// freeze, palindrome reverse, ramps), Frame Blending, Optical Flow and variable-frame-rate media through the `retime`
-// extension — checked frame by frame on the exported files (real ffmpeg) against the shared model
-// (`clipMediaTimeAt` + `pickFrames`, the preview's frame choice).
+// clipMediaTimeAt and pickFrames provide the preview's frame-choice oracle for decoded native exports.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
@@ -48,7 +45,6 @@ const settings = (seqId: string, engine = 'native') => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 16 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine,
@@ -208,7 +204,6 @@ describe('native retime', () => {
 			expect(frameCode(file, f, [640, 360]), `frame ${f}`).toBe(want);
 			if (want !== f) differsFromCfr++;
 		}
-		// Conforming (one source frame per output frame) would have shown the wrong frame on most of these.
 		expect(differsFromCfr).toBeGreaterThan(20);
 	}, 180_000);
 
@@ -286,7 +281,6 @@ describe('Scene Edit Detection job', () => {
 		if (process.env.SCENE_REPORT) console.info(JSON.stringify({ frames, ...acc }));
 		expect(acc.recall).toBe(1);
 		expect(acc.precision).toBe(1);
-		// A sub-range starts at its own first frame.
 		const sub = await app.inject({
 			method: 'POST',
 			url: '/api/scenes/detect?wait=1',

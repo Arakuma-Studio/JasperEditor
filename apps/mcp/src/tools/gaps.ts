@@ -1,6 +1,3 @@
-// Workstream `gaps` MCP tools (docs/wp-notes/gaps.md): Find, Edit Original, Add / Delete Tracks, and (further down)
-// Project Settings, Sequence Settings, proxies, Project Manager, Export Frame, Audio Channels, Warp Stabilizer,
-// Auto Reframe, Morph Cut and Essential Graphics templates. Edits are document commands (one transaction each).
 import type { MediaJobResult, ReframeResult, RegisteredMedia, WarpAnalysisResult } from '@jasper/api';
 import {
 	AUDIO_DISPLAY_FORMATS,
@@ -11,7 +8,6 @@ import {
 	findTimelineHits,
 	graphicTemplateOf,
 	INGEST_ACTIONS,
-	makeEnvelope,
 	mediaJobCommands,
 	PROJECT_FIND_FIELDS,
 	PROXY_PRESETS,
@@ -31,6 +27,7 @@ import {
 	warpRequestFor,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	DESTRUCTIVE_IDEMPOTENT,
@@ -41,18 +38,16 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
-	requireSequence,
 	type ToolContext,
 	transact,
 	txBody,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
+import { pickSequence } from '../format.ts';
 import { mediaRegisterCommand } from '../media.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - find searches the Project panel (scope "project": name, label, type, path, codec, frameSize, any) or a sequence (scope "timeline": clipName, sourceName, text, marker, any) with up to two criteria (contains, matches, begins, ends, notContains), match all/any and matchCase, like Premiere's Edit ▸ Find. Timeline hits come in frame order with timecodes.
 - locate_media says where a media file is on the engine host; action "reveal" shows it in the file browser and "open" opens it in its default application (Edit Original; local engines only, never programs).
@@ -66,11 +61,6 @@ export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - auto_reframe_sequence: Sequence ▸ Auto Reframe Sequence — a copy at another aspect ("9:16", "1:1", "4:5", "16:9", "W:H") whose clips follow their subject with Position keyframes (faces when the face model is installed, else motion / contrast saliency). Morph Cut is the transition jasper.morph-cut (add it on a jump cut with transition.add).
 - Essential Graphics: create_graphic makes a graphic (a nested sequence flagged graphic; its tracks are the layers) at a time; edit it with apply_commands graphic.addLayer {sequenceId, kind}, graphic.align {sequenceId, clipIds, mode, relativeTo}, graphic.setPins {sequenceId, clipId, target: "frame" | layer clip id, edges}, and set_graphic (intro / outro, duration, roll / crawl). export_graphic_template / import_graphic_template move graphics as .jgt JSON. Adobe .mogrt files are not supported (proprietary After Effects / Premiere project inside; no public format).
 - add_tracks adds video / audio / submix tracks at a placement ("first", "last" or after a track label like "V2"), audio track type mono / stereo / 5.1; delete_tracks deletes "empty" tracks, "unassigned" submixes or named tracks (tracks with clips need force: true and the user's approval).`;
-
-const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 
 const Criterion = z.object({
 	field: z.string().min(1).describe('Column: see the scope'),
@@ -137,7 +127,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 					}),
 				});
 			}
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const hits = findTimelineHits(doc, seq.id, query);
 			return jsonResult({
 				sequenceId: seq.id,
@@ -233,7 +223,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 			if (!video && !audio && !submix)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to add', 'Pass video, audio or submix.');
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const cmds: unknown[] = [];
 			if (video)
 				cmds.push({
@@ -286,7 +276,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, video, audio, submix, force }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const empty = (id: string) => !Object.values(seq.clips).some((c) => c.trackId === id);
 			const pick = (list: Sequence['videoTracks'], spec: 'empty' | string[] | undefined) => {
 				if (!spec) return [];
@@ -667,7 +657,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, format, jpegQuality, folder, name, importIntoProject }, extra) => {
 			const loaded = await loadDoc(ctx, projectId);
-			const seq = requireSequence(loaded.doc, sequenceId);
+			const seq = pickSequence(loaded.doc, sequenceId);
 			let frame: number;
 			try {
 				frame = resolveFrameInput(seq, at);
@@ -684,11 +674,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const fileName = (
 				name ?? `${item?.name ?? 'Sequence'} ${sequenceTimecode(seq, frame).replace(/[:;]/g, '_')}`
 			).replace(/[\\/]/g, '_');
-			const envelope = makeEnvelope(loaded.doc, {
-				revision: loaded.revision ?? 0,
-				savedAt: new Date().toISOString(),
-				platform: 'mcp',
-			}) as never;
+			const envelope = toolEnvelope(loaded.doc, loaded.revision);
 			const job = await ctx.engine((c) =>
 				c.requestStill({
 					envelope,
@@ -750,7 +736,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const st = seq.settings;
 			const f = sequenceFormatOf(st);
 			return jsonResult({
@@ -803,7 +789,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, conform, reposition, ...rest }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const settings = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
 			if (!Object.keys(settings).length)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to change', 'Pass at least one setting.');
@@ -893,17 +879,11 @@ export function registerGapsTools(ctx: ToolContext): void {
 				const asset = doc.media[it.mediaId]!;
 				return jsonResult({
 					sourceChannels: sourceChannels(asset),
-					routing: (it as { audioChannels?: unknown }).audioChannels ?? null,
+					routing: it.audioChannels ?? null,
 				});
 			}
-			const seq = requireSequence(doc, sequenceId);
-			const clips = (clipIds ?? [])
-				.map((id) => seq.clips[id])
-				.filter((c) => c?.kind === 'audio') as unknown as {
-				id: string;
-				mediaId: string;
-				channels: unknown;
-			}[];
+			const seq = pickSequence(doc, sequenceId);
+			const clips = (clipIds ?? []).map((id) => seq.clips[id]).filter((c) => c?.kind === 'audio');
 			if (!clips.length)
 				throw new ToolError(
 					'E_INVALID_PARAM',
@@ -942,7 +922,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 				if (!clips)
 					throw new ToolError('E_INVALID_PARAM', 'Timeline clips need a routing per clip', 'Pass clips.');
 				const { doc } = await loadDoc(ctx, projectId);
-				seqId = requireSequence(doc, sequenceId).id;
+				seqId = pickSequence(doc, sequenceId).id;
 				cmd = { type: 'clip.setAudioChannels', sequenceId: seqId, clipIds, channels: clips };
 			} else cmd = { type: 'item.setAudioChannels', itemIds, clips };
 			const res = await transact(ctx, projectId, {
@@ -977,11 +957,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, dryRun, ...o }, extra) => {
 			const loaded = await loadDoc(ctx, projectId);
-			const envelope = makeEnvelope(loaded.doc, {
-				revision: loaded.revision ?? 0,
-				savedAt: new Date().toISOString(),
-				platform: 'mcp',
-			}) as never;
+			const envelope = toolEnvelope(loaded.doc, loaded.revision);
 			const options = {
 				destination: o.destination,
 				mode: o.mode,
@@ -1029,7 +1005,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, clipId, params, reanalyze }, extra) => {
 			let { doc } = await loadDoc(ctx, projectId);
-			let seq = requireSequence(doc, sequenceId);
+			let seq = pickSequence(doc, sequenceId);
 			const clip = seq.clips[clipId];
 			if (!clip)
 				throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
@@ -1058,7 +1034,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 				});
 				requireOk(res);
 				({ doc } = await loadDoc(ctx, projectId));
-				seq = requireSequence(doc, seq.id);
+				seq = pickSequence(doc, seq.id);
 				fx = fxOf(seq.clips[clipId]);
 			}
 			if (!fx) throw new ToolError('E_INTERNAL', 'The Warp Stabilizer was not added');
@@ -1130,10 +1106,10 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, aspect, tracking, name }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const [num, den] = aspect.split(':').map(Number) as [number, number];
 			if (!(num > 0 && den > 0)) throw new ToolError('E_INVALID_PARAM', `Bad aspect ${aspect}`);
-			const jobs = reframeJobsFor(doc as never, seq.id);
+			const jobs = reframeJobsFor(doc, seq.id);
 			if (!jobs.length)
 				throw new ToolError('E_INVALID_PARAM', 'The sequence has no video clips of engine media to reframe');
 			const subjects: { clipId: string; start: number; frameDuration: number; points: number[] }[] = [];
@@ -1205,7 +1181,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, kind, text, seconds, track, name }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const frame = resolveFrameInput(seq, at);
 			const dur = Math.max(
 				1,
@@ -1234,7 +1210,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 			const ok = requireOk(res);
 			const gid = ok.refs.$g!;
 			const { doc: now } = await loadDoc(ctx, projectId);
-			const clip = Object.values(requireSequence(now, seq.id).clips).find(
+			const clip = Object.values(pickSequence(now, seq.id).clips).find(
 				(c) => c.kind === 'nest-video' && (c as { sequenceId: string }).sequenceId === gid,
 			);
 			return jsonResult({
@@ -1326,7 +1302,7 @@ export function registerGapsTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, template, at, track }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = requireSequence(doc, sequenceId);
+			const seq = pickSequence(doc, sequenceId);
 			const res = await transact(ctx, projectId, {
 				label: 'Add Graphic Template',
 				sequenceId: seq.id,

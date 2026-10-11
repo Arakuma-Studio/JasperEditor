@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the committed speech fixture `fixtures/speech/lj-composite.*` (wp speech, end-to-end Whisper test).
+// Builds the committed speech fixture `fixtures/speech/lj-composite.*` for the Whisper E2E test.
 //
 // Source: the LJ Speech Dataset (Keith Ito and Linda Johnson, 2017), which is in the public domain (its readings
 // come from LibriVox public-domain recordings of public-domain books). Twelve single-sentence clips are fetched

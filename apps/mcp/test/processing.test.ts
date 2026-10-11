@@ -1,7 +1,3 @@
-// MCP clip-processing tools end to end (S07 §8 test 10, PRA-001/002): a real engine (temp appdir, private port
-// MCP_PROCESSING_TEST_PORT = 48555) and jasper-mcp over stdio. process_clip (denoise, local, replace, wait)
-// returns the processed media id and the clip references it; use_media_version switches back;
-// get_media_info lists the versions; test_remote_executor without settings is a clear "not configured" error.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -151,13 +147,11 @@ describe('clip-processing MCP tools', () => {
 		const artifacts = join(ROOT, 'test-results', 'mcp');
 		mkdirSync(artifacts, { recursive: true });
 		writeFileSync(join(artifacts, 'processed-project.json'), (resource.contents[0] as { text: string }).text);
-		// Back to the original.
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId });
 		expect(await videoSource()).toContain(`[${mediaId}]`);
 	}, 600_000);
 });
 
-// M3 (wp-m3-inpoint, S07:PRA-003): source ranges over MCP.
 describe('source ranges (process_clip handles, use_media_version fit, sidecars, replace_footage)', () => {
 	let projectId = '';
 	let codeId = '';
@@ -166,7 +160,6 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 	type Clip = { id: string; mediaId?: string; sourceIn: number; start: number; duration: number };
 	const F = 23_520_000; // flicks per frame at 30 fps
 
-	/** A clip as the project document stores it (the MCP document resource). */
 	async function clip(id: string): Promise<Clip> {
 		const res = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
 		const doc = JSON.parse((res.contents[0] as { text: string }).text) as {
@@ -222,7 +215,6 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 			expect.objectContaining({ mediaId: codeId, sourceFrames: { start: 0, end: 64 } }),
 			expect.objectContaining({ mediaId: versionId, sourceFrames: { start: 14, end: 46 } }),
 		]);
-		// Back to the original: the in-point is the original's again.
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId: codeId });
 		expect((await clip(clipId)).sourceIn).toBe(20 * F);
 	}, 600_000);

@@ -1,6 +1,3 @@
-// S11:FIX-010 / acceptance 8 in the web app: Help ▸ About names anime.js (MIT) without an engine and links the
-// JavaScript third-party notices (THIRD_PARTY_NOTICES.md, shipped by the Vite build), showing them on demand;
-// anime.js gets its own vendor chunk (S11:ANM-023).
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { portedSection, ThirdPartyLicenses } from '../src/shell/licenses.tsx';

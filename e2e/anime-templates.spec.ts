@@ -1,15 +1,12 @@
-// Anime templates E2E (S11 §11 test 3, wp-m2-anime-templates): drag `title-reveal` from the gallery (badge R, hover
-// preview), edit its text and colour in Properties, keyframe a colour param (Effect Controls/Properties
-// stopwatch), stretch the clip (intro and outro frame-exact), apply a Gaussian blur and a corner pin (visible in the
-// Program), export, and compare an exported frame with `renderStill`. fframes templates keep their twin + badge.
-//
-// Export path: with the layer-bake extension ready (`features.layerBake.state === 'ready'`, wp-m2-layer-bake) the
+// Export path: with the layer-bake extension ready (`features.layerBake.state === 'ready'`) the
 // plan must be native/hybrid; without it (this package alone) Auto plans the Remotion path because the anime
 // template has a native blocker. The test records which one it checked as an annotation — it never skips.
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { ExportResultSchema, StillResultSchema } from '../packages/api/src/exports.ts';
 import { makeEnvelope, type ProjectDocument } from '../packages/project/src/index.ts';
 import {
 	appliedLabels,
@@ -97,7 +94,6 @@ test('keyframe a colour param with the stopwatch: the Program colour changes ove
 	const f1 = doc.start + 100;
 	await query(page, 'playhead.set', { frame: f0 });
 	const labels = (await appliedLabels(page)).length;
-	// Effect Controls ▸ Template · Title Reveal: the stopwatch of a colour param (S05:ECP-008).
 	await page.getByTestId('tab-effectControls').click();
 	const ec = page.getByTestId('effect-controls-panel');
 	await ec.getByTestId('stopwatch-params.accentColor').click();
@@ -178,7 +174,7 @@ test('Gaussian blur and corner pin visibly change the template in the Program', 
 	expect(pin).toBeDefined();
 	const result = await page.evaluate(
 		(id) =>
-			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			window.jasper!.transact({
 				label: 'Corner pin',
 				commands: [{ type: 'param.set', target: ['effect', id, 'topLeft'], value: [0.12, 0.08] }],
 			}),
@@ -237,7 +233,7 @@ async function exportProRes(
 	expect(res.ok()).toBe(true);
 	const file = join(EXPORT_DIR, filename);
 	writeFileSync(file, await res.body());
-	return { file, renderPath: String(job.result?.renderPath ?? '') };
+	return { file, renderPath: ExportResultSchema.parse(job.result).renderPath ?? '' };
 }
 
 function redPixels(
@@ -269,7 +265,6 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	const out = await exportProRes(request, bake ? /native|hybrid/i : /remotion/i);
 	expect(out.renderPath).toMatch(bake ? /native|hybrid/ : /remotion/);
 
-	// renderStill of the same frame (engine POST /api/stills over the live document).
 	const doc = await query<ProjectDocument>(page, 'doc.get');
 	const clip = doc.sequences[seqId]!.clips[clipId] as unknown as MgClipDoc;
 	const frame = clip.start + 24; // inside the intro: chars, subtitle and underline mid-animation
@@ -279,7 +274,7 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	const stillJob = await waitForJob(request, (await still.json()).id, 300_000);
 	expect(stillJob.state, JSON.stringify(stillJob.error ?? null)).toBe('succeeded');
 	const png = join(EXPORT_DIR, `still-${frame}.png`);
-	writeFileSync(png, await (await request.get(String(stillJob.result?.url))).body());
+	writeFileSync(png, await (await request.get(StillResultSchema.parse(stillJob.result).url)).body());
 
 	const a = rgbFrame(out.file, ['-vf', `select=eq(n\\,${frame})`, '-frames:v', '1']);
 	const b = rgbFrame(png, []);
@@ -304,7 +299,6 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 		description: `${(ratio * 100).toFixed(2)} % within 3/255 (max ${max})`,
 	});
 	expect(ratio).toBeGreaterThanOrEqual(0.99);
-	// The frame is not trivially black: the title is drawn.
 	let lit = 0;
 	for (let i = 0; i < b.length; i += 3) if (b[i]! + b[i + 1]! + b[i + 2]! > 60) lit++;
 	expect(lit).toBeGreaterThan(1000);
@@ -315,7 +309,7 @@ test('an out-of-canvas callout is clipped in the Program and exported frame', as
 	await createProject(page, 'E2E Callout Clipping');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	const tx = await page.evaluate(() =>
-		(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+		window.jasper!.transact({
 			label: 'Callout at canvas edge',
 			commands: [
 				{

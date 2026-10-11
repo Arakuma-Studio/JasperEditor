@@ -9,7 +9,6 @@ import {
 	formatSchemaIssues,
 	type JsonSchemaNode,
 	type MotionGraphicClip,
-	makeEnvelope,
 	makeSequenceSettings,
 	type ProjectDocument,
 	type Sequence,
@@ -17,6 +16,7 @@ import {
 } from '@jasper/project';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { ProjectIdArg, timeArg } from '../arguments.ts';
 import {
 	defineTool,
 	EDIT_IDEMPOTENT,
@@ -29,17 +29,13 @@ import {
 	txBody,
 	waitJob,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, type RenderCapsHint, renderHint, ToolError } from '../errors.ts';
-import { timeArg } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 - list_motion_templates shows every template with renderer ("fframes" = native jasper-mg renderer, "anime" = drawn by Remotion), its params (type, range, default, keyframable) and the full paramsSchema.
 - Anime templates (title-reveal, lower-third-anim, callout, counter…) need no fframes renderer: render_motion_graphic_preview, render_frame and exports draw them with Remotion in a headless Chrome.
 - set_motion_graphic_params {clipId, params} changes params of a placed template clip (one undo step). Numeric and colour params of anime templates are keyframable: pass at and keyframe: true to animate them (a keyframe per call); once a param is animated, pass at to set its value at that time.`;
-
-// ---------------------------------------------------------------- catalogue summaries
 
 /**
  * Bounds at or beyond the safe-integer range are no bounds (zod's `.int()` writes ±MAX_SAFE_INTEGER into the JSON
@@ -151,8 +147,6 @@ export function findTemplate(cat: MgTemplatesResponse, spec: string, hint = ''):
 	return t;
 }
 
-// ---------------------------------------------------------------- render failures (ANA-005)
-
 /** Engine errors that are not render failures (their own hints in errors.ts apply). */
 const NOT_RENDER = new Set([
 	'NETWORK',
@@ -211,8 +205,6 @@ export async function failedJobError(
 	const hint = await renderErrorHint(ctx, code, message);
 	return new ToolError(code, message, hint ?? fallbackHint, details);
 }
-
-// ---------------------------------------------------------------- anime preview (ANA-003)
 
 /** Even, ≥ 2 (encoders and the still path want even frame sizes). */
 const evenSize = (n: number) => Math.max(2, Math.round(n / 2) * 2);
@@ -380,11 +372,7 @@ export async function animeTemplatePreview(
 	const height = evenSize(a.height ?? 540);
 	const durationFrames = Math.max(1, Math.round((a.durationSeconds ?? t.defaultDurationSeconds ?? 5) * fps));
 	const { doc, sequenceId } = animePreviewDocument(t, { params, width, height, fps, durationFrames });
-	const envelope = makeEnvelope(doc, {
-		revision: 0,
-		savedAt: new Date().toISOString(),
-		platform: 'mcp',
-	}) as never;
+	const envelope = toolEnvelope(doc, 0);
 	const frames = previewFrames(durationFrames, a.frames ?? 1, {
 		introFrames: t.introFrames,
 		outroFrames: t.outroFrames,
@@ -436,8 +424,6 @@ export async function animeTemplatePreview(
 		images,
 	);
 }
-
-// ---------------------------------------------------------------- set_motion_graphic_params (ANA-003)
 
 function findMgClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: MotionGraphicClip } {
 	for (const seq of Object.values(doc.sequences)) {

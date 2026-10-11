@@ -1,5 +1,3 @@
-// A JasperEditor project exercising what the interchange formats carry, built through real commands, and a
-// comparable summary of a sequence (clip timing, sources, Motion/Opacity, audio levels, effects, transitions, …).
 import {
 	type Clip,
 	checkInvariants,
@@ -12,7 +10,6 @@ import { Harness, videoAsset } from '../../../project/test/helpers.ts';
 
 export { Harness };
 
-/** Sequence preset ids by rate (all 1920×1080). */
 export const PRESET_FOR: Record<string, string> = {
 	'24000/1001': 'hd-1080p-23.976',
 	'24/1': 'hd-1080p-24',
@@ -34,10 +31,6 @@ export function withPath(a: ReturnType<typeof videoAsset>, path: string): Return
 
 export type Rich = { h: Harness; ids: Record<string, string> };
 
-/**
- * V1: A (linked to A1, keyframed Motion, Gaussian Blur) → cross dissolve → B (opacity 50, multiply);
- * V2: C at 2× speed, a red solid; V3: a text clip; A1/A2: audio with keyframed volume and pan; markers.
- */
 export function richProject(opts: { preset?: string; fps?: { num: number; den: number } } = {}): Rich {
 	const h = new Harness({ preset: opts.preset ?? 'hd-1080p-30' });
 	const fps = opts.fps ?? { num: 30, den: 1 };
@@ -146,7 +139,6 @@ const stripIds = (v: unknown): unknown => {
 	return v;
 };
 
-/** A comparable summary of a sequence: per track, its clips in order (ids stripped), transitions and markers. */
 export function summarize(
 	doc: ProjectDocument,
 	seqId: string,
@@ -200,7 +192,6 @@ export function summarize(
 	return out;
 }
 
-/** Adds a caption track with two captions to the rich project. */
 export function addCaptions(h: Harness): void {
 	h.ok([
 		{ type: 'caption.add', at: 0, duration: 30, text: 'Hello there' },

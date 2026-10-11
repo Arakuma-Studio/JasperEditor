@@ -1,8 +1,7 @@
-// wp interchange: timeline import/export (FCP7 XML, FCPXML, OTIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media
-// (S04:AS-011). Design and behaviour: docs/wp-notes/interchange.md.
 import { MediaAssetSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
+import { RegisteredMediaSchema } from './media.ts';
 import { EnvelopeSchema } from './projects.ts';
 
 export const INTERCHANGE_FORMATS = ['fcp7', 'fcpxml', 'otio', 'edl', 'aaf', 'omf', 'ale'] as const;
@@ -38,8 +37,6 @@ export const InterchangeReportEntrySchema = z.object({
 	instead: z.string().optional(),
 });
 export type InterchangeReportEntry = z.infer<typeof InterchangeReportEntrySchema>;
-
-// ---------------------------------------------------------------- import
 
 export const InterchangeImportRequestSchema = z
 	.object({
@@ -79,8 +76,6 @@ export const InterchangeImportResponseSchema = z.object({
 	extracted: z.array(z.object({ name: z.string(), path: z.string() })),
 });
 export type InterchangeImportResponse = z.infer<typeof InterchangeImportResponseSchema>;
-
-// ---------------------------------------------------------------- export
 
 export const PrerenderModeSchema = z.enum(['unsupported', 'all', 'none']);
 
@@ -183,8 +178,6 @@ export const InterchangePrerenderPlanResponseSchema = z.object({
 	),
 });
 
-// ---------------------------------------------------------------- Link Media (S04:AS-011)
-
 /** File name (always first), file size, media duration, media start (start timecode). */
 export const RELINK_CRITERIA = ['name', 'size', 'duration', 'mediaStart'] as const;
 export const RelinkCriterionSchema = z.enum(RELINK_CRITERIA);
@@ -206,7 +199,7 @@ export const RelinkDiffSchema = z.object({
 
 export const AssetRelinkResponseSchema = z.object({
 	/** The registered file (build the `media.relink` command from it). */
-	media: z.record(z.string(), z.unknown()),
+	media: RegisteredMediaSchema,
 	/** `fingerprint`: the same bytes; `placeholder`: the asset had no fingerprint yet (imported offline). */
 	match: z.enum(['fingerprint', 'placeholder', 'different']),
 	/** What differs (empty when nothing the user would notice does). */
@@ -234,7 +227,7 @@ export const RelinkScanResultSchema = z.object({
 		z.object({
 			assetId: z.string(),
 			path: z.string(),
-			media: z.record(z.string(), z.unknown()),
+			media: RegisteredMediaSchema,
 			matched: z.array(RelinkCriterionSchema),
 			match: z.enum(['fingerprint', 'placeholder', 'different']),
 			diff: z.array(RelinkDiffSchema),

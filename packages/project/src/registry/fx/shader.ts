@@ -1,16 +1,19 @@
-// GPU shader effects (wave-1 fx framework; S03 §15.1 `preview.webgl`, S03:FX-001 "WebGL wrappers", FX-041 effect
+// GPU shader effects (S03 §15.1 `preview.webgl`, S03:FX-001 "WebGL wrappers", FX-041 effect
 // bounds; the GL colour stage of ARCHITECTURE §19.2 is the rendering precedent). `EffectSpec.gpu` describes one or
 // more GLSL ES 3.00 fragment passes. This module is pure (no DOM, no GL): it maps params to uniforms, plans the
 // passes of one effect instance (sizes, named intermediates, complete program sources), resolves padding, seeds
 // and the time hooks, and validates specs. The compositions' GL host (`packages/compositions/src/fx/`) compiles and
 // runs the plans inside Remotion's canvas effect chain, in the Player and in renders alike.
 // Authoring guide (normative for effect authors): docs/wp-notes/fx-shader-framework.md.
+
+import type { WarpAnalysisData } from '../../gaps/warp/analysis.ts';
 import { evaluate } from '../../keyframes.ts';
+import type { ResolvedPuppet } from '../../puppet/model.ts';
 import type { Animatable, ParamValue } from '../../schema/common.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
-
-// ---------------------------------------------------------------- types
+import { numberParam as finite, mediaParamId } from '../param-values.ts';
+import { FORBIDDEN_GLSL_SYNTAX } from './validation.ts';
 
 /** A reusable piece of GLSL (functions/constants) prepended once per program, after its `deps`. */
 export type GlslChunk = {
@@ -188,9 +191,9 @@ export const FX_PIXELS_MAX = 1024;
 
 /** sim-warp: structured instance data resolved at the frame (see `EffectInstance.puppet`). */
 export type FxStructures = {
-	puppet?: unknown;
+	puppet?: ResolvedPuppet;
 	/** gaps (FX-6): the Warp Stabilizer's stored analysis (`EffectInstance.warpAnalysis`). */
-	warpAnalysis?: unknown;
+	warpAnalysis?: WarpAnalysisData;
 	/**
 	 * The layer's masks at the frame (After Effects' "Mask 1…n" popups of Reshape, Smear, Particle Playground's
 	 * Wall, Liquify's Freeze Area Mask), in stack order, flattened to polylines in layer px.
@@ -393,8 +396,6 @@ export type FxEffectPlan = {
 	key: string;
 };
 
-// ---------------------------------------------------------------- constants
-
 /** Maximum extra source pictures per layer (time samples). */
 export const FX_MAX_TIME_SAMPLES = 8;
 /** Largest effect canvas side in pixels; bigger layers are drawn downscaled (`pxScale` < 1). */
@@ -464,10 +465,6 @@ export function paramUniformType(p: ParamSpec): FxUniformType | 'sampler2D' | 's
 			return null;
 	}
 }
-
-// ---------------------------------------------------------------- uniforms
-
-const finite = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) ? x : d);
 
 /**
  * Uniforms derived from params (naming: `u_<paramName>`): number → `float`, boolean → `bool`, enum → `int` (index in
@@ -601,8 +598,6 @@ export function uniformDeclaration(u: FxUniform): string {
 	if (u.type === 'vec4[]') return `uniform vec4 ${u.name}[${u.value.length / 4}];`;
 	return `uniform ${u.type} ${u.name};`;
 }
-
-// ---------------------------------------------------------------- program sources
 
 /** The prelude every pass gets (after `#version`): precision, varyings, built-ins and the coordinate helpers. */
 export const FX_PRELUDE = `precision highp float;
@@ -784,9 +779,7 @@ export function buildPassSource(
 	return parts.join('\n');
 }
 
-// ---------------------------------------------------------------- planning
-
-const nonNeg = (x: unknown) => Math.min(FX_MAX_PADDING, Math.max(0, finite(x)));
+const nonNeg = (x: number | undefined) => Math.min(FX_MAX_PADDING, Math.max(0, finite(x)));
 
 /** The padding an effect instance asks for (layer px, clamped to 0..FX_MAX_PADDING). */
 export function gpuPadding(spec: Pick<EffectSpec, 'gpu'>, p: EffectParams, ctx: FxPlanContext): FxPadding {
@@ -806,7 +799,6 @@ export function addPadding(a: FxPadding, b: FxPadding): FxPadding {
 
 export const ZERO_PADDING: FxPadding = Object.freeze({ left: 0, top: 0, right: 0, bottom: 0 });
 
-/** The pass list of an effect instance. */
 export function gpuPasses(gpu: GpuEffect, p: EffectParams, ctx: FxPlanContext): readonly ShaderPass[] {
 	return typeof gpu.passes === 'function' ? gpu.passes(p, ctx) : gpu.passes;
 }
@@ -832,15 +824,12 @@ export function planGpuEffect(
 	for (const [k, v] of Object.entries(custom)) uniforms.push(toUniform(k, v));
 	const textures: FxEffectPlan['textures'] = spec.params
 		.filter((ps) => ps.type === 'media')
-		.map((ps) => {
-			const v = p[ps.name] as { mediaId?: unknown } | undefined;
-			return {
-				param: ps.name,
-				uniform: `u_${ps.name}`,
-				mediaId: typeof v?.mediaId === 'string' ? v.mediaId : '',
-				...(isLutMediaParam(ps) ? { kind: 'lut' as const } : {}),
-			};
-		});
+		.map((ps) => ({
+			param: ps.name,
+			uniform: `u_${ps.name}`,
+			mediaId: mediaParamId(p[ps.name]),
+			...(isLutMediaParam(ps) ? { kind: 'lut' as const } : {}),
+		}));
 	// parity (roto): object mattes (state 0 until the host resolves them).
 	for (const m of gpu.mattes ?? []) {
 		const v = p[m.param];
@@ -967,8 +956,6 @@ export function planPasses(
 	return planned;
 }
 
-// ---------------------------------------------------------------- built-in uniforms
-
 /** What the host knows about a layer at a frame: the values behind the built-in uniforms (except u_seed). */
 export type FxBuiltinInput = {
 	canvas: { width: number; height: number };
@@ -1017,8 +1004,6 @@ export function fxBuiltinUniforms(b: FxBuiltinInput): FxUniform[] {
 	];
 }
 
-// ---------------------------------------------------------------- seeds and randomness
-
 /** FNV-1a 32-bit of a string (stable across engines and realms). */
 export function hashString(s: string): number {
 	let h = 0x811c9dc5;
@@ -1047,8 +1032,6 @@ export function fxRandom(seed: number, n: number): number {
 	x = Math.imul(x ^ (x >>> 15), 0x735a2d97) >>> 0;
 	return ((x ^ (x >>> 15)) >>> 0) / 4294967296;
 }
-
-// ---------------------------------------------------------------- time hooks
 
 /** A time-hook effect of a stack (stack order) with what its hooks get. */
 export type FxTimeStep = {
@@ -1191,16 +1174,14 @@ export function gpuIsTimeDependent(
 	if (!params || !('params' in spec)) return false;
 	for (const ps of spec.params) {
 		if (ps.type !== 'media' || isLutMediaParam(ps)) continue;
-		const id = (params[ps.name] as { mediaId?: unknown } | undefined)?.mediaId;
-		if (typeof id !== 'string' || !id) continue;
+		const id = mediaParamId(params[ps.name]);
+		if (!id) continue;
 		const kind = mediaKind ? mediaKind(id) : undefined;
 		if (kind === 'video') return true;
 		if (!mediaKind && (ps.mediaKinds ?? ['image', 'video']).includes('video')) return true;
 	}
 	return false;
 }
-
-// ---------------------------------------------------------------- params at other times, clip context
 
 /** Content time (flicks) of a fractional clip-local frame (`contentTimeAt` of derive/, with a numeric fps). */
 export function fxClipContentTime(
@@ -1244,8 +1225,6 @@ export function fxSourceSeconds(clip: FxClipInfo, frame: number, fps: number): n
 	const i = clip.reverse ? clip.duration - 1 - frame : frame;
 	return clip.sourceInSeconds + (i / (fps > 0 ? fps : 30)) * clip.speed;
 }
-
-// ---------------------------------------------------------------- validation
 
 /**
  * Uniform names a spec's params declare (`u_<name>`; media params also `u_<name>_size`; a numeric `seed` param feeds
@@ -1297,13 +1276,8 @@ export function uniformCollisions(input: {
 }
 
 const RESERVED = new Set(Object.keys(FX_BUILTIN_UNIFORMS));
-const FORBIDDEN_GLSL: [RegExp, string][] = [
-	[/#version/, 'must not contain #version (the framework adds it)'],
-	[/\bprecision\s+(highp|mediump|lowp)\b/, 'must not declare precision (the prelude does)'],
-	[/\bgl_FragColor\b/, 'uses gl_FragColor (GLSL ES 1.00); write fragColor'],
-	[/\btexture2D\s*\(/, 'uses texture2D (GLSL ES 1.00); use texture()'],
-	[/\bvarying\b/, 'uses varying (GLSL ES 1.00)'],
-	[/\bout\s+vec4\s+fragColor\b/, 'declares fragColor (the prelude does)'],
+const FORBIDDEN_GLSL: readonly (readonly [RegExp, string])[] = [
+	...FORBIDDEN_GLSL_SYNTAX,
 	[/\bMath\.random\b/, 'mentions Math.random'],
 ];
 
@@ -1346,7 +1320,7 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	try {
 		passes = gpuPasses(gpu, defaults, ctx);
 	} catch (e) {
-		at(`passes(defaults) threw: ${(e as Error).message}`);
+		at(`passes(defaults) threw: ${e instanceof Error ? e.message : String(e)}`);
 	}
 	if (passes.length === 0) at('no passes');
 	const outputs = new Set<string>();
@@ -1430,7 +1404,7 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 		const r = gpu.time?.remap?.(defaults, tctx);
 		if (r !== undefined && !Number.isFinite(r)) at('time.remap returned a non-finite frame');
 	} catch (e) {
-		at(`hook threw with default params: ${(e as Error).message}`);
+		at(`hook threw with default params: ${e instanceof Error ? e.message : String(e)}`);
 	}
 	if (spec.bin !== undefined && !spec.bin.trim()) at('bin must not be empty');
 	return out;

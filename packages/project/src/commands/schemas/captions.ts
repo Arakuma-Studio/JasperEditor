@@ -1,6 +1,4 @@
-// wp captions: caption editing and text-based editing commands (docs/wp-notes/captions.md). Clip-level edits of
-// captions (move, trim, ripple delete, sync-lock) use the ordinary clip commands; these add what is specific to
-// captions and transcripts.
+// Caption moves, trims, ripple deletes and sync-lock edits use the ordinary clip commands.
 import { z } from 'zod';
 import { CaptionStandardSchema, CaptionStyleSchema } from '../../schema/sequence.ts';
 import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
@@ -154,8 +152,6 @@ export const CaptionSavePresetCmd = cmd('caption.savePreset', {
 export const CaptionDeletePresetCmd = cmd('caption.deletePreset', {
 	presetId: z.string(),
 });
-
-// ---------------------------------------------------------------- transcripts
 
 const TextBasedRangeShape = {
 	sequenceId: IdRefSchema.optional(),

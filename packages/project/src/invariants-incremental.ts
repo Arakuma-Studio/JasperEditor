@@ -1,4 +1,4 @@
-// Incremental invariant checking (workstream perf-core, docs/wp-notes/perf-core.md §2; ARCHITECTURE §13).
+// Incremental invariant checking (docs/wp-notes/perf-core.md §2; ARCHITECTURE §13).
 //
 // A transaction's result `next` differs from its valid base in a few entities; Immer's structural sharing says
 // which (unchanged objects keep their identity). Instead of re-checking the whole document (≈ 20 ms on 1 000
@@ -60,8 +60,6 @@ export function setInvariantMode(m: InvariantMode): void {
 export function invariantMode(): InvariantMode {
 	return mode;
 }
-
-// ---------------------------------------------------------------- id index
 
 /** Layers over a flattened set: what a verified document's entities claim (INV-001). */
 class IdIndex {
@@ -136,8 +134,6 @@ export function verifyDocument(doc: ProjectDocument, opts: InvariantOptions = {}
 	return full(doc, opts).length === 0;
 }
 
-// ---------------------------------------------------------------- entry point
-
 /**
  * The invariant issues of `next`, a transaction's result on `base`: exactly `checkInvariants(next, opts)`, computed
  * incrementally when `base` is verified and the change is of the kinds above.
@@ -177,8 +173,6 @@ function full(doc: ProjectDocument, opts: InvariantOptions): Issue[] {
 	if (issues.length === 0) markVerified(doc, seen, opts);
 	return issues;
 }
-
-// ---------------------------------------------------------------- the incremental check
 
 /** Sequence fields compared entity by entity; any other field that changes falls back to the full check. */
 const FINE_SEQUENCE_FIELDS = new Set(['clips', 'transitions', 'links', 'groups', 'markers']);

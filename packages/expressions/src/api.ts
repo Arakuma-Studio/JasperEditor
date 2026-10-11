@@ -1,5 +1,6 @@
 // High-level expression API for the editor, the engine and agents.
 import {
+	type Expression,
 	type ExpressionRef,
 	type ExpressionWorldData,
 	flicksPerFrame,
@@ -15,7 +16,7 @@ import {
 	loadExpressionEngine as loadRuntime,
 } from './runtime.ts';
 import type { PropKind } from './values.ts';
-import type { SelectorInput, World } from './world.ts';
+import type { EvalStatus, SelectorInput, World } from './world.ts';
 
 /**
  * Loads the QuickJS engine and installs expression support into @jasper/project (`bindExpressions`, used by
@@ -38,7 +39,7 @@ export type PropertyStatus = {
 	/** The keyframed (pre-expression) value. */
 	keyframedValue: unknown;
 	/** The stored expression, if any. */
-	expression: { text: string; enabled: boolean } | null;
+	expression: Expression | null;
 	/** Error of the expression at this time (`null` = it ran, or there is none / it is disabled). */
 	expressionError: string | null;
 	kind: PropKind;
@@ -81,7 +82,7 @@ export function evaluateExpressionText(
 	ref: ExpressionRef,
 	text: string,
 	t: number,
-): { value: unknown; error: string | null } {
+): EvalStatus {
 	const syntax = checkExpressionSyntax(text);
 	if (syntax) {
 		const world = worldOfDocument(doc);
@@ -90,8 +91,6 @@ export function evaluateExpressionText(
 	}
 	return worldOfDocument(doc).evaluateText(ref, text, t);
 }
-
-// ---------------------------------------------------------------- text Expression Selector
 
 export type SelectorAmount = { ok: true; amount: [number, number, number] } | { ok: false; error: string };
 
@@ -174,8 +173,6 @@ export function textSelectorExpressionHost(
 		return null;
 	};
 }
-
-// ---------------------------------------------------------------- pick-whip
 
 /**
  * The expression text that reads property `to` from the expression of property `from` (AE's pick-whip): the

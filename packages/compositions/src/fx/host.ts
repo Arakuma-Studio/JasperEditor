@@ -482,7 +482,7 @@ export function upload(h: FxHost, tex: WebGLTexture, source: TexImageSource): vo
 
 /** A media param's picture: uploaded once per (source object, version). */
 function mediaTexture(h: FxHost, source: TexImageSource, version: string): WebGLTexture {
-	const key = source as unknown as object;
+	const key = source;
 	const hit = h.media.get(key);
 	if (hit && hit.version === version) return hit.tex;
 	const tex = hit?.tex ?? texture2d(h.gl, h.gl.LINEAR);

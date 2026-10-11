@@ -1,13 +1,3 @@
-// Edit ▸ Preferences pages of workstream gaps (docs/wp-notes/gaps.md §UI-4), Premiere's pages that mean something
-// here: Appearance, Auto Save, Labels, Memory, Playback, Trim and Audio Hardware. Collaboration (Team Projects) and
-// Sync Settings (Creative Cloud) are Adobe services and are not offered. Every setting is wired to behaviour:
-// - Appearance: theme, contrast, density (prefsStore), reduced motion and language (UI-6).
-// - Auto Save: the autosave timer (on / off, longest wait) and the engine's saved versions (interval, how many).
-// - Labels: label colour names (Project panel and Timeline menus) and Label Defaults of new bins, sequences, media.
-// - Memory: host memory and "Optimize rendering for" (parallel headless render pages).
-// - Playback: Preroll / Postroll of Play Around, Play In to Out with Preroll/Postroll and trim-mode playback.
-// - Trim: Large Trim Offset (Trim Forward / Backward Many, the Trim Monitor buttons).
-// - Audio Hardware: the output device and latency of the editor's audio; the input device of voice-over.
 import type { EngineGapsSettings } from '@jasper/api';
 import { LABEL_COLORS, type LabelColor } from '@jasper/project';
 import { Button, Checkbox, Select, TextField } from '@jasper/ui';
@@ -57,8 +47,6 @@ function NumberField(props: {
 		/>
 	);
 }
-
-// ---------------------------------------------------------------- Appearance
 
 function AppearancePage() {
 	const ui = useUiPrefs();
@@ -128,8 +116,6 @@ function AppearancePage() {
 	);
 }
 
-// ---------------------------------------------------------------- engine settings hook
-
 function useEngineGaps() {
 	const engine = useEngineOrNull()?.client ?? null;
 	const [info, setInfo] = useState<
@@ -161,8 +147,6 @@ function useEngineGaps() {
 	};
 	return { info, error, save, connected: !!engine };
 }
-
-// ---------------------------------------------------------------- Auto Save
 
 function AutoSavePage() {
 	const g = useGapsPrefs();
@@ -226,8 +210,6 @@ function AutoSavePage() {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Labels
 
 const DEFAULT_KINDS: { kind: LabelDefaultKind; label: string }[] = [
 	{ kind: 'bin', label: 'Bin' },
@@ -295,8 +277,6 @@ function LabelsPage() {
 	);
 }
 
-// ---------------------------------------------------------------- Memory
-
 function MemoryPage() {
 	const eng = useEngineGaps();
 	const heap = (performance as unknown as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } })
@@ -351,8 +331,6 @@ function MemoryPage() {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Playback / Trim
 
 function PlaybackPage() {
 	const g = useGapsPrefs();
@@ -413,8 +391,6 @@ function TrimPage() {
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- Audio Hardware
 
 function AudioHardwarePage() {
 	const g = useGapsPrefs();

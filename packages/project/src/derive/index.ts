@@ -7,8 +7,6 @@ import { contentSpanFlicks, flicksPerFrame, type Rational } from '../time.ts';
 
 export const clipEnd = (c: { start: number; duration: number }) => c.start + c.duration;
 
-// ---------------------------------------------------------------- per-track index
-
 const indexCache = new WeakMap<object, Map<string, Clip[]>>();
 
 /**
@@ -148,8 +146,6 @@ export function clipsInRange(seq: Sequence, trackId: string, from: number, to: n
 	return out;
 }
 
-// ---------------------------------------------------------------- tracks
-
 export function allTracks(seq: Pick<Sequence, 'videoTracks' | 'audioTracks' | 'captionTracks'>): Track[] {
 	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks];
 }
@@ -188,8 +184,6 @@ export function resolveTrackRef(seq: Sequence, ref: string): string | null {
 	}
 	return findTrack(seq, ref) ? ref : null;
 }
-
-// ---------------------------------------------------------------- duration, gaps, edit points
 
 const durationCache = new WeakMap<object, number>();
 
@@ -243,8 +237,6 @@ export function prevEditPoint(seq: Sequence, frame: number, trackIds?: readonly 
 	return pts.length ? pts[pts.length - 1]! : null;
 }
 
-// ---------------------------------------------------------------- links and groups
-
 /** Link partners of a clip (excluding itself). */
 export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
 	const c = seq.clips[clipId];
@@ -256,8 +248,6 @@ export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
 		.map((m) => seq.clips[m]!)
 		.filter(Boolean);
 }
-
-// ---------------------------------------------------------------- content time
 
 /**
  * Content time (flicks) shown at timeline frame `f` (S01:CLP-004). May be fractional at non-unit speeds;
@@ -377,8 +367,6 @@ export function outOfSyncOffsets(seq: Sequence): Record<string, number> {
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- usage
 
 export type MediaUsage = { clips: number; sequences: string[] };
 

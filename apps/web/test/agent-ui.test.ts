@@ -1,5 +1,5 @@
-// mcp-cli live-UI automation (agent-bridge/ui-input.ts, ui-elements.ts): chord parsing, key codes and roles.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { runUiAction } from '../src/agent-bridge/ui-automation.ts';
 import { accessibleName, implicitRole, isInteractive } from '../src/agent-bridge/ui-elements.ts';
 import { keyOf, parseChord } from '../src/agent-bridge/ui-input.ts';
 
@@ -39,5 +39,20 @@ describe('element roles and names', () => {
 		expect(accessibleName(html('<button aria-label="Play">▶</button>'))).toBe('Play');
 		expect(accessibleName(html('<button title="Snap">S</button>'))).toBe('Snap');
 		expect(accessibleName(html('<input placeholder="Search">'))).toBe('Search');
+	});
+});
+
+describe('desktop screenshots', () => {
+	it('reports a refused native capture as unavailable', async () => {
+		const previous = Object.getOwnPropertyDescriptor(window, 'jasperDesktop');
+		const capturePage = vi.fn().mockResolvedValue(null);
+		Object.defineProperty(window, 'jasperDesktop', { configurable: true, value: { capturePage } });
+		try {
+			await expect(runUiAction('screenshot', {})).rejects.toMatchObject({ code: 'E_NOT_AVAILABLE' });
+			expect(capturePage).toHaveBeenCalledOnce();
+		} finally {
+			if (previous) Object.defineProperty(window, 'jasperDesktop', previous);
+			else delete window.jasperDesktop;
+		}
 	});
 });

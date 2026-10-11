@@ -1,4 +1,3 @@
-// Workstream gaps command handlers (docs/wp-notes/gaps.md).
 import { channelsProblem } from '../../gaps/audio-channels.ts';
 import {
 	clipMediaSecondsAt,
@@ -6,24 +5,16 @@ import {
 	reframePosition,
 	smoothSubjectPath,
 } from '../../gaps/auto-reframe.ts';
-import {
-	alignOffsets,
-	graphicSettingsOf,
-	isGraphic,
-	type LayerPins,
-	layerBounds,
-	pinOffsets,
-} from '../../gaps/graphics.ts';
+import { alignOffsets, graphicSettingsOf, isGraphic, layerBounds, pinOffsets } from '../../gaps/graphics.ts';
 import { proxyMismatch } from '../../gaps/proxies.ts';
 import { WARP_STABILIZER_EFFECT_ID, warpAnalysisProblem } from '../../gaps/warp/analysis.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { MediaAsset } from '../../schema/media.ts';
-import type { Clip, Sequence } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { clipCoreHandlers } from './clip-core.ts';
-import { insertProjectItems } from './clipboard.ts';
+import { insertProjectItems, parseCommandClipboard } from './clipboard.ts';
 import { keyframeHandlers } from './keyframe.ts';
 import { locateEffect } from './param.ts';
 import { sequenceHandlers } from './sequence.ts';
@@ -33,28 +24,21 @@ import { type HandlerMap, idList } from './util.ts';
 
 export const GAPS_OWNER = 'gaps' as const;
 
-function mediaOf(
-	doc: { media: Record<string, MediaAsset>; items: Record<string, unknown> },
-	id: string,
-	h: HandlerContext,
-): MediaAsset {
+function mediaOf(doc: DDoc, id: string, h: HandlerContext): MediaAsset {
 	const direct = doc.media[id];
 	if (direct) return direct;
-	const it = doc.items[id] as { kind?: string; mediaId?: string } | undefined;
-	if (it && (it.kind === 'media' || it.kind === 'subclip') && it.mediaId && doc.media[it.mediaId])
+	const it = doc.items[id];
+	if (it && (it.kind === 'media' || it.kind === 'subclip') && doc.media[it.mediaId])
 		return doc.media[it.mediaId]!;
 	return h.fail('E_NOT_FOUND', `Media not found: ${id}`);
 }
 
-type Run = (doc: DDoc, cmd: unknown, h: HandlerContext) => unknown;
-const run = (map: HandlerMap, type: string) => (map as Record<string, unknown>)[type] as Run;
-
-export const gapsHandlers: HandlerMap = {
+export const gapsHandlers = {
 	'graphic.update': (doc, cmd: CommandOf<'graphic.update'>, h) => {
-		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		const seq = doc.sequences[cmd.sequenceId];
 		if (!seq) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
 		if (cmd.graphic === null) {
-			delete (seq as { graphic?: unknown }).graphic;
+			delete seq.graphic;
 			return { graphic: null };
 		}
 		const cur = graphicSettingsOf(seq) ?? { intro: 0, outro: 0, roll: null };
@@ -63,25 +47,25 @@ export const gapsHandlers: HandlerMap = {
 			outro: cmd.graphic.outro ?? cur.outro,
 			roll: cmd.graphic.roll === undefined ? (cur.roll ?? null) : cmd.graphic.roll,
 		};
-		(seq as { graphic?: unknown }).graphic = next;
+		seq.graphic = next;
 		if (cmd.graphic.duration !== undefined) {
 			const end = Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));
 			for (const c of Object.values(seq.clips)) {
 				if (c.start + c.duration !== end) continue;
 				if (c.start >= cmd.graphic.duration)
 					h.fail('E_INVALID_PARAM', `Layer ${c.id} starts after the new end`);
-				(c as { duration: number }).duration = cmd.graphic.duration - c.start;
+				c.duration = cmd.graphic.duration - c.start;
 			}
 		}
 		return { graphic: next };
 	},
 	'graphic.addLayer': (doc, cmd: CommandOf<'graphic.addLayer'>, h) => {
-		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		const seq = doc.sequences[cmd.sequenceId];
 		if (!seq || !isGraphic(seq)) return h.fail('E_INVALID_PARAM', `${cmd.sequenceId} is not a graphic`);
 		const end = Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration));
 		const rate = seq.settings.frameRate;
 		const duration = end > 0 ? end : Math.round((5 * rate.num) / rate.den);
-		run(sequenceHandlers, 'track.add')(doc, { type: 'track.add', sequenceId: seq.id, kind: 'video' }, h);
+		sequenceHandlers['track.add'](doc, { type: 'track.add', sequenceId: seq.id, kind: 'video' }, h);
 		const track = seq.videoTracks[seq.videoTracks.length - 1]!.id;
 		const base = {
 			sequenceId: seq.id,
@@ -93,12 +77,12 @@ export const gapsHandlers: HandlerMap = {
 		};
 		const r =
 			cmd.kind === 'text'
-				? run(clipCoreHandlers, 'clip.addText')(
+				? clipCoreHandlers['clip.addText'](
 						doc,
 						{ type: 'clip.addText', ...base, content: { text: cmd.text ?? 'New Text' } },
 						h,
 					)
-				: run(shapeHandlers, 'clip.addShape')(
+				: shapeHandlers['clip.addShape'](
 						doc,
 						{
 							type: 'clip.addShape',
@@ -109,8 +93,8 @@ export const gapsHandlers: HandlerMap = {
 					);
 		return r;
 	},
-	'graphic.align': (doc, cmd: CommandOf<'graphic.align'>, h) => {
-		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+	'graphic.align': (doc, cmd: CommandOf<'graphic.align'>, h: HandlerContext) => {
+		const seq = doc.sequences[cmd.sequenceId];
 		if (!seq) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
 		const clips = cmd.clipIds.map((id) => {
 			const c = seq.clips[id];
@@ -120,9 +104,9 @@ export const gapsHandlers: HandlerMap = {
 			return c;
 		});
 		const rects = clips.map((c) => {
-			const r = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq } as never), c.sourceIn);
+			const r = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq }), c.sourceIn);
 			if (!r) h.fail('E_INVALID_PARAM', `${c.id} has no Motion to align`);
-			return r!;
+			return r;
 		});
 		const to =
 			cmd.relativeTo === 'frame'
@@ -132,51 +116,48 @@ export const gapsHandlers: HandlerMap = {
 		clips.forEach((c, i) => {
 			const [dx, dy] = offs[i]!;
 			if (!dx && !dy) return;
-			const pos = (
-				c as unknown as {
-					transform: { position: { value: [number, number]; keyframes: { value: [number, number] }[] } };
-				}
-			).transform.position;
+			if (!('transform' in c)) h.fail('E_INVALID_PARAM', `${c.id} has no Motion to align`);
+			const pos = c.transform.position;
 			pos.value = [pos.value[0] + dx, pos.value[1] + dy];
 			for (const k of pos.keyframes) k.value = [k.value[0] + dx, k.value[1] + dy];
 		});
 		return { moved: offs.filter(([x, y]) => x || y).length };
 	},
 	'graphic.setPins': (doc, cmd: CommandOf<'graphic.setPins'>, h) => {
-		const seq = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		const seq = doc.sequences[cmd.sequenceId];
 		if (!seq || !isGraphic(seq)) return h.fail('E_INVALID_PARAM', `${cmd.sequenceId} is not a graphic`);
 		const c = seq.clips[cmd.clipId];
 		if (!c) return h.fail('E_NOT_FOUND', `Clip not found: ${cmd.clipId}`);
 		if (!cmd.edges.length) {
-			delete (c as { pins?: unknown }).pins;
+			if ('pins' in c) delete c.pins;
 			return { pinned: false };
 		}
+		if (!('transform' in c) || c.kind === 'captions')
+			return h.fail('E_INVALID_PARAM', `${c.id} does not support layer pins`);
 		if (cmd.target === cmd.clipId) h.fail('E_INVALID_PARAM', 'A layer cannot be pinned to itself');
 		const tc = cmd.target === 'frame' ? null : seq.clips[cmd.target];
 		if (cmd.target !== 'frame' && !tc) h.fail('E_NOT_FOUND', `Layer not found: ${cmd.target}`);
-		if (tc && (tc as { pins?: LayerPins }).pins?.target === cmd.clipId)
+		if (tc && 'pins' in tc && tc.pins?.target === cmd.clipId)
 			h.fail('E_INVALID_PARAM', 'Two layers cannot be pinned to each other');
-		const own = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq } as never), c.sourceIn);
+		const own = layerBounds(c, intrinsicBoxOf({ clip: c, doc, seq }), c.sourceIn);
 		const target = tc
-			? layerBounds(tc, intrinsicBoxOf({ clip: tc, doc, seq } as never), tc.sourceIn)
+			? layerBounds(tc, intrinsicBoxOf({ clip: tc, doc, seq }), tc.sourceIn)
 			: { x: 0, y: 0, width: seq.settings.width, height: seq.settings.height };
 		if (!own || !target) return h.fail('E_INVALID_PARAM', 'Both layers need Motion to be pinned');
 		const pins = { target: cmd.target, edges: pinOffsets(own, target, cmd.edges) };
-		(c as { pins?: unknown }).pins = pins;
+		c.pins = pins;
 		return { pinned: true, pins };
 	},
 	'graphic.importTemplate': (doc, cmd: CommandOf<'graphic.importTemplate'>, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const pasted = insertProjectItems(doc, cmd.template.payload as never, cmd.binId, undefined, h) as {
-			itemIds: string[];
-			sequenceIds: string[];
-		};
+		const payload = parseCommandClipboard(cmd.template.payload, h, ['project-items']);
+		const pasted = insertProjectItems(doc, payload, cmd.binId, undefined, h);
 		const itemId = pasted.itemIds.find((id) => {
-			const it = doc.items[id] as { kind?: string; sequenceId?: string };
-			return it.kind === 'sequence' && isGraphic(doc.sequences[it.sequenceId!] as Sequence);
+			const it = doc.items[id];
+			return it?.kind === 'sequence' && isGraphic(doc.sequences[it.sequenceId]!);
 		});
 		if (!itemId) return h.fail('E_INVALID_PARAM', 'The template holds no graphic');
-		const placed = run(clipCoreHandlers, 'clip.place')(
+		const placed = clipCoreHandlers['clip.place'](
 			doc,
 			{
 				type: 'clip.place',
@@ -193,22 +174,20 @@ export const gapsHandlers: HandlerMap = {
 		return { itemId, placed };
 	},
 	'sequence.autoReframe': (doc, cmd: CommandOf<'sequence.autoReframe'>, h) => {
-		const src = doc.sequences[cmd.sequenceId] as Sequence | undefined;
+		const src = doc.sequences[cmd.sequenceId];
 		if (!src) return h.fail('E_NOT_FOUND', `Sequence not found: ${cmd.sequenceId}`);
 		for (const s of cmd.subjects)
 			if (!src.clips[s.clipId]) h.fail('E_NOT_FOUND', `Clip not found in the sequence: ${s.clipId}`);
-		const item = Object.values(doc.items).find(
-			(i) => i.kind === 'sequence' && (i as { sequenceId: string }).sequenceId === src.id,
-		);
+		const item = Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === src.id);
 		const g = (a: number, b: number): number => (b ? g(b, a % b) : a);
 		const k = g(cmd.width, cmd.height);
 		const name = cmd.name ?? `${item?.name ?? 'Sequence'} - (${cmd.width / k}:${cmd.height / k})`;
-		const dup = run(structureHandlers, 'sequence.duplicate')(
+		const dup = structureHandlers['sequence.duplicate'](
 			doc,
 			{ type: 'sequence.duplicate', sequenceId: src.id, name, ...(cmd.ref ? { ref: cmd.ref } : {}) },
 			h,
-		) as { sequenceId: string; itemId: string };
-		run(sequenceHandlers, 'sequence.updateSettings')(
+		);
+		sequenceHandlers['sequence.updateSettings'](
 			doc,
 			{
 				type: 'sequence.updateSettings',
@@ -218,7 +197,7 @@ export const gapsHandlers: HandlerMap = {
 			},
 			h,
 		);
-		const seq = doc.sequences[dup.sequenceId] as Sequence;
+		const seq = doc.sequences[dup.sequenceId];
 		const oldIds = Object.keys(src.clips);
 		const newIds = Object.keys(seq.clips);
 		const map = new Map(oldIds.map((id, i) => [id, newIds[i]!]));
@@ -228,26 +207,17 @@ export const gapsHandlers: HandlerMap = {
 		const skipped: { clipId: string; reason: string }[] = [];
 		for (const path of cmd.subjects) {
 			const id = map.get(path.clipId);
-			const clip = id ? (seq.clips[id] as Clip | undefined) : undefined;
+			const clip = id ? seq.clips[id] : undefined;
 			if (clip?.kind !== 'video') {
 				skipped.push({ clipId: path.clipId, reason: 'not a video clip' });
 				continue;
 			}
-			const tr = (
-				clip as {
-					transform?: {
-						position: { keyframes: unknown[]; value: [number, number] };
-						scale: { keyframes: unknown[]; value: number };
-						scaleWidth: { value: number };
-						anchor: { keyframes: unknown[]; value: [number, number] };
-					};
-				}
-			).transform;
+			const tr = clip.transform;
 			if (!tr || tr.position.keyframes.length || tr.scale.keyframes.length || tr.anchor.keyframes.length) {
 				skipped.push({ clipId: path.clipId, reason: 'Motion is already animated' });
 				continue;
 			}
-			const box = intrinsicBoxOf({ clip, doc, seq } as never);
+			const box = intrinsicBoxOf({ clip, doc, seq });
 			const fill = Math.max(frame.width / box.width, frame.height / box.height) * 100;
 			const scale = Math.max(tr.scale.value, fill);
 			tr.scale.value = scale;
@@ -255,7 +225,7 @@ export const gapsHandlers: HandlerMap = {
 			const smooth = smoothSubjectPath(path.points, path.frameDuration, cmd.tracking);
 			const values: [number, number][] = [];
 			for (let f = clip.start; f < clip.start + clip.duration; f++) {
-				const t = clipMediaSecondsAt(clip as never, f, rate, FLICKS_PER_SECOND);
+				const t = clipMediaSecondsAt(clip, f, rate, FLICKS_PER_SECOND);
 				const i = Math.max(0, Math.min(smooth.length - 1, Math.round((t - path.start) / path.frameDuration)));
 				values.push(reframePosition(smooth[i] ?? [0.5, 0.5], box, frame, scale, tr.anchor.value));
 			}
@@ -265,7 +235,7 @@ export const gapsHandlers: HandlerMap = {
 				tr.position.value = [first[0], first[1]];
 			} else
 				for (const i of keys)
-					run(keyframeHandlers, 'keyframe.add')(
+					keyframeHandlers['keyframe.add'](
 						doc,
 						{
 							type: 'keyframe.add',
@@ -286,7 +256,7 @@ export const gapsHandlers: HandlerMap = {
 		if (loc.fx.effectId !== WARP_STABILIZER_EFFECT_ID)
 			h.fail('E_INVALID_PARAM', `${cmd.effectInstanceId} is not a Warp Stabilizer`);
 		if (!loc.clip) h.fail('E_INVALID_PARAM', 'The Warp Stabilizer analyses clips only');
-		const fx = loc.fx as { warpAnalysis?: unknown };
+		const fx = loc.fx;
 		if (cmd.analysis === null) {
 			delete fx.warpAnalysis;
 			return { analysed: false };
@@ -297,21 +267,21 @@ export const gapsHandlers: HandlerMap = {
 		return { analysed: true, frames: Math.floor(cmd.analysis.frames.length / 14) };
 	},
 	'media.attachProxy': (doc, cmd: CommandOf<'media.attachProxy'>, h) => {
-		const asset = mediaOf(doc as never, cmd.mediaId, h);
+		const asset = mediaOf(doc, cmd.mediaId, h);
 		if (asset.kind !== 'video')
 			h.fail('E_INVALID_PARAM', `${asset.originalName} is not a video: only video media takes proxies`);
 		if (!cmd.force) {
-			const why = proxyMismatch(asset, cmd.proxy.probe as never);
+			const why = proxyMismatch(asset, cmd.proxy.probe);
 			if (why) h.fail('E_INVALID_PARAM', why, { path: ['proxy'] });
 		}
 		if (cmd.proxy.fingerprint === asset.fingerprint)
 			h.fail('E_INVALID_PARAM', 'That file is the original itself, not a proxy', {
 				path: ['proxy', 'fingerprint'],
 			});
-		(asset as MediaAsset).proxy = { ...cmd.proxy, attachedAt: cmd.proxy.attachedAt ?? h.ctx.now() } as never;
+		asset.proxy = { ...cmd.proxy, attachedAt: cmd.proxy.attachedAt ?? h.ctx.now() };
 		return { mediaId: asset.id };
 	},
-	'clip.setAudioChannels': (doc, cmd: CommandOf<'clip.setAudioChannels'>, h) => {
+	'clip.setAudioChannels': (doc, cmd: CommandOf<'clip.setAudioChannels'>, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		if (cmd.channels.length !== cmd.clipIds.length)
 			h.fail('E_INVALID_PARAM', 'One routing per clip: clipIds and channels differ in length');
@@ -319,35 +289,34 @@ export const gapsHandlers: HandlerMap = {
 			const clip = seq.clips[ref];
 			if (!clip) h.fail('E_NOT_FOUND', `Clip not found: ${ref}`);
 			if (clip.kind !== 'audio') h.fail('E_INVALID_PARAM', `${ref} is not an audio clip of media`);
-			const media = doc.media[(clip as { mediaId: string }).mediaId];
+			const media = doc.media[clip.mediaId];
 			const ch = cmd.channels[i]!;
 			const why = channelsProblem(media, ch);
 			if (why) h.fail('E_INVALID_PARAM', `Clip ${i + 1}: ${why}`, { path: ['channels', String(i)] });
 			const track = [...seq.audioTracks].find((t) => t.id === clip.trackId);
 			if (track?.locked) h.fail('E_TRACK_LOCKED', `Track of ${ref} is locked`);
-			(clip as { channels: unknown }).channels = {
+			clip.channels = {
 				streamIndex: ch.streamIndex,
 				map: [...ch.map],
 				...(ch.mute?.length ? { mute: [...ch.mute] } : {}),
 			};
 		});
 	},
-	'item.setAudioChannels': (doc, cmd: CommandOf<'item.setAudioChannels'>, h) => {
+	'item.setAudioChannels': (doc, cmd: CommandOf<'item.setAudioChannels'>, h: HandlerContext) => {
 		for (const id of idList(cmd.itemIds)) {
 			const it = doc.items[id];
 			if (!it) h.fail('E_NOT_FOUND', `Item not found: ${id}`);
 			if (it.kind !== 'media') h.fail('E_INVALID_PARAM', `${it.name} is not a media item`);
-			const r = it as { audioChannels?: unknown; mediaId: string };
 			if (cmd.clips === null) {
-				delete r.audioChannels;
+				delete it.audioChannels;
 				continue;
 			}
-			const media = doc.media[r.mediaId];
+			const media = doc.media[it.mediaId];
 			cmd.clips.forEach((ch, i) => {
 				const why = channelsProblem(media, ch);
 				if (why) h.fail('E_INVALID_PARAM', `Clip ${i + 1}: ${why}`, { path: ['clips', String(i)] });
 			});
-			r.audioChannels = {
+			it.audioChannels = {
 				clips: cmd.clips.map((c) => ({
 					streamIndex: c.streamIndex,
 					map: [...c.map],
@@ -359,12 +328,12 @@ export const gapsHandlers: HandlerMap = {
 	'media.detachProxy': (doc, cmd: CommandOf<'media.detachProxy'>, h) => {
 		const detached: string[] = [];
 		for (const id of idList(cmd.mediaIds)) {
-			const asset = mediaOf(doc as never, id, h);
+			const asset = mediaOf(doc, id, h);
 			if (asset.proxy) {
-				delete (asset as { proxy?: unknown }).proxy;
+				delete asset.proxy;
 				detached.push(asset.id);
 			}
 		}
 		return { detached };
 	},
-};
+} satisfies HandlerMap;

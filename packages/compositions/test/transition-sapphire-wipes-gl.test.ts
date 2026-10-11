@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire wipes (family sapphire-wipes-other) in a real WebGL2 (headless Chrome, SwiftShader): every S_Wipe* moves
-// monotonically from A to B; the characteristic geometry of each shape mid-way (line side, circle / rectangle / star
-// in vs out, clock sweep direction, wedges, the four wedges' X), Sapphire's border colour and border glow, Reverse,
-// one-sided fades, Grad Add, Grow / Shrink, tile shapes, and determinism of the random ones (same seed → same
-// pixels, other seed → different). Entry: test/transition-sapphire-wipes-gl/entry.ts. FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -88,7 +83,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					true,
 				);
 			}
-			// Center moves the shape.
 			const off = { wipeDirection: 'circleOut', center: [0.2, 0.5] };
 			expect(near(await pixel('S_WipeCircle', 0.2, 0.2, 0.5, off), BLUE)).toBe(true);
 			expect(near(await pixel('S_WipeCircle', 0.2, 0.8, 0.5, off), RED)).toBe(true);

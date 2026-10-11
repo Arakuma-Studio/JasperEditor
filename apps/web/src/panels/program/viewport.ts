@@ -1,6 +1,8 @@
+import type { Vec2 } from '@jasper/project';
+
 // Monitor viewport math (S03 §6.2, PGM-010…015, §0.3 screen space): fit, zoom about a point, pan clamp,
 // and the screen ↔ sequence mapping shared by the Player wrapper and the overlay.
-export type Vec2 = [number, number];
+export type { Vec2 } from '@jasper/project';
 export type Size = { width: number; height: number };
 /** screen = (x, y) + sequencePoint · scale, in CSS px relative to the viewport's top-left. */
 export type View = { scale: number; x: number; y: number };

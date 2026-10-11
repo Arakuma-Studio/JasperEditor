@@ -1,7 +1,4 @@
-// Clip blend modes on the Remotion path (keyframes-blend, REMOTION_E2E=1): the composition's blend scopes (GL
-// compositor over the HTML-in-Canvas backdrop) and CSS modes rendered for real in headless Chrome, every mode at 60 %
-// opacity, checked against `blendPixel` exactly like the native export (blend-export.test.ts) — the native ↔ preview
-// parity of every mode. The patterns, layer and tolerances are the native test's.
+// Uses the native blend test's patterns and tolerances to compare Chrome rendering with blendPixel.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

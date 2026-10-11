@@ -1,4 +1,3 @@
-// README "Use JasperEditor from Claude Code / Codex / Cursor": the tool list and its count match the server.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';

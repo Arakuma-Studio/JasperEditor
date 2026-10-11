@@ -1,4 +1,4 @@
-// Export checks of the Warp Stabilizer (workstream gaps, docs/wp-notes/gaps.md §FX-6): an enabled stabiliser without
+// Export checks of the Warp Stabilizer (docs/wp-notes/gaps.md §FX-6): an enabled stabiliser without
 // its analysis would export unstabilised (the preview shows Premiere's "Analyzing" banner meanwhile), so the planner
 // refuses with WARP_NOT_ANALYZED (AGENTS.md §4); frames outside the analysed span hold the nearest analysed frame's
 // correction and are reported as a warning (WARP_PARTIAL).

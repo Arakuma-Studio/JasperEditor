@@ -1,4 +1,4 @@
-// GPU painter's order for the simulation-warp family (sim-warp workstream): pieces (cards, shards, polygons) and balls
+// GPU painter's order for the simulation-warp family: pieces (cards, shards, polygons) and balls
 // whose depth depends on pictures only the GPU has (gradient maps, the layer's own colours) are drawn far to near by
 // sorting their depth keys on the GPU — a bitonic sorting network over an rgba32f texture of (key, id) pairs, one
 // ping-pong pass per network stage (`update` passes of one output, one program). The draw pass then reads the id of

@@ -1,8 +1,5 @@
-// Effect Controls ▸ Time Remapping (workstream `time`): Premiere's intrinsic Time Remapping effect — the Speed at the
-// playhead (Premiere shows it read-only; here typing a value sets the speed of the segment under the playhead), the
-// stopwatch (on: a remap with the band shown; off: every speed keyframe deleted), keyframe navigation and the list
-// of speed keyframes with their transitions, the Time Interpolation of the clip and what happens to its linked audio
-// (Premiere: "the audio portion of the clip remains unchanged by Time Remapping, although it remains linked").
+import type { CommandInput } from '@jasper/project';
+// Time Remapping changes the picture while linked audio remains unchanged.
 import {
 	activeRemap,
 	type Clip,
@@ -46,8 +43,8 @@ export function TimeRemapSection(props: { session: EditorSession; clipId: string
 	const inside = frame >= c.start && frame < c.start + c.duration;
 	const speed = clipSpeedAt(c, inside ? frame : c.start, rate);
 	const keys = remapKeyViews(c, rate);
-	const apply = (label: string, commands: unknown[]) =>
-		session.apply({ label, origin: 'user', sequenceId: seq.id, commands: commands as never[] });
+	const apply = (label: string, commands: CommandInput[]) =>
+		session.apply({ label, origin: 'user', sequenceId: seq.id, commands });
 	const seek = (f: number) => session.transport.seek(Math.round(f));
 	const prev = [...keys].reverse().find((k) => k.frame < frame - 0.5);
 	const next = keys.find((k) => k.frame > frame + 0.5);

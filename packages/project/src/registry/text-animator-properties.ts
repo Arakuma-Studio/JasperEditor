@@ -1,4 +1,4 @@
-// Property specs of text animators, Path Options and More Options (workstream text-animators). Dynamic per clip:
+// Property specs of text animators, Path Options and More Options. Dynamic per clip:
 // keys address animators and selectors by id, storage paths by their index in the clip, so `param.set`,
 // `param.setAnimated` and every keyframe command work on them like on any clip property (stopwatches, keys,
 // graphs, copy/paste of keyframes). Static popups (Based On, Mode, Shape, …) are `animatable: 'no'` fields
@@ -242,7 +242,7 @@ export function textAnimatorPropertySpecs(clip: TextLike): PropertySpec[] {
 	if (clip.kind !== 'text') return [];
 	const out: PropertySpec[] = [];
 	(clip.animators ?? []).forEach((a, ai) => {
-		const props = a.properties as Record<string, unknown>;
+		const props = a.properties;
 		for (const def of ANIMATOR_PROPERTY_DEFS)
 			if (props[def.key] !== undefined) out.push(propertySpec(a, ai, def));
 		for (const tag of Object.keys(a.properties.axes ?? {})) out.push(axisSpec(a, ai, tag));
@@ -271,9 +271,7 @@ export function resolveTextAnimatorSpec(key: string, clip: TextLike | undefined)
 		if (parts[2] === 'axes' && parts.length === 4)
 			return a.properties.axes?.[parts[3]!] ? axisSpec(a, ai, parts[3]!) : undefined;
 		const def = parts.length === 3 ? ANIMATOR_PROPERTY_BY_KEY.get(parts[2]!) : undefined;
-		return def && (a.properties as Record<string, unknown>)[def.key] !== undefined
-			? propertySpec(a, ai, def)
-			: undefined;
+		return def && a.properties[def.key] !== undefined ? propertySpec(a, ai, def) : undefined;
 	}
 	if (parts[1] === 'selectors' && parts.length === 4) {
 		const si = a.selectors.findIndex((s) => s.id === parts[2]);

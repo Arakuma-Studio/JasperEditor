@@ -1,4 +1,3 @@
-// Essential Sound panel (audio-fx; Premiere Window ▸ Essential Sound): audio types, their sections and presets.
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

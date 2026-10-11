@@ -1,5 +1,3 @@
-// Agent bridge entry points (ARCHITECTURE §11): one AgentBridge per open session, `window.jasper` in dev
-// and Electron builds, and React hooks for the project lifecycle and the shell's approval cards (shell/AgentApprovals.tsx).
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { useEffect, useState } from 'react';
@@ -27,7 +25,7 @@ const listeners = new Set<() => void>();
 function shouldExposeWindowApi(): boolean {
 	if (typeof window === 'undefined') return false;
 	if (import.meta.env?.DEV) return true;
-	if ((window as { jasperDesktop?: unknown }).jasperDesktop) return true;
+	if (window.jasperDesktop) return true;
 	try {
 		return window.localStorage?.getItem('jasper:agent-bridge') === '1';
 	} catch {

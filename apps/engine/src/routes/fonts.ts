@@ -1,4 +1,3 @@
-// Bundled font catalog and files (ARCHITECTURE §9.2, S04:FT-001…003).
 import type { FastifyInstance } from 'fastify';
 import { serveFile } from '../tools/http.ts';
 import { fail, guarded } from '../tools/reply.ts';

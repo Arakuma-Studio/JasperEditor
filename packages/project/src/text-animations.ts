@@ -27,8 +27,6 @@ export type TextAnimationSpec = {
 	description: string;
 };
 
-// ---------------------------------------------------------------- the catalogue (S11:TXA-003)
-
 /** Animated piece of the text (S11 §0 *Unit*). */
 export const TEXT_ANIMATION_UNITS = ['char', 'word', 'line'] as const;
 /** Order in which the stagger visits the units (`random` is seeded by the clip id). */

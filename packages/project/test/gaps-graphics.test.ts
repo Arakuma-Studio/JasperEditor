@@ -1,5 +1,3 @@
-// Essential Graphics (gaps GR-4/5): graphic sequences, layers, align / distribute, Responsive Design (position pins,
-// Intro / Outro time), Roll / Crawl and .jgt templates — commands with undo and refusals, and what renders.
 import { describe, expect, it } from 'vitest';
 import {
 	alignOffsets,
@@ -17,7 +15,6 @@ import {
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
-/** A graphic nest with one text layer in the harness's sequence (returns ids). */
 function makeGraphic(h: Harness) {
 	const r = h.ok([
 		{
@@ -40,6 +37,47 @@ const fxList = (c: unknown) =>
 	c as { transform: { position: { value: [number, number]; keyframes: unknown[] } } };
 
 describe('essential graphics', () => {
+	it('rejects a malformed template payload before importing project items', () => {
+		const h = new Harness();
+		const before = h.doc;
+		const result = h.tx([
+			{
+				type: 'graphic.importTemplate',
+				at: 0,
+				template: {
+					format: GRAPHIC_TEMPLATE_FORMAT,
+					version: 1,
+					name: 'Invalid graphic',
+					frame: { width: 1920, height: 1080 },
+					payload: {},
+				},
+			},
+		]);
+		expect(result).toMatchObject({ ok: false, errors: [{ code: 'E_SCHEMA', path: ['payload'] }] });
+		expect(h.doc).toBe(before);
+	});
+
+	it('refuses layer pins on caption clips without changing the project', () => {
+		const h = new Harness();
+		h.ok([
+			{ type: 'graphic.update', sequenceId: h.seqId, graphic: { intro: 0, outro: 0 } },
+			{ type: 'caption.add', at: 0, duration: 30, text: 'Caption' },
+		]);
+		const caption = Object.values(h.seq.clips).find((clip) => clip.kind === 'captions')!;
+		const before = h.doc;
+		const result = h.tx([
+			{
+				type: 'graphic.setPins',
+				sequenceId: h.seqId,
+				clipId: caption.id,
+				target: 'frame',
+				edges: ['left'],
+			},
+		]);
+		expect(result).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
+		expect(h.doc).toBe(before);
+	});
+
 	it('align / distribute offsets', () => {
 		const rects = [
 			{ x: 10, y: 10, width: 100, height: 50 },
@@ -50,7 +88,6 @@ describe('essential graphics', () => {
 		expect(alignOffsets(rects, 'left', frame).map((o) => o[0])).toEqual([-10, -300, -150]);
 		expect(alignOffsets(rects, 'center', frame)[0]).toEqual([960 - 60, 0]);
 		const d = alignOffsets(rects, 'distributeHorizontal', null);
-		// Equal gaps between consecutive layers after the move.
 		const xs = rects
 			.map((r, i) => ({ l: r.x + d[i]![0], r: r.x + r.width + d[i]![0] }))
 			.sort((a, b) => a.l - b.l);

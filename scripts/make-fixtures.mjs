@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fixtureH264Args } from './fixture-encoding.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'fixtures', 'media');
@@ -26,13 +27,10 @@ const ffmpeg = process.env.JASPER_FFMPEG || 'ffmpeg';
 mkdirSync(outDir, { recursive: true });
 
 const base = ['-hide_banner', '-loglevel', 'error', '-y'];
-// H.264 sources that mimic camera files. x264 is used when the ffmpeg has it (the recipe the fixtures were
-// tuned with); an LGPL build (ARCHITECTURE D-13) encodes them with OpenH264 instead, so x264 is never needed.
-const encoders = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '';
-const h264 =
-	/\blibx264\b/.test(encoders) || !/\blibopenh264\b/.test(encoders)
-		? ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', '30']
-		: ['-c:v', 'libopenh264', '-b:v', '4M', '-allow_skip_frames', '0', '-pix_fmt', 'yuv420p', '-g', '30'];
+const encoderProbe = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+if (encoderProbe.error) throw encoderProbe.error;
+if (encoderProbe.status !== 0) throw new Error(`Cannot inspect fixture encoders: ${encoderProbe.stderr}`);
+const h264 = fixtureH264Args(encoderProbe.stdout, process.env.JASPER_FFMPEG_LGPL_ONLY === '1');
 const aac = ['-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000'];
 /**
  * A tone whose level changes over time, so timeline waveforms show a shape (a steady sine draws as a flat
@@ -88,7 +86,7 @@ const frameCode = (colour) => [
 	'64',
 ];
 
-/** @type {({name: string, steps: (out: string) => string[][]} | {name: string, recipe: string, make: (out: string) => unknown})[]} */
+/** @type {import('./fixtures/types.ts').Fixture[]} */
 const fixtures = [
 	{
 		name: 'clip-a.mp4',
@@ -205,7 +203,7 @@ const fixtures = [
 	},
 ];
 
-// M2 (ARCHITECTURE §19.11): feature packages add fixtures in their own module `scripts/fixtures/<name>.mjs`
+// Fixture modules under `scripts/fixtures/` are discovered automatically.
 // exporting `fixtures(ctx)` → entries `{name, steps(out)}` (ffmpeg argument lists, as above) or
 // `{name, recipe, make(out)}` (custom generator; `recipe` is any string that changes when the output would).
 const pluginDir = join(root, 'scripts', 'fixtures');
@@ -218,10 +216,8 @@ if (existsSync(pluginDir)) {
 	}
 }
 
-// One generator at a time (verify workstream): several test files spawn this script at once on a clean checkout
-// (CI), and concurrent runs made every fixture twice, replaced files other tests were reading, and failed renaming a
-// directory fixture onto the other run's copy (ENOTEMPTY). The lock holds the owner's pid; a dead owner's lock is
-// taken over. Whoever waited then finds the fixtures current and skips them.
+// The lock prevents concurrent fixture generators from replacing files another test is reading.
+// A dead owner's lock can be taken over; waiters recheck recipe stamps after acquiring it.
 const lockFile = join(outDir, '.make-fixtures.lock');
 const alive = (pid) => {
 	try {
@@ -252,8 +248,8 @@ for (let waited = 0; ; ) {
 const unlock = () => {
 	try {
 		if (readFileSync(lockFile, 'utf8').trim() === String(process.pid)) rmSync(lockFile, { force: true });
-	} catch {
-		// already gone
+	} catch (error) {
+		if (error?.code !== 'ENOENT') console.error(`Could not release fixture lock: ${error.message}`);
 	}
 };
 process.on('exit', unlock);

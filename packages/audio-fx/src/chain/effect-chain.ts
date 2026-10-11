@@ -1,16 +1,12 @@
 // An ordered stack of audio effect processors with keyframed parameters (clip, track or master effect stack). The
 // owner decides the time base of the keyframes (clip effects: content time; track/master: sequence time, S01:KF-002)
 // and calls `automate(t)` at its control points; `process` runs the enabled processors in order.
-import { type Animatable, evaluate, type ParamValue } from '@jasper/project/audio';
+import { type Animatable, type EffectInstance, evaluate, type ParamValue } from '@jasper/project/audio';
 import type { AudioProcessor } from '../core/effect.ts';
 import { createProcessor } from '../registry.ts';
 
-/** One effect instance of a stack (the document's `EffectInstance` shape). */
-export type ChainEffect = {
-	id: string;
-	effectId: string;
-	enabled: boolean;
-	params: Readonly<Record<string, Animatable<ParamValue>>>;
+export type ChainEffect = Pick<EffectInstance, 'id' | 'effectId' | 'enabled'> & {
+	params: Readonly<EffectInstance['params']>;
 };
 
 type Slot = {
@@ -76,7 +72,7 @@ export class EffectChain {
 	private push(slot: Slot, name: string, v: ParamValue): void {
 		if (slot.last.has(name) && slot.last.get(name) === v) return;
 		slot.last.set(name, v);
-		slot.processor.setParam(name, v as number);
+		slot.processor.setParam(name, v);
 	}
 
 	/** True when any enabled effect has keyframes. */
@@ -86,8 +82,7 @@ export class EffectChain {
 
 	/** Evaluates the keyframed params at time `t` (the stack's time base) and pushes changed values. */
 	automate(t: number): void {
-		for (const s of this.active)
-			for (const a of s.animated) this.push(s, a.name, evaluate(a.anim, t) as ParamValue);
+		for (const s of this.active) for (const a of s.animated) this.push(s, a.name, evaluate(a.anim, t));
 	}
 
 	/** Total latency (samples) of the enabled processors. */

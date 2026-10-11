@@ -19,7 +19,6 @@ export type Features = {
 	rates: readonly { rate: Rate; dropFrame: boolean }[];
 	videoTracks: number;
 	audioTracks: number;
-	/** Clips per track (max). */
 	clips: number;
 	transform: boolean;
 	opacity: boolean;
@@ -38,7 +37,6 @@ export type Features = {
 	generators: boolean;
 	nested: boolean;
 	audioOnlyMedia: boolean;
-	/** Media start timecode. */
 	timecode: boolean;
 };
 
@@ -103,7 +101,6 @@ function key<T>(time: number, value: T, interpolation: Keyframe<T>['interpolatio
 	};
 }
 
-/** A random project with one top sequence (and, with `nested`, one nested sequence used by a clip). */
 export function arbProject(f: Features): fc.Arbitrary<IProject> {
 	return fc
 		.record({
@@ -337,7 +334,6 @@ function build(f: Features, g: Gen): IProject {
 		(video ? seq.video : seq.audio).push(track);
 	});
 	if (f.links) {
-		// Link the first video clip with the first audio clip of the same media and timing.
 		for (const v of seq.video[0]?.clips ?? [])
 			for (const a of seq.audio[0]?.clips ?? [])
 				if (!v.link && !a.link && v.start === a.start && v.duration === a.duration) {

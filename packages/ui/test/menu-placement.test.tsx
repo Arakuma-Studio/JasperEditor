@@ -1,4 +1,3 @@
-// Menus stay inside the window (wp fixups): point menus flip / pin and scroll, submenus flip left and slide up.
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -83,7 +82,7 @@ describe('PointMenu', () => {
 			for (const k of ['offsetWidth', 'scrollHeight'] as const) {
 				const d = sizes[k];
 				if (d) Object.defineProperty(HTMLElement.prototype, k, d);
-				else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+				else Reflect.deleteProperty(HTMLElement.prototype, k);
 			}
 		}
 	});

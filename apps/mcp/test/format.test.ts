@@ -1,6 +1,3 @@
-// The compact timeline table agents read (`get_timeline`). Regression (verify workstream): a time-remapped clip
-// showed its source as sourceIn + duration (e.g. "0–11 s" for 6 s of media slowed down) instead of the media its
-// frames actually show.
 import {
 	applyTransaction,
 	createCounterIdSource,

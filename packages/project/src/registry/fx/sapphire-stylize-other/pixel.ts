@@ -32,8 +32,6 @@ import {
 
 const BIN = SAPPHIRE_BINS.stylize;
 
-// ---------------------------------------------------------------- S_PixelSort
-
 export const PIXEL_SORT_TYPES = [
 	'monochrome',
 	'average',
@@ -297,8 +295,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_PixelMosh
 
 /**
  * The hold frame ("dropped I-frame") in effect at clip-local `frame`: automatic = seeded intervals of Frame Interval

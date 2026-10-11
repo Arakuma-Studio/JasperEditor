@@ -64,8 +64,6 @@ export async function sha256File(file) {
 	return h.digest('hex');
 }
 
-// ------------------------------------------------------------------------------------------ licensing
-
 /**
  * configure switches that make a build GPL or nonfree (FFmpeg 7.1 configure: EXTERNAL_LIBRARY_GPL_LIST,
  * EXTERNAL_LIBRARY_NONFREE_LIST, HWACCEL_LIBRARY_NONFREE_LIST, plus `--enable-gpl` / `--enable-nonfree`
@@ -115,7 +113,7 @@ function configureFlags(text) {
 }
 
 /**
- * vid.stab (S07:PST-003, ARCHITECTURE D-13 M2 note): `--enable-libvidstab` is only acceptable for a build of
+ * vid.stab (ARCHITECTURE D-13): `--enable-libvidstab` is only acceptable for a build of
  * the pinned post-relicense (LGPL-2.1-or-later) vid.stab commit, which the build records in BUILDINFO.json
  * (`libvidstab: {commit, license}`). Any other vid.stab — every release up to v1.1.2 is GPL — fails.
  * Returns null when the record is acceptable, else the reason.

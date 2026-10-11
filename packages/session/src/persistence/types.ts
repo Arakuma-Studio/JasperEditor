@@ -1,17 +1,10 @@
-// ProjectStore interface (S01:PER-001).
-import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
+import type { Lease, ProjectSummary, RecoveryInfo, RecoveryListResponse, VersionInfo } from '@jasper/api';
 import type { Issue, ProjectDocument, RepairEntry } from '@jasper/project';
+import type { ProjectViewState } from '../view.ts';
 
-export type { Lease, ProjectSummary, RecoveryInfo, VersionInfo };
+export type { ProjectViewState } from '../view.ts';
 
-/** Persisted, non-undoable view record (S01:SES-004). */
-export type ProjectViewState = {
-	version: 1;
-	views: Record<string, unknown>;
-	tabs: { open: string[] };
-	activeSequenceId: string | null;
-	[k: string]: unknown;
-};
+export type { Lease, ProjectSummary, RecoveryInfo, RecoveryListResponse, VersionInfo };
 
 export type OpenedProject = {
 	document: ProjectDocument;
@@ -42,13 +35,13 @@ export type RecoveryWrite = {
 export type RecoveredSnapshot = { info: RecoveryInfo; document: ProjectDocument; repairs: RepairEntry[] };
 
 /**
- * Crash-recovery journals and saved-version restores (process workstream, D-39). Optional: stores without them
+ * Crash-recovery journals and saved-version restores (D-39). Optional: stores without them
  * (tests, headless tools) simply don't journal.
  */
 export interface RecoveryStore {
 	writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void>;
 	/** Journals no live session holds any more, newest first. */
-	listRecovery(projectId: string): Promise<RecoveryInfo[]>;
+	listRecovery(projectId: string): Promise<RecoveryListResponse>;
 	readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot>;
 	/** Deletes a journal: the session's own (with its `leaseId`) or a candidate nobody holds. */
 	discardRecovery(projectId: string, sessionId: string, leaseId?: string): Promise<void>;
@@ -78,7 +71,7 @@ export interface ProjectStore {
 	duplicate(projectId: string, name: string): Promise<string>;
 	delete(projectId: string): Promise<void>;
 	exportFile(projectId: string): Promise<Blob | { path: string }>;
-	importFile(file: Blob | { path: string }): Promise<string>;
+	importFile(file: Blob): Promise<string>;
 	/** `takeOver` revokes another session's lease ("Take over editing", S01:PER-040). */
 	acquireLease(projectId: string, sessionId?: string, opts?: { takeOver?: boolean }): Promise<Lease>;
 	/** Heartbeat / release (engine leases, S01:PER-040). Optional for stores without leases. */

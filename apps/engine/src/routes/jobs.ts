@@ -1,4 +1,3 @@
-// Job list and control (ARCHITECTURE §9.2, S04 §17).
 import { JobListQuerySchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';

@@ -129,11 +129,11 @@ const FX_PREVIEW_SCALE: Record<PlaybackResolution, number> = {
 function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const engine = useEngineOrNull()?.client ?? null;
 	const transport = session.transport;
-	// audio-mix: automation passes and audio scrubbing follow this session's transport.
+	// automation passes and audio scrubbing follow this session's transport.
 	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
-	// ui-perf: gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
+	// gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
 	const drawn = useGestureFrameDocument();
 	const media = useSessionState((s) => s.media);
 	const autoProxies = useSessionState((s) => s.toggles.useProxies);
@@ -145,7 +145,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;
-	// wp-multicam: the Multi-Camera view plays a virtual document — the angle grid next to the program — in the same
+	// the Multi-Camera view plays a virtual document — the angle grid next to the program — in the same
 	// Player. Which multi-camera track/source it follows changes only when the playhead crosses clips.
 	const mcState = useStoreSelector(multicamViewStore, (s) => s);
 	const [mcKey, setMcKey] = useState<{ key: string; frame: number }>({ key: '', frame: 0 });
@@ -225,7 +225,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const colorBypass = useColorBypass();
 	// GPU shader effects follow the playback resolution (1/2 → canvases at half size), keeping heavy stacks interactive.
 	const fxPreviewScale = FX_PREVIEW_SCALE[monitor.playbackResolution];
-	// three-d: the selected 3D view (View ▸ Switch 3D View) draws the 3D layers through its camera.
+	// the selected 3D view (View ▸ Switch 3D View) draws the 3D layers through its camera.
 	const views3d = useStoreSelector(threeDViews, (s) => (seqId ? s.bySequence[seqId] : undefined));
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the view store entry carries the view cameras
 	const view3d = useMemo(
@@ -267,13 +267,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const shell = useShellRuntimeOrNull();
 	const [layerMenu, setLayerMenu] = useState<{ x: number; y: number; clipId: string | null } | null>(null);
 	const menuCtx = () => shell?.getCtx() ?? ctx;
-	// edit-ux: transport buttons run with the shell's live context focused on this monitor.
+	// transport buttons run with the shell's live context focused on this monitor.
 	const barCtx = () => {
 		const c = shell?.getCtx();
 		return c ? { ...c, focus: { panel: 'program' as const, instanceId } } : ctx;
 	};
 
-	// ------------------------------------------------------------------ Player ↔ TransportStore (ARC-010)
 	const live = useRef({ seq, end, fps });
 	live.current = { seq, end, fps };
 	const [playerRate, setPlayerRate] = useState(1);
@@ -373,7 +372,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			// storage unavailable
 		}
 		if (!import.meta.env.DEV && !bridge) return;
-		const w = window as unknown as {
+		const w = window as Window & {
 			__jasperMonitor?: { session: EditorSession; driver: PlaybackDriver; gestureFrames: GestureFrames };
 		};
 		w.__jasperMonitor = { session, driver, gestureFrames: gestureFrames(session.store) };
@@ -382,7 +381,6 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		};
 	}, [session, driver]);
 
-	// ------------------------------------------------------------------ zoom / pan (PGM-010…015)
 	const setPan = useCallback(
 		(pan: Vec2) =>
 			monitorStores.program.setState((s) => ({
@@ -417,7 +415,6 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		return () => el.removeEventListener('wheel', onWheel);
 	}, [viewportRef, viewport, frameSize]);
 
-	// ------------------------------------------------------------------ chrome
 	const playing = useTransportPlaying(transport);
 	const format: TimecodeFormat = useMemo(
 		() => ({
@@ -752,7 +749,6 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				onSeek={seek}
 				testId="program-ruler"
 			/>
-			{/* edit-ux: data-driven transport row with the Button Editor. */}
 			<TransportBar monitor="program" ctx={barCtx} playing={playing} testId="program-transport" />
 			{/* Portaled: the dock's split views clip and stack their panels' fixed descendants. */}
 			{layerMenu

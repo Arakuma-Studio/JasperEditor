@@ -59,13 +59,11 @@ const TextContentInput = z.strictObject({
 			}),
 		)
 		.optional(),
-	/** text-animators workstream: per-paragraph overrides (`index` = paragraph number, 0-based). */
+	/** per-paragraph overrides (`index` = paragraph number, 0-based). */
 	paragraphs: z
 		.array(z.strictObject({ index: z.number().int().min(0), style: TextStyleSchema.partial() }))
 		.optional(),
 });
-
-// ---------------------------------------------------------------- text animators (M2, S11:TXA-006)
 
 /** A new animator side: `preset` (+ `version`, default the newest), window and params over the preset defaults. */
 export const TextAnimatorInputSchema = z.strictObject({
@@ -97,8 +95,6 @@ export const TextAnimationPatchSchema = z.strictObject({
 	out: TextAnimatorPatchSchema.nullable().optional(),
 });
 export type TextAnimationPatch = z.infer<typeof TextAnimationPatchSchema>;
-
-// ---------------------------------------------------------------- shapes (M2, S11:SHP-003)
 
 const vec2 = z.tuple([z.number(), z.number()]);
 /** clip.addShape geometry (static values; keyframes through the keyframe commands). */
@@ -177,7 +173,7 @@ export const ClipPlaceCmd = cmd('clip.place', {
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
 	/**
-	 * edit-structure: a sequence source is placed as a nested sequence (`true`, the default: nest-video + nest-audio
+	 * a sequence source is placed as a nested sequence (`true`, the default: nest-video + nest-audio
 	 * clips, Premiere's "Insert and overwrite sequences as nests") or as copies of its clips (`false`, "individual
 	 * clips"). Ignored for other sources.
 	 */
@@ -189,7 +185,7 @@ export const ClipAddTextCmd = cmd('clip.addText', {
 	content: TextContentInput,
 	box: TextBoxSchema.partial().optional(),
 	transform: TransformPatch.optional(),
-	/** M2 (S11:TXA-006): in/out animators. */
+	/** in/out animators. */
 	textAnimation: TextAnimationInputSchema.optional(),
 });
 export const ClipAddSolidCmd = cmd('clip.addSolid', { ...placementTarget, color: RGBASchema });
@@ -203,7 +199,7 @@ export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	...placementTarget,
 	/** Default: the composition's length at the sequence rate (S08:MGC-004); longer values are clamped. */
 	duration: TimeInputSchema.optional(),
-	/** M2 (S08): `mediaId` = the mg-bundle asset, `id` = composition id in it; version 1. */
+	/** `mediaId` = the mg-bundle asset, `id` = composition id in it; version 1. */
 	composition: z.strictObject({
 		mediaId: IdRefSchema,
 		id: z.string().min(1),
@@ -213,7 +209,7 @@ export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	props: z.record(z.string(), z.unknown()).optional(),
 	canvas: canvas.optional(),
 });
-/** M2 (S11:SHP-003): a rectangle or ellipse (default 400×400 at the sequence centre, 5 s). */
+/** a rectangle or ellipse (default 400×400 at the sequence centre, 5 s). */
 export const ClipAddShapeCmd = cmd('clip.addShape', {
 	...placementTarget,
 	/** Default 5 s. */
@@ -229,7 +225,7 @@ export const ClipAddCaptionsCmd = cmd('clip.addCaptions', {
 	range: z.strictObject({ from: TimeInputSchema, to: TimeInputSchema }).optional(),
 	style: CaptionStyleSchema.partial().optional(),
 	/**
-	 * wp captions: one caption clip per caption block (default), or one clip paging through the blocks (`false`).
+	 * one caption clip per caption block (default), or one clip paging through the blocks (`false`).
 	 * Blocks follow `rules` (Create Captions defaults: 42 characters × 2 lines, 1–7 s).
 	 */
 	split: z.boolean().optional(),
@@ -241,7 +237,7 @@ export const ClipAddAdjustmentCmd = cmd('clip.addAdjustment', {
 	at: TimeInputSchema,
 	duration: TimeInputSchema,
 	track: TrackRefSchema,
-	/** edit-structure: clip name (default "Adjustment Layer"). */
+	/** clip name (default "Adjustment Layer"). */
 	name: z.string().min(1).optional(),
 	ref: RefDeclSchema.optional(),
 });
@@ -287,7 +283,7 @@ export const ClipSlipCmd = cmd('clip.slip', { clipIds: IdListSchema, deltaFrames
 export const ClipSlideCmd = cmd('clip.slide', {
 	clipId: IdRefSchema,
 	deltaFrames: z.number().int(),
-	/** edit-ux: linked partners that start with the clip slide too (default true; Alt-drag = false). */
+	/** linked partners that start with the clip slide too (default true; Alt-drag = false). */
 	linked: z.boolean().optional(),
 });
 export const ClipSplitCmd = cmd('clip.split', {
@@ -353,7 +349,7 @@ export const ClipPatchSchema = z.strictObject({
 	/** Motion-graphic params merged over the current params and validated by the template. */
 	params: z.record(z.string(), z.unknown()).optional(),
 	/**
-	 * M2 (S08:MGC-007): composition clips — the whole props override object (replaces the current overrides,
+	 * composition clips — the whole props override object (replaces the current overrides,
 	 * validated against the composition's propsSchema; `{}` = reset to defaults).
 	 */
 	props: z.record(z.string(), z.unknown()).optional(),
@@ -367,11 +363,11 @@ export const ClipPatchSchema = z.strictObject({
 	loop: z.boolean().optional(),
 	maintainPitch: z.boolean().optional(),
 	style: CaptionStyleSchema.partial().optional(),
-	/** M2 (S11:TXA-006): text clips — `null` removes both sides; see TextAnimationPatchSchema. */
+	/** text clips — `null` removes both sides; see TextAnimationPatchSchema. */
 	textAnimation: TextAnimationPatchSchema.nullable().optional(),
-	/** M2 (S11:SHP-003): shape clips — merged into the current shape. */
+	/** shape clips — merged into the current shape. */
 	shape: ShapePatchSchema.optional(),
-	/** M2 (S11:ATP-009): motion-graphic clips — upgrade the template to `version` (params migrated). */
+	/** motion-graphic clips — upgrade the template to `version` (params migrated). */
 	template: z.strictObject({ version: z.number().int() }).optional(),
 });
 export type ClipPatch = z.infer<typeof ClipPatchSchema>;
@@ -395,11 +391,12 @@ export const ClipSetSpeedCmd = cmd('clip.setSpeed', {
  * the trimmed edge) to the covered frames, `skip` leaves that clip unchanged with a warning.
  */
 export const SourceFitSchema = z.enum(['refuse', 'trim', 'skip']);
+export type SourceFit = z.infer<typeof SourceFitSchema>;
 export const ClipReplaceSourceCmd = cmd('clip.replaceSource', {
 	clipId: IdRefSchema,
 	mediaId: IdRefSchema,
 	keepDuration: z.boolean().optional(),
-	/** M3 (additive): behaviour when the new media does not cover the clip (default `refuse`). */
+	/** behaviour when the new media does not cover the clip (default `refuse`). */
 	fit: SourceFitSchema.optional(),
 });
 export const ClipFitToFrameCmd = cmd('clip.fitToFrame', {

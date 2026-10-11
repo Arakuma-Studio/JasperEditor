@@ -12,8 +12,14 @@
 // journals are never offered, read for recovery or deleted by anyone but their session. A journal that is no longer
 // held and whose document differs from the saved project is a **recovery candidate**; one whose document equals
 // the saved project (the last autosave caught up before the crash) is stale and is removed when listed.
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { access, mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import {
+	type RecoveryInfo as RecoveryCandidate,
+	RecoveryInfoSchema,
+	type RecoveryListResponse,
+	type RecoveryPutRequest,
+} from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
 import { atomicWriteJson, randomId, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
@@ -26,38 +32,12 @@ const MAX_LABELS = 50;
 /** Largest snapshot accepted (the engine's JSON body limit is the other bound). */
 const MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
 
-export type RecoveryInfo = {
-	sessionId: string;
-	projectId: string;
-	projectName: string;
-	/** Revision of the saved project the session's unsaved changes are based on. */
-	baseRevision: number;
-	/** The session's local revision when the snapshot was written. */
-	revision: number;
-	startedAt: string;
-	savedAt: string;
-	/** Labels of the unsaved History steps, oldest first (at most 50). */
-	changes: string[];
-	/** Number of unsaved History steps (may exceed `changes.length`). */
-	changeCount: number;
-	sizeBytes: number;
-};
+type RecoveryInfo = Omit<RecoveryCandidate, 'projectRevision'>;
 
-export type RecoveryCandidate = RecoveryInfo & {
-	/** Current revision of the saved project (greater than `baseRevision` when it was saved again later). */
-	projectRevision: number;
-};
-
+export type { RecoveryCandidate };
+export type RecoveryWrite = RecoveryPutRequest;
+const JournalInfoSchema = RecoveryInfoSchema.omit({ projectRevision: true });
 type Lock = { pid: number; instance: string };
-
-export type RecoveryWrite = {
-	leaseId: string;
-	baseRevision: number;
-	revision: number;
-	changes: string[];
-	changeCount?: number;
-	envelope: { document: Record<string, unknown> } & Record<string, unknown>;
-};
 
 /** Whether a process with this pid exists (signal 0 checks without signalling; EPERM means it exists). */
 function processAlive(pid: number): boolean {
@@ -141,7 +121,7 @@ export class RecoveryJournal {
 		if (!doc || typeof doc !== 'object' || doc.projectId !== projectId)
 			throw new ProjectError('VALIDATION_FAILED', 400, 'The snapshot is not a document of this project');
 		const text = JSON.stringify(w.envelope);
-		if (text.length > MAX_SNAPSHOT_BYTES)
+		if (Buffer.byteLength(text) > MAX_SNAPSHOT_BYTES)
 			throw new ProjectError('VALIDATION_FAILED', 400, 'The snapshot is too large to journal');
 		await mkdir(dir, { recursive: true });
 		const prev = await readJsonOrNull<RecoveryInfo>(join(dir, 'session.json'));
@@ -193,35 +173,60 @@ export class RecoveryJournal {
 	}
 
 	/** Recovery candidates of a project, newest first (stale journals are removed on the way). */
-	async list(projectId: string): Promise<RecoveryCandidate[]> {
+	async list(projectId: string): Promise<RecoveryListResponse> {
 		let names: string[];
 		try {
 			names = await readdir(this.dir(projectId));
-		} catch {
-			return [];
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { candidates: [], warnings: [] };
+			throw error;
 		}
 		const saved = await this.opts.saved(projectId);
-		if (!saved) return [];
+		if (!saved) return { candidates: [], warnings: [] };
 		const savedDoc = JSON.stringify(saved.document);
-		const out: RecoveryCandidate[] = [];
+		const candidates: RecoveryCandidate[] = [];
+		const warnings: RecoveryListResponse['warnings'] = [];
 		for (const sessionId of names) {
 			if (!SESSION_ID_RE.test(sessionId)) continue;
-			if (await this.held(projectId, sessionId)) continue;
-			const dir = this.dir(projectId, sessionId);
-			const info = await readJsonOrNull<RecoveryInfo>(join(dir, 'session.json'));
-			const snap = await readJsonOrNull<{ document?: unknown }>(join(dir, 'snapshot.jasper'));
-			if (!info || !snap?.document || typeof snap.document !== 'object') {
-				// a session that died before its first complete write: nothing to recover
-				await rm(dir, { recursive: true, force: true });
-				continue;
+			try {
+				if (await this.held(projectId, sessionId)) continue;
+				const dir = this.dir(projectId, sessionId);
+				const { info, envelope } = await this.snapshot(projectId, sessionId);
+				if (JSON.stringify(envelope.document) === savedDoc) {
+					await rm(dir, { recursive: true, force: true });
+					continue;
+				}
+				candidates.push({ ...info, projectRevision: saved.revision });
+			} catch (error) {
+				warnings.push({
+					sessionId,
+					code: error instanceof ProjectError ? error.code : 'INTERNAL',
+					message:
+						error instanceof ProjectError
+							? error.message
+							: `Recovery journal ${sessionId} could not be inspected; remaining files have been preserved`,
+				});
 			}
-			if (JSON.stringify(snap.document) === savedDoc) {
-				await rm(dir, { recursive: true, force: true });
-				continue;
-			}
-			out.push({ ...info, projectRevision: saved.revision });
 		}
-		return out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+		return { candidates: candidates.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1)), warnings };
+	}
+
+	private async snapshot(
+		projectId: string,
+		sessionId: string,
+	): Promise<{ info: RecoveryInfo; envelope: Record<string, unknown> }> {
+		const dir = this.dir(projectId, sessionId);
+		const info = JournalInfoSchema.safeParse(await readJsonOrNull(join(dir, 'session.json')));
+		const envelope = await readJsonOrNull<Record<string, unknown>>(join(dir, 'snapshot.jasper'));
+		// Interrupted writes can leave a recoverable snapshot without complete metadata.
+		if (!info.success || !envelope?.document || typeof envelope.document !== 'object')
+			throw new ProjectError(
+				'VALIDATION_FAILED',
+				422,
+				`Recovery journal ${sessionId} is incomplete or unreadable; its files have been preserved for recovery`,
+				{ projectId, sessionId },
+			);
+		return { info: info.data, envelope };
 	}
 
 	/** A candidate's snapshot (refused while its session still holds it). */
@@ -229,16 +234,21 @@ export class RecoveryJournal {
 		projectId: string,
 		sessionId: string,
 	): Promise<{ info: RecoveryCandidate; envelope: Record<string, unknown> }> {
-		const candidate = (await this.list(projectId)).find((c) => c.sessionId === sessionId);
-		if (!candidate) {
-			if (await this.held(projectId, sessionId).catch(() => false))
-				throw new ProjectError('LEASE_HELD', 409, 'That session is still editing; its journal is in use');
-			throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
+		const dir = this.dir(projectId, sessionId);
+		try {
+			await access(dir);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+				throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
+			throw error;
 		}
-		const envelope = await readJsonOrNull<Record<string, unknown>>(
-			join(this.dir(projectId, sessionId), 'snapshot.jasper'),
-		);
-		if (!envelope) throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
-		return { info: candidate, envelope };
+		if (await this.held(projectId, sessionId))
+			throw new ProjectError('LEASE_HELD', 409, 'That session is still editing; its journal is in use');
+		const saved = await this.opts.saved(projectId);
+		if (!saved) throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
+		const { info, envelope } = await this.snapshot(projectId, sessionId);
+		if (JSON.stringify(envelope.document) === JSON.stringify(saved.document))
+			throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
+		return { info: { ...info, projectRevision: saved.revision }, envelope };
 	}
 }

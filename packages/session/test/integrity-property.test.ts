@@ -1,14 +1,3 @@
-// Security review DATA-1 (docs/security-review.md): data integrity under random edits across the command families
-// the parity workstreams added (masks, shapes, time remap, multicam recording, roto, camera tracking, 3D, captions,
-// text animators, expressions; gaps: proxies, audio channel mapping, sequence format, Warp Stabilizer) mixed with the core edits that move, trim, split and delete what they hang off.
-//
-// For every random transaction sequence, through a real EditorSession:
-//  - a refused transaction leaves the document reference unchanged, and no handler produces an invalid document
-//    (no E_INVARIANT / E_INTERNAL refusals);
-//  - the incremental autosave serialisation (`stringifyJson`, ui-perf) equals `JSON.stringify` after every step;
-//  - saving and loading is lossless: `loadProject` of the JSON gives the same document, with no repairs and no issues
-//    (a field the schema does not declare, or a repair that fires on a valid document, would silently lose data);
-//  - undoing everything restores the exact initial document, and redoing everything the exact final one.
 import {
 	createCounterIdSource,
 	createEmptyProject,
@@ -71,7 +60,6 @@ function asset(seconds: number, kind: 'video' | 'audio' = 'video'): Omit<MediaAs
 	} as Omit<MediaAsset, 'id'>;
 }
 
-/** The edited (first) sequence of each test session. */
 const MAIN = new WeakMap<EditorSession, string>();
 
 function newSession(): EditorSession {
@@ -92,7 +80,6 @@ function must(s: EditorSession, commands: unknown[]): unknown[] {
 	return r.results ?? [];
 }
 
-/** A project with every family present: two cameras in a multicam, a placed multicam clip, a camera, text, shape, captions. */
 function setup(): EditorSession {
 	const s = newSession();
 	const reg = (sec: number) =>
@@ -138,7 +125,6 @@ function clipsOf(doc: ProjectDocument, seqId: string) {
 const pick = <T>(list: readonly T[], i: number): T | undefined =>
 	list.length ? list[i % list.length] : undefined;
 
-/** Commands for one abstract step against the current document (null: nothing to do). */
 function concretize(
 	st: Step,
 	doc: ProjectDocument,
@@ -155,7 +141,7 @@ function concretize(
 	const camera = clips.find((c) => c.kind === 'camera');
 	const text = clips.find((c) => c.kind === 'text');
 	const captions = clips.filter((c) => c.kind === 'captions');
-	const mcClips = clips.filter((c) => 'multicam' in c && (c as { multicam?: unknown }).multicam);
+	const mcClips = clips.filter((c) => 'multicam' in c && c.multicam);
 	const items = Object.values(doc.items).filter((i) => i.kind === 'media');
 	const one = (...commands: unknown[]) => ({ sequenceId: seqId, commands });
 	switch (st.k) {
@@ -267,7 +253,6 @@ function concretize(
 			return items.length
 				? one({ type: 'item.delete', itemIds: [pick(items, st.a)!.id], force: true })
 				: null;
-		// ---- workstream gaps: proxies, audio channel mapping, sequence format, Warp Stabilizer
 		case 26: {
 			const m = pick(
 				Object.values(doc.media).filter((x) => x.kind === 'video'),
@@ -291,7 +276,7 @@ function concretize(
 			});
 		}
 		case 27: {
-			const withProxy = Object.values(doc.media).filter((x) => (x as { proxy?: unknown }).proxy);
+			const withProxy = Object.values(doc.media).filter((x) => x.proxy);
 			return withProxy.length
 				? one({ type: 'media.detachProxy', mediaIds: [pick(withProxy, st.a)!.id] })
 				: null;
@@ -361,7 +346,6 @@ describe('DATA-1: integrity under random edits of the new command families', () 
 				expect(loaded.repairs).toEqual([]);
 				expect(loaded.issues).toEqual([]);
 				expect(JSON.parse(JSON.stringify(loaded.document))).toEqual(JSON.parse(JSON.stringify(final)));
-				// Undo every step → the exact initial document; redo them all → the exact final one (each document between).
 				for (let i = docs.length - 1; i >= 0; i--) {
 					expect(s.getCommitted()).toBe(docs[i]);
 					expect(s.undo().ok).toBe(true);

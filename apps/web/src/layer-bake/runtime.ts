@@ -112,8 +112,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 		if (this.scanTimer) clearTimeout(this.scanTimer);
 	}
 
-	// ------------------------------------------------------------------ BakedLayerRuntime
-
 	subscribe = (cb: () => void): (() => void) => {
 		this.listeners.add(cb);
 		return () => this.listeners.delete(cb);
@@ -145,8 +143,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 		const id = this.identityOf(clip);
 		return id ? (this.previews.get(id) ?? null) : null;
 	}
-
-	// ------------------------------------------------------------------ scanning
 
 	private scanSoon(ms = 150): void {
 		if (this.disposed) return;
@@ -204,8 +200,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 		}, PREVIEW_IDLE_MS);
 		this.scheduled.set(clipId, { identity, timer });
 	}
-
-	// ------------------------------------------------------------------ jobs
 
 	/** Identity of a clip in a document (null: the clip is no longer a graded DOM layer of that sequence). */
 	private identityIn(doc: ProjectDocument, sequenceId: string, clipId: string): string | null {
@@ -284,8 +278,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 		this.notify();
 	}
 }
-
-// ---------------------------------------------------------------- one runtime per open session
 
 let current: LayerBakeRuntime | null = null;
 const facadeListeners = new Set<() => void>();

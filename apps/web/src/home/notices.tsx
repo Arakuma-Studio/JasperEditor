@@ -1,4 +1,3 @@
-// Notices for import results and export completion, including download links (S05 §13).
 import { Button, IconButton, Z } from '@jasper/ui';
 import { useEffect, useSyncExternalStore } from 'react';
 import type { ToastRequest } from '../commands/types.ts';

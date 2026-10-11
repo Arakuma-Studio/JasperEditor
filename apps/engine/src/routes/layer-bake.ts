@@ -1,16 +1,8 @@
-// Layer bake (M2, S11 §6, ARCHITECTURE §20.5). Owner: wp-m2-layer-bake.
-//   POST /api/layer-bake/preview   graded VP9-alpha preview of one DOM layer (S11:LBK-010) → 202 EngineJob
-//                                  (`?wait=1` → the finished job, result LayerBakePreviewResult)
-//   GET  /mg/layers/:key/:file     cached bake files (master.mov, still.png, preview.webm; graded.png?n=<frame>: frame
-//                                  n of the graded PNG sequence), Range, signable (the Remotion path loads graded
-//                                  masters through one signed URL per entry)
-// Also registers the `layer-bake` native extension (text, shapes and anime templates exported through cached alpha
-// masters), the `layer-bake` job runner, the `features.layerBake` capability block and the cache GC.
-// Registered after `mg-bundles` and before `tracking` (extension order, ARCHITECTURE §19.6).
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LayerBakePreviewRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { replyWithJob } from '../jobs/reply.ts';
 import { layerBakeExtension } from '../layer-bake/extension.ts';
 import { hasColorEffects, isDomLayer } from '../layer-bake/layer.ts';
 import { bakeParallelismFromEnv, LayerBakeService } from '../layer-bake/service.ts';
@@ -109,20 +101,7 @@ export default async function layerBakeRoutes(app: FastifyInstance): Promise<voi
 					join(svc.dir, bake.key),
 					join(svc.dir, grade.key),
 				]);
-			if (req.query.wait === '1') {
-				const done = await core.queue.wait(job.id);
-				if (done.state !== 'succeeded')
-					throw new HttpError(
-						422,
-						done.error?.code ?? 'LAYER_BAKE_FAILED',
-						done.error?.message ?? done.state,
-						{
-							jobId: done.id,
-						},
-					);
-				return done;
-			}
-			return reply.code(202).send(job);
+			return replyWithJob(core.queue, job, req.query.wait, reply, 'LAYER_BAKE_FAILED');
 		}),
 	);
 

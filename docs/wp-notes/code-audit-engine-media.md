@@ -1,0 +1,68 @@
+# Engine media and worker code audit
+
+Scope: `apps/engine/src/{processing,roto,tracking,camtrack,speech,media,derivatives,tools,imports,gaps,time,three-d,sync,perf,interchange,fonts,effect-presets}`. Source, caller, declaration and test inspection covered duplication, shared types, dependency cycles, exception boundaries, obsolete paths and comments. Repository safety and format compatibility requirements take precedence over removing defensive code.
+
+## Assessment and implemented recommendations
+
+| Finding | Assessment | Change |
+| --- | --- | --- |
+| Four worker entry resolvers independently implemented the same lookup and `tsx` loading | Duplication had already produced a functional inconsistency: source workers ignored the environment argument when selecting their Node runtime. An invalid explicit JavaScript entry silently selected another worker. | `tools/worker-command.ts` implements the shared resolver. Source and bundled commands both honor the provided runtime environment. Explicit entries must exist and have a supported extension. An unresolved `tsx/esm` import fails at resolution instead of retrying the same import from a different working directory. |
+| OpenCV modules, matrices and tracker results were broadly `any` | The installed `@techstark/opencv-js` 4.12.0-release.1 package supplies `Mat`, numerical array, tracker-function and constructor declarations. The declarations do not describe the Emscripten initialization callback/thenable. | Tracking and camera-feature code use those package declarations. `tools/opencv.ts` supplies the shared API/runtime types and one initialization promise for camera tracking and roto. Worker messaging uses `MessagePort`, `FrameTracker` and discriminated results. |
+| Promise adoption and a redundant exception wrapper in the dejudder worker | The pinned Emscripten module resolves its `then` callback with itself. Passing it to native promise resolution does not settle. A `try/catch` inside a promise executor added no error handling beyond the executor itself. | Keep the readiness callback/wrapper invariant. Remove the redundant catch and unsupported native-Promise compatibility branch; use the actual package runtime contract. |
+| The processing pool could resolve an arbitrary generic result through an `any` callback | Callers implicitly trusted the correspondence between operation and worker reply. | Pending callbacks accept the concrete reply union; operation methods narrow the discriminant and reject a mismatched reply. Existing worker exit/error rejection remains intact. |
+| Vision model files were cast through `unknown` into speech entries | Installation checks require a model id and file list, not speech-only multilingual/default metadata. | Model-store file operations accept `Pick` types for the fields they actually use; vision callers pass their entries directly. |
+| A range-aware frame step was discovered with an `in` check and double assertion | Range-neighbor access is a real optional capability used by the runner and dejudder implementation. | Declare `FrameStep.setRangeContext`; the runner invokes the optional typed method. Reuse project `Rational` rather than duplicating it in the processing runtime. |
+| Worker CLI events and internal promise bookkeeping used unrestricted results | Event producers have a small closed protocol; mutex completion carries no value. | Add shared worker-event unions; infer derivative/variant job results, share processing step reports, type raw roto prompts, and type mutex tails as `Promise<void>`, smooth-path pending computations as `Promise<Similarity \| null>` and tracking-pass completion precisely. |
+| Filesystem helpers treated permission/I/O errors as missing data or successful durability | An unreadable metadata file must not be interpreted as an absent file. A successful rename does not establish durability when directory sync fails. | `readJsonOrNull` recovers only missing files and malformed JSON. Directory sync ignores explicitly unsupported operations, with Windows-specific directory limitations; storage failures propagate. Engine-core persistence changes handle these errors at their user-facing boundaries. |
+| Engine startup did not report upload sweep failures | The upload service owns periodic work and reports failure through its error callback. | Wire that callback to the engine logger; use a property guard for Electron's optional `process.resourcesPath` instead of a double assertion. |
+| Interchange relink producers erased already typed registered media | Contracts are strengthened by the contracts audit. | Return registered-media values directly in both relink responses. |
+| Comments repeated section names, numbered obvious statements and recipe version history | They added reading cost without preserving an invariant or algorithm detail. | Remove those comments. Preserve algorithm references, port/licensing provenance, pixel units, worker serialization constraints and reasons for intentional numerical handling. |
+
+## Research and retained boundaries
+
+The source review used `docs/ARCHITECTURE.md`, `docs/gaps.md`, `docs/parity.md`, the processing, tracking, roto, speech and 3D workstream notes, and their tests. OpenCV types were checked against the installed package's `dist/src/types/opencv/{Mat,_hacks,video_track,calib3d,imgproc_feature,imgproc_transform,imgproc_object}.d.ts`. The shared runtime contract follows the pinned package consumed by the existing workers; no algorithm or third-party code was imported.
+
+An AST inventory measured 131 TypeScript/JavaScript source files and 256 type/interface declarations after the initial cleanup. It found **zero explicit TypeScript `any` nodes** in this scope. Remaining `unknown` uses include unsanitized JSON and errors, open extension metadata, JSON-schema/preset values, generic hash inputs and binary/DOM boundaries. Replacing those with assertions would reduce safety. Follow-up narrowing of open metadata requires a documented closed format and migration/consumer tests; it is not justified merely to eliminate the keyword.
+
+A TypeScript-AST import graph over 255 engine source files found **zero runtime local-module strongly connected components with more than one file**. Type-only imports were excluded. This is local static-module evidence; it does not claim that dynamic plugin relationships or the entire monorepo are acyclic.
+
+The review retained exception boundaries for untrusted project/media/model/worker input, optional capability discovery, cached data recovery, process cancellation and native allocation cleanup. OpenCV numerical convergence failure, speech temperature retries, processing auto-mode selection, missing-font substitution and LGPL encoder selection are documented product/algorithm behavior, not obsolete alternate implementations. Removing them as textual “fallbacks” would change supported behavior. Historical project migrations and user-owned unrecognized preset fields remain preserved.
+
+`readJsonOrNull` still deliberately treats malformed JSON as unavailable; callers that own irreplaceable project/library data must preserve or report corrupt bytes before replacing anything. Its generic return type is not schema validation. The persistence audit owns project recovery behavior; this change does not claim to redesign all metadata formats.
+
+## Verification
+
+Focused tests cover worker runtime selection, missing explicit worker overrides, tracking geometry, camera jobs and solves, roto algorithms, processing ranges/steps, metadata I/O failures and directory durability. `fs.test.ts` includes a `fast-check` JSON round-trip property. Loading the unchanged filesystem helper from baseline `12049d8e` into the new filesystem suite reproduced five failures: three swallowed metadata read errors and two false durability successes (three other tests passed). The property compares serialized JSON values, accounting for JSON's normalization of negative zero. The source-runtime regression also exercises behavior absent from the previous implementation.
+
+The filesystem and worker-runtime focused suite passed: 2 files, 13 tests (`pnpm exec vitest run apps/engine/test/fs.test.ts apps/engine/test/node-runtime.test.ts --maxWorkers=1 --testTimeout=120000`). The small suites now import a separate temporary-directory helper so they do not load the entire engine merely to create a directory.
+
+Changed-source Biome checks passed during implementation. The branch-wide engine typecheck was stopped at the integrator's request because many concurrent typechecks exhausted the shared host; the serialized integration gate owns the final typecheck/build result. The seven-file numerical/media run was stopped at the integrator's request when the integrated full suite began. Its initial `processing-steps` setup exceeded the hook limit while generating all fixture media; those 16 tests did not run, and the remaining numerical run was incomplete. It is not reported as a pass. The integrated suite owns that coverage and final typecheck/build results.
+
+No visual rendering algorithm was changed. No new media, models, binary assets or dependencies were added.
+
+## OpenCV declaration verification
+
+The integrated typecheck identified `minMaxLoc` as an inaccurate declaration in `@techstark/opencv-js` 4.12.0-release.1: `dist/src/types/opencv/core_array.d.ts` describes C++ output-pointer arguments. The [OpenCV 4.12 JavaScript bindings](https://github.com/opencv/opencv/blob/4.12.0/modules/js/src/core_bindings.cpp) register one-argument `Mat` and two-argument `Mat, Mat` overloads, both returning `MinMaxLoc`. The shared `OpenCvApi` replaces only that declaration with the two actual signatures, reusing the package's matrix and result types. The point tracker's one-argument call remains valid without extra mask allocations or type assertions. A focused runtime test verifies extrema and coordinates both across a whole matrix and through a mask. Integration remains responsible for the complete engine typecheck and suite.
+
+`pnpm exec vitest run apps/engine/test/opencv.test.ts --maxWorkers=1` passed (one file, one test). The initial attempt exceeded the five-second test limit during WebAssembly initialization; initialization now has a separate 30-second setup budget, while the assertions retain the default timeout. Biome passed for both touched TypeScript files, and `git diff --check` passed. No broad tests or full typecheck were rerun.
+
+## Smooth-path test report typing
+
+The remaining explicit `any` in `smoothpath.test.ts` erased the report returned by the in-process smooth-path step. Its finite fixture projection now matches the fields emitted by `smoothpath/step.ts`, reusing `SegmentPlan` for fallback details, used options, segment positions and camera statistics. The test helper accepts only `stabilize` steps with `method: 'smoothpath'`, so another processor cannot be passed to a helper expecting this report. Fallback remains nullable; its three property assertions use non-null assertions only after the existing `not.toBeNull()` expectation. The generic runner's metadata assertion now names this concrete report instead of admitting arbitrary keys and values.
+
+Against baseline `7105a89b`, TypeScript `transpileModule` with ES2022/ESNext produced byte-identical JavaScript (9,017 bytes; SHA-256 `a4a46b4026ed2e0b3c91fe7a74b2bad344a70687bdd328696715b1a461a09e1c`). An AST scan counted one explicit `any` before and zero after. Biome and `git diff --check` passed. No test execution or typecheck was repeated for this type-only change.
+
+## Integrated upscale timeout investigation
+
+The integrated processing-step suite reported 15 passes and one timeout: the 150-frame video `upscale` case exceeded its existing 600,000 ms limit. The separate tiled-gradient seam and mix-linearity test passed. At integration revision `2ae20363`, `upscale.ts`, `resample.ts`, `ffio.ts`, `tiny-onnx.ts` and the test model writer were unchanged from baseline `12049d8e`. The processing-step test's emitted JavaScript is identical to baseline when comments are excluded. The runner's behavioral cleanup concerns range-context dispatch; this whole-file upscale case has no range or context-frame capability.
+
+The unchanged upscale case passed in isolation using the already completed integration fixtures:
+
+```sh
+JASPER_REQUIRE_ORACLES=1 JASPER_FFMPEG=/usr/bin/ffmpeg JASPER_FFPROBE=/usr/bin/ffprobe \
+  pnpm exec vitest run apps/engine/test/processing-steps.test.ts -t 'upscale$' --maxWorkers=1
+```
+
+Result: one passed, 15 excluded by the name filter; 108.95 seconds in tests, 144.73 seconds total. The original 600-second budget and all assertions remained unchanged: frame packets/count, frame rate, ProRes codec, BT.709 color space, doubled width and bit-identical audio. The source fixture contains 150 video packets at 1280×720 and 25 fps. No fixture generation was required. The external log is `/tmp/jasper-audit-upscale-isolated.log`.
+
+The host had 12 logical CPUs, one-minute load 26.38 and CPU pressure `some avg10=49.46` when the rerun began; other integration tests and typechecks were still running. An active encoder produced a growing output throughout the rerun. The isolated success and unchanged relevant implementation support shared-host contention as the timeout explanation; no functional defect was reproduced, so no production or test-budget change was made. No broad suite or typecheck was repeated.

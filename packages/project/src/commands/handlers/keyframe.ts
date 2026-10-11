@@ -1,7 +1,3 @@
-// Keyframe handlers (ARCHITECTURE §5.3, S01 §12, S03 §12.3): keyframe.add/update/remove/move,
-// keyframe.setInterpolation (Linear / Bezier / Auto Bezier / Continuous Bezier / Hold and the Ease In,
-// Ease Out, Easy Ease presets of S01:KF-004) and keyframes.prune (S01:KF-006).
-//
 // Keyframes live in content time (flicks) of the owning clip; track and master parameters use sequence
 // time in flicks (S01:KF-002). Keys are addressed by id; the handlers locate them anywhere in the
 // document and re-use param.ts target resolution for validation, lock checks and time conversion.
@@ -30,13 +26,13 @@ import { PRUNE_EMPTY_KEYFRAMES, templateParamDraftAnim } from './mg-template.ts'
 import { getAt, resolveTarget, type Target, validateValue } from './param.ts';
 import { sourceTextDraftAnim } from './text-animators.ts';
 import type { HandlerMap } from './util.ts';
+import { clone } from './util.ts';
 
 type DAnim = Draft<Animatable<unknown>>;
 type DKey = Draft<Keyframe<unknown>>;
 
 const LINEAR: Ease = EASE_PRESETS.linear;
 const AUTO_INFLUENCE = 1 / 3;
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 function isAnim(v: unknown): v is DAnim {
 	return (
@@ -69,14 +65,14 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
 	}
-	// wp shapes: every item property of a vector shape (dynamic `shape.items.<id>.<field>` keys).
+	// every item property of a vector shape (dynamic `shape.items.<id>.<field>` keys).
 	if (clip.kind === 'shape')
 		for (const s of shapeItemPropertySpecs(clip as never)) {
 			if (s.animatable === 'no') continue;
 			const a = getAt(clip, s.storagePath);
 			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
 		}
-	// text-animators workstream: animator properties, selector fields, Path / More Options, Source Text.
+	// animator properties, selector fields, Path / More Options, Source Text.
 	if (clip.kind === 'text') {
 		for (const s of textAnimatorPropertySpecs(clip as never)) {
 			if (s.animatable === 'no') continue;
@@ -91,7 +87,7 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 				clip,
 			});
 	}
-	// wp masks: Opacity masks and effect masks (`["mask", id, prop]`).
+	// Opacity masks and effect masks (`["mask", id, prop]`).
 	const maskLists = [
 		(clip as { masks?: Draft<Mask>[] }).masks ?? [],
 		...((clip as { effects?: Draft<EffectInstance>[] }).effects ?? []).map(
@@ -104,7 +100,7 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 				const a = m[prop];
 				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['mask', m.id, prop], seq, clip });
 			}
-	// sim-warp: Puppet pin properties (`["puppetPin", id, prop]`).
+	// Puppet pin properties (`["puppetPin", id, prop]`).
 	for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? [])
 		for (const pin of fx.puppet?.pins ?? [])
 			for (const prop of PUPPET_PIN_PROPS) {
@@ -185,8 +181,6 @@ export function assertSpatialTarget(target: Target, h: HandlerContext): void {
 	if (!target.rule.spatial)
 		h.fail('E_INVALID_PARAM', `${target.label} is not a point property; it has no spatial interpolation`);
 }
-
-// ---------------------------------------------------------------- curve maintenance
 
 function magnitude(a: unknown, b: unknown): number {
 	if (typeof a === 'number' && typeof b === 'number') return Math.abs(b - a);
@@ -301,9 +295,7 @@ function applyInterpolation(
 	if (interpolation === 'continuous-bezier') matchContinuous(anim, i, easeIn && !easeOut ? 'in' : 'out');
 }
 
-// ---------------------------------------------------------------- handlers
-
-export const keyframeHandlers: HandlerMap = {
+export const keyframeHandlers = {
 	'keyframe.add': (doc, cmd: CommandOf<'keyframe.add'>, h: HandlerContext) => {
 		const target = resolveTarget(doc, cmd, h, { create: cmd.value !== undefined });
 		if (target.type !== 'anim') return h.fail('E_INVALID_PARAM', `${target.label} is not animatable`);
@@ -473,4 +465,4 @@ export const keyframeHandlers: HandlerMap = {
 		}
 		return { removed };
 	},
-};
+} satisfies HandlerMap;

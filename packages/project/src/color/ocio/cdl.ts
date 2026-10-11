@@ -1,4 +1,4 @@
-// ASC Color Decision List (workstream color-mgmt): ASC CDL v1.2 maths (slope, offset, power per channel, then
+// ASC Color Decision List: ASC CDL v1.2 maths (slope, offset, power per channel, then
 // saturation with Rec.709 luma weights) and the `.cc` / `.ccc` / `.cdl` XML containers. Ported from EffectCraft
 // `crates/effects/src/ocio.rs` (MIT OR Apache-2.0).
 import type { Rgb } from '../lut.ts';

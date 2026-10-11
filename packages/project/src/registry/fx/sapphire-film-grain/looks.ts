@@ -1,7 +1,9 @@
 // Sapphire film / grain family — the "looks": S_Vignette, S_BleachBypass, S_Grain, S_GrainStatic, S_UltraGrain,
 // S_Diffuse, S_VintageColor2Strip, S_VintageColor3Strip, S_ScanLines, S_ScanLinesMono. Parameter names, order and
 // defaults follow Boris FX's public Sapphire reference; Sapphire's Mask input is replaced by "Mix with Orig".
-import type { EffectSpec } from '../../effects.ts';
+
+import type { ParamValue } from '../../../schema/common.ts';
+import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
 import { fxParam } from '../params.ts';
@@ -28,8 +30,6 @@ function sourceBlur(output: string, sigma: number): ShaderPass[] {
 	const scale = sigma > 24 ? 0.25 : sigma > 8 ? 0.5 : 1;
 	return gaussianBlurPasses({ input: 'source', output, sigma, scale });
 }
-
-// ---------------------------------------------------------------- S_Vignette
 
 const VIGNETTE_COMBINE = [
 	'composite',
@@ -119,8 +119,6 @@ export const S_VIGNETTE = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- S_BleachBypass
-
 const BLEACH_FRAG = (blur: boolean) => /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -180,8 +178,6 @@ export const S_BLEACH_BYPASS = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_Grain
 
 /** Grain presets (the Load Preset factory looks of film stocks): base values, scaled by the sliders. */
 export const GRAIN_PRESETS: Record<
@@ -268,7 +264,7 @@ export const GRAIN_PRESETS: Record<
 const GRAIN_PRESET_KEYS = Object.keys(GRAIN_PRESETS);
 
 /** Effective S_Grain values: Custom = the sliders; a preset = its base values scaled by the sliders' ratios. */
-export function grainSettings(p: Record<string, unknown>) {
+export function grainSettings(p: EffectParams) {
 	const key = typeof p.filmStock === 'string' && GRAIN_PRESETS[p.filmStock] ? p.filmStock : 'custom';
 	const pr = GRAIN_PRESETS[key]!;
 	const amp = Math.max(0, num(p.colorAmplitude, 0.1));
@@ -368,8 +364,6 @@ export const S_GRAIN = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- S_GrainStatic
-
 export const S_GRAIN_STATIC = defineShaderEffect({
 	id: 'jasper.s.grain-static',
 	label: 'S_GrainStatic',
@@ -402,8 +396,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_UltraGrain
 
 export const S_ULTRA_GRAIN = defineShaderEffect({
 	id: 'jasper.s.ultra-grain',
@@ -438,7 +430,8 @@ export const S_ULTRA_GRAIN = defineShaderEffect({
 			const hd = hdPx(ctx);
 			const size = Math.max(0.001, num(p.grainSize, 1));
 			const blur = Math.max(0, num(p.grainBlur, 0.00567)) * 230;
-			const px = (b: unknown, d: number) => Math.max(0.5, size * hd * (1 + blur * Math.max(0, num(b, d))));
+			const px = (b: ParamValue | undefined, d: number) =>
+				Math.max(0.5, size * hd * (1 + blur * Math.max(0, num(b, d))));
 			return {
 				u_sizePx: [px(p.grainBlurRed, 0.572), px(p.grainBlurGreen, 0.561), px(p.grainBlurBlue, 0.528)],
 			};
@@ -460,8 +453,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Diffuse
 
 const WRAP = ['no', 'tile', 'reflect'] as const;
 const WRAP_LABELS = ['No', 'Tile', 'Reflect'];
@@ -506,8 +497,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_VintageColor2Strip / 3Strip
 
 const VINTAGE_GRAIN = /* glsl */ `
 vec3 svc_grain(vec3 rec, float amp, float blur) {
@@ -644,8 +633,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_ScanLines / S_ScanLinesMono
 
 const SCANLINES_COMMON = /* glsl */ `
 // Scan-line profile (1 on the line centre, 0 between lines) for a phase offset, sharpened by Lines Sharpness

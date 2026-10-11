@@ -1,7 +1,4 @@
-// Workstream gaps (FX-6): the Warp Stabilizer's background analysis job on shaky.mp4 (a test chart panned by a known
-// seeded random walk, scripts/fixtures/process.mjs) — the measured per-frame translation matches the walk, the
-// trajectories feed Subspace Warp, the stored analysis passes the command, the plan stabilises the known path — and
-// the export planner refuses an un-analysed stabiliser (WARP_NOT_ANALYZED).
+// shaky.mp4 pans a test chart by a seeded random walk, providing independent ground truth for stabilisation.
 import type { WarpAnalysisResult } from '@jasper/api';
 import {
 	decodeWarpAnalysis,
@@ -125,7 +122,6 @@ describe('Warp Stabilizer analysis', () => {
 				scaling: 'fit',
 				quality: { mode: 'crf', value: 20 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 			audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 			engine: 'auto',

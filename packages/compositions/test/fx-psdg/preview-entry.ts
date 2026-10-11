@@ -1,6 +1,3 @@
-// Browser entry of the family's visual preview tool (preview.ts): renders jobs (effect + params on the test photo,
-// a transparent-edged shape, or a blank layer) through the real GPU host and returns PNG data URLs, plus a labelled
-// contact sheet (transparency over a checkerboard).
 import { canvas, defaults, type Paint, picture, run, spec } from './harness.ts';
 
 export type PreviewJob = {
@@ -100,8 +97,10 @@ const api = {
 		await loadPhoto(photoUrl);
 		return true;
 	},
-	/** Renders jobs; returns {name, png | error} and an optional contact sheet. */
-	render(jobs: PreviewJob[], sheet: { columns: number; cell: [number, number]; title?: string } | null) {
+	render(
+		jobs: readonly PreviewJob[],
+		sheet: { columns: number; cell: [number, number]; title?: string } | null,
+	) {
 		const results: { name: string; png?: string; error?: string; size?: [number, number] }[] = [];
 		// Jobs and outputs accumulate over calls (the CLI renders one job per call, then asks for the sheet).
 		const outs = allOuts;
@@ -159,4 +158,10 @@ const api = {
 	},
 };
 
-(window as unknown as { __psdg: typeof api }).__psdg = api;
+declare global {
+	interface Window {
+		__psdg: typeof api;
+	}
+}
+
+window.__psdg = api;

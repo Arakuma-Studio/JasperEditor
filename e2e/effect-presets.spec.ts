@@ -1,7 +1,3 @@
-// S03:FX-030 (wp-m3-presets) through the built app: Effects ▸ Presets applies a built-in preset to the selected clip
-// by double-click (one History entry); Save Preset… from the Opacity header in Effect Controls stores a user preset
-// in the engine library; after a reload (a new session) the preset is still in Effects ▸ Presets and applies to
-// another clip with its key times anchored to the Out point.
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
@@ -58,7 +54,7 @@ test('a built-in preset applies by double-click with clips selected', async () =
 		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [1, 0, 0, 1] },
 		{ type: 'clip.addSolid', at: 120, duration: 150, track: 'V1', color: [0, 0, 1, 1] },
 	]);
-	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
 	const [a] = await clipsOnV1();
 	await clipElement(page, a!.id).click();
 	await tab('Effects').click();

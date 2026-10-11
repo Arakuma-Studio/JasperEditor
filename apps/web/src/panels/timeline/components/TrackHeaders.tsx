@@ -1,3 +1,4 @@
+import type { Command } from '@jasper/project';
 // Track headers (S02 §6: TL-250…268; S05:TLC-005/006). Document toggles (lock, sync lock, eye, mute,
 // solo, name) go through `track.update` transactions (undoable); targeting and heights are view state.
 import { type Sequence, type Track, trackList } from '@jasper/project';
@@ -40,9 +41,9 @@ type Kind = 'video' | 'audio';
 const labelOf = (kind: Kind, index: number) => `${kind === 'video' ? 'V' : 'A'}${index + 1}`;
 const defaultName = (kind: Kind, index: number) => `${kind === 'video' ? 'Video' : 'Audio'} ${index + 1}`;
 
-function apply(p: TrackHeadersProps, label: string, commands: unknown[]) {
+function apply(p: TrackHeadersProps, label: string, commands: Command[]) {
 	if (commands.length === 0) return;
-	const r = p.session.apply({ label, origin: 'user', sequenceId: p.seq.id, commands: commands as never[] });
+	const r = p.session.apply({ label, origin: 'user', sequenceId: p.seq.id, commands });
 	if (!r.ok) p.toast('warning', r.errors[0]?.message ?? `${label} failed`);
 	return r;
 }
@@ -73,8 +74,8 @@ function toggleFlag(
 ) {
 	const list = trackList(p.seq, kind);
 	const next = !flagValue(track, f);
-	const cmd = (t: Track, v: boolean) => ({ type: 'track.update', trackId: t.id, patch: { [f]: v } });
-	let commands: unknown[];
+	const cmd = (t: Track, v: boolean): Command => ({ type: 'track.update', trackId: t.id, patch: { [f]: v } });
+	let commands: Command[];
 	if (e.shiftKey) commands = list.map((t) => cmd(t, next));
 	else if (e.altKey && f === 'solo') commands = list.map((t) => cmd(t, t.id === track.id));
 	else if (e.altKey && f === 'output') {
@@ -130,7 +131,7 @@ function headerMenu(
 	index: number,
 	startRename: () => void,
 ): ContextMenuItem[] {
-	// ui-perf: header rows do not re-render for clip-only changes (HeaderRow), so the clips come from the session.
+	// header rows do not re-render for clip-only changes (HeaderRow), so the clips come from the session.
 	const clips = Object.values((p.session.getDrawn().sequences[p.seq.id] ?? p.seq).clips);
 	const clipCount = clips.filter((c) => c.trackId === track.id).length;
 	const list = trackList(p.seq, kind);
@@ -204,7 +205,7 @@ function headerMenu(
 type HeaderProps = TrackHeadersProps & { row: TrackRow; track: Track };
 
 /**
- * ui-perf: a header row draws its track, its layout row and the view's targeting, source patching and keyframe
+ * a header row draws its track, its layout row and the view's targeting, source patching and keyframe
  * display; the clips of the sequence never reach it (the context menu reads them from the session). So a clip drag,
  * a trim, a scroll or a zoom does not re-render the headers and their tooltip buttons.
  */
@@ -477,7 +478,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 }
 
 /**
- * edit-ux: the source patching column (Premiere "Source patching and track targeting"): while a clip is open in the
+ * the source patching column (Premiere "Source patching and track targeting"): while a clip is open in the
  * Source monitor, each source track (V1, A1…) shows on the sequence track it is patched to. Click it to switch that
  * source track off/on (off = left out of Insert/Overwrite); click an empty cell to patch the first source track of
  * that kind there; drag a source indicator onto another track to repatch it.

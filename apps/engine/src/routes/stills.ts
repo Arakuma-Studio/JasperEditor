@@ -1,5 +1,3 @@
-// POST /api/stills: one frame as PNG for agents and Export Frame (ARCHITECTURE §9.2, S04:EX-030).
-// The job result is `{url}` under /renders/<jobId>/output.
 import { StillRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { guarded, parseOr400 } from '../tools/reply.ts';

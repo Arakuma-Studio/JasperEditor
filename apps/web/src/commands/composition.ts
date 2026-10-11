@@ -1,11 +1,3 @@
-// M2 UI commands for Remotion composition clips (S08 §6). Owner: wp-m2-mg (ARCHITECTURE §19.10).
-//   mg.importRemotionProject   File ▸ Import Remotion Project… (folder on desktop/local engines, zip on the web)
-//   mg.insertComposition       insert a composition of an imported bundle at the playhead (agent-exposed)
-//   mg.renderCompositionMasters render the ProRes 4444 masters of the selected composition clips now
-//   mg.rebuildBundle           rebuild the bundle of the selected composition clip / Project item
-// This module is imported at start-up (commands/index.ts), so it is also where the package registers its UI
-// extensions: the Properties ▸ Composition section, the runtime host (Program overlay that renders nothing),
-// the timeline ✓ badge provider, Project panel item menu entries and the import dialog.
 import type { MediaAsset } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -15,6 +7,7 @@ import {
 	programOverlays,
 	projectItemMenuExtensions,
 } from '../extensions/index.ts';
+import { notices } from '../home/notices.tsx';
 import { CanvasTextEditorHost } from '../mg-bundles/CanvasTextEditor.tsx';
 import { CompositionSection } from '../mg-bundles/CompositionSection.tsx';
 import { MG_IMPORT_DIALOG, registerImportRemotionDialog } from '../mg-bundles/ImportDialog.tsx';
@@ -46,8 +39,9 @@ function bundleOfSelection(ctx: CommandCtx): MediaAsset | null {
 	const seqId = s?.activeSequenceId;
 	if (!s || !seqId) return null;
 	for (const id of selectedCompositionClips(ctx)) {
-		const clip = s.document.sequences[seqId]?.clips[id] as { composition?: { mediaId?: string } } | undefined;
-		const asset = clip?.composition?.mediaId ? s.document.media[clip.composition.mediaId] : undefined;
+		const clip = s.document.sequences[seqId]?.clips[id];
+		const mediaId = clip?.kind === 'composition' ? clip.composition.mediaId : undefined;
+		const asset = mediaId ? s.document.media[mediaId] : undefined;
 		if (asset?.mgBundle?.source.type === 'project-dir') return asset;
 	}
 	return null;
@@ -128,8 +122,6 @@ export const compositionCommands: UiCommand[] = [
 	},
 ];
 
-// ---------------------------------------------------------------- UI extensions (ARCHITECTURE §19.10)
-
 registerImportRemotionDialog();
 
 clipSections.register({
@@ -148,7 +140,6 @@ programOverlays.register({
 	order: 0,
 });
 
-// wp-m3-mgtext (S08:MGU-005): in-place text editing of composition clips in the Program monitor.
 programOverlays.register({
 	id: 'mg-text-editor',
 	active: () => true,
@@ -210,7 +201,10 @@ projectItemMenuExtensions.register({
 				label: 'Rebuild Remotion Bundle',
 				disabled: readOnly || !engine || asset.mgBundle?.source.type !== 'project-dir',
 				run: () => {
-					if (engine) void rebuildBundle(engine, asset, session.projectId).catch(() => undefined);
+					if (engine)
+						void rebuildBundle(engine, asset, session.projectId).catch((error) =>
+							notices.push({ kind: 'error', message: 'Rebuild failed', detail: bundleErrorText(error) }),
+						);
 				},
 			},
 		];

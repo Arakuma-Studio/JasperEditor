@@ -56,7 +56,7 @@ export type ProjectRow = {
 		| 'lut'
 		| 'mg-bundle'
 		| 'color-config'
-		// three-d: 3D models
+		// 3D models
 		| 'model'
 		| 'search-bin';
 	mediaId: string | null;
@@ -234,7 +234,7 @@ function rowFor(
 				...describeMedia(asset),
 				// LUT items (S06:LUT-002): size and title in the info column / tile badge.
 				...(asset.kind === 'lut' ? { videoInfo: lutInfoText(asset) } : {}),
-				// color-mgmt: OCIO configs show their colour space count.
+				// OCIO configs show their colour space count.
 				...(asset.kind === 'color-config' && asset.colorConfig
 					? { videoInfo: `OCIO · ${asset.colorConfig.spaces.length} colour spaces` }
 					: {}),

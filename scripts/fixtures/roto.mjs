@@ -1,4 +1,4 @@
-// Roto fixtures (parity workstream `roto`): a synthetic plate with an exactly known object.
+// Roto fixtures: a synthetic plate with an exactly known object.
 //
 //   roto-object.mp4 / .json  640x360, 30 fps, 45 frames. A warm, noise-textured ellipse (semi-axes 80 × 60 px)
 //                            moving right and down while it slowly rotates, over a cool noise-textured gradient

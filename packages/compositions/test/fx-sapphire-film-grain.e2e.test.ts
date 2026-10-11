@@ -1,11 +1,4 @@
 // @vitest-environment node
-// The Sapphire film / grain / damage family on the Remotion render path (REMOTION_E2E=1): bundles the compositions
-// (fx-render/entry.ts — the production registry, which contains the family), renders stills of a video clip with the
-// effects in headless Chrome (WebGL2 through ANGLE/SwiftShader, as the engine's render browser) and checks that
-// (1) S_FilmDamage changes between consecutive frames but is identical when a frame is rendered twice
-// (deterministic across render pages), (2) S_DigitalDamage's freeze shows the held (earlier) frame through its time
-// sample, (3) every effect of the family renders. FX_FILM_STILLS=<dir> [FX_FILM_IMAGE=<jpg>] also writes stills of
-// every effect on that picture (frames 10–12) for a visual check. Needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';

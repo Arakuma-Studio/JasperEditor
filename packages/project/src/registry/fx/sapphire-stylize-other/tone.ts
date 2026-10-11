@@ -23,8 +23,6 @@ import {
 
 const BIN = SAPPHIRE_BINS.stylize;
 
-// ---------------------------------------------------------------- S_BandPass
-
 export const S_BAND_PASS: EffectSpec = defineShaderEffect({
 	id: 'jasper.s.band-pass',
 	label: 'S_BandPass',
@@ -77,8 +75,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_DogVision
 
 export const S_DOG_VISION: EffectSpec = defineShaderEffect({
 	id: 'jasper.s.dog-vision',
@@ -162,8 +158,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_PseudoColor
-
 export const S_PSEUDO_COLOR: EffectSpec = defineShaderEffect({
 	id: 'jasper.s.pseudo-color',
 	label: 'S_PseudoColor',
@@ -199,8 +193,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_PsykoBlobs / S_PsykoStripes
 
 const psykoFinal = (pattern: string) => /* glsl */ `
 float sso_pattern() {
@@ -280,8 +272,6 @@ export const S_PSYKO_STRIPES: EffectSpec = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- S_Solarize
-
 export const S_SOLARIZE: EffectSpec = defineShaderEffect({
 	id: 'jasper.s.solarize',
 	label: 'S_Solarize',
@@ -318,8 +308,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Zebrafy / S_ZebrafyColor
 
 const zebraFinal = (body: string) => /* glsl */ `
 void main() {

@@ -1,5 +1,4 @@
-// Media Browser (workstream polish; docs/wp-notes/polish.md): Premiere's Media Browser over the engine host's file
-// system. Local engines only, like path registration (S04:SC-002): a remote engine never exposes its disks.
+// Browsing is local-only, like path registration (S04:SC-002): remote engines never expose their disks.
 //   GET /api/browse/roots              Home, the usual media folders, mounted volumes, the file-system root(s)
 //   GET /api/browse/list?path=&all=    one folder: sub-folders and importable files (all=1: everything)
 //   GET /api/browse/info?path=         size, date and the ffprobe summary of audio / video / stills

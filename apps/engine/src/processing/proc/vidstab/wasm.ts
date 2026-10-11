@@ -226,8 +226,6 @@ export class VidstabWasm {
 		return new Uint8Array(this.mem, ptr, length);
 	}
 
-	// --- detection -----------------------------------------------------------------------------------------
-
 	detectInit(
 		width: number,
 		height: number,
@@ -251,8 +249,6 @@ export class VidstabWasm {
 	detectFree(): void {
 		this.ex.vsx_detect_free();
 	}
-
-	// --- camera path ---------------------------------------------------------------------------------------
 
 	pathInit(width: number, height: number): void {
 		if (this.ex.vsx_path_init(width, height) !== 0) throw new Error('vid.stab path init failed');
@@ -290,8 +286,6 @@ export class VidstabWasm {
 	pathFree(): void {
 		this.ex.vsx_path_free();
 	}
-
-	// --- warp ----------------------------------------------------------------------------------------------
 
 	/** Raw call of the SIMD warp on buffers inside this instance's memory (see glue.c vsx_warp_rgb48). */
 	warpRaw(

@@ -1,6 +1,3 @@
-// "Sapphire other stylize" family (fx catalogue, wave 2): catalogue shape (ids, labels, bin, Sapphire param order)
-// and the TypeScript maths of the entries — units, pass planning, S_PixelMosh's hold frames and time samples,
-// S_StripSlide's timing. Pixel behaviour: packages/compositions/test/fx-sapphire-stylize-other-gl.test.ts.
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
@@ -199,7 +196,7 @@ describe('Sapphire other-stylize family', () => {
 		holds.forEach((h, f) => {
 			expect(h).toBeLessThanOrEqual(f);
 		});
-		expect(new Set(starts.slice(1).map((s, i) => s - starts[i]!)).size).toBeGreaterThan(1); // varied
+		expect(new Set(starts.slice(1).map((s, i) => s - starts[i]!)).size).toBeGreaterThan(1);
 		const other = Array.from({ length: 300 }, (_, f) => pixelMoshHoldFrame(auto, f, 0.9));
 		expect(other).not.toEqual(holds);
 		const fixed = { frameInterval: 10, varyFrameInterval: 0 };
@@ -233,8 +230,8 @@ describe('Sapphire other-stylize family', () => {
 			expect(stripSlideProgress(1, rank, 10, 1)).toBe(1);
 		}
 		expect(stripSlideProgress(0.2, 0, 10, 0)).toBeGreaterThan(stripSlideProgress(0.2, 1, 10, 0));
-		expect(stripSlideProgress(0.1, 0, 10, 1)).toBeLessThan(stripSlideProgress(0.1, 0, 10, 0)); // slow start
-		expect(stripSlideProgress(0.5, 0, 1, 0)).toBeCloseTo(stripSlideProgress(0.5, 1, 1, 0)); // Speed 1: together
+		expect(stripSlideProgress(0.1, 0, 10, 1)).toBeLessThan(stripSlideProgress(0.1, 0, 10, 0));
+		expect(stripSlideProgress(0.5, 0, 1, 0)).toBeCloseTo(stripSlideProgress(0.5, 1, 1, 0));
 	});
 
 	it('marks time-invariant only the effects without time, phase animation or video inputs', () => {

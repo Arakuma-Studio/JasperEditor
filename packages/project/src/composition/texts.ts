@@ -15,6 +15,7 @@
 //   - sibling prefix `title` + `titleColor` / `titleFontSize` / `titleSize` / `titleFont` / `titleFontFamily` /
 //     `titleWeight` / `titleAlign` / `titleItalic` / `titleLineHeight` / `titleLetterSpacing` (also `title_color`).
 
+import { z } from 'zod';
 import { compositionPropsPropertySpecs, type PropertySpec } from '../registry/properties.ts';
 import type { MgCompositionInfo, MgTextDecl } from '../schema/media.ts';
 import { isCssColor, type JsonSchemaNode, validateJsonSchema } from './json-schema.ts';
@@ -257,8 +258,6 @@ export function findTextLayer(
 	);
 }
 
-// ---------------------------------------------------------------- checks (S08:MGC-037)
-
 export type TextIssueCode =
 	| 'MG_TEXT_TOO_LONG'
 	| 'MG_TEXT_TOO_SHORT'
@@ -321,36 +320,46 @@ export function checkCompositionText(layer: CompositionTextLayer, value: string)
 	return out;
 }
 
+const TextRectSchema = z.object({
+	x: z.number(),
+	y: z.number(),
+	width: z.number(),
+	height: z.number(),
+});
+
 /** Layout of one text in a rendered composition frame (the host page's text probe, mg-host/text-probe.ts). */
-export type MgTextMeasurement = {
+export const MgTextMeasurementSchema = z.object({
 	/** Caller's id (the text's prop path). */
-	id: string;
+	id: z.string(),
 	/** The text was found in the page (its characters, ignoring whitespace, case and `*_~` markup). */
-	found: boolean;
+	found: z.boolean(),
 	/** Found and drawn at this frame (not transparent, not hidden). */
-	visible: boolean;
+	visible: z.boolean(),
 	/** Union of the text's boxes, composition pixels. */
-	rect: { x: number; y: number; width: number; height: number } | null;
+	rect: TextRectSchema.nullable(),
 	/** Line boxes (one per rendered line). */
-	lines: { x: number; y: number; width: number; height: number }[];
+	lines: z.array(TextRectSchema),
 	/** The box of the nearest ancestor that clips the text (overflow hidden/clip), when the text exceeds it. */
-	clippedBy: { x: number; y: number; width: number; height: number } | null;
+	clippedBy: TextRectSchema.nullable(),
 	/** An ancestor shows an ellipsis because the text does not fit. */
-	truncated: boolean;
+	truncated: z.boolean(),
 	/** Computed style of the text's element (for the on-canvas editor). */
-	style: {
-		fontFamily: string;
-		fontSize: number;
-		fontWeight: string;
-		fontStyle: string;
-		color: string;
-		lineHeight: number | null;
-		letterSpacing: number;
-		textAlign: string;
-		textTransform: string;
-		whiteSpace: string;
-	} | null;
-};
+	style: z
+		.object({
+			fontFamily: z.string(),
+			fontSize: z.number(),
+			fontWeight: z.string(),
+			fontStyle: z.string(),
+			color: z.string(),
+			lineHeight: z.number().nullable(),
+			letterSpacing: z.number(),
+			textAlign: z.string(),
+			textTransform: z.string(),
+			whiteSpace: z.string(),
+		})
+		.nullable(),
+});
+export type MgTextMeasurement = z.infer<typeof MgTextMeasurementSchema>;
 
 /** Layout checks of a measured text (S08:MGC-037): off frame, clipped, outside its safe box, extra lines. */
 export function measuredTextIssues(
@@ -420,8 +429,6 @@ export function measuredTextIssues(
 		});
 	return out;
 }
-
-// ---------------------------------------------------------------- edits (S08:MGC-038)
 
 /** The colour of a text's accent spans: the declared CSS colour, or the value of the declared colour prop. */
 export function textAccentColor(

@@ -1,6 +1,3 @@
-// Crash recovery, saved versions and Save As in the built app (process workstream, ARCHITECTURE D-39,
-// docs/project-files.md). A real browser crash is simulated where it matters: the journal is left behind by a
-// session that held the lease and vanished without saving (its lease released, as when it expires).
 import { expect, type Page, test } from '@playwright/test';
 import { createProject, enableAgentBridge, transact } from './support.ts';
 
@@ -76,7 +73,6 @@ test('unsaved changes of a dead session are offered on open and recovered as one
 	const left = await (await page.request.get(`/api/projects/${projectId}/recovery`)).json();
 	expect(left.candidates).toEqual([]);
 
-	// Undo takes the recovery back (and autosave writes that too).
 	await page.getByText('Edit', { exact: true }).first().click();
 	await page.getByRole('menuitem', { name: /^Undo Recover Unsaved Changes/ }).click();
 	await expect.poll(() => markerCount(page, projectId)).toBe(0);
@@ -88,8 +84,7 @@ test('a reloaded tab reclaims its own lease even when the pagehide release is lo
 }) => {
 	await enableAgentBridge(page);
 	const projectId = await createProject(page, 'Lease E2E');
-	// Drop every lease release, as when the keepalive request loses the race or the browser drops it: before
-	// polish the reloaded page opened read-only until the old lease expired (30 s).
+	// Browsers may drop pagehide keepalive requests during navigation.
 	const dropRelease = (route: import('@playwright/test').Route) =>
 		route.request().method() === 'DELETE' ? route.abort() : route.continue();
 	await page.route('**/api/projects/*/lease/*', dropRelease);
@@ -109,7 +104,6 @@ test('a reloaded tab reclaims its own lease even when the pagehide release is lo
 	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
 	await expect.poll(holder).not.toBe(first);
 
-	// A full navigation to Home right after opening, then back: still editable at once.
 	await page.goto('/');
 	await expect(page.getByTestId('home')).toBeVisible();
 	await page.goto(`/project/${projectId}`);
@@ -117,7 +111,6 @@ test('a reloaded tab reclaims its own lease even when the pagehide release is lo
 	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
 	expect((await transact(page, [{ type: 'marker.add', frame: 3, name: 'still editable' }])).ok).toBe(true);
 
-	// Another tab never reclaims this tab's lease.
 	const other = await context.newPage();
 	await other.goto(`/project/${projectId}`);
 	await expect(other.getByTestId('editor-shell')).toBeVisible();
@@ -135,13 +128,10 @@ test('reload keeps the project editable; versions restore in place; Save As open
 	expect((await transact(page, [{ type: 'marker.add', frame: 5, name: 'A' }])).ok).toBe(true);
 	await expect.poll(() => markerCount(page, projectId)).toBe(1);
 
-	// A reload is never read-only: pagehide releases the lease, and if that release is lost the reloaded tab
-	// reclaims it (see the test above).
 	await page.reload();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('banner-read-only')).toHaveCount(0);
 
-	// Revert is disabled while everything is saved.
 	await page.getByText('File', { exact: true }).first().click();
 	await expect(page.getByRole('menuitem', { name: /^Revert/ })).toHaveAttribute('aria-disabled', 'true');
 	await page.keyboard.press('Escape');

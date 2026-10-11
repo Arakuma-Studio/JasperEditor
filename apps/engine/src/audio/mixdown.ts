@@ -189,7 +189,6 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	if (!o.normalize || !keep || !pass1) {
 		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before };
 	}
-	// ---- pass 2: gain + true-peak limiter
 	const gainDb = Number.isFinite(before.integrated) ? o.normalize.targetLufs - before.integrated : 0;
 	const g = 10 ** (gainDb / 20);
 	const out = join(o.scratchDir, 'mix.wav');

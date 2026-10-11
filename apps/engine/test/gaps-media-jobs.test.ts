@@ -1,4 +1,3 @@
-// Workstream gaps (PRJ-8): Create Proxies and ingest copies / transcodes as engine jobs.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -69,7 +68,6 @@ describe('media jobs', () => {
 			expect(
 				proxyMismatch({ kind: 'video', probe: orig.probe, originalName: orig.originalName }, p.probe),
 			).toBeNull();
-		// A second run numbers the files instead of overwriting.
 		const again = await run({
 			op: 'proxy',
 			preset: 'proxy-540',
@@ -87,7 +85,6 @@ describe('media jobs', () => {
 			items: [{ mediaKey: b.mediaKey, mediaId: 'med_b' }],
 		});
 		expect((copy.outputs[0]!.registered as RegisteredMedia).fingerprint).toBe(b.fingerprint);
-		// The engine now reads the media from the ingested copy.
 		const loc = await app.inject({
 			method: 'GET',
 			url: `/api/media/${b.mediaKey}/location`,
@@ -162,7 +159,6 @@ describe('exports and proxies', () => {
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 18 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 		audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 		engine: 'native',

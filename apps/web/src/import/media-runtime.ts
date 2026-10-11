@@ -165,8 +165,7 @@ export function createMediaRuntimeSync(
 			patchKey(key, { availability: 'offline' });
 		else if (e instanceof EngineError && e.code === 'NETWORK')
 			patchKey(key, { availability: 'needs-engine' });
-		// Older/stub engines: assume the original is served and wait for events.
-		else patchKey(key, { availability: 'online' });
+		else patchKey(key, { availability: 'error' });
 	};
 	const resolve = (key: string) => {
 		patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });
@@ -176,9 +175,7 @@ export function createMediaRuntimeSync(
 			.catch((e) => resolveFailed(key, e));
 	};
 	/**
-	 * polish: resolves many media with one request per batch and applies each answer as one store update. Opening a
-	 * 2 000-item project used to send 2 000 status requests and update the store (and every subscriber) once per
-	 * answer. An engine without the batch route (older build) is asked per medium, as before.
+	 * Batch lookups publish one store update per response, limiting both network requests and subscriber work.
 	 */
 	let batchRoute = true;
 	const resolveMany = (keys: readonly string[]) => {
@@ -232,8 +229,7 @@ export function createMediaRuntimeSync(
 			resolveMany([...toResolve]);
 		});
 
-	// ---- imports: interpreted pictures (display PNG of stills a browser cannot show / with a pixel interpretation,
-	// interpreted proxy of videos with one). Keyed per asset: two assets of one file may be interpreted differently.
+	// Key interpreted pictures per asset: two assets of the same file can have different interpretations.
 	const variantKeyOf = (m: MediaAsset): string | null => {
 		const need = browserPictureNeed(m);
 		return need.picture ? `${need.picture}:${need.variant}` : null;

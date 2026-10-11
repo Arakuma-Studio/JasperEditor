@@ -1,6 +1,3 @@
-// Masks end to end (wp masks): Effect Controls ▸ Opacity ▸ ellipse tool creates a centred mask; the Program monitor
-// shows its vertices; dragging a vertex is one History entry; the pen draws a closed free-form mask; the preview is
-// masked; the export (native kernel) cuts the solid to the mask.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -70,7 +67,6 @@ test('Effect Controls ▸ Opacity ▸ ellipse creates a centred mask drawn on th
 	expect(m!.name).toBe('Mask (1)');
 	await expect(page.getByTestId(`mask-selected-${m!.id}`)).toBeVisible();
 	await expect(page.locator('[data-testid^="mask-vertex-"]')).toHaveCount(4);
-	// The preview is masked: darker than the full white solid, not black.
 	await expect.poll(async () => (await programPixels(page)).mean, { timeout: 30_000 }).toBeLessThan(200);
 	expect((await programPixels(page)).mean).toBeGreaterThan(5);
 });
@@ -124,7 +120,6 @@ test('the pen draws a closed free-form mask (click, click, click, click the firs
 
 test('native export cuts the solid to the mask', async ({ request }) => {
 	mkdirSync(EXPORT_DIR, { recursive: true });
-	// Drop the pen mask; keep the ellipse.
 	const ms = await masks();
 	expect((await transact(page, [{ type: 'mask.remove', maskIds: [ms[1]!.id] }])).ok).toBe(true);
 	const out = await exportViaUi(page, request, {

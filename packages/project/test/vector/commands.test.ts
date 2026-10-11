@@ -1,5 +1,3 @@
-// Vector shape commands (wp shapes): clip.addShape {type: 'vector'}, shape.* item commands, property keys through
-// param.set / keyframes, conversion of rectangles and ellipses, presets, invariants and repair.
 import { describe, expect, it } from 'vitest';
 import { createCounterIdSource } from '../../src/ids.ts';
 import {
@@ -212,18 +210,15 @@ describe('shape item commands', () => {
 			[300, 50],
 		]);
 		expect(evaluate(r.size, 15 * F)).toEqual([200, 75]);
-		// The keyframe machinery sees the property (move, remove).
 		const kf = r.size.keyframes[1]!.id;
 		h.ok([{ type: 'keyframe.move', keyframeIds: [kf], delta: { frames: 10 } }]);
 		expect((contentsOf(h, id)[0] as Extract<ShapeItem, { type: 'rect' }>).size.keyframes[1]!.time).toBe(
 			40 * F,
 		);
-		// Ranges clamp, wrong kinds fail.
 		const round = ['clip', id, 'shape', 'items', rect.id, 'roundness'];
 		const res = h.ok([{ type: 'param.set', target: round, value: -5 }]);
 		expect(res.warnings.some((w) => w.code === 'W_VALUE_CLAMPED')).toBe(true);
 		expect(h.tx([{ type: 'param.set', target: [...round.slice(0, 5), 'nope'], value: 1 }]).ok).toBe(false);
-		// Specs are listed for the clip (agent schema / Effect Controls).
 		const keys = propertiesForClip(clipOf(h, id)).map((s) => s.key);
 		expect(keys).toContain(`shape.items.${rect.id}.size`);
 		expect(keys).not.toContain('shape.size');
@@ -264,7 +259,6 @@ describe('shape item commands', () => {
 		const xs = mid.vertices.map((v) => v.p[0]);
 		expect(Math.max(...xs)).toBeGreaterThan(100);
 		expect(Math.max(...xs)).toBeLessThan(200);
-		// A malformed path is refused.
 		expect(
 			h.tx([{ type: 'param.set', target: pt, value: { closed: false, vertices: [{ p: [0, 'x'] }] } }]).ok,
 		).toBe(false);
@@ -348,7 +342,6 @@ describe('shape.convertToVector', () => {
 		const draws = evaluateVectorShape(items, 10 * F);
 		const b = shapeGeom.pathBounds(draws.find((d) => d.kind === 'fill')!.paths)!;
 		expect([b.x1 - b.x0, b.y1 - b.y0]).toEqual(g.size as Vec2);
-		// Legacy commands are refused on vector shapes and vice versa.
 		expect(h.tx([{ type: 'clip.update', clipId: id, patch: { shape: { fill: null } } }]).ok).toBe(false);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});

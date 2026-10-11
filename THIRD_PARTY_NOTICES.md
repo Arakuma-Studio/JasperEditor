@@ -9300,7 +9300,7 @@ Record: `licenses/ported/audio-fx.md`
 | Upstream path | Our path | What |
 |---|---|---|
 | `crates/audio-dsp/src/lib.rs` (`AudioEffect`, dB helpers) | `packages/audio-fx/src/core/effect.ts`, `packages/audio-fx/src/core/math.ts` | The processor contract (planar in-place blocks, latency, reset) and numeric helpers |
-| `crates/audio-dsp/src/fft.rs` | `packages/audio-fx/src/core/fft.ts` | Radix-2 complex FFT (f64 here) |
+| `crates/audio-dsp/src/fft.rs` | `packages/audio-dsp/src/fft.ts` | Radix-2 complex FFT (f64 here) |
 | `crates/audio-dsp/src/design.rs` | `packages/audio-fx/src/core/design.ts` | Bessel / Butterworth / Chebyshev I / elliptic prototypes → bilinear biquad cascades (Scientific Filter) |
 | `crates/audio-dsp/src/effects/util.rs` | `packages/audio-fx/src/core/util.ts` | Delay lines, LFOs, one-pole / DC-block / all-pass, envelope follower, PRNG |
 | `crates/audio-dsp/src/effects/stft.rs` | `packages/audio-fx/src/core/stft.ts` | Streaming √Hann STFT overlap-add |
@@ -9447,7 +9447,7 @@ Record: `licenses/ported/color-mgmt-effectcraft.md`
 |---|---|---|
 | `crates/effects/src/ocio_config.rs` | `packages/project/src/color/ocio/yaml.ts`, `config.ts` | YAML subset reader, config (spaces, roles, displays), Matrix / File / Exponent / Log / LogAffine / CDL / Range / Group transforms, tests |
 | `crates/effects/src/ocio.rs` (CDL, `.cc`/`.ccc`/`.cdl`, file inverse) | `packages/project/src/color/ocio/cdl.ts`, `config.ts` | ASC CDL v1.2 maths and XML, 1D exact / 3D iterative inverse |
-| `crates/color/src/space.rs` | `packages/project/src/color/cms/matrix.ts`, `gamut.ts` | Bradford chromatic adaptation, ACES AP0/AP1 primaries and white |
+| `crates/color/src/space.rs` | `packages/project/src/color/cms/matrix.ts`, `gamut.ts`, `packages/project/src/math/matrix3.ts` | Bradford chromatic adaptation, ACES AP0/AP1 primaries and white |
 
 Notes: ported to TypeScript. Extended: OCIO v2 display colour spaces and view transforms, ExponentWithLinear,
 LogCamera, ColorSpace, Allocation, ExposureContrast (linear), FixedFunction (ACES_GamutComp13, XYZ→xyY/uvY,
@@ -9466,7 +9466,7 @@ Record: `licenses/ported/color-mgmt-filmcraft.md`
 | Upstream path | Our path | What |
 |---|---|---|
 | `crates/color/src/log.rs` | `packages/project/src/color/cms/log.ts` | S-Log3, V-Log, Canon Log 2/3, LogC3, LogC4, Apple Log, D-Log encode/decode, signal domains, reference-point tests |
-| `crates/color/src/spaces.rs` | `packages/project/src/color/cms/gamut.ts`, `spaces.ts`, `matrix.ts` | gamut primaries, normalised primary matrix (RP 177), colour space catalogue, tag detection |
+| `crates/color/src/spaces.rs` | `packages/project/src/color/cms/gamut.ts`, `spaces.ts`, `matrix.ts`, `packages/project/src/math/matrix3.ts` | gamut primaries, normalised primary matrix (RP 177), colour space catalogue, tag detection |
 | `crates/color/src/transform.rs` | `packages/project/src/color/cms/transform.ts`, `hdr.ts` | input/output transforms, BT.2390 EETF tone mapping, desaturation into gamut, HLG OOTF |
 | `crates/color/src/grade.rs` | `packages/project/src/color/cms/transform.ts` (`gradeSpace`) | Lumetri grading signal normalised to HDR White (PQ / HLG) |
 | `crates/color/src/lib.rs` | `packages/project/src/color/cms/transfer.ts`, `hdr.ts` | PQ / HLG / sRGB functions, HDR static metadata peak |

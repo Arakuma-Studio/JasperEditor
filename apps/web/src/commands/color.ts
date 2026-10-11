@@ -1,7 +1,3 @@
-// M2 colour UI commands and extensions (S06 §6, ARCHITECTURE §19.10). Owner: wp-m2-color.
-// Imported at start-up (commands/index.ts), so this module also registers the package's UI extensions:
-// the Lumetri Effect Controls editor (curves + wheels, `hideParams`), Copy/Paste Grade in the timeline clip
-// menu, and "Apply as Look" on LUT items in the Project panel.
 import { type Clip, LUMETRI_EDITOR_PARAMS, LUMETRI_EFFECT_ID } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
@@ -25,8 +21,6 @@ import {
 import { monitorExtras } from '../panels/program/monitor-view.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
-// ---------------------------------------------------------------- helpers
-
 function primaryClip(session: EditorSession): Clip | null {
 	const s = session.getState();
 	const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
@@ -48,8 +42,6 @@ function pasteTargets(session: EditorSession, clipIds: readonly string[]): strin
 	const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 	return clipIds.filter((id) => gradeEligible(seq?.clips[id]));
 }
-
-// ---------------------------------------------------------------- extensions (registered at module load)
 
 effectEditors.register({
 	id: 'color.lumetri',
@@ -102,15 +94,12 @@ projectItemMenuExtensions.register({
 	},
 });
 
-// color-grade: the Lumetri eyedroppers' Program monitor overlay (renders nothing until a picker is armed).
 programOverlays.register({
 	id: 'color.eyedropper',
 	active: (session) => !!session.getState().activeSequenceId,
 	component: EyedropperOverlay,
 	order: 90,
 });
-
-// ---------------------------------------------------------------- commands
 
 export const colorCommands: UiCommand[] = [
 	{

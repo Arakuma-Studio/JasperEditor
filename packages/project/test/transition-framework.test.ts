@@ -1,8 +1,3 @@
-// The GPU transition framework (wave 2; docs/wp-notes/fx-transition-framework.md): the catalogue wiring (every family
-// file in TRANSITION_SPECS and the agent schema, every entry valid), progress (Start/End %, Reverse, one-sided),
-// placement matrices, planning, the resolution into render stages (handles, no ramps) and the param commands
-// (transition.add/update {params}, param.set / keyframe.add on ["transition", id, name]). Wave-3 families are
-// checked by the catalogue part as soon as they add entries.
 import { describe, expect, it } from 'vitest';
 import {
 	BUILTIN_TRANSITION_SPECS,
@@ -117,7 +112,7 @@ describe('transition catalogue', () => {
 		expect(schema.transitions.map((t) => t.id)).toEqual(TRANSITION_SPECS.map((s) => s.id));
 		const push = schema.transitions.find((t) => t.id === 'jasper.push')!;
 		expect(push).toMatchObject({ bin: 'Slide', gpu: true, appliesTo: 'video' });
-		expect((push.params as { name: string }[]).map((p) => p.name)).toEqual([
+		expect(push.params.map((p) => p.name)).toEqual([
 			'startPercent',
 			'endPercent',
 			'useCompletion',
@@ -227,7 +222,6 @@ describe('GPU transitions in the document and the render snapshot', () => {
 				incomingClipId: b,
 			},
 		]);
-		// Every declared param is present (defaults).
 		expect(r.stages.get(trackId)![0]!.params.direction).toEqual({ value: 'westToEast', keyframes: [] });
 		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => HANDLE, resolveFont: () => null });
 		expect(snap.videoTracks[0]!.transitions).toHaveLength(1);
@@ -263,7 +257,7 @@ describe('GPU transitions in the document and the render snapshot', () => {
 			{ type: 'transition.update', transitionId: t.id, params: { antiAliasing: 'high', startPercent: 150 } },
 		]);
 		expect(only(h).params.antiAliasing!.value).toBe('high');
-		expect(only(h).params.startPercent!.value).toBe(100); // clamped
+		expect(only(h).params.startPercent!.value).toBe(100);
 		const bad = fails(h, [{ type: 'transition.update', transitionId: t.id, params: { radius: 3 } }]);
 		expect(bad.errors[0]!.message).toMatch(/no parameter "radius".*borderWidth/);
 		const builtin = fails(h, [
@@ -295,7 +289,6 @@ describe('GPU transitions in the document and the render snapshot', () => {
 		const k = only(h).params.borderWidth!.keyframes;
 		const F = 705600000 / 30;
 		expect(k.map((x) => x.time)).toEqual([0, 9 * F]);
-		// Keyframes of transitions are found by id (move/remove work like any key).
 		h.ok([{ type: 'keyframe.remove', keyframeIds: [k[1]!.id] }]);
 		expect(only(h).params.borderWidth!.keyframes).toHaveLength(1);
 	});

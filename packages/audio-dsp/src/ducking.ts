@@ -190,7 +190,6 @@ export type DuckingPlanInput = {
 	bridgeS?: number;
 };
 
-/** Result of {@link planDucking}. */
 export type DuckingPlan = {
 	/** Detected trigger activity `[start, end]` in sequence seconds (not clamped). */
 	regions: [number, number][];

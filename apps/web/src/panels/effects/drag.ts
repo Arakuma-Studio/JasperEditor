@@ -141,8 +141,6 @@ export function effectTree(
 		}));
 }
 
-// ---------------------------------------------------------------- transitions (S10:TUI-020)
-
 /**
  * Contract (M2, wp-m2-transitions): dragging a transition from the Effects panel puts
  *   DataTransfer[JASPER_TRANSITION_MIME] = JSON.stringify({ type: 'jasper/transition', effectId })

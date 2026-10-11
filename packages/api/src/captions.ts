@@ -1,4 +1,3 @@
-// wp captions: reading a caption / transcript file by path on a local engine (desktop File ▸ Import of caption files).
 import { z } from 'zod';
 
 export const CaptionFileReadRequestSchema = z.object({ path: z.string().min(1) });

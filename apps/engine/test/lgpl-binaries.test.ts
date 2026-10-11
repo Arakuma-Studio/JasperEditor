@@ -1,5 +1,3 @@
-// wp-lgpl (ARCHITECTURE D-13): binaries directory resolution for Remotion and the native ffmpeg, strict
-// (packaged) refusal, and the Remotion two-phase export plan.
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -296,8 +294,6 @@ describe('third-party licenses (About dialog, D-13)', () => {
 		expect(c!.notice).toContain('FFmpeg source:');
 	});
 });
-
-// ---------------------------------------------------------------- two-phase export plan
 
 const choice = (over: Partial<EncoderChoice>): EncoderChoice => ({
 	codec: 'h264',

@@ -1,6 +1,3 @@
-// wp-multicam UI: camera keys (switch while stopped, Cut to Camera), a live switching pass recorded while playing
-// (one History entry, committed on stop), the Multi-Camera view's virtual document (grid + program), menus' commands
-// and the keymap's Premiere defaults.
 import { EngineClient } from '@jasper/engine-client';
 import {
 	buildRenderSnapshot,
@@ -105,12 +102,10 @@ describe('camera keys and live recording', () => {
 				[120, 2],
 			] as const) {
 				h.session.transport.seek(f);
-				// the transport stays "playing" (seek while playing does not stop the pass)
 				h.session.transport.play(1);
 				expect(pressCamera(h.session, n, 'select', h.toast)).toBe(true);
 			}
 			expect(multicamRecorderStore.getState().recording).toBe(true);
-			// live: the drawn (gesture) document shows the cuts; nothing committed yet
 			const drawn = h.session.getDrawn().sequences[h.seqId]!;
 			expect(Object.values(drawn.clips).filter((c) => c.kind === 'nest-video')).toHaveLength(5);
 			expect(h.session.getState().history.entries.length).toBe(before);
@@ -160,7 +155,6 @@ describe('Multi-Camera view document', () => {
 			resolveFont: () => null,
 		});
 		const layers = snap.videoTracks.flatMap((t) => t.clips);
-		// program + one cell per camera, each a nest showing its own angle
 		expect(layers).toHaveLength(6);
 		const cellMedia = layers
 			.filter((l) => l.name !== 'Program')
@@ -172,7 +166,6 @@ describe('Multi-Camera view document', () => {
 			.map((cs) => (cs[0]!.source as { mediaId: string }).mediaId);
 		expect(new Set(cellMedia).size).toBe(5);
 		expect(snap.audioClips.length).toBeGreaterThan(0);
-		// 2×2 pages
 		const p2 = buildMulticamViewDoc(doc, h.seqId, 0, {
 			showPreview: false,
 			topDown: false,

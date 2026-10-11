@@ -1,8 +1,5 @@
-// Project Settings ▸ General ▸ Video / Audio Display Format in the UI (workstream gaps, §PRJ-4). Monitors, the
-// timeline ruler and playhead, Info, Markers, Effect Controls, Properties and the time entry fields import
-// `formatTimecode` / `parseTimecodeEntry` from here instead of `@jasper/project`: same signatures, but they show and
-// read times in the open project's display format (timecode, frames, 35 mm / 16 mm feet + frames). The active format
-// follows the open project (`syncDisplayFormat`); agents and exports keep SMPTE timecode.
+// UI time fields follow the open project's display format. Agents and exports retain SMPTE timecode,
+// so UI callers must use these wrappers rather than @jasper/project's formatters directly.
 import {
 	type AudioDisplayFormat,
 	formatTimeDisplay,

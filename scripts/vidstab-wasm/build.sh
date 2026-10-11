@@ -3,7 +3,6 @@
 #
 #   scripts/vidstab-wasm/build.sh [outdir]      default outdir: apps/engine/src/processing/proc/vidstab
 #
-# README
 #   Builds libvidstab from the pinned post-relicense commit (LGPL-2.1-or-later, manifest.json `vidstab`,
 #   the same pin as scripts/ffmpeg/manifest.json) plus our glue (glue.c, LGPL-2.1-or-later) into ONE
 #   reactor-style wasm32 module, `vidstab.wasm`: no `_start`, only a handful of WASI imports that the
@@ -57,7 +56,6 @@ download() {
 	mv "$3.partial" "$3"
 }
 
-# --- consistency with the FFmpeg source build pin -------------------------------------------------------
 COMMIT="$(m vidstab.commit)"
 VS_SHA="$(m vidstab.sha256)"
 node -e "
@@ -66,7 +64,6 @@ if (a.vidstab.commit!==b.vidstab.commit || a.vidstab.sha256!==b.source.packages.
   console.error('[vidstab-wasm] manifest.json vid.stab pin differs from scripts/ffmpeg/manifest.json'); process.exit(1);
 }" "$MANIFEST" "$ROOT/scripts/ffmpeg/manifest.json"
 
-# --- toolchain -------------------------------------------------------------------------------------------
 case "$(uname -s)-$(uname -m)" in
 Linux-x86_64) HOST=linux-x64 ;;
 Linux-aarch64 | Linux-arm64) HOST=linux-arm64 ;;
@@ -90,7 +87,6 @@ fi
 CC="$TC_DIR/bin/clang"
 SYSROOT="$TC_DIR/share/wasi-sysroot"
 
-# --- vid.stab source -------------------------------------------------------------------------------------
 MODIFIED=false
 if [ -n "${VIDSTAB_SRC:-}" ]; then
 	SRC="$(cd "$VIDSTAB_SRC" && pwd)"
@@ -105,7 +101,6 @@ else
 	fi
 fi
 
-# --- compile ---------------------------------------------------------------------------------------------
 BUILD="$CACHE/build"
 rm -rf "$BUILD"
 mkdir -p "$BUILD/obj"
@@ -138,7 +133,6 @@ printf '%s\n' "${SOURCES[@]}" | xargs -P "$JOBS" -I{} sh -c '
 
 "$CC" "${CFLAGS[@]}" "${LDFLAGS[@]}" "$BUILD"/obj/*.o -o "$BUILD/vidstab.wasm"
 
-# --- outputs ---------------------------------------------------------------------------------------------
 cp "$BUILD/vidstab.wasm" "$OUT/vidstab.wasm"
 chmod 644 "$OUT/vidstab.wasm"
 cp "$SRC/COPYING.LESSER" "$OUT/LICENSE-vidstab.txt"

@@ -1,5 +1,3 @@
-// Small dialogs of workstream gaps: a one-field name prompt (Clip ▸ Rename…, Save Track Height Preset…), Manage
-// Track Height Presets, and the unsaved-changes prompt of File ▸ Exit.
 import {
 	Button,
 	Dialog,

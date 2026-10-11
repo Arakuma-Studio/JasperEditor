@@ -1,9 +1,4 @@
 // @vitest-environment node
-// The Sapphire film / grain / damage family (registry/fx/sapphire-film-grain.ts) in real WebGL2 (headless Chrome,
-// SwiftShader): default-param identity checks, one characteristic pixel per effect, alpha handling, temporal
-// animation (grain/dust/flicker change per frame) and determinism (same params → same pixels, new Seed → new
-// pattern). Pattern of fx-gl.test.ts; the bundle is fx-sapphire-film-grain/entry.ts. FX_GL=0 skips it.
-// Visual check: FX_FILM_SHOTS=<dir> [FX_FILM_IMAGE=<jpg/png>] also writes a PNG per effect and frame.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +44,6 @@ const DIGITAL_ON = {
 	flowAlways: 1,
 };
 
-/** Effects whose look changes from frame to frame (with these params). */
 const ANIMATED: [string, Record<string, unknown>][] = [
 	['jasper.s.film-effect', {}],
 	['jasper.s.film-damage', {}],
@@ -63,7 +57,6 @@ const ANIMATED: [string, Record<string, unknown>][] = [
 	['jasper.s.tv-damage', {}],
 ];
 
-/** Effects with a Seed param whose pattern depends on it (with these params). */
 const SEEDED: [string, Record<string, unknown>][] = [
 	['jasper.s.film-effect', {}],
 	['jasper.s.film-damage', {}],

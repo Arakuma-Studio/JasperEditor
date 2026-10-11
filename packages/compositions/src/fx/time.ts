@@ -1,4 +1,4 @@
-// Time hooks of the fx framework in the composition (wave 1): the source-frame remap of a layer (`gpu.time.remap` of
+// Time hooks of the fx framework in the composition: the source-frame remap of a layer (`gpu.time.remap` of
 // its enabled shader effects, NESTED in stack order — see `fxSourceFrame`) and the frame dependence of GPU layers.
 // `SequenceComposition` applies the remap around the layer: `<Freeze frame>` (media elements decode the remapped
 // frame) plus the remapped `localFrame`/`contentTime` (DOM layers draw their content at it); `realFrame` keeps the

@@ -9,19 +9,19 @@
 // - pattern shifts (X & Y): fractions of the layer width;
 // - Sapphire direction vectors (Light Dir, Direction) are y-UP like in Sapphire (`[-0.5, 0.361]` = light from the
 //   upper left); centres are `point` params normalised to the layer box (the framework's on-canvas handle).
+import type { ParamValue } from '../../../schema/common.ts';
 import type { ParamSpec } from '../../effects.ts';
+import { numberParam as num } from '../../param-values.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
 
-export const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-
 /** One Sapphire size unit in layer pixels (1 % of the layer width). */
 export const SAPPHIRE_UNIT = 0.01;
 
 /** A Sapphire width/size value in CANVAS pixels for a layer. */
-export function sUnitsPx(v: unknown, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>): number {
+export function sUnitsPx(v: ParamValue | undefined, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>): number {
 	return Math.max(0, num(v)) * ctx.width * SAPPHIRE_UNIT * ctx.pxScale;
 }
 
@@ -44,7 +44,7 @@ export function sNum(
 	name: string,
 	label: string,
 	def: number,
-	range: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number },
+	range: NonNullable<ParamSpec['range']>,
 	extra?: { animatable?: boolean; unit?: ParamSpec['unit'] },
 ): ParamSpec {
 	return fxParam.number(name, label, def, { step: 0.001, ...range }, extra);
@@ -73,8 +73,6 @@ export function rgbParam(name: string, label: string, rgb: [number, number, numb
 export function xyParam(name: string, label: string, def: [number, number], step = 0.001): ParamSpec {
 	return fxParam.vec2(name, label, def, { softMin: -1, softMax: 1, step });
 }
-
-// ---------------------------------------------------------------- GLSL
 
 /**
  * Branch-free integer hashes and value noise (same PCG maths as fx/hash). The library's `fx_u` has a sign branch
@@ -218,3 +216,5 @@ vec3 pke_colorCorrect(vec3 c, float saturation, float scaleLights, float offsetD
 }
 `,
 };
+
+export { num };

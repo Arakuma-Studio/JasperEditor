@@ -1,7 +1,3 @@
-// Program monitor layer menu (wp-clipboard-2, S03:XF-050/051/038): Reset Motion / Reset Crop, Fit to Frame /
-// Fill Frame / Set to Native (crop- and rotation-aware, centred), Anchor ▸ (the image stays put), Arrange ▸
-// (another video track at the same time, tracks created above the top, never over content), Reveal in Timeline /
-// Project. Fit and anchor geometry are tested against their visible outcomes, and commands against sessions.
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
@@ -151,7 +147,7 @@ describe('Anchor ▸ (XF-038)', () => {
 			for (const [i, q] of after.entries()) close(q, before[i]!);
 		}
 		expect(anchorPatch(s, 'top-left')!.anchor).toEqual([128, 144]);
-		expect(anchorPatch(state({}), 'center')).toBeNull(); // already centred
+		expect(anchorPatch(state({}), 'center')).toBeNull();
 	});
 });
 
@@ -192,7 +188,6 @@ describe('layer commands (XF-050)', () => {
 		expect(p.history()).toHaveLength(before + 3);
 		p.session.undo();
 		expect(t().scale.value).toBe(150);
-		// Animated scale: a key at the playhead.
 		p.apply([
 			{ type: 'keyframe.add', target: ['clip', p.video, 'transform', 'scale'], at: { frames: 0 }, value: 50 },
 			{
@@ -248,7 +243,6 @@ describe('layer commands (XF-050)', () => {
 		expect(p.seq().videoTracks).toHaveLength(tracks);
 		await p.run('arrange.sendToBack');
 		expect(p.seq().clips[p.video]!.trackId).toBe(p.seq().videoTracks[0]!.id);
-		// Alone at its time: Bring to Front is disabled with the reason.
 		p.session.select('timeline', [r.refs.$over!]);
 		p.apply([{ type: 'clip.move', clipIds: [r.refs.$over!], deltaFrames: 500 }]);
 		expect(isCommandEnabled(getCommand('arrange.bringToFront')!, p.ctxFor())).toBe(false);

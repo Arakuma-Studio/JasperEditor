@@ -1,6 +1,3 @@
-// wp speech UI commands (agent-exposed): Generate Transcript… for the active sequence (Sequence ▸ Captions, Text ▸
-// Transcript), for the selected clips' media (Clip menu) or the selected Project media, and Preferences ▸ Transcription.
-// Premiere has no default shortcuts for these. Gated by the `transcription` capability (engine speech ready).
 import type { Sequence } from '@jasper/project';
 import { activeTimeline } from '../panels/timeline/env.tsx';
 import { PREFERENCES_DIALOG } from '../shell/preferences/index.ts';
@@ -22,8 +19,11 @@ function selectedProjectMedia(ctx: CommandCtx): string[] {
 	if (!s) return [];
 	const doc = s.document;
 	return s.selection.project.items
-		.map((id) => (doc.items[id] as { mediaId?: string } | undefined)?.mediaId)
-		.filter((id): id is string => !!id && hasAudio(doc.media[id] as never));
+		.map((id) => {
+			const item = doc.items[id];
+			return item && 'mediaId' in item ? item.mediaId : undefined;
+		})
+		.filter((id): id is string => !!id && hasAudio(doc.media[id]));
 }
 
 function selectedClipMedia(ctx: CommandCtx): string[] {

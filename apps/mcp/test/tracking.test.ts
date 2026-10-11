@@ -1,7 +1,3 @@
-// jasper-mcp tracking tools end to end (S09 §8 item 7, TRA-001/002): a real engine (token mode, temp appdir,
-// port MCP_TRACK_TEST_PORT = 48553) and an MCP client over stdio. add_tracker + track (wait) + apply_tracking
-// on the planar fixture plate, then render_frame: the pinned overlay's corners in the PNG are within 3 px of the
-// fixture's ground truth.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -44,7 +40,6 @@ async function ok<T = Record<string, unknown>>(name: string, args: Record<string
 	return JSON.parse(textOf(r)) as T;
 }
 
-/** Decodes a PNG to RGB24 with ffmpeg. */
 function decodePng(png: Buffer): { w: number; h: number; rgb: Buffer } {
 	const w = png.readUInt32BE(16);
 	const h = png.readUInt32BE(20);
@@ -223,7 +218,6 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 			targetClipId: targetId,
 			mode: 'corner-pin',
 		});
-		// S09:TRK-023 / TRA-003: simplify the 150 per-frame keys of each corner (dry run first, then for real).
 		type Simplified = {
 			keyframesBefore: number;
 			keyframesAfter: number;

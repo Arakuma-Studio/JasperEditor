@@ -1,9 +1,3 @@
-// Sequence ▸ Sequence Settings… (workstream gaps, docs/wp-notes/gaps.md §TL-11): Premiere's one dialog for the active
-// sequence — Timebase, Frame Size, Pixel Aspect Ratio, Fields, Start timecode / drop frame, Audio sample rate and
-// channel format, the Video Previews settings (the previews workstream's dialog) and the Working Colour Space
-// (color-mgmt's dialog). Load Preset fills the fields from a sequence preset. Edits are checked against the content as
-// Premiere does: a timebase change of a sequence with clips asks before conforming them, a frame size change asks how
-// clips are repositioned. OK commits ONE undoable `sequence.updateSettings`.
 import {
 	isAllowedSequenceRate,
 	type Rational,

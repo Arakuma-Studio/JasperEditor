@@ -1,10 +1,3 @@
-// jasper-proc steps against the S07 §8 acceptance criteria (tests 2-6) with the LGPL FFmpeg:
-//   2 frame count / rate / audio bit-exact for every step on clip-b.mp4
-//   3 stabilise shaky.mp4: global inter-frame motion variance (phase correlation) drops ≥ 60 % (vid.stab WASM)
-//     and ≥ 40 % (deshake)
-//   4 de-judder judder.mp4 (detected, step CV drops ≥ 50 %); exact steady passthrough in dejudder.test.ts
-//   5 denoise: noise sigma of a flat patch drops ≥ 40 % (medium); deblock: 8x8 blockiness drops ≥ 25 %
-//   6 upscale with the generated model: exactly 2×, seamless tiles, `mix` blends linearly
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -71,7 +64,6 @@ function audioHash(file: string): string {
 	return createHash('sha256').update(r.stdout).digest('hex');
 }
 
-/** Grey frames (full range) of a file, optionally scaled. */
 function grey(file: string, w: number, h: number, vf = ''): Uint8Array[] {
 	const r = spawnSync(
 		FFMPEG,
@@ -94,8 +86,6 @@ function grey(file: string, w: number, h: number, vf = ''): Uint8Array[] {
 		frames.push(new Uint8Array(r.stdout.subarray(o, o + w * h)));
 	return frames;
 }
-
-// ---------------------------------------------------------------- metrics
 
 /** In-place radix-2 FFT. */
 function fft(re: Float64Array, im: Float64Array, inverse = false): void {
@@ -347,8 +337,7 @@ describe('de-judder (S07 §8 test 4)', () => {
 	}, 600_000);
 });
 
-// M3 (wp-m3-inpoint, PST-013): a processed RANGE reads one context frame before/after it from the source, so
-// its first/last frames are retimed exactly as in a whole-file run instead of being copied.
+// A processed range needs one context frame on either side so boundary frames are retimed as in a whole-file run.
 describe('de-judder of a range reads context frames (PST-013)', () => {
 	it('ranges starting mid-motion retime their edge frames like the whole file does', async () => {
 		const whole = await proc(fixture('judder.mp4'), [{ op: 'dejudder', mode: 'force' }], 'judder-whole');

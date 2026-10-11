@@ -1,5 +1,3 @@
-// Render previews in the editor (workstream `previews`): the render bar of the Timeline and the preview files the
-// Program monitor plays, from the committed document and the engine's answers (store.ts).
 import type { PreviewSettings } from '@jasper/api';
 import {
 	audioPreviewSegments,

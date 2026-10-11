@@ -149,8 +149,6 @@ export function framesWhere(n: number, test: (k: number) => boolean, fps: Ration
 	return runs.map(([a, b]) => `between(t,${sec(a - 0.5)},${sec(b - 0.5)})`).join('+');
 }
 
-// ---- Layers: Motion and Opacity (S03 §3.2, §4.2 steps 5–6; ENG-030 steps 6–8, ENG-032)
-
 /**
  * Fit tolerances: sizes and positions in pixels, rotation in degrees, opacity as a 0..1 factor, gain in dB. Well
  * inside S03:ENG-032 (0.25 px / 0.1°); the filters then round sizes and positions to whole pixels anyway.
@@ -269,7 +267,6 @@ export function motionStage(o: MotionStageOptions): MotionStage {
 	// Without keyframes one sample (frame f0) stands for every frame: constant filters and offsets.
 	const n = layerAnimated(c) ? Math.max(1, f1 - f0) : 1;
 
-	// ---- per-frame samples (the shared evaluator, S03:KF-010)
 	const exW = new Float64Array(n);
 	const exH = new Float64Array(n);
 	const deg = new Float64Array(n);
@@ -318,7 +315,6 @@ export function motionStage(o: MotionStageOptions): MotionStage {
 	// Quarter turns of a fixed-size picture stay exact transposes/flips; anything else goes through `rotate`.
 	const rotating = rotVar || (sizeVar ? !near(deg0, 0) : !quarter);
 
-	// ---- flips (negative scale), on the source
 	const flip = (neg: Uint8Array, filter: 'hflip' | 'vflip') => {
 		const all = neg.every((v) => v === neg[0]);
 		if (all && !neg[0]) return;
@@ -327,7 +323,6 @@ export function motionStage(o: MotionStageOptions): MotionStage {
 	flip(negX, 'hflip');
 	flip(negY, 'vflip');
 
-	// ---- size (whole pixels)
 	const pw = fitPieces(exW, FIT_TOLERANCE.px);
 	const ph = fitPieces(exH, FIT_TOLERANCE.px);
 	const sizeExpr = (pieces: Piece[], index: string) => `max(1,round(${piecewiseExpr(pieces, index)}))`;
@@ -352,7 +347,7 @@ export function motionStage(o: MotionStageOptions): MotionStage {
 			? { w: String(sw[0]), h: String(sh[0]), perFrame: false, threads: 1 }
 			: null;
 
-	// ---- rotation about the picture centre (y-down, clockwise), or the fixed box of an unrotated picture
+	// Rotation is clockwise about the picture centre in y-down coordinates.
 	let RW: number;
 	let RH: number;
 	/** Overlay offset expression (main time) for one axis. */
@@ -407,7 +402,6 @@ export function motionStage(o: MotionStageOptions): MotionStage {
 		} else if (near(Math.abs(deg0), 180)) filters.push('hflip', 'vflip');
 	}
 
-	// ---- opacity: alpha × per-frame factor
 	if (varies(alpha)) {
 		const pa = fitPieces(alpha, FIT_TOLERANCE.alpha);
 		const value = piecewiseExpr(pa, frameIndex(fps, 0, false, 'T'));
@@ -431,8 +425,6 @@ export function alphaMultiply(label: string, factor: string): string {
 		`[${c}][${d}]lut2=c0='floor(x*y/255+0.5)'[${e}];[${a}][${e}]alphamerge`
 	);
 }
-
-// ---- Crop with keyframed edges (S01:FX-003, S03:DM-010: content is hidden, never moved)
 
 export const CROP_EDGES = ['left', 'top', 'right', 'bottom'] as const;
 

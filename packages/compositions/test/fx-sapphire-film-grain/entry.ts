@@ -1,7 +1,3 @@
-// Browser entry of the S_Film / grain / damage family GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-film-grain-gl.test.ts): runs one effect of the family on the real GPU host (src/fx/host.ts) over a
-// synthetic picture or a loaded photo and reports pixels (and, for the visual check, a PNG data URL). The seed is
-// derived like the compositions do (`fxSeed(clip, instance, params)`), so the Seed param changes the pattern.
 import '../gl-poison.ts';
 import { defaultEffectRegistry, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
@@ -158,7 +154,6 @@ const api = {
 			.map((s) => s.id);
 	},
 	render,
-	/** Compiles the passes of an effect (default params) in a fresh WebGL2 context: ms per pass (diagnostics). */
 	compileTimes(id: string, over: Record<string, unknown> = {}) {
 		const spec = defaultEffectRegistry.get(id)!;
 		const params = { ...Object.fromEntries(spec.params.map((p) => [p.name, p.default])), ...over };

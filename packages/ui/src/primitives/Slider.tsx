@@ -1,6 +1,3 @@
-// Slider (S05:CT-030/031): 2 px track, 12 px hollow ring thumb, secondary-colored fill; bipolar sliders
-// fill from the center; double-click the thumb resets to the default. Keyboard: arrows = step,
-// Shift+arrows = 10 steps, Home/End = min/max (Radix). Always paired with a ScrubbyNumber by callers.
 import { Slider as RSlider } from 'radix-ui';
 import { cx } from '../cx.ts';
 
@@ -19,7 +16,6 @@ export type SliderProps = {
 	disabled?: boolean;
 	/** Drag started (map to session.beginGesture). */
 	onChangeStart?(): void;
-	/** Live value. */
 	onChange?(value: number): void;
 	/** Drag/keyboard change finished: commit once. */
 	onCommit?(value: number): void;

@@ -1,4 +1,4 @@
-// Layout measurement of the typeset text renderer (workstream text-animators). The text is laid out by the
+// Layout measurement of the typeset text renderer. The text is laid out by the
 // browser — the same line breaking, shaping, kerning and justification as any DOM text — in an off-screen,
 // untransformed copy of the text block (attached to `document.body`, so layer transforms and the Program
 // monitor's zoom never round the measurements), and every grapheme is measured with a Range (sub-pixel rects).
@@ -101,17 +101,10 @@ export function paragraphStyles(content: TextContent, count: number): TextStyle[
 	return Array.from({ length: count }, (_, i) => {
 		const o = content.paragraphs?.find((p) => p.index === i)?.style;
 		if (!o) return content.style;
-		const pick = Object.fromEntries(
-			PARAGRAPH_FIELDS.filter((f) => (o as Record<string, unknown>)[f] !== undefined).map((f) => [
-				f,
-				(o as Record<string, unknown>)[f],
-			]),
-		);
+		const pick = Object.fromEntries(PARAGRAPH_FIELDS.filter((f) => o[f] !== undefined).map((f) => [f, o[f]]));
 		return { ...content.style, ...pick } as TextStyle;
 	});
 }
-
-// ---------------------------------------------------------------- font metrics
 
 const ascentCache = new Map<string, number>();
 
@@ -150,8 +143,6 @@ function ascentOf(css: CSSProperties, host: HTMLElement): number {
 	ascentCache.set(key, v);
 	return v;
 }
-
-// ---------------------------------------------------------------- side bearings (optical kerning, tsume)
 
 let canvasCtx: CanvasRenderingContext2D | null | undefined;
 function ctx2d(): CanvasRenderingContext2D | null {
@@ -232,8 +223,6 @@ export function spacingAdjustments(
 	});
 	return out;
 }
-
-// ---------------------------------------------------------------- the flow and its measurement
 
 export type FlowInput = {
 	content: TextContent;

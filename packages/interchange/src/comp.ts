@@ -147,8 +147,6 @@ export function flicksToUnits(t: number, num: number, den: number): { n: number;
 	return { n: bigDivRound(x, d), exact: x % d === 0n };
 }
 
-// ---------------------------------------------------------------- interchange → composition
-
 type Side = { type: 'two'; start: number; end: number } | { type: 'one'; len: number };
 
 const essenceKeyEq = (a: EssenceKey, b: EssenceKey) => JSON.stringify(a) === JSON.stringify(b);
@@ -505,9 +503,7 @@ function markerIn(m: CMarker): IMarker {
 	};
 }
 
-// ---------------------------------------------------------------- composition → interchange
-
-export function toProject(doc: CDocument, opts: ImportOptions, report: Report, formatName: string): IProject {
+export function toProject(doc: CDocument, opts: ImportOptions, report: Report): IProject {
 	const name = opts.name ?? doc.compositions[0]?.name ?? 'Imported';
 	const b = new Builder(name);
 	const mediaBin = b.bin('Media');
@@ -609,7 +605,6 @@ export function toProject(doc: CDocument, opts: ImportOptions, report: Report, f
 		b.ensureTracks(seq, 'audio', 1);
 		linkClips(b, seq);
 	}
-	void formatName;
 	return b.finish();
 }
 

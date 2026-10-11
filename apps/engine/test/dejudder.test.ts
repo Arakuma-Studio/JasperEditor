@@ -1,4 +1,3 @@
-// S07:PST-012: automatic de-judder must pass steady footage through unchanged.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

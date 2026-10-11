@@ -1,4 +1,3 @@
-// Saved versions, save a copy and recovery journals over MCP (process workstream, D-39).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';

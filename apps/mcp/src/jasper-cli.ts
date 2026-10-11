@@ -6,6 +6,7 @@
 // Exit status: 0 ok, 1 the command failed, 2 usage error. --json prints one JSON document per result line.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { AgentQueryNameSchema } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -63,8 +64,6 @@ Exit status: 0 ok, 1 the command failed, 2 usage error.`;
 export class UsageError extends Error {
 	override readonly name = 'UsageError';
 }
-
-// ---------------------------------------------------------------- argument parsing
 
 const VALUE_FLAGS = new Set([
 	'project',
@@ -161,8 +160,6 @@ export function timeValue(s: string): unknown {
 	throw new UsageError(`Not a time: "${s}" (use frames, 2.5s or HH:MM:SS:FF)`);
 }
 
-// ---------------------------------------------------------------- output
-
 type Out = { stdout(s: string): void; stderr(s: string): void };
 
 export class CommandFailed extends Error {
@@ -187,8 +184,6 @@ function imageOf(r: CallToolResult): Buffer | null {
 	const img = r.content.find((c) => c.type === 'image') as { data?: string } | undefined;
 	return img?.data ? Buffer.from(img.data, 'base64') : null;
 }
-
-// ---------------------------------------------------------------- session
 
 export type CliSession = {
 	call(name: string, args?: Record<string, unknown>, opts?: { progress?: boolean }): Promise<CallToolResult>;
@@ -231,8 +226,6 @@ export async function openSession(
 		},
 	};
 }
-
-// ---------------------------------------------------------------- commands
 
 type Ctx = {
 	s: CliSession;
@@ -515,10 +508,12 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 	},
 	async query(c, args) {
 		needArgs(args, 1, 'query <name> [k=v…]');
+		const name = AgentQueryNameSchema.safeParse(args[0]);
+		if (!name.success) throw new UsageError(`Unknown query ${args[0]}`);
 		const cl = await c.s.link.client();
 		const q = await cl.agentQuery({
 			projectId: await c.projectId(),
-			query: args[0] as never,
+			query: name.data,
 			args: kvArgs(args.slice(1)),
 		});
 		emit(c, q.result);

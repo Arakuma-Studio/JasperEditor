@@ -34,8 +34,6 @@ export function quadToScreen(layerMap: Mat3, view: View, q: readonly Vec2[]): Qu
 	return q.map((p) => mediaToScreen(layerMap, view, p)) as Quad;
 }
 
-// ------------------------------------------------------------------ quad drags
-
 /** What a pointer grabbed on a tracker quad: a corner (0..3 = TL, TR, BR, BL), an edge (i → i+1) or the body. */
 export type QuadPart = { kind: 'corner'; index: number } | { kind: 'edge'; index: number } | { kind: 'body' };
 
@@ -79,8 +77,6 @@ function partMoves(part: QuadPart, i: number): boolean {
 	);
 }
 
-// ------------------------------------------------------------------ point trackers
-
 /** Axis-aligned square of side `size` centred on `p` (media px) as a quad. */
 export function squareAround(p: Vec2, size: number): Quad {
 	const h = size / 2;
@@ -99,8 +95,6 @@ export function sizeFromCorner(centre: Vec2, corner: Vec2, min = 4): number {
 		Math.round(2 * Math.max(Math.abs(corner[0] - centre[0]), Math.abs(corner[1] - centre[1]))),
 	);
 }
-
-// ------------------------------------------------------------------ confidence and trails
 
 type ConfidenceTone = 'good' | 'fair' | 'poor';
 
@@ -164,8 +158,6 @@ export function progressGeometry(data: readonly number[]): { corners: Quad | nul
 	return { corners: null, point: null };
 }
 
-// ------------------------------------------------------------------ corner pin (TRU-003/004)
-
 export const CORNER_PIN_DEFAULTS: Quad = [
 	[0, 0],
 	[1, 0],
@@ -217,8 +209,6 @@ function round6(v: number): number {
 export function pinIsConvex(params: Quad, box: { width: number; height: number }): boolean {
 	return isConvexQuad(denormalise(params, box));
 }
-
-// ------------------------------------------------------------------ default placement
 
 /**
  * The part of a plate's media that is visible in the sequence frame at a layer map (media px rect), or the whole

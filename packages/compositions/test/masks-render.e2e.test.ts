@@ -1,8 +1,4 @@
 // @vitest-environment node
-// wp masks on the Remotion render path (the preview's code, rendered by @remotion/renderer in headless Chrome as the
-// engine's export and layer bakes do): Opacity masks against the CPU coverage definition (the native export
-// kernel's: preview/export parity), a masked effect, and Track Matte Key reading a hidden track (alpha, luma,
-// reverse). Gated by REMOTION_E2E=1; needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -150,7 +146,6 @@ describe.runIf(enabled)(
 							effectId: 'jasper.track-matte-key',
 							params: { matteTrack: v3, ...opts },
 						} as Command,
-						// The matte: a grey (50 %) rectangle shape on V3, hidden.
 						{
 							type: 'clip.addShape',
 							at: 0,

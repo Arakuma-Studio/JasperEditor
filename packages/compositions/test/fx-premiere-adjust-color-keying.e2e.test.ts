@@ -1,10 +1,4 @@
 // @vitest-environment node
-// The fx family premiere-adjust-color-keying on the Remotion render path (REMOTION_E2E=1): bundles the compositions
-// (the default registry includes the family), renders stills with @remotion/renderer in headless Chrome and checks
-// pixels — Drop Shadow into the padding with Premiere's direction convention, Ultra Key on a green solid, the
-// analysis passes of Auto Levels / Equalize on video, a media-param matte (Track Matte Key) and Basic 3D.
-// PACG_PHOTOS=<dir with Girl_in_front_of_a_g.jpg, market0157.jpg> also renders photo stills for a visual check
-// (written next to the other stills; the test logs the directory).
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';

@@ -2,9 +2,9 @@
 // the engine runs the project's own `remotion bundle`, optionally watching it), or a zip of a built bundle
 // uploaded with `purpose: 'mg-bundle'` (web). The RegisteredMedia becomes an `mg-bundle` MediaAsset (with its
 // `mgBundle` header) in one "Import Remotion Project" transaction.
-import { type RegisteredMedia, UPLOAD_CHUNK_BYTES, UploadOffsetMismatchSchema } from '@jasper/api';
+import type { RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import type { Command, MediaAsset } from '@jasper/project';
+import type { CommandInput, MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { buildMediaAsset, LOCAL_ENGINE_ID, mediaKeyOf } from '../import/assets.ts';
 import { clientJobs } from '../import/client-jobs.ts';
@@ -42,7 +42,7 @@ function commitBundle(
 	const previous = srcPath
 		? Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && m.mgBundle?.source.path === srcPath)
 		: undefined;
-	const commands: Command[] = previous
+	const commands: CommandInput[] = previous
 		? [
 				{
 					type: 'media.relink',
@@ -51,7 +51,7 @@ function commitBundle(
 					fingerprint: reg.fingerprint,
 					mgBundle: reg.mgBundle,
 					sizeBytes: reg.sizeBytes,
-				} as Command,
+				},
 			]
 		: [
 				{
@@ -60,7 +60,7 @@ function commitBundle(
 					name: reg.mgBundle?.source.name ?? reg.originalName,
 					label: 'magenta',
 					ref: '$bundle',
-				} as Command,
+				},
 			];
 	const result = session.apply({ label, origin: 'user', commands });
 	if (!result.ok) throw new Error(result.errors.map((e) => e.message).join('; ') || 'Import failed');
@@ -127,25 +127,13 @@ export async function importBundleZip(
 			mimeType: 'application/zip',
 			purpose: 'mg-bundle',
 		});
-		let offset = up.offset;
-		const chunk = up.chunkSize || UPLOAD_CHUNK_BYTES;
-		let guard = 0;
-		while (offset < file.size) {
-			const end = Math.min(file.size, offset + chunk);
-			try {
-				offset = (await engine.appendUpload(up.uploadId, offset, file.slice(offset, end), opts.signal))
-					.offset;
-			} catch (e) {
-				const m =
-					e instanceof EngineError && e.code === 'UPLOAD_OFFSET_MISMATCH'
-						? UploadOffsetMismatchSchema.safeParse(e.detail)
-						: null;
-				if (!m?.success || ++guard > 5) throw e;
-				offset = m.data.expectedOffset;
-			}
-			opts.onProgress?.(offset, file.size);
-			clientJobs.update(jobId, { progress: file.size ? offset / file.size : 1, loadedBytes: offset });
-		}
+		await engine.uploadChunks(file, up, {
+			signal: opts.signal,
+			onProgress({ loaded, total }) {
+				opts.onProgress?.(loaded, total);
+				clientJobs.update(jobId, { progress: total ? loaded / total : 1, loadedBytes: loaded });
+			},
+		});
 		clientJobs.update(jobId, { stage: 'Importing', progress: null });
 		const reg = await engine.call('mgBundleImport', {
 			body: { uploadId: up.uploadId, projectId: session.projectId },

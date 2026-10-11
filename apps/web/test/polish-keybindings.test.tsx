@@ -1,5 +1,3 @@
-// polish: the default key bindings that had no command behind them — Get Properties for Selection (Ctrl+Shift+H),
-// Set / Clear Poster Frame (Shift+P / Alt+Shift+P) and the Effects panel's custom bins (Ctrl+/, Backspace).
 import type { MediaAsset, MediaItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -49,7 +47,6 @@ describe('Get Properties for Selection', () => {
 		expect(get('Audio')).toBe('48000 Hz · stereo (stereo) · aac');
 		expect(get('Total Duration')).toBe('00:00:10.000');
 		expect(get('File Size')).toContain('1,000 bytes');
-		// offline media say so; an unknown path is simply not listed
 		expect(mediaFacts(session.getCommitted().media[mediaId] as MediaAsset, null)[0]).toEqual({
 			label: 'File Path',
 			value: 'Offline',
@@ -84,7 +81,6 @@ describe('Set / Clear Poster Frame', () => {
 		const toast = vi.fn();
 		const ctx = createCommandContext({ engine: new ScriptedEngine().client(), session, toast });
 
-		// nothing hovered: the command explains itself and changes nothing
 		await runCommand('project.setPosterFrame', ctx);
 		expect(toast).toHaveBeenCalledTimes(1);
 		expect(poster(session, itemId)).toBeUndefined();
@@ -105,7 +101,6 @@ describe('Set / Clear Poster Frame', () => {
 		session.undo();
 		expect(poster(session, itemId)).toBeUndefined();
 
-		// without a hover, Clear acts on the selected items that have a poster
 		session.redo();
 		clearPosterHover(itemId);
 		expect(getCommand('project.clearPosterFrame')!.when?.(ctx)).toBe(false);
@@ -142,7 +137,7 @@ describe('Effects panel custom bins', () => {
 		expect(newBin.when?.(ctx)).toBe(true);
 		await runCommand('effects.newCustomBin', ctx);
 		expect(handle.newBin).toHaveBeenCalledTimes(1);
-		expect(del.when?.(ctx)).toBe(false); // nothing of the user's is picked
+		expect(del.when?.(ctx)).toBe(false);
 		expect(del.labelFor?.(ctx)).toBe('Delete Custom Item');
 		picked = { kind: 'bin', name: 'Looks' };
 		expect(del.when?.(ctx)).toBe(true);

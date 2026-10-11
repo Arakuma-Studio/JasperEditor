@@ -1,4 +1,4 @@
-// Sprite rendering of the simulation-warp family (sim-warp workstream): particles, drops, flakes, stars, balls and
+// Sprite rendering of the simulation-warp family: particles, drops, flakes, stars, balls and
 // strand segments are instanced quads of a draw pass (`ShaderPass.draw`), shaded per pixel by `sp_shade` — a port of
 // EffectCraft's sprite rasteriser (crates/effects/src/sim.rs `sprite_shade`, MIT OR Apache-2.0; see
 // licenses/ported/sim-warp.md) — and composited with the original layer by `sp_combine` (the effects' Transfer

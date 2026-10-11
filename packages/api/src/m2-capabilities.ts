@@ -1,9 +1,8 @@
-// M2 capability blocks (ARCHITECTURE §19.7): each work package fills its block through a capability provider
-// (`core.registerCapabilityProvider`). All optional: absent = the feature is not built into this engine.
+// Missing capability blocks mean the feature is not available in this engine.
 import { z } from 'zod';
 
 export const M2FeaturesSchema = z.object({
-	/** wp-m2-color: colour grading on the native path. */
+	/** Colour grading on the native path. */
 	color: z
 		.object({
 			/** `lut3d` present in the engine's FFmpeg (native path for colour effects). */
@@ -12,13 +11,13 @@ export const M2FeaturesSchema = z.object({
 			remotionWebgl: z.enum(['ok', 'unavailable', 'unknown']),
 		})
 		.optional(),
-	/** wp-m2-process: clip processing (S07). */
+	/** Clip processing (S07). */
 	processing: z
 		.object({
 			stabilize: z.enum(['vidstab', 'deshake', 'none']),
 			/**
-			 * wp-m3-stabpath (S07:PST-005): the smooth-path stabiliser (OpenCV.js tracking + the vid.stab WASM warp
-			 * kernel). Absent on older engines = unavailable.
+			 * the smooth-path stabiliser (OpenCV.js tracking + the vid.stab WASM warp
+			 * kernel). Absent means unavailable.
 			 */
 			smoothPath: z.enum(['ready', 'unavailable']).optional(),
 			denoise: z.array(z.enum(['atadenoise', 'fftdnoiz', 'nlmeans'])),
@@ -39,7 +38,7 @@ export const M2FeaturesSchema = z.object({
 			}),
 		})
 		.optional(),
-	/** wp-m2-mg: Remotion bundles as clips (S08). */
+	/** Remotion bundles as clips (S08). */
 	mgBundles: z
 		.object({
 			status: z.enum(['ready', 'unavailable']),
@@ -48,7 +47,7 @@ export const M2FeaturesSchema = z.object({
 			projectImport: z.boolean(),
 		})
 		.optional(),
-	/** wp-m2-track: tracking jobs (S09). */
+	/** Tracking jobs (S09). */
 	tracking: z
 		.object({
 			status: z.enum(['ready', 'unavailable']),
@@ -58,10 +57,10 @@ export const M2FeaturesSchema = z.object({
 			warpStage: z.boolean(),
 		})
 		.optional(),
-	/** M2 animation (S11:LBK-030, filled by routes/anime.ts): the anime.js runtime and its catalogues. */
+	/** The anime.js runtime and its catalogues. */
 	anime: z
 		.object({
-			/** anime.js version bundled with the compositions (pinned exactly, S11:ANM-011). */
+			/** Anime.js version bundled with the compositions (pinned exactly, S11:ANM-011). */
 			animejs: z.string(),
 			/** Text animator presets (TEXT_ANIMATION_SPECS). */
 			textPresets: z.number().int().min(0),
@@ -69,8 +68,7 @@ export const M2FeaturesSchema = z.object({
 			templates: z.number().int().min(0),
 		})
 		.optional(),
-	/** wp-m2-layer-bake (S11:LBK-030): native export of DOM layers (text, shapes, anime templates). */
-	/** wp speech: local speech-to-text (Whisper on ONNX Runtime). */
+	/** Local speech-to-text (Whisper on ONNX Runtime). */
 	speech: z
 		.object({
 			status: z.enum(['ready', 'unavailable']),
@@ -88,7 +86,7 @@ export const M2FeaturesSchema = z.object({
 			cacheBytes: z.number().int().min(0),
 		})
 		.optional(),
-	/** parity (roto): Roto Brush / face tracking (`POST /api/roto/segment`). */
+	/** Roto Brush / face tracking (`POST /api/roto/segment`). */
 	roto: z
 		.object({
 			status: z.enum(['ready', 'unavailable']),
@@ -99,7 +97,7 @@ export const M2FeaturesSchema = z.object({
 			faceModel: z.boolean(),
 		})
 		.optional(),
-	/** wp-multicam: `POST /api/sync/audio` (Synchronize / Merge Clips / multi-camera by audio). */
+	/** `POST /api/sync/audio` (Synchronize / Merge Clips / multi-camera by audio). */
 	audioSync: z
 		.object({
 			state: z.enum(['ready', 'unavailable']),
@@ -109,7 +107,7 @@ export const M2FeaturesSchema = z.object({
 			maxSeconds: z.number(),
 		})
 		.optional(),
-	/** wp interchange: timeline import/export formats, pre-renders and AAF / OMF audio essence (ffmpeg). */
+	/** Timeline import/export formats, pre-renders and AAF / OMF audio essence (ffmpeg). */
 	interchange: z
 		.object({
 			state: z.enum(['ready', 'unavailable']),

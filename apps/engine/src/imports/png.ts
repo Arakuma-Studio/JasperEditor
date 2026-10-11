@@ -1,5 +1,4 @@
-// Raw RGBA → PNG through ffmpeg (imports workstream): layered documents' layers and composites. 8-bit sources write
-// `rgba` PNGs, deeper ones `rgba64be` (16-bit) so nothing is lost; straight (unpremultiplied) alpha.
+// Preserve source precision: 8-bit sources use rgba PNG, deeper sources rgba64be; alpha stays unpremultiplied.
 import { randomBytes } from 'node:crypto';
 import { rename, rm, writeFile } from 'node:fs/promises';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';

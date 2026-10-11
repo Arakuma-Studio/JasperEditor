@@ -1,6 +1,3 @@
-// Robustness of expression source (golden-fuzz; docs/testing.md §Fuzzing): any text — mutated real expressions,
-// truncations, arbitrary strings — compiles to a result or an AE-style error message and evaluates to a value or an
-// error message on a real document, never throwing or hanging (the engine's own tick / wall-clock limits apply).
 import type { ExpressionRef } from '@jasper/project';
 import { describeFuzz, textTarget } from '@jasper/testkit/fuzz';
 import { beforeAll } from 'vitest';

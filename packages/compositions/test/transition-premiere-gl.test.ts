@@ -1,9 +1,4 @@
 // @vitest-environment node
-// The Premiere transition family (packages/project/src/registry/transitions/premiere-transitions.ts + premiere/*)
-// in a real WebGL2 (headless Chrome, SwiftShader when there is no GPU; entry: test/transition-premiere-gl/entry.ts):
-// a characteristic pixel of every transition at a fixed progress (Start = End), directions, Reverse, borders,
-// one-sided use, determinism of the random ones and the Morph Cut warp. Runs when a Chrome is found
-// (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

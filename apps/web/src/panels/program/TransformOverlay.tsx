@@ -103,7 +103,7 @@ const AXIS_LOCK_PX = 6;
 type ClipStart = { id: string; v0: LayerTransformValues; move3d?: Move3D };
 type GestureState =
 	| { kind: 'pan'; start: Vec2; pan0: Vec2 }
-	/** edit-ux: marquee selection on empty canvas (Premiere Program monitor; Shift/Ctrl add to the selection). */
+	/** marquee selection on empty canvas (Premiere Program monitor; Shift/Ctrl add to the selection). */
 	| { kind: 'marquee'; start: Vec2; base: string[]; startScreen: Vec2; moved: boolean }
 	| {
 			kind: 'move';
@@ -162,7 +162,7 @@ type GestureState =
 			drag: MotionPathDrag;
 			startScreen: Vec2;
 			moved: boolean;
-			/** keyframes-blend: snap targets of a key drag (frame, safe margins, layers, the path's other keys). */
+			/** snap targets of a key drag (frame, safe margins, layers, the path's other keys). */
 			targets: SnapTargets | null;
 	  };
 
@@ -237,7 +237,7 @@ export function TransformOverlay({
 			: '';
 	});
 	const locked = useMemo(() => new Set(lockedKey ? lockedKey.split(',') : []), [lockedKey]);
-	// three-d: 3D layers are resolved through the monitor's camera (active camera or 3D view).
+	// 3D layers are resolved through the monitor's camera (active camera or 3D view).
 	const views3d = useStoreSelector(threeDViews, (s) => s.bySequence[doc.sequenceId]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: the 3D view changes what the scene projects
 	const scene = useMemo(() => resolveProgramScene(doc, frame), [doc, frame, views3d]);
@@ -250,7 +250,7 @@ export function TransformOverlay({
 	// changes (the snapshot shares the document's Animatables), never per playhead frame (ARC-010).
 	const pathClip = useMemo(() => {
 		if (selected.length !== 1) return null;
-		// three-d: a 3D layer's 2D motion path would not lie where it is drawn.
+		// a 3D layer's 2D motion path would not lie where it is drawn.
 		for (const t of doc.videoTracks)
 			for (const c of t.clips) if (c.clipId === selected[0] && c.transform && !c.threeD) return c;
 		return null;
@@ -274,7 +274,7 @@ export function TransformOverlay({
 		() => (pathClip ? buildMotionPath(pathClip, doc.settings.fps) : null),
 		[pathKey, pathAnim],
 	);
-	// keyframes-blend: the Anchor Point path (anchor values in layer space, drawn through the layer map at the
+	// the Anchor Point path (anchor values in layer space, drawn through the layer map at the
 	// playhead — the anchor point always sits at Position in the frame, so its path is shown over the layer as After
 	// Effects shows it over the layer). Rebuilt when the layer map changes.
 	const anchorAnim = pathClip?.transform?.anchor;
@@ -378,8 +378,8 @@ export function TransformOverlay({
 		const seq = activeSequence(session);
 		const c = seq?.clips[id];
 		if (!seq || !c || !('transform' in c)) return null;
-		const v0 = transformAt(seq, c as never, live.current.frame);
-		// three-d: a 3D layer moves in the plane facing the camera (it follows the pointer).
+		const v0 = transformAt(seq, c, live.current.frame);
+		// a 3D layer moves in the plane facing the camera (it follows the pointer).
 		const rc = doc.videoTracks.flatMap((t) => t.clips).find((x) => x.clipId === id);
 		if (rc?.threeD && rc.kind !== 'adjustment')
 			return { id, v0, move3d: move3dStart(doc, rc, live.current.frame, v0) };
@@ -427,7 +427,7 @@ export function TransformOverlay({
 		const pathHit = found?.hit ?? null;
 		if (found && pathHit) {
 			const mp = found.path;
-			// keyframes-blend: the Pen tool, or Ctrl (Cmd on macOS) on a key square, converts the vertex (click) or pulls
+			// the Pen tool, or Ctrl (Cmd on macOS) on a key square, converts the vertex (click) or pulls
 			// Continuous Bezier handles out of it (drag) — After Effects' Convert Vertex.
 			const pull = pathHit.kind === 'key' && (tool === 'pen' || e.ctrlKey || e.metaKey);
 			const drag = startMotionPathDrag(mp, pathHit, p, pull ? new Set() : selectedKeys, { pull });
@@ -744,7 +744,7 @@ export function TransformOverlay({
 							value: p3[2],
 							at: { sequenceFrame: f },
 							sequenceId: seqId,
-						} as never,
+						},
 					];
 				}),
 			);
@@ -858,7 +858,7 @@ export function TransformOverlay({
 			setMarquee(null);
 			return;
 		}
-		// keyframes-blend: a Pen / Ctrl click on a path key (no drag) converts the vertex (corner ↔ smooth).
+		// a Pen / Ctrl click on a path key (no drag) converts the vertex (corner ↔ smooth).
 		if (g?.kind === 'path' && g.drag.pull && !g.moved) {
 			endGesture(false);
 			void session.apply({
@@ -871,7 +871,6 @@ export function TransformOverlay({
 		endGesture(true);
 	};
 
-	// ------------------------------------------------------------------ drops (WP-3I)
 	// Effects dropped on the Program monitor apply to the layer under the pointer (S05:EFX-010, like the
 	// timeline); motion templates dropped anywhere on it are inserted at the playhead (S05:MGT-002).
 	const [dropHint, setDropHint] = useState<string | null>(null);
@@ -934,7 +933,6 @@ export function TransformOverlay({
 		}
 	};
 
-	// ------------------------------------------------------------------ drawing
 	const hoverLayer =
 		hover && !selectedSet.has(hover) ? scene.find((l) => l.clip.clipId === hover) : undefined;
 	const frameRect: Quad = [
@@ -1261,7 +1259,7 @@ function PlaybackOutlines({
 	);
 }
 
-/** edit-ux: visible guides of the active sequence are snap targets (Premiere: Snap in Program Monitor). */
+/** visible guides of the active sequence are snap targets (Premiere: Snap in Program Monitor). */
 function snapGuides(session: EditorSession) {
 	if (!monitorExtras.getState().showGuides) return [];
 	return guidesOf(session.getState().activeSequenceId);

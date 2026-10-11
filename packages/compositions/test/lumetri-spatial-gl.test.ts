@@ -1,8 +1,4 @@
 // @vitest-environment node
-// color-grade: Lumetri's spatial GPU stage (`jasper.lumetri-spatial`) in a real WebGL2 (headless Chrome, SwiftShader).
-// Pointwise settings (HSL Secondary key + correction, Show Mask, Invert, Vignette) match the CPU reference
-// (color/lumetri-spatial.ts) on every pixel within 1 code value; Refine (Denoise, Blur) and Sharpen show their
-// characteristic behaviour; alpha is kept. Harness: test/lumetri-spatial-gl/entry.ts. FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

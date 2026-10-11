@@ -1,6 +1,3 @@
-// Workstream gaps (docs/wp-notes/gaps.md): Project Settings read with defaults, and the invariants / repairs of every
-// optional field this workstream added (project settings, attached proxies, sequence pixel aspect and fields, clip
-// audio channel maps, Warp Stabilizer analyses, graphic layers). `invariants.ts` calls `gapsIssues` and `repairGaps`.
 import type { Issue } from '../commands/types.ts';
 import {
 	type ProjectDisplay,

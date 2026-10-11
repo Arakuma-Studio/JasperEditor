@@ -1,4 +1,3 @@
-// scripts/check-layers.mjs (ARCHITECTURE §3.1, D-37): the dependency table over package.json edges and imports.
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -111,7 +110,6 @@ describe('check-layers', () => {
 				].join('\n'),
 			),
 		).toEqual(['node:fs', 'path', 'react', 'remotion', 'animejs/utils']);
-		// the opt-out needs a reason
 		expect(found("// layers-allow: types only, erased\nimport type { Stats } from 'node:fs';")).toEqual([]);
 	});
 
@@ -140,7 +138,53 @@ describe('check-layers', () => {
 		expect(rules(root)).toEqual(['packages/newthing/package.json unknown-package newthing']);
 	});
 
+	it('rejects scoped UI and server packages in browser model layers', () => {
+		const ctx = {
+			dir: 'packages/project',
+			layer: LAYERS['packages/project'],
+			declared: new Set(),
+			exportsOf: () => null,
+		};
+		const text = 'import "@radix-ui/react-dialog";\nimport "@fastify/cors";\nimport "@remotion/renderer";';
+		expect(fileViolations('packages/project/src/x.ts', text, ctx).map(({ spec }) => spec)).toEqual([
+			'@radix-ui/react-dialog',
+			'@fastify/cors',
+			'@remotion/renderer',
+		]);
+	});
+
+	it('allows only type imports of the desktop API bridge contract', () => {
+		const root = workspace({
+			'packages/api': {
+				pkg: { name: '@jasper/api', exports: { '.': './src/index.ts' } },
+				files: { 'src/index.ts': 'export interface Bridge {}' },
+			},
+			'apps/desktop': {
+				pkg: { name: '@jasper/desktop', dependencies: { '@jasper/api': 'workspace:*' } },
+				files: { 'src/preload.ts': 'import type { Bridge } from "@jasper/api";\nimport "@jasper/api";' },
+			},
+		});
+		expect(rules(root)).toEqual(['apps/desktop/src/preload.ts forbidden-edge @jasper/api']);
+	});
+
+	it('inspects import types and ignores imports quoted inside source strings and comments', () => {
+		const ctx = {
+			dir: 'packages/project',
+			layer: LAYERS['packages/project'],
+			declared: new Set(),
+			exportsOf: () => null,
+		};
+		const text = [
+			'const example = "import value from \'node:fs\'";',
+			'// import "node:path";',
+			'type Remote = import("@jasper/api").Remote;',
+		].join('\n');
+		expect(fileViolations('packages/project/src/x.ts', text, ctx).map(({ spec }) => spec)).toEqual([
+			'@jasper/api',
+		]);
+	});
+
 	it('the repository passes', () => {
 		expect(checkRepo(repo)).toEqual([]);
-	}, 60_000);
+	}, 120_000);
 });

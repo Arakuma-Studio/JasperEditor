@@ -1,5 +1,3 @@
-// Dynamics: static curves vs the Giannoulis–Massberg–Reiss soft-knee formula, steady state, time constants, the
-// limiter's ceiling guarantee (sample and true peak), latency, gate range, flat multiband crossover, determinism.
 import { TruePeakDetector } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
 import { dbToGain } from '../src/core/math.ts';

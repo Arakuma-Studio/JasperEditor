@@ -17,7 +17,7 @@ function watch(reg: ServiceWorkerRegistration): void {
 export function registerServiceWorker(): void {
 	if (
 		!import.meta.env?.PROD ||
-		(typeof window !== 'undefined' && !!(window as { jasperDesktop?: unknown }).jasperDesktop) ||
+		(typeof window !== 'undefined' && !!window.jasperDesktop) ||
 		typeof navigator === 'undefined' ||
 		!('serviceWorker' in navigator)
 	)

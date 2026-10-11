@@ -1,6 +1,5 @@
-// The sandboxed live frame host (security review MG-1): the host agent that runs inside a bundle's page
-// (mg-host/agent.ts) driven over a real MessageChannel by the editor's remote (mg-host/remote.ts), against a
-// stand-in for the Remotion 4.0.499 renderer-page globals; and what the editor accepts from a page it does not trust.
+// The bundle page is untrusted. Exercise the sandbox agent over a real MessageChannel
+// against the renderer globals provided by Remotion 4.0.499.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	HOST_AGENT_SCRIPT,
@@ -38,7 +37,6 @@ const REMOTION_GLOBALS = [
 	'__jasperTexts',
 ];
 
-/** What a 4.0.499 bundle page exposes, recording what the agent does with it. */
 function fakeRemotionPage(opts: { version?: string; failOn?: string } = {}) {
 	const log: string[] = [];
 	W.remotion_version = opts.version ?? '4.0.499';
@@ -69,7 +67,6 @@ function fakeRemotionPage(opts: { version?: string; failOn?: string } = {}) {
 	return log;
 }
 
-/** Hands the agent its port the way `connectMgHost` does, and returns the editor's end. */
 async function connect(): Promise<{ remote: MgHostRemote; port: MessagePort }> {
 	const channel = new MessageChannel();
 	const hello = new Promise<unknown>((resolve) => {
@@ -128,11 +125,10 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 		expect(log).toEqual(['mode:evaluation', 'calc:Title:{"title":"Hi"}', 'mode:composition:Title']);
 
 		await remote.seek('Title', 45);
-		await remote.seek('Title', 45); // the same frame is not drawn twice
-		await remote.seek('Title', 1e9); // clamped to the composition
+		await remote.seek('Title', 45);
+		await remote.seek('Title', 1e9);
 		expect(log.slice(3)).toEqual(['frame:Title:45', 'frame:Title:89']);
 
-		// The same configuration again is free; new props remount and show the last frame again.
 		await remote.configure({
 			compositionId: 'Title',
 			props: { title: 'Hi' },
@@ -246,13 +242,11 @@ describe('storage stand-ins of a sandboxed page (MG-1)', () => {
 		ls.removeItem('a');
 		ls.clear();
 		expect(ls.length).toBe(0);
-		// Each kind is its own store, and nothing leaves the page.
 		(win.sessionStorage as Storage).setItem('s', '1');
 		expect(ls.getItem('s')).toBeNull();
 		doc.cookie = 'stolen=1';
 		expect(doc.cookie).toBe('');
 
-		// A page that is not sandboxed keeps the real things.
 		const real = { localStorage: { real: true }, sessionStorage: { real: true } } as Record<string, unknown>;
 		const realDoc = { cookie: 'a=b' };
 		new Function('window', 'document', SANDBOX_STORAGE_SHIM)(real, realDoc);
@@ -268,7 +262,8 @@ function hostilePort(answer: (msg: { id: number; op: string }) => unknown): MgHo
 		postMessage(message: unknown) {
 			const m = message as { id: number; op: string };
 			const reply = answer(m);
-			if (reply !== undefined) queueMicrotask(() => port.onmessage?.({ data: reply }));
+			if (reply !== undefined)
+				queueMicrotask(() => port.onmessage?.(new MessageEvent<unknown>('message', { data: reply })));
 		},
 		close() {},
 	};
@@ -338,8 +333,12 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 				{ id: 'not-a-number', ok: true },
 				{ id: 999_999, ok: true, result: 1 },
 			])
-				port!.onmessage?.({ data: junk });
-			queueMicrotask(() => port!.onmessage?.({ data: { id: m.id, ok: true, result: true } }));
+				port!.onmessage?.(new MessageEvent<unknown>('message', { data: junk }));
+			queueMicrotask(() =>
+				port!.onmessage?.(
+					new MessageEvent<unknown>('message', { data: { id: m.id, ok: true, result: true } }),
+				),
+			);
 			return { id: m.id, ok: true, result: true };
 		});
 		const remote = new MgHostRemote(port);
@@ -388,7 +387,6 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 		expect(out[0]!.style!.fontFamily.length).toBe(1024);
 		expect(out[1]).toMatchObject({ id: 'b', found: false, rect: null });
 		expect(out[2]).toMatchObject({ id: 'c', found: false });
-		// Not an array, a huge array, a visible text without a box.
 		expect(sanitizeMeasurements(items, { length: 1e9 }).every((m) => !m.found)).toBe(true);
 		expect(
 			sanitizeMeasurements([{ id: 'a' }], [{ id: 'a', found: true, visible: true, rect: null }])[0],
@@ -414,7 +412,6 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 			`url("${origin}/media/mk_1")`,
 			`url("${origin}/mg/sandboxes/x")`,
 			`url("${origin}/mg/sandbox/cap/")`,
-			// Other loopback ports, plain http, files, relative and scheme-relative URLs, javascript.
 			'url("http://127.0.0.1:9229/json")',
 			'url("http://192.168.1.1/admin")',
 			'url("file:///etc/passwd")',
@@ -429,7 +426,6 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 		];
 		for (const s of bad)
 			expect([s.slice(0, 60), isSafeFontSource(s, origin)]).toEqual([s.slice(0, 60), false]);
-		// Without a known origin nothing same-origin is accepted.
 		expect(isSafeFontSource(ok[0]!, '')).toBe(false);
 	});
 

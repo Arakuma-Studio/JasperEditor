@@ -1,9 +1,3 @@
-// Security hardening (workstream `hardening`, docs/security-review.md §8): the residual risks of the review that
-// were closed, each with the test that failed before.
-//   AGT-2  approval answers count only from the editor connection that was shown the card
-//   AGT-3  destructive engine operations outside transactions ask the user when an agent makes them
-//   DEV-1  an engine that listens always has a token; the editor key is in no file an agent reads
-//   MG-1   motion-graphics bundle pages are served for a sandboxed, opaque-origin iframe
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AGENT_INPUT_HEADER, AGENT_NAME_HEADER } from '@jasper/api';
@@ -43,7 +37,6 @@ const secured = (opts: Parameters<typeof makeApp>[0] = {}) =>
 const agentService = (app: FastifyInstance) => app.jasper.services.agent as AgentService;
 
 type Msg = Record<string, unknown>;
-/** A `/agent` connection that said hello for a project, with everything it received. */
 async function session(app: App, headers: Record<string, string>, projectId: string, id = 'ses_1') {
 	const ws: WebSocket = await app.injectWS('/agent', { headers });
 	const received: Msg[] = [];
@@ -80,7 +73,6 @@ async function session(app: App, headers: Record<string, string>, projectId: str
 				payload: { approvalId, decision, ...(answerKey !== undefined ? { answerKey } : {}) },
 			}),
 		);
-	/** Answers every card this connection is shown. */
 	const auto = (decision: 'approved' | 'denied') =>
 		ws.on('message', (d) => {
 			const m = JSON.parse(String(d)) as Msg;
@@ -122,8 +114,6 @@ const postTx = (app: App, projectId: string, headers: Record<string, string> = A
 		payload: destructiveTx(projectId),
 	});
 
-// ================================================================================================ AGT-2
-
 describe('AGT-2: the editor is told apart from everything else that holds the token', () => {
 	it('classifies a request by the editor key cookie, never by the token', () => {
 		const config = { token: TOKEN, editorKey: KEY, port: 47900 } as never;
@@ -137,7 +127,6 @@ describe('AGT-2: the editor is told apart from everything else that holds the to
 		expect(isEditorRequest({ cookie: 'jasper_editor_47900=' }, config)).toBe(false);
 		// Another engine's cookie (same host, another port) is not this engine's.
 		expect(isEditorRequest({ cookie: `jasper_editor_48000=${KEY}` }, config)).toBe(false);
-		// Malformed percent-encoding must not throw out of the auth hook.
 		expect(isEditorRequest({ cookie: 'jasper_editor_47900=%E0%A4%A' }, config)).toBe(false);
 		// The editor itself says when it acts on an agent's live-UI input.
 		expect(isEditorRequest({ cookie: `jasper_editor_47900=${KEY}`, [AGENT_INPUT_HEADER]: '1' }, config)).toBe(
@@ -163,7 +152,6 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		const events: { type: string; payload: unknown }[] = [];
 		coreServices(app).broadcaster.subscribe((e) => events.push(e));
 		const editor = await session(app, EDITOR, projectId, 'ses_editor');
-		// An agent attaches to the relay as a "session" of the same project, with the token it read from runtime.json.
 		const rogue = await session(app, AGENT, projectId, 'ses_rogue');
 
 		const pending = postTx(app, projectId);
@@ -171,10 +159,8 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		await settle();
 		expect(cards(rogue)).toEqual([]);
 
-		// The approval id is public (the /events stream every token holder can read)…
 		const published = events.find((e) => e.type === 'agent.approval.requested');
 		expect(published?.payload).toMatchObject({ approvalId: card.approvalId });
-		// …the answer key is not.
 		expect(JSON.stringify(events)).not.toContain(card.answerKey);
 
 		// Everything the rogue connection can try: no key, a guessed key, and even the real key (stolen somehow) —
@@ -190,7 +176,6 @@ describe('AGT-2: approval answers count only from the editor connection that was
 				.map((a) => a.approvalId),
 		).toEqual([card.approvalId]);
 
-		// The editor's own answer, with its key, decides.
 		editor.answer(card.approvalId, 'denied', card.answerKey);
 		expect((await pending).json().result).toMatchObject({
 			ok: false,
@@ -208,7 +193,6 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		const first = postTx(app, projectId);
 		const cardA1 = await a.card();
 		const cardB1 = await b.card();
-		// Each window got its own key for the same approval.
 		expect(cardA1.approvalId).toBe(cardB1.approvalId);
 		expect(cardA1.answerKey).not.toBe(cardB1.answerKey);
 
@@ -219,9 +203,9 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		const otherA = cardsOf(a).find((c) => c.approvalId !== cardA1.approvalId)!;
 		const otherB = cardsOf(b).find((c) => c.approvalId === otherA.approvalId)!;
 
-		a.answer(cardA1.approvalId, 'approved'); // no key
-		a.answer(cardA1.approvalId, 'approved', otherA.answerKey); // the key of another card
-		a.answer(cardA1.approvalId, 'approved', cardB1.answerKey); // the key of another window
+		a.answer(cardA1.approvalId, 'approved');
+		a.answer(cardA1.approvalId, 'approved', otherA.answerKey);
+		a.answer(cardA1.approvalId, 'approved', cardB1.answerKey);
 		await settle();
 		expect(agentService(app).approvals.pending().length).toBe(2);
 
@@ -229,14 +213,12 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		b.answer(otherB.approvalId, 'denied', otherB.answerKey);
 		for (const r of [await first, await second])
 			expect(r.json().result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
-		// A key is spent with its card.
 		expect(a.received.filter((m) => m.event === 'agent.approval.resolved').length).toBe(2);
 	});
 
 	it('without an editor window the request is refused at once, whoever else is connected', async () => {
 		const app = await secured();
 		const { projectId } = seed(app);
-		// A token-holding "session" claims the project and its lease: it is not somebody who can be asked.
 		await session(app, AGENT, projectId, 'ses_rogue');
 		const t0 = Date.now();
 		const r = await postTx(app, projectId);
@@ -258,7 +240,6 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		expect(card2.answerKey).not.toBe(card1.answerKey);
 		late.answer(card2.approvalId, 'denied', card2.answerKey);
 		expect((await pending).json().result).toMatchObject({ ok: false });
-		// Both windows take the card down.
 		await first.next((m) => m.event === 'agent.approval.resolved');
 	});
 
@@ -292,8 +273,6 @@ describe('AGT-2: approval answers count only from the editor connection that was
 	});
 });
 
-// ================================================================================================ AGT-3
-
 describe('AGT-3: destructive operations outside transactions ask the user when an agent makes them', () => {
 	const fadeIn = () => JSON.parse(JSON.stringify(builtinEffectPreset('builtin.fade-in')));
 	const presets = async (app: App) =>
@@ -305,7 +284,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		const r = await app.inject({
 			method: 'POST',
 			url: '/api/effect-presets',
-			// Saving a preset is not destructive: an agent may do it.
 			headers: json(AGENT),
 			payload: { preset: { ...fadeIn(), name }, ...(folderId ? { folderId } : {}) },
 		});
@@ -320,13 +298,11 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		const del = (headers: Record<string, string>) =>
 			app.inject({ method: 'DELETE', url: `/api/effect-presets/${id}`, headers });
 
-		// No editor window: nobody to ask. (Before the fix this deleted the preset.)
 		const refused = await del(AGENT);
 		expect(refused.statusCode).toBe(403);
 		expect(refused.json()).toMatchObject({ code: 'APPROVAL_DENIED', detail: { code: 'E_APPROVAL_DENIED' } });
 		expect((await presets(app)).presets.map((p) => p.id)).toEqual([id]);
 
-		// With an editor window: a card that says what and who; denied → nothing happens.
 		const editor = await session(app, EDITOR, projectId);
 		const denied = del(AGENT);
 		const card = await editor.card();
@@ -336,7 +312,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		expect((await denied).statusCode).toBe(403);
 		expect((await presets(app)).presets.length).toBe(1);
 
-		// Approved → deleted.
 		const approved = del(AGENT);
 		const card2 = await editor.card(editor.received.length);
 		editor.answer(card2.approvalId, 'approved', card2.answerKey);
@@ -351,7 +326,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		const a = await savePreset(app, 'A');
 		const b = await savePreset(app, 'B');
 
-		// A `ui_click` on Delete in the Effects panel: the editor marks the request, the engine asks the user.
 		const viaUi = app.inject({
 			method: 'DELETE',
 			url: `/api/effect-presets/${a}`,
@@ -361,7 +335,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		editor.answer(card.approvalId, 'denied', card.answerKey);
 		expect((await viaUi).statusCode).toBe(403);
 
-		// The user's own click.
 		const own = await app.inject({ method: 'DELETE', url: `/api/effect-presets/${b}`, headers: EDITOR });
 		expect(own.statusCode).toBe(200);
 		expect(cards(editor).length).toBe(1);
@@ -420,7 +393,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		await del;
 	});
 
-	// One row per gated route: an agent's request is refused while no editor window is open, and nothing changed.
 	type Gate = {
 		name: string;
 		request(ctx: { app: App; projectId: string }): Promise<{
@@ -429,7 +401,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 			payload?: unknown;
 			headers?: Record<string, string>;
 		}>;
-		/** Proof that nothing happened. */
 		unchanged(ctx: { app: App; projectId: string; file: string }): Promise<void> | void;
 	};
 	const stillThere = ({ file }: { file: string }) => {
@@ -539,7 +510,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 		);
 		await gate.unchanged(ctx);
 
-		// With an editor window that denies: still nothing; the card names the operation.
 		const editor = await session(app, EDITOR, projectId);
 		editor.auto('denied');
 		const denied = await send(AGENT);
@@ -565,7 +535,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 			payload: { hashes: [] },
 		});
 		expect(range.statusCode).toBe(200);
-		// Keeping more versions is not destructive.
 		const more = await app.inject({
 			method: 'PUT',
 			url: '/api/settings/gaps',
@@ -602,7 +571,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 				},
 			});
 		};
-		// save_project_copy: create, then save the document into it — twice is fine too.
 		expect((await put(AGENT, 'Filled')).statusCode).toBe(200);
 		expect((await put(AGENT, 'Filled again')).statusCode).toBe(200);
 		// The user opens it and saves: from here it is the user's work.
@@ -646,7 +614,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 			headers: EDITOR,
 		});
 		expect(beat.statusCode).toBe(200);
-		// The user's own "Take over editing" in another window needs no card.
 		expect((await lease(EDITOR, 'ses_user_2', true)).statusCode).toBe(200);
 	});
 
@@ -662,7 +629,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 			if (!id) continue;
 			const r = await app.inject({ method: 'DELETE', url: `/api/${kind}/models/${id}`, headers: AGENT });
 			expect([kind, r.statusCode, r.json().detail?.code]).toEqual([kind, 403, 'E_APPROVAL_DENIED']);
-			// Unknown models are a plain 404.
 			const none = await app.inject({ method: 'DELETE', url: `/api/${kind}/models/nope`, headers: AGENT });
 			expect(none.statusCode).toBe(404);
 		}
@@ -685,8 +651,6 @@ describe('AGT-3: destructive operations outside transactions ask the user when a
 	});
 });
 
-// ================================================================================================ DEV-1
-
 describe('DEV-1: an engine that listens always has a token', () => {
 	const engines: Awaited<ReturnType<typeof startEngine>>[] = [];
 	afterEach(async () => {
@@ -705,7 +669,6 @@ describe('DEV-1: an engine that listens always has a token', () => {
 		const appdir = tempAppdir('jasper-dev1-');
 		const engine = await start({ appdir, dev: true });
 		expect(engine.token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
-		// Before the fix: 200 for anybody on the machine.
 		expect((await fetch(`${engine.url}/api/projects`)).status).toBe(401);
 		expect(
 			(await fetch(`${engine.url}/api/projects`, { headers: { authorization: 'Bearer nope' } })).status,
@@ -748,9 +711,7 @@ describe('DEV-1: an engine that listens always has a token', () => {
 			logs.join('\n'),
 		].join('\n');
 		expect(everything).not.toContain(KEY);
-		// Whoever starts the engine with a key already holds it: there is nothing to pair.
 		expect(engine.pairingUrl).toBeNull();
-		// A packaged or headless engine writes no key file at all.
 		expect(() => statSync(appdirPaths(appdir).devEditorKeyFile)).toThrow();
 	});
 
@@ -782,10 +743,8 @@ describe('DEV-1: an engine that listens always has a token', () => {
 		expect(engine.token).toBeNull();
 		expect((await fetch(`${engine.url}/api/projects`)).status).toBe(200);
 		expect(warnings.join('\n')).toMatch(/JASPER_INSECURE_DEV is set: THIS ENGINE HAS NO TOKEN/);
-		// A token still wins over the flag.
 		const tokened = await start({ env: { JASPER_INSECURE_DEV: '1', JASPER_LOCAL_TOKEN: 'still-required' } });
 		expect((await fetch(`${tokened.url}/api/projects`)).status).toBe(401);
-		// "0" and "false" are not "set".
 		expect((await start({ env: { JASPER_INSECURE_DEV: '0' } })).token).not.toBeNull();
 	});
 
@@ -795,7 +754,6 @@ describe('DEV-1: an engine that listens always has a token', () => {
 		const engine = await start({ webDir });
 		expect(engine.pairingUrl).toMatch(new RegExp(`^${engine.url}/pair\\?key=`));
 
-		// An unpaired browser: an explanation for a page load, JSON for everything else, no cookie either way.
 		const page = await fetch(`${engine.url}/`, {
 			headers: { accept: 'text/html', 'sec-fetch-dest': 'document' },
 		});
@@ -818,18 +776,14 @@ describe('DEV-1: an engine that listens always has a token', () => {
 		const jar = cookies.map((c) => c.split(';')[0]).join('; ');
 		expect(jar).toContain(`jasper_session_${engine.port}=`);
 		expect(jar).toContain(`jasper_editor_${engine.port}=`);
-		// The page it answers with holds no secret and no script.
 		const body = await paired.text();
 		expect(body).not.toContain(engine.token!);
 		expect(body).not.toMatch(/<script/i);
-		// With the cookies the browser gets the app and the API.
 		expect((await fetch(`${engine.url}/api/projects`, { headers: { cookie: jar } })).status).toBe(200);
 		const app = await fetch(`${engine.url}/`, { headers: { cookie: jar, accept: 'text/html' } });
 		expect(await app.text()).toContain('<title>app</title>');
 	});
 });
-
-// ================================================================================================ MG-1
 
 describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque origin', () => {
 	/** A bundle directory registered with the service (no Remotion needed to serve it). */
@@ -881,14 +835,12 @@ describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque or
 		expect(csp).not.toMatch(/allow-same-origin|allow-top-navigation|allow-popups|allow-forms/);
 		expect(csp).toContain(`default-src ${base} data: blob:`);
 		expect(csp).toContain(`connect-src ${base} data: blob: https:`);
-		// Not the rest of the engine, no other loopback port, no plain http.
 		expect(csp).not.toContain("'self'");
 		expect(csp).not.toMatch(/\shttp:(\s|;|$)/);
 		expect(csp).toContain("frame-src 'none'");
 		expect(csp).toContain("form-action 'none'");
 		expect(csp).toContain('frame-ancestors http://127.0.0.1:47900 http://localhost:47900');
 
-		// Its scripts and files come from the same path, with the same policy.
 		const prefix = location.split('index.html')[0]!;
 		const js = await app.inject({ method: 'GET', url: `${prefix}bundle.js`, headers: opaque });
 		expect([js.statusCode, js.headers['content-type']]).toEqual([200, 'text/javascript; charset=utf-8']);
@@ -912,17 +864,13 @@ describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque or
 		expect(await get(`/mg/sandbox/${cap}/${key}/bundle.js`)).toBe(200);
 		expect(await get(`/mg/sandbox/${cap.slice(0, -1)}x/${key}/bundle.js`)).toBe(403);
 		expect(await get(`/mg/sandbox/x/${key}/bundle.js`)).toBe(403);
-		// Another bundle's capability.
 		const other = coreServices(app).signer.capability(mgSandboxScope('mk_ffffffffffffffffffffffff'));
 		expect(await get(`/mg/sandbox/${other}/${key}/bundle.js`)).toBe(403);
-		// A capability of another engine launch (another secret).
 		expect(
 			await get(`/mg/sandbox/${new UrlSigner('x').capability(mgSandboxScope(key))}/${key}/bundle.js`),
 		).toBe(403);
-		// Read-only.
 		expect(await get(`/mg/sandbox/${cap}/${key}/bundle.js`, 'POST')).toBe(403);
 		expect(await get(`/mg/sandbox/${cap}/${key}/bundle.js`, 'DELETE')).toBe(403);
-		// Traversal out of the bundle directory, raw and encoded.
 		for (const p of [
 			'..%2F..%2Fengine%2Fruntime.json',
 			'%2e%2e/%2e%2e/engine/runtime.json',
@@ -930,7 +878,6 @@ describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque or
 			'%00',
 		])
 			expect([403, 404], p).toContain(await get(`/mg/sandbox/${cap}/${key}/${p}`));
-		// The capability opens nothing else: the API still needs the session, and refuses the opaque origin.
 		expect(await get('/api/projects')).toBe(403);
 		expect(await get(`/api/projects?cap=${cap}`)).toBe(403);
 		expect((await app.inject({ method: 'GET', url: '/api/projects', headers: HOST })).statusCode).toBe(401);
@@ -939,7 +886,6 @@ describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque or
 	it('under the address the editor knows, bundle files are inert data: no script runs with the editor’s origin', async () => {
 		const app = await secured();
 		const key = await bundle(app);
-		// Before the fix this page ran `bundle.js` same-origin with the session cookie (`allowScripts: true`).
 		for (const file of ['index.html', 'bundle.js']) {
 			const r = await app.inject({ method: 'GET', url: `/mg/bundles/${key}/${file}`, headers: EDITOR });
 			expect(r.statusCode).toBe(200);

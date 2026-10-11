@@ -1,5 +1,5 @@
-// sim-warp command handlers: Liquify strokes, Mesh Warp vertices, Puppet meshes and pins (schemas/sim-warp.ts).
 import type { Draft } from 'immer';
+import { anim } from '../../factories.ts';
 import { evaluate } from '../../keyframes.ts';
 import { resolveMasks } from '../../masks/model.ts';
 import { flattenPath } from '../../path/model.ts';
@@ -19,18 +19,17 @@ import {
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { Animatable } from '../../schema/common.ts';
 import type { Mask } from '../../schema/mask.ts';
-import type { Puppet, PuppetPin, PuppetPinKind, PuppetPinProp } from '../../schema/puppet.ts';
+import type { Puppet, PuppetPinKind, PuppetPinProp } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { finish } from './keyframe.ts';
 import { locateEffect, newKeyframe, paramHandlers } from './param.ts';
-import type { HandlerMap } from './util.ts';
+import { locatePin, PUPPET_PIN_RANGES, type PuppetPinLocation } from './puppet-location.ts';
+import type { ClipEffectLocation as FxLoc, HandlerMap } from './util.ts';
 
 export const SIM_WARP_OWNER = 'sim-warp' as const;
-
-type FxLoc = { seq: DSeq; clip: DClip; fx: Draft<EffectInstance> };
 
 /** A clip effect instance of one of `effectIds` (refusing tracks, master and other effects). */
 function clipEffect(doc: DDoc, id: string, effectIds: readonly string[], h: HandlerContext): FxLoc {
@@ -51,7 +50,7 @@ const boxOf = (doc: DDoc, l: FxLoc) =>
 	intrinsicBoxOf({ doc: doc as never, seq: l.seq as never, clip: l.clip as Clip });
 
 /** The value of an effect param at content time `t` (keys evaluated; no expressions in handlers). */
-function paramAt(l: FxLoc, name: string, t: number, d: unknown): unknown {
+function paramAt(l: FxLoc, name: string, t: number, d: unknown) {
 	const a = l.fx.params[name] as Animatable<unknown> | undefined;
 	return a ? evaluate(a, t) : d;
 }
@@ -95,21 +94,7 @@ function maskPolygon(
 	return pts.length >= 3 ? { pts, inverted: m.inverted } : null;
 }
 
-// ---------------------------------------------------------------- Puppet helpers
-
-type PinLoc = FxLoc & { pin: Draft<PuppetPin>; index: number };
-
-function locatePin(doc: DDoc, pinId: string): PinLoc | null {
-	for (const seq of Object.values(doc.sequences))
-		for (const clip of Object.values(seq.clips))
-			for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? []) {
-				const pins = fx.puppet?.pins ?? [];
-				const index = pins.findIndex((p) => p.id === pinId);
-				if (index >= 0) return { seq, clip, fx, pin: pins[index]!, index };
-			}
-	return null;
-}
-function mustPin(doc: DDoc, pinId: string, h: HandlerContext): PinLoc {
+function mustPin(doc: DDoc, pinId: string, h: HandlerContext): PuppetPinLocation {
 	const l = locatePin(doc, pinId);
 	if (!l) return h.fail('E_NOT_FOUND', `Puppet pin not found: ${pinId}`);
 	assertUnlocked(findTrackIn(l.seq, l.clip.trackId)!.track, h);
@@ -133,15 +118,6 @@ const PIN_DEFAULTS: Record<Exclude<PuppetPinProp, 'position'>, number> = {
 	extent: 15,
 	inFront: 50,
 };
-/** Ranges of the pin properties (clamped on write). */
-export const PUPPET_PIN_RANGES: Record<PuppetPinProp, { min?: number; max?: number }> = {
-	position: {},
-	scale: { min: 0, max: 10000 },
-	rotation: {},
-	amount: { min: 0, max: 100 },
-	extent: { min: 0, max: 10000 },
-	inFront: { min: -100, max: 100 },
-};
 const PIN_LABELS: Record<PuppetPinKind, string> = {
 	position: 'Puppet Pin',
 	advanced: 'Puppet Pin',
@@ -149,8 +125,6 @@ const PIN_LABELS: Record<PuppetPinKind, string> = {
 	starch: 'Starch',
 	overlap: 'Overlap',
 };
-
-const anim = <T>(value: T) => ({ value, keyframes: [] }) as unknown as Animatable<T>;
 
 function newMesh(
 	h: HandlerContext,
@@ -176,7 +150,7 @@ const finite2 = (p: readonly number[], h: HandlerContext, what: string): Pt => {
 	return [p[0]!, p[1]!];
 };
 
-export const simWarpHandlers: HandlerMap = {
+export const simWarpHandlers = {
 	'liquify.stroke': (doc, cmd: CommandOf<'liquify.stroke'>, h) => {
 		const l = clipEffect(doc, cmd.effectInstanceId, ['jasper.liquify'], h);
 		const box = boxOf(doc, l);
@@ -400,9 +374,4 @@ export const simWarpHandlers: HandlerMap = {
 		finish([a as never]);
 		return { pinId: cmd.pinId, keys: keys.length };
 	},
-};
-
-/** Is a value a pin property name? */
-export const isPinProp = (s: string): s is PuppetPinProp =>
-	['position', 'scale', 'rotation', 'amount', 'extent', 'inFront'].includes(s);
-export { locatePin };
+} satisfies HandlerMap;

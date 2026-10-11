@@ -27,7 +27,7 @@ function snapshot<T extends Record<string, number>>(target: T): Readonly<T> {
 type Built<T> = { timeline: Timeline; targets: T[] };
 
 /** Seeked values per build and seek time (the values are a pure function of both; see `valuesAt`). */
-const valueCache = new WeakMap<object, Map<number, readonly unknown[]>>();
+const valueCache = new WeakMap<object, Map<number, readonly Readonly<Record<string, number>>[]>>();
 /** Distinct seek times remembered per build: a 10 s clip at 60 fps, beyond that the oldest entries go. */
 const VALUE_CACHE_SIZE = 600;
 
@@ -85,7 +85,7 @@ function attributeNames(root: Element): Map<Element, Set<string>> {
  * removed, so a StrictMode re-mount or a rebuild draws exactly what the first build drew. The leaf element must
  * stay the same node while built (its React attributes that the build reads belong in `buildKey`).
  */
-export function useAnimeDom<E extends Element>(
+export function useAnimeDom<E extends DOMTarget>(
 	ref: RefObject<E | null>,
 	buildKey: string,
 	build: (root: E) => Timeline | null,
@@ -95,13 +95,12 @@ export function useAnimeDom<E extends Element>(
 	const timeline = useRef<Timeline | null>(null);
 	const buildRef = useRef(build);
 	buildRef.current = build;
-	// Rebuilt when the key or readiness changes (`build` itself is read through a ref).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: buildKey identifies the build
 	useLayoutEffect(() => {
 		const root = ref.current;
 		if (!ready || !root) return;
 		const before = attributeNames(root);
-		const scope = createScope({ root: root as unknown as DOMTarget });
+		const scope = createScope({ root });
 		timeline.current = scope.execute(() => buildRef.current(root));
 		return () => {
 			timeline.current = null;
@@ -110,7 +109,6 @@ export function useAnimeDom<E extends Element>(
 				for (const a of Array.from(el.attributes)) if (!names.has(a.name)) el.removeAttribute(a.name);
 		};
 	}, [ref, buildKey, ready]);
-	// Re-seek after every rebuild too.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: buildKey/ready re-run the seek after a rebuild
 	useLayoutEffect(() => {
 		if (timeline.current) seekCanonical(timeline.current, ms);

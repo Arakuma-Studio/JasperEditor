@@ -1,7 +1,3 @@
-// Effect presets in the editor (S03:FX-030, EC-004, S05:EFX-001/002): the Presets bin (built-ins, search, badge
-// filters, user bins), applying by double-click and by drop (one undo entry for N clips), Save Preset… from Effect
-// Controls headers (dialog → engine library) and library edits (delete with confirmation). The engine is faked at
-// the EngineClient boundary.
 import type { EngineClient } from '@jasper/engine-client';
 import { BUILTIN_EFFECT_PRESETS, type EffectPreset } from '@jasper/project';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
@@ -96,7 +92,6 @@ describe('Effects ▸ Presets bin (EFX-001, FX-030)', () => {
 		expect(session.getState().history.entries.length).toBe(entries + 1);
 		expect(session.getState().history.entries.at(-1)!.label).toBe('Apply Preset Fade In (1 s) (2 clips)');
 		expect(screen.getByTestId('effects-status').textContent).toBe('Applied Fade In (1 s) to 2 clips.');
-		// Badge filters: the Gaussian Blur presets are real-time and native; nothing matches → empty message.
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'blur' } });
 		});
@@ -217,7 +212,6 @@ describe('Effect presets in Effect Controls (EC-004, FX-030)', () => {
 		expect(Object.keys(saved.intrinsic ?? {}).sort()).toEqual(['blendMode', 'motion', 'opacity']);
 		expect(saved.intrinsic?.opacity?.keyframes?.map((k) => k.time / F)).toEqual([40, 59]);
 		expect(saved.effects).toBeUndefined();
-		// The saved preset shows in the Effects panel straight away (the library refreshed after the write).
 		await waitFor(() =>
 			expect(
 				presetLibrary()
@@ -225,7 +219,6 @@ describe('Effect presets in Effect Controls (EC-004, FX-030)', () => {
 					.presets.map((p) => p.name),
 			).toEqual(['Fade Down']),
 		);
-		// Nothing in the project changed (no History entry for saving a preset).
 		expect(session.getState().history.entries.at(-1)!.label).toBe('keys');
 	});
 });

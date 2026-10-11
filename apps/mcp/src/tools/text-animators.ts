@@ -1,7 +1,3 @@
-// Text animators for agents (workstream text-animators): After Effects-style animators on text clips — presets,
-// animators with properties and selectors (Range, Wiggly, Expression), text on a mask path, per-character 3D,
-// conversion of In/Out text animations. Every call is one transaction (one History entry) through the document
-// commands; values and keyframes of animator properties use the generic param / keyframe commands on their keys.
 import {
 	ANIMATOR_MENU_IDS,
 	type Clip,
@@ -13,6 +9,7 @@ import {
 	WIGGLY_SELECTOR_FIELDS,
 } from '@jasper/project';
 import { z } from 'zod';
+import { ProjectIdArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -24,9 +21,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
-import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE). */
 export const TEXT_ANIMATORS_GUIDE = `Text animators (After Effects "Animate Text"):
 - A text clip can carry animators. Each animator offsets properties (position, anchor, scale, skew, rotation incl. per-character 3D X/Y, opacity, fill/stroke colour RGB/hue/saturation/brightness/opacity, stroke width, tracking, line anchor, line spacing, character offset/value, blur, variable font axes) by how much each character is selected. Selectors combine top to bottom by mode (add, subtract, intersect, min, max, difference): Range (start/end/offset in % or index, based on characters / characters excluding spaces / words / lines, shape square/rampUp/rampDown/triangle/round/smooth, smoothness, ease high/low, amount, randomize order + seed), Wiggly (max/min amount, wiggles per second, correlation, temporal/spatial phase, lock dimensions, seed) and Expression (an expression per character with textIndex, textTotal, selectorValue; its result replaces the selection). No selector = every character fully.
 - Fastest: list_text_animator_presets, then apply_text_animator_preset {clipIds, preset} (typewriter, fade-in-by-word, slide-up-in, pop-in, bounce-in-words, scramble, decoder, tracking-in, blur-in, flip-in-3d, wave, jitter, …; "-out" twins end the clip, loops repeat). durationFrames / durationSeconds stretch it.

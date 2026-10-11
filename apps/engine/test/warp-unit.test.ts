@@ -1,5 +1,3 @@
-// S09:TRK-032: the worker kernel samples straight-alpha images on pixel centres,
-// interpolates premultiplied colour, and emits BT.709 TV-range ProRes input.
 import { describe, expect, it } from 'vitest';
 import { warpFrame } from '../src/export/warp/kernel.ts';
 

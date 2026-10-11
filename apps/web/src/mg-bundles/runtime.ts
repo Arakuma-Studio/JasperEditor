@@ -173,8 +173,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		if (this.scanTimer) clearTimeout(this.scanTimer);
 	}
 
-	// ------------------------------------------------------------------ CompositionPreviewRuntime
-
 	subscribe = (cb: () => void): (() => void) => {
 		this.listeners.add(cb);
 		return () => this.listeners.delete(cb);
@@ -275,8 +273,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		this.notify();
 	}
 
-	// ------------------------------------------------------------------ status for the UI
-
 	status(clipId: string): ClipMgStatus {
 		const keys = this.clipKeys.get(clipId);
 		return {
@@ -285,8 +281,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 			master: (keys?.master && this.renders.get(`master:${keys.master}`)) || NONE,
 		};
 	}
-
-	// ------------------------------------------------------------------ scanning the document
 
 	private scanSoon(ms = 150): void {
 		if (this.disposed) return;
@@ -364,8 +358,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 			this.notify();
 		}
 	}
-
-	// ------------------------------------------------------------------ jobs
 
 	private async submit(req: MgPrerenderRequest, key: string, layerKey?: string): Promise<EngineJob | null> {
 		const slot = `${req.quality}:${key}`;
@@ -457,8 +449,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		});
 	}
 
-	// ------------------------------------------------------------------ actions
-
 	/** "Render master now" (MGU-003): the master of the clip's drawn span with its current props. */
 	async renderMaster(clipId: string): Promise<EngineJob | null> {
 		const s = this.session.store.getState();
@@ -472,8 +462,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		return this.submit(req, requestKey(req));
 	}
 }
-
-// ---------------------------------------------------------------- one runtime per open session
 
 let current: MgRuntime | null = null;
 const facadeListeners = new Set<() => void>();

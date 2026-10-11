@@ -1,7 +1,3 @@
-// Browser entry of the Advanced 3D GL test (bundled with esbuild, run in headless Chrome by ../three-d-advanced.test.ts):
-// renders scenes with the Advanced 3D renderer and, for unlit scenes, the Classic 3D CPU reference of the same
-// pictures; lit scenes report what the test checks (shadow masks with and without the caster's shadows, coverage of
-// extruded vs flat text, colours at given pixels).
 import '../gl-poison.ts';
 import {
 	anim,
@@ -134,7 +130,6 @@ const td = (f: (t: ReturnType<typeof newLayer3D>) => void) => {
 	return t;
 };
 
-/** A white ring (outline with a hole) on transparency. */
 const ring = () =>
 	picture(40, 30, (x, y) => {
 		const d = Math.hypot(x + 0.5 - 20, y + 0.5 - 15);
@@ -441,7 +436,6 @@ function classic(name: string): number[] {
 	return px;
 }
 
-/** PNG data URL of an image (×4, debugging). */
 function png(img: number[]): string {
 	const c = document.createElement('canvas');
 	c.width = W;

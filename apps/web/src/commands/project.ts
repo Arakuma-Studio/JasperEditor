@@ -1,5 +1,3 @@
-// project UI commands — owned by WP-2E (S05:PRJ-002/003, KB-010; S01 §5). Ids match keymap-defaults.ts.
-// Panel-view commands act on the focused Project panel instance (else the most recently used one).
 import type { EditorSession } from '@jasper/session';
 import { pickFilesInBrowser } from '../import/desktop.ts';
 import { EngineImportService } from '../import/service.ts';

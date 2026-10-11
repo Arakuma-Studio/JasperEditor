@@ -1,5 +1,3 @@
-// three-d MCP tools through the protocol against an in-memory engine: 3D layer switch, transform, material, cameras
-// (settings, tools), lights, renderer and the get_3d_scene read-out; refusals come back as tool errors.
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,

@@ -1,8 +1,8 @@
-// Distort ▸ Displacement Map, Optics Compensation, Polar Coordinates, Bezier Warp, Reshape, Smear (sim-warp
-// workstream; After Effects' effects of those names). Per-pixel remaps, except Bezier Warp (a Coons-patch mesh drawn
+// Per-pixel remaps, except Bezier Warp (a Coons-patch mesh drawn
 // forward by a draw pass). Reshape and Smear read the layer's masks ("Mask 1…8" popups). Ported from EffectCraft
 // crates/effects/src/distort.rs (polar), distort2.rs (displacement_map, optics_compensation, bezier_grid) and
 // distort3.rs (smear_setup, reshape_setup; MIT OR Apache-2.0), see licenses/ported/sim-warp.md.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
@@ -13,8 +13,6 @@ import { bool, choice, clamp, num, vec2 } from './core.ts';
 import { MASK_CHOICES, maskOf } from './playground.ts';
 
 const DISTORT = 'Distort';
-
-// ---------------------------------------------------------------- Displacement Map
 
 const DM_SOURCES = [
 	'Red',
@@ -103,8 +101,6 @@ void main() {
 		timeInvariant: true,
 	},
 });
-
-// ---------------------------------------------------------------- Optics Compensation
 
 const FOV_ORIENT = ['Horizontal', 'Vertical', 'Diagonal'] as const;
 const RESIZE = ['Off', 'Max 2X', 'Max 4X', 'Unlimited'] as const;
@@ -204,8 +200,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Polar Coordinates
-
 export const POLAR_COORDINATES = defineShaderEffect({
 	id: 'jasper.polar-coordinates',
 	label: 'Polar Coordinates',
@@ -245,8 +239,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Bezier Warp
 
 const BW_POINTS = [
 	['topLeftVertex', 'Top Left Vertex', [0, 0]],
@@ -344,8 +336,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Reshape, Smear
-
 const ELASTICITY = [
 	'Stiff',
 	'Less Stiff',
@@ -398,7 +388,7 @@ export function resample(m: FxLayerMask, n: number): [number, number][] {
 }
 
 /** "s,d s,d …" correspondence pairs (outline fractions), sorted by destination. */
-function parseCorrespondence(s: unknown): [number, number][] {
+function parseCorrespondence(s: ParamValue | undefined): [number, number][] {
 	if (typeof s !== 'string') return [];
 	return s
 		.split(/\s+/)

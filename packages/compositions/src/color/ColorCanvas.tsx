@@ -15,11 +15,12 @@ import {
 import {
 	continueRender,
 	delayRender,
-	type EffectDefinitionAndStack,
 	type EffectDescriptor,
 	getRemotionEnvironment,
 	Internals,
 } from 'remotion';
+
+import { memoizeEffects } from '../effect-chain.ts';
 
 export type ColorCanvasHandle = {
 	/** Draws a source picture through the chain (resolves false when superseded by a newer draw). */
@@ -44,10 +45,7 @@ export const ColorCanvas = forwardRef<ColorCanvasHandle, ColorCanvasProps>(funct
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const chain = Internals.useEffectChainState();
 	const lastSource = useRef<CanvasImageSource | null>(null);
-	const memoized = useMemo(
-		() => effects.map((e) => ({ ...e, memoized: true }) as EffectDefinitionAndStack<unknown>),
-		[effects],
-	);
+	const memoized = useMemo(() => memoizeEffects(effects), [effects]);
 	const rendering = getRemotionEnvironment().isRendering;
 
 	const draw = useCallback(

@@ -1,3 +1,4 @@
+import type { Command, CommandOf } from '@jasper/project';
 // Timeline panel (S02, S05 §16.7): tabs, header (timecode readout + toolbar), ruler, split V/A regions
 // with track headers, virtualized clips, overlays, playhead and zoom bar. All timeline state is scoped
 // to this instance (TL-006); document edits go through the TimelineController (gestures) or UI commands.
@@ -140,10 +141,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const prefs = useStoreSelector(timelinePrefs(), (s) => s);
 	const mac = useMemo(isMac, []);
 
-	// ------------------------------------------------------------ store selections (no transport!)
 	const seq = useSessionState((s) => (s.transient ?? s.document).sequences[seqId] as Sequence);
 	const committedSeq = useSessionState((s) => s.document.sequences[seqId] as Sequence);
-	// edit-structure: Sequence ▸ Show Through Edits.
+	// Sequence ▸ Show Through Edits.
 	const showThroughEdits = useSessionState((s) => s.toggles.showThroughEdits !== false);
 	const committedDoc = useSessionState((s) => s.document);
 	const view = useSessionState((s) => s.views[seqId]!);
@@ -190,7 +190,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		(a, b) => a.w === b.w && a.h === b.h,
 	);
 	const readoutFrames = useStoreSelector(ui, (s) => s.readoutFrames);
-	// edit-ux: keyframe lanes (rubber bands) on expanded tracks.
+	// keyframe lanes (rubber bands) on expanded tracks.
 	const activeTool = useSessionState((s) => s.toggles.activeTool);
 	const keyframeSel = useSessionState((s) => s.selection.keyframes);
 	const lanes = useMemo(
@@ -205,7 +205,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	);
 	const snapping = useSessionState((s) => s.toggles.snapping);
 
-	// ------------------------------------------------------------ geometry
 	const viewport: Viewport = useMemo(
 		() => ({ scrollFrame: view.scrollFrame, pxPerFrame: view.pxPerFrame, width: size.w }),
 		[view.scrollFrame, view.pxPerFrame, size.w],
@@ -255,7 +254,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				geometry: () => geomRef.current,
 				toast,
 				platform: { mac, wheelHorizontal: timelinePrefs().getState().wheelHorizontal },
-				// audio-fx: the Remix tool's release plans the remix on the engine and commits `clip.remix`.
+				// the Remix tool's release plans the remix on the engine and commits `clip.remix`.
 				remix: (clipId, targetFrames) => {
 					const engine = engineRef.current;
 					if (!engine || !seqId) return toast('error', 'The engine is not connected');
@@ -287,7 +286,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[controller],
 	);
 
-	// ------------------------------------------------------------ registration (services, commands)
 	useEffect(() => {
 		const handle: TimelineHandle = {
 			instanceId: props.instanceId,
@@ -322,7 +320,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		if (import.meta.env.DEV) exposeForDev(session);
 	}, [session]);
 
-	// edit-ux: selected edit points follow their clips through edits, undo and redo (trim mode).
+	// selected edit points follow their clips through edits, undo and redo (trim mode).
 	useEffect(
 		() =>
 			session.on('doc.changed', () => {
@@ -342,7 +340,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[session, ui],
 	);
 
-	// ------------------------------------------------------------ measuring
 	const areaRef = useRef<HTMLDivElement>(null);
 	useLayoutEffect(() => {
 		const el = areaRef.current;
@@ -496,7 +493,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		});
 	}, [props.instanceId, controller, session]);
 
-	// ------------------------------------------------------------ pointer input (coalesced per frame, TL-156)
 	const pending = useRef<PointerInfo | null>(null);
 	const raf = useRef<number | null>(null);
 	const local = useCallback((e: { clientX: number; clientY: number }) => {
@@ -557,7 +553,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		return () => el.removeEventListener('wheel', onWheel);
 	}, [controller, mac, local]);
 
-	// ------------------------------------------------------------ follow playhead during playback (TL-119)
 	const followRef = useRef(prefs.follow);
 	followRef.current = prefs.follow;
 	const lastFrame = useRef(session.transport.getState().frame);
@@ -575,7 +570,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[controller],
 	);
 
-	// ------------------------------------------------------------ derived
 	const selectedSet = useMemo(() => new Set(selectedClips), [selectedClips]);
 	// S10:TUI-004: per-track transition index of the drawn sequence (follows gestures, TUI-005).
 	const transitions = useMemo(() => transitionIndex(seq, media), [seq, media]);
@@ -608,7 +602,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[prefs],
 	);
 
-	// ------------------------------------------------------------ commands from menus
 	const run = useCallback(
 		(id: string, args?: unknown) => {
 			const ctx = createCommandContext({
@@ -636,8 +629,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[ui],
 	);
 	const apply = useCallback(
-		(label: string, commands: unknown[]) => {
-			const r = session.apply({ label, origin: 'user', sequenceId: seqId, commands: commands as never[] });
+		(label: string, commands: Command[]) => {
+			const r = session.apply({ label, origin: 'user', sequenceId: seqId, commands });
 			if (!r.ok) toast('warning', r.errors[0]?.message ?? `${label} failed`);
 			return r;
 		},
@@ -840,8 +833,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		];
 	};
 
-	// ------------------------------------------------------------ transitions (S10)
-	const updateTransition = (label: string, t: Transition, patch: Record<string, unknown>) => {
+	const updateTransition = (
+		label: string,
+		t: Transition,
+		patch: Omit<CommandOf<'transition.update'>, 'type' | 'transitionId'>,
+	) => {
 		const r = apply(label, [{ type: 'transition.update', transitionId: t.id, ...patch }]);
 		if (r.ok && r.warnings.length) toast('info', r.warnings[0]!.message);
 	};
@@ -943,7 +939,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		if (yh.kind !== 'track') return;
 		const th = hitTransition(transitions, yh.row, g.viewport, p.x, p.y - yh.row.y);
 		if (!th) {
-			// edit-structure: double-clicking a nest clip opens its sequence at the frame under the pointer.
+			// double-clicking a nest clip opens its sequence at the frame under the pointer.
 			const hit = hitTest(committedSeq, g.layout, g.viewport, p.x, p.y);
 			// edit-ux (Premiere): double-clicking an edit point opens the Trim Monitor (trim mode).
 			if (hit.kind === 'clip' && hit.zone !== 'body' && ui.getState().editPoints.length) {
@@ -1112,7 +1108,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		}
 	};
 
-	// ------------------------------------------------------------ track-area handlers
 	const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
 		touchTimelineInstance(props.instanceId);
 		if (e.button === 2) return;
@@ -1194,7 +1189,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		]);
 	};
 
-	// ------------------------------------------------------------ drops (TL-492…496)
 	const dropTarget = (e: React.DragEvent) => {
 		const p = local(e);
 		const g = geomRef.current;
@@ -1298,7 +1292,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			return;
 		}
 		const files = Array.from(e.dataTransfer.files ?? []);
-		// polish: files dragged out of the Media Browser are paths on the engine host (registered in place).
+		// files dragged out of the Media Browser are paths on the engine host (registered in place).
 		const hostPaths = readHostPathsDrag(e.dataTransfer);
 		if (files.length === 0 && !hostPaths) return;
 		// WP-2E registers the import service module-wide (state/services.ts); a panel-scoped one wins.
@@ -1321,7 +1315,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	};
 	const placeItems = (itemIds: string[], t: ReturnType<typeof dropTarget>) => {
 		const doc = session.getCommitted();
-		const commands: unknown[] = [];
+		const commands: Command[] = [];
 		let at = t.frame;
 		for (const id of itemIds) {
 			const item = doc.items[id] as ProjectItem | undefined;
@@ -1329,12 +1323,12 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			const dur = itemDurationFrames(doc, item, committedSeq.settings.frameRate);
 			if (dur === null) continue;
 			const asset = item.kind === 'media' ? (doc.media[item.mediaId] as MediaAsset | undefined) : undefined;
-			// edit-structure: sequences (nests or individual clips) and synthetics with sound have both kinds.
+			// sequences (nests or individual clips) and synthetics with sound have both kinds.
 			const av = itemAvKinds(doc, item);
 			const hasVideo = asset ? asset.probe.streams.some((s) => s.type === 'video') : av.video;
 			const hasAudio = asset ? asset.probe.streams.some((s) => s.type === 'audio') : av.audio;
 			// TL-493/494: pointer track for its kind; the other kind mirrors the index; retarget to V1/A1.
-			const tracks: Record<string, unknown> = {};
+			const tracks: NonNullable<CommandOf<'clip.place'>['tracks']> = {};
 			if (t.region === 'video') {
 				tracks.video = hasVideo ? t.label : 'V1';
 				if (hasAudio) tracks.audio = hasVideo ? `A${t.index + 1}` : 'A1';
@@ -1359,7 +1353,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		apply(commands.length === 1 ? 'Place Clip' : `Place ${commands.length} Clips`, commands);
 	};
 
-	// ------------------------------------------------------------ render
 	const rate = seq.settings.frameRate;
 	const headerWidth = Math.min(HEADER_MAX, Math.max(HEADER_MIN, prefs.headerWidth));
 	const rulerMenu = (m: import('@jasper/project').Marker | null): ContextMenuItem[] =>

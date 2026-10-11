@@ -1,14 +1,3 @@
-// edit-ux: keyboard layout presets for the Keyboard Shortcuts editor (Premiere's "Keyboard Layout Preset"): Premiere
-// Pro (our default keymap), Avid Media Composer, Final Cut Pro 7 and Final Cut Pro. Each non-default layout starts
-// from the default keymap and takes the other editor's keys for the equivalent commands: every default binding of
-// a listed command is replaced, and a default binding that used one of the layout's chords in the same scope gives
-// it up (no conflicts, keymap.test.ts checks every layout).
-//
-// Key assignments are functional facts about how other editors are operated. Avid and Final Cut Pro tables are
-// ported from FilmCraft crates/engine/src/shortcut_presets.rs (AVID, FINAL_CUT; MIT OR Apache-2.0, Copyright (c)
-// 2026 ArtCraft Team and the FilmCraft contributors) onto our command ids; the Final Cut Pro 7 table follows Apple's
-// "Final Cut Pro 7 User Manual" keyboard shortcut appendix. Keys are written in our Windows/Linux notation
-// (KeyboardEvent.code, "Ctrl" = ⌘ on macOS).
 import { DEFAULT_KEYMAP, type KeyBinding } from './keymap-defaults.ts';
 import type { CommandScope } from './types.ts';
 

@@ -143,8 +143,6 @@ export function buildLayout(
 	};
 }
 
-// ------------------------------------------------------------------ sanitize (SH-023, WS-014)
-
 const KNOWN = new Set<string>(PANEL_KINDS);
 
 type Leaf = {

@@ -1,5 +1,3 @@
-// wp captions: caption tracks draw above every video track, page by page, with the resolved style, markup and
-// the active-word highlight (structure checks in happy-dom).
 import {
 	applyTransaction,
 	buildRenderSnapshot,

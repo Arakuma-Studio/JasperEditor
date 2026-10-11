@@ -5,7 +5,7 @@
 import { type Autosaver, attachPersistence, type EditorSession, persistenceFor } from '@jasper/session';
 import { gapsPrefs } from '../gaps/app-prefs.ts';
 
-/** gaps (Preferences ▸ Auto Save): the autosave policy every saver of this window follows. */
+/** Every saver in this window follows the same autosave policy. */
 export function autoSavePolicy(): { enabled: boolean; maxIntervalMs: number } {
 	const a = gapsPrefs.get().autoSave;
 	return { enabled: a.enabled, maxIntervalMs: a.maxIntervalSeconds * 1000 };
@@ -45,6 +45,13 @@ export async function saveNow(session: EditorSession): Promise<SaveOutcome> {
 	return saver.lastSavedRevision === before ? 'unchanged' : 'saved';
 }
 
+export async function saveBeforeLeaving(session: EditorSession): Promise<void> {
+	if (!session.getState().dirty) return;
+	const outcome = await saveNow(session);
+	if (outcome !== 'saved' && outcome !== 'unchanged')
+		throw new Error('The project has unsaved changes. Save it or save a copy before continuing.');
+}
+
 let skipUnloadFlush = false;
 /**
  * gaps (File ▸ Exit ▸ Don't Save): the window is closing on purpose without saving; the pagehide / beforeunload flush
@@ -57,7 +64,7 @@ export function setSkipUnloadFlush(on: boolean): void {
 /** Flushes every live saver (pagehide/beforeunload). */
 export function flushAutosaver(session: EditorSession | null | undefined): void {
 	if (skipUnloadFlush) return;
-	// gaps (Preferences ▸ Auto Save off): journal the unsaved edits, do not save.
+	// With autosave disabled, journal unsaved edits without saving the project.
 	if (session && !gapsPrefs.get().autoSave.enabled) {
 		void persistenceFor(session)
 			?.journal?.flush()

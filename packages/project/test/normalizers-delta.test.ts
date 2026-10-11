@@ -1,6 +1,3 @@
-// perf-core: the normalizers scoped to what a transaction changed (orphan collection, caption ownership,
-// cleanupSequence: src/commands/tx-delta.ts, placement.ts) produce exactly the documents, results and warnings of the
-// full scans, on random chains of real commands (linked clips, groups, transitions, captions, deletions).
 import fc from 'fast-check';
 import { type Draft, produce } from 'immer';
 import { describe, expect, it } from 'vitest';
@@ -142,7 +139,7 @@ describe('delta-scoped normalizers (perf-core)', () => {
 		expect(applied).toBeGreaterThan(RUNS);
 	}, 600_000);
 
-	// Raw edits no command makes today, but the normalizers must still treat like the full scans.
+	// Direct corruptions exercise normalization beyond states reachable through commands.
 	const both = (doc: ProjectDocument, recipe: (d: Draft<ProjectDocument>) => void) => {
 		const run = (on: boolean) => {
 			setDeltaScans(on);

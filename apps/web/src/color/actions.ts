@@ -8,8 +8,6 @@ import type { EngineImportService } from '../import/service.ts';
 import { getImportService } from '../state/services.ts';
 import { type CopiedColorEffect, copyGrade, planApplyLook, planPasteGrade } from './model.ts';
 
-// ---------------------------------------------------------------- grade clipboard (CGU-004)
-
 let clipboard: { effects: CopiedColorEffect[] } | null = null;
 
 export const gradeClipboard = {
@@ -43,8 +41,6 @@ export function pasteGradeTo(session: EditorSession, clipIds: readonly string[])
 	});
 }
 
-// ---------------------------------------------------------------- LUT as Look (LUT-002)
-
 export function applyLookToClips(
 	session: EditorSession,
 	mediaId: string,
@@ -77,8 +73,6 @@ export function dropLutItems(
 	return true;
 }
 
-// ---------------------------------------------------------------- Browse… (LUT-005)
-
 /**
  * Imports `.cube` files through the normal import path (desktop dialog or browser picker) and resolves with the
  * media id of the first LUT imported (or already in the project), or null when cancelled / failed.
@@ -104,8 +98,6 @@ export async function browseForLut(session: EditorSession): Promise<string | nul
 	}
 	return null;
 }
-
-// ---------------------------------------------------------------- before/after (CGU-005)
 
 let bypassed: readonly string[] = [];
 const bypassListeners = new Set<() => void>();
