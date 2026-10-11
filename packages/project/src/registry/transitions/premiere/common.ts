@@ -175,10 +175,10 @@ void main() {
   vec2 px = tr_px();
   float p = tr_progress();
   float aa = tr_aaWidth(u_antiAliasing);
-  float bw = $border ? 'max(u_borderWidth, 0.0)' : '0.0';
+  float bw = ${border ? 'max(u_borderWidth, 0.0)' : '0.0'};
   float m = bw + aa + 1.0;
   float d = 0.0;
-  $body.trim()
+  ${body.trim()}
   fragColor = tr_wipeMix(tr_from(v_uv), tr_to(v_uv), d, 0.0, aa, bw, ${border ? 'u_borderColor' : 'vec4(0.0)'});
 }`,
 				},
