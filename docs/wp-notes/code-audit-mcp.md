@@ -92,5 +92,5 @@ branch.
   parallel local typechecks were stopped to relieve host contention. Real-engine processing,
   render/export and CLI integration suites are part of that final gate.
 - Measurement contract regressions cover complete probe output, absent/invisible text, malformed
-  layouts and styles, non-finite numbers, and 200 generated finite rectangles. Their focused run
-  is pending while these integration fixes are handed to the integrator.
+  layouts and styles, non-finite numbers, and 200 generated finite rectangles. All 11 passed with
+  `pnpm exec vitest run test/mg-measurement-contract.test.ts --maxWorkers=1` from `packages/api`.
