@@ -6,3 +6,12 @@ export const FORBIDDEN_GLSL_SYNTAX: readonly (readonly [RegExp, string])[] = [
 	[/\bvarying\b/, 'uses varying (GLSL ES 1.00)'],
 	[/\bout\s+vec4\s+fragColor\b/, 'declares fragColor (the prelude does)'],
 ];
+
+/** A thrown value may also throw when its message is read or converted to text. */
+export function hookErrorMessage(error: unknown): string {
+	try {
+		return String(error instanceof Error ? error.message : error);
+	} catch {
+		return 'Unknown shader hook error';
+	}
+}

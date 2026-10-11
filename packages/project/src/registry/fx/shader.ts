@@ -13,7 +13,7 @@ import type { Animatable, ParamValue } from '../../schema/common.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { numberParam as finite, mediaParamId } from '../param-values.ts';
-import { FORBIDDEN_GLSL_SYNTAX } from './validation.ts';
+import { FORBIDDEN_GLSL_SYNTAX, hookErrorMessage } from './validation.ts';
 
 /** A reusable piece of GLSL (functions/constants) prepended once per program, after its `deps`. */
 export type GlslChunk = {
@@ -1320,7 +1320,7 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	try {
 		passes = gpuPasses(gpu, defaults, ctx);
 	} catch (e) {
-		at(`passes(defaults) threw: ${e instanceof Error ? e.message : String(e)}`);
+		at(`passes(defaults) threw: ${hookErrorMessage(e)}`);
 	}
 	if (passes.length === 0) at('no passes');
 	const outputs = new Set<string>();
@@ -1404,7 +1404,7 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 		const r = gpu.time?.remap?.(defaults, tctx);
 		if (r !== undefined && !Number.isFinite(r)) at('time.remap returned a non-finite frame');
 	} catch (e) {
-		at(`hook threw with default params: ${e instanceof Error ? e.message : String(e)}`);
+		at(`hook threw with default params: ${hookErrorMessage(e)}`);
 	}
 	if (spec.bin !== undefined && !spec.bin.trim()) at('bin must not be empty');
 	return out;

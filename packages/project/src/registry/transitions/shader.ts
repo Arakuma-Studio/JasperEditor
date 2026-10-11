@@ -30,7 +30,7 @@ import {
 	uniformCollisions,
 	uniformDeclaration,
 } from '../fx/shader.ts';
-import { FORBIDDEN_GLSL_SYNTAX } from '../fx/validation.ts';
+import { FORBIDDEN_GLSL_SYNTAX, hookErrorMessage } from '../fx/validation.ts';
 import { numberParam as finite, mediaParamId } from '../param-values.ts';
 import { GLSL_TRANSITION } from './glsl.ts';
 
@@ -431,7 +431,7 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 	try {
 		passes = transitionPasses(gpu, defaults, ctx);
 	} catch (e) {
-		at(`passes(defaults) threw: ${e instanceof Error ? e.message : String(e)}`);
+		at(`passes(defaults) threw: ${hookErrorMessage(e)}`);
 	}
 	if (passes.length === 0) at('no passes');
 	const outputs = new Set<string>();
@@ -466,7 +466,7 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 		globals = Object.keys(gpu.uniforms?.(defaults, ctx) ?? {});
 		for (const k of globals) if (!UNIFORM_RE.test(k)) at(`uniform "${k}" must be named u_<name>`);
 	} catch (e) {
-		at(`uniforms threw with default params: ${e instanceof Error ? e.message : String(e)}`);
+		at(`uniforms threw with default params: ${hookErrorMessage(e)}`);
 	}
 	// Extra uniforms must not redeclare a built-in, a param uniform or a pass output (the framework's placement
 	// outputs `from` / `to` included: u_from / u_to are built-ins).

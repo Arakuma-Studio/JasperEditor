@@ -6,42 +6,46 @@ import { validateGpuTransition } from '../src/registry/transitions/shader.ts';
 
 const passes = [{ frag: 'void main() { fragColor = vec4(0.0); }' }];
 
-describe.each(['passes', 'uniforms'] as const)('registry %s hook errors', (hook) => {
-	it.each([null, undefined, 'invalid hook', 42, new Error('invalid hook')])(
-		'reports a thrown %s without throwing from the validator',
-		(error) => {
-			const gpu = {
-				passes,
-				[hook]: () => {
-					throw error;
+describe.each(['effect', 'transition'] as const)('%s registry', (kind) => {
+	describe.each(['passes', 'uniforms'] as const)('%s hook errors', (hook) => {
+		it.each([
+			['null', null, 'null'],
+			['undefined', undefined, 'undefined'],
+			['string', 'invalid hook', 'invalid hook'],
+			['number', 42, '42'],
+			['Error', new Error('invalid hook'), 'invalid hook'],
+			['null-prototype object', Object.create(null), 'Unknown shader hook error'],
+			[
+				'object with throwing coercion',
+				{
+					toString() {
+						throw new Error('cannot stringify');
+					},
+				},
+				'Unknown shader hook error',
+			],
+		])('reports a thrown %s without throwing from the validator', (_label, error, message) => {
+			const init = {
+				id: 'test.invalid',
+				label: 'Invalid',
+				description: 'Invalid shader',
+				params: [],
+				gpu: {
+					passes,
+					[hook]: () => {
+						throw error;
+					},
 				},
 			};
-			const effect = defineShaderEffect({
-				id: 'test.invalid-effect',
-				label: 'Invalid effect',
-				category: 'Stylize',
-				params: [],
-				gpu,
-			});
-			const transition = defineShaderTransition({
-				id: 'test.invalid-transition',
-				label: 'Invalid transition',
-				bin: 'Dissolve',
-				description: 'Invalid transition',
-				params: [],
-				gpu,
-			});
-			const message = error instanceof Error ? error.message : String(error);
+			const problems =
+				kind === 'effect'
+					? validateGpuEffect(defineShaderEffect({ ...init, category: 'Stylize' }))
+					: validateGpuTransition(defineShaderTransition({ ...init, bin: 'Dissolve' }));
 			expect(
-				validateGpuEffect(effect).some((problem) =>
+				problems.some((problem) =>
 					problem.endsWith(`threw${hook === 'passes' ? '' : ' with default params'}: ${message}`),
 				),
 			).toBe(true);
-			expect(
-				validateGpuTransition(transition).some((problem) =>
-					problem.endsWith(`threw${hook === 'passes' ? '' : ' with default params'}: ${message}`),
-				),
-			).toBe(true);
-		},
-	);
+		});
+	});
 });
