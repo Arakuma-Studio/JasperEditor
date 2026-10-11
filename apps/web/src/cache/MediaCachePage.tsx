@@ -14,6 +14,7 @@ import type {
 import { Button, Checkbox, confirmDialog, cx, Select, TextField } from '@jasper/ui';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { errorText, followJob, formatAgo, formatBytes } from '../processing/engine-jobs.ts';
+import { getDesktopBridge } from '../runtime/platform.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 
@@ -220,10 +221,8 @@ function reportText(r: CacheGcReport): string {
 	return parts.join(' · ');
 }
 
-type DesktopFolderBridge = { pickFolder?(opts?: { title?: string }): Promise<string | null> };
-
-function desktopFolderPicker(): DesktopFolderBridge['pickFolder'] | null {
-	const b = (globalThis as { jasperDesktop?: DesktopFolderBridge }).jasperDesktop;
+function desktopFolderPicker() {
+	const b = getDesktopBridge();
 	return b ? b.pickFolder.bind(b) : null;
 }
 
