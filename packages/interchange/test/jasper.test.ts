@@ -96,6 +96,7 @@ describe('JasperEditor round trips', () => {
 
 	it('OTIO restores the sequence exactly (text, solids, effects, keyframes, transitions, links, markers)', () => {
 		const { h, target, seqId, binId, out } = roundTrip('otio');
+		expect(Object.keys(target.doc.sequences)).toHaveLength(2);
 		expect(summarize(target.doc, seqId, { keep: KEEP_ALL })).toEqual(
 			summarize(h.doc, h.seqId, { keep: KEEP_ALL }),
 		);
@@ -211,11 +212,6 @@ describe('JasperEditor round trips', () => {
 		expect(align(target.doc, seqId)).toEqual(align(h.doc, h.seqId));
 		const t = Object.values(target.doc.sequences[seqId]!.transitions);
 		expect(t.map((x) => [x.effectId, x.duration])).toEqual([['jasper.cross-dissolve', 10]]);
-	});
-
-	it('import is one undoable transaction', () => {
-		const { target } = roundTrip('otio');
-		expect(Object.keys(target.doc.sequences).length).toBe(2);
 	});
 
 	it('plans pre-renders per format and mode', () => {

@@ -9,7 +9,6 @@ import {
 	defaultEffectRegistry,
 	type EffectSpec,
 	TRANSITION_SPECS,
-	type TransitionSpec,
 	transitionSpec,
 } from '@jasper/project';
 import type { Report } from './report.ts';
@@ -59,11 +58,6 @@ const AUDIO_ALIASES: Record<string, string> = {
 	'constant gain': CONSTANT_GAIN,
 };
 
-/** The registry entry of a transition id (null when unknown). */
-export function transitionSpecOf(effectId: string): TransitionSpec | null {
-	return transitionSpec(effectId);
-}
-
 /**
  * The JasperEditor transition for a document's transition name (or id). Unknown names become Cross Dissolve
  * (Constant Power on audio) with a warning naming the transition.
@@ -88,10 +82,6 @@ export function transitionFromName(name: string, audio: boolean, report: Report)
 /** Display (Premiere) name of a transition id. */
 export function transitionLabel(effectId: string): string {
 	return transitionSpec(effectId)?.label ?? effectId;
-}
-
-export function isAudioTransition(effectId: string): boolean {
-	return transitionSpec(effectId)?.appliesTo === 'audio';
 }
 
 /** A registry effect by id or display name (case-insensitive), for `appliesTo` when given. */

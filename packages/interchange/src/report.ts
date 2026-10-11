@@ -56,10 +56,6 @@ export class Report {
 		return this.entries.filter((e) => e.level === 'warning');
 	}
 
-	hasWarnings(): boolean {
-		return this.entries.some((e) => e.level === 'warning');
-	}
-
 	/** Whether any entry's message contains `needle` (case-insensitive). */
 	mentions(needle: string): boolean {
 		const n = needle.toLowerCase();

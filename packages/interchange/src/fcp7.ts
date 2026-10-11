@@ -20,6 +20,7 @@
 import type { Animatable, Keyframe, LabelColor, Transform, Vec2 } from '@jasper/project';
 import { blendFromFcp7, fcp7BlendName } from './blend.ts';
 import {
+	anim,
 	Builder,
 	dbToGain,
 	describeClip,
@@ -76,6 +77,7 @@ import {
 	elements,
 	num,
 	parseXml,
+	path as xmlPath,
 	pathText,
 	XmlError,
 	XmlWriter,
@@ -102,8 +104,6 @@ function writeRate(w: XmlWriter, rate: Rate): void {
 	const { timebase, ntsc } = timebaseOf(rate);
 	w.open('rate').text('timebase', timebase).text('ntsc', boolStr(ntsc)).close();
 }
-
-const anim = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
 
 function kf<T>(time: number, value: T, interpolation: Keyframe<T>['interpolation']): Keyframe<T> {
 	return {
@@ -386,8 +386,8 @@ class Fcp7Importer {
 		this.inProgress.add(key);
 		const rate = readRate(def) ?? { num: 24, den: 1 };
 		const tc = child(def, 'timecode');
-		const vfmt = path3(def, ['media', 'video', 'format', 'samplecharacteristics']);
-		const afmt = path3(def, ['media', 'audio', 'format', 'samplecharacteristics']);
+		const vfmt = xmlPath(def, ['media', 'video', 'format', 'samplecharacteristics']);
+		const afmt = xmlPath(def, ['media', 'audio', 'format', 'samplecharacteristics']);
 		const label = labelFrom(pathText(def, ['labels', 'label2']));
 		const seq = this.b.sequence(
 			{
@@ -1043,15 +1043,6 @@ class Fcp7Importer {
 			}
 		}
 	}
-}
-
-function path3(n: XNode, names: string[]): XNode | null {
-	let cur: XNode | null = n;
-	for (const nm of names) {
-		cur = child(cur, nm);
-		if (!cur) return null;
-	}
-	return cur;
 }
 
 function interpOf(k: XNode): Keyframe<unknown>['interpolation'] {

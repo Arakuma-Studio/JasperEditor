@@ -20,6 +20,7 @@
 import type { Animatable, Keyframe, Transform, Vec2 } from '@jasper/project';
 import { blendFromFcpxml, fcpxmlBlend } from './blend.ts';
 import {
+	anim,
 	Builder,
 	describeClip,
 	frameOf,
@@ -137,8 +138,6 @@ function kf<T>(time: number, value: T, interpolation: Keyframe<T>['interpolation
 		easeOut: { influence: 1 / 3, slope },
 	};
 }
-
-const anim = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
 
 // ---------------------------------------------------------------- import
 

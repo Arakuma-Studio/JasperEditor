@@ -2,10 +2,8 @@
 import {
 	type ExpressionRef,
 	type ExpressionWorldData,
-	expressionBindingOf,
 	flicksPerFrame,
 	installExpressionSupport,
-	locateExpressionTarget,
 	type ProjectDocument,
 	type Rational,
 	type TextSelectorExpressionHost,
@@ -93,12 +91,6 @@ export function evaluateExpressionText(
 	return worldOfDocument(doc).evaluateText(ref, text, t);
 }
 
-/** Status of a bound Animatable (Effect Controls rows evaluate the anim they render). */
-export function boundStatus(anim: unknown, t: number): { value: unknown; error: string | null } | null {
-	const b = expressionBindingOf(anim);
-	return b ? b.evaluateWithStatus(t) : null;
-}
-
 // ---------------------------------------------------------------- text Expression Selector
 
 export type SelectorAmount = { ok: true; amount: [number, number, number] } | { ok: false; error: string };
@@ -165,11 +157,7 @@ export function textSelectorExpressionHost(
 		'version' in data && 'boxes' in data
 			? bindWorld(data as ExpressionWorldData).world
 			: worldOfDocument(data as ProjectDocument);
-	const sequences =
-		'version' in data && 'boxes' in data
-			? (data as ExpressionWorldData).sequences
-			: (data as ProjectDocument).sequences;
-	const sequenceId = Object.keys(sequences).find((id) => sequences[id]!.clips[clipId]);
+	const sequenceId = Object.keys(data.sequences).find((id) => data.sequences[id]!.clips[clipId]);
 	if (!sequenceId) return null;
 	const reported = new Set<string>();
 	return (q) => {
@@ -188,8 +176,6 @@ export function textSelectorExpressionHost(
 }
 
 // ---------------------------------------------------------------- pick-whip
-
-const quote = (s: string) => JSON.stringify(s);
 
 /**
  * The expression text that reads property `to` from the expression of property `from` (AE's pick-whip): the
@@ -210,12 +196,14 @@ export function pickWhipExpression(
 	if (to.owner !== from.owner || to.seq !== from.seq) {
 		if (info.kind !== 'clip') return null;
 		const comp =
-			to.seq === from.seq ? 'thisComp' : `comp(${quote(doc.items ? nameOfSequence(doc, to.seq) : to.seq)})`;
+			to.seq === from.seq
+				? 'thisComp'
+				: `comp(${JSON.stringify(doc.items ? nameOfSequence(doc, to.seq) : to.seq)})`;
 		const clip = info.clip;
 		const sameName = world.layers(to.seq).filter((id) => info.seq.clips[id]?.name === clip.name);
 		const key =
 			sameName.length === 1 && sameName[0] === clip.id
-				? quote(clip.name)
+				? JSON.stringify(clip.name)
 				: String(world.layers(to.seq).indexOf(clip.id) + 1);
 		layer = `${comp}.layer(${key}).`;
 	} else if (info.kind !== 'clip' && info.kind !== 'track' && info.kind !== 'master') return null;
@@ -225,8 +213,8 @@ export function pickWhipExpression(
 		const [, fxId, ...rest] = path.split('.');
 		const fxNode = world.children(info, 'effects').find((n) => n.path === `effects.${fxId}`);
 		if (!fxNode) return null;
-		const effectCall = layer ? `${layer}effect(${quote(fxNode.name)})` : `effect(${quote(fxNode.name)})`;
-		return `${effectCall}(${quote(target.name || rest.join('.'))})`;
+		const effectCall = `${layer}effect(${JSON.stringify(fxNode.name)})`;
+		return `${effectCall}(${JSON.stringify(target.name || rest.join('.'))})`;
 	}
 	if (path.startsWith('masks.')) {
 		const [, maskId, prop] = path.split('.');
@@ -235,7 +223,7 @@ export function pickWhipExpression(
 		const attr = { feather: 'maskFeather', opacity: 'maskOpacity', expansion: 'maskExpansion' }[
 			prop as 'feather'
 		];
-		return attr ? `${layer}mask(${quote(node.name)}).${attr}` : null;
+		return attr ? `${layer}mask(${JSON.stringify(node.name)}).${attr}` : null;
 	}
 	const short: Record<string, string> = {
 		'transform.position': 'transform.position',
@@ -255,22 +243,16 @@ export function pickWhipExpression(
 	};
 	const s =
 		short[path] ??
-		(path.startsWith('params.') ? `${layer ? '' : 'thisLayer.'}params(${quote(path.slice(7))})` : null);
+		(path.startsWith('params.')
+			? `${layer ? '' : 'thisLayer.'}params(${JSON.stringify(path.slice(7))})`
+			: null);
 	if (!s) return null;
 	if (!layer && (info.kind === 'track' || info.kind === 'master')) return null;
-	return layer ? `${layer}${s}` : s;
+	return `${layer}${s}`;
 }
 
 function nameOfSequence(doc: ProjectDocument, seqId: string): string {
 	for (const it of Object.values(doc.items))
 		if (it.kind === 'sequence' && it.sequenceId === seqId) return it.name;
 	return seqId;
-}
-
-/** True when `ref` addresses a property that can hold an expression in `doc`. */
-export function canHaveExpression(doc: ProjectDocument, ref: ExpressionRef): boolean {
-	const loc = locateExpressionTarget(doc, ref);
-	if (loc) return true;
-	const p = worldOfDocument(doc).prop(ref);
-	return !!p && p.kind !== 'other' && !ref.path.startsWith('params.');
 }

@@ -29,7 +29,6 @@ import {
 	type ExpressionRef,
 	type ExpressionWorldData,
 	effectParamPropertySpec,
-	evaluate,
 	evaluateKeyframes,
 	FLICKS_PER_SECOND,
 	findItem,
@@ -37,7 +36,6 @@ import {
 	getPropertySpec,
 	hasActiveExpression,
 	invertMat3,
-	isAnimated,
 	type Keyframe,
 	kindCapabilities,
 	type Layer3D,
@@ -138,32 +136,19 @@ function effectNames(effects: readonly EffectInstance[]): string[] {
 	});
 }
 
-function paramKind(p: Pick<ParamSpec, 'type' | 'ui'>): PropKind {
-	if (p.ui?.control === ('layer' as never)) return 'layer';
-	switch (p.type) {
+function propKind(kind: ParamSpec['type'] | PropertySpec['kind'], control?: string): PropKind {
+	if (control === 'layer') return 'layer';
+	switch (kind) {
 		case 'number':
 		case 'boolean':
 		case 'enum':
 		case 'string':
 		case 'vec2':
+		case 'vec3':
 		case 'color':
-			return p.type;
+			return kind;
 		default:
-			return (p.type as string) === 'vec3' ? 'vec3' : 'other';
-	}
-}
-
-function specKind(s: Pick<PropertySpec, 'kind'>): PropKind {
-	switch (s.kind) {
-		case 'number':
-		case 'boolean':
-		case 'enum':
-		case 'string':
-		case 'vec2':
-		case 'color':
-			return s.kind;
-		default:
-			return (s.kind as string) === 'vec3' ? 'vec3' : 'other';
+			return 'other';
 	}
 }
 
@@ -602,7 +587,7 @@ export class World {
 				...base,
 				name: p?.label ?? name,
 				matchName: name,
-				kind: p ? paramKind(p) : kindOfValue(anim.value),
+				kind: p ? propKind(p.type, p.ui?.control) : kindOfValue(anim.value),
 				options: p?.options,
 				opts: ps ? propertyEvaluateOptions(ps) : {},
 				anim,
@@ -623,7 +608,7 @@ export class World {
 				...base,
 				name: p.label,
 				matchName: p.name,
-				kind: paramKind(p),
+				kind: propKind(p.type, p.ui?.control),
 				options: p.options,
 				opts: propertyEvaluateOptions(
 					effectParamPropertySpec(info.id, { id: t.effectId, appliesTo: 'video' } as EffectSpec, p),
@@ -756,7 +741,7 @@ export class World {
 			...base,
 			name: spec.label,
 			matchName: ref.path,
-			kind: specKind(spec),
+			kind: propKind(spec.kind),
 			options: spec.options,
 			opts: propertyEvaluateOptions(spec),
 			anim: a,
@@ -1198,8 +1183,6 @@ function clampOut(v: unknown, o: EvaluateOptions): unknown {
 	if (Array.isArray(v)) return v.map((x) => (typeof x === 'number' ? f(x) : x));
 	return v;
 }
-
-export { evaluate, isAnimated };
 
 // ---------------------------------------------------------------- wp shapes: vector shape contents
 

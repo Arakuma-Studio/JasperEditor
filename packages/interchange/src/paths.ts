@@ -11,7 +11,7 @@ export function isAbsolutePath(p: string): boolean {
 function percentDecode(s: string): string {
 	const bytes: number[] = [];
 	for (let i = 0; i < s.length; ) {
-		if (s[i] === '%' && i + 2 < s.length + 0 && /^[0-9a-fA-F]{2}$/.test(s.slice(i + 1, i + 3))) {
+		if (s[i] === '%' && i + 2 < s.length && /^[0-9a-fA-F]{2}$/.test(s.slice(i + 1, i + 3))) {
 			bytes.push(Number.parseInt(s.slice(i + 1, i + 3), 16));
 			i += 3;
 			continue;

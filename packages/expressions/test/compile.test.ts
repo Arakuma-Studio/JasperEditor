@@ -1,6 +1,13 @@
 // Source transform: array maths (the EffectCraft rewrite.rs cases) and completion values.
 import { describe, expect, it } from 'vitest';
-import { compileExpressionSource, MAX_NESTING, rewriteForTest } from '../src/compile.ts';
+import { compileExpressionSource, MAX_NESTING } from '../src/compile.ts';
+
+/** Extract the transformed body for focused compiler assertions. */
+function rewriteForTest(text: string): string {
+	const c = compileExpressionSource(text);
+	if (!c.ok) throw new Error(c.error);
+	return c.code.slice(c.code.indexOf(';') + 1, -'\n;return __r;})'.length);
+}
 
 const n = (s: string) => s.replace(/[ \t]/g, '');
 const rw = (s: string) => n(rewriteForTest(s));
@@ -44,7 +51,7 @@ describe('array maths rewrite (rewrite.rs cases)', () => {
 	it('completion values: statements outside functions only', () => {
 		expect(rw('var x = 1; x')).toBe(n('var x = 1; __r=(x)'));
 		expect(rw('for (var i = 0; i < 3; i++) { s = i }')).toBe(
-			n('__r=void 0;for (var i = 0; __r=(i) < 3; i++) { __r=(s = i) }').replace('__r=(i)<3', 'i<3'),
+			n('__r=void 0;for (var i = 0; i < 3; i++) { __r=(s = i) }'),
 		);
 		expect(rw('[1, 2].map(function (v) { v * 2; return v })')).toBe(
 			n('__r=([1, 2].map(function (v) { __mul(v,2); return v }))'),

@@ -26,6 +26,7 @@ import {
 	transitionStartFrame,
 	vttSettingsFor,
 } from '@jasper/project';
+import { anim } from './build.ts';
 import type {
 	IBinEntry,
 	IClip,
@@ -903,10 +904,6 @@ export function fromJasper(
 	for (const id of Object.keys(p.media))
 		if (!placed.has(id) && !id.startsWith('pre_')) p.root.push({ type: 'media', id });
 	return p;
-}
-
-function anim<T>(value: T): Animatable<T> {
-	return { value, keyframes: [] };
 }
 
 /** Whether any animatable of a clip (Motion, Opacity, levels, effect params, Source Text) has an expression. */

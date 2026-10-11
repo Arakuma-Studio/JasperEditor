@@ -8,15 +8,9 @@
 // serialisers convert to and from edit units (frames for picture, samples for sound, so audio edits are exact).
 //
 // Port of FilmCraft `crates/interchange/src/comp.rs` (MIT OR Apache-2.0).
-import type { Animatable, Keyframe } from '@jasper/project';
+import { type Animatable, type Keyframe, transitionSpec } from '@jasper/project';
 import { Builder, dbToGain, describeClip, frameOf, gainToDb, newClip, reportVisualLoss } from './build.ts';
-import {
-	CONSTANT_POWER,
-	CROSS_DISSOLVE,
-	DIP_TO_BLACK,
-	transitionFromName,
-	transitionSpecOf,
-} from './effects.ts';
+import { transitionFromName } from './effects.ts';
 import type { IClip, IMarker, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import { FLICKS } from './model.ts';
 import type { EssenceKey, ImportOptions, MediaOptions } from './options.ts';
@@ -696,7 +690,7 @@ function buildTrack(
 			report.warn('a transition between two fillers was dropped');
 			return;
 		}
-		const spec = transitionSpecOf(p.effect);
+		const spec = transitionSpec(p.effect);
 		const audio = kind === 'audio';
 		const effectId =
 			spec && (spec.appliesTo === 'audio') === audio ? spec.id : transitionFromName(p.effect, audio, report);
@@ -755,25 +749,4 @@ function linkClips(b: Builder, seq: ISequence): void {
 		const l = b.id('l');
 		for (const c of g) c.link = l;
 	}
-}
-
-/** Transition id ↔ the format's operation. */
-export function transitionOpKind(
-	kind: CKind,
-	effect: string,
-): 'audio-dissolve' | 'fade-to-black' | 'wipe' | 'dissolve' {
-	if (kind === 'sound') return 'audio-dissolve';
-	if (effect === DIP_TO_BLACK) return 'fade-to-black';
-	if (effect.includes('wipe')) return 'wipe';
-	return 'dissolve';
-}
-
-export function transitionFromOp(
-	kind: CKind,
-	op: 'audio-dissolve' | 'fade-to-black' | 'wipe' | 'dissolve' | null,
-): string {
-	if (kind === 'sound') return CONSTANT_POWER;
-	if (op === 'fade-to-black') return DIP_TO_BLACK;
-	if (op === 'wipe') return 'jasper.wipe';
-	return CROSS_DISSOLVE;
 }

@@ -52,10 +52,6 @@ export function anim<T>(value: T): Animatable<T> {
 	return { value, keyframes: [] };
 }
 
-export function isAnimated(a: Animatable<unknown> | undefined | null): boolean {
-	return !!a && a.keyframes.length > 0;
-}
-
 // ---------------------------------------------------------------- level conversions
 
 export function dbToGain(db: number): number {
@@ -189,10 +185,6 @@ export class Builder {
 		return `${prefix}${this.n}`;
 	}
 
-	findMedia(key: string): string | null {
-		return this.mediaByKey.get(key) ?? null;
-	}
-
 	/** Media deduplicated by `key`; added to `bin` (an entry list) the first time. */
 	media(key: string, init: MediaInit, bin: IBinEntry[] | null = this.p.root): string {
 		const known = this.mediaByKey.get(key);
@@ -299,7 +291,7 @@ export class Builder {
 		track.clips = out;
 	}
 
-	/** Finish: sort clips, grow media durations to cover every use, drop empty trailing tracks of nothing. */
+	/** Finish: sort clips and grow media durations to cover every use. */
 	finish(): IProject {
 		const need = new Map<string, number>();
 		for (const seq of Object.values(this.p.sequences)) {
@@ -340,40 +332,6 @@ export function newClip(
 		effects: [],
 		...init,
 	};
-}
-
-// ---------------------------------------------------------------- writer helpers
-
-/** Every bin path of an entry (for writers that rebuild the bin tree). */
-export function findInBins(root: IBinEntry[], pred: (e: IBinEntry) => boolean): IBinEntry[][] | null {
-	const walk = (list: IBinEntry[], trail: IBinEntry[][]): IBinEntry[][] | null => {
-		for (const e of list) {
-			if (pred(e)) return [...trail, list];
-			if (e.type === 'bin') {
-				const r = walk(e.children, [...trail, list]);
-				if (r) return r;
-			}
-		}
-		return null;
-	};
-	return walk(root, []);
-}
-
-/** Sequences nested (directly or not) in `seqId`, children before parents; cycles are cut. */
-export function nestedSequences(p: IProject, seqId: string): string[] {
-	const out: string[] = [];
-	const seen = new Set<string>();
-	const visit = (id: string) => {
-		if (seen.has(id)) return;
-		seen.add(id);
-		const s = p.sequences[id];
-		if (!s) return;
-		for (const t of [...s.video, ...s.audio])
-			for (const c of t.clips) if (c.source.type === 'sequence') visit(c.source.sequenceId);
-		out.push(id);
-	};
-	visit(seqId);
-	return out;
 }
 
 // ---------------------------------------------------------------- multi-camera clips

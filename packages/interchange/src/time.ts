@@ -4,10 +4,6 @@ import { formatTimecode, parseTimecode } from '@jasper/project';
 import { FLICKS, type Rate } from './model.ts';
 
 const BF = BigInt(FLICKS);
-/** Premiere Pro ticks per second (254 016 000 000) = 360 per flick. */
-export const PPRO_TICKS_PER_SECOND = 254_016_000_000;
-export const TICKS_PER_FLICK = 360;
-
 export const RATE_23_976: Rate = { num: 24000, den: 1001 };
 export const RATE_24: Rate = { num: 24, den: 1 };
 export const RATE_25: Rate = { num: 25, den: 1 };
@@ -125,17 +121,6 @@ export function onFrame(t: number, r: Rate): boolean {
 	return framesToFlicks(flicksToFrames(t, r, 'floor'), r) === t;
 }
 
-/** Snap a flick time to the nearest frame boundary of `r`. */
-export function snapToFrame(t: number, r: Rate): number {
-	return framesToFlicks(flicksToFrames(t, r), r);
-}
-
-// ---------------------------------------------------------------- samples / edit units
-
-/** Flicks of `units` edit units at `rate` (frames or samples: an edit rate is any rational). */
-export const unitsToFlicks = framesToFlicks;
-export const flicksToUnits = flicksToFrames;
-
 // ---------------------------------------------------------------- seconds
 
 /** Rational seconds `n/d` → flicks (exact when on the grid, else rounded; `exact` says which). */
@@ -151,14 +136,6 @@ export function flicksToRationalSeconds(t: number): [bigint, bigint] {
 	const n = BigInt(Math.round(t));
 	const g = bgcd(n, BF) || 1n;
 	return [n / g, BF / g];
-}
-
-export function secondsToFlicks(s: number): number {
-	return Math.round(s * FLICKS);
-}
-
-export function flicksToSeconds(t: number): number {
-	return t / FLICKS;
 }
 
 // ---------------------------------------------------------------- Premiere ticks
@@ -220,9 +197,4 @@ export function bigDivRound(n: bigint, d: bigint): number {
 	const a = neg ? -n : n;
 	const q = (a * 2n + d) / (2n * d);
 	return Number(neg ? -q : q);
-}
-
-/** Integer check that also rejects NaN/∞ (document numbers). */
-export function isInt(x: unknown): x is number {
-	return typeof x === 'number' && Number.isInteger(x);
 }

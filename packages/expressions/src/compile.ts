@@ -335,10 +335,3 @@ function compileUncached(text: string): CompiledSource {
 		.join('');
 	return { ok: true, code: `(function(){var __r${locals};${body}\n;return __r;})` };
 }
-
-/** Just the transformed body (tests and debugging). */
-export function rewriteForTest(text: string): string {
-	const c = compileExpressionSource(text);
-	if (!c.ok) throw new Error(c.error);
-	return c.code.slice(c.code.indexOf(';') + 1, -'\n;return __r;})'.length);
-}
