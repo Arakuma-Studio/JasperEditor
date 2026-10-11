@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
 import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
-import { EngineProjectStore } from '@jasper/session';
+import { defaultSequenceView, EngineProjectStore, type ProjectViewState } from '@jasper/session';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
 import { ProjectStoreFs } from '../src/projects/store.ts';
@@ -24,6 +24,29 @@ async function create(name = 'My Project'): Promise<string> {
 	});
 	expect(r.statusCode).toBe(201);
 	return r.json().projectId;
+}
+
+function projectStore(): EngineProjectStore {
+	const client = new EngineClient({
+		baseUrl: 'http://engine.test',
+		fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+			const url = new URL(String(input));
+			const r = await app.inject({
+				method: (init?.method ?? 'GET') as 'GET',
+				url: url.pathname + url.search,
+				headers: { ...H, ...((init?.headers as Record<string, string>) ?? {}) },
+				...(init?.body !== undefined ? { payload: init.body as string } : {}),
+			});
+			return new Response(
+				r.statusCode === 204 || r.statusCode === 304 ? null : new Uint8Array(r.rawPayload),
+				{
+					status: r.statusCode,
+					headers: r.headers as Record<string, string>,
+				},
+			);
+		}) as typeof fetch,
+	});
+	return new EngineProjectStore(client);
 }
 
 describe('projects (ARCHITECTURE §9.2)', () => {
@@ -115,26 +138,7 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 	});
 
 	it('works end to end with the session EngineProjectStore (open → save → conflict)', async () => {
-		const client = new EngineClient({
-			baseUrl: 'http://engine.test',
-			fetch: (async (input: string | URL | Request, init?: RequestInit) => {
-				const url = new URL(String(input));
-				const r = await app.inject({
-					method: (init?.method ?? 'GET') as 'GET',
-					url: url.pathname + url.search,
-					headers: { ...H, ...((init?.headers as Record<string, string>) ?? {}) },
-					...(init?.body !== undefined ? { payload: init.body as string } : {}),
-				});
-				return new Response(
-					r.statusCode === 204 || r.statusCode === 304 ? null : new Uint8Array(r.rawPayload),
-					{
-						status: r.statusCode,
-						headers: r.headers as Record<string, string>,
-					},
-				);
-			}) as typeof fetch,
-		});
-		const store = new EngineProjectStore(client);
+		const store = projectStore();
 		const id = await store.create({ name: 'Session', preset: 'hd-1080p-30' });
 		const opened = await store.open(id);
 		expect(opened.revision).toBe(0);
@@ -146,14 +150,46 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		expect(saved).toEqual({ ok: true, revision: 5 });
 		const stale = await store.save(id, opened.document, { revision: 6, baseRevision: 0 });
 		expect(stale).toEqual({ ok: false, conflict: true, revision: 5 });
-		await store.saveView(id, { version: 1 } as never);
-		expect((await store.open(id)).view).toEqual({ version: 1 });
+		const sequenceId = Object.keys(opened.document.sequences)[0]!;
+		const view: ProjectViewState = {
+			version: 1,
+			views: { [sequenceId]: { ...defaultSequenceView(), playhead: 42 } },
+			tabs: { open: [sequenceId] },
+			activeSequenceId: sequenceId,
+		};
+		await store.saveView(id, view);
+		const reopened = await store.open(id);
+		expect(reopened.view).toEqual(view);
+		expect(reopened.issues).toEqual([]);
 		expect((await store.listVersions(id)).length).toBe(1);
 		const lease = await store.acquireLease(id, '00000000-0000-4000-8000-00000000000a');
 		await expect(store.acquireLease(id, '00000000-0000-4000-8000-00000000000b')).rejects.toThrow();
 		await store.releaseLease(id, lease.leaseId);
 		await store.delete(id);
 		expect((await store.list()).some((p) => p.projectId === id)).toBe(false);
+	});
+
+	it('reports malformed saved views without changing project or view bytes', async () => {
+		const store = projectStore();
+		const id = await store.create({ name: 'Preserved view', preset: 'hd-1080p-30' });
+		const original = await store.open(id);
+		const paths = appdirPaths(app.appdir);
+		const projectBytes = readFileSync(paths.projectFile(id));
+		await store.engine.putView(id, { version: 1 });
+		const viewBytes = readFileSync(paths.projectViewFile(id));
+
+		const reopened = await store.open(id);
+		expect(reopened.view).toBeNull();
+		expect(reopened.issues).toEqual([
+			expect.objectContaining({
+				code: 'W_REPAIRED',
+				message: expect.stringContaining('Saved view settings'),
+			}),
+		]);
+		expect(reopened.document).toEqual(original.document);
+		expect(reopened.revision).toBe(original.revision);
+		expect(readFileSync(paths.projectFile(id))).toEqual(projectBytes);
+		expect(readFileSync(paths.projectViewFile(id))).toEqual(viewBytes);
 	});
 
 	it('keeps versions at most every 5 minutes of saving (S01:PER-020) and stores the view file', async () => {
