@@ -1,10 +1,5 @@
-// Hostile AAF / OMF containers (security review PAR-2): small files built to make a reader loop, recurse or
-// allocate far beyond their own size. Measured against the readers before the fixes (each in its own process, 25 s
-// limit, docs/security-review.md §8): the weak set of empty keys crashed Node (out of memory), the overlapping Bento
-// segments and the self-containing OMF sequence never finished, the repeated AAF children took 5 s and 350 MiB for
-// a 12 KiB file; the compound-file cycle and the 65 535 properties were already refused (they stay as regression
-// tests of that). Used by hostile.test.ts (each one alone, with a time limit) and as fuzz seeds (fuzz.test.ts), so
-// mutation starts from the shapes that hurt.
+// Small AAF/OMF containers that exercise cyclic references, repeated traversal and disproportionate allocation.
+// Used directly with deadlines and as mutation seeds; see docs/security-review.md §8 for the threat model.
 import { utf16z } from '../../src/aaf/store.ts';
 import { CfbWriter, ENDOFCHAIN, FATSECT, FREESECT } from '../../src/cfb.ts';
 import { BentoWriter, LABEL_SIZE, MAGIC } from '../../src/omf/bento.ts';
@@ -22,8 +17,6 @@ const concat = (parts: Uint8Array[]) => {
 	}
 	return out;
 };
-
-// ---------------------------------------------------------------- compound files
 
 /**
  * A version 4 compound file (4096-byte sectors) whose header names the same FAT sector in all 109 DIFAT slots and
@@ -74,7 +67,7 @@ function properties(props: [number, number, Uint8Array][], declared = props.leng
 
 /**
  * An AAF object store in which every object has a strong reference vector of `fanout` entries that all name the
- * same child storage, `depth` levels deep: seven storages that were read until the two-million-object limit.
+ * same child storage, `depth` levels deep. Without tracking visited objects, traversal grows exponentially.
  */
 export function aafRepeatedChildren(fanout = 60, depth = 6): Uint8Array {
 	const w = new CfbWriter(3);
@@ -94,7 +87,7 @@ export function aafRepeatedChildren(fanout = 60, depth = 6): Uint8Array {
 
 /**
  * An AAF object with a weak reference set whose index says: 4 294 967 295 keys of 0 bytes each. The length check
- * (9 + count × size ≤ stream) passes; the reader then built that many keys.
+ * (9 + count × size ≤ stream) passes, so count must be bounded independently of the byte length.
  */
 export function aafWeakSetOfEmptyKeys(): Uint8Array {
 	const w = new CfbWriter(3);
@@ -117,12 +110,9 @@ export function aafManyProperties(): Uint8Array {
 	return w.finish();
 }
 
-// ---------------------------------------------------------------- Bento / OMF
-
 /**
  * A Bento container whose table of contents gives one value (an object's global name, which `open` reads) `segments`
- * segments that each cover the same megabyte: the value was assembled into segments × 1 MiB (default 4 GiB) and
- * then turned into a string character by character.
+ * segments that each cover the same megabyte. Assembly without an overlap check would expand to 4 GiB by default.
  */
 export function bentoOverlappingSegments(segments = 4096, heapBytes = 1 << 20): Uint8Array {
 	const heap = new Uint8Array(heapBytes).fill(0x41);

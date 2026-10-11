@@ -200,7 +200,6 @@ export function summarize(
 	return out;
 }
 
-/** Adds a caption track with two captions to the rich project. */
 export function addCaptions(h: Harness): void {
 	h.ok([
 		{ type: 'caption.add', at: 0, duration: 30, text: 'Hello there' },

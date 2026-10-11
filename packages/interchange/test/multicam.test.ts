@@ -96,7 +96,6 @@ const angleNames = (doc: ProjectDocument, clip: Clip) => {
 		?.name;
 };
 
-/** The camera names of the video cuts of the original. */
 const cuts = (h: Harness) =>
 	(Object.values(h.seq.clips) as Clip[])
 		.filter((c) => c.kind === 'nest-video')

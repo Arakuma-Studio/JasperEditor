@@ -33,7 +33,7 @@ export class Doc {
 		commands = commands.map(sub);
 		const { document, result } = applyTransaction(
 			this.doc,
-			{ label: 'test', origin: 'user', sequenceId: this.seqId, commands } as never,
+			{ label: 'test', origin: 'user', sequenceId: this.seqId, commands },
 			{
 				ids: this.ids,
 				now: () => '2026-10-07T00:00:00.000Z',

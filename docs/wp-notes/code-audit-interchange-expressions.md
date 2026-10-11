@@ -35,6 +35,8 @@ purchased reference material or add dependencies, assets, migrations, or export 
   reports and pre-render decisions also remain: deleting them could silently change exported output.
 - The generic expression value API still supports structured values and selector results. Its existing
   `unknown` contract is broader than `ParamValue` for a reason; no narrower type was invented to hide it.
+- Test fixtures use the project's actual solid/text clip, vector shape and media types instead of invented partial shapes and double casts. Command fixture helpers retain `unknown` because they exercise the public validation boundary; unnecessary `as never` casts at that boundary were removed. Generic canonicalizers still accept arbitrary structured values.
+- Test comments retain protocol, invariant and measurement rationale; obvious assertion summaries and historical workstream notes were removed.
 - No new catch, silent error fallback, placeholder implementation, or explanatory changelog comment
   was added to source code.
 
@@ -50,6 +52,8 @@ A static relative-import walk after the change found no cycles in either package
 modules with 21 relative import edges, and 33 interchange modules with 160 edges. This includes
 relative type imports; it does not claim to analyze dynamic imports or the entire monorepo.
 
-- Passed: `pnpm exec biome check packages/expressions/src packages/interchange/src packages/interchange/test/aaf-store.test.ts` and `git diff --check`.
-- Pending: `pnpm exec vitest run packages/expressions packages/interchange --maxWorkers=1` is still running. It reported one failing `recursion and memory limits` expression test under heavy shared-host load; the final diagnostic and targeted follow-up are outstanding.
+- Passed: `pnpm exec biome check packages/expressions/src packages/interchange/src packages/interchange/test/aaf-store.test.ts`, `pnpm exec biome check packages/expressions/test packages/interchange/test`, and `git diff --check`.
+- `pnpm exec vitest run packages/expressions packages/interchange --maxWorkers=1`: 185 tests passed, four failed in a 1377.84 s run (689.81 s spent importing). The failures were Vitest's 5 s timeout for the heap/stack test, the ALE throughput budget (5153 ms against an adjusted 2576 ms), and two fuzz-target timing checks (sniffed seed 0: 2005 ms; OMF seed 10/mutation 15: 7814/5762 ms; limit 2000 ms). No result, sandbox-isolation, or round-trip assertion failed.
+- The four-test rerun with a 60 s test-runner timeout passed the expression heap/stack test. Three timing assertions still failed: ALE 7436 ms against a calibrated 2766 ms; sniffed fuzz seed 10/mutation 31 took 6515/3216 ms; OMF seed 10/mutation 15 took 4365/2016 ms (fuzz limit 2000 ms). This run took 320.80 s, with 224.42 s spent importing. The fuzz and performance assertions retain their original budgets; these runs do not establish throughput on an uncontended host.
+- The AAF corrupt-reference-table regression was run against the reader from `12049d8e` and the changed reader: the original failed with `Missing expected exception`; the changed reader passed. Its two committed regression tests passed in the package run.
 - Pending integration: package typechecks were started and then stopped at the integration agent's request to avoid oversubscribing the shared host. The integration agent owns the final serialized typechecks and repository gate.

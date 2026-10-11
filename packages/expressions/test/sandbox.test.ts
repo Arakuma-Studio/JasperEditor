@@ -1,4 +1,4 @@
-// Security review (docs/security-review.md EXPR-1, EXPR-2): one QuickJS realm serves every document of a process, so
+// One QuickJS realm serves every document of a process, so
 // nothing an expression does may outlive its evaluation, and an expression that exhausts the heap (where the
 // interrupt hook cannot stop it) is not re-run per frame.
 import type { ExpressionRef } from '@jasper/project';
@@ -115,7 +115,7 @@ describe('resource limits', () => {
 		expect(run('var s = "x"; while (1) s += s;').error).toMatch(/string too long|memory/);
 	});
 
-	// EXPR-2 and the hardening follow-up: an expression stopped by any resource limit is not run again in the realm.
+	// An expression stopped by any resource limit must not run again in the realm.
 	// Which limit trips first depends on the machine and its load, so each path is driven explicitly (the clock is
 	// replaced where the test is about it, frozen where it is not), and the slow allocation loop is checked for the
 	// one property that matters whatever trips first: the second run costs nothing.
@@ -130,7 +130,6 @@ describe('resource limits', () => {
 		expect(performance.now() - t0).toBeLessThan(50);
 		expect(second.error).toMatch(/ran out of memory/);
 		expect(second.error).toMatch(quarantined);
-		// Other expressions are unaffected.
 		expect(run('1 + 1')).toEqual({ value: 2, error: null });
 	});
 

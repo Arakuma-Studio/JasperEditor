@@ -6,6 +6,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { exportAle, importAle } from '../src/ale.ts';
 import { detectFormat } from '../src/formats.ts';
+import type { IMedia } from '../src/model.ts';
 import { Report } from '../src/report.ts';
 import { framesToFlicks } from '../src/time.ts';
 import { arbProject, BASIC } from './support/arbitraries.ts';
@@ -35,12 +36,7 @@ describe('Avid ALE', () => {
 				const text = exportAle(p, p.top[0]!, { ale: { scope: 'project' } }, new Report());
 				expect(text.includes('\r\n')).toBe(true);
 				const back = importAle(text, {}, new Report());
-				const pick = (m: {
-					name: string;
-					path: string | null;
-					duration: number | null;
-					timecode?: unknown;
-				}) => [m.name, m.path, m.duration, m.timecode];
+				const pick = (m: IMedia) => [m.name, m.path, m.duration, m.timecode];
 				const orig = Object.values(p.media).filter((m) => !m.generator);
 				expect(Object.values(back.media).map(pick)).toEqual(orig.map(pick));
 			}),

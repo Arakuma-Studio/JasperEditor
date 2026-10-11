@@ -1,13 +1,14 @@
-// Binding: the shared evaluate(), render snapshots (also after JSON, as in the Remotion renderer), scene resolution
-// and determinism across evaluation orders.
 import {
 	buildRenderSnapshot,
 	contentTimeAt,
 	evaluate,
 	evaluateKeyframes,
 	type RenderSnapshot,
+	type RenderVisualSource,
 	resolveSceneAt,
+	type SolidClip,
 	sourceTextAt,
+	type TextClip,
 } from '@jasper/project';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -49,15 +50,14 @@ describe('documents', () => {
 		const bound = bindDocumentExpressions(d.doc);
 		expect(bindDocumentExpressions(d.doc)).toBe(bound);
 		const seq = bound.sequences[d.seqId]!;
-		const a = seq.clips[d.refs.$a!] as never as { transform: { rotation: never; position: never } };
-		const rawA = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as { transform: { rotation: never } };
+		const a = seq.clips[d.refs.$a!] as SolidClip;
+		const rawA = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip;
 		const t = storedTimeAtFrame(d.doc, { seq: d.seqId, owner: d.refs.$a!, path: 'transform.rotation' }, 60);
 		expect(evaluate(a.transform.rotation, t)).toBeCloseTo(180, 9);
 		expect(evaluate(rawA.transform.rotation, t)).toBe(0);
 		expect(evaluateKeyframes(a.transform.rotation, t)).toBe(0);
 		const p = evaluate(a.transform.position, t) as number[];
 		expect(p[0]).toBe(1002);
-		// JSON never sees the binding.
 		expect(JSON.stringify(bound)).toBe(JSON.stringify(d.doc));
 	});
 	it('a disabled expression renders the keyframed value; status reports errors', () => {
@@ -77,21 +77,17 @@ describe('documents', () => {
 	it('Source Text expressions', () => {
 		const d = rigged();
 		const bound = bindDocumentExpressions(d.doc);
-		const title = bound.sequences[d.seqId]!.clips[d.refs.$title!] as never as { content: never };
+		const title = bound.sequences[d.seqId]!.clips[d.refs.$title!] as TextClip;
 		const ref = { seq: d.seqId, owner: d.refs.$title!, path: 'text.content' };
 		expect(sourceTextAt(title.content, storedTimeAtFrame(d.doc, ref, 75))).toBe('00:00:02:15');
 	});
 	it('commands: clear, empty text, undo-friendly storage', () => {
 		const d = rigged();
 		d.tx([{ type: 'expression.clear', target: ['clip', '$a', 'transform', 'rotation'] }]);
-		const a = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as {
-			transform: { rotation: { expression?: unknown } };
-		};
+		const a = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip;
 		expect(a.transform.rotation.expression).toBeUndefined();
 		d.tx([{ type: 'expression.set', target: ['clip', '$a', 'transform', 'position'], text: '  ' }]);
-		const b = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as never as {
-			transform: { position: { expression?: unknown } };
-		};
+		const b = d.doc.sequences[d.seqId]!.clips[d.refs.$a!] as SolidClip;
 		expect(b.transform.position.expression).toBeUndefined();
 		expect(() =>
 			d.tx([{ type: 'expression.set', target: ['clip', '$a', 'transform', 'flipH'], text: '1' }]),
@@ -123,7 +119,7 @@ describe('render snapshots', () => {
 			9,
 		);
 		const text = bound.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === d.refs.$title)!;
-		const src = text.source as unknown as { text: never };
+		const src = text.source as Extract<RenderVisualSource, { text: TextClip['content'] }>;
 		expect(sourceTextAt(src.text, contentTimeAt(text, 45, { num: 30, den: 1 }))).toBe('00:00:01:15');
 	});
 	it('documents without expressions keep plain snapshots', () => {
@@ -212,7 +208,7 @@ describe('agent property reads', () => {
 		const { runAgentQuery } = await import('@jasper/project');
 		const d = rigged();
 		d.tx([{ type: 'expression.set', target: ['clip', '$a', 'opacity'], text: 'bad(' }]);
-		const r = runAgentQuery({ doc: d.doc, revision: 1 } as never, 'clip.properties', {
+		const r = runAgentQuery({ doc: d.doc, revision: 1 }, 'clip.properties', {
 			clipId: d.refs.$a!,
 			frame: 60,
 			keys: ['transform.rotation', 'opacity'],

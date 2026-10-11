@@ -139,7 +139,6 @@ describe('AAF', () => {
 			expect(ma.video && ma.audio).toBeTruthy();
 			expect(ma.markers.map((m) => [m.name, m.comment])).toEqual([['slate', 'take 3']]);
 			expect(Object.values(q.media).find((m) => m.name === 'music.wav')!.video).toBeUndefined();
-			// reproducible
 			expect(exportAaf(p, s, {}, new Report())).toEqual(bytes);
 		}
 	});

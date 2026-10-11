@@ -1,12 +1,12 @@
-// Expressions on vector shape items (wp shapes): binding into documents and snapshots, AE's content() access path,
-// the drawn geometry following the expression, refusal on structured values.
 import {
 	buildRenderSnapshot,
 	evaluate,
 	evaluateVectorShape,
 	resolveSceneAt,
+	type ShapeClip,
 	type ShapeItem,
 	shapeGeom,
+	type VectorShapeData,
 } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -20,6 +20,8 @@ import { basicDoc } from './fixture.ts';
 beforeAll(async () => {
 	await loadExpressionEngine();
 });
+
+type VectorClip = ShapeClip & { shape: VectorShapeData };
 
 const snapOpts = { resolveMedia: () => null, resolveFont: () => null };
 
@@ -46,7 +48,7 @@ function shapeDoc() {
 			ref: '$s',
 		},
 	]);
-	const clip = d.doc.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as { shape: { contents: ShapeItem[] } };
+	const clip = d.doc.sequences[d.seqId]!.clips[d.refs.$s!] as VectorClip;
 	const group = clip.shape.contents[0] as Extract<ShapeItem, { type: 'group' }>;
 	return { d, groupId: group.id, rectId: group.contents[0]!.id, trimId: clip.shape.contents[1]!.id };
 }
@@ -72,11 +74,8 @@ describe('vector shape expressions', () => {
 		const rot = propertyStatusAt(d.doc, { ...ref, path: `shape.items.${groupId}.transform.rotation` }, t);
 		expect(rot?.expressionError ?? null).toBeNull();
 		expect(rot?.value).toBeCloseTo(20, 9);
-		// The bound document and the render snapshot draw the expression's geometry.
 		const bound = bindDocumentExpressions(d.doc);
-		const clip = bound.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as {
-			shape: { contents: ShapeItem[] };
-		};
+		const clip = bound.sequences[d.seqId]!.clips[d.refs.$s!] as VectorClip;
 		const rect = (clip.shape.contents[0] as Extract<ShapeItem, { type: 'group' }>).contents[0] as Extract<
 			ShapeItem,
 			{ type: 'rect' }
@@ -85,7 +84,7 @@ describe('vector shape expressions', () => {
 		const snap = buildRenderSnapshot(d.doc, d.seqId, snapOpts);
 		const layer = resolveSceneAt(snap, 60).find((l) => l.clip.clipId === d.refs.$s)!;
 		const draws = evaluateVectorShape(
-			(layer.clip.source as { shape: { contents: ShapeItem[] } }).shape.contents,
+			(layer.clip.source as { shape: VectorShapeData }).shape.contents,
 			layer.contentTime,
 		);
 		const b = shapeGeom.pathBounds(draws[0]!.paths)!;
@@ -104,9 +103,7 @@ describe('vector shape expressions', () => {
 				ref: '$s',
 			},
 		]);
-		const items = (
-			d.doc.sequences[d.seqId]!.clips[d.refs.$s!] as unknown as { shape: { contents: ShapeItem[] } }
-		).shape.contents;
+		const items = (d.doc.sequences[d.seqId]!.clips[d.refs.$s!] as VectorClip).shape.contents;
 		expect(() =>
 			d.tx([
 				{

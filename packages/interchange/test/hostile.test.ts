@@ -1,9 +1,5 @@
-// Hostile AAF (compound file + object store) and OMF (Bento) files — security review PAR-2. The review of these
-// readers found ways a small file could crash the importer (out of memory), keep it busy without end or make it use
-// hundreds of megabytes; each is built here (support/hostile.ts, which says what each did before) and must be
-// refused quickly with the format's own error. Then a field-aware
-// mutation run: 32-bit fields of real exports are overwritten with the values that break container readers
-// (0, 1, itself, end-of-chain markers, 2³² − 1), and every result must import or fail cleanly, in bounded time.
+// Malformed container graphs must fail with format errors before exhausting memory or time. Field-aware
+// mutations target counts, offsets and links that random byte mutations rarely exercise.
 import { describe, expect, it } from 'vitest';
 import { importAaf } from '../src/aaf/index.ts';
 import { readStore, StoreError } from '../src/aaf/store.ts';
@@ -25,7 +21,7 @@ import { richProject } from './support/rich.ts';
 
 const NOW = '2026-10-07T00:00:00.000Z';
 
-/** Generous for a loaded host; the unfixed readers needed minutes to hours (or died) on these files. */
+/** Allows for a loaded host while bounding malformed-container traversal. */
 const LIMIT_MS = 20_000;
 
 function timed<T>(fn: () => T): { ms: number; value?: T; error?: unknown } {
@@ -142,8 +138,6 @@ describe('every crafted file, through the importers', () => {
 		}
 	});
 });
-
-// ---------------------------------------------------------------- field-aware mutation
 
 /** xorshift32: deterministic across runs and hosts. */
 function rng(seed: number) {

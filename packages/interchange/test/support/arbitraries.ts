@@ -337,7 +337,6 @@ function build(f: Features, g: Gen): IProject {
 		(video ? seq.video : seq.audio).push(track);
 	});
 	if (f.links) {
-		// Link the first video clip with the first audio clip of the same media and timing.
 		for (const v of seq.video[0]?.clips ?? [])
 			for (const a of seq.audio[0]?.clips ?? [])
 				if (!v.link && !a.link && v.start === a.start && v.duration === a.duration) {

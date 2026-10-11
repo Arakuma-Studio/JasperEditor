@@ -18,13 +18,11 @@ function seeds(): Uint8Array[] {
 		if (!FORMAT_INFO[f]?.write) continue;
 		for (const file of exportTimeline(h.doc, h.seqId, f).files) out.push(file.bytes);
 	}
-	// Security review PAR-2: mutation also starts from the container shapes that made the AAF and OMF readers loop
-	// or allocate without bound (repeated children, empty-key sets, overlapping segments, self-containing objects).
+	// Seed malformed container graphs as well as valid exports to exercise bounded traversal and allocation.
 	out.push(...hostileSeeds());
 	return out;
 }
 
-/** Import, then apply the fragment to a fresh project. */
 function importAndApply(bytes: Uint8Array, format: Format | null): void {
 	const imp = importTimeline(bytes, { format, now: '2026-10-07T00:00:00.000Z', rate: { num: 30, den: 1 } });
 	const target = new Harness({ preset: 'hd-1080p-30', seed: 999 });

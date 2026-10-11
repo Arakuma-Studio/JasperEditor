@@ -1,5 +1,3 @@
-// The expression engine end to end on a document: object model, helpers, determinism, errors and limits.
-
 import type { ExpressionRef } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpressionText, loadExpressionEngine, storedTimeAtFrame } from '../src/index.ts';
@@ -126,7 +124,7 @@ describe('keyframes, loops and time', () => {
 		expect(str(d, 'timeToTimecode(3661.5, 30)')).toBe('01:01:01:15');
 	});
 	it('markers of the comp and of the layer', () => {
-		d.tx([{ type: 'marker.add', frame: 90, name: 'Beat', comment: 'drop' } as never]);
+		d.tx([{ type: 'marker.add', frame: 90, name: 'Beat', comment: 'drop' }]);
 		expect(num(d, 'thisComp.marker.numKeys')).toBe(1);
 		expect(num(d, 'thisComp.marker.key(1).time')).toBeCloseTo(3, 12);
 		expect(str(d, 'thisComp.marker.key("Beat").comment')).toBe('drop');
@@ -186,7 +184,6 @@ describe('determinism: random, wiggle, noise, clock', () => {
 		expect(r).toBeGreaterThanOrEqual(20);
 		expect(r).toBeLessThan(30);
 		expect(num(d, 'Math.random()', 40)).toBe(num(d, 'random()', 40));
-		// Successive calls differ.
 		expect(num(d, 'random() - random()', 40)).not.toBe(0);
 	});
 	it('gaussRandom falls mostly in range', () => {
@@ -248,7 +245,6 @@ describe('errors fall back to the keyframed value', () => {
 		const r = ev(d, '$a', 'transform.rotation', 'while (true) {}');
 		expect(r.error).toMatch(/took too long/);
 		expect(Date.now() - t0).toBeLessThan(5000);
-		// The engine keeps working afterwards.
 		expect(num(d, '1 + 1')).toBe(2);
 	});
 	it('recursion and memory limits', () => {
@@ -309,7 +305,6 @@ describe('Expression Controls', () => {
 		expect(str(d, 'thisComp.layer("A").effect("Layer Control")("Layer").value.name')).toBe('Title');
 		expect(str(d, 'thisComp.layer("A").effect("Layer Control")("Layer").text.sourceText')).toBe('Hello');
 		expect(num(d, 'effect("Angle Control")("Angle")')).toBe(30);
-		// Duplicates are numbered from the second one.
 		expect(num(d, 'effect("Slider Control 2")("Slider")')).toBe(7);
 	});
 	it('renamed instances are found by their name', () => {
