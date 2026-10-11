@@ -355,9 +355,8 @@ export class ProjectStoreFs {
 			...(await this.listSchemaBackups(projectId)).sort((a, b) => (a.id < b.id ? 1 : -1)),
 		];
 		for (const v of files) {
-			const env = await readJsonOrNull<EnvelopeJson>(v.path);
-			if (env?.format !== 'jasper-project' || !env.document || typeof env.revision !== 'number') continue;
-			out.push(ProjectStoreFs.info(v, env));
+			const env = EnvelopeSchema.safeParse(await readJsonOrNull(v.path));
+			if (env.success) out.push(ProjectStoreFs.info(v, env.data));
 		}
 		return out;
 	}
@@ -369,10 +368,9 @@ export class ProjectStoreFs {
 	): Promise<{ version: VersionInfo; envelope: EnvelopeJson }> {
 		await this.readEnvelope(projectId);
 		const v = await this.versionFile(projectId, versionId);
-		const env = v ? await readJsonOrNull<EnvelopeJson>(v.path) : null;
-		if (!v || env?.format !== 'jasper-project' || !env.document || typeof env.revision !== 'number')
-			throw new ProjectError('NOT_FOUND', 404, `No saved version ${versionId}`);
-		return { version: ProjectStoreFs.info(v, env), envelope: env };
+		if (!v) throw new ProjectError('NOT_FOUND', 404, `No saved version ${versionId}`);
+		const envelope = this.parseEnvelope(await readFile(v.path, 'utf8'));
+		return { version: ProjectStoreFs.info(v, envelope), envelope };
 	}
 
 	/**

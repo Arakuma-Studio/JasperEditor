@@ -144,6 +144,26 @@ describe('saved versions: read and restore (S01:PER-001/020)', () => {
 		expect(kept.envelope.document.name).toBe('Second');
 	});
 
+	it('refuses malformed version envelopes without replacing or copying project data', async () => {
+		const s = storeOn();
+		const id = await s.store.create({ name: 'Preserved', preset: 'hd-1080p-30' });
+		const { envelope } = await s.store.get(id);
+		await s.store.save(id, { ...envelope, revision: 1 }, 0);
+		const [version] = await s.store.versions(id);
+		const file = join(s.paths.projectVersionsDir(id), `${version!.versionId}.jasper`);
+		const corrupt = JSON.stringify({ format: 'jasper-project', document: 1, revision: 0 });
+		writeFileSync(file, corrupt);
+		const before = readFileSync(s.paths.projectFile(id), 'utf8');
+		for (const mode of ['replace', 'copy'] as const)
+			await expect(s.store.restoreVersion(id, version!.versionId, { mode })).rejects.toMatchObject({
+				code: 'VALIDATION_FAILED',
+				status: 422,
+			});
+		expect(await s.store.versions(id)).toEqual([]);
+		expect(readFileSync(file, 'utf8')).toBe(corrupt);
+		expect(readFileSync(s.paths.projectFile(id), 'utf8')).toBe(before);
+	});
+
 	it('refuses unknown and path-like version ids', async () => {
 		const s = storeOn();
 		const id = await s.store.create({ name: 'X', preset: 'hd-1080p-30' });
