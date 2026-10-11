@@ -1,4 +1,4 @@
-import type { EngineJob, InterchangeExportRequest, RelinkScanResult } from '@jasper/api';
+import type { EngineJob, InterchangeExportRequest, RegisteredMedia, RelinkScanResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -90,7 +90,7 @@ function fakeEngine() {
 		],
 	});
 	if (!setup.ok) throw new Error(JSON.stringify(setup.errors));
-	const reg = (name: string, seconds: number) => ({
+	const reg = (name: string, seconds: number): RegisteredMedia => ({
 		mediaKey: `mk_${name}`,
 		fingerprint: `q1:${name}`,
 		originalName: name,

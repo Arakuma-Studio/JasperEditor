@@ -32,6 +32,12 @@ module. A traversal of all 58 resulting MCP source modules reports zero local im
   derive from the API result type. Audio callbacks use `Extra`, processing uses `ProcessStep` and
   `VideoClip`, and composition measurements use the engine response type. Media registration
   preserves its command discriminant. CLI query names are checked against the shared query enum.
+- **Measurement contracts:** the engine response previously checked only a text measurement's id
+  and found flag, leaving layout consumers to trust unknown fields. The project measurement type
+  now derives from a shared schema used by the API response. It validates the complete probe
+  output, including finite rectangle and style values, while preserving nullable layout for
+  missing or invisible text. SDK registration explicitly names its schema input generic; Zod
+  clone definitions retain the installed library's discriminator union.
 - **Error transparency:** processing can finish its transaction and then fail to reload the updated
   document. It now returns the committed transaction together with an explicit `refreshError`
   instead of silently omitting the source range. The message tells callers the edit was applied
@@ -85,3 +91,6 @@ branch.
 - Full typechecking and the integration gate are delegated to the integrator's serialized run;
   parallel local typechecks were stopped to relieve host contention. Real-engine processing,
   render/export and CLI integration suites are part of that final gate.
+- Measurement contract regressions cover complete probe output, absent/invisible text, malformed
+  layouts and styles, non-finite numbers, and 200 generated finite rectangles. Their focused run
+  is pending while these integration fixes are handed to the integrator.

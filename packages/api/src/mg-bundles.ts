@@ -1,5 +1,5 @@
 // Bundles use `/mg/bundles/:key/*`; pre-render masters reuse `/mg/:renderKey/:file`.
-import { MgBundleInfoSchema } from '@jasper/project';
+import { MgBundleInfoSchema, MgTextMeasurementSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
 
@@ -93,7 +93,7 @@ export type MgTextMeasureRequest = z.infer<typeof MgTextMeasureRequestSchema>;
 
 /** Result: one `MgTextMeasurement` (@jasper/project) per item, and the font families the bundle registers. */
 export const MgTextMeasureResultSchema = z.object({
-	measurements: z.array(z.looseObject({ id: z.string(), found: z.boolean() })),
+	measurements: z.array(MgTextMeasurementSchema),
 	fonts: z.array(z.string()),
 });
 export type MgTextMeasureResult = z.infer<typeof MgTextMeasureResultSchema>;

@@ -23,7 +23,7 @@ import { z } from 'zod';
 export { OPEN_OBJECT, suggestKey } from '@jasper/project';
 
 type AnySchema = z.ZodType;
-type Def = Record<string, unknown> & { type: string };
+type Def = Record<string, unknown> & z.core.$ZodTypeDef;
 
 const defOf = (s: unknown): Def | null => {
 	const d = (s as { _zod?: { def?: Def } } | null)?._zod?.def;

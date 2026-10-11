@@ -79,7 +79,7 @@ export function defineTool<S extends Shape>(
 	config: { title: string; description: string; input: S; annotations: FullToolAnnotations },
 	run: (args: z.infer<z.ZodObject<S>>, extra: Extra) => Promise<CallToolResult>,
 ): void {
-	ctx.server.registerTool(
+	ctx.server.registerTool<z.ZodType, z.ZodObject<S>>(
 		name,
 		{
 			title: config.title,
