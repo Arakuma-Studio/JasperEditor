@@ -17,10 +17,7 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { bundle } from '@remotion/bundler';
 import type { HeadlessBrowser } from '@remotion/renderer';
-import * as r from '@remotion/renderer';
-import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { renderPagesInOwnWindows } from '../../compositions/src/render-host.ts';
 import { parityDoc, PARITY_SCENE as SCENE } from './determinism-render/doc.ts';
@@ -34,7 +31,8 @@ const CHROME =
 	(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : undefined);
 const N = SCENE.durationInFrames;
 
-type Composition = Awaited<ReturnType<typeof r.selectComposition>>;
+type Renderer = typeof import('@remotion/renderer');
+type Composition = Awaited<ReturnType<Renderer['selectComposition']>>;
 
 const ffmpeg = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 /** Decodes an image or a video file / PNG buffer to raw RGBA frames. */
@@ -71,6 +69,7 @@ const mismatches = (got: (Buffer | undefined)[], want: Buffer[], map: (i: number
 	got.flatMap((b, i) => (b && want[map(i)] && b.equals(want[map(i)]!) ? [] : [map(i)]));
 
 describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { timeout: 1_200_000 }, () => {
+	let r: Renderer;
 	const browserOpts = CHROME ? { browserExecutable: CHROME, chromeMode: 'chrome-for-testing' as const } : {};
 	let serveUrl = '';
 	let browser: HeadlessBrowser | undefined;
@@ -82,6 +81,8 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 	const stills: Record<string, Buffer[]> = {};
 
 	beforeAll(async () => {
+		r = await import('@remotion/renderer');
+		const { bundle } = await import('@remotion/bundler');
 		console.log(`[ANM-014] Render parity artifacts: ${work}`);
 		serveUrl = await bundle({ entryPoint: join(here, 'determinism-render', 'entry.tsx') });
 		browser = await r.openBrowser('chrome', { ...browserOpts });
@@ -223,6 +224,7 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 		let page: import('@playwright/test').Page;
 		let close: () => Promise<void> = async () => {};
 		beforeAll(async () => {
+			const { build } = await import('esbuild');
 			const dir = mkdtempSync(join(tmpdir(), 'jasper-anm014-player-'));
 			await build({
 				entryPoints: [join(here, 'determinism-render', 'player.tsx')],
