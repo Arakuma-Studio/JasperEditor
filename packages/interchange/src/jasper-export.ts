@@ -770,17 +770,11 @@ export function fromJasper(
 				};
 			}
 			default: {
-				// text, shape, motion-graphic, composition, captions, adjustment: the writer reports them per clip.
-				const visual = c as Clip & {
-					transform?: IClip['transform'];
-					opacity?: Animatable<number>;
-					blendMode?: IClip['blendMode'];
-				};
 				return {
 					...base,
-					...(visual.transform ? { transform: clone(visual.transform) } : {}),
-					...(visual.opacity ? { opacity: clone(visual.opacity) } : {}),
-					...(visual.blendMode ? { blendMode: visual.blendMode } : {}),
+					...('transform' in c ? { transform: clone(c.transform) } : {}),
+					...('opacity' in c ? { opacity: clone(c.opacity) } : {}),
+					...('blendMode' in c ? { blendMode: c.blendMode } : {}),
 				};
 			}
 		}
