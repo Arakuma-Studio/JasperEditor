@@ -171,6 +171,16 @@ function registerIpc(): void {
 		const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
 		return r.canceled ? [] : r.filePaths;
 	});
+	ipcMain.handle('jasper:pick-folder', async (e) => {
+		if (!fromApp(e)) return null;
+		const win = BrowserWindow.fromWebContents(e.sender);
+		const opts: Electron.OpenDialogOptions = {
+			title: 'Choose Folder',
+			properties: ['openDirectory'],
+		};
+		const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+		return result.canceled ? null : (result.filePaths[0] ?? null);
+	});
 	ipcMain.handle('jasper:mcp-info', (e) => {
 		if (!fromApp(e)) return null;
 		const { mcpEntry } = resources();

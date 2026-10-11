@@ -28,6 +28,8 @@ export type DesktopMcpInfo = {
 export type DesktopBridge = {
 	runtime: 'desktop';
 	pickMedia(): Promise<string[]>;
+	/** Null when the native folder dialog is cancelled. */
+	pickFolder(): Promise<string | null>;
 	revealInFolder(path: string): void;
 	windowControls: { minimize(): void; toggleMaximize(): void; close(): void };
 	focusWindow(): void;

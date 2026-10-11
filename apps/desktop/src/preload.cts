@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 const bridge: DesktopBridge = {
 	runtime: 'desktop' as const,
 	pickMedia: (): Promise<string[]> => ipcRenderer.invoke('jasper:pick-media'),
+	pickFolder: (): Promise<string | null> => ipcRenderer.invoke('jasper:pick-folder'),
 	revealInFolder: (path: string): void => ipcRenderer.send('jasper:reveal', path),
 	windowControls: {
 		minimize: (): void => ipcRenderer.send('jasper:window', 'minimize'),
