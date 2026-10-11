@@ -64,7 +64,8 @@ casts of relink/media-job results. Their owners can adopt the client upload help
   error details, and the low-level request body; schema-level opaque payloads remain at the boundaries above.
 - `pnpm exec biome check packages/api packages/engine-client` passes.
 - `pnpm vitest run packages/api/test/api.test.ts packages/engine-client/test/client.test.ts --maxWorkers=1`:
-  initial run passed 23 tests in two files. The final run includes the non-JSON-route regression.
+  final run passed 24 tests in two files, including the non-JSON-route regression (228.92 seconds on the shared
+  host, 1.28 seconds in tests).
 - Package typechecking was started and then stopped at the integrator's request to relieve shared-host CPU
   contention. The integration gate runs serialized typechecks for these packages and their consumers.
 - Regression coverage rejects inherited event names and fuzzes arbitrary JSON/event names. Upload coverage checks
