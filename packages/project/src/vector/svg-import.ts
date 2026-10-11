@@ -53,7 +53,7 @@ const I: Mat = [1, 0, 0, 1, 0, 0];
 
 export type SvgConversion = {
 	/** Shape items (input form), centred on the layer centre. */
-	contents: Item[];
+	contents: ShapeItemInput[];
 	/** Document size in px (width/height attributes, else the viewBox size). */
 	width: number;
 	height: number;
@@ -1073,7 +1073,7 @@ export function svgPathToShapeItems(
 		fill?: string | [number, number, number, number] | null;
 		stroke?: { color: string | [number, number, number, number]; width: number } | null;
 	} = {},
-): Item[] {
+): ShapeItemInput[] {
 	const items: Item[] = pathItems(parseSvgPath(d));
 	if (paint.stroke) items.push({ type: 'stroke', color: paint.stroke.color, width: paint.stroke.width });
 	if (paint.fill !== null) items.push({ type: 'fill', color: paint.fill ?? [1, 1, 1, 1] });
