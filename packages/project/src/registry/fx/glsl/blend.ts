@@ -180,8 +180,8 @@ const fxConsts = FX_BLEND_MODES.map(
 ).join('\n');
 const appended = FX_APPENDED_LAYER.map((l, i) => `  if (mode == ${16 + i}) return ${l};`).join('\n');
 
-export const GLSL_BLEND: GlslChunk = {
-	name: 'fx/blend',
+export const GLSL_LAYER_BLEND: GlslChunk = {
+	name: 'fx/layer-blend',
 	source: /* glsl */ `
 ${fxConsts}
 ${layerConsts}
@@ -292,7 +292,13 @@ int fx_blendLayerMode(int mode) {
 ${appended}
   return FX_LAYER_NORMAL;
 }
+`,
+};
 
+export const GLSL_BLEND: GlslChunk = {
+	name: 'fx/blend',
+	deps: [GLSL_LAYER_BLEND],
+	source: /* glsl */ `
 vec3 fx_overlayRgb(vec3 b, vec3 t) { return mix(2.0 * b * t, 1.0 - 2.0 * (1.0 - b) * (1.0 - t), step(0.5, b)); }
 vec3 fx_softLightRgb(vec3 b, vec3 t) {
   vec3 d = mix(((16.0 * b - 12.0) * b + 4.0) * b, sqrt(b), step(0.25, b));

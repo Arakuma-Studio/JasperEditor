@@ -31,7 +31,13 @@ import { GLSL_MB } from './motion-blur.ts';
 import { GLSL_NOISE } from './noise.ts';
 import { GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
-export { FX_BLEND_MODE_LABELS, FX_BLEND_MODES, FX_BLEND_TO_LAYER, GLSL_BLEND } from './blend.ts';
+export {
+	FX_BLEND_MODE_LABELS,
+	FX_BLEND_MODES,
+	FX_BLEND_TO_LAYER,
+	GLSL_BLEND,
+	GLSL_LAYER_BLEND,
+} from './blend.ts';
 export { FX_BLUR_MAX_TAPS, GLSL_BLUR } from './blur.ts';
 export { GLSL_COLOR } from './color.ts';
 export { GLSL_COMPOSITE } from './composite.ts';
