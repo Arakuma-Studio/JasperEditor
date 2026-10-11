@@ -98,6 +98,10 @@ object was a `MediaHandle`. Empty URLs are intentional because these queries eva
 media. Three-dimensional orientation evaluation uses `expressionBindingOf` rather than duplicating the global
 symbol and casting through an arbitrary symbol-indexed record.
 
+Roto input hashing and colour-run cache keys share the pure `canonical-json.ts` serializer. Sorted keys,
+omitted undefined object fields, scalar encoding, and array ordering remain identical; the colour module
+continues to export the same public function.
+
 ### Exceptions, compatibility, and comments
 
 The expression-world builder no longer catches every exception from `intrinsicBoxOf` and silently substitutes
@@ -145,6 +149,9 @@ glTF regressions, hostile-model allocation/tree tests, binary/text model tests, 
 passed. The retained failing input is in ignored `test-results/fuzz-failures/`; it is not an asset to commit.
 An isolated rerun with `-t 'LUT sniffing' --maxWorkers=1` **passed** (one test, 34 skipped), without a changed
 timing allowance or production LUT change.
+
+The shared canonical serializer matched the previous roto serializer for **1000 generated JSON values**
+(fast-check seed 24301) and four explicit nested/scalar undefined cases.
 
 The focused model regression command passed **197 tests across 15 files**:
 

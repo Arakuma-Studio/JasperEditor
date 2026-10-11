@@ -1,6 +1,7 @@
 // Roto / object mattes: the pure model shared by the command handlers, the renderer,
 // the engine, the UI and MCP — settings with their defaults, the inputs hash that says whether computed mattes are
 // current, frame mapping between clip time and media frames, and the render reference of computed mattes.
+import { canonicalJson } from '../canonical-json.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { ClipRoto, RotoSettings } from '../schema/sequence.ts';
@@ -63,16 +64,6 @@ export function rotoSettingsOf(
 	return out;
 }
 
-/** Canonical JSON (sorted keys) for hashing. */
-function canonical(v: unknown): string {
-	if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
-	if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-	const keys = Object.keys(v as Record<string, unknown>)
-		.filter((k) => (v as Record<string, unknown>)[k] !== undefined)
-		.sort();
-	return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
-}
-
 /** 64-bit FNV-1a of a string's UTF-8 bytes as 16 hex digits. */
 export function fnv64(text: string): string {
 	let h = 0xcbf29ce484222325n;
@@ -120,7 +111,7 @@ export function rotoInputs(r: ClipRoto) {
 }
 
 export function rotoInputsHash(r: ClipRoto): string {
-	return fnv64(canonical(rotoInputs(r)));
+	return fnv64(canonicalJson(rotoInputs(r)));
 }
 
 /** The computed mattes no longer match the roto (strokes, span or settings changed since). */
