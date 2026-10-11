@@ -211,7 +211,6 @@ const engineRuntimeSchema = z.object({
 	startedAt: z.string().default(''),
 });
 
-/** Discovery metadata may be absent in runtime files created by older engine builds. */
 export type EngineRuntimeInfo = z.infer<typeof engineRuntimeSchema>;
 
 /** Parses a runtime file's JSON (null when malformed). */

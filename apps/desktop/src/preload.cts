@@ -1,5 +1,3 @@
-// Preload (sandboxed, CommonJS): exposes the minimal desktop bridge (ARCHITECTURE §12). No media bytes
-// cross IPC; the renderer talks HTTP to the engine like the web build.
 import type { DesktopBridge } from '@jasper/api';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 

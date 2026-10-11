@@ -1,10 +1,3 @@
-// Electron main (ARCHITECTURE §12, D-17; S05 §21; R-OMS §8.5). No second renderer app and no IPC byte
-// bridge: the window loads the same SPA over HTTP.
-//   dev             → loads JASPER_DESKTOP_DEV_URL (default http://127.0.0.1:5173; Vite proxies the dev engine)
-//   packaged-like   → forks apps/engine/dist/engine.mjs (utilityProcess, --port 0, per-launch token),
-//                     sets the HttpOnly SameSite=Strict jasper_session cookie, loads the engine origin,
-//                     which serves apps/web/dist (`pnpm build` first)
-//   packaged        → same as packaged-like with resources from process.resourcesPath (M3 installers)
 // The engine writes <appdir>/engine/runtime.json, which is how the bundled jasper-mcp server
 // (resources/mcp/jasper-mcp.mjs; Help ▸ Connect an AI Agent…) finds this app's engine and token.
 import { randomBytes } from 'node:crypto';
@@ -178,7 +171,6 @@ function registerIpc(): void {
 		const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
 		return r.canceled ? [] : r.filePaths;
 	});
-	// Help ▸ Connect an AI Agent…: where the bundled jasper-mcp lives and how an MCP client launches it.
 	ipcMain.handle('jasper:mcp-info', (e) => {
 		if (!fromApp(e)) return null;
 		const { mcpEntry } = resources();
@@ -196,7 +188,7 @@ function registerIpc(): void {
 			bundledNode: node && existsSync(node) ? node : null,
 		});
 	});
-	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
+	// Capture compositor pixels so screenshots include WebGL output.
 	ipcMain.handle('jasper:capture-page', async (e, rect: unknown, maxWidth: unknown) => {
 		if (!fromApp(e) || !isCaptureRect(rect)) return null;
 		const image = await e.sender.capturePage({
@@ -280,7 +272,6 @@ function registerIpc(): void {
 		if (!win || !fromApp(e) || !isWindowAction(action)) return;
 		if (action === 'minimize') win.minimize();
 		else if (action === 'focus') {
-			// An agent asked the editor to show a project (jasper-mcp open_project_in_editor).
 			if (win.isMinimized()) win.restore();
 			win.show();
 			win.focus();
@@ -377,7 +368,6 @@ async function boot(): Promise<void> {
 // (text, shapes, motion graphics) — Remotion's render browser always enables it; must be set before `ready`.
 app.commandLine.appendSwitch('enable-features', 'CanvasDrawElement');
 
-// One instance per user profile: a second launch focuses the first window.
 if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {

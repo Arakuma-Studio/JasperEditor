@@ -34,6 +34,7 @@ The reviewed module dependencies are acyclic: desktop → config plus API types;
 - Measured: desktop/config Vitest suites passed, 27 tests across four files (`pnpm exec vitest run apps/desktop/test packages/config/test --maxWorkers=1`). Includes arbitrary-JSON runtime parsing, malformed ports/PIDs/URLs, subprocess readiness/exit/timeouts, invalid startup URLs, and rejected window loads.
 - Measured: desktop main/preload bundle build passed (`node apps/desktop/scripts/build-main.mjs`).
 - Measured: Biome for edited TypeScript/scripts and `node scripts/check-assets.mjs` passed.
-- Pending at this commit: native workspace tests (cargo compilation running with one build job) and native/TypeScript parity checks.
+- Measured: native workspace tests passed, 14 tests (`cargo test --manifest-path native/mg/Cargo.toml --workspace --locked -j 1`). Includes bounded reads of endless input, invalid thread settings, worker panics, stdout failures, straight alpha, SVG escaping, and exact byte equality between single-worker and four-worker renders.
+- Measured: native/TypeScript parity passed, four tests (`MG_PARITY=1 JASPER_MG="$PWD/native/mg/target/debug/jasper-mg" pnpm exec vitest run packages/mg-templates/test/parity.test.ts --maxWorkers=1 --testTimeout=120000`). The first attempt exceeded the default five-second timeout under shared host load; the same assertions passed with the invocation timeout increased.
 
 Typechecking is delegated to the serialized integration gate to avoid competing whole-workspace TypeScript processes. macOS/Windows system clipboard/permission dialogs and installer signing were inspected through their contracts, not exercised on this Linux host.
