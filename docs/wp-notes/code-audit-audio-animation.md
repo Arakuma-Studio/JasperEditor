@@ -80,11 +80,18 @@ Measured checks:
 - `pnpm exec biome check --write packages/audio-dsp packages/audio-fx
   packages/motion packages/mg-templates`: passed across 145 files.
 - `node scripts/check-anime.mjs` and `git diff --check`: passed.
-- Focused Vitest run is pending at the source commit. The audio-effects
-  registry suite reported one failure after its extreme-settings case took
-  202 seconds under host contention; the final failure detail and remaining
-  suites will be reported separately. No assertions or test-source timeouts
-  have been relaxed.
+- Focused Vitest coverage: **103 tests passed, 8 opt-in tests skipped**, across
+  15 files. The initial run passed 100 cases and exceeded wall-clock limits on
+  three cases under host contention (no assertion failures). Rerunning exactly
+  those three with `--testTimeout=600000 --maxWorkers=1` passed all three; no
+  assertions or test-source timeouts were changed.
+
+Commands:
+
+```sh
+pnpm exec vitest run packages/audio-dsp/test/fft.test.ts packages/audio-dsp/test/sync.test.ts packages/audio-fx/test/core.test.ts packages/audio-fx/test/delay-modulation.test.ts packages/audio-fx/test/registry.test.ts packages/mg-templates packages/motion --maxWorkers=1
+pnpm exec vitest run packages/audio-fx/test/registry.test.ts packages/motion/test/runtime.test.tsx packages/motion/test/templates-review.test.tsx -t 'extreme settings stay finite|gives identical values for shuffled|a large counter advances' --maxWorkers=1 --testTimeout=600000
+```
 
 The audio-DSP typecheck passed before the integration coordinator stopped
 parallel typechecks to reduce host contention. The final serialized workspace
