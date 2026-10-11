@@ -1,5 +1,3 @@
-/* dockview-react theme mapped to --pr-* tokens (ARCHITECTURE §7.1, R-PUI §5). Apply the class
-   `dockview-theme-jasper` to the DockviewReact root (WP-2A). */
 .dockview-theme-jasper {
 	--dv-background-color: var(--pr-bg-app);
 	--dv-paneview-active-outline-color: var(--pr-focus-ring);
@@ -30,7 +28,6 @@
 	font-family: var(--pr-font-ui);
 }
 
-/* Active tab: 2px light underline (R-PUI §5.2). */
 .dockview-theme-jasper .dv-tab.dv-active-tab {
 	box-shadow: inset 0 -2px 0 var(--pr-tab-underline);
 }
@@ -51,8 +48,6 @@
 	z-index: 60;
 }
 
-/* ---- WP-2A shell rules (S05 §5–§6) ------------------------------------------------------------ */
-
 .dockview-theme-jasper {
 	--dv-drag-over-background-color: var(--pr-dock-drop-fill);
 	--dv-drag-over-border: 2px solid var(--pr-accent);
@@ -67,7 +62,6 @@
 	color: var(--pr-text-primary);
 }
 
-/* Group frames: 4 px radius, panel background, no borders or shadows inside the dock (DK-002). */
 .dockview-theme-jasper .dv-groupview {
 	border-radius: var(--pr-radius-frame);
 	overflow: hidden;
@@ -77,7 +71,6 @@
 	background: var(--pr-bg-panel);
 }
 
-/* Tab strip (PC-001/003): same background as the body; tabs distinguished by text, not boxes. */
 .dockview-theme-jasper .dv-tabs-and-actions-container {
 	background: var(--pr-bg-panel);
 	border-bottom: 1px solid var(--pr-border-subtle);
@@ -104,7 +97,6 @@
 	background: transparent;
 }
 
-/* Maximized group: 1 px accent inner outline (DK-041). */
 .pr-maximized .dockview-theme-jasper .dv-groupview::after {
 	content: "";
 	position: absolute;
@@ -115,7 +107,6 @@
 	z-index: 60;
 }
 
-/* Floating groups: overlay shadow only on floating frames (DT §8.6). */
 .dockview-theme-jasper .dv-resize-container {
 	border-radius: var(--pr-radius-frame);
 	box-shadow: var(--pr-shadow-floating);
@@ -125,7 +116,6 @@
 	background: var(--pr-bg-panel);
 }
 
-/* No animation on dock changes (DT-040). */
 .dockview-theme-jasper * {
 	--dv-transition-duration: 0ms;
 	--dv-active-sash-transition-duration: 0ms;

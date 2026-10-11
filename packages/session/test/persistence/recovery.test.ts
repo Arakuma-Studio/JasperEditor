@@ -1,5 +1,3 @@
-// Crash-recovery journal (S01:PER-021, AC-18, ARCHITECTURE D-39): timing, clearing on save and clean close,
-// recovery into a new session as one undoable step, Revert discarding it.
 import {
 	createCounterIdSource,
 	createEmptyProject,

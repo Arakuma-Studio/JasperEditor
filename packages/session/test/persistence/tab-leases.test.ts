@@ -1,5 +1,3 @@
-// polish: a reloaded tab reclaims the lease its previous page held at once (the pagehide keepalive release is
-// best effort), while other tabs, duplicated tabs whose original is alive, and agents stay locked out.
 import { createCounterIdSource, defaultRegistries } from '@jasper/project';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {

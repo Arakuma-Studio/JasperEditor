@@ -1,4 +1,4 @@
-// Gesture frames for costly views (workstream ui-perf, docs/performance.md §5). A gesture (timeline drag or trim,
+// A gesture (timeline drag or trim,
 // property scrub, transform drag) replaces the transient document once per pointer frame; the panel driving it must
 // follow every frame, but views that rebuild a lot from the whole document (the Program monitor's render snapshot
 // and Player, ARCHITECTURE §8) would spend the frame budget the gesture needs. `gestureFrames(store)` is the drawn

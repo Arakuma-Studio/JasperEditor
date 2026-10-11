@@ -1,14 +1,3 @@
-// Security review DATA-1 (docs/security-review.md): data integrity under random edits across the command families
-// the parity workstreams added (masks, shapes, time remap, multicam recording, roto, camera tracking, 3D, captions,
-// text animators, expressions; gaps: proxies, audio channel mapping, sequence format, Warp Stabilizer) mixed with the core edits that move, trim, split and delete what they hang off.
-//
-// For every random transaction sequence, through a real EditorSession:
-//  - a refused transaction leaves the document reference unchanged, and no handler produces an invalid document
-//    (no E_INVARIANT / E_INTERNAL refusals);
-//  - the incremental autosave serialisation (`stringifyJson`, ui-perf) equals `JSON.stringify` after every step;
-//  - saving and loading is lossless: `loadProject` of the JSON gives the same document, with no repairs and no issues
-//    (a field the schema does not declare, or a repair that fires on a valid document, would silently lose data);
-//  - undoing everything restores the exact initial document, and redoing everything the exact final one.
 import {
 	createCounterIdSource,
 	createEmptyProject,
@@ -267,7 +256,6 @@ function concretize(
 			return items.length
 				? one({ type: 'item.delete', itemIds: [pick(items, st.a)!.id], force: true })
 				: null;
-		// ---- workstream gaps: proxies, audio channel mapping, sequence format, Warp Stabilizer
 		case 26: {
 			const m = pick(
 				Object.values(doc.media).filter((x) => x.kind === 'video'),

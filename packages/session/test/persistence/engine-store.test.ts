@@ -134,8 +134,6 @@ describe('leases (S01:PER-040)', () => {
 	}
 
 	it('a reload does not open the project read-only while the old page’s keepalive release is in flight', async () => {
-		// Regression (verify workstream, e2e/effect-presets): the old page's keepalive DELETE raced the new page's
-		// acquire; when the acquire won, the user's own project opened read-only ("open in another session").
 		const { engine, projectId } = setup();
 		const page = new EventTarget();
 		vi.stubGlobal('window', page);

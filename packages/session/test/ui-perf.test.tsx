@@ -1,5 +1,3 @@
-// Workstream ui-perf: gesture frames for costly views, frozen background subtrees, idle invariant verification and the
-// incremental serialisation of autosave / the recovery journal (docs/wp-notes/ui-perf.md).
 import {
 	createCounterIdSource,
 	createEmptyProject,
