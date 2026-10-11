@@ -39,6 +39,18 @@ function setup() {
 }
 
 describe('EngineProjectStore (S01:PER-001 over the engine routes)', () => {
+	it('preserves recovery warnings alongside candidate listings', async () => {
+		const { engine, projectId } = setup();
+		const client = engine.client();
+		const result = {
+			candidates: [],
+			warnings: [{ sessionId: 'damaged', code: 'INVALID_JSON', message: 'Unreadable recovery journal' }],
+		};
+		vi.spyOn(client, 'listRecovery').mockResolvedValue(result);
+		const store = new EngineProjectStore(client);
+		expect(await store.listRecovery(projectId)).toEqual(result);
+	});
+
 	it('saves with If-Match: <baseRevision> and returns the new revision', async () => {
 		const { engine, store, projectId } = setup();
 		const s = store();
