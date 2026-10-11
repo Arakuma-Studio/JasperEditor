@@ -103,7 +103,17 @@ export const RecoveryInfoSchema = z.object({
 	projectRevision: z.number().int(),
 });
 export type RecoveryInfo = z.infer<typeof RecoveryInfoSchema>;
-export const RecoveryListResponseSchema = z.object({ candidates: z.array(RecoveryInfoSchema) });
+export const RecoveryJournalWarningSchema = z.object({
+	sessionId: z.string(),
+	code: z.string(),
+	message: z.string(),
+});
+export type RecoveryJournalWarning = z.infer<typeof RecoveryJournalWarningSchema>;
+export const RecoveryListResponseSchema = z.object({
+	candidates: z.array(RecoveryInfoSchema),
+	warnings: z.array(RecoveryJournalWarningSchema).default([]),
+});
+export type RecoveryListResponse = z.infer<typeof RecoveryListResponseSchema>;
 export const RecoveryGetResponseSchema = z.object({
 	candidate: RecoveryInfoSchema,
 	envelope: EnvelopeSchema,

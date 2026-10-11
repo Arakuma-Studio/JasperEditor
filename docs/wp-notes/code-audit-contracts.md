@@ -73,3 +73,12 @@ casts of relink/media-job results. Their owners can adopt the client upload help
   sequence-frame offset recovery; invalid chunk sizes; and existing cancellation/chunking behavior.
 
 No assets, runtime dependencies, persisted document formats, or migrations changed.
+
+## Recovery-list diagnostics
+
+Recovery listings expose per-journal `{sessionId, code, message}` warnings beside healthy candidates. The shared
+`RecoveryJournalWarning` and `RecoveryListResponse` contracts carry those errors through engine validation and
+the client rather than letting the response parser discard them. Omitted warnings parse to an empty list, so
+clients can also consume engines that do not provide this additive field. The engine and session/UI owners
+implement journal isolation and warning presentation; the API contract regression verifies that candidates and
+warnings survive together and that omitted warnings remain compatible.
