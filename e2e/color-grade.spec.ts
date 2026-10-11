@@ -1,13 +1,16 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { JobListResponseSchema } from '../packages/api/src/jobs.ts';
 import {
 	appliedLabels,
 	clipBox,
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	exportViaUi,
+	ffprobe,
 	importFiles,
 	mediaIdForFile,
 	query,
@@ -212,6 +215,29 @@ test.describe('Lumetri completion and scopes', () => {
 	});
 
 	test('export renders the spatial stage (vignette) through the layer bake', async ({ request }) => {
+		const before = await clips(page);
+		const a = before.find((c) => c.id === clipA)!;
+		const frames = Math.max(...before.map((c) => c.end));
+		const grade = await lumetriOf(clipA);
+		expect(a).toMatchObject({ kind: 'video', start: 0 });
+		expect(a.duration).toBeGreaterThan(30);
+		// Frame 10 checks a fixed spatial effect; keep a moving-video master without baking its unasserted tail.
+		expectTransaction(
+			await transact(page, [
+				{
+					type: 'clip.trim',
+					clipId: clipA,
+					edge: 'out',
+					deltaFrames: 30 - a.duration,
+					linked: false,
+					group: false,
+				},
+			]),
+		);
+		const after = await clips(page);
+		expect(after.find((c) => c.id === clipA)).toMatchObject({ start: 0, duration: 30 });
+		expect(after.filter((c) => c.id !== clipA)).toEqual(before.filter((c) => c.id !== clipA));
+		expect(await lumetriOf(clipA)).toEqual(grade);
 		const out = await exportViaUi(page, request, {
 			engine: 'auto',
 			fileName: 'color-grade.mp4',
@@ -219,8 +245,31 @@ test.describe('Lumetri completion and scopes', () => {
 			outDir: OUT,
 			jobTimeoutMs: 600_000,
 		});
-		const corner = regionLuma(out.file, 10 / 29.97, { x: 0, y: 0, w: 0.08, h: 0.08 });
-		const center = regionLuma(out.file, 10 / 29.97, { x: 0.45, y: 0.45, w: 0.1, h: 0.1 });
-		expect(corner).toBeLessThan(center * 0.6);
+		expect(out.job.result.frames).toBe(frames);
+		const probe = ffprobe(out.file);
+		const video = probe.streams.find((stream) => stream.codec_type === 'video');
+		expect(video).toMatchObject({
+			codec_name: 'h264',
+			width: 1920,
+			height: 1080,
+			r_frame_rate: '30000/1001',
+		});
+		expect(Number(video?.nb_read_frames)).toBe(frames);
+		expect(Math.abs(Number(probe.format.duration) - (frames * 1001) / 30000)).toBeLessThan(0.1);
+		const response = await request.get('/api/jobs');
+		expect(response.ok()).toBe(true);
+		const { jobs } = JobListResponseSchema.parse(await response.json());
+		expect(jobs.filter((job) => job.parentId === out.job.id && job.kind === 'layer-bake')).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: 'succeeded',
+					result: expect.objectContaining({ still: false, frames: 30 }),
+				}),
+			]),
+		);
+		// Sample the same green bar: different source colors can hide a missing vignette.
+		const edge = regionLuma(out.file, 10 / 29.97, { x: 0.2, y: 0, w: 0.08, h: 0.08 });
+		const interior = regionLuma(out.file, 10 / 29.97, { x: 0.2, y: 0.45, w: 0.08, h: 0.1 });
+		expect(edge).toBeLessThan(interior * 0.6);
 	});
 });
