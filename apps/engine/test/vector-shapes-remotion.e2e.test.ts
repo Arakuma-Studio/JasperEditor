@@ -314,7 +314,6 @@ describe.runIf(enabled)('vector shapes: golden probes and preview ↔ export par
 							scaling: 'fit',
 							quality: { mode: 'crf', value: 4 },
 							encoderSpeed: 'fast',
-							colorTags: 'rec709',
 						},
 						audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 						engine: 'auto',

@@ -133,7 +133,6 @@ const exportSettings = (seqId: string, video: Record<string, unknown>, container
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 		...video,
 	},
 	audio: { codec: container === 'mov' ? 'pcm' : 'aac', sampleRate: 48000, channels: 2 },

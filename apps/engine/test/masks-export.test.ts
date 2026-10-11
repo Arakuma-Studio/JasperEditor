@@ -41,7 +41,6 @@ const settings = (seqId: string, frames: number) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 10 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 });
 

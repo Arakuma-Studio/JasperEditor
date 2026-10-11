@@ -43,7 +43,6 @@ const settings = (d: DocBuilder, video: Record<string, unknown>, extra: Record<s
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 20 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 			...video,
 		},
 		audio: { codec: 'aac', sampleRate: 48000, channels: 2 },

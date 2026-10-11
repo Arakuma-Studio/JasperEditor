@@ -157,7 +157,6 @@ export function buildExportSettings(
 			scaling: 'fit',
 			quality: { mode: 'crf', value: opts.crf ?? preset.crf },
 			encoderSpeed: preset.speed,
-			colorTags: 'rec709',
 			...(videoKbps ? { bitrateKbps: videoKbps } : {}),
 			...(preset.bitDepth ? { bitDepth: preset.bitDepth } : {}),
 		},

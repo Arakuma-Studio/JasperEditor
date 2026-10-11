@@ -48,7 +48,6 @@ const settings = (seqId: string, container = 'mov', engine = 'native') => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 30 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine,

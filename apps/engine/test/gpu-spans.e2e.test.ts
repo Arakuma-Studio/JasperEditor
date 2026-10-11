@@ -137,7 +137,6 @@ describe.runIf(enabled || bench)(
 				scaling: 'fit',
 				quality: { mode: 'crf', value: o.codec === 'prores' ? 10 : 18 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 		});
 

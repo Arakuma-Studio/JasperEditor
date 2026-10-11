@@ -454,7 +454,6 @@ describe('ENG-6: frame sizes no path can render are refused by name', () => {
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 23 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	};
 	const plan = (app: Awaited<ReturnType<typeof makeApp>>, d: DocBuilder, size: Partial<typeof video> = {}) =>
 		app.inject({

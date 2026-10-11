@@ -174,7 +174,6 @@ const proresSettings = (seqId: string, engine: 'auto' | 'native' | 'remotion' = 
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 10 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 });
 
@@ -191,7 +190,6 @@ const h264Settings = (seqId: string, engine: 'auto' | 'native' | 'remotion' = 'a
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 });

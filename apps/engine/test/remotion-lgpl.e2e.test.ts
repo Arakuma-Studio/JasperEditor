@@ -89,7 +89,6 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 23 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 		audio: { codec: codec === 'vp9' ? 'opus' : 'aac', sampleRate: 48000, channels: 2 },
 	});

@@ -162,7 +162,6 @@ describe('exports and proxies', () => {
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 18 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 		audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 		engine: 'native',

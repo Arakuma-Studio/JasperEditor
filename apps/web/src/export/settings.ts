@@ -90,7 +90,6 @@ export function buildExportSettings(
 			scaling: 'fit',
 			quality: { mode: 'crf', value: choice.crf ?? DEFAULT_CRF },
 			encoderSpeed: 'balanced',
-			colorTags: 'rec709',
 			// color-mgmt
 			...(col.colorSpace !== 'working' ? { colorSpace: col.colorSpace } : {}),
 			...(col.bitDepth !== 'auto' ? { bitDepth: col.bitDepth } : {}),

@@ -213,7 +213,6 @@ const request = {
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 23 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 	},
 };

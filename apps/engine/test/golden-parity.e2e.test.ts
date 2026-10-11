@@ -185,7 +185,6 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 					scaling: 'fit',
 					quality: { mode: 'crf', value: 10 },
 					encoderSpeed: 'fast',
-					colorTags: 'rec709',
 				},
 			} as never,
 		});

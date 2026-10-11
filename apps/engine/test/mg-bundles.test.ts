@@ -797,7 +797,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 				scaling: 'fit',
 				quality: { mode: 'crf', value: 10 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 		};
 		const plan = (

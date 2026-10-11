@@ -418,7 +418,6 @@ async function exportSection() {
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 		...extra,
 	});
 	const runs = [

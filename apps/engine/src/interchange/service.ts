@@ -581,7 +581,6 @@ export class InterchangeService {
 				scaling: 'fit',
 				quality: { mode: 'crf', value: 18 },
 				encoderSpeed: 'balanced',
-				colorTags: 'rec709',
 			},
 			engine: 'remotion',
 			destination: { type: 'download' },

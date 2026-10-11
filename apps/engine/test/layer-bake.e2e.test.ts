@@ -155,7 +155,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 10 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 	});
 

@@ -124,7 +124,6 @@ describe('Audio Channels in the export mix', () => {
 						scaling: 'fit',
 						quality: { mode: 'crf', value: 30 },
 						encoderSpeed: 'fast',
-						colorTags: 'rec709',
 					},
 					audio: { codec: 'aac', sampleRate: 48000, channels: 2, normalize: null },
 					engine: 'native',

@@ -731,7 +731,6 @@ export class ExportService {
 								scaling: 'stretch',
 								quality: { mode: 'crf', value: 10 },
 								encoderSpeed: 'fast',
-								colorTags: 'rec709',
 							},
 						},
 					},

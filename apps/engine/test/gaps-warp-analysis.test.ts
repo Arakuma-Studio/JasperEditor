@@ -125,7 +125,6 @@ describe('Warp Stabilizer analysis', () => {
 				scaling: 'fit',
 				quality: { mode: 'crf', value: 20 },
 				encoderSpeed: 'fast',
-				colorTags: 'rec709',
 			},
 			audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 			engine: 'auto',

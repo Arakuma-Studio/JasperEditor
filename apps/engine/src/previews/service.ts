@@ -365,7 +365,6 @@ export class PreviewService {
 					quality: { mode: 'crf', value: p.settings.quality === 'high' ? 12 : 17 },
 					bitrateKbps: Math.min(500_000, Math.max(100, kbps)),
 					encoderSpeed: 'fast',
-					colorTags: 'rec709',
 					keyframeInterval: p.settings.format === 'h264-iframe' ? 1 : 15,
 				},
 				engine: 'auto',

@@ -59,7 +59,6 @@ describe.runIf(enabled)('Remotion render (REMOTION_E2E=1)', () => {
 						scaling: 'fit',
 						quality: { mode: 'crf', value: 23 },
 						encoderSpeed: 'fast',
-						colorTags: 'rec709',
 					},
 				},
 			};

@@ -196,7 +196,6 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 			scaling: 'fit',
 			quality: { mode: 'crf', value: 10 },
 			encoderSpeed: 'fast',
-			colorTags: 'rec709',
 		},
 	});
 

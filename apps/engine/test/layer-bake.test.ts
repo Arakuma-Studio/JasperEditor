@@ -95,7 +95,6 @@ const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 20 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	...extra,
 });

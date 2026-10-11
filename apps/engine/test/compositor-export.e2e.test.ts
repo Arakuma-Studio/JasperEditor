@@ -27,7 +27,6 @@ const settings = (seqId: string, engine: 'auto' | 'native' | 'remotion') => ({
 		scaling: 'fit',
 		quality: { mode: 'crf', value: 18 },
 		encoderSpeed: 'fast',
-		colorTags: 'rec709',
 	},
 	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 	engine,
