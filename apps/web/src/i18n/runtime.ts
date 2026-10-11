@@ -25,7 +25,7 @@ type Catalog = Record<string, string>;
 
 /** Catalogues by language family; English is the source and has none. */
 const LOADERS: Record<string, () => Promise<Catalog>> = {
-	es: async () => (await import('./es.json')).default as Catalog,
+	es: async () => (await import('./es.json')).default,
 };
 const loaded = new Map<string, Catalog | null>();
 
@@ -57,7 +57,7 @@ const listeners = new Set<() => void>();
 async function loadModelNames(): Promise<ReadonlySet<string>> {
 	if (modelNames) return modelNames;
 	try {
-		modelNames = new Set((await import('./model-strings.json')).default as string[]);
+		modelNames = new Set((await import('./model-strings.json')).default);
 	} catch {
 		modelNames = new Set();
 	}

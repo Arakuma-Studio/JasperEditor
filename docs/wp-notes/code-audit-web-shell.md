@@ -54,3 +54,5 @@ The follow-up also removes the remaining internal `as never` assertions in agent
 - Follow-up Biome check: 72 files, no fixes needed.
 - Translation coverage check: Spanish covers all 8,615 extracted strings.
 - The second broad focused test run was stopped after 16 minutes without advancing beyond three files under severe host load. Its two Escape failures used the pre-fix import cache; `activeTimeline` is imported in the committed code. A six-file focused rerun covers recovery, command boundaries, UI automation, timeline commands, trim mode, and template upgrades. Final results follow separately.
+
+A final boundary review found that fullscreen entry failures were swallowed and fullscreen exit failures escaped the command runner. Both promises are now awaited by the existing command boundary, which reports browser refusal through its error toast. The registry regression asserts that refusal is observable. Model-backed shape commands and bundled JSON catalogues no longer use unnecessary assertions.

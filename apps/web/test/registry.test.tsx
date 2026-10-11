@@ -8,6 +8,7 @@ import {
 	registerCommands,
 	runCommand,
 } from '../src/commands/index.ts';
+import { monitorViewCommands, registerFullscreenTarget } from '../src/commands/monitor-view.ts';
 import { onBeforeCommand } from '../src/commands/registry.ts';
 import { PanelServices } from '../src/state/panel-services.ts';
 
@@ -55,6 +56,28 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 		expect((await runCommand('nope', ctx)).reason).toBe('unknown');
 		off();
 	});
+	it('reports a refused fullscreen request through the command error boundary', async () => {
+		const error = new Error('Fullscreen denied by the browser');
+		const element = document.createElement('div');
+		Object.defineProperty(element, 'requestFullscreen', { value: vi.fn().mockRejectedValue(error) });
+		const unregister = registerCommands(monitorViewCommands);
+		const removeTarget = registerFullscreenTarget('program', () => element);
+		const toast = vi.fn();
+		try {
+			await expect(
+				runCommand('monitor.fullScreenVideo', createCommandContext({ engine, toast })),
+			).resolves.toEqual({ ran: false, reason: 'error', error });
+			expect(toast).toHaveBeenCalledWith({
+				kind: 'error',
+				message: 'Toggle Full Screen failed',
+				detail: error.message,
+			});
+		} finally {
+			removeTarget();
+			unregister();
+		}
+	});
+
 	it('reports a failing pre-command hook without running the command', async () => {
 		const run = vi.fn();
 		const toast = vi.fn();

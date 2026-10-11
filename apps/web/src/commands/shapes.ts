@@ -1,4 +1,4 @@
-import type { Command, LegacyShapeType } from '@jasper/project';
+import type { CommandOf, LegacyShapeType } from '@jasper/project';
 import { clipSections, programOverlays } from '../extensions/index.ts';
 import { TOOLS } from '../panels/timeline/model/tools.ts';
 import { addShapeAt, SHAPE_LABELS } from '../shapes/insert.ts';
@@ -69,7 +69,9 @@ export const shapeCommands: UiCommand[] = [
 			const r = ctx.session.apply({
 				label: 'Convert to Vector Shape',
 				origin: 'user',
-				commands: ids.map((clipId) => ({ type: 'shape.convertToVector', clipId }) as Command),
+				commands: ids.map(
+					(clipId): CommandOf<'shape.convertToVector'> => ({ type: 'shape.convertToVector', clipId }),
+				),
 			});
 			if (!r.ok) ctx.ui.toast({ kind: 'error', message: r.errors[0]?.message ?? 'Could not convert' });
 		},
