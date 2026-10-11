@@ -633,15 +633,18 @@ export type EffectLike = {
 	effectVersion: number;
 	enabled: boolean;
 	/** Parameter values already evaluated at the frame (or raw values for static params). */
-	params: Record<string, unknown>;
+	params: EffectParams;
 };
 
 /** Params with registry defaults filled in for missing or null values. */
-export function effectiveParams(spec: EffectSpec, params: Record<string, unknown>): EffectParams {
+export function effectiveParams(
+	spec: EffectSpec,
+	params: Readonly<Partial<Record<string, ParamValue | null>>>,
+): EffectParams {
 	const out: EffectParams = {};
 	for (const p of spec.params) {
 		const v = params[p.name];
-		out[p.name] = v === undefined || v === null ? p.default : (v as ParamValue);
+		out[p.name] = v ?? p.default;
 	}
 	return out;
 }

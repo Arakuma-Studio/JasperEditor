@@ -73,12 +73,19 @@ Changing their diagnostics would require a coordinated UI/planner contract rathe
 
 ### Remaining boundary types and compatibility
 
-A measured TypeScript AST scan of the final 205 registry files found no explicit `any` type nodes and 73
+A measured TypeScript AST scan of the final 205 registry files found no explicit `any` type nodes and 71
 `unknown` type nodes. Remaining unknowns are concentrated in dynamic property/JSON-schema inspection,
 motion-graphics template payloads, migrations, and raw property/command values. These locations accept data
 whose shape is established by a schema or property definition at runtime. The two mesh readers retain `unknown`
 because they validate serialized mesh layouts before commands and rendering use them. Replacing these types
 with an asserted application type would hide the boundary rather than make it safe.
+
+Evaluated colour effects now require `EffectParams`, and registry-default resolution accepts typed parameter
+values with explicit missing/null defaulting. The stack partitioner has an actual additional caller with
+persisted `Animatable<ParamValue>` parameters (`apps/engine/src/color/extension.ts`); its generic constraint
+therefore covers only the effect metadata it reads. It does not weaken the evaluated parameter contract
+used by colour baking and cache keys. The grading service builds typed evaluated parameters before default
+resolution, without an `unknown` cast.
 
 Old effect parameter migrations and registry version lookup remain necessary to open saved projects. Named
 M1/M2 catalogue arrays remain exported composition groups, not alternative implementations. Unknown effect
@@ -113,10 +120,16 @@ comment now describes the actual effect-versus-clip formula distinction without 
   timing failures are consistent with the observed shared-host contention; serialized integration verification
   must rerun that file before claiming a passing gate. The registry, shader, transition, property-consuming 3D,
   and text animator behavioural tests passed.
+- An isolated rerun of `three-d-hostile.test.ts --maxWorkers=1` passed 12 of 13 tests in 84.52 seconds.
+  The same glTF allocation-refusal timing assertion remained over budget (43,885 ms versus 20,000 ms); its
+  error result was correct and the other previously timed-out test passed. The performance gate remains
+  unresolved and no timing limit was changed.
 - Package typechecking was started, then stopped at the integrator's request because simultaneous project
   typechecks were exhausting shared-host resources. Final serialized typechecking is an integration gate.
 - `git diff --check` is run before commit.
 
 Integration dependencies: merge the model audit's `math/matrix3.ts` and public `mediaParamId` export and the
-compositions audit's typed structured-effect readers with this change. A temporary local link to the model
+compositions audit's typed structured-effect readers with this change. The evaluated-effect narrowing also
+requires the model audit's metadata-only `effectRuns` constraint and the engine export audit's typed grading
+parameter construction. A temporary local link to the model
 agent's matrix helper was used for tests; that link is not committed. No assets or dependencies were added.
