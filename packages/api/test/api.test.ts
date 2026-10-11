@@ -40,7 +40,16 @@ describe('event payload validation', () => {
 			fc.property(unknownType, fc.jsonValue(), (type, payload) => {
 				expect(parseEvent({ id: 1, type, createdAt: 'now', payload })).toBeNull();
 			}),
-			{ seed: 0x5eed, numRuns: 100 },
+			{
+				seed: 0x5eed,
+				numRuns: 100,
+				examples: [
+					['constructor', null],
+					['__proto__', null],
+					['toString', null],
+					['hasOwnProperty', null],
+				],
+			},
 		);
 	});
 
