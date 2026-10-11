@@ -53,6 +53,7 @@ host under substantial contention; elapsed times below are observations, not per
 | Check | Measured result |
 | --- | --- |
 | `pnpm lint` | Passed: Biome checked 2,548 files; token, animation, package-layer/runtime-cycle, and asset checks passed. |
+| Workspace and E2E typechecks | All 18 package scripts passed across serialized integration batches and focused final package reruns. `pnpm e2e:typecheck` also passed. |
 | `pnpm build` | Passed for web, desktop, engine, and MCP. The web build transformed 3,630 modules. |
 | `pnpm notices --check` | Passed: 150 packages and 31 ported-code records. |
 | `pnpm i18n:check` | Passed: 8,615 strings. |
@@ -61,6 +62,8 @@ host under substantial contention; elapsed times below are observations, not per
 | Full software-GL shader compilation | Passed with required oracles and one compile worker: 983 unique programs, including 20 custom-vertex programs and 17 library stress cases. |
 | Native export regression | Passed all pixel, audio, frame-count, event, and HTTP-range assertions. An extracted output frame was inspected. |
 | Import integration suite | All 11 tests passed with unchanged assertions and deadlines, reusing generated fixtures. |
+| Upscale media oracle | Passed in 108.95 seconds with its original 600-second deadline: all frame-count, frame-rate, dimensions, codec, colour-space, and audio-hash assertions passed. |
+| Project-store integration suite | All seven tests passed, including a real-engine check that malformed views produce a warning without altering project or view bytes. |
 | Desktop folder selection | All 20 focused main/preload/web tests passed; native dialogs were mocked. |
 | MCP typed response boundaries | All 21 focused tests passed. |
 
