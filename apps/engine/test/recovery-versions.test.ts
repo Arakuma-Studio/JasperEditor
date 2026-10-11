@@ -1,6 +1,6 @@
 // Crash-recovery journal (S01:PER-021, AC-18), saved versions (read / restore) and the schema backup kept by the
 // first save over a migrated project (S01:MIG-004). ARCHITECTURE D-39, docs/project-files.md.
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
@@ -378,6 +378,18 @@ describe('journal locks across engine processes', () => {
 			}),
 			{ numRuns: 20 },
 		);
+	});
+
+	it('reads a valid journal when another session has incomplete metadata', async () => {
+		const { s, id, saved } = await journalled();
+		const incomplete = join(s.paths.projectDir(id), 'recovery', 'ses_incomplete');
+		mkdirSync(incomplete);
+		writeFileSync(join(incomplete, 'snapshot.jasper'), '{');
+		const restarted = new RecoveryJournal({ paths: s.paths, leases: new LeaseManager(), saved });
+		const recovered = await restarted.read(id, 'ses_x');
+		expect(recovered.info.sessionId).toBe('ses_x');
+		expect(recovered.envelope.document).toMatchObject({ name: 'Unsaved' });
+		expect(readFileSync(join(incomplete, 'snapshot.jasper'), 'utf8')).toBe('{');
 	});
 
 	it('an engine restart (new instance, no leases) offers the journal of the dead session', async () => {

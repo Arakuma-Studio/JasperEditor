@@ -12,7 +12,7 @@
 // journals are never offered, read for recovery or deleted by anyone but their session. A journal that is no longer
 // held and whose document differs from the saved project is a **recovery candidate**; one whose document equals
 // the saved project (the last autosave caught up before the crash) is stale and is removed when listed.
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { access, mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	type RecoveryInfo as RecoveryCandidate,
@@ -188,23 +188,32 @@ export class RecoveryJournal {
 			if (!SESSION_ID_RE.test(sessionId)) continue;
 			if (await this.held(projectId, sessionId)) continue;
 			const dir = this.dir(projectId, sessionId);
-			const info = JournalInfoSchema.safeParse(await readJsonOrNull(join(dir, 'session.json')));
-			const snap = await readJsonOrNull<{ document?: unknown }>(join(dir, 'snapshot.jasper'));
-			// Interrupted writes can leave a recoverable snapshot without complete metadata.
-			if (!info.success || !snap?.document || typeof snap.document !== 'object')
-				throw new ProjectError(
-					'VALIDATION_FAILED',
-					422,
-					`Recovery journal ${sessionId} is incomplete or unreadable; its files have been preserved for recovery`,
-					{ projectId, sessionId },
-				);
-			if (JSON.stringify(snap.document) === savedDoc) {
+			const { info, envelope } = await this.snapshot(projectId, sessionId);
+			if (JSON.stringify(envelope.document) === savedDoc) {
 				await rm(dir, { recursive: true, force: true });
 				continue;
 			}
-			out.push({ ...info.data, projectRevision: saved.revision });
+			out.push({ ...info, projectRevision: saved.revision });
 		}
 		return out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+	}
+
+	private async snapshot(
+		projectId: string,
+		sessionId: string,
+	): Promise<{ info: RecoveryInfo; envelope: Record<string, unknown> }> {
+		const dir = this.dir(projectId, sessionId);
+		const info = JournalInfoSchema.safeParse(await readJsonOrNull(join(dir, 'session.json')));
+		const envelope = await readJsonOrNull<Record<string, unknown>>(join(dir, 'snapshot.jasper'));
+		// Interrupted writes can leave a recoverable snapshot without complete metadata.
+		if (!info.success || !envelope?.document || typeof envelope.document !== 'object')
+			throw new ProjectError(
+				'VALIDATION_FAILED',
+				422,
+				`Recovery journal ${sessionId} is incomplete or unreadable; its files have been preserved for recovery`,
+				{ projectId, sessionId },
+			);
+		return { info: info.data, envelope };
 	}
 
 	/** A candidate's snapshot (refused while its session still holds it). */
@@ -212,16 +221,21 @@ export class RecoveryJournal {
 		projectId: string,
 		sessionId: string,
 	): Promise<{ info: RecoveryCandidate; envelope: Record<string, unknown> }> {
-		const candidate = (await this.list(projectId)).find((c) => c.sessionId === sessionId);
-		if (!candidate) {
-			if (await this.held(projectId, sessionId))
-				throw new ProjectError('LEASE_HELD', 409, 'That session is still editing; its journal is in use');
-			throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
+		const dir = this.dir(projectId, sessionId);
+		try {
+			await access(dir);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+				throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
+			throw error;
 		}
-		const envelope = await readJsonOrNull<Record<string, unknown>>(
-			join(this.dir(projectId, sessionId), 'snapshot.jasper'),
-		);
-		if (!envelope) throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
-		return { info: candidate, envelope };
+		if (await this.held(projectId, sessionId))
+			throw new ProjectError('LEASE_HELD', 409, 'That session is still editing; its journal is in use');
+		const saved = await this.opts.saved(projectId);
+		if (!saved) throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
+		const { info, envelope } = await this.snapshot(projectId, sessionId);
+		if (JSON.stringify(envelope.document) === JSON.stringify(saved.document))
+			throw new ProjectError('NOT_FOUND', 404, 'No unsaved changes to recover for that session');
+		return { info: { ...info, projectRevision: saved.revision }, envelope };
 	}
 }

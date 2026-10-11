@@ -24,7 +24,7 @@ Scope: `apps/engine/src` entry points, routes, agent relay and approval handling
 - Filesystem recovery conventions are being tightened in the engine-media audit's shared `tools/fs.ts`: absence/JSON parse failure are distinct from permission, full-disk, and I/O failures. Cache scanners retain their conservative handling of vanished files, busy holders, failed moves, and rollback. A broad removal of those handlers would make cleanup less safe.
 - Older project schema loading, schema backups, lease takeover, expired-lease headless execution, interrupted-job recovery, and multi-platform startup paths remain supported behavior. No shipped migration or format version was changed.
 - Engine-export's TypeScript AST audit found zero strongly connected components in static relative runtime imports across 253 engine source files, excluding type-only imports. This establishes no local runtime import cycle under that analysis; dynamic imports and external packages were outside that scan.
-- A corrupt journal now blocks listing until it is repaired or explicitly discarded. This is intentional conservative behavior: the API cannot safely invent history metadata, and the response identifies the preserved session. No automatic repair or claim of recovered edits is made.
+- A corrupt journal now blocks listing until it is repaired or explicitly discarded, while reading a known valid session remains independent of other journals. This is intentional conservative behavior: the API cannot safely invent history metadata, and the response identifies the preserved session. No automatic repair or claim of recovered edits is made.
 
 ## Verification
 
