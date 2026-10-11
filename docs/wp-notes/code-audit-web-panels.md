@@ -70,8 +70,9 @@ notification behavior; this audit does not turn a missing optional thumbnail int
 - `panel-input-validation.test.ts` adds the malformed-neighbor regression plus property tests over arbitrary
   JSON and explicit malformed version/composition drag cases.
 - A focused Vitest run with `--maxWorkers=1` covers the input tests, motion templates, mixer panels, timeline
-  gestures/transitions/trim mode, the timeline panel and effect presets. Its result will be recorded after the
-  running check completes.
+  gestures/transitions/trim mode, the timeline panel and effect presets: **8 files, 71 tests passed**
+  (600.96 s wall time on the shared host). Command:
+  `pnpm exec vitest run apps/web/test/panel-input-validation.test.ts apps/web/test/motion-templates.test.tsx apps/web/test/audio-mix-panels.test.tsx apps/web/test/timeline-gestures.test.ts apps/web/test/transitions-timeline.test.ts apps/web/test/edit-ux-trim-mode.test.ts apps/web/test/timeline-panel.test.tsx apps/web/test/effect-presets.test.tsx --maxWorkers=1`.
 - The web typecheck was started but stopped at the integration agent's request because concurrent compilers
   saturated the shared host; it had not emitted diagnostics. The serialized integration typecheck remains
   required before merge.
