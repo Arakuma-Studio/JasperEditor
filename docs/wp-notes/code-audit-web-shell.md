@@ -42,7 +42,7 @@ Focused command, shell, persistence, agent security, internationalization and bu
 
 - Targeted Biome checks pass, including the new shared modules and regression tests.
 - `node scripts/i18n.mjs --check`: passes; Spanish covers all 8,614 extracted strings.
-- The first focused test run encountered host-load timeouts and was stopped before completion. A second run uses one worker and a 60-second test/hook timeout; assertions and Testing Library deadlines are unchanged. Results are recorded in the follow-up verification update.
+- The final six-file focused run passed all 51 tests. The final registry/media-browser run passed all 19 tests, including the new fullscreen refusal regression. Both used one worker and 60-second test/hook limits; assertions and Testing Library deadlines are unchanged.
 - The web typecheck was stopped at the integrator's request to reduce concurrent compiler load. The integrator runs the final serialized typecheck against all audit changes together.
 
 ## Recovery listing follow-up
@@ -53,8 +53,15 @@ The follow-up also removes the remaining internal `as never` assertions in agent
 
 - Follow-up Biome check: 72 files, no fixes needed.
 - Translation coverage check: Spanish covers all 8,615 extracted strings.
-- The second broad focused test run was stopped after 16 minutes without advancing beyond three files under severe host load. Its two Escape failures used the pre-fix import cache; `activeTimeline` is imported in the committed code. A six-file focused rerun covers recovery, command boundaries, UI automation, timeline commands, trim mode, and template upgrades. Final results follow separately.
+- The second broad focused test run was stopped after 16 minutes without advancing beyond three files under severe host load. Its two Escape failures used the pre-fix import cache; `activeTimeline` is imported in the committed code. The six-file focused rerun passed all 51 tests covering recovery, command boundaries, UI automation, timeline commands, trim mode, and template upgrades.
 
 A final boundary review found that fullscreen entry failures were swallowed and fullscreen exit failures escaped the command runner. Both promises are now awaited by the existing command boundary, which reports browser refusal through its error toast. The registry regression asserts that refusal is observable. Model-backed shape commands and bundled JSON catalogues no longer use unnecessary assertions.
 
 The six-file regression run passed all 51 tests. The final command/engine-dialog run passed 18 of 19 tests, including fullscreen refusal and failed-save navigation, but timed out while the unchanged media-browser fixture awaited its initial async effects. Its mount helper now uses asynchronous React `act` to settle the scripted engine/effect chain before assertions; the one-second Testing Library deadline and all assertions remain unchanged. The registry unit test imports the context and registry leaves rather than loading every application's command module.
+
+## Final focused verification
+
+- `vitest run test/project-files.test.tsx test/registry.test.tsx test/agent-ui.test.ts test/timeline-commands.test.ts test/edit-ux-trim-mode.test.ts test/anime-templates.test.ts --maxWorkers=1 --testTimeout=60000 --hookTimeout=60000`: 6 files, 51 tests passed; 254.74 seconds under host load.
+- `vitest run test/registry.test.tsx test/polish-media-browser.test.tsx --maxWorkers=1 --testTimeout=60000 --hookTimeout=60000`: 2 files, 19 tests passed; 135.66 seconds after the async mount fix.
+- `tsx i18n/model-strings.ts`: 5,545 model labels; generated output unchanged.
+- Final targeted Biome and `git diff --check` pass. The integrator owns the final combined TypeScript/build/test checks.
