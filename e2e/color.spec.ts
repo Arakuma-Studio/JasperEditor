@@ -219,7 +219,6 @@ test('the forced WebGL Program canvas matches the independent CPU LUT reference 
 			},
 		],
 		defaultEffectRegistry,
-	type EffectParams,
 		{ lut: (id) => (id === 'L' ? lookLut : null) },
 		33,
 	)!;
