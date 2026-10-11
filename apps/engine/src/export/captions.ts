@@ -15,7 +15,6 @@ import {
 	type SnapshotOptions,
 	supportsDropFrame,
 	type Track,
-	writeCaptionFile,
 	writeCaptionFileBytes,
 } from '@jasper/project';
 
@@ -223,11 +222,6 @@ export function embedArgs(
 	if (container !== 'webm') args.push('-movflags', '+faststart');
 	args.push('-f', container === 'mov' ? 'mov' : container, output);
 	return args;
-}
-
-/** WebVTT text of a track for embedding. */
-export function vttFor(o: CaptionTrackOutput): string {
-	return writeCaptionFile(o.doc, 'vtt') as string;
 }
 
 /** A sidecar file's bytes. */

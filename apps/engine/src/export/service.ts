@@ -36,6 +36,7 @@ import {
 	mediaDecodeHints,
 	type RenderVisualClip,
 	rotoStorePath,
+	writeCaptionFile,
 } from '@jasper/project';
 import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
 import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
@@ -70,7 +71,6 @@ import {
 	sidecarName,
 	sidecarTracks,
 	subtitleCodecFor,
-	vttFor,
 } from './captions.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
@@ -923,7 +923,7 @@ export class ExportService {
 			const files = [];
 			for (const [i, t] of tracks.entries()) {
 				const path = join(scratch, `captions-${i}.vtt`);
-				await writeFile(path, vttFor(t));
+				await writeFile(path, writeCaptionFile(t.doc, 'vtt'));
 				files.push({ path, language: t.language, title: t.name });
 			}
 			const container = extname(output).slice(1);
@@ -1646,12 +1646,6 @@ export class ExportService {
 		if (!audio.path) throw new JobError('MIXDOWN_FAILED', 'The mixer wrote no audio', true);
 		await copyFile(audio.path, output);
 		return { samples: audio.samples };
-	}
-
-	/** The container (file extension) an export request will be written in. */
-	async containerOf(req: ExportStartRequest): Promise<string> {
-		const planned = await this.plan(req);
-		return planned.output.encoder?.container ?? 'mp4';
 	}
 
 	private async runExport(ctx: JobContext): Promise<unknown> {

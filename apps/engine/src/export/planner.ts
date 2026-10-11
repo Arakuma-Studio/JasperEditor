@@ -478,7 +478,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			`Audio effects without an export processor: ${[...new Set(unrenderable.map((u) => u.effectId))].join(', ')}`,
 			{ effects: unrenderable },
 		);
-	const audioOut = audioOutputOf(seq, settings, deps.selectEncoder ? null : null);
+	const audioOut = audioOutputOf(seq, settings);
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -786,7 +786,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 }
 
 /** Enabled audio effects (clips, tracks, submixes, the Mix) with no export processor (`registerAudioProcessor`). */
-export function unrenderableAudioEffects(
+function unrenderableAudioEffects(
 	snapshot: RenderSnapshot,
 ): { itemId: string; effectId: string; where: 'clip' | 'strip' }[] {
 	const out: { itemId: string; effectId: string; where: 'clip' | 'strip' }[] = [];
@@ -803,17 +803,15 @@ export function unrenderableAudioEffects(
 }
 
 /** Delivered audio format: channels, rate (Opus is 48 kHz only) and the loudness normalisation in effect. */
-export function audioOutputOf(
+function audioOutputOf(
 	seq: {
 		settings: { audioSampleRate?: number; masterLayout?: string };
 		master: { loudness?: { enabled: boolean; targetLufs: number; truePeakDb: number } };
 	},
 	settings: Pick<ExportSettings, 'audio'>,
-	_encoder: unknown,
 ): { channels: 1 | 2 | 6; sampleRate: number; normalize: { targetLufs: number; truePeakDb: number } | null } {
 	const a = settings.audio;
-	const master = seq.settings.masterLayout === '5.1' ? 6 : seq.settings.masterLayout === 'mono' ? 1 : 2;
-	const channels = (a?.channels ?? (master === 6 ? 6 : 2)) as 1 | 2 | 6;
+	const channels = a?.channels ?? (seq.settings.masterLayout === '5.1' ? 6 : 2);
 	const sampleRate = a?.codec === 'opus' ? 48000 : (a?.sampleRate ?? seq.settings.audioSampleRate ?? 48000);
 	const l = seq.master.loudness;
 	const normalize =

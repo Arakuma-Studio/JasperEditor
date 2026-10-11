@@ -21,7 +21,7 @@ import { planRetime } from './plan.ts';
 import { FlowPool } from './pool.ts';
 import { RetimeRenderError, renderRetimeLayer } from './render.ts';
 
-export const RETIME_EXTENSION_ID = 'retime';
+const RETIME_EXTENSION_ID = 'retime';
 /** Bumped whenever the intermediate's pixels would change for the same inputs (algorithm, encoder). */
 const RETIME_VERSION = 1;
 
@@ -38,7 +38,7 @@ export type RetimeDeps = {
 };
 
 /** Video layers this extension renders (the snapshot marks them `retime`). */
-export function retimeClaims(c: RenderVisualClip): boolean {
+function retimeClaims(c: RenderVisualClip): boolean {
 	return c.kind === 'video' && !!c.retime && 'mediaId' in c.source;
 }
 
@@ -161,10 +161,13 @@ export function createRetimeExtension(deps: RetimeDeps): NativeExtension {
 
 	return {
 		id: RETIME_EXTENSION_ID,
-		retimes: (c) => retimeClaims(c),
+		retimes: retimeClaims,
 		async prepare(planned, ctx): Promise<RetimePrepared> {
 			const out = new Map<string, { path: string; startFrame: number }>();
-			const clips = allClips(planned).filter((c) => retimeClaims(c) && !bakedElsewhere(c));
+			// Nested sequences are prepared separately by prepareNestedExtensions.
+			const clips = planned.snapshot.videoTracks
+				.flatMap((t) => t.clips)
+				.filter((c) => retimeClaims(c) && !bakedElsewhere(c));
 			let flow: FlowPool | null = null;
 			const pool = () => {
 				flow ??= new FlowPool(Math.max(1, Math.min(8, threads - 1)));
@@ -186,9 +189,4 @@ export function createRetimeExtension(deps: RetimeDeps): NativeExtension {
 			return p ? { path: p.path, space: 'layer', startFrame: p.startFrame, retimed: true } : null;
 		},
 	};
-}
-
-/** Visual clips of the export's snapshot (nested sequences are prepared separately, `prepareNestedExtensions`). */
-function allClips(planned: PlannedExport): RenderVisualClip[] {
-	return planned.snapshot.videoTracks.flatMap((t) => t.clips);
 }
