@@ -47,9 +47,8 @@ export function has3d(doc: RenderDoc | null | undefined): boolean {
 }
 
 export function Scene3DOverlay(props: ProgramOverlayHostProps) {
-	const doc = props.doc | null;
-	if (!has3d(doc)) return null;
-	return <Scene3DSurface {...props} doc={doc!} />;
+	if (!has3d(props.doc)) return null;
+	return <Scene3DSurface {...props} />;
 }
 
 type Drag =
