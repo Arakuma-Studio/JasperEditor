@@ -1,10 +1,3 @@
-// Desktop clipboard runtime check (wp-clipboard-2, S01:CLB-002/010): two packaged-like JasperEditor desktop apps
-// (separate processes, profiles, engines and projects) under one X display, driven over CDP. Copy in app A writes
-// the custom `application/x-jasper-clipboard` format through the Electron clipboard; app B reads it back from the
-// OS clipboard and pastes it (Edit ▸ Paste through the bridge, Ctrl+V through the paste event). A helper Electron
-// process ("another application") then puts external text, image data and file lists on the clipboard, which B
-// pastes as a text clip, "Pasted image <time>" assets and files registered in place (no upload).
-//
 // Run with `pnpm e2e:desktop-clipboard` (e2e/desktop-clipboard.mjs builds and starts a headless X server).
 import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -226,7 +219,6 @@ test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-
 		})
 		.toEqual([id]);
 	await A.page.keyboard.press('Control+KeyC');
-	// The other process reads the custom format back from the OS clipboard.
 	await expect.poll(() => bridgeRead(B.page), { timeout: 15_000 }).toContain('"format":"jasper-clipboard"');
 	expect(await bridgeRead(B.page)).toContain('Desktop copy');
 	// Edit ▸ Paste in B goes through the bridge (no paste event, no web clipboard permission involved).
@@ -287,7 +279,6 @@ test('files copied in a file manager: Edit ▸ Paste and Ctrl+V register them in
 		const stop = await external('files', file);
 		try {
 			const at = await atEnd(B.page);
-			// The bridge sees the file manager's list (main reads and validates it).
 			expect(
 				await B.page.evaluate(() =>
 					(

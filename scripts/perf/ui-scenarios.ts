@@ -13,9 +13,7 @@ import type { CDPSession, Page } from '@playwright/test';
 import { ProjectCreateResponseSchema, ProjectGetResponseSchema } from '../../packages/api/src/projects.ts';
 import type { ProjectEnvelope } from '../../packages/project/src/index.ts';
 
-//
-// Every engine has a token, and tells the editor window from an agent by the editor key (security review DEV-1 /
-// AGT-2). A harness that starts an engine plays the desktop shell: it makes both, hands them to the engine
+// This harness supplies both the engine token and editor key, as the desktop shell does, to the engine
 // (`harnessEngineEnv`) and to its browser pages (`harnessCookies`, added by `openProject`) and requests
 // (`harnessHeaders`). The secrets travel in E2E_TOKEN / E2E_EDITOR_KEY, which playwright.config.ts sets for the
 // E2E suite; export them to measure against a stack that is already running (BASE_URL).
@@ -27,19 +25,16 @@ export function harnessSecrets(env: NodeJS.ProcessEnv = process.env): { token: s
 	return { token: env.E2E_TOKEN, editorKey: env.E2E_EDITOR_KEY };
 }
 
-/** Environment for an engine this harness starts. */
 export function harnessEngineEnv(): Record<string, string> {
 	const { token, editorKey } = harnessSecrets();
 	return { JASPER_LOCAL_TOKEN: token, JASPER_EDITOR_KEY: editorKey };
 }
 
-/** Headers that make a request from Node the editor's. */
 export function harnessHeaders(): Record<string, string> {
 	const { token, editorKey } = harnessSecrets();
 	return { authorization: `Bearer ${token}`, cookie: `jasper_editor=${editorKey}` };
 }
 
-/** Cookies that make a browser page on `base` the editor. */
 export function harnessCookies(base: string) {
 	const { token, editorKey } = harnessSecrets();
 	const one = (name: string, value: string) => ({
@@ -281,7 +276,6 @@ export async function openProject(page: Page, base: string, projectId: string): 
 	return Date.now() - t0;
 }
 
-/** Waits for a quiet page: two frames, then `ms`. */
 export async function settle(page: Page, ms = 300): Promise<void> {
 	await page.evaluate(
 		(t) =>
@@ -489,7 +483,6 @@ export async function wheelScenario(
 	});
 }
 
-/** Drags the playhead across the ruler in `steps` moves (scrub). */
 export async function scrubScenario(page: Page, tracer: Window, steps = 40): Promise<void> {
 	const ruler = await box(page, '[data-testid="timeline-ruler"]');
 	const y = ruler.y + ruler.height / 2;
@@ -589,7 +582,6 @@ export async function effectControlsScenario(page: Page, tracer: Window, steps =
 	});
 }
 
-/** Starts a CPU profile (V8 sampling) of the page. */
 export async function startProfile(page: Page): Promise<CDPSession> {
 	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('Profiler.enable');

@@ -30,7 +30,7 @@ test.afterAll(async () => {
 
 /** Text of an element of the LowerThird's live host page in the Program monitor. */
 async function hostText(testId: string): Promise<string | null> {
-	// Security review MG-1: the host page is a sandboxed frame; it is read from inside (the editor cannot reach in).
+	// The host page is sandboxed; read from inside the frame because the editor cannot reach in.
 	return page
 		.frameLocator('[data-testid="program-monitor"] iframe[data-mg-host]')
 		.locator(`[data-testid="${testId}"]`)

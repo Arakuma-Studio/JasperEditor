@@ -1,4 +1,4 @@
-// Clip-processing fixtures (wp-m2-process, S07 §8 tests 3-5), loaded by `pnpm fixtures`:
+// Clip-processing fixtures, loaded by `pnpm fixtures`:
 //   shaky.mp4       1080p30, 90 frames: a static test chart panned by a seeded random walk of ±24 px (stabilise)
 //   judder.mp4      640x360 30 fps, 60 frames: a 50 fps pan decimated 2-2-1 to 30 fps (de-judder)
 //   reframe.mp4     848x480 30 fps, 90 frames: a static shot with one jerky operator reframe (160 px right,

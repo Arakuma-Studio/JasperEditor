@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// Desktop clipboard runtime check (wp-clipboard-2, S01:CLB-002/010): runs e2e/desktop/clipboard.desktop.ts, which
-// starts two packaged-like desktop apps and a helper "other app" under one headless X server and checks copy →
-// paste across them through application/x-jasper-clipboard plus external text, image and file pastes.
-//
 //   pnpm e2e:desktop-clipboard          # builds Electron main/preload, engine and web (E2E_SKIP_BUILD=1: reuse)
 //
 // Needs xvfb-run and the Electron binary (`node node_modules/.pnpm/electron@*/node_modules/electron/install.js`
@@ -33,7 +29,6 @@ if (spawnSync('which', ['xvfb-run']).status !== 0) fail('xvfb-run is not install
 
 run(process.execPath, [join(desktop, 'scripts/build-main.mjs')]);
 run('node', ['scripts/make-fixtures.mjs']);
-// The packaged-like apps load the built engine + web app (E2E_SKIP_BUILD=1 reuses existing builds).
 const skipBuild = process.env.E2E_SKIP_BUILD === '1';
 if (!skipBuild || !existsSync(join(root, 'apps/engine/dist/engine.mjs')))
 	run('pnpm', ['--filter', '@jasper/engine', 'build']);

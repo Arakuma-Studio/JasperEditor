@@ -50,7 +50,7 @@ export type UiScenarioResult = FrameStats & {
 	scenario: string;
 	fixture: string;
 	openMs?: number;
-	/** polish: until every medium of the project has left "resolving" (ms from navigation start). */
+	/** Time until every medium leaves "resolving" (ms from navigation start). */
 	openMediaMs?: number;
 	openBestMs?: number;
 	/** Media status requests the open made (two batches for 2 000 media, not 2 000). */
@@ -114,7 +114,6 @@ async function traced(
 	return { scenario: name, fixture, ...stats, ...(extra ?? {}) };
 }
 
-/** Runs every UI scenario; `only` filters by scenario name prefix. */
 export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiScenarioResult[]> {
 	const want = (name: string) => only.length === 0 || only.some((o) => name.startsWith(o));
 	const out: UiScenarioResult[] = [];
@@ -164,8 +163,7 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 		);
 		await page.close();
 	}
-	// polish (docs/performance.md §6): opening a 2 000-item project — to an interactive editor with every medium
-	// resolved. Three cold opens; the median counts (the phases of the best run are reported with it).
+	// Use the median of three cold opens; report the best run's phases (docs/performance.md §6).
 	if (want('open')) {
 		const projectId = await uploadProject(ctx.base, await cachedFixture('items:2000'));
 		const runs = [];

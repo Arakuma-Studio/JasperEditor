@@ -241,7 +241,6 @@ export function ffprobe(file: string): ProbeResult {
 	return JSON.parse(out) as ProbeResult;
 }
 
-/** Waits for an engine job to finish (GET /api/jobs/:id). */
 export async function waitForJob(
 	request: APIRequestContext,
 	jobId: string,
@@ -263,10 +262,6 @@ type ExportOutcome = {
 	job: EngineJob & { result: ExportResult };
 };
 
-/**
- * Export mode (Ctrl+M) → engine choice → plan summary must mention `expectPath` → Export → wait for the job
- * → Download from the Jobs panel → saved file path.
- */
 export async function exportViaUi(
 	page: Page,
 	request: APIRequestContext,

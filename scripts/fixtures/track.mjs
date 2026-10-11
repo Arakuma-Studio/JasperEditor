@@ -1,4 +1,4 @@
-// Tracking fixtures (S09 §8.2, wp-m2-track): synthetic plates with exact ground truth.
+// Tracking fixtures: synthetic plates with exact ground truth.
 //
 //   plate-planar.mp4 / .json  1920x1080, 30 fps, 150 frames. A textured plane (noise + checker + blocks inside a dark
 //                             bezel-like border) warped by a known per-frame homography (translation, rotation, scale
@@ -109,8 +109,6 @@ function invert3(m) {
 		(a * e - b * d) / det,
 	];
 }
-
-// ------------------------------------------------------------------------------------------------ planar plate
 
 const PLANAR = {
 	width: 1920,
@@ -297,8 +295,6 @@ function planarTruth() {
 		corners,
 	};
 }
-
-// ------------------------------------------------------------------------------------------------ point plate
 
 const POINT = {
 	width: 1280,

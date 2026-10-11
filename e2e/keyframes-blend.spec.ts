@@ -1,8 +1,5 @@
+// HTML-in-Canvas enables GPU compositing, as in Electron and Remotion.
 import { expectTransaction } from './support.ts';
-// keyframes-blend end to end in the built app: Opacity ▸ Blend Mode lists Premiere's groups and sets a GL-composited
-// mode (Linear Burn) whose Program monitor preview matches the formula; the native export draws the same colour;
-// right-click a key ▸ Rove Across Time re-times it. HTML-in-Canvas is enabled for this browser (as in Electron and in
-// Remotion renders) so the preview runs the GL compositor.
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';

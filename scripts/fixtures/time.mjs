@@ -1,4 +1,4 @@
-// Workstream `time` fixtures (docs/wp-notes/time.md):
+// Timing fixtures:
 // - vfr-code.mp4: variable-frame-rate "phone" footage, 640×360, 64 frames carrying the 6-bit frame code of
 //   frame-code.mp4 (white boxes 40 + 70·b px, b = bit), frame n at n/30 + 0.01·(n mod 3) s (frame gaps 43.3, 43.3 and
 //   13.3 ms), H.264 with real per-frame timestamps;
@@ -6,9 +6,8 @@
 // - scenes.mp4: 320×180 30 fps shots with hard cuts at frames 45, 75, 120 and 198 and the false-positive guards of
 //   Scene Edit Detection: moving test pattern, bars, a Mandelbrot zoom with a one-frame white flash at frame 95, a
 //   0.4 s cross dissolve (frames 153–164) between a cellular automaton and moving gradients, and a 12 px/frame pan.
-//   Every random source is pinned (cellauto seed; gradients colours, end points and seed): with the defaults each
-//   regeneration made different footage. The gradient colours are a random instance whose green straddles the 64
-//   histogram bin edge, which made hard-binned scene detection report a false cut at the end of the dissolve.
+//   Pin every random source (cellauto seed; gradient colours, endpoints and seed) for reproducibility.
+//   Green straddles a 64-bin histogram boundary to exercise false-cut rejection at the end of the dissolve.
 export function fixtures({ h264 }) {
 	const bits = [0, 1, 2, 3, 4, 5]
 		.map(

@@ -1,6 +1,3 @@
-// wp interchange through the real UI of the built app (docs/wp-notes/interchange.md): File ▸ Export ▸ Final Cut Pro
-// XML… (options dialog, job, report with the download), File ▸ Export ▸ AAF… with embedded audio, File ▸ Import of an
-// EDL whose media moved (offline placeholders, the report), and Link Media (folder search) bringing them online.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -64,7 +61,6 @@ test('File ▸ Export ▸ Final Cut Pro XML: options, job, report and download',
 	await fileMenu(/^Final Cut Pro XML…/, /^Export$/);
 	const dialog = page.getByTestId('interchange-export-dialog');
 	await expect(dialog).toBeVisible();
-	// the pre-render plan names the text clip
 	await expect(page.getByTestId('ix-prerender-plan')).toContainText('text clip');
 	await page.screenshot({ path: join(OUT, '1-export-dialog.png') });
 	await dialog.getByRole('button', { name: 'Export', exact: true }).click();
@@ -138,7 +134,6 @@ test('File ▸ Import of an EDL whose media moved, then Link Media by folder', a
 	await dlg.getByRole('button', { name: 'Link 2' }).click();
 	await expect(dlg).toBeHidden();
 	await expect.poll(pending).toBe(0);
-	// the imported sequence holds the two clips
 	const d = await doc();
 	const seqItem = Object.values(d.items).find((i) => i.kind === 'sequence' && i.name === 'Moved Cut')!;
 	const clips = Object.values(d.sequences[seqItem.sequenceId!]!.clips).filter((c) => c.kind === 'video');

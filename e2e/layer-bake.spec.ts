@@ -1,5 +1,3 @@
-// Layer bake E2E (S11 §6, §11 test 4): edit static and keyframed titles through the UI, grade the static
-// Program preview (FIX-002), then verify both titles and the opacity ramp in the hybrid export.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -58,7 +56,6 @@ test('footage, a static title after it and a keyframed title (Effect Controls st
 	await row.dragTo(timelineArea(page), { targetPosition: { x: 0, y: box.height - 150 } });
 	await expect.poll(async () => (await clips(page)).length).toBe(2);
 
-	// Graphics ▸ Text at 10 s (after the footage) and at 15 s: 5 s titles centred in the frame.
 	await seek('00;00;10;00');
 	await focusTimeline(page);
 	await page.keyboard.press('Alt+KeyT');
@@ -70,7 +67,6 @@ test('footage, a static title after it and a keyframed title (Effect Controls st
 	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(2);
 	movingTitle = (await clips(page)).find((c) => c.kind === 'text' && c.id !== staticTitle)!.id;
 
-	// Opacity keyframes on the second title: 100 % at 15 s, 20 % at 19 s.
 	await selectClip(movingTitle);
 	await page.getByTestId('tab-effectControls').click();
 	const ec = page.getByTestId('ec-content');
@@ -103,7 +99,6 @@ test('a Lumetri grade on the static title produces a graded Program preview (FIX
 		})
 		.toBe('true');
 	await expect(page.getByTestId('lumetri-chip')).toBeVisible();
-	// Exposure slider dragged to the left: a darker title.
 	const slider = page.getByTestId('lumetri-exposure');
 	const s = (await slider.boundingBox())!;
 	await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
@@ -144,7 +139,6 @@ test('a Lumetri grade on the static title produces a graded Program preview (FIX
 			return max;
 		});
 	await expect.poll(maxLuma, { timeout: 30_000 }).toBeGreaterThan(5);
-	// The white title is graded down (opaque glyph pixels well below white).
 	expect(await maxLuma()).toBeLessThan(200);
 	await page.getByTestId('workspace-tab-editing').click();
 });
@@ -163,11 +157,9 @@ test('Auto hybrid export shows the graded static title and keyframed opacity ram
 	const v = probe.streams.find((s) => s.codec_type === 'video')!;
 	expect([v.width, v.height]).toEqual([1920, 1080]);
 	const centre = { x: 0.3, y: 0.4, w: 0.4, h: 0.2 };
-	// Static title over black (after the footage), graded darker but visible.
 	expect(
 		regionLuma(out.file, 12, centre) - regionLuma(out.file, 12, { x: 0.02, y: 0.02, w: 0.1, h: 0.1 }),
 	).toBeGreaterThan(0.2);
-	// The keyframed title's opacity ramp (100 % at 15 s → 20 % at 19 s).
 	// Luma above the black level of the same frame (TV-range black is not 0).
 	const corner = { x: 0.02, y: 0.02, w: 0.1, h: 0.1 };
 	const lift = (t: number) => regionLuma(out.file, t, centre) - regionLuma(out.file, t, corner);
@@ -177,6 +169,5 @@ test('Auto hybrid export shows the graded static title and keyframed opacity ram
 	// ≈ 30/90 with linear keys; the stopwatch's default interpolation eases, so allow a band around it.
 	expect(b / a).toBeGreaterThan(0.2);
 	expect(b / a).toBeLessThan(0.6);
-	// After the last key (19 s) the title holds 20 %: dimmer than at 18.5 s.
 	expect(lift(19.6)).toBeLessThan(b);
 });

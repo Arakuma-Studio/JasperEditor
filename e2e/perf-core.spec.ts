@@ -1,7 +1,3 @@
-// Workstream `perf-core` in the built app: a 1 000-clip sequence stays interactive. Shift-clicking clips and dragging
-// them in the timeline moves them as one gesture (one history entry, overwrite edits on the way); single edits and
-// the drag take the incremental invariant path in production (`perf` UI action, MCP perf_stats), and an edit costs
-// milliseconds in the page.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -76,7 +72,6 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 	console.info(`[perf-core] one edit on 1 000 clips through the agent bridge: ${ms.toFixed(1)} ms`);
 	expect(ms).toBeLessThan(250);
 
-	// Zoom out (−) so more clips are on screen, then Shift+click the clips of V1 that are.
 	await focusTimeline(page);
 	await page.keyboard.press('Minus');
 	const v1 = (await clips(page)).filter((c) => c.track === 'V1');
@@ -111,7 +106,6 @@ test('a multi-clip drag on a 1 000-clip sequence is one incremental gesture', as
 	expect(moved.every((c) => c.start > orig.get(c.id)!)).toBe(true);
 	await page.screenshot({ path: 'test-results/perf-core-drag.png' });
 
-	// Production builds check incrementally: the editor's perf readout says how.
 	const perf = await ui<{
 		invariants: { mode: string; incremental: number; full: number; fallbacks: object };
 	}>('perf', { sampleMs: 100 });

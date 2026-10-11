@@ -1,4 +1,4 @@
-// Colour-grading fixtures (wp-m2-color, S06 §9 tests 2–4), loaded by scripts/make-fixtures.mjs:
+// Colour-grading fixtures, loaded by scripts/make-fixtures.mjs:
 //   chart.png            1920×1080 test chart: grey/RGB/CMY ramps, a hue × saturation field, a 24-patch
 //                        colour checker (approximate sRGB values), skin tones (light → deep) and a black-to-white
 //                        step wedge. Written by a tiny PNG encoder (no ffmpeg), untagged sRGB, deterministic.
@@ -12,7 +12,6 @@ import { deflateSync } from 'node:zlib';
 const W = 1920;
 const H = 1080;
 
-// ---------------------------------------------------------------- PNG encoder (RGB 8-bit)
 const CRC_TABLE = (() => {
 	const t = new Uint32Array(256);
 	for (let n = 0; n < 256; n++) {
@@ -54,7 +53,6 @@ function encodePng(width, height, rgb) {
 	]);
 }
 
-// ---------------------------------------------------------------- chart
 const clamp8 = (x) => Math.max(0, Math.min(255, Math.round(x)));
 function hsv(h, s, v) {
 	const i = Math.floor(h * 6) % 6;
@@ -163,7 +161,6 @@ function makeChart() {
 	return encodePng(W, H, px);
 }
 
-// ---------------------------------------------------------------- .cube files
 const f6 = (x) => (Math.round(x * 1e6) / 1e6).toFixed(6);
 /** A teal/orange-ish look: warm highlights, cool shadows, a gentle S-curve and a saturation lift. */
 function lookFn(r, g, b) {

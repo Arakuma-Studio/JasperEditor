@@ -1,7 +1,3 @@
-// wp-multicam through the real UI of the built app (docs/wp-notes/multicam.md): Project panel ▸ Create Multi-Camera
-// Source Sequence…, placing the source as multi-camera clips, the Program monitor's Multi-Camera view (grid + program,
-// Shift+0), switching by clicking a cell while stopped, a live recording pass with keys 1–2 while playing (one undo
-// step), Clip ▸ Merge Clips… with the audio-sync reliability warning, and a native export checked with ffmpeg.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -111,7 +107,6 @@ test('Multi-Camera view (Shift+0): the grid next to the program; clicking a cell
 	await expect(page.getByTestId('multicam-overlay')).toBeVisible();
 	await expect(page.getByTestId('multicam-cell-1')).toHaveAttribute('data-active', 'true');
 	await expect(page.getByTestId('multicam-cell-2')).toBeVisible();
-	// grid cells + program are nests drawn by the Player
 	await expect
 		.poll(async () => page.locator('[data-nest]').count(), { timeout: 30_000 })
 		.toBeGreaterThanOrEqual(3);
@@ -161,7 +156,6 @@ test('exports natively: each part shows its camera', async ({ request }) => {
 	const mid = (c: { start: number; duration: number }) => c.start + Math.floor(c.duration / 2);
 	const a = pixel(file, mid(parts[0]!), 960, 540);
 	const b = pixel(file, mid(parts[1]!), 960, 540);
-	// xfade-red / xfade-blue: camera 1 is red, camera 2 blue
 	expect(a[0]).toBeGreaterThan(150);
 	expect(a[2]).toBeLessThan(90);
 	expect(b[2]).toBeGreaterThan(150);
@@ -169,7 +163,6 @@ test('exports natively: each part shows its camera', async ({ request }) => {
 });
 
 test('Merge Clips… with audio: an unrelated recording is flagged before merging anyway', async () => {
-	// leave the Multi-Camera view so the Program monitor is back to normal
 	await page.getByTestId('program-viewport').click({ position: { x: 20, y: 20 } });
 	await page.keyboard.press('Shift+Digit0');
 	await expect(page.getByTestId('multicam-overlay')).toBeHidden();

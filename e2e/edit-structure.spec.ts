@@ -1,7 +1,3 @@
-// edit-structure through the real UI of the built app (docs/wp-notes/edit-structure.md): Clip ▸ Nest… with the
-// Nested Sequence Name dialog, double-click into the nest, Group (Ctrl+G), Project ▸ New Item ▸ Bars and Tone /
-// Adjustment Layer, frame hold from the clip menu, the Program monitor drawing the nest, the bars and the
-// adjustment scope, and a native export whose frames are checked with ffmpeg (nested frame, bars, adjustment).
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -82,16 +78,13 @@ test('Clip ▸ Nest… nests the selected clips; double-click opens the nested s
 	expect(Object.values((await doc()).items).some((i) => i.kind === 'sequence' && i.name === 'E2E Nest')).toBe(
 		true,
 	);
-	// The Program monitor draws the nested sequence.
 	await expect(page.locator('[data-nest]').first()).toBeAttached({ timeout: 30_000 });
-	// Double-click opens it.
 	const nb = await clipBox(page, nest.id);
 	await page.mouse.dblclick(nb.x + 20, nb.y + nb.height / 2);
 	await expect.poll(async () => (await sequenceSummary(page)).sequenceId).not.toBe(mainSeq);
 });
 
 test('New Item ▸ Bars and Tone and Adjustment Layer; the Program draws them', async () => {
-	// Back to the main sequence through its project item.
 	const main = Object.values((await doc()).items).find(
 		(i) => i.kind === 'sequence' && i.sequenceId === mainSeq,
 	)!;
@@ -190,7 +183,6 @@ test('exports natively: the nested frames, the bars and the adjustment layer', a
 	expect(white.every((c) => Math.abs(c - 191) < 10)).toBe(true);
 	const grey = pixel(file, 100, 100, 100);
 	expect(grey.every((c) => Math.abs(c - 102) < 10)).toBe(true);
-	// Under the Black & White adjustment the nest's picture is there and grey.
 	const p = pixel(file, 10, 960, 540);
 	expect(p.some((c) => c > 10)).toBe(true);
 	expect(Math.max(...p) - Math.min(...p)).toBeLessThan(12);
@@ -217,7 +209,6 @@ test('an adjustment layer with a shader-only effect routes the export through Re
 		outDir,
 		jobTimeoutMs: 600_000,
 	});
-	// Bars come from the same generator in the browser.
 	const white = pixel(file, 100, 300, 100);
 	expect(white.every((c) => Math.abs(c - 191) < 12)).toBe(true);
 });

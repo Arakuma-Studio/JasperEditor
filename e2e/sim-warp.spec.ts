@@ -1,8 +1,3 @@
-// Puppet, Liquify and Mesh Warp tools in the editor (sim-warp workstream, docs/wp-notes/sim-warp.md): chart.png on V1
-// (fit to the frame) with Puppet → Effect Controls ▸ Puppet ▸ Pin tool → two clicks on the Program monitor add two pins
-// (two "Add Puppet Pin" entries; the first makes the mesh) → dragging a pin handle moves it (one "Move Puppet Pins"
-// entry) → Liquify: the brush paints one stroke ("Liquify" entry, the Distortion Mesh changes) → Mesh Warp: dragging a
-// vertex handle ("Edit Distortion Mesh") → undo restores each step.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -94,7 +89,6 @@ test('Puppet: the Pin tool adds pins on the Program monitor and a drag moves one
 	expect((await appliedLabels(page)).slice(labels0)).toEqual(['Add Puppet Pin', 'Add Puppet Pin']);
 	expect((await fxOf('jasper.puppet')).puppet!.meshes).toHaveLength(1);
 	await expect(ec.locator('[data-testid^="puppet-pin-name-"]')).toHaveCount(2);
-	// Tool off: drag the right pin up.
 	await ec.getByLabel('Puppet Pin tool').uncheck();
 	const pin = (await fxOf('jasper.puppet')).puppet!.pins[1]!;
 	const handle = page.getByTestId(`puppet-pin-handle-${pin.id}`);
@@ -109,7 +103,6 @@ test('Puppet: the Pin tool adds pins on the Program monitor and a drag moves one
 	expect(Math.abs(moved[0]! - pin.position.value[0]!)).toBeLessThan(0.02);
 	await expect(page.getByTestId('puppet-mesh')).toBeVisible();
 	await page.screenshot({ path: 'test-results/e2e-sim-warp-puppet.png' });
-	// Undo the move: the pin is back.
 	await page.keyboard.press('Control+z');
 	await expect
 		.poll(async () => (await fxOf('jasper.puppet')).puppet!.pins[1]!.position.value)
@@ -154,7 +147,6 @@ test('Mesh Warp: dragging a vertex edits the Distortion Mesh', async () => {
 	await expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe('Edit Distortion Mesh');
 	const mesh = (await fxOf('jasper.mesh-warp')).params.distortionMesh!.value as number[];
 	expect(mesh.length).toBeGreaterThan(3);
-	// Its tangent handles show for the selected vertex.
 	await expect(page.getByTestId('mesh-warp-tangent-right')).toBeAttached();
 	await page.screenshot({ path: 'test-results/e2e-sim-warp-mesh-warp.png' });
 });

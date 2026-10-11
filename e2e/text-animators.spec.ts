@@ -1,7 +1,3 @@
-// Text animators (workstream text-animators) end to end in the built app: Effect Controls ▸ Text ▸ Animate ▸
-// (property, preset), Add ▸ Selector, the Path popup on a mask, Character settings in Properties, the Program
-// monitor drawing the animation, and the export matching renderStill of the same frame.
-
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -113,13 +109,11 @@ test('Effect Controls ▸ Text ▸ Animate ▸ adds animators, selectors and pre
 	expect(Object.keys(a.properties)).toEqual(['position']);
 	expect(a.selectors.map((s) => s.kind)).toEqual(['range']);
 	await expect(page.getByTestId(`text-animator-${a.id}`)).toBeVisible();
-	// Add ▸ Selector ▸ Wiggly on that animator.
 	await page.getByTestId(`text-animator-add-${a.id}`).click();
 	await menuPath(['Selector', 'Wiggly']);
 	await expect
 		.poll(async () => (await animators())[0]!.selectors.map((s) => s.kind))
 		.toEqual(['range', 'wiggly']);
-	// Remove it again, then a preset from the same menu.
 	await page.getByTestId(`text-animator-delete-${a.id}`).click();
 	await expect.poll(async () => (await animators()).length).toBe(0);
 	await animate.click();
@@ -239,7 +233,6 @@ test('export: a mid-animation frame matches renderStill (≤ 3/255 on 99 % of th
 	}
 	expect(textPixels).toBeGreaterThan(1000);
 	expect(close / (w * h)).toBeGreaterThanOrEqual(0.99);
-	// Before the first keystroke nothing shows; after the animation the whole title does.
 	const f0 = rgbFrame(out.file, clip.start, w, h);
 	let lit0 = 0;
 	for (let i = 0; i < f0.length; i += 3) if (f0[i]! > 128) lit0++;

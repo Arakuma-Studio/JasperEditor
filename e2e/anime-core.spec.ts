@@ -1,6 +1,3 @@
-// wp-m2-anime-core (S11 acceptance 8, FIX-010): Help ▸ About lists anime.js (MIT, with its text) from the
-// engine's /api/licenses and shows the JavaScript third-party notices that the built web app ships as
-// /THIRD_PARTY_NOTICES.md.
 import { expect, test } from '@playwright/test';
 import { createProject, enableAgentBridge } from './support.ts';
 

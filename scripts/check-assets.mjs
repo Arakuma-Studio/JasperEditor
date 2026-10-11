@@ -18,7 +18,6 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ASSET_EXTENSIONS = [
-	// images, icons, screenshots
 	'png',
 	'jpg',
 	'jpeg',
@@ -34,18 +33,15 @@ export const ASSET_EXTENSIONS = [
 	'exr',
 	'hdr',
 	'psd',
-	// fonts
 	'ttf',
 	'otf',
 	'woff',
 	'woff2',
-	// colour LUTs and looks
 	'cube',
 	'3dl',
 	'csp',
 	'look',
 	'icc',
-	// video and audio
 	'mp4',
 	'mov',
 	'm4v',
@@ -62,7 +58,6 @@ export const ASSET_EXTENSIONS = [
 	'flac',
 	'aif',
 	'aiff',
-	// models, binaries, 3D
 	'onnx',
 	'tflite',
 	'safetensors',
@@ -72,7 +67,6 @@ export const ASSET_EXTENSIONS = [
 	'glb',
 	'obj',
 	'fbx',
-	// project files, templates and presets
 	'jasper',
 	'mogrt',
 	'lottie',
@@ -133,7 +127,6 @@ export function parseSidecar(text) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** The sidecar and ATTRIBUTION.md row a developer should write for `path` (the fix in every message). */
 export function template(path) {
 	const name = basename(path);
 	return [
@@ -240,7 +233,6 @@ export function findProblems(files, read) {
 	return problems;
 }
 
-/** Tracked and new (not ignored) files of the repository at `root`. */
 export function repoFiles(root) {
 	const r = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
 		cwd: root,

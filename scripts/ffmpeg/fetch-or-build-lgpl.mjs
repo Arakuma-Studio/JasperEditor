@@ -400,7 +400,7 @@ async function main() {
 				return;
 			}
 		} catch {
-			// re-assemble
+			// Unreadable build metadata forces regeneration from the pinned inputs.
 		}
 	}
 	const { prefix, origin } = await ffmpegPrefix();

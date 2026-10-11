@@ -1,8 +1,3 @@
-// wp speech through the real UI of the built app (docs/wp-notes/speech.md): import the public-domain speech fixture,
-// Sequence ▸ Captions ▸ Transcript, Text ▸ Transcript ▸ Generate Transcript… (model, speaker labels; a model that is
-// not on the machine downloads in the dialog after its licence is shown), the Whisper job in the Jobs panel, the
-// transcript in the Text panel (one undo step), the Project panel context menu entry and Preferences ▸ Transcription.
-//
 // The model comes from the speech model cache (`$JASPER_SPEECH_MODELS_DIR`, else `target/speech-models`) when it is
 // there (linked into the server's appdir); otherwise — or with SPEECH_E2E_DOWNLOAD=1 — it is downloaded through the
 // dialog (154 MB from Hugging Face).

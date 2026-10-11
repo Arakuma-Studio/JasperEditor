@@ -1,7 +1,3 @@
-// Motion path end to end (S03:OVL-020, KF-021, wave1 spatial-motion-path): a solid with three position keys made
-// through the stopwatch semantics gets Auto Bezier spatial keys; the Program monitor draws the path (dots, key
-// squares, tangent handles); dragging a key square and a tangent are one History entry each; Effect Controls ▸
-// right-click ▸ Spatial Interpolation ▸ Linear straightens it.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,

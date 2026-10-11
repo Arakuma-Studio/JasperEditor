@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Agent API demo (WP-2H, ARCHITECTURE §11, S01 Appendix B): posts one transaction to a running engine —
+// Agent API demo: posts one transaction to a running engine —
 // a text clip declared with a temp ref, an opacity fade-in on it (param.setAnimated + two param.set),
 // and an agent-note marker. With the project open in the editor it applies live (one "Agent: …" History
 // entry); with no editor open the engine applies it headlessly and saves a new revision.

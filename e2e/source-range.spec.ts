@@ -1,9 +1,3 @@
-// Source ranges (M3, wp-m3-inpoint, S07:PRC-015…019, PRU-005; spec §8 item 11): Process Clip… on a sub-range of
-// `frame-code.mp4` (each frame burns its number in as a 6-bit code) with handles → the clip swaps onto the
-// shorter processed version; `render_frame` (agent query `frame.capture`, the engine's still render) shows the
-// same frame codes at several timeline frames before and after; the Media Version section shows the range and
-// the handles; switching back to the original keeps the codes; Replace Footage with a render of frames 10…63
-// plus a source-range sidecar keeps source timing.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -155,7 +149,6 @@ test('Process Clip… on the clip range + handles swaps onto the range with iden
 	const d = await doc();
 	expect(d.media[versionId]!.sourceRange).toMatchObject({ mediaId: originalId, firstFrame: 14, frames: 32 });
 	expect([c.start, c.duration, c.sourceIn]).toEqual([0, 20, 6 * F]);
-	// render_frame: the same source frames at the same timeline frames.
 	expect(await codes()).toEqual(before);
 
 	await clipElement(page, clipId).click({ position: { x: 20, y: 20 } });
@@ -179,7 +172,6 @@ test('switching back to the original (and to the range again) keeps the frames',
 	await page.getByRole('option', { name: 'Deblocked · frames 14–45' }).click();
 	await expect.poll(async () => (await clip()).mediaId).toBe(versionId);
 	expect(await codes()).toEqual([20, 25, 30, 39]);
-	// Back to the original for Replace Footage.
 	await section.getByRole('combobox', { name: 'Media version' }).click();
 	await page.getByRole('option', { name: 'Original' }).click();
 	await expect.poll(async () => (await clip()).mediaId).toBe(originalId);
@@ -225,7 +217,6 @@ test('Replace Footage with a render of frames 10…63 and its sidecar keeps sour
 	expect(m.originalName).toBe('frame-code-from10.mp4');
 	expect(m.sourceRange).toMatchObject({ firstFrame: 10, frames: 54 });
 	expect(await codes()).toEqual([20, 25, 30, 39]);
-	// One undo restores the original file and in-point.
 	await page.getByTestId('timeline-track-area').click({ position: { x: 5, y: 5 } });
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clip()).sourceIn).toBe(20 * F);

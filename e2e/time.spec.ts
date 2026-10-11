@@ -1,10 +1,3 @@
-// Workstream `time` through the real UI of the built app (docs/wp-notes/time.md):
-// - clip menu ▸ Show Clip Keyframes ▸ Time Remapping ▸ Speed shows the speed band; dragging it changes the speed
-//   (one undo step) and the clip's duration follows;
-// - clip menu ▸ Time Interpolation, the Effect Controls Time Remapping section;
-// - the Program monitor draws the remapped frame (frame-code.mp4 carries its frame number as 6 white boxes);
-// - a native export shows the same frames;
-// - clip menu ▸ Scene Edit Detection… cuts scenes.mp4 at its four hard cuts in one undo step.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -138,7 +131,7 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 	const [v] = await clips(page, ['V1']);
 	coded = v!.id;
 	const before = (await clipDoc(coded)).duration;
-	// Like Premiere, the speed band needs a tall track: Expand All Tracks.
+	// The speed band requires expanded tracks to expose its drag target.
 	await focusTimeline(page);
 	await page.keyboard.press('Shift+Equal');
 	const box = await clipBox(page, coded);
@@ -155,12 +148,11 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 	const lb = (await line.boundingBox())!;
 	const x = lb.x + lb.width / 2;
 	const y = lb.y + lb.height / 2;
-	// Down = slower (Premiere): the clip gets longer.
+	// Downward speed-band drags reduce speed and increase duration.
 	await pointerDrag(page, { x, y }, { x, y: y + 8 });
 	await expect.poll(async () => (await clipDoc(coded)).timeRemap?.enabled).toBe(true);
 	expect((await clipDoc(coded)).duration).toBeGreaterThan(before);
 	expect((await appliedLabels(page)).at(-1)).toBe('Change Speed');
-	// One undo step restores the clip.
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await clipDoc(coded)).duration).toBe(before);
 });

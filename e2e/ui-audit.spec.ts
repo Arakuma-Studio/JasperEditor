@@ -1,8 +1,5 @@
-// mcp-cli §4 audit (EffectCraft's ui_agent_audit, for the web shell): every interactive element of every panel,
-// in every workspace, has a stable automation id (a unique data-testid, an entity id such as
-// timeline.clip.<id>, or a unique "<scope>/<role>[<accessible name>]"). Opens each workspace, focuses and
-// maximizes each of its panels, and asks the live window for its elements through POST /api/agent/ui, the
-// same path agents use. Fails with the list of elements that only have a positional "#n" id or no name.
+// Automation IDs must survive reordering: data-testid, entity IDs, or unique scope/role/name paths.
+// Positional "#n" IDs cannot identify controls reliably (EffectCraft's ui_agent_audit contract).
 import { expect, type Page, test } from '@playwright/test';
 import { createProject, enableAgentBridge, importFiles, query, serverInfo, transact } from './support.ts';
 
@@ -59,7 +56,6 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-/** Elements without a stable id in what is on screen now (optionally one panel). */
 const checked = new Map<string, number>();
 async function gaps(where: string, panel?: string): Promise<string[]> {
 	const r = await ui<{ elements: El[] }>('elements', { ...(panel ? { panel } : {}), limit: 2000 });
@@ -78,7 +74,6 @@ test('every interactive element of every panel in every workspace has a stable a
 	const state = await ui<{ workspace: { id: string; available: string[] } }>('state');
 	const found = new Set<string>();
 	const seenPanels = new Set<string>();
-	// Select the title (Effect Controls, Properties and Lumetri then show their controls).
 	const select = async () => {
 		const clips = await query<{ clips: { id: string; kind: string }[] }>(page, 'sequence.clipsInRange', {
 			from: 0,
@@ -112,7 +107,6 @@ test('every interactive element of every panel in every workspace has a stable a
 		await page.waitForTimeout(300);
 		for (const g of await gaps(`[window menu] ${kind}`, kind)) found.add(g);
 	}
-	// The menu bar menus and the timeline clip context menu.
 	const chrome = await ui<{ elements: El[] }>('elements', { limit: 2000 });
 	const menus = chrome.elements.filter((e) => e.panel === null && e.id.startsWith('menubar/'));
 	expect(
@@ -129,7 +123,6 @@ test('every interactive element of every panel in every workspace has a stable a
 	for (const g of await gaps('[clip context menu]')) found.add(g);
 	await ui('key', { key: 'Escape' });
 	expect([...found], `${found.size} interactive elements without a stable automation id`).toEqual([]);
-	// The audit looked at real content: the selected title's controls, the clips, the header and menus.
 	const total = [...checked.values()].reduce((a, b) => a + b, 0);
 	expect(total, JSON.stringify(Object.fromEntries(checked))).toBeGreaterThan(400);
 	expect(checked.get('effectControls') ?? 0, JSON.stringify(Object.fromEntries(checked))).toBeGreaterThan(15);

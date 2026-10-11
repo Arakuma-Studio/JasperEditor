@@ -1,4 +1,3 @@
-// scripts/third-party-notices.mjs (S11:FIX-010): the closure, the rendered file and `--check`.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -245,18 +244,15 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		expect(records.map((r) => r.copyrights)).toEqual([[ec], [fc, ec], [ec, fc]]);
 		const text = renderNotices([], records, portedLicenseTexts(root, records));
 		const section = text.slice(text.indexOf(PORTED_START), text.indexOf(PORTED_END));
-		// Per-record attribution in the table, by number; each holder spelled out once in the list.
 		expect(section).toContain('| A | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [1] |');
 		expect(section).toContain(
 			'| B | https://github.com/storytold/effectcraft | MIT OR Apache-2.0 | [2] [1] |',
 		);
 		expect(section).toContain(`1. ${ec}: \`a\`, \`b\`, \`c\``);
 		expect(section).toContain(`2. ${fc}: \`b\`, \`c\``);
-		// Each licence text lists each holder once.
 		const applies = section.slice(section.indexOf('## Licence text: MIT'));
 		expect(applies.split(ec).length - 1).toBe(1);
 		expect(applies.split(fc).length - 1).toBe(1);
-		// The table and holder list name each line exactly once outside the record bodies.
 		const summary = section.slice(0, section.indexOf('## A'));
 		expect(summary.split(ec).length - 1).toBe(1);
 	});

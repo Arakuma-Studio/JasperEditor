@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// THIRD_PARTY_NOTICES.md (S11:FIX-010, spec 04 LC-005): the JavaScript packages shipped in the web build
+// THIRD_PARTY_NOTICES.md: the JavaScript packages shipped in the web build
 // (`apps/web`) and in the Remotion bundle (`packages/compositions`) — the production dependency closure of both,
 // through the workspace packages they use, plus the build-time packages whose output ships
 // (`SHIPPED_BUILD_OUTPUT`) — with name, version, licence and licence text.
@@ -18,7 +18,6 @@
 // `<!-- ported-source:end -->` (Help ▸ About ▸ Licenses shows that part on its own), followed by the text of every
 // licence the records name (`licenses/texts/<SPDX id>.txt`). An incomplete record (no upstream URL, licence or
 // copyright line) or a licence without its text fails generation and `--check`.
-// Owner: wp-m2-anime-core; ported records: process.
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,7 +37,6 @@ export const PORTED_END = '<!-- ported-source:end -->';
  * `from` is the repo directory, or an earlier entry, the package is resolved from.
  */
 const SHIPPED_BUILD_OUTPUT = [
-	// web build (Vite)
 	{ name: 'tailwindcss', from: 'apps/web', ships: 'preflight, theme variables and utilities (the CSS)' },
 	{
 		name: 'vite',
@@ -46,7 +44,6 @@ const SHIPPED_BUILD_OUTPUT = [
 		ships:
 			'modulepreload polyfill, preload helper, CommonJS interop helpers (its bundled @rollup/plugin-commonjs)',
 	},
-	// Remotion bundle (`@remotion/bundler`'s webpack build run by apps/engine `build:remotion`)
 	{ name: '@remotion/bundler', from: 'apps/engine', ships: 'environment setup and React shim entries' },
 	{ name: 'webpack', from: '@remotion/bundler', ships: 'webpack runtime (bootstrap, chunk loading)' },
 	{ name: '@remotion/studio', from: '@remotion/bundler', ships: 'renderEntry, the bundle entry' },
@@ -118,7 +115,6 @@ function licenseTexts(dir) {
 		.map((file) => ({ file, text: readFileSync(join(dir, file), 'utf8').replace(/\r\n/g, '\n').trimEnd() }));
 }
 
-/** The notice of the external package in `dir`. */
 function noticeOf(dir, pkg) {
 	let license = licenseOf(pkg);
 	let texts = licenseTexts(dir);

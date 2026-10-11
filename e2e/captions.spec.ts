@@ -1,8 +1,3 @@
-// wp captions through the real UI of the built app (docs/wp-notes/captions.md): File ▸ Import of an SRT onto a caption
-// track, the Timeline caption lane, Text ▸ Captions (edit text, search/replace, add at playhead with Ctrl+Alt+C, style),
-// Text ▸ Transcript (import a JSON transcript, click-to-seek, search, select words → Mark In/Out, Remove Fillers,
-// Create Captions), the Program monitor drawing the caption, and an export with burned-in captions, embedded mov_text
-// streams and an SRT sidecar — checked with ffprobe and by decoding frames.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -113,7 +108,6 @@ test('Text ▸ Captions: edit text, search and replace, add a caption at the pla
 	await page.getByTestId('text.captions.replaceAll').click();
 	await expect.poll(() => textOfCaption(c2!.id)).toBe('Last caption');
 	await page.getByTestId('text.captions.search').fill('');
-	// Ctrl+Alt+C at the playhead (Premiere "Add Caption")
 	await focusTimeline(page);
 	await page.keyboard.press('End');
 	const end = await playheadFrame(page);
@@ -122,7 +116,6 @@ test('Text ▸ Captions: edit text, search and replace, add a caption at the pla
 	await expect.poll(async () => (await captionClips()).length).toBe(3);
 	const added = (await captionClips())[2]!;
 	expect(added.start).toBe(end);
-	// style strip: box off, size 64
 	const size = page.getByTestId('text.captions.style.size');
 	await size.fill('64');
 	await size.blur();
@@ -174,24 +167,19 @@ test('Text ▸ Transcript: import, seek, search, select → Mark In/Out, Remove 
 	await (await chooser).setFiles(json);
 	await expect(page.getByTestId('text.transcript.word.0')).toHaveText('Welcome');
 	await expect(page.getByTestId('text.transcript.speaker').first()).toHaveText('Host');
-	// click a word to seek
 	await page.getByTestId('text.transcript.word.5').click();
 	await expect.poll(() => playheadFrame(page)).toBe(Math.floor(3.2 * 29.97));
-	// search
 	await page.getByTestId('text.transcript.search').fill('the show');
 	await expect(page.getByTestId('text.transcript.matches')).toHaveText('1/1');
-	// select "Welcome … show." and mark In/Out (snapped outward)
 	await page.getByTestId('text.transcript.word.0').click();
 	await page.getByTestId('text.transcript.word.4').click({ modifiers: ['Shift'] });
 	await page.getByTestId('text.transcript.markInOut').click();
 	await expect.poll(async () => [(await seqOf()).inPoint, (await seqOf()).outPoint]).toEqual([8, 60]);
-	// remove fillers
 	await page.getByTestId('text.transcript.fillers').click();
 	await expect(page.getByTestId('text.transcript.fillerCount')).toContainText('1 found');
 	await page.getByTestId('text.transcript.fillersApply').click();
 	await expect(page.getByTestId('text.transcript.word.1')).toHaveText('to');
 	expect((await clips(page, ['V1'])).length).toBe(2);
-	// create captions on a new track
 	await page.getByTestId('text.transcript.createCaptions').click();
 	await page.getByTestId('text.transcript.captionsApply').click();
 	await expect.poll(async () => (await seqOf()).captionTracks.length).toBe(2);
@@ -248,7 +236,6 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 	const sidecar = join(OUT, 'captions-e2e.srt');
 	await (await sdl).saveAs(sidecar);
 
-	// streams: video, audio, two mov_text subtitle streams (C1 active first, default)
 	const probe = ffprobe(file) as unknown as {
 		streams: {
 			codec_type: string;
@@ -274,7 +261,6 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 	expect(readFileSync(sidecar, 'utf8')).toMatch(
 		/^1\n00:00:00,501 --> 00:00:01,\d{3}\nHello from the captions panel\n/,
 	);
-	// burned in: the bottom-centre band is brighter while a caption shows than between captions
 	const band = { x: 0.3, y: 0.82, w: 0.4, h: 0.08 };
 	const withCaption = regionLuma(file, 1.2, band);
 	const without = regionLuma(file, 1.95, band);
@@ -323,7 +309,6 @@ test('the Remotion path burns the same captions in', async ({ request }) => {
 	await (await dl).saveAs(file);
 	const band = { x: 0.3, y: 0.82, w: 0.4, h: 0.08 };
 	expect(Math.abs(regionLuma(file, 1.2, band) - regionLuma(file, 1.95, band))).toBeGreaterThan(8);
-	// no embedded streams this time
 	const probe = ffprobe(file) as unknown as { streams: { codec_type: string }[] };
 	expect(probe.streams.filter((s) => s.codec_type === 'subtitle')).toEqual([]);
 	execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [

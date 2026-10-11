@@ -1,6 +1,3 @@
-// S11 §11 test 2 / TXA-013: real UI animation selection, seek determinism, glyph/RTL regressions,
-// and exported animation matching a still frame. MCP helper contracts live in apps/mcp/test.
-
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -155,7 +152,6 @@ test('the Program animates the title; revisiting a frame gives identical pixels'
 	const rest = mean(await settledLuma());
 	await seek(clip.start);
 	const first = mean(await settledLuma());
-	// Frame 0 of slide-up: every word is transparent.
 	expect(rest - first).toBeGreaterThan(2);
 	const mid = clip.start + 8;
 	await seek(mid);
@@ -163,14 +159,12 @@ test('the Program animates the title; revisiting a frame gives identical pixels'
 	expect(mean(a)).toBeGreaterThan(first);
 	expect(mean(a)).toBeLessThan(rest + 0.5);
 	await page.getByTestId('program-player-wrapper').screenshot({ path: join(OUT_DIR, 'program-mid-in.png') });
-	// Scrub forward and back (In, rest, Out, before the clip) and return.
 	for (const f of [clip.start + 19, clip.start + 3, clip.start + 70, clip.end - 2, clip.start + 12, mid + 1])
 		await seek(f);
 	await seek(mid);
 	const b = await settledLuma();
 	expect(b.length).toBe(a.length);
 	expect(b.filter((v, i) => v !== a[i]!).length).toBe(0);
-	// Out: the last frame is faded to (almost) nothing.
 	await seek(clip.end - 1);
 	expect(mean(await settledLuma())).toBeLessThan(first + 1);
 });
@@ -223,7 +217,6 @@ test('TXA-013: char units at the window boundary sit on the glyphs of the plain 
 	);
 	test.info().annotations.push({ type: 'glyph-shift-px', description: shift.toFixed(3) });
 	expect(shift).toBeLessThanOrEqual(1);
-	// Back to the tab's preset for the export.
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await animationOf(left.id))?.in?.preset).toBe('slide-up');
@@ -255,9 +248,7 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 	await page
 		.getByTestId('program-player-wrapper')
 		.screenshot({ path: join(OUT_DIR, 'program-after-export.png') });
-	// Baked layers: the native builder overlays them (plan path native or hybrid, S11:LBK-002).
 	expect(baked ? ['native', 'hybrid'] : ['remotion']).toContain(out.job.result?.renderPath);
-	// renderStill of the same frame through the engine (the project as the editor holds it).
 	const doc = await query<Record<string, unknown>>(page, 'doc.get');
 	const job = await (
 		await request.post('/api/stills', {
@@ -296,7 +287,6 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 		if (d <= 3) close++;
 		if (b[i]! > 128) textPixels++;
 	}
-	// The frame shows (part of) the title, and the export agrees with the still.
 	expect(textPixels).toBeGreaterThan(1000);
 	expect(close / (w * h)).toBeGreaterThanOrEqual(0.99);
 });

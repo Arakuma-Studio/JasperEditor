@@ -240,8 +240,6 @@ function runRef(input: string, output: string | null, threads: number) {
 	};
 }
 
-// --- jitter (grade/lab/stab_test.py) ------------------------------------------------------------------------
-
 type Cv = {
 	Mat: new (rows: number, cols: number, type: number) => CvMat;
 	CV_8UC1: number;
@@ -334,8 +332,6 @@ async function jitter(file: string): Promise<number> {
 function png(video: string, frame: number, out: string): void {
 	run('ffmpeg', ['-v', 'error', '-y', '-i', video, '-vf', `select=eq(n\\,${frame})`, '-frames:v', '1', out]);
 }
-
-// --- main ----------------------------------------------------------------------------------------------------
 
 const lines: string[] = [];
 const log = (s: string) => {

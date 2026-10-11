@@ -1,8 +1,4 @@
-// compositor end to end in the built app (HTML-in-Canvas on, as in Electron and Remotion renders): a stack whose canvas
-// scopes used to nest — an adjustment layer with a GPU effect over a GL blend mode — shows in the Program monitor as
-// the formula says (it showed a chip and the unadjusted picture before) and exports through Remotion with the same
-// colour; a Rec. 2100 PQ sequence keeps its display transform while that stack draws; a 3D layer joins the stack.
-
+// HTML-in-Canvas enables GPU compositing, as in Electron and Remotion.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';

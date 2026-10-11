@@ -1,7 +1,3 @@
-// S10:TUI-031…035 (wp-m3-transdefaults) through the built app: Sequence ▸ Transition Defaults… opens
-// Preferences ▸ Timeline; the default video transition, alignment and the project's video duration are changed
-// there (the duration is one History step, the preferences none); Ctrl+D then applies exactly those; after a
-// reload the project duration (saved with the project) and the preferences (this computer) are still there.
 // The two clips are placed by the in-page agent API (setup only) so they have media handles around the cut.
 
 import { join } from 'node:path';
@@ -120,7 +116,6 @@ test('change the default video transition, alignment and duration; only the dura
 	);
 	expect(settings).toMatchObject({ defaultTransitionFrames: 12, defaultAudioTransitionFrames: 15 });
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transition-defaults-changed.png') });
-	// Esc while a field is being edited reverts it and keeps the dialog open; the next Esc closes it.
 	await field.fill('99');
 	await field.press('Escape');
 	await expect(dialog()).toBeVisible();

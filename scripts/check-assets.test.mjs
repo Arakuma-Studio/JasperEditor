@@ -1,4 +1,3 @@
-// scripts/check-assets.mjs (AGENTS.md §3, ARCHITECTURE D-38): sidecars, the ATTRIBUTION.md index and the fix text.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -17,7 +16,6 @@ notes:        drawn by code
 `;
 const INDEX = '| `img/logo.png` | JasperEditor contributors | original work | LicenseRef-JasperEditor |\n';
 
-/** Problems of an in-memory repo `{path: text}`. */
 const problems = (files) =>
 	findProblems(Object.keys(files), (p) => (Object.hasOwn(files, p) ? files[p] : null)).map((p) => p.problem);
 

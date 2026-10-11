@@ -96,7 +96,6 @@ function mediaAsset(i: number, kind: 'video' | 'image'): CommandOf<'media.regist
 	};
 }
 
-/** One sequence of `n` colour mattes (the perf-core layout). */
 export function timelineProject(n: number): ProjectDocument {
 	const b = builder(`UI perf ${n} clips`);
 	b.tx([{ type: 'track.add', kind: 'video', count: 1 }], 'tracks');

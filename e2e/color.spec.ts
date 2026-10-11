@@ -1,5 +1,3 @@
-// Colour grading E2E (S06). `Lumetri UI` (wp-m2-color, web UI): Color workspace, Lumetri panel edits (first edit
-// adds the instance, a slider drag is one history entry, curve point), and the LUT look picker.
 // Forced WebGL preview pixels are compared with the independent CPU LUT implementation.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -55,7 +53,6 @@ test.describe('Lumetri UI', () => {
 	test('Color workspace with a graded clip: Lumetri edit = one history entry', async () => {
 		await createProject(page, 'E2E Color UI');
 		await importFiles(page, ['clip-a.mp4', 'look-33.cube']);
-		// The LUT item shows its size and title (LUT-002).
 		await expect(page.getByTestId('project-row').filter({ hasText: 'look-33.cube' })).toContainText('33³');
 		const row = page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' });
 		await row.click();
@@ -72,7 +69,6 @@ test.describe('Lumetri UI', () => {
 		await expect(page.getByTestId('lumetri-chip')).toHaveText('clip-a.mp4');
 		expect(await lumetri()).toHaveLength(0);
 
-		// Exposure slider drag: creates the instance and sets the value in ONE history entry.
 		const before = (await appliedLabels(page)).length;
 		const slider = page.getByTestId('lumetri-exposure');
 		const s = (await slider.boundingBox())!;
@@ -86,7 +82,6 @@ test.describe('Lumetri UI', () => {
 		expect(fx).toBeTruthy();
 		expect(fx!.params.exposure!.value as number).toBeGreaterThan(0.5);
 
-		// Look picker lists the imported LUT; picking it is one entry on the same instance.
 		const look = page.getByTestId('lumetri-look');
 		await look.selectOption({ label: 'look-33.cube (33³)' });
 		await expect.poll(async () => (await appliedLabels(page)).length).toBe(before + 2);
@@ -94,7 +89,6 @@ test.describe('Lumetri UI', () => {
 		expect(after).toHaveLength(1);
 		expect((after[0]!.params.look!.value as { mediaId: string }).mediaId).not.toBe('');
 
-		// A click in the curves editor adds a point (sorted curve, one entry).
 		const curve = page.getByTestId('lumetri-curve');
 		await curve.scrollIntoViewIfNeeded();
 		const c = (await curve.boundingBox())!;
@@ -104,7 +98,6 @@ test.describe('Lumetri UI', () => {
 		expect(pts).toHaveLength(3);
 		expect(pts.map((p) => p[0])).toEqual([...pts.map((p) => p[0])].sort((a, b) => a - b));
 
-		// Undo restores the previous curve.
 		await page.keyboard.press('Control+KeyZ');
 		await expect
 			.poll(

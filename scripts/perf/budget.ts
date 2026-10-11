@@ -1,4 +1,4 @@
-// Load-tolerant performance budgets for tests (workstream `previews`, docs/performance.md).
+// Load-tolerant performance budgets for tests (docs/performance.md).
 //
 // Timing assertions measure the machine as much as the code: on a shared host with dozens of busy processes a 1 s
 // budget can take 5 s without any regression. The normal test gate therefore scales every budget by the host's

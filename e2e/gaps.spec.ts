@@ -71,7 +71,7 @@ async function ui<T = unknown>(action: string, args: Record<string, unknown> = {
 }
 const runCommand = (id: string, args?: unknown) => ui('command', { id, ...(args ? { args } : {}) });
 
-/** Reloads the window: the reloaded tab reclaims its own lease at once (polish), so it opens editable. */
+/** Reloaded tabs reclaim their own lease immediately and must remain editable. */
 async function reloadEditable() {
 	await page.reload();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();

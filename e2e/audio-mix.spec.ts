@@ -1,7 +1,3 @@
-// audio-mix through the real UI of the built app (docs/wp-notes/audio-mix.md): the Audio Meters panel driven by
-// the preview mix (levels + R128), the Audio Track Mixer (balance knob, submix), the Audio Gain dialog (G,
-// Normalize Max Peak measured on the engine), a native export whose channel levels follow the mixer, and a
-// voice-over take recorded from Chrome's fake microphone into A2 and placed at the record point.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -170,7 +166,6 @@ test('Voice-over: the fake microphone is recorded into A3 at the playhead', asyn
 	expect(a3, JSON.stringify(summary.tracks)).toBeTruthy();
 	const header = page.locator(`[data-track-header="${a3!.id}"]`);
 	await header.locator('[data-control="voiceover"]').click();
-	// pre-roll 2 s with countdown, then record ~2 s
 	await page.waitForTimeout(4500);
 	await header.locator('[data-control="voiceover"]').click();
 	await expect.poll(async () => (await clips(page, ['A3'])).length, { timeout: 60_000 }).toBe(1);

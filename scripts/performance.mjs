@@ -58,7 +58,6 @@ function budget(name, value, base, { higherIsBetter = false, scale = true, paral
 	);
 }
 
-// Host load factor (the same calibration as the test budgets).
 {
 	const out = spawnSync(
 		process.execPath,
@@ -69,7 +68,6 @@ function budget(name, value, base, { higherIsBetter = false, scale = true, paral
 	console.log(`host load factor ${report.loadFactor.toFixed(2)} (load average ${report.loadavg.join(' ')})`);
 }
 
-// ------------------------------------------------------------------ micro
 if (sections.includes('micro')) {
 	const micro = [];
 	for (const benchmark of [
@@ -78,7 +76,7 @@ if (sections.includes('micro')) {
 		'packages/session/bench/selection.ts',
 		'apps/web/bench/timeline-transitions.ts',
 		'apps/engine/bench/cache-references.ts',
-		// golden-fuzz: 200 sequences / ~5,000 clips with budgets (docs/testing.md §6); writes scale.results.json
+		// 200 sequences / ~5,000 clips with budgets (docs/testing.md §6); writes scale.results.json
 		'packages/session/bench/scale.ts',
 	]) {
 		console.log(`\n${benchmark}`);
@@ -96,9 +94,7 @@ if (sections.includes('micro')) {
 	report.sections.micro = micro;
 }
 
-// ------------------------------------------------------------------ the built stack
-// Every engine has a token and tells the editor from an agent by the editor key (docs/security-review.md DEV-1,
-// AGT-2). This harness plays the desktop shell for the stack it starts: it makes both, gives them to the engine and
+// This harness supplies both the engine token and editor key, as the desktop shell does, and
 // uses them for its own requests and pages. The child scripts (scripts/perf/ui-run.ts) read the same variables; to
 // measure a stack that is already running (BASE_URL), export E2E_TOKEN and E2E_EDITOR_KEY of that stack.
 process.env.E2E_TOKEN ??= randomBytes(24).toString('base64url');
@@ -172,7 +168,6 @@ async function waitJob(id) {
 	}
 }
 
-// ------------------------------------------------------------------ editor (playback)
 async function editorSection() {
 	const { chromium } = await import('@playwright/test');
 	const executablePath = [
@@ -296,9 +291,7 @@ async function editorSection() {
 		{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.black-white' },
 	]);
 	results.push(await play('GPU effects, live'));
-	// Render Effects In to Out, then the same playback from the previews.
 	const t0 = Date.now();
-	// Render Effects In to Out through the engine (the same request the command sends), then wait for green.
 	await page.evaluate(async () => {
 		const s = window.__jasperMonitor.session;
 		const doc = s.getCommitted();
@@ -355,10 +348,6 @@ async function editorSection() {
 	);
 }
 
-// ------------------------------------------------------------------ editor UI at scale (ui-perf)
-// scripts/perf/ui-run.ts: scripted gestures on generated 1 000 / 5 000-clip sequences, Effect Controls with many
-// keyframes and a 2 000-item Project panel; main-thread work per frame from a Chrome trace (docs/performance.md §5);
-// opening the 2 000-item project (`--ui open`, docs/performance.md §6).
 async function uiSection() {
 	const only = (arg('ui', '') ?? '').split(',').filter(Boolean);
 	const out = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/perf/ui-run.ts', ...only], {
@@ -376,7 +365,6 @@ async function uiSection() {
 	}
 	for (const r of results)
 		if (typeof r.openMediaMs === 'number')
-			// polish: project open (scripts/perf/open-phases.ts)
 			console.log(
 				`  ${r.scenario}: interactive in ${r.openMs} ms, media resolved in ${r.openMediaMs} ms (best ${r.openBestMs} ms), ${r.statusRequests} media status request(s), longest task ${r.max} ms, main thread ${JSON.stringify(r.work)}`,
 			);
@@ -395,7 +383,6 @@ async function uiSection() {
 	}
 }
 
-// ------------------------------------------------------------------ export throughput
 async function exportSection() {
 	const proj = await api('/api/projects', { name: `perf-export-${label}`, preset: 'hd-1080p-30' });
 	const projectId = proj.projectId ?? proj.project?.projectId;

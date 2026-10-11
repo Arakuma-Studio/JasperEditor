@@ -14,7 +14,6 @@ const run = (cmd, args) => {
 	if (r.status !== 0) process.exit(r.status ?? 1);
 };
 
-// Creates missing fixtures and regenerates ones whose recipe changed (a no-op when they are current).
 run('node', ['scripts/make-fixtures.mjs']);
 // D-13: the E2E engine is a built (non-dev) engine, which only renders through Remotion with the LGPL
 // FFmpeg directory. Fetch it when a pinned prebuilt exists for this platform (a no-op when it is current);
@@ -38,6 +37,5 @@ if (process.env.E2E_SKIP_BUILD !== '1') {
 	run('pnpm', ['--filter', '@jasper/engine', 'build']);
 	run('pnpm', ['--filter', '@jasper/engine', 'build:remotion']);
 	run('pnpm', ['--filter', '@jasper/web', 'build']);
-	// e2e/agent.spec.ts drives the editor through the built MCP server, like an external coding agent.
 	run('pnpm', ['--filter', '@jasper/mcp', 'build']);
 }

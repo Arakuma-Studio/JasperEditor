@@ -50,7 +50,6 @@ const RULES = [
 	{ id: 'tailwind-white-black-opacity', re: /(?<![\w-])(?:white|black)\/\d{1,3}(?![\w])/g },
 ];
 
-/** Returns true when a path is exempt from the rule (theme dirs and *.tokens.ts files). */
 function isExempt(filePath) {
 	const parts = filePath.split(/[\\/]/);
 	if (parts.includes('theme')) return true;

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// UI-6 i18n catalogue tool (workstream gaps, docs/wp-notes/gaps.md §UI-6).
+// Catalogue generation includes both UI literals and model names displayed by the UI.
 //   node scripts/i18n.mjs            writes apps/web/src/i18n/en.json (every UI string the transform wraps, plus the
 //                                    model's names the UI shows: effects, parameters, transitions, command labels)
 //   node scripts/i18n.mjs --check    fails when es.json misses a string of en.json (the Spanish catalogue is complete)

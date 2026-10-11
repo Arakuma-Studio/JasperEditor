@@ -1,13 +1,7 @@
+// The independent colour-science oracle is outputTransformFn(working, displaySpaceFor(working)).
+// PQ(203 cd/m²) = 148.1/255, displayed as 230.4/255; a 50% linear blend over black is
+// 129.9/255, displayed as 190.3/255. Encoded blending would display 69.1/255.
 import { expectTransaction } from './support.ts';
-// color-mgmt end to end in the built app: Properties ▸ Colour sets a Rec. 2100 PQ working space, whose Program
-// monitor preview goes through the display transform (graphics white = 203 cd/m², BT.2390 tone mapped to Rec. 709);
-// "Blend using 1.0 gamma" composites in linear light and the display transform keeps running (the compositor draws
-// the stack flat and applies the display LUT last, so no "shown without display conversion" chip; wp-note
-// compositor); the export writes 10-bit PQ ProRes with its tags and HDR metadata. HTML-in-Canvas is enabled for this
-// browser (as in Electron and in Remotion renders). Expected values from the TS colour science
-// (packages/project/src/color/cms, `outputTransformFn(working, displaySpaceFor(working))`): PQ(203 cd/m²) =
-// 148.1/255, its display rendition 230.4/255; a 50 % blend of it over black in linear light 129.9/255, shown as
-// 190.3/255 (encoded blending: 74.0, shown as 69.1).
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';

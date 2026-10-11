@@ -1,4 +1,4 @@
-// wp-m2-transitions fixtures (ARCHITECTURE §19.11):
+// Transition fixtures:
 // - two steady tones of different pitch for audio crossfade checks (S10 §8 test 7: no gap and no level bump
 //   at the cut; a constant level makes a crossfade's gain curve directly measurable with `astats`);
 // - two solid-colour clips (red, blue) with audio, so a video dissolve between them is measurable in the

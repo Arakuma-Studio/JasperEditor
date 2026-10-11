@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// fframes capability fallback (ARCHITECTURE §15 item 9, WP-3I): the same sequence with a lower-third@1 clip
+// fframes capability routing (ARCHITECTURE §15 item 9): the same sequence with a lower-third@1 clip
 // plans `native` when jasper-mg is available and `remotion` (with a blocker that says why) when the binary is
 // missing. Runs two *built* engines side by side (ports DESKTOP_SMOKE_PORT-style: MG_CHECK_PORT, +1).
 //
@@ -20,8 +20,7 @@ process.on('exit', () => {
 	for (const d of temps) rmSync(d, { recursive: true, force: true });
 });
 
-// Every engine has a token and tells the editor from an agent by the editor key (docs/security-review.md DEV-1,
-// AGT-2). This check plays the desktop shell for the engines it starts.
+// This harness supplies both the engine token and editor key, as the desktop shell does.
 const TOKEN = randomBytes(24).toString('base64url');
 const EDITOR_KEY = randomBytes(24).toString('base64url');
 const AUTH_ENV = { JASPER_LOCAL_TOKEN: TOKEN, JASPER_EDITOR_KEY: EDITOR_KEY };
@@ -69,7 +68,6 @@ async function planFor(url) {
 		name: 'MG check',
 		preset: 'hd-1080p-29.97',
 	});
-	// Headless agent transaction (no editor open): a 5 s lower third on V1.
 	const tx = await call(url, 'POST', '/api/agent/tx', {
 		projectId,
 		transaction: {

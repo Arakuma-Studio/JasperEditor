@@ -1,4 +1,4 @@
-// 3D Camera Tracker fixtures (parity workstream `three-d`): a ray-cast plate filmed by an exactly known camera.
+// 3D Camera Tracker fixtures: a ray-cast plate filmed by an exactly known camera.
 //
 //   camtrack-dolly.mp4 / .json  640x360, 30 fps, 60 frames. A camera (focal length 560 px, horizontal angle of view
 //                               ≈ 59.5°) dollies sideways and forwards while turning toward a point of interest, over a

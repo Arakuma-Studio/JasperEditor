@@ -1,4 +1,3 @@
-// LGPL guard contracts for the tree, packaged app and ELF RPATH rewrite.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

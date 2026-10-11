@@ -1,7 +1,3 @@
-// S03:FX-030 (wp-m3-presets) through the built app: Effects ▸ Presets applies a built-in preset to the selected clip
-// by double-click (one History entry); Save Preset… from the Opacity header in Effect Controls stores a user preset
-// in the engine library; after a reload (a new session) the preset is still in Effects ▸ Presets and applies to
-// another clip with its key times anchored to the Out point.
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {

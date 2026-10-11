@@ -1,6 +1,3 @@
-// Expressions end to end (docs/wp-notes/expressions.md): Alt-click a stopwatch in Effect Controls, type an
-// expression in the editor, see the post-expression value (red) and the Program preview follow it, an error under
-// the field, a preset from the language menu, the post-expression graph, and one undo per edit.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -88,7 +85,6 @@ test('Alt-click adds an expression; typing drives the value, the preview and the
 	await query(page, 'playhead.set', { frame: 15 });
 	await expect.poll(previewRotation).toBe(45);
 
-	// The post-expression graph.
 	await ec.getByTestId('twirl-transform.rotation').click();
 	await expect(ec.getByTestId('graph-post-curve-transform.rotation-0')).toBeVisible();
 	await page.screenshot({ path: 'test-results/e2e/expressions-effect-controls.png' });
@@ -104,7 +100,6 @@ test('errors show under the field; a preset from the language menu replaces the 
 	// The editor closes the bracket: nope() is a call of an undefined function (a runtime error).
 	await page.keyboard.press('Control+Enter');
 	await expect(ec.getByTestId(`expr-error-${pathId}`)).toContainText('Error at line 1');
-	// The property falls back to its keyframed value (0).
 	await expect.poll(previewRotation).toBe(0);
 
 	await ec.getByTestId(`expr-menu-${pathId}`).click();
@@ -124,7 +119,7 @@ test('browser (editor page) and Node evaluate expressions bit-identically', asyn
 	// Expressions that exercise libm (sin, exp, pow, log, atan2), noise, wiggle, random and gaussRandom; their results
 	// are read at full precision from the page (effect params of `sequence.at`) and recomputed in Node. (Layer
 	// bounds are not compared: they go through the host's Math.cos/sin in layerMatrix, which differ in the last ulp
-	// between Chrome's V8 and Node's — pre-existing render maths, not expressions.)
+	// between Chrome's V8 and Node's.)
 	const r = await transact(page, [
 		{ type: 'clip.addSolid', at: 200, duration: 60, track: 'V2', color: [0.1, 0.6, 0.9, 1], ref: '$c' },
 		{ type: 'effect.add', target: { clipId: '$c' }, effectId: 'jasper.gaussian-blur', ref: '$b' },
@@ -183,6 +178,5 @@ test('browser (editor page) and Node evaluate expressions bit-identically', asyn
 		expect(inPage.transform.rotation).toBe(round3(inNode.props.transform!.rotation));
 		radii.add(inPage.effects[0]!.params.radius);
 	}
-	// The expressions ran (the keyframed radius is constant).
 	expect(radii.size).toBe(5);
 });

@@ -52,7 +52,6 @@ test('an agent cannot approve its own request through the UI tools; the user can
 	});
 	const card = page.getByTestId('agent-approval-card');
 	await expect(card).toBeVisible({ timeout: 20_000 });
-	// The agent clicks Approve with the live-UI tool: the click arrives (the tool succeeds), nothing is approved.
 	const click = await call('ui_click', { projectId, id: 'agent-approval-approve' });
 	expect(click.isError, text(click)).toBeFalsy();
 	await page.waitForTimeout(500);
@@ -175,7 +174,6 @@ test('DEV-1: the engine refuses requests without its token; the page is the edit
 	// Node's own fetch: no cookie, no token.
 	expect((await fetch(`http://127.0.0.1:${port}/api/projects`)).status).toBe(401);
 	expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200);
-	// The page works (it has been all along) and cannot read either secret.
 	expect(await page.evaluate(() => fetch('/api/projects').then((r) => r.status))).toBe(200);
 	expect(await page.evaluate(() => document.cookie)).not.toMatch(/jasper_(session|editor)/);
 	const cookies = await page.context().cookies();

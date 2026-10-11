@@ -1,4 +1,4 @@
-// Profiles one editor UI scenario in the built app (workstream ui-perf, docs/performance.md §5): frame statistics from a
+// Profiles one editor UI scenario in the built app (docs/performance.md §5): frame statistics from a
 // Chrome trace plus a V8 CPU profile mapped through the web build's source maps (self and inclusive time per function
 // and per source file).
 //
@@ -71,7 +71,6 @@ async function startServer(): Promise<{ base: string; child: ChildProcess | null
 	throw new Error('the engine did not start');
 }
 
-// ------------------------------------------------------------------ profile → functions
 type Mapped = { key: string; file: string };
 const consumers = new Map<string, InstanceType<typeof SourceMapConsumer> | null>();
 function mapFrame(cf: CpuProfile['nodes'][number]['callFrame']): Mapped {
@@ -157,7 +156,6 @@ if (from) {
 	process.exit(0);
 }
 
-// ------------------------------------------------------------------ run
 const { base, child } = await startServer();
 try {
 	const envelope = await cachedFixture(

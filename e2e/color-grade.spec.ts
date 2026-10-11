@@ -1,6 +1,3 @@
-// color-grade E2E: the Lumetri completion in the real app — HSL Secondary eyedropper on the Program monitor, Auto,
-// Comparison View + Apply Match against another clip, the Looks browser, the vignette in the Program monitor and in
-// the export (the spatial GPU stage through the layer bake), and the Lumetri Scopes layouts.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -105,7 +102,6 @@ test.describe('Lumetri completion and scopes', () => {
 		]);
 		expect(placed.ok, JSON.stringify(placed)).toBe(true);
 		clipB = (await clips(page)).find((c) => c.kind === 'video' && c.id !== clipA)!.id;
-		// A warm, saturated reference grade on clip B.
 		const r = await transact(page, [
 			{
 				type: 'effect.add',
@@ -135,7 +131,6 @@ test.describe('Lumetri completion and scopes', () => {
 		await expect(page.getByTestId('lumetri-eyedropper-overlay')).toBeHidden();
 		const fx = (await lumetriOf(clipA))!;
 		expect(fx.params.secLumaLow!.value).not.toBe(0);
-		// Show the key, then hide it again (the mask view).
 		await transact(page, [
 			{ type: 'param.set', target: ['effect', fx.id, 'secShowMask'], value: true },
 			{ type: 'param.set', target: ['effect', fx.id, 'secMaskStyle'], value: 'whiteBlack' },
@@ -155,7 +150,6 @@ test.describe('Lumetri completion and scopes', () => {
 	test('Comparison View + Apply Match grades clip A towards clip B', async () => {
 		await page.getByTestId('lumetri-comparison-view').click();
 		await expect(page.getByTestId('comparison-view')).toBeVisible();
-		// Reference: a frame of clip B (step to it, Set to Playhead), then back on clip A.
 		await seek(startB + 10);
 		await page.getByTestId('comparison-set').click();
 		await seek(10);

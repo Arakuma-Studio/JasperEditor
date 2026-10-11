@@ -1,4 +1,3 @@
-// scripts/check-anime.mjs (S11:ANM-012): dependency and determinism rules plus the documented escape.
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +25,6 @@ describe('check-anime dependency rules (S11:ANM-001/022/023)', () => {
 		expect(
 			rules('packages/project/src/x.ts', "import type { UnitValues } from '@jasper/motion/text';"),
 		).toEqual(['motion-outside-compositions']);
-		// mentioning the package name is not importing it
 		expect(rules('apps/engine/src/x.ts', "resolve('@jasper/motion'); // see animejs")).toEqual([]);
 		// nor is source code held as data in a template literal (the scaffolded project, ANM-016)
 		expect(rules('apps/engine/src/x.ts', "const f = `import { x } from 'animejs/timeline';`;")).toEqual([]);
@@ -105,7 +103,6 @@ describe('check-anime dependency rules (S11:ANM-001/022/023)', () => {
 			'runtime-only-name',
 		]);
 		expect(rules(RUNTIME, "import { Timeline } from 'animejs/timeline';")).toEqual([]);
-		// types are not values
 		expect(rules(TEMPLATE, "import type { Timeline } from 'animejs/timeline';")).toEqual([]);
 		expect(rules(TEMPLATE, "import { type Timeline } from 'animejs/timeline';")).toEqual([]);
 		expect(rules(MOTION, 'new Timer({}); new JSAnimation(o, {}); utils.sync(f); utils.keepTime(g);')).toEqual(

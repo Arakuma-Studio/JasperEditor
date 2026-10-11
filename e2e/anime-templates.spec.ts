@@ -1,9 +1,4 @@
-// Anime templates E2E (S11 §11 test 3, wp-m2-anime-templates): drag `title-reveal` from the gallery (badge R, hover
-// preview), edit its text and colour in Properties, keyframe a colour param (Effect Controls/Properties
-// stopwatch), stretch the clip (intro and outro frame-exact), apply a Gaussian blur and a corner pin (visible in the
-// Program), export, and compare an exported frame with `renderStill`. fframes templates keep their twin + badge.
-//
-// Export path: with the layer-bake extension ready (`features.layerBake.state === 'ready'`, wp-m2-layer-bake) the
+// Export path: with the layer-bake extension ready (`features.layerBake.state === 'ready'`) the
 // plan must be native/hybrid; without it (this package alone) Auto plans the Remotion path because the anime
 // template has a native blocker. The test records which one it checked as an annotation — it never skips.
 
@@ -99,7 +94,6 @@ test('keyframe a colour param with the stopwatch: the Program colour changes ove
 	const f1 = doc.start + 100;
 	await query(page, 'playhead.set', { frame: f0 });
 	const labels = (await appliedLabels(page)).length;
-	// Effect Controls ▸ Template · Title Reveal: the stopwatch of a colour param (S05:ECP-008).
 	await page.getByTestId('tab-effectControls').click();
 	const ec = page.getByTestId('effect-controls-panel');
 	await ec.getByTestId('stopwatch-params.accentColor').click();
@@ -271,7 +265,6 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	const out = await exportProRes(request, bake ? /native|hybrid/i : /remotion/i);
 	expect(out.renderPath).toMatch(bake ? /native|hybrid/ : /remotion/);
 
-	// renderStill of the same frame (engine POST /api/stills over the live document).
 	const doc = await query<ProjectDocument>(page, 'doc.get');
 	const clip = doc.sequences[seqId]!.clips[clipId] as unknown as MgClipDoc;
 	const frame = clip.start + 24; // inside the intro: chars, subtitle and underline mid-animation
@@ -306,7 +299,6 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 		description: `${(ratio * 100).toFixed(2)} % within 3/255 (max ${max})`,
 	});
 	expect(ratio).toBeGreaterThanOrEqual(0.99);
-	// The frame is not trivially black: the title is drawn.
 	let lit = 0;
 	for (let i = 0; i < b.length; i += 3) if (b[i]! + b[i + 1]! + b[i + 2]! > 60) lit++;
 	expect(lit).toBeGreaterThan(1000);

@@ -1,8 +1,3 @@
-// Roto Brush UI acceptance (parity workstream `roto`): the synthetic ellipse plate on V1 (fit to the frame) →
-// Properties ▸ Roto → Roto Brush tool → drag over the object on the Program monitor (one "Roto Brush" entry + an
-// Object Matte effect; the frame is segmented on the engine: "Propagate Roto") → the matte shows on the monitor →
-// Propagate both directions (engine job with progress, one entry) → the Program output is cut out → Convert to Masks
-// (one entry) → views and the Effect Controls object picker → undo restores each step.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -104,7 +99,6 @@ test('paint over the object with the Roto Brush: a roto, an Object Matte and the
 		await clipDoc<{ effects: { effectId: string; params: Record<string, { value: unknown }> }[] }>()
 	).effects;
 	expect(fx.find((e) => e.effectId === 'jasper.object-matte')?.params.object?.value).toBe(roto.id);
-	// The frame is segmented on the engine and committed.
 	await expect
 		.poll(async () => (await appliedLabels(page)).slice(labels0), { timeout: 120_000 })
 		.toEqual(['Roto Brush', 'Propagate Roto']);
@@ -127,7 +121,6 @@ test('Propagate both directions runs one engine job and commits one entry; the o
 	await expect(page.getByTestId('roto-overlay')).toHaveAttribute('data-media-frame', '30');
 	await expect(page.getByTestId('roto-matte')).toHaveAttribute('data-url', /n=30/);
 	await page.screenshot({ path: 'test-results/e2e-roto-propagated.png' });
-	// Views of the monitor matte.
 	await page.getByTestId('roto-view').selectOption('boundary');
 	await expect(page.getByTestId('roto-matte')).toBeVisible();
 	await page.screenshot({ path: 'test-results/e2e-roto-boundary.png' });

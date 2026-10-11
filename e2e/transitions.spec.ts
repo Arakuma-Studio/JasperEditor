@@ -1,6 +1,3 @@
-// S10 §8 test 5 (wp-m2-transitions): transitions through the real UI of the built app — drag Cross Dissolve from
-// the Effects panel onto a cut (the Program shows the mix), Ctrl+Z, Ctrl+D at the playhead, drag the right edge
-// to lengthen it, change the type to Dip to Black in Effect Controls, and export natively.
 // The two clips are placed by the in-page agent API (setup only) so they have media handles around the cut.
 
 import { mkdirSync } from 'node:fs';
@@ -122,7 +119,6 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	expect(b.ok, JSON.stringify(b)).toBe(true);
 	expect((await clips(page, ['V1'])).map((c) => c.start)).toEqual([0, cut]);
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 90_000 });
-	// Hard cut: the last frame before it is red.
 	await seek(cut - 1);
 	await expect.poll(async () => (await programRgb())[0], { timeout: 30_000 }).toBeGreaterThan(180);
 	expect((await programRgb())[2]).toBeLessThan(60);

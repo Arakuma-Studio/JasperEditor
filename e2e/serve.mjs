@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// E2E server (WP-3I): runs the *built* engine (apps/engine/dist/engine.mjs) with the built web app
+// E2E server: runs the *built* engine (apps/engine/dist/engine.mjs) with the built web app
 // (apps/web/dist) on 127.0.0.1:<E2E_PORT> and a throwaway appdir, so every `pnpm e2e` run starts from an
 // empty project list. Playwright's `webServer` starts this script and stops it with SIGTERM.
-// The engine is authenticated (security review DEV-1): playwright.config.ts passes JASPER_LOCAL_TOKEN and
+// The engine is authenticated: playwright.config.ts passes JASPER_LOCAL_TOKEN and
 // JASPER_EDITOR_KEY and gives the browser the matching cookies. Started by hand without them, the engine makes its
 // own and prints the pairing link to open in a browser.
 import { spawn } from 'node:child_process';

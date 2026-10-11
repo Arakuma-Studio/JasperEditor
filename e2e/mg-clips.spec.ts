@@ -1,8 +1,3 @@
-// Motion-graphics composition clips (M2, S08 §8 test 4): the renderer-page protocol contract of the live frame
-// host (fails loudly when a Remotion upgrade changes the page protocol, ARCHITECTURE D-19), then the UI flow:
-// File ▸ Import Remotion Project… (fixtures/mg-project), Motion Templates ▸ Remotion, insert, live host frame in
-// the Program monitor, a props edit in Properties visible within 500 ms, and the switch to the cached VP9-alpha
-// preview after the props stay unchanged for 2 s.
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -42,8 +37,7 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 
 	const probe = await browser.newPage(); // own context: the shared page's context refuses newPage()
 	await probe.goto('/health');
-	// Security review MG-1: the host page is a sandboxed iframe (opaque origin). The editor drives it through the
-	// page's host agent over a MessagePort (`connectMgHost`), exactly as the Composition layer does.
+	// The opaque-origin iframe is controlled through a MessagePort, as in the Composition layer.
 	await probe.setContent(
 		'<html><body style="margin:0;background:rgb(255,0,0)"><iframe id="h" sandbox="allow-scripts" style="border:0;width:1920px;height:1080px;color-scheme:light"></iframe></body></html>',
 	);
@@ -71,7 +65,6 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 		});
 		await d.seek('Title', 45);
 		(window as unknown as { __host: Remote }).__host = d;
-		// The page is out of the editor's reach: neither its document nor its globals are readable from here.
 		let reachable = true;
 		try {
 			reachable = !!f.contentDocument || 'remotion_setFrame' in (f.contentWindow as object);
@@ -80,7 +73,6 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 		}
 		return { check: await d.check(), meta, reachable };
 	}, reg.mediaKey);
-	// What the page drew, read inside the frame (Playwright attaches to it; the editor cannot).
 	const host = probe.frames().find((x) => x.url().includes('/mg/sandbox/'))!;
 	expect(host, 'the host page lives under its capability path').toBeTruthy();
 	const drawn = () =>
@@ -116,19 +108,17 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 		(window as unknown as { __host: { seek(id: string, f: number): Promise<void> } }).__host.seek('Title', 0),
 	);
 	const at0 = await drawn();
-	// If any of these fail after a Remotion upgrade, packages/compositions/src/mg-host/agent.ts must follow.
+	// Frame positioning depends on Remotion's renderer-page protocol; the host agent must match it.
 	expect(r.check).toEqual({ ok: true, missing: [], remotionVersion: '4.0.499', siteVersion: '11' });
 	expect(r.meta).toMatchObject({ width: 1280, height: 720, fps: 30, durationInFrames: 90 });
 	expect(at45.ready).toBe(true);
 	expect(at45.text).toBe('Contract');
-	expect(at45.opacity).toBeCloseTo(1, 5); // frame 45: the panel has entered
-	expect(at0.opacity).toBe(0); // frame 0: not yet
-	expect(at45.bodyBg).toBe('rgba(0, 0, 0, 0)'); // transparent page
-	// MG-1: an opaque origin on both sides of the frame boundary — no editor DOM, no cookies, no storage.
+	expect(at45.opacity).toBeCloseTo(1, 5);
+	expect(at0.opacity).toBe(0);
+	expect(at45.bodyBg).toBe('rgba(0, 0, 0, 0)');
 	expect(r.reachable).toBe(false);
 	expect(at45.origin).toBe('null');
 	expect(at45.parentReachable).toBe(false);
-	// Its "storage" works for the page and reaches nothing: not the editor's localStorage, not a cookie jar.
 	expect(at45.cookies).toBe('');
 	expect(at45.storage).toBe('from-the-bundle');
 	expect(await probe.evaluate(() => window.localStorage.getItem('jasper-mg-probe'))).toBeNull();
@@ -243,7 +233,6 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	expect(elapsed).toBeLessThan(500);
 	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');
 
-	// After 2 s without changes the layer switches to the pre-rendered preview WebM.
 	await expect(page.getByTestId('composition-status')).toHaveText(/Preview ready/, { timeout: 300_000 });
 	await expect(page.locator('[data-testid="program-monitor"] iframe[data-mg-host]')).toHaveAttribute(
 		'data-mg-host-state',
