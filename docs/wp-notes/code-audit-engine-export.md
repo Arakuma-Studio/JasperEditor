@@ -87,6 +87,27 @@ claim about runtime-loaded third-party packages or every possible dynamic import
 - The local engine typecheck was stopped at the integrator's request because simultaneous typechecks
   overloaded the shared host. The integration gate owns the final serialized typecheck and full gate.
 
+## Integrated native export deadline investigation
+
+At integration revision `7105a89b`, the full suite's 300-frame 1080p native-export test exceeded its
+explicit 120-second completion deadline. The saved job journal records a successful native
+`libopenh264` export in 90.345 seconds. An unchanged isolated rerun also exceeded 120 seconds; its
+cleanup interrupted an encoding job at 42.65%, with no preceding render error. Host load averages
+were approximately 74 initially and 107 during artifact checks. These are measured functional-test
+results under contention, not a renderer performance benchmark or a passing test claim.
+
+Independent checks of the completed full-suite artifact passed the original media assertions:
+300 decoded frames, 1920×1080 H.264/yuv420p with BT.709 tags, stereo 48 kHz AAC lasting 10 seconds,
+6,605,616 bytes, and an MP4 `ftyp` signature. The three sampled RGB pixels were `[0, 0, 254]`,
+`[0, 214, 0]`, and `[253, 23, 0]`, satisfying the blue, green, and still-red assertions. The sequential
+ffprobe/pixel checks took 61.061 seconds with one decoder thread. They did not independently exercise
+the HTTP range response.
+
+Only this test's completion deadline is now 600 seconds. Its render settings, frame count, pixel,
+audio, event, and HTTP assertions are unchanged; no production timeout or performance budget changed.
+The focused rerun of every original assertion is pending at this commit:
+`pnpm exec vitest run apps/engine/test/export.test.ts -t 'exports a 2-track sequence to an mp4 whose frame count equals the range length' --maxWorkers=1 --reporter=verbose`.
+
 ## Limits
 
 No preview/export pixel algorithm, format migration, shader, encoder, or user-facing editing behavior

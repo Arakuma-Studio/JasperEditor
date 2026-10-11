@@ -212,7 +212,7 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		expect(dl.statusCode).toBe(206);
 		expect(dl.headers['content-range']).toBe(`bytes 0-11/${size}`);
 		expect(dl.rawPayload.subarray(4, 8).toString('latin1')).toBe('ftyp');
-	}, 120_000);
+	}, 600_000);
 
 	it('renders a still frame natively for media-only frames (POST /api/stills)', async () => {
 		const { d } = await twoTrackDoc();
