@@ -36,6 +36,6 @@ Focused tests cover worker runtime selection, missing explicit worker overrides,
 
 The filesystem and worker-runtime focused suite passed: 2 files, 13 tests (`pnpm exec vitest run apps/engine/test/fs.test.ts apps/engine/test/node-runtime.test.ts --maxWorkers=1 --testTimeout=120000`). The small suites now import a separate temporary-directory helper so they do not load the entire engine merely to create a directory.
 
-Changed-source Biome checks passed during implementation. The branch-wide engine typecheck was stopped at the integrator's request because many concurrent typechecks exhausted the shared host; the serialized integration gate owns the final typecheck/build result. Final focused-test results are recorded in the integration report.
+Changed-source Biome checks passed during implementation. The branch-wide engine typecheck was stopped at the integrator's request because many concurrent typechecks exhausted the shared host; the serialized integration gate owns the final typecheck/build result. The seven-file numerical/media run was stopped at the integrator's request when the integrated full suite began. Its initial `processing-steps` setup exceeded the hook limit while generating all fixture media; those 16 tests did not run, and the remaining numerical run was incomplete. It is not reported as a pass. The integrated suite owns that coverage and final typecheck/build results.
 
 No visual rendering algorithm was changed. No new media, models, binary assets or dependencies were added.
