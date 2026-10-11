@@ -1,5 +1,3 @@
-// polish: the Media Browser panel, File ▸ Import from Media Browser, Engine ▸ Connect / Status, Edit Parameters and
-// Third-Party Notices.
 import type { BrowseEntry } from '@jasper/api';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -236,7 +234,6 @@ describe('Media Browser panel', () => {
 		expect((screen.getByTestId('media-browser-path') as HTMLInputElement).value).toBe('/media/Footage');
 		fireEvent.click(screen.getByTestId('media-browser-up'));
 		await waitFor(() => expect(screen.getByText('tone.wav')).toBeTruthy());
-		// the last folder is remembered for the next time the panel opens
 		expect(JSON.parse(localStorage.getItem('jasper:media-browser') ?? '{}').path).toBe('/home/u');
 	});
 
@@ -263,7 +260,6 @@ describe('Media Browser panel', () => {
 				{ kind: 'bin', binId: null },
 			);
 
-			// File ▸ Import from Media Browser imports the same selection.
 			const ctx = createCommandContext({
 				engine: new ScriptedEngine().client(),
 				session,
@@ -274,7 +270,6 @@ describe('Media Browser panel', () => {
 			});
 			expect(importFiles).toHaveBeenCalledTimes(2);
 
-			// Double-click imports the file under the pointer.
 			await act(async () => {
 				fireEvent.doubleClick(row('tone.wav'));
 			});
@@ -470,7 +465,6 @@ describe('engine dialogs', () => {
 		await waitFor(() =>
 			expect(screen.getByTestId('engine-connect-result').textContent).toBe('Connected to engine 0.1.0'),
 		);
-		// an agent's live-UI input may not send the window to another address
 		fireEvent.change(field, { target: { value: 'http://127.0.0.1:9' } });
 		await runAgentInput(async () => {
 			await act(async () => {

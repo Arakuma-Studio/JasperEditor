@@ -14,8 +14,6 @@ import { PlaybackDriver, type PlayerLike } from '../src/panels/program/playback-
 import { Shuttle, type ShuttleTarget } from '../src/panels/program/shuttle.ts';
 import { shuttleFor } from '../src/panels/program/transport-registry.ts';
 
-// ------------------------------------------------------------------ fakes
-
 function transportTarget(t: TransportStore): ShuttleTarget {
 	return {
 		play: (r) => t.play(r),
@@ -65,7 +63,6 @@ class FakePlayer implements PlayerLike {
 	emit(n: Ev, detail: unknown = {}) {
 		for (const cb of this.listeners.get(n) ?? []) cb({ detail });
 	}
-	/** Simulates native playback of `n` frames. */
 	advance(n: number) {
 		for (let i = 0; i < n; i++) {
 			this.frame += 1;
@@ -115,8 +112,6 @@ function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }) {
 	driver.setPlayer(player);
 	return { transport, player, clock, driver, rates };
 }
-
-// ------------------------------------------------------------------ JKL (S02 Appendix A.8)
 
 describe('JKL shuttle', () => {
 	afterEach(() => vi.useRealTimers());
@@ -205,8 +200,6 @@ describe('JKL shuttle', () => {
 	});
 });
 
-// ------------------------------------------------------------------ Player ↔ TransportStore
-
 describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 	afterEach(() => vi.unstubAllGlobals());
 	it('plays natively at 1×: the Player is the clock and frames are reported', () => {
@@ -236,17 +229,15 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 			};
 			transport.play(1);
 			expect(plays).toBe(1);
-			vi.advanceTimersByTime(1000); // no frames arrived: kicked again
+			vi.advanceTimersByTime(1000);
 			expect(plays).toBe(2);
 			expect(player.seeks.at(-1)).toBe(61);
-			// Progressing: no kicks while frames keep arriving.
 			for (let i = 0; i < 6; i++) {
 				player.advance(5);
 				vi.advanceTimersByTime(200);
 			}
 			expect(plays).toBe(2);
 			expect(transport.getState().frame).toBe(91);
-			// Stalls mid-play (seen in the E2E suite: 61 → 62, then nothing): kicked again.
 			vi.advanceTimersByTime(1000);
 			expect(plays).toBe(3);
 			expect(player.seeks.at(-1)).toBe(91);
@@ -305,7 +296,6 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 				plays++;
 				orig();
 			};
-			// a play rendering a frame every 400 ms
 			transport.seek(10);
 			transport.play(1);
 			for (let i = 0; i < 6; i++) {
@@ -344,7 +334,7 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(player.playing).toBe(false);
 		player.seeks.length = 0;
 		for (let i = 0; i < 60; i++) clock.step(1000 / 60);
-		const expected = 8 * 30; // 1 s at 30 fps × 8
+		const expected = 8 * 30;
 		expect(Math.abs(transport.getState().frame - expected) / expected).toBeLessThan(0.05);
 		expect(player.seeks.length).toBeLessThanOrEqual(31);
 		expect(player.seeks.length).toBeGreaterThan(20);
@@ -393,8 +383,6 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(player.frame).toBe(80);
 	});
 });
-
-// ------------------------------------------------------------------ commands
 
 function makeSession(): EditorSession {
 	const ids = createCounterIdSource(1);

@@ -116,8 +116,6 @@ describe('workspace store', () => {
 	});
 });
 
-// ------------------------------------------------------------------ keyboard (KB-001…007, AC-KB-1/2/4)
-
 describe('keyboard dispatcher', () => {
 	function mount(focus: PanelKind | null, commands: UiCommand[]) {
 		registerCommands(commands);
@@ -174,7 +172,6 @@ describe('keyboard dispatcher', () => {
 		document.body.append(input);
 		input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', key: 'j', bubbles: true }));
 		expect(shuttle).not.toHaveBeenCalled();
-		// Even with an editing panel focused the key is suspended inside the field.
 		off();
 		const again = mount('timeline', [
 			cmd('transport.shuttleReverse', 'editing', shuttle),
@@ -192,7 +189,6 @@ describe('keyboard dispatcher', () => {
 			}),
 		);
 		expect(save).toHaveBeenCalledOnce();
-		// Text-editing chords stay with the field.
 		const undo = vi.fn();
 		registerCommands([cmd('history.undo', 'global', undo)]);
 		input.dispatchEvent(
@@ -261,7 +257,6 @@ describe('keyboard dispatcher', () => {
 		window.dispatchEvent(pointer('pointermove', 0));
 		window.dispatchEvent(esc());
 		expect(cancel).toHaveBeenCalledTimes(2);
-		// Losing focus mid-drag clears it too.
 		window.dispatchEvent(pointer('pointerdown', 1));
 		window.dispatchEvent(new Event('blur'));
 		window.dispatchEvent(esc());
@@ -331,8 +326,6 @@ describe('keyboard dispatcher', () => {
 	});
 });
 
-// ------------------------------------------------------------------ menus (MN-001/011, SH-031)
-
 describe('menus', () => {
 	async function sessionWithEdit() {
 		const ids = createRandomIdSource();
@@ -372,7 +365,6 @@ describe('menus', () => {
 		const after = resolveMenu(MENUBAR.find((m) => m.id === 'edit')!.items, env);
 		const redo2 = after.find((i) => i.id === 'history.redo');
 		expect(redo2?.type === 'item' && redo2.label).toBe('Redo Add Marker');
-		// Agent steps read "Undo Agent: …" (MN-011).
 		const seqId = session.getState().activeSequenceId!;
 		session.apply({
 			label: 'Mark beat',

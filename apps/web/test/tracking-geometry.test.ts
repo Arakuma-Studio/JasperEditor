@@ -1,6 +1,3 @@
-// Tracking overlay geometry (S09:TRU-002/003): media px ↔ sequence px ↔ screen px through a plate's layer map and
-// the monitor view, quad drags (corner / edge / body), corner-pin normalisation through the inverse
-// Motion, confidence tones, trails and default placement.
 import type { ClipTracker, Quad } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import type { View } from '../src/panels/program/viewport.ts';

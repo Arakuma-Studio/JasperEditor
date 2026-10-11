@@ -1,5 +1,3 @@
-// PreviewThumb (ARCHITECTURE §20.6): poster through <Thumbnail>, one shared hover <Player> after 200 ms,
-// touch / reduced motion → poster only.
 import { act, fireEvent, render, within } from '@testing-library/react';
 import { useCurrentFrame } from 'remotion';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,7 +68,6 @@ describe('PreviewThumb', () => {
 		});
 		expect(frameOf(a)).toBe('a:0');
 
-		// One Player for the whole app: hovering b moves it there.
 		fireEvent.pointerEnter(b, { pointerType: 'mouse' });
 		act(() => {
 			vi.advanceTimersByTime(200);

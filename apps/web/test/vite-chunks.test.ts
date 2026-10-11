@@ -1,5 +1,4 @@
 // @vitest-environment node
-// The animation spec requires anime.js in its own cacheable web chunk.
 import { describe, expect, it } from 'vitest';
 import config from '../vite.config.ts';
 

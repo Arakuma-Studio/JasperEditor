@@ -1,6 +1,3 @@
-// Motion path gaps closed by keyframes-blend (happy-dom): the Anchor Point path (drawn through the layer map, keys
-// edited in layer space), snapping of key drags, multi-key drags (one undo entry), Pen / Ctrl-click vertex
-// conversion and pulling Continuous Bezier handles out of a corner.
 import { buildRenderSnapshot, type Keyframe, type Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';

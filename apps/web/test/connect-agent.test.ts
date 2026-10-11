@@ -1,4 +1,3 @@
-// Help ▸ Connect an AI Agent… (wp-mcp): the configuration snippets for Claude Code, Codex CLI and Cursor.
 import { describe, expect, it } from 'vitest';
 import { buildAgentSnippets, resolveMcpLaunch } from '../src/shell/connect-agent.tsx';
 

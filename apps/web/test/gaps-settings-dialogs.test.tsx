@@ -1,5 +1,3 @@
-// Workstream gaps: Sequence Settings (TL-11), Project Settings (PRJ-4), the display-format UI wrapper and proxies UI
-// helpers (PRJ-8).
 import { EngineClient } from '@jasper/engine-client';
 import { projectSettingsOf, type Sequence } from '@jasper/project';
 import { DialogHost, openDialog } from '@jasper/ui';
@@ -74,7 +72,6 @@ describe('Project Settings', () => {
 		act(() => void openDialog(PROJECT_SETTINGS_DIALOG, { session, engine }));
 		await screen.findByTestId('project-settings-dialog');
 		await waitFor(() => expect(screen.getByText(/Renderer \(preview\)/)).toBeTruthy());
-		// Change the video display format through the dialog's own command path: apply what OK applies.
 		const r = session.apply({
 			label: 'Project Settings',
 			origin: 'user',

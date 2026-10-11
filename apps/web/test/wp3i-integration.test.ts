@@ -1,4 +1,3 @@
-// WP-3I export file-name contract.
 import { describe, expect, it } from 'vitest';
 import { sanitizeFileName } from '../src/export/settings.ts';
 

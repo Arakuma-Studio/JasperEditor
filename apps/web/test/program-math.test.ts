@@ -49,7 +49,7 @@ describe('viewport (S03:PGM-010…014)', () => {
 	});
 });
 
-// A layer rotated 37° with 150 %/80 % non-uniform scale and a 20 % left crop (AC-XF-1).
+// A layer rotated 37° with 150 %/80 % non-uniform scale and a 20 % left crop.
 const V: LayerTransformValues = {
 	position: [900, 500],
 	anchor: [320, 180],
@@ -61,7 +61,7 @@ const V: LayerTransformValues = {
 	flipV: false,
 };
 const RECT = { x: 128, y: 0, width: 512, height: 360 };
-// The eight points and their opposites in the specified cropped fixture (AC-XF-1 / XF-031).
+// The eight points and their opposites in the cropped fixture.
 const HANDLES: readonly [HandleId, Vec2, Vec2][] = [
 	['nw', [128, 0], [640, 360]],
 	['n', [384, 0], [384, 360]],
@@ -95,7 +95,6 @@ describe('on-canvas transform math (S03 §9)', () => {
 		expect(hitTest(layers, [75, 75], new Set(['V2']))).toBe('a');
 		expect(hitTest(layers, [10, 10])).toBe('a');
 		expect(hitTest(layers, [300, 300])).toBeNull();
-		// mirrored winding still hits
 		expect(pointInQuad([5, 5], [...q(0, 0, 10)].reverse())).toBe(true);
 	});
 
@@ -120,7 +119,6 @@ describe('on-canvas transform math (S03 §9)', () => {
 				const got = screenOf(next, qh, zoom);
 				const exp: Vec2 = [wanted[0] * zoom, wanted[1] * zoom];
 				expect(Math.hypot(got[0] - exp[0], got[1] - exp[1])).toBeLessThanOrEqual(1);
-				// edges change only their own axis
 				if (h === 'e' || h === 'w') expect(r.scale).toBeCloseTo(V.scale, 9);
 				if (h === 'n' || h === 's') expect(r.scaleWidth).toBeCloseTo(V.scaleWidth, 9);
 			}
@@ -157,7 +155,6 @@ describe('on-canvas transform math (S03 §9)', () => {
 		expect(r.scale).toBeLessThan(205);
 		const through = scaleFromHandle({ values: u, rect: RECT, handle: 'se', pointer: [0, 0] });
 		expect(through.scale).toBe(0.1);
-		// Shift inverts uniform → free scaling
 		expect(
 			scaleFromHandle({ values: u, rect: RECT, handle: 'se', pointer: doubled, invertUniform: true })
 				.uniformScale,
@@ -190,7 +187,6 @@ describe('on-canvas transform math (S03 §9)', () => {
 			expect(b[0]).toBeCloseTo(a[0], 9);
 			expect(b[1]).toBeCloseTo(a[1], 9);
 		}
-		// the crosshair lands where the pointer moved
 		const cross = applyMatrix(layerMatrix(next), anchor);
 		expect(cross[0]).toBeCloseTo(V.position[0] + 37, 9);
 		expect(cross[1]).toBeCloseTo(V.position[1] - 12, 9);

@@ -122,7 +122,6 @@ describe('EngineImportService', () => {
 			origin: 'sidecar',
 		});
 		expect(crudo.sourceRange).toBeUndefined();
-		// The sidecar was read, not uploaded.
 		expect(engine.requests.filter((r) => r.method === 'POST' && r.path === '/api/uploads')).toHaveLength(2);
 		expect(session.getState().history.entries).toHaveLength(1);
 	});
@@ -162,7 +161,6 @@ describe('EngineImportService', () => {
 		expect(second.mediaIds).toContain(first.mediaIds[0]);
 		const doc = session.getCommitted();
 		expect(Object.keys(doc.media)).toHaveLength(2);
-		// "Use existing" does not add another project item for the duplicate.
 		expect(Object.values(doc.items).filter((i) => i.kind === 'media')).toHaveLength(2);
 	});
 
@@ -191,7 +189,6 @@ describe('EngineImportService', () => {
 		const video = Object.values(s2.clips).find((c) => c.kind === 'video')!;
 		expect(video.duration).toBe(250);
 		expect(session.getState().history.entries).toHaveLength(1);
-		// The second drop does not ask again (the sequence is no longer empty).
 		engine.media.set('c.mp4', registered('c.mp4', { width: 640, height: 480 }));
 		await service.importFiles(
 			{ files: [file('c.mp4')] },

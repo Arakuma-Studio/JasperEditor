@@ -1,7 +1,3 @@
-// Lumetri UI (S06 §9 test 7, CGU-001/002/004, LUT-002): the panel creates the instance on first edit (one history
-// entry), a scrub is one entry, the curves editor adds/moves/removes points and writes a sorted curve, the wheels
-// write the unit disc, Effect Controls hosts the custom editor and hides the curve/wheel rows, Copy/Paste Grade and
-// "Apply as Look" are one undo step.
 import { EngineClient } from '@jasper/engine-client';
 import type { Clip, EffectInstance } from '@jasper/project';
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
@@ -98,12 +94,10 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 		const [fx] = lumetriOf(session, id);
 		expect(fx).toBeTruthy();
 		expect(param<number>(fx!, 'exposure')).toBeGreaterThan(0);
-		// A drag with many moves on another slider is still exactly one entry and edits the same instance.
 		drag(screen.getByTestId('lumetri-contrast'), 50, [55, 60, 70, 80]);
 		expect(entries(session)).toBe(before + 2);
 		expect(lumetriOf(session, id)).toHaveLength(1);
 		expect(param<number>(lumetriOf(session, id)[0]!, 'contrast')).toBeGreaterThan(0);
-		// Undo removes the contrast change only; undo again removes the instance.
 		act(() => void session.undo());
 		expect(param(lumetriOf(session, id)[0]!, 'contrast')).toBe(0);
 		act(() => void session.undo());
@@ -140,7 +134,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 		const svg = () => screen.getByTestId('lumetri-curve');
 		const curve = () => param<{ curve: number[][] }>(lumetriOf(session, id)[0]!, 'curveMaster').curve;
 		const before = entries(session);
-		// Add a control point.
 		act(() => {
 			fireEvent.pointerDown(svg(), { clientX: 100, clientY: 50, button: 0 });
 			fireEvent.pointerUp(window, { clientX: 100, clientY: 50 });
@@ -148,7 +141,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 		expect(curve()).toHaveLength(3);
 		const added = curve()[1]!;
 		expect(entries(session)).toBe(before + 1);
-		// Drag the new point to the right and up: one entry, still sorted.
 		act(() => {
 			fireEvent.pointerDown(svg(), { clientX: 100, clientY: 50, button: 0 });
 			for (const x of [110, 120]) fireEvent.pointerMove(window, { clientX: x, clientY: 40 });
@@ -158,7 +150,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 		expect(curve()[1]![0]).toBeGreaterThan(added[0]!);
 		expect(curve()[1]![1]).toBeGreaterThan(added[1]!);
 		expect(entries(session)).toBe(before + 2);
-		// A point dragged past its neighbour stops before it (x stays strictly increasing).
 		act(() => {
 			fireEvent.pointerDown(svg(), { clientX: 30, clientY: 150, button: 0 });
 			fireEvent.pointerMove(window, { clientX: 190, clientY: 150 });
@@ -168,7 +159,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 		expect(pts).toHaveLength(4);
 		expect(pts.map((p) => p[0])).toEqual([...pts.map((p) => p[0])].sort((a, b) => a - b));
 		expect(entries(session)).toBe(before + 3);
-		// Dragging out of the box removes the point.
 		act(() => {
 			fireEvent.pointerDown(svg(), { clientX: 120, clientY: 40, button: 0 });
 			fireEvent.pointerMove(window, { clientX: 500, clientY: 50 });
@@ -176,7 +166,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 		});
 		expect(curve()).toHaveLength(3);
 		expect(entries(session)).toBe(before + 4);
-		// Double-click removes a point; clicking a point without moving adds no entry.
 		const n = entries(session);
 		act(() => {
 			fireEvent.pointerDown(svg(), { clientX: 118, clientY: 150, button: 0 });
@@ -191,7 +180,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 			[1, 1],
 		]);
 		expect(entries(session)).toBe(n + 1);
-		// The end points cannot be removed below two points.
 		act(() => {
 			fireEvent.doubleClick(svg(), { clientX: 0, clientY: 200 });
 		});
@@ -228,7 +216,6 @@ describe('Lumetri Color panel (S06:CGU-001)', () => {
 			fireEvent.doubleClick(disc);
 		});
 		expect(param(lumetriOf(session, id)[0]!, 'shadowsWheel')).toEqual([0, 0]);
-		// The level slider under the wheel.
 		drag(screen.getByTestId('lumetri-midtonesWheel-level'), 100, []);
 		expect(param(lumetriOf(session, id)[0]!, 'midtonesLevel')).toBe(100);
 	});

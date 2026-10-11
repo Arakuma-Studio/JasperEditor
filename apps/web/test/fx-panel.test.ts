@@ -1,5 +1,3 @@
-// fx framework in the web app (wave 1): Effects-panel bins ("Video Effects ▸ Sapphire Glows ▸ S_Glow") and the GPU
-// badge filter, and the point-handle geometry of the Program monitor overlay (normalised layer point ↔ sequence px).
 import {
 	createEffectRegistry,
 	defaultEffectRegistry,

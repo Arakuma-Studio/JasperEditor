@@ -1,8 +1,3 @@
-// External clipboard content (wp-clipboard-2, S01:CLB-010): files and image data from the paste event, the async
-// Clipboard API (Edit ▸ Paste) and the desktop bridge are told apart; image data is uploaded as "Pasted image
-// <time>" and placed at the playhead on the lowest targeted tracks with the Timeline or Program focused (one
-// "Import 1 file" step), files keep their names (desktop paths register in place), plain text becomes a 5 s
-// centred text clip on the lowest targeted video track (one "Paste Text" step); text fields keep their paste.
 import { EngineClient } from '@jasper/engine-client';
 import {
 	buildClipsPayload,
@@ -112,7 +107,6 @@ describe('telling external content apart (CLB-010)', () => {
 		expect(c.images.map((f) => f.name)).toEqual(['image.png']);
 		expect(c.files.map((f) => f.name)).toEqual(['holiday.png', 'clip.mp4']);
 		expect(c.text).toBeNull();
-		// Desktop: Files with a path register in place, image data stays data.
 		const desk = externalContentOf({ ...data, paths: ['/m/a.mov'] }, (f) =>
 			f.name === 'image.png' ? '' : `/m/${f.name}`,
 		);
@@ -272,7 +266,6 @@ describe('pasting images and files (CLB-010, LIFE-010)', () => {
 			const items = Object.values(p.session.getCommitted().items).filter((i) => i.kind === 'media');
 			expect(items.map((i) => i.name)).toEqual(['clip.mp4']);
 			expect(Object.keys(p.seq().clips)).toHaveLength(0);
-			// The Timeline places video and its audio on the lowest targeted tracks.
 			await runCommand('edit.paste', p.ctxFor('timeline'), {
 				clipboard: { html: null, text: null, files: 1, blobs: [mp4] },
 			});

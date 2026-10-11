@@ -1,5 +1,5 @@
-// Waveform stream lookup: clips carry the container stream index of their audio (S01:CLP-014) and the engine
-// keys peaks by that same index (peaks generator v2, WP-3I). A movie's audio is usually container stream 1.
+// Clips and the engine key waveform peaks by the container stream index.
+// A movie's audio is usually container stream 1.
 import type { MediaAsset } from '@jasper/project';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { peaksFor } from '../src/panels/timeline/media/media-cache.ts';

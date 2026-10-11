@@ -1,6 +1,3 @@
-// edit-ux: keyframe lanes / rubber bands on timeline clips — model (value ↔ y incl. the volume scale, band, keys,
-// roving dots, expressions, fades) and the lane component's gestures (drag the band, Ctrl-click / Pen add, drag a
-// key, fade handles, Pen marquee, Delete), each one History entry.
 import { EngineClient } from '@jasper/engine-client';
 import type { Clip } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';

@@ -1,6 +1,3 @@
-// Wave-4 transition polish in the web app (component, happy-dom): the Transition section marks expensive transitions
-// like expensive effects, edits image params with the media picker, seeds the Custom Completion curve, and the
-// Program monitor shows draggable crosshairs for the point params of the selected transition.
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';

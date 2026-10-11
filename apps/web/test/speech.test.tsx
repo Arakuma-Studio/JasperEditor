@@ -1,8 +1,3 @@
-// wp speech UI: the Generate Transcript dialog builds the engine request (model, language, translate, speakers) and
-// downloads a missing model after showing its licence; a finished job commits ONE "Generate Transcript" transaction
-// (`transcript.attach`) that the Text panel's sequence transcript reads; a sequence-mix result is distributed to the
-// clip media and refused when the sequence changed; Preferences ▸ Transcription lists, downloads and deletes models; the
-// menus carry the entries.
 import type { EngineJob, SpeechModel, TranscriptionResult } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';

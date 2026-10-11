@@ -1,6 +1,3 @@
-// Timeline UI commands (S02:TL-903) against a real session: targeting, playhead trims, In/Out,
-// lift/extract, markers, selection, nudges. Acceptance: AC-8c, AC-11d, AC-13a, AC-13b, AC-13d,
-// AC-15a/b, AC-16b.
 import { EngineClient } from '@jasper/engine-client';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -210,7 +207,6 @@ describe('playhead trims (TL-549, AC-11d)', () => {
 	it('E extends the selected edit point to the playhead with its trim type', async () => {
 		const h = harness({ pxPerFrame: 4 });
 		h.apply([solid(0, 100, 'V1'), solid(100, 100, 'V1')]);
-		// Select the edit point by clicking the edge (TL-547), switch to roll with Shift+T.
 		h.controller.pointerDown(h.pt(h.x(100) - 1, h.rowY('V1')));
 		h.controller.pointerUp(h.pt(h.x(100) - 1, h.rowY('V1')));
 		const handle = {
@@ -222,7 +218,6 @@ describe('playhead trims (TL-549, AC-11d)', () => {
 		};
 		const { registerTimelineInstance } = await import('../src/panels/timeline/env.tsx');
 		const off = registerTimelineInstance(handle);
-		// Toggle Trim Type cycles Ripple → Roll → Trim (Premiere): Trim → Ripple → Roll.
 		await h.run('timeline.toggleTrimType');
 		expect(h.ui.getState().editPoints[0]!.type).toBe('ripple');
 		await h.run('timeline.toggleTrimType');
@@ -255,7 +250,6 @@ describe('In/Out, lift and extract (TL-690…766, AC-13d, AC-15a/b)', () => {
 		expect(h.seq().outPoint).toBe(251);
 		h.session.undo();
 		expect(h.seq().outPoint).toBe(200);
-		// Marking In after Out clears Out (TL-760).
 		h.session.transport.seek(300);
 		await h.run('timeline.markIn');
 		expect([h.seq().inPoint, h.seq().outPoint]).toEqual([300, null]);

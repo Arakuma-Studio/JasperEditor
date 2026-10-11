@@ -156,7 +156,6 @@ export function setupTimeline(opts: { pxPerFrame?: number; scrollFrame?: number 
 		button: 0,
 		...mods,
 	});
-	/** Drag from (x0,y0) to (x1,y1) in a few pointer moves. */
 	const drag = (
 		x0: number,
 		y0: number,

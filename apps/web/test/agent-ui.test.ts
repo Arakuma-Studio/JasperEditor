@@ -1,4 +1,3 @@
-// mcp-cli live-UI automation (agent-bridge/ui-input.ts, ui-elements.ts): chord parsing, key codes and roles.
 import { describe, expect, it, vi } from 'vitest';
 import { runUiAction } from '../src/agent-bridge/ui-automation.ts';
 import { accessibleName, implicitRole, isInteractive } from '../src/agent-bridge/ui-elements.ts';

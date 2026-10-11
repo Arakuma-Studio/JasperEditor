@@ -1,5 +1,3 @@
-// Text animators in the web app (S11:TXA-020…024): drop side, apply/remove actions (one undo
-// step), commands, the Text Animations tab, Properties / Effect Controls, and In/Out bar gestures.
 import { EngineClient } from '@jasper/engine-client';
 import { type Clip, resolveTextAnimationWindows } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -87,14 +85,12 @@ describe('commands and menus (S11:TXA-024)', () => {
 		expect((await runCommand('text.applyAnimation', ctx, { side: 'in', preset: 'zoom' })).ran).toBe(false);
 		expect((await runCommand('text.removeAnimation', ctx, { side: 'both' })).ran).toBe(true);
 		expect(textOf(session, a!).textAnimation).toBeUndefined();
-		// compression is reported
 		await runCommand('text.applyAnimation', ctx, {
 			clipIds: [a!],
 			side: 'both',
 			preset: 'fade',
 			durationFrames: 50,
 		});
-		// with nothing selected, agents still remove by clipIds; without them the user is told to select
 		act(() => session.select('timeline', []));
 		expect((await runCommand('text.removeAnimation', ctx, { clipIds: [a!], side: 'out' })).ran).toBe(true);
 		expect(textOf(session, a!).textAnimation?.out).toBeUndefined();
@@ -121,11 +117,9 @@ describe('Text Animations tab (S11:TXA-020)', () => {
 		expect(screen.queryByRole('listitem', { name: /^Mask Reveal \(/ })).toBeNull();
 		fireEvent.doubleClick(screen.getByRole('listitem', { name: /^Slide Up \(/ }));
 		expect(textOf(session, id!).textAnimation?.in?.preset).toBe('slide-up');
-		// the Out chip makes double-click apply as Out
 		fireEvent.click(screen.getByRole('button', { name: 'Out' }));
 		fireEvent.keyDown(screen.getByRole('listitem', { name: /^Slide Down \(/ }), { key: 'Enter' });
 		expect(textOf(session, id!).textAnimation?.out?.preset).toBe('slide-down');
-		// dragging a card carries the preset
 		const dt = dataTransfer();
 		fireEvent.dragStart(screen.getByRole('listitem', { name: /^Slide Left \(/ }), { dataTransfer: dt });
 		expect(readTextAnimationDrag(dt)).toEqual({ preset: 'slide-left', version: 1 });
@@ -142,9 +136,7 @@ describe('Properties ▸ Text Animation (S11:TXA-021)', () => {
 		const popover = screen.getByTestId('text-anim-popover-in');
 		act(() => fireEvent.click(within(popover).getByRole('option', { name: /Blur/ })));
 		for (const id of ids) expect(textOf(session, id).textAnimation?.in?.preset).toBe('blur');
-		// different presets on the selection: mixed, no param rows
 		act(() => void applyTextAnimation(session, [ids[1]!], { side: 'in', preset: 'pop' }));
-		// reset re-applies the preset (defaults) to every selected clip
 		act(() => fireEvent.click(screen.getByTestId('text-anim-picker-in')));
 		act(() =>
 			fireEvent.click(
@@ -187,7 +179,6 @@ describe('Effect Controls (S11:TXA-022)', () => {
 		});
 		expect(textOf(session, id!).textAnimation?.in?.durationFrames).toBe(27);
 		expect(labels(session)).toHaveLength(before + 1);
-		// the playhead did not move (the ruler seek is not triggered by the edge)
 		expect(session.transport.getState().frame).toBe(5);
 	});
 	it('a compressed bar edge follows the pointer (the drag inverts the compression)', () => {

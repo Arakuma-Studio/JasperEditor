@@ -1,4 +1,3 @@
-// Workstream `previews`: the render bar model and the preview status store of the editor.
 import type { PreviewStatus, PreviewStatusRequest } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import type { RenderPreviewSegment } from '@jasper/project';
@@ -77,11 +76,9 @@ describe('preview status store', () => {
 		previewStatusStore.ensure(settings, ['a', 'b'], []);
 		await vi.waitFor(() => expect(previewStatusStore.get(settings)).not.toBeNull());
 		expect([...previewStatusStore.get(settings)!.video]).toEqual(['a']);
-		// already asked: no new request
 		previewStatusStore.ensure(settings, ['a', 'b'], []);
 		await new Promise((r) => setTimeout(r, 100));
 		expect(calls).toHaveLength(1);
-		// a render finished: green at once
 		previewStatusStore.onEvent({
 			id: 1,
 			createdAt: '',
@@ -89,7 +86,6 @@ describe('preview status store', () => {
 			payload: { formatKey: 'ffffffffffffffff', hash: 'b', kind: 'video' },
 		} as never);
 		expect(previewStatusStore.get(settings)!.video.has('b')).toBe(true);
-		// Delete Render Files: everything is asked again
 		previewStatusStore.onEvent({
 			id: 2,
 			createdAt: '',

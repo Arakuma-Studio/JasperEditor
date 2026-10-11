@@ -1,6 +1,3 @@
-// UI-6 i18n (workstream gaps): every UI string the build externalises and every model name the UI shows has a Spanish
-// translation with the same placeholders; the transform wraps the right positions and leaves ids, classes and data
-// alone; the runtime fills placeholders.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { COMMAND_CATALOG, defaultRegistries, TRANSITION_SPECS } from '@jasper/project';

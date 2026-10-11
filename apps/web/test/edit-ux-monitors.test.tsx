@@ -1,5 +1,3 @@
-// edit-ux: Program/Source monitor view features — guides (add/move/remove, templates, persistence, snapping),
-// rulers, the comparison layout, the dropped-frame counter, the Button Editor rows and the monitor commands.
 import { EngineClient } from '@jasper/engine-client';
 import { TransportStore } from '@jasper/session';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -55,7 +53,6 @@ describe('guides', () => {
 		const t = buildSnapTargets({ width: 1920, height: 1080, guides: guidesOf('seq_a') });
 		expect(t.x.filter((x) => x.kind === 'guide').map((x) => x.value)).toEqual([640, 1280]);
 		expect(t.y.filter((x) => x.kind === 'guide').map((x) => x.value)).toEqual([360, 720]);
-		// Persisted state survives a reload through the tolerant parser.
 		const re = parseMonitorExtras(JSON.parse(JSON.stringify(monitorExtras.getState())));
 		expect(re.guides.seq_a).toHaveLength(4);
 		expect(re.templates.map((x) => x.name)).toEqual(['Mine']);

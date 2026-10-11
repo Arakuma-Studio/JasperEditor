@@ -1,6 +1,3 @@
-// Properties ▸ Tracking section, the Apply Tracking dialog and the corner-pin Effect Controls editor (S09:TRU-001,
-// TRU-004) with a fake engine behind <EngineProvider>: add → Track Forward (progress, "Track") → Apply (one entry)
-// → "Driven by tracker" with Re-apply / Unlink, and the non-convex warning.
 import type { Clip, EffectInstance, EffectSpec } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -72,7 +69,6 @@ describe('Corner pin editor', () => {
 		unmount();
 		mountEditor(session, target);
 		expect(screen.queryByTestId('corner-pin-driven')).toBeNull();
-		// keyframes stay after unlinking
 		const fx = (seqOf(session).clips[target] as Clip & { effects: EffectInstance[] }).effects.find(
 			(e) => e.effectId === 'jasper.corner-pin',
 		)!;

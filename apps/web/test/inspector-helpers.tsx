@@ -1,4 +1,3 @@
-// Test helpers for the WP-2D inspector panels: an in-memory EditorSession with solid clips.
 import { mgRegistry } from '@jasper/mg-templates';
 import { type Clip, createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
@@ -17,7 +16,6 @@ export function makeSession(): EditorSession {
 	});
 }
 
-/** Adds solids at the given starts (each `duration` frames long) on V1 and returns their ids. */
 export function addSolids(session: EditorSession, starts: number[], duration = 50): string[] {
 	const r = session.apply({
 		label: 'setup',

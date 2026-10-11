@@ -1,6 +1,3 @@
-// S10 §8 tests 1–3 and 6: timeline transition geometry and hit-testing, gesture → command mapping through
-// the TimelineController, drop resolution with handle feedback, and the Ctrl+D family.
-
 import { EngineClient } from '@jasper/engine-client';
 import { type Sequence, transitionSpec } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -121,7 +118,6 @@ describe('gesture → command mapping (S10 §8 test 2, TUI-012…015)', () => {
 		expect(t.session.getDrawn()).toEqual(doc);
 		t.controller.pointerUp(t.pt(t.x(110), y));
 		expect(t.history().length).toBe(before + 1);
-		// A drag that ends where it started records nothing.
 		t.drag(t.x(130), y, t.x(131), y);
 		expect(t.history().length).toBe(before + 1);
 	});
@@ -159,7 +155,6 @@ describe('drop resolution (S10 §8 test 3, TUI-021…024)', () => {
 		expect(drop(t, x + 10)).toMatchObject({ alignment: 'start-at-cut' });
 		expect(drop(t, t.x(0) + 5)).toMatchObject({ oneSided: 'in' });
 		expect(drop(t, t.x(240) - 3)).toMatchObject({ oneSided: 'out' });
-		// Wrong medium: no target.
 		expect(drop(t, x, 'jasper.constant-power')).toBeNull();
 		expect(drop(t, x, 'jasper.constant-power', 30, 'audio')).toMatchObject({ cut: 120, oneSided: null });
 	});
@@ -171,7 +166,6 @@ describe('drop resolution (S10 §8 test 3, TUI-021…024)', () => {
 		if (d?.kind !== 'add') throw new Error('expected an add target');
 		expect(d.feedback.fittedDuration).toBe(15);
 		expect(d.refused).toBeNull();
-		// No handles at all → refused with the model's explanation.
 		const t2 = setupTimeline({ pxPerFrame: 2 });
 		cut(t2, 0);
 		const r = drop(t2, t2.x(120) - 10);

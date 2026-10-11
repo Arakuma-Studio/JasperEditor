@@ -1,5 +1,3 @@
-// The web project's load-scaled test timeout (vitest.config.ts): what it is on a quiet host, how it grows, where it
-// stops, and that this very test run is using it.
 import { describe, expect, it } from 'vitest';
 import { webTestTimeoutMs } from '../vitest.config.ts';
 

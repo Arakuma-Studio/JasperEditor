@@ -1,5 +1,3 @@
-// Security review AGT-1: an agent's live-UI automation cannot do what the approval gate refuses through
-// apply_commands — destructive transactions, irreversible commands — and cannot approve its own requests.
 import { AGENT_INPUT_HEADER } from '@jasper/api';
 import { JsonText } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
@@ -63,11 +61,9 @@ describe('requests the editor makes while it handles agent input (security revie
 		// The stand-in engine answers every route with the same body: what a route makes of it is not the point here.
 		const sent = (p: Promise<unknown>) => p.catch(() => undefined);
 
-		// The user's own click: an ordinary request.
 		await del();
 		expect(last()).toMatchObject({ marked: false });
 
-		// A `ui_click` on Delete: the request says it comes from agent input, during the action and in its aftermath.
 		await runAgentInput(del);
 		expect(last()).toMatchObject({ url: '/api/effect-presets/fxp_1', marked: true });
 		await del();
@@ -90,7 +86,6 @@ describe('requests the editor makes while it handles agent input (security revie
 			expect(last().marked).toBe(true);
 		});
 
-		// After the grace period (or a real key press) requests are the user's again.
 		resetAgentInputForTests();
 		await del();
 		expect(last().marked).toBe(false);
@@ -104,7 +99,6 @@ describe('session guard', () => {
 		const r = await runAgentInput(async () => s.apply(deleteSequence(s)));
 		expect(r).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
 		expect(Object.keys(s.getState().document.sequences)).toHaveLength(1);
-		// Non-destructive edits by agent UI input are fine.
 		const m = await runAgentInput(async () =>
 			s.apply({ label: 'Marker', origin: 'user', commands: [{ type: 'marker.add', frame: 1 }] }),
 		);

@@ -1,7 +1,5 @@
-// polish: code-split panels (and the editor shell) mount through state, not through a Suspense retry. A retry
-// renders in a lane React never lets expire and starts over whenever another update arrives; with updates arriving
-// faster than the panel renders, it never appeared (seen in the e2e suite on a busy host: the Project panel and the
-// Program monitor stayed skeletons for three minutes, and each abandoned attempt left eight <audio> elements).
+// Frequent updates can starve Suspense retries because their render lane never expires.
+// State-based loading must still mount slow panels while other updates arrive.
 import { cleanup, render, screen } from '@testing-library/react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -12,9 +10,7 @@ afterEach(() => cleanup());
 
 function busy(ms: number) {
 	const t = performance.now();
-	while (performance.now() - t < ms) {
-		// spin: a render that takes real time
-	}
+	while (performance.now() - t < ms) {}
 }
 function Slow() {
 	busy(3);

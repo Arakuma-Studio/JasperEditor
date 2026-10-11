@@ -1,5 +1,3 @@
-// polish: every menu entry (menubar, Workspaces menu, panel menus) and every default key binding resolves to a
-// registered command. An entry may be limited to a runtime (File ▸ Exit is desktop-only), but it is still wired.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';

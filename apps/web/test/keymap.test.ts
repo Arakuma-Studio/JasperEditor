@@ -26,7 +26,7 @@ describe('default keymap (S02:TL-903, R-PUI §16, S05:KB-010/011/013)', () => {
 				if (!key) continue;
 				const k = `${b.scope}|${normalizeChord(key)}`;
 				const prev = seen.get(k);
-				// edit-ux: a contextual binding shares its chord on purpose (first enabled wins); it must come first.
+				// A contextual binding shares its chord intentionally: the first enabled binding wins.
 				if (prev && prev !== b.command && !b.contextual && !contextual.has(k))
 					dups.push(`${k}: ${prev} vs ${b.command}`);
 				if (b.contextual && prev && prev !== b.command && !contextual.has(k))

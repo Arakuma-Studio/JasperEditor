@@ -1,4 +1,3 @@
-// Workstream gaps (UI-4): the new Preferences pages and the behaviour behind them.
 import { EngineClient } from '@jasper/engine-client';
 import { DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';

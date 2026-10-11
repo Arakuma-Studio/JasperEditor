@@ -31,7 +31,6 @@ describe('indexed timeline transition queries', () => {
 			}
 		}
 		expect(transitionsInRange(index, 'missing', 0, 100)).toEqual([]);
-		// Caller-supplied maps retain their order and do not require pre-indexed lists.
 		const unsorted = [...list].reverse();
 		expect(transitionsInRange(new Map([[row.trackId, unsorted]]), row.trackId, 0, 100)).toEqual(
 			unsorted.filter((g) => g.end > 0 && g.start < 100),

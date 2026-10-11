@@ -1,6 +1,3 @@
-// wp interchange UI: File ▸ Import routes timeline documents to the engine and adds the fragment in one transaction
-// (offline media as placeholders, then Link Media); File ▸ Export ▸ <format> builds the engine request, follows the
-// job and shows the report; the menus carry the entries.
 import type { EngineJob, InterchangeExportResult } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { importTimeline } from '@jasper/interchange';
@@ -92,7 +89,6 @@ describe('interchange UI', () => {
 		expect(checkInvariants(doc, { effects: defaultRegistries().effects })).toEqual([]);
 		const offline = offlineMedia(session);
 		expect(offline.length).toBe(2);
-		// Link Media is offered (File menu and Project panel)
 		const ctx = createCommandContext({
 			engine,
 			session,
@@ -100,7 +96,6 @@ describe('interchange UI', () => {
 			toast: () => {},
 		});
 		expect(getCommand('project.linkMedia')!.when!(ctx)).toBe(true);
-		// relink one placeholder to a registered file
 		const a = offline.find((m) => m.originalName === 'A001.mov')!;
 		const reg = {
 			mediaKey: 'mk_a001',
@@ -123,7 +118,6 @@ describe('interchange UI', () => {
 		expect(linked.fingerprint).toBe('sha256-partial:abc');
 		expect(linked.locators[0]).toEqual({ type: 'engine-store', engineId: 'local', key: 'mk_a001' });
 		expect(offlineMedia(session).map((m) => m.originalName)).toEqual(['B002.mov']);
-		// one undo removes the whole import
 		session.undo();
 		session.undo();
 		expect(Object.keys(session.getCommitted().sequences).length).toBe(before);

@@ -1,4 +1,3 @@
-// audio-mix (web): fader law, prefs parsing, automation gestures, voice-over helpers, workspaces and commands.
 import { describe, expect, it } from 'vitest';
 import { Gesture } from '../src/audio/automation.ts';
 import { dbToFader, faderToDb } from '../src/audio/components/controls.tsx';

@@ -1,7 +1,3 @@
-// edit-structure UI commands against a real session: Group / Ungroup and Alt-selection, Add Frame Hold, Insert Frame
-// Hold Segment, Join Through Edits, Go to Gap, Make Subsequence, Unnest, Reveal Nested Sequence, Match Frame through
-// nests, synthetic New Items, Remove Unused, the nest/individual placement toggle and the Source monitor's sequence
-// and synthetic sources.
 import { EngineClient } from '@jasper/engine-client';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {

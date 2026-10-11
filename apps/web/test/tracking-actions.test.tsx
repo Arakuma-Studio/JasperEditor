@@ -1,6 +1,3 @@
-// Tracking actions and the Program overlay (S09:TRU-001/002, TRK-010, TRK-024) against a fake engine: add a
-// tracker, run a job (request body, live progress, ONE "Track" entry), partial re-track re-applies to linked
-// targets inside the same entry, stop, engine errors, and overlay drags = ONE gesture each.
 import { buildRenderSnapshot, type ClipTracker, type Quad } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
@@ -51,7 +48,6 @@ describe('tracking actions', () => {
 			options: { features: 'inside', refineEdges: true },
 		});
 		expect(body.projectId).toBe(session.projectId);
-		// live progress: geometry + trail, and the playhead follows the tracked frame
 		handleEngineEvent(session, engine, {
 			id: 1,
 			createdAt: 'x',
@@ -72,7 +68,6 @@ describe('tracking actions', () => {
 		expect(run.trail).toHaveLength(1);
 		expect(session.transport.getState().frame).toBe(12);
 		expect(labels(session)).toEqual(['Add Planar Tracker']);
-		// the job ends → the result is fetched and committed once (duplicate events are ignored)
 		const job = engine.finish(jobId!, planarResult(0, 60, REF, id));
 		handleEngineEvent(session, engine, { id: 2, createdAt: 'x', type: 'job.finished', payload: job });
 		handleEngineEvent(session, engine, { id: 3, createdAt: 'x', type: 'job.finished', payload: job });
@@ -123,7 +118,6 @@ describe('tracking actions', () => {
 			direction: 'forward',
 			range: { startFrame: 20, endFrame: 60 },
 		});
-		// the re-track shifts the quad by +100 px from frame 20 on
 		const shifted = planarResult(20, 40, REF.map((p) => [p[0] + 100, p[1]]) as Quad);
 		const job = engine.finish(jobId!, shifted);
 		handleEngineEvent(session, engine, { id: 1, createdAt: 'x', type: 'job.finished', payload: job });
@@ -131,10 +125,8 @@ describe('tracking actions', () => {
 		expect(labels(session)).toEqual(['Add Planar Tracker', 'Track', 'Apply Tracking', 'Track']);
 		const after = pinKeys().map((k) => k.value[0]);
 		expect(after).toHaveLength(30);
-		// frames before the playhead are untouched, frames from it on follow the new samples
 		expect(after.slice(0, 20)).toEqual(before.slice(0, 20));
 		expect(after[25]! - before[25]!).toBeCloseTo(100 / 1920, 6);
-		// one undo restores the previous keyframes and samples together
 		session.undo();
 		expect(pinKeys().map((k) => k.value[0])).toEqual(before);
 	});

@@ -49,10 +49,9 @@ describe('Effect Controls (S03 §13, S05:ECP)', () => {
 			[10, 100],
 			[30, 40],
 		]);
-		// EC-006: the row shows the value resolved at the playhead (frame 50 = halfway).
+		// Frame 50 is halfway between the keys.
 		act(() => session.transport.seek(50));
 		await waitFor(() => expect(screen.getByTestId('prop-opacity').textContent).toBe('70.0%'));
-		// Keyframe glyphs in the mini-timeline; navigator jumps between keys.
 		act(() => {
 			fireEvent.click(screen.getByTestId('kf-next-opacity'));
 		});
@@ -119,7 +118,6 @@ describe('Effect Controls (S03 §13, S05:ECP)', () => {
 		});
 		expect(opacityOf(session, id).keyframes[0]!.time).toBeGreaterThan(originalTime);
 		expect(session.getState().history.entries.length).toBe(entries + 1);
-		// Delete removes the selected key.
 		act(() => {
 			fireEvent.keyDown(screen.getByTestId('ec-content'), { key: 'Delete' });
 		});

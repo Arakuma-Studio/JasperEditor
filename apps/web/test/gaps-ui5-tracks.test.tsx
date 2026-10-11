@@ -1,4 +1,3 @@
-// Workstream gaps: Edit ▸ Find…, Clip ▸ Rename…, File ▸ Exit, Sequence ▸ Add / Delete Tracks… and track height presets.
 import { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import { DialogHost } from '@jasper/ui';
@@ -158,7 +157,6 @@ describe('Add / Delete Tracks', () => {
 		expect(seq().videoTracks).toHaveLength(5);
 		expect(seq().audioTracks.at(-1)!.channelFormat).toBe('5.1');
 		expect(seq().submixTracks).toHaveLength(1);
-		// The clip that was on V1 moved up to V3 (two tracks inserted before it).
 		const v1clip = Object.values(seq().clips).find((c) => c.kind === 'video')!;
 		expect(seq().videoTracks.findIndex((t) => t.id === v1clip.trackId)).toBe(2);
 		session.undo();

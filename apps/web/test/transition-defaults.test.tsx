@@ -1,9 +1,3 @@
-// M3 transition defaults (S10:TUI-031…034, wp-m3-transdefaults): the duration fields (frames / seconds against
-// the sequence rate), the per-user preference store (v1 migration, alignment, units), the Ctrl+D family and
-// "Apply to Selected Clips" with the user's alignment and the project's per-medium durations, Sequence ▸
-// Transition Defaults… (Preferences ▸ Timeline with the session), the page (project changes are one History
-// step each, preferences are not in History), the menus, the agent bridge's `preferences.get` and the
-// cross-window drag id.
 import { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
@@ -296,7 +290,6 @@ describe('agents and drag (TUI-034, TUI-021)', () => {
 						audio: 'jasper.constant-power',
 						alignment: 'start-at-cut',
 					},
-					// edit-structure: the timeline toggles agents read too (Insert Sequences as Nests, Show Through Edits).
 					timeline: { insertSequencesAsNests: true, showThroughEdits: true },
 				},
 			});

@@ -1,5 +1,3 @@
-// Workstream `time` UI: the speed band geometry and the Time Remapping / Time Interpolation / Scene Edit Detection
-// commands against a real session.
 import { EngineClient } from '@jasper/engine-client';
 import { activeRemap, RATES, type Sequence, type TimedClip, type VideoClip } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -109,7 +107,6 @@ describe('time commands', () => {
 		expect((h.seq().clips[v] as VideoClip).timeInterpolation).toBe('optical-flow');
 		await h.run('timeline.removeTimeRemapping');
 		expect((h.seq().clips[v] as VideoClip).timeRemap).toBeUndefined();
-		// One History entry per command: undo brings the remap back.
 		expect(h.session.undo().label).toBe('Remove Time Remapping');
 		expect(activeRemap(h.seq().clips[v] as TimedClip)).not.toBeNull();
 	});

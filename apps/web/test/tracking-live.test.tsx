@@ -1,7 +1,3 @@
-// Live tracking progress on the timeline strips (S09:TRU-005, TRK-010): engine `tracking.progress` events grow the
-// strip over the frames tracked so far (merged over the committed samples, gaps filled with the lower neighbour),
-// redraws are throttled (≤ 10 Hz), nothing reaches the document or History, and the committed result replaces the
-// live span when the job ends. Also: the strips use the timeline's own trim edge-zone helper (no copy).
 import { FLICKS_PER_SECOND, type Quad, type TrackerSamples } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -67,12 +63,11 @@ describe('liveSamples', () => {
 		expect(s.start).toBe(0);
 		expect(s.confidence).toHaveLength(16);
 		expect(s.data).toHaveLength(16 * 8);
-		expect(s.confidence.slice(0, 8)).toEqual(new Array(8).fill(0.9)); // committed, untouched
+		expect(s.confidence.slice(0, 8)).toEqual(new Array(8).fill(0.9));
 		expect(s.confidence[8]).toBe(0.95);
 		expect(s.confidence.slice(9, 12)).toEqual([0.6, 0.6, 0.6]); // gap 9–11: min(0.95, 0.6)
 		expect(s.confidence.slice(13, 15)).toEqual([0.3, 0.3]);
 		expect(s.confidence[15]).toBe(0.3);
-		// A new job must not inherit confidence from the previous job.
 		recordLiveProgress('tkr_a', { jobId: 'job2', frame: 40, confidence: 1, step: F30, stride: 8 });
 		expect(liveSamples('tkr_a', null)!.start).toBe(40 * F30);
 	});
@@ -108,7 +103,6 @@ describe('timeline strip during a track job', () => {
 		const engine = fakeEngine();
 		const id = addTracker(session, plate, 'planar');
 		mount(session, engine);
-		// Not tracked yet: no strip.
 		expect(document.querySelector(`[data-tracker-strip="${id}"]`)).toBeNull();
 		await act(async () => void (await startTrack(session, engine, id, 'forward')));
 		const jobId = [...engine.jobs.keys()][0]!;
@@ -141,11 +135,9 @@ describe('timeline strip during a track job', () => {
 		const live = liveSamples(id, null)!;
 		expect(live.confidence).toHaveLength(21);
 		expect(live.confidence[12]).toBe(0);
-		// Live progress never touches the document or History.
 		expect(session.getState().document).toBe(doc);
 		expect(labels(session)).toEqual(historyBefore);
 		vi.useRealTimers();
-		// The job ends: the committed samples replace the live span.
 		await act(async () => {
 			commitTrackResult(session, id, { step: F30, merge: 'replace' }, planarResult(0, 60, REF, id));
 			patchRunning(id, null);

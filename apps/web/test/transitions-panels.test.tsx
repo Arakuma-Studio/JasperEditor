@@ -1,5 +1,3 @@
-// S10 §8 test 4 (component, happy-dom): clearing a selected transition (one history entry),
-// Effects panel actions (TUI-020/031), and Transition controls in Effect Controls / Properties (TUI-040).
 import { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
@@ -95,7 +93,6 @@ describe('Effects panel transition bins (TUI-020, TUI-031)', () => {
 				<EffectsPanel instanceId="fx" visible />
 			</SessionProvider>,
 		);
-		// Drag payload.
 		const data: Record<string, string> = {};
 		const dt = {
 			setData: (k: string, v: string) => {
@@ -111,11 +108,9 @@ describe('Effects panel transition bins (TUI-020, TUI-031)', () => {
 			effectId: 'jasper.dip-to-black',
 		});
 		expect(data['text/plain']).toBe('jasper-transition:jasper.dip-to-black');
-		// Context menu: Set Selected as Default Transition.
 		fireEvent.contextMenu(document.querySelector('[data-transition-effect-id="jasper.dip-to-black"]')!);
 		fireEvent.click(screen.getByText('Set Selected as Default Transition'));
 		expect(transitionDefaults().getState().video).toBe('jasper.dip-to-black');
-		// Search filters the bins.
 		fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'power' } });
 		expect(screen.getByText('Constant Power')).toBeTruthy();
 		expect(document.querySelector('[data-transition-effect-id="jasper.dip-to-black"]')).toBeNull();
@@ -141,7 +136,6 @@ describe('Transition section (TUI-040/041)', () => {
 			fireEvent.change(screen.getByTestId('transition-alignment'), { target: { value: 'start-at-cut' } });
 		});
 		expect(seq().transitions[dissolve]!.alignment).toBe('start-at-cut');
-		// Duration: timecode entry.
 		act(() => {
 			fireEvent.click(screen.getByTestId('transition-duration').querySelector('button')!);
 		});

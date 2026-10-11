@@ -1,8 +1,3 @@
-// Clipboard in the web app (wp-clipboard, S01 §20, S03:XF-050/FX-012/EC-023): the Edit/Timeline commands per
-// focused panel against real sessions (paste at the playhead with the selection following and the playhead at
-// the end, Paste Insert, cross-project paste through the system clipboard data, read-only), the paste-source rules,
-// the Paste Attributes dialog through the dialog host, the Program monitor layer menu, and the dispatcher's native
-// paste (Ctrl/Cmd+V waits for the browser's paste event; text fields keep theirs).
 import { EngineClient } from '@jasper/engine-client';
 import {
 	buildClipsPayload,
@@ -91,7 +86,6 @@ describe('timeline copy / paste (CLB-003/004, SEL-006)', () => {
 		expect((await runCommand('edit.copy', ctx)).ran).toBe(true);
 		expect(clipboardMemory.get()?.payload.kind).toBe('clips');
 		expect(clipboardMemory.get()?.text).toBe('T0\nT30');
-		// Target V3 (lowest targeted video track) and paste at frame 100.
 		p.session.setView(p.seqId, {
 			targeting: { video: [p.seq().videoTracks[2]!.id], audio: [p.seq().audioTracks[0]!.id] },
 		});
@@ -250,9 +244,8 @@ describe('Effect Controls and Project panel clipboard (CLB-006/007)', () => {
 		const bin = doc.items[r.refs.$bin!] as { children: string[] };
 		expect(bin.children).toHaveLength(1);
 		expect(p.session.getState().selection.project.items).toEqual(bin.children);
-		expect(Object.keys(doc.media)).toHaveLength(1); // same file: the media is shared
+		expect(Object.keys(doc.media)).toHaveLength(1);
 		expect(p.history().at(-1)).toBe('Paste');
-		// Clips do not paste into the Project panel.
 		const t = p.apply([text(0, 'V1', '$t')]);
 		writeClipboard(buildClipsPayload(p.session.getCommitted(), p.seqId, [t.refs.$t!]));
 		await runCommand('edit.paste', ctx, { clipboard: null });
@@ -279,7 +272,6 @@ describe('Paste Attributes dialog (CLB-005, FX-012)', () => {
 		render(<DialogHost />);
 		const done = runCommand('edit.pasteAttributes', ctx, { clipboard: null });
 		const dialog = await screen.findByTestId('paste-attributes-dialog');
-		// Uncheck Motion: only Opacity and the blur are pasted.
 		fireEvent.click(dialog.querySelector('[data-attr="motion"] button')!);
 		fireEvent.click(screen.getByRole('button', { name: 'Paste' }));
 		await act(async () => {

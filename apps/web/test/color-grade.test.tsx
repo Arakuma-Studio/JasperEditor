@@ -1,6 +1,3 @@
-// color-grade: Lumetri panel completion (section switches, built-in looks + Looks browser, hue/saturation curves and
-// their eyedropper, HSL Secondary Set/Add/Remove Color, vignette, Apply Match gating) and the Lumetri Scopes compute
-// (every scope of a layout per frame, the shared maths).
 import type { Clip, EffectInstance } from '@jasper/project';
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -160,7 +157,6 @@ describe('Lumetri Scopes compute (worker)', () => {
 		const wf = r.images.find((i) => i.kind === 'waveform')!;
 		expect(wf.names).toEqual(['Y', 'C']);
 		expect(r.images.find((i) => i.kind === 'vectorscopeYuv')!.width).toBe(255);
-		// Something is drawn.
 		expect(wf.image.some((v, i) => i % 4 === 3 && v > 0)).toBe(true);
 	});
 	it('unclamped waveforms span −10 … 110 %', () => {

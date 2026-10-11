@@ -1,4 +1,3 @@
-// S05:PWA-004: requests that must remain outside Cache Storage are left to the browser.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';

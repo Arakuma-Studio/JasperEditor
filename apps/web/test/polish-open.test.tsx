@@ -1,5 +1,3 @@
-// polish: opening a project resolves its media with one status request per batch and one store update per answer
-// (a 2 000-item project used to send 2 000 requests and re-run every subscriber once per answer).
 import { DERIVATIVE_KINDS, MEDIA_STATUS_BATCH_MAX } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
@@ -224,14 +222,12 @@ describe('editor boot script (preload + early project fetch)', () => {
 			expect(r.early, path).toBeUndefined();
 		}
 		expect(boot('/', ok).links).toEqual([]);
-		// a failing early request is not an unhandled rejection
 		const failing = boot('/project/p1', () => Promise.reject(new Error('down')));
 		await expect(failing.early?.response).rejects.toThrow('down');
 	});
 
 	it('says so when the bundle cannot be downloaded, instead of a blank page', () => {
 		document.body.innerHTML = '<div id="root"></div>';
-		// The automatic reloads are used up (their own test below): the next failure shows the message.
 		window.sessionStorage.setItem(
 			BOOT_RETRY_KEY,
 			JSON.stringify({ fast: BOOT_RETRIES, total: BOOT_MAX_RELOADS }),
@@ -257,7 +253,6 @@ describe('editor boot script (preload + early project fetch)', () => {
 				document.body.appendChild(el);
 				el.dispatchEvent(new Event('error'));
 			};
-			// an image or a classic script that fails is not the app failing to start
 			fail(document.createElement('img'));
 			fail(document.createElement('script'));
 			expect(root.childElementCount).toBe(0);
@@ -271,11 +266,9 @@ describe('editor boot script (preload + early project fetch)', () => {
 			expect(alert?.querySelector('button')?.textContent).toBe('Recargar');
 			expect(document.activeElement).toBe(alert?.querySelector('button'));
 
-			// once something is on screen (the app, or the message itself) a later failure adds nothing
 			fail(entry);
 			expect(root.querySelectorAll('[data-testid="app-load-error"]')).toHaveLength(1);
 
-			// English without a stored language, and with a broken preference
 			for (const stored of [null, '{broken']) {
 				root.innerHTML = '';
 				if (stored === null) window.localStorage.removeItem('jasper:gaps-prefs');
@@ -292,9 +285,7 @@ describe('editor boot script (preload + early project fetch)', () => {
 	});
 
 	it('reloads by itself first: fast failures have a small budget, slow cut-off loads a larger one, a boot resets it', async () => {
-		// Regression (verify workstream): a cold desktop dev start had every module request aborted by Chromium's
-		// net::ERR_NETWORK_CHANGED (Docker interfaces coming and going on the host), and the page showed "could not
-		// load" for good; a reload loads it, and each reload is faster than the one before.
+		// Network-interface changes can abort all module requests mid-load; a reload must recover.
 		vi.useFakeTimers();
 		const reload = vi.fn();
 		const realLocation = window.location;
@@ -339,7 +330,6 @@ describe('editor boot script (preload + early project fetch)', () => {
 		};
 		try {
 			window.sessionStorage.removeItem(BOOT_RETRY_KEY);
-			// quick failures (the server is down): BOOT_RETRIES reloads, one per page however many modules fail
 			for (let i = 1; i <= BOOT_RETRIES; i++) {
 				expect(await page(100)).toMatchObject({ reloaded: true, message: false });
 				expect(reload).toHaveBeenCalledTimes(1);
@@ -349,12 +339,10 @@ describe('editor boot script (preload + early project fetch)', () => {
 			// a slow load cut off midway was making progress: it is reloaded although the quick budget is spent
 			expect(await page(BOOT_SLOW_MS + 1)).toMatchObject({ reloaded: true, message: false });
 			expect(stored()).toEqual({ fast: BOOT_RETRIES, total: BOOT_RETRIES + 1 });
-			// ... up to BOOT_MAX_RELOADS in all
 			for (let i = BOOT_RETRIES + 2; i <= BOOT_MAX_RELOADS; i++)
 				expect(await page(BOOT_SLOW_MS * 2)).toMatchObject({ reloaded: true, message: false });
 			expect(stored()).toEqual({ fast: BOOT_RETRIES, total: BOOT_MAX_RELOADS });
 			expect(await page(BOOT_SLOW_MS * 2)).toMatchObject({ reloaded: false, message: true });
-			// a page that boots (the app renders) clears the count; a broken stored value counts as none
 			const { root } = await page(null);
 			root.appendChild(document.createElement('main'));
 			await vi.advanceTimersByTimeAsync(0);
@@ -384,18 +372,18 @@ describe('editor boot script (preload + early project fetch)', () => {
 		});
 
 		w.__jasperEarly = early();
-		expect(await (await f('/api/projects/p2')).text()).toBe('real'); // another URL: untouched
+		expect(await (await f('/api/projects/p2')).text()).toBe('real');
 		expect(await (await f('/api/projects/p1', { method: 'PUT' })).text()).toBe('real');
 		expect(w.__jasperEarly).toBeDefined();
 		expect(await (await f('/api/projects/p1')).text()).toBe('early');
 		expect(w.__jasperEarly).toBeUndefined();
-		expect(await (await f('/api/projects/p1')).text()).toBe('real'); // only once
+		expect(await (await f('/api/projects/p1')).text()).toBe('real');
 
 		w.__jasperEarly = { ...early(), response: Promise.reject(new Error('down')) };
 		w.__jasperEarly.response.catch(() => undefined);
 		expect(await (await f('/api/projects/p1')).text()).toBe('real');
 
-		w.__jasperEarly = { ...early(), at: Date.now() - 60_000 }; // stale: asked again
+		w.__jasperEarly = { ...early(), at: Date.now() - 60_000 };
 		expect(await (await f('/api/projects/p1')).text()).toBe('real');
 		expect(w.__jasperEarly).toBeUndefined();
 	});

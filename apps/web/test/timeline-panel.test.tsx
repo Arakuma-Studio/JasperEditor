@@ -59,7 +59,6 @@ describe('Timeline panel rendering', () => {
 		expect(mounted).toBeGreaterThan(0);
 		expect(mounted).toBeLessThan(600);
 		const playhead = screen.getByTestId('timeline-playhead');
-		// TL-155 requires pure playhead updates to bypass React; this is an explicit architecture contract.
 		const before = commits;
 		const t0 = playhead.style.transform;
 		await act(async () => {
