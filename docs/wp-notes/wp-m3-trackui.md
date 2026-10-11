@@ -112,6 +112,11 @@ E2E_PORT=48640 pnpm e2e -- e2e/tracking.spec.ts
 
 `JASPER_TRAILER_TRACKS` points the real-track test elsewhere; it is skipped when the directory is missing.
 
+The 2026-10-11 audit restored guarded keyframe counting: loose schemas preserve unknown transform fields,
+which may be null or contain non-array `keyframes`. Valid animation extensions still contribute to the count.
+Measured: four schema-validated regression cases failed before the fix; all 9 tests passed with
+`cd apps/web && pnpm exec vitest run test/tracking-simplify.test.tsx --maxWorkers=1` afterward.
+
 Screenshots: `docs/screenshots/wp-m3-trackui/` — the timeline glyphs (02), a link click revealing Tracking (03), the
 dialog at 0.1 / 0.5 px (04, 05), Effect Controls after simplifying (06), the keyframe menu (07, 08) and a strip
 tooltip (09).

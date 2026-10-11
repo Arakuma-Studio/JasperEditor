@@ -12,13 +12,21 @@ import {
 
 function clipKeyframeCount(clip: Clip): number {
 	let count = 0;
-	if ('transform' in clip)
-		for (const animation of Object.values(clip.transform))
-			if (typeof animation === 'object') count += animation.keyframes.length;
-	if ('opacity' in clip) count += clip.opacity.keyframes.length;
+	// Loose document schemas preserve unknown fields alongside recognized animations.
+	const add = (animation: unknown) => {
+		if (
+			animation !== null &&
+			typeof animation === 'object' &&
+			'keyframes' in animation &&
+			Array.isArray(animation.keyframes)
+		)
+			count += animation.keyframes.length;
+	};
+	if ('transform' in clip) for (const animation of Object.values(clip.transform ?? {})) add(animation);
+	if ('opacity' in clip) add(clip.opacity);
 	if ('effects' in clip)
 		for (const effect of clip.effects ?? [])
-			for (const animation of Object.values(effect.params)) count += animation.keyframes.length;
+			for (const animation of Object.values(effect.params)) add(animation);
 	if ('paramKeyframes' in clip)
 		for (const keys of Object.values(clip.paramKeyframes ?? {})) count += keys.length;
 	return count;

@@ -1,10 +1,11 @@
-import type { Clip } from '@jasper/project';
+import { type Clip, type Keyframe, SolidClipSchema } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApplyTrackingDialog } from '../src/tracking/ApplyTrackingDialog.tsx';
 import { addTracker, commitTrackResult } from '../src/tracking/actions.ts';
 import { SimplifyKeyframesDialog } from '../src/tracking/SimplifyKeyframesDialog.tsx';
+import { clipHasDenseKeys } from '../src/tracking/simplify-actions.ts';
 import { trackingStore } from '../src/tracking/store.ts';
 import { labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
@@ -122,6 +123,45 @@ describe('Simplify Keyframes dialog', () => {
 });
 
 describe('entry points', () => {
+	const keys: Keyframe<number>[] = [0, 1, 2].map((time) => ({
+		id: `key_${time}`,
+		time,
+		value: time,
+		interpolation: 'linear',
+		easeIn: { influence: 1 / 3, slope: 1 },
+		easeOut: { influence: 1 / 3, slope: 1 },
+	}));
+
+	it.each([null, {}, { keyframes: null }, { keyframes: 'future' }])(
+		'ignores preserved non-animation transform data %j when checking keyframe density',
+		(future) => {
+			const { session, target } = trackingSession();
+			const base = SolidClipSchema.parse(seqOf(session).clips[target]);
+			const clip = SolidClipSchema.parse({ ...base, transform: { ...base.transform, future } });
+			expect(clip.transform.future).toEqual(future);
+			expect(clipHasDenseKeys(clip)).toBe(false);
+			const animated = SolidClipSchema.parse({
+				...clip,
+				transform: { ...clip.transform, rotation: { value: 0, keyframes: keys } },
+			});
+			expect(clipHasDenseKeys(animated)).toBe(true);
+		},
+	);
+
+	it('counts preserved animation fields alongside recognized transform parameters', () => {
+		const { session, target } = trackingSession();
+		const base = SolidClipSchema.parse(seqOf(session).clips[target]);
+		const clip = SolidClipSchema.parse({
+			...base,
+			transform: {
+				...base.transform,
+				rotation: { value: 0, keyframes: keys.slice(0, 2) },
+				future: { value: 0, keyframes: keys.slice(2) },
+			},
+		});
+		expect(clipHasDenseKeys(clip)).toBe(true);
+	});
+
 	it('Apply Tracking can simplify in the same entry', async () => {
 		const t = trackingSession();
 		const id = addTracker(t.session, t.plate, 'planar');
