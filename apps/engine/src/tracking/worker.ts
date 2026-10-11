@@ -4,10 +4,11 @@
 // and in the esbuild bundle without a separate worker entry point. Loaded workers are pooled (a few idle ones are
 // kept for a minute) so short jobs such as "step forward" do not pay the ~0.3–1 s OpenCV start-up every time.
 import { createRequire } from 'node:module';
-import { Worker } from 'node:worker_threads';
+import { type MessagePort, Worker } from 'node:worker_threads';
+import type { OpenCv } from '../tools/opencv.ts';
 import * as Geometry from './geometry.ts';
 import { createMaskTracker, type MaskConfig } from './mask.ts';
-import { createPlanarTracker, type FrameResult, type PlanarConfig } from './planar.ts';
+import { createPlanarTracker, type FrameResult, type FrameTracker, type PlanarConfig } from './planar.ts';
 import { createPointTracker, type PointConfig } from './point.ts';
 import { createWarpTracker, type WarpConfig } from './warp.ts';
 
@@ -26,10 +27,10 @@ type WorkerReply =
 
 /** Worker entry point (evaluated from its source text: parameters and globals only). */
 function workerMain(
-	threads: any,
+	threads: { parentPort: MessagePort },
 	/** The worker's CommonJS `require`, passed in from the source string: a literal `require(...)` here would be
 	 * rewritten by esbuild's ESM bundling into its `__require` shim, which does not exist inside the worker. */
-	load: (id: string) => any,
+	load: (id: string) => OpenCv,
 	cvPath: string,
 	G: typeof Geometry,
 	makePlanar: typeof createPlanarTracker,
@@ -38,10 +39,9 @@ function workerMain(
 	makeWarp: typeof createWarpTracker,
 ): void {
 	const port = threads.parentPort;
-	const cvModule: any = load(cvPath);
-	let cv: any = null;
-	let tracker: { reference(i: Uint8Array): unknown; track(i: Uint8Array): unknown; dispose(): void } | null =
-		null;
+	const cv = load(cvPath);
+	let ready = false;
+	let tracker: FrameTracker | null = null;
 	const pending: WorkerRequest[] = [];
 	const errorText = (e: unknown): string => {
 		if (typeof e === 'number' && cv?.exceptionFromPtr) {
@@ -71,7 +71,7 @@ function workerMain(
 				if (!tracker) throw new Error('tracker not initialised');
 				const img = new Uint8Array(m.buf);
 				const r = m.type === 'reference' ? tracker.reference(img) : tracker.track(img);
-				port.postMessage({ type: 'result', frame: m.frame, ...(r as object) });
+				port.postMessage({ type: 'result', frame: m.frame, ...r });
 			} else if (m.type === 'release') {
 				tracker?.dispose();
 				tracker = null;
@@ -82,14 +82,17 @@ function workerMain(
 		}
 	};
 	port.on('message', (m: WorkerRequest) => {
-		if (cv) handle(m);
+		if (ready) handle(m);
 		else pending.push(m);
 	});
-	cvModule.then(() => {
-		cv = cvModule;
+	const onReady = () => {
+		ready = true;
 		port.postMessage({ type: 'ready' });
 		for (const m of pending.splice(0)) handle(m);
-	});
+	};
+	if (cv.then) cv.then(onReady);
+	else if (cv.Mat) onReady();
+	else cv.onRuntimeInitialized = onReady;
 }
 
 let cachedSource: string | null = null;
@@ -101,10 +104,7 @@ export function openCvPath(): string {
 
 function workerSource(): string {
 	if (cachedSource) return cachedSource;
-	const geo = Object.entries(Geometry).filter(([, v]) => typeof v === 'function') as [
-		string,
-		() => unknown,
-	][];
+	const geo = Object.entries(Geometry).filter(([, v]) => typeof v === 'function');
 	cachedSource = [
 		// esbuild's keepNames helper, in case the transpiler that produced these functions inserted it.
 		'var __name = (f) => f;',
@@ -178,7 +178,6 @@ export class TrackingWorker {
 		void this.worker.terminate();
 	}
 
-	/** Pool bookkeeping. */
 	park(ms: number, onExpire: () => void): void {
 		this.worker.unref();
 		this.idleTimer = setTimeout(onExpire, ms);

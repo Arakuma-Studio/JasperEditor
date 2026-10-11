@@ -57,8 +57,6 @@ export function melFilters(nMels: number): Float32Array {
 	return w;
 }
 
-// ------------------------------------------------------------------ FFT (mixed radix, N = 400)
-
 type FftPlan = { n: number; factors: number[]; cos: Float64Array; sin: Float64Array };
 
 function factorize(n: number): number[] {

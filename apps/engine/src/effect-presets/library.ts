@@ -50,7 +50,7 @@ const notFound = (what: string, id: string) =>
 
 export class EffectPresetLibrary {
 	private state: LibraryFile | null = null;
-	private chain: Promise<unknown> = Promise.resolve();
+	private chain: Promise<void> = Promise.resolve();
 
 	constructor(
 		private readonly file: string,
@@ -120,7 +120,10 @@ export class EffectPresetLibrary {
 			this.opts.onChange?.(next.revision);
 			return out;
 		});
-		this.chain = run.catch(() => undefined);
+		this.chain = run.then(
+			() => undefined,
+			() => undefined,
+		);
 		return run;
 	}
 
@@ -145,8 +148,13 @@ export class EffectPresetLibrary {
 		return this.mutate((s) => {
 			const now = this.now();
 			const { builtIn: _b, category: _c, ...rest } = raw;
-			const candidate = { ...rest, id: newId('fxp'), createdAt: now, updatedAt: now };
-			if (folderId !== undefined) (candidate as Record<string, unknown>).folderId = folderId;
+			const candidate = {
+				...rest,
+				id: newId('fxp'),
+				createdAt: now,
+				updatedAt: now,
+				...(folderId !== undefined ? { folderId } : {}),
+			};
 			const r = parseEffectPreset(candidate);
 			if (!r.ok) throw new HttpError(400, 'PRESET_INVALID', r.message);
 			this.assertFolder(s, r.preset.folderId);

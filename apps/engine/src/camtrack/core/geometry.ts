@@ -346,8 +346,6 @@ export function procrustes(a: V3[], b: V3[]): M3 | null {
 	return r;
 }
 
-// ---------------------------------------------------------------- homography fit (fit.rs, Model::Homography)
-
 export type H3 = M3;
 export function applyH(h: H3, p: P2): P2 {
 	const w = h[2][0] * p[0] + h[2][1] * p[1] + h[2][2];

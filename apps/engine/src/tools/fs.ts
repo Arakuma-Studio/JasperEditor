@@ -15,15 +15,19 @@ export function sha256File(file: string): Promise<string> {
 }
 
 async function fsyncDir(dir: string): Promise<void> {
-	// Directory fsync makes the rename durable. Not supported on every platform (Windows): best effort.
+	// Some filesystems cannot fsync directories; other failures mean durability was not established.
 	let fh: Awaited<ReturnType<typeof open>> | null = null;
 	try {
 		fh = await open(dir, constants.O_RDONLY);
 		await fh.sync();
-	} catch {
-		// ignore
+	} catch (error) {
+		const code = error instanceof Error && 'code' in error ? error.code : undefined;
+		const unsupported = code === 'EINVAL' || code === 'ENOTSUP' || code === 'ENOSYS' || code === 'EISDIR';
+		const windowsDirectory =
+			process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES' || code === 'EBADF');
+		if (!unsupported && !windowsDirectory) throw error;
 	} finally {
-		await fh?.close().catch(() => undefined);
+		await fh?.close();
 	}
 }
 
@@ -83,8 +87,14 @@ export async function atomicWriteJson(file: string, value: unknown, pretty = fal
 export async function readJsonOrNull<T = unknown>(file: string): Promise<T | null> {
 	try {
 		return JSON.parse(await readFile(file, 'utf8')) as T;
-	} catch {
-		return null;
+	} catch (error) {
+		if (
+			error instanceof SyntaxError ||
+			(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+		) {
+			return null;
+		}
+		throw error;
 	}
 }
 

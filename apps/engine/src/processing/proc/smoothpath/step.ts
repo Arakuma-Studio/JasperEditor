@@ -101,7 +101,7 @@ export function createSmoothPathStep(
 				let prev: Uint8Array | null = null;
 				let prevMeans: Float64Array | null = null;
 				let index = 0;
-				const inFlight = new Set<Promise<unknown>>();
+				const inFlight = new Set<Promise<Similarity | null>>();
 				const limit = Math.max(2, cv.size * 2);
 				for await (const buf of decodeFrames(input, {
 					pixFmt: 'gray',

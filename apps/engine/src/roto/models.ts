@@ -24,7 +24,7 @@ export class VisionModelStore {
 	) {
 		this.store = new SpeechModelStore(
 			modelsDir,
-			entries.map((e) => ({ multilingual: false, ...e }) as SpeechCatalogEntry),
+			entries.map((e) => ({ multilingual: false, ...e })),
 		);
 	}
 
@@ -38,7 +38,7 @@ export class VisionModelStore {
 	}
 
 	async installed(e: VisionCatalogEntry): Promise<boolean> {
-		return this.store.installed(e as unknown as SpeechCatalogEntry);
+		return this.store.installed(e);
 	}
 
 	async list(): Promise<VisionModel[]> {
@@ -58,7 +58,7 @@ export class VisionModelStore {
 					revision: e.revision,
 					sizeBytes,
 					installed,
-					missingBytes: installed ? 0 : await this.store.missingBytes(e as unknown as SpeechCatalogEntry),
+					missingBytes: installed ? 0 : await this.store.missingBytes(e),
 				};
 			}),
 		);

@@ -9,6 +9,7 @@
 // (`CamTrackJobOutput`). Exit codes: 0 done, 2 bad arguments, 3 failed (message on stderr and as
 // `{"type":"error","message":…}`), 130 cancelled (SIGTERM/SIGINT).
 import { readFileSync, writeFileSync } from 'node:fs';
+import type { WorkerEvent } from '../../tools/worker-events.ts';
 import { type CamTrackJobSpec, CancelledError, runCamTrackJob } from './run.ts';
 
 const [specPath, outPath] = process.argv.slice(2);
@@ -16,7 +17,7 @@ if (!specPath || !outPath) {
 	process.stderr.write('usage: jasper-camtrack <spec.json> <out.json>\n');
 	process.exit(2);
 }
-const emit = (o: unknown) => process.stdout.write(`${JSON.stringify(o)}\n`);
+const emit = (o: WorkerEvent) => process.stdout.write(`${JSON.stringify(o)}\n`);
 const ac = new AbortController();
 for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => ac.abort());
 

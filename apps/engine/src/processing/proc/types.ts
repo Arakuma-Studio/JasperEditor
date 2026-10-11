@@ -1,7 +1,9 @@
 // jasper-proc (S07:PRC-011…014): the processor runtime's shared types. jasper-proc is a standalone CLI bundled
 // to dist/jasper-proc.mjs; everything under processing/proc/ must only depend on Node built-ins and the
 // processing runtimes (onnxruntime-node, OpenCV.js, the vid.stab WASM module) — never on the engine server.
-import type { ProcessStep } from '@jasper/project';
+import type { ProcessStep, Rational } from '@jasper/project';
+
+export type { Rational } from '@jasper/project';
 
 /**
  * One frame between steps (S07:PRC-012): interleaved R'G'B' 16 bit per channel (`rgb48le`), full range,
@@ -14,8 +16,6 @@ export type RgbFrame = {
 	height: number;
 	data: Uint16Array;
 };
-
-export type Rational = { num: number; den: number };
 
 /**
  * How to decode exactly the frames a step works on (the source range or an intermediate file). `inputArgs`
@@ -74,6 +74,7 @@ export type StepContext = {
  */
 export interface FrameStep {
 	readonly name: string;
+	setRangeContext?(fetch: (relativeFrame: number) => Promise<RgbFrame | null>): void;
 	analyse?(input: DecodeSpec, ctx: StepContext): Promise<void>;
 	open(ctx: StepContext): Promise<{ width: number; height: number }>;
 	push(frame: RgbFrame): Promise<RgbFrame[]>;

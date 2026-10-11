@@ -200,8 +200,6 @@ export class Ffmpeg {
 	}
 }
 
-// ---------------------------------------------------------------- self-check (S04:ENG-011)
-
 /** Any of these can write a native export video stream (see `selectVideoEncoder`). */
 const VIDEO_EXPORT_ENCODERS = [
 	'h264_videotoolbox',

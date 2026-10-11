@@ -145,8 +145,6 @@ export const LEGACY_X264_CHOICE: EncoderChoice = {
 	gpl: true,
 };
 
-// ---------------------------------------------------------------- parsing
-
 /** Build license from `ffmpeg -version` / `-buildconf` output. */
 export function parseBuildLicense(versionOut: string): EncodingCapabilities['license'] {
 	const m = /configuration:(.*)/.exec(versionOut);
@@ -177,8 +175,6 @@ export function parseHwaccels(out: string): string[] {
 	}
 	return names;
 }
-
-// ---------------------------------------------------------------- selection
 
 /** Encoders the selector may use: GPL/nonfree ones removed in LGPL-only mode. */
 function effectiveEncoders(inv: Pick<EncoderInventory, 'encoders' | 'lgplOnly'>): string[] {
@@ -332,8 +328,6 @@ export function encodingCapabilities(inv: EncoderInventory): EncodingCapabilitie
 		...(message ? { message } : {}),
 	};
 }
-
-// ---------------------------------------------------------------- arguments
 
 type EncodeParams = {
 	/** x264-style CRF 0–51 (the export quality setting); mapped per encoder. */
@@ -686,8 +680,6 @@ export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
 
-// ---------------------------------------------------------------- hardware probing
-
 const hwCache = new Map<string, Promise<HwTestResult[]>>();
 
 /** Test-encode arguments for a hardware encoder (a few black frames to the null muxer). */
@@ -792,8 +784,6 @@ function hwProbingDisabled(env: Record<string, string | undefined>): boolean {
 	const v = env[HW_ENCODERS_ENV];
 	return !!v && /^(0|false|no|off)$/i.test(v.trim());
 }
-
-// ---------------------------------------------------------------- service
 
 /**
  * The engine's encoder inventory: built once at startup from the self-check (`-encoders`, `-hwaccels`,

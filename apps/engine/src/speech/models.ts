@@ -47,6 +47,8 @@ type InstallRecord = {
 	files: Record<string, { sha256: string; sizeBytes: number; mtimeMs: number }>;
 };
 
+type ModelFiles = Pick<SpeechCatalogEntry, 'id' | 'files'>;
+
 const RECORD = 'install.json';
 
 export class SpeechModelStore {
@@ -63,16 +65,16 @@ export class SpeechModelStore {
 		return (this.entries.find((e) => e.default) ?? this.entries[0])?.id ?? 'whisper-base';
 	}
 
-	dirOf(e: SpeechCatalogEntry): string {
+	dirOf(e: Pick<SpeechCatalogEntry, 'id'>): string {
 		return join(this.modelsDir, e.id);
 	}
 
-	sizeOf(e: SpeechCatalogEntry): number {
+	sizeOf(e: Pick<SpeechCatalogEntry, 'files'>): number {
 		return e.files.reduce((s, f) => s + f.sizeBytes, 0);
 	}
 
 	/** All files present with their catalogue size. */
-	async installed(e: SpeechCatalogEntry): Promise<boolean> {
+	async installed(e: ModelFiles): Promise<boolean> {
 		for (const f of e.files) {
 			const s = await stat(join(this.dirOf(e), f.path)).catch(() => null);
 			if (!s?.isFile() || s.size !== f.sizeBytes) return false;
@@ -81,7 +83,7 @@ export class SpeechModelStore {
 	}
 
 	/** Bytes still to download (files already present with the right size are kept). */
-	async missingBytes(e: SpeechCatalogEntry): Promise<number> {
+	async missingBytes(e: ModelFiles): Promise<number> {
 		let n = 0;
 		for (const f of e.files) {
 			const s = await stat(join(this.dirOf(e), f.path)).catch(() => null);

@@ -145,8 +145,6 @@ export function psdLayeredInfo(psd: Psd, file: string): LayeredInfo {
 	};
 }
 
-// ---------------------------------------------------------------- pixels
-
 const srgbEncode = (v: number) => {
 	const x = Math.max(0, Math.min(1, v));
 	return x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
@@ -269,8 +267,6 @@ export function layerPicture(layer: Layer, bits: number): RgbaImage | null {
 	}
 	return img;
 }
-
-// ---------------------------------------------------------------- composite
 
 const KERNEL = makeBlendKernel();
 
@@ -437,8 +433,6 @@ function compositeLayers(
 		}
 	}
 }
-
-// ---------------------------------------------------------------- layer extraction
 
 export type ExtractedLayer = Omit<LayeredLayer, 'media' | 'children'> & {
 	/** The PNG written for the layer (null for groups / empty / adjustment layers). */

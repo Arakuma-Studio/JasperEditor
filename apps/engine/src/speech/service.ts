@@ -89,8 +89,6 @@ export class SpeechService {
 		};
 	}
 
-	// ------------------------------------------------------------------ submit
-
 	/** Validates the model choice (sync errors become HTTP 4xx). */
 	private async checkModel(o: TranscribeOptions): Promise<string> {
 		const id = o.model ?? this.models.defaultId();
@@ -191,8 +189,6 @@ export class SpeechService {
 			throw e;
 		}
 	}
-
-	// ------------------------------------------------------------------ run
 
 	private async run(ctx: JobContext): Promise<TranscriptionResult> {
 		const input = ctx.input as MediaInput | SequenceInput;

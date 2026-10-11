@@ -201,9 +201,7 @@ export class VariantService {
 		return p;
 	}
 
-	// ------------------------------------------------------------------ runner
-
-	private async run(ctx: JobContext): Promise<unknown> {
+	private async run(ctx: JobContext) {
 		const input = ctx.input as JobInput;
 		const r = this.deps.registry.get(input.mediaKey);
 		if (!r) throw new JobError('ASSET_NOT_FOUND', `Unknown media ${input.mediaKey}`, false);

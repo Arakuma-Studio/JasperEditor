@@ -83,7 +83,11 @@ export async function createCoreServices(
 	const resourcesDir =
 		opts.resourcesDir ??
 		env.JASPER_RESOURCES_DIR ??
-		(opts.env ? null : ((process as unknown as { resourcesPath?: string }).resourcesPath ?? null));
+		(opts.env
+			? null
+			: 'resourcesPath' in process && typeof process.resourcesPath === 'string'
+				? process.resourcesPath
+				: null);
 	// D-13: one LGPL directory (vendor in dev, <resources>/ffmpeg-lgpl packaged) serves both paths.
 	const vendorDir = findVendorDir({ env });
 	const bins = resolveBinaries({ env, resourcesDir, vendorDir });
@@ -124,7 +128,13 @@ export async function createCoreServices(
 		broadcaster,
 		exposePaths: true,
 	});
-	const uploads = new UploadService({ dir: join(paths.mediaDir, '.uploads'), media });
+	const uploadDependencies = {
+		dir: join(paths.mediaDir, '.uploads'),
+		media,
+		onError: (error: unknown) =>
+			opts.log?.(`[uploads] sweep failed: ${error instanceof Error ? error.message : String(error)}`),
+	};
+	const uploads = new UploadService(uploadDependencies);
 	const leases = new LeaseManager();
 	const projects = new ProjectStoreFs({ paths, leases, appVersion: config.version });
 	const recovery = new RecoveryJournal({

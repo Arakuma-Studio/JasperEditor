@@ -3,7 +3,7 @@
 // (store.ts). Deterministic: a frame's segmentation is a function of its chain key (chainKeys), so frames already
 // in the store are reused, never recomputed.
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { loadOpenCv } from '../../tools/opencv.ts';
 import { decodeSeg, encodeGreyPng, encodeSeg } from '../core/codec.ts';
 import { matteSize, resample, rgbFloat } from '../core/image.ts';
 import {
@@ -114,12 +114,16 @@ export type RotoRunOptions = {
 	onFrame?(frame: number, area: number, done: number, total: number): void;
 };
 
+type RotoFrameInput =
+	| [Stroke['kind'], number, [number, number][]]
+	| ['box', [number, number, number, number]];
+
 /** Chain keys of the frames of a brush roto (empty without a base). */
 export function chainKeys(
 	seed: string,
 	base: number | null,
 	span: [number, number],
-	strokesAt: (f: number) => unknown,
+	strokesAt: (f: number) => readonly RotoFrameInput[],
 ): Map<number, string> {
 	const out = new Map<number, string>();
 	if (base === null) return out;
@@ -138,27 +142,6 @@ export function chainKeys(
 	return out;
 }
 
-let cvModule: any = null;
-let cvReady: Promise<void> | null = null;
-/**
- * OpenCV.js (Farnebäck optical flow), loaded once. The module object is a thenable, so it never travels through a
- * promise (that would adopt it forever): the promise only signals readiness.
- */
-async function loadCv(): Promise<any> {
-	if (!cvReady)
-		cvReady = new Promise<void>((resolve) => {
-			const cv = createRequire(import.meta.url)('@techstark/opencv-js');
-			const done = () => {
-				cvModule = cv;
-				resolve();
-			};
-			if (typeof cv.then === 'function') cv.then(done);
-			else cv.onRuntimeInitialized = done;
-		});
-	await cvReady;
-	return { cv: cvModule };
-}
-
 /**
  * Dense optical flow next → prev (per pixel of `next`, where it was in `prev`), matte px, by Farnebäck on grey
  * images at ≤ FLOW_MAX_SIDE, upsampled.
@@ -169,7 +152,7 @@ async function flowNextToPrev(
 	w: number,
 	h: number,
 ): Promise<Float32Array> {
-	const { cv } = await loadCv();
+	const { cv } = await loadOpenCv();
 	const s = Math.min(1, FLOW_MAX_SIDE / Math.max(w, h));
 	const fw = Math.max(8, Math.round(w * s));
 	const fh = Math.max(8, Math.round(h * s));
@@ -187,7 +170,7 @@ async function flowNextToPrev(
 	const f = new cv.Mat();
 	try {
 		cv.calcOpticalFlowFarneback(a, b, f, 0.5, 4, 21, 3, 5, 1.2, 0);
-		const small = Float32Array.from(f.data32F as Float32Array);
+		const small = Float32Array.from(f.data32F);
 		const up = resample(small, fw, fh, 2, w, h);
 		for (let i = 0; i < up.length; i++) up[i] = up[i]! / s;
 		return up;
@@ -210,7 +193,6 @@ function areaOf(m: Uint8Array): number {
 	return Math.round((s / (255 * Math.max(1, m.length))) * 1e6) / 1e6;
 }
 
-/** Runs a roto job. */
 export async function runRotoJob(spec: RotoJobSpec, opts: RotoRunOptions = {}): Promise<RotoJobOutput> {
 	const t0 = performance.now();
 	const store = new RotoStore(spec.store);
@@ -235,8 +217,6 @@ export async function runRotoJob(spec: RotoJobSpec, opts: RotoRunOptions = {}): 
 	return runBrush(spec, src, span, store, write, opts, t0);
 }
 
-// ---------------------------------------------------------------- Roto Brush
-
 async function runBrush(
 	spec: RotoJobSpec,
 	src: FrameSource,
@@ -255,7 +235,7 @@ async function runBrush(
 	const sy = h / spec.display.height;
 	const sr = Math.sqrt(sx * sy);
 	const strokesByFrame = new Map<number, Stroke[]>();
-	const rawByFrame = new Map<number, unknown[]>();
+	const rawByFrame = new Map<number, RotoFrameInput[]>();
 	for (const s of spec.roto.strokes) {
 		const list = strokesByFrame.get(s.frame) ?? [];
 		list.push({
@@ -439,8 +419,6 @@ async function runBrush(
 		ms: Math.round(performance.now() - t0),
 	};
 }
-
-// ---------------------------------------------------------------- faces
 
 type FaceTrack = {
 	id: number;

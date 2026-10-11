@@ -213,8 +213,6 @@ export class InterchangeService {
 		if (!this.local) throw new HttpError(403, 'LOCAL_MODE_ONLY', `${what} is only available in local mode`);
 	}
 
-	// ------------------------------------------------------------------ import
-
 	async importDocument(req: InterchangeImportRequest): Promise<InterchangeImportResponse> {
 		let bytes: Uint8Array;
 		let fileName: string;
@@ -310,8 +308,6 @@ export class InterchangeService {
 		}
 		return out;
 	}
-
-	// ------------------------------------------------------------------ export
 
 	private load(envelope: { document: unknown }): ProjectDocument {
 		try {
@@ -412,7 +408,6 @@ export class InterchangeService {
 			});
 		};
 
-		// ---- pre-renders
 		const mode = opts.prerender ?? defaultPrerenderMode(req.format);
 		const jobs = planPrerender(doc, req.sequenceId, req.format, mode);
 		const report = new Report();
@@ -446,7 +441,6 @@ export class InterchangeService {
 			}
 		}
 
-		// ---- the interchange project
 		ctx.progress(0.75, { stage: `Writing ${info.name}` });
 		const paths = await this.mediaPaths(doc);
 		const ir = fromJasper(
@@ -513,7 +507,6 @@ export class InterchangeService {
 			await addFile(name, 'document', f.bytes);
 		}
 
-		// ---- destination
 		if (destPath) {
 			ctx.progress(0.97, { stage: 'Copying to the destination' });
 			await mkdir(dirname(destPath), { recursive: true });
@@ -738,8 +731,6 @@ export class InterchangeService {
 		});
 	}
 
-	// ------------------------------------------------------------------ Link Media (S04:AS-011)
-
 	async relink(req: AssetRelinkRequest): Promise<AssetRelinkResponse> {
 		this.requireLocal('Linking media by path');
 		if (!isAbsolute(req.path)) throw new HttpError(400, 'VALIDATION_FAILED', 'The path must be absolute');
@@ -754,7 +745,7 @@ export class InterchangeService {
 		const match = relinkMatch(asset, reg);
 		const diff = relinkDiff(asset, reg);
 		return {
-			media: reg as unknown as Record<string, unknown>,
+			media: reg,
 			match,
 			diff,
 			needsConfirm: relinkNeedsConfirm(match, diff),
@@ -867,7 +858,7 @@ export class InterchangeService {
 			found.push({
 				assetId: a.id,
 				path: hit.file.path,
-				media: hit.reg as unknown as Record<string, unknown>,
+				media: hit.reg,
 				matched: hit.matched,
 				match,
 				diff: relinkDiff(a, hit.reg),

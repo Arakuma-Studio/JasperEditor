@@ -1,8 +1,7 @@
 // Shared helpers for engine tests: temp appdirs, fixture media (generated on demand with the repo script),
 // documents built through @jasper/project commands.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RegisteredMedia } from '@jasper/api';
@@ -18,6 +17,9 @@ import {
 import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
 import type { FastifyInstance } from 'fastify';
 import { createServer, engineConfig } from '../src/index.ts';
+import { tempAppdir } from './temp.ts';
+
+export { tempAppdir } from './temp.ts';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
@@ -56,10 +58,6 @@ export function ensureFixtures(): void {
 
 export function fixture(name: string): string {
 	return join(FIXTURES, name);
-}
-
-export function tempAppdir(prefix = 'jasper-engine-'): string {
-	return mkdtempSync(join(tmpdir(), prefix));
 }
 
 export type TestApp = FastifyInstance & { appdir: string };
