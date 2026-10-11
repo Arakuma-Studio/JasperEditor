@@ -121,8 +121,6 @@ function runStyleCss(run: RunStyle, base: TextStyle, fonts: Fonts): CSSPropertie
 	return css;
 }
 
-// ---------------------------------------------------------------- styled runs
-
 type StyledSpan = { from: number; to: number; style: RunStyle | null };
 
 /** The text cut at run boundaries; each piece carries the merged style of the runs covering it (later win). */
@@ -146,8 +144,6 @@ function styledSpans(text: string, runs: readonly TextRun[] | undefined): Styled
 	return out;
 }
 
-// ---------------------------------------------------------------- rest
-
 function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts; hidden: boolean }) {
 	const { text, style, runs } = source.text;
 	const block = textBlockStyle(source, fonts);
@@ -168,8 +164,6 @@ function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts;
 		</p>
 	);
 }
-
-// ---------------------------------------------------------------- animated
 
 /** One piece of the flow: a whitespace run or (part of) a unit, in one style. */
 type FlowPiece = {
@@ -632,8 +626,6 @@ function TextOverlay({
 		</div>
 	);
 }
-
-// ---------------------------------------------------------------- layer
 
 export function TextLayer(layer: LayerProps) {
 	const raw = layer.clip.source;

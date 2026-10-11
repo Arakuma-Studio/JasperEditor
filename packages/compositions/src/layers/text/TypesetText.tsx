@@ -1,4 +1,4 @@
-// Typeset text (workstream text-animators): the renderer of text clips with AE-style animators, Path Options or
+// Typeset text: the renderer of text clips with AE-style animators, Path Options or
 // the extended typography. The browser lays the text out (measure.ts); every character is then drawn as its own
 // element at its measured place, moved by the animators (`charTransforms` → `placeGlyphs`, the EffectCraft port in
 // @jasper/project): position / anchor / scale / skew / rotation (per-character 3D with the comp camera's
@@ -228,7 +228,7 @@ export function TypesetText({
 			? {
 					moreOptions: {
 						anchorPointGrouping: more.anchorPointGrouping,
-						groupingAlignment: evaluate(more.groupingAlignment as never, t) as [number, number],
+						groupingAlignment: evaluate(more.groupingAlignment, t),
 					},
 				}
 			: {}),

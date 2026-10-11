@@ -145,8 +145,6 @@ export function compositeRunMode(
 	return { mode: 'gpu' };
 }
 
-// ---------------------------------------------------------------- track context
-
 export type BlendTrackValue = {
 	hub: CompositeHub;
 	mode: CompositeMode;
@@ -246,8 +244,6 @@ export function makeLinearBlendGroup(
 	};
 }
 
-// ---------------------------------------------------------------- chain step
-
 type FxBlendParams = {
 	key: string;
 	items: readonly CompositeItem[];
@@ -312,8 +308,6 @@ export const fxBlendComposite = createEffect<FxBlendParams, null>({
 	},
 	cleanup: () => {},
 });
-
-// ---------------------------------------------------------------- scope
 
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
 

@@ -15,6 +15,7 @@ import {
 	type ClassicSetup,
 	dofLevels,
 	GLSL_BLEND,
+	type GlslChunk,
 	type Iris,
 	kernelSpans,
 	type LightState,
@@ -44,13 +45,13 @@ void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 function blendSource(): string {
 	const seen = new Set<string>();
 	const out: string[] = [];
-	const add = (c: { name: string; source: string; deps?: readonly { name: string; source: string }[] }) => {
+	const add = (c: GlslChunk) => {
 		if (seen.has(c.name)) return;
 		seen.add(c.name);
 		for (const d of c.deps ?? []) add(d);
 		out.push(c.source);
 	};
-	add(GLSL_BLEND as never);
+	add(GLSL_BLEND);
 	// Only the clip blend formulas (the effect blends after them read effect uniforms).
 	const src = out.join('\n');
 	const cut = src.indexOf('// ---- effect blends');
@@ -308,8 +309,6 @@ void main() {
 }
 `;
 
-// ---------------------------------------------------------------- depth of field passes
-
 const DOF_INIT_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_atlas;
@@ -419,8 +418,6 @@ void main() {
 }
 `;
 
-// ---------------------------------------------------------------- GL plumbing
-
 type Programs = {
 	composite: WebGLProgram;
 	dofInit: WebGLProgram;
@@ -529,8 +526,6 @@ function dataTexture(
 	return t;
 }
 
-// ---------------------------------------------------------------- atlas
-
 export type AtlasSlot = { x: number; y: number; w: number; h: number };
 
 /** Shelf packing of rectangles (tallest first); null when it does not fit `max`×`max`. */
@@ -561,8 +556,6 @@ export function packAtlas(
 	const height = Math.max(1, y + shelf);
 	return height > max ? null : { slots, width, height };
 }
-
-// ---------------------------------------------------------------- the render
 
 export type ClassicGlInput = {
 	setup: ClassicSetup;

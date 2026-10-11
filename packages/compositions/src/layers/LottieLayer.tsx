@@ -1,49 +1,16 @@
-// Lottie animations (imports workstream, docs/wp-notes/imports.md): an `animated-image` clip whose media is a Lottie
+// Lottie animations (docs/wp-notes/imports.md): an `animated-image` clip whose media is a Lottie
 // document is drawn by the Lottie player (lottie-web, SVG renderer, MIT) — frame-exact: every composition frame seeks
 // the player to the Lottie frame of the clip's media time (Frame Sampling, `lottieFrameAt`), through Interpret Footage
 // (assumed frame rate, loop) and the clip's own loop. The same component draws the Program monitor, the Remotion
 // renders and the layer bakes of the native export, so every path shows the same pixels. Renders hold a delayRender
 // until the document and its images are loaded and the frame is drawn.
-import { FLICKS_PER_SECOND, fileTimeOf, lottieFrameAt } from '@jasper/project';
+import { FLICKS_PER_SECOND, fileTimeOf, lottieFrameAt, lottieImageAssets } from '@jasper/project';
+import type { AnimationItem } from 'lottie-web';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cancelRender, continueRender, delayRender, getRemotionEnvironment } from 'remotion';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
-
-type LottiePlayer = {
-	loadAnimation(params: Record<string, unknown>): LottieAnimation;
-};
-type LottieAnimation = {
-	goToAndStop(value: number, isFrame: boolean): void;
-	destroy(): void;
-	addEventListener(name: string, cb: () => void): void;
-	isLoaded?: boolean;
-};
-
-let player: Promise<LottiePlayer> | null = null;
-/** lottie-web is loaded on first use (it touches the DOM when imported; never on the engine side). */
-function lottiePlayer(): Promise<LottiePlayer> {
-	player ??= import('lottie-web/build/player/lottie_svg').then(
-		(m) => ((m as { default?: LottiePlayer }).default ?? m) as LottiePlayer,
-	);
-	return player;
-}
-
-const docs = new Map<string, Promise<Record<string, unknown>>>();
-/** The Lottie JSON at `url` (fetched once per page; each player gets its own deep copy: lottie-web mutates it). */
-export function lottieDocument(url: string): Promise<Record<string, unknown>> {
-	let p = docs.get(url);
-	if (!p) {
-		p = fetch(url).then(async (r) => {
-			if (!r.ok) throw new Error(`Lottie document ${url}: HTTP ${r.status}`);
-			return (await r.json()) as Record<string, unknown>;
-		});
-		docs.set(url, p);
-		p.catch(() => docs.delete(url));
-		if (docs.size > 64) docs.delete(docs.keys().next().value as string);
-	}
-	return p;
-}
+import { lottieDocument, lottiePlayer } from './lottie.ts';
 
 /**
  * The Lottie frame shown at a layer's picture time: media time → file time (Interpret Footage), wrapped by the clip's
@@ -66,7 +33,7 @@ export function lottieFrameForLayer(
 export function LottieLayer(layer: LayerProps) {
 	const { media } = layer;
 	const host = useRef<HTMLDivElement | null>(null);
-	const anim = useRef<LottieAnimation | null>(null);
+	const anim = useRef<AnimationItem | null>(null);
 	const [ready, setReady] = useState(false);
 	const rendering = getRemotionEnvironment().isRendering;
 	const url = media?.loaderUrl ?? null;
@@ -76,7 +43,7 @@ export function LottieLayer(layer: LayerProps) {
 	useEffect(() => {
 		if (!url || !host.current) return;
 		let alive = true;
-		let a: LottieAnimation | null = null;
+		let a: AnimationItem | null = null;
 		void Promise.all([lottiePlayer(), lottieDocument(url)])
 			.then(([lottie, doc]) => {
 				if (!alive || !host.current) return;
@@ -92,9 +59,9 @@ export function LottieLayer(layer: LayerProps) {
 				// Ready once the SVG tree exists (`DOMLoaded`) and every embedded image is decoded (renders must not capture
 				// an image element before its picture).
 				const images = Promise.all(
-					((doc.assets as { p?: unknown }[] | undefined) ?? [])
-						.map((x) => x.p)
-						.filter((p): p is string => typeof p === 'string' && p.startsWith('data:image/'))
+					lottieImageAssets(doc)
+						.map((asset) => asset.file)
+						.filter((file) => file.startsWith('data:image/'))
 						.map((src) => {
 							const img = new Image();
 							img.src = src;

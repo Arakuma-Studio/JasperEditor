@@ -67,8 +67,6 @@ import { extrudedMesh, geometryAt } from './extruded.ts';
 import { type GlPlane, renderClassicGL } from './gl.ts';
 import { type LoadedModel, modelAt, modelToLayer } from './model-loader.ts';
 
-// ---------------------------------------------------------------- hub
-
 type HubPicture = {
 	canvas: HTMLCanvasElement;
 	version: number;
@@ -129,8 +127,6 @@ export class Scene3DHub {
 
 	getVersion = (): number => this.version;
 }
-
-// ---------------------------------------------------------------- per-frame runs
 
 /** How the 3D scopes run here. */
 export type Scene3DMode = { mode: 'gpu' } | { mode: 'fallback'; reason: string };
@@ -206,8 +202,6 @@ export function useScene3DTap(clipId: string, frame: number): LayerTap | null {
 	return ctx.hubOf(run.bottomTrack)?.tap(clipId, frame) ?? null;
 }
 
-// ---------------------------------------------------------------- scene evaluation
-
 /** Lights of the scene at a frame (none in Draft 3D previews). */
 export function sceneLightsAt(
 	doc: Pick<RenderSnapshot, 'settings' | 'scene3d'>,
@@ -252,8 +246,6 @@ export function fallbackProjective(
 		: null;
 	return pin ? multiplyMat3(h, pin) : h;
 }
-
-// ---------------------------------------------------------------- the effect
 
 type Fx3DParams = {
 	key: string;
@@ -391,8 +383,6 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 	},
 	cleanup: () => {},
 });
-
-// ---------------------------------------------------------------- scope
 
 /** A short fingerprint of the 3D state an effect draws (rounded numbers; FNV-1a). */
 function sceneFingerprint(

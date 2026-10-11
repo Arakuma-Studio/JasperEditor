@@ -17,10 +17,10 @@ export {
 	FxFeedContext,
 	FxPicture,
 	fxDescriptors,
-	loadFxImage,
 	useFxFeed,
 } from './FxPicture.tsx';
 export { type FxHost, type FxRunInputs, FxShaderError, fxHost, runLutPass, runShaderPlan } from './host.ts';
+export { loadFxImage } from './images.ts';
 export {
 	type FxBypass,
 	type FxCanvasLayout,

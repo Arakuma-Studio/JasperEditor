@@ -182,8 +182,6 @@ export const fxTap = createEffect<FxTapParams, null>({
 	cleanup: () => {},
 });
 
-// ---------------------------------------------------------------- edit-structure: adjustment layers
-
 export type FxStashParams = { key: string; holder: { canvas: HTMLCanvasElement | null } };
 
 /** Keeps a copy of the picture (the composite below an adjustment layer) and passes it through. */

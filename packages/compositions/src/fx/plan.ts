@@ -246,7 +246,7 @@ export function planLayerFx(
 			steps.push(withMasks({ kind: 'flip', fx, horizontal: fx.effectId === FLIP_H }));
 			return;
 		}
-		const css = spec.preview.css?.(fx.params as never);
+		const css = spec.preview.css?.(fx.params);
 		if (css && Object.keys(css).length === 0) return; // identity
 		if (css && Object.keys(css).length === 1 && typeof css.filter === 'string') {
 			steps.push(withMasks({ kind: 'css', fx, filter: css.filter }));

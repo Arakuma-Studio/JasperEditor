@@ -27,18 +27,19 @@ import {
 	cancelRender,
 	continueRender,
 	delayRender,
-	type EffectDefinitionAndStack,
 	type EffectDescriptor,
 	getRemotionEnvironment,
 	HtmlInCanvas,
 	Internals,
 } from 'remotion';
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
-import { colorStageBackend } from '../color/gl.ts';
+import { colorStageBackend, sourceSize } from '../color/gl.ts';
 import { loadedLutAsset, ocioConversionLut } from '../color/luts.ts';
+import { memoizeEffects } from '../effect-chain.ts';
 import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
-import type { FxRunInputs, FxTextureInput } from './host.ts';
+import type { FxTextureInput } from './host.ts';
+import { fxImageFailed, loadedFxImage, loadFxImage, useFxImages } from './images.ts';
 import { fxMaskApply, fxMasked } from './mask.ts';
 import { fxMatteTap, useTrackMattes } from './matte.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
@@ -61,157 +62,12 @@ export function useFxFeed(): FxFeed {
 
 type Slot = { raw: HTMLCanvasElement; has: boolean; version: number; width: number; height: number };
 
-function imageSize(src: CanvasImageSource): { width: number; height: number } {
-	const s = src as {
-		videoWidth?: number;
-		videoHeight?: number;
-		naturalWidth?: number;
-		naturalHeight?: number;
-		width?: unknown;
-		height?: unknown;
-		displayWidth?: number;
-		displayHeight?: number;
-	};
-	if (s.videoWidth) return { width: s.videoWidth, height: s.videoHeight ?? 0 };
-	if (s.naturalWidth) return { width: s.naturalWidth, height: s.naturalHeight ?? 0 };
-	if (s.displayWidth) return { width: s.displayWidth, height: s.displayHeight ?? 0 };
-	return {
-		width: typeof s.width === 'number' ? s.width : 0,
-		height: typeof s.height === 'number' ? s.height : 0,
-	};
-}
-
 const canvasEl = (w: number, h: number) => {
 	const c = document.createElement('canvas');
 	c.width = Math.max(1, w);
 	c.height = Math.max(1, h);
 	return c;
 };
-
-// ---------------------------------------------------------------- media images
-
-type LoadedImage = {
-	img: HTMLImageElement | null;
-	failed: boolean;
-	promise: Promise<HTMLImageElement | null>;
-};
-const imageCache = new Map<string, LoadedImage>();
-/**
- * parity (roto): per-frame pictures (object-matte frames) are transient: at most this many are kept (least recently
- * used first out), so long mattes do not hold every decoded frame. Effect media (textures, maps) stay cached.
- */
-const TRANSIENT_IMAGES = 96;
-const transient = new Set<string>();
-/** URLs whose last load failed (renders turn a failed object-matte frame into an error). */
-const failedImages = new Set<string>();
-
-/** parity (roto): the matte frame at `url` failed to load. */
-export function fxImageFailed(url: string): boolean {
-	return failedImages.has(url) && !imageCache.get(url)?.img;
-}
-
-function touch(url: string, entry: LoadedImage): void {
-	if (!transient.has(url)) return;
-	imageCache.delete(url);
-	imageCache.set(url, entry);
-}
-
-/** Loads an image for WebGL (`crossOrigin = anonymous`: render pages read the engine's signed URLs cross-origin). */
-export function loadFxImage(
-	url: string,
-	opts: { transient?: boolean } = {},
-): Promise<HTMLImageElement | null> {
-	const hit = imageCache.get(url);
-	if (hit) {
-		touch(url, hit);
-		return hit.promise;
-	}
-	const entry: LoadedImage = {
-		img: null,
-		failed: false,
-		promise: new Promise((resolve) => {
-			const img = new Image();
-			img.crossOrigin = 'anonymous';
-			img.onload = () => {
-				void (img.decode?.() ?? Promise.resolve())
-					.catch(() => undefined)
-					.then(() => {
-						entry.img = img;
-						resolve(img);
-					});
-			};
-			img.onerror = () => {
-				entry.failed = true;
-				failedImages.add(url);
-				if (failedImages.size > 1024) failedImages.delete(failedImages.values().next().value!);
-				// A failed transient frame may be computed later (a running propagation): do not cache the failure.
-				if (transient.has(url)) {
-					imageCache.delete(url);
-					transient.delete(url);
-				}
-				resolve(null);
-			};
-			img.src = url;
-		}),
-	};
-	imageCache.set(url, entry);
-	if (opts.transient) {
-		transient.add(url);
-		if (transient.size > TRANSIENT_IMAGES)
-			for (const u of imageCache.keys()) {
-				if (transient.size <= TRANSIENT_IMAGES) break;
-				if (!transient.has(u) || u === url) continue;
-				imageCache.delete(u);
-				transient.delete(u);
-			}
-	}
-	return entry.promise;
-}
-
-/** The loaded image of `url` (null while loading or after a failure). */
-function loadedFxImage(url: string): HTMLImageElement | null {
-	return imageCache.get(url)?.img ?? null;
-}
-
-/** The loaded images of `urls` (renders wait for them with a delayRender); re-renders on arrival. Also used by the
- * transition stage for image params. */
-export function useFxImages(
-	urls: readonly string[],
-	rendering: boolean,
-	transientUrls?: ReadonlySet<string>,
-): Map<string, HTMLImageElement> {
-	const key = urls.join('\n');
-	const missing = urls.filter((u) => !imageCache.get(u)?.img);
-	const [initial] = useState(() =>
-		rendering && missing.length > 0 ? delayRender(`Loading fx image ${missing[0]}`) : null,
-	);
-	const [, setVersion] = useState(0);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the URL list
-	useEffect(() => {
-		const need = key ? key.split('\n').filter((u) => !imageCache.get(u)?.img) : [];
-		if (need.length === 0) {
-			if (initial !== null) continueRender(initial);
-			return;
-		}
-		let alive = true;
-		const handle = rendering && initial === null ? delayRender(`Loading fx image ${need[0]}`) : initial;
-		Promise.all(need.map((u) => loadFxImage(u, { transient: transientUrls?.has(u) }))).then(() => {
-			if (alive) setVersion((v) => v + 1);
-			if (handle !== null) continueRender(handle);
-		});
-		return () => {
-			alive = false;
-		};
-	}, [key]);
-	const out = new Map<string, HTMLImageElement>();
-	for (const u of urls) {
-		const img = imageCache.get(u)?.img;
-		if (img) out.set(u, img);
-	}
-	return out;
-}
-
-// ---------------------------------------------------------------- descriptors
 
 type DescriptorInputs = {
 	/** Placed time samples by source frame (canvas-sized). */
@@ -237,14 +93,14 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 		const at = out.length;
 		switch (s.kind) {
 			case 'gpu': {
-				const textures: FxRunInputs['textures'] = {};
+				const textures: Record<string, FxTextureInput | null> = {};
 				const versions: string[] = [];
 				for (const t of s.plan.textures) {
 					const m = t.mediaId ? inputs.media.get(t.mediaId) : undefined;
-					(textures as Record<string, unknown>)[t.uniform] = m ?? null;
+					textures[t.uniform] = m ?? null;
 					versions.push(m?.version ?? '-');
 				}
-				// Every sample picture, or none while one is not delivered yet (u_sampleCount 0, as in wave 1).
+				// Every sample picture, or none while one is not delivered yet (u_sampleCount 0).
 				const sources = s.sampleFrames
 					.map((f) => (f === null ? inputs.blank : inputs.samples.get(f)))
 					.filter((c): c is HTMLCanvasElement => !!c);
@@ -357,9 +213,6 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 	return out;
 }
 
-const memoized = (d: readonly EffectDescriptor[]) =>
-	d.map((e) => ({ ...e, memoized: true }) as EffectDefinitionAndStack<unknown>);
-
 /** Style of the output canvas inside the layer box: the padded canvas at (−left, −top), in layer pixels. */
 function canvasStyle(stage: FxStage): CSSProperties {
 	const L = stage.layout;
@@ -372,8 +225,6 @@ function canvasStyle(stage: FxStage): CSSProperties {
 		display: 'block',
 	};
 }
-
-// ---------------------------------------------------------------- FxPicture (media layers)
 
 let pictureSerial = 0;
 
@@ -481,7 +332,9 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 						version: String(slot.version),
 					});
 			}
-			const effects = memoized(fxDescriptors(s, { samples, sampleKeys, blank, media, preview: !rendering }));
+			const effects = memoizeEffects(
+				fxDescriptors(s, { samples, sampleKeys, blank, media, preview: !rendering }),
+			);
 			const state = chain.get(W, H);
 			if (!state) return;
 			await Internals.runEffectChain({ state, source, effects, output: out, width: W, height: H });
@@ -496,7 +349,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 	const feed = useMemo<FxFeed>(
 		() => ({
 			feed(name, image) {
-				const { width, height } = imageSize(image);
+				const { width, height } = sourceSize(image);
 				if (!width || !height) return;
 				let slot = slots.current.get(name);
 				if (!slot) {
@@ -561,8 +414,6 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 		</FxFeedContext.Provider>
 	);
 }
-
-// ---------------------------------------------------------------- FxDomPicture (DOM layers)
 
 /**
  * A DOM layer's content through the fx chain: Remotion's `<HtmlInCanvas>` (Chrome's HTML-in-Canvas: always enabled

@@ -1,4 +1,4 @@
-// Time Interpolation on the GPU (workstream `time`): Frame Blending and Optical Flow between two decoded frames in
+// Time Interpolation on the GPU: Frame Blending and Optical Flow between two decoded frames in
 // WebGL2, the same algorithm as the CPU reference `@jasper/project` time-remap/flow.ts (used by the native export):
 // analysis luma (k×k box), 2×2 pyramids, hierarchical block matching (SAD ±4 at the coarsest level, ±1 around the
 // sorted, de-duplicated seeds of the tile and its 4 neighbours below), sub-pixel parabola, 3×3 component-wise

@@ -15,7 +15,7 @@ import { defaultEffectRegistry, hasEffectMasks, type RenderVisualClip } from '@j
 import { Video } from '@remotion/media';
 import { type ComponentType, type CSSProperties, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { continueRender, delayRender, Img, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
-import { useFxImages } from '../fx/FxPicture.tsx';
+import { useFxImages } from '../fx/images.ts';
 import { blendModeCss } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';

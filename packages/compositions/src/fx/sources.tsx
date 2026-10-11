@@ -1,4 +1,4 @@
-// Feeders of the fx framework (wave 1): components that deliver a layer's pictures into `<FxPicture>` slots.
+// Feeders of the fx framework: components that deliver a layer's pictures into `<FxPicture>` slots.
 // - video: `@remotion/media` `<Video headless onVideoFrame>` (Player and renders; the element draws nothing itself,
 //   Remotion's scheduling and delayRender stay in charge) or `<OffthreadVideo onVideoFrame>` (renders of originals a
 //   browser cannot decode; kept mounted, invisible);
@@ -13,7 +13,8 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { continueRender, delayRender, Freeze, getRemotionEnvironment, OffthreadVideo } from 'remotion';
 import { RetimedFeed } from '../retime/RetimedVideo.tsx';
 import type { LayerProps } from '../types.ts';
-import { loadFxImage, useFxFeed } from './FxPicture.tsx';
+import { useFxFeed } from './FxPicture.tsx';
+import { loadFxImage } from './images.ts';
 import type { FxStage } from './stage.ts';
 
 const HIDDEN = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', opacity: 0 } as const;

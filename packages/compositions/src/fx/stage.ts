@@ -33,6 +33,7 @@ import {
 	layerMapOf,
 	type MediaHandle,
 	mediaFrameAt,
+	mediaParamId,
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
@@ -254,7 +255,7 @@ export function useLayerFx(
 			const hit = cache.get(fxId);
 			if (hit !== undefined) return hit;
 			const inst = byId.get(fxId);
-			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}|${(inst as { warpAnalysis?: { key?: string } } | undefined)?.warpAnalysis?.key ?? ''}`;
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify(inst?.puppet ?? null))}|${inst?.warpAnalysis?.key ?? ''}`;
 			cache.set(fxId, k);
 			return k;
 		};
@@ -323,8 +324,8 @@ export function useLayerFx(
 				s.kind === 'gpu'
 					? s.spec.params
 							.filter((ps) => isLutMediaParam(ps))
-							.map((ps) => (s.fx.params[ps.name] as { mediaId?: unknown } | undefined)?.mediaId)
-							.filter((id): id is string => typeof id === 'string' && !!id)
+							.map((ps) => mediaParamId(s.fx.params[ps.name]))
+							.filter((id) => !!id)
 					: [],
 			) ?? [],
 		[plan],
@@ -336,8 +337,8 @@ export function useLayerFx(
 				plan?.steps.flatMap((s) =>
 					s.kind === 'gpu'
 						? (s.spec.gpu?.cpuPixels ?? [])
-								.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
-								.filter((id): id is string => typeof id === 'string' && !!id)
+								.map((name) => mediaParamId(s.fx.params[name]))
+								.filter((id) => !!id)
 								.map((id) => doc.media[id])
 								.filter((h) => h?.kind === 'image')
 								.map((h) => h!.url)
@@ -467,17 +468,13 @@ export function useLayerFx(
 						...(paramsAt ? { paramsAt } : {}),
 						instanceKey: instanceKeyOf(s.fx.id),
 						pixels: (param: string) => {
-							const id = (s.fx.params[param] as { mediaId?: unknown } | undefined)?.mediaId;
-							const h = typeof id === 'string' && id ? doc.media[id] : undefined;
+							const id = mediaParamId(s.fx.params[param]);
+							const h = id ? doc.media[id] : undefined;
 							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
 						},
 						structures: {
-							...((s.fx as { puppet?: unknown }).puppet
-								? { puppet: (s.fx as { puppet?: unknown }).puppet }
-								: {}),
-							...((s.fx as { warpAnalysis?: unknown }).warpAnalysis
-								? { warpAnalysis: (s.fx as { warpAnalysis?: unknown }).warpAnalysis }
-								: {}),
+							...(s.fx.puppet ? { puppet: s.fx.puppet } : {}),
+							...(s.fx.warpAnalysis ? { warpAnalysis: s.fx.warpAnalysis } : {}),
 							...(layerMasks.length ? { masks: layerMasks } : {}),
 						},
 					};

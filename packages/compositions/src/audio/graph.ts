@@ -19,6 +19,7 @@ import {
 	panMonoGains,
 } from '@jasper/audio-dsp';
 import {
+	type Animatable,
 	audioFadeGain,
 	contentTimeAt,
 	type EffectInstance,
@@ -83,8 +84,6 @@ export function hasPreviewInsert(effectId: string): boolean {
 	return insertFactories.has(effectId);
 }
 
-// ------------------------------------------------------------------ worklet module
-
 let workletUrl: string | null = null;
 const workletLoads = new WeakMap<BaseAudioContext, Promise<boolean>>();
 /** The URL of the bundled `worklet.ts` (the web app sets it; without it meters and the preview limiter are off). */
@@ -111,29 +110,17 @@ function loadWorklet(ctx: BaseAudioContext): Promise<boolean> {
 	return p;
 }
 
-// ------------------------------------------------------------------ helpers
-
 const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** (db / 20));
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
 const layoutOf = (w: number): Layout => layoutFromChannels(w);
 
-function laneAt(
-	a: { value: number; keyframes: { time: number; value: number }[] },
-	t: number,
-	hold = false,
-): number {
-	// Keyframes or a bound expression (wave expressions; clip Volume / Pan).
-	if (!isAnimated(a as never)) return a.value;
-	return hold ? holdValueAt(a as never, t) : evaluate(a as never, t);
+function laneAt(a: Animatable<number>, t: number, hold = false): number {
+	if (!isAnimated(a)) return a.value;
+	return hold ? holdValueAt(a, t) : evaluate(a, t);
 }
 
 function scaleRows(m: number[][], gains: number[]): number[][] {
 	return m.map((row, o) => row.map((v) => v * (gains[o] ?? 1)));
-}
-
-function _mul(a: number[][], b: number[][]): number[][] {
-	// (a · b)[o][i] = Σ_k a[o][k] b[k][i]
-	return a.map((row) => b[0]!.map((_, i) => row.reduce((s, x, k) => s + x * (b[k]?.[i] ?? 0), 0)));
 }
 
 /** The pan stage matrix of a strip (width w → bus width ow) for a pan value (−100…100) or 5.1 puck. */
@@ -162,8 +149,6 @@ export function panStageMatrix(
 	const fold = w === 6 ? conversionMatrix('5.1', 'stereo', mixdown) : conversionMatrix('stereo', 'stereo');
 	return scaleRows(fold, [l, r]);
 }
-
-// ------------------------------------------------------------------ slots
 
 class SlotChain {
 	readonly input: GainNode;
@@ -211,8 +196,6 @@ class SlotChain {
 		this.output.disconnect();
 	}
 }
-
-// ------------------------------------------------------------------ strips
 
 type SendNodes = {
 	id: string;
@@ -288,8 +271,6 @@ class StripNodes {
 		}
 	}
 }
-
-// ------------------------------------------------------------------ clips
 
 /** audio-fx: a clip whose levels are applied after its effects in the preview (enabled clip effects). */
 export function clipHasEffects(clip: Pick<RenderAudioClip, 'effects'>): boolean {
@@ -435,8 +416,6 @@ class ClipNodes {
 	}
 }
 
-// ------------------------------------------------------------------ the graph
-
 type Listener<T> = (v: T) => void;
 
 export class MixGraph {
@@ -489,8 +468,6 @@ export class MixGraph {
 		return this.time;
 	}
 
-	// -------------------------------------------------------------- clips
-
 	/** The node Remotion's per-clip gain must connect to for `clip` (stable for the life of the clip id). */
 	clipInput(clip: RenderAudioClip): GainNode {
 		let c = this.clips.get(clip.clipId);
@@ -510,8 +487,6 @@ export class MixGraph {
 		this.clips.delete(clipId);
 	}
 
-	// -------------------------------------------------------------- overrides (live controls)
-
 	/** Holds a control at `value` (`lane`: volume, pan, mute, pan51.*, send.<id>.level, clip.volume, clip.pan). */
 	setOverride(stripId: string, lane: string, value: number | null): void {
 		const k = `${stripId}|${lane}`;
@@ -528,8 +503,6 @@ export class MixGraph {
 		this.overrides.clear();
 		if (this.mix) this.applyValues(true);
 	}
-
-	// -------------------------------------------------------------- meters
 
 	/** Meter readings of a strip (`master` = the Mix, with loudness). Returns an unsubscribe function. */
 	onMeter(stripId: string, cb: Listener<MeterReading>): () => void {
@@ -580,8 +553,6 @@ export class MixGraph {
 		};
 		return node;
 	}
-
-	// -------------------------------------------------------------- update (every rendered frame)
 
 	update(mix: RenderAudioMix, clips: readonly RenderAudioClip[], timeFlicks: number, fps: Rational): void {
 		this.mix = mix;
@@ -849,8 +820,6 @@ export class MixGraph {
 		this.masterMeter?.disconnect();
 	}
 }
-
-// ------------------------------------------------------------------ registry
 
 const graphs = new WeakMap<BaseAudioContext, MixGraph>();
 let active: MixGraph | null = null;

@@ -8,7 +8,7 @@
 // M2 colour (S06:CG-040/041): the layer's colour runs are canvas effect passes on the decoded frame —
 // `<Video effects>` (the frame canvas of @remotion/media, preview and renders) or, for <OffthreadVideo>, the
 // `ColorCanvas` fed from `onVideoFrame` while the element stays mounted (invisible) for Remotion's scheduling.
-// fx framework (wave 1): with GPU shader effects the picture is drawn by `FxPicture` (padded canvas, shader passes,
+// fx framework: with GPU shader effects the picture is drawn by `FxPicture` (padded canvas, shader passes,
 // colour runs, time samples) fed by a headless <Video> / an invisible <OffthreadVideo>; see fx/.
 import { Video } from '@remotion/media';
 import { useCallback, useRef } from 'react';
@@ -98,7 +98,7 @@ export function VideoLayer(layer: LayerProps) {
 	);
 }
 
-/** A retimed video layer (workstream `time`) in its three modes: fx picture, colour stage, plain. */
+/** A retimed video layer in its three modes: fx picture, colour stage, plain. */
 function RetimedVideoLayer({
 	layer,
 	media,

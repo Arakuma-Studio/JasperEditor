@@ -7,7 +7,7 @@
 // (mg-host/agent.ts) over a MessagePort (mg-host/remote.ts). Effects, Motion, opacity and blend apply
 // through LayerBox like for any layer; colour effects need pixels, so they wait for the preview WebM
 // ("Grade pending", MGC-025).
-// fx framework (wave 1): GPU shader effects run on the master (renders) and on the preview WebM (`FxPicture`, fed by
+// fx framework: GPU shader effects run on the master (renders) and on the preview WebM (`FxPicture`, fed by
 // the same media elements); the live host (an iframe) cannot be captured, so they wait for the preview like colour
 // effects do ("Grade pending").
 
@@ -47,9 +47,7 @@ export function compositionFramesAt(info: { fps: number; durationInFrames: numbe
 export function hasPixelEffects(clip: RenderVisualClip): boolean {
 	return clip.effects.some((fx) => {
 		if (!fx.enabled) return false;
-		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion) as
-			| { color?: unknown; gpu?: unknown }
-			| undefined;
+		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
 		return !!spec?.color || !!spec?.gpu;
 	});
 }

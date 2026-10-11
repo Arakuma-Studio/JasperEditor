@@ -47,9 +47,7 @@ export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 		if (spec?.appliesTo !== 'video') continue;
 		if (fx.effectId === CROP || spec.gpu || spec.color) return false;
 		// Only filter-type CSS (or an SVG filter): anything else (transforms, clip paths) changes geometry.
-		const probe = spec.preview.css?.(
-			Object.fromEntries(spec.params.map((p) => [p.name, p.default])) as never,
-		);
+		const probe = spec.preview.css?.(Object.fromEntries(spec.params.map((p) => [p.name, p.default])));
 		if (probe && Object.keys(probe).some((k) => k !== 'filter')) return false;
 		if (!probe && !spec.preview.svgFilter) return false;
 	}

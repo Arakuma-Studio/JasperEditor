@@ -1,6 +1,6 @@
 // Preview composition of one text animation preset (S11:TXA-020/021): an "Aa Title" text clip animated by the
 // preset, rendered by the real SequenceComposition (same layer, same value engine) so gallery cards and the
-// preset picker show exactly what the timeline will. Owner: wp-m2-text-anim.
+// preset picker show exactly what the timeline will.
 import {
 	applyTransaction,
 	buildRenderSnapshot,

@@ -131,8 +131,6 @@ export function AudioLayer({
 	);
 }
 
-// ---------------------------------------------------------------- workstream `time`: reversed clips
-
 /**
  * The reversed WAV of a reversed clip's content (its handles included): WAV time 0 is the content shown at the first
  * frame of the clip's <Sequence> (`headHandle` frames before the clip), so it plays with `trimBefore` 0 at the clip's
@@ -168,8 +166,6 @@ function useReversedAudio(clip: RenderAudioClip, src: string | null, fps: Ration
 	}, [src, lo, hi, rendering]);
 	return src ? url : null;
 }
-
-// ---------------------------------------------------------------- imports: interpreted media
 
 /**
  * The WAV of a clip of interpreted media (Interpret Footage ▸ assumed frame rate / loop): its content range with the
@@ -213,8 +209,6 @@ function useMappedAudio(clip: RenderAudioClip, src: string | null, fps: Rational
 	return src ? url : null;
 }
 
-// ---------------------------------------------------------------- audio-fx: latency compensation
-
 type SharedAudio = NonNullable<React.ContextType<typeof Internals.SharedAudioContext>>;
 
 /** Total latency (samples at 48 kHz) of a clip's enabled effects. */
@@ -243,8 +237,6 @@ function compensate(shared: SharedAudio, shift: number): Partial<SharedAudio> {
 		},
 	};
 }
-
-// ---------------------------------------------------------------- edit-structure: synthetic sounds
 
 const SAMPLE_RATE = 48000;
 const generatedUrls = new Map<string, string>();

@@ -1,4 +1,4 @@
-// Frame-exact decoding for retimed video layers (workstream `time`): reverse playback, time remaps, Frame Blending /
+// Frame-exact decoding for retimed video layers: reverse playback, time remaps, Frame Blending /
 // Optical Flow and variable-frame-rate media in the Program monitor and in Remotion renders. Built on mediabunny (the
 // demuxer/decoder @remotion/media itself uses): frames are found by their real timestamps (VFR media show the frame
 // whose timestamp is at or before the media time, like the native export), and decoded frames are cached per
@@ -71,10 +71,8 @@ export class FrameSource {
 		const track: InputVideoTrack | null = await this.input.getPrimaryVideoTrack();
 		if (!track) throw new Error(`No video track in ${this.src}`);
 		if (!(await track.canDecode())) throw new Error(`The browser cannot decode the video of ${this.src}`);
-		// ffmpeg's start_time (the origin of the native export and of input seeking): the earliest first timestamp of
-		// the tracks, where a negative one counts as 0 — it is encoder priming / pre-roll the container's edit list
-		// hides (AAC's -0.0213 s in nearly every MP4 with audio). Taken as is, it made every frame 21 ms late and media
-		// times exactly on a frame showed the one before (verify workstream).
+		// Negative timestamps represent priming/pre-roll hidden by container edit lists. Clamp each track's
+		// first timestamp to zero so media time agrees with ffmpeg input seeking.
 		const firsts = [await track.getFirstTimestamp()];
 		for (const t of await this.input.getTracks()) firsts.push(await t.getFirstTimestamp());
 		this.origin = Math.min(

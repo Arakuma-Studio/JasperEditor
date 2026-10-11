@@ -225,22 +225,14 @@ export function drawThroughLut(
 
 /** Size of a CanvasImageSource (video frames, images, canvases, bitmaps). */
 export function sourceSize(src: CanvasImageSource): { width: number; height: number } {
-	const s = src as {
-		videoWidth?: number;
-		videoHeight?: number;
-		naturalWidth?: number;
-		naturalHeight?: number;
-		displayWidth?: number;
-		displayHeight?: number;
-		width?: number | { baseVal: { value: number } };
-		height?: number | { baseVal: { value: number } };
+	if ('videoWidth' in src && src.videoWidth) return { width: src.videoWidth, height: src.videoHeight };
+	if ('naturalWidth' in src && src.naturalWidth)
+		return { width: src.naturalWidth, height: src.naturalHeight };
+	if ('displayWidth' in src) return { width: src.displayWidth, height: src.displayHeight };
+	return {
+		width: typeof src.width === 'number' ? src.width : (src.width?.baseVal.value ?? 0),
+		height: typeof src.height === 'number' ? src.height : (src.height?.baseVal.value ?? 0),
 	};
-	if (s.videoWidth) return { width: s.videoWidth, height: s.videoHeight ?? 0 };
-	if (s.naturalWidth) return { width: s.naturalWidth, height: s.naturalHeight ?? 0 };
-	if (s.displayWidth) return { width: s.displayWidth, height: s.displayHeight ?? 0 };
-	const w = typeof s.width === 'number' ? s.width : (s.width?.baseVal.value ?? 0);
-	const h = typeof s.height === 'number' ? s.height : (s.height?.baseVal.value ?? 0);
-	return { width: w, height: h };
 }
 
 let webgl2Support: boolean | null = null;

@@ -2,6 +2,7 @@
 // the picture's alpha). Pictures are frame-sized canvases: only the bounding box of the drawn pixels is traced. The
 // last solid of each layer is kept while its picture and Geometry Options do not change.
 import {
+	type Animatable,
 	evaluate,
 	extrudeShapes,
 	invertMat3,
@@ -26,8 +27,8 @@ export function geometryAt(
 } | null {
 	const g = clip.threeD?.geometry;
 	if (!g || (clip.kind !== 'text' && clip.kind !== 'shape')) return null;
-	const num = (a: unknown, d: number) => {
-		const v = a ? (evaluate(a as never, t) as number) : d;
+	const num = (a: Animatable<number> | undefined, d: number) => {
+		const v = a ? evaluate(a, t) : d;
 		return Number.isFinite(v) ? v : d;
 	};
 	const depth = Math.max(0, num(g.extrusionDepth, 0));

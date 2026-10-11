@@ -36,13 +36,12 @@ import {
 	getRemotionEnvironment,
 	useCurrentFrame,
 } from 'remotion';
+import { blendModeCss } from '../pipeline.ts';
 import type { TransitionTap } from '../types.ts';
 import { useCompositeTap } from './composite.tsx';
-import { useFxImages } from './FxPicture.tsx';
 import { FxShaderError, type FxTextureInput, fxHost, runShaderPlan } from './host.ts';
+import { useFxImages } from './images.ts';
 import { type FxGpuState, fxStatus } from './status.ts';
-
-// ---------------------------------------------------------------- hub
 
 type HubPicture = { canvas: HTMLCanvasElement; side: TrSide; version: number };
 
@@ -106,8 +105,6 @@ export class TransitionHub {
 		for (const l of this.listeners) l();
 	}
 }
-
-// ---------------------------------------------------------------- run mode
 
 /** How a GPU transition runs here: on the GPU (sides captured) or as the preview's dissolve fallback. */
 export type TransitionMode = { mode: 'gpu' } | { mode: 'fallback'; reason: string };
@@ -181,8 +178,6 @@ export function transitionProgressAt(
 	return transitionProgress(spec.gpu, params, transitionLinearProgress(local, t.duration, t.sides)).progress;
 }
 
-// ---------------------------------------------------------------- per-track context
-
 /** One side of a transition, as a clip of the track sees it. */
 export type TransitionSideEntry = {
 	t: RenderTransition;
@@ -196,8 +191,6 @@ export type TransitionSideEntry = {
 export const TransitionSidesContext = createContext<ReadonlyMap<string, readonly TransitionSideEntry[]>>(
 	new Map(),
 );
-
-// ---------------------------------------------------------------- stage
 
 const blank = (() => {
 	let c: HTMLCanvasElement | null = null;
@@ -367,7 +360,7 @@ export function TransitionStage(props: {
 				compositeTap
 					? { visibility: 'hidden' }
 					: props.blendMode && props.blendMode !== 'normal'
-						? { mixBlendMode: props.blendMode as never }
+						? { mixBlendMode: blendModeCss(props.blendMode) }
 						: undefined
 			}
 		>

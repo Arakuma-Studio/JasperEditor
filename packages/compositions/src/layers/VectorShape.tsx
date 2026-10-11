@@ -77,11 +77,9 @@ export function VectorShape(props: VectorShapeProps) {
 	return planIsCssExact(plan) ? <SvgShape {...props} plan={plan} /> : <CanvasShape {...props} plan={plan} />;
 }
 
-// ---------------------------------------------------------------- SVG
-
 type Node =
 	| { prim: PlanPrimitive; index: number }
-	| { group: { key: string; blend: string }; children: Node[] };
+	| { group: { key: string; blend: PlanPrimitive['blend'] }; children: Node[] };
 
 /** Nests consecutive primitives of the same blended group instance. */
 function nest(plan: readonly PlanPrimitive[]): Node[] {
@@ -241,8 +239,6 @@ function SvgPrimitive({ prim, id }: { prim: PlanPrimitive; id: string }) {
 	);
 }
 
-// ---------------------------------------------------------------- canvas compositor
-
 const KERNEL = makeBlendKernel();
 
 type Canvas2D = CanvasRenderingContext2D;
@@ -321,7 +317,7 @@ export function compositePlan(
 	scratch: Canvas2D,
 	seed: number,
 ): Float64Array<ArrayBuffer> {
-	const stack: { key: string; buf: Float64Array<ArrayBuffer>; blend: string }[] = [];
+	const stack: { key: string; buf: Float64Array<ArrayBuffer>; blend: PlanPrimitive['blend'] }[] = [];
 	let cur = new Float64Array(w * h * 4);
 	const d = new Float64Array(4);
 	const sp = new Float64Array(4);
@@ -353,7 +349,7 @@ export function compositePlan(
 		const g = stack.pop()!;
 		const child = cur;
 		cur = g.buf;
-		blendInto(cur, child, planBlendIndex(g.blend as never), isStencilBlend(g.blend));
+		blendInto(cur, child, planBlendIndex(g.blend), isStencilBlend(g.blend));
 	};
 	for (const prim of plan) {
 		let depth = 0;

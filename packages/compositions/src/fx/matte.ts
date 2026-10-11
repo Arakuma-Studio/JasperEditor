@@ -9,7 +9,7 @@
 // - Fill layers bind it as a media input (`track:<trackId>`, `useTrackMattes`): renders hold a delayRender until
 //   every clip of the matte track drew this exact frame (deterministic in any frame order); the Player shows the
 //   latest composite.
-import { matteClipsAt, type RenderVisualClip } from '@jasper/project';
+import { matteClipsAt, type RenderSnapshot, type RenderVisualClip } from '@jasper/project';
 import { createContext, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { continueRender, createEffect, delayRender, getRemotionEnvironment } from 'remotion';
 import {
@@ -56,7 +56,7 @@ export class TrackMatteHub {
 	private readonly taps = new Map<string, MatteTap>();
 	private readonly listeners = new Set<() => void>();
 	private clips: readonly RenderVisualClip[] = [];
-	private media: Readonly<Record<string, unknown>> = {};
+	private media: Readonly<RenderSnapshot['media']> = {};
 	private composite: { canvas: HTMLCanvasElement; frame: number; version: number } | null = null;
 	private version = 0;
 
@@ -66,7 +66,7 @@ export class TrackMatteHub {
 	) {}
 
 	/** The track's clips (bottom → top order is the track order) and the snapshot's media (offline = no picture). */
-	setClips(clips: readonly RenderVisualClip[], media: Readonly<Record<string, unknown>>): void {
+	setClips(clips: readonly RenderVisualClip[], media: Readonly<RenderSnapshot['media']>): void {
 		this.clips = clips;
 		this.media = media;
 	}
@@ -140,8 +140,6 @@ export class TrackMatteHub {
 		this.composite = { canvas, frame: f, version: ++this.version };
 	}
 }
-
-// ---------------------------------------------------------------- GL composite
 
 const PLACE_SHADER = /* glsl */ `#version 300 es
 precision highp float;
@@ -254,8 +252,6 @@ function compositeMatte(
 	ctx.globalCompositeOperation = 'source-over';
 }
 
-// ---------------------------------------------------------------- composition plumbing
-
 /** trackId → hub, for the fill layers (provided by the composition). */
 export const TrackMatteContext = createContext<ReadonlyMap<string, TrackMatteHub>>(new Map());
 
@@ -326,8 +322,6 @@ export function useTrackMattes(
 	);
 	return { media, key: `${version}|${[...media.values()].map((m) => m.version).join(',')}` };
 }
-
-// ---------------------------------------------------------------- chain step
 
 export type FxMatteTapParams = { key: string; tap: MatteTap; meta: MatteTapMeta; hide: boolean };
 

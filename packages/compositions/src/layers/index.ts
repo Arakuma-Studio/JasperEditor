@@ -19,7 +19,6 @@ import { VectorLayer } from './VectorLayer.tsx';
 import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
-// M2 (wp-m2-layer-bake)
 export {
 	type BakedLayerPreview,
 	type BakedLayerRuntime,
@@ -33,7 +32,8 @@ export {
 export { CAPTION_TITLE_SAFE, captionBlockPlacement, captionPageAt } from './CaptionsLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
-export { lottieDocument, lottieFrameForLayer } from './LottieLayer.tsx';
+export { lottieFrameForLayer } from './LottieLayer.tsx';
+export { lottieDocument } from './lottie.ts';
 export {
 	type MgRenderState,
 	MgRenderStateContext,

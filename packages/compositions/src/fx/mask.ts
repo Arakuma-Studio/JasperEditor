@@ -145,8 +145,6 @@ export function runMaskPass(
 	blit(h, out, W, H);
 }
 
-// ---------------------------------------------------------------- packed masks (cached by content)
-
 export type FxMaskGeometry = {
 	masks: readonly ResolvedMask[];
 	/** The layer box inside the chain canvas (canvas px). */
@@ -259,10 +257,7 @@ export const fxMasked = createEffect<FxMaskedParams, null>({
 		if (!h) throw unavailable();
 		const { pack, key } = packedMasks(params.geometry, width, height);
 		const runInner = (d: EffectDescriptor, src: CanvasImageSource, slot: number): HTMLCanvasElement => {
-			const def = d.definition as {
-				setup(t: HTMLCanvasElement): unknown;
-				apply(a: Record<string, unknown>): void;
-			};
+			const def = d.definition;
 			const target = scratchCanvas(width, height, slot);
 			let states = innerStates.get(def);
 			if (!states) {

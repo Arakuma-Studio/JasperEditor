@@ -69,6 +69,6 @@ const STAND_INS: Readonly<Record<string, GpuEffect>> = { 'jasper.gaussian-blur':
 export function chainGpuStandIn(spec: EffectSpec, params: EffectParams): EffectSpec | null {
 	const gpu = STAND_INS[spec.id];
 	if (!gpu || spec.gpu) return null;
-	if (spec.preview.css?.(params as never) !== null) return null;
+	if (spec.preview.css?.(params) !== null) return null;
 	return { ...spec, gpu };
 }

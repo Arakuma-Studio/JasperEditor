@@ -1,4 +1,4 @@
-// Typography of the typeset text renderer (workstream text-animators): the CSS of character and paragraph
+// Typography of the typeset text renderer: the CSS of character and paragraph
 // settings, the read-time defaults of the optional style fields, and when a text clip needs the typeset renderer.
 //
 // Character settings follow After Effects' Character panel (helpx.adobe.com/after-effects/using/
@@ -14,7 +14,7 @@
 //   = an outline stroke in the fill colour of Skia's fake-bold width (size × 1/24 at 9 px … 1/32 from 36 px);
 // - ligatures / OpenType features = `font-variant-*` and `font-feature-settings`; variable axes =
 //   `font-variation-settings`.
-import type { TextContent, TextStyle } from '@jasper/project';
+import type { TextAnimatorGroup, TextContent, TextPathOptions, TextStyle } from '@jasper/project';
 import type { CSSProperties } from 'react';
 
 export const SCRIPT_SIZE = 0.583;
@@ -40,7 +40,7 @@ export const PARAGRAPH_FIELDS = [
 	'spaceAfterPx',
 ] as const;
 
-/** Style fields this workstream added (their presence routes a clip to the typeset renderer). */
+/** Non-default values in these fields require the typeset renderer. */
 const TYPOGRAPHY_FIELDS = [
 	'kerning',
 	'baselineShiftPx',
@@ -63,9 +63,8 @@ const TYPOGRAPHY_FIELDS = [
 /** True when a style uses a typography field with a non-default value. */
 export function usesTypography(s: Partial<TextStyle> | undefined): boolean {
 	if (!s) return false;
-	const r = s as Record<string, unknown>;
 	return TYPOGRAPHY_FIELDS.some((f) => {
-		const v = r[f];
+		const v = s[f];
 		if (v === undefined) return false;
 		switch (f) {
 			case 'kerning':
@@ -92,8 +91,8 @@ export function usesTypography(s: Partial<TextStyle> | undefined): boolean {
 /** The parts of a text layer source the typeset renderer reads. */
 export type TypesetSource = {
 	text: TextContent;
-	animators?: readonly unknown[];
-	pathOptions?: unknown;
+	animators?: readonly TextAnimatorGroup[];
+	pathOptions?: TextPathOptions;
 };
 
 /**

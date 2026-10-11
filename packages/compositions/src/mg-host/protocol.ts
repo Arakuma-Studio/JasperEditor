@@ -51,7 +51,7 @@ export function bundleServeUrl(mediaKey: string): string {
  * document: nothing persists, nothing is shared with the editor or with another bundle. A page that is not
  * sandboxed (the engine's own headless measuring browser) keeps the real ones.
  */
-export const SANDBOX_STORAGE_SHIM = String.raw`(function(){
+export const SANDBOX_STORAGE_SHIM = `(function(){
 function memory() {
 	var m = Object.create(null);
 	var api = {
@@ -124,8 +124,6 @@ export function injectHostBootstrap(html: string, opts?: { timeoutMs?: number; l
 	if (!m) return `${tag}${html}`;
 	return html.slice(0, m.index + m[0].length) + tag + html.slice(m.index + m[0].length);
 }
-
-// ---------------------------------------------------------------- the driver
 
 /** The metadata in effect for a mounted composition (after overrides). */
 export type CompositionMetadata = {
