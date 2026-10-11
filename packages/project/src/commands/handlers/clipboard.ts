@@ -1,5 +1,3 @@
-import { CommandError } from '../types.ts';
-import { clone } from './util.ts';
 // Clipboard command handlers (wp-clipboard; S01 §20 CLB-003…008, ID-005; S03:FX-011/012, EC-023/032, KF table
 // "duplicate, copy/paste, paste attributes"). Every paste validates its payload first (CLB-009), gives every
 // pasted entity a new id and remaps the references inside the pasted set (ID-005), and resolves the entities the
@@ -61,6 +59,7 @@ import {
 	syncFollowerTracks,
 } from '../placement.ts';
 import type { CommandOf, PasteAttributes } from '../schemas/index.ts';
+import { CommandError } from '../types.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { buildParams } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
@@ -68,7 +67,7 @@ import { PRUNE_EMPTY_KEYFRAMES } from './mg-template.ts';
 import { resolveTarget, validateValue } from './param.ts';
 import { assertBin, insertItem } from './project-items.ts';
 import { pasteTimeRemap, removeTimeRemap } from './time.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { clone, type HandlerMap, idList } from './util.ts';
 
 export const CLIPBOARD_OWNER = 'wp-clipboard';
 

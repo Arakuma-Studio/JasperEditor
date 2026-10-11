@@ -1,15 +1,3 @@
-import {
-	applyTransformPatch,
-	commonFields,
-	frameBox,
-	makeRoom,
-	newGeneratorClip,
-	prepareTrack,
-	visualFields,
-} from './clip-common.ts';
-// Core clip handlers (ARCHITECTURE §5.3, WP-00): place, addText/addSolid/addMotionGraphic, move,
-// trim (regular + ripple), split, lift, extract, update. S01 §9–§10, S02 §10–§13, Appendix A.
-
 import type { Draft } from 'immer';
 import {
 	anim,
@@ -53,6 +41,15 @@ import {
 import { rippleDeleteSpans, rippleTrimGroup, tracksHolding, trimLimits } from '../ripple.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import {
+	applyTransformPatch,
+	commonFields,
+	frameBox,
+	makeRoom,
+	newGeneratorClip,
+	prepareTrack,
+	visualFields,
+} from './clip-common.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';

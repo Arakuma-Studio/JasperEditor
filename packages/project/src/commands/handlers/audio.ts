@@ -1,4 +1,3 @@
-// Audio buses handlers (workstream audio-mix): see `schemas/audio.ts` and `audio/strip.ts`.
 import type { Draft } from 'immer';
 import { duckClipKeyframes } from '../../audio/ducking.ts';
 import {

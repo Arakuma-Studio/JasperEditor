@@ -1,7 +1,3 @@
-// Keyframe handlers (ARCHITECTURE §5.3, S01 §12, S03 §12.3): keyframe.add/update/remove/move,
-// keyframe.setInterpolation (Linear / Bezier / Auto Bezier / Continuous Bezier / Hold and the Ease In,
-// Ease Out, Easy Ease presets of S01:KF-004) and keyframes.prune (S01:KF-006).
-//
 // Keyframes live in content time (flicks) of the owning clip; track and master parameters use sequence
 // time in flicks (S01:KF-002). Keys are addressed by id; the handlers locate them anywhere in the
 // document and re-use param.ts target resolution for validation, lock checks and time conversion.

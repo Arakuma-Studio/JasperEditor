@@ -1,4 +1,3 @@
-// Mask commands (wp masks, S03 §17): mask.add / remove / update / reorder / duplicate / editPath / setPathKeys.
 // Masks are Opacity masks of a visual clip (`clip.masks`) or masks of one of its video effect instances
 // (`effect.masks`, Premiere's per-effect masks). Paths are in layer-box-normalised coordinates; feather and
 // expansion are layer pixels. Every mask property is also a ParamPath target (`["mask", id, prop]`, param.ts).

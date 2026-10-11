@@ -1,7 +1,3 @@
-// Shape clips (M2, S11:SHP-001…003, ARCHITECTURE §20.1): clip.addShape, the `shape` patch of clip.update,
-// the "None" fill/stroke materialisation behind `param.set shape.*`, and the rule that keeps a shape centred on
-// its anchor when an edit changes its layer box. Owner: wp-m2-shapes.
-//
 // The layer box of a shape is `shapeIntrinsicBox` (largest size over the keyframes, or the static value when there
 // are none, plus the stroke drawn outside) and the geometry is centred in it. When an edit changes that box, the
 // anchor (value and keys) moves by half the change, so the geometry stays where it was on screen

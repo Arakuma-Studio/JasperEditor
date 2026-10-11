@@ -1,7 +1,3 @@
-import type { DTrack } from '../context.ts';
-import { clone as snapshotClip } from './util.ts';
-// Advanced edit handlers owned by WP-2B (ARCHITECTURE §5.3): roll, slip, slide, speed, duplicate,
-// link/unlink, fit to frame, range lift/extract and gap close (S01 §9, §16.2; S02 §11–§14).
 //
 // Conventions shared with the core handlers (clip-core.ts):
 // - handlers are pure over Immer drafts and throw through `h.fail` (atomic transactions, S01:CMD-004);
@@ -16,7 +12,7 @@ import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Clip } from '../../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame } from '../../time.ts';
 import { isRemapped } from '../../time-remap/model.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
 	assertKindFits,
@@ -40,7 +36,7 @@ import {
 } from '../placement.ts';
 import { contentHandles, contentWindow } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { type HandlerMap, idList } from './util.ts';
+import { type HandlerMap, idList, clone as snapshotClip } from './util.ts';
 
 function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
 	const t = findTrackIn(seq, clip.trackId);

@@ -1,4 +1,3 @@
-// sim-warp command handlers: Liquify strokes, Mesh Warp vertices, Puppet meshes and pins (schemas/sim-warp.ts).
 import type { Draft } from 'immer';
 import { anim } from '../../factories.ts';
 import { evaluate } from '../../keyframes.ts';
