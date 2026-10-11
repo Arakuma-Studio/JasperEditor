@@ -47,6 +47,12 @@ The highest-confidence findings and implementations are:
   explicitly omit only the selected clip id. Known clip fields use discriminant/property narrowing instead
   of invented `Record<string, unknown>` interfaces. Overlay host props derive from the existing transform
   overlay contract, and coordinate tuples reuse project `Vec2`.
+- The 3D overlay wrapper coerced its document with a bitwise operator, suppressing the entire overlay. It now
+  passes the supplied document through unchanged. A real session/camera regression checks both the SVG overlay
+  and the named active-camera option.
+- SVG conversion exposes canonical `ShapeItemInput` payloads, with a discriminated static representation inside
+  the converter. Drawing tools and mesh gestures retain their required fields and coordinate tuples; transcript
+  attachment plans derive their payload type from the command schema. Tracker links use the model's mode union.
 - Redundant section-divider comments and extraction-obsolete imports were removed. Retained comments explain
   coordinate systems, source-time rules, undo/gesture behavior, browser limitations, or API contracts.
 
@@ -80,5 +86,8 @@ incorrect or that arbitrary future input can never reveal another bug.
 - The final audit/import run passes all 25 tests in `audit-web-features.test.tsx` and `imports.test.tsx`
   with `--maxWorkers=1`, including the malformed-result property. These two fresh runs cover 42 distinct tests
   across five files.
+- The focused `scene3d-overlay.test.tsx` regression fails with the bitwise document coercion (missing overlay)
+  and passes with the corrected wrapper (1/1, `--maxWorkers=1`). It creates a real camera and checks its name in
+  the rendered active-camera option.
 - The integration owner will run the serialized full web typecheck and the repository verification gate;
   concurrent TypeScript processes were avoided because the shared host was heavily loaded.
