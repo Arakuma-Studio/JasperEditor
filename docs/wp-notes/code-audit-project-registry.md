@@ -104,7 +104,15 @@ comment now describes the actual effect-versus-clip formula distinction without 
   passes after formatting.
 - `pnpm exec vitest run packages/project/test/registry-validation.test.ts --maxWorkers=1`:
   10 tests pass, following the failing-before-fix run described above.
-- The broader registry/property/family test selection is recorded below once it completes.
+- `pnpm exec vitest run packages/project/test/fx-*.test.ts packages/project/test/transition-*.test.ts
+  packages/project/test/properties*.test.ts packages/project/test/three-d*.test.ts
+  packages/project/test/text-animators*.test.ts packages/project/test/registry-validation.test.ts --maxWorkers=1`:
+  34 of 35 files pass; 460 of 462 tests pass. The two failures are in the unchanged `three-d-hostile.test.ts`:
+  a glTF allocation refusal took 151,164 ms against its 20,000 ms wall-clock budget, and another hostile-model
+  test exceeded its 60-second timeout. The run took 1,259 seconds, including 848 seconds of imports. These
+  timing failures are consistent with the observed shared-host contention; serialized integration verification
+  must rerun that file before claiming a passing gate. The registry, shader, transition, property-consuming 3D,
+  and text animator behavioural tests passed.
 - Package typechecking was started, then stopped at the integrator's request because simultaneous project
   typechecks were exhausting shared-host resources. Final serialized typechecking is an integration gate.
 - `git diff --check` is run before commit.

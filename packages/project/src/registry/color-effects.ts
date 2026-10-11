@@ -340,7 +340,7 @@ export const LUMETRI_PARAMS: readonly ParamSpec[] = [
 	bipolar('midtonesLevel', 'Midtones Level', 'wheels'),
 	bipolar('highlightsLevel', 'Highlights Level', 'wheels'),
 
-	// the Lumetri panel's order; `LUMETRI_GROUPS` lists the sections.
+	// Parameter order matches the Lumetri panel; LUMETRI_GROUPS defines its sections.
 	sectionToggle('basicOn', 'Basic Correction', 'basic'),
 	sectionToggle('creativeOn', 'Creative', 'creative'),
 	{
