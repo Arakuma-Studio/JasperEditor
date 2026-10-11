@@ -1,4 +1,4 @@
-// Transition family "sapphire-wipes-other" (transition framework, wave 3): the Sapphire-style wipes (S_Wipe*).
+// Transition family "sapphire-wipes-other": the Sapphire-style wipes (S_Wipe*).
 // Ids `jasper.s.<kebab>`; bin TRANSITION_BINS.sapphire, sub-bin SAPPHIRE_TRANSITION_SUBBINS.wipes. (The swish /
 // other Sapphire transitions live in their own family file.)
 // Entries are built with `sapphireWipe` (./sapphire-wipes/common.ts, on top

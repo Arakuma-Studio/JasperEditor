@@ -32,8 +32,6 @@ import {
 
 const DIR_PER_UNIT = 1 / 8;
 
-// ---------------------------------------------------------------- S_BlurDirectional
-
 const GLSL_SBS_DIRECTIONAL: GlslChunk = {
 	name: 'sapphire-blur-sharpen/directional',
 	deps: [GLSL_SBS_COMMON],
@@ -163,8 +161,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- transform path (BlurMotion, BlurMoCurves)
 
 /** One Sapphire transformation: Z Dist (zoom about the centre), Rotate (deg), Shift (Sapphire units). */
 export type MoTransform = { zDist: number; rotate: number; shift: readonly [number, number] };
@@ -371,8 +367,6 @@ const commonTail = [
 	fxParam.toggle('subpixel', 'Subpixel', true),
 ];
 
-// ---------------------------------------------------------------- S_BlurMotion
-
 export const S_BLUR_MOTION = defineShaderEffect({
 	id: 'jasper.s.blur-motion',
 	label: 'S_BlurMotion',
@@ -402,8 +396,6 @@ export const S_BLUR_MOTION = defineShaderEffect({
 		passes: (p) => moPasses(p, p.effect === 'mono'),
 	},
 });
-
-// ---------------------------------------------------------------- S_BlurMoCurves
 
 const MOC_EFFECT = ['transformAndBlur', 'blurOnly'] as const;
 

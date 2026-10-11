@@ -1,4 +1,4 @@
-// Shared matte operations of the matte / keying families (parity workstream `roto`): matte sampling over the layer
+// Shared matte operations of the matte / keying families: matte sampling over the layer
 // box, fractional grey-scale morphology (choke / spread), Gaussian softening and contrast, as GLSL and as pass
 // builders (ping-pong passes on one output name). Imported by object-matte.ts and keying-matte.ts.
 import { GLSL_BLUR } from './glsl/blur.ts';

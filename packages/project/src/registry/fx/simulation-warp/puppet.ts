@@ -1,21 +1,21 @@
-// Distort ▸ Puppet (sim-warp workstream; After Effects' Puppet effect): the layer is drawn through triangle meshes
+// Distort ▸ Puppet (After Effects' Puppet effect): the layer is drawn through triangle meshes
 // deformed as rigidly as possible by pins (Position, Advanced, Bend, Starch and Overlap pins, `EffectInstance.puppet`,
 // edited with the Program monitor's Puppet Pin tool and the `puppet.*` commands). The ARAP solve runs per frame in TS
 // (puppet/arap.ts); a draw pass maps the source through the deformed triangles, back to front by Overlap depth.
 // Areas outside every mesh are not drawn (as in After Effects); without meshes the layer passes through.
 
-import { type ResolvedPuppet, solvePuppet } from '../../../puppet/model.ts';
-import type { EffectSpec } from '../../effects.ts';
+import { solvePuppet } from '../../../puppet/model.ts';
+import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
 import type { FxPlanContext } from '../shader.ts';
 import { n } from './common.ts';
 import { clamp, num } from './core.ts';
 
-const refineOf = (p: Record<string, unknown>) => clamp(Math.round(num(p.refinement, 20) / 10), 0, 10);
+const refineOf = (p: EffectParams) => clamp(Math.round(num(p.refinement, 20) / 10), 0, 10);
 
-function solved(p: Record<string, unknown>, ctx: FxPlanContext) {
-	const pup = ctx.structures?.puppet as ResolvedPuppet | undefined;
+function solved(p: EffectParams, ctx: FxPlanContext) {
+	const pup = ctx.structures?.puppet;
 	if (!pup || pup.meshes.length === 0) return null;
 	return solvePuppet(pup, ctx.width, ctx.height, refineOf(p));
 }

@@ -12,23 +12,19 @@
 // - Motion blur is a shutter in PROGRESS space: `u_frameStep` is the progress change per frame of the span, and a
 //   blur of B frames samples the move over [p − B·step/2, p + B·step/2], shrunk near the ends so progress 0 is
 //   exactly A and 1 exactly B. Tap counts follow the on-screen extent (≤ 1.5 px apart, stratified jitter beyond).
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { fxParam, seedParam } from '../../fx/params.ts';
 import type { GlslChunk } from '../../fx/shader.ts';
+import { booleanParam as bool, clamp, numberParam as num, stringParam as str } from '../../param-values.ts';
 import { GLSL_TRANSITION } from '../glsl.ts';
 import type { TrFrameContext } from '../shader.ts';
 
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const bool = (v: unknown, d = false): boolean => (typeof v === 'boolean' ? v : d);
-export const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
-export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
-export const vec2 = (v: unknown, d: [number, number]): [number, number] =>
+export const vec2 = (v: ParamValue | undefined, d: [number, number]): [number, number] =>
 	Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number'
 		? [v[0], v[1]]
 		: d;
-
-// ---------------------------------------------------------------- param builders
 
 type Range = NonNullable<ParamSpec['range']>;
 
@@ -37,7 +33,6 @@ export function sNum(name: string, label: string, def: number, range: Range = {}
 	return fxParam.number(name, label, def, { step: 0.01, ...range }, group ? { group } : undefined);
 }
 
-/** An integer Sapphire slider. */
 export function sInt(
 	name: string,
 	label: string,
@@ -112,10 +107,8 @@ export const whipParam = (name: string, label: string) =>
 export const DIRECTION_OPTIONS = ['left', 'right', 'up', 'down'] as const;
 export const DIRECTION_LABELS = ['Left', 'Right', 'Up', 'Down'] as const;
 const DIRS: Record<string, [number, number]> = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
-export const directionVector = (v: unknown, def = 'left'): [number, number] =>
+export const directionVector = (v: ParamValue | undefined, def = 'left'): [number, number] =>
 	DIRS[str(v, def)] ?? DIRS[def]!;
-
-// ---------------------------------------------------------------- pure maths (mirrored by the GLSL)
 
 /**
  * Sapphire Slow In / Slow Out: a cubic Hermite from 0 to 1 whose end tangents are 1 − slowIn and 1 − slowOut
@@ -211,8 +204,6 @@ export function shakeOffset(
 	return [axis(1) * a, axis(2) * a];
 }
 
-// ---------------------------------------------------------------- GLSL
-
 /**
  * `sw/core`: Slow In/Out, bells, wraps, frame units, shutters and the whip curve (mirrors of the TS above).
  * Frame units ("f"): centred, y down, 1 = the frame HEIGHT (x spans ±aspect/2). Sapphire units (1 = half the
@@ -296,3 +287,5 @@ float sw_shutter(float p, float blurFrames) {
 export function shutterUniforms(p: EffectParams, ctx: TrFrameContext) {
 	return { u_frameStep: frameStep(p, ctx) };
 }
+
+export { bool, clamp, num, str };

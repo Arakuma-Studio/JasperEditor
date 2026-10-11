@@ -1,6 +1,7 @@
 // Card and strip transitions of the family: S_CardFlip (3D cards in perspective with lighting and a drop shadow),
 // S_StripSlideTransition (strips sliding off / on one at a time) and S_ParallaxStripsTransition (refracting glass
 // strips that grow, carry the dissolve and shrink away).
+import type { ParamValue } from '../../../schema/common.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { GLSL_MB } from '../../fx/glsl/motion-blur.ts';
 import { fxParam } from '../../fx/params.ts';
@@ -26,10 +27,8 @@ import {
 const BIN = TRANSITION_BINS.sapphire;
 const OTHER = SAPPHIRE_TRANSITION_SUBBINS.other;
 
-// ---------------------------------------------------------------- S_CardFlip
-
 /** Spin axis (0 vertical, 1 horizontal) and sign of a Spin Direction. */
-export function cardSpin(direction: unknown): { axis: number; sign: number } {
+export function cardSpin(direction: ParamValue | undefined): { axis: number; sign: number } {
 	switch (str(direction, 'left')) {
 		case 'right':
 			return { axis: 0, sign: -1 };
@@ -43,7 +42,7 @@ export function cardSpin(direction: unknown): { axis: number; sign: number } {
 }
 
 /** Total rotation (half turns) of S_CardFlip for Revolutions: 0 = a slide/shuffle, n ≥ 1 = 2n − 1 half turns. */
-export function cardHalfTurns(revolutions: unknown): number {
+export function cardHalfTurns(revolutions: ParamValue | undefined): number {
 	const r = Math.max(0, Math.round(num(revolutions, 1)));
 	return r === 0 ? 0 : 2 * r - 1;
 }
@@ -139,8 +138,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_StripSlideTransition
 
 export const STRIP_ORDERS = ['topDown', 'bottomUp', 'random', 'centerOut', 'edgesIn'] as const;
 
@@ -254,8 +251,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_ParallaxStripsTransition
 
 /** Growth (0..1) of the strips at eased progress e: up to the middle and back, Slow Grow easing the start. */
 export function parallaxGrowth(e: number, slowGrow: number): number {

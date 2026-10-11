@@ -1,17 +1,14 @@
-// Shared helpers of the Premiere Adjust/Color/Keying family (fx catalogue, wave 2): param value readers, Premiere-
+// Shared helpers of the Premiere Adjust/Color/Keying family: param value readers, Premiere-
 // style param builders, family GLSL chunks (media layers over the layer box, colour spaces, analysis reductions) and
 // pass builders (downscaled frame analysis for Auto Color/Contrast/Levels and Equalize).
 // Import rule: values only from the framework (`../define.ts`, `../params.ts`, `../passes.ts`, `../shader.ts`,
 // `../glsl/*`); only types from `../../effects.ts`.
+
 import type { ParamSpec } from '../../effects.ts';
+import { booleanParam as bool, numberParam as num, stringParam as str } from '../../param-values.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
-
-/** A finite number param value (or the default). */
-export const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const bool = (v: unknown, d = false) => (typeof v === 'boolean' ? v : d);
-export const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d);
 
 /** A Premiere-style numeric slider with a hard range and a slider (soft) range. */
 export function slider(
@@ -75,8 +72,6 @@ export const layerSizesParam = (def: 'center' | 'stretch' = 'center', name = 'la
 		def,
 	);
 
-// ---------------------------------------------------------------- GLSL
-
 /**
  * Family GLSL: media layers placed over the layer box (Premiere "If Layer Sizes Differ": centred at native size or
  * stretched), clamped colour helpers, YIQ, and Rec.601/709 luma.
@@ -112,8 +107,6 @@ vec3 pacg_yiq2rgb(vec3 y) {
 vec3 pacg_straight(vec4 p) { return p.a > 0.0 ? p.rgb / p.a : vec3(0.0); }
 `,
 };
-
-// ---------------------------------------------------------------- frame analysis (Auto Color/Contrast/Levels, Equalize)
 
 /** Long side of the analysis thumbnail in pixels (≈ 96 × 54 = 5k samples for a 16:9 layer). */
 export const ANALYSIS_SIDE = 96;
@@ -158,3 +151,5 @@ export function statsScale(ctx: FxPlanContext): number {
 	const side = Math.max(ctx.width, ctx.height) * ctx.pxScale;
 	return Math.min(1, Math.max(1e-3, 1 / Math.max(1, side)));
 }
+
+export { bool, num, str };

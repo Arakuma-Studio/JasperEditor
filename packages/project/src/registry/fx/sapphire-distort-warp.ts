@@ -1,4 +1,4 @@
-// Effect family "sapphire-distort-warp" (fx catalogue, wave 2). Sapphire-style distortions: warps, ripples,
+// Effect family "sapphire-distort-warp". Sapphire-style distortions: warps, ripples,
 // displacement, lens distortion, shake. Video Effects ▸ Sapphire Distort ▸ S_*.
 // Authoring guide: docs/wp-notes/fx-shader-framework.md. Family-private GLSL and maths: ./sapphire-distort-warp/.
 //
@@ -11,7 +11,9 @@
 // - Radii are in units of half the smaller layer side (`dw_unit`); frequencies in waves per frame width.
 // - "Wrap" (No / Tile / Reflect) is a pair of popups (Wrap X, Wrap Y) where Sapphire has one x/y popup.
 // - "Filter" switches the adaptive supersampling (antialiased minifying warps, folds and hard edges).
+import type { ParamValue } from '../../schema/common.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
+import { booleanParam as bool, numberParam as num, stringParam as str } from '../param-values.ts';
 import { defineShaderEffect, SAPPHIRE_BINS, type ShaderEffectInit } from './define.ts';
 import { GLSL_HASH } from './glsl/hash.ts';
 import { GLSL_MB_POSES } from './glsl/motion-blur.ts';
@@ -51,13 +53,8 @@ import {
 } from './sapphire-distort-warp/math.ts';
 import type { FxPlanContext, ShaderPass } from './shader.ts';
 
-// ---------------------------------------------------------------- helpers
-
-const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const bool = (v: unknown, d = false) => (typeof v === 'boolean' ? v : d);
-const vec2 = (v: unknown, d: readonly [number, number]): [number, number] =>
+const vec2 = (v: ParamValue | undefined, d: readonly [number, number]): [number, number] =>
 	Array.isArray(v) && v.length === 2 ? [num(v[0], d[0]), num(v[1], d[1])] : [d[0], d[1]];
-const str = (v: unknown, d: string) => (typeof v === 'string' ? v : d);
 
 /** Displacement (frame widths) per unit of Amount × lens gradient (luminance per frame width). */
 export const DW_DISTORT_UNIT = 0.0025;
@@ -114,8 +111,6 @@ void main() { fragColor = dw_render(${opts.wrap ?? WRAP}, ${opts.filter ?? 'u_fi
 const distortEffect = (init: Omit<ShaderEffectInit, 'category' | 'bin'>) =>
 	defineShaderEffect({ ...init, category: 'Distort', bin: SAPPHIRE_BINS.distort });
 
-// ---------------------------------------------------------------- lens (S_Distort, S_DistortBlur, …, S_WarpPuff)
-
 /**
  * Passes producing the blurred lens luminance `lensB` (half-float): the Lens media (stretched over the layer box)
  * when one is chosen, else the source's own luminance (premultiplied: transparent areas are dark).
@@ -150,8 +145,6 @@ const lensParam = () => fxParam.media('lens', 'Lens');
 const blurLensParam = (name = 'blurLens', label = 'Blur Lens') =>
 	fxParam.number(name, label, 0.4, { min: 0, softMax: 3, step: 0.01 });
 
-// ---------------------------------------------------------------- S_Distort
-
 export const S_DISTORT = distortEffect({
 	id: 'jasper.s.distort',
 	label: 'S_Distort',
@@ -182,8 +175,6 @@ vec2 dw_warp(vec2 f) { return f + u_dispScale * (dw_rot(u_rotateWarpDir) * dw_le
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DistortBlur
 
 export const S_DISTORT_BLUR = distortEffect({
 	id: 'jasper.s.distort-blur',
@@ -232,8 +223,6 @@ void main() { fragColor = dw_render(${WRAP}, u_subpixel, 2); }`,
 	},
 });
 
-// ---------------------------------------------------------------- S_DistortChroma
-
 export const S_DISTORT_CHROMA = distortEffect({
 	id: 'jasper.s.distort-chroma',
 	label: 'S_DistortChroma',
@@ -276,8 +265,6 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 2); }`,
 	},
 });
 
-// ---------------------------------------------------------------- S_DistortRGB
-
 export const S_DISTORT_RGB = distortEffect({
 	id: 'jasper.s.distort-rgb',
 	label: 'S_DistortRGB',
@@ -317,8 +304,6 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 3); }`,
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_InfiniteZoom
 
 const SPIRAL_OPTIONS = ['none', 'cw1', 'ccw1', 'cw2', 'ccw2'] as const;
 const SPIRAL_STRANDS: Record<string, number> = { none: 0, cw1: -1, ccw1: 1, cw2: -2, ccw2: 2 };
@@ -428,8 +413,6 @@ void main() { fragColor = dw_render(${WRAP1}, true, 3); }`,
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_ParallaxStrips
 
 export const S_PARALLAX_STRIPS = distortEffect({
 	id: 'jasper.s.parallax-strips',
@@ -567,8 +550,6 @@ export function parallaxAmount(p: EffectParams, frame: number, duration: number)
 	return str(p.fade, 'end') === 'start' ? 1 - ease(1 - t) : 1 - ease(t);
 }
 
-// ---------------------------------------------------------------- S_WarpBubble / S_WarpBubble2
-
 const BUBBLE_GLSL = /* glsl */ `
 // Bubble noise: two fbm fields → a displacement of about ±amp / freq frame widths.
 vec2 wb_bubble(vec2 f, float amp, float freq, float relX, float octaves, vec2 shift, float seed) {
@@ -648,8 +629,6 @@ vec2 dw_warp(vec2 f) {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_WarpChroma / S_WarpRepeat (transform paths)
 
 const PATH_GLSL = /* glsl */ `
 // The transform at t (0 = From, 1 = To), scaled by Warp Amount: source frame position of output f.
@@ -747,8 +726,6 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 2); }`,
 	},
 });
 
-// ---------------------------------------------------------------- motion blur of keyframed warps
-
 /** Motion Blur + Mo Blur Length (frames of shutter, centred on the frame) of the keyframed warps. */
 const motionBlurParams = () => [
 	fxParam.toggle('motionBlur', 'Motion Blur', false),
@@ -797,8 +774,6 @@ function warpShutterPlan(
 		quality: p.mbQuality,
 	});
 }
-
-// ---------------------------------------------------------------- S_WarpCornerPin
 
 const cornerPoints = (p: EffectParams) => ({
 	tl: vec2(p.topLeft, [0.1, 0.38]),
@@ -963,8 +938,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- ripples: S_WarpDrops, S_WarpPuddle
 
 const RIPPLE_GLSL = /* glsl */ `
 // Envelope of a ripple at radius r (dw_unit radii): fades in after Inner Radius, out before Outer Radius.
@@ -1184,8 +1157,6 @@ vec2 dw_warp(vec2 f) { return f * u_zDist + (texture(u_dropDisp, dw_uvOfFrame(f)
 	},
 });
 
-// ---------------------------------------------------------------- S_WarpFishEye
-
 export const S_WARP_FISH_EYE = distortEffect({
 	id: 'jasper.s.warp-fish-eye',
 	label: 'S_WarpFishEye',
@@ -1227,8 +1198,6 @@ vec2 dw_warp(vec2 f) {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_WarpMagnify
 
 export const S_WARP_MAGNIFY = distortEffect({
 	id: 'jasper.s.warp-magnify',
@@ -1272,8 +1241,6 @@ vec2 dw_warp(vec2 f) {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_WarpPerspective
 
 /** The plane pose of S_WarpPerspective's params, packed as its motion-blur samples (2 vec4). */
 function perspectivePose(q: EffectParams): number[] {
@@ -1441,8 +1408,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_WarpPolar
-
 export const S_WARP_POLAR = distortEffect({
 	id: 'jasper.s.warp-polar',
 	label: 'S_WarpPolar',
@@ -1488,8 +1453,6 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 4); }`,
 	},
 });
 
-// ---------------------------------------------------------------- S_WarpPuff
-
 export const S_WARP_PUFF = distortEffect({
 	id: 'jasper.s.warp-puff',
 	label: 'S_WarpPuff',
@@ -1518,8 +1481,6 @@ vec2 dw_warp(vec2 f) { return f + u_dispScale * (dw_rot(u_rotateWarpDir) * dw_le
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_WarpTransform
 
 const transformParams = (p: EffectParams) => ({
 	scale: vec2(p.scale, [1, 1]),
@@ -1582,8 +1543,6 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 4); }`,
 	},
 });
 
-// ---------------------------------------------------------------- S_WarpVortex
-
 export const S_WARP_VORTEX = distortEffect({
 	id: 'jasper.s.warp-vortex',
 	label: 'S_WarpVortex',
@@ -1618,8 +1577,6 @@ vec2 dw_warp(vec2 f) {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_WarpWaves / S_WarpWaves2
 
 const WAVES_GLSL = /* glsl */ `
 // Straight waves travelling along angle (0 = vertical crests moving right), pushing along angle + displaceAngle.
@@ -1692,8 +1649,6 @@ vec2 dw_warp(vec2 f) {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Shake
 
 const shakeAxisParams = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp: number): ParamSpec[] => {
 	const group = `${label} Shake`;
@@ -1961,8 +1916,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_StretchFrameEdges
-
 export const S_STRETCH_FRAME_EDGES = distortEffect({
 	id: 'jasper.s.stretch-frame-edges',
 	label: 'S_StretchFrameEdges',
@@ -2009,8 +1962,6 @@ vec2 dw_warp(vec2 f) {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- catalogue
 
 export const SAPPHIRE_DISTORT_WARP_EFFECTS: readonly EffectSpec[] = [
 	S_DISTORT,

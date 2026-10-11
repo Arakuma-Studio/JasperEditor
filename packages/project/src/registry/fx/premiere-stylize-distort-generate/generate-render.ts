@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Generate, part 2 (family "premiere-stylize-distort-generate", wave 2): Lens Flare,
+// Premiere Pro standard effects — Generate, part 2 (family "premiere-stylize-distort-generate"): Lens Flare,
 // Lightning, Paint Bucket, Write-on.
 // - Lens Flare: additive light — core, glow, rays, a rainbow halo and a chain of ghosts along the line from the flare
 //   centre through the layer centre; each Lens Type has its own element set. Padded.
@@ -11,7 +11,9 @@
 // - Write-on: the framework gives effects their params at the current frame only, so the accumulated stroke of the
 //   animated Brush Position (the real effect paints every position up to now) cannot be drawn; this draws the brush
 //   dab at the current position (see the family report: a `paramAt(frame)` context would allow the full stroke).
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec } from '../../effects.ts';
+import { numberParam as wNum } from '../../param-values.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
@@ -26,8 +28,6 @@ import {
 	str,
 } from './common.ts';
 import { GLSL_PSDG_HASH } from './noise-glsl.ts';
-
-// ---------------------------------------------------------------- Lens Flare
 
 /** Padding of Lens Flare: a quarter of the layer diagonal (glow, halo and ghosts spill past the edges). */
 export const lensFlarePadding = (w: number, h: number) => Math.ceil(0.25 * Math.hypot(w, h));
@@ -135,10 +135,8 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Lightning
-
 /** Padding of Lightning: the bolt's width/glow plus its sideways amplitude may leave the start–end box. */
-export function lightningPadding(p: Record<string, unknown>, w: number, h: number): number {
+export function lightningPadding(p: EffectParams, w: number, h: number): number {
 	const width = Math.max(0, num(p.width as number, 10));
 	const amp = Math.max(0, num(p.amplitude as number, 10));
 	return Math.min(1024, Math.ceil(width * 3 + (amp / 100) * Math.hypot(w, h) * 0.5));
@@ -304,8 +302,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Paint Bucket
 
 const FILL_SELECTORS = ['colorAlpha', 'straightColor', 'transparency', 'opacity', 'alphaChannel'] as const;
 
@@ -509,15 +505,12 @@ export const PAINT_BUCKET = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- Write-on
-
 /** Most brush positions of the accumulated Write-on stroke (sampled evenly in time; consecutive ones joined). */
 export const WRITE_ON_POINTS = 64;
 
-const wNum = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const wPt = (v: unknown): [number, number] =>
+const wPt = (v: ParamValue | undefined): [number, number] =>
 	Array.isArray(v) && v.length === 2 ? [wNum(v[0], 0.5), wNum(v[1], 0.5)] : [0.5, 0.5];
-const wColor = (v: unknown): number[] =>
+const wColor = (v: ParamValue | undefined): number[] =>
 	Array.isArray(v) && v.length === 4 ? v.map((x, i) => wNum(x, i === 3 ? 1 : 0)) : [1, 1, 1, 1];
 
 /**

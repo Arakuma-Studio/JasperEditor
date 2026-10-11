@@ -1,4 +1,4 @@
-// Effect family "sapphire-adjust-composite" (fx catalogue, wave 2): Sapphire-style Adjust effects (channel and colour
+// Effect family "sapphire-adjust-composite": Sapphire-style Adjust effects (channel and colour
 // adjustments, tone maps, thresholds, colour-space conversion, gamut checks) and Composite effects (blend/maths/matte/
 // depth composites with a second picture).
 // Behaviour, parameter names, order, ranges and defaults follow Boris FX's public Sapphire documentation (OFX/AE
@@ -60,8 +60,6 @@ import {
 } from './sapphire-adjust-composite/ocio.ts';
 import type { FxPlanContext, FxUniformValue, GlslChunk, ShaderPass } from './shader.ts';
 
-// ---------------------------------------------------------------- param shorthands
-
 /** A Sapphire "any"-range number: wide hard limits, a practical slider range. */
 const anyNum = (name: string, label: string, def: number, softMin: number, softMax: number, step = 0.01) =>
 	fxParam.number(name, label, def, { min: -100, max: 100, softMin, softMax, step });
@@ -72,8 +70,6 @@ const darks = (name: string, label: string) =>
 const saturation = (name: string, label: string, min = -2, max = 8) =>
 	fxParam.number(name, label, 1, { min, max, softMin: Math.max(min, 0), softMax: 2, step: 0.01 });
 const rgb = (r: number, g: number, b: number): [number, number, number, number] => [r, g, b, 1];
-
-// ---------------------------------------------------------------- Adjust effects: one pointwise pass
 
 type AdjustInit = {
 	id: string;
@@ -140,8 +136,6 @@ void main() {
 	});
 }
 
-// ---- S_ChannelSwitcher
-
 const CHANNELS = ['red', 'green', 'blue', 'alpha', 'luma', 'one', 'zero'] as const;
 const CHANNEL_LABELS = ['Red', 'Green', 'Blue', 'Alpha', 'Luma', '1', '0'] as const;
 const channelFrom = (name: string, label: string, def: (typeof CHANNELS)[number]) =>
@@ -189,8 +183,6 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---- S_ClampChroma
-
 export const S_CLAMP_CHROMA = adjustEffect({
 	id: 'jasper.s.clamp-chroma',
 	label: 'S_ClampChroma',
@@ -215,8 +207,6 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---- S_DuoTone
-
 export const S_DUO_TONE = adjustEffect({
 	id: 'jasper.s.duo-tone',
 	label: 'S_DuoTone',
@@ -238,8 +228,6 @@ vec4 sac_apply(vec4 c) {
   return vec4(mix(u_color0.rgb, u_color1.rgb, t), c.a);
 }`,
 });
-
-// ---- S_Gamma
 
 const gammaNum = (name: string, label: string) =>
 	fxParam.number(name, label, 1, { min: 0.1, max: 10, softMax: 4, step: 0.001 });
@@ -282,8 +270,6 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---- S_Hotspots
-
 export const S_HOTSPOTS = adjustEffect({
 	id: 'jasper.s.hotspots',
 	label: 'S_Hotspots',
@@ -315,8 +301,6 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---- S_HueSatBright
-
 export const S_HUE_SAT_BRIGHT = adjustEffect({
 	id: 'jasper.s.hue-sat-bright',
 	label: 'S_HueSatBright',
@@ -347,8 +331,6 @@ vec4 sac_apply(vec4 c) {
   return vec4(o, c.a);
 }`,
 });
-
-// ---- S_Invert
 
 export const S_INVERT = adjustEffect({
 	id: 'jasper.s.invert',
@@ -393,8 +375,6 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---- S_Monochrome
-
 export const S_MONOCHROME = adjustEffect({
 	id: 'jasper.s.monochrome',
 	label: 'S_Monochrome',
@@ -416,8 +396,6 @@ vec4 sac_apply(vec4 c) {
   return vec4(vec3(dot(c.rgb, w) * u_brightness), c.a);
 }`,
 });
-
-// ---- S_OCIOTransform
 
 const OCIO_VALUES = OCIO_SPACES.map((s) => s.value);
 const OCIO_LABELS = OCIO_SPACES.map((s) => s.label);
@@ -487,8 +465,6 @@ vec4 sac_apply(vec4 c) {
   return vec4(sac_ocioEncode3(u_ocioTo, lin), c.a);
 }`,
 });
-
-// ---- S_TriTone / S_QuadTone (brightness → colour stops)
 
 /**
  * Colour stops of the Tri/QuadTone tone map, sorted by their "At Bright" position. `soft` is the softness of the
@@ -596,8 +572,6 @@ export const S_QUAD_TONE = adjustEffect({
 	glsl: TONE_GLSL,
 });
 
-// ---- S_Threshold
-
 export const S_THRESHOLD = adjustEffect({
 	id: 'jasper.s.threshold',
 	label: 'S_Threshold',
@@ -625,8 +599,6 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---- S_Tint
-
 export const S_TINT = adjustEffect({
 	id: 'jasper.s.tint',
 	label: 'S_Tint',
@@ -647,8 +619,6 @@ vec4 sac_apply(vec4 c) {
   return vec4(sac_lightsDarks(s, u_tintLights.rgb * u_scaleLights, u_tintDarks.rgb + vec3(u_offsetDarks)), c.a);
 }`,
 });
-
-// ---- S_ShowBadColors
 
 const unit = (name: string, label: string, def: number) =>
 	fxParam.number(name, label, def, { min: 0, max: 1, step: 0.001 });
@@ -698,14 +668,10 @@ vec4 sac_apply(vec4 c) {
 }`,
 });
 
-// ---------------------------------------------------------------- Composite effects
-
 const compositeBase = {
 	category: 'Utility' as EffectCategory,
 	bin: SAPPHIRE_BINS.composite,
 };
-
-// ---- S_Layer
 
 const LAYER_MODES = [
 	'normal',
@@ -944,8 +910,6 @@ void main() {
 	},
 });
 
-// ---- S_MathOps
-
 const MATH_OPS = [
 	'add',
 	'subtract',
@@ -1086,8 +1050,6 @@ void main() {
 		},
 	},
 });
-
-// ---- S_MatteOps / S_MatteOpsComp (matte shaping)
 
 const OUTPUTS = ['matte', 'rgba', 'rgbaPremult', 'mattePremult'] as const;
 const OUTPUT_LABELS = ['Matte', 'RGBA', 'RGBA Premult', 'Matte Premult'] as const;
@@ -1232,8 +1194,6 @@ void main() {
 	},
 });
 
-// ---- S_EdgeFlash
-
 export const S_EDGE_FLASH = defineShaderEffect({
 	...compositeBase,
 	id: 'jasper.s.edge-flash',
@@ -1369,8 +1329,6 @@ void main() {
 		},
 	},
 });
-
-// ---- S_ZComp
 
 export const S_Z_COMP = defineShaderEffect({
 	...compositeBase,

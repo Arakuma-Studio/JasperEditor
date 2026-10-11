@@ -1,11 +1,9 @@
-// Distortion meshes of Mesh Warp and Liquify (sim-warp workstream): the layouts of their keyframable `mesh` params
+// Distortion meshes of Mesh Warp and Liquify: the layouts of their keyframable `mesh` params
 // (flat number lists that interpolate number by number between keys) and the pure functions that edit them — the
 // commands (`meshWarp.setVertex`, `liquify.stroke`) and the Program monitor tools use these, the renderers read them.
 // Liquify's brushes are ported from EffectCraft crates/effects/src/distort4.rs (build_mesh; MIT OR Apache-2.0) and
 // extended with the reconstruction modes and a keyframable mesh; see licenses/ported/sim-warp.md.
 import { clamp, h01 } from './core.ts';
-
-// ---------------------------------------------------------------- Mesh Warp
 
 /** Mesh Warp: version, columns, rows, then per vertex (row-major, (rows+1) × (cols+1)): x, y (layer-normalised), and
  * the offsets (layer-normalised) of its left, right, up and down tangent handles. */
@@ -71,8 +69,6 @@ export function meshWarpSetVertex(
 	});
 	return out;
 }
-
-// ---------------------------------------------------------------- Liquify
 
 /**
  * Liquify: version, nx, ny, then per grid node (row-major) the displacement (dx, dy) in grid cells. Cells (not

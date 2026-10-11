@@ -2,6 +2,7 @@
 // sprocket edges and film dirt) and S_FilmRoll (the film slips in the gate: the clips roll vertically with a frame
 // line between them, shake, flicker, dirt). The film look reuses the Sapphire film/grain family's GLSL (grain,
 // dust, hairs, scratches, stains, element combine) by import, so the transitions match S_FilmBurn / S_FilmDamage.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_UV } from '../../fx/glsl/sample.ts';
 import { fxParam } from '../../fx/params.ts';
@@ -37,8 +38,6 @@ export function dustCells(density: number, w: number, h: number): { cell: number
 	const cell = Math.max(4, Math.sqrt((w * h) / (2 * n)));
 	return { cell, prob: Math.min(1, (n * cell * cell) / (w * h)) };
 }
-
-// ---------------------------------------------------------------- S_FilmBurnTransition
 
 type Flash = {
 	size: number;
@@ -363,10 +362,8 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_FilmRoll
-
 /** Whole film frames S_FilmRoll rolls through (Roll Speed rounded, ≥ 1) and the direction (+1 up, −1 down). */
-export function rollFrames(rollSpeed: unknown): { frames: number; dir: number } {
+export function rollFrames(rollSpeed: ParamValue | undefined): { frames: number; dir: number } {
 	const v = num(rollSpeed, 1);
 	return { frames: Math.max(1, Math.round(Math.abs(v))), dir: v < 0 ? -1 : 1 };
 }

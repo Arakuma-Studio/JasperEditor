@@ -1,8 +1,8 @@
-// Distort ▸ Mesh Warp, Liquify (sim-warp workstream; After Effects' effects of those names). Both keep a keyframable
+// Distort ▸ Mesh Warp, Liquify (After Effects' effects of those names). Both keep a keyframable
 // Distortion Mesh (`mesh` param, layouts in meshes.ts) edited on the Program monitor (Mesh Warp's vertex and tangent
 // handles, Liquify's brushes) or by commands (`meshWarp.setVertex`, `liquify.stroke`). Mesh Warp draws the layer
 // through Coons patches of cubic Bézier edges (a forward mesh of a draw pass); Liquify is a backward displacement map.
-import type { EffectSpec, ParamSpec } from '../../effects.ts';
+import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
 import { fxParam } from '../params.ts';
@@ -27,7 +27,7 @@ const meshParam = (name: string, label: string): ParamSpec => ({
 	animatable: true,
 });
 
-const gridOf = (p: Record<string, unknown>) => ({
+const gridOf = (p: EffectParams) => ({
 	cols: clamp(Math.round(num(p.columns, 7)), 1, 31),
 	rows: clamp(Math.round(num(p.rows, 7)), 1, 31),
 });

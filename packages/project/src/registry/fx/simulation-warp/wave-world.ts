@@ -1,4 +1,4 @@
-// Simulation ▸ Wave World (sim-warp workstream; After Effects' Wave World): a stepped 2D wave equation on a grid,
+// Simulation ▸ Wave World (After Effects' Wave World): a stepped 2D wave equation on a grid,
 // driven by two producers (rings or lines oscillating at Amplitude / Frequency / Phase), damped, reflected or absorbed
 // at the edges, shaped by an optional Ground image (its luminance is an elevation: dry land is a wall, shallow water
 // slows the waves by Wave Strength). Views: Height Map (a grey displacement map for Caustics / Displacement Map) and

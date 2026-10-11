@@ -10,8 +10,6 @@ import { GLSL_FILM } from './glsl.ts';
 
 const STYLIZE = SAPPHIRE_BINS.stylize;
 
-// ---------------------------------------------------------------- S_JpegDamage
-
 /** Standard JPEG quantisation tables (ITU T.81 Annex K), row-major (v, u). */
 const LUMA_Q = [
 	16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22,
@@ -186,8 +184,6 @@ export const S_JPEG_DAMAGE = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_DigitalDamage
 
 const DAMAGE_KINDS = ['freeze', 'shift', 'brights', 'pixelate', 'blocks', 'invert', 'flow'] as const;
 

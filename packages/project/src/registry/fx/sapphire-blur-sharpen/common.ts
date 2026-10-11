@@ -1,4 +1,4 @@
-// Shared core of the Sapphire Blur+Sharpen family (family-private, wave 2): Sapphire units, the common params
+// Shared core of the Sapphire Blur+Sharpen family: Sapphire units, the common params
 // (Edge Mode, Soft Borders, Filter, Mix With Source), edge-mode sampling at the layer-box borders, separable
 // box/triangle/gaussian blurs with automatic downscaling (a 3×3-prefiltered pyramid) and a tiny pass-graph builder
 // so every effect of the family plans its passes the same way.
@@ -7,45 +7,40 @@
 // horizontally (y down, aspect-scaled vertically), so ONE Sapphire unit = half the layer width. Every size param
 // of this family is expressed in that unit (`unitPx(ctx)` canvas px); each effect documents its own scale factor
 // (e.g. S_Blur: σ = Blur Amount × U / 24) so the Sapphire defaults give the same look at any resolution.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
+import { booleanParam as bool, clamp, numberParam as num } from '../../param-values.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_SAMPLE } from '../glsl/sample.ts';
 import { fxParam, mixWithOriginalParam } from '../params.ts';
 import type { FxPlanContext, FxUniformValue, GlslChunk, ShaderPass } from '../shader.ts';
 
-// ---------------------------------------------------------------- value helpers
-
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const bool = (v: unknown, d = false): boolean => (typeof v === 'boolean' ? v : d);
-export const vec2 = (v: unknown, d: readonly [number, number]): [number, number] =>
+export const vec2 = (v: ParamValue | undefined, d: readonly [number, number]): [number, number] =>
 	Array.isArray(v) && v.length === 2 ? [num(v[0], d[0]), num(v[1], d[1])] : [d[0], d[1]];
 export const rgba = (
-	v: unknown,
+	v: ParamValue | undefined,
 	d: readonly [number, number, number, number],
 ): [number, number, number, number] =>
 	Array.isArray(v) && v.length === 4
 		? [num(v[0], d[0]), num(v[1], d[1]), num(v[2], d[2]), num(v[3], d[3])]
 		: [d[0], d[1], d[2], d[3]];
 /** Index of an enum param value among `options` (unknown → index of `def`). */
-export const choiceIndex = (v: unknown, options: readonly string[], def: string): number => {
+export const choiceIndex = (v: ParamValue | undefined, options: readonly string[], def: string): number => {
 	const i = typeof v === 'string' ? options.indexOf(v) : -1;
 	return i >= 0 ? i : Math.max(0, options.indexOf(def));
 };
-export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 /** Canvas pixels per Sapphire unit (half the layer width). */
 export const unitPx = (ctx: Pick<FxPlanContext, 'width' | 'pxScale'>) => (ctx.width * ctx.pxScale) / 2;
 /** Layer pixels per Sapphire unit (paddings are in layer pixels). */
 export const unitLayerPx = (ctx: Pick<FxPlanContext, 'width'>) => ctx.width / 2;
 
-// ---------------------------------------------------------------- params
-
 /** A Sapphire numeric param: `min`/`max` hard limits (null = unbounded), `softMax` the slider end. */
 export function sNum(
 	name: string,
 	label: string,
 	def: number,
-	opts: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number; int?: boolean } = {},
+	opts: NonNullable<ParamSpec['range']> & { int?: boolean } = {},
 ): ParamSpec {
 	const range: NonNullable<ParamSpec['range']> = { step: opts.step ?? (opts.int ? 1 : 0.001) };
 	if (opts.min !== undefined) range.min = opts.min;
@@ -101,8 +96,6 @@ export const SBS_EDGE_TRANSPARENT = 0;
 export const SBS_EDGE_REPEAT = 1;
 export const SBS_EDGE_REFLECT = 2;
 export const SBS_EDGE_NONE = 3;
-
-// ---------------------------------------------------------------- GLSL
 
 /**
  * `sapphire-blur-sharpen/common`: layer-box addressing with edge modes (`sbs_tex`), 1D box/triangle/gaussian
@@ -214,8 +207,6 @@ vec4 sbs_chromaTex(sampler2D t, vec2 uv, float amount, int mode) {
 }
 `,
 };
-
-// ---------------------------------------------------------------- pass graph
 
 export type SbsFormat = 'rgba8' | 'rgba16f';
 
@@ -414,3 +405,5 @@ export function definesChunk(defines: string, deps: readonly GlslChunk[] = []): 
 	const name = `sapphire-blur-sharpen/defines-${(h >>> 0).toString(16)}${deps.map((d) => `+${d.name}`).join('')}`;
 	return { name, source: defines, deps };
 }
+
+export { bool, clamp, num };

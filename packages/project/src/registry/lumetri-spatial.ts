@@ -261,8 +261,6 @@ export const LUMETRI_SPATIAL_EFFECT: EffectSpec = {
 	// Exported with the colour effects' native badge semantics: the planner bakes the layer (hybrid) or uses Remotion.
 };
 
-// ---------------------------------------------------------------- render snapshot expansion
-
 type InstanceLike = {
 	id: string;
 	effectId: string;

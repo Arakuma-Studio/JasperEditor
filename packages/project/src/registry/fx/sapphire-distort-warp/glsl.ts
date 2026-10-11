@@ -1,4 +1,4 @@
-// Family-private GLSL of the Sapphire Distort family (fx catalogue, wave 2).
+// Family-private GLSL of the Sapphire Distort family.
 //
 // Coordinates ("frame units", Sapphire's convention with the editor's y-down axis): origin at the centre of the
 // layer box, 1 = the layer width, y down (so y spans ±aspect/2, aspect = height / width). Radii use `dw_unit()` =

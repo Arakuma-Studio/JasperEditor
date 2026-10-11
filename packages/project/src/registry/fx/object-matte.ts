@@ -1,4 +1,4 @@
-// Object mattes (parity workstream `roto`): the output side of the Roto Brush and of face tracking. The mattes are
+// Object mattes: the output side of the Roto Brush and of face tracking. The mattes are
 // computed by the engine (graph cut + SAM 2.1 + edge matting, docs/wp-notes/roto.md) and bound per frame through
 // `GpuEffect.mattes`; these effects refine and apply them live, like After Effects' Roto Brush & Refine Edge matte
 // controls (Feather, Contrast, Shift Edge, Reduce Chatter, Motion Blur, Decontaminate Edge Colors) — ported from
@@ -10,16 +10,15 @@
 //
 // Matte states (`u_<matte>_state`): 0 = no object / not computed → the input passes through; 1 = the frame's matte;
 // 2 = outside the computed span → Object Matte is transparent there (After Effects), Object Blur changes nothing.
+
 import { OBJECT_BLUR_EFFECT_ID, OBJECT_MATTE_EFFECT_ID } from '../../roto/index.ts';
 import type { EffectParams, EffectSpec } from '../effects.ts';
+import { booleanParam as bool, numberParam as num } from '../param-values.ts';
 import { defineShaderEffect } from './define.ts';
 import { GLSL_MB } from './glsl/motion-blur.ts';
 import { blurPasses, GLSL_OBJECT_MATTE, morphPasses } from './matte-ops.ts';
 import { fxParam } from './params.ts';
 import type { ShaderPass } from './shader.ts';
-
-const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const bool = (v: unknown, d = false) => (typeof v === 'boolean' ? v : d);
 
 /** Shift Edge: ±100 % moves the edge by 10 px (EffectCraft / After Effects' scale for the Roto Brush matte). */
 export const OBJECT_SHIFT_PX_PER_100 = 10;

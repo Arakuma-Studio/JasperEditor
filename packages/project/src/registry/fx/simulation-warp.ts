@@ -1,4 +1,4 @@
-// Effect family "simulation-warp" (sim-warp workstream): After Effects' Simulation category (particles, shatter, cards,
+// Effect family "simulation-warp": After Effects' Simulation category (particles, shatter, cards,
 // foam, waves, caustics, weather) and the mesh / brush warps of Distort (Puppet, Liquify, Mesh Warp, Bezier Warp,
 // Reshape, Smear, Displacement Map, Optics Compensation, Polar Coordinates), under neutral names. Ids
 // `jasper.<kebab>`; Effects-panel folders = categories (Simulation, Distort, Transition). The entries live under

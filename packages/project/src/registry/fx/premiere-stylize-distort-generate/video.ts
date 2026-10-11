@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Video bin (family "premiere-stylize-distort-generate", wave 2): Clip Name,
+// Premiere Pro standard effects — Video bin (family "premiere-stylize-distort-generate"): Clip Name,
 // Timecode, Simple Text. Text is drawn in GLSL from a 1-bit bitmap font (video-font.ts, bilinear + soft threshold so
 // it scales cleanly); the string is composed in TypeScript (`gpu.uniforms`, per frame for Timecode) and passed as
 // `u_text` (3 characters per float, 7 bits each — exact in float32) with `u_textLen`.
@@ -133,8 +133,6 @@ void main() {
   fragColor = text + (box + src * (1.0 - box.a)) * (1.0 - text.a);
 }`;
 
-// ---------------------------------------------------------------- Clip Name
-
 const CLIP_NAME_DISPLAYS = ['sequenceClipName', 'projectItemName', 'fileName', 'custom'] as const;
 
 /**
@@ -181,8 +179,6 @@ export const CLIP_NAME = defineShaderEffect({
 		passes: [{ include: [GLSL_PSDG_TEXT], frag: textFrag }],
 	},
 });
-
-// ---------------------------------------------------------------- Timecode
 
 const TIME_DISPLAYS = ['24', '25', '30df', '30', '50', '60df', '60'] as const;
 
@@ -304,8 +300,6 @@ export const TIMECODE = defineShaderEffect({
 		passes: [{ include: [GLSL_PSDG_TEXT], frag: textFrag }],
 	},
 });
-
-// ---------------------------------------------------------------- Simple Text
 
 export const SIMPLE_TEXT = defineShaderEffect({
 	id: 'jasper.simple-text',

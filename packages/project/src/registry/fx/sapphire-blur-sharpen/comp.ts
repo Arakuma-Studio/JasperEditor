@@ -2,7 +2,10 @@
 // (with its own alpha) and a Background plate by independent iris widths, then composites front over middle over
 // back — a rack focus between planes of a composite. Plates are `media` params stretched over the layer box; the
 // Matte is a media param (Luma/Alpha) or the clip's own alpha. Iris, units and tone as S_RackDefocus.
+
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec } from '../../effects.ts';
+import { mediaParamId } from '../../param-values.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { fxParam } from '../params.ts';
 import type { ShaderPass } from '../shader.ts';
@@ -35,8 +38,7 @@ import {
 } from './iris.ts';
 
 const MATTE_USE = ['luma', 'alpha'] as const;
-const hasMedia = (v: unknown) =>
-	typeof (v as { mediaId?: unknown })?.mediaId === 'string' && !!(v as { mediaId: string }).mediaId;
+const hasMedia = (v: ParamValue | undefined) => !!mediaParamId(v);
 
 /**
  * A plate prepared for the gather: straight colour × matte (premultiplied), boost + gamma, matte gamma on alpha —

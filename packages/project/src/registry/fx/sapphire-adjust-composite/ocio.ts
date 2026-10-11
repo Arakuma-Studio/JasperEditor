@@ -8,9 +8,10 @@
 //   β = 0.018053968510807); ACEScct S-2016-001; ARRI LogC3 EI800 (ARRI white paper, OCIO's unrounded constants);
 //   Sony S-Log3 (S-Gamut3/S-Log3 technical summary); Panasonic V-Log (V-Log/V-Gamut reference manual).
 // Matrices (row-major, M · [r g b]ᵀ) to AP0: from the primaries + Bradford CAT, equal to OCIO studio-config-v2.2.0.
+import { type Matrix3, multiplyMatrix3 as mulMat3 } from '../../../math/matrix3.ts';
 import type { GlslChunk } from '../shader.ts';
 
-export type Mat3 = readonly [number, number, number, number, number, number, number, number, number];
+export type Mat3 = Readonly<Matrix3>;
 
 /** Transfer curves (GLSL `int` ids = indexes). */
 export const OCIO_CURVES = [
@@ -55,13 +56,7 @@ const VGAMUT_TO_AP0: Mat3 = [
 ];
 
 /** `a · b` (apply b first). */
-export function mulMat3(a: Mat3, b: Mat3): Mat3 {
-	const o: number[] = [];
-	for (let r = 0; r < 3; r++)
-		for (let c = 0; c < 3; c++)
-			o.push(a[3 * r]! * b[c]! + a[3 * r + 1]! * b[3 + c]! + a[3 * r + 2]! * b[6 + c]!);
-	return o as unknown as Mat3;
-}
+export { mulMat3 };
 
 export function invertMat3(m: Mat3): Mat3 {
 	const [a, b, c, d, e, f, g, h, i] = m;
@@ -126,8 +121,6 @@ export function ocioMatrix(from: OcioSpace, to: OcioSpace): Mat3 {
 
 /** Row-major → GLSL column-major (`{mat3}` uniforms). */
 export const toColumnMajor = (m: Mat3): number[] => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
-
-// ---------------------------------------------------------------- transfer curves (TS mirror of the GLSL)
 
 const LOGC = {
 	cut: 0.0105909904954696,
@@ -212,8 +205,6 @@ export function ocioConvert(from: OcioSpace, to: OcioSpace, rgb: readonly [numbe
 	const out = [0, 1, 2].map((r) => m[3 * r]! * lin[0]! + m[3 * r + 1]! * lin[1]! + m[3 * r + 2]! * lin[2]!);
 	return out.map((v) => ocioEncode(to.curve, v)) as [number, number, number];
 }
-
-// ---------------------------------------------------------------- GLSL
 
 const f = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 

@@ -1,4 +1,4 @@
-// Reusable pass builders of the fx framework (wave 1): separable Gaussian blurs (optionally downscaled) and bloom
+// Reusable pass builders of the fx framework: separable Gaussian blurs (optionally downscaled) and bloom
 // pyramids, so blur/glow/defocus families do not each re-derive the pass plumbing. They return plain `ShaderPass`
 // objects to splice into a `GpuEffect.passes` function; authors still own the passes that read the results.
 import { GLSL_BLUR } from './glsl/blur.ts';

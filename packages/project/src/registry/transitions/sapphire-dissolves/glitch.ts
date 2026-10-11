@@ -36,8 +36,6 @@ import {
 	slider,
 } from './common.ts';
 
-// ---------------------------------------------------------------- S_DissolveDigitalDamage
-
 const gate = (name: string, label: string, blink: number, always: number) => [
 	slider(`${name}BlinkFreq`, `${label} Blink Freq`, blink, { min: 0.1, softMax: 30 }),
 	slider(`${name}Always`, `${label} Always`, always, { min: 0, max: 1 }),
@@ -223,8 +221,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_DissolvePixelMosh
-
 /** Macroblock size in frame px (Block Size X / Y). */
 export function moshBlockPx(p: EffectParams): [number, number] {
 	return [Math.max(4, Math.round(num(p.blockSizeX, 32))), Math.max(4, Math.round(num(p.blockSizeY, 32)))];
@@ -364,8 +360,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolvePixelSort
 
 export const SORT_TYPES = [
 	'monochrome',

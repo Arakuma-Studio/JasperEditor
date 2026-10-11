@@ -2,17 +2,17 @@
 // enum params (+ their vectors), a few number readers and the family GLSL chunk `premiere/common`.
 // Import rule (no cycles): values only from ../define.ts, ../glsl.ts, ../shader.ts and ../../fx/*; types from
 // ../../../transitions.ts and ../../effects.ts (`import type`).
-import type { Vec2 } from '../../../schema/common.ts';
+import type { ParamValue, Vec2 } from '../../../schema/common.ts';
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { fxParam } from '../../fx/params.ts';
 import type { FxUniformValue, GlslChunk } from '../../fx/shader.ts';
+import { numberParam as num } from '../../param-values.ts';
 import { defineShaderTransition, type ShaderTransitionInit } from '../define.ts';
 import { GLSL_TR_WIPE, GLSL_TRANSITION } from '../glsl.ts';
 import type { TrFrameContext } from '../shader.ts';
 
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const count = (v: unknown, d: number, max = 256): number =>
+export const count = (v: ParamValue | undefined, d: number, max = 256): number =>
 	Math.min(max, Math.max(1, Math.round(num(v, d))));
 
 type Vec = readonly [number, number];
@@ -175,10 +175,10 @@ void main() {
   vec2 px = tr_px();
   float p = tr_progress();
   float aa = tr_aaWidth(u_antiAliasing);
-  float bw = ${border ? 'max(u_borderWidth, 0.0)' : '0.0'};
+  float bw = $border ? 'max(u_borderWidth, 0.0)' : '0.0';
   float m = bw + aa + 1.0;
   float d = 0.0;
-  ${body.trim()}
+  $body.trim()
   fragColor = tr_wipeMix(tr_from(v_uv), tr_to(v_uv), d, 0.0, aa, bw, ${border ? 'u_borderColor' : 'vec4(0.0)'});
 }`,
 				},
@@ -186,3 +186,5 @@ void main() {
 		},
 	});
 }
+
+export { num };

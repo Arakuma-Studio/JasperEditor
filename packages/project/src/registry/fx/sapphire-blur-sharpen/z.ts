@@ -103,8 +103,6 @@ ${shape ? '  fragColor = sbs_shapeView(u_shapeRel, 0.8); return;' : ''}
 	return plan.passes;
 }
 
-// ---------------------------------------------------------------- S_ZDefocus
-
 const ZDEF_SHOW = ['result', 'inFocusZone', 'shape'] as const;
 
 export const S_Z_DEFOCUS = defineShaderEffect({
@@ -170,8 +168,6 @@ export const S_Z_DEFOCUS = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_ZBlur
 
 const ZBLUR_SHOW = ['result', 'inFocusZone'] as const;
 const GAUSS_IRIS: IrisConfig = { sides: 0, roundness: 1, rotate: 0, bokeh: 0, gauss: true };

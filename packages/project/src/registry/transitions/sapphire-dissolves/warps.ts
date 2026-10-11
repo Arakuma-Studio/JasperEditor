@@ -101,8 +101,6 @@ const rampUniforms = (p: EffectParams, progress: number) => {
 	return { u_rampA: t, u_rampB: 1 - t };
 };
 
-// ---------------------------------------------------------------- S_DissolveBubble
-
 export const S_DISSOLVE_BUBBLE: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-bubble',
 	label: 'S_DissolveBubble',
@@ -139,8 +137,6 @@ vec2 warpB(vec2 f) { return f + bubble(f) * u_amplitude * u_relAmp2 * u_rampB; }
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveVortex
 
 export const S_DISSOLVE_VORTEX: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-vortex',
@@ -181,8 +177,6 @@ vec2 warpB(vec2 f) { return vortex(f, u_relAmount2 * u_rampB); }`),
 	},
 });
 
-// ---------------------------------------------------------------- S_DissolveWaves
-
 export const S_DISSOLVE_WAVES: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-waves',
 	label: 'S_DissolveWaves',
@@ -221,8 +215,6 @@ vec2 warpB(vec2 f) { return f + waves(f) * u_relAmp2 * u_rampB; }`),
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolvePuddle
 
 export const S_DISSOLVE_PUDDLE: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-puddle',
@@ -276,8 +268,6 @@ vec2 warpB(vec2 f) { return f + puddle(f) * u_relAmp2 * u_rampB; }`),
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveDistort
 
 /** Smoothness → σ (frame px) of the luma before its gradient is taken. */
 export const distortSmoothPx = (p: EffectParams, width: number) =>
@@ -337,8 +327,6 @@ vec2 warpB(vec2 f) {
 	},
 });
 
-// ---------------------------------------------------------------- S_DissolveDiffuse
-
 export const S_DISSOLVE_DIFFUSE: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-diffuse',
 	label: 'S_DissolveDiffuse',
@@ -372,8 +360,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveShake
 
 const shakeAxis = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp: number) =>
 	grp(`${label} Shake`, [
@@ -447,8 +433,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveTiles
 
 export const TILE_COMBINES = ['fromOverTo', 'toOverFrom'] as const;
 

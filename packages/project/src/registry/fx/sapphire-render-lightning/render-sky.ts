@@ -56,8 +56,6 @@ const dateJD = (p: EffectParams, def: { year: number; month: number; day: number
 		num(p.hour, def.hour) + num(p.minute) / 60 - num(p.gmtOffset, -5),
 	);
 
-// ---------------------------------------------------------------- S_Luna
-
 /** Lunar phase in degrees (0 new, 90 first quarter, 180 full, 270 last quarter) at a Julian day (mean synodic month). */
 export function lunarPhaseDeg(jd: number): number {
 	const k = (jd - 2451550.1) / 29.530588853;
@@ -260,8 +258,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_NightSky
-
 /** Column-major mat3: camera (x right, y up, z forward, in tan units) → equatorial (J2000-ish) directions. */
 export function nightSkyMatrix(p: EffectParams): number[] {
 	const jd = dateJD(p, { year: 2020, month: 12, day: 1, hour: 16 });
@@ -438,8 +434,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_Caustics
-
 const CAUSTIC_COMBINE = pictureCombine('Caustic');
 
 export const S_CAUSTICS = defineShaderEffect({
@@ -558,8 +552,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Dust
 
 const DUST_COMBINE = pictureCombine('Dust');
 
@@ -706,8 +698,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Sparkles / S_SparklesColor
 
 const sparkleParams = (color: boolean) => [
 	n('frequency', 'Frequency', 25, 0.01, undefined, { softMax: 100, step: 0.01 }),

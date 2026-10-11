@@ -1,4 +1,4 @@
-// Effect family "premiere-adjust-color-keying" (fx catalogue, wave 2): Premiere Pro's standard video effects of the
+// Effect family "premiere-adjust-color-keying": Premiere Pro's standard video effects of the
 // Adjust, Blur & Sharpen, Channel, Color Correction, Image Control, Keying, Perspective, Transform and Utility bins,
 // as GPU shader effects (ids `jasper.<kebab>`, Effects-panel folder = the category; no bin). One module per bin lives
 // in ./premiere-adjust-color-keying/; this file concatenates them in Effects-panel order. Effects that already exist

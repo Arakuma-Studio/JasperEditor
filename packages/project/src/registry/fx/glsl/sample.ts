@@ -1,4 +1,4 @@
-// Shared GLSL: sampling with edge modes and UV helpers (wave-1 fx framework). Textures are clamp-to-edge with linear
+// Shared GLSL: sampling with edge modes and UV helpers. Textures are clamp-to-edge with linear
 // filtering; these helpers implement the other edge behaviours in the shader (After Effects / Sapphire "Edge Mode":
 // transparent, repeat, mirror, clamp/extend). Mode numbers = indexes of FX_EDGE_MODES (`edgeModeParam`).
 import type { GlslChunk } from '../shader.ts';

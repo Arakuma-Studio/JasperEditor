@@ -1,11 +1,13 @@
-// 3D pieces of the simulation-warp family (sim-warp workstream): Card Dance, Shatter, Card Wipe and Pixel Polly cut
+// 3D pieces of the simulation-warp family: Card Dance, Shatter, Card Wipe and Pixel Polly cut
 // the layer into planar textured pieces (cards, shards, polygons) placed in 3D, seen through the effect's Camera
 // System (Camera Position or Corner Pins) and lit by its Lighting / Material. Each effect defines its pieces in GLSL
 // (a pure function of the piece id: rest polygon, rotation, position) so the same code runs in the sort-key pass and
 // in the draw pass; pieces are drawn far to near after a GPU sort (sort.ts). Ported from EffectCraft
 // crates/effects/src/card3d.rs (camera systems, lighting) and sim2.rs (Piece; MIT OR Apache-2.0), see
 // licenses/ported/sim-warp.md.
+
 import { type Mat3, multiplyMat3, type Quad, quadToQuad } from '../../../render/homography.ts';
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { fxParam } from '../params.ts';
 import type { FxFrameContext, FxUniformValue, GlslChunk, ShaderPass } from '../shader.ts';
@@ -147,7 +149,7 @@ function then(p: Proj, h: Mat3): Proj {
 export function projection(p: EffectParams, box: { x: number; y: number; w: number; h: number }): Proj {
 	const c: [number, number] = [box.x + box.w / 2, box.y + box.h / 2];
 	const size = Math.max(box.w, box.h);
-	const at = (v: unknown, d: [number, number]): [number, number] => {
+	const at = (v: ParamValue | undefined, d: [number, number]): [number, number] => {
 		const q = vec2(v, d);
 		return [box.x + q[0] * box.w, box.y + q[1] * box.h];
 	};
@@ -456,5 +458,6 @@ void main() { fragColor = sp_combine(u_post, texture(u_source, v_uv), texture(u_
 }
 
 /** Clamped integer of a param. */
-export const intOf = (v: unknown, d: number, lo: number, hi: number) => clamp(Math.round(num(v, d)), lo, hi);
+export const intOf = (v: ParamValue | undefined, d: number, lo: number, hi: number) =>
+	clamp(Math.round(num(v, d)), lo, hi);
 export { multiplyMat3 };

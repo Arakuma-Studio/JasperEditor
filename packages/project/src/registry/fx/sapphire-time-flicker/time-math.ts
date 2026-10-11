@@ -1,16 +1,15 @@
-// Pure time maths of the Sapphire Time + Flicker family (fx catalogue, wave 2): source-frame remaps (freeze, reverse,
+// Pure time maths of the Sapphire Time + Flicker family: source-frame remaps (freeze, reverse,
 // jitter, random edits, retime…), time-sample planning (span clamping, ≤ 8 offsets spread over a window) and the
 // per-frame flicker gains. Every function is a deterministic function of its arguments (no state, no clocks), so the
 // Player, stills and parallel render pages agree on every frame (S11 §2).
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams } from '../../effects.ts';
+import { booleanParam as bool, numberParam as num, stringParam as str } from '../../param-values.ts';
 import { FX_MAX_TIME_SAMPLES, type FxTimeContext, fxRandom } from '../shader.ts';
 
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 /** A rounded integer param, at least `min`. */
-export const int = (v: unknown, d: number, min = Number.NEGATIVE_INFINITY): number =>
+export const int = (v: ParamValue | undefined, d: number, min = Number.NEGATIVE_INFINITY): number =>
 	Math.max(min, Math.round(num(v, d)));
-export const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
-export const bool = (v: unknown, d = false): boolean => (typeof v === 'boolean' ? v : d);
 
 type Span = Pick<FxTimeContext, 'duration' | 'headHandle' | 'tailHandle'>;
 
@@ -67,8 +66,6 @@ export function historyOffsets(steps: number, max = FX_MAX_TIME_SAMPLES): number
 	for (let k = count; k >= 1; k--) out.add(-Math.max(1, Math.round((k * s) / count)));
 	return [...out].sort((a, b) => a - b);
 }
-
-// ---------------------------------------------------------------- remaps (clip-local frames)
 
 /** S_FreezeFrame: holds every `freezeFrames`-th frame, phase `frameStart` (0 1 2 3 4 5… → 0 0 0 0 0 5 5…). */
 export function freezeFrameSource(f: number, freezeFrames: number, frameStart: number): number {
@@ -184,8 +181,6 @@ export function splitFrame(src: number): { frame: number; t: number } {
 	return { frame, t: src - frame };
 }
 
-// ---------------------------------------------------------------- flicker
-
 function smoothRandom(seed: number, x: number, lane: number): number {
 	const i = Math.floor(x);
 	const fr = x - i;
@@ -222,3 +217,5 @@ export function flickerGains(
 	};
 	return [gain(0), gain(1), gain(2)];
 }
+
+export { bool, num, str };

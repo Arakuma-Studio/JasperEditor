@@ -1,4 +1,4 @@
-// GLSL shared by the Premiere "Generate" effects (family "premiere-stylize-distort-generate", wave 2): layer-pixel
+// GLSL shared by the Premiere "Generate" effects (family "premiere-stylize-distort-generate"): layer-pixel
 // coordinates, antialiased coverage helpers (box-filtered bands, soft steps), the "Size From" cell size of
 // Checkerboard/Grid and the generator tail (draw inside the layer box, Blending Mode over the layer).
 import type { GlslChunk } from '../shader.ts';

@@ -204,8 +204,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_Grid
-
 const GRID_COMBINE: CombineOption[] = [
 	{ value: 'over', label: 'Over', op: 'over' },
 	{ value: 'exclusion', label: 'Exclusion', op: 'exclusion' },
@@ -304,8 +302,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_Shape
 
 const SHAPE_COMBINE: CombineOption[] = [
 	{ value: 'shapeOnly', label: 'Shape Only', op: 'only' },

@@ -1,4 +1,4 @@
-// Transition family "sapphire-dissolves" (transition framework, wave 3): Sapphire-style dissolves (S_Dissolve*).
+// Transition family "sapphire-dissolves": Sapphire-style dissolves (S_Dissolve*).
 // Ids `jasper.s.<kebab>`; bin TRANSITION_BINS.sapphire, sub-bin SAPPHIRE_TRANSITION_SUBBINS.dissolves.
 // Family-private modules live in ./sapphire-dissolves/. Authoring guide: docs/wp-notes/fx-transition-framework.md.
 // Import rule (no cycles): values only from ./define.ts, ./glsl.ts, ./shader.ts, ../fx/* and the family-private

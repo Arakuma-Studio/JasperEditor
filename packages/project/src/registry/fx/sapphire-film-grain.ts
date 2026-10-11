@@ -1,4 +1,4 @@
-// Effect family "sapphire-film-grain" (fx catalogue, wave 2): Sapphire-style film looks, grain and damage.
+// Effect family "sapphire-film-grain": Sapphire-style film looks, grain and damage.
 // Film and grain: S_FilmEffect, S_FilmDamage, S_FilmBurn, S_Vignette, S_BleachBypass, S_Grain, S_GrainStatic,
 // S_UltraGrain, S_Diffuse, S_VintageColor2Strip, S_VintageColor3Strip. Damage looks: S_VHSDamage, S_DigitalDamage,
 // S_JpegDamage, S_TVDamage, S_Grunge (Sapphire Render), S_ScanLines, S_ScanLinesMono.

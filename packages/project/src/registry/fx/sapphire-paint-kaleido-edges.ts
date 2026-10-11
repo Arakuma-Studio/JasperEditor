@@ -1,4 +1,4 @@
-// Effect family "sapphire-paint-kaleido-edges" (fx catalogue, wave 2): Sapphire-style paint and pattern looks —
+// Effect family "sapphire-paint-kaleido-edges": Sapphire-style paint and pattern looks —
 // AutoPaint and halftone (S_AutoPaint, S_Sketch, S_Etching, S_Brush:Oil/Chalk, S_Crosshatch, S_Cartoon,
 // S_CartoonPaint, S_Posterize, S_HalfTone, S_HalfToneColor, S_HalfToneRings), kaleidoscopes (S_Kaleido:*,
 // S_KaleidoPolar, S_KaleidoRadial, S_FlysEye*, S_TileScramble), edges (S_EdgeDetect, S_EdgeDetectDouble,

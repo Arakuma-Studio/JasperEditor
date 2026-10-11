@@ -96,8 +96,6 @@ function bilateral2d(
 	return o.output;
 }
 
-// ---------------------------------------------------------------- S_EdgeAwareBlur
-
 const BLUR_TYPES = ['sharpEdges', 'softEdges', 'softerEdges'] as const;
 const EAB_FILTERS = ['box', 'triangle', 'gauss', 'smooth'] as const;
 
@@ -175,8 +173,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_Beauty
 
 const BEAUTY_SHOW = ['final', 'skinMask', 'withGarbageMask', 'skin', 'skinWithGarbageMask'] as const;
 

@@ -1,4 +1,4 @@
-// Particle rendering of Particle World and Particle Systems II (sim-warp workstream): one instanced draw pass reads a
+// Particle rendering of Particle World and Particle Systems II: one instanced draw pass reads a
 // record per particle (sorted far to near in TS) and draws its Particle Type — sprite shapes (sp_shade), 3D polygons
 // and solids (Tripolygon, QuadPolygon, Cube, Tetrahedron: rotated in the vertex shader, back faces culled, lit),
 // textured discs / squares / quads (the Texture Layer), and lenses that refract the layer under them.

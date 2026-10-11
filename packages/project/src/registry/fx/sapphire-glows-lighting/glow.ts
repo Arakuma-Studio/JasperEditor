@@ -1,4 +1,4 @@
-// Family-private helpers of the Sapphire Glows + Lighting family (fx catalogue, wave 2): the multi-scale glow
+// Family-private helpers of the Sapphire Glows + Lighting family: the multi-scale glow
 // cascade every glow uses, directional/radial light passes, and the shared GLSL chunk `sgl/core`.
 //
 // The glow cascade. A Sapphire-style glow is not one Gaussian: its long, soft tail comes from summing blurs of
@@ -7,10 +7,9 @@
 // resolution matched to its width (1/1 … 1/32 of the canvas): wide glows cost about as much as narrow ones and 1080p
 // previews stay interactive. Width X / Width Y stretch the kernel per axis. Levels are rgba16f (light > 1 survives).
 // The final pass sums the levels with `glowSumGlsl` weights (falloff), see `glowWeights`.
+import { clamp, numberParam as num } from '../../param-values.ts';
 import type { GlslChunk, ShaderPass } from '../shader.ts';
 
-export const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 const pow2floor = (x: number) => 2 ** Math.floor(Math.log2(Math.max(1, x)));
 
 /** Downscale factor (power of two, 1…32) of a blur level whose total sigma is (sx, sy) canvas px. */
@@ -157,8 +156,6 @@ export function brightDownscale(sigmaMin: number, levels: number): number {
 	return pow2floor(clamp(s0 / 4, 1, 8));
 }
 
-// ---------------------------------------------------------------- shared GLSL
-
 export const GLSL_SGL_CORE: GlslChunk = {
 	name: 'sgl/core',
 	source: /* glsl */ `
@@ -223,3 +220,5 @@ vec3 sgl_spectrum(float t) {
 }
 `,
 };
+
+export { clamp, num };

@@ -23,6 +23,7 @@
 // anamorphic2: horizontal blue rays and a red glow; anamorphicBlue: horizontal and diagonal blue rays with a
 // hexagonal blue/white glow; rays_only 1–3: ray clusters only; simple_hex: four red and blue hexagons). The element
 // lists below are our own designs after those descriptions, plus a few extra lenses.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { GlslChunk } from '../shader.ts';
 import { GLSL_SGL_CORE } from './glow.ts';
 
@@ -408,4 +409,5 @@ export function flareChunk(lens: FlareLens): GlslChunk {
 	};
 }
 
-export const lensOf = (v: unknown): FlareLens => FLARE_LENSES.find((l) => l.value === v) ?? FLARE_LENSES[0]!;
+export const lensOf = (v: ParamValue | undefined): FlareLens =>
+	FLARE_LENSES.find((l) => l.value === v) ?? FLARE_LENSES[0]!;

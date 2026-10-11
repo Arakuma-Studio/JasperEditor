@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Transition bin (family "premiere-stylize-distort-generate", wave 2): the keyframable
+// Premiere Pro standard effects — Transition bin (family "premiere-stylize-distort-generate"): the keyframable
 // EFFECT versions of Block Dissolve, Gradient Wipe, Linear Wipe, Radial Wipe and Venetian Blinds. Each makes the layer
 // progressively transparent as Transition Completion goes 0 → 100 % (0 % = untouched, 100 % = fully transparent);
 // animate Transition Completion to reveal the layers below. They do not use the transition framework's u_progress.

@@ -10,8 +10,6 @@ import { gaussianBlurPasses } from '../passes.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
 import { GLSL_PACG, layerSizesParam, num, popup, slider, str } from './common.ts';
 
-// ---------------------------------------------------------------- matte morphology
-
 /** Separable min/max (erode/dilate) of a matte stored in the red channel, radius in texture pixels. */
 export const GLSL_PACG_MATTE: GlslChunk = {
 	name: 'pacg/matte',
@@ -64,8 +62,6 @@ function softenPasses(input: string, output: string, sigma: number): ShaderPass[
 	if (sigma < 0.05) return [];
 	return gaussianBlurPasses({ input, output, sigma, scale: sigma > 8 ? 0.5 : 1 });
 }
-
-// ---------------------------------------------------------------- Ultra Key
 
 /** Matte Generation / Cleanup values of Ultra Key's "Setting" presets (Default = the param defaults). */
 export const ULTRA_KEY_PRESETS = {
@@ -251,8 +247,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Alpha Adjust
-
 export const ALPHA_ADJUST = defineShaderEffect({
 	id: 'jasper.alpha-adjust',
 	label: 'Alpha Adjust',
@@ -284,8 +278,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Color Key
 
 /** Color Key's Edge Thin / Edge Feather in layer px. */
 export const colorKeyEdgeThinPx = (p: EffectParams) => Math.max(-5, Math.min(5, num(p.edgeThin)));
@@ -343,8 +335,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Difference Matte
 
 export const DIFFERENCE_MATTE = defineShaderEffect({
 	id: 'jasper.difference-matte',
@@ -411,8 +401,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Image Matte Key / Track Matte Key
 
 const matteKeyFrag = (param: string) => /* glsl */ `
 void main() {
@@ -502,8 +490,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Luma Key
-
 export const LUMA_KEY = defineShaderEffect({
 	id: 'jasper.luma-key',
 	label: 'Luma Key',
@@ -531,8 +517,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Non Red Key
 
 export const NON_RED_KEY = defineShaderEffect({
 	id: 'jasper.non-red-key',
@@ -594,8 +578,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Remove Matte
 
 export const REMOVE_MATTE = defineShaderEffect({
 	id: 'jasper.remove-matte',

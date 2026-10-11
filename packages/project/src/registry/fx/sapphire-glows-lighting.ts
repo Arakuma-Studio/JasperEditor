@@ -1,4 +1,4 @@
-// Effect family "sapphire-glows-lighting" (fx catalogue, wave 2). Sapphire-style glows and lighting: glows, lens flares, rays, glints, light leaks.
+// Effect family "sapphire-glows-lighting". Sapphire-style glows and lighting: glows, lens flares, rays, glints, light leaks.
 // Entries are built with
 // `defineShaderEffect` (../fx/define.ts); ids start with `jasper.s.`; Effects-panel bins: SAPPHIRE_BINS.glows / SAPPHIRE_BINS.lighting.
 // Authoring guide: docs/wp-notes/fx-shader-framework.md. The catalogue test checks every entry (validateGpuEffect).
@@ -13,6 +13,7 @@
 //   common.ts    Sapphire units/points, the shared light-effect tail params and their finishing GLSL
 // Sapphire places every one of these in its "Sapphire Lighting" submenu (Premiere and AE); `SGL_BIN` below.
 // Sapphire units: widths/sizes are fractions of the layer width ×10 (`unitPx`); points are layer-normalised.
+import type { ParamValue } from '../../schema/common.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from './define.ts';
 import { GLSL_COLOR } from './glsl/color.ts';
@@ -64,7 +65,7 @@ const white: [number, number, number, number] = [1, 1, 1, 1];
 const black: [number, number, number, number] = [0, 0, 0, 1];
 
 /** Sigma (canvas px) of a Sapphire glow width. */
-const glowSigma = (width: unknown, ctx: FxPlanContext) =>
+const glowSigma = (width: ParamValue | undefined, ctx: FxPlanContext) =>
 	Math.max(0, num(width)) * K_GLOW * unitPx(ctx.width) * ctx.pxScale;
 
 /** Expand Borders (Sapphire, default off there): here default ON, since editor layers are often tighter than the
@@ -128,7 +129,7 @@ function glowPasses(
 }
 
 /** Padding of a glow: ~3 sigma of its widest channel/axis (layer px). */
-const glowPadding = (p: EffectParams, ctx: FxPlanContext, width: unknown, mult = 1) =>
+const glowPadding = (p: EffectParams, ctx: FxPlanContext, width: ParamValue | undefined, mult = 1) =>
 	3 * num(width) * K_GLOW * unitPx(ctx.width) * Math.max(num(p.widthX, 1), num(p.widthY, 1)) * mult;
 
 /** The usual Sapphire threshold source (bright pass body): `fromAlpha`, `threshold`, `thresholdAddColor`. */
@@ -517,8 +518,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- distance-based glows
-
 /** Reach (canvas px) a distance glow needs for a falloff length `len` (canvas px). */
 const distReach = (len: number) => Math.max(4, len * 5);
 
@@ -771,8 +770,6 @@ void main() {
 			),
 	},
 });
-
-// ---------------------------------------------------------------- S_UltraGlow, S_ZGlow
 
 const EDGE_COMBINE = ['Screen', 'Add', 'Edges Only'] as const;
 
@@ -1097,7 +1094,8 @@ export const SGL_GLOW_EFFECTS: readonly EffectSpec[] = [
 const RES_OPTIONS = ['full', 'half', 'quarter'];
 const resChoice = (name: string, label: string) =>
 	fxParam.choice(name, label, RES_OPTIONS, ['Full', 'Half', 'Quarter'], 'full');
-const resScale = (v: unknown) => [1, 0.5, 0.25][Math.max(0, RES_OPTIONS.indexOf(String(v)))] ?? 1;
+const resScale = (v: ParamValue | undefined) =>
+	[1, 0.5, 0.25][Math.max(0, RES_OPTIONS.indexOf(String(v)))] ?? 1;
 
 /** How far rays reach outside the layer (layer px): a pixel at radius r extends to r / (1 − length). */
 function rayPadding(p: EffectParams, ctx: FxPlanContext): number {
@@ -1360,7 +1358,8 @@ export const S_STREAKS = defineShaderEffect({
 	gpu: {
 		padding: (p, ctx) => {
 			const s = Math.max(1 / Math.max(0.001, num(p.fromZDist, 1)), 1 / Math.max(0.001, num(p.toZDist, 0.8)));
-			const sh = (v: unknown) => (Array.isArray(v) ? Math.hypot(num(v[0]), num(v[1])) : 0) * ctx.width;
+			const sh = (v: ParamValue | undefined) =>
+				(Array.isArray(v) ? Math.hypot(num(v[0]), num(v[1])) : 0) * ctx.width;
 			return Math.min(
 				Math.max(ctx.width, ctx.height),
 				Math.max(0, s - 1) * 0.6 * Math.max(ctx.width, ctx.height) + Math.max(sh(p.fromShift), sh(p.toShift)),
@@ -1368,8 +1367,8 @@ export const S_STREAKS = defineShaderEffect({
 		},
 		uniforms: (p, ctx) => {
 			// Similarity transforms (complex a = scale·e^{iθ}, shift b in layer px, y down) of From and To.
-			const ln = (z: unknown, d: number) => Math.log(1 / Math.max(0.001, num(z, d)));
-			const sh = (v: unknown): [number, number] =>
+			const ln = (z: ParamValue | undefined, d: number) => Math.log(1 / Math.max(0.001, num(z, d)));
+			const sh = (v: ParamValue | undefined): [number, number] =>
 				Array.isArray(v) ? [num(v[0]) * ctx.width, -num(v[1]) * ctx.width] : [0, 0];
 			return {
 				u_mode: combineMode(p.combine, ['Add', 'Screen'], 'Add'),

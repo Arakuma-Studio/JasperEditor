@@ -46,8 +46,6 @@ const KERNEL_TEXELS = 64;
 /** Default disc kernel radius in Sapphire units (half the layer width). */
 const DEFAULT_DISC = 0.044;
 
-// ---------------------------------------------------------------- params
-
 const AUTOSCALE = ['maxChannel', 'luma', 'indepChannels', 'countNonzero', 'kernelSize'] as const;
 const COMBINE = ['convolveOnly', 'screen', 'add', 'difference'] as const;
 
@@ -75,8 +73,6 @@ const edgeXY = (): ParamSpec[] => [
 	sEdgeMode('transparent', 'edgeModeX', 'Edge Mode X'),
 	sEdgeMode('transparent', 'edgeModeY', 'Edge Mode Y'),
 ];
-
-// ---------------------------------------------------------------- GLSL
 
 /** Per-axis edge modes (Edge Mode X & Y) and the kernel grid / stats / gather. */
 const GLSL_SBS_KERNEL: GlslChunk = {
@@ -227,8 +223,6 @@ vec4 sbs_kernelGather(sampler2D kern, sampler2D kstat, vec2 uv, vec2 kscale, int
 `,
 };
 
-// ---------------------------------------------------------------- planning
-
 function kernelUniforms(p: EffectParams): Record<string, FxUniformValue> {
 	const c1 = vec2(p.kernelCrop1, [-0.997, -0.747]);
 	const c2 = vec2(p.kernelCrop2, [0.997, 0.747]);
@@ -358,8 +352,6 @@ vec4 sbs_convOut(vec4 g, float brightness) {
 }
 `;
 
-// ---------------------------------------------------------------- S_Convolve
-
 const highlightParams = (thrLabel = 'Hilight Threshold'): ParamSpec[] => [
 	sNum('useGamma', 'Use Gamma', 1, { min: 0.1, softMax: 4, step: 0.01 }),
 	sNum('boostHighlights', 'Boost Highlights', 0, { min: 0, softMax: 4, step: 0.01 }),
@@ -436,8 +428,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_ConvolveComp
 
 const MATTE_USE = ['luma', 'alpha'] as const;
 
@@ -575,8 +565,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_ZConvolve
 
 const ZCONV_SHOW = ['result', 'kernel', 'inFocusZone'] as const;
 

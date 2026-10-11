@@ -4,7 +4,9 @@
 // Gaussian chain makes the glow (multi-pass), the last pass adds bolt + glow and combines with the source.
 // Determinism: shapes are hashes of (u_seed, Jitter Frames period, branch/bolt ids); Wiggle moves the noise along a
 // time axis — every frame is a pure function of params and frame.
+
 import type { EffectParams, EffectSpec } from '../../effects.ts';
+import { mediaParamId } from '../../param-values.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
@@ -54,8 +56,6 @@ export const glowGain = (glowWidth: number, boltWidth: number) =>
 
 const glowSigma = (p: EffectParams, ctx: FxPlanContext, name = 'glowWidth', def = 0.224) =>
 	Math.max(0.5, num(p[name], def) * unitPx(ctx) * GLOW_K);
-
-// ---------------------------------------------------------------- shared params
 
 const wiggleParams = () => [
 	n('wiggleStart', 'Wiggle Start', 0, 0, undefined, { softMax: 10, step: 0.01 }),
@@ -132,8 +132,6 @@ const commonZapUniforms = (p: EffectParams, ctx: FxFrameContext) => ({
 	u_glowGain: glowGain(num(p.glowWidth, 0.224), num(p.boltWidth, 0.07)),
 	...combineUniforms(p, ZAP_COMBINE, 'screen'),
 });
-
-// ---------------------------------------------------------------- S_Zap
 
 const ZAP_POINTS = {
 	start: [0.25, -0.03],
@@ -235,8 +233,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_UltraZap
 
 const ULTRA_POINTS = {
 	startPoint: [0.25, 0.056],
@@ -488,16 +484,13 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_ZapTo / S_ZapFrom (edges of an object clip)
-
 /** Edge points texture capacity: the `pts` pass is at least 64 texels wide. */
 const PTS_W = 64;
 const ptsScale = (ctx: FxPlanContext) => Math.min(1, PTS_W / Math.max(1, ctx.width * ctx.pxScale));
 
 /** Object matte (luma/alpha of the object clip or the layer itself), blurred: outputs `obj`, `objBH`, `objB`. */
 function objectPasses(p: EffectParams, ctx: FxPlanContext, media: string, blurName: string, blurDef: number) {
-	const v = p[media] as { mediaId?: unknown } | undefined;
-	const has = typeof v?.mediaId === 'string' && v.mediaId !== '';
+	const has = !!mediaParamId(p[media]);
 	const sigma = Math.max(0, num(p[blurName], blurDef)) * unitPx(ctx) * 0.5;
 	const passes: ShaderPass[] = [
 		{

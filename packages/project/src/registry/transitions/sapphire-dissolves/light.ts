@@ -37,8 +37,6 @@ import { brightPass, GLOW_GAIN, relSideParams } from './glow.ts';
 /** Glint / glare lengths: a Sapphire size of 1.0 = 10 % of the frame width. */
 const GLINT_UNIT = 0.1;
 
-// ---------------------------------------------------------------- shared streak gather
-
 /**
  * Streaks of a light texture along up to 16 directions (both ways), packed in `u_rays` (floats: dx, dy, length px,
  * brightness per direction; `u_rayCount` directions). Per-channel weights along the ray come from `rayWeight(u)`
@@ -84,8 +82,6 @@ export function packRays(rays: readonly { angle: number; length: number; brightn
 	while (floats.length < 64) floats.push(0, 0, 0, 0);
 	return { u_rays: { vec4s: floats }, u_rayCount: Math.min(16, rays.length) };
 }
-
-// ---------------------------------------------------------------- S_DissolveGlint / S_DissolveGlintRainbow
 
 /** The 4 glint rays of a frame: X, Y, Diag1 (top right → bottom left), Diag2 (top left → bottom right). */
 export function glintRays(p: EffectParams, width: number, env: number, mix: number) {
@@ -222,8 +218,6 @@ void main() {
 
 export const S_DISSOLVE_GLINT = glintDissolve(false);
 export const S_DISSOLVE_GLINT_RAINBOW = glintDissolve(true);
-
-// ---------------------------------------------------------------- S_DissolveGlare
 
 export const GLARE_STYLES = ['star4', 'star6', 'star8', 'sparkle', 'haloRing', 'anamorphic'] as const;
 const GLARE_STYLE_LABELS = ['Star 4', 'Star 6', 'Star 8', 'Sparkle', 'Halo Ring', 'Anamorphic'] as const;
@@ -385,8 +379,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_DissolveFlashbulbs
-
 export const FLASH_STYLES = ['bulb', 'star', 'soft', 'glare'] as const;
 const FLASH_STYLE_LABELS = ['Bulb', 'Star', 'Soft', 'Glare'] as const;
 /** Most flashes per frame (and frames of Hold). */
@@ -530,8 +522,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveLensFlare
 
 export const LENS_TYPES = ['standard', 'anamorphic', 'zoom', 'sun'] as const;
 const LENS_LABELS = ['Standard 50mm', 'Anamorphic', 'Zoom Lens', 'Sun'] as const;
@@ -732,8 +722,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_DissolveZap
 
 /** Most bolts drawn (Max Bolts is clamped to it). */
 export const MAX_BOLTS = 64;

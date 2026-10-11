@@ -1,4 +1,4 @@
-// The GPU transition catalogue and framework (wave 2; docs/wp-notes/fx-transition-framework.md). Every family file
+// The GPU transition catalogue and framework (docs/wp-notes/fx-transition-framework.md). Every family file
 // exports one `readonly TransitionSpec[]`; `FX_TRANSITIONS` concatenates them in Effects-panel order and is part of
 // `TRANSITION_SPECS` (../../transitions.ts), hence of the Effects panel, the timeline, Effect Controls' Transition
 // section, the agent schema export / MCP and the renderers. Adding a transition = adding an entry to its family

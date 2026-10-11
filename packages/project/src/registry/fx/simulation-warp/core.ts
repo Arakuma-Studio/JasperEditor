@@ -1,11 +1,13 @@
-// Simulation core of the simulation-warp family (sim-warp workstream): deterministic hashing and noise, the fixed
+// Simulation core of the simulation-warp family: deterministic hashing and noise, the fixed
 // step clock and a checkpointed stepper. Every stepped simulation (Particle World, Particle Systems, Mercury, Particle
 // Playground, Foam, Wave World) is a pure function of (params over time, seed, step count): it is stepped from clip
 // time 0 at SIM_SPS steps per second, and `fxSimRun` keeps checkpoints per instance key, so seeking to frame N gives
 // exactly the state that playing to frame N gives (resuming from a checkpoint replays the same steps).
 // Ported in part from EffectCraft (crates/effects/src/util.rs SimCache, sim.rs steps_at; MIT OR Apache-2.0), see
 // licenses/ported/sim-warp.md.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams } from '../../effects.ts';
+import { booleanParam as bool, clamp, numberParam as num } from '../../param-values.ts';
 import type { FxFrameContext } from '../shader.ts';
 
 /** Steps per second of the stepped simulations. */
@@ -34,7 +36,7 @@ export function h01(i: number, k: number, seed: number): number {
 export const hs = (i: number, k: number, seed: number) => h01(i, k, seed) * 2 - 1;
 
 /** A 32-bit seed from `u_seed` (0..1) and a Random Seed param. */
-export function seedOf(ctxSeed: number, randomSeed: unknown, salt: number): number {
+export function seedOf(ctxSeed: number, randomSeed: ParamValue | undefined, salt: number): number {
 	const r = typeof randomSeed === 'number' && Number.isFinite(randomSeed) ? Math.floor(randomSeed) : 0;
 	return (Math.floor(ctxSeed * 4294967296) ^ Math.imul(r + 1, 0x9e3779b9) ^ Math.imul(salt, 0x85ebca6b)) | 0;
 }
@@ -56,8 +58,6 @@ export function valueNoise3(x: number, y: number, z: number, seed: number): numb
 	const b = l(l(c(0, 0, 1), c(1, 0, 1), fx), l(c(0, 1, 1), c(1, 1, 1), fx), fy);
 	return l(a, b, fz);
 }
-
-// ---------------------------------------------------------------- checkpointed stepper
 
 type Entry<S> = { checkpoints: Map<number, S>; used: number };
 
@@ -139,13 +139,9 @@ export function paramsAtStep(p: EffectParams, ctx: FxFrameContext, i: number): E
 /** Steps reached at the context's frame. */
 export const stepsOf = (ctx: FxFrameContext) => stepsAt(ctx.frame / (ctx.fps > 0 ? ctx.fps : 30));
 
-// ---------------------------------------------------------------- params helpers
-
-export const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const bool = (v: unknown, d = false) => (typeof v === 'boolean' ? v : d);
-export const vec2 = (v: unknown, d: [number, number] = [0, 0]): [number, number] =>
+export const vec2 = (v: ParamValue | undefined, d: [number, number] = [0, 0]): [number, number] =>
 	Array.isArray(v) && v.length >= 2 ? [num(v[0], d[0]), num(v[1], d[1])] : d;
-export const rgba = (v: unknown, d: [number, number, number, number] = [1, 1, 1, 1]) =>
+export const rgba = (v: ParamValue | undefined, d: [number, number, number, number] = [1, 1, 1, 1]) =>
 	Array.isArray(v) && v.length >= 4
 		? ([num(v[0], d[0]), num(v[1], d[1]), num(v[2], d[2]), num(v[3], d[3])] as [
 				number,
@@ -155,8 +151,9 @@ export const rgba = (v: unknown, d: [number, number, number, number] = [1, 1, 1,
 			])
 		: d;
 /** Index of an enum value in its options (default 0). */
-export const choice = (v: unknown, options: readonly string[], d = 0) => {
+export const choice = (v: ParamValue | undefined, options: readonly string[], d = 0) => {
 	const i = typeof v === 'string' ? options.indexOf(v) : -1;
 	return i >= 0 ? i : d;
 };
-export const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
+
+export { bool, clamp, num };

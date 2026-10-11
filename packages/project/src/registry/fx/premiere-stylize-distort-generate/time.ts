@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Time (family "premiere-stylize-distort-generate", wave 2): Echo (time samples) and
+// Premiere Pro standard effects — Time (family "premiere-stylize-distort-generate"): Echo (time samples) and
 // Posterize Time (time remap). Echo reads up to 8 earlier/later frames of the raw layer source (framework limit
 // FX_MAX_TIME_SAMPLES): put it first in the stack, as in Premiere. DOM layers (text, shapes) have no samples.
 import type { EffectParams, EffectSpec } from '../../effects.ts';

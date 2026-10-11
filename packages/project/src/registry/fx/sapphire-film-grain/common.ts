@@ -2,18 +2,17 @@
 // param builders (seeds with Sapphire's 0.123 default, grain and vignette groups shared by several effects), the
 // grain-hold cadence, and smooth deterministic random signals (flicker, shake, blink) evaluated per frame in
 // `gpu.uniforms` hooks — pure functions of (params, frame, seed), never Math.random.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
+import { booleanParam as bool, clamp, numberParam as num } from '../../param-values.ts';
 import { GLSL_BLUR } from '../glsl/blur.ts';
 import { fxParam, mixWithOriginalParam, seedParam } from '../params.ts';
 import { type FxUniformValue, fxRandom, type ShaderPass } from '../shader.ts';
 
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-export const bool = (v: unknown, d = false): boolean => (typeof v === 'boolean' ? v : d);
-export const rgb = (v: unknown, d: [number, number, number]): [number, number, number] =>
+export const rgb = (v: ParamValue | undefined, d: [number, number, number]): [number, number, number] =>
 	Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => typeof x === 'number' && Number.isFinite(x))
 		? [v[0] as number, v[1] as number, v[2] as number]
 		: d;
-export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 /** Puts every param of a list into an Effect Controls section (metadata for panels and the agent catalogue). */
 export function grp(group: string, params: ParamSpec[]): ParamSpec[] {
@@ -38,7 +37,6 @@ export function slider(
 	});
 }
 
-/** An integer Sapphire slider. */
 export function intSlider(
 	name: string,
 	label: string,
@@ -59,7 +57,6 @@ export function intSlider(
 export const color = (name: string, label: string, c: [number, number, number]) =>
 	fxParam.color(name, label, [c[0], c[1], c[2], 1]);
 
-/** A checkbox. */
 export const check = (name: string, label: string, def: boolean) => fxParam.toggle(name, label, def);
 
 /**
@@ -82,8 +79,6 @@ export function sapphirePoint(x: number, y: number): [number, number] {
 /** The usual tail: "Mix with Orig" (the framework's substitute for Sapphire's Mask input blending). */
 export const mixParam = (label = 'Mix with Orig') => ({ ...mixWithOriginalParam(), label });
 
-// ---------------------------------------------------------------- grain hold (FilmEffect / FilmDamage)
-
 export const GRAIN_HOLD = [
 	'field',
 	'frame',
@@ -98,14 +93,12 @@ export const GRAIN_HOLD = [
  * The frame index whose grain pattern is shown at `frame`: Field/Frame → a new pattern every frame; "3:2 at k" →
  * 4 film frames over 5 video frames (one pattern held over 3 then 2 fields), phase k.
  */
-export function grainFrame(hold: unknown, frame: number): number {
+export function grainFrame(hold: ParamValue | undefined, frame: number): number {
 	const i = typeof hold === 'string' ? GRAIN_HOLD.indexOf(hold as (typeof GRAIN_HOLD)[number]) : 1;
 	if (i < 2) return Math.floor(frame);
 	const k = i - 2;
 	return Math.floor(((Math.floor(frame) + k) * 4) / 5);
 }
-
-// ---------------------------------------------------------------- deterministic signals
 
 /** Smooth value noise of time t (in "cycles"): −1..1, C1-continuous, deterministic in (seed, channel). */
 export function smoothNoise1(seed: number, channel: number, t: number): number {
@@ -126,8 +119,6 @@ export function stepNoise1(seed: number, channel: number, t: number): number {
 export const frameWidth = (ctx: { width: number }) => Math.max(1, ctx.width);
 /** Layer px per "HD pixel" (1920-wide reference): resolution-independent pixel sizes. */
 export const hdPx = (ctx: { width: number }) => Math.max(1, ctx.width) / 1920;
-
-// ---------------------------------------------------------------- shared param groups
 
 /**
  * Sapphire film-grain group (S_FilmEffect, S_FilmDamage, S_BleachBypass): Grain Amp (+ per channel), Darks/Brights
@@ -228,3 +219,5 @@ void main() {
 		{ output: opts.output, frag: frag(`u_${opts.output}H`, 'vec2(0.0, 1.0)'), include: [GLSL_BLUR], scale },
 	];
 }
+
+export { bool, clamp, num };

@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Noise & Grain (family "premiere-stylize-distort-generate", wave 2): Dust &
+// Premiere Pro standard effects — Noise & Grain (family "premiere-stylize-distort-generate"): Dust &
 // Scratches, Median, Noise, Noise Alpha, Noise HLS, Noise HLS Auto.
 // Median machinery: per-channel median of a 7×7 tap grid spread over the radius (exact 7×7 window up to radius 3,
 // sparser — linearly filtered — taps beyond), found by bisection on the tap values (no sorting network). For radii

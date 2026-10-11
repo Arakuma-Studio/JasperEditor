@@ -1,4 +1,4 @@
-// Simulation ▸ Ball Action, Scatterize, Hair (sim-warp workstream; After Effects' CC Ball Action, CC Scatterize,
+// Simulation ▸ Ball Action, Scatterize, Hair (After Effects' CC Ball Action, CC Scatterize,
 // CC Hair). The layer's own pixels become balls, scattered dots or hair strands; positions are closed-form functions
 // of the pixel/grid index computed in the vertex shader (colours read from the layer there), balls drawn far to near
 // after a GPU sort. Ported from EffectCraft crates/effects/src/sim2.rs (ball_action_plan, scatterize_plan) and
@@ -13,8 +13,6 @@ import { GLSL_SORTED, gpuSortPasses } from './sort.ts';
 import { GLSL_SPRITES, SPRITE_FRAG_MAIN, SPRITE_VERT_DECLS } from './sprites.ts';
 
 const SIM = 'Simulation';
-
-// ---------------------------------------------------------------- Ball Action
 
 const AXES = ['X Axis', 'Y Axis', 'Z Axis', 'XY Axis', 'XZ Axis', 'YZ Axis', 'XYZ Axis'] as const;
 const TWIST = ['X Axis', 'Y Axis', 'Radius', 'Brightness', 'Red', 'Green', 'Blue', 'Alpha'] as const;
@@ -115,8 +113,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Scatterize
-
 export const SCATTERIZE = defineShaderEffect({
 	id: 'jasper.scatterize',
 	label: 'Scatterize',
@@ -181,8 +177,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Hair
 
 /** Segments per strand. */
 const HAIR_SEGS = 6;

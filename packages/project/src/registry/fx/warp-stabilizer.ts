@@ -1,4 +1,4 @@
-// Distort ▸ Warp Stabilizer (workstream gaps, docs/wp-notes/gaps.md §FX-6): Premiere's live stabiliser. The clip is
+// Distort ▸ Warp Stabilizer (docs/wp-notes/gaps.md §FX-6): Premiere's live stabiliser. The clip is
 // analysed in the background by the engine (`warp-analysis` job: features tracked frame to frame, robust translation /
 // similarity / homography per frame, long trajectories for Subspace Warp); the analysis is stored with the effect
 // instance (`EffectInstance.warpAnalysis`). This shader applies the stabilisation planned from it at the current
@@ -6,6 +6,7 @@
 // framing (crop, auto-scale, Additional Scale) and, for "Stabilize, Synthesize Edges", the blank borders filled from
 // neighbouring frames (time samples brought into the frame through the analysed motion). Without an analysis it
 // passes the picture through (the Program monitor shows Premiere's banner; exports refuse: WARP_NOT_ANALYZED).
+
 import {
 	decodeWarpAnalysis,
 	mediaTimeAtClipFrame,
@@ -18,7 +19,7 @@ import {
 } from '../../gaps/warp/analysis.ts';
 import { type H3, hInv, hMul } from '../../gaps/warp/math.ts';
 import { frameToFrame, type StabPlan } from '../../gaps/warp/stabilize.ts';
-import type { EffectSpec } from '../effects.ts';
+import type { EffectParams, EffectSpec } from '../effects.ts';
 import { defineShaderEffect } from './define.ts';
 import { GLSL_DATA } from './glsl/data.ts';
 import { fxParam } from './params.ts';
@@ -32,7 +33,7 @@ const hold = { animatable: false } as const;
 
 /** The analysis of an instance (`ctx.structures.warpAnalysis`), when there is one. */
 function analysisOf(ctx: FxPlanContext): WarpAnalysisData | null {
-	const a = (ctx.structures as { warpAnalysis?: WarpAnalysisData } | undefined)?.warpAnalysis;
+	const a = ctx.structures?.warpAnalysis;
 	return a && Array.isArray(a.frames) && a.frames.length >= 14 ? a : null;
 }
 
@@ -42,7 +43,7 @@ function indexAt(a: WarpAnalysisData, frame: number, ctx: FxPlanContext): number
 }
 
 /** Time-sample offsets (clip frames) Synthesize Edges reads: nearest first, ±, within Synthesis Input Range. */
-export function warpSynthesisOffsets(p: Record<string, unknown>, fps: number): number[] {
+export function warpSynthesisOffsets(p: EffectParams, fps: number): number[] {
 	if (p.framing !== 'synthesizeEdges') return [];
 	const secs = typeof p.synthesisInputRange === 'number' ? Math.max(0, p.synthesisInputRange) : 1;
 	const range = Math.round(secs * fps);
@@ -62,7 +63,7 @@ const colMajor = (h: H3): number[] => [h[0]!, h[3]!, h[6]!, h[1]!, h[4]!, h[7]!,
 const toLayer = (sx: number, sy: number, h: H3) =>
 	hMul(hMul([sx, 0, 0, 0, sy, 0, 0, 0, 1], h), [1 / sx, 0, 0, 0, 1 / sy, 0, 0, 0, 1]);
 
-function uniformsOf(p: Record<string, unknown>, ctx: FxFrameContext): Record<string, FxUniformValue> {
+function uniformsOf(p: EffectParams, ctx: FxFrameContext): Record<string, FxUniformValue> {
 	const a = analysisOf(ctx);
 	const none: Record<string, FxUniformValue> = {
 		u_wsMode: { int: 0 },
@@ -297,7 +298,7 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 	gpu: {
 		uniforms: (p, ctx) => uniformsOf(p, ctx),
 		time: {
-			samples: (p: Record<string, unknown>, ctx: FxTimeContext) => warpSynthesisOffsets(p, ctx.fps),
+			samples: (p: EffectParams, ctx: FxTimeContext) => warpSynthesisOffsets(p, ctx.fps),
 			sampleEdge: 'transparent',
 		},
 		passes: [{ include: [GLSL_DATA], frag: FRAG }],
@@ -307,6 +308,6 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 export const WARP_STABILIZER_EFFECTS: readonly EffectSpec[] = [WARP_STABILIZER];
 
 /** The plan an instance renders with at a clip frame (tests, the Effect Controls status line). */
-export function warpPlanAt(p: Record<string, unknown>, a: WarpAnalysisData): StabPlan {
+export function warpPlanAt(p: EffectParams, a: WarpAnalysisData): StabPlan {
 	return warpPlanFor(a, warpSettingsOf(p, warpAnalysisFps(a)));
 }

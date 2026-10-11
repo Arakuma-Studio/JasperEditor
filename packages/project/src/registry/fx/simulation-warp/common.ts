@@ -1,4 +1,4 @@
-// Shared params and passes of the simulation-warp family (sim-warp workstream).
+// Shared params and passes of the simulation-warp family.
 import type { ParamSpec } from '../../effects.ts';
 import { fxParam } from '../params.ts';
 import type { ShaderPass } from '../shader.ts';

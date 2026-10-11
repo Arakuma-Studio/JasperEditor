@@ -57,24 +57,8 @@ import {
 } from './text-animator-properties.ts';
 import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 
-/**
- * `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). `json` (M2, S08) = any JSON
- * value described by the spec's `valueSchema` (composition props that are arrays or free-form objects).
- */
-export type ValueKind =
-	| 'number'
-	| 'vec2'
-	/** Wave expressions: 3D Point Control. */
-	| 'vec3'
-	| 'color'
-	| 'enum'
-	| 'boolean'
-	| 'string'
-	| 'curve'
-	| 'media'
-	| 'json'
-	/** sim-warp: a keyframable distortion mesh (flat number list; edited on the Program monitor). */
-	| 'mesh';
+/** `json` properties carry their schema in `valueSchema` (arrays and free-form composition props). */
+export type ValueKind = ParamSpec['type'] | 'json';
 export type PropertyGroup =
 	| 'motion'
 	| 'opacity'
@@ -115,7 +99,7 @@ export type PropertySpec = {
 	group: PropertyGroup;
 	kind: ValueKind;
 	unit?: ParamSpec['unit'];
-	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
+	range?: ParamSpec['range'];
 	/** `continuous` = interpolated keyframes; `hold-only` = step keyframes (S01:KF-007); `no` = static field. */
 	animatable: 'continuous' | 'hold-only' | 'no';
 	/**
@@ -221,7 +205,6 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	return frame;
 }
 
-// ---------------------------------------------------------------- M2 text animators (wp-m2-text-anim)
 // S11:TXA-007: static keys `textAnimation.<side>.preset` (enum incl. `none`) and `.durationFrames`; dynamic keys
 // `textAnimation.<side>.params.<name>` from the chosen preset's schema. Every key is static (`animatable: 'no'`)
 // and written through `clip.update {textAnimation}` (the handler validates the preset's params as a whole).
@@ -306,8 +289,6 @@ export function textAnimationParamSpecs(clip: TextAnimated): PropertySpec[] {
 		return specs;
 	});
 }
-
-// ---------------------------------------------------------------- wp-m2-shapes (S11:SHP-001…007)
 
 /** Largest shape side and stroke width the registry accepts (layer pixels); larger values are clamped. */
 export const SHAPE_LIMITS = { size: 32768, strokeWidth: 4096, cornerRadius: 16384 } as const;
@@ -408,9 +389,6 @@ const SHAPE_PROPERTY_SPECS: readonly PropertySpec[] = [
 	},
 ];
 
-// ---------------------------------------------------------------- end wp-m2-shapes
-
-// ---------------------------------------------------------------- text-animators: typography
 type TypoStyle = Partial<TextStyle> & Record<string, unknown>;
 /** Readers of the typography specs (`['$typo', key]` storage: values with read-time defaults). */
 const TYPO_GETTERS = new Map<string, (s: TypoStyle) => unknown>();
@@ -1117,7 +1095,7 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		defaultValue: false,
 		write: styleWrite('allCaps'),
 	},
-	// text-animators workstream: Character and Paragraph settings (AE Character / Paragraph panels).
+	// Character and Paragraph settings (AE Character / Paragraph panels).
 	...TYPOGRAPHY_SPECS,
 	{
 		key: 'solid.color',
@@ -1132,9 +1110,9 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	},
 	// M2 (S11:TXA-007, wp-m2-text-anim): preset + window of each side; params are dynamic (below).
 	...TEXT_ANIMATION_SIDES.flatMap(textAnimationSideSpecs),
-	// ------------------------------------------------ wp-m2-shapes: shape properties (S11:SHP-003/005)
+
 	...SHAPE_PROPERTY_SPECS,
-	// ------------------------------------------------ end wp-m2-shapes
+
 	// three-d: 3D layers, cameras, lights.
 	...THREE_D_PROPERTY_SPECS,
 ];
@@ -1339,7 +1317,6 @@ export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
 	);
 }
 
-// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates ---------------------------
 // Storage: the static value stays in `clip.params[name]` (validated by the template schema, read by every M1
 // consumer); keyframes live in `clip.paramKeyframes[name]` (content time, flicks). fframes template params stay
 // static: their masters are rendered by `jasper-mg` from the params alone.
@@ -1402,7 +1379,6 @@ export function evaluateTemplateParams(
 	}
 	return out ?? params;
 }
-// ---- end wp-m2-anime-templates ---------------------------------------------------------------------------
 
 /**
  * Specs for a composition clip's `props.<dotted.path>` (S08:MGU-003) from the composition's `propsSchema`
@@ -1510,7 +1486,7 @@ export function propertiesForClip(
 		return [
 			...base,
 			...textAnimationParamSpecs(clip as TextAnimated),
-			// text-animators workstream: animators, selectors, Path / More Options, Source Text.
+			// animators, selectors, Path / More Options, Source Text.
 			SOURCE_TEXT_SPEC,
 			...textAnimatorPropertySpecs(clip as Parameters<typeof textAnimatorPropertySpecs>[0]),
 		];
@@ -1535,7 +1511,7 @@ export function resolvePropertySpec(
 	// wp shapes: `shape.items.<itemId>.<field…>` of vector shapes (given the clip).
 	if (key.startsWith(SHAPE_ITEM_KEY_PREFIX))
 		return clip ? shapeItemPropertySpecs(clip as Pick<Clip, 'kind'>).find((s) => s.key === key) : undefined;
-	// text-animators workstream: dynamic animator / selector / path / more-options keys (need the clip).
+	// dynamic animator / selector / path / more-options keys (need the clip).
 	if (isTextAnimatorKey(key))
 		return resolveTextAnimatorSpec(key, clip as Parameters<typeof resolveTextAnimatorSpec>[1]);
 	if (/^textAnimation\.(in|out)\.params\./.test(key))
@@ -1554,8 +1530,6 @@ export function resolvePropertySpec(
 	}
 	return getPropertySpec(key);
 }
-
-// ---------------------------------------------------------------- reading and resolving values
 
 function getAt(obj: unknown, path: readonly string[]): unknown {
 	let cur = obj as Record<string, unknown> | undefined;
@@ -1586,12 +1560,12 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
 		return fx?.params[b!];
 	}
-	// text-animators workstream: typography values with read-time defaults.
+	// typography values with read-time defaults.
 	if (head === '$typo') {
 		const st = ctx.clip.kind === 'text' ? (ctx.clip.content.style as TypoStyle) : ({} as TypoStyle);
 		return TYPO_GETTERS.get(a!)?.(st);
 	}
-	// text-animators workstream: Source Text as an Animatable view (`content` + hold keys).
+	// Source Text as an Animatable view (`content` + hold keys).
 	if (head === '$sourceText') {
 		const t = ctx.clip as { content?: unknown; sourceTextKeyframes?: Keyframe<unknown>[] };
 		return { value: t.content, keyframes: t.sourceTextKeyframes ?? [] };
@@ -1683,8 +1657,6 @@ export function resolvePropertyAt(ctx: PropertyContext, s: PropertySpec, frame: 
 	return { value: stored, animated: false, anim: null, time, outside };
 }
 
-// ---------------------------------------------------------------- write path helpers
-
 export type PropertyWriteCommand =
 	| { type: 'param.set'; target: ParamPath; value: unknown; at?: { sequenceFrame: number } }
 	| { type: 'clip.update'; clipId: string; patch: Record<string, unknown> };
@@ -1706,8 +1678,6 @@ export function propertyWriteCommand(
 		? { type: 'param.set', target, value, at: { sequenceFrame: atFrame } }
 		: { type: 'param.set', target, value };
 }
-
-// ---------------------------------------------------------------- JSON Schema (S03:PRP-003)
 
 export type JsonSchemaObject = Record<string, unknown>;
 
@@ -1834,8 +1804,6 @@ export function propertyKeyToParamPath(owner: PropertyOwner, key: string): Param
 	return owner.sequenceId ? ['master', owner.sequenceId, key] : ['master', key];
 }
 
-// ---------------------------------------------------------------- wp masks
-
 /** The Effect Controls / Properties spec of a mask property (`masks.<maskId>.<prop>`). */
 export function maskPropertySpec(maskId: string, prop: MaskProp): PropertySpec {
 	const base = {
@@ -1878,8 +1846,6 @@ export function maskPropertySpec(maskId: string, prop: MaskProp): PropertySpec {
 			};
 	}
 }
-
-// ---------------------------------------------------------------- sim-warp: Puppet pins
 
 /** The Effect Controls / Properties spec of a Puppet pin property (`puppet.<pinId>.<prop>`). */
 export function puppetPinPropertySpec(pinId: string, prop: PuppetPinProp): PropertySpec {

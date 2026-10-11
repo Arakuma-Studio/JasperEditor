@@ -17,8 +17,6 @@ import { historyOffsets, inSpan, int, num, spreadOffsets, str } from './time-mat
 
 const time = { category: 'Time' as const, bin: SAPPHIRE_BINS.time };
 
-// ---------------------------------------------------------------- S_CutToDissolve
-
 /** The dissolve window of S_CutToDissolve: frames [start, end) around the cut (first incoming frame `cut`). */
 export function cutDissolveWindow(p: EffectParams): {
 	cut: number;
@@ -118,8 +116,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_FieldRemove
-
 export const S_FIELD_REMOVE = defineShaderEffect({
 	...time,
 	id: 'jasper.s.field-remove',
@@ -184,8 +180,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_MotionDetect
-
 export const MOTION_COMBINE = [
 	'motionOnly',
 	'mult',
@@ -246,8 +240,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_NearestColor
-
 export const S_NEAREST_COLOR = defineShaderEffect({
 	...time,
 	id: 'jasper.s.nearest-color',
@@ -289,8 +281,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_RepairFrames
 
 export function repairRange(p: EffectParams): { first: number; count: number } {
 	return { first: int(p.firstBadFrame, 5, 0), count: int(p.badFrameCount, 1, 1) };
@@ -347,8 +337,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_TimeAverage
-
 export const S_TIME_AVERAGE = defineShaderEffect({
 	...time,
 	id: 'jasper.s.time-average',
@@ -384,8 +372,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_TimeDisplace
 
 export function timeDisplaceSamples(p: EffectParams, ctx: FxTimeContext): number[] {
 	const b = num(p.blackTimeShift, -10);
@@ -467,8 +453,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_TimeSlice
-
 export function timeSliceSamples(p: EffectParams, ctx: FxTimeContext): number[] {
 	const n = Math.max(1, num(p.sliceNumber, 12));
 	const fo = num(p.frameOffset, 0);
@@ -518,8 +502,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- S_TimeWarpRGB
 
 export function timeWarpOffsets(p: EffectParams): [number, number, number] {
 	return [-int(p.redShiftFrames, 1), -int(p.greenShiftFrames, 0), -int(p.blueShiftFrames, -1)];

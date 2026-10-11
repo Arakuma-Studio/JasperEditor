@@ -1,6 +1,7 @@
 // "Sapphire other stylize" family — tiling effects: S_Mosaic (block averages), S_RomanTile (lit mosaic tesserae with
 // grout) and S_StripSlide (strips sliding off to reveal a Background). Parameters follow Boris FX's public Sapphire
 // documentation (AE/Premiere host), minus Mocha/preset/Opacity-handling/crop params. Clean-room implementations.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
@@ -26,11 +27,9 @@ import {
 
 const BIN = SAPPHIRE_BINS.stylize;
 
-// ---------------------------------------------------------------- S_Mosaic
-
 /** Block size of S_Mosaic in canvas px: Pixel Frequency blocks across the layer width, Pixel Rel Height tall. */
 export function mosaicBlockPx(
-	p: { pixelFrequency?: unknown; pixelRelHeight?: unknown },
+	p: { pixelFrequency?: ParamValue; pixelRelHeight?: ParamValue },
 	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
 ): [number, number] {
 	const w = (ctx.width * ctx.pxScale) / Math.max(1, num(p.pixelFrequency, 40));
@@ -98,11 +97,9 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_RomanTile
-
 /** Tile width of S_RomanTile in canvas px (Tile Size 1.0 = 6 % of the layer width; the default 0.5 ≈ 33 tiles across). */
 export function romanTilePx(
-	p: { tileSize?: unknown },
+	p: { tileSize?: ParamValue },
 	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
 ): number {
 	return Math.max(2, num(p.tileSize, 0.5) * 0.06 * ctx.width * ctx.pxScale);
@@ -259,8 +256,6 @@ void main() {
   fragColor = sso_finish(result, src, -1.0);
 }`;
 
-// ---------------------------------------------------------------- S_StripSlide
-
 export const STRIP_SLIDE_ORDERS = ['topDown', 'bottomUp', 'random', 'centerOut', 'edgesIn'] as const;
 
 /**
@@ -342,7 +337,7 @@ void main() {
   float d1 = ss_progress(u_amount, rank) * travel;
   float d0 = ss_progress(a0, rank) * travel;
   vec4 strip = vec4(0.0);
-  // Motion blur: taps along the strip's real (eased) slide over the blur window — 12 (wave 3) or ≤ 1 px apart when
+  // Motion blur: taps along the strip's real (eased) slide over the blur window — 12 or ≤ 1 px apart when
   // longer (adaptive, ≤ 64, jittered per pixel beyond).
   float ext = abs(d1 - d0);
   int n = ext > 0.5 ? max(12, fx_mbTapCount(ext, 64)) : 1;

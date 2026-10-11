@@ -1,4 +1,4 @@
-// Dissolve ▸ Morph Cut (workstream gaps, docs/wp-notes/gaps.md §AI-2). Premiere smooths a jump cut between two
+// Dissolve ▸ Morph Cut (docs/wp-notes/gaps.md §AI-2). Premiere smooths a jump cut between two
 // takes of a talking head by tracking the subject and interpolating optical flow between the shots. Here the stage
 // runs the time workstream's optical flow (time-remap/flow.ts; GPU port compositions/retime/flow-gl.ts) between side A
 // and side B at every frame of the span, then draws the motion-compensated picture at the transition's progress with

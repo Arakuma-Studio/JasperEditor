@@ -1,25 +1,14 @@
-// Shared helpers of the "premiere-stylize-distort-generate" family (wave 2): param coercion, the Premiere/After
+// Shared helpers of the "premiere-stylize-distort-generate" family: param coercion, the Premiere/After
 // Effects "Blending Mode" popup of the generators (None … Luminosity, Stencil/Silhouette Alpha), "Blend With
 // Original", "Random Seed", and the GLSL that goes with them. Family-private: other families use the framework's
 // `blendModeParam()` / `sapphireCommonParams()` instead.
-import type { ParamValue } from '../../../schema/common.ts';
+
 import type { ParamSpec } from '../../effects.ts';
+import { booleanParam as bool, clamp, numberParam as num, stringParam as str } from '../../param-values.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
-
-/** A finite number param value (or the default). */
-export const num = (v: ParamValue | undefined, d = 0): number =>
-	typeof v === 'number' && Number.isFinite(v) ? v : d;
-
-/** A boolean param value (or the default). */
-export const bool = (v: ParamValue | undefined, d = false): boolean => (typeof v === 'boolean' ? v : d);
-
-/** An enum param value (or the default). */
-export const str = (v: ParamValue | undefined, d: string): string => (typeof v === 'string' ? v : d);
-
-export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 /**
  * The Blending Mode popup of the After Effects-derived generators (Circle, Checkerboard, Grid, 4-Color Gradient…), in
@@ -203,3 +192,5 @@ export function evolutionParams(group = 'Evolution Options'): ParamSpec[] {
 
 // The evolving fractal noise GLSL lives in noise-glsl.ts (lean hashes, see there).
 export { GLSL_PSDG_EVOLVE, GLSL_PSDG_HASH } from './noise-glsl.ts';
+
+export { bool, clamp, num, str };

@@ -22,6 +22,7 @@
 // Sapphire controls without an equivalent here: Transition Dir (= Reverse), Auto Trans / Wipe Percent (= the
 // transition's own progress with Start / End), Opacity (sides are premultiplied pictures), the on-screen widget
 // toggles (Show Wipe / Show Center / …) and Crop.
+
 import type { Vec2 } from '../../../schema/common.ts';
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
@@ -29,13 +30,10 @@ import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { GLSL_UV } from '../../fx/glsl/sample.ts';
 import { fxParam, seedParam } from '../../fx/params.ts';
 import type { FxUniformValue, GlslChunk } from '../../fx/shader.ts';
+import { numberParam as num } from '../../param-values.ts';
 import { defineShaderTransition, SAPPHIRE_TRANSITION_SUBBINS, TRANSITION_BINS, trParam } from '../define.ts';
 import { GLSL_TR_WIPE } from '../glsl.ts';
 import type { TrFrameContext } from '../shader.ts';
-
-export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-
-// ---------------------------------------------------------------- params
 
 /** Sapphire's default border colour (a dark red). */
 export const SAPPHIRE_BORDER_COLOR: [number, number, number, number] = [0.75, 0, 0, 1];
@@ -134,8 +132,6 @@ export function wipeMargin(p: EffectParams): number {
 	const glow = num(p.borderGlow) > 0 ? shift + bw / 2 + 3 * Math.max(num(p.glowWidth, 40) * widest, 0.5) : 0;
 	return soft + Math.max(border, glow) + 1;
 }
-
-// ---------------------------------------------------------------- GLSL
 
 /** Field / pattern helpers (no param uniforms). */
 export const GLSL_SW_CORE: GlslChunk = {
@@ -240,8 +236,6 @@ float sw_shapeWipe(bool grow, float margin) {
 `,
 };
 
-// ---------------------------------------------------------------- builder
-
 export type SapphireWipeInit = {
 	/** Kebab name: id `jasper.s.<name>`. */
 	name: string;
@@ -283,3 +277,5 @@ export function sapphireWipe(init: SapphireWipeInit): TransitionSpec {
 		},
 	});
 }
+
+export { num };

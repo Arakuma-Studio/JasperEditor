@@ -1,4 +1,4 @@
-// GLSL library of GPU transitions (wave-2 transition framework; authoring guide
+// GLSL library of GPU transitions (authoring guide
 // docs/wp-notes/fx-transition-framework.md §GLSL). Functions start with `tr_`, constants with `TR_`. Coordinates:
 // `v_uv` 0..1 over the sequence frame ((0,0) = top-left); "px" = sequence pixels (y down), `tr_px()` = v_uv ·
 // u_compSize. Every chunk is compiled by packages/compositions/test/transition-gl.test.ts in Chrome's WebGL2.

@@ -1,4 +1,4 @@
-// `defineShaderTransition` (wave-2 transition framework): the one way transition family files declare GPU
+// `defineShaderTransition`: the one way transition family files declare GPU
 // transitions, so every entry gets the same defaults — version 1, video, `preview: 'webgl'`, Remotion export, the
 // Effects-panel bin — and Premiere's standard transition options as params: Start / End (%), Reverse, and on request
 // Border Width / Border Color, Anti-aliasing Quality and a Center point. Bins mirror Premiere's Video Transitions

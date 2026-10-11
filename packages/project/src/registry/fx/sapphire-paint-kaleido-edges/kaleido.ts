@@ -247,8 +247,6 @@ vec4 kal_lookup(vec2 n) {
 	},
 });
 
-// ---------------------------------------------------------------- fly's eye
-
 /** Tile lattice helpers: positions are canvas px relative to the layer box centre. */
 const FLY_GLSL: GlslChunk = {
 	name: 'sapphire-paint-kaleido-edges/flyseye',

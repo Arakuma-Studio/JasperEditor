@@ -145,8 +145,6 @@ export const S_RANDOM_EDITS = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- S_Retime
-
 const RETIME_EPS = 1e-4;
 
 function retimeSamples(p: EffectParams, ctx: FxTimeContext): number[] {
@@ -213,8 +211,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- reversing
 
 export const S_REVERSE_CLIP = defineShaderEffect({
 	...time,

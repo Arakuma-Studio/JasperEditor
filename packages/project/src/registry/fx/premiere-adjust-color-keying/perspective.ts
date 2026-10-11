@@ -13,8 +13,6 @@ import { bool, GLSL_PACG, num, popup, slider } from './common.ts';
 /** Softness (layer px, blur radius) → Gaussian σ. */
 const softnessSigma = (softness: number) => Math.max(0, softness) * 0.4;
 
-// ---------------------------------------------------------------- Basic 3D
-
 /** Basic 3D camera: focal length (layer px) for a layer box, and the plane's distance offset. */
 export function basic3dCamera(p: EffectParams, ctx: Pick<FxPlanContext, 'width' | 'height'>) {
 	const f = Math.hypot(ctx.width, ctx.height) * 1.2;
@@ -125,8 +123,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Bevel Alpha
-
 export const BEVEL_ALPHA = defineShaderEffect({
 	id: 'jasper.bevel-alpha',
 	label: 'Bevel Alpha',
@@ -176,8 +172,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Bevel Edges
-
 export const BEVEL_EDGES = defineShaderEffect({
 	id: 'jasper.bevel-edges',
 	label: 'Bevel Edges',
@@ -218,8 +212,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Drop Shadow
 
 /** Drop Shadow offset (layer px) along Premiere's direction (0° = up, clockwise). */
 export function dropShadowOffset(p: EffectParams): [number, number] {
@@ -284,8 +276,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- Radial Shadow
 
 /** Radial Shadow's projection scale about the light (1 + distance / 100). */
 export const radialShadowScale = (p: EffectParams) => 1 + Math.max(0, num(p.projectionDistance, 10)) / 100;

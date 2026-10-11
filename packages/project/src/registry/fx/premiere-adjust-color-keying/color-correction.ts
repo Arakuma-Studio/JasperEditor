@@ -40,8 +40,6 @@ float pacg_matchMask(float d, float tolerance, float softness) {
 `,
 };
 
-// ---------------------------------------------------------------- Change Color
-
 export const CHANGE_COLOR = defineShaderEffect({
 	id: 'jasper.change-color',
 	label: 'Change Color',
@@ -91,8 +89,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Change to Color
 
 export const CHANGE_TO_COLOR = defineShaderEffect({
 	id: 'jasper.change-to-color',
@@ -161,8 +157,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Channel Mixer
-
 const MIX_ROWS = ['Red', 'Green', 'Blue'] as const;
 const MIX_COLS = ['Red', 'Green', 'Blue', 'Const'] as const;
 
@@ -213,8 +207,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Color Balance
 
 const TONES = ['shadow', 'midtone', 'highlight'] as const;
 const TONE_LABELS = { shadow: 'Shadow', midtone: 'Midtone', highlight: 'Highlight' } as const;
@@ -271,8 +263,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Color Balance (HLS)
-
 export const COLOR_BALANCE_HLS = defineShaderEffect({
 	id: 'jasper.color-balance-hls',
 	label: 'Color Balance (HLS)',
@@ -303,8 +293,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Leave Color
 
 export const LEAVE_COLOR = defineShaderEffect({
 	id: 'jasper.leave-color',
@@ -342,8 +330,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Tint
-
 export const TINT = defineShaderEffect({
 	id: 'jasper.tint',
 	label: 'Tint',
@@ -372,8 +358,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Video Limiter
 
 /** Video Limiter's Compression Before Clip options (fraction of the range below the clip level). */
 export const VIDEO_LIMITER_COMPRESSION = { none: 0, '3': 0.03, '5': 0.05, '10': 0.1, '20': 0.2 } as const;

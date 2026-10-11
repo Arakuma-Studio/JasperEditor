@@ -56,8 +56,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- measuring flicker tools
-
 type Variant = { kind: 'remove' | 'match'; color: boolean; matte: boolean };
 
 /** Sapphire's default rectangle (screen coords ±0.583 × ±0.441) as layer-normalised corners. */

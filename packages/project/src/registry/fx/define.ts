@@ -1,4 +1,4 @@
-// `defineShaderEffect` (wave-1 fx framework): the one way family files declare GPU effects, so every entry gets the
+// `defineShaderEffect`: the one way family files declare GPU effects, so every entry gets the
 // same defaults — version 1, video, `preview: 'webgl'`, Remotion export (native only with an explicit ffmpeg
 // mapping), the Effects-panel bin — and new framework fields reach all of them. Bins mirror how Premiere shows
 // third-party packs: Video Effects ▸ <bin> ▸ <effect> (R-PUI §12).

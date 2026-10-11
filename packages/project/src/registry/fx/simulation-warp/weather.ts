@@ -1,9 +1,11 @@
-// Simulation ▸ Rainfall, Snowfall, Bubbles, Drizzle, Star Burst (sim-warp workstream; After Effects' CC Rainfall,
+// Simulation ▸ Rainfall, Snowfall, Bubbles, Drizzle, Star Burst (After Effects' CC Rainfall,
 // CC Snowfall, CC Bubbles, CC Drizzle, CC Star Burst under neutral names). Closed-form functions of time: every
 // item's position is a hash of its index and the clip time, computed in the vertex shader of an instanced draw pass
 // (no state, any frame renders directly). Ported from EffectCraft crates/effects/src/sim.rs (rainfall_plan,
 // snowfall_plan, bubble_list, drizzle_drops, star_burst_plan; MIT OR Apache-2.0), see licenses/ported/sim-warp.md.
-import type { EffectSpec } from '../../effects.ts';
+
+import type { ParamValue } from '../../../schema/common.ts';
+import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
 import { fxParam } from '../params.ts';
@@ -16,10 +18,8 @@ const TRANSFER = ['composite', 'lighten'] as const;
 const TRANSFER_LABELS = ['Composite', 'Lighten'] as const;
 
 /** Weather post: with the original → Composite (0) or Lighten (3); without → the drops only (5). */
-const weatherPost = (mode: unknown, withOrig: unknown) =>
+const weatherPost = (mode: ParamValue | undefined, withOrig: ParamValue | undefined) =>
 	withOrig === false ? 5 : choice(mode, TRANSFER) === 1 ? 3 : 0;
-
-// ---------------------------------------------------------------- Rainfall
 
 export const RAINFALL = defineShaderEffect({
 	id: 'jasper.rainfall',
@@ -92,8 +92,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Snowfall
-
 export const SNOWFALL = defineShaderEffect({
 	id: 'jasper.snowfall',
 	label: 'Snowfall',
@@ -164,8 +162,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Bubbles
 
 const SHADING = ['None', 'Lighten', 'Darken', 'Fade Inwards', 'Fade Outwards'] as const;
 
@@ -253,14 +249,12 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Drizzle
-
 /** Most drops Drizzle draws at once (the most recent ones). */
 export const DRIZZLE_MAX_DROPS = 4096;
 
 /** Drizzle's live drops at a time: [x, y (layer px), ring radius (layer px), amplitude] per drop. */
 export function drizzleDrops(
-	p: Record<string, unknown>,
+	p: EffectParams,
 	t: number,
 	layer: { width: number; height: number },
 	seed: number,
@@ -389,8 +383,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Star Burst
 
 export const STAR_BURST = defineShaderEffect({
 	id: 'jasper.star-burst',

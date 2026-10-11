@@ -1,15 +1,15 @@
-// Family-private helpers of `sapphire-adjust-composite` (fx catalogue, wave 2): param readers, Sapphire's relative
+// Family-private helpers of `sapphire-adjust-composite`: param readers, Sapphire's relative
 // width convention, the Sapphire mask block (Mask input + Mask Use / Blur Mask / Invert Mask), picture inputs mapped
 // onto the layer box (Input Fit) and the shared GLSL (lights/darks/saturation grading, media sampling, matte reads).
 // Import rule: values only from the framework modules (../shader.ts, ../params.ts, ../passes.ts, ../glsl/*), types
 // from ../../effects.ts.
+
 import type { EffectParams, ParamSpec } from '../../effects.ts';
+import { mediaParamId } from '../../param-values.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam, mixWithOriginalParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
-
-// ---------------------------------------------------------------- param readers
 
 export const num = (p: EffectParams, k: string, d = 0): number => {
 	const v = p[k];
@@ -25,8 +25,7 @@ export const str = (p: EffectParams, k: string, d: string): string => {
 };
 /** True when a `media` param names a media item (offline media still reads as size 0 in GLSL). */
 export const mediaSet = (p: EffectParams, k: string): boolean => {
-	const v = p[k] as { mediaId?: unknown } | undefined | null;
-	return !!v && typeof v === 'object' && typeof v.mediaId === 'string' && v.mediaId !== '';
+	return !!mediaParamId(p[k]);
 };
 
 /**
@@ -42,8 +41,6 @@ export function mixWithSourceParam(): ParamSpec {
 	return { ...mixWithOriginalParam(), label: 'Mix With Source' };
 }
 
-// ---------------------------------------------------------------- Input Fit (picture inputs on the layer box)
-
 /** How picture inputs (Background, Source B, mattes, depth maps) are mapped onto the layer box. */
 export function inputFitParam(): ParamSpec {
 	return fxParam.choice(
@@ -54,8 +51,6 @@ export function inputFitParam(): ParamSpec {
 		'stretch',
 	);
 }
-
-// ---------------------------------------------------------------- shared GLSL
 
 export const GLSL_SAC_COMMON: GlslChunk = {
 	name: 'sapphire-adjust-composite/common',
@@ -94,8 +89,6 @@ float sac_matteOf(vec4 p, int use) {
 vec3 sac_straight(vec4 p) { return p.a > 0.0 ? clamp(p.rgb / p.a, 0.0, 1.0) : vec3(0.0); }
 `,
 };
-
-// ---------------------------------------------------------------- the Sapphire mask block
 
 /**
  * Sapphire's optional Mask input and its trailing controls (Mask Use, Blur Mask, Invert Mask). White mask areas show

@@ -1,4 +1,4 @@
-// Adaptive shutter motion blur (wave 5): the TypeScript half of the framework helper shared by effects and
+// Adaptive shutter motion blur: the TypeScript half of the framework helper shared by effects and
 // transitions (GLSL half: ./glsl/motion-blur.ts; guide: docs/wp-notes/fx-shader-framework.md §19). Pure: no DOM, no GL.
 //
 // The model (Premiere / Sapphire): a box shutter over an interval of the frame (Shutter Angle / 360 or Mo Blur Length
@@ -11,6 +11,7 @@
 // spline on SwiftShader) and takes its taps through a time warp (`fx_mbTap`) that spreads them over time AND path length, so a
 // fast burst inside the shutter (a Jumpy shake jump, a keyframe ease) stays a continuous smear; the per-tap weights
 // bring the exposure back to a box shutter.
+import type { ParamValue } from '../../schema/common.ts';
 import type { ParamSpec } from '../effects.ts';
 import { FX_MB_MAX_TAPS, FX_MB_SPACING, FX_MB_TAP_LIMIT, FX_MB_WARP_SIZE } from './glsl/motion-blur.ts';
 import { fxParam } from './params.ts';
@@ -37,7 +38,7 @@ export function mbQualityParam(name = 'mbQuality', label = 'Mo Blur Quality'): P
 }
 
 /** Tap spacing (pass px) and cap of a quality value (unknown → Auto). */
-export function mbQuality(q: unknown): { spacing: number; max: number } {
+export function mbQuality(q: ParamValue | undefined): { spacing: number; max: number } {
 	return QUALITY[(typeof q === 'string' && q in QUALITY ? q : 'auto') as MbQuality];
 }
 
@@ -138,7 +139,7 @@ export type MbPlanOptions<P> = {
 	/** vec4s per pose (fixed per effect: the uniform's length must not change between frames). */
 	stride: number;
 	/** Quality param value (`mbQualityParam`); default Auto. */
-	quality?: unknown;
+	quality?: ParamValue;
 };
 
 export type MbPlan = {

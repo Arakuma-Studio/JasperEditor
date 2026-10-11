@@ -60,8 +60,6 @@ const DUST_UNIFORMS = (density: number, w: number, h: number) => {
 	return { cell: Math.sqrt((Math.max(1, w) * Math.max(1, h)) / cells), prob: n / cells };
 };
 
-// ---------------------------------------------------------------- S_FilmEffect
-
 const NEG_KEYS = Object.keys(NEG_STOCKS);
 const PRINT_KEYS = Object.keys(PRINT_STOCKS);
 
@@ -186,8 +184,6 @@ export const S_FILM_EFFECT = defineShaderEffect({
 	},
 });
 
-// ---------------------------------------------------------------- S_FilmDamage
-
 /** Per-frame signals of S_FilmDamage (pure functions of params, frame, fps, seed). */
 export function filmDamageSignals(
 	p: EffectParams,
@@ -265,7 +261,7 @@ void main() {
   float period = 1.0 + max(u_interframeBorderHeight, 0.0) * 0.1;
   vec4 s = vec4(0.0);
   float wsum = 0.0;
-  // Shake Motion Blur: a smear along the slip, 5 taps (wave 3) or ≤ 1 px apart when longer (adaptive, ≤ 64).
+  // Shake Motion Blur: a smear along the slip, 5 taps or ≤ 1 px apart when longer (adaptive, ≤ 64).
   float span = u_shakeVel * u_shakeMotionBlur * 4.0;
   float ext = abs(span) * box.y * u_pxScale;
   int mbN = max(5, fx_mbTapCount(ext, 64));
@@ -463,8 +459,6 @@ export const S_FILM_DAMAGE = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_FilmBurn
 
 type FlashDefaults = {
 	size: number;

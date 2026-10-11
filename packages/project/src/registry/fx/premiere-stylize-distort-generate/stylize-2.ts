@@ -1,4 +1,4 @@
-// Premiere Pro standard effects — Stylize, part 2 (family "premiere-stylize-distort-generate", wave 2): Replicate,
+// Premiere Pro standard effects — Stylize, part 2 (family "premiere-stylize-distort-generate"): Replicate,
 // Roughen Edges, Solarize, Strobe Light, Texturize, Threshold.
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
@@ -15,8 +15,6 @@ import {
 	randomSeedParam,
 } from './common.ts';
 import { GLSL_PSDG_COMPASS } from './stylize.ts';
-
-// ---------------------------------------------------------------- Replicate
 
 export const REPLICATE = defineShaderEffect({
 	id: 'jasper.replicate',
@@ -42,8 +40,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Roughen Edges
 
 const ROUGHEN_TYPES = [
 	'roughen',
@@ -149,8 +145,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Solarize
-
 export const SOLARIZE = defineShaderEffect({
 	id: 'jasper.solarize',
 	label: 'Solarize',
@@ -176,8 +170,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Strobe Light
 
 const STROBE_OPERATORS = [
 	'copy',
@@ -306,8 +298,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Texturize
-
 export const TEXTURIZE = defineShaderEffect({
 	id: 'jasper.texturize',
 	label: 'Texturize',
@@ -361,8 +351,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Threshold
 
 export const THRESHOLD = defineShaderEffect({
 	id: 'jasper.threshold',

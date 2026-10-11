@@ -1,4 +1,4 @@
-// Effect family "sapphire-time-flicker" (fx catalogue, wave 2): Sapphire-style Time effects (freeze, get frame,
+// Effect family "sapphire-time-flicker": Sapphire-style Time effects (freeze, get frame,
 // jitter, random/reverse edits, retime, reverse, cut-to-dissolve, repair frames, trails, feedback, time average/
 // displace/slice, RGB time warp, motion detect, nearest colour, field remove) and the Flicker tools (add, match,
 // remove; luma/colour; rectangle/matte), all in Video Effects ▸ Sapphire Time.

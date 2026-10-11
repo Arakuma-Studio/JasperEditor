@@ -17,8 +17,6 @@ void main() {
   fragColor = vec4(sbs_rgb2yiq(c.rgb) + vec3(0.0, 0.5, 0.5), c.a);
 }`;
 
-// ---------------------------------------------------------------- S_Sharpen
-
 const QUALITY = ['best', 'fast'] as const;
 
 export const S_SHARPEN = defineShaderEffect({
@@ -96,8 +94,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_Median
 
 const MEDIAN_MODES = ['median', 'medianChannels'] as const;
 const MEDIAN_TAPS = 81;
@@ -197,8 +193,6 @@ export const S_MEDIAN = defineShaderEffect({
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_Deband
 
 const DEBAND_SHOW = ['result', 'edges'] as const;
 
@@ -332,8 +326,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- S_GrainRemove
-
 export const S_GRAIN_REMOVE = defineShaderEffect({
 	id: 'jasper.s.grain-remove',
 	label: 'S_GrainRemove',
@@ -399,8 +391,6 @@ void main() {
 		},
 	},
 });
-
-// ---------------------------------------------------------------- S_EdgeBlur
 
 const MATTE_USE = ['luma', 'alpha'] as const;
 

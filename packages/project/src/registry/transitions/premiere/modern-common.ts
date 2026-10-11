@@ -66,7 +66,7 @@ vec2 pm_fromAxes(vec2 q, vec2 dir) {
 }
 // Frame size in motion axes (px).
 vec2 pm_axesSize(vec2 dir) { return abs(dir.y) > 0.5 ? u_compSize.yx : u_compSize; }
-// Taps of a blur whose longest path is extentPx: the wave-3 count minN, more (≤ 1 px apart, ≤ 64) when longer.
+// Taps of a blur whose longest path is extentPx: the minimum count minN, more (≤ 1 px apart, ≤ 64) when longer.
 int pm_taps(float extentPx, int minN) { return max(minN, fx_mbTapCount(extentPx, 64)); }
 // A long straight blur (32+ taps, jittered per pixel against banding).
 vec4 pm_streakLong(int side, vec2 uv, vec2 delta) {
@@ -113,7 +113,7 @@ vec4 pm_spinBlur(int side, vec2 uv, vec2 c, float ang) {
   return s / float(n);
 }
 // The motion-blur shutter of the moving transitions: half width (progress) of a shutter of blur% × frames, one frame
-// being 1 / max(duration, 2) of progress (the wave-3 scale), shrunk at the ends (exactly A at 0, B at 1).
+// being 1 / max(duration, 2) of progress, shrunk at the ends (exactly A at 0, B at 1).
 float pm_shutter(float p, float blurPercent, float frames) {
   return fx_mbShutter(p, (blurPercent / 100.0) * frames, 1.0 / max(u_duration, 2.0));
 }

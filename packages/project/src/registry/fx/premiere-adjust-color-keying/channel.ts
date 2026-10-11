@@ -16,8 +16,6 @@ uvec3 pacg_u8(vec3 c) { return uvec3(clamp(floor(c * 255.0 + 0.5), 0.0, 255.0));
 `,
 };
 
-// ---------------------------------------------------------------- Arithmetic
-
 const ARITHMETIC_OPS: [string, string][] = [
 	['and', 'And'],
 	['or', 'Or'],
@@ -83,8 +81,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Blend
-
 export const BLEND = defineShaderEffect({
 	id: 'jasper.blend',
 	label: 'Blend',
@@ -136,8 +132,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Calculations
 
 const CALC_CHANNELS: [string, string][] = [
 	['rgba', 'RGBA'],
@@ -199,8 +193,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Compound Arithmetic
 
 export const COMPOUND_ARITHMETIC = defineShaderEffect({
 	id: 'jasper.compound-arithmetic',
@@ -292,8 +284,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Invert
-
 export const INVERT = defineShaderEffect({
 	id: 'jasper.invert',
 	label: 'Invert',
@@ -360,8 +350,6 @@ void main() {
 	},
 });
 
-// ---------------------------------------------------------------- Set Matte
-
 export const SET_MATTE = defineShaderEffect({
 	id: 'jasper.set-matte',
 	label: 'Set Matte',
@@ -417,8 +405,6 @@ void main() {
 		],
 	},
 });
-
-// ---------------------------------------------------------------- Solid Composite
 
 export const SOLID_COMPOSITE = defineShaderEffect({
 	id: 'jasper.solid-composite',

@@ -5,8 +5,10 @@ import {
 	BEVEL_STYLES,
 	IRIS_SHAPES,
 	LAYER_AUTO_ORIENT,
+	type Layer3D,
 	LIGHT_FALLOFFS,
 	LIGHT_TYPES,
+	type LightData,
 	SHADOW_MODES,
 } from '../schema/three-d.ts';
 import {
@@ -17,20 +19,22 @@ import {
 } from '../three-d/model.ts';
 import type { PropertyContext, PropertySpec } from './properties.ts';
 
-const has3d = (c: Pick<Clip, 'kind'>) => !!(c as { threeD?: unknown }).threeD && c.kind !== 'adjustment';
-const hasGeometry = (c: Pick<Clip, 'kind'>) =>
-	has3d(c) &&
-	(c.kind === 'text' || c.kind === 'shape') &&
-	!!(c as { threeD?: { geometry?: unknown } }).threeD?.geometry;
+type LayerProperties = Pick<Clip, 'kind'> & { threeD?: Layer3D; light?: LightData };
+
+const has3d = (c: LayerProperties) => !!c.threeD && c.kind !== 'adjustment';
+const hasGeometry = (c: LayerProperties) =>
+	has3d(c) && (c.kind === 'text' || c.kind === 'shape') && !!c.threeD?.geometry;
 const isCamera = (c: Pick<Clip, 'kind'>) => c.kind === 'camera';
 const isLight = (c: Pick<Clip, 'kind'>) => c.kind === 'light';
-const lightType = (c: Pick<Clip, 'kind'>) => (c as { light?: { type?: string } }).light?.type;
+const lightType = (c: LayerProperties) => c.light?.type;
 const isLightOf =
-	(...types: string[]) =>
-	(c: Pick<Clip, 'kind'>) =>
-		isLight(c) && types.includes(lightType(c) ?? '');
+	(...types: LightData['type'][]) =>
+	(c: LayerProperties) => {
+		const type = lightType(c);
+		return isLight(c) && type !== undefined && types.includes(type);
+	};
 
-type Num = { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
+type Num = NonNullable<PropertySpec['range']>;
 
 function num(
 	key: string,
@@ -147,8 +151,6 @@ const centre = ({ seq }: PropertyContext): [number, number, number] => [
 	seq.settings.height / 2,
 	0,
 ];
-
-// ---------------------------------------------------------------- 3D layers
 
 const L = (k: string) => ['threeD', k];
 const M = (k: string) => ['threeD', 'material', k];
@@ -309,8 +311,6 @@ export const LAYER_3D_SPECS: readonly PropertySpec[] = [
 	}),
 ];
 
-// ---------------------------------------------------------------- cameras
-
 const C = (k: string) => ['camera', k];
 const CT = (k: string) => ['camera', 'transform', k];
 const camDof = (c: Pick<Clip, 'kind'>) => isCamera(c);
@@ -444,8 +444,6 @@ export const CAMERA_SPECS: readonly PropertySpec[] = [
 		group: 'camera',
 	}),
 ];
-
-// ---------------------------------------------------------------- lights
 
 const LO = (k: string) => ['light', k];
 const LT = (k: string) => ['light', 'transform', k];

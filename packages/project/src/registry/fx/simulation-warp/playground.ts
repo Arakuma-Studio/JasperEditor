@@ -1,4 +1,4 @@
-// Simulation ▸ Particle Playground (sim-warp workstream; After Effects' Particle Playground): a deterministic 2D
+// Simulation ▸ Particle Playground (After Effects' Particle Playground): a deterministic 2D
 // particle system stepped from clip time 0 at SIM_SPS. Producers: Cannon (a stream from a barrel), Grid (particles
 // placed at time 0) and Layer Exploder (this layer or an image broken into particles at time 0). Forces: Gravity,
 // Repel, Wall (a mask of the layer the particles bounce off), the Particle Exploder (bursts particles into smaller
@@ -8,6 +8,7 @@
 // particles as copies of a picture. Particles replace the layer's own pixels.
 // Ported from EffectCraft crates/effects/src/sim3.rs (Pg, Mapper, Affects, playground_plan; MIT OR Apache-2.0), see
 // licenses/ported/sim-warp.md.
+import type { ParamValue } from '../../../schema/common.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
@@ -122,8 +123,6 @@ const S = 28;
 
 type PgState = { d: Float64Array; n: number; carry: number; next: number; init: boolean };
 
-// ---------------------------------------------------------------- params
-
 function affects(group: string, key: string): ParamSpec[] {
 	return [
 		popup(`${key}ParticlesFrom`, 'Particles From', PARTICLES_FROM, 0, group),
@@ -146,8 +145,6 @@ function mapperParams(group: string, key: string, operators: boolean): ParamSpec
 }
 
 const AFFECT_KEYS = ['pex', 'layerMap', 'gravity', 'repel', 'wall', 'persistent', 'ephemeral'] as const;
-
-// ---------------------------------------------------------------- maps and affects
 
 /** Straight RGBA 0..1 of a map at layer px (stretched over the layer), bilinear, clamped. */
 function mapAt(px: FxPixels, x: number, y: number, lw: number, lh: number): [number, number, number, number] {
@@ -397,12 +394,13 @@ function pointInPoly(pts: readonly [number, number][], x: number, y: number): bo
 }
 
 /** The mask chosen by a "Mask n" popup (null for None or a missing mask). */
-export function maskOf(v: unknown, masks: readonly FxLayerMask[] | undefined): FxLayerMask | null {
+export function maskOf(
+	v: ParamValue | undefined,
+	masks: readonly FxLayerMask[] | undefined,
+): FxLayerMask | null {
 	const i = choice(v, values(MASK_CHOICES));
 	return i > 0 ? (masks?.[i - 1] ?? null) : null;
 }
-
-// ---------------------------------------------------------------- simulation
 
 function grow(st: PgState): void {
 	if ((st.n + 1) * S <= st.d.length) return;

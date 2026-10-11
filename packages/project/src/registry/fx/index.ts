@@ -1,4 +1,4 @@
-// The fx catalogue and the GPU shader-effect framework (wave 1; docs/wp-notes/fx-shader-framework.md). Every family
+// The fx catalogue and the GPU shader-effect framework (docs/wp-notes/fx-shader-framework.md). Every family
 // file exports one `readonly EffectSpec[]`; `FX_EFFECTS` concatenates them in Effects-panel order and is part of
 // `defaultEffectRegistry` (registry/effects.ts), hence of the Effects panel, Effect Controls, the agent schema export
 // (MCP) and the engine. Adding an effect = adding an entry to its family file; nothing else changes.
@@ -56,12 +56,9 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	{ file: 'sapphire-render-textures', idPrefix: 'jasper.s.', effects: SAPPHIRE_RENDER_TEXTURES_EFFECTS },
 	{ file: 'sapphire-textures-clouds', idPrefix: 'jasper.s.', effects: SAPPHIRE_TEXTURES_CLOUDS_EFFECTS },
 	{ file: 'sapphire-time-flicker', idPrefix: 'jasper.s.', effects: SAPPHIRE_TIME_FLICKER_EFFECTS },
-	// parity (roto): object mattes of Roto Brush / face tracking
 	{ file: 'object-matte', idPrefix: 'jasper.', effects: OBJECT_MATTE_EFFECTS },
-	// parity (roto): screen keyer, matte refinement, key cleaner, spill suppression
 	{ file: 'keying-matte', idPrefix: 'jasper.', effects: KEYING_MATTE_EFFECTS },
 	{ file: 'simulation-warp', idPrefix: 'jasper.', effects: SIMULATION_WARP_EFFECTS },
-	// gaps: Warp Stabilizer (docs/wp-notes/gaps.md §FX-6)
 	{ file: 'warp-stabilizer', idPrefix: 'jasper.', effects: WARP_STABILIZER_EFFECTS },
 ];
 
