@@ -38,15 +38,13 @@ export function toExpressionValue(kind: PropKind, v: unknown, options?: readonly
 	}
 }
 
-export type Converted = { ok: true; value: unknown } | { ok: false; error: string };
+export type Converted<T = unknown> = { ok: true; value: T } | { ok: false; error: string };
 
-type Wire = unknown;
-
-function nonFinite(x: Wire): boolean {
+function nonFinite(x: unknown): boolean {
 	return !!x && typeof x === 'object' && '__nonFinite' in (x as object);
 }
 
-function num(x: Wire): number | null {
+function num(x: unknown): number | null {
 	if (typeof x === 'number') return Number.isFinite(x) ? x : null;
 	if (typeof x === 'boolean') return x ? 1 : 0;
 	return null;
@@ -54,11 +52,11 @@ function num(x: Wire): number | null {
 
 const NOT_FINITE = 'Error: expression result is not a finite number';
 
-function dims(r: Wire): number {
+function dims(r: unknown): number {
 	return Array.isArray(r) ? r.length : 1;
 }
 
-function vector(r: Wire, n: number, label: string): Converted {
+function vector(r: unknown, n: number, label: string): Converted<number[]> {
 	if (!Array.isArray(r)) {
 		if (nonFinite(r)) return { ok: false, error: NOT_FINITE };
 		return { ok: false, error: `Error: expression result must be of dimension ${label}, not 1` };
@@ -81,7 +79,7 @@ function vector(r: Wire, n: number, label: string): Converted {
 /** Converts a script result (JSON-decoded) to the property's value. `current` = the keyframed value. */
 export function fromExpressionValue(
 	kind: PropKind,
-	r: Wire,
+	r: unknown,
 	current: unknown,
 	options?: readonly string[],
 ): Converted {
@@ -116,7 +114,7 @@ export function fromExpressionValue(
 			if (!rgb.ok) return rgb;
 			const a = r.length > 3 ? num(r[3]) : Array.isArray(current) ? (current[3] as number) : 1;
 			if (a === null) return { ok: false, error: NOT_FINITE };
-			return { ok: true, value: [...(rgb.value as number[]), a] };
+			return { ok: true, value: [...rgb.value, a] };
 		}
 		case 'boolean':
 			return { ok: true, value: truthy(r) };
@@ -147,7 +145,7 @@ export function fromExpressionValue(
 	}
 }
 
-function truthy(r: Wire): boolean {
+function truthy(r: unknown): boolean {
 	if (r === null || r === undefined) return false;
 	if (typeof r === 'number') return r !== 0 && !Number.isNaN(r);
 	if (typeof r === 'string') return r.length > 0;
@@ -156,13 +154,9 @@ function truthy(r: Wire): boolean {
 	return true;
 }
 
-function jsNumber(x: number): string {
-	return String(x);
-}
-
-function text(r: Wire): string {
+function text(r: unknown): string {
 	if (typeof r === 'string') return r;
-	if (typeof r === 'number') return jsNumber(r);
+	if (typeof r === 'number') return String(r);
 	if (typeof r === 'boolean') return String(r);
 	if (r === null || r === undefined) return '';
 	if (nonFinite(r)) return (r as { __nonFinite: string }).__nonFinite;
@@ -171,7 +165,7 @@ function text(r: Wire): string {
 	return '[object Object]';
 }
 
-function describe(r: Wire): string {
+function describe(r: unknown): string {
 	if (typeof r === 'string') return `the string "${r.length > 40 ? `${r.slice(0, 40)}…` : r}"`;
 	if (r === null) return 'null';
 	if (Array.isArray(r)) return `an array of ${r.length}`;

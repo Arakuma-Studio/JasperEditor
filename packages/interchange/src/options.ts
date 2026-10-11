@@ -45,8 +45,6 @@ export const DEFAULT_EDL_OPTIONS: EdlOptions = {
 
 export type FcpxmlVersion = '1.9' | '1.10' | '1.11';
 
-// ---------------------------------------------------------------- AAF / OMF media (essence.ts)
-
 /** What a piece of essence stands in for: a whole media item, or one clip's rendered audio. */
 export type EssenceKey = { media: string } | { clip: string };
 

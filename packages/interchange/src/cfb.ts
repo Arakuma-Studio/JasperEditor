@@ -7,7 +7,7 @@
 //
 // - `CompoundFile.open` parses a file held in memory; every chain is bounds- and cycle-checked, so damaged files
 //   give a `CfbError`, never an exception of another kind or an endless loop. A hostile file cannot make the reader
-//   allocate more than a small multiple of its own size either (security review PAR-2): a chain never has more
+//   allocate more than a small multiple of its own size either: a chain never has more
 //   sectors than the file, and the bytes handed out by `read` are counted against a budget, so directory entries
 //   (or AAF properties) that all name the same stream cannot be read into gigabytes.
 // - `CfbWriter` builds a tree of storages and streams and lays it out in one pass: stream sectors, mini stream,
@@ -317,8 +317,6 @@ function parseEntry(b: Uint8Array, version: number): Entry {
 		child: u32(b, 76),
 	};
 }
-
-// ---------------------------------------------------------------- writer
 
 type WNode = {
 	name: string;

@@ -47,7 +47,7 @@ export function importAaf(bytes: Uint8Array, opts: ImportOptions, report: Report
 		throw e;
 	}
 	const doc = readAaf(root, report);
-	return toProject(doc, opts, report, 'AAF');
+	return toProject(doc, opts, report);
 }
 
 export function exportAaf(p: IProject, sequenceId: string, opts: ExportOptions, report: Report): Uint8Array {

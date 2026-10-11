@@ -2,7 +2,6 @@
 // `jasper` fields so formats that can carry metadata (OTIO `metadata.jasper`) restore it exactly; other formats
 // map what they can and report the rest.
 import {
-	type Animatable,
 	type CaptionsClip,
 	type Clip,
 	captionClipSpeaker,
@@ -26,6 +25,8 @@ import {
 	transitionStartFrame,
 	vttSettingsFor,
 } from '@jasper/project';
+import { anim } from './build.ts';
+import { FORMAT_CAPS } from './capabilities.ts';
 import type {
 	IBinEntry,
 	IClip,
@@ -41,7 +42,6 @@ import type {
 } from './model.ts';
 import type { Format } from './options.ts';
 import { isAbsolutePath, kindFromExtension } from './paths.ts';
-import { FORMAT_CAPS } from './prerender.ts';
 import type { Report } from './report.ts';
 import { parseTc } from './time.ts';
 
@@ -80,7 +80,7 @@ export function uncarriedWhat(kind: string): string | null {
 			return 'captions clip';
 		case 'adjustment':
 			return 'adjustment layer';
-		// three-d: cameras and lights shape the 3D layers (which are pre-rendered with them); model layers draw in 3D only.
+		// cameras and lights shape the 3D layers (which are pre-rendered with them); model layers draw in 3D only.
 		case 'camera':
 			return 'camera';
 		case 'light':
@@ -192,7 +192,7 @@ export function fromJasper(
 	 * The clips an enabled multi-camera clip shows (Multi-Camera ▸ Flatten's pieces), `k` = which of the source's
 	 * audible tracks a piece comes from (0 for video); null when it is no enabled multi-camera clip or has a frame hold.
 	 */
-	const flattenMulticam = (s: Sequence, c: Clip, rate: Rate): { clip: Clip; k: number }[] | null => {
+	const flattenMulticam = (c: Clip, rate: Rate): { clip: Clip; k: number }[] | null => {
 		if (!isEnabledMulticamClip(c) || c.frameHold) return null;
 		const r = resolveMulticamClip(doc, { num: rate.num, den: rate.den }, c);
 		if (!r) return null;
@@ -213,7 +213,7 @@ export function fromJasper(
 							id,
 							warn,
 						);
-			if (c.linkId) (clip as { linkId: string | null }).linkId = `${c.linkId}:${clip.start}:${clip.duration}`;
+			if (c.linkId) clip.linkId = `${c.linkId}:${clip.start}:${clip.duration}`;
 			return { clip, k: innerTracks.indexOf(piece.innerTrackId) };
 		});
 		const angle = r.multicam.angles.find((a) => a.id === r.angleId);
@@ -223,7 +223,6 @@ export function fromJasper(
 		);
 		for (const m of notes)
 			report.info(m, { subject: { kind: 'clip', id: c.id, name: c.name, frame: c.start } });
-		void s;
 		return out;
 	};
 
@@ -371,7 +370,7 @@ export function fromJasper(
 					color: m.color,
 					type: m.type,
 					...(m.url ? { url: m.url } : {}),
-					jasper: clone(m) as unknown as Record<string, unknown>,
+					jasper: clone(m),
 				}),
 			),
 			inPoint: s.inPoint === null ? null : s.inPoint * F,
@@ -411,7 +410,7 @@ export function fromJasper(
 				locked: t.locked,
 				clips: [],
 				transitions: [],
-				jasper: clone(t) as unknown as Record<string, unknown>,
+				jasper: clone(t),
 			};
 			if (kind === 'audio') {
 				if (t.solo) tr.solo = true;
@@ -441,7 +440,7 @@ export function fromJasper(
 			/** Flattened multi-camera clips: outer clip id → the pieces at its edges (on this track). */
 			const edges = new Map<string, { first: string | null; last: string | null }>();
 			for (const c of clips) {
-				const flat = flat_ && !pre(c) ? flattenMulticam(s, c, rate) : null;
+				const flat = flat_ && !pre(c) ? flattenMulticam(c, rate) : null;
 				if (flat) {
 					const e = { first: null as string | null, last: null as string | null };
 					for (const piece of flat) {
@@ -492,7 +491,7 @@ export function fromJasper(
 					duration: x.duration * F,
 					alignment: x.alignment,
 					params: clone(x.params) as ITransition['params'],
-					jasper: clone(x) as unknown as Record<string, unknown>,
+					jasper: clone(x),
 				});
 			}
 			tr.transitions.sort((a, b) => a.start - b.start);
@@ -532,7 +531,7 @@ export function fromJasper(
 			if (!rest.length) continue;
 			if (!carriesCaptions) {
 				for (const c of rest)
-					reportUncarried(c, rate, 'caption', 'nothing (export the captions as a sidecar file)');
+					reportUncarried(c, 'caption', 'nothing (export the captions as a sidecar file)');
 				continue;
 			}
 			(seq.captions ??= []).push({
@@ -554,19 +553,17 @@ export function fromJasper(
 		return seq;
 	};
 
-	const reportUncarried = (c: Clip, rate: Rate, what: string, instead: string | null) => {
+	const reportUncarried = (c: Clip, what: string, instead: string | null) => {
 		if (instead === null) return;
 		const frame = c.start;
 		report.warn(`${what} "${c.name}" at frame ${frame} has no equivalent in this format`, {
 			subject: { kind: 'clip', id: c.id, name: c.name, frame },
 			instead,
 		});
-		void rate;
 	};
 
 	const convertClip = (c: Clip, rate: Rate): IClip | null => {
 		const F = flicksPerFrame(rate);
-		const any = c as Clip & Record<string, unknown>;
 		const base: IClip = {
 			id: c.id,
 			name: c.name,
@@ -589,15 +586,14 @@ export function fromJasper(
 					color: m.color,
 					type: m.type,
 					...(m.url ? { url: m.url } : {}),
-					jasper: clone(m) as unknown as Record<string, unknown>,
+					jasper: clone(m),
 				}),
 			),
-			effects: clone(((any.effects as Clip[]) ?? []) as never),
-			jasper: clone(c) as unknown as Record<string, unknown>,
+			effects: clone('effects' in c ? c.effects : []),
+			jasper: clone(c),
 		};
-		// edit-structure Frame Hold: the clip shows one content time for its whole length.
 		if (c.frameHold) base.hold = c.frameHold.flicks;
-		// Workstream `time`: Time Remapping as a time map (clip time → media time), and the Time Interpolation.
+		// Time Remapping as a time map (clip time → media time), and the Time Interpolation.
 		const tmap = remapToTimeMap(c as TimedClip, rate);
 		// (`speed` / `sourceIn` stay: they are the content axis keyframes are measured on.)
 		if (tmap) base.timeMap = tmap;
@@ -626,16 +622,14 @@ export function fromJasper(
 		}
 		if (!pre && !otio) {
 			const where = { kind: 'clip' as const, id: c.id, name: c.name, frame: c.start };
-			const masks = (any.masks as unknown[] | undefined)?.length ?? 0;
-			const fxMasks = ((any.effects as { masks?: unknown[] }[] | undefined) ?? []).some(
-				(e) => e.masks?.length,
-			);
+			const masks = 'masks' in c && c.masks?.length;
+			const fxMasks = 'effects' in c && c.effects.some((e) => e.masks?.length);
 			if (masks || fxMasks)
 				report.warn(`the masks of clip "${c.name}" at frame ${c.start} are not carried`, {
 					subject: where,
 					instead: 'the clip without its masks (pre-render it to keep them)',
 				});
-			if ((any.threeD as { enabled?: boolean } | undefined)?.enabled === true && c.kind !== 'model')
+			if ('threeD' in c && c.threeD?.enabled === true && c.kind !== 'model')
 				report.warn(`the 3D placement of clip "${c.name}" at frame ${c.start} is not carried`, {
 					subject: where,
 					instead:
@@ -668,12 +662,12 @@ export function fromJasper(
 					flipV: false,
 				},
 				opacity: anim(100),
-				blendMode: (any.blendMode as IClip['blendMode']) ?? 'normal',
+				blendMode: 'blendMode' in c ? c.blendMode : 'normal',
 				markers: [],
 			};
 		}
 		if (!isKnownClipKind(c.kind)) {
-			reportUncarried(c, rate, `${c.kind} clip`, otio ? null : 'nothing (unknown clip kind)');
+			reportUncarried(c, `${c.kind} clip`, otio ? null : 'nothing (unknown clip kind)');
 			return otio ? base : null;
 		}
 		switch (c.kind) {
@@ -721,7 +715,7 @@ export function fromJasper(
 			case 'solid': {
 				const mid = generatorFor(c.syntheticId);
 				if (!mid) {
-					reportUncarried(c, rate, 'solid clip', otio ? null : 'nothing (unsupported synthetic source)');
+					reportUncarried(c, 'solid clip', otio ? null : 'nothing (unsupported synthetic source)');
 					return otio ? base : null;
 				}
 				return {
@@ -735,7 +729,7 @@ export function fromJasper(
 			case 'synthetic-audio': {
 				const mid = generatorFor(c.syntheticId);
 				if (!mid) {
-					reportUncarried(c, rate, 'synthetic audio clip', otio ? null : 'nothing');
+					reportUncarried(c, 'synthetic audio clip', otio ? null : 'nothing');
 					return otio ? base : null;
 				}
 				return {
@@ -797,10 +791,10 @@ export function fromJasper(
 	// JasperEditor entities the exported clips reference besides their media (fonts, transcripts, synthetic
 	// sources, Remotion bundles, LUTs): kept on the top sequence for formats that carry metadata (OTIO).
 	{
-		const fonts = new Map<string, unknown>();
-		const transcripts = new Map<string, unknown>();
-		const synthetics = new Map<string, unknown>();
-		const media = new Map<string, unknown>();
+		const fonts = new Map<string, ProjectDocument['fonts'][string]>();
+		const transcripts = new Map<string, ProjectDocument['transcripts'][string]>();
+		const synthetics = new Map<string, SyntheticSource>();
+		const media = new Map<string, MediaAsset>();
 		const addMedia = (id: unknown) => {
 			if (typeof id === 'string' && doc.media[id] && !p.media[id]) media.set(id, clone(doc.media[id]));
 		};
@@ -903,10 +897,6 @@ export function fromJasper(
 	for (const id of Object.keys(p.media))
 		if (!placed.has(id) && !id.startsWith('pre_')) p.root.push({ type: 'media', id });
 	return p;
-}
-
-function anim<T>(value: T): Animatable<T> {
-	return { value, keyframes: [] };
 }
 
 /** Whether any animatable of a clip (Motion, Opacity, levels, effect params, Source Text) has an expression. */

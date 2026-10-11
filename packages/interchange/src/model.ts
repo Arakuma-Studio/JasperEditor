@@ -27,15 +27,14 @@ import type {
 	EffectInstance,
 	LabelColor,
 	MarkerType,
+	Rational as Rate,
 	Transform,
+	Transition,
 	Vec2,
 } from '@jasper/project';
 
-export const FLICKS = 705_600_000;
-
-export type Rate = { num: number; den: number };
-
-// ---------------------------------------------------------------- project
+export type { Rational as Rate } from '@jasper/project';
+export { FLICKS_PER_SECOND as FLICKS } from '@jasper/project';
 
 export type IProject = {
 	name: string;
@@ -51,8 +50,6 @@ export type IBinEntry =
 	| { type: 'bin'; name: string; label?: LabelColor; children: IBinEntry[] }
 	| { type: 'media'; id: string }
 	| { type: 'sequence'; id: string };
-
-// ---------------------------------------------------------------- media
 
 export type IMediaKind = 'video' | 'audio' | 'image' | 'animated-image' | 'generator';
 
@@ -107,8 +104,6 @@ export type IMedia = {
 	/** JasperEditor-only data carried by formats that can (OTIO `metadata.jasper`); see `jasper.ts`. */
 	jasper?: Record<string, unknown>;
 };
-
-// ---------------------------------------------------------------- sequences
 
 export type ISequence = {
 	id: string;
@@ -194,12 +189,12 @@ export type IClip = {
 	/** Frame hold: the content time shown for the whole clip, or null. */
 	hold?: number | null;
 	/**
-	 * Workstream `time`: variable speed (Time Remapping, FCPXML `timeMap`, FCP7 `graphdict`): the content time shown
+	 * Variable speed (Time Remapping, FCPXML `timeMap`, FCP7 `graphdict`): the content time shown
 	 * at clip times (flicks from the clip's start), ascending in `time`; linear between points (`smooth` = an eased
 	 * speed change towards the next point). When present it replaces `sourceIn`/`speed`/`reverse` for the picture.
 	 */
 	timeMap?: ITimePoint[] | null;
-	/** Workstream `time`: how in-between frames are made (FCPXML `frameSampling`, FCP7 `frameblending`). */
+	/** How in-between frames are made (FCPXML `frameSampling`, FCP7 `frameblending`). */
 	frameSampling?: 'frame-sampling' | 'frame-blending' | 'optical-flow';
 	enabled: boolean;
 	label?: LabelColor;
@@ -209,11 +204,11 @@ export type IClip = {
 	group?: string | null;
 	source: ISource;
 	markers: IMarker[];
-	// ---- video clips
+
 	transform?: Transform;
 	opacity?: Animatable<number>;
 	blendMode?: BlendMode;
-	// ---- audio clips
+
 	gainDb?: number;
 	volumeDb?: Animatable<number>;
 	/** −100 (left) … 100 (right). */
@@ -230,7 +225,7 @@ export type IClip = {
 	jasper?: Record<string, unknown>;
 };
 
-/** One point of a clip's time map (workstream `time`). */
+/** One point of a clip's time map. */
 export type ITimePoint = { time: number; value: number; interp?: 'linear' | 'smooth' };
 
 export type ITransition = {
@@ -244,7 +239,7 @@ export type ITransition = {
 	start: number;
 	duration: number;
 	alignment: 'center' | 'start-at-cut' | 'end-at-cut';
-	params: Record<string, Animatable<unknown>>;
+	params: Transition['params'];
 	jasper?: Record<string, unknown>;
 };
 

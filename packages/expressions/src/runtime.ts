@@ -41,7 +41,7 @@ const MAX_FUNCTIONS = 2048;
  * native built-ins, the garbage collector at the memory limit). One such evaluation blocks its thread for up to
  * seconds; without the quarantine a hostile project paid that per frame and per property, freezing the editor or the
  * engine (docs/security-review.md, EXPR-2). Which limit trips first depends on the machine and its load (on a busy
- * host the wall clock can come before the heap), so every one of them quarantines (hardening follow-up).
+ * host the wall clock can come before the heap), so every one of them quarantines.
  */
 const quarantine = new Map<string, string>();
 const MAX_QUARANTINE = 512;
@@ -104,8 +104,6 @@ export function loadExpressionEngine(): Promise<void> {
 export function isExpressionEngineLoaded(): boolean {
 	return engine !== null;
 }
-
-// ---------------------------------------------------------------- host request stack
 
 const hosts: HostHandler[] = [];
 let depth = 0;
@@ -200,8 +198,6 @@ function abandonEngine(reason: string): void {
 	);
 }
 
-// ---------------------------------------------------------------- errors
-
 /** QuickJS error → `Error at line N: message` (the user's line; the wrapper shares line 1). */
 function formatError(dumped: unknown): string {
 	if (dumped && typeof dumped === 'object') {
@@ -217,8 +213,6 @@ function formatError(dumped: unknown): string {
 	}
 	return `Error: ${String(dumped)}`;
 }
-
-// ---------------------------------------------------------------- compile and run
 
 function compiled(e: Engine, text: string): { fn: QuickJSHandle } | { error: string } {
 	const hit = e.functions.get(text);

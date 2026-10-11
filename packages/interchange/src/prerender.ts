@@ -2,7 +2,6 @@
 // represent are rendered by the engine's export pipeline to ProRes 4444 with alpha (one movie per clip, the clip
 // alone on a transparent frame, Motion/Opacity/effects baked in) and referenced as media instead.
 import {
-	type BlendMode,
 	type Clip,
 	isEnabledMulticamClip,
 	isKnownClipKind,
@@ -11,32 +10,14 @@ import {
 	type Transform,
 } from '@jasper/project';
 import { formatCarriesBlend } from './blend.ts';
+import { FORMAT_CAPS } from './capabilities.ts';
 import { hasExpression } from './jasper-export.ts';
 import type { Format } from './options.ts';
 
+export { FORMAT_CAPS } from './capabilities.ts';
+
 export const PRERENDER_MODES = ['unsupported', 'all', 'none'] as const;
 export type PrerenderMode = (typeof PRERENDER_MODES)[number];
-
-/** What a format can represent of a visual clip (for other applications, not JasperEditor's own metadata). */
-type Caps = {
-	video: boolean;
-	transform: 'full' | 'uniform' | 'none';
-	opacity: boolean;
-	speed: boolean;
-	/** Workstream `time`: variable speed (time maps). */
-	timeMap: boolean;
-	nesting: boolean;
-};
-
-export const FORMAT_CAPS: Record<Format, Caps> = {
-	fcp7: { video: true, transform: 'uniform', opacity: true, speed: true, timeMap: true, nesting: true },
-	fcpxml: { video: true, transform: 'full', opacity: true, speed: true, timeMap: true, nesting: true },
-	otio: { video: true, transform: 'none', opacity: false, speed: true, timeMap: false, nesting: true },
-	edl: { video: true, transform: 'none', opacity: false, speed: true, timeMap: false, nesting: false },
-	aaf: { video: true, transform: 'none', opacity: false, speed: false, timeMap: false, nesting: false },
-	omf: { video: false, transform: 'none', opacity: false, speed: false, timeMap: false, nesting: false },
-	ale: { video: false, transform: 'none', opacity: false, speed: false, timeMap: false, nesting: false },
-};
 
 /** Default pre-render mode per format: OTIO keeps everything in its JasperEditor metadata. */
 export function defaultPrerenderMode(format: Format): PrerenderMode {
@@ -82,13 +63,12 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 	const caps = FORMAT_CAPS[format];
 	if (!caps.video) return null;
 	if (!isKnownClipKind(c.kind)) return null;
-	// three-d: a 3D layer is drawn by the 3D renderer (camera, lights, depth); a pre-render carries it with them.
+	// a 3D layer is drawn by the 3D renderer (camera, lights, depth); a pre-render carries it with them.
 	if (c.kind === 'model') return '3D model layer';
-	if ((c as { threeD?: { enabled?: boolean } }).threeD?.enabled === true) return '3D layer';
+	if ('threeD' in c && c.threeD?.enabled === true) return '3D layer';
 	switch (c.kind) {
 		case 'text':
-			// text-animators: animators and text paths are drawn by the composition, so the pre-render carries them.
-			return (c as { animators?: unknown[] }).animators?.length ? 'text clip with animators' : 'text clip';
+			return c.animators?.length ? 'text clip with animators' : 'text clip';
 		case 'shape':
 			return 'shape clip';
 		case 'motion-graphic':
@@ -101,28 +81,22 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 		case 'nest-audio':
 		case 'adjustment':
 		case 'synthetic-audio':
-		// three-d: cameras and lights draw nothing (the writer reports them; 3D layers are pre-rendered with them).
+		// cameras and lights draw nothing (the writer reports them; 3D layers are pre-rendered with them).
 		case 'camera':
 		case 'light':
 			return null;
 	}
-	const v = c as Clip & {
-		transform: Transform;
-		opacity: { value: number; keyframes: unknown[] };
-		effects?: { enabled: boolean }[];
-		trackedBy?: unknown;
-	};
+	if (!('transform' in c)) return null;
 	// Formats without nests write an enabled multi-camera clip as its angle's clips (see `fromJasper`).
 	const flattens = isEnabledMulticamClip(c) && !c.frameHold && !!doc.sequences[c.sequenceId]?.multicam;
 	if (c.kind === 'nest-video' && !caps.nesting && !flattens) return 'nested sequence';
-	const any = c as Clip & { masks?: unknown[]; effects?: { enabled: boolean; masks?: unknown[] }[] };
-	if (any.masks?.length || (any.effects ?? []).some((e) => e.enabled && e.masks?.length)) return 'masks';
+	if (c.masks?.length || c.effects.some((e) => e.enabled && e.masks?.length)) return 'masks';
 	if (hasExpression(c)) return 'expressions';
-	if ((v.effects ?? []).some((e) => e.enabled)) return 'effects';
-	const blend = (c as { blendMode?: BlendMode }).blendMode;
+	if (c.effects.some((e) => e.enabled)) return 'effects';
+	const blend = c.blendMode;
 	if (blend && !formatCarriesBlend(format, blend)) return `blend mode ${blend}`;
 	if (c.frameHold && !caps.speed) return 'frame hold';
-	if (v.trackedBy) return 'tracking';
+	if (c.trackedBy) return 'tracking';
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	let box: { width: number; height: number } | null = null;
 	if (c.kind === 'video' || c.kind === 'still' || c.kind === 'animated-image') {
@@ -137,7 +111,7 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 		const inner = doc.sequences[c.sequenceId];
 		if (inner) box = { width: inner.settings.width, height: inner.settings.height };
 	}
-	const t = v.transform;
+	const t = c.transform;
 	if (caps.transform === 'none' && !isIdentityTransform(t, box, frame)) return 'Motion';
 	if (caps.transform === 'uniform') {
 		if (t.flipH || t.flipV) return 'flipped Motion';
@@ -148,11 +122,9 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 				t.scale.keyframes.length > 0);
 		if (nonUniform) return 'non-uniform scale';
 	}
-	if (!caps.opacity && (v.opacity.value !== 100 || v.opacity.keyframes.length > 0)) return 'Opacity';
+	if (!caps.opacity && (c.opacity.value !== 100 || c.opacity.keyframes.length > 0)) return 'Opacity';
 	if (!caps.speed && (c.speed.rate !== 1 || c.speed.reverse)) return 'speed change';
-	// Workstream `time`: variable speed needs a time map (FCPXML timeMap, FCP7 graphdict).
-	if (!caps.timeMap && (c as { timeRemap?: { enabled?: boolean } }).timeRemap?.enabled)
-		return 'time remapping';
+	if (!caps.timeMap && 'timeRemap' in c && c.timeRemap?.enabled) return 'time remapping';
 	// FCP7 XML and OTIO (metadata) carry solids as generators; FCPXML generators are Motion templates.
 	if (c.kind === 'solid' && format !== 'fcp7' && format !== 'otio')
 		return 'solid (no generators in this format)';

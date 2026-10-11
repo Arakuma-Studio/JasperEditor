@@ -12,20 +12,17 @@
 //    text every frame. Instead every expression statement outside nested functions is rewritten to `__r = (…)`
 //    and the program becomes the body of `function () { var __r; …; return __r; }`, compiled once per text and
 //    called per evaluation. Compound statements reset `__r` first (ECMAScript UpdateEmpty: `1; if (false) 2`
-//    completes with `undefined`). `var`/function declarations become locals of the call (they used to leak into
-//    the global object between evaluations in an `eval` design).
+//    completes with `undefined`). `var`/function declarations are local to each evaluation.
 //
 // Line breaks are preserved (the wrapper prefix shares line 1 with the user's code), so runtime error lines match
 // the user's text. Nesting deeper than MAX_NESTING is rejected like rewrite.rs (the parser and QuickJS recurse per
 // level).
-import { type Node, Parser } from 'acorn';
+import { type AnyNode, Parser, type Program } from 'acorn';
 
 /** Deepest bracket / operator nesting an expression may have (rewrite.rs `MAX_NESTING`). */
 export const MAX_NESTING = 64;
 
 export type CompiledSource = { ok: true; code: string } | { ok: false; error: string };
-
-type AnyNode = Node & Record<string, unknown>;
 
 const ARITH: Record<string, string> = { '+': '__add', '-': '__sub', '*': '__mul', '/': '__div' };
 const COMPOUND: Record<string, string> = { '+=': '__add', '-=': '__sub', '*=': '__mul', '/=': '__div' };
@@ -55,9 +52,9 @@ function isNode(v: unknown): v is AnyNode {
 
 function children(node: AnyNode): AnyNode[] {
 	const out: AnyNode[] = [];
-	for (const k of Object.keys(node)) {
+	const fields: [string, unknown][] = Object.entries(node);
+	for (const [k, v] of fields) {
 		if (k === 'loc' || k === 'range') continue;
-		const v = node[k];
 		if (isNode(v)) out.push(v);
 		else if (Array.isArray(v)) for (const x of v) if (isNode(x)) out.push(x);
 	}
@@ -123,14 +120,13 @@ class Emitter {
 	statement(node: AnyNode, capture: boolean, inList: boolean): string {
 		if (!capture) return this.gen(node, false);
 		if (node.type === 'ExpressionStatement') {
-			const expr = node.expression as AnyNode;
+			const expr = node.expression;
 			// A lone string literal is the result ("abc"), not a directive: AE expressions are never strict code.
 			return `__r=(${this.gen(expr, true)})${this.slice(expr.end, node.end)}`;
 		}
 		const body = this.gen(node, true);
 		const resets =
-			RESETTING.has(node.type) ||
-			(node.type === 'LabeledStatement' && RESETTING.has((node.body as AnyNode).type));
+			RESETTING.has(node.type) || (node.type === 'LabeledStatement' && RESETTING.has(node.body.type));
 		if (!resets) return body;
 		return inList ? `__r=void 0;${body}` : `{__r=void 0;${body}}`;
 	}
@@ -142,7 +138,7 @@ class Emitter {
 			case 'StaticBlock': {
 				let out = '';
 				let pos = node.start;
-				for (const s of node.body as AnyNode[]) {
+				for (const s of node.body) {
 					out += this.slice(pos, s.start);
 					out += this.statement(s, capture && node.type !== 'StaticBlock', true);
 					pos = s.end;
@@ -153,11 +149,11 @@ class Emitter {
 				let out = '';
 				let pos = node.start;
 				if (node.test) {
-					const t = node.test as AnyNode;
+					const t = node.test;
 					out += this.slice(pos, t.start) + this.gen(t, capture);
 					pos = t.end;
 				}
-				for (const s of node.consequent as AnyNode[]) {
+				for (const s of node.consequent) {
 					out += this.slice(pos, s.start) + this.statement(s, capture, true);
 					pos = s.end;
 				}
@@ -176,8 +172,8 @@ class Emitter {
 				let out = '';
 				let pos = node.start;
 				const parts: [AnyNode, boolean][] = [];
-				for (const k of Object.keys(node)) {
-					const v = node[k];
+				const fields: [string, unknown][] = Object.entries(node);
+				for (const [k, v] of fields) {
 					if (isNode(v)) parts.push([v, stmtKeys.has(k)]);
 				}
 				parts.sort((a, b) => a[0].start - b[0].start);
@@ -190,10 +186,10 @@ class Emitter {
 				return out + this.slice(pos, node.end);
 			}
 			case 'BinaryExpression': {
-				const helper = ARITH[node.operator as string];
+				const helper = ARITH[node.operator];
 				if (!helper) return this.generic(node, capture);
-				const l = node.left as AnyNode;
-				const r = node.right as AnyNode;
+				const l = node.left;
+				const r = node.right;
 				return (
 					`${helper}(${newlines(this.slice(node.start, l.start))}${this.gen(l, capture)},` +
 					`${newlines(this.slice(l.end, r.start))}${this.gen(r, capture)}` +
@@ -201,17 +197,17 @@ class Emitter {
 				);
 			}
 			case 'UnaryExpression': {
-				const arg = node.argument as AnyNode;
+				const arg = node.argument;
 				if (node.operator !== '-') return this.generic(node, capture);
 				if (arg.type === 'Literal' && typeof arg.value === 'number')
 					return `-${this.slice(arg.start, arg.end)}`;
 				return `__neg(${newlines(this.slice(node.start, arg.start))}${this.gen(arg, capture)}${newlines(this.slice(arg.end, node.end))})`;
 			}
 			case 'AssignmentExpression': {
-				const helper = COMPOUND[node.operator as string];
+				const helper = COMPOUND[node.operator];
 				if (!helper) return this.generic(node, capture);
-				const l = node.left as AnyNode;
-				const r = node.right as AnyNode;
+				const l = node.left;
+				const r = node.right;
 				const target = this.gen(l, capture);
 				return `${target}=${helper}(${target},${newlines(this.slice(l.end, r.start))}(${this.gen(r, capture)}))${newlines(this.slice(r.end, node.end))}`;
 			}
@@ -238,20 +234,19 @@ function patternNames(node: AnyNode | null | undefined, out: Set<string>): void 
 	if (!node) return;
 	switch (node.type) {
 		case 'Identifier':
-			out.add(node.name as string);
+			out.add(node.name);
 			return;
 		case 'ArrayPattern':
-			for (const el of node.elements as (AnyNode | null)[]) patternNames(el, out);
+			for (const el of node.elements) patternNames(el, out);
 			return;
 		case 'ObjectPattern':
-			for (const p of node.properties as AnyNode[])
-				patternNames((p.type === 'RestElement' ? p.argument : p.value) as AnyNode, out);
+			for (const p of node.properties) patternNames(p.type === 'RestElement' ? p.argument : p.value, out);
 			return;
 		case 'AssignmentPattern':
-			patternNames(node.left as AnyNode, out);
+			patternNames(node.left, out);
 			return;
 		case 'RestElement':
-			patternNames(node.argument as AnyNode, out);
+			patternNames(node.argument, out);
 			return;
 		default:
 			return; // member expressions assign properties, not bindings
@@ -266,26 +261,26 @@ function patternNames(node: AnyNode | null | undefined, out: Set<string>): void 
  * would be a redeclaration); names declared only in nested scopes are still hoisted, which is harmless (the
  * nested declaration shadows the hoisted one exactly as it shadowed the global).
  */
-function implicitGlobals(program: AnyNode): string[] {
+function implicitGlobals(program: Program): string[] {
 	const assigned = new Set<string>();
 	const stack: AnyNode[] = [program];
 	while (stack.length > 0) {
 		const node = stack.pop()!;
-		if (node.type === 'AssignmentExpression') patternNames(node.left as AnyNode, assigned);
-		else if (node.type === 'UpdateExpression') patternNames(node.argument as AnyNode, assigned);
+		if (node.type === 'AssignmentExpression') patternNames(node.left, assigned);
+		else if (node.type === 'UpdateExpression') patternNames(node.argument, assigned);
 		else if (
 			(node.type === 'ForInStatement' || node.type === 'ForOfStatement') &&
-			(node.left as AnyNode).type !== 'VariableDeclaration'
+			node.left.type !== 'VariableDeclaration'
 		)
-			patternNames(node.left as AnyNode, assigned);
+			patternNames(node.left, assigned);
 		for (const c of children(node)) stack.push(c);
 	}
 	if (assigned.size === 0) return [];
 	const lexical = new Set<string>();
-	for (const s of program.body as AnyNode[]) {
+	for (const s of program.body) {
 		if (s.type === 'VariableDeclaration' && s.kind !== 'var')
-			for (const d of s.declarations as AnyNode[]) patternNames(d.id as AnyNode, lexical);
-		else if (s.type === 'ClassDeclaration' && s.id) patternNames(s.id as AnyNode, lexical);
+			for (const d of s.declarations) patternNames(d.id, lexical);
+		else if (s.type === 'ClassDeclaration' && s.id) patternNames(s.id, lexical);
 	}
 	return [...assigned].filter((n) => !lexical.has(n) && !realmGlobals.has(n) && !NEVER_HOISTED.has(n)).sort();
 }
@@ -309,7 +304,7 @@ function compileUncached(text: string): CompiledSource {
 			ok: false,
 			error: `Error: expression is nested too deeply (more than ${MAX_NESTING} levels of brackets or chained operators)`,
 		};
-	let ast: AnyNode;
+	let ast: Program;
 	try {
 		ast = Parser.parse(text, {
 			ecmaVersion: 2023,
@@ -317,7 +312,7 @@ function compileUncached(text: string): CompiledSource {
 			allowReturnOutsideFunction: true,
 			allowHashBang: false,
 			locations: true,
-		}) as unknown as AnyNode;
+		});
 	} catch (e) {
 		const err = e as { message?: string; loc?: { line: number } };
 		const msg = (err.message ?? String(e)).replace(/\s*\(\d+:\d+\)\s*$/, '');
@@ -326,8 +321,14 @@ function compileUncached(text: string): CompiledSource {
 	let body: string;
 	try {
 		body = new Emitter(text).gen(ast, true);
-	} catch {
-		return { ok: false, error: 'Error: expression is too complex' };
+	} catch (error) {
+		return {
+			ok: false,
+			error:
+				error instanceof RangeError
+					? 'Error: expression is too complex'
+					: `Error: expression transform failed (${error instanceof Error ? error.message : String(error)})`,
+		};
 	}
 	// The trailing newline closes a final `//` comment.
 	const locals = implicitGlobals(ast)

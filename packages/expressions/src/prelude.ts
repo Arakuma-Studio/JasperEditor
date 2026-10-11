@@ -97,7 +97,6 @@ function __result(r) {
   return r;
 }
 
-// ---------------------------------------------------------------------------------------------
 // Array maths (targets of the operator rewrite).
 
 function __v(x) {
@@ -159,7 +158,6 @@ function __neg(a) {
   return -a;
 }
 
-// ---------------------------------------------------------------------------------------------
 // Vector maths.
 
 function add(a, b) { return __bin(a, b, __fadd); }
@@ -218,7 +216,6 @@ function lookAt(from, at) {
 function degreesToRadians(d) { return __v(d) * Math.PI / 180; }
 function radiansToDegrees(r) { return __v(r) * 180 / Math.PI; }
 
-// ---------------------------------------------------------------------------------------------
 // Interpolation: linear/ease/easeIn/easeOut(t, [tMin, tMax,] value1, value2).
 
 function __interp(shape, args) {
@@ -249,7 +246,6 @@ function ease() { return __interp(__ease, arguments); }
 function easeIn() { return __interp(__easeIn, arguments); }
 function easeOut() { return __interp(__easeOut, arguments); }
 
-// ---------------------------------------------------------------------------------------------
 // Deterministic hashing (32-bit, Math.imul), random numbers and smooth noise.
 
 function __hash(x) {
@@ -363,7 +359,6 @@ function noise(x) {
   return __noise3(x, 0, 0);
 }
 
-// ---------------------------------------------------------------------------------------------
 // Time conversion.
 
 function timeToFrames(t, fps, isDuration) {
@@ -420,7 +415,6 @@ function posterizeTime(fps) {
   }
 }
 
-// ---------------------------------------------------------------------------------------------
 // Colour.
 
 function rgbToHsl(c) {
@@ -464,7 +458,6 @@ function hexToRgb(hex) {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, a];
 }
 
-// ---------------------------------------------------------------------------------------------
 // Object model: comps (sequences), layers (clips), property groups and properties.
 
 function __child(seq, owner, group, key) {
@@ -532,7 +525,7 @@ function __m3(m, p) {
   if (W !== 0 && W !== 1) { X /= W; Y /= W; }
   return p.length > 2 ? [X, Y, p[2] || 0] : [X, Y];
 }
-// three-d: 4×4 row-major helpers (points with the perspective divide, vectors without translation), the
+// 4×4 row-major helpers (points with the perspective divide, vectors without translation), the
 // projection to sequence pixels ([x, y, camera depth]) and comp → layer plane through the inverse homography.
 function __m4(m, p) {
   var x = p[0] || 0, y = p[1] || 0, z = p[2] || 0;
@@ -615,7 +608,7 @@ Layer.prototype = {
     return g.__get(k);
   },
   __x: function (t) { return __h(__XFORM, this.__s, this.__o, t === undefined ? time : __v(t)); },
-  // three-d: a 3D layer's xform also carries its world matrix, its inverse and the camera's view-projection.
+  // a 3D layer's xform also carries its world matrix, its inverse and the camera's view-projection.
   toComp: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4c(x[4], __m4(x[2], __v(p))) : __m3(x[0], __v(p)); },
   fromComp: function (p, t) { var x = this.__x(t); return x.length > 2 ? __plane(x[1], __v(p)) : __m3(x[1], __v(p)); },
   toWorld: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4(x[2], __v(p)) : __m3(x[0], __v(p)); },
@@ -921,7 +914,6 @@ Markers.prototype = {
   },
 };
 
-// ---------------------------------------------------------------------------------------------
 // Unqualified names: thisLayer / thisProperty attributes and the this* objects. Accessors on the global object;
 // assigning one (width = 10) shadows it for the current evaluation only.
 

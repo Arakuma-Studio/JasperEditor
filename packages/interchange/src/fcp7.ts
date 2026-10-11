@@ -17,9 +17,18 @@
 //
 // Port of FilmCraft `crates/interchange/src/fcp7.rs` (MIT OR Apache-2.0), extended (bins and master clips on
 // export, crop, ticks above 2^53, blend modes, generators, channel mapping, hold filters).
-import type { Animatable, Keyframe, LabelColor, Transform, Vec2 } from '@jasper/project';
+import type {
+	Animatable,
+	EffectInstance,
+	Interpolation,
+	Keyframe,
+	LabelColor,
+	Transform,
+	Vec2,
+} from '@jasper/project';
 import { blendFromFcp7, fcp7BlendName } from './blend.ts';
 import {
+	anim,
 	Builder,
 	dbToGain,
 	describeClip,
@@ -89,8 +98,6 @@ export function sniffFcp7(head: string): boolean {
 	return /<xmeml[\s>]/.test(head);
 }
 
-// ---------------------------------------------------------------- shared vocabulary
-
 function readRate(n: XNode | null): Rate | null {
 	const r = child(n, 'rate');
 	const tb = childNum(r, 'timebase');
@@ -102,8 +109,6 @@ function writeRate(w: XmlWriter, rate: Rate): void {
 	const { timebase, ntsc } = timebaseOf(rate);
 	w.open('rate').text('timebase', timebase).text('ntsc', boolStr(ntsc)).close();
 }
-
-const anim = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
 
 function kf<T>(time: number, value: T, interpolation: Keyframe<T>['interpolation']): Keyframe<T> {
 	return {
@@ -177,8 +182,6 @@ function writeColor(w: XmlWriter, c: readonly number[]): void {
 		.text('blue', b(c[2] ?? 0))
 		.close();
 }
-
-// ---------------------------------------------------------------- import
 
 const nodeKey = (n: XNode, ids: Map<XNode, number>) => n.attrs.id ?? `#node${ids.get(n) ?? 0}`;
 
@@ -749,7 +752,7 @@ class Fcp7Importer {
 						.sort((a, b) => a.when - b.when);
 			}
 		}
-		// Workstream `time`: variable speed (Time Remap graph) → a time map; the clip axis then runs at 100 %.
+		// variable speed (Time Remap graph) → a time map; the clip axis then runs at 100 %.
 		const timeMap =
 			variable && graph.length >= 2 && !hold
 				? graph.map((k) => ({
@@ -905,7 +908,7 @@ class Fcp7Importer {
 				return;
 			}
 			case 'crop': {
-				const out: Record<string, Animatable<unknown>> = {};
+				const out: EffectInstance['params'] = {};
 				for (const k of ['left', 'right', 'top', 'bottom'] as const) {
 					const p = find(k);
 					if (p) out[k] = readParam(p, (v) => v, rate);
@@ -917,7 +920,7 @@ class Fcp7Importer {
 					effectId: 'jasper.crop',
 					effectVersion: 1,
 					enabled,
-					params: out as never,
+					params: out,
 				});
 				return;
 			}
@@ -929,7 +932,7 @@ class Fcp7Importer {
 			});
 			return;
 		}
-		const out: Record<string, Animatable<unknown>> = {};
+		const out: EffectInstance['params'] = {};
 		for (const ps of spec.params) {
 			const p = find(ps.name) ?? find(ps.label);
 			if (!p) continue;
@@ -961,7 +964,7 @@ class Fcp7Importer {
 			effectId: spec.id,
 			effectVersion: spec.version,
 			enabled,
-			params: out as never,
+			params: out,
 		});
 	}
 
@@ -1054,7 +1057,7 @@ function path3(n: XNode, names: string[]): XNode | null {
 	return cur;
 }
 
-function interpOf(k: XNode): Keyframe<unknown>['interpolation'] {
+function interpOf(k: XNode): Interpolation {
 	const n = (pathText(k, ['interpolation', 'name']) ?? '').toLowerCase();
 	if (n === 'hold') return 'hold';
 	if (n === 'bezier' || n === 'fcpcurve' || n === 'ease' || n === 'smooth') return 'bezier';
@@ -1139,8 +1142,6 @@ function markerColor(s: string | null): LabelColor | null {
 			return null;
 	}
 }
-
-// ---------------------------------------------------------------- export
 
 export function exportFcp7(p: IProject, sequenceId: string, opts: ExportOptions, report: Report): string {
 	if (!p.sequences[sequenceId]) throw new InterchangeError('NO_SEQUENCE', `no sequence ${sequenceId}`);
@@ -1449,7 +1450,7 @@ class Fcp7Exporter {
 	}
 
 	/** The `<multiclip>` of a multi-camera clip item (Apple's xmeml: name, collapsed, synctype, angle+). */
-	writeMulticlip(c: IClip, kind: 'video' | 'audio', info: MulticamInfo, angles: MulticlipAngle[]): void {
+	writeMulticlip(info: MulticamInfo, angles: MulticlipAngle[]): void {
 		const w = this.w;
 		const rate = info.seq.rate;
 		const first = info.mc.angles.find((a) => a.video !== null) ?? null;
@@ -1478,8 +1479,6 @@ class Fcp7Exporter {
 			w.close().close();
 		}
 		w.close();
-		void c;
-		void kind;
 	}
 
 	/** The source of a nested-sequence clip item: a multiclip, the nest as its angle sees it, or the nest. */
@@ -1493,7 +1492,7 @@ class Fcp7Exporter {
 		const angles = this.multiclipAngles(info);
 		const allAudio = kind === 'audio' && info.mc.audio === 'all';
 		if (angles && !allAudio) {
-			this.writeMulticlip(c, kind, info, angles);
+			this.writeMulticlip(info, angles);
 			return;
 		}
 		const hidden = multicamHiddenTracks(this.p, c, kind)!;
@@ -1733,7 +1732,7 @@ class Fcp7Exporter {
 					},
 				);
 			if (c.timeMap && c.timeMap.length >= 2 && c.hold == null) {
-				// Workstream `time`: variable speed as the Time Remap graph (`graphdict`): <when> = the clip's content time
+				// variable speed as the Time Remap graph (`graphdict`): <when> = the clip's content time
 				// in frames (the keyframe convention of this writer), <value> = the source frame shown.
 				const m = c.timeMap;
 				const first = (m[1]!.value - m[0]!.value) / Math.max(1, m[1]!.time - m[0]!.time);
@@ -1812,7 +1811,7 @@ class Fcp7Exporter {
 		this.w.open('parameter').text('parameterid', id).text('name', name).text('value', value).close();
 	}
 
-	interp(i: Keyframe<unknown>['interpolation']): void {
+	interp(i: Interpolation): void {
 		if (i === 'linear') return;
 		this.w
 			.open('interpolation')

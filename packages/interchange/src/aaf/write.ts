@@ -213,7 +213,6 @@ export function writeAaf(doc: CDocument, version: CfbVersion, report: Report): U
 		if (!usedOps.some((x) => auidEq(x, op))) usedOps.push(op);
 	};
 
-	// ---- media: master mobs (one per source key), file mobs (one per file and kind), tape mobs
 	const groups: { key: string; members: number[] }[] = [];
 	doc.sources.forEach((s, i) => {
 		const g = groups.find((x) => x.key === s.key);
@@ -334,7 +333,6 @@ export function writeAaf(doc: CDocument, version: CfbVersion, report: Report): U
 		}
 	}
 
-	// ---- the composition
 	const crate: [number, number] = [comp.rate.num, comp.rate.den];
 	const slots: Obj[] = [];
 	const trackLen = (items: CItem[]) =>
@@ -488,7 +486,6 @@ export function writeAaf(doc: CDocument, version: CfbVersion, report: Report): U
 	);
 	if (w.inexact) report.info('some times are not on whole edit units and were rounded');
 
-	// ---- dictionary
 	const ddefs = (
 		[
 			[DDEF.PICTURE, 'Picture'],

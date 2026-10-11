@@ -97,8 +97,6 @@ export function rateFromFloat(r: number): Rate {
 	return reduceRate({ num: Math.round(r * 1_000_000), den: 1_000_000 });
 }
 
-// ---------------------------------------------------------------- frames ↔ flicks
-
 /** Flicks per frame (integral for every broadcast rate; fractional for odd rates). */
 export function flicksPerFrame(r: Rate): number {
 	return (FLICKS * r.den) / r.num;
@@ -130,13 +128,9 @@ export function snapToFrame(t: number, r: Rate): number {
 	return framesToFlicks(flicksToFrames(t, r), r);
 }
 
-// ---------------------------------------------------------------- samples / edit units
-
 /** Flicks of `units` edit units at `rate` (frames or samples: an edit rate is any rational). */
 export const unitsToFlicks = framesToFlicks;
 export const flicksToUnits = flicksToFrames;
-
-// ---------------------------------------------------------------- seconds
 
 /** Rational seconds `n/d` → flicks (exact when on the grid, else rounded; `exact` says which). */
 export function rationalSecondsToFlicks(n: bigint, d: bigint): { flicks: number; exact: boolean } {
@@ -161,8 +155,6 @@ export function flicksToSeconds(t: number): number {
 	return t / FLICKS;
 }
 
-// ---------------------------------------------------------------- Premiere ticks
-
 /** Premiere ticks (decimal string or number, any size) → flicks; `exact` false when not a multiple of 360. */
 export function ticksToFlicks(ticks: string | number | bigint): { flicks: number; exact: boolean } | null {
 	let b: bigint;
@@ -183,8 +175,6 @@ export function flicksToTicks(t: number): string {
 	return (BigInt(Math.round(t)) * 360n).toString();
 }
 
-// ---------------------------------------------------------------- timecode
-
 /** `HH:MM:SS:FF` (or `HH;MM;SS;FF` drop-frame) of a frame index at `r`. */
 export function formatTc(frames: number, r: Rate, dropFrame: boolean): string {
 	return formatTimecode(frames, r, { dropFrame: dropFrame && supportsDropFrame(r) });
@@ -198,8 +188,6 @@ export function parseTc(s: string, r: Rate, dropFrame?: boolean): number | null 
 	const drop = (dropFrame ?? /;/.test(s)) && supportsDropFrame(r);
 	return parseTimecode(s, r, { dropFrame: drop });
 }
-
-// ---------------------------------------------------------------- BigInt helpers
 
 function floorDiv(n: bigint, d: bigint): bigint {
 	if (d < 0n) {

@@ -32,6 +32,7 @@ import {
 	timeMapToRemap,
 	transitionSpec,
 } from '@jasper/project';
+import { anim } from './build.ts';
 import type { IBinEntry, IClip, IMedia, IProject, ISequence, ITrack, Rate } from './model.ts';
 import { extension, fileName } from './paths.ts';
 import type { Report } from './report.ts';
@@ -92,7 +93,6 @@ export type ToJasperOptions = {
 };
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-const anim = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
 
 /** FNV-1a of a string (placeholder fingerprints are stable per document reference). */
 function hash(s: string): string {
@@ -247,7 +247,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		missing: [],
 	};
 
-	// ---- which media are used where (placeholders get the streams their clips need)
 	const usage = new Map<string, { video: boolean; audio: boolean }>();
 	for (const s of Object.values(p.sequences))
 		for (const kind of ['video', 'audio'] as const)
@@ -265,7 +264,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		rate: firstSeq?.rate ?? { num: 24, den: 1 },
 	};
 
-	// ---- media and synthetics
 	const assetOf = new Map<string, MediaAsset>();
 	const synOf = new Map<string, SyntheticSource>();
 	const itemOf = new Map<string, string>();
@@ -335,7 +333,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		return itemId;
 	};
 
-	// ---- sequences: ids first (nests refer to each other)
 	const seqIdOf = new Map<string, string>();
 	const seqItemOf = new Map<string, string>();
 	for (const s of Object.values(p.sequences)) seqIdOf.set(s.id, ids.next('seq'));
@@ -526,7 +523,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 				});
 		}
 
-		// ---- links (at most one video member per group) and groups
 		for (const [, members] of linkMembers) {
 			const valid = members.filter((m) => seq.clips[m]);
 			const video = valid.filter((m) => seq.videoTracks.some((t) => t.id === seq.clips[m]!.trackId));
@@ -547,7 +543,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 			for (const m of valid) seq.clips[m]!.groupId = gid;
 		}
 
-		// ---- transitions
 		const usedEdge = new Set<string>();
 		for (const { t, track } of transitionsOf) {
 			for (const x of t.transitions) {
@@ -627,7 +622,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		return seq;
 	};
 
-	// ---- clips
 	const convertClip = (c: IClip, track: Track, toFrames: (t: number) => number, rate: Rate): Clip[] => {
 		const F = flicksPerFrame(rate);
 		const start = Math.max(0, toFrames(c.start));
@@ -678,7 +672,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		});
 		const reid = <T extends { id: string }>(list: T[], prefix: 'fx'): T[] =>
 			list.map((x) => ({ ...clone(x), id: isValidId(x.id) ? x.id : ids.next(prefix) }));
-		// Workstream `time`: a time map becomes Time Remapping (video and nested pictures); audio cannot be remapped.
+		// a time map becomes Time Remapping (video and nested pictures); audio cannot be remapped.
 		const hasMap = !!c.timeMap && c.timeMap.length >= 2 && c.hold == null;
 		const remapFields = (): Record<string, unknown> => {
 			// OTIO carries JasperEditor's own remap in its metadata (the format has no variable speed).
@@ -936,7 +930,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 				report.warn(`frame hold of clip "${c.name}" lies after the end of its media; the hold was dropped`, {
 					subject: where,
 				});
-				delete (held as { frameHold?: unknown }).frameHold;
+				delete held.frameHold;
 			}
 			const f = fit(held);
 			return f ? [f] : [];
@@ -982,7 +976,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 	}
 	frag.topSequences = p.top.map((t) => seqIdOf.get(t)).filter((x): x is string => !!x);
 
-	// ---- bins
 	const placedSeq = new Set<string>();
 	const placedMedia = new Set<string>();
 	const seqItem = (s: ISequence): string => {
@@ -1032,7 +1025,6 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		}
 	for (const [mid, itemId] of itemOf) if (!placedMedia.has(mid)) frag.rootItems.push(itemId);
 
-	// ---- JasperEditor entities carried by OTIO metadata (fonts, transcripts) for restored clips
 	for (const s of Object.values(p.sequences)) {
 		const ent = s.jasper?.entities as
 			| {

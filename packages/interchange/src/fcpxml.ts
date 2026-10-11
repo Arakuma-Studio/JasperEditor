@@ -17,9 +17,10 @@
 //
 // Port of FilmCraft `crates/interchange/src/fcpxml.rs` (MIT OR Apache-2.0), extended (non-uniform scale, anchor,
 // blend modes, pan, crop, roles, captions, keyframe easing, effects with their params, generators reported).
-import type { Animatable, Keyframe, Transform, Vec2 } from '@jasper/project';
+import type { Animatable, EffectInstance, Interpolation, Keyframe, Transform, Vec2 } from '@jasper/project';
 import { blendFromFcpxml, fcpxmlBlend } from './blend.ts';
 import {
+	anim,
 	Builder,
 	describeClip,
 	frameOf,
@@ -47,8 +48,6 @@ const MAX_NEST = 64;
 export function sniffFcpxml(head: string): boolean {
 	return /<fcpxml[\s>]/.test(head);
 }
-
-// ---------------------------------------------------------------- rational time
 
 /** `"1001/24000s"`, `"5s"`, `"0s"`, `"3.5s"` → flicks. */
 export function parseTime(s: string | undefined | null): number | null {
@@ -137,10 +136,6 @@ function kf<T>(time: number, value: T, interpolation: Keyframe<T>['interpolation
 		easeOut: { influence: 1 / 3, slope },
 	};
 }
-
-const anim = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
-
-// ---------------------------------------------------------------- import
 
 type AssetInfo = { media: string; start: number; hasVideo: boolean; hasAudio: boolean };
 
@@ -471,7 +466,7 @@ class FcpxmlImporter {
 					src = { kind: 'media', id: a.media, origin: a.start, v: a.hasVideo, a: a.hasAudio };
 					const tc = this.b.p.media[a.media]!.timecode;
 					if (tc && el.attrs.tcFormat === 'DF') tc.dropFrame = true;
-				} else this.missingRef(el, name);
+				} else this.missingRef(name);
 				break;
 			}
 			case 'clip': {
@@ -485,7 +480,7 @@ class FcpxmlImporter {
 					const v = a.hasVideo && inner.name !== 'audio';
 					const au = a.hasAudio && (inner.name !== 'video' || elements(el).some((x) => x.name === 'audio'));
 					src = { kind: 'media', id: a.media, origin: a.start - shift, v, a: au };
-				} else if (inner) this.missingRef(inner, name);
+				} else if (inner) this.missingRef(name);
 				break;
 			}
 			case 'ref-clip': {
@@ -524,7 +519,7 @@ class FcpxmlImporter {
 							audio: known(aNode?.attrs.angleID) ?? (srcs.length ? undefined : firstV),
 							vNode,
 						};
-				} else this.missingRef(el, name);
+				} else this.missingRef(name);
 				break;
 			}
 			case 'sync-clip':
@@ -627,11 +622,10 @@ class FcpxmlImporter {
 		return { start: t0, end: t0 + dur, clip: vclip, track: vtrack };
 	}
 
-	missingRef(el: XNode, name: string): void {
+	missingRef(name: string): void {
 		this.report.warn(`clip "${name}" refers to a resource the document does not define; it was skipped`, {
 			subject: { kind: 'clip', name },
 		});
-		void el;
 	}
 
 	caption(ctx: Ctx, el: XNode, t0: number): void {
@@ -755,7 +749,7 @@ class FcpxmlImporter {
 			} else if (kind === 'video' && a.name === 'adjust-crop') {
 				const tr = child(a, 'trim-rect') ?? child(a, 'crop-rect');
 				if (tr) {
-					const params: Record<string, Animatable<unknown>> = {};
+					const params: EffectInstance['params'] = {};
 					for (const k of ['left', 'right', 'top', 'bottom'] as const) {
 						const v = Number(tr.attrs[k] ?? 0);
 						if (v) params[k] = anim(v);
@@ -765,7 +759,7 @@ class FcpxmlImporter {
 						effectId: 'jasper.crop',
 						effectVersion: 1,
 						enabled: true,
-						params: params as never,
+						params,
 					});
 				}
 			} else if (kind === 'audio' && a.name === 'adjust-volume') {
@@ -788,7 +782,7 @@ class FcpxmlImporter {
 					});
 					continue;
 				}
-				const params: Record<string, Animatable<unknown>> = {};
+				const params: EffectInstance['params'] = {};
 				for (const p of children(a, 'param')) {
 					const k = p.attrs.key ?? p.attrs.name;
 					const ps = spec.params.find(
@@ -813,7 +807,7 @@ class FcpxmlImporter {
 					effectId: spec.id,
 					effectVersion: spec.version,
 					enabled: flag(a, 'enabled') ?? true,
-					params: params as never,
+					params,
 				});
 			}
 		}
@@ -859,7 +853,7 @@ function frameSamplingIn(v: string | undefined): IClip['frameSampling'] | undefi
 
 /**
  * (speed, reverse, freeze, source time at the element's local start) of a `timeMap`; a variable one (more than two
- * points or eased pieces) also returns its `points` in local time → source time (workstream `time`).
+ * points or eased pieces) also returns its `points` in local time → source time ().
  */
 function timeMap(
 	el: XNode,
@@ -923,8 +917,6 @@ function r9(v: number): number {
 	const r = Math.round(v * 1e9) / 1e9;
 	return Object.is(r, -0) ? 0 : r;
 }
-
-// ---------------------------------------------------------------- export
 
 type El = { tag: string; attrs: [string, string][]; children: El[]; text?: string };
 const el = (
@@ -1487,7 +1479,7 @@ class FcpxmlExporter {
 		const retimed = c.speed !== 1 || c.reverse || c.hold != null;
 		const sampling = FRAME_SAMPLING_OUT[c.frameSampling ?? 'frame-sampling'];
 		if (c.timeMap && c.timeMap.length >= 2 && c.hold == null) {
-			// Workstream `time`: variable speed — one timept per time-map point (local time → source time).
+			// variable speed — one timept per time-map point (local time → source time).
 			kids.push(
 				el(
 					'timeMap',
@@ -1545,7 +1537,7 @@ class FcpxmlExporter {
 		for (const e of c.effects) {
 			if (e.effectId === 'jasper.crop' && kind === 'video') {
 				const v = (k: string) => (e.params[k] as Animatable<number> | undefined)?.value ?? 0;
-				if (Object.values(e.params).some((x) => (x as Animatable<unknown>).keyframes.length))
+				if (Object.values(e.params).some((x) => x.keyframes.length))
 					this.report.warn(`crop keyframes of clip "${c.name}" are written as the static crop`, {
 						subject: where,
 					});
@@ -1860,7 +1852,7 @@ class FcpxmlExporter {
 	}
 }
 
-function interpAttrs(i: Keyframe<unknown>['interpolation']): [string, string][] {
+function interpAttrs(i: Interpolation): [string, string][] {
 	return i === 'linear' || i === 'hold'
 		? [
 				['interp', 'linear'],

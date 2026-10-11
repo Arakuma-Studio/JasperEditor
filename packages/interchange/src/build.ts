@@ -1,5 +1,5 @@
 // Shared helpers for readers (building an `IProject`) and writers (walking one).
-import type { Animatable, LabelColor } from '@jasper/project';
+import { type Animatable, LABEL_COLORS, type LabelColor } from '@jasper/project';
 import type {
 	IBinEntry,
 	IClip,
@@ -14,8 +14,6 @@ import type {
 	Rate,
 } from './model.ts';
 import { flicksPerFrame } from './time.ts';
-
-// ---------------------------------------------------------------- clip arithmetic
 
 /** Content consumed by a clip (flicks): `duration × speed`, 0 for a frame hold. */
 export function sourceSpan(c: Pick<IClip, 'duration' | 'speed' | 'hold'>): number {
@@ -52,12 +50,6 @@ export function anim<T>(value: T): Animatable<T> {
 	return { value, keyframes: [] };
 }
 
-export function isAnimated(a: Animatable<unknown> | undefined | null): boolean {
-	return !!a && a.keyframes.length > 0;
-}
-
-// ---------------------------------------------------------------- level conversions
-
 export function dbToGain(db: number): number {
 	return db <= -287 ? 0 : 10 ** (db / 20);
 }
@@ -66,32 +58,11 @@ export function gainToDb(g: number): number {
 	return g <= 1e-15 ? -287.5 : 20 * Math.log10(g);
 }
 
-// ---------------------------------------------------------------- labels
-
-const LABELS: readonly LabelColor[] = [
-	'violet',
-	'iris',
-	'caribbean',
-	'lavender',
-	'cerulean',
-	'forest',
-	'rose',
-	'mango',
-	'purple',
-	'blue',
-	'teal',
-	'magenta',
-	'tan',
-	'green',
-	'brown',
-	'yellow',
-];
-
 /** A JasperEditor label from a document label name (Premiere names, any case; FCP7 names like "Good Take" → null). */
 export function labelFrom(s: string | null | undefined): LabelColor | null {
 	if (!s) return null;
 	const n = s.trim().toLowerCase();
-	return LABELS.find((l) => l === n) ?? null;
+	return LABEL_COLORS.find((l) => l === n) ?? null;
 }
 
 /** Premiere-style label name ("Iris"). */
@@ -150,8 +121,6 @@ export function colorNameOf(l: LabelColor): string {
 			return 'PINK';
 	}
 }
-
-// ---------------------------------------------------------------- import builder
 
 export type MediaInit = {
 	name: string;
@@ -342,8 +311,6 @@ export function newClip(
 	};
 }
 
-// ---------------------------------------------------------------- writer helpers
-
 /** Every bin path of an entry (for writers that rebuild the bin tree). */
 export function findInBins(root: IBinEntry[], pred: (e: IBinEntry) => boolean): IBinEntry[][] | null {
 	const walk = (list: IBinEntry[], trail: IBinEntry[][]): IBinEntry[][] | null => {
@@ -375,8 +342,6 @@ export function nestedSequences(p: IProject, seqId: string): string[] {
 	visit(seqId);
 	return out;
 }
-
-// ---------------------------------------------------------------- multi-camera clips
 
 export type MulticamInfo = {
 	/** The multi-camera source sequence. */

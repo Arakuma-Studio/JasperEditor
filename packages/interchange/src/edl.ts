@@ -50,8 +50,6 @@ export function looksLikeEdl(head: string): boolean {
 		});
 }
 
-// ---------------------------------------------------------------- parsing
-
 type Tc = { h: number; m: number; s: number; f: number; df: boolean };
 
 function parseTcFields(s: string): Tc | null {
@@ -298,8 +296,6 @@ function guessRate(p: Parsed): Rate {
 	return RATE_24;
 }
 
-// ---------------------------------------------------------------- import
-
 class EdlImporter {
 	readonly track = (kind: 'video' | 'audio', i: number): ITrack => {
 		this.b.ensureTracks(this.seq, kind, i + 1);
@@ -438,7 +434,6 @@ class EdlImporter {
 					0,
 				);
 			}
-			const name = ev.effect ?? (l2.trans.kind === 'wipe' ? 'Wipe' : 'Cross Dissolve');
 			if (l2.trans.kind === 'wipe' && !ev.effect && l2.trans.code > 2)
 				this.report.info(`SMPTE wipe ${String(l2.trans.code).padStart(3, '0')} imported as a plain Wipe`);
 			for (const ch of new Map(l2.chans.map((c) => [chKey(c), c])).values()) {
@@ -462,13 +457,12 @@ class EdlImporter {
 						: l2.trans.kind === 'wipe'
 							? 'jasper.wipe'
 							: CROSS_DISSOLVE;
-				void name;
 				t.transitions.push({
 					id: this.b.id('t'),
 					effectId,
 					from: from?.id ?? null,
 					to: to?.id ?? null,
-					start: toBlack ? t0 : t0,
+					start: t0,
 					duration: d,
 					alignment,
 					params: {},
@@ -581,8 +575,6 @@ export function importEdl(text: string, opts: ImportOptions, report: Report): IP
 		}
 	return b.finish();
 }
-
-// ---------------------------------------------------------------- export
 
 type OutLine = {
 	media: IMedia | null;

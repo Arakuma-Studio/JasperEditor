@@ -51,8 +51,6 @@ type J = Record<string, unknown>;
 const FORMAT = 'OpenTimelineIO';
 const MAX_DEPTH = 64;
 
-// ---------------------------------------------------------------- time
-
 function rt(t: number, rate: Rate): J {
 	const f = flicksToFrames(t, rate, 'floor');
 	const value = framesToFlicks(f, rate) === t ? f : (t * rate.num) / (rate.den * FLICKS);
@@ -105,8 +103,6 @@ const schemaName = (v: unknown) => schema(v).split('.')[0] ?? '';
 const nameOf = (v: unknown) => str(obj(v)?.name) ?? '';
 /** Our metadata namespace on an OTIO object. */
 const jm = (v: unknown): J | null => obj(obj(obj(v)?.metadata)?.jasper);
-
-// ---------------------------------------------------------------- export
 
 export function sniffOtio(head: string): boolean {
 	const h = head.replace(/^﻿/, '').trimStart();
@@ -357,8 +353,6 @@ function absUrl(path: string): string {
 	return isAbsolutePath(path) ? pathToFileUrl(path, false) : path;
 }
 
-// ---------------------------------------------------------------- import
-
 export function importOtio(text: string, opts: ImportOptions, report: Report): IProject {
 	let v: unknown;
 	try {
@@ -519,7 +513,7 @@ class OtioImporter {
 				}
 				case 'Clip':
 				case 'Stack': {
-					const clip = schemaName(c) === 'Clip' ? this.clip(c, kind, pos) : this.nested(c, kind, pos);
+					const clip = schemaName(c) === 'Clip' ? this.clip(c, kind, pos) : this.nested(c, pos);
 					if (clip) {
 						track.clips.push(clip);
 						slots.push({ clip: clip.id, start: clip.start, end: clip.start + clip.duration });
@@ -687,7 +681,7 @@ class OtioImporter {
 		return clip;
 	}
 
-	private nested(c: unknown, kind: 'video' | 'audio', pos: number): IClip | null {
+	private nested(c: unknown, pos: number): IClip | null {
 		const co = obj(c)!;
 		const range = readTr(co.source_range);
 		const meta = jm(c);
@@ -721,7 +715,6 @@ class OtioImporter {
 			markers: Array.isArray(meta?.clipMarkers) ? (meta.clipMarkers as IMarker[]) : [],
 			effects: [],
 		};
-		void kind;
 		this.applyClipMeta(clip, c);
 		return clip;
 	}
