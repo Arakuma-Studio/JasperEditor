@@ -1,5 +1,9 @@
 # Codebase simplification audit
 
+This page records the earlier audit starting from `0451dcd`. The
+[11 October 2026 continuation](wp-notes/slop-audit-2026-10-11.md) reviews the codebase after the parity-program
+merge at `12049d8e`; its changes and validation status are recorded separately.
+
 This audit removes demonstrably unused code, duplicated work and unnecessary indirection while preserving supported behavior. Evidence comes from repository-wide caller searches, package entrypoints, dynamic registration paths, before/after data flow and existing behavioral assertions. A low reference count alone was not grounds for deletion.
 
 Validation is complete, including focused follow-ups for every failure. The ledger records per-change evidence, risk and coverage; the validation table records exact full-run results, fixes, retries and gated cases. The layer-cache and session-bridge follow-ups correct bugs demonstrated by behavioral assertions.
