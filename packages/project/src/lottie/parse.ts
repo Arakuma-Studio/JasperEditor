@@ -1,5 +1,3 @@
-// Lottie documents (imports workstream, docs/wp-notes/imports.md): validation of untrusted Lottie JSON, the header
-// the editor stores (`LottieInfo`) and the list of what the player may draw differently from After Effects.
 // Implemented from the Lottie format documentation (lottie-spec 1.0 schema, LottieFiles "lottie-docs"); pure.
 import type { LottieInfo } from '../schema/media.ts';
 

@@ -1,4 +1,4 @@
-// How the engine decodes imported pictures (imports workstream): one definition shared by the display pictures of
+// One decoding definition is shared by the display pictures of
 // stills, the interpreted proxies / masters and the native export, so every path shows the same pixels.
 // - Scene-linear stills (OpenEXR, Radiance HDR) are shown with the sRGB transfer (EXR decoder `apply_trc`, `zscale`
 //   for HDR); values above 1 clip. 16-bit output keeps the precision of half / float sources.

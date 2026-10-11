@@ -1,5 +1,4 @@
-// Image sequences (imports workstream): numbered stills (`shot_0001.exr`, `frame12.png`) grouped into sequences —
-// Premiere's Import ▸ Image Sequence. The number is the last run of digits before the extension; files group when
+// The frame number is the last run of digits before the extension; files group when
 // their prefix, extension and (for zero-padded numbers) digit count agree. Pure; bounded.
 
 export type FrameName = {

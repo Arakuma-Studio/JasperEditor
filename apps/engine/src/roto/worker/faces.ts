@@ -1,5 +1,5 @@
-// color-grade: face boxes in still frames for Colour Match's skin-tone protection ("Face Detection"), with the roto
-// workstream's face models (MediaPipe BlazeFace via ONNX Runtime, models/face.ts). Runs in the jasper-roto child
+// Face boxes protect skin tones in Colour Match (MediaPipe BlazeFace via ONNX Runtime, models/face.ts).
+// Runs in the jasper-roto child
 // process like every model inference (heavy work never runs in the engine process, D-07):
 //
 //   jasper-roto --faces <spec.json> <out.json>

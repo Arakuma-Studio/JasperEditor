@@ -1,6 +1,4 @@
-// Paste Attributes / Remove Attributes options (S01:CLB-005, S03:FX-011/012): the checkbox rows the dialog
-// shows, derived from the copied clip (or effects) and the target clips. Time Remapping (workstream `time`) pastes the
-// copied clip's speed keyframes; Channel Volume is P2 and not modelled, so it has no row (no stubs).
+// Channel Volume is not modeled, so attribute dialogs do not offer it.
 import {
 	type Clip,
 	type ClipboardPayload,

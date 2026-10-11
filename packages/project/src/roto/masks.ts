@@ -1,5 +1,5 @@
 // Convert to Masks: the outlines of a roto object's computed matte (auto-traced by the
-// engine with the masks workstream's `tracePaths`) become Opacity masks of its clip — one mask per outline at a frame
+// engine with tracePaths) become Opacity masks of its clip — one mask per outline at a frame
 // (holes subtract), or one animated mask following the object's main outline over its frames.
 import type { z } from 'zod';
 import type { MaskAddCmd, MaskSetPathKeysCmd } from '../commands/schemas/mask.ts';

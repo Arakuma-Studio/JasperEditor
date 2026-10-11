@@ -34,8 +34,6 @@ export function VideoLayer(layer: LayerProps) {
 	const source = videoSource(media, options);
 	if (source.via === 'pending-proxy') return <ProxyPendingCard {...layer} />;
 	const trimBefore = videoTrimBefore(clip, fps);
-	// Workstream `time`: reverse, time remaps, Frame Blending / Optical Flow and VFR media are drawn frame by frame
-	// from media times (retime/).
 	if (clip.retime) return <RetimedVideoLayer layer={layer} media={media} color={color} fx={fx} />;
 	if (fx.mode === 'active')
 		return (

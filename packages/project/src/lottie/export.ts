@@ -1,4 +1,4 @@
-// Sequence → Lottie document (imports workstream, docs/wp-notes/imports.md). Design ported from EffectCraft
+// Lottie export design ported from EffectCraft
 // `crates/lottie/src/{export,anim,shapes,text}.rs` (MIT OR Apache-2.0): every layer maps to its Lottie layer type,
 // keyframes keep their temporal ease (our influence / slope ease is exactly Lottie's normalised Bézier `o`/`i`) and
 // spatial tangents (`to`/`ti`), and everything Lottie cannot express is listed in `warnings` instead of being dropped

@@ -28,7 +28,7 @@ export interface ImportPrompts {
 	duplicates(info: { names: string[] }): Promise<DuplicateChoice>;
 	clipMismatch(info: MismatchInfo): Promise<'change' | 'keep'>;
 	failures(info: { failed: ImportFailure[]; committed: number }): void;
-	// ---- imports workstream (optional: without them numbered stills import one by one, PSDs flattened, PDFs page 1)
+	// Without these prompts, numbered stills import individually, PSDs flattened, and PDFs on page 1.
 	/** Numbered stills found among the files: import them as image sequences, and at which frame rate. */
 	imageSequence?(info: {
 		groups: ImageSequenceGroupView[];
@@ -79,7 +79,6 @@ export class PromptQueue implements ImportPrompts {
 	failures(info: { failed: ImportFailure[]; committed: number }): void {
 		this.push({ id: ++this.seq, kind: 'failures', ...info });
 	}
-	// ---- imports workstream: hosted dialogs (apps/web/src/imports/dialogs.tsx)
 	async imageSequence(info: {
 		groups: ImageSequenceGroupView[];
 		defaultRate: Rational;

@@ -1,9 +1,3 @@
-// Sequence ▸ Add Tracks… / Delete Tracks… (workstream gaps, docs/wp-notes/gaps.md §TL-10), as Premiere's dialogs:
-// - Add Tracks: video / audio / audio submix sections, each "Add [n] track(s)", a Placement (Before First Track,
-//   After <Track n>, After Last Track) and, for audio and submixes, the Track Type (Mono, Stereo, 5.1).
-// - Delete Tracks: per section a checkbox and a target: All Empty Tracks or one track (video, audio), All Unassigned
-//   Tracks or one submix. A track holding clips is deleted with its clips after a confirmation.
-// Both apply one undoable transaction (`track.add` / `track.remove` / `mixer.addSubmix` / `mixer.removeSubmix`).
 import type { AudioChannelFormat, CommandInput, Sequence, Track } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {

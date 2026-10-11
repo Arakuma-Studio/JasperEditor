@@ -134,9 +134,8 @@ function safeEntryPath(dest: string, name: string): string | null {
 }
 
 /**
- * Writes one entry to `target`, streaming (security review ZIP-1: an entry used to be inflated wholly in memory up to
- * its declared size, so a small archive could ask for gigabytes). The output is cut at the declared size; a different
- * size or corrupt data removes the file and throws.
+ * Stream entries so untrusted declared sizes cannot force large allocations. Output is capped at the
+ * declared size; a size mismatch or corrupt data removes the file and throws.
  */
 async function writeEntry(zipFile: string, e: Entry, dataStart: number, target: string): Promise<void> {
 	let written = 0;

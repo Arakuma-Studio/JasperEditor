@@ -214,7 +214,6 @@ export class EngineImportService implements ImportService {
 				}
 			}
 		}
-		// imports workstream: numbered stills → image sequences (one clip each), when the user says so.
 		const sequences: Acquired[] = [];
 		if (
 			!this.session.getState().readOnly &&
@@ -374,7 +373,6 @@ export class EngineImportService implements ImportService {
 		target: ImportTarget,
 		failed: ImportFailure[],
 	): Promise<ImportResult> {
-		// imports workstream: PDF pages and layered documents (their prompts), before the one transaction.
 		const expanded = await expandImports(
 			{ engine: this.engine, session: this.session, prompts: this.prompts },
 			acquiredIn,
@@ -442,7 +440,7 @@ export class EngineImportService implements ImportService {
 		});
 		const mediaIds: string[] = [];
 		const clipIds: string[] = [];
-		// imports workstream: the layers of layered documents join the same transaction (one undo step).
+		// Include extracted layers in the import transaction so one undo removes the entire import.
 		if (expanded.commands.length) {
 			if (built.tx) built.tx = { ...built.tx, commands: [...built.tx.commands, ...expanded.commands] };
 			else built.tx = { label: 'Import layers', origin: 'user', commands: expanded.commands } as TxInput;

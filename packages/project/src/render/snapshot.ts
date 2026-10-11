@@ -101,7 +101,6 @@ export type MediaHandle = {
 	 * `proxyUrl`, engine renders decode the original natively. Absent = decodable or unknown.
 	 */
 	browserDecodable?: boolean;
-	// ---- imports workstream (set by buildRenderSnapshot from the asset; consumers only read them)
 	/**
 	 * Interpret Footage ▸ field order / alpha: what decoders apply to the pixels (deinterlace, unpremultiply, drop or
 	 * invert the alpha). The browser cannot, so previews and Remotion renders show the variant picture the engine made
@@ -182,8 +181,8 @@ export function mediaDecodeHints(
 }
 
 /**
- * M2 (S11:TXA-009): the animators of a text clip as rendered — params with the preset defaults merged (known
- * presets) and window lengths compressed to the clip (TXA-004). Absent sides have no animator.
+ * Known presets supply missing animator params; window lengths are compressed to the clip duration.
+ * Absent sides have no animator.
  */
 export type RenderTextAnimation = { in?: ResolvedTextAnimator; out?: ResolvedTextAnimator };
 
@@ -209,19 +208,19 @@ export type RenderVisualSource =
 				template: { id: string; version: number };
 				params: Record<string, unknown>;
 				canvas: { width: number; height: number };
-				/** M2 (S11:ATP-002): absent = `fframes`. */
+				/** Absent means fframes. */
 				renderer?: MgRenderer;
 				/**
-				 * wp-m2-anime-templates (S11:ATP-006): keyframes of anime template params by name (content time,
+				 * Keyframes of anime template params by name (content time,
 				 * unevaluated like shapes, RND-001); the layer evaluates them with the shared evaluator. Anime only.
 				 */
 				paramKeyframes?: Record<string, Keyframe<unknown>[]>;
 			};
 	  }
-	/** M2 (S11:SHP-001): a shape; Animatables unevaluated (RND-001), evaluated per frame by the layer. */
+	/** Shape Animatables remain unevaluated until the layer renders each frame. */
 	| { shape: ShapeData }
 	/**
-	 * M2 (S08): a composition of an `mg-bundle` asset. `media[mediaId]` resolves the bundle (`url` = its serve
+	 * A composition of an mg-bundle asset. `media[mediaId]` resolves the bundle (`url` = its serve
 	 * URL). The pre-rendered alpha master is found by the consumers (engine: cache; preview: MG runtime).
 	 */
 	| {
@@ -237,7 +236,7 @@ export type RenderVisualSource =
 	/** edit-structure (KND-011): a nested sequence, drawn recursively. */
 	| { nest: RenderNestSource }
 	/**
-	 * wp captions: a caption clip resolved for drawing — its style (track style ← clip overrides, defaults applied)
+	 * A caption clip resolved for drawing — its style (track style ← clip overrides, defaults applied)
 	 * and its pages in sequence frames with per-word frames (active-word highlight). The same pages feed sidecar and
 	 * embedded caption export (`captionCuesForTrack`).
 	 */
@@ -267,7 +266,6 @@ export type RenderNestSource = {
 	contentKey: string;
 };
 
-/** Source of a composition clip in the snapshot (S08:MGC-008; wp-m2-mg fields are additive). */
 export type RenderCompositionSource = {
 	mediaId: string;
 	compositionId: string;
@@ -308,7 +306,7 @@ export type RenderVisualClip = {
 	blendMode: BlendMode;
 	effects: EffectInstance[];
 	intrinsicBox: { width: number; height: number };
-	/** wp masks: the layer's Opacity masks (absent = none; effect masks travel in `effects[].masks`). */
+	/** Layer Opacity masks; effect masks travel in effects[].masks. */
 	masks?: Mask[];
 	engine: EngineId;
 	loop?: boolean;
@@ -330,7 +328,7 @@ export type RenderVisualClip = {
 	/** edit-structure (Frame Hold): the clip shows the content at `flicks` (see `clipPictureTime`). */
 	frameHold?: { flicks: number; holdFilters?: boolean };
 	/**
-	 * M2 (S11:LBK-010, wp-m2-layer-bake): a pre-rendered picture of the whole placed layer (sequence space: Motion,
+	 * A pre-rendered picture of the whole placed layer (sequence space: Motion,
 	 * effects, grade, opacity and fades baked, straight alpha) that the composition plays instead of drawing the
 	 * layer — the colour-graded master of a DOM layer on the Remotion path. `startFrame` = sequence frame shown by
 	 * its frame 0; `rect` = the region of the frame it covers (absent = the whole frame). Set by the engine only.
@@ -356,12 +354,12 @@ export type RenderVisualClip = {
 	 */
 	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
 	/**
-	 * Workstream `time`: the clip's enabled Time Remapping (content time → media time, see time-remap/model.ts). The
+	 * The clip's enabled Time Remapping (content time → media time, see time-remap/model.ts). The
 	 * time-remap functions (`clipMediaTimeAt`…) read it directly from the render clip.
 	 */
 	timeRemap?: TimeRemap;
 	/**
-	 * Workstream `time`: set for video clips whose picture is made frame by frame from media times — reverse, a time
+	 * Set for video clips whose picture is made frame by frame from media times — reverse, a time
 	 * remap, Frame Blending / Optical Flow where frames fall between source frames, and variable-frame-rate media
 	 * (timestamp-exact frames). Consumers draw them with the retime pipeline (preview decoder / native retime stage).
 	 */
@@ -412,7 +410,6 @@ export type RenderScene3D = {
 	lights: RenderLightClip[];
 };
 
-/** How a retimed video layer makes its frames (workstream `time`). */
 export type RenderRetime = {
 	interpolation: TimeInterpolation;
 	/** Nominal frame rate of the media's video stream. */
@@ -479,7 +476,7 @@ export type RenderSnapshot = {
 	range: { start: number; end: number };
 	durationFrames: number;
 	/**
-	 * V1 (bottom) → top, then the visible caption tracks (wp captions: C1 → Cn, `caption: true`) above every video
+	 * V1 (bottom) → top, then the visible caption tracks (C1 → Cn, `caption: true`) above every video
 	 * track; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
 	 * colours drawn under the track's clips (the black of a dip to black). `transitions` (wave-2 transition framework)
 	 * are the GPU transition stages drawn over the track's clips (each replaces its A/B clips for its span).
@@ -489,11 +486,11 @@ export type RenderSnapshot = {
 		clips: RenderVisualClip[];
 		mattes?: RenderMatte[];
 		transitions?: RenderTransition[];
-		/** wp captions: a caption track (burned in). */
+		/** Captions are burned into the picture. */
 		caption?: boolean;
 	}[];
 	/**
-	 * wp masks: hidden video tracks (output off) that a Track Matte Key reads (Premiere mattes are usually hidden
+	 * Hidden video tracks (output off) that a Track Matte Key reads (Premiere mattes are usually hidden
 	 * tracks), V1 → top. Their clips are rendered into the matte only, never into the frame; consumers that draw the
 	 * frame ignore this list. Absent = none. A layer bake's document carries the matte tracks of its clip here too.
 	 */
@@ -530,7 +527,7 @@ export type SnapshotOptions = {
 	 * `rotoStorePath(key)`); default the unsigned same-origin path.
 	 */
 	resolveRoto?(key: string): string;
-	/** M2 (S08, additive): pre-render URLs of a composition clip known to the consumer. */
+	/** Pre-render URLs known to the consumer. */
 	resolveComposition?(clip: {
 		clipId: string;
 		asset: MediaAsset;
@@ -539,7 +536,7 @@ export type SnapshotOptions = {
 	/** edit-structure (internal): the chain of sequences being built (nest recursion, cycle guard). */
 	nestStack?: readonly string[];
 	/**
-	 * wp captions: which caption tracks are drawn (burned in): `'visible'` (default) = tracks whose eye is on,
+	 * Caption tracks drawn (burned in): 'visible' (default) = tracks whose eye is on,
 	 * `'none'`, or a list of track ids/labels.
 	 */
 	captions?: 'visible' | 'none' | readonly string[];
@@ -634,7 +631,6 @@ function mediaTimeFields(c: Clip, doc: ProjectDocument): { mediaTime?: MediaTime
 	return tm ? { mediaTime: tm } : {};
 }
 
-/** Workstream `time`: the `timeRemap` / `retime` fields of a render clip. */
 function retimeFields(
 	c: Clip,
 	doc: ProjectDocument,
@@ -741,7 +737,7 @@ export function buildRenderSnapshot(
 		};
 	};
 
-	// ---- edit-structure: nested sequences (KND-011). A nested snapshot is built at the parent's rate over the
+	// A nested snapshot is built at the parent's rate over the
 	// nested frames a clip shows; its media and fonts join this snapshot's tables (consumers resolve them once).
 	const F = flicksPerFrame(seq.settings.frameRate as Rational);
 	const nestedSnapshot = (
@@ -899,8 +895,7 @@ export function buildRenderSnapshot(
 					if (c.perCharacter3d) source.perCharacter3d = true;
 					if (c.sourceTextKeyframes?.length)
 						source.sourceTextKeyframes = c.sourceTextKeyframes as Keyframe<TextContent>[];
-					// M2 (wp-m2-text-anim, S11:TXA-010): styled runs may use other faces than the base style (and every
-					// Source Text key's content, text-animators workstream).
+					// Styled runs and Source Text keys can use different font faces from the base style.
 					const contents = [c.content, ...(c.sourceTextKeyframes ?? []).map((k) => k.value as TextContent)];
 					const faces = contents.flatMap((ct) => [
 						ct.style,
@@ -961,7 +956,6 @@ export function buildRenderSnapshot(
 							params: c.params,
 							canvas: box,
 							...(renderer === 'anime' ? { renderer } : {}),
-							// wp-m2-anime-templates (S11:ATP-006)
 							...(renderer === 'anime' && c.paramKeyframes && Object.keys(c.paramKeyframes).length > 0
 								? { paramKeyframes: c.paramKeyframes as Record<string, Keyframe<unknown>[]> }
 								: {}),
@@ -1012,7 +1006,7 @@ export function buildRenderSnapshot(
 			}
 			// color-mgmt: the source's colour input transform (media interpretation, graphics, nested working space).
 			const colorFx = colorEffectOf(c, doc, colorInfo);
-			// M2 (S06:LUT-003): LUT assets referenced by effect params (`{mediaId}`) get media handles too.
+			// LUT assets referenced by effect params need media handles too.
 			for (const fx of colorFx ? [colorFx, ...effects] : effects) if (fx.enabled) useParamMedia(fx.params);
 			clips.push({
 				clipId: c.id,
@@ -1124,7 +1118,7 @@ export function buildRenderSnapshot(
 	const audioMix = buildAudioMix(seq);
 	const played = playedTracks(audioMix);
 	const audible = seq.audioTracks.filter((t) => played.has(t.id));
-	// ---- wp captions: caption tracks draw above every video track (S01:RND-005).
+	// Caption tracks draw above every video track.
 	const captionMode = opts.captions ?? 'visible';
 	const fallbackFont = Object.values(doc.fonts)[0]?.id ?? '';
 	seq.captionTracks.forEach((t, ti) => {

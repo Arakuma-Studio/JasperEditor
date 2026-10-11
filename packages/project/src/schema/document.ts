@@ -183,11 +183,10 @@ export const ProjectSettingsSchema = z.looseObject({
 	/** M3 (S10:TUI-032): default audio transition length; absent = `defaultTransitionFrames`. */
 	defaultAudioTransitionFrames: z.number().int().min(1).optional(),
 	defaultScaling: DefaultScalingSchema,
-	/** wp captions: caption style presets saved in the project (Premiere "Track Style"). */
 	captionStylePresets: z
 		.array(z.looseObject({ id: z.string(), name: z.string(), style: CaptionStyleSchema.partial() }))
 		.optional(),
-	// ---- gaps (optional; read with `projectSettingsOf`)
+	// projectSettingsOf supplies defaults for absent settings.
 	display: ProjectDisplaySchema.optional(),
 	scratch: ProjectScratchSchema.optional(),
 	ingest: ProjectIngestSchema.optional(),

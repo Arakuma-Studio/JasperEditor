@@ -1,12 +1,9 @@
 // The host agent (security review MG-1): the part of the live frame host that runs INSIDE a bundle's page.
 //
-// A Remotion bundle is somebody's code. Its page used to be a same-origin iframe the editor reached into
-// (`contentWindow.remotion_setFrame(…)`), which gave the bundle the editor's origin: the engine API with the
-// user's session, the editor's DOM, `window.jasper`, and in the desktop app the desktop bridge. The page is now a
-// sandboxed iframe without `allow-same-origin` (an opaque origin: no cookies, no storage, no access to its parent),
-// served under a capability path with a Content-Security-Policy, and the editor talks to it through one
-// MessagePort. This script is the other end of that port: it drives the renderer-page protocol (protocol.ts) and
-// the text probe (text-probe.ts) on behalf of the editor.
+// Bundles are untrusted code: their iframe omits allow-same-origin, giving it an opaque origin without
+// cookies, storage, or access to the parent and desktop bridge. A capability path and Content-Security-Policy
+// restrict loading; the editor communicates only through one MessagePort. This agent drives the renderer-page
+// protocol and text probe at the other end of that port.
 //
 // The whole API is the `ops` table below: seven operations, plain JSON in, plain JSON out (font data as
 // ArrayBuffers). Nothing here is trusted by the editor either: remote.ts validates every reply, because the

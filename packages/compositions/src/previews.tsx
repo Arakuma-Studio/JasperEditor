@@ -1,5 +1,4 @@
-// Render previews in the Program monitor (workstream `previews`, docs/wp-notes/previews.md). The editor hands the
-// Player the preview files of the segments that have one (`RenderOptions.previews`, preview only); the composition
+// The editor supplies available preview files through RenderOptions.previews; the composition
 // then plays them in place of the live layers, in the same Player clock, so playback crosses between previews and
 // live frames without a seam:
 //

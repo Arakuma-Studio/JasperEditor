@@ -1,7 +1,3 @@
-// Text animators for agents (workstream text-animators): After Effects-style animators on text clips — presets,
-// animators with properties and selectors (Range, Wiggly, Expression), text on a mask path, per-character 3D,
-// conversion of In/Out text animations. Every call is one transaction (one History entry) through the document
-// commands; values and keyframes of animator properties use the generic param / keyframe commands on their keys.
 import {
 	ANIMATOR_MENU_IDS,
 	type Clip,

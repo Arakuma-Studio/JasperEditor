@@ -678,7 +678,6 @@ function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) 
 		[source.text, keyed, layer.fonts],
 	);
 	const fontsReady = useFontsReady(families);
-	// text-animators workstream: animators, Path Options, Source Text keys or extended typography → typeset renderer.
 	if (needsTypeset(source as TypesetSourceProps) || keyed?.length)
 		return fontsReady ? (
 			<TypesetText layer={layer} source={source as TypesetSourceProps} hidden={false} />

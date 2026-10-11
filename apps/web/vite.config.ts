@@ -98,9 +98,7 @@ export default defineConfig({
 		host: '127.0.0.1',
 		port: 5173,
 		strictPort: true,
-		// Transform the app's static module graph when the server starts, not when the first page asks for it: a cold
-		// first load was ~hundreds of on-demand transforms long, and on a loaded machine long enough for Chromium to
-		// abort it on a host network change (net::ERR_NETWORK_CHANGED; editor-boot.ts reloads it, verify workstream).
+		// Warm the static graph so first-load requests spend less time exposed to host network changes.
 		warmup: { clientFiles: ['./index.html', './src/main.tsx'] },
 		proxy: {
 			'/api': http,

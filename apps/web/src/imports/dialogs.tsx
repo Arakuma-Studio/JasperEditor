@@ -1,6 +1,3 @@
-// imports workstream dialogs (docs/wp-notes/imports.md): the import prompts — Image Sequence (numbered stills as one
-// clip, frame rate), Import Layered File (Premiere's: Merge All Layers / Merged Layers / Individual Layers / Sequence
-// with the layer list), PDF / Illustrator pages — and File ▸ Export ▸ Lottie… (format, range, warnings, download).
 import type { LayeredExtractResult, LayeredLayer, LottieExportResult } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import type { LayeredImportMode, Rational } from '@jasper/project';

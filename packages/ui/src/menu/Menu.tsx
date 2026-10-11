@@ -266,9 +266,7 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 }
 
 /**
- * The items of a dropdown or context menu. A component of its own, so that they are resolved and built when the menu
- * opens (Radix mounts the content then), not on every render of whatever carries the menu: every panel with a
- * context menu used to resolve its whole menu — command states included — each time it rendered.
+ * Radix mounts this component only when the menu opens, avoiding command-state resolution on unrelated panel renders.
  */
 function LazyItems({
 	kit,

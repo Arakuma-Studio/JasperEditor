@@ -1,5 +1,4 @@
-// Preferences ▸ Audio Hardware (workstream gaps, docs/wp-notes/gaps.md §UI-4): the output device and latency of the
-// editor's audio. Every AudioContext the page creates (the Program / Source monitor Player, scrubbing, the mixers'
+// Every AudioContext the page creates (the Program / Source monitor Player, scrubbing, the mixers'
 // meters) is routed to the chosen device with `AudioContext.setSinkId` and gets the chosen latency hint unless its
 // creator asked for one; media elements that play sound directly follow with `HTMLMediaElement.setSinkId`. Changing
 // the preference moves the open contexts. Browsers without `setSinkId` keep the system default (the page says so).

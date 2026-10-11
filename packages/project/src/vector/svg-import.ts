@@ -45,7 +45,7 @@ export class SvgImportError extends Error {}
 type XNode = { name: string; attrs: Record<string, string>; children: XNode[]; text: string };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-/** A character reference's text; out-of-range or surrogate code points become U+FFFD (they used to throw RangeError). */
+/** Invalid Unicode scalar values become U+FFFD instead of reaching String.fromCodePoint. */
 function charRef(cp: number): string {
 	return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)
 		? String.fromCodePoint(cp)

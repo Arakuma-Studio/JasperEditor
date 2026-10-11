@@ -1,7 +1,6 @@
 // Nested sequences (S01:SEQ-010, KND-011; edit-structure, docs/wp-notes/edit-structure.md). Pure helpers shared by the
 // commands, the render snapshot, the export and the UI.
 //
-// The nest model (for importers, e.g. XML interchange, and other workstreams such as multicam):
 // - A nested sequence is an ordinary `Sequence` with its own project item. It is shown in another sequence by
 //   `nest-video` (picture) and `nest-audio` (sound) clips whose `sequenceId` names it; a video and an audio nest clip
 //   of one placement share a link group. The nesting graph is acyclic (INV-009).

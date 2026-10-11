@@ -4,7 +4,7 @@
 // (shared keyframe evaluator); paths and gradients interpolate through `vector/values.ts`. Every item has an id
 // unique within its clip; property keys address items by id (`shape.items.<id>.<field…>`).
 //
-// All fields added in this workstream are optional at read time where a default exists (see `vector/defaults.ts`).
+// Fields with defaults are optional at read time; vector/defaults.ts supplies their values.
 import { z } from 'zod';
 import type { BezierPath } from '../path/model.ts';
 import type { GradientValue } from '../vector/values.ts';

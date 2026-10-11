@@ -39,8 +39,7 @@ export const ClipPasteCmd = cmd('clip.paste', {
 });
 
 /**
- * Paste Attributes checkboxes (CLB-005, FX-012). Channel Volume (P2) is not modelled. `timeRemapping` (workstream
- * `time`): the copied clip's speed keyframes, from the target's first frame.
+ * Time Remapping pastes speed keyframes relative to the target's first frame. Channel Volume is not modeled.
  */
 export const PasteAttributesSchema = z.strictObject({
 	motion: z.boolean().optional(),
@@ -72,7 +71,7 @@ export const ClipRemoveAttributesCmd = cmd('clip.removeAttributes', {
 	clipIds: IdListSchema,
 	attributes: z.strictObject({
 		motion: z.boolean().optional(),
-		/** Workstream `time`: Time Remapping off (every speed keyframe deleted). */
+		/** Disabling Time Remapping deletes its speed keyframes. */
 		timeRemapping: z.boolean().optional(),
 		opacity: z.boolean().optional(),
 		volume: z.boolean().optional(),

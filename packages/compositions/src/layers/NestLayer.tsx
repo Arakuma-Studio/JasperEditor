@@ -61,7 +61,6 @@ function NestPicture({
 	const report = useCallback(() => setReported(true), []);
 	const canvasSource = fx.mode === 'active' && (usesCanvas || reported);
 	const F = flicksPerFrame(sub.settings.fps);
-	// Workstream `time`: a time-remapped nest (multi-camera clips too) shows the nested frame at the remapped time.
 	const remap = activeRemap(clip);
 	const pt = layer.pictureTime ?? layer.contentTime;
 	const t = remap ? Math.max(0, remapSourceAt(remap, pt)) : pt;

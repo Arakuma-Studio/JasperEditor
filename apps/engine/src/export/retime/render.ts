@@ -1,4 +1,4 @@
-// One retimed layer intermediate (workstream `time`): the plan's frames are made from the decoded media frames —
+// The plan's frames are made from decoded media frames —
 // Frame Sampling copies frame a, Frame Blending mixes a and b (`blendFrames`), Optical Flow interpolates them in the
 // worker pool (`FlowPool`, the CPU kernel the GPU preview matches) — and encoded losslessly (FFV1, BGRA) into a
 // layer-sized intermediate that the builder reads as the clip's `layer` override.

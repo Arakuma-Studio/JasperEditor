@@ -1,4 +1,4 @@
-// Coverage rasteriser for vector masks of layered documents (imports workstream): closed cubic Bézier paths →
+// Closed cubic Bézier paths become
 // an 8-bit coverage mask, anti-aliased with 4×4 supersampling per pixel (scanline crossings at 4 sub-rows, exact
 // horizontal coverage per sub-row), non-zero or even-odd fill. Pure; bounded by the mask size.
 

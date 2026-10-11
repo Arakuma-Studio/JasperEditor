@@ -112,7 +112,7 @@ export const trackerHandlers = {
 		const { seq, clip } = h.clip(doc, cmd.clipId);
 		if (clip.kind !== 'video')
 			h.fail('E_INVALID_PARAM', `Trackers go on video clips, not ${clip.kind} clips`, { path: [clip.id] });
-		// Workstream `time`: tracker samples live in content time, which a time remap no longer maps to the picture.
+		// Tracker samples live in content time, which a time remap no longer maps to the picture.
 		if (isRemapped(clip as Clip))
 			h.fail(
 				'E_INVALID_PARAM',

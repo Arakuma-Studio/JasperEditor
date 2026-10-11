@@ -1,8 +1,5 @@
-// Clip ▸ Modify ▸ Audio Channels… (workstream gaps, docs/wp-notes/gaps.md §AU-7), as Premiere's dialog: Clip Channel
-// Format, Number of Audio Clips (Project items; timeline clips keep their count) and the matrix of Media Source
-// Channels (rows) × clip channels (columns, grouped by clip): each source channel goes to at most one clip channel,
-// each clip channel takes at most one source channel (one without a source is silent). OK commits one undoable
-// `clip.setAudioChannels` (timeline clips) or `item.setAudioChannels` (Project items: future placements).
+// Each source channel maps to at most one clip channel, and each clip channel takes at most one source.
+// An unmapped clip channel is silent. Project-item edits affect future placements; timeline edits retain clip count.
 import {
 	CLIP_CHANNEL_FORMATS,
 	type ClipChannelFormat,

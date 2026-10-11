@@ -1,6 +1,3 @@
-// Timeline menus for track heights (workstream gaps, §TL-10): the Timeline Display Settings entries (Expand All
-// Tracks, Minimize All Tracks, Save Preset…, Manage Presets…, the presets) and the track header ▸ Track Height
-// submenu (one track's size).
 import type { Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { openDialog } from '@jasper/ui';

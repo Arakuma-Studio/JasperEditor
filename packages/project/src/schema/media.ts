@@ -481,7 +481,6 @@ export const MediaAssetSchema = z.looseObject({
 	sourceRange: SourceRangeSchema.optional(),
 	/** color-mgmt: kind `color-config` (a custom OCIO config). */
 	colorConfig: ColorConfigInfoSchema.optional(),
-	// ---- imports workstream (all optional, no version bump)
 	/** Interpret Footage. */
 	interpretation: MediaInterpretationSchema.optional(),
 	/** SVG / PDF / Illustrator vector still. */

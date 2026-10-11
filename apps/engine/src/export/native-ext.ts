@@ -27,7 +27,7 @@ export type LayerOverride = {
 	/** ffmpeg decoder for the input (e.g. `libvpx-vp9` for VP9 alpha); default: automatic. */
 	decoder?: string;
 	/**
-	 * M2 (S11:LBK-004, wp-m2-layer-bake): `path` is one still image (PNG, straight alpha) looped for the layer's
+	 * `path` is one still image (PNG, straight alpha) looped for the layer's
 	 * frames like a still clip (`sequence` space; `startFrame` is then informational). edit-structure: also in
 	 * `layer` space (a generator's constant picture, e.g. Bars and Tone).
 	 */
@@ -38,17 +38,17 @@ export type LayerOverride = {
 	 */
 	contentOrigin?: number;
 	/**
-	 * M2 (S11:LBK-005): the intermediate covers only this region of the frame (sequence pixels, `w × h` frames) and
+	 * The intermediate covers only this region of the frame (sequence pixels, `w × h` frames) and
 	 * is overlaid at `x, y` (`sequence` space).
 	 */
 	rect?: { x: number; y: number; w: number; h: number };
 	/**
-	 * M2 (S11:LBK-010): the intermediate was rendered without the clip's colour runs; the builder applies them to
+	 * The intermediate was rendered without the clip's colour runs; the builder applies them to
 	 * the override stream (`sequence` space) with the filters of the extensions that realise colour effects.
 	 */
 	colorRuns?: boolean;
 	/**
-	 * Workstream `time` (`layer` space): the intermediate already follows the clip's time mapping (reverse, time
+	 * In `layer` space, the intermediate already follows the clip's time mapping (reverse, time
 	 * remap, frame hold, interpolation): frame k shows sequence frame `startFrame + k`, played linearly.
 	 */
 	retimed?: boolean;
@@ -114,7 +114,7 @@ export type NativeExtension = {
 	 */
 	effectSupport?(effectId: string, spec: EffectSpec | undefined): NativeEffectSupport;
 	/**
-	 * Workstream `time`: this extension renders the clip's frames by media time (reverse, time remaps, Frame Blending /
+	 * This extension renders the clip's frames by media time (reverse, time remaps, Frame Blending /
 	 * Optical Flow, VFR media) through a `layer` override: the planner stops blocking reversed / retimed video clips.
 	 */
 	retimes?(clip: RenderVisualClip): boolean;
@@ -126,14 +126,14 @@ export type NativeExtension = {
 	 */
 	claimsLayer?(clip: RenderVisualClip): boolean;
 	/**
-	 * M2 (wp-m2-layer-bake, additive): this extension pre-renders the claimed layer with a graphics engine (S04:RP-003
+	 * This extension pre-renders the claimed layer with a graphics engine (S04:RP-003
 	 * graphics group): the plan lists it in `graphicsGroups` with that engine and the path becomes `hybrid`.
 	 */
 	bakes?(clip: RenderVisualClip): 'remotion' | null;
 	/** Reasons this extension cannot render a clip it claims / provides (capability missing…). */
 	blockers?(clip: RenderVisualClip): string[];
 	/**
-	 * M2 (wp-m2-mg, additive): plan warnings for a clip this extension claims / provides (e.g. MG_FPS_MISMATCH
+	 * Plan warnings for a clip this extension claims / provides (e.g. MG_FPS_MISMATCH
 	 * for a composition at another frame rate). Added to the RenderPlan with the clip as item.
 	 */
 	warnings?(clip: RenderVisualClip, ctx: { fps: Rational }): { code: string; message: string }[];

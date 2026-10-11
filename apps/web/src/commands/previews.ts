@@ -102,7 +102,7 @@ const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
 
 export const previewCommands: UiCommand[] = [
 	{
-		// The id predates the previews workstream (keymap presets refer to it): Premiere's Enter.
+		// Keymap presets depend on this stable command id.
 		id: 'timeline.renderInToOut',
 		label: 'Render Effects In to Out',
 		description: 'Render previews of the red and yellow segments between In and Out',

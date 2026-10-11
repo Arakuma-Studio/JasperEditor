@@ -657,8 +657,7 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		default:
 			video.push(...rate(1.2), '-g', String(gop));
 	}
-	// Generic codec option, understood by every H.264 encoder (OpenH264 never makes B-frames anyway). Pieces encoded with
-	// B-frames lost frames at the join with copied GOPs (verify workstream: libx264, as with CI's apt ffmpeg).
+	// B-frames can lose frames at joins with copied GOPs. OpenH264 never produces B-frames.
 	if (p.noBFrames && (enc === 'libx264' || HW_H264.some((h) => h.encoder === enc))) video.push('-bf', '0');
 	if (!filters.includes('hwupload')) video.push('-pix_fmt', pix);
 	if (p.threads && !HW_ALL.some((h) => h.encoder === enc)) video.push('-threads', String(p.threads));

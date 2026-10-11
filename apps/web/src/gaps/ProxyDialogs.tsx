@@ -1,11 +1,5 @@
-// Clip ▸ Proxy (workstream gaps, docs/wp-notes/gaps.md §PRJ-8): Create Proxies…, Attach Proxies… and Reconnect Full
-// Resolution Media…, as Premiere's dialogs.
-// - Create Proxies: preset and destination (next to the original media in a Proxies folder, the project's generated
-//   media folder, or a folder); a background job, attached when it finishes.
-// - Attach Proxies: per selected clip, choose a file (the desktop file dialog, an upload in a browser, or a path on a
-//   local engine); a file whose duration or frame rate differs is refused unless attached anyway.
-// - Reconnect Full Resolution Media: choose the full-resolution file of a clip; the file the clip used becomes its
-//   proxy when it had none (projects edited from proxies only), else the full-resolution file is relinked.
+// When reconnecting an original to a project edited from proxies alone, retain the previously linked file
+// as its proxy. Existing proxy associations remain unchanged.
 import type { RegisteredMedia } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import type { CommandInput } from '@jasper/project';

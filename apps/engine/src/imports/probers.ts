@@ -1,6 +1,4 @@
-// Asset probers of the imports workstream (media/probe.ts `registerAssetProber`): Lottie (`.json` / `.lottie`),
-// vector stills (`.svg`, `.svgz`, `.pdf`, `.ai`) and layered documents (`.psd`, `.psb`). Other still formats (EXR, DPX,
-// TGA, TIFF, HEIF, JPEG XL…) are probed by ffprobe (media/probe.ts).
+// ffprobe handles other still formats; these probers supply Lottie, vector, and layered-document metadata.
 import { EMPTY_PROBE } from '@jasper/project';
 import { JobError } from '../jobs/types.ts';
 import type { AssetProber, ProbeResult } from '../media/probe.ts';

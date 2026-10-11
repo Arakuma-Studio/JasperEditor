@@ -46,9 +46,8 @@ export function createPausedTimeline(params?: TimelineParams): Timeline {
 }
 
 /**
- * History-independent seek: `seek(duration) → seek(0) → seek(ms)`, callbacks muted. A plain `seek` depends on the
- * previously visited time (R-ANM §1: 259/300 random timelines differ by visit order; 0/300 with this). Non-finite
- * `ms` seeks to 0; an infinite duration (a looping child) is never visited.
+ * A plain seek depends on the last visited time. Seeking duration, then zero, then ms with callbacks muted
+ * makes frame evaluation independent of visit order. Non-finite ms seeks to zero; infinite duration is never visited.
  */
 export function seekCanonical(tl: Timeline, ms: number): void {
 	const t = Number.isFinite(ms) ? ms : 0;

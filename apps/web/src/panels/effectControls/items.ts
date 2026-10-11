@@ -396,7 +396,6 @@ export function buildGroups(
 				rows: rows(['opacity', 'blendMode']),
 				masks: maskList(doc, seq, clip, (clip as { masks?: Mask[] }).masks, null, frame),
 			});
-			// Workstream `time`: Premiere's intrinsic Time Remapping (body drawn by TimeRemapSection).
 			if (clip.kind === 'video' || clip.kind === 'nest-video')
 				sections.push({
 					id: `${clip.id}:timeRemap`,

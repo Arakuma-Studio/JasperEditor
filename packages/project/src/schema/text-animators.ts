@@ -1,8 +1,5 @@
-// Text animators, Path Options and More Options of text clips (workstream text-animators; After Effects "Animate
-// Text"). Every field is optional on the clip (absent = no animators / no path / defaults), so documents written
-// before this workstream parse unchanged and no schema version bump is needed. Animatable values reuse the shared
-// `{value, keyframes}` storage (S01:KF-001) and are evaluated per frame at the clip's content time by the text
-// layer, like shapes (RND-001).
+// Absent fields mean no animators, no path, or the field default. Animatable values use the shared
+// {value, keyframes} storage and are evaluated at the clip's content time, like shapes.
 import { z } from 'zod';
 import { AnimNumberSchema, AnimRGBASchema, AnimVec2Schema, type DeepStrip } from './common.ts';
 

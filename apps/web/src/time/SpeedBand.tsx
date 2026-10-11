@@ -1,15 +1,4 @@
 import type { CommandInput } from '@jasper/project';
-// The speed rubber band on timeline clips (workstream `time`, docs/wp-notes/time.md), registered as a
-// `clipDecorations` overlay. Premiere's gestures (Premiere Pro CS6 reference, "Time remapping"):
-// - drag the band up / down: the segment under the pointer speeds up / slows down (Shift: 5 % steps); the clip gets
-//   shorter / longer (it stops at the next clip, the rest goes into its tail);
-// - Ctrl/Cmd-click the band: add a speed keyframe;
-// - drag a keyframe: split it into a speed transition (its halves move apart symmetrically);
-// - Alt-drag a keyframe: move it (the speeds stay);
-// - Ctrl/Cmd-drag a keyframe: reverse (palindrome) for the dragged length;
-// - Ctrl+Alt (Cmd+Opt)-drag a keyframe: freeze frame for the dragged length;
-// - click a keyframe and press Delete: remove it.
-// Every drag is one session gesture (one undo step) that re-applies the document command while the pointer moves.
 import { type Clip, contentTimeAt, isRemapped, type Rational, type TimedClip } from '@jasper/project';
 import { useSessionOrNull } from '@jasper/session/react';
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef, useState } from 'react';

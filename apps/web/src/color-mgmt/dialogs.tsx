@@ -1,12 +1,3 @@
-// Colour management dialogs (workstream color-mgmt):
-// - Sequence Settings ▸ Colour (Sequence ▸ Sequence Settings…): Working Color Space (Rec. 709, sRGB, Rec. 2020,
-//   P3-D65, Display P3, Rec. 2100 PQ / HLG, and the linear variants), Linearize Working Space, Blend Using 1.0 Gamma,
-//   Auto Tone Map Media, HDR Graphics White, HDR mastering peak. One undoable `sequence.updateSettings`.
-// - Interpret Footage ▸ Colour (media items) and Clip Colour Space (timeline clips): the source colour space
-//   (Automatic = the file's tags, a space from the list, or a space of an imported OCIO config), the file range used
-//   by log curves, Tone Mapping (sequence default / on / off), the PQ content peak and an input LUT.
-//   `media.interpretColor` / `clip.setColorInterpretation`. The section is a component (`ColorInterpretationFields`)
-//   so the imports workstream's Interpret Footage dialog can host it as its Colour section.
 // Sources: Adobe, "Color management in Premiere Pro" and "Interpret footage" (helpx.adobe.com); ITU-R BT.2408 for the
 // HDR graphics white choices.
 import { type ColorInterpretation, type MediaAsset, sequenceColorInfo } from '@jasper/project';

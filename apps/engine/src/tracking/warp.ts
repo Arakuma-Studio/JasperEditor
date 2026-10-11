@@ -1,6 +1,6 @@
 import type { Mat } from '@techstark/opencv-js';
 import type { OpenCvApi } from '../tools/opencv.ts';
-// Warp Stabilizer analysis tracker `warp-klt@1` (workstream gaps, docs/wp-notes/gaps.md §FX-6; the analysis of
+// Warp Stabilizer analysis tracker `warp-klt@1` (the analysis of
 // effectcraft `crates/track/src/stabilize.rs`, MIT OR Apache-2.0, licenses/ported/gaps.md). Runs inside the tracking
 // worker with OpenCV.js, frame to frame over the whole clip:
 // 1. Shi–Tomasi corners spread over the frame (minimum distance ∝ frame size); features keep their id while they are

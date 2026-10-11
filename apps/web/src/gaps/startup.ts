@@ -1,5 +1,3 @@
-// Runtime pieces of workstream gaps installed once per page before the app renders (docs/wp-notes/gaps.md): the
-// audio output routing (Preferences ▸ Audio Hardware) and the reduced-motion attribute (Preferences ▸ Appearance).
 import { gapsPrefs } from './app-prefs.ts';
 import { installAudioOutput } from './audio-output.ts';
 

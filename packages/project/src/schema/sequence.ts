@@ -122,8 +122,8 @@ export const TextStyleSchema = z.looseObject({
 		})
 		.nullable(),
 	allCaps: z.boolean(),
-	// ---- typography (all optional; absent = the default noted, read-time defaults in
-	// `typography.ts`). Character settings apply per styled run; paragraph settings per paragraph (`paragraphs`).
+	// typography.ts supplies read-time defaults. Character settings apply per styled run;
+	// paragraph settings apply per entry in paragraphs.
 	/** `metrics` (font kerning, default), `optical` (from the outlines) or manual 1/1000 em before each character. */
 	kerning: TextKerningSchema.optional(),
 	/** Pixels, positive = up (default 0). */
@@ -199,7 +199,7 @@ export const CaptionStyleSchema = TextStyleSchema.extend({
 	maxSegmentMs: z.number().positive(),
 	minGapMs: z.number().min(0),
 	boxWidthPct: z.number().positive().max(100),
-	// ---- wp captions (all optional, defaults at read time: `resolveCaptionStyle`)
+	// resolveCaptionStyle supplies defaults for absent fields.
 	/** Vertical placement inside the title-safe area (default `bottom`). */
 	placement: z.enum(['bottom', 'middle', 'top']).optional(),
 	/** Extra distance from the title-safe edge, % of the frame height (0–45, default 0). */
@@ -239,7 +239,6 @@ export const TrackSchema = z.looseObject({
 	captionFormat: z.literal('open').optional(),
 	visible: z.boolean().optional(),
 	styleDefaults: CaptionStyleSchema.optional(),
-	// ---- wp captions (caption tracks; optional)
 	/** BCP-47 language of the captions (`en`, `fr-CA`); written to embedded streams and sidecars. */
 	language: z.string().optional(),
 	/** Caption standard of the track (default `subtitle`). */
@@ -564,9 +563,9 @@ export const VideoClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S09): trackers placed on this clip's picture. */
 	trackers: z.array(ClipTrackerSchema).optional(),
-	/** Workstream `time`: Time Remapping (speed keyframes). Optional; absent = constant speed. */
+	/** Absent means constant speed. */
 	timeRemap: TimeRemapSchema.optional(),
-	/** Workstream `time`: Time Interpolation (default `frame-sampling`). */
+	/** Defaults to frame-sampling. */
 	timeInterpolation: TimeInterpolationSchema.optional(),
 	/** parity (roto): segmented objects (Roto Brush, faces) of this clip's picture. */
 	rotos: z.array(ClipRotoSchema).optional(),
@@ -629,8 +628,7 @@ export const TextClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S11:TXA-001): in/out animators (schema v4). */
 	textAnimation: TextAnimationSchema.optional(),
-	// ---- text-animators workstream (all optional, no version bump): AE-style animators, Path Options, More Options,
-	// per-character 3D and Source Text keyframes (hold; `content` is the value when there are none).
+	// Source Text keys hold their values; content supplies the value when no keys exist.
 	animators: z.array(TextAnimatorGroupSchema).optional(),
 	pathOptions: TextPathOptionsSchema.optional(),
 	moreOptions: TextMoreOptionsSchema.optional(),
@@ -670,7 +668,7 @@ export const MotionGraphicClipSchema = z.looseObject({
 	 */
 	template: z.looseObject({ id: z.string(), version: int(), renderer: MgRendererSchema.optional() }),
 	params: z.record(z.string(), z.unknown()),
-	// ---- wp-m2-anime-templates (S11:ATP-006): keyframes of numeric/colour params of anime templates, per param
+	// Keyframes of numeric/colour params of anime templates, per param
 	// name, in content time (flicks). The static value stays in `params`; absent/empty = not animated.
 	paramKeyframes: z.record(z.string(), z.array(MgParamKeyframeSchema)).optional(),
 	canvas: canvasSchema,
@@ -707,9 +705,8 @@ export const NestVideoClipSchema = z.looseObject({
 	...visualShape,
 	/** wp-multicam: present = a multi-camera clip. */
 	multicam: MulticamSelectionSchema.optional(),
-	/** Workstream `time`: Time Remapping of the nested sequence's picture (multi-camera clips too). */
 	timeRemap: TimeRemapSchema.optional(),
-	/** Workstream `time`: Time Interpolation of the nested picture (default `frame-sampling`). */
+	/** Defaults to frame-sampling. */
 	timeInterpolation: TimeInterpolationSchema.optional(),
 });
 export const NestAudioClipSchema = z.looseObject({
@@ -933,7 +930,7 @@ export const SequenceSettingsSchema = z.looseObject({
 	workingColorSpace: z.string(),
 	/** color-mgmt: Sequence Settings ▸ Colour (linearize, blend using 1.0 gamma, tone mapping, HDR white/peak). */
 	color: SequenceColorSchema.optional(),
-	// ---- gaps (Sequence Settings, docs/wp-notes/gaps.md §TL-11; read with `sequenceFormatOf`)
+	// sequenceFormatOf resolves absent format settings.
 	/** Pixel Aspect Ratio of the delivered files; absent / 1:1 = square pixels. `width` is then the display width. */
 	pixelAspectRatio: z.looseObject({ num: z.number(), den: z.number() }).nullable().optional(),
 	/** Frame width the delivered files carry (with a non-square pixel aspect ratio). */
@@ -994,7 +991,6 @@ export const MergedClipSchema = z.looseObject({
 export type MergedClip = DeepStrip<z.infer<typeof MergedClipSchema>>;
 
 /**
- * previews workstream: Sequence Settings ▸ Video Previews (Premiere's Preview File Format / Codec / Width / Height).
  * `format`: `h264-iframe` = I-frame-only H.264 (every frame a keyframe: frame-exact, instant seeks; Premiere's default
  * "I-Frame Only MPEG"), `h264` = H.264 with a keyframe every 15 frames (≈ ⅓ smaller), `vp9` = VP9 in WebM. `size`:
  * full or half the sequence frame size (half renders and plays faster; exports never use half-size previews).

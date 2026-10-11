@@ -1,4 +1,4 @@
-// Photoshop documents (`.psd`, `.psb`) on the engine (imports workstream), read with ag-psd (MIT). Three uses:
+// Photoshop documents (`.psd`, `.psb`) are read with ag-psd (MIT):
 // - probe: an `image` media (the flattened document) with a `layered` header;
 // - display picture: the document's composite image (when the file has none — "Maximize Compatibility" off — the
 //   layers are composited here with the shared blend kernel, Photoshop's formulas);

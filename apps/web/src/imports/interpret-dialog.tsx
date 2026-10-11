@@ -1,8 +1,5 @@
-// Interpret Footage (imports workstream, docs/wp-notes/imports.md): Premiere's Modify ▸ Interpret Footage with After
-// Effects' loop and matte colour — Frame Rate, Pixel Aspect Ratio, Field Order, Alpha Channel and Loop. The dialog is
-// made of sections registered in `INTERPRET_SECTIONS` (`registerInterpretSection`): each section edits its own part of
-// a shared draft and contributes commands on OK, so another workstream adds a section (Colour) without touching this
-// file. The built-in sections all write one `media.interpret` patch (one undo step for the whole dialog).
+// Registered sections edit separate parts of one draft; their commands commit together so the whole
+// interpretation change is one undo step.
 import {
 	type CommandInput,
 	fileFieldOrder,

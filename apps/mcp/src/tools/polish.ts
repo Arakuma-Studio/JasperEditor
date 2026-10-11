@@ -1,5 +1,4 @@
-// Workstream polish: the Media Browser for agents. `browse_media_files` lists a folder on the engine host (the
-// same listing as the Media Browser panel) so an agent can find footage before `import_media`; local engines only.
+// Browsing exposes engine-host paths and is restricted to local engines, like the Media Browser panel.
 import { BROWSE_PREVIEWABLE, BrowseCategorySchema, type BrowseEntry } from '@jasper/api';
 import { z } from 'zod';
 import { defineTool, READ_ONLY, type ToolContext } from '../context.ts';

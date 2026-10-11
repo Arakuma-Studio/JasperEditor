@@ -63,7 +63,7 @@ export function contentWindow(doc: DDoc, c: DClip | Clip): { start: number; end:
  */
 export function contentHandles(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
 	const step = flicksPerFrame(seq.settings.frameRate) * c.speed.rate;
-	// Workstream `time`: a remapped clip's handles are the frames whose remapped media time is inside the media;
+	// A remapped clip's handles are the frames whose remapped media time is inside the media;
 	// its content time (the keyframe axis) still never goes below 0.
 	if (isRemapped(c as Clip) && !(c as Clip).frameHold) {
 		const room = remapRoom(

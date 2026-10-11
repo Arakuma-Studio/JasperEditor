@@ -1,5 +1,3 @@
-// three-d workstream: 3D layers, cameras, lights (docs/wp-notes/three-d.md).
-
 export * from './bokeh.ts';
 export * from './camtrack.ts';
 export * from './classic.ts';

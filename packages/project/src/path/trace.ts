@@ -10,8 +10,6 @@
 //    at 1, blended between.
 // Loops smaller than the minimum area are dropped. Each loop carries its nesting depth (0 = outermost; odd = hole),
 // so callers can add outer outlines and subtract holes.
-//
-// Pure function of the field — the `roto` workstream converts mattes to masks with it.
 import { type BezierPath, type PathPoint, polygonPath, polygonSignedArea } from './model.ts';
 
 export type TraceOptions = {

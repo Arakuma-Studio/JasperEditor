@@ -169,7 +169,6 @@ function isFrameDependent(
 	media?: RenderDoc['media'],
 ): boolean {
 	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
-	// Workstream `time`: a retimed video draws the frame of its media time (retime/RetimedVideo.tsx).
 	if (clip.retime) return true;
 	// A shader effect that changes over time (incl. a media param bound to a video that plays).
 	if (hasTimeDependentFx(clip, undefined, media ? (id) => media[id]?.kind : undefined)) return true;

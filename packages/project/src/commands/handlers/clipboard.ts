@@ -97,9 +97,8 @@ class Resolver {
 	/** Payload media by id (first wins, as `find`): a lookup per media was a linear scan. */
 	private readonly payloadMedia = new Map<string, MediaAsset>();
 	/**
-	 * The first live project media per fingerprint, built on first use and extended with the media this paste
-	 * creates. Scanning `doc.media` (a draft) per pasted media made importing a 2,500-clip bin take ≈ 15–30 s
-	 * (verify workstream, interchange fuzzing).
+	 * Cache the first live media per fingerprint to avoid rescanning every draft for each pasted media.
+	 * New media join the index so later paste entries reuse them.
 	 */
 	private byFingerprint: Map<string, string> | null = null;
 
@@ -504,7 +503,7 @@ type AttributeSource = {
 	textAnimation?: { in?: TextAnimator | null; out?: TextAnimator | null };
 	textStyle?: Record<string, unknown>;
 	shape?: Record<string, unknown>;
-	/** Workstream `time`: the copied clip itself when it is time-remapped (Paste Attributes ▸ Time Remapping). */
+	/** The copied clip supplies Time Remapping keys for Paste Attributes. */
 	remapped?: TimedClip;
 };
 

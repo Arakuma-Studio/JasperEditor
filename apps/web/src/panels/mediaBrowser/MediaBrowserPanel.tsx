@@ -1,9 +1,3 @@
-// Media Browser panel (workstream polish; Premiere's Window ▸ Media Browser, Shift+8). Browses the engine host's
-// file system through `/api/browse/*` (local engines only): places (Home, media folders, volumes, the root), a
-// folder listing in list or thumbnail view filtered to what JasperEditor imports, a preview of the selected file
-// (video / audio player or still, with its ffprobe summary) and Import, which registers the files in place into the
-// active bin — the same path as File ▸ Import on the desktop. Files can also be dragged onto the Project panel or the
-// Timeline. Double-click (or Enter) opens a folder or imports a file.
 import type { BrowseCategory, BrowseEntry, BrowseInfo, BrowseList, BrowseRoots } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';

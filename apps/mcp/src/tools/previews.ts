@@ -1,5 +1,3 @@
-// Render previews and performance stats for agents (workstream `previews`, docs/wp-notes/previews.md):
-// get_render_bar_state, render_previews, delete_render_files, perf_stats.
 import type { EngineJob, PreviewSettings } from '@jasper/api';
 import { audioPreviewSegments, previewSegments, previewSettingsOf, type Sequence } from '@jasper/project';
 import { z } from 'zod';

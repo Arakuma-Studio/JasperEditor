@@ -137,12 +137,11 @@ function valueShape(v: unknown): string {
 
 export type InvariantOptions = {
 	effects?: EffectRegistry;
-	/** wp-m2-anime-templates (S11:ATP-002): checks renderer stamps against known templates when given. */
+	/** Checks renderer stamps against known templates when given. */
 	mgTemplates?: MgTemplateRegistry;
 };
 
-// ---- wp-m2-anime-templates (S11:ATP-002): the renderer stamp of a motion-graphic clip must agree with a known
-// registry entry (absent = fframes); unknown templates keep whatever they carry (preserved, KND-030 spirit).
+// Known templates must match their registry renderer (absent = fframes); preserve unknown templates' stamps.
 function templateStampIssue(
 	c: { template: { id: string; version: number; renderer?: string } },
 	reg: MgTemplateRegistry | undefined,
@@ -494,8 +493,6 @@ function repairIds(
 	}
 }
 
-// ---- per-sequence invariant memo (golden-fuzz): see the sequence loop of `checkInvariants`.
-
 /** What a sequence's findings depend on besides the sequence object itself (compared by identity). */
 type SequenceDeps = {
 	media: unknown;
@@ -706,7 +703,6 @@ export function invariantCheckers(
 			issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
 		if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
 			issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
-		// Workstream `time`: Time Remapping / Time Interpolation (INV-005/011/012).
 		for (const k of (c as { timeRemap?: { keyframes: { id: string }[] } }).timeRemap?.keyframes ?? [])
 			claim(k.id, 'kf', [...cw, 'timeRemap', k.id]);
 		for (const x of remapIssues(c, rate, contentDurationFlicks(doc, c)))
@@ -915,7 +911,6 @@ export function invariantCheckers(
 			if (values(sh.fill ?? undefined).some(badColor) || values(sh.stroke?.color).some(badColor))
 				issues.push(inv('INV-012', `Shape ${c.id} fill and stroke colours must be RGBA in 0..1`, cw));
 		}
-		// ---- wp-m2-anime-templates (S11:ATP-002/006): renderer stamp and template param keyframes
 		if (c.kind === 'motion-graphic') {
 			const stamp = templateStampIssue(c, opts.mgTemplates);
 			if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
@@ -1594,7 +1589,6 @@ export function repairDocument(
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
 
-	// ---- previews: unreadable preview settings fall back to the defaults.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		const r = seq as { previews?: unknown };
 		if (r.previews !== undefined && !SequencePreviewSettingsSchema.safeParse(r.previews).success) {
@@ -1603,8 +1597,7 @@ export function repairDocument(
 		}
 	}
 
-	// ---- wp-m2-anime-templates (S11:ATP-002/006): re-stamp renderers from the registry; drop malformed param
-	// keyframe lists (unsorted / duplicate times / wrong value type) — the static params stay.
+	// Keep static params when discarding invalid animation, and use the registry's renderer for known templates.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'motion-graphic') continue;
@@ -1629,7 +1622,7 @@ export function repairDocument(
 		}
 	}
 
-	// ---- three-d: 3D blocks on kinds that cannot be 3D are dropped; missing environment media → studio light.
+	// Missing environment media uses studio light; unsupported clip kinds cannot retain 3D blocks.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		for (const c of Object.values(seq.clips)) {
 			const r = c as Record<string, unknown>;
@@ -1662,7 +1655,7 @@ export function repairDocument(
 			}
 		}
 	}
-	// ---- imports: Interpret Footage sections that do not fit the media are dropped (the file's own value is used).
+	// Invalid interpretation sections revert to the file's own values.
 	for (const m of Object.values(doc.media)) {
 		const it = m.interpretation as Record<string, unknown> | undefined;
 		if (!it) continue;
@@ -1677,7 +1670,6 @@ export function repairDocument(
 		if (Object.keys(it).length === 0) delete (m as { interpretation?: unknown }).interpretation;
 	}
 
-	// ---- wp shapes: vector shape items — malformed items dropped, duplicate item ids renumbered.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'shape' || c.shape.type !== 'vector') continue;
@@ -1767,8 +1759,6 @@ export function repairDocument(
 			retimeRoving(kfs);
 			for (const id of bad) note('drop-roving', id, `${path.join('.')}: the key cannot rove`);
 		});
-	// ---- wp captions: well-formed transcript words, an existing active caption track, caption fonts, and one clip
-	// per caption transcript.
 	for (const t of Object.values(doc.transcripts)) {
 		if (wordsWellFormed(t.words)) {
 			t.words = normalizeWords(t.words);
@@ -1910,7 +1900,6 @@ export function repairDocument(
 				}
 			}
 		}
-		// Workstream `time`: malformed or out-of-media time remaps.
 		for (const c of Object.values(seq.clips))
 			for (const detail of repairRemap(c, seq.settings.frameRate as Rational, contentDurationFlicks(doc, c)))
 				note('repair-time-remap', c.id, detail);

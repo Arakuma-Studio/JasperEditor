@@ -251,8 +251,7 @@ export function ContextMenu(props: {
 			window.removeEventListener('keydown', key, true);
 		};
 	}, [props.onClose]);
-	// PointMenu: in a portal (`fixed` inside the docked panel was relative to the panel, workstream `time`), and kept
-	// inside the window: flipped left / up, or pinned to the edge and scrolling when taller than the window (wp fixups).
+	// Portal positioning avoids the dock panel becoming the fixed-position containing block.
 	return (
 		<PointMenu
 			x={props.x}

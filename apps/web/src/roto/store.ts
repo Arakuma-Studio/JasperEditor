@@ -1,6 +1,4 @@
-// Roto UI state (parity workstream `roto`): the Roto Brush tool (on/off, brush size in screen px, add / subtract /
-// Refine Edge stroke kinds), the roto shown on the Program monitor and how (overlay, boundary, alpha, off), running
-// roto jobs with their live progress, auto-propagation, and the last error per roto. Never in the document.
+// Brush choices and job progress are UI state and must not enter project documents.
 import { useSyncExternalStore } from 'react';
 import { createStore } from 'zustand/vanilla';
 

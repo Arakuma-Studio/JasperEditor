@@ -1,14 +1,4 @@
-// the Program monitor's Comparison View (Premiere: Program monitor ▸ Comparison View; helpx "Comparison
-// view"): a reference frame next to the current frame — Side by Side, Vertical Split or Horizontal Split (drag the
-// divider), Swap Sides — where the reference comes from another time of this sequence or from another sequence,
-// stepped by edit points or set to the playhead.
-//
-// Generic by design (the color-grade workstream reuses it for before/after grading):
-// - `ComparisonLayout` lays out any two pictures (`reference`, `current`) in a mode with a draggable split;
-// - `ProgramComparison` is the Program monitor's use: both sides are `FrameView`s of the composited sequence, and
-//   `currentOptions` / `referenceOptions` (RenderOptions) let a caller bypass features on one side (e.g. colour
-//   effects for "before").
-// State lives in monitor-view.ts (`monitorExtras.comparison`, `setComparison`).
+// Separate RenderOptions for each side let before/after comparisons bypass colour effects on the reference.
 import type { RenderOptions } from '@jasper/compositions';
 import {
 	nextEditPoint,

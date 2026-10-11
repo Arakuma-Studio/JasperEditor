@@ -99,7 +99,6 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		return [e.clientX - r.left, e.clientY - r.top];
 	};
 
-	// ---- the selected 3D layer's gizmo
 	const scene = resolveProgramScene(doc, frame);
 	const sel =
 		selected.length === 1 ? scene.find((l) => l.clip.clipId === selected[0] && l.clip.threeD) : undefined;
@@ -148,7 +147,6 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		};
 	};
 
-	// ---- camera tool
 	const viewRig = (): Rig | null => {
 		if (current === 'activeCamera') {
 			if (!camClip) return null;
@@ -256,7 +254,6 @@ function Scene3DSurface(props: ProgramOverlayHostProps & { doc: RenderDoc }) {
 		setViewCam(doc.sequenceId, current, viewOfRig(r, v.down));
 	};
 
-	// ---- wireframes (views other than the active camera)
 	const wires: { key: string; d: string; color: string }[] = [];
 	if (current !== 'activeCamera') {
 		for (const c of doc.scene3d?.cameras ?? []) {

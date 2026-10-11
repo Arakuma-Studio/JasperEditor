@@ -1,7 +1,4 @@
-// Preferences of workstream gaps (docs/wp-notes/gaps.md §UI-4), kept in localStorage like the other UI preferences:
-// Auto Save, Labels (names and defaults), Playback (pre-roll / post-roll), Trim (large trim offset), Audio Hardware
-// (output device, latency) and Appearance additions (reduced motion, language — UI-6). Tolerant parse: unknown keys and
-// bad values fall back to the defaults, so a corrupt entry never breaks the editor.
+// Invalid stored fields use their defaults so a corrupt preference cannot prevent the editor from opening.
 import { LABEL_COLORS, type LabelColor } from '@jasper/project';
 import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useSyncExternalStore } from 'react';

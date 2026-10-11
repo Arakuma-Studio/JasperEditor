@@ -191,8 +191,7 @@ export function FxMediaInputs({ stage, frame }: { stage: FxStage; frame: number 
 }
 
 /**
- * Workstream `time`: the sources of a retimed video layer (reverse, time remap, Frame Blending / Optical Flow, VFR) —
- * the main slot and the stage's time samples come from `RetimedFeed` at their picture times.
+ * The main slot and the stage's time samples use RetimedFeed at their picture times, preserving retiming in effects.
  */
 export function RetimedFxSources(props: { layer: LayerProps; stage: FxStage; media: MediaHandle }) {
 	const { layer, stage, media } = props;

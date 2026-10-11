@@ -1,6 +1,5 @@
-// Native retime plan (workstream `time`): for every sequence frame a retimed video layer draws, the media frames that
-// make its picture (`pickFrames` of @jasper/project: the same choice as the preview decoder) — reverse, time remaps,
-// Frame Blending / Optical Flow and variable-frame-rate media. Pure; the decoder and the compositor follow it.
+// The decoder and compositor share the preview's pickFrames choices for reverse, time remaps,
+// Frame Blending / Optical Flow, and variable-frame-rate media.
 import {
 	activeRemap,
 	clipPictureTime,

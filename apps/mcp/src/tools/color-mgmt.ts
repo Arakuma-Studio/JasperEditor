@@ -1,6 +1,3 @@
-// Colour management MCP tools (workstream color-mgmt, docs/wp-notes/color-mgmt.md): the colour space catalogue, a
-// sequence's working space and colour settings, Interpret Footage ▸ Colour on media, clip colour overrides and custom
-// OCIO configs. Every edit is one transaction of document commands (also available through apply_commands).
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import {

@@ -1,7 +1,7 @@
 // Filesystem ProjectStore (ARCHITECTURE D-08, §4.3, §9.2; S01 §18): the S01:PER-002 envelope in
 // `<appdir>/projects/<projectId>/project.jasper` with atomic writes (S01:PER-016), a view file (PER-019),
 // versions every 5 minutes of saving (PER-020), and If-Match revisions with 409 on conflict (PER-025).
-// Process workstream (D-39, docs/project-files.md): the first save over a project migrated from an older schema keeps
+// The first save over a project migrated from an older schema keeps
 // `project (schema vN backup).jasper` next to it (S01:MIG-004); saved versions can be read and restored in place
 // (keeping the replaced state as a `before-restore` version) or as a new project (S01:PER-001 `restoreVersion`).
 import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';

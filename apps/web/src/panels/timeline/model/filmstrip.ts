@@ -117,7 +117,7 @@ export function filmstripSlots(i: SlotInput): Slot[] {
 }
 
 /**
- * Workstream `time`: slots of a clip whose media time is not linear (Time Remapping, frame holds): one slot per
+ * Slots of a clip whose media time is not linear (Time Remapping, frame holds): one slot per
  * thumbnail width from the clip start, each showing the media time at its centre frame (`mediaSecondsAt`).
  */
 export function mappedFilmstripSlots(i: {

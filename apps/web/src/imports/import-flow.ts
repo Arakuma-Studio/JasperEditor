@@ -1,10 +1,3 @@
-// imports workstream: the import steps of File ▸ Import / drops that are specific to the new formats
-// (docs/wp-notes/imports.md), called by the import service (`import/service.ts`):
-// 1. image sequences — numbered stills among the picked files (uploads) or paths (desktop; a single numbered still
-//    whose folder holds its siblings counts too) become one clip each when the user says so (frame rate prompt);
-// 2. multi-page PDF / Illustrator documents — the chosen pages become one item each;
-// 3. layered documents (PSD) — Merge All Layers (the flattened item), Merged Layers (one picture of the chosen
-//    layers), Individual Layers (a bin of layers) or Sequence (the layers stacked; `layeredImportCommands`).
 import {
 	type EngineJob,
 	LayeredExtractResultSchema,

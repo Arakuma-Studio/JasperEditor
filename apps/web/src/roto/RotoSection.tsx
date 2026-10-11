@@ -1,8 +1,3 @@
-// Properties ▸ Roto (parity workstream `roto`): the roto objects of the selected video / still clip — the Roto Brush
-// tool (brush size, add / Refine Edge brush, Auto-propagate), the monitor view (overlay, boundary, alpha, off), and for
-// the active roto: status (computed frames, stale, model), Propagate (backward / both / forward) with progress and
-// cancel, span and segmentation settings, Apply Object Matte / Object Blur, Convert to Masks, Freeze, Remove; Track
-// Faces / Blur Faces and per-face "Keyframes to…".
 import { type Clip, type ClipRoto, findRoto, rotoIsStale, rotoSettingsOf } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';

@@ -61,10 +61,7 @@ export class CompositeHub {
 		if (hit) return hit;
 		if (this.taps.size > 256) this.taps.clear();
 		const t: LayerTap = {
-			// Per frame (as the 3D scope's taps): the layer's tap step is keyed by `side`, so it re-runs and delivers every
-			// frame even when the layer's picture is static (text, shapes). Keyed by the clip alone, a render of a static
-			// DOM layer in a GL blend mode delivered only on each page's first frame and the scope's delayRender timed
-			// out at the next one (verify workstream: "Blend modes at frame 6").
+			// Key each frame by side so static DOM layers deliver again and release that frame's delayRender.
 			side: id,
 			deliver: (p, w, h, meta) => this.deliver(key, frame, p, w, h, meta),
 		};
@@ -190,11 +187,10 @@ export function makeBlendTrack(
 }
 
 /**
- * previews (scope nesting): the context value shared by a run of consecutive tracks holding GL blend modes in encoded
+ * The context value shared by a run of consecutive tracks holding GL blend modes in encoded
  * blending (one scope under the lowest of them). At frames where any member draws a GL item every layer of every
  * member is composited by the scope (`linearGroupItemsAt` with forced items), elsewhere it passes the backdrop through
- * and the tracks draw the CSS way. Chrome cannot nest HTML-in-Canvas scopes (fx/canvas-scope.tsx), so two GL-blend
- * tracks used to fail with CANVAS_NESTED.
+ * and the tracks draw the CSS way. Sharing one scope avoids Chrome's prohibition on nested HTML-in-Canvas scopes.
  */
 export function makeBlendGroup(
 	members: Parameters<typeof linearGroupItemsAt>[0],

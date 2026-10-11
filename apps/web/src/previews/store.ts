@@ -1,6 +1,3 @@
-// Render previews in the editor (workstream `previews`, docs/wp-notes/previews.md): which segment hashes have preview
-// files in the engine. The render bar turns them green and the Program monitor plays them.
-//
 // Segments and hashes are computed here from the committed document (`previewSegments`, the same pure function the
 // engine uses); the engine only answers which hashes have files (`/api/previews/status`). Answers are cached per
 // preview format: a hash once seen stays known (files are immutable) until a deletion or a cache cleaning, so an

@@ -289,7 +289,7 @@ export class MediaService {
 	}
 
 	/**
-	 * imports workstream: registers a managed file the engine produced for an import (the lossless intermediate of an
+	 * Registers a managed file the engine produced for an import (the lossless intermediate of an
 	 * image sequence, the extracted layers of a PSD), with descriptors (`extras`) stored on the record and returned in
 	 * RegisteredMedia. Probed like any file; the usual derivatives follow (a proxy when browsers cannot decode it).
 	 */

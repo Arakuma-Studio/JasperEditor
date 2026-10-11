@@ -1,11 +1,5 @@
-// Warp Stabilizer in the editor (workstream gaps, docs/wp-notes/gaps.md §FX-6), as Premiere:
-// - background analysis: as soon as a clip has an enabled Warp Stabilizer without a usable analysis (none, another
-//   media, Detailed Analysis changed, or the clip now shows frames outside the analysed span), the engine's
-//   `warp-analysis` job runs on the clip's media range (+ handles); its result is stored with the effect by
-//   `effect.setWarpAnalysis` (origin `system`: no undo step, like Premiere's analysis);
-// - Effect Controls: Analyze / Cancel and the status line ("Analyzing in background (step 1 of 2)", frames analysed,
-//   tracking confidence, auto-scale);
-// - the Program monitor banner over a clip whose stabiliser is not analysed yet (Advanced ▸ Hide Warning Banner).
+// Analysis is invalidated by media, Detailed Analysis, or visible-range changes. Store completed
+// analysis with origin system so background computation does not create an undo step.
 import type { WarpAnalysisResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

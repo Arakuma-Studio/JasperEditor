@@ -1,5 +1,4 @@
-// Distort ▸ Displacement Map, Optics Compensation, Polar Coordinates, Bezier Warp, Reshape, Smear (sim-warp
-// workstream; After Effects' effects of those names). Per-pixel remaps, except Bezier Warp (a Coons-patch mesh drawn
+// Per-pixel remaps, except Bezier Warp (a Coons-patch mesh drawn
 // forward by a draw pass). Reshape and Smear read the layer's masks ("Mask 1…8" popups). Ported from EffectCraft
 // crates/effects/src/distort.rs (polar), distort2.rs (displacement_map, optics_compensation, bezier_grid) and
 // distort3.rs (smear_setup, reshape_setup; MIT OR Apache-2.0), see licenses/ported/sim-warp.md.

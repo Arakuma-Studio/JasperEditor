@@ -1,8 +1,5 @@
-// File ▸ Export ▸ Frame and the camera button of the Program / Source monitors (workstream gaps, docs/wp-notes/gaps.md
-// §EX-3), as Premiere's Export Frame dialog: Name, Format (PNG, JPEG, TIFF, DPX, OpenEXR, BMP, Targa), Path and
-// "Import into project". The frame is rendered by the engine's still path (the export's own renderer: native, layer
-// bake or Remotion), at full resolution — never from proxies. The Source monitor exports the source's frame at the
-// source playhead (a scratch sequence holding the source, like the Source monitor draws it).
+// Frames use the engine's full-resolution still renderer, never proxies. Source-monitor export uses
+// a scratch sequence at the source playhead so its framing matches the monitor.
 import { STILL_FORMAT_EXTENSIONS, STILL_FORMATS, type StillFormat } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

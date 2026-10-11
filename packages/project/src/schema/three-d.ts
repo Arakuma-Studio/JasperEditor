@@ -1,14 +1,9 @@
-// three-d workstream (docs/wp-notes/three-d.md): After Effects-style 3D layers, cameras and lights.
-//
 // Coordinates are After Effects': world space is sequence space (x right, y down, in pixels) plus z pointing away
 // from the viewer (into the screen). A 3D layer's map is
 //   world = T(position, positionZ) · Orientation · Rz(rotation) · Ry(rotationY) · Rx(rotationX) · S(sx, sy, scaleZ)
 //           · T(−anchor, −anchorZ)
 // so a 3D layer with every 3D value at its default (z 0, no X/Y rotation, no orientation) seen through the default
 // camera is exactly where its 2D Motion puts it. Angles are degrees, clockwise on screen (as the 2D Rotation).
-//
-// Everything here is additive and optional on the existing schema (no version bump): `threeD` on visual clips,
-// the `camera` / `light` clip kinds (older builds keep them as unknown clips) and `threeD` on sequences.
 import { z } from 'zod';
 import {
 	AnimNumberSchema,
@@ -45,7 +40,6 @@ export const MaterialOptionsSchema = z.looseObject({
 	specularShininess: AnimNumberSchema,
 	/** Highlight colour: 0 % = the light's, 100 % = the layer's. */
 	metal: AnimNumberSchema,
-	// ---- Advanced 3D (optional)
 	/** Mirror reflection of the environment, percent (Advanced 3D). Default 0. */
 	reflectionIntensity: AnimNumberSchema.optional(),
 	/** Reflection sharpness, percent (100 = mirror; lower = rougher). Default 100. */

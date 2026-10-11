@@ -151,7 +151,6 @@ export type ClipContentTiming = {
 	sourceIn: number;
 	duration: number;
 	speed: { rate: number; reverse: boolean };
-	/** Workstream `time`: a time-remapped clip shows media times through its remap. */
 	kind?: string;
 	timeRemap?: TimeRemap | null;
 	start?: number;
@@ -287,7 +286,7 @@ export function shiftClipContentTime(clip: ShiftableClip, shift: number): Conten
 	if (shift === 0) return report;
 	clip.sourceIn += shift;
 	shiftAnimatables(clip, shift);
-	// Workstream `time`: speed keyframes anchor content time and media time; both move with the file.
+	// Speed keyframes anchor content time and media time; both move with the file.
 	for (const k of clip.timeRemap?.keyframes ?? []) {
 		k.time += shift;
 		k.source += shift;

@@ -1,7 +1,3 @@
-// color-mgmt: the Colour section of Interpret Footage (the imports workstream's section registry, order 60 = after
-// Loop). It edits `draft.sections.color` (a full colour interpretation) and contributes one `media.interpretColor`
-// command on OK — the change between the selected items' common interpretation and the edited one — in the dialog's
-// single transaction.
 import {
 	type ColorInterpretation,
 	type CommandInput,

@@ -75,7 +75,7 @@ export type PropertyGroup =
 	| 'box'
 	/** M2 (S11:SHP-005, wp-m2-shapes): shape geometry and paint (`shape.*`). */
 	| 'shape'
-	/** text-animators workstream: animators, selectors, Path Options, More Options (`textAnimators.*`, …). */
+	/** Animator, selector, Path Options, and More Options keys (`textAnimators.*`, …). */
 	| 'textAnimator'
 	/** wp masks: Opacity / effect mask properties (`masks.<maskId>.<prop>`). */
 	| 'mask'

@@ -105,7 +105,7 @@ export function assetFromRegistered(reg: RegisteredMedia, id: string, now: strin
 
 /**
  * The first of `stem`, `stem (2)`, `stem (3)`… with no document (`<stem>.<ext>`, `<stem>_<suffix>.<ext>`) and no side
- * folder (`<stem> Media`) in `dir` (security review DATA-3: interchange exports used to overwrite both silently).
+ * folder (`<stem> Media`) in `dir`, so exports cannot overwrite either existing output.
  */
 export async function freeDestinationStem(dir: string, stem: string, ext: string): Promise<string> {
 	const names = new Set(await readdir(dir).catch(() => [] as string[]));

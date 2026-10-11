@@ -291,3 +291,26 @@ catch was extracted with the existing image decode behavior, rather than introdu
 operation failure. Remaining catches and `unknown` values are review candidates under the boundary
 criteria above, not evidence that removing them would be safe. The inventory excludes tests and
 does not count JavaScript embedded in string literals.
+
+## Final production comment review
+
+A separate pass against integration commit `d45543ed` read residual production comment blocks across
+the engine, web UI, project model, compositions, MCP, UI primitives, and native CLI. The largest
+remaining concentrations were feature-list headers in web dialogs, workstream narration in engine
+imports and rendering, old rendering-stage names, and historical performance anecdotes. The pass
+removed redundant headers and section labels and retained concise explanations of constraints:
+atomic publication, bounded allocations, sandbox origins, preview/export parity, coordinate spaces,
+read-time defaults, recovery preservation, and subscription or rendering costs.
+
+No regular-expression deletion was applied to source comments. Complete surrounding blocks were read
+before each edit; protocol details, attribution, compatibility invariants, and useful specification
+references remain. Shipped migration behavior is unchanged; its schema-version safety explanation
+remains. Registry shader section labels were delegated to the registry owner while that owner checked
+shader compilation. Tooling and E2E comments were handled by the tooling owner.
+
+All **180 edited TypeScript/JavaScript files** have identical baseline and edited output from the
+TypeScript printer with `removeComments: true`. Template-literal contents remain in this comparison,
+including embedded shader and worker code. The native change removes only the obsolete
+"Required in M1" sentence from the raw-output option's generated CLI help; the remaining Rust bytes are
+unchanged. Whitespace validation is also run. No tests, typechecks, or dependency-graph scans were
+started by this pass while integration verification was running.

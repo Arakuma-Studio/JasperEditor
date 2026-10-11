@@ -1,4 +1,4 @@
-// HDR static metadata boxes for MP4 / MOV exports (workstream color-mgmt). FFmpeg 7.1 writes the ISO/IEC 14496-12
+// FFmpeg 7.1 writes the ISO/IEC 14496-12 HDR metadata boxes
 // `mdcv` (mastering display colour volume, SMPTE ST 2086) and `clli` (content light level, CTA-861.3) boxes only from
 // stream side data, which an export graph has no way to set; this module appends them to the video sample entry of
 // a finished file instead: the box sizes of the sample entry and its ancestors grow, and when the `moov` precedes

@@ -1,7 +1,3 @@
-// Scene Edit Detection… (workstream `time`): Premiere's dialog — "Apply a cut at each detected cut point", "Create
-// subclip for each cut" (in a new bin), "Generate clip markers at each detected cut point" — plus the sensitivity and
-// shortest shot of FilmCraft's detector. Analyse runs the engine jobs with a progress bar (Cancel stops them and
-// changes nothing); the results land in one undo step.
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, ScrubbyNumber, Slider } from '@jasper/ui';
 import { useMemo, useRef, useState } from 'react';

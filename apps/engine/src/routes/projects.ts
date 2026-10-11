@@ -108,7 +108,6 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 		guarded<P>(async (req) => ({ versions: await projects.versions(req.params.projectId) })),
 	);
 
-	// Saved versions (process workstream, D-39): read one, restore it in place or as a new project.
 	app.get<PV>(
 		'/api/projects/:projectId/versions/:versionId',
 		guarded<PV>(async (req) => projects.version(req.params.projectId, req.params.versionId)),

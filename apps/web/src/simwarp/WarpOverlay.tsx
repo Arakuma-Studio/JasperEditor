@@ -110,7 +110,6 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 		className: 'pointer-events-none absolute inset-0 h-full w-full touch-none select-none',
 	} as const;
 
-	// ---- Puppet
 	if (fx.effectId === 'jasper.puppet') {
 		const pup = (fx as { puppet?: ResolvedPuppet }).puppet ?? { meshes: [], pins: [] };
 		const refine = Math.min(10, Math.max(0, Math.round(Number(fx.params.refinement ?? 20) / 10)));
@@ -261,7 +260,6 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 		);
 	}
 
-	// ---- Liquify
 	if (fx.effectId === 'jasper.liquify') {
 		if (!ui.brush) return null;
 		const size = Number(fx.params.brushSize ?? 64);
@@ -314,7 +312,6 @@ export function SimWarpOverlay(props: ProgramOverlayHostProps) {
 		);
 	}
 
-	// ---- Mesh Warp
 	if (fx.effectId === 'jasper.mesh-warp') {
 		const cols = Math.min(31, Math.max(1, Math.round(Number(fx.params.columns ?? 7))));
 		const rows = Math.min(31, Math.max(1, Math.round(Number(fx.params.rows ?? 7))));

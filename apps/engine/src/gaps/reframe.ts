@@ -1,4 +1,3 @@
-// Sequence ▸ Auto Reframe Sequence ▸ the subject analysis (workstream gaps, docs/wp-notes/gaps.md §AI-2): job `reframe`.
 // ffmpeg decodes a media range to small RGB frames (≤ 256 px wide); for each frame the subject is
 //   1. the faces, when the roto face model (MediaPipe BlazeFace) is installed: every 3rd frame goes through the
 //      jasper-roto child, the centre is the area × score weighted mean of the detected faces (held between samples);

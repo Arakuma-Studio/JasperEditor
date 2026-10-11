@@ -1,6 +1,4 @@
-// Saved versions, Save a Copy and crash-recovery journals for agents (process workstream, ARCHITECTURE D-39,
-// docs/project-files.md). Restoring in place is refused while the project is open in an editor (the editor owns
-// it: File ▸ Project Versions…); restoring as a copy always works.
+// An open editor owns its project lease, so agents can restore a saved version only as a copy while it is open.
 import type { VersionInfo } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { z } from 'zod';

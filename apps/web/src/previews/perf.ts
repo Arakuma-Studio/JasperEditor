@@ -1,6 +1,3 @@
-// Editor-side performance counters (workstream `previews`, docs/performance.md): what the MCP `perf_stats` tool and
-// scripts/performance.mjs read from an open editor window through the agent relay (UI action `perf`) — the Program
-// monitor's playback (frames shown / dropped, fps, stalls recovered, buffering), the render bar and the UI frame rate.
 import { invariantMode, invariantStats, previewSettingsOf } from '@jasper/project';
 import { type EditorSession, gestureFrames } from '@jasper/session';
 import type { PlaybackDriver } from '../panels/program/playback-driver.ts';

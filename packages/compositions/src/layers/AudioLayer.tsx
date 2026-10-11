@@ -104,8 +104,7 @@ export function AudioLayer({
 	const generated = useGeneratedAudio(clip, { num, den });
 	const mediaUrl =
 		!generated && media && (media.hasAudio || media.kind === 'audio') ? mediaSrc(media, options) : null;
-	// Workstream `time`: a reversed clip plays its range reversed in the page (Remotion's <Audio> plays forwards only).
-	// imports: interpreted media (assumed frame rate, loop) plays a WAV of its interpreted range made in the page.
+	// Remotion's Audio plays forwards only; reversed and interpreted ranges use a WAV prepared in the page.
 	const mapped = !!clip.mediaTime;
 	const reversed = useReversedAudio(clip, clip.speed.reverse && !mapped ? mediaUrl : null, { num, den });
 	const mappedUrl = useMappedAudio(clip, mapped ? mediaUrl : null, { num, den });

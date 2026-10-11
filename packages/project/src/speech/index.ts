@@ -2,7 +2,7 @@
 //
 // - `distributeSequenceWords`: a transcript of a sequence's MIX (words in sequence time) becomes media transcripts:
 //   each word goes to the clip it is heard through — audio tracks top first, the first enabled, non-reversed audio
-//   clip whose range covers the word's midpoint (the same rule as the captions workstream's `sequenceWords`, so the
+//   clip whose range covers the word's midpoint (the same rule as sequenceWords, so the
 //   derived sequence transcript reads the words back where they were spoken) — and is mapped into that clip's media
 //   time through its speed. Each media also gets the media ranges its clips play (`coverage`).
 // - `mergeTranscriptWords`: words of a partial transcript replace an existing transcript's words inside its

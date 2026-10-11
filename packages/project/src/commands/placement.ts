@@ -137,7 +137,6 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 		trackedBy?: { effectInstanceId?: string };
 	};
 	for (const t of c.trackers ?? []) t.id = h.ids.next('tkr');
-	// Workstream `time`: speed keyframes of a time remap.
 	for (const k of (clip as { timeRemap?: { keyframes?: { id: string }[] } }).timeRemap?.keyframes ?? [])
 		k.id = h.ids.next('kf');
 	// parity (roto): roto objects too; effect params naming them follow (ROTO_OBJECT_PARAMS).

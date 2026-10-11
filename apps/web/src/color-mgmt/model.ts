@@ -1,5 +1,3 @@
-// Colour management in the web app (workstream color-mgmt): option lists and labels for the Sequence Settings ▸
-// Colour section and Interpret Footage ▸ Colour, read from the shared colour space registry (@jasper/project).
 import {
 	COLOR_SPACES,
 	type ColorInterpretation,

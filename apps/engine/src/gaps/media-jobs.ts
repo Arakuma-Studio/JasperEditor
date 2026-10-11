@@ -1,5 +1,4 @@
-// Create Proxies and ingest (workstream gaps, docs/wp-notes/gaps.md §PRJ-8): one background job (`proxy-create`) over
-// several media. `proxy` transcodes each video to a preset size with the engine's browser-playable proxy encoder
+// One `proxy-create` job processes several media. `proxy` transcodes each video with the browser-playable encoder
 // (H.264, else VP9 / AV1; short GOPs for scrubbing; the display matrix kept with -noautorotate so the proxy turns like
 // its original); `transcode` writes a full-size ProRes 422 HQ (or browser-playable) version; `copy` copies the file
 // and checks the copy's fingerprint. Each output is registered with the engine and returned as RegisteredMedia: the

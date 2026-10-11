@@ -51,7 +51,7 @@ export function rotoExportIssues(snap: RenderSnapshot): RotoExportIssue[] {
 			let lo = Number.POSITIVE_INFINITY;
 			let hi = Number.NEGATIVE_INFINITY;
 			for (let f = f0; f < f1; f++) {
-				// Workstream `time`: the media time of the picture shown (frame hold, then Time Remapping).
+				// Matte lookup follows the displayed media frame after frame hold and Time Remapping.
 				const mf = c.kind === 'still' ? 0 : mediaFrameAt(clipMediaTimeAt(c as TimedClip, f, fps), m.rate);
 				if (rotoFrameState(m, mf) === 'missing') {
 					lo = Math.min(lo, mf);

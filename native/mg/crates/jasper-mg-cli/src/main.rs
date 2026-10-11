@@ -50,7 +50,7 @@ enum Command {
         /// Spec file, or `-` for stdin.
         #[arg(long)]
         spec: String,
-        /// Write width*height*4 bytes per frame (RGBA, straight alpha) to stdout. Required in M1.
+        /// Write width*height*4 bytes per frame (RGBA, straight alpha) to stdout.
         #[arg(long)]
         raw_rgba: bool,
         /// Worker threads (default: `JASPER_MG_THREADS` or all cores). The engine passes its CPU slots.

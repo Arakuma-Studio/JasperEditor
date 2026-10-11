@@ -1,6 +1,6 @@
 // Dissolve ▸ Morph Cut (docs/wp-notes/gaps.md §AI-2). Premiere smooths a jump cut between two
 // takes of a talking head by tracking the subject and interpolating optical flow between the shots. Here the stage
-// runs the time workstream's optical flow (time-remap/flow.ts; GPU port compositions/retime/flow-gl.ts) between side A
+// runs optical flow (time-remap/flow.ts; GPU port compositions/retime/flow-gl.ts) between side A
 // and side B at every frame of the span, then draws the motion-compensated picture at the transition's progress with
 // the same multi-hypothesis, occlusion-aware interpolation as Time Interpolation ▸ Optical Flow:
 //   analysis luma (k×k box, long side ≤ 1024) → 2×2 pyramid (≤ 4 levels) → hierarchical block matching on 8×8 tiles

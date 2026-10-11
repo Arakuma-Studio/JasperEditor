@@ -1,4 +1,4 @@
-// The `retime` native extension (workstream `time`, docs/wp-notes/time.md): video layers whose frames are chosen by
+// Video layers whose frames are chosen by
 // media time — reverse, Time Remapping, Frame Blending / Optical Flow (speed changes, remaps, frame-rate conform) and
 // variable-frame-rate media (timestamp-exact) — stay on the native path. `prepare` renders each one into a
 // layer-sized lossless intermediate (FFV1, cached under `<appdir>/cache/retime/<key>.mkv`) with exactly the frames

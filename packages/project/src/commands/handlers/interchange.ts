@@ -68,7 +68,6 @@ function importTimeline(doc: DDoc, cmd: CommandOf<'project.importTimeline'>, h: 
 		binId = createdBin;
 	}
 	const r = insertProjectItems(doc, parsed.data as unknown as ClipboardPayload, binId, undefined, h);
-	// Caption tracks (FCPXML captions, OTIO): through the Captions workstream's import (transcript + caption clips).
 	const captionTrackIds: string[] = [];
 	for (const raw of Array.isArray(f.captions) ? (f.captions as unknown[]) : []) {
 		const parsed = FragmentCaptionsSchema.safeParse(raw);

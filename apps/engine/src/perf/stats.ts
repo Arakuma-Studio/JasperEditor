@@ -1,6 +1,3 @@
-// Performance instrumentation of the engine (workstream `previews`, docs/performance.md): `GET /api/perf` and the MCP
-// `perf_stats` tool. Cheap enough to run always: process CPU and memory, event-loop delay (perf_hooks histogram),
-// host load, the job queue, and the throughput of recent renders (exports, stills, previews) from the job journal.
 import { availableParallelism, freemem, loadavg, totalmem } from 'node:os';
 import { type IntervalHistogram, monitorEventLoopDelay } from 'node:perf_hooks';
 import type { EngineJob } from '@jasper/api';

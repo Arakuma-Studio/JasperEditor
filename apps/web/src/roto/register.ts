@@ -1,6 +1,3 @@
-// Registers the roto UI into the extension points (parity workstream `roto`): Properties ▸ Roto, the Program monitor
-// Roto Brush overlay, Preferences ▸ Roto & Face Tracking and the timeline clip menu ("Roto" submenu). Called at module
-// load of commands/roto.ts.
 import type { Clip, ClipRoto } from '@jasper/project';
 import { clipMenuExtensions, clipSections, type MenuItemSpec, programOverlays } from '../extensions/index.ts';
 import { registerPreferencesDialog, registerPreferencesPage } from '../shell/preferences/index.ts';

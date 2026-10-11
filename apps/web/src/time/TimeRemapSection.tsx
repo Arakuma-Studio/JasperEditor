@@ -1,9 +1,5 @@
 import type { CommandInput } from '@jasper/project';
-// Effect Controls ▸ Time Remapping (workstream `time`): Premiere's intrinsic Time Remapping effect — the Speed at the
-// playhead (Premiere shows it read-only; here typing a value sets the speed of the segment under the playhead), the
-// stopwatch (on: a remap with the band shown; off: every speed keyframe deleted), keyframe navigation and the list
-// of speed keyframes with their transitions, the Time Interpolation of the clip and what happens to its linked audio
-// (Premiere: "the audio portion of the clip remains unchanged by Time Remapping, although it remains linked").
+// Time Remapping changes the picture while linked audio remains unchanged.
 import {
 	activeRemap,
 	type Clip,

@@ -99,7 +99,6 @@ type ProjectItemMenuContext = {
 	session: EditorSession;
 	items: readonly ProjectItem[];
 	readOnly: boolean;
-	/** imports workstream: runs a registered UI command with args (the panel's command context). */
 	runCommand?(commandId: string, args: unknown): void;
 };
 export type ProjectItemMenuExtension = {

@@ -82,7 +82,6 @@ const cascade = (
 });
 
 const IN_PRESETS: TextAnimatorPreset[] = [
-	// ---- the shipped In/Out presets re-expressed (defaults of their params)
 	{
 		id: 'fade-in',
 		name: 'Fade In',
@@ -293,7 +292,6 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 			},
 		],
 	},
-	// ---- AE-style library
 	{
 		id: 'fade-up-characters',
 		name: 'Fade Up Characters',

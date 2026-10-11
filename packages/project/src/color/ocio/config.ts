@@ -1,4 +1,4 @@
-// Custom OpenColorIO configurations (`.ocio`, workstream color-mgmt), read from the published configuration format
+// Custom OpenColorIO configurations (`.ocio`), read from the published configuration format
 // (a YAML document), not from OpenColorIO's source. Ported and extended from EffectCraft
 // `crates/effects/src/ocio_config.rs` (MIT OR Apache-2.0, licenses/ported/color-mgmt.md).
 //

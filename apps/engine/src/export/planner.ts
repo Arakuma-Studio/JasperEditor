@@ -259,7 +259,7 @@ function linearBlendSequences(snap: RenderSnapshot, name = ''): string[] {
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
 	let document: ProjectDocument;
 	try {
-		const loaded = loadProject(input.envelope, { mgTemplates: mgRegistry }); // wp-m2-anime-templates: re-stamp renderers
+		const loaded = loadProject(input.envelope, { mgTemplates: mgRegistry });
 		document = loaded.document;
 	} catch (e) {
 		throw new PlanError('VALIDATION_FAILED', 400, `Invalid project: ${(e as Error).message}`);
@@ -269,9 +269,9 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const settings = input.settings;
 	const range = input.rangeOverride ?? exportRange(document, input.sequenceId, settings);
 
-	// ---- media resolution (engine-store keys only: never trust path locators from a client, S04:SC-003)
+	// Resolve engine-store keys only; client path locators are untrusted.
 	const media: Record<string, LocalMedia> = {};
-	// gaps (PRJ-8): exports use the full-resolution media; `draftUseProxies` (asked for explicitly) decodes attached
+	// Exports use the full-resolution media; `draftUseProxies` (asked for explicitly) decodes attached
 	// proxies instead, scaled to the original's frame size (the layout keeps the original's dimensions).
 	const draftProxies: string[] = [];
 	const proxiesOffline: string[] = [];
@@ -297,7 +297,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		}
 	}
 	const fontFallbacks = new Set<string>();
-	// wp captions: caption settings name existing tracks; burn-in is a snapshot option.
 	let captionWarnings: RenderPlan['warnings'] = [];
 	try {
 		captionWarnings = captionPlanWarnings(document, seq, settings, range);
@@ -320,7 +319,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		},
 	});
 
-	// ---- security review ENG-6: frame buffers are sized by these numbers (`width × height × 4` per layer in the
+	// Frame buffers are sized by these numbers (`width × height × 4` per layer in the
 	// compositing kernels and in ffmpeg). Commands keep sequences within 8192 px; a hostile document or request is
 	// refused by name before anything is allocated.
 	assertFrameSize('The sequence', seq.settings.width, seq.settings.height);
@@ -336,8 +335,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			assertFrameSize(`The nested sequence of clip "${c.name}"`, n.width, n.height);
 		}
 
-	// ---- wp-m2-anime-templates (S11:ATP-010, FIX-008): templates this build lacks block every path (native,
-	// Remotion, stills) instead of exporting the placeholder card.
+	// Missing templates block every path so exports cannot contain their preview placeholder cards.
 	const missing = missingTemplates(snapshot);
 	if (missing.length > 0)
 		throw new PlanError(
@@ -346,9 +344,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			missingTemplatesMessage(missing),
 			missingTemplatesDetail(missing),
 		);
-	// ---- end wp-m2-anime-templates
-
-	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
 	{
@@ -371,7 +366,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			message: `${proxiesOffline.length} proxies are offline: those media render at full resolution`,
 			itemIds: proxiesOffline,
 		});
-	// ---- gaps (FX-6): a Warp Stabilizer exports only with its analysis; frames outside it are a warning.
 	{
 		const issues = warpExportIssues(snapshot);
 		const missing = issues.filter((i) => i.kind === 'not-analyzed');
@@ -381,8 +375,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			});
 		for (const i of issues) warnings.push({ code: 'WARP_PARTIAL', message: i.message, itemIds: [i.clipId] });
 	}
-	// ---- parity (roto): object mattes render on every path from computed matte sets; frames without one would come
-	// out unmatted, so they block every path (never silently dropped). Stale mattes are a warning.
+	// Missing matte frames block every path because exporting them would silently remove the matte.
 	{
 		const issues = rotoExportIssues(snapshot);
 		const missing = issues.filter((i) => i.kind === 'not-computed');
@@ -495,7 +488,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			reason: 'no usable video encoder (H.264, AV1 or VP9) in this ffmpeg build',
 		});
 
-	// ---- warnings
 	const offlineUsed = new Set<string>();
 	for (const c of visual)
 		if ('mediaId' in c.source && snapshot.media[c.source.mediaId] === null) offlineUsed.add(c.clipId);
@@ -507,7 +499,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			itemIds: [...offlineUsed],
 		});
 	}
-	// color-mgmt: LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
+	// LUTs and custom OCIO configs used by colour steps (grades, input LUTs, OCIO interpretations) that are
 	// offline: those steps are skipped (the clips render ungraded / uninterpreted there), so the export says so.
 	const lutOffline = new Set<string>();
 	for (const c of visual)
@@ -521,7 +513,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			message: `${lutOffline.size} clip(s) use an offline LUT or colour config; the colour steps using it are skipped`,
 			itemIds: [...lutOffline],
 		});
-	// Workstream `time`: VFR media are mapped by their real timestamps by the retime stage (native) and the preview
+	// VFR media are mapped by their real timestamps by the retime stage (native) and the preview
 	// decoder (Remotion); only an engine without the retime stage still conforms them.
 	const vfr = new Set<string>();
 	for (const c of visual) {
@@ -555,7 +547,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
 	warnings.push(...captionWarnings);
-	// M2 (§19.6): warnings of the extensions for the clips they provide (e.g. MG_FPS_MISMATCH).
 	for (const ext of deps.extensions ?? []) {
 		if (!ext.warnings) continue;
 		for (const c of visual) {
@@ -566,12 +557,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	if (encoder?.message) warnings.push({ code: 'ENCODER_FALLBACK', message: encoder.message });
 
-	// ---- output spec
 	const seqFps = seq.settings.frameRate;
 	const video = settings.video;
 	const outFps = video?.frameRate ?? seqFps;
 	const durationSec = ((range.end - range.start) * seqFps.den) / seqFps.num;
-	// gaps: a non-square-pixel sequence exported at its own frame size delivers the storage width at its pixel aspect
+	// A non-square-pixel sequence exported at its own frame size delivers the storage width at its pixel aspect
 	// ratio (the anamorphic file of a DV / HDV / DVCPRO HD sequence); another size is a square-pixel output.
 	const fmt = sequenceFormatOf(seq.settings);
 	const matchesSequence =
@@ -641,7 +631,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 
-	// ---- path choice (S04:RP-001, RP-012)
 	const nativeEligible = blockers.length === 0;
 	// `hybrid` = the native composite with baked graphics layers (S04 §11.2, S11:LBK-002).
 	const nativePath = baked.length > 0 ? 'hybrid' : 'native';
@@ -866,7 +855,7 @@ export function nativeBlockers(
 ): string[] {
 	const out: string[] = [];
 	const label = `${c.kind} clip "${c.name}"`;
-	// three-d: 3D layers are planes of the sequence's 3D scene (depth sort, lights, shadows, depth of field), drawn by
+	// 3D layers are planes of the sequence's 3D scene (depth sort, lights, shadows, depth of field), drawn by
 	// the compositions' 3D renderer: the export renders them on the Remotion path (never baked one by one, which would
 	// flatten them in their 2D place).
 	if (c.threeD) return [`3D layer "${c.name}" is drawn by the 3D renderer (Remotion path)`];
@@ -874,10 +863,9 @@ export function nativeBlockers(
 		if (ext.kinds?.has(c.kind) || ext.claimsLayer?.(c)) out.push(...(ext.blockers?.(c) ?? []));
 	}
 	const extKind = exts.some((e) => e.kinds?.has(c.kind));
-	// edit-structure: generator pictures (Bars and Tone, counting leader) come from the synthetic extension.
 	if ('generator' in c.source && !exts.some((e) => e.id === 'synthetic'))
 		out.push(`${label} draws a generator that needs the synthetic extension`);
-	// Workstream `time`: reverse, time remaps, Frame Blending / Optical Flow and VFR media are rendered by the retime
+	// Reverse, time remaps, Frame Blending / Optical Flow and VFR media are rendered by the retime
 	// extension (or inside a whole-layer bake); without it they would play linearly — a named blocker instead.
 	const retimed =
 		exts.some((e) => e.retimes?.(c)) ||
@@ -947,8 +935,6 @@ export function nativeBlockers(
 	}
 	return out;
 }
-
-// ---------------------------------------------------------------- edit-structure: nested sequences
 
 /** Visual clips of a snapshot and of every nested snapshot drawn in it. */
 export function allVisualClips(snap: RenderSnapshot): RenderVisualClip[] {

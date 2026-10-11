@@ -1,11 +1,4 @@
 import type { Command, CommandOf } from '@jasper/project';
-// Essential Graphics panel (workstream gaps, docs/wp-notes/gaps.md §GR-4/GR-5; Premiere Window ▸ Essential Graphics).
-// Browse: My Templates (.jgt, kept in this browser) — Add at the playhead, Export, Delete, Import .jgt…; the motion-
-// graphics templates live in the Motion Templates panel (one click away). Edit: the graphic of the selected graphic clip
-// (or the open graphic sequence): its layers top first (visibility, rename, delete, select), New Layer (Text,
-// Rectangle, Ellipse), Align and Transform (align / distribute to the video frame or the selection), Responsive Design
-// – Position (pin edges to the frame or a layer), Responsive Design – Time (Intro / Outro), Roll / Crawl, Duration,
-// Export As Template. Without a graphic, New Layer makes one at the playhead (a text layer nested into a graphic).
 import {
 	ALIGN_MODES,
 	type AlignMode,

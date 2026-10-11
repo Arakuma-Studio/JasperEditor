@@ -1,7 +1,3 @@
-// Roto actions (parity workstream `roto`): Roto Brush strokes / boxes as undoable commands, `roto` engine jobs
-// (segment a frame, propagate, track faces) followed by polling and live `roto.progress` events and committed as one
-// "Propagate Roto" / "Track Faces" step, cancel, apply / freeze / remove, Blur Faces, face keyframes and Convert to
-// Masks (engine auto-trace → mask commands).
 import {
 	type EngineJob,
 	type EventEnvelope,
