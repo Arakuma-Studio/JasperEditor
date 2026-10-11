@@ -13,6 +13,7 @@ import {
 	colorRunKey,
 	curveFn,
 	defaultEffectRegistry,
+	type EffectParams,
 	effectBadges,
 	effectiveParams,
 	effectRuns,
@@ -27,8 +28,8 @@ import {
 } from '../src/index.ts';
 
 const NO_LUTS: ColorOpContext = { lut: () => null };
-const run = (params: Record<string, unknown>, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb => {
-	const fn = lumetriFn(params as never, ctx);
+const run = (params: EffectParams, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb => {
+	const fn = lumetriFn(params, ctx);
 	const out: Rgb = [c[0], c[1], c[2]];
 	fn?.(out);
 	return out;
@@ -307,9 +308,9 @@ describe('PCHIP curves (S06 §3.1 step 10)', () => {
 });
 
 describe('M1 colour ops (S06:CG-003/023)', () => {
-	const apply = (op: typeof BRIGHTNESS_CONTRAST_OP, p: Record<string, unknown>, c: Rgb): Rgb => {
+	const apply = (op: typeof BRIGHTNESS_CONTRAST_OP, p: EffectParams, c: Rgb): Rgb => {
 		const o: Rgb = [...c];
-		op.build(p as never, NO_LUTS)?.(o);
+		op.build(p, NO_LUTS)?.(o);
 		return o;
 	};
 
@@ -358,7 +359,7 @@ describe('M1 colour ops (S06:CG-003/023)', () => {
 });
 
 describe('colour runs with Lumetri (S06:CG-011/012)', () => {
-	const fx = (id: string, effectId: string, params: Record<string, unknown>, enabled = true) => ({
+	const fx = (id: string, effectId: string, params: EffectParams, enabled = true) => ({
 		id,
 		effectId,
 		effectVersion: 1,

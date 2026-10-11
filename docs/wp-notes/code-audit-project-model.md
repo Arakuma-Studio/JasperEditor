@@ -62,6 +62,8 @@ explicitly at the serialization boundary instead of using a blanket `any` docume
   partial of that same type so generic key assignments preserve each property's value type.
 - Colour-run partitioning requires only effect identity and enabled metadata; baking and cache keys still
   require evaluated effect parameters. This keeps persisted animated values out of colour evaluation.
+- Valid colour-test helpers use `EffectParams` and complete `Animatable<ParamValue>` fixtures; deliberately
+  malformed fuzz payloads and migration inputs retain their explicit boundary casts.
 - Vector property catalogues construct real shape items with the existing defaults. They no longer assert an
   incomplete sample object is a complete `ShapeItem`. Their advertised field types come from `PropertySpec`.
 - `resolveLayerProps` accepts the property-bearing portion of a visual clip. Tracking callers provide that
@@ -141,6 +143,8 @@ Result: **74 passed, 1 failed** across five files. The failure was the unchanged
 wall-clock allowance: mutation 201 took 3129 ms against a 2000 ms limit under shared-host contention. All new
 glTF regressions, hostile-model allocation/tree tests, binary/text model tests, and malformed-input regressions
 passed. The retained failing input is in ignored `test-results/fuzz-failures/`; it is not an asset to commit.
+An isolated rerun with `-t 'LUT sniffing' --maxWorkers=1` **passed** (one test, 34 skipped), without a changed
+timing allowance or production LUT change.
 
 The focused model regression command passed **197 tests across 15 files**:
 

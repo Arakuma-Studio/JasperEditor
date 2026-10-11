@@ -10,6 +10,7 @@ import {
 	colorRunKey,
 	createCounterIdSource,
 	defaultEffectRegistry,
+	type EffectParams,
 	effectRuns,
 	logEncode,
 	type MediaAsset,
@@ -256,11 +257,11 @@ describe('snapshot colour input transforms', () => {
 });
 
 describe('Lumetri in HDR', () => {
-	const lum = (params: Record<string, unknown>) => [
+	const lum = (params: EffectParams) => [
 		{ id: 'l', effectId: 'jasper.lumetri', effectVersion: 1, enabled: true, params },
 	];
 	const pq = sequenceColorInfo({ workingColorSpace: 'rec2100-pq' });
-	const run = (params: Record<string, unknown>, c: Rgb) => {
+	const run = (params: EffectParams, c: Rgb) => {
 		const lut = bakeColorRun(lum(params), defaultEffectRegistry, { lut: () => null, working: pq }, 33);
 		const o: Rgb = [...c];
 		if (lut) applyLut(lut, o);
