@@ -98,3 +98,11 @@ parallel typechecks to reduce host contention. The final serialized workspace
 typecheck and complete verification gate belong to integration. Native SVG
 parity and browser render parity are opt-in suites; this source/type cleanup
 does not claim a new native-render or browser-frame measurement.
+
+Integration identified a Zod overload issue in the catalog's JSON Schema type:
+`ReturnType<typeof z.toJSONSchema>` selects the registry overload, which returns
+`{ schemas: ... }`. Installed Zod declarations confirm that the single-schema
+payload extends `z.core.JSONSchema.BaseSchema`; the catalog now uses that type.
+The parity fixture map explicitly accepts schema files and the catalog payload,
+matching the generator's contract. These annotation-only corrections were
+format-checked; their typecheck is part of the serialized integration gate.

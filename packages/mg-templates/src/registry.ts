@@ -20,7 +20,7 @@ export type MgCatalogEntryJson = {
 	version: number;
 	name: string;
 	category: string;
-	paramsSchema: ReturnType<typeof z.toJSONSchema>;
+	paramsSchema: z.core.JSONSchema.BaseSchema;
 	defaults: Record<string, unknown>;
 	introFrames: number;
 	outroFrames: number;

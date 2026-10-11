@@ -28,9 +28,8 @@ if (!parityEnabled)
 describe('checked-in schemas', () => {
 	it('schemas/ matches the TS catalog (run `pnpm --filter @jasper/mg-templates schemas`)', () => {
 		const catalog = mgRegistry.catalogJson().filter((entry) => entry.renderer !== 'anime');
-		const files = Object.fromEntries(
-			catalog.map((entry) => [`${entry.id}@${entry.version}.json`, entry.paramsSchema]),
-		);
+		const files: Record<string, { templates: MgCatalogEntryJson[] } | MgCatalogEntryJson['paramsSchema']> =
+			Object.fromEntries(catalog.map((entry) => [`${entry.id}@${entry.version}.json`, entry.paramsSchema]));
 		files['catalog.json'] = { templates: catalog };
 		const onDisk = readdirSync(join(here, '..', 'schemas')).filter((f) => f.endsWith('.json'));
 		expect(onDisk.sort()).toEqual(Object.keys(files).sort());
