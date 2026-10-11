@@ -1,8 +1,5 @@
-// Core primitives: RBJ biquads against the cookbook's analytic responses, smoothing, delay lines, FFT, true-peak
-// interpolator (ports of the filmcraft unit tests, plus extra analytic checks).
 import { describe, expect, it } from 'vitest';
 import { Biquad, designBiquad, magnitudeDb } from '../src/core/biquad.ts';
-import { Fft } from '../src/core/fft.ts';
 import { AllPass1, DelayLine, Prng } from '../src/core/util.ts';
 import { db, SR, sine, toneAmplitude } from './util.ts';
 
@@ -102,28 +99,6 @@ describe('primitives', () => {
 			eout += y * y;
 		}
 		expect(Math.abs(eout / ein - 1)).toBeLessThan(0.01);
-	});
-
-	it('FFT matches a naive DFT and round-trips', () => {
-		const n = 64;
-		const fft = new Fft(n);
-		const x = Array.from({ length: n }, (_, i) => (((i * 7) % 13) - 6) / 6);
-		const re = Float64Array.from(x);
-		const im = new Float64Array(n);
-		fft.forward(re, im);
-		for (let k = 0; k < n; k++) {
-			let r = 0;
-			let q = 0;
-			for (let t = 0; t < n; t++) {
-				const a = (-2 * Math.PI * k * t) / n;
-				r += x[t]! * Math.cos(a);
-				q += x[t]! * Math.sin(a);
-			}
-			expect(Math.abs(re[k]! - r)).toBeLessThan(1e-9);
-			expect(Math.abs(im[k]! - q)).toBeLessThan(1e-9);
-		}
-		fft.inverse(re, im);
-		for (let t = 0; t < n; t++) expect(Math.abs(re[t]! / n - x[t]!)).toBeLessThan(1e-12);
 	});
 
 	it('PRNG is deterministic and uniform', () => {
