@@ -274,13 +274,13 @@ boundaries, and failure-isolating cleanup remain where they protect user work.
 
 ### Integrated syntax inventory
 
-An immutable Git-object scan of integration commit `4ff0bd34` applied the same syntax rules to
+An immutable Git-object scan of integration commit `9e9ce22c` applied the same syntax rules to
 **1,743 files**. Reading blobs from that commit avoids mixing revisions while other branches merge.
 
 | Candidate | Baseline | Integrated snapshot |
 | --- | ---: | ---: |
 | Explicit `any` type nodes | 21 | 0 |
-| `unknown` type nodes | 2,955 | 2,333 |
+| `unknown` type nodes | 2,955 | 2,320 |
 | Double assertions through `unknown` | 189 | 102 |
 | Catch blocks with no statements | 123 | 110 |
 | Simple promise-catch candidates | 194 | 177 |
@@ -323,8 +323,8 @@ comparison parsed **1,123 modified production/script files** without starting a 
 or dependency-graph scan. It found no new parser diagnostics and only two new bitwise expressions:
 
 - `Scene3DOverlay.tsx` contained `props.doc | null` after an assertion was removed. Integration
-  typechecking had already identified this error; the web feature owner owns the correction and
-  regression test. The expression coerces the render document to a number and must not ship.
+  typechecking identified the coercion. Commit `70e13852` preserves the document and adds a camera
+  overlay regression that failed before the fix and passed afterward.
 - `audio-dsp/src/fft.ts` uses `(i >>> b) & 1` in its consolidated bit-reversal implementation. This
   preserves the original algorithm and is intentional.
 
@@ -347,10 +347,10 @@ production code was changed by this pass.
 Integration exposed a runtime dependency on a removed shader comment:
 `packages/compositions/src/three-d/gl.ts` cut `GLSL_BLEND` at
 `// ---- effect blends`. Removing that text made `blendSource()` include effect-only functions in
-the Classic 3D shader, where their uniforms and varyings are unavailable. The composition owner is
-replacing this textual boundary with an explicit reusable layer-blend chunk and a focused rendering
-regression. Restoring a section-label comment would preserve the hidden dependency rather than
-remove it.
+the Classic 3D shader, where their uniforms and varyings are unavailable. Commit `54c35224` replaces
+this textual boundary with an explicit reusable layer-blend chunk. The unchanged Classic 3D suite
+reproduced the failure before the fix and passed all eight tests afterward. Shader formulas and the
+concatenated effect-shader source remain unchanged.
 
 A focused read-only scan at integration snapshot `17c80897` traced source-string slicing, splitting,
 replacement, regular expressions, and comment-like string literals across apps, packages, scripts,
