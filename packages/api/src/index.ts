@@ -7,6 +7,7 @@ export * from './camtrack.ts';
 export * from './capabilities.ts';
 export * from './captions.ts';
 export * from './common.ts';
+export type * from './desktop.ts';
 export * from './effect-presets.ts';
 export * from './events.ts';
 export * from './exports.ts';
