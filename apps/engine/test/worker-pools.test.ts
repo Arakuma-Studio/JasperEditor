@@ -35,7 +35,15 @@ async function settles<T>(
 
 async function killIdleWorker(pool: BlendPool | LayerPool | WarpPool | FlowPool): Promise<void> {
 	// biome-ignore-start lint/complexity/useLiteralKeys: Bracket access permits typed fault injection into private workers.
-	const scheduler = pool['pool'];
+	// Narrow first: TypeScript cannot index distinct private members through a union.
+	const scheduler =
+		pool instanceof BlendPool
+			? pool['pool']
+			: pool instanceof LayerPool
+				? pool['pool']
+				: pool instanceof WarpPool
+					? pool['pool']
+					: pool['pool'];
 	const w = scheduler['workers'][0]!;
 	// biome-ignore-end lint/complexity/useLiteralKeys: Bracket access permits typed fault injection into private workers.
 	const exited = once(w, 'exit');
