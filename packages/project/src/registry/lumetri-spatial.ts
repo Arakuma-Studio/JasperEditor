@@ -8,11 +8,7 @@
 //
 // It is never listed (Effects panel, agent catalogue) and cannot be added by commands (`internal`); the
 // before/after toggle bypasses it with the colour effects (`gradeBypass`).
-import {
-	LUMETRI_SPATIAL_PARAMS,
-	lumetriSpatialActive,
-	lumetriSpatialSettings,
-} from '../color/lumetri-spatial.ts';
+import { LUMETRI_SPATIAL_PARAMS, lumetriSpatialSettings } from '../color/lumetri-spatial.ts';
 import type { Animatable } from '../schema/common.ts';
 import { LUMETRI_EFFECT_ID, LUMETRI_PARAMS } from './color-effects.ts';
 import type { EffectParams, EffectSpec } from './effects.ts';
@@ -342,9 +338,4 @@ export function expandLumetriSpatial<E extends InstanceLike>(effects: readonly E
 		} as E);
 	}
 	return out;
-}
-
-/** Whether evaluated Lumetri params use the spatial stage at this frame (tests, UI badges). */
-export function lumetriSpatialActiveAt(p: EffectParams): boolean {
-	return lumetriSpatialActive(lumetriSpatialSettings(p));
 }

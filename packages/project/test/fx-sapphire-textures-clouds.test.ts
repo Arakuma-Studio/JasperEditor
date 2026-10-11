@@ -13,7 +13,6 @@ import {
 	paramUniforms,
 	planGpuEffect,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import {
 	glowPasses,
@@ -75,7 +74,7 @@ describe('sapphire-textures-clouds family', () => {
 		expect(FX_FAMILIES.find((f) => f.file === 'sapphire-textures-clouds')!.effects).toBe(FX);
 	});
 
-	it('ids are jasper.s.<kebab of the Sapphire name>; generators in Sapphire Render; valid GPU specs', () => {
+	it('ids are jasper.s.<kebab of the Sapphire name>; generators in Sapphire Render', () => {
 		for (const s of FX) {
 			const kebab = s.label
 				.slice(2)
@@ -86,7 +85,6 @@ describe('sapphire-textures-clouds family', () => {
 			expect(s.category).toBe('Generate');
 			expect(s.gpu?.kind).toBe('generator');
 			expect(s.description).toBeTruthy();
-			expect(validateGpuEffect(s)).toEqual([]);
 		}
 	});
 

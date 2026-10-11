@@ -33,12 +33,6 @@ export function h01(i: number, k: number, seed: number): number {
 /** Signed hash → [−1, 1). */
 export const hs = (i: number, k: number, seed: number) => h01(i, k, seed) * 2 - 1;
 
-/** A 32-bit seed from `u_seed` (0..1) and a Random Seed param. */
-export function seedOf(ctxSeed: number, randomSeed: unknown, salt: number): number {
-	const r = typeof randomSeed === 'number' && Number.isFinite(randomSeed) ? Math.floor(randomSeed) : 0;
-	return (Math.floor(ctxSeed * 4294967296) ^ Math.imul(r + 1, 0x9e3779b9) ^ Math.imul(salt, 0x85ebca6b)) | 0;
-}
-
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 
 /** 3D value noise in [0, 1] (smooth lattice noise, quintic fade). */
@@ -115,11 +109,6 @@ export class SimCache<S> {
 		}
 		st = e.checkpoints.get(target)!;
 		return st;
-	}
-
-	/** Forget every simulation (tests). */
-	clear(): void {
-		this.entries.clear();
 	}
 }
 

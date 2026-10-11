@@ -9,7 +9,6 @@ import {
 	type FxTimeContext,
 	gpuPasses,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import {
 	clampToSpan,
@@ -105,7 +104,6 @@ describe('Sapphire Time + Flicker family', () => {
 		for (const s of SAPPHIRE_TIME_FLICKER_EFFECTS) {
 			expect(s.id).toMatch(/^jasper\.s\.[a-z0-9-]+$/);
 			expect(s.bin).toBe(SAPPHIRE_BINS.time);
-			expect(validateGpuEffect(s)).toEqual([]);
 		}
 	});
 

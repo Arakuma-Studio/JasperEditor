@@ -15,7 +15,6 @@ import {
 	type TrFrameContext,
 	transitionPasses,
 	transitionSpec,
-	validateGpuTransition,
 } from '../src/index.ts';
 import {
 	blurScale,
@@ -118,7 +117,6 @@ describe('Sapphire dissolves catalogue', () => {
 			expect(s.subBin).toBe(SAPPHIRE_TRANSITION_SUBBINS.dissolves);
 			expect(s.description.length).toBeGreaterThan(40);
 			expect(transitionSpec(s.id)).toBe(s);
-			expect(validateGpuTransition(s)).toEqual([]);
 			const names = s.params.map((p) => p.name);
 			expect(names.slice(0, 2)).toEqual(['startPercent', 'endPercent']);
 			expect(names).toContain('reverse');

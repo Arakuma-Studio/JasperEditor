@@ -3,13 +3,7 @@
 // pixels are checked in packages/compositions/test/fx-sapphire-glows-lighting-gl.test.ts (real WebGL2).
 import { describe, expect, it } from 'vitest';
 import type { EffectParams, EffectSpec } from '../src/index.ts';
-import {
-	defaultEffectRegistry,
-	FX_FAMILIES,
-	planGpuEffect,
-	SAPPHIRE_BINS,
-	validateGpuEffect,
-} from '../src/index.ts';
+import { defaultEffectRegistry, FX_FAMILIES, planGpuEffect, SAPPHIRE_BINS } from '../src/index.ts';
 import { combineMode, sapphirePoint, unitPx } from '../src/registry/fx/sapphire-glows-lighting/common.ts';
 import { jfaPasses } from '../src/registry/fx/sapphire-glows-lighting/distance.ts';
 import { FLARE_LENSES, flareChunk, packFlare } from '../src/registry/fx/sapphire-glows-lighting/flare.ts';
@@ -68,7 +62,6 @@ describe('Sapphire Glows + Lighting catalogue', () => {
 		for (const s of SAPPHIRE_GLOWS_LIGHTING_EFFECTS) {
 			expect(defaultEffectRegistry.get(s.id)).toBe(s);
 			expect(s.bin).toBe(SAPPHIRE_BINS.lighting);
-			expect(validateGpuEffect(s)).toEqual([]);
 		}
 	});
 

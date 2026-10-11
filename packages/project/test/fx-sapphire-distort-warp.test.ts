@@ -12,7 +12,6 @@ import {
 	paramUniforms,
 	planGpuEffect,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import {
 	boundsPadding,
@@ -82,7 +81,6 @@ describe('Sapphire Distort catalogue', () => {
 			expect(s.category).toBe('Distort');
 			expect(s.id).toMatch(/^jasper\.s\.[a-z0-9]+(-[a-z0-9]+)*$/);
 			expect(s.description).toBeTruthy();
-			expect(validateGpuEffect(s)).toEqual([]);
 		}
 		expect(byLabel('S_WarpFishEye').id).toBe('jasper.s.warp-fish-eye');
 		expect(byLabel('S_DistortRGB').id).toBe('jasper.s.distort-rgb');

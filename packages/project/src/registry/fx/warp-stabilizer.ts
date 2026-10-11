@@ -305,8 +305,3 @@ export const WARP_STABILIZER: EffectSpec = defineShaderEffect({
 });
 
 export const WARP_STABILIZER_EFFECTS: readonly EffectSpec[] = [WARP_STABILIZER];
-
-/** The plan an instance renders with at a clip frame (tests, the Effect Controls status line). */
-export function warpPlanAt(p: Record<string, unknown>, a: WarpAnalysisData): StabPlan {
-	return warpPlanFor(a, warpSettingsOf(p, warpAnalysisFps(a)));
-}

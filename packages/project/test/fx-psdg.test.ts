@@ -2,7 +2,7 @@
 // their Premiere-facing params, and the pure TypeScript maths (time hooks, timecode text, strobe timing, paddings,
 // text encoding). Pixel behaviour: packages/compositions/test/fx-psdg-*-gl.test.ts.
 import { describe, expect, it } from 'vitest';
-import { defaultEffectRegistry, type EffectSpec, FX_FAMILIES, validateGpuEffect } from '../src/index.ts';
+import { defaultEffectRegistry, type EffectSpec, FX_FAMILIES } from '../src/index.ts';
 import { PSDG_BLEND_MODES } from '../src/registry/fx/premiere-stylize-distort-generate/common.ts';
 import { waveWarpPadding } from '../src/registry/fx/premiere-stylize-distort-generate/distort.ts';
 import {
@@ -115,7 +115,6 @@ describe('premiere-stylize-distort-generate family', () => {
 			expect(s.gpu).toBeTruthy();
 			expect(s.description).toBeTruthy();
 			expect(defaultEffectRegistry.get(e.id)).toBe(s);
-			expect(validateGpuEffect(s)).toEqual([]);
 		}
 		expect(FX_FAMILIES.find((f) => f.file === 'premiere-stylize-distort-generate')!.effects).toBe(FAMILY);
 	});

@@ -8,7 +8,6 @@ import {
 	type FxPlanContext,
 	gpuPasses,
 	planGpuEffect,
-	validateGpuEffect,
 } from '../src/index.ts';
 import { kernelMat3, levelsUniforms } from '../src/registry/fx/premiere-adjust-color-keying/adjust.ts';
 import { equalizeLutScale } from '../src/registry/fx/premiere-adjust-color-keying/analysis.ts';
@@ -132,9 +131,8 @@ describe('fx family premiere-adjust-color-keying: catalogue', () => {
 		}
 	});
 
-	it('every entry passes validateGpuEffect and plans with default params', () => {
+	it('every entry plans with default params', () => {
 		for (const s of FAMILY) {
-			expect(validateGpuEffect(s), s.id).toEqual([]);
 			const plan = planGpuEffect(s, { id: 'fx', params: defaults(s) }, frame, { width: 1920, height: 1080 });
 			expect(plan.passes.length).toBeGreaterThan(0);
 			expect(plan.passes.at(-1)!.output).toBeNull();

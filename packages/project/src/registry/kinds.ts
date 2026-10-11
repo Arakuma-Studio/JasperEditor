@@ -352,11 +352,6 @@ export function clipEngines(clip: { kind: string; template?: { renderer?: string
 	return { ...caps.engines, badge: caps.badge };
 }
 
-/** Clip kinds that live on audio tracks (audio, nest-audio, synthetic-audio). */
-export function isAudioKind(kind: string): boolean {
-	return kindCapabilities(kind)?.trackKind === 'audio';
-}
-
 /** Track kind a clip kind belongs on (S01:TRK-003). Unknown kinds return null (any track). */
 export function trackKindFor(kind: string): TrackKind | null {
 	return kindCapabilities(kind)?.trackKind ?? null;

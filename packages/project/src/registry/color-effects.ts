@@ -12,7 +12,6 @@ import {
 	defaultWorkingSettings,
 	gradeSpace,
 	inputTransformFn,
-	outputTransformFn,
 } from '../color/cms/transform.ts';
 import { NEUTRAL_HUE_CURVE } from '../color/hue-curves.ts';
 import { CREATIVE_LOOKS } from '../color/looks.ts';
@@ -639,16 +638,6 @@ export const COLOR_INPUT_EFFECT: EffectSpec = {
 	color: { build: colorInputFn },
 	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
 };
-
-/** color-mgmt: the working → output conversion as a colour op (exports in another space than the working one). */
-export function colorOutputFn(outSpace: string, ctx: ColorOpContext): ColorFn | null {
-	const working = ctx.working ?? {
-		...defaultWorkingSettings('rec709'),
-		linearize: false,
-		blendLinear: false,
-	};
-	return outputTransformFn(working, outSpace);
-}
 
 /** The colour effects added by M2 (registered by default through `M2_EFFECTS`). */
 export const COLOR_EFFECTS: readonly EffectSpec[] = [LUMETRI_EFFECT];

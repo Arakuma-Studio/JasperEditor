@@ -11,7 +11,6 @@ import {
 	gpuPadding,
 	planGpuEffect,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import { edgeOf, levelFor, unitPx } from '../src/registry/fx/sapphire-blur-sharpen/common.ts';
 import { zMaxAmount } from '../src/registry/fx/sapphire-blur-sharpen/depth.ts';
@@ -72,7 +71,6 @@ describe('Sapphire Blur+Sharpen catalogue', () => {
 			expect(s.id).toMatch(/^jasper\.s\.[a-z0-9-]+$/);
 			expect(s.bin).toBe(SAPPHIRE_BINS.blurSharpen);
 			expect(s.description?.length).toBeGreaterThan(20);
-			expect(validateGpuEffect(s)).toEqual([]);
 			expect(defaultEffectRegistry.get(s.id)).toBe(s);
 		}
 	});

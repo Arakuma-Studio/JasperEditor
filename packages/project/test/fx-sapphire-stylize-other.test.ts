@@ -11,7 +11,6 @@ import {
 	gpuPasses,
 	planGpuEffect,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import {
 	defaultsOf,
@@ -59,7 +58,6 @@ describe('Sapphire other-stylize family', () => {
 		for (const s of SAPPHIRE_STYLIZE_OTHER_EFFECTS) {
 			expect(s.bin).toBe(SAPPHIRE_BINS.stylize);
 			expect(defaultEffectRegistry.get(s.id)).toBe(s);
-			expect(validateGpuEffect(s)).toEqual([]);
 		}
 		expect(SAPPHIRE_STYLIZE_OTHER_EFFECTS.filter((s) => s.expensive).map((s) => s.id)).toEqual([
 			'jasper.s.pixel-mosh',

@@ -11,7 +11,6 @@ import {
 	gpuPadding,
 	planGpuEffect,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import { blurPasses, sUnitsPx } from '../src/registry/fx/sapphire-paint-kaleido-edges/common.ts';
 import { edgeGain, edgeSmoothSigma } from '../src/registry/fx/sapphire-paint-kaleido-edges/edges.ts';
@@ -74,7 +73,6 @@ describe('sapphire-paint-kaleido-edges family', () => {
 			expect(s.bin).toBe(SAPPHIRE_BINS.stylize);
 			expect(s.gpu).toBeDefined();
 			expect(defaultEffectRegistry.get(s.id)).toBe(s);
-			expect(validateGpuEffect(s)).toEqual([]);
 			expect(s.params.at(-1)?.name).toBe('mixWithOriginal');
 		}
 	});

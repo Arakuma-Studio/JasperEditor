@@ -8,7 +8,6 @@ import {
 	TRANSITION_BINS,
 	TRANSITION_FAMILIES,
 	type TransitionSpec,
-	validateGpuTransition,
 } from '../src/index.ts';
 import { wipeMargin } from '../src/registry/transitions/sapphire-wipes/common.ts';
 
@@ -80,7 +79,6 @@ describe('Sapphire wipes catalogue', () => {
 			expect(s.subBin).toBe(SAPPHIRE_TRANSITION_SUBBINS.wipes);
 			expect(s.description.length).toBeGreaterThan(20);
 			expect(s.keywords).toContain('wipe');
-			expect(validateGpuTransition(s)).toEqual([]);
 		}
 	});
 

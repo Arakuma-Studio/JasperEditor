@@ -32,10 +32,6 @@ const isText = (c: Pick<Clip, 'kind'>) => c.kind === 'text';
 
 export const TEXT_ANIMATOR_KEY_PREFIX = 'textAnimators.';
 
-function controlOf(ui: AnimatorPropertyDef['ui'] | SelectorFieldDef['ui']): PropertySpec['ui']['control'] {
-	return ui;
-}
-
 function propertySpec(a: TextAnimatorGroup, ai: number, def: AnimatorPropertyDef): PropertySpec {
 	return {
 		key: `${TEXT_ANIMATOR_KEY_PREFIX}${a.id}.properties.${def.key}`,
@@ -50,7 +46,7 @@ function propertySpec(a: TextAnimatorGroup, ai: number, def: AnimatorPropertyDef
 		storagePath: ['animators', String(ai), 'properties', def.key],
 		appliesTo: isText,
 		ui: {
-			control: controlOf(def.ui),
+			control: def.ui,
 			...(def.key === 'skew' || def.key.endsWith('Saturation') || def.key.endsWith('Brightness')
 				? { bipolar: true }
 				: {}),

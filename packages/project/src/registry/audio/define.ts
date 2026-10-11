@@ -14,9 +14,6 @@ import type {
 	ParamSpec,
 } from '../effects.ts';
 
-/** Id prefix of every audio effect. */
-export const AUDIO_EFFECT_PREFIX = 'jasper.audio.';
-
 /** Premiere's Audio Effects folders (the effect's category; helpx "Audio effects and transitions"). */
 export const AUDIO_EFFECT_FOLDERS = [
 	'Amplitude and Compression',

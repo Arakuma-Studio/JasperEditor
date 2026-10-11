@@ -601,7 +601,6 @@ export function uniformDeclaration(u: FxUniform): string {
 	if (u.type === 'vec4[]') return `uniform vec4 ${u.name}[${u.value.length / 4}];`;
 	return `uniform ${u.type} ${u.name};`;
 }
-const declaration = uniformDeclaration;
 
 // ---------------------------------------------------------------- program sources
 
@@ -854,7 +853,7 @@ export function planGpuEffect(
 		uniforms.push({ name: `u_${m.name}_state`, type: 'float', value: [0] });
 	}
 	const planned = planPasses(passes, {
-		paramDecls: uniforms.map(declaration),
+		paramDecls: uniforms.map(uniformDeclaration),
 		textures: textures.map((t) => t.uniform),
 		lut: textures.filter((t) => t.kind === 'lut').map((t) => t.uniform),
 		canvas,
@@ -916,7 +915,7 @@ export function planPasses(
 			textures: opts.textures,
 			lut: opts.lut,
 			outputs: [...outputs],
-			uniforms: passUniforms.map(declaration),
+			uniforms: passUniforms.map(uniformDeclaration),
 		});
 		const name = last ? null : (pass.output ?? `pass${index}`);
 		let target: string | undefined;
@@ -940,7 +939,7 @@ export function planPasses(
 					textures: opts.textures,
 					lut: opts.lut,
 					outputs: [...outputs],
-					uniforms: passUniforms.map(declaration),
+					uniforms: passUniforms.map(uniformDeclaration),
 				}),
 				vertices,
 				instances:

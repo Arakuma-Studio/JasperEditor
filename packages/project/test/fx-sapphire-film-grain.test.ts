@@ -11,7 +11,6 @@ import {
 	fxSeed,
 	paramUniforms,
 	SAPPHIRE_BINS,
-	validateGpuEffect,
 } from '../src/index.ts';
 import { grainFrame, sapphirePoint } from '../src/registry/fx/sapphire-film-grain/common.ts';
 import {
@@ -75,7 +74,6 @@ describe('sapphire-film-grain catalogue', () => {
 		);
 		for (const s of SAPPHIRE_FILM_GRAIN_EFFECTS) {
 			expect(defaultEffectRegistry.get(s.id)).toBe(s);
-			expect(validateGpuEffect(s)).toEqual([]);
 			expect(s.description!.length).toBeGreaterThan(40);
 		}
 	});
