@@ -1,3 +1,4 @@
+import { EnvelopeSchema } from '@jasper/api';
 import {
 	createCounterIdSource,
 	createEmptyProject,
@@ -236,7 +237,7 @@ describe('autosave and the journal send the same JSON, serialised incrementally'
 			s.apply({ label: 'Add', origin: 'user', commands: [solid(i * 40)] });
 			const doc = s.getCommitted();
 			await store.save(s.projectId, doc, { revision: i + 1, baseRevision: i });
-			const sent = JSON.parse(bodies[bodies.length - 1]!) as { document: unknown; revision: number };
+			const sent = EnvelopeSchema.parse(JSON.parse(bodies[bodies.length - 1]!));
 			expect(sent.revision).toBe(i + 1);
 			expect(JSON.stringify(sent.document)).toBe(JSON.stringify(doc));
 			// Byte-identical to the plain serialisation of the same envelope.

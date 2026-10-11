@@ -1,3 +1,4 @@
+import { EnvelopeSchema } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, defaultRegistries, type ProjectDocument } from '@jasper/project';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,7 +83,7 @@ describe('EngineProjectStore (S01:PER-001 over the engine routes)', () => {
 		expect(copy.document.name).toBe('Film copy');
 		expect(copy.document.projectId).toBe(copyId);
 		const blob = await s.exportFile(projectId);
-		const env = JSON.parse(await blob.text());
+		const env = EnvelopeSchema.parse(JSON.parse(await blob.text()));
 		expect(env.format).toBe('jasper-project');
 		const importedId = await s.importFile(blob);
 		expect((await s.open(importedId)).document.name).toBe('Film');

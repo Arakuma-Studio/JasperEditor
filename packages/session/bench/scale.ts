@@ -128,7 +128,7 @@ measure('load', 'JSON.parse + loadProject (migrate, zod, invariants)', 2500, () 
 	loadProject(JSON.parse(json), { ids: createCounterIdSource(1), effects: registries.effects }),
 );
 // Migrate: the whole migration pipeline from the oldest schema (v1 → current).
-const v1 = JSON.stringify({ ...JSON.parse(json), document: { ...doc, schemaVersion: 1 } });
+const v1 = JSON.stringify({ ...envelope(), document: { ...doc, schemaVersion: 1 } });
 measure(
 	'migrate v1→current',
 	'migrate() of the same project stamped schema v1',

@@ -53,7 +53,7 @@ export class FakeEngine {
 		const method = (init.method ?? 'GET').toUpperCase();
 		const path = url.split('?')[0]!;
 		const headers = Object.fromEntries(new Headers(init.headers).entries());
-		const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
+		const body: unknown = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
 		this.requests.push({ method, path, headers, body, keepalive: init.keepalive });
 		const fi = this.failures.findIndex((f) => f.match.test(`${method} ${path}`));
 		if (fi >= 0) {
