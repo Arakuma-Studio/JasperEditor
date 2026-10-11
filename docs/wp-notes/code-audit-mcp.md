@@ -82,8 +82,13 @@ fields reuse their existing schemas; the interpretation projection is checked ag
 `describeInterpretation`'s return type. Imported clips retain the model's union and narrow properties
 by membership. The speech fake takes the real client's route/options types and validates each
 request body and sequence document. Existing rejected-input cases and assertions remain intact.
-Focused fake-engine and response-reader checks are pending integration of this follow-up; no full
-typecheck or real-engine grading rerun was started.
+Auto-tone parameter validation rejects extra keys so its exact key-set assertion remains effective;
+exact speech request comparisons inspect the original logged request. Repeated caption/job reads
+parse once. A TypeScript AST scan of all 103 MCP TypeScript files found no explicit `any` nodes.
+All 21 distinct tests across captions, imports, speech and the response reader passed: the initial
+run passed 20, and the three-caption-test rerun passed after correcting a redundant read of an
+already parsed list. Runs used `pnpm exec vitest run <files> --maxWorkers=1` from `apps/mcp`.
+No full typecheck or real-engine grading rerun was started.
 
 - Biome and `git diff --check` passed for the edited source and tests.
 - The focused run covered unit/discovery, conventions, PNG, default-sequence, audio effects,
