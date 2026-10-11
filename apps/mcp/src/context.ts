@@ -25,7 +25,15 @@ import type {
 	ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
-import { cancelledResult, RequestCancelled, ToolError, TX_ERROR_HINTS, toErrorResult } from './errors.ts';
+import {
+	cancelledResult,
+	jsonResult,
+	RequestCancelled,
+	ToolError,
+	TX_ERROR_HINTS,
+	toErrorResult,
+} from './errors.ts';
+import { pickSequence } from './format.ts';
 import { type EngineConnection, withEngine } from './link.ts';
 import { strictInputSchema } from './strict.ts';
 
@@ -142,6 +150,15 @@ export async function loadDoc(ctx: ToolContext, projectId: string): Promise<Load
 	return { doc, revision: r.revision, live: r.via === 'session' };
 }
 
+/** Resolves the sequence with the tool error and discovery hint used by sequence-based tools. */
+export function requireSequence(doc: ProjectDocument, sequenceId?: string): Sequence {
+	try {
+		return pickSequence(doc, sequenceId);
+	} catch (e) {
+		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
+	}
+}
+
 export function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
 	for (const seq of Object.values(doc.sequences)) {
 		const clip = seq.clips[clipId];
@@ -166,14 +183,12 @@ export function frameOf(
 // ---------------------------------------------------------------- progress
 
 /** At most one `notifications/progress` per request every this many ms (docs/wp-notes/mcp-cli.md §2). */
-export const PROGRESS_INTERVAL_MS = 100;
+const PROGRESS_INTERVAL_MS = 100;
 
-export type ProgressReporter = {
+type ProgressReporter = {
 	(progress: number, total?: number, message?: string): void;
 	/** Sends the latest pending update (waiting out the interval) so it arrives before the result. */
 	flush(): Promise<void>;
-	/** Drops a pending update (the request is over). */
-	dispose(): void;
 };
 
 type ProgressParams = { progressToken: string | number; progress: number; total?: number; message?: string };
@@ -193,13 +208,8 @@ const channels = new WeakMap<Extra, ProgressChannel>();
  * one every PROGRESS_INTERVAL_MS per request (the latest value wins; a trailing update follows a burst) and
  * strictly increasing across every reporter of the request, as the MCP progress utility requires.
  */
-export function progressReporter(
-	extra: Extra,
-	opts: { intervalMs?: number; now?: () => number } = {},
-): ProgressReporter {
+export function progressReporter(extra: Extra): ProgressReporter {
 	const token = extra._meta?.progressToken;
-	const interval = opts.intervalMs ?? PROGRESS_INTERVAL_MS;
-	const now = opts.now ?? (() => Date.now());
 	let ch = channels.get(extra);
 	if (!ch) {
 		ch = {
@@ -217,7 +227,7 @@ export function progressReporter(
 		const p = c.pending;
 		c.pending = null;
 		if (!p || extra.signal.aborted) return;
-		c.lastSentAt = now();
+		c.lastSentAt = Date.now();
 		void extra.sendNotification({ method: 'notifications/progress', params: p }).catch(() => {});
 	};
 	const report = ((progress: number, total?: number, message?: string) => {
@@ -229,28 +239,23 @@ export function progressReporter(
 			...(total !== undefined ? { total } : {}),
 			...(message ? { message } : {}),
 		};
-		const wait = c.lastSentAt + interval - now();
+		const wait = c.lastSentAt + PROGRESS_INTERVAL_MS - Date.now();
 		if (wait <= 0) send();
 		else if (!c.timer) c.timer = setTimeout(send, wait);
 	}) as ProgressReporter;
 	report.flush = async () => {
 		if (!c.pending) return;
-		const wait = c.lastSentAt + interval - now();
+		const wait = c.lastSentAt + PROGRESS_INTERVAL_MS - Date.now();
 		if (c.timer) clearTimeout(c.timer);
 		c.timer = null;
 		if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 		send();
 	};
-	report.dispose = () => {
-		if (c.timer) clearTimeout(c.timer);
-		c.timer = null;
-		c.pending = null;
-	};
 	return report;
 }
 
 /** Drops the pending progress update of a finished request (defineTool calls it). */
-export function disposeReporters(extra: Extra): void {
+function disposeReporters(extra: Extra): void {
 	const c = channels.get(extra);
 	if (c?.timer) clearTimeout(c.timer);
 	channels.delete(extra);
@@ -376,6 +381,19 @@ export function txBody(res: AgentTxResponse, r: Extract<TransactionResult, { ok:
 	};
 }
 
+/** Applies helper commands and returns the standard transaction result. */
+export async function applyCommands(
+	ctx: ToolContext,
+	projectId: string,
+	label: string,
+	commands: unknown[],
+	extra: Extra | undefined,
+	sequenceId?: string,
+) {
+	const res = await transact(ctx, projectId, { label, commands, sequenceId }, extra);
+	return jsonResult(txBody(res, requireOk(res)));
+}
+
 // ---------------------------------------------------------------- jobs
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'interrupted']);
@@ -494,7 +512,7 @@ export async function waitJob(
 
 // ---------------------------------------------------------------- stills
 
-export type StillResult = {
+type StillResult = {
 	jobId: string;
 	sequenceId: string;
 	frame: number;

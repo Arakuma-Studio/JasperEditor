@@ -179,3 +179,23 @@ load-sensitive Lumetri bake timing test, which passes when rerun), Playwright `e
 - The Electron capture path (`jasper:capture-page`) is covered by the rect validation unit test only; no packaged
   desktop app was run here.
 - The CLI's `set --at` takes sequence frames or timecode (param.set keys sit on sequence frames), not seconds.
+
+## 2026-10-11 code audit
+
+The MCP audit collapsed eight identical sequence lookup/error conversions into `requireSequence`, five
+identical transaction/result helpers into `applyCommands`, and the time-remap clip lookup into the existing
+`findClip`. Tool registration, schemas, result fields, approval handling and error text remain unchanged.
+Unused progress-reporter configuration/disposal and private-helper exports were removed after checking all
+repository references; the request-level disposal and 100 ms progress interval remain.
+
+The audit also reproduced a PNG allocation bug: a 1,096-byte PNG declaring one RGBA pixel expanded to
+1,048,576 bytes instead of its five-byte scanline, and the decoder accepted it. The decoder now caps dimensions
+at 64 × 1024 × 1024 pixels (the testkit decoder's existing ceiling, allowing 8K), and caps zlib output at the
+scanline size declared by the header. Oversized dimensions return `E_LIMIT`; surplus inflated data returns
+`E_INVALID_PARAM`, both with an actionable hint. Existing supported images retain their decoding behavior.
+`apps/mcp/test/png-limits.test.ts` contains the failing-before regression plus seeded property cases for valid,
+overlong and oversized inputs. No test assets were added; its PNGs are generated in memory.
+
+Validation recorded by the audit worker: formatting and `git diff --check` passed; all three new PNG tests
+failed against the original decoder. Post-change tests and package typechecking were stopped at the
+integrator's request because the shared host was thrashing, and must run in the serial integration gate.

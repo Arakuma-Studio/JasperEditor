@@ -6,7 +6,6 @@ import {
 	isNestClip,
 	nestContentKey,
 	nestReferences,
-	type Sequence,
 	SYNTHETIC_INFO,
 	SYNTHETIC_KINDS,
 	sequenceGaps,
@@ -17,19 +16,17 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	applyCommands,
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
 	loadDoc,
 	READ_ONLY,
-	requireOk,
+	requireSequence,
 	type ToolContext,
-	transact,
-	txBody,
 } from '../context.ts';
-import { jsonResult, ToolError } from '../errors.ts';
-import { pickSequence } from '../format.ts';
+import { jsonResult } from '../errors.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
@@ -50,31 +47,9 @@ const SequenceIdArg = z
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
 const RgbaArg = z.tuple([z.number(), z.number(), z.number(), z.number()]).describe('RGBA, each 0..1');
 
-async function run(
-	ctx: ToolContext,
-	projectId: string,
-	label: string,
-	commands: unknown[],
-	extra: Parameters<typeof transact>[3],
-	sequenceId?: string,
-) {
-	const res = await transact(
-		ctx,
-		projectId,
-		{ label, commands, ...(sequenceId ? { sequenceId } : {}) },
-		extra,
-	);
-	return jsonResult(txBody(res, requireOk(res)));
-}
-
 async function sequenceOf(ctx: ToolContext, projectId: string, sequenceId?: string) {
 	const { doc, revision, live } = await loadDoc(ctx, projectId);
-	let seq: Sequence;
-	try {
-		seq = pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
+	const seq = requireSequence(doc, sequenceId);
 	return { doc, seq, revision, live };
 }
 
@@ -98,7 +73,13 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipIds, name }, extra) =>
-			run(ctx, projectId, 'Nest', [{ type: 'clip.nest', clipIds, ...(name ? { name } : {}) }], extra),
+			applyCommands(
+				ctx,
+				projectId,
+				'Nest',
+				[{ type: 'clip.nest', clipIds, ...(name ? { name } : {}) }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -112,7 +93,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipIds }, extra) =>
-			run(ctx, projectId, 'Unnest', [{ type: 'clip.unnest', clipIds }], extra),
+			applyCommands(ctx, projectId, 'Unnest', [{ type: 'clip.unnest', clipIds }], extra),
 	);
 
 	defineTool(
@@ -146,7 +127,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			extra,
 		) => {
 			const { seq } = await sequenceOf(ctx, projectId, sequenceId);
-			return run(
+			return applyCommands(
 				ctx,
 				projectId,
 				'Place Sequence',
@@ -236,7 +217,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, duration, track, name, effects }, extra) => {
 			const { seq } = await sequenceOf(ctx, projectId, sequenceId);
-			return run(
+			return applyCommands(
 				ctx,
 				projectId,
 				'New Adjustment Layer',
@@ -274,7 +255,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipIds }, extra) =>
-			run(ctx, projectId, 'Group', [{ type: 'clip.group', clipIds }], extra),
+			applyCommands(ctx, projectId, 'Group', [{ type: 'clip.group', clipIds }], extra),
 	);
 
 	defineTool(
@@ -287,7 +268,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds }, extra) =>
-			run(ctx, projectId, 'Ungroup', [{ type: 'clip.ungroup', clipIds }], extra),
+			applyCommands(ctx, projectId, 'Ungroup', [{ type: 'clip.ungroup', clipIds }], extra),
 	);
 
 	defineTool(
@@ -301,7 +282,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, sequenceId, name }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Duplicate Sequence',
@@ -321,7 +302,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, sequenceId, force }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Delete Sequence',
@@ -348,7 +329,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, kinds }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Remove Unused',
@@ -390,7 +371,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, kind, name, binId, params }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				`New ${SYNTHETIC_INFO[kind as keyof typeof SYNTHETIC_INFO].label}`,
@@ -422,7 +403,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, syntheticId, params }, extra) =>
-			run(ctx, projectId, 'Edit Item', [{ type: 'synthetic.update', syntheticId, params }], extra),
+			applyCommands(ctx, projectId, 'Edit Item', [{ type: 'synthetic.update', syntheticId, params }], extra),
 	);
 
 	defineTool(
@@ -462,7 +443,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, clipIds }, extra) => {
 			const { seq } = await sequenceOf(ctx, projectId, sequenceId);
-			return run(
+			return applyCommands(
 				ctx,
 				projectId,
 				'Join Through Edits',
@@ -529,7 +510,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, clipIds, tracks, from, to, name }, extra) => {
 			const { seq } = await sequenceOf(ctx, projectId, sequenceId);
-			return run(
+			return applyCommands(
 				ctx,
 				projectId,
 				'Make Subsequence',
@@ -568,7 +549,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, clipIds, tracks }, extra) => {
 			const { seq } = await sequenceOf(ctx, projectId, sequenceId);
-			return run(
+			return applyCommands(
 				ctx,
 				projectId,
 				'Add Frame Hold',
@@ -603,7 +584,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipId, at, duration }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Insert Frame Hold Segment',
@@ -638,7 +619,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, enabled, holdOn, at, sourceTime, holdFilters }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Frame Hold Options',

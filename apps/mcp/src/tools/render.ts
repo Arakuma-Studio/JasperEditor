@@ -14,6 +14,7 @@ import {
 	jobBody,
 	loadDoc,
 	READ_ONLY,
+	requireSequence,
 	type ToolContext,
 	waitJob,
 } from '../context.ts';
@@ -24,7 +25,7 @@ import {
 	EXPORT_PRESETS,
 	findExportPreset,
 } from '../export-presets.ts';
-import { pickSequence, timelineTable } from '../format.ts';
+import { timelineTable } from '../format.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 import {
@@ -41,14 +42,6 @@ const SequenceIdArg = z
 	.optional()
 	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
 const JobIdArg = z.string().min(1).describe('Job id from start_export / render tools');
-
-function pickSeq(doc: Parameters<typeof pickSequence>[0], sequenceId?: string) {
-	try {
-		return pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
-}
 
 export function registerRenderTools(ctx: ToolContext): void {
 	defineTool(
@@ -68,7 +61,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, from, to }) => {
 			const { doc, revision, live } = await loadDoc(ctx, projectId);
-			const seq = pickSeq(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			return {
 				content: [
 					{
@@ -479,7 +472,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					'Pass a full path such as /tmp/cut.mp4.',
 				);
 			const { doc, revision } = await loadDoc(ctx, projectId);
-			const seq = pickSeq(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			let r: ExportSettings['range'] = { type: 'entire' };
 			if (range === 'in-out') {
 				if (seq.inPoint === null || seq.outPoint === null)

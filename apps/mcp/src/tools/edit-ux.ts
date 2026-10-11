@@ -16,17 +16,18 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	applyCommands,
 	defineTool,
 	EDIT,
 	loadDoc,
 	READ_ONLY,
 	requireOk,
+	requireSequence,
 	type ToolContext,
 	transact,
 	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { pickSequence } from '../format.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
@@ -58,14 +59,6 @@ const FitArg = z
 	])
 	.describe("Premiere's Fit Clip choice when four points disagree");
 
-function seqOf(doc: Parameters<typeof pickSequence>[0], sequenceId?: string): Sequence {
-	try {
-		return pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
-}
-
 function frameOf(seq: Sequence, input: unknown): number {
 	try {
 		return resolveFrameInput(seq, input);
@@ -76,23 +69,6 @@ function frameOf(seq: Sequence, input: unknown): number {
 			'Use frames, {"seconds": x} or "HH:MM:SS:FF".',
 		);
 	}
-}
-
-async function edit(
-	ctx: ToolContext,
-	projectId: string,
-	label: string,
-	commands: unknown[],
-	extra: Parameters<typeof transact>[3],
-	sequenceId?: string,
-) {
-	const res = await transact(
-		ctx,
-		projectId,
-		{ label, commands, ...(sequenceId ? { sequenceId } : {}) },
-		extra,
-	);
-	return jsonResult(txBody(res, requireOk(res)));
 }
 
 export function registerEditUxTools(ctx: ToolContext): void {
@@ -114,7 +90,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, tracks, clipId }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = seqOf(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const trackIds = (tracks ?? []).map((ref) => {
 				const t = [...seq.videoTracks, ...seq.audioTracks].find(
 					(x) => x.id === ref || trackLabel(seq, x.id)?.toUpperCase() === ref.toUpperCase(),
@@ -167,7 +143,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		async ({ projectId, sequenceId, itemId, mediaId, sourceTime, tracks }) => {
 			if (!itemId && !mediaId) throw new ToolError('E_INVALID_PARAM', 'Pass itemId or mediaId');
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = seqOf(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const item = itemId ? doc.items[itemId] : undefined;
 			const mid = mediaId ?? (item && 'mediaId' in item ? (item as { mediaId: string }).mediaId : undefined);
 			const asset = mid ? doc.media[mid] : undefined;
@@ -301,7 +277,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, at, kind, tracks }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = seqOf(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const trackIds = (tracks ?? [])
 				.map(
 					(ref) =>
@@ -438,7 +414,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, itemId, in: inT, out, restrictTrims }, extra) =>
-			edit(
+			applyCommands(
 				ctx,
 				projectId,
 				'Edit Subclip',
@@ -490,7 +466,7 @@ export function registerEditUxTools(ctx: ToolContext): void {
 						...(audioIn !== undefined ? { audioIn } : {}),
 						...(audioOut !== undefined ? { audioOut } : {}),
 					};
-			return edit(
+			return applyCommands(
 				ctx,
 				projectId,
 				'Mark Split',

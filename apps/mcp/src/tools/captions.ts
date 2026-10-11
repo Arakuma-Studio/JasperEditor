@@ -38,6 +38,7 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	applyCommands,
 	DESTRUCTIVE,
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
@@ -47,12 +48,12 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
+	requireSequence,
 	type ToolContext,
 	transact,
 	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { pickSequence } from '../format.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
@@ -85,31 +86,9 @@ const StyleArg = z
 const WordArg = (what: string) =>
 	z.number().int().min(0).describe(`${what} (sequence word index from transcript_inspect)`);
 
-async function run(
-	ctx: ToolContext,
-	projectId: string,
-	label: string,
-	commands: unknown[],
-	extra: Parameters<typeof transact>[3],
-	sequenceId?: string,
-) {
-	const res = await transact(
-		ctx,
-		projectId,
-		{ label, commands, ...(sequenceId ? { sequenceId } : {}) },
-		extra,
-	);
-	return jsonResult(txBody(res, requireOk(res)));
-}
-
 async function sequenceOf(ctx: ToolContext, projectId: string, sequenceId?: string) {
 	const { doc, revision } = await loadDoc(ctx, projectId);
-	let seq: Sequence;
-	try {
-		seq = pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
+	const seq = requireSequence(doc, sequenceId);
 	return { doc, seq, revision };
 }
 
@@ -257,7 +236,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const input = await readInput(a.path, a.content);
-			return run(
+			return applyCommands(
 				ctx,
 				a.projectId,
 				'Import Captions',
@@ -391,7 +370,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (a, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				a.projectId,
 				'Add Caption',
@@ -459,7 +438,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 					'Nothing to change',
 					'Give text, speaker, start, end or style.',
 				);
-			return run(ctx, a.projectId, 'Edit Caption', commands, extra);
+			return applyCommands(ctx, a.projectId, 'Edit Caption', commands, extra);
 		},
 	);
 
@@ -479,7 +458,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (a, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				a.projectId,
 				'Split Caption',
@@ -500,7 +479,13 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE,
 		},
 		async (a, extra) =>
-			run(ctx, a.projectId, 'Merge Captions', [{ type: 'caption.merge', clipIds: a.clipIds }], extra),
+			applyCommands(
+				ctx,
+				a.projectId,
+				'Merge Captions',
+				[{ type: 'caption.merge', clipIds: a.clipIds }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -514,7 +499,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async (a, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				a.projectId,
 				'Delete Captions',
@@ -573,7 +558,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 					'Nothing to change',
 					'Give style, preset, reset or savePresetAs.',
 				);
-			return run(ctx, a.projectId, 'Caption Style', commands, extra, a.sequenceId);
+			return applyCommands(ctx, a.projectId, 'Caption Style', commands, extra, a.sequenceId);
 		},
 	);
 
@@ -601,7 +586,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			if (a.action === 'add')
-				return run(
+				return applyCommands(
 					ctx,
 					a.projectId,
 					'Add Caption Track',
@@ -635,7 +620,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			if (Object.keys(patch).length) commands.push({ type: 'track.update', trackId: a.track, patch });
 			if (a.active) commands.push({ type: 'caption.setActiveTrack', trackId: a.track });
 			if (!commands.length) throw new ToolError('E_INVALID_PARAM', 'Nothing to change');
-			return run(ctx, a.projectId, 'Caption Track', commands, extra, a.sequenceId);
+			return applyCommands(ctx, a.projectId, 'Caption Track', commands, extra, a.sequenceId);
 		},
 	);
 
@@ -662,7 +647,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const input = await readInput(a.path, a.content);
-			return run(
+			return applyCommands(
 				ctx,
 				a.projectId,
 				'Import Transcript',
@@ -764,7 +749,14 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			async (a, extra) => {
 				const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
 				const [fromWord, toWord] = rangeOf(sequenceWords(doc, seq), a);
-				return run(ctx, a.projectId, title, [{ type, sequenceId: seq.id, fromWord, toWord }], extra, seq.id);
+				return applyCommands(
+					ctx,
+					a.projectId,
+					title,
+					[{ type, sequenceId: seq.id, fromWord, toWord }],
+					extra,
+					seq.id,
+				);
 			},
 		);
 	textEdit(
@@ -808,7 +800,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		async (a, extra) => {
 			const { doc, seq } = await sequenceOf(ctx, a.projectId, a.sequenceId);
 			const [fromWord, toWord] = rangeOf(sequenceWords(doc, seq), a);
-			return run(
+			return applyCommands(
 				ctx,
 				a.projectId,
 				'Insert Text Selection',
@@ -862,7 +854,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 					frames: ranges.reduce((n, [x, y]) => n + y - x, 0),
 				});
 			}
-			return run(
+			return applyCommands(
 				ctx,
 				a.projectId,
 				'Remove Filler Words',
@@ -912,7 +904,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 					frames: ranges.reduce((n, [x, y]) => n + y - x, 0),
 				});
 			}
-			return run(
+			return applyCommands(
 				ctx,
 				a.projectId,
 				'Remove Pauses',
@@ -946,7 +938,7 @@ export function registerCaptionTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async (a, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				a.projectId,
 				'Rename Speaker',

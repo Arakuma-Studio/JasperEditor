@@ -18,11 +18,11 @@ import {
 	jobBody,
 	loadDoc,
 	READ_ONLY,
+	requireSequence,
 	type ToolContext,
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { pickSequence } from '../format.ts';
 import { ProjectIdArg } from './projects.ts';
 import { failedJobError } from './templates.ts';
 
@@ -40,14 +40,6 @@ const RangeArg = z
 	})
 	.optional()
 	.describe('Range [from, to); default: In/Out, else the whole sequence');
-
-function pick(doc: Parameters<typeof pickSequence>[0], sequenceId?: string): Sequence {
-	try {
-		return pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
-}
 
 function rangeOf(
 	seq: Sequence,
@@ -79,7 +71,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, sequenceId, range }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = pick(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const settings = previewSettingsOf(seq) as PreviewSettings;
 			const segs = previewSegments(doc, seq.id);
 			const audio = audioPreviewSegments(doc, seq.id);
@@ -160,7 +152,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 					'Pass the clip ids to render.',
 				);
 			const { doc, revision } = await loadDoc(ctx, projectId);
-			const seq = pick(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),
@@ -218,7 +210,7 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		async ({ projectId, sequenceId, scope, range }) => {
 			if (scope === 'all') return jsonResult(await ctx.engine((c) => c.deletePreviews({ all: true })));
 			const { doc } = await loadDoc(ctx, projectId);
-			const seq = pick(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const r = rangeOf(seq, range);
 			const hashes = [
 				...previewSegments(doc, seq.id).filter((s) => overlapsRange(s, r)),

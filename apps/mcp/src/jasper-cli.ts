@@ -13,7 +13,7 @@ import { type EngineConnection, EngineLink } from './link.ts';
 import { createJasperMcpServer } from './server.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
-export const CLI_HELP = `jasper ${MCP_SERVER_VERSION} — JasperEditor from the command line
+const CLI_HELP = `jasper ${MCP_SERVER_VERSION} — JasperEditor from the command line
 
 Usage: jasper [options] <command> [arguments]
 

@@ -14,7 +14,6 @@ import {
 	type ProjectDocument,
 	resolveFrameInput,
 	resolveTrackRef,
-	type Sequence,
 	SyncError,
 	sequenceTimecode,
 	shownAngles,
@@ -31,12 +30,12 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
+	requireSequence,
 	type ToolContext,
 	transact,
 	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { pickSequence } from '../format.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
@@ -154,14 +153,6 @@ async function apply(
 	return jsonResult({ ...txBody(res, requireOk(res)), ...more });
 }
 
-function seqOf(doc: ProjectDocument, sequenceId?: string): Sequence {
-	try {
-		return pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
-}
-
 function multicamSummary(doc: ProjectDocument, seqId: string, mc: MulticamSource) {
 	const item = Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === seqId);
 	const seq = doc.sequences[seqId]!;
@@ -204,7 +195,7 @@ export function registerMulticamTools(ctx: ToolContext): void {
 			let clips: AudioSyncClip[];
 			if (itemIds) clips = syncErrors(() => audioSyncClipsForItems(doc, itemIds));
 			else {
-				const seq = seqOf(doc, sequenceId);
+				const seq = requireSequence(doc, sequenceId);
 				clips = syncErrors(() => audioSyncClipsForUnits(doc, seq, synchronizeUnits(seq, clipIds!, 'audio')));
 			}
 			const r = await measure(ctx, clips, {
@@ -235,7 +226,7 @@ export function registerMulticamTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const { doc } = await loadDoc(ctx, a.projectId);
-			const seq = seqOf(doc, a.sequenceId);
+			const seq = requireSequence(doc, a.sequenceId);
 			let audioOffsets: Record<string, number> | undefined;
 			let report: SyncReport[] | undefined;
 			if (a.method === 'audio') {
@@ -622,7 +613,7 @@ export function registerMulticamTools(ctx: ToolContext): void {
 			const sources = Object.values(doc.sequences)
 				.filter((s) => multicamSourceOf(s))
 				.map((s) => multicamSummary(doc, s.id, multicamSourceOf(s)!));
-			const seq = seqOf(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const clips = Object.values(seq.clips)
 				.filter(isMulticamClip)
 				.sort((x, y) => x.start - y.start)

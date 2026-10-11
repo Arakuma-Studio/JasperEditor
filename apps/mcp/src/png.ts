@@ -1,6 +1,7 @@
 // Minimal PNG codec and grid composition for render_frames' contact sheet (S11:ANA-004), on node:zlib only:
 // decodes 8-bit non-interlaced greyscale/RGB(A) PNGs (every filter type) to RGBA, encodes RGB with filter 0.
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
+import { ToolError } from './errors.ts';
 
 /** An 8-bit RGBA raster, rows top to bottom. */
 type RgbaImage = { width: number; height: number; data: Uint8Array };
@@ -8,6 +9,8 @@ type RgbaImage = { width: number; height: number; data: Uint8Array };
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Samples per pixel by colour type (greyscale, RGB, greyscale + alpha, RGBA; no palette). */
 const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 4: 2, 6: 4 };
+// Bounds all decoded buffers while allowing 8K source images (same ceiling as the testkit decoder).
+const MAX_PNG_PIXELS = 64 * 1024 * 1024;
 
 function paeth(a: number, b: number, c: number): number {
 	const p = a + b - c;
@@ -41,9 +44,27 @@ export function decodePng(png: Uint8Array): RgbaImage {
 		o += 12 + len;
 	}
 	if (!width || !height || !idat.length) throw new Error('Truncated PNG');
-	const raw = inflateSync(Buffer.concat(idat));
+	if (width * height > MAX_PNG_PIXELS)
+		throw new ToolError(
+			'E_LIMIT',
+			`PNG dimensions ${width}×${height} exceed the ${MAX_PNG_PIXELS}-pixel decoding limit`,
+			'Use a smaller source image or render width.',
+		);
 	const stride = width * channels;
-	if (raw.length < (stride + 1) * height) throw new Error('Truncated PNG data');
+	const scanlineBytes = (stride + 1) * height;
+	let raw: Buffer;
+	try {
+		raw = inflateSync(Buffer.concat(idat), { maxOutputLength: scanlineBytes });
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE')
+			throw new ToolError(
+				'E_INVALID_PARAM',
+				'PNG data expands beyond its declared dimensions',
+				'Re-render or replace the malformed PNG image.',
+			);
+		throw e;
+	}
+	if (raw.length < scanlineBytes) throw new Error('Truncated PNG data');
 	const px = new Uint8Array(stride * height);
 	for (let y = 0; y < height; y++) {
 		const filter = raw[y * (stride + 1)]!;

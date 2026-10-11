@@ -16,6 +16,7 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	applyCommands,
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
@@ -24,7 +25,6 @@ import {
 	requireOk,
 	type ToolContext,
 	transact,
-	txBody,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaRegisterCommand } from '../media.ts';
@@ -82,17 +82,6 @@ function seqOf(doc: ProjectDocument, sequenceId?: string): Sequence {
 			'Call list_sequences.',
 		);
 	return seq as Sequence;
-}
-
-async function run(
-	ctx: ToolContext,
-	projectId: string,
-	label: string,
-	commands: unknown[],
-	extra: Parameters<typeof transact>[3],
-) {
-	const res = await transact(ctx, projectId, { label, commands }, extra);
-	return jsonResult(txBody(res, requireOk(res)));
 }
 
 export function registerColorMgmtTools(ctx: ToolContext): void {
@@ -200,7 +189,7 @@ export function registerColorMgmtTools(ctx: ToolContext): void {
 			const { doc } = await loadDoc(ctx, projectId);
 			const seq = seqOf(doc, sequenceId);
 			const color = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
-			return run(
+			return applyCommands(
 				ctx,
 				projectId,
 				'Sequence Colour Settings',
@@ -234,7 +223,7 @@ export function registerColorMgmtTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, mediaIds, color }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Interpret Footage (Colour)',
@@ -258,7 +247,7 @@ export function registerColorMgmtTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, color }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Clip Colour Space',

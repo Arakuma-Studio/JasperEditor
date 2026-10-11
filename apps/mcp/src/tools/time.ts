@@ -8,7 +8,6 @@ import {
 	clipMediaRange,
 	clipSpeedAt,
 	FLICKS_PER_SECOND,
-	type ProjectDocument,
 	type Rational,
 	remapKeyViews,
 	remapSegmentViews,
@@ -18,10 +17,12 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	applyCommands,
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
+	findClip,
 	isTerminal,
 	loadDoc,
 	READ_ONLY,
@@ -50,27 +51,8 @@ const ClipIdArg = z.string().min(1).describe('Clip id ("clp_…") from get_timel
 const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
 const SpeedArg = z.number().gt(0).max(20_000).describe('Speed in percent (100 = normal)');
 
-async function run(
-	ctx: ToolContext,
-	projectId: string,
-	label: string,
-	commands: unknown[],
-	extra: Parameters<typeof transact>[3],
-) {
-	const res = await transact(ctx, projectId, { label, commands }, extra);
-	return jsonResult(txBody(res, requireOk(res)));
-}
-
-function locate(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
-	for (const s of Object.values(doc.sequences)) {
-		const c = s.clips[clipId];
-		if (c) return { seq: s as Sequence, clip: c as Clip };
-	}
-	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
-}
-
 /** A clip's time mapping for agents. */
-export function describeTimeRemap(seq: Sequence, clip: Clip) {
+function describeTimeRemap(seq: Sequence, clip: Clip) {
 	const rate = seq.settings.frameRate as Rational;
 	const c = clip as TimedClip;
 	const round = (x: number) => Math.round(x * 1000) / 1000;
@@ -114,7 +96,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, clipId }) => {
 			const { doc } = await loadDoc(ctx, projectId);
-			const { seq, clip } = locate(doc, clipId);
+			const { seq, clip } = findClip(doc, clipId);
 			return jsonResult(describeTimeRemap(seq, clip));
 		},
 	);
@@ -135,7 +117,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, enabled, linkedAudio }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				enabled ? 'Time Remapping' : 'Remove Time Remapping',
@@ -161,7 +143,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, at, speedPercent, ripple }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Change Speed',
@@ -189,7 +171,13 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipId, at }, extra) =>
-			run(ctx, projectId, 'Add Speed Keyframe', [{ type: 'timeRemap.addKeyframe', clipId, at }], extra),
+			applyCommands(
+				ctx,
+				projectId,
+				'Add Speed Keyframe',
+				[{ type: 'timeRemap.addKeyframe', clipId, at }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -203,7 +191,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, keyframeIds }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Delete Speed Keyframes',
@@ -229,7 +217,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, keyframeId, to, ripple }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Move Speed Keyframe',
@@ -263,7 +251,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, keyframeId, frames, ease }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Speed Transition',
@@ -297,7 +285,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipId, at, duration, ripple }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Freeze Frame',
@@ -324,7 +312,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, clipId, at, duration, speedPercent, ripple }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Reverse Speed Segment',
@@ -357,7 +345,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, mode }, extra) =>
-			run(
+			applyCommands(
 				ctx,
 				projectId,
 				'Time Interpolation',
@@ -404,7 +392,7 @@ export function registerTimeTools(ctx: ToolContext): void {
 			const { doc } = await loadDoc(ctx, projectId);
 			const jobs: Record<string, EngineJob> = {};
 			for (const clipId of clipIds) {
-				const { seq, clip } = locate(doc, clipId);
+				const { seq, clip } = findClip(doc, clipId);
 				if (clip.kind !== 'video')
 					throw new ToolError(
 						'E_INVALID_PARAM',

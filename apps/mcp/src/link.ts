@@ -94,8 +94,7 @@ type LinkOptions = DiscoveryOptions & {
  * Names the agent on every engine request (`x-jasper-agent`), so the approval card the engine shows for a
  * destructive operation says who is asking (security review AGT-3). URI-encoded: header values are Latin-1.
  */
-function agentHeaders(name: (() => string) | undefined): (() => Record<string, string>) | undefined {
-	if (!name) return undefined;
+function agentHeaders(name: () => string): () => Record<string, string> {
 	return (): Record<string, string> => {
 		const n = name().slice(0, 64);
 		return n ? { [AGENT_NAME_HEADER]: encodeURIComponent(n) } : {};

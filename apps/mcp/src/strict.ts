@@ -37,9 +37,6 @@ function withMeta<T extends AnySchema>(to: T, from: AnySchema): T {
 	return to;
 }
 
-const WRAPPERS = SCHEMA_WRAPPERS;
-const isOpen = isOpenObject;
-
 /**
  * A copy of `schema` in which every object that would silently strip or pass through unknown keys rejects
  * them instead (`looseObject` too, unless marked OPEN_OBJECT). Objects with a typed catchall
@@ -63,10 +60,10 @@ export function deepStrict<T extends AnySchema>(schema: T, seen = new Map<AnySch
 		const catchall = def.catchall as AnySchema | undefined;
 		// clone keeps the object's own checks (refinements) and options; only shape / catchall change.
 		const clone = (d: Def) => (schema as unknown as { clone(d: Def): AnySchema }).clone(d);
-		if (!catchall || (isAnyCatchall(catchall) && !isOpen(schema)))
+		if (!catchall || (isAnyCatchall(catchall) && !isOpenObject(schema)))
 			out = clone({ ...def, shape: next, catchall: z.never() });
 		else if (changed) out = clone({ ...def, shape: next });
-	} else if (WRAPPERS.has(def.type)) {
+	} else if (SCHEMA_WRAPPERS.has(def.type)) {
 		const inner = def.innerType as AnySchema;
 		const s = deepStrict(inner, seen);
 		if (s !== inner)
@@ -102,10 +99,10 @@ export function strictInputSchema(shape: Record<string, AnySchema>): z.ZodObject
 	return deepStrict(z.object(shape)) as unknown as z.ZodObject;
 }
 
-export type ArgumentError = { code: string; message: string; hint: string; details: unknown };
+type ArgumentError = { code: string; message: string; hint: string; details: unknown };
 
 /** The error for unknown argument keys of a tool. */
-export function unknownArgumentsError(tool: string, found: UnknownKeys[]): ArgumentError {
+function unknownArgumentsError(tool: string, found: UnknownKeys[]): ArgumentError {
 	const parts = found.map((f) => {
 		const where = f.path ? ` in ${f.path}` : '';
 		const keys = f.keys.map((k) => `"${k}"`).join(', ');
@@ -122,7 +119,7 @@ export function unknownArgumentsError(tool: string, found: UnknownKeys[]): Argum
 }
 
 /** The error for arguments that do not match a tool's schema. */
-export function invalidArgumentsError(tool: string, schema: AnySchema, error: z.ZodError): ArgumentError {
+function invalidArgumentsError(tool: string, schema: AnySchema, error: z.ZodError): ArgumentError {
 	const issues = error.issues.slice(0, 8).map((i) => ({
 		path: keyPathText(i.path as (string | number)[]),
 		message: i.message,
@@ -143,7 +140,7 @@ export function invalidArgumentsError(tool: string, schema: AnySchema, error: z.
 }
 
 /** Validates tool arguments: unknown keys first, then the schema. Throws the JSON error body. */
-export async function validateArguments(tool: string, schema: AnySchema, args: unknown): Promise<unknown> {
+async function validateArguments(tool: string, schema: AnySchema, args: unknown): Promise<unknown> {
 	const value = args ?? {};
 	const unknown = findUnknownKeys(schema, value);
 	if (unknown.length) throw new ArgumentValidationError(unknownArgumentsError(tool, unknown));
@@ -153,7 +150,7 @@ export async function validateArguments(tool: string, schema: AnySchema, args: u
 }
 
 /** Thrown during `tools/call`; its message is the JSON error body the client receives (`isError`). */
-export class ArgumentValidationError extends Error {
+class ArgumentValidationError extends Error {
 	constructor(readonly body: ArgumentError) {
 		super(JSON.stringify({ error: body }));
 		this.name = 'ArgumentValidationError';

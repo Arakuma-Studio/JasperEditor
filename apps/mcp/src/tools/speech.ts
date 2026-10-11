@@ -9,7 +9,6 @@ import {
 	makeEnvelope,
 	mixFingerprint,
 	type ProjectDocument,
-	type Sequence,
 	sequenceWords,
 	speakerName,
 	type Transcript,
@@ -25,12 +24,12 @@ import {
 	loadDoc,
 	READ_ONLY,
 	requireOk,
+	requireSequence,
 	type ToolContext,
 	transact,
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { pickSequence } from '../format.ts';
 import { ProjectIdArg } from './projects.ts';
 
 /** Appended to the server instructions. */
@@ -108,14 +107,6 @@ function clipMediaId(doc: ProjectDocument, clipId: string): string {
 		return c.mediaId;
 	}
 	throw new ToolError('E_NOT_FOUND', `No clip ${clipId}`, 'Call get_timeline for clip ids.');
-}
-
-function sequenceOf(doc: ProjectDocument, sequenceId?: string): Sequence {
-	try {
-		return pickSequence(doc, sequenceId);
-	} catch (e) {
-		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
 }
 
 async function speechCall<T>(
@@ -327,7 +318,7 @@ export function registerSpeechTools(ctx: ToolContext): void {
 			if (args.mediaId) await submitMedia(args.mediaId);
 			else if (args.clipId) await submitMedia(clipMediaId(doc, args.clipId));
 			else {
-				const seq = sequenceOf(doc, args.sequenceId);
+				const seq = requireSequence(doc, args.sequenceId);
 				if (args.mode === 'mix') {
 					const envelope = makeEnvelope(doc, {
 						revision: 0,
@@ -456,7 +447,7 @@ export function registerSpeechTools(ctx: ToolContext): void {
 						.join(' '),
 				});
 			}
-			const seq = sequenceOf(doc, sequenceId);
+			const seq = requireSequence(doc, sequenceId);
 			const words = sequenceWords(doc, seq);
 			const F = FLICKS_PER_SECOND * (seq.settings.frameRate.den / seq.settings.frameRate.num);
 			return jsonResult({
