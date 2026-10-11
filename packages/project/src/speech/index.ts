@@ -7,9 +7,11 @@
 //   time through its speed. Each media also gets the media ranges its clips play (`coverage`).
 // - `mergeTranscriptWords`: words of a partial transcript replace an existing transcript's words inside its
 //   coverage only (re-transcribing a sequence keeps the words of media parts it does not play).
+import type { z } from 'zod';
 import { tickOf } from '../captions/formats/rate.ts';
 import { mergeRanges } from '../captions/sequence-transcript.ts';
 import { normalizeWords } from '../captions/words.ts';
+import type { TranscriptAttachCmd } from '../commands/schemas/speech.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Transcript, TranscriptWord } from '../schema/media.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
@@ -166,9 +168,11 @@ export type RecognitionResult = {
 	speakers: Record<string, { name: string }>;
 };
 
+type TranscriptAttachCommand = z.input<typeof TranscriptAttachCmd>;
+
 export type AttachPlan =
 	| {
-			commands: Array<Record<string, unknown> & { type: 'transcript.attach'; mediaId: string }>;
+			commands: TranscriptAttachCommand[];
 			/** Words attached, per media. */
 			media: Array<{ mediaId: string; words: number }>;
 			/** Mix words heard through no audio clip (dropped). */
@@ -187,7 +191,7 @@ export function transcriptAttachPlan(
 	res: RecognitionResult,
 	opts: { mediaId?: string; replace: boolean; currentMixHash?: string },
 ): AttachPlan {
-	const meta = {
+	const meta: Pick<TranscriptAttachCommand, 'language' | 'origin' | 'model' | 'task' | 'sourceLanguage'> = {
 		language: transcriptLanguage(res.language, res.task),
 		origin: 'whisper-local',
 		model: res.model,
@@ -219,7 +223,7 @@ export function transcriptAttachPlan(
 		start: res.target.range.startFrame,
 		end: res.target.range.endFrame,
 	});
-	const commands: Array<Record<string, unknown> & { type: 'transcript.attach'; mediaId: string }> = [];
+	const commands: TranscriptAttachCommand[] = [];
 	const media: Array<{ mediaId: string; words: number }> = [];
 	for (const m of r.media) {
 		const existing = Object.values(doc.transcripts).some((t) => t.mediaId === m.mediaId);
