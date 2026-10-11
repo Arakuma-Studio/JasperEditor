@@ -15,6 +15,7 @@ import {
 	parseFrameName,
 	parseLottie,
 	type Sequence,
+	type StillClip,
 	sequenceFrameFiles,
 	svgToShapeContents,
 } from '../src/index.ts';
@@ -374,17 +375,17 @@ describe('layered (PSD) import commands', () => {
 				(c) =>
 					(c as { name?: string }).name === n ||
 					h.doc.media[(c as { mediaId?: string }).mediaId ?? '']?.originalName === `${n}.png`,
-			) as Record<string, any>;
+			) as StillClip;
 		const shadow = byName('Shadow');
 		expect(shadow.blendMode).toBe('multiply');
 		expect(shadow.opacity.value).toBeCloseTo(50, 6);
 		expect(shadow.transform.position.value).toEqual([60, 50]);
 		const clipped = byName('Clipped');
 		expect(JSON.stringify(clipped.effects)).toContain('track-matte');
-		const nest = Object.values(seq.clips).find((c) => c.kind === 'nest-video') as Record<string, any>;
+		const nest = Object.values(seq.clips).find((c) => c.kind === 'nest-video')!;
 		expect(nest.opacity.value).toBeCloseTo(80, 6);
 		const inner = h.doc.sequences[nest.sequenceId] as Sequence;
-		const innerClips = Object.values(inner.clips) as Record<string, any>[];
+		const innerClips = Object.values(inner.clips) as StillClip[];
 		expect(innerClips.map((c) => c.blendMode ?? 'normal').sort()).toEqual(['add', 'normal']);
 		expect(innerClips.filter((c) => c.enabled === false)).toHaveLength(1);
 		const media = Object.values(h.doc.media).filter((m) => m.layerSource);

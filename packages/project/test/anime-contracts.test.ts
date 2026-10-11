@@ -13,9 +13,11 @@ import {
 	defaultShape,
 	exportAgentSchema,
 	intrinsicBoxOf,
+	type LegacyShapeClip,
 	loadProject,
 	type MgTemplateInfo,
 	type ProjectDocument,
+	type ProjectEnvelope,
 	resolveTextAnimationWindows,
 	type ShapeData,
 	scaleAnimationFrames,
@@ -24,7 +26,8 @@ import {
 } from '../src/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixtureV4 = () => JSON.parse(readFileSync(join(here, 'fixtures/v4/basic.jasper'), 'utf8'));
+const fixtureV4 = (): ProjectEnvelope =>
+	JSON.parse(readFileSync(join(here, 'fixtures/v4/basic.jasper'), 'utf8'));
 const loadV4 = () => loadProject(fixtureV4(), { effects: defaultEffectRegistry }).document;
 const clipsOf = (doc: ProjectDocument) => Object.values(Object.values(doc.sequences)[0]!.clips);
 
@@ -61,15 +64,15 @@ describe('schema v4 (ARCHITECTURE §20.1, D-32)', () => {
 	});
 	it('rejects malformed animators and shapes at load (schema), and flags them after edits (invariants)', () => {
 		const bad = fixtureV4();
-		const seq = Object.values(bad.document.sequences)[0] as { clips: Record<string, any> };
-		const text = Object.values(seq.clips).find((c) => c.kind === 'text');
-		text.textAnimation.in.durationFrames = 0;
+		const seq = Object.values(bad.document.sequences)[0]!;
+		const text = Object.values(seq.clips).find((c) => c.kind === 'text')!;
+		text.textAnimation!.in!.durationFrames = 0;
 		expect(() => loadProject(bad)).toThrow(/does not match the schema/);
 		const doc = loadV4();
 		const s2 = Object.values(doc.sequences)[0]!;
-		const t2 = Object.values(s2.clips).find((c) => c.kind === 'text') as any;
-		t2.textAnimation.out.durationFrames = 2.5;
-		const rect = Object.values(s2.clips).find((c) => c.kind === 'shape') as any;
+		const t2 = Object.values(s2.clips).find((c) => c.kind === 'text')!;
+		t2.textAnimation!.out!.durationFrames = 2.5;
+		const rect = Object.values(s2.clips).find((c) => c.kind === 'shape') as LegacyShapeClip;
 		rect.shape.size.value = [-1, 10];
 		rect.shape.cornerRadius.value = -2;
 		const issues = checkInvariants(doc).map((i) => i.message);
