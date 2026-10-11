@@ -200,9 +200,9 @@ describe('caption MCP tools', () => {
 		);
 		const imp = await call('import_captions', { path: srt, language: 'en' });
 		expect(imp.isError, JSON.stringify(imp.body)).toBe(false);
-		let list = await call('list_captions', {});
-		expect(list.read(CaptionListSchema).tracks).toHaveLength(1);
-		const t = list.read(CaptionListSchema).tracks[0]!;
+		let list = (await call('list_captions', {})).read(CaptionListSchema);
+		expect(list.tracks).toHaveLength(1);
+		const t = list.tracks[0]!;
 		expect([t.label, t.name, t.language, t.active, t.visible]).toEqual(['C1', 'english', 'en', true, true]);
 		expect(
 			t.captions.map((c: { text: string; in: { timecode: string } }) => [c.in.timecode, c.text]),
@@ -223,9 +223,9 @@ describe('caption MCP tools', () => {
 		).toBe(false);
 		expect((await call('add_caption', { text: 'Third', at: { seconds: 5 } })).isError).toBe(false);
 		expect((await call('split_captions', { at: { seconds: 6 } })).isError).toBe(false);
-		list = await call('list_captions', {});
-		expect(list.read(CaptionListSchema).tracks[0]!.captions).toHaveLength(4);
-		const ids = list.read(CaptionListSchema).tracks[0]!.captions.map((c: { clipId: string }) => c.clipId);
+		list = (await call('list_captions', {})).read(CaptionListSchema);
+		expect(list.tracks[0]!.captions).toHaveLength(4);
+		const ids = list.tracks[0]!.captions.map((c: { clipId: string }) => c.clipId);
 		expect((await call('merge_captions', { clipIds: [ids[2], ids[3]] })).isError).toBe(false);
 		expect((await call('delete_captions', { clipIds: [second], ripple: true })).isError).toBe(false);
 		expect(
@@ -239,7 +239,7 @@ describe('caption MCP tools', () => {
 		expect(
 			(await call('caption_track', { action: 'update', track: 'C2', visible: false, active: true })).isError,
 		).toBe(false);
-		list = await call('list_captions', {});
+		list = (await call('list_captions', {})).read(CaptionListSchema);
 		expect(
 			list
 				.read(CaptionListSchema)
@@ -248,8 +248,8 @@ describe('caption MCP tools', () => {
 			[false, true],
 			[true, false],
 		]);
-		expect(list.read(CaptionListSchema).tracks[0]!.style.placement).toBe('top');
-		expect(list.read(CaptionListSchema).tracks[0]!.captions[0]!.styleOverrides?.fill).toEqual([1, 1, 0, 1]);
+		expect(list.tracks[0]!.style.placement).toBe('top');
+		expect(list.tracks[0]!.captions[0]!.styleOverrides?.fill).toEqual([1, 1, 0, 1]);
 		const vtt = await call('export_captions', { track: 'C1', format: 'vtt' });
 		expect(vtt.body.content).toContain('00:00:01.000 --> 00:00:02.520\nHello there');
 		const out = join(dir, 'out.scc');
@@ -294,14 +294,14 @@ describe('caption MCP tools', () => {
 		expect((await call('rename_speaker', { speaker: 'Guest', name: 'Ann' })).isError).toBe(false);
 		const cap = await call('captions_from_transcript', { preset: 'builtin:broadcast' });
 		expect(cap.isError, JSON.stringify(cap.body)).toBe(false);
-		const list = await call('list_captions', {});
+		const list = (await call('list_captions', {})).read(CaptionListSchema);
 		// the 2 s pause is now 0.2 s, so the host's words share a caption; the guest starts a new one
-		expect(list.read(CaptionListSchema).tracks[0]!.captions.map((c: { text: string }) => c.text)).toEqual([
+		expect(list.tracks[0]!.captions.map((c: { text: string }) => c.text)).toEqual([
 			'Welcome to the show. today we talk about\nrivers.',
 			'Thanks for having me. I love rivers, you\nknow.',
 		]);
-		expect(list.read(CaptionListSchema).tracks[0]!.captions[1]!.speaker).toBe('Ann');
-		expect(list.read(CaptionListSchema).tracks[0]!.style.background?.color).toEqual([0, 0, 0, 1]);
+		expect(list.tracks[0]!.captions[1]!.speaker).toBe('Ann');
+		expect(list.tracks[0]!.style.background?.color).toEqual([0, 0, 0, 1]);
 	});
 
 	it('extract, lift and insert a text selection', async () => {

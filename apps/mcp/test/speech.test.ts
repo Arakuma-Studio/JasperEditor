@@ -351,9 +351,10 @@ describe('speech MCP tools', () => {
 		await call('transcribe', { mediaId: engine.a });
 		const r = await call('transcribe', { sequenceId: engine.seqId, wait: false });
 		expect(r.isError, JSON.stringify(r.body)).toBe(false);
-		expect(r.read(SpeechJobsSchema).jobs).toHaveLength(1);
-		expect(r.read(SpeechJobsSchema).jobs[0]!.mediaId).toBe(engine.b);
-		const c = await call('transcribe', { jobIds: [r.read(SpeechJobsSchema).jobs[0]!.jobId] });
+		const { jobs } = r.read(SpeechJobsSchema);
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]!.mediaId).toBe(engine.b);
+		const c = await call('transcribe', { jobIds: [jobs[0]!.jobId] });
 		expect(c.isError, JSON.stringify(c.body)).toBe(false);
 		const seq = await call('get_transcript', { sequenceId: engine.seqId });
 		expect(seq.body.text).toBe('Hello world. Second');
