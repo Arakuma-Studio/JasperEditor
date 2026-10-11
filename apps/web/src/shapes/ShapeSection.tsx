@@ -57,7 +57,11 @@ export function ShapeSection({ session, clips, frame, sequenceId }: ClipSectionP
 		);
 		return r && r.bindings.length === list.length ? r : null;
 	};
-	const updateShapes = (label: string, list: LegacyShapeClip[], shape: Record<string, unknown>) =>
+	const updateShapes = (
+		label: string,
+		list: LegacyShapeClip[],
+		shape: NonNullable<Extract<CommandInput, { type: 'clip.update' }>['patch']['shape']>,
+	) =>
 		ops.apply(
 			label,
 			list.map((c) => ({ type: 'clip.update', clipId: c.id, patch: { shape } }) satisfies CommandInput),
