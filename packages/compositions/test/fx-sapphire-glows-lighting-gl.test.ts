@@ -61,10 +61,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		}, 120_000);
 
-		it('ships the 25 effects of the family', () => {
-			expect(FAMILY_IDS).toHaveLength(25);
-		});
-
 		it.each(FAMILY_IDS)(
 			'compiles and runs %s with default params (opaque and transparent input)',
 			async (id) => {

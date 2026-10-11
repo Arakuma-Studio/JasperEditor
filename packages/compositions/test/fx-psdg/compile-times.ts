@@ -1,31 +1,19 @@
 // Development aid: shader compile+link time of each pass of fx effects in headless Chrome (SwiftShader).
 //   pnpm tsx packages/compositions/test/fx-psdg/compile-times.ts jasper.mirror jasper.roughen-edges …
 //   (no ids: every effect of the premiere-stylize-distort-generate family)
+
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FX_FAMILIES } from '@jasper/project';
+import { bundleForBrowser } from '@jasper/testkit/browser';
 import { chromium } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ids = process.argv.slice(2).length
 	? process.argv.slice(2)
 	: FX_FAMILIES.find((f) => f.file === 'premiere-stylize-distort-generate')!.effects.map((s) => s.id);
-const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-const esbuild = req('esbuild') as {
-	build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-};
-const bundle = await esbuild.build({
-	entryPoints: [join(here, 'compile-entry.ts')],
-	bundle: true,
-	write: false,
-	format: 'iife',
-	platform: 'browser',
-	target: 'es2022',
-	define: { 'process.env.NODE_ENV': '"production"' },
-	logLevel: 'silent',
-});
+const code = await bundleForBrowser(join(here, 'compile-entry.ts'));
 const CHROME = [process.env.JASPER_BROWSER_EXECUTABLE, '/usr/bin/google-chrome'].find(
 	(p): p is string => !!p && existsSync(p),
 );
@@ -36,7 +24,7 @@ const browser = await chromium.launch({
 try {
 	const page = await browser.newPage();
 	await page.setContent('<!doctype html><html><body></body></html>');
-	await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+	await page.addScriptTag({ content: code });
 	if (process.env.PSDG_SRC) {
 		// Raw fragment sources (files), compiled as-is: PSDG_SRC=a.glsl,b.glsl
 		for (const f of process.env.PSDG_SRC.split(',')) {

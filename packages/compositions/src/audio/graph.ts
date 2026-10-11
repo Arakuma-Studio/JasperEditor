@@ -12,7 +12,6 @@
 import {
 	balanceGains,
 	conversionMatrix,
-	type Layout,
 	layoutFromChannels,
 	type Mixdown,
 	pan51Matrix,
@@ -79,9 +78,6 @@ export function registerPreviewInsert(effectId: string, factory: PreviewInsertFa
 		if (insertFactories.get(effectId) === factory) insertFactories.delete(effectId);
 	};
 }
-export function hasPreviewInsert(effectId: string): boolean {
-	return insertFactories.has(effectId);
-}
 
 // ------------------------------------------------------------------ worklet module
 
@@ -93,10 +89,6 @@ export function setMixWorkletUrl(url: string | null): void {
 }
 /** audio-fx: resolves true once the mix worklet module (with the `jasper-audio-fx` effect slot) is loaded on `ctx`. */
 export function mixWorkletReady(ctx: BaseAudioContext): Promise<boolean> {
-	return loadWorklet(ctx);
-}
-
-function loadWorklet(ctx: BaseAudioContext): Promise<boolean> {
 	let p = workletLoads.get(ctx);
 	if (!p) {
 		p =
@@ -115,7 +107,6 @@ function loadWorklet(ctx: BaseAudioContext): Promise<boolean> {
 
 const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** (db / 20));
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
-const layoutOf = (w: number): Layout => layoutFromChannels(w);
 
 function laneAt(
 	a: { value: number; keyframes: { time: number; value: number }[] },
@@ -131,11 +122,6 @@ function scaleRows(m: number[][], gains: number[]): number[][] {
 	return m.map((row, o) => row.map((v) => v * (gains[o] ?? 1)));
 }
 
-function _mul(a: number[][], b: number[][]): number[][] {
-	// (a · b)[o][i] = Σ_k a[o][k] b[k][i]
-	return a.map((row) => b[0]!.map((_, i) => row.reduce((s, x, k) => s + x * (b[k]?.[i] ?? 0), 0)));
-}
-
 /** The pan stage matrix of a strip (width w → bus width ow) for a pan value (−100…100) or 5.1 puck. */
 export function panStageMatrix(
 	w: number,
@@ -144,7 +130,7 @@ export function panStageMatrix(
 	p51: { x: number; y: number; center: number; lfeDb: number },
 	mixdown: Mixdown = 'frontRear',
 ): number[][] {
-	const src = layoutOf(w);
+	const src = layoutFromChannels(w);
 	if (ow === 6)
 		return pan51Matrix(src, {
 			x: p51.x / 100,
@@ -403,7 +389,7 @@ class ClipNodes {
 		const pan = override?.pan ?? laneAt(clip.pan, content);
 		const w = this.width;
 		const tw = this.trackWidth;
-		let m = conversionMatrix(layoutOf(w), layoutOf(tw));
+		let m = conversionMatrix(layoutFromChannels(w), layoutFromChannels(tw));
 		if (tw === 2 && pan !== 0) m = scaleRows(m, balanceGains(Math.max(-1, Math.min(1, pan / 100))));
 		this.pan.set(m, instant);
 		// Clip Mixer fader held: replace the clip's volume (Remotion applies gain + volume; the trim corrects it).
@@ -466,7 +452,7 @@ export class MixGraph {
 		readonly destination: AudioNode,
 	) {
 		this.loudGain = discreteGain(ctx, 2);
-		void loadWorklet(ctx).then((ok) => {
+		void mixWorkletReady(ctx).then((ok) => {
 			this.workletReady = ok;
 			if (ok && this.mix) {
 				this.structure = '';
@@ -699,7 +685,7 @@ export class MixGraph {
 
 	/** The Mix → device fold with the meters' channel solo applied (soloed channels only, folded the same way). */
 	private deviceMatrix(mw: number): number[][] {
-		const m = conversionMatrix(layoutOf(mw), 'stereo', this.mixdown);
+		const m = conversionMatrix(layoutFromChannels(mw), 'stereo', this.mixdown);
 		if (this.monitorSolo.size === 0) return m;
 		const solo = mw === 2 ? m.map((row) => row.map((v, j) => (this.monitorSolo.has(j) ? v : 0))) : m;
 		if (mw !== 2) return m.map((row) => row.map((v, j) => (this.monitorSolo.has(j) ? v : 0)));
@@ -823,20 +809,6 @@ export class MixGraph {
 					: null;
 			c.update(clip, t, override, instant, this.fps);
 		}
-	}
-
-	/** Sample-accurate equivalent check helper for tests: the pan matrix the strip would use at `t`. */
-	stripMatrix(stripId: string): number[][] | null {
-		const s = this.order.find((x) => x.id === stripId);
-		const st = this.strips.get(stripId);
-		if (!s || !st) return null;
-		const t = this.time;
-		return panStageMatrix(st.width, st.outWidth, laneAt(s.pan, t), {
-			x: laneAt(s.pan51.x, t),
-			y: laneAt(s.pan51.y, t),
-			center: laneAt(s.pan51.center, t),
-			lfeDb: laneAt(s.pan51.lfe, t),
-		});
 	}
 
 	dispose(): void {

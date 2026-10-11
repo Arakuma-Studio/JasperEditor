@@ -106,11 +106,6 @@ export function ocioConversionLut(
 	return out;
 }
 
-/** Whether an asset finished loading (either kind). */
-export function colorAssetLoaded(url: string): boolean {
-	return assets.get(lutUrlKey(url))?.lut !== undefined;
-}
-
 const BAKES_PER_LAYER = 64;
 const bakes = new Map<string, Map<string, Lut | null>>();
 

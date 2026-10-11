@@ -4,11 +4,12 @@
 // (`<Video headless onVideoFrame>` feeding FxPicture), a still with a padded drop shadow, a paused param edit
 // (redraw), a freeze-frame remap, and a shape (DOM layer) through HTML-in-Canvas when Chrome has the feature — and a
 // visible chip when it has not. Gated by REMOTION_E2E=1 (browser + video decoding, ≈ 30–60 s).
+
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FX_H, FX_W, type FxMedia, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -41,21 +42,7 @@ describe.runIf(enabled && !!CHROME)(
 
 		beforeAll(async () => {
 			media = await startFxMedia('fx-player-');
-			const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-			const esbuild = req('esbuild') as {
-				build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-			};
-			const out = await esbuild.build({
-				entryPoints: [join(here, 'fx-player', 'entry.tsx')],
-				bundle: true,
-				write: false,
-				format: 'iife',
-				platform: 'browser',
-				target: 'es2022',
-				jsx: 'automatic',
-				define: { 'process.env.NODE_ENV': '"production"' },
-				logLevel: 'silent',
-			});
+			const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
 			docs = {
 				plain: fxSnapshot(fxCmd.video(media, 2)),
 				halved: fxSnapshot([
@@ -70,7 +57,7 @@ describe.runIf(enabled && !!CHROME)(
 					fxCmd.effect('test.drop-shadow', { ...shadow([0, 1, 0, 1]), direction: 90, distance: 30 }),
 				]),
 			};
-			media.page('bundle.js', 'text/javascript', out.outputFiles[0]!.text);
+			media.page('bundle.js', 'text/javascript', code);
 			media.page(
 				'index.html',
 				'text/html',

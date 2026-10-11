@@ -2,11 +2,12 @@
 // through the real fx GPU host in headless Chrome and writes one PNG per job plus a labelled contact sheet.
 //   pnpm tsx packages/compositions/test/fx-psdg/preview.ts <jobs.json> <outDir> [photo.png] [--columns 4] [--title T]
 // jobs.json: PreviewJob[] (see preview-entry.ts). The photo defaults to $PSDG_PHOTO, else a generated test card.
+
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundleForBrowser } from '@jasper/testkit/browser';
 import { chromium } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -44,20 +45,7 @@ if (!photo || !existsSync(photo)) {
 	]);
 }
 
-const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-const esbuild = req('esbuild') as {
-	build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-};
-const bundle = await esbuild.build({
-	entryPoints: [join(here, 'preview-entry.ts')],
-	bundle: true,
-	write: false,
-	format: 'iife',
-	platform: 'browser',
-	target: 'es2022',
-	define: { 'process.env.NODE_ENV': '"production"' },
-	logLevel: 'silent',
-});
+const code = await bundleForBrowser(join(here, 'preview-entry.ts'));
 const CHROME = [process.env.JASPER_BROWSER_EXECUTABLE, '/usr/bin/google-chrome', '/usr/bin/chromium'].find(
 	(p): p is string => !!p && existsSync(p),
 );
@@ -70,7 +58,7 @@ try {
 	const errors: string[] = [];
 	page.on('pageerror', (e) => errors.push(e.message));
 	await page.setContent('<!doctype html><html><body></body></html>');
-	await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+	await page.addScriptTag({ content: code });
 	if (errors.length) throw new Error(errors.join('\n'));
 	const photoUrl = `data:image/png;base64,${readFileSync(photo).toString('base64')}`;
 	await page.evaluate((u) => (window as any).__psdg.init(u), photoUrl);

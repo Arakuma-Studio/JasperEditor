@@ -5,7 +5,6 @@ export { audioFxMeters, installAudioFxPreview } from './audio/fx-inserts.ts';
 // audio-mix: the preview mix graph (meters, live mixer controls, effect slots).
 export {
 	activeMixGraph,
-	hasPreviewInsert,
 	type LoudnessReading,
 	type MeterReading,
 	type MixGraph,

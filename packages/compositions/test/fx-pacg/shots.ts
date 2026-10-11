@@ -5,10 +5,11 @@
 // shots.json: [{ "name": "levels-gamma", "id": "jasper.levels", "params": {…}, "picture": {"kind": "image",
 // "file": "/abs/photo.jpg"} | {"kind": "bars"|"ramp"|"disc"|"solid", …}, "box": {"width": 480, "height": 270},
 // "media": {"paramName": {…picture…}}, "background": "checker" }]
+
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundleForBrowser } from '@jasper/testkit/browser';
 import { chromium } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -37,20 +38,7 @@ const resolvePic = (p: Pic): Pic =>
 const shots = JSON.parse(readFileSync(shotsFile, 'utf8')) as Shot[];
 mkdirSync(outDir, { recursive: true });
 
-const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-const esbuild = req('esbuild') as {
-	build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-};
-const bundle = await esbuild.build({
-	entryPoints: [join(here, 'entry.ts')],
-	bundle: true,
-	write: false,
-	format: 'iife',
-	platform: 'browser',
-	target: 'es2022',
-	define: { 'process.env.NODE_ENV': '"production"' },
-	logLevel: 'silent',
-});
+const code = await bundleForBrowser(join(here, 'entry.ts'));
 const CHROME = [process.env.JASPER_BROWSER_EXECUTABLE, '/usr/bin/google-chrome', '/usr/bin/chromium'].find(
 	(p): p is string => !!p && existsSync(p),
 );
@@ -61,7 +49,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.error('pageerror', e.message));
 await page.setContent('<!doctype html><html><body></body></html>');
-await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
+await page.addScriptTag({ content: code });
 
 const results: { name: string; url: string }[] = [];
 for (const s of shots) {

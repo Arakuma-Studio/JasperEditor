@@ -5,12 +5,14 @@
 // under an adjustment layer — and the HDR display transform keeps running while a scope draws inside it (it used to
 // step aside with a chip). Gated by REMOTION_E2E=1; COMPOSITOR_ELECTRON=1 (under xvfb-run) runs the same Players in the
 // desktop app's Electron.
+
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blendPixel, type Command, type Rgba } from '@jasper/project';
+import { bundleForBrowser } from '@jasper/testkit/browser';
 import { _electron, type Browser, chromium, type ElectronApplication, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FX_H, FX_W, type FxMedia, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -54,21 +56,7 @@ describe.runIf(enabled && !!CHROME)(
 
 		beforeAll(async () => {
 			media = await startFxMedia('compositor-player-');
-			const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-			const esbuild = req('esbuild') as {
-				build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-			};
-			const out = await esbuild.build({
-				entryPoints: [join(here, 'fx-player', 'entry.tsx')],
-				bundle: true,
-				write: false,
-				format: 'iife',
-				platform: 'browser',
-				target: 'es2022',
-				jsx: 'automatic',
-				define: { 'process.env.NODE_ENV': '"production"' },
-				logLevel: 'silent',
-			});
+			const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
 			docs = {
 				video: fxSnapshot(fxCmd.video(media, 2)),
 				videoFlat: fxSnapshot([
@@ -117,7 +105,7 @@ describe.runIf(enabled && !!CHROME)(
 					mode('$b', 'add'),
 				]),
 			};
-			media.page('bundle.js', 'text/javascript; charset=utf-8', out.outputFiles[0]!.text);
+			media.page('bundle.js', 'text/javascript; charset=utf-8', code);
 			media.page(
 				'index.html',
 				'text/html',

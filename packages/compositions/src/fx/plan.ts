@@ -109,17 +109,6 @@ export function effectMasks(fx: Pick<ResolvedEffect, 'masks'>): ResolvedMask[] {
 	return fx.masks?.length ? activeMasks(fx.masks) : [];
 }
 
-/** wp masks: the layer has an active Opacity mask or an enabled effect with an active mask. */
-export function layerHasMasks(
-	effects: readonly Pick<ResolvedEffect, 'masks' | 'enabled'>[],
-	masks: readonly ResolvedMask[] | undefined,
-): boolean {
-	return (
-		(masks?.length ? activeMasks(masks).length > 0 : false) ||
-		effects.some((fx) => fx.enabled && effectMasks(fx).length > 0)
-	);
-}
-
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 export function planLayerFx(

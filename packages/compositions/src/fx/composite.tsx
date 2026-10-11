@@ -41,9 +41,8 @@ import {
 	linearGroupItemsAt,
 	planComposite,
 } from './composite-plan.ts';
-import { canUseHtmlInCanvas } from './FxPicture.tsx';
 import { FxShaderError, type FxTextureInput, fxHost, runShaderPlan } from './host.ts';
-import { type FxGpuState, fxStatus, useFxStatus } from './status.ts';
+import { type FxGpuState, fxStatus } from './status.ts';
 
 type HubPicture = { canvas: HTMLCanvasElement; version: number; frame: number; pic: CompositePicture };
 
@@ -434,12 +433,6 @@ export function BlendFallback({
 		/>
 	);
 }
-
-/** Status of the fx GPU host for scopes (re-exported for the composition). */
-export const useBlendGpu = useFxStatus;
-
-/** Whether HTML-in-Canvas is available (scopes need it to capture the backdrop). */
-export const blendHtmlInCanvas = canUseHtmlInCanvas;
 
 /** Chip of the Player's fallback (the modes it cannot preview here). */
 export function CompositeChip({ text }: { text: string }) {

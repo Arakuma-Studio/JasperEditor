@@ -4,12 +4,13 @@
 // follows the playhead), Iris Round over a video side (headless <Video> → FxPicture → tap → stage), S_DissolveLuma
 // over a still (both sides in one shader), a shape side through HTML-in-Canvas — and, in a Chrome without
 // HTML-in-Canvas, the dissolve fallback with a chip on the stage. Gated by REMOTION_E2E=1.
+
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@jasper/project';
+import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
@@ -59,21 +60,7 @@ describe.runIf(enabled && !!CHROME)(
 				'1',
 				join(media.dir, 'halves.png'),
 			]);
-			const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-			const esbuild = req('esbuild') as {
-				build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-			};
-			const out = await esbuild.build({
-				entryPoints: [join(here, 'fx-player', 'entry.tsx')],
-				bundle: true,
-				write: false,
-				format: 'iife',
-				platform: 'browser',
-				target: 'es2022',
-				jsx: 'automatic',
-				define: { 'process.env.NODE_ENV': '"production"' },
-				logLevel: 'silent',
-			});
+			const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
 			const solidA = [
 				{
 					type: 'clip.addSolid',
@@ -144,7 +131,7 @@ describe.runIf(enabled && !!CHROME)(
 					),
 				),
 			};
-			media.page('bundle.js', 'text/javascript', out.outputFiles[0]!.text);
+			media.page('bundle.js', 'text/javascript', code);
 			media.page(
 				'index.html',
 				'text/html',

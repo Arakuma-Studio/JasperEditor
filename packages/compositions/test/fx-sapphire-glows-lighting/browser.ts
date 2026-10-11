@@ -1,8 +1,8 @@
 // Shared launcher of the Sapphire Glows + Lighting browser checks: bundles ./entry.ts with esbuild (from tsx) and
 // opens it in headless Chrome (SwiftShader WebGL2). Used by the GL test and by the visual dump script (dump.ts).
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bundleForBrowser, SWIFTSHADER_ARGS } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { CHROME } from '../gl-browser.ts';
 
@@ -12,42 +12,14 @@ export { CHROME } from '../gl-browser.ts';
 
 let bundled: Promise<string> | null = null;
 
-/** The entry bundled once per process (esbuild from tsx). */
-function bundle(): Promise<string> {
-	bundled ??= (async () => {
-		const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-		const esbuild = req('esbuild') as {
-			build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-		};
-		const out = await esbuild.build({
-			entryPoints: [join(here, 'entry.ts')],
-			bundle: true,
-			write: false,
-			format: 'iife',
-			platform: 'browser',
-			target: 'es2022',
-			define: { 'process.env.NODE_ENV': '"production"' },
-			logLevel: 'silent',
-		});
-		return out.outputFiles[0]!.text;
-	})();
-	return bundled;
-}
-
 /** Launches Chrome (SwiftShader WebGL2); `page()` opens a fresh page with the bundle (a new GL context). */
 export async function openSglBrowser(): Promise<{ browser: Browser; page(): Promise<Page> }> {
-	const code = await bundle();
+	const code = await (bundled ??= bundleForBrowser(join(here, 'entry.ts')));
 	const browser = await chromium.launch({
 		executablePath: CHROME,
 		// No GPU watchdog / crash limit: on a loaded machine a long SwiftShader draw would otherwise get the GPU
 		// process killed and, after a few crashes, WebGL disabled for the rest of the run.
-		args: [
-			'--use-angle=swiftshader',
-			'--enable-unsafe-swiftshader',
-			'--ignore-gpu-blocklist',
-			'--disable-gpu-watchdog',
-			'--disable-gpu-process-crash-limit',
-		],
+		args: [...SWIFTSHADER_ARGS, '--disable-gpu-watchdog', '--disable-gpu-process-crash-limit'],
 	});
 	return {
 		browser,
