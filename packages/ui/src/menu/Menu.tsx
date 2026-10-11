@@ -1,9 +1,6 @@
 // Menu primitives (S05:MN-001/002/020/021/030): one data model renders the menubar, dropdowns and
 // context menus. The app resolves its command-id menu model into `ResolvedMenuItem`s (labels, shortcuts,
 // enabled/checked state from the command registry); this module only draws them.
-// Styling: menu bg, 1 px menu border, radius 6, 4 px padding, overlay shadow; 24 px items with a 20 px
-// check/icon column, right-aligned shortcut, submenu chevron; highlight = accent fill with white text;
-// disabled items are tertiary but stay hoverable so their reason tooltip shows (S05:SH-031).
 import { ContextMenu as RContext, DropdownMenu as RDropdown, Menubar as RMenubar } from 'radix-ui';
 import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';

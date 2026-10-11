@@ -26,7 +26,6 @@ export const LABEL_DISPLAY_NAMES: Record<LabelName, string> = {
 	yellow: 'Yellow',
 };
 
-/** CSS color for a label body (`var(--pr-label-<name>)`). */
 export function labelColor(name: LabelName): string {
 	return `var(--pr-label-${name})`;
 }

@@ -1,5 +1,3 @@
-// Panel error boundary (S05:PC-032): if a panel throws, only that panel shows "This panel crashed" with
-// Reload Panel and Copy Details; the rest of the workspace keeps working.
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Icon } from '../icons/Icon.tsx';
 import { Button } from './Button.tsx';

@@ -59,7 +59,6 @@ export function parseHex(input: string): Rgba | null {
 	return [n(0), n(2), n(4), s.length === 8 ? n(6) : 1];
 }
 
-/** CSS color for a content color (swatches, picker surfaces). */
 export function rgbaToCss(c: Rgba): string {
 	const [r, g, b] = [c[0], c[1], c[2]].map((x) => Math.round(clamp01(x) * 255));
 	return `rgb(${r} ${g} ${b} / ${clamp01(c[3])})`; // tokens-allow: document content color

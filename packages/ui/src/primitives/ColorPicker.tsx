@@ -1,7 +1,4 @@
-// Color swatch + picker popover (S05:CT-014): 24×16 swatch with a 1 px strong border; the popover has
-// an HSV square, hue strip, alpha strip, hex field, eyedropper where supported, recent colors and
-// project swatches. Live changes stream through `onChange(color, {final:false})`; releasing a drag or
-// committing a field calls it with `final:true` (callers commit one undo step there).
+// Callers commit one undo step when onChange receives final: true.
 import { Popover } from 'radix-ui';
 import { type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { cx } from '../cx.ts';

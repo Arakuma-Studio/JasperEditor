@@ -1,6 +1,4 @@
-// Scrubby number ("hot text", S05:CT-020…025): blue value without a box; drag horizontally to change it
-// (Shift 10×, Ctrl/Cmd 0.1×), click (< 3 px movement) to type (math relative to the current value), Esc
-// reverts. Callers map the callbacks onto session gestures so one drag = one undo step (CT-023):
+// Callers map callbacks onto session gestures so one drag is one undo step:
 //   onScrubStart → session.beginGesture(label); onScrub → gesture.update(...); onScrubEnd → gesture.commit();
 //   onScrubCancel → gesture.cancel(); onCommit (typed entry, arrow keys) → session.apply(...).
 import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from 'react';
@@ -79,7 +77,6 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 		setLive(null);
 	};
 
-	// Esc during a drag reverts (CT-023).
 	useEffect(() => {
 		const onKey = (e: globalThis.KeyboardEvent) => {
 			const d = drag.current;

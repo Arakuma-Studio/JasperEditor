@@ -1,9 +1,4 @@
-// Virtualized tree/list (S05:CT-040…045): 22 px rows, optional zebra, hover; selection colors depend on
-// panel focus (primary row accent fill in the focused panel); click / Ctrl+click / Shift+click; arrows,
-// Shift+arrows, Home/End, PgUp/PgDn, type-ahead, Enter/F2 rename; → expands, ← collapses or goes to the
-// parent, Alt+click expands recursively. Only visible rows (plus overscan) are rendered; ARIA row counts
-// stay correct. Key handling is local: the root carries `data-keymap-local` so the global dispatcher
-// defers to it (S05:KB-003).
+// data-keymap-local makes the global keyboard dispatcher defer to the tree.
 import {
 	type KeyboardEvent,
 	type MouseEvent,

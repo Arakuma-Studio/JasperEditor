@@ -1,7 +1,3 @@
-// Dialogs (S05 §14, DG-001…007): Radix Dialog, centered, scrim backdrop, panel frame with menu border,
-// radius 6, overlay shadow; 40 px header with 16/600 title and ×; body padding 16; 48 px footer with
-// Cancel then the primary pill. Focus is trapped; Esc = Cancel; Enter = primary unless focus is in a
-// multi-line field or on another button; focus returns to the invoker on close.
 import { Dialog as RDialog } from 'radix-ui';
 import { type KeyboardEvent, type ReactNode, useState, useSyncExternalStore } from 'react';
 import { cx } from '../cx.ts';
@@ -234,7 +230,6 @@ function closeEntry(id: number, result?: unknown) {
 	emit();
 }
 
-/** Closes every hosted dialog (workspace switch, tests). */
 export function closeAllDialogs(): void {
 	for (const o of stack) o.resolve(undefined);
 	stack = [];
@@ -298,7 +293,6 @@ function ConfirmDialog(props: HostedDialogProps<ConfirmOptions>) {
 }
 registerDialog(CONFIRM_KIND, ConfirmDialog);
 
-/** Confirmation dialog; resolves true when confirmed. */
 export async function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
 	return (await openDialog<boolean>(CONFIRM_KIND, opts)) === true;
 }

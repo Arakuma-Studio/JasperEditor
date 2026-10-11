@@ -5,12 +5,10 @@ import { createContext, useContext } from 'react';
 
 export const InDialogContext = createContext(false);
 
-/** True inside a Dialog's content. */
 export function useInDialog(): boolean {
 	return useContext(InDialogContext);
 }
 
-/** The z-index class of a popover: the popover layer, or just above the dialog layer inside a dialog. */
 export function popoverZClass(inDialog: boolean): string {
 	return inDialog ? 'z-[calc(var(--pr-z-dialog)+10)]' : 'z-[var(--pr-z-popover)]';
 }

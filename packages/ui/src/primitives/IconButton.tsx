@@ -30,7 +30,6 @@ const SIZES = {
 	small: 'size-5',
 };
 
-/** 24×24 (transport 28×28) icon button with a 16 px glyph (S05:CT-001, R-PUI §3.5). */
 export function IconButton({
 	icon,
 	label,
