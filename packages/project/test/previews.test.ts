@@ -335,12 +335,13 @@ describe('audio segments (Render Audio)', () => {
 		const moved = audioPreviewSegments(h.doc, h.seqId);
 		expect(moved.map((s) => s.hash)).toEqual(before.map((s) => s.hash));
 		const first = h.clips('A1')[0]!.id;
+		const pictureHashes = hashes(segs(h.doc, h.seqId));
 		h.ok([{ type: 'param.set', target: ['clip', first, 'volumeDb'], value: -12 }]);
 		const after = audioPreviewSegments(h.doc, h.seqId);
 		expect(after[0]!.hash).not.toBe(moved[0]!.hash);
 		expect(after[after.length - 1]!.hash).toBe(moved[moved.length - 1]!.hash);
 		// picture hashes ignore audio
-		expect(hashes(segs(h.doc, h.seqId))).toEqual(hashes(segs(h.doc, h.seqId)));
+		expect(hashes(segs(h.doc, h.seqId))).toEqual(pictureHashes);
 	});
 });
 
