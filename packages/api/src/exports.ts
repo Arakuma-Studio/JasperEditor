@@ -1,17 +1,10 @@
-// Export planning and rendering (ARCHITECTURE §9.5, S04 §10.2 subset, RP-010, EX-030).
-
 import { OUTPUT_SPACE_IDS } from '@jasper/project';
 import { z } from 'zod';
 import { EncoderChoiceSchema, VideoCodecSchema } from './capabilities.ts';
 import { RationalSchema } from './common.ts';
 import { EnvelopeSchema } from './projects.ts';
 
-/**
- * M1 subset of S04 `ExportSettings`: MP4 / H.264 / AAC 48 kHz stereo; enums widen additively later.
- * The engine may substitute the codec/container when the build cannot encode H.264 (D-13): the plan's
- * `encoder` says what will actually be written.
- */
-/** wp captions: caption output of an export (S04:TR-061/062). Track lists take ids or `C1`-style labels. */
+/** Caption output of an export (S04:TR-061/062). Track lists take ids or `C1`-style labels. */
 export const CAPTION_SIDECAR_FORMATS = ['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
 export const ExportCaptionsSchema = z.object({
 	/** Burn captions into the picture: `true` (default) = the visible caption tracks, `false` = none, or a list. */
@@ -30,6 +23,7 @@ export const ExportCaptionsSchema = z.object({
 });
 export type ExportCaptions = z.infer<typeof ExportCaptionsSchema>;
 
+/** If H.264 is unavailable, the render plan names the codec and container the engine will use. */
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
 	range: z.discriminatedUnion('type', [
@@ -62,17 +56,15 @@ export const ExportSettingsSchema = z.object({
 			/** ProRes profile of a `prores` export: 422 HQ (default) or 4444 (4:4:4, 12-bit class). */
 			proresProfile: z.enum(['hq', '4444']).optional(),
 			/**
-			 * wp interchange (additive): a straight-alpha ProRes 4444 (`yuva444p10le`) movie on a transparent background,
+			 * a straight-alpha ProRes 4444 (`yuva444p10le`) movie on a transparent background,
 			 * no audio — pre-renders of clips an interchange format cannot represent. Needs `codec: 'prores'`,
 			 * `proresProfile: '4444'`, `container: 'mov'`; renders on the Remotion path (the same compositions as the
 			 * preview).
 			 */
 			alpha: z.boolean().optional(),
 			encoderSpeed: z.enum(['fast', 'balanced', 'best']),
-			/** Legacy field (always Rec. 709): the written colour space is `colorSpace` (color-mgmt). */
-			colorTags: z.literal('rec709').default('rec709'),
 			/**
-			 * previews (additive): frames between keyframes (1 = every frame is a keyframe). Absent = the encoder default
+			 * frames between keyframes (1 = every frame is a keyframe). Absent = the encoder default
 			 * (≈ 2 s). Render previews use short intervals so the Program monitor seeks inside them quickly.
 			 */
 			keyframeInterval: z.number().int().min(1).max(600).optional(),
@@ -109,15 +101,15 @@ export const ExportSettingsSchema = z.object({
 		.optional(),
 	audio: z
 		.object({
-			/** audio-mix: `pcm` (24-bit, MOV only) added. */
+			/** `pcm` is 24-bit and requires MOV. */
 			codec: z.enum(['aac', 'opus', 'pcm']),
-			/** audio-mix: 44.1 / 48 / 96 kHz (default: the sequence rate). AAC and Opus encode at 48 kHz max 96. */
+			/** 44.1 / 48 / 96 kHz (default: the sequence rate). AAC and Opus encode at 48 kHz max 96. */
 			sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]),
-			/** audio-mix: 6 = discrete 5.1 (L R C LFE Ls Rs); a 5.1 Mix exported as 2/1 channels is folded (BS.775). */
+			/** 6 = discrete 5.1 (L R C LFE Ls Rs); a 5.1 Mix exported as 2/1 channels is folded (BS.775). */
 			channels: z.union([z.literal(1), z.literal(2), z.literal(6)]),
 			bitrateKbps: z.number().int().positive().optional(),
 			/**
-			 * audio-mix: two-pass loudness normalisation of the final mix (S04:RN-032) with a true-peak ceiling. Absent =
+			 * two-pass loudness normalisation of the final mix (S04:RN-032) with a true-peak ceiling. Absent =
 			 * the sequence's Mix setting (`master.loudness` when enabled); null = off.
 			 */
 			normalize: z
@@ -137,17 +129,17 @@ export const ExportSettingsSchema = z.object({
 			z.object({ type: z.literal('path'), path: z.string() }),
 		])
 		.default({ type: 'download' }),
-	/** wp captions: burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
+	/** Burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
 	captions: ExportCaptionsSchema.optional(),
-	/** previews (additive): picture only — no audio stream and no mixdown (render previews of the picture). */
+	/** Picture only — no audio stream and no mixdown (render previews of the picture). */
 	videoOnly: z.boolean().optional(),
 	/**
-	 * previews (additive): use the sequence's valid render previews for the segments they cover (Premiere "Use
+	 * use the sequence's valid render previews for the segments they cover (Premiere "Use
 	 * Previews"). Segments without a preview render as usual. Ignored for alpha masters.
 	 */
 	usePreviews: z.boolean().optional(),
 	/**
-	 * previews (smart rendering, additive): with the `auto` engine and an H.264 or ProRes export matching its sources,
+	 * with the `auto` engine and an H.264 or ProRes export matching its sources,
 	 * stretches that show a source untouched are stream-copied (whole closed GOPs; ProRes frame by frame) and only the
 	 * rest is rendered. Absent = on for ProRes (lossless), off for H.264 (opt-in: the copies keep the sources' bitrate
 	 * and profile); true = on; false = off. The plan's `smart` says what is copied or why nothing can be.
@@ -174,7 +166,7 @@ export const RenderPlanSchema = z.object({
 	audio: z.object({
 		mode: z.enum(['native-mix', 'remotion', 'browser']),
 		normalize: z.object({ targetLufs: z.number(), truePeakDb: z.number().optional() }).optional(),
-		/** audio-mix: what the delivered audio is: rate, channels and codec. */
+		/** What the delivered audio is: rate, channels and codec. */
 		sampleRate: z.number().int().optional(),
 		channels: z.number().int().optional(),
 		codec: z.string().optional(),
@@ -190,7 +182,7 @@ export const RenderPlanSchema = z.object({
 		z.object({ code: z.string(), message: z.string(), itemIds: z.array(z.string()).optional() }),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
-	/** previews (smart rendering): whether stream copy is used, how many frames are copied, and why not (additive). */
+	/** Whether stream copy is used, how many frames are copied, and why not. */
 	smart: z
 		.object({ used: z.boolean(), copiedFrames: z.number().int(), reasons: z.array(z.string()) })
 		.optional(),
@@ -214,22 +206,22 @@ export const ExportResultSchema = z.object({
 	durationSec: z.number(),
 	frames: z.number().int(),
 	path: z.string().optional(),
-	/** ffmpeg video encoder and container actually used (D-13). */
+	/** FFmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
 	container: z.enum(['mp4', 'webm', 'mov']).optional(),
 	/**
-	 * Remotion path only (D-13, wp-lgpl): `intermediate` = Remotion rendered ProRes and the engine encoded the
+	 * Remotion path only (D-13): `intermediate` = Remotion rendered ProRes and the engine encoded the
 	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).
 	 */
 	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
-	/** M2 (wp-m2-layer-bake, additive): the path that produced the file (`hybrid` = native with baked layers). */
+	/** The path that produced the file (`hybrid` = native with baked layers). */
 	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion']).optional(),
 	/**
-	 * M2 (S11:LBK-023, additive): run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
+	 * run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
 	 * and an `auto` export was rendered on the Remotion path instead.
 	 */
 	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
-	/** audio-mix: loudness of the delivered audio (BS.1770-4), and the normalisation gain when it was normalised. */
+	/** Loudness of the delivered audio (BS.1770-4), and the normalisation gain when it was normalised. */
 	audioLoudness: z
 		.object({
 			integratedLufs: z.number().nullable(),
@@ -238,7 +230,7 @@ export const ExportResultSchema = z.object({
 			normalizedGainDb: z.number().optional(),
 		})
 		.optional(),
-	/** wp captions (additive): caption streams embedded in the file and sidecar files written. */
+	/** Caption streams embedded in the file and sidecar files written. */
 	captions: z
 		.object({
 			embedded: z.array(
@@ -266,7 +258,7 @@ export const ExportResultSchema = z.object({
 export type ExportResult = z.infer<typeof ExportResultSchema>;
 
 /**
- * gaps (File ▸ Export ▸ Frame, EX-3): still file formats. `exr` holds linear light (the working space's transfer
+ * still file formats. `exr` holds linear light (the working space's transfer
  * inverted, half float); `dpx` is 10-bit RGB; `jpeg` takes `jpegQuality`; the others are 8-bit RGB.
  */
 export const STILL_FORMATS = ['png', 'jpeg', 'tiff', 'dpx', 'exr', 'bmp', 'tga'] as const;
@@ -286,12 +278,12 @@ export const StillRequestSchema = z.object({
 	sequenceId: z.string(),
 	frame: z.number().int().min(0),
 	width: z.number().int().positive().optional(),
-	/** gaps (Export Frame): the file format (default PNG). */
+	/** the file format (default PNG). */
 	format: z.enum(STILL_FORMATS).optional(),
-	/** gaps: JPEG quality 1–100 (default 90). */
+	/** JPEG quality 1–100 (default 90). */
 	jpegQuality: z.number().int().min(1).max(100).optional(),
 	/**
-	 * gaps (Export Frame): also copy the frame to `<folder>/<name>.<ext>` on the engine host (local engines; never
+	 * also copy the frame to `<folder>/<name>.<ext>` on the engine host (local engines; never
 	 * overwrites: " (2)" is appended). The result's `path` is the file written.
 	 */
 	destination: z
@@ -308,7 +300,7 @@ export const StillRequestSchema = z.object({
 export type StillRequest = z.infer<typeof StillRequestSchema>;
 export const StillResultSchema = z.object({
 	url: z.string(),
-	/** gaps: the file written at the destination, its format and pixel size. */
+	/** the file written at the destination, its format and pixel size. */
 	path: z.string().optional(),
 	format: z.enum(STILL_FORMATS).optional(),
 });

@@ -1,4 +1,3 @@
-// GET /health and GET /api/capabilities (ARCHITECTURE §9.2, S04:RT-002 subset).
 import { z } from 'zod';
 import { M2FeaturesSchema } from './m2-capabilities.ts';
 
@@ -13,7 +12,7 @@ export type Health = z.infer<typeof HealthSchema>;
  * Video codecs the engine can encode (ARCHITECTURE D-13). `prores` is the mastering codec: ProRes 422 HQ
  * (or 4444) in MOV with PCM audio, written by `prores_ks` (LGPL).
  */
-/** gaps (EX-2): `hevc` = H.265 Main (libkvazaar, 8-bit) or Main / Main10 (hardware encoders). */
+/** `hevc` = H.265 Main (libkvazaar, 8-bit) or Main / Main10 (hardware encoders). */
 export const VideoCodecSchema = z.enum(['h264', 'vp9', 'av1', 'prores', 'hevc']);
 export type VideoCodec = z.infer<typeof VideoCodecSchema>;
 
@@ -23,7 +22,7 @@ export type VideoCodec = z.infer<typeof VideoCodecSchema>;
  */
 export const EncoderChoiceSchema = z.object({
 	codec: VideoCodecSchema,
-	/** ffmpeg encoder name, e.g. `h264_nvenc`, `libopenh264`, `libx264`, `libsvtav1`. */
+	/** FFmpeg encoder name, e.g. `h264_nvenc`, `libopenh264`, `libx264`, `libsvtav1`. */
 	encoder: z.string(),
 	/** Human label, e.g. "H.264 · NVIDIA NVENC (hardware)". */
 	label: z.string(),
@@ -57,7 +56,7 @@ export const EncodingCapabilitiesSchema = z.object({
 		av1: z.array(z.string()),
 		/** ProRes master encoders (`prores_ks`); absent on engines that predate it. */
 		prores: z.array(z.string()).optional(),
-		/** gaps: HEVC encoders (usable hardware, then libkvazaar); absent on engines that predate it. */
+		/** HEVC encoders (usable hardware, then libkvazaar); absent on engines that predate it. */
 		hevc: z.array(z.string()).optional(),
 	}),
 	audio: z.object({ aac: z.boolean(), opus: z.boolean() }),
@@ -102,21 +101,21 @@ export const EngineCapabilitiesSchema = z.object({
 		ffprobeVersion: z.string().nullable(),
 		encoders: z.array(z.string()),
 		filters: z.array(z.string()),
-		/** Encoder selection (D-13); additive, absent on older engines. */
+		/** Absent when encoder selection is unavailable. */
 		encoding: EncodingCapabilitiesSchema.optional(),
-		/** Where the engine's ffmpeg came from (D-13 order: env → resources → vendor → PATH); additive. */
+		/** Where the engine's ffmpeg came from (D-13 order: env → resources → vendor → PATH). */
 		ffmpegSource: z.enum(['env', 'resources', 'vendor', 'path', 'missing']).optional(),
 	}),
 	render: z.object({
 		native: z.boolean(),
 		remotionLocal: z.enum(['ready', 'needs-browser-download', 'unavailable']),
-		/** FFmpeg of the Remotion path (D-13, wp-lgpl); additive. */
+		/** FFmpeg used by the Remotion path. */
 		remotionBinaries: RemotionBinariesSchema.optional(),
 		fframes: z.enum(['ready', 'unavailable']),
 		fframesReason: z.string().optional(),
 	}),
 	fonts: z.object({ bundledCatalog: z.boolean(), systemFonts: z.boolean(), customUpload: z.boolean() }),
-	/** M2 feature blocks (ARCHITECTURE §19.7); additive. */
+	/** Optional feature capabilities. */
 	features: M2FeaturesSchema.optional(),
 	limits: z.object({
 		maxUploadBytes: z.number().nullable(),

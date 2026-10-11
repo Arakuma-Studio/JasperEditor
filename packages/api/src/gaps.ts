@@ -1,8 +1,5 @@
-// Workstream `gaps` (docs/wp-notes/gaps.md): Edit Original, scratch disks, proxies, Project Manager, Export Frame,
-// Warp Stabilizer and Auto Reframe analysis contracts.
 import { z } from 'zod';
-
-// ---------------------------------------------------------------- Edit Original (UI-5)
+import { RegisteredMediaSchema } from './media.ts';
 
 /** `GET /api/media/:mediaKey/location`: where the media's bytes are on the engine host. */
 export const MediaLocationSchema = z.object({
@@ -24,8 +21,6 @@ export const MediaOpenResponseSchema = z.object({
 	action: z.enum(['reveal', 'open']),
 });
 export type MediaOpenResponse = z.infer<typeof MediaOpenResponseSchema>;
-
-// ---------------------------------------------------------------- Project Settings ▸ Scratch Disks (PRJ-4)
 
 /** One scratch location: where it is on the engine host and the space left there. */
 export const ScratchLocationSchema = z.object({
@@ -62,8 +57,6 @@ export const ScratchCheckSchema = ScratchLocationSchema.extend({
 	message: z.string().optional(),
 });
 export type ScratchCheck = z.infer<typeof ScratchCheckSchema>;
-
-// ---------------------------------------------------------------- Proxies and ingest (PRJ-8)
 
 /**
  * Where Create Proxies / ingest writes: `next-to-media` = a `Proxies` (or `Ingested Media`) folder beside the source
@@ -103,15 +96,13 @@ export type MediaJobRequest = z.infer<typeof MediaJobRequestSchema>;
 export const MediaJobResultSchema = z.object({
 	op: z.enum(['proxy', 'transcode', 'copy']),
 	preset: z.string().nullable(),
-	outputs: z.array(z.object({ mediaId: z.string(), path: z.string(), registered: z.unknown() })),
+	outputs: z.array(z.object({ mediaId: z.string(), path: z.string(), registered: RegisteredMediaSchema })),
 	skipped: z.array(z.object({ mediaId: z.string(), reason: z.string() })),
 });
 export type MediaJobResult = z.infer<typeof MediaJobResultSchema>;
 
-// ---------------------------------------------------------------- Preferences ▸ Auto Save / Memory (UI-4)
-
 /**
- * Engine-wide preferences of workstream gaps: saved versions (Premiere's "Automatically save every N minutes" and
+ * Engine-wide preferences: saved versions (Premiere's "Automatically save every N minutes" and
  * "Maximum Project Versions" — a version of the project file is kept at most every `versionIntervalMinutes`, the
  * newest `keepVersions` are kept) and Memory ▸ "Optimize rendering for" (`memory` halves the parallel render pages
  * and browser tabs of exports, previews and pre-renders).
@@ -132,8 +123,6 @@ export const EngineGapsInfoSchema = EngineGapsSettingsSchema.extend({
 		cpuCount: z.number(),
 	}),
 });
-
-// ---------------------------------------------------------------- File ▸ Project Manager (PRJ-6)
 
 export const ProjectManagerOptionsSchema = z.object({
 	/** Absolute folder the copy is written to (created when missing). */
@@ -201,8 +190,6 @@ export const ProjectManagerResultSchema = z.object({
 });
 export type ProjectManagerResult = z.infer<typeof ProjectManagerResultSchema>;
 
-// ---------------------------------------------------------------- Warp Stabilizer analysis (FX-6)
-
 /**
  * `POST /api/warp-analysis`: analyse source frames [startFrame, startFrame + frameCount) of a video for the Warp
  * Stabilizer (job `warp-analysis`; its result is the analysis stored with the effect: `effect.setWarpAnalysis`).
@@ -238,8 +225,6 @@ export const WarpAnalysisResultSchema = z.object({
 });
 export type WarpAnalysisResult = z.infer<typeof WarpAnalysisResultSchema>;
 
-// ---------------------------------------------------------------- Auto Reframe analysis (AI-2)
-
 /** `POST /api/reframe`: the subject of each frame of a media range (job `reframe`). */
 export const ReframeRequestSchema = z.object({
 	projectId: z.string().optional(),
@@ -254,7 +239,7 @@ export type ReframeRequest = z.infer<typeof ReframeRequestSchema>;
 export const ReframeResultSchema = z.object({
 	start: z.number(),
 	frameDuration: z.number(),
-	/** x, y (0..1 of the display), confidence per frame. */
+	/** X, y (0..1 of the display), confidence per frame. */
 	points: z.array(z.number()),
 	source: z.enum(['faces', 'saliency', 'mixed']),
 	frames: z.number().int(),

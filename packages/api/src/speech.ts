@@ -1,5 +1,4 @@
-// Speech-to-text (wp speech): Whisper models of the processing-model catalogue, `transcription` jobs for a media or
-// a sequence's mix, and their results. Word times in results are flicks (705 600 000 / s).
+// Word times are flicks (705,600,000 per second).
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 

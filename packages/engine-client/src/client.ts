@@ -1,4 +1,3 @@
-// Typed engine client: one method per route of @jasper/api's ROUTES (ARCHITECTURE §9.2).
 import {
 	type AgentOpenProjectRequest,
 	type AgentQueryRequest,
@@ -14,6 +13,7 @@ import {
 	type ColorMatchRequest,
 	type DerivativeKind,
 	type EngineJob,
+	type EnvelopeJson,
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
@@ -45,8 +45,8 @@ import {
 	type RouteResponse,
 	type SceneDetectRequest,
 	type StillRequest,
-	UPLOAD_CHUNK_BYTES,
 	type UploadCreateRequest,
+	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
 	type VersionRestoreRequest,
 } from '@jasper/api';
@@ -69,8 +69,7 @@ export type EngineClientOptions = {
 };
 
 /**
- * A JSON request body that is already serialised (ui-perf: autosave and the recovery journal serialise documents
- * incrementally, `stringifyJson` in @jasper/project). Sent as is with `content-type: application/json`.
+ * Autosave and recovery serialize documents incrementally. This body is sent verbatim as application/json.
  */
 export class JsonText {
 	constructor(readonly text: string) {}
@@ -100,6 +99,11 @@ export type MediaVariant =
 	| { peaks: number };
 
 export type UploadProgress = { loaded: number; total: number };
+
+export type UploadOptions = {
+	signal?: AbortSignal;
+	onProgress?(progress: UploadProgress): void;
+};
 
 export class EngineClient {
 	readonly baseUrl: string;
@@ -138,9 +142,10 @@ export class EngineClient {
 		};
 	}
 
-	/** Low-level typed call by route name. */
 	async call<N extends RouteName>(name: N, opts: CallOptions = {}): Promise<RouteResponse<N>> {
 		const route = ROUTES[name];
+		if (typeof route.response === 'string')
+			throw new EngineError('INVALID_REQUEST', `Route ${name} does not return JSON`);
 		const path = buildPath(route.path, opts.params);
 		const binary = 'body' in route && route.body === 'binary';
 		const headers: Record<string, string> = {
@@ -162,21 +167,13 @@ export class EngineClient {
 				body = opts.body instanceof JsonText ? opts.body.text : JSON.stringify(opts.body);
 			}
 		}
-		let res: Response;
-		try {
-			res = await this.fetchImpl(this.url(path, opts.query), {
-				method: route.method,
-				headers,
-				body,
-				signal: opts.signal,
-				credentials: 'include',
-			});
-		} catch (e) {
-			if ((e as { name?: string })?.name === 'AbortError') throw e;
-			throw new EngineError('NETWORK', `Engine not reachable: ${(e as Error)?.message ?? e}`, {
-				retryable: true,
-			});
-		}
+		const res = await this.fetchResponse(this.url(path, opts.query), {
+			method: route.method,
+			headers,
+			body,
+			signal: opts.signal,
+			credentials: 'include',
+		});
 		const apiHeader = res.headers.get(API_HEADER);
 		if (apiHeader && Number(apiHeader) !== API_VERSION) {
 			throw new EngineError(
@@ -202,8 +199,7 @@ export class EngineClient {
 				retryable: res.status >= 500,
 			});
 		}
-		const schema = route.response as z.ZodType | string;
-		if (typeof schema === 'string') return json as RouteResponse<N>;
+		const schema: z.ZodType = route.response;
 		const parsed = schema.safeParse(json);
 		if (!parsed.success) {
 			throw new EngineError(
@@ -214,8 +210,6 @@ export class EngineClient {
 		}
 		return parsed.data as RouteResponse<N>;
 	}
-
-	// ------------------------------------------------------------ one method per route
 
 	health() {
 		return this.call('health');
@@ -236,7 +230,7 @@ export class EngineClient {
 		return this.call('projectGet', { params: { projectId } });
 	}
 	/** Saves with `If-Match: <baseRevision>`; a 409 throws `REVISION_CONFLICT` with `{revision}` detail. */
-	putProject(projectId: string, envelope: unknown, baseRevision: number) {
+	putProject(projectId: string, envelope: EnvelopeJson | JsonText, baseRevision: number) {
 		return this.call('projectPut', {
 			params: { projectId },
 			body: envelope,
@@ -251,7 +245,6 @@ export class EngineClient {
 	listVersions(projectId: string) {
 		return this.call('projectVersions', { params: { projectId } });
 	}
-	/** One saved version with its envelope (process, D-39). */
 	getVersion(projectId: string, versionId: string) {
 		return this.call('projectVersionGet', { params: { projectId, versionId } });
 	}
@@ -292,7 +285,6 @@ export class EngineClient {
 	releaseLease(projectId: string, leaseId: string) {
 		return this.call('leaseRelease', { params: { projectId, leaseId }, automatic: true });
 	}
-	// polish: Media Browser (local engines only)
 	browseRoots() {
 		return this.call('browseRoots');
 	}
@@ -310,19 +302,19 @@ export class EngineClient {
 	browseFileUrl(path: string): string {
 		return this.url('/api/browse/file', { path });
 	}
-	/** wp captions: a caption / transcript file by path (local engines). */
+	/** A caption / transcript file by path (local engines). */
 	readCaptionFile(req: CaptionFileReadRequest) {
 		return this.call('captionFileRead', { body: req });
 	}
-	/** wp interchange: reads a timeline document into a `project.importTimeline` fragment. */
+	/** Reads a timeline document into a `project.importTimeline` fragment. */
 	importTimeline(req: InterchangeImportRequest, signal?: AbortSignal) {
 		return this.call('interchangeImport', { body: req, ...(signal ? { signal } : {}) });
 	}
-	/** wp interchange: the clips an export to `format` would pre-render. */
+	/** The clips an export to `format` would pre-render. */
 	interchangePrerenderPlan(req: z.input<typeof InterchangePrerenderPlanRequestSchema>) {
 		return this.call('interchangePrerenderPlan', { body: req });
 	}
-	/** wp interchange: exports a sequence as a timeline document (job `interchange-export`). */
+	/** Exports a sequence as a timeline document (job `interchange-export`). */
 	exportTimeline(req: InterchangeExportRequest) {
 		return this.call('interchangeExport', { body: req });
 	}
@@ -357,7 +349,7 @@ export class EngineClient {
 	mediaStatus(mediaKey: string) {
 		return this.call('mediaStatus', { params: { mediaKey } });
 	}
-	/** polish: the status of many media in one request (at most MEDIA_STATUS_BATCH_MAX keys). */
+	/** The status of many media in one request (at most MEDIA_STATUS_BATCH_MAX keys). */
 	mediaStatusBatch(mediaKeys: string[]) {
 		return this.call('mediaStatusBatch', { body: { mediaKeys } });
 	}
@@ -382,15 +374,15 @@ export class EngineClient {
 	startExport(req: ExportStartRequest): Promise<EngineJob> {
 		return this.call('exportStart', { body: req });
 	}
-	/** audio-mix: loudness / peaks / activity analysis job (`wait` answers the finished job). */
+	/** Loudness / peaks / activity analysis job (`wait` answers the finished job). */
 	analyzeAudio(req: AudioAnalyzeRequest, wait = false): Promise<EngineJob> {
 		return this.call('audioAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
 	}
-	/** audio-fx: a music remix plan for a clip's content range (synchronous). */
+	/** A music remix plan for a clip's content range (synchronous). */
 	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
-		return this.call('audioRemixPlan', { body: req }) as Promise<RemixPlanResult>;
+		return this.call('audioRemixPlan', { body: req });
 	}
-	/** audio-mix: a loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
+	/** A loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
 	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {
 		return this.call('mediaLoudnessNormalize', {
 			params: { key: mediaKey },
@@ -398,7 +390,7 @@ export class EngineClient {
 			...(wait ? { query: { wait: '1' as const } } : {}),
 		});
 	}
-	// ---- imports workstream
+
 	/** The interpreted picture of a media (display / proxy / master of a pixel variant); queues it when missing. */
 	requestMediaVariant(mediaKey: string, req: MediaVariantRequest) {
 		return this.call('mediaVariant', { params: { mediaKey }, body: req });
@@ -432,14 +424,12 @@ export class EngineClient {
 	 */
 	async uploadSequenceFrame(
 		blob: Blob,
-		opts: {
+		opts: UploadOptions & {
 			projectId: string;
 			fileName?: string;
-			signal?: AbortSignal;
-			onProgress?(p: UploadProgress): void;
 		},
 	): Promise<string> {
-		const fileName = opts.fileName ?? (blob as File).name ?? 'frame.bin';
+		const fileName = opts.fileName ?? this.blobName(blob) ?? 'frame.bin';
 		const session = await this.createUpload({
 			projectId: opts.projectId,
 			fileName,
@@ -447,33 +437,25 @@ export class EngineClient {
 			mimeType: blob.type || 'application/octet-stream',
 			purpose: 'sequence-frame',
 		});
-		const chunkSize = session.chunkSize || UPLOAD_CHUNK_BYTES;
-		let offset = session.offset;
 		try {
-			while (offset < blob.size) {
-				if (opts.signal?.aborted) throw opts.signal.reason ?? new DOMException('Aborted', 'AbortError');
-				const end = Math.min(blob.size, offset + chunkSize);
-				offset = (await this.appendUpload(session.uploadId, offset, blob.slice(offset, end), opts.signal))
-					.offset;
-				opts.onProgress?.({ loaded: offset, total: blob.size });
-			}
-		} catch (e) {
-			await this.abortUpload(session.uploadId).catch(() => undefined);
-			throw e;
+			await this.uploadChunks(blob, session, opts);
+		} catch (error) {
+			await this.abortFailedUpload(session.uploadId, error);
+			throw error;
 		}
 		return session.uploadId;
 	}
-	/** Workstream `time`: Scene Edit Detection of a media range (job; result SceneDetectResult). */
+	/** Scene Edit Detection of a media range (job; result SceneDetectResult). */
 	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {
 		return this.call('scenesDetect', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
 	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });
 	}
-	// ---- previews workstream (render previews, docs/wp-notes/previews.md)
+
 	/** Which segment hashes have render preview files (video / audio) in a preview format. */
 	previewStatus(req: PreviewStatusRequest): Promise<PreviewStatus> {
-		return this.call('previewStatus', { body: req as never });
+		return this.call('previewStatus', { body: req });
 	}
 	/** Sequence ▸ Render…: a `preview` job, or `{job: null}` when every segment is rendered already. */
 	renderPreviews(
@@ -481,23 +463,23 @@ export class EngineClient {
 		wait = false,
 	): Promise<EngineJob | { job: null; existing: number }> {
 		return this.call('previewRender', {
-			body: req as never,
+			body: req,
 			...(wait ? { query: { wait: '1' as const } } : {}),
-		}) as Promise<EngineJob | { job: null; existing: number }>;
+		});
 	}
 	/** Delete Render Files (`{all: true}`) / Delete Render Files In to Out (`{hashes}`). */
 	deletePreviews(req: PreviewDeleteRequest): Promise<PreviewDeleteResult> {
 		return this.call('previewDelete', { body: req });
 	}
-	/** color-grade: Lumetri Scopes of a rendered frame as numbers. */
+	/** Lumetri Scopes of a rendered frame as numbers. */
 	gradingScopes(req: GradingScopesRequest, signal?: AbortSignal) {
 		return this.call('gradingScopes', { body: req, ...(signal ? { signal } : {}) });
 	}
-	/** color-grade: Colour Match of a clip to a reference frame (Lumetri params to apply). */
+	/** Colour Match of a clip to a reference frame (Lumetri params to apply). */
 	gradingMatch(req: ColorMatchRequest, signal?: AbortSignal) {
 		return this.call('gradingMatch', { body: req, ...(signal ? { signal } : {}) });
 	}
-	/** color-grade: Basic Correction ▸ Auto of a clip (Lumetri params to apply). */
+	/** Basic Correction ▸ Auto of a clip (Lumetri params to apply). */
 	gradingAutoTone(req: AutoToneRequest, signal?: AbortSignal) {
 		return this.call('gradingAutoTone', { body: req, ...(signal ? { signal } : {}) });
 	}
@@ -522,7 +504,7 @@ export class EngineClient {
 	agentOpenProject(req: AgentOpenProjectRequest) {
 		return this.call('agentOpenProject', { body: req });
 	}
-	/** mcp-cli: live-UI automation of an open editor window. */
+	/** Live-UI automation of an open editor window. */
 	agentUi(req: AgentUiRequest, signal?: AbortSignal) {
 		return this.call('agentUi', { body: req, signal });
 	}
@@ -536,19 +518,11 @@ export class EngineClient {
 	 */
 	async fetchBytes(path: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array; contentType: string }> {
 		const url = /^https?:/.test(path) ? path : this.url(path);
-		let res: Response;
-		try {
-			res = await this.fetchImpl(url, {
-				headers: this.authorizationHeaders(),
-				signal,
-				credentials: 'include',
-			});
-		} catch (e) {
-			if ((e as { name?: string })?.name === 'AbortError') throw e;
-			throw new EngineError('NETWORK', `Engine not reachable: ${(e as Error)?.message ?? e}`, {
-				retryable: true,
-			});
-		}
+		const res = await this.fetchResponse(url, {
+			headers: this.authorizationHeaders(),
+			signal,
+			credentials: 'include',
+		});
 		if (!res.ok)
 			throw new EngineError(
 				res.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR',
@@ -562,8 +536,6 @@ export class EngineClient {
 			contentType: res.headers.get('content-type') ?? 'application/octet-stream',
 		};
 	}
-
-	// ------------------------------------------------------------ URLs for elements (<video>, <img>, fonts)
 
 	/** Same-origin media URL (ARCHITECTURE §8, S04:MS-001). */
 	mediaUrl(mediaKey: string, variant: MediaVariant = 'original'): string {
@@ -579,14 +551,14 @@ export class EngineClient {
 	renderOutputUrl(jobId: string): string {
 		return this.url(buildPath(ROUTES.renderOutput.path, { jobId }));
 	}
-	/** wp interchange: download URL of a file of a finished interchange export. */
+	/** Download URL of a file of a finished interchange export. */
 	interchangeOutputUrl(jobId: string, name: string, download = false): string {
 		return this.url(
 			buildPath(ROUTES.interchangeOutput.path, { jobId, name }),
 			download ? { download: 1 } : undefined,
 		);
 	}
-	/** wp captions: download URL of an export's sidecar caption file. */
+	/** Download URL of an export's sidecar caption file. */
 	renderCaptionFileUrl(jobId: string, name: string): string {
 		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
 	}
@@ -601,8 +573,6 @@ export class EngineClient {
 			this.baseUrl || (typeof location !== 'undefined' ? location.origin : 'http://127.0.0.1:47900');
 		return `${base.replace(/^http/, 'ws')}/agent`;
 	}
-
-	// ------------------------------------------------------------ streams and uploads
 
 	/** Opens the NDJSON event stream; reconnects with 1 s → 30 s backoff and resumes with `since`. */
 	openEvents(opts: { since?: number | null; projectId?: string }, handlers: EventHandlers): EventStream {
@@ -623,16 +593,14 @@ export class EngineClient {
 	 */
 	async uploadFile(
 		blob: Blob,
-		opts: {
+		opts: UploadOptions & {
 			projectId: string;
 			fileName?: string;
 			mimeType?: string;
 			clientFingerprint?: string;
-			onProgress?(p: UploadProgress): void;
-			signal?: AbortSignal;
 		},
 	): Promise<RegisteredMedia> {
-		const fileName = opts.fileName ?? (blob as File).name ?? 'upload.bin';
+		const fileName = opts.fileName ?? this.blobName(blob) ?? 'upload.bin';
 		const session = await this.createUpload({
 			projectId: opts.projectId,
 			fileName,
@@ -640,31 +608,88 @@ export class EngineClient {
 			mimeType: opts.mimeType ?? (blob.type || 'application/octet-stream'),
 			...(opts.clientFingerprint ? { clientFingerprint: opts.clientFingerprint } : {}),
 		});
-		const chunkSize = session.chunkSize || UPLOAD_CHUNK_BYTES;
-		let offset = session.offset;
-		opts.onProgress?.({ loaded: offset, total: blob.size });
 		try {
-			let guard = 0;
-			while (offset < blob.size) {
-				if (opts.signal?.aborted) throw opts.signal.reason ?? new DOMException('Aborted', 'AbortError');
-				const end = Math.min(blob.size, offset + chunkSize);
-				try {
-					const r = await this.appendUpload(session.uploadId, offset, blob.slice(offset, end), opts.signal);
-					offset = r.offset;
-				} catch (e) {
-					const mismatch =
-						e instanceof EngineError && e.code === 'UPLOAD_OFFSET_MISMATCH'
-							? UploadOffsetMismatchSchema.safeParse(e.detail)
-							: null;
-					if (!mismatch?.success || ++guard > 5) throw e;
-					offset = mismatch.data.expectedOffset;
-				}
-				opts.onProgress?.({ loaded: offset, total: blob.size });
-			}
+			await this.uploadChunks(blob, session, opts);
 			return await this.completeUpload(session.uploadId);
-		} catch (e) {
-			if (opts.signal?.aborted) await this.abortUpload(session.uploadId).catch(() => undefined);
-			throw e;
+		} catch (error) {
+			if (opts.signal?.aborted) await this.abortFailedUpload(session.uploadId, error);
+			throw error;
+		}
+	}
+
+	async uploadChunks(blob: Blob, session: UploadCreateResponse, opts: UploadOptions = {}): Promise<void> {
+		let offset = session.offset;
+		let conflicts = 0;
+		const validateOffset = (value: number) => {
+			if (!Number.isSafeInteger(value) || value < 0 || value > blob.size)
+				throw new EngineError('INVALID_RESPONSE', 'Upload offset is outside the file', {
+					detail: { offset: value, size: blob.size },
+				});
+		};
+		if (!Number.isSafeInteger(session.chunkSize) || session.chunkSize <= 0)
+			throw new EngineError('INVALID_RESPONSE', 'Upload chunk size must be a positive integer');
+		validateOffset(offset);
+		opts.onProgress?.({ loaded: offset, total: blob.size });
+		while (offset < blob.size) {
+			opts.signal?.throwIfAborted();
+			const end = Math.min(blob.size, offset + session.chunkSize);
+			try {
+				const response = await this.appendUpload(
+					session.uploadId,
+					offset,
+					blob.slice(offset, end),
+					opts.signal,
+				);
+				validateOffset(response.offset);
+				if (response.offset !== end)
+					throw new EngineError(
+						'INVALID_RESPONSE',
+						'Upload acknowledgement does not match the submitted chunk',
+						{
+							detail: { offset: response.offset, expectedOffset: end },
+						},
+					);
+				offset = response.offset;
+			} catch (error) {
+				const mismatch =
+					error instanceof EngineError && error.code === 'UPLOAD_OFFSET_MISMATCH'
+						? UploadOffsetMismatchSchema.safeParse(error.detail)
+						: null;
+				if (!mismatch?.success || ++conflicts > 5) throw error;
+				validateOffset(mismatch.data.expectedOffset);
+				offset = mismatch.data.expectedOffset;
+			}
+			opts.onProgress?.({ loaded: offset, total: blob.size });
+		}
+	}
+
+	private blobName(blob: Blob): string | undefined {
+		return 'name' in blob && typeof blob.name === 'string' ? blob.name : undefined;
+	}
+
+	private async abortFailedUpload(uploadId: string, originalError: unknown): Promise<void> {
+		try {
+			await this.abortUpload(uploadId);
+		} catch (cleanupError) {
+			throw new AggregateError(
+				[originalError, cleanupError],
+				'Upload failed and its session could not be removed',
+			);
+		}
+	}
+
+	private async fetchResponse(url: string, init: RequestInit): Promise<Response> {
+		try {
+			return await this.fetchImpl(url, init);
+		} catch (error) {
+			if (init.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+			throw new EngineError(
+				'NETWORK',
+				`Engine not reachable: ${error instanceof Error ? error.message : String(error)}`,
+				{
+					retryable: true,
+				},
+			);
 		}
 	}
 }

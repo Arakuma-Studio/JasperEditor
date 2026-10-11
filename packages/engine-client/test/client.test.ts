@@ -61,17 +61,25 @@ describe('EngineClient requests', () => {
 	it('sends If-Match, JSON bodies and bearer tokens', async () => {
 		const m = mockFetch(() => json({ revision: 3 }));
 		const c = new EngineClient({ fetch: m.fetch, baseUrl: 'http://127.0.0.1:47900/', token: 'tok' });
-		await c.putProject('prj_1', { a: 1 }, 2);
+		const envelope = {
+			format: 'jasper-project' as const,
+			schemaVersion: 1,
+			savedAt: 't',
+			savedBy: { app: 'JasperEditor', version: '1', platform: 'web' },
+			revision: 3,
+			document: {},
+		};
+		await c.putProject('prj_1', envelope, 2);
 		const call = m.calls[0]!;
 		expect(call.url).toBe('http://127.0.0.1:47900/api/projects/prj_1');
 		expect(call.init.method).toBe('PUT');
 		const h = call.init.headers as Record<string, string>;
 		expect(h['if-match']).toBe('2');
 		expect(h.authorization).toBe('Bearer tok');
-		expect(JSON.parse(String(call.init.body))).toEqual({ a: 1 });
+		expect(JSON.parse(String(call.init.body))).toEqual(envelope);
 	});
 
-	it('maps error shapes, 501 stubs, invalid responses and API mismatches', async () => {
+	it('maps error shapes, invalid responses and API mismatches', async () => {
 		const m = mockFetch((url) => {
 			if (url.endsWith('/api/capabilities'))
 				return json({ code: 'NOT_IMPLEMENTED', message: 'later', retryable: false }, 501);
@@ -85,15 +93,23 @@ describe('EngineClient requests', () => {
 		await expect(c.listFonts()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
 		await expect(c.health()).rejects.toMatchObject({ code: 'API_VERSION_MISMATCH' });
 		const down = new EngineClient({
-			fetch: (async () => {
+			fetch: async () => {
 				throw new TypeError('connect ECONNREFUSED');
-			}) as unknown as typeof fetch,
+			},
 		});
 		await expect(down.health()).rejects.toMatchObject({ code: 'NETWORK', retryable: true });
 	});
 
+	it('rejects binary routes before a JSON call sends a request', async () => {
+		const m = mockFetch(() => new Response('bytes'));
+		await expect(
+			new EngineClient({ fetch: m.fetch }).call('mediaFile', { params: { mediaKey: 'mk_test' } }),
+		).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+		expect(m.calls).toHaveLength(0);
+	});
+
 	it('builds media and output URLs', () => {
-		const c = new EngineClient({ fetch: (() => {}) as unknown as typeof fetch });
+		const c = new EngineClient({ fetch: async () => new Response() });
 		expect(c.mediaUrl('mk_abc')).toBe('/media/mk_abc');
 		expect(c.mediaUrl('mk_abc', { proxy: '720' })).toBe('/media/mk_abc/proxy/720');
 		expect(c.mediaUrl('mk_abc', 'poster')).toBe('/media/mk_abc/poster.jpg');
@@ -211,8 +227,8 @@ describe('openEvents (NDJSON, S04:ENG-023)', () => {
 		vi.useFakeTimers();
 		const urls: string[] = [];
 		let n = 0;
-		const fetchImpl = (async (url: string) => {
-			urls.push(url);
+		const fetchImpl: typeof fetch = async (url) => {
+			urls.push(String(url));
 			n++;
 			if (n === 1) {
 				return streamResponse([
@@ -222,7 +238,7 @@ describe('openEvents (NDJSON, S04:ENG-023)', () => {
 			}
 			if (n === 2) throw new TypeError('down');
 			return streamResponse(['{"id":3,"type":"future.event","createdAt":"t","payload":{"x":1}}\n'], true);
-		}) as unknown as typeof fetch;
+		};
 		const c = new EngineClient({ fetch: fetchImpl });
 		const types: string[] = [];
 		const envs: number[] = [];
@@ -255,21 +271,21 @@ describe('openEvents (NDJSON, S04:ENG-023)', () => {
 	it('reconnects when heartbeats stop and caps the backoff at 30 s', async () => {
 		vi.useFakeTimers();
 		let n = 0;
-		const fetchImpl = (async (_url: string, init: RequestInit) => {
+		const fetchImpl: typeof fetch = async (_url, init) => {
 			n++;
 			if (n === 1) {
 				// open but silent: the watchdog must abort it
 				return new Response(
 					new ReadableStream({
 						start(ctrl) {
-							init.signal?.addEventListener('abort', () => ctrl.error(new Error('aborted')));
+							init?.signal?.addEventListener('abort', () => ctrl.error(new Error('aborted')));
 						},
 					}),
 					{ status: 200 },
 				);
 			}
 			throw new TypeError('down');
-		}) as unknown as typeof fetch;
+		};
 		const c = new EngineClient({ fetch: fetchImpl });
 		const delays: number[] = [];
 		const s = c.openEvents(
@@ -281,5 +297,95 @@ describe('openEvents (NDJSON, S04:ENG-023)', () => {
 		for (let i = 0; i < 8; i++) await vi.advanceTimersByTimeAsync(30_000);
 		expect(delays.slice(0, 7)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
 		s.close();
+	});
+});
+
+describe('upload contract failures', () => {
+	it.each([0, 3, 9, 11])('rejects an acknowledgement at unexpected offset %d', async (offset) => {
+		let puts = 0;
+		const m = mockFetch((_url, init) => {
+			if (init.method === 'POST') return json({ uploadId: 'up', chunkSize: 4, offset: 0 });
+			if (++puts > 1) throw new Error('Repeated invalid chunk');
+			return json({ offset });
+		});
+		await expect(
+			new EngineClient({ fetch: m.fetch }).uploadFile(new Blob([new Uint8Array(10)]), { projectId: 'p' }),
+		).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+		expect(puts).toBe(1);
+	});
+
+	it('rejects a resumed offset beyond the file', async () => {
+		const m = mockFetch((_url, init) =>
+			init.method === 'POST'
+				? json({ uploadId: 'up', chunkSize: 4, offset: 0 })
+				: json(
+						{
+							code: 'UPLOAD_OFFSET_MISMATCH',
+							message: 'offset',
+							detail: { expectedOffset: 11 },
+							retryable: false,
+						},
+						409,
+					),
+		);
+		await expect(
+			new EngineClient({ fetch: m.fetch }).uploadFile(new Blob([new Uint8Array(10)]), { projectId: 'p' }),
+		).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+	});
+
+	it('reports cleanup failures together with the original cancellation', async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const m = mockFetch((_url, init) =>
+			init.method === 'POST'
+				? json({ uploadId: 'up', chunkSize: 4, offset: 0 })
+				: json({ code: 'DISK_FULL', message: 'cleanup failed', retryable: true }, 507),
+		);
+		await expect(
+			new EngineClient({ fetch: m.fetch }).uploadFile(new Blob(['abc']), {
+				projectId: 'p',
+				signal: controller.signal,
+			}),
+		).rejects.toMatchObject({
+			name: 'AggregateError',
+			errors: [
+				expect.objectContaining({ name: 'AbortError' }),
+				expect.objectContaining({ code: 'DISK_FULL' }),
+			],
+		});
+	});
+
+	it('resumes image sequence frame uploads through the same offset protocol', async () => {
+		let puts = 0;
+		const m = mockFetch((_url, init) => {
+			if (init.method === 'POST') return json({ uploadId: 'up', chunkSize: 4, offset: 0 });
+			if (++puts === 1)
+				return json(
+					{
+						code: 'UPLOAD_OFFSET_MISMATCH',
+						message: 'offset',
+						detail: { expectedOffset: 2 },
+						retryable: false,
+					},
+					409,
+				);
+			return json({ offset: 3 });
+		});
+		await expect(
+			new EngineClient({ fetch: m.fetch }).uploadSequenceFrame(new Blob(['abc']), { projectId: 'p' }),
+		).resolves.toBe('up');
+		expect(m.calls[2]?.url).toBe('/api/uploads/up?offset=2');
+	});
+
+	it('rejects an invalid chunk size before sending chunks', async () => {
+		const m = mockFetch(() => json({ offset: 0 }));
+		await expect(
+			new EngineClient({ fetch: m.fetch }).uploadChunks(new Blob(['abc']), {
+				uploadId: 'up',
+				offset: 0,
+				chunkSize: 0,
+			}),
+		).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+		expect(m.calls).toHaveLength(0);
 	});
 });

@@ -1,15 +1,12 @@
-// Roto / object mattes and face tracking (parity workstream `roto`). Owner: roto.
+import { RotoStrokeSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
-
-const Vec2 = z.tuple([z.number(), z.number()]);
+import { TracedMaskPathSchema } from './masks.ts';
 
 /** A roto stroke as stored in the document (media px, media frame). */
 export const RotoStrokeWireSchema = z.object({
-	kind: z.enum(['fg', 'bg', 'refine', 'refineErase']),
-	frame: z.number().int().min(0),
-	radius: z.number().positive().max(10_000),
-	points: z.array(Vec2).min(1).max(20_000),
+	...RotoStrokeSchema.shape,
+	points: RotoStrokeSchema.shape.points.max(20_000),
 });
 
 /** Resolved segmentation settings (`rotoSettingsOf`). */
@@ -156,19 +153,12 @@ export const RotoTraceRequestSchema = z.object({
 });
 export type RotoTraceRequest = z.infer<typeof RotoTraceRequestSchema>;
 
-const P = z.tuple([z.number(), z.number()]);
 export const RotoTraceResponseSchema = z.object({
 	frames: z.array(
 		z.object({
 			frame: z.number().int(),
 			/** Paths normalised to the picture (0..1, = the clip's layer box); depth odd = a hole. */
-			paths: z.array(
-				z.object({
-					path: z.object({ closed: z.boolean(), vertices: z.array(z.object({ p: P, in: P, out: P })) }),
-					depth: z.number().int().min(0),
-					area: z.number(),
-				}),
-			),
+			paths: z.array(TracedMaskPathSchema),
 		}),
 	),
 });

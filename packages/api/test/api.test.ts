@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { buildPath, isEnginePath, parseEvent, ROUTES } from '../src/index.ts';
 
@@ -26,5 +27,27 @@ describe('@jasper/api schemas', () => {
 		expect(e?.type).toBe('derivative.ready');
 		expect(parseEvent({ id: 4, type: 'future.thing', createdAt: 'now', payload: {} })).toBeNull();
 		expect(parseEvent({ id: 'x' })).toBeNull();
+	});
+});
+
+describe('event payload validation', () => {
+	it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+		'ignores inherited event name %s',
+		(type) => {
+			expect(parseEvent({ id: 1, type, createdAt: 'now', payload: {} })).toBeNull();
+		},
+	);
+
+	it('accepts arbitrary JSON without throwing', () => {
+		fc.assert(
+			fc.property(fc.jsonValue(), (value) => {
+				expect(() => parseEvent(value)).not.toThrow();
+			}),
+		);
+		fc.assert(
+			fc.property(fc.string(), fc.jsonValue(), (type, payload) => {
+				expect(() => parseEvent({ id: 1, type, createdAt: 'now', payload })).not.toThrow();
+			}),
+		);
 	});
 });

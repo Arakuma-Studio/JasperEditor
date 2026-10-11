@@ -1,5 +1,3 @@
-// Media registration, uploads, derivatives and their JSON headers (ARCHITECTURE §9.2/§9.4, D-09, D-10,
-// S04:IN-005, TH-002, WF-001).
 import {
 	ColorConfigInfoSchema,
 	ImageSequenceInfoSchema,
@@ -28,22 +26,22 @@ export const RegisteredMediaSchema = z.object({
 	probe: MediaProbeSchema,
 	locators: z.array(MediaLocatorSchema),
 	browserPlayable: z.enum(['yes', 'no', 'unknown']),
-	/** kind `lut` (M2, S06): parsed header, copied into `MediaAsset.lut`. */
+	/** Kind `lut` (S06): parsed header, copied into `MediaAsset.lut`. */
 	lut: LutInfoSchema.optional(),
-	/** kind `mg-bundle` (M2, S08): compositions, copied into `MediaAsset.mgBundle`. */
+	/** Kind `mg-bundle` (S08): compositions, copied into `MediaAsset.mgBundle`. */
 	mgBundle: MgBundleInfoSchema.optional(),
-	/** color-mgmt: kind `color-config` (a custom OCIO config bundle): header, copied into `MediaAsset.colorConfig`. */
+	/** Color-mgmt: kind `color-config` (a custom OCIO config bundle): header, copied into `MediaAsset.colorConfig`. */
 	colorConfig: ColorConfigInfoSchema.optional(),
-	/** imports: SVG / PDF / Illustrator vector still, copied into `MediaAsset.vector`. */
+	/** SVG / PDF / Illustrator vector still, copied into `MediaAsset.vector`. */
 	vector: VectorInfoSchema.optional(),
-	/** imports: Lottie animation, copied into `MediaAsset.lottie`. */
+	/** Lottie animation, copied into `MediaAsset.lottie`. */
 	lottie: LottieInfoSchema.optional(),
-	/** imports: layered document (PSD), copied into `MediaAsset.layered`. */
+	/** Layered document (PSD), copied into `MediaAsset.layered`. */
 	layered: LayeredInfoSchema.optional(),
-	/** imports: the numbered stills this file was conformed from, copied into `MediaAsset.imageSequence`. */
+	/** The numbered stills this file was conformed from, copied into `MediaAsset.imageSequence`. */
 	imageSequence: ImageSequenceInfoSchema.optional(),
 	/**
-	 * M3 (S07:PRC-019): a source-range sidecar found next to a file registered by path (`<name>.json` or
+	 * a source-range sidecar found next to a file registered by path (`<name>.json` or
 	 * `<stem>.json`, see `parseSourceSidecar`). Clients turn it into `MediaAsset.sourceRange`
 	 * (`sourceRangeFromSidecar`). Not stored by the engine: read at registration.
 	 */
@@ -61,7 +59,7 @@ export const RegisteredMediaSchema = z.object({
 export type RegisteredMedia = z.infer<typeof RegisteredMediaSchema>;
 
 /**
- * `DELETE /api/media/:mediaKey` (M3, S07:PRC-018): discards a media the client registered but did not commit
+ * `DELETE /api/media/:mediaKey` (S07:PRC-018): discards a media the client registered but did not commit
  * (Replace Footage cancelled after the upload). Only engine-managed copies (uploads, "copy into project") that no
  * stored project or project version references are deleted — never the user's own files (`path` storage) nor
  * processed versions (content-addressed, reused).
@@ -70,7 +68,7 @@ export const MediaDiscardResponseSchema = z.object({
 	deleted: z.boolean(),
 	reason: z.enum(['deleted', 'not-managed', 'derived', 'in-use']),
 	/**
-	 * M3 (wp-m3-cachegc, additive): cached derivatives still in use after the wait (a job reading one, a response
+	 * cached derivatives still in use after the wait (a job reading one, a response
 	 * streaming) — left for the next cache cleaning pass, which removes them once unused.
 	 */
 	cacheKept: z.number().int().min(0).optional(),
@@ -154,8 +152,6 @@ export const PeaksHeaderSchema = z.object({
 });
 export type PeaksHeader = z.infer<typeof PeaksHeaderSchema>;
 
-// ---------------------------------------------------------------- uploads (S04:IN-005)
-
 export const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 
 export const UploadCreateRequestSchema = z.object({
@@ -165,7 +161,7 @@ export const UploadCreateRequestSchema = z.object({
 	mimeType: z.string(),
 	clientFingerprint: z.string().optional(),
 	/**
-	 * M2 (wp-m2-mg, additive): `mg-bundle` = a zip of a built Remotion bundle, completed by
+	 * `mg-bundle` = a zip of a built Remotion bundle, completed by
 	 * `POST /api/mg-bundles/import {uploadId}` instead of `…/complete`. Default `media`.
 	 */
 	purpose: z.enum(['media', 'mg-bundle', 'sequence-frame']).optional(),

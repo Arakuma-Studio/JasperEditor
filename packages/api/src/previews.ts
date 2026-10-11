@@ -1,17 +1,14 @@
-// Render previews (workstream `previews`, docs/wp-notes/previews.md): Sequence ▸ Render Effects In to Out / Render In
-// to Out / Render Selection / Render Audio / Delete Render Files, the render bar's green state and preview playback.
-//
-// Segments and their content hashes are computed by `@jasper/project` (`previewSegments`, `audioPreviewSegments`)
-// on both sides: the editor asks which of its hashes have files (`/api/previews/status`); render requests carry the
-// document and the engine computes the segments itself (a client never names the files the engine writes).
+// Both peers compute segment hashes from the project. Render requests carry the document;
+// clients never name the files the engine writes.
+import { SequencePreviewSettingsSchema } from '@jasper/project';
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 
 /** Sequence Settings ▸ Video Previews (the engine's file format key is derived from them and the renderer version). */
 export const PreviewSettingsSchema = z.object({
-	format: z.enum(['h264-iframe', 'h264', 'vp9']).default('h264-iframe'),
-	size: z.enum(['full', 'half']).default('full'),
-	quality: z.enum(['standard', 'high']).default('standard'),
+	format: SequencePreviewSettingsSchema.shape.format.unwrap().default('h264-iframe'),
+	size: SequencePreviewSettingsSchema.shape.size.unwrap().default('full'),
+	quality: SequencePreviewSettingsSchema.shape.quality.unwrap().default('standard'),
 });
 export type PreviewSettings = z.infer<typeof PreviewSettingsSchema>;
 

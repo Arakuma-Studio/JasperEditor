@@ -1,5 +1,3 @@
-// imports workstream (docs/wp-notes/imports.md): interpreted media variants, image sequences, layered documents
-// (PSD), vector pages and Lottie export.
 import {
 	type LayeredImportLayer,
 	LayeredInfoSchema,
@@ -8,8 +6,6 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import { type RegisteredMedia, RegisteredMediaSchema } from './media.ts';
-
-// ---------------------------------------------------------------- interpreted variants
 
 /**
  * Pictures the engine makes for an interpretation the browser cannot apply (Interpret Footage ▸ field order / alpha,
@@ -41,8 +37,6 @@ export const MediaVariantReadyEventSchema = z.object({
 	variant: z.string(),
 	url: z.string(),
 });
-
-// ---------------------------------------------------------------- image sequences
 
 /**
  * `POST /api/imports/image-sequence`: numbered stills → one clip. Either `path` (engine host: one frame of the
@@ -77,8 +71,6 @@ export const ImageSequenceDetectResponseSchema = z.object({
 	missing: z.array(z.number().int().min(0)),
 });
 export type ImageSequenceDetectResponse = z.infer<typeof ImageSequenceDetectResponseSchema>;
-
-// ---------------------------------------------------------------- layered documents (PSD)
 
 export const PSD_BLEND_MODES = [
 	'pass-through',
@@ -196,8 +188,6 @@ export const LayeredExtractResultSchema = z.object({
 });
 export type LayeredExtractResult = z.infer<typeof LayeredExtractResultSchema>;
 
-// ---------------------------------------------------------------- vector documents (PDF pages)
-
 /** `GET /api/imports/vector/:mediaKey` — the pages of a PDF / Illustrator file (size in points). */
 export const VectorPagesResponseSchema = z.object({
 	mediaKey: z.string(),
@@ -205,8 +195,6 @@ export const VectorPagesResponseSchema = z.object({
 	pages: z.array(z.object({ page: z.number().int().min(1), width: z.number(), height: z.number() })),
 });
 export type VectorPagesResponse = z.infer<typeof VectorPagesResponseSchema>;
-
-// ---------------------------------------------------------------- Lottie export
 
 /**
  * `POST /api/imports/lottie/export`: a sequence (its graphics clips: shapes, text, solids, stills, nested sequences)

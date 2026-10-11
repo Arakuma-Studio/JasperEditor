@@ -1,4 +1,4 @@
-// NDJSON event stream `GET /events` (ARCHITECTURE §9.2, S04 §19.3, ENG-023).
+import { TransactionSchema } from '@jasper/project';
 import { z } from 'zod';
 import { ApprovalSchema } from './agent.ts';
 import { CacheGcReportSchema } from './cache.ts';
@@ -31,7 +31,7 @@ export const EVENT_PAYLOADS = {
 		derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema).optional(),
 	}),
 	'derivative.ready': z.object({ mediaKey: z.string(), kind: DerivativeKindSchema, url: z.string() }),
-	/** imports: an interpreted picture (display / proxy / master of a pixel variant) is ready. */
+	/** An interpreted picture (display / proxy / master of a pixel variant) is ready. */
 	'media.variant.ready': MediaVariantReadyEventSchema,
 	'export.finished': z.object({
 		jobId: z.string(),
@@ -44,7 +44,7 @@ export const EVENT_PAYLOADS = {
 		projectId: z.string(),
 		revision: z.number().int(),
 		label: z.string(),
-		origin: z.unknown(),
+		origin: TransactionSchema.shape.origin,
 		created: z.array(z.string()),
 		changed: z.array(z.string()),
 		deleted: z.array(z.string()),
@@ -58,14 +58,14 @@ export const EVENT_PAYLOADS = {
 	}),
 	/** An agent (jasper-mcp `open_project_in_editor`) asks editor windows to open this project. */
 	'editor.openProject': z.object({ projectId: z.string(), agent: z.string().optional() }),
-	/** M2 (wp-m2-mg, S08:MGC-013): a Remotion bundle was rebuilt; editors relink the asset keyed `oldKey`. */
+	/** A Remotion bundle was rebuilt; editors relink the asset keyed `oldKey`. */
 	'mgBundle.rebuilt': MgBundleRebuiltEventSchema,
-	/** M3 (wp-m3-cachegc, S04:CA-014): a cleaning pass removed cache entries (Preferences ▸ Media Cache refreshes). */
+	/** A cleaning pass removed cache entries (Preferences ▸ Media Cache refreshes). */
 	'cache.cleaned': CacheGcReportSchema,
-	/** M3 (wp-m3-presets, S03:FX-030): the user effect preset library changed (Effects ▸ Presets refreshes). */
+	/** The user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
 	/**
-	 * previews: preview files appeared (a segment finished rendering) or were deleted; the render bar asks again. A
+	 * preview files appeared (a segment finished rendering) or were deleted; the render bar asks again. A
 	 * deletion carries `deleted` (count), a render the segment.
 	 */
 	'previews.changed': z.object({
@@ -88,8 +88,8 @@ export type TypedEvent = {
 export function parseEvent(raw: unknown): TypedEvent | null {
 	const env = EventEnvelopeSchema.safeParse(raw);
 	if (!env.success) return null;
-	const schema = (EVENT_PAYLOADS as Record<string, z.ZodType>)[env.data.type];
-	if (!schema) return null;
+	if (!Object.hasOwn(EVENT_PAYLOADS, env.data.type)) return null;
+	const schema = EVENT_PAYLOADS[env.data.type as EngineEventType];
 	const payload = schema.safeParse(env.data.payload);
 	if (!payload.success) return null;
 	return { ...env.data, payload: payload.data } as TypedEvent;

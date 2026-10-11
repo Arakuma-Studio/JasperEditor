@@ -1,7 +1,11 @@
-// Clip processing contracts (M2, S07, ARCHITECTURE §19.4). Owner: wp-m2-process.
 import { ProcessStepSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RegisteredMediaSchema } from './media.ts';
+
+const SourceFrameRangeSchema = z.object({
+	startFrame: z.number().int().min(0),
+	endFrame: z.number().int().min(1),
+});
 
 /** `POST /api/media/:key/process` → EngineJob (kind `process`). */
 export const ProcessRequestSchema = z.object({
@@ -11,9 +15,9 @@ export const ProcessRequestSchema = z.object({
 	executor: z.enum(['auto', 'local', 'remote']).default('auto'),
 	/**
 	 * Process only the source frames `[startFrame, endFrame)` (at the media's rate), e.g. the part a clip uses plus
-	 * handles (M3, S07:PRC-015); the result is a shorter version whose `sourceRange` records the range.
+	 * handles (S07:PRC-015); the result is a shorter version whose `sourceRange` records the range.
 	 */
-	range: z.object({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) }).optional(),
+	range: SourceFrameRangeSchema.optional(),
 });
 export type ProcessRequest = z.infer<typeof ProcessRequestSchema>;
 
@@ -28,10 +32,10 @@ export const ProcessResultSchema = z.object({
 	/** Per-step notes, e.g. `dejudder: no cadence found, frames copied`. */
 	notes: z.array(z.string()),
 	/**
-	 * M3 (S07:PRC-015): the source frames `[startFrame, endFrame)` that were processed (absent = the whole
+	 * the source frames `[startFrame, endFrame)` that were processed (absent = the whole
 	 * source); the client passes it to `media.derive {range}` so the version records its source range.
 	 */
-	range: z.object({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) }).optional(),
+	range: SourceFrameRangeSchema.optional(),
 });
 export type ProcessResult = z.infer<typeof ProcessResultSchema>;
 
@@ -84,7 +88,7 @@ export const RemoteProbeResultSchema = z.object({
 	message: z.string(),
 	node: z.string().nullable(),
 	ffmpeg: z.string().nullable(),
-	/** e.g. 'NVIDIA GeForce RTX 5070 Ti' or null without a CUDA GPU. */
+	/** E.g. 'NVIDIA GeForce RTX 5070 Ti' or null without a CUDA GPU. */
 	gpu: z.string().nullable(),
 	onnxProviders: z.array(z.string()),
 	/** The remote runtime (jasper-proc bundle, onnxruntime) is installed and current. */
