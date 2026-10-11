@@ -35,6 +35,9 @@ The highest-confidence findings and implementations are:
   complete obsolete path. Only their own legacy test imported that math. The live panel already uses
   `createScopesComputer` and the shared project scope implementation. The unused path is removed; readback
   sizing tests remain, with live scope behavior covered by `color-grade.test.tsx` and project `scopes.test.ts`.
+- Remotion bundle uploads duplicated chunking and offset recovery. They now call the shared engine client
+  `uploadChunks` implementation, including its validated offsets and bounded recovery. Bundle transactions use
+  the project `CommandInput` contract so schema defaults remain optional at construction.
 - Colour interpretation dialogs duplicated patch generation. Both now use the typed `colorPatchOf` helper.
 - Internal command arrays now use the project's discriminated `Command` contract. Partial shape commands
   explicitly omit only the selected clip id. Known clip fields use discriminant/property narrowing instead
