@@ -76,11 +76,12 @@ The recovery adapter also has a regression asserting that listing warnings survi
 Direct executions of the baseline implementation confirmed `formatNumber(1.25, 101)` throws `RangeError` and
 that falsy thrown values cause the old panel boundary to render the failed child again.
 
-Biome passed for both packages. Focused tests are pending in this commit; the initial worktree run was
-restarted after linking the newly declared Zod dependency into its local dependency tree.
-
-Focused verification command: `pnpm exec vitest run packages/session/test packages/ui/test --maxWorkers=1`.
-The root-project focused run was stopped while propagating the integration recovery-warning contract.
+Biome passed for both packages. Package-local Vitest runs passed with `--maxWorkers=1 --testTimeout=60000
+--hookTimeout=60000`: session 14 files / 71 tests; UI 3 files / 39 tests. The session run took 471.19 seconds
+and UI 209.58 seconds on the loaded shared host, predominantly in transformation/import work.
+A narrow engine-store/view/ui-perf rerun is pending after the final session-ID helper and test typing changes.
+The initial root-project focused run was restarted after linking the newly declared Zod dependency, then
+stopped while propagating the integration recovery-warning contract; it supplies no pass evidence.
 Package typechecks and the final full gate are run serially by integration because parallel TypeScript workers
 exhaust the shared host. No visual layout changes are intended; failure messages are covered by DOM assertions.
 
