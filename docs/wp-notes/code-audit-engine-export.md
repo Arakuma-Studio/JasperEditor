@@ -105,8 +105,11 @@ the HTTP range response.
 
 Only this test's completion deadline is now 600 seconds. Its render settings, frame count, pixel,
 audio, event, and HTTP assertions are unchanged; no production timeout or performance budget changed.
-The focused rerun of every original assertion is pending at this commit:
-`pnpm exec vitest run apps/engine/test/export.test.ts -t 'exports a 2-track sequence to an mp4 whose frame count equals the range length' --maxWorkers=1 --reporter=verbose`.
+`pnpm exec vitest run apps/engine/test/export.test.ts -t 'exports a 2-track sequence to an mp4 whose frame count equals the range length' --maxWorkers=1 --reporter=verbose`
+passed every original assertion: 1 passed, 17 unrelated tests skipped by the name filter. Vitest
+reported 135.12 seconds for tests including setup and 585.55 seconds overall, with 442.38 seconds
+spent importing modules. The export job itself succeeded in 97.663 seconds. This focused result
+includes the export-event and HTTP range assertions; it does not claim a full-suite pass.
 
 ## Limits
 
