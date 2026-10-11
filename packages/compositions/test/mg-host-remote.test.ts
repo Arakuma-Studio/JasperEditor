@@ -262,7 +262,8 @@ function hostilePort(answer: (msg: { id: number; op: string }) => unknown): MgHo
 		postMessage(message: unknown) {
 			const m = message as { id: number; op: string };
 			const reply = answer(m);
-			if (reply !== undefined) queueMicrotask(() => port.onmessage?.({ data: reply }));
+			if (reply !== undefined)
+				queueMicrotask(() => port.onmessage?.(new MessageEvent<unknown>('message', { data: reply })));
 		},
 		close() {},
 	};
@@ -332,8 +333,12 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 				{ id: 'not-a-number', ok: true },
 				{ id: 999_999, ok: true, result: 1 },
 			])
-				port!.onmessage?.({ data: junk });
-			queueMicrotask(() => port!.onmessage?.({ data: { id: m.id, ok: true, result: true } }));
+				port!.onmessage?.(new MessageEvent<unknown>('message', { data: junk }));
+			queueMicrotask(() =>
+				port!.onmessage?.(
+					new MessageEvent<unknown>('message', { data: { id: m.id, ok: true, result: true } }),
+				),
+			);
 			return { id: m.id, ok: true, result: true };
 		});
 		const remote = new MgHostRemote(port);

@@ -218,7 +218,7 @@ type Pending = { resolve(v: unknown): void; reject(e: Error): void; timer: Retur
 /** The subset of a MessagePort the remote uses (tests pass a fake). */
 export type MgHostPort = {
 	postMessage(message: unknown): void;
-	onmessage: ((ev: Pick<MessageEvent<unknown>, 'data'>) => void) | null;
+	onmessage: ((ev: MessageEvent<unknown>) => void) | null;
 	close(): void;
 	start?(): void;
 };
@@ -233,7 +233,7 @@ export class MgHostRemote {
 		private readonly port: MgHostPort,
 		private readonly opts: { timeoutMs?: number; origin?: string } = {},
 	) {
-		port.onmessage = (ev: { data: unknown }) => this.onMessage(ev.data);
+		port.onmessage = (ev) => this.onMessage(ev.data);
 		port.start?.();
 	}
 
