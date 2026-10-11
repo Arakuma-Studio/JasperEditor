@@ -514,6 +514,14 @@ export function shapeItemAnimatables(contents: readonly ShapeItem[]): {
  * it; the tree is copied along changed paths only.
  */
 export function mapShapeItemAnimatables(
+	contents: ShapeItem[],
+	f: (anim: object, key: string) => object,
+): ShapeItem[];
+export function mapShapeItemAnimatables(
+	contents: readonly ShapeItem[],
+	f: (anim: object, key: string) => object,
+): readonly ShapeItem[];
+export function mapShapeItemAnimatables(
 	contents: readonly ShapeItem[],
 	f: (anim: object, key: string) => object,
 ): readonly ShapeItem[] {

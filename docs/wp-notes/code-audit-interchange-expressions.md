@@ -35,6 +35,7 @@ purchased reference material or add dependencies, assets, migrations, or export 
   reports and pre-render decisions also remain: deleting them could silently change exported output.
 - The generic expression value API still supports structured values and selector results. Its existing
   `unknown` contract is broader than `ParamValue` for a reason; no narrower type was invented to hide it.
+- The shape-animatable mapper preserves array mutability in its overloads: mutable input returns either that same mutable array or mutable copies; readonly input remains readonly. This lets snapshot binding preserve its mutable schema contract without asserting away readonly.
 - Test fixtures use the project's actual solid/text clip, vector shape and media types instead of invented partial shapes and double casts. Command fixture helpers retain `unknown` because they exercise the public validation boundary; unnecessary `as never` casts at that boundary were removed. Generic canonicalizers still accept arbitrary structured values.
 - Test comments retain protocol, invariant and measurement rationale; obvious assertion summaries and historical workstream notes were removed.
 - No new catch, silent error fallback, placeholder implementation, or explanatory changelog comment
