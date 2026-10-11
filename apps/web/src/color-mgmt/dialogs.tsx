@@ -53,6 +53,11 @@ export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>
 	const seq = props.session.getCommitted().sequences[props.sequenceId];
 	const info = sequenceColorInfo(seq?.settings);
 	const [choice, setChoice] = useState(workingChoiceOf(info));
+	const workingOptions = workingSpaceOptions();
+	const selectWorkingChoice = (value: string) => {
+		const option = workingOptions.find((option) => option.value === value);
+		if (option) setChoice(option.value);
+	};
 	const [blend, setBlend] = useState(info.blendLinear && !info.linearize);
 	const [toneMap, setToneMap] = useState(info.autoToneMap);
 	const [white, setWhite] = useState(String(info.sdrWhiteNits));
@@ -117,8 +122,8 @@ export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>
 					<Select
 						id="cm-working"
 						value={choice}
-						onValueChange={setChoice}
-						options={workingSpaceOptions()}
+						onValueChange={selectWorkingChoice}
+						options={workingOptions}
 						label="Working Color Space"
 						className="flex-1"
 					/>
@@ -126,7 +131,7 @@ export function SequenceColorDialog(props: HostedDialogProps<SequenceColorProps>
 				<Row label="">
 					<Checkbox
 						checked={linear}
-						onCheckedChange={(on) => setChoice(on ? `${space}-linear` : space)}
+						onCheckedChange={(on) => selectWorkingChoice(on ? `${space}-linear` : space)}
 						disabled={hdr}
 						label="Linearize Working Space"
 						id="cm-linearize"

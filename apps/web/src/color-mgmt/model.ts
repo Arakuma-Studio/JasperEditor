@@ -7,23 +7,24 @@ import {
 	resolveInputSpace,
 	type SequenceColorInfo,
 	sequenceColorInfo,
-	WORKING_SPACE_IDS,
+	WORKING_SPACE_CHOICES,
 } from '@jasper/project';
 
-export type Option = { value: string; label: string };
+type WorkingChoice = (typeof WORKING_SPACE_CHOICES)[number];
+export type Option<T extends string = string> = { value: T; label: string };
 
 /** Working Color Space choices: the spaces, then their linear variants (Linearize Working Space on). */
-export function workingSpaceOptions(): Option[] {
-	const base = WORKING_SPACE_IDS.map((id) => ({ value: id, label: colorSpace(id)!.label }));
-	const linear = WORKING_SPACE_IDS.filter((id) => !id.startsWith('rec2100')).map((id) => ({
-		value: `${id}-linear`,
-		label: `${colorSpace(id)!.label} (linear)`,
-	}));
-	return [...base, ...linear];
+export function workingSpaceOptions(): Option<WorkingChoice>[] {
+	return WORKING_SPACE_CHOICES.map((value) => {
+		const linear = value.endsWith('-linear');
+		const space = linear ? value.slice(0, -'-linear'.length) : value;
+		const label = colorSpace(space)!.label;
+		return { value, label: linear ? `${label} (linear)` : label };
+	});
 }
 
 /** The working choice id of a sequence's settings (`rec709` or `rec709-linear` …). */
-export function workingChoiceOf(info: SequenceColorInfo): string {
+export function workingChoiceOf(info: SequenceColorInfo): WorkingChoice {
 	return info.linearize && !info.space.startsWith('rec2100') ? `${info.space}-linear` : info.space;
 }
 
