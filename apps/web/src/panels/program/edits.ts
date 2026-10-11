@@ -6,6 +6,7 @@ import {
 	type Command,
 	contentTimeAt,
 	evaluate,
+	kindCapabilities,
 	type LayerTransformValues,
 	type Sequence,
 	type Transform,
@@ -24,7 +25,8 @@ export function activeSequence(session: EditorSession): Sequence | null {
 type VisualWithTransform = Clip & { transform: Transform; trackId: string };
 
 export function hasTransform(c: Clip | undefined): c is VisualWithTransform {
-	return !!c && 'transform' in c && c.kind !== 'captions';
+	// Loose clip schemas preserve extension fields, which need not describe editable Motion.
+	return !!c && c.kind !== 'captions' && !!kindCapabilities(c.kind)?.hasTransform;
 }
 
 /** Motion values of a clip evaluated at a sequence frame (content time, S01:KF-002). */

@@ -290,7 +290,7 @@ function ClipViewImpl(p: ClipViewProps) {
 		: null;
 	// M2 (S11:ATP-002): per clip, so anime templates show R.
 	const badge = clipEngines(c)?.badge ?? null;
-	const hasFx = ('effects' in c ? c.effects.length : 0) > 0;
+	const hasFx = 'effects' in c && (c.effects?.length ?? 0) > 0;
 	const nameOffset = nameShift(p);
 	const body = p.offline
 		? 'var(--pr-offline-clip)'
