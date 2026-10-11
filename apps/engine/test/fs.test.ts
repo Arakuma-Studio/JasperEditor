@@ -40,10 +40,11 @@ describe('JSON reads', () => {
 	it('round-trips arbitrary JSON values', async () => {
 		await fc.assert(
 			fc.asyncProperty(fc.jsonValue(), async (value) => {
-				vi.mocked(fs.readFile).mockResolvedValueOnce(JSON.stringify(value));
-				expect(await readJsonOrNull('metadata.json')).toEqual(value);
+				const serialized = JSON.stringify(value);
+				vi.mocked(fs.readFile).mockResolvedValueOnce(serialized);
+				expect(JSON.stringify(await readJsonOrNull('metadata.json'))).toBe(serialized);
 			}),
-			{ numRuns: 50 },
+			{ numRuns: 50, examples: [[-0]] },
 		);
 	});
 });

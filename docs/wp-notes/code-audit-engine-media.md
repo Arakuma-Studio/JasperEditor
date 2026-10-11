@@ -32,7 +32,7 @@ The review retained exception boundaries for untrusted project/media/model/worke
 
 ## Verification
 
-Focused tests cover worker runtime selection, missing explicit worker overrides, tracking geometry, camera jobs and solves, roto algorithms, processing ranges/steps, metadata I/O failures and directory durability. `fs.test.ts` includes a `fast-check` JSON round-trip property. The filesystem regressions and source-runtime regression fail against the previous implementation.
+Focused tests cover worker runtime selection, missing explicit worker overrides, tracking geometry, camera jobs and solves, roto algorithms, processing ranges/steps, metadata I/O failures and directory durability. `fs.test.ts` includes a `fast-check` JSON round-trip property. Loading the unchanged filesystem helper from baseline `12049d8e` into the new filesystem suite reproduced five failures: three swallowed metadata read errors and two false durability successes (three other tests passed). The property compares serialized JSON values, accounting for JSON's normalization of negative zero. The source-runtime regression also exercises behavior absent from the previous implementation.
 
 The filesystem and worker-runtime focused suite passed: 2 files, 13 tests (`pnpm exec vitest run apps/engine/test/fs.test.ts apps/engine/test/node-runtime.test.ts --maxWorkers=1 --testTimeout=120000`). The small suites now import a separate temporary-directory helper so they do not load the entire engine merely to create a directory.
 
