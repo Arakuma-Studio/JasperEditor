@@ -274,16 +274,16 @@ boundaries, and failure-isolating cleanup remain where they protect user work.
 
 ### Integrated syntax inventory
 
-An immutable Git-object scan of integration commit `71037b10` applied the same syntax rules to
-**1,741 files**. Reading blobs from that commit avoids mixing revisions while other branches merge.
+An immutable Git-object scan of integration commit `4ff0bd34` applied the same syntax rules to
+**1,743 files**. Reading blobs from that commit avoids mixing revisions while other branches merge.
 
 | Candidate | Baseline | Integrated snapshot |
 | --- | ---: | ---: |
 | Explicit `any` type nodes | 21 | 0 |
-| `unknown` type nodes | 2,955 | 2,344 |
+| `unknown` type nodes | 2,955 | 2,333 |
 | Double assertions through `unknown` | 189 | 102 |
 | Catch blocks with no statements | 123 | 110 |
-| Simple promise-catch candidates | 194 | 178 |
+| Simple promise-catch candidates | 194 | 177 |
 | Type suppression lines | 0 | 0 |
 
 No file increased its empty-catch or double-assertion count. The new image-loading module's promise
