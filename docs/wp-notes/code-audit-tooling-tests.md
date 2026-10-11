@@ -72,6 +72,11 @@ constraints, attribution and the reason a measurement differs from ordinary UI b
   tests clean up their temporary directories.
 - Biome rejects explicit `any` under `apps/**/src/**` and `packages/**/src/**`. Test files remain outside
   this override. The performance helper's sole explicit `any` was removed.
+- A second comment review covered E2E tests and script sources, including shell, Rust and C. Historical
+  suite/workstream headers, step/assertion narration, redundant helper descriptions and section dividers
+  were removed. Fixture geometry, timing tolerances, browser boundaries, measurement methods, format
+  details and licensing explanations remain. Two support import blocks exposed by header removal were
+  consolidated without changing their bindings.
 
 ## Verification and limits
 
@@ -98,3 +103,9 @@ manifests. Full verification, live browser E2E behavior, fixture-media regenerat
 packaging are integration checks; this audit does not claim those were exercised here. Platform-specific
 fallback discovery, dev-only FFmpeg selection, cleanup handlers and hostile-input fuzz boundaries were
 retained because they implement explicit behavior rather than dead compatibility branches.
+
+The comment-only follow-up changed 94 source files. Comparing TypeScript-parsed files with comments
+removed produced identical code before and after, with no syntax diagnostics; shell/Rust non-comment
+lines also matched. The subsequent two-file import consolidation preserved every imported binding and
+all non-import code. Biome checked the 92 JavaScript/TypeScript files touched by this pass. No tests or
+typechecks were repeated during this follow-up because integrated checks were already running.

@@ -1,5 +1,4 @@
 // HTML-in-Canvas enables GPU compositing, as in Electron and Remotion.
-import { expectTransaction } from './support.ts';
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -10,6 +9,7 @@ import {
 	clipBox,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	exportViaUi,
 	query,
 	timelineArea,

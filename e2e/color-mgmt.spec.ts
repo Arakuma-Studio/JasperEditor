@@ -1,7 +1,6 @@
 // The independent colour-science oracle is outputTransformFn(working, displaySpaceFor(working)).
 // PQ(203 cd/m²) = 148.1/255, displayed as 230.4/255; a 50% linear blend over black is
 // 129.9/255, displayed as 190.3/255. Encoded blending would display 69.1/255.
-import { expectTransaction } from './support.ts';
 
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -12,6 +11,7 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	expectTransaction,
 	ffprobe,
 	focusTimeline,
 	query,
