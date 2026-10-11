@@ -1,7 +1,3 @@
-// Layers with GPU shader effects in the composition (wave-1 fx framework), happy-dom with the GPU mocked: the padded
-// output canvas, the chain the layer runs (shader + LUT passes reach the host, in stack order), the CSS stages left
-// to LayerBox, and the visible bypass when the GPU or HTML-in-Canvas is missing. Real WebGL: fx-gl.test.ts; real
-// renders: fx-render.e2e.test.ts.
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -174,7 +170,7 @@ describe('GPU shader effects on layers (GPU mocked)', () => {
 			add('test.drop-shadow'),
 		]);
 		const { container } = renderFrame(doc);
-		expect(container.querySelector('[data-shape]')).not.toBeNull(); // still drawn, effects bypassed
+		expect(container.querySelector('[data-shape]')).not.toBeNull();
 		expect(container.querySelector('[data-grade-chip]')!.textContent).toMatch(/HTML-in-Canvas/);
 	});
 

@@ -1,9 +1,5 @@
 // @vitest-environment node
-// compositor: stacks whose canvas scopes used to nest (CANVAS_NESTED) are drawn by the flat compositor (fx/flat.tsx).
-// Every combination that failed before renders here on the Remotion path (what exports and stills render) against
-// references computed without a browser: the CPU reference of three-d-reference.ts (solids, `blendPixel` = the native
-// kernel's formulas, the Classic 3D CPU renderer, pointwise adjustment layers), Invert = 1 − c, and the BT.1886 curve
-// for linear-light blending. Gated by REMOTION_E2E=1; needs ffmpeg on PATH. COMPOSITOR_OUT=<dir> copies the stills.
+// Browser output is compared with independent CPU references for compositing, 3D and BT.1886 blending.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -141,8 +137,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 	const mid: Rgba = [0.3, 0.6, 0.9, 1];
 	const top: Rgba = [0.5, 0.5, 0.25, 1];
 
-	// ------------------------------------------------------------ adjustment layers and GL blend modes
-
 	it('an adjustment layer with GPU effects over a GL blend-mode track', async () => {
 		await matchesReference(
 			[
@@ -213,8 +207,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		expectAt(raw, FX_W * 0.25, FX_H / 2, below);
 		expectAt(raw, FX_W * 0.75, FX_H / 2, mixed);
 	});
-
-	// ------------------------------------------------------------ DOM layers drawing through HTML-in-Canvas
 
 	it('a DOM layer with GPU effects under a GL blend-mode track', async () => {
 		const raw = await still(
@@ -291,8 +283,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		expectAt(raw, 20, 20, [1, 1, 1, 1]);
 	});
 
-	// ------------------------------------------------------------ linear light
-
 	const dec = (v: number) => v ** 2.4;
 	const enc = (x: number) => x ** (1 / 2.4);
 	/** Linear-light Normal of `c` at `alpha` over `dst` (BT.1886 curve, Rec. 709 working space). */
@@ -345,8 +335,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		);
 		expectAt(raw, FX_W / 2, FX_H / 2, linMix(linMix(base, invert(mid), 0.5), top, 0.5));
 	});
-
-	// ------------------------------------------------------------ 3D runs
 
 	it('a 3D run over a GL blend-mode track = the CPU reference', async () => {
 		await matchesReference(
@@ -401,8 +389,6 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 			'blend-run-blend',
 		);
 	});
-
-	// ------------------------------------------------------------ nested sequences
 
 	const nested = (inner: Command[]): Command[] => [
 		{
@@ -468,10 +454,8 @@ describe.runIf(enabled)('flat compositor in Remotion renders (REMOTION_E2E=1)', 
 		expectAt(raw, FX_W / 2, FX_H / 2, invert(over([{ c: base }, { c: mid, mode: 'linear-burn' }])));
 	});
 
-	// ------------------------------------------------------------ parity with the nested structure
-	// The same frame through the scope it always used (one scope: no nesting) and through the flat compositor (the
-	// stack is made flat by a GL blend clip on a high track at OTHER frames: two scopes statically, nothing drawn by it
-	// at frame 5). Whole frames, so placement, padding and edges are compared too.
+	// A GL blend clip active at other frames forces flat compositing without altering this frame.
+	// Compare the whole frame to the single-scope path to cover placement, padding and edges.
 	const flatter = (): Command[] => [
 		{ type: 'clip.addAdjustment', at: 40, duration: 10, track: 'V6', ref: '$flatAdj' } as Command,
 		effect('$flatAdj', 'jasper.invert'),

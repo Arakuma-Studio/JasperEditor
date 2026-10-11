@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire Time + Flicker family on the Remotion render path (REMOTION_E2E=1): renders consecutive stills of every
-// effect of the family on a test scene (a moving box over testsrc2, a cut at frame 30 to SMPTE bars with another
-// moving box, plus a flickering copy for the flicker tools), checks representative behaviour (freeze frame, reverse,
-// determinism of a recursive effect under out-of-order renders, flicker removal) and, with FX_CONTACT_SHEET=<png>,
-// writes a contact sheet of all effects (docs/screenshots/fx/sapphire-time-flicker/). Needs Chrome + ffmpeg.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -16,7 +11,6 @@ import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './f
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
 
-/** The scene (2 s, 30 fps): moving white box over testsrc2, a hard cut at frame 30 to bars + a moving red disc. */
 function makeScene(dir: string) {
 	const ff = (args: string[]) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args]);
 	const s = `s=${FX_W}x${FX_H}:r=30`;
@@ -68,7 +62,6 @@ function clip(
 	];
 }
 
-/** Every effect of the family with the settings shown on the contact sheet and the frames rendered. */
 const SHEET: { id: string; params?: Record<string, unknown>; video?: string; frames: number[] }[] = [
 	{ id: 'jasper.s.cut-to-dissolve', params: { cutPoint: 30, dissolveLength: 12 }, frames: [26, 30, 34] },
 	{ id: 'jasper.s.feedback', frames: [12, 13, 14] },
@@ -231,7 +224,6 @@ describe.runIf(enabled)(
 					files.push(join(media.dir, `sheet-${tag}-${f}.png`));
 				}
 				rows.push(tag);
-				// One row: the frames side by side at 1/3 size, labelled.
 				execFileSync('ffmpeg', [
 					'-v',
 					'error',
@@ -248,7 +240,6 @@ describe.runIf(enabled)(
 			if (out) {
 				mkdirSync(dirname(out), { recursive: true });
 				const inputs = rows.flatMap((r) => ['-i', join(media.dir, `row-${r}.png`)]);
-				// Two columns of rows.
 				const half = Math.ceil(rows.length / 2);
 				const col = (from: number, to: number, name: string) =>
 					`${rows

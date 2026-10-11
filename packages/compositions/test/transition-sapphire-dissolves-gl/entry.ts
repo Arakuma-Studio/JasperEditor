@@ -1,7 +1,3 @@
-// Browser entry of the Sapphire dissolves GL test (bundled with esbuild, run in headless Chrome by
-// ../transition-sapphire-dissolves-gl.test.ts): plans transition stages of the sapphire-dissolves family exactly as
-// TransitionStage does (planGpuTransition + runShaderPlan on the fx GPU host) over procedural sides and reports
-// pixels / timings.
 import '../gl-poison.ts';
 import {
 	planGpuTransition,
@@ -25,7 +21,6 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 	return c;
 }
 
-/** Side pictures: 'a' = dark red with a white disc (highlight) in the middle, 'b' = blue with a yellow bar. */
 function picture(kind: string, w: number, h: number): HTMLCanvasElement {
 	return canvas(w, h, (ctx) => {
 		if (kind === 'a') {
@@ -142,7 +137,6 @@ function run(args: RunArgs) {
 const api = {
 	ids: () => SPECS.map((s) => s.id),
 	run,
-	/** Mean absolute difference (0..255, all channels) between two renders. */
 	compare(a: RunArgs, b: RunArgs) {
 		const x = render(a).data;
 		const y = render(b).data;
@@ -150,7 +144,6 @@ const api = {
 		for (let i = 0; i < x.length; i++) d += Math.abs(x[i]! - y[i]!);
 		return d / x.length;
 	},
-	/** Compile + first frame and a second frame time (ms) of every dissolve. */
 	timings() {
 		const out: Record<string, [number, number]> = {};
 		for (const s of SPECS) {

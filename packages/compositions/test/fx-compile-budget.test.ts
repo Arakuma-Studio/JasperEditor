@@ -1,14 +1,7 @@
 // @vitest-environment node
-// Software-GL compile budget of the fx framework: every distinct fragment program of every registered GPU effect and
-// GPU transition (default params, as planned by `planGpuEffect` / `planGpuTransition`) is compiled, linked and drawn
-// once in headless Chrome on SwiftShader (the renderer of exports without a GPU). SwiftShader's shader compiler is
-// super-linear in inlined code (noise in loops, many hash calls): a program over the budget makes software renders
-// stall for minutes, so this test fails when ANY single program takes longer than FX_COMPILE_BUDGET_MS (default
-// 5000 ms) and prints the slowest programs. Timing = compileShader + linkProgram + the first draw + a readPixels
-// (ANGLE/SwiftShader may compile the pipeline lazily at the first draw). Programs over the budget are re-timed once
-// in a fresh browser (the best time counts: host load inflates wall times).
-// Env: FX_GL=0 skips; FX_COMPILE_BUDGET_MS (budget), FX_COMPILE_WORKERS (parallel browsers, default 2),
-// FX_COMPILE_FILTER (substring of the effect id), FX_COMPILE_REPORT (write every timing as JSON to this path).
+// SwiftShader compile time grows super-linearly with inlined noise and hash calls.
+// Include the first draw and readback: ANGLE may compile a pipeline lazily.
+// Retest over-budget programs in a fresh browser; host load can inflate wall times.
 import { existsSync, writeFileSync } from 'node:fs';
 import {
 	defaultEffectRegistry,
@@ -38,7 +31,7 @@ const CHROME = [
 	'/usr/bin/chromium-browser',
 ].find((p): p is string => !!p && existsSync(p));
 
-/** previews (perf harness): the documented budget, scaled by the host's load unless PERF=1 (scripts/perf/budget.ts). */
+/** Scale the documented budget by host load unless PERF=1 (scripts/perf/budget.ts). */
 const BASE_BUDGET = Number(process.env.FX_COMPILE_BUDGET_MS ?? 5000);
 const BUDGET = budgetMs(BASE_BUDGET, { parallel: true });
 const WORKERS = Math.max(1, Number(process.env.FX_COMPILE_WORKERS ?? 2));
@@ -52,7 +45,6 @@ type Program = { source: string; vertex?: string; users: string[] };
 const defaults = (params: readonly ParamSpec[]): EffectParams =>
 	Object.fromEntries(params.map((param) => [param.name, param.default] as const));
 
-/** Every distinct pass source of the registered GPU effects and transitions (default params). */
 function collectPrograms(): Program[] {
 	const bySource = new Map<string, Program>();
 	const add = (source: string, user: string, vertex?: string) => {
@@ -164,7 +156,6 @@ const LIBRARY_STRESS: [string, string][] = [
 	],
 ];
 
-/** Page side: compiles, links and draws one program into a 4×4 target; returns the wall time in ms. */
 function compileInPage(prog: { source: string; vertex?: string }): number | string {
 	const { source, vertex } = prog;
 	const w = window as Window & {

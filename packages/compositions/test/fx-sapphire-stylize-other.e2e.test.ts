@@ -1,10 +1,4 @@
 // @vitest-environment node
-// "Sapphire other stylize" family on the Remotion render path (REMOTION_E2E=1): bundles the production root (with the
-// test registry, which contains every catalogue effect), renders a still of a picture through each of the 17 effects
-// with @remotion/renderer in headless Chrome (WebGL2 via ANGLE/SwiftShader), and S_PixelMosh on a zooming video (its
-// time samples decoded for their own frames). Checks that each effect changed the picture, deterministically.
-// FX_SSO_IMAGE=<photo> renders that picture (else an ffmpeg test pattern); FX_SSO_STILLS=<dir> copies the stills there
-// (contact sheet for review; commit one only over `pnpm fixtures` media, AGENTS.md §3). Needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -175,8 +169,8 @@ describe.runIf(enabled)(
 				20,
 				'pixel-mosh-again',
 			);
-			expect(meanDiff(a, plain)).toBeGreaterThan(4); // not the current frame
-			expect(meanDiff(a, b)).toBeLessThan(0.5); // same pixels on a re-render
+			expect(meanDiff(a, plain)).toBeGreaterThan(4);
+			expect(meanDiff(a, b)).toBeLessThan(0.5);
 			const hold = await still(
 				[...zoomVideo(), fxCmd.effect('jasper.s.pixel-mosh', { ...params, useFlowWarp: false })],
 				20,

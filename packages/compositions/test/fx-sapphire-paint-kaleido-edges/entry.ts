@@ -1,6 +1,3 @@
-// Browser entry of the "sapphire-paint-kaleido-edges" GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-paint-kaleido-edges-gl.test.ts): runs the family's registered effects through the real GPU host on
-// synthetic pictures (or a loaded image) and reports pixels / PNGs.
 import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
@@ -199,7 +196,6 @@ const api = {
 		return d / a.length;
 	},
 
-	/** A hash of the whole output (determinism checks). */
 	signature(id: string, over: Record<string, unknown>, o: RunOptions) {
 		const { out } = run(id, over, o);
 		const d = out.getContext('2d')!.getImageData(0, 0, out.width, out.height).data;
@@ -211,7 +207,6 @@ const api = {
 		return h >>> 0;
 	},
 
-	/** The output as a PNG data URL (visual checks). */
 	png(id: string, over: Record<string, unknown>, o: RunOptions) {
 		const t0 = performance.now();
 		const { out } = run(id, over, o);

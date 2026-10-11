@@ -1,6 +1,3 @@
-// Browser entry of the Sapphire Distort family GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-distort-warp-gl.test.ts): runs the family's effects through the real GPU host on a procedural test
-// picture (or a given image) and reports pixels / PNGs.
 import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,
@@ -24,7 +21,6 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 
 const images = new Map<string, HTMLImageElement>();
 
-/** Procedural test picture: colour quadrants, a grid and a white disc in the middle (all deterministic). */
 function paintTest(
 	ctx: CanvasRenderingContext2D,
 	b: { x: number; y: number; w: number; h: number },
@@ -157,7 +153,6 @@ function run(a: RunArgs) {
 				ctx.getImageData(Math.floor(x + layout.box.x), Math.floor(y + layout.box.y), 1, 1).data,
 			) as Px,
 	);
-	// Whole-picture checksum over the layer box (determinism checks).
 	const all = ctx.getImageData(layout.box.x, layout.box.y, a.width, a.height).data;
 	let sum = 0;
 	for (let i = 0; i < all.length; i += 1) sum = (sum * 31 + all[i]!) >>> 0;

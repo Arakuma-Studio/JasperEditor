@@ -1,9 +1,4 @@
 // @vitest-environment node
-// "Sapphire other stylize" family (fx catalogue, wave 2) in a real WebGL2 (headless Chrome, SwiftShader without a
-// GPU): characteristic pixels of every effect, alpha handling, determinism of the seeded ones, the media inputs
-// (Mask, ZBuffer, Background, LUT image) and the time samples of S_PixelMosh. Pattern of fx-gl.test.ts.
-// FX_SSO_DUMP=<dir> [FX_SSO_IMAGE=<photo>] also writes one PNG per effect (visual review / contact sheet).
-// FX_GL=0 skips it.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

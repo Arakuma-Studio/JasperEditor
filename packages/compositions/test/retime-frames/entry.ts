@@ -1,5 +1,3 @@
-// Browser entry of the retime frame-source test: decodes frame-code.mp4 / vfr-code.mp4 through FrameSource (served by
-// the test at /media/<name>) in arbitrary orders and reports the 6-bit frame code of each decoded picture.
 import { FrameSource } from '../../src/retime/frames.ts';
 
 function code(c: HTMLCanvasElement | OffscreenCanvas, w: number, h: number, scale: number): number {

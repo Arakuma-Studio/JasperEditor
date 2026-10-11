@@ -1,4 +1,3 @@
-// Workstream `previews`: render previews in the Program monitor's composition (src/previews.tsx).
 import {
 	applyTransaction,
 	buildRenderSnapshot,
@@ -45,10 +44,8 @@ describe('applyPreviews', () => {
 		const a = applyPreviews(doc, { video: [{ start: 0, frames: 50, url: '/p/a.mp4' }], audio: [] });
 		expect(a.doc.videoTracks[0]!.clips.map((c) => c.start)).toEqual([50]);
 		expect(a.video).toHaveLength(1);
-		// partly covered: stays mounted under the opaque preview
 		const b = applyPreviews(doc, { video: [{ start: 0, frames: 30, url: '/p/a.mp4' }], audio: [] });
 		expect(b.doc.videoTracks[0]!.clips.map((c) => c.start)).toEqual([0, 50]);
-		// adjacent previews merge into one coverage
 		const c = applyPreviews(doc, {
 			video: [
 				{ start: 0, frames: 50, url: '/p/a.mp4' },

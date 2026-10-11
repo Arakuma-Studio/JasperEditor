@@ -1,4 +1,3 @@
-// Shipped schemas and the native CLI share a parameter protocol; SVG twins also preserve geometry and timing.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

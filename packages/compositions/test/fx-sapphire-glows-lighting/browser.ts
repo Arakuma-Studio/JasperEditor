@@ -1,5 +1,3 @@
-// Shared launcher of the Sapphire Glows + Lighting browser checks: bundles ./entry.ts with esbuild (from tsx) and
-// opens it in headless Chrome (SwiftShader WebGL2). Used by the GL test and by the visual dump script (dump.ts).
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +10,6 @@ export { CHROME } from '../gl-browser.ts';
 
 let bundled: Promise<string> | null = null;
 
-/** The entry bundled once per process (esbuild from tsx). */
 function bundle(): Promise<string> {
 	bundled ??= (async () => {
 		const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
@@ -63,7 +60,6 @@ export async function openSglBrowser(): Promise<{ browser: Browser; page(): Prom
 	};
 }
 
-/** Calls `window.__sgl[name](...args)` in the page. */
 export function sgl<T>(page: Page, name: string, ...args: unknown[]): Promise<T> {
 	return page.evaluate(
 		({ n, a }) =>

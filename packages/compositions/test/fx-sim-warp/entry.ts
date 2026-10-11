@@ -1,5 +1,3 @@
-// Browser entry of fx-sim-warp-gl.test.ts: characteristic pixels, determinism and seed stability of every effect of
-// the simulation-warp family through the real GPU host. Each function returns plain data to assert on.
 import {
 	FX_FAMILIES,
 	liquifyApplyStroke,
@@ -39,12 +37,10 @@ const fx = (
 	return run(s, defaults(s, over), box, paint, extra);
 };
 
-/** A copy of a region of a canvas. */
 function canvasRegion(c: HTMLCanvasElement, x: number, y: number, w: number, h: number): HTMLCanvasElement {
 	return canvas(w, h, (ctx) => ctx.drawImage(c, x, y, w, h, 0, 0, w, h));
 }
 
-/** A larger render as a PNG data URL (contact-sheet gallery). */
 function png(arg: {
 	id: string;
 	over?: Record<string, unknown>;
@@ -75,7 +71,6 @@ function png(arg: {
 
 const api = {
 	png,
-	/** Compiles and runs every effect of the family at default params (several frames), checking alpha sanity. */
 	catalogue() {
 		const fam = FX_FAMILIES.find((f) => f.file === 'simulation-warp')!;
 		const errors: string[] = [];
@@ -92,7 +87,6 @@ const api = {
 		return { count: fam.effects.length, errors };
 	},
 
-	/** Same params + frame → same pixels; another seed → other pixels; the next frame moves. */
 	determinism(arg: { id: string; over?: Record<string, unknown>; frame?: number }) {
 		const f = arg.frame ?? 12;
 		const a = fx(arg.id, arg.over, { frame: f });
@@ -299,7 +293,6 @@ const api = {
 	},
 
 	surfaces() {
-		// Foam: bubbles appear, rise with the default wind… determinism of seek.
 		const foam = (frame: number, key: string, over: Record<string, unknown> = {}) =>
 			fx('jasper.foam', { productionRate: 3, ...over }, { frame, instanceKey: key });
 		const f1 = foam(40, 'a');

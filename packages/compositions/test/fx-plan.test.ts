@@ -1,6 +1,3 @@
-// Stack planning of layers with GPU shader effects (wave-1 fx framework, src/fx/plan.ts): which effects run in the
-// canvas chain and in which order (S03 §4.2, FX-002, RND-010), what stays CSS/SVG, padding, bypass rules; plus the
-// canvas layout, the time hooks in the composition and the example effects' validity.
 import {
 	type EffectInstance,
 	type EffectParams,
@@ -36,13 +33,13 @@ describe('planLayerFx', () => {
 
 	it('puts crop first, keeps stack order, fuses colour runs and leaves trailing effects to CSS', () => {
 		const crop = fx('jasper.crop', { left: 10, top: 0, right: 20, bottom: 0 });
-		const blur = fx('jasper.gaussian-blur', { radius: 2 }); // CSS filter → 2D step
+		const blur = fx('jasper.gaussian-blur', { radius: 2 });
 		const bc = fx('jasper.brightness-contrast', { brightness: 10 });
 		const hs = fx('jasper.hue-saturation', { hue: 30 });
 		const glow = fx('test.s.glow', { radius: 5 });
 		const flip = fx('jasper.flip-horizontal');
 		const shadow = fx('test.drop-shadow', { distance: 4, softness: 2 });
-		const after = fx('jasper.gaussian-blur', { radius: 2, dimensions: 'horizontal' }); // SVG, after the chain
+		const after = fx('jasper.gaussian-blur', { radius: 2, dimensions: 'horizontal' });
 		const p = planLayerFx([blur, bc, hs, glow, crop, flip, shadow, after], opts)!;
 		expect(p.active).toBe(true);
 		expect(kinds(p)).toEqual(['crop', 'css', 'lut', 'gpu', 'flip', 'gpu']);
@@ -75,7 +72,7 @@ describe('planLayerFx', () => {
 
 	it('keeps colour after the last shader effect in the chain (exact grade), CSS after the last colour run', () => {
 		const glow = fx('test.s.glow');
-		const css = fx('jasper.black-white', { amount: 0 }); // colour op
+		const css = fx('jasper.black-white', { amount: 0 });
 		const blur = fx('jasper.gaussian-blur', { radius: 1 });
 		const p = planLayerFx([glow, css, blur], opts)!;
 		expect(kinds(p)).toEqual(['gpu', 'lut']);

@@ -1,9 +1,4 @@
 // @vitest-environment node
-// sapphire-textures-clouds on the Remotion render path: bundles the compositions (fx-render/entry.ts, the production
-// registry, where the family is registered), renders a still of every texture/clouds generator over a solid with
-// @remotion/renderer in headless Chrome (WebGL2 via ANGLE/SwiftShader, as the engine's render browser) and checks
-// that each draws a textured frame; an animated one differs between frames, a time-invariant one does not.
-// Gated by REMOTION_E2E=1 (needs ffmpeg on PATH). STC_STILLS_DIR=<dir> keeps the PNGs (contact sheets).
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';

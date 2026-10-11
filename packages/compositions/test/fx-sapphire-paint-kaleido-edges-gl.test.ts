@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Family "sapphire-paint-kaleido-edges" in real WebGL2 (headless Chrome, SwiftShader when there is no GPU): every
-// effect runs; Mix with Orig 1 / Kaleido Amount 0 / identity tiles give the input back; characteristic pixels of the
-// edges, halftones, posterize and emboss; alpha stays transparent; seeded strokes are deterministic, change with
-// the seed and are stable over time unless Jitter Frames / animation asks otherwise. FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

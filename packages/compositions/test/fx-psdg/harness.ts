@@ -1,6 +1,3 @@
-// Browser-side harness of the premiere-stylize-distort-generate family tests (bundled with esbuild, run in headless
-// Chrome): runs one GPU effect through the real fx host (src/fx/host.ts) on a painted layer and returns the output
-// canvas. Same contract as test/fx-gl/entry.ts `run`, plus time samples built from the hook's offsets and frames.
 import {
 	defaultEffectRegistry,
 	type EffectSpec,
@@ -132,7 +129,6 @@ export function run(
 	return { out, layout, input };
 }
 
-/** Paints a solid rectangle over the layer box. */
 export const solid =
 	(color: string): Paint =>
 	(ctx, b) => {
@@ -147,7 +143,6 @@ export const picture =
 		ctx.drawImage(img, b.x - o * 6, b.y, b.w, b.h);
 	};
 
-/** Max |difference| of two canvases' RGBA bytes. */
 export function maxDiff(a: HTMLCanvasElement, b: HTMLCanvasElement): number {
 	const da = a.getContext('2d')!.getImageData(0, 0, a.width, a.height).data;
 	const db = b.getContext('2d')!.getImageData(0, 0, b.width, b.height).data;
@@ -157,7 +152,6 @@ export function maxDiff(a: HTMLCanvasElement, b: HTMLCanvasElement): number {
 	return m;
 }
 
-/** Mean of the RGBA bytes of a canvas region. */
 export function mean(c: HTMLCanvasElement, x = 0, y = 0, w = c.width, h = c.height): Px {
 	const d = c.getContext('2d')!.getImageData(x, y, w, h).data;
 	const s = [0, 0, 0, 0];

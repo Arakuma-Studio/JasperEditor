@@ -1,17 +1,6 @@
 // @vitest-environment node
-// Render parity (S11:ANM-014) and value-engine cost (ANM-015), gated by REMOTION_E2E=1 (bundles with
-// @remotion/bundler, renders in headless Chrome: /usr/bin/google-chrome or JASPER_BROWSER_EXECUTABLE).
-//
-// The real SequenceComposition with the parity document (every installed text animator and anime template, a
-// keyframed shape) rendered frame by frame with `renderStill` is byte-identical
-// to `renderFrames` (the frame stage of `renderMedia`) at concurrency 1 and 4 and to one renderer page visiting
-// the frames reversed and shuffled (<Freeze> compositions); `renderMedia` ProRes 4444 at concurrency 1 and 4
-// decodes to identical pixels; the @remotion/player frame matches `renderStill` within 3/255 on ≥ 99.5 % of the
-// pixels, and a paused Player revisiting frames in any order shows byte-identical pixels. The cost of the value engine
-// for a 200-unit title is measured in the same Chrome.
-// The composition repaints every rendered (and paused) frame from scratch (FrameRepaint,
-// packages/compositions/src/repaint.tsx); the render browser creates its pages in their own windows like the engine
-// does with a full Chrome (packages/compositions/src/render-host.ts).
+// Reused renderer pages accumulate frame history. Compare sequential, reversed and shuffled seeks
+// with independent still renders, including paused Player frames.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,7 +24,6 @@ type Renderer = typeof import('@remotion/renderer');
 type Composition = Awaited<ReturnType<Renderer['selectComposition']>>;
 
 const ffmpeg = process.env.JASPER_FFMPEG ?? 'ffmpeg';
-/** Decodes an image or a video file / PNG buffer to raw RGBA frames. */
 function rgba(input: Buffer | string): Buffer {
 	const args = [
 		'-v',
@@ -50,7 +38,6 @@ function rgba(input: Buffer | string): Buffer {
 	return r.stdout;
 }
 
-/** Fraction of pixels whose largest channel difference exceeds `tolerance` (RGB). */
 function differingFraction(a: Buffer, b: Buffer, tolerance: number): number {
 	expect(a.length).toBe(b.length);
 	let bad = 0;
@@ -267,7 +254,6 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 						clip: { x: 0, y: 0, width: SCENE.width, height: SCENE.height },
 					});
 					report[f] = differingFraction(rgba(shot), rgba(stills[id]![f]!), 3);
-					// control: the comparison has teeth (another frame of the same composition differs)
 					if (f === 0) control = differingFraction(rgba(shot), rgba(stills[id]![Math.floor(N / 2)]!), 3);
 				}
 				expect(control, 'Player frame 0 vs still of the middle frame').toBeGreaterThan(0.005);

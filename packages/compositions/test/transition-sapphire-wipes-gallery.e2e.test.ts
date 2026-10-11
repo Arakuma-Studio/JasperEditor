@@ -1,8 +1,5 @@
 // @vitest-environment node
-// Visual gallery of the Sapphire wipes (family sapphire-wipes-other) over footage: renders frames at progress ≈ 0.25,
-// 0.5 and 0.75 of each S_Wipe* between a testsrc2 video (A) and a colourful still (B, ffmpeg's mandelbrot) with
-// @remotion/renderer, writes the PNGs to SAPPHIRE_WIPES_GALLERY=<dir> for a human look, and asserts that every
-// mid-way frame differs from both sides. Gated by REMOTION_E2E=1 and SAPPHIRE_WIPES_GALLERY.
+// This gallery only checks that middle frames differ from both sides; inspect the PNGs for visual quality.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -16,10 +13,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const out = process.env.SAPPHIRE_WIPES_GALLERY;
 const enabled = process.env.REMOTION_E2E === '1' && !!out;
 const WIPES = TRANSITION_FAMILIES.find((f) => f.file === 'sapphire-wipes-other')?.transitions ?? [];
-/** SAPPHIRE_WIPES_ONLY=Clock,Star renders a subset. */
 const ONLY = process.env.SAPPHIRE_WIPES_ONLY?.split(',');
 
-/** Showcase params (borders and glows on some, so they get looked at too). */
 const SHOWCASE: Record<string, Record<string, unknown>> = {
 	'jasper.s.wipe-line': { borderWidth: 6, borderGlow: 1.2, glowWidth: 14 },
 	'jasper.s.wipe-circle': { borderWidth: 5, edgeSoftness: 4 },

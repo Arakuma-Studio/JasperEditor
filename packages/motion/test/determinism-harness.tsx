@@ -1,11 +1,10 @@
-// ANM-013: public animator outputs are independent of frame visit order.
 import { type TextAnimationSide, type TextAnimationSpec, toJsonSchema } from '@jasper/project';
 import fc from 'fast-check';
 import { expect } from 'vitest';
 import { frameToMs, hash32, seekCanonical } from '../src/runtime/index.ts';
 import type { TextAnimationBuildContext, TextAnimationImpl } from '../src/text/index.ts';
 
-// Identity transform and full reveal, specified by ANM-009, independent of REST_UNIT_VALUES.
+// Keep the expected identity transform and reveal independent of REST_UNIT_VALUES.
 const rest = { opacity: 1, x: 0, y: 0, scale: 1, rotate: 0, blur: 0, letterSpacing: 0, reveal: 1 };
 
 function visitOrders(frames: number[]): number[][] {
@@ -17,7 +16,6 @@ function visitOrders(frames: number[]): number[][] {
 	];
 }
 
-/** Param variants of a text preset: its defaults, then every enum value of each enum param, one at a time. */
 function paramVariants(spec: TextAnimationSpec | undefined): Record<string, unknown>[] {
 	if (!spec) return [{}];
 	const out: Record<string, unknown>[] = [{ ...spec.defaults }];
@@ -41,7 +39,6 @@ const RATES: readonly (readonly [number, number])[] = [
 	[24, 13],
 ];
 
-/** The contexts a text implementation is checked with: sides × unit counts × param variants × two frame rates. */
 function textAnimationCases(impl: TextAnimationImpl, spec?: TextAnimationSpec): TextCase[] {
 	const sides: readonly TextAnimationSide[] = spec?.phases ?? ['in', 'out'];
 	const out: TextCase[] = [];

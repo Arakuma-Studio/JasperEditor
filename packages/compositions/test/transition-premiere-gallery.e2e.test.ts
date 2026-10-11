@@ -1,9 +1,5 @@
 // @vitest-environment node
-// Visual gallery of the Premiere transition family over moving footage (A: testsrc2, B: a Mandelbrot zoom, both
-// videos with handles): one sequence with a cut per transition, rendered with @remotion/renderer at ~25 / 50 / 75 %
-// of each transition; writes the PNGs (PREMIERE_GALLERY=<dir>) for a human look. Asserts only that the middle frame
-// differs from the frames before and after. Gated by REMOTION_E2E=1 and PREMIERE_GALLERY; PREMIERE_GALLERY_IDS=a,b
-// limits the ids.
+// This gallery only checks that middle frames differ from before and after; inspect the PNGs for visual quality.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -85,7 +81,6 @@ describe.runIf(enabled)(
 					at: (k + 1) * CUT,
 					effectId,
 					duration: SPAN,
-					// Show the borders off where a transition has them.
 					...(TRANSITION_SPECS.find((s) => s.id === effectId)?.params.some((p) => p.name === 'borderWidth')
 						? { params: { borderWidth: 4, borderColor: [1, 1, 1, 1] } }
 						: {}),

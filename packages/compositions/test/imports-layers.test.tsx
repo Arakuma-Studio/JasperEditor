@@ -1,5 +1,5 @@
-// imports workstream: the frame a Lottie layer shows (interpreted time → file time → Lottie frame, Frame Sampling) and
-// the picture scale of vector layers (largest Motion scale, power of two, capped).
+// Lottie frames follow interpreted time → file time → frame sampling.
+// Vector raster size uses the largest Motion scale, rounded to a power of two and capped.
 import {
 	type Animatable,
 	anim as constant,

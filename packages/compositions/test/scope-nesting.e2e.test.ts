@@ -1,8 +1,5 @@
 // @vitest-environment node
-// previews (scope nesting): Chrome cannot nest HTML-in-Canvas scopes (fx/canvas-scope.tsx), so stacks that used to
-// put one canvas scope inside another failed with CANVAS_NESTED. Consecutive tracks with GL blend modes now share one
-// scope; checked here on the Remotion render path against `blendPixel` (the native kernel's formulas). Gated by
-// REMOTION_E2E=1; needs ffmpeg on PATH.
+// Chrome cannot nest HTML-in-Canvas scopes. Consecutive tracks with GL blend modes must share one scope.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';

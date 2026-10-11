@@ -1,6 +1,3 @@
-// color-grade: the fx chain plan of a Lumetri instance with spatial steps — the render snapshot's companion stage
-// runs right after the instance's LUT step, a masked instance is masked as ONE unit (maskJoin, exact with feathered
-// masks), and the before/after toggle bypasses both.
 import {
 	defaultEffectRegistry,
 	expandLumetriSpatial,
@@ -30,7 +27,6 @@ const mask = {
 	falloff: 'smooth',
 } as never as ResolvedMask;
 
-/** The resolved effects the composition gets for a Lumetri instance (snapshot expansion, then evaluation). */
 function resolved(params: Record<string, unknown>, masks?: ResolvedMask[]): ResolvedEffect[] {
 	const inst = {
 		id: 'fx1',

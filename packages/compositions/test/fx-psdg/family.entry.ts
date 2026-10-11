@@ -1,12 +1,9 @@
-// Browser entry of fx-psdg-gl.test.ts: characteristic pixels of every effect of the premiere-stylize-distort-generate
-// family through the real GPU host (Vignette/Glow: light.entry.ts). Each function returns plain data to assert on.
 import { canvas, defaults, maxDiff, mean, type Paint, type Px, px, run, solid, spec } from './harness.ts';
 
 const W = 64;
 const H = 36;
 const box = { width: W, height: H };
 
-/** A colourful deterministic test picture (gradients + a few shapes). */
 const picture: Paint = (ctx, b) => {
 	const g = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
 	g.addColorStop(0, 'rgb(220,40,30)');

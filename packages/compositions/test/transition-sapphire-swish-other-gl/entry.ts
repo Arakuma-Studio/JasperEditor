@@ -1,7 +1,3 @@
-// Browser entry of the "sapphire-swish-other" transition GL test (bundled with esbuild, run in headless Chrome by
-// ../transition-sapphire-swish-other-gl.test.ts): plans a stage frame of a registered transition exactly as
-// TransitionStage does (planGpuTransition + runShaderPlan on the fx GPU host) over named test pictures and returns
-// the pixels at the requested points.
 import '../gl-poison.ts';
 import { planGpuTransition, TRANSITION_SPECS, type TransitionSides, type TrSide } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
@@ -18,7 +14,6 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 	return c;
 }
 
-/** Test pictures: solids, halves (left red / right green), vertical stripes, a checker. */
 function picture(name: string): HTMLCanvasElement {
 	return canvas(W, H, (ctx) => {
 		if (name === 'halves') {
@@ -102,7 +97,6 @@ function run(o: RunOpts): Px[] {
 	);
 }
 
-/** A whole frame as a flat array (determinism checks). */
 function frame(o: Omit<RunOpts, 'points'>): number[] {
 	const pts: [number, number][] = [];
 	for (let y = 1; y < H; y += 3) for (let x = 1; x < W; x += 3) pts.push([x, y]);

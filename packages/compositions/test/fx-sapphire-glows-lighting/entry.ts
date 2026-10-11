@@ -1,6 +1,3 @@
-// Browser entry of the Sapphire Glows + Lighting GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-sapphire-glows-lighting-gl.test.ts): runs the family's effects on the real GPU host (src/fx/host.ts) over
-// painted test scenes and reports pixels, PNGs (visual review) and a contact sheet.
 import '../gl-poison.ts';
 import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
@@ -28,8 +25,6 @@ const defaults = (spec: EffectSpec, over: Record<string, unknown> = {}) => ({
 	...over,
 });
 
-// ---------------------------------------------------------------- test scenes (deterministic)
-
 /** A night street: dark sky, a moon, lit windows, street lamps, coloured neon and white title text. */
 function paintNight(ctx: CanvasRenderingContext2D, b: Box) {
 	const { x, y, w, h } = b;
@@ -39,12 +34,10 @@ function paintNight(ctx: CanvasRenderingContext2D, b: Box) {
 	sky.addColorStop(1, '#120c18');
 	ctx.fillStyle = sky;
 	ctx.fillRect(x, y, w, h);
-	// moon
 	ctx.fillStyle = '#fffbe8';
 	ctx.beginPath();
 	ctx.arc(x + w * 0.78, y + h * 0.2, h * 0.07, 0, Math.PI * 2);
 	ctx.fill();
-	// buildings with windows
 	const bld = [
 		[0.02, 0.45, 0.16],
 		[0.2, 0.32, 0.14],
@@ -64,7 +57,6 @@ function paintNight(ctx: CanvasRenderingContext2D, b: Box) {
 				ctx.fillRect(x + w * wx, y + h * wy, w * 0.016, h * 0.03);
 			}
 	}
-	// street lamps
 	for (const lx of [0.12, 0.5, 0.72]) {
 		ctx.fillStyle = '#333';
 		ctx.fillRect(x + w * lx - 1, y + h * 0.62, 3, h * 0.38);
@@ -73,7 +65,6 @@ function paintNight(ctx: CanvasRenderingContext2D, b: Box) {
 		ctx.arc(x + w * lx, y + h * 0.62, h * 0.018, 0, Math.PI * 2);
 		ctx.fill();
 	}
-	// neon sign
 	ctx.strokeStyle = '#ff2fa8';
 	ctx.lineWidth = Math.max(2, h * 0.012);
 	ctx.strokeRect(x + w * 0.38, y + h * 0.56, w * 0.14, h * 0.08);
@@ -83,12 +74,10 @@ function paintNight(ctx: CanvasRenderingContext2D, b: Box) {
 	ctx.lineTo(x + w * 0.68, y + h * 0.62);
 	ctx.lineTo(x + w * 0.68, y + h * 0.76);
 	ctx.stroke();
-	// title
 	ctx.fillStyle = '#ffffff';
 	ctx.font = `bold ${Math.round(h * 0.14)}px sans-serif`;
 	ctx.textBaseline = 'alphabetic';
 	ctx.fillText('JASPER', x + w * 0.05, y + h * 0.93);
-	// colour bar
 	const bar = ctx.createLinearGradient(x + w * 0.62, 0, x + w * 0.98, 0);
 	for (const [i, c] of ['#f00', '#ff0', '#0f0', '#0ff', '#00f', '#f0f'].entries()) bar.addColorStop(i / 5, c);
 	ctx.fillStyle = bar;
@@ -159,8 +148,6 @@ function paintDot(ctx: CanvasRenderingContext2D, b: Box) {
 
 const SCENES = { night: paintNight, logo: paintLogo, day: paintDay, dot: paintDot, black: () => {} } as const;
 type Scene = keyof typeof SCENES;
-
-// ---------------------------------------------------------------- running effects
 
 type RunOpts = {
 	scene?: Scene;
@@ -265,7 +252,6 @@ type Shot = {
 const api = {
 	ids: () => FAMILY.map((s) => ({ id: s.id, label: s.label, bin: s.bin })),
 
-	/** Every family effect with default params on the night scene: no throw, finite pixels. */
 	allDefaults() {
 		const errors: string[] = [];
 		for (const s of FAMILY) {
@@ -290,7 +276,6 @@ const api = {
 		return { first: Math.round(t1 - t0), second: Math.round(performance.now() - t1) };
 	},
 
-	/** One effect with default params on the night scene and the transparent logo (later frame): error or null. */
 	runDefaults(id: string) {
 		try {
 			const s = specOf(id);
@@ -316,7 +301,6 @@ const api = {
 		};
 	},
 
-	/** A checksum of the whole output (determinism tests). */
 	checksum(id: string, over: Record<string, unknown>, opts: RunOpts) {
 		const spec = specOf(id);
 		const r = run(spec, defaults(spec, over), opts);
@@ -326,14 +310,12 @@ const api = {
 		return hsh >>> 0;
 	},
 
-	/** PNG (data URL) of one effect on a scene. */
 	png(shot: Shot) {
 		const spec = specOf(shot.id);
 		const r = run(spec, defaults(spec, shot.params), shot.opts);
 		return boxImage(r, shot.padded).toDataURL('image/png');
 	},
 
-	/** The source scene alone. */
 	scenePng(scene: Scene, width = 480, height = 270) {
 		return canvas(width, height, (ctx) => {
 			ctx.fillStyle = '#000';
@@ -342,7 +324,6 @@ const api = {
 		}).toDataURL('image/png');
 	},
 
-	/** A labelled contact sheet of shots (cols × rows thumbnails). */
 	sheet(shots: Shot[], cols: number, tw: number, th: number) {
 		const rows = Math.ceil(shots.length / cols);
 		const lh = 16;

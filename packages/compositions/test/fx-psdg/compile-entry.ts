@@ -1,5 +1,3 @@
-// Browser entry of compile-times.ts (development aid): compiles + links every pass of the requested effects in a
-// fresh WebGL2 context and reports the time of each (finds shaders that are slow to compile, e.g. unrolled noise).
 import { defaultEffectRegistry, planGpuEffect } from '@jasper/project';
 
 const VS = `#version 300 es

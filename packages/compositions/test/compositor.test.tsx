@@ -1,7 +1,5 @@
-// compositor: the flat compositor's planning (fx/flat-plan.ts) and the structure the composition builds (happy-dom,
-// GPU and HTML-in-Canvas mocked): stacks whose canvas scopes would nest are drawn flat, stacks that worked before keep
-// the nested structure, and — a property over random stacks — no HTML-in-Canvas canvas ever lies inside another one.
-// The pixels: compositor.e2e.test.ts (Remotion renders in Chrome).
+// Chrome cannot nest HTML-in-Canvas scopes. Structure checks mock painting;
+// compositor.e2e.test.ts verifies the pixels in real Remotion renders.
 import {
 	applyTransaction,
 	BLEND_MODES,
@@ -156,7 +154,6 @@ function renderFrame(doc: RenderSnapshot, frame = 3, isPreview = false) {
 	);
 }
 
-/** The composition rendered (not the Player's error card). */
 function rendered(root: Element): void {
 	expect(root.textContent ?? '').not.toContain('⚠️');
 	expect(root.querySelector('[data-track-id]')).not.toBeNull();
@@ -187,8 +184,6 @@ const text = (track: string, ref: string): Command =>
 	}) as Command;
 const threeD = (ref: string): Command => ({ type: 'clip.set3d', clipIds: [ref], enabled: true }) as Command;
 const linear = { type: 'sequence.updateSettings', settings: { color: { blendLinear: true } } } as Command;
-
-// ---------------------------------------------------------------- planning
 
 describe('flat compositor planning', () => {
 	const t = (index: number, over: Partial<FlatTrackInput> = {}): FlatTrackInput => ({
@@ -230,10 +225,8 @@ describe('flat compositor planning', () => {
 		expect(
 			ops.map((op) => (op.kind === 'layers' ? op.items.map((it) => it.key).join('+') : `${op.kind}`)),
 		).toEqual([`${FLAT_BACKGROUND_KEY}+a`, 'adjust', 'matte:m+b', 'run3d', 'transition:tr']);
-		// Every drawn layer is an item, Normal ones included, with its own mode.
 		const items = ops.flatMap((op) => (op.kind === 'layers' ? op.items : []));
 		expect(items.find((it) => it.key === 'b')).toMatchObject({ kind: 'clip', mode: 'linear-burn' });
-		// Outside their spans: nothing but the background and the layers drawn.
 		expect(flatOpsAt(tracks, 20, { background: null, isGpuSide: () => false })).toEqual([]);
 	});
 
@@ -289,8 +282,6 @@ describe('flat compositor planning', () => {
 	});
 });
 
-// ---------------------------------------------------------------- structure
-
 describe('the composition draws flat only what would nest', () => {
 	it('keeps the nested structure for one scope (every stack that worked before)', () => {
 		const { container } = renderFrame(
@@ -332,8 +323,6 @@ describe('the composition draws flat only what would nest', () => {
 		expect(nestedCanvases(container)).toEqual([]);
 	});
 });
-
-// ---------------------------------------------------------------- property: never nested
 
 const GL_MODES: string[] = [...BLEND_MODES];
 type TrackSpec =
@@ -479,7 +468,6 @@ describe('no HTML-in-Canvas canvas is ever nested (property)', () => {
 					try {
 						rendered(container);
 						expect(nestedCanvases(container)).toEqual([]);
-						// The static decision was right: no scope had to ask for a flat stack at run time.
 						expect(container.querySelector('[data-canvas-scope-flattening]')).toBeNull();
 						expect(container.querySelector('[data-canvas-scope-nested]')).toBeNull();
 					} finally {

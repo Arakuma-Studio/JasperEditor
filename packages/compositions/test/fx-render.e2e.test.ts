@@ -1,10 +1,4 @@
 // @vitest-environment node
-// GPU shader effects on the Remotion render path (wave-1 fx framework): bundles the compositions with the test
-// effects (fx-render/entry.ts), renders stills with @remotion/renderer in headless Chrome (WebGL2 through ANGLE/
-// SwiftShader, as the engine's render browser) and checks the pixels: a solid + generator, a still + padded drop
-// shadow (drawn outside the layer box), a video + a half-opacity generator (the decoded frame through the chain,
-// upright), a time remap (freeze frame = the source at another frame), a time sample (an earlier frame) and a shape (DOM layer → HTML-in-Canvas) +
-// drop shadow. Gated by REMOTION_E2E=1 (bundling ≈ 10–30 s, each still ≈ 1–3 s); needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';

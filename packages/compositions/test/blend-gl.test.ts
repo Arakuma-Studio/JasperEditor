@@ -1,11 +1,4 @@
 // @vitest-environment node
-// Clip blend modes in a real WebGL2 and in Chrome's CSS compositor (keyframes-blend), against `blendPixel` — the
-// formulas the native export kernel runs:
-// - the GL compositor (planComposite + runShaderPlan in headless Chrome, SwiftShader without a GPU) for EVERY mode,
-//   opaque and translucent, layer opacity, Dissolve's deterministic noise (`dissolveNoise`), placement, mattes;
-// - the CSS modes (`blendModeCss`) drawn by Chrome's compositor with `mix-blend-mode`: equal to the formulas (this is
-//   why the preview draws them with CSS and the other modes through the compositor).
-// Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateSync } from 'node:zlib';
@@ -25,7 +18,6 @@ import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** Deterministic pseudo-random bytes. */
 function rng(seed: number) {
 	let s = seed >>> 0;
 	return () => {

@@ -1,9 +1,6 @@
 // @vitest-environment node
-// three-d: the Advanced 3D GL renderer (WebGL2 in headless Chrome, SwiftShader). Unlit scenes must match the Classic 3D
-// CPU reference (same projection, depth order and sampling; multisampled edges may differ); lit scenes check what
-// Advanced 3D adds: shadow maps (the caster's shadow on the floor), extruded text (walls widen the silhouette, the
-// hole stays open), environment reflection and background, and the GGX highlight.
-// Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
+// Unlit Advanced 3D must match the Classic CPU projection, depth and sampling;
+// multisampled edges can differ.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -121,7 +118,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 
 	it('depth of field: the layer in focus stays sharp, the far one is blurred', async () => {
 		const img = await call<number[]>('advanced', 'dof');
-		// Local contrast (mean |Δ| between horizontal neighbours) in a window of each layer.
 		const contrast = (x0: number, x1: number) => {
 			let s = 0;
 			let n = 0;

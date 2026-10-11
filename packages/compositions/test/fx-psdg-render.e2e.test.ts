@@ -1,9 +1,4 @@
 // @vitest-environment node
-// The premiere-stylize-distort-generate family on the Remotion render path (REMOTION_E2E=1): bundles the
-// compositions (production registry: the family is registered by default), renders one still per effect with
-// representative settings over a picture (PSDG_PHOTO=<640×360 png> if set, else frame 10 of the testsrc2 video) with
-// @remotion/renderer in headless Chrome (WebGL2 via ANGLE/SwiftShader), and checks each still rendered and changed
-// the picture. PSDG_SHEET=<file.png> also writes a labelled contact sheet of every still (ffmpeg xstack + drawtext).
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';

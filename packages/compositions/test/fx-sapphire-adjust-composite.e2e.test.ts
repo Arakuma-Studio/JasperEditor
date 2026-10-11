@@ -1,9 +1,4 @@
 // @vitest-environment node
-// The sapphire-adjust-composite family on the Remotion render path (REMOTION_E2E=1): renders a still per effect with
-// showcase params — adjust effects on a synthetic scene still, composite effects on a layer with an alpha circle
-// over a second picture given as a media param — checks a few pixels against the plain frame, and (with
-// FX_CONTACT_SHEET=<png path>) tiles all stills into a labelled contact sheet for visual review.
-// Needs Chrome and ffmpeg; bundling ≈ 10–30 s, each still ≈ 1–3 s.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -293,7 +288,6 @@ describe.runIf(enabled)(
 				const d = meanDiff(raws.get(s.name)!, s.layer === 'scene' ? video : fg);
 				expect(d, `${s.label} changes the picture`).toBeGreaterThan(2);
 			}
-			// S_Invert is the negative of the frame.
 			const inv = raws.get('invert')!;
 			let worst = 0;
 			for (let y = 20; y < FX_H; y += 40)

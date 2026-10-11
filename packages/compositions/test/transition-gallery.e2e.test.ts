@@ -1,8 +1,5 @@
 // @vitest-environment node
-// Visual gallery of the example GPU transitions over real footage (wave-2 transition framework): renders a few
-// frames of each example between a testsrc2 video (A) and a red still (B) with @remotion/renderer and writes the
-// PNGs (TRANSITION_GALLERY=<dir>) for a human look. Asserts only that the frames differ from both sides mid-way.
-// Gated by REMOTION_E2E=1 and TRANSITION_GALLERY.
+// This gallery checks only that middle frames differ from both sides; inspect the PNGs for visual quality.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';

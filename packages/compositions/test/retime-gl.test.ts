@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Time Interpolation on the GPU (workstream `time`) in a real WebGL2 (headless Chrome, SwiftShader without a GPU):
-// src/retime/flow-gl.ts against the CPU reference used by the native export (@jasper/project time-remap/flow.ts) on
-// the same 8-bit frames — the same block vectors, the same pictures within rounding, and both closer to the true
-// in-between frame than a frame mix. Runs when a Chrome is found; RETIME_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';
@@ -60,7 +56,6 @@ describe.runIf(!!CHROME && process.env.RETIME_GL !== '0')(
 				expect(r.vecSame).toBeGreaterThan(0.97);
 				expect(r.gpuVsCpu.mean).toBeLessThan(0.1);
 				expect(r.gpuVsCpu.within).toBeGreaterThan(0.995);
-				// Both beat a frame mix against the true in-between frame.
 				expect(r.gpuVsTruth.mean).toBeLessThan(r.mixVsTruth.mean * 0.5);
 				expect(r.cpuVsTruth.mean).toBeLessThan(r.mixVsTruth.mean * 0.5);
 			});

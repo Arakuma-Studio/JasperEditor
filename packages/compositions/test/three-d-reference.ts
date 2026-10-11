@@ -1,8 +1,5 @@
-// three-d test helper: the CPU reference picture of a snapshot frame whose layers are solids (pictures known without
-// a browser): the background, 2D solids (their Motion), and every 3D run drawn by `compositeClassicCPU` — what the
-// composition's GPU renderer must match.
-// compositor: adjustment layers whose effects are pointwise (`opts.adjust`: the effect on straight RGBA) apply to the
-// whole picture below them, so stacks mixing 3D runs, blend modes and adjustment layers have a reference too.
+// Independent CPU reference for solid layers, whose pixels are known without a browser.
+// Pointwise adjustments operate on the full backdrop in straight RGBA, including 3D runs and blend modes.
 import {
 	activeCameraAt,
 	applyMat3,

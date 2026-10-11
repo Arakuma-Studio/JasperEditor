@@ -1,9 +1,6 @@
 // @vitest-environment node
-// previews (playback robustness): the Remotion Player stall after seeks. Chrome leaves `AudioContext.resume()`
-// pending when `suspend()` follows before it settled, and the Player waits for the audio clock to move after every
-// resume — so a seek's suspend right after a play froze playback. `installSerialAudioContext` serialises the context's
-// state changes and lets the clock move before such a suspend. In a real Chrome: the browser behaviour without the
-// shim (documented: a browser fix shows up here) and the fix. Runs when a Chrome is found; FX_GL=0 skips it.
+// Chrome can leave resume() pending if suspend() follows before it settles.
+// The Player also needs the audio clock to move after resume before another suspend.
 import { type Browser, chromium } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installSerialAudioContext } from '../src/audio/serial-audio-context.ts';

@@ -1,10 +1,4 @@
 // @vitest-environment node
-// The fx GPU host in a real WebGL2 (wave-1 fx framework): headless Chrome (Playwright, SwiftShader when there is no
-// GPU) runs src/fx/host.ts bundled with esbuild. Compiles the whole GLSL library and EVERY registered GPU effect
-// (the fx catalogue: wave-2 families get this check for free) and checks the host contract: orientation, alpha,
-// multi-pass + downscaled blur + padding (glow), generator, padded drop shadow, time samples, media textures, LUT
-// pass, half-float intermediates, compile errors. Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the
-// usual paths); FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FX_FAMILIES } from '@jasper/project';
@@ -63,7 +57,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			it(`compiles and runs every GPU effect of ${family}`, { timeout: 240_000 }, async () => {
 				const r = await call<{ count: number; errors: string[] }>('catalogue', family);
 				expect(r.errors).toEqual([]);
-				// Golden fingerprints (testkit): every effect of the family at its defaults on the test card.
 				expectFingerprints(
 					FX_FINGERPRINTS,
 					await call<Record<string, number[]>>('fingerprints', family),
@@ -185,7 +178,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			it('time samples are uploaded once per key', async () => {
 				const r = await call<{ first: Px; sameKey: Px; newKey: Px }>('samplesOnce');
 				expect(near(r.first, [255, 0, 0, 255])).toBe(true);
-				expect(near(r.sameKey, [255, 0, 0, 255])).toBe(true); // same key: not re-uploaded
+				expect(near(r.sameKey, [255, 0, 0, 255])).toBe(true);
 				expect(near(r.newKey, [0, 255, 0, 255])).toBe(true);
 			});
 

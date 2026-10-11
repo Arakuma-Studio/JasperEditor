@@ -1,10 +1,5 @@
 // @vitest-environment node
-// Visual gallery of the Sapphire-style dissolves (registry/transitions/sapphire-dissolves.ts) over footage: renders
-// each dissolve at progress 0.25 / 0.5 / 0.75 with @remotion/renderer (the export path) and writes the PNGs to
-// $SD_GALLERY for a human look. A is a video, B a still: by default a testsrc2 clip and a generated pattern; set
-// SD_GALLERY_A (an image, panned into a 2 s clip) and SD_GALLERY_B (an image) to use real photographs. SD_GALLERY_IDS
-// (comma-separated ids or labels) limits the run. Asserts that the middle frame differs from the quarter frames.
-// Gated by REMOTION_E2E=1 and SD_GALLERY.
+// This gallery only checks differences between quarter and middle frames; inspect the PNGs for visual quality.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -51,7 +46,6 @@ describe.runIf(enabled)(
 			const a = process.env.SD_GALLERY_A;
 			videoA = media.video;
 			if (a && existsSync(a)) {
-				// A slow push-in over the photo, so side A moves.
 				ff([
 					...['-loop', '1', '-i', a, '-t', '2', '-r', '30'],
 					...[

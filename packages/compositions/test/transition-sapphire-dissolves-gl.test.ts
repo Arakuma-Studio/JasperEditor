@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire-style dissolves (registry/transitions/sapphire-dissolves.ts) in a real WebGL2 (headless Chrome,
-// SwiftShader when there is no GPU): the stages run through the GPU host (src/fx/host.ts) over procedural sides
-// (A: dark red with a white disc, B: blue with a yellow bar — see transition-sapphire-dissolves-gl/entry.ts) and the
-// pixels are checked: the progress contract with default params two-sided and one-sided, one characteristic pixel
-// per dissolve mid-way, Reverse, determinism and seeds. SD_GL_TIMINGS=1 prints compile / frame times. FX_GL=0 skips.
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -130,7 +125,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					[76, 27],
 				] as [number, number][],
 			};
-			// Foreground: the dark areas of A go first.
 			const fg = await run({ id: 'S_DissolveLuma', ...at(50, { useLumaOf: 'foreground' }), ...halves });
 			expect(
 				bad(fg.probes, [

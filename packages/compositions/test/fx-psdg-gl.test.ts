@@ -1,6 +1,4 @@
 // @vitest-environment node
-// The premiere-stylize-distort-generate family in real WebGL2 (headless Chrome via fx-psdg/gl-suite.ts): identity at
-// neutral defaults, a characteristic pixel per effect, padding, alpha, determinism and animation. FX_GL=0 skips.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -63,13 +61,13 @@ describe.runIf(psdgGlEnabled)(
 			expect(g.cellMean[3]).toBe(255);
 			expect(g.ellipseRing[3]).toBeGreaterThan(200);
 			expect(g.ellipseCentre[3]).toBe(0);
-			expect(g.flareCanvas[0]).toBeGreaterThan(64); // padded
+			expect(g.flareCanvas[0]).toBeGreaterThan(64);
 			expect(g.flareCentre[0]).toBeGreaterThan(240);
 			expect(g.boltOn[3]).toBeGreaterThan(200);
 			expect(g.boltOff[0]).toBeLessThan(40);
 			expect(g.boltDet).toBe(0);
 			expect(g.boltAnim).toBeGreaterThan(30);
-			expect(near(g.bucketLeft, [255, 0, 0, 255])).toBe(true); // filled room
+			expect(near(g.bucketLeft, [255, 0, 0, 255])).toBe(true);
 			expect(near(g.bucketRight, [255, 255, 255, 255])).toBe(true); // same colour, other room: untouched
 			expect(near(g.writeCentre, [255, 0, 0, 255])).toBe(true);
 			expect(near(g.writeEdge, [0, 0, 0, 255])).toBe(true);
@@ -77,14 +75,14 @@ describe.runIf(psdgGlEnabled)(
 
 		it('Noise & Grain', async () => {
 			const n = await page.call<Record<string, any>>('noise');
-			expect(n.dustSpeck[0]).toBeLessThan(140); // the speck is removed
+			expect(n.dustSpeck[0]).toBeLessThan(140);
 			expect(n.medianSpeck[0]).toBeLessThan(140);
-			expect(n.noiseAnim).toBeGreaterThan(30); // new noise every frame
+			expect(n.noiseAnim).toBeGreaterThan(30);
 			expect(Math.abs(n.noiseMean[0] - 128)).toBeLessThan(10);
 			expect(n.noiseAlpha).toBeLessThan(250);
 			expect(n.noiseAlphaVar).toBeGreaterThan(30);
 			expect(n.hls).toBeGreaterThan(20);
-			expect(n.hlsAuto).toBeGreaterThan(10); // Auto animates
+			expect(n.hlsAuto).toBeGreaterThan(10);
 		});
 
 		it('Stylize', async () => {
@@ -99,7 +97,7 @@ describe.runIf(psdgGlEnabled)(
 			expect(near(s.colorEmboss, [90, 160, 30, 255], 2)).toBe(true);
 			expect(near(s.findEdgesFlat, [255, 255, 255, 255], 2)).toBe(true);
 			expect(s.findEdgesEdge[0] + s.findEdgesEdge[2]).toBeLessThan(400);
-			expect(near(s.mosaicA, s.mosaicB, 1)).toBe(true); // one block, one colour
+			expect(near(s.mosaicA, s.mosaicB, 1)).toBe(true);
 			expect(near(s.mosaicA, s.mosaicC, 1)).toBe(false);
 			expect(near(s.posterize, [255, 0, 255, 255], 1)).toBe(true);
 			// Replicate 2: each half of the layer holds a full copy (red | blue twice).
@@ -145,7 +143,7 @@ describe.runIf(psdgGlEnabled)(
 
 		it('Video: text burn-ins', async () => {
 			const v = await page.call<Record<string, any>>('video');
-			expect(v.timecodeChanges).toBeGreaterThan(100); // the timecode counts
+			expect(v.timecodeChanges).toBeGreaterThan(100);
 			expect(v.timecodeAbove).toEqual([128, 128, 128, 255]);
 			expect(v.textWhitePixels).toBeGreaterThan(40);
 			expect(v.textCorner).toEqual([0, 0, 0, 255]);

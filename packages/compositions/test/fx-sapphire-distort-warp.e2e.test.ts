@@ -1,9 +1,4 @@
 // @vitest-environment node
-// The Sapphire Distort family on the Remotion render path: bundles the compositions (fx-render/entry.ts: the
-// production registry, which contains the family), renders stills of a full-frame picture (a Mandelbrot with a test
-// pattern and a grid, 640×360) with every effect of the family, and checks each is drawn (not empty, not the plain
-// picture where the defaults change it), plus a padded warp of a small still, the shake over video frames and its
-// determinism. Gated by REMOTION_E2E=1 (needs Chrome and ffmpeg). DW_E2E_OUT=<dir> keeps the stills there.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -143,8 +138,8 @@ describe.runIf(enabled)(
 					10,
 					id.replace('jasper.s.', ''),
 				);
-				expect(mean(raw), id).toBeGreaterThan(10); // drawn (not black/empty)
-				expect(diff(raw, plain), id).toBeGreaterThan(0.5); // and changed by the default settings
+				expect(mean(raw), id).toBeGreaterThan(10);
+				expect(diff(raw, plain), id).toBeGreaterThan(0.5);
 			}
 		});
 

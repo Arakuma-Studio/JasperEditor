@@ -1,7 +1,4 @@
 // @vitest-environment node
-// The retime decoder (src/retime/frames.ts) in headless Chrome on real H.264 files: every requested media time shows
-// the frame whose timestamp is at or before it — forwards, backwards (GOP cache), random order, and on variable-frame-
-// rate media by the real timestamps. Runs when a Chrome is found; RETIME_GL=0 skips it.
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -124,9 +121,8 @@ describe.runIf(!!CHROME && have && process.env.RETIME_GL !== '0')(
 		});
 
 		it('an AAC track with encoder priming does not shift the frames (media time 0 = ffmpeg start_time)', async () => {
-			// Regression (verify workstream): the audio's first packet is at -0.0213 s (priming hidden by the MP4 edit list,
-			// ffmpeg's start_time 0). Taken as the file origin, every frame was 21 ms late and a time exactly on frame n
-			// showed frame n − 1 — remapped clips rendered one frame early in Remotion against the native export.
+			// The audio starts at -0.0213 s for priming, hidden by the MP4 edit list (start_time = 0).
+			// Video timestamps must use the video origin or an exact frame request selects the preceding frame.
 			const times = [0, 1 / 30, 5 / 30, 12 / 30, 30 / 30, 39 / 30, 63 / 30];
 			const r = await call<{ out: { code: number; time: number }[] }>('codes', {
 				src: 'https://media.test/frame-code-aac.mp4',

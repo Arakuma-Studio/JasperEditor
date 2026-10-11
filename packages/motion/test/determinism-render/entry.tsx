@@ -1,7 +1,5 @@
-// Remotion entry of the render-parity e2e (S11:ANM-014, REMOTION_E2E=1). Compositions:
-// - Sequence: the real SequenceComposition with the parity document (inputProps {doc, options});
-// - <name>Reversed / <name>Shuffled: output frame i shows frame order[i] through <Freeze>, so one renderer page
-//   visits the frames in that order (the history a reused page accumulates is what the canonical seek defeats).
+// Freeze maps output frames to a reordered scene frame sequence on one renderer page,
+// exposing state that persists between seeks.
 import type { ComponentType } from 'react';
 import { Composition, Freeze, registerRoot, useCurrentFrame } from 'remotion';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';

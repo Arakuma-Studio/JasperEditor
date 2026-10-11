@@ -1,9 +1,4 @@
 // @vitest-environment node
-// Sapphire Blur+Sharpen family in a real WebGL2 (headless Chrome, SwiftShader): every effect compiles and runs with
-// default params, and each effect's characteristic behaviour shows in the pixels — blur profiles, iris point-spread
-// functions (circle vs polygon, prism rings), soft-border padding, alpha, sharpening, median, deband, motion
-// streaks, depth-of-field from a Z buffer, skin key, kernel convolution, determinism of the random parts.
-// Harness: test/fx-sapphire-blur-sharpen-gl/entry.ts (same host contract as fx-gl). FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Sapphire Distort family in a real WebGL2 (headless Chrome, SwiftShader when there is no GPU): the effects run
-// through the GPU host (src/fx/host.ts) on a procedural picture (colour quadrants, a black grid, a white disc in the
-// centre — see fx-sapphire-distort-warp/entry.ts) and the pixels are checked: identity settings, one characteristic
-// pixel per effect, padding, transparent input, determinism and seeds, time. FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

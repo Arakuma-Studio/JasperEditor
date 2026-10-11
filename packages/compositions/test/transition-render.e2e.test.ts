@@ -1,11 +1,4 @@
 // @vitest-environment node
-// GPU transitions on the Remotion render path (wave-2 transition framework): bundles the production root, renders
-// stills with @remotion/renderer in headless Chrome (WebGL2 through ANGLE/SwiftShader, as the engine's render
-// browser) and checks the pixels of the four example transitions: Push (two solids), Iris Round (two-sided and a
-// one-sided fade-out to transparent), S_DissolveLuma (the luma of A decides where B shows: both sides in one
-// shader), Cross Zoom, a video side (decoded frames through the side's chain) and a shape side (DOM layer captured
-// through HTML-in-Canvas). The built-in Cross Dissolve keeps its ramps (no stage). Gated by REMOTION_E2E=1; needs
-// ffmpeg on PATH. The stills stay in the printed directory (TRANSITION_RENDER_OUT=<dir> copies them there).
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -23,7 +16,6 @@ const RED: [number, number, number, number] = [1, 0, 0, 1];
 const BLUE: [number, number, number, number] = [0, 0, 1, 1];
 const GREEN: [number, number, number, number] = [0, 1, 0, 1];
 
-/** Two solids on V1 (A 0–30, B 30–60) with a transition at the cut. */
 function solidsWith(effectId: string, a = RED, b = BLUE, extra: Record<string, unknown> = {}): Command[] {
 	return [
 		{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: a, ref: '$a' } as Command,
@@ -119,8 +111,7 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 	});
 
 	it('Push: at progress 1 (the last frame of a fade at a tail) the border has left the far edge', async () => {
-		// A alone, Push at its tail (span 10…30): the last frame is p = 1 → only the background (black) is left; the
-		// border used to stay visible along the far (bottom) edge.
+		// A alone at its tail (span 10…30): the last frame is p = 1, leaving only black background and no border.
 		const cmds: Command[] = [
 			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: RED, ref: '$a' } as Command,
 			{
@@ -214,8 +205,8 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 			} as Command,
 		];
 		const raw = await still(cmds, 30, 'luma-30');
-		expect(close(at(raw, 100, FX_H / 2), [0, 255, 0])).toBe(true); // white → already B
-		expect(close(at(raw, 540, FX_H / 2), [0, 0, 0])).toBe(true); // black → still A
+		expect(close(at(raw, 100, FX_H / 2), [0, 255, 0])).toBe(true);
+		expect(close(at(raw, 540, FX_H / 2), [0, 0, 0])).toBe(true);
 	});
 
 	it('Cross Zoom: mostly A early, B at the end', async () => {

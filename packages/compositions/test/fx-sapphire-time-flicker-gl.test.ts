@@ -1,8 +1,4 @@
 // @vitest-environment node
-// Sapphire Time + Flicker family in a real WebGL2 (headless Chrome, SwiftShader without a GPU): characteristic
-// pixels of every effect group — remaps, recursive trails/feedback, sample windows, cut dissolve, repaired and
-// retimed (motion-compensated) in-betweens, field removal, flicker add/remove/match — plus alpha and determinism.
-// Runs when a Chrome is found (JASPER_BROWSER_EXECUTABLE or the usual paths); FX_GL=0 skips it.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from '@playwright/test';

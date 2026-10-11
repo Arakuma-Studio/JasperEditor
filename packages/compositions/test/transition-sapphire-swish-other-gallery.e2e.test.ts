@@ -1,9 +1,5 @@
 // @vitest-environment node
-// Visual gallery of the "sapphire-swish-other" transitions on the Remotion render path (REMOTION_E2E=1 and
-// TRANSITION_SSO_GALLERY=<dir>): two moving clips (a slow push-in on a picture each — SSO_IMAGE_A / SSO_IMAGE_B, else
-// ffmpeg's mandelbrot and testsrc2), a 19-frame transition at the cut, stills at progress 0.25 / 0.5 / 0.75 of every
-// transition (plus a few variants) rendered with @remotion/renderer in headless Chrome, written to the directory with
-// a contact sheet (`contact-sheet.jpg`). Asserts only that the middle frame differs from both sides.
+// This gallery only checks that middle frames differ from both sides; inspect the PNGs for visual quality.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,7 +14,6 @@ const out = process.env.TRANSITION_SSO_GALLERY;
 const enabled = process.env.REMOTION_E2E === '1' && !!out;
 const only = process.env.TRANSITION_SSO_ONLY?.split(',');
 
-/** Entries of the gallery: [name, transition id, params]. */
 const GALLERY: [string, string, Record<string, unknown>?][] = [
 	['swish-pan', 'jasper.s.swish-pan'],
 	['swish-3d', 'jasper.s.swish-3d'],
@@ -97,7 +92,6 @@ describe.runIf(enabled)(
 
 		afterAll(() => {
 			media?.close();
-			// Contact sheet: one row per entry (0.25 / 0.5 / 0.75), small JPEG.
 			const rows = GALLERY.filter(([n]) => !only || only.includes(n)).map(([n]) => n);
 			const files = rows.flatMap((n) => FRAMES.map((f) => join(out!, `${n}-${f}.png`)));
 			if (!files.every((f) => existsSync(f)) || files.length === 0) return;

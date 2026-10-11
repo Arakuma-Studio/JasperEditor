@@ -1,8 +1,5 @@
-// audio-fx preview ↔ export parity: the AudioWorklet slot core (fx-processor.ts, 128-sample render quanta) and the
-// export mixer's processor (`EffectSlot`, arbitrary mixer blocks) run the same EffectChain on the same input; with
-// static parameters their samples are identical bit for bit, for every audio effect of the catalogue. Keyframed
-// parameters: the preview evaluates them at the frame time posted by the graph (smoothed by the processors), the
-// export every 32 samples — the difference stays small.
+// The worklet uses 128-sample quanta; export blocks may have arbitrary lengths. Static parameters must
+// produce bit-identical samples. Preview automation updates once per frame; export updates every 32 samples.
 import { EffectSlot } from '@jasper/audio-fx';
 import { AUDIO_EFFECTS, type EffectInstance, flicksPerFrame } from '@jasper/project';
 import { describe, expect, it } from 'vitest';

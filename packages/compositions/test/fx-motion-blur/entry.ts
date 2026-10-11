@@ -1,8 +1,5 @@
-// Browser entry of the motion-blur GL test (bundled with esbuild, run in headless Chrome by
-// ../fx-motion-blur-gl.test.ts): runs effects and transitions through the real GPU host on simple test pictures (a
-// thin bright line on black, a grid), with keyframed params (`keys` → `ctx.paramsAt`, piecewise linear between keys
-// at fractional frames, as the shared keyframe evaluator does for linear keys) and an optional preview scale, and
-// reports intensity profiles across the smear, checksums, PNGs and timings.
+// Keyframe values are linearly interpolated at fractional frames, matching the shared evaluator
+// for linear keys; this lets the shutter sample motion between whole frames.
 import '../gl-poison.ts';
 import {
 	defaultEffectRegistry,

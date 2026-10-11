@@ -1,7 +1,3 @@
-// The render-parity sequence (S11:ANM-014) as a RenderDoc: one text clip per installed text animator (in and
-// out, with its default params), one clip per installed anime
-// template, and a shape with keyframed size — rendered through the real SequenceComposition. Animators and
-// templates join this fixture automatically when they are registered.
 import { isAnimeTemplate, mgRegistry } from '@jasper/mg-templates';
 import {
 	anim,

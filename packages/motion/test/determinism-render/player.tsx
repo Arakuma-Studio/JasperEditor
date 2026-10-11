@@ -1,6 +1,4 @@
-// Player page of the render-parity e2e (S11:ANM-014/015), bundled with esbuild and opened in Chrome: mounts the
-// SequenceComposition in a @remotion/player <Player> at 1:1 and exposes `window.__parity`:
-// `mount`, `seek(frame)` (resolves once the frame is painted) and `bench` (value-engine cost per frame).
+// seek(frame) resolves after the Player paints, so callers can compare its pixels with renderer output.
 
 import { getTextAnimationSpec } from '@jasper/project';
 import { Player, type PlayerRef } from '@remotion/player';

@@ -1,9 +1,4 @@
 // @vitest-environment node
-// three-d on the Remotion render path (what exports render): bundles the production root and renders stills with
-// @remotion/renderer in headless Chrome, then compares them with the CPU reference renderer of @jasper/project on the
-// same scene (the export ↔ reference parity): a two-layer run with intersection, a moved camera and a spot light with
-// a cast shadow; two runs split by a 2D layer; a 3D video layer; depth of field. Gated by REMOTION_E2E=1; needs ffmpeg.
-// THREE_D_RENDER_OUT=<dir> copies the stills there.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -131,8 +126,7 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 		...extra,
 	];
 
-	// Regression: the run's lower member used to be captured inside the upper track's HTML-in-Canvas scope, where its
-	// own capture never painted (the render hung on "waiting for first paint").
+	// Capturing a 3D run member inside another HTML-in-Canvas scope prevents its own capture from painting.
 	it.each([
 		['one run of two layers on two tracks', ['$a', '$b']],
 		['a 3D layer under a 2D layer', ['$a']],
@@ -208,7 +202,6 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 		const flat = await still(scene(text(0)), 5, 'advanced-flat');
 		const ext = await still(scene(text(60)), 5, 'advanced-extruded');
 		const classic = await still(scene(), 5, 'classic-run');
-		// Lit: the card and the floor are drawn (not the bare backdrop) and differ from the unlit colours.
 		let changed = 0;
 		for (let i = 0; i < FX_W * FX_H; i++) {
 			let e = 0;
@@ -216,7 +209,6 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 			if (e > 30) changed++;
 		}
 		expect(changed / (FX_W * FX_H)).toBeGreaterThan(0.002);
-		// Advanced and Classic agree on where things are (same camera): most pixels are close.
 		const d = diff(flat, new Uint8ClampedArray(classic), 60);
 		expect(d.bad).toBeLessThan(0.25);
 	});

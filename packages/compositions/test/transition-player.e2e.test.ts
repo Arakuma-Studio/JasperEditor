@@ -1,9 +1,4 @@
 // @vitest-environment node
-// GPU transitions in the Remotion Player (wave-2 transition framework, preview path): Players of SequenceComposition
-// in headless Chrome (the fx-player entry, bundled with esbuild): Push between solids while scrubbing (the seam
-// follows the playhead), Iris Round over a video side (headless <Video> → FxPicture → tap → stage), S_DissolveLuma
-// over a still (both sides in one shader), a shape side through HTML-in-Canvas — and, in a Chrome without
-// HTML-in-Canvas, the dissolve fallback with a chip on the stage. Gated by REMOTION_E2E=1.
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -224,7 +219,7 @@ describe.runIf(enabled && !!CHROME)(
 				(r) => close(at(r, FX_W / 2, FX_H / 2), [0, 0, 255]) && at(r, 20, 20).some((v) => v > 40),
 			);
 			expect(close(at(raw, FX_W / 2, FX_H / 2), [0, 0, 255])).toBe(true);
-			expect(at(raw, 20, 20).some((v) => v > 40)).toBe(true); // testsrc2, not black
+			expect(at(raw, 20, 20).some((v) => v > 40)).toBe(true);
 		});
 
 		it('S_DissolveLuma: the white half of A already shows B', async () => {

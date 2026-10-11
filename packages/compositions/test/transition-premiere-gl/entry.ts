@@ -1,7 +1,3 @@
-// Browser entry of the Premiere transition family GL test (bundled with esbuild, run in headless Chrome by
-// ../transition-premiere-gl.test.ts): drives the real fx GPU host with planned transition stages (planGpuTransition
-// + runShaderPlan, as test/transition-gl/entry.ts does) and reports characteristic pixels of each Premiere transition
-// at a fixed progress (Start = End = the progress), Reverse, borders, one-sided use and determinism.
 import '../gl-poison.ts';
 import {
 	planGpuTransition,
@@ -29,7 +25,6 @@ const solid = (color: string) =>
 		ctx.fillStyle = color;
 		ctx.fillRect(0, 0, W, H);
 	});
-/** Left half `left`, right half `right`. */
 const halves = (left: string, right: string) =>
 	canvas(W, H, (ctx) => {
 		ctx.fillStyle = left;
@@ -57,7 +52,6 @@ type RunOpts = {
 	id?: string;
 };
 
-/** One stage frame of transition `id` at a fixed progress. */
 function run(id: string, o: RunOpts): HTMLCanvasElement {
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
@@ -108,7 +102,6 @@ function stats(c: HTMLCanvasElement) {
 }
 
 const api = {
-	/** Run time (ms) of each Premiere-family transition for a few frames (compile included on the first). */
 	timings() {
 		const out: Record<string, number> = {};
 		for (const s of TRANSITION_SPECS.filter((x) => x.gpu && !x.id.startsWith('jasper.s.'))) {
@@ -120,11 +113,9 @@ const api = {
 		return out;
 	},
 
-	/** Characteristic pixels: [observed, …] per check name. */
 	pixels() {
 		const r: Record<string, Px> = {};
 		const greenBlue = () => halves('#0f0', '#00f');
-		// Wipe
 		r.wipeLeft = at('jasper.wipe', { at: 50 }, 8, 18);
 		r.wipeRight = at('jasper.wipe', { at: 50 }, 56, 18);
 		r.wipeDiagNW = at('jasper.wipe', { at: 50, params: { direction: 'northWestToSouthEast' } }, 4, 4);
@@ -145,7 +136,6 @@ const api = {
 		r.bandTopE = at('jasper.band-wipe', band, 60, 9);
 		r.bandBottomE = at('jasper.band-wipe', band, 60, 27);
 		r.bandBottomW = at('jasper.band-wipe', band, 4, 27);
-		// Barn Doors
 		r.barnCenter = at('jasper.barn-doors', { at: 50 }, 32, 18);
 		r.barnEdge = at('jasper.barn-doors', { at: 50 }, 2, 18);
 		r.barnVertCenter = at('jasper.barn-doors', { at: 50, params: { direction: 'vertical' } }, 2, 18);
@@ -174,10 +164,8 @@ const api = {
 		// Pinwheel (4 wedges) at 50 %: half of each quadrant from 12 o'clock clockwise
 		r.pinIn = at('jasper.pinwheel', { at: 50, params: { wedges: 4 } }, 36.1, 6.7);
 		r.pinOut = at('jasper.pinwheel', { at: 50, params: { wedges: 4 } }, 43.3, 13.9);
-		// Radial Wipe from the north west corner at 50 %
 		r.radialTop = at('jasper.radial-wipe', { at: 50 }, 60, 4);
 		r.radialLeft = at('jasper.radial-wipe', { at: 50 }, 4, 32);
-		// Inset from the north west corner at 50 %
 		r.insetIn = at('jasper.inset', { at: 50 }, 8, 5);
 		r.insetOut = at('jasper.inset', { at: 50 }, 56, 30);
 		r.insetSE = at('jasper.inset', { at: 50, params: { direction: 'southEast' } }, 56, 30);
@@ -193,7 +181,6 @@ const api = {
 		// Random Wipe (north to south) at 40 %: the top is B, the bottom A
 		r.randomWipeTop = at('jasper.random-wipe', { at: 40 }, 32, 1);
 		r.randomWipeBottom = at('jasper.random-wipe', { at: 40 }, 32, 35);
-		// Gradient Wipe
 		r.gradLeft = at('jasper.gradient-wipe', { at: 50, params: { softness: 0 } }, 8, 18);
 		r.gradRight = at('jasper.gradient-wipe', { at: 50, params: { softness: 0 } }, 56, 18);
 		r.gradInvert = at('jasper.gradient-wipe', { at: 50, params: { softness: 0, invert: true } }, 8, 18);
@@ -210,7 +197,6 @@ const api = {
 			8,
 			18,
 		);
-		// Irises at 40 %
 		r.boxIn = at('jasper.iris-box', { at: 40 }, 42, 23);
 		r.boxOut = at('jasper.iris-box', { at: 40 }, 32, 27);
 		r.diamondIn = at('jasper.iris-diamond', { at: 40 }, 52, 18);
@@ -220,7 +206,6 @@ const api = {
 		r.crossBetween = at('jasper.iris-cross', { at: 40 }, 44, 28);
 		r.boxCenterOff = at('jasper.iris-box', { at: 30, params: { center: [0.2, 0.3] } }, 13, 11);
 		r.boxCenterOffFar = at('jasper.iris-box', { at: 30, params: { center: [0.2, 0.3] } }, 50, 30);
-		// 3D Motion
 		r.cubeLeft = at('jasper.cube-spin', { at: 50 }, 8, 18);
 		r.cubeRight = at('jasper.cube-spin', { at: 50 }, 56, 18);
 		r.cubeNSTop = at('jasper.cube-spin', { at: 50, params: { direction: 'northToSouth' } }, 32, 4);
@@ -229,7 +214,6 @@ const api = {
 		r.flipLate = at('jasper.flip-over', { at: 75 }, 32, 18);
 		r.flipMid = at('jasper.flip-over', { at: 50 }, 32, 18);
 		r.flipBandsLate = at('jasper.flip-over', { at: 75, params: { bands: 4 } }, 8, 18);
-		// Page Peel / Page Turn from the north west corner at 30 %
 		r.peelCorner = at('jasper.page-peel', { at: 30 }, 2, 2);
 		r.peelFar = at('jasper.page-peel', { at: 30 }, 62, 34);
 		r.turnCorner = at('jasper.page-turn', { at: 30 }, 2, 2);
@@ -263,7 +247,6 @@ const api = {
 		r.splitMovesA = at('jasper.split', { at: 50, a: greenBlue() }, 2, 18);
 		r.whipEarly = at('jasper.whip', { at: 3 }, 32, 18);
 		r.whipLate = at('jasper.whip', { at: 97 }, 32, 18);
-		// Dissolves at 50 % / 25 %
 		r.additive = at('jasper.additive-dissolve', { at: 50 }, 32, 18);
 		r.dipWhite = at('jasper.dip-to-white', { at: 50 }, 32, 18);
 		r.dipWhiteQuarter = at('jasper.dip-to-white', { at: 25 }, 32, 18);
@@ -278,7 +261,6 @@ const api = {
 		return r;
 	},
 
-	/** Characteristic pixels of Premiere 26's modern transitions. */
 	modernPixels() {
 		const r: Record<string, Px> = {};
 		r.blurDissolve = at('jasper.blur-dissolve', { at: 50 }, 32, 18);
@@ -347,7 +329,6 @@ const api = {
 		r.mirrorFlip = at('jasper.mirror-transition', { at: 30, a: halves('#0f0', '#f00') }, 8, 18);
 		r.waveBehind = at('jasper.wave-transition', { at: 50 }, 8, 18);
 		r.waveAhead = at('jasper.wave-transition', { at: 50 }, 56, 18);
-		// VR: shapes on the sphere, per eye in stereo layouts.
 		r.vrIrisCenter = at('jasper.vr-iris-wipe', { at: 50 }, 32, 18);
 		r.vrIrisBehind = at('jasper.vr-iris-wipe', { at: 50 }, 1, 18);
 		r.vrIrisMonoUpper = at('jasper.vr-iris-wipe', { at: 20 }, 32, 9);
@@ -406,8 +387,8 @@ const api = {
 	},
 
 	/**
-	 * gaps (AI-2): Morph Cut on a textured shot moved by 12 px between the takes (a jump cut): the mid frame matches the
-	 * picture moved half-way (6 px) much better than a cross dissolve does. Mean abs error per channel, 0..255.
+	 * A 12 px jump cut should yield a midpoint translated by 6 px, closer than a cross dissolve.
+	 * Returns mean absolute channel error in 0..255.
 	 */
 	morphTexture() {
 		const [w0, h0] = [W, H];

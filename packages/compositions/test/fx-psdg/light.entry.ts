@@ -1,4 +1,3 @@
-// Browser entry of fx-psdg-light-gl.test.ts (Vignette, Glow).
 import { defaults, px, run, solid, spec } from './harness.ts';
 
 const W = 64;

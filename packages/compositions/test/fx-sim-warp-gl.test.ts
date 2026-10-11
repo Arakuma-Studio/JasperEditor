@@ -1,7 +1,4 @@
 // @vitest-environment node
-// The simulation-warp family in real WebGL2 (headless Chrome, SwiftShader without a GPU): every effect compiles and
-// runs at several frames, characteristic pixels per effect, determinism (same frame → same pixels), seed stability
-// (another seed → another pattern) and motion. FX_GL=0 skips.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openPsdgPage, type PsdgPage, psdgGlEnabled } from './fx-psdg/gl-suite.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
-/** SIM_GALLERY=<dir> (and optionally SIM_GALLERY_IDS=a,b): writes a PNG per effect setting for a visual check. */
 const GALLERY = process.env.SIM_GALLERY;
 const GALLERY_CASES: {
 	name: string;
@@ -162,8 +158,8 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(w.rainOnlyAlpha).toBeLessThan(80); // without the original: drops over transparency
 		expect(w.snowVisible).toBeGreaterThan(20);
 		expect(w.bubblesAlpha).toBeGreaterThan(1);
-		expect(w.noBubblesAlpha).toBe(0); // bubbles replace the layer
-		expect(w.bubbleY[1]).toBeLessThan(w.bubbleY[0]); // bubbles rise
+		expect(w.noBubblesAlpha).toBe(0);
+		expect(w.bubbleY[1]).toBeLessThan(w.bubbleY[0]);
 		expect(w.drizzle).toBeGreaterThan(1);
 		expect(w.noDrizzle).toBe(0);
 		expect(w.starAlpha).toBeGreaterThan(1);
@@ -188,7 +184,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 
 	it('cards: Card Dance, Card Wipe, Pixel Polly', async () => {
 		const r = await page.call<Record<string, any>>('cards');
-		expect(r.cdRest).toBeLessThanOrEqual(3); // flat cards reproduce the layer
+		expect(r.cdRest).toBeLessThanOrEqual(3);
 		expect(r.cdRot).toBeGreaterThan(50);
 		expect(r.cdZ).toBeGreaterThan(50); // cards pulled towards the camera grow
 		expect(r.cwRest).toBeLessThanOrEqual(3);
@@ -203,7 +199,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	it('shatter: intact at rest for every pattern, breaks, render modes, wireframes', async () => {
 		const r = await page.call<Record<string, any>>('shatter');
 		expect(r.rest).toBeLessThanOrEqual(3);
-		for (const d of r.patterns) expect(d).toBeLessThanOrEqual(8); // every pattern tiles the layer seamlessly
+		for (const d of r.patterns) expect(d).toBeLessThanOrEqual(8);
 		expect(r.moved).toBeGreaterThan(50);
 		expect(r.wireMax).toBeGreaterThan(1);
 		expect(r.wireHasGaps).toBe(1);

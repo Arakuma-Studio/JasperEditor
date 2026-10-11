@@ -1,9 +1,4 @@
 // @vitest-environment node
-// edit-structure on the Remotion render path: bundles the production root and renders stills with @remotion/renderer
-// in headless Chrome, then checks pixels — a nested sequence (scaled nest clip, nested frame mapping, speed 2×), an
-// adjustment layer (CSS filter mode; canvas mode with 50 % opacity and a crop region through HTML-in-Canvas over a
-// video, and limited by an Opacity mask), Bars and Tone, the counting leader, and a frame hold of a moving video. Gated by REMOTION_E2E=1; needs
-// ffmpeg on PATH. EDIT_STRUCTURE_RENDER_OUT=<dir> copies the stills there.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
