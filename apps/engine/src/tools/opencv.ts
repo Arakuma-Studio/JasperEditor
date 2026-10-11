@@ -1,7 +1,11 @@
 import { createRequire } from 'node:module';
 import type * as Cv from '@techstark/opencv-js';
 
-export type OpenCvApi = typeof Cv;
+export type OpenCvApi = Omit<typeof Cv, 'minMaxLoc'> & {
+	// The package declares C++ output pointers; the JavaScript bindings return their values.
+	minMaxLoc(src: Cv.Mat): Cv.MinMaxLoc;
+	minMaxLoc(src: Cv.Mat, mask: Cv.Mat): Cv.MinMaxLoc;
+};
 
 export type OpenCv = OpenCvApi & {
 	then?: (ready: () => void) => void;
