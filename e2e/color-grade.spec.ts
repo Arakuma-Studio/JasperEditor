@@ -12,6 +12,7 @@ import {
 	enableAgentBridge,
 	exportViaUi,
 	importFiles,
+	mediaIdForFile,
 	query,
 	ROOT,
 	regionLuma,
@@ -95,7 +96,12 @@ test.describe('Lumetri completion and scopes', () => {
 		clipA = a.id;
 		startB = a.start + a.duration;
 		const placed = await transact(page, [
-			{ type: 'clip.place', source: { mediaId: { mediaByName: 'clip-b.mp4' } }, at: startB, audio: false },
+			{
+				type: 'clip.place',
+				source: { mediaId: await mediaIdForFile(page, 'clip-b.mp4') },
+				at: startB,
+				audio: false,
+			},
 		]);
 		expect(placed.ok, JSON.stringify(placed)).toBe(true);
 		clipB = (await clips(page)).find((c) => c.kind === 'video' && c.id !== clipA)!.id;

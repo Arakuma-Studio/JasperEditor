@@ -16,6 +16,7 @@ import {
 	ffprobe,
 	focusTimeline,
 	importFiles,
+	mediaIdForFile,
 	pointerDrag,
 	query,
 	ROOT,
@@ -103,7 +104,7 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	const a = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'xfade-red.mp4' } },
+			source: { mediaId: await mediaIdForFile(page, 'xfade-red.mp4') },
 			at: 0,
 			sourceRange: { in: { seconds: 1 }, out: { seconds: 5 } },
 		},
@@ -113,7 +114,7 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	const b = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'xfade-blue.mp4' } },
+			source: { mediaId: await mediaIdForFile(page, 'xfade-blue.mp4') },
 			at: cut,
 			sourceRange: { in: { seconds: 2 }, out: { seconds: 5 } },
 		},

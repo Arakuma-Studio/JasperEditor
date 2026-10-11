@@ -9,6 +9,7 @@ import {
 	enableAgentBridge,
 	expectTransaction,
 	importFiles,
+	mediaIdForFile,
 	query,
 	transact,
 } from './support.ts';
@@ -48,7 +49,7 @@ test('render bar, Render Effects In to Out, green bar and preview playback', asy
 	const r = await transact(page, [
 		{
 			type: 'clip.place',
-			source: { mediaByName: 'clip-a.mp4' },
+			source: { mediaId: await mediaIdForFile(page, 'clip-a.mp4') },
 			at: 0,
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 3 } },
 		},

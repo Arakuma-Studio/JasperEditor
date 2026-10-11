@@ -77,7 +77,7 @@ function mediaAsset(i: number, kind: 'video' | 'image'): CommandOf<'media.regist
 					? [
 							{
 								index: 1,
-								type: 'audio',
+								type: 'audio' as const,
 								codec: 'aac',
 								sampleRate: 48000,
 								channels: 2,

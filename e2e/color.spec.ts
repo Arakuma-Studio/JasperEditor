@@ -9,6 +9,7 @@ import {
 	applyLut,
 	bakeColorRun,
 	defaultEffectRegistry,
+	type EffectParams,
 	LUMETRI_EFFECT_ID,
 	parseCube,
 } from '../packages/project/src/index.ts';
@@ -114,7 +115,7 @@ test.describe('Lumetri UI', () => {
 });
 
 /** A representative grade (the same as the engine's native/Remotion parity tests). */
-const PARITY_GRADE = (look: string) => ({
+const PARITY_GRADE = (look: string): EffectParams => ({
 	temperature: -30,
 	tint: 6,
 	exposure: 0.3,
@@ -218,6 +219,7 @@ test('the forced WebGL Program canvas matches the independent CPU LUT reference 
 			},
 		],
 		defaultEffectRegistry,
+	type EffectParams,
 		{ lut: (id) => (id === 'L' ? lookLut : null) },
 		33,
 	)!;

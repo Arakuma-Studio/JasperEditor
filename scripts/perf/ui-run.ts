@@ -193,9 +193,9 @@ export async function runUiScenarios(ctx: Ctx, only: string[] = []): Promise<UiS
 	if (want('project')) {
 		const { page, openMs } = await session(ctx, 'items:2000');
 		log({
-			...(await traced(page, 'project panel 2 000 items scroll', 'items:2000', (t) =>
-				scrollContainerScenario(page, t, '[data-testid="project-body"]').then(() => undefined),
-			)),
+			...(await traced(page, 'project panel 2 000 items scroll', 'items:2000', async (t) => {
+				await scrollContainerScenario(page, t, '[data-testid="project-body"]');
+			})),
 			openMs,
 		});
 		await page.close();

@@ -45,7 +45,9 @@ constraints, attribution and the reason a measurement differs from ordinary UI b
 - E2E `window.jasper` declarations use the application's type-only `JasperAgentApi` contract, extracted
   by the web-shell audit. Shared setup accepts `CommandInput[]`; transaction results use the real
   discriminated union, with one assertion helper for successful outcomes. Local result assertions and
-  fallback empty reference maps were removed. History origins use `Origin`.
+  fallback empty reference maps were removed. History origins use `Origin`. Setup commands resolve imported
+  fixture filenames to unique media IDs before submission; semantic agent addressing is a separate
+  pre-validation contract and is not part of `CommandInput`.
 - Job polling and export downloads validate with `EngineJobSchema`, `JobListResponseSchema`,
   `ExportResultSchema` and `StillResultSchema`; terminal states come from the shared set. The export
   helper returns the actual export-result type.

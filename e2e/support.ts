@@ -11,7 +11,7 @@ import {
 	JobListResponseSchema,
 	TERMINAL_JOB_STATES,
 } from '../packages/api/src/jobs.ts';
-import type { CommandInput, Origin, TransactionResult } from '../packages/project/src/index.ts';
+import type { CommandInput, MediaAsset, Origin, TransactionResult } from '../packages/project/src/index.ts';
 
 declare global {
 	interface Window {
@@ -125,6 +125,13 @@ export async function importFiles(page: Page, names: string[]): Promise<void> {
 	for (const n of names) {
 		await expect(page.getByTestId('project-row').filter({ hasText: n })).toBeVisible({ timeout: 60_000 });
 	}
+}
+
+export async function mediaIdForFile(page: Page, name: string): Promise<string> {
+	const media = await query<Record<string, MediaAsset>>(page, 'doc.get', { path: ['media'] });
+	const matches = Object.values(media).filter((asset) => asset.originalName === name);
+	expect(matches, `Expected one imported media asset named ${name}`).toHaveLength(1);
+	return matches[0]!.id;
 }
 
 export function timelineArea(page: Page): Locator {
