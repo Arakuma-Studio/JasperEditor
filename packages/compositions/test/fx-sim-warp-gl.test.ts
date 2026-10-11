@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { openPsdgPage, type PsdgPage, psdgGlEnabled } from './fx-psdg/gl-suite.ts';
+import type { SimulationApi } from './fx-sim-warp/entry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const GALLERY = process.env.SIM_GALLERY;
@@ -152,7 +153,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('weather: rain, snow, bubbles, drizzle, star burst', async () => {
-		const w = await page.call<Record<string, any>>('weather');
+		const w = await page.call<ReturnType<SimulationApi['weather']>>('weather');
 		expect(w.rainVisible).toBeGreaterThan(20);
 		expect(w.noRain).toBe(0);
 		expect(w.rainOnlyAlpha).toBeLessThan(80); // without the original: drops over transparency
@@ -168,7 +169,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('particles: types, seek = play, gravity, floor, guides, 2D direction, mercury', async () => {
-		const r = await page.call<Record<string, any>>('particles');
+		const r = await page.call<ReturnType<SimulationApi['particles']>>('particles');
 		expect(r.typeErrors).toEqual([]);
 		expect(r.seek).toBe(0); // frame 60 directly equals 30 → 45 → 60 (checkpoint resume)
 		expect(r.startAlpha).toBeLessThan(0.01); // nothing born at frame 0 (black matte only)
@@ -183,7 +184,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('cards: Card Dance, Card Wipe, Pixel Polly', async () => {
-		const r = await page.call<Record<string, any>>('cards');
+		const r = await page.call<ReturnType<SimulationApi['cards']>>('cards');
 		expect(r.cdRest).toBeLessThanOrEqual(3);
 		expect(r.cdRot).toBeGreaterThan(50);
 		expect(r.cdZ).toBeGreaterThan(50); // cards pulled towards the camera grow
@@ -197,7 +198,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('shatter: intact at rest for every pattern, breaks, render modes, wireframes', async () => {
-		const r = await page.call<Record<string, any>>('shatter');
+		const r = await page.call<ReturnType<SimulationApi['shatter']>>('shatter');
 		expect(r.rest).toBeLessThanOrEqual(3);
 		for (const d of r.patterns) expect(d).toBeLessThanOrEqual(8);
 		expect(r.moved).toBeGreaterThan(50);
@@ -210,7 +211,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('pixel effects: Ball Action, Scatterize, Hair', async () => {
-		const r = await page.call<Record<string, any>>('pixelFx');
+		const r = await page.call<ReturnType<SimulationApi['pixelFx']>>('pixelFx');
 		expect(r.ballsAlpha).toBeGreaterThan(50);
 		expect(r.noBalls).toBe(0);
 		expect(r.scatter).toBeGreaterThan(10);
@@ -223,7 +224,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('surfaces: Foam, Wave World, Caustics', async () => {
-		const r = await page.call<Record<string, any>>('surfaces');
+		const r = await page.call<ReturnType<SimulationApi['surfaces']>>('surfaces');
 		expect(r.foamAlpha).toBeGreaterThan(0.5);
 		expect(r.foamSeek).toBe(0);
 		expect(r.foamRendered).toBeGreaterThan(1);
@@ -239,7 +240,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('Particle Playground: cannon seek, gravity, wall, repel, text, layer exploder', async () => {
-		const r = await page.call<Record<string, any>>('playground');
+		const r = await page.call<ReturnType<SimulationApi['playground']>>('playground');
 		expect(r.cannonAlpha).toBeGreaterThan(0.2);
 		expect(r.cannonSeek).toBe(0);
 		expect(r.cannonZero).toBe(0);
@@ -253,7 +254,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('distort: Displacement Map, Optics Compensation, Polar, Bezier Warp, Reshape, Smear', async () => {
-		const r = await page.call<Record<string, any>>('distort');
+		const r = await page.call<ReturnType<SimulationApi['distort']>>('distort');
 		for (const [k, v] of Object.entries(r.identities)) expect(v, k).toBeLessThanOrEqual(2);
 		expect(r.optics).toBeGreaterThan(20);
 		expect(r.polar).toBeGreaterThan(20);
@@ -267,7 +268,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 	});
 
 	it('warps: Mesh Warp, Liquify, Puppet', async () => {
-		const r = await page.call<Record<string, any>>('warps');
+		const r = await page.call<ReturnType<SimulationApi['warps']>>('warps');
 		expect(r.mwRest).toBeLessThanOrEqual(3);
 		expect(r.mwEmpty).toBeLessThanOrEqual(3);
 		expect(r.mw).toBeGreaterThan(20);

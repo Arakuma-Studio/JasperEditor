@@ -155,4 +155,10 @@ const api = {
 	},
 };
 
-(window as unknown as { __psdg: typeof api }).__psdg = api;
+declare global {
+	interface Window {
+		__psdg: typeof api;
+	}
+}
+
+window.__psdg = api;

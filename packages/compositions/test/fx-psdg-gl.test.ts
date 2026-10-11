@@ -2,6 +2,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { PsdgFamilyApi } from './fx-psdg/family.entry.ts';
 import { openPsdgPage, type PsdgPage, psdgGlEnabled } from './fx-psdg/gl-suite.ts';
 
 type Px = [number, number, number, number];
@@ -19,12 +20,12 @@ describe.runIf(psdgGlEnabled)(
 		afterAll(() => page?.close());
 
 		it('neutral defaults leave the picture untouched', async () => {
-			const r = await page.call<Record<string, number>>('identities');
+			const r = await page.call<ReturnType<PsdgFamilyApi['identities']>>('identities');
 			for (const [id, diff] of Object.entries(r)) expect(diff, id).toBeLessThanOrEqual(2);
 		});
 
 		it('Distort', async () => {
-			const d = await page.call<Record<string, any>>('distort');
+			const d = await page.call<ReturnType<PsdgFamilyApi['distort']>>('distort');
 			expect(near(d.mirrorRight, [255, 0, 0, 255])).toBe(true); // 0°: the right side mirrors the left
 			expect(near(d.mirrorLeft, [255, 0, 0, 255])).toBe(true);
 			expect(near(d.offsetLeft, [0, 0, 255, 255])).toBe(true); // shifted by half a layer, wrapping
@@ -42,7 +43,7 @@ describe.runIf(psdgGlEnabled)(
 		});
 
 		it('Generate', async () => {
-			const g = await page.call<Record<string, any>>('generate');
+			const g = await page.call<ReturnType<PsdgFamilyApi['generate']>>('generate');
 			expect(g.g4TopLeft[0]).toBeGreaterThan(200); // yellow corner
 			expect(g.g4TopLeft[2]).toBeLessThan(80);
 			expect(g.g4BottomRight[2]).toBeGreaterThan(200); // blue corner
@@ -74,7 +75,7 @@ describe.runIf(psdgGlEnabled)(
 		});
 
 		it('Noise & Grain', async () => {
-			const n = await page.call<Record<string, any>>('noise');
+			const n = await page.call<ReturnType<PsdgFamilyApi['noise']>>('noise');
 			expect(n.dustSpeck[0]).toBeLessThan(140);
 			expect(n.medianSpeck[0]).toBeLessThan(140);
 			expect(n.noiseAnim).toBeGreaterThan(30);
@@ -86,7 +87,7 @@ describe.runIf(psdgGlEnabled)(
 		});
 
 		it('Stylize', async () => {
-			const s = await page.call<Record<string, any>>('stylize');
+			const s = await page.call<ReturnType<PsdgFamilyApi['stylize']>>('stylize');
 			expect(s.glowOutside[3]).toBeGreaterThan(40); // glow around the shape's alpha edge
 			expect(s.glowFar[3]).toBe(0);
 			expect(near(s.glowInside, [200, 120, 60, 255])).toBe(true);
@@ -117,7 +118,7 @@ describe.runIf(psdgGlEnabled)(
 		});
 
 		it('Transition bin', async () => {
-			const t = await page.call<Record<string, any>>('transitions');
+			const t = await page.call<ReturnType<PsdgFamilyApi['transitions']>>('transitions');
 			for (const a of t.done) expect(a).toBe(0); // 100 % = fully transparent
 			expect(t.blockHalf).toBeGreaterThan(90);
 			expect(t.blockHalf).toBeLessThan(165);
@@ -133,7 +134,7 @@ describe.runIf(psdgGlEnabled)(
 		});
 
 		it('Time: Echo combines the current frame with earlier frames', async () => {
-			const e = await page.call<Record<string, Px>>('time');
+			const e = await page.call<ReturnType<PsdgFamilyApi['time']>>('time');
 			expect(e.current[1]).toBeGreaterThan(190);
 			expect(e.echo1[1]).toBeGreaterThan(190); // frame −1 (bar 10 px to the left)
 			expect(e.echo2[1]).toBeGreaterThan(190); // frame −2
@@ -142,7 +143,7 @@ describe.runIf(psdgGlEnabled)(
 		});
 
 		it('Video: text burn-ins', async () => {
-			const v = await page.call<Record<string, any>>('video');
+			const v = await page.call<ReturnType<PsdgFamilyApi['video']>>('video');
 			expect(v.timecodeChanges).toBeGreaterThan(100);
 			expect(v.timecodeAbove).toEqual([128, 128, 128, 255]);
 			expect(v.textWhitePixels).toBeGreaterThan(40);

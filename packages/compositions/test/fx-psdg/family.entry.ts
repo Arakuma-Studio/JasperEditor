@@ -328,4 +328,6 @@ function maxDiffAt(id: string, over: Record<string, unknown>, frame: number) {
 	return maxDiff(r.out, r.input);
 }
 
-(window as unknown as { __psdgTest: typeof api }).__psdgTest = api;
+export type PsdgFamilyApi = typeof api;
+
+(window as unknown as { __psdgTest: PsdgFamilyApi }).__psdgTest = api;

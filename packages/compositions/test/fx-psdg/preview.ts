@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
+import type {} from './preview-entry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -73,18 +74,15 @@ try {
 	await page.addScriptTag({ content: bundle.outputFiles[0]!.text });
 	if (errors.length) throw new Error(errors.join('\n'));
 	const photoUrl = `data:image/png;base64,${readFileSync(photo).toString('base64')}`;
-	await page.evaluate((u) => (window as any).__psdg.init(u), photoUrl);
+	await page.evaluate((u) => window.__psdg.init(u), photoUrl);
 	const jobs = JSON.parse(readFileSync(jobsFile, 'utf8'));
 	const t0 = Date.now();
-	type Result = { name: string; png?: string; error?: string; size?: [number, number] };
 	const write = (file: string, dataUrl: string) =>
 		writeFileSync(join(outDir, file), Buffer.from(dataUrl.split(',')[1]!, 'base64'));
 	// One job per call: progress and per-job timing (slow shaders show up immediately).
 	for (const job of jobs) {
 		const t = Date.now();
-		const r = (await page.evaluate(([j]) => (window as any).__psdg.render(j, null), [[job]] as const)) as {
-			results: Result[];
-		};
+		const r = await page.evaluate(([j]) => window.__psdg.render(j, null), [[job]] as const);
 		const res = r.results[0]!;
 		if (res.png) write(`${res.name.replace(/[^\w.-]+/g, '_')}.png`, res.png);
 		console.log(
@@ -93,9 +91,9 @@ try {
 				: `ok   ${res.name} ${res.size?.join('x')} ${Date.now() - t} ms`,
 		);
 	}
-	const sheet = (await page.evaluate(([s]) => (window as any).__psdg.render([], s), [
+	const sheet = await page.evaluate(([s]) => window.__psdg.render([], s), [
 		{ columns, cell, title: title || undefined },
-	] as const)) as { sheet?: string };
+	] as const);
 	if (sheet.sheet) write('_sheet.png', sheet.sheet);
 	console.log(`rendered ${jobs.length} jobs in ${Date.now() - t0} ms → ${outDir}`);
 } finally {

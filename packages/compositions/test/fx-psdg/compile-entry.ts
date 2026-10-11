@@ -63,4 +63,10 @@ const api = {
 	},
 };
 
-(window as unknown as { __c: typeof api }).__c = api;
+declare global {
+	interface Window {
+		__c: typeof api;
+	}
+}
+
+window.__c = api;

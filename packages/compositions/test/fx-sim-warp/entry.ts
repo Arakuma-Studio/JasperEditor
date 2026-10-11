@@ -670,4 +670,6 @@ const api = {
 	},
 };
 
-(window as unknown as { __psdgTest: typeof api }).__psdgTest = api;
+export type SimulationApi = typeof api;
+
+(window as unknown as { __psdgTest: SimulationApi }).__psdgTest = api;

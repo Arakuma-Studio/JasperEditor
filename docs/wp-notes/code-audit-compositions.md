@@ -79,6 +79,12 @@ matching native `MessagePort` callbacks while keeping hostile reply data untrust
 media, animation, and shader fixtures now use the existing project types instead of fabricated
 `never`/`unknown` shapes.
 
+The final GPU-helper type review found result dictionaries and browser globals still declared as
+`any`. PSDG and simulation test results now derive from their browser entry APIs via `ReturnType`.
+Compile/preview tooling shares producer-checked `Window` declarations, eliminating duplicate reply
+interfaces and return casts. Paint/kaleidoscope helpers use `EffectParams` and direct typed browser
+calls; this avoids asserting a common signature over methods with different arguments and results.
+
 The comment-only followup covered composition, motion-template, and motion tests. Across all 151
 TypeScript/TSX files, the comment-free TypeScript printer output and all 1,331 raw template chunks were
 identical before and after; compiler/linter/environment directives were preserved and syntax diagnostics
@@ -113,6 +119,12 @@ remained empty. This proof applies to that comment-only commit, before subsequen
   package typecheck was run by this reviewer; integration owns the final check.
 - The complete 971-program software-GL compile sweep still requires an integration rerun after these
   fixes. The filtered Iris result and the 8-case Classic 3D result do not establish a passing full sweep.
+- The final GPU-helper cleanup touched 10 TypeScript files: 7 retain byte-identical emitted JavaScript;
+  2 differ only in redundant expression parentheses after type erasure. The remaining file replaces
+  dynamic browser dispatch with direct calls. A mocked bridge comparison verified six calls across
+  all four used methods, preserving names, arguments, ordering and optional defaults. All 10 files
+  parse without diagnostics and have zero explicit `any` AST nodes. Biome and whitespace checks pass;
+  no GPU suite or package typecheck was repeated for this followup.
 - No new visual assets, dependencies, migrations or altered golden images are part of this change.
 
 Focused commands:

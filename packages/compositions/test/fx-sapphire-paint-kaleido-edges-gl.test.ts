@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { EffectParams } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { RunOptions } from './fx-sapphire-paint-kaleido-edges/entry.ts';
@@ -8,24 +9,18 @@ import { CHROME, openGlPage } from './gl-browser.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-type Px = [number, number, number, number];
-type Params = Record<string, unknown>;
-
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	'sapphire-paint-kaleido-edges in WebGL2 (headless Chrome)',
 	{ timeout: 240_000 },
 	() => {
 		let browser: Browser;
 		let page: Page;
-		const call = <T>(name: string, ...args: unknown[]): Promise<T> =>
-			page.evaluate(([n, a]) => (window as any).__pke[n as string](...(a as unknown[])), [
-				name,
-				args,
-			] as const) as Promise<T>;
-		const probe = (id: string, p: Params, o: RunOptions, pts: [number, number][]) =>
-			call<{ canvas: number[]; box: number[]; pixels: Px[] }>('probe', id, p, o, pts);
-		const diff = (id: string, p: Params, o: RunOptions = {}) => call<number>('diffFromInput', id, p, o);
-		const sig = (id: string, p: Params, o: RunOptions = {}) => call<number>('signature', id, p, o);
+		const probe = (id: string, p: EffectParams, o: RunOptions, pts: [number, number][]) =>
+			page.evaluate(([id, p, o, pts]) => window.__pke.probe(id, p, o, pts), [id, p, o, pts] as const);
+		const diff = (id: string, p: EffectParams, o: RunOptions = {}) =>
+			page.evaluate(([id, p, o]) => window.__pke.diffFromInput(id, p, o), [id, p, o] as const);
+		const sig = (id: string, p: EffectParams, o: RunOptions = {}) =>
+			page.evaluate(([id, p, o]) => window.__pke.signature(id, p, o), [id, p, o] as const);
 
 		beforeAll(async () => {
 			({ browser, page } = await openGlPage(join(here, 'fx-sapphire-paint-kaleido-edges', 'entry.ts')));
@@ -36,7 +31,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('runs all 30 effects, and Mix with Orig = 1 gives the input back', async () => {
-			const ids = await call<string[]>('ids');
+			const ids = await page.evaluate(() => window.__pke.ids());
 			const family = ids.filter((id) => FAMILY_IDS.includes(id));
 			expect(family.sort()).toEqual([...FAMILY_IDS].sort());
 			for (const id of FAMILY_IDS) {

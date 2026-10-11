@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FX_FAMILIES } from '@jasper/project';
 import { chromium } from '@playwright/test';
+import type {} from './compile-entry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ids = process.argv.slice(2).length
@@ -41,25 +42,18 @@ try {
 		// Raw fragment sources (files), compiled as-is: PSDG_SRC=a.glsl,b.glsl
 		for (const f of process.env.PSDG_SRC.split(',')) {
 			const src = (await import('node:fs')).readFileSync(f, 'utf8');
-			const r = await page.evaluate(([s]) => (window as any).__c.compile('jasper.mirror', s), [src] as const);
+			const r = await page.evaluate(([s]) => window.__c.compile('jasper.mirror', s), [src] as const);
 			console.log(`${f}: ${JSON.stringify(r)}`);
 		}
 		process.exit(0);
 	}
 	if (process.env.PSDG_DUMP) {
 		const [id, pass] = process.env.PSDG_DUMP.split(':');
-		console.log(
-			await page.evaluate(([i, p]) => (window as any).__c.source(i, Number(p)), [id, pass] as const),
-		);
+		console.log(await page.evaluate(([i, p]) => window.__c.source(i, Number(p)), [id, pass] as const));
 		process.exit(0);
 	}
 	for (const id of ids) {
-		const r = (await page.evaluate((i) => (window as any).__c.compile(i), id)) as {
-			pass: number;
-			ms: number;
-			ok: boolean;
-			log?: string;
-		}[];
+		const r = await page.evaluate((i) => window.__c.compile(i), id);
 		console.log(`${id}: ${r.map((p) => `${p.ms}${p.ok ? '' : '!'}`).join(' ')} ms`);
 	}
 } finally {
