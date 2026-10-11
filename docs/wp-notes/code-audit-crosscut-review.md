@@ -249,7 +249,8 @@ The independent pass found and delegated four additional corrections:
    journal to block the read. The engine owner separated direct reads from listing and added a
    regression with healthy and damaged sibling journals. Listing was then extended to return
    per-session warnings alongside healthy candidates; damaged files remain intact. The API, session
-   adapter, and UI must carry these warnings together.
+   adapter, and both UI entry points carry these warnings together. A warnings-only dialog remains
+   visible, and no action offers to discard a damaged journal.
 2. The shared job poller initially retried only `NETWORK`. It now also honors the API's explicit
    `retryable` flag, with the same three-consecutive-failure limit. A successful response resets the
    limit; replacement/cancellation checks surround asynchronous requests. Permanent authorization
@@ -273,15 +274,15 @@ boundaries, and failure-isolating cleanup remain where they protect user work.
 
 ### Integrated syntax inventory
 
-An immutable Git-object scan of integration commit `62c56d0a` applied the same syntax rules to
+An immutable Git-object scan of integration commit `71037b10` applied the same syntax rules to
 **1,741 files**. Reading blobs from that commit avoids mixing revisions while other branches merge.
 
 | Candidate | Baseline | Integrated snapshot |
 | --- | ---: | ---: |
 | Explicit `any` type nodes | 21 | 0 |
-| `unknown` type nodes | 2,955 | 2,347 |
+| `unknown` type nodes | 2,955 | 2,344 |
 | Double assertions through `unknown` | 189 | 102 |
-| Catch blocks with no statements | 123 | 111 |
+| Catch blocks with no statements | 123 | 110 |
 | Simple promise-catch candidates | 194 | 178 |
 | Type suppression lines | 0 | 0 |
 
