@@ -40,7 +40,8 @@ function bundleOfSelection(ctx: CommandCtx): MediaAsset | null {
 	if (!s || !seqId) return null;
 	for (const id of selectedCompositionClips(ctx)) {
 		const clip = s.document.sequences[seqId]?.clips[id];
-		const asset = clip?.kind === 'composition' ? s.document.media[clip.composition.mediaId] : undefined;
+		const mediaId = clip?.kind === 'composition' ? clip.composition.mediaId : undefined;
+		const asset = mediaId ? s.document.media[mediaId] : undefined;
 		if (asset?.mgBundle?.source.type === 'project-dir') return asset;
 	}
 	return null;

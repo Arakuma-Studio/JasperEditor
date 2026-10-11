@@ -25,16 +25,18 @@ export class PanelServices {
 
 	/** Publishes a service; returns the unregister function (call it on unmount). */
 	register<K extends PanelServiceName>(name: K, instanceId: string, service: PanelServiceMap[K]): () => void {
-		const list = (this.map[name] ?? []).filter((e) => e.instanceId !== instanceId);
+		const list: { instanceId: string; service: PanelServiceMap[K] }[] = (this.map[name] ??= []);
+		const prior = list.findIndex((e) => e.instanceId === instanceId);
+		if (prior !== -1) list.splice(prior, 1);
 		const entry = { instanceId, service };
 		list.push(entry);
-		this.map[name] = list;
 		return () => {
 			const cur = this.map[name];
 			if (!cur) return;
-			const next = cur.filter((e) => e !== entry);
-			if (next.length) this.map[name] = next;
-			else delete this.map[name];
+			const index = cur.indexOf(entry);
+			if (index === -1) return;
+			cur.splice(index, 1);
+			if (!cur.length) delete this.map[name];
 		};
 	}
 

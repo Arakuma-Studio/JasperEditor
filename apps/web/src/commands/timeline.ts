@@ -418,7 +418,7 @@ function liftExtract(ctx: CommandCtx, e: Env, extract: boolean): void {
 	const targeted = [...e.view.targeting.video, ...e.view.targeting.audio].filter(
 		(id) => !isLocked(e.seq, id),
 	);
-	const range = {
+	const range: CommandOf<'range.extract'> | CommandOf<'range.lift'> = {
 		type: extract ? 'range.extract' : 'range.lift',
 		from: inPoint,
 		to: outPoint,

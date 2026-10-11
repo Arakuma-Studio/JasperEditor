@@ -258,7 +258,8 @@ function ShellBody() {
 			},
 			exportWorkspace: () => {
 				const id = effectiveRef.current;
-				store.setCurrent(id, dock.currentLayout() ?? store.get(id)?.current ?? null);
+				const layout = dock.currentLayout();
+				if (layout) store.setCurrent(id, layout);
 				const json = store.exportJson(id);
 				if (json)
 					download(`${(store.get(id)?.name ?? id).replace(/[^\w-]+/g, '_')}.jasper-workspace.json`, json);

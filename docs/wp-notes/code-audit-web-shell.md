@@ -65,3 +65,9 @@ The six-file regression run passed all 51 tests. The final command/engine-dialog
 - `vitest run test/registry.test.tsx test/polish-media-browser.test.tsx --maxWorkers=1 --testTimeout=60000 --hookTimeout=60000`: 2 files, 19 tests passed; 135.66 seconds after the async mount fix.
 - `tsx i18n/model-strings.ts`: 5,545 model labels; generated output unchanged.
 - Final targeted Biome and `git diff --check` pass. The integrator owns the final combined TypeScript/build/test checks.
+
+## Integrated typecheck corrections
+
+The combined typecheck identified widened transition/range discriminants, stale `TimedClip` assertions, readonly selection arrays at mutable command inputs, optional composition/camera/source IDs, and nullable dock snapshots. These now use the existing command and shape-input types, narrowed values, and copied selections where commands own a mutable array. Clipboard SVG output uses the canonical `ShapeItemInput` contract supplied by the typed SVG adapter. Shared session transaction input corrections remain with the session owner.
+
+Panel service buckets are created with their mapped service type and mutated in place. This preserves service-name/value correlation without an indexed-write assertion, while stale unregister callbacks still cannot remove a replacement. An isolated TypeScript program over that standalone module reports zero diagnostics, and eight lifecycle assertions pass. Targeted Biome checks cover all eight corrected source files; no full application typecheck or broad suite was started during the integration gate.

@@ -80,7 +80,7 @@ export const timeCommands: UiCommand[] = [
 		'Show Clip Keyframes ▸ Time Remapping ▸ Speed',
 		(_ctx, e) => {
 			const clips = selectedClips(e).filter(remappable);
-			const on = !clips.every((c) => isBandShown(c.id) || isRemapped(c as TimedClip));
+			const on = !clips.every((c) => isBandShown(c.id) || isRemapped(c));
 			setBandShown(
 				clips.map((c) => c.id),
 				on,
@@ -94,7 +94,7 @@ export const timeCommands: UiCommand[] = [
 			checked: (ctx) => {
 				const e = envOf(ctx);
 				const clips = e ? selectedClips(e).filter(remappable) : [];
-				return clips.length > 0 && clips.every((c) => isBandShown(c.id) || isRemapped(c as TimedClip));
+				return clips.length > 0 && clips.every((c) => isBandShown(c.id) || isRemapped(c));
 			},
 		},
 	),
@@ -191,8 +191,8 @@ clipMenuExtensions.register({
 	items: ({ session, clip, selection }) => {
 		if (!remappable(clip)) return [];
 		const readOnly = session.getState().readOnly;
-		const ids = selection.includes(clip.id) ? selection : [clip.id];
-		const remapped = !!activeRemap(clip as TimedClip);
+		const ids = selection.includes(clip.id) ? [...selection] : [clip.id];
+		const remapped = !!activeRemap(clip);
 		// Show Clip Keyframes ▸ Time Remapping ▸ Speed lives in edit-ux's Show Clip Keyframes menu (edit-ux/menus.ts).
 		const items: MenuItemSpec[] = [];
 		if (remapped)
@@ -214,7 +214,7 @@ clipMenuExtensions.register({
 				items: INTERP.map((m) => ({
 					kind: 'item' as const,
 					label: m.label,
-					checked: timeInterpolationOf(clip as TimedClip) === m.mode,
+					checked: timeInterpolationOf(clip) === m.mode,
 					disabled: readOnly,
 					run: () =>
 						void session.apply({

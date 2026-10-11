@@ -1,4 +1,4 @@
-import type { Clip, Command, FitClip } from '@jasper/project';
+import type { Clip, Command, CommandOf, FitClip } from '@jasper/project';
 import { editPointFrame, type NearestKind, resolvePropertyAt, type Sequence } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -334,7 +334,7 @@ export const editUxCommands: UiCommand[] = [
 		(ctx, e) => {
 			// Premiere Shift+D with edit points selected (Trim Monitor button): the default video/audio transition at
 			// every selected edit point (FilmCraft trim.applyDefaultTransition).
-			const commands = editPointsOf(e.handle?.ui).flatMap((p) => {
+			const commands = editPointsOf(e.handle?.ui).flatMap<CommandOf<'transition.applyDefault'>>((p) => {
 				const c = e.seq.clips[p.clipId];
 				if (!c) return [];
 				const video = e.seq.videoTracks.some((t) => t.id === c.trackId);

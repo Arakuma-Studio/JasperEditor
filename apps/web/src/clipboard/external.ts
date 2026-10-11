@@ -10,6 +10,7 @@ import {
 	looksLikeSvg,
 	parseSvgPath,
 	type Sequence,
+	type ShapeItemInput,
 	svgPathToShapeItems,
 	svgToShapeContents,
 } from '@jasper/project';
@@ -226,7 +227,7 @@ export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): 
 	const { session, seq } = env;
 	const svg = looksLikeSvg(text);
 	if (!seq || (!svg && !looksLikeSvgPathData(text))) return false;
-	let items: Record<string, unknown>[];
+	let items: ShapeItemInput[];
 	let warnings: string[] = [];
 	try {
 		if (svg) {

@@ -257,12 +257,13 @@ export const multicamCommands: UiCommand[] = [
 		(ctx, e, args) => {
 			const a = args as { camera?: number; angle?: string } | undefined;
 			const clips = targetClips(e);
-			if (!clips.length || (!a?.camera && !a?.angle)) return;
+			const angle = a?.angle ?? a?.camera;
+			if (!clips.length || angle === undefined) return;
 			apply(ctx, e, 'Switch Multi-Camera Angle', [
 				{
 					type: 'multicam.switchAngle',
 					clipIds: clips.map((c) => c.id),
-					angle: a.angle ?? a.camera,
+					angle,
 					audio: multicamViewStore.getState().audioFollowsVideo,
 				},
 			]);
@@ -322,8 +323,9 @@ export const multicamCommands: UiCommand[] = [
 			return writable(ctx) && !!it && ctx.session!.getCommitted().items[it]?.kind === 'media';
 		},
 		run: (ctx) => {
-			const session = ctx.session!;
+			const session = ctx.session;
 			const src = sourceMonitorState.getState();
+			if (!session || !src.itemId) return;
 			const f = getSourceTransport()?.getState().frame ?? 0;
 			const r = session.apply({
 				label: 'Add Marker',
